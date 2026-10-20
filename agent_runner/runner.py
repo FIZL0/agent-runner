@@ -61,7 +61,12 @@ import uuid
 from pathlib import Path
 
 from agent_runner import plan as P
-from agent_runner.config import RUNNER, Config, cfg, main_checkout
+
+# The library API a wrapping project may call; these change only in a major version. `cmd_run(argv)` and
+# `cmd_stop(argv)` are the commands; `PROMPT`, `FIXER` and `OTHERS` may be replaced before `cmd_run`.
+__all__ = ['init', 'cmd_run', 'cmd_stop', 'pick', 'tasks', 'prompt_for', 'reopen_landed', 'retry_reopened',
+           'ask_stop', 'stopping', 'PROMPT', 'FIXER', 'OTHERS']
+from agent_runner.config import RUNNER, Config, cfg, main_checkout, runner_cmd
 from agent_runner.done import gate
 from agent_runner.gitops import drop_if_merged, push
 
@@ -356,8 +361,7 @@ def lean() -> list[str]:
 def agent_cmd(prompt: str, sid: str, model: str, idle: int) -> str:
     """The agent command line for one task. The Stop hook is this runner in --stop-hook mode."""
     stop = [{'hooks': [{'type': 'command',
-                        'command': shlex.join([sys.executable, str(RUNNER), 'run', '--stop-hook',
-                                               '--idle', str(idle)])}]}]
+                        'command': shlex.join([*runner_cmd(), 'run', '--stop-hook', '--idle', str(idle)])}]}]
     return shlex.join([C.run['agent'], prompt, '--session-id', sid, '--permission-mode', 'bypassPermissions',
                        '--disallowedTools', 'AskUserQuestion', '--model', model, *lean(),
                        '--settings', json.dumps({'hooks': {'Stop': stop, 'StopFailure': stop}})])
@@ -368,20 +372,21 @@ def brief_for(tid: str, cwd: Path) -> str:
     try:
         return '\n'.join(P.brief(tid, root=cwd, plan_dir=cwd / os.path.relpath(C.plan_dir, C.root)))
     except SystemExit as e:
-        return f'({RUNNER} plan brief {tid} produced nothing: {e})'
+        return f'({C.command} plan brief {tid} produced nothing: {e})'
 
 
 def prompt_for(tid: str, n: int, slots: int, cwd: Path, branch: str) -> str:
     """The first turn of a task's session: `[run] prompt` (a file) if set, else PROMPT, filled in.
 
     Placeholders a custom template may use: {tid} {n} {runner} {branch} {others} {earlier} {rules} {test}
-    {journal} {extra} {brief}. Any other `{name}` is left as it is.
+    {journal} {extra} {brief}. Any other `{name}` is left as it is. `[run] prompt_extra` may use them too
+    (a slot's own emulator, say: "KIT_PCSX2={n} is set").
     """
     r = C.run
     journal = os.path.relpath(C.journal, C.root) if C.journal else ''
     wip = not git('rev-parse', '--verify', '-q', f'refs/heads/wip/{tid}').returncode
     vals = dict(
-        tid=tid, n=n, runner=RUNNER, branch=branch,
+        tid=tid, n=n, runner=C.command, branch=branch,
         others=OTHERS if slots > 1 else '',
         earlier=(f'An earlier attempt that could not be merged is on wip/{tid} (`git log {branch}..wip/{tid}`, '
                  f'and the ledger line in {r["notes"]}/ledger.md says why). Read it before starting over.\n'
@@ -396,6 +401,7 @@ def prompt_for(tid: str, n: int, slots: int, cwd: Path, branch: str) -> str:
         extra=f'\n{r["prompt_extra"].strip()}\n' if r['prompt_extra'] else '',
         brief=brief_for(tid, cwd),
     )
+    vals['extra'] = vals['extra'].format_map(_Keep(vals))  # `prompt_extra` may say {n}, {tid}, {runner}
     template = (ROOT / r['prompt']).read_text(encoding='utf-8') if r['prompt'] else PROMPT
     return template.format_map(_Keep(vals))
 
@@ -405,8 +411,19 @@ class _Keep(dict):
         return '{' + k + '}'
 
 
+SLOTS = 1  # how many slots this run has; `cmd_run` sets it, for {slots} in `[run] slot_env`
+
+
 def slot_env(n: int) -> list[str]:
-    return ['AGENT_RUNNER=1', *[e.format(n=n) for e in C.run['slot_env']]]
+    """A slot's environment, as NAME=value: `AGENT_RUNNER=1`; the config file when it came from
+    AGENT_RUNNER_CONFIG and every variable `[run] pass_env` names that is set (a tmux pane does not inherit
+    the runner's environment, so a wrapper's own variables must be passed on by name); then `[run]
+    slot_env` with {n} (the slot) and {slots} filled in."""
+    env = ['AGENT_RUNNER=1']
+    if os.environ.get('AGENT_RUNNER_CONFIG') and C.file:
+        env.append(f'AGENT_RUNNER_CONFIG={C.file}')
+    env += [f'{k}={os.environ[k]}' for k in C.run['pass_env'] if k in os.environ]
+    return env + [e.format(n=n, slots=SLOTS) for e in C.run['slot_env']]
 
 
 def start(n: int, task, branch: str, model: str, idle: int, slots: int):
@@ -443,12 +460,43 @@ def joinable(f: str) -> bool:
     them into something that reads like a sentence and is not one, and a reader believes it. A paragraph
     needs reading, so it goes to a fix session.
     """
-    return any(fnmatch.fnmatch(f, g) for g in C.run['joinable'])
+    return any(fnmatch.fnmatch(f, g) for g in [*C.run['joinable'], *C.run['join']])
+
+
+def custom_join(f: str, sides: list[str], text: str, tid: str, cwd: Path) -> str | None:
+    """`[run.join]`: hand a joined file to the project's own joiner. The text to keep, or None to refuse.
+
+    Some record-per-line files cannot be joined blind: an address list where both sides gave one name two
+    different addresses must go to somebody who can pick, not to whichever branch merged first. The
+    project knows its own records, so it gets a command per glob, with these placeholders (all paths):
+
+        {ours} {base} {theirs}   the three sides of the conflict
+        {union}                  both sides' lines joined (what the runner would keep without this)
+        {out}                    where to write the result; it starts as a copy of {union}
+        {file}                   the file's path in the repo
+
+    Exit 0 keeps {out}; anything else refuses the join, and the conflict goes to a fix session (its output
+    is logged). A command rather than a Python hook, so it can be any language, and so the project's own
+    CLI (`./kit oracle-join ...`) is the one place that knows the format.
+    """
+    cmd = next(c for g, c in C.run['join'].items() if fnmatch.fnmatch(f, g))
+    u, out = C.notes('union.joined'), C.notes('union.out')
+    u.write_text(text, encoding='utf-8')
+    out.write_text(text, encoding='utf-8')
+    vals = dict(ours=sides[0], base=sides[1], theirs=sides[2], union=str(u), out=str(out), file=f)
+    r = sp.run(cmd.format_map({k: shlex.quote(v) for k, v in vals.items()}), shell=True, cwd=str(cwd),
+               capture_output=True, text=True)
+    if r.returncode:
+        log(f'{tid}: the [run.join] command for {f} refused the join (exit {r.returncode}): '
+            + ' / '.join((r.stdout + r.stderr).strip().splitlines()[-3:])[:300])
+        return None
+    return out.read_text(encoding='utf-8')
 
 
 def union(files: list[str], tid: str, cwd: Path) -> bool:
     """Join both sides of a conflict in every file `joinable` allows. Then, in the task list, drop a task
-    line that came out twice and any TODO line whose task DONE.md already has."""
+    line that came out twice and any TODO line whose task DONE.md already has; and a file with a
+    `[run.join]` command goes through it (`custom_join`), which may refuse."""
     todo, done = plan_rel('TODO.md'), plan_rel('DONE.md')
     for f in sorted(files, key=lambda f: f != done):  # DONE.md first: TODO.md reads it
         sides = []
@@ -477,6 +525,9 @@ def union(files: list[str], tid: str, cwd: Path) -> bool:
                     seen[k] = len(kept)
                 kept.append(l)
             text = '\n'.join(kept)
+        if any(fnmatch.fnmatch(f, g) for g in C.run['join']) and \
+                (text := custom_join(f, sides, text, tid, cwd)) is None:
+            return False
         (cwd / f).write_text(text, encoding='utf-8')
         git('add', f, cwd=cwd)
     return True
@@ -562,6 +613,20 @@ def untestable(f: str) -> bool:
     return f.endswith('.md')
 
 
+def suspect(base: str, merged: str) -> str:
+    """The first line a merge added to TODO.md or DONE.md that matches `[run] suspect`, else ''.
+
+    For blocks a project knows to distrust: a session in a run that can drive the emulator itself saying
+    "needs a human at the emulator" is one. The ledger flags it so the morning starts there.
+    """
+    if not (pat := C.run['suspect']):
+        return ''
+    rx = re.compile(pat, re.I)
+    added = git('diff', base, merged, '--', plan_rel('TODO.md'), plan_rel('DONE.md')).stdout
+    return next((l[1:].strip()[:200] for l in added.splitlines()
+                 if l.startswith('+') and not l.startswith('+++') and rx.search(l)), '')
+
+
 def merge(tid: str, branch: str) -> str | None:
     """Merge task/<tid> into the shared branch: merge, archive ticks, test, land, push, delete the branch.
 
@@ -621,8 +686,9 @@ def merge(tid: str, branch: str) -> str | None:
         git('branch', '-d', f'task/{tid}')
         line = next((l for l in plan_text(branch) if f'**{tid}**' in l), '')
         state = 'blocked' if line.startswith('- [~]') else 'part' if line else 'ticked'
-        note(f'{tid}: merged, {state}')
-        log(f'{tid}: merged, {state}')
+        msg = f'{tid}: merged, {state}' + (f'; SUSPECT, recheck: {sus}' if (sus := suspect(base, merged)) else '')
+        note(msg)
+        log(msg)
         reopen_landed(branch, tid)  # before the push, so the reopen goes out with the merge
         published(tid, branch)
         return None
@@ -862,7 +928,7 @@ def stop_hook(idle: int) -> int:
     if ev.get('background_tasks'):
         idle = max(idle, int(os.environ.get('AGENT_RUNNER_IDLE_BG', 1800)))
     try:
-        sp.Popen([sys.executable, str(RUNNER), 'run', '--stop-waiter', str(os.getppid()), t,
+        sp.Popen([*runner_cmd(), 'run', '--stop-waiter', str(os.getppid()), t,
                   str(_user_entries(t)), str(idle)],
                  stdin=sp.DEVNULL, stdout=sp.DEVNULL, stderr=sp.DEVNULL, start_new_session=True)
     except Exception:
@@ -945,7 +1011,8 @@ def sequential(branch: str, model: str, idle: int, pause: int, force: bool, once
                env={**os.environ, **dict(e.split('=', 1) for e in slot_env(1))})
         log(f'{tid}: session ended ({stats(sid)})')
         if C.run['on_exit']:
-            sp.run(C.run['on_exit'], shell=True, cwd=str(ROOT), capture_output=True)
+            sp.run(C.run['on_exit'], shell=True, cwd=str(ROOT), capture_output=True,
+                   env={**os.environ, **dict(e.split('=', 1) for e in slot_env(1))})
         if r := limit_only(sid, C.notes('slot1.log'), 0):
             log(f'{tid}: only hit the usage limit; sleeping until {r:%H:%M}')
             time.sleep(max(0, (r - dt.datetime.now()).total_seconds()) + pause)
@@ -1023,6 +1090,8 @@ def cmd_run(argv: list[str]) -> int:
     except ValueError:
         ap.error(f"slots must be a number or 'once', not {a.slots!r}")
     mode = a.mode or r['mode']
+    global SLOTS
+    SLOTS = slots
     idle, stall, pause = a.idle or r['idle'], a.stall or r['stall'], a.pause or r['pause']
     model = a.model or r['model']
 

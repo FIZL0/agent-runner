@@ -48,6 +48,12 @@ from pathlib import Path
 
 from agent_runner.config import cfg
 
+PROG = './run plan'  # the name in messages; a wrapper sets its own ('./kit plan')
+# The library API a wrapping project may call; names and signatures here change only in a major version.
+__all__ = ['PROG', 'HELP', 'lines', 'index', 'section', 'ensure', 'archive', 'tick', 'block', 'reopen',
+           'unblock', 'move', 'next_id', 'add', 'note', 'next_task', 'files_on_line', 'brief', 'open_ids',
+           'write_atomic', 'main']
+
 TTL = 5.0  # seconds a parsed file is trusted before its mtime is checked again
 _cache: dict[str, tuple[float, int, list[str]]] = {}  # path -> (checked_at, mtime_ns, lines)
 
@@ -135,7 +141,7 @@ def _find(ls: list[str], tid: str) -> int:
         m = ITEM.match(line)
         if m and not m.group(1) and m.group(3).rstrip('.') == tid:
             return i
-    raise SystemExit(f'./run plan: no task {tid!r} (./run plan for the index)')
+    raise SystemExit(f'{PROG}: no task {tid!r} ({PROG} for the index)')
 
 
 # --- writing ------------------------------------------------------------------
@@ -182,7 +188,7 @@ def ensure(todo=None, done=None) -> tuple[str, str]:
     if not os.path.exists(todo):
         _write(todo, ['# TODO — open tasks, in order', '', '### Next', ''])
     if not os.path.exists(done):
-        _write(done, ['# DONE — the archive (`./run plan tick <ID>` puts them here)', ''])
+        _write(done, [f'# DONE — the archive (`{PROG} tick <ID>` puts them here)', ''])
     return todo, done
 
 
@@ -314,20 +320,20 @@ def _place(ls: list[str], where: str, ref: str | None) -> int:
         return i
     if where in ('before', 'after'):
         if not ref:
-            raise SystemExit(f'./run plan: {where} needs a task id')
+            raise SystemExit(f'{PROG}: {where} needs a task id')
         i = _find(ls, ref)
         return i if where == 'before' else i + len(_item_block(ls, i))
     if where == 'in':
         h = next((i for i, l in enumerate(ls) if _level(l) and (ref or '').lower() in l.lower()), None)
         if h is None:
-            raise SystemExit(f'./run plan: no section {ref!r}')
+            raise SystemExit(f'{PROG}: no section {ref!r}')
         j = h + 1
         while j < len(ls) and not (0 < _level(ls[j]) <= _level(ls[h])):
             j += 1
         while j - 1 > 0 and ls[j - 1].strip() == '':
             j -= 1
         return j
-    raise SystemExit(f'./run plan: where must be top | before ID | after ID | in SECTION, not {where!r}')
+    raise SystemExit(f'{PROG}: where must be top | before ID | after ID | in SECTION, not {where!r}')
 
 
 def move(tid: str, where: str, ref: str | None = None, todo=None) -> None:
@@ -431,7 +437,9 @@ def brief(tid: str, root=None, plan_dir=None, journal=None) -> list[str]:
       * its journal directory: the file list, and the newest entry pasted in (capped at JOURNAL_MAX chars,
         because the newest entry is where the last session said whose move it is),
       * the files named on the line: where they actually are, how long they are, and their last 3 commits —
-        so the session knows whether someone changed them yesterday before it reads a single one.
+        so the session knows whether someone changed them yesterday before it reads a single one,
+      * and the output of `[plan] brief_extra` (a command; {id} is the task), for what only the project
+        knows how to find.
 
     `./run run` pastes this into the agent's first turn.
     """
@@ -442,7 +450,7 @@ def brief(tid: str, root=None, plan_dir=None, journal=None) -> list[str]:
     paths = [plan_dir / 'TODO.md', plan_dir / 'DONE.md']
     line = next((o for p in paths if (o := section(p, tid))), [])
     if not line:
-        raise SystemExit(f'./run plan: no task {tid!r} in {plan_dir}/TODO.md or DONE.md')
+        raise SystemExit(f'{PROG}: no task {tid!r} in {plan_dir}/TODO.md or DONE.md')
     text = '\n'.join(line)
     out = [f'## Task {tid} ({plan_dir.name}/TODO.md)', *line]
     own = plan_dir / f'{tid}.md'
@@ -482,6 +490,10 @@ def brief(tid: str, root=None, plan_dir=None, journal=None) -> list[str]:
             except OSError:
                 size = 'missing — this task creates it'
             out += [f'- `{t}` ({size})', *[f'  - {l[:120]}' for l in log]]
+    if cmd := c.raw['plan']['brief_extra']:  # what only the project knows: its oracle names, a spec, …
+        r = subprocess.run(cmd.format(id=tid), shell=True, cwd=str(root), capture_output=True, text=True)
+        if extra := (r.stdout.rstrip() or (f'({cmd} failed: {r.stderr.strip()[:200]})' if r.returncode else '')):
+            out += ['', *extra.splitlines()]
     return out
 
 
@@ -560,7 +572,7 @@ def main(argv: list[str] | None = None) -> int:
     paths = [str(p) for p in paths if os.path.exists(p)]
     if argv[:1] == ['-f']:
         if len(argv) < 3:
-            print('./run plan -f FILE <name>', file=sys.stderr)
+            print(f'{PROG} -f FILE <name>', file=sys.stderr)
             return 2
         paths, argv = [argv[1]], argv[2:]
     task_file = plan_dir / f'{argv[0]}.md' if argv else None
@@ -571,7 +583,7 @@ def main(argv: list[str] | None = None) -> int:
     else:
         out = next((o for p in paths if (o := section(p, argv[0]))), [])
     if not out:
-        print(f'./run plan: nothing named {argv[0]!r} — run `./run plan` for the index', file=sys.stderr)
+        print(f'{PROG}: nothing named {argv[0]!r} — run `{PROG}` for the index', file=sys.stderr)
         return 1
     print('\n'.join(out))
     return 0

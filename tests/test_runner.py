@@ -235,6 +235,11 @@ def test_prompt_and_hooks(repo: Path):
     R.C.run['prompt'] = 'prompt.txt'
     p = R.prompt_for('T2', 1, 1, repo, 'main')
     has(p, rf'^Do T2 with {RUN}; keep {{unknown}}\.', 'a custom template fills what it knows, leaves the rest')
+    R.C.run['prompt'], R.C.run['prompt_extra'] = '', 'Slot {n} has its own server on port 80{n}.'
+    has(R.prompt_for('T2', 3, 3, repo, 'main'), r'^Slot 3 has its own server on port 803\.$',
+        '[run] prompt_extra fills placeholders too')
+    R.C.run['prompt_extra'] = ''
+    R.C.run['prompt'] = 'prompt.txt'
     R.C.run['prompt'] = ''
     p = R.prompt_for('T2', 1, 1, repo, 'main')
     has(p, r'The test gate is `python3 check\.py`', 'the built-in prompt names the gate')
@@ -267,13 +272,94 @@ def test_prompt_and_hooks(repo: Path):
     (repo / '.runner/STOP').unlink()
 
 
+def test_hooks(repo: Path, tmp: Path):
+    print('hooks a wrapping project uses: its own config file, a pre-commit check, joiners, suspect, brief')
+    from agent_runner import config
+    kit = tmp / 'kit.toml'
+    kit.write_text('[git]\nkit_owns_this = true\n\n[agent-runner.run]\ntest = "python3 check.py"\n'
+                   'precommit = "test ! -e SECRET"\ncommand = "./kit"\n\n[agent-runner.git]\npush = false\n',
+                   encoding='utf-8')
+    env = {**os.environ, 'AGENT_RUNNER_CONFIG': str(kit)}
+    os.environ['AGENT_RUNNER_CONFIG'] = str(kit)
+    try:
+        c = config.Config(repo)
+        eq(c.file, kit.resolve(), 'AGENT_RUNNER_CONFIG wins over runner.toml')
+        check(c.run['precommit'] == 'test ! -e SECRET' and c.push_remote is None,
+              'and its [agent-runner] table is the config')
+        check('kit_owns_this' not in c.raw['git'], "the project's own [git] does not leak in")
+        eq(c.command, './kit', '[run] command is what sessions are told to call')
+        R._cfg_was = R.C
+        R.C = c
+        check(f'AGENT_RUNNER_CONFIG={kit.resolve()}' in R.slot_env(2), 'and a slot pane is handed the config file')
+        c.run['slot_env'], c.run['pass_env'] = ['KIT_PCSX2={n}', 'KIT_CHECK_SLOTS={slots}'], ['KIT_FLAG', 'KIT_UNSET']
+        os.environ['KIT_FLAG'] = 'x'
+        R.SLOTS = 3
+        env_ = R.slot_env(2)
+        check({'KIT_PCSX2=2', 'KIT_CHECK_SLOTS=3', 'KIT_FLAG=x'} <= set(env_) and not any('UNSET' in e for e in env_),
+              'slot_env fills {n} and {slots}; pass_env hands on what is set', env_)
+        del os.environ['KIT_FLAG']
+        R.SLOTS = 1
+    finally:
+        del os.environ['AGENT_RUNNER_CONFIG']
+        R.C = R._cfg_was
+
+    d = task_branch(repo, 2, 'T2')
+    (d / 'b.py').write_text('def show(x):\n    return str(x)\n', encoding='utf-8')
+    (d / 'SECRET').write_text('', encoding='utf-8')
+    r = run(d, 'done', 'T2', 'T2: the printer', env=env)
+    check(r.returncode == 1 and 'pre-commit check failed' in r.stderr, '[run] precommit refuses', r.stdout + r.stderr)
+    eq(git(d, 'rev-list', '--count', 'main..HEAD'), '0', 'and commits nothing')
+    r = run(d, 'done', 'T2', 'T2: the printer (SECRET is a fixture)', '--skip-check', env=env)
+    check(r.returncode == 0 and 'skipped (--skip-check)' in r.stdout, '--skip-check commits anyway', r.stdout + r.stderr)
+    check('pushed' not in r.stdout and 'task/T2' not in remote_branches(tmp), "and [agent-runner.git] push = false holds")
+    git(d, 'checkout', '-q', '--detach')
+
+    R.init(repo)
+    R.C.run['join'] = {'*.addr': 'grep -v CLASH {union} > {out}', 'refuse.addr': 'echo two addresses; exit 3'}
+    try:
+        check(R.joinable('x/y.addr') and not R.joinable('x/y.txt'), 'a [run.join] glob makes a file joinable')
+        sides = []
+        for name, text in (('ours', 'a 1\n'), ('base', ''), ('theirs', 'b 2\n')):
+            (tmp / name).write_text(text, encoding='utf-8')
+            sides.append(str(tmp / name))
+        eq(R.custom_join('lists/one.addr', sides, 'a 1\nCLASH\nb 2\n', 'T9', repo), 'a 1\nb 2\n',
+           'the joiner rewrites the union through {union} and {out}')
+        R.C.run['join'] = {'refuse.addr': 'echo two addresses; exit 3'}
+        check(R.custom_join('refuse.addr', sides, 'x\n', 'T9', repo) is None, 'and a non-zero exit refuses the join')
+        has((repo / '.runner/run.log').read_text(), r'refused the join \(exit 3\): two addresses', 'saying why')
+    finally:
+        R.C.run['join'] = {}
+
+    R.C.run['suspect'] = r'BLOCKED:.*\bemulator\b'
+    try:
+        before = git(repo, 'rev-parse', 'HEAD')
+        P._cache.clear()
+        P.block('T6', 'needs a human at the emulator', todo=repo / 'plan/TODO.md')
+        git(repo, 'commit', '-qam', 'T6: blocked')
+        has(R.suspect(before, git(repo, 'rev-parse', 'HEAD')), r'T6.*emulator', '[run] suspect flags a block a merge adds')
+        eq(R.suspect(before, before), '', 'and nothing when none was added')
+    finally:
+        R.C.run['suspect'] = ''
+
+    R.C.raw['plan']['brief_extra'] = 'echo "## From the project"; echo "names for {id}"'
+    try:
+        P._cache.clear()
+        b = '\n'.join(P.brief('T6', root=repo))
+        has(b, r'^## From the project\nnames for T6$', '[plan] brief_extra ends the brief')
+        has(b, r'## Files on the line, and their last commits\n- `c.py`', 'after the files and their git log')
+    finally:
+        R.C.raw['plan']['brief_extra'] = ''
+    has(R.agent_cmd('p', 'sid', 'opus', 90), r'run run --stop-hook', 'the Stop hook calls this runner back')
+
+
 def main() -> int:
     with tempfile.TemporaryDirectory() as t:
         tmp = Path(t)
         repo = make_repo(tmp)
         return report([lambda: test_picking(repo), lambda: test_done(repo, tmp), lambda: test_merge(repo, tmp),
                        lambda: test_retry(repo),
-                       lambda: test_conflicts(repo, tmp), lambda: test_prompt_and_hooks(repo)])
+                       lambda: test_conflicts(repo, tmp), lambda: test_prompt_and_hooks(repo),
+                       lambda: test_hooks(repo, tmp)])
 
 
 if __name__ == '__main__':

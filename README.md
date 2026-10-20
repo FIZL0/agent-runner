@@ -8,17 +8,21 @@ That's all it is: the Claude agent, plus the context it needs for one task, plus
 keeps several of them from tripping over each other while nobody is watching. It doesn't care what the
 repo contains: a decompilation, a game port, a web app or a book.
 
-- Python 3.11+ standard library only. No install: clone it anywhere and call `./run`.
-- One CLI: `./run plan …`, `./run done …`, `./run run …`, `./run stop`.
-- One optional config file in your repo: `runner.toml`.
+**Setting it up:** installing, adding it to a repo, wrapping it from your own CLI, and migrating a repo
+that has its own copy are all in [docs/SETUP.md](docs/SETUP.md). Changes: [CHANGELOG.md](CHANGELOG.md).
+
+- Python 3.11+ standard library only. Install it as a tool, or clone it and call `./run`.
+- One CLI: `agent-runner plan …`, `agent-runner done …`, `agent-runner run …`, `agent-runner stop`
+  (`./run …` in a clone is the same).
+- One optional config file in your repo: `runner.toml`, or a table in your own config file.
 
 ```sh
-git clone <this repo> ~/agent-runner
+uv tool install git+https://github.com/FIZL0/agent-runner@v0.1.0    # or pipx install …
 cd your-repo
-~/agent-runner/run plan                  # what the runner sees in plan/TODO.md
-~/agent-runner/run run --dry-run 3       # what three slots would start right now
-~/agent-runner/run run once              # one task, one session, then stop: try it like this first
-tmux new -s runner ~/agent-runner/run run 3
+agent-runner plan                  # what the runner sees in plan/TODO.md
+agent-runner run --dry-run 3       # what three slots would start right now
+agent-runner run once              # one task, one session, then stop: try it like this first
+tmux new -s runner agent-runner run 3
 ```
 
 `examples/demo.sh` copies `examples/hello` (a tiny repo with a plan) to a temp dir, gives it a bare
@@ -303,10 +307,13 @@ the running tasks merge. A run left up keeps picking up whatever you commit to T
 
 ```
 ./run plan [...]                       the task list as a tool (./run plan help)
-./run done ID "MSG" [--blocked WHY [--after X,Y]] [--no-test]
+./run done ID "MSG" [--blocked WHY [--after X,Y]] [--no-test] [--skip-check]
 ./run run [N|once] [--mode d|p] [--dry-run] [--no-tmux] [--model M] [--idle S] [--stall S] [--pause S] [--force]
 ./run stop                             finish what's running, start nothing new, exit (or s + Enter in the runner's pane)
+./run --version
 ```
+
+`agent-runner` is the same CLI. `--no-test` skips the gate, and `--skip-check` skips `[run] precommit`.
 
 `plan` and `done` work on the checkout you're in (the agent's worktree). `run` always merges into the
 main checkout. Set `AGENT_RUNNER_REPO` to use a repo from outside it.
@@ -316,10 +323,15 @@ main checkout. Set `AGENT_RUNNER_REPO` to use a repo from outside it.
 Every key is optional. Without a `runner.toml` you get the plan in `plan/`, no gate, 3 slots, and pushes
 to origin. A worktree without its own `runner.toml` (because it's git-ignored) reads the main checkout's.
 
+If `AGENT_RUNNER_CONFIG` names a file, the settings come from that file instead: from its
+`[agent-runner]` table (`[agent-runner.run]`, …) if it has one, else from its top level. This lets a
+project keep them in its own config file (see [docs/SETUP.md](docs/SETUP.md#wrapping-it-from-your-own-cli)).
+
 ```toml
 [plan]
 dir = "plan"              # TODO.md, DONE.md, <ID>.md
 journal = ""              # e.g. "journal": per-task folders, the newest pasted into the brief
+brief_extra = ""          # a command whose output ends the brief; {id} is the task id
 
 [run]
 test = ""                 # the gate, run by `done` and on every merge, e.g. "make test"
@@ -334,16 +346,23 @@ pause = 60                # s between one session ending and the next starting i
 weekly_max = 90           # % of 7-day usage past which nothing new starts
 notes = ".runner"         # logs + ledger (git-ignore it)
 links = []                # git-ignored paths symlinked into every worktree (data, big files)
-slot_env = ["AGENT_SLOT={n}"]
-on_exit = ""              # command run in a slot's worktree when its session ends (stop a server, …)
+slot_env = ["AGENT_SLOT={n}"]   # {n}: the slot, {slots}: how many
+pass_env = []             # the runner's own environment variables handed on to every slot
+on_exit = ""              # command run in a slot's worktree, with its env, when its session ends
 rules = ""                # "AGENTS.md", "CLAUDE.md", …
 prompt = ""               # a template file replacing the built-in prompt
-prompt_extra = ""
+prompt_extra = ""         # added to the prompt; takes its placeholders ({n}, {id}, {runner}, …)
+command = ""              # what sessions are told to type (default: this runner), e.g. "./kit"
+precommit = ""            # a second check `done` runs before it ticks; `done --skip-check` skips it
+suspect = ""              # regex: a BLOCKED line a merge adds that matches it is flagged in the ledger
 shared_files = []         # files nearly every task names; mode d ignores them
 joinable = ["plan/TODO.md", "plan/DONE.md"]   # globs of record-per-line files a conflict may be joined in
 fix_merges = true
 fix_model = "opus"
 fix_timeout = 1800
+
+[run.join]                # glob = a command that joins a conflict in that file itself:
+# "data/addresses.txt" = "./tools/join {union} {out}"   # also {ours} {base} {theirs} {file}; exit 0 keeps {out}
 
 [git]
 push = "origin"           # false: never push
@@ -352,11 +371,18 @@ push_merge = true         # push the shared branch after each tested merge
 
 ## What it leaves out
 
-These were in ps2-decomp-kit and openmx and are gone here: starting and stopping the PS2 emulator
-(`KIT_PCSX2`, and use `on_exit` and `slot_env` for your own), the "SUSPECT" emulator check on
-transcripts, joining oracle address lists (use `joinable` for your own record-per-line files), the
-address audit, Ghidra, and the long-lived master session (see above). From opentennis, batching several
-finished branches into one merge-and-test is a good idea that isn't here yet.
+Nothing project-specific is built in. What ps2-decomp-kit and openmx did inline is a hook a project
+sets: the emulator per slot (`slot_env`, `on_exit`), the SUSPECT check (`suspect`), the oracle
+address-list join (`[run.join]`), and the address audit (`precommit`). The mapping is in
+[docs/SETUP.md](docs/SETUP.md#worked-mapping-ps2-decomp-kit). The long-lived master session is gone
+(see above). From opentennis, batching several finished branches into one merge-and-test is a good idea
+that isn't here yet.
+
+## Library
+
+`from agent_runner import plan, done, runner` and the names in each module's `__all__` are a stable API,
+so a project's CLI can be thin wrappers (`plan.main(argv)`, `done.main(argv)`, `runner.cmd_run(argv)`).
+See [docs/SETUP.md](docs/SETUP.md#wrapping-it-from-your-own-cli).
 
 ## Tests
 

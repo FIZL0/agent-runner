@@ -11,15 +11,20 @@ USAGE = """usage: run <command> [args]
     run [N|once] [--mode d|p] [--dry-run]
                                the unattended runner (`run run --help`)
     stop                       let the running tasks finish and merge, start nothing new
+    --version                  print the version
 
 Run it from anywhere inside the repository whose tasks it works on (or set AGENT_RUNNER_REPO).
-Configuration: runner.toml at the repository's root; see the README.
+Configuration: runner.toml at the repository's root, or the file AGENT_RUNNER_CONFIG names; see the README.
 """
 
 
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     cmd, rest = (argv[0], argv[1:]) if argv else ('', [])
+    if cmd in ('--version', '-V', 'version'):
+        from agent_runner import __version__
+        print(f'agent-runner {__version__}')
+        return 0
     if cmd == 'plan':
         from agent_runner import plan
         return plan.main(rest)

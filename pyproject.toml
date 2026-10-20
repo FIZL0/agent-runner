@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agent-runner"
+dynamic = ["version"]
+description = "N Claude Code sessions working through a markdown task list, unattended: worktrees, a test gate, merges, pushes"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.11"
+dependencies = []
+authors = [{ name = "FIZL0" }]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Environment :: Console",
+    "Topic :: Software Development :: Build Tools",
+]
+
+[project.urls]
+Homepage = "https://github.com/FIZL0/agent-runner"
+
+[project.scripts]
+agent-runner = "agent_runner.cli:main"
+
+[tool.setuptools]
+packages = ["agent_runner"]
+
+[tool.setuptools.dynamic]
+version = { attr = "agent_runner.__version__" }

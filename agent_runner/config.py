@@ -10,22 +10,52 @@ The runner is a tool you point at a repo, not a library the repo vendors, so it 
 
 Every key has a default, and a repo with no `runner.toml` at all works: plan in `plan/`, no test gate,
 three slots, push to origin.
+
+Where the settings come from, first match wins:
+
+1. `AGENT_RUNNER_CONFIG=<file>`: a TOML file a wrapping project names (its own `kit.toml`, say). If the
+   file has an `[agent-runner]` table, that table is the config (`[agent-runner.run]`, …), so the
+   project's own `[git]` or `[run]` never collide with ours. Otherwise its top level is. A relative path
+   is relative to the main checkout.
+2. `runner.toml` at the root of the checkout, else the main checkout's (a git-ignored one is only there).
 """
 from __future__ import annotations
 
 import os
+import shlex
+import shutil
 import subprocess
+import sys
 import tomllib
 from functools import cache
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-RUNNER = HERE.parent / 'run'   # the CLI entry, called by absolute path from hooks and agent sessions
+CLONE_ENTRY = HERE.parent / 'run'  # `./run` in a clone; an installed package has no such file
+
+
+def runner_cmd() -> list[str]:
+    """How the runner calls itself from a hook or a detached timer: this interpreter, and either the
+    clone's `run` or `-m agent_runner` (installed, `sys.executable` is the env that has the package)."""
+    if CLONE_ENTRY.exists():
+        return [sys.executable, str(CLONE_ENTRY)]
+    return [sys.executable, '-m', 'agent_runner']
+
+
+def _typed() -> str:
+    """What a session types: the clone's `run` (it has a shebang), else the installed `agent-runner`."""
+    if CLONE_ENTRY.exists():
+        return str(CLONE_ENTRY)
+    return shutil.which('agent-runner') or shlex.join(runner_cmd())
+
+
+RUNNER = _typed()  # for a prompt or a log line
 
 DEFAULTS: dict = {
     'plan': {
         'dir': 'plan',          # TODO.md and DONE.md live here; plan/<ID>.md is a task's long form
         'journal': '',          # optional: a directory of per-task journal folders, pasted into briefs
+        'brief_extra': '',      # a command whose output ends the brief; {id} is the task id
     },
     'run': {
         'test': '',             # the gate: `done` and every merge run it; empty means no gate
@@ -40,13 +70,18 @@ DEFAULTS: dict = {
         'weekly_max': 90,       # % of the account's 7-day usage past which no new task starts
         'notes': '.runner',     # logs and the ledger; keep it git-ignored
         'links': [],            # git-ignored paths symlinked into every worktree (data, big files)
-        'slot_env': ['AGENT_SLOT={n}'],  # extra environment per slot; {n} is the slot number
+        'slot_env': ['AGENT_SLOT={n}'],  # extra environment per slot; {n} is the slot, {slots} how many
+        'pass_env': [],         # names of the runner's own environment variables handed on to every slot
         'on_exit': '',          # a command run in the slot's worktree when its session ends
         'rules': '',            # the repo's rules file the prompt points at (AGENTS.md, CLAUDE.md, …)
         'prompt': '',           # path to a prompt template replacing the built-in one (see README)
         'prompt_extra': '',     # a paragraph added to the built-in prompt (what each slot owns, …)
         'shared_files': [],     # files nearly every task names; mode d ignores them
         'joinable': ['plan/TODO.md', 'plan/DONE.md'],  # record-per-line files a conflict may be joined in
+        'join': {},             # glob -> a command that joins a conflict in that file (see runner.custom_join)
+        'suspect': '',          # a regex: a block line a merge adds that matches it is flagged in the ledger
+        'precommit': '',        # a check `done` runs after the gate, before it ticks (--skip-check skips it)
+        'command': '',          # what the prompt tells sessions to call (default: this runner); e.g. ./kit
         'fix_merges': True,     # give a conflict the join cannot do to a one-shot agent session
         'fix_model': 'opus',
         'fix_timeout': 1800,
@@ -79,18 +114,37 @@ def main_checkout(cwd: Path | str | None = None) -> Path:
     return common.parent.resolve() if common.name == '.git' else top
 
 
+def config_file(root: Path) -> Path | None:
+    """The file the settings come from (see the module docstring), or None for the defaults."""
+    if env := os.environ.get('AGENT_RUNNER_CONFIG'):
+        f = Path(env)
+        f = f if f.is_absolute() else main_checkout(root) / f
+        if not f.exists():
+            raise SystemExit(f'agent-runner: AGENT_RUNNER_CONFIG names {f}, which does not exist')
+        return f.resolve()
+    for f in (root / 'runner.toml', main_checkout(root) / 'runner.toml'):
+        if f.exists():  # a git-ignored runner.toml is only in the main checkout, not the worktrees
+            return f
+    return None
+
+
 class Config:
     def __init__(self, root: Path):
         self.root = root
         raw: dict = {}
-        f = root / 'runner.toml'
-        if not f.exists():  # a git-ignored runner.toml is only in the main checkout, not the worktrees
-            f = main_checkout(root) / 'runner.toml'
-        if f.exists():
-            with open(f, 'rb') as fh:
+        self.file = config_file(root)
+        if self.file:
+            with open(self.file, 'rb') as fh:
                 raw = tomllib.load(fh)
+            if isinstance(raw.get('agent-runner'), dict):
+                raw = raw['agent-runner']
         self.raw = {k: {**v, **raw.get(k, {})} for k, v in DEFAULTS.items()}
         self.run = self.raw['run']
+
+    @property
+    def command(self) -> str:
+        """What a session types to reach the plan tool and `done`: `[run] command`, else this runner."""
+        return self.run['command'] or RUNNER
 
     @property
     def plan_dir(self) -> Path:

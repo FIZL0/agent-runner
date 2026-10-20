@@ -1,0 +1,263 @@
+# Setting it up
+
+How to install agent-runner, add it to a repo, wrap it from a project's own CLI, move a repo that has its
+own copy over to it, and what a version number promises.
+
+- [Installing](#installing)
+- [A new repo from scratch](#a-new-repo-from-scratch)
+- [Wrapping it from your own CLI](#wrapping-it-from-your-own-cli)
+- [Migrating a repo that carries its own copy](#migrating-a-repo-that-carries-its-own-copy)
+- [Worktrees: why a global install](#worktrees-why-a-global-install)
+- [Versions](#versions)
+
+## Installing
+
+It is stdlib-only Python 3.11+, so it installs as a plain tool with nothing beside it.
+
+```sh
+uv tool install git+https://github.com/FIZL0/agent-runner@v0.1.0
+# or
+pipx install git+https://github.com/FIZL0/agent-runner@v0.1.0
+
+agent-runner --version          # agent-runner 0.1.0
+```
+
+That puts `agent-runner` on your PATH. It is the same CLI as `./run` in a clone: `agent-runner plan`,
+`agent-runner done`, `agent-runner run`, `agent-runner stop`. `python3 -m agent_runner` works too.
+
+**Pin a tag.** Always install from a tag (`@v0.1.0`), not from `main`, so a repo's overnight run doesn't
+change under it because somebody pushed.
+
+**Upgrade every repo at once.** There is one install per machine, so one command upgrades every repo
+that uses it:
+
+```sh
+uv tool install --force git+https://github.com/FIZL0/agent-runner@v0.2.0
+pipx install --force git+https://github.com/FIZL0/agent-runner@v0.2.0
+```
+
+Do it between runs (see [below](#switch-between-runs)). Read [CHANGELOG.md](../CHANGELOG.md) first: a
+new major version may rename a config key.
+
+**Roll back** the same way, naming the older tag: `uv tool install --force …@v0.1.0`.
+
+**From a clone,** for hacking on the runner itself: `git clone https://github.com/FIZL0/agent-runner`
+and call `~/agent-runner/run …`. A clone needs no install. `uv tool install --editable ~/agent-runner`
+makes the `agent-runner` command run the clone's code.
+
+## A new repo from scratch
+
+```sh
+cd your-repo
+mkdir plan
+```
+
+**plan/TODO.md**, one line per task, in sections:
+
+```markdown
+## Now
+
+- [ ] **A1** Add a --json flag to `report` · `src/report.py`, `tests/test_report.py`
+- [ ] **A2** Cache the parsed config · `src/config.py` · after A1
+```
+
+The id is bold, the files after a `·` are what the task may touch (mode `d` keeps two slots off the same
+file), and `after X` holds a task until X is ticked. `plan/A1.md`, if present, is the long brief. See the
+[README](../README.md#the-task-list) for the full format.
+
+**plan/DONE.md** can start empty; finished tasks move there.
+
+**runner.toml** (every key is optional; see the [README](../README.md#runnertoml)):
+
+```toml
+[run]
+test = "make test"        # the gate: `done` and every merge run it
+rules = "AGENTS.md"       # what every session reads first
+notes = ".runner"
+```
+
+**AGENTS.md** (or CLAUDE.md): the repo's rules for an agent. It holds how to build and test, what not to
+touch, and where things live. The runner's prompt already covers the task and the bookkeeping (the
+brief, `done`, `--blocked`), so this file is only about the repo.
+
+Git-ignore the notes folder, commit the rest, then try one task before trusting it with a night:
+
+```sh
+echo .runner/ >> .gitignore
+git add plan runner.toml AGENTS.md .gitignore && git commit -m "agent-runner plan"
+agent-runner plan                 # what it sees
+agent-runner plan brief A1        # what the session will be handed
+agent-runner run --dry-run 3      # what three slots would start
+agent-runner run once             # one task, one session; watch it
+tmux new -s runner agent-runner run 3
+```
+
+## Wrapping it from your own CLI
+
+A project with its own CLI (`./kit`, `make`, `just`) can keep it as the one front door. The agents
+type `./kit done …`, and the CLI hands off to agent-runner. There are two parts to that.
+
+**The config** lives in the project's own config file, under an `[agent-runner]` table, named by
+`AGENT_RUNNER_CONFIG`:
+
+```toml
+# kit.toml
+[git]                      # the kit's own; agent-runner does not read it
+remote = "upstream"
+
+[agent-runner.run]
+test = "./kit check"
+command = "./kit"          # what the prompt tells sessions to type
+
+[agent-runner.git]
+push = "origin"
+```
+
+Settings come from exactly one place: the file `AGENT_RUNNER_CONFIG` names (its `[agent-runner]` table
+if it has one, else its top level), else `runner.toml`. A relative path is read against the main
+checkout. The runner hands `AGENT_RUNNER_CONFIG` on to every slot and every Stop hook, so the sessions
+read the same file.
+
+**The code** is thin wrappers over the library, which keep the project's exact CLI:
+
+```python
+import os
+os.environ.setdefault('AGENT_RUNNER_CONFIG', 'kit.toml')
+
+from agent_runner import plan, done, runner
+from agent_runner.config import cfg
+
+plan.PROG = './kit plan'                 # how its messages name the command
+done.PROG = './kit done'
+
+def kit_plan(argv): return plan.main(argv)
+def kit_done(argv):
+    argv = ['--skip-check' if a == '--skip-audit' else a for a in argv]   # the kit's old flag
+    rc = done.main(argv)
+    print('journal: ./kit journal finish', file=sys.stderr)              # anything extra after
+    return rc
+def kit_run(argv):
+    os.environ['KIT_CHECK_SLOTS'] = '3'   # forwarded through [run] pass_env
+    return runner.cmd_run(argv)
+def kit_stop(argv): return runner.cmd_stop(argv)
+```
+
+`cfg()` is cached per checkout, so a wrapper can also adjust a setting in code before calling in:
+`cfg().run['links'].append('context')`.
+
+The names in each module's `__all__` are the stable API (see [Versions](#versions)): `plan.main`,
+`plan.brief`, `plan.tick`, `plan.open_ids` …, `done.main`, `done.gate`, `done.check`, `runner.cmd_run`,
+`runner.cmd_stop`, `runner.pick`, `runner.tasks`, `runner.ask_stop`, `runner.PROMPT`, …
+
+### The hooks a wrapping project gets
+
+| hook | what it does |
+|---|---|
+| `[run] test` | the gate run by `done` and after every merge |
+| `[run] precommit` | a second check `done` runs after the gate, before it ticks or commits; `done --skip-check` skips it |
+| `[run.join]` | `"glob" = "command"`: the project joins a conflict in that file itself. `{ours} {base} {theirs} {union} {out} {file}`; exit 0 keeps `{out}`, non-zero sends it to a fix session |
+| `[run] suspect` | a regex; a `BLOCKED` line a merge adds to the plan that matches it is flagged `SUSPECT, recheck` in the ledger |
+| `[run] slot_env` | `NAME=value` per slot, with `{n}` (slot) and `{slots}` (how many) |
+| `[run] pass_env` | names of the runner's environment variables handed on to every slot |
+| `[run] on_exit` | a command run in the slot's worktree, with the slot's env, when its session ends (both parallel and `once`) |
+| `[run] prompt_extra` | a paragraph added to the prompt; takes the prompt's placeholders (`{n}`, `{id}`, `{runner}`, …) |
+| `[run] command` | what the prompt and the brief tell sessions to type (`./kit`) |
+| `[run] links` | git-ignored paths symlinked into every worktree |
+| `[plan] journal` | per-task journal folders; the newest entry goes into the brief |
+| `[plan] brief_extra` | a command (`{id}`) whose output ends the brief |
+
+The brief already holds the task line, `plan/<ID>.md`, the newest journal entry, and the git log of the
+files the task names. `brief_extra` is for anything else.
+
+### Worked mapping: ps2-decomp-kit
+
+What each `./kit` feature becomes:
+
+| ps2 kit feature | agent-runner |
+|---|---|
+| `./kit check` (tests + lint) as the gate | `test = "./kit check"` |
+| the address audit, `./kit done --skip-audit` | `precommit = "./kit audit --quiet"`; the wrapper maps `--skip-audit` to `--skip-check` |
+| joining `research/oracle.txt` address lists, refusing when one name gets two addresses | `[agent-runner.run.join] "research/oracle.txt" = "./kit oracle join {union} {out}"` (a kit subcommand that reuses its address parser and exits 1 on a clash) |
+| the SUSPECT check on blocks that blame the emulator | `suspect = 'BLOCKED:.*(pcsx2\|pine\|capture\|record\|screenshot\|save state\|unattended)'` |
+| `KIT_PCSX2=<slot>`, `KIT_RUN=1` | `slot_env = ["KIT_PCSX2={n}", "KIT_RUN=1"]` |
+| `KIT_CHECK_SLOTS` | the wrapper exports it and lists it in `pass_env = ["KIT_CHECK_SLOTS"]` (or `slot_env` with `{slots}`) |
+| stopping the slot's PCSX2 when its session ends | `on_exit = "./kit pcsx2 stop"` (it runs with `KIT_PCSX2={n}`) |
+| the emulator paragraph in the prompt | `prompt_extra = "Your emulator is slot {n}: ./kit pcsx2 start …"` |
+| agents typing `./kit plan`, `./kit done` | `command = "./kit"`, and `plan.PROG` / `done.PROG` |
+| `research/journal` | `[agent-runner.plan] journal = "research/journal"` |
+| `context/notes` (logs, ledger) | `notes = "context/notes"` |
+| `context/` and `*.iso` in every worktree | `links = ["context", "*.iso"]` |
+| the long-lived master session and master.md | gone: one fix session per conflict, and the ledger (`notes/ledger.md`) |
+| the journal hint after `done` | printed by the wrapper after `done.main` |
+
+The rest of `./kit` (Ghidra, PCSX2, PINE, the state tools) stays in the kit. agent-runner never needs to
+know about it.
+
+## Migrating a repo that carries its own copy
+
+openmx and ps2-decomp-kit each have their own runner (`tools/kit/run.py`, `plan.py`, `done.py`). Moving
+one over:
+
+1. **Install** a pinned tag (above).
+2. **Move the config.** Write the `[agent-runner]` table into the project's config file, taking each
+   value from the old code: the gate, the slot env, the prompt paragraph, the links, the notes folder.
+   Use the mapping table above. Set `AGENT_RUNNER_CONFIG` where the CLI starts.
+3. **Move the special cases into hooks.** A custom join becomes a `[run.join]` command; an audit
+   becomes `precommit`; a transcript check becomes `suspect`.
+4. **Replace the commands with wrappers** (above), keeping the old flags as aliases.
+5. **Check parity on a scratch copy of the plan,** never on the live one:
+
+   ```sh
+   git worktree add --detach /tmp/parity HEAD
+   cp kit.toml /tmp/parity/            # git-ignored config doesn't travel
+   cd /tmp/parity
+   old/kit plan > /tmp/old.txt;  ./kit plan > /tmp/new.txt;  diff /tmp/old.txt /tmp/new.txt
+   for id in A1 A2 A3; do diff <(old/kit plan brief $id) <(./kit plan brief $id); done   # a few open ids
+   ./kit run --dry-run 3               # the same picks as the old runner's --dry-run
+   ./kit done SOME_ID "parity" --no-test    # ticks and commits on the scratch branch only
+   git log -1 --stat; cd -; git worktree remove --force /tmp/parity
+   ```
+
+   The plan listing, the briefs and the dry-run picks should match. A brief may differ in the
+   runner's wording only.
+6. **Delete** the old runner modules (`run.py`, `plan.py`, `done.py`) and their tests. Keep the kit's
+   own commands, the hook commands you just wrote, `plan/`, the journal and the notes folder: the
+   ledger, the logs and the `wip/<ID>` branches carry over as they are.
+7. <a id="switch-between-runs"></a>**Switch between runs, never while slots are working.** Stop the old
+   runner (`./kit stop` or `s` + Enter) and wait until it exits. Then commit the switch on main and
+   start the new one. A session that started under the old runner would call `done` from its worktree,
+   and its branch might still have the old code: that is the one mix that breaks.
+
+## Worktrees: why a global install
+
+Every slot is a git worktree, and the runner in the main checkout and the sessions in the worktrees call
+each other: the session's Stop hook calls `run hook`, and `done` in a worktree writes the files the
+runner then merges. They must be **one copy of one version**.
+
+- A **global install** (uv tool, pipx) is one copy at one absolute path, shared by every checkout,
+  every worktree and every repo on the machine. The hooks call it by that path.
+- A **git submodule** is per checkout. Each worktree has its own copy at whatever commit its branch
+  points to. A task branch made before a bump runs the old runner, and the main checkout runs the
+  new one. Bumping it is a commit that every in-flight branch then conflicts with at merge.
+- A **vendored copy** (what the repos have now) has the same problem, plus the drift between repos that
+  this package exists to end.
+
+The only thing per repo is the config, and the worktrees read the main checkout's config when theirs is
+git-ignored.
+
+## Versions
+
+[Semantic versioning](https://semver.org). The version is in `agent_runner.__version__` and
+`agent-runner --version`. Every release is a tag `vX.Y.Z` with an entry in [CHANGELOG.md](../CHANGELOG.md).
+
+**Breaking (a major bump; minor while 0.x)** is anything that makes a repo's existing setup stop working:
+
+- the **task-line format** in TODO.md / DONE.md (ids, `·` files, `after`, `BLOCKED`, sections);
+- the **CLI**: command names, flags, exit codes, and the output a wrapper or the prompt relies on;
+- **config keys**: renaming or removing one, or changing what a value means;
+- the names in a module's `__all__`.
+
+**Not breaking (minor or patch):** new keys with defaults that keep the old behaviour, new commands or
+flags, the prompt's wording, log and ledger wording, and anything not in `__all__`.
+
+While the version is 0.x, a breaking change bumps the minor version (0.1 → 0.2), so pin a tag.
