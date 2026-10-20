@@ -1,0 +1,17 @@
+# The runner's settings for this repo. Every key is optional; see the README for all of them.
+
+[plan]
+dir = "plan"                 # TODO.md, DONE.md and plan/<ID>.md long forms
+journal = "journal"          # one folder per task; the newest entry is pasted into the brief
+
+[run]
+test = "python3 -m unittest -q"   # the gate: `done` and every merge run it
+slots = 2
+mode = "d"                   # never two running tasks on the same file
+rules = "AGENTS.md"          # what the prompt tells each session to read first
+joinable = ["plan/TODO.md", "plan/DONE.md", "journal/*/*.md", "CHANGELOG.md"]
+shared_files = ["CHANGELOG.md"]   # every task appends here; mode d does not count it as overlap
+
+[git]
+push = "origin"
+push_merge = true            # push main after each merge that passed the gate
