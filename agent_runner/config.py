@@ -56,6 +56,7 @@ DEFAULTS: dict = {
         'dir': 'plan',          # TODO.md and DONE.md live here; plan/<ID>.md is a task's long form
         'journal': '',          # optional: a directory of per-task journal folders, pasted into briefs
         'brief_extra': '',      # a command whose output ends the brief; {id} is the task id
+        'brief': '',            # a command whose output *is* the brief, replacing the built-in one; {id}
     },
     'run': {
         'test': '',             # the gate: `done` and every merge run it; empty means no gate
@@ -82,6 +83,15 @@ DEFAULTS: dict = {
         'suspect': '',          # a regex: a block line a merge adds that matches it is flagged in the ledger
         'precommit': '',        # a check `done` runs after the gate, before it ticks (--skip-check skips it)
         'command': '',          # what the prompt tells sessions to call (default: this runner); e.g. ./kit
+        'untested': ['*.md'],   # globs of files the gate cannot see (`!glob` takes one back): a merge that
+                                # differs from what was tested only in these is not tested again
+        'failures': '',         # a regex whose group 1 names a failing test in the gate's output
+        'retest': '',           # the gate for just some tests; {names} is those `failures` found. A failure
+                                # that passes alone was load; one the branch's base fails too is merged anyway
+        'batch': True,          # finished branches waiting for the merge go in together under one gate run
+        'before_start': '',     # a command that must succeed before a session starts; the slot waits on it
+        'not_attempt': '',      # a regex on a finished branch's first commit subject ({id}): such a session
+                                # (a spec phase, say) is not the run's one attempt at the task
         'fix_merges': True,     # give a conflict the join cannot do to a one-shot agent session
         'fix_model': 'opus',
         'fix_timeout': 1800,

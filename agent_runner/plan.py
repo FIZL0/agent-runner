@@ -470,10 +470,17 @@ def brief(tid: str, root=None, plan_dir=None, journal=None) -> list[str]:
       * and the output of `[plan] brief_extra` (a command; {id} is the task), for what only the project
         knows how to find.
 
-    `./run run` pastes this into the agent's first turn.
+    `./run run` pastes this into the agent's first turn. A project whose own tool already writes a brief
+    (one that also sets things up for the session, say) names it in `[plan] brief`, and its output is
+    the brief instead.
     """
     c = cfg(root)
     root = c.root
+    if cmd := c.raw['plan']['brief']:
+        r = subprocess.run(cmd.format(id=tid), shell=True, cwd=str(root), capture_output=True, text=True)
+        if r.returncode:
+            raise SystemExit(f'{PROG}: `{cmd.format(id=tid)}` failed: {r.stderr.strip()[:300]}')
+        return r.stdout.rstrip().splitlines()
     plan_dir = Path(plan_dir or c.plan_dir)
     journal = Path(journal) if journal else c.journal
     paths = [plan_dir / 'TODO.md', plan_dir / 'DONE.md']

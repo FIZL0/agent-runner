@@ -399,6 +399,82 @@ def test_hooks(repo: Path, tmp: Path):
         lock.close()
 
 
+def commit_on(repo: Path, tid: str, files: dict[str, str], subject: str) -> None:
+    d = task_branch(repo, 1, tid)
+    for f, text in files.items():
+        (d / f).write_text(text, encoding='utf-8')
+    git(d, 'add', *files)
+    git(d, 'commit', '-qm', subject)
+    git(d, 'checkout', '-q', '--detach')
+
+
+def test_gate_and_batches(repo: Path):
+    print('run: untested globs, flaky and inherited failures, batched merges, phases that are not attempts')
+    R.init(repo)
+    r = R.C.run
+    r['untested'] = ['*.md', 'tools/*', '!tools/check.sh']
+    check(R.untestable('docs/a.md') and R.untestable('tools/x.sh') and not R.untestable('tools/check.sh')
+          and not R.untestable('a.py'), '[run] untested: globs, and !glob takes a file back')
+
+    d = R.worktree('merge', 'main')
+    base = git(repo, 'rev-parse', 'main')
+    git(d, 'checkout', '-q', '--detach', base)
+    (d / 'only_on_head').write_text('', encoding='utf-8')
+    git(d, 'add', 'only_on_head')
+    git(d, 'commit', '-qm', 'head')
+    head = git(d, 'rev-parse', 'HEAD')
+    gate_was = R.gate
+    R.gate = lambda cwd, key='test', full=False: (1, 'FAIL t_a\nboom')
+    r['failures'] = r'^FAIL (\S+)'
+    try:
+        r['retest'] = 'true'
+        eq(R.tested('X', d, base), None, 'a failure that passes when rerun alone counts as passing')
+        r['retest'] = 'echo FAIL {names}; false'
+        eq(R.tested('X', d, base), None, 'one the base fails the same way merges anyway')
+        r['retest'] = 'test ! -e only_on_head || { echo FAIL t_a; exit 1; }'
+        has(R.tested('X', d, base) or '', r'tests fail after the merge', 'one only the merge fails stops it')
+        eq(git(d, 'rev-parse', 'HEAD'), head, 'and the merge worktree is back on the merge')
+        r['failures'] = ''
+        has(R.tested('X', d, base) or '', r'boom', 'without [run] failures a failure is a failure')
+    finally:
+        R.gate = gate_was
+        r['failures'] = r['retest'] = ''
+
+    commit_on(repo, 'B1', {'b1.py': '1\n'}, 'B1: one')
+    commit_on(repo, 'B2', {'b2.py': '2\n'}, 'B2: two')
+    R.WAITING.add('B2')  # as a second finish thread queued on the lock
+    eq(R.merge('B1', 'main'), None, 'a batch lands')
+    has((repo / '.runner/run.log').read_text(), r'B1: merging together with B2', 'B2 rode along with B1')
+    check((repo / 'b1.py').exists() and (repo / 'b2.py').exists(), 'both are in main')
+    R.WAITING.discard('B2')
+    eq(R.merge('B2', 'main'), None, 'the rider\'s own turn only does the bookkeeping')
+    check(git(repo, 'branch', '--list', 'task/B2') == '' and not R.LANDED, 'its branch is gone')
+
+    commit_on(repo, 'B3', {'b3.py': '3\n'}, 'B3: three')
+    commit_on(repo, 'B4', {'BROKEN': ''}, 'B4: breaks the gate')
+    R.WAITING.add('B4')
+    eq(R.merge('B3', 'main'), None, 'a batch that fails the gate still lands its own task')
+    has((repo / '.runner/run.log').read_text(), r'B3: the batch fails the gate', 'alone, after saying so')
+    check((repo / 'b3.py').exists() and not (repo / 'BROKEN').exists(), 'without the rider')
+    R.WAITING.discard('B4')
+    git(repo, 'branch', '-D', 'task/B4')
+
+    r['not_attempt'] = r'^{id} spec:'
+    commit_on(repo, 'S1', {'s.md': 'spec\n'}, 'S1 spec: how it works')
+    check(R.not_attempt('S1', 'main'), '[run] not_attempt: a spec phase is not the attempt')
+    commit_on(repo, 'S2', {'s2.md': 'x\n'}, 'S2: done')
+    check(not R.not_attempt('S2', 'main'), 'a finished task is')
+    r['not_attempt'] = ''
+    git(repo, 'branch', '-D', 'task/S1', 'task/S2')
+
+    R.C.raw['plan']['brief'] = 'echo "the project brief for {id}"'
+    try:
+        P._cache.clear()
+        eq(P.brief('T6', root=repo), ['the project brief for T6'], '[plan] brief replaces the built-in brief')
+    finally:
+        R.C.raw['plan']['brief'] = ''
+
+
 def main() -> int:
     with tempfile.TemporaryDirectory() as t:
         tmp = Path(t)
@@ -406,7 +482,7 @@ def main() -> int:
         return report([lambda: test_picking(repo), lambda: test_split_parents(repo), lambda: test_done(repo, tmp), lambda: test_merge(repo, tmp),
                        lambda: test_retry(repo),
                        lambda: test_conflicts(repo, tmp), lambda: test_prompt_and_hooks(repo),
-                       lambda: test_hooks(repo, tmp)])
+                       lambda: test_hooks(repo, tmp), lambda: test_gate_and_batches(repo)])
 
 
 if __name__ == '__main__':

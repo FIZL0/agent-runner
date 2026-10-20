@@ -675,9 +675,44 @@ def fix_merge(tid: str, branch: str, files: list[str], cwd: Path) -> str | None:
 
 
 def untestable(f: str) -> bool:
-    """A change the test gate cannot see: markdown. A merge that differs from what the branch tested only
-    in these is not retested."""
-    return f.endswith('.md')
+    """A change the test gate cannot see (`[run] untested`; the last glob that matches decides, `!glob` takes
+    a file back). A merge that differs from what the branch tested only in these is not retested."""
+    hit = False
+    for g in C.run['untested']:
+        if fnmatch.fnmatch(f, g.lstrip('!')):
+            hit = not g.startswith('!')
+    return hit
+
+
+def tested(tid: str, d: Path, base: str) -> str | None:
+    """Run the gate on the merge checked out in `d`: None when it passes, else why.
+
+    With `[run] failures` and `retest`, a failure gets two more looks before it counts: rerun alone (a test
+    that timed out under the other slots' load passes then), and rerun on `base`, the branch it merges into
+    (one that already fails there the same way is not this task's doing, so it merges anyway, and says so).
+    """
+    rc, out = gate(d, full=True)
+    if not rc:
+        return None
+    why = 'the tests fail after the merge: ' + ' / '.join(out.splitlines()[-4:])[:400]
+    rx, cmd = C.run['failures'], C.run['retest']
+    if not (rx and cmd and (names := sorted(set(re.findall(rx, out, re.M))))):
+        return why
+    cmd = cmd.replace('{names}', shlex.join(names))
+    if not sp.run(cmd, shell=True, cwd=str(d), capture_output=True).returncode:
+        log(f'{tid}: {", ".join(names)} failed, then passed alone (load); counted as passing')
+        return None
+    head = git('rev-parse', 'HEAD', cwd=d).stdout.strip()
+    git('checkout', '-q', '--detach', base, cwd=d)
+    try:
+        r = sp.run(cmd, shell=True, cwd=str(d), capture_output=True, text=True)
+    finally:
+        git('checkout', '-q', '--detach', head, cwd=d)
+    # ponytail: name-level match; a branch that breaks an already-failing test some other way slips through
+    if r.returncode and set(re.findall(rx, r.stdout + r.stderr, re.M)) >= set(names):
+        log(f'{tid}: {", ".join(names)} already fail without it; merged anyway')
+        return None
+    return why
 
 
 def suspect(base: str, merged: str) -> str:
@@ -694,6 +729,10 @@ def suspect(base: str, merged: str) -> str:
                  if l.startswith('+') and not l.startswith('+++') and rx.search(l)), '')
 
 
+WAITING: set[str] = set()  # finished tasks queued on MERGE: whoever merges next takes them along
+LANDED: dict[str, tuple[str, str]] = {}  # a task that landed in another's batch -> (base, merged)
+
+
 def merge(tid: str, branch: str) -> str | None:
     """Merge task/<tid> into the shared branch: merge, archive ticks, test, land, push, delete the branch.
 
@@ -702,54 +741,22 @@ def merge(tid: str, branch: str) -> str | None:
     committing the whole time, nothing is reset under them, and their edits are never stashed (a stash pop
     that clashed once left somebody's work in a stash nobody looked at).
 
+    With `[run] batch`, the other finished branches waiting for the lock ride along: one gate run for all of
+    them (the gate is often the slow part). A rider that conflicts beyond a join waits for its own turn, and
+    a batch that fails the gate is split: this task tries again alone, the riders take their own turns.
+
     Returns None when it landed, else why it was left alone. The shared branch is then as it was, and the
     task branch is still there.
     """
+    WAITING.add(tid)
     with MERGE:
-        d = worktree('merge', branch)
-        try:
-            for attempt in range(3):
-                git('merge', '--abort', cwd=d), git('reset', '-q', '--hard', cwd=d), git('clean', '-fdq', cwd=d)
-                base = git('rev-parse', branch).stdout.strip()
-                git('checkout', '-q', '--detach', base, cwd=d)
-                msg = ['-m', f"Merge branch 'task/{tid}'"]
-                if git('merge', '--no-edit', *msg, f'task/{tid}', cwd=d).returncode:
-                    files = git('diff', '--name-only', '--diff-filter=U', cwd=d).stdout.split()
-                    if all(map(joinable, files)) and union(files, tid, d):
-                        git('commit', '-q', '--no-edit', cwd=d)
-                        log(f'{tid}: joined both sides of {", ".join(files)}')
-                    else:
-                        # start the conflict again from a clean state (a refused join may have written some
-                        # of its files) and give it to a session that can read it
-                        git('merge', '--abort', cwd=d)
-                        git('merge', '--no-edit', *msg, f'task/{tid}', cwd=d)
-                        if why := fix_merge(tid, branch, files, d):
-                            return why
-                P._cache.clear()
-                P.archive(d / plan_rel('TODO.md'), d / plan_rel('DONE.md'))
-                plan_files = [plan_rel('TODO.md'), plan_rel('DONE.md')]
-                if git('status', '--porcelain', '--', *plan_files, cwd=d).stdout.strip():
-                    git('commit', '-qm', f'{tid}: archive ticked tasks', '--', *plan_files, cwd=d)
-                merged = git('rev-parse', 'HEAD', cwd=d).stdout.strip()
-                # `done` already passed the gate on the branch: rerun it only if the merged code differs
-                # from what it tested (a markdown-only difference is not code)
-                if not all(map(untestable, git('diff', '--name-only', f'task/{tid}', merged, cwd=d).stdout.split())):
-                    rc, out = gate(d)
-                    if rc:
-                        return 'the tests fail after the merge: ' + ' / '.join(out.splitlines()[-4:])[:400]
-                moved = git('diff', '--name-only', base, branch).stdout.split()
-                if attempt < 2 and not all(map(untestable, moved)):
-                    log(f'{tid}: {branch} got code commits during the tests; testing the merge again')
-                    continue
-                why = land(tid, branch, merged)
-                if why == 'conflict' and attempt < 2:
-                    continue
-                if why:
-                    return why
-                break
-        finally:
-            git('merge', '--abort', cwd=d)
-            git('checkout', '-q', '--detach', cwd=d)
+        WAITING.discard(tid)
+        if tid in LANDED:  # it went in with an earlier task's batch
+            base, merged = LANDED.pop(tid)
+        elif why := merge_batch(tid, branch):
+            return why
+        else:
+            base, merged = LANDED.pop(tid)
         git('branch', '-d', f'task/{tid}')
         line = next((l for l in plan_text(branch) if f'**{tid}**' in l), '')
         state = 'blocked' if line.startswith('- [~]') else 'part' if line else 'ticked'
@@ -759,6 +766,72 @@ def merge(tid: str, branch: str) -> str | None:
         reopen_landed(branch, tid)  # before the push, so the reopen goes out with the merge
         published(tid, branch)
         return None
+
+
+def merge_batch(tid: str, branch: str) -> str | None:
+    """`merge`'s part under the lock: build, test and land task/<tid> and its riders; record them in LANDED."""
+    d = worktree('merge', branch)
+    solo = not C.run['batch']
+    try:
+        for attempt in range(3):
+            git('merge', '--abort', cwd=d), git('reset', '-q', '--hard', cwd=d), git('clean', '-fdq', cwd=d)
+            base = git('rev-parse', branch).stdout.strip()
+            git('checkout', '-q', '--detach', base, cwd=d)
+            msg = ['-m', f"Merge branch 'task/{tid}'"]
+            if git('merge', '--no-edit', *msg, f'task/{tid}', cwd=d).returncode:
+                files = git('diff', '--name-only', '--diff-filter=U', cwd=d).stdout.split()
+                if all(map(joinable, files)) and union(files, tid, d):
+                    git('commit', '-q', '--no-edit', cwd=d)
+                    log(f'{tid}: joined both sides of {", ".join(files)}')
+                else:
+                    # start the conflict again from a clean state (a refused join may have written some
+                    # of its files) and give it to a session that can read it
+                    git('merge', '--abort', cwd=d)
+                    git('merge', '--no-edit', *msg, f'task/{tid}', cwd=d)
+                    if why := fix_merge(tid, branch, files, d):
+                        return why
+            riders = []
+            for t in ([] if solo else sorted(WAITING - set(LANDED))):
+                if git('merge', '--no-edit', '-m', f"Merge branch 'task/{t}'", f'task/{t}', cwd=d).returncode:
+                    files = git('diff', '--name-only', '--diff-filter=U', cwd=d).stdout.split()
+                    if not (all(map(joinable, files)) and union(files, t, d)):
+                        git('merge', '--abort', cwd=d)
+                        continue  # it waits for its own turn, where a fix session can take the conflict
+                    git('commit', '-q', '--no-edit', cwd=d)
+                riders.append(t)
+            if riders:
+                log(f'{tid}: merging together with {", ".join(riders)} (one gate run)')
+            P._cache.clear()
+            P.archive(d / plan_rel('TODO.md'), d / plan_rel('DONE.md'))
+            plan_files = [plan_rel('TODO.md'), plan_rel('DONE.md')]
+            if git('status', '--porcelain', '--', *plan_files, cwd=d).stdout.strip():
+                git('commit', '-qm', f'{tid}: archive ticked tasks', '--', *plan_files, cwd=d)
+            merged = git('rev-parse', 'HEAD', cwd=d).stdout.strip()
+            # `done` already passed the gate on the branch: rerun it only if the merged code differs
+            # from what it tested (`[run] untested` files are not code)
+            if riders or not all(map(untestable, git('diff', '--name-only', f'task/{tid}', merged, cwd=d).stdout.split())):
+                if why := tested(tid, d, base):
+                    if riders:
+                        log(f'{tid}: the batch fails the gate; {tid} again alone, the others in their own turns')
+                        solo = True
+                        continue
+                    return why
+            moved = git('diff', '--name-only', base, branch).stdout.split()
+            if attempt < 2 and not all(map(untestable, moved)):
+                log(f'{tid}: {branch} got code commits during the tests; testing the merge again')
+                continue
+            why = land(tid, branch, merged)
+            if why == 'conflict' and attempt < 2:
+                continue
+            if why:
+                return why
+            for t in [tid, *riders]:
+                LANDED[t] = (base, merged)
+            return None
+        return f'{tid}: no merge landed in three tries'
+    finally:
+        git('merge', '--abort', cwd=d)
+        git('checkout', '-q', '--detach', cwd=d)
 
 
 def land(tid: str, branch: str, merged: str) -> str | None:
@@ -857,6 +930,14 @@ def reopen_landed(branch: str, why: str) -> None:
     for t, ids in got:
         note(f'{t}: reopened, {", ".join(ids)} landed')
         log(f'{t}: reopened, {", ".join(ids)} landed')
+
+
+def not_attempt(tid: str, branch: str) -> bool:
+    """The session's last commit matches `[run] not_attempt` ({id} = the task): a phase that leaves the task open
+    on purpose (a spec written for a later session to port from), so the task may start again once it merges."""
+    rx = C.run['not_attempt']
+    last = git('log', '-1', '--format=%s', f'{branch}..task/{tid}').stdout.strip()
+    return bool(rx and last and re.search(rx.replace('{id}', re.escape(tid)), last))
 
 
 def finish(tid: str, n: int, sid: str, branch: str) -> None:
@@ -1237,7 +1318,8 @@ def cmd_run(argv: list[str]) -> int:
                     log(f'slot {n}: {task[0]} only hit the usage limit; transcript dropped, the task goes '
                         f'back in the pool and the slot sleeps until {reset:%H:%M}')
                 else:
-                    tried.add(task[0])  # one attempt per run: ticked, blocked or failed, a human looks next
+                    if not not_attempt(task[0], branch):
+                        tried.add(task[0])  # one attempt per run: ticked, blocked or failed, a human looks next
                     git('checkout', '-q', '--detach', cwd=SLOTS_DIR / f's{n}')
                     t = threading.Thread(target=finish, args=(task[0], n, sid, branch))
                     t.start()
@@ -1272,6 +1354,14 @@ def cmd_run(argv: list[str]) -> int:
                         cap_said = True
                     continue
                 cap_said = False
+                if r['before_start'] and sp.run(r['before_start'], shell=True, cwd=str(ROOT),
+                                                capture_output=True).returncode:
+                    if 'before_start' not in stall_said:
+                        stall_said.add('before_start')
+                        log(f'`{r["before_start"]}` fails: no new session starts until it passes')
+                        print('\a', end='', flush=True)
+                    continue
+                stall_said.discard('before_start')
                 if task := pick(running, tried, mode, branch):
                     if p := start(n, task, branch, model, idle, slots):
                         procs[n], running[n] = p, task
