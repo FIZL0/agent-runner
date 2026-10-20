@@ -25,6 +25,12 @@ agent-runner --version          # agent-runner 0.2.0
 That puts `agent-runner` on your PATH. It is the same CLI as `./run` in a clone: `agent-runner plan`,
 `agent-runner done`, `agent-runner run`, `agent-runner stop`. `python3 -m agent_runner` works too.
 
+**Windows:** Python 3.11+ from python.org (not the Store's `python3` alias), Git for Windows (Claude Code
+runs hooks and Bash calls in its Git Bash), and Windows Terminal for a tab per slot. Without Windows
+Terminal each slot gets a console window. tmux isn't needed. Run `agent-runner run 3` from any terminal.
+`[run] links` need no Developer Mode: without it they become junctions and hard links. See the README's
+[Terminals, and Windows](../README.md#terminals-and-windows).
+
 **Pin a tag.** Always install from a tag (`@v0.2.0`), not from `main`, so a repo's overnight run doesn't
 change under it because somebody pushed.
 

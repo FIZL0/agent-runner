@@ -1,7 +1,8 @@
 # agent-runner
 
 Point it at a git repo with a markdown task list and it runs N Claude Code sessions overnight. Each
-session gets one task in its own git worktree and tmux pane. When a session finishes, the runner merges
+session gets one task in its own git worktree and terminal (a tmux pane; on Windows a Windows Terminal
+tab). When a session finishes, the runner merges
 the branch, runs your tests, pushes, and starts the next task.
 
 That's all it is: the Claude agent, plus the context it needs for one task, plus the bookkeeping that
@@ -79,6 +80,26 @@ plan/TODO.md ──pick──▶ slot N: git worktree <repo>-slots/sN on task/<I
    Then `main` is pushed (`[git] push_merge`), and the remote `task/<ID>` is deleted once the remote `main`
    contains it.
 7. **Repeat** until nothing can start. Then the run [goes idle](#it-stays-up) and waits for new tasks.
+
+### Terminals, and Windows
+
+Each slot's session runs in a terminal you can watch and type into. Which one is `[run] mux` (or
+`--mux`): `tmux` panes in the window "agents" (the default on Linux and macOS; start the run inside tmux),
+`wt` (a Windows Terminal tab per slot, in a window named "agents", the default on Windows), or `console`
+(a console window per slot, Windows' fallback when `wt.exe` isn't installed). `none` (`--no-tmux`) is
+the sequential run below.
+
+On Windows the runner can't get the session's pid back from `wt.exe` (it only asks the running terminal
+to open a tab), so every slot runs through a small shim, `run --slot-shim`. It starts the agent and keeps
+its pid in `.runner/slotN.live` while it runs. The loop, a restarted run's adopt and the Stop hook read
+that file. The rest of the Windows differences are in `agent_runner/plat.py`: the run lock is
+`msvcrt.locking`, process checks go through kernel32 (stdlib `ctypes`, no psutil), an ended session is
+`taskkill /T /F`, and `[run] links` become a junction (directory) or hard link (file) when symlinks
+need Developer Mode. Two things work differently there. Nothing captures a console's output, so
+`.runner/slotN.log` has only the header lines and a usage limit is read from the transcript alone. A
+prompt over 24,000 characters (a Windows command line holds 32,767) is handed over as a file the session
+is told to read. `[run] test`, `on_exit`, `before_start` and the other commands run in the platform's
+shell, which on Windows is `cmd.exe`.
 
 `./run run 1` (or no tmux, or `--no-tmux`) is the sequential run. It's one session at a time, in your
 checkout, on the branch you have out. There's no worktree and no merge: `done` already ran the gate, and
@@ -308,7 +329,7 @@ the running tasks merge. A run left up keeps picking up whatever you commit to T
 ```
 ./run plan [...]                       the task list as a tool (./run plan help)
 ./run done ID "MSG" [--blocked WHY [--after X,Y]] [--no-test] [--skip-check]
-./run run [N|once] [--mode d|p] [--dry-run] [--no-tmux] [--model M] [--idle S] [--stall S] [--pause S] [--force]
+./run run [N|once] [--mode d|p] [--dry-run] [--no-tmux] [--mux tmux|wt|console|none] [--model M] [--idle S] [--stall S] [--pause S] [--force]
 ./run stop                             finish what's running, start nothing new, exit (or s + Enter in the runner's pane)
 ./run --version
 ```
@@ -337,6 +358,7 @@ brief = ""                # a command whose output *is* the brief (the project's
 [run]
 test = ""                 # the gate, run by `done` and on every merge, e.g. "make test"
 slots = 3
+mux = ""                  # tmux, wt, console or none; "" = tmux (Windows: wt, else console)
 mode = "d"                # d: different files; p: plan order
 agent = "claude"
 model = "opus"

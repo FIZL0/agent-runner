@@ -399,6 +399,85 @@ def test_hooks(repo: Path, tmp: Path):
         lock.close()
 
 
+def test_platform(repo: Path, tmp: Path):
+    """The OS layer, on the parts Linux can run: the terminal choice, quoting (Windows' too, by flipping
+    plat.WINDOWS for the pure functions), the run lock, links, process checks, and the Windows slot shim,
+    which is plain Python around a marker file."""
+    print('platform: the terminal per slot, quoting, locks, links, processes, the Windows slot shim')
+    from agent_runner import plat
+    choice = plat.mux_choice
+    eq(choice(3, '', True, False, windows=False), 'tmux', 'POSIX with tmux: panes')
+    eq(choice(3, '', False, False, windows=False), 'sequential', 'POSIX without tmux: the sequential run')
+    eq(choice(3, '', False, True, windows=True), 'wt', 'Windows with Windows Terminal: tabs')
+    eq(choice(3, '', True, False, windows=True), 'console', 'Windows without it: a console window per slot')
+    eq(choice(1, '', True, True, windows=True), 'sequential', 'one slot (or once) is sequential anywhere')
+    eq(choice(3, 'none', True, True, windows=False), 'sequential', '--no-tmux is sequential')
+    eq(choice(3, 'console', False, True, windows=True), 'console', '[run] mux picks console over wt')
+    eq(choice(3, 'wt', True, True, windows=False), 'sequential', 'a terminal that is not there falls back to sequential')
+
+    eq(plat.command_text(['/usr/bin/python3', '/x y/run', 'run']), "/usr/bin/python3 '/x y/run' run",
+       'POSIX command text is shlex.join, as before')
+    eq(plat.quote("a b"), "'a b'", 'POSIX quoting for shell=True is shlex.quote')
+    plat.WINDOWS = True
+    try:
+        eq(plat.command_text([r'C:\Program Files\Python\python.exe', r'C:\src\agent-runner\run', 'run', '--idle', '90']),
+           '"C:/Program Files/Python/python.exe" C:/src/agent-runner/run run --idle 90',
+           'Windows command text: forward slashes, double quotes (Git Bash and cmd.exe agree)')
+        eq(plat.quote('a b'), '"a b"', 'Windows quoting for shell=True is cmd.exe\'s')
+    finally:
+        plat.WINDOWS = False
+
+    lk = tmp / 'x.lock'
+    first = plat.lock(lk)
+    check(first is not None, 'a free lock is taken')
+    r = subprocess.run([sys.executable, '-c', 'import sys; from agent_runner import plat; '
+                        'sys.exit(plat.lock(sys.argv[1]) is None)', str(lk)],
+                       env={**os.environ, 'PYTHONPATH': str(Path(R.__file__).parent.parent)})
+    eq(r.returncode, 1, 'and another process cannot take it')
+    first.close()
+    (tmp / 'ldir').mkdir()
+    (tmp / 'lfile').write_text('x')
+    check(plat.link(tmp / 'ldir', tmp / 'ldir2') and (tmp / 'ldir2').is_dir(), 'link: a directory')
+    check(plat.link(tmp / 'lfile', tmp / 'lfile2') and (tmp / 'lfile2').read_text() == 'x', 'link: a file')
+
+    check(plat.alive(os.getpid()) and not plat.alive(0), 'alive: this process yes, pid 0 no')
+    sh = subprocess.Popen(['sh', '-c', 'sleep 30; true'])
+    try:
+        time.sleep(0.3)
+        eq(len(plat.children(sh.pid)), 1, 'children: the shell\'s sleep')
+    finally:
+        sh.kill()
+        sh.wait()
+    check(not plat.alive(sh.pid), 'alive: a reaped process is gone')
+
+    long = R.agent_argv('x' * (R.ARGV_PROMPT_MAX + 1), 'sid-1', 'opus', 90, 'slotT')
+    has(long[1], r'Your instructions .* are in .*slotT\.prompt', 'a prompt too long for a Windows command line goes by file')
+    eq(R.C.notes('slotT.prompt').read_text(encoding='utf-8'), 'x' * (R.ARGV_PROMPT_MAX + 1), 'all of it')
+    eq(long[2:4], ['--session-id', 'sid-1'], 'and the flags follow, as in agent_cmd')
+
+    # the shim a Windows tab runs: the agent's pid in the marker while it runs, AGENT_RUNNER_MARKER set
+    marker, job, seen = R.C.notes('slot7.live'), R.C.notes('slot7.job'), tmp / 'seen'
+    agent = [sys.executable, '-c', 'import os, sys, time; open(sys.argv[1], "w").write(os.environ["AGENT_RUNNER_MARKER"]);'
+             ' time.sleep(2)', str(seen), '--session-id', 'sid-7']
+    job.write_text(json.dumps({'argv': agent, 'cwd': str(repo), 'env': {'AGENT_SLOT': '7'}, 'marker': str(marker)}))
+    shim = subprocess.Popen([sys.executable, str(RUN), 'run', '--slot-shim', str(job)], cwd=str(repo))
+    try:
+        for _ in range(50):
+            if R.marker_pid(marker):
+                break
+            time.sleep(0.1)
+        mux = R.ShimMux('wt')
+        pid = R.marker_pid(marker)
+        check(pid and plat.alive(pid) and pid != shim.pid, 'the shim publishes the agent\'s own pid')
+        eq(mux.panes().get('s7', (None, None))[1], pid, 'the Windows terminals list the slot by its marker')
+        eq(mux.session_id(pid), 'sid-7', 'and a restart reads its session id off the job file')
+        shim.wait(timeout=10)
+    finally:
+        shim.kill()
+    check(not marker.exists(), 'the marker goes when the session ends')
+    eq(seen.read_text() if seen.exists() else '', str(marker), 'the agent is told its marker (for the Stop hook)')
+
+
 def commit_on(repo: Path, tid: str, files: dict[str, str], subject: str) -> None:
     d = task_branch(repo, 1, tid)
     for f, text in files.items():
@@ -482,7 +561,8 @@ def main() -> int:
         return report([lambda: test_picking(repo), lambda: test_split_parents(repo), lambda: test_done(repo, tmp), lambda: test_merge(repo, tmp),
                        lambda: test_retry(repo),
                        lambda: test_conflicts(repo, tmp), lambda: test_prompt_and_hooks(repo),
-                       lambda: test_hooks(repo, tmp), lambda: test_gate_and_batches(repo)])
+                       lambda: test_hooks(repo, tmp), lambda: test_gate_and_batches(repo),
+                       lambda: test_platform(repo, tmp)])
 
 
 if __name__ == '__main__':

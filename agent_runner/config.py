@@ -30,6 +30,8 @@ import tomllib
 from functools import cache
 from pathlib import Path
 
+from agent_runner import plat
+
 HERE = Path(__file__).resolve().parent
 CLONE_ENTRY = HERE.parent / 'run'  # `./run` in a clone; an installed package has no such file
 
@@ -43,7 +45,11 @@ def runner_cmd() -> list[str]:
 
 
 def _typed() -> str:
-    """What a session types: the clone's `run` (it has a shebang), else the installed `agent-runner`."""
+    """What a session types: the clone's `run` (it has a shebang), else the installed `agent-runner`.
+    Windows has no shebangs, so there it is the interpreter and the script (or the installed .exe)."""
+    if plat.WINDOWS:
+        exe = shutil.which('agent-runner')
+        return plat.command_text([exe] if exe else runner_cmd())
     if CLONE_ENTRY.exists():
         return str(CLONE_ENTRY)
     return shutil.which('agent-runner') or shlex.join(runner_cmd())
@@ -61,6 +67,7 @@ DEFAULTS: dict = {
     'run': {
         'test': '',             # the gate: `done` and every merge run it; empty means no gate
         'slots': 3,
+        'mux': '',              # terminal per slot: tmux, wt, console, none; '' = tmux (Windows: wt, else console)
         'mode': 'd',            # d = never two running tasks on the same file; p = strict plan order
         'agent': 'claude',      # the CLI that runs a session
         'model': 'opus',

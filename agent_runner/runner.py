@@ -2,8 +2,8 @@
 
 Most of a long project is small, checkable steps that need no human in the loop: they need the backlog,
 the tests and a commit. This is the loop that does that. It picks the next task nobody is on, opens a git
-worktree and a tmux pane for it, and starts an agent session with the task's brief already pasted into
-the first turn. It waits for the session to finish, merges and tests the branch, pushes it, and starts the
+worktree and a terminal for it (a tmux pane; on Windows a Windows Terminal tab or a console window), and
+starts an agent session with the task's brief already pasted into the first turn. It waits for the session to finish, merges and tests the branch, pushes it, and starts the
 next task.
 
     ./run run once            one task, then stop (the way to try it the first time)
@@ -40,6 +40,9 @@ The README explains each mechanism and the night that made it necessary. In shor
 Internal modes (used by the sessions it starts, not by you):
     --stop-hook            Stop hook: arm the idle timer for the session that is stopping
     --stop-waiter P T N S  the detached timer itself
+    --slot-shim JOB        run one slot's session in a Windows tab or console, its pid in a marker file
+
+What depends on the OS is in `plat.py`; the terminals are `TmuxMux` and `ShimMux` below.
 """
 from __future__ import annotations
 
@@ -52,7 +55,6 @@ import os
 import re
 import shlex
 import shutil
-import signal
 import subprocess as sp
 import sys
 import threading
@@ -61,6 +63,7 @@ import uuid
 from pathlib import Path
 
 from agent_runner import plan as P
+from agent_runner import plat
 
 # The library API a wrapping project may call; these change only in a major version. `cmd_run(argv)` and
 # `cmd_stop(argv)` are the commands; `PROMPT`, `FIXER` and `OTHERS` may be replaced before `cmd_run`.
@@ -296,7 +299,7 @@ def worktree(n, branch: str) -> Path:
             if src.exists() and not dst.is_symlink() and not dst.exists():
                 try:
                     dst.parent.mkdir(parents=True, exist_ok=True)
-                    dst.symlink_to(src)
+                    plat.link(src, dst)  # a symlink; on Windows without Developer Mode a junction or hard link
                 except OSError:
                     pass
     return d
@@ -338,17 +341,7 @@ def pane(name: str, cwd: Path, cmd: str, env=(), logfile: Path | None = None) ->
     return int(pid)
 
 
-def alive(pid: int) -> bool:
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True
-    try:  # a zombie answers kill(0) too
-        return Path(f'/proc/{pid}/stat').read_text().split(')')[-1].split()[0] != 'Z'
-    except OSError:
-        return True
+alive = plat.alive
 
 
 def panes() -> dict[str, tuple[str, int]]:
@@ -363,11 +356,8 @@ def panes() -> dict[str, tuple[str, int]]:
 
 def session_id(pid: int) -> str | None:
     """The `--session-id` of the agent running as `pid` or its child (the pane's shell may not exec it)."""
-    kids = sp.run(['pgrep', '-P', str(pid)], capture_output=True, text=True).stdout.split()
-    for p in [str(pid), *kids]:
-        try:
-            args = Path(f'/proc/{p}/cmdline').read_text().split('\0')
-        except OSError:
+    for p in [pid, *plat.children(pid)]:
+        if (args := plat.cmdline(p)) is None:
             continue
         for flag in ('--session-id', '--resume'):
             if flag in args[:-1]:
@@ -381,8 +371,8 @@ def adopt(branch: str) -> dict[int, tuple]:
     restart used to do. A slot past this run's count is watched until it ends and never refilled."""
     known = {t[0]: t for t in tasks(branch)}
     out = {}
-    for name, (_, pid) in panes().items():
-        if not re.fullmatch(r's\d+', name) or not alive(pid) or not (sid := session_id(pid)):
+    for name, (_, pid) in MUX.panes().items():
+        if not re.fullmatch(r's\d+', name) or not alive(pid) or not (sid := MUX.session_id(pid)):
             continue
         n = int(name[1:])
         tid = git('branch', '--show-current', cwd=SLOTS_DIR / name).stdout.strip().removeprefix('task/')
@@ -398,11 +388,7 @@ def adopt(branch: str) -> dict[int, tuple]:
 def single_run() -> object:
     """Hold `<notes>/run.lock` for this process's life, or exit: two runs would share the slot worktrees
     and reset each other's sessions. The lock goes with the process, however it ends."""
-    import fcntl
-    f = open(C.notes('run.lock'), 'a+')
-    try:
-        fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
-    except OSError:
+    if not (f := plat.lock(C.notes('run.lock'))):
         raise SystemExit(f'another run is going in this repository ({C.notes("run.lock")} is held); '
                          f'wait for it, or `{C.command} stop` it')
     return f
@@ -417,8 +403,17 @@ def lean() -> list[str]:
         if C.run['lean'] else []
 
 
+def agent_flags(sid: str, model: str, idle: int) -> list[str]:
+    """Everything after the prompt. The Stop hook is this runner in --stop-hook mode."""
+    stop = [{'hooks': [{'type': 'command',
+                        'command': plat.command_text([*runner_cmd(), 'run', '--stop-hook', '--idle', str(idle)])}]}]
+    return ['--session-id', sid, '--permission-mode', 'bypassPermissions',
+            '--disallowedTools', 'AskUserQuestion', '--model', model, *lean(),
+            '--settings', json.dumps({'hooks': {'Stop': stop, 'StopFailure': stop}})]
+
+
 def agent_cmd(prompt: str, sid: str, model: str, idle: int, name: str) -> str:
-    """The agent command line for one task. The Stop hook is this runner in --stop-hook mode.
+    """The agent command line for one task, for sh (tmux, and the POSIX sequential run).
 
     The prompt goes through a file (`<notes>/<name>.prompt`), read by the shell that runs the command:
     tmux refuses a command over about 16 KB, and a long brief (a task with a big journal) passes that,
@@ -426,12 +421,24 @@ def agent_cmd(prompt: str, sid: str, model: str, idle: int, name: str) -> str:
     """
     pf = C.notes(f'{name}.prompt')
     pf.write_text(prompt, encoding='utf-8')
-    stop = [{'hooks': [{'type': 'command',
-                        'command': shlex.join([*runner_cmd(), 'run', '--stop-hook', '--idle', str(idle)])}]}]
-    return shlex.quote(C.run['agent']) + f' "$(cat {shlex.quote(str(pf))})" ' + shlex.join([
-        '--session-id', sid, '--permission-mode', 'bypassPermissions',
-        '--disallowedTools', 'AskUserQuestion', '--model', model, *lean(),
-        '--settings', json.dumps({'hooks': {'Stop': stop, 'StopFailure': stop}})])
+    return shlex.quote(C.run['agent']) + f' "$(cat {shlex.quote(str(pf))})" ' + shlex.join(agent_flags(sid, model, idle))
+
+
+ARGV_PROMPT_MAX = 24000  # Windows' CreateProcess takes 32 767 characters, flags and paths included
+
+
+def agent_argv(prompt: str, sid: str, model: str, idle: int, name: str) -> list[str]:
+    """The same command as an argv, for Windows, where no POSIX shell stands between us and the agent.
+
+    The prompt is written to `<notes>/<name>.prompt` all the same. When it is too long for a Windows
+    command line, the session is handed a short prompt that points at that file instead.
+    """
+    pf = C.notes(f'{name}.prompt')
+    pf.write_text(prompt, encoding='utf-8')
+    if len(prompt) > ARGV_PROMPT_MAX:
+        prompt = (f'Your instructions for this session are in {pf.as_posix()}, too long to pass on a Windows '
+                  f'command line. Read that whole file first, then follow it.')
+    return [plat.exe(C.run['agent']), prompt, *agent_flags(sid, model, idle)]
 
 
 def brief_for(tid: str, cwd: Path) -> str:
@@ -508,9 +515,117 @@ def start(n: int, task, branch: str, model: str, idle: int, slots: int):
     since = logfile.stat().st_size if logfile.exists() else 0  # in append mode tell() is not that
     with open(logfile, 'a', encoding='utf-8') as f:
         f.write(f'\n=== {dt.datetime.now().isoformat(timespec="seconds")} {tid} session {sid}\n')
-    pid = pane(f's{n}', d, agent_cmd(prompt, sid, model, idle, f'slot{n}'), slot_env(n), logfile)
+    if not (pid := MUX.open(n, d, prompt, sid, model, idle, slot_env(n), logfile)):
+        log(f'slot {n}: the session for {tid} did not start in {MUX.where(n)}')
+        return None
     log(f'slot {n}: {tid} ({task[1]}; {", ".join(sorted(task[2])) or "no files listed"})')
     return pid, sid, since
+
+
+# --- terminals: one per slot -----------------------------------------------------
+
+class TmuxMux:
+    """tmux panes in the window "agents", tagged @runner=sN; the pane's output goes to the slot log."""
+    name = 'tmux'
+
+    def open(self, n: int, cwd: Path, prompt: str, sid: str, model: str, idle: int, env: list[str],
+             logfile: Path) -> int | None:
+        return pane(f's{n}', cwd, agent_cmd(prompt, sid, model, idle, f'slot{n}'), env, logfile)
+
+    def panes(self) -> dict[str, tuple[str, int]]:
+        return panes()
+
+    def session_id(self, pid: int) -> str | None:
+        return session_id(pid)
+
+    def where(self, n: int) -> str:
+        return f'pane s{n}'
+
+
+class ShimMux:
+    """Windows: a Windows Terminal tab per slot (`wt`), or a console window per slot (`console`).
+
+    Neither hands back the agent's pid the way tmux does: `wt.exe` only asks the running terminal to open
+    a tab and exits, and the tab gets the terminal's environment, not ours. So each slot runs through a
+    shim (`run --slot-shim <job>`, `slot_shim`): it reads the argv, directory and environment from
+    `<notes>/slotN.job`, starts the agent, and keeps its pid in `<notes>/slotN.live` while it runs. The
+    loop, a restart's adopt and the Stop hook all read that marker. The console window gets the shim too,
+    so the two behave the same. Nothing captures a console's output, so the slot log has only the header
+    lines here, and a usage limit is read from the transcript alone.
+    """
+
+    def __init__(self, name: str):
+        self.name = name
+
+    def open(self, n, cwd, prompt, sid, model, idle, env, logfile):
+        job, marker = C.notes(f'slot{n}.job'), C.notes(f'slot{n}.live')
+        marker.unlink(missing_ok=True)
+        envd = dict(e.split('=', 1) for e in env)
+        job.write_text(json.dumps({'argv': agent_argv(prompt, sid, model, idle, f'slot{n}'), 'cwd': str(cwd),
+                                   'env': envd, 'marker': str(marker)}), encoding='utf-8')
+        shim = [*runner_cmd(), 'run', '--slot-shim', str(job)]
+        if self.name == 'wt':
+            sp.Popen(['wt.exe', '-w', 'agents', 'new-tab', '--title', f's{n}', '-d', str(cwd), *shim],
+                     stdin=sp.DEVNULL, stdout=sp.DEVNULL, stderr=sp.DEVNULL)
+        else:
+            plat.spawn_console(shim, cwd, {**os.environ, **envd})
+        for _ in range(100):
+            if pid := marker_pid(marker):
+                return pid
+            time.sleep(0.3)
+        return None
+
+    def panes(self) -> dict[str, tuple[str, int]]:
+        """{sN: (marker, pid)} for every slot whose marker is there; the caller checks the pid is alive."""
+        out = {}
+        for m in C.notes().glob('slot*.live'):
+            if re.fullmatch(r'slot\d+', m.stem) and (pid := marker_pid(m)):
+                out[f's{m.stem[4:]}'] = (str(m), pid)
+        return out
+
+    def session_id(self, pid: int) -> str | None:
+        for m in C.notes().glob('slot*.live'):
+            if marker_pid(m) == pid:
+                try:
+                    args = json.loads(m.with_suffix('.job').read_text(encoding='utf-8'))['argv']
+                except (OSError, ValueError, KeyError):
+                    return None
+                return args[args.index('--session-id') + 1] if '--session-id' in args[:-1] else None
+        return None
+
+    def where(self, n: int) -> str:
+        return f'the "s{n}" tab' if self.name == 'wt' else f'the console window of slot {n}'
+
+
+def marker_pid(marker: Path) -> int:
+    try:
+        return int(marker.read_text(encoding='utf-8').strip() or 0)
+    except (OSError, ValueError):
+        return 0
+
+
+def run_session(argv: list[str], cwd: str, env: dict, marker: Path) -> int:
+    """Run one agent session in this terminal, its pid in `marker` while it runs (see ShimMux). The agent
+    gets AGENT_RUNNER_MARKER, which is how the Stop hook finds the pid to end on Windows."""
+    proc = sp.Popen(argv, cwd=cwd, env={**os.environ, **env, 'AGENT_RUNNER_MARKER': str(marker)})
+    marker.write_text(str(proc.pid), encoding='utf-8')
+    try:
+        while True:
+            try:
+                return proc.wait()
+            except KeyboardInterrupt:
+                continue  # Ctrl-C in the tab is for the agent (it interrupts a turn), not for the shim
+    finally:
+        marker.unlink(missing_ok=True)
+
+
+def slot_shim(job: str) -> int:
+    """`run --slot-shim <job>`: what a Windows tab or console window runs (see ShimMux)."""
+    spec = json.loads(Path(job).read_text(encoding='utf-8'))
+    return run_session(spec['argv'], spec['cwd'], spec['env'], Path(spec['marker']))
+
+
+MUX: TmuxMux | ShimMux = TmuxMux()  # what `cmd_run` picked
 
 
 # --- merging a finished branch -------------------------------------------------
@@ -551,7 +666,7 @@ def custom_join(f: str, sides: list[str], text: str, tid: str, cwd: Path) -> str
     u.write_text(text, encoding='utf-8')
     out.write_text(text, encoding='utf-8')
     vals = dict(ours=sides[0], base=sides[1], theirs=sides[2], union=str(u), out=str(out), file=f)
-    r = sp.run(cmd.format_map({k: shlex.quote(v) for k, v in vals.items()}), shell=True, cwd=str(cwd),
+    r = sp.run(cmd.format_map({k: plat.quote(v) for k, v in vals.items()}), shell=True, cwd=str(cwd),
                capture_output=True, text=True)
     if r.returncode:
         log(f'{tid}: the [run.join] command for {f} refused the join (exit {r.returncode}): '
@@ -631,7 +746,7 @@ What happened on earlier merges in this run (the ledger's tail):
 
 def fix_cmd(prompt: str) -> list[str]:
     """A fix session: one prompt, one answer, no session to keep — `-p`, so nothing types into a pane."""
-    return [C.run['agent'], '-p', prompt, '--permission-mode', 'bypassPermissions',
+    return [plat.exe(C.run['agent']), '-p', prompt, '--permission-mode', 'bypassPermissions',
             '--disallowedTools', 'AskUserQuestion', '--model', C.run['fix_model'], *lean()]
 
 
@@ -993,7 +1108,7 @@ def stalled(pid: int, sid: str, limit: int) -> str | None:
     """
     t = transcript(sid)
     quiet = time.time() - os.path.getmtime(t) if t and os.path.exists(t) else 0
-    busy = sp.run(['pgrep', '-P', str(pid)], capture_output=True).returncode == 0
+    busy = bool(plat.children(pid))
     if quiet > 65 * 60 or (quiet > limit and not busy):
         return f'no transcript activity for {int(quiet // 60)} min' + \
                (' with a tool still running' if busy else ' at a prompt')
@@ -1075,10 +1190,13 @@ def stop_hook(idle: int) -> int:
         return 0
     if ev.get('background_tasks'):
         idle = max(idle, int(os.environ.get('AGENT_RUNNER_IDLE_BG', 1800)))
+    # POSIX: the hook's parent is the agent. Windows: the hook runs under Git Bash, whose pid is not the
+    # agent's, so the pid comes from the marker the slot's shim keeps (run_session)
+    pid = os.getppid()
+    if plat.WINDOWS and (m := os.environ.get('AGENT_RUNNER_MARKER')):
+        pid = marker_pid(Path(m)) or pid
     try:
-        sp.Popen([*runner_cmd(), 'run', '--stop-waiter', str(os.getppid()), t,
-                  str(_user_entries(t)), str(idle)],
-                 stdin=sp.DEVNULL, stdout=sp.DEVNULL, stderr=sp.DEVNULL, start_new_session=True)
+        plat.spawn_detached([*runner_cmd(), 'run', '--stop-waiter', str(pid), t, str(_user_entries(t)), str(idle)])
     except Exception:
         pass
     return 0
@@ -1103,10 +1221,7 @@ def stop_waiter(pid: int, t: str, n: int, idle: int) -> int:
     tail = text[text.rfind('continuing automatically'):] if 'continuing automatically' in text else ''
     if tail and '"tool_use"' not in tail:
         return 0  # waiting out a usage limit; Claude Code resumes it at the reset
-    try:
-        os.kill(pid, signal.SIGTERM)
-    except OSError:
-        pass
+    plat.terminate(pid)
     return 0
 
 
@@ -1155,8 +1270,13 @@ def sequential(branch: str, model: str, idle: int, pause: int, force: bool, once
         sid = str(uuid.uuid4())
         before = git('rev-parse', 'HEAD').stdout.strip()
         log(f'{tid}: starting ({task[1]})')
-        sp.run(agent_cmd(prompt_for(tid, 1, 1, ROOT, here), sid, model, idle, 'slot1'), shell=True, cwd=str(ROOT),
-               env={**os.environ, **dict(e.split('=', 1) for e in slot_env(1))})
+        env = dict(e.split('=', 1) for e in slot_env(1))
+        if plat.WINDOWS:  # no sh to read the prompt file; the marker is how the Stop hook finds the agent
+            run_session(agent_argv(prompt_for(tid, 1, 1, ROOT, here), sid, model, idle, 'slot1'), str(ROOT), env,
+                        C.notes('slot1.live'))
+        else:
+            sp.run(agent_cmd(prompt_for(tid, 1, 1, ROOT, here), sid, model, idle, 'slot1'), shell=True,
+                   cwd=str(ROOT), env={**os.environ, **env})
         log(f'{tid}: session ended ({stats(sid)})')
         if C.run['on_exit']:
             sp.run(C.run['on_exit'], shell=True, cwd=str(ROOT), capture_output=True,
@@ -1219,9 +1339,12 @@ def cmd_run(argv: list[str]) -> int:
     ap.add_argument('--pause', type=int, default=None, help='seconds between a session ending and the next')
     ap.add_argument('--model', default=None, help='the agent model (default [run] model)')
     ap.add_argument('--no-tmux', action='store_true', help='force the single sequential session')
+    ap.add_argument('--mux', choices=['tmux', 'wt', 'console', 'none'], default=None,
+                    help='the terminal per slot (default [run] mux, else tmux; on Windows wt, else console)')
     ap.add_argument('--dry-run', action='store_true', help='print what would start, and start nothing')
     ap.add_argument('--stop-hook', action='store_true', help=argparse.SUPPRESS)
     ap.add_argument('--stop-waiter', nargs=4, metavar=('PID', 'TRANSCRIPT', 'N', 'IDLE'), help=argparse.SUPPRESS)
+    ap.add_argument('--slot-shim', metavar='JOB', help=argparse.SUPPRESS)
     a = ap.parse_args(argv)
 
     if a.stop_hook:  # these two run inside an agent session and need no repository
@@ -1229,6 +1352,8 @@ def cmd_run(argv: list[str]) -> int:
     if a.stop_waiter:
         pid, t, n, idle = a.stop_waiter
         return stop_waiter(int(pid), t, int(n), int(idle))
+    if a.slot_shim:
+        return slot_shim(a.slot_shim)
 
     init()
     r = C.run
@@ -1254,13 +1379,19 @@ def cmd_run(argv: list[str]) -> int:
     if stopping():  # left by a run that was killed before it saw it; a stop is for the run that is up
         C.notes('STOP').unlink(missing_ok=True)
         log('cleared a stop request left by an earlier run')
-    have_tmux = shutil.which('tmux') is not None
-    if once or a.no_tmux or not have_tmux or slots <= 1:
-        if not have_tmux and not a.no_tmux:
-            log('tmux is not installed: falling back to one sequential session '
-                '(install tmux for parallel slots, panes you can attach to, and worktrees)')
+    want = 'none' if a.no_tmux else (a.mux or r['mux'])
+    choice = plat.mux_choice(slots, want, shutil.which('tmux') is not None, shutil.which('wt.exe') is not None)
+    if choice == 'sequential':
+        if slots > 1 and want != 'none':
+            log((f'{want} is not available here' if want else 'tmux is not installed') +
+                ': falling back to one sequential session (install tmux, or Windows Terminal on Windows, '
+                'for parallel slots, a terminal per session, and worktrees)')
         return sequential(branch, model, idle, pause, a.force, once)
-    if not os.environ.get('TMUX'):
+    global MUX
+    MUX = TmuxMux() if choice == 'tmux' else ShimMux(choice)
+    if choice == 'console':
+        log('Windows Terminal (wt.exe) is not installed: each slot gets a console window of its own')
+    if choice == 'tmux' and not os.environ.get('TMUX'):
         print(f'Run me inside tmux, so the sessions get panes you can attach to:\n'
               f'    tmux new -s runner {RUNNER} run {slots} --mode {mode}', file=sys.stderr)
         return 2
@@ -1277,7 +1408,7 @@ def cmd_run(argv: list[str]) -> int:
     merging: list[threading.Thread] = []
     stall_said: set[str] = set()
     cap_said = stop_said = False
-    log(f'run: {slots} slots, mode {mode}, merging into {branch}' +
+    log(f'run: {slots} slots in {MUX.name}, mode {mode}, merging into {branch}' +
         (f', weekly usage {weekly()}%' if not a.force and r['agent'] == 'claude' else ''))
 
     for n, (proc, task) in adopt(branch).items():
@@ -1328,9 +1459,9 @@ def cmd_run(argv: list[str]) -> int:
             if n in procs and procs[n][1] not in stall_said and \
                     (why := stalled(procs[n][0], procs[n][1], stall)):
                 stall_said.add(procs[n][1])
-                log(f'slot {n}: {running[n][0]} looks stalled ({why}); attach to pane s{n} to see')
+                log(f'slot {n}: {running[n][0]} looks stalled ({why}); look at {MUX.where(n)}')
                 print('\a', end='', flush=True)
-            if n not in procs and (old := panes().get(f's{n}')) and alive(old[1]):
+            if n not in procs and (old := MUX.panes().get(f's{n}')) and alive(old[1]):
                 # a session no run tracks still sits in this slot (adopt found no session id, or a second
                 # tmux session): never reset the worktree under it; the slot waits until that pane ends
                 if f'pid{old[1]}' not in stall_said:
