@@ -52,7 +52,7 @@ PROG = './run plan'  # the name in messages; a wrapper sets its own ('./kit plan
 # The library API a wrapping project may call; names and signatures here change only in a major version.
 __all__ = ['PROG', 'HELP', 'lines', 'index', 'section', 'ensure', 'archive', 'tick', 'block', 'reopen',
            'unblock', 'move', 'next_id', 'add', 'note', 'next_task', 'files_on_line', 'brief', 'open_ids',
-           'write_atomic', 'main']
+           'write_atomic', 'child', 'subtasks', 'main']
 
 TTL = 5.0  # seconds a parsed file is trusted before its mtime is checked again
 _cache: dict[str, tuple[float, int, list[str]]] = {}  # path -> (checked_at, mtime_ns, lines)
@@ -192,8 +192,36 @@ def ensure(todo=None, done=None) -> tuple[str, str]:
     return todo, done
 
 
+SPLIT = re.compile(r'\(split into ([^)]*)\)')
+
+
+def child(parent: str, tid: str) -> bool:
+    """P17 -> P17a, P11k -> P11k1: the parent's id plus a character of the other kind (so P170 is not P17's)."""
+    rest = tid[len(parent):]
+    return tid.startswith(parent) and bool(rest) and rest[0].isdigit() != parent[-1].isdigit()
+
+
+def subtasks(tid: str, line: str, ids) -> set[str]:
+    """A split parent's subtasks among `ids`: its children by id, and any its `(split into …)` names."""
+    named = {t for m in SPLIT.findall(line) for t in TASK_ID.findall(m)}
+    return {t for t in ids if t != tid and (child(tid, t) or t in named)}
+
+
+def _close_parents(ls: list[str], dl: list[str]) -> None:
+    """Tick each `(split into …)` parent whose subtasks are all done (in DONE.md, or ticked here). Only a
+    parent that says it was split: a task whose ids merely look like children is left to its own session."""
+    boxes = {m.group(3).rstrip('.'): m.group(2) for m in map(ITEM.match, dl + ls) if m and not m.group(1)}
+    for i, l in enumerate(ls):
+        m = ITEM.match(l)
+        if m and not m.group(1) and m.group(2) != 'x' and SPLIT.search(l):
+            kids = subtasks(m.group(3).rstrip('.'), l, boxes)
+            if kids and all(boxes[k] == 'x' for k in kids):
+                _mark(ls, i, 'x')
+
+
 def archive(todo, done) -> int:
-    """Move every top-level [x] task (with its sub-lines) from todo into done, under the same ### heading.
+    """Move every top-level [x] task (with its sub-lines) from todo into done, under the same ### heading;
+    a split parent goes too once its subtasks are all done.
 
     Needed because a merge can bring a tick in from a branch without moving the line, and because a human
     sometimes ticks by hand anyway. Running it is always safe.
@@ -201,6 +229,7 @@ def archive(todo, done) -> int:
     ls, dl, sec, moved = list(lines(todo)), list(lines(done)), '', 0
     if not dl:
         dl = ['# DONE — the archive', '']
+    _close_parents(ls, dl)
     i = 0
     while i < len(ls):
         if _level(ls[i]):

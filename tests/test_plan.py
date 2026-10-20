@@ -175,6 +175,28 @@ def test_brief():
             '`run plan block --after` from a subdirectory edits the repo\'s plan')
 
 
+def test_split_parents():
+    print('plan: a split parent is ticked once its subtasks are all done')
+    with tempfile.TemporaryDirectory() as tmp:
+        d = Path(tmp) / 'plan'
+        todo, done = plan.ensure(d / 'TODO.md', d / 'DONE.md')
+        Path(todo).write_text('\n'.join([
+            '# TODO', '', '### Later', '',
+            '- [ ] **P1** the importer (split into P1a, X2)',
+            '- [x] **P1a** the header',
+            '- [~] **X2** the body BLOCKED: a sample',
+            '- [ ] **R1** the parser',
+            '- [x] **R1a** a part of it', '']), encoding='utf-8')
+        plan._cache.clear()
+        eq(plan.archive(todo, done), 2, 'P1a and R1a archive; P1 waits on X2 (blocked is not done)')
+        has(Path(todo).read_text(), r'- \[ \] \*\*P1\*\*', 'P1 is still open')
+        plan.unblock('X2', todo=todo)
+        plan.tick('X2', todo=todo, done=done, plan_dir=d)
+        txt = Path(todo).read_text()
+        check('**P1**' not in txt, 'once X2 is ticked, P1 is ticked and archived with it')
+        has(txt, r'- \[ \] \*\*R1\*\*', 'R1 says no "(split into …)", so it is left to its own session')
+
+
 def test_hand_edits_commit():
     print('plan: a hand edit in the main checkout commits at once; mid-merge it waits')
     with tempfile.TemporaryDirectory() as tmp:
@@ -192,4 +214,4 @@ def test_hand_edits_commit():
 
 if __name__ == '__main__':
     sys.exit(report([test_plan_roundtrip, test_plan_reopen, test_plan_index_and_sections, test_brief,
-                     test_hand_edits_commit]))
+                     test_split_parents, test_hand_edits_commit]))

@@ -222,7 +222,8 @@ def take_keys() -> None:
 def tasks(branch: str) -> list[tuple[str, str, set[str], set[str]]]:
     """Open tasks in TODO.md order: (id, section, files named on the line, task ids named on it)."""
     ls = plan_text(branch)
-    open_ids = {m.group(1) for l in ls if (m := TASK.match(l))}
+    # open and blocked: neither is done, so a split parent or an `(after X)` still waits on a blocked X
+    open_ids = {m.group(1) for l in ls if (m := ANY_TASK.match(l)) and not l.startswith('- [x]')}
     every = {m.group(1) for l in ls if (m := ANY_TASK.match(l))}
     out, section = [], ''
     for l in ls:
@@ -230,12 +231,13 @@ def tasks(branch: str) -> list[tuple[str, str, set[str], set[str]]]:
             section = l[4:]
             continue
         m = TASK.match(l)
-        if not m or section.startswith('Stretch') or 'split into' in l:
+        if not m or section.startswith('Stretch'):
             continue
         tid, rest = m.group(1), m.group(2)
-        # a parent whose own subtasks are open: those run instead of it
-        if any(o != tid and o.startswith(tid) and o[len(tid)].isdigit() != tid[-1].isdigit()
-               for o in open_ids):
+        # a split parent: its subtasks run first, blocked ones included, then it runs (or `archive` ticks it).
+        # Read by id and by its `(split into …)` list, never by the words alone: a task about something "split
+        # into two tabs" once never ran
+        if P.subtasks(tid, l, open_ids):
             continue
         # `(after S41, S45, S46)` is every one of them. A one-id pattern once read that as no dependency
         # at all, which is how S48 started before S41 had landed, and then blocked itself

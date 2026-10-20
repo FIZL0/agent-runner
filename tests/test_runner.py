@@ -114,6 +114,32 @@ def test_picking(repo: Path):
     has(r.stdout, r'waiting on .*T4', 'and what waits')
 
 
+def test_split_parents(repo: Path):
+    print('run: split parents wait for their subtasks, blocked ones too; the words alone hold nothing')
+    R.init(repo)
+    d = R.worktree('split', 'main')
+    git(d, 'checkout', '-q', '-B', 'splitcheck', 'main')
+    (d / 'plan/TODO.md').write_text("""# TODO
+
+### Later
+
+- [ ] **P1** the importer (split into P1a, X2) → a.py
+- [~] **P1a** read the header → a.py BLOCKED: needs a sample file
+- [ ] **X2** read the body → b.py
+- [ ] **B9** the settings page, split into two tabs → c.py
+- [ ] **Q1** the exporter (split into Q1a) → d.py
+""", encoding='utf-8')
+    git(d, 'commit', '-qam', 'split check')
+    try:
+        ids = [t[0] for t in R.tasks('splitcheck')]
+        check('P1' not in ids, 'P1 waits: its subtask P1a is blocked, not done')
+        check('B9' in ids, 'B9 runs: "split into two tabs" in a description is not a split')
+        check('Q1' in ids, 'Q1 runs: its subtask is gone (done), so the parent is next')
+    finally:
+        git(repo, 'worktree', 'remove', '--force', str(d))
+        git(repo, 'branch', '-D', 'splitcheck')
+
+
 def task_branch(repo: Path, n: int, tid: str) -> Path:
     """A slot worktree on task/<tid>, the way `start` leaves it for a session."""
     d = R.worktree(n, 'main')
@@ -360,7 +386,7 @@ def main() -> int:
     with tempfile.TemporaryDirectory() as t:
         tmp = Path(t)
         repo = make_repo(tmp)
-        return report([lambda: test_picking(repo), lambda: test_done(repo, tmp), lambda: test_merge(repo, tmp),
+        return report([lambda: test_picking(repo), lambda: test_split_parents(repo), lambda: test_done(repo, tmp), lambda: test_merge(repo, tmp),
                        lambda: test_retry(repo),
                        lambda: test_conflicts(repo, tmp), lambda: test_prompt_and_hooks(repo),
                        lambda: test_hooks(repo, tmp)])
