@@ -244,8 +244,12 @@ def test_prompt_and_hooks(repo: Path):
     p = R.prompt_for('T2', 1, 1, repo, 'main')
     has(p, r'The test gate is `python3 check\.py`', 'the built-in prompt names the gate')
     check('Other agents' not in p, 'and says nothing about other agents in a one-slot run')
-    cmd = R.agent_cmd('hi', 'sid', 'opus', 90)
+    cmd = R.agent_cmd('hi', 'sid', 'opus', 90, 'slot1')
     has(cmd, r'--stop-hook --idle 90', 'the agent command carries the idle Stop hook')
+    big = 'x' * 40000  # past tmux's ~16 KB command limit
+    cmd = R.agent_cmd(big, 'sid', 'opus', 90, 'slot1')
+    check(len(cmd) < 4000 and R.C.notes('slot1.prompt').read_text() == big,
+          'the prompt goes through a file, so a long brief stays under tmux\'s command limit')
     for payload in ('{}', 'garbage', '{"transcript_path": "/nonexistent"}', '{"transcript_path": null}'):
         r = subprocess.run([sys.executable, str(RUN), 'run', '--stop-hook'], input=payload,
                            capture_output=True, text=True, cwd='/')
@@ -349,7 +353,7 @@ def test_hooks(repo: Path, tmp: Path):
         has(b, r'## Files on the line, and their last commits\n- `c.py`', 'after the files and their git log')
     finally:
         R.C.raw['plan']['brief_extra'] = ''
-    has(R.agent_cmd('p', 'sid', 'opus', 90), r'run run --stop-hook', 'the Stop hook calls this runner back')
+    has(R.agent_cmd('p', 'sid', 'opus', 90, 'slot1'), r'run run --stop-hook', 'the Stop hook calls this runner back')
 
 
 def main() -> int:

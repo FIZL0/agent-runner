@@ -358,13 +358,21 @@ def lean() -> list[str]:
         if C.run['lean'] else []
 
 
-def agent_cmd(prompt: str, sid: str, model: str, idle: int) -> str:
-    """The agent command line for one task. The Stop hook is this runner in --stop-hook mode."""
+def agent_cmd(prompt: str, sid: str, model: str, idle: int, name: str) -> str:
+    """The agent command line for one task. The Stop hook is this runner in --stop-hook mode.
+
+    The prompt goes through a file (`<notes>/<name>.prompt`), read by the shell that runs the command:
+    tmux refuses a command over about 16 KB, and a long brief (a task with a big journal) passes that,
+    which used to end the whole run.
+    """
+    pf = C.notes(f'{name}.prompt')
+    pf.write_text(prompt, encoding='utf-8')
     stop = [{'hooks': [{'type': 'command',
                         'command': shlex.join([*runner_cmd(), 'run', '--stop-hook', '--idle', str(idle)])}]}]
-    return shlex.join([C.run['agent'], prompt, '--session-id', sid, '--permission-mode', 'bypassPermissions',
-                       '--disallowedTools', 'AskUserQuestion', '--model', model, *lean(),
-                       '--settings', json.dumps({'hooks': {'Stop': stop, 'StopFailure': stop}})])
+    return shlex.quote(C.run['agent']) + f' "$(cat {shlex.quote(str(pf))})" ' + shlex.join([
+        '--session-id', sid, '--permission-mode', 'bypassPermissions',
+        '--disallowedTools', 'AskUserQuestion', '--model', model, *lean(),
+        '--settings', json.dumps({'hooks': {'Stop': stop, 'StopFailure': stop}})])
 
 
 def brief_for(tid: str, cwd: Path) -> str:
@@ -441,7 +449,7 @@ def start(n: int, task, branch: str, model: str, idle: int, slots: int):
     since = logfile.stat().st_size if logfile.exists() else 0  # in append mode tell() is not that
     with open(logfile, 'a', encoding='utf-8') as f:
         f.write(f'\n=== {dt.datetime.now().isoformat(timespec="seconds")} {tid} session {sid}\n')
-    pid = pane(f's{n}', d, agent_cmd(prompt, sid, model, idle), slot_env(n), logfile)
+    pid = pane(f's{n}', d, agent_cmd(prompt, sid, model, idle, f'slot{n}'), slot_env(n), logfile)
     log(f'slot {n}: {tid} ({task[1]}; {", ".join(sorted(task[2])) or "no files listed"})')
     return pid, sid, since
 
@@ -1007,7 +1015,7 @@ def sequential(branch: str, model: str, idle: int, pause: int, force: bool, once
         sid = str(uuid.uuid4())
         before = git('rev-parse', 'HEAD').stdout.strip()
         log(f'{tid}: starting ({task[1]})')
-        sp.run(agent_cmd(prompt_for(tid, 1, 1, ROOT, here), sid, model, idle), shell=True, cwd=str(ROOT),
+        sp.run(agent_cmd(prompt_for(tid, 1, 1, ROOT, here), sid, model, idle, 'slot1'), shell=True, cwd=str(ROOT),
                env={**os.environ, **dict(e.split('=', 1) for e in slot_env(1))})
         log(f'{tid}: session ended ({stats(sid)})')
         if C.run['on_exit']:
