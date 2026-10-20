@@ -11,7 +11,8 @@ next task.
     ./run run 5 --mode p      5 agents, strictly in TODO.md order, files may overlap
     ./run run 1               one at a time, in this checkout (also what you get without tmux)
     ./run run --dry-run 4     print what 4 free slots would start now, and start nothing
-    ./run stop                finish what is running, start nothing new, then exit
+    ./run stop                finish what is running, start nothing new, then exit (or type s + Enter
+                              in the runner's pane; s again takes it back)
     (every form but `once` stays up when the work runs out: it logs `run idle` and waits for more)
 
 The README explains each mechanism and the night that made it necessary. In short:
@@ -168,8 +169,47 @@ def plan_text(branch: str) -> list[str]:
 
 
 def stopping() -> bool:
-    """`./run stop` was asked for: start nothing new."""
+    """`./run stop` (or `s` in the runner's pane) was asked for: start nothing new."""
     return C.notes('STOP').exists()
+
+
+def ask_stop(how: str) -> None:
+    """The one stop mechanism: the STOP file, saying who asked. `./run stop` and `s` + Enter both write it."""
+    C.notes('STOP').write_text(f'{dt.datetime.now().isoformat(timespec="seconds")} {how}\n', encoding='utf-8')
+
+
+def stopped_by() -> str:
+    try:
+        return C.notes('STOP').read_text(encoding='utf-8').split(maxsplit=1)[1].strip()
+    except (OSError, IndexError):
+        return './run stop'
+
+
+KEYS: list[str] = []  # lines typed into the runner's pane
+
+
+def read_keys() -> None:
+    """A daemon thread's loop: every line typed into the runner's pane goes on KEYS for the loop to read.
+
+    A thread rather than select() on stdin, which only works on POSIX. Started only when stdin is a tty, and
+    never by the sequential run, whose agent session reads the same terminal.
+    """
+    for line in sys.stdin:
+        KEYS.append(line.strip().lower())
+
+
+def take_keys() -> None:
+    """`s` + Enter toggles the stop, as opentennis's parallel runner does: nothing new starts, the running
+    tasks finish and merge, then the run ends. `s` again takes it back. Ctrl-C cuts sessions off mid-task."""
+    while KEYS:
+        if KEYS.pop(0) != 's':
+            continue
+        if stopping():
+            C.notes('STOP').unlink(missing_ok=True)
+            log('stop taken back: starting tasks again')
+        else:
+            ask_stop('s')
+            log('stopping: no new tasks; the running ones finish and merge, then the run ends (s again: undo)')
 
 
 # --- picking the next task -----------------------------------------------------
@@ -993,6 +1033,9 @@ def cmd_run(argv: list[str]) -> int:
     if a.dry_run:
         return dry_run(slots, mode, branch)
 
+    if stopping():  # left by a run that was killed before it saw it; a stop is for the run that is up
+        C.notes('STOP').unlink(missing_ok=True)
+        log('cleared a stop request left by an earlier run')
     have_tmux = shutil.which('tmux') is not None
     if once or a.no_tmux or not have_tmux or slots <= 1:
         if not have_tmux and not a.no_tmux:
@@ -1004,6 +1047,9 @@ def cmd_run(argv: list[str]) -> int:
               f'    tmux new -s runner {RUNNER} run {slots} --mode {mode}', file=sys.stderr)
         return 2
 
+    if sys.stdin.isatty():
+        threading.Thread(target=read_keys, daemon=True).start()
+        log('type s + Enter here to stop gently (the running tasks finish and merge first); s again: undo')
     running: dict[int, tuple] = {}
     procs: dict[int, tuple] = {}
     tried: set[str] = set()
@@ -1062,7 +1108,9 @@ def cmd_run(argv: list[str]) -> int:
                 log(f'slot {n}: {running[n][0]} looks stalled ({why}); attach to pane s{n} to see')
                 print('\a', end='', flush=True)
             if n not in procs and dt.datetime.now() >= free_at[n]:
-                if stopping():
+                if not stopping():
+                    stop_said = False  # taken back (s again, or the STOP file removed)
+                else:
                     if not stop_said:
                         log('stop asked for: no new tasks; exiting once the running ones are merged')
                         stop_said = True
@@ -1087,11 +1135,13 @@ def cmd_run(argv: list[str]) -> int:
             tried -= REOPENED  # a task reopened by a merge is a new attempt, not the one that blocked
             REOPENED.clear()
         merging = [t for t in merging if t.is_alive()]
-        quiet = not procs and not merging and all(dt.datetime.now() >= t for t in free_at.values())
-        if quiet and stopping():
+        take_keys()
+        if stopping() and not procs and not merging:  # a slot asleep until a usage reset does not hold it
+            how = stopped_by()
             C.notes('STOP').unlink(missing_ok=True)
-            log(f'run done (stop asked for); tried this run: {", ".join(sorted(tried)) or "none"}')
+            log(f'run stopped ({how}); tried this run: {", ".join(sorted(tried)) or "none"}')
             return 0
+        quiet = not procs and not merging and all(dt.datetime.now() >= t for t in free_at.values())
         # Idle, never exit: tasks a human or a session commits later start without anyone restarting the
         # run. Said once, and only with nothing running or merging: on 2026-10-20 a run that exited while
         # idle left two slots running and three finished branches unmerged. A script waiting on the run
@@ -1106,6 +1156,6 @@ def cmd_run(argv: list[str]) -> int:
 def cmd_stop(argv: list[str]) -> int:
     """`./run stop`: the running sessions finish and merge, nothing new starts, and the run exits."""
     init()
-    C.notes('STOP').write_text(dt.datetime.now().isoformat(timespec='seconds') + '\n', encoding='utf-8')
+    ask_stop('./run stop')
     print(f'asked the run to stop ({C.notes("STOP")}); it exits once the running tasks are merged')
     return 0

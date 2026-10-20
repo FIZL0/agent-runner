@@ -200,7 +200,20 @@ once gone idle exited with two sessions still running and three finished branche
 started waiting. It must never wait for the process to exit, because it never will.** `run busy` means
 work started again.
 
-`./run stop` writes `.runner/STOP`. The run then starts nothing new, merges what's running, and exits.
+### Stopping a run
+
+Ctrl-C ends the run at once and cuts every session off mid-task. To stop gently, **type `s` + Enter in
+the runner's pane** (the one you started `./run run` in), or run `./run stop` from anywhere. Either way
+nothing new starts, the running tasks finish and merge, and then the run logs `run stopped (s)` (or
+`run stopped (./run stop)`) and exits with 0. Typing `s` again before then takes the stop back, and tasks
+start again.
+
+The two are one mechanism. Both write `.runner/STOP` (with who asked), and the loop checks that file on
+every pass, so `s` can take back a `./run stop` and the reverse. A daemon thread reads the pane's lines
+into a queue that the loop drains each pass. It's a thread because `select()` on stdin doesn't work on
+Windows, and it only starts when stdin is a terminal. The sequential run has no `s` key, because its
+agent session reads the same terminal; use `./run stop` there, which takes effect between tasks. A STOP
+file left behind by a run that was killed is cleared when the next run starts.
 
 ### One fix session per conflict, not a long-lived master
 
@@ -266,6 +279,9 @@ instance.
 
 ### In the morning
 
+To end the run before you start, type `s` + Enter in its pane ([Stopping a run](#stopping-a-run)) and let
+the running tasks merge. A run left up keeps picking up whatever you commit to TODO.md.
+
 1. `.runner/ledger.md` has one line per branch: merged, blocked, reopened, or **LEFT FOR A HUMAN, and
    why**.
 2. `git branch --list 'wip/*'` lists branches that couldn't be merged. Merge one by hand, or delete it and
@@ -282,7 +298,7 @@ instance.
 ./run plan [...]                       the task list as a tool (./run plan help)
 ./run done ID "MSG" [--blocked WHY [--after X,Y]] [--no-test]
 ./run run [N|once] [--mode d|p] [--dry-run] [--no-tmux] [--model M] [--idle S] [--stall S] [--pause S] [--force]
-./run stop                             finish what's running, start nothing new, exit
+./run stop                             finish what's running, start nothing new, exit (or s + Enter in the runner's pane)
 ```
 
 `plan` and `done` work on the checkout you're in (the agent's worktree). `run` always merges into the

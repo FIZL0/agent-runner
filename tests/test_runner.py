@@ -256,6 +256,14 @@ def test_prompt_and_hooks(repo: Path):
         check(r.returncode == 0 and len(r.stdout) > 200, f'`run {" ".join(cmd)}` explains itself')
     run(repo, 'stop')
     check(R.stopping(), '`run stop` asks the run to start nothing new')
+    eq(R.stopped_by(), './run stop', 'and the STOP file says who asked')
+    R.KEYS.extend(['s'])
+    R.take_keys()
+    check(not R.stopping(), '`s` in the runner\'s pane takes a stop back')
+    R.KEYS.extend(['', 'x', 's'])
+    R.take_keys()
+    check(R.stopping() and R.stopped_by() == 's', 'and `s` again asks for one, through the same STOP file')
+    check(not R.KEYS, 'every line typed is read')
     (repo / '.runner/STOP').unlink()
 
 
