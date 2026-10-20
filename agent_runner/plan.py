@@ -494,6 +494,18 @@ so a finished id is never handed out again. That matters because journal directo
 """
 
 
+def _commit(root: Path, paths: list[Path], msg: str) -> None:
+    """A plan edit made by hand in the main checkout commits at once: the runner lands a merge only once no
+    uncommitted edit there touches a file it changes, and nearly every merge changes TODO.md. Worktrees (the
+    agents') commit through `done`; mid-merge the edit stays uncommitted for whoever is merging."""
+    def git(*a):
+        return subprocess.run(['git', '-C', str(root), *a], capture_output=True, text=True)
+    gd, cd = (git('rev-parse', '--path-format=absolute', f).stdout.strip() for f in ('--git-dir', '--git-common-dir'))
+    if gd and gd == cd and not os.path.exists(os.path.join(gd, 'MERGE_HEAD')):
+        git('add', '--', *map(str, paths))  # a fresh plan/ is untracked, and commit -- PATH skips those
+        git('commit', '-q', '-m', f'plan: {msg}', '--', *map(str, paths))
+
+
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     if argv and argv[0] in ('-h', '--help', 'help'):
@@ -505,6 +517,8 @@ def main(argv: list[str] | None = None) -> int:
 
     def say(msg):
         print(msg)
+        if argv[0] in ('tick', 'block', 'reopen', 'unblock', 'move', 'add', 'note'):
+            _commit(c.root, [todo, done], ' '.join(argv)[:70])
         return 0
 
     if argv[:1] == ['tick'] and len(argv) == 2:

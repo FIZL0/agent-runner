@@ -175,5 +175,21 @@ def test_brief():
             '`run plan block --after` from a subdirectory edits the repo\'s plan')
 
 
+def test_hand_edits_commit():
+    print('plan: a hand edit in the main checkout commits at once; mid-merge it waits')
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        git(root, 'init', '-q')
+        git(root, 'commit', '-q', '--allow-empty', '-m', 'start')
+        r = run(root, 'plan', 'add', 'R', 'the parser')
+        check(r.returncode == 0, '`run plan add` works', r.stderr)
+        has(git(root, 'log', '-1', '--format=%s'), r'^plan: add R the parser', 'the add is its own commit')
+        eq(git(root, 'status', '--porcelain', '--', 'plan'), '', 'and nothing in plan/ is left uncommitted')
+        (root / '.git/MERGE_HEAD').write_text(git(root, 'rev-parse', 'HEAD') + '\n', encoding='utf-8')
+        run(root, 'plan', 'note', 'R1', 'mid-merge')
+        has(git(root, 'status', '--porcelain', '--', 'plan'), r'TODO\.md', 'mid-merge the edit stays uncommitted')
+
+
 if __name__ == '__main__':
-    sys.exit(report([test_plan_roundtrip, test_plan_reopen, test_plan_index_and_sections, test_brief]))
+    sys.exit(report([test_plan_roundtrip, test_plan_reopen, test_plan_index_and_sections, test_brief,
+                     test_hand_edits_commit]))
