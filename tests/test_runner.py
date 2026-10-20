@@ -15,6 +15,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 from _check import RUN, check, eq, git, has, report, run
@@ -380,6 +381,22 @@ def test_hooks(repo: Path, tmp: Path):
     finally:
         R.C.raw['plan']['brief_extra'] = ''
     has(R.agent_cmd('p', 'sid', 'opus', 90, 'slot1'), r'run run --stop-hook', 'the Stop hook calls this runner back')
+
+    # a restart adopts running sessions: their id is read off the agent's command line, even under a shell
+    sh = subprocess.Popen(['sh', '-c', 'python3 -c "import time; time.sleep(30)" --session-id abc-123; true'], start_new_session=True)
+    try:
+        time.sleep(0.5)
+        eq(R.session_id(sh.pid), 'abc-123', 'session_id finds the agent under the pane\'s shell')
+    finally:
+        os.killpg(sh.pid, 9)
+    lock = R.single_run()
+    try:
+        r = subprocess.run([sys.executable, '-c', 'from agent_runner import runner as R; R.init(); R.single_run()'],
+                           cwd=str(repo), capture_output=True, text=True,
+                           env={**os.environ, 'PYTHONPATH': str(Path(R.__file__).parent.parent)})
+        has(r.stderr, r'another run is going', 'a second run in the same repository refuses to start')
+    finally:
+        lock.close()
 
 
 def main() -> int:

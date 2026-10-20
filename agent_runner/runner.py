@@ -351,6 +351,63 @@ def alive(pid: int) -> bool:
         return True
 
 
+def panes() -> dict[str, tuple[str, int]]:
+    """{name: (pane id, pid)} of the tagged panes in this tmux session."""
+    out = {}
+    for l in tmux('list-panes', '-s', '-F', f'#{{pane_id}}\t#{{pane_pid}}\t#{{{TAG}}}').stdout.splitlines():
+        pane_id, pid, name = (l.split('\t') + ['', ''])[:3]
+        if name and pid.isdigit():
+            out[name] = (pane_id, int(pid))
+    return out
+
+
+def session_id(pid: int) -> str | None:
+    """The `--session-id` of the agent running as `pid` or its child (the pane's shell may not exec it)."""
+    kids = sp.run(['pgrep', '-P', str(pid)], capture_output=True, text=True).stdout.split()
+    for p in [str(pid), *kids]:
+        try:
+            args = Path(f'/proc/{p}/cmdline').read_text().split('\0')
+        except OSError:
+            continue
+        for flag in ('--session-id', '--resume'):
+            if flag in args[:-1]:
+                return args[args.index(flag) + 1]
+    return None
+
+
+def adopt(branch: str) -> dict[int, tuple]:
+    """Sessions an earlier run left going in panes sN: {n: ((pid, sid, since), task)}. A restarted runner
+    watches and merges them as its own, instead of resetting their worktrees under them, which is what a
+    restart used to do. A slot past this run's count is watched until it ends and never refilled."""
+    known = {t[0]: t for t in tasks(branch)}
+    out = {}
+    for name, (_, pid) in panes().items():
+        if not re.fullmatch(r's\d+', name) or not alive(pid) or not (sid := session_id(pid)):
+            continue
+        n = int(name[1:])
+        tid = git('branch', '--show-current', cwd=SLOTS_DIR / name).stdout.strip().removeprefix('task/')
+        if not tid:
+            continue
+        logfile = C.notes(f'slot{n}.log')
+        out[n] = ((pid, sid, logfile.stat().st_size if logfile.exists() else 0),
+                  known.get(tid, (tid, '', set(), set())))
+        log(f'slot {n}: adopted the running {tid}')
+    return out
+
+
+def single_run() -> object:
+    """Hold `<notes>/run.lock` for this process's life, or exit: two runs would share the slot worktrees
+    and reset each other's sessions. The lock goes with the process, however it ends."""
+    import fcntl
+    f = open(C.notes('run.lock'), 'a+')
+    try:
+        fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        raise SystemExit(f'another run is going in this repository ({C.notes("run.lock")} is held); '
+                         f'wait for it, or `{C.command} stop` it')
+    return f
+
+
 # --- starting a session --------------------------------------------------------
 
 def lean() -> list[str]:
@@ -1112,6 +1169,7 @@ def cmd_run(argv: list[str]) -> int:
     if a.dry_run:
         return dry_run(slots, mode, branch)
 
+    lock = single_run()  # noqa: F841 — held until the process ends
     if stopping():  # left by a run that was killed before it saw it; a stop is for the run that is up
         C.notes('STOP').unlink(missing_ok=True)
         log('cleared a stop request left by an earlier run')
@@ -1141,6 +1199,10 @@ def cmd_run(argv: list[str]) -> int:
     log(f'run: {slots} slots, mode {mode}, merging into {branch}' +
         (f', weekly usage {weekly()}%' if not a.force and r['agent'] == 'claude' else ''))
 
+    for n, (proc, task) in adopt(branch).items():
+        procs[n], running[n] = proc, task
+        free_at.setdefault(n, dt.datetime.min)
+
     # branches a previous run never merged (it was stopped, or a session ended while nothing watched)
     held = {l.removeprefix('branch refs/heads/') for l in
             git('worktree', 'list', '--porcelain').stdout.splitlines() if l.startswith('branch ')}
@@ -1158,7 +1220,7 @@ def cmd_run(argv: list[str]) -> int:
     with MERGE:  # blocks freed by merges made while no run was up
         reopen_landed(branch, 'a merge before this run')
     for n in free_at:  # idle slots must let go of old task/<ID> branches, or start() cannot take them
-        if (SLOTS_DIR / f's{n}').is_dir():
+        if n not in procs and (SLOTS_DIR / f's{n}').is_dir():
             git('checkout', '-q', '--detach', cwd=SLOTS_DIR / f's{n}')
 
     while True:
@@ -1186,6 +1248,15 @@ def cmd_run(argv: list[str]) -> int:
                 stall_said.add(procs[n][1])
                 log(f'slot {n}: {running[n][0]} looks stalled ({why}); attach to pane s{n} to see')
                 print('\a', end='', flush=True)
+            if n not in procs and (old := panes().get(f's{n}')) and alive(old[1]):
+                # a session no run tracks still sits in this slot (adopt found no session id, or a second
+                # tmux session): never reset the worktree under it; the slot waits until that pane ends
+                if f'pid{old[1]}' not in stall_said:
+                    stall_said.add(f'pid{old[1]}')
+                    log(f'slot {n}: an untracked session (pid {old[1]}, pane {old[0]}) still runs there; slot held')
+                continue
+            if n > slots:
+                continue  # an adopted slot past this run's count: watched to the end, never refilled
             if n not in procs and dt.datetime.now() >= free_at[n]:
                 if not stopping():
                     stop_said = False  # taken back (s again, or the STOP file removed)
