@@ -159,6 +159,13 @@ is open again, and its next prompt points at the earlier attempt.
 whatever a human was editing, and having an untested merge sitting in `main` while the tests ran. Now the
 merge is built and tested elsewhere, and `main` moves only to a tested commit.
 
+**Your own edits in the main checkout should be committed, not left lying around.** A merge lands only
+once no uncommitted edit there touches a file it changes, and nearly every merge changes `TODO.md`. So
+`run plan add/note/move/tick/block/unblock/reopen`, run by hand in the main checkout, commits the plan at
+once (not mid-merge, not in a worktree, where `done` commits). For code work alongside a run, use your
+own worktree (`git worktree add ../<repo>-<slug>`, or `claude -w <slug>`) and merge it when done; never a
+slot's, which the runner reuses.
+
 **The shared branch is pushed only after a merge passes the gate.** Unattended pushes are defensible only
 if what's pushed has been tested. `done` pushes `task/<ID>`, which is the only copy of the work not on
 this disk. It refuses to push `main`.
