@@ -2,6 +2,26 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
+## Unreleased
+
+From opentennis's `tools/parallel.py`, so it can switch over:
+
+- Batch merges (`[run] batch`, on by default): finished branches waiting for the merge lock go in
+  together under one gate run. A rider that conflicts beyond a join waits for its own turn, and a batch
+  that fails the gate is split up.
+- `[run] failures` + `retest`: a failure that passes when rerun alone counts as load. One the base
+  already fails the same way merges anyway, and the ledger says so.
+- `[run] untested`: globs (with `!`) for files the gate can't see; it used to be markdown only.
+- `[run] before_start`: a check that holds new sessions (no display, device gone).
+- `[run] not_attempt`: a regex on the last commit subject. Such a session, e.g. a spec phase, doesn't
+  use up the task's one attempt.
+- `[plan] brief`: the project's own brief command replaces the built-in brief.
+- A restarted run adopts the sessions still running in its panes. A slot whose pane runs a session no
+  run tracks is held, and a second `run` in the same repository refuses to start.
+- The prompt goes through a file, because tmux's ~16 KB command limit broke long briefs.
+- "(split into …)" parents wait for every subtask, blocked ones included, and tick themselves once those
+  are done. A line that merely says "split into" isn't treated as a parent.
+
 ## 0.1.0 (2026-10-20)
 
 The first release: the runner and plan tool out of openmx's and ps2-decomp-kit's `./kit run`, with

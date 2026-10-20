@@ -332,6 +332,7 @@ project keep them in its own config file (see [docs/SETUP.md](docs/SETUP.md#wrap
 dir = "plan"              # TODO.md, DONE.md, <ID>.md
 journal = ""              # e.g. "journal": per-task folders, the newest pasted into the brief
 brief_extra = ""          # a command whose output ends the brief; {id} is the task id
+brief = ""                # a command whose output *is* the brief (the project's own brief tool); {id}
 
 [run]
 test = ""                 # the gate, run by `done` and on every merge, e.g. "make test"
@@ -355,6 +356,12 @@ prompt_extra = ""         # added to the prompt; takes its placeholders ({n}, {i
 command = ""              # what sessions are told to type (default: this runner), e.g. "./kit"
 precommit = ""            # a second check `done` runs before it ticks; `done --skip-check` skips it
 suspect = ""              # regex: a BLOCKED line a merge adds that matches it is flagged in the ledger
+untested = ["*.md"]       # globs the gate can't see ("!glob" takes one back): no retest for these alone
+failures = ""             # regex, group 1 = a failing test's name in the gate's output
+retest = ""               # the gate for just {names}: rerun alone (load), then on the base (already failing)
+batch = true              # finished branches waiting for the merge go in together under one gate run
+before_start = ""         # a command that must pass before any session starts (a display, a device)
+not_attempt = ""          # regex on a branch's last commit subject ({id}): a phase, not the run's one try
 shared_files = []         # files nearly every task names; mode d ignores them
 joinable = ["plan/TODO.md", "plan/DONE.md"]   # globs of record-per-line files a conflict may be joined in
 fix_merges = true
@@ -375,8 +382,26 @@ Nothing project-specific is built in. What ps2-decomp-kit and openmx did inline 
 sets: the emulator per slot (`slot_env`, `on_exit`), the SUSPECT check (`suspect`), the oracle
 address-list join (`[run.join]`), and the address audit (`precommit`). The mapping is in
 [docs/SETUP.md](docs/SETUP.md#worked-mapping-ps2-decomp-kit). The long-lived master session is gone
-(see above). From opentennis, batching several finished branches into one merge-and-test is a good idea
-that isn't here yet.
+(see above).
+
+## A program per slot
+
+Some tasks need a running program of their own: an emulator to record from, a browser, a device, a dev
+server on a port. Two slots sharing one copy step on each other (one session's save state loads under
+another's recording), so give each slot its own and let the runner tell it which:
+
+- `slot_env` hands every slot its number, so the project's tools pick their copy: a port, a profile
+  directory, a lock file. `EMU_SLOT={n}` and a launcher that reads it is all it takes.
+- `pass_env` passes on what the whole run shares (a cap on how long one session may hold the program).
+- `on_exit` closes the slot's copy when its session ends, with that slot's env, so a crashed or
+  finished session doesn't leave copies running all night.
+- `before_start` holds new sessions while the program can't run at all (no display after a reboot, the
+  device unplugged). The run says it once, rings the bell, and starts again once the check passes.
+- `prompt_extra` tells the session it has its own copy and how to drive it (`{n}` is the slot).
+- `links` symlinks the program's big git-ignored inputs into every worktree.
+
+opentennis runs one PCSX2 per slot this way. Its mapping is in
+[docs/SETUP.md](docs/SETUP.md#worked-example-opentennis).
 
 ## Library
 
@@ -389,7 +414,8 @@ See [docs/SETUP.md](docs/SETUP.md#wrapping-it-from-your-own-cli).
 ```sh
 python3 tests/test_plan.py      # the plan tool
 python3 tests/test_runner.py    # picking, done, merge/join/land/push, fix sessions, wip parking,
-                                # retry after unblock, prompt, Stop hook, usage limits (temp repos, fake agent)
+                                # retry after unblock, prompt, Stop hook, usage limits, adopt,
+                                # batches, flaky/inherited failures (temp repos, fake agent)
 ```
 
 ## License

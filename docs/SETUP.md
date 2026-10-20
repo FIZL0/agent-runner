@@ -165,6 +165,11 @@ The names in each module's `__all__` are the stable API (see [Versions](#version
 | `[run] links` | git-ignored paths symlinked into every worktree |
 | `[plan] journal` | per-task journal folders; the newest entry goes into the brief |
 | `[plan] brief_extra` | a command (`{id}`) whose output ends the brief |
+| `[plan] brief` | a command (`{id}`) whose output is the whole brief, for a project with its own brief tool |
+| `[run] untested` | globs of files the gate can't see (`!glob` takes one back); a merge differing only in them isn't retested |
+| `[run] failures`, `retest` | a regex naming failed tests in the gate output, and the gate for just `{names}`: rerun alone, then on the base |
+| `[run] before_start` | a check that must pass before any session starts |
+| `[run] not_attempt` | a regex on the last commit subject (`{id}`): that session was a phase, not the run's one attempt |
 
 The brief already holds the task line, `plan/<ID>.md`, the newest journal entry, and the git log of the
 files the task names. `brief_extra` is for anything else.
@@ -192,6 +197,60 @@ What each `./kit` feature becomes:
 
 The rest of `./kit` (Ghidra, PCSX2, PINE, the state tools) stays in the kit. agent-runner never needs to
 know about it.
+
+### Worked example: opentennis
+
+Not switched yet: opentennis still runs its own `tools/parallel.py`. This is the mapping for when it
+does. Every feature it has is now a hook here. The one thing it gives up is the long-lived master: a
+fix session per conflict replaces it, and since merges never stash the main checkout any more, a human's
+uncommitted work there is safe.
+
+```toml
+# runner.toml (opentennis)
+[plan]
+dir = "plan"
+journal = "research/journal"
+brief = "tools/ctx.py brief {id}"   # also writes the .cleanroom lock for a port phase
+
+[run]
+test = "tools/check.sh"
+precommit = "tools/audit.sh"
+slots = 5
+mode = "p"
+notes = "context/notes"
+rules = "AGENT.md"
+prompt = "tools/runner-prompt.md"   # says `tools/done.sh` (its --spec / --blocked), PCSX2 and play.rs rules
+links = ["context", "mods", "replacements", "*.iso"]
+shared_files = ["play.rs"]
+joinable = ["plan/*.md", "research/journal/*", "RELEASE_NOTES.md"]
+slot_env = ["HST_PCSX2={n}", "HST_BG=1", "RUSTC_WRAPPER=sccache", "SCCACHE_CACHE_SIZE=60G"]
+pass_env = ["HST_PCSX2_MAX_HOLD"]
+on_exit = "tools/pcsx2.sh tools/pcsx2-hst.sh stop"
+before_start = "ls /run/user/$(id -u)/wayland-[0-9]* >/dev/null 2>&1"   # PCSX2 needs a desktop session
+untested = ["*.md", ".github/*", "tools/*", "!tools/check.sh"]
+failures = '^---- (\S+) stdout ----'
+retest = "tools/check.sh -- --exact {names}"
+not_attempt = '^{id} spec:'        # a clean-room spec phase; its port phase starts once it merges
+suspect = 'BLOCKED:.*(pcsx2|pine|capture|record|screenshot|save state|unattended)'
+```
+
+| `tools/parallel.py` | agent-runner |
+|---|---|
+| tmux `hst` panes, `HST_PCSX2=N` per slot, PCSX2 stopped when a session ends | `slot_env`, `on_exit` |
+| no new tasks without a Wayland session (bell, log once) | `before_start` |
+| `ctx.py brief` pasted into the prompt (and its `.cleanroom` lock) | `[plan] brief` |
+| `tested_by_cargo` | `untested` |
+| net:: flakes rerun once; "already failing on main → merge anyway" | `failures` + `retest` |
+| WAITING/LANDED batch merges | `batch = true` |
+| spec commits aren't an attempt | `not_attempt` |
+| "(split into …)" parents wait, then tick themselves | built in |
+| adopting running sessions after a restart; a slot held while an untracked pane runs; one runner at a time | built in |
+| the prompt through a file (tmux's ~16 KB limit) | built in |
+| master session stashing main around merges | gone: a merge worktree, then a fast-forward-or-merge into main that waits for a human's edits instead of stashing them |
+
+What it gets that it didn't have: a fix session per conflict instead of one master that knows every
+merge, `--after` reopening blocked tasks once their blocker lands, `wip/<ID>` parking pushed off the
+disk, `run once` / `--dry-run`, and the tests.
 
 ## Migrating a repo that carries its own copy
 
