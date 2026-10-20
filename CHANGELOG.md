@@ -2,7 +2,7 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
-## Unreleased
+## 0.2.0 (2026-10-20)
 
 From opentennis's `tools/parallel.py`, so it can switch over:
 

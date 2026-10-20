@@ -15,25 +15,25 @@ own copy over to it, and what a version number promises.
 It is stdlib-only Python 3.11+, so it installs as a plain tool with nothing beside it.
 
 ```sh
-uv tool install git+https://github.com/FIZL0/agent-runner@v0.1.0
+uv tool install git+https://github.com/FIZL0/agent-runner@v0.2.0
 # or
-pipx install git+https://github.com/FIZL0/agent-runner@v0.1.0
+pipx install git+https://github.com/FIZL0/agent-runner@v0.2.0
 
-agent-runner --version          # agent-runner 0.1.0
+agent-runner --version          # agent-runner 0.2.0
 ```
 
 That puts `agent-runner` on your PATH. It is the same CLI as `./run` in a clone: `agent-runner plan`,
 `agent-runner done`, `agent-runner run`, `agent-runner stop`. `python3 -m agent_runner` works too.
 
-**Pin a tag.** Always install from a tag (`@v0.1.0`), not from `main`, so a repo's overnight run doesn't
+**Pin a tag.** Always install from a tag (`@v0.2.0`), not from `main`, so a repo's overnight run doesn't
 change under it because somebody pushed.
 
 **Upgrade every repo at once.** There is one install per machine, so one command upgrades every repo
 that uses it:
 
 ```sh
-uv tool install --force git+https://github.com/FIZL0/agent-runner@v0.2.0
-pipx install --force git+https://github.com/FIZL0/agent-runner@v0.2.0
+uv tool install --force git+https://github.com/FIZL0/agent-runner@v0.3.0
+pipx install --force git+https://github.com/FIZL0/agent-runner@v0.3.0
 ```
 
 Do it between runs (see [below](#switch-between-runs)). Read [CHANGELOG.md](../CHANGELOG.md) first: a
