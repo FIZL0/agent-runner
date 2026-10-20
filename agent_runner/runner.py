@@ -189,7 +189,7 @@ def stopped_by() -> str:
     try:
         return C.notes('STOP').read_text(encoding='utf-8').split(maxsplit=1)[1].strip()
     except (OSError, IndexError):
-        return './run stop'
+        return f'{C.command} stop'
 
 
 KEYS: list[str] = []  # lines typed into the runner's pane
@@ -996,7 +996,8 @@ def published(tid: str, branch: str) -> None:
 
 REOPENED: set[str] = set()  # tasks `reopen_landed` put back to [ ]: `cmd_run` lets them be tried again
 BOX = re.compile(r'^- \[(.)\] \*\*([^*\s]+)\*\*')
-IDLE = 'run idle: no task it may start; waiting for TODO.md to change (Ctrl-C or ./run stop to end it)'
+def idle_line() -> str:
+    return f'run idle: no task it may start; waiting for TODO.md to change (Ctrl-C or {C.command} stop to end it)'
 
 
 def retry_reopened(tried: set[str], closed: set[str], branch: str) -> None:
@@ -1249,7 +1250,7 @@ def sequential(branch: str, model: str, idle: int, pause: int, force: bool, once
             if once:
                 break
             if not idle_said:
-                log(IDLE)
+                log(idle_line())
                 idle_said = True
             time.sleep(30)
             continue
@@ -1320,8 +1321,9 @@ def dry_run(slots: int, mode: str, branch: str) -> int:
     return 0
 
 
-def cmd_run(argv: list[str]) -> int:
-    ap = argparse.ArgumentParser(prog='run run', description=__doc__,
+def cmd_run(argv: list[str], prog: str = f'{RUNNER} run') -> int:
+    """`prog` is what --help shows; a wrapping CLI passes its own (e.g. './kit run')."""
+    ap = argparse.ArgumentParser(prog=prog, description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('slots', nargs='?', default=None,
                     help="how many agents at once (default [run] slots), or 'once' for one task then stop")
@@ -1387,7 +1389,7 @@ def cmd_run(argv: list[str]) -> int:
         log('Windows Terminal (wt.exe) is not installed: each slot gets a console window of its own')
     if choice == 'tmux' and not os.environ.get('TMUX'):
         print(f'Run me inside tmux, so the sessions get panes you can attach to:\n'
-              f'    tmux new -s runner {RUNNER} run {slots} --mode {mode}', file=sys.stderr)
+              f'    tmux new -s runner {prog} {slots} --mode {mode}', file=sys.stderr)
         return 2
 
     if sys.stdin.isatty():
@@ -1513,14 +1515,16 @@ def cmd_run(argv: list[str]) -> int:
         # watches run.log for `run idle`; the process itself ends only on Ctrl-C or `./run stop`.
         if quiet and not idle_said and not pick(running, tried, mode, branch):
             log(f'tried this run: {", ".join(sorted(tried)) or "none"}')
-            log(IDLE)
+            log(idle_line())
             idle_said = True
         time.sleep(10)
 
 
-def cmd_stop(argv: list[str]) -> int:
+def cmd_stop(argv: list[str], prog: str = f'{RUNNER} stop') -> int:
     """`./run stop`: the running sessions finish and merge, nothing new starts, and the run exits."""
+    argparse.ArgumentParser(prog=prog, description='Finish the running tasks, start nothing new, then exit.'
+                            ).parse_args(argv)
     init()
-    ask_stop('./run stop')
+    ask_stop(f'{C.command} stop')
     print(f'asked the run to stop ({C.notes("STOP")}); it exits once the running tasks are merged')
     return 0

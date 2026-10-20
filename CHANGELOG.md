@@ -2,7 +2,7 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
-## Unreleased
+## 0.3.0 (2026-10-20)
 
 - Windows: a Windows Terminal tab per slot (`wt`), or a console window per slot when Windows Terminal
   isn't installed, through a slot shim that keeps each session's pid in `.runner/slotN.live`. The run
@@ -10,6 +10,9 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
   standard library only. `[run] links` fall back to junctions and hard links without Developer Mode.
 - `[run] mux` / `--mux tmux|wt|console|none` picks the terminal. The default is unchanged: tmux on
   Linux and macOS.
+- `cmd_run(argv, prog=…)` and `cmd_stop(argv, prog=…)` take the wrapping CLI's name for `--help`;
+  `stop` parses its arguments (`stop --help` no longer stops the run). Stop and idle messages name
+  `[run] command`.
 
 ## 0.2.0 (2026-10-20)
 

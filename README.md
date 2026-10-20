@@ -14,7 +14,7 @@ that has its own copy are all in [docs/SETUP.md](docs/SETUP.md). Changes: [CHANG
 - One optional config file in your repo: `runner.toml`, or a table in your own config file.
 
 ```sh
-uv tool install git+https://github.com/FIZL0/agent-runner@v0.2.0    # or pipx install …
+uv tool install git+https://github.com/FIZL0/agent-runner@v0.3.0    # or pipx install …
 cd your-repo
 agent-runner plan                  # what the runner sees in plan/TODO.md
 agent-runner run --dry-run 3       # what three slots would start right now
