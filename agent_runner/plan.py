@@ -25,8 +25,7 @@ checkbox is `[ ]` open, `[x]` done, `[~]` blocked.
 
 **A block that only waits on another task says which**, as `BLOCKED: (after X, Y) why`, and `reopen` (which a
 `./run run` calls after every merge) puts it back to `[ ]` the moment X and Y are done. Without that a task
-blocked on "P36 is not merged yet" stays blocked long after P36 lands, because nothing reads prose: on
-2026-10-20 five tasks sat `[~]` through the merges that freed them. `block` fills the list in by itself
+blocked on "P36 is not merged yet" stays blocked long after P36 lands, because nothing reads prose. `block` fills the list in by itself
 from the open task ids its WHY names, so a session that forgets `--after` still gets one.
 
 **Design rule: checkboxes are only ever changed through this tool.** Never hand-edit a `- [ ]` in TODO.md or

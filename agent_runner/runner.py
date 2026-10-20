@@ -15,7 +15,7 @@ next task.
                               in the runner's pane; s again takes it back)
     (every form but `once` stays up when the work runs out: it logs `run idle` and waits for more)
 
-The README explains each mechanism and the night that made it necessary. In short:
+The README describes each mechanism. In short:
 
 * **picking** (`tasks`, `pick`) goes down TODO.md in order and skips
   - blocked tasks and split parents,
@@ -142,8 +142,7 @@ def git(*a: str, cwd=None) -> sp.CompletedProcess:
 def note(msg: str) -> None:
     """One line in `<notes>/ledger.md`: what happened to each branch. The fix sessions read its tail.
 
-    It is one file whichever path a branch took, because the question asked in the morning is "what
-    happened to my eight tasks", not "which part of the runner did it".
+    One file for every path a branch can take, so a branch's history reads in one place.
     """
     try:
         with open(C.notes('ledger.md'), 'a', encoding='utf-8') as f:
@@ -238,12 +237,11 @@ def tasks(branch: str) -> list[tuple[str, str, set[str], set[str]]]:
             continue
         tid, rest = m.group(1), m.group(2)
         # a split parent: its subtasks run first, blocked ones included, then it runs (or `archive` ticks it).
-        # Read by id and by its `(split into …)` list, never by the words alone: a task about something "split
-        # into two tabs" once never ran
+        # Read by id and by its `(split into …)` list, never by the words alone, so prose that happens to say
+        # "split into" is not taken for a split
         if P.subtasks(tid, l, open_ids):
             continue
-        # `(after S41, S45, S46)` is every one of them. A one-id pattern once read that as no dependency
-        # at all, which is how S48 started before S41 had landed, and then blocked itself
+        # `(after S41, S45, S46)` waits on every id in the list
         if any(set(P.TASK_ID.findall(a)) & (open_ids - {tid}) for a in re.findall(r'\(after ([^)]*)\)', l)):
             continue
         named = set(P.TASK_ID.findall(rest)) & every - {tid}
@@ -367,8 +365,7 @@ def session_id(pid: int) -> str | None:
 
 def adopt(branch: str) -> dict[int, tuple]:
     """Sessions an earlier run left going in panes sN: {n: ((pid, sid, since), task)}. A restarted runner
-    watches and merges them as its own, instead of resetting their worktrees under them, which is what a
-    restart used to do. A slot past this run's count is watched until it ends and never refilled."""
+    watches and merges them as its own instead of resetting their worktrees under them. A slot past this run's count is watched until it ends and never refilled."""
     known = {t[0]: t for t in tasks(branch)}
     out = {}
     for name, (_, pid) in MUX.panes().items():
@@ -416,8 +413,7 @@ def agent_cmd(prompt: str, sid: str, model: str, idle: int, name: str) -> str:
     """The agent command line for one task, for sh (tmux, and the POSIX sequential run).
 
     The prompt goes through a file (`<notes>/<name>.prompt`), read by the shell that runs the command:
-    tmux refuses a command over about 16 KB, and a long brief (a task with a big journal) passes that,
-    which used to end the whole run.
+    tmux refuses a command over about 16 KB, and a long brief (a task with a big journal) can exceed it.
     """
     pf = C.notes(f'{name}.prompt')
     pf.write_text(prompt, encoding='utf-8')
@@ -759,7 +755,7 @@ def fix_merge(tid: str, branch: str, files: list[str], cwd: Path) -> str | None:
     long-lived "master" session.)
 
     Never fatal. A fixer that fails, times out, aborts or is not installed leaves the merge for the caller
-    to abort, and the task is left for a human, which is what used to happen to every conflict.
+    to abort, and the task is left for a human.
     """
     if not C.run['fix_merges']:
         return 'conflicts a join cannot resolve, and [run] fix_merges is off'
@@ -834,7 +830,7 @@ def suspect(base: str, merged: str) -> str:
     """The first line a merge added to TODO.md or DONE.md that matches `[run] suspect`, else ''.
 
     For blocks a project knows to distrust: a session in a run that can drive the emulator itself saying
-    "needs a human at the emulator" is one. The ledger flags it so the morning starts there.
+    "needs a human at the emulator" is one. The ledger flags it for review.
     """
     if not (pat := C.run['suspect']):
         return ''
@@ -853,8 +849,7 @@ def merge(tid: str, branch: str) -> str | None:
 
     The merge is built and tested in its own worktree (`<repo>-slots/merge`), and the shared branch only
     moves once the tests pass. So the main checkout never holds an untested merge: whoever works there keeps
-    committing the whole time, nothing is reset under them, and their edits are never stashed (a stash pop
-    that clashed once left somebody's work in a stash nobody looked at).
+    committing the whole time, nothing is reset under them, and their edits are never stashed.
 
     With `[run] batch`, the other finished branches waiting for the lock ride along: one gate run for all of
     them (the gate is often the slow part). A rider that conflicts beyond a join waits for its own turn, and
@@ -1027,8 +1022,7 @@ def retry_reopened(tried: set[str], closed: set[str], branch: str) -> None:
 def reopen_landed(branch: str, why: str) -> None:
     """Unblock what a merge freed (`plan.reopen`) and commit it, in the main checkout, holding MERGE.
 
-    Without it, a task blocked on "X is not merged yet" stays blocked until a human reads the prose: on
-    2026-10-20 five did, through the very merges that freed them. Left alone when TODO.md has edits nobody
+    Without it, a task blocked on "X is not merged yet" stays blocked until a human reads the prose. Left alone when TODO.md has edits nobody
     committed (somebody mid-edit), so it never commits theirs; the next merge tries again.
     """
     rel = plan_rel('TODO.md')
@@ -1121,8 +1115,8 @@ LIMIT = re.compile(r'limit\D{0,12}resets? (\d+(?::\d+)?\s?[ap]m)', re.I)
 def limit_only(sid: str, slot_log: Path, since: int) -> dt.datetime | None:
     """If the session did nothing but hit the usage limit: discard its transcript, return the reset time.
 
-    A limited session produced no work, so counting it as an attempt would quietly drop the task from the
-    night; and keeping its transcript would make the next run resume a session that never started.
+    A limited session produced no work, so counting it as an attempt would drop the task from the run;
+    and keeping its transcript would make the next run resume a session that never started.
     """
     t = transcript(sid)
     text = open(t, encoding='utf-8', errors='replace').read() if t else ''
@@ -1238,9 +1232,9 @@ def capped(force: bool) -> float | None:
 def sequential(branch: str, model: str, idle: int, pause: int, force: bool, once: bool = False) -> int:
     """No tmux, or one slot: one session at a time, in this checkout, on the branch it has out.
 
-    Honest about the trade: no worktree, so a task commits straight onto the branch you are on and no merge
+    No worktree: so a task commits straight onto the branch you are on and no merge
     happens. `done` ran the gate before it committed, so with `push_merge` the branch is pushed after each
-    task. `once` stops after the first task, which is how to try the runner before a night. With nothing to
+    task. `once` stops after the first task, which is how to try the runner on a single task. With nothing to
     start it does not exit: it logs `run idle` once and looks at TODO.md again every 30 s.
     """
     here = git('branch', '--show-current').stdout.strip() or branch
@@ -1514,8 +1508,8 @@ def cmd_run(argv: list[str]) -> int:
             return 0
         quiet = not procs and not merging and all(dt.datetime.now() >= t for t in free_at.values())
         # Idle, never exit: tasks a human or a session commits later start without anyone restarting the
-        # run. Said once, and only with nothing running or merging: on 2026-10-20 a run that exited while
-        # idle left two slots running and three finished branches unmerged. A script waiting on the run
+        # run. Logged once, and only with nothing running or merging, so no slot or finished branch is left
+        # behind. A script waiting on the run
         # watches run.log for `run idle`; the process itself ends only on Ctrl-C or `./run stop`.
         if quiet and not idle_said and not pick(running, tried, mode, branch):
             log(f'tried this run: {", ".join(sorted(tried)) or "none"}')

@@ -1,13 +1,9 @@
 # agent-runner
 
-Point it at a git repo with a markdown task list and it runs N Claude Code sessions overnight. Each
-session gets one task in its own git worktree and terminal (a tmux pane; on Windows a Windows Terminal
-tab). When a session finishes, the runner merges
-the branch, runs your tests, pushes, and starts the next task.
-
-That's all it is: the Claude agent, plus the context it needs for one task, plus the bookkeeping that
-keeps several of them from tripping over each other while nobody is watching. It doesn't care what the
-repo contains: a decompilation, a game port, a web app or a book.
+agent-runner runs N Claude Code sessions unattended against a git repository with a markdown task list.
+Each session gets one task in its own git worktree and terminal (a tmux pane; on Windows a Windows
+Terminal tab or console window). When a session finishes, the runner merges the branch, runs the test
+gate, pushes, and starts the next task. It is independent of what the repository contains.
 
 **Setting it up:** installing, adding it to a repo, wrapping it from your own CLI, and migrating a repo
 that has its own copy are all in [docs/SETUP.md](docs/SETUP.md). Changes: [CHANGELOG.md](CHANGELOG.md).
@@ -32,17 +28,12 @@ tmux new -s runner agent-runner run 3
 
 ## Used by
 
-- **[ps2-decomp-kit](https://github.com/FIZL0/ps2-decomp-kit-linux)**: a PS2 decompilation kit. Its
-  `./kit run` is where this runner started. That copy has emulator and Ghidra hooks and keeps a
-  long-lived "master" session for merges.
-- **[openmx](https://github.com/FIZL0/openmx)**: a port of a PS2 game built on the kit. It ran hundreds
-  of tasks through `./kit run`, and the war stories below come from its nights.
-- **[opentennis](https://github.com/FIZL0/opentennis)**: has the ancestor of all this, `tools/parallel.py`
-  plus `single.sh`/`done.sh`. It's worth reading for how small the first version was.
+- **[ps2-decomp-kit](https://github.com/FIZL0/ps2-decomp-kit-linux)**: a PS2 decompilation kit (`./kit run`).
+- **[openmx](https://github.com/FIZL0/openmx)**: a PS2 game port built on the kit.
+- **[opentennis](https://github.com/FIZL0/opentennis)**: a PS2 game remaster (`tools/parallel.py`).
 
-This repo is the runner pulled out of those projects with every game-specific part removed. Anything that
-was specific became a setting: the test gate is a command, per-slot environment is a list, and the files
-a conflict may be joined in are a glob list.
+Project-specific behaviour is configuration: the test gate is a command, per-slot environment is a list,
+and the files a conflict may be joined in are a glob list.
 
 ## How it works
 
@@ -150,8 +141,8 @@ the branch is pushed after each task.
 | skipped | why |
 |---|---|
 | `[~]` blocked, and split parents (a task with open subtasks) | the subtasks are the work |
-| an open `(after X, Y)`, for **any** id listed | the old one-id pattern read `(after S41, S45, S46)` as no dependency at all |
-| a line that names a running task's id | prose like "uses P36's menu" is a dependency nobody wrote down as one |
+| an open `(after X, Y)`, for **any** id listed | every listed dependency must be done |
+| a line that names a running task's id | prose such as "uses P36's menu" is treated as a dependency |
 | a sibling of a running task (same family) | P13 and P13a edit the same thing |
 | a task in a section whose heading starts with *Next* or says *in this order*, while another task from that section runs | an ordered section runs one task at a time |
 | `### Stretch` | never unattended |
@@ -163,52 +154,43 @@ Mode **d** (the default) runs tasks in parallel on different files. Mode **p** f
 and lets files overlap, which is useful when the order matters more than clean merges.
 `./run run --dry-run N` prints what N free slots would start, and what's waiting and why.
 
-## Why each mechanism exists
+## Behaviour
 
-Each of these was added because something went wrong without it on a real night.
+**Blocks reopen themselves.** `done --blocked WHY` records the open task ids that WHY names (or
+`--after X,Y`) as `BLOCKED: (after X, Y)`. After every merge, `plan reopen` sets the task back to `[ ]`
+once all of those ids are done, and the run picks it up again.
 
-**Blocks reopen themselves.** On 2026-10-20 five tasks sat `[~]` through the very merges that freed them.
-Their blocks said "needs S41 merged" in prose, and nothing reads prose. Now `done --blocked WHY` records
-the open ids that WHY names (or `--after X,Y`) as `BLOCKED: (after X, Y)`. After every merge,
-`plan reopen` puts the task back to `[ ]` once all of those ids are done, and the run tries it again.
-The same night showed that `(after S41, S45, S46)` had been read as depending only on S41, so now every
-id counts.
+**Unmergeable branches are parked.** A conflict the line join cannot resolve goes to a fix session
+(below). A branch the fix session gives up on is renamed `wip/<ID>` and pushed; the task is open again,
+and its next prompt points at the earlier attempt.
 
-**Unmergeable branches don't stall the night.** On 2026-10-15 eight branches finished and none merged.
-`pick` skips tasks whose branch is waiting to merge, and everything `(after …)` them, so a handful of
-conflicts stopped the critical path until morning. Now a conflict the line-join can't handle goes to a
-fix session (below). A branch the fix session gives up on is renamed `wip/<ID>` and pushed. Then the task
-is open again, and its next prompt points at the earlier attempt.
+**Merges happen in a merge worktree.** The merge is built and tested in `<repo>-slots/merge`; the main
+checkout moves only to a tested commit, and nothing in it is stashed.
 
-**Merges happen in a merge worktree, not your checkout.** Merging in the main checkout meant stashing
-whatever a human was editing, and having an untested merge sitting in `main` while the tests ran. Now the
-merge is built and tested elsewhere, and `main` moves only to a tested commit.
+**Commit your own edits in the main checkout.** A merge lands only when no uncommitted edit there touches
+a file it changes, and nearly every merge changes `TODO.md`. `run plan add/note/move/tick/block/unblock/
+reopen`, run by hand in the main checkout, therefore commits the plan immediately (not mid-merge, and not
+in a worktree, where `done` commits). For code work alongside a run, use your own worktree
+(`git worktree add ../<repo>-<slug>`, or `claude -w <slug>`) and merge it when done; never use a slot's
+worktree, which the runner reuses.
 
-**Your own edits in the main checkout should be committed, not left lying around.** A merge lands only
-once no uncommitted edit there touches a file it changes, and nearly every merge changes `TODO.md`. So
-`run plan add/note/move/tick/block/unblock/reopen`, run by hand in the main checkout, commits the plan at
-once (not mid-merge, not in a worktree, where `done` commits). For code work alongside a run, use your
-own worktree (`git worktree add ../<repo>-<slug>`, or `claude -w <slug>`) and merge it when done; never a
-slot's, which the runner reuses.
+**The shared branch is pushed only after a merge passes the gate.** `done` pushes `task/<ID>` and
+refuses to push `main`.
 
-**The shared branch is pushed only after a merge passes the gate.** Unattended pushes are defensible only
-if what's pushed has been tested. `done` pushes `task/<ID>`, which is the only copy of the work not on
-this disk. It refuses to push `main`.
+**A usage limit is not a failed task.** When a session's only outcome is the usage limit (its transcript
+or slot log says "resets 3pm"), the transcript is dropped, the task returns to the pool, and the slot
+sleeps until the reset. Past `[run] weekly_max`% of the 7-day usage, no new task starts unless `--force`
+is given.
 
-**A usage limit isn't a failed task.** When a session hit the 5-hour limit, the old runner counted the
-task as tried and moved on. Now a session whose only problem was the limit (its transcript and pane log
-say "resets 3pm") gets the transcript dropped, the task goes back in the pool, and the slot sleeps until
-the reset. Past `[run] weekly_max`% of the 7-day usage, no new task starts unless you pass `--force`.
+**Idle stop.** The Stop hook starts a detached timer; a session quiet for `[run] idle` seconds is ended.
+The timer does not fire on a session a human has typed into, or one waiting out a usage limit.
 
-**The idle Stop hook.** A finished session sits at its prompt forever, holding its slot. The Stop hook
-starts a detached timer, and the session is ended once it has been quiet for `idle` seconds. The timer
-never fires on a session a human has typed into.
+**Stall watchdog.** A session quiet at a prompt with no tool running for `[run] stall` seconds (20 min),
+or quiet for over 65 minutes with a tool running, is logged with the terminal to look at, and the bell
+rings.
 
-**The stall watchdog.** If a session sits quiet at a prompt with no tool running for `[run] stall`
-seconds (20 min), the runner rings the terminal bell and logs which pane to attach to.
-
-**A line that names a running task waits.** Dependencies are often only in the prose ("the menu P36 adds").
-Starting such a task next to P36 gets a guess, not P36's work.
+**A line that names a running task waits.** A task whose line mentions a running task's id is not
+started alongside it.
 
 ### It stays up
 
@@ -225,12 +207,8 @@ A tried task normally stays tried for the rest of the run. But if its line close
 opens again (a human ran `plan unblock`), that's a new attempt, so it goes back in the pool and the log
 says `<ID>: open again since it was tried; back in the pool`.
 
-The old behaviour was a bug (openmx, 2026-10-20). The exit check ignored running slots, so a run that had
-once gone idle exited with two sessions still running and three finished branches never merged.
-
-**If a script waits on a run, it must watch `.runner/run.log` for a `run idle` line written after it
-started waiting. It must never wait for the process to exit, because it never will.** `run busy` means
-work started again.
+A script waiting on a run should watch `.runner/run.log` for a `run idle` line written after it started
+waiting, not for the process to exit. `run busy` means work started again.
 
 ### Stopping a run
 
@@ -240,31 +218,19 @@ nothing new starts, the running tasks finish and merge, and then the run logs `r
 `run stopped (./run stop)`) and exits with 0. Typing `s` again before then takes the stop back, and tasks
 start again.
 
-The two are one mechanism. Both write `.runner/STOP` (with who asked), and the loop checks that file on
-every pass, so `s` can take back a `./run stop` and the reverse. A daemon thread reads the pane's lines
-into a queue that the loop drains each pass. It's a thread because `select()` on stdin doesn't work on
-Windows, and it only starts when stdin is a terminal. The sequential run has no `s` key, because its
+Both write `.runner/STOP` (with who asked), and the loop checks that file on every pass, so `s` can take
+back a `./run stop` and the reverse. A daemon thread reads the runner's terminal (it works on Windows
+consoles too) and only starts when stdin is a terminal. The sequential run has no `s` key, because its
 agent session reads the same terminal; use `./run stop` there, which takes effect between tasks. A STOP
 file left behind by a run that was killed is cleared when the next run starts.
 
-### One fix session per conflict, not a long-lived master
+### Fix sessions
 
-ps2-decomp-kit and openmx keep a *master*: a long-lived agent session in a tmux pane that gets one merge
-report at a time, with `/clear` between reports. That works, but it costs a lot to keep running. The
-runner has to type into a pane (and confirm the text arrived), keep an outbox, a lock and idle files, and
-guess when a master that's been quiet for 90 minutes has died.
-
-This runner uses upstream ps2-decomp-kit's design instead: **one `claude -p` session per conflict that
-can't be joined.** It runs in the merge worktree with the conflict in place, and its prompt (`FIXER` in
-`runner.py`) includes the tail of the ledger as history. It either commits the resolution or runs
-`git merge --abort` and says why. Its output goes to `.runner/fixer.log`.
-
-- It's simpler: there's no typing into tmux and no "is it still alive?" check, it works without tmux, and
-  every fix starts with a clean context.
-- The cost is that the merge lock is held while a fix runs, so other merges wait. Merges are serialised
-  anyway, and a fix session is capped at `[run] fix_timeout` (30 min).
-
-Set `fix_merges = false` to park every real conflict as `wip/<ID>` for a human instead.
+A conflict the line join cannot resolve goes to one `claude -p` session, run in the merge worktree with
+the conflict in place. Its prompt (`FIXER` in `runner.py`) includes the tail of the ledger. It either
+commits the resolution or runs `git merge --abort` and states why; its output goes to
+`.runner/fixer.log`. The merge lock is held while it runs, and it is capped at `[run] fix_timeout`
+(30 min). Set `fix_merges = false` to park every such conflict as `wip/<ID>` instead.
 
 ## Working with it well
 
@@ -309,9 +275,9 @@ Each session also gets `AGENT_RUNNER=1` and `[run] slot_env` (default `AGENT_SLO
 environment, so your tools can tell slots apart, for example to give each one its own port or emulator
 instance.
 
-### In the morning
+### After a run
 
-To end the run before you start, type `s` + Enter in its pane ([Stopping a run](#stopping-a-run)) and let
+To end the run first, type `s` + Enter in its terminal ([Stopping a run](#stopping-a-run)) and let
 the running tasks merge. A run left up keeps picking up whatever you commit to TODO.md.
 
 1. `.runner/ledger.md` has one line per branch: merged, blocked, reopened, or **LEFT FOR A HUMAN, and
@@ -400,25 +366,22 @@ push_merge = true         # push the shared branch after each tested merge
 
 ## What it leaves out
 
-Nothing project-specific is built in. What ps2-decomp-kit and openmx did inline is a hook a project
-sets: the emulator per slot (`slot_env`, `on_exit`), the SUSPECT check (`suspect`), the oracle
-address-list join (`[run.join]`), and the address audit (`precommit`). The mapping is in
-[docs/SETUP.md](docs/SETUP.md#worked-mapping-ps2-decomp-kit). The long-lived master session is gone
-(see above).
+Nothing project-specific is built in. A project supplies it through hooks: a program per slot
+(`slot_env`, `on_exit`), a check on new block reasons (`suspect`), a custom conflict join
+(`[run.join]`), and an extra pre-commit check (`precommit`). The ps2-decomp-kit mapping is in
+[docs/SETUP.md](docs/SETUP.md#worked-mapping-ps2-decomp-kit).
 
 ## A program per slot
 
 Some tasks need a running program of their own: an emulator to record from, a browser, a device, a dev
-server on a port. Two slots sharing one copy step on each other (one session's save state loads under
-another's recording), so give each slot its own and let the runner tell it which:
+server on a port. Give each slot its own copy and let the runner tell it which:
 
 - `slot_env` hands every slot its number, so the project's tools pick their copy: a port, a profile
   directory, a lock file. `EMU_SLOT={n}` and a launcher that reads it is all it takes.
 - `pass_env` passes on what the whole run shares (a cap on how long one session may hold the program).
-- `on_exit` closes the slot's copy when its session ends, with that slot's env, so a crashed or
-  finished session doesn't leave copies running all night.
-- `before_start` holds new sessions while the program can't run at all (no display after a reboot, the
-  device unplugged). The run says it once, rings the bell, and starts again once the check passes.
+- `on_exit` closes the slot's copy when its session ends, with that slot's env.
+- `before_start` holds new sessions while the program cannot run (no display, device unplugged). The run
+  logs it once, rings the bell, and resumes once the check passes.
 - `prompt_extra` tells the session it has its own copy and how to drive it (`{n}` is the slot).
 - `links` symlinks the program's big git-ignored inputs into every worktree.
 
@@ -437,7 +400,8 @@ See [docs/SETUP.md](docs/SETUP.md#wrapping-it-from-your-own-cli).
 python3 tests/test_plan.py      # the plan tool
 python3 tests/test_runner.py    # picking, done, merge/join/land/push, fix sessions, wip parking,
                                 # retry after unblock, prompt, Stop hook, usage limits, adopt,
-                                # batches, flaky/inherited failures (temp repos, fake agent)
+                                # batches, flaky/inherited failures, the platform layer and the
+                                # Windows slot shim (temp repos, fake agent)
 ```
 
 ## License

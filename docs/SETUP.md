@@ -31,8 +31,8 @@ Terminal each slot gets a console window. tmux isn't needed. Run `agent-runner r
 `[run] links` need no Developer Mode: without it they become junctions and hard links. See the README's
 [Terminals, and Windows](../README.md#terminals-and-windows).
 
-**Pin a tag.** Always install from a tag (`@v0.2.0`), not from `main`, so a repo's overnight run doesn't
-change under it because somebody pushed.
+**Pin a tag.** Always install from a tag (`@v0.2.0`), not from `main`, so a repo's runs don't change
+under it when somebody pushes.
 
 **Upgrade every repo at once.** There is one install per machine, so one command upgrades every repo
 that uses it:
@@ -86,7 +86,7 @@ notes = ".runner"
 touch, and where things live. The runner's prompt already covers the task and the bookkeeping (the
 brief, `done`, `--blocked`), so this file is only about the repo.
 
-Git-ignore the notes folder, commit the rest, then try one task before trusting it with a night:
+Git-ignore the notes folder, commit the rest, then try one task before a full run:
 
 ```sh
 echo .runner/ >> .gitignore
