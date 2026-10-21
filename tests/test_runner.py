@@ -422,7 +422,7 @@ def test_platform(repo: Path, tmp: Path):
     eq(choice(3, '', False, False, windows=False), 'sequential', 'POSIX without tmux: the sequential run')
     eq(choice(3, '', False, True, windows=True), 'wt', 'Windows with Windows Terminal: tabs')
     eq(choice(3, '', True, False, windows=True), 'console', 'Windows without it: a console window per slot')
-    eq(choice(1, '', True, True, windows=True), 'sequential', 'one slot (or once) is sequential anywhere')
+    eq(choice(1, '', True, False, windows=False), 'tmux', 'one slot (or once) gets a pane and a worktree too')
     eq(choice(3, 'none', True, True, windows=False), 'sequential', '--no-tmux is sequential')
     eq(choice(3, 'console', False, True, windows=True), 'console', '[run] mux picks console over wt')
     eq(choice(3, 'wt', True, True, windows=False), 'sequential', 'a terminal that is not there falls back to sequential')

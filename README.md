@@ -113,7 +113,7 @@ Each slot's session runs in a terminal you can watch and type into. Which one is
 `--mux`): `tmux` panes in the window "agents" (the default on Linux and macOS; start the run inside tmux),
 `wt` (a Windows Terminal tab per slot, in a window named "agents", the default on Windows), or `console`
 (a console window per slot, Windows' fallback when `wt.exe` isn't installed). `none` (`--no-tmux`) is
-the sequential run below.
+the sequential run below. One slot, and `once`, run like any other count: a worktree, a pane, a tested merge.
 
 On Windows the runner can't get the session's pid back from `wt.exe` (it only asks the running terminal
 to open a tab), so every slot runs through a small shim, `run --slot-shim`. It starts the agent and keeps
@@ -127,8 +127,8 @@ prompt over 24,000 characters (a Windows command line holds 32,767) is handed ov
 is told to read. `[run] test`, `on_exit`, `before_start` and the other commands run in the platform's
 shell, which on Windows is `cmd.exe`.
 
-`./run run 1` (or no tmux, or `--no-tmux`) is the sequential run. It's one session at a time, in your
-checkout, on the branch you have out. There's no worktree and no merge: `done` already ran the gate, and
+`--no-tmux` (or no tmux / Windows Terminal installed) is the sequential run. It's one session at a time,
+in your checkout, on the branch you have out. There's no worktree and no merge: `done` already ran the gate, and
 the branch is pushed after each task.
 
 ## The task list

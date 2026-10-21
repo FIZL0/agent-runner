@@ -1272,7 +1272,7 @@ def shut_down(idle_at: float) -> bool:
 
 
 def sequential(branch: str, model: str, idle: int, pause: int, force: bool, once: bool = False) -> int:
-    """No tmux, or one slot: one session at a time, in this checkout, on the branch it has out.
+    """`--no-tmux`, or no terminal for panes: one session at a time, in this checkout, on the branch it has out.
 
     No worktree: so a task commits straight onto the branch you are on and no merge
     happens. `done` ran the gate before it committed, so with `push_merge` the branch is pushed after each
@@ -1440,7 +1440,7 @@ def run(argv: list[str], prog: str) -> int:
     want = 'none' if a.no_tmux else (a.mux or r['mux'])
     choice = plat.mux_choice(slots, want, shutil.which('tmux') is not None, shutil.which('wt.exe') is not None)
     if choice == 'sequential':
-        if slots > 1 and want != 'none':
+        if want != 'none':
             log((f'{want} is not available here' if want else 'tmux is not installed') +
                 ': falling back to one sequential session (install tmux, or Windows Terminal on Windows, '
                 'for parallel slots, a terminal per session, and worktrees)')
@@ -1451,7 +1451,7 @@ def run(argv: list[str], prog: str) -> int:
         log('Windows Terminal (wt.exe) is not installed: each slot gets a console window of its own')
     if choice == 'tmux' and not os.environ.get('TMUX'):
         print(f'Run me inside tmux, so the sessions get panes you can attach to:\n'
-              f'    tmux new -s runner {prog} {slots} --mode {mode}', file=sys.stderr)
+              f'    tmux new -s runner {prog} {a.slots or slots} --mode {mode}', file=sys.stderr)
         return 2
 
     if sys.stdin.isatty():
@@ -1544,6 +1544,8 @@ def run(argv: list[str], prog: str) -> int:
                 if task := pick(running, tried, mode, branch):
                     if p := start(n, task, branch, model, idle, slots):
                         procs[n], running[n] = p, task
+                        if once:  # one task: nothing new starts, and the run exits once it has merged
+                            ask_stop('once')
                         if idle_said:
                             log(f'run busy: new work ({task[0]})')
                             idle_said = False
@@ -1565,6 +1567,9 @@ def run(argv: list[str], prog: str) -> int:
         # run. Logged once, and only with nothing running or merging, so no slot or finished branch is left
         # behind. A script waiting on the run
         # watches run.log for `run idle`; the process itself ends only on Ctrl-C or `./run stop`.
+        if once and quiet and not stopping() and not pick(running, tried, mode, branch):
+            log('run done: nothing it may start (once)')
+            return 0
         if quiet and not idle_said and not pick(running, tried, mode, branch):
             log(f'tried this run: {", ".join(sorted(tried)) or "none"}')
             log(idle_line())

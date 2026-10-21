@@ -2,6 +2,12 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
+## 0.6.0 (2026-10-21)
+
+- `run 1` and `run once` use a worktree, a pane and a tested merge like any other slot count; only
+  `--no-tmux` (or no pane terminal installed) runs sessions in the checkout itself.
+- `run once` exits when there is nothing it may start, and after its one task has merged.
+
 ## 0.5.0 (2026-10-21)
 
 - Windows: ending a session first sends WM_CLOSE to every window in its process tree and gives those

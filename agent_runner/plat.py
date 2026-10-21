@@ -286,12 +286,13 @@ def command_text(argv: list[str]) -> str:
 def mux_choice(slots: int, want: str, tmux_ok: bool, wt_ok: bool, windows: bool = WINDOWS) -> str:
     """Which terminal a run puts its sessions in: 'sequential', 'tmux', 'wt' or 'console'.
 
-    One slot and `want == 'none'` (`--no-tmux`) are the sequential run whatever is installed. `want` is
+    `want == 'none'` (`--no-tmux`) is the sequential run whatever is installed; one slot (and `once`) still
+    gets a worktree and a pane, like any parallel run. `want` is
     `[run] mux`: '' (auto) picks tmux on POSIX, and on Windows a Windows Terminal tab when wt.exe is
     there, else a console window per slot. Asking for one that is not available falls back to sequential
     rather than to a different terminal than the one asked for.
     """
-    if want == 'none' or slots <= 1:
+    if want == 'none':
         return 'sequential'
     if want:
         ok = {'tmux': tmux_ok, 'wt': windows and wt_ok, 'console': windows}.get(want, False)
