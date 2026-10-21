@@ -206,7 +206,7 @@ know about it.
 
 ### Worked example: opentennis
 
-opentennis runs on agent-runner with this `runner.toml`; its `tools/parallel.sh` wraps `agent-runner run`.
+opentennis runs `agent-runner run` directly, with this `runner.toml` and no wrapper script.
 Conflicts go to a fix session each, and merges never stash the main checkout.
 
 ```toml
