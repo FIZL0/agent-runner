@@ -2,6 +2,12 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
+## 0.6.1 (2026-10-21)
+
+- A merge that git rerere resolves entirely by itself is committed and no longer logged as an empty join.
+- A merge git refuses to start (e.g. an untracked file in the way) parks the branch instead of being
+  taken for a clean merge.
+
 ## 0.6.0 (2026-10-21)
 
 - `run 1` and `run once` use a worktree, a pane and a tested merge like any other slot count; only

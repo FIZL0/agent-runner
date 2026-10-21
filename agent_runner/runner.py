@@ -903,6 +903,22 @@ def merge(tid: str, branch: str) -> str | None:
         return None
 
 
+def merge_into(d: Path, ref: str, msg: str) -> list[str] | None:
+    """`git merge ref` in d: the files left in conflict ([] when it merged), or None when git refused it.
+
+    A failed merge with nothing in conflict is either git rerere having replayed an earlier resolution of
+    every file (the merge is still open: committed here) or git refusing to start (e.g. an untracked file
+    in the way), which must not pass for a merge."""
+    if not git('merge', '--no-edit', '-m', msg, ref, cwd=d).returncode:
+        return []
+    if files := git('diff', '--name-only', '--diff-filter=U', cwd=d).stdout.split():
+        return files
+    if git('rev-parse', '-q', '--verify', 'MERGE_HEAD', cwd=d).returncode:
+        return None
+    git('commit', '-q', '--no-edit', cwd=d)
+    return []
+
+
 def merge_batch(tid: str, branch: str) -> str | None:
     """`merge`'s part under the lock: build, test and land task/<tid> and its riders; record them in LANDED."""
     d = worktree('merge', branch)
@@ -913,8 +929,9 @@ def merge_batch(tid: str, branch: str) -> str | None:
             base = git('rev-parse', branch).stdout.strip()
             git('checkout', '-q', '--detach', base, cwd=d)
             msg = ['-m', f"Merge branch 'task/{tid}'"]
-            if git('merge', '--no-edit', *msg, f'task/{tid}', cwd=d).returncode:
-                files = git('diff', '--name-only', '--diff-filter=U', cwd=d).stdout.split()
+            if (files := merge_into(d, f'task/{tid}', msg[1])) is None:
+                return f'git refused to merge task/{tid} into {branch} (see the merge worktree, {d})'
+            if files:
                 if all(map(joinable, files)) and union(files, tid, d):
                     git('commit', '-q', '--no-edit', cwd=d)
                     log(f'{tid}: joined both sides of {", ".join(files)}')
@@ -927,8 +944,10 @@ def merge_batch(tid: str, branch: str) -> str | None:
                         return why
             riders = []
             for t in ([] if solo else sorted(WAITING - set(LANDED))):
-                if git('merge', '--no-edit', '-m', f"Merge branch 'task/{t}'", f'task/{t}', cwd=d).returncode:
-                    files = git('diff', '--name-only', '--diff-filter=U', cwd=d).stdout.split()
+                if (files := merge_into(d, f'task/{t}', f"Merge branch 'task/{t}'")) is None:
+                    git('merge', '--abort', cwd=d)
+                    continue
+                if files:
                     if not (all(map(joinable, files)) and union(files, t, d)):
                         git('merge', '--abort', cwd=d)
                         continue  # it waits for its own turn, where a fix session can take the conflict

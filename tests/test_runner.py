@@ -205,6 +205,29 @@ def test_merge(repo: Path, tmp: Path):
     eq(git(repo, 'status', '--porcelain'), '', 'the main checkout is clean')
 
 
+def test_merge_into(tmp: Path):
+    print('run: a merge git rerere resolved by itself is committed; one git refuses is not a merge')
+    d = tmp / 'rerere'
+    d.mkdir()
+    git(d, 'init', '-q', '-b', 'main')
+    for k, v in (('user.name', 't'), ('user.email', 't@t'), ('rerere.enabled', 'true'), ('rerere.autoupdate', 'true')):
+        git(d, 'config', k, v)
+    (d / 'f').write_text('base\n')
+    git(d, 'add', 'f'), git(d, 'commit', '-qm', 'base')
+    git(d, 'checkout', '-qb', 'side'), (d / 'f').write_text('side\n'), git(d, 'commit', '-qam', 'side')
+    git(d, 'checkout', '-q', 'main'), (d / 'f').write_text('main\n'), git(d, 'commit', '-qam', 'main')
+    eq(R.merge_into(d, 'side', 'm'), ['f'], 'a first conflict lists its file')
+    (d / 'f').write_text('both\n'), git(d, 'commit', '-qam', 'm')  # rerere records this resolution
+    git(d, 'reset', '-q', '--hard', 'HEAD~1')
+    eq(R.merge_into(d, 'side', 'm'), [], 'the same conflict again: rerere resolves it, and it is committed')
+    eq((d / 'f').read_text(), 'both\n', 'with the recorded resolution')
+    eq(git(d, 'rev-parse', 'HEAD^2'), git(d, 'rev-parse', 'side'), 'as a merge of the branch')
+    git(d, 'reset', '-q', '--hard', 'HEAD~1')
+    git(d, 'checkout', '-q', 'side'), (d / 'g').write_text('x\n'), git(d, 'add', 'g'), git(d, 'commit', '-qm', 'g')
+    git(d, 'checkout', '-q', 'main'), (d / 'g').write_text('untracked\n')
+    eq(R.merge_into(d, 'side', 'm'), None, 'git refusing (an untracked file in the way) is not a merge')
+
+
 def test_retry(repo: Path):
     print('run: a tried task a human blocks and then unblocks is back in the pool')
     R.init(repo)
@@ -632,7 +655,7 @@ def main() -> int:
                        lambda: test_retry(repo), lambda: test_unmerged(repo),
                        lambda: test_conflicts(repo, tmp), lambda: test_prompt_and_hooks(repo),
                        lambda: test_hooks(repo, tmp), lambda: test_gate_and_batches(repo),
-                       lambda: test_platform(repo, tmp), lambda: test_shutdown(repo)])
+                       lambda: test_platform(repo, tmp), lambda: test_shutdown(repo), lambda: test_merge_into(tmp)])
 
 
 if __name__ == '__main__':
