@@ -206,10 +206,8 @@ know about it.
 
 ### Worked example: opentennis
 
-Not switched yet: opentennis still runs its own `tools/parallel.py`. This is the mapping for when it
-does. Every feature it has is now a hook here. The one thing it gives up is the long-lived master: a
-fix session per conflict replaces it, and since merges never stash the main checkout any more, a human's
-uncommitted work there is safe.
+opentennis runs on agent-runner with this `runner.toml`; its `tools/parallel.sh` wraps `agent-runner run`.
+Conflicts go to a fix session each, and merges never stash the main checkout.
 
 ```toml
 # runner.toml (opentennis)
@@ -220,12 +218,12 @@ brief = "tools/ctx.py brief {id}"   # also writes the .cleanroom lock for a port
 
 [run]
 test = "tools/check.sh"
-precommit = "tools/audit.sh"
 slots = 5
 mode = "p"
+weekly_max = 94
 notes = "context/notes"
 rules = "AGENT.md"
-prompt = "tools/runner-prompt.md"   # says `tools/done.sh` (its --spec / --blocked), PCSX2 and play.rs rules
+prompt = "tools/runner-prompt.md"   # sessions finish with tools/done.sh (audit, tests, --spec / --blocked)
 links = ["context", "mods", "replacements", "*.iso"]
 shared_files = ["play.rs"]
 joinable = ["plan/*.md", "research/journal/*", "RELEASE_NOTES.md"]
