@@ -26,6 +26,41 @@ tmux new -s runner agent-runner run 3
 "origin", and shows `plan`, `plan brief` and `run --dry-run` without starting any agent.
 `examples/demo.sh --run` also runs `run once` there, which does start a real `claude` session.
 
+## Why: the same tasks in a fifth of the context
+
+Measured in opentennis. **Before:** each session loads the full Claude Code setup and reads the plan
+itself to find its task.
+
+```
+prefix ............  50k
+TODO.md ...........   8k
+REFERENCE.md ......   9k
+DONE.md ........... 150k
+                   ─────
+                    217k  ✗ over a 200k window before any work starts
+```
+
+**After:** each session gets a lean prefix plus a brief of its own task (its line, files and newest
+journal entry).
+
+```
+lean prefix .......  17k
+task brief ........   1k
+                   ─────
+                    ~20k  ✓ 180k (90%) left for the work
+```
+
+Medians over about 1,000 real sessions:
+
+|                          | before  | after      |
+|--------------------------|---------|------------|
+| context at the first turn | ~48k    | **~20k**   |
+| peak context             | 165k    | **~100k**  |
+| tokens re-read per session | 9–18M   | **5.5–7M** |
+
+That's about 1B tokens not re-read since the switch, with five sessions in parallel and every merge
+tested before it reaches the shared branch.
+
 ## Used by
 
 - **[ps2-decomp-kit](https://github.com/FIZL0/ps2-decomp-kit-linux)**: a PS2 decompilation kit (`./kit run`).
