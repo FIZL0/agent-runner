@@ -2,6 +2,11 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
+## 0.4.1 (2026-10-20)
+
+- A branch finished while no run was up is merged at startup even when its slot's worktree still has it
+  checked out: idle slots are detached before the scan, not after it.
+
 ## 0.4.0 (2026-10-20)
 
 - `run --shutdown`: power the computer off once nothing is running or merging and no open task can
