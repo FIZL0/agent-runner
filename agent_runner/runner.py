@@ -93,10 +93,12 @@ def init(root=None) -> Config:
 
 PROMPT = """Unattended run: nobody will answer questions, so never ask one — decide, write down why, and go on.
 
-Do task {tid} and nothing else. You are in a git worktree on branch task/{tid}: commit here only. Never \
+Do task {tid} and nothing else. You are in a git worktree on branch task/{tid}: commit this repo's work here only. Never \
 touch the main checkout, and never merge, rebase or push the main branch. When your session ends, the \
 runner merges your branch, tests the merge and publishes it. `{runner} done` pushes task/{tid} for you, \
-which is the one copy of your work that is not on this disk.
+which is the one copy of your work that is not on this disk. Commits you make in other repositories (a \
+dependency or sibling repo the task needed) are pushed as usual; never publish beyond git \
+(releases, uploads, stores) unless the task says to.
 {others}{earlier}
 Rules: {rules}. {test}
 {journal}

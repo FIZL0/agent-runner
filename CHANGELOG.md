@@ -2,6 +2,11 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
+## 0.6.2 (2026-10-21)
+
+- The task prompt says commits in other repositories (a dependency or sibling repo the task needed) are pushed
+  as usual; only this repo's main stays the runner's to merge. Publishing beyond git still needs the task to say so.
+
 ## 0.6.1 (2026-10-21)
 
 - A merge that git rerere resolves entirely by itself is committed and no longer logged as an empty join.
