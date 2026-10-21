@@ -448,7 +448,7 @@ def _tracked(root) -> list[str]:
     for dirpath, dirnames, filenames in os.walk(root):
         dirnames[:] = [d for d in dirnames if d not in ('.git', 'target', 'node_modules', '__pycache__')]
         for f in filenames:
-            out.append(os.path.relpath(os.path.join(dirpath, f), root))
+            out.append(os.path.relpath(os.path.join(dirpath, f), root).replace(os.sep, '/'))
     return out
 
 
@@ -505,7 +505,7 @@ def brief(tid: str, root=None, plan_dir=None, journal=None) -> list[str]:
         if not d.is_dir():
             continue
         files = sorted(f for f in os.listdir(d) if f.endswith('.md'))
-        rel = os.path.relpath(d, root)
+        rel = os.path.relpath(d, root).replace(os.sep, '/')
         out += ['', f'## Journal {rel}/: {" · ".join(files)}']
         if files and j in own_j:  # journals the line only points at are listed, not pasted
             body = (d / files[-1]).read_text(encoding='utf-8', errors='replace')

@@ -152,7 +152,8 @@ def note(msg: str) -> None:
 
 
 def plan_rel(name: str) -> str:
-    return os.path.relpath(C.plan_dir / name, C.root)
+    """A plan file's path as git names it: forward slashes on Windows too (`git show`, the union's file list)."""
+    return os.path.relpath(C.plan_dir / name, C.root).replace(os.sep, '/')
 
 
 def default_branch() -> str:
@@ -468,7 +469,7 @@ def prompt_for(tid: str, n: int, slots: int, cwd: Path, branch: str) -> str:
     (a slot's own emulator, say: "KIT_PCSX2={n} is set").
     """
     r = C.run
-    journal = os.path.relpath(C.journal, C.root) if C.journal else ''
+    journal = os.path.relpath(C.journal, C.root).replace(os.sep, '/') if C.journal else ''
     wip = not git('rev-parse', '--verify', '-q', f'refs/heads/wip/{tid}').returncode
     vals = dict(
         tid=tid, n=n, runner=C.command, branch=branch,
@@ -833,7 +834,7 @@ def tested(tid: str, d: Path, base: str) -> str | None:
     rx, cmd = C.run['failures'], C.run['retest']
     if not (rx and cmd and (names := sorted(set(re.findall(rx, out, re.M))))):
         return why
-    cmd = cmd.replace('{names}', shlex.join(names))
+    cmd = cmd.replace('{names}', ' '.join(map(plat.quote, names)))
     if not sp.run(cmd, shell=True, cwd=str(d), capture_output=True, env=env).returncode:
         log(f'{tid}: {", ".join(names)} failed, then passed alone (load); counted as passing')
         return None

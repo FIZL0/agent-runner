@@ -436,8 +436,43 @@ def test_platform(repo: Path, tmp: Path):
            '"C:/Program Files/Python/python.exe" C:/src/agent-runner/run run --idle 90',
            'Windows command text: forward slashes, double quotes (Git Bash and cmd.exe agree)')
         eq(plat.quote('a b'), '"a b"', 'Windows quoting for shell=True is cmd.exe\'s')
+
+        # terminate on Windows: WM_CLOSE to the windows of the tree, wait for them, then taskkill /T /F
+        saved = plat._snapshot, plat._windows_of, plat._post_close, plat.alive, plat.sp.run, plat.CLOSE_GRACE
+        procs = [(10, 1, 'claude.exe'), (11, 10, 'bash.exe'), (12, 11, 'pcsx2-qt.exe'), (13, 99, 'other.exe')]
+        posted, ran, polls = [], [], []
+        try:
+            plat._snapshot = lambda: procs
+            plat._windows_of = lambda p: [500] if p == 12 else []
+            plat._post_close = posted.append
+            plat.alive = lambda p: polls.append(p) or len(polls) < 3  # the emulator exits on the third look
+            plat.sp.run = lambda argv, **kw: ran.append(argv)
+            eq(plat.descendants(10), [11, 12], 'descendants: the whole tree below, nothing outside it')
+            plat.terminate(10)
+            eq(posted, [500], 'the emulator\'s window in the tree gets WM_CLOSE')
+            eq(polls, [12, 12, 12], 'the runner waits for that process, and only that one')
+            eq(ran, [['taskkill', '/T', '/F', '/PID', '10']], 'then the tree is ended by force')
+            posted.clear(); ran.clear(); polls.clear()
+            plat.CLOSE_GRACE = 0.3
+            plat.alive = lambda p: polls.append(p) or True  # it never closes
+            t0 = time.monotonic()
+            plat.terminate(10)
+            check(time.monotonic() - t0 < 2 and ran == [['taskkill', '/T', '/F', '/PID', '10']],
+                  'a window that will not close waits out the grace, then the force kill')
+            plat._windows_of = lambda p: []
+            polls.clear(); ran.clear()
+            plat.terminate(10)
+            check(not polls and ran, 'no window in the tree: straight to taskkill, no wait')
+        finally:
+            plat._snapshot, plat._windows_of, plat._post_close, plat.alive, plat.sp.run, plat.CLOSE_GRACE = saved
     finally:
         plat.WINDOWS = False
+    saved = os.sep, os.path.relpath
+    try:  # Windows' relpath gives backslashes; git names files with forward slashes
+        os.sep, os.path.relpath = '\\', lambda a, b=None: 'plan\\TODO.md'
+        eq(R.plan_rel('TODO.md'), 'plan/TODO.md', 'plan paths given to git use forward slashes on Windows too')
+    finally:
+        os.sep, os.path.relpath = saved
 
     lk = tmp / 'x.lock'
     first = plat.lock(lk)

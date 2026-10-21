@@ -5,7 +5,8 @@ always did (`os.kill`, `/proc`, `pgrep`, `flock`, a new session for a detached p
 gets the native equivalent from the standard library and `ctypes` only (no psutil):
 
     alive / children      OpenProcess + GetExitCodeProcess; a CreateToolhelp32Snapshot of parent pids
-    terminate             `taskkill /T /F` (no SIGTERM, and the agent may be a .cmd wrapper around node)
+    terminate             WM_CLOSE to the windows of the process tree (an emulator saves and exits), a short
+                          wait, then `taskkill /T /F` (no SIGTERM; the agent may be a .cmd around node)
     spawn_detached        DETACHED_PROCESS + a new process group (+ breakaway from a job when allowed)
     spawn_console         a new console window (CREATE_NEW_CONSOLE), the fallback without Windows Terminal
     lock                  msvcrt.locking on one byte, which goes with the handle however the process ends
@@ -26,6 +27,7 @@ import shutil
 import signal
 import subprocess as sp
 import sys
+import time
 from pathlib import Path
 
 WINDOWS = sys.platform.startswith('win')
@@ -121,10 +123,66 @@ def cmdline(pid: int) -> list[str] | None:
         return None
 
 
+CLOSE_GRACE = 10.0  # seconds a windowed process in the tree gets to close itself before the force kill
+
+
+def descendants(pid: int) -> list[int]:
+    """Every process below `pid` (Windows), children first."""
+    try:
+        procs = _snapshot()
+    except OSError:
+        return []
+    out, todo = [], [int(pid)]
+    while todo:
+        kids = [p for p, parent, _ in procs if parent == todo[0] and p not in out and p != int(pid)]
+        out += kids
+        todo = todo[1:] + kids
+    return out
+
+
+def _windows_of(pid: int) -> list[int]:
+    """Visible top-level window handles owned by `pid` (Windows)."""
+    import ctypes
+    from ctypes import wintypes
+    u = ctypes.WinDLL('user32', use_last_error=True)
+    out: list[int] = []
+    CB = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+
+    def seen(hwnd, _):
+        owner = wintypes.DWORD()
+        u.GetWindowThreadProcessId(hwnd, ctypes.byref(owner))
+        if owner.value == pid and u.IsWindowVisible(hwnd):
+            out.append(int(hwnd))
+        return True
+
+    u.EnumWindows(CB(seen), 0)
+    return out
+
+
+def _post_close(hwnd: int) -> None:
+    import ctypes
+    from ctypes import wintypes
+    ctypes.WinDLL('user32').PostMessageW(wintypes.HWND(hwnd), 0x0010, 0, 0)  # WM_CLOSE
+
+
 def terminate(pid: int) -> None:
-    """End a session: SIGTERM on POSIX; on Windows the whole tree, by force (there is no SIGTERM, and a
-    console process that is not ours gets no Ctrl+Break from a detached waiter)."""
+    """End a session: SIGTERM on POSIX. Windows has no SIGTERM, so first every process in the tree that has
+    a window gets WM_CLOSE (an emulator then saves and shuts down as if its window were closed), the
+    tree gets up to CLOSE_GRACE seconds for those to exit, and then `taskkill /T /F` ends whatever is
+    left, the session itself included (a console process that is not ours gets no Ctrl+Break)."""
     if WINDOWS:
+        closing = []
+        for p in [int(pid)] + descendants(pid):
+            hwnds = _windows_of(p)
+            for h in hwnds:
+                _post_close(h)
+            if hwnds:
+                closing.append(p)
+        end = time.monotonic() + CLOSE_GRACE
+        while closing and time.monotonic() < end:
+            closing = [p for p in closing if alive(p)]
+            if closing:
+                time.sleep(0.25)
         sp.run(['taskkill', '/T', '/F', '/PID', str(pid)], capture_output=True)
         return
     try:

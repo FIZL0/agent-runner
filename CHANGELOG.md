@@ -2,6 +2,13 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
+## 0.5.0 (2026-10-21)
+
+- Windows: ending a session first sends WM_CLOSE to every window in its process tree and gives those
+  processes up to 10 s to exit (an emulator saves and shuts down), then `taskkill /T /F` as before.
+- Windows: plan and journal paths handed to git, prompts and briefs use forward slashes, so `git show`
+  and the plan-file union find TODO.md/DONE.md; `[run] retest` quotes `{names}` for cmd.exe.
+
 ## 0.4.1 (2026-10-20)
 
 - A branch finished while no run was up is merged at startup even when its slot's worktree still has it

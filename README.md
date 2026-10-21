@@ -84,8 +84,8 @@ On Windows the runner can't get the session's pid back from `wt.exe` (it only as
 to open a tab), so every slot runs through a small shim, `run --slot-shim`. It starts the agent and keeps
 its pid in `.runner/slotN.live` while it runs. The loop, a restarted run's adopt and the Stop hook read
 that file. The rest of the Windows differences are in `agent_runner/plat.py`: the run lock is
-`msvcrt.locking`, process checks go through kernel32 (stdlib `ctypes`, no psutil), an ended session is
-`taskkill /T /F`, and `[run] links` become a junction (directory) or hard link (file) when symlinks
+`msvcrt.locking`, process checks go through kernel32 (stdlib `ctypes`, no psutil), an ended session's
+windowed processes (an emulator, say) get WM_CLOSE and up to 10 s to exit before `taskkill /T /F`, and `[run] links` become a junction (directory) or hard link (file) when symlinks
 need Developer Mode. Two things work differently there. Nothing captures a console's output, so
 `.runner/slotN.log` has only the header lines and a usage limit is read from the transcript alone. A
 prompt over 24,000 characters (a Windows command line holds 32,767) is handed over as a file the session
