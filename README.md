@@ -58,8 +58,8 @@ Medians over about 1,000 real sessions:
 | peak context             | 165k    | **~100k**  |
 | tokens re-read per session | 9–18M   | **5.5–7M** |
 
-That's about 1B tokens not re-read since the switch, with five sessions in parallel and every merge
-tested before it reaches the shared branch.
+In opentennis that came to about 1B fewer tokens re-read over its first week on the lean setup (about 390
+sessions), with five sessions in parallel and every merge tested before it reaches the shared branch.
 
 ## Used by
 
