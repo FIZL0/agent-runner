@@ -65,7 +65,7 @@ sessions), with five sessions in parallel and every merge tested before it reach
 
 - **[ps2-decomp-kit](https://github.com/FIZL0/ps2-decomp-kit-linux)**: a PS2 decompilation kit (`./kit run`).
 - **[openmx](https://github.com/FIZL0/openmx)**: a PS2 game port built on the kit.
-- **[opentennis](https://github.com/FIZL0/opentennis)**: a PS2 game remaster (`tools/parallel.py`).
+- **[opentennis](https://github.com/FIZL0/opentennis)**: a PS2 game remaster (`tools/parallel.sh` wraps `agent-runner run`; settings in `runner.toml`).
 
 Project-specific behaviour is configuration: the test gate is a command, per-slot environment is a list,
 and the files a conflict may be joined in are a glob list.
