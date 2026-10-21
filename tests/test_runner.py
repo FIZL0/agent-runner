@@ -503,7 +503,7 @@ def test_gate_and_batches(repo: Path):
     git(d, 'commit', '-qm', 'head')
     head = git(d, 'rev-parse', 'HEAD')
     gate_was = R.gate
-    R.gate = lambda cwd, key='test', full=False: (1, 'FAIL t_a\nboom')
+    R.gate = lambda cwd, key='test', full=False, env=None: (1, 'FAIL t_a\nboom')
     r['failures'] = r'^FAIL (\S+)'
     try:
         r['retest'] = 'true'

@@ -484,6 +484,12 @@ class _Keep(dict):
 SLOTS = 1  # how many slots this run has; `cmd_run` sets it, for {slots} in `[run] slot_env`
 
 
+def merge_env() -> dict:
+    """The merge worktree's gate environment: `[run] slot_env` entries that are not per slot (no {n}), such as a
+    compiler cache, so the merge builds the way the slots do."""
+    return {**os.environ, **dict(e.replace('{slots}', str(SLOTS)).split('=', 1) for e in C.run['slot_env'] if '{n}' not in e)}
+
+
 def slot_env(n: int) -> list[str]:
     """A slot's environment, as NAME=value: `AGENT_RUNNER=1`; the config file when it came from
     AGENT_RUNNER_CONFIG and every variable `[run] pass_env` names that is set (a tmux pane does not inherit
@@ -802,7 +808,8 @@ def tested(tid: str, d: Path, base: str) -> str | None:
     that timed out under the other slots' load passes then), and rerun on `base`, the branch it merges into
     (one that already fails there the same way is not this task's doing, so it merges anyway, and says so).
     """
-    rc, out = gate(d, full=True)
+    env = merge_env()
+    rc, out = gate(d, full=True, env=env)
     if not rc:
         return None
     why = 'the tests fail after the merge: ' + ' / '.join(out.splitlines()[-4:])[:400]
@@ -810,13 +817,13 @@ def tested(tid: str, d: Path, base: str) -> str | None:
     if not (rx and cmd and (names := sorted(set(re.findall(rx, out, re.M))))):
         return why
     cmd = cmd.replace('{names}', shlex.join(names))
-    if not sp.run(cmd, shell=True, cwd=str(d), capture_output=True).returncode:
+    if not sp.run(cmd, shell=True, cwd=str(d), capture_output=True, env=env).returncode:
         log(f'{tid}: {", ".join(names)} failed, then passed alone (load); counted as passing')
         return None
     head = git('rev-parse', 'HEAD', cwd=d).stdout.strip()
     git('checkout', '-q', '--detach', base, cwd=d)
     try:
-        r = sp.run(cmd, shell=True, cwd=str(d), capture_output=True, text=True)
+        r = sp.run(cmd, shell=True, cwd=str(d), capture_output=True, text=True, env=env)
     finally:
         git('checkout', '-q', '--detach', head, cwd=d)
     # ponytail: name-level match; a branch that breaks an already-failing test some other way slips through
@@ -1425,8 +1432,9 @@ def cmd_run(argv: list[str], prog: str = f'{RUNNER} run') -> int:
             t = threading.Thread(target=finish, args=(tid, 0, '(unknown)', branch))
             t.start()
             merging.append(t)
-    with MERGE:  # blocks freed by merges made while no run was up
-        reopen_landed(branch, 'a merge before this run')
+    if not merging:  # blocks freed by merges made while no run was up (a merge started above reopens by itself)
+        with MERGE:
+            reopen_landed(branch, 'a merge before this run')
     for n in free_at:  # idle slots must let go of old task/<ID> branches, or start() cannot take them
         if n not in procs and (SLOTS_DIR / f's{n}').is_dir():
             git('checkout', '-q', '--detach', cwd=SLOTS_DIR / f's{n}')

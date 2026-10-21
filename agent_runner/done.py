@@ -34,12 +34,12 @@ PROG = 'run done'  # the name in messages; a wrapper sets its own ('kit done')
 __all__ = ['gate', 'check', 'main', 'PROG']
 
 
-def gate(cwd: Path, key: str = 'test', full: bool = False) -> tuple[int, str]:
+def gate(cwd: Path, key: str = 'test', full: bool = False, env: dict | None = None) -> tuple[int, str]:
     """Run `[run] <key>` in `cwd`; (exit code, last lines of its output, or all of it). (0, '') when not set."""
     cmd = cfg(cwd).run[key]
     if not cmd:
         return 0, ''
-    r = subprocess.run(cmd, shell=True, cwd=str(cwd), capture_output=True, text=True)
+    r = subprocess.run(cmd, shell=True, cwd=str(cwd), capture_output=True, text=True, env=env)
     out = (r.stdout + r.stderr).strip()
     return r.returncode, out if full else '\n'.join(out.splitlines()[-15:])
 

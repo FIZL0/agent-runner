@@ -2,6 +2,13 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
+## 0.3.1 (2026-10-20)
+
+- Slots start while branches finished before the run are still merging (the startup reopen no longer
+  waits on the merge lock).
+- The merge's test gate gets the `[run] slot_env` entries that aren't per slot (no `{n}`), e.g. a
+  compiler cache, so it builds like the slots do.
+
 ## 0.3.0 (2026-10-20)
 
 - Windows: a Windows Terminal tab per slot (`wt`), or a console window per slot when Windows Terminal
