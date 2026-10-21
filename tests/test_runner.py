@@ -223,6 +223,18 @@ def test_retry(repo: Path):
     has((repo / '.runner/run.log').read_text(), r'T4: open again since it was tried', 'and the log says so')
 
 
+def test_unmerged(repo: Path):
+    print('run: a branch finished while no run was up is found, even in a slot still on it')
+    R.init(repo)
+    d = task_branch(repo, 4, 'T2')
+    (d / 'b.py').write_text('# printer\n', encoding='utf-8')
+    git(d, 'commit', '-qam', 'T2: the printer')
+    eq(R.unmerged('main', []), [], 'a branch a busy slot holds is not merged under its session')
+    eq(R.unmerged('main', [4]), ['T2'], 'an idle slot still on its finished branch: found')
+    eq(git(d, 'branch', '--show-current'), '', 'and that slot let go of the branch')
+    git(repo, 'branch', '-D', 'task/T2')
+
+
 def test_conflicts(repo: Path, tmp: Path):
     print('run: a conflict a join cannot do goes to a fix session; one it gives up on is parked')
     agent = tmp / 'fake-agent'
@@ -582,7 +594,7 @@ def main() -> int:
         tmp = Path(t)
         repo = make_repo(tmp)
         return report([lambda: test_picking(repo), lambda: test_split_parents(repo), lambda: test_done(repo, tmp), lambda: test_merge(repo, tmp),
-                       lambda: test_retry(repo),
+                       lambda: test_retry(repo), lambda: test_unmerged(repo),
                        lambda: test_conflicts(repo, tmp), lambda: test_prompt_and_hooks(repo),
                        lambda: test_hooks(repo, tmp), lambda: test_gate_and_batches(repo),
                        lambda: test_platform(repo, tmp), lambda: test_shutdown(repo)])

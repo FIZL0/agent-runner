@@ -382,6 +382,21 @@ def adopt(branch: str) -> dict[int, tuple]:
     return out
 
 
+def unmerged(branch: str, idle: list[int]) -> list[str]:
+    """Open tasks whose task/<ID> has commits `branch` lacks: work finished while no run was up. The idle
+    slots in `idle` are detached first, so a slot whose session ended still on its branch neither hides
+    that branch from the scan nor keeps start() from taking it later."""
+    for n in idle:
+        if (SLOTS_DIR / f's{n}').is_dir():
+            git('checkout', '-q', '--detach', cwd=SLOTS_DIR / f's{n}')
+    held = {l.removeprefix('branch refs/heads/') for l in
+            git('worktree', 'list', '--porcelain').stdout.splitlines() if l.startswith('branch ')}
+    open_ids = {m.group(1) for l in plan_text(branch) if (m := TASK.match(l))}
+    names = git('branch', '--format=%(refname:short)', '--list', 'task/*').stdout.split()
+    return [b.removeprefix('task/') for b in names if b not in held and b.removeprefix('task/') in open_ids
+            and git('log', '--format=%s', f'{branch}..{b}').stdout.strip()]
+
+
 def single_run() -> object:
     """Hold `<notes>/run.lock` for this process's life, or exit: two runs would share the slot worktrees
     and reset each other's sessions. The lock goes with the process, however it ends."""
@@ -1457,26 +1472,15 @@ def run(argv: list[str], prog: str) -> int:
         procs[n], running[n] = proc, task
         free_at.setdefault(n, dt.datetime.min)
 
-    # branches a previous run never merged (it was stopped, or a session ended while nothing watched)
-    held = {l.removeprefix('branch refs/heads/') for l in
-            git('worktree', 'list', '--porcelain').stdout.splitlines() if l.startswith('branch ')}
-    open_ids = {m.group(1) for l in plan_text(branch) if (m := TASK.match(l))}
-    for b in git('branch', '--format=%(refname:short)', '--list', 'task/*').stdout.split():
-        tid = b.removeprefix('task/')
-        if b in held or tid not in open_ids:
-            continue
-        if git('log', '--format=%s', f'{branch}..{b}').stdout.strip():
-            log(f'{tid}: finished while no run was up; merging it now')
-            tried.add(tid)
-            t = threading.Thread(target=finish, args=(tid, 0, '(unknown)', branch))
-            t.start()
-            merging.append(t)
+    for tid in unmerged(branch, [n for n in free_at if n not in procs]):
+        log(f'{tid}: finished while no run was up; merging it now')
+        tried.add(tid)
+        t = threading.Thread(target=finish, args=(tid, 0, '(unknown)', branch))
+        t.start()
+        merging.append(t)
     if not merging:  # blocks freed by merges made while no run was up (a merge started above reopens by itself)
         with MERGE:
             reopen_landed(branch, 'a merge before this run')
-    for n in free_at:  # idle slots must let go of old task/<ID> branches, or start() cannot take them
-        if n not in procs and (SLOTS_DIR / f's{n}').is_dir():
-            git('checkout', '-q', '--detach', cwd=SLOTS_DIR / f's{n}')
 
     while True:
         for n in list(free_at):
