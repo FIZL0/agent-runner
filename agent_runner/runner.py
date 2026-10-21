@@ -812,6 +812,8 @@ def tested(tid: str, d: Path, base: str) -> str | None:
     rc, out = gate(d, full=True, env=env)
     if not rc:
         return None
+    if rc in (130, -2):  # the gate got the run's Ctrl-C: not a failure; the run is exiting
+        threading.Event().wait()
     why = 'the tests fail after the merge: ' + ' / '.join(out.splitlines()[-4:])[:400]
     rx, cmd = C.run['failures'], C.run['retest']
     if not (rx and cmd and (names := sorted(set(re.findall(rx, out, re.M))))):
@@ -1330,6 +1332,20 @@ def dry_run(slots: int, mode: str, branch: str) -> int:
 
 def cmd_run(argv: list[str], prog: str = f'{RUNNER} run') -> int:
     """`prog` is what --help shows; a wrapping CLI passes its own (e.g. './kit run')."""
+    try:
+        return run(argv, prog)
+    except KeyboardInterrupt:
+        # Exit now: a merge thread would otherwise keep the process up. Its merge worktree is thrown away; the
+        # main checkout only ever moves to a tested commit. Sessions in their panes keep going and the next run
+        # adopts them and merges what finished.
+        try:
+            log('run interrupted (Ctrl-C): sessions in their panes keep running; the next run adopts them')
+        except Exception:  # Ctrl-C before the config was read
+            pass
+        os._exit(130)
+
+
+def run(argv: list[str], prog: str) -> int:
     ap = argparse.ArgumentParser(prog=prog, description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('slots', nargs='?', default=None,

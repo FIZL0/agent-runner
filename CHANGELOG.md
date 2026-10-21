@@ -4,6 +4,8 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## 0.3.1 (2026-10-20)
 
+- Ctrl-C ends the run at once with one log line, no traceback and no second Ctrl-C; a gate it cut off
+  isn't reported as a test failure.
 - Slots start while branches finished before the run are still merging (the startup reopen no longer
   waits on the merge lock).
 - The merge's test gate gets the `[run] slot_env` entries that aren't per slot (no `{n}`), e.g. a
