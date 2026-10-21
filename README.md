@@ -295,12 +295,15 @@ the running tasks merge. A run left up keeps picking up whatever you commit to T
 ```
 ./run plan [...]                       the task list as a tool (./run plan help)
 ./run done ID "MSG" [--blocked WHY [--after X,Y]] [--no-test] [--skip-check]
-./run run [N|once] [--mode d|p] [--dry-run] [--no-tmux] [--mux tmux|wt|console|none] [--model M] [--idle S] [--stall S] [--pause S] [--force]
+./run run [N|once] [--mode d|p] [--dry-run] [--no-tmux] [--mux tmux|wt|console|none] [--model M] [--idle S] [--stall S] [--pause S] [--force] [--shutdown]
 ./run stop                             finish what's running, start nothing new, exit (or s + Enter in the runner's pane)
 ./run --version
 ```
 
 `agent-runner` is the same CLI. `--no-test` skips the gate, and `--skip-check` skips `[run] precommit`.
+`--shutdown` powers the computer off once no task is running or merging and no open task can start, after
+120 s idle; new work in that window cancels it. On Linux it runs `systemctl poweroff`, which needs the
+logged-in session's polkit permission; if the command is refused the run stays up.
 
 `plan` and `done` work on the checkout you're in (the agent's worktree). `run` always merges into the
 main checkout. Set `AGENT_RUNNER_REPO` to use a repo from outside it.

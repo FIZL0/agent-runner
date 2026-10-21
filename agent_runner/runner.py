@@ -1239,6 +1239,22 @@ def capped(force: bool) -> float | None:
     return w if w is not None and w >= C.run['weekly_max'] else None
 
 
+SHUTDOWN = False  # --shutdown: power the machine off once the run has nothing left to do
+SHUTDOWN_GRACE = 120  # s the run must stay idle first; new work or a stop in that time cancels it
+
+
+def shut_down(idle_at: float) -> bool:
+    """With --shutdown, after SHUTDOWN_GRACE s idle: power off. The caller checked that nothing runs, merges
+    or may start. True once the power-off command has been accepted; a refused one is logged and the run stays."""
+    if not SHUTDOWN or time.time() - idle_at < SHUTDOWN_GRACE or stopping():
+        return False
+    log('nothing left to do and nothing merging: shutting the computer down (--shutdown)')
+    if rc := plat.power_off():
+        log(f'the power-off command failed (exit {rc}); staying up')
+        return False
+    return True
+
+
 def sequential(branch: str, model: str, idle: int, pause: int, force: bool, once: bool = False) -> int:
     """No tmux, or one slot: one session at a time, in this checkout, on the branch it has out.
 
@@ -1252,7 +1268,7 @@ def sequential(branch: str, model: str, idle: int, pause: int, force: bool, once
         f'committing in this checkout)')
     tried: set[str] = set()
     closed: set[str] = set()
-    idle_said = False
+    idle_said, idle_at = False, 0.0
     while not stopping():
         retry_reopened(tried, closed, here)
         if not (task := pick({}, tried, 'p', here)):
@@ -1260,7 +1276,9 @@ def sequential(branch: str, model: str, idle: int, pause: int, force: bool, once
                 break
             if not idle_said:
                 log(idle_line())
-                idle_said = True
+                idle_said, idle_at = True, time.time()
+            if shut_down(idle_at):
+                return 0
             time.sleep(30)
             continue
         if idle_said:
@@ -1353,6 +1371,9 @@ def run(argv: list[str], prog: str) -> int:
     ap.add_argument('--mode', choices=['p', 'd'], default=None,
                     help='p = plan order, overlapping files allowed; d = different files (default [run] mode)')
     ap.add_argument('--force', action='store_true', help='keep starting tasks past the weekly usage cap')
+    ap.add_argument('--shutdown', action='store_true',
+                    help=f'power the computer off once nothing is running or merging and no open task may start '
+                         f'(after {SHUTDOWN_GRACE} s idle)')
     ap.add_argument('--idle', type=int, default=None, help='seconds of quiet before a session is ended')
     ap.add_argument('--stall', type=int, default=None, help='seconds of quiet that count as stalled')
     ap.add_argument('--pause', type=int, default=None, help='seconds between a session ending and the next')
@@ -1377,6 +1398,8 @@ def run(argv: list[str], prog: str) -> int:
     init()
     r = C.run
     once = a.slots == 'once'
+    global SHUTDOWN
+    SHUTDOWN = a.shutdown and not once
     try:
         slots = 1 if once else int(a.slots or r['slots'])
     except ValueError:
@@ -1422,7 +1445,7 @@ def run(argv: list[str], prog: str) -> int:
     procs: dict[int, tuple] = {}
     tried: set[str] = set()
     closed: set[str] = set()  # see retry_reopened
-    idle_said = False
+    idle_said, idle_at = False, 0.0
     free_at = {n: dt.datetime.min for n in range(1, slots + 1)}
     merging: list[threading.Thread] = []
     stall_said: set[str] = set()
@@ -1540,7 +1563,10 @@ def run(argv: list[str], prog: str) -> int:
         if quiet and not idle_said and not pick(running, tried, mode, branch):
             log(f'tried this run: {", ".join(sorted(tried)) or "none"}')
             log(idle_line())
-            idle_said = True
+            idle_said, idle_at = True, time.time()
+        if (idle_said and quiet and SHUTDOWN and time.time() - idle_at >= SHUTDOWN_GRACE
+                and not pick(running, tried, mode, branch) and shut_down(idle_at)):
+            return 0
         time.sleep(10)
 
 

@@ -487,6 +487,29 @@ def commit_on(repo: Path, tid: str, files: dict[str, str], subject: str) -> None
     git(d, 'checkout', '-q', '--detach')
 
 
+def test_shutdown(repo: Path):
+    print('run: --shutdown powers off only after the grace period, and stays up when refused')
+    R.init(repo)
+    calls: list[int] = []
+    saved = R.plat.power_off, R.pick, R.SHUTDOWN, R.SHUTDOWN_GRACE
+    try:
+        R.plat.power_off = lambda: calls.append(1) or 0
+        R.SHUTDOWN, R.SHUTDOWN_GRACE = False, 0
+        check(not R.shut_down(0) and not calls, 'without --shutdown nothing happens')
+        R.SHUTDOWN, R.SHUTDOWN_GRACE = True, 3600
+        check(not R.shut_down(time.time()) and not calls, 'not before the grace period')
+        R.SHUTDOWN_GRACE = 0
+        R.plat.power_off = lambda: calls.append(1) or 1
+        check(not R.shut_down(0) and calls == [1], 'a refused power-off keeps the run up')
+        calls.clear()
+        R.plat.power_off = lambda: calls.append(1) or 0
+        R.pick = lambda *a, **k: None
+        eq(R.sequential('main', 'opus', 90, 0, False), 0, 'an idle sequential run ends after powering off')
+        eq(calls, [1], 'and powered off once')
+    finally:
+        R.plat.power_off, R.pick, R.SHUTDOWN, R.SHUTDOWN_GRACE = saved
+
+
 def test_gate_and_batches(repo: Path):
     print('run: untested globs, flaky and inherited failures, batched merges, phases that are not attempts')
     R.init(repo)
@@ -562,7 +585,7 @@ def main() -> int:
                        lambda: test_retry(repo),
                        lambda: test_conflicts(repo, tmp), lambda: test_prompt_and_hooks(repo),
                        lambda: test_hooks(repo, tmp), lambda: test_gate_and_batches(repo),
-                       lambda: test_platform(repo, tmp)])
+                       lambda: test_platform(repo, tmp), lambda: test_shutdown(repo)])
 
 
 if __name__ == '__main__':

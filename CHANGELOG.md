@@ -2,6 +2,11 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
+## 0.4.0 (2026-10-20)
+
+- `run --shutdown`: power the computer off once nothing is running or merging and no open task can
+  start (after 120 s idle). Blocked tasks don't keep it up.
+
 ## 0.3.1 (2026-10-20)
 
 - Ctrl-C ends the run at once with one log line, no traceback and no second Ctrl-C; a gate it cut off

@@ -241,3 +241,17 @@ def mux_choice(slots: int, want: str, tmux_ok: bool, wt_ok: bool, windows: bool 
     if windows:
         return 'wt' if wt_ok else 'console'
     return 'tmux' if tmux_ok else 'sequential'
+
+
+def power_off() -> int:
+    """Shut the computer down now; the command's exit code (non-zero: refused, e.g. no permission)."""
+    if WINDOWS:
+        cmd = ['shutdown', '/s', '/t', '0']
+    elif sys.platform == 'darwin':
+        cmd = ['osascript', '-e', 'tell app "System Events" to shut down']
+    else:
+        cmd = ['systemctl', 'poweroff']
+    try:
+        return sp.run(cmd).returncode
+    except OSError:
+        return 127
