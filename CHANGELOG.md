@@ -2,6 +2,11 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
+## 0.6.3 (2026-10-21)
+
+- `plan add`/`newid` on a task's own id give its next subtask (L3 -> L3a, L3a -> L3a1), which runs after its
+  family instead of beside it; they used to give L31, a separate task that started at once.
+
 ## 0.6.2 (2026-10-21)
 
 - The task prompt says commits in other repositories (a dependency or sibling repo the task needed) are pushed

@@ -169,6 +169,9 @@ the branch is pushed after each task.
 `./run plan help` lists every subcommand: `next`, `<ID>`, `brief`, `tick`, `block`, `unblock`, `reopen`,
 `add`, `move`, `note`, `newid` and `archive`.
 
+A follow-up that needs a task to land first goes in as that task's subtask: `plan add L3 TEXT` gives `L3a`, then
+`L3b`. A family (L3, L3a, L3b) never runs side by side, so they run one at a time; a fresh number starts at once.
+
 ## Picking
 
 `pick` walks TODO.md in order and starts the first task that passes all of these checks:

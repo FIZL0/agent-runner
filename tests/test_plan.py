@@ -57,6 +57,8 @@ def test_plan_roundtrip():
         has(Path(done).read_text(), r'- \[x\] \*\*D1\*\* the parser', 'with its text intact in DONE.md')
         has((d / 'D1.md').read_text(), r'- \[x\] \*\*D1\*\*', 'and ticked in its own plan/<ID>.md')
         eq(plan.next_id('D', [todo, done]), 'D3', 'ids are never reused: D1 is archived, the next is D3')
+        eq(plan.next_id('D1', [todo, done]), 'D1a', "a task's id gives its first subtask")
+        eq(plan.next_id('D1a', [todo, done]), 'D1a1', "and a subtask's its own")
 
         Path(todo).write_text(Path(todo).read_text().replace('- [ ] **D2**', '- [x] **D2**'), encoding='utf-8')
         plan._cache.clear()

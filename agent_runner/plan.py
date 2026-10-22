@@ -16,7 +16,7 @@ re-reads it on every turn pays again. So the backlog is a command instead:
     ./run plan move <ID> WHERE   WHERE = top | before ID | after ID | in SECTION (its end); sub-items follow
     ./run plan add PREFIX TEXT [@ WHERE]   new "- [ ] **<next free id>** TEXT"; prints the id
     ./run plan note <ID> TEXT    append " — TEXT" to the task (user details, priority reasons)
-    ./run plan newid PREFIX      the next free id, e.g. L -> L7
+    ./run plan newid PREFIX      the next free id, e.g. L -> L7; a task's id gives its next subtask, L3 -> L3a
     ./run plan archive           move every [x] line left in TODO.md to DONE.md (after merges, hand edits)
     ./run plan reopen            unblock every task whose BLOCKED (after X, Y) tasks are all done now
 
@@ -376,9 +376,14 @@ def move(tid: str, where: str, ref: str | None = None, todo=None) -> None:
 
 
 def next_id(prefix: str, paths=None) -> str:
-    """The next free id with this prefix, counting DONE.md too: ids are permanent and never reused."""
+    """The next free id with this prefix, counting DONE.md too: ids are permanent and never reused. A task's own id
+    gives its next subtask (P17 -> P17a, P17a -> P17a1), which the runner keeps from running beside its family."""
     if paths is None:
         paths = list(ensure())
+    if prefix[-1:].isdigit():
+        k = [m.group(1) for p in paths for l in lines(p)
+             if (m := re.match(rf'\s*- \[.\] \*\*{re.escape(prefix)}([a-z])\b', l))]
+        return prefix + chr(ord(max(k, default='`')) + 1)
     n = [int(m.group(1)) for p in paths for l in lines(p)
          if (m := re.match(rf'\s*- \[.\] \*\*{re.escape(prefix)}(\d+)\b', l))]
     return f'{prefix}{max(n, default=0) + 1}'
