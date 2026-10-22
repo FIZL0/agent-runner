@@ -6,6 +6,7 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 - `plan add`/`newid` on a task's own id give its next subtask (L3 -> L3a, L3a -> L3a1), which runs after its
   family instead of beside it; they used to give L31, a separate task that started at once.
+- The top-level usage shows how to add a todo, and how to add one as a subtask.
 
 ## 0.6.2 (2026-10-21)
 

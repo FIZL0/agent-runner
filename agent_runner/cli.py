@@ -6,6 +6,9 @@ import sys
 USAGE = """usage: run <command> [args]
 
     plan [...]                 the task list as a tool (`run plan help`)
+    plan add PREFIX TEXT [@ WHERE]
+                               add a todo: `plan add B "…"` = next number (starts at once);
+                               `plan add B646 "…"` = subtask B646a (runs after B646)
     done ID "MSG" [--blocked WHY [--after X,Y]]
                                test gate, tick or block, commit, push the task branch
     run [N|once] [--mode d|p] [--dry-run]
