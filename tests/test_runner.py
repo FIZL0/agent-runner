@@ -647,6 +647,60 @@ def test_gate_and_batches(repo: Path):
         R.C.raw['plan']['brief'] = ''
 
 
+def test_leftovers(repo: Path):
+    print('a session that ends uncommitted: its edits are saved on a branch before the slot is reset')
+    R.init(repo)
+    d = task_branch(repo, 3, 'L1')
+    eq(R.save_leftovers(d, 'L1', 'main'), '', 'a clean slot has nothing to keep')
+    (d / 'a.py').write_text('# a, edited\n', encoding='utf-8')
+    (d / 'new.py').write_text('# new\n', encoding='utf-8')
+    git(d, 'add', 'a.py')  # half staged, as an interrupted `done` might leave it
+    eq(R.save_leftovers(d, 'L1', 'main'), 'wip/L1', 'with no commits of its own the work goes to wip/<ID>')
+    eq(git(repo, 'show', 'wip/L1:new.py'), '# new', 'untracked files too')
+    eq(git(repo, 'show', 'wip/L1:a.py'), '# a, edited', 'and staged ones')
+    check(git(d, 'status', '--porcelain') != '' and git(d, 'rev-parse', 'HEAD') == git(repo, 'rev-parse', 'main'),
+          'the slot itself is left as it was')
+    has((repo / '.runner/run.log').read_text(), r'L1: the session left 2 files uncommitted .*saved on wip/L1', 'and the log says where')
+    git(d, 'add', '-A')
+    git(d, 'commit', '-qm', 'L1: a commit of its own')
+    (d / 'b.py').write_text('# b, scratch\n', encoding='utf-8')
+    eq(R.save_leftovers(d, 'L1', 'main'), 'leftover/L1', 'with commits (or a wip/ already) it goes to leftover/<ID>')
+    eq(git(repo, 'rev-list', '--count', 'main..task/L1'), '1', 'and the task branch does not take in the untested edits')
+    git(d, 'reset', '-q', '--hard')
+    git(d, 'checkout', '-q', '--detach')
+    git(repo, 'branch', '-D', 'task/L1', 'wip/L1', 'leftover/L1')
+
+
+def test_stop_waiter(tmp: Path):
+    print('the idle stop waits out a command the agent still runs, up to a cap')
+    t = tmp / 'transcript.jsonl'
+    t.write_text('{"type":"user"}\n', encoding='utf-8')
+    poll, R.WAITER_POLL = R.WAITER_POLL, 0.2
+    agent = [sys.executable, '-c', 'import subprocess, time; subprocess.run(["sleep", "1.5"]); time.sleep(30)']
+    try:
+        p = subprocess.Popen(agent)
+        time.sleep(0.3)
+        t0 = time.time()
+        R.stop_waiter(p.pid, str(t), 1, 0)
+        took = time.time() - t0
+        check(p.wait(5) is not None and took >= 1.0, 'it ends the session only once its child has exited', took)
+        os.environ['AGENT_RUNNER_IDLE_MAX'] = '1'
+        p = subprocess.Popen([sys.executable, '-c', 'import subprocess; subprocess.run(["sleep", "4"])'])
+        time.sleep(0.3)
+        t0 = time.time()
+        R.stop_waiter(p.pid, str(t), 1, 0)
+        took = time.time() - t0
+        check(p.wait(5) is not None and took < 3, 'and not past AGENT_RUNNER_IDLE_MAX', took)
+        p = subprocess.Popen(agent)
+        t.write_text('{"type":"user"}\n{"type":"user"}\n', encoding='utf-8')
+        R.stop_waiter(p.pid, str(t), 1, 0)
+        check(p.poll() is None, 'a session that moved on is left alone')
+        p.kill()
+    finally:
+        R.WAITER_POLL = poll
+        os.environ.pop('AGENT_RUNNER_IDLE_MAX', None)
+
+
 def main() -> int:
     with tempfile.TemporaryDirectory() as t:
         tmp = Path(t)
@@ -655,7 +709,8 @@ def main() -> int:
                        lambda: test_retry(repo), lambda: test_unmerged(repo),
                        lambda: test_conflicts(repo, tmp), lambda: test_prompt_and_hooks(repo),
                        lambda: test_hooks(repo, tmp), lambda: test_gate_and_batches(repo),
-                       lambda: test_platform(repo, tmp), lambda: test_shutdown(repo), lambda: test_merge_into(tmp)])
+                       lambda: test_platform(repo, tmp), lambda: test_shutdown(repo), lambda: test_merge_into(tmp),
+                       lambda: test_leftovers(repo), lambda: test_stop_waiter(tmp)])
 
 
 if __name__ == '__main__':

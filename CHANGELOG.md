@@ -2,6 +2,15 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
+## 0.6.5 (2026-10-22)
+
+- The idle stop no longer ends a session whose agent is still running a background command: a `done`
+  that waited past the 30 min background grace for a test slot was killed with its session, and its
+  uncommitted work was lost. It waits for the command, up to `AGENT_RUNNER_IDLE_MAX` (10800 s).
+- A session that ends with uncommitted edits has them saved before the slot is reset: on `wip/<ID>` when
+  the task has no commits, else `leftover/<ID>`. Both are pushed and logged. `start` refuses to reset a
+  slot whose edits could not be saved.
+
 ## 0.6.4 (2026-10-21)
 
 - `agent-runner help` rewritten around real examples: running, adding tasks and subtasks, making one wait, finishing.

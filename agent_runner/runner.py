@@ -57,6 +57,7 @@ import shlex
 import shutil
 import subprocess as sp
 import sys
+import tempfile
 import threading
 import time
 import uuid
@@ -520,9 +521,51 @@ def slot_env(n: int) -> list[str]:
     return env + [e.format(n=n, slots=SLOTS) for e in C.run['slot_env']]
 
 
+def save_leftovers(d: Path, tid: str, branch: str) -> str | None:
+    """Keep what a slot's session left uncommitted on a branch before anything resets the worktree.
+
+    A session can end before its `done` commits (killed, or stopped mid-gate), and the next `start` resets
+    the slot. With no commits of its own the work goes to wip/<tid>, where the task's next attempt is told
+    to look; otherwise (or with a wip/<tid> already there) to leftover/<tid>, so the merge never takes in
+    untested edits. The branch's own index and files are left as they are. Returns the branch, '' when
+    there was nothing to keep, or None when the save failed."""
+    if not git('status', '--porcelain', cwd=d).stdout.strip():
+        return ''
+    fd, idx = tempfile.mkstemp(prefix='agent-runner-index-')
+    os.close(fd)
+    env = {**os.environ, 'GIT_INDEX_FILE': idx}
+    try:
+        g = lambda *a: sp.run(['git', *a], cwd=str(d), capture_output=True, text=True, env=env)
+        if g('read-tree', 'HEAD').returncode or g('add', '-A').returncode:
+            return None
+        tree = g('write-tree').stdout.strip()
+        msg = f'{tid} wip: uncommitted when the session ended (saved by the runner before the slot was reset)'
+        c = g('commit-tree', tree, '-p', 'HEAD', '-m', msg).stdout.strip()
+    finally:
+        os.unlink(idx)
+    if not c:
+        return None
+    mine = git('rev-list', '--count', f'{branch}..HEAD', cwd=d).stdout.strip()
+    wip = not git('rev-parse', '--verify', '-q', f'refs/heads/wip/{tid}', cwd=d).returncode
+    to = f'wip/{tid}' if mine == '0' and not wip else f'leftover/{tid}'
+    if git('branch', '-f', to, c, cwd=d).returncode:
+        return None
+    files = git('diff', '--name-only', 'HEAD', c, cwd=d).stdout.split()
+    many = f'{len(files)} file{"s" if len(files) != 1 else ""}'
+    note(f'{tid}: the session left {many} uncommitted; saved on {to}')
+    log(f'{tid}: the session left {many} uncommitted ({", ".join(files)[:200]}); saved on {to}')
+    if out := push(ROOT, to):
+        log(out)
+    return to
+
+
 def start(n: int, task, branch: str, model: str, idle: int, slots: int):
     tid = task[0]
     d = worktree(n, branch)
+    head = git('symbolic-ref', '-q', '--short', 'HEAD', cwd=d).stdout.strip()
+    if save_leftovers(d, head.removeprefix('task/') if head.startswith('task/') else f's{n}', branch) is None:
+        log(f'slot {n}: uncommitted edits there could not be saved; not resetting it for {tid}')
+        return None
     git('reset', '-q', '--hard', cwd=d)
     git('clean', '-fdq', cwd=d)
     co = git('checkout', '-q', '-B', f'task/{tid}', branch, cwd=d)
@@ -1217,7 +1260,10 @@ def stop_hook(idle: int) -> int:
     A finished agent otherwise sits at its prompt forever, and the loop never starts the next task. "Idle"
     means no new user or tool-result entry in the transcript, so typing into the pane keeps the session
     alive: you can take one over by hand. A session with a background task running gets a much longer
-    grace (`AGENT_RUNNER_IDLE_BG`, 1800 s), because a background task normally ends and wakes it.
+    grace (`AGENT_RUNNER_IDLE_BG`, 1800 s), because a background task normally ends and wakes it. Past the
+    grace the waiter still leaves alone a session whose agent has a child process (its background command:
+    a `done` queued behind other test runs can take longer than any grace), up to
+    `AGENT_RUNNER_IDLE_MAX` (10800 s) after the stop.
 
     A usage limit is deliberately *not* idleness: Claude Code prints "continuing automatically at <reset>"
     and resumes by itself, so the waiter leaves such a session alone.
@@ -1251,17 +1297,27 @@ def _user_entries(t: str) -> int:
         return -1
 
 
+WAITER_POLL = 60  # s between looks at a session whose background command is still running
+
+
 def stop_waiter(pid: int, t: str, n: int, idle: int) -> int:
+    until = time.time() + max(idle, int(os.environ.get('AGENT_RUNNER_IDLE_MAX', 10800)))
     time.sleep(idle)
-    if _user_entries(t) != n:
-        return 0  # the human typed, or a tool came back: the session is alive, leave it
-    try:
-        text = open(t, encoding='utf-8', errors='replace').read()
-    except OSError:
-        text = ''
-    tail = text[text.rfind('continuing automatically'):] if 'continuing automatically' in text else ''
-    if tail and '"tool_use"' not in tail:
-        return 0  # waiting out a usage limit; Claude Code resumes it at the reset
+    while True:
+        if _user_entries(t) != n:
+            return 0  # the human typed, or a tool came back: the session is alive, leave it
+        try:
+            text = open(t, encoding='utf-8', errors='replace').read()
+        except OSError:
+            text = ''
+        tail = text[text.rfind('continuing automatically'):] if 'continuing automatically' in text else ''
+        if tail and '"tool_use"' not in tail:
+            return 0  # waiting out a usage limit; Claude Code resumes it at the reset
+        # a child is a command the agent still runs (a `done` that waited 30 min for a test slot was killed
+        # with its session, and the work it was about to commit went with it): it ends and wakes the agent
+        if not plat.children(pid) or time.time() >= until:
+            break
+        time.sleep(WAITER_POLL)
     plat.terminate(pid)
     return 0
 
@@ -1509,6 +1565,9 @@ def run(argv: list[str], prog: str) -> int:
             if n in procs and not alive(procs[n][0]):
                 (pid, sid, since), task = procs.pop(n), running.pop(n)
                 log(f'slot {n}: {task[0]} exited ({stats(sid)})')
+                if save_leftovers(d := SLOTS_DIR / f's{n}', task[0], branch):
+                    git('reset', '-q', '--hard', cwd=d)  # saved: the next start finds the slot clean
+                    git('clean', '-fdq', cwd=d)
                 if r['on_exit']:
                     sp.Popen(r['on_exit'], shell=True, cwd=str(SLOTS_DIR / f's{n}'),
                              env={**os.environ, **dict(e.split('=', 1) for e in slot_env(n))},

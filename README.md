@@ -94,7 +94,10 @@ plan/TODO.md ──pick──▶ slot N: git worktree <repo>-slots/sN on task/<I
    ticked or committed. A session that's stuck runs `done --blocked "why"` instead.
 4. **End the session.** The session goes quiet at its prompt. The Stop hook's detached timer sees no new
    transcript entries for `[run] idle` seconds (90) and ends it. If a human typed in the pane, or a usage
-   limit is being waited out, the timer leaves the session alone.
+   limit is being waited out, the timer leaves the session alone. A session still running a background
+   command (a `done` queued behind other test runs) is left alone until that command ends, up to 3 h.
+   Whatever a session leaves uncommitted is saved on `wip/<ID>` (or `leftover/<ID>` when it has commits)
+   before the slot is reset.
 5. **Merge.** In a separate merge worktree, the runner merges `main` and `task/<ID>`:
    - conflicts in record-per-line files (`[run] joinable`, by default TODO.md and DONE.md) are joined,
      keeping both sides' lines;
@@ -236,7 +239,14 @@ sleeps until the reset. Past `[run] weekly_max`% of the 7-day usage, no new task
 is given.
 
 **Idle stop.** The Stop hook starts a detached timer; a session quiet for `[run] idle` seconds is ended.
-The timer does not fire on a session a human has typed into, or one waiting out a usage limit.
+The timer does not fire on a session a human has typed into, or one waiting out a usage limit. Nor on
+one whose agent still has a child process (a background command), until it ends or
+`AGENT_RUNNER_IDLE_MAX` (10800 s) has passed since the stop.
+
+**Nothing uncommitted is lost.** When a session ends with edits it never committed, the runner commits
+them onto `wip/<ID>` if the task has no commits (the next attempt is told to read it), or onto
+`leftover/<ID>` otherwise, so the merge never takes in untested edits; both are pushed. Only then is
+the slot reset.
 
 **Stall watchdog.** A session quiet at a prompt with no tool running for `[run] stall` seconds (20 min),
 or quiet for over 65 minutes with a tool running, is logged with the terminal to look at, and the bell
