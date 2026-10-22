@@ -58,6 +58,7 @@ Choose what goes first:
     agent-runner plan move B12 top            first in line
     agent-runner plan move B12 after B646     right behind B646
     agent-runner plan add B "Fix it" @ after B646
+    agent-runner plan add B "Fix it" @ bottom    last in the leading section (an agent's default)
 
 Never started: blocked [~] tasks, ### Stretch, a task with open subtasks, a task that already failed this run,
 and a finished task waiting to merge. In mode d, also a task that names a file a running task names.

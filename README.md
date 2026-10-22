@@ -175,7 +175,7 @@ the branch is pushed after each task.
 ## What runs when
 
 Each free slot reads `plan/TODO.md` from the top and starts the first task it's allowed to, so the order of the
-lines is the order of the work. `plan add` puts a new task at the top; `plan add PREFIX TEXT @ after ID` or
+lines is the order of the work. `plan add` puts a new task at the top (an agent's goes to the bottom of that section, behind the queued work; `@ bottom` asks for that); `plan add PREFIX TEXT @ after ID` or
 `plan move ID after ID` puts it where you want it.
 
 Several slots run at once, so **a task that has to wait for another must say so in a way the runner reads**.

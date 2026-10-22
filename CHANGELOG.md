@@ -2,6 +2,12 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
+## 0.6.6 (2026-10-22)
+
+- `plan add` run by an agent (`AGENT_RUNNER=1`) files its task at the bottom of the leading section, so
+  follow-ups queue behind the work a person put there instead of jumping ahead of it. A person's `plan
+  add` still goes to the top. `@ bottom` asks for the bottom either way.
+
 ## 0.6.5 (2026-10-22)
 
 - The idle stop no longer ends a session whose agent is still running a background command: a `done`

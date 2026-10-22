@@ -114,7 +114,7 @@ it>"`, then stop. If all it waits on is another task landing (its code is not on
 A usage limit is not being stuck: do not block the task. The session waits for the reset and carries on.
 
 The task list is a tool, not a file to read whole: `{runner} plan` lists the tasks, `{runner} plan <ID>` \
-shows one, and `{runner} plan add <PREFIX> "<text>"` files a follow-up you find but must not do now. Never \
+shows one, and `{runner} plan add <PREFIX> "<text>"` files a follow-up you find but must not do now (it queues at the bottom of the leading section). Never \
 hand-edit a checkbox.
 {extra}
 The task's brief (`{runner} plan brief {tid}`) follows, so don't gather it again.

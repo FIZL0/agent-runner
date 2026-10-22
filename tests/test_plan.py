@@ -199,6 +199,28 @@ def test_split_parents():
         has(txt, r'- \[ \] \*\*R1\*\*', 'R1 says no "(split into …)", so it is left to its own session')
 
 
+def test_add_bottom():
+    print("plan: an agent's follow-up files behind the queued work; a person's goes first")
+    with tempfile.TemporaryDirectory() as tmp:
+        d = Path(tmp) / 'plan'
+        todo, done = plan.ensure(d / 'TODO.md', d / 'DONE.md')
+        kw = dict(todo=todo, done=done)
+        for t in ('one', 'two'):
+            plan.add('D', t, 'bottom', **kw)
+        plan.add('D', 'three', 'bottom', **kw)
+        eq([l[4:] for l in plan.index(todo) if l.startswith('[ ] ')], ['D1', 'D2', 'D3'],
+           'add @ bottom files each behind the last')
+        old = os.environ.pop('AGENT_RUNNER', None)
+        try:
+            os.environ['AGENT_RUNNER'] = '1'
+            eq(plan.add_default(), 'bottom', "a running agent's follow-up goes to the bottom")
+            del os.environ['AGENT_RUNNER']
+            eq(plan.add_default(), 'top', "a person's task goes to the top")
+        finally:
+            if old is not None:
+                os.environ['AGENT_RUNNER'] = old
+
+
 def test_hand_edits_commit():
     print('plan: a hand edit in the main checkout commits at once; mid-merge it waits')
     with tempfile.TemporaryDirectory() as tmp:
@@ -216,4 +238,4 @@ def test_hand_edits_commit():
 
 if __name__ == '__main__':
     sys.exit(report([test_plan_roundtrip, test_plan_reopen, test_plan_index_and_sections, test_brief,
-                     test_split_parents, test_hand_edits_commit]))
+                     test_split_parents, test_add_bottom, test_hand_edits_commit]))

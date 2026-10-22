@@ -334,8 +334,8 @@ def unblock(tid: str, note: str = '', todo=None) -> None:
 
 
 def _place(ls: list[str], where: str, ref: str | None) -> int:
-    """Index to insert a top-level item at: top (first task of the leading section), before/after ID,
-    or in SECTION (at its end)."""
+    """Index to insert a top-level item at: top (first task of the leading section), bottom (its last),
+    before/after ID, or in SECTION (at its end)."""
     if where == 'top':
         h = next((i for i, l in enumerate(ls) if _level(l) and 'next' in l.lower()), None)
         if h is None:
@@ -346,6 +346,13 @@ def _place(ls: list[str], where: str, ref: str | None) -> int:
         while i < len(ls) and not ITEM.match(ls[i]) and not _level(ls[i]):
             i += 1
         return i
+    if where == 'bottom':
+        i = j = _place(ls, 'top', None)
+        while j < len(ls) and not _level(ls[j]):
+            j += 1
+        while j > i and ls[j - 1].strip() == '':
+            j -= 1
+        return j
     if where in ('before', 'after'):
         if not ref:
             raise SystemExit(f'{PROG}: {where} needs a task id')
@@ -361,7 +368,7 @@ def _place(ls: list[str], where: str, ref: str | None) -> int:
         while j - 1 > 0 and ls[j - 1].strip() == '':
             j -= 1
         return j
-    raise SystemExit(f'{PROG}: where must be top | before ID | after ID | in SECTION, not {where!r}')
+    raise SystemExit(f'{PROG}: where must be top | bottom | before ID | after ID | in SECTION, not {where!r}')
 
 
 def move(tid: str, where: str, ref: str | None = None, todo=None) -> None:
@@ -387,6 +394,12 @@ def next_id(prefix: str, paths=None) -> str:
     n = [int(m.group(1)) for p in paths for l in lines(p)
          if (m := re.match(rf'\s*- \[.\] \*\*{re.escape(prefix)}(\d+)\b', l))]
     return f'{prefix}{max(n, default=0) + 1}'
+
+
+def add_default() -> str:
+    """Where `plan add` files a task when no `@` says: a running agent's follow-up goes to the bottom of the
+    leading section, behind the work a person queued; a person's own task goes to the top."""
+    return 'bottom' if os.environ.get('AGENT_RUNNER') == '1' else 'top'
 
 
 def add(prefix: str, text: str, where: str = 'top', ref: str | None = None, todo=None, done=None) -> str:
@@ -593,7 +606,7 @@ def main(argv: list[str] | None = None) -> int:
         return say(f'moved {argv[1]} {" ".join(argv[2:])}')
     if argv[:1] == ['add'] and len(argv) > 2:
         text, _, where = ' '.join(argv[2:]).partition(' @ ')
-        w = where.split(maxsplit=1) or ['top']
+        w = where.split(maxsplit=1) or [add_default()]
         return say(f'added {add(argv[1], text, w[0], (w[1:] or [None])[0])}')
     if argv[:1] == ['note'] and len(argv) > 2:
         note(argv[1], ' '.join(argv[2:]))
