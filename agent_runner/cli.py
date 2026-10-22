@@ -3,46 +3,68 @@ from __future__ import annotations
 
 import sys
 
-USAGE = """usage: run <command> [args]
+USAGE = """agent-runner: AI agents work through plan/TODO.md, one task each, in parallel.
 
-    plan [...]                 the task list as a tool (`run plan help`)
-    plan add PREFIX TEXT [@ WHERE]
-                               add a todo: `plan add B "…"` = next number (may run alongside others);
-                               `plan add B646 "…"` = subtask B646a (never alongside B646)
-    help order                 what runs when, and how to make one task wait for another
-    done ID "MSG" [--blocked WHY [--after X,Y]]
-                               test gate, tick or block, commit, push the task branch
-    run [N|once] [--mode d|p] [--dry-run]
-                               the unattended runner (`run run --help`)
-    stop                       let the running tasks finish and merge, start nothing new
-    --version                  print the version
+Run the agents
+    agent-runner run once             try it: one task, then stop
+    agent-runner run                  keep going with the slots runner.toml sets, until you stop it
+    agent-runner run 3                3 agents at once
+    agent-runner run --dry-run 3      show what 3 agents would start now, start nothing
+    agent-runner stop                 let running tasks finish, start no new ones
 
-Run it from anywhere inside the repository whose tasks it works on (or set AGENT_RUNNER_REPO).
-Configuration: runner.toml at the repository's root, or the file AGENT_RUNNER_CONFIG names; see the README.
+See and change the task list
+    agent-runner plan                 every task id, one line each
+    agent-runner plan next            the task that starts next
+    agent-runner plan B646            one task's full text
+    agent-runner plan add B "Fix the menu flicker"
+                                      new task B647: may run beside anything
+    agent-runner plan add B646 "Bake the letter sheet"
+                                      new subtask B646a: never runs beside B646
+    agent-runner plan block B12 --after B646 "needs the new sheet"
+                                      B12 waits, and reopens by itself once B646 is done
+    agent-runner plan move B12 top    B12 to the top: the next free agent takes it
+    agent-runner plan help            every plan command
+
+Finish a task (what an agent runs at the end)
+    agent-runner done B646 "Halve the sheet's memory"
+    agent-runner done B646 "Halved part of it" --blocked "needs a browser to measure"
+
+More
+    agent-runner help order           what runs when, and how to make one task wait for another
+    agent-runner run --help           every runner option
+    agent-runner --version
+
+Run it anywhere inside the repo. Settings: runner.toml in the repo root (or AGENT_RUNNER_CONFIG).
 """
 
 ORDER = """What runs when
 
-Each free slot reads plan/TODO.md from the top and starts the first task it is allowed to. So the order of the
-lines is the order of the work. `plan add` puts a new task at the top; `plan add … @ after ID` or `plan move ID
-after ID` places it.
+Each free agent takes the first task from the top of plan/TODO.md that it's allowed to start.
+Several agents run at once, so a new task starts as soon as an agent is free, unless it is told to wait.
 
-Several slots run at once. A task that must wait for another needs one of these, or it starts as soon as a slot is free:
+Make a task wait for another (writing "after B646" in its text is not enough):
 
-  subtask     plan add A12 "…"           -> A12a, A12b, …. One family (A12, A12a, A12b) never runs two tasks at
-                                            once, so they go one at a time, top to bottom.
-  after       plan block B3 --after A12 "why"
-                                         -> B3 is [~] until A12 is done; the run reopens it by itself.
-  ordered     a section heading that starts with "Next" or says "in this order": one task from it at a time.
-              Mode d only; mode p ignores it.
-  mention     a line naming a running task's id waits while that task runs. Only while it runs: a line saying
-              "follows A12" still starts if A12 hasn't started yet. Use a subtask or --after instead.
+    agent-runner plan add B646 "Bake the letter sheet"
+        -> B646a. B646, B646a, B646b never run at the same time, so they go one by one, top to bottom.
 
-Never started: [~] blocked, ### Stretch, a parent with open subtasks, a task already tried this run, a task whose
-branch is finished and waiting to merge, and in mode d a task naming a file a running task names.
+    agent-runner plan block B12 --after B646 "needs the new sheet"
+        -> B12 is blocked until B646 is done, then reopens by itself.
 
-Modes (runner.toml [run] mode, or --mode): p = strict top-to-bottom, files may overlap; d = different files.
-`run run --dry-run N` shows what N free slots would start, and why the rest wait.
+    A heading starting with "Next" or saying "in this order"
+        -> one task from that section at a time (mode d only; mode p ignores it).
+
+Choose what goes first:
+
+    agent-runner plan move B12 top            first in line
+    agent-runner plan move B12 after B646     right behind B646
+    agent-runner plan add B "Fix it" @ after B646
+
+Never started: blocked [~] tasks, ### Stretch, a task with open subtasks, a task that already failed this run,
+and a finished task waiting to merge. In mode d, also a task that names a file a running task names.
+
+Modes (runner.toml mode, or --mode): p = strictly top to bottom; d = only tasks on different files at once.
+
+    agent-runner run --dry-run 3      what 3 free agents would start now, and why the rest wait
 """
 
 

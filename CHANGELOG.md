@@ -4,6 +4,7 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## 0.6.4 (2026-10-21)
 
+- `agent-runner help` rewritten around real examples: running, adding tasks and subtasks, making one wait, finishing.
 - `help order` and the README's *What runs when*: the order tasks start in, and the three ways to make one wait
   for another (subtask, `--after`, an ordered section).
 
