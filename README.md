@@ -169,8 +169,23 @@ the branch is pushed after each task.
 `./run plan help` lists every subcommand: `next`, `<ID>`, `brief`, `tick`, `block`, `unblock`, `reopen`,
 `add`, `move`, `note`, `newid` and `archive`.
 
-A follow-up that needs a task to land first goes in as that task's subtask: `plan add L3 TEXT` gives `L3a`, then
-`L3b`. A family (L3, L3a, L3b) never runs side by side, so they run one at a time; a fresh number starts at once.
+## What runs when
+
+Each free slot reads `plan/TODO.md` from the top and starts the first task it's allowed to, so the order of the
+lines is the order of the work. `plan add` puts a new task at the top; `plan add PREFIX TEXT @ after ID` or
+`plan move ID after ID` puts it where you want it.
+
+Several slots run at once, so **a task that has to wait for another must say so in a way the runner reads**.
+Writing "follows A12" in its text isn't enough: if A12 hasn't started, the task starts beside it.
+
+| to make B wait for A | do this | what happens |
+|---|---|---|
+| B is part of A's work | `plan add A12 "…"` gives `A12a`, then `A12b` | one family (A12, A12a, A12b) never runs two tasks at once, so they go one at a time, top to bottom |
+| B needs A merged first | `plan block B3 --after A12 "why"` | B3 stays `[~]` until A12 is done, then the run reopens it |
+| a list that must go in order | a section heading starting with *Next* or saying *in this order* | one task from it runs at a time (mode d only) |
+
+A plain new number (`plan add A "…"`) is an independent task and may run beside anything. `agent-runner help order`
+prints this summary; `./run run --dry-run N` shows what N free slots would start now, and why the rest wait.
 
 ## Picking
 

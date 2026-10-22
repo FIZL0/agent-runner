@@ -2,6 +2,11 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
+## 0.6.4 (2026-10-21)
+
+- `help order` and the README's *What runs when*: the order tasks start in, and the three ways to make one wait
+  for another (subtask, `--after`, an ordered section).
+
 ## 0.6.3 (2026-10-21)
 
 - `plan add`/`newid` on a task's own id give its next subtask (L3 -> L3a, L3a -> L3a1), which runs after its
