@@ -238,6 +238,15 @@ or slot log says "resets 3pm"), the transcript is dropped, the task returns to t
 sleeps until the reset. Past `[run] weekly_max`% of the 7-day usage, no new task starts unless `--force`
 is given.
 
+**A cut-off session resumes.** A session whose turn ended on an API error (the network dropped, the
+API was down) is not finished, though the idle stop ends it. Its worktree is left as it is, and once the
+API answers again it is resumed in the same slot (`claude --resume`, with its whole conversation) and told
+it was cut off. While the API cannot be reached, no session resumes or starts. At startup, a slot still on
+`task/<ID>` whose session stopped mid-turn while no run was up (a reboot, the runner killed) is resumed
+the same way. A usage limit or a request the API refused is not a cut-off, and one session is resumed at
+most 3 times. `./run resume <ID>` resumes a task's last session by hand, for one the run already ended:
+when its slot is free, the edits it left come back from `wip/<ID>` (kept as `resumed/<ID>`).
+
 **Idle stop.** The Stop hook starts a detached timer; a session quiet for `[run] idle` seconds is ended.
 The timer does not fire on a session a human has typed into, or one waiting out a usage limit. Nor on
 one whose agent still has a child process (a background command), until it ends or
@@ -360,6 +369,7 @@ the running tasks merge. A run left up keeps picking up whatever you commit to T
 ./run done ID "MSG" [--blocked WHY [--after X,Y]] [--no-test] [--skip-check]
 ./run run [N|once] [--mode d|p] [--dry-run] [--no-tmux] [--mux tmux|wt|console|none] [--model M] [--idle S] [--stall S] [--pause S] [--force] [--shutdown]
 ./run stop                             finish what's running, start nothing new, exit (or s + Enter in the runner's pane)
+./run resume ID...                     continue each task's last session in its slot, once that slot is free
 ./run --version
 ```
 

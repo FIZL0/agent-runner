@@ -2,6 +2,16 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
+## 0.6.9 (2026-10-23)
+
+- A session cut off by an API error (the network dropped, `EAI_AGAIN`; the API down) is resumed in its own
+  slot with `claude --resume` once the API answers, instead of being ended, its edits parked on wip/ and
+  the task dropped for the run. At startup, a slot still on `task/<ID>` whose session stopped mid-turn
+  while no run was up (a reboot) is resumed the same way. At most 3 resumes per session; a usage limit or
+  a refused request is not a cut-off. No session starts or resumes while the API cannot be reached.
+- `resume <ID>…` resumes a task's last session by hand once its slot is free, bringing its edits back
+  from the wip/<ID> the runner saved.
+
 ## 0.6.8 (2026-10-23)
 
 - A tested merge that cannot land yet says why, once, in the log (with a bell): uncommitted edits in the

@@ -28,6 +28,7 @@ The README describes each mechanism. In short:
 * **one worktree per slot**, kept warm between tasks, with `[run] links` symlinked in;
 * **an idle stop** (the Stop hook): a finished session is ended once its transcript is quiet;
 * **a usage limit is not a failed task**: the transcript is dropped and the slot sleeps to the reset;
+* **a cut-off session resumes**: one ended by an API error (or, at startup, mid-turn) is resumed in its slot;
 * **a stall watchdog**: belled and logged, with the pane to attach to;
 * **merges in a merge worktree**: tested before the shared branch moves, so the main checkout never
   holds an untested merge and nobody's edits are stashed;
@@ -55,6 +56,7 @@ import os
 import re
 import shlex
 import shutil
+import socket
 import subprocess as sp
 import sys
 import tempfile
@@ -69,7 +71,7 @@ from agent_runner import plat
 # The library API a wrapping project may call; these change only in a major version. `cmd_run(argv)` and
 # `cmd_stop(argv)` are the commands; `PROMPT`, `FIXER` and `OTHERS` may be replaced before `cmd_run`.
 __all__ = ['init', 'cmd_run', 'cmd_stop', 'pick', 'tasks', 'prompt_for', 'reopen_landed', 'retry_reopened',
-           'ask_stop', 'stopping', 'PROMPT', 'FIXER', 'OTHERS']
+           'ask_stop', 'stopping', 'cmd_resume', 'PROMPT', 'FIXER', 'OTHERS']
 from agent_runner.config import RUNNER, Config, cfg, main_checkout, runner_cmd
 from agent_runner.done import gate
 from agent_runner.gitops import drop_if_merged, push
@@ -265,7 +267,7 @@ def pick(running: dict, tried: set, mode: str, branch: str):
     # A section whose heading says its tasks are ordered ("Next (in this order)") runs one task at a time:
     # its second task usually depends on the first having landed, whatever the files say.
     busy_sections = {b[1] for b in busy}
-    busy_ids = {b[0] for b in busy}
+    busy_ids = {b[0] for b in busy} | {q[0] for q in queued().values()}  # one waiting to resume is running
     shared = set(C.run['shared_files'])
     for tid, section, files, named in tasks(branch):
         if tid not in busy_ids and git('rev-list', '-1', f'{branch}..task/{tid}').stdout.strip():
@@ -419,16 +421,17 @@ def lean() -> list[str]:
         if C.run['lean'] else []
 
 
-def agent_flags(sid: str, model: str, idle: int) -> list[str]:
-    """Everything after the prompt. The Stop hook is this runner in --stop-hook mode."""
+def agent_flags(sid: str, model: str, idle: int, resume: bool = False) -> list[str]:
+    """Everything after the prompt. The Stop hook is this runner in --stop-hook mode. `resume` continues the
+    session `sid` instead of starting it (its transcript keeps the id)."""
     stop = [{'hooks': [{'type': 'command',
                         'command': plat.command_text([*runner_cmd(), 'run', '--stop-hook', '--idle', str(idle)])}]}]
-    return ['--session-id', sid, '--permission-mode', 'bypassPermissions',
+    return ['--resume' if resume else '--session-id', sid, '--permission-mode', 'bypassPermissions',
             '--disallowedTools', 'AskUserQuestion', '--model', model, *lean(),
             '--settings', json.dumps({'hooks': {'Stop': stop, 'StopFailure': stop}})]
 
 
-def agent_cmd(prompt: str, sid: str, model: str, idle: int, name: str) -> str:
+def agent_cmd(prompt: str, sid: str, model: str, idle: int, name: str, resume: bool = False) -> str:
     """The agent command line for one task, for sh (tmux, and the POSIX sequential run).
 
     The prompt goes through a file (`<notes>/<name>.prompt`), read by the shell that runs the command:
@@ -436,13 +439,13 @@ def agent_cmd(prompt: str, sid: str, model: str, idle: int, name: str) -> str:
     """
     pf = C.notes(f'{name}.prompt')
     pf.write_text(prompt, encoding='utf-8')
-    return shlex.quote(C.run['agent']) + f' "$(cat {shlex.quote(str(pf))})" ' + shlex.join(agent_flags(sid, model, idle))
+    return shlex.quote(C.run['agent']) + f' "$(cat {shlex.quote(str(pf))})" ' + shlex.join(agent_flags(sid, model, idle, resume))
 
 
 ARGV_PROMPT_MAX = 24000  # Windows' CreateProcess takes 32 767 characters, flags and paths included
 
 
-def agent_argv(prompt: str, sid: str, model: str, idle: int, name: str) -> list[str]:
+def agent_argv(prompt: str, sid: str, model: str, idle: int, name: str, resume: bool = False) -> list[str]:
     """The same command as an argv, for Windows, where no POSIX shell stands between us and the agent.
 
     The prompt is written to `<notes>/<name>.prompt` all the same. When it is too long for a Windows
@@ -453,7 +456,7 @@ def agent_argv(prompt: str, sid: str, model: str, idle: int, name: str) -> list[
     if len(prompt) > ARGV_PROMPT_MAX:
         prompt = (f'Your instructions for this session are in {pf.as_posix()}, too long to pass on a Windows '
                   f'command line. Read that whole file first, then follow it.')
-    return [plat.exe(C.run['agent']), prompt, *agent_flags(sid, model, idle)]
+    return [plat.exe(C.run['agent']), prompt, *agent_flags(sid, model, idle, resume)]
 
 
 def brief_for(tid: str, cwd: Path) -> str:
@@ -585,6 +588,48 @@ def start(n: int, task, branch: str, model: str, idle: int, slots: int):
     return pid, sid, since
 
 
+RESUME = """The runner resumed this session: it was cut off ({why}). Whatever you had running in the \
+background ended with it, and so did anything `[run] on_exit` stops. Look at `git status` and at what you \
+did last, then carry on with task {tid} where you left off and finish it as the first message of this \
+session says."""
+
+
+def resume(n: int, tid: str, sid: str, why: str, branch: str, model: str, idle: int):
+    """Continue the session `sid` of task `tid` in slot n, where it ran: its transcript names that worktree's
+    paths, so no other slot will do. A slot still on task/<tid> is used as it is; one that moved on gets the
+    task back from wip/<tid> (the edits the session left, saved when the slot was reset), uncommitted again.
+    """
+    d = worktree(n, branch)
+    head = git('symbolic-ref', '-q', '--short', 'HEAD', cwd=d).stdout.strip()
+    if head != f'task/{tid}':
+        if save_leftovers(d, head.removeprefix('task/') if head.startswith('task/') else f's{n}', branch) is None:
+            log(f'slot {n}: uncommitted edits there could not be saved; not resetting it to resume {tid}')
+            return None
+        git('reset', '-q', '--hard', cwd=d)
+        git('clean', '-fdq', cwd=d)
+        saved = git('log', '-1', '--format=%s', f'wip/{tid}', '--').stdout.startswith(f'{tid} wip: uncommitted')
+        src = f'wip/{tid}' if saved else f'task/{tid}'
+        if git('rev-parse', '--verify', '-q', src).returncode:
+            log(f'slot {n}: nothing of {tid} to resume from (no task/{tid}, and no wip/{tid} the runner saved)')
+            return None
+        if git('checkout', '-q', '-B', f'task/{tid}', src, cwd=d).returncode:
+            log(f'slot {n}: checkout task/{tid} failed; not resuming it')
+            return None
+        if saved:
+            git('reset', '-q', 'HEAD~1', cwd=d)  # the saved edits are uncommitted again, as the session left them
+            git('branch', '-M', src, f'resumed/{tid}')  # kept, but no longer read as an earlier attempt
+    logfile = C.notes(f'slot{n}.log')
+    since = logfile.stat().st_size if logfile.exists() else 0
+    with open(logfile, 'a', encoding='utf-8') as f:
+        f.write(f'\n=== {dt.datetime.now().isoformat(timespec="seconds")} {tid} resume {sid} ({why})\n')
+    if not (pid := MUX.open(n, d, RESUME.format(why=why, tid=tid), sid, model, idle, slot_env(n), logfile,
+                            resume=True)):
+        log(f'slot {n}: the session for {tid} did not resume in {MUX.where(n)}')
+        return None
+    log(f'slot {n}: {tid} resumed ({why})')
+    return pid, sid, since
+
+
 # --- terminals: one per slot -----------------------------------------------------
 
 class TmuxMux:
@@ -592,8 +637,8 @@ class TmuxMux:
     name = 'tmux'
 
     def open(self, n: int, cwd: Path, prompt: str, sid: str, model: str, idle: int, env: list[str],
-             logfile: Path) -> int | None:
-        return pane(f's{n}', cwd, agent_cmd(prompt, sid, model, idle, f'slot{n}'), env, logfile)
+             logfile: Path, resume: bool = False) -> int | None:
+        return pane(f's{n}', cwd, agent_cmd(prompt, sid, model, idle, f'slot{n}', resume), env, logfile)
 
     def panes(self) -> dict[str, tuple[str, int]]:
         return panes()
@@ -620,11 +665,11 @@ class ShimMux:
     def __init__(self, name: str):
         self.name = name
 
-    def open(self, n, cwd, prompt, sid, model, idle, env, logfile):
+    def open(self, n, cwd, prompt, sid, model, idle, env, logfile, resume=False):
         job, marker = C.notes(f'slot{n}.job'), C.notes(f'slot{n}.live')
         marker.unlink(missing_ok=True)
         envd = dict(e.split('=', 1) for e in env)
-        job.write_text(json.dumps({'argv': agent_argv(prompt, sid, model, idle, f'slot{n}'), 'cwd': str(cwd),
+        job.write_text(json.dumps({'argv': agent_argv(prompt, sid, model, idle, f'slot{n}', resume), 'cwd': str(cwd),
                                    'env': envd, 'marker': str(marker)}), encoding='utf-8')
         shim = [*runner_cmd(), 'run', '--slot-shim', str(job)]
         if self.name == 'wt':
@@ -653,7 +698,10 @@ class ShimMux:
                     args = json.loads(m.with_suffix('.job').read_text(encoding='utf-8'))['argv']
                 except (OSError, ValueError, KeyError):
                     return None
-                return args[args.index('--session-id') + 1] if '--session-id' in args[:-1] else None
+                for flag in ('--session-id', '--resume'):
+                    if flag in args[:-1]:
+                        return args[args.index(flag) + 1]
+                return None
         return None
 
     def where(self, n: int) -> str:
@@ -1283,6 +1331,119 @@ def stalled(pid: int, sid: str, limit: int) -> str | None:
     return None
 
 
+RESUMES_MAX = 3  # resumes of one session before a cut-off is taken for the end of it
+NOT_RESUMED = {'invalid_request', 'authentication_failed', 'billing_error', 'rate_limit'}  # would fail again
+
+
+def cut_off(sid: str, mid_turn: bool = False) -> str | None:
+    """Why the session ended without finishing its turn, else None. An API error ends a turn in Claude Code
+    and the idle stop then ends the session, though nothing was finished: the network dropped, or the API
+    was down. A usage limit or a request the API refused is not that. With `mid_turn`, also a transcript
+    that stops inside a turn: the machine went down under it. A finished session ends on a turn it ended."""
+    last = None
+    try:
+        with open(transcript(sid) or os.devnull, encoding='utf-8', errors='replace') as f:
+            for l in f:
+                try:
+                    d = json.loads(l)
+                except ValueError:
+                    continue
+                if d.get('type') in ('user', 'assistant') and not d.get('isSidechain') and not d.get('isMeta'):
+                    last = d
+    except OSError:
+        return None
+    if not last:
+        return None
+    m = last.get('message') if isinstance(last.get('message'), dict) else {}
+    if last.get('isApiErrorMessage'):
+        c = m.get('content')
+        text = c if isinstance(c, str) else ' '.join(x.get('text', '') for x in c or [] if isinstance(x, dict))
+        text = ' '.join(text.split())
+        if LIMIT.search(text) or last.get('error') in NOT_RESUMED:
+            return None
+        return text[:160] or f'API error {last.get("error")}'
+    if mid_turn and (last['type'] == 'user' or m.get('stop_reason') in (None, 'tool_use')):
+        return 'its transcript stops mid-turn'
+    return None
+
+
+def queued() -> dict[int, tuple[str, str, str]]:
+    """{slot: (task, session, why)}: the sessions waiting to resume, one `<notes>/<ID>.resume` each."""
+    out = {}
+    for f in C.notes().glob('*.resume'):
+        try:
+            q = json.loads(f.read_text(encoding='utf-8'))
+            out[int(q['slot'])] = (f.stem, q['sid'], q['why'])
+        except (OSError, ValueError, KeyError, TypeError):
+            continue
+    return out
+
+
+def queue_resume(tid: str, n: int, sid: str, why: str) -> None:
+    C.notes(f'{tid}.resume').write_text(json.dumps({'slot': n, 'sid': sid, 'why': why}), encoding='utf-8')
+
+
+HEADER = re.compile(r'^=== (\S+) (\S+) (?:session|resume) (\S+)')
+
+
+def resumes(n: int, sid: str) -> int:
+    """How often session `sid` has been resumed (its slot log's resume headers)."""
+    try:
+        with open(C.notes(f'slot{n}.log'), encoding='utf-8', errors='replace') as f:
+            return sum(1 for l in f if l.startswith('=== ') and f' resume {sid} ' in l)
+    except OSError:
+        return 0
+
+
+def last_session(tid: str) -> tuple[int, str] | None:
+    """(slot, session) of task `tid`'s latest session, from the slot logs' headers."""
+    best = None
+    for f in C.notes().glob('slot*.log'):
+        if not re.fullmatch(r'slot\d+', f.stem):
+            continue
+        with open(f, encoding='utf-8', errors='replace') as fh:
+            for l in fh:
+                if (m := HEADER.match(l)) and m.group(2) == tid and (not best or m.group(1) >= best[0]):
+                    best = (m.group(1), int(f.stem[4:]), m.group(3))
+    return best and best[1:]
+
+
+def queue_cut_off(branch: str, slots: list[int]) -> None:
+    """Startup: a slot still on task/<ID> whose session was cut off while no run was up (a reboot, the runner
+    killed, the network down at its exit) is queued to resume instead of being reset for a new task."""
+    open_ids = {m.group(1) for l in plan_text(branch) if (m := TASK.match(l))}
+    waiting = queued()
+    for n in slots:
+        if n in waiting or not (SLOTS_DIR / f's{n}').is_dir():
+            continue
+        tid = git('branch', '--show-current', cwd=SLOTS_DIR / f's{n}').stdout.strip().removeprefix('task/')
+        if tid not in open_ids or (last_session(tid) or (0,))[0] != n:
+            continue
+        sid = last_session(tid)[1]
+        if (why := cut_off(sid, mid_turn=True)) and resumes(n, sid) < RESUMES_MAX:
+            queue_resume(tid, n, sid, why)
+            log(f'slot {n}: {tid} was cut off while no run was up ({why}); it resumes there')
+
+
+_api = [-1e9, True]
+
+
+def api_up() -> bool:
+    """Whether the agent's API can be reached (a TCP connect), checked at most every 10 s. A session started
+    or resumed while it cannot be dies at its first call. True for another agent, or behind a proxy."""
+    if C.run['agent'] != 'claude' or any(os.environ.get(k) for k in ('HTTPS_PROXY', 'https_proxy')):
+        return True
+    if time.time() - _api[0] >= 10:
+        host = re.sub(r'^\w+://|[:/].*$', '', os.environ.get('ANTHROPIC_BASE_URL') or 'api.anthropic.com')
+        try:
+            socket.create_connection((host, 443), timeout=5).close()
+            _api[1] = True
+        except OSError:
+            _api[1] = False
+        _api[0] = time.time()
+    return _api[1]
+
+
 LIMIT = re.compile(r'limit\D{0,12}resets? (\d+(?::\d+)?\s?[ap]m)', re.I)
 
 
@@ -1634,7 +1795,8 @@ def run(argv: list[str], prog: str) -> int:
         procs[n], running[n] = proc, task
         free_at.setdefault(n, dt.datetime.min)
 
-    for tid in unmerged(branch, [n for n in free_at if n not in procs]):
+    queue_cut_off(branch, [n for n in range(1, slots + 1) if n not in procs])
+    for tid in unmerged(branch, [n for n in free_at if n not in procs and n not in queued()]):
         log(f'{tid}: finished while no run was up; merging it now')
         tried.add(tid)
         t = threading.Thread(target=finish, args=(tid, 0, '(unknown)', branch))
@@ -1645,17 +1807,26 @@ def run(argv: list[str], prog: str) -> int:
             reopen_landed(branch, 'a merge before this run')
 
     while True:
+        waiting = {n: q for n, q in queued().items() if n in free_at and n <= slots}
         for n in list(free_at):
             if n in procs and not alive(procs[n][0]):
                 (pid, sid, since), task = procs.pop(n), running.pop(n)
                 log(f'slot {n}: {task[0]} exited ({stats(sid)})')
-                if save_leftovers(d := SLOTS_DIR / f's{n}', task[0], branch):
-                    git('reset', '-q', '--hard', cwd=d)  # saved: the next start finds the slot clean
-                    git('clean', '-fdq', cwd=d)
                 if r['on_exit']:
                     sp.Popen(r['on_exit'], shell=True, cwd=str(SLOTS_DIR / f's{n}'),
                              env={**os.environ, **dict(e.split('=', 1) for e in slot_env(n))},
                              stdout=sp.DEVNULL, stderr=sp.DEVNULL)
+                if (why := cut_off(sid)) and n <= slots:
+                    if resumes(n, sid) < RESUMES_MAX:
+                        # its worktree stays as the session left it, on task/<ID>: the resume goes on there
+                        queue_resume(task[0], n, sid, why)
+                        log(f'slot {n}: {task[0]} was cut off ({why}); it resumes in this slot once the API answers')
+                        continue
+                    log(f'slot {n}: {task[0]} was cut off again ({why}) after {RESUMES_MAX} resumes; '
+                        f'taken as ended')
+                if save_leftovers(d := SLOTS_DIR / f's{n}', task[0], branch):
+                    git('reset', '-q', '--hard', cwd=d)  # saved: the next start finds the slot clean
+                    git('clean', '-fdq', cwd=d)
                 if reset := limit_only(sid, C.notes(f'slot{n}.log'), since):
                     free_at[n] = reset + dt.timedelta(seconds=pause)
                     log(f'slot {n}: {task[0]} only hit the usage limit; transcript dropped, the task goes '
@@ -1682,6 +1853,21 @@ def run(argv: list[str], prog: str) -> int:
                 continue
             if n > slots:
                 continue  # an adopted slot past this run's count: watched to the end, never refilled
+            if n not in procs and n in waiting:  # a running task, not a new one: no stop or usage cap holds it
+                if not api_up():
+                    if 'api' not in stall_said:
+                        stall_said.add('api')
+                        log('the API cannot be reached: nothing resumes or starts until it can')
+                    continue
+                stall_said.discard('api')
+                tid, sid, why = waiting.pop(n)
+                C.notes(f'{tid}.resume').unlink(missing_ok=True)
+                if p := resume(n, tid, sid, why, branch, model, idle):
+                    procs[n] = p
+                    running[n] = next((t for t in tasks(branch) if t[0] == tid), (tid, '', set(), set()))
+                    tried.add(tid)
+                    idle_said = False
+                continue
             if n not in procs and dt.datetime.now() >= free_at[n]:
                 if not stopping():
                     stop_said = False  # taken back (s again, or the STOP file removed)
@@ -1697,6 +1883,12 @@ def run(argv: list[str], prog: str) -> int:
                         cap_said = True
                     continue
                 cap_said = False
+                if not api_up():
+                    if 'api' not in stall_said:
+                        stall_said.add('api')
+                        log('the API cannot be reached: nothing resumes or starts until it can')
+                    continue
+                stall_said.discard('api')
                 if r['before_start'] and sp.run(r['before_start'], shell=True, cwd=str(ROOT),
                                                 capture_output=True).returncode:
                     if 'before_start' not in stall_said:
@@ -1721,12 +1913,14 @@ def run(argv: list[str], prog: str) -> int:
             REOPENED.clear()
         merging = [t for t in merging if t.is_alive()]
         take_keys()
-        if stopping() and not procs and not merging:  # a slot asleep until a usage reset does not hold it
+        waiting = {n: q for n, q in queued().items() if n in free_at and n <= slots}  # an exit may have queued one
+        # a slot asleep until a usage reset does not hold the stop; a session waiting to resume does
+        if stopping() and not procs and not waiting and not merging:
             how = stopped_by()
             C.notes('STOP').unlink(missing_ok=True)
             log(f'run stopped ({how}); tried this run: {", ".join(sorted(tried)) or "none"}')
             return 0
-        quiet = not procs and not merging and all(dt.datetime.now() >= t for t in free_at.values())
+        quiet = not procs and not waiting and not merging and all(dt.datetime.now() >= t for t in free_at.values())
         # Idle, never exit: tasks a human or a session commits later start without anyone restarting the
         # run. Logged once, and only with nothing running or merging, so no slot or finished branch is left
         # behind. A script waiting on the run
@@ -1742,6 +1936,36 @@ def run(argv: list[str], prog: str) -> int:
                 and not pick(running, tried, mode, branch) and shut_down(idle_at)):
             return 0
         time.sleep(10)
+
+
+def cmd_resume(argv: list[str], prog: str = f'{RUNNER} resume') -> int:
+    """`./run resume <ID>…`: continue a task's last session in its own slot, though the run already ended it."""
+    ap = argparse.ArgumentParser(prog=prog, description=
+        'Continue the last session of each task in the slot it ran in, with its whole conversation: for a '
+        'session cut off before the run could resume it by itself (an older runner, or past its resume limit). '
+        'The run resumes it once that slot is free; a slot that moved on gets the task back from the wip/<ID> '
+        'the runner saved, its edits uncommitted again.')
+    ap.add_argument('ids', nargs='+', metavar='ID')
+    a = ap.parse_args(argv)
+    init()
+    branch = default_branch()
+    open_ids = {m.group(1) for l in plan_text(branch) if (m := TASK.match(l))}
+    bad = 0
+    for tid in a.ids:
+        if tid not in open_ids:
+            print(f'{tid}: not an open task on {branch}', file=sys.stderr)
+        elif not (last := last_session(tid)):
+            print(f'{tid}: no session of it in the slot logs', file=sys.stderr)
+        elif not transcript(last[1]):
+            print(f'{tid}: the transcript of its session {last[1]} is gone', file=sys.stderr)
+        else:
+            queue_resume(tid, last[0], last[1], 'resumed by hand')
+            print(f'{tid}: session {last[1]} resumes in slot {last[0]} once that slot is free')
+            continue
+        bad += 1
+    if not bad and plat.lock(C.notes('run.lock')):
+        print(f'no run is up: it resumes when `{C.command} run` starts')
+    return 1 if bad else 0
 
 
 def cmd_stop(argv: list[str], prog: str = f'{RUNNER} stop') -> int:

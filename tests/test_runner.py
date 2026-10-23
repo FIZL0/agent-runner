@@ -768,6 +768,116 @@ def test_land_waits_aloud(repo: Path):
     eq((repo / '.runner/run.log').read_text().count('W1: tested, waiting'), 1, 'said once, not every 10 s')
 
 
+def test_resume(repo: Path, tmp: Path):
+    print('run: a session cut off by a dropped network or a reboot resumes in its own slot')
+    R.init(repo)
+    ts = {}
+    transcript, R.transcript = R.transcript, lambda sid: ts.get(sid)
+
+    def said(sid: str, *entries: dict) -> str:
+        ts[sid] = str(tmp / f'{sid}.jsonl')
+        Path(ts[sid]).write_text(''.join(json.dumps(e) + '\n' for e in entries), encoding='utf-8')
+        return sid
+
+    ask = {'type': 'user', 'message': {'role': 'user', 'content': 'do T2'}}
+    tool = {'type': 'assistant', 'message': {'stop_reason': 'tool_use', 'content': [{'type': 'tool_use'}]}}
+    result = {'type': 'user', 'message': {'role': 'user', 'content': [{'type': 'tool_result'}]}}
+    end = {'type': 'assistant', 'message': {'stop_reason': 'end_turn', 'content': [{'type': 'text', 'text': 'done'}]}}
+
+    def error(text: str, kind: str = 'server_error') -> dict:
+        return {'type': 'assistant', 'isApiErrorMessage': True, 'error': kind,
+                'message': {'stop_reason': 'stop_sequence', 'content': [{'type': 'text', 'text': text}]}}
+
+    dns = "API Error: Can't reach the API server — check your internet or DNS (EAI_AGAIN)"
+    try:
+        has(R.cut_off(said('net', ask, tool, result, error(dns))) or '', 'EAI_AGAIN',
+            'an API error that ended the turn is a cut-off, and says what the API said')
+        eq(R.cut_off(said('fin', ask, tool, result, end)), None, 'a turn that ended is not')
+        eq(R.cut_off(said('lim', ask, error("You've hit your limit · resets 3pm", 'rate_limit'))), None,
+           'nor is a usage limit (the slot sleeps to the reset instead)')
+        eq(R.cut_off(said('bad', ask, error('prompt is too long', 'invalid_request'))), None,
+           'nor a request the API refused, which would fail again')
+        eq(R.cut_off(said('mid', ask, tool, result)), None, 'a transcript that stops mid-turn is no cut-off ...')
+        has(R.cut_off('mid', mid_turn=True) or '', 'mid-turn', '... but at startup it is: the machine went down')
+        flags = R.agent_flags('net', 'opus', 90, resume=True)
+        check(flags[:2] == ['--resume', 'net'] and '--session-id' not in flags,
+              'a resume passes --resume <id> and no --session-id, which Claude Code refuses beside it', flags)
+
+        # T2 was cut off in slot 2, and the run then saved its edits on wip/T2 and gave the slot to T5
+        d = task_branch(repo, 2, 'T2')
+        (C := R.C.notes('slot2.log')).write_text('\n=== 2026-10-23T08:00:00 T2 session net\n', encoding='utf-8')
+        eq(R.last_session('T2'), (2, 'net'), 'the slot logs name the session and its slot')
+        (d / 'b.py').write_text('# b, half done\n', encoding='utf-8')
+        (d / 'new.py').write_text('# new\n', encoding='utf-8')
+        eq(R.save_leftovers(d, 'T2', 'main'), 'wip/T2', '(the old runner saved them on wip/T2)')
+        git(d, 'reset', '-q', '--hard')
+        git(d, 'clean', '-fdq')
+        git(d, 'checkout', '-q', '-B', 'task/T5', 'main')
+        git(repo, 'branch', '-D', 'task/T2')
+        R.queue_resume('T2', 2, 'net', 'resumed by hand')
+        eq(R.queued(), {2: ('T2', 'net', 'resumed by hand')}, 'a queued resume is kept in the notes')
+        check('T2' not in [t[0] for t in [R.pick({}, set(), 'p', 'main')] if t], 'and no slot starts that task afresh')
+        opened = []
+
+        class Mux:
+            name = 'fake'
+
+            def open(self, *a, **kw):
+                opened.append((a, kw))
+                return 4242
+
+            def where(self, n):
+                return f'slot {n}'
+
+        mux, R.MUX = R.MUX, Mux()
+        try:
+            got = R.resume(2, 'T2', 'net', 'resumed by hand', 'main', 'opus', 90)
+        finally:
+            R.MUX = mux
+        eq(got[:2], (4242, 'net'), 'resume opens the session in its own slot')
+        check(opened and opened[0][1].get('resume') is True and opened[0][0][1] == d,
+              'with --resume, in the worktree the transcript names', opened)
+        has(opened[0][0][2], r'cut off \(resumed by hand\).*task T2', 'and a first turn that says what happened')
+        eq(git(d, 'branch', '--show-current'), 'task/T2', 'the slot is back on task/T2')
+        eq((git(d, 'rev-parse', 'HEAD'), (d / 'b.py').read_text(), (d / 'new.py').read_text()),
+           (git(repo, 'rev-parse', 'main'), '# b, half done\n', '# new\n'),
+           'with the saved edits uncommitted again, as the session left them')
+        check(git(repo, 'branch', '--list', 'wip/T2') == '' and git(repo, 'branch', '--list', 'resumed/T2') != '',
+              'wip/T2 is kept as resumed/T2, so no later attempt reads it as a failed one')
+        has(C.read_text(), r'=== \S+ T2 resume net \(resumed by hand\)', 'the slot log has a resume header')
+        eq(R.resumes(2, 'net'), 1, 'which counts the resumes, against RESUMES_MAX')
+        eq(R.last_session('T2'), (2, 'net'), 'and the session is still the one a later resume finds')
+
+        # a reboot: the session in slot 2 stopped mid-turn and no run saw it end
+        R.C.notes('T2.resume').unlink()
+        said('net', ask, tool, result)
+        R.queue_cut_off('main', [1, 2, 3])
+        eq(R.queued(), {2: ('T2', 'net', 'its transcript stops mid-turn')}, 'at startup a slot cut off mid-turn is queued')
+        has((repo / '.runner/run.log').read_text(), r'slot 2: T2 was cut off while no run was up', 'and logged')
+        R.C.notes('T2.resume').unlink()
+        said('net', ask, tool, result, end)
+        R.queue_cut_off('main', [2])
+        eq(R.queued(), {}, 'one that ended its turn is left to the merge')
+        eq(run(repo, 'resume', 'T9').returncode, 1, '`resume` refuses a task that is not open')
+        has(run(repo, 'resume', 'T2').stderr, 'transcript of its session net is gone',
+            '`resume` refuses a session whose transcript is gone (this process alone has the fakes)')
+        here = os.getcwd()
+        os.chdir(repo)
+        try:
+            eq(R.cmd_resume(['T2']), 0, '`resume T2` queues it')
+        finally:
+            os.chdir(here)
+        eq(R.queued(), {2: ('T2', 'net', 'resumed by hand')}, 'for slot 2, where it ran')
+        R.C.notes('T2.resume').unlink()
+    finally:
+        R.transcript = transcript
+        git(d, 'reset', '-q', '--hard')
+        git(d, 'clean', '-fdq')
+        git(d, 'checkout', '-q', '--detach')
+        git(repo, 'branch', '-D', 'task/T2', 'task/T5', 'resumed/T2')
+        R.C.notes('slot2.log').unlink(missing_ok=True)
+
+
 def main() -> int:
     with tempfile.TemporaryDirectory() as t:
         tmp = Path(t)
@@ -778,7 +888,8 @@ def main() -> int:
                        lambda: test_hooks(repo, tmp), lambda: test_gate_and_batches(repo),
                        lambda: test_platform(repo, tmp), lambda: test_shutdown(repo), lambda: test_merge_into(tmp),
                        lambda: test_leftovers(repo), lambda: test_renumber(repo),
-                       lambda: test_stop_waiter(tmp), lambda: test_land_waits_aloud(repo)])
+                       lambda: test_stop_waiter(tmp), lambda: test_land_waits_aloud(repo),
+                       lambda: test_resume(repo, tmp)])
 
 
 if __name__ == '__main__':
