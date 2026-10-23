@@ -620,7 +620,7 @@ def save_leftovers(d: Path, tid: str, branch: str) -> str | None:
     os.close(fd)
     env = {**os.environ, 'GIT_INDEX_FILE': idx}
     try:
-        g = lambda *a: sp.run(['git', *a], cwd=str(d), capture_output=True, text=True, env=env)
+        g = lambda *a: sp.run(['git', *a], cwd=str(d), capture_output=True, encoding='utf-8', errors='replace', env=env)
         if g('read-tree', 'HEAD').returncode or g('add', '-A').returncode:
             return None
         tree = g('write-tree').stdout.strip()
@@ -912,7 +912,8 @@ def renumber_doubles(ref: str, onto: str, tid: str, cwd: Path) -> str:
     pat = re.compile(r'\b(' + '|'.join(map(re.escape, new)) + r')\b')
     idx = C.notes('renumber.index')
     env = {**os.environ, 'GIT_INDEX_FILE': str(idx)}
-    g = lambda *a, **kw: sp.run(['git', *a], cwd=str(cwd), env=env, capture_output=True, text=True, **kw)
+    g = lambda *a, **kw: sp.run(['git', *a], cwd=str(cwd), env=env, capture_output=True, encoding='utf-8',
+                                errors='replace', **kw)
     try:
         g('read-tree', ref)
         for f in files:
@@ -1839,7 +1840,7 @@ def run(argv: list[str], prog: str) -> int:
                     f'session ({k + 1}/{RESUME_MAX})')
                 if new := resume(n, pid, sid, running[n][0], model, idle):
                     procs[n] = (new, sid, since)
-                    stall_said.discard(sid)
+                    stall_said.add(sid)  # its transcript is still old until the resumed session writes
             if n in procs and not alive(procs[n][0]):
                 (pid, sid, since), task = procs.pop(n), running.pop(n)
                 log(f'slot {n}: {task[0]} exited ({stats(sid)})')

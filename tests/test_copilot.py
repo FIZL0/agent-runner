@@ -114,6 +114,19 @@ def test_utf8_merge(tmp: Path):
     text = (d / 'plan/TODO.md').read_text(encoding='utf-8')
     check('“open”' in text and '**A2** two ·' in text and '**A3** three …' in text,
           'with both lines and the text unchanged', text)
+    git(d, 'merge', '--abort')
+
+    print('windows: a task id both sides gave away is renumbered, non-ASCII text intact')
+    git(d, 'checkout', '-qb', 'task/A4', 'main~1')
+    (d / 'plan/TODO.md').write_text(head + '- [ ] **A1** one → a.py\n- [ ] **A3** other “thing” → d.py\n',
+                                    encoding='utf-8')
+    git(d, 'commit', '-qam', 'A4 files A3')
+    git(d, 'checkout', '-q', 'main')
+    ref = R.renumber_doubles('task/A4', 'main', 'A4', d)
+    check(ref != 'task/A4', 'the branch gets a renumbering commit')
+    shown = R.git('show', f'{ref}:plan/TODO.md', cwd=d).stdout
+    check('**A4** other “thing” → d.py' in shown or '**A5** other “thing” → d.py' in shown,
+          'its A3 has a new id and its text is unchanged', shown)
 
 
 def test_shim_once(repo: Path, tmp: Path):
