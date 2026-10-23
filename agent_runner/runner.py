@@ -906,14 +906,45 @@ hold, keep the one that matches {branch}'s current direction and say so.
 2. Change nothing the merge did not touch. You are not reviewing the code and you are not doing task \
 {tid}'s work: a conflict is all that is in front of you. Never hand-edit a task checkbox; if a side ticked \
 or blocked a task by hand, keep the plan tool's form of it.
-3. Then `git commit --no-edit` to land the merge, and stop. Do not push. Do not run the test suite: the \
-runner runs it as soon as you are done. Do not merge, rebase or delete anything else, do not `git stash`, \
-and do not touch the other worktrees under {slots_dir}.
+{build_step}3. Then `git commit --no-edit` to land the merge, and stop. Do not push. Do not run the test suite: \
+the runner runs it as soon as you are done. Do not merge, rebase or delete anything else, do not \
+`git stash`, and do not touch the other worktrees under {slots_dir}.
 4. If it cannot be resolved honestly — the two sides contradict each other and picking needs a human — run \
 `git merge --abort` and say why in one line. That is a real answer, not a failure.
 
 What happened on earlier merges in this run (the ledger's tail):
 {history}
+"""
+
+
+BUILD_STEP = """3a. Before you commit, run `{build}` (a build, not the tests). Git merged every file it did not stop on \
+without reading it, so the two sides can clash there too: a function or item both added under one name, a \
+caller of something the other side renamed or removed. Fix what the build reports that the merge caused, \
+in the fewest lines and keeping both sides, and build again until it passes. An error {branch} already has \
+is not yours: leave it.
+"""
+
+REPAIR = """The merge of task/{tid} into {branch} is committed in this checkout (as {merge}), and the test gate fails on \
+it. task/{tid} passed the gate on its own before it was merged, so the likely cause is a clash between the \
+two sides that git merged without a conflict: an item both added under one name, a caller of something the \
+other side renamed or removed, a test that checks what the other side changed on purpose. Repair it. \
+Nobody will answer questions: decide, and say what you decided.
+
+The gate's output ends with this (all of it is in {log}):
+
+{tail}
+
+1. `git diff {merge}^1 {merge} --stat` (what task/{tid} brought) and `git diff {merge}^2 {merge} --stat` \
+(what {branch} brought) show the two sides. Find where they meet.
+2. Fix the clash in the fewest lines, so that **both sides' intent survives**. Change nothing the clash \
+does not need. You are not reviewing the code and you are not redoing task {tid}. A test one side wrote \
+for behaviour the other side changed on purpose is updated to the merged behaviour, and you say so.
+3. {check}Then commit the fix on top of the merge: `git add` what you changed and \
+`git commit -m "{tid}: repair the merge into {branch}: <what clashed>"`. Do not amend or reset the \
+merge, do not push, do not merge, rebase or delete anything else, do not `git stash`, and do not touch \
+the other worktrees under {slots_dir}. The runner runs the whole gate again when you are done.
+4. If it is not a clash you can fix honestly (the failure is {branch}'s own, the two sides contradict each \
+other and picking needs a human), commit nothing and say why in one line. That is a real answer.
 """
 
 
@@ -939,7 +970,8 @@ def fix_merge(tid: str, branch: str, files: list[str], cwd: Path) -> str | None:
     led = C.notes('ledger.md')
     history = ''.join(led.read_text(encoding='utf-8').splitlines(True)[-12:]) if led.exists() else ''
     prompt = FIXER.format(tid=tid, branch=branch, files='\n'.join(f'  {f}' for f in files),
-                          slots_dir=SLOTS_DIR, history=history.strip() or '(nothing yet: this is the first)')
+                          slots_dir=SLOTS_DIR, history=history.strip() or '(nothing yet: this is the first)',
+                          build_step=BUILD_STEP.format(build=C.run['build'], branch=branch) if C.run['build'] else '')
     logfile = C.notes('fixer.log')
     log(f'{tid}: conflicts in {", ".join(files)} need reading — handing them to a fix session')
     with open(logfile, 'a', encoding='utf-8') as fh:
@@ -959,6 +991,50 @@ def fix_merge(tid: str, branch: str, files: list[str], cwd: Path) -> str | None:
         return f'the fix session aborted the merge; its reason is in {logfile}'
     note(f'{tid}: conflicts in {", ".join(files)} resolved by a fix session')
     log(f'{tid}: the fix session resolved {", ".join(files)} and committed the merge')
+    return None
+
+
+def repair_merge(tid: str, branch: str, cwd: Path) -> str | None:
+    """Give a committed merge that fails the gate to a fresh agent session in `cwd`. None when it committed
+    a repair on top of the merge (the caller runs the gate again), else why not.
+
+    Like `fix_merge`: one session, under the merge lock, never fatal. It reads the gate's full output in
+    `<notes>/merge-gate.log`, which `tested` wrote; the prompt carries the tail.
+    """
+    if not C.run['repair_merges']:
+        return 'off ([run] repair_merges)'
+    gate_log = C.notes('merge-gate.log')
+    out = gate_log.read_text(encoding='utf-8') if gate_log.exists() else '(no gate output kept)'
+    merge = git('log', '-1', '--merges', '--first-parent', '--format=%h', cwd=cwd).stdout.strip()
+    tail = '\n'.join('    ' + l for l in out.splitlines()[-60:])
+    r = C.run
+    check = (f'Check it with `{r["build"]}` and, if the gate names failing tests, the gate for just those '
+             f'({r["retest"] or r["test"]}). ' if r['build'] else
+             f'Check it with the failing tests alone if you can; not the whole gate (`{r["test"]}`). ')
+    prompt = REPAIR.format(tid=tid, branch=branch, log=gate_log, tail=tail, check=check, slots_dir=SLOTS_DIR,
+                           merge=merge)
+    before = git('rev-parse', 'HEAD', cwd=cwd).stdout.strip()
+    logfile = C.notes('fixer.log')
+    log(f'{tid}: the merge fails the gate — handing it to a repair session')
+    with open(logfile, 'a', encoding='utf-8') as fh:
+        fh.write(f'\n=== {dt.datetime.now().isoformat(timespec="seconds")} {tid} repair (gate failed)\n')
+        fh.flush()
+        try:
+            sp.run(fix_cmd(prompt), cwd=str(cwd), stdout=fh, stderr=sp.STDOUT, stdin=sp.DEVNULL,
+                   timeout=r['fix_timeout'])
+        except FileNotFoundError:
+            return f'no agent command to repair it with ([run] agent = {r["agent"]!r})'
+        except sp.TimeoutExpired:
+            return f'the repair session ran past {r["fix_timeout"]}s'
+    head = git('rev-parse', 'HEAD', cwd=cwd).stdout.strip()
+    if head == before:
+        return f'the repair session committed nothing; its reason is in {logfile}'
+    if git('merge-base', '--is-ancestor', before, head, cwd=cwd).returncode:
+        return f'the repair session rewrote the merge instead of committing on top; see {logfile}'
+    if git('status', '--porcelain', '--untracked-files=no', cwd=cwd).stdout.strip():
+        return f'the repair session left edits uncommitted; see {logfile}'
+    log(f'{tid}: the repair session committed {git("rev-list", "--count", f"{before}..{head}", cwd=cwd).stdout.strip()} '
+        f'fix(es) on the merge: {git("log", "-1", "--format=%s", cwd=cwd).stdout.strip()[:200]}')
     return None
 
 
@@ -983,6 +1059,7 @@ def tested(tid: str, d: Path, base: str) -> str | None:
     rc, out = gate(d, full=True, env=env)
     if not rc:
         return None
+    C.notes('merge-gate.log').write_text(out + '\n', encoding='utf-8')  # for a repair session
     if rc in (130, -2):  # the run's Ctrl-C reached the gate: the main thread exits the process within moments
         threading.Event().wait(5)  # still here, so it was not the run's: a gate that exits 130 is a failure
     why = 'the tests fail after the merge: ' + ' / '.join(out.splitlines()[-4:])[:400]
@@ -1078,6 +1155,8 @@ def merge_batch(tid: str, branch: str) -> str | None:
     """`merge`'s part under the lock: build, test and land task/<tid> and its riders; record them in LANDED."""
     d = worktree('merge', branch)
     solo = not C.run['batch']
+    repairs: list[str] = []  # a repair session's commits, replayed when the merge is built again
+    repaired = False
     try:
         for attempt in range(3):
             git('merge', '--abort', cwd=d), git('reset', '-q', '--hard', cwd=d), git('clean', '-fdq', cwd=d)
@@ -1112,6 +1191,10 @@ def merge_batch(tid: str, branch: str) -> str | None:
                 riders.append(t)
             if riders:
                 log(f'{tid}: merging together with {", ".join(riders)} (one gate run)')
+            if repairs and git('cherry-pick', '--allow-empty', *repairs, cwd=d).returncode:
+                git('cherry-pick', '--abort', cwd=d)
+                log(f'{tid}: the repair no longer applies to the merge; testing it without')
+                repairs = []
             P._cache.clear()
             P.archive(d / plan_rel('TODO.md'), d / plan_rel('DONE.md'))
             plan_files = [plan_rel('TODO.md'), plan_rel('DONE.md')]
@@ -1126,7 +1209,18 @@ def merge_batch(tid: str, branch: str) -> str | None:
                         log(f'{tid}: the batch fails the gate; {tid} again alone, the others in their own turns')
                         solo = True
                         continue
-                    return why
+                    if repaired:
+                        return why + (' (after a repair session)' if repairs else '')
+                    repaired = solo = True  # a rebuild replays the repair onto this task alone
+                    before = merged
+                    if not_fixed := repair_merge(tid, branch, d):
+                        note(f'{tid}: no repair: {not_fixed}')
+                        return why
+                    repairs = git('rev-list', '--reverse', f'{before}..HEAD', cwd=d).stdout.split()
+                    merged = git('rev-parse', 'HEAD', cwd=d).stdout.strip()
+                    if why := tested(tid, d, base):
+                        return why + ' (after a repair session)'
+                    note(f'{tid}: the merge failed the gate; a repair session fixed it')
             moved = git('diff', '--name-only', base, branch).stdout.split()
             if attempt < 2 and not all(map(untestable, moved)):
                 log(f'{tid}: {branch} got code commits during the tests; testing the merge again')

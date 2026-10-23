@@ -102,6 +102,9 @@ DEFAULTS: dict = {
         'fix_merges': True,     # give a conflict the join cannot do to a one-shot agent session
         'fix_model': 'opus',
         'fix_timeout': 1800,
+        'build': '',            # a quick build, not the gate: a fix session runs it before it commits, so a
+                                # clash git merged without a conflict (one name defined twice) is caught there
+        'repair_merges': True,  # a merge that fails the gate gets one session to repair it before it is parked
     },
     'git': {
         'push': 'origin',       # where finished work goes; false turns every push off

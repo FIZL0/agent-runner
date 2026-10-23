@@ -45,10 +45,20 @@ TODO = """# TODO
 """
 
 FAKE_AGENT = r'''#!/usr/bin/env python3
-# A stand-in for `claude -p`: FAKE_FIX=theirs resolves a merge with the branch's side, =abort gives up.
-import os, subprocess
+# A stand-in for `claude -p`: FAKE_FIX=theirs resolves a merge with the branch's side, =abort gives up,
+# =repair removes BROKEN in a commit on top. FAKE_PROMPT names a file to write the prompt to.
+import os, subprocess, sys
 g = lambda *a: subprocess.run(['git', *a], capture_output=True, text=True)
-if os.environ.get('FAKE_FIX') == 'theirs':
+if os.environ.get('FAKE_PROMPT'):
+    open(os.environ['FAKE_PROMPT'], 'w').write(sys.argv[sys.argv.index('-p') + 1])
+if os.environ.get('FAKE_FIX') == 'repair':
+    g('rm', '-q', 'BROKEN'); g('commit', '-qm', 'repair: drop BROKEN')
+    if os.environ.get('FAKE_MAIN'):  # main moves while it works: the merge is built again, the repair replayed
+        open(os.path.join(os.environ['FAKE_MAIN'], 'moved.txt'), 'w').write('x\n')
+        subprocess.run(['git', 'add', 'moved.txt'], cwd=os.environ['FAKE_MAIN'])
+        subprocess.run(['git', 'commit', '-qm', 'main: moved'], cwd=os.environ['FAKE_MAIN'])
+    print('the two sides clashed in BROKEN')
+elif os.environ.get('FAKE_FIX') == 'theirs':
     for f in g('diff', '--name-only', '--diff-filter=U').stdout.split():
         g('checkout', '--theirs', '--', f); g('add', f)
     g('commit', '-q', '--no-edit')
@@ -263,7 +273,8 @@ def test_conflicts(repo: Path, tmp: Path):
     agent = tmp / 'fake-agent'
     agent.write_text(FAKE_AGENT, encoding='utf-8')
     agent.chmod(0o755)
-    R.C.run['agent'] = str(agent)
+    R.C.run['agent'], R.C.run['build'] = str(agent), 'make quick'
+    os.environ['FAKE_PROMPT'] = str(tmp / 'fix-prompt.txt')
     for n, tid, mode in ((2, 'T3', 'theirs'), (3, 'T6', 'abort')):
         f = 'a.py' if tid == 'T3' else 'c.py'
         d = task_branch(repo, n, tid)
@@ -277,6 +288,8 @@ def test_conflicts(repo: Path, tmp: Path):
         R.finish(tid, n, 'sid', 'main')
     led = (repo / '.runner/ledger.md').read_text()
     has(led, r'T3: conflicts in a\.py resolved by a fix session', 'T3: the fix session resolved it')
+    has((tmp / 'fix-prompt.txt').read_text(), r'run `make quick` \(a build, not the tests\)',
+        'with [run] build, the fix session builds before it commits')
     eq((repo / 'a.py').read_text(), '# T3 version\n', 'and its resolution landed on main')
     has(led, r'T6: LEFT FOR A HUMAN — the fix session aborted', 'T6: the fix session gave up, and the ledger says so')
     eq((repo / 'c.py').read_text(), '# main version of c.py\n', 'main is as it was')
@@ -288,7 +301,59 @@ def test_conflicts(repo: Path, tmp: Path):
     has(p, r'An earlier attempt .* on wip/T6', 'its next prompt points at the earlier attempt')
     has(p, r'## Task T6', 'and carries the brief')
     os.environ.pop('FAKE_FIX', None)
-    R.C.run['agent'] = 'claude'
+    os.environ.pop('FAKE_PROMPT', None)
+    R.C.run['agent'], R.C.run['build'] = 'claude', ''
+
+
+def test_repair(repo: Path, tmp: Path):
+    print('run: a merge that fails the gate gets one repair session; one that commits nothing is parked')
+    R.init(repo)
+    agent = tmp / 'fake-agent'
+    agent.write_text(FAKE_AGENT, encoding='utf-8')
+    agent.chmod(0o755)
+    seen = tmp / 'prompt.txt'
+    R.C.run['agent'], R.C.run['build'] = str(agent), 'python3 -c "print(1)"'
+    os.environ['FAKE_PROMPT'] = str(seen)
+
+    def on_main(name: str) -> None:  # main moves on, so the merge differs from what the branch's done gated
+        (repo / name).write_text('x\n', encoding='utf-8')
+        git(repo, 'add', name), git(repo, 'commit', '-qm', f'main: {name}')
+    try:
+        commit_on(repo, 'R1', {'BROKEN': ''}, 'R1: breaks the gate only merged')
+        on_main('r1.txt')
+        os.environ['FAKE_FIX'], os.environ['FAKE_MAIN'] = 'repair', str(repo)
+        eq(R.merge('R1', 'main'), None, 'a repair session that fixes the merge lands it')
+        os.environ.pop('FAKE_MAIN')
+        check(not (repo / 'BROKEN').exists() and (repo / 'moved.txt').exists(),
+              'with its fix on main, replayed onto main\'s commit made meanwhile')
+        eq((repo / '.runner/run.log').read_text().count('R1: the merge fails the gate'), 1,
+           'one session: the rebuilt merge passes with the replayed repair')
+        has(git(repo, 'log', '-3', '--format=%s', 'main'), r'repair: drop BROKEN', 'as a commit of its own')
+        has(seen.read_text(), r'test gate fails on it', 'the session was told the gate fails')
+        has(seen.read_text(), r'python3 -c "print\(1\)"', 'and to check with [run] build')
+        has((repo / '.runner/ledger.md').read_text(), r'R1: the merge failed the gate; a repair session fixed it',
+            'the ledger says so')
+
+        commit_on(repo, 'R2', {'BROKEN': ''}, 'R2: breaks the gate too')
+        on_main('r2.txt')
+        os.environ['FAKE_FIX'] = 'abort'
+        has(R.merge('R2', 'main') or '', r'tests fail after the merge', 'one the session cannot repair stays unmerged')
+        has((repo / '.runner/ledger.md').read_text(), r'R2: no repair: the repair session committed nothing',
+            'and the ledger says why')
+        check(not (repo / 'BROKEN').exists(), 'main is as it was')
+        git(repo, 'branch', '-D', 'task/R2')
+
+        R.C.run['repair_merges'] = False
+        commit_on(repo, 'R3', {'BROKEN': ''}, 'R3: breaks the gate')
+        on_main('r3.txt')
+        seen.unlink()
+        has(R.merge('R3', 'main') or '', r'tests fail after the merge', 'repair_merges off: parked at the first failure')
+        check(not seen.exists(), 'with no session')
+        git(repo, 'branch', '-D', 'task/R3')
+    finally:
+        for k in ('FAKE_FIX', 'FAKE_PROMPT', 'FAKE_MAIN'):
+            os.environ.pop(k, None)
+        R.C.run.update(agent='claude', build='', repair_merges=True)
 
 
 def test_prompt_and_hooks(repo: Path):
@@ -884,7 +949,8 @@ def main() -> int:
         repo = make_repo(tmp)
         return report([lambda: test_picking(repo), lambda: test_split_parents(repo), lambda: test_done(repo, tmp), lambda: test_merge(repo, tmp),
                        lambda: test_retry(repo), lambda: test_unmerged(repo),
-                       lambda: test_conflicts(repo, tmp), lambda: test_prompt_and_hooks(repo),
+                       lambda: test_conflicts(repo, tmp), lambda: test_repair(repo, tmp),
+                       lambda: test_prompt_and_hooks(repo),
                        lambda: test_hooks(repo, tmp), lambda: test_gate_and_batches(repo),
                        lambda: test_platform(repo, tmp), lambda: test_shutdown(repo), lambda: test_merge_into(tmp),
                        lambda: test_leftovers(repo), lambda: test_renumber(repo),

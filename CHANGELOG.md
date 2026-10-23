@@ -2,6 +2,18 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
+## 0.6.10 (2026-10-23)
+
+- A merge that fails the gate gets one repair session before it is parked as wip/<ID>: a one-shot session
+  like the fix session's, on the committed merge, with the gate's output (`.runner/merge-gate.log`). It
+  commits a fix on top or says why not; the gate runs once more, and a second failure parks the branch as
+  before. A clash git merges without a conflict (both sides adding one name, a caller of something the
+  other side renamed) used to cost the whole task a fresh attempt. The repair is replayed when the merge is
+  built again because the shared branch moved. `[run] repair_merges = false` turns it off.
+- `[run] build`: a quick build (not the gate) the fix session runs before it commits, fixing what the two
+  sides broke between them in files git merged on its own. Its prompt used to forbid any check, so it
+  committed merges that did not compile.
+
 ## 0.6.9 (2026-10-23)
 
 - A session cut off by an API error (the network dropped, `EAI_AGAIN`; the API down) is resumed in its own

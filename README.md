@@ -302,7 +302,17 @@ A conflict the line join cannot resolve goes to one `claude -p` session, run in 
 the conflict in place. Its prompt (`FIXER` in `runner.py`) includes the tail of the ledger. It either
 commits the resolution or runs `git merge --abort` and states why; its output goes to
 `.runner/fixer.log`. The merge lock is held while it runs, and it is capped at `[run] fix_timeout`
-(30 min). Set `fix_merges = false` to park every such conflict as `wip/<ID>` instead.
+(30 min). Set `fix_merges = false` to park every such conflict as `wip/<ID>` instead. With `[run] build`
+set, the fix session runs it before it commits and fixes what the two sides broke between them: git
+merges the files it did not stop on without reading them, so a function both sides added under one name
+builds on neither side's branch and breaks only the merge.
+
+A merge that fails the gate (and not because of load, or a failure its base has too) gets one repair
+session before it is parked: the same kind of session, in the merge worktree on the committed merge, with
+the gate's output (`.runner/merge-gate.log`). It commits a fix on top, or nothing and says why. The gate
+then runs once more; a second failure parks the branch as before. A repair is replayed onto the merge when
+the shared branch moves during the tests and the merge is built again. `repair_merges = false` parks at
+the first failure.
 
 ## Working with it well
 
@@ -431,6 +441,8 @@ joinable = ["plan/TODO.md", "plan/DONE.md"]   # globs of record-per-line files a
 fix_merges = true
 fix_model = "opus"
 fix_timeout = 1800
+build = ""                # a quick build a fix or repair session runs before it commits (not the gate)
+repair_merges = true      # a merge failing the gate gets one repair session before it is parked
 
 [run.join]                # glob = a command that joins a conflict in that file itself:
 # "data/addresses.txt" = "./tools/join {union} {out}"   # also {ours} {base} {theirs} {file}; exit 0 keeps {out}
