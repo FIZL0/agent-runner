@@ -444,7 +444,8 @@ def files_on_line(text: str, root=None) -> list[str]:
 def _tracked(root) -> list[str]:
     """Every tracked path, from git; a filesystem walk when this isn't a git checkout (tests, a fresh copy)."""
     try:
-        r = subprocess.run(['git', 'ls-files'], cwd=str(root), capture_output=True, text=True, timeout=20)
+        r = subprocess.run(['git', 'ls-files'], cwd=str(root), capture_output=True, encoding='utf-8',
+                           errors='replace', timeout=20)
         if r.returncode == 0 and r.stdout.strip():
             return r.stdout.split()
     except (OSError, subprocess.SubprocessError):
@@ -523,7 +524,8 @@ def brief(tid: str, root=None, plan_dir=None, journal=None) -> list[str]:
         out += ['', '## Files on the line, and their last commits']
         for t in where:
             log = subprocess.run(['git', 'log', '-3', '--format=%h %ad %s', '--date=short', '--', t],
-                                 cwd=str(root), capture_output=True, text=True).stdout.strip().splitlines()
+                                 cwd=str(root), capture_output=True, encoding='utf-8',
+                                 errors='replace').stdout.strip().splitlines()
             try:
                 n_lines = sum(1 for _ in open(root / t, encoding='utf-8', errors='replace'))
                 size = f'{n_lines} lines'
@@ -531,7 +533,8 @@ def brief(tid: str, root=None, plan_dir=None, journal=None) -> list[str]:
                 size = 'missing — this task creates it'
             out += [f'- `{t}` ({size})', *[f'  - {l[:120]}' for l in log]]
     if cmd := c.raw['plan']['brief_extra']:  # what only the project knows: its oracle names, a spec, …
-        r = subprocess.run(cmd.format(id=tid), shell=True, cwd=str(root), capture_output=True, text=True)
+        r = subprocess.run(cmd.format(id=tid), shell=True, cwd=str(root), capture_output=True, text=True,
+                           errors='replace')
         if extra := (r.stdout.rstrip() or (f'({cmd} failed: {r.stderr.strip()[:200]})' if r.returncode else '')):
             out += ['', *extra.splitlines()]
     return out
@@ -551,7 +554,7 @@ def _commit(root: Path, paths: list[Path], msg: str) -> None:
     uncommitted edit there touches a file it changes, and nearly every merge changes TODO.md. Worktrees (the
     agents') commit through `done`; mid-merge the edit stays uncommitted for whoever is merging."""
     def git(*a):
-        return subprocess.run(['git', '-C', str(root), *a], capture_output=True, text=True)
+        return subprocess.run(['git', '-C', str(root), *a], capture_output=True, encoding='utf-8', errors='replace')
     gd, cd = (git('rev-parse', '--path-format=absolute', f).stdout.strip() for f in ('--git-dir', '--git-common-dir'))
     if gd and gd == cd and not os.path.exists(os.path.join(gd, 'MERGE_HEAD')):
         git('add', '--', *map(str, paths))  # a fresh plan/ is untracked, and commit -- PATH skips those

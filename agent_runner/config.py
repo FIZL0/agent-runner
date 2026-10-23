@@ -69,7 +69,7 @@ DEFAULTS: dict = {
         'slots': 3,
         'mux': '',              # terminal per slot: tmux, wt, console, none; '' = tmux (Windows: wt, else console)
         'mode': 'd',            # d = never two running tasks on the same file; p = strict plan order
-        'agent': 'claude',      # the CLI that runs a session
+        'agent': 'claude',      # the CLI that runs a session: claude, or copilot (GitHub Copilot CLI)
         'model': 'opus',
         'lean': True,           # agents get Bash/Read/Edit/Write only, no MCP, no user settings
         'idle': 90,             # seconds a finished session sits at its prompt before it is ended

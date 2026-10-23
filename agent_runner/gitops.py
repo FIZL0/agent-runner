@@ -14,7 +14,7 @@ from agent_runner.config import cfg, main_checkout
 
 def _git(cwd: Path):
     def g(*a: str):
-        return subprocess.run(['git', *a], cwd=str(cwd), capture_output=True, text=True)
+        return subprocess.run(['git', *a], cwd=str(cwd), capture_output=True, encoding='utf-8', errors='replace')
     return g
 
 

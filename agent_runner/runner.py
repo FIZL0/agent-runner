@@ -94,11 +94,7 @@ def init(root=None) -> Config:
 PROMPT = """Unattended run: nobody will answer questions, so never ask one — decide, write down why, and go on.
 
 Do task {tid} and nothing else. You are in a git worktree on branch task/{tid}: commit this repo's work here only. Never \
-touch the main checkout, and never merge, rebase or push the main branch. When your session ends, the \
-runner merges your branch, tests the merge and publishes it. `{runner} done` pushes task/{tid} for you, \
-which is the one copy of your work that is not on this disk. Commits you make in other repositories (a \
-dependency or sibling repo the task needed) are pushed as usual; never publish beyond git \
-(releases, uploads, stores) unless the task says to.
+touch the main checkout, and never merge, rebase or push the main branch. {publish}
 {others}{earlier}
 Rules: {rules}. {test}
 {journal}
@@ -124,6 +120,18 @@ OTHERS = ('Other agents are working on other tasks at the same time, in other wo
           'local: add functions and new files, and don\'t move, rename or reformat code you did not come '
           'for, so the merges stay clean.\n')
 
+PUBLISH = ('When your session ends, the runner merges your branch, tests the merge and publishes it. `{runner} '
+           'done` pushes task/{tid} for you, which is the one copy of your work that is not on this disk. Commits '
+           'you make in other repositories (a dependency or sibling repo the task needed) are pushed as usual; '
+           'never publish beyond git (releases, uploads, stores) unless the task says to.')
+NO_PUSH = ('When your session ends, the runner merges your branch and tests the merge. Pushing is off for this '
+           'run: never run `git push`, here or in any other repository, and never publish anything else '
+           '(releases, uploads, stores). A human reviews and pushes.')
+
+# With `[git] push = false`, every agent session gets these as git config: any push to a URL of these kinds
+# goes to a remote helper that does not exist, so it fails whatever command or repository it comes from.
+NO_PUSH_URLS = ('https://', 'http://', 'ssh://', 'git://', 'git@', 'file://')
+
 
 # --- small helpers -------------------------------------------------------------
 
@@ -138,7 +146,7 @@ def log(msg: str) -> None:
 
 
 def git(*a: str, cwd=None) -> sp.CompletedProcess:
-    return sp.run(['git', *a], cwd=str(cwd or ROOT), capture_output=True, text=True)
+    return sp.run(['git', *a], cwd=str(cwd or ROOT), capture_output=True, encoding='utf-8', errors='replace')
 
 
 def note(msg: str) -> None:
@@ -411,20 +419,84 @@ def single_run() -> object:
 
 # --- starting a session --------------------------------------------------------
 
+def copilot() -> bool:
+    """`[run] agent` is GitHub Copilot CLI rather than Claude Code."""
+    return Path(C.run['agent']).stem.lower() == 'copilot'
+
+
+def copilot_home() -> Path:
+    return Path(os.environ.get('COPILOT_HOME') or Path.home() / '.copilot')
+
+
 def lean() -> list[str]:
     """Bash/Read/Edit/Write and the repo's own settings only: an unattended agent needs no MCP servers, and a
     user-level setting (a status line, a hook that asks) is something nobody is there to answer."""
-    return ['--tools', 'Bash,Read,Edit,Write', '--setting-sources', 'project,local', '--strict-mcp-config'] \
-        if C.run['lean'] else []
+    if not C.run['lean']:
+        return []
+    if copilot():
+        return ['--disable-builtin-mcps']
+    return ['--tools', 'Bash,Read,Edit,Write', '--setting-sources', 'project,local', '--strict-mcp-config']
 
 
 def agent_flags(sid: str, model: str, idle: int) -> list[str]:
     """Everything after the prompt. The Stop hook is this runner in --stop-hook mode."""
+    if copilot():  # its Stop hook is written into the checkout by copilot_hooks
+        return ['--session-id', sid, '--allow-all', '--no-ask-user', '--no-auto-update', '--model', model,
+                *deny_push(), *lean()]
     stop = [{'hooks': [{'type': 'command',
                         'command': plat.command_text([*runner_cmd(), 'run', '--stop-hook', '--idle', str(idle)])}]}]
     return ['--session-id', sid, '--permission-mode', 'bypassPermissions',
             '--disallowedTools', 'AskUserQuestion', '--model', model, *lean(),
             '--settings', json.dumps({'hooks': {'Stop': stop, 'StopFailure': stop}})]
+
+
+def prompt_flag() -> list[str]:
+    """What goes before the prompt: Copilot CLI takes it as `-i`, Claude Code as its first argument."""
+    return ['-i'] if copilot() else []
+
+
+def deny_push() -> list[str]:
+    """Copilot CLI refuses `git push` itself when `[git] push = false`, so the agent is told why at once."""
+    return [] if C.push_remote else ['--deny-tool', 'shell(git push)']
+
+
+def copilot_hooks(cwd: Path, idle: int) -> None:
+    """Copilot CLI has no `--settings`: the Stop hook goes in the checkout's `.github/copilot/settings.local.json`
+    (keep it git-ignored), which Copilot reads for a trusted folder. Other keys in that file are kept."""
+    f = cwd / '.github' / 'copilot' / 'settings.local.json'
+    try:
+        cur = json.loads(f.read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        cur = {}
+    exe, *args = [*runner_cmd(), 'run', '--stop-hook', '--idle', str(idle)]
+    cur.setdefault('hooks', {})['Stop'] = [{'type': 'command', 'exec': exe, 'args': args, 'timeoutSec': 30}]
+    f.parent.mkdir(parents=True, exist_ok=True)
+    f.write_text(json.dumps(cur, indent=2) + '\n', encoding='utf-8')
+
+
+def copilot_trust(*dirs: Path) -> None:
+    """Add `dirs` to Copilot CLI's trusted folders: it asks before working in an untrusted one, and loads no
+    repo hooks there, and nobody is there to answer."""
+    f = copilot_home() / 'config.json'
+    try:
+        lines = f.read_text(encoding='utf-8-sig').splitlines(keepends=True)
+        n = next((i for i, l in enumerate(lines) if not l.lstrip().startswith('//')), len(lines))
+        head = lines[:n]  # Copilot writes `//` comment lines above the JSON
+        conf = json.loads(''.join(lines[n:]))
+    except (OSError, ValueError):
+        log(f'could not read {f}: trust {", ".join(map(str, dirs))} in Copilot CLI by hand')
+        return
+    have = conf.setdefault('trustedFolders', [])
+    norm = lambda p: os.path.normcase(os.path.abspath(p)).rstrip('\\/')  # noqa: E731
+    new = [str(d) for d in dirs if not any(norm(d) == norm(t) or norm(d).startswith(norm(t) + os.sep)
+                                           for t in have)]
+    if not new:
+        return
+    have += new
+    tmp = f.with_name(f.name + '.agent-runner')
+    tmp.write_text(''.join(head) + json.dumps(conf, indent=2) + '\n', encoding='utf-8')
+    os.replace(tmp, f)
+    log(f'Copilot CLI now trusts {", ".join(new)} (trustedFolders in {f})')
 
 
 def agent_cmd(prompt: str, sid: str, model: str, idle: int, name: str) -> str:
@@ -435,7 +507,8 @@ def agent_cmd(prompt: str, sid: str, model: str, idle: int, name: str) -> str:
     """
     pf = C.notes(f'{name}.prompt')
     pf.write_text(prompt, encoding='utf-8')
-    return shlex.quote(C.run['agent']) + f' "$(cat {shlex.quote(str(pf))})" ' + shlex.join(agent_flags(sid, model, idle))
+    return shlex.join([C.run['agent'], *prompt_flag()]) + f' "$(cat {shlex.quote(str(pf))})" ' + \
+        shlex.join(agent_flags(sid, model, idle))
 
 
 ARGV_PROMPT_MAX = 24000  # Windows' CreateProcess takes 32 767 characters, flags and paths included
@@ -452,7 +525,7 @@ def agent_argv(prompt: str, sid: str, model: str, idle: int, name: str) -> list[
     if len(prompt) > ARGV_PROMPT_MAX:
         prompt = (f'Your instructions for this session are in {pf.as_posix()}, too long to pass on a Windows '
                   f'command line. Read that whole file first, then follow it.')
-    return [plat.exe(C.run['agent']), prompt, *agent_flags(sid, model, idle)]
+    return [plat.exe(C.run['agent']), *prompt_flag(), prompt, *agent_flags(sid, model, idle)]
 
 
 def brief_for(tid: str, cwd: Path) -> str:
@@ -475,6 +548,7 @@ def prompt_for(tid: str, n: int, slots: int, cwd: Path, branch: str) -> str:
     wip = not git('rev-parse', '--verify', '-q', f'refs/heads/wip/{tid}').returncode
     vals = dict(
         tid=tid, n=n, runner=C.command, branch=branch,
+        publish=(PUBLISH if C.push_remote else NO_PUSH).format(runner=C.command, tid=tid),
         others=OTHERS if slots > 1 else '',
         earlier=(f'An earlier attempt that could not be merged is on wip/{tid} (`git log {branch}..wip/{tid}`, '
                  f'and the ledger line in {r["notes"]}/ledger.md says why). Read it before starting over.\n'
@@ -517,7 +591,18 @@ def slot_env(n: int) -> list[str]:
     if os.environ.get('AGENT_RUNNER_CONFIG') and C.file:
         env.append(f'AGENT_RUNNER_CONFIG={C.file}')
     env += [f'{k}={os.environ[k]}' for k in C.run['pass_env'] if k in os.environ]
-    return env + [e.format(n=n, slots=SLOTS) for e in C.run['slot_env']]
+    return env + [e.format(n=n, slots=SLOTS) for e in C.run['slot_env']] + [f'{k}={v}' for k, v in no_push_env().items()]
+
+
+def no_push_env() -> dict[str, str]:
+    """With `[git] push = false`: git config, as environment, that makes every push from an agent session fail."""
+    if C.push_remote:
+        return {}
+    env = {'GIT_CONFIG_COUNT': str(len(NO_PUSH_URLS))}
+    for i, url in enumerate(NO_PUSH_URLS):
+        env[f'GIT_CONFIG_KEY_{i}'] = 'url.agent-runner-no-push:.pushInsteadOf'
+        env[f'GIT_CONFIG_VALUE_{i}'] = url
+    return env
 
 
 def start(n: int, task, branch: str, model: str, idle: int, slots: int):
@@ -530,6 +615,8 @@ def start(n: int, task, branch: str, model: str, idle: int, slots: int):
         log(f'slot {n}: checkout task/{tid} failed: {co.stderr.strip()[:200]}')
         return None
     sid = str(uuid.uuid4())
+    if copilot():
+        copilot_hooks(d, idle)
     prompt = prompt_for(tid, n, slots, d, branch)
     logfile = C.notes(f'slot{n}.log')
     since = logfile.stat().st_size if logfile.exists() else 0  # in append mode tell() is not that
@@ -640,9 +727,18 @@ def run_session(argv: list[str], cwd: str, env: dict, marker: Path) -> int:
 
 
 def slot_shim(job: str) -> int:
-    """`run --slot-shim <job>`: what a Windows tab or console window runs (see ShimMux)."""
-    spec = json.loads(Path(job).read_text(encoding='utf-8'))
-    return run_session(spec['argv'], spec['cwd'], spec['env'], Path(spec['marker']))
+    """`run --slot-shim <job>`: what a Windows tab or console window runs (see ShimMux).
+
+    Always exits 0, so Windows Terminal closes the tab; and a job runs once, so a tab restarted with Enter
+    does not resume a finished session behind the runner's back."""
+    f = Path(job)
+    spec = json.loads(f.read_text(encoding='utf-8'))
+    if spec.get('started'):
+        print('This slot\'s session has ended; the runner starts the next one. Close this tab.')
+        return 0
+    f.write_text(json.dumps({**spec, 'started': True}), encoding='utf-8')
+    run_session(spec['argv'], spec['cwd'], spec['env'], Path(spec['marker']))
+    return 0
 
 
 MUX: TmuxMux | ShimMux = TmuxMux()  # what `cmd_run` picked
@@ -687,7 +783,7 @@ def custom_join(f: str, sides: list[str], text: str, tid: str, cwd: Path) -> str
     out.write_text(text, encoding='utf-8')
     vals = dict(ours=sides[0], base=sides[1], theirs=sides[2], union=str(u), out=str(out), file=f)
     r = sp.run(cmd.format_map({k: plat.quote(v) for k, v in vals.items()}), shell=True, cwd=str(cwd),
-               capture_output=True, text=True)
+               capture_output=True, text=True, errors='replace')
     if r.returncode:
         log(f'{tid}: the [run.join] command for {f} refused the join (exit {r.returncode}): '
             + ' / '.join((r.stdout + r.stderr).strip().splitlines()[-3:])[:300])
@@ -766,6 +862,9 @@ What happened on earlier merges in this run (the ledger's tail):
 
 def fix_cmd(prompt: str) -> list[str]:
     """A fix session: one prompt, one answer, no session to keep — `-p`, so nothing types into a pane."""
+    if copilot():
+        return [plat.exe(C.run['agent']), '-p', prompt, '--allow-all', '--no-ask-user', '--no-auto-update',
+                '--model', C.run['fix_model'], *deny_push(), *lean()]
     return [plat.exe(C.run['agent']), '-p', prompt, '--permission-mode', 'bypassPermissions',
             '--disallowedTools', 'AskUserQuestion', '--model', C.run['fix_model'], *lean()]
 
@@ -791,15 +890,25 @@ def fix_merge(tid: str, branch: str, files: list[str], cwd: Path) -> str | None:
     log(f'{tid}: conflicts in {", ".join(files)} need reading — handing them to a fix session')
     with open(logfile, 'a', encoding='utf-8') as fh:
         fh.write(f'\n=== {dt.datetime.now().isoformat(timespec="seconds")} {tid} {", ".join(files)}\n')
-        fh.flush()
-        try:
-            r = sp.run(fix_cmd(prompt), cwd=str(cwd), stdout=fh, stderr=sp.STDOUT, stdin=sp.DEVNULL,
-                       timeout=C.run['fix_timeout'])
-        except FileNotFoundError:
-            return f'no agent command to fix the conflicts with ([run] agent = {C.run["agent"]!r})'
-        except sp.TimeoutExpired:
-            note(f'{tid}: the fix session timed out after {C.run["fix_timeout"]}s')
-            return f'the fix session ran past {C.run["fix_timeout"]}s'
+        for attempt in range(3):
+            fh.flush()
+            start = logfile.stat().st_size
+            try:
+                r = sp.run(fix_cmd(prompt), cwd=str(cwd), stdout=fh, stderr=sp.STDOUT, stdin=sp.DEVNULL,
+                           env={**os.environ, **no_push_env()},
+                           timeout=C.run['fix_timeout'])
+            except FileNotFoundError:
+                return f'no agent command to fix the conflicts with ([run] agent = {C.run["agent"]!r})'
+            except sp.TimeoutExpired:
+                note(f'{tid}: the fix session timed out after {C.run["fix_timeout"]}s')
+                return f'the fix session ran past {C.run["fix_timeout"]}s'
+            fh.flush()
+            said = logfile.read_bytes()[start:].decode('utf-8', errors='replace')
+            if not r.returncode or attempt == 2 or not COPILOT_FAILED.search(said):
+                break
+            wait = RESUME_AFTER * 2 ** attempt
+            log(f'{tid}: the fix session could not reach the model; trying again in {wait}s')
+            time.sleep(wait)
     if git('rev-parse', '--verify', '-q', 'MERGE_HEAD', cwd=cwd).returncode == 0:
         return f'the fix session did not finish the merge (exit {r.returncode}); see {logfile}'
     if git('merge-base', '--is-ancestor', f'task/{tid}', 'HEAD', cwd=cwd).returncode:
@@ -843,7 +952,7 @@ def tested(tid: str, d: Path, base: str) -> str | None:
     head = git('rev-parse', 'HEAD', cwd=d).stdout.strip()
     git('checkout', '-q', '--detach', base, cwd=d)
     try:
-        r = sp.run(cmd, shell=True, cwd=str(d), capture_output=True, text=True, env=env)
+        r = sp.run(cmd, shell=True, cwd=str(d), capture_output=True, text=True, errors='replace', env=env)
     finally:
         git('checkout', '-q', '--detach', head, cwd=d)
     # ponytail: name-level match; a branch that breaks an already-failing test some other way slips through
@@ -1098,6 +1207,14 @@ def not_attempt(tid: str, branch: str) -> bool:
 
 def finish(tid: str, n: int, sid: str, branch: str) -> None:
     """After a slot's session: merge its branch, or park it as wip/<ID> and say why."""
+    try:
+        _finish(tid, n, sid, branch)
+    except Exception as e:  # a merge thread that dies silently leaves the branch unmerged with no word why
+        note(f'{tid}: LEFT FOR A HUMAN — the merge crashed: {e!r}')
+        log(f'{tid}: LEFT FOR A HUMAN — the merge crashed: {e!r}')
+
+
+def _finish(tid: str, n: int, sid: str, branch: str) -> None:
     commits = git('log', '--format=%s', f'{branch}..task/{tid}').stdout.splitlines()
     if not commits:
         git('branch', '-D', f'task/{tid}')
@@ -1119,6 +1236,9 @@ def finish(tid: str, n: int, sid: str, branch: str) -> None:
 # --- watching a session --------------------------------------------------------
 
 def transcript(sid: str) -> str | None:
+    if copilot():
+        t = copilot_home() / 'session-state' / sid / 'events.jsonl'
+        return str(t) if t.exists() else None
     return next(iter(glob.glob(os.path.expanduser(f'~/.claude/projects/*/{sid}.jsonl'))), None)
 
 
@@ -1130,7 +1250,10 @@ def stats(sid: str) -> str:
         for l in open(transcript(sid) or os.devnull, encoding='utf-8', errors='replace'):
             d = json.loads(l)
             ts += [d['timestamp']] if 'timestamp' in d else []
-            if d.get('type') == 'assistant' and (u := d.get('message', {}).get('usage')):
+            if d.get('type') == 'session.usage_record' and (u := d.get('data', {}).get('usage')):
+                calls += 1
+                ctx.append(u.get('inputTokens', 0))
+            elif d.get('type') == 'assistant' and (u := d.get('message', {}).get('usage')):
                 calls += 1
                 ctx.append(sum(u.get(k, 0) for k in ('input_tokens', 'cache_read_input_tokens',
                                                      'cache_creation_input_tokens')))
@@ -1157,6 +1280,56 @@ def stalled(pid: int, sid: str, limit: int) -> str | None:
 
 
 LIMIT = re.compile(r'limit\D{0,12}resets? (\d+(?::\d+)?\s?[ap]m)', re.I)
+COPILOT_LIMIT = re.compile(r'"type":"session\.error".*(rate.?limit|quota|usage limit|too many requests)', re.I)
+COPILOT_LIMIT_WAIT = 30 * 60  # Copilot does not say when a rate limit resets: try again after this long
+COPILOT_FAILED = re.compile(r'Failed to get response from the AI model|could not retrieve the list of available models',
+                            re.I)
+PROGRESS = ('"type":"user.message"', '"type":"assistant.turn_start"', '"type":"tool.execution_start"')
+RESUME_AFTER = 120  # s after a failed model call before the session is resumed; doubles with each resume
+RESUME_MAX = 5
+RESUME = ('The connection to the model failed and this session stopped mid-task. Carry on with task {tid} from '
+          'where you left off.')
+
+
+def copilot_failed(sid: str) -> tuple[str, float] | None:
+    """(message, age in s) when the session's last word is a model call that failed (a network drop), else None.
+    Copilot gives up after a few quick retries and sits at its prompt, and no Stop hook fires."""
+    t = transcript(sid)
+    if not t:
+        return None
+    err, ts = '', ''
+    for l in open(t, encoding='utf-8', errors='replace'):
+        if '"type":"session.error"' in l and COPILOT_FAILED.search(l):
+            d = json.loads(l)
+            err, ts = d.get('data', {}).get('message', 'a failed model call'), d.get('timestamp', '')
+        elif any(p in l for p in PROGRESS):
+            err = ''
+    if not err or not ts:
+        return None
+    at = dt.datetime.fromisoformat(ts.replace('Z', '+00:00'))
+    return err, (dt.datetime.now(dt.timezone.utc) - at).total_seconds()
+
+
+def resume(n: int, pid: int, sid: str, tid: str, model: str, idle: int) -> int | None:
+    """End slot n's session and start it again on the same session id, told to carry on; the new pid."""
+    plat.terminate(pid)
+    marker = C.notes(f'slot{n}.live')
+    for _ in range(50):  # the old shim removes its marker as it exits: wait, so it cannot remove the new one
+        if not marker.exists():
+            break
+        time.sleep(0.2)
+    return MUX.open(n, SLOTS_DIR / f's{n}', RESUME.format(tid=tid), sid, model, idle, slot_env(n),
+                    C.notes(f'slot{n}.log'))
+
+
+def copilot_limit_only(sid: str) -> dt.datetime | None:
+    """`limit_only` for Copilot CLI: a session whose only errors are rate limits and that ran no tool."""
+    t = transcript(sid)
+    text = open(t, encoding='utf-8', errors='replace').read() if t else ''
+    if not COPILOT_LIMIT.search(text) or '"type":"tool.execution_complete"' in text:
+        return None
+    shutil.rmtree(Path(t).parent, ignore_errors=True)
+    return dt.datetime.now() + dt.timedelta(seconds=COPILOT_LIMIT_WAIT)
 
 
 def limit_only(sid: str, slot_log: Path, since: int) -> dt.datetime | None:
@@ -1165,6 +1338,8 @@ def limit_only(sid: str, slot_log: Path, since: int) -> dt.datetime | None:
     A limited session produced no work, so counting it as an attempt would drop the task from the run;
     and keeping its transcript would make the next run resume a session that never started.
     """
+    if copilot():
+        return copilot_limit_only(sid)
     t = transcript(sid)
     text = open(t, encoding='utf-8', errors='replace').read() if t else ''
     try:
@@ -1222,11 +1397,13 @@ def stop_hook(idle: int) -> int:
     A usage limit is deliberately *not* idleness: Claude Code prints "continuing automatically at <reset>"
     and resumes by itself, so the waiter leaves such a session alone.
     """
+    if not os.environ.get('AGENT_RUNNER'):
+        return 0  # a hook file in a checkout also fires for a person's own session there: never end that one
     try:
         ev = json.load(sys.stdin)
     except Exception:
         return 0
-    t = ev.get('transcript_path')
+    t = ev.get('transcript_path') or ev.get('transcriptPath')
     if not t or not os.path.exists(t):
         return 0
     if ev.get('background_tasks'):
@@ -1243,10 +1420,13 @@ def stop_hook(idle: int) -> int:
     return 0
 
 
+USER_ENTRY = re.compile(r'"type":"(user|user\.message|tool\.execution_complete)"')  # Claude Code; Copilot CLI
+
+
 def _user_entries(t: str) -> int:
     try:
         with open(t, encoding='utf-8', errors='replace') as f:
-            return sum(1 for l in f if '"type":"user"' in l)
+            return sum(1 for l in f if USER_ENTRY.search(l))
     except OSError:
         return -1
 
@@ -1330,6 +1510,8 @@ def sequential(branch: str, model: str, idle: int, pause: int, force: bool, once
         before = git('rev-parse', 'HEAD').stdout.strip()
         log(f'{tid}: starting ({task[1]})')
         env = dict(e.split('=', 1) for e in slot_env(1))
+        if copilot():
+            copilot_hooks(ROOT, idle)
         if plat.WINDOWS:  # no sh to read the prompt file; the marker is how the Stop hook finds the agent
             run_session(agent_argv(prompt_for(tid, 1, 1, ROOT, here), sid, model, idle, 'slot1'), str(ROOT), env,
                         C.notes('slot1.live'))
@@ -1455,6 +1637,8 @@ def run(argv: list[str], prog: str) -> int:
         return dry_run(slots, mode, branch)
 
     lock = single_run()  # noqa: F841 — held until the process ends
+    if copilot():
+        copilot_trust(ROOT, SLOTS_DIR)
     if stopping():  # left by a run that was killed before it saw it; a stop is for the run that is up
         C.notes('STOP').unlink(missing_ok=True)
         log('cleared a stop request left by an earlier run')
@@ -1486,6 +1670,7 @@ def run(argv: list[str], prog: str) -> int:
     free_at = {n: dt.datetime.min for n in range(1, slots + 1)}
     merging: list[threading.Thread] = []
     stall_said: set[str] = set()
+    resumes: dict[str, int] = {}  # session id -> times it was resumed after a failed model call
     cap_said = stop_said = False
     log(f'run: {slots} slots in {MUX.name}, mode {mode}, merging into {branch}' +
         (f', weekly usage {weekly()}%' if not a.force and r['agent'] == 'claude' else ''))
@@ -1506,6 +1691,15 @@ def run(argv: list[str], prog: str) -> int:
 
     while True:
         for n in list(free_at):
+            if n in procs and copilot() and alive(procs[n][0]) and (f := copilot_failed(procs[n][1])) and \
+                    (k := resumes.get(procs[n][1], 0)) < RESUME_MAX and f[1] >= RESUME_AFTER * 2 ** k:
+                pid, sid, since = procs[n]
+                resumes[sid] = k + 1
+                log(f'slot {n}: {running[n][0]} stopped on a failed model call ({f[0][:120]}); resuming its '
+                    f'session ({k + 1}/{RESUME_MAX})')
+                if new := resume(n, pid, sid, running[n][0], model, idle):
+                    procs[n] = (new, sid, since)
+                    stall_said.discard(sid)
             if n in procs and not alive(procs[n][0]):
                 (pid, sid, since), task = procs.pop(n), running.pop(n)
                 log(f'slot {n}: {task[0]} exited ({stats(sid)})')

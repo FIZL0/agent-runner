@@ -382,7 +382,7 @@ test = ""                 # the gate, run by `done` and on every merge, e.g. "ma
 slots = 3
 mux = ""                  # tmux, wt, console or none; "" = tmux (Windows: wt, else console)
 mode = "d"                # d: different files; p: plan order
-agent = "claude"
+agent = "claude"          # or "copilot": GitHub Copilot CLI (set model/fix_model to a Copilot model id)
 model = "opus"
 lean = true               # sessions get Bash/Read/Edit/Write only, no MCP servers or user settings
 idle = 90                 # s quiet after finishing before a session is ended

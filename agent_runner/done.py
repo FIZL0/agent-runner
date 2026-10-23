@@ -39,7 +39,7 @@ def gate(cwd: Path, key: str = 'test', full: bool = False, env: dict | None = No
     cmd = cfg(cwd).run[key]
     if not cmd:
         return 0, ''
-    r = subprocess.run(cmd, shell=True, cwd=str(cwd), capture_output=True, text=True, env=env)
+    r = subprocess.run(cmd, shell=True, cwd=str(cwd), capture_output=True, text=True, errors='replace', env=env)
     out = (r.stdout + r.stderr).strip()
     return r.returncode, out if full else '\n'.join(out.splitlines()[-15:])
 
@@ -92,7 +92,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f'ticked {a.id}')
 
     def g(*args):
-        return subprocess.run(['git', *args], cwd=str(cwd), capture_output=True, text=True)
+        return subprocess.run(['git', *args], cwd=str(cwd), capture_output=True, encoding='utf-8', errors='replace')
 
     if g('add', '-A').returncode:
         print('git add failed', file=sys.stderr)
