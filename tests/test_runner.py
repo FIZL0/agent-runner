@@ -671,6 +671,40 @@ def test_leftovers(repo: Path):
     git(repo, 'branch', '-D', 'task/L1', 'wip/L1', 'leftover/L1')
 
 
+def test_renumber(repo: Path):
+    print("a follow-up filed under an id main gave away meanwhile is renumbered, not dropped by the join")
+    R.init(repo)
+    d = task_branch(repo, 4, 'N1')
+    todo = 'plan/TODO.md'
+    P.add('Q', 'the follow-up, after Q1 is read', 'bottom', todo=d / todo, done=d / 'plan/DONE.md')
+    P.add('Q', 'and its sequel, after Q1', 'bottom', todo=d / todo, done=d / 'plan/DONE.md')
+    git(d, 'commit', '-qam', 'N1: follow-ups Q1, Q2')
+    P.add('Q', "the person's own task", todo=repo / todo, done=repo / 'plan/DONE.md')
+    git(repo, 'commit', '-qam', 'plan: add Q1')
+    eq(R.renumber_doubles('main', 'main', 'N1', repo), 'main', 'nothing doubled: the ref is merged as it is')
+    ref = R.renumber_doubles('task/N1', 'main', 'N1', repo)
+    check(ref != 'task/N1', 'a doubled id gets a commit of its own on top of the branch')
+    t = git(repo, 'show', f'{ref}:{todo}')
+    has(t, r'\*\*Q3\*\* the follow-up, after Q3 is read', 'the follow-up takes the next id free on both sides, '
+        'and a line the branch wrote that names it follows')
+    has(t, r'\*\*Q2\*\* and its sequel, after Q3', 'an id main does not use stays, and its mention follows')
+    eq(git(repo, 'rev-parse', f'{ref}^'), git(repo, 'rev-parse', 'task/N1'), 'on top of the branch, not instead of it')
+    git(repo, 'merge', '-q', '--no-edit', ref)
+    t = (repo / todo).read_text()
+    check(all(x in t for x in ("**Q1** the person's own task", '**Q3** the follow-up', '**Q2** and its sequel')),
+          'after the merge all three are there')
+    has((repo / '.runner/run.log').read_text(), r'N1: renumbered Q1 -> Q3', 'and the log says so')
+    (repo / todo).write_text(t + '- [ ] **Q1** a stray copy under the same id\n', encoding='utf-8')
+    try:
+        P.tick('Q1', todo=repo / todo, done=repo / 'plan/DONE.md')
+        check(False, 'tick refuses an id listed twice')
+    except SystemExit as e:
+        has(str(e), 'listed twice', 'tick refuses an id listed twice')
+    git(repo, 'checkout', '-q', '--', todo)
+    git(d, 'checkout', '-q', '--detach')
+    git(repo, 'branch', '-D', 'task/N1')
+
+
 def test_stop_waiter(tmp: Path):
     print('the idle stop waits out a command the agent still runs, up to a cap')
     t = tmp / 'transcript.jsonl'
@@ -710,7 +744,8 @@ def main() -> int:
                        lambda: test_conflicts(repo, tmp), lambda: test_prompt_and_hooks(repo),
                        lambda: test_hooks(repo, tmp), lambda: test_gate_and_batches(repo),
                        lambda: test_platform(repo, tmp), lambda: test_shutdown(repo), lambda: test_merge_into(tmp),
-                       lambda: test_leftovers(repo), lambda: test_stop_waiter(tmp)])
+                       lambda: test_leftovers(repo), lambda: test_renumber(repo),
+                       lambda: test_stop_waiter(tmp)])
 
 
 if __name__ == '__main__':

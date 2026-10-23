@@ -778,6 +778,68 @@ def union(files: list[str], tid: str, cwd: Path) -> bool:
     return True
 
 
+def _next_free(k: str, taken: set[str]) -> str:
+    """The next id of `k`'s kind that `taken` does not hold: P119 -> P124, P118a -> P118c."""
+    if m := re.fullmatch(r'(.*\d)([a-z])', k):
+        last = max((t[-1] for t in taken if len(t) == len(k) and t.startswith(m.group(1))), default='`')
+        return m.group(1) + chr(ord(last) + 1)
+    if m := re.fullmatch(r'(.*[^\d])(\d+)', k):
+        n = [int(t[len(m.group(1)):]) for t in taken if t.startswith(m.group(1)) and t[len(m.group(1)):].isdigit()]
+        return f'{m.group(1)}{max(n, default=0) + 1}'
+    return k + 'r'
+
+
+def renumber_doubles(ref: str, onto: str, tid: str, cwd: Path) -> str:
+    """`ref`, or a commit on top of it that renumbers the tasks it added under an id `onto` already uses.
+
+    A branch files a follow-up with the next id its own copy of the plan has free, while main, meanwhile,
+    may have handed that id to another task. Both lines then come out of the merge, and the join (or a tick)
+    keeps one and drops the other: P118's two follow-ups vanished that way. So before a merge the branch's
+    new task gets the next id free on both sides, and every line the branch added or changed that names it
+    follows; the change is logged. Run before each merge, the tested one and the one onto main."""
+    files = [plan_rel('TODO.md'), plan_rel('DONE.md')]
+    base = git('merge-base', onto, ref, cwd=cwd).stdout.strip()
+    show = lambda rev, f: git('show', f'{rev}:{f}', cwd=cwd).stdout.splitlines() if rev else []
+
+    def ids(rev):
+        return {m.group(1).rstrip('.'): re.sub(r'^- \[.\] ', '', l)
+                for f in files for l in show(rev, f) if (m := ANY_TASK.match(l))}
+
+    old, theirs, ours = ids(base), ids(ref), ids(onto)
+    doubled = [k for k in theirs if k not in old and k in ours and k != tid and theirs[k] != ours[k]]
+    if not doubled:
+        return ref
+    taken, new = set(old) | set(theirs) | set(ours), {}
+    for k in doubled:
+        new[k] = _next_free(k, taken)
+        taken.add(new[k])
+    pat = re.compile(r'\b(' + '|'.join(map(re.escape, new)) + r')\b')
+    idx = C.notes('renumber.index')
+    env = {**os.environ, 'GIT_INDEX_FILE': str(idx)}
+    g = lambda *a, **kw: sp.run(['git', *a], cwd=str(cwd), env=env, capture_output=True, text=True, **kw)
+    try:
+        g('read-tree', ref)
+        for f in files:
+            was, now = set(show(base, f)), show(ref, f)
+            if not now:
+                continue
+            text = '\n'.join(l if l in was else pat.sub(lambda m: new[m.group(1)], l) for l in now) + '\n'
+            blob = g('hash-object', '-w', '--stdin', input=text).stdout.strip()
+            g('update-index', '--cacheinfo', f'100644,{blob},{f}')
+        tree = g('write-tree').stdout.strip()
+        pairs = ', '.join(f'{k} -> {v}' for k, v in new.items())
+        c = g('commit-tree', tree, '-p', ref, '-m',
+              f'{tid}: renumber {pairs} ({onto} already uses the id)').stdout.strip()
+    finally:
+        idx.unlink(missing_ok=True)
+    if not c:
+        log(f'{tid}: could not renumber {", ".join(doubled)}; the merge may drop a task')
+        return ref
+    log(f'{tid}: renumbered {pairs}: {onto} gave the id to another task meanwhile')
+    note(f'{tid}: renumbered {pairs} before the merge')
+    return c
+
+
 FIXER = """A merge of task/{tid} into {branch} is half-done in this checkout and git could not finish it \
 by itself. Finish it. Nobody will answer questions: decide, and say what you decided.
 
@@ -974,7 +1036,8 @@ def merge_batch(tid: str, branch: str) -> str | None:
             base = git('rev-parse', branch).stdout.strip()
             git('checkout', '-q', '--detach', base, cwd=d)
             msg = ['-m', f"Merge branch 'task/{tid}'"]
-            if (files := merge_into(d, f'task/{tid}', msg[1])) is None:
+            ref = renumber_doubles(f'task/{tid}', base, tid, d)
+            if (files := merge_into(d, ref, msg[1])) is None:
                 return f'git refused to merge task/{tid} into {branch} (see the merge worktree, {d})'
             if files:
                 if all(map(joinable, files)) and union(files, tid, d):
@@ -984,12 +1047,13 @@ def merge_batch(tid: str, branch: str) -> str | None:
                     # start the conflict again from a clean state (a refused join may have written some
                     # of its files) and give it to a session that can read it
                     git('merge', '--abort', cwd=d)
-                    git('merge', '--no-edit', *msg, f'task/{tid}', cwd=d)
+                    git('merge', '--no-edit', *msg, ref, cwd=d)
                     if why := fix_merge(tid, branch, files, d):
                         return why
             riders = []
             for t in ([] if solo else sorted(WAITING - set(LANDED))):
-                if (files := merge_into(d, f'task/{t}', f"Merge branch 'task/{t}'")) is None:
+                if (files := merge_into(d, renumber_doubles(f'task/{t}', 'HEAD', t, d),
+                                        f"Merge branch 'task/{t}'")) is None:
                     git('merge', '--abort', cwd=d)
                     continue
                 if files:
@@ -1050,7 +1114,8 @@ def land(tid: str, branch: str, merged: str) -> str | None:
     if cur != branch and git('checkout', '-q', branch).returncode:
         return f'the main checkout is on {cur or "a detached HEAD"} and would not switch to {branch}'
     msg = ['-m', f'{tid}: the tested merge, onto commits {branch} got during the tests']
-    while git('merge', '-q', *msg, merged).returncode and \
+    ref = renumber_doubles(merged, 'HEAD', tid, ROOT)
+    while git('merge', '-q', *msg, ref).returncode and \
             git('rev-parse', '--verify', '-q', 'MERGE_HEAD').returncode:
         if time.time() - t0 > 60 * 60:
             return 'uncommitted edits in the main checkout to files the merge changes, for 60 min'

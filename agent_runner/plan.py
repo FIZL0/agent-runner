@@ -262,6 +262,9 @@ def tick(tid: str, todo=None, done=None, plan_dir=None) -> int:
     todo, done = ensure(todo, done)
     plan_dir = str(plan_dir or os.path.dirname(todo))
     ls = list(lines(todo))
+    if sum(1 for l in ls if (m := ITEM.match(l)) and not m.group(1) and m.group(3).rstrip('.') == tid) > 1:
+        raise SystemExit(f'{PROG}: {tid} is listed twice, as two different tasks; give one a new id '
+                         f'(`{PROG} newid`) before ticking, or the other is archived with it')
     _mark(ls, _find(ls, tid), 'x')
     _write(todo, ls)
     own = os.path.join(plan_dir, f'{tid}.md')

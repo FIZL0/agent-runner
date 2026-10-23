@@ -2,6 +2,14 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
+## 0.6.7 (2026-10-22)
+
+- A task a branch added under an id the target branch gave to another task meanwhile is renumbered (to
+  the next id free on both sides) in a commit on top of the branch before each merge, and the lines the
+  branch wrote that name it follow; logged as "renumbered P119 -> P122". Before, the join kept one line
+  per id and silently dropped the branch's task.
+- `plan tick` refuses an id listed twice as two tasks, instead of archiving one and leaving the other.
+
 ## 0.6.6 (2026-10-22)
 
 - `plan add` run by an agent (`AGENT_RUNNER=1`) files its task at the bottom of the leading section, so
