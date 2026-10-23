@@ -2,6 +2,14 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
+## 0.6.8 (2026-10-23)
+
+- A tested merge that cannot land yet says why, once, in the log (with a bell): uncommitted edits in the
+  main checkout to the files the merge changes (named), or a merge of its own there. It used to wait up to
+  60 min in silence, so the run looked hung with a finished task unmerged.
+- A test gate that exits 130 without the run's Ctrl-C is a failure after 5 s. The merge thread used to
+  wait on it forever.
+
 ## 0.6.7 (2026-10-22)
 
 - A task a branch added under an id the target branch gave to another task meanwhile is renumbered (to

@@ -735,6 +735,39 @@ def test_stop_waiter(tmp: Path):
         os.environ.pop('AGENT_RUNNER_IDLE_MAX', None)
 
 
+def test_land_waits_aloud(repo: Path):
+    print('run: a tested merge that waits on edits in the main checkout says so, then lands')
+    import threading
+    R.init(repo)
+    git(repo, 'checkout', '-q', 'main')
+    d = R.SLOTS_DIR / 's1'
+    git(d, 'checkout', '-q', '--detach', 'main')
+    (d / 'g.py').write_text('# g, from the branch\n', encoding='utf-8')
+    git(d, 'commit', '-qam', 'W1: g')
+    merged = git(d, 'rev-parse', 'HEAD')
+    git(d, 'checkout', '-q', '--detach')
+    (repo / 'g.py').write_text('# g, somebody editing\n', encoding='utf-8')
+    sleep, R.time.sleep = R.time.sleep, lambda s: sleep(min(s, 0.05))
+    try:
+        out: list = []
+        t = threading.Thread(target=lambda: out.append(R.land('W1', 'main', merged)))
+        t.start()
+        for _ in range(100):
+            if 'W1: tested, waiting' in (repo / '.runner/run.log').read_text():
+                break
+            sleep(0.05)
+        has((repo / '.runner/run.log').read_text(),
+            r'W1: tested, waiting to land on main: uncommitted edits in the main checkout .* to g\.py, which the merge changes',
+            'the log names the edited file the merge needs, before an hour of silence')
+        check(t.is_alive(), 'and it still waits for them')
+        git(repo, 'checkout', '--', 'g.py')
+        t.join(10)
+    finally:
+        R.time.sleep = sleep
+    eq(out, [None], 'once the edit is gone it lands')
+    eq((repo / '.runner/run.log').read_text().count('W1: tested, waiting'), 1, 'said once, not every 10 s')
+
+
 def main() -> int:
     with tempfile.TemporaryDirectory() as t:
         tmp = Path(t)
@@ -745,7 +778,7 @@ def main() -> int:
                        lambda: test_hooks(repo, tmp), lambda: test_gate_and_batches(repo),
                        lambda: test_platform(repo, tmp), lambda: test_shutdown(repo), lambda: test_merge_into(tmp),
                        lambda: test_leftovers(repo), lambda: test_renumber(repo),
-                       lambda: test_stop_waiter(tmp)])
+                       lambda: test_stop_waiter(tmp), lambda: test_land_waits_aloud(repo)])
 
 
 if __name__ == '__main__':

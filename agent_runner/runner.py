@@ -935,8 +935,8 @@ def tested(tid: str, d: Path, base: str) -> str | None:
     rc, out = gate(d, full=True, env=env)
     if not rc:
         return None
-    if rc in (130, -2):  # the gate got the run's Ctrl-C: not a failure; the run is exiting
-        threading.Event().wait()
+    if rc in (130, -2):  # the run's Ctrl-C reached the gate: the main thread exits the process within moments
+        threading.Event().wait(5)  # still here, so it was not the run's: a gate that exits 130 is a failure
     why = 'the tests fail after the merge: ' + ' / '.join(out.splitlines()[-4:])[:400]
     rx, cmd = C.run['failures'], C.run['retest']
     if not (rx and cmd and (names := sorted(set(re.findall(rx, out, re.M))))):
@@ -1105,10 +1105,21 @@ def land(tid: str, branch: str, merged: str) -> str | None:
     starts, a merge that would change a file somebody is editing, so this waits for them to commit.
     """
     t0 = time.time()
+    said = False
+
+    def waiting(why: str) -> None:
+        """Say once why the landing waits: it can be an hour, and a quiet run looks hung."""
+        nonlocal said
+        if not said:
+            said = True
+            log(f'{tid}: tested, waiting to land on {branch}: {why} (gives up after 60 min)')
+            print('\a', end='', flush=True)
+
     while git('diff', '--name-only', '--diff-filter=U').stdout.strip() or \
             git('rev-parse', '--verify', '-q', 'MERGE_HEAD').returncode == 0:
         if time.time() - t0 > 60 * 60:
             return 'the main checkout has a merge or unmerged paths of its own, for 60 min'
+        waiting(f'the main checkout ({ROOT}) is in the middle of a merge of its own; finish or abort it')
         time.sleep(10)
     cur = git('branch', '--show-current').stdout.strip()
     if cur != branch and git('checkout', '-q', branch).returncode:
@@ -1119,6 +1130,14 @@ def land(tid: str, branch: str, merged: str) -> str | None:
             git('rev-parse', '--verify', '-q', 'MERGE_HEAD').returncode:
         if time.time() - t0 > 60 * 60:
             return 'uncommitted edits in the main checkout to files the merge changes, for 60 min'
+        if not said:
+            edited = set(git('diff', '--name-only', 'HEAD').stdout.split())
+            edited |= set(git('ls-files', '--others', '--exclude-standard').stdout.split())
+            changes = set(git('diff', '--name-only', 'HEAD', ref).stdout.split())
+            files = sorted(edited & changes) or sorted(edited)
+            more = f' and {len(files) - 6} more' if len(files) > 6 else ''
+            waiting(f'uncommitted edits in the main checkout ({ROOT}) to {", ".join(files[:6])}{more}, '
+                    'which the merge changes; commit them or move them to a branch')
         time.sleep(10)
     if git('rev-parse', '--verify', '-q', 'MERGE_HEAD').returncode == 0:
         files = git('diff', '--name-only', '--diff-filter=U').stdout.split()
