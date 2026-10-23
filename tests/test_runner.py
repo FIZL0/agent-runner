@@ -647,6 +647,127 @@ def test_gate_and_batches(repo: Path):
         R.C.raw['plan']['brief'] = ''
 
 
+def test_leftovers(repo: Path):
+    print('a session that ends uncommitted: its edits are saved on a branch before the slot is reset')
+    R.init(repo)
+    d = task_branch(repo, 3, 'L1')
+    eq(R.save_leftovers(d, 'L1', 'main'), '', 'a clean slot has nothing to keep')
+    (d / 'a.py').write_text('# a, edited\n', encoding='utf-8')
+    (d / 'new.py').write_text('# new\n', encoding='utf-8')
+    git(d, 'add', 'a.py')  # half staged, as an interrupted `done` might leave it
+    eq(R.save_leftovers(d, 'L1', 'main'), 'wip/L1', 'with no commits of its own the work goes to wip/<ID>')
+    eq(git(repo, 'show', 'wip/L1:new.py'), '# new', 'untracked files too')
+    eq(git(repo, 'show', 'wip/L1:a.py'), '# a, edited', 'and staged ones')
+    check(git(d, 'status', '--porcelain') != '' and git(d, 'rev-parse', 'HEAD') == git(repo, 'rev-parse', 'main'),
+          'the slot itself is left as it was')
+    has((repo / '.runner/run.log').read_text(), r'L1: the session left 2 files uncommitted .*saved on wip/L1', 'and the log says where')
+    git(d, 'add', '-A')
+    git(d, 'commit', '-qm', 'L1: a commit of its own')
+    (d / 'b.py').write_text('# b, scratch\n', encoding='utf-8')
+    eq(R.save_leftovers(d, 'L1', 'main'), 'leftover/L1', 'with commits (or a wip/ already) it goes to leftover/<ID>')
+    eq(git(repo, 'rev-list', '--count', 'main..task/L1'), '1', 'and the task branch does not take in the untested edits')
+    git(d, 'reset', '-q', '--hard')
+    git(d, 'checkout', '-q', '--detach')
+    git(repo, 'branch', '-D', 'task/L1', 'wip/L1', 'leftover/L1')
+
+
+def test_renumber(repo: Path):
+    print("a follow-up filed under an id main gave away meanwhile is renumbered, not dropped by the join")
+    R.init(repo)
+    d = task_branch(repo, 4, 'N1')
+    todo = 'plan/TODO.md'
+    P.add('Q', 'the follow-up, after Q1 is read', 'bottom', todo=d / todo, done=d / 'plan/DONE.md')
+    P.add('Q', 'and its sequel, after Q1', 'bottom', todo=d / todo, done=d / 'plan/DONE.md')
+    git(d, 'commit', '-qam', 'N1: follow-ups Q1, Q2')
+    P.add('Q', "the person's own task", todo=repo / todo, done=repo / 'plan/DONE.md')
+    git(repo, 'commit', '-qam', 'plan: add Q1')
+    eq(R.renumber_doubles('main', 'main', 'N1', repo), 'main', 'nothing doubled: the ref is merged as it is')
+    ref = R.renumber_doubles('task/N1', 'main', 'N1', repo)
+    check(ref != 'task/N1', 'a doubled id gets a commit of its own on top of the branch')
+    t = git(repo, 'show', f'{ref}:{todo}')
+    has(t, r'\*\*Q3\*\* the follow-up, after Q3 is read', 'the follow-up takes the next id free on both sides, '
+        'and a line the branch wrote that names it follows')
+    has(t, r'\*\*Q2\*\* and its sequel, after Q3', 'an id main does not use stays, and its mention follows')
+    eq(git(repo, 'rev-parse', f'{ref}^'), git(repo, 'rev-parse', 'task/N1'), 'on top of the branch, not instead of it')
+    git(repo, 'merge', '-q', '--no-edit', ref)
+    t = (repo / todo).read_text()
+    check(all(x in t for x in ("**Q1** the person's own task", '**Q3** the follow-up', '**Q2** and its sequel')),
+          'after the merge all three are there')
+    has((repo / '.runner/run.log').read_text(), r'N1: renumbered Q1 -> Q3', 'and the log says so')
+    (repo / todo).write_text(t + '- [ ] **Q1** a stray copy under the same id\n', encoding='utf-8')
+    try:
+        P.tick('Q1', todo=repo / todo, done=repo / 'plan/DONE.md')
+        check(False, 'tick refuses an id listed twice')
+    except SystemExit as e:
+        has(str(e), 'listed twice', 'tick refuses an id listed twice')
+    git(repo, 'checkout', '-q', '--', todo)
+    git(d, 'checkout', '-q', '--detach')
+    git(repo, 'branch', '-D', 'task/N1')
+
+
+def test_stop_waiter(tmp: Path):
+    print('the idle stop waits out a command the agent still runs, up to a cap')
+    t = tmp / 'transcript.jsonl'
+    t.write_text('{"type":"user"}\n', encoding='utf-8')
+    poll, R.WAITER_POLL = R.WAITER_POLL, 0.2
+    agent = [sys.executable, '-c', 'import subprocess, time; subprocess.run(["sleep", "1.5"]); time.sleep(30)']
+    try:
+        p = subprocess.Popen(agent)
+        time.sleep(0.3)
+        t0 = time.time()
+        R.stop_waiter(p.pid, str(t), 1, 0)
+        took = time.time() - t0
+        check(p.wait(5) is not None and took >= 1.0, 'it ends the session only once its child has exited', took)
+        os.environ['AGENT_RUNNER_IDLE_MAX'] = '1'
+        p = subprocess.Popen([sys.executable, '-c', 'import subprocess; subprocess.run(["sleep", "4"])'])
+        time.sleep(0.3)
+        t0 = time.time()
+        R.stop_waiter(p.pid, str(t), 1, 0)
+        took = time.time() - t0
+        check(p.wait(5) is not None and took < 3, 'and not past AGENT_RUNNER_IDLE_MAX', took)
+        p = subprocess.Popen(agent)
+        t.write_text('{"type":"user"}\n{"type":"user"}\n', encoding='utf-8')
+        R.stop_waiter(p.pid, str(t), 1, 0)
+        check(p.poll() is None, 'a session that moved on is left alone')
+        p.kill()
+    finally:
+        R.WAITER_POLL = poll
+        os.environ.pop('AGENT_RUNNER_IDLE_MAX', None)
+
+
+def test_land_waits_aloud(repo: Path):
+    print('run: a tested merge that waits on edits in the main checkout says so, then lands')
+    import threading
+    R.init(repo)
+    git(repo, 'checkout', '-q', 'main')
+    d = R.SLOTS_DIR / 's1'
+    git(d, 'checkout', '-q', '--detach', 'main')
+    (d / 'g.py').write_text('# g, from the branch\n', encoding='utf-8')
+    git(d, 'commit', '-qam', 'W1: g')
+    merged = git(d, 'rev-parse', 'HEAD')
+    git(d, 'checkout', '-q', '--detach')
+    (repo / 'g.py').write_text('# g, somebody editing\n', encoding='utf-8')
+    sleep, R.time.sleep = R.time.sleep, lambda s: sleep(min(s, 0.05))
+    try:
+        out: list = []
+        t = threading.Thread(target=lambda: out.append(R.land('W1', 'main', merged)))
+        t.start()
+        for _ in range(100):
+            if 'W1: tested, waiting' in (repo / '.runner/run.log').read_text():
+                break
+            sleep(0.05)
+        has((repo / '.runner/run.log').read_text(),
+            r'W1: tested, waiting to land on main: uncommitted edits in the main checkout .* to g\.py, which the merge changes',
+            'the log names the edited file the merge needs, before an hour of silence')
+        check(t.is_alive(), 'and it still waits for them')
+        git(repo, 'checkout', '--', 'g.py')
+        t.join(10)
+    finally:
+        R.time.sleep = sleep
+    eq(out, [None], 'once the edit is gone it lands')
+    eq((repo / '.runner/run.log').read_text().count('W1: tested, waiting'), 1, 'said once, not every 10 s')
+
+
 def main() -> int:
     with tempfile.TemporaryDirectory() as t:
         tmp = Path(t)
@@ -655,7 +776,9 @@ def main() -> int:
                        lambda: test_retry(repo), lambda: test_unmerged(repo),
                        lambda: test_conflicts(repo, tmp), lambda: test_prompt_and_hooks(repo),
                        lambda: test_hooks(repo, tmp), lambda: test_gate_and_batches(repo),
-                       lambda: test_platform(repo, tmp), lambda: test_shutdown(repo), lambda: test_merge_into(tmp)])
+                       lambda: test_platform(repo, tmp), lambda: test_shutdown(repo), lambda: test_merge_into(tmp),
+                       lambda: test_leftovers(repo), lambda: test_renumber(repo),
+                       lambda: test_stop_waiter(tmp), lambda: test_land_waits_aloud(repo)])
 
 
 if __name__ == '__main__':

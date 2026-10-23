@@ -57,6 +57,7 @@ import shlex
 import shutil
 import subprocess as sp
 import sys
+import tempfile
 import threading
 import time
 import uuid
@@ -109,7 +110,7 @@ it>"`, then stop. If all it waits on is another task landing (its code is not on
 A usage limit is not being stuck: do not block the task. The session waits for the reset and carries on.
 
 The task list is a tool, not a file to read whole: `{runner} plan` lists the tasks, `{runner} plan <ID>` \
-shows one, and `{runner} plan add <PREFIX> "<text>"` files a follow-up you find but must not do now. Never \
+shows one, and `{runner} plan add <PREFIX> "<text>"` files a follow-up you find but must not do now (it queues at the bottom of the leading section). Never \
 hand-edit a checkbox.
 {extra}
 The task's brief (`{runner} plan brief {tid}`) follows, so don't gather it again.
@@ -605,9 +606,51 @@ def no_push_env() -> dict[str, str]:
     return env
 
 
+def save_leftovers(d: Path, tid: str, branch: str) -> str | None:
+    """Keep what a slot's session left uncommitted on a branch before anything resets the worktree.
+
+    A session can end before its `done` commits (killed, or stopped mid-gate), and the next `start` resets
+    the slot. With no commits of its own the work goes to wip/<tid>, where the task's next attempt is told
+    to look; otherwise (or with a wip/<tid> already there) to leftover/<tid>, so the merge never takes in
+    untested edits. The branch's own index and files are left as they are. Returns the branch, '' when
+    there was nothing to keep, or None when the save failed."""
+    if not git('status', '--porcelain', cwd=d).stdout.strip():
+        return ''
+    fd, idx = tempfile.mkstemp(prefix='agent-runner-index-')
+    os.close(fd)
+    env = {**os.environ, 'GIT_INDEX_FILE': idx}
+    try:
+        g = lambda *a: sp.run(['git', *a], cwd=str(d), capture_output=True, text=True, env=env)
+        if g('read-tree', 'HEAD').returncode or g('add', '-A').returncode:
+            return None
+        tree = g('write-tree').stdout.strip()
+        msg = f'{tid} wip: uncommitted when the session ended (saved by the runner before the slot was reset)'
+        c = g('commit-tree', tree, '-p', 'HEAD', '-m', msg).stdout.strip()
+    finally:
+        os.unlink(idx)
+    if not c:
+        return None
+    mine = git('rev-list', '--count', f'{branch}..HEAD', cwd=d).stdout.strip()
+    wip = not git('rev-parse', '--verify', '-q', f'refs/heads/wip/{tid}', cwd=d).returncode
+    to = f'wip/{tid}' if mine == '0' and not wip else f'leftover/{tid}'
+    if git('branch', '-f', to, c, cwd=d).returncode:
+        return None
+    files = git('diff', '--name-only', 'HEAD', c, cwd=d).stdout.split()
+    many = f'{len(files)} file{"s" if len(files) != 1 else ""}'
+    note(f'{tid}: the session left {many} uncommitted; saved on {to}')
+    log(f'{tid}: the session left {many} uncommitted ({", ".join(files)[:200]}); saved on {to}')
+    if out := push(ROOT, to):
+        log(out)
+    return to
+
+
 def start(n: int, task, branch: str, model: str, idle: int, slots: int):
     tid = task[0]
     d = worktree(n, branch)
+    head = git('symbolic-ref', '-q', '--short', 'HEAD', cwd=d).stdout.strip()
+    if save_leftovers(d, head.removeprefix('task/') if head.startswith('task/') else f's{n}', branch) is None:
+        log(f'slot {n}: uncommitted edits there could not be saved; not resetting it for {tid}')
+        return None
     git('reset', '-q', '--hard', cwd=d)
     git('clean', '-fdq', cwd=d)
     co = git('checkout', '-q', '-B', f'task/{tid}', branch, cwd=d)
@@ -831,6 +874,68 @@ def union(files: list[str], tid: str, cwd: Path) -> bool:
     return True
 
 
+def _next_free(k: str, taken: set[str]) -> str:
+    """The next id of `k`'s kind that `taken` does not hold: P119 -> P124, P118a -> P118c."""
+    if m := re.fullmatch(r'(.*\d)([a-z])', k):
+        last = max((t[-1] for t in taken if len(t) == len(k) and t.startswith(m.group(1))), default='`')
+        return m.group(1) + chr(ord(last) + 1)
+    if m := re.fullmatch(r'(.*[^\d])(\d+)', k):
+        n = [int(t[len(m.group(1)):]) for t in taken if t.startswith(m.group(1)) and t[len(m.group(1)):].isdigit()]
+        return f'{m.group(1)}{max(n, default=0) + 1}'
+    return k + 'r'
+
+
+def renumber_doubles(ref: str, onto: str, tid: str, cwd: Path) -> str:
+    """`ref`, or a commit on top of it that renumbers the tasks it added under an id `onto` already uses.
+
+    A branch files a follow-up with the next id its own copy of the plan has free, while main, meanwhile,
+    may have handed that id to another task. Both lines then come out of the merge, and the join (or a tick)
+    keeps one and drops the other: P118's two follow-ups vanished that way. So before a merge the branch's
+    new task gets the next id free on both sides, and every line the branch added or changed that names it
+    follows; the change is logged. Run before each merge, the tested one and the one onto main."""
+    files = [plan_rel('TODO.md'), plan_rel('DONE.md')]
+    base = git('merge-base', onto, ref, cwd=cwd).stdout.strip()
+    show = lambda rev, f: git('show', f'{rev}:{f}', cwd=cwd).stdout.splitlines() if rev else []
+
+    def ids(rev):
+        return {m.group(1).rstrip('.'): re.sub(r'^- \[.\] ', '', l)
+                for f in files for l in show(rev, f) if (m := ANY_TASK.match(l))}
+
+    old, theirs, ours = ids(base), ids(ref), ids(onto)
+    doubled = [k for k in theirs if k not in old and k in ours and k != tid and theirs[k] != ours[k]]
+    if not doubled:
+        return ref
+    taken, new = set(old) | set(theirs) | set(ours), {}
+    for k in doubled:
+        new[k] = _next_free(k, taken)
+        taken.add(new[k])
+    pat = re.compile(r'\b(' + '|'.join(map(re.escape, new)) + r')\b')
+    idx = C.notes('renumber.index')
+    env = {**os.environ, 'GIT_INDEX_FILE': str(idx)}
+    g = lambda *a, **kw: sp.run(['git', *a], cwd=str(cwd), env=env, capture_output=True, text=True, **kw)
+    try:
+        g('read-tree', ref)
+        for f in files:
+            was, now = set(show(base, f)), show(ref, f)
+            if not now:
+                continue
+            text = '\n'.join(l if l in was else pat.sub(lambda m: new[m.group(1)], l) for l in now) + '\n'
+            blob = g('hash-object', '-w', '--stdin', input=text).stdout.strip()
+            g('update-index', '--cacheinfo', f'100644,{blob},{f}')
+        tree = g('write-tree').stdout.strip()
+        pairs = ', '.join(f'{k} -> {v}' for k, v in new.items())
+        c = g('commit-tree', tree, '-p', ref, '-m',
+              f'{tid}: renumber {pairs} ({onto} already uses the id)').stdout.strip()
+    finally:
+        idx.unlink(missing_ok=True)
+    if not c:
+        log(f'{tid}: could not renumber {", ".join(doubled)}; the merge may drop a task')
+        return ref
+    log(f'{tid}: renumbered {pairs}: {onto} gave the id to another task meanwhile')
+    note(f'{tid}: renumbered {pairs} before the merge')
+    return c
+
+
 FIXER = """A merge of task/{tid} into {branch} is half-done in this checkout and git could not finish it \
 by itself. Finish it. Nobody will answer questions: decide, and say what you decided.
 
@@ -939,8 +1044,8 @@ def tested(tid: str, d: Path, base: str) -> str | None:
     rc, out = gate(d, full=True, env=env)
     if not rc:
         return None
-    if rc in (130, -2):  # the gate got the run's Ctrl-C: not a failure; the run is exiting
-        threading.Event().wait()
+    if rc in (130, -2):  # the run's Ctrl-C reached the gate: the main thread exits the process within moments
+        threading.Event().wait(5)  # still here, so it was not the run's: a gate that exits 130 is a failure
     why = 'the tests fail after the merge: ' + ' / '.join(out.splitlines()[-4:])[:400]
     rx, cmd = C.run['failures'], C.run['retest']
     if not (rx and cmd and (names := sorted(set(re.findall(rx, out, re.M))))):
@@ -1040,7 +1145,8 @@ def merge_batch(tid: str, branch: str) -> str | None:
             base = git('rev-parse', branch).stdout.strip()
             git('checkout', '-q', '--detach', base, cwd=d)
             msg = ['-m', f"Merge branch 'task/{tid}'"]
-            if (files := merge_into(d, f'task/{tid}', msg[1])) is None:
+            ref = renumber_doubles(f'task/{tid}', base, tid, d)
+            if (files := merge_into(d, ref, msg[1])) is None:
                 return f'git refused to merge task/{tid} into {branch} (see the merge worktree, {d})'
             if files:
                 if all(map(joinable, files)) and union(files, tid, d):
@@ -1050,12 +1156,13 @@ def merge_batch(tid: str, branch: str) -> str | None:
                     # start the conflict again from a clean state (a refused join may have written some
                     # of its files) and give it to a session that can read it
                     git('merge', '--abort', cwd=d)
-                    git('merge', '--no-edit', *msg, f'task/{tid}', cwd=d)
+                    git('merge', '--no-edit', *msg, ref, cwd=d)
                     if why := fix_merge(tid, branch, files, d):
                         return why
             riders = []
             for t in ([] if solo else sorted(WAITING - set(LANDED))):
-                if (files := merge_into(d, f'task/{t}', f"Merge branch 'task/{t}'")) is None:
+                if (files := merge_into(d, renumber_doubles(f'task/{t}', 'HEAD', t, d),
+                                        f"Merge branch 'task/{t}'")) is None:
                     git('merge', '--abort', cwd=d)
                     continue
                 if files:
@@ -1107,19 +1214,39 @@ def land(tid: str, branch: str, merged: str) -> str | None:
     starts, a merge that would change a file somebody is editing, so this waits for them to commit.
     """
     t0 = time.time()
+    said = False
+
+    def waiting(why: str) -> None:
+        """Say once why the landing waits: it can be an hour, and a quiet run looks hung."""
+        nonlocal said
+        if not said:
+            said = True
+            log(f'{tid}: tested, waiting to land on {branch}: {why} (gives up after 60 min)')
+            print('\a', end='', flush=True)
+
     while git('diff', '--name-only', '--diff-filter=U').stdout.strip() or \
             git('rev-parse', '--verify', '-q', 'MERGE_HEAD').returncode == 0:
         if time.time() - t0 > 60 * 60:
             return 'the main checkout has a merge or unmerged paths of its own, for 60 min'
+        waiting(f'the main checkout ({ROOT}) is in the middle of a merge of its own; finish or abort it')
         time.sleep(10)
     cur = git('branch', '--show-current').stdout.strip()
     if cur != branch and git('checkout', '-q', branch).returncode:
         return f'the main checkout is on {cur or "a detached HEAD"} and would not switch to {branch}'
     msg = ['-m', f'{tid}: the tested merge, onto commits {branch} got during the tests']
-    while git('merge', '-q', *msg, merged).returncode and \
+    ref = renumber_doubles(merged, 'HEAD', tid, ROOT)
+    while git('merge', '-q', *msg, ref).returncode and \
             git('rev-parse', '--verify', '-q', 'MERGE_HEAD').returncode:
         if time.time() - t0 > 60 * 60:
             return 'uncommitted edits in the main checkout to files the merge changes, for 60 min'
+        if not said:
+            edited = set(git('diff', '--name-only', 'HEAD').stdout.split())
+            edited |= set(git('ls-files', '--others', '--exclude-standard').stdout.split())
+            changes = set(git('diff', '--name-only', 'HEAD', ref).stdout.split())
+            files = sorted(edited & changes) or sorted(edited)
+            more = f' and {len(files) - 6} more' if len(files) > 6 else ''
+            waiting(f'uncommitted edits in the main checkout ({ROOT}) to {", ".join(files[:6])}{more}, '
+                    'which the merge changes; commit them or move them to a branch')
         time.sleep(10)
     if git('rev-parse', '--verify', '-q', 'MERGE_HEAD').returncode == 0:
         files = git('diff', '--name-only', '--diff-filter=U').stdout.split()
@@ -1392,7 +1519,10 @@ def stop_hook(idle: int) -> int:
     A finished agent otherwise sits at its prompt forever, and the loop never starts the next task. "Idle"
     means no new user or tool-result entry in the transcript, so typing into the pane keeps the session
     alive: you can take one over by hand. A session with a background task running gets a much longer
-    grace (`AGENT_RUNNER_IDLE_BG`, 1800 s), because a background task normally ends and wakes it.
+    grace (`AGENT_RUNNER_IDLE_BG`, 1800 s), because a background task normally ends and wakes it. Past the
+    grace the waiter still leaves alone a session whose agent has a child process (its background command:
+    a `done` queued behind other test runs can take longer than any grace), up to
+    `AGENT_RUNNER_IDLE_MAX` (10800 s) after the stop.
 
     A usage limit is deliberately *not* idleness: Claude Code prints "continuing automatically at <reset>"
     and resumes by itself, so the waiter leaves such a session alone.
@@ -1431,17 +1561,27 @@ def _user_entries(t: str) -> int:
         return -1
 
 
+WAITER_POLL = 60  # s between looks at a session whose background command is still running
+
+
 def stop_waiter(pid: int, t: str, n: int, idle: int) -> int:
+    until = time.time() + max(idle, int(os.environ.get('AGENT_RUNNER_IDLE_MAX', 10800)))
     time.sleep(idle)
-    if _user_entries(t) != n:
-        return 0  # the human typed, or a tool came back: the session is alive, leave it
-    try:
-        text = open(t, encoding='utf-8', errors='replace').read()
-    except OSError:
-        text = ''
-    tail = text[text.rfind('continuing automatically'):] if 'continuing automatically' in text else ''
-    if tail and '"tool_use"' not in tail:
-        return 0  # waiting out a usage limit; Claude Code resumes it at the reset
+    while True:
+        if _user_entries(t) != n:
+            return 0  # the human typed, or a tool came back: the session is alive, leave it
+        try:
+            text = open(t, encoding='utf-8', errors='replace').read()
+        except OSError:
+            text = ''
+        tail = text[text.rfind('continuing automatically'):] if 'continuing automatically' in text else ''
+        if tail and '"tool_use"' not in tail:
+            return 0  # waiting out a usage limit; Claude Code resumes it at the reset
+        # a child is a command the agent still runs (a `done` that waited 30 min for a test slot was killed
+        # with its session, and the work it was about to commit went with it): it ends and wakes the agent
+        if not plat.children(pid) or time.time() >= until:
+            break
+        time.sleep(WAITER_POLL)
     plat.terminate(pid)
     return 0
 
@@ -1703,6 +1843,9 @@ def run(argv: list[str], prog: str) -> int:
             if n in procs and not alive(procs[n][0]):
                 (pid, sid, since), task = procs.pop(n), running.pop(n)
                 log(f'slot {n}: {task[0]} exited ({stats(sid)})')
+                if save_leftovers(d := SLOTS_DIR / f's{n}', task[0], branch):
+                    git('reset', '-q', '--hard', cwd=d)  # saved: the next start finds the slot clean
+                    git('clean', '-fdq', cwd=d)
                 if r['on_exit']:
                     sp.Popen(r['on_exit'], shell=True, cwd=str(SLOTS_DIR / f's{n}'),
                              env={**os.environ, **dict(e.split('=', 1) for e in slot_env(n))},

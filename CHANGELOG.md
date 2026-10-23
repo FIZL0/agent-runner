@@ -2,6 +2,37 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
+## 0.6.8 (2026-10-23)
+
+- A tested merge that cannot land yet says why, once, in the log (with a bell): uncommitted edits in the
+  main checkout to the files the merge changes (named), or a merge of its own there. It used to wait up to
+  60 min in silence, so the run looked hung with a finished task unmerged.
+- A test gate that exits 130 without the run's Ctrl-C is a failure after 5 s. The merge thread used to
+  wait on it forever.
+
+## 0.6.7 (2026-10-22)
+
+- A task a branch added under an id the target branch gave to another task meanwhile is renumbered (to
+  the next id free on both sides) in a commit on top of the branch before each merge, and the lines the
+  branch wrote that name it follow; logged as "renumbered P119 -> P122". Before, the join kept one line
+  per id and silently dropped the branch's task.
+- `plan tick` refuses an id listed twice as two tasks, instead of archiving one and leaving the other.
+
+## 0.6.6 (2026-10-22)
+
+- `plan add` run by an agent (`AGENT_RUNNER=1`) files its task at the bottom of the leading section, so
+  follow-ups queue behind the work a person put there instead of jumping ahead of it. A person's `plan
+  add` still goes to the top. `@ bottom` asks for the bottom either way.
+
+## 0.6.5 (2026-10-22)
+
+- The idle stop no longer ends a session whose agent is still running a background command: a `done`
+  that waited past the 30 min background grace for a test slot was killed with its session, and its
+  uncommitted work was lost. It waits for the command, up to `AGENT_RUNNER_IDLE_MAX` (10800 s).
+- A session that ends with uncommitted edits has them saved before the slot is reset: on `wip/<ID>` when
+  the task has no commits, else `leftover/<ID>`. Both are pushed and logged. `start` refuses to reset a
+  slot whose edits could not be saved.
+
 ## 0.6.4 (2026-10-21)
 
 - `agent-runner help` rewritten around real examples: running, adding tasks and subtasks, making one wait, finishing.
