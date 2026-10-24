@@ -2,6 +2,14 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
+## 0.6.13 (2026-10-24)
+
+- Under tmux, fix and repair sessions are ordinary interactive sessions in a window named "master"
+  (`[run] fix_pane`, on by default), not `claude -p`: you can watch one resolve a merge, or take it over by
+  typing. Its Stop hook ends it 90 s after its answer, the runner then reads the merge worktree as before,
+  and `fixer.log` gets the session id and its last words. Without tmux, or with `fix_pane = false`, it is
+  `-p` as before.
+
 ## 0.6.12 (2026-10-24)
 
 - A batch that fails the gate gets one repair session for the whole batch before it is split: it sees every

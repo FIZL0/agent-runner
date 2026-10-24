@@ -314,16 +314,20 @@ def tmux(*a: str, **kw) -> sp.CompletedProcess:
 
 
 def pane(name: str, cwd: Path, cmd: str, env=(), logfile: Path | None = None) -> int:
-    """Open cmd in a pane of the window "agents", tagged @runner=name, in slot order; returns its pid.
+    """Open cmd in a pane of the window "agents", tagged @runner=name, in slot order; returns its pid. The
+    fix and repair sessions (name "master") get a window of their own, "master", so the slots' layout does
+    not squeeze them to a column.
 
     Panes are found by their tag rather than their position, so you can break them out, join them or swap
     them around while the run goes on. The pane's output is piped to `logfile`, which is where a usage
     limit's "resets 3pm" shows up when the transcript does not have it.
     """
     envs = [a for e in env for a in ('-e', e)]
-    w = 'agents'
+    w = 'master' if name == 'master' else 'agents'
     where = ['new-window', '-n', w]
-    if w in tmux('list-windows', '-F', '#{window_name}').stdout.split():
+    if w == 'master':
+        pass  # one session at a time (it runs under MERGE), and its window closes with it
+    elif w in tmux('list-windows', '-F', '#{window_name}').stdout.split():
         here = sorted((int(h[1:]), p) for p, h in
                       (l.split('\t') for l in tmux('list-panes', '-t', w, '-F',
                                                    f'#{{pane_id}}\t#{{{TAG}}}').stdout.splitlines())
@@ -973,6 +977,65 @@ runner then merges each branch on its own. That is a real answer.
 """
 
 
+MASTER_PANE = False  # `run` sets it under tmux with [run] fix_pane: fix and repair sessions get a window
+MASTER_IDLE = 90     # s a master session sits at its prompt, its answer given, before the Stop hook ends it
+
+
+def master_env() -> list[str]:
+    """The master window's environment: a slot's (`slot_env`) without the per-slot `[run] slot_env` entries,
+    so it builds in the merge worktree the way the gate there does (`merge_env`)."""
+    env = ['AGENT_RUNNER=1']
+    if os.environ.get('AGENT_RUNNER_CONFIG') and C.file:
+        env.append(f'AGENT_RUNNER_CONFIG={C.file}')
+    env += [f'{k}={os.environ[k]}' for k in C.run['pass_env'] if k in os.environ]
+    return env + [e.replace('{slots}', str(SLOTS)) for e in C.run['slot_env'] if '{n}' not in e]
+
+
+def last_words(sid: str) -> str:
+    """The last thing session `sid` said, for fixer.log: why it committed what it did, or nothing."""
+    said = ''
+    try:
+        for l in open(transcript(sid) or os.devnull, encoding='utf-8', errors='replace'):
+            d = json.loads(l)
+            if d.get('type') == 'assistant':
+                text = [c.get('text', '') for c in d.get('message', {}).get('content', []) if isinstance(c, dict)]
+                said = '\n'.join(t for t in text if t) or said
+    except (OSError, ValueError):
+        pass
+    return said.strip()
+
+
+def fix_session(prompt: str, cwd: Path, fh) -> int:
+    """Run one fix or repair session in `cwd` to its end; its exit code. Raises what `sp.run` raises for a
+    missing agent or a timeout.
+
+    Under tmux (`[run] fix_pane`) it is an ordinary session in the window "master", so a human can watch
+    it work, or take it over by typing; the Stop hook ends it once it has been idle `MASTER_IDLE` seconds,
+    and its last words go to `fh`. Otherwise it is `-p`, its output in `fh`.
+    """
+    timeout = C.run['fix_timeout']
+    if not MASTER_PANE:
+        return sp.run(fix_cmd(prompt), cwd=str(cwd), stdout=fh, stderr=sp.STDOUT, stdin=sp.DEVNULL,
+                      timeout=timeout).returncode
+    if not shutil.which(C.run['agent']):
+        raise FileNotFoundError(C.run['agent'])
+    sid = str(uuid.uuid4())
+    fh.write(f'in tmux window "master", session {sid}\n')
+    fh.flush()
+    cmd = agent_cmd(prompt, sid, C.run['fix_model'], MASTER_IDLE, 'master')
+    pid = pane('master', cwd, cmd, master_env())
+    until = time.time() + timeout
+    while alive(pid):
+        if time.time() >= until:
+            for p in [*plat.children(pid), pid]:
+                plat.terminate(p)
+            fh.write(last_words(sid) + '\n')
+            raise sp.TimeoutExpired(cmd, timeout)
+        time.sleep(5)
+    fh.write(last_words(sid) + '\n')
+    return 0
+
+
 def fix_cmd(prompt: str) -> list[str]:
     """A fix session: one prompt, one answer, no session to keep — `-p`, so nothing types into a pane."""
     return [plat.exe(C.run['agent']), '-p', prompt, '--permission-mode', 'bypassPermissions',
@@ -985,7 +1048,7 @@ def fix_merge(tid: str, branch: str, files: list[str], cwd: Path) -> str | None:
     One session per merge, run to completion while the caller waits: the merge lock is held anyway, so
     there is nothing to gain from doing it in the background. Each one starts with an empty context and the
     ledger's tail, so the twentieth costs what the first did. (See the README for why this replaced a
-    long-lived "master" session.)
+    long-lived "master" session. Under tmux it still runs in a window named "master": see `fix_session`.)
 
     Never fatal. A fixer that fails, times out, aborts or is not installed leaves the merge for the caller
     to abort, and the task is left for a human.
@@ -1003,15 +1066,14 @@ def fix_merge(tid: str, branch: str, files: list[str], cwd: Path) -> str | None:
         fh.write(f'\n=== {dt.datetime.now().isoformat(timespec="seconds")} {tid} {", ".join(files)}\n')
         fh.flush()
         try:
-            r = sp.run(fix_cmd(prompt), cwd=str(cwd), stdout=fh, stderr=sp.STDOUT, stdin=sp.DEVNULL,
-                       timeout=C.run['fix_timeout'])
+            code = fix_session(prompt, cwd, fh)
         except FileNotFoundError:
             return f'no agent command to fix the conflicts with ([run] agent = {C.run["agent"]!r})'
         except sp.TimeoutExpired:
             note(f'{tid}: the fix session timed out after {C.run["fix_timeout"]}s')
             return f'the fix session ran past {C.run["fix_timeout"]}s'
     if git('rev-parse', '--verify', '-q', 'MERGE_HEAD', cwd=cwd).returncode == 0:
-        return f'the fix session did not finish the merge (exit {r.returncode}); see {logfile}'
+        return f'the fix session did not finish the merge (exit {code}); see {logfile}'
     if git('merge-base', '--is-ancestor', f'task/{tid}', 'HEAD', cwd=cwd).returncode:
         return f'the fix session aborted the merge; its reason is in {logfile}'
     note(f'{tid}: conflicts in {", ".join(files)} resolved by a fix session')
@@ -1052,8 +1114,7 @@ def repair_merge(tid: str, branch: str, cwd: Path, riders: list[str] = (), base:
         fh.write(f'\n=== {dt.datetime.now().isoformat(timespec="seconds")} {ids} repair (gate failed)\n')
         fh.flush()
         try:
-            sp.run(fix_cmd(prompt), cwd=str(cwd), stdout=fh, stderr=sp.STDOUT, stdin=sp.DEVNULL,
-                   timeout=r['fix_timeout'])
+            fix_session(prompt, cwd, fh)
         except FileNotFoundError:
             return f'no agent command to repair it with ([run] agent = {r["agent"]!r})'
         except sp.TimeoutExpired:
@@ -1942,6 +2003,8 @@ def run(argv: list[str], prog: str) -> int:
         return sequential(branch, model, idle, pause, a.force, once)
     global MUX
     MUX = TmuxMux() if choice == 'tmux' else ShimMux(choice)
+    global MASTER_PANE
+    MASTER_PANE = choice == 'tmux' and C.run['fix_pane']
     if choice == 'console':
         log('Windows Terminal (wt.exe) is not installed: each slot gets a console window of its own')
     if choice == 'tmux' and not os.environ.get('TMUX'):

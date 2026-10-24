@@ -101,7 +101,7 @@ plan/TODO.md ──pick──▶ slot N: git worktree <repo>-slots/sN on task/<I
 5. **Merge.** In a separate merge worktree, the runner merges `main` and `task/<ID>`:
    - conflicts in record-per-line files (`[run] joinable`, by default TODO.md and DONE.md) are joined,
      keeping both sides' lines;
-   - any other conflict goes to a one-shot fix session (`claude -p`);
+   - any other conflict goes to a one-shot fix session (in the tmux window "master", or `claude -p`);
    - the gate runs again if the merged code differs from what `done` tested.
    Only then is the main checkout moved to the tested merge. That takes seconds, it never stashes, and it
    waits if someone has uncommitted edits to the files involved.
@@ -298,8 +298,10 @@ file left behind by a run that was killed is cleared when the next run starts.
 
 ### Fix sessions
 
-A conflict the line join cannot resolve goes to one `claude -p` session, run in the merge worktree with
-the conflict in place. Its prompt (`FIXER` in `runner.py`) includes the tail of the ledger. It either
+A conflict the line join cannot resolve goes to one fresh session, run in the merge worktree with the
+conflict in place. Under tmux it is an interactive session in a window of its own, "master", so you can
+watch it or take it over by typing; its Stop hook ends it once it has been idle 90 s after its answer
+(`[run] fix_pane = false`, or no tmux: `claude -p`). Its prompt (`FIXER` in `runner.py`) includes the tail of the ledger. It either
 commits the resolution or runs `git merge --abort` and states why; its output goes to
 `.runner/fixer.log`. The merge lock is held while it runs, and it is capped at `[run] fix_timeout`
 (30 min). Set `fix_merges = false` to park every such conflict as `wip/<ID>` instead. With `[run] build`
