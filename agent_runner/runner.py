@@ -947,6 +947,31 @@ the other worktrees under {slots_dir}. The runner runs the whole gate again when
 other and picking needs a human), commit nothing and say why in one line. That is a real answer.
 """
 
+REPAIR_BATCH = """The merges of {tasks} into {branch} are committed in this checkout, one after another on top of \
+{base}, and the test gate fails on the result. Each branch passed the gate on its own before it was merged, so \
+the likely cause is a clash between them that git merged without a conflict: an item two of them added under \
+one name, a caller of something another renamed or removed, a test that checks what another changed on \
+purpose. Repair it, so all of them land after one more gate run. Nobody will answer questions: decide, and \
+say what you decided.
+
+The gate's output ends with this (all of it is in {log}):
+
+{tail}
+
+1. `git log --first-parent --format='%h %s' {base}..HEAD` lists the merges; `git diff <merge>^1 <merge> --stat` \
+shows what each one brought. Find where they meet.
+2. Fix the clash in the fewest lines, so that **every branch's intent survives**. Change nothing the clash \
+does not need. You are not reviewing the code and you are not redoing any task. A test one branch wrote for \
+behaviour another changed on purpose is updated to the merged behaviour, and you say so.
+3. {check}Then commit the fix on top: `git add` what you changed and \
+`git commit -m "{tid}: repair the batch merge of {ids} into {branch}: <what clashed>"`. Do not amend or reset \
+the merges, do not push, do not merge, rebase or delete anything else, do not `git stash`, and do not touch \
+the other worktrees under {slots_dir}. The runner runs the whole gate again when you are done.
+4. If it is not a clash you can fix honestly (the failure is {branch}'s own, one branch is broken by itself, \
+two branches contradict each other and picking needs a human), commit nothing and say why in one line. The \
+runner then merges each branch on its own. That is a real answer.
+"""
+
 
 def fix_cmd(prompt: str) -> list[str]:
     """A fix session: one prompt, one answer, no session to keep — `-p`, so nothing types into a pane."""
@@ -994,9 +1019,10 @@ def fix_merge(tid: str, branch: str, files: list[str], cwd: Path) -> str | None:
     return None
 
 
-def repair_merge(tid: str, branch: str, cwd: Path) -> str | None:
+def repair_merge(tid: str, branch: str, cwd: Path, riders: list[str] = (), base: str = '') -> str | None:
     """Give a committed merge that fails the gate to a fresh agent session in `cwd`. None when it committed
-    a repair on top of the merge (the caller runs the gate again), else why not.
+    a repair on top of the merge (the caller runs the gate again), else why not. With `riders`, it is the
+    whole batch (task/<tid> and theirs, merged on `base` one after another) that the session repairs.
 
     Like `fix_merge`: one session, under the merge lock, never fatal. It reads the gate's full output in
     `<notes>/merge-gate.log`, which `tested` wrote; the prompt carries the tail.
@@ -1011,13 +1037,19 @@ def repair_merge(tid: str, branch: str, cwd: Path) -> str | None:
     check = (f'Check it with `{r["build"]}` and, if the gate names failing tests, the gate for just those '
              f'({r["retest"] or r["test"]}). ' if r['build'] else
              f'Check it with the failing tests alone if you can; not the whole gate (`{r["test"]}`). ')
-    prompt = REPAIR.format(tid=tid, branch=branch, log=gate_log, tail=tail, check=check, slots_dir=SLOTS_DIR,
-                           merge=merge)
+    ids = ', '.join([tid, *riders])
+    if riders:
+        prompt = REPAIR_BATCH.format(tid=tid, branch=branch, log=gate_log, tail=tail, check=check, slots_dir=SLOTS_DIR,
+                                     base=base[:12], ids=ids, tasks=', '.join(f'task/{t}' for t in [tid, *riders]))
+        log(f'{tid}: the batch ({ids}) fails the gate — handing it to a repair session')
+    else:
+        prompt = REPAIR.format(tid=tid, branch=branch, log=gate_log, tail=tail, check=check, slots_dir=SLOTS_DIR,
+                               merge=merge)
+        log(f'{tid}: the merge fails the gate — handing it to a repair session')
     before = git('rev-parse', 'HEAD', cwd=cwd).stdout.strip()
     logfile = C.notes('fixer.log')
-    log(f'{tid}: the merge fails the gate — handing it to a repair session')
     with open(logfile, 'a', encoding='utf-8') as fh:
-        fh.write(f'\n=== {dt.datetime.now().isoformat(timespec="seconds")} {tid} repair (gate failed)\n')
+        fh.write(f'\n=== {dt.datetime.now().isoformat(timespec="seconds")} {ids} repair (gate failed)\n')
         fh.flush()
         try:
             sp.run(fix_cmd(prompt), cwd=str(cwd), stdout=fh, stderr=sp.STDOUT, stdin=sp.DEVNULL,
@@ -1161,6 +1193,8 @@ def merge_batch(tid: str, branch: str) -> str | None:
     solo = not C.run['batch']
     repairs: list[str] = []  # a repair session's commits, replayed when the merge is built again
     repaired = False
+    batch_repaired = False  # one repair session per batch; a batch that still fails is split
+    batch_fixes = C.run['fix_merges']  # a rider's conflict a join cannot do gets a fix session in the batch
     try:
         for attempt in range(3):
             git('merge', '--abort', cwd=d), git('reset', '-q', '--hard', cwd=d), git('clean', '-fdq', cwd=d)
@@ -1183,15 +1217,26 @@ def merge_batch(tid: str, branch: str) -> str | None:
                         return why
             riders = []
             for t in ([] if solo else sorted(WAITING - set(LANDED))):
-                if (files := merge_into(d, renumber_doubles(f'task/{t}', 'HEAD', t, d),
-                                        f"Merge branch 'task/{t}'")) is None:
+                ref = renumber_doubles(f'task/{t}', 'HEAD', t, d)
+                if (files := merge_into(d, ref, f"Merge branch 'task/{t}'")) is None:
                     git('merge', '--abort', cwd=d)
                     continue
                 if files:
-                    if not (all(map(joinable, files)) and union(files, t, d)):
+                    if all(map(joinable, files)) and union(files, t, d):
+                        git('commit', '-q', '--no-edit', cwd=d)
+                    elif batch_fixes:
+                        # a fix session takes the conflict here, so the rider shares this gate run
+                        git('merge', '--abort', cwd=d)
+                        at = git('rev-parse', 'HEAD', cwd=d).stdout.strip()
+                        git('merge', '--no-edit', '-m', f"Merge branch 'task/{t}'", ref, cwd=d)
+                        if fix_merge(t, branch, files, d):
+                            git('merge', '--abort', cwd=d)
+                            git('reset', '-q', '--hard', at, cwd=d)
+                            git('clean', '-fdq', cwd=d)
+                            continue  # it waits for its own turn
+                    else:
                         git('merge', '--abort', cwd=d)
                         continue  # it waits for its own turn, where a fix session can take the conflict
-                    git('commit', '-q', '--no-edit', cwd=d)
                 riders.append(t)
             if riders:
                 log(f'{tid}: merging together with {", ".join(riders)} (one gate run)')
@@ -1209,10 +1254,22 @@ def merge_batch(tid: str, branch: str) -> str | None:
             # from what it tested (`[run] untested` files are not code)
             if riders or not all(map(untestable, git('diff', '--name-only', f'task/{tid}', merged, cwd=d).stdout.split())):
                 if why := tested(tid, d, base):
-                    if riders:
+                    if riders and not batch_repaired and C.run['repair_merges']:
+                        batch_repaired = True
+                        before = merged
+                        if not (not_fixed := repair_merge(tid, branch, d, riders, base)) and not tested(tid, d, base):
+                            note(f'{tid}: the batch ({", ".join(riders)} with it) failed the gate; a repair session fixed it')
+                            # replayed if the batch is built again because the shared branch moved
+                            repairs = git('rev-list', '--reverse', f'{before}..HEAD', cwd=d).stdout.split()
+                            merged = git('rev-parse', 'HEAD', cwd=d).stdout.strip()
+                            why = None
+                        else:
+                            note(f'{tid}: no batch repair: {not_fixed or "the repaired batch still fails the gate"}')
+                    if why and riders:
                         log(f'{tid}: the batch fails the gate; {tid} again alone, the others in their own turns')
-                        solo = True
+                        solo, repairs = True, []
                         continue
+                if why:
                     if repaired:
                         return why + (' (after a repair session)' if repairs else '')
                     repaired = solo = True  # a rebuild replays the repair onto this task alone

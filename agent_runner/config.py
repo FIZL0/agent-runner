@@ -104,7 +104,7 @@ DEFAULTS: dict = {
         'fix_timeout': 1800,
         'build': '',            # a quick build, not the gate: a fix session runs it before it commits, so a
                                 # clash git merged without a conflict (one name defined twice) is caught there
-        'repair_merges': True,  # a merge that fails the gate gets one session to repair it before it is parked
+        'repair_merges': True,  # a merge (or a batch) that fails the gate gets one session to repair it first
     },
     'git': {
         'push': 'origin',       # where finished work goes; false turns every push off

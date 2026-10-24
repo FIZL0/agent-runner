@@ -646,7 +646,7 @@ def test_shutdown(repo: Path):
         R.plat.power_off, R.pick, R.SHUTDOWN, R.SHUTDOWN_GRACE = saved
 
 
-def test_gate_and_batches(repo: Path):
+def test_gate_and_batches(repo: Path, tmp: Path):
     print('run: untested globs, flaky and inherited failures, batched merges, phases that are not attempts')
     R.init(repo)
     r = R.C.run
@@ -688,14 +688,47 @@ def test_gate_and_batches(repo: Path):
     eq(R.merge('B2', 'main'), None, 'the rider\'s own turn only does the bookkeeping')
     check(git(repo, 'branch', '--list', 'task/B2') == '' and not R.LANDED, 'its branch is gone')
 
-    commit_on(repo, 'B3', {'b3.py': '3\n'}, 'B3: three')
-    commit_on(repo, 'B4', {'BROKEN': ''}, 'B4: breaks the gate')
-    R.WAITING.add('B4')
-    eq(R.merge('B3', 'main'), None, 'a batch that fails the gate still lands its own task')
-    has((repo / '.runner/run.log').read_text(), r'B3: the batch fails the gate', 'alone, after saying so')
-    check((repo / 'b3.py').exists() and not (repo / 'BROKEN').exists(), 'without the rider')
-    R.WAITING.discard('B4')
-    git(repo, 'branch', '-D', 'task/B4')
+    agent = tmp / 'fake-agent'
+    agent.write_text(FAKE_AGENT, encoding='utf-8')
+    agent.chmod(0o755)
+    r['agent'] = str(agent)
+    try:
+        commit_on(repo, 'B3', {'b3.py': '3\n'}, 'B3: three')
+        commit_on(repo, 'B4', {'BROKEN': ''}, 'B4: breaks the gate')
+        R.WAITING.add('B4')
+        os.environ['FAKE_FIX'] = 'abort'
+        eq(R.merge('B3', 'main'), None, 'a batch that fails the gate still lands its own task')
+        log = (repo / '.runner/run.log').read_text()
+        has(log, r'B3: the batch \(B3, B4\) fails the gate — handing it to a repair session', 'after a batch repair session')
+        has(log, r'B3: the batch fails the gate', 'that commits nothing, alone, after saying so')
+        check((repo / 'b3.py').exists() and not (repo / 'BROKEN').exists(), 'without the rider')
+        R.WAITING.discard('B4')
+        git(repo, 'branch', '-D', 'task/B4')
+
+        commit_on(repo, 'B5', {'b5.py': '5\n'}, 'B5: five')
+        commit_on(repo, 'B6', {'BROKEN': '', 'b6.py': '6\n'}, 'B6: clashes with the batch')
+        R.WAITING.add('B6')
+        os.environ['FAKE_FIX'] = 'repair'
+        eq(R.merge('B5', 'main'), None, 'a batch the repair session fixes lands')
+        check((repo / 'b5.py').exists() and (repo / 'b6.py').exists() and not (repo / 'BROKEN').exists(),
+              'both tasks, with the repair')
+        eq(R.LANDED.get('B6', ('', ''))[1], git(repo, 'rev-parse', 'main'), 'the rider landed in the same merge')
+        has(git(repo, 'log', '-4', '--format=%s', 'main'), r'repair: drop BROKEN', 'the repair is a commit of its own')
+        R.WAITING.discard('B6')
+        eq(R.merge('B6', 'main'), None, 'and its own turn only does the bookkeeping')
+
+        commit_on(repo, 'B7', {'g.py': '# g, B7\n'}, 'B7: g')
+        commit_on(repo, 'B8', {'g.py': '# g, B8\n', 'b8.py': '8\n'}, 'B8: g too')
+        R.WAITING.add('B8')
+        os.environ['FAKE_FIX'] = 'theirs'
+        eq(R.merge('B7', 'main'), None, 'a rider whose conflict a join cannot do')
+        has((repo / '.runner/run.log').read_text(), r'B8: the fix session resolved g\.py', 'gets a fix session in the batch')
+        check((repo / 'b8.py').exists() and 'B8' in R.LANDED, 'and lands with it, in one gate run')
+        R.WAITING.discard('B8')
+        eq(R.merge('B8', 'main'), None, 'its own turn only does the bookkeeping')
+    finally:
+        os.environ.pop('FAKE_FIX', None)
+        r['agent'] = 'claude'
 
     r['not_attempt'] = r'^{id} spec:'
     commit_on(repo, 'S1', {'s.md': 'spec\n'}, 'S1 spec: how it works')
@@ -980,7 +1013,7 @@ def main() -> int:
                        lambda: test_retry(repo), lambda: test_unmerged(repo),
                        lambda: test_conflicts(repo, tmp), lambda: test_repair(repo, tmp),
                        lambda: test_prompt_and_hooks(repo),
-                       lambda: test_hooks(repo, tmp), lambda: test_gate_and_batches(repo),
+                       lambda: test_hooks(repo, tmp), lambda: test_gate_and_batches(repo, tmp),
                        lambda: test_platform(repo, tmp), lambda: test_shutdown(repo), lambda: test_merge_into(tmp),
                        lambda: test_leftovers(repo), lambda: test_renumber(repo),
                        lambda: test_stop_waiter(tmp), lambda: test_land_waits_aloud(repo), lambda: test_land_gives_merge_back(repo),

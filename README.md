@@ -314,6 +314,16 @@ then runs once more; a second failure parks the branch as before. A repair is re
 the shared branch moves during the tests and the merge is built again. `repair_merges = false` parks at
 the first failure.
 
+A batch (`batch = true`) is repaired the same way, as a whole: when the branches merged together fail the
+gate, one repair session sees every merge in the batch (`REPAIR_BATCH`) and fixes where they clash, and the
+gate runs once more for all of them. Only if that fails too is the batch split, each branch merged on its
+own. A rider whose conflict the line join cannot do gets its fix session inside the batch, so it shares the
+batch's gate run instead of waiting for a turn of its own.
+
+A tested merge that cannot land because of uncommitted edits in the main checkout to files it changes waits
+10 minutes, then gives the merge lock back and stays `task/<ID>`; it is merged again once those files are
+committed. It is never parked for that.
+
 ## Working with it well
 
 - **Small tasks that name their files.** One session, one task, one commit is the unit. A task line that

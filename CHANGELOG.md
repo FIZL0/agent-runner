@@ -2,6 +2,15 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
+## 0.6.12 (2026-10-24)
+
+- A batch that fails the gate gets one repair session for the whole batch before it is split: it sees every
+  merge in it (`REPAIR_BATCH`), commits a fix on top, and the gate runs once more for all of them. Splitting
+  cost every rider a gate run of its own and, for a clash between riders, a repair session each — in one
+  night here every batch of fifteen failed to build together and went one by one.
+- A rider whose conflict the line join cannot do gets a fix session inside the batch (`[run] fix_merges`),
+  instead of waiting for its own turn and gate run.
+
 ## 0.6.11 (2026-10-24)
 
 - A tested merge that cannot land only because of uncommitted edits in the main checkout is no longer
