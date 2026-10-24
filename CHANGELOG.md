@@ -5,10 +5,10 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 ## 0.6.13 (2026-10-24)
 
 - Under tmux, fix and repair sessions are ordinary interactive sessions in a window named "master"
-  (`[run] fix_pane`, on by default), not `claude -p`: you can watch one resolve a merge, or take it over by
-  typing. Its Stop hook ends it 90 s after its answer, the runner then reads the merge worktree as before,
-  and `fixer.log` gets the session id and its last words. Without tmux, or with `fix_pane = false`, it is
-  `-p` as before.
+  instead of `claude -p`: you can watch one resolve a merge, or take it over by typing. Its Stop hook ends
+  it 90 s after its answer, the runner then reads the merge worktree as before, and `fixer.log` gets the
+  session id and its last words. There is no switch back to `-p`; only a run without tmux (Windows, the
+  sequential run) still uses it, having no window to put the session in.
 
 ## 0.6.12 (2026-10-24)
 

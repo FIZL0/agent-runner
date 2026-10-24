@@ -977,7 +977,7 @@ runner then merges each branch on its own. That is a real answer.
 """
 
 
-MASTER_PANE = False  # `run` sets it under tmux with [run] fix_pane: fix and repair sessions get a window
+MASTER_PANE = False  # `run` sets it under tmux: fix and repair sessions get a window of their own
 MASTER_IDLE = 90     # s a master session sits at its prompt, its answer given, before the Stop hook ends it
 
 
@@ -1009,9 +1009,9 @@ def fix_session(prompt: str, cwd: Path, fh) -> int:
     """Run one fix or repair session in `cwd` to its end; its exit code. Raises what `sp.run` raises for a
     missing agent or a timeout.
 
-    Under tmux (`[run] fix_pane`) it is an ordinary session in the window "master", so a human can watch
+    Under tmux it is an ordinary session in the window "master", so a human can watch
     it work, or take it over by typing; the Stop hook ends it once it has been idle `MASTER_IDLE` seconds,
-    and its last words go to `fh`. Otherwise it is `-p`, its output in `fh`.
+    and its last words go to `fh`. Without tmux (Windows, the sequential run) it is `-p`, its output in `fh`.
     """
     timeout = C.run['fix_timeout']
     if not MASTER_PANE:
@@ -2004,7 +2004,7 @@ def run(argv: list[str], prog: str) -> int:
     global MUX
     MUX = TmuxMux() if choice == 'tmux' else ShimMux(choice)
     global MASTER_PANE
-    MASTER_PANE = choice == 'tmux' and C.run['fix_pane']
+    MASTER_PANE = choice == 'tmux'
     if choice == 'console':
         log('Windows Terminal (wt.exe) is not installed: each slot gets a console window of its own')
     if choice == 'tmux' and not os.environ.get('TMUX'):
