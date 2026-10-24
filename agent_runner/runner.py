@@ -1097,6 +1097,10 @@ def suspect(base: str, merged: str) -> str:
                  if l.startswith('+') and not l.startswith('+++') and rx.search(l)), '')
 
 
+LAND_WAIT = 10 * 60  # how long a tested merge holds MERGE waiting on edits in the main checkout
+EDITS_POLL = 60  # then how often its thread looks whether those edits are committed
+EDITED = 'uncommitted edits in the main checkout'  # land()'s why for them; finish() keeps the branch
+
 WAITING: set[str] = set()  # finished tasks queued on MERGE: whoever merges next takes them along
 LANDED: dict[str, tuple[str, str]] = {}  # a task that landed in another's batch -> (base, merged)
 
@@ -1244,7 +1248,8 @@ def land(tid: str, branch: str, merged: str) -> str | None:
 
     None when it landed, 'conflict' when the branch's new commits clash with it (the caller builds it again
     on top), else why it could not. Uncommitted edits there are never moved aside: git refuses, before it
-    starts, a merge that would change a file somebody is editing, so this waits for them to commit.
+    starts, a merge that would change a file somebody is editing, so this waits LAND_WAIT for them to commit,
+    then gives MERGE back with a why starting EDITED: `finish` keeps task/<ID> and tries again once they are.
     """
     t0 = time.time()
     said = False
@@ -1254,7 +1259,7 @@ def land(tid: str, branch: str, merged: str) -> str | None:
         nonlocal said
         if not said:
             said = True
-            log(f'{tid}: tested, waiting to land on {branch}: {why} (gives up after 60 min)')
+            log(f'{tid}: tested, waiting to land on {branch}: {why}')
             print('\a', end='', flush=True)
 
     while git('diff', '--name-only', '--diff-filter=U').stdout.strip() or \
@@ -1270,8 +1275,8 @@ def land(tid: str, branch: str, merged: str) -> str | None:
     ref = renumber_doubles(merged, 'HEAD', tid, ROOT)
     while git('merge', '-q', *msg, ref).returncode and \
             git('rev-parse', '--verify', '-q', 'MERGE_HEAD').returncode:
-        if time.time() - t0 > 60 * 60:
-            return 'uncommitted edits in the main checkout to files the merge changes, for 60 min'
+        if time.time() - t0 > LAND_WAIT:
+            return f'{EDITED} to files the merge changes'
         if not said:
             edited = set(git('diff', '--name-only', 'HEAD').stdout.split())
             edited |= set(git('ls-files', '--others', '--exclude-standard').stdout.split())
@@ -1373,7 +1378,17 @@ def finish(tid: str, n: int, sid: str, branch: str) -> None:
         note(f'{tid}: no commits — nothing to merge')
         log(f'{tid}: no commits — nothing to merge')
         return
-    if not (why := merge(tid, branch)):
+    while (why := merge(tid, branch)) and why.startswith(EDITED):
+        # Tested and only waiting on somebody's edits: parking it would throw the work away for a fresh
+        # attempt. The branch stays task/<ID> (`pick` leaves it alone, the next run's `unmerged` takes it).
+        log(f'{tid}: {why}; task/{tid} stays and merges again once they are committed')
+        print('\a', end='', flush=True)
+        while blocked_by_edits(tid, branch):
+            if stopping():
+                log(f'{tid}: the run stops; task/{tid} waits for the next run to merge it')
+                return
+            time.sleep(EDITS_POLL)
+    if not why:
         return
     note(f'{tid}: LEFT FOR A HUMAN — {why}')
     log(f'{tid}: LEFT FOR A HUMAN — {why}. Its {len(commits)} commits: {" / ".join(commits)[:300]}')
@@ -1383,6 +1398,13 @@ def finish(tid: str, n: int, sid: str, branch: str) -> None:
         log(f'{tid}: its branch is parked as wip/{tid}; the task stays open and can start again')
         if out := push(ROOT, f'wip/{tid}'):  # the one copy of that work: get it off this disk
             log(f'{tid}: {out}')
+
+
+def blocked_by_edits(tid: str, branch: str) -> bool:
+    """The main checkout has uncommitted edits (or new files) to files task/<tid> changes."""
+    edited = set(git('diff', '--name-only', 'HEAD').stdout.split())
+    edited |= set(git('ls-files', '--others', '--exclude-standard').stdout.split())
+    return bool(edited & set(git('diff', '--name-only', f'{branch}...task/{tid}').stdout.split()))
 
 
 # --- watching a session --------------------------------------------------------

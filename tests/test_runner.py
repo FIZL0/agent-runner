@@ -6,7 +6,8 @@
 What it proves is the part a night depends on and nobody watches: which task a free slot takes, that
 `done` gates, ticks, commits and pushes only the task branch, and that a finished branch is merged in the
 merge worktree, joined or handed to a fix session when it conflicts, tested, landed, pushed, its remote
-copy dropped, and the blocks it freed reopened — or parked as wip/<ID> when it cannot land.
+copy dropped, and the blocks it freed reopened — or parked as wip/<ID> when it cannot land (but kept as
+task/<ID> while it only waits on edits in the main checkout).
 """
 from __future__ import annotations
 
@@ -943,6 +944,34 @@ def test_resume(repo: Path, tmp: Path):
         R.C.notes('slot2.log').unlink(missing_ok=True)
 
 
+def test_land_gives_merge_back(repo: Path):
+    print('run: a tested merge blocked by edits gives MERGE back after LAND_WAIT, and the branch knows when it is free')
+    R.init(repo)
+    git(repo, 'checkout', '-q', 'main')
+    git(repo, 'branch', '-f', 'task/W2', 'main')
+    d = R.SLOTS_DIR / 's1'
+    git(d, 'checkout', '-q', 'task/W2')
+    (d / 'h.py').write_text('# h, from the branch\n', encoding='utf-8')
+    git(d, 'add', 'h.py')
+    git(d, 'commit', '-qm', 'W2: h')
+    merged = git(d, 'rev-parse', 'HEAD')
+    git(d, 'checkout', '-q', '--detach')
+    (repo / 'h.py').write_text('# h, somebody writing it too\n', encoding='utf-8')
+    wait, R.LAND_WAIT = R.LAND_WAIT, 0
+    try:
+        why = R.land('W2', 'main', merged)
+        check(why is not None and why.startswith(R.EDITED), f'it gives up with the edits why, which finish() keeps the branch for ({why})')
+        check(R.blocked_by_edits('W2', 'main'), 'the edited file is one task/W2 changes')
+        (repo / 'h.py').unlink()
+        check(not R.blocked_by_edits('W2', 'main'), 'once the edit is gone the branch may merge again')
+        (repo / 'other.py').write_text('# not the branch\'s\n', encoding='utf-8')
+        check(not R.blocked_by_edits('W2', 'main'), 'edits to files the branch does not touch never hold it')
+        (repo / 'other.py').unlink()
+    finally:
+        R.LAND_WAIT = wait
+        git(repo, 'branch', '-D', 'task/W2')
+
+
 def main() -> int:
     with tempfile.TemporaryDirectory() as t:
         tmp = Path(t)
@@ -954,7 +983,7 @@ def main() -> int:
                        lambda: test_hooks(repo, tmp), lambda: test_gate_and_batches(repo),
                        lambda: test_platform(repo, tmp), lambda: test_shutdown(repo), lambda: test_merge_into(tmp),
                        lambda: test_leftovers(repo), lambda: test_renumber(repo),
-                       lambda: test_stop_waiter(tmp), lambda: test_land_waits_aloud(repo),
+                       lambda: test_stop_waiter(tmp), lambda: test_land_waits_aloud(repo), lambda: test_land_gives_merge_back(repo),
                        lambda: test_resume(repo, tmp)])
 
 

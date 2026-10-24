@@ -2,6 +2,16 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
+## 0.6.11 (2026-10-24)
+
+- A tested merge that cannot land only because of uncommitted edits in the main checkout is no longer
+  parked as wip/<ID> after an hour. It waits 10 min holding MERGE, then gives the lock back; its branch
+  stays task/<ID> (`pick` leaves it alone) and it is merged again, from a fresh build, as soon as the
+  files it changes have no uncommitted edits (checked every minute). A stop leaves the branch for the next
+  run's startup merge. Parking threw away finished, tested work for a fresh attempt: in one night an
+  interactive session's uncommitted edits sent five finished tasks back to the queue, and serialised a
+  dozen more behind an hour's wait each.
+
 ## 0.6.10 (2026-10-23)
 
 - A merge that fails the gate gets one repair session before it is parked as wip/<ID>: a one-shot session
