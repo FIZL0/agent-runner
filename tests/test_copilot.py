@@ -138,6 +138,11 @@ def test_shim_once(repo: Path, tmp: Path):
     eq(R.slot_shim(str(job)), 0, 'exit 0 even when the agent was killed (taskkill leaves exit code 1)')
     eq(R.slot_shim(str(job)), 0, 'a restarted tab exits at once')
     eq(count.read_text(), 'x', 'and the session ran only once')
+    eq(marker.with_suffix('.exit').read_text(), 'exit code 1', 'how the agent ended is left for the runner')
+    job.write_text(json.dumps({'argv': [str(tmp / 'no-such-agent.exe')], 'cwd': str(repo), 'env': {},
+                               'marker': str(marker)}), encoding='utf-8')
+    eq(R.slot_shim(str(job)), 0, 'an agent that cannot start still ends the tab cleanly')
+    check(marker.with_suffix('.exit').read_text().startswith('could not start'), 'and says it could not start')
 
 
 def test_trust(tmp: Path):

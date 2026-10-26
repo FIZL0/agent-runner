@@ -709,7 +709,9 @@ class ShimMux:
 
     def open(self, n, cwd, prompt, sid, model, idle, env, logfile):
         job, marker = C.notes(f'slot{n}.job'), C.notes(f'slot{n}.live')
+        ended = marker.with_suffix('.exit')
         marker.unlink(missing_ok=True)
+        ended.unlink(missing_ok=True)
         envd = dict(e.split('=', 1) for e in env)
         job.write_text(json.dumps({'argv': agent_argv(prompt, sid, model, idle, f'slot{n}'), 'cwd': str(cwd),
                                    'env': envd, 'marker': str(marker)}), encoding='utf-8')
@@ -722,6 +724,9 @@ class ShimMux:
         for _ in range(100):
             if pid := marker_pid(marker):
                 return pid
+            if ended.exists():  # the agent ended before the marker was seen, or never started
+                log(f'slot {n}: the agent ended at once: {ended.read_text(encoding="utf-8").strip()[:300]}')
+                return None
             time.sleep(0.3)
         return None
 
@@ -780,7 +785,13 @@ def slot_shim(job: str) -> int:
         print('This slot\'s session has ended; the runner starts the next one. Close this tab.')
         return 0
     f.write_text(json.dumps({**spec, 'started': True}), encoding='utf-8')
-    run_session(spec['argv'], spec['cwd'], spec['env'], Path(spec['marker']))
+    ended = Path(spec['marker']).with_suffix('.exit')
+    try:
+        code = run_session(spec['argv'], spec['cwd'], spec['env'], Path(spec['marker']))
+        ended.write_text(f'exit code {code}', encoding='utf-8')
+    except OSError as e:
+        ended.write_text(f'could not start {spec["argv"][0]}: {e}', encoding='utf-8')
+        print(f'could not start the agent: {e}')
     return 0
 
 
@@ -1415,6 +1426,7 @@ COPILOT_FAILED = re.compile(r'Failed to get response from the AI model|could not
 PROGRESS = ('"type":"user.message"', '"type":"assistant.turn_start"', '"type":"tool.execution_start"')
 RESUME_AFTER = 120  # s after a failed model call before the session is resumed; doubles with each resume
 RESUME_MAX = 5
+START_TRIES = 3  # a task whose session will not start is tried this many times in a run
 RESUME = ('The connection to the model failed and this session stopped mid-task. Carry on with task {tid} from '
           'where you left off.')
 
@@ -1812,6 +1824,7 @@ def run(argv: list[str], prog: str) -> int:
     merging: list[threading.Thread] = []
     stall_said: set[str] = set()
     resumes: dict[str, int] = {}  # session id -> times it was resumed after a failed model call
+    failed_starts: dict[str, int] = {}  # task -> sessions that did not start
     cap_said = stop_said = False
     log(f'run: {slots} slots in {MUX.name}, mode {mode}, merging into {branch}' +
         (f', weekly usage {weekly()}%' if not a.force and r['agent'] == 'claude' else ''))
@@ -1909,7 +1922,12 @@ def run(argv: list[str], prog: str) -> int:
                             log(f'run busy: new work ({task[0]})')
                             idle_said = False
                     else:
-                        tried.add(task[0])
+                        failed_starts[task[0]] = failed_starts.get(task[0], 0) + 1
+                        if failed_starts[task[0]] >= START_TRIES:
+                            tried.add(task[0])
+                        else:  # a terminal that was slow to open, or an agent that failed once: again later
+                            log(f'slot {n}: {task[0]} will be tried again in {pause} s')
+                            free_at[n] = dt.datetime.now() + dt.timedelta(seconds=pause)
         retry_reopened(tried, closed, branch)
         if REOPENED:
             tried -= REOPENED  # a task reopened by a merge is a new attempt, not the one that blocked
