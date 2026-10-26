@@ -207,12 +207,61 @@ def test_transcript(tmp: Path):
     eq(R.copilot_failed('sid-9'), None, 'and a session that is working is not failed')
 
 
+def test_pi(repo: Path):
+    print('pi: command lines, the extension, the session files, stats and resuming a failed call')
+    R.init(repo)
+    R.C.run['agent'], R.C.run['model'], R.C.run['fix_model'] = 'pi', 'github-copilot/m1', 'github-copilot/m2'
+    try:
+        check(R.pi() and not R.copilot(), '[run] agent = "pi" is recognised')
+        argv = R.agent_argv('do T1', 'sid-p', 'github-copilot/m1', 45, 'slotP')
+        eq(argv[-2:], ['--', 'do T1'], 'Pi reads its options first, the prompt after --')
+        eq(argv[argv.index('--session-id') + 1], 'sid-p', 'the session id is ours')
+        eq(Path(argv[argv.index('--session-dir') + 1]), R.pi_sessions(), 'in a session folder of this run')
+        eq(argv[argv.index('--model') + 1], 'github-copilot/m1', 'with the model')
+        ext = Path(argv[argv.index('-e') + 1])
+        text = ext.read_text(encoding='utf-8')
+        check('"--stop-hook", "--idle", "45"' in text, 'the extension calls this runner back after agent_settled')
+        check('const NO_PUSH: boolean = true' in text, 'and refuses git push, since pushing is off')
+        fix = R.fix_cmd('fix it')
+        check('-p' in fix and '--no-session' in fix and fix[fix.index('--model') + 1] == 'github-copilot/m2',
+              'a fix session is print mode, keeps no session, uses fix_model')
+
+        ev = lambda ts, **m: json.dumps({'type': 'message', 'timestamp': ts, 'message': m},  # noqa: E731
+                                        separators=(',', ':'))
+        lines = [json.dumps({'type': 'session', 'id': 'sid-p', 'timestamp': '2020-01-01T10:00:00.000Z'},
+                            separators=(',', ':')),
+                 ev('2020-01-01T10:00:01.000Z', role='user', content='go'),
+                 ev('2020-01-01T10:00:05.000Z', role='assistant', stopReason='toolUse',
+                    usage={'input': 2, 'cacheRead': 18000, 'cacheWrite': 2000, 'output': 50}),
+                 ev('2020-01-01T10:00:06.000Z', role='toolResult', toolName='bash'),
+                 ev('2020-01-01T10:09:00.000Z', role='assistant', stopReason='stop',
+                    usage={'input': 2, 'cacheRead': 40000, 'cacheWrite': 1000, 'output': 80})]
+        f = R.pi_sessions() / '2020-01-01T10-00-00-000Z_sid-p.jsonl'
+        f.write_text('\n'.join(lines) + '\n', encoding='utf-8')
+        eq(R.transcript('sid-p'), str(f), 'the transcript is <timestamp>_<id>.jsonl in the session folder')
+        eq(R.stats('sid-p'), '9 min, 2 calls, context 20k first, 41k peak', 'stats read the assistant usage')
+        eq(R._user_entries(str(f)), 2, 'a user message and a tool result count as activity')
+        eq(R.agent_failed('sid-p'), None, 'a session that ended its turn is not failed')
+        with open(f, 'a', encoding='utf-8') as fh:
+            fh.write(ev('2020-01-01T10:10:00.000Z', role='assistant', stopReason='error',
+                        errorMessage='fetch failed', usage={}) + '\n')
+        got = R.agent_failed('sid-p')
+        check(got is not None and got[0] == 'fetch failed' and got[1] > R.RESUME_AFTER,
+              'a failed model call is found, to be resumed', str(got))
+        check(R.pi_last_error(str(f))[0] == 'fetch failed', 'and the Stop hook leaves that session alone')
+        with open(f, 'a', encoding='utf-8') as fh:
+            fh.write(ev('2020-01-01T10:12:00.000Z', role='user', content=R.RESUME) + '\n')
+        eq(R.agent_failed('sid-p'), None, 'once resumed it is not failed any more')
+    finally:
+        R.C.run['agent'], R.C.run['model'], R.C.run['fix_model'] = 'copilot', 'm1', 'm2'
+
+
 def main() -> int:
     tmp = Path(tempfile.mkdtemp(prefix='agent-runner-copilot-'))
     repo = make_repo(tmp)
     return report([lambda: test_commands(repo), lambda: test_hooks(repo), lambda: test_no_push(repo),
                    lambda: test_trust(tmp), lambda: test_transcript(tmp), lambda: test_shim_once(repo, tmp),
-                   lambda: test_utf8_merge(tmp)])
+                   lambda: test_utf8_merge(tmp), lambda: test_pi(repo)])
 
 
 if __name__ == '__main__':

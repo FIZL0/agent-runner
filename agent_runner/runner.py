@@ -429,6 +429,65 @@ def copilot_home() -> Path:
     return Path(os.environ.get('COPILOT_HOME') or Path.home() / '.copilot')
 
 
+def pi() -> bool:
+    """`[run] agent` is the Pi coding agent (pi.dev)."""
+    return Path(C.run['agent']).stem.lower() == 'pi'
+
+
+def pi_sessions() -> Path:
+    """Where Pi keeps this run's sessions (`--session-dir`), as `<timestamp>_<session id>.jsonl`."""
+    return C.notes('pi-sessions', 'x').parent
+
+
+def pi_argv0() -> list[str]:
+    """Pi itself. On Windows its npm `.cmd` shim is skipped: cmd.exe would cut a multi-line prompt short and
+    ask "Terminate batch job?" on Ctrl-C, so node runs the CLI the shim names."""
+    exe = plat.exe(C.run['agent'])
+    if plat.WINDOWS and exe.lower().endswith('.cmd'):
+        cli = Path(exe).parent / 'node_modules' / '@earendil-works' / 'pi-coding-agent' / 'dist' / 'bundle' / 'cli.js'
+        node = Path(exe).parent / 'node.exe'
+        if cli.exists():
+            return [str(node) if node.exists() else (shutil.which('node') or 'node'), str(cli)]
+    return [exe]
+
+
+PI_EXTENSION = """// Written by agent-runner for each run: the idle Stop hook and, when pushing is off, no git push.
+import { spawn } from "node:child_process";
+
+const HOOK: string[] = %(hook)s;
+const NO_PUSH: boolean = %(no_push)s;
+const PUSH = /\\bgit(\\s+-[Cc]\\s+\\S+)*\\s+push\\b/;
+
+export default function (pi: any) {
+  pi.on("agent_settled", async (_event: any, ctx: any) => {
+    if (!process.env.AGENT_RUNNER) return;  // a person's own Pi session: never end it
+    const child = spawn(HOOK[0], HOOK.slice(1), { stdio: ["pipe", "ignore", "ignore"], detached: true, windowsHide: true });
+    child.on("error", () => {});
+    child.stdin.end(JSON.stringify({
+      transcript_path: ctx.sessionManager.getSessionFile(),
+      session_id: ctx.sessionManager.getSessionId(),
+    }));
+    child.unref();
+  });
+  pi.on("tool_call", async (event: any) => {
+    if (!NO_PUSH || (event.toolName !== "bash" && event.toolName !== "powershell")) return undefined;
+    if (PUSH.test(String(event.input?.command ?? ""))) {
+      return { block: true, reason: "Pushing is off for this run: never run git push. A human pushes." };
+    }
+    return undefined;
+  });
+}
+"""
+
+
+def pi_extension(idle: int) -> Path:
+    """The extension every Pi session of this run loads (`-e`): Pi has no hook settings, only extensions."""
+    f = C.notes('agent-runner-pi.ts')
+    f.write_text(PI_EXTENSION % {'hook': json.dumps([*runner_cmd(), 'run', '--stop-hook', '--idle', str(idle)]),
+                                 'no_push': 'false' if C.push_remote else 'true'}, encoding='utf-8')
+    return f
+
+
 def lean() -> list[str]:
     """Bash/Read/Edit/Write and the repo's own settings only: an unattended agent needs no MCP servers, and a
     user-level setting (a status line, a hook that asks) is something nobody is there to answer."""
@@ -436,11 +495,16 @@ def lean() -> list[str]:
         return []
     if copilot():
         return ['--disable-builtin-mcps']
+    if pi():
+        return ['--no-mcp']
     return ['--tools', 'Bash,Read,Edit,Write', '--setting-sources', 'project,local', '--strict-mcp-config']
 
 
 def agent_flags(sid: str, model: str, idle: int) -> list[str]:
     """Everything after the prompt. The Stop hook is this runner in --stop-hook mode."""
+    if pi():  # its Stop hook and the push guard are an extension (pi_extension)
+        return ['--session-id', sid, '--session-dir', str(pi_sessions()), '--model', model, '--approve',
+                '-e', str(pi_extension(idle)), *lean()]
     if copilot():  # its Stop hook is written into the checkout by copilot_hooks
         return ['--session-id', sid, '--allow-all', '--no-ask-user', '--no-auto-update', '--model', model,
                 *deny_push(), *lean()]
@@ -508,6 +572,9 @@ def agent_cmd(prompt: str, sid: str, model: str, idle: int, name: str) -> str:
     """
     pf = C.notes(f'{name}.prompt')
     pf.write_text(prompt, encoding='utf-8')
+    if pi():  # Pi reads its options first, then the messages after `--`
+        return shlex.join([C.run['agent'], *agent_flags(sid, model, idle), '--']) + \
+            f' "$(cat {shlex.quote(str(pf))})"'
     return shlex.join([C.run['agent'], *prompt_flag()]) + f' "$(cat {shlex.quote(str(pf))})" ' + \
         shlex.join(agent_flags(sid, model, idle))
 
@@ -526,6 +593,8 @@ def agent_argv(prompt: str, sid: str, model: str, idle: int, name: str) -> list[
     if len(prompt) > ARGV_PROMPT_MAX:
         prompt = (f'Your instructions for this session are in {pf.as_posix()}, too long to pass on a Windows '
                   f'command line. Read that whole file first, then follow it.')
+    if pi():
+        return [*pi_argv0(), *agent_flags(sid, model, idle), '--', prompt]
     return [plat.exe(C.run['agent']), *prompt_flag(), prompt, *agent_flags(sid, model, idle)]
 
 
@@ -979,6 +1048,9 @@ What happened on earlier merges in this run (the ledger's tail):
 
 def fix_cmd(prompt: str) -> list[str]:
     """A fix session: one prompt, one answer, no session to keep — `-p`, so nothing types into a pane."""
+    if pi():
+        return [*pi_argv0(), '-p', '--no-session', '--model', C.run['fix_model'], '--approve',
+                '-e', str(pi_extension(C.run['idle'])), *lean(), '--', prompt]
     if copilot():
         return [plat.exe(C.run['agent']), '-p', prompt, '--allow-all', '--no-ask-user', '--no-auto-update',
                 '--model', C.run['fix_model'], *deny_push(), *lean()]
@@ -1375,6 +1447,8 @@ def _finish(tid: str, n: int, sid: str, branch: str) -> None:
 # --- watching a session --------------------------------------------------------
 
 def transcript(sid: str) -> str | None:
+    if pi():
+        return next(iter(glob.glob(str(pi_sessions() / f'*_{glob.escape(sid)}.jsonl'))), None)
     if copilot():
         t = copilot_home() / 'session-state' / sid / 'events.jsonl'
         return str(t) if t.exists() else None
@@ -1392,6 +1466,10 @@ def stats(sid: str) -> str:
             if d.get('type') == 'session.usage_record' and (u := d.get('data', {}).get('usage')):
                 calls += 1
                 ctx.append(u.get('inputTokens', 0))
+            elif d.get('type') == 'message' and (m := d.get('message', {})).get('role') == 'assistant' \
+                    and (u := m.get('usage')):  # Pi
+                calls += 1
+                ctx.append(u.get('input', 0) + u.get('cacheRead', 0) + u.get('cacheWrite', 0))
             elif d.get('type') == 'assistant' and (u := d.get('message', {}).get('usage')):
                 calls += 1
                 ctx.append(sum(u.get(k, 0) for k in ('input_tokens', 'cache_read_input_tokens',
@@ -1444,6 +1522,35 @@ def copilot_failed(sid: str) -> tuple[str, float] | None:
             err, ts = d.get('data', {}).get('message', 'a failed model call'), d.get('timestamp', '')
         elif any(p in l for p in PROGRESS):
             err = ''
+    if not err or not ts:
+        return None
+    at = dt.datetime.fromisoformat(ts.replace('Z', '+00:00'))
+    return err, (dt.datetime.now(dt.timezone.utc) - at).total_seconds()
+
+
+def pi_last_error(t: str) -> tuple[str, str]:
+    """(error message, timestamp) when a Pi transcript's last turn ended in a failed model call, else ('', '')."""
+    err, ts = '', ''
+    try:
+        for l in open(t, encoding='utf-8', errors='replace'):
+            if '"role":"assistant"' in l and '"stopReason":"error"' in l:
+                d = json.loads(l)
+                err = d.get('message', {}).get('errorMessage') or 'a failed model call'
+                ts = d.get('timestamp', '')
+            elif any(f'"role":"{r}"' in l for r in ('user', 'toolResult', 'assistant')):
+                err = ''
+    except (OSError, ValueError):
+        return '', ''
+    return err, ts
+
+
+def agent_failed(sid: str) -> tuple[str, float] | None:
+    """(message, age in s) when the session stopped on a failed model call and should be resumed."""
+    if copilot():
+        return copilot_failed(sid)
+    if not pi() or not (t := transcript(sid)):
+        return None
+    err, ts = pi_last_error(t)
     if not err or not ts:
         return None
     at = dt.datetime.fromisoformat(ts.replace('Z', '+00:00'))
@@ -1549,6 +1656,8 @@ def stop_hook(idle: int) -> int:
     t = ev.get('transcript_path') or ev.get('transcriptPath')
     if not t or not os.path.exists(t):
         return 0
+    if pi_last_error(t)[0]:
+        return 0  # Pi settles after a failed model call too: the run resumes that session instead
     if ev.get('background_tasks'):
         idle = max(idle, int(os.environ.get('AGENT_RUNNER_IDLE_BG', 1800)))
     # POSIX: the hook's parent is the agent. Windows: the hook runs under Git Bash, whose pid is not the
@@ -1563,7 +1672,8 @@ def stop_hook(idle: int) -> int:
     return 0
 
 
-USER_ENTRY = re.compile(r'"type":"(user|user\.message|tool\.execution_complete)"')  # Claude Code; Copilot CLI
+# Claude Code; Copilot CLI; Pi (a user message or a tool result)
+USER_ENTRY = re.compile(r'"type":"(user|user\.message|tool\.execution_complete)"|"role":"(user|toolResult)"')
 
 
 def _user_entries(t: str) -> int:
@@ -1845,7 +1955,7 @@ def run(argv: list[str], prog: str) -> int:
 
     while True:
         for n in list(free_at):
-            if n in procs and copilot() and alive(procs[n][0]) and (f := copilot_failed(procs[n][1])) and \
+            if n in procs and alive(procs[n][0]) and (f := agent_failed(procs[n][1])) and \
                     (k := resumes.get(procs[n][1], 0)) < RESUME_MAX and f[1] >= RESUME_AFTER * 2 ** k:
                 pid, sid, since = procs[n]
                 resumes[sid] = k + 1
