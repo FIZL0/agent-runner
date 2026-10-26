@@ -2,6 +2,17 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
+## 0.6.14 (2026-10-26)
+
+- A session's temp folder (`<tmp>/claude-<uid>/<project>/<session>/`: its scratchpad and background tasks'
+  output) is deleted when the session ends for good. A session queued to resume keeps it. Claude Code
+  never deletes these, and agents build in their scratchpads: here one tmpfs with a per-user quota reached
+  EDQUOT holding 595 finished sessions' folders, 40 GB, 17 GB of it cargo target dirs.
+- At startup and every 6 h the run also sweeps this repository's session folders (the main checkout's,
+  the slots' and the merge worktree's) that no running process, no queued resume and no write in the last
+  day claims: sessions that ended while no run was up, interactive ones, and those from before 0.6.14.
+  Not on Windows, which has no /proc to tell a live session from an ended one.
+
 ## 0.6.13 (2026-10-24)
 
 - Under tmux, fix and repair sessions are ordinary interactive sessions in a window named "master"

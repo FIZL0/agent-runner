@@ -1005,6 +1005,49 @@ def test_land_gives_merge_back(repo: Path):
         git(repo, 'branch', '-D', 'task/W2')
 
 
+def test_session_tmp(repo: Path, tmp: Path):
+    print("an ended session's temp folder is deleted, and stale ones of this repo are swept")
+    R.init(repo)
+    root = tmp / 'tmproot'
+    os.environ['CLAUDE_CODE_TMPDIR'] = str(root)
+    sid = lambda: str(__import__('uuid').uuid4())
+    mine, slot, other = (root / 'claude-1' / R.project_slug(p)
+                         for p in (R.ROOT, R.SLOTS_DIR / 's1', tmp / 'elsewhere'))
+
+    def folder(proj: Path, s: str, age: float = 0) -> Path:
+        d = proj / s / 'scratchpad' / 'target'
+        d.mkdir(parents=True)
+        (d / 'big').write_bytes(b'x' * 1000)
+        old = time.time() - age
+        for p in [d / 'big', d, d.parent, d.parent.parent]:
+            os.utime(p, (old, old))
+        return proj / s
+
+    day = R.SESSION_TMP_KEEP + 60
+    try:
+        ended = folder(slot, sid())
+        R.drop_session_tmp(ended.name)
+        check(not ended.exists(), "a session that ended for good loses its temp folder")
+        stale, fresh, foreign = folder(mine, sid(), day), folder(slot, sid(), day), folder(other, sid(), day)
+        (fresh / 'scratchpad' / 'new').write_text('just written')
+        live_sid, queued_sid = sid(), sid()
+        live, waits = folder(slot, live_sid, day), folder(slot, queued_sid, day)
+        agent = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(30)', '--session-id', live_sid])
+        R.queue_resume('T9', 1, queued_sid, 'cut off')
+        time.sleep(0.2)
+        R.sweep_tmp(force=True)
+        check(not stale.exists(), "the main checkout's session that nothing wrote to in a day is swept")
+        check(fresh.exists(), 'one with a file written inside the day is kept')
+        check(live.exists(), 'one whose agent still runs is kept')
+        check(waits.exists(), 'one queued to resume is kept')
+        check(foreign.exists(), "another project's sessions are not the runner's to sweep")
+        R.sweep_tmp()
+        agent.kill()
+    finally:
+        os.environ.pop('CLAUDE_CODE_TMPDIR', None)
+        R.C.notes('T9.resume').unlink(missing_ok=True)
+
+
 def main() -> int:
     with tempfile.TemporaryDirectory() as t:
         tmp = Path(t)
@@ -1017,7 +1060,8 @@ def main() -> int:
                        lambda: test_platform(repo, tmp), lambda: test_shutdown(repo), lambda: test_merge_into(tmp),
                        lambda: test_leftovers(repo), lambda: test_renumber(repo),
                        lambda: test_stop_waiter(tmp), lambda: test_land_waits_aloud(repo), lambda: test_land_gives_merge_back(repo),
-                       lambda: test_resume(repo, tmp)])
+                       lambda: test_resume(repo, tmp),
+                       lambda: test_session_tmp(repo, tmp)])
 
 
 if __name__ == '__main__':

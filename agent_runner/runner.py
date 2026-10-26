@@ -1642,6 +1642,88 @@ def last_session(tid: str) -> tuple[int, str] | None:
     return best and best[1:]
 
 
+SESSION_TMP_KEEP = 24 * 3600  # s with no file written before a session's temp folder that nothing runs is swept
+SWEEP_EVERY = 6 * 3600        # s between sweeps in a long run
+_swept = [-1e9]
+
+
+def tmp_roots() -> list[Path]:
+    """Where Claude Code keeps its per-session temp folders, `<root>/claude-<uid>/<project>/<session>/`
+    (the scratchpad and background tasks' output). It never deletes them, and agents build in them: one
+    tmpfs with a per-user quota filled to EDQUOT with 40 GB of finished sessions' cargo target dirs."""
+    roots = [os.environ.get('CLAUDE_CODE_TMPDIR'), tempfile.gettempdir(), '/tmp']
+    return list(dict.fromkeys(Path(r) for r in roots if r))
+
+
+def drop_session_tmp(sid: str) -> None:
+    """Delete session `sid`'s temp folder: it has ended for good (not queued to resume)."""
+    if not re.fullmatch(r'[0-9a-f-]{36}', sid or ''):
+        return
+    for root in tmp_roots():
+        for d in root.glob(f'claude-*/*/{sid}'):
+            shutil.rmtree(d, ignore_errors=True)
+
+
+def project_slug(p: Path) -> str:
+    """Claude Code's folder name for a working directory: every character but [A-Za-z0-9] as '-'."""
+    return re.sub(r'[^A-Za-z0-9]', '-', str(p.resolve()))
+
+
+def live_sessions() -> set[str]:
+    """The session ids of every agent process running now (POSIX; empty where /proc is missing)."""
+    out = set()
+    for f in Path('/proc').glob('[0-9]*/cmdline'):
+        try:
+            args = f.read_text(errors='replace').split('\0')
+        except OSError:
+            continue
+        for flag in ('--session-id', '--resume'):
+            if flag in args[:-1]:
+                out.add(args[args.index(flag) + 1])
+    return out
+
+
+def newest_write(d: Path) -> float:
+    newest = d.stat().st_mtime
+    for top, dirs, files in os.walk(d):
+        for name in dirs + files:
+            try:
+                newest = max(newest, os.lstat(os.path.join(top, name)).st_mtime)
+            except OSError:
+                pass
+    return newest
+
+
+def sweep_tmp(force: bool = False) -> None:
+    """Delete this repository's sessions' temp folders (the main checkout's, the slots' and the merge
+    worktree's) that no process runs, no resume waits for, and nothing wrote to in SESSION_TMP_KEEP: a
+    session that ended while no run was up, an interactive one, or one from before the runner cleaned up."""
+    if not force and time.monotonic() - _swept[0] < SWEEP_EVERY:
+        return
+    _swept[0] = time.monotonic()
+    if plat.WINDOWS:  # no /proc to tell a live session from a finished one
+        return
+    keep = live_sessions() | {q[1] for q in queued().values()}
+    mine, slots = project_slug(ROOT), project_slug(SLOTS_DIR) + '-'
+    cutoff, freed = time.time() - SESSION_TMP_KEEP, 0
+    for root in tmp_roots():
+        for proj in root.glob('claude-*/*'):
+            if proj.name != mine and not proj.name.startswith(slots):
+                continue
+            for d in proj.iterdir():
+                if not re.fullmatch(r'[0-9a-f-]{36}', d.name) or d.name in keep or not d.is_dir():
+                    continue
+                try:
+                    if newest_write(d) > cutoff:
+                        continue
+                    freed += sum(f.stat().st_size for f in d.rglob('*') if f.is_file() and not f.is_symlink())
+                except OSError:
+                    continue
+                shutil.rmtree(d, ignore_errors=True)
+    if freed:
+        log(f'swept {freed / 2**20:,.0f} MB of ended sessions\' temp folders')
+
+
 def queue_cut_off(branch: str, slots: list[int]) -> None:
     """Startup: a slot still on task/<ID> whose session was cut off while no run was up (a reboot, the runner
     killed, the network down at its exit) is queued to resume instead of being reset for a new task."""
@@ -1872,6 +1954,7 @@ def sequential(branch: str, model: str, idle: int, pause: int, force: bool, once
             sp.run(agent_cmd(prompt_for(tid, 1, 1, ROOT, here), sid, model, idle, 'slot1'), shell=True,
                    cwd=str(ROOT), env={**os.environ, **env})
         log(f'{tid}: session ended ({stats(sid)})')
+        drop_session_tmp(sid)
         if C.run['on_exit']:
             sp.run(C.run['on_exit'], shell=True, cwd=str(ROOT), capture_output=True,
                    env={**os.environ, **dict(e.split('=', 1) for e in slot_env(1))})
@@ -2032,6 +2115,7 @@ def run(argv: list[str], prog: str) -> int:
         free_at.setdefault(n, dt.datetime.min)
 
     queue_cut_off(branch, [n for n in range(1, slots + 1) if n not in procs])
+    sweep_tmp(force=True)
     for tid in unmerged(branch, [n for n in free_at if n not in procs and n not in queued()]):
         log(f'{tid}: finished while no run was up; merging it now')
         tried.add(tid)
@@ -2043,6 +2127,7 @@ def run(argv: list[str], prog: str) -> int:
             reopen_landed(branch, 'a merge before this run')
 
     while True:
+        sweep_tmp()
         waiting = {n: q for n, q in queued().items() if n in free_at and n <= slots}
         for n in list(free_at):
             if n in procs and not alive(procs[n][0]):
@@ -2060,6 +2145,7 @@ def run(argv: list[str], prog: str) -> int:
                         continue
                     log(f'slot {n}: {task[0]} was cut off again ({why}) after {RESUMES_MAX} resumes; '
                         f'taken as ended')
+                drop_session_tmp(sid)  # ended for good: a resume (above) keeps its scratchpad
                 if save_leftovers(d := SLOTS_DIR / f's{n}', task[0], branch):
                     git('reset', '-q', '--hard', cwd=d)  # saved: the next start finds the slot clean
                     git('clean', '-fdq', cwd=d)
