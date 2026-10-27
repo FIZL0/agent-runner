@@ -23,11 +23,12 @@ from __future__ import annotations
 import argparse
 import subprocess
 import sys
+from functools import partial
 from pathlib import Path
 
 from agent_runner import plan
 from agent_runner.config import cfg
-from agent_runner.gitops import push, shared_branch
+from agent_runner.gitops import git, push, shared_branch
 
 
 PROG = 'run done'  # the name in messages; a wrapper sets its own ('kit done')
@@ -97,8 +98,7 @@ def main(argv: list[str] | None = None) -> int:
         plan.tick(a.id)
         print(f'ticked {a.id}')
 
-    def g(*args):
-        return subprocess.run(['git', *args], cwd=str(cwd), capture_output=True, text=True)
+    g = partial(git, cwd=cwd)
 
     def untick() -> int:  # nothing committed: the plan as it was, so `done` can run again
         g('reset', '-q')

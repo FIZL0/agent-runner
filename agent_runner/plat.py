@@ -286,7 +286,7 @@ def command_text(argv: list[str]) -> str:
 
 # --- terminals ---------------------------------------------------------------
 
-def mux_choice(slots: int, want: str, tmux_ok: bool, wt_ok: bool, windows: bool = WINDOWS) -> str:
+def mux_choice(want: str, tmux_ok: bool, wt_ok: bool, windows: bool = WINDOWS) -> str:
     """Which terminal a run puts its sessions in: 'sequential', 'tmux', 'wt' or 'console'.
 
     `want == 'none'` (`--no-tmux`) is the sequential run whatever is installed; one slot (and `once`) still

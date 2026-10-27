@@ -2,6 +2,18 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
+## 0.6.17 (2026-10-27)
+
+- No behaviour change: a simpler runner. Fewer git calls per scheduling tick: `pick` reads the tracked
+  files once for every task line (`plan.files_on_line` takes them as `tracked=`), and one
+  `git for-each-ref --no-merged` finds the finished `task/<ID>` branches for `pick` and `unmerged`, where
+  each branch had a `rev-list` or `git log` of its own. The end of a tick picks at most once, not three times.
+- The plan's 5 s read cache is gone (`plan.lines` reads the file): a read is cheap now that a tick makes
+  few, and nothing has to clear it.
+- A transcript's path is kept once found, so a stall check no longer globs `~/.claude/projects/*/` for
+  every slot every 10 s.
+- `plat.mux_choice` lost its unused `slots` argument; `gitops.shared_name` takes the name to fall back to.
+
 ## 0.6.16 (2026-10-27)
 
 - A merge skips the gate only when `task/<ID>` is the tree `done`'s gate passed on, which `done` now records

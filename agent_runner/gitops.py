@@ -8,15 +8,19 @@ from __future__ import annotations
 
 import os
 import subprocess
+from functools import partial
 from pathlib import Path
 
 from agent_runner.config import cfg, main_checkout
 
 
+def git(*a: str, cwd, **kw) -> subprocess.CompletedProcess:
+    """git in `cwd`, its output captured as text; `kw` goes to `subprocess.run` (env, input, timeout, …)."""
+    return subprocess.run(['git', *a], cwd=str(cwd), capture_output=True, text=True, **kw)
+
+
 def _git(cwd: Path):
-    def g(*a: str):
-        return subprocess.run(['git', *a], cwd=str(cwd), capture_output=True, text=True)
-    return g
+    return partial(git, cwd=cwd)
 
 
 NET_TIMEOUT = 300  # s a push or fetch may take; one that asks for a password fails at once instead
@@ -31,15 +35,14 @@ def _net(cwd: Path):
 
     def g(*a: str):
         try:
-            return subprocess.run(['git', *a], cwd=str(cwd), capture_output=True, text=True,
-                                  stdin=subprocess.DEVNULL, env=env, timeout=NET_TIMEOUT)
+            return git(*a, cwd=cwd, stdin=subprocess.DEVNULL, env=env, timeout=NET_TIMEOUT)
         except subprocess.TimeoutExpired:
             return subprocess.CompletedProcess(['git', *a], 124, '', f'timed out after {NET_TIMEOUT}s')
     return g
 
 
-def shared_name(cwd: Path, remote: str) -> str:
-    """The branch everybody reads: what the remote's HEAD points at, else main/master/trunk."""
+def shared_name(cwd: Path, remote: str, default: str | None = 'main') -> str | None:
+    """The branch everybody reads: what the remote's HEAD points at, else main/master/trunk, else `default`."""
     g = _git(cwd)
     r = g('symbolic-ref', '--short', f'refs/remotes/{remote}/HEAD')
     if not r.returncode and (head := r.stdout.strip()):
@@ -47,7 +50,7 @@ def shared_name(cwd: Path, remote: str) -> str:
     for name in ('main', 'master', 'trunk'):
         if not g('rev-parse', '--verify', '-q', f'refs/heads/{name}').returncode:
             return name
-    return 'main'
+    return default
 
 
 def shared_branch(cwd: Path, remote: str, branch: str) -> bool:

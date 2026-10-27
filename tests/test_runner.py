@@ -187,7 +187,6 @@ def test_done(repo: Path, tmp: Path):
     has(r.stdout, r'main is not pushed', 'but says main is the runner\'s to push')
     check(git(tmp / 'origin.git', 'rev-parse', 'main') != git(repo, 'rev-parse', 'main'),
           'and the remote main is where it was')
-    P._cache.clear()
     P.block('T4', 'needs T1 and T5 landed', todo=repo / 'plan/TODO.md')
     git(repo, 'commit', '-qam', 'T4: blocked')
     has((repo / 'plan/TODO.md').read_text(), r'\*\*T4\*\*.*BLOCKED: \(after T5\)',
@@ -248,7 +247,6 @@ def test_retry(repo: Path):
     check('T4' in tried, 'a tried task still open stays tried (it failed: a human looks next)')
     for step in (lambda: P.block('T4', 'needs a decision', todo=repo / 'plan/TODO.md'),
                  lambda: P.unblock('T4', 'decided', todo=repo / 'plan/TODO.md')):
-        P._cache.clear()
         step()
         git(repo, 'commit', '-qam', 'Plan: T4')
         R.retry_reopened(tried, closed, 'main')
@@ -466,7 +464,6 @@ def test_hooks(repo: Path, tmp: Path):
     R.C.run['suspect'] = r'BLOCKED:.*\bemulator\b'
     try:
         before = git(repo, 'rev-parse', 'HEAD')
-        P._cache.clear()
         P.block('T6', 'needs a human at the emulator', todo=repo / 'plan/TODO.md')
         git(repo, 'commit', '-qam', 'T6: blocked')
         has(R.suspect(before, git(repo, 'rev-parse', 'HEAD')), r'T6.*emulator', '[run] suspect flags a block a merge adds')
@@ -476,7 +473,6 @@ def test_hooks(repo: Path, tmp: Path):
 
     R.C.raw['plan']['brief_extra'] = 'echo "## From the project"; echo "names for {id}"'
     try:
-        P._cache.clear()
         b = '\n'.join(P.brief('T6', root=repo))
         has(b, r'^## From the project\nnames for T6$', '[plan] brief_extra ends the brief')
         has(b, r'## Files on the line, and their last commits\n- `c.py`', 'after the files and their git log')
@@ -508,14 +504,13 @@ def test_platform(repo: Path, tmp: Path):
     print('platform: the terminal per slot, quoting, locks, links, processes, the Windows slot shim')
     from agent_runner import plat
     choice = plat.mux_choice
-    eq(choice(3, '', True, False, windows=False), 'tmux', 'POSIX with tmux: panes')
-    eq(choice(3, '', False, False, windows=False), 'sequential', 'POSIX without tmux: the sequential run')
-    eq(choice(3, '', False, True, windows=True), 'wt', 'Windows with Windows Terminal: tabs')
-    eq(choice(3, '', True, False, windows=True), 'console', 'Windows without it: a console window per slot')
-    eq(choice(1, '', True, False, windows=False), 'tmux', 'one slot (or once) gets a pane and a worktree too')
-    eq(choice(3, 'none', True, True, windows=False), 'sequential', '--no-tmux is sequential')
-    eq(choice(3, 'console', False, True, windows=True), 'console', '[run] mux picks console over wt')
-    eq(choice(3, 'wt', True, True, windows=False), 'sequential', 'a terminal that is not there falls back to sequential')
+    eq(choice('', True, False, windows=False), 'tmux', 'POSIX with tmux: panes')
+    eq(choice('', False, False, windows=False), 'sequential', 'POSIX without tmux: the sequential run')
+    eq(choice('', False, True, windows=True), 'wt', 'Windows with Windows Terminal: tabs')
+    eq(choice('', True, False, windows=True), 'console', 'Windows without it: a console window per slot')
+    eq(choice('none', True, True, windows=False), 'sequential', '--no-tmux is sequential')
+    eq(choice('console', False, True, windows=True), 'console', '[run] mux picks console over wt')
+    eq(choice('wt', True, True, windows=False), 'sequential', 'a terminal that is not there falls back to sequential')
 
     eq(plat.command_text(['/usr/bin/python3', '/x y/run', 'run']), "/usr/bin/python3 '/x y/run' run",
        'POSIX command text is shlex.join, as before')
@@ -745,7 +740,6 @@ def test_gate_and_batches(repo: Path, tmp: Path):
 
     R.C.raw['plan']['brief'] = 'echo "the project brief for {id}"'
     try:
-        P._cache.clear()
         eq(P.brief('T6', root=repo), ['the project brief for T6'], '[plan] brief replaces the built-in brief')
     finally:
         R.C.raw['plan']['brief'] = ''

@@ -9,7 +9,7 @@ next task.
     ./run run once            one task, then stop (the way to try it the first time)
     ./run run                 [run] slots agents (3), mode d (different files), in tmux
     ./run run 5 --mode p      5 agents, strictly in TODO.md order, files may overlap
-    ./run run 1               one at a time, in this checkout (also what you get without tmux)
+    ./run run 1               one agent, in a worktree and a pane like any count (no tmux: in this checkout)
     ./run run --dry-run 4     print what 4 free slots would start now, and start nothing
     ./run stop                finish what is running, start nothing new, then exit (or type s + Enter
                               in the runner's pane; s again takes it back)
@@ -67,7 +67,7 @@ import uuid
 from pathlib import Path
 
 from agent_runner import plan as P
-from agent_runner import plat
+from agent_runner import gitops, plat
 
 # The library API a wrapping project may call; these change only in a major version. `cmd_run(argv)` and
 # `cmd_stop(argv)` are the commands; `PROMPT`, `FIXER` and `OTHERS` may be replaced before `cmd_run`.
@@ -75,10 +75,9 @@ __all__ = ['init', 'cmd_run', 'cmd_stop', 'pick', 'tasks', 'prompt_for', 'reopen
            'ask_stop', 'stopping', 'cmd_resume', 'PROMPT', 'FIXER', 'OTHERS']
 from agent_runner.config import RUNNER, Config, cfg, main_checkout, runner_cmd
 from agent_runner.done import TESTED, gate
-from agent_runner.gitops import drop_if_merged, push
+from agent_runner.gitops import drop_if_merged, push, shared_name
 
-TASK = re.compile(r'^- \[ \] \*\*([^*\s]+)\*\*(.*)')
-ANY_TASK = re.compile(r'^- \[.\] \*\*([^*\s]+)\*\*')
+TASK = re.compile(r'^- \[(.)\] \*\*([^*\s]+)\*\*(.*)')  # a top-level task line: its box, its id, the rest
 TAG = '@runner'  # the tmux pane option a slot's pane is found by
 
 ROOT = Path('.')       # the main checkout; set by `init`
@@ -141,8 +140,14 @@ def log(msg: str) -> None:
         pass
 
 
-def git(*a: str, cwd=None) -> sp.CompletedProcess:
-    return sp.run(['git', *a], cwd=str(cwd or ROOT), capture_output=True, text=True)
+def git(*a: str, cwd=None, **kw) -> sp.CompletedProcess:
+    return gitops.git(*a, cwd=cwd or ROOT, **kw)
+
+
+def clean(d: Path, to: str = 'HEAD') -> None:
+    """Worktree `d` exactly at `to`: no edits, no untracked files (ignored ones, a warm build, stay)."""
+    git('reset', '-q', '--hard', to, cwd=d)
+    git('clean', '-fdq', cwd=d)
 
 
 def note(msg: str) -> None:
@@ -163,15 +168,9 @@ def plan_rel(name: str) -> str:
 
 
 def default_branch() -> str:
-    """The branch worktrees start from and finished work is merged into."""
-    remote = C.push_remote or 'origin'
-    r = git('symbolic-ref', '--quiet', '--short', f'refs/remotes/{remote}/HEAD')
-    if r.returncode == 0 and r.stdout.strip():
-        return r.stdout.strip().split('/', 1)[-1]
-    for b in ('main', 'master', 'trunk'):
-        if git('rev-parse', '--verify', '--quiet', b).returncode == 0:
-            return b
-    return git('branch', '--show-current').stdout.strip() or 'main'
+    """The branch worktrees start from and finished work is merged into: `shared_name`, else the one out here."""
+    return (shared_name(ROOT, C.push_remote or 'origin', None)
+            or git('branch', '--show-current').stdout.strip() or 'main')
 
 
 def plan_text(branch: str) -> list[str]:
@@ -228,21 +227,26 @@ def take_keys() -> None:
 
 # --- picking the next task -----------------------------------------------------
 
+def open_tasks(branch: str) -> set[str]:
+    """Ids of the open ([ ]) top-level tasks in `branch`'s TODO.md."""
+    return {m.group(2) for l in plan_text(branch) if (m := TASK.match(l)) and m.group(1) == ' '}
+
+
 def tasks(branch: str) -> list[tuple[str, str, set[str], set[str]]]:
     """Open tasks in TODO.md order: (id, section, files named on the line, task ids named on it)."""
     ls = plan_text(branch)
     # open and blocked: neither is done, so a split parent or an `(after X)` still waits on a blocked X
-    open_ids = {m.group(1) for l in ls if (m := ANY_TASK.match(l)) and not l.startswith('- [x]')}
-    every = {m.group(1) for l in ls if (m := ANY_TASK.match(l))}
-    out, section = [], ''
+    open_ids = {m.group(2) for l in ls if (m := TASK.match(l)) and m.group(1) != 'x'}
+    every = {m.group(2) for l in ls if (m := TASK.match(l))}
+    out, section, tracked = [], '', None
     for l in ls:
         if l.startswith('### '):
             section = l[4:]
             continue
         m = TASK.match(l)
-        if not m or section.startswith('Stretch'):
+        if not m or m.group(1) != ' ' or section.startswith('Stretch'):
             continue
-        tid, rest = m.group(1), m.group(2)
+        tid, rest = m.group(2), m.group(3)
         # a split parent: its subtasks run first, blocked ones included, then it runs (or `archive` ticks it).
         # Read by id and by its `(split into …)` list, never by the words alone, so prose that happens to say
         # "split into" is not taken for a split
@@ -252,8 +256,15 @@ def tasks(branch: str) -> list[tuple[str, str, set[str], set[str]]]:
         if any(set(P.TASK_ID.findall(a)) & (open_ids - {tid}) for a in re.findall(r'\(after ([^)]*)\)', l)):
             continue
         named = set(P.TASK_ID.findall(rest)) & every - {tid}
-        out.append((tid, section, set(P.files_on_line(rest, C.root)), named))
+        tracked = P._tracked(C.root) if tracked is None else tracked  # one ls-files for every line
+        out.append((tid, section, set(P.files_on_line(rest, C.root, tracked)), named))
     return out
+
+
+def ahead(branch: str) -> list[str]:
+    """Ids whose task/<ID> has commits `branch` lacks, in one `git for-each-ref` rather than a call per branch."""
+    refs = git('for-each-ref', f'--no-merged={branch}', '--format=%(refname)', 'refs/heads/task/').stdout.split()
+    return [r.removeprefix('refs/heads/task/') for r in refs]
 
 
 def family(tid: str) -> str:
@@ -270,8 +281,10 @@ def pick(running: dict, tried: set, mode: str, branch: str):
     busy_sections = {b[1] for b in busy}
     busy_ids = {b[0] for b in busy} | {q[0] for q in queued().values()}  # one waiting to resume is running
     shared = set(C.run['shared_files'])
-    for tid, section, files, named in tasks(branch):
-        if tid not in busy_ids and git('rev-list', '-1', f'{branch}..task/{tid}').stdout.strip():
+    todo = tasks(branch)
+    finished = set(ahead(branch)) if todo else set()
+    for tid, section, files, named in todo:
+        if tid not in busy_ids and tid in finished:
             continue  # finished, its branch is waiting to be merged: restarting it would reset the branch
         if any(family(tid) == family(b[0]) for b in busy):
             continue
@@ -367,12 +380,14 @@ def panes() -> dict[str, tuple[str, int]]:
 def session_id(pid: int) -> str | None:
     """The `--session-id` of the agent running as `pid` or its child (the pane's shell may not exec it)."""
     for p in [pid, *plat.children(pid)]:
-        if (args := plat.cmdline(p)) is None:
-            continue
-        for flag in ('--session-id', '--resume'):
-            if flag in args[:-1]:
-                return args[args.index(flag) + 1]
+        if (args := plat.cmdline(p)) is not None and (named := sids(args)):
+            return named[0]
     return None
+
+
+def sids(args: list[str]) -> list[str]:
+    """The session ids an agent command line names: `--session-id`'s, then `--resume`'s."""
+    return [args[args.index(f) + 1] for f in ('--session-id', '--resume') if f in args[:-1]]
 
 
 def adopt(branch: str) -> dict[int, tuple]:
@@ -403,10 +418,8 @@ def unmerged(branch: str, idle: list[int]) -> list[str]:
             git('checkout', '-q', '--detach', cwd=SLOTS_DIR / f's{n}')
     held = {l.removeprefix('branch refs/heads/') for l in
             git('worktree', 'list', '--porcelain').stdout.splitlines() if l.startswith('branch ')}
-    open_ids = {m.group(1) for l in plan_text(branch) if (m := TASK.match(l))}
-    names = git('branch', '--format=%(refname:short)', '--list', 'task/*').stdout.split()
-    return [b.removeprefix('task/') for b in names if b not in held and b.removeprefix('task/') in open_ids
-            and git('log', '--format=%s', f'{branch}..{b}').stdout.strip()]
+    open_ids = open_tasks(branch)
+    return [t for t in ahead(branch) if f'task/{t}' not in held and t in open_ids]
 
 
 def single_run() -> object:
@@ -466,7 +479,6 @@ def agent_argv(prompt: str, sid: str, model: str, idle: int, name: str, resume: 
 
 
 def brief_for(tid: str, cwd: Path) -> str:
-    P._cache.clear()
     try:
         return '\n'.join(P.brief(tid, root=cwd, plan_dir=cwd / os.path.relpath(C.plan_dir, C.root)))
     except SystemExit as e:
@@ -512,22 +524,32 @@ class _Keep(dict):
 SLOTS = 1  # how many slots this run has; `cmd_run` sets it, for {slots} in `[run] slot_env`
 
 
+def shared_env() -> list[str]:
+    """`[run] slot_env` entries that are not per slot (no {n}), such as a compiler cache, {slots} filled in."""
+    return [e.replace('{slots}', str(SLOTS)) for e in C.run['slot_env'] if '{n}' not in e]
+
+
 def merge_env() -> dict:
-    """The merge worktree's gate environment: `[run] slot_env` entries that are not per slot (no {n}), such as a
-    compiler cache, so the merge builds the way the slots do."""
-    return {**os.environ, **dict(e.replace('{slots}', str(SLOTS)).split('=', 1) for e in C.run['slot_env'] if '{n}' not in e)}
+    """The merge worktree's gate environment: ours and `shared_env`, so the merge builds the way the slots do."""
+    return {**os.environ, **env_vars(shared_env())}
 
 
-def slot_env(n: int) -> list[str]:
+def slot_env(n: int | None) -> list[str]:
     """A slot's environment, as NAME=value: `AGENT_RUNNER=1`; the config file when it came from
     AGENT_RUNNER_CONFIG and every variable `[run] pass_env` names that is set (a tmux pane does not inherit
     the runner's environment, so a wrapper's own variables must be passed on by name); then `[run]
-    slot_env` with {n} (the slot) and {slots} filled in."""
+    slot_env` with {n} (the slot) and {slots} filled in. `n=None` is the master window's: `shared_env` in
+    place of `[run] slot_env`, so it builds in the merge worktree the way the gate there does."""
     env = ['AGENT_RUNNER=1']
     if os.environ.get('AGENT_RUNNER_CONFIG') and C.file:
         env.append(f'AGENT_RUNNER_CONFIG={C.file}')
     env += [f'{k}={os.environ[k]}' for k in C.run['pass_env'] if k in os.environ]
-    return env + [e.format(n=n, slots=SLOTS) for e in C.run['slot_env']]
+    return env + (shared_env() if n is None else [e.format(n=n, slots=SLOTS) for e in C.run['slot_env']])
+
+
+def env_vars(env) -> dict[str, str]:
+    """NAME=value entries as a dict."""
+    return dict(e.split('=', 1) for e in env)
 
 
 def save_leftovers(d: Path, tid: str, branch: str) -> str | None:
@@ -544,7 +566,7 @@ def save_leftovers(d: Path, tid: str, branch: str) -> str | None:
     os.close(fd)
     env = {**os.environ, 'GIT_INDEX_FILE': idx}
     try:
-        g = lambda *a: sp.run(['git', *a], cwd=str(d), capture_output=True, text=True, env=env)
+        g = lambda *a: git(*a, cwd=d, env=env)
         if g('read-tree', 'HEAD').returncode or g('add', '-A').returncode:
             return None
         tree = g('write-tree').stdout.strip()
@@ -598,25 +620,38 @@ def edited_elsewhere(files) -> list[str]:
     return out
 
 
+def vacate(n: int, d: Path, head: str, branch: str, what: str) -> bool:
+    """Slot n's worktree `d` (on branch `head`) reset clean, what its session left uncommitted saved first
+    (`save_leftovers`); False, and nothing reset, when that save failed."""
+    if save_leftovers(d, head.removeprefix('task/') if head.startswith('task/') else f's{n}', branch) is None:
+        log(f'slot {n}: uncommitted edits there could not be saved; not resetting it {what}')
+        return False
+    clean(d)
+    return True
+
+
+def slot_header(n: int, what: str) -> tuple[Path, int]:
+    """A session's header line in slot n's log: (the log, its size before the line, where `limit_only` reads from)."""
+    logfile = C.notes(f'slot{n}.log')
+    since = logfile.stat().st_size if logfile.exists() else 0  # in append mode tell() is not that
+    with open(logfile, 'a', encoding='utf-8') as f:
+        f.write(f'\n=== {dt.datetime.now().isoformat(timespec="seconds")} {what}\n')
+    return logfile, since
+
+
 def start(n: int, task, branch: str, model: str, idle: int, slots: int):
     tid = task[0]
     d = worktree(n, branch)
     head = git('symbolic-ref', '-q', '--short', 'HEAD', cwd=d).stdout.strip()
-    if save_leftovers(d, head.removeprefix('task/') if head.startswith('task/') else f's{n}', branch) is None:
-        log(f'slot {n}: uncommitted edits there could not be saved; not resetting it for {tid}')
+    if not vacate(n, d, head, branch, f'for {tid}'):
         return None
-    git('reset', '-q', '--hard', cwd=d)
-    git('clean', '-fdq', cwd=d)
     co = git('checkout', '-q', '-B', f'task/{tid}', branch, cwd=d)
     if co.returncode:  # e.g. another worktree still holds task/<ID>: never start an agent on the wrong branch
         log(f'slot {n}: checkout task/{tid} failed: {co.stderr.strip()[:200]}')
         return None
     sid = str(uuid.uuid4())
     prompt = prompt_for(tid, n, slots, d, branch)
-    logfile = C.notes(f'slot{n}.log')
-    since = logfile.stat().st_size if logfile.exists() else 0  # in append mode tell() is not that
-    with open(logfile, 'a', encoding='utf-8') as f:
-        f.write(f'\n=== {dt.datetime.now().isoformat(timespec="seconds")} {tid} session {sid}\n')
+    logfile, since = slot_header(n, f'{tid} session {sid}')
     if not (pid := MUX.open(n, d, prompt, sid, model, idle, slot_env(n), logfile)):
         log(f'slot {n}: the session for {tid} did not start in {MUX.where(n)}')
         return None
@@ -641,11 +676,8 @@ def resume(n: int, tid: str, sid: str, why: str, branch: str, model: str, idle: 
     d = worktree(n, branch)
     head = git('symbolic-ref', '-q', '--short', 'HEAD', cwd=d).stdout.strip()
     if head != f'task/{tid}':
-        if save_leftovers(d, head.removeprefix('task/') if head.startswith('task/') else f's{n}', branch) is None:
-            log(f'slot {n}: uncommitted edits there could not be saved; not resetting it to resume {tid}')
+        if not vacate(n, d, head, branch, f'to resume {tid}'):
             return None
-        git('reset', '-q', '--hard', cwd=d)
-        git('clean', '-fdq', cwd=d)
         saved = git('log', '-1', '--format=%s', f'wip/{tid}', '--').stdout.startswith(f'{tid} wip: uncommitted')
         src = f'wip/{tid}' if saved else f'task/{tid}'
         if git('rev-parse', '--verify', '-q', src).returncode:
@@ -657,10 +689,7 @@ def resume(n: int, tid: str, sid: str, why: str, branch: str, model: str, idle: 
         if saved:
             git('reset', '-q', 'HEAD~1', cwd=d)  # the saved edits are uncommitted again, as the session left them
             git('branch', '-M', src, free_branch(f'resumed/{tid}'))  # kept, but no longer read as an earlier attempt
-    logfile = C.notes(f'slot{n}.log')
-    since = logfile.stat().st_size if logfile.exists() else 0
-    with open(logfile, 'a', encoding='utf-8') as f:
-        f.write(f'\n=== {dt.datetime.now().isoformat(timespec="seconds")} {tid} resume {sid} ({why})\n')
+    logfile, since = slot_header(n, f'{tid} resume {sid} ({why})')
     if not (pid := MUX.open(n, d, RESUME.format(why=why, tid=tid), sid, model, idle, slot_env(n), logfile,
                             resume=True)):
         log(f'slot {n}: the session for {tid} did not resume in {MUX.where(n)}')
@@ -711,7 +740,7 @@ class ShimMux:
     def open(self, n, cwd, prompt, sid, model, idle, env, logfile, resume=False):
         job, marker = C.notes(f'slot{n}.job'), C.notes(f'slot{n}.live')
         marker.unlink(missing_ok=True)
-        envd = dict(e.split('=', 1) for e in env)
+        envd = env_vars(env)
         job.write_text(json.dumps({'argv': agent_argv(prompt, sid, model, idle, f'slot{n}', resume), 'cwd': str(cwd),
                                    'env': envd, 'marker': str(marker)}), encoding='utf-8')
         shim = [*runner_cmd(), 'run', '--slot-shim', str(job)]
@@ -741,10 +770,7 @@ class ShimMux:
                     args = json.loads(m.with_suffix('.job').read_text(encoding='utf-8'))['argv']
                 except (OSError, ValueError, KeyError):
                     return None
-                for flag in ('--session-id', '--resume'):
-                    if flag in args[:-1]:
-                        return args[args.index(flag) + 1]
-                return None
+                return (sids(args) or [None])[0]
         return None
 
     def where(self, n: int) -> str:
@@ -850,13 +876,13 @@ def union(files: list[str], tid: str, cwd: Path) -> bool:
             return False
         text = out.stdout
         if f in (todo, done):
-            gone = {m.group(1).rstrip('.') for l in (cwd / done).read_text(encoding='utf-8').splitlines()
-                    if (m := ANY_TASK.match(l)) and '- [x]' in l} if f == todo else set()
+            gone = {m.group(2).rstrip('.') for l in (cwd / done).read_text(encoding='utf-8').splitlines()
+                    if (m := TASK.match(l)) and '- [x]' in l} if f == todo else set()
             mine = git('show', f'task/{tid}:{f}', cwd=cwd).stdout.splitlines()
             kept, seen = [], {}
             for l in text.split('\n'):
-                if m := ANY_TASK.match(l):
-                    k = m.group(1).rstrip('.')
+                if m := TASK.match(l):
+                    k = m.group(2).rstrip('.')
                     if k in gone:
                         continue
                     if k in seen:  # keep the branch's copy of its own task, the target's copy of the rest
@@ -898,8 +924,8 @@ def renumber_doubles(ref: str, onto: str, tid: str, cwd: Path) -> str:
     show = lambda rev, f: git('show', f'{rev}:{f}', cwd=cwd).stdout.splitlines() if rev else []
 
     def ids(rev):
-        return {m.group(1).rstrip('.'): re.sub(r'^- \[.\] ', '', l)
-                for f in files for l in show(rev, f) if (m := ANY_TASK.match(l))}
+        return {m.group(2).rstrip('.'): re.sub(r'^- \[.\] ', '', l)
+                for f in files for l in show(rev, f) if (m := TASK.match(l))}
 
     old, theirs, ours = ids(base), ids(ref), ids(onto)
     doubled = [k for k in theirs if k not in old and k in ours and k != tid and theirs[k] != ours[k]]
@@ -912,7 +938,7 @@ def renumber_doubles(ref: str, onto: str, tid: str, cwd: Path) -> str:
     pat = re.compile(r'\b(' + '|'.join(map(re.escape, new)) + r')\b')
     idx = C.notes('renumber.index')
     env = {**os.environ, 'GIT_INDEX_FILE': str(idx)}
-    g = lambda *a, **kw: sp.run(['git', *a], cwd=str(cwd), env=env, capture_output=True, text=True, **kw)
+    g = lambda *a, **kw: git(*a, cwd=cwd, env=env, **kw)
     try:
         g('read-tree', ref)
         for f in files:
@@ -972,80 +998,51 @@ in the fewest lines and keeping both sides, and build again until it passes. An 
 is not yours: leave it.
 """
 
-REPAIR = """The merge of task/{tid} into {branch} is committed in this checkout (as {merge}), and the test gate fails on \
-it. task/{tid} passed the gate on its own before it was merged, so the likely cause is a clash between the \
-two sides that git merged without a conflict: an item both added under one name, a caller of something the \
-other side renamed or removed, a test that checks what the other side changed on purpose. Repair it. \
-Nobody will answer questions: decide, and say what you decided.
+REPAIR = """[[The merge of task/{tid} into {branch} is|The merges of {tasks} into {branch} are]] committed in this \
+checkout[[ (as {merge})|, one after another on top of {base}]], and the test gate fails on [[it. task/{tid}|the \
+result. Each branch]] passed the gate on its own before it was merged, so the likely cause is a clash between \
+[[the two sides|them]] that git merged without a conflict: an item [[both|two of them]] added under one name, a \
+caller of something [[the other side|another]] renamed or removed, a test that checks what [[the other \
+side|another]] changed on purpose. Repair it[[|, so all of them land after one more gate run]]. Nobody will \
+answer questions: decide, and say what you decided.
 
 The gate's output ends with this (all of it is in {log}):
 
 {tail}
 
-1. `git diff {merge}^1 {merge} --stat` (what task/{tid} brought) and `git diff {merge}^2 {merge} --stat` \
-(what {branch} brought) show the two sides. Find where they meet.
-2. Fix the clash in the fewest lines, so that **both sides' intent survives**. Change nothing the clash \
-does not need. You are not reviewing the code and you are not redoing task {tid}. A test one side wrote \
-for behaviour the other side changed on purpose is updated to the merged behaviour, and you say so.
-3. {check}Then commit the fix on top of the merge: `git add` what you changed and \
-`git commit -m "{tid}: repair the merge into {branch}: <what clashed>"`. Do not amend or reset the \
-merge, do not push, do not merge, rebase or delete anything else, do not `git stash`, and do not touch \
-the other worktrees under {slots_dir}. The runner runs the whole gate again when you are done.
-4. If it is not a clash you can fix honestly (the failure is {branch}'s own, the two sides contradict each \
-other and picking needs a human), commit nothing and say why in one line. That is a real answer.
-"""
+1. [[`git diff {merge}^1 {merge} --stat` (what task/{tid} brought) and `git diff {merge}^2 {merge} --stat` \
+(what {branch} brought) show the two sides|`git log --first-parent --format='%h %s' {base}..HEAD` lists the \
+merges; `git diff <merge>^1 <merge> --stat` shows what each one brought]]. Find where they meet.
+2. Fix the clash in the fewest lines, so that **[[both sides'|every branch's]] intent survives**. Change nothing \
+the clash does not need. You are not reviewing the code and you are not redoing [[task {tid}|any task]]. A test \
+one [[side wrote for behaviour the other side|branch wrote for behaviour another]] changed on purpose is updated \
+to the merged behaviour, and you say so.
+3. {check}Then commit the fix on top[[ of the merge|]]: `git add` what you changed and `git commit -m "{tid}: \
+repair the [[merge|batch merge of {ids}]] into {branch}: <what clashed>"`. Do not amend or reset the merge[[|s]], \
+do not push, do not merge, rebase or delete anything else, do not `git stash`, and do not touch the other \
+worktrees under {slots_dir}. The runner runs the whole gate again when you are done.
+4. If it is not a clash you can fix honestly (the failure is {branch}'s own, [[the two sides contradict|one branch \
+is broken by itself, two branches contradict]] each other and picking needs a human), commit nothing and say why \
+in one line. [[|The runner then merges each branch on its own. ]]That is a real answer.
+"""  # [[one merge|a batch]]: `repair_prompt` keeps one side
 
-REPAIR_BATCH = """The merges of {tasks} into {branch} are committed in this checkout, one after another on top of \
-{base}, and the test gate fails on the result. Each branch passed the gate on its own before it was merged, so \
-the likely cause is a clash between them that git merged without a conflict: an item two of them added under \
-one name, a caller of something another renamed or removed, a test that checks what another changed on \
-purpose. Repair it, so all of them land after one more gate run. Nobody will answer questions: decide, and \
-say what you decided.
 
-The gate's output ends with this (all of it is in {log}):
-
-{tail}
-
-1. `git log --first-parent --format='%h %s' {base}..HEAD` lists the merges; `git diff <merge>^1 <merge> --stat` \
-shows what each one brought. Find where they meet.
-2. Fix the clash in the fewest lines, so that **every branch's intent survives**. Change nothing the clash \
-does not need. You are not reviewing the code and you are not redoing any task. A test one branch wrote for \
-behaviour another changed on purpose is updated to the merged behaviour, and you say so.
-3. {check}Then commit the fix on top: `git add` what you changed and \
-`git commit -m "{tid}: repair the batch merge of {ids} into {branch}: <what clashed>"`. Do not amend or reset \
-the merges, do not push, do not merge, rebase or delete anything else, do not `git stash`, and do not touch \
-the other worktrees under {slots_dir}. The runner runs the whole gate again when you are done.
-4. If it is not a clash you can fix honestly (the failure is {branch}'s own, one branch is broken by itself, \
-two branches contradict each other and picking needs a human), commit nothing and say why in one line. The \
-runner then merges each branch on its own. That is a real answer.
-"""
+def repair_prompt(batch: bool, **vals) -> str:
+    text = re.sub(r'\[\[(.*?)\|(.*?)\]\]', lambda m: m.group(2 if batch else 1), REPAIR, flags=re.S)
+    return text.format(**vals)
 
 
 MASTER_PANE = False  # `run` sets it under tmux: fix and repair sessions get a window of their own
 MASTER_IDLE = 90     # s a master session sits at its prompt, its answer given, before the Stop hook ends it
 
 
-def master_env() -> list[str]:
-    """The master window's environment: a slot's (`slot_env`) without the per-slot `[run] slot_env` entries,
-    so it builds in the merge worktree the way the gate there does (`merge_env`)."""
-    env = ['AGENT_RUNNER=1']
-    if os.environ.get('AGENT_RUNNER_CONFIG') and C.file:
-        env.append(f'AGENT_RUNNER_CONFIG={C.file}')
-    env += [f'{k}={os.environ[k]}' for k in C.run['pass_env'] if k in os.environ]
-    return env + [e.replace('{slots}', str(SLOTS)) for e in C.run['slot_env'] if '{n}' not in e]
-
-
 def last_words(sid: str) -> str:
     """The last thing session `sid` said, for fixer.log: why it committed what it did, or nothing."""
     said = ''
-    try:
-        for l in open(transcript(sid) or os.devnull, encoding='utf-8', errors='replace'):
-            d = json.loads(l)
-            if d.get('type') == 'assistant':
-                text = [c.get('text', '') for c in d.get('message', {}).get('content', []) if isinstance(c, dict)]
-                said = '\n'.join(t for t in text if t) or said
-    except (OSError, ValueError):
-        pass
+    for d in entries(sid):
+        if d.get('type') == 'assistant':
+            text = [c.get('text', '') for c in d.get('message', {}).get('content', []) if isinstance(c, dict)]
+            said = '\n'.join(t for t in text if t) or said
     return said.strip()
 
 
@@ -1068,7 +1065,7 @@ def fix_session(prompt: str, cwd: Path, fh) -> int:
     fh.flush()
     cmd = agent_cmd(prompt, sid, C.run['fix_model'], MASTER_IDLE, 'master')
     try:
-        pid = pane('master', cwd, cmd, master_env())
+        pid = pane('master', cwd, cmd, slot_env(None))
     except RuntimeError as e:  # no session ran: the caller reads the merge as one it did not finish
         log(f'the fix session did not start: {e}')
         fh.write(f'{e}\n')
@@ -1083,6 +1080,20 @@ def fix_session(prompt: str, cwd: Path, fh) -> int:
         time.sleep(5)
     fh.write(last_words(sid) + '\n')
     return 0
+
+
+def fixer(head: str, prompt: str, cwd: Path, kind: str, to: str) -> tuple[int | None, str]:
+    """`fix_session` under a `head` line in fixer.log: (its exit code, ''), or why it did not run to its end
+    (code 0 when there is no agent command, None when it timed out)."""
+    with open(C.notes('fixer.log'), 'a', encoding='utf-8') as fh:
+        fh.write(f'\n=== {dt.datetime.now().isoformat(timespec="seconds")} {head}\n')
+        fh.flush()
+        try:
+            return fix_session(prompt, cwd, fh), ''
+        except FileNotFoundError:
+            return 0, f'no agent command to {to} with ([run] agent = {C.run["agent"]!r})'
+        except sp.TimeoutExpired:
+            return None, f'the {kind} session ran past {C.run["fix_timeout"]}s'
 
 
 def fix_cmd(prompt: str) -> list[str]:
@@ -1111,16 +1122,11 @@ def fix_merge(tid: str, branch: str, files: list[str], cwd: Path) -> str | None:
                           build_step=BUILD_STEP.format(build=C.run['build'], branch=branch) if C.run['build'] else '')
     logfile = C.notes('fixer.log')
     log(f'{tid}: conflicts in {", ".join(files)} need reading — handing them to a fix session')
-    with open(logfile, 'a', encoding='utf-8') as fh:
-        fh.write(f'\n=== {dt.datetime.now().isoformat(timespec="seconds")} {tid} {", ".join(files)}\n')
-        fh.flush()
-        try:
-            code = fix_session(prompt, cwd, fh)
-        except FileNotFoundError:
-            return f'no agent command to fix the conflicts with ([run] agent = {C.run["agent"]!r})'
-        except sp.TimeoutExpired:
+    code, why = fixer(f'{tid} {", ".join(files)}', prompt, cwd, 'fix', 'fix the conflicts')
+    if why:
+        if code is None:
             note(f'{tid}: the fix session timed out after {C.run["fix_timeout"]}s')
-            return f'the fix session ran past {C.run["fix_timeout"]}s'
+        return why
     if git('rev-parse', '--verify', '-q', 'MERGE_HEAD', cwd=cwd).returncode == 0:
         return f'the fix session did not finish the merge (exit {code}); see {logfile}'
     if git('merge-base', '--is-ancestor', f'task/{tid}', 'HEAD', cwd=cwd).returncode:
@@ -1150,24 +1156,17 @@ def repair_merge(tid: str, branch: str, cwd: Path, riders: list[str] = (), base:
              f'Check it with the failing tests alone if you can; not the whole gate (`{r["test"]}`). ')
     ids = ', '.join([tid, *riders])
     if riders:
-        prompt = REPAIR_BATCH.format(tid=tid, branch=branch, log=gate_log, tail=tail, check=check, slots_dir=SLOTS_DIR,
-                                     base=base[:12], ids=ids, tasks=', '.join(f'task/{t}' for t in [tid, *riders]))
+        prompt = repair_prompt(True, tid=tid, branch=branch, log=gate_log, tail=tail, check=check, slots_dir=SLOTS_DIR,
+                               base=base[:12], ids=ids, tasks=', '.join(f'task/{t}' for t in [tid, *riders]))
         log(f'{tid}: the batch ({ids}) fails the gate — handing it to a repair session')
     else:
-        prompt = REPAIR.format(tid=tid, branch=branch, log=gate_log, tail=tail, check=check, slots_dir=SLOTS_DIR,
+        prompt = repair_prompt(False, tid=tid, branch=branch, log=gate_log, tail=tail, check=check, slots_dir=SLOTS_DIR,
                                merge=merge)
         log(f'{tid}: the merge fails the gate — handing it to a repair session')
     before = git('rev-parse', 'HEAD', cwd=cwd).stdout.strip()
     logfile = C.notes('fixer.log')
-    with open(logfile, 'a', encoding='utf-8') as fh:
-        fh.write(f'\n=== {dt.datetime.now().isoformat(timespec="seconds")} {ids} repair (gate failed)\n')
-        fh.flush()
-        try:
-            fix_session(prompt, cwd, fh)
-        except FileNotFoundError:
-            return f'no agent command to repair it with ([run] agent = {r["agent"]!r})'
-        except sp.TimeoutExpired:
-            return f'the repair session ran past {r["fix_timeout"]}s'
+    if why := fixer(f'{ids} repair (gate failed)', prompt, cwd, 'repair', 'repair it')[1]:
+        return why
     head = git('rev-parse', 'HEAD', cwd=cwd).stdout.strip()
     if head == before:
         return f'the repair session committed nothing; its reason is in {logfile}'
@@ -1228,14 +1227,14 @@ def tested(tid: str, d: Path, base: str) -> str | None:
         return None
     head = git('rev-parse', 'HEAD', cwd=d).stdout.strip()
     # the gate may have left files behind, and a checkout that refuses would rerun the tests on the merge
-    git('reset', '-q', '--hard', cwd=d), git('clean', '-fdq', cwd=d)
+    clean(d)
     if (co := git('checkout', '-q', '--detach', base, cwd=d)).returncode:
         log(f'{tid}: could not check out {base[:12]} to rerun {", ".join(names)} there: {co.stderr.strip()[:200]}')
         return why
     try:
         r = retest()
     finally:
-        git('reset', '-q', '--hard', cwd=d), git('clean', '-fdq', cwd=d)
+        clean(d)
         git('checkout', '-q', '--detach', head, cwd=d)
     # ponytail: name-level match; a branch that breaks an already-failing test some other way slips through
     if r and r.returncode and set(re.findall(rx, r.stdout + r.stderr, re.M)) >= set(names):
@@ -1318,6 +1317,36 @@ def merge_into(d: Path, ref: str, msg: str) -> list[str] | None:
     return []
 
 
+def joined(files: list[str], tid: str, d: Path) -> bool:
+    """Every conflicted file in `d` is one the runner may join, and joining them worked: committed."""
+    if not (all(map(joinable, files)) and union(files, tid, d)):
+        return False
+    git('commit', '-q', '--no-edit', cwd=d)
+    return True
+
+
+def refix(tid: str, branch: str, ref: str, files: list[str], d: Path, undo: bool = False) -> str | None:
+    """Start the conflict again from a clean state (a refused join may have written some of its files) and give
+    it to a fix session (`fix_merge`): None when it committed the merge, else why not. With `undo`, a merge
+    it did not finish is taken back off `d`, so the batch goes on without it."""
+    git('merge', '--abort', cwd=d)
+    at = git('rev-parse', 'HEAD', cwd=d).stdout.strip()
+    git('merge', '--no-edit', '-m', f"Merge branch 'task/{tid}'", ref, cwd=d)
+    if (why := fix_merge(tid, branch, files, d)) and undo:
+        git('merge', '--abort', cwd=d)
+        clean(d, at)
+    return why
+
+
+def repair_retest(tid: str, branch: str, d: Path, base: str, merged: str,
+                  riders: list[str] = ()) -> tuple[str | None, str | None, list[str]]:
+    """A repair session on `merged`, which fails the gate (`repair_merge`), then the gate again: (why there is
+    no repair, why the repaired merge still fails, the repair's commits)."""
+    if not_fixed := repair_merge(tid, branch, d, riders, base):
+        return not_fixed, None, []
+    return None, tested(tid, d, base), git('rev-list', '--reverse', f'{merged}..HEAD', cwd=d).stdout.split()
+
+
 def merge_batch(tid: str, branch: str) -> str | None:
     """`merge`'s part under the lock: build, test and land task/<tid> and its riders; record them in LANDED."""
     d = worktree('merge', branch)
@@ -1328,46 +1357,31 @@ def merge_batch(tid: str, branch: str) -> str | None:
     batch_fixes = C.run['fix_merges']  # a rider's conflict a join cannot do gets a fix session in the batch
     try:
         for attempt in range(3):
-            git('merge', '--abort', cwd=d), git('reset', '-q', '--hard', cwd=d), git('clean', '-fdq', cwd=d)
+            git('merge', '--abort', cwd=d)
+            clean(d)
             base = git('rev-parse', branch).stdout.strip()
             git('checkout', '-q', '--detach', base, cwd=d)
-            msg = ['-m', f"Merge branch 'task/{tid}'"]
             ref = renumber_doubles(f'task/{tid}', base, tid, d)
-            if (files := merge_into(d, ref, msg[1])) is None:
+            if (files := merge_into(d, ref, f"Merge branch 'task/{tid}'")) is None:
                 return f'git refused to merge task/{tid} into {branch} (see the merge worktree, {d})'
             if files:
-                if all(map(joinable, files)) and union(files, tid, d):
-                    git('commit', '-q', '--no-edit', cwd=d)
+                if joined(files, tid, d):
                     log(f'{tid}: joined both sides of {", ".join(files)}')
-                else:
-                    # start the conflict again from a clean state (a refused join may have written some
-                    # of its files) and give it to a session that can read it
-                    git('merge', '--abort', cwd=d)
-                    git('merge', '--no-edit', *msg, ref, cwd=d)
-                    if why := fix_merge(tid, branch, files, d):
-                        return why
+                elif why := refix(tid, branch, ref, files, d):
+                    return why
             riders = []
             for t in ([] if solo else sorted(WAITING - set(LANDED))):
                 ref = renumber_doubles(f'task/{t}', 'HEAD', t, d)
                 if (files := merge_into(d, ref, f"Merge branch 'task/{t}'")) is None:
                     git('merge', '--abort', cwd=d)
                     continue
-                if files:
-                    if all(map(joinable, files)) and union(files, t, d):
-                        git('commit', '-q', '--no-edit', cwd=d)
-                    elif batch_fixes:
-                        # a fix session takes the conflict here, so the rider shares this gate run
-                        git('merge', '--abort', cwd=d)
-                        at = git('rev-parse', 'HEAD', cwd=d).stdout.strip()
-                        git('merge', '--no-edit', '-m', f"Merge branch 'task/{t}'", ref, cwd=d)
-                        if fix_merge(t, branch, files, d):
-                            git('merge', '--abort', cwd=d)
-                            git('reset', '-q', '--hard', at, cwd=d)
-                            git('clean', '-fdq', cwd=d)
-                            continue  # it waits for its own turn
-                    else:
+                if files and not joined(files, t, d):
+                    if not batch_fixes:
                         git('merge', '--abort', cwd=d)
                         continue  # it waits for its own turn, where a fix session can take the conflict
+                    # a fix session takes the conflict here, so the rider shares this gate run
+                    if refix(t, branch, ref, files, d, undo=True):
+                        continue  # it waits for its own turn
                 riders.append(t)
             if riders:
                 log(f'{tid}: merging together with {", ".join(riders)} (one gate run)')
@@ -1375,7 +1389,6 @@ def merge_batch(tid: str, branch: str) -> str | None:
                 git('cherry-pick', '--abort', cwd=d)
                 log(f'{tid}: the repair no longer applies to the merge; testing it without')
                 repairs = []
-            P._cache.clear()
             P.archive(d / plan_rel('TODO.md'), d / plan_rel('DONE.md'))
             plan_files = [plan_rel('TODO.md'), plan_rel('DONE.md')]
             if git('status', '--porcelain', '--', *plan_files, cwd=d).stdout.strip():
@@ -1389,13 +1402,11 @@ def merge_batch(tid: str, branch: str) -> str | None:
                 if why := tested(tid, d, base):
                     if riders and not batch_repaired and C.run['repair_merges']:
                         batch_repaired = True
-                        before = merged
-                        if not (not_fixed := repair_merge(tid, branch, d, riders, base)) and not tested(tid, d, base):
+                        not_fixed, still, fixes = repair_retest(tid, branch, d, base, merged, riders)
+                        if not not_fixed and not still:
                             note(f'{tid}: the batch ({", ".join(riders)} with it) failed the gate; a repair session fixed it')
                             # replayed if the batch is built again because the shared branch moved
-                            repairs = git('rev-list', '--reverse', f'{before}..HEAD', cwd=d).stdout.split()
-                            merged = git('rev-parse', 'HEAD', cwd=d).stdout.strip()
-                            why = None
+                            repairs, merged, why = fixes, git('rev-parse', 'HEAD', cwd=d).stdout.strip(), None
                         else:
                             note(f'{tid}: no batch repair: {not_fixed or "the repaired batch still fails the gate"}')
                     if why and riders:
@@ -1406,14 +1417,13 @@ def merge_batch(tid: str, branch: str) -> str | None:
                     if repaired:
                         return why + (' (after a repair session)' if repairs else '')
                     repaired = solo = True  # a rebuild replays the repair onto this task alone
-                    before = merged
-                    if not_fixed := repair_merge(tid, branch, d):
+                    not_fixed, still, repairs = repair_retest(tid, branch, d, base, merged)
+                    if not_fixed:
                         note(f'{tid}: no repair: {not_fixed}')
                         return why
-                    repairs = git('rev-list', '--reverse', f'{before}..HEAD', cwd=d).stdout.split()
+                    if still:
+                        return still + ' (after a repair session)'
                     merged = git('rev-parse', 'HEAD', cwd=d).stdout.strip()
-                    if why := tested(tid, d, base):
-                        return why + ' (after a repair session)'
                     note(f'{tid}: the merge failed the gate; a repair session fixed it')
             moved = git('diff', '--name-only', base, branch).stdout.split()
             if attempt < 2 and not all(map(untestable, moved)):
@@ -1432,6 +1442,12 @@ def merge_batch(tid: str, branch: str) -> str | None:
     finally:
         git('merge', '--abort', cwd=d)
         git('checkout', '-q', '--detach', cwd=d)
+
+
+def edited() -> set[str]:
+    """Files with uncommitted edits in the main checkout, new ones (not ignored) included."""
+    return set(git('diff', '--name-only', 'HEAD').stdout.split()) | \
+        set(git('ls-files', '--others', '--exclude-standard').stdout.split())
 
 
 def land(tid: str, branch: str, merged: str) -> str | None:
@@ -1470,20 +1486,17 @@ def land(tid: str, branch: str, merged: str) -> str | None:
         if time.time() - t0 > LAND_WAIT:
             return f'{EDITED} to files the merge changes'
         if not said:
-            edited = set(git('diff', '--name-only', 'HEAD').stdout.split())
-            edited |= set(git('ls-files', '--others', '--exclude-standard').stdout.split())
-            changes = set(git('diff', '--name-only', 'HEAD', ref).stdout.split())
-            files = sorted(edited & changes) or sorted(edited)
+            mine = edited()
+            files = sorted(mine & set(git('diff', '--name-only', 'HEAD', ref).stdout.split())) or sorted(mine)
             more = f' and {len(files) - 6} more' if len(files) > 6 else ''
             waiting(f'uncommitted edits in the main checkout ({ROOT}) to {", ".join(files[:6])}{more}, '
                     'which the merge changes; commit them or move them to a branch')
         time.sleep(10)
     if git('rev-parse', '--verify', '-q', 'MERGE_HEAD').returncode == 0:
         files = git('diff', '--name-only', '--diff-filter=U').stdout.split()
-        if not all(map(joinable, files)) or not union(files, tid, ROOT):
+        if not joined(files, tid, ROOT):
             git('merge', '--abort')
             return 'conflict'
-        git('commit', '-q', '--no-edit')
     if git('merge-base', '--is-ancestor', merged, 'HEAD').returncode:
         return f'the merge did not land in {branch}; merge it again'
     return None
@@ -1507,7 +1520,6 @@ def published(tid: str, branch: str) -> None:
 
 
 REOPENED: set[str] = set()  # tasks `reopen_landed` put back to [ ]: `cmd_run` lets them be tried again
-BOX = re.compile(r'^- \[(.)\] \*\*([^*\s]+)\*\*')
 def idle_line() -> str:
     return f'run idle: no task it may start; waiting for TODO.md to change (Ctrl-C or {C.command} stop to end it)'
 
@@ -1522,7 +1534,7 @@ def retry_reopened(tried: set[str], closed: set[str], branch: str) -> None:
     """
     if not tried:
         return
-    box = {m.group(2): m.group(1) for l in plan_text(branch) if (m := BOX.match(l))}
+    box = {m.group(2): m.group(1) for l in plan_text(branch) if (m := TASK.match(l))}
     for t in list(tried):
         if box.get(t) != ' ':
             closed.add(t)
@@ -1541,7 +1553,6 @@ def reopen_landed(branch: str, why: str) -> None:
     rel = plan_rel('TODO.md')
     if git('branch', '--show-current').stdout.strip() != branch or git('status', '--porcelain', '--', rel).stdout.strip():
         return
-    P._cache.clear()
     if not (got := P.reopen(ROOT / rel)):
         return
     names = ', '.join(t for t, _ in got)
@@ -1610,31 +1621,49 @@ def blocked_by_edits(tid: str, branch: str) -> bool:
                 'commit them or unstage them')
         return True
     STAGED_SAID.discard(tid)
-    edited = set(git('diff', '--name-only', 'HEAD').stdout.split())
-    edited |= set(git('ls-files', '--others', '--exclude-standard').stdout.split())
-    return bool(edited & set(git('diff', '--name-only', f'{branch}...task/{tid}').stdout.split()))
+    return bool(edited() & set(git('diff', '--name-only', f'{branch}...task/{tid}').stdout.split()))
 
 
 # --- watching a session --------------------------------------------------------
 
+TRANSCRIPTS: dict[str, str] = {}  # sid -> its transcript, once found: `stalled` asks every 10 s per slot
+
+
 def transcript(sid: str) -> str | None:
-    return next(iter(glob.glob(os.path.expanduser(f'~/.claude/projects/*/{sid}.jsonl'))), None)
+    if (t := TRANSCRIPTS.get(sid)) and os.path.exists(t):
+        return t
+    if t := next(iter(glob.glob(os.path.expanduser(f'~/.claude/projects/*/{sid}.jsonl'))), None):
+        TRANSCRIPTS[sid] = t
+    return t
+
+
+def entries(sid: str, skip_bad: bool = False):
+    """Session `sid`'s transcript entries, in order; none without a transcript. A line that is not JSON ends
+    them (the one being written), or with `skip_bad` is passed over."""
+    try:
+        with open(transcript(sid) or os.devnull, encoding='utf-8', errors='replace') as f:
+            for l in f:
+                try:
+                    d = json.loads(l)
+                except ValueError:
+                    if skip_bad:
+                        continue
+                    return
+                yield d
+    except OSError:
+        return
 
 
 def stats(sid: str) -> str:
     """'N min, N calls, context Nk first, Nk peak' for the exit line. Watch the peak over a run: if it keeps
     creeping up, or more tasks come back blocked, the tasks are too big."""
     calls, ctx, ts = 0, [], []
-    try:
-        for l in open(transcript(sid) or os.devnull, encoding='utf-8', errors='replace'):
-            d = json.loads(l)
-            ts += [d['timestamp']] if 'timestamp' in d else []
-            if d.get('type') == 'assistant' and (u := d.get('message', {}).get('usage')):
-                calls += 1
-                ctx.append(sum(u.get(k, 0) for k in ('input_tokens', 'cache_read_input_tokens',
-                                                     'cache_creation_input_tokens')))
-    except (OSError, ValueError, KeyError):
-        pass
+    for d in entries(sid):
+        ts += [d['timestamp']] if 'timestamp' in d else []
+        if d.get('type') == 'assistant' and (u := d.get('message', {}).get('usage')):
+            calls += 1
+            ctx.append(sum(u.get(k, 0) for k in ('input_tokens', 'cache_read_input_tokens',
+                                                 'cache_creation_input_tokens')))
     if not ctx or not ts:
         return 'no transcript'
     span = (dt.datetime.fromisoformat(ts[-1].replace('Z', '+00:00')) -
@@ -1665,17 +1694,9 @@ def cut_off(sid: str, mid_turn: bool = False) -> str | None:
     was down. A usage limit or a request the API refused is not that. With `mid_turn`, also a transcript
     that stops inside a turn: the machine went down under it. A finished session ends on a turn it ended."""
     last = None
-    try:
-        with open(transcript(sid) or os.devnull, encoding='utf-8', errors='replace') as f:
-            for l in f:
-                try:
-                    d = json.loads(l)
-                except ValueError:
-                    continue
-                if d.get('type') in ('user', 'assistant') and not d.get('isSidechain') and not d.get('isMeta'):
-                    last = d
-    except OSError:
-        return None
+    for d in entries(sid, skip_bad=True):
+        if d.get('type') in ('user', 'assistant') and not d.get('isSidechain') and not d.get('isMeta'):
+            last = d
     if not last:
         return None
     m = last.get('message') if isinstance(last.get('message'), dict) else {}
@@ -1767,9 +1788,7 @@ def live_sessions() -> set[str]:
             args = f.read_text(errors='replace').split('\0')
         except OSError:
             continue
-        for flag in ('--session-id', '--resume'):
-            if flag in args[:-1]:
-                out.add(args[args.index(flag) + 1])
+        out.update(sids(args))
     return out
 
 
@@ -1818,7 +1837,7 @@ def sweep_tmp(force: bool = False) -> None:
 def queue_cut_off(branch: str, slots: list[int]) -> None:
     """Startup: a slot still on task/<ID> whose session was cut off while no run was up (a reboot, the runner
     killed, the network down at its exit) is queued to resume instead of being reset for a new task."""
-    open_ids = {m.group(1) for l in plan_text(branch) if (m := TASK.match(l))}
+    open_ids = open_tasks(branch)
     waiting = queued()
     for n in slots:
         if n in waiting or not (SLOTS_DIR / f's{n}').is_dir():
@@ -1833,6 +1852,17 @@ def queue_cut_off(branch: str, slots: list[int]) -> None:
 
 
 _api = [-1e9, True]
+
+
+def api_down(said: set[str]) -> bool:
+    """`api_up` is False: said once (in `said`) until it is up again."""
+    if api_up():
+        said.discard('api')
+        return False
+    if 'api' not in said:
+        said.add('api')
+        log('the API cannot be reached: nothing resumes or starts until it can')
+    return True
 
 
 def api_up() -> bool:
@@ -2037,7 +2067,7 @@ def sequential(branch: str, model: str, idle: int, pause: int, force: bool, once
         sid = str(uuid.uuid4())
         before = git('rev-parse', 'HEAD').stdout.strip()
         log(f'{tid}: starting ({task[1]})')
-        env = dict(e.split('=', 1) for e in slot_env(1))
+        env = env_vars(slot_env(1))
         if plat.WINDOWS:  # no sh to read the prompt file; the marker is how the Stop hook finds the agent
             run_session(agent_argv(prompt_for(tid, 1, 1, ROOT, here), sid, model, idle, 'slot1'), str(ROOT), env,
                         C.notes('slot1.live'))
@@ -2049,7 +2079,7 @@ def sequential(branch: str, model: str, idle: int, pause: int, force: bool, once
         if C.run['on_exit']:
             try:
                 sp.run(C.run['on_exit'], shell=True, cwd=str(ROOT), capture_output=True, timeout=C.run['timeout'],
-                       env={**os.environ, **dict(e.split('=', 1) for e in slot_env(1))})
+                       env={**os.environ, **env})
             except sp.TimeoutExpired:
                 log(f'`{C.run["on_exit"]}` ran past [run] timeout ({C.run["timeout"]}s); stopped')
         if r := limit_only(sid, C.notes('slot1.log'), 0):
@@ -2098,8 +2128,8 @@ def dry_run(slots: int, mode: str, branch: str) -> int:
         print('nothing to start: every open task is blocked, waiting on another, or already finished')
     can = {t[0] for t in tasks(branch)}
     ls = plan_text(branch)
-    waits = [m.group(1) for l in ls if (m := TASK.match(l)) and m.group(1) not in can]
-    blocked = [m.group(1) for l in ls if (m := ANY_TASK.match(l)) and l.startswith('- [~]')]
+    waits = [m.group(2) for l in ls if (m := TASK.match(l)) and m.group(1) == ' ' and m.group(2) not in can]
+    blocked = [m.group(2) for l in ls if (m := TASK.match(l)) and m.group(1) == '~']
     if waits:
         print(f'waiting on an (after …), a subtask or Stretch: {", ".join(waits)}')
     if blocked:
@@ -2191,7 +2221,7 @@ def run(argv: list[str], prog: str) -> int:
         C.notes('STOP').unlink(missing_ok=True)
         log('cleared a stop request left by an earlier run')
     want = 'none' if a.no_tmux else (a.mux or r['mux'])
-    choice = plat.mux_choice(slots, want, shutil.which('tmux') is not None, shutil.which('wt.exe') is not None)
+    choice = plat.mux_choice(want, shutil.which('tmux') is not None, shutil.which('wt.exe') is not None)
     if choice == 'sequential':
         if want != 'none':
             log((f'{want} is not available here' if want else 'tmux is not installed') +
@@ -2243,13 +2273,14 @@ def run(argv: list[str], prog: str) -> int:
     while True:
         sweep_tmp()
         waiting = {n: q for n, q in queued().items() if n in free_at and n <= slots}
+        tagged = None  # MUX.panes(), looked at once a tick and only for a free slot
         for n in list(free_at):
             if n in procs and not alive(procs[n][0]):
                 (pid, sid, since), task = procs.pop(n), running.pop(n)
                 log(f'slot {n}: {task[0]} exited ({stats(sid)})')
                 if r['on_exit']:
                     sp.Popen(r['on_exit'], shell=True, cwd=str(SLOTS_DIR / f's{n}'),
-                             env={**os.environ, **dict(e.split('=', 1) for e in slot_env(n))},
+                             env={**os.environ, **env_vars(slot_env(n))},
                              stdout=sp.DEVNULL, stderr=sp.DEVNULL)
                 if (why := cut_off(sid)) and n <= slots:
                     if resumes(n, sid) < RESUMES_MAX:
@@ -2261,8 +2292,7 @@ def run(argv: list[str], prog: str) -> int:
                         f'taken as ended')
                 drop_session_tmp(sid)  # ended for good: a resume (above) keeps its scratchpad
                 if save_leftovers(d := SLOTS_DIR / f's{n}', task[0], branch):
-                    git('reset', '-q', '--hard', cwd=d)  # saved: the next start finds the slot clean
-                    git('clean', '-fdq', cwd=d)
+                    clean(d)  # saved: the next start finds the slot clean
                 if reset := limit_only(sid, C.notes(f'slot{n}.log'), since):
                     git('checkout', '-q', '--detach', cwd=SLOTS_DIR / f's{n}')  # another slot may take the task
                     free_at[n] = reset + dt.timedelta(seconds=pause)
@@ -2281,7 +2311,9 @@ def run(argv: list[str], prog: str) -> int:
                 stall_said.add(procs[n][1])
                 log(f'slot {n}: {running[n][0]} looks stalled ({why}); look at {MUX.where(n)}')
                 print('\a', end='', flush=True)
-            if n not in procs and (old := MUX.panes().get(f's{n}')) and alive(old[1]):
+            if n not in procs and tagged is None:
+                tagged = MUX.panes()  # a session that ended this tick is in it with a dead pid, as before
+            if n not in procs and (old := tagged.get(f's{n}')) and alive(old[1]):
                 # a session no run tracks still sits in this slot (adopt found no session id, or a second
                 # tmux session): never reset the worktree under it; the slot waits until that pane ends
                 if f'pid{old[1]}' not in stall_said:
@@ -2291,12 +2323,8 @@ def run(argv: list[str], prog: str) -> int:
             if n > slots:
                 continue  # an adopted slot past this run's count: watched to the end, never refilled
             if n not in procs and n in waiting:  # a running task, not a new one: no stop or usage cap holds it
-                if not api_up():
-                    if 'api' not in stall_said:
-                        stall_said.add('api')
-                        log('the API cannot be reached: nothing resumes or starts until it can')
+                if api_down(stall_said):
                     continue
-                stall_said.discard('api')
                 tid, sid, why = waiting.pop(n)
                 C.notes(f'{tid}.resume').unlink(missing_ok=True)
                 if p := resume(n, tid, sid, why, branch, model, idle):
@@ -2320,12 +2348,8 @@ def run(argv: list[str], prog: str) -> int:
                         cap_said = True
                     continue
                 cap_said = False
-                if not api_up():
-                    if 'api' not in stall_said:
-                        stall_said.add('api')
-                        log('the API cannot be reached: nothing resumes or starts until it can')
+                if api_down(stall_said):
                     continue
-                stall_said.discard('api')
                 if r['before_start'] and before_start_fails():
                     if 'before_start' not in stall_said:
                         stall_said.add('before_start')
@@ -2361,16 +2385,18 @@ def run(argv: list[str], prog: str) -> int:
         # run. Logged once, and only with nothing running or merging, so no slot or finished branch is left
         # behind. A script waiting on the run
         # watches run.log for `run idle`; the process itself ends only on Ctrl-C or `./run stop`.
-        if once and quiet and not stopping() and not pick(running, tried, mode, branch):
-            log('run done: nothing it may start (once)')
-            return 0
-        if quiet and not idle_said and not pick(running, tried, mode, branch):
-            log(f'tried this run: {", ".join(sorted(tried)) or "none"}')
-            log(idle_line())
-            idle_said, idle_at = True, time.time()
-        if (idle_said and quiet and SHUTDOWN and time.time() - idle_at >= SHUTDOWN_GRACE
-                and not pick(running, tried, mode, branch) and shut_down(idle_at)):
-            return 0
+        # one pick, and only when its answer is needed: to end `once`, to say idle, or to power off
+        if quiet and (once and not stopping() or not idle_said
+                      or SHUTDOWN and time.time() - idle_at >= SHUTDOWN_GRACE) and not pick(running, tried, mode, branch):
+            if once and not stopping():
+                log('run done: nothing it may start (once)')
+                return 0
+            if not idle_said:
+                log(f'tried this run: {", ".join(sorted(tried)) or "none"}')
+                log(idle_line())
+                idle_said, idle_at = True, time.time()
+            if shut_down(idle_at):
+                return 0
         time.sleep(10)
 
 
@@ -2385,7 +2411,7 @@ def cmd_resume(argv: list[str], prog: str = f'{RUNNER} resume') -> int:
     a = ap.parse_args(argv)
     init()
     branch = default_branch()
-    open_ids = {m.group(1) for l in plan_text(branch) if (m := TASK.match(l))}
+    open_ids = open_tasks(branch)
     bad = 0
     for tid in a.ids:
         if tid not in open_ids:
