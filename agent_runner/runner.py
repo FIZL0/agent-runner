@@ -1848,7 +1848,7 @@ def newest_write(d: Path) -> float:
 def sweep_tmp(force: bool = False) -> None:
     """Delete this repository's sessions' temp folders (the slots' and the merge worktree's) that no process
     runs, no resume waits for, and nothing wrote to in SESSION_TMP_KEEP: a session that ended while no run
-    was up, or one from before the runner cleaned up. Not the main checkout's: a person's interactive session
+    was up or under a Ctrl-C'd run. Not the main checkout's: a person's interactive session
     there has no session id on its command line to tell it is still running."""
     if not force and time.monotonic() - _swept[0] < SWEEP_EVERY:
         return
@@ -2467,7 +2467,7 @@ def cmd_resume(argv: list[str], prog: str = f'{RUNNER} resume') -> int:
     """`./run resume <ID>…`: continue a task's last session in its own slot, though the run already ended it."""
     ap = argparse.ArgumentParser(prog=prog, description=
         'Continue the last session of each task in the slot it ran in, with its whole conversation: for a '
-        'session cut off before the run could resume it by itself (an older runner, or past its resume limit). '
+        'session cut off before the run could resume it by itself (past its resume limit). '
         'The run resumes it once that slot is free; a slot that moved on gets the task back from the wip/<ID> '
         'the runner saved, its edits uncommitted again.')
     ap.add_argument('ids', nargs='+', metavar='ID')
