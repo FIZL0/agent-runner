@@ -2,6 +2,12 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
+## 0.6.18 (2026-10-27)
+
+- Each merge fetches the remote's shared branch first and, when it has commits the local one lacks, merges
+  them into the merge before the gate (joined, or given to a fix session on a conflict). The gate tests
+  both and the push goes through, instead of failing on a remote that moved.
+
 ## 0.6.17 (2026-10-27)
 
 - No behaviour change: a simpler runner. Fewer git calls per scheduling tick: `pick` reads the tracked
@@ -36,7 +42,7 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 - A `done` whose commit fails puts the plan back as it was, so it can run again (it said "no task <ID>").
 - A slot asleep until a usage-limit reset lets go of `task/<ID>`, so another slot can take the task.
 - When the remote's shared branch has moved, the runner's push no longer merges it into the main checkout
-  and pushes that untested merge; it says so, and the merge is a human's.
+  and pushes that untested merge; it says so (0.6.18: the next merge takes it in).
 - A SIGTERM or SIGHUP ends the run as Ctrl-C does, and either one waits up to a minute for a merge open in
   the main checkout to be committed or aborted first.
 - The temp sweep matches only the slots' and the merge worktree's folders, not a sibling repo whose name

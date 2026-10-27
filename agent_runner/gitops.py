@@ -75,8 +75,8 @@ def push(cwd: Path, branch: str, shared: bool = False) -> str:
     The shared branch is refused unless `shared=True` (the runner, after a tested merge). Returns one line
     to print, or '' when there is nothing to say. It merges rather than rebases when the remote has moved:
     the worktree branches are based on these commits, and rebasing what they came from turns every later
-    merge into a fight. Never for the shared branch, though: that merge would be pushed untested, so it is
-    left for a human.
+    merge into a fight. Never for the shared branch, though: that merge would be pushed untested, so the
+    runner's next merge takes the remote's commits in before its gate (`runner.upstream`).
     """
     remote = cfg(cwd).push_remote
     if not remote:
@@ -91,7 +91,7 @@ def push(cwd: Path, branch: str, shared: bool = False) -> str:
     if shared:
         net('fetch', '-q', remote)
         return (f'! {branch} did not push: {remote}/{branch} has moved (or refused it). Not merged here, since '
-                f'that merge would go out untested: merge {remote}/{branch} into {branch} by hand, then push.')
+                f'that merge would go out untested: the next merge takes it in before its gate, then pushes.')
     if g('branch', '--show-current').stdout.strip() != branch:
         return f'! {branch} did not push (it is committed locally; push it by hand)'
     net('fetch', '-q', remote)

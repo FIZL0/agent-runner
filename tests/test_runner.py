@@ -1208,7 +1208,15 @@ def test_shared_push(repo: Path, tmp: Path):
     head = git(repo, 'rev-parse', 'HEAD')
     has(push(repo, 'main', shared=True), r'did not push: origin/main has moved', 'the push fails, and says why')
     eq(git(repo, 'rev-parse', 'HEAD'), head, 'and main is as it was')
-    git(repo, 'push', '-q', '-f', 'origin', 'main')
+    print('...the next merge takes the remote\'s commits in, tests them with it, and pushes')
+    R.init(repo)
+    todo = repo / 'plan/TODO.md'
+    todo.write_text(todo.read_text().replace('### Stretch', '- [ ] **U1** upstream → u1.py\n\n### Stretch'))
+    git(repo, 'commit', '-qam', 'plan: U1')
+    commit_on(repo, 'U1', {'u1.py': '# u1\n'}, 'U1: u1')
+    eq(R.merge('U1', 'main'), None, 'the merge lands')
+    check((repo / 'theirs.txt').exists() and (repo / 'ours.txt').exists(), 'with both sides in main')
+    eq(git(repo, 'rev-parse', 'main'), git(tmp / 'origin.git', 'rev-parse', 'main'), 'and main is pushed')
 
 
 def main() -> int:

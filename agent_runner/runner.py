@@ -75,7 +75,7 @@ __all__ = ['init', 'cmd_run', 'cmd_stop', 'pick', 'tasks', 'prompt_for', 'reopen
            'ask_stop', 'stopping', 'cmd_resume', 'PROMPT', 'FIXER', 'OTHERS']
 from agent_runner.config import RUNNER, Config, cfg, main_checkout, runner_cmd
 from agent_runner.done import TESTED, gate
-from agent_runner.gitops import drop_if_merged, push, shared_name
+from agent_runner.gitops import _net, drop_if_merged, push, shared_name
 
 TASK = re.compile(r'^- \[(.)\] \*\*([^*\s]+)\*\*(.*)')  # a top-level task line: its box, its id, the rest
 TAG = '@runner'  # the tmux pane option a slot's pane is found by
@@ -1325,13 +1325,13 @@ def joined(files: list[str], tid: str, d: Path) -> bool:
     return True
 
 
-def refix(tid: str, branch: str, ref: str, files: list[str], d: Path, undo: bool = False) -> str | None:
+def refix(tid: str, branch: str, ref: str, files: list[str], d: Path, undo: bool = False, msg: str = '') -> str | None:
     """Start the conflict again from a clean state (a refused join may have written some of its files) and give
     it to a fix session (`fix_merge`): None when it committed the merge, else why not. With `undo`, a merge
     it did not finish is taken back off `d`, so the batch goes on without it."""
     git('merge', '--abort', cwd=d)
     at = git('rev-parse', 'HEAD', cwd=d).stdout.strip()
-    git('merge', '--no-edit', '-m', f"Merge branch 'task/{tid}'", ref, cwd=d)
+    git('merge', '--no-edit', '-m', msg or f"Merge branch 'task/{tid}'", ref, cwd=d)
     if (why := fix_merge(tid, branch, files, d)) and undo:
         git('merge', '--abort', cwd=d)
         clean(d, at)
@@ -1345,6 +1345,20 @@ def repair_retest(tid: str, branch: str, d: Path, base: str, merged: str,
     if not_fixed := repair_merge(tid, branch, d, riders, base):
         return not_fixed, None, []
     return None, tested(tid, d, base), git('rev-list', '--reverse', f'{merged}..HEAD', cwd=d).stdout.split()
+
+
+def upstream(branch: str, d: Path) -> str:
+    """The remote's `branch`, just fetched, when it has commits the merge in `d` lacks; else ''. Merged into
+    the merge before the gate, so the gate tests both and the push after it goes through."""
+    remote = C.push_remote
+    if not (C.push_merge and remote) or git('remote', 'get-url', remote).returncode:
+        return ''
+    _net(ROOT)('fetch', '-q', remote, branch)
+    ref = f'refs/remotes/{remote}/{branch}'
+    if git('rev-parse', '-q', '--verify', ref).returncode or \
+            not git('merge-base', '--is-ancestor', ref, 'HEAD', cwd=d).returncode:
+        return ''
+    return ref
 
 
 def merge_batch(tid: str, branch: str) -> str | None:
@@ -1385,6 +1399,13 @@ def merge_batch(tid: str, branch: str) -> str | None:
                 riders.append(t)
             if riders:
                 log(f'{tid}: merging together with {", ".join(riders)} (one gate run)')
+            if up := upstream(branch, d):  # someone pushed to the remote: take it in, the gate tests it too
+                msg = f"Merge {up.removeprefix('refs/remotes/')} into {branch}"
+                if (files := merge_into(d, up, msg)) is None:
+                    return f'git refused to merge {up} into the merge of task/{tid} (see the merge worktree, {d})'
+                if files and not joined(files, tid, d) and (why := refix(tid, branch, up, files, d, msg=msg)):
+                    return f'{up} has moved and conflicts with the merge: {why}'
+                log(f'{tid}: {up} had commits {branch} did not; merged in, so the gate tests them together')
             if repairs and git('cherry-pick', '--allow-empty', *repairs, cwd=d).returncode:
                 git('cherry-pick', '--abort', cwd=d)
                 log(f'{tid}: the repair no longer applies to the merge; testing it without')
