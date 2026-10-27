@@ -1219,6 +1219,25 @@ def test_shared_push(repo: Path, tmp: Path):
     eq(git(repo, 'rev-parse', 'main'), git(tmp / 'origin.git', 'rev-parse', 'main'), 'and main is pushed')
 
 
+def test_update_notice():
+    import io
+    import urllib.request
+    said, real_log, real_open = [], R.log, urllib.request.urlopen
+    R.log = said.append
+    try:
+        for remote, want in (("__version__ = '999.0.0'\n", 1), ("__version__ = '0.0.1'\n", 0), ('garbage', 0)):
+            urllib.request.urlopen = lambda *a, **k: io.BytesIO(remote.encode())
+            said.clear()
+            R.update_notice()
+            eq(len(said), want, f'update notice for {remote.strip()!r}')
+        urllib.request.urlopen = lambda *a, **k: (_ for _ in ()).throw(OSError('offline'))
+        said.clear()
+        R.update_notice()
+        eq(said, [], 'offline: no notice, no crash')
+    finally:
+        R.log, urllib.request.urlopen = real_log, real_open
+
+
 def main() -> int:
     with tempfile.TemporaryDirectory() as t:
         tmp = Path(t)
@@ -1235,7 +1254,7 @@ def main() -> int:
                        lambda: test_resume(repo, tmp),
                        lambda: test_session_tmp(repo, tmp), lambda: test_tested_ref(repo, tmp),
                        lambda: test_no_pane(repo, tmp), lambda: test_limit_lets_go(repo),
-                       lambda: test_shared_push(repo, tmp)])
+                       lambda: test_shared_push(repo, tmp), test_update_notice])
 
 
 if __name__ == '__main__':

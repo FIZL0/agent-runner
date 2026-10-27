@@ -2,6 +2,12 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
+## 0.6.19 (2026-10-27)
+
+- A run says when `main` has a newer version than the one running, with the command to upgrade
+  (`pipx upgrade agent-runner`, `uv tool upgrade agent-runner`, or `git pull` in a clone). One read of
+  `main`'s version, in the background, 5 s at most; silent when offline.
+
 ## 0.6.18 (2026-10-27)
 
 - Each merge fetches the remote's shared branch first and, when it has commits the local one lacks, merges

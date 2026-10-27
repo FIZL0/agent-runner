@@ -38,11 +38,12 @@ there is one). To hold a machine at a version, name its tag instead: `…/agent-
 that uses it:
 
 ```sh
-uv tool install --force git+https://github.com/FIZL0/agent-runner
-pipx install --force git+https://github.com/FIZL0/agent-runner
+uv tool upgrade agent-runner
+pipx upgrade agent-runner
 ```
 
-Do it between runs (see [below](#switch-between-runs)). Read [CHANGELOG.md](../CHANGELOG.md) first: a
+Both fetch `main` again (a tag install stays on its tag). A run says when `main` has a newer version and
+which of these to type. Do it between runs (see [below](#switch-between-runs)). Read [CHANGELOG.md](../CHANGELOG.md) first: a
 new major version may rename a config key.
 
 **Roll back** the same way, naming the older tag: `uv tool install --force …@v0.2.0`.

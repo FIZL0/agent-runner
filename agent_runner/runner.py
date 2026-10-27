@@ -1955,6 +1955,26 @@ def weekly() -> float | None:
     return _weekly[1]
 
 
+LATEST = 'https://raw.githubusercontent.com/FIZL0/agent-runner/main/agent_runner/__init__.py'
+
+
+def update_notice() -> None:
+    """Says so when main has a newer version than this one. Run in a thread at the start of a run; silent
+    when it cannot tell (offline, GitHub down, a clone ahead of main)."""
+    import urllib.request
+    from agent_runner import __version__
+    try:
+        text = urllib.request.urlopen(LATEST, timeout=5).read().decode()
+        latest = re.search(r"__version__ = '([\d.]+)'", text)[1]
+        newer = tuple(map(int, latest.split('.'))) > tuple(map(int, __version__.split('.')))
+    except Exception:
+        return
+    if newer:
+        how = ('pipx upgrade agent-runner' if 'pipx' in sys.prefix else
+               'uv tool upgrade agent-runner' if f'{os.sep}uv{os.sep}' in sys.prefix else 'git pull')
+        log(f'agent-runner {latest} is out (this is {__version__}); to upgrade after this run: {how}')
+
+
 # --- the idle stop hook --------------------------------------------------------
 
 def stop_hook(idle: int) -> int:
@@ -2260,6 +2280,7 @@ def run(argv: list[str], prog: str) -> int:
               f'    tmux new -s runner {prog} {a.slots or slots} --mode {mode}', file=sys.stderr)
         return 2
 
+    threading.Thread(target=update_notice, daemon=True).start()
     if sys.stdin.isatty():
         threading.Thread(target=read_keys, daemon=True).start()
         log('type s + Enter here to stop gently (the running tasks finish and merge first); s again: undo')
