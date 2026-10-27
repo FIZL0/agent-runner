@@ -832,9 +832,23 @@ def test_stop_waiter(tmp: Path):
         R.stop_waiter(p.pid, str(t), 1, 0)
         check(p.poll() is None, 'a session that moved on is left alone')
         p.kill()
+        os.environ['AGENT_RUNNER_IDLE_MAX'] = '60'
+        os.environ['AGENT_RUNNER_SLOT'] = '9'
+        t.write_text('{"type":"user"}\n', encoding='utf-8')
+        mark = R.finished_mark()
+        mark.touch()
+        p = subprocess.Popen([sys.executable, '-c', 'import subprocess; subprocess.run(["sleep", "30"])'])
+        time.sleep(0.3)
+        t0 = time.time()
+        R.stop_waiter(p.pid, str(t), 1, 0)
+        took = time.time() - t0
+        check(p.wait(5) is not None and took < 3, 'after a successful done a leftover background command does not hold it', took)
     finally:
         R.WAITER_POLL = poll
         os.environ.pop('AGENT_RUNNER_IDLE_MAX', None)
+        os.environ.pop('AGENT_RUNNER_SLOT', None)
+        if (m := R.finished_mark('9')) and m.exists():
+            m.unlink()
 
 
 def test_land_waits_aloud(repo: Path):

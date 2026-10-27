@@ -27,7 +27,7 @@ from functools import partial
 from pathlib import Path
 
 from agent_runner import plan
-from agent_runner.config import cfg
+from agent_runner.config import cfg, finished_mark
 from agent_runner.gitops import git, push, shared_branch
 
 
@@ -113,7 +113,7 @@ def main(argv: list[str] | None = None) -> int:
         print('nothing to commit (the tick was already committed?)')
         if not a.no_test:
             g('update-ref', TESTED + a.id, 'HEAD')
-        return 0
+        return finished()
     if (r := g('commit', '-qm', a.message)).returncode:
         print(f'git commit failed: {r.stderr.strip()}', file=sys.stderr)
         return untick()
@@ -125,4 +125,11 @@ def main(argv: list[str] | None = None) -> int:
         print(line)
     elif here and (remote := c.push_remote) and shared_branch(cwd, remote, here):
         print(f'{here} is not pushed: done only pushes a task branch (git push {remote} {here} to publish)')
+    return finished()
+
+
+def finished() -> int:
+    """Tell the slot's stop waiter this task is done, so a leftover background command can't hold the slot."""
+    if m := finished_mark():
+        m.touch()
     return 0

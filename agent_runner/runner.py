@@ -73,7 +73,7 @@ from agent_runner import gitops, plat
 # `cmd_stop(argv)` are the commands; `PROMPT`, `FIXER` and `OTHERS` may be replaced before `cmd_run`.
 __all__ = ['init', 'cmd_run', 'cmd_stop', 'pick', 'tasks', 'prompt_for', 'reopen_landed', 'retry_reopened',
            'ask_stop', 'stopping', 'cmd_resume', 'PROMPT', 'FIXER', 'OTHERS']
-from agent_runner.config import RUNNER, Config, cfg, main_checkout, runner_cmd
+from agent_runner.config import RUNNER, Config, cfg, finished_mark, main_checkout, runner_cmd
 from agent_runner.done import TESTED, gate
 from agent_runner.gitops import _net, drop_if_merged, push, shared_name
 
@@ -560,7 +560,7 @@ def slot_env(n: int | None) -> list[str]:
     the runner's environment, so a wrapper's own variables must be passed on by name); then `[run]
     slot_env` with {n} (the slot) and {slots} filled in. `n=None` is the master window's: `shared_env` in
     place of `[run] slot_env`, so it builds in the merge worktree the way the gate there does."""
-    env = ['AGENT_RUNNER=1']
+    env = ['AGENT_RUNNER=1'] + ([] if n is None else [f'AGENT_RUNNER_SLOT={n}'])  # `finished_mark`
     if os.environ.get('AGENT_RUNNER_CONFIG') and C.file:
         env.append(f'AGENT_RUNNER_CONFIG={C.file}')
     env += [f'{k}={os.environ[k]}' for k in C.run['pass_env'] if k in os.environ]
@@ -661,6 +661,7 @@ def slot_header(n: int, what: str) -> tuple[Path, int]:
 
 def start(n: int, task, branch: str, model: str, idle: int, slots: int):
     tid = task[0]
+    finished_mark(n).unlink(missing_ok=True)  # the last task's `done`, not this one's
     d = worktree(n, branch)
     head = git('symbolic-ref', '-q', '--short', 'HEAD', cwd=d).stdout.strip()
     if not vacate(n, d, head, branch, f'for {tid}'):
@@ -2058,8 +2059,10 @@ def stop_waiter(pid: int, t: str, n: int, idle: int) -> int:
         if tail and '"tool_use"' not in tail:
             return 0  # waiting out a usage limit; Claude Code resumes it at the reset
         # a child is a command the agent still runs (a `done` that waited 30 min for a test slot was killed
-        # with its session, and the work it was about to commit went with it): it ends and wakes the agent
-        if not plat.children(pid) or time.time() >= until:
+        # with its session, and the work it was about to commit went with it): it ends and wakes the agent.
+        # Once `done` has succeeded there is nothing left to protect: a leftover background command (a wait
+        # loop that never ends) must not hold the slot for hours
+        if not plat.children(pid) or time.time() >= until or ((m := finished_mark()) and m.exists()):
             break
         time.sleep(WAITER_POLL)
     plat.terminate(pid)

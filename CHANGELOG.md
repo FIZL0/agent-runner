@@ -2,6 +2,14 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
+## 0.6.22 (2026-10-27)
+
+- A finished task no longer holds its slot. A successful `done` leaves `slot<N>.finished` in the notes
+  folder (slots get `AGENT_RUNNER_SLOT`), and the idle stop then ends the session even when the agent still
+  has a child process. Before, a leftover background command (a wait loop whose `pgrep -f` matched itself)
+  kept a finished session alive for up to `AGENT_RUNNER_IDLE_MAX` (3 h). A slot clears the mark when it
+  starts its next task.
+
 ## 0.6.21 (2026-10-27)
 
 - A pane is a runner's only when its `@runner-repo` names that runner's main checkout; 0.6.20's

@@ -208,3 +208,10 @@ def _cfg(root: Path) -> Config:
 
 def cfg(cwd: Path | str | None = None) -> Config:
     return _cfg(toplevel(cwd))
+
+
+def finished_mark(slot: str | int | None = None) -> Path | None:
+    """The file a slot's successful `done` leaves (`AGENT_RUNNER_SLOT`); the slot clears it when it starts a task,
+    and the stop waiter stops protecting the session's leftover background commands once it exists."""
+    slot = slot if slot is not None else os.environ.get('AGENT_RUNNER_SLOT')
+    return cfg().notes(f'slot{slot}.finished') if slot not in (None, '') else None
