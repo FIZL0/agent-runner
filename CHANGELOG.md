@@ -2,6 +2,152 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
+## 0.6.22 (2026-10-27)
+
+- A finished task no longer holds its slot. A successful `done` leaves `slot<N>.finished` in the notes
+  folder (slots get `AGENT_RUNNER_SLOT`), and the idle stop then ends the session even when the agent still
+  has a child process. Before, a leftover background command (a wait loop whose `pgrep -f` matched itself)
+  kept a finished session alive for up to `AGENT_RUNNER_IDLE_MAX` (3 h). A slot clears the mark when it
+  starts its next task.
+
+## 0.6.21 (2026-10-27)
+
+- A pane is a runner's only when its `@runner-repo` names that runner's main checkout; 0.6.20's
+  fallback for untagged panes (by working directory) is gone. A pane opened before 0.6.20 is no one's:
+  let its session end, or tag it (`tmux set-option -p -t <pane> @runner-repo <main checkout>`), before
+  restarting a run.
+
+## 0.6.20 (2026-10-27)
+
+- Runners for different repos can share one tmux session. A pane now carries the repo it works for
+  (`@runner-repo`, its main checkout), and each repo gets its own windows, `agents-<repo>` and
+  `master-<repo>`. A restart adopts, holds and lays out only its own repo's panes; before, a second repo's
+  runner adopted the first's `s1` (a task of the same id), held its `s2`/`s3` as "untracked sessions", and
+  split its own panes into the first's `agents` window.
+
+## 0.6.19 (2026-10-27)
+
+- A run says when `main` has a newer version than the one running, with the command to upgrade
+  (`pipx upgrade agent-runner`, `uv tool upgrade agent-runner`, or `git pull` in a clone). One read of
+  `main`'s version, in the background, 5 s at most; silent when offline.
+
+## 0.6.18 (2026-10-27)
+
+- Each merge fetches the remote's shared branch first and, when it has commits the local one lacks, merges
+  them into the merge before the gate (joined, or given to a fix session on a conflict). The gate tests
+  both and the push goes through, instead of failing on a remote that moved.
+
+## 0.6.17 (2026-10-27)
+
+- No behaviour change: a simpler runner. Fewer git calls per scheduling tick: `pick` reads the tracked
+  files once for every task line (`plan.files_on_line` takes them as `tracked=`), and one
+  `git for-each-ref --no-merged` finds the finished `task/<ID>` branches for `pick` and `unmerged`, where
+  each branch had a `rev-list` or `git log` of its own. The end of a tick picks at most once, not three times.
+- The plan's 5 s read cache is gone (`plan.lines` reads the file): a read is cheap now that a tick makes
+  few, and nothing has to clear it.
+- A transcript's path is kept once found, so a stall check no longer globs `~/.claude/projects/*/` for
+  every slot every 10 s.
+- `plat.mux_choice` lost its unused `slots` argument; `gitops.shared_name` takes the name to fall back to.
+
+## 0.6.16 (2026-10-27)
+
+- A merge skips the gate only when `task/<ID>` is the tree `done`'s gate passed on, which `done` now records
+  as `refs/agent-runner/tested/<ID>`. Before, any merge differing from the branch only in `[run] untested`
+  files skipped it, so a fast-forward of a branch committed after `done`, by `done --no-test`, or by a
+  session that never ran `done` was pushed untested.
+- Rerunning failed tests on the base resets the merge worktree first and checks the checkout: a gate that
+  left a tracked file edited made the checkout refuse, the "base" rerun ran on the merge, and a real
+  failure read as "already fail without it; merged anyway".
+- tmux refusing a pane fails that one start, or that fix or repair session (the merge is left for a human
+  as for any failed fix), instead of ending the run or silently killing the merge thread.
+- `[run] timeout` (3600 s): the gate, a retest, a `[run.join]` command, `before_start` and the sequential
+  run's `on_exit` past it are stopped and count as failed. Pushes and fetches get no stdin, no password or
+  ssh prompt (`GIT_TERMINAL_PROMPT=0`, `ssh -oBatchMode=yes` unless an ssh command is configured) and 300 s.
+- Anything staged in the main checkout holds a tested merge, as edits to its files do: git refuses to
+  merge onto it, and the merge was rebuilt, gated and refused every 10 min.
+- A main checkout with another branch out is no longer switched to `main` to land a merge, carrying
+  whatever was uncommitted there; the merge stays `task/<ID>` until `main` is out again.
+- An earlier `wip/<ID>`, `leftover/<ID>` or `resumed/<ID>` is never overwritten: the new one is `-2`, `-3`, ….
+- A `done` whose commit fails puts the plan back as it was, so it can run again (it said "no task <ID>").
+- A slot asleep until a usage-limit reset lets go of `task/<ID>`, so another slot can take the task.
+- When the remote's shared branch has moved, the runner's push no longer merges it into the main checkout
+  and pushes that untested merge; it says so (0.6.18: the next merge takes it in).
+- A SIGTERM or SIGHUP ends the run as Ctrl-C does, and either one waits up to a minute for a merge open in
+  the main checkout to be committed or aborted first.
+- The temp sweep matches only the slots' and the merge worktree's folders, not a sibling repo whose name
+  starts the same, and never the main checkout's, where an interactive session has no session id to see.
+- On Windows the runner's own command is quoted for Git Bash when a path has `'`, `$`, `` ` `` or `;`.
+
+## 0.6.15 (2026-10-27)
+
+- `plan add` names an open task that looks like the same work, with its id and the start of its text,
+  under the new id. Nothing is printed when none does, so an agent's context pays only on a match: the
+  new task's rarer words mostly on the other (half of them, weighted by how few tasks use them), or 30%
+  of them plus a file that at most three open tasks name. Done tasks are not compared.
+- Starting a task, the run logs any checkout outside its slots (the main checkout, a person's or a chat
+  session's worktree) with uncommitted edits to the task's files: work there is invisible to the runner,
+  and on 2026-10-26 two hand-made fixes sat uncommitted while the runners did the same two tasks.
+
+## 0.6.14 (2026-10-26)
+
+- A session's temp folder (`<tmp>/claude-<uid>/<project>/<session>/`: its scratchpad and background tasks'
+  output) is deleted when the session ends for good. A session queued to resume keeps it. Claude Code
+  never deletes these, and agents build in their scratchpads: here one tmpfs with a per-user quota reached
+  EDQUOT holding 595 finished sessions' folders, 40 GB, 17 GB of it cargo target dirs.
+- At startup and every 6 h the run also sweeps this repository's session folders (the main checkout's,
+  the slots' and the merge worktree's) that no running process, no queued resume and no write in the last
+  day claims: sessions that ended while no run was up, interactive ones, and those from before 0.6.14.
+  Not on Windows, which has no /proc to tell a live session from an ended one.
+
+## 0.6.13 (2026-10-24)
+
+- Under tmux, fix and repair sessions are ordinary interactive sessions in a window named "master"
+  instead of `claude -p`: you can watch one resolve a merge, or take it over by typing. Its Stop hook ends
+  it 90 s after its answer, the runner then reads the merge worktree as before, and `fixer.log` gets the
+  session id and its last words. There is no switch back to `-p`; only a run without tmux (Windows, the
+  sequential run) still uses it, having no window to put the session in.
+
+## 0.6.12 (2026-10-24)
+
+- A batch that fails the gate gets one repair session for the whole batch before it is split: it sees every
+  merge in it (`REPAIR_BATCH`), commits a fix on top, and the gate runs once more for all of them. Splitting
+  cost every rider a gate run of its own and, for a clash between riders, a repair session each — in one
+  night here every batch of fifteen failed to build together and went one by one.
+- A rider whose conflict the line join cannot do gets a fix session inside the batch (`[run] fix_merges`),
+  instead of waiting for its own turn and gate run.
+
+## 0.6.11 (2026-10-24)
+
+- A tested merge that cannot land only because of uncommitted edits in the main checkout is no longer
+  parked as wip/<ID> after an hour. It waits 10 min holding MERGE, then gives the lock back; its branch
+  stays task/<ID> (`pick` leaves it alone) and it is merged again, from a fresh build, as soon as the
+  files it changes have no uncommitted edits (checked every minute). A stop leaves the branch for the next
+  run's startup merge. Parking threw away finished, tested work for a fresh attempt: in one night an
+  interactive session's uncommitted edits sent five finished tasks back to the queue, and serialised a
+  dozen more behind an hour's wait each.
+
+## 0.6.10 (2026-10-23)
+
+- A merge that fails the gate gets one repair session before it is parked as wip/<ID>: a one-shot session
+  like the fix session's, on the committed merge, with the gate's output (`.runner/merge-gate.log`). It
+  commits a fix on top or says why not; the gate runs once more, and a second failure parks the branch as
+  before. A clash git merges without a conflict (both sides adding one name, a caller of something the
+  other side renamed) used to cost the whole task a fresh attempt. The repair is replayed when the merge is
+  built again because the shared branch moved. `[run] repair_merges = false` turns it off.
+- `[run] build`: a quick build (not the gate) the fix session runs before it commits, fixing what the two
+  sides broke between them in files git merged on its own. Its prompt used to forbid any check, so it
+  committed merges that did not compile.
+
+## 0.6.9 (2026-10-23)
+
+- A session cut off by an API error (the network dropped, `EAI_AGAIN`; the API down) is resumed in its own
+  slot with `claude --resume` once the API answers, instead of being ended, its edits parked on wip/ and
+  the task dropped for the run. At startup, a slot still on `task/<ID>` whose session stopped mid-turn
+  while no run was up (a reboot) is resumed the same way. At most 3 resumes per session; a usage limit or
+  a refused request is not a cut-off. No session starts or resumes while the API cannot be reached.
+- `resume <ID>…` resumes a task's last session by hand once its slot is free, bringing its edits back
+  from the wip/<ID> the runner saved.
+
 ## 0.6.8 (2026-10-23)
 
 - A tested merge that cannot land yet says why, once, in the log (with a bell): uncommitted edits in the

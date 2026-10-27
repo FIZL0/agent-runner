@@ -11,6 +11,7 @@ Run the agents
     agent-runner run 3                3 agents at once
     agent-runner run --dry-run 3      show what 3 agents would start now, start nothing
     agent-runner stop                 let running tasks finish, start no new ones
+    agent-runner resume B646          continue B646's last session, cut off by a dropped network or a reboot
 
 See and change the task list
     agent-runner plan                 every task id, one line each
@@ -85,6 +86,9 @@ def main(argv: list[str] | None = None) -> int:
     if cmd == 'run':
         from agent_runner import runner
         return runner.cmd_run(rest)
+    if cmd == 'resume':
+        from agent_runner import runner
+        return runner.cmd_resume(rest)
     if cmd == 'stop':
         from agent_runner import runner
         return runner.cmd_stop(rest)

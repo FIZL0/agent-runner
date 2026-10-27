@@ -23,14 +23,16 @@ from __future__ import annotations
 import argparse
 import subprocess
 import sys
+from functools import partial
 from pathlib import Path
 
 from agent_runner import plan
-from agent_runner.config import cfg
-from agent_runner.gitops import push, shared_branch
+from agent_runner.config import cfg, finished_mark
+from agent_runner.gitops import git, push, shared_branch
 
 
 PROG = 'run done'  # the name in messages; a wrapper sets its own ('kit done')
+TESTED = 'refs/agent-runner/tested/'  # + <ID>: the commit whose tree `done`'s gate passed on
 __all__ = ['gate', 'check', 'main', 'PROG']
 
 
@@ -39,7 +41,11 @@ def gate(cwd: Path, key: str = 'test', full: bool = False, env: dict | None = No
     cmd = cfg(cwd).run[key]
     if not cmd:
         return 0, ''
-    r = subprocess.run(cmd, shell=True, cwd=str(cwd), capture_output=True, text=True, errors='replace', env=env)
+    try:
+        r = subprocess.run(cmd, shell=True, cwd=str(cwd), capture_output=True, text=True, errors='replace', env=env,
+                           timeout=cfg(cwd).run['timeout'])
+    except subprocess.TimeoutExpired:
+        return 124, f'`{cmd}` ran past [run] timeout ({cfg(cwd).run["timeout"]}s): counted as failing'
     out = (r.stdout + r.stderr).strip()
     return r.returncode, out if full else '\n'.join(out.splitlines()[-15:])
 
@@ -84,6 +90,7 @@ def main(argv: list[str] | None = None) -> int:
             return 1
         print(f'check {"failed, skipped (--skip-check)" if rc else "passed"}: {c.run["precommit"]}')
 
+    kept = {p: p.read_bytes() for p in (c.todo, c.done, c.plan_dir / f'{a.id}.md') if p.exists()}
     if a.blocked:
         plan.block(a.id, a.blocked, after=None if a.after is None else [t for t in a.after.split(',') if t])
         print(f'blocked {a.id}')
@@ -91,22 +98,38 @@ def main(argv: list[str] | None = None) -> int:
         plan.tick(a.id)
         print(f'ticked {a.id}')
 
-    def g(*args):
-        return subprocess.run(['git', *args], cwd=str(cwd), capture_output=True, encoding='utf-8', errors='replace')
+    g = partial(git, cwd=cwd)
+
+    def untick() -> int:  # nothing committed: the plan as it was, so `done` can run again
+        g('reset', '-q')
+        for p, b in kept.items():
+            p.write_bytes(b)
+        return 1
 
     if g('add', '-A').returncode:
         print('git add failed', file=sys.stderr)
-        return 1
+        return untick()
     if not g('diff', '--cached', '--quiet').returncode:
         print('nothing to commit (the tick was already committed?)')
-        return 0
+        if not a.no_test:
+            g('update-ref', TESTED + a.id, 'HEAD')
+        return finished()
     if (r := g('commit', '-qm', a.message)).returncode:
         print(f'git commit failed: {r.stderr.strip()}', file=sys.stderr)
-        return 1
+        return untick()
+    if not a.no_test:  # what the gate passed on, so a merge that differs from it only in [run] untested skips it
+        g('update-ref', TESTED + a.id, 'HEAD')
     print(g('log', '-1', '--oneline').stdout.strip())
     here = g('branch', '--show-current').stdout.strip()
     if here and (line := push(cwd, here)):
         print(line)
     elif here and (remote := c.push_remote) and shared_branch(cwd, remote, here):
         print(f'{here} is not pushed: done only pushes a task branch (git push {remote} {here} to publish)')
+    return finished()
+
+
+def finished() -> int:
+    """Tell the slot's stop waiter this task is done, so a leftover background command can't hold the slot."""
+    if m := finished_mark():
+        m.touch()
     return 0

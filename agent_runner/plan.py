@@ -14,7 +14,8 @@ re-reads it on every turn pays again. So the backlog is a command instead:
     ./run plan block <ID> [--after X,Y] WHY   [~] with "BLOCKED: (after X, Y) WHY" appended
     ./run plan unblock <ID> [NOTE]   reopen: [ ], drop "BLOCKED: …", append NOTE (what unblocked it)
     ./run plan move <ID> WHERE   WHERE = top | before ID | after ID | in SECTION (its end); sub-items follow
-    ./run plan add PREFIX TEXT [@ WHERE]   new "- [ ] **<next free id>** TEXT"; prints the id
+    ./run plan add PREFIX TEXT [@ WHERE]   new "- [ ] **<next free id>** TEXT"; prints the id, and any open task
+                                 that looks like the same work (nothing when none does)
     ./run plan note <ID> TEXT    append " — TEXT" to the task (user details, priority reasons)
     ./run plan newid PREFIX      the next free id, e.g. L -> L7; a task's id gives its next subtask, L3 -> L3a
     ./run plan archive           move every [x] line left in TODO.md to DONE.md (after merges, hand edits)
@@ -42,19 +43,18 @@ import os
 import re
 import subprocess
 import sys
-import time
+from collections import Counter
+from functools import partial
 from pathlib import Path
 
 from agent_runner.config import cfg
+from agent_runner.gitops import git
 
 PROG = './run plan'  # the name in messages; a wrapper sets its own ('./kit plan')
 # The library API a wrapping project may call; names and signatures here change only in a major version.
 __all__ = ['PROG', 'HELP', 'lines', 'index', 'section', 'ensure', 'archive', 'tick', 'block', 'reopen',
-           'unblock', 'move', 'next_id', 'add', 'note', 'next_task', 'files_on_line', 'brief', 'open_ids',
+           'unblock', 'move', 'next_id', 'add', 'similar', 'note', 'next_task', 'files_on_line', 'brief', 'open_ids',
            'write_atomic', 'child', 'subtasks', 'main']
-
-TTL = 5.0  # seconds a parsed file is trusted before its mtime is checked again
-_cache: dict[str, tuple[float, int, list[str]]] = {}  # path -> (checked_at, mtime_ns, lines)
 
 ITEM = re.compile(r'^(\s*)- \[(.)\] \*\*([^\s*]+)')
 HEAD = re.compile(r'(#+) ')
@@ -67,24 +67,11 @@ JOURNAL_MAX = 12000  # chars of the newest journal file pasted into a brief; the
 # --- reading ------------------------------------------------------------------
 
 def lines(path) -> list[str]:
-    """A file's lines, cached. The mtime is only re-checked once the TTL is up, so a command that reads the
-    same file five times (index, then a section, then a lookup) stats it once."""
-    path = str(path)
-    now = time.monotonic()
-    hit = _cache.get(path)
-    if hit and now - hit[0] < TTL:
-        return hit[2]
-    try:
-        mtime = os.stat(path).st_mtime_ns
-    except OSError:
+    """A file's lines; [] when there is no such file."""
+    if not os.path.exists(path):  # exists() is a stat() that says False on any OSError
         return []
-    if hit and hit[1] == mtime:
-        _cache[path] = (now, mtime, hit[2])
-        return hit[2]
     with open(path, encoding='utf-8', errors='replace') as f:
-        ls = f.read().splitlines()
-    _cache[path] = (now, mtime, ls)
-    return ls
+        return f.read().splitlines()
 
 
 def _level(line: str) -> int:
@@ -160,7 +147,7 @@ def write_atomic(path, text: str) -> None:
 
 
 def _write(path, ls: list[str]) -> None:
-    """Atomic (see `config.write_atomic`), and a no-op when nothing changed."""
+    """Atomic (see `write_atomic`), and a no-op when nothing changed."""
     path = str(path)
     text = '\n'.join(ls).rstrip('\n') + '\n'
     try:
@@ -169,7 +156,6 @@ def _write(path, ls: list[str]) -> None:
     except OSError:
         pass
     write_atomic(path, text)
-    _cache.pop(path, None)
 
 
 def _mark(ls: list[str], i: int, box: str) -> None:
@@ -415,6 +401,61 @@ def add(prefix: str, text: str, where: str = 'top', ref: str | None = None, todo
     return tid
 
 
+# Words too common in any task line to say two tasks are about the same thing.
+_STOP = set('''about after again along also another anything around because before being below between could
+does doing each every first from have here into itself just keeps like makes means might more most much never
+only other over same should since some still such than that their them then there these they this those
+through today under until what when where which while with without would your'''.split())
+
+
+def _words(text: str) -> set[str]:
+    """The words of a task's text before its file list: no ids, no dated user quotes' brackets."""
+    text = text.split('→')[0].split('| t:')[0]
+    text = re.sub(r'\*\*[^*]+\*\*|\([^)]*\d{4}-\d\d-\d\d[^)]*\)', ' ', text)
+    return {w for w in re.findall(r'[a-z][a-z-]{3,}', text.lower()) if w not in _STOP}
+
+
+def _files(text: str) -> set[str]:
+    text = text.split('| t:')[0]
+    return {f.rstrip('.,;:') for f in FILE_TOKEN.findall(text.partition('→')[2] or text)}
+
+
+def similar(text: str, todo=None, skip: str | None = None, limit: int = 3) -> list[str]:
+    """Open or blocked tasks that look like the same work as `text`, best first, as 'ID: start of its text'.
+
+    Shown when a task is added, so a duplicate is caught before an agent spends a session on it. Kept quiet
+    unless the match is strong, since every line lands in an agent's context: the new task's rarer words
+    (weighted by how few tasks use them) mostly also on the other, or a fair share of them plus a file that
+    few open tasks name."""
+    import math
+    todo, _ = ensure(todo)
+    tasks = [(m.group(3), l) for l in lines(todo)
+             if (m := ITEM.match(l)) and not m.group(1) and m.group(2) != 'x' and m.group(3) != skip]
+    if not tasks:
+        return []
+    docs = [(tid, _words(l), _files(l)) for tid, l in tasks]
+    df = Counter(w for _, ws, _ in docs for w in ws)  # how many tasks use each word
+    hub = Counter(f for _, _, fs in docs for f in fs)  # and name each file
+    n = len(docs)
+    weight = lambda w: math.log((n + 1) / (df[w] + 1))
+    ws, fs = _words(text), _files(text)
+    total = sum(weight(w) for w in ws)
+    if not total:
+        return []
+    hits = []
+    for (tid, w2, f2), (_, line) in zip(docs, tasks):
+        score = sum(weight(w) for w in ws & w2) / total
+        rare = any(hub[f] <= 3 for f in fs & f2)
+        if score >= 0.5 or (rare and score >= 0.3):
+            hits.append((score, tid, line))
+    hits.sort(key=lambda h: -h[0])
+    out = []
+    for _, tid, line in hits[:limit]:
+        body = re.sub(r'^\s*- \[.\] \*\*[^*]+\*\*\s*', '', line).split('→')[0].strip()
+        out.append(f'{tid}: {body[:90]}{"…" if len(body) > 90 else ""}')
+    return out
+
+
 def note(tid: str, text: str, todo=None) -> None:
     todo, _ = ensure(todo)
     ls = list(lines(todo))
@@ -432,15 +473,16 @@ def next_task(todo=None) -> str | None:
     return ITEM.match(blk[0]).group(3).rstrip('.') if blk else None
 
 
-def files_on_line(text: str, root=None) -> list[str]:
+def files_on_line(text: str, root=None, tracked=None) -> list[str]:
     """Repo paths named on a task line, resolved against the repo. Also used by `./run run` in mode `d`
-    to keep two running agents off the same files, so the matching lives here, once."""
+    to keep two running agents off the same files, so the matching lives here, once. `tracked`: the repo's
+    paths (`_tracked`), when the caller reads them once for many lines."""
     root = Path(root or cfg().root)
     text = text.split('| t:')[0]
     names = list(dict.fromkeys(FILE_TOKEN.findall(text)))
     # what follows `→` is the task's file list by the line format, so a new top-level file counts there
     listed = set(FILE_TOKEN.findall(text.partition('→')[2])) if '→' in text else set()
-    tracked = _tracked(root)
+    tracked = _tracked(root) if tracked is None else tracked
     out = []
     for n in names:
         n = n.rstrip('.,;:')
@@ -460,8 +502,7 @@ def files_on_line(text: str, root=None) -> list[str]:
 def _tracked(root) -> list[str]:
     """Every tracked path, from git; a filesystem walk when this isn't a git checkout (tests, a fresh copy)."""
     try:
-        r = subprocess.run(['git', 'ls-files'], cwd=str(root), capture_output=True, encoding='utf-8',
-                           errors='replace', timeout=20)
+        r = git('ls-files', cwd=root, timeout=20)
         if r.returncode == 0 and r.stdout.strip():
             return r.stdout.split()
     except (OSError, subprocess.SubprocessError):
@@ -539,9 +580,7 @@ def brief(tid: str, root=None, plan_dir=None, journal=None) -> list[str]:
     if where:
         out += ['', '## Files on the line, and their last commits']
         for t in where:
-            log = subprocess.run(['git', 'log', '-3', '--format=%h %ad %s', '--date=short', '--', t],
-                                 cwd=str(root), capture_output=True, encoding='utf-8',
-                                 errors='replace').stdout.strip().splitlines()
+            log = git('log', '-3', '--format=%h %ad %s', '--date=short', '--', t, cwd=root).stdout.strip().splitlines()
             try:
                 n_lines = sum(1 for _ in open(root / t, encoding='utf-8', errors='replace'))
                 size = f'{n_lines} lines'
@@ -569,12 +608,11 @@ def _commit(root: Path, paths: list[Path], msg: str) -> None:
     """A plan edit made by hand in the main checkout commits at once: the runner lands a merge only once no
     uncommitted edit there touches a file it changes, and nearly every merge changes TODO.md. Worktrees (the
     agents') commit through `done`; mid-merge the edit stays uncommitted for whoever is merging."""
-    def git(*a):
-        return subprocess.run(['git', '-C', str(root), *a], capture_output=True, encoding='utf-8', errors='replace')
-    gd, cd = (git('rev-parse', '--path-format=absolute', f).stdout.strip() for f in ('--git-dir', '--git-common-dir'))
+    g = partial(git, cwd=root)
+    gd, cd = (g('rev-parse', '--path-format=absolute', f).stdout.strip() for f in ('--git-dir', '--git-common-dir'))
     if gd and gd == cd and not os.path.exists(os.path.join(gd, 'MERGE_HEAD')):
-        git('add', '--', *map(str, paths))  # a fresh plan/ is untracked, and commit -- PATH skips those
-        git('commit', '-q', '-m', f'plan: {msg}', '--', *map(str, paths))
+        g('add', '--', *map(str, paths))  # a fresh plan/ is untracked, and commit -- PATH skips those
+        g('commit', '-q', '-m', f'plan: {msg}', '--', *map(str, paths))
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -613,7 +651,13 @@ def main(argv: list[str] | None = None) -> int:
     if argv[:1] == ['add'] and len(argv) > 2:
         text, _, where = ' '.join(argv[2:]).partition(' @ ')
         w = where.split(maxsplit=1) or [add_default()]
-        return say(f'added {add(argv[1], text, w[0], (w[1:] or [None])[0])}')
+        tid = add(argv[1], text, w[0], (w[1:] or [None])[0])
+        same = similar(text, skip=tid)
+        msg = f'added {tid}'
+        if same:
+            msg += ('\nalready open, and may be the same work (if so, `plan note` it there and drop this one):\n  '
+                    + '\n  '.join(same))
+        return say(msg)
     if argv[:1] == ['note'] and len(argv) > 2:
         note(argv[1], ' '.join(argv[2:]))
         return say(f'noted {argv[1]}')

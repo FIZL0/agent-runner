@@ -6,13 +6,15 @@
 What it proves is the part a night depends on and nobody watches: which task a free slot takes, that
 `done` gates, ticks, commits and pushes only the task branch, and that a finished branch is merged in the
 merge worktree, joined or handed to a fix session when it conflicts, tested, landed, pushed, its remote
-copy dropped, and the blocks it freed reopened — or parked as wip/<ID> when it cannot land.
+copy dropped, and the blocks it freed reopened — or parked as wip/<ID> when it cannot land (but kept as
+task/<ID> while it only waits on edits in the main checkout).
 """
 from __future__ import annotations
 
 import json
 import os
 import subprocess
+import re
 import sys
 import tempfile
 import time
@@ -45,10 +47,20 @@ TODO = """# TODO
 """
 
 FAKE_AGENT = r'''#!/usr/bin/env python3
-# A stand-in for `claude -p`: FAKE_FIX=theirs resolves a merge with the branch's side, =abort gives up.
-import os, subprocess
+# A stand-in for `claude -p`: FAKE_FIX=theirs resolves a merge with the branch's side, =abort gives up,
+# =repair removes BROKEN in a commit on top. FAKE_PROMPT names a file to write the prompt to.
+import os, subprocess, sys
 g = lambda *a: subprocess.run(['git', *a], capture_output=True, text=True)
-if os.environ.get('FAKE_FIX') == 'theirs':
+if os.environ.get('FAKE_PROMPT'):
+    open(os.environ['FAKE_PROMPT'], 'w').write(sys.argv[sys.argv.index('-p') + 1])
+if os.environ.get('FAKE_FIX') == 'repair':
+    g('rm', '-q', 'BROKEN'); g('commit', '-qm', 'repair: drop BROKEN')
+    if os.environ.get('FAKE_MAIN'):  # main moves while it works: the merge is built again, the repair replayed
+        open(os.path.join(os.environ['FAKE_MAIN'], 'moved.txt'), 'w').write('x\n')
+        subprocess.run(['git', 'add', 'moved.txt'], cwd=os.environ['FAKE_MAIN'])
+        subprocess.run(['git', 'commit', '-qm', 'main: moved'], cwd=os.environ['FAKE_MAIN'])
+    print('the two sides clashed in BROKEN')
+elif os.environ.get('FAKE_FIX') == 'theirs':
     for f in g('diff', '--name-only', '--diff-filter=U').stdout.split():
         g('checkout', '--theirs', '--', f); g('add', f)
     g('commit', '-q', '--no-edit')
@@ -175,7 +187,6 @@ def test_done(repo: Path, tmp: Path):
     has(r.stdout, r'main is not pushed', 'but says main is the runner\'s to push')
     check(git(tmp / 'origin.git', 'rev-parse', 'main') != git(repo, 'rev-parse', 'main'),
           'and the remote main is where it was')
-    P._cache.clear()
     P.block('T4', 'needs T1 and T5 landed', todo=repo / 'plan/TODO.md')
     git(repo, 'commit', '-qam', 'T4: blocked')
     has((repo / 'plan/TODO.md').read_text(), r'\*\*T4\*\*.*BLOCKED: \(after T5\)',
@@ -236,7 +247,6 @@ def test_retry(repo: Path):
     check('T4' in tried, 'a tried task still open stays tried (it failed: a human looks next)')
     for step in (lambda: P.block('T4', 'needs a decision', todo=repo / 'plan/TODO.md'),
                  lambda: P.unblock('T4', 'decided', todo=repo / 'plan/TODO.md')):
-        P._cache.clear()
         step()
         git(repo, 'commit', '-qam', 'Plan: T4')
         R.retry_reopened(tried, closed, 'main')
@@ -263,7 +273,8 @@ def test_conflicts(repo: Path, tmp: Path):
     agent = tmp / 'fake-agent'
     agent.write_text(FAKE_AGENT, encoding='utf-8')
     agent.chmod(0o755)
-    R.C.run['agent'] = str(agent)
+    R.C.run['agent'], R.C.run['build'] = str(agent), 'make quick'
+    os.environ['FAKE_PROMPT'] = str(tmp / 'fix-prompt.txt')
     for n, tid, mode in ((2, 'T3', 'theirs'), (3, 'T6', 'abort')):
         f = 'a.py' if tid == 'T3' else 'c.py'
         d = task_branch(repo, n, tid)
@@ -277,6 +288,8 @@ def test_conflicts(repo: Path, tmp: Path):
         R.finish(tid, n, 'sid', 'main')
     led = (repo / '.runner/ledger.md').read_text()
     has(led, r'T3: conflicts in a\.py resolved by a fix session', 'T3: the fix session resolved it')
+    has((tmp / 'fix-prompt.txt').read_text(), r'run `make quick` \(a build, not the tests\)',
+        'with [run] build, the fix session builds before it commits')
     eq((repo / 'a.py').read_text(), '# T3 version\n', 'and its resolution landed on main')
     has(led, r'T6: LEFT FOR A HUMAN — the fix session aborted', 'T6: the fix session gave up, and the ledger says so')
     eq((repo / 'c.py').read_text(), '# main version of c.py\n', 'main is as it was')
@@ -288,7 +301,59 @@ def test_conflicts(repo: Path, tmp: Path):
     has(p, r'An earlier attempt .* on wip/T6', 'its next prompt points at the earlier attempt')
     has(p, r'## Task T6', 'and carries the brief')
     os.environ.pop('FAKE_FIX', None)
-    R.C.run['agent'] = 'claude'
+    os.environ.pop('FAKE_PROMPT', None)
+    R.C.run['agent'], R.C.run['build'] = 'claude', ''
+
+
+def test_repair(repo: Path, tmp: Path):
+    print('run: a merge that fails the gate gets one repair session; one that commits nothing is parked')
+    R.init(repo)
+    agent = tmp / 'fake-agent'
+    agent.write_text(FAKE_AGENT, encoding='utf-8')
+    agent.chmod(0o755)
+    seen = tmp / 'prompt.txt'
+    R.C.run['agent'], R.C.run['build'] = str(agent), 'python3 -c "print(1)"'
+    os.environ['FAKE_PROMPT'] = str(seen)
+
+    def on_main(name: str) -> None:  # main moves on, so the merge differs from what the branch's done gated
+        (repo / name).write_text('x\n', encoding='utf-8')
+        git(repo, 'add', name), git(repo, 'commit', '-qm', f'main: {name}')
+    try:
+        commit_on(repo, 'R1', {'BROKEN': ''}, 'R1: breaks the gate only merged')
+        on_main('r1.txt')
+        os.environ['FAKE_FIX'], os.environ['FAKE_MAIN'] = 'repair', str(repo)
+        eq(R.merge('R1', 'main'), None, 'a repair session that fixes the merge lands it')
+        os.environ.pop('FAKE_MAIN')
+        check(not (repo / 'BROKEN').exists() and (repo / 'moved.txt').exists(),
+              'with its fix on main, replayed onto main\'s commit made meanwhile')
+        eq((repo / '.runner/run.log').read_text().count('R1: the merge fails the gate'), 1,
+           'one session: the rebuilt merge passes with the replayed repair')
+        has(git(repo, 'log', '-3', '--format=%s', 'main'), r'repair: drop BROKEN', 'as a commit of its own')
+        has(seen.read_text(), r'test gate fails on it', 'the session was told the gate fails')
+        has(seen.read_text(), r'python3 -c "print\(1\)"', 'and to check with [run] build')
+        has((repo / '.runner/ledger.md').read_text(), r'R1: the merge failed the gate; a repair session fixed it',
+            'the ledger says so')
+
+        commit_on(repo, 'R2', {'BROKEN': ''}, 'R2: breaks the gate too')
+        on_main('r2.txt')
+        os.environ['FAKE_FIX'] = 'abort'
+        has(R.merge('R2', 'main') or '', r'tests fail after the merge', 'one the session cannot repair stays unmerged')
+        has((repo / '.runner/ledger.md').read_text(), r'R2: no repair: the repair session committed nothing',
+            'and the ledger says why')
+        check(not (repo / 'BROKEN').exists(), 'main is as it was')
+        git(repo, 'branch', '-D', 'task/R2')
+
+        R.C.run['repair_merges'] = False
+        commit_on(repo, 'R3', {'BROKEN': ''}, 'R3: breaks the gate')
+        on_main('r3.txt')
+        seen.unlink()
+        has(R.merge('R3', 'main') or '', r'tests fail after the merge', 'repair_merges off: parked at the first failure')
+        check(not seen.exists(), 'with no session')
+        git(repo, 'branch', '-D', 'task/R3')
+    finally:
+        for k in ('FAKE_FIX', 'FAKE_PROMPT', 'FAKE_MAIN'):
+            os.environ.pop(k, None)
+        R.C.run.update(agent='claude', build='', repair_merges=True)
 
 
 def test_prompt_and_hooks(repo: Path):
@@ -399,7 +464,6 @@ def test_hooks(repo: Path, tmp: Path):
     R.C.run['suspect'] = r'BLOCKED:.*\bemulator\b'
     try:
         before = git(repo, 'rev-parse', 'HEAD')
-        P._cache.clear()
         P.block('T6', 'needs a human at the emulator', todo=repo / 'plan/TODO.md')
         git(repo, 'commit', '-qam', 'T6: blocked')
         has(R.suspect(before, git(repo, 'rev-parse', 'HEAD')), r'T6.*emulator', '[run] suspect flags a block a merge adds')
@@ -409,7 +473,6 @@ def test_hooks(repo: Path, tmp: Path):
 
     R.C.raw['plan']['brief_extra'] = 'echo "## From the project"; echo "names for {id}"'
     try:
-        P._cache.clear()
         b = '\n'.join(P.brief('T6', root=repo))
         has(b, r'^## From the project\nnames for T6$', '[plan] brief_extra ends the brief')
         has(b, r'## Files on the line, and their last commits\n- `c.py`', 'after the files and their git log')
@@ -441,14 +504,13 @@ def test_platform(repo: Path, tmp: Path):
     print('platform: the terminal per slot, quoting, locks, links, processes, the Windows slot shim')
     from agent_runner import plat
     choice = plat.mux_choice
-    eq(choice(3, '', True, False, windows=False), 'tmux', 'POSIX with tmux: panes')
-    eq(choice(3, '', False, False, windows=False), 'sequential', 'POSIX without tmux: the sequential run')
-    eq(choice(3, '', False, True, windows=True), 'wt', 'Windows with Windows Terminal: tabs')
-    eq(choice(3, '', True, False, windows=True), 'console', 'Windows without it: a console window per slot')
-    eq(choice(1, '', True, False, windows=False), 'tmux', 'one slot (or once) gets a pane and a worktree too')
-    eq(choice(3, 'none', True, True, windows=False), 'sequential', '--no-tmux is sequential')
-    eq(choice(3, 'console', False, True, windows=True), 'console', '[run] mux picks console over wt')
-    eq(choice(3, 'wt', True, True, windows=False), 'sequential', 'a terminal that is not there falls back to sequential')
+    eq(choice('', True, False, windows=False), 'tmux', 'POSIX with tmux: panes')
+    eq(choice('', False, False, windows=False), 'sequential', 'POSIX without tmux: the sequential run')
+    eq(choice('', False, True, windows=True), 'wt', 'Windows with Windows Terminal: tabs')
+    eq(choice('', True, False, windows=True), 'console', 'Windows without it: a console window per slot')
+    eq(choice('none', True, True, windows=False), 'sequential', '--no-tmux is sequential')
+    eq(choice('console', False, True, windows=True), 'console', '[run] mux picks console over wt')
+    eq(choice('wt', True, True, windows=False), 'sequential', 'a terminal that is not there falls back to sequential')
 
     eq(plat.command_text(['/usr/bin/python3', '/x y/run', 'run']), "/usr/bin/python3 '/x y/run' run",
        'POSIX command text is shlex.join, as before')
@@ -580,7 +642,7 @@ def test_shutdown(repo: Path):
         R.plat.power_off, R.pick, R.SHUTDOWN, R.SHUTDOWN_GRACE = saved
 
 
-def test_gate_and_batches(repo: Path):
+def test_gate_and_batches(repo: Path, tmp: Path):
     print('run: untested globs, flaky and inherited failures, batched merges, phases that are not attempts')
     R.init(repo)
     r = R.C.run
@@ -606,6 +668,10 @@ def test_gate_and_batches(repo: Path):
         r['retest'] = 'test ! -e only_on_head || { echo FAIL t_a; exit 1; }'
         has(R.tested('X', d, base) or '', r'tests fail after the merge', 'one only the merge fails stops it')
         eq(git(d, 'rev-parse', 'HEAD'), head, 'and the merge worktree is back on the merge')
+        r['retest'] = 'test -e only_on_head && echo x >> only_on_head && echo FAIL t_a && exit 1; exit 0'
+        has(R.tested('X', d, base) or '', r'tests fail after the merge',
+            'a retest that dirties a tracked file still reruns on the base, not on the merge')
+        eq((git(d, 'rev-parse', 'HEAD'), git(d, 'status', '--porcelain')), (head, ''), 'and leaves the merge clean')
         r['failures'] = ''
         has(R.tested('X', d, base) or '', r'boom', 'without [run] failures a failure is a failure')
     finally:
@@ -622,14 +688,47 @@ def test_gate_and_batches(repo: Path):
     eq(R.merge('B2', 'main'), None, 'the rider\'s own turn only does the bookkeeping')
     check(git(repo, 'branch', '--list', 'task/B2') == '' and not R.LANDED, 'its branch is gone')
 
-    commit_on(repo, 'B3', {'b3.py': '3\n'}, 'B3: three')
-    commit_on(repo, 'B4', {'BROKEN': ''}, 'B4: breaks the gate')
-    R.WAITING.add('B4')
-    eq(R.merge('B3', 'main'), None, 'a batch that fails the gate still lands its own task')
-    has((repo / '.runner/run.log').read_text(), r'B3: the batch fails the gate', 'alone, after saying so')
-    check((repo / 'b3.py').exists() and not (repo / 'BROKEN').exists(), 'without the rider')
-    R.WAITING.discard('B4')
-    git(repo, 'branch', '-D', 'task/B4')
+    agent = tmp / 'fake-agent'
+    agent.write_text(FAKE_AGENT, encoding='utf-8')
+    agent.chmod(0o755)
+    r['agent'] = str(agent)
+    try:
+        commit_on(repo, 'B3', {'b3.py': '3\n'}, 'B3: three')
+        commit_on(repo, 'B4', {'BROKEN': ''}, 'B4: breaks the gate')
+        R.WAITING.add('B4')
+        os.environ['FAKE_FIX'] = 'abort'
+        eq(R.merge('B3', 'main'), None, 'a batch that fails the gate still lands its own task')
+        log = (repo / '.runner/run.log').read_text()
+        has(log, r'B3: the batch \(B3, B4\) fails the gate — handing it to a repair session', 'after a batch repair session')
+        has(log, r'B3: the batch fails the gate', 'that commits nothing, alone, after saying so')
+        check((repo / 'b3.py').exists() and not (repo / 'BROKEN').exists(), 'without the rider')
+        R.WAITING.discard('B4')
+        git(repo, 'branch', '-D', 'task/B4')
+
+        commit_on(repo, 'B5', {'b5.py': '5\n'}, 'B5: five')
+        commit_on(repo, 'B6', {'BROKEN': '', 'b6.py': '6\n'}, 'B6: clashes with the batch')
+        R.WAITING.add('B6')
+        os.environ['FAKE_FIX'] = 'repair'
+        eq(R.merge('B5', 'main'), None, 'a batch the repair session fixes lands')
+        check((repo / 'b5.py').exists() and (repo / 'b6.py').exists() and not (repo / 'BROKEN').exists(),
+              'both tasks, with the repair')
+        eq(R.LANDED.get('B6', ('', ''))[1], git(repo, 'rev-parse', 'main'), 'the rider landed in the same merge')
+        has(git(repo, 'log', '-4', '--format=%s', 'main'), r'repair: drop BROKEN', 'the repair is a commit of its own')
+        R.WAITING.discard('B6')
+        eq(R.merge('B6', 'main'), None, 'and its own turn only does the bookkeeping')
+
+        commit_on(repo, 'B7', {'g.py': '# g, B7\n'}, 'B7: g')
+        commit_on(repo, 'B8', {'g.py': '# g, B8\n', 'b8.py': '8\n'}, 'B8: g too')
+        R.WAITING.add('B8')
+        os.environ['FAKE_FIX'] = 'theirs'
+        eq(R.merge('B7', 'main'), None, 'a rider whose conflict a join cannot do')
+        has((repo / '.runner/run.log').read_text(), r'B8: the fix session resolved g\.py', 'gets a fix session in the batch')
+        check((repo / 'b8.py').exists() and 'B8' in R.LANDED, 'and lands with it, in one gate run')
+        R.WAITING.discard('B8')
+        eq(R.merge('B8', 'main'), None, 'its own turn only does the bookkeeping')
+    finally:
+        os.environ.pop('FAKE_FIX', None)
+        r['agent'] = 'claude'
 
     r['not_attempt'] = r'^{id} spec:'
     commit_on(repo, 'S1', {'s.md': 'spec\n'}, 'S1 spec: how it works')
@@ -641,7 +740,6 @@ def test_gate_and_batches(repo: Path):
 
     R.C.raw['plan']['brief'] = 'echo "the project brief for {id}"'
     try:
-        P._cache.clear()
         eq(P.brief('T6', root=repo), ['the project brief for T6'], '[plan] brief replaces the built-in brief')
     finally:
         R.C.raw['plan']['brief'] = ''
@@ -666,9 +764,13 @@ def test_leftovers(repo: Path):
     (d / 'b.py').write_text('# b, scratch\n', encoding='utf-8')
     eq(R.save_leftovers(d, 'L1', 'main'), 'leftover/L1', 'with commits (or a wip/ already) it goes to leftover/<ID>')
     eq(git(repo, 'rev-list', '--count', 'main..task/L1'), '1', 'and the task branch does not take in the untested edits')
+    (d / 'c.py').write_text('# c, more scratch\n', encoding='utf-8')
+    eq(R.save_leftovers(d, 'L1', 'main'), 'leftover/L1-2', 'a second leftover takes the next free name')
+    eq(git(repo, 'show', 'leftover/L1:b.py'), '# b, scratch', 'and the first one is kept as it was')
     git(d, 'reset', '-q', '--hard')
+    git(d, 'clean', '-fdq')
     git(d, 'checkout', '-q', '--detach')
-    git(repo, 'branch', '-D', 'task/L1', 'wip/L1', 'leftover/L1')
+    git(repo, 'branch', '-D', 'task/L1', 'wip/L1', 'leftover/L1', 'leftover/L1-2')
 
 
 def test_renumber(repo: Path):
@@ -730,9 +832,23 @@ def test_stop_waiter(tmp: Path):
         R.stop_waiter(p.pid, str(t), 1, 0)
         check(p.poll() is None, 'a session that moved on is left alone')
         p.kill()
+        os.environ['AGENT_RUNNER_IDLE_MAX'] = '60'
+        os.environ['AGENT_RUNNER_SLOT'] = '9'
+        t.write_text('{"type":"user"}\n', encoding='utf-8')
+        mark = R.finished_mark()
+        mark.touch()
+        p = subprocess.Popen([sys.executable, '-c', 'import subprocess; subprocess.run(["sleep", "30"])'])
+        time.sleep(0.3)
+        t0 = time.time()
+        R.stop_waiter(p.pid, str(t), 1, 0)
+        took = time.time() - t0
+        check(p.wait(5) is not None and took < 3, 'after a successful done a leftover background command does not hold it', took)
     finally:
         R.WAITER_POLL = poll
         os.environ.pop('AGENT_RUNNER_IDLE_MAX', None)
+        os.environ.pop('AGENT_RUNNER_SLOT', None)
+        if (m := R.finished_mark('9')) and m.exists():
+            m.unlink()
 
 
 def test_land_waits_aloud(repo: Path):
@@ -768,17 +884,423 @@ def test_land_waits_aloud(repo: Path):
     eq((repo / '.runner/run.log').read_text().count('W1: tested, waiting'), 1, 'said once, not every 10 s')
 
 
+def test_edited_elsewhere(repo: Path, tmp: Path):
+    print("run: a task heading into uncommitted edits outside the runner's slots is named in the log")
+    R.init(repo)
+    git(repo, 'checkout', '-q', 'main')
+    hand = tmp / 'hand-worktree'
+    git(repo, 'worktree', 'add', '-q', '--detach', str(hand), 'main')
+    s1 = R.SLOTS_DIR / 's1'
+    git(s1, 'checkout', '-q', '--detach', 'main')
+    try:
+        (hand / 'g.py').write_text('# g, edited by hand\n', encoding='utf-8')
+        (s1 / 'f.py').write_text('# f, a slot of its own\n', encoding='utf-8')
+        eq(R.edited_elsewhere({'g.py', 'f.py', 'h.py'}), [f'{hand} (g.py)'],
+           "a hand worktree's edit is named; a runner slot's is its own business")
+        (repo / 'f.py').write_text('# f, in the main checkout\n', encoding='utf-8')
+        has('\n'.join(R.edited_elsewhere({'f.py'})), rf'^{re.escape(str(repo))} \(f\.py\)$', 'the main checkout counts too')
+        eq(R.edited_elsewhere({'h.py'}), [], 'files nobody edits: nothing')
+        eq(R.edited_elsewhere(set()), [], 'a task with no files: nothing')
+    finally:
+        git(repo, 'checkout', '--', 'f.py')
+        git(s1, 'checkout', '--', 'f.py')
+        git(repo, 'worktree', 'remove', '--force', str(hand))
+
+
+def test_resume(repo: Path, tmp: Path):
+    print('run: a session cut off by a dropped network or a reboot resumes in its own slot')
+    R.init(repo)
+    ts = {}
+    transcript, R.transcript = R.transcript, lambda sid: ts.get(sid)
+
+    def said(sid: str, *entries: dict) -> str:
+        ts[sid] = str(tmp / f'{sid}.jsonl')
+        Path(ts[sid]).write_text(''.join(json.dumps(e) + '\n' for e in entries), encoding='utf-8')
+        return sid
+
+    ask = {'type': 'user', 'message': {'role': 'user', 'content': 'do T2'}}
+    tool = {'type': 'assistant', 'message': {'stop_reason': 'tool_use', 'content': [{'type': 'tool_use'}]}}
+    result = {'type': 'user', 'message': {'role': 'user', 'content': [{'type': 'tool_result'}]}}
+    end = {'type': 'assistant', 'message': {'stop_reason': 'end_turn', 'content': [{'type': 'text', 'text': 'done'}]}}
+
+    def error(text: str, kind: str = 'server_error') -> dict:
+        return {'type': 'assistant', 'isApiErrorMessage': True, 'error': kind,
+                'message': {'stop_reason': 'stop_sequence', 'content': [{'type': 'text', 'text': text}]}}
+
+    dns = "API Error: Can't reach the API server — check your internet or DNS (EAI_AGAIN)"
+    try:
+        has(R.cut_off(said('net', ask, tool, result, error(dns))) or '', 'EAI_AGAIN',
+            'an API error that ended the turn is a cut-off, and says what the API said')
+        eq(R.cut_off(said('fin', ask, tool, result, end)), None, 'a turn that ended is not')
+        eq(R.cut_off(said('lim', ask, error("You've hit your limit · resets 3pm", 'rate_limit'))), None,
+           'nor is a usage limit (the slot sleeps to the reset instead)')
+        eq(R.cut_off(said('bad', ask, error('prompt is too long', 'invalid_request'))), None,
+           'nor a request the API refused, which would fail again')
+        eq(R.cut_off(said('mid', ask, tool, result)), None, 'a transcript that stops mid-turn is no cut-off ...')
+        has(R.cut_off('mid', mid_turn=True) or '', 'mid-turn', '... but at startup it is: the machine went down')
+        flags = R.agent_flags('net', 'opus', 90, resume=True)
+        check(flags[:2] == ['--resume', 'net'] and '--session-id' not in flags,
+              'a resume passes --resume <id> and no --session-id, which Claude Code refuses beside it', flags)
+
+        # T2 was cut off in slot 2, and the run then saved its edits on wip/T2 and gave the slot to T5
+        d = task_branch(repo, 2, 'T2')
+        (C := R.C.notes('slot2.log')).write_text('\n=== 2026-10-23T08:00:00 T2 session net\n', encoding='utf-8')
+        eq(R.last_session('T2'), (2, 'net'), 'the slot logs name the session and its slot')
+        (d / 'b.py').write_text('# b, half done\n', encoding='utf-8')
+        (d / 'new.py').write_text('# new\n', encoding='utf-8')
+        eq(R.save_leftovers(d, 'T2', 'main'), 'wip/T2', '(the old runner saved them on wip/T2)')
+        git(d, 'reset', '-q', '--hard')
+        git(d, 'clean', '-fdq')
+        git(d, 'checkout', '-q', '-B', 'task/T5', 'main')
+        git(repo, 'branch', '-D', 'task/T2')
+        R.queue_resume('T2', 2, 'net', 'resumed by hand')
+        eq(R.queued(), {2: ('T2', 'net', 'resumed by hand')}, 'a queued resume is kept in the notes')
+        check('T2' not in [t[0] for t in [R.pick({}, set(), 'p', 'main')] if t], 'and no slot starts that task afresh')
+        opened = []
+
+        class Mux:
+            name = 'fake'
+
+            def open(self, *a, **kw):
+                opened.append((a, kw))
+                return 4242
+
+            def where(self, n):
+                return f'slot {n}'
+
+        mux, R.MUX = R.MUX, Mux()
+        try:
+            got = R.resume(2, 'T2', 'net', 'resumed by hand', 'main', 'opus', 90)
+        finally:
+            R.MUX = mux
+        eq(got[:2], (4242, 'net'), 'resume opens the session in its own slot')
+        check(opened and opened[0][1].get('resume') is True and opened[0][0][1] == d,
+              'with --resume, in the worktree the transcript names', opened)
+        has(opened[0][0][2], r'cut off \(resumed by hand\).*task T2', 'and a first turn that says what happened')
+        eq(git(d, 'branch', '--show-current'), 'task/T2', 'the slot is back on task/T2')
+        eq((git(d, 'rev-parse', 'HEAD'), (d / 'b.py').read_text(), (d / 'new.py').read_text()),
+           (git(repo, 'rev-parse', 'main'), '# b, half done\n', '# new\n'),
+           'with the saved edits uncommitted again, as the session left them')
+        check(git(repo, 'branch', '--list', 'wip/T2') == '' and git(repo, 'branch', '--list', 'resumed/T2') != '',
+              'wip/T2 is kept as resumed/T2, so no later attempt reads it as a failed one')
+        has(C.read_text(), r'=== \S+ T2 resume net \(resumed by hand\)', 'the slot log has a resume header')
+        eq(R.resumes(2, 'net'), 1, 'which counts the resumes, against RESUMES_MAX')
+        eq(R.last_session('T2'), (2, 'net'), 'and the session is still the one a later resume finds')
+
+        # a reboot: the session in slot 2 stopped mid-turn and no run saw it end
+        R.C.notes('T2.resume').unlink()
+        said('net', ask, tool, result)
+        R.queue_cut_off('main', [1, 2, 3])
+        eq(R.queued(), {2: ('T2', 'net', 'its transcript stops mid-turn')}, 'at startup a slot cut off mid-turn is queued')
+        has((repo / '.runner/run.log').read_text(), r'slot 2: T2 was cut off while no run was up', 'and logged')
+        R.C.notes('T2.resume').unlink()
+        said('net', ask, tool, result, end)
+        R.queue_cut_off('main', [2])
+        eq(R.queued(), {}, 'one that ended its turn is left to the merge')
+        eq(run(repo, 'resume', 'T9').returncode, 1, '`resume` refuses a task that is not open')
+        has(run(repo, 'resume', 'T2').stderr, 'transcript of its session net is gone',
+            '`resume` refuses a session whose transcript is gone (this process alone has the fakes)')
+        here = os.getcwd()
+        os.chdir(repo)
+        try:
+            eq(R.cmd_resume(['T2']), 0, '`resume T2` queues it')
+        finally:
+            os.chdir(here)
+        eq(R.queued(), {2: ('T2', 'net', 'resumed by hand')}, 'for slot 2, where it ran')
+        R.C.notes('T2.resume').unlink()
+    finally:
+        R.transcript = transcript
+        git(d, 'reset', '-q', '--hard')
+        git(d, 'clean', '-fdq')
+        git(d, 'checkout', '-q', '--detach')
+        git(repo, 'branch', '-D', 'task/T2', 'task/T5', 'resumed/T2')
+        R.C.notes('slot2.log').unlink(missing_ok=True)
+
+
+def test_land_gives_merge_back(repo: Path):
+    print('run: a tested merge blocked by edits gives MERGE back after LAND_WAIT, and the branch knows when it is free')
+    R.init(repo)
+    git(repo, 'checkout', '-q', 'main')
+    git(repo, 'branch', '-f', 'task/W2', 'main')
+    d = R.SLOTS_DIR / 's1'
+    git(d, 'checkout', '-q', 'task/W2')
+    (d / 'h.py').write_text('# h, from the branch\n', encoding='utf-8')
+    git(d, 'add', 'h.py')
+    git(d, 'commit', '-qm', 'W2: h')
+    merged = git(d, 'rev-parse', 'HEAD')
+    git(d, 'checkout', '-q', '--detach')
+    (repo / 'h.py').write_text('# h, somebody writing it too\n', encoding='utf-8')
+    wait, R.LAND_WAIT = R.LAND_WAIT, 0
+    try:
+        why = R.land('W2', 'main', merged)
+        check(why is not None and why.startswith(R.EDITED), f'it gives up with the edits why, which finish() keeps the branch for ({why})')
+        check(R.blocked_by_edits('W2', 'main'), 'the edited file is one task/W2 changes')
+        (repo / 'h.py').unlink()
+        check(not R.blocked_by_edits('W2', 'main'), 'once the edit is gone the branch may merge again')
+        (repo / 'other.py').write_text('# not the branch\'s\n', encoding='utf-8')
+        check(not R.blocked_by_edits('W2', 'main'), 'edits to files the branch does not touch never hold it')
+        git(repo, 'add', 'other.py')
+        check(R.blocked_by_edits('W2', 'main'), 'staged ones do: git merges onto no index but HEAD\'s')
+        has((repo / '.runner/run.log').read_text(), r'W2: staged changes in the main checkout .* block the merge',
+            'and the log says so')
+        git(repo, 'rm', '-q', '--cached', 'other.py')
+        (repo / 'other.py').unlink()
+        git(repo, 'checkout', '-q', '-b', 'mine')
+        why = R.land('W2', 'main', merged) or ''
+        check(why.startswith(R.ELSEWHERE), f'a main checkout with another branch out is not merged into ({why})')
+        eq(git(repo, 'branch', '--show-current'), 'mine', 'nor switched to main under whoever works there')
+        check(R.blocked_by_edits('W2', 'main'), 'and the branch waits until main is out again')
+        git(repo, 'checkout', '-q', 'main')
+        git(repo, 'branch', '-D', 'mine')
+        check(not R.blocked_by_edits('W2', 'main'), 'then it may merge')
+    finally:
+        R.LAND_WAIT = wait
+        git(repo, 'branch', '-D', 'task/W2')
+
+
+def test_session_tmp(repo: Path, tmp: Path):
+    print("an ended session's temp folder is deleted, and stale ones of this repo are swept")
+    R.init(repo)
+    root = tmp / 'tmproot'
+    os.environ['CLAUDE_CODE_TMPDIR'] = str(root)
+    sid = lambda: str(__import__('uuid').uuid4())
+    mine, slot, other, sibling = (root / 'claude-1' / R.project_slug(p)
+                                  for p in (R.ROOT, R.SLOTS_DIR / 's1', tmp / 'elsewhere', tmp / 'proj-slots-foo'))
+
+    def folder(proj: Path, s: str, age: float = 0) -> Path:
+        d = proj / s / 'scratchpad' / 'target'
+        d.mkdir(parents=True)
+        (d / 'big').write_bytes(b'x' * 1000)
+        old = time.time() - age
+        for p in [d / 'big', d, d.parent, d.parent.parent]:
+            os.utime(p, (old, old))
+        return proj / s
+
+    day = R.SESSION_TMP_KEEP + 60
+    try:
+        ended = folder(slot, sid())
+        R.drop_session_tmp(ended.name)
+        check(not ended.exists(), "a session that ended for good loses its temp folder")
+        stale, fresh, foreign = folder(slot, sid(), day), folder(slot, sid(), day), folder(other, sid(), day)
+        person, near = folder(mine, sid(), day), folder(sibling, sid(), day)
+        (fresh / 'scratchpad' / 'new').write_text('just written')
+        live_sid, queued_sid = sid(), sid()
+        live, waits = folder(slot, live_sid, day), folder(slot, queued_sid, day)
+        agent = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(30)', '--session-id', live_sid])
+        R.queue_resume('T9', 1, queued_sid, 'cut off')
+        time.sleep(0.2)
+        R.sweep_tmp(force=True)
+        check(not stale.exists(), "a slot's session that nothing wrote to in a day is swept")
+        check(person.exists(), "the main checkout's is not: an interactive session there names no session id")
+        check(near.exists(), "nor a sibling repo's whose name starts like the slots folder's")
+        check(fresh.exists(), 'one with a file written inside the day is kept')
+        check(live.exists(), 'one whose agent still runs is kept')
+        check(waits.exists(), 'one queued to resume is kept')
+        check(foreign.exists(), "another project's sessions are not the runner's to sweep")
+        R.sweep_tmp()
+        agent.kill()
+    finally:
+        os.environ.pop('CLAUDE_CODE_TMPDIR', None)
+        R.C.notes('T9.resume').unlink(missing_ok=True)
+
+
+def test_tested_ref(repo: Path, tmp: Path):
+    print("run: a merge skips the gate only for the tree done's gate passed on; a failed commit ticks nothing")
+    R.init(repo)
+    git(repo, 'checkout', '-q', 'main')
+    todo = repo / 'plan/TODO.md'
+    todo.write_text(todo.read_text().replace('### Stretch', '- [ ] **G1** gated → g1.py\n\n### Stretch'))
+    git(repo, 'commit', '-qam', 'plan: G1')
+    d = task_branch(repo, 1, 'G1')
+    (d / 'g1.py').write_text('# g1\n', encoding='utf-8')
+    hooks = tmp / 'hooks'
+    hooks.mkdir()
+    (hooks / 'pre-commit').write_text('#!/bin/sh\nexit 1\n')
+    (hooks / 'pre-commit').chmod(0o755)
+    git(repo, 'config', 'core.hooksPath', str(hooks))
+    r = run(d, 'done', 'G1', 'G1: g1')
+    git(repo, 'config', '--unset', 'core.hooksPath')
+    check(r.returncode == 1 and 'git commit failed' in r.stderr, 'a commit that fails fails done', r.stdout + r.stderr)
+    check('- [ ] **G1**' in (d / 'plan/TODO.md').read_text(), 'and leaves the task open, so done can run again')
+    r = run(d, 'done', 'G1', 'G1: g1')
+    check(r.returncode == 0, 'which it then does', r.stdout + r.stderr)
+    eq(git(repo, 'rev-parse', 'refs/agent-runner/tested/G1'), git(repo, 'rev-parse', 'task/G1'),
+       'done records what its gate passed on, seen from the main checkout too')
+    git(d, 'checkout', '-q', '--detach')
+    calls: list = []
+    gate_was = R.gate
+    R.gate = lambda *a, **k: calls.append(1) or gate_was(*a, **k)
+    R.C.run['repair_merges'] = False
+    try:
+        eq(R.merge('G1', 'main'), None, 'the gated branch lands')
+        eq(calls, [], 'without a second gate run: it differs from what done tested only in the archived plan')
+        check(git(repo, 'for-each-ref', 'refs/agent-runner/tested/G1') == '', 'and its tested ref goes with the branch')
+        commit_on(repo, 'G2', {'BROKEN': ''}, 'G2: never ran done')
+        has(R.merge('G2', 'main') or '', r'tests fail after the merge',
+            'a branch done never gated is tested, though the merge is a fast-forward')
+        check(not (repo / 'BROKEN').exists(), 'and stays off main')
+    finally:
+        R.gate = gate_was
+        R.C.run['repair_merges'] = True
+        git(repo, 'branch', '-D', 'task/G2')
+
+
+def test_no_pane(repo: Path, tmp: Path):
+    print('run: tmux refusing a pane fails that one start or fix session, not the run')
+    R.init(repo)
+    tmux, R.tmux = R.tmux, lambda *a, **k: subprocess.CompletedProcess(a, 1, '', 'no server running')
+    agent = tmp / 'fake-agent'
+    agent.write_text(FAKE_AGENT, encoding='utf-8')
+    agent.chmod(0o755)
+    R.C.run['agent'], R.MASTER_PANE = str(agent), True
+    try:
+        eq(R.TmuxMux().open(1, repo, 'hi', 'sid', 'opus', 90, [], R.C.notes('slot1.log')), None,
+           'a slot whose pane tmux will not open does not start')
+        with open(tmp / 'fixer.log', 'w') as fh:
+            eq(R.fix_session('fix it', repo, fh), 1, 'a fix session tmux will not open is a failed one')
+        has((tmp / 'fixer.log').read_text(), r'no server running', 'and its log says why')
+    finally:
+        R.tmux, R.MASTER_PANE, R.C.run['agent'] = tmux, False, 'claude'
+
+
+def test_other_repos_panes(repo: Path, tmp: Path):
+    print('tmux: a second repo\'s runner in the same session finds only its own panes')
+    R.init(repo)
+    other = tmp / 'other'
+    rows = [('%1', '101', 's1', str(other)),    # the other repo's
+            ('%2', '102', 's2', ''),            # a slot tag with no repo: no runner's
+            ('%3', '103', 's3', str(R.ROOT)),   # ours
+            ('%5', '105', '', '')]              # not a runner's pane
+    calls = []
+
+    def fake(*a, **k):
+        calls.append(a)
+        if a[0] == 'list-panes':
+            return subprocess.CompletedProcess(a, 0, ''.join('\t'.join(r) + '\n' for r in rows), '')
+        if a[0] == 'list-windows':
+            return subprocess.CompletedProcess(a, 0, '@1\tagents\n@2\tagents-other\n', '')
+        if a[0] in ('new-window', 'split-window'):
+            return subprocess.CompletedProcess(a, 0, '%9 109 @7\n', '')
+        return subprocess.CompletedProcess(a, 0, '', '')
+    tmux, R.tmux = R.tmux, fake
+    try:
+        eq(R.panes(), {'s3': ('%3', 103)}, 'only the slots tagged with this repo')
+        eq(R.window('agents'), f'agents-{repo.name}', 'each repo lays out its own window')
+        eq(R.pane('s1', repo, 'true'), 109, 'a pane opens')
+        check(any(a[0] == 'new-window' and f'agents-{repo.name}' in a for a in calls),
+              'in a new window of its own, not the other repo\'s "agents" or "agents-other"')
+        check(('set-option', '-p', '-t', '%9', R.REPO_TAG, str(R.ROOT)) in calls, 'tagged with its repo')
+    finally:
+        R.tmux = tmux
+
+
+def test_limit_lets_go(repo: Path):
+    print('run: a slot asleep until a usage reset lets go of its task, so another slot may take it')
+    R.init(repo)
+    git(repo, 'checkout', '-q', 'main')
+
+    class Mux:
+        name = 'fake'
+
+        def open(self, n, cwd, prompt, sid, model, idle, env, logfile, resume=False):
+            with open(logfile, 'a', encoding='utf-8') as f:
+                f.write("You've hit your limit · resets 3pm\n")
+            R.ask_stop('test')  # the run ends once the slot is asleep
+            p = subprocess.Popen(['true'])
+            p.wait()
+            return p.pid
+
+        def panes(self):
+            return {}
+
+        def session_id(self, pid):
+            return None
+
+        def where(self, n):
+            return f'slot {n}'
+
+    saved = R.TmuxMux, R.MUX, R.plat.mux_choice, R.time.sleep, os.environ.get('TMUX')
+    sleep = R.time.sleep
+    R.TmuxMux, R.plat.mux_choice, R.time.sleep = Mux, lambda *a, **k: 'tmux', lambda s: sleep(min(s, 0.05))
+    os.environ['TMUX'] = 'test'
+    R.C.run['agent'] = 'fake'
+    here = os.getcwd()
+    os.chdir(repo)
+    try:
+        eq(R.run(['1'], 'run'), 0, 'the run ends on its stop')
+    finally:
+        os.chdir(here)
+        R.TmuxMux, R.MUX, R.plat.mux_choice, R.time.sleep = saved[:4]
+        os.environ.pop('TMUX') if saved[4] is None else os.environ.update(TMUX=saved[4])
+        R.C.run['agent'], R.MASTER_PANE = 'claude', False
+    m = re.search(r'slot 1: (\S+) only hit the usage limit', (repo / '.runner/run.log').read_text())
+    check(m, 'the session only hit the usage limit')
+    eq(git(R.SLOTS_DIR / 's1', 'branch', '--show-current'), '', 'and the sleeping slot let go of its task branch')
+    if m:
+        git(repo, 'branch', '-D', f'task/{m.group(1)}')
+
+
+def test_shared_push(repo: Path, tmp: Path):
+    print('the shared branch is not merged with a remote that moved: that merge would go out untested')
+    from agent_runner.gitops import push
+    git(repo, 'checkout', '-q', 'main')
+    clone = tmp / 'clone'
+    git(tmp, 'clone', '-q', str(tmp / 'origin.git'), str(clone))
+    (clone / 'theirs.txt').write_text('x\n')
+    git(clone, 'add', 'theirs.txt'), git(clone, 'commit', '-qm', 'theirs'), git(clone, 'push', '-q', 'origin', 'main')
+    (repo / 'ours.txt').write_text('x\n')
+    git(repo, 'add', 'ours.txt'), git(repo, 'commit', '-qm', 'ours')
+    head = git(repo, 'rev-parse', 'HEAD')
+    has(push(repo, 'main', shared=True), r'did not push: origin/main has moved', 'the push fails, and says why')
+    eq(git(repo, 'rev-parse', 'HEAD'), head, 'and main is as it was')
+    print('...the next merge takes the remote\'s commits in, tests them with it, and pushes')
+    R.init(repo)
+    todo = repo / 'plan/TODO.md'
+    todo.write_text(todo.read_text().replace('### Stretch', '- [ ] **U1** upstream → u1.py\n\n### Stretch'))
+    git(repo, 'commit', '-qam', 'plan: U1')
+    commit_on(repo, 'U1', {'u1.py': '# u1\n'}, 'U1: u1')
+    eq(R.merge('U1', 'main'), None, 'the merge lands')
+    check((repo / 'theirs.txt').exists() and (repo / 'ours.txt').exists(), 'with both sides in main')
+    eq(git(repo, 'rev-parse', 'main'), git(tmp / 'origin.git', 'rev-parse', 'main'), 'and main is pushed')
+
+
+def test_update_notice():
+    import io
+    import urllib.request
+    said, real_log, real_open = [], R.log, urllib.request.urlopen
+    R.log = said.append
+    try:
+        for remote, want in (("__version__ = '999.0.0'\n", 1), ("__version__ = '0.0.1'\n", 0), ('garbage', 0)):
+            urllib.request.urlopen = lambda *a, **k: io.BytesIO(remote.encode())
+            said.clear()
+            R.update_notice()
+            eq(len(said), want, f'update notice for {remote.strip()!r}')
+        urllib.request.urlopen = lambda *a, **k: (_ for _ in ()).throw(OSError('offline'))
+        said.clear()
+        R.update_notice()
+        eq(said, [], 'offline: no notice, no crash')
+    finally:
+        R.log, urllib.request.urlopen = real_log, real_open
+
+
 def main() -> int:
     with tempfile.TemporaryDirectory() as t:
         tmp = Path(t)
         repo = make_repo(tmp)
         return report([lambda: test_picking(repo), lambda: test_split_parents(repo), lambda: test_done(repo, tmp), lambda: test_merge(repo, tmp),
                        lambda: test_retry(repo), lambda: test_unmerged(repo),
-                       lambda: test_conflicts(repo, tmp), lambda: test_prompt_and_hooks(repo),
-                       lambda: test_hooks(repo, tmp), lambda: test_gate_and_batches(repo),
+                       lambda: test_conflicts(repo, tmp), lambda: test_repair(repo, tmp),
+                       lambda: test_prompt_and_hooks(repo),
+                       lambda: test_hooks(repo, tmp), lambda: test_gate_and_batches(repo, tmp),
                        lambda: test_platform(repo, tmp), lambda: test_shutdown(repo), lambda: test_merge_into(tmp),
                        lambda: test_leftovers(repo), lambda: test_renumber(repo),
-                       lambda: test_stop_waiter(tmp), lambda: test_land_waits_aloud(repo)])
+                       lambda: test_stop_waiter(tmp), lambda: test_land_waits_aloud(repo), lambda: test_land_gives_merge_back(repo),
+                       lambda: test_edited_elsewhere(repo, tmp),
+                       lambda: test_resume(repo, tmp),
+                       lambda: test_session_tmp(repo, tmp), lambda: test_tested_ref(repo, tmp),
+                       lambda: test_no_pane(repo, tmp), lambda: test_other_repos_panes(repo, tmp),
+                       lambda: test_limit_lets_go(repo),
+                       lambda: test_shared_push(repo, tmp), test_update_notice])
 
 
 if __name__ == '__main__':

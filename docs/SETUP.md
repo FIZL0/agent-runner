@@ -15,11 +15,11 @@ own copy over to it, and what a version number promises.
 It is stdlib-only Python 3.11+, so it installs as a plain tool with nothing beside it.
 
 ```sh
-uv tool install git+https://github.com/FIZL0/agent-runner@v0.4.1
+uv tool install git+https://github.com/FIZL0/agent-runner
 # or
-pipx install git+https://github.com/FIZL0/agent-runner@v0.4.1
+pipx install git+https://github.com/FIZL0/agent-runner
 
-agent-runner --version          # agent-runner 0.4.1
+agent-runner --version          # agent-runner 0.6.18
 ```
 
 That puts `agent-runner` on your PATH. It is the same CLI as `./run` in a clone: `agent-runner plan`,
@@ -31,18 +31,19 @@ Terminal each slot gets a console window. tmux isn't needed. Run `agent-runner r
 `[run] links` need no Developer Mode: without it they become junctions and hard links. See the README's
 [Terminals, and Windows](../README.md#terminals-and-windows).
 
-**Pin a tag.** Always install from a tag (`@v0.4.1`), not from `main`, so a repo's runs don't change
-under it when somebody pushes.
+**Latest, or a tag.** Without `@…` it installs `main`, which is always the latest release (every commit
+there is one). To hold a machine at a version, name its tag instead: `…/agent-runner@v0.6.18`.
 
 **Upgrade every repo at once.** There is one install per machine, so one command upgrades every repo
 that uses it:
 
 ```sh
-uv tool install --force git+https://github.com/FIZL0/agent-runner@v0.4.1
-pipx install --force git+https://github.com/FIZL0/agent-runner@v0.4.1
+uv tool upgrade agent-runner
+pipx upgrade agent-runner
 ```
 
-Do it between runs (see [below](#switch-between-runs)). Read [CHANGELOG.md](../CHANGELOG.md) first: a
+Both fetch `main` again (a tag install stays on its tag). A run says when `main` has a newer version and
+which of these to type. Do it between runs (see [below](#switch-between-runs)). Read [CHANGELOG.md](../CHANGELOG.md) first: a
 new major version may rename a config key.
 
 **Roll back** the same way, naming the older tag: `uv tool install --force …@v0.2.0`.
@@ -175,6 +176,7 @@ The names in each module's `__all__` are the stable API (see [Versions](#version
 | `[run] untested` | globs of files the gate can't see (`!glob` takes one back); a merge differing only in them isn't retested |
 | `[run] failures`, `retest` | a regex naming failed tests in the gate output, and the gate for just `{names}`: rerun alone, then on the base |
 | `[run] before_start` | a check that must pass before any session starts |
+| `[run] timeout` | seconds the gate, a retest, a `[run.join]` command, `before_start` or the sequential run's `on_exit` may run before it is stopped and counts as failed (3600) |
 | `[run] not_attempt` | a regex on the last commit subject (`{id}`): that session was a phase, not the run's one attempt |
 
 The brief already holds the task line, `plan/<ID>.md`, the newest journal entry, and the git log of the

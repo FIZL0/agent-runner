@@ -14,7 +14,7 @@ that has its own copy are all in [docs/SETUP.md](docs/SETUP.md). Changes: [CHANG
 - One optional config file in your repo: `runner.toml`, or a table in your own config file.
 
 ```sh
-uv tool install git+https://github.com/FIZL0/agent-runner@v0.4.1    # or pipx install …
+uv tool install git+https://github.com/FIZL0/agent-runner    # latest; or pipx install …
 cd your-repo
 agent-runner plan                  # what the runner sees in plan/TODO.md
 agent-runner run --dry-run 3       # what three slots would start right now
@@ -85,7 +85,7 @@ plan/TODO.md ──pick──▶ slot N: git worktree <repo>-slots/sN on task/<I
 1. **Pick.** It reads `plan/TODO.md` *on the shared branch* (what is committed, not what you're
    editing) and walks it top to bottom. See [Picking](#picking) for what it skips.
 2. **Start.** Slot N gets a git worktree in `../<repo>-slots/sN` on branch `task/<ID>`, and a tmux pane in
-   the window `agents`. The pane's output is piped to `.runner/slotN.log`. The pane runs
+   the window `agents-<repo>`. The pane's output is piped to `.runner/slotN.log`. The pane runs
    `claude --session-id … --model … "<prompt>"`, with Claude Code's Stop hook set to the runner's idle
    timer. The prompt includes the task's brief (`./run plan brief <ID>`): its line, its `plan/<ID>.md`
    long form, the files it names (or "missing: this task creates it"), and the newest journal entry.
@@ -101,7 +101,7 @@ plan/TODO.md ──pick──▶ slot N: git worktree <repo>-slots/sN on task/<I
 5. **Merge.** In a separate merge worktree, the runner merges `main` and `task/<ID>`:
    - conflicts in record-per-line files (`[run] joinable`, by default TODO.md and DONE.md) are joined,
      keeping both sides' lines;
-   - any other conflict goes to a one-shot fix session (`claude -p`);
+   - any other conflict goes to a one-shot fix session (in the tmux window "master-<repo>", or `claude -p`);
    - the gate runs again if the merged code differs from what `done` tested.
    Only then is the main checkout moved to the tested merge. That takes seconds, it never stashes, and it
    waits if someone has uncommitted edits to the files involved.
@@ -113,7 +113,8 @@ plan/TODO.md ──pick──▶ slot N: git worktree <repo>-slots/sN on task/<I
 ### Terminals, and Windows
 
 Each slot's session runs in a terminal you can watch and type into. Which one is `[run] mux` (or
-`--mux`): `tmux` panes in the window "agents" (the default on Linux and macOS; start the run inside tmux),
+`--mux`): `tmux` panes in the window "agents-<repo>" (the default on Linux and macOS; start the run inside tmux;
+runners for different repos can share one tmux session, each finding only its own panes),
 `wt` (a Windows Terminal tab per slot, in a window named "agents", the default on Windows), or `console`
 (a console window per slot, Windows' fallback when `wt.exe` isn't installed). `none` (`--no-tmux`) is
 the sequential run below. One slot, and `once`, run like any other count: a worktree, a pane, a tested merge.
@@ -221,7 +222,8 @@ once all of those ids are done, and the run picks it up again.
 and its next prompt points at the earlier attempt.
 
 **Merges happen in a merge worktree.** The merge is built and tested in `<repo>-slots/merge`; the main
-checkout moves only to a tested commit, and nothing in it is stashed.
+checkout moves only to a tested commit, and nothing in it is stashed. Nor is its branch ever switched: while
+it has another branch than `main` out, a tested merge stays `task/<ID>` and lands once `main` is out again.
 
 **Commit your own edits in the main checkout.** A merge lands only when no uncommitted edit there touches
 a file it changes, and nearly every merge changes `TODO.md`. `run plan add/note/move/tick/block/unblock/
@@ -237,6 +239,15 @@ refuses to push `main`.
 or slot log says "resets 3pm"), the transcript is dropped, the task returns to the pool, and the slot
 sleeps until the reset. Past `[run] weekly_max`% of the 7-day usage, no new task starts unless `--force`
 is given.
+
+**A cut-off session resumes.** A session whose turn ended on an API error (the network dropped, the
+API was down) is not finished, though the idle stop ends it. Its worktree is left as it is, and once the
+API answers again it is resumed in the same slot (`claude --resume`, with its whole conversation) and told
+it was cut off. While the API cannot be reached, no session resumes or starts. At startup, a slot still on
+`task/<ID>` whose session stopped mid-turn while no run was up (a reboot, the runner killed) is resumed
+the same way. A usage limit or a request the API refused is not a cut-off, and one session is resumed at
+most 3 times. `./run resume <ID>` resumes a task's last session by hand, for one the run already ended:
+when its slot is free, the edits it left come back from `wip/<ID>` (kept as `resumed/<ID>`).
 
 **Idle stop.** The Stop hook starts a detached timer; a session quiet for `[run] idle` seconds is ended.
 The timer does not fire on a session a human has typed into, or one waiting out a usage limit. Nor on
@@ -289,11 +300,37 @@ file left behind by a run that was killed is cleared when the next run starts.
 
 ### Fix sessions
 
-A conflict the line join cannot resolve goes to one `claude -p` session, run in the merge worktree with
-the conflict in place. Its prompt (`FIXER` in `runner.py`) includes the tail of the ledger. It either
+A conflict the line join cannot resolve goes to one fresh session, run in the merge worktree with the
+conflict in place. Under tmux it is an interactive session in a window of its own, "master", so you can
+watch it or take it over by typing; its Stop hook ends it once it has been idle 90 s after its answer
+(without tmux, where there is no window for it: `claude -p`). Its prompt (`FIXER` in `runner.py`) includes the tail of the ledger. It either
 commits the resolution or runs `git merge --abort` and states why; its output goes to
 `.runner/fixer.log`. The merge lock is held while it runs, and it is capped at `[run] fix_timeout`
-(30 min). Set `fix_merges = false` to park every such conflict as `wip/<ID>` instead.
+(30 min). Set `fix_merges = false` to park every such conflict as `wip/<ID>` instead. With `[run] build`
+set, the fix session runs it before it commits and fixes what the two sides broke between them: git
+merges the files it did not stop on without reading them, so a function both sides added under one name
+builds on neither side's branch and breaks only the merge.
+
+A merge that fails the gate (and not because of load, or a failure its base has too) gets one repair
+session before it is parked: the same kind of session, in the merge worktree on the committed merge, with
+the gate's output (`.runner/merge-gate.log`). It commits a fix on top, or nothing and says why. The gate
+then runs once more; a second failure parks the branch as before. A repair is replayed onto the merge when
+the shared branch moves during the tests and the merge is built again. `repair_merges = false` parks at
+the first failure.
+
+A batch (`batch = true`) is repaired the same way, as a whole: when the branches merged together fail the
+gate, one repair session sees every merge in the batch (`REPAIR_BATCH`) and fixes where they clash, and the
+gate runs once more for all of them. Only if that fails too is the batch split, each branch merged on its
+own. A rider whose conflict the line join cannot do gets its fix session inside the batch, so it shares the
+batch's gate run instead of waiting for a turn of its own.
+
+A tested merge that cannot land because of uncommitted edits in the main checkout to files it changes (or
+anything staged there, which git refuses to merge onto) waits 10 minutes, then gives the merge lock back
+and stays `task/<ID>`; it is merged again once those files are committed. It is never parked for that.
+
+A merge skips the gate only when `task/<ID>` is the very tree `done`'s gate passed on (recorded as
+`refs/agent-runner/tested/<ID>`) and the merge differs from it only in `[run] untested` files. After
+`done --no-test`, commits made after `done`, or a session that never ran it, the merge is tested.
 
 ## Working with it well
 
@@ -360,6 +397,7 @@ the running tasks merge. A run left up keeps picking up whatever you commit to T
 ./run done ID "MSG" [--blocked WHY [--after X,Y]] [--no-test] [--skip-check]
 ./run run [N|once] [--mode d|p] [--dry-run] [--no-tmux] [--mux tmux|wt|console|none] [--model M] [--idle S] [--stall S] [--pause S] [--force] [--shutdown]
 ./run stop                             finish what's running, start nothing new, exit (or s + Enter in the runner's pane)
+./run resume ID...                     continue each task's last session in its slot, once that slot is free
 ./run --version
 ```
 
@@ -421,6 +459,9 @@ joinable = ["plan/TODO.md", "plan/DONE.md"]   # globs of record-per-line files a
 fix_merges = true
 fix_model = "opus"
 fix_timeout = 1800
+build = ""                # a quick build a fix or repair session runs before it commits (not the gate)
+repair_merges = true      # a merge failing the gate gets one repair session before it is parked
+timeout = 3600            # s the gate, a retest or a hook (join, before_start, on_exit) may run: past it, failed
 
 [run.join]                # glob = a command that joins a conflict in that file itself:
 # "data/addresses.txt" = "./tools/join {union} {out}"   # also {ours} {base} {theirs} {file}; exit 0 keeps {out}
