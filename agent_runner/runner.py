@@ -79,6 +79,7 @@ from agent_runner.gitops import _net, drop_if_merged, push, shared_name
 
 TASK = re.compile(r'^- \[(.)\] \*\*([^*\s]+)\*\*(.*)')  # a top-level task line: its box, its id, the rest
 TAG = '@runner'  # the tmux pane option a slot's pane is found by
+REPO_TAG = '@runner-repo'  # the main checkout a pane's runner works for: two repos' runners share a tmux session
 
 ROOT = Path('.')       # the main checkout; set by `init`
 SLOTS_DIR = Path('.')  # <repo>-slots/ beside it: s1, s2, …, and `merge`
@@ -327,10 +328,26 @@ def tmux(*a: str, **kw) -> sp.CompletedProcess:
     return sp.run(['tmux', *a], capture_output=True, text=True, **kw)
 
 
+def window(kind: str) -> str:
+    """This repo's window of `kind` ("agents" or "master"): "agents-openmx", so two repos' runners in one
+    tmux session neither share a window nor lay out each other's panes."""
+    return f"{kind}-{re.sub(r'[^A-Za-z0-9_-]', '-', ROOT.name)}"
+
+
+def window_id(name: str) -> str | None:
+    """The id (@N) of this tmux session's window called exactly `name`: a name as a target also matches a
+    longer one by prefix (agents-openmx would find agents-openmx-mods)."""
+    for l in tmux('list-windows', '-F', '#{window_id}\t#{window_name}').stdout.splitlines():
+        wid, _, wname = l.partition('\t')
+        if wname == name:
+            return wid
+    return None
+
+
 def pane(name: str, cwd: Path, cmd: str, env=(), logfile: Path | None = None) -> int:
-    """Open cmd in a pane of the window "agents", tagged @runner=name, in slot order; returns its pid. The
-    fix and repair sessions (name "master") get a window of their own, "master", so the slots' layout does
-    not squeeze them to a column.
+    """Open cmd in a pane of this repo's window "agents-<repo>", tagged @runner=name and @runner-repo=the
+    main checkout, in slot order; returns its pid. The fix and repair sessions (name "master") get a
+    window of their own, "master-<repo>", so the slots' layout does not squeeze them to a column.
 
     Panes are found by their tag rather than their position, so you can break them out, join them or swap
     them around while the run goes on. The pane's output is piped to `logfile`, which is where a usage
@@ -338,24 +355,25 @@ def pane(name: str, cwd: Path, cmd: str, env=(), logfile: Path | None = None) ->
     will not open it.
     """
     envs = [a for e in env for a in ('-e', e)]
-    w = 'master' if name == 'master' else 'agents'
+    w = window('master' if name == 'master' else 'agents')
     where = ['new-window', '-n', w]
-    if w == 'master':
+    if name == 'master':
         pass  # one session at a time (it runs under MERGE), and its window closes with it
-    elif w in tmux('list-windows', '-F', '#{window_name}').stdout.split():
+    elif wid := window_id(w):
         here = sorted((int(h[1:]), p) for p, h in
-                      (l.split('\t') for l in tmux('list-panes', '-t', w, '-F',
+                      (l.split('\t') for l in tmux('list-panes', '-t', wid, '-F',
                                                    f'#{{pane_id}}\t#{{{TAG}}}').stdout.splitlines())
                       if re.fullmatch(r's\d+', h))
         k = int(name[1:])
         lower = [p for i, p in here if i < k]
         where = (['split-window', '-h', '-t', lower[-1]] if lower else
-                 ['split-window', '-h', '-b', '-t', here[0][1] if here else w])
-    r = tmux(*where, '-d', '-c', str(cwd), *envs, '-P', '-F', '#{pane_id} #{pane_pid}', cmd)
+                 ['split-window', '-h', '-b', '-t', here[0][1] if here else wid])
+    r = tmux(*where, '-d', '-c', str(cwd), *envs, '-P', '-F', '#{pane_id} #{pane_pid} #{window_id}', cmd)
     if r.returncode or not r.stdout.split():
         raise RuntimeError(f'tmux could not open a pane: {r.stderr.strip()}')
-    pane_id, pid = r.stdout.split()[:2]
+    pane_id, pid, w = (r.stdout.split() + [w])[:3]
     tmux('set-option', '-p', '-t', pane_id, TAG, name)
+    tmux('set-option', '-p', '-t', pane_id, REPO_TAG, str(ROOT))
     tmux('set-option', '-w', '-t', w, 'pane-border-status', 'top')
     tmux('set-option', '-w', '-t', w, 'pane-border-format', f' #{{{TAG}}} ')
     tmux('select-layout', '-t', w, 'even-horizontal')
@@ -368,13 +386,26 @@ alive = plat.alive
 
 
 def panes() -> dict[str, tuple[str, int]]:
-    """{name: (pane id, pid)} of the tagged panes in this tmux session."""
+    """{name: (pane id, pid)} of this repo's tagged panes in this tmux session. Another repo's runner may
+    share the session, with slots of the same names: a pane is ours when its @runner-repo is this main
+    checkout or, opened before panes carried one, when it runs in one of this repo's slot worktrees."""
     out = {}
-    for l in tmux('list-panes', '-s', '-F', f'#{{pane_id}}\t#{{pane_pid}}\t#{{{TAG}}}').stdout.splitlines():
-        pane_id, pid, name = (l.split('\t') + ['', ''])[:3]
-        if name and pid.isdigit():
+    fmt = f'#{{pane_id}}\t#{{pane_pid}}\t#{{{TAG}}}\t#{{{REPO_TAG}}}\t#{{pane_current_path}}'
+    for l in tmux('list-panes', '-s', '-F', fmt).stdout.splitlines():
+        pane_id, pid, name, repo, path = (l.split('\t') + [''] * 4)[:5]
+        if name and pid.isdigit() and ours(repo, path):
             out[name] = (pane_id, int(pid))
     return out
+
+
+def ours(repo: str, path: str) -> bool:
+    """A pane tagged for `repo` (its main checkout), or untagged and sitting at `path`, is this runner's."""
+    if repo:
+        return Path(repo) == ROOT
+    try:
+        return Path(path).resolve().is_relative_to(SLOTS_DIR.resolve())
+    except (OSError, ValueError):
+        return False
 
 
 def session_id(pid: int) -> str | None:
@@ -701,7 +732,8 @@ def resume(n: int, tid: str, sid: str, why: str, branch: str, model: str, idle: 
 # --- terminals: one per slot -----------------------------------------------------
 
 class TmuxMux:
-    """tmux panes in the window "agents", tagged @runner=sN; the pane's output goes to the slot log."""
+    """tmux panes in this repo's window "agents-<repo>", tagged @runner=sN; the pane's output goes to the
+    slot log."""
     name = 'tmux'
 
     def open(self, n: int, cwd: Path, prompt: str, sid: str, model: str, idle: int, env: list[str],
@@ -1050,7 +1082,7 @@ def fix_session(prompt: str, cwd: Path, fh) -> int:
     """Run one fix or repair session in `cwd` to its end; its exit code. Raises what `sp.run` raises for a
     missing agent or a timeout.
 
-    Under tmux it is an ordinary session in the window "master", so a human can watch
+    Under tmux it is an ordinary session in the window "master-<repo>", so a human can watch
     it work, or take it over by typing; the Stop hook ends it once it has been idle `MASTER_IDLE` seconds,
     and its last words go to `fh`. Without tmux (Windows, the sequential run) it is `-p`, its output in `fh`.
     """
@@ -1061,7 +1093,7 @@ def fix_session(prompt: str, cwd: Path, fh) -> int:
     if not shutil.which(C.run['agent']):
         raise FileNotFoundError(C.run['agent'])
     sid = str(uuid.uuid4())
-    fh.write(f'in tmux window "master", session {sid}\n')
+    fh.write(f'in tmux window "{window("master")}", session {sid}\n')
     fh.flush()
     cmd = agent_cmd(prompt, sid, C.run['fix_model'], MASTER_IDLE, 'master')
     try:

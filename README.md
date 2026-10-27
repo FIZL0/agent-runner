@@ -85,7 +85,7 @@ plan/TODO.md ──pick──▶ slot N: git worktree <repo>-slots/sN on task/<I
 1. **Pick.** It reads `plan/TODO.md` *on the shared branch* (what is committed, not what you're
    editing) and walks it top to bottom. See [Picking](#picking) for what it skips.
 2. **Start.** Slot N gets a git worktree in `../<repo>-slots/sN` on branch `task/<ID>`, and a tmux pane in
-   the window `agents`. The pane's output is piped to `.runner/slotN.log`. The pane runs
+   the window `agents-<repo>`. The pane's output is piped to `.runner/slotN.log`. The pane runs
    `claude --session-id … --model … "<prompt>"`, with Claude Code's Stop hook set to the runner's idle
    timer. The prompt includes the task's brief (`./run plan brief <ID>`): its line, its `plan/<ID>.md`
    long form, the files it names (or "missing: this task creates it"), and the newest journal entry.
@@ -101,7 +101,7 @@ plan/TODO.md ──pick──▶ slot N: git worktree <repo>-slots/sN on task/<I
 5. **Merge.** In a separate merge worktree, the runner merges `main` and `task/<ID>`:
    - conflicts in record-per-line files (`[run] joinable`, by default TODO.md and DONE.md) are joined,
      keeping both sides' lines;
-   - any other conflict goes to a one-shot fix session (in the tmux window "master", or `claude -p`);
+   - any other conflict goes to a one-shot fix session (in the tmux window "master-<repo>", or `claude -p`);
    - the gate runs again if the merged code differs from what `done` tested.
    Only then is the main checkout moved to the tested merge. That takes seconds, it never stashes, and it
    waits if someone has uncommitted edits to the files involved.
@@ -113,7 +113,8 @@ plan/TODO.md ──pick──▶ slot N: git worktree <repo>-slots/sN on task/<I
 ### Terminals, and Windows
 
 Each slot's session runs in a terminal you can watch and type into. Which one is `[run] mux` (or
-`--mux`): `tmux` panes in the window "agents" (the default on Linux and macOS; start the run inside tmux),
+`--mux`): `tmux` panes in the window "agents-<repo>" (the default on Linux and macOS; start the run inside tmux;
+runners for different repos can share one tmux session, each finding only its own panes),
 `wt` (a Windows Terminal tab per slot, in a window named "agents", the default on Windows), or `console`
 (a console window per slot, Windows' fallback when `wt.exe` isn't installed). `none` (`--no-tmux`) is
 the sequential run below. One slot, and `once`, run like any other count: a worktree, a pane, a tested merge.

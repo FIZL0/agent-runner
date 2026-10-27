@@ -1149,6 +1149,38 @@ def test_no_pane(repo: Path, tmp: Path):
         R.tmux, R.MASTER_PANE, R.C.run['agent'] = tmux, False, 'claude'
 
 
+def test_other_repos_panes(repo: Path, tmp: Path):
+    print('tmux: a second repo\'s runner in the same session finds only its own panes')
+    R.init(repo)
+    other = tmp / 'other'
+    rows = [('%1', '101', 's1', str(other), str(tmp / 'other-slots' / 's1')),        # the other repo's, tagged
+            ('%2', '102', 's2', '', str(tmp / 'other-slots' / 's2')),                # the other repo's, from before tags
+            ('%3', '103', 's3', str(R.ROOT), str(R.SLOTS_DIR / 's3')),               # ours, tagged
+            ('%4', '104', 's4', '', str(R.SLOTS_DIR / 's4')),                        # ours, from before tags
+            ('%5', '105', '', '', str(R.ROOT))]                                      # not a runner's pane
+    calls = []
+
+    def fake(*a, **k):
+        calls.append(a)
+        if a[0] == 'list-panes':
+            return subprocess.CompletedProcess(a, 0, ''.join('\t'.join(r) + '\n' for r in rows), '')
+        if a[0] == 'list-windows':
+            return subprocess.CompletedProcess(a, 0, '@1\tagents\n@2\tagents-other\n', '')
+        if a[0] in ('new-window', 'split-window'):
+            return subprocess.CompletedProcess(a, 0, '%9 109 @7\n', '')
+        return subprocess.CompletedProcess(a, 0, '', '')
+    tmux, R.tmux = R.tmux, fake
+    try:
+        eq(R.panes(), {'s3': ('%3', 103), 's4': ('%4', 104)}, 'only this repo\'s slots, tagged or by their worktree')
+        eq(R.window('agents'), f'agents-{repo.name}', 'each repo lays out its own window')
+        eq(R.pane('s1', repo, 'true'), 109, 'a pane opens')
+        check(any(a[0] == 'new-window' and f'agents-{repo.name}' in a for a in calls),
+              'in a new window of its own, not the other repo\'s "agents" or "agents-other"')
+        check(('set-option', '-p', '-t', '%9', R.REPO_TAG, str(R.ROOT)) in calls, 'tagged with its repo')
+    finally:
+        R.tmux = tmux
+
+
 def test_limit_lets_go(repo: Path):
     print('run: a slot asleep until a usage reset lets go of its task, so another slot may take it')
     R.init(repo)
@@ -1253,7 +1285,8 @@ def main() -> int:
                        lambda: test_edited_elsewhere(repo, tmp),
                        lambda: test_resume(repo, tmp),
                        lambda: test_session_tmp(repo, tmp), lambda: test_tested_ref(repo, tmp),
-                       lambda: test_no_pane(repo, tmp), lambda: test_limit_lets_go(repo),
+                       lambda: test_no_pane(repo, tmp), lambda: test_other_repos_panes(repo, tmp),
+                       lambda: test_limit_lets_go(repo),
                        lambda: test_shared_push(repo, tmp), test_update_notice])
 
 
