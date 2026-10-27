@@ -386,26 +386,15 @@ alive = plat.alive
 
 
 def panes() -> dict[str, tuple[str, int]]:
-    """{name: (pane id, pid)} of this repo's tagged panes in this tmux session. Another repo's runner may
-    share the session, with slots of the same names: a pane is ours when its @runner-repo is this main
-    checkout or, opened before panes carried one, when it runs in one of this repo's slot worktrees."""
+    """{name: (pane id, pid)} of this repo's tagged panes in this tmux session: another repo's runner may
+    share the session, with slots of the same names, so a pane is ours only when its @runner-repo is this
+    main checkout."""
     out = {}
-    fmt = f'#{{pane_id}}\t#{{pane_pid}}\t#{{{TAG}}}\t#{{{REPO_TAG}}}\t#{{pane_current_path}}'
-    for l in tmux('list-panes', '-s', '-F', fmt).stdout.splitlines():
-        pane_id, pid, name, repo, path = (l.split('\t') + [''] * 4)[:5]
-        if name and pid.isdigit() and ours(repo, path):
+    for l in tmux('list-panes', '-s', '-F', f'#{{pane_id}}\t#{{pane_pid}}\t#{{{TAG}}}\t#{{{REPO_TAG}}}').stdout.splitlines():
+        pane_id, pid, name, repo = (l.split('\t') + [''] * 3)[:4]
+        if name and pid.isdigit() and repo and Path(repo) == ROOT:
             out[name] = (pane_id, int(pid))
     return out
-
-
-def ours(repo: str, path: str) -> bool:
-    """A pane tagged for `repo` (its main checkout), or untagged and sitting at `path`, is this runner's."""
-    if repo:
-        return Path(repo) == ROOT
-    try:
-        return Path(path).resolve().is_relative_to(SLOTS_DIR.resolve())
-    except (OSError, ValueError):
-        return False
 
 
 def session_id(pid: int) -> str | None:

@@ -2,14 +2,20 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
+## 0.6.21 (2026-10-27)
+
+- A pane is a runner's only when its `@runner-repo` names that runner's main checkout; 0.6.20's
+  fallback for untagged panes (by working directory) is gone. A pane opened before 0.6.20 is no one's:
+  let its session end, or tag it (`tmux set-option -p -t <pane> @runner-repo <main checkout>`), before
+  restarting a run.
+
 ## 0.6.20 (2026-10-27)
 
 - Runners for different repos can share one tmux session. A pane now carries the repo it works for
   (`@runner-repo`, its main checkout), and each repo gets its own windows, `agents-<repo>` and
   `master-<repo>`. A restart adopts, holds and lays out only its own repo's panes; before, a second repo's
   runner adopted the first's `s1` (a task of the same id), held its `s2`/`s3` as "untracked sessions", and
-  split its own panes into the first's `agents` window. Panes opened before 0.6.20 have no repo tag and
-  are told apart by their working directory under `<repo>-slots/`.
+  split its own panes into the first's `agents` window.
 
 ## 0.6.19 (2026-10-27)
 

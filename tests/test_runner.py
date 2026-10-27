@@ -1153,11 +1153,10 @@ def test_other_repos_panes(repo: Path, tmp: Path):
     print('tmux: a second repo\'s runner in the same session finds only its own panes')
     R.init(repo)
     other = tmp / 'other'
-    rows = [('%1', '101', 's1', str(other), str(tmp / 'other-slots' / 's1')),        # the other repo's, tagged
-            ('%2', '102', 's2', '', str(tmp / 'other-slots' / 's2')),                # the other repo's, from before tags
-            ('%3', '103', 's3', str(R.ROOT), str(R.SLOTS_DIR / 's3')),               # ours, tagged
-            ('%4', '104', 's4', '', str(R.SLOTS_DIR / 's4')),                        # ours, from before tags
-            ('%5', '105', '', '', str(R.ROOT))]                                      # not a runner's pane
+    rows = [('%1', '101', 's1', str(other)),    # the other repo's
+            ('%2', '102', 's2', ''),            # a slot tag with no repo: no runner's
+            ('%3', '103', 's3', str(R.ROOT)),   # ours
+            ('%5', '105', '', '')]              # not a runner's pane
     calls = []
 
     def fake(*a, **k):
@@ -1171,7 +1170,7 @@ def test_other_repos_panes(repo: Path, tmp: Path):
         return subprocess.CompletedProcess(a, 0, '', '')
     tmux, R.tmux = R.tmux, fake
     try:
-        eq(R.panes(), {'s3': ('%3', 103), 's4': ('%4', 104)}, 'only this repo\'s slots, tagged or by their worktree')
+        eq(R.panes(), {'s3': ('%3', 103)}, 'only the slots tagged with this repo')
         eq(R.window('agents'), f'agents-{repo.name}', 'each repo lays out its own window')
         eq(R.pane('s1', repo, 'true'), 109, 'a pane opens')
         check(any(a[0] == 'new-window' and f'agents-{repo.name}' in a for a in calls),
