@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import re
 import sys
 import tempfile
 import time
@@ -867,6 +868,29 @@ def test_land_waits_aloud(repo: Path):
     eq((repo / '.runner/run.log').read_text().count('W1: tested, waiting'), 1, 'said once, not every 10 s')
 
 
+def test_edited_elsewhere(repo: Path, tmp: Path):
+    print("run: a task heading into uncommitted edits outside the runner's slots is named in the log")
+    R.init(repo)
+    git(repo, 'checkout', '-q', 'main')
+    hand = tmp / 'hand-worktree'
+    git(repo, 'worktree', 'add', '-q', '--detach', str(hand), 'main')
+    s1 = R.SLOTS_DIR / 's1'
+    git(s1, 'checkout', '-q', '--detach', 'main')
+    try:
+        (hand / 'g.py').write_text('# g, edited by hand\n', encoding='utf-8')
+        (s1 / 'f.py').write_text('# f, a slot of its own\n', encoding='utf-8')
+        eq(R.edited_elsewhere({'g.py', 'f.py', 'h.py'}), [f'{hand} (g.py)'],
+           "a hand worktree's edit is named; a runner slot's is its own business")
+        (repo / 'f.py').write_text('# f, in the main checkout\n', encoding='utf-8')
+        has('\n'.join(R.edited_elsewhere({'f.py'})), rf'^{re.escape(str(repo))} \(f\.py\)$', 'the main checkout counts too')
+        eq(R.edited_elsewhere({'h.py'}), [], 'files nobody edits: nothing')
+        eq(R.edited_elsewhere(set()), [], 'a task with no files: nothing')
+    finally:
+        git(repo, 'checkout', '--', 'f.py')
+        git(s1, 'checkout', '--', 'f.py')
+        git(repo, 'worktree', 'remove', '--force', str(hand))
+
+
 def test_resume(repo: Path, tmp: Path):
     print('run: a session cut off by a dropped network or a reboot resumes in its own slot')
     R.init(repo)
@@ -1060,6 +1084,7 @@ def main() -> int:
                        lambda: test_platform(repo, tmp), lambda: test_shutdown(repo), lambda: test_merge_into(tmp),
                        lambda: test_leftovers(repo), lambda: test_renumber(repo),
                        lambda: test_stop_waiter(tmp), lambda: test_land_waits_aloud(repo), lambda: test_land_gives_merge_back(repo),
+                       lambda: test_edited_elsewhere(repo, tmp),
                        lambda: test_resume(repo, tmp),
                        lambda: test_session_tmp(repo, tmp)])
 

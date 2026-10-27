@@ -566,6 +566,27 @@ def save_leftovers(d: Path, tid: str, branch: str) -> str | None:
     return to
 
 
+def edited_elsewhere(files) -> list[str]:
+    """Checkouts outside the runner's own slots (the main checkout, a person's or a chat session's worktree)
+    with uncommitted edits to any of `files`, as 'path (file, file)'. Work there is invisible to the runner
+    until it is committed, so a task started on the same files is likely to redo it or to conflict."""
+    files = set(files)
+    if not files:
+        return []
+    out = []
+    listed = git('worktree', 'list', '--porcelain', cwd=ROOT).stdout.splitlines()
+    for d in (Path(l[len('worktree '):]) for l in listed if l.startswith('worktree ')):
+        if d.parent == SLOTS_DIR and re.fullmatch(r's\d+|merge', d.name):
+            continue
+        st = git('status', '--porcelain', '--untracked-files=no', cwd=d)
+        if st.returncode:
+            continue
+        hit = sorted(files & {l[3:].split(' -> ')[-1] for l in st.stdout.splitlines()})
+        if hit:
+            out.append(f'{d} ({", ".join(hit[:4])}{", …" if len(hit) > 4 else ""})')
+    return out
+
+
 def start(n: int, task, branch: str, model: str, idle: int, slots: int):
     tid = task[0]
     d = worktree(n, branch)
@@ -589,6 +610,9 @@ def start(n: int, task, branch: str, model: str, idle: int, slots: int):
         log(f'slot {n}: the session for {tid} did not start in {MUX.where(n)}')
         return None
     log(f'slot {n}: {tid} ({task[1]}; {", ".join(sorted(task[2])) or "no files listed"})')
+    for where in edited_elsewhere(task[2]):
+        log(f'slot {n}: {tid} heads into uncommitted edits outside the runner, in {where}: '
+            f'if that is the same work, stop the slot; if not, commit it before {tid} lands')
     return pid, sid, since
 
 

@@ -2,6 +2,16 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
+## 0.6.15 (2026-10-27)
+
+- `plan add` names an open task that looks like the same work, with its id and the start of its text,
+  under the new id. Nothing is printed when none does, so an agent's context pays only on a match: the
+  new task's rarer words mostly on the other (half of them, weighted by how few tasks use them), or 30%
+  of them plus a file that at most three open tasks name. Done tasks are not compared.
+- Starting a task, the run logs any checkout outside its slots (the main checkout, a person's or a chat
+  session's worktree) with uncommitted edits to the task's files: work there is invisible to the runner,
+  and on 2026-10-26 two hand-made fixes sat uncommitted while the runners did the same two tasks.
+
 ## 0.6.14 (2026-10-26)
 
 - A session's temp folder (`<tmp>/claude-<uid>/<project>/<session>/`: its scratchpad and background tasks'

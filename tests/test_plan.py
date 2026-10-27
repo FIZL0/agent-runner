@@ -236,6 +236,29 @@ def test_hand_edits_commit():
         has(git(root, 'status', '--porcelain', '--', 'plan'), r'TODO\.md', 'mid-merge the edit stays uncommitted')
 
 
+def test_similar():
+    print('plan: add names an open task that looks like the same work, and stays quiet otherwise')
+    with tempfile.TemporaryDirectory() as tmp:
+        d = Path(tmp) / 'plan'
+        todo, done = plan.ensure(d / 'TODO.md', d / 'DONE.md')
+        kw = dict(todo=todo, done=done)
+        plan.add('V', "the radar's map names go inside the minimap → src/hud.rs", **kw)
+        plan.add('V', 'world tiles pop in at once; stream them nearest first → src/tiles.rs · src/main.rs', **kw)
+        plan.add('P', 'the menu sound plays when a slider moves → src/menu.rs · src/main.rs', **kw)
+        plan.add('P', 'the garage shows each bike in its own colours → src/garage.rs · src/main.rs', **kw)
+        plan.add('S', 'a done one about the radar and its minimap names → src/hud.rs', **kw)
+        plan.tick('S1', **kw)
+        got = plan.similar("show the map names inside the radar's minimap → src/hud.rs", todo=todo)
+        eq([g.split(':')[0] for g in got], ['V1'], 'the same work is named, and a done task is not')
+        has(got[0], r"^V1: the radar's map names go inside the minimap$", 'as its id and the start of its text')
+        eq(plan.similar('the rider leans too far in a berm → src/rider.rs', todo=todo), [],
+           'unrelated work prints nothing, so an agent pays nothing for it')
+        eq([g.split(':')[0] for g in plan.similar('stream tiles nearest first, they pop in → src/tiles.rs', todo=todo)],
+           ['V2'], 'a shared rare file and some of the words is enough')
+        eq(plan.similar('the main menu → src/main.rs', todo=todo, skip='P1'), [],
+           'a file every task names is not a match by itself')
+
+
 if __name__ == '__main__':
     sys.exit(report([test_plan_roundtrip, test_plan_reopen, test_plan_index_and_sections, test_brief,
-                     test_split_parents, test_add_bottom, test_hand_edits_commit]))
+                     test_split_parents, test_add_bottom, test_hand_edits_commit, test_similar]))
