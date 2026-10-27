@@ -2020,7 +2020,7 @@ def stop_hook(idle: int) -> int:
     t = ev.get('transcript_path')
     if not t or not os.path.exists(t):
         return 0
-    if ev.get('background_tasks'):
+    if ev.get('background_tasks') and not finished():  # a finished task's leftovers get no grace
         idle = max(idle, int(os.environ.get('AGENT_RUNNER_IDLE_BG', 1800)))
     # POSIX: the hook's parent is the agent. Windows: the hook runs under Git Bash, whose pid is not the
     # agent's, so the pid comes from the marker the slot's shim keeps (run_session)
@@ -2045,6 +2045,11 @@ def _user_entries(t: str) -> int:
 WAITER_POLL = 60  # s between looks at a session whose background command is still running
 
 
+def finished() -> bool:
+    """This slot's `done` has succeeded (`finished_mark`)."""
+    return bool((m := finished_mark()) and m.exists())
+
+
 def stop_waiter(pid: int, t: str, n: int, idle: int) -> int:
     until = time.time() + max(idle, int(os.environ.get('AGENT_RUNNER_IDLE_MAX', 10800)))
     time.sleep(idle)
@@ -2062,7 +2067,7 @@ def stop_waiter(pid: int, t: str, n: int, idle: int) -> int:
         # with its session, and the work it was about to commit went with it): it ends and wakes the agent.
         # Once `done` has succeeded there is nothing left to protect: a leftover background command (a wait
         # loop that never ends) must not hold the slot for hours
-        if not plat.children(pid) or time.time() >= until or ((m := finished_mark()) and m.exists()):
+        if not plat.children(pid) or time.time() >= until or finished():
             break
         time.sleep(WAITER_POLL)
     plat.terminate(pid)

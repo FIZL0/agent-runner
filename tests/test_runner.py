@@ -851,6 +851,28 @@ def test_stop_waiter(tmp: Path):
             m.unlink()
 
 
+def test_stop_hook_grace(tmp: Path):
+    print('the stop hook gives background tasks a long grace, but not once the task is done')
+    import io
+    t = tmp / 'transcript.jsonl'
+    t.write_text('{"type":"user"}\n', encoding='utf-8')
+    seen, spawn, stdin = [], R.plat.spawn_detached, sys.stdin
+    R.plat.spawn_detached = lambda argv: seen.append(argv[-1])
+    os.environ['AGENT_RUNNER_SLOT'] = '9'
+    try:
+        for done in (False, True):
+            if done:
+                R.finished_mark().touch()
+            sys.stdin = io.StringIO(json.dumps({'transcript_path': str(t), 'background_tasks': [{'id': 'b1'}]}))
+            R.stop_hook(90)
+        eq(seen, ['1800', '90'], 'idle handed to the waiter: before done, after done')
+    finally:
+        R.plat.spawn_detached, sys.stdin = spawn, stdin
+        os.environ.pop('AGENT_RUNNER_SLOT', None)
+        if (m := R.finished_mark('9')) and m.exists():
+            m.unlink()
+
+
 def test_land_waits_aloud(repo: Path):
     print('run: a tested merge that waits on edits in the main checkout says so, then lands')
     import threading
@@ -1294,7 +1316,7 @@ def main() -> int:
                        lambda: test_hooks(repo, tmp), lambda: test_gate_and_batches(repo, tmp),
                        lambda: test_platform(repo, tmp), lambda: test_shutdown(repo), lambda: test_merge_into(tmp),
                        lambda: test_leftovers(repo), lambda: test_renumber(repo),
-                       lambda: test_stop_waiter(tmp), lambda: test_land_waits_aloud(repo), lambda: test_land_gives_merge_back(repo),
+                       lambda: test_stop_waiter(tmp), lambda: test_stop_hook_grace(tmp), lambda: test_land_waits_aloud(repo), lambda: test_land_gives_merge_back(repo),
                        lambda: test_edited_elsewhere(repo, tmp),
                        lambda: test_resume(repo, tmp),
                        lambda: test_session_tmp(repo, tmp), lambda: test_tested_ref(repo, tmp),

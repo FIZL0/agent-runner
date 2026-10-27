@@ -2,6 +2,12 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
+## 0.6.23 (2026-10-27)
+
+- 0.6.22 still let a finished task sit for half an hour: a session with background tasks got the 30 min
+  `AGENT_RUNNER_IDLE_BG` grace before the waiter first looked at the finished mark. Once `done` has
+  succeeded the stop hook now hands the waiter the normal idle time.
+
 ## 0.6.22 (2026-10-27)
 
 - A finished task no longer holds its slot. A successful `done` leaves `slot<N>.finished` in the notes
