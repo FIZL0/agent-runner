@@ -22,6 +22,7 @@ module on Linux never reaches them, and its POSIX half is what the tests run.
 from __future__ import annotations
 
 import os
+import re
 import shlex
 import shutil
 import signal
@@ -274,11 +275,13 @@ def command_text(argv: list[str]) -> str:
 
     Windows: every word double-quoted with forward slashes, which both Git Bash (what Claude Code runs
     hooks and Bash calls in) and cmd.exe read the same way. Unquoted backslashes would vanish in Bash, and
-    POSIX single quotes mean nothing to cmd.exe. Only for paths and plain flags, never for free text.
+    POSIX single quotes mean nothing to cmd.exe. Only for paths and plain flags, never for free text. Inside
+    the quotes `$` and a backtick get a backslash, for Bash (cmd.exe keeps it; a Windows path rarely has either).
     """
     if not WINDOWS:
         return shlex.join(argv)
-    return ' '.join(f'"{a}"' if any(c in a for c in ' &()^%!') else a for a in (x.replace('\\', '/') for x in argv))
+    return ' '.join('"' + re.sub(r'([$`])', r'\\\1', a) + '"' if any(c in a for c in ' &()^%!\'$`;') else a
+                    for a in (x.replace('\\', '/') for x in argv))
 
 
 # --- terminals ---------------------------------------------------------------

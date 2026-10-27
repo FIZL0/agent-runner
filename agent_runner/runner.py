@@ -56,6 +56,7 @@ import os
 import re
 import shlex
 import shutil
+import signal
 import socket
 import subprocess as sp
 import sys
@@ -73,7 +74,7 @@ from agent_runner import plat
 __all__ = ['init', 'cmd_run', 'cmd_stop', 'pick', 'tasks', 'prompt_for', 'reopen_landed', 'retry_reopened',
            'ask_stop', 'stopping', 'cmd_resume', 'PROMPT', 'FIXER', 'OTHERS']
 from agent_runner.config import RUNNER, Config, cfg, main_checkout, runner_cmd
-from agent_runner.done import gate
+from agent_runner.done import TESTED, gate
 from agent_runner.gitops import drop_if_merged, push
 
 TASK = re.compile(r'^- \[ \] \*\*([^*\s]+)\*\*(.*)')
@@ -320,7 +321,8 @@ def pane(name: str, cwd: Path, cmd: str, env=(), logfile: Path | None = None) ->
 
     Panes are found by their tag rather than their position, so you can break them out, join them or swap
     them around while the run goes on. The pane's output is piped to `logfile`, which is where a usage
-    limit's "resets 3pm" shows up when the transcript does not have it.
+    limit's "resets 3pm" shows up when the transcript does not have it. Raises RuntimeError when tmux
+    will not open it.
     """
     envs = [a for e in env for a in ('-e', e)]
     w = 'master' if name == 'master' else 'agents'
@@ -338,7 +340,7 @@ def pane(name: str, cwd: Path, cmd: str, env=(), logfile: Path | None = None) ->
                  ['split-window', '-h', '-b', '-t', here[0][1] if here else w])
     r = tmux(*where, '-d', '-c', str(cwd), *envs, '-P', '-F', '#{pane_id} #{pane_pid}', cmd)
     if r.returncode or not r.stdout.split():
-        raise SystemExit(f'tmux could not open a pane: {r.stderr.strip()}')
+        raise RuntimeError(f'tmux could not open a pane: {r.stderr.strip()}')
     pane_id, pid = r.stdout.split()[:2]
     tmux('set-option', '-p', '-t', pane_id, TAG, name)
     tmux('set-option', '-w', '-t', w, 'pane-border-status', 'top')
@@ -554,8 +556,8 @@ def save_leftovers(d: Path, tid: str, branch: str) -> str | None:
         return None
     mine = git('rev-list', '--count', f'{branch}..HEAD', cwd=d).stdout.strip()
     wip = not git('rev-parse', '--verify', '-q', f'refs/heads/wip/{tid}', cwd=d).returncode
-    to = f'wip/{tid}' if mine == '0' and not wip else f'leftover/{tid}'
-    if git('branch', '-f', to, c, cwd=d).returncode:
+    to = f'wip/{tid}' if mine == '0' and not wip else free_branch(f'leftover/{tid}')
+    if git('branch', to, c, cwd=d).returncode:
         return None
     files = git('diff', '--name-only', 'HEAD', c, cwd=d).stdout.split()
     many = f'{len(files)} file{"s" if len(files) != 1 else ""}'
@@ -564,6 +566,15 @@ def save_leftovers(d: Path, tid: str, branch: str) -> str | None:
     if out := push(ROOT, to):
         log(out)
     return to
+
+
+def free_branch(name: str) -> str:
+    """`name`, or `name-2`, `name-3`, … when an earlier attempt already holds it: a ref is never overwritten."""
+    k, out = 1, name
+    while not git('rev-parse', '--verify', '-q', f'refs/heads/{out}').returncode:
+        k += 1
+        out = f'{name}-{k}'
+    return out
 
 
 def edited_elsewhere(files) -> list[str]:
@@ -645,7 +656,7 @@ def resume(n: int, tid: str, sid: str, why: str, branch: str, model: str, idle: 
             return None
         if saved:
             git('reset', '-q', 'HEAD~1', cwd=d)  # the saved edits are uncommitted again, as the session left them
-            git('branch', '-M', src, f'resumed/{tid}')  # kept, but no longer read as an earlier attempt
+            git('branch', '-M', src, free_branch(f'resumed/{tid}'))  # kept, but no longer read as an earlier attempt
     logfile = C.notes(f'slot{n}.log')
     since = logfile.stat().st_size if logfile.exists() else 0
     with open(logfile, 'a', encoding='utf-8') as f:
@@ -666,7 +677,11 @@ class TmuxMux:
 
     def open(self, n: int, cwd: Path, prompt: str, sid: str, model: str, idle: int, env: list[str],
              logfile: Path, resume: bool = False) -> int | None:
-        return pane(f's{n}', cwd, agent_cmd(prompt, sid, model, idle, f'slot{n}', resume), env, logfile)
+        try:
+            return pane(f's{n}', cwd, agent_cmd(prompt, sid, model, idle, f'slot{n}', resume), env, logfile)
+        except RuntimeError as e:
+            log(f'slot {n}: {e}')
+            return None
 
     def panes(self) -> dict[str, tuple[str, int]]:
         return panes()
@@ -770,6 +785,7 @@ MUX: TmuxMux | ShimMux = TmuxMux()  # what `cmd_run` picked
 # --- merging a finished branch -------------------------------------------------
 
 MERGE = threading.Lock()  # one merge into the shared branch at a time
+LANDING = threading.Lock()  # held while `land` moves the main checkout: an interrupted run waits for it
 
 
 def joinable(f: str) -> bool:
@@ -805,8 +821,12 @@ def custom_join(f: str, sides: list[str], text: str, tid: str, cwd: Path) -> str
     u.write_text(text, encoding='utf-8')
     out.write_text(text, encoding='utf-8')
     vals = dict(ours=sides[0], base=sides[1], theirs=sides[2], union=str(u), out=str(out), file=f)
-    r = sp.run(cmd.format_map({k: plat.quote(v) for k, v in vals.items()}), shell=True, cwd=str(cwd),
-               capture_output=True, text=True)
+    try:
+        r = sp.run(cmd.format_map({k: plat.quote(v) for k, v in vals.items()}), shell=True, cwd=str(cwd),
+                   capture_output=True, text=True, timeout=C.run['timeout'])
+    except sp.TimeoutExpired:
+        log(f'{tid}: the [run.join] command for {f} ran past [run] timeout ({C.run["timeout"]}s); join refused')
+        return None
     if r.returncode:
         log(f'{tid}: the [run.join] command for {f} refused the join (exit {r.returncode}): '
             + ' / '.join((r.stdout + r.stderr).strip().splitlines()[-3:])[:300])
@@ -1047,7 +1067,12 @@ def fix_session(prompt: str, cwd: Path, fh) -> int:
     fh.write(f'in tmux window "master", session {sid}\n')
     fh.flush()
     cmd = agent_cmd(prompt, sid, C.run['fix_model'], MASTER_IDLE, 'master')
-    pid = pane('master', cwd, cmd, master_env())
+    try:
+        pid = pane('master', cwd, cmd, master_env())
+    except RuntimeError as e:  # no session ran: the caller reads the merge as one it did not finish
+        log(f'the fix session did not start: {e}')
+        fh.write(f'{e}\n')
+        return 1
     until = time.time() + timeout
     while alive(pid):
         if time.time() >= until:
@@ -1165,6 +1190,12 @@ def untestable(f: str) -> bool:
     return hit
 
 
+def gated(tid: str) -> bool:
+    """task/<tid> is what `done`'s gate passed on: the tree its tested ref records."""
+    tree = git('rev-parse', '-q', '--verify', f'{TESTED}{tid}^{{tree}}').stdout.strip()
+    return bool(tree) and tree == git('rev-parse', '-q', '--verify', f'task/{tid}^{{tree}}').stdout.strip()
+
+
 def tested(tid: str, d: Path, base: str) -> str | None:
     """Run the gate on the merge checked out in `d`: None when it passes, else why.
 
@@ -1184,17 +1215,30 @@ def tested(tid: str, d: Path, base: str) -> str | None:
     if not (rx and cmd and (names := sorted(set(re.findall(rx, out, re.M))))):
         return why
     cmd = cmd.replace('{names}', ' '.join(map(plat.quote, names)))
-    if not sp.run(cmd, shell=True, cwd=str(d), capture_output=True, env=env).returncode:
+
+    def retest() -> sp.CompletedProcess | None:
+        try:
+            return sp.run(cmd, shell=True, cwd=str(d), capture_output=True, text=True, env=env, timeout=C.run['timeout'])
+        except sp.TimeoutExpired:
+            log(f'{tid}: the retest of {", ".join(names)} ran past [run] timeout ({C.run["timeout"]}s); counted as failing')
+            return None
+
+    if (r := retest()) and not r.returncode:
         log(f'{tid}: {", ".join(names)} failed, then passed alone (load); counted as passing')
         return None
     head = git('rev-parse', 'HEAD', cwd=d).stdout.strip()
-    git('checkout', '-q', '--detach', base, cwd=d)
+    # the gate may have left files behind, and a checkout that refuses would rerun the tests on the merge
+    git('reset', '-q', '--hard', cwd=d), git('clean', '-fdq', cwd=d)
+    if (co := git('checkout', '-q', '--detach', base, cwd=d)).returncode:
+        log(f'{tid}: could not check out {base[:12]} to rerun {", ".join(names)} there: {co.stderr.strip()[:200]}')
+        return why
     try:
-        r = sp.run(cmd, shell=True, cwd=str(d), capture_output=True, text=True, env=env)
+        r = retest()
     finally:
+        git('reset', '-q', '--hard', cwd=d), git('clean', '-fdq', cwd=d)
         git('checkout', '-q', '--detach', head, cwd=d)
     # ponytail: name-level match; a branch that breaks an already-failing test some other way slips through
-    if r.returncode and set(re.findall(rx, r.stdout + r.stderr, re.M)) >= set(names):
+    if r and r.returncode and set(re.findall(rx, r.stdout + r.stderr, re.M)) >= set(names):
         log(f'{tid}: {", ".join(names)} already fail without it; merged anyway')
         return None
     return why
@@ -1217,6 +1261,7 @@ def suspect(base: str, merged: str) -> str:
 LAND_WAIT = 10 * 60  # how long a tested merge holds MERGE waiting on edits in the main checkout
 EDITS_POLL = 60  # then how often its thread looks whether those edits are committed
 EDITED = 'uncommitted edits in the main checkout'  # land()'s why for them; finish() keeps the branch
+ELSEWHERE = 'the main checkout has another branch out'  # and for that: never switched under whoever works there
 
 WAITING: set[str] = set()  # finished tasks queued on MERGE: whoever merges next takes them along
 LANDED: dict[str, tuple[str, str]] = {}  # a task that landed in another's batch -> (base, merged)
@@ -1246,6 +1291,7 @@ def merge(tid: str, branch: str) -> str | None:
         else:
             base, merged = LANDED.pop(tid)
         git('branch', '-d', f'task/{tid}')
+        git('update-ref', '-d', TESTED + tid)
         line = next((l for l in plan_text(branch) if f'**{tid}**' in l), '')
         state = 'blocked' if line.startswith('- [~]') else 'part' if line else 'ticked'
         msg = f'{tid}: merged, {state}' + (f'; SUSPECT, recheck: {sus}' if (sus := suspect(base, merged)) else '')
@@ -1336,8 +1382,10 @@ def merge_batch(tid: str, branch: str) -> str | None:
                 git('commit', '-qm', f'{tid}: archive ticked tasks', '--', *plan_files, cwd=d)
             merged = git('rev-parse', 'HEAD', cwd=d).stdout.strip()
             # `done` already passed the gate on the branch: rerun it only if the merged code differs
-            # from what it tested (`[run] untested` files are not code)
-            if riders or not all(map(untestable, git('diff', '--name-only', f'task/{tid}', merged, cwd=d).stdout.split())):
+            # from what it tested (`[run] untested` files are not code). Not after `done --no-test`, nor
+            # commits made after `done`, nor a session that never ran it: its tested ref is not the branch
+            if riders or not gated(tid) or \
+                    not all(map(untestable, git('diff', '--name-only', f'task/{tid}', merged, cwd=d).stdout.split())):
                 if why := tested(tid, d, base):
                     if riders and not batch_repaired and C.run['repair_merges']:
                         batch_repaired = True
@@ -1371,7 +1419,8 @@ def merge_batch(tid: str, branch: str) -> str | None:
             if attempt < 2 and not all(map(untestable, moved)):
                 log(f'{tid}: {branch} got code commits during the tests; testing the merge again')
                 continue
-            why = land(tid, branch, merged)
+            with LANDING:
+                why = land(tid, branch, merged)
             if why == 'conflict' and attempt < 2:
                 continue
             if why:
@@ -1392,6 +1441,7 @@ def land(tid: str, branch: str, merged: str) -> str | None:
     on top), else why it could not. Uncommitted edits there are never moved aside: git refuses, before it
     starts, a merge that would change a file somebody is editing, so this waits LAND_WAIT for them to commit,
     then gives MERGE back with a why starting EDITED: `finish` keeps task/<ID> and tries again once they are.
+    A main checkout with another branch out is never switched: the why starts ELSEWHERE, kept the same way.
     """
     t0 = time.time()
     said = False
@@ -1411,8 +1461,8 @@ def land(tid: str, branch: str, merged: str) -> str | None:
         waiting(f'the main checkout ({ROOT}) is in the middle of a merge of its own; finish or abort it')
         time.sleep(10)
     cur = git('branch', '--show-current').stdout.strip()
-    if cur != branch and git('checkout', '-q', branch).returncode:
-        return f'the main checkout is on {cur or "a detached HEAD"} and would not switch to {branch}'
+    if cur != branch:
+        return f'{ELSEWHERE} ({cur or "a detached HEAD"}, not {branch})'
     msg = ['-m', f'{tid}: the tested merge, onto commits {branch} got during the tests']
     ref = renumber_doubles(merged, 'HEAD', tid, ROOT)
     while git('merge', '-q', *msg, ref).returncode and \
@@ -1517,13 +1567,15 @@ def finish(tid: str, n: int, sid: str, branch: str) -> None:
     commits = git('log', '--format=%s', f'{branch}..task/{tid}').stdout.splitlines()
     if not commits:
         git('branch', '-D', f'task/{tid}')
+        git('update-ref', '-d', TESTED + tid)
         note(f'{tid}: no commits — nothing to merge')
         log(f'{tid}: no commits — nothing to merge')
         return
-    while (why := merge(tid, branch)) and why.startswith(EDITED):
+    while (why := merge(tid, branch)) and why.startswith((EDITED, ELSEWHERE)):
         # Tested and only waiting on somebody's edits: parking it would throw the work away for a fresh
         # attempt. The branch stays task/<ID> (`pick` leaves it alone, the next run's `unmerged` takes it).
-        log(f'{tid}: {why}; task/{tid} stays and merges again once they are committed')
+        log(f'{tid}: {why}; task/{tid} stays and merges again once ' +
+            ('they are committed' if why.startswith(EDITED) else f'{branch} is checked out there'))
         print('\a', end='', flush=True)
         while blocked_by_edits(tid, branch):
             if stopping():
@@ -1536,14 +1588,28 @@ def finish(tid: str, n: int, sid: str, branch: str) -> None:
     log(f'{tid}: LEFT FOR A HUMAN — {why}. Its {len(commits)} commits: {" / ".join(commits)[:300]}')
     # Parked as wip/<ID>: a task/<ID> ahead of the branch reads as finished-and-waiting to `pick`, which
     # would then skip the task for good. As wip/ the task can start again, with the old attempt to read.
-    if not git('branch', '-M', f'task/{tid}', f'wip/{tid}').returncode:
-        log(f'{tid}: its branch is parked as wip/{tid}; the task stays open and can start again')
-        if out := push(ROOT, f'wip/{tid}'):  # the one copy of that work: get it off this disk
+    if not git('branch', '-M', f'task/{tid}', wip := free_branch(f'wip/{tid}')).returncode:
+        git('update-ref', '-d', TESTED + tid)
+        log(f'{tid}: its branch is parked as {wip}; the task stays open and can start again')
+        if out := push(ROOT, wip):  # the one copy of that work: get it off this disk
             log(f'{tid}: {out}')
 
 
+STAGED_SAID: set[str] = set()
+
+
 def blocked_by_edits(tid: str, branch: str) -> bool:
-    """The main checkout has uncommitted edits (or new files) to files task/<tid> changes."""
+    """The main checkout has uncommitted edits (or new files) to files task/<tid> changes, or anything
+    staged (git merges onto no index but HEAD's), or another branch out than `branch`."""
+    if git('branch', '--show-current').stdout.strip() != branch:
+        return True
+    if git('diff', '--cached', '--quiet').returncode:
+        if tid not in STAGED_SAID:
+            STAGED_SAID.add(tid)
+            log(f'{tid}: staged changes in the main checkout ({ROOT}) block the merge, whatever files they are; '
+                'commit them or unstage them')
+        return True
+    STAGED_SAID.discard(tid)
     edited = set(git('diff', '--name-only', 'HEAD').stdout.split())
     edited |= set(git('ls-files', '--others', '--exclude-standard').stdout.split())
     return bool(edited & set(git('diff', '--name-only', f'{branch}...task/{tid}').stdout.split()))
@@ -1719,20 +1785,21 @@ def newest_write(d: Path) -> float:
 
 
 def sweep_tmp(force: bool = False) -> None:
-    """Delete this repository's sessions' temp folders (the main checkout's, the slots' and the merge
-    worktree's) that no process runs, no resume waits for, and nothing wrote to in SESSION_TMP_KEEP: a
-    session that ended while no run was up, an interactive one, or one from before the runner cleaned up."""
+    """Delete this repository's sessions' temp folders (the slots' and the merge worktree's) that no process
+    runs, no resume waits for, and nothing wrote to in SESSION_TMP_KEEP: a session that ended while no run
+    was up, or one from before the runner cleaned up. Not the main checkout's: a person's interactive session
+    there has no session id on its command line to tell it is still running."""
     if not force and time.monotonic() - _swept[0] < SWEEP_EVERY:
         return
     _swept[0] = time.monotonic()
     if plat.WINDOWS:  # no /proc to tell a live session from a finished one
         return
     keep = live_sessions() | {q[1] for q in queued().values()}
-    mine, slots = project_slug(ROOT), project_slug(SLOTS_DIR) + '-'
+    mine = {project_slug(d) for d in SLOTS_DIR.glob('*') if re.fullmatch(r's\d+|merge', d.name)}
     cutoff, freed = time.time() - SESSION_TMP_KEEP, 0
     for root in tmp_roots():
         for proj in root.glob('claude-*/*'):
-            if proj.name != mine and not proj.name.startswith(slots):
+            if proj.name not in mine:
                 continue
             for d in proj.iterdir():
                 if not re.fullmatch(r'[0-9a-f-]{36}', d.name) or d.name in keep or not d.is_dir():
@@ -1980,8 +2047,11 @@ def sequential(branch: str, model: str, idle: int, pause: int, force: bool, once
         log(f'{tid}: session ended ({stats(sid)})')
         drop_session_tmp(sid)
         if C.run['on_exit']:
-            sp.run(C.run['on_exit'], shell=True, cwd=str(ROOT), capture_output=True,
-                   env={**os.environ, **dict(e.split('=', 1) for e in slot_env(1))})
+            try:
+                sp.run(C.run['on_exit'], shell=True, cwd=str(ROOT), capture_output=True, timeout=C.run['timeout'],
+                       env={**os.environ, **dict(e.split('=', 1) for e in slot_env(1))})
+            except sp.TimeoutExpired:
+                log(f'`{C.run["on_exit"]}` ran past [run] timeout ({C.run["timeout"]}s); stopped')
         if r := limit_only(sid, C.notes('slot1.log'), 0):
             log(f'{tid}: only hit the usage limit; sleeping until {r:%H:%M}')
             time.sleep(max(0, (r - dt.datetime.now()).total_seconds()) + pause)
@@ -2006,6 +2076,16 @@ def sequential(branch: str, model: str, idle: int, pause: int, force: bool, once
 
 # --- the loop ------------------------------------------------------------------
 
+def before_start_fails() -> bool:
+    """`[run] before_start` exits non-zero, or runs past `[run] timeout` (logged: it holds every start)."""
+    try:
+        return bool(sp.run(C.run['before_start'], shell=True, cwd=str(ROOT), capture_output=True,
+                           timeout=C.run['timeout']).returncode)
+    except sp.TimeoutExpired:
+        log(f'`{C.run["before_start"]}` ran past [run] timeout ({C.run["timeout"]}s): counted as failing')
+        return True
+
+
 def dry_run(slots: int, mode: str, branch: str) -> int:
     """What `slots` free slots would start right now, in order, and why the rest of the open tasks wait."""
     running: dict = {}
@@ -2029,17 +2109,27 @@ def dry_run(slots: int, mode: str, branch: str) -> int:
 
 def cmd_run(argv: list[str], prog: str = f'{RUNNER} run') -> int:
     """`prog` is what --help shows; a wrapping CLI passes its own (e.g. './kit run')."""
+    if not plat.WINDOWS and threading.current_thread() is threading.main_thread():
+        for s in (signal.SIGTERM, signal.SIGHUP):  # a kill, a closed terminal: the same exit as Ctrl-C
+            signal.signal(s, _interrupted)
     try:
         return run(argv, prog)
     except KeyboardInterrupt:
         # Exit now: a merge thread would otherwise keep the process up. Its merge worktree is thrown away; the
-        # main checkout only ever moves to a tested commit. Sessions in their panes keep going and the next run
-        # adopts them and merges what finished.
+        # main checkout only ever moves to a tested commit, and a merge open there is waited for (up to a
+        # minute) so it is not left half-done. Sessions in their panes keep going and the next run adopts
+        # them and merges what finished.
         try:
-            log('run interrupted (Ctrl-C): sessions in their panes keep running; the next run adopts them')
+            log('run interrupted: sessions in their panes keep running; the next run adopts them')
         except Exception:  # Ctrl-C before the config was read
             pass
+        if LANDING.locked() and not git('rev-parse', '-q', '--verify', 'MERGE_HEAD').returncode:
+            LANDING.acquire(timeout=60)  # mid-merge in the main checkout: let it commit or abort first
         os._exit(130)
+
+
+def _interrupted(*_) -> None:
+    raise KeyboardInterrupt
 
 
 def run(argv: list[str], prog: str) -> int:
@@ -2174,6 +2264,7 @@ def run(argv: list[str], prog: str) -> int:
                     git('reset', '-q', '--hard', cwd=d)  # saved: the next start finds the slot clean
                     git('clean', '-fdq', cwd=d)
                 if reset := limit_only(sid, C.notes(f'slot{n}.log'), since):
+                    git('checkout', '-q', '--detach', cwd=SLOTS_DIR / f's{n}')  # another slot may take the task
                     free_at[n] = reset + dt.timedelta(seconds=pause)
                     log(f'slot {n}: {task[0]} only hit the usage limit; transcript dropped, the task goes '
                         f'back in the pool and the slot sleeps until {reset:%H:%M}')
@@ -2235,8 +2326,7 @@ def run(argv: list[str], prog: str) -> int:
                         log('the API cannot be reached: nothing resumes or starts until it can')
                     continue
                 stall_said.discard('api')
-                if r['before_start'] and sp.run(r['before_start'], shell=True, cwd=str(ROOT),
-                                                capture_output=True).returncode:
+                if r['before_start'] and before_start_fails():
                     if 'before_start' not in stall_said:
                         stall_said.add('before_start')
                         log(f'`{r["before_start"]}` fails: no new session starts until it passes')

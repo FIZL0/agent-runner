@@ -2,6 +2,35 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
+## 0.6.16 (2026-10-27)
+
+- A merge skips the gate only when `task/<ID>` is the tree `done`'s gate passed on, which `done` now records
+  as `refs/agent-runner/tested/<ID>`. Before, any merge differing from the branch only in `[run] untested`
+  files skipped it, so a fast-forward of a branch committed after `done`, by `done --no-test`, or by a
+  session that never ran `done` was pushed untested.
+- Rerunning failed tests on the base resets the merge worktree first and checks the checkout: a gate that
+  left a tracked file edited made the checkout refuse, the "base" rerun ran on the merge, and a real
+  failure read as "already fail without it; merged anyway".
+- tmux refusing a pane fails that one start, or that fix or repair session (the merge is left for a human
+  as for any failed fix), instead of ending the run or silently killing the merge thread.
+- `[run] timeout` (3600 s): the gate, a retest, a `[run.join]` command, `before_start` and the sequential
+  run's `on_exit` past it are stopped and count as failed. Pushes and fetches get no stdin, no password or
+  ssh prompt (`GIT_TERMINAL_PROMPT=0`, `ssh -oBatchMode=yes` unless an ssh command is configured) and 300 s.
+- Anything staged in the main checkout holds a tested merge, as edits to its files do: git refuses to
+  merge onto it, and the merge was rebuilt, gated and refused every 10 min.
+- A main checkout with another branch out is no longer switched to `main` to land a merge, carrying
+  whatever was uncommitted there; the merge stays `task/<ID>` until `main` is out again.
+- An earlier `wip/<ID>`, `leftover/<ID>` or `resumed/<ID>` is never overwritten: the new one is `-2`, `-3`, ….
+- A `done` whose commit fails puts the plan back as it was, so it can run again (it said "no task <ID>").
+- A slot asleep until a usage-limit reset lets go of `task/<ID>`, so another slot can take the task.
+- When the remote's shared branch has moved, the runner's push no longer merges it into the main checkout
+  and pushes that untested merge; it says so, and the merge is a human's.
+- A SIGTERM or SIGHUP ends the run as Ctrl-C does, and either one waits up to a minute for a merge open in
+  the main checkout to be committed or aborted first.
+- The temp sweep matches only the slots' and the merge worktree's folders, not a sibling repo whose name
+  starts the same, and never the main checkout's, where an interactive session has no session id to see.
+- On Windows the runner's own command is quoted for Git Bash when a path has `'`, `$`, `` ` `` or `;`.
+
 ## 0.6.15 (2026-10-27)
 
 - `plan add` names an open task that looks like the same work, with its id and the start of its text,

@@ -221,7 +221,8 @@ once all of those ids are done, and the run picks it up again.
 and its next prompt points at the earlier attempt.
 
 **Merges happen in a merge worktree.** The merge is built and tested in `<repo>-slots/merge`; the main
-checkout moves only to a tested commit, and nothing in it is stashed.
+checkout moves only to a tested commit, and nothing in it is stashed. Nor is its branch ever switched: while
+it has another branch than `main` out, a tested merge stays `task/<ID>` and lands once `main` is out again.
 
 **Commit your own edits in the main checkout.** A merge lands only when no uncommitted edit there touches
 a file it changes, and nearly every merge changes `TODO.md`. `run plan add/note/move/tick/block/unblock/
@@ -322,9 +323,13 @@ gate runs once more for all of them. Only if that fails too is the batch split, 
 own. A rider whose conflict the line join cannot do gets its fix session inside the batch, so it shares the
 batch's gate run instead of waiting for a turn of its own.
 
-A tested merge that cannot land because of uncommitted edits in the main checkout to files it changes waits
-10 minutes, then gives the merge lock back and stays `task/<ID>`; it is merged again once those files are
-committed. It is never parked for that.
+A tested merge that cannot land because of uncommitted edits in the main checkout to files it changes (or
+anything staged there, which git refuses to merge onto) waits 10 minutes, then gives the merge lock back
+and stays `task/<ID>`; it is merged again once those files are committed. It is never parked for that.
+
+A merge skips the gate only when `task/<ID>` is the very tree `done`'s gate passed on (recorded as
+`refs/agent-runner/tested/<ID>`) and the merge differs from it only in `[run] untested` files. After
+`done --no-test`, commits made after `done`, or a session that never ran it, the merge is tested.
 
 ## Working with it well
 
@@ -455,6 +460,7 @@ fix_model = "opus"
 fix_timeout = 1800
 build = ""                # a quick build a fix or repair session runs before it commits (not the gate)
 repair_merges = true      # a merge failing the gate gets one repair session before it is parked
+timeout = 3600            # s the gate, a retest or a hook (join, before_start, on_exit) may run: past it, failed
 
 [run.join]                # glob = a command that joins a conflict in that file itself:
 # "data/addresses.txt" = "./tools/join {union} {out}"   # also {ours} {base} {theirs} {file}; exit 0 keeps {out}

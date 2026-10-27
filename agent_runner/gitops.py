@@ -6,6 +6,7 @@ merge that passed the test gate (`[git] push_merge`), so what reaches the remote
 """
 from __future__ import annotations
 
+import os
 import subprocess
 from pathlib import Path
 
@@ -15,6 +16,25 @@ from agent_runner.config import cfg, main_checkout
 def _git(cwd: Path):
     def g(*a: str):
         return subprocess.run(['git', *a], cwd=str(cwd), capture_output=True, text=True)
+    return g
+
+
+NET_TIMEOUT = 300  # s a push or fetch may take; one that asks for a password fails at once instead
+
+
+def _net(cwd: Path):
+    """git that talks to the remote: no stdin, no terminal or ssh prompt to wait on, NET_TIMEOUT to answer.
+    A push runs under the merge lock, so one that hangs on a passphrase would stop every merge."""
+    env = {**os.environ, 'GIT_TERMINAL_PROMPT': '0'}
+    if not env.get('GIT_SSH_COMMAND') and not env.get('GIT_SSH') and _git(cwd)('config', 'core.sshCommand').returncode:
+        env['GIT_SSH_COMMAND'] = 'ssh -oBatchMode=yes'
+
+    def g(*a: str):
+        try:
+            return subprocess.run(['git', *a], cwd=str(cwd), capture_output=True, text=True,
+                                  stdin=subprocess.DEVNULL, env=env, timeout=NET_TIMEOUT)
+        except subprocess.TimeoutExpired:
+            return subprocess.CompletedProcess(['git', *a], 124, '', f'timed out after {NET_TIMEOUT}s')
     return g
 
 
@@ -52,26 +72,31 @@ def push(cwd: Path, branch: str, shared: bool = False) -> str:
     The shared branch is refused unless `shared=True` (the runner, after a tested merge). Returns one line
     to print, or '' when there is nothing to say. It merges rather than rebases when the remote has moved:
     the worktree branches are based on these commits, and rebasing what they came from turns every later
-    merge into a fight.
+    merge into a fight. Never for the shared branch, though: that merge would be pushed untested, so it is
+    left for a human.
     """
     remote = cfg(cwd).push_remote
     if not remote:
         return ''
-    g = _git(cwd)
+    g, net = _git(cwd), _net(cwd)
     if g('remote', 'get-url', remote).returncode:
         return ''
     if not shared and shared_branch(cwd, remote, branch):
         return ''
-    if not g('push', '-q', remote, branch).returncode:
+    if not net('push', '-q', remote, branch).returncode:
         return f'pushed {branch} → {remote}'
+    if shared:
+        net('fetch', '-q', remote)
+        return (f'! {branch} did not push: {remote}/{branch} has moved (or refused it). Not merged here, since '
+                f'that merge would go out untested: merge {remote}/{branch} into {branch} by hand, then push.')
     if g('branch', '--show-current').stdout.strip() != branch:
         return f'! {branch} did not push (it is committed locally; push it by hand)'
-    g('fetch', '-q', remote)
+    net('fetch', '-q', remote)
     if g('merge', '--no-edit', f'{remote}/{branch}').returncode:
         g('merge', '--abort')
         return (f'! {branch} did not push: {remote}/{branch} has moved and merging it conflicts. '
                 f'Nothing is lost — resolve it by hand, then push.')
-    if g('push', '-q', remote, branch).returncode:
+    if net('push', '-q', remote, branch).returncode:
         return f'! {branch} did not push (it is committed locally; push it by hand)'
     return f'pushed {branch} → {remote}, after merging {remote}/{branch} into it'
 
@@ -86,16 +111,16 @@ def drop_if_merged(cwd: Path, branch: str) -> str:
     remote = cfg(cwd).push_remote
     if not remote:
         return ''
-    g = _git(cwd)
+    g, net = _git(cwd), _net(cwd)
     if g('remote', 'get-url', remote).returncode:
         return ''
-    g('fetch', '-q', remote)
+    net('fetch', '-q', remote)
     ref = f'refs/remotes/{remote}/{branch}'
     if g('rev-parse', '--verify', '-q', ref).returncode:
         return ''
     shared = shared_name(cwd, remote)
     if g('merge-base', '--is-ancestor', ref, f'refs/remotes/{remote}/{shared}').returncode:
         return f'kept {branch} on {remote}: {remote}/{shared} does not have the merge yet'
-    if g('push', '-q', remote, '--delete', branch).returncode:
+    if net('push', '-q', remote, '--delete', branch).returncode:
         return ''
     return f'dropped {branch} from {remote}: {remote}/{shared} has the merge now'
