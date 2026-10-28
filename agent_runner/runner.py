@@ -590,6 +590,8 @@ def save_leftovers(d: Path, tid: str, branch: str) -> str | None:
         if g('read-tree', 'HEAD').returncode or g('add', '-A').returncode:
             return None
         tree = g('write-tree').stdout.strip()
+        if tree and tree == git('rev-parse', 'HEAD^{tree}', cwd=d).stdout.strip():
+            return ''  # only what a commit can't hold changed (a submodule's own edits, say): nothing to keep
         msg = f'{tid} wip: uncommitted when the session ended (saved by the runner before the slot was reset)'
         c = g('commit-tree', tree, '-p', 'HEAD', '-m', msg).stdout.strip()
     finally:

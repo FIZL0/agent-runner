@@ -15,6 +15,7 @@ import json
 import os
 import subprocess
 import re
+import shutil
 import sys
 import tempfile
 import time
@@ -750,6 +751,19 @@ def test_leftovers(repo: Path):
     R.init(repo)
     d = task_branch(repo, 3, 'L1')
     eq(R.save_leftovers(d, 'L1', 'main'), '', 'a clean slot has nothing to keep')
+    sub = repo.parent / 'leftover-sub'
+    sub.mkdir(exist_ok=True)
+    git(sub, 'init', '-q')
+    (sub / 's.txt').write_text('s\n', encoding='utf-8')
+    git(sub, 'add', '-A')
+    git(sub, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 's')
+    git(d, '-c', 'protocol.file.allow=always', 'submodule', 'add', '-q', str(sub), 'sub')
+    git(d, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'sub')
+    (d / 'sub' / 's.txt').write_text('patched by a build\n', encoding='utf-8')
+    check(git(d, 'status', '--porcelain') != '', 'a submodule edited inside shows in git status')
+    eq(R.save_leftovers(d, 'L1', 'main'), '', 'but a commit could not hold it: nothing to keep, no branch')
+    git(d, 'reset', '-q', '--hard', 'HEAD~1')
+    shutil.rmtree(d / 'sub', ignore_errors=True)
     (d / 'a.py').write_text('# a, edited\n', encoding='utf-8')
     (d / 'new.py').write_text('# new\n', encoding='utf-8')
     git(d, 'add', 'a.py')  # half staged, as an interrupted `done` might leave it

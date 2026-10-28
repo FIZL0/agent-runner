@@ -2,6 +2,13 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
+## 0.6.24 (2026-10-28)
+
+- No more empty leftover branches. A slot whose only "change" is something a commit can't hold (a
+  submodule edited inside, e.g. patches a build applies to it) showed in `git status`, so every reset
+  saved an empty `wip/` or `leftover/` commit and pushed it: partyboard collected 87 of them. The save now
+  keeps nothing when the snapshot's tree is HEAD's.
+
 ## 0.6.23 (2026-10-27)
 
 - 0.6.22 still let a finished task sit for half an hour: a session with background tasks got the 30 min
