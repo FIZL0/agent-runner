@@ -1319,6 +1319,29 @@ def test_update_notice():
         R.log, urllib.request.urlopen = real_log, real_open
 
 
+def test_end_orphans(repo: Path):
+    print("what an ended session left running is ended; a live session's and others' are not")
+    if R.plat.WINDOWS:
+        return
+    R.init(repo)
+    gone, live = str(__import__('uuid').uuid4()), str(__import__('uuid').uuid4())
+    base = {k: v for k, v in os.environ.items() if k not in ('AGENT_RUNNER', 'CLAUDE_CODE_SESSION_ID')}
+    sleep = lambda env, *extra: subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(30)', *extra],
+                                                 env={**base, **env}, start_new_session=True)
+    agent = sleep({}, '--session-id', live)  # stands in for the agent of a running session
+    orphan = sleep({'AGENT_RUNNER': '1', 'CLAUDE_CODE_SESSION_ID': gone})
+    kept = sleep({'AGENT_RUNNER': '1', 'CLAUDE_CODE_SESSION_ID': live})
+    mine = sleep({'CLAUDE_CODE_SESSION_ID': gone})  # not started by a runner
+    try:
+        R.end_orphans()
+        check(orphan.wait(10) is not None, 'the ended session\'s process is ended')
+        check(kept.poll() is None and mine.poll() is None, 'a live session\'s and a non-runner process are left')
+    finally:
+        for p in (agent, orphan, kept, mine):
+            p.kill()
+            p.wait()
+
+
 def main() -> int:
     with tempfile.TemporaryDirectory() as t:
         tmp = Path(t)
@@ -1333,7 +1356,7 @@ def main() -> int:
                        lambda: test_stop_waiter(tmp), lambda: test_stop_hook_grace(tmp), lambda: test_land_waits_aloud(repo), lambda: test_land_gives_merge_back(repo),
                        lambda: test_edited_elsewhere(repo, tmp),
                        lambda: test_resume(repo, tmp),
-                       lambda: test_session_tmp(repo, tmp), lambda: test_tested_ref(repo, tmp),
+                       lambda: test_session_tmp(repo, tmp), lambda: test_end_orphans(repo), lambda: test_tested_ref(repo, tmp),
                        lambda: test_no_pane(repo, tmp), lambda: test_other_repos_panes(repo, tmp),
                        lambda: test_limit_lets_go(repo),
                        lambda: test_shared_push(repo, tmp), test_update_notice])

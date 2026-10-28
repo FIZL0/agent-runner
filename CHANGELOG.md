@@ -2,6 +2,14 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
+## 0.6.28 (2026-10-28)
+
+- The runner ends what a finished session left running. Ending a session only ended the agent, so its
+  tools' processes lived on under init: partyboard collected Gradle daemons and `find /` crawls that
+  walked an sftp mount for up to 21 h, about 5 GB and two cores between them. Every process carrying
+  `AGENT_RUNNER=1` and the session id of an agent no longer running is now sent SIGTERM (SIGKILL 5 s
+  later) when a slot exits and at each temp sweep. POSIX only.
+
 ## 0.6.27 (2026-10-28)
 
 - Prompt: every wait gets a time limit, and no whole-disk `find /`. partyboard N91 piled up

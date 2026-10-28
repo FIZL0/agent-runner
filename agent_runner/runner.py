@@ -1844,6 +1844,40 @@ def live_sessions() -> set[str]:
     return out
 
 
+def end_orphans() -> None:
+    """End what ended sessions left running (POSIX). Killing a session leaves its tools' processes behind,
+    reparented to init: partyboard collected Gradle daemons and `find /` crawls of an sftp mount that ran
+    for 20 h, 5 GB and two cores between them. Each carries AGENT_RUNNER=1 and its session's
+    CLAUDE_CODE_SESSION_ID in its environment (a detached daemon too); one whose session no agent runs
+    any more gets SIGTERM, then SIGKILL."""
+    if plat.WINDOWS:
+        return
+    live, found = live_sessions(), []
+    for f in Path('/proc').glob('[0-9]*/environ'):
+        try:
+            env = dict(v.split('=', 1) for v in f.read_bytes().decode(errors='replace').split('\0') if '=' in v)
+        except OSError:
+            continue
+        pid = int(f.parent.name)
+        if env.get('AGENT_RUNNER') == '1' and (s := env.get('CLAUDE_CODE_SESSION_ID')) and s not in live \
+                and pid != os.getpid():
+            found.append((pid, s, ' '.join(plat.cmdline(pid) or [])[:80]))
+    for pid, s, what in found:
+        log(f'ending pid {pid} left by session {s}: {what}')
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except OSError:
+            pass
+    end = time.monotonic() + 5
+    while (found := [f for f in found if alive(f[0])]) and time.monotonic() < end:
+        time.sleep(0.25)
+    for pid, *_ in found:
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except OSError:
+            pass
+
+
 def newest_write(d: Path) -> float:
     newest = d.stat().st_mtime
     for top, dirs, files in os.walk(d):
@@ -1865,6 +1899,7 @@ def sweep_tmp(force: bool = False) -> None:
     _swept[0] = time.monotonic()
     if plat.WINDOWS:  # no /proc to tell a live session from a finished one
         return
+    end_orphans()
     keep = live_sessions() | {q[1] for q in queued().values()}
     mine = {project_slug(d) for d in SLOTS_DIR.glob('*') if re.fullmatch(r's\d+|merge', d.name)}
     cutoff, freed = time.time() - SESSION_TMP_KEEP, 0
@@ -2154,6 +2189,7 @@ def sequential(branch: str, model: str, idle: int, pause: int, force: bool, once
             sp.run(agent_cmd(prompt_for(tid, 1, 1, ROOT, here), sid, model, idle, 'slot1'), shell=True,
                    cwd=str(ROOT), env={**os.environ, **env})
         log(f'{tid}: session ended ({stats(sid)})')
+        end_orphans()
         drop_session_tmp(sid)
         if C.run['on_exit']:
             try:
@@ -2358,6 +2394,7 @@ def run(argv: list[str], prog: str) -> int:
             if n in procs and not alive(procs[n][0]):
                 (pid, sid, since), task = procs.pop(n), running.pop(n)
                 log(f'slot {n}: {task[0]} exited ({stats(sid)})')
+                end_orphans()
                 if r['on_exit']:
                     sp.Popen(r['on_exit'], shell=True, cwd=str(SLOTS_DIR / f's{n}'),
                              env={**os.environ, **env_vars(slot_env(n))},
