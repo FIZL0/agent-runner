@@ -2,6 +2,12 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
+## 0.6.27 (2026-10-28)
+
+- Prompt: every wait gets a time limit, and no whole-disk `find /`. partyboard N91 piled up
+  `until grep "<line>" <log>` loops for over an hour after the runs they watched had died, and N97 crawled
+  `/` for half an hour looking for one file.
+
 ## 0.6.26 (2026-10-28)
 
 - The prompt's process rule is now: wait for and kill only the pids you started, never match processes

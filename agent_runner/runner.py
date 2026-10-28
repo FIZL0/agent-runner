@@ -119,7 +119,9 @@ A usage limit is not being stuck: do not block the task. The session waits for t
 Wait for and stop only processes you started, by the pid you kept (`$!`): `wait` on it, `kill` it. Never \
 match processes by a command-line pattern (`pgrep -f`, `pkill -f`, `ps | grep`/`awk`, `killall`): a wait \
 loop's pattern matches the loop itself and never ends, and every agent's command line holds this whole \
-prompt, so a pattern kill can end the other sessions on this machine.
+prompt, so a pattern kill can end the other sessions on this machine. Every wait gets a time limit \
+(`timeout 600 <cmd>`, or a deadline in the loop): a loop waiting for a line that a dead process will never \
+print runs for ever. Never search the whole disk (`find /`); look where the thing can be.
 
 The task list is a tool, not a file to read whole: `{runner} plan` lists the tasks, `{runner} plan <ID>` \
 shows one, and `{runner} plan add <PREFIX> "<text>"` files a follow-up you find but must not do now (it queues at the bottom of the leading section). Never \
