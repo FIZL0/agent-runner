@@ -2,6 +2,14 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
+## 0.6.26 (2026-10-28)
+
+- The prompt's process rule is now: wait for and kill only the pids you started, never match processes
+  by a command-line pattern. 0.6.25 suggested `tail --pid=...` for waiting; an agent then cleaned up with
+  `ps | awk '/tail --pid/'` + `kill`, which matched every session's command line (each holds the whole
+  prompt) and ended all three running sessions at once (partyboard N86, N90, N93; their work was kept on
+  wip/ branches).
+
 ## 0.6.25 (2026-10-28)
 
 - The session prompt tells agents to wait on a pid or `pgrep -x <name>`, never `until ! pgrep -f
