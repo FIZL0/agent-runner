@@ -116,6 +116,10 @@ it>"`, then stop. If all it waits on is another task landing (its code is not on
 
 A usage limit is not being stuck: do not block the task. The session waits for the reset and carries on.
 
+To wait for a process, wait on its pid (`wait $pid`, `tail --pid=$pid -f /dev/null`) or name (`pgrep -x \
+<name>`), never `until ! pgrep -f '<pattern>'`: the loop's own command line holds the pattern, matches \
+itself and never ends, and the session waits on it for hours.
+
 The task list is a tool, not a file to read whole: `{runner} plan` lists the tasks, `{runner} plan <ID>` \
 shows one, and `{runner} plan add <PREFIX> "<text>"` files a follow-up you find but must not do now (it queues at the bottom of the leading section). Never \
 hand-edit a checkbox.

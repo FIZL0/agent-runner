@@ -2,6 +2,13 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
+## 0.6.25 (2026-10-28)
+
+- The session prompt tells agents to wait on a pid or `pgrep -x <name>`, never `until ! pgrep -f
+  '<pattern>'`: the loop's own command line matches the pattern, so it never ends. Twice in partyboard
+  (N35, N87) a session sat for 15-25 minutes on such loops, once before its `done`, where 0.6.22's
+  finished mark can't help.
+
 ## 0.6.24 (2026-10-28)
 
 - No more empty leftover branches. A slot whose only "change" is something a commit can't hold (a
