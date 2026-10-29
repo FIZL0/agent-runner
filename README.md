@@ -161,6 +161,10 @@ the branch is pushed after each task.
   other.
 - `**ID**` is any token (`P12`, `bug-3`, `S41`). `plan add PREFIX` picks the next free one. `P13a` is a
   subtask of `P13`, and P13 and P13a are *family*, so they never run at the same time.
+- The prefix says the kind of work. `[plan] kinds` names each letter (`B = "bug"`, `N = "netplay"`, …);
+  the prompt lists them so an agent picks the right one, `plan kinds` prints them, and `plan add` refuses
+  a letter the table lacks. With no table, the generic `B F T D R C` (bug, feature, tests and tooling,
+  docs, research, cleanup) are suggested but not enforced.
 - `→ files…` lists the files the task will touch, separated by `·`, spaces or commas. Mode d uses this
   list to keep two running tasks off the same file, and the brief pastes those files in. Files that don't
   exist yet still count.
@@ -176,8 +180,22 @@ the branch is pushed after each task.
 ## What runs when
 
 Each free slot reads `plan/TODO.md` from the top and starts the first task it's allowed to, so the order of the
-lines is the order of the work. `plan add` puts a new task at the top (an agent's goes to the bottom of that section, behind the queued work; `@ bottom` asks for that); `plan add PREFIX TEXT @ after ID` or
+lines is the order of the work. `plan add` puts a person's new task at the top; `plan add PREFIX TEXT @ after ID` or
 `plan move ID after ID` puts it where you want it.
+
+A follow-up an agent files gets a level (`--pri`, default `normal`), tagged on its line as
+`(follow-up, LEVEL)`, and is filed so the work a person queued comes first:
+
+| level | filed | for |
+|---|---|---|
+| `critical` | top of the leading section, behind earlier critical ones | it breaks or blocks other work (the text says what) |
+| `normal` | `### Follow-ups`, made after the person's sections (before Stretch/Parked) | the usual follow-up |
+| `low` | the same section, behind every normal one | a check, a small tidy-up |
+| `later` | `### Parked`, which a run never starts | big future work, for a person to schedule |
+
+A test that fails under load and passes alone (a `retest` pass, or a name `[run] flaky` finds in a passing
+gate's output) gets a `critical` follow-up to make it robust when the merge lands, unless an open task
+names it already.
 
 Several slots run at once, so **a task that has to wait for another must say so in a way the runner reads**.
 Writing "follows A12" in its text isn't enough: if A12 hasn't started, the task starts beside it.
@@ -202,7 +220,7 @@ prints this summary; `./run run --dry-run N` shows what N free slots would start
 | a line that names a running task's id | prose such as "uses P36's menu" is treated as a dependency |
 | a sibling of a running task (same family) | P13 and P13a edit the same thing |
 | a task in a section whose heading starts with *Next* or says *in this order*, while another task from that section runs | an ordered section runs one task at a time |
-| `### Stretch` | never unattended |
+| `### Stretch`, `### Parked` | never unattended |
 | tried this run | one attempt per run: if it failed, a human looks next |
 | `task/<ID>` has commits not yet merged | it's finished and waiting for the merge |
 | mode d: names a file a running task names (minus `[run] shared_files`) | keeps merges clean |
@@ -424,6 +442,7 @@ dir = "plan"              # TODO.md, DONE.md, <ID>.md
 journal = ""              # e.g. "journal": per-task folders, the newest pasted into the brief
 brief_extra = ""          # a command whose output ends the brief; {id} is the task id
 brief = ""                # a command whose output *is* the brief (the project's own brief tool); {id}
+kinds = {}                # id prefix -> kind of work, e.g. { B = "bug", N = "netplay" }; `plan add` keeps to it
 
 [run]
 test = ""                 # the gate, run by `done` and on every merge, e.g. "make test"
@@ -451,6 +470,8 @@ suspect = ""              # regex: a BLOCKED line a merge adds that matches it i
 untested = ["*.md"]       # globs the gate can't see ("!glob" takes one back): no retest for these alone
 failures = ""             # regex, group 1 = a failing test's name in the gate's output
 retest = ""               # the gate for just {names}: rerun alone (load), then on the base (already failing)
+flaky = ""                # regex, group 1 = tests a passing gate passed only on its own rerun (comma-separated)
+flaky_kind = "T"          # the prefix of the critical "make <test> robust" follow-ups
 batch = true              # finished branches waiting for the merge go in together under one gate run
 before_start = ""         # a command that must pass before any session starts (a display, a device)
 not_attempt = ""          # regex on a branch's last commit subject ({id}): a phase, not the run's one try

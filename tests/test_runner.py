@@ -1300,6 +1300,44 @@ def test_shared_push(repo: Path, tmp: Path):
     eq(git(repo, 'rev-parse', 'main'), git(tmp / 'origin.git', 'rev-parse', 'main'), 'and main is pushed')
 
 
+def test_followups(repo: Path):
+    print('run: follow-up levels and kinds in the prompt, Parked never starts, flaky tests get a task')
+    R.init(repo)
+    p = R.prompt_for('T2', 1, 1, repo, 'main')
+    has(p, r'plan add <KIND> "<text>" \[--pri LEVEL\]', 'the prompt shows --pri')
+    has(p, r'B bug: .*; F feature', 'and the id letters, from plan.KINDS with none set')
+    has(p, r'passes alone is a bug in the test', 'and says a flaky test is to be made robust')
+    plan_text = R.plan_text
+    R.plan_text = lambda b: ['### Next', '- [ ] **T1** a', '### Parked', '- [ ] **T9** some day']
+    try:
+        eq([t[0] for t in R.tasks('main')], ['T1'], 'a Parked task is never offered to a run')
+    finally:
+        R.plan_text = plan_text
+    test, R.C.run['test'] = R.C.run['test'], 'python3 -c "print(\'rerun passed: a::one, b::two\')"'
+    R.C.run['flaky'] = r'^rerun passed: (.*)$'
+    R.FLAKY.clear()
+    try:
+        eq(R.tested('T2', repo, 'HEAD'), None, 'a passing gate passes')
+    finally:
+        R.C.run['test'], R.C.run['flaky'] = test, ''
+    eq(R.FLAKY, {'a::one': 'T2', 'b::two': 'T2'}, '[run] flaky reads the names a passing gate reran')
+    head = git(repo, 'rev-parse', 'HEAD')
+    todo = repo / 'plan/TODO.md'
+    todo.write_text(todo.read_text() + '- [ ] **X1** something about b::two\n', encoding='utf-8')
+    git(repo, 'commit', '-qam', 'X1')
+    try:
+        R.reopen_landed('main', 'T2')
+        text = todo.read_text()
+        has(text, r'### Next \(in this order\)\n\n(- \[ \] \*\*T\d+\*\* \(follow-up, critical\).*\n)*'
+            r'- \[ \] \*\*T\d+\*\* \(follow-up, critical\) make the test `a::one` robust',
+            'a flaky test gets a critical task at the top, behind earlier critical ones')
+        check('`b::two` robust' not in text, 'unless an open task names it already')
+        has(git(repo, 'log', '-1', '--format=%s'), r'^Plan: T\d+ to fix flaky tests \(T2', 'committed on its own')
+        eq(R.FLAKY, {}, 'and each is filed once')
+    finally:
+        git(repo, 'reset', '-q', '--hard', head)
+
+
 def test_update_notice():
     import io
     import urllib.request
@@ -1359,7 +1397,7 @@ def main() -> int:
                        lambda: test_session_tmp(repo, tmp), lambda: test_end_orphans(repo), lambda: test_tested_ref(repo, tmp),
                        lambda: test_no_pane(repo, tmp), lambda: test_other_repos_panes(repo, tmp),
                        lambda: test_limit_lets_go(repo),
-                       lambda: test_shared_push(repo, tmp), test_update_notice])
+                       lambda: test_shared_push(repo, tmp), lambda: test_followups(repo), test_update_notice])
 
 
 if __name__ == '__main__':

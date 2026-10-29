@@ -210,12 +210,70 @@ def test_add_bottom():
         old = os.environ.pop('AGENT_RUNNER', None)
         try:
             os.environ['AGENT_RUNNER'] = '1'
-            eq(plan.add_default(), 'bottom', "a running agent's follow-up goes to the bottom")
+            eq(plan.add_default(), 'normal', "a running agent's follow-up is filed at level normal")
             del os.environ['AGENT_RUNNER']
-            eq(plan.add_default(), 'top', "a person's task goes to the top")
+            eq(plan.add_default(), None, "a person's task has no level, so it goes to the top")
         finally:
             if old is not None:
                 os.environ['AGENT_RUNNER'] = old
+
+
+def test_add_pri():
+    print('plan: follow-ups file by level, behind the sections a person queued')
+    with tempfile.TemporaryDirectory() as tmp:
+        d = Path(tmp) / 'plan'
+        d.mkdir()
+        todo, done = d / 'TODO.md', d / 'DONE.md'
+        todo.write_text('\n'.join(['# TODO', '', '### Next', '', '- [ ] **A1** queued first', '',
+                                    '### Phase 2', '', '- [ ] **A2** a person asked for this', '',
+                                    '### Stretch', '', '- [ ] **A3** some day', '']), encoding='utf-8')
+        kw = dict(todo=todo, done=done)
+        plan.add('T', 'a check', pri='low', **kw)
+        plan.add('T', 'the usual', pri='normal', **kw)
+        plan.add('T', 'the build is red on main', pri='critical', **kw)
+        plan.add('T', 'second critical', pri='critical', **kw)
+        plan.add('T', 'a rewrite', pri='later', **kw)
+        plan.add('T', 'another usual', pri='normal', **kw)
+        plan.add('A', 'a person, now', **kw)
+        eq(plan.index(todo), ['# TODO', '### Next', '[ ] A4', '[ ] T3', '[ ] T4', '[ ] A1', '### Phase 2', '[ ] A2',
+                              '### Follow-ups', '[ ] T2', '[ ] T6', '[ ] T1', '### Stretch', '[ ] A3',
+                              '### Parked', '[ ] T5'],
+           'critical leads (in order, behind a person\'s newest); normal then low after the person\'s sections; '
+           'later at the end')
+        text = todo.read_text()
+        has(text, r'\*\*T1\*\* \(follow-up, low\) a check', 'the level is tagged on the line')
+        has(text, r'### Phase 2\n\n- \[ \] \*\*A2\*\* a person asked for this\n\n### Follow-ups\n\n- \[ \] \*\*T2',
+            'the new section keeps the blank lines around it')
+        plan.add('T', 'placed by hand', pri='low', where='top', **kw)
+        eq(plan.next_task(todo=todo), 'T7', '@ WHERE still overrides the level\'s place')
+        eq(plan.similar('(follow-up, normal) the rider leans', todo=todo), [], 'the tag is no word to match on')
+        try:
+            plan.add('T', 'x', pri='urgent', **kw)
+            check(False, 'an unknown level is refused')
+        except SystemExit as e:
+            has(str(e), 'critical | normal | low | later', 'an unknown level is refused, naming the four')
+
+
+def test_kinds():
+    print('plan: id letters name a kind of work; a repo that names its own refuses others')
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        git(root, 'init', '-q')
+        env = {**os.environ, 'AGENT_RUNNER_REPO': str(root)}
+        env.pop('AGENT_RUNNER', None)
+        r = run(root, 'plan', 'kinds', env=env)
+        has(r.stdout, r'B  bug', 'with none set, the defaults are shown')
+        has(r.stdout, r'set \[plan\] kinds', 'and how to set them')
+        r = run(root, 'plan', 'add', 'Q', 'anything', env=env)
+        eq(r.returncode, 0, 'the defaults do not refuse a letter')
+        (root / 'runner.toml').write_text('[plan.kinds]\nU = "the UI"\nN = "netplay"\n', encoding='utf-8')
+        r = run(root, 'plan', 'add', 'B', 'a bug', env=env)
+        eq(r.returncode, 2, 'a letter the repo does not name is refused')
+        has(r.stderr, r'U  the UI\n\s*N  netplay', 'and the refusal lists the kinds to pick from')
+        r = run(root, 'plan', 'add', 'U', 'the menu', '--pri', 'low', env=env)
+        has(r.stdout, r'added U1 \(low\)', 'a named letter is fine, and --pri anywhere in the words is read')
+        r = run(root, 'plan', 'add', 'Q1', 'a subtask', env=env)
+        has(r.stdout, 'added Q1a', "a task's id is a subtask, whatever the kinds")
 
 
 def test_hand_edits_commit():
@@ -258,4 +316,4 @@ def test_similar():
 
 if __name__ == '__main__':
     sys.exit(report([test_plan_roundtrip, test_plan_reopen, test_plan_index_and_sections, test_brief,
-                     test_split_parents, test_add_bottom, test_hand_edits_commit, test_similar]))
+                     test_split_parents, test_add_bottom, test_add_pri, test_kinds, test_hand_edits_commit, test_similar]))

@@ -21,7 +21,7 @@ The README describes each mechanism. In short:
   - blocked tasks and split parents,
   - tasks with an open `(after X, Y)`,
   - tasks whose line names a running task,
-  - the Stretch section, anything tried this run, and branches waiting to be merged.
+  - the Stretch and Parked sections, anything tried this run, and branches waiting to be merged.
 
   Siblings never run together. An ordered section runs one task at a time. Mode d keeps tasks off each
   other's files.
@@ -123,13 +123,21 @@ prompt, so a pattern kill can end the other sessions on this machine. Every wait
 (`timeout 600 <cmd>`, or a deadline in the loop): a loop waiting for a line that a dead process will never \
 print runs for ever. Never search the whole disk (`find /`); look where the thing can be.
 
-The task list is a tool, not a file to read whole: `{runner} plan` lists the tasks, `{runner} plan <ID>` \
-shows one, and `{runner} plan add <PREFIX> "<text>"` files a follow-up you find but must not do now (it queues at the bottom of the leading section). Never \
-hand-edit a checkbox.
+{followups}
 {extra}
 The task's brief (`{runner} plan brief {tid}`) follows, so don't gather it again.
 
 {brief}"""
+
+FOLLOWUPS = """\
+The task list is a tool, not a file to read whole: `{runner} plan` lists the tasks, `{runner} plan <ID>` \
+shows one, and `{runner} plan add <KIND> "<text>" [--pri LEVEL]` files a follow-up you find but must not do \
+now. Never hand-edit a checkbox. KIND is the id letter for the kind of work: {kinds}. LEVEL is where it queues: \
+`critical` only when it breaks or blocks other work (it goes ahead of everything, so its text says what it \
+breaks); `normal`, the default, after the work a person queued; `low` for a check or a small tidy-up, after \
+normal; `later` for big future work, parked for a person to schedule and never started by a run. A test that \
+fails under load and passes alone is a bug in the test: if one gets in your way, make it robust (what it \
+races, not a longer timeout), or file it as critical."""
 
 OTHERS = ('Other agents are working on other tasks at the same time, in other worktrees. Keep your changes '
           'local: add functions and new files, and don\'t move, rename or reformat code you did not come '
@@ -252,7 +260,7 @@ def tasks(branch: str) -> list[tuple[str, str, set[str], set[str]]]:
             section = l[4:]
             continue
         m = TASK.match(l)
-        if not m or m.group(1) != ' ' or section.startswith('Stretch'):
+        if not m or m.group(1) != ' ' or section.startswith(P.SKIPPED):
             continue
         tid, rest = m.group(2), m.group(3)
         # a split parent: its subtasks run first, blocked ones included, then it runs (or `archive` ticks it).
@@ -516,7 +524,7 @@ def prompt_for(tid: str, n: int, slots: int, cwd: Path, branch: str) -> str:
     """The first turn of a task's session: `[run] prompt` (a file) if set, else PROMPT, filled in.
 
     Placeholders a custom template may use: {tid} {n} {runner} {branch} {others} {earlier} {rules} {test}
-    {journal} {extra} {brief}. Any other `{name}` is left as it is. `[run] prompt_extra` may use them too
+    {journal} {extra} {followups} {brief}. Any other `{name}` is left as it is. `[run] prompt_extra` may use them too
     (a slot's own emulator, say: "KIT_PCSX2={n} is set").
     """
     r = C.run
@@ -538,6 +546,8 @@ def prompt_for(tid: str, n: int, slots: int, cwd: Path, branch: str) -> str:
         extra=f'\n{r["prompt_extra"].strip()}\n' if r['prompt_extra'] else '',
         brief=brief_for(tid, cwd),
     )
+    kinds, _ = P.kinds()
+    vals['followups'] = FOLLOWUPS.format(runner=C.command, kinds='; '.join(f'{k} {v}' for k, v in kinds.items()))
     vals['extra'] = vals['extra'].format_map(_Keep(vals))  # `prompt_extra` may say {n}, {tid}, {runner}
     template = (ROOT / r['prompt']).read_text(encoding='utf-8') if r['prompt'] else PROMPT
     return template.format_map(_Keep(vals))
@@ -1236,6 +1246,8 @@ def tested(tid: str, d: Path, base: str) -> str | None:
     env = merge_env()
     rc, out = gate(d, full=True, env=env)
     if not rc:
+        if rx := C.run['flaky']:  # the gate's own rerun of a load flake passed: still a test to fix
+            flaky(tid, [n for g in re.findall(rx, out, re.M) for n in re.split(r'[,\s]+', g) if n])
         return None
     C.notes('merge-gate.log').write_text(out + '\n', encoding='utf-8')  # for a repair session
     if rc in (130, -2):  # the run's Ctrl-C reached the gate: the main thread exits the process within moments
@@ -1255,6 +1267,7 @@ def tested(tid: str, d: Path, base: str) -> str | None:
 
     if (r := retest()) and not r.returncode:
         log(f'{tid}: {", ".join(names)} failed, then passed alone (load); counted as passing')
+        flaky(tid, names)
         return None
     head = git('rev-parse', 'HEAD', cwd=d).stdout.strip()
     # the gate may have left files behind, and a checkout that refuses would rerun the tests on the merge
@@ -1596,8 +1609,39 @@ def retry_reopened(tried: set[str], closed: set[str], branch: str) -> None:
             log(f'{t}: open again since it was tried; back in the pool')
 
 
+FLAKY: dict[str, str] = {}  # a test that failed under load and passed alone -> the task whose gate saw it
+
+
+def flaky(tid: str, names: list[str]) -> None:
+    for n in names:
+        FLAKY.setdefault(n, tid)
+
+
+def file_flaky(rel: str) -> list[str]:
+    """File a critical follow-up to make each flaky test robust, unless an open task names it already.
+
+    A rerun alone lets the merge through, but the flake is still there and costs every later gate a rerun (or a
+    red one, when it flakes twice), so it is fixed before the queued work rather than worked around."""
+    if not FLAKY:
+        return []
+    ls = P.lines(ROOT / rel)
+    open_text = '\n'.join(l for l in ls if (m := P.ITEM.match(l)) and m.group(2) != 'x')
+    kind, out = C.run['flaky_kind'], []
+    for name, tid in list(FLAKY.items()):
+        del FLAKY[name]
+        if name in open_text:
+            continue
+        out.append(P.add(kind, f'make the test `{name}` robust: it failed under load in {tid}\'s merge gate and '
+                               f'passed alone. Find what it races (wall-clock time, shared ports or files, '
+                               f'other processes) and remove that, rather than widening a timeout',
+                         todo=ROOT / rel, pri='critical'))
+        open_text += '\n' + name
+    return out
+
+
 def reopen_landed(branch: str, why: str) -> None:
-    """Unblock what a merge freed (`plan.reopen`) and commit it, in the main checkout, holding MERGE.
+    """File the flaky tests the gate met (`file_flaky`), and unblock what a merge freed (`plan.reopen`), each
+    committed in the main checkout, holding MERGE.
 
     Without it, a task blocked on "X is not merged yet" stays blocked until a human reads the prose. Left alone when TODO.md has edits nobody
     committed (somebody mid-edit), so it never commits theirs; the next merge tries again.
@@ -1605,6 +1649,14 @@ def reopen_landed(branch: str, why: str) -> None:
     rel = plan_rel('TODO.md')
     if git('branch', '--show-current').stdout.strip() != branch or git('status', '--porcelain', '--', rel).stdout.strip():
         return
+    if filed := file_flaky(rel):
+        if git('commit', '-qm', f'Plan: {", ".join(filed)} to fix flaky tests ({why}\'s gate met them)',
+               '--', rel).returncode:
+            git('checkout', '-q', '--', rel)
+        else:
+            for t in filed:
+                note(f'{t}: filed, a flaky test to make robust')
+                log(f'{t}: filed (critical), a flaky test to make robust')
     if not (got := P.reopen(ROOT / rel)):
         return
     names = ', '.join(t for t, _ in got)

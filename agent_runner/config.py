@@ -63,6 +63,7 @@ DEFAULTS: dict = {
         'journal': '',          # optional: a directory of per-task journal folders, pasted into briefs
         'brief_extra': '',      # a command whose output ends the brief; {id} is the task id
         'brief': '',            # a command whose output *is* the brief, replacing the built-in one; {id}
+        'kinds': {},            # id prefix -> the kind of work it marks (`plan kinds`); empty = plan.KINDS
     },
     'run': {
         'test': '',             # the gate: `done` and every merge run it; empty means no gate
@@ -95,6 +96,9 @@ DEFAULTS: dict = {
         'failures': '',         # a regex whose group 1 names a failing test in the gate's output
         'retest': '',           # the gate for just some tests; {names} is those `failures` found. A failure
                                 # that passes alone was load; one the branch's base fails too is merged anyway
+        'flaky': '',            # a regex whose group 1 names tests (comma/space separated) a passing gate says
+                                # passed only on a rerun; each, like a `retest` pass, gets a critical follow-up
+        'flaky_kind': 'T',      # the id prefix those follow-ups get (see [plan] kinds)
         'batch': True,          # finished branches waiting for the merge go in together under one gate run
         'before_start': '',     # a command that must succeed before a session starts; the slot waits on it
         'not_attempt': '',      # a regex on a finished branch's first commit subject ({id}): such a session

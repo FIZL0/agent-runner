@@ -18,7 +18,7 @@ See and change the task list
     agent-runner plan next            the task that starts next
     agent-runner plan B646            one task's full text
     agent-runner plan add B "Fix the menu flicker"
-                                      new task B647: may run beside anything
+                                      new task B647 (B: the kind of work, see `plan kinds`)
     agent-runner plan add B646 "Bake the letter sheet"
                                       new subtask B646a: never runs beside B646
     agent-runner plan block B12 --after B646 "needs the new sheet"
@@ -59,9 +59,13 @@ Choose what goes first:
     agent-runner plan move B12 top            first in line
     agent-runner plan move B12 after B646     right behind B646
     agent-runner plan add B "Fix it" @ after B646
-    agent-runner plan add B "Fix it" @ bottom    last in the leading section (an agent's default)
+    agent-runner plan add B "Fix it" @ bottom    last in the leading section
+    agent-runner plan add B "Check it" --pri low
+        -> a follow-up: critical (top: it breaks or blocks work), normal (an agent's default) and low go
+           after the queued sections, in ### Follow-ups; later is parked in ### Parked.
+    agent-runner plan kinds                   what each id letter means ([plan] kinds)
 
-Never started: blocked [~] tasks, ### Stretch, a task with open subtasks, a task that already failed this run,
+Never started: blocked [~] tasks, ### Stretch and ### Parked, a task with open subtasks, a task that already failed this run,
 and a finished task waiting to merge. In mode d, also a task that names a file a running task names.
 
 Modes (runner.toml mode, or --mode): p = strictly top to bottom; d = only tasks on different files at once.

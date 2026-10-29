@@ -2,6 +2,19 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
+## 0.6.29 (2026-10-29)
+
+- Follow-ups have a level: `plan add PREFIX TEXT --pri critical|normal|low|later`, tagged
+  `(follow-up, LEVEL)` on the line. An agent's default is `normal`, which now files in `### Follow-ups`
+  after every section a person queued, not at the bottom of the leading section (where it went ahead of
+  them); `low` goes behind the normal ones, `critical` to the top, `later` to `### Parked`, which a run
+  never starts. A person's task still goes to the top, untagged.
+- Id prefixes name a kind of work: `[plan] kinds` (a table, letter -> meaning), shown in the prompt and
+  by `plan kinds`; `plan add` refuses a letter it lacks. Without it the generic B/F/T/D/R/C are suggested.
+- A test that failed and then passed alone gets a critical follow-up (`[run] flaky_kind`, default T) to
+  make it robust when its merge lands; `[run] flaky` finds the same in a passing gate's own reruns.
+- The prompt's follow-up paragraph is `{followups}`, for custom templates.
+
 ## 0.6.28 (2026-10-28)
 
 - The runner ends what a finished session left running. Ending a session only ended the agent, so its

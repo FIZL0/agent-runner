@@ -14,12 +14,24 @@ re-reads it on every turn pays again. So the backlog is a command instead:
     ./run plan block <ID> [--after X,Y] WHY   [~] with "BLOCKED: (after X, Y) WHY" appended
     ./run plan unblock <ID> [NOTE]   reopen: [ ], drop "BLOCKED: …", append NOTE (what unblocked it)
     ./run plan move <ID> WHERE   WHERE = top | before ID | after ID | in SECTION (its end); sub-items follow
-    ./run plan add PREFIX TEXT [@ WHERE]   new "- [ ] **<next free id>** TEXT"; prints the id, and any open task
-                                 that looks like the same work (nothing when none does)
+    ./run plan add PREFIX TEXT [--pri LEVEL] [@ WHERE]   new "- [ ] **<next free id>** TEXT"; prints the id, and
+                                 any open task that looks like the same work (nothing when none does)
+    ./run plan kinds             what each id letter means ([plan] kinds): an id's prefix says the kind of work
     ./run plan note <ID> TEXT    append " — TEXT" to the task (user details, priority reasons)
     ./run plan newid PREFIX      the next free id, e.g. L -> L7; a task's id gives its next subtask, L3 -> L3a
     ./run plan archive           move every [x] line left in TODO.md to DONE.md (after merges, hand edits)
     ./run plan reopen            unblock every task whose BLOCKED (after X, Y) tasks are all done now
+
+**Where `add` files a task.** A person's task goes to the top of the leading section, as before. A task
+given a `--pri` (and every follow-up a running agent files, which is `normal` unless it says) is tagged
+`(follow-up, LEVEL)` and filed by its level, so the work a person queued always comes first:
+
+    critical   the top of the leading section, behind earlier critical ones: it breaks or blocks other work
+    normal     `### Follow-ups`, made after the person's sections (before Stretch/Parked): the usual follow-up
+    low        the same section, behind every normal one: a check, a small tidy-up, a nice-to-have
+    later      `### Parked`, which a run never starts: big future work for a person to schedule
+
+`@ WHERE` still overrides the place (the tag stays).
 
 The line format is `- [ ] **ID** text → files… | t: tests | j: journal-dir`, under `###` headings, and the
 checkbox is `[ ]` open, `[x]` done, `[~]` blocked.
@@ -54,7 +66,7 @@ PROG = './run plan'  # the name in messages; a wrapper sets its own ('./kit plan
 # The library API a wrapping project may call; names and signatures here change only in a major version.
 __all__ = ['PROG', 'HELP', 'lines', 'index', 'section', 'ensure', 'archive', 'tick', 'block', 'reopen',
            'unblock', 'move', 'next_id', 'add', 'similar', 'note', 'next_task', 'files_on_line', 'brief', 'open_ids',
-           'write_atomic', 'child', 'subtasks', 'main']
+           'write_atomic', 'child', 'subtasks', 'main', 'PRI', 'kinds', 'check_kind']
 
 ITEM = re.compile(r'^(\s*)- \[(.)\] \*\*([^\s*]+)')
 HEAD = re.compile(r'(#+) ')
@@ -385,17 +397,95 @@ def next_id(prefix: str, paths=None) -> str:
     return f'{prefix}{max(n, default=0) + 1}'
 
 
-def add_default() -> str:
-    """Where `plan add` files a task when no `@` says: a running agent's follow-up goes to the bottom of the
-    leading section, behind the work a person queued; a person's own task goes to the top."""
-    return 'bottom' if os.environ.get('AGENT_RUNNER') == '1' else 'top'
+PRI = ('critical', 'normal', 'low', 'later')  # a follow-up's level, most urgent first
+PRI_TAG = re.compile(r'\(follow-up, (' + '|'.join(PRI) + r')\)')
+FOLLOW_UPS, PARKED = 'Follow-ups', 'Parked'  # the sections `add` makes for levels normal/low and later
+# Sections a run never starts tasks from (a heading starting with one of these)
+SKIPPED = ('Stretch', PARKED)
+# The id letters when a repo names none in [plan] kinds: kinds of work any project has
+KINDS = {'B': 'bug: something that worked, or should, is broken', 'F': 'feature: new behaviour',
+         'T': 'tests and tooling: the gate, scripts, CI, the build', 'D': 'docs',
+         'R': 'research: find out, measure or check; no product change', 'C': 'cleanup: refactor, remove, tidy'}
 
 
-def add(prefix: str, text: str, where: str = 'top', ref: str | None = None, todo=None, done=None) -> str:
+def kinds() -> tuple[dict[str, str], bool]:
+    """What each id prefix means, and whether the repo set them (then `add` refuses any other prefix)."""
+    k = cfg().raw['plan'].get('kinds') or {}
+    return (dict(k), True) if k else (KINDS, False)
+
+
+def check_kind(prefix: str) -> str | None:
+    """Why `prefix` is the wrong id letter, or None. A task's own id (P17 -> P17a) is a subtask, always fine."""
+    if prefix[-1:].isdigit():
+        return None
+    k, own = kinds()
+    if prefix in k:
+        return None
+    listing = '\n  '.join(f'{p}  {m}' for p, m in k.items())
+    return (f'{PROG}: {prefix!r} is not a kind of task here; pick the letter for the kind of work '
+            f'(or a task id, for a subtask):\n  {listing}') if own else None
+
+
+def add_default() -> str | None:
+    """The level `plan add` files a task at when none is given: a running agent's follow-up is `normal`, behind
+    the work a person queued; a person's own task (None) goes to the top."""
+    return 'normal' if os.environ.get('AGENT_RUNNER') == '1' else None
+
+
+def _section_end(ls: list[str], h: int) -> int:
+    """Index after the last non-blank line of the section headed at ls[h]."""
+    j = h + 1
+    while j < len(ls) and not (0 < _level(ls[j]) <= _level(ls[h])):
+        j += 1
+    while j - 1 > h + 1 and ls[j - 1].strip() == '':  # keep the blank line under the heading
+        j -= 1
+    return j
+
+
+def _heading(ls: list[str], name: str) -> int | None:
+    return next((i for i, l in enumerate(ls) if _level(l) == 3 and l[4:].strip().startswith(name)), None)
+
+
+def _make_section(ls: list[str], name: str, before: tuple[str, ...]) -> int:
+    """Index of the `### name` heading, made before the first of the `before` sections (else at the end)."""
+    h = _heading(ls, name)
+    if h is not None:
+        return h
+    at = min((i for b in before if (i := _heading(ls, b)) is not None), default=len(ls))
+    while at > 0 and ls[at - 1].strip() == '':
+        at -= 1
+    ls[at:at] = ['', f'### {name}', ''] + ([''] if at < len(ls) else [])
+    return at + 1
+
+
+def _place_pri(ls: list[str], pri: str) -> int:
+    """Index to file a follow-up of level `pri` at (see the module doc); may add its section to `ls`."""
+    if pri == 'critical':
+        i = _place(ls, 'top', None)
+        while i < len(ls) and ITEM.match(ls[i]) and (t := PRI_TAG.search(ls[i])) and t.group(1) == 'critical':
+            i += len(_item_block(ls, i))
+        return i
+    if pri == 'later':
+        return _section_end(ls, _make_section(ls, PARKED, ()))
+    h = _make_section(ls, FOLLOW_UPS, SKIPPED)
+    end = _section_end(ls, h)
+    if pri == 'normal':  # before the first low one
+        return next((i for i in range(h + 1, end) if (m := ITEM.match(ls[i])) and not m.group(1)
+                     and (t := PRI_TAG.search(ls[i])) and t.group(1) == 'low'), end)
+    return end
+
+
+def add(prefix: str, text: str, where: str | None = None, ref: str | None = None, todo=None, done=None,
+        pri: str | None = None) -> str:
+    """File a new task; with `pri` it is tagged `(follow-up, pri)` and, unless `where` says, filed by its level."""
+    if pri is not None and pri not in PRI:
+        raise SystemExit(f'{PROG}: --pri must be one of {" | ".join(PRI)}, not {pri!r}')
     todo, done = ensure(todo, done)
     tid = next_id(prefix, [todo, done])
     ls = list(lines(todo))
-    j = _place(ls, where, ref)
+    if pri and not PRI_TAG.search(text):
+        text = f'(follow-up, {pri}) {text}'
+    j = _place_pri(ls, pri) if pri and not where else _place(ls, where or 'top', ref)
     ls[j:j] = [f'- [ ] **{tid}** {text}']
     _write(todo, ls)
     return tid
@@ -411,7 +501,7 @@ through today under until what when where which while with without would your'''
 def _words(text: str) -> set[str]:
     """The words of a task's text before its file list: no ids, no dated user quotes' brackets."""
     text = text.split('→')[0].split('| t:')[0]
-    text = re.sub(r'\*\*[^*]+\*\*|\([^)]*\d{4}-\d\d-\d\d[^)]*\)', ' ', text)
+    text = re.sub(r'\*\*[^*]+\*\*|\([^)]*\d{4}-\d\d-\d\d[^)]*\)', ' ', PRI_TAG.sub(' ', text))
     return {w for w in re.findall(r'[a-z][a-z-]{3,}', text.lower()) if w not in _STOP}
 
 
@@ -647,12 +737,25 @@ def main(argv: list[str] | None = None) -> int:
     if argv[:1] == ['move'] and len(argv) > 2:
         move(argv[1], argv[2], ' '.join(argv[3:]) or None)
         return say(f'moved {argv[1]} {" ".join(argv[2:])}')
+    if argv == ['kinds']:
+        k, own = kinds()
+        return say('\n'.join(f'{p}  {m}' for p, m in k.items())
+                   + ('' if own else '\n(the defaults: set [plan] kinds in runner.toml to name your own)'))
     if argv[:1] == ['add'] and len(argv) > 2:
-        text, _, where = ' '.join(argv[2:]).partition(' @ ')
-        w = where.split(maxsplit=1) or [add_default()]
-        tid = add(argv[1], text, w[0], (w[1:] or [None])[0])
+        rest, pri = argv[2:], add_default()
+        if '--pri' in rest[:-1]:
+            k = rest.index('--pri')
+            pri, rest = rest[k + 1], rest[:k] + rest[k + 2:]
+        if why := check_kind(argv[1]):
+            print(why, file=sys.stderr)
+            return 2
+        text, _, where = ' '.join(rest).partition(' @ ')
+        w = where.split(maxsplit=1) or [None]
+        tid = add(argv[1], text, w[0], (w[1:] or [None])[0], pri=pri)
         same = similar(text, skip=tid)
-        msg = f'added {tid}'
+        msg = f'added {tid}' + (f' ({pri})' if pri else '')
+        if pri == 'critical' and os.environ.get('AGENT_RUNNER') == '1':
+            msg += '\ncritical goes ahead of the queued work: its text must say what it breaks or blocks'
         if same:
             msg += ('\nalready open, and may be the same work (if so, `plan note` it there and drop this one):\n  '
                     + '\n  '.join(same))
