@@ -2,6 +2,13 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
+## 0.6.30 (2026-10-29)
+
+- A restart never resumes a session that is still running. A slot whose last session's id is on a live
+  process's command line (a pane opened before 0.6.20, untagged, so `adopt` cannot see it) is held, with
+  a log line saying how to tag the pane, until that process ends; before, the run took its mid-turn
+  transcript as cut off and resumed a second agent in the same worktree.
+
 ## 0.6.29 (2026-10-29)
 
 - Follow-ups have a level: `plan add PREFIX TEXT --pri critical|normal|low|later`, tagged

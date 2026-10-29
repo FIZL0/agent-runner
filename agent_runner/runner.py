@@ -1973,11 +1973,28 @@ def sweep_tmp(force: bool = False) -> None:
         log(f'swept {freed / 2**20:,.0f} MB of ended sessions\' temp folders')
 
 
-def queue_cut_off(branch: str, slots: list[int]) -> None:
+def live_session(sid: str) -> int | None:
+    """The pid of a process still running session `sid` (its command line names it), or None: a session
+    in a pane no run tagged, or another tmux session, is not cut off however its transcript ends. POSIX
+    only; the Windows terminals' job files name every session they started."""
+    if plat.WINDOWS or not sid:
+        return None
+    for d in Path('/proc').iterdir():
+        if d.name.isdigit() and int(d.name) != os.getpid() and (args := plat.cmdline(int(d.name))) \
+                and sid in sids(args) and not any(a.startswith('--stop-') for a in args):
+            return int(d.name)
+    return None
+
+
+def queue_cut_off(branch: str, slots: list[int]) -> dict[int, int]:
     """Startup: a slot still on task/<ID> whose session was cut off while no run was up (a reboot, the runner
-    killed, the network down at its exit) is queued to resume instead of being reset for a new task."""
+    killed, the network down at its exit) is queued to resume instead of being reset for a new task.
+    Returns {slot: pid} of the slots whose session still runs outside this run's panes (one opened before
+    panes carried @runner-repo, say): resuming it would put a second agent in the worktree, so the slot is
+    held until that process ends."""
     open_ids = open_tasks(branch)
     waiting = queued()
+    held = {}
     for n in slots:
         if n in waiting or not (SLOTS_DIR / f's{n}').is_dir():
             continue
@@ -1985,9 +2002,14 @@ def queue_cut_off(branch: str, slots: list[int]) -> None:
         if tid not in open_ids or (last_session(tid) or (0,))[0] != n:
             continue
         sid = last_session(tid)[1]
-        if (why := cut_off(sid, mid_turn=True)) and resumes(n, sid) < RESUMES_MAX:
+        if pid := live_session(sid):
+            held[n] = pid
+            log(f'slot {n}: {tid}\'s session still runs (pid {pid}) in a pane this run does not know; slot held '
+                f'until it ends (to adopt it, `tmux set-option -p -t <pane> {REPO_TAG} {ROOT}` and restart)')
+        elif (why := cut_off(sid, mid_turn=True)) and resumes(n, sid) < RESUMES_MAX:
             queue_resume(tid, n, sid, why)
             log(f'slot {n}: {tid} was cut off while no run was up ({why}); it resumes there')
+    return held
 
 
 _api = [-1e9, True]
@@ -2426,9 +2448,9 @@ def run(argv: list[str], prog: str) -> int:
         procs[n], running[n] = proc, task
         free_at.setdefault(n, dt.datetime.min)
 
-    queue_cut_off(branch, [n for n in range(1, slots + 1) if n not in procs])
+    foreign = queue_cut_off(branch, [n for n in range(1, slots + 1) if n not in procs])
     sweep_tmp(force=True)
-    for tid in unmerged(branch, [n for n in free_at if n not in procs and n not in queued()]):
+    for tid in unmerged(branch, [n for n in free_at if n not in procs and n not in queued() and n not in foreign]):
         log(f'{tid}: finished while no run was up; merging it now')
         tried.add(tid)
         t = threading.Thread(target=finish, args=(tid, 0, '(unknown)', branch))
@@ -2480,6 +2502,12 @@ def run(argv: list[str], prog: str) -> int:
                 stall_said.add(procs[n][1])
                 log(f'slot {n}: {running[n][0]} looks stalled ({why}); look at {MUX.where(n)}')
                 print('\a', end='', flush=True)
+            if n not in procs and n in foreign:
+                if alive(foreign[n]):
+                    continue  # see queue_cut_off: never a second agent in its worktree
+                log(f'slot {n}: the session no run knew (pid {foreign.pop(n)}) ended')
+                foreign.update(queue_cut_off(branch, [n]))
+                continue
             if n not in procs and tagged is None:
                 tagged = MUX.panes()  # a session that ended this tick is in it with a dead pid, as before
             if n not in procs and (old := tagged.get(f's{n}')) and alive(old[1]):

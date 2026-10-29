@@ -1030,6 +1030,13 @@ def test_resume(repo: Path, tmp: Path):
         eq(R.queued(), {2: ('T2', 'net', 'its transcript stops mid-turn')}, 'at startup a slot cut off mid-turn is queued')
         has((repo / '.runner/run.log').read_text(), r'slot 2: T2 was cut off while no run was up', 'and logged')
         R.C.notes('T2.resume').unlink()
+        alive = subprocess.Popen([sys.executable, '-c', 'import sys; sys.stdin.read()', '--resume', 'net'], stdin=subprocess.PIPE)
+        try:
+            eq(R.queue_cut_off('main', [2]), {2: alive.pid}, 'but one whose session still runs in an untagged pane is held')
+            eq(R.queued(), {}, 'and not resumed: that would be a second agent in its worktree')
+            has((repo / '.runner/run.log').read_text(), r'slot 2: T2.s session still runs \(pid \d+\)', 'logged')
+        finally:
+            alive.communicate(b'')
         said('net', ask, tool, result, end)
         R.queue_cut_off('main', [2])
         eq(R.queued(), {}, 'one that ended its turn is left to the merge')
