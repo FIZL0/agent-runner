@@ -1408,6 +1408,27 @@ def test_end_orphans(repo: Path):
             p.wait()
 
 
+def test_stalled(tmp: Path):
+    print('run: a session quiet through a long tool run is not stalled at a prompt the moment the tool ends')
+    t = tmp / 'stall.jsonl'
+    t.write_text('{}\n')
+    old = time.time() - 30 * 60
+    os.utime(t, (old, old))
+    saved = R.transcript, R.plat.children
+    kids = [[1]]
+    try:
+        R.transcript = lambda sid: t
+        R.plat.children = lambda pid: kids[0]
+        eq(R.stalled(1, 'busy', 20 * 60), None, 'a tool running 30 min is not stalled (under the hung-tool limit)')
+        kids[0] = []
+        eq(R.stalled(1, 'busy', 20 * 60), None, 'just after the tool ends: not at a prompt for 30 min')
+        has(R.stalled(1, 'never', 20 * 60) or '', 'at a prompt', 'a session never seen busy, quiet 30 min, is stalled')
+        R._busy_at['busy'] = time.time() - 21 * 60
+        has(R.stalled(1, 'busy', 20 * 60) or '', 'at a prompt', '21 min at a prompt after the tool ended is stalled')
+    finally:
+        R.transcript, R.plat.children = saved
+
+
 def main() -> int:
     with tempfile.TemporaryDirectory() as t:
         tmp = Path(t)
@@ -1425,7 +1446,8 @@ def main() -> int:
                        lambda: test_session_tmp(repo, tmp), lambda: test_end_orphans(repo), lambda: test_tested_ref(repo, tmp),
                        lambda: test_no_pane(repo, tmp), lambda: test_other_repos_panes(repo, tmp),
                        lambda: test_limit_lets_go(repo),
-                       lambda: test_shared_push(repo, tmp), lambda: test_followups(repo), test_dedupe_tasks, test_update_notice])
+                       lambda: test_shared_push(repo, tmp), lambda: test_followups(repo), test_dedupe_tasks, test_update_notice,
+                       lambda: test_stalled(tmp)])
 
 
 if __name__ == '__main__':

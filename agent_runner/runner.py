@@ -1815,14 +1815,22 @@ def stats(sid: str) -> str:
     return f'{int(span.total_seconds()) // 60} min, {calls} calls, context {ctx[0] // 1000}k first, {max(ctx) // 1000}k peak'
 
 
+_busy_at: dict[str, float] = {}  # session id → when stalled() last saw it running a tool
+
+
 def stalled(pid: int, sid: str, limit: int) -> str | None:
     """Why a live session looks stuck, else None: quiet for `limit` seconds with no tool running (a prompt or
     a dialog the idle hook never sees), or quiet for longer than the Bash timeout even with one (a hung tool).
+    A tool's run writes nothing to the transcript, so the prompt's quiet counts from the last look that saw
+    one running: a 20-minute test run then a minute's thinking is not 21 minutes at a prompt (openmx's P38).
     """
     t = transcript(sid)
-    quiet = time.time() - os.path.getmtime(t) if t and os.path.exists(t) else 0
-    busy = bool(plat.children(pid))
-    if quiet > 65 * 60 or (quiet > limit and not busy):
+    now = time.time()
+    quiet = now - os.path.getmtime(t) if t and os.path.exists(t) else 0
+    if busy := bool(plat.children(pid)):
+        _busy_at[sid] = now
+    idle = min(quiet, now - _busy_at.get(sid, 0))
+    if quiet > 65 * 60 or (idle > limit and not busy):
         return f'no transcript activity for {int(quiet // 60)} min' + \
                (' with a tool still running' if busy else ' at a prompt')
     return None

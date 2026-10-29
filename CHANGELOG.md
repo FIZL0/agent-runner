@@ -2,6 +2,12 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
+## 0.6.34 (2026-10-29)
+
+- The stall warning counts a session's quiet at a prompt from the end of its last tool run, not from its
+  last transcript write. A tool's run writes nothing, so a long test run followed by a moment between
+  commands was reported as "no transcript activity for 22 min at a prompt": openmx's P38, mid-gate.
+
 ## 0.6.33 (2026-10-29)
 
 - `plan add <ID>`, a task split into subtasks, files them after the task and its earlier subtasks, under the
