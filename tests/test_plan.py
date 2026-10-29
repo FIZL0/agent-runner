@@ -257,6 +257,28 @@ def test_add_pri():
             has(str(e), 'critical | normal | low | later', 'an unknown level is refused, naming the four')
 
 
+def test_add_subtask():
+    print('plan: an agent\'s split of a task stays with it, not behind the follow-ups')
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        git(root, 'init', '-q')
+        (root / 'plan').mkdir()
+        todo = root / 'plan' / 'TODO.md'
+        todo.write_text('\n'.join(['# TODO', '', '### Next', '', '- [ ] **A1** a person asked for this',
+                                    '- [ ] **A2** and this', '', '### Follow-ups', '',
+                                    '- [ ] **A3** (follow-up, low) a check', '']), encoding='utf-8')
+        env = {**os.environ, 'AGENT_RUNNER_REPO': str(root), 'AGENT_RUNNER': '1'}
+        for args in (['A1', 'the first part'], ['A1', 'the second part'], ['A3', 'part of the check'],
+                     ['A', 'something else'], ['A2', 'urgent part', '--pri', 'critical']):
+            eq(run(root, 'plan', 'add', *args, env=env).returncode, 0, f'add {args[0]}')
+        eq(plan.index(todo), ['# TODO', '### Next', '[ ] A2a', '[ ] A1', '[ ] A1a', '[ ] A1b', '[ ] A2',
+                              '### Follow-ups', '[ ] A4', '[ ] A3', '[ ] A3a'],
+           'subtasks follow their family; a plain add is a normal follow-up; --pri still places it')
+        text = todo.read_text()
+        has(text, r'\*\*A1a\*\* the first part', 'a person\'s task\'s subtask carries no follow-up tag')
+        has(text, r'\*\*A3a\*\* \(follow-up, low\) part of the check', 'a follow-up\'s subtask keeps its level')
+
+
 def test_kinds():
     print('plan: id letters name a kind of work; a repo that names its own refuses others')
     with tempfile.TemporaryDirectory() as tmp:
@@ -319,4 +341,4 @@ def test_similar():
 
 if __name__ == '__main__':
     sys.exit(report([test_plan_roundtrip, test_plan_reopen, test_plan_index_and_sections, test_brief,
-                     test_split_parents, test_add_bottom, test_add_pri, test_kinds, test_hand_edits_commit, test_similar]))
+                     test_split_parents, test_add_bottom, test_add_pri, test_add_subtask, test_kinds, test_hand_edits_commit, test_similar]))

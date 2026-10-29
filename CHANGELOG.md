@@ -2,6 +2,13 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
+## 0.6.33 (2026-10-29)
+
+- `plan add <ID>`, a task split into subtasks, files them after the task and its earlier subtasks, under the
+  task's own level tag or none, unless `--pri` or `@` says otherwise. Before, an agent's split was a `normal`
+  follow-up like any other, so the rest of a person's task queued behind every follow-up: openmx's S149a-e.
+  The prompt says to split this way.
+
 ## 0.6.32 (2026-10-29)
 
 - Joining a task list keeps each task in the section the target files it under (the branch's, for the

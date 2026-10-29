@@ -33,6 +33,10 @@ given a `--pri` (and every follow-up a running agent files, which is `normal` un
 
 `@ WHERE` still overrides the place (the tag stays).
 
+**A subtask keeps its parent's place.** `add P17 …` (a task's id as the prefix: a split of that task) files
+P17a after P17 and its earlier subtasks, under P17's own tag or none, with no level of its own unless `--pri`
+gives one: the rest of a person's task stays where the person queued it, not behind every follow-up.
+
 The line format is `- [ ] **ID** text → files… | t: tests | j: journal-dir`, under `###` headings, and the
 checkbox is `[ ]` open, `[x]` done, `[~]` blocked.
 
@@ -476,6 +480,24 @@ def _place_pri(ls: list[str], pri: str) -> int:
     return end
 
 
+def family_end(prefix: str, todo=None) -> tuple[str, str | None] | None:
+    """For a subtask prefix (a task id open in TODO.md): the last id of its family, the parent and its
+    subtasks, which a new subtask files after, and the parent's level tag; None when no such task is open."""
+    if not prefix[-1:].isdigit():
+        return None
+    todo, _ = ensure(todo, None)
+    last, tag = None, None
+    for l in lines(todo):
+        m = ITEM.match(l)
+        if m and not m.group(1) and m.group(2) != 'x':
+            t = m.group(3).rstrip('.')
+            if t == prefix:
+                last, tag = t, (PRI_TAG.search(l) or [None, None])[1]
+            elif last and re.fullmatch(rf'{re.escape(prefix)}[a-z]\w*', t):
+                last = t
+    return (last, tag) if last else None
+
+
 def add(prefix: str, text: str, where: str | None = None, ref: str | None = None, todo=None, done=None,
         pri: str | None = None) -> str:
     """File a new task; with `pri` it is tagged `(follow-up, pri)` and, unless `where` says, filed by its level."""
@@ -747,7 +769,7 @@ def main(argv: list[str] | None = None) -> int:
                    + ('' if own else '\n(the defaults: set [plan] kinds in runner.toml to name your own)'))
     if argv[:1] == ['add'] and len(argv) > 2:
         rest, pri = argv[2:], add_default()
-        if '--pri' in rest[:-1]:
+        if given := '--pri' in rest[:-1]:
             k = rest.index('--pri')
             pri, rest = rest[k + 1], rest[:k] + rest[k + 2:]
         if why := check_kind(argv[1]):
@@ -755,6 +777,8 @@ def main(argv: list[str] | None = None) -> int:
             return 2
         text, _, where = ' '.join(rest).partition(' @ ')
         w = where.split(maxsplit=1) or [None]
+        if not given and not where and (fam := family_end(argv[1])):
+            w, pri = ['after', fam[0]], fam[1]  # a split stays with its parent (module doc)
         tid = add(argv[1], text, w[0], (w[1:] or [None])[0], pri=pri)
         same = similar(text, skip=tid)
         msg = f'added {tid}' + (f' ({pri})' if pri else '')
