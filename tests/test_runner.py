@@ -1312,6 +1312,22 @@ def test_shared_push(repo: Path, tmp: Path):
     eq(git(repo, 'rev-parse', 'main'), git(tmp / 'origin.git', 'rev-parse', 'main'), 'and main is pushed')
 
 
+def test_dedupe_tasks():
+    print('run: a joined task list keeps each task once, where the target files it')
+    ours = ['### Next', '- [ ] **A1** mine', '', '### Follow-ups', '- [ ] **B1** (follow-up, normal) a follow-up',
+            '  - its note', '']
+    mine = ['### Next', '- [x] **A1** mine, done', '- [ ] **B1** a follow-up', '  - its note',
+            '- [ ] **C1** done now', '', '### Follow-ups', '- [ ] **D1** (follow-up, normal) new', '']
+    union = ['### Next', '- [x] **A1** mine, done', '- [ ] **A1** mine', '- [ ] **B1** a follow-up', '  - its note',
+             '- [ ] **C1** done now', '', '### Follow-ups', '- [ ] **B1** (follow-up, normal) a follow-up',
+             '  - its note', '- [ ] **D1** (follow-up, normal) new', '']
+    eq(R.dedupe_tasks(union, 'A1', mine, ours, {'C1'}),
+       ['### Next', '- [x] **A1** mine, done', '', '### Follow-ups', '- [ ] **B1** (follow-up, normal) a follow-up',
+        '  - its note', '- [ ] **D1** (follow-up, normal) new', ''],
+       'the branch\'s words for its own task, the target\'s words and section for the rest (a branch cut '
+       'before a re-sort keeps B1 out of Next, its note with it), and a task DONE.md has goes')
+
+
 def test_followups(repo: Path):
     print('run: follow-up levels and kinds in the prompt, Parked never starts, flaky tests get a task')
     R.init(repo)
@@ -1409,7 +1425,7 @@ def main() -> int:
                        lambda: test_session_tmp(repo, tmp), lambda: test_end_orphans(repo), lambda: test_tested_ref(repo, tmp),
                        lambda: test_no_pane(repo, tmp), lambda: test_other_repos_panes(repo, tmp),
                        lambda: test_limit_lets_go(repo),
-                       lambda: test_shared_push(repo, tmp), lambda: test_followups(repo), test_update_notice])
+                       lambda: test_shared_push(repo, tmp), lambda: test_followups(repo), test_dedupe_tasks, test_update_notice])
 
 
 if __name__ == '__main__':

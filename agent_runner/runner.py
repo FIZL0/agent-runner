@@ -908,6 +908,49 @@ def custom_join(f: str, sides: list[str], text: str, tid: str, cwd: Path) -> str
     return out.read_text(encoding='utf-8')
 
 
+def _sections(lines: list[str]) -> dict[str, str]:
+    """{task id: the heading it sits under} in a task list."""
+    out, cur = {}, ''
+    for l in lines:
+        if l.startswith('#'):
+            cur = l
+        elif m := TASK.match(l):
+            out.setdefault(m.group(2).rstrip('.'), cur)
+    return out
+
+
+def dedupe_tasks(lines: list[str], tid: str, mine: list[str], ours: list[str], gone: set[str]) -> list[str]:
+    """A joined task list with each task once. A task is its line and the indented lines under it, kept or
+    dropped together; one DONE.md has (`gone`) is dropped. Of a task that came out twice, the branch's copy
+    is kept for its own task `tid` and the target's (`ours`) for the rest, in the section that side files
+    it under: a branch cut before a plan was re-sorted must not put the old order back."""
+    blocks: list[tuple[str | None, str, list[str]]] = []  # (task id or None, heading above, lines)
+    cur = ''
+    for l in lines:
+        if blocks and blocks[-1][0] and l.startswith((' ', '\t')) and l.strip():
+            blocks[-1][2].append(l)
+            continue
+        if l.startswith('#'):
+            cur = l
+        m = TASK.match(l)
+        blocks.append((m.group(2).rstrip('.') if m else None, cur, [l]))
+    want_mine, want_ours, mine_set = _sections(mine), _sections(ours), set(mine)
+    copies: dict[str, list[int]] = {}
+    for i, (k, _, _) in enumerate(blocks):
+        if k:
+            copies.setdefault(k, []).append(i)
+    keep: dict[int, list[str]] = {}  # the block index each task stays at, with the lines it keeps
+    for k, at in copies.items():
+        if k in gone:
+            continue
+        own = k == tid
+        words = next((i for i in at if (blocks[i][2][0] in mine_set) == own), at[0])
+        want = (want_mine if own else want_ours).get(k)
+        place = next((i for i in at if blocks[i][1] == want), at[0])
+        keep[place] = blocks[words][2]
+    return [l for i, (k, _, ls) in enumerate(blocks) if not k or i in keep for l in (keep.get(i) or ls)]
+
+
 def union(files: list[str], tid: str, cwd: Path) -> bool:
     """Join both sides of a conflict in every file `joinable` allows. Then, in the task list, drop a task
     line that came out twice and any TODO line whose task DONE.md already has; and a file with a
@@ -927,19 +970,8 @@ def union(files: list[str], tid: str, cwd: Path) -> bool:
             gone = {m.group(2).rstrip('.') for l in (cwd / done).read_text(encoding='utf-8').splitlines()
                     if (m := TASK.match(l)) and '- [x]' in l} if f == todo else set()
             mine = git('show', f'task/{tid}:{f}', cwd=cwd).stdout.splitlines()
-            kept, seen = [], {}
-            for l in text.split('\n'):
-                if m := TASK.match(l):
-                    k = m.group(2).rstrip('.')
-                    if k in gone:
-                        continue
-                    if k in seen:  # keep the branch's copy of its own task, the target's copy of the rest
-                        if (k == tid) == (l in mine):
-                            kept[seen[k]] = l
-                        continue
-                    seen[k] = len(kept)
-                kept.append(l)
-            text = '\n'.join(kept)
+            text = '\n'.join(dedupe_tasks(text.split('\n'), tid, mine,
+                                           Path(sides[0]).read_text(encoding='utf-8').splitlines(), gone))
         if any(fnmatch.fnmatch(f, g) for g in C.run['join']) and \
                 (text := custom_join(f, sides, text, tid, cwd)) is None:
             return False

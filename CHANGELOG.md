@@ -2,6 +2,13 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
+## 0.6.32 (2026-10-29)
+
+- Joining a task list keeps each task in the section the target files it under (the branch's, for the
+  branch's own task), and moves a task's indented lines with it. Before, a doubled task stayed where its
+  first copy was, so a branch cut before the plan was re-sorted put the old order back on merge: openmx's
+  P185 moved 51 follow-ups back into Next.
+
 ## 0.6.31 (2026-10-29)
 
 - A task whose text names a common file only in passing (`README.md`, in a spec) no longer lists every
