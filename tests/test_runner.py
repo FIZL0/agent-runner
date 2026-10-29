@@ -378,6 +378,11 @@ def test_prompt_and_hooks(repo: Path):
     cmd = R.agent_cmd(big, 'sid', 'opus', 90, 'slot1')
     check(len(cmd) < 4000 and R.C.notes('slot1.prompt').read_text() == big,
           'the prompt goes through a file, so a long brief stays under tmux\'s command limit')
+    huge = 'x' * 140000  # past Linux's 128 KiB for one argument: the agent would exit at once
+    cmd = R.agent_cmd(huge, 'sid', 'opus', 90, 'slot1')
+    check('slot1.cmd-prompt' in cmd and R.C.notes('slot1.prompt').read_text() == huge and
+          'slot1.prompt' in R.C.notes('slot1.cmd-prompt').read_text(),
+          'one past the argument limit is a short prompt that points at the file')
     for payload in ('{}', 'garbage', '{"transcript_path": "/nonexistent"}', '{"transcript_path": null}'):
         r = subprocess.run([sys.executable, str(RUN), 'run', '--stop-hook'], input=payload,
                            capture_output=True, text=True, cwd='/')

@@ -2,6 +2,17 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
+## 0.6.31 (2026-10-29)
+
+- A task whose text names a common file only in passing (`README.md`, in a spec) no longer lists every
+  file of that name: a bare name that more than `BARE_MAX` (5) tracked paths share is prose, unless the
+  line's `→` list names it, and that list now ends with its line instead of running on into the
+  task's appended `plan/<ID>.md`. One openmx brief went from 597 READMEs and 129 KB to 9 KB.
+- A prompt past 96 KiB reaches the agent as a short first turn pointing at `<notes>/<slot>.prompt`, as on
+  Windows: Linux takes one argument of 128 KiB at most, and the session died at once ("Argument list too
+  long", logged as "exited (no transcript)") every time the task came up.
+- `plan brief` no longer crashes on a `j:` field when no journal directory is configured.
+
 ## 0.6.30 (2026-10-29)
 
 - A restart never resumes a session that is still running. A slot whose last session's id is on a live

@@ -133,6 +133,9 @@ def test_plan_index_and_sections():
            'files_on_line resolves a bare name against the repo, and stops at the tests')
         eq(plan.files_on_line('mentions notes.py in prose → new.py', root=root), ['new.py'],
            'a new top-level file after the → counts; one named only in prose does not')
+        many = [f'd{i}/README.md' for i in range(plan.BARE_MAX + 1)] + ['src/parse.py']
+        eq(plan.files_on_line('the dataset card is a README.md → src/parse.py', root=root, tracked=many), ['src/parse.py'],
+           'a bare name that many files share is prose, not a file of the task')
 
 
 def test_brief():

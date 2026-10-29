@@ -490,12 +490,19 @@ def agent_cmd(prompt: str, sid: str, model: str, idle: int, name: str, resume: b
 
     The prompt goes through a file (`<notes>/<name>.prompt`), read by the shell that runs the command:
     tmux refuses a command over about 16 KB, and a long brief (a task with a big journal) can exceed it.
+    Past ARG_PROMPT_MAX bytes even that fails (Linux takes one argument of 128 KB at most, and the agent
+    exits at once, "Argument list too long"), so the session gets a short prompt pointing at the file.
     """
     pf = C.notes(f'{name}.prompt')
     pf.write_text(prompt, encoding='utf-8')
+    if len(prompt.encode('utf-8')) > ARG_PROMPT_MAX:
+        pf = C.notes(f'{name}.cmd-prompt')
+        pf.write_text(f'Your instructions for this session are in {C.notes(f"{name}.prompt").as_posix()}, too long '
+                      f'for one command-line argument. Read that whole file first, then follow it.', encoding='utf-8')
     return shlex.quote(C.run['agent']) + f' "$(cat {shlex.quote(str(pf))})" ' + shlex.join(agent_flags(sid, model, idle, resume))
 
 
+ARG_PROMPT_MAX = 96 * 1024  # Linux's MAX_ARG_STRLEN is 128 KiB for one argument; leave room
 ARGV_PROMPT_MAX = 24000  # Windows' CreateProcess takes 32 767 characters, flags and paths included
 
 

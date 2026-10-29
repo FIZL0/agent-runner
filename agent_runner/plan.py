@@ -73,6 +73,7 @@ HEAD = re.compile(r'(#+) ')
 # A path-ish token on a task line: `src/main.c`, `crates/sim/src/lib.rs`, `runner.toml`, `docs/api.md`,
 # `play/*.rs`. Anything with a dot and a short extension; checked against the repo before it is believed.
 FILE_TOKEN = re.compile(r'(?<![\w/.`-])([\w.*-]+(?:/[\w.*-]+)*\.[A-Za-z][\w+]{0,5})')
+BARE_MAX = 5  # a bare file name in a task's text matching more tracked paths than this names none of them
 JOURNAL_MAX = 12000  # chars of the newest journal file pasted into a brief; the rest is a Read away
 
 
@@ -570,8 +571,9 @@ def files_on_line(text: str, root=None, tracked=None) -> list[str]:
     root = Path(root or cfg().root)
     text = text.split('| t:')[0]
     names = list(dict.fromkeys(FILE_TOKEN.findall(text)))
-    # what follows `→` is the task's file list by the line format, so a new top-level file counts there
-    listed = set(FILE_TOKEN.findall(text.partition('→')[2])) if '→' in text else set()
+    # what follows `→` is the task's file list by the line format, so a new top-level file counts there;
+    # the list ends with its line (a brief appends the task's long form, whose prose is no list)
+    listed = set(FILE_TOKEN.findall(text.partition('→')[2].split('\n')[0])) if '→' in text else set()
     tracked = _tracked(root) if tracked is None else tracked
     out = []
     for n in names:
@@ -581,6 +583,8 @@ def files_on_line(text: str, root=None, tracked=None) -> list[str]:
             out += [t for t in tracked if fnmatch.fnmatch(t, f'*{n}')]
             continue
         hits = [t for t in tracked if t == n or t.endswith('/' + n)]
+        if '/' not in n and n not in listed and len(hits) > BARE_MAX:
+            continue  # prose about a kind of file (`README.md`, `mod.json`), not one of the task's files
         # A path that does not exist yet is still the task's file: half the backlog creates its files, and
         # `brief` wants to say "missing — this task creates it" rather than quietly listing nothing. Only
         # names that look like paths or follow the `→`, though, or prose about `fpu.rs` becomes a file the
@@ -653,7 +657,7 @@ def brief(tid: str, root=None, plan_dir=None, journal=None) -> list[str]:
     except OSError:
         dirs = []
     own_j = [d for d in dirs if re.search(rf'-{re.escape(tid.lower())}(-|$)', d.lower())]
-    for j in dict.fromkeys(named + own_j):
+    for j in dict.fromkeys(named + own_j) if journal else ():  # `j:` on a line with no journal dir set
         d = journal / j
         if not d.is_dir():
             continue
