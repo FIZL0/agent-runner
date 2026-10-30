@@ -1,6 +1,7 @@
 # agent-runner
 
-agent-runner runs N Claude Code sessions unattended against a git repository with a markdown task list.
+agent-runner runs N terminal coding agents (Claude Code or Pi) unattended against a git repository with a markdown
+task list.
 Each session gets one task in its own git worktree and terminal (a tmux pane; on Windows a Windows
 Terminal tab or console window). When a session finishes, the runner merges the branch, runs the test
 gate, pushes, and starts the next task. It is independent of what the repository contains.
@@ -12,6 +13,12 @@ that has its own copy are all in [docs/SETUP.md](docs/SETUP.md). Changes: [CHANG
 - One CLI: `agent-runner plan …`, `agent-runner done …`, `agent-runner run …`, `agent-runner stop`
   (`./run …` in a clone is the same).
 - One optional config file in your repo: `runner.toml`, or a table in your own config file.
+
+**Pi:** set `agent = "pi"` to run sessions with [Pi](https://www.npmjs.com/package/@earendil-works/pi-coding-agent),
+which can use GitHub Copilot (github.com or an enterprise host), Codex and other provider logins. See
+[Pi and enterprise Copilot setup](docs/SETUP.md#pi-and-enterprise-copilot). Repositories without configuration
+still default to Claude Code. Which other terminal agents could become backends, and the tests that decide it,
+are in [docs/AGENTS-EVAL.md](docs/AGENTS-EVAL.md).
 
 ```sh
 uv tool install git+https://github.com/FIZL0/agent-runner    # latest; or pipx install …
@@ -450,6 +457,7 @@ slots = 3
 mux = ""                  # tmux, wt, console or none; "" = tmux (Windows: wt, else console)
 mode = "d"                # d: different files; p: plan order
 agent = "claude"
+backend = ""              # claude or pi; empty detects pi from the agent executable's name
 model = "opus"
 lean = true               # sessions get Bash/Read/Edit/Write only, no MCP servers or user settings
 idle = 90                 # s quiet after finishing before a session is ended
@@ -530,6 +538,9 @@ python3 tests/test_runner.py    # picking, done, merge/join/land/push, fix sessi
                                 # retry after unblock, prompt, Stop hook, usage limits, adopt,
                                 # batches, flaky/inherited failures, the platform layer and the
                                 # Windows slot shim (temp repos, fake agent)
+python3 tests/test_pi.py        # Pi configuration, prompts, sessions, errors, and merge fixers (no network)
+python3 tests/agent_matrix.py   # which terminal agents are installed and have the flags a backend needs;
+                                # --live runs tiny real tasks (needs a login, spends tokens)
 ```
 
 ## License

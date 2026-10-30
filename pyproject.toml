@@ -28,3 +28,6 @@ packages = ["agent_runner"]
 
 [tool.setuptools.dynamic]
 version = { attr = "agent_runner.__version__" }
+
+[tool.setuptools.package-data]
+agent_runner = ["pi_idle.ts"]

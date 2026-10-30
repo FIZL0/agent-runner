@@ -476,49 +476,166 @@ def lean() -> list[str]:
         if C.run['lean'] else []
 
 
-def agent_flags(sid: str, model: str, idle: int, resume: bool = False) -> list[str]:
-    """Everything after the prompt. The Stop hook is this runner in --stop-hook mode. `resume` continues the
-    session `sid` instead of starting it (its transcript keeps the id)."""
-    stop = [{'hooks': [{'type': 'command',
-                        'command': plat.command_text([*runner_cmd(), 'run', '--stop-hook', '--idle', str(idle)])}]}]
-    return ['--resume' if resume else '--session-id', sid, '--permission-mode', 'bypassPermissions',
-            '--disallowedTools', 'AskUserQuestion', '--model', model, *lean(),
-            '--settings', json.dumps({'hooks': {'Stop': stop, 'StopFailure': stop}})]
+ARG_PROMPT_MAX = 96 * 1024  # Linux's MAX_ARG_STRLEN is 128 KiB for one argument; leave room
+ARGV_PROMPT_MAX = 24000  # Windows' CreateProcess takes 32 767 characters, flags and paths included
+LONG_BRIEF = 'Your instructions for this session are in your system prompt, under "{marker}". Follow them.'
+
+
+class Claude:
+    """Claude Code: an interactive session ended by its Stop hook once `idle` s at the prompt; the brief is
+    the first message; transcripts under ~/.claude/projects, in the shape the rest of the runner reads.
+
+    A backend is everything the runner does differently per agent CLI. To add one, subclass this and
+    override what differs, then name it in BACKENDS (and `config.py`'s backend check).
+    """
+    report_exit = False  # log a session's last words at exit, and fail a sequential run on a nonzero exit
+
+    def flags(self, sid: str, model: str, idle: int, resume: bool, once: bool) -> list[str]:
+        stop = [{'hooks': [{'type': 'command', 'command': plat.command_text(
+            [*runner_cmd(), 'run', '--stop-hook', '--idle', str(idle)])}]}]
+        brief = C.notes(f'{sid}.brief')
+        return ['--resume' if resume else '--session-id', sid, '--permission-mode', 'bypassPermissions',
+                '--disallowedTools', 'AskUserQuestion', '--model', model, *lean(),
+                *(['--append-system-prompt-file', str(brief)] if brief.exists() else []),
+                '--settings', json.dumps({'hooks': {'Stop': stop, 'StopFailure': stop}})]
+
+    def cmd(self, prompt: str, pf: Path, sid: str, flags: list[str]) -> str:
+        """sh reads the prompt file into the one argument (tmux refuses a command over about 16 KB). Past
+        ARG_PROMPT_MAX bytes even that fails (Linux takes one argument of 128 KB at most, and the agent
+        exits at once, "Argument list too long"), so the brief goes in as the system prompt (`long_brief`)."""
+        if len(prompt.encode('utf-8')) > ARG_PROMPT_MAX:
+            pf = pf.with_suffix('.cmd-prompt')
+            pf.write_text(self.long_brief(prompt, sid), encoding='utf-8')
+        return shlex.quote(C.run['agent']) + f' "$(cat {shlex.quote(str(pf))})" ' + shlex.join(flags)
+
+    def argv(self, prompt: str, pf: Path, sid: str, flags: list[str]) -> list[str]:
+        if len(prompt) > ARGV_PROMPT_MAX:
+            prompt = self.long_brief(prompt, sid)
+        return [plat.exe(C.run['agent']), prompt, *flags]
+
+    @staticmethod
+    def long_brief(prompt: str, sid: str) -> str:
+        """Keep a brief too long for a command line in `<notes>/<sid>.brief`, which `flags` hands to every
+        start and resume of `sid` as the system prompt (a resumed session does not keep the one it started
+        with); the short first message that points at it. Read whole, unlike a file the agent would have to
+        page through with its Read tool."""
+        marker = 'agent-runner task brief'
+        C.notes(f'{sid}.brief').write_text(f'# {marker}\n\n{prompt}', encoding='utf-8')
+        return LONG_BRIEF.format(marker=marker)
+
+    def fix_cmd(self, prompt: str) -> list[str]:
+        return [plat.exe(C.run['agent']), '-p', prompt, '--permission-mode', 'bypassPermissions',
+                '--disallowedTools', 'AskUserQuestion', '--model', C.run['fix_model'], *lean()]
+
+    def find_transcript(self, sid: str) -> str | None:
+        return next(iter(glob.glob(os.path.expanduser(f'~/.claude/projects/*/{sid}.jsonl'))), None)
+
+    def entry(self, d: dict) -> dict | None:
+        return d
+
+    def limits(self) -> bool:
+        """Claude's usage-limit text ("resets 3pm") and its handling (`limit_only`) apply."""
+        return True
+
+
+class Pi(Claude):
+    """Pi: interactive too, ended by the bundled `pi_idle.ts` extension after `idle` s settled at the prompt
+    with nothing in the editor; `once` is print mode (exits after its turn), for a fix session with no pane.
+    Pi reads the prompt file itself (`@file`), at any size. Sessions live in `<notes>/pi-sessions`, their
+    entries turned into Claude's shape (`entry`)."""
+    report_exit = True
+
+    def flags(self, sid, model, idle, resume, once):
+        if resume and not transcript(sid):
+            raise FileNotFoundError(f'Pi session {sid} is missing')
+        flags = ['--print'] if once else ['-e', str(Path(__file__).with_name('pi_idle.ts')),
+                                          '--runner-idle', str(idle)]
+        flags += ['--session-id', sid, '--session-dir', str(C.notes('pi-sessions')), '--approve']
+        if model:
+            flags += ['--model', model]
+        if C.run['lean']:
+            shell = 'powershell' if plat.WINDOWS else 'bash'
+            flags += ['--tools', f'read,{shell},edit,write', '--no-extensions', '--no-mcp',
+                      '--no-skills', '--no-prompt-templates', '--no-themes']
+        return flags
+
+    def cmd(self, prompt, pf, sid, flags):
+        return shlex.join([C.run['agent'], *flags, '--', f'@{pf}'])
+
+    def argv(self, prompt, pf, sid, flags):
+        return [plat.exe(C.run['agent']), *flags, '--', f'@{pf}']
+
+    def fix_cmd(self, prompt):
+        return agent_argv(prompt, str(uuid.uuid4()), C.run['fix_model'], MASTER_IDLE, 'master', once=True)
+
+    def find_transcript(self, sid):
+        return next((str(p) for p in C.notes('pi-sessions').glob(f'*_{sid}.jsonl')), None)
+
+    def entry(self, entry):
+        """A Pi session record as a Claude one: role -> type, Pi's stop reasons and usage keys, and errors
+        marked as API errors (transient ones resumable). None for a message that is neither user nor
+        assistant. Pi retries rate limits itself, so one that reaches here is not resumed."""
+        if entry.get('type') != 'message':
+            return entry
+        message = entry.get('message', {})
+        role = message.get('role')
+        if role not in ('user', 'assistant', 'toolResult'):
+            return None
+        entry['type'] = 'assistant' if role == 'assistant' else 'user'
+        message['stop_reason'] = {'stop': 'end_turn', 'toolUse': 'tool_use',
+                                  'length': 'max_tokens'}.get(message.get('stopReason'))
+        if usage := message.get('usage'):
+            message['usage'] = {
+                'input_tokens': usage.get('input', 0),
+                'cache_read_input_tokens': usage.get('cacheRead', 0),
+                'cache_creation_input_tokens': usage.get('cacheWrite', 0),
+            }
+        if message.get('stopReason') == 'error':
+            text = message.get('errorMessage') or 'Pi model request failed'
+            entry['isApiErrorMessage'] = True
+            permanent = re.search(
+                r'\b(?:400|401|403|404|413|422|429)\b|authentication|unauthorized|'
+                r'forbidden|billing|rate.?limit|invalid.?request', text, re.I)
+            transient = re.search(
+                r'network|fetch failed|ECONN|EAI_AGAIN|ETIMEDOUT|timeout|timed? out|'
+                r'connection|\b5\d\d\b|overloaded|unavailable', text, re.I)
+            entry['error'] = 'server_error' if transient and not permanent else 'invalid_request'
+            message['content'] = [{'type': 'text', 'text': text}]
+        return entry
+
+    def limits(self):
+        return False  # Claude's reset text and sidecar cleanup do not apply to Pi providers
+
+
+BACKENDS = {'claude': Claude(), 'pi': Pi()}
+
+
+def backend() -> Claude:
+    """The configured backend: `[run] backend`, settled by `Config`."""
+    return BACKENDS[C.run['backend']]
+
+
+def agent_flags(sid: str, model: str, idle: int, resume: bool = False, once: bool = False) -> list[str]:
+    """The session flags after the prompt. `resume` continues the session `sid` instead of starting it (its
+    transcript keeps the id); `once` is a session with no pane, which exits after one answer."""
+    return backend().flags(sid, model, idle, resume, once)
 
 
 def agent_cmd(prompt: str, sid: str, model: str, idle: int, name: str, resume: bool = False) -> str:
-    """The agent command line for one task, for sh (tmux, and the POSIX sequential run).
-
-    The prompt goes through a file (`<notes>/<name>.prompt`), read by the shell that runs the command:
-    tmux refuses a command over about 16 KB, and a long brief (a task with a big journal) can exceed it.
-    Past ARG_PROMPT_MAX bytes even that fails (Linux takes one argument of 128 KB at most, and the agent
-    exits at once, "Argument list too long"), so the session gets a short prompt pointing at the file.
-    """
+    """The agent command line for one task, for sh (tmux, and the POSIX sequential run). The prompt is
+    written to `<notes>/<name>.prompt` and goes in from there (`Claude.cmd`, `Pi.cmd`)."""
     pf = C.notes(f'{name}.prompt')
     pf.write_text(prompt, encoding='utf-8')
-    if len(prompt.encode('utf-8')) > ARG_PROMPT_MAX:
-        pf = C.notes(f'{name}.cmd-prompt')
-        pf.write_text(f'Your instructions for this session are in {C.notes(f"{name}.prompt").as_posix()}, too long '
-                      f'for one command-line argument. Read that whole file first, then follow it.', encoding='utf-8')
-    return shlex.quote(C.run['agent']) + f' "$(cat {shlex.quote(str(pf))})" ' + shlex.join(agent_flags(sid, model, idle, resume))
+    return backend().cmd(prompt, pf, sid, agent_flags(sid, model, idle, resume))
 
 
-ARG_PROMPT_MAX = 96 * 1024  # Linux's MAX_ARG_STRLEN is 128 KiB for one argument; leave room
-ARGV_PROMPT_MAX = 24000  # Windows' CreateProcess takes 32 767 characters, flags and paths included
-
-
-def agent_argv(prompt: str, sid: str, model: str, idle: int, name: str, resume: bool = False) -> list[str]:
-    """The same command as an argv, for Windows, where no POSIX shell stands between us and the agent.
-
-    The prompt is written to `<notes>/<name>.prompt` all the same. When it is too long for a Windows
-    command line, the session is handed a short prompt that points at that file instead.
-    """
+def agent_argv(prompt: str, sid: str, model: str, idle: int, name: str, resume: bool = False,
+               once: bool = False) -> list[str]:
+    """The same command as an argv, for Windows, where no POSIX shell stands between us and the agent. The
+    prompt is written to `<notes>/<name>.prompt` all the same."""
     pf = C.notes(f'{name}.prompt')
     pf.write_text(prompt, encoding='utf-8')
-    if len(prompt) > ARGV_PROMPT_MAX:
-        prompt = (f'Your instructions for this session are in {pf.as_posix()}, too long to pass on a Windows '
-                  f'command line. Read that whole file first, then follow it.')
-    return [plat.exe(C.run['agent']), prompt, *agent_flags(sid, model, idle, resume)]
+    return backend().argv(prompt, pf, sid, agent_flags(sid, model, idle, resume, once))
 
 
 def brief_for(tid: str, cwd: Path) -> str:
@@ -1131,14 +1248,15 @@ def fix_session(prompt: str, cwd: Path, fh) -> int:
     """Run one fix or repair session in `cwd` to its end; its exit code. Raises what `sp.run` raises for a
     missing agent or a timeout.
 
-    Under tmux it is an ordinary session in the window "master-<repo>", so a human can watch
-    it work, or take it over by typing; the Stop hook ends it once it has been idle `MASTER_IDLE` seconds,
-    and its last words go to `fh`. Without tmux (Windows, the sequential run) it is `-p`, its output in `fh`.
+    Under tmux it is an ordinary session in the window "master-<repo>", so a human can watch it work, or
+    take it over by typing; the Stop hook (Pi: `pi_idle.ts`) ends it once it has been idle `MASTER_IDLE`
+    seconds, and its last words go to `fh`. Without tmux it is `-p` (Pi: `--print`), its output in `fh`.
     """
     timeout = C.run['fix_timeout']
     if not MASTER_PANE:
+        env = {**os.environ, **env_vars(slot_env(None))}  # as the master pane gets it
         return sp.run(fix_cmd(prompt), cwd=str(cwd), stdout=fh, stderr=sp.STDOUT, stdin=sp.DEVNULL,
-                      timeout=timeout).returncode
+                      env=env, timeout=timeout).returncode
     if not shutil.which(C.run['agent']):
         raise FileNotFoundError(C.run['agent'])
     sid = str(uuid.uuid4())
@@ -1179,8 +1297,7 @@ def fixer(head: str, prompt: str, cwd: Path, kind: str, to: str) -> tuple[int | 
 
 def fix_cmd(prompt: str) -> list[str]:
     """A fix session: one prompt, one answer, no session to keep — `-p`, so nothing types into a pane."""
-    return [plat.exe(C.run['agent']), '-p', prompt, '--permission-mode', 'bypassPermissions',
-            '--disallowedTools', 'AskUserQuestion', '--model', C.run['fix_model'], *lean()]
+    return backend().fix_cmd(prompt)
 
 
 def fix_merge(tid: str, branch: str, files: list[str], cwd: Path) -> str | None:
@@ -1776,14 +1893,15 @@ TRANSCRIPTS: dict[str, str] = {}  # sid -> its transcript, once found: `stalled`
 def transcript(sid: str) -> str | None:
     if (t := TRANSCRIPTS.get(sid)) and os.path.exists(t):
         return t
-    if t := next(iter(glob.glob(os.path.expanduser(f'~/.claude/projects/*/{sid}.jsonl'))), None):
+    if t := backend().find_transcript(sid):
         TRANSCRIPTS[sid] = t
     return t
 
 
 def entries(sid: str, skip_bad: bool = False):
     """Session `sid`'s transcript entries, in order; none without a transcript. A line that is not JSON ends
-    them (the one being written), or with `skip_bad` is passed over."""
+    them (the one being written), or with `skip_bad` is passed over. Every backend's come in Claude's shape."""
+    shape = backend().entry
     try:
         with open(transcript(sid) or os.devnull, encoding='utf-8', errors='replace') as f:
             for l in f:
@@ -1793,7 +1911,8 @@ def entries(sid: str, skip_bad: bool = False):
                     if skip_bad:
                         continue
                     return
-                yield d
+                if (d := shape(d)) is not None:
+                    yield d
     except OSError:
         return
 
@@ -1919,9 +2038,10 @@ def tmp_roots() -> list[Path]:
 
 
 def drop_session_tmp(sid: str) -> None:
-    """Delete session `sid`'s temp folder: it has ended for good (not queued to resume)."""
+    """Delete session `sid`'s temp folder and long brief: it has ended for good (not queued to resume)."""
     if not re.fullmatch(r'[0-9a-f-]{36}', sid or ''):
         return
+    C.notes(f'{sid}.brief').unlink(missing_ok=True)
     for root in tmp_roots():
         for d in root.glob(f'claude-*/*/{sid}'):
             shutil.rmtree(d, ignore_errors=True)
@@ -2099,6 +2219,8 @@ def limit_only(sid: str, slot_log: Path, since: int) -> dt.datetime | None:
     A limited session produced no work, so counting it as an attempt would drop the task from the run;
     and keeping its transcript would make the next run resume a session that never started.
     """
+    if not backend().limits():
+        return None
     t = transcript(sid)
     text = open(t, encoding='utf-8', errors='replace').read() if t else ''
     try:
@@ -2305,11 +2427,11 @@ def sequential(branch: str, model: str, idle: int, pause: int, force: bool, once
         log(f'{tid}: starting ({task[1]})')
         env = env_vars(slot_env(1))
         if plat.WINDOWS:  # no sh to read the prompt file; the marker is how the Stop hook finds the agent
-            run_session(agent_argv(prompt_for(tid, 1, 1, ROOT, here), sid, model, idle, 'slot1'), str(ROOT), env,
-                        C.notes('slot1.live'))
+            code = run_session(agent_argv(prompt_for(tid, 1, 1, ROOT, here), sid, model, idle, 'slot1'),
+                               str(ROOT), env, C.notes('slot1.live'))
         else:
-            sp.run(agent_cmd(prompt_for(tid, 1, 1, ROOT, here), sid, model, idle, 'slot1'), shell=True,
-                   cwd=str(ROOT), env={**os.environ, **env})
+            code = sp.run(agent_cmd(prompt_for(tid, 1, 1, ROOT, here), sid, model, idle, 'slot1'), shell=True,
+                          cwd=str(ROOT), env={**os.environ, **env}).returncode
         log(f'{tid}: session ended ({stats(sid)})')
         end_orphans()
         drop_session_tmp(sid)
@@ -2319,6 +2441,9 @@ def sequential(branch: str, model: str, idle: int, pause: int, force: bool, once
                        env={**os.environ, **env})
             except sp.TimeoutExpired:
                 log(f'`{C.run["on_exit"]}` ran past [run] timeout ({C.run["timeout"]}s); stopped')
+        if backend().report_exit and code:
+            log(f'{tid}: {C.run["backend"]} failed (exit {code}): {last_words(sid) or "see terminal output"}')
+            return code
         if r := limit_only(sid, C.notes('slot1.log'), 0):
             log(f'{tid}: only hit the usage limit; sleeping until {r:%H:%M}')
             time.sleep(max(0, (r - dt.datetime.now()).total_seconds()) + pause)
@@ -2517,6 +2642,8 @@ def run(argv: list[str], prog: str) -> int:
                 (pid, sid, since), task = procs.pop(n), running.pop(n)
                 log(f'slot {n}: {task[0]} exited ({stats(sid)})')
                 end_orphans()
+                if backend().report_exit and (said := last_words(sid)):
+                    log(f'slot {n}: {task[0]} {r["backend"]}: {said[:500]}')
                 if r['on_exit']:
                     sp.Popen(r['on_exit'], shell=True, cwd=str(SLOTS_DIR / f's{n}'),
                              env={**os.environ, **env_vars(slot_env(n))},

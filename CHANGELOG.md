@@ -2,6 +2,24 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
+## 0.7.0 (2026-10-30)
+
+- A Pi backend (`[run] backend = "pi"`, or an `agent` executable named `pi`): provider-qualified models
+  (GitHub Copilot, enterprise Copilot, Codex and other Pi logins), prompts by file at any size, retained
+  sessions for resume and restart adoption, transcript statistics and stall checks. Claude stays the
+  default. Setup, enterprise Copilot included: docs/SETUP.md.
+- Pi sessions run interactive in their panes, watchable and takeable like Claude's; the bundled
+  `pi_idle.ts` extension ends one after `idle` seconds settled at the prompt, not while text sits in the
+  editor. Fix sessions use the `master-<repo>` window under tmux, print mode without it.
+- Each agent CLI is a backend class (`Claude`, `Pi`) in `runner.py`; adding one is a subclass, see
+  docs/AGENTS-EVAL.md. A fix session without tmux gets `slot_env`'s non-slot settings for Claude too.
+- Claude: a brief too long for one command-line argument (96 KB on Linux, 24 000 characters on Windows) goes
+  in whole as the system prompt (`--append-system-prompt-file <notes>/<sid>.brief`, given again on every
+  resume), instead of a pointer the agent had to page through with Read. The file goes when the session ends.
+- `docs/AGENTS-EVAL.md`: what a backend must support, candidate terminal agents (Copilot CLI, Codex,
+  opencode, Arctic, Crush) by login type, and a test plan; `tests/agent_matrix.py` probes them. First
+  live results: Pi and Copilot CLI pass the headless checks; Pi completes `run once` end to end.
+
 ## 0.6.34 (2026-10-29)
 
 - The stall warning counts a session's quiet at a prompt from the end of its last tool run, not from its
