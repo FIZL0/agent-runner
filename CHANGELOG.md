@@ -2,6 +2,13 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
+## Unreleased
+
+- Add a Pi backend with provider-qualified models, file-based prompts, one-shot task and merge-fix
+  sessions, retained sessions, resume support, transcript statistics, and stall detection. Claude remains
+  the default for unconfigured repositories. This branch's `runner.toml` selects enterprise Copilot
+  through Pi, with the OS certificate trust store enabled for the runner's Node.js processes.
+
 ## 0.6.34 (2026-10-29)
 
 - The stall warning counts a session's quiet at a prompt from the end of its last tool run, not from its

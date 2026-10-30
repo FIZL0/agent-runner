@@ -1,6 +1,6 @@
 # agent-runner
 
-agent-runner runs N Claude Code sessions unattended against a git repository with a markdown task list.
+agent-runner runs N Claude Code or Pi sessions unattended against a git repository with a markdown task list.
 Each session gets one task in its own git worktree and terminal (a tmux pane; on Windows a Windows
 Terminal tab or console window). When a session finishes, the runner merges the branch, runs the test
 gate, pushes, and starts the next task. It is independent of what the repository contains.
@@ -12,6 +12,10 @@ that has its own copy are all in [docs/SETUP.md](docs/SETUP.md). Changes: [CHANG
 - One CLI: `agent-runner plan …`, `agent-runner done …`, `agent-runner run …`, `agent-runner stop`
   (`./run …` in a clone is the same).
 - One optional config file in your repo: `runner.toml`, or a table in your own config file.
+
+**Pi:** this branch's `runner.toml` selects Pi with GitHub Copilot. See
+[Pi and enterprise Copilot setup](docs/SETUP.md#pi-and-enterprise-copilot) for login, models, and configuration
+in other repositories. Repositories without configuration still default to Claude Code.
 
 ```sh
 uv tool install git+https://github.com/FIZL0/agent-runner    # latest; or pipx install …
@@ -450,6 +454,7 @@ slots = 3
 mux = ""                  # tmux, wt, console or none; "" = tmux (Windows: wt, else console)
 mode = "d"                # d: different files; p: plan order
 agent = "claude"
+backend = ""              # claude or pi; empty detects pi from the agent executable's name
 model = "opus"
 lean = true               # sessions get Bash/Read/Edit/Write only, no MCP servers or user settings
 idle = 90                 # s quiet after finishing before a session is ended
@@ -530,6 +535,7 @@ python3 tests/test_runner.py    # picking, done, merge/join/land/push, fix sessi
                                 # retry after unblock, prompt, Stop hook, usage limits, adopt,
                                 # batches, flaky/inherited failures, the platform layer and the
                                 # Windows slot shim (temp repos, fake agent)
+python3 tests/test_pi.py        # Pi configuration, prompts, sessions, errors, and merge fixers (no network)
 ```
 
 ## License

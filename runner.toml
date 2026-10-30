@@ -1,0 +1,7 @@
+[run]
+backend = "pi"
+agent = "pi"
+model = "github-copilot/claude-opus-5.5"
+fix_model = "github-copilot/claude-opus-5.5"
+slots = 1
+slot_env = ["AGENT_SLOT={n}", "NODE_USE_SYSTEM_CA=1"]

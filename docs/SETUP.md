@@ -4,6 +4,7 @@ How to install agent-runner, add it to a repo, wrap it from a project's own CLI,
 own copy over to it, and what a version number promises.
 
 - [Installing](#installing)
+- [Pi and enterprise Copilot](#pi-and-enterprise-copilot)
 - [A new repo from scratch](#a-new-repo-from-scratch)
 - [Wrapping it from your own CLI](#wrapping-it-from-your-own-cli)
 - [Migrating a repo that carries its own copy](#migrating-a-repo-that-carries-its-own-copy)
@@ -51,6 +52,62 @@ new major version may rename a config key.
 **From a clone,** for hacking on the runner itself: `git clone https://github.com/FIZL0/agent-runner`
 and call `~/agent-runner/run …`. A clone needs no install. `uv tool install --editable ~/agent-runner`
 makes the `agent-runner` command run the clone's code.
+
+## Pi and enterprise Copilot
+
+Pi 1.4.0 or newer is supported alongside Claude Code. Install it with Node.js 22.19+:
+
+```powershell
+npm install --global --ignore-scripts @earendil-works/pi-coding-agent
+pi
+```
+
+Inside Pi, run `/login`, choose **GitHub Copilot**, enter your full enterprise hostname, and complete
+the device authorization in your browser. Run `/model` to choose a model. Authentication remains in
+Pi's private user directory, never in `runner.toml`.
+
+Check authentication and the account's models without printing credentials:
+
+```powershell
+pi auth check --provider github-copilot --json
+pi --offline --list-models github-copilot
+```
+
+Configure the repository:
+
+```toml
+[run]
+agent = "pi"
+backend = "pi"            # optional for an executable named pi; required for a differently named wrapper
+model = "github-copilot/claude-sonnet-5.5"
+fix_model = "github-copilot/claude-sonnet-5.5"
+slots = 1
+slot_env = ["AGENT_SLOT={n}", "NODE_USE_SYSTEM_CA=1"]
+```
+
+Choose an ID your account lists. Provider-qualified IDs prevent ambient AWS or other provider
+credentials from selecting the wrong service. If `model` is omitted, Pi uses its own model selection;
+an omitted `fix_model` follows `model`. Other Pi providers work through their own qualified IDs and login.
+`NODE_USE_SYSTEM_CA=1` uses the OS certificate trust store for corporate TLS interception; it requires a
+Node.js release supporting that setting (Node.js 22.19+). It does not disable certificate verification.
+If Pi itself reports an issuer-certificate error, set `$env:NODE_USE_SYSTEM_CA = "1"` before starting it.
+
+From a clone on Windows, use `python -m agent_runner run once`; an installed runner uses
+`agent-runner run once`. Normal terminal selection, parallel worktrees, `done`, test gates, and merging
+are unchanged.
+
+Pi runs in one-shot print mode, exiting when its work completes rather than waiting for a Claude Stop
+hook. Prompts are passed as files, including on Windows. Sessions are retained under
+`.runner/pi-sessions` for `agent-runner resume ID`, restart adoption, usage statistics, and stall checks.
+Transient network/server errors can resume up to the existing resume limit in worktree mode. Pi's own
+provider retries apply, but Claude-specific weekly caps and usage-reset detection do not apply to Pi;
+authentication, billing, and other non-transient errors are reported for a human rather than retried.
+In sequential mode a failed Pi process returns its nonzero exit code.
+
+With `lean = true` (the default), Pi gets read/edit/write and a shell (`powershell` on Windows, `bash`
+elsewhere), with extensions, MCP, skills, prompt templates, and themes disabled. Repository context
+files remain available. Set `lean = false` to use Pi's normal resource configuration. Fix/repair sessions
+also use Pi print mode and the non-slot-specific environment from `slot_env`.
 
 ## A new repo from scratch
 

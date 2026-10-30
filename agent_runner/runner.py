@@ -477,8 +477,20 @@ def lean() -> list[str]:
 
 
 def agent_flags(sid: str, model: str, idle: int, resume: bool = False) -> list[str]:
-    """Everything after the prompt. The Stop hook is this runner in --stop-hook mode. `resume` continues the
-    session `sid` instead of starting it (its transcript keeps the id)."""
+    """Backend-specific session flags. Claude uses a Stop hook; Pi exits after its turn.
+    `resume` continues the session `sid` instead of starting it (its transcript keeps the id)."""
+    if C.run['backend'] == 'pi':
+        if resume and not transcript(sid):
+            raise FileNotFoundError(f'Pi session {sid} is missing')
+        flags = ['--print', '--session-id', sid, '--session-dir', str(C.notes('pi-sessions')),
+                 '--approve']
+        if model:
+            flags += ['--model', model]
+        if C.run['lean']:
+            shell = 'powershell' if plat.WINDOWS else 'bash'
+            flags += ['--tools', f'read,{shell},edit,write', '--no-extensions', '--no-mcp',
+                      '--no-skills', '--no-prompt-templates', '--no-themes']
+        return flags
     stop = [{'hooks': [{'type': 'command',
                         'command': plat.command_text([*runner_cmd(), 'run', '--stop-hook', '--idle', str(idle)])}]}]
     return ['--resume' if resume else '--session-id', sid, '--permission-mode', 'bypassPermissions',
@@ -496,6 +508,8 @@ def agent_cmd(prompt: str, sid: str, model: str, idle: int, name: str, resume: b
     """
     pf = C.notes(f'{name}.prompt')
     pf.write_text(prompt, encoding='utf-8')
+    if C.run['backend'] == 'pi':
+        return shlex.join([C.run['agent'], *agent_flags(sid, model, idle, resume), '--', f'@{pf}'])
     if len(prompt.encode('utf-8')) > ARG_PROMPT_MAX:
         pf = C.notes(f'{name}.cmd-prompt')
         pf.write_text(f'Your instructions for this session are in {C.notes(f"{name}.prompt").as_posix()}, too long '
@@ -515,6 +529,8 @@ def agent_argv(prompt: str, sid: str, model: str, idle: int, name: str, resume: 
     """
     pf = C.notes(f'{name}.prompt')
     pf.write_text(prompt, encoding='utf-8')
+    if C.run['backend'] == 'pi':
+        return [plat.exe(C.run['agent']), *agent_flags(sid, model, idle, resume), '--', f'@{pf}']
     if len(prompt) > ARGV_PROMPT_MAX:
         prompt = (f'Your instructions for this session are in {pf.as_posix()}, too long to pass on a Windows '
                   f'command line. Read that whole file first, then follow it.')
@@ -1131,14 +1147,15 @@ def fix_session(prompt: str, cwd: Path, fh) -> int:
     """Run one fix or repair session in `cwd` to its end; its exit code. Raises what `sp.run` raises for a
     missing agent or a timeout.
 
-    Under tmux it is an ordinary session in the window "master-<repo>", so a human can watch
+    With Claude under tmux it is an ordinary session in the window "master-<repo>", so a human can watch
     it work, or take it over by typing; the Stop hook ends it once it has been idle `MASTER_IDLE` seconds,
-    and its last words go to `fh`. Without tmux (Windows, the sequential run) it is `-p`, its output in `fh`.
+    and its last words go to `fh`. Without tmux, and with Pi, it is `-p`, its output in `fh`.
     """
     timeout = C.run['fix_timeout']
-    if not MASTER_PANE:
+    if not MASTER_PANE or C.run['backend'] == 'pi':
+        env = {**os.environ, **env_vars(slot_env(None))} if C.run['backend'] == 'pi' else None
         return sp.run(fix_cmd(prompt), cwd=str(cwd), stdout=fh, stderr=sp.STDOUT, stdin=sp.DEVNULL,
-                      timeout=timeout).returncode
+                      env=env, timeout=timeout).returncode
     if not shutil.which(C.run['agent']):
         raise FileNotFoundError(C.run['agent'])
     sid = str(uuid.uuid4())
@@ -1179,6 +1196,8 @@ def fixer(head: str, prompt: str, cwd: Path, kind: str, to: str) -> tuple[int | 
 
 def fix_cmd(prompt: str) -> list[str]:
     """A fix session: one prompt, one answer, no session to keep — `-p`, so nothing types into a pane."""
+    if C.run['backend'] == 'pi':
+        return agent_argv(prompt, str(uuid.uuid4()), C.run['fix_model'], MASTER_IDLE, 'master')
     return [plat.exe(C.run['agent']), '-p', prompt, '--permission-mode', 'bypassPermissions',
             '--disallowedTools', 'AskUserQuestion', '--model', C.run['fix_model'], *lean()]
 
@@ -1776,14 +1795,19 @@ TRANSCRIPTS: dict[str, str] = {}  # sid -> its transcript, once found: `stalled`
 def transcript(sid: str) -> str | None:
     if (t := TRANSCRIPTS.get(sid)) and os.path.exists(t):
         return t
-    if t := next(iter(glob.glob(os.path.expanduser(f'~/.claude/projects/*/{sid}.jsonl'))), None):
+    if C.run['backend'] == 'pi':
+        t = next((str(p) for p in C.notes('pi-sessions').glob(f'*_{sid}.jsonl')), None)
+    else:
+        t = next(iter(glob.glob(os.path.expanduser(f'~/.claude/projects/*/{sid}.jsonl'))), None)
+    if t:
         TRANSCRIPTS[sid] = t
     return t
 
 
 def entries(sid: str, skip_bad: bool = False):
     """Session `sid`'s transcript entries, in order; none without a transcript. A line that is not JSON ends
-    them (the one being written), or with `skip_bad` is passed over."""
+    them (the one being written), or with `skip_bad` is passed over. Pi's entries come in Claude's shape."""
+    pi = C.run['backend'] == 'pi'
     try:
         with open(transcript(sid) or os.devnull, encoding='utf-8', errors='replace') as f:
             for l in f:
@@ -1793,9 +1817,45 @@ def entries(sid: str, skip_bad: bool = False):
                     if skip_bad:
                         continue
                     return
+                if pi:
+                    d = pi_entry(d)
+                    if d is None:
+                        continue
                 yield d
     except OSError:
         return
+
+
+def pi_entry(entry: dict) -> dict | None:
+    """A Pi session record as a Claude one: role -> type, Pi's stop reasons and usage keys, and errors marked
+    as API errors (transient ones resumable). None for a message that is neither user nor assistant."""
+    if entry.get('type') != 'message':
+        return entry
+    message = entry.get('message', {})
+    role = message.get('role')
+    if role not in ('user', 'assistant', 'toolResult'):
+        return None
+    entry['type'] = 'assistant' if role == 'assistant' else 'user'
+    message['stop_reason'] = {'stop': 'end_turn', 'toolUse': 'tool_use',
+                              'length': 'max_tokens'}.get(message.get('stopReason'))
+    if usage := message.get('usage'):
+        message['usage'] = {
+            'input_tokens': usage.get('input', 0),
+            'cache_read_input_tokens': usage.get('cacheRead', 0),
+            'cache_creation_input_tokens': usage.get('cacheWrite', 0),
+        }
+    if message.get('stopReason') == 'error':
+        text = message.get('errorMessage') or 'Pi model request failed'
+        entry['isApiErrorMessage'] = True
+        permanent = re.search(
+            r'\b(?:400|401|403|404|413|422|429)\b|authentication|unauthorized|'
+            r'forbidden|billing|rate.?limit|invalid.?request', text, re.I)
+        transient = re.search(
+            r'network|fetch failed|ECONN|EAI_AGAIN|ETIMEDOUT|timeout|timed? out|'
+            r'connection|\b5\d\d\b|overloaded|unavailable', text, re.I)
+        entry['error'] = 'server_error' if transient and not permanent else 'invalid_request'
+        message['content'] = [{'type': 'text', 'text': text}]
+    return entry
 
 
 def stats(sid: str) -> str:
@@ -2099,6 +2159,8 @@ def limit_only(sid: str, slot_log: Path, since: int) -> dt.datetime | None:
     A limited session produced no work, so counting it as an attempt would drop the task from the run;
     and keeping its transcript would make the next run resume a session that never started.
     """
+    if C.run['backend'] == 'pi':
+        return None  # Claude's reset text and sidecar cleanup do not apply to Pi providers
     t = transcript(sid)
     text = open(t, encoding='utf-8', errors='replace').read() if t else ''
     try:
@@ -2305,11 +2367,11 @@ def sequential(branch: str, model: str, idle: int, pause: int, force: bool, once
         log(f'{tid}: starting ({task[1]})')
         env = env_vars(slot_env(1))
         if plat.WINDOWS:  # no sh to read the prompt file; the marker is how the Stop hook finds the agent
-            run_session(agent_argv(prompt_for(tid, 1, 1, ROOT, here), sid, model, idle, 'slot1'), str(ROOT), env,
-                        C.notes('slot1.live'))
+            code = run_session(agent_argv(prompt_for(tid, 1, 1, ROOT, here), sid, model, idle, 'slot1'),
+                               str(ROOT), env, C.notes('slot1.live'))
         else:
-            sp.run(agent_cmd(prompt_for(tid, 1, 1, ROOT, here), sid, model, idle, 'slot1'), shell=True,
-                   cwd=str(ROOT), env={**os.environ, **env})
+            code = sp.run(agent_cmd(prompt_for(tid, 1, 1, ROOT, here), sid, model, idle, 'slot1'), shell=True,
+                          cwd=str(ROOT), env={**os.environ, **env}).returncode
         log(f'{tid}: session ended ({stats(sid)})')
         end_orphans()
         drop_session_tmp(sid)
@@ -2319,6 +2381,9 @@ def sequential(branch: str, model: str, idle: int, pause: int, force: bool, once
                        env={**os.environ, **env})
             except sp.TimeoutExpired:
                 log(f'`{C.run["on_exit"]}` ran past [run] timeout ({C.run["timeout"]}s); stopped')
+        if C.run['backend'] == 'pi' and code:
+            log(f'{tid}: Pi failed (exit {code}): {last_words(sid) or "see terminal output"}')
+            return code
         if r := limit_only(sid, C.notes('slot1.log'), 0):
             log(f'{tid}: only hit the usage limit; sleeping until {r:%H:%M}')
             time.sleep(max(0, (r - dt.datetime.now()).total_seconds()) + pause)
@@ -2517,6 +2582,8 @@ def run(argv: list[str], prog: str) -> int:
                 (pid, sid, since), task = procs.pop(n), running.pop(n)
                 log(f'slot {n}: {task[0]} exited ({stats(sid)})')
                 end_orphans()
+                if r['backend'] == 'pi' and (said := last_words(sid)):
+                    log(f'slot {n}: {task[0]} Pi: {said[:500]}')
                 if r['on_exit']:
                     sp.Popen(r['on_exit'], shell=True, cwd=str(SLOTS_DIR / f's{n}'),
                              env={**os.environ, **env_vars(slot_env(n))},

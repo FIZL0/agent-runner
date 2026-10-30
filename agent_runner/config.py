@@ -71,6 +71,7 @@ DEFAULTS: dict = {
         'mux': '',              # terminal per slot: tmux, wt, console, none; '' = tmux (Windows: wt, else console)
         'mode': 'd',            # d = never two running tasks on the same file; p = strict plan order
         'agent': 'claude',      # the CLI that runs a session
+        'backend': '',         # claude or pi; empty infers pi from the executable name, else claude
         'model': 'opus',
         'lean': True,           # agents get Bash/Read/Edit/Write only, no MCP, no user settings
         'idle': 90,             # seconds a finished session sits at its prompt before it is ended
@@ -166,6 +167,19 @@ class Config:
                 raw = raw['agent-runner']
         self.raw = {k: {**v, **raw.get(k, {})} for k, v in DEFAULTS.items()}
         self.run = self.raw['run']
+        backend = self.run['backend'] or (
+            'pi' if Path(self.run['agent'].replace('\\', '/')).stem.lower() == 'pi' else 'claude')
+        if backend not in ('claude', 'pi'):
+            raise SystemExit(f'agent-runner: unknown [run] backend {backend!r}; choose claude or pi')
+        self.run['backend'] = backend
+        supplied = raw.get('run', {})
+        if 'agent' not in supplied:
+            self.run['agent'] = backend
+        if backend == 'pi':
+            if 'model' not in supplied:
+                self.run['model'] = ''
+            if 'fix_model' not in supplied:
+                self.run['fix_model'] = self.run['model']
 
     @property
     def command(self) -> str:
