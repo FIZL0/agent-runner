@@ -2,19 +2,20 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
-## Unreleased
+## 0.7.0 (2026-10-30)
 
+- A Pi backend (`[run] backend = "pi"`, or an `agent` executable named `pi`): provider-qualified models
+  (GitHub Copilot, enterprise Copilot, Codex and other Pi logins), prompts by file at any size, retained
+  sessions for resume and restart adoption, transcript statistics and stall checks. Claude stays the
+  default. Setup, enterprise Copilot included: docs/SETUP.md.
 - Pi sessions run interactive in their panes, watchable and takeable like Claude's; the bundled
-  `pi_idle.ts` extension ends them after `idle` seconds settled at the prompt, not while text sits in the
-  editor. Fix sessions under tmux use the `master-<repo>` window for Pi too.
+  `pi_idle.ts` extension ends one after `idle` seconds settled at the prompt, not while text sits in the
+  editor. Fix sessions use the `master-<repo>` window under tmux, print mode without it.
+- Each agent CLI is a backend class (`Claude`, `Pi`) in `runner.py`; adding one is a subclass, see
+  docs/AGENTS-EVAL.md. A fix session without tmux gets `slot_env`'s non-slot settings for Claude too.
 - Claude: a brief too long for one command-line argument (96 KB on Linux, 24 000 characters on Windows) goes
   in whole as the system prompt (`--append-system-prompt-file <notes>/<sid>.brief`, given again on every
   resume), instead of a pointer the agent had to page through with Read. The file goes when the session ends.
-
-- Add a Pi backend with provider-qualified models, file-based prompts, one-shot task and merge-fix
-  sessions, retained sessions, resume support, transcript statistics, and stall detection. Claude remains
-  the default for unconfigured repositories. This branch's `runner.toml` selects enterprise Copilot
-  through Pi, with the OS certificate trust store enabled for the runner's Node.js processes.
 - `docs/AGENTS-EVAL.md`: what a backend must support, candidate terminal agents (Copilot CLI, Codex,
   opencode, Arctic, Crush) by login type, and a test plan; `tests/agent_matrix.py` probes them. First
   live results: Pi and Copilot CLI pass the headless checks; Pi completes `run once` end to end.

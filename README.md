@@ -1,6 +1,7 @@
 # agent-runner
 
-agent-runner runs N Claude Code or Pi sessions unattended against a git repository with a markdown task list.
+agent-runner runs N terminal coding agents (Claude Code or Pi) unattended against a git repository with a markdown
+task list.
 Each session gets one task in its own git worktree and terminal (a tmux pane; on Windows a Windows
 Terminal tab or console window). When a session finishes, the runner merges the branch, runs the test
 gate, pushes, and starts the next task. It is independent of what the repository contains.

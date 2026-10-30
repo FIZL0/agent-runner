@@ -111,6 +111,7 @@ Must: R1–R6, R8, R9, A4, A5, B1–B6, C2, D1, D4. Should: R7, R10, C1, C3, D2,
 
 ## Integration shape
 
-`backend` already selects claude/pi. Each new backend adds: flags (`agent_flags`), prompt passing
-(`agent_cmd`/`agent_argv`), transcript path (`transcript`), an entry translator like `pi_entry`, and
-error classification. Worth turning into a small `Backend` class per agent before adding a third.
+`backend` selects a class in `runner.py`'s `BACKENDS`: `Claude`, and `Pi` as a subclass of it. A new
+backend subclasses `Claude` and overrides what differs: `flags`, prompt passing (`cmd`/`argv`),
+`fix_cmd`, `find_transcript`, `entry` (its transcript records in Claude's shape, error classification
+included), `limits` and `report_exit`; then `config.py` accepts its name.
