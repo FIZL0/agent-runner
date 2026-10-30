@@ -40,7 +40,8 @@ AGENTS: dict[str, dict] = {
                  'R7 tool allowlist': r'--allow-tool|--deny-tool|--available-tools',
                  'JSON output': r'--output-format'},
         'auth': None,  # verify: is there a status command that does not open a browser?
-        'live': ['-p', '{prompt}', '--allow-all-tools', '--session-id', '{sid}', '[--model', '{model}]'],
+        'live': ['--allow-all-tools', '--session-id', '{sid}', '[--model', '{model}]'],
+        'stdin': True,  # -p takes the prompt as an argument (length-limited); piped stdin has no limit
     },
     'codex': {
         'help': ['exec', '--help'],
@@ -90,10 +91,10 @@ LIVE = [
 ]
 
 
-def run(argv: list[str], timeout: int = 60, **kw) -> tuple[int, str]:
+def run(argv: list[str], timeout: int = 60, stdin: str | None = None, **kw) -> tuple[int, str]:
     try:
         p = sp.run(argv, capture_output=True, text=True, encoding='utf-8', errors='replace',
-                   stdin=sp.DEVNULL, timeout=timeout, **kw)
+                   input=stdin, stdin=None if stdin is not None else sp.DEVNULL, timeout=timeout, **kw)
         return p.returncode, (p.stdout or '') + (p.stderr or '')
     except sp.TimeoutExpired:
         return 124, 'timeout'
@@ -135,7 +136,7 @@ def auth(spec: dict, exe: str) -> str:
 def live(name: str, spec: dict, exe: str, model: str) -> list[tuple[str, bool, float, str]]:
     results = []
     for title, prompt, ok in LIVE:
-        with tempfile.TemporaryDirectory(prefix=f'am-{name}-') as d:
+        with tempfile.TemporaryDirectory(prefix=f'am-{name}-', ignore_cleanup_errors=True) as d:
             repo = Path(d)
             run(['git', 'init', '-q'], cwd=repo)
             (repo / 'README.md').write_text('seed\n')
@@ -144,11 +145,12 @@ def live(name: str, spec: dict, exe: str, model: str) -> list[tuple[str, bool, f
             pf = repo.parent / f'{repo.name}.prompt'
             pf.write_text(prompt, encoding='utf-8')
             argv = [exe, *fill(spec['live'], model, prompt=prompt, prompt_file=str(pf), sid=str(uuid.uuid4()))]
-            if len(prompt) > 30_000 and '{prompt}' in ' '.join(spec['live']):
+            if len(prompt) > 30_000 and '{prompt}' in ' '.join(spec['live']) and not spec.get('stdin'):
                 results.append((title, False, 0.0, 'prompt only passes on the command line (R2 gap)'))
                 continue
             t = time.time()
-            code, out = run(argv, 600, cwd=repo, env={**os.environ, 'NODE_USE_SYSTEM_CA': '1'})
+            code, out = run(argv, 600, stdin=prompt if spec.get('stdin') else None, cwd=repo,
+                            env={**os.environ, 'NODE_USE_SYSTEM_CA': '1'})
             passed = code == 0 and ok(repo, out)
             results.append((title, passed, time.time() - t, f'exit {code}' + ('' if passed else f': {out[-200:]!r}')))
             pf.unlink(missing_ok=True)

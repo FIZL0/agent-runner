@@ -84,6 +84,27 @@ tokens on tiny tasks in a temp repo). `python tests/agent_matrix.py [--live] [ag
 - Run each agent with the *same* model where possible (e.g. Claude Sonnet via Copilot) so the
   agent harness, not the model, is what is compared.
 
+## Results
+
+### 2026-10-30, Windows 11, Copilot (github.com) login, model Claude Haiku 5.5
+
+| Check | Pi 1.4.0 | Copilot CLI 1.0.103 |
+|-------|----------|---------------------|
+| Static flags (R1–R7) | all present | all present |
+| A4 non-interactive auth check | `pi auth check --provider github-copilot --json` → ready | none found (verify) |
+| B1 answer and exit | pass 1.7 s | pass 7–19 s |
+| B3 edit file / run shell unprompted | pass 2.8 s / 3.0 s | pass 8.5 s / 10–12 s |
+| B2 150 KB prompt | pass (`@file`) | pass via **stdin** only (`-p` is argv) |
+| B4 bad model → exit 1 | pass (provider 400) | pass (rejected before the call) |
+| B5 preset id + resume remembers | pass (`--session-id` + `--session-dir`) | pass (`--session-id`, `--resume=<id>`) |
+| B6 transcript | `<session-dir>/*_<id>.jsonl`, usage per call | `~/.copilot/session-state/<id>/events.jsonl`, `session.usage_record` |
+| D1 `run once` on examples/hello | **pass**: G1 done, gate green, pushed, 20 s, 5 calls, 6k peak | not wired yet |
+
+Notes: Copilot CLI on Windows keeps a process in the cwd briefly after exit, so temp-dir cleanup can fail
+(`end_orphans` should cover it in the runner). Pi prints a harmless "No project session found with id"
+warning when the runner presets a new session id. Not yet tested: GHE host (A2), Codex login (A3),
+failure classes C1–C3, parallel slots (D2), Codex CLI, opencode, Arctic, Crush.
+
 ## Pass bar for a backend
 
 Must: R1–R6, R8, R9, A4, A5, B1–B6, C2, D1, D4. Should: R7, R10, C1, C3, D2, D3, D5.
