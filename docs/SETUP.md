@@ -99,8 +99,11 @@ are unchanged.
 Other terminal agents (Copilot CLI, Codex, opencode, …) are evaluated in [AGENTS-EVAL.md](AGENTS-EVAL.md);
 `python tests/agent_matrix.py --auth pi` checks that Pi is installed and logged in.
 
-Pi runs in one-shot print mode, exiting when its work completes rather than waiting for a Claude Stop
-hook. Prompts are passed as files, including on Windows. Sessions are retained under
+Pi sessions are interactive, like Claude's: each slot's pane (and the `master-<repo>` window for fix
+sessions) shows Pi's interface, and you can take a session over by typing. The bundled extension
+`pi_idle.ts`, loaded with `-e` even under `lean`, does what Claude's Stop hook does: once Pi has settled at
+its prompt for `idle` seconds with nothing in the editor, it exits. Fix sessions without tmux use print
+mode. Prompts are passed as files (`@file`), at any size, including on Windows. Sessions are retained under
 `.runner/pi-sessions` for `agent-runner resume ID`, restart adoption, usage statistics, and stall checks.
 Transient network/server errors can resume up to the existing resume limit in worktree mode. Pi's own
 provider retries apply, but Claude-specific weekly caps and usage-reset detection do not apply to Pi;

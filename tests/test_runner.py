@@ -380,9 +380,15 @@ def test_prompt_and_hooks(repo: Path):
           'the prompt goes through a file, so a long brief stays under tmux\'s command limit')
     huge = 'x' * 140000  # past Linux's 128 KiB for one argument: the agent would exit at once
     cmd = R.agent_cmd(huge, 'sid', 'opus', 90, 'slot1')
-    check('slot1.cmd-prompt' in cmd and R.C.notes('slot1.prompt').read_text() == huge and
-          'slot1.prompt' in R.C.notes('slot1.cmd-prompt').read_text(),
-          'one past the argument limit is a short prompt that points at the file')
+    sid = '00000000-0000-0000-0000-000000000001'
+    cmd = R.agent_cmd(huge, sid, 'opus', 90, 'slot1')
+    check('slot1.cmd-prompt' in cmd and 'system prompt' in R.C.notes('slot1.cmd-prompt').read_text() and
+          huge in R.C.notes(f'{sid}.brief').read_text(),
+          'one past the argument limit goes in whole as the system prompt, a short first message pointing at it')
+    check(str(R.C.notes(f'{sid}.brief')) in R.agent_flags(sid, 'opus', 90, resume=True),
+          'and every resume of that session gets it again')
+    R.drop_session_tmp(sid)
+    check(not R.C.notes(f'{sid}.brief').exists(), 'a session ended for good drops its brief')
     for payload in ('{}', 'garbage', '{"transcript_path": "/nonexistent"}', '{"transcript_path": null}'):
         r = subprocess.run([sys.executable, str(RUN), 'run', '--stop-hook'], input=payload,
                            capture_output=True, text=True, cwd='/')
@@ -589,7 +595,8 @@ def test_platform(repo: Path, tmp: Path):
     check(not plat.alive(sh.pid), 'alive: a reaped process is gone')
 
     long = R.agent_argv('x' * (R.ARGV_PROMPT_MAX + 1), 'sid-1', 'opus', 90, 'slotT')
-    has(long[1], r'Your instructions .* are in .*slotT\.prompt', 'a prompt too long for a Windows command line goes by file')
+    has(long[1], r'in your system prompt', 'a prompt too long for a Windows command line goes in the system prompt')
+    has(R.C.notes('sid-1.brief').read_text(encoding='utf-8'), 'x' * (R.ARGV_PROMPT_MAX + 1), 'whole')
     eq(R.C.notes('slotT.prompt').read_text(encoding='utf-8'), 'x' * (R.ARGV_PROMPT_MAX + 1), 'all of it')
     eq(long[2:4], ['--session-id', 'sid-1'], 'and the flags follow, as in agent_cmd')
 

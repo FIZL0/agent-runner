@@ -4,6 +4,13 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Pi sessions run interactive in their panes, watchable and takeable like Claude's; the bundled
+  `pi_idle.ts` extension ends them after `idle` seconds settled at the prompt, not while text sits in the
+  editor. Fix sessions under tmux use the `master-<repo>` window for Pi too.
+- Claude: a brief too long for one command-line argument (96 KB on Linux, 24 000 characters on Windows) goes
+  in whole as the system prompt (`--append-system-prompt-file <notes>/<sid>.brief`, given again on every
+  resume), instead of a pointer the agent had to page through with Read. The file goes when the session ends.
+
 - Add a Pi backend with provider-qualified models, file-based prompts, one-shot task and merge-fix
   sessions, retained sessions, resume support, transcript statistics, and stall detection. Claude remains
   the default for unconfigured repositories. This branch's `runner.toml` selects enterprise Copilot

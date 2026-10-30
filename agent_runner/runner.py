@@ -476,14 +476,17 @@ def lean() -> list[str]:
         if C.run['lean'] else []
 
 
-def agent_flags(sid: str, model: str, idle: int, resume: bool = False) -> list[str]:
-    """Backend-specific session flags. Claude uses a Stop hook; Pi exits after its turn.
-    `resume` continues the session `sid` instead of starting it (its transcript keeps the id)."""
+def agent_flags(sid: str, model: str, idle: int, resume: bool = False, once: bool = False) -> list[str]:
+    """Backend-specific session flags. Claude ends through its Stop hook, Pi through `pi_idle.ts` (both after
+    `idle` s at the prompt); with `once`, Pi runs in print mode and exits after its turn, for no pane.
+    `resume` continues the session `sid` instead of starting it (its transcript keeps the id). A brief
+    too long for a command line rides in the system prompt (`agent_cmd`), on every resume too."""
     if C.run['backend'] == 'pi':
         if resume and not transcript(sid):
             raise FileNotFoundError(f'Pi session {sid} is missing')
-        flags = ['--print', '--session-id', sid, '--session-dir', str(C.notes('pi-sessions')),
-                 '--approve']
+        flags = ['--print'] if once else ['-e', str(Path(__file__).with_name('pi_idle.ts')),
+                                          '--runner-idle', str(idle)]
+        flags += ['--session-id', sid, '--session-dir', str(C.notes('pi-sessions')), '--approve']
         if model:
             flags += ['--model', model]
         if C.run['lean']:
@@ -493,8 +496,10 @@ def agent_flags(sid: str, model: str, idle: int, resume: bool = False) -> list[s
         return flags
     stop = [{'hooks': [{'type': 'command',
                         'command': plat.command_text([*runner_cmd(), 'run', '--stop-hook', '--idle', str(idle)])}]}]
+    brief = C.notes(f'{sid}.brief')
     return ['--resume' if resume else '--session-id', sid, '--permission-mode', 'bypassPermissions',
             '--disallowedTools', 'AskUserQuestion', '--model', model, *lean(),
+            *(['--append-system-prompt-file', str(brief)] if brief.exists() else []),
             '--settings', json.dumps({'hooks': {'Stop': stop, 'StopFailure': stop}})]
 
 
@@ -504,7 +509,8 @@ def agent_cmd(prompt: str, sid: str, model: str, idle: int, name: str, resume: b
     The prompt goes through a file (`<notes>/<name>.prompt`), read by the shell that runs the command:
     tmux refuses a command over about 16 KB, and a long brief (a task with a big journal) can exceed it.
     Past ARG_PROMPT_MAX bytes even that fails (Linux takes one argument of 128 KB at most, and the agent
-    exits at once, "Argument list too long"), so the session gets a short prompt pointing at the file.
+    exits at once, "Argument list too long"), so the brief goes in as the system prompt (`long_brief`).
+    Pi reads the file itself (`@file`), at any size.
     """
     pf = C.notes(f'{name}.prompt')
     pf.write_text(prompt, encoding='utf-8')
@@ -512,28 +518,38 @@ def agent_cmd(prompt: str, sid: str, model: str, idle: int, name: str, resume: b
         return shlex.join([C.run['agent'], *agent_flags(sid, model, idle, resume), '--', f'@{pf}'])
     if len(prompt.encode('utf-8')) > ARG_PROMPT_MAX:
         pf = C.notes(f'{name}.cmd-prompt')
-        pf.write_text(f'Your instructions for this session are in {C.notes(f"{name}.prompt").as_posix()}, too long '
-                      f'for one command-line argument. Read that whole file first, then follow it.', encoding='utf-8')
+        pf.write_text(long_brief(prompt, sid), encoding='utf-8')
     return shlex.quote(C.run['agent']) + f' "$(cat {shlex.quote(str(pf))})" ' + shlex.join(agent_flags(sid, model, idle, resume))
 
 
 ARG_PROMPT_MAX = 96 * 1024  # Linux's MAX_ARG_STRLEN is 128 KiB for one argument; leave room
 ARGV_PROMPT_MAX = 24000  # Windows' CreateProcess takes 32 767 characters, flags and paths included
+LONG_BRIEF = 'Your instructions for this session are in your system prompt, under "{marker}". Follow them.'
 
 
-def agent_argv(prompt: str, sid: str, model: str, idle: int, name: str, resume: bool = False) -> list[str]:
+def long_brief(prompt: str, sid: str) -> str:
+    """Keep a Claude brief too long for a command line in `<notes>/<sid>.brief`, which `agent_flags` hands
+    to every start and resume of `sid` as the system prompt (a resumed session does not keep the one it
+    started with); the short first message that points at it. Read whole, unlike a file the agent would
+    have to page through with its Read tool."""
+    marker = 'agent-runner task brief'
+    C.notes(f'{sid}.brief').write_text(f'# {marker}\n\n{prompt}', encoding='utf-8')
+    return LONG_BRIEF.format(marker=marker)
+
+
+def agent_argv(prompt: str, sid: str, model: str, idle: int, name: str, resume: bool = False,
+               once: bool = False) -> list[str]:
     """The same command as an argv, for Windows, where no POSIX shell stands between us and the agent.
 
     The prompt is written to `<notes>/<name>.prompt` all the same. When it is too long for a Windows
-    command line, the session is handed a short prompt that points at that file instead.
+    command line, it goes in as the system prompt (`long_brief`).
     """
     pf = C.notes(f'{name}.prompt')
     pf.write_text(prompt, encoding='utf-8')
     if C.run['backend'] == 'pi':
-        return [plat.exe(C.run['agent']), *agent_flags(sid, model, idle, resume), '--', f'@{pf}']
+        return [plat.exe(C.run['agent']), *agent_flags(sid, model, idle, resume, once), '--', f'@{pf}']
     if len(prompt) > ARGV_PROMPT_MAX:
-        prompt = (f'Your instructions for this session are in {pf.as_posix()}, too long to pass on a Windows '
-                  f'command line. Read that whole file first, then follow it.')
+        prompt = long_brief(prompt, sid)
     return [plat.exe(C.run['agent']), prompt, *agent_flags(sid, model, idle, resume)]
 
 
@@ -1147,12 +1163,12 @@ def fix_session(prompt: str, cwd: Path, fh) -> int:
     """Run one fix or repair session in `cwd` to its end; its exit code. Raises what `sp.run` raises for a
     missing agent or a timeout.
 
-    With Claude under tmux it is an ordinary session in the window "master-<repo>", so a human can watch
-    it work, or take it over by typing; the Stop hook ends it once it has been idle `MASTER_IDLE` seconds,
-    and its last words go to `fh`. Without tmux, and with Pi, it is `-p`, its output in `fh`.
+    Under tmux it is an ordinary session in the window "master-<repo>", so a human can watch it work, or
+    take it over by typing; the Stop hook (Pi: `pi_idle.ts`) ends it once it has been idle `MASTER_IDLE`
+    seconds, and its last words go to `fh`. Without tmux it is `-p` (Pi: `--print`), its output in `fh`.
     """
     timeout = C.run['fix_timeout']
-    if not MASTER_PANE or C.run['backend'] == 'pi':
+    if not MASTER_PANE:
         env = {**os.environ, **env_vars(slot_env(None))} if C.run['backend'] == 'pi' else None
         return sp.run(fix_cmd(prompt), cwd=str(cwd), stdout=fh, stderr=sp.STDOUT, stdin=sp.DEVNULL,
                       env=env, timeout=timeout).returncode
@@ -1197,7 +1213,7 @@ def fixer(head: str, prompt: str, cwd: Path, kind: str, to: str) -> tuple[int | 
 def fix_cmd(prompt: str) -> list[str]:
     """A fix session: one prompt, one answer, no session to keep — `-p`, so nothing types into a pane."""
     if C.run['backend'] == 'pi':
-        return agent_argv(prompt, str(uuid.uuid4()), C.run['fix_model'], MASTER_IDLE, 'master')
+        return agent_argv(prompt, str(uuid.uuid4()), C.run['fix_model'], MASTER_IDLE, 'master', once=True)
     return [plat.exe(C.run['agent']), '-p', prompt, '--permission-mode', 'bypassPermissions',
             '--disallowedTools', 'AskUserQuestion', '--model', C.run['fix_model'], *lean()]
 
@@ -1979,9 +1995,10 @@ def tmp_roots() -> list[Path]:
 
 
 def drop_session_tmp(sid: str) -> None:
-    """Delete session `sid`'s temp folder: it has ended for good (not queued to resume)."""
+    """Delete session `sid`'s temp folder and long brief: it has ended for good (not queued to resume)."""
     if not re.fullmatch(r'[0-9a-f-]{36}', sid or ''):
         return
+    C.notes(f'{sid}.brief').unlink(missing_ok=True)
     for root in tmp_roots():
         for d in root.glob(f'claude-*/*/{sid}'):
             shutil.rmtree(d, ignore_errors=True)

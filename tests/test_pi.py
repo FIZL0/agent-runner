@@ -59,8 +59,13 @@ def test_commands(repo: Path):
     configure(repo)
     model = 'github-copilot/example'
     flags = R.agent_flags('test-session', model, 90)
-    check('--print' in flags and '--session-id' in flags and '--settings' not in flags
-          and '--permission-mode' not in flags, 'Pi uses native one-shot flags, not Claude hooks')
+    check('--print' not in flags and '--session-id' in flags and '--settings' not in flags
+          and '--permission-mode' not in flags, 'Pi runs interactive, without Claude hooks')
+    ext = flags[flags.index('-e') + 1]
+    check(ext.endswith('pi_idle.ts') and Path(ext).exists() and flags[flags.index('--runner-idle') + 1] == '90',
+          'its idle exit is the bundled extension, given the idle seconds')
+    check('--print' in R.agent_flags('test-session', model, 90, once=True) and
+          '-e' not in R.agent_flags('test-session', model, 90, once=True), 'once: print mode, no extension')
     eq(flags[flags.index('--model') + 1], model, 'provider-qualified models are passed intact')
     eq(flags[flags.index('--tools') + 1],
        f'read,{"powershell" if plat.WINDOWS else "bash"},edit,write', 'lean tools use the platform shell')
@@ -160,9 +165,14 @@ def test_fixer(repo: Path):
         calls.append((argv, kw))
         return subprocess.CompletedProcess(argv, 7)
 
-    with patch.object(R, 'MASTER_PANE', True), patch.object(R.sp, 'run', side_effect=execute):
+    with patch.object(R, 'MASTER_PANE', True), patch.object(R.shutil, 'which', return_value='pi'), \
+            patch.object(R, 'pane', return_value=2 ** 22 + 7) as pane:
+        eq(R.fix_session('resolve the merge', repo, io.StringIO()), 0, 'under tmux a Pi fixer is a pane session')
+        cmd = pane.call_args[0][2]
+        check('pi_idle.ts' in cmd and '--print' not in cmd, 'watchable in the master window, ended by pi_idle')
+    with patch.object(R, 'MASTER_PANE', False), patch.object(R.sp, 'run', side_effect=execute):
         eq(R.fix_session('resolve the merge', repo, io.StringIO()), 7,
-           'Pi fix sessions return their real exit code, even with tmux enabled')
+           'Pi fix sessions without tmux return their real exit code')
         argv, kw = calls[-1]
         check('--print' in argv and '--settings' not in argv, 'fix sessions use the Pi backend too')
         eq(kw['env']['NODE_USE_SYSTEM_CA'], '1', 'fixers inherit non-slot environment settings')
