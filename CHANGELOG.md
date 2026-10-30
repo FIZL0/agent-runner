@@ -8,6 +8,9 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
   sessions, retained sessions, resume support, transcript statistics, and stall detection. Claude remains
   the default for unconfigured repositories. This branch's `runner.toml` selects enterprise Copilot
   through Pi, with the OS certificate trust store enabled for the runner's Node.js processes.
+- `docs/AGENTS-EVAL.md`: what a backend must support, candidate terminal agents (Copilot CLI, Codex,
+  opencode, Arctic, Crush) by login type, and a test plan; `tests/agent_matrix.py` probes them. First
+  live results: Pi and Copilot CLI pass the headless checks; Pi completes `run once` end to end.
 
 ## 0.6.34 (2026-10-29)
 

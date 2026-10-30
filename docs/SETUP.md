@@ -96,6 +96,9 @@ From a clone on Windows, use `python -m agent_runner run once`; an installed run
 `agent-runner run once`. Normal terminal selection, parallel worktrees, `done`, test gates, and merging
 are unchanged.
 
+Other terminal agents (Copilot CLI, Codex, opencode, …) are evaluated in [AGENTS-EVAL.md](AGENTS-EVAL.md);
+`python tests/agent_matrix.py --auth pi` checks that Pi is installed and logged in.
+
 Pi runs in one-shot print mode, exiting when its work completes rather than waiting for a Claude Stop
 hook. Prompts are passed as files, including on Windows. Sessions are retained under
 `.runner/pi-sessions` for `agent-runner resume ID`, restart adoption, usage statistics, and stall checks.

@@ -13,9 +13,11 @@ that has its own copy are all in [docs/SETUP.md](docs/SETUP.md). Changes: [CHANG
   (`./run …` in a clone is the same).
 - One optional config file in your repo: `runner.toml`, or a table in your own config file.
 
-**Pi:** this branch's `runner.toml` selects Pi with GitHub Copilot. See
-[Pi and enterprise Copilot setup](docs/SETUP.md#pi-and-enterprise-copilot) for login, models, and configuration
-in other repositories. Repositories without configuration still default to Claude Code.
+**Pi:** set `agent = "pi"` to run sessions with [Pi](https://www.npmjs.com/package/@earendil-works/pi-coding-agent),
+which can use GitHub Copilot (github.com or an enterprise host), Codex and other provider logins. See
+[Pi and enterprise Copilot setup](docs/SETUP.md#pi-and-enterprise-copilot). Repositories without configuration
+still default to Claude Code. Which other terminal agents could become backends, and the tests that decide it,
+are in [docs/AGENTS-EVAL.md](docs/AGENTS-EVAL.md).
 
 ```sh
 uv tool install git+https://github.com/FIZL0/agent-runner    # latest; or pipx install …
@@ -536,6 +538,8 @@ python3 tests/test_runner.py    # picking, done, merge/join/land/push, fix sessi
                                 # batches, flaky/inherited failures, the platform layer and the
                                 # Windows slot shim (temp repos, fake agent)
 python3 tests/test_pi.py        # Pi configuration, prompts, sessions, errors, and merge fixers (no network)
+python3 tests/agent_matrix.py   # which terminal agents are installed and have the flags a backend needs;
+                                # --live runs tiny real tasks (needs a login, spends tokens)
 ```
 
 ## License
