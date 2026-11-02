@@ -1377,6 +1377,70 @@ def test_followups(repo: Path):
         git(repo, 'reset', '-q', '--hard', head)
 
 
+def test_ci_watch(repo: Path):
+    print('run: a red workflow run on the shared branch files one critical task, once')
+    from agent_runner import ci
+    R.init(repo)
+    runs = [{'databaseId': 7, 'status': 'completed', 'conclusion': 'failure', 'headSha': 'abc12345ff',
+             'url': 'https://example/runs/7', 'displayTitle': 'T9: something', 'createdAt': '2026-11-02T13:53:00Z'},
+            {'databaseId': 8, 'status': 'completed', 'conclusion': 'cancelled', 'headSha': 'f', 'url': '',
+             'displayTitle': '', 'createdAt': ''},
+            {'databaseId': 9, 'status': 'in_progress', 'conclusion': '', 'headSha': 'e', 'url': '',
+             'displayTitle': '', 'createdAt': ''}]
+    log = ('ci / test\tUNKNOWN STEP\t2026-11-02T13:54:29.1Z   The system library `alsa` was not found.\n'
+           'ci / test\tUNKNOWN STEP\t2026-11-02T13:54:38.1Z ##[error]Process completed with exit code 101.\n'
+           'ci / test\tUNKNOWN STEP\t2026-11-02T13:54:38.2Z Post job cleanup.\n')
+    asked = []
+
+    def gh(*a):
+        asked.append(a)
+        if a[:2] == ('run', 'list'):
+            out = json.dumps(runs)
+        elif '--log-failed' in a:
+            out = log
+        else:
+            out = json.dumps({'jobs': [{'name': 'ci / test', 'conclusion': 'failure'},
+                                       {'name': 'web', 'conclusion': 'success'}]})
+        return subprocess.CompletedProcess(a, 0, out, '')
+    head, real = git(repo, 'rev-parse', 'HEAD'), ci.gh_in
+    ci.gh_in = lambda cwd: gh
+    R.C.run['ci_watch'] = ['pages.yml']
+    seen = ci.seen_file(R.C.notes, 'pages.yml')
+    seen.unlink(missing_ok=True)
+    try:
+        R.CI_AT[0] = time.time()
+        eq((R.watch_ci('main'), asked), ([], []), 'not before CI_POLL has passed since the last look')
+        got = R.watch_ci('main', force=True)
+        eq(len(got), 1, 'the newest finished run is red (a cancelled one says nothing): one task')
+        todo = (repo / 'plan/TODO.md').read_text()
+        has(todo, rf'- \[ \] \*\*{got[0]}\*\* \(follow-up, critical\) CI: `pages.yml` on main is red '
+            r'\(failure, run 7 on abc12345.*failed ci / test\.', 'a critical task naming the failed jobs')
+        check(got[0].startswith('B'), '[run] ci_kind, B by default')
+        own = (repo / f'plan/{got[0]}.md').read_text()
+        has(own, r'Process completed with exit code 101\.\n```', 'the log tail, in the long form, to the last error')
+        check('Post job cleanup' not in own and 'ci / test:   The system library' in own,
+              'without the cleanup after it, nor the timestamps')
+        has(git(repo, 'log', '-1', '--format=%s'), rf'^Plan: {got[0]}, `pages.yml` on main is red', 'committed')
+        eq(git(repo, 'status', '--porcelain', '--', 'plan'), '', 'both files')
+        eq(R.watch_ci('main', force=True), [], 'the same run is not filed twice')
+        runs.insert(0, {**runs[0], 'databaseId': 10})
+        eq(R.watch_ci('main', force=True), [], 'nor a newer red run while its task is open')
+        eq(seen.read_text().strip(), '10', 'though it is judged')
+        git(repo, 'reset', '-q', '--hard', head)
+        runs.insert(0, {**runs[0], 'databaseId': 11, 'conclusion': 'success'})
+        eq(R.watch_ci('main', force=True), [], 'a green run files nothing')
+        runs.insert(0, {**runs[0], 'databaseId': 12, 'conclusion': 'failure'})
+        n = len(asked)
+        (repo / 'plan/TODO.md').write_text((repo / 'plan/TODO.md').read_text() + '\n- [ ] **Z1** mid-edit\n')
+        eq((R.watch_ci('main', force=True), len(asked)), ([], n), 'a plan with uncommitted edits is left alone')
+        git(repo, 'checkout', '-q', '--', 'plan/TODO.md')
+        eq(len(R.watch_ci('main', force=True)), 1, 'a red run after the task closed files again')
+    finally:
+        ci.gh_in, R.C.run['ci_watch'] = real, []
+        git(repo, 'reset', '-q', '--hard', head)
+        seen.unlink(missing_ok=True)
+
+
 def test_update_notice():
     import io
     import urllib.request
@@ -1458,7 +1522,7 @@ def main() -> int:
                        lambda: test_session_tmp(repo, tmp), lambda: test_end_orphans(repo), lambda: test_tested_ref(repo, tmp),
                        lambda: test_no_pane(repo, tmp), lambda: test_other_repos_panes(repo, tmp),
                        lambda: test_limit_lets_go(repo),
-                       lambda: test_shared_push(repo, tmp), lambda: test_followups(repo), test_dedupe_tasks, test_update_notice,
+                       lambda: test_shared_push(repo, tmp), lambda: test_followups(repo), lambda: test_ci_watch(repo), test_dedupe_tasks, test_update_notice,
                        lambda: test_stalled(tmp)])
 
 

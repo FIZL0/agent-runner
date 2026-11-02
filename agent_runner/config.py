@@ -103,6 +103,9 @@ DEFAULTS: dict = {
         'flaky': '',            # a regex whose group 1 names tests (comma/space separated) a passing gate says
                                 # passed only on a rerun; each, like a `retest` pass, gets a critical follow-up
         'flaky_kind': 'T',      # the id prefix those follow-ups get (see [plan] kinds)
+        'ci_watch': [],         # GitHub Actions workflow files (pages.yml) whose newest finished run on the
+                                # shared branch is read while a run is up: a red one files one critical task
+        'ci_kind': 'B',         # the id prefix that task gets
         'batch': True,          # finished branches waiting for the merge go in together under one gate run
         'before_start': '',     # a command that must succeed before a session starts; the slot waits on it
         'not_attempt': '',      # a regex on a finished branch's first commit subject ({id}): such a session

@@ -207,6 +207,13 @@ A test that fails under load and passes alone (a `retest` pass, or a name `[run]
 gate's output) gets a `critical` follow-up to make it robust when the merge lands, unless an open task
 names it already.
 
+With `[run] ci_watch = ["pages.yml"]`, the run reads GitHub Actions too: every 5 min (and only when no merge
+holds the lock) it asks `gh` for the newest finished run of each workflow on the shared branch. A red one
+(a cancelled run says nothing; the one before it decides) gets a single `critical` task, its failed jobs on the
+line and the last 40 lines of `gh run view --log-failed` in `plan/<ID>.md`. No second one while that task
+is open, and no run is judged twice (`<notes>/ci-<workflow>.seen`), so a broken workflow is one task, not
+an email per push. Landing never waits on CI.
+
 Several slots run at once, so **a task that has to wait for another must say so in a way the runner reads**.
 Writing "follows A12" in its text isn't enough: if A12 hasn't started, the task starts beside it.
 
@@ -483,6 +490,9 @@ failures = ""             # regex, group 1 = a failing test's name in the gate's
 retest = ""               # the gate for just {names}: rerun alone (load), then on the base (already failing)
 flaky = ""                # regex, group 1 = tests a passing gate passed only on its own rerun (comma-separated)
 flaky_kind = "T"          # the prefix of the critical "make <test> robust" follow-ups
+ci_watch = []             # workflow files ("pages.yml"): a red newest finished run on the shared branch
+                          # files one critical task (needs `gh` logged in)
+ci_kind = "B"             # the prefix of that task
 batch = true              # finished branches waiting for the merge go in together under one gate run
 before_start = ""         # a command that must pass before any session starts (a display, a device)
 not_attempt = ""          # regex on a branch's last commit subject ({id}): a phase, not the run's one try

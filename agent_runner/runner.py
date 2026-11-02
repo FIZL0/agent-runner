@@ -67,7 +67,7 @@ import uuid
 from pathlib import Path
 
 from agent_runner import plan as P
-from agent_runner import gitops, plat
+from agent_runner import ci, gitops, plat
 
 # The library API a wrapping project may call; these change only in a major version. `cmd_run(argv)` and
 # `cmd_stop(argv)` are the commands; `PROMPT`, `FIXER` and `OTHERS` may be replaced before `cmd_run`.
@@ -1855,6 +1855,57 @@ def reopen_landed(branch: str, why: str) -> None:
         log(f'{t}: reopened, {", ".join(ids)} landed')
 
 
+CI_AT = [0.0]  # when `watch_ci` last asked GitHub
+
+
+def watch_ci(branch: str, force: bool = False) -> list[str]:
+    """`[run] ci_watch`: file one critical task for a red workflow run on the shared branch (see `ci`).
+
+    Every `ci.CI_POLL` s from the run loop, and only when MERGE is free: the task is committed in the main
+    checkout like `reopen_landed`'s, and a loop that waited out a gate here would start nothing for an hour.
+    Left alone, as there, while TODO.md has edits nobody committed. The ids filed.
+    """
+    flows = C.run['ci_watch']
+    flows = [flows] if isinstance(flows, str) else flows
+    if not flows or not force and time.time() - CI_AT[0] < ci.CI_POLL:
+        return []
+    if not MERGE.acquire(blocking=False):
+        return []
+    filed: list[str] = []
+    try:
+        CI_AT[0] = time.time()
+        rel = plan_rel('TODO.md')
+        if git('branch', '--show-current').stdout.strip() != branch or \
+                git('status', '--porcelain', '--', plan_rel('')).stdout.strip():
+            return []
+        gh = ci.gh_in(ROOT)
+        for wf in flows:
+            ls = P.lines(ROOT / rel)
+            open_text = '\n'.join(l for l in ls if (m := P.ITEM.match(l)) and m.group(2) != 'x')
+            seen = ci.seen_file(C.notes, wf)
+            was = seen.read_text() if seen.exists() else ''
+            if not (got := ci.to_file(gh, wf, branch, seen, open_text)):
+                continue
+            text, long = got
+            tid = P.add(C.run['ci_kind'], text, todo=ROOT / rel, pri='critical')
+            own = plan_rel(f'{tid}.md')
+            (ROOT / own).write_text('\n'.join([f'# {tid} — CI: {ci.marker(wf, branch)}', '', *long, '']),
+                                    encoding='utf-8')
+            git('add', '--', own)
+            if git('commit', '-qm', f'Plan: {tid}, {ci.marker(wf, branch)}', '--', rel, own).returncode:
+                git('reset', '-q', '--', own)
+                git('checkout', '-q', '--', rel)
+                (ROOT / own).unlink(missing_ok=True)
+                seen.write_text(was)  # not filed: the next look tries that run again
+                continue
+            filed.append(tid)
+            note(f'{tid}: filed (critical), {ci.marker(wf, branch)}')
+            log(f'{tid}: filed (critical), {ci.marker(wf, branch)}: {text[:200]}')
+    finally:
+        MERGE.release()
+    return filed
+
+
 def not_attempt(tid: str, branch: str) -> bool:
     """The session's last commit matches `[run] not_attempt` ({id} = the task): a phase that leaves the task open
     on purpose (a spec written for a later session to port from), so the task may start again once it merges."""
@@ -2773,6 +2824,7 @@ def run(argv: list[str], prog: str) -> int:
             tried -= REOPENED  # a task reopened by a merge is a new attempt, not the one that blocked
             REOPENED.clear()
         merging = [t for t in merging if t.is_alive()]
+        watch_ci(branch)
         take_keys()
         waiting = {n: q for n, q in queued().items() if n in free_at and n <= slots}  # an exit may have queued one
         # a slot asleep until a usage reset does not hold the stop; a session waiting to resume does

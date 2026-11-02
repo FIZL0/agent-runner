@@ -2,6 +2,14 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
+## 0.7.3 (2026-11-02)
+
+- `[run] ci_watch`: a run reads the shared branch's GitHub Actions results (`gh run list`, every 5 min, never
+  holding up a landing) and files one `critical` task for a red workflow run, with its failed jobs and the
+  last lines of `--log-failed` in the task's long form; none again while it is open. openmx's pages.yml had
+  been red on every push for two days, and its only sign was an email per push. `[run] ci_kind` (B) is
+  the task's prefix.
+
 ## 0.7.2 (2026-11-02)
 
 - Claude sessions no longer stop on a startup dialog nobody is there to answer. Lean mode leaves out user
