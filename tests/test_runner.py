@@ -165,6 +165,10 @@ def test_done(repo: Path, tmp: Path):
     print('done: gate, tick, commit, push the task branch — never the shared one')
     d = task_branch(repo, 1, 'T5')
     check((d / 'runner.toml').exists(), 'the worktree has the runner.toml')
+    trusted = json.loads((tmp / '.claude.json').read_text())['projects'][str(d.resolve())]
+    check(trusted.get('hasTrustDialogAccepted'), "the worktree is a folder Claude Code already trusts", trusted)
+    check(any('"skipDangerousModePermissionPrompt": true' in a for a in R.Claude().flags('s', 'opus', 30, False, False)),
+          'a session skips the bypass-mode warning, which lean mode would otherwise bring back')
     (d / 'd.py').write_text('def log(x):\n    print(x)\n', encoding='utf-8')
     (d / 'BROKEN').write_text('', encoding='utf-8')
     r = run(d, 'done', 'T5', 'T5: the logger')
@@ -1439,6 +1443,7 @@ def test_stalled(tmp: Path):
 def main() -> int:
     with tempfile.TemporaryDirectory() as t:
         tmp = Path(t)
+        os.environ['CLAUDE_CONFIG_DIR'] = str(tmp)  # Claude.trust writes here, never to the real ~/.claude.json
         repo = make_repo(tmp)
         return report([lambda: test_picking(repo), lambda: test_split_parents(repo), lambda: test_done(repo, tmp), lambda: test_merge(repo, tmp),
                        lambda: test_retry(repo), lambda: test_unmerged(repo),

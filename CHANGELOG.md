@@ -2,6 +2,12 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
+## 0.7.2 (2026-11-02)
+
+- Claude sessions no longer stop on a startup dialog nobody is there to answer. Lean mode leaves out user
+  settings, so a session now passes `skipDangerousModePermissionPrompt` itself, and each slot and merge
+  worktree is marked trusted in `~/.claude.json` (or `$CLAUDE_CONFIG_DIR`) before a session starts there.
+
 ## 0.7.1 (2026-11-01)
 
 - Claude Code (Opus) is the default and needs no configuration; Pi is the way to other providers. The README

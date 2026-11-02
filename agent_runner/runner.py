@@ -337,6 +337,7 @@ def worktree(n, branch: str) -> Path:
                     plat.link(src, dst)  # a symlink; on Windows without Developer Mode a junction or hard link
                 except OSError:
                     pass
+    backend().trust(d)
     return d
 
 
@@ -497,7 +498,9 @@ class Claude:
         return ['--resume' if resume else '--session-id', sid, '--permission-mode', 'bypassPermissions',
                 '--disallowedTools', 'AskUserQuestion', '--model', model, *lean(),
                 *(['--append-system-prompt-file', str(brief)] if brief.exists() else []),
-                '--settings', json.dumps({'hooks': {'Stop': stop, 'StopFailure': stop}})]
+                # lean() drops user settings, where the bypass dialog's opt-out lives; nobody is there to answer it
+                '--settings', json.dumps({'skipDangerousModePermissionPrompt': True,
+                                          'hooks': {'Stop': stop, 'StopFailure': stop}})]
 
     def cmd(self, prompt: str, pf: Path, sid: str, flags: list[str]) -> str:
         """sh reads the prompt file into the one argument (tmux refuses a command over about 16 KB). Past
@@ -523,6 +526,27 @@ class Claude:
         C.notes(f'{sid}.brief').write_text(f'# {marker}\n\n{prompt}', encoding='utf-8')
         return LONG_BRIEF.format(marker=marker)
 
+    @staticmethod
+    def trust(d: Path) -> None:
+        """Accept Claude Code's "do you trust this folder?" dialog for `d` ahead of time: an interactive session
+        in a new worktree otherwise waits on it, and no setting turns it off. The answer lives per folder in
+        `~/.claude.json` (or `$CLAUDE_CONFIG_DIR/.claude.json`)."""
+        # ponytail: read-modify-replace; a running Claude rewriting the file at the same instant can drop it,
+        # and the next start writes it again
+        cfg_dir = os.environ.get('CLAUDE_CONFIG_DIR')
+        f = Path(cfg_dir) / '.claude.json' if cfg_dir else Path.home() / '.claude.json'
+        try:
+            data = json.loads(f.read_text(encoding='utf-8')) if f.exists() else {}
+        except (OSError, ValueError):
+            return  # unreadable or mid-write: leave it; the dialog shows, as before
+        proj = data.setdefault('projects', {}).setdefault(str(d.resolve()), {})
+        if proj.get('hasTrustDialogAccepted'):
+            return
+        proj['hasTrustDialogAccepted'] = True
+        tmp = f.with_name(f'{f.name}.agent-runner.tmp')
+        tmp.write_text(json.dumps(data, indent=2), encoding='utf-8')
+        os.replace(tmp, f)
+
     def fix_cmd(self, prompt: str) -> list[str]:
         return [plat.exe(C.run['agent']), '-p', prompt, '--permission-mode', 'bypassPermissions',
                 '--disallowedTools', 'AskUserQuestion', '--model', C.run['fix_model'], *lean()]
@@ -544,6 +568,10 @@ class Pi(Claude):
     `pi_hooks.ts` runs the repo's Claude PreToolUse hooks. Pi reads the prompt file itself (`@file`), at any size. Sessions live in `<notes>/pi-sessions`, their
     entries turned into Claude's shape (`entry`)."""
     report_exit = True
+
+    @staticmethod
+    def trust(d):
+        pass  # Pi asks no folder question
 
     def flags(self, sid, model, idle, resume, once):
         if resume and not transcript(sid):
