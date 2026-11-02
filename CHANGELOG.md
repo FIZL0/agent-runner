@@ -2,6 +2,14 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
+## 0.7.1 (2026-11-01)
+
+- Claude Code (Opus) is the default and needs no configuration; Pi is the way to other providers. The README
+  and SETUP say so, and that Pi on an Anthropic model bills extra usage rather than the plan.
+- Pi sessions run the repo's Claude Code PreToolUse hooks (`pi_hooks.ts`: exit 2 or a deny blocks the call,
+  an updated command replaces it), so a repo's guards hold in Pi slots and fix sessions.
+- `AGENT_RUNNER_BACKEND=claude|pi` picks the backend for one run, the repo's config otherwise kept.
+
 ## 0.7.0 (2026-10-30)
 
 - A Pi backend (`[run] backend = "pi"`, or an `agent` executable named `pi`): provider-qualified models

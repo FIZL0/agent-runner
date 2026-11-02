@@ -1,7 +1,7 @@
 # agent-runner
 
-agent-runner runs N terminal coding agents (Claude Code or Pi) unattended against a git repository with a markdown
-task list.
+agent-runner runs N terminal coding agents unattended against a git repository with a markdown task list.
+By default every session is Claude Code (Opus), with its hooks and permission setup: no configuration needed.
 Each session gets one task in its own git worktree and terminal (a tmux pane; on Windows a Windows
 Terminal tab or console window). When a session finishes, the runner merges the branch, runs the test
 gate, pushes, and starts the next task. It is independent of what the repository contains.
@@ -14,12 +14,14 @@ that has its own copy are all in [docs/SETUP.md](docs/SETUP.md). Changes: [CHANG
   (`./run …` in a clone is the same).
 - One optional config file in your repo: `runner.toml`, or a table in your own config file.
 
-**Pi:** set `agent = "pi"` to run sessions with [Pi](https://www.npmjs.com/package/@earendil-works/pi-coding-agent),
-which can use GitHub Copilot (github.com or an enterprise host), Codex and other provider logins. See
-[Pi and enterprise Copilot setup](docs/SETUP.md#pi-and-enterprise-copilot). `AGENT_RUNNER_BACKEND=pi agent-runner run once`
-tries a Claude repo on Pi without editing its config. A Pi session runs the repo's Claude Code PreToolUse hooks
-(`.claude/settings.json`) too, so its guards hold. Repositories without configuration still default to Claude Code. Which other terminal agents could become backends, and the tests that decide it,
-are in [docs/AGENTS-EVAL.md](docs/AGENTS-EVAL.md).
+**Other providers, through Pi:** for a model Claude Code doesn't serve (GitHub Copilot on github.com or an
+enterprise host, Codex, other provider logins), sessions can run on
+[Pi](https://www.npmjs.com/package/@earendil-works/pi-coding-agent) instead: `backend = "pi"` in `[run]`, or
+`AGENT_RUNNER_BACKEND=pi agent-runner run once` to try it for one run without editing the config. A Pi session
+runs the repo's Claude Code PreToolUse hooks (`.claude/settings.json`) too, so its guards hold. Pi on an
+Anthropic model bills that account's extra usage, not the plan, so keep Claude models on Claude Code. Setup:
+[Pi and enterprise Copilot](docs/SETUP.md#pi-and-enterprise-copilot). Which other terminal agents could become
+backends, and the tests that decide it, are in [docs/AGENTS-EVAL.md](docs/AGENTS-EVAL.md).
 
 ```sh
 uv tool install git+https://github.com/FIZL0/agent-runner    # latest; or pipx install …

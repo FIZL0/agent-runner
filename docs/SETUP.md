@@ -55,7 +55,10 @@ makes the `agent-runner` command run the clone's code.
 
 ## Pi and enterprise Copilot
 
-Pi 1.4.0 or newer is supported alongside Claude Code. Install it with Node.js 22.19+:
+Claude Code is the default backend and needs nothing here. Use Pi when sessions should run on another
+provider (GitHub Copilot, enterprise Copilot, Codex, other Pi logins): `backend = "pi"` in `[run]`, or
+`AGENT_RUNNER_BACKEND=pi` for one run. Pi on an Anthropic model bills the account's extra usage, not the plan.
+Pi 1.4.0 or newer is supported. Install it with Node.js 22.19+:
 
 ```powershell
 npm install --global --ignore-scripts @earendil-works/pi-coding-agent

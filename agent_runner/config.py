@@ -74,7 +74,7 @@ DEFAULTS: dict = {
         'mux': '',              # terminal per slot: tmux, wt, console, none; '' = tmux (Windows: wt, else console)
         'mode': 'd',            # d = never two running tasks on the same file; p = strict plan order
         'agent': 'claude',      # the CLI that runs a session
-        'backend': '',         # claude or pi; empty infers pi from the executable name, else claude
+        'backend': '',          # '' = Claude Code (or pi when `agent` is a pi executable); pi = other providers
         'model': 'opus',
         'lean': True,           # agents get Bash/Read/Edit/Write only, no MCP, no user settings
         'idle': 90,             # seconds a finished session sits at its prompt before it is ended
