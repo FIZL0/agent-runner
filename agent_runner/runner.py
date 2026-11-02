@@ -541,15 +541,16 @@ class Claude:
 class Pi(Claude):
     """Pi: interactive too, ended by the bundled `pi_idle.ts` extension after `idle` s settled at the prompt
     with nothing in the editor; `once` is print mode (exits after its turn), for a fix session with no pane.
-    Pi reads the prompt file itself (`@file`), at any size. Sessions live in `<notes>/pi-sessions`, their
+    `pi_hooks.ts` runs the repo's Claude PreToolUse hooks. Pi reads the prompt file itself (`@file`), at any size. Sessions live in `<notes>/pi-sessions`, their
     entries turned into Claude's shape (`entry`)."""
     report_exit = True
 
     def flags(self, sid, model, idle, resume, once):
         if resume and not transcript(sid):
             raise FileNotFoundError(f'Pi session {sid} is missing')
-        flags = ['--print'] if once else ['-e', str(Path(__file__).with_name('pi_idle.ts')),
-                                          '--runner-idle', str(idle)]
+        ext = lambda name: ['-e', str(Path(__file__).with_name(name))]
+        flags = ext('pi_hooks.ts')  # the repo's Claude PreToolUse guards, in print mode too
+        flags += ['--print'] if once else [*ext('pi_idle.ts'), '--runner-idle', str(idle)]
         flags += ['--session-id', sid, '--session-dir', str(C.notes('pi-sessions')), '--approve']
         if model:
             flags += ['--model', model]

@@ -16,8 +16,9 @@ that has its own copy are all in [docs/SETUP.md](docs/SETUP.md). Changes: [CHANG
 
 **Pi:** set `agent = "pi"` to run sessions with [Pi](https://www.npmjs.com/package/@earendil-works/pi-coding-agent),
 which can use GitHub Copilot (github.com or an enterprise host), Codex and other provider logins. See
-[Pi and enterprise Copilot setup](docs/SETUP.md#pi-and-enterprise-copilot). Repositories without configuration
-still default to Claude Code. Which other terminal agents could become backends, and the tests that decide it,
+[Pi and enterprise Copilot setup](docs/SETUP.md#pi-and-enterprise-copilot). `AGENT_RUNNER_BACKEND=pi agent-runner run once`
+tries a Claude repo on Pi without editing its config. A Pi session runs the repo's Claude Code PreToolUse hooks
+(`.claude/settings.json`) too, so its guards hold. Repositories without configuration still default to Claude Code. Which other terminal agents could become backends, and the tests that decide it,
 are in [docs/AGENTS-EVAL.md](docs/AGENTS-EVAL.md).
 
 ```sh

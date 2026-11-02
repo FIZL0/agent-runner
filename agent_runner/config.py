@@ -18,6 +18,9 @@ Where the settings come from, first match wins:
    project's own `[git]` or `[run]` never collide with ours. Otherwise its top level is. A relative path
    is relative to the main checkout.
 2. `runner.toml` at the root of the checkout, else the main checkout's (a git-ignored one is only there).
+
+`AGENT_RUNNER_BACKEND=claude|pi` runs on that backend whatever the file says (its `agent`, `model` and
+`fix_model` then fall back to the backend's defaults), e.g. to try a task on Pi with the repo's own config.
 """
 from __future__ import annotations
 
@@ -165,14 +168,20 @@ class Config:
                 raw = tomllib.load(fh)
             if isinstance(raw.get('agent-runner'), dict):
                 raw = raw['agent-runner']
+        supplied = dict(raw.get('run', {}))
+        infer = lambda run: run.get('backend') or (
+            'pi' if Path(run.get('agent', 'claude').replace('\\', '/')).stem.lower() == 'pi' else 'claude')
+        if (env := os.environ.get('AGENT_RUNNER_BACKEND')) and env != infer(supplied):
+            # one run on another agent with the repo's config: its agent and models are the other backend's
+            supplied = {k: v for k, v in supplied.items() if k not in ('agent', 'model', 'fix_model')}
+            supplied['backend'] = env
+        raw = {**raw, 'run': supplied}
         self.raw = {k: {**v, **raw.get(k, {})} for k, v in DEFAULTS.items()}
         self.run = self.raw['run']
-        backend = self.run['backend'] or (
-            'pi' if Path(self.run['agent'].replace('\\', '/')).stem.lower() == 'pi' else 'claude')
+        backend = infer(self.run)
         if backend not in ('claude', 'pi'):
             raise SystemExit(f'agent-runner: unknown [run] backend {backend!r}; choose claude or pi')
         self.run['backend'] = backend
-        supplied = raw.get('run', {})
         if 'agent' not in supplied:
             self.run['agent'] = backend
         if backend == 'pi':

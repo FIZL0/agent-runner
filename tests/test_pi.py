@@ -46,6 +46,18 @@ def test_config(repo: Path):
           'Claude still uses its interactive session flags and Stop hooks')
     eq(R.agent_flags('sid', 'opus', 90, resume=True)[:2], ['--resume', 'sid'],
        'Claude resume flags remain unchanged')
+    os.environ['AGENT_RUNNER_BACKEND'] = 'pi'
+    try:
+        c = configure(repo, 'model = "sonnet"\nfix_model = "opus"\n')
+        eq((c.run['agent'], c.run['backend'], c.run['model'], c.run['fix_model']), ('pi', 'pi', '', ''),
+           "AGENT_RUNNER_BACKEND=pi runs a Claude repo on Pi, without Claude's models")
+        c = configure(repo, 'backend = "pi"\nmodel = "x/y"\n')
+        eq(c.run['model'], 'x/y', 'an override naming the configured backend keeps its model')
+        os.environ['AGENT_RUNNER_BACKEND'] = 'claude'
+        c = configure(repo, 'model = "sonnet"\n')
+        eq(c.run['model'], 'sonnet', 'an override naming the inferred backend keeps its model')
+    finally:
+        del os.environ['AGENT_RUNNER_BACKEND']
     (repo / 'runner.toml').write_text('[run]\nbackend = "invalid"\n', encoding='utf-8')
     try:
         Config(repo)
@@ -61,11 +73,13 @@ def test_commands(repo: Path):
     flags = R.agent_flags('test-session', model, 90)
     check('--print' not in flags and '--session-id' in flags and '--settings' not in flags
           and '--permission-mode' not in flags, 'Pi runs interactive, without Claude hooks')
-    ext = flags[flags.index('-e') + 1]
-    check(ext.endswith('pi_idle.ts') and Path(ext).exists() and flags[flags.index('--runner-idle') + 1] == '90',
-          'its idle exit is the bundled extension, given the idle seconds')
-    check('--print' in R.agent_flags('test-session', model, 90, once=True) and
-          '-e' not in R.agent_flags('test-session', model, 90, once=True), 'once: print mode, no extension')
+    exts = [flags[i + 1] for i, f in enumerate(flags) if f == '-e']
+    check([Path(e).name for e in exts] == ['pi_hooks.ts', 'pi_idle.ts'] and all(Path(e).exists() for e in exts)
+          and flags[flags.index('--runner-idle') + 1] == '90',
+          'the bundled hook bridge and idle exit, given the idle seconds')
+    once = R.agent_flags('test-session', model, 90, once=True)
+    check('--print' in once and 'pi_idle.ts' not in ' '.join(once) and 'pi_hooks.ts' in ' '.join(once),
+          'once: print mode, hooks bridged, no idle exit')
     eq(flags[flags.index('--model') + 1], model, 'provider-qualified models are passed intact')
     eq(flags[flags.index('--tools') + 1],
        f'read,{"powershell" if plat.WINDOWS else "bash"},edit,write', 'lean tools use the platform shell')

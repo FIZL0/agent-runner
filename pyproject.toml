@@ -30,4 +30,4 @@ packages = ["agent_runner"]
 version = { attr = "agent_runner.__version__" }
 
 [tool.setuptools.package-data]
-agent_runner = ["pi_idle.ts"]
+agent_runner = ["pi_idle.ts", "pi_hooks.ts"]
