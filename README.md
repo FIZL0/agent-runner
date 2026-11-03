@@ -83,18 +83,18 @@ and the files a conflict may be joined in are a glob list.
 ## How it works
 
 ```
-plan/TODO.md ──pick──▶ slot N: git worktree <repo>-slots/sN on task/<ID>
+plan/TODO.md ──pick──▶ slot N: git worktree ~/runs/<repo>/sN on task/<ID>
                          tmux pane sN: claude "<prompt + the task's brief>"
                          …the session works, then `./run done <ID> "msg"` (test gate → tick → commit → push task/<ID>)
                          Stop hook: quiet for [run] idle seconds → the session is ended
-               ◀─merge── merge worktree <repo>-slots/merge: merge main + task/<ID>, join line-records,
+               ◀─merge── merge worktree ~/runs/<repo>/merge: merge main + task/<ID>, join line-records,
                          a fix session for real conflicts, the test gate on the merge
                          → land in the main checkout → reopen what it unblocked → push main
 ```
 
 1. **Pick.** It reads `plan/TODO.md` *on the shared branch* (what is committed, not what you're
    editing) and walks it top to bottom. See [Picking](#picking) for what it skips.
-2. **Start.** Slot N gets a git worktree in `../<repo>-slots/sN` on branch `task/<ID>`, and a tmux pane in
+2. **Start.** Slot N gets a git worktree in `~/runs/<repo>/sN` (`[run] home`) on branch `task/<ID>`, and a tmux pane in
    the window `agents-<repo>`. The pane's output is piped to `.runner/slotN.log`. The pane runs
    `claude --session-id … --model … "<prompt>"`, with Claude Code's Stop hook set to the runner's idle
    timer. The prompt includes the task's brief (`./run plan brief <ID>`): its line, its `plan/tasks/<ID>.md`
@@ -199,7 +199,7 @@ TODO.md. Give the plan its own git repo instead:
 ```toml
 [plan]
 repo = "git@github.com:you/project-plan.git"   # or a local path
-# dir = "~/.cache/agent-runner/project-plan"     # where the clone goes (this is the default)
+# dir = "~/runs/<repo>/plan"     # where the clone goes (this is the default: `[run] home`/plan)
 ```
 
 - One clone, outside the code, shared by the main checkout and every slot. Reads pull it (at most every
@@ -293,7 +293,7 @@ once all of those ids are done, and the run picks it up again.
 (below). A branch the fix session gives up on is renamed `wip/<ID>` and pushed; the task is open again,
 and its next prompt points at the earlier attempt.
 
-**Merges happen in a merge worktree.** The merge is built and tested in `<repo>-slots/merge`; the main
+**Merges happen in a merge worktree.** The merge is built and tested in `~/runs/<repo>/merge`; the main
 checkout moves only to a tested commit, and nothing in it is stashed. Nor is its branch ever switched: while
 it has another branch than `main` out, a tested merge stays `task/<ID>` and lands once `main` is out again.
 
@@ -575,6 +575,9 @@ fix_model = "opus"
 fix_timeout = 1800
 build = ""                # a quick build a fix or repair session runs before it commits (not the gate)
 repair_merges = true      # a merge failing the gate gets one repair session before it is parked
+home = "~/runs/{repo}"    # the worktrees (s1…, merge) and a [plan] repo clone (plan/), outside your
+                          # repos folder; {repo} = the checkout's folder name. AGENT_RUNNER_HOME overrides
+                          # it on one machine. Worktrees still in the old <repo>-slots/ are used until moved
 slot_max_gb = 50          # a worktree over this loses its stalest build output before its next task; 0 = never
 min_free_gb = 10          # under this much free disk: free worktrees cleaned, no new task starts; 0 = never
 slot_clean = ""           # a project's own clean, run instead of the trim and the full git clean -ffdXq
@@ -622,6 +625,7 @@ See [docs/SETUP.md](docs/SETUP.md#wrapping-it-from-your-own-cli).
 
 ```sh
 python3 tests/test_plan.py      # the plan tool
+python3 tests/test_home.py      # [run] home: default, overrides, the pre-0.13 places
 python3 tests/test_disk.py      # slot_max_gb, min_free_gb, extra slots removed
 python3 tests/test_cost.py      # agent-runner cost: kinds of call, size × turns, Claude and Pi transcripts
 python3 tests/test_plansync.py  # [plan] repo: two checkouts on one plan repo, merges, claims, tick on landing

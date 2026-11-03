@@ -83,7 +83,7 @@ TAG = '@runner'  # the tmux pane option a slot's pane is found by
 REPO_TAG = '@runner-repo'  # the main checkout a pane's runner works for: two repos' runners share a tmux session
 
 ROOT = Path('.')       # the main checkout; set by `init`
-SLOTS_DIR = Path('.')  # <repo>-slots/ beside it: s1, s2, …, and `merge`
+SLOTS_DIR = Path('.')  # `[run] home` (~/runs/<repo>/): s1, s2, …, and `merge`
 C: Config
 
 
@@ -91,8 +91,8 @@ def init(root=None) -> Config:
     """Point the runner at the repository around `root` (default: the current directory)."""
     global ROOT, SLOTS_DIR, C
     ROOT = main_checkout(root)
-    SLOTS_DIR = ROOT.parent / f'{ROOT.name}-slots'
     C = cfg(ROOT)
+    SLOTS_DIR = C.slots_dir
     return C
 
 

@@ -2,6 +2,13 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
+## 0.13.0 (2026-11-03)
+
+- `[run] home` (default `~/runs/{repo}`) holds a project's worktrees (`s1`…, `merge`) and its `[plan] repo`
+  clone (`plan/`), so the repos folder keeps only checkouts. `AGENT_RUNNER_HOME` overrides it on one machine.
+  Worktrees in the old `<repo>-slots/` and a clone in `~/.cache/agent-runner/` keep being used until they are
+  moved (`git worktree move`, a plain `mv` for the clone), with no run going.
+
 ## 0.12.0 (2026-11-03)
 
 - `[plan] journal_layout = "id"`: one journal folder per task, `journal/<ID>/notes.md`, a retry in

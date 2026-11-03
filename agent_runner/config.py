@@ -123,6 +123,9 @@ DEFAULTS: dict = {
         'build': '',            # a quick build, not the gate: a fix session runs it before it commits, so a
                                 # clash git merged without a conflict (one name defined twice) is caught there
         'repair_merges': True,  # a merge (or a batch) that fails the gate gets one session to repair it first
+        'home': '~/runs/{repo}',  # the runner's own files for this project, outside the repos folder: the
+                                # worktrees (s1, s2, …, merge) and a `[plan] repo` clone (plan/). {repo} is
+                                # the main checkout's folder name; AGENT_RUNNER_HOME overrides it on one machine
         'slot_max_gb': 50,      # a worktree (slot or merge) bigger than this loses its stalest build output
                                 # before its next task (runner.trim); 0 = never
         'min_free_gb': 10,      # less free disk than this: free worktrees are cleaned, and no new task starts
@@ -196,7 +199,9 @@ class Config:
         self.raw = {k: {**v, **raw.get(k, {})} for k, v in DEFAULTS.items()}
         if self.raw['plan']['repo'] and 'dir' not in raw.get('plan', {}):
             name = Path(self.raw['plan']['repo'].rstrip('/')).name.removesuffix('.git')
-            self.raw['plan']['dir'] = f'~/.cache/agent-runner/{name}'
+            legacy = Path(f'~/.cache/agent-runner/{name}').expanduser()  # before 0.13; `git mv`-free to move
+            self.raw['plan']['dir'] = str(legacy if legacy.is_dir() and not (self.home / 'plan').exists()
+                                          else self.home / 'plan')
         self.run = self.raw['run']
         backend = infer(self.run)
         if backend not in ('claude', 'pi'):
@@ -222,6 +227,22 @@ class Config:
     @property
     def plan_repo(self) -> str:
         return self.raw['plan']['repo']
+
+    @property
+    def home(self) -> Path:
+        """`[run] home` (or AGENT_RUNNER_HOME): where this project's worktrees and plan clone live."""
+        main = main_checkout(self.root)
+        t = os.environ.get('AGENT_RUNNER_HOME') or self.raw['run']['home']
+        return main / Path(t.replace('{repo}', main.name)).expanduser()
+
+    @property
+    def slots_dir(self) -> Path:
+        """The worktrees: `home`, or `<repo>-slots/` beside the checkout while a run from before 0.13 left them."""
+        main, home = main_checkout(self.root), self.home
+        legacy = main.parent / f'{main.name}-slots'
+        if legacy.is_dir() and not any((home / n).is_dir() for n in ('s1', 'merge')):
+            return legacy
+        return home
 
     @property
     def plan_external(self) -> bool:
