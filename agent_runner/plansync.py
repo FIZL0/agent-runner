@@ -170,7 +170,7 @@ def stale(cl: tuple[str, float, str]) -> bool:
 
 
 def label(cl: tuple[str, float, str]) -> str:
-    """`ryan@desk 14:02`, the date too when it is not today, and STALE past STALE."""
+    """`alex@laptop 14:02`, the date too when it is not today, and STALE past STALE."""
     at = time.localtime(cl[1])
     when = time.strftime('%H:%M' if at[:3] == time.localtime()[:3] else '%m-%d %H:%M', at)
     return f'{cl[2]} {when}' + (' STALE' if stale(cl) else '')

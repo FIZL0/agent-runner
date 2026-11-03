@@ -211,7 +211,7 @@ repo = "git@github.com:you/project-plan.git"   # or a local path
   claim one at once conflict on push, and the later moves on to its next task. A claim that cannot be
   pushed (offline) starts nothing, since nobody else would see it. The claim goes
   when the task merges or is left for a human.
-- **Who has what.** `plan` marks each claimed task, `[ ] LOAD6b  [ryan@desk 14:02]`; `plan claims` lists
+- **Who has what.** `plan` marks each claimed task, `[ ] LOAD6b  [alex@laptop 14:02]`; `plan claims` lists
   them all. A live run re-stamps its claims every hour, so a claim not refreshed in 3 h shows `STALE`, and
   every other run logs it once: a crashed run's claims would otherwise hold those tasks for good. The same
   checkout takes its own back on its next run; for anyone else's, `plan unclaim <ID>`.
