@@ -121,11 +121,12 @@ DEFAULTS: dict = {
         'build': '',            # a quick build, not the gate: a fix session runs it before it commits, so a
                                 # clash git merged without a conflict (one name defined twice) is caught there
         'repair_merges': True,  # a merge (or a batch) that fails the gate gets one session to repair it first
-        'slot_max_gb': 50,      # a worktree (slot or merge) bigger than this is cleaned before its next task; 0 = never
+        'slot_max_gb': 50,      # a worktree (slot or merge) bigger than this loses its stalest build output
+                                # before its next task (runner.trim); 0 = never
         'min_free_gb': 10,      # less free disk than this: free worktrees are cleaned, and no new task starts
                                 # until there is room again; 0 = never
-        'slot_clean': '',       # how to clean a worktree; '' = `git clean -ffdXq`: every git-ignored file
-                                # (builds, outputs; `links` come back on their own). A project may keep caches
+        'slot_clean': '',       # a project's own clean, run instead of the trim and of the low-disk
+                                # `git clean -ffdXq` (every git-ignored file; `links` come back on their own)
         'timeout': 3600,        # seconds the gate, a retest or a hook command (join, before_start, on_exit) may
                                 # run before it is stopped and counts as failed
     },

@@ -5,6 +5,7 @@
 """
 from __future__ import annotations
 
+import os
 import sys
 import tempfile
 import time
@@ -48,9 +49,24 @@ def test_disk(tmp: Path):
     build(d, 3)
     check(R.trim(d, 'slot 1'), 'one over it is cleaned')
     check(not (d / 'build').exists() and (d / 'a.py').exists(), 'its build output goes, tracked files stay')
-    has('\n'.join(said), r'slot 1: .* GB, over \[run\] slot_max_gb .*git clean', 'and says so')
+    has('\n'.join(said), r'slot 1: .* GB, over \[run\] slot_max_gb .*removed .*build/out\.o', 'and says so')
     R.worktree(1, 'main')
     check((d / 'data').is_symlink() and (repo / 'data/big.bin').exists(), 'the link comes back; its target was never touched')
+
+    print('over the cap, the stale parts go first')
+    (d / 'build/old').mkdir(parents=True)
+    (d / 'build/old/task.o').write_bytes(b'o' * 1_500_000)
+    (d / 'build/old/more.o').write_bytes(b'o' * 1_500_000)
+    (d / 'build/warm').mkdir()
+    (d / 'build/warm/lib.o').write_bytes(b'w' * 900_000)
+    week = time.time() - 7 * 86400
+    for f in (d / 'build/old').iterdir():
+        os.utime(f, (week, week))
+    check(R.trim(d, 'slot 1'), 'a slot over the cap is trimmed')
+    check(not (d / 'build/old').exists(), 'what an old task left goes')
+    check((d / 'build/warm/lib.o').exists(), 'what was built lately stays warm')
+    has(said[-1], r'removed the least recently written build output \(build/old/', 'and says what went')
+    (d / 'build/warm/lib.o').unlink()
 
     print('min_free_gb')
     build(d, 1)

@@ -2,6 +2,14 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
+## 0.11.1 (2026-11-03)
+
+- A worktree over `slot_max_gb` is trimmed, not wiped: its least recently written git-ignored parts (folders
+  split up to three levels, nothing under 1/500 of the cap) go until it is at half the cap, so the builds
+  recent tasks used stay warm. On one project's slots that dropped old-hash library copies and stale
+  cross-platform targets, 67 GB to 25 GB, and kept the live builds. The whole `git clean` stays for a disk
+  under `min_free_gb`.
+
 ## 0.11.0 (2026-11-03)
 
 - Worktrees no longer fill the disk. A slot or merge worktree over `[run] slot_max_gb` (default 50) is cleaned

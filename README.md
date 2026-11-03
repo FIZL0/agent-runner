@@ -344,15 +344,18 @@ Each slot, and the merge worktree, keeps its git-ignored build output between ta
 faster than a cold one. That is one full copy of the project's builds per worktree, and a task that builds
 into a folder of its own leaves another behind every time. So, by default:
 
-- **A worktree over `slot_max_gb` (50) is cleaned** before its next task, never while a session works in it.
-- **Under `min_free_gb` (10) free on the disk**, every free worktree is cleaned, and while the disk stays
-  that full no new task starts: the run logs why and waits for room.
+- **A worktree over `slot_max_gb` (50) is trimmed** before its next task, never while a session works in it:
+  its least recently written git-ignored parts go until it is at half the cap. Big folders are looked into
+  (`target/debug/incremental`, old-hash libraries in `deps/`, `build/<old task>`), nothing under 1/500 of
+  the cap (100 MB) goes, so the builds recent tasks used stay warm and stray small files stay put.
+- **Under `min_free_gb` (10) free on the disk**, every free worktree is cleaned whole, and while the disk
+  stays that full no new task starts: the run logs why and waits for room.
 - **Slots past the count are removed.** Lower `slots` and the next run deletes the extra `sN` worktrees
   (an adopted session there finishes first; one with uncommitted work is kept and logged).
 
-The clean is `git clean -ffdXq` unless `slot_clean` says otherwise: everything git ignores goes, and
-`links` are put back. A project whose builds are slow to redo names a narrower command, e.g. one that
-drops only per-task build folders and keeps the shared ones: `slot_clean = "rm -rf build/task-* out/runs"`.
+The whole clean is `git clean -ffdXq`: everything git ignores goes, and `links` are put back. A project that
+knows its layout better sets `slot_clean`, which then runs in both cases instead, e.g. one that drops only
+per-task build folders and keeps the shared ones: `slot_clean = "rm -rf build/task-* out/runs"`.
 
 ### It stays up
 
@@ -570,9 +573,9 @@ fix_model = "opus"
 fix_timeout = 1800
 build = ""                # a quick build a fix or repair session runs before it commits (not the gate)
 repair_merges = true      # a merge failing the gate gets one repair session before it is parked
-slot_max_gb = 50          # a worktree over this is cleaned before its next task; 0 = never
+slot_max_gb = 50          # a worktree over this loses its stalest build output before its next task; 0 = never
 min_free_gb = 10          # under this much free disk: free worktrees cleaned, no new task starts; 0 = never
-slot_clean = ""           # how a worktree is cleaned; "" = git clean -ffdXq (every git-ignored file)
+slot_clean = ""           # a project's own clean, run instead of the trim and the full git clean -ffdXq
 timeout = 3600            # s the gate, a retest or a hook (join, before_start, on_exit) may run: past it, failed
 
 [run.join]                # glob = a command that joins a conflict in that file itself:

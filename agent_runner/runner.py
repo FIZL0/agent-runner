@@ -879,29 +879,82 @@ DISK_AT = [0.0]  # when `low_disk` last cleaned
 DISK_SAID = [False]
 
 
-def du(d: Path) -> int:
-    """Bytes on disk under `d`, symlinks not followed (a `links` target is not the slot's)."""
-    total = 0
-    for root, _, files in os.walk(d):
+def usage(p: Path) -> tuple[int, float]:
+    """(bytes on disk, newest write) under `p`, symlinks not followed (a `links` target is not the slot's)."""
+    total, newest = 0, 0.0
+    walk = os.walk(p) if p.is_dir() and not p.is_symlink() else [(str(p.parent), [], [p.name])]
+    for root, _, files in walk:
         for f in files:
             try:
                 st = os.lstat(os.path.join(root, f))
-                total += getattr(st, 'st_blocks', 0) * 512 or st.st_size
             except OSError:
-                pass
-    return total
+                continue
+            total += getattr(st, 'st_blocks', 0) * 512 or st.st_size
+            newest = max(newest, st.st_mtime)
+    return total, newest
+
+
+def du(d: Path) -> int:
+    return usage(d)[0]
+
+
+def stale_first(d: Path, split: int, least: int) -> list[tuple[float, int, Path]]:
+    """`d`'s git-ignored files and folders, least recently written first: (newest write, bytes, path). A folder
+    bigger than `split` is broken into what is in it (three levels at most), so a build tree's stale parts go
+    one by one and its live ones stay: target/debug/incremental before target/debug/deps. Nothing under `least`
+    bytes: small ignored files free nothing and may be someone's notes or settings."""
+    out: list[tuple[float, int, Path]] = []
+
+    def add(p: Path, depth: int) -> None:
+        if p.is_symlink():
+            return  # `links`, runner.toml: put there by `worktree`, not build output
+        size, newest = usage(p)
+        if p.is_dir() and size > split and depth < 3:
+            for k in p.iterdir():
+                add(k, depth + 1)
+        elif size >= least:
+            out.append((newest, size, p))
+
+    for rel in git('ls-files', '--others', '--ignored', '--exclude-standard', '--directory', '-z',
+                   cwd=d).stdout.split('\0'):
+        if rel:
+            add(d / rel.rstrip('/'), 0)
+    return sorted(out, key=lambda t: t[0])
 
 
 def trim(d: Path, what: str, why: str = '') -> bool:
-    """Clean worktree `d` (`[run] slot_clean`) when it is over `[run] slot_max_gb`, or when `why` says it must be.
-    Only ever for a worktree nobody works in: a free slot before its next task, the merge worktree under MERGE.
-    True when it cleaned (`worktree` puts `links` back)."""
+    """Shrink worktree `d` when it is over `[run] slot_max_gb`, or clean it whole when `why` says it must be (the
+    disk is nearly full). Only ever for a worktree nobody works in: a free slot before its next task, the merge
+    worktree under MERGE. True when it removed anything (`worktree` puts `links` back).
+
+    Over the cap, by default the least recently written git-ignored parts go until it is at half the cap: the
+    build folders recent tasks used stay warm, the ones old tasks left behind go. `[run] slot_clean`, when set,
+    is run instead, in both cases."""
     cap = C.run['slot_max_gb'] * GB
     size = du(d)
     if not why:
         if not cap or size <= cap:
             return False
         why = f'over [run] slot_max_gb ({C.run["slot_max_gb"]} GB)'
+        if not C.run['slot_clean']:
+            gone, names = 0, []
+            for _, n, p in stale_first(d, cap // 4, cap // 500):  # 50 GB: folders over 12 GB split, none under 100 MB
+                if size - gone <= cap // 2:
+                    break
+                if p.is_dir():
+                    shutil.rmtree(p, ignore_errors=True)
+                else:
+                    p.unlink(missing_ok=True)
+                for q in p.parents:  # no empty folders left behind
+                    if q == d or any(q.iterdir()):
+                        break
+                    q.rmdir()
+                gone += n
+                names.append(p.relative_to(d).as_posix())
+            more = f' and {len(names) - 5} more' if len(names) > 5 else ''
+            log(f'{what}: {size / GB:.1f} GB, {why}: removed the least recently written build output '
+                f'({", ".join(names[:5])}{more}), now {du(d) / GB:.1f} GB')
+            return bool(names)
     cmd = C.run['slot_clean'] or 'git clean -ffdXq'
     try:
         sp.run(cmd, shell=True, cwd=str(d), capture_output=True, timeout=C.run['timeout'])
