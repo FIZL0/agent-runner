@@ -32,6 +32,7 @@ Finish a task (what an agent runs at the end)
 
 More
     agent-runner cost                 where the workers' tokens go, by kind of tool call (last 7 days)
+    agent-runner home [slots|plan]    where this project's runner files are ([run] home): for scripts
     agent-runner help order           what runs when, and how to make one task wait for another
     agent-runner run --help           every runner option
     agent-runner --version
@@ -94,6 +95,15 @@ def main(argv: list[str] | None = None) -> int:
     if cmd == 'cost':
         from agent_runner import cost
         return cost.main(rest)
+    if cmd == 'home':  # one answer for every script: never rebuild these paths by hand
+        from agent_runner.config import cfg
+        c = cfg()
+        what = {'': c.home, 'slots': c.slots_dir, 'plan': c.plan_dir}.get(rest[0] if rest else '')
+        if what is None or len(rest) > 1:
+            print('agent-runner home [slots|plan]', file=sys.stderr)
+            return 2
+        print(what)
+        return 0
     if cmd == 'resume':
         from agent_runner import runner
         return runner.cmd_resume(rest)

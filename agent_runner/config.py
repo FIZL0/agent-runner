@@ -65,7 +65,7 @@ DEFAULTS: dict = {
         'dir': 'plan',          # TODO.md and DONE.md live here; plan/tasks/<ID>.md is a task's long form. Outside
                                 # the repo (~/…, /…) every checkout and worktree shares that one copy
         'repo': '',             # a git URL or path: the plan in its own repo, cloned to `dir` (default
-                                # ~/.cache/agent-runner/<name>) and pulled/pushed on every edit (plansync)
+                                # [run] home/plan) and pulled/pushed on every edit (plansync)
         'journal': '',          # optional: a directory of per-task journal folders, pasted into briefs
         'journal_layout': 'dated',  # 'dated': <journal>/<date>-<id>-<slug>/; 'id': <journal>/<ID>/notes.md, a
                                 # repeat attempt in <journal>/<ID>/<date>-<slug>/notes.md

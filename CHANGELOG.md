@@ -2,6 +2,11 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
+## 0.13.1 (2026-11-03)
+
+- `agent-runner home [slots|plan]` prints where this project's runner files are, from `[run] home` and
+  `AGENT_RUNNER_HOME`, so a project's scripts (an emulator per slot, say) ask instead of rebuilding the path.
+
 ## 0.13.0 (2026-11-03)
 
 - `[run] home` (default `~/runs/{repo}`) holds a project's worktrees (`s1`…, `merge`) and its `[plan] repo`

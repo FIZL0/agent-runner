@@ -1689,7 +1689,7 @@ LANDED: dict[str, tuple[str, str]] = {}  # a task that landed in another's batch
 def merge(tid: str, branch: str) -> str | None:
     """Merge task/<tid> into the shared branch: merge, archive ticks, test, land, push, delete the branch.
 
-    The merge is built and tested in its own worktree (`<repo>-slots/merge`), and the shared branch only
+    The merge is built and tested in its own worktree (`[run] home`/merge), and the shared branch only
     moves once the tests pass. So the main checkout never holds an untested merge: whoever works there keeps
     committing the whole time, nothing is reset under them, and their edits are never stashed.
 

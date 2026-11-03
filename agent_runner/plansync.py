@@ -2,7 +2,7 @@
 
 Inside the code repo every branch carries its own TODO.md, and two coordinators see each other's edits only
 after a code merge, which nearly always conflicts on TODO.md. With `repo` set, the plan is one clone outside
-the code (`[plan] dir`, default ~/.cache/agent-runner/<name>), shared by the main checkout and every worktree:
+the code (`[plan] dir`, default `[run] home`/plan), shared by the main checkout and every worktree:
 
 * a read pulls first (at most every PULL_EVERY s), so a pick sees everybody's edits;
 * an edit holds `locked`, pulls, edits, commits and pushes; a rejected push pulls and pushes again;

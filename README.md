@@ -578,6 +578,7 @@ repair_merges = true      # a merge failing the gate gets one repair session bef
 home = "~/runs/{repo}"    # the worktrees (s1…, merge) and a [plan] repo clone (plan/), outside your
                           # repos folder; {repo} = the checkout's folder name. AGENT_RUNNER_HOME overrides
                           # it on one machine. Worktrees still in the old <repo>-slots/ are used until moved
+                          # Scripts ask `agent-runner home [slots|plan]` rather than rebuild the path
 slot_max_gb = 50          # a worktree over this loses its stalest build output before its next task; 0 = never
 min_free_gb = 10          # under this much free disk: free worktrees cleaned, no new task starts; 0 = never
 slot_clean = ""           # a project's own clean, run instead of the trim and the full git clean -ffdXq

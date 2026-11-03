@@ -35,5 +35,11 @@ eq(Config(repo).slots_dir, tmp / 'proj-slots', 'the old <repo>-slots/ is used wh
 (tmp / 'machine/proj/s1').mkdir(parents=True)
 eq(Config(repo).slots_dir, tmp / 'machine/proj', 'once home has them, home it is')
 
+print('`agent-runner home` answers scripts from the same settings')
+from _check import run  # noqa: E402
+eq(run(repo, 'home').stdout.strip(), str(tmp / 'machine/proj'), '`home` prints it')
+eq(run(repo, 'home', 'slots').stdout.strip(), str(tmp / 'machine/proj'), '`home slots` prints the worktrees')
+eq(run(repo, 'home', 'bogus').returncode, 2, 'anything else is a usage error')
+
 os.environ['AGENT_RUNNER_HOME'] = env
 raise SystemExit(1 if FAILED else print('\nall checks passed'))
