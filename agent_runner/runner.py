@@ -303,7 +303,15 @@ def pick(running: dict, tried: set, mode: str, branch: str, claim: bool = False)
 
     `claim` (a run about to start it): with `[plan] repo`, the task is claimed and the claim pushed first;
     one another runner has, or got just now, is passed over for the next."""
-    pick_ = lambda t: t if not claim or plansync.claim(C, t[0]) else None
+    def pick_(t):
+        if not claim or not C.plan_repo:
+            return t
+        if not plansync.claim(C, t[0]):
+            return None
+        if t[0] in open_tasks(branch):  # the claim pulled: the pick may have read a plan up to 20 s old
+            return t
+        plansync.release(C, t[0])  # closed meanwhile (ticked or blocked by someone else)
+        return None
     busy = list(running.values())
     # A section whose heading says its tasks are ordered ("Next (in this order)") runs one task at a time:
     # its second task usually depends on the first having landed, whatever the files say.
@@ -332,7 +340,7 @@ def pick(running: dict, tried: set, mode: str, branch: str, claim: bool = False)
             return got
         if tid not in PASSED:
             PASSED.add(tid)
-            log(f'{tid}: claimed by another runner, or the claim could not be pushed; passed over')
+            log(f'{tid}: claimed by another runner, closed since the pick read the plan, or the claim did not push; passed over')
     return None
 
 
@@ -1911,6 +1919,25 @@ def _reopen_landed(branch: str, why: str) -> None:
         log(f'{t}: reopened, {", ".join(ids)} landed')
 
 
+CLAIMS_AT = [0.0]
+STALE_SAID: set[str] = set()
+
+
+def keep_claims(running: dict, branch: str) -> None:
+    """`[plan] repo`, every plansync.REFRESH s: re-stamp this run's claims (running, or waiting to merge), and
+    say once of each other run's claim gone stale: a crashed run's claims would hold those tasks for good."""
+    if not C.plan_repo or time.time() - CLAIMS_AT[0] < plansync.REFRESH:
+        return
+    CLAIMS_AT[0] = time.time()
+    plansync.refresh(C, {t[0] for t in running.values()} | set(ahead(branch)))
+    me = plansync.owner(C)
+    for t, cl in plansync.claims(C).items():
+        if cl[0] != me and plansync.stale(cl) and t not in STALE_SAID:
+            STALE_SAID.add(t)
+            log(f'{t}: claimed by {plansync.label(cl)}, not refreshed since: if that run is gone, '
+                f'`{C.command} plan unclaim {t}`')
+
+
 CI_AT = [0.0]  # when `watch_ci` last asked GitHub
 
 
@@ -2899,6 +2926,7 @@ def run(argv: list[str], prog: str) -> int:
             REOPENED.clear()
         merging = [t for t in merging if t.is_alive()]
         watch_ci(branch)
+        keep_claims(running, branch)
         take_keys()
         waiting = {n: q for n, q in queued().items() if n in free_at and n <= slots}  # an exit may have queued one
         # a slot asleep until a usage reset does not hold the stop; a session waiting to resume does

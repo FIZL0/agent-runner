@@ -15,6 +15,7 @@ A `[plan] dir` outside the code repo without `repo` (a synced folder) gets the l
 """
 from __future__ import annotations
 
+import getpass
 import re
 import socket
 import threading
@@ -142,13 +143,47 @@ def owner(c) -> str:
     return f'{socket.gethostname()}:{main_checkout(c.root)}'
 
 
-def taken(c) -> set[str]:
-    """Tasks another runner (another machine, or another checkout here) has claimed."""
+STALE = 3 * 3600  # s without a refresh after which a claim is reported as probably left by a dead run
+REFRESH = 3600  # s between a live run's refreshes of its claims (one commit for all of them)
+_STAMP = '%Y-%m-%d %H:%M'
+
+
+def claims(c) -> dict[str, tuple[str, float, str]]:
+    """Every claim: id -> (owner, when last claimed or refreshed, who: user@host)."""
     d = c.plan_dir / 'claims'
     if not c.plan_repo or not d.is_dir():
-        return set()
+        return {}
+    out = {}
+    for f in d.iterdir():
+        if f.is_file():
+            ls = f.read_text().splitlines() + ['', '', '']
+            try:
+                at = time.mktime(time.strptime(ls[1], _STAMP))
+            except ValueError:
+                at = 0.0
+            out[f.name] = (ls[0], at, ls[2] or ls[0].split(':')[0])
+    return out
+
+
+def stale(cl: tuple[str, float, str]) -> bool:
+    return time.time() - cl[1] > STALE
+
+
+def label(cl: tuple[str, float, str]) -> str:
+    """`ryan@desk 14:02`, the date too when it is not today, and STALE past STALE."""
+    at = time.localtime(cl[1])
+    when = time.strftime('%H:%M' if at[:3] == time.localtime()[:3] else '%m-%d %H:%M', at)
+    return f'{cl[2]} {when}' + (' STALE' if stale(cl) else '')
+
+
+def taken(c) -> set[str]:
+    """Tasks another runner (another machine, or another checkout here) has claimed."""
     me = owner(c)
-    return {f.name for f in d.iterdir() if f.is_file() and f.read_text().split('\n')[0] != me}
+    return {t for t, cl in claims(c).items() if cl[0] != me}
+
+
+def _stamp(c, f: Path) -> None:
+    f.write_text(f'{owner(c)}\n{time.strftime(_STAMP)}\n{getpass.getuser()}@{socket.gethostname()}\n')
 
 
 def claim(c, tid: str) -> bool:
@@ -163,7 +198,7 @@ def claim(c, tid: str) -> bool:
         if f.exists():
             return True  # ours already (a restarted run)
         f.parent.mkdir(exist_ok=True)
-        f.write_text(f'{owner(c)}\n{time.strftime("%Y-%m-%d %H:%M")}\n')
+        _stamp(c, f)
         if publish(c, f'claim {tid}'):  # not pushed: lost the race (a conflict), or no remote to tell
             git('reset', '-q', '--hard', 'HEAD~1', cwd=c.plan_dir)
             pull(c, force=True)
@@ -181,6 +216,32 @@ def release(c, tid: str) -> None:
         if f.exists() and f.read_text().split('\n')[0] == owner(c):
             f.unlink()
             publish(c, f'release {tid}')
+
+
+def refresh(c, tids) -> None:
+    """Re-stamp this runner's claims on `tids` (running, or waiting to merge), so others can tell a live
+    claim from one a crashed run left behind. One commit for all of them."""
+    if not c.plan_repo:
+        return
+    with locked(c):
+        pull(c, force=True)
+        me = owner(c)
+        for t, cl in claims(c).items():
+            if t in tids and cl[0] == me:
+                _stamp(c, c.plan_dir / 'claims' / t)
+        publish(c, 'refresh claims')
+
+
+def unclaim(c, tid: str) -> bool:
+    """Drop the claim on `tid`, whoever's it is: for a run that is gone. False when there is none."""
+    with locked(c):
+        pull(c, force=True)
+        f = c.plan_dir / 'claims' / tid
+        if not f.is_file():
+            return False
+        f.unlink()
+        publish(c, f'unclaim {tid}')
+        return True
 
 
 def ticks(c) -> Path:

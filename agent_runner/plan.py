@@ -21,6 +21,8 @@ re-reads it on every turn pays again. So the backlog is a command instead:
     ./run plan newid PREFIX      the next free id, e.g. L -> L7; a task's id gives its next subtask, L3 -> L3a
     ./run plan archive           move every [x] line left in TODO.md to DONE.md (after merges, hand edits)
     ./run plan reopen            unblock every task whose BLOCKED (after X, Y) tasks are all done now
+    ./run plan claims            [plan] repo: which run has which task, and since when (STALE: no refresh in 3 h)
+    ./run plan unclaim <ID>      drop a claim, whoever's: for a run that crashed or was switched off
 
 **Where `add` files a task.** A person's task goes to the top of the leading section, as before. A task
 given a `--pri` (and every follow-up a running agent files, which is `normal` unless it says) is tagged
@@ -825,6 +827,14 @@ def _main(argv: list[str], c) -> int:
         return say('\n'.join(brief(argv[1])))
     if argv == ['archive']:
         return say(f'archived {archive(todo, done)}')
+    if argv == ['claims']:
+        got = sorted(plansync.claims(c).items())
+        return say('\n'.join(f'{t}  {plansync.label(cl)}' for t, cl in got) or 'no claims')
+    if argv[:1] == ['unclaim'] and len(argv) == 2:
+        if not plansync.unclaim(c, argv[1]):
+            print(f'{PROG}: no claim on {argv[1]}', file=sys.stderr)
+            return 1
+        return say(f'unclaimed {argv[1]}')
 
     # a lookup: an id, a section name, or `next`
     paths = [todo, plan_dir / 'REFERENCE.md', plan_dir / 'HUMAN.md', done]
@@ -840,7 +850,8 @@ def _main(argv: list[str], c) -> int:
     if len(paths) > 1 and task_file and task_file.exists():
         out = lines(task_file)
     elif not argv:
-        out = index(todo)
+        out, cl = index(todo), plansync.claims(c)
+        out = [f'{l}  [{plansync.label(cl[t])}]' if (t := l.rsplit(' ', 1)[-1]) in cl else l for l in out]
     else:
         out = next((o for p in paths if (o := section(p, argv[0]))), [])
     if not out:

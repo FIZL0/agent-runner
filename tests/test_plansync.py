@@ -135,6 +135,7 @@ def test_all(tmp: Path):
     R.init(b)
     tb = R.pick({}, set(), 'd', 'main', claim=True)
     check(ta and tb and ta[0] != tb[0], 'each run claims a different task as it picks', f'{ta} {tb}')
+    check('G1' not in (ta[0], tb[0]), 'never one ticked since the pick last read the plan (G1, just above)')
     has(git(bare, 'show', f'main:claims/{ta[0]}'), str(a), "A's claim is pushed before its slot starts")
     eq(R.pick({}, set(), 'd', 'main')[0], tb[0], 'a pick that does not start (dry run) claims nothing new')
     (tmp / 'plan.git').rename(tmp / 'away.git')
@@ -143,6 +144,33 @@ def test_all(tmp: Path):
         eq(left, None, 'with the plan repo out of reach, a run starts nothing: its claim would be unseen')
     finally:
         (tmp / 'away.git').rename(tmp / 'plan.git')
+
+    print('claims on the board')
+    has(run(b, 'plan').stdout, rf'\] {ta[0]}  \[\S+@\S+ \d\d:\d\d\]', '`plan` marks a claimed task with who and when')
+    has(run(b, 'plan', 'claims').stdout, rf'^{ta[0]}  ', '`plan claims` lists them')
+    f = ca.plan_dir / 'claims' / ta[0]
+    ls = f.read_text().splitlines()
+    f.write_text('\n'.join([ls[0], '2026-01-01 09:00', *ls[2:]]) + '\n')
+    plansync.publish(ca, 'age a claim')
+    plansync.pull(cb, force=True)
+    check(plansync.stale(plansync.claims(cb)[ta[0]]), 'a claim not refreshed for hours is stale')
+    R.init(b)
+    R.CLAIMS_AT[0] = 0.0
+    said = []
+    saved, R.log = R.log, said.append
+    try:
+        R.keep_claims({}, 'main')
+    finally:
+        R.log = saved
+    has('\n'.join(said), rf'{ta[0]}: claimed by .*STALE.*plan unclaim {ta[0]}', 'a run says so, with the fix')
+    R.init(a)
+    R.CLAIMS_AT[0] = 0.0
+    R.keep_claims({1: ta}, 'main')
+    check(not plansync.stale(plansync.claims(ca)[ta[0]]), "A's live run re-stamps its own claim")
+    r = run(b, 'plan', 'unclaim', ta[0])
+    check(r.returncode == 0 and ta[0] not in git(bare, 'ls-tree', '--name-only', 'main', 'claims/'),
+          "B can unclaim A's task by hand", r.stderr)
+    eq(run(b, 'plan', 'unclaim', ta[0]).returncode, 1, 'unclaiming nothing says so')
 
 
 def main() -> int:

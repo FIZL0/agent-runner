@@ -2,6 +2,14 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
+## 0.9.1 (2026-11-03)
+
+- `[plan] repo`: `plan` shows who has each claimed task and since when; `plan claims` lists them and
+  `plan unclaim <ID>` drops one. A run re-stamps its own claims hourly, and logs once for each other claim
+  unrefreshed for 3 h (STALE), so a crashed run on another machine no longer holds its tasks unseen.
+- A run no longer starts a task that someone ticked or blocked in the seconds since its pick last read the
+  plan: the claim pulls, and the task is checked again before it starts.
+
 ## 0.9.0 (2026-11-03)
 
 - A task's long form moves to `plan/tasks/<ID>.md`, so the plan's top level is TODO.md, DONE.md and the

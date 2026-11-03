@@ -210,8 +210,11 @@ repo = "git@github.com:you/project-plan.git"   # or a local path
   pushes `claims/<ID>` (host and checkout) before anything starts. Other runs skip a claimed task; two that
   claim one at once conflict on push, and the later moves on to its next task. A claim that cannot be
   pushed (offline) starts nothing, since nobody else would see it. The claim goes
-  when the task merges or is left for a human. A crashed run's claims stay: the same checkout takes them
-  back on its next run; for another one's, `git rm claims/<ID>` in the plan clone and push.
+  when the task merges or is left for a human.
+- **Who has what.** `plan` marks each claimed task, `[ ] LOAD6b  [ryan@desk 14:02]`; `plan claims` lists
+  them all. A live run re-stamps its claims every hour, so a claim not refreshed in 3 h shows `STALE`, and
+  every other run logs it once: a crashed run's claims would otherwise hold those tasks for good. The same
+  checkout takes its own back on its next run; for anyone else's, `plan unclaim <ID>`.
 - **Tick on landing.** `done` in a slot leaves the task open and the run ticks it once the merge lands,
   noting `landed <sha>`; a merge left for a human leaves it open, as in-repo. `done` outside a run (a
   person's session) ticks at once. `--blocked` blocks at once either way.
