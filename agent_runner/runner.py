@@ -1948,7 +1948,8 @@ def watch_ci(branch: str, force: bool = False) -> list[str]:
                 continue
             text, long = got
             tid = P.add(C.run['ci_kind'], text, todo=ROOT / rel, pri='critical')
-            own = plan_rel(f'{tid}.md')
+            own = plan_rel(f'{P.TASKS}/{tid}.md')
+            (ROOT / own).parent.mkdir(parents=True, exist_ok=True)
             (ROOT / own).write_text('\n'.join([f'# {tid} — CI: {ci.marker(wf, branch)}', '', *long, '']),
                                     encoding='utf-8')
             git('add', '--', own)

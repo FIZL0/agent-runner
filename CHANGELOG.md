@@ -2,6 +2,12 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
+## 0.9.0 (2026-11-03)
+
+- A task's long form moves to `plan/tasks/<ID>.md`, so the plan's top level is TODO.md, DONE.md and the
+  overviews a person reads. Briefs, `plan <ID>`, ticks and CI-filed tasks use it; a long form still at
+  `plan/<ID>.md` keeps working until it is moved (`git mv plan/<ID>.md plan/tasks/`).
+
 ## 0.8.0 (2026-11-03)
 
 - `[plan] repo`: the plan in its own git repo, so several people and runners share one queue instead of a

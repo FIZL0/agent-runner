@@ -97,7 +97,7 @@ plan/TODO.md ──pick──▶ slot N: git worktree <repo>-slots/sN on task/<I
 2. **Start.** Slot N gets a git worktree in `../<repo>-slots/sN` on branch `task/<ID>`, and a tmux pane in
    the window `agents-<repo>`. The pane's output is piped to `.runner/slotN.log`. The pane runs
    `claude --session-id … --model … "<prompt>"`, with Claude Code's Stop hook set to the runner's idle
-   timer. The prompt includes the task's brief (`./run plan brief <ID>`): its line, its `plan/<ID>.md`
+   timer. The prompt includes the task's brief (`./run plan brief <ID>`): its line, its `plan/tasks/<ID>.md`
    long form, the files it names (or "missing: this task creates it"), and the newest journal entry.
 3. **Finish.** The session ends with `./run done <ID> "msg"`. That runs the test gate, ticks the task
    (`[x]`, and the line moves to DONE.md), commits, and pushes `task/<ID>`. If the gate fails, nothing is
@@ -182,7 +182,10 @@ the branch is pushed after each task.
 - `(after X, Y)` means don't start until X and Y are done. **Every id** in the parentheses counts.
 - `BLOCKED: (after X, Y) why` is what `plan block`/`done --blocked` write. The `(after …)` list is what
   lets the run reopen the task by itself.
-- `plan/<ID>.md`, if it exists, is the task's long form. The brief uses it instead of the one-line text.
+- `plan/tasks/<ID>.md`, if it exists, is the task's long form. The brief uses it instead of the one-line text.
+  Long forms sit in `tasks/` so the plan's top level is TODO.md, DONE.md and the overviews a person reads
+  (REFERENCE.md, HUMAN.md, batch briefs). A long form left at `plan/<ID>.md` still counts; move it with
+  `git mv plan/<ID>.md plan/tasks/`.
 
 `./run plan help` lists every subcommand: `next`, `<ID>`, `brief`, `tick`, `block`, `unblock`, `reopen`,
 `add`, `move`, `note`, `newid` and `archive`.
@@ -212,7 +215,7 @@ repo = "git@github.com:you/project-plan.git"   # or a local path
 - **Tick on landing.** `done` in a slot leaves the task open and the run ticks it once the merge lands,
   noting `landed <sha>`; a merge left for a human leaves it open, as in-repo. `done` outside a run (a
   person's session) ticks at once. `--blocked` blocks at once either way.
-- `<ID>.md` long forms, `REFERENCE.md` and `HUMAN.md` live in the plan repo; `[plan] journal` stays in the
+- `tasks/<ID>.md` long forms, `REFERENCE.md` and `HUMAN.md` live in the plan repo; `[plan] journal` stays in the
   code repo, since journals describe code and travel with it.
 - `dir` outside the repo without `repo` (a synced folder) shares one copy the same way, without git.
 - Moving an existing plan over, keeping its history: `git subtree split -P plan -b plan-only`, push that
@@ -241,7 +244,7 @@ names it already.
 With `[run] ci_watch = ["pages.yml"]`, the run reads GitHub Actions too: every 5 min (and only when no merge
 holds the lock) it asks `gh` for the newest finished run of each workflow on the shared branch. A red one
 (a cancelled run says nothing; the one before it decides) gets a single `critical` task, its failed jobs on the
-line and the last 40 lines of `gh run view --log-failed` in `plan/<ID>.md`. No second one while that task
+line and the last 40 lines of `gh run view --log-failed` in `plan/tasks/<ID>.md`. No second one while that task
 is open, and no run is judged twice (`<notes>/ci-<workflow>.seen`), so a broken workflow is one task, not
 an email per push. Landing never waits on CI.
 
@@ -486,7 +489,7 @@ project keep them in its own config file (see [docs/SETUP.md](docs/SETUP.md#wrap
 
 ```toml
 [plan]
-dir = "plan"              # TODO.md, DONE.md, <ID>.md; outside the repo, one copy for every worktree
+dir = "plan"              # TODO.md, DONE.md, tasks/<ID>.md; outside the repo, one copy for every worktree
 repo = ""                 # the plan in its own git repo (see "The plan in its own repo")
 journal = ""              # e.g. "journal": per-task folders, the newest pasted into the brief
 brief_extra = ""          # a command whose output ends the brief; {id} is the task id

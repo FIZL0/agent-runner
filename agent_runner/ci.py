@@ -5,7 +5,7 @@ makes, and the only sign is GitHub's failure email for each one. With `ci_watch 
 asks `gh` every CI_POLL seconds for the newest finished run of each workflow on the shared branch. When it
 is red (failure, timed out, startup failure; a cancelled one says nothing and the one before it decides),
 a single `critical` task is filed with the failed jobs, and the last lines of `gh run view --log-failed`
-go in its long form, plan/<ID>.md. No second task while one for that workflow is open (its line says
+go in its long form, plan/tasks/<ID>.md. No second task while one for that workflow is open (its line says
 `<workflow>` on <branch> is red), and a run already judged is never filed again: the newest judged run
 is kept in `<notes>/ci-<workflow>.seen`. A landing never waits on any of this.
 

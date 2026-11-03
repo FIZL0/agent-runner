@@ -1416,7 +1416,7 @@ def test_ci_watch(repo: Path):
         has(todo, rf'- \[ \] \*\*{got[0]}\*\* \(follow-up, critical\) CI: `pages.yml` on main is red '
             r'\(failure, run 7 on abc12345.*failed ci / test\.', 'a critical task naming the failed jobs')
         check(got[0].startswith('B'), '[run] ci_kind, B by default')
-        own = (repo / f'plan/{got[0]}.md').read_text()
+        own = (repo / f'plan/tasks/{got[0]}.md').read_text()
         has(own, r'Process completed with exit code 101\.\n```', 'the log tail, in the long form, to the last error')
         check('Post job cleanup' not in own and 'ci / test:   The system library' in own,
               'without the cleanup after it, nor the timestamps')

@@ -247,7 +247,7 @@ The names in each module's `__all__` are the stable API (see [Versions](#version
 | `[run] timeout` | seconds the gate, a retest, a `[run.join]` command, `before_start` or the sequential run's `on_exit` may run before it is stopped and counts as failed (3600) |
 | `[run] not_attempt` | a regex on the last commit subject (`{id}`): that session was a phase, not the run's one attempt |
 
-The brief already holds the task line, `plan/<ID>.md`, the newest journal entry, and the git log of the
+The brief already holds the task line, `plan/tasks/<ID>.md`, the newest journal entry, and the git log of the
 files the task names. `brief_extra` is for anything else.
 
 ### Worked mapping: ps2-decomp-kit

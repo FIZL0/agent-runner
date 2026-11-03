@@ -101,7 +101,7 @@ def record(a, c) -> int:
     """Tick (or block) the task, commit, push the branch. A plan outside the repo is published on its own,
     after the code commit; in a runner's slot its tick waits for the merge to land (`runner.land_tick`)."""
     cwd = c.root
-    kept = {p: p.read_bytes() for p in (c.todo, c.done, c.plan_dir / f'{a.id}.md') if p.exists()}
+    kept = {p: p.read_bytes() for p in (c.todo, c.done, plan.long_form(c.plan_dir, a.id)) if p.exists()}
     later = c.plan_external and not a.blocked and finished_mark() is not None
     if a.blocked:
         plan.block(a.id, a.blocked, after=None if a.after is None else [t for t in a.after.split(',') if t])

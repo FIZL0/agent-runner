@@ -62,7 +62,7 @@ RUNNER = _typed()  # for a prompt or a log line
 
 DEFAULTS: dict = {
     'plan': {
-        'dir': 'plan',          # TODO.md and DONE.md live here; plan/<ID>.md is a task's long form. Outside
+        'dir': 'plan',          # TODO.md and DONE.md live here; plan/tasks/<ID>.md is a task's long form. Outside
                                 # the repo (~/…, /…) every checkout and worktree shares that one copy
         'repo': '',             # a git URL or path: the plan in its own repo, cloned to `dir` (default
                                 # ~/.cache/agent-runner/<name>) and pulled/pushed on every edit (plansync)

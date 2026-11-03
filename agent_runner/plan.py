@@ -6,7 +6,7 @@ re-reads it on every turn pays again. So the backlog is a command instead:
 
     ./run plan                   index of plan/TODO.md: every heading and task id, one line each
     ./run plan next              the first open task, with its sub-items
-    ./run plan <ID>              a task's full text: plan/<ID>.md, else its line in TODO.md or DONE.md
+    ./run plan <ID>              a task's full text: plan/tasks/<ID>.md, else its line in TODO.md or DONE.md
     ./run plan <name>            a heading's section (case-insensitive substring) in the plan files
     ./run plan -f FILE <name>    the same, on any other markdown file
     ./run plan brief <ID>        everything a task starts from, in one shot (see `brief`)
@@ -48,7 +48,7 @@ from the open task ids its WHY names, so a session that forgets `--after` still 
 **Design rule: checkboxes are only ever changed through this tool.** Never hand-edit a `- [ ]` in TODO.md or
 DONE.md. Ticking by hand is how a task ends up done in one file and open in another, how a `(after X)`
 dependency silently stops being satisfied, and how two parallel agents both pick the same task. `tick` is one
-transaction: mark it, mirror the mark into `plan/<ID>.md`, move the block to DONE.md under the same heading.
+transaction: mark it, mirror the mark into `plan/tasks/<ID>.md`, move the block to DONE.md under the same heading.
 
 Everything here is plain text and atomic: a temp file plus `os.replace`, and a file whose content did not
 change is not rewritten at all (so mtimes stay meaningful and git stays quiet).
@@ -271,11 +271,21 @@ def tick(tid: str, todo=None, done=None, plan_dir=None) -> int:
                          f'(`{PROG} newid`) before ticking, or the other is archived with it')
     _mark(ls, _find(ls, tid), 'x')
     _write(todo, ls)
-    own = os.path.join(plan_dir, f'{tid}.md')
+    own = long_form(plan_dir, tid)
     if os.path.exists(own):
         _write(own, [re.sub(rf'^(\s*)- \[[ ~]\] \*\*{re.escape(tid)}\b', rf'\1- [x] **{tid}', l)
                      for l in lines(own)])
     return archive(todo, done)
+
+
+TASKS = 'tasks'  # a task's long form is <plan dir>/tasks/<ID>.md, so the top level stays TODO.md and overviews
+
+
+def long_form(plan_dir, tid: str) -> Path:
+    """The task's long form: <plan dir>/tasks/<ID>.md. A plan from before 0.9 keeps it at <plan dir>/<ID>.md,
+    which still counts until it is moved (`git mv`)."""
+    new, old = Path(plan_dir) / TASKS / f'{tid}.md', Path(plan_dir) / f'{tid}.md'
+    return old if old.exists() and not new.exists() else new
 
 
 TASK_ID = re.compile(r'\b([A-Z]+\d+[a-z0-9]*)\b')
@@ -636,12 +646,12 @@ def brief(tid: str, root=None, plan_dir=None, journal=None) -> list[str]:
     """Everything a task starts from, in one command.
 
     This is the highest-value thing in the module. A fresh session otherwise spends its first five or six
-    turns finding the task line, looking for a `plan/<ID>.md`, hunting the journal directory, opening the
+    turns finding the task line, looking for a `plan/tasks/<ID>.md`, hunting the journal directory, opening the
     files and running `git log` on them — all of it predictable, all of it paid for again on every turn after.
     `brief` assembles it once:
 
       * the task's own line (and sub-items) from TODO.md or DONE.md,
-      * `plan/<ID>.md` in full, if the task has a long form,
+      * `plan/tasks/<ID>.md` in full, if the task has a long form,
       * its journal directory: the file list, and the newest entry pasted in (capped at JOURNAL_MAX chars,
         because the newest entry is where the last session said whose move it is),
       * the files named on the line: where they actually are, how long they are, and their last 3 commits —
@@ -668,9 +678,10 @@ def brief(tid: str, root=None, plan_dir=None, journal=None) -> list[str]:
         raise SystemExit(f'{PROG}: no task {tid!r} in {plan_dir}/TODO.md or DONE.md')
     text = '\n'.join(line)
     out = [f'## Task {tid} ({plan_dir.name}/TODO.md)', *line]
-    own = plan_dir / f'{tid}.md'
+    own = long_form(plan_dir, tid)
+    own_rel = f'{plan_dir.name}/{own.relative_to(plan_dir).as_posix()}'
     if own.exists():
-        out += ['', f'## {plan_dir.name}/{tid}.md', *lines(own)]
+        out += ['', f'## {own_rel}', *lines(own)]
         text += '\n' + '\n'.join(lines(own))
 
     # journals: the ones the line points at (`j: <dir>`) and any whose name carries this id
@@ -693,7 +704,7 @@ def brief(tid: str, root=None, plan_dir=None, journal=None) -> list[str]:
             out += [f'### {files[-1]}' + (f' (first {JOURNAL_MAX} chars)' if cut else ''),
                     body[:JOURNAL_MAX].rstrip()]
 
-    where = [p for p in files_on_line(text, root) if p != f'{plan_dir.name}/{tid}.md']
+    where = [p for p in files_on_line(text, root) if p != own_rel]
     if where:
         out += ['', '## Files on the line, and their last commits']
         for t in where:
@@ -825,7 +836,7 @@ def _main(argv: list[str], c) -> int:
             print(f'{PROG} -f FILE <name>', file=sys.stderr)
             return 2
         paths, argv = [argv[1]], argv[2:]
-    task_file = plan_dir / f'{argv[0]}.md' if argv else None
+    task_file = long_form(plan_dir, argv[0]) if argv else None
     if len(paths) > 1 and task_file and task_file.exists():
         out = lines(task_file)
     elif not argv:
