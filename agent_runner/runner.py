@@ -64,10 +64,11 @@ import tempfile
 import threading
 import time
 import uuid
+from contextlib import ExitStack
 from pathlib import Path
 
 from agent_runner import plan as P
-from agent_runner import ci, gitops, plat
+from agent_runner import ci, gitops, plat, plansync
 
 # The library API a wrapping project may call; these change only in a major version. `cmd_run(argv)` and
 # `cmd_stop(argv)` are the commands; `PROMPT`, `FIXER` and `OTHERS` may be replaced before `cmd_run`.
@@ -180,7 +181,10 @@ def note(msg: str) -> None:
 
 
 def plan_rel(name: str) -> str:
-    """A plan file's path as git names it: forward slashes on Windows too (`git show`, the union's file list)."""
+    """A plan file's path as git names it: forward slashes on Windows too (`git show`, the union's file list).
+    A plan outside the repo is its absolute path: git ignores it there, and `ROOT / rel` still finds it."""
+    if C.plan_external:
+        return str(C.plan_dir / name)
     return os.path.relpath(C.plan_dir / name, C.root).replace(os.sep, '/')
 
 
@@ -191,7 +195,11 @@ def default_branch() -> str:
 
 
 def plan_text(branch: str) -> list[str]:
-    """TODO.md as the merge target has it — not a worktree's copy, so a branch mid-task cannot skew picks."""
+    """TODO.md as the merge target has it — not a worktree's copy, so a branch mid-task cannot skew picks.
+    A plan outside the repo has one copy: pulled (now and then) and read."""
+    if C.plan_external:
+        plansync.pull(C)
+        return P.lines(C.todo)
     r = git('show', f'{branch}:{plan_rel("TODO.md")}')
     if r.returncode == 0:
         return r.stdout.splitlines()
@@ -290,8 +298,12 @@ def family(tid: str) -> str:
     return m.group() if m else tid
 
 
-def pick(running: dict, tried: set, mode: str, branch: str):
-    """The next task a free slot may take, or None. See the module docstring for the rules."""
+def pick(running: dict, tried: set, mode: str, branch: str, claim: bool = False):
+    """The next task a free slot may take, or None. See the module docstring for the rules.
+
+    `claim` (a run about to start it): with `[plan] repo`, the task is claimed and the claim pushed first;
+    one another runner has, or got just now, is passed over for the next."""
+    pick_ = lambda t: t if not claim or plansync.claim(C, t[0]) else None
     busy = list(running.values())
     # A section whose heading says its tasks are ordered ("Next (in this order)") runs one task at a time:
     # its second task usually depends on the first having landed, whatever the files say.
@@ -300,6 +312,7 @@ def pick(running: dict, tried: set, mode: str, branch: str):
     shared = set(C.run['shared_files'])
     todo = tasks(branch)
     finished = set(ahead(branch)) if todo else set()
+    finished |= plansync.taken(C)  # another runner's: on its slots
     for tid, section, files, named in todo:
         if tid not in busy_ids and tid in finished:
             continue  # finished, its branch is waiting to be merged: restarting it would reset the branch
@@ -309,13 +322,21 @@ def pick(running: dict, tried: set, mode: str, branch: str):
             continue
         if named & busy_ids:
             continue  # its line names a task that is running now: it is built on that, so it waits for it
-        if mode == 'p':
-            return tid, section, files, named
-        if (section.startswith('Next') or 'in this order' in section) and section in busy_sections:
-            continue
-        if all(not ((files - shared) & b[2]) for b in busy):
-            return tid, section, files, named
+        if mode != 'p':
+            if (section.startswith('Next') or 'in this order' in section) and section in busy_sections:
+                continue
+            if any((files - shared) & b[2] for b in busy):
+                continue
+        if got := pick_((tid, section, files, named)):
+            PASSED.discard(tid)
+            return got
+        if tid not in PASSED:
+            PASSED.add(tid)
+            log(f'{tid}: claimed by another runner, or the claim could not be pushed; passed over')
     return None
+
+
+PASSED: set[str] = set()  # tasks `pick` could not claim, said once each
 
 
 # --- worktrees and panes -------------------------------------------------------
@@ -669,7 +690,8 @@ def agent_argv(prompt: str, sid: str, model: str, idle: int, name: str, resume: 
 
 def brief_for(tid: str, cwd: Path) -> str:
     try:
-        return '\n'.join(P.brief(tid, root=cwd, plan_dir=cwd / os.path.relpath(C.plan_dir, C.root)))
+        plan_dir = C.plan_dir if C.plan_external else cwd / os.path.relpath(C.plan_dir, C.root)
+        return '\n'.join(P.brief(tid, root=cwd, plan_dir=plan_dir))
     except SystemExit as e:
         return f'({C.command} plan brief {tid} produced nothing: {e})'
 
@@ -1521,6 +1543,7 @@ def merge(tid: str, branch: str) -> str | None:
             base, merged = LANDED.pop(tid)
         git('branch', '-d', f'task/{tid}')
         git('update-ref', '-d', TESTED + tid)
+        land_tick(tid, merged)
         line = next((l for l in plan_text(branch) if f'**{tid}**' in l), '')
         state = 'blocked' if line.startswith('- [~]') else 'part' if line else 'ticked'
         msg = f'{tid}: merged, {state}' + (f'; SUSPECT, recheck: {sus}' if (sus := suspect(base, merged)) else '')
@@ -1640,7 +1663,8 @@ def merge_batch(tid: str, branch: str) -> str | None:
                 git('cherry-pick', '--abort', cwd=d)
                 log(f'{tid}: the repair no longer applies to the merge; testing it without')
                 repairs = []
-            P.archive(d / plan_rel('TODO.md'), d / plan_rel('DONE.md'))
+            if not C.plan_external:  # outside, `done` and `land_tick` archive as they tick
+                P.archive(d / plan_rel('TODO.md'), d / plan_rel('DONE.md'))
             plan_files = [plan_rel('TODO.md'), plan_rel('DONE.md')]
             if git('status', '--porcelain', '--', *plan_files, cwd=d).stdout.strip():
                 git('commit', '-qm', f'{tid}: archive ticked tasks', '--', *plan_files, cwd=d)
@@ -1825,7 +1849,40 @@ def file_flaky(rel: str) -> list[str]:
     return out
 
 
+def land_tick(tid: str, merged: str) -> None:
+    """A plan outside the repo: tick what `done` finished, now that its code is on the shared branch, with
+    where it landed. Ticked at `done` instead, a merge left for a human would leave the task closed."""
+    mark = plansync.ticks(C) / tid
+    if not C.plan_external or not mark.exists():
+        return
+    with plansync.locked(C):
+        plansync.pull(C, force=True)
+        if tid in P.open_ids(P.lines(C.todo)):
+            P.note(tid, f'landed {merged[:10]}', todo=C.todo)
+            P.tick(tid, C.todo, C.done)
+            if out := plansync.publish(C, f'tick {tid} (landed {merged[:10]})'):
+                log(f'{tid}: {out}')
+    mark.unlink(missing_ok=True)
+
+
+def commit_plan(msg: str, *rels: str) -> bool:
+    """Commit a runner's plan edit: in the main checkout, or, for a plan outside it, in the plan's clone."""
+    if C.plan_external:
+        if out := plansync.publish(C, msg):
+            log(out)
+        return True
+    return not git('commit', '-qm', msg, '--', *rels).returncode
+
+
 def reopen_landed(branch: str, why: str) -> None:
+    if not C.plan_external:
+        return _reopen_landed(branch, why)
+    with plansync.locked(C):
+        plansync.pull(C, force=True)
+        _reopen_landed(branch, why)
+
+
+def _reopen_landed(branch: str, why: str) -> None:
     """File the flaky tests the gate met (`file_flaky`), and unblock what a merge freed (`plan.reopen`), each
     committed in the main checkout, holding MERGE.
 
@@ -1836,8 +1893,7 @@ def reopen_landed(branch: str, why: str) -> None:
     if git('branch', '--show-current').stdout.strip() != branch or git('status', '--porcelain', '--', rel).stdout.strip():
         return
     if filed := file_flaky(rel):
-        if git('commit', '-qm', f'Plan: {", ".join(filed)} to fix flaky tests ({why}\'s gate met them)',
-               '--', rel).returncode:
+        if not commit_plan(f'Plan: {", ".join(filed)} to fix flaky tests ({why}\'s gate met them)', rel):
             git('checkout', '-q', '--', rel)
         else:
             for t in filed:
@@ -1846,7 +1902,7 @@ def reopen_landed(branch: str, why: str) -> None:
     if not (got := P.reopen(ROOT / rel)):
         return
     names = ', '.join(t for t, _ in got)
-    if git('commit', '-qm', f'Plan: reopen {names} ({why} landed what they waited on)', '--', rel).returncode:
+    if not commit_plan(f'Plan: reopen {names} ({why} landed what they waited on)', rel):
         git('checkout', '-q', '--', rel)
         return
     REOPENED.update(t for t, _ in got)
@@ -1872,8 +1928,12 @@ def watch_ci(branch: str, force: bool = False) -> list[str]:
     if not MERGE.acquire(blocking=False):
         return []
     filed: list[str] = []
+    hold = ExitStack()
     try:
         CI_AT[0] = time.time()
+        if C.plan_external:  # the whole look: a gh call or two, seconds
+            hold.enter_context(plansync.locked(C))
+            plansync.pull(C, force=True)
         rel = plan_rel('TODO.md')
         if git('branch', '--show-current').stdout.strip() != branch or \
                 git('status', '--porcelain', '--', plan_rel('')).stdout.strip():
@@ -1892,7 +1952,7 @@ def watch_ci(branch: str, force: bool = False) -> list[str]:
             (ROOT / own).write_text('\n'.join([f'# {tid} — CI: {ci.marker(wf, branch)}', '', *long, '']),
                                     encoding='utf-8')
             git('add', '--', own)
-            if git('commit', '-qm', f'Plan: {tid}, {ci.marker(wf, branch)}', '--', rel, own).returncode:
+            if not commit_plan(f'Plan: {tid}, {ci.marker(wf, branch)}', rel, own):
                 git('reset', '-q', '--', own)
                 git('checkout', '-q', '--', rel)
                 (ROOT / own).unlink(missing_ok=True)
@@ -1902,6 +1962,7 @@ def watch_ci(branch: str, force: bool = False) -> list[str]:
             note(f'{tid}: filed (critical), {ci.marker(wf, branch)}')
             log(f'{tid}: filed (critical), {ci.marker(wf, branch)}: {text[:200]}')
     finally:
+        hold.close()
         MERGE.release()
     return filed
 
@@ -1915,14 +1976,22 @@ def not_attempt(tid: str, branch: str) -> bool:
 
 
 def finish(tid: str, n: int, sid: str, branch: str) -> None:
-    """After a slot's session: merge its branch, or park it as wip/<ID> and say why."""
+    """After a slot's session: merge its branch, or park it as wip/<ID> and say why. Then drop the claim, unless
+    the branch still waits to merge."""
+    if _finish(tid, n, sid, branch):
+        (plansync.ticks(C) / tid).unlink(missing_ok=True)  # not landed: the task stays open
+        plansync.release(C, tid)
+
+
+def _finish(tid: str, n: int, sid: str, branch: str) -> bool:
+    """False when task/<tid> waits for the next run to merge it."""
     commits = git('log', '--format=%s', f'{branch}..task/{tid}').stdout.splitlines()
     if not commits:
         git('branch', '-D', f'task/{tid}')
         git('update-ref', '-d', TESTED + tid)
         note(f'{tid}: no commits — nothing to merge')
         log(f'{tid}: no commits — nothing to merge')
-        return
+        return True
     while (why := merge(tid, branch)) and why.startswith((EDITED, ELSEWHERE)):
         # Tested and only waiting on somebody's edits: parking it would throw the work away for a fresh
         # attempt. The branch stays task/<ID> (`pick` leaves it alone, the next run's `unmerged` takes it).
@@ -1932,10 +2001,10 @@ def finish(tid: str, n: int, sid: str, branch: str) -> None:
         while blocked_by_edits(tid, branch):
             if stopping():
                 log(f'{tid}: the run stops; task/{tid} waits for the next run to merge it')
-                return
+                return False
             time.sleep(EDITS_POLL)
     if not why:
-        return
+        return True
     note(f'{tid}: LEFT FOR A HUMAN — {why}')
     log(f'{tid}: LEFT FOR A HUMAN — {why}. Its {len(commits)} commits: {" / ".join(commits)[:300]}')
     # Parked as wip/<ID>: a task/<ID> ahead of the branch reads as finished-and-waiting to `pick`, which
@@ -1945,6 +2014,7 @@ def finish(tid: str, n: int, sid: str, branch: str) -> None:
         log(f'{tid}: its branch is parked as {wip}; the task stays open and can start again')
         if out := push(ROOT, wip):  # the one copy of that work: get it off this disk
             log(f'{tid}: {out}')
+    return True
 
 
 STAGED_SAID: set[str] = set()
@@ -2484,7 +2554,7 @@ def sequential(branch: str, model: str, idle: int, pause: int, force: bool, once
     idle_said, idle_at = False, 0.0
     while not stopping():
         retry_reopened(tried, closed, here)
-        if not (task := pick({}, tried, 'p', here)):
+        if not (task := pick({}, tried, 'p', here, claim=True)):
             if once:
                 break
             if not idle_said:
@@ -2523,12 +2593,14 @@ def sequential(branch: str, model: str, idle: int, pause: int, force: bool, once
                 log(f'`{C.run["on_exit"]}` ran past [run] timeout ({C.run["timeout"]}s); stopped')
         if backend().report_exit and code:
             log(f'{tid}: {C.run["backend"]} failed (exit {code}): {last_words(sid) or "see terminal output"}')
+            plansync.release(C, tid)
             return code
         if r := limit_only(sid, C.notes('slot1.log'), 0):
             log(f'{tid}: only hit the usage limit; sleeping until {r:%H:%M}')
             time.sleep(max(0, (r - dt.datetime.now()).total_seconds()) + pause)
             continue
         tried.add(tid)
+        plansync.release(C, tid)  # committed here, ticked by its `done`: nothing left to hold
         if git('rev-parse', 'HEAD').stdout.strip() != before:
             note(f'{tid}: committed on {here}')
             with MERGE:
@@ -2809,7 +2881,7 @@ def run(argv: list[str], prog: str) -> int:
                         print('\a', end='', flush=True)
                     continue
                 stall_said.discard('before_start')
-                if task := pick(running, tried, mode, branch):
+                if task := pick(running, tried, mode, branch, claim=True):
                     if p := start(n, task, branch, model, idle, slots):
                         procs[n], running[n] = p, task
                         if once:  # one task: nothing new starts, and the run exits once it has merged
@@ -2819,6 +2891,7 @@ def run(argv: list[str], prog: str) -> int:
                             idle_said = False
                     else:
                         tried.add(task[0])
+                        plansync.release(C, task[0])  # a start that failed (never another runner's claim)
         retry_reopened(tried, closed, branch)
         if REOPENED:
             tried -= REOPENED  # a task reopened by a merge is a new attempt, not the one that blocked

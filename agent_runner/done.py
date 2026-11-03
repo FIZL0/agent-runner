@@ -26,7 +26,7 @@ import sys
 from functools import partial
 from pathlib import Path
 
-from agent_runner import plan
+from agent_runner import plan, plansync
 from agent_runner.config import cfg, finished_mark
 from agent_runner.gitops import git, push, shared_branch
 
@@ -90,10 +90,25 @@ def main(argv: list[str] | None = None) -> int:
             return 1
         print(f'check {"failed, skipped (--skip-check)" if rc else "passed"}: {c.run["precommit"]}')
 
+    if not c.plan_external:
+        return record(a, c)
+    with plansync.locked(c):  # after the gate: a gate can take an hour, and the lock holds every plan edit
+        plansync.pull(c, force=True)
+        return record(a, c)
+
+
+def record(a, c) -> int:
+    """Tick (or block) the task, commit, push the branch. A plan outside the repo is published on its own,
+    after the code commit; in a runner's slot its tick waits for the merge to land (`runner.land_tick`)."""
+    cwd = c.root
     kept = {p: p.read_bytes() for p in (c.todo, c.done, c.plan_dir / f'{a.id}.md') if p.exists()}
+    later = c.plan_external and not a.blocked and finished_mark() is not None
     if a.blocked:
         plan.block(a.id, a.blocked, after=None if a.after is None else [t for t in a.after.split(',') if t])
         print(f'blocked {a.id}')
+    elif later:
+        (plansync.ticks(c) / a.id).touch()
+        print(f'{a.id} is ticked in {c.plan_dir} once its merge lands')
     else:
         plan.tick(a.id)
         print(f'ticked {a.id}')
@@ -104,6 +119,8 @@ def main(argv: list[str] | None = None) -> int:
         g('reset', '-q')
         for p, b in kept.items():
             p.write_bytes(b)
+        if later:
+            (plansync.ticks(c) / a.id).unlink(missing_ok=True)
         return 1
 
     if g('add', '-A').returncode:
@@ -113,7 +130,7 @@ def main(argv: list[str] | None = None) -> int:
         print('nothing to commit (the tick was already committed?)')
         if not a.no_test:
             g('update-ref', TESTED + a.id, 'HEAD')
-        return finished()
+        return finished(c, a)
     if (r := g('commit', '-qm', a.message)).returncode:
         print(f'git commit failed: {r.stderr.strip()}', file=sys.stderr)
         return untick()
@@ -125,11 +142,14 @@ def main(argv: list[str] | None = None) -> int:
         print(line)
     elif here and (remote := c.push_remote) and shared_branch(cwd, remote, here):
         print(f'{here} is not pushed: done only pushes a task branch (git push {remote} {here} to publish)')
-    return finished()
+    return finished(c, a)
 
 
-def finished() -> int:
-    """Tell the slot's stop waiter this task is done, so a leftover background command can't hold the slot."""
+def finished(c=None, a=None) -> int:
+    """Publish a plan kept outside the repo; tell the slot's stop waiter this task is done, so a leftover
+    background command can't hold the slot."""
+    if c and c.plan_external and (out := plansync.publish(c, f'{a.id}: {a.message}')):
+        print(out, file=sys.stderr)
     if m := finished_mark():
         m.touch()
     return 0

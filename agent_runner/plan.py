@@ -63,6 +63,7 @@ from collections import Counter
 from functools import partial
 from pathlib import Path
 
+from agent_runner import plansync
 from agent_runner.config import cfg
 from agent_runner.gitops import git
 
@@ -730,19 +731,35 @@ def _commit(root: Path, paths: list[Path], msg: str) -> None:
         g('commit', '-q', '-m', f'plan: {msg}', '--', *map(str, paths))
 
 
+EDITS = ('tick', 'block', 'reopen', 'unblock', 'move', 'add', 'note', 'archive')
+
+
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     if argv and argv[0] in ('-h', '--help', 'help'):
         print(HELP)
         return 0
     c = cfg()
+    if not c.plan_external:
+        return _main(argv, c)
+    edit = argv[:1] and argv[0] in EDITS
+    with plansync.locked(c):  # a read pulls too, so it sees other people's edits
+        plansync.pull(c, force=bool(edit))
+        return _main(argv, c)
+
+
+def _main(argv: list[str], c) -> int:
     plan_dir = c.plan_dir
     todo, done = ensure()
 
     def say(msg):
         print(msg)
-        if argv[0] in ('tick', 'block', 'reopen', 'unblock', 'move', 'add', 'note'):
-            _commit(c.root, [todo, done], ' '.join(argv)[:70])
+        if argv[0] in EDITS:
+            if c.plan_external:
+                if out := plansync.publish(c, ' '.join(argv)[:70]):
+                    print(out, file=sys.stderr)
+            elif argv[0] != 'archive':
+                _commit(c.root, [todo, done], ' '.join(argv)[:70])
         return 0
 
     if argv[:1] == ['tick'] and len(argv) == 2:

@@ -2,6 +2,14 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
+## 0.8.0 (2026-11-03)
+
+- `[plan] repo`: the plan in its own git repo, so several people and runners share one queue instead of a
+  copy per branch (#3). Reads pull, edits push (a rejected push merges by line and retries), a run claims a
+  task (`claims/<ID>`, pushed as it picks; offline it starts nothing) so two users' runs never take the same one, and a slot's `done` is ticked
+  only once its merge lands, noting `landed <sha>`. `[plan] dir` may now be outside the repo (`~/…`) on
+  its own too. Unset, nothing changes.
+
 ## 0.7.3 (2026-11-02)
 
 - `[run] ci_watch`: a run reads the shared branch's GitHub Actions results (`gh run list`, every 5 min, never

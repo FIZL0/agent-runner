@@ -62,7 +62,10 @@ RUNNER = _typed()  # for a prompt or a log line
 
 DEFAULTS: dict = {
     'plan': {
-        'dir': 'plan',          # TODO.md and DONE.md live here; plan/<ID>.md is a task's long form
+        'dir': 'plan',          # TODO.md and DONE.md live here; plan/<ID>.md is a task's long form. Outside
+                                # the repo (~/…, /…) every checkout and worktree shares that one copy
+        'repo': '',             # a git URL or path: the plan in its own repo, cloned to `dir` (default
+                                # ~/.cache/agent-runner/<name>) and pulled/pushed on every edit (plansync)
         'journal': '',          # optional: a directory of per-task journal folders, pasted into briefs
         'brief_extra': '',      # a command whose output ends the brief; {id} is the task id
         'brief': '',            # a command whose output *is* the brief, replacing the built-in one; {id}
@@ -180,6 +183,9 @@ class Config:
             supplied['backend'] = env
         raw = {**raw, 'run': supplied}
         self.raw = {k: {**v, **raw.get(k, {})} for k, v in DEFAULTS.items()}
+        if self.raw['plan']['repo'] and 'dir' not in raw.get('plan', {}):
+            name = Path(self.raw['plan']['repo'].rstrip('/')).name.removesuffix('.git')
+            self.raw['plan']['dir'] = f'~/.cache/agent-runner/{name}'
         self.run = self.raw['run']
         backend = infer(self.run)
         if backend not in ('claude', 'pi'):
@@ -200,7 +206,16 @@ class Config:
 
     @property
     def plan_dir(self) -> Path:
-        return self.root / self.raw['plan']['dir']
+        return self.root / Path(self.raw['plan']['dir']).expanduser()
+
+    @property
+    def plan_repo(self) -> str:
+        return self.raw['plan']['repo']
+
+    @property
+    def plan_external(self) -> bool:
+        """The plan is not in the code repo: one copy for every worktree, never committed with the code."""
+        return not self.plan_dir.is_relative_to(self.root)
 
     @property
     def todo(self) -> Path:

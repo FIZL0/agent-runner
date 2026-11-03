@@ -187,6 +187,37 @@ the branch is pushed after each task.
 `./run plan help` lists every subcommand: `next`, `<ID>`, `brief`, `tick`, `block`, `unblock`, `reopen`,
 `add`, `move`, `note`, `newid` and `archive`.
 
+### The plan in its own repo
+
+By default the plan lives in the code repo, so every branch and clone has its own copy: two people (or two
+machines running `run`) see each other's edits only after a code merge, which nearly always conflicts on
+TODO.md. Give the plan its own git repo instead:
+
+```toml
+[plan]
+repo = "git@github.com:you/project-plan.git"   # or a local path
+# dir = "~/.cache/agent-runner/project-plan"     # where the clone goes (this is the default)
+```
+
+- One clone, outside the code, shared by the main checkout and every slot. Reads pull it (at most every
+  20 s), every edit (`plan add/tick/block/…`, `done`, a run's reopens and filed tasks) locks it, pulls,
+  commits and pushes. A rejected push pulls and pushes again; `*.md` merge as `union`, since the plan is
+  one record per line, and a line left open for a task DONE.md has ticked is dropped.
+- **Claims: two people can run at once.** The moment a run picks a task (parallel or sequential), it
+  pushes `claims/<ID>` (host and checkout) before anything starts. Other runs skip a claimed task; two that
+  claim one at once conflict on push, and the later moves on to its next task. A claim that cannot be
+  pushed (offline) starts nothing, since nobody else would see it. The claim goes
+  when the task merges or is left for a human. A crashed run's claims stay: the same checkout takes them
+  back on its next run; for another one's, `git rm claims/<ID>` in the plan clone and push.
+- **Tick on landing.** `done` in a slot leaves the task open and the run ticks it once the merge lands,
+  noting `landed <sha>`; a merge left for a human leaves it open, as in-repo. `done` outside a run (a
+  person's session) ticks at once. `--blocked` blocks at once either way.
+- `<ID>.md` long forms, `REFERENCE.md` and `HUMAN.md` live in the plan repo; `[plan] journal` stays in the
+  code repo, since journals describe code and travel with it.
+- `dir` outside the repo without `repo` (a synced folder) shares one copy the same way, without git.
+- Moving an existing plan over, keeping its history: `git subtree split -P plan -b plan-only`, push that
+  branch to the new repo as `main`, set `[plan] repo`, then `git rm -r plan` in the code repo.
+
 ## What runs when
 
 Each free slot reads `plan/TODO.md` from the top and starts the first task it's allowed to, so the order of the
@@ -455,7 +486,8 @@ project keep them in its own config file (see [docs/SETUP.md](docs/SETUP.md#wrap
 
 ```toml
 [plan]
-dir = "plan"              # TODO.md, DONE.md, <ID>.md
+dir = "plan"              # TODO.md, DONE.md, <ID>.md; outside the repo, one copy for every worktree
+repo = ""                 # the plan in its own git repo (see "The plan in its own repo")
 journal = ""              # e.g. "journal": per-task folders, the newest pasted into the brief
 brief_extra = ""          # a command whose output ends the brief; {id} is the task id
 brief = ""                # a command whose output *is* the brief (the project's own brief tool); {id}
@@ -547,6 +579,7 @@ See [docs/SETUP.md](docs/SETUP.md#wrapping-it-from-your-own-cli).
 
 ```sh
 python3 tests/test_plan.py      # the plan tool
+python3 tests/test_plansync.py  # [plan] repo: two checkouts on one plan repo, merges, claims, tick on landing
 python3 tests/test_runner.py    # picking, done, merge/join/land/push, fix sessions, wip parking,
                                 # retry after unblock, prompt, Stop hook, usage limits, adopt,
                                 # batches, flaky/inherited failures, the platform layer and the
