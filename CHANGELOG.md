@@ -2,6 +2,14 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
+## 0.11.0 (2026-11-03)
+
+- Worktrees no longer fill the disk. A slot or merge worktree over `[run] slot_max_gb` (default 50) is cleaned
+  before its next task; under `[run] min_free_gb` (default 10) free, every free worktree is cleaned and no new
+  task starts until there is room; slots past the run's count are removed once nothing uses them. The clean
+  is `git clean -ffdXq` (every git-ignored file; `links` come back), or `[run] slot_clean`. Set either limit to
+  0 for the old behaviour. One project's slots had grown to hundreds of GB of task-specific build folders.
+
 ## 0.10.0 (2026-11-03)
 
 - `[plan] outline`: a command that prints one file's outline (`{file}` is the path). The brief shows it

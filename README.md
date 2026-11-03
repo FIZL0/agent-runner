@@ -338,6 +338,22 @@ rings.
 **A line that names a running task waits.** A task whose line mentions a running task's id is not
 started alongside it.
 
+### Disk
+
+Each slot, and the merge worktree, keeps its git-ignored build output between tasks, since a warm build is
+faster than a cold one. That is one full copy of the project's builds per worktree, and a task that builds
+into a folder of its own leaves another behind every time. So, by default:
+
+- **A worktree over `slot_max_gb` (50) is cleaned** before its next task, never while a session works in it.
+- **Under `min_free_gb` (10) free on the disk**, every free worktree is cleaned, and while the disk stays
+  that full no new task starts: the run logs why and waits for room.
+- **Slots past the count are removed.** Lower `slots` and the next run deletes the extra `sN` worktrees
+  (an adopted session there finishes first; one with uncommitted work is kept and logged).
+
+The clean is `git clean -ffdXq` unless `slot_clean` says otherwise: everything git ignores goes, and
+`links` are put back. A project whose builds are slow to redo names a narrower command, e.g. one that
+drops only per-task build folders and keeps the shared ones: `slot_clean = "rm -rf build/task-* out/runs"`.
+
 ### It stays up
 
 The parallel run never exits on its own. Only `once` ends by itself; otherwise use Ctrl-C or
@@ -554,6 +570,9 @@ fix_model = "opus"
 fix_timeout = 1800
 build = ""                # a quick build a fix or repair session runs before it commits (not the gate)
 repair_merges = true      # a merge failing the gate gets one repair session before it is parked
+slot_max_gb = 50          # a worktree over this is cleaned before its next task; 0 = never
+min_free_gb = 10          # under this much free disk: free worktrees cleaned, no new task starts; 0 = never
+slot_clean = ""           # how a worktree is cleaned; "" = git clean -ffdXq (every git-ignored file)
 timeout = 3600            # s the gate, a retest or a hook (join, before_start, on_exit) may run: past it, failed
 
 [run.join]                # glob = a command that joins a conflict in that file itself:
@@ -598,6 +617,7 @@ See [docs/SETUP.md](docs/SETUP.md#wrapping-it-from-your-own-cli).
 
 ```sh
 python3 tests/test_plan.py      # the plan tool
+python3 tests/test_disk.py      # slot_max_gb, min_free_gb, extra slots removed
 python3 tests/test_cost.py      # agent-runner cost: kinds of call, size × turns, Claude and Pi transcripts
 python3 tests/test_plansync.py  # [plan] repo: two checkouts on one plan repo, merges, claims, tick on landing
 python3 tests/test_runner.py    # picking, done, merge/join/land/push, fix sessions, wip parking,

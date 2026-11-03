@@ -872,6 +872,98 @@ def slot_header(n: int, what: str) -> tuple[Path, int]:
     return logfile, since
 
 
+# --- disk: worktrees keep their builds warm, within limits ----------------------
+
+GB = 1 << 30
+DISK_AT = [0.0]  # when `low_disk` last cleaned
+DISK_SAID = [False]
+
+
+def du(d: Path) -> int:
+    """Bytes on disk under `d`, symlinks not followed (a `links` target is not the slot's)."""
+    total = 0
+    for root, _, files in os.walk(d):
+        for f in files:
+            try:
+                st = os.lstat(os.path.join(root, f))
+                total += getattr(st, 'st_blocks', 0) * 512 or st.st_size
+            except OSError:
+                pass
+    return total
+
+
+def trim(d: Path, what: str, why: str = '') -> bool:
+    """Clean worktree `d` (`[run] slot_clean`) when it is over `[run] slot_max_gb`, or when `why` says it must be.
+    Only ever for a worktree nobody works in: a free slot before its next task, the merge worktree under MERGE.
+    True when it cleaned (`worktree` puts `links` back)."""
+    cap = C.run['slot_max_gb'] * GB
+    size = du(d)
+    if not why:
+        if not cap or size <= cap:
+            return False
+        why = f'over [run] slot_max_gb ({C.run["slot_max_gb"]} GB)'
+    cmd = C.run['slot_clean'] or 'git clean -ffdXq'
+    try:
+        sp.run(cmd, shell=True, cwd=str(d), capture_output=True, timeout=C.run['timeout'])
+    except sp.TimeoutExpired:
+        log(f'{what}: `{cmd}` ran past [run] timeout; stopped')
+    log(f'{what}: {size / GB:.1f} GB, {why}: cleaned with `{cmd}`, now {du(d) / GB:.1f} GB')
+    return True
+
+
+def free_gb() -> float:
+    return shutil.disk_usage(SLOTS_DIR if SLOTS_DIR.is_dir() else ROOT).free / GB
+
+
+def low_disk(free_slots) -> bool:
+    """Less free disk than `[run] min_free_gb`: clean the free slots and the merge worktree (at most every 10 min),
+    and True while it stays low, so no new task starts and fills the disk up."""
+    want = C.run['min_free_gb']
+    if not want or free_gb() >= want:
+        DISK_SAID[0] = False
+        return False
+    if time.time() - DISK_AT[0] > 600:
+        DISK_AT[0] = time.time()
+        why = f'the disk is under [run] min_free_gb ({want} GB free)'
+        for n in free_slots:
+            if (d := SLOTS_DIR / f's{n}').is_dir():
+                trim(d, f'slot {n}', why)
+        if (d := SLOTS_DIR / 'merge').is_dir() and MERGE.acquire(blocking=False):
+            try:
+                trim(d, 'merge worktree', why)
+            finally:
+                MERGE.release()
+        if free_gb() >= want:
+            return False
+    if not DISK_SAID[0]:
+        DISK_SAID[0] = True
+        log(f'disk: {free_gb():.1f} GB free, under [run] min_free_gb ({want} GB), even with the free worktrees '
+            f'cleaned: no new task starts until there is room')
+        print('\a', end='', flush=True)
+    return True
+
+
+def drop_extra_slots(slots: int, busy) -> None:
+    """Remove slot worktrees past this run's count (`slots` was lowered) that nothing uses: no session, nothing
+    uncommitted. Moved aside at once, deleted in the background; a task branch lives on in the repo."""
+    rm = lambda t: threading.Thread(target=shutil.rmtree, args=(t,), kwargs={'ignore_errors': True},
+                                    daemon=True).start()
+    for t in SLOTS_DIR.glob('.removed-*'):  # what a run that was stopped mid-delete left
+        rm(t)
+    for d in SLOTS_DIR.glob('s*'):
+        if not re.fullmatch(r's\d+', d.name) or int(d.name[1:]) <= slots or int(d.name[1:]) in busy:
+            continue
+        if git('status', '--porcelain', cwd=d).stdout.strip() or git('rev-parse', cwd=d).returncode:
+            log(f'slot {d.name[1:]}: past the {slots} slots, but it has uncommitted work (or is not a worktree): kept')
+            continue
+        size = du(d)
+        trash = SLOTS_DIR / f'.removed-{d.name}-{int(time.time())}'
+        d.rename(trash)
+        git('worktree', 'prune')
+        rm(trash)
+        log(f'slot {d.name[1:]}: past the {slots} slots and unused: removed ({size / GB:.1f} GB)')
+
+
 def start(n: int, task, branch: str, model: str, idle: int, slots: int):
     tid = task[0]
     finished_mark(n).unlink(missing_ok=True)  # the last task's `done`, not this one's
@@ -879,6 +971,8 @@ def start(n: int, task, branch: str, model: str, idle: int, slots: int):
     head = git('symbolic-ref', '-q', '--short', 'HEAD', cwd=d).stdout.strip()
     if not vacate(n, d, head, branch, f'for {tid}'):
         return None
+    if trim(d, f'slot {n}'):
+        worktree(n, branch)  # the `links` the clean took
     co = git('checkout', '-q', '-B', f'task/{tid}', branch, cwd=d)
     if co.returncode:  # e.g. another worktree still holds task/<ID>: never start an agent on the wrong branch
         log(f'slot {n}: checkout task/{tid} failed: {co.stderr.strip()[:200]}')
@@ -1635,6 +1729,8 @@ def upstream(branch: str, d: Path) -> str:
 def merge_batch(tid: str, branch: str) -> str | None:
     """`merge`'s part under the lock: build, test and land task/<tid> and its riders; record them in LANDED."""
     d = worktree('merge', branch)
+    if trim(d, 'merge worktree'):
+        worktree('merge', branch)
     solo = not C.run['batch']
     repairs: list[str] = []  # a repair session's commits, replayed when the merge is built again
     repaired = False
@@ -2605,6 +2701,9 @@ def sequential(branch: str, model: str, idle: int, pause: int, force: bool, once
         if idle_said:
             log(f'run busy: new work ({task[0]})')
             idle_said = False
+        if low_disk([]):
+            time.sleep(30)
+            continue
         if (w := capped(force)) is not None:
             log(f'weekly usage {w}% >= {C.run["weekly_max"]}%: waiting for the reset (--force to go on)')
             time.sleep(300)
@@ -2813,6 +2912,7 @@ def run(argv: list[str], prog: str) -> int:
 
     foreign = queue_cut_off(branch, [n for n in range(1, slots + 1) if n not in procs])
     sweep_tmp(force=True)
+    drop_extra_slots(slots, set(procs) | set(queued()) | set(foreign))
     for tid in unmerged(branch, [n for n in free_at if n not in procs and n not in queued() and n not in foreign]):
         log(f'{tid}: finished while no run was up; merging it now')
         tried.add(tid)
@@ -2882,8 +2982,11 @@ def run(argv: list[str], prog: str) -> int:
                     stall_said.add(f'pid{old[1]}')
                     log(f'slot {n}: an untracked session (pid {old[1]}, pane {old[0]}) still runs there; slot held')
                 continue
-            if n > slots:
-                continue  # an adopted slot past this run's count: watched to the end, never refilled
+            if n > slots:  # an adopted slot past this run's count: watched to the end, never refilled
+                if n not in procs and n not in waiting and n not in foreign:
+                    free_at.pop(n)
+                    drop_extra_slots(slots, set(procs) | set(queued()) | set(foreign))
+                continue
             if n not in procs and n in waiting:  # a running task, not a new one: no stop or usage cap holds it
                 if api_down(stall_said):
                     continue
@@ -2911,6 +3014,9 @@ def run(argv: list[str], prog: str) -> int:
                     continue
                 cap_said = False
                 if api_down(stall_said):
+                    continue
+                if low_disk([m for m in range(1, slots + 1) if m not in procs and m not in waiting
+                             and m not in foreign]):
                     continue
                 if r['before_start'] and before_start_fails():
                     if 'before_start' not in stall_said:

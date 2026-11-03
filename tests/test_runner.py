@@ -87,7 +87,7 @@ def make_repo(tmp: Path) -> Path:
     # the gate: fails while a file named BROKEN exists
     (repo / 'check.py').write_text('import os, sys\nsys.exit(1 if os.path.exists("BROKEN") else 0)\n')
     (repo / 'runner.toml').write_text(
-        '[run]\ntest = "python3 check.py"\nshared_files = ["CHANGELOG.md"]\n'
+        '[run]\ntest = "python3 check.py"\nmin_free_gb = 0\nshared_files = ["CHANGELOG.md"]\n'
         'joinable = ["plan/TODO.md", "plan/DONE.md", "CHANGELOG.md"]\n', encoding='utf-8')
     (repo / '.gitignore').write_text('.runner/\n', encoding='utf-8')
     git(repo, 'add', '-A')
