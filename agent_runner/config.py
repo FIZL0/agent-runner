@@ -67,6 +67,8 @@ DEFAULTS: dict = {
         'repo': '',             # a git URL or path: the plan in its own repo, cloned to `dir` (default
                                 # ~/.cache/agent-runner/<name>) and pulled/pushed on every edit (plansync)
         'journal': '',          # optional: a directory of per-task journal folders, pasted into briefs
+        'journal_layout': 'dated',  # 'dated': <journal>/<date>-<id>-<slug>/; 'id': <journal>/<ID>/notes.md, a
+                                # repeat attempt in <journal>/<ID>/<date>-<slug>/notes.md
         'brief_extra': '',      # a command whose output ends the brief; {id} is the task id
         'outline': '',          # a command printing one file's outline (its symbols, sections); {file} is
                                 # the path. The brief shows it under each file the task line names

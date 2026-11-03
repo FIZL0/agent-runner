@@ -695,18 +695,20 @@ def brief(tid: str, root=None, plan_dir=None, journal=None) -> list[str]:
         dirs = sorted(d for d in os.listdir(journal) if (journal / d).is_dir()) if journal else []
     except OSError:
         dirs = []
-    own_j = [d for d in dirs if re.search(rf'-{re.escape(tid.lower())}(-|$)', d.lower())]
+    own_j = [d for d in dirs if d == tid or re.search(rf'-{re.escape(tid.lower())}(-|$)', d.lower())]
     for j in dict.fromkeys(named + own_j) if journal else ():  # `j:` on a line with no journal dir set
         d = journal / j
         if not d.is_dir():
             continue
-        files = sorted(f for f in os.listdir(d) if f.endswith('.md'))
+        # entries: its .md files and those one folder down (an `id` layout's repeat attempts, <date>-<slug>/)
+        files = sorted(p.relative_to(d).as_posix() for p in [*d.glob('*.md'), *d.glob('*/*.md')])
         rel = os.path.relpath(d, root).replace(os.sep, '/')
         out += ['', f'## Journal {rel}/: {" · ".join(files)}']
         if files and j in own_j:  # journals the line only points at are listed, not pasted
-            body = (d / files[-1]).read_text(encoding='utf-8', errors='replace')
+            newest = max(files, key=lambda f: (m[0] if (m := DATE.search(f)) else '', f))  # dated beats undated
+            body = (d / newest).read_text(encoding='utf-8', errors='replace')
             cut = len(body) > JOURNAL_MAX
-            out += [f'### {files[-1]}' + (f' (first {JOURNAL_MAX} chars)' if cut else ''),
+            out += [f'### {newest}' + (f' (first {JOURNAL_MAX} chars)' if cut else ''),
                     body[:JOURNAL_MAX].rstrip()]
 
     where = [p for p in files_on_line(text, root) if p != own_rel]
@@ -729,6 +731,7 @@ def brief(tid: str, root=None, plan_dir=None, journal=None) -> list[str]:
     return out
 
 
+DATE = re.compile(r'\d{4}-\d{2}-\d{2}')
 OUTLINE_MAX = 6000  # chars of one file's outline in a brief
 
 

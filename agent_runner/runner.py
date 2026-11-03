@@ -723,6 +723,9 @@ def prompt_for(tid: str, n: int, slots: int, cwd: Path, branch: str) -> str:
     """
     r = C.run
     journal = os.path.relpath(C.journal, C.root).replace(os.sep, '/') if C.journal else ''
+    journal_at = (f'{journal}/{tid}/notes.md (if it exists, an earlier attempt wrote it: then '
+                  f'{journal}/{tid}/<date>-<slug>/notes.md)' if C.raw['plan']['journal_layout'] == 'id'
+                  else f'{journal}/<date>-{tid.lower()}-<slug>/')
     wip = not git('rev-parse', '--verify', '-q', f'refs/heads/wip/{tid}').returncode
     vals = dict(
         tid=tid, n=n, runner=C.command, branch=branch,
@@ -733,7 +736,7 @@ def prompt_for(tid: str, n: int, slots: int, cwd: Path, branch: str) -> str:
         rules=f'read {r["rules"]} first' if r['rules'] else 'the README, and AGENTS.md or CLAUDE.md if there is one',
         test=(f'The test gate is `{r["test"]}`. `done` runs it, and it must pass.' if r['test'] else
               'There is no test gate, so say in the commit message how you checked the work.'),
-        journal=(f'\nWrite the task\'s journal as you go, in {journal}/<date>-{tid.lower()}-<slug>/: what you did, '
+        journal=(f'\nWrite the task\'s journal as you go, in {journal_at}: what you did, '
                  f'what you tried that failed, and under **Not verified** everything you could not check, with '
                  f'why (or `none`). A skipped check that is written down is useful; a silent one is a bug '
                  f'nobody will find.\n' if journal else ''),

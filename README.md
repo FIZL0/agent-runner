@@ -434,7 +434,8 @@ A merge skips the gate only when `task/<ID>` is the very tree `done`'s gate pass
   busy.
 - **One task per session.** The prompt says "do task X and nothing else". Follow-ups go in with
   `./run plan add`, not into the same branch.
-- **Journal and notes.** Set `[plan] journal` and each session writes `journal/<date>-<id>-<slug>/`: what
+- **Journal and notes.** Set `[plan] journal` and each session writes `journal/<date>-<id>-<slug>/` (or, with
+  `journal_layout = "id"`, `journal/<ID>/notes.md` and a retry's `journal/<ID>/<date>-<slug>/notes.md`): what
   it did, what failed, and a **Not verified** list. The newest entry for a task goes into the next brief,
   so a retry starts from what the last attempt learned.
 - **A real test gate.** `[run] test` is the only thing between an unattended session and `main`. Make it
@@ -519,6 +520,7 @@ project keep them in its own config file (see [docs/SETUP.md](docs/SETUP.md#wrap
 dir = "plan"              # TODO.md, DONE.md, tasks/<ID>.md; outside the repo, one copy for every worktree
 repo = ""                 # the plan in its own git repo (see "The plan in its own repo")
 journal = ""              # e.g. "journal": per-task folders, the newest pasted into the brief
+journal_layout = "dated"  # or "id": one folder per task, journal/<ID>/, a retry dated one folder down
 brief_extra = ""          # a command whose output ends the brief; {id} is the task id
 outline = ""              # a command printing one file's outline; {file} is the path, e.g.
                           # "python3 tools/outline.py {file}": the brief shows it under each file the line names

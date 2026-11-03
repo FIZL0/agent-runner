@@ -175,6 +175,16 @@ def test_brief():
         out = '\n'.join(plan.brief('D3', root=root))
         has(out, rf'first {cut} chars', 'a huge journal entry is capped, and says so')
         check(len(out) < cut + 4000, 'and the whole brief stays bounded')
+        k = root / 'journal/K4'  # the `id` layout: notes.md, then a repeat attempt one folder down
+        (k / '2026-03-04-retry').mkdir(parents=True)
+        (k / 'notes.md').write_text('first attempt\n', encoding='utf-8')
+        (k / '2026-03-04-retry/notes.md').write_text('the retry word\n', encoding='utf-8')
+        with open(root / 'plan/TODO.md', 'a', encoding='utf-8') as f:
+            f.write('- [ ] **K4** another\n')
+        out = '\n'.join(plan.brief('K4', root=root))
+        has(out, r'Journal journal/K4/: 2026-03-04-retry/notes\.md · notes\.md', 'a journal/<ID>/ folder is found')
+        has(out, r'the retry word', 'and its newest (dated) attempt is pasted')
+        check('first attempt' not in out, 'not the first one')
         r = run(root, 'plan', 'brief', 'D3')
         check(r.returncode == 0 and '## Task D3' in r.stdout, '`run plan brief` works from the repo', r.stderr)
         r = run(root / 'docs', 'plan', 'block', 'D3', '--after', 'X9', 'waits on X9')

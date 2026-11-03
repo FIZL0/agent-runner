@@ -2,6 +2,12 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
+## 0.12.0 (2026-11-03)
+
+- `[plan] journal_layout = "id"`: one journal folder per task, `journal/<ID>/notes.md`, a retry in
+  `journal/<ID>/<date>-<slug>/notes.md`. The prompt names that place, and the brief finds a `journal/<ID>/`
+  folder and pastes its newest entry (a dated one beats an undated one). The default, `dated`, is unchanged.
+
 ## 0.11.1 (2026-11-03)
 
 - A worktree over `slot_max_gb` is trimmed, not wiped: its least recently written git-ignored parts (folders
