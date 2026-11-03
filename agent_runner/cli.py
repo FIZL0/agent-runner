@@ -31,6 +31,7 @@ Finish a task (what an agent runs at the end)
     agent-runner done B646 "Halved part of it" --blocked "needs a browser to measure"
 
 More
+    agent-runner cost                 where the workers' tokens go, by kind of tool call (last 7 days)
     agent-runner help order           what runs when, and how to make one task wait for another
     agent-runner run --help           every runner option
     agent-runner --version
@@ -90,6 +91,9 @@ def main(argv: list[str] | None = None) -> int:
     if cmd == 'run':
         from agent_runner import runner
         return runner.cmd_run(rest)
+    if cmd == 'cost':
+        from agent_runner import cost
+        return cost.main(rest)
     if cmd == 'resume':
         from agent_runner import runner
         return runner.cmd_resume(rest)

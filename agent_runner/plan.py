@@ -59,6 +59,7 @@ from __future__ import annotations
 
 import os
 import re
+import shlex
 import subprocess
 import sys
 from collections import Counter
@@ -657,7 +658,9 @@ def brief(tid: str, root=None, plan_dir=None, journal=None) -> list[str]:
       * its journal directory: the file list, and the newest entry pasted in (capped at JOURNAL_MAX chars,
         because the newest entry is where the last session said whose move it is),
       * the files named on the line: where they actually are, how long they are, and their last 3 commits —
-        so the session knows whether someone changed them yesterday before it reads a single one,
+        so the session knows whether someone changed them yesterday before it reads a single one — and,
+        with `[plan] outline` (a command; {file} is the path), each file's outline: the map of what is
+        where, so a session reads the part it needs instead of paging through the file to find it,
       * and the output of `[plan] brief_extra` (a command; {id} is the task), for what only the project
         knows how to find.
 
@@ -717,11 +720,30 @@ def brief(tid: str, root=None, plan_dir=None, journal=None) -> list[str]:
             except OSError:
                 size = 'missing — this task creates it'
             out += [f'- `{t}` ({size})', *[f'  - {l[:120]}' for l in log]]
+            if (cmd := c.raw['plan']['outline']) and size[0].isdigit():
+                out += outline(cmd, t, root)
     if cmd := c.raw['plan']['brief_extra']:  # what only the project knows: its oracle names, a spec, …
         r = subprocess.run(cmd.format(id=tid), shell=True, cwd=str(root), capture_output=True, text=True)
         if extra := (r.stdout.rstrip() or (f'({cmd} failed: {r.stderr.strip()[:200]})' if r.returncode else '')):
             out += ['', *extra.splitlines()]
     return out
+
+
+OUTLINE_MAX = 6000  # chars of one file's outline in a brief
+
+
+def outline(cmd: str, path: str, root) -> list[str]:
+    """`[plan] outline` for one file, indented under its entry in the brief; a failure says so in one line."""
+    cmd = cmd.format(file=shlex.quote(path))
+    try:
+        r = subprocess.run(cmd, shell=True, cwd=str(root), capture_output=True, text=True, timeout=60)
+    except subprocess.TimeoutExpired:
+        return [f'  (outline: `{cmd}` ran past 60 s)']
+    if r.returncode or not r.stdout.strip():
+        return [f'  (outline: `{cmd}` failed: {r.stderr.strip()[:150]})'] if r.returncode else []
+    text = r.stdout.rstrip()
+    cut = f'  … (outline cut at {OUTLINE_MAX} chars)' if len(text) > OUTLINE_MAX else ''
+    return ['  outline:', *(f'    {l}' for l in text[:OUTLINE_MAX].splitlines()), *([cut] if cut else [])]
 
 
 # --- the command ---------------------------------------------------------------

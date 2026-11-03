@@ -211,7 +211,7 @@ repo = "git@github.com:you/project-plan.git"   # or a local path
   claim one at once conflict on push, and the later moves on to its next task. A claim that cannot be
   pushed (offline) starts nothing, since nobody else would see it. The claim goes
   when the task merges or is left for a human.
-- **Who has what.** `plan` marks each claimed task, `[ ] LOAD6b  [alex@laptop 14:02]`; `plan claims` lists
+- **Who has what.** `plan` marks each claimed task, `[ ] B12  [alex@laptop 14:02]`; `plan claims` lists
   them all. A live run re-stamps its claims every hour, so a claim not refreshed in 3 h shows `STALE`, and
   every other run logs it once: a crashed run's claims would otherwise hold those tasks for good. The same
   checkout takes its own back on its next run; for anyone else's, `plan unclaim <ID>`.
@@ -461,6 +461,11 @@ the running tasks merge. A run left up keeps picking up whatever you commit to T
 4. `.runner/run.log` is the full timeline. `.runner/slotN.log` is what each pane showed, and
    `.runner/fixer.log` is what the fix sessions decided.
 5. The `journal/` entries' **Not verified** lists tell you what to check yourself.
+6. `agent-runner cost` shows where the workers' tokens went: each kind of tool call (`git log`, `sed`,
+   `python3 tools/x.py`, `read`), by its results' size times the turns they stayed in context, since that is
+   what a session pays for. A command that tops it is worth an outline (`[plan] outline`), a quieter
+   flag, or a line in the prompt. It reads the last 7 days of this repo's slot and merge sessions, Claude
+   and Pi (`--days N`, or name transcripts).
 
 ## Commands
 
@@ -496,6 +501,8 @@ dir = "plan"              # TODO.md, DONE.md, tasks/<ID>.md; outside the repo, o
 repo = ""                 # the plan in its own git repo (see "The plan in its own repo")
 journal = ""              # e.g. "journal": per-task folders, the newest pasted into the brief
 brief_extra = ""          # a command whose output ends the brief; {id} is the task id
+outline = ""              # a command printing one file's outline; {file} is the path, e.g.
+                          # "python3 tools/outline.py {file}": the brief shows it under each file the line names
 brief = ""                # a command whose output *is* the brief (the project's own brief tool); {id}
 kinds = {}                # id prefix -> kind of work, e.g. { B = "bug", N = "netplay" }; `plan add` keeps to it
 
@@ -591,6 +598,7 @@ See [docs/SETUP.md](docs/SETUP.md#wrapping-it-from-your-own-cli).
 
 ```sh
 python3 tests/test_plan.py      # the plan tool
+python3 tests/test_cost.py      # agent-runner cost: kinds of call, size × turns, Claude and Pi transcripts
 python3 tests/test_plansync.py  # [plan] repo: two checkouts on one plan repo, merges, claims, tick on landing
 python3 tests/test_runner.py    # picking, done, merge/join/land/push, fix sessions, wip parking,
                                 # retry after unblock, prompt, Stop hook, usage limits, adopt,

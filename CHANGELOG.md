@@ -2,6 +2,15 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
+## 0.10.0 (2026-11-03)
+
+- `[plan] outline`: a command that prints one file's outline (`{file}` is the path). The brief shows it
+  under each file the task line names, so a session starts with the map of what is where instead of
+  paging through files to find its way. Each project supplies its own; unset, briefs are as before.
+- `agent-runner cost`: where the workers' tokens go, per kind of tool call (a Bash command by program and
+  subcommand or script, other tools by name), weighed by result size times the turns it stays in context.
+  Reads Claude and Pi transcripts: by default the last 7 days of this repo's slot and merge sessions.
+
 ## 0.9.2 (2026-11-03)
 
 - `[git] master_branch` optionally selects the local branch task worktrees use and tested merges target.

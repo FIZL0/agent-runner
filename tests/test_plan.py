@@ -182,6 +182,27 @@ def test_brief():
             '`run plan block --after` from a subdirectory edits the repo\'s plan')
 
 
+def test_brief_outline():
+    print('plan: brief with [plan] outline')
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        git(root, 'init', '-q')
+        (root / 'plan').mkdir()
+        (root / 'src').mkdir()
+        (root / 'src/ab.py').write_text('def one():\n    pass\n\ndef two():\n    pass\n', encoding='utf-8')
+        (root / 'outline.py').write_text('import sys\nfor l in open(sys.argv[1]):\n'
+                                          '    print(l.rstrip()) if l.startswith("def ") else None\n')
+        (root / 'runner.toml').write_text('[plan]\noutline = "python3 outline.py {file}"\n', encoding='utf-8')
+        (root / 'plan/TODO.md').write_text('# TODO\n\n### Next\n\n- [ ] **D1** both → src/ab.py · src/new.py\n',
+                                           encoding='utf-8')
+        (root / 'plan/DONE.md').write_text('# DONE\n', encoding='utf-8')
+        git(root, 'add', '-A')
+        out = '\n'.join(plan.brief('D1', root=root))
+        has(out, r'`src/ab\.py` \(5 lines\)\n  outline:\n    def one\(\):\n    def two\(\):',
+            "each file's outline goes under it")
+        check(out.count('outline:') == 1, 'a file the task creates gets none')
+
+
 def test_split_parents():
     print('plan: a split parent is ticked once its subtasks are all done')
     with tempfile.TemporaryDirectory() as tmp:
@@ -344,5 +365,5 @@ def test_similar():
 
 
 if __name__ == '__main__':
-    sys.exit(report([test_plan_roundtrip, test_plan_reopen, test_plan_index_and_sections, test_brief,
+    sys.exit(report([test_plan_roundtrip, test_plan_reopen, test_plan_index_and_sections, test_brief, test_brief_outline,
                      test_split_parents, test_add_bottom, test_add_pri, test_add_subtask, test_kinds, test_hand_edits_commit, test_similar]))

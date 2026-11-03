@@ -68,6 +68,8 @@ DEFAULTS: dict = {
                                 # ~/.cache/agent-runner/<name>) and pulled/pushed on every edit (plansync)
         'journal': '',          # optional: a directory of per-task journal folders, pasted into briefs
         'brief_extra': '',      # a command whose output ends the brief; {id} is the task id
+        'outline': '',          # a command printing one file's outline (its symbols, sections); {file} is
+                                # the path. The brief shows it under each file the task line names
         'brief': '',            # a command whose output *is* the brief, replacing the built-in one; {id}
         'kinds': {},            # id prefix -> the kind of work it marks (`plan kinds`); empty = plan.KINDS
     },
