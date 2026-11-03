@@ -123,6 +123,7 @@ DEFAULTS: dict = {
                                 # run before it is stopped and counts as failed
     },
     'git': {
+        'master_branch': '',    # explicit local branch for tasks and tested merges; empty discovers it as before
         'push': 'origin',       # where finished work goes; false turns every push off
         'push_merge': True,     # push the shared branch after each merge that passed the gate
     },
@@ -240,6 +241,15 @@ class Config:
     def push_remote(self) -> str | None:
         v = self.raw['git']['push']
         return None if v is False else (str(v) if isinstance(v, str) else 'origin')
+
+    @property
+    def master_branch(self) -> str | None:
+        value = self.raw['git']['master_branch']
+        if not isinstance(value, str):
+            raise SystemExit('[git] master_branch must be a branch name string (or empty for automatic discovery)')
+        if value != value.strip():
+            raise SystemExit('[git] master_branch must not have leading or trailing whitespace')
+        return value or None
 
     @property
     def push_merge(self) -> bool:

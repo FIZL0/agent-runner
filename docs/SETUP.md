@@ -147,6 +147,9 @@ file), and `after X` holds a task until X is ticked. `plan/A1.md`, if present, i
 test = "make test"        # the gate: `done` and every merge run it
 rules = "AGENTS.md"       # what every session reads first
 notes = ".runner"
+
+[git]
+master_branch = "main"    # optional: explicit local shared branch; it must exist and be checked out
 ```
 
 **AGENTS.md** (or CLAUDE.md): the repo's rules for an agent. It holds how to build and test, what not to

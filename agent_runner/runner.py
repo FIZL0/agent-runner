@@ -189,7 +189,17 @@ def plan_rel(name: str) -> str:
 
 
 def default_branch() -> str:
-    """The branch worktrees start from and finished work is merged into: `shared_name`, else the one out here."""
+    """The branch worktrees start from and finished work is merged into: configured or discovered shared branch."""
+    if branch := C.master_branch:
+        if git('check-ref-format', '--branch', branch).returncode:
+            raise SystemExit(f'[git] master_branch is not a valid branch name: {branch!r}')
+        if git('show-ref', '--verify', '--quiet', f'refs/heads/{branch}').returncode:
+            raise SystemExit(f'[git] master_branch {branch!r} does not exist as a local branch')
+        current = git('branch', '--show-current').stdout.strip()
+        if current != branch:
+            raise SystemExit(f'[git] master_branch {branch!r} must be checked out in the main checkout '
+                             f'(currently {current or "detached HEAD"!r})')
+        return branch
     return (shared_name(ROOT, C.push_remote or 'origin', None)
             or git('branch', '--show-current').stdout.strip() or 'main')
 

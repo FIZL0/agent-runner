@@ -2,6 +2,12 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
+## 0.9.2 (2026-11-03)
+
+- `[git] master_branch` optionally selects the local branch task worktrees use and tested merges target.
+  It overrides remote `HEAD` discovery and fails before a run starts if the branch is missing or not checked out.
+- The runner test suite passes on Windows.
+
 ## 0.9.1 (2026-11-03)
 
 - `[plan] repo`: `plan` shows who has each claimed task and since when; `plan claims` lists them and

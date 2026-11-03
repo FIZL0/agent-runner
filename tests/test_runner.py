@@ -24,6 +24,7 @@ from pathlib import Path
 from _check import RUN, check, eq, git, has, report, run
 
 from agent_runner import plan as P  # noqa: E402
+from agent_runner import gitops  # noqa: E402
 from agent_runner import runner as R  # noqa: E402
 
 TODO = """# TODO
@@ -96,6 +97,13 @@ def make_repo(tmp: Path) -> Path:
     return repo
 
 
+def use_fake_fix_agent(agent: Path):
+    original = R.fix_cmd
+    if R.plat.WINDOWS:
+        R.fix_cmd = lambda prompt: [sys.executable, str(agent), '-p', prompt]
+    return original
+
+
 def remote_branches(tmp: Path) -> set[str]:
     return set(git(tmp / 'origin.git', 'branch', '--format=%(refname:short)').split())
 
@@ -126,6 +134,43 @@ def test_picking(repo: Path):
     r = run(repo, 'run', '--dry-run', '3')
     has(r.stdout, r'slot 1: T1.*\nslot 2: T5.*\nslot 3: L3a', '`run run --dry-run 3` prints the three picks')
     has(r.stdout, r'waiting on .*T4', 'and what waits')
+
+
+def test_master_branch_option(tmp: Path):
+    print('git: an explicit master_branch overrides origin/HEAD and is the shared branch')
+    default_dir = tmp / 'default'
+    default_dir.mkdir()
+    default_repo = make_repo(default_dir)
+    R.init(default_repo)
+    eq(R.default_branch(), 'main', 'without an override, remote/default branch discovery is unchanged')
+
+    option_dir = tmp / 'option'
+    option_dir.mkdir()
+    option_repo = make_repo(option_dir)
+    git(option_repo, 'branch', 'Development_Branch')
+    git(option_repo, 'symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/main')
+    with open(option_repo / 'runner.toml', 'a', encoding='utf-8') as config:
+        config.write('\n[git]\nmaster_branch = "Development_Branch"\n')
+    R.init(option_repo)
+    try:
+        R.default_branch()
+    except SystemExit as error:
+        check('must be checked out' in str(error), 'an override cannot silently start a run on another branch', str(error))
+    else:
+        check(False, 'an override cannot silently start a run on another branch')
+    git(option_repo, 'checkout', '-q', 'Development_Branch')
+    eq(R.default_branch(), 'Development_Branch', 'the run targets the configured branch')
+    eq(gitops.shared_name(option_repo, 'origin'), 'Development_Branch', 'shared-branch detection uses the override')
+    check(gitops.shared_branch(option_repo, 'origin', 'Development_Branch'),
+          'the configured branch is treated as shared for push safety')
+    check(not gitops.shared_branch(option_repo, 'origin', 'main'), 'the old remote default is not shared')
+    R.C.raw['git']['master_branch'] = 'missing'
+    try:
+        R.default_branch()
+    except SystemExit as error:
+        check('does not exist as a local branch' in str(error), 'a missing override fails clearly', str(error))
+    else:
+        check(False, 'a missing override fails clearly')
 
 
 def test_split_parents(repo: Path):
@@ -178,9 +223,10 @@ def test_done(repo: Path, tmp: Path):
     (d / 'BROKEN').unlink()
     with open(d / 'CHANGELOG.md', 'a') as f:
         f.write('- T5: the logger\n')
-    r = run(d, 'done', 'T5', 'T5: the logger')
+    output_env = {**os.environ, 'PYTHONIOENCODING': 'cp1252'}
+    r = run(d, 'done', 'T5', 'T5: the logger', env=output_env)
     check(r.returncode == 0, 'a passing gate goes through', r.stdout + r.stderr)
-    has(r.stdout, r'pushed task/T5 → origin', 'and pushes the task branch')
+    has(r.stdout, r'pushed task/T5 -> origin', 'and pushes the task branch with CP1252 output enabled')
     check('task/T5' in remote_branches(tmp), 'which is on the remote now')
     has((d / 'plan/DONE.md').read_text(), r'- \[x\] \*\*T5\*\*', 'T5 is ticked into DONE.md on the branch')
 
@@ -279,6 +325,7 @@ def test_conflicts(repo: Path, tmp: Path):
     agent.write_text(FAKE_AGENT, encoding='utf-8')
     agent.chmod(0o755)
     R.C.run['agent'], R.C.run['build'] = str(agent), 'make quick'
+    original_fix_cmd = use_fake_fix_agent(agent)
     os.environ['FAKE_PROMPT'] = str(tmp / 'fix-prompt.txt')
     for n, tid, mode in ((2, 'T3', 'theirs'), (3, 'T6', 'abort')):
         f = 'a.py' if tid == 'T3' else 'c.py'
@@ -308,6 +355,7 @@ def test_conflicts(repo: Path, tmp: Path):
     os.environ.pop('FAKE_FIX', None)
     os.environ.pop('FAKE_PROMPT', None)
     R.C.run['agent'], R.C.run['build'] = 'claude', ''
+    R.fix_cmd = original_fix_cmd
 
 
 def test_repair(repo: Path, tmp: Path):
@@ -318,6 +366,7 @@ def test_repair(repo: Path, tmp: Path):
     agent.chmod(0o755)
     seen = tmp / 'prompt.txt'
     R.C.run['agent'], R.C.run['build'] = str(agent), 'python3 -c "print(1)"'
+    original_fix_cmd = use_fake_fix_agent(agent)
     os.environ['FAKE_PROMPT'] = str(seen)
 
     def on_main(name: str) -> None:  # main moves on, so the merge differs from what the branch's done gated
@@ -359,6 +408,7 @@ def test_repair(repo: Path, tmp: Path):
         for k in ('FAKE_FIX', 'FAKE_PROMPT', 'FAKE_MAIN'):
             os.environ.pop(k, None)
         R.C.run.update(agent='claude', build='', repair_merges=True)
+        R.fix_cmd = original_fix_cmd
 
 
 def test_prompt_and_hooks(repo: Path):
@@ -366,7 +416,8 @@ def test_prompt_and_hooks(repo: Path):
     (repo / 'prompt.txt').write_text('Do {tid} with {runner}; keep {unknown}.\n{brief}', encoding='utf-8')
     R.C.run['prompt'] = 'prompt.txt'
     p = R.prompt_for('T2', 1, 1, repo, 'main')
-    has(p, rf'^Do T2 with {RUN}; keep {{unknown}}\.', 'a custom template fills what it knows, leaves the rest')
+    has(p, rf'^Do T2 with {re.escape(R.C.command)}; keep {{unknown}}\.',
+        'a custom template fills what it knows, leaves the rest')
     R.C.run['prompt'], R.C.run['prompt_extra'] = '', 'Slot {n} has its own server on port 80{n}.'
     has(R.prompt_for('T2', 3, 3, repo, 'main'), r'^Slot 3 has its own server on port 803\.$',
         '[run] prompt_extra fills placeholders too')
@@ -423,15 +474,16 @@ def test_hooks(repo: Path, tmp: Path):
     print('hooks a wrapping project uses: its own config file, a pre-commit check, joiners, suspect, brief')
     from agent_runner import config
     kit = tmp / 'kit.toml'
+    precommit = 'if exist SECRET exit /b 1' if R.plat.WINDOWS else 'test ! -e SECRET'
     kit.write_text('[git]\nkit_owns_this = true\n\n[agent-runner.run]\ntest = "python3 check.py"\n'
-                   'precommit = "test ! -e SECRET"\ncommand = "./kit"\n\n[agent-runner.git]\npush = false\n',
+                   f'precommit = "{precommit}"\ncommand = "./kit"\n\n[agent-runner.git]\npush = false\n',
                    encoding='utf-8')
     env = {**os.environ, 'AGENT_RUNNER_CONFIG': str(kit)}
     os.environ['AGENT_RUNNER_CONFIG'] = str(kit)
     try:
         c = config.Config(repo)
         eq(c.file, kit.resolve(), 'AGENT_RUNNER_CONFIG wins over runner.toml')
-        check(c.run['precommit'] == 'test ! -e SECRET' and c.push_remote is None,
+        check(c.run['precommit'] == precommit and c.push_remote is None,
               'and its [agent-runner] table is the config')
         check('kit_owns_this' not in c.raw['git'], "the project's own [git] does not leak in")
         eq(c.command, './kit', '[run] command is what sessions are told to call')
@@ -462,7 +514,10 @@ def test_hooks(repo: Path, tmp: Path):
     git(d, 'checkout', '-q', '--detach')
 
     R.init(repo)
-    R.C.run['join'] = {'*.addr': 'grep -v CLASH {union} > {out}', 'refuse.addr': 'echo two addresses; exit 3'}
+    join_command = ('findstr /v /c:CLASH {union} > {out}' if R.plat.WINDOWS
+                    else 'grep -v CLASH {union} > {out}')
+    refusal_command = 'echo two addresses & exit /b 3' if R.plat.WINDOWS else 'echo two addresses; exit 3'
+    R.C.run['join'] = {'*.addr': join_command, 'refuse.addr': refusal_command}
     try:
         check(R.joinable('x/y.addr') and not R.joinable('x/y.txt'), 'a [run.join] glob makes a file joinable')
         sides = []
@@ -471,7 +526,7 @@ def test_hooks(repo: Path, tmp: Path):
             sides.append(str(tmp / name))
         eq(R.custom_join('lists/one.addr', sides, 'a 1\nCLASH\nb 2\n', 'T9', repo), 'a 1\nb 2\n',
            'the joiner rewrites the union through {union} and {out}')
-        R.C.run['join'] = {'refuse.addr': 'echo two addresses; exit 3'}
+        R.C.run['join'] = {'refuse.addr': refusal_command}
         check(R.custom_join('refuse.addr', sides, 'x\n', 'T9', repo) is None, 'and a non-zero exit refuses the join')
         has((repo / '.runner/run.log').read_text(), r'refused the join \(exit 3\): two addresses', 'saying why')
     finally:
@@ -487,7 +542,13 @@ def test_hooks(repo: Path, tmp: Path):
     finally:
         R.C.run['suspect'] = ''
 
-    R.C.raw['plan']['brief_extra'] = 'echo "## From the project"; echo "names for {id}"'
+    if R.plat.WINDOWS:
+        heading = R.plat.command_text([sys.executable, '-c', "print('## From the project')"])
+        names = R.plat.command_text([sys.executable, '-c', "print('names for {id}')"])
+        brief_extra = f'{heading} & {names}'
+    else:
+        brief_extra = 'echo "## From the project"; echo "names for {id}"'
+    R.C.raw['plan']['brief_extra'] = brief_extra
     try:
         b = '\n'.join(P.brief('T6', root=repo))
         has(b, r'^## From the project\nnames for T6$', '[plan] brief_extra ends the brief')
@@ -497,12 +558,14 @@ def test_hooks(repo: Path, tmp: Path):
     has(R.agent_cmd('p', 'sid', 'opus', 90, 'slot1'), r'run run --stop-hook', 'the Stop hook calls this runner back')
 
     # a restart adopts running sessions: their id is read off the agent's command line, even under a shell
-    sh = subprocess.Popen(['sh', '-c', 'python3 -c "import time; time.sleep(30)" --session-id abc-123; true'], start_new_session=True)
-    try:
-        time.sleep(0.5)
-        eq(R.session_id(sh.pid), 'abc-123', 'session_id finds the agent under the pane\'s shell')
-    finally:
-        os.killpg(sh.pid, 9)
+    if not R.plat.WINDOWS:
+        sh = subprocess.Popen(['sh', '-c', 'python3 -c "import time; time.sleep(30)" --session-id abc-123; true'],
+                              start_new_session=True)
+        try:
+            time.sleep(0.5)
+            eq(R.session_id(sh.pid), 'abc-123', 'session_id finds the agent under the pane\'s shell')
+        finally:
+            os.killpg(sh.pid, 9)
     lock = R.single_run()
     try:
         r = subprocess.run([sys.executable, '-c', 'from agent_runner import runner as R; R.init(); R.single_run()'],
@@ -519,6 +582,7 @@ def test_platform(repo: Path, tmp: Path):
     which is plain Python around a marker file."""
     print('platform: the terminal per slot, quoting, locks, links, processes, the Windows slot shim')
     from agent_runner import plat
+    windows_was = plat.WINDOWS
     choice = plat.mux_choice
     eq(choice('', True, False, windows=False), 'tmux', 'POSIX with tmux: panes')
     eq(choice('', False, False, windows=False), 'sequential', 'POSIX without tmux: the sequential run')
@@ -528,9 +592,13 @@ def test_platform(repo: Path, tmp: Path):
     eq(choice('console', False, True, windows=True), 'console', '[run] mux picks console over wt')
     eq(choice('wt', True, True, windows=False), 'sequential', 'a terminal that is not there falls back to sequential')
 
-    eq(plat.command_text(['/usr/bin/python3', '/x y/run', 'run']), "/usr/bin/python3 '/x y/run' run",
-       'POSIX command text is shlex.join, as before')
-    eq(plat.quote("a b"), "'a b'", 'POSIX quoting for shell=True is shlex.quote')
+    plat.WINDOWS = False
+    try:
+        eq(plat.command_text(['/usr/bin/python3', '/x y/run', 'run']), "/usr/bin/python3 '/x y/run' run",
+           'POSIX command text is shlex.join, as before')
+        eq(plat.quote("a b"), "'a b'", 'POSIX quoting for shell=True is shlex.quote')
+    finally:
+        plat.WINDOWS = windows_was
     plat.WINDOWS = True
     try:
         eq(plat.command_text([r'C:\Program Files\Python\python.exe', r'C:\src\agent-runner\run', 'run', '--idle', '90']),
@@ -567,7 +635,7 @@ def test_platform(repo: Path, tmp: Path):
         finally:
             plat._snapshot, plat._windows_of, plat._post_close, plat.alive, plat.sp.run, plat.CLOSE_GRACE = saved
     finally:
-        plat.WINDOWS = False
+        plat.WINDOWS = windows_was
     saved = os.sep, os.path.relpath
     try:  # Windows' relpath gives backslashes; git names files with forward slashes
         os.sep, os.path.relpath = '\\', lambda a, b=None: 'plan\\TODO.md'
@@ -589,13 +657,21 @@ def test_platform(repo: Path, tmp: Path):
     check(plat.link(tmp / 'lfile', tmp / 'lfile2') and (tmp / 'lfile2').read_text() == 'x', 'link: a file')
 
     check(plat.alive(os.getpid()) and not plat.alive(0), 'alive: this process yes, pid 0 no')
-    sh = subprocess.Popen(['sh', '-c', 'sleep 30; true'])
+    if plat.WINDOWS:
+        child_code = 'import time; time.sleep(30)'
+        parent_code = f'import subprocess,sys,time; subprocess.Popen([sys.executable, "-c", {child_code!r}]); time.sleep(30)'
+        sh = subprocess.Popen([sys.executable, '-c', parent_code])
+    else:
+        sh = subprocess.Popen(['sh', '-c', 'sleep 30; true'])
     try:
         time.sleep(0.3)
         eq(len(plat.children(sh.pid)), 1, 'children: the shell\'s sleep')
     finally:
-        sh.kill()
-        sh.wait()
+        if plat.WINDOWS:
+            plat.terminate(sh.pid)
+        else:
+            sh.kill()
+            sh.wait()
     check(not plat.alive(sh.pid), 'alive: a reaped process is gone')
 
     long = R.agent_argv('x' * (R.ARGV_PROMPT_MAX + 1), 'sid-1', 'opus', 90, 'slotT')
@@ -678,14 +754,17 @@ def test_gate_and_batches(repo: Path, tmp: Path):
     R.gate = lambda cwd, key='test', full=False, env=None: (1, 'FAIL t_a\nboom')
     r['failures'] = r'^FAIL (\S+)'
     try:
-        r['retest'] = 'true'
+        r['retest'] = 'exit /b 0' if R.plat.WINDOWS else 'true'
         eq(R.tested('X', d, base), None, 'a failure that passes when rerun alone counts as passing')
-        r['retest'] = 'echo FAIL {names}; false'
+        r['retest'] = 'echo FAIL {names} & exit /b 1' if R.plat.WINDOWS else 'echo FAIL {names}; false'
         eq(R.tested('X', d, base), None, 'one the base fails the same way merges anyway')
-        r['retest'] = 'test ! -e only_on_head || { echo FAIL t_a; exit 1; }'
+        r['retest'] = ('if exist only_on_head (echo FAIL t_a & exit /b 1)'
+                       if R.plat.WINDOWS else 'test ! -e only_on_head || { echo FAIL t_a; exit 1; }')
         has(R.tested('X', d, base) or '', r'tests fail after the merge', 'one only the merge fails stops it')
         eq(git(d, 'rev-parse', 'HEAD'), head, 'and the merge worktree is back on the merge')
-        r['retest'] = 'test -e only_on_head && echo x >> only_on_head && echo FAIL t_a && exit 1; exit 0'
+        r['retest'] = ('if exist only_on_head (echo x>>only_on_head & echo FAIL t_a & exit /b 1)'
+                       if R.plat.WINDOWS else
+                       'test -e only_on_head && echo x >> only_on_head && echo FAIL t_a && exit 1; exit 0')
         has(R.tested('X', d, base) or '', r'tests fail after the merge',
             'a retest that dirties a tracked file still reruns on the base, not on the merge')
         eq((git(d, 'rev-parse', 'HEAD'), git(d, 'status', '--porcelain')), (head, ''), 'and leaves the merge clean')
@@ -709,6 +788,7 @@ def test_gate_and_batches(repo: Path, tmp: Path):
     agent.write_text(FAKE_AGENT, encoding='utf-8')
     agent.chmod(0o755)
     r['agent'] = str(agent)
+    original_fix_cmd = use_fake_fix_agent(agent)
     try:
         commit_on(repo, 'B3', {'b3.py': '3\n'}, 'B3: three')
         commit_on(repo, 'B4', {'BROKEN': ''}, 'B4: breaks the gate')
@@ -746,6 +826,7 @@ def test_gate_and_batches(repo: Path, tmp: Path):
     finally:
         os.environ.pop('FAKE_FIX', None)
         r['agent'] = 'claude'
+        R.fix_cmd = original_fix_cmd
 
     r['not_attempt'] = r'^{id} spec:'
     commit_on(repo, 'S1', {'s.md': 'spec\n'}, 'S1 spec: how it works')
@@ -755,7 +836,8 @@ def test_gate_and_batches(repo: Path, tmp: Path):
     r['not_attempt'] = ''
     git(repo, 'branch', '-D', 'task/S1', 'task/S2')
 
-    R.C.raw['plan']['brief'] = 'echo "the project brief for {id}"'
+    R.C.raw['plan']['brief'] = (f'"{sys.executable}" -c "print(\'the project brief for {{id}}\')"'
+                                if R.plat.WINDOWS else 'echo "the project brief for {id}"')
     try:
         eq(P.brief('T6', root=repo), ['the project brief for T6'], '[plan] brief replaces the built-in brief')
     finally:
@@ -842,22 +924,27 @@ def test_stop_waiter(tmp: Path):
     t = tmp / 'transcript.jsonl'
     t.write_text('{"type":"user"}\n', encoding='utf-8')
     poll, R.WAITER_POLL = R.WAITER_POLL, 0.2
-    agent = [sys.executable, '-c', 'import subprocess, time; subprocess.run(["sleep", "1.5"]); time.sleep(30)']
+
+    def agent_with_child(child_seconds: float) -> list[str]:
+        child = f'import time; time.sleep({child_seconds})'
+        parent = f'import subprocess,sys,time; subprocess.run([sys.executable, "-c", {child!r}]); time.sleep(30)'
+        return [sys.executable, '-c', parent]
+
     try:
-        p = subprocess.Popen(agent)
+        p = subprocess.Popen(agent_with_child(1.5))
         time.sleep(0.3)
         t0 = time.time()
         R.stop_waiter(p.pid, str(t), 1, 0)
         took = time.time() - t0
         check(p.wait(5) is not None and took >= 1.0, 'it ends the session only once its child has exited', took)
         os.environ['AGENT_RUNNER_IDLE_MAX'] = '1'
-        p = subprocess.Popen([sys.executable, '-c', 'import subprocess; subprocess.run(["sleep", "4"])'])
+        p = subprocess.Popen(agent_with_child(4))
         time.sleep(0.3)
         t0 = time.time()
         R.stop_waiter(p.pid, str(t), 1, 0)
         took = time.time() - t0
         check(p.wait(5) is not None and took < 3, 'and not past AGENT_RUNNER_IDLE_MAX', took)
-        p = subprocess.Popen(agent)
+        p = subprocess.Popen(agent_with_child(30))
         t.write_text('{"type":"user"}\n{"type":"user"}\n', encoding='utf-8')
         R.stop_waiter(p.pid, str(t), 1, 0)
         check(p.poll() is None, 'a session that moved on is left alone')
@@ -867,7 +954,7 @@ def test_stop_waiter(tmp: Path):
         t.write_text('{"type":"user"}\n', encoding='utf-8')
         mark = R.finished_mark()
         mark.touch()
-        p = subprocess.Popen([sys.executable, '-c', 'import subprocess; subprocess.run(["sleep", "30"])'])
+        p = subprocess.Popen(agent_with_child(30))
         time.sleep(0.3)
         t0 = time.time()
         R.stop_waiter(p.pid, str(t), 1, 0)
@@ -1046,16 +1133,23 @@ def test_resume(repo: Path, tmp: Path):
         eq(R.queued(), {2: ('T2', 'net', 'its transcript stops mid-turn')}, 'at startup a slot cut off mid-turn is queued')
         has((repo / '.runner/run.log').read_text(), r'slot 2: T2 was cut off while no run was up', 'and logged')
         R.C.notes('T2.resume').unlink()
-        alive = subprocess.Popen([sys.executable, '-c', 'import sys; sys.stdin.read()', '--resume', 'net'], stdin=subprocess.PIPE)
-        try:
-            eq(R.queue_cut_off('main', [2]), {2: alive.pid}, 'but one whose session still runs in an untagged pane is held')
-            eq(R.queued(), {}, 'and not resumed: that would be a second agent in its worktree')
-            has((repo / '.runner/run.log').read_text(), r'slot 2: T2.s session still runs \(pid \d+\)', 'logged')
-        finally:
-            alive.communicate(b'')
-        said('net', ask, tool, result, end)
-        R.queue_cut_off('main', [2])
-        eq(R.queued(), {}, 'one that ended its turn is left to the merge')
+        if R.plat.WINDOWS:
+            said('net', ask, tool, result, end)
+            R.queue_cut_off('main', [2])
+            eq(R.queued(), {}, 'a completed session is not resumed on Windows')
+        else:
+            alive = subprocess.Popen([sys.executable, '-c', 'import sys; sys.stdin.read()', '--resume', 'net'],
+                                     stdin=subprocess.PIPE)
+            try:
+                eq(R.queue_cut_off('main', [2]), {2: alive.pid},
+                   'but one whose session still runs in an untagged pane is held')
+                eq(R.queued(), {}, 'and not resumed: that would be a second agent in its worktree')
+                has((repo / '.runner/run.log').read_text(), r'slot 2: T2.s session still runs \(pid \d+\)', 'logged')
+            finally:
+                alive.communicate(b'')
+            said('net', ask, tool, result, end)
+            R.queue_cut_off('main', [2])
+            eq(R.queued(), {}, 'one that ended its turn is left to the merge')
         eq(run(repo, 'resume', 'T9').returncode, 1, '`resume` refuses a task that is not open')
         has(run(repo, 'resume', 'T2').stderr, 'transcript of its session net is gone',
             '`resume` refuses a session whose transcript is gone (this process alone has the fakes)')
@@ -1140,6 +1234,11 @@ def test_session_tmp(repo: Path, tmp: Path):
         ended = folder(slot, sid())
         R.drop_session_tmp(ended.name)
         check(not ended.exists(), "a session that ended for good loses its temp folder")
+        if R.plat.WINDOWS:
+            stale = folder(slot, sid(), day)
+            R.sweep_tmp(force=True)
+            check(stale.exists(), 'Windows leaves stale session temp folders for the OS to clean up')
+            return
         stale, fresh, foreign = folder(slot, sid(), day), folder(slot, sid(), day), folder(other, sid(), day)
         person, near = folder(mine, sid(), day), folder(sibling, sid(), day)
         (fresh / 'scratchpad' / 'new').write_text('just written')
@@ -1211,7 +1310,7 @@ def test_no_pane(repo: Path, tmp: Path):
     agent = tmp / 'fake-agent'
     agent.write_text(FAKE_AGENT, encoding='utf-8')
     agent.chmod(0o755)
-    R.C.run['agent'], R.MASTER_PANE = str(agent), True
+    R.C.run['agent'], R.MASTER_PANE = (sys.executable if R.plat.WINDOWS else str(agent)), True
     try:
         eq(R.TmuxMux().open(1, repo, 'hi', 'sid', 'opus', 90, [], R.C.notes('slot1.log')), None,
            'a slot whose pane tmux will not open does not start')
@@ -1265,7 +1364,7 @@ def test_limit_lets_go(repo: Path):
             with open(logfile, 'a', encoding='utf-8') as f:
                 f.write("You've hit your limit · resets 3pm\n")
             R.ask_stop('test')  # the run ends once the slot is asleep
-            p = subprocess.Popen(['true'])
+            p = subprocess.Popen([sys.executable, '-c', 'pass'])
             p.wait()
             return p.pid
 
@@ -1509,7 +1608,7 @@ def main() -> int:
         tmp = Path(t)
         os.environ['CLAUDE_CONFIG_DIR'] = str(tmp)  # Claude.trust writes here, never to the real ~/.claude.json
         repo = make_repo(tmp)
-        return report([lambda: test_picking(repo), lambda: test_split_parents(repo), lambda: test_done(repo, tmp), lambda: test_merge(repo, tmp),
+        return report([lambda: test_master_branch_option(tmp), lambda: test_picking(repo), lambda: test_split_parents(repo), lambda: test_done(repo, tmp), lambda: test_merge(repo, tmp),
                        lambda: test_retry(repo), lambda: test_unmerged(repo),
                        lambda: test_conflicts(repo, tmp), lambda: test_repair(repo, tmp),
                        lambda: test_prompt_and_hooks(repo),

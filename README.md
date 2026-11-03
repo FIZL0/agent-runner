@@ -499,6 +499,12 @@ brief_extra = ""          # a command whose output ends the brief; {id} is the t
 brief = ""                # a command whose output *is* the brief (the project's own brief tool); {id}
 kinds = {}                # id prefix -> kind of work, e.g. { B = "bug", N = "netplay" }; `plan add` keeps to it
 
+[git]
+master_branch = ""        # optional local shared branch; must exist and be checked out
+# empty uses remote HEAD, then main/master/trunk, then the current branch
+push = "origin"           # where finished work goes; false turns every push off
+push_merge = true         # push the shared branch after each tested merge
+
 [run]
 test = ""                 # the gate, run by `done` and on every merge, e.g. "make test"
 slots = 3
