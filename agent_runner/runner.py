@@ -267,6 +267,11 @@ def open_tasks(branch: str) -> set[str]:
     return {m.group(2) for l in plan_text(branch) if (m := TASK.match(l)) and m.group(1) == ' '}
 
 
+def blocked_tasks(branch: str) -> set[str]:
+    """Ids of the blocked ([~]) top-level tasks in `branch`'s TODO.md."""
+    return {m.group(2) for l in plan_text(branch) if (m := TASK.match(l)) and m.group(1) == '~'}
+
+
 def tasks(branch: str) -> list[tuple[str, str, set[str], set[str]]]:
     """Open tasks in TODO.md order: (id, section, files named on the line, task ids named on it)."""
     ls = plan_text(branch)
@@ -308,53 +313,84 @@ def family(tid: str) -> str:
     return m.group() if m else tid
 
 
+def ordered(section: str) -> bool:
+    """A section whose heading says its tasks are ordered ("Next (in this order)") runs one task at a time:
+    its second task usually depends on the first having landed, whatever the files say."""
+    return section.startswith('Next') or 'in this order' in section
+
+
+def clash(t: tuple, b: tuple, mode: str, shared: set[str]) -> bool:
+    """Task `t` may not run beside `b` (running here, or claimed by another runner): siblings, a line naming
+    it, and in mode d also a shared ordered section or overlapping files (`shared_files` aside)."""
+    tid, section, files, named = t
+    if family(tid) == family(b[0]) or b[0] in named:
+        return True
+    if mode == 'p':
+        return False
+    return (ordered(section) and section == b[1]) or bool(P.overlap(set(files) - shared, set(b[2])))
+
+
+def claimed_elsewhere(cls: dict, todo: list) -> list[tuple]:
+    """Other runners' live claims as busy tasks: the claimed line's section, files and named ids, plus the
+    files its claim says its session has touched. A stale claim (a crashed run's) holds only its own task."""
+    me, lines = plansync.owner(C), {t[0]: t for t in todo}
+    out = []
+    for tid, cl in cls.items():
+        if cl.owner == me or plansync.stale(cl):
+            continue
+        t = lines.get(tid, (tid, '', set(), set()))
+        out.append((tid, t[1], set(t[2]) | set(cl.files), t[3]))
+    return out
+
+
 def pick(running: dict, tried: set, mode: str, branch: str, claim: bool = False):
     """The next task a free slot may take, or None. See the module docstring for the rules.
 
     `claim` (a run about to start it): with `[plan] repo`, the task is claimed and the claim pushed first;
-    one another runner has, or got just now, is passed over for the next."""
+    one another runner has, or got just now, is passed over for the next. Another runner's live claim counts
+    as a task running here, so its files, ordered section and family wait for it too."""
+    shared = set(C.run['shared_files'])
+    todo = tasks(branch)
+
     def pick_(t):
         if not claim or not C.plan_repo:
             return t
-        if not plansync.claim(C, t[0]):
+        if not plansync.claim(C, t[0], t[2]):
             return None
-        if t[0] in open_tasks(branch):  # the claim pulled: the pick may have read a plan up to 20 s old
-            return t
-        plansync.release(C, t[0])  # closed meanwhile (ticked or blocked by someone else)
-        return None
-    shared = set(C.run['shared_files'])
-    todo = tasks(branch)
-    me = plansync.owner(C) if C.plan_repo else None
-    # another runner's live claims (a stale one is a crashed run's: it holds its task, not its files) count as
-    # running here: their files, section and family keep this run off the same work
-    elsewhere = {t for t, cl in plansync.claims(C).items() if cl[0] != me and not plansync.stale(cl)}
-    busy = list(running.values()) + [t for t in todo if t[0] in elsewhere]
-    # A section whose heading says its tasks are ordered ("Next (in this order)") runs one task at a time:
-    # its second task usually depends on the first having landed, whatever the files say.
-    busy_sections = {b[1] for b in busy}
+        if t[0] not in open_tasks(branch):  # the claim pulled: the pick may have read a plan up to 20 s old
+            plansync.release(C, t[0])  # closed meanwhile (ticked or blocked by someone else)
+            return None
+        # Two runners can claim clashing tasks from plans read seconds apart; both see both claims now, and
+        # the later one gives way (claim time, then owner: both sides reach the same verdict).
+        now = plansync.claims(C)
+        mine = now.get(t[0])
+        for b in claimed_elsewhere(now, todo):
+            cl = now[b[0]]
+            if mine and (cl.since, cl.owner) < (mine.since, mine.owner) and clash(t, b, mode, shared):
+                plansync.release(C, t[0])
+                log(f'{t[0]}: {cl.who} claimed {b[0]} first and it clashes; given way')
+                return None
+        return t
+
+    busy = list(running.values()) + claimed_elsewhere(plansync.claims(C), todo)  # {} without [plan] repo
     busy_ids = {b[0] for b in busy} | {q[0] for q in queued().values()}  # one waiting to resume is running
     finished = set(ahead(branch)) if todo else set()
     finished |= plansync.taken(C)  # another runner's: on its slots
-    for tid, section, files, named in todo:
+    for t in todo:
+        tid, named = t[0], t[3]
         if tid not in busy_ids and tid in finished:
             continue  # finished, its branch is waiting to be merged: restarting it would reset the branch
-        if any(family(tid) == family(b[0]) for b in busy):
-            continue
         if tid in tried or tid in busy_ids:
             continue
-        if named & busy_ids:
-            continue  # its line names a task that is running now: it is built on that, so it waits for it
-        if mode != 'p':
-            if (section.startswith('Next') or 'in this order' in section) and section in busy_sections:
-                continue
-            if any(P.overlap(files - shared, b[2]) for b in busy):
-                continue
-        if got := pick_((tid, section, files, named)):
+        if named & busy_ids or any(clash(t, b, mode, shared) for b in busy):
+            continue  # a running task's sibling, dependant, ordered-section mate or file neighbour waits
+        if got := pick_(t):
             PASSED.discard(tid)
             return got
         if tid not in PASSED:
             PASSED.add(tid)
-            log(f'{tid}: claimed by another runner, closed since the pick read the plan, or the claim did not push; passed over')
+            log(f'{tid}: claimed by another runner, closed since the pick read the plan, the claim did not push, '
+                'or a clashing claim came first; passed over')
     return None
 
 
@@ -498,7 +534,9 @@ def unmerged(branch: str, idle: list[int]) -> list[str]:
             git('checkout', '-q', '--detach', cwd=SLOTS_DIR / f's{n}')
     held = {l.removeprefix('branch refs/heads/') for l in
             git('worktree', 'list', '--porcelain').stdout.splitlines() if l.startswith('branch ')}
-    open_ids = open_tasks(branch)
+    # blocked too: a session that ended its task blocked (a concept round handing over) still has its journal
+    # to merge, and its claim would otherwise be refreshed for as long as the branch sits
+    open_ids = open_tasks(branch) | blocked_tasks(branch)
     return [t for t in ahead(branch) if f'task/{t}' not in held and t in open_ids]
 
 
@@ -2111,19 +2149,47 @@ CLAIMS_AT = [0.0]
 STALE_SAID: set[str] = set()
 
 
+def touched(tid: str, branch: str, slot: Path | None) -> set[str]:
+    """Files task `tid` has changed so far: its branch's commits past `branch`, and in its slot what is not
+    committed yet. A claim carries them, so another runner keeps off them even when the task line lists
+    none (or too few)."""
+    out = set(git('diff', '--name-only', f'{branch}...task/{tid}').stdout.split())
+    if slot and slot.is_dir():
+        st = git('status', '--porcelain', '--untracked-files=all', cwd=slot)
+        if not st.returncode:
+            out |= {l[3:].split(' -> ')[-1].strip('"') for l in st.stdout.splitlines()}
+    return out
+
+
 def keep_claims(running: dict, branch: str) -> None:
-    """`[plan] repo`, every plansync.REFRESH s: re-stamp this run's claims (running, or waiting to merge), and
-    say once of each other run's claim gone stale: a crashed run's claims would hold those tasks for good."""
+    """`[plan] repo`, every plansync.REFRESH s: re-stamp this run's claims (running, or waiting to merge) with
+    the files each holds (the line's and the ones its session has touched), drop its claims on anything else,
+    and say once of each other run's claim gone stale (a crashed run's would hold that task for good) and of
+    each other runner too old to keep off this run's files."""
     if not C.plan_repo or time.time() - CLAIMS_AT[0] < plansync.REFRESH:
         return
     CLAIMS_AT[0] = time.time()
-    plansync.refresh(C, {t[0] for t in running.values()} | set(ahead(branch)))
+    slots = {t[0]: (SLOTS_DIR / f's{n}', t[2]) for n, t in running.items() if isinstance(n, int)}
+    keep = set(slots) | set(ahead(branch)) | {q[0] for q in queued().values()}  # queued: waiting to resume
+    lines = {t[0]: t[2] for t in tasks(branch)}
+    files = {t: set(slots.get(t, (None, lines.get(t, set())))[1]) | touched(t, branch, slots.get(t, (None,))[0])
+             for t in keep}
+    plansync.refresh(C, keep, files)
     me = plansync.owner(C)
     for t, cl in plansync.claims(C).items():
-        if cl[0] != me and plansync.stale(cl) and t not in STALE_SAID:
+        if cl.owner == me:
+            continue
+        if plansync.stale(cl) and t not in STALE_SAID:
             STALE_SAID.add(t)
             log(f'{t}: claimed by {plansync.label(cl)}, not refreshed since: if that run is gone, '
                 f'`{C.command} plan unclaim {t}`')
+        elif not plansync.stale(cl) and plansync.outdated(cl) and cl.owner not in OUTDATED_SAID:
+            OUTDATED_SAID.add(cl.owner)
+            log(f'! {cl.who} runs agent-runner {cl.version or "older than 0.14"}, which does not keep off the '
+                f'files this run holds: upgrade it to {".".join(map(str, plansync.MIN_PEER))} or later')
+
+
+OUTDATED_SAID: set[str] = set()  # other runners already reported as too old, by owner
 
 
 CI_AT = [0.0]  # when `watch_ci` last asked GitHub

@@ -2,6 +2,26 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
+## 0.14.0 (2026-11-04)
+
+Runners on several machines share one `[plan] repo` without stepping on each other.
+
+- **Clashing claims settle.** Two runs that claim different tasks with overlapping files (or an ordered
+  section, or a family) from plans read seconds apart both push, then both see both claims: the later
+  claim gives way and the run picks again.
+- **Claims hold touched files.** Each refresh adds the files the task's session has changed (its branch
+  past main, and the slot's uncommitted and untracked edits), so a task line that lists too few files, or
+  none, still keeps other runs off them.
+- **Version in claims.** A claim records the runner's version and when it was claimed; `plan` and
+  `plan claims` show it. A live claim from a runner older than 0.14 (which ignores other runs' files) is
+  warned of once per run: upgrade every machine.
+- **Faster dead-run recovery.** Claims refresh every 15 min (was 1 h) and go stale after 90 min (was 3 h).
+  0.13 runners still refresh hourly, which stays inside 90 min.
+- **No orphan claims.** A run's refresh drops its own claims on tasks it neither runs, queues nor holds an
+  unmerged branch for, and a blocked task's finished branch (a concept round that ended while no run was
+  up) is merged instead of sitting, claimed, for good.
+- The claim file gains three lines (version, claimed at, files); 0.13 reads the first three as before.
+
 ## 0.13.4 (2026-11-04)
 
 - A session whose `done` succeeded and that then sits quiet at its prompt past `[run] stall` is ended by the run

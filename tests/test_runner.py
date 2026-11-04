@@ -127,12 +127,46 @@ def test_picking(repo: Path):
     check((R.pick({1: first, 2: second, 3: third}, set(), 'd', 'main') or ('',))[0] != 'L3b',
           'a sibling of a running task waits')
     eq(R.pick({1: first}, set(), 'p', 'main')[0], 'T2', 'mode p just follows the plan order')
-    claims, R.plansync.claims = R.plansync.claims, lambda c: {'T1': ('elsewhere:/x', time.time(), 'ian@desk')}
+    Claim, me = R.plansync.Claim, R.plansync.owner(R.C)
+    claims, R.plansync.claims = R.plansync.claims, lambda c: {'T1': Claim('elsewhere:/x', time.time(), 'ian@desk')}
     try:
         eq(R.pick({}, set(), 'd', 'main')[0], 'T5',
            "another runner's live claim on T1 holds its files, section and dependants here too")
-        R.plansync.claims = lambda c: {'T1': ('elsewhere:/x', time.time() - 4 * 3600, 'ian@desk')}
+        R.plansync.claims = lambda c: {'T1': Claim('elsewhere:/x', time.time() - 4 * 3600, 'ian@desk')}
         eq(R.pick({}, set(), 'd', 'main')[0], 'T2', "a stale claim (a crashed run's) holds only its own task")
+        R.plansync.claims = lambda c: {'S9': Claim('elsewhere:/x', time.time(), 'ian@desk', '0.14.0', 1.0,
+                                                   frozenset({'a.py'}))}
+        check(R.pick({}, set(), 'd', 'main')[0] not in ('T1', 'T3'),
+              "files a claim says its session touched hold too, whatever its line lists")
+        # the race: both runners pick from plans read before the other's claim, and both claims push
+        st, gave = {}, []
+
+        def raced(c):  # nothing claimed until this run claims; then theirs on T3 (T1's file) and ours both show
+            if 'tid' not in st:
+                return {}
+            return {'T3': Claim('elsewhere:/x', time.time(), 'ian@desk', '0.14.0', st['theirs']),
+                    st['tid']: Claim(me, time.time(), 'me@here', '0.14.0', 2.0)}
+
+        def claim_(c, tid, files=()):
+            st['tid'] = tid
+            return True
+
+        saved = (R.plansync.claim, R.plansync.release, R.C.raw['plan']['repo'], R.log)
+        R.plansync.claims, R.plansync.claim, R.plansync.release = raced, claim_, lambda c, t: gave.append(t)
+        R.C.raw['plan']['repo'], R.log = 'plan.git', lambda m: None
+        try:
+            st['theirs'] = 1.0
+            got = R.pick({}, set(), 'd', 'main', claim=True)[0]
+            check(got not in ('T1', 'T3'), 'the later of two clashing claims gives way: T1 shares a file with their T3',
+                  got)
+            eq(gave[:1], ['T1'], 'releasing the claim it gave way on')
+            gave.clear()
+            st.clear()
+            st['theirs'] = 3.0
+            eq(R.pick({}, set(), 'd', 'main', claim=True)[0], 'T1', 'the earlier claim keeps its task')
+            eq(gave, [], 'and releases nothing')
+        finally:
+            R.plansync.claim, R.plansync.release, R.C.raw['plan']['repo'], R.log = saved
     finally:
         R.plansync.claims = claims
     files = set(R.P.files_on_line('menu → Assets/Settings/** · docs/a.md | t: x', repo))
@@ -383,6 +417,22 @@ def test_unmerged(repo: Path):
     eq(R.unmerged('main', []), [], 'a branch a busy slot holds is not merged under its session')
     eq(R.unmerged('main', [4]), ['T2'], 'an idle slot still on its finished branch: found')
     eq(git(d, 'branch', '--show-current'), '', 'and that slot let go of the branch')
+    git(repo, 'branch', '-D', 'task/T2')
+    d = task_branch(repo, 4, 'T2')
+    (d / 'b.py').write_text('# printer, again\n', encoding='utf-8')
+    (d / 'new.py').write_text('# new\n', encoding='utf-8')
+    git(d, 'commit', '-qam', 'T2: the printer again')
+    (d / 'c.py').write_text('# not committed yet\n', encoding='utf-8')
+    eq(R.touched('T2', 'main', d) >= {'b.py', 'c.py', 'new.py'}, True,
+       "a claim's touched files: the branch's commits, the slot's uncommitted and untracked edits")
+    git(d, 'checkout', '-q', '--', '.')
+    (d / 'new.py').unlink()
+    saved = R.open_tasks, R.blocked_tasks
+    R.open_tasks, R.blocked_tasks = (lambda b: saved[0](b) - {'T2'}), (lambda b: {'T2'})
+    try:
+        eq(R.unmerged('main', [4]), ['T2'], 'a task that ended blocked (a concept round) still has its branch merged')
+    finally:
+        R.open_tasks, R.blocked_tasks = saved
     git(repo, 'branch', '-D', 'task/T2')
 
 

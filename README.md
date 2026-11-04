@@ -208,13 +208,19 @@ repo = "git@github.com:you/project-plan.git"   # or a local path
   one record per line, and a line left open for a task DONE.md has ticked is dropped.
 - **Claims: two people can run at once.** The moment a run picks a task (parallel or sequential), it
   pushes `claims/<ID>` (host and checkout) before anything starts. Other runs skip a claimed task and treat it as
-  running there: a task sharing its files, its ordered section or its family waits for it. Two that
-  claim one at once conflict on push, and the later moves on to its next task. A claim that cannot be
-  pushed (offline) starts nothing, since nobody else would see it. The claim goes
-  when the task merges or is left for a human.
-- **Who has what.** `plan` marks each claimed task, `[ ] B12  [alex@laptop 14:02]`; `plan claims` lists
-  them all. A live run re-stamps its claims every hour, so a claim not refreshed in 3 h shows `STALE`, and
-  every other run logs it once: a crashed run's claims would otherwise hold those tasks for good. The same
+  running there: a task sharing its files, its ordered section or its family waits for it. The claim
+  holds the line's files and, refreshed as the session works, every file it has touched, so a task whose
+  line lists too few is still kept clear. Two that claim one task at once conflict on push, and the later
+  moves on; two that claim clashing tasks from plans read seconds apart both push, see each other, and the
+  later claim gives way. A claim that cannot be pushed (offline) starts nothing, since nobody else would
+  see it. The claim goes when the task merges or is left for a human, and a run drops any of its own
+  claims on a task it neither runs nor holds a branch for. A blocked task's finished branch (a concept
+  round handing over) is merged like an open one's, journal and all.
+- **Who has what.** `plan` marks each claimed task, `[ ] B12  [alex@laptop 14:02 v0.14.0]`; `plan claims`
+  lists them all. A live run re-stamps its claims every 15 min, so a claim not refreshed in 90 min shows
+  `STALE` and holds only its own task, not its files, and every other run logs it once: a crashed run's
+  claims would otherwise hold those tasks for good. A claim from a runner older than 0.14 shows `pre-0.14`,
+  and every other run warns once: that runner does not keep off their files, so upgrade every machine. The same
   checkout takes its own back on its next run; for anyone else's, `plan unclaim <ID>`.
 - **Tick on landing.** `done` in a slot leaves the task open and the run ticks it once the merge lands,
   noting `landed <sha>`; a merge left for a human leaves it open, as in-repo. `done` outside a run (a

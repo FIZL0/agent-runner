@@ -22,6 +22,7 @@ import threading
 import time
 from contextlib import contextmanager
 from pathlib import Path
+from typing import NamedTuple
 
 from agent_runner import plat
 from agent_runner.gitops import _net, git
@@ -143,50 +144,88 @@ def owner(c) -> str:
     return f'{socket.gethostname()}:{main_checkout(c.root)}'
 
 
-STALE = 3 * 3600  # s without a refresh after which a claim is reported as probably left by a dead run
-REFRESH = 3600  # s between a live run's refreshes of its claims (one commit for all of them)
+REFRESH = 15 * 60  # s between a live run's refreshes of its claims (one commit for all of them)
+STALE = 90 * 60  # s without a refresh after which a claim is a dead run's: it holds its task, not its files
 _STAMP = '%Y-%m-%d %H:%M'
+# The claim file, one field a line. 0.13 and older write the first three and read only those, so both read
+# each other's claims; a claim without a version is from a runner that ignores the files claims hold.
+#   owner (host:checkout) / refreshed (_STAMP) / user@host / version / claimed at (epoch) / files, tab-separated
+MIN_PEER = (0, 14, 0)  # the first version that keeps off the files another runner's claims hold
 
 
-def claims(c) -> dict[str, tuple[str, float, str]]:
-    """Every claim: id -> (owner, when last claimed or refreshed, who: user@host)."""
+class Claim(NamedTuple):
+    owner: str
+    at: float  # when last claimed or refreshed
+    who: str  # user@host
+    version: str = ''  # '' from a runner older than 0.14
+    since: float = 0.0  # when first claimed: the earlier of two clashing claims keeps its task
+    files: frozenset = frozenset()  # the task line's files and the ones its session has touched
+
+
+def claims(c) -> dict[str, Claim]:
+    """Every claim: id -> Claim."""
     d = c.plan_dir / 'claims'
     if not c.plan_repo or not d.is_dir():
         return {}
     out = {}
     for f in d.iterdir():
         if f.is_file():
-            ls = f.read_text().splitlines() + ['', '', '']
+            ls = f.read_text().splitlines() + [''] * 6
             try:
                 at = time.mktime(time.strptime(ls[1], _STAMP))
             except ValueError:
                 at = 0.0
-            out[f.name] = (ls[0], at, ls[2] or ls[0].split(':')[0])
+            try:
+                since = float(ls[4])
+            except ValueError:
+                since = at
+            out[f.name] = Claim(ls[0], at, ls[2] or ls[0].split(':')[0], ls[3], since,
+                                frozenset(x for x in ls[5].split('\t') if x))
     return out
 
 
-def stale(cl: tuple[str, float, str]) -> bool:
+def version_tuple(v: str) -> tuple[int, ...]:
+    """'0.14.0' -> (0, 14, 0); () for '' or anything unreadable."""
+    try:
+        return tuple(int(x) for x in v.split('.')[:3])
+    except ValueError:
+        return ()
+
+
+def outdated(cl: Claim) -> bool:
+    """Its runner predates MIN_PEER, so it does not keep off this run's files."""
+    return version_tuple(cl.version) < MIN_PEER
+
+
+def stale(cl: Claim) -> bool:
     return time.time() - cl[1] > STALE
 
 
-def label(cl: tuple[str, float, str]) -> str:
-    """`alex@laptop 14:02`, the date too when it is not today, and STALE past STALE."""
+def label(cl: Claim) -> str:
+    """`alex@laptop 14:02`, the date too when it is not today, the runner's version, and STALE past STALE."""
     at = time.localtime(cl[1])
     when = time.strftime('%H:%M' if at[:3] == time.localtime()[:3] else '%m-%d %H:%M', at)
-    return f'{cl[2]} {when}' + (' STALE' if stale(cl) else '')
+    return f'{cl.who} {when} ' + (f'v{cl.version}' if cl.version else 'pre-0.14') + (' STALE' if stale(cl) else '')
 
 
 def taken(c) -> set[str]:
     """Tasks another runner (another machine, or another checkout here) has claimed."""
     me = owner(c)
-    return {t for t, cl in claims(c).items() if cl[0] != me}
+    return {t for t, cl in claims(c).items() if cl.owner != me}
 
 
-def _stamp(c, f: Path) -> None:
-    f.write_text(f'{owner(c)}\n{time.strftime(_STAMP)}\n{getpass.getuser()}@{socket.gethostname()}\n')
+def _stamp(c, f: Path, files=None) -> None:
+    """Write (or re-stamp) a claim of this runner's: when it was first claimed is kept; `files` replaces the
+    held files when given."""
+    from agent_runner import __version__
+    old = f.read_text().splitlines() + [''] * 6 if f.exists() else [''] * 6
+    since = old[4] or f'{time.time():.3f}'
+    held = '\t'.join(sorted(files)) if files is not None else old[5]
+    f.write_text(f'{owner(c)}\n{time.strftime(_STAMP)}\n{getpass.getuser()}@{socket.gethostname()}\n'
+                 f'{__version__}\n{since}\n{held}\n')
 
 
-def claim(c, tid: str) -> bool:
+def claim(c, tid: str, files=()) -> bool:
     """Push claims/<tid> before starting it. False when another runner has it, got there first, or the claim
     could not be pushed (offline): a claim nobody else can see protects nothing, so the task waits."""
     if not c.plan_repo or not re.fullmatch(r'[\w.-]+', tid):
@@ -198,7 +237,7 @@ def claim(c, tid: str) -> bool:
         if f.exists():
             return True  # ours already (a restarted run)
         f.parent.mkdir(exist_ok=True)
-        _stamp(c, f)
+        _stamp(c, f, files)
         if publish(c, f'claim {tid}'):  # not pushed: lost the race (a conflict), or no remote to tell
             git('reset', '-q', '--hard', 'HEAD~1', cwd=c.plan_dir)
             pull(c, force=True)
@@ -218,17 +257,25 @@ def release(c, tid: str) -> None:
             publish(c, f'release {tid}')
 
 
-def refresh(c, tids) -> None:
+def refresh(c, tids, files=None) -> None:
     """Re-stamp this runner's claims on `tids` (running, or waiting to merge), so others can tell a live
-    claim from one a crashed run left behind. One commit for all of them."""
+    claim from one a crashed run left behind, and drop the rest of its claims: a task that ended while this
+    run was down, or was ticked elsewhere, holds nothing. `files`: id -> the files that claim holds now.
+    One commit for all of them."""
     if not c.plan_repo:
         return
+    files = files or {}
     with locked(c):
         pull(c, force=True)
         me = owner(c)
         for t, cl in claims(c).items():
-            if t in tids and cl[0] == me:
-                _stamp(c, c.plan_dir / 'claims' / t)
+            if cl.owner != me:
+                continue
+            f = c.plan_dir / 'claims' / t
+            if t in tids:
+                _stamp(c, f, files.get(t))
+            else:
+                f.unlink()
         publish(c, 'refresh claims')
 
 

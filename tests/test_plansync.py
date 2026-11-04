@@ -8,6 +8,7 @@ from __future__ import annotations
 import os
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 from _check import check, eq, git, has, report, run
@@ -154,8 +155,36 @@ def test_all(tmp: Path):
     finally:
         (tmp / 'away.git').rename(tmp / 'plan.git')
 
+    print('claims: what a claim file holds')
+    from agent_runner import __version__
+    cl = plansync.claims(cb)[ta[0]]
+    eq(cl.version, __version__, 'a claim records its runner version')
+    check(cl.since > 0 and not plansync.outdated(cl), 'and when it was claimed, so a later clashing claim can give way')
+    check(plansync.claim(ca, 'Z9', {'z.py', 'lib/**'}), 'a claim with files')
+    eq(plansync.claims(ca)['Z9'].files, frozenset({'z.py', 'lib/**'}), 'records the files it holds')
+    plansync.release(ca, 'Z9')
+    old_style = ca.plan_dir / 'claims' / 'OLD1'
+    old_style.write_text(f'elsewhere:/x\n{time.strftime(plansync._STAMP)}\nian@desk\n')
+    old_cl = plansync.claims(ca)['OLD1']
+    check(plansync.outdated(old_cl) and not plansync.stale(old_cl), "a 0.13 runner's claim reads as live but outdated")
+    R.init(a)
+    R.CLAIMS_AT[0] = 0.0
+    said = []
+    saved, R.log = R.log, said.append
+    try:
+        R.keep_claims({1: ta}, 'main')
+    finally:
+        R.log = saved
+    has('\n'.join(said), r'ian@desk runs agent-runner older than 0\.14.*upgrade', 'a run warns of an outdated peer')
+    plansync.pull(ca, force=True)
+    check(ta[0] in plansync.claims(ca), 'its live claim is kept')
+    check('T3' not in plansync.claims(ca), "and its claim on a task it no longer runs or holds is dropped")
+    old_style.unlink(missing_ok=True)
+    plansync.publish(ca, 'drop OLD1')
+
     print('claims on the board')
-    has(run(b, 'plan').stdout, rf'\] {ta[0]}  \[\S+@\S+ \d\d:\d\d\]', '`plan` marks a claimed task with who and when')
+    has(run(b, 'plan').stdout, rf'\] {ta[0]}  \[\S+@\S+ \d\d:\d\d v\d+\.\d+\.\d+\]',
+        '`plan` marks a claimed task with who, when and which runner version')
     has(run(b, 'plan', 'claims').stdout, rf'^{ta[0]}  ', '`plan claims` lists them')
     f = ca.plan_dir / 'claims' / ta[0]
     ls = f.read_text().splitlines()
