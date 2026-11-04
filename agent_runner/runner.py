@@ -7,7 +7,7 @@ starts an agent session with the task's brief already pasted into the first turn
 next task.
 
     ./run run once            one task, then stop (the way to try it the first time)
-    ./run run                 [run] slots agents (3), mode d (different files), in tmux
+    ./run run                 [run] slots agents (3), mode p (plan order), in tmux
     ./run run 5 --mode p      5 agents, strictly in TODO.md order, files may overlap
     ./run run 1               one agent, in a worktree and a pane like any count (no tmux: in this checkout)
     ./run run --dry-run 4     print what 4 free slots would start now, and start nothing
@@ -751,7 +751,15 @@ def prompt_for(tid: str, n: int, slots: int, cwd: Path, branch: str) -> str:
     vals['followups'] = FOLLOWUPS.format(runner=C.command, kinds='; '.join(f'{k} {v}' for k, v in kinds.items()))
     vals['extra'] = vals['extra'].format_map(_Keep(vals))  # `prompt_extra` may say {n}, {tid}, {runner}
     template = (ROOT / r['prompt']).read_text(encoding='utf-8') if r['prompt'] else PROMPT
-    return template.format_map(_Keep(vals))
+    prompt = template.format_map(_Keep(vals))
+    policies = []
+    if r['include_task_id_in_commit']:
+        policies.append(f'Include task ID `{tid}` at the start of the commit subject.')
+    else:
+        policies.append(f'Do not include task ID `{tid}` in the commit subject; task tracking is separate.')
+    if r['comment_policy'] == 'minimal':
+        policies.append('Only add comments when necessary to explain non-obvious intent or constraints.')
+    return f'{prompt.rstrip()}\n\nProject policies:\n' + '\n'.join(f'- {policy}' for policy in policies)
 
 
 class _Keep(dict):
@@ -1788,6 +1796,16 @@ def upstream(branch: str, d: Path) -> str:
     return ref
 
 
+def merge_message(tid: str, ref: str) -> str:
+    if C.run['include_task_id_in_commit']:
+        return f"Merge branch 'task/{tid}'"
+    subject = git('log', '-1', '--format=%s', ref).stdout.strip()
+    prefix = f'{tid}:'
+    if subject.startswith(prefix):
+        subject = subject[len(prefix):].lstrip(' \t')
+    return f'Merge: {subject or "task changes"}'
+
+
 def merge_batch(tid: str, branch: str) -> str | None:
     """`merge`'s part under the lock: build, test and land task/<tid> and its riders; record them in LANDED."""
     d = worktree('merge', branch)
@@ -1805,17 +1823,19 @@ def merge_batch(tid: str, branch: str) -> str | None:
             base = git('rev-parse', branch).stdout.strip()
             git('checkout', '-q', '--detach', base, cwd=d)
             ref = renumber_doubles(f'task/{tid}', base, tid, d)
-            if (files := merge_into(d, ref, f"Merge branch 'task/{tid}'")) is None:
+            msg = merge_message(tid, ref)
+            if (files := merge_into(d, ref, msg)) is None:
                 return f'git refused to merge task/{tid} into {branch} (see the merge worktree, {d})'
             if files:
                 if joined(files, tid, d):
                     log(f'{tid}: joined both sides of {", ".join(files)}')
-                elif why := refix(tid, branch, ref, files, d):
+                elif why := refix(tid, branch, ref, files, d, msg=msg):
                     return why
             riders = []
             for t in ([] if solo else sorted(WAITING - set(LANDED))):
                 ref = renumber_doubles(f'task/{t}', 'HEAD', t, d)
-                if (files := merge_into(d, ref, f"Merge branch 'task/{t}'")) is None:
+                msg = merge_message(t, ref)
+                if (files := merge_into(d, ref, msg)) is None:
                     git('merge', '--abort', cwd=d)
                     continue
                 if files and not joined(files, t, d):
@@ -1823,7 +1843,7 @@ def merge_batch(tid: str, branch: str) -> str | None:
                         git('merge', '--abort', cwd=d)
                         continue  # it waits for its own turn, where a fix session can take the conflict
                     # a fix session takes the conflict here, so the rider shares this gate run
-                    if refix(t, branch, ref, files, d, undo=True):
+                    if refix(t, branch, ref, files, d, undo=True, msg=msg):
                         continue  # it waits for its own turn
                 riders.append(t)
             if riders:

@@ -468,6 +468,11 @@ Each session also gets `AGENT_RUNNER=1` and `[run] slot_env` (default `AGENT_SLO
 environment, so your tools can tell slots apart, for example to give each one its own port or emulator
 instance.
 
+`include_task_id_in_commit = false` tells sessions to omit the task ID from the commit subject; `done` also
+removes a leading `<ID>:` if a session includes one anyway. The default is `true`. `comment_policy = "minimal"`
+asks sessions to add comments only when they explain non-obvious intent or constraints. The default is `"normal"`.
+These policy instructions are appended to built-in and custom prompts.
+
 ### After a run
 
 To end the run first, type `s` + Enter in its terminal ([Stopping a run](#stopping-a-run)) and let
@@ -538,7 +543,9 @@ push_merge = true         # push the shared branch after each tested merge
 test = ""                 # the gate, run by `done` and on every merge, e.g. "make test"
 slots = 3
 mux = ""                  # tmux, wt, console or none; "" = tmux (Windows: wt, else console)
-mode = "d"                # d: different files; p: plan order
+mode = "p"                # p: plan order; d: different files
+include_task_id_in_commit = true
+comment_policy = "normal"
 agent = "claude"
 backend = ""              # claude or pi; empty detects pi from the agent executable's name
 model = "opus"

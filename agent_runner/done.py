@@ -131,7 +131,12 @@ def record(a, c) -> int:
         if not a.no_test:
             g('update-ref', TESTED + a.id, 'HEAD')
         return finished(c, a)
-    if (r := g('commit', '-qm', a.message)).returncode:
+    message = a.message
+    if not c.run['include_task_id_in_commit']:
+        prefix = f'{a.id}:'
+        if message.startswith(prefix):
+            message = message[len(prefix):].lstrip(' \t')
+    if (r := g('commit', '-qm', message)).returncode:
         print(f'git commit failed: {r.stderr.strip()}', file=sys.stderr)
         return untick()
     if not a.no_test:  # what the gate passed on, so a merge that differs from it only in [run] untested skips it

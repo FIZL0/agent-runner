@@ -79,7 +79,9 @@ DEFAULTS: dict = {
         'test': '',             # the gate: `done` and every merge run it; empty means no gate
         'slots': 3,
         'mux': '',              # terminal per slot: tmux, wt, console, none; '' = tmux (Windows: wt, else console)
-        'mode': 'd',            # d = never two running tasks on the same file; p = strict plan order
+        'mode': 'p',            # d = never two running tasks on the same file; p = strict plan order
+        'include_task_id_in_commit': True,
+        'comment_policy': 'normal',
         'agent': 'claude',      # the CLI that runs a session
         'backend': '',          # '' = Claude Code (or pi when `agent` is a pi executable); pi = other providers
         'model': 'opus',
@@ -203,6 +205,10 @@ class Config:
             self.raw['plan']['dir'] = str(legacy if legacy.is_dir() and not (self.home / 'plan').exists()
                                           else self.home / 'plan')
         self.run = self.raw['run']
+        if not isinstance(self.run['include_task_id_in_commit'], bool):
+            raise SystemExit('agent-runner: [run] include_task_id_in_commit must be a boolean')
+        if self.run['comment_policy'] not in ('normal', 'minimal'):
+            raise SystemExit("agent-runner: [run] comment_policy must be 'normal' or 'minimal'")
         backend = infer(self.run)
         if backend not in ('claude', 'pi'):
             raise SystemExit(f'agent-runner: unknown [run] backend {backend!r}; choose claude or pi')
