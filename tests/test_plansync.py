@@ -15,7 +15,7 @@ from _check import check, eq, git, has, report, run
 from agent_runner import config, plansync  # noqa: E402
 from agent_runner import plan as P  # noqa: E402
 
-TODO = '# TODO\n\n### Next\n\n- [ ] **T1** first → a.py\n- [ ] **T2** second → b.py\n- [ ] **T3** third → c.py\n'
+TODO = '# TODO\n\n### Tasks\n\n- [ ] **T1** first → a.py\n- [ ] **T2** second → b.py\n- [ ] **T3** third → c.py\n'
 
 
 def setup(tmp: Path) -> tuple[Path, Path, Path]:
@@ -138,6 +138,15 @@ def test_all(tmp: Path):
     check('G1' not in (ta[0], tb[0]), 'never one ticked since the pick last read the plan (G1, just above)')
     has(git(bare, 'show', f'main:claims/{ta[0]}'), str(a), "A's claim is pushed before its slot starts")
     eq(R.pick({}, set(), 'd', 'main')[0], tb[0], 'a pick that does not start (dry run) claims nothing new')
+    R.init(a)
+    nxt = R.C.plan_dir / 'TODO.md'
+    keep = nxt.read_text()
+    nxt.write_text(keep.replace('### Tasks', '### Next'))
+    try:
+        eq(R.pick({}, set(), 'd', 'main'), None, "an ordered section waits while another runner has one of its tasks")
+    finally:
+        nxt.write_text(keep)
+    R.init(b)
     (tmp / 'plan.git').rename(tmp / 'away.git')
     try:
         left = R.pick({}, {tb[0], 'T2'}, 'd', 'main', claim=True)  # T2: B's, pushed earlier

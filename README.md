@@ -177,7 +177,7 @@ the branch is pushed after each task.
   docs, research, cleanup) are suggested but not enforced.
 - `→ files…` lists the files the task will touch, separated by `·`, spaces or commas. Mode d uses this
   list to keep two running tasks off the same file, and the brief pastes those files in. Files that don't
-  exist yet still count.
+  exist yet still count, and so do patterns: `dir/**` (everything under it) and `dir/*.rs`.
 - `| t: tests` names the tests that prove it. `| j: dir` names its journal folder.
 - `(after X, Y)` means don't start until X and Y are done. **Every id** in the parentheses counts.
 - `BLOCKED: (after X, Y) why` is what `plan block`/`done --blocked` write. The `(after …)` list is what
@@ -207,7 +207,8 @@ repo = "git@github.com:you/project-plan.git"   # or a local path
   commits and pushes. A rejected push pulls and pushes again; `*.md` merge as `union`, since the plan is
   one record per line, and a line left open for a task DONE.md has ticked is dropped.
 - **Claims: two people can run at once.** The moment a run picks a task (parallel or sequential), it
-  pushes `claims/<ID>` (host and checkout) before anything starts. Other runs skip a claimed task; two that
+  pushes `claims/<ID>` (host and checkout) before anything starts. Other runs skip a claimed task and treat it as
+  running there: a task sharing its files, its ordered section or its family waits for it. Two that
   claim one at once conflict on push, and the later moves on to its next task. A claim that cannot be
   pushed (offline) starts nothing, since nobody else would see it. The claim goes
   when the task merges or is left for a human.

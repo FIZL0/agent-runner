@@ -2,6 +2,14 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
+## 0.13.3 (2026-11-04)
+
+- Two runners on one `[plan] repo` keep off each other's files: another run's live claim counts as running
+  here, so a task sharing its files, ordered section or family waits, not just the claimed task itself.
+  A stale claim (a crashed run's) still holds only its own task.
+- `dir/**` and `dir/*` on a task line are file patterns: they reserve everything under the folder, files
+  that exist only on another branch included, and overlap the paths and patterns they match.
+
 ## 0.13.2 (2026-11-04)
 
 - `run` no longer crashes starting a task when a worktree's folder was deleted without `git worktree remove`

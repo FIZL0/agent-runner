@@ -126,6 +126,19 @@ def test_picking(repo: Path):
     check((R.pick({1: first, 2: second, 3: third}, set(), 'd', 'main') or ('',))[0] != 'L3b',
           'a sibling of a running task waits')
     eq(R.pick({1: first}, set(), 'p', 'main')[0], 'T2', 'mode p just follows the plan order')
+    claims, R.plansync.claims = R.plansync.claims, lambda c: {'T1': ('elsewhere:/x', time.time(), 'ian@desk')}
+    try:
+        eq(R.pick({}, set(), 'd', 'main')[0], 'T5',
+           "another runner's live claim on T1 holds its files, section and dependants here too")
+        R.plansync.claims = lambda c: {'T1': ('elsewhere:/x', time.time() - 4 * 3600, 'ian@desk')}
+        eq(R.pick({}, set(), 'd', 'main')[0], 'T2', "a stale claim (a crashed run's) holds only its own task")
+    finally:
+        R.plansync.claims = claims
+    files = set(R.P.files_on_line('menu → Assets/Settings/** · docs/a.md | t: x', repo))
+    check({'Assets/Settings/**', 'docs/a.md'} <= files, 'a `dir/**` on the line is a file pattern', str(files))
+    check(R.P.overlap({'Assets/Settings/**'}, {'Assets/Settings/Page.cs'}), 'a pattern meets a path under it')
+    check(R.P.overlap({'Assets/Settings/**'}, {'Assets/Settings/**'}), 'and the same pattern on another line')
+    check(not R.P.overlap({'Assets/Settings/**'}, {'Assets/Audio/Mix.cs'}), 'but not a path elsewhere')
     eq(R.pick({}, set(ids), 'd', 'main'), None, 'nothing left once everything has been tried')
     for f in ('plan/TODO.md', 'plan/DONE.md', 'CHANGELOG.md'):
         check(R.joinable(f), f'{f} is in [run] joinable, so a conflict there is joined')

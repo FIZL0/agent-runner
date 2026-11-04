@@ -73,14 +73,14 @@ from agent_runner.gitops import git
 PROG = './run plan'  # the name in messages; a wrapper sets its own ('./kit plan')
 # The library API a wrapping project may call; names and signatures here change only in a major version.
 __all__ = ['PROG', 'HELP', 'lines', 'index', 'section', 'ensure', 'archive', 'tick', 'block', 'reopen',
-           'unblock', 'move', 'next_id', 'add', 'similar', 'note', 'next_task', 'files_on_line', 'brief', 'open_ids',
+           'unblock', 'move', 'next_id', 'add', 'similar', 'note', 'next_task', 'files_on_line', 'overlap', 'brief', 'open_ids',
            'write_atomic', 'child', 'subtasks', 'main', 'PRI', 'kinds', 'check_kind']
 
 ITEM = re.compile(r'^(\s*)- \[(.)\] \*\*([^\s*]+)')
 HEAD = re.compile(r'(#+) ')
 # A path-ish token on a task line: `src/main.c`, `crates/sim/src/lib.rs`, `runner.toml`, `docs/api.md`,
 # `play/*.rs`. Anything with a dot and a short extension; checked against the repo before it is believed.
-FILE_TOKEN = re.compile(r'(?<![\w/.`-])([\w.*-]+(?:/[\w.*-]+)*\.[A-Za-z][\w+]{0,5})')
+FILE_TOKEN = re.compile(r'(?<![\w/.`-])([\w.*-]+(?:/[\w.*-]+)*\.[A-Za-z][\w+]{0,5}|[\w.-]+(?:/[\w.-]+)*/\*\*?)')
 BARE_MAX = 5  # a bare file name in a task's text matching more tracked paths than this names none of them
 JOURNAL_MAX = 12000  # chars of the newest journal file pasted into a brief; the rest is a Read away
 
@@ -614,9 +614,10 @@ def files_on_line(text: str, root=None, tracked=None) -> list[str]:
     out = []
     for n in names:
         n = n.rstrip('.,;:')
-        if '*' in n:  # `play/*.rs` on a line means every file in that directory
+        if '*' in n:  # `play/*.rs`, `play/**` on a line mean every file there
             import fnmatch
-            out += [t for t in tracked if fnmatch.fnmatch(t, f'*{n}')]
+            # the pattern itself too: files it names that this checkout lacks (made on another branch) still overlap
+            out += [t for t in tracked if fnmatch.fnmatch(t, f'*{n}')] + [n]
             continue
         hits = [t for t in tracked if t == n or t.endswith('/' + n)]
         if '/' not in n and n not in listed and len(hits) > BARE_MAX:
@@ -627,6 +628,14 @@ def files_on_line(text: str, root=None, tracked=None) -> list[str]:
         # runner reserves.
         out += hits or ([n] if '/' in n or n in listed or (root / n).exists() else [])
     return list(dict.fromkeys(out))
+
+
+def overlap(a: set[str], b: set[str]) -> set[str]:
+    """Paths and patterns (`dir/**`, `dir/*.rs`) of `a` that meet `b`'s: equal, or one matching the other."""
+    import fnmatch
+    pa, pb = [x for x in a if '*' in x], [y for y in b if '*' in y]  # few: only patterns need fnmatch
+    return (a & b) | {x for x in pa for y in b if fnmatch.fnmatch(y, x)} | {
+        x for x in a for y in pb if fnmatch.fnmatch(x, y)}
 
 
 def _tracked(root) -> list[str]:
@@ -711,7 +720,7 @@ def brief(tid: str, root=None, plan_dir=None, journal=None) -> list[str]:
             out += [f'### {newest}' + (f' (first {JOURNAL_MAX} chars)' if cut else ''),
                     body[:JOURNAL_MAX].rstrip()]
 
-    where = [p for p in files_on_line(text, root) if p != own_rel]
+    where = [p for p in files_on_line(text, root) if p != own_rel and '*' not in p]
     if where:
         out += ['', '## Files on the line, and their last commits']
         for t in where:

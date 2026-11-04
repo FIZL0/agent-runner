@@ -322,13 +322,17 @@ def pick(running: dict, tried: set, mode: str, branch: str, claim: bool = False)
             return t
         plansync.release(C, t[0])  # closed meanwhile (ticked or blocked by someone else)
         return None
-    busy = list(running.values())
+    shared = set(C.run['shared_files'])
+    todo = tasks(branch)
+    me = plansync.owner(C) if C.plan_repo else None
+    # another runner's live claims (a stale one is a crashed run's: it holds its task, not its files) count as
+    # running here: their files, section and family keep this run off the same work
+    elsewhere = {t for t, cl in plansync.claims(C).items() if cl[0] != me and not plansync.stale(cl)}
+    busy = list(running.values()) + [t for t in todo if t[0] in elsewhere]
     # A section whose heading says its tasks are ordered ("Next (in this order)") runs one task at a time:
     # its second task usually depends on the first having landed, whatever the files say.
     busy_sections = {b[1] for b in busy}
     busy_ids = {b[0] for b in busy} | {q[0] for q in queued().values()}  # one waiting to resume is running
-    shared = set(C.run['shared_files'])
-    todo = tasks(branch)
     finished = set(ahead(branch)) if todo else set()
     finished |= plansync.taken(C)  # another runner's: on its slots
     for tid, section, files, named in todo:
@@ -343,7 +347,7 @@ def pick(running: dict, tried: set, mode: str, branch: str, claim: bool = False)
         if mode != 'p':
             if (section.startswith('Next') or 'in this order' in section) and section in busy_sections:
                 continue
-            if any((files - shared) & b[2] for b in busy):
+            if any(P.overlap(files - shared, b[2]) for b in busy):
                 continue
         if got := pick_((tid, section, files, named)):
             PASSED.discard(tid)
