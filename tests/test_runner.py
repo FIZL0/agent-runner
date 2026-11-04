@@ -1040,6 +1040,11 @@ def test_edited_elsewhere(repo: Path, tmp: Path):
         has('\n'.join(R.edited_elsewhere({'f.py'})), rf'^{re.escape(str(repo))} \(f\.py\)$', 'the main checkout counts too')
         eq(R.edited_elsewhere({'h.py'}), [], 'files nobody edits: nothing')
         eq(R.edited_elsewhere(set()), [], 'a task with no files: nothing')
+        gone = tmp / 'gone-worktree'
+        git(repo, 'worktree', 'add', '-q', '--detach', str(gone), 'main')
+        shutil.rmtree(gone)
+        eq(R.edited_elsewhere({'h.py'}), [], 'a worktree whose folder was deleted is skipped, not a crash')
+        git(repo, 'worktree', 'prune')
     finally:
         git(repo, 'checkout', '--', 'f.py')
         git(s1, 'checkout', '--', 'f.py')

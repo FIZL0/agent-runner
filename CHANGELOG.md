@@ -2,6 +2,11 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
+## 0.13.2 (2026-11-04)
+
+- `run` no longer crashes starting a task when a worktree's folder was deleted without `git worktree remove`
+  (a chat session's scratchpad, say): the edited-elsewhere check skips worktrees git lists as prunable.
+
 ## 0.13.1 (2026-11-03)
 
 - `agent-runner home [slots|plan]` prints where this project's runner files are, from `[run] home` and

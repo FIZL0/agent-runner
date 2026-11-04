@@ -847,6 +847,8 @@ def edited_elsewhere(files) -> list[str]:
     for d in (Path(l[len('worktree '):]) for l in listed if l.startswith('worktree ')):
         if d.parent == SLOTS_DIR and re.fullmatch(r's\d+|merge', d.name):
             continue
+        if not d.is_dir():  # a worktree whose folder was deleted (git lists it as prunable)
+            continue
         st = git('status', '--porcelain', '--untracked-files=no', cwd=d)
         if st.returncode:
             continue
