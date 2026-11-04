@@ -3027,8 +3027,14 @@ def run(argv: list[str], prog: str) -> int:
             if n in procs and procs[n][1] not in stall_said and \
                     (why := stalled(procs[n][0], procs[n][1], stall)):
                 stall_said.add(procs[n][1])
-                log(f'slot {n}: {running[n][0]} looks stalled ({why}); look at {MUX.where(n)}')
-                print('\a', end='', flush=True)
+                if (m := finished_mark(n)) and m.exists():
+                    # its `done` succeeded, so the Stop hook's waiter should have ended it; that waiter can
+                    # be lost (Clay's R18 and H1 sat finished for hours), so the run ends it: next tick reaps it
+                    log(f'slot {n}: {running[n][0]} finished but {why}; ending it')
+                    plat.terminate(procs[n][0])
+                else:
+                    log(f'slot {n}: {running[n][0]} looks stalled ({why}); look at {MUX.where(n)}')
+                    print('\a', end='', flush=True)
             if n not in procs and n in foreign:
                 if alive(foreign[n]):
                     continue  # see queue_cut_off: never a second agent in its worktree

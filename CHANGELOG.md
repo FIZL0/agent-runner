@@ -2,6 +2,12 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
+## 0.13.4 (2026-11-04)
+
+- A session whose `done` succeeded and that then sits quiet at its prompt past `[run] stall` is ended by the run
+  itself, not just reported as stalled. The Stop hook's detached waiter can be lost, and two finished sessions
+  held their slots for 5 and 8 hours.
+
 ## 0.13.3 (2026-11-04)
 
 - Two runners on one `[plan] repo` keep off each other's files: another run's live claim counts as running
