@@ -41,6 +41,9 @@ def test_config(repo: Path):
     c = configure(repo, '')
     eq((c.run['agent'], c.run['backend'], c.run['model'], c.run['fix_model']),
        ('claude', 'claude', 'opus', 'opus'), 'unconfigured repositories retain Claude defaults')
+    eq(c.run['mode'], 'p', 'unconfigured repositories default to plan order')
+    c = configure(repo, 'mode = "d"\n')
+    eq(c.run['mode'], 'd', 'repositories can explicitly select different-file mode')
     flags = R.agent_flags('sid', 'opus', 90)
     check(flags[:2] == ['--session-id', 'sid'] and '--settings' in flags and '--print' not in flags,
           'Claude still uses its interactive session flags and Stop hooks')

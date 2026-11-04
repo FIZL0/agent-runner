@@ -87,7 +87,8 @@ def make_repo(tmp: Path) -> Path:
     # the gate: fails while a file named BROKEN exists
     (repo / 'check.py').write_text('import os, sys\nsys.exit(1 if os.path.exists("BROKEN") else 0)\n')
     (repo / 'runner.toml').write_text(
-        '[run]\ntest = "python3 check.py"\nmin_free_gb = 0\nshared_files = ["CHANGELOG.md"]\n'
+        '[run]\nmode = "d"\ntest = "python3 check.py"\nshared_files = ["CHANGELOG.md"]\n'
+    'min_free_gb = 0\n'
         'joinable = ["plan/TODO.md", "plan/DONE.md", "CHANGELOG.md"]\n', encoding='utf-8')
     (repo / '.gitignore').write_text('.runner/\n', encoding='utf-8')
     git(repo, 'add', '-A')
@@ -217,6 +218,59 @@ def task_branch(repo: Path, n: int, tid: str) -> Path:
     d = R.worktree(n, 'main')
     git(d, 'checkout', '-q', '-B', f'task/{tid}', 'main')
     return d
+
+
+def test_run_policies(repo: Path, tmp: Path):
+    print('run: project-configured commit and merge subjects and comment guidance')
+    fixture = tmp / 'policy-fixture'
+    fixture.mkdir()
+    policy_repo = make_repo(fixture)
+    (policy_repo / 'runner.toml').write_text(
+        '[run]\nmode = "d"\n'
+        f'home = "{fixture.as_posix()}/runner-home/{{repo}}"\n'
+        'include_task_id_in_commit = false\ncomment_policy = "minimal"\n'
+        '[git]\npush = false\n', encoding='utf-8')
+    git(policy_repo, 'add', 'runner.toml')
+    git(policy_repo, 'commit', '-qm', 'configure policy fixture')
+    env = {**os.environ, 'AGENT_RUNNER_CONFIG': str(policy_repo / 'runner.toml')}
+    old_config = os.environ.get('AGENT_RUNNER_CONFIG')
+    os.environ['AGENT_RUNNER_CONFIG'] = env['AGENT_RUNNER_CONFIG']
+    R.init(policy_repo)
+    try:
+        from agent_runner import config
+        R.C = config.Config(policy_repo)
+        prompt = R.prompt_for('T2', 1, 1, policy_repo, 'main')
+        has(prompt, r'Do not include task ID .+ in the commit subject',
+            'the task-ID setting reaches the agent prompt')
+        has(prompt, r'Only add comments when necessary to explain non-obvious intent',
+            'the comment policy reaches the agent prompt')
+
+        git(policy_repo, 'checkout', '-q', '-b', 'task/T2', 'main')
+        result = run(policy_repo, 'done', 'T2', 'T2: the printer', env=env)
+        check(result.returncode == 0, 'configured task completion succeeds', result.stdout + result.stderr)
+        eq(git(policy_repo, 'log', '-1', '--format=%s'), 'the printer',
+           'the configured commit subject omits its task ID')
+        printer_ref = git(policy_repo, 'rev-parse', 'HEAD')
+
+        git(policy_repo, 'checkout', '-q', '-b', 'task/T3', 'main')
+        (policy_repo / 'logger.py').write_text('def log(): pass\n', encoding='utf-8')
+        git(policy_repo, 'add', 'logger.py')
+        result = run(policy_repo, 'done', 'T3', 'T3: the logger', env=env)
+        check(result.returncode == 0, 'configured batch-rider completion succeeds', result.stdout + result.stderr)
+        eq(git(policy_repo, 'log', '-1', '--format=%s'), 'the logger',
+           'the configured batch-rider commit subject omits its task ID')
+        logger_ref = git(policy_repo, 'rev-parse', 'HEAD')
+
+        eq(R.merge_message('T2', printer_ref), 'Merge: the printer',
+           'the configured primary merge message omits its task ID')
+        eq(R.merge_message('T3', logger_ref), 'Merge: the logger',
+           'the configured batch-rider merge message omits its task ID')
+    finally:
+        if old_config is None:
+            os.environ.pop('AGENT_RUNNER_CONFIG', None)
+        else:
+            os.environ['AGENT_RUNNER_CONFIG'] = old_config
+        R.init(repo)
 
 
 def test_done(repo: Path, tmp: Path):
@@ -1630,7 +1684,8 @@ def main() -> int:
                        lambda: test_retry(repo), lambda: test_unmerged(repo),
                        lambda: test_conflicts(repo, tmp), lambda: test_repair(repo, tmp),
                        lambda: test_prompt_and_hooks(repo),
-                       lambda: test_hooks(repo, tmp), lambda: test_gate_and_batches(repo, tmp),
+                       lambda: test_hooks(repo, tmp), lambda: test_run_policies(repo, tmp),
+                       lambda: test_gate_and_batches(repo, tmp),
                        lambda: test_platform(repo, tmp), lambda: test_shutdown(repo), lambda: test_merge_into(tmp),
                        lambda: test_leftovers(repo), lambda: test_renumber(repo),
                        lambda: test_stop_waiter(tmp), lambda: test_stop_hook_grace(tmp), lambda: test_land_waits_aloud(repo), lambda: test_land_gives_merge_back(repo),
