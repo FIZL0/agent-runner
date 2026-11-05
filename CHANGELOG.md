@@ -2,6 +2,18 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
+## 0.18.0 (2026-11-05)
+
+- A restarted run adopts the merge the last one was in the middle of, the way it adopts the slots'
+  sessions. The merge gate now runs in a session of its own that outlives the runner, and a pass is kept
+  per tree and gate command (`.runner/gates/`, a week), so the same merge is not tested twice. A fix or
+  repair session in the master window records itself (`.runner/master.json`), the next run waits for it,
+  and what it committed is kept under `refs/agent-runner/held/<ID>/` and reused when the merge is built
+  again. A restart used to throw all of that away and redo it, which cost a whole gate run.
+- The startup log no longer says every unmerged branch "finished while no run was up": it is "its merge
+  was under way when the last run ended; adopting it" or "finished, not merged yet; merging it now", and
+  the adopted one merges first.
+
 ## 0.17.0 (2026-11-05)
 
 - `plan add` refuses text that looks like an open task's work (exit 3, nothing written), naming the open

@@ -410,6 +410,15 @@ consoles too) and only starts when stdin is a terminal. The sequential run has n
 agent session reads the same terminal; use `./run stop` there, which takes effect between tasks. A STOP
 file left behind by a run that was killed is cleared when the next run starts.
 
+A merge a run was in the middle of is adopted by the next run too, like the slots' sessions. Its gate
+runs in a session of its own (`.runner/gate.json`), and a fix or repair session in the master window
+records itself in `.runner/master.json`; both outlive the runner. The restarted run waits for them,
+keeps what they made (a passing gate per tree and gate command in `.runner/gates/`, a session's commit
+under `refs/agent-runner/held/<ID>/`), builds the merge again and reuses them instead of doing that
+work a second time. The startup log says `<ID>: its merge was under way when the last run ended;
+adopting it`, or `<ID>: finished, not merged yet; merging it now` for a branch that only waited its
+turn.
+
 ### Fix sessions
 
 A conflict the line join cannot resolve goes to one fresh session, run in the merge worktree with the

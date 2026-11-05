@@ -530,7 +530,8 @@ def adopt(branch: str) -> dict[int, tuple]:
 
 
 def unmerged(branch: str, idle: list[int]) -> list[str]:
-    """Open tasks whose task/<ID> has commits `branch` lacks: work finished while no run was up. The idle
+    """Open tasks whose task/<ID> has commits `branch` lacks: work that finished, or was merging, when no run
+    was up to merge it. The idle
     slots in `idle` are detached first, so a slot whose session ended still on its branch neither hides
     that branch from the scan nor keeps start() from taking it later."""
     for n in idle:
@@ -542,6 +543,19 @@ def unmerged(branch: str, idle: list[int]) -> list[str]:
     # to merge, and its claim would otherwise be refreshed for as long as the branch sits
     open_ids = open_tasks(branch) | blocked_tasks(branch)
     return [t for t in ahead(branch) if f'task/{t}' not in held and t in open_ids]
+
+
+def left_merging() -> set[str]:
+    """The tasks whose fix or repair session or gate run an earlier run left going (`adopt_merge`)."""
+    out = set()
+    for f in ('master.json', 'gate.json'):
+        try:
+            s = json.loads(C.notes(f).read_text(encoding='utf-8'))
+        except (OSError, ValueError):
+            continue
+        if alive(s.get('pid')):
+            out.add(s['tid'])
+    return out
 
 
 def single_run() -> object:
@@ -1471,13 +1485,15 @@ def last_words(sid: str) -> str:
     return said.strip()
 
 
-def fix_session(prompt: str, cwd: Path, fh) -> int:
+def fix_session(prompt: str, cwd: Path, fh, keep: dict | None = None) -> int:
     """Run one fix or repair session in `cwd` to its end; its exit code. Raises what `sp.run` raises for a
     missing agent or a timeout.
 
     Under tmux it is an ordinary session in the window "master-<repo>", so a human can watch it work, or
     take it over by typing; the Stop hook (Pi: `pi_idle.ts`) ends it once it has been idle `MASTER_IDLE`
     seconds, and its last words go to `fh`. Without tmux it is `-p` (Pi: `--print`), its output in `fh`.
+    A pane session outlives the runner: `keep` (what it was started on) goes to `<notes>/master.json` with
+    its pid, so the next run adopts it (`adopt_merge`) instead of starting the merge over under it.
     """
     timeout = C.run['fix_timeout']
     if not MASTER_PANE:
@@ -1497,25 +1513,164 @@ def fix_session(prompt: str, cwd: Path, fh) -> int:
         fh.write(f'{e}\n')
         return 1
     until = time.time() + timeout
-    while alive(pid):
-        if time.time() >= until:
-            for p in [*plat.children(pid), pid]:
-                plat.terminate(p)
+    if keep:
+        C.notes('master.json').write_text(json.dumps({**keep, 'pid': pid, 'sid': sid, 'until': until}), encoding='utf-8')
+    try:
+        if not wait_session(pid, until):
             fh.write(last_words(sid) + '\n')
             raise sp.TimeoutExpired(cmd, timeout)
-        time.sleep(5)
+    finally:
+        C.notes('master.json').unlink(missing_ok=True)
     fh.write(last_words(sid) + '\n')
     return 0
 
 
-def fixer(head: str, prompt: str, cwd: Path, kind: str, to: str) -> tuple[int | None, str]:
+def wait_session(pid: int, until: float) -> bool:
+    """Wait for the session `pid` to end: False when it ran to `until` and was ended."""
+    while alive(pid):
+        if time.time() >= until:
+            for p in [*plat.children(pid), pid]:
+                plat.terminate(p)
+            return False
+        time.sleep(5)
+    return True
+
+
+HELD = 'refs/agent-runner/held/'  # + <ID>/<start>[-<ref>]: what a fix or repair session made from there
+
+
+def held(tid: str, start: str, ref: str = '') -> str:
+    return f'{HELD}{tid}/{start}' + (f'-{ref}' if ref else '')
+
+
+def kept(tid: str, start: str, ref: str, d: Path, kind: str) -> bool:
+    """A fix (`ref` merged onto `start`) or repair (commits on `start`) session made the same thing in an
+    earlier run, or before a rebuild: `d` is moved to what it made, and no session runs again."""
+    if not (h := git('rev-parse', '-q', '--verify', held(tid, start, ref)).stdout.strip()):
+        return False
+    git('merge', '--abort', cwd=d)
+    clean(d, h)
+    log(f'{tid}: reused what the {kind} session made of this merge before ({h[:12]})')
+    return True
+
+
+def keep_made(s: dict, d: Path) -> bool:
+    """Record what the session `s` (master.json) made in `d`, when it made what its kind should: a fix commits
+    the merge of `ref` onto `start`, a repair commits on top of `start` and leaves nothing uncommitted."""
+    head = git('rev-parse', 'HEAD', cwd=d).stdout.strip()
+    if s['kind'] == 'fix':
+        ok = git('rev-parse', '-q', '--verify', 'MERGE_HEAD', cwd=d).returncode != 0 and \
+            git('rev-parse', '-q', '--verify', 'HEAD^2', cwd=d).stdout.strip() == s['ref'] and \
+            git('rev-parse', '-q', '--verify', 'HEAD^1', cwd=d).stdout.strip() == s['start']
+    else:
+        ok = head != s['start'] and not git('merge-base', '--is-ancestor', s['start'], head, cwd=d).returncode and \
+            not git('status', '--porcelain', '--untracked-files=no', cwd=d).stdout.strip()
+    if ok:
+        git('update-ref', held(s['tid'], s['start'], s.get('ref', '')), head)
+    return ok
+
+
+def adopt_merge(d: Path) -> None:
+    """Before a merge resets the merge worktree `d`: wait out what an earlier run left going in it, a fix or
+    repair session in the master window or a gate run, and keep what they made (`held`, `GATES`). The merge
+    is then built again as it was, and reuses them instead of doing them again."""
+    m = C.notes('master.json')
+    try:
+        s = json.loads(m.read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        s = None
+    if s and Path(s.get('cwd', '')) == d:
+        if alive(s['pid']) and MUX.session_id(s['pid']) == s['sid']:
+            log(f'{s["tid"]}: adopted the {s["kind"]} session an earlier run left going in the master window')
+            if not wait_session(s['pid'], s['until']):
+                log(f'{s["tid"]}: the adopted {s["kind"]} session ran past [run] fix_timeout; ended')
+        if keep_made(s, d):
+            log(f'{s["tid"]}: kept what the {s["kind"]} session made ({git("rev-parse", "--short", "HEAD", cwd=d).stdout.strip()})')
+    m.unlink(missing_ok=True)
+    g = C.notes('gate.json')
+    try:
+        s = json.loads(g.read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        s = None
+    if s and alive(s['pid']):
+        log(f'{s["tid"]}: adopted the gate run an earlier run left going on the merge; waiting for it')
+        while alive(s['pid']) and time.time() < s['until']:
+            time.sleep(5)
+        if alive(s['pid']):
+            os.killpg(s['pid'], signal.SIGTERM)
+    if s:
+        gate_done(s)
+    g.unlink(missing_ok=True)
+
+
+GATES = 'gates'  # <notes>/gates/<key>.pass: a tree the merge gate passed on (`merge_gate`)
+
+
+def gate_key(d: Path) -> str:
+    """The merge in `d`'s tree, with the gate command: a pass is one of this command on this tree."""
+    tree = git('rev-parse', 'HEAD^{tree}', cwd=d).stdout.strip()
+    return f'{tree}-{uuid.uuid5(uuid.NAMESPACE_OID, C.run["test"]).hex[:12]}'
+
+
+def gate_done(s: dict) -> tuple[int, str] | None:
+    """The finished gate run `s` (gate.json): (exit code, output), its pass kept; None when it never got to
+    the end (ended, or killed with the machine)."""
+    out, rc = Path(s['out']), Path(s['out']).with_suffix('.rc')
+    try:
+        code, text = int(rc.read_text().strip()), out.read_text(encoding='utf-8', errors='replace').strip()
+    except (OSError, ValueError):
+        return None
+    finally:
+        rc.unlink(missing_ok=True)
+        out.unlink(missing_ok=True)
+    if not code:
+        out.with_suffix('.pass').write_text(s['tid'] + '\n', encoding='utf-8')
+    return code, text
+
+
+def merge_gate(tid: str, d: Path, env: dict) -> tuple[int, str]:
+    """`gate(d, full=True)` for a merge, as a run of its own that outlives the runner (a restart adopts it:
+    `adopt_merge`), and one a tree it already passed on skips: a gate can take an hour."""
+    if not (cmd := C.run['test']):
+        return 0, ''
+    if plat.WINDOWS:
+        return gate(d, full=True, env=env)
+    gates = C.notes(GATES)
+    gates.mkdir(exist_ok=True)
+    for f in gates.iterdir():
+        if f.stat().st_mtime < time.time() - 7 * 86400:
+            f.unlink(missing_ok=True)
+    key = gate_key(d)
+    if (gates / f'{key}.pass').exists():
+        log(f'{tid}: the gate already passed on this exact merge; not run again')
+        return 0, ''
+    out = gates / f'{key}.out'
+    timeout = C.run['timeout']
+    with open(out, 'w', encoding='utf-8') as fh:
+        p = sp.Popen(f'({cmd}\n); echo $? > {shlex.quote(str(out.with_suffix(".rc")))}', shell=True, cwd=str(d),
+                     env=env, stdout=fh, stderr=sp.STDOUT, stdin=sp.DEVNULL, start_new_session=True)
+    s = {'tid': tid, 'pid': p.pid, 'out': str(out), 'until': time.time() + timeout}
+    C.notes('gate.json').write_text(json.dumps(s), encoding='utf-8')
+    try:
+        p.wait(timeout=timeout)
+    except sp.TimeoutExpired:
+        os.killpg(p.pid, signal.SIGTERM)
+        p.wait()
+        gate_done(s)
+        return 124, f'`{cmd}` ran past [run] timeout ({timeout}s): counted as failing'
+    finally:
+        C.notes('gate.json').unlink(missing_ok=True)
+    return gate_done(s) or (p.returncode or 1, f'`{cmd}` left no exit code')
+
+
+def fixer(head: str, prompt: str, cwd: Path, kind: str, to: str, keep: dict | None = None) -> tuple[int | None, str]:
     """`fix_session` under a `head` line in fixer.log: (its exit code, ''), or why it did not run to its end
     (code 0 when there is no agent command, None when it timed out)."""
     with open(C.notes('fixer.log'), 'a', encoding='utf-8') as fh:
         fh.write(f'\n=== {dt.datetime.now().isoformat(timespec="seconds")} {head}\n')
         fh.flush()
         try:
-            return fix_session(prompt, cwd, fh), ''
+            return fix_session(prompt, cwd, fh, keep), ''
         except FileNotFoundError:
             return 0, f'no agent command to {to} with ([run] agent = {C.run["agent"]!r})'
         except sp.TimeoutExpired:
@@ -1527,7 +1682,7 @@ def fix_cmd(prompt: str) -> list[str]:
     return backend().fix_cmd(prompt)
 
 
-def fix_merge(tid: str, branch: str, files: list[str], cwd: Path) -> str | None:
+def fix_merge(tid: str, branch: str, files: list[str], cwd: Path, start: str = '', ref: str = '') -> str | None:
     """Give a conflict the join cannot do to a fresh agent session, in `cwd`. None when it landed.
 
     One session per merge, run to completion while the caller waits: the merge lock is held anyway, so
@@ -1547,7 +1702,8 @@ def fix_merge(tid: str, branch: str, files: list[str], cwd: Path) -> str | None:
                           build_step=BUILD_STEP.format(build=C.run['build'], branch=branch) if C.run['build'] else '')
     logfile = C.notes('fixer.log')
     log(f'{tid}: conflicts in {", ".join(files)} need reading — handing them to a fix session')
-    code, why = fixer(f'{tid} {", ".join(files)}', prompt, cwd, 'fix', 'fix the conflicts')
+    keep = {'kind': 'fix', 'tid': tid, 'start': start, 'ref': ref, 'cwd': str(cwd)} if start else None
+    code, why = fixer(f'{tid} {", ".join(files)}', prompt, cwd, 'fix', 'fix the conflicts', keep)
     if why:
         if code is None:
             note(f'{tid}: the fix session timed out after {C.run["fix_timeout"]}s')
@@ -1556,6 +1712,8 @@ def fix_merge(tid: str, branch: str, files: list[str], cwd: Path) -> str | None:
         return f'the fix session did not finish the merge (exit {code}); see {logfile}'
     if git('merge-base', '--is-ancestor', f'task/{tid}', 'HEAD', cwd=cwd).returncode:
         return f'the fix session aborted the merge; its reason is in {logfile}'
+    if keep:
+        keep_made(keep, cwd)
     note(f'{tid}: conflicts in {", ".join(files)} resolved by a fix session')
     log(f'{tid}: the fix session resolved {", ".join(files)} and committed the merge')
     return None
@@ -1589,8 +1747,11 @@ def repair_merge(tid: str, branch: str, cwd: Path, riders: list[str] = (), base:
                                merge=merge)
         log(f'{tid}: the merge fails the gate — handing it to a repair session')
     before = git('rev-parse', 'HEAD', cwd=cwd).stdout.strip()
+    if kept(tid, before, '', cwd, 'repair'):
+        return None
     logfile = C.notes('fixer.log')
-    if why := fixer(f'{ids} repair (gate failed)', prompt, cwd, 'repair', 'repair it')[1]:
+    keep = {'kind': 'repair', 'tid': tid, 'start': before, 'cwd': str(cwd)}
+    if why := fixer(f'{ids} repair (gate failed)', prompt, cwd, 'repair', 'repair it', keep)[1]:
         return why
     head = git('rev-parse', 'HEAD', cwd=cwd).stdout.strip()
     if head == before:
@@ -1599,6 +1760,7 @@ def repair_merge(tid: str, branch: str, cwd: Path, riders: list[str] = (), base:
         return f'the repair session rewrote the merge instead of committing on top; see {logfile}'
     if git('status', '--porcelain', '--untracked-files=no', cwd=cwd).stdout.strip():
         return f'the repair session left edits uncommitted; see {logfile}'
+    keep_made(keep, cwd)
     log(f'{tid}: the repair session committed {git("rev-list", "--count", f"{before}..{head}", cwd=cwd).stdout.strip()} '
         f'fix(es) on the merge: {git("log", "-1", "--format=%s", cwd=cwd).stdout.strip()[:200]}')
     return None
@@ -1628,7 +1790,7 @@ def tested(tid: str, d: Path, base: str) -> str | None:
     (one that already fails there the same way is not this task's doing, so it merges anyway, and says so).
     """
     env = merge_env()
-    rc, out = gate(d, full=True, env=env)
+    rc, out = merge_gate(tid, d, env)
     if not rc:
         if rx := C.run['flaky']:  # the gate's own rerun of a load flake passed: still a test to fix
             flaky(tid, [n for g in re.findall(rx, out, re.M) for n in re.split(r'[,\s]+', g) if n])
@@ -1719,6 +1881,8 @@ def merge(tid: str, branch: str) -> str | None:
             base, merged = LANDED.pop(tid)
         git('branch', '-d', f'task/{tid}')
         git('update-ref', '-d', TESTED + tid)
+        for h in git('for-each-ref', '--format=%(refname)', f'{HELD}{tid}/').stdout.split():
+            git('update-ref', '-d', h)
         land_tick(tid, merged)
         line = next((l for l in plan_text(branch) if f'**{tid}**' in l), '')
         state = 'blocked' if line.startswith('- [~]') else 'part' if line else 'ticked'
@@ -1766,8 +1930,11 @@ def refix(tid: str, branch: str, ref: str, files: list[str], d: Path, undo: bool
     it did not finish is taken back off `d`, so the batch goes on without it."""
     git('merge', '--abort', cwd=d)
     at = git('rev-parse', 'HEAD', cwd=d).stdout.strip()
+    sha = git('rev-parse', ref, cwd=d).stdout.strip()
+    if kept(tid, at, sha, d, 'fix'):
+        return None
     git('merge', '--no-edit', '-m', msg or f"Merge branch 'task/{tid}'", ref, cwd=d, **task_env(tid))
-    if (why := fix_merge(tid, branch, files, d)) and undo:
+    if (why := fix_merge(tid, branch, files, d, at, sha)) and undo:
         git('merge', '--abort', cwd=d)
         clean(d, at)
     return why
@@ -1827,6 +1994,7 @@ def carry_notes(base: str, d: Path) -> None:
 def merge_batch(tid: str, branch: str) -> str | None:
     """`merge`'s part under the lock: build, test and land task/<tid> and its riders; record them in LANDED."""
     d = worktree('merge', branch)
+    adopt_merge(d)
     if trim(d, 'merge worktree'):
         worktree('merge', branch)
     solo = not C.run['batch']
@@ -3064,8 +3232,11 @@ def run(argv: list[str], prog: str) -> int:
     foreign = queue_cut_off(branch, [n for n in range(1, slots + 1) if n not in procs])
     sweep_tmp(force=True)
     drop_extra_slots(slots, set(procs) | set(queued()) | set(foreign))
-    for tid in unmerged(branch, [n for n in free_at if n not in procs and n not in queued() and n not in foreign]):
-        log(f'{tid}: finished while no run was up; merging it now')
+    left = left_merging()
+    for tid in sorted(unmerged(branch, [n for n in free_at if n not in procs and n not in queued() and n not in foreign]),
+                      key=lambda t: t not in left):  # the merge an earlier run left going first: it adopts that
+        log(f'{tid}: ' + ('its merge was under way when the last run ended; adopting it' if tid in left else
+                          'finished, not merged yet; merging it now'))
         tried.add(tid)
         t = threading.Thread(target=finish, args=(tid, 0, '(unknown)', branch))
         t.start()

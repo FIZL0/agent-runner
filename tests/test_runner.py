@@ -362,6 +362,65 @@ def test_note_on_a_ticked_task(repo: Path):
     has((repo / 'plan/DONE.md').read_text(), r'\*\*U2\*\* noted.* — a person said this', 'and the note went with it')
 
 
+def test_adopt_merge(repo: Path):
+    print('run: a restarted run adopts the gate run and the fix or repair session an earlier one left going')
+    R.init(repo)
+    d = R.worktree('merge', 'main')
+    git(d, 'checkout', '-q', '--detach', 'main')
+    start = git(d, 'rev-parse', 'HEAD')
+    test, R.C.run['test'] = R.C.run['test'], 'echo ok >> ../gate-ran.log'
+    ran = d.parent / 'gate-ran.log'
+    ran.unlink(missing_ok=True)
+    try:
+        if not R.plat.WINDOWS:
+            gates = R.C.notes(R.GATES)
+            gates.mkdir(exist_ok=True)
+            out = gates / f'{R.gate_key(d)}.out'
+            with open(out, 'w') as fh:  # as merge_gate starts it, by a run that is gone now
+                p = R.sp.Popen(f'(sleep 1; {R.C.run["test"]}\n); echo $? > {out.with_suffix(".rc")}', shell=True,
+                               cwd=str(d), stdout=fh, stderr=R.sp.STDOUT, start_new_session=True)
+            R.C.notes('gate.json').write_text(R.json.dumps({'tid': 'Z1', 'pid': p.pid, 'out': str(out),
+                                                            'until': R.time.time() + 60}))
+            eq(R.left_merging(), {'Z1'}, 'a live gate run names its task, which startup merges first')
+            R.adopt_merge(d)
+            p.wait()
+            check(not R.C.notes('gate.json').exists(), 'the adopted gate is waited for')
+            eq(R.merge_gate('Z1', d, R.merge_env()), (0, ''), 'and its pass counts')
+            eq(ran.read_text().count('ok'), 1, 'so the gate is not run a second time on that merge')
+            eq(R.merge_gate('Z1', d, R.merge_env())[0], 0, 'nor a third')
+        (d / 'z1.py').write_text('# repaired\n')
+        git(d, 'add', 'z1.py'), git(d, 'commit', '-qm', 'Z1: repair')
+        made = git(d, 'rev-parse', 'HEAD')
+        # a repair session that ended while no run was up: its pid is gone, its commit is in the worktree
+        R.C.notes('master.json').write_text(R.json.dumps({'kind': 'repair', 'tid': 'Z1', 'start': start,
+                                                          'cwd': str(d), 'pid': 999999999, 'sid': 'x', 'until': 0}))
+        R.adopt_merge(d)
+        eq(git(repo, 'rev-parse', R.held('Z1', start)), made, 'what the repair made is kept')
+        git(d, 'checkout', '-q', '--detach', start)
+        check(R.kept('Z1', start, '', d, 'repair') and git(d, 'rev-parse', 'HEAD') == made,
+              'and the rebuilt merge takes it instead of a second session')
+        check(not R.kept('Z1', made, '', d, 'repair'), 'a different merge is not one it repaired')
+        git(d, 'checkout', '-q', '--detach', start)
+        git(d, 'checkout', '-q', '-b', 'z1-side')
+        (d / 'z1-side.py').write_text('# side\n')
+        git(d, 'add', 'z1-side.py'), git(d, 'commit', '-qm', 'side')
+        side = git(d, 'rev-parse', 'HEAD')
+        git(d, 'checkout', '-q', '--detach', start)
+        git(d, 'merge', '-q', '--no-ff', '--no-edit', side)
+        fix = {'kind': 'fix', 'tid': 'Z1', 'start': start, 'ref': side, 'cwd': str(d)}
+        check(R.keep_made(fix, d), 'a fix session that committed the merge is kept')
+        check(not R.keep_made({**fix, 'ref': made}, d), 'one that merged something else is not')
+        git(d, 'checkout', '-q', '--detach', start)
+        check(R.kept('Z1', start, side, d, 'fix') and git(d, 'rev-parse', 'HEAD^2') == side, 'and is reused')
+    finally:
+        R.C.run['test'] = test
+        git(d, 'checkout', '-q', '--detach', 'main')
+        git(repo, 'branch', '-D', 'z1-side')
+        for h in git(repo, 'for-each-ref', '--format=%(refname)', R.HELD).split():
+            git(repo, 'update-ref', '-d', h)
+        R.C.notes('master.json').unlink(missing_ok=True)
+
+
 def test_merge(repo: Path, tmp: Path):
     print('run: a finished branch is joined, tested, landed, pushed, and frees what it blocked')
     R.init(repo)
@@ -884,8 +943,8 @@ def test_gate_and_batches(repo: Path, tmp: Path):
     git(d, 'add', 'only_on_head')
     git(d, 'commit', '-qm', 'head')
     head = git(d, 'rev-parse', 'HEAD')
-    gate_was = R.gate
-    R.gate = lambda cwd, key='test', full=False, env=None: (1, 'FAIL t_a\nboom')
+    gate_was = R.merge_gate
+    R.merge_gate = lambda tid, cwd, env: (1, 'FAIL t_a\nboom')
     r['failures'] = r'^FAIL (\S+)'
     try:
         r['retest'] = 'exit /b 0' if R.plat.WINDOWS else 'true'
@@ -905,7 +964,7 @@ def test_gate_and_batches(repo: Path, tmp: Path):
         r['failures'] = ''
         has(R.tested('X', d, base) or '', r'boom', 'without [run] failures a failure is a failure')
     finally:
-        R.gate = gate_was
+        R.merge_gate = gate_was
         r['failures'] = r['retest'] = ''
 
     commit_on(repo, 'B1', {'b1.py': '1\n'}, 'B1: one')
@@ -1425,8 +1484,8 @@ def test_tested_ref(repo: Path, tmp: Path):
        'done records what its gate passed on, seen from the main checkout too')
     git(d, 'checkout', '-q', '--detach')
     calls: list = []
-    gate_was = R.gate
-    R.gate = lambda *a, **k: calls.append(1) or gate_was(*a, **k)
+    gate_was = R.merge_gate
+    R.merge_gate = lambda *a, **k: calls.append(1) or gate_was(*a, **k)
     R.C.run['repair_merges'] = False
     try:
         eq(R.merge('G1', 'main'), None, 'the gated branch lands')
@@ -1437,7 +1496,7 @@ def test_tested_ref(repo: Path, tmp: Path):
             'a branch done never gated is tested, though the merge is a fast-forward')
         check(not (repo / 'BROKEN').exists(), 'and stays off main')
     finally:
-        R.gate = gate_was
+        R.merge_gate = gate_was
         R.C.run['repair_merges'] = True
         git(repo, 'branch', '-D', 'task/G2')
 
@@ -1794,7 +1853,7 @@ def main() -> int:
                        lambda: test_session_tmp(repo, tmp), lambda: test_end_orphans(repo), lambda: test_tested_ref(repo, tmp),
                        lambda: test_no_pane(repo, tmp), lambda: test_other_repos_panes(repo, tmp),
                        lambda: test_limit_lets_go(repo),
-                       lambda: test_shared_push(repo, tmp), lambda: test_note_on_a_ticked_task(repo), lambda: test_followups(repo), lambda: test_ci_watch(repo), test_update_notice,
+                       lambda: test_shared_push(repo, tmp), lambda: test_note_on_a_ticked_task(repo), lambda: test_adopt_merge(repo), lambda: test_followups(repo), lambda: test_ci_watch(repo), test_update_notice,
                        lambda: test_stalled(tmp)])
 
 
