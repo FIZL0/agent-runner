@@ -74,7 +74,7 @@ from agent_runner import ci, gitops, plat, plansync
 # `cmd_stop(argv)` are the commands; `PROMPT`, `FIXER` and `OTHERS` may be replaced before `cmd_run`.
 __all__ = ['init', 'cmd_run', 'cmd_stop', 'pick', 'tasks', 'prompt_for', 'reopen_landed', 'retry_reopened',
            'ask_stop', 'stopping', 'cmd_resume', 'PROMPT', 'FIXER', 'OTHERS']
-from agent_runner.config import RUNNER, Config, cfg, finished_mark, main_checkout, runner_cmd
+from agent_runner.config import RUNNER, Config, cfg, finished_mark, main_checkout, runner_cmd, ensure_local
 from agent_runner.done import TESTED, gate
 from agent_runner.gitops import _net, drop_if_merged, push, shared_name
 
@@ -3037,6 +3037,7 @@ def run(argv: list[str], prog: str) -> int:
         return dry_run(slots, mode, branch)
 
     lock = single_run()  # noqa: F841 — held until the process ends
+    ensure_local(ROOT)  # this machine's runner.local.toml: made once (all comments), never rewritten, git-ignored
     if stopping():  # left by a run that was killed before it saw it; a stop is for the run that is up
         C.notes('STOP').unlink(missing_ok=True)
         log('cleared a stop request left by an earlier run')

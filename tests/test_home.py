@@ -42,5 +42,33 @@ eq(run(repo, 'home').stdout.strip(), str(tmp / 'machine/proj'), '`home` prints i
 eq(run(repo, 'home', 'slots').stdout.strip(), str(tmp / 'machine/proj'), '`home slots` prints the worktrees')
 eq(run(repo, 'home', 'bogus').returncode, 2, 'anything else is a usage error')
 
+print("runner.local.toml: one machine's settings over runner.toml, never shared, never rewritten")
+from agent_runner.config import LOCAL, ensure_local  # noqa: E402
+from _check import check  # noqa: E402
+(repo / 'runner.toml').write_text('[run]\nslots = 3\nweekly_max = 90\nmodel = "opus"\n', encoding='utf-8')
+f = ensure_local(repo)
+eq(f, repo / LOCAL, 'run makes it in the main checkout')
+r = Config(repo).run
+eq((r['slots'], r['weekly_max'], r['model']), (3, 90, 'opus'), 'the made file is all comments: it changes nothing')
+check(LOCAL not in git(repo, 'status', '--porcelain', '--untracked-files=all'), 'and git does not see it')
+eq(git(repo, 'check-ignore', LOCAL), LOCAL, 'it is ignored (the clone\'s .git/info/exclude)')
+f.write_text('[run]\nweekly_max = 50\nslots = 1\n', encoding='utf-8')
+r = Config(repo).run
+eq((r['slots'], r['weekly_max'], r['model']), (1, 50, 'opus'), 'its keys win; the rest stay runner.toml\'s')
+ensure_local(repo)
+eq(f.read_text(encoding='utf-8'), '[run]\nweekly_max = 50\nslots = 1\n', 'and a run never rewrites it')
+exclude = repo / '.git/info/exclude'
+eq(exclude.read_text(encoding='utf-8').count(f'/{LOCAL}'), 1, 'nor adds it to the excludes twice')
+f.write_text('[agent-runner.run]\nweekly_max = 40\n', encoding='utf-8')
+eq(Config(repo).run['weekly_max'], 40, 'it may wrap its tables in [agent-runner] too')
+f.write_text('[run\n', encoding='utf-8')
+try:
+    Config(repo)
+except SystemExit as e:
+    check(LOCAL in str(e), 'a broken one stops the run naming the file', str(e))
+else:
+    check(False, 'a broken one stops the run naming the file')
+f.unlink()
+
 os.environ['AGENT_RUNNER_HOME'] = env
 raise SystemExit(1 if FAILED else print('\nall checks passed'))

@@ -2,6 +2,14 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
+## 0.15.0 (2026-11-04)
+
+- `runner.local.toml`: one machine's settings (`weekly_max`, `slots`, `model`, any key) laid over
+  `runner.toml` key by key, so a person tunes their own run without editing the shared file. `run` creates
+  it in the main checkout (all comments, changing nothing) when it is missing and never rewrites it, and
+  keeps it out of git through the clone's `.git/info/exclude`. Worktrees read the main checkout's; it may
+  wrap its tables in `[agent-runner]` like a wrapped config; a broken one stops the run naming the file.
+
 ## 0.14.1 (2026-11-04)
 
 - `[run] ci_watch` defaults to `"auto"`: every workflow in `.github/workflows/` that runs on a push to the

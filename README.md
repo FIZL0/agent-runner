@@ -531,6 +531,20 @@ If `AGENT_RUNNER_CONFIG` names a file, the settings come from that file instead:
 `[agent-runner]` table (`[agent-runner.run]`, …) if it has one, else from its top level. This lets a
 project keep them in its own config file (see [docs/SETUP.md](docs/SETUP.md#wrapping-it-from-your-own-cli)).
 
+**`runner.local.toml` is one machine's settings.** Laid over the shared file key by key, table by table, it
+changes what one person needs without editing what everyone shares: a lower `weekly_max` for a smaller
+plan, fewer `slots` on a laptop, another `model`. `run` creates it in the main checkout when it is missing,
+all comments so it changes nothing, and never rewrites it after that; it keeps it out of git through the
+clone's `.git/info/exclude`, so neither a `git add` nor another person sees it. Worktrees read the main
+checkout's.
+
+```toml
+# runner.local.toml
+[run]
+weekly_max = 50
+slots = 2
+```
+
 ```toml
 [plan]
 dir = "plan"              # TODO.md, DONE.md, tasks/<ID>.md; outside the repo, one copy for every worktree

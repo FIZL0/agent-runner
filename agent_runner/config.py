@@ -19,6 +19,12 @@ Where the settings come from, first match wins:
    is relative to the main checkout.
 2. `runner.toml` at the root of the checkout, else the main checkout's (a git-ignored one is only there).
 
+Then `runner.local.toml` (the checkout's, else the main checkout's), if there is one, is laid over it key by
+key, table by table: one person's settings on one machine (`weekly_max`, `slots`, `model`) without editing the
+file everyone shares. It may wrap its tables in `[agent-runner]` too. `run` creates it in the main checkout
+(all comments, so it changes nothing) when it is missing and never rewrites it, and keeps it out of git by
+adding it to the clone's `.git/info/exclude`.
+
 `AGENT_RUNNER_BACKEND=claude|pi` runs on that backend whatever the file says (its `agent`, `model` and
 `fix_model` then fall back to the backend's defaults), e.g. to try a task on Pi with the repo's own config.
 """
@@ -181,16 +187,80 @@ def config_file(root: Path) -> Path | None:
     return None
 
 
+LOCAL = 'runner.local.toml'
+
+
+def local_file(root: Path) -> Path | None:
+    """This machine's `runner.local.toml`: the checkout's, else the main checkout's (a git-ignored file is
+    only there), or None."""
+    return next((f for f in (root / LOCAL, main_checkout(root) / LOCAL) if f.is_file()), None)
+
+
+def keep_local_ignored(root: Path) -> None:
+    """Add `runner.local.toml` to the clone's `.git/info/exclude` unless git ignores it already: it is one
+    person's settings, and a `git add` of the folder must not share it."""
+    if not subprocess.run(['git', 'check-ignore', '-q', LOCAL], cwd=str(root), capture_output=True).returncode:
+        return
+    r = subprocess.run(['git', 'rev-parse', '--git-common-dir'], cwd=str(root), capture_output=True, text=True)
+    if r.returncode:
+        return
+    ex = (root / r.stdout.strip()).resolve() / 'info' / 'exclude'
+    try:
+        ex.parent.mkdir(parents=True, exist_ok=True)
+        old = ex.read_text(encoding='utf-8') if ex.exists() else ''
+        ex.write_text(old + ('' if not old or old.endswith('\n') else '\n') + f'/{LOCAL}\n', encoding='utf-8')
+    except OSError:
+        pass
+
+
+LOCAL_TEMPLATE = """\
+# This machine's agent-runner settings, laid over runner.toml key by key. Git ignores this file (the runner
+# added it to .git/info/exclude) and the runner never rewrites it: what you set here stays yours.
+# Uncomment and edit; any key runner.toml takes works here, in the same tables.
+
+# [run]
+# weekly_max = 90        # % of the account's 7-day usage past which no new task starts
+# slots = 3              # parallel sessions on this machine
+# model = "opus"
+# min_free_gb = 10       # below this free disk space no new task starts
+"""
+
+
+def ensure_local(root: Path) -> Path:
+    """Create `root`/runner.local.toml from LOCAL_TEMPLATE if it is missing (never rewrite one), and keep it
+    out of git. The path."""
+    f = root / LOCAL
+    if not f.exists():
+        try:
+            f.write_text(LOCAL_TEMPLATE, encoding='utf-8')
+        except OSError:
+            return f
+    keep_local_ignored(root)
+    return f
+
+
+def _load(f: Path) -> dict:
+    with open(f, 'rb') as fh:
+        raw = tomllib.load(fh)
+    return raw['agent-runner'] if isinstance(raw.get('agent-runner'), dict) else raw
+
+
 class Config:
     def __init__(self, root: Path):
         self.root = root
         raw: dict = {}
         self.file = config_file(root)
         if self.file:
-            with open(self.file, 'rb') as fh:
-                raw = tomllib.load(fh)
-            if isinstance(raw.get('agent-runner'), dict):
-                raw = raw['agent-runner']
+            raw = _load(self.file)
+        self.local = local_file(root)
+        if self.local:
+            try:
+                mine = _load(self.local)
+            except tomllib.TOMLDecodeError as e:
+                raise SystemExit(f'agent-runner: {self.local}: {e}')
+            raw = {**raw, **{k: ({**raw.get(k, {}), **v} if isinstance(v, dict) and isinstance(raw.get(k), dict)
+                                 else v) for k, v in mine.items()}}
+            keep_local_ignored(self.local.parent)
         supplied = dict(raw.get('run', {}))
         infer = lambda run: run.get('backend') or (
             'pi' if Path(run.get('agent', 'claude').replace('\\', '/')).stem.lower() == 'pi' else 'claude')
