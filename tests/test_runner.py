@@ -945,7 +945,7 @@ def test_gate_and_batches(repo: Path, tmp: Path):
     git(d, 'commit', '-qm', 'head')
     head = git(d, 'rev-parse', 'HEAD')
     gate_was = R.merge_gate
-    R.merge_gate = lambda tid, cwd, env: (1, 'FAIL t_a\nboom')
+    R.merge_gate = lambda tid, cwd, env, batch=None: (1, 'FAIL t_a\nboom')
     r['failures'] = r'^FAIL (\S+)'
     try:
         r['retest'] = 'exit /b 0' if R.plat.WINDOWS else 'true'
@@ -1388,11 +1388,48 @@ def test_merge_ahead(repo: Path):
         first.join(60), second.join(60)
         log = (repo / '.runner/run.log').read_text()
         has(log, r'H2: merged ahead on the merge under test', 'H2 was built on H1 during its gate')
-        has(log, r'H2: reusing the merge built ahead', 'and its turn took that merge')
+        has(log, r'H2: reusing the merge already built and gated', 'and its turn took that merge')
         check((repo / 'h1.py').exists() and (repo / 'h2.py').exists(), 'both landed')
         eq(ran.read_text().count('ok'), 2, 'two gate runs, side by side, not a third after H1 landed')
     finally:
         R.C.run['test'], R.AHEAD_POLL = test, poll
+        ran.unlink(missing_ok=True)
+
+
+def test_adopted_gate_merge(repo: Path):
+    print('run: a merge whose gate passed under an earlier run lands as it was, plan commits since or not')
+    if R.plat.WINDOWS:
+        return
+    R.init(repo)
+    ran = R.SLOTS_DIR / 'gate-ran.log'
+    test, R.C.run['test'] = R.C.run['test'], f'echo ok >> {ran}'
+    untested, R.C.run['untested'] = R.C.run['untested'], ['plan/*', '*.md']
+    try:
+        commit_on(repo, 'Y1', {'y1.py': '1\n'}, 'Y1: one')
+        d = R.worktree('merge', 'main')
+        base = git(repo, 'rev-parse', 'main')
+        git(d, 'checkout', '-q', '--detach', base)
+        git(d, 'merge', '-q', '--no-edit', 'task/Y1')
+        eq(R.merge_gate('Y1', d, R.merge_env(), {'base': base, 'tids': ['Y1']})[0], 0, 'the earlier run\'s gate')
+        # as if it was still running when that run ended: the record outlives it
+        rec = R.C.notes(R.GATES) / f'{R.gate_key(d)}.json'
+        rec.write_text(R.json.dumps({'tid': 'Y1', 'pid': 999999999, 'out': str(rec.with_suffix('.out')),
+                                     'until': 0, 'cwd': str(d), 'rec': str(rec), 'base': base, 'tids': ['Y1'],
+                                     'head': git(d, 'rev-parse', 'HEAD')}))
+        git(d, 'checkout', '-q', '--detach', base)
+        (repo / 'plan/TODO.md').write_text((repo / 'plan/TODO.md').read_text() + '\n')
+        git(repo, 'commit', '-qam', 'plan: a note meanwhile')
+        commit_on(repo, 'Y2', {'y2.py': '2\n'}, 'Y2: two')
+        R.WAITING.add('Y2')  # finished meanwhile: not in the gated merge
+        eq(R.merge('Y1', 'main'), None, 'it lands')
+        has((repo / '.runner/run.log').read_text(), r'Y1: reusing the merge already built and gated',
+            'the adopted merge is reused')
+        eq(ran.read_text().count('ok'), 1, 'the gate is not run again')
+        check((repo / 'y1.py').exists() and not (repo / 'y2.py').exists(), 'Y2 waits for its own turn')
+        R.WAITING.discard('Y2')
+        eq(R.merge('Y2', 'main'), None, 'which lands after')
+    finally:
+        R.C.run['test'], R.C.run['untested'] = test, untested
         ran.unlink(missing_ok=True)
 
 
@@ -1875,7 +1912,7 @@ def main() -> int:
                        lambda: test_gate_and_batches(repo, tmp),
                        lambda: test_platform(repo, tmp), lambda: test_shutdown(repo), lambda: test_merge_into(tmp),
                        lambda: test_leftovers(repo), lambda: test_renumber(repo),
-                       lambda: test_stop_waiter(tmp), lambda: test_stop_hook_grace(tmp), lambda: test_land_waits_aloud(repo), lambda: test_merge_ahead(repo), lambda: test_land_gives_merge_back(repo),
+                       lambda: test_stop_waiter(tmp), lambda: test_stop_hook_grace(tmp), lambda: test_land_waits_aloud(repo), lambda: test_merge_ahead(repo), lambda: test_adopted_gate_merge(repo), lambda: test_land_gives_merge_back(repo),
                        lambda: test_edited_elsewhere(repo, tmp),
                        lambda: test_resume(repo, tmp),
                        lambda: test_session_tmp(repo, tmp), lambda: test_end_orphans(repo), lambda: test_tested_ref(repo, tmp),

@@ -2,6 +2,13 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
+## 0.19.1 (2026-11-05)
+
+- A gate that passed under an earlier run is not wasted when tasks finish or plan commits land in
+  between: its merge is reused as it was gated (the gate record keeps the batch), the plan commits are
+  merged into it, and the tasks that finished meanwhile wait for the next turn. A gate pass is now keyed
+  on the files the gate tests (`[run] untested` left out), so a plan commit does not make a passed merge new.
+
 ## 0.19.0 (2026-11-05)
 
 - Merge ahead (`[run] merge_ahead`, on by default): tasks that finish while a batch is in its gate are

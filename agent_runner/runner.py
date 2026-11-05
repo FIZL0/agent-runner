@@ -51,6 +51,7 @@ import argparse
 import datetime as dt
 import fnmatch
 import glob
+import hashlib
 import json
 import os
 import re
@@ -1594,7 +1595,10 @@ def adopt_merge(d: Path) -> None:
             continue  # merge2's, built ahead: a turn whose merge is the same waits for it by its tree
         if alive(s['pid']):
             log(f'{s["tid"]}: adopted the gate run an earlier run left going on the merge; waiting for it')
-        wait_gate(s)
+        if (r := wait_gate(s)) and r[0] == 0 and s.get('head') and \
+                git('cat-file', '-e', f'{s["head"]}^{{commit}}').returncode == 0:
+            AHEAD.update(base=s['base'], tids=s['tids'], merged=s['head'])  # its turn reuses that merge
+            (C.notes(GATES) / f'{gate_key(d, s["head"])}.pass').touch()  # kept under this version's key too
 
 
 def gate_runs() -> list[dict]:
@@ -1660,7 +1664,7 @@ def _build_ahead(branch: str, base: str, cands: list[str]) -> None:
         git('commit', '-qm', f'{tids[0]}: archive ticked tasks', '--', *plan_files, cwd=d)
     AHEAD.update(base=base, tids=tids, merged=git('rev-parse', 'HEAD', cwd=d).stdout.strip())
     log(f'{", ".join(tids)}: merged ahead on the merge under test; its gate runs beside that one')
-    merge_gate(tids[0], d, merge_env())
+    merge_gate(tids[0], d, merge_env(), {'base': base, 'tids': tids})
 
 
 def drop_ahead() -> None:
@@ -1674,9 +1678,12 @@ def drop_ahead() -> None:
 GATES = 'gates'  # <notes>/gates/<key>.pass: a tree the merge gate passed on (`merge_gate`)
 
 
-def gate_key(d: Path) -> str:
-    """The merge in `d`'s tree, with the gate command: a pass is one of this command on this tree."""
-    tree = git('rev-parse', 'HEAD^{tree}', cwd=d).stdout.strip()
+def gate_key(d: Path, rev: str = 'HEAD') -> str:
+    """The merge in `d`'s tree, with the gate command: a pass is one of this command on this tree. Files the
+    gate does not test (`[run] untested`: the plan, notes) are left out, so a plan commit or a ticked task
+    does not make a passed merge new."""
+    files = git('ls-tree', '-r', rev, cwd=d).stdout.splitlines()
+    tree = hashlib.sha1('\n'.join(f for f in files if not untestable(f.split('\t', 1)[-1])).encode()).hexdigest()
     return f'{tree}-{uuid.uuid5(uuid.NAMESPACE_OID, C.run["test"]).hex[:12]}'
 
 
@@ -1706,7 +1713,7 @@ def _gate_done(s: dict) -> tuple[int, str] | None:
     return code, text
 
 
-def merge_gate(tid: str, d: Path, env: dict) -> tuple[int, str]:
+def merge_gate(tid: str, d: Path, env: dict, batch: dict | None = None) -> tuple[int, str]:
     """`gate(d, full=True)` for a merge, as a run of its own that outlives the runner (a restart adopts it:
     `adopt_merge`), and one a tree it already passed on skips: a gate can take an hour."""
     if not (cmd := C.run['test']):
@@ -1734,7 +1741,8 @@ def merge_gate(tid: str, d: Path, env: dict) -> tuple[int, str]:
     with open(out, 'w', encoding='utf-8') as fh:
         p = sp.Popen(f'({cmd}\n); echo $? > {shlex.quote(str(out.with_suffix(".rc")))}', shell=True, cwd=str(d),
                      env=env, stdout=fh, stderr=sp.STDOUT, stdin=sp.DEVNULL, start_new_session=True)
-    s = {'tid': tid, 'pid': p.pid, 'out': str(out), 'until': time.time() + timeout, 'cwd': str(d), 'rec': str(rec)}
+    s = {'tid': tid, 'pid': p.pid, 'out': str(out), 'until': time.time() + timeout, 'cwd': str(d), 'rec': str(rec),
+         **(batch or {}), 'head': git('rev-parse', 'HEAD', cwd=d).stdout.strip()}
     rec.write_text(json.dumps(s), encoding='utf-8')
     try:
         p.wait(timeout=timeout)
@@ -1867,7 +1875,7 @@ def gated(tid: str) -> bool:
     return bool(tree) and tree == git('rev-parse', '-q', '--verify', f'task/{tid}^{{tree}}').stdout.strip()
 
 
-def tested(tid: str, d: Path, base: str) -> str | None:
+def tested(tid: str, d: Path, base: str, tids: list[str] | None = None) -> str | None:
     """Run the gate on the merge checked out in `d`: None when it passes, else why.
 
     With `[run] failures` and `retest`, a failure gets two more looks before it counts: rerun alone (a test
@@ -1875,7 +1883,7 @@ def tested(tid: str, d: Path, base: str) -> str | None:
     (one that already fails there the same way is not this task's doing, so it merges anyway, and says so).
     """
     env = merge_env()
-    rc, out = merge_gate(tid, d, env)
+    rc, out = merge_gate(tid, d, env, {'base': base, 'tids': tids or [tid]})
     if not rc:
         if rx := C.run['flaky']:  # the gate's own rerun of a load flake passed: still a test to fix
             flaky(tid, [n for g in re.findall(rx, out, re.M) for n in re.split(r'[,\s]+', g) if n])
@@ -2094,13 +2102,21 @@ def merge_batch(tid: str, branch: str) -> str | None:
             base = git('rev-parse', branch).stdout.strip()
             git('checkout', '-q', '--detach', base, cwd=d)
             ahead = dict(AHEAD)
-            if ahead.get('base') == base and tid in ahead['tids'] and \
+            if ahead and (ahead['base'] == base or git('merge-base', '--is-ancestor', ahead['base'], base).returncode == 0
+                          and all(map(untestable, git('diff', '--name-only', ahead['base'], base).stdout.split()))) \
+                    and tid in ahead['tids'] and \
                     set(ahead['tids']) - {tid} <= WAITING - set(LANDED):  # built on the merge that just landed
                 AHEAD.clear()
                 clean(d, ahead['merged'])
                 riders = [t for t in ahead['tids'] if t != tid]
-                log(f'{tid}: reusing the merge built ahead' + (f' with {", ".join(riders)}' if riders else '') +
-                    ' while the last one was tested')
+                log(f'{tid}: reusing the merge already built and gated (ahead, or by an earlier run)' +
+                    (f' with {", ".join(riders)}' if riders else ''))
+                if ahead['base'] != base:  # the branch moved by untested files only: take them in
+                    if (files := merge_into(d, base, f'Merge {branch} into the merge of task/{tid}')) is None or \
+                            files and not joined(files, tid, d):
+                        git('merge', '--abort', cwd=d)
+                        log(f'{tid}: {branch} moved and conflicts with it; building the merge again')
+                        continue
             else:
                 if ahead:
                     drop_ahead()  # the branch moved some other way, or its tasks are gone: not this merge
@@ -2158,7 +2174,7 @@ def merge_batch(tid: str, branch: str) -> str | None:
                     threading.Thread(target=build_ahead, args=(branch, merged, ahead_done, {tid, *riders}),
                                      daemon=True).start()
                 try:
-                    why = tested(tid, d, base)
+                    why = tested(tid, d, base, [tid, *riders])
                 finally:
                     ahead_done.set()
                 if why:
