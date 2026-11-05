@@ -123,6 +123,7 @@ DEFAULTS: dict = {
                                 # "auto": every workflow that runs on a push to it (push runs only); false: off
         'ci_kind': 'B',         # the id prefix that task gets
         'batch': True,          # finished branches waiting for the merge go in together under one gate run
+        'merge_ahead': True,    # tasks finishing during a batch's gate are merged on it and tested beside it
         'before_start': '',     # a command that must succeed before a session starts; the slot waits on it
         'not_attempt': '',      # a regex on a finished branch's first commit subject ({id}): such a session
                                 # (a spec phase, say) is not the run's one attempt at the task

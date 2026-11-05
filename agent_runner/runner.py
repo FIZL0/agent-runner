@@ -548,12 +548,12 @@ def unmerged(branch: str, idle: list[int]) -> list[str]:
 def left_merging() -> set[str]:
     """The tasks whose fix or repair session or gate run an earlier run left going (`adopt_merge`)."""
     out = set()
-    for f in ('master.json', 'gate.json'):
-        try:
-            s = json.loads(C.notes(f).read_text(encoding='utf-8'))
-        except (OSError, ValueError):
-            continue
-        if alive(s.get('pid')):
+    try:
+        runs = [json.loads(C.notes('master.json').read_text(encoding='utf-8'))]
+    except (OSError, ValueError):
+        runs = []
+    for s in runs + (gate_runs() if C.notes(GATES).is_dir() else []):
+        if alive(s.get('pid')) and Path(s.get('cwd', '')).name != 'merge2':
             out.add(s['tid'])
     return out
 
@@ -1059,6 +1059,8 @@ def low_disk(free_slots) -> bool:
                 trim(d, 'merge worktree', why)
             finally:
                 MERGE.release()
+        if (d := SLOTS_DIR / 'merge2').is_dir() and not AHEAD_BUSY.locked() and not AHEAD:
+            trim(d, 'merge-ahead worktree', why)
         if free_gb() >= want:
             return False
     if not DISK_SAID[0]:
@@ -1587,20 +1589,86 @@ def adopt_merge(d: Path) -> None:
         if keep_made(s, d):
             log(f'{s["tid"]}: kept what the {s["kind"]} session made ({git("rev-parse", "--short", "HEAD", cwd=d).stdout.strip()})')
     m.unlink(missing_ok=True)
-    g = C.notes('gate.json')
-    try:
-        s = json.loads(g.read_text(encoding='utf-8'))
-    except (OSError, ValueError):
-        s = None
-    if s and alive(s['pid']):
-        log(f'{s["tid"]}: adopted the gate run an earlier run left going on the merge; waiting for it')
-        while alive(s['pid']) and time.time() < s['until']:
-            time.sleep(5)
+    for s in gate_runs():
+        if Path(s.get('cwd', '')) != d:
+            continue  # merge2's, built ahead: a turn whose merge is the same waits for it by its tree
         if alive(s['pid']):
+            log(f'{s["tid"]}: adopted the gate run an earlier run left going on the merge; waiting for it')
+        wait_gate(s)
+
+
+def gate_runs() -> list[dict]:
+    """The merge gates running, or left by a run that ended: `<notes>/gates/<key>.json`."""
+    out = []
+    for f in sorted(C.notes(GATES).glob('*.json')) if C.notes(GATES).is_dir() else []:
+        try:
+            out.append({**json.loads(f.read_text(encoding='utf-8')), 'rec': str(f)})
+        except (OSError, ValueError):
+            f.unlink(missing_ok=True)
+    return out
+
+
+def wait_gate(s: dict) -> tuple[int, str] | None:
+    """Wait for the gate run `s` (another thread's or an earlier run's) to end: `gate_done`'s answer."""
+    while alive(s['pid']) and time.time() < s['until']:
+        time.sleep(5)
+    if alive(s['pid']):
+        os.killpg(s['pid'], signal.SIGTERM)
+    r = gate_done(s)
+    Path(s['rec']).unlink(missing_ok=True)
+    return r
+
+
+AHEAD_BUSY = threading.Lock()  # held while build_ahead uses merge2
+AHEAD_POLL = 30  # seconds between looks for tasks that finished during a gate
+AHEAD: dict = {}  # the next batch, built on the merge under test: {'base', 'tids', 'merged'} (`build_ahead`)
+
+
+def build_ahead(branch: str, base: str, done: threading.Event, taken: set[str]) -> None:
+    """While the merge `base` is in its gate: the tasks that finished since, merged on top of it in a second
+    worktree (merge2) and tested there beside it. When `base` lands, their turn reuses that merge, and with
+    it the gate run already passed or under way (`merge_gate` goes by tree), instead of a gate from the start.
+    A conflict a join cannot do is left for that task's turn (one fix session at a time)."""
+    while not done.wait(AHEAD_POLL):
+        if cands := sorted(WAITING - taken - set(LANDED)):
+            break
+    else:
+        return
+    with AHEAD_BUSY:
+        _build_ahead(branch, base, cands)
+
+
+def _build_ahead(branch: str, base: str, cands: list[str]) -> None:
+    d = worktree('merge2', branch)
+    git('merge', '--abort', cwd=d)
+    clean(d)
+    git('checkout', '-q', '--detach', base, cwd=d)
+    tids = []
+    for t in cands:
+        ref = renumber_doubles(f'task/{t}', 'HEAD', t, d)
+        if (files := merge_into(d, ref, merge_message(t, ref), t)) is None or files and not joined(files, t, d):
+            git('merge', '--abort', cwd=d)
+            continue
+        tids.append(t)
+    if not tids:
+        return
+    if not C.plan_external:
+        carry_notes(base, d)
+        P.archive(d / plan_rel('TODO.md'), d / plan_rel('DONE.md'))
+    plan_files = [plan_rel('TODO.md'), plan_rel('DONE.md')]
+    if git('status', '--porcelain', '--', *plan_files, cwd=d).stdout.strip():
+        git('commit', '-qm', f'{tids[0]}: archive ticked tasks', '--', *plan_files, cwd=d)
+    AHEAD.update(base=base, tids=tids, merged=git('rev-parse', 'HEAD', cwd=d).stdout.strip())
+    log(f'{", ".join(tids)}: merged ahead on the merge under test; its gate runs beside that one')
+    merge_gate(tids[0], d, merge_env())
+
+
+def drop_ahead() -> None:
+    """The batch built ahead is on a merge that will not land as it is: its gate is stopped."""
+    AHEAD.clear()
+    for s in gate_runs():
+        if Path(s.get('cwd', '')).name == 'merge2' and alive(s['pid']):
             os.killpg(s['pid'], signal.SIGTERM)
-    if s:
-        gate_done(s)
-    g.unlink(missing_ok=True)
 
 
 GATES = 'gates'  # <notes>/gates/<key>.pass: a tree the merge gate passed on (`merge_gate`)
@@ -1612,10 +1680,20 @@ def gate_key(d: Path) -> str:
     return f'{tree}-{uuid.uuid5(uuid.NAMESPACE_OID, C.run["test"]).hex[:12]}'
 
 
+GATE_DONE = threading.Lock()
+
+
 def gate_done(s: dict) -> tuple[int, str] | None:
-    """The finished gate run `s` (gate.json): (exit code, output), its pass kept; None when it never got to
-    the end (ended, or killed with the machine)."""
+    """The finished gate run `s` (gates/<key>.json): (exit code, output), its pass kept; None when it never
+    got to the end (ended, or killed with the machine), or another thread read it first."""
+    with GATE_DONE:
+        return _gate_done(s)
+
+
+def _gate_done(s: dict) -> tuple[int, str] | None:
     out, rc = Path(s['out']), Path(s['out']).with_suffix('.rc')
+    if out.with_suffix('.pass').exists():
+        return 0, ''
     try:
         code, text = int(rc.read_text().strip()), out.read_text(encoding='utf-8', errors='replace').strip()
     except (OSError, ValueError):
@@ -1644,13 +1722,20 @@ def merge_gate(tid: str, d: Path, env: dict) -> tuple[int, str]:
     if (gates / f'{key}.pass').exists():
         log(f'{tid}: the gate already passed on this exact merge; not run again')
         return 0, ''
+    rec = gates / f'{key}.json'
+    for s in gate_runs():
+        if s['rec'] == str(rec) and alive(s['pid']):
+            log(f'{tid}: a gate on this exact merge is already running (built ahead, or left by an earlier run); '
+                f'waiting for it')
+            if (r := wait_gate(s)) is not None:
+                return r
     out = gates / f'{key}.out'
     timeout = C.run['timeout']
     with open(out, 'w', encoding='utf-8') as fh:
         p = sp.Popen(f'({cmd}\n); echo $? > {shlex.quote(str(out.with_suffix(".rc")))}', shell=True, cwd=str(d),
                      env=env, stdout=fh, stderr=sp.STDOUT, stdin=sp.DEVNULL, start_new_session=True)
-    s = {'tid': tid, 'pid': p.pid, 'out': str(out), 'until': time.time() + timeout}
-    C.notes('gate.json').write_text(json.dumps(s), encoding='utf-8')
+    s = {'tid': tid, 'pid': p.pid, 'out': str(out), 'until': time.time() + timeout, 'cwd': str(d), 'rec': str(rec)}
+    rec.write_text(json.dumps(s), encoding='utf-8')
     try:
         p.wait(timeout=timeout)
     except sp.TimeoutExpired:
@@ -1659,7 +1744,7 @@ def merge_gate(tid: str, d: Path, env: dict) -> tuple[int, str]:
         gate_done(s)
         return 124, f'`{cmd}` ran past [run] timeout ({timeout}s): counted as failing'
     finally:
-        C.notes('gate.json').unlink(missing_ok=True)
+        rec.unlink(missing_ok=True)
     return gate_done(s) or (p.returncode or 1, f'`{cmd}` left no exit code')
 
 
@@ -2008,32 +2093,43 @@ def merge_batch(tid: str, branch: str) -> str | None:
             clean(d)
             base = git('rev-parse', branch).stdout.strip()
             git('checkout', '-q', '--detach', base, cwd=d)
-            ref = renumber_doubles(f'task/{tid}', base, tid, d)
-            msg = merge_message(tid, ref)
-            if (files := merge_into(d, ref, msg, tid)) is None:
-                return f'git refused to merge task/{tid} into {branch} (see the merge worktree, {d})'
-            if files:
-                if joined(files, tid, d):
-                    log(f'{tid}: joined both sides of {", ".join(files)}')
-                elif why := refix(tid, branch, ref, files, d, msg=msg):
-                    return why
-            riders = []
-            for t in ([] if solo else sorted(WAITING - set(LANDED))):
-                ref = renumber_doubles(f'task/{t}', 'HEAD', t, d)
-                msg = merge_message(t, ref)
-                if (files := merge_into(d, ref, msg, t)) is None:
-                    git('merge', '--abort', cwd=d)
-                    continue
-                if files and not joined(files, t, d):
-                    if not batch_fixes:
+            ahead = dict(AHEAD)
+            if ahead.get('base') == base and tid in ahead['tids'] and \
+                    set(ahead['tids']) - {tid} <= WAITING - set(LANDED):  # built on the merge that just landed
+                AHEAD.clear()
+                clean(d, ahead['merged'])
+                riders = [t for t in ahead['tids'] if t != tid]
+                log(f'{tid}: reusing the merge built ahead' + (f' with {", ".join(riders)}' if riders else '') +
+                    ' while the last one was tested')
+            else:
+                if ahead:
+                    drop_ahead()  # the branch moved some other way, or its tasks are gone: not this merge
+                ref = renumber_doubles(f'task/{tid}', base, tid, d)
+                msg = merge_message(tid, ref)
+                if (files := merge_into(d, ref, msg, tid)) is None:
+                    return f'git refused to merge task/{tid} into {branch} (see the merge worktree, {d})'
+                if files:
+                    if joined(files, tid, d):
+                        log(f'{tid}: joined both sides of {", ".join(files)}')
+                    elif why := refix(tid, branch, ref, files, d, msg=msg):
+                        return why
+                riders = []
+                for t in ([] if solo else sorted(WAITING - set(LANDED))):
+                    ref = renumber_doubles(f'task/{t}', 'HEAD', t, d)
+                    msg = merge_message(t, ref)
+                    if (files := merge_into(d, ref, msg, t)) is None:
                         git('merge', '--abort', cwd=d)
-                        continue  # it waits for its own turn, where a fix session can take the conflict
-                    # a fix session takes the conflict here, so the rider shares this gate run
-                    if refix(t, branch, ref, files, d, undo=True, msg=msg):
-                        continue  # it waits for its own turn
-                riders.append(t)
-            if riders:
-                log(f'{tid}: merging together with {", ".join(riders)} (one gate run)')
+                        continue
+                    if files and not joined(files, t, d):
+                        if not batch_fixes:
+                            git('merge', '--abort', cwd=d)
+                            continue  # it waits for its own turn, where a fix session can take the conflict
+                        # a fix session takes the conflict here, so the rider shares this gate run
+                        if refix(t, branch, ref, files, d, undo=True, msg=msg):
+                            continue  # it waits for its own turn
+                    riders.append(t)
+                if riders:
+                    log(f'{tid}: merging together with {", ".join(riders)} (one gate run)')
             if up := upstream(branch, d):  # someone pushed to the remote: take it in, the gate tests it too
                 msg = f"Merge {up.removeprefix('refs/remotes/')} into {branch}"
                 if (files := merge_into(d, up, msg)) is None:
@@ -2057,7 +2153,16 @@ def merge_batch(tid: str, branch: str) -> str | None:
             # commits made after `done`, nor a session that never ran it: its tested ref is not the branch
             if riders or not gated(tid) or \
                     not all(map(untestable, git('diff', '--name-only', f'task/{tid}', merged, cwd=d).stdout.split())):
-                if why := tested(tid, d, base):
+                ahead_done = threading.Event()
+                if C.run['merge_ahead']:
+                    threading.Thread(target=build_ahead, args=(branch, merged, ahead_done, {tid, *riders}),
+                                     daemon=True).start()
+                try:
+                    why = tested(tid, d, base)
+                finally:
+                    ahead_done.set()
+                if why:
+                    drop_ahead()  # built on a merge that does not land as it is
                     if riders and not batch_repaired and C.run['repair_merges']:
                         batch_repaired = True
                         not_fixed, still, fixes = repair_retest(tid, branch, d, base, merged, riders)

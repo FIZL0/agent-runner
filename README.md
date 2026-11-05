@@ -411,7 +411,7 @@ agent session reads the same terminal; use `./run stop` there, which takes effec
 file left behind by a run that was killed is cleared when the next run starts.
 
 A merge a run was in the middle of is adopted by the next run too, like the slots' sessions. Its gate
-runs in a session of its own (`.runner/gate.json`), and a fix or repair session in the master window
+runs in a session of its own (`.runner/gates/<key>.json`), and a fix or repair session in the master window
 records itself in `.runner/master.json`; both outlive the runner. The restarted run waits for them,
 keeps what they made (a passing gate per tree and gate command in `.runner/gates/`, a session's commit
 under `refs/agent-runner/held/<ID>/`), builds the merge again and reuses them instead of doing that
@@ -444,6 +444,14 @@ gate, one repair session sees every merge in the batch (`REPAIR_BATCH`) and fixe
 gate runs once more for all of them. Only if that fails too is the batch split, each branch merged on its
 own. A rider whose conflict the line join cannot do gets its fix session inside the batch, so it shares the
 batch's gate run instead of waiting for a turn of its own.
+
+Tasks that finish while a batch is in its gate do not wait for it to end (`merge_ahead = true`). They are
+merged on top of the merge under test in a second worktree (`.runner/slots/merge2`) and their gate starts
+beside that one. When the first batch lands, the next one's turn finds the same merge built ahead and
+waits for the gate already under way on that exact tree, so two batches cost about one gate's wait. If
+the first batch fails or the branch moves another way, the merge built ahead is dropped and its gate
+stopped. Its conflicts get only the line join: one that needs a fix session waits for its own turn. The
+first gate in merge2 builds from cold, and merge2 has a build directory of its own.
 
 A tested merge that cannot land because of uncommitted edits in the main checkout to files it changes (or
 anything staged there, which git refuses to merge onto) waits 10 minutes, then gives the merge lock back
@@ -617,6 +625,7 @@ ci_watch = "auto"         # "auto": workflows run on a push to the shared branch
                           # files one critical task (needs `gh` logged in)
 ci_kind = "B"             # the prefix of that task
 batch = true              # finished branches waiting for the merge go in together under one gate run
+merge_ahead = true        # tasks finishing during a batch's gate are merged on it and tested beside it
 before_start = ""         # a command that must pass before any session starts (a display, a device)
 not_attempt = ""          # regex on a branch's last commit subject ({id}): a phase, not the run's one try
 shared_files = []         # files nearly every task names; mode d ignores them

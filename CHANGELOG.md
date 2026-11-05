@@ -2,6 +2,15 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
+## 0.19.0 (2026-11-05)
+
+- Merge ahead (`[run] merge_ahead`, on by default): tasks that finish while a batch is in its gate are
+  merged on top of that merge in a second worktree (merge2) and gated beside it. The next turn reuses that
+  merge, and waits for the gate already running on its tree, instead of starting its gate only after the
+  last one landed. A failed first batch drops the merge built ahead and stops its gate.
+- Gate runs are recorded per tree (`.runner/gates/<key>.json`, not `.runner/gate.json`), so a turn waits
+  for a gate already running on its exact merge, and a restart adopts every gate an earlier run left.
+
 ## 0.18.0 (2026-11-05)
 
 - A restarted run adopts the merge the last one was in the middle of, the way it adopts the slots'

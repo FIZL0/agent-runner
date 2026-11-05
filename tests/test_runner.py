@@ -379,12 +379,13 @@ def test_adopt_merge(repo: Path):
             with open(out, 'w') as fh:  # as merge_gate starts it, by a run that is gone now
                 p = R.sp.Popen(f'(sleep 1; {R.C.run["test"]}\n); echo $? > {out.with_suffix(".rc")}', shell=True,
                                cwd=str(d), stdout=fh, stderr=R.sp.STDOUT, start_new_session=True)
-            R.C.notes('gate.json').write_text(R.json.dumps({'tid': 'Z1', 'pid': p.pid, 'out': str(out),
-                                                            'until': R.time.time() + 60}))
+            rec = out.with_suffix('.json')
+            rec.write_text(R.json.dumps({'tid': 'Z1', 'pid': p.pid, 'out': str(out), 'until': R.time.time() + 60,
+                                         'cwd': str(d), 'rec': str(rec)}))
             eq(R.left_merging(), {'Z1'}, 'a live gate run names its task, which startup merges first')
             R.adopt_merge(d)
             p.wait()
-            check(not R.C.notes('gate.json').exists(), 'the adopted gate is waited for')
+            check(not rec.exists(), 'the adopted gate is waited for')
             eq(R.merge_gate('Z1', d, R.merge_env()), (0, ''), 'and its pass counts')
             eq(ran.read_text().count('ok'), 1, 'so the gate is not run a second time on that merge')
             eq(R.merge_gate('Z1', d, R.merge_env())[0], 0, 'nor a third')
@@ -1368,6 +1369,33 @@ def test_resume(repo: Path, tmp: Path):
         R.C.notes('slot2.log').unlink(missing_ok=True)
 
 
+def test_merge_ahead(repo: Path):
+    print('run: a task that finishes during a gate is merged on top of it and tested beside it')
+    if R.plat.WINDOWS:
+        return  # merge_gate runs `gate` there, with no record another turn can wait on
+    R.init(repo)
+    ran = R.SLOTS_DIR / 'gate-ran.log'
+    test, R.C.run['test'] = R.C.run['test'], f'sleep 2; echo ok >> {ran}'
+    poll, R.AHEAD_POLL = R.AHEAD_POLL, 0.2
+    try:
+        commit_on(repo, 'H1', {'h1.py': '1\n'}, 'H1: one')
+        first = R.threading.Thread(target=R.merge, args=('H1', 'main'))
+        first.start()
+        R.time.sleep(1)  # H1's gate is running
+        commit_on(repo, 'H2', {'h2.py': '2\n'}, 'H2: two')
+        second = R.threading.Thread(target=R.merge, args=('H2', 'main'))
+        second.start()
+        first.join(60), second.join(60)
+        log = (repo / '.runner/run.log').read_text()
+        has(log, r'H2: merged ahead on the merge under test', 'H2 was built on H1 during its gate')
+        has(log, r'H2: reusing the merge built ahead', 'and its turn took that merge')
+        check((repo / 'h1.py').exists() and (repo / 'h2.py').exists(), 'both landed')
+        eq(ran.read_text().count('ok'), 2, 'two gate runs, side by side, not a third after H1 landed')
+    finally:
+        R.C.run['test'], R.AHEAD_POLL = test, poll
+        ran.unlink(missing_ok=True)
+
+
 def test_land_gives_merge_back(repo: Path):
     print('run: a tested merge blocked by edits gives MERGE back after LAND_WAIT, and the branch knows when it is free')
     R.init(repo)
@@ -1847,7 +1875,7 @@ def main() -> int:
                        lambda: test_gate_and_batches(repo, tmp),
                        lambda: test_platform(repo, tmp), lambda: test_shutdown(repo), lambda: test_merge_into(tmp),
                        lambda: test_leftovers(repo), lambda: test_renumber(repo),
-                       lambda: test_stop_waiter(tmp), lambda: test_stop_hook_grace(tmp), lambda: test_land_waits_aloud(repo), lambda: test_land_gives_merge_back(repo),
+                       lambda: test_stop_waiter(tmp), lambda: test_stop_hook_grace(tmp), lambda: test_land_waits_aloud(repo), lambda: test_merge_ahead(repo), lambda: test_land_gives_merge_back(repo),
                        lambda: test_edited_elsewhere(repo, tmp),
                        lambda: test_resume(repo, tmp),
                        lambda: test_session_tmp(repo, tmp), lambda: test_end_orphans(repo), lambda: test_tested_ref(repo, tmp),
