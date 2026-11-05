@@ -412,6 +412,11 @@ def worktree(n, branch: str) -> Path:
         SLOTS_DIR.mkdir(parents=True, exist_ok=True)
         git('worktree', 'prune')
         git('worktree', 'add', '-q', '--detach', str(d), branch)
+    for pat in C.run['copies']:  # git-ignored files a worktree needs its own copy of (a local config)
+        for src in map(Path, glob.glob(str(ROOT / pat))):
+            if src.is_file() and not (dst := d / src.relative_to(ROOT)).exists():
+                dst.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(src, dst)
     for pat in [*C.run['links'], 'runner.toml']:
         for src in map(Path, glob.glob(str(ROOT / pat))):
             dst = d / src.relative_to(ROOT)
@@ -1679,9 +1684,15 @@ def _build_ahead(branch: str, base: str, cands: list[str]) -> None:
     plan_files = [plan_rel('TODO.md'), plan_rel('DONE.md')]
     if git('status', '--porcelain', '--', *plan_files, cwd=d).stdout.strip():
         git('commit', '-qm', f'{tids[0]}: archive ticked tasks', '--', *plan_files, cwd=d)
-    AHEADS.append({'base': base, 'tids': tids, 'merged': git('rev-parse', 'HEAD', cwd=d).stdout.strip()})
+    batch = {'base': base, 'tids': tids, 'merged': git('rev-parse', 'HEAD', cwd=d).stdout.strip()}
+    AHEADS.append(batch)
     log(f'{", ".join(tids)}: merged ahead on the merge under test; its gate runs beside that one')
-    merge_gate(tids[0], d, merge_env(), {'base': base, 'tids': tids})
+    key = gate_key(d)
+    rc, text = merge_gate(tids[0], d, merge_env(), {'base': base, 'tids': tids})
+    log(f'{", ".join(tids)}: the gate on the merge built ahead ' + ('passed' if not rc else
+        f'failed (exit {rc}; {C.notes(GATES) / key}.failed)'))
+    if rc and batch in AHEADS:  # its turn has not come yet: it goes from this result, not a gate of its own
+        ADOPTED[key] = rc, text
 
 
 def reusable(a: dict, tid: str, base: str) -> bool:

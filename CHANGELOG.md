@@ -2,6 +2,14 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
+## 0.19.3 (2026-11-05)
+
+- `[run] copies`: git-ignored files copied into a new worktree once, where `links` would share one file
+  (a local config the tests read from the checkout's root). The merge-ahead worktree had none and its
+  first gate failed on that alone.
+- The gate on a merge built ahead says how it ended; a failure is kept for that batch's turn, which goes
+  from it (retests, repairs) instead of running the gate again.
+
 ## 0.19.2 (2026-11-05)
 
 - An adopted gate that failed is no longer thrown away: its merge is reused as it was gated and the

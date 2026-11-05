@@ -607,6 +607,7 @@ pause = 60                # s between one session ending and the next starting i
 weekly_max = 90           # % of 7-day usage past which nothing new starts
 notes = ".runner"         # logs + ledger (git-ignore it)
 links = []                # git-ignored paths symlinked into every worktree (data, big files)
+copies = []               # git-ignored files copied into a new worktree once (a local config file)
 slot_env = ["AGENT_SLOT={n}"]   # {n}: the slot, {slots}: how many
 pass_env = []             # the runner's own environment variables handed on to every slot
 on_exit = ""              # command run in a slot's worktree, with its env, when its session ends

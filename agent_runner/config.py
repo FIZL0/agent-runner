@@ -98,6 +98,7 @@ DEFAULTS: dict = {
         'weekly_max': 90,       # % of the account's 7-day usage past which no new task starts
         'notes': '.runner',     # logs and the ledger; keep it git-ignored
         'links': [],            # git-ignored paths symlinked into every worktree (data, big files)
+        'copies': [],           # git-ignored files copied into a new worktree once (a local config)
         'slot_env': ['AGENT_SLOT={n}'],  # extra environment per slot; {n} is the slot, {slots} how many
         'pass_env': [],         # names of the runner's own environment variables handed on to every slot
         'on_exit': '',          # a command run in the slot's worktree when its session ends

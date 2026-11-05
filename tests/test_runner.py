@@ -1479,6 +1479,23 @@ def test_adopted_gate_results(repo: Path):
         ran.unlink(missing_ok=True)
 
 
+def test_copies(repo: Path):
+    print('run: [run] copies puts its own copy of a git-ignored file in a new worktree')
+    R.init(repo)
+    (repo / 'local.cfg').write_text('mine\n')
+    copies, R.C.run['copies'] = R.C.run['copies'], ['local.cfg']
+    try:
+        d = R.worktree('copytest', 'main')
+        check((d / 'local.cfg').is_file() and not (d / 'local.cfg').is_symlink(), 'a copy, not a link')
+        (d / 'local.cfg').write_text('changed\n')
+        R.worktree('copytest', 'main')
+        eq((d / 'local.cfg').read_text(), 'changed\n', 'and it is not copied over again')
+    finally:
+        R.C.run['copies'] = copies
+        (repo / 'local.cfg').unlink()
+        git(repo, 'worktree', 'remove', '--force', str(d))
+
+
 def test_land_gives_merge_back(repo: Path):
     print('run: a tested merge blocked by edits gives MERGE back after LAND_WAIT, and the branch knows when it is free')
     R.init(repo)
@@ -1958,7 +1975,7 @@ def main() -> int:
                        lambda: test_gate_and_batches(repo, tmp),
                        lambda: test_platform(repo, tmp), lambda: test_shutdown(repo), lambda: test_merge_into(tmp),
                        lambda: test_leftovers(repo), lambda: test_renumber(repo),
-                       lambda: test_stop_waiter(tmp), lambda: test_stop_hook_grace(tmp), lambda: test_land_waits_aloud(repo), lambda: test_merge_ahead(repo), lambda: test_adopted_gate_merge(repo), lambda: test_adopted_gate_results(repo), lambda: test_land_gives_merge_back(repo),
+                       lambda: test_stop_waiter(tmp), lambda: test_stop_hook_grace(tmp), lambda: test_land_waits_aloud(repo), lambda: test_merge_ahead(repo), lambda: test_adopted_gate_merge(repo), lambda: test_adopted_gate_results(repo), lambda: test_copies(repo), lambda: test_land_gives_merge_back(repo),
                        lambda: test_edited_elsewhere(repo, tmp),
                        lambda: test_resume(repo, tmp),
                        lambda: test_session_tmp(repo, tmp), lambda: test_end_orphans(repo), lambda: test_tested_ref(repo, tmp),
