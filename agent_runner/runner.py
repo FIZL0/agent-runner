@@ -64,6 +64,7 @@ import tempfile
 import threading
 import time
 import uuid
+from collections import Counter
 from contextlib import ExitStack
 from pathlib import Path
 
@@ -1340,6 +1341,46 @@ def dedupe_tasks(lines: list[str], tid: str, mine: list[str], ours: list[str], g
     return [l for i, (k, _, ls) in enumerate(blocks) if not k or i in keep for l in (keep.get(i) or ls)]
 
 
+def dedupe_headings(lines: list[str], mine: list[str], ours: list[str]) -> list[str]:
+    """A joined task list with each heading no more often than either side has it. A union keeps both
+    sides of a conflict, so a heading one side moved or retitled beside a line the other side changed
+    comes out twice; the runner reads a section from its first heading, so tasks filed under an empty
+    first copy would run ahead of an ordered section's own. A copy past the allowed count is dropped and
+    the lines under it go to the end of the first copy's section, before its trailing blank lines."""
+    allowed = Counter(l for l in mine if l.startswith('#'))
+    for h, n in Counter(l for l in ours if l.startswith('#')).items():
+        allowed[h] = max(allowed[h], n)
+    out: list[str] = []
+    seen: Counter[str] = Counter()
+    first: dict[str, int] = {}  # heading -> its index in `out`
+    moving: str | None = None  # the heading whose dropped copy's lines are being moved
+    for l in lines:
+        if l.startswith('#'):
+            seen[l] += 1
+            if seen[l] > max(allowed[l], 1) and l in first:
+                moving = l
+                continue
+            moving = None
+            first.setdefault(l, len(out))
+            out.append(l)
+        elif moving is not None:
+            at = first[moving] + 1
+            while at < len(out) and not out[at].startswith('#'):
+                at += 1
+            if at == len(out):  # the first copy's section is still the last: the lines simply follow it
+                out.append(l)
+                continue
+            if not l.strip():
+                continue
+            while at > first[moving] + 1 and not out[at - 1].strip():
+                at -= 1
+            out.insert(at, l)
+            first.update({h: i + 1 for h, i in first.items() if i >= at})
+        else:
+            out.append(l)
+    return out
+
+
 def union(files: list[str], tid: str, cwd: Path) -> bool:
     """Join both sides of a conflict in every file `joinable` allows. Then, in the task list, drop a task
     line that came out twice and any TODO line whose task DONE.md already has; and a file with a
@@ -1359,8 +1400,8 @@ def union(files: list[str], tid: str, cwd: Path) -> bool:
             gone = {m.group(2).rstrip('.') for l in (cwd / done).read_text(encoding='utf-8').splitlines()
                     if (m := TASK.match(l)) and '- [x]' in l} if f == todo else set()
             mine = git('show', f'task/{tid}:{f}', cwd=cwd).stdout.splitlines()
-            text = '\n'.join(dedupe_tasks(text.split('\n'), tid, mine,
-                                           Path(sides[0]).read_text(encoding='utf-8').splitlines(), gone))
+            ours = Path(sides[0]).read_text(encoding='utf-8').splitlines()
+            text = '\n'.join(dedupe_tasks(dedupe_headings(text.split('\n'), mine, ours), tid, mine, ours, gone))
         if any(fnmatch.fnmatch(f, g) for g in C.run['join']) and \
                 (text := custom_join(f, sides, text, tid, cwd)) is None:
             return False

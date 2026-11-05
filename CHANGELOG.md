@@ -2,6 +2,13 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
+## 0.15.1 (2026-11-05)
+
+- A joined task list keeps each heading no more often than either side has it. `--union` keeps both sides
+  of a conflict, so a heading one side moved beside a line the other side changed came out twice; tasks
+  filed later went under the empty first copy, and an ordered section's own tasks waited behind them.
+  The extra copy is dropped and its lines go to the end of the first copy's section.
+
 ## 0.15.0 (2026-11-04)
 
 - `runner.local.toml`: one machine's settings (`weekly_max`, `slots`, `model`, any key) laid over

@@ -1558,6 +1558,22 @@ def test_dedupe_tasks():
         '  - its note', '- [ ] **D1** (follow-up, normal) new', ''],
        'the branch\'s words for its own task, the target\'s words and section for the rest (a branch cut '
        'before a re-sort keeps B1 out of Next, its note with it), and a task DONE.md has goes')
+    print('run: a joined task list keeps each heading no more often than a side has it')
+    ours = ['### Critical', '- [ ] **K1** flaky', '', '### Next (in order)', '- [ ] **M1** first', '- [ ] **M2** then', '']
+    mine = ['### Next (in order)', '- [ ] **K2** another', '- [ ] **M1** first', '- [ ] **M2** then', '']
+    union = ['### Critical', '- [ ] **K1** flaky', '', '### Next (in order)', '### Next (in order)', '- [ ] **K2** another',
+             '- [ ] **M1** first', '- [ ] **M2** then', '']
+    eq(R.dedupe_headings(union, mine, ours),
+       ['### Critical', '- [ ] **K1** flaky', '', '### Next (in order)', '- [ ] **K2** another', '- [ ] **M1** first',
+        '- [ ] **M2** then', ''],
+       'a heading the union doubled (one side moved it, the other changed a line beside it) comes out once, '
+       'with no empty first copy left for new tasks to file under ahead of the section')
+    union = ['### A', '- [ ] **A1** a', '', '### B', '- [ ] **B1** b', '', '### A', '- [ ] **A2** late', '']
+    eq(R.dedupe_headings(union, ['### A', '', '### B', ''], ['### A', '', '### B', '']),
+       ['### A', '- [ ] **A1** a', '- [ ] **A2** late', '', '### B', '- [ ] **B1** b', ''],
+       'and a later copy\'s tasks go to the end of the first copy\'s section')
+    two = ['### Notes', 'x', '### Notes', 'y']
+    eq(R.dedupe_headings(two, two, two), two, 'but a heading a side has twice stays twice')
 
 
 def test_followups(repo: Path):
