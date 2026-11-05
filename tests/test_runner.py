@@ -1661,6 +1661,55 @@ def test_ci_watch(repo: Path):
         git(repo, 'reset', '-q', '--hard', head)
         seen.unlink(missing_ok=True)
 
+    print('run: ci_watch = "auto" watches the workflows that run on a push to the shared branch')
+    on = ci.runs_on_push
+    check(on('on: push\n', 'main') and on('on: [push, pull_request]\n', 'main'), 'on: push, on: [push, ...]')
+    check(on('on:\n  - pull_request\n  - push\n', 'main'), 'a list of events')
+    check(on('on:\n  pull_request:\n  push:\n    branches: [main]\njobs:\n', 'main'), 'push with branches [main]')
+    check(on('on:\n  push:\n    branches:\n      - "release/*"\n      - main\n', 'main'), 'a block list of branches')
+    check(not on('on:\n  push:\n    branches: [dev]\n', 'main'), 'push to other branches only: no')
+    check(on('on:\n  push:\n    branches: ["**"]\n', 'main'), 'a glob that matches')
+    check(not on('on:\n  push:\n    branches-ignore: [main]\n', 'main'), 'branches-ignore that names it: no')
+    check(not on('on:\n  push:\n    tags: ["v*"]\n', 'main'), 'tags only: no')
+    check(on('on:\n  push: { branches: [main] }\n  schedule: [{ cron: "1 * * * *" }]\n', 'main') and
+          not on('on:\n  push: { branches: [dev] }\n', 'main'), 'push: { branches: [...] } inline')
+    check(on('on:\n  push:\n    paths: ["src/**"]\n', 'main'), 'paths only: every branch')
+    check(not on('on:\n  schedule:\n    - cron: "0 3 * * *"\n  workflow_dispatch:\n', 'main'),
+          'a nightly or manual workflow: no')
+    check(not on('on:\n  pull_request:\n    branches: [main]\n', 'main'), 'pull requests only: no')
+    wf = repo / '.github' / 'workflows'
+    wf.mkdir(parents=True, exist_ok=True)
+    (wf / 'ci.yml').write_text('name: ci\non:\n  push:\n    branches: [main]\n  pull_request:\njobs: {}\n')
+    (wf / 'nightly.yaml').write_text('on:\n  schedule:\n    - cron: "0 3 * * *"\n')
+    try:
+        eq(ci.push_workflows(repo, 'main'), ['ci.yml'], 'the push workflows of the repository')
+        R.C.run['ci_watch'] = 'auto'
+        eq(R.ci_flows('main'), (['ci.yml'], 'push'), '"auto": those, push runs only')
+        R.C.run['ci_watch'] = 'pages.yml'
+        eq(R.ci_flows('main'), (['pages.yml'], ''), 'a name: just it, any event')
+        for off in (False, [], ''):
+            R.C.run['ci_watch'] = off
+            eq(R.ci_flows('main'), ([], ''), f'{off!r}: off')
+        R.C.run['ci_watch'] = 'auto'
+        asked, said = [], []
+
+        def blind(*a):
+            asked.append(a)
+            return subprocess.CompletedProcess(a, 1, '', 'HTTP 404: Not Found')
+        ci.gh_in, saved = (lambda cwd: blind), R.log
+        R.log = said.append
+        try:
+            eq(R.watch_ci('main', force=True), [], 'a gh that cannot see the repository files nothing')
+            R.watch_ci('main', force=True)
+        finally:
+            ci.gh_in, R.log = real, saved
+        eq(len([m for m in said if 'gh cannot see this repository (HTTP 404: Not Found)' in m]), 1,
+           'and says so once, with why')
+        check(all(a[:2] == ('repo', 'view') for a in asked), 'without asking for runs it cannot see')
+    finally:
+        R.C.run['ci_watch'] = []
+        shutil.rmtree(repo / '.github')
+
 
 def test_update_notice():
     import io

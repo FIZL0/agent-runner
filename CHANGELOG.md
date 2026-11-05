@@ -2,6 +2,14 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
+## 0.14.1 (2026-11-04)
+
+- `[run] ci_watch` defaults to `"auto"`: every workflow in `.github/workflows/` that runs on a push to the
+  shared branch is watched, its push runs only (a nightly, release or manual run files nothing), so a red
+  main becomes one critical task without any setup. `false` turns it off; a list still names workflows.
+- A `gh` that cannot see the repository (not installed, not logged in, the wrong account) is said once in
+  the run log instead of being read, every 5 min, as "no runs yet".
+
 ## 0.14.0 (2026-11-04)
 
 Runners on several machines share one `[plan] repo` without stepping on each other.

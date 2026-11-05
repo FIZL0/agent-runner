@@ -9,6 +9,11 @@ go in its long form, plan/tasks/<ID>.md. No second task while one for that workf
 `<workflow>` on <branch> is red), and a run already judged is never filed again: the newest judged run
 is kept in `<notes>/ci-<workflow>.seen`. A landing never waits on any of this.
 
+`ci_watch = "auto"` (the default) watches every workflow in `.github/workflows/` that runs on a push to the
+shared branch (`push_workflows`), and only its push runs: a nightly or a manual run is not about the code that
+just merged. `false` (or `[]`) turns it off. A `gh` that cannot see the repository (not installed, not
+logged in, the wrong account) is said once (`reachable`), not silently retried as "no runs".
+
 The parts that talk to `gh` take a `gh` callable, so the tests give them canned answers.
 """
 from __future__ import annotations
@@ -41,10 +46,109 @@ def gh_in(cwd: Path) -> Gh:
     return gh
 
 
-def newest_finished(gh: Gh, workflow: str, branch: str) -> dict | None:
+def reachable(gh: Gh) -> str:
+    """'' when `gh` can see this repository, else one line saying why it cannot."""
+    r = gh('repo', 'view', '--json', 'nameWithOwner')
+    if not r.returncode:
+        return ''
+    why = (r.stderr or r.stdout).strip().splitlines()
+    return why[-1][:200] if why else f'gh exited {r.returncode}'
+
+
+def _on_block(text: str) -> tuple[str, list[str]]:
+    """A workflow's top-level `on:` key: (its inline value, its indented lines)."""
+    ls = text.splitlines()
+    for i, l in enumerate(ls):
+        if m := re.match(r"""^["']?on["']?\s*:\s*(.*?)\s*(#.*)?$""", l):
+            body = []
+            for x in ls[i + 1:]:
+                if x.strip() and not x[0].isspace() and not x.lstrip().startswith('#'):
+                    break
+                body.append(x)
+            return m.group(1), body
+    return '', []
+
+
+def _names(value: str, lines: list[str]) -> list[str]:
+    """`[a, 'b']` inline, or the `- a` items below it."""
+    if value.startswith('['):
+        return [v.strip().strip('"\'') for v in value.strip('[]').split(',') if v.strip()]
+    if value:
+        return [value.strip('"\'')]
+    return [m.group(1).strip().strip('"\'') for x in lines if (m := re.match(r'^\s*-\s*(.+?)\s*(#.*)?$', x))]
+
+
+def runs_on_push(text: str, branch: str) -> bool:
+    """Does this workflow (its YAML text) run on a push to `branch`? Reads the common forms of `on:`:
+    `on: push`, `on: [push, ...]`, and a `push:` block with `branches` / `branches-ignore` / `tags`."""
+    # ponytail: a line-based reading of YAML's usual `on:` shapes, not a YAML parser; anchors or a flow map
+    # for the whole key (`on: {push: ...}`) read as no push. Name the workflow in `ci_watch` for those.
+    import fnmatch
+    value, body = _on_block(text)
+    if value:
+        return 'push' in _names(value, [])
+    items = [x for x in body if x.strip() and not x.lstrip().startswith('#')]
+    if not items:
+        return False
+    top = min(len(x) - len(x.lstrip()) for x in items)
+    for i, x in enumerate(items):
+        ind, key = len(x) - len(x.lstrip()), x.strip()
+        if ind != top:
+            continue
+        if re.fullmatch(r'-\s*push', key):
+            return True
+        if not (m := re.match(r'^push\s*:\s*(.*?)\s*(#.*)?$', key)):
+            continue
+        if m.group(1) in ('', '~', 'null', '{}'):
+            sub = []
+            for y in items[i + 1:]:
+                if len(y) - len(y.lstrip()) <= top:
+                    break
+                sub.append(y)
+        else:
+            sub = []
+        filters: dict[str, list[str]] = {}
+        if m.group(1).startswith('{'):  # `push: { branches: [main] }`
+            for k in re.finditer(r'([\w-]+)\s*:\s*(\[[^\]]*\]|[^,}]+)', m.group(1)):
+                filters[k.group(1)] = _names(k.group(2).strip(), [])
+        sind = min((len(y) - len(y.lstrip()) for y in sub), default=0)
+        for j, y in enumerate(sub):
+            if len(y) - len(y.lstrip()) == sind and (k := re.match(r'^\s*([\w-]+)\s*:\s*(.*?)\s*(#.*)?$', y)):
+                below = []
+                for z in sub[j + 1:]:
+                    if len(z) - len(z.lstrip()) <= sind and not z.lstrip().startswith('-'):
+                        break
+                    below.append(z)
+                filters[k.group(1)] = _names(k.group(2), below)
+        hit = lambda pats: any(fnmatch.fnmatch(branch, p) for p in pats)
+        if 'branches' in filters:
+            return hit(filters['branches'])
+        if 'branches-ignore' in filters:
+            return not hit(filters['branches-ignore'])
+        return 'tags' not in filters  # tags only: branch pushes do not run it
+    return False
+
+
+def push_workflows(root: Path, branch: str) -> list[str]:
+    """The workflow files under `root`/.github/workflows that run on a push to `branch`, sorted."""
+    d = root / '.github' / 'workflows'
+    if not d.is_dir():
+        return []
+    out = []
+    for f in sorted([*d.glob('*.yml'), *d.glob('*.yaml')]):
+        try:
+            if runs_on_push(f.read_text(encoding='utf-8', errors='replace'), branch):
+                out.append(f.name)
+        except OSError:
+            pass
+    return out
+
+
+def newest_finished(gh: Gh, workflow: str, branch: str, event: str = '') -> dict | None:
     """The newest run of `workflow` on `branch` that finished saying something (green or red), or None
-    (none yet, every recent one cancelled, or `gh` could not answer: not logged in, offline)."""
-    r = gh('run', 'list', '-w', workflow, '-b', branch, '-L', '20',
+    (none yet, every recent one cancelled, or `gh` could not answer: not logged in, offline). `event`
+    (`push`): only runs that event started."""
+    r = gh('run', 'list', '-w', workflow, '-b', branch, '-L', '20', *(['-e', event] if event else []),
            '--json', 'databaseId,status,conclusion,headSha,url,displayTitle,createdAt')
     if r.returncode:
         return None
@@ -91,12 +195,13 @@ def seen_file(notes: Callable[[str], Path], workflow: str) -> Path:
     return notes(f'ci-{re.sub(r"[^A-Za-z0-9_.-]", "_", workflow)}.seen')
 
 
-def to_file(gh: Gh, workflow: str, branch: str, seen: Path, open_text: str) -> tuple[str, list[str]] | None:
+def to_file(gh: Gh, workflow: str, branch: str, seen: Path, open_text: str,
+            event: str = '') -> tuple[str, list[str]] | None:
     """(task line text, long form lines) for a red run nobody has been told about, else None.
 
     The newest finished run is judged once: its id goes in `seen` whatever it says, and a run no newer than
     that is not looked at again. A red one with a task for this workflow still open files nothing."""
-    run = newest_finished(gh, workflow, branch)
+    run = newest_finished(gh, workflow, branch, event)
     if not run:
         return None
     try:

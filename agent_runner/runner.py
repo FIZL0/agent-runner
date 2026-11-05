@@ -2192,6 +2192,19 @@ def keep_claims(running: dict, branch: str) -> None:
 OUTDATED_SAID: set[str] = set()  # other runners already reported as too old, by owner
 
 
+def ci_flows(branch: str) -> tuple[list[str], str]:
+    """`[run] ci_watch` as (workflow files, event their runs must come from): "auto" (the default) is every
+    workflow that runs on a push to `branch`, push runs only; a name or list is just those, any event;
+    false, [] or "" is none."""
+    w = C.run['ci_watch']
+    if w == 'auto':
+        return ci.push_workflows(ROOT, branch), 'push'
+    if not w:
+        return [], ''
+    return ([w] if isinstance(w, str) else list(w)), ''
+
+
+CI_UNSEEN: list[str] = []  # why gh could not see the repository, once it has been said
 CI_AT = [0.0]  # when `watch_ci` last asked GitHub
 
 
@@ -2202,9 +2215,10 @@ def watch_ci(branch: str, force: bool = False) -> list[str]:
     checkout like `reopen_landed`'s, and a loop that waited out a gate here would start nothing for an hour.
     Left alone, as there, while TODO.md has edits nobody committed. The ids filed.
     """
-    flows = C.run['ci_watch']
-    flows = [flows] if isinstance(flows, str) else flows
-    if not flows or not force and time.time() - CI_AT[0] < ci.CI_POLL:
+    if not force and time.time() - CI_AT[0] < ci.CI_POLL:
+        return []
+    flows, event = ci_flows(branch)
+    if not flows:
         return []
     if not MERGE.acquire(blocking=False):
         return []
@@ -2220,12 +2234,19 @@ def watch_ci(branch: str, force: bool = False) -> list[str]:
                 git('status', '--porcelain', '--', plan_rel('')).stdout.strip():
             return []
         gh = ci.gh_in(ROOT)
+        if why := ci.reachable(gh):
+            if not CI_UNSEEN:
+                CI_UNSEEN.append(why)
+                log(f'! ci_watch: gh cannot see this repository ({why}); CI on {branch} is not watched until it '
+                    f'can (`gh auth status`; `ci_watch = false` in [run] to stop looking)')
+            return []
+        CI_UNSEEN.clear()
         for wf in flows:
             ls = P.lines(ROOT / rel)
             open_text = '\n'.join(l for l in ls if (m := P.ITEM.match(l)) and m.group(2) != 'x')
             seen = ci.seen_file(C.notes, wf)
             was = seen.read_text() if seen.exists() else ''
-            if not (got := ci.to_file(gh, wf, branch, seen, open_text)):
+            if not (got := ci.to_file(gh, wf, branch, seen, open_text, event)):
                 continue
             text, long = got
             tid = P.add(C.run['ci_kind'], text, todo=ROOT / rel, pri='critical')
