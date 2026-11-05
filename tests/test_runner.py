@@ -175,10 +175,9 @@ def test_picking(repo: Path):
     check(R.P.overlap({'Assets/Settings/**'}, {'Assets/Settings/**'}), 'and the same pattern on another line')
     check(not R.P.overlap({'Assets/Settings/**'}, {'Assets/Audio/Mix.cs'}), 'but not a path elsewhere')
     eq(R.pick({}, set(ids), 'd', 'main'), None, 'nothing left once everything has been tried')
-    for f in ('plan/TODO.md', 'plan/DONE.md', 'CHANGELOG.md'):
-        check(R.joinable(f), f'{f} is in [run] joinable, so a conflict there is joined')
-    for f in ('README.md', 'a.py', 'plan/T1.md'):
-        check(not R.joinable(f), f'{f} is not, so it needs reading')
+    check(R.joinable('CHANGELOG.md'), 'CHANGELOG.md is in [run] joinable, so a conflict there is joined')
+    for f in ('README.md', 'a.py', 'plan/T1.md', 'plan/TODO.md', 'plan/DONE.md'):
+        check(not R.joinable(f), f'{f} is not (the task list: git merged it by task already), so it needs reading')
     r = run(repo, 'run', '--dry-run', '3')
     has(r.stdout, r'slot 1: T1.*\nslot 2: T5.*\nslot 3: L3a', '`run run --dry-run 3` prints the three picks')
     has(r.stdout, r'waiting on .*T4', 'and what waits')
@@ -1544,38 +1543,6 @@ def test_shared_push(repo: Path, tmp: Path):
     eq(git(repo, 'rev-parse', 'main'), git(tmp / 'origin.git', 'rev-parse', 'main'), 'and main is pushed')
 
 
-def test_dedupe_tasks():
-    print('run: a joined task list keeps each task once, where the target files it')
-    ours = ['### Next', '- [ ] **A1** mine', '', '### Follow-ups', '- [ ] **B1** (follow-up, normal) a follow-up',
-            '  - its note', '']
-    mine = ['### Next', '- [x] **A1** mine, done', '- [ ] **B1** a follow-up', '  - its note',
-            '- [ ] **C1** done now', '', '### Follow-ups', '- [ ] **D1** (follow-up, normal) new', '']
-    union = ['### Next', '- [x] **A1** mine, done', '- [ ] **A1** mine', '- [ ] **B1** a follow-up', '  - its note',
-             '- [ ] **C1** done now', '', '### Follow-ups', '- [ ] **B1** (follow-up, normal) a follow-up',
-             '  - its note', '- [ ] **D1** (follow-up, normal) new', '']
-    eq(R.dedupe_tasks(union, 'A1', mine, ours, {'C1'}),
-       ['### Next', '- [x] **A1** mine, done', '', '### Follow-ups', '- [ ] **B1** (follow-up, normal) a follow-up',
-        '  - its note', '- [ ] **D1** (follow-up, normal) new', ''],
-       'the branch\'s words for its own task, the target\'s words and section for the rest (a branch cut '
-       'before a re-sort keeps B1 out of Next, its note with it), and a task DONE.md has goes')
-    print('run: a joined task list keeps each heading no more often than a side has it')
-    ours = ['### Critical', '- [ ] **K1** flaky', '', '### Next (in order)', '- [ ] **M1** first', '- [ ] **M2** then', '']
-    mine = ['### Next (in order)', '- [ ] **K2** another', '- [ ] **M1** first', '- [ ] **M2** then', '']
-    union = ['### Critical', '- [ ] **K1** flaky', '', '### Next (in order)', '### Next (in order)', '- [ ] **K2** another',
-             '- [ ] **M1** first', '- [ ] **M2** then', '']
-    eq(R.dedupe_headings(union, mine, ours),
-       ['### Critical', '- [ ] **K1** flaky', '', '### Next (in order)', '- [ ] **K2** another', '- [ ] **M1** first',
-        '- [ ] **M2** then', ''],
-       'a heading the union doubled (one side moved it, the other changed a line beside it) comes out once, '
-       'with no empty first copy left for new tasks to file under ahead of the section')
-    union = ['### A', '- [ ] **A1** a', '', '### B', '- [ ] **B1** b', '', '### A', '- [ ] **A2** late', '']
-    eq(R.dedupe_headings(union, ['### A', '', '### B', ''], ['### A', '', '### B', '']),
-       ['### A', '- [ ] **A1** a', '- [ ] **A2** late', '', '### B', '- [ ] **B1** b', ''],
-       'and a later copy\'s tasks go to the end of the first copy\'s section')
-    two = ['### Notes', 'x', '### Notes', 'y']
-    eq(R.dedupe_headings(two, two, two), two, 'but a heading a side has twice stays twice')
-
-
 def test_followups(repo: Path):
     print('run: follow-up levels and kinds in the prompt, Parked never starts, flaky tests get a task')
     R.init(repo)
@@ -1809,7 +1776,7 @@ def main() -> int:
                        lambda: test_session_tmp(repo, tmp), lambda: test_end_orphans(repo), lambda: test_tested_ref(repo, tmp),
                        lambda: test_no_pane(repo, tmp), lambda: test_other_repos_panes(repo, tmp),
                        lambda: test_limit_lets_go(repo),
-                       lambda: test_shared_push(repo, tmp), lambda: test_followups(repo), lambda: test_ci_watch(repo), test_dedupe_tasks, test_update_notice,
+                       lambda: test_shared_push(repo, tmp), lambda: test_followups(repo), lambda: test_ci_watch(repo), test_update_notice,
                        lambda: test_stalled(tmp)])
 
 

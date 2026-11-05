@@ -105,7 +105,7 @@ DEFAULTS: dict = {
         'prompt': '',           # path to a prompt template replacing the built-in one (see README)
         'prompt_extra': '',     # a paragraph added to the built-in prompt (what each slot owns, …)
         'shared_files': [],     # files nearly every task names; mode d ignores them
-        'joinable': ['plan/TODO.md', 'plan/DONE.md'],  # record-per-line files a conflict may be joined in
+        'joinable': [],  # record-per-line files a conflict may be joined in (the task list merges by task anyway)
         'join': {},             # glob -> a command that joins a conflict in that file (see runner.custom_join)
         'suspect': '',          # a regex: a block line a merge adds that matches it is flagged in the ledger
         'precommit': '',        # a check `done` runs after the gate, before it ticks (--skip-check skips it)

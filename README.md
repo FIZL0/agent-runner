@@ -109,8 +109,12 @@ plan/TODO.md ──pick──▶ slot N: git worktree ~/runs/<repo>/sN on task/<
    Whatever a session leaves uncommitted is saved on `wip/<ID>` (or `leftover/<ID>` when it has commits)
    before the slot is reset.
 5. **Merge.** In a separate merge worktree, the runner merges `main` and `task/<ID>`:
-   - conflicts in record-per-line files (`[run] joinable`, by default TODO.md and DONE.md) are joined,
-     keeping both sides' lines;
+   - TODO.md and DONE.md merge by section and task, not by line: git's merge driver for them
+     (`agent-runner merge-plan`, set up by `run` in `.git/config` and `.git/info/attributes`) merges each
+     task's box, text, notes and BLOCKED against the base, so a task one side ticked stays ticked, a
+     heading one side moved comes out once, and two notes on one line are both kept;
+   - conflicts in other record-per-line files (`[run] joinable`, e.g. a CHANGELOG) are joined, keeping
+     both sides' lines;
    - any other conflict goes to a one-shot fix session (in the tmux window "master-<repo>", or `claude -p`);
    - the gate runs again if the merged code differs from what `done` tested.
    Only then is the main checkout moved to the tested merge. That takes seconds, it never stashes, and it
@@ -204,8 +208,8 @@ repo = "git@github.com:you/project-plan.git"   # or a local path
 
 - One clone, outside the code, shared by the main checkout and every slot. Reads pull it (at most every
   20 s), every edit (`plan add/tick/block/…`, `done`, a run's reopens and filed tasks) locks it, pulls,
-  commits and pushes. A rejected push pulls and pushes again; `*.md` merge as `union`, since the plan is
-  one record per line, and a line left open for a task DONE.md has ticked is dropped.
+  commits and pushes. A rejected push pulls and pushes again; TODO.md and DONE.md merge by section and
+  task (the same merge driver as in a repository), other `*.md` as `union`.
 - **Claims: two people can run at once.** The moment a run picks a task (parallel or sequential), it
   pushes `claims/<ID>` (host and checkout) before anything starts. Other runs skip a claimed task and treat it as
   running there: a task sharing its files, its ordered section or its family waits for it. The claim
@@ -601,7 +605,7 @@ batch = true              # finished branches waiting for the merge go in togeth
 before_start = ""         # a command that must pass before any session starts (a display, a device)
 not_attempt = ""          # regex on a branch's last commit subject ({id}): a phase, not the run's one try
 shared_files = []         # files nearly every task names; mode d ignores them
-joinable = ["plan/TODO.md", "plan/DONE.md"]   # globs of record-per-line files a conflict may be joined in
+joinable = []             # globs of record-per-line files a conflict may be joined in (TODO.md, DONE.md merge by task)
 fix_merges = true
 fix_model = "opus"
 fix_timeout = 1800

@@ -2,6 +2,24 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
+## 0.16.0 (2026-11-05)
+
+- The task list and its archive merge by section and task instead of by line. `run` makes
+  `agent-runner merge-plan` git's merge driver for TODO.md and DONE.md (`.git/config` and
+  `.git/info/attributes`, shared by every worktree, never committed; a plan clone gets it on its next
+  pull), so every merge of them goes through it: the runner's, a rebase, a person's. Each part merges
+  against the base: sections by heading, tasks by id wherever they moved, and a task line's box, text,
+  ` — notes` and `BLOCKED:` one by one. A task one side ticked stays gone though the other noted it, a
+  moved heading comes out once, two notes on one line are both kept, a task added on each side goes where
+  its side put it, and one id handed out on both sides keeps both tasks. Where both changed the same part
+  of the merged branch's own task, the branch's words win (`AGENT_RUNNER_TASK`). Prose both sides
+  rewrote falls back to git's text merge and its conflict. Replayed over 752 of this repository's
+  past task-list merges, 739 come out as they did and the rest differ only in order or keep a move the
+  old join undid.
+- Removed what cleaned up after the line join: the runner's `dedupe_tasks` and `dedupe_headings` passes
+  and `plansync`'s `tidy` (with its commit after a pull). TODO.md and DONE.md are no longer in the
+  `[run] joinable` default (now `[]`) and are never line-joined, even when a config still lists them.
+
 ## 0.15.1 (2026-11-05)
 
 - A joined task list keeps each heading no more often than either side has it. `--union` keeps both sides

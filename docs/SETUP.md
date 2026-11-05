@@ -299,7 +299,7 @@ rules = "AGENT.md"
 prompt = "tools/runner-prompt.md"   # sessions finish with tools/done.sh (audit, tests, --spec / --blocked)
 links = ["context", "mods", "replacements", "*.iso"]
 shared_files = ["play.rs"]
-joinable = ["plan/*.md", "research/journal/*", "RELEASE_NOTES.md"]
+joinable = ["research/journal/*", "RELEASE_NOTES.md"]
 slot_env = ["HST_PCSX2={n}", "HST_BG=1", "RUSTC_WRAPPER=sccache", "SCCACHE_CACHE_SIZE=60G"]
 pass_env = ["HST_PCSX2_MAX_HOLD"]
 on_exit = "tools/pcsx2.sh tools/pcsx2-hst.sh stop"

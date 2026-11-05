@@ -64,7 +64,6 @@ import tempfile
 import threading
 import time
 import uuid
-from collections import Counter
 from contextlib import ExitStack
 from pathlib import Path
 
@@ -94,6 +93,8 @@ def init(root=None) -> Config:
     ROOT = main_checkout(root)
     C = cfg(ROOT)
     SLOTS_DIR = C.slots_dir
+    if not C.plan_external:  # the task list merges by task, in every merge of this repository
+        P.install_driver(ROOT, [plan_rel('TODO.md'), plan_rel('DONE.md')])
     return C
 
 
@@ -1255,12 +1256,15 @@ LANDING = threading.Lock()  # held while `land` moves the main checkout: an inte
 def joinable(f: str) -> bool:
     """True when the runner may join both sides of a conflict in `f` itself (`[run] joinable`, globs).
 
-    Only for files where a line is a whole record and two agents each added records: the task list and its
-    archive, a changelog, a journal. Never prose, even prose that is only appended to. A union joins
+    Only for files where a line is a whole record and two agents each added records: a changelog, a
+    journal. Not the task list and its archive, whatever the config says: git merges those by task
+    (`plan.merge3`), and a conflict left there is in prose. Never prose, even prose that is only appended to. A union joins
     *lines*, and two sides that both reflowed one paragraph give it no line to agree on. It then stitches
     them into something that reads like a sentence and is not one, and a reader believes it. A paragraph
     needs reading, so it goes to a fix session.
     """
+    if f in (plan_rel('TODO.md'), plan_rel('DONE.md')):
+        return False  # git merged it by task already (`plan.merge3`): what still conflicts there is prose
     return any(fnmatch.fnmatch(f, g) for g in [*C.run['joinable'], *C.run['join']])
 
 
@@ -1298,95 +1302,10 @@ def custom_join(f: str, sides: list[str], text: str, tid: str, cwd: Path) -> str
     return out.read_text(encoding='utf-8')
 
 
-def _sections(lines: list[str]) -> dict[str, str]:
-    """{task id: the heading it sits under} in a task list."""
-    out, cur = {}, ''
-    for l in lines:
-        if l.startswith('#'):
-            cur = l
-        elif m := TASK.match(l):
-            out.setdefault(m.group(2).rstrip('.'), cur)
-    return out
-
-
-def dedupe_tasks(lines: list[str], tid: str, mine: list[str], ours: list[str], gone: set[str]) -> list[str]:
-    """A joined task list with each task once. A task is its line and the indented lines under it, kept or
-    dropped together; one DONE.md has (`gone`) is dropped. Of a task that came out twice, the branch's copy
-    is kept for its own task `tid` and the target's (`ours`) for the rest, in the section that side files
-    it under: a branch cut before a plan was re-sorted must not put the old order back."""
-    blocks: list[tuple[str | None, str, list[str]]] = []  # (task id or None, heading above, lines)
-    cur = ''
-    for l in lines:
-        if blocks and blocks[-1][0] and l.startswith((' ', '\t')) and l.strip():
-            blocks[-1][2].append(l)
-            continue
-        if l.startswith('#'):
-            cur = l
-        m = TASK.match(l)
-        blocks.append((m.group(2).rstrip('.') if m else None, cur, [l]))
-    want_mine, want_ours, mine_set = _sections(mine), _sections(ours), set(mine)
-    copies: dict[str, list[int]] = {}
-    for i, (k, _, _) in enumerate(blocks):
-        if k:
-            copies.setdefault(k, []).append(i)
-    keep: dict[int, list[str]] = {}  # the block index each task stays at, with the lines it keeps
-    for k, at in copies.items():
-        if k in gone:
-            continue
-        own = k == tid
-        words = next((i for i in at if (blocks[i][2][0] in mine_set) == own), at[0])
-        want = (want_mine if own else want_ours).get(k)
-        place = next((i for i in at if blocks[i][1] == want), at[0])
-        keep[place] = blocks[words][2]
-    return [l for i, (k, _, ls) in enumerate(blocks) if not k or i in keep for l in (keep.get(i) or ls)]
-
-
-def dedupe_headings(lines: list[str], mine: list[str], ours: list[str]) -> list[str]:
-    """A joined task list with each heading no more often than either side has it. A union keeps both
-    sides of a conflict, so a heading one side moved or retitled beside a line the other side changed
-    comes out twice; the runner reads a section from its first heading, so tasks filed under an empty
-    first copy would run ahead of an ordered section's own. A copy past the allowed count is dropped and
-    the lines under it go to the end of the first copy's section, before its trailing blank lines."""
-    allowed = Counter(l for l in mine if l.startswith('#'))
-    for h, n in Counter(l for l in ours if l.startswith('#')).items():
-        allowed[h] = max(allowed[h], n)
-    out: list[str] = []
-    seen: Counter[str] = Counter()
-    first: dict[str, int] = {}  # heading -> its index in `out`
-    moving: str | None = None  # the heading whose dropped copy's lines are being moved
-    for l in lines:
-        if l.startswith('#'):
-            seen[l] += 1
-            if seen[l] > max(allowed[l], 1) and l in first:
-                moving = l
-                continue
-            moving = None
-            first.setdefault(l, len(out))
-            out.append(l)
-        elif moving is not None:
-            at = first[moving] + 1
-            while at < len(out) and not out[at].startswith('#'):
-                at += 1
-            if at == len(out):  # the first copy's section is still the last: the lines simply follow it
-                out.append(l)
-                continue
-            if not l.strip():
-                continue
-            while at > first[moving] + 1 and not out[at - 1].strip():
-                at -= 1
-            out.insert(at, l)
-            first.update({h: i + 1 for h, i in first.items() if i >= at})
-        else:
-            out.append(l)
-    return out
-
-
 def union(files: list[str], tid: str, cwd: Path) -> bool:
-    """Join both sides of a conflict in every file `joinable` allows. Then, in the task list, drop a task
-    line that came out twice and any TODO line whose task DONE.md already has; and a file with a
-    `[run.join]` command goes through it (`custom_join`), which may refuse."""
-    todo, done = plan_rel('TODO.md'), plan_rel('DONE.md')
-    for f in sorted(files, key=lambda f: f != done):  # DONE.md first: TODO.md reads it
+    """Join both sides of a conflict in every file `joinable` allows; a file with a `[run.join]` command
+    goes through it (`custom_join`), which may refuse."""
+    for f in files:
         sides = []
         for stage in (2, 1, 3):  # ours, base, theirs
             t = C.notes(f'union.{stage}')
@@ -1396,12 +1315,6 @@ def union(files: list[str], tid: str, cwd: Path) -> bool:
         if out.returncode < 0:
             return False
         text = out.stdout
-        if f in (todo, done):
-            gone = {m.group(2).rstrip('.') for l in (cwd / done).read_text(encoding='utf-8').splitlines()
-                    if (m := TASK.match(l)) and '- [x]' in l} if f == todo else set()
-            mine = git('show', f'task/{tid}:{f}', cwd=cwd).stdout.splitlines()
-            ours = Path(sides[0]).read_text(encoding='utf-8').splitlines()
-            text = '\n'.join(dedupe_tasks(dedupe_headings(text.split('\n'), mine, ours), tid, mine, ours, gone))
         if any(fnmatch.fnmatch(f, g) for g in C.run['join']) and \
                 (text := custom_join(f, sides, text, tid, cwd)) is None:
             return False
@@ -1425,8 +1338,8 @@ def renumber_doubles(ref: str, onto: str, tid: str, cwd: Path) -> str:
     """`ref`, or a commit on top of it that renumbers the tasks it added under an id `onto` already uses.
 
     A branch files a follow-up with the next id its own copy of the plan has free, while main, meanwhile,
-    may have handed that id to another task. Both lines then come out of the merge, and the join (or a tick)
-    keeps one and drops the other: P118's two follow-ups vanished that way. So before a merge the branch's
+    may have handed that id to another task. The merge keeps both lines (`plan.merge3`), but under one id, so a
+    tick or a pick would take one for the other: P118's two follow-ups vanished that way. So before a merge the branch's
     new task gets the next id free on both sides, and every line the branch added or changed that names it
     follows; the change is logged. Run before each merge, the tested one and the one onto main."""
     files = [plan_rel('TODO.md'), plan_rel('DONE.md')]
@@ -1815,13 +1728,19 @@ def merge(tid: str, branch: str) -> str | None:
         return None
 
 
-def merge_into(d: Path, ref: str, msg: str) -> list[str] | None:
+def task_env(tid: str) -> dict:
+    """The environment for a git merge of `tid`'s branch: the task list's merge driver (`plan.merge3`) lets the
+    branch's own words win where both sides edited the same part of that task's line."""
+    return {'env': {**os.environ, 'AGENT_RUNNER_TASK': tid}} if tid else {}
+
+
+def merge_into(d: Path, ref: str, msg: str, tid: str = '') -> list[str] | None:
     """`git merge ref` in d: the files left in conflict ([] when it merged), or None when git refused it.
 
     A failed merge with nothing in conflict is either git rerere having replayed an earlier resolution of
     every file (the merge is still open: committed here) or git refusing to start (e.g. an untracked file
     in the way), which must not pass for a merge."""
-    if not git('merge', '--no-edit', '-m', msg, ref, cwd=d).returncode:
+    if not git('merge', '--no-edit', '-m', msg, ref, cwd=d, **task_env(tid)).returncode:
         return []
     if files := git('diff', '--name-only', '--diff-filter=U', cwd=d).stdout.split():
         return files
@@ -1845,7 +1764,7 @@ def refix(tid: str, branch: str, ref: str, files: list[str], d: Path, undo: bool
     it did not finish is taken back off `d`, so the batch goes on without it."""
     git('merge', '--abort', cwd=d)
     at = git('rev-parse', 'HEAD', cwd=d).stdout.strip()
-    git('merge', '--no-edit', '-m', msg or f"Merge branch 'task/{tid}'", ref, cwd=d)
+    git('merge', '--no-edit', '-m', msg or f"Merge branch 'task/{tid}'", ref, cwd=d, **task_env(tid))
     if (why := fix_merge(tid, branch, files, d)) and undo:
         git('merge', '--abort', cwd=d)
         clean(d, at)
@@ -1903,7 +1822,7 @@ def merge_batch(tid: str, branch: str) -> str | None:
             git('checkout', '-q', '--detach', base, cwd=d)
             ref = renumber_doubles(f'task/{tid}', base, tid, d)
             msg = merge_message(tid, ref)
-            if (files := merge_into(d, ref, msg)) is None:
+            if (files := merge_into(d, ref, msg, tid)) is None:
                 return f'git refused to merge task/{tid} into {branch} (see the merge worktree, {d})'
             if files:
                 if joined(files, tid, d):
@@ -1914,7 +1833,7 @@ def merge_batch(tid: str, branch: str) -> str | None:
             for t in ([] if solo else sorted(WAITING - set(LANDED))):
                 ref = renumber_doubles(f'task/{t}', 'HEAD', t, d)
                 msg = merge_message(t, ref)
-                if (files := merge_into(d, ref, msg)) is None:
+                if (files := merge_into(d, ref, msg, t)) is None:
                     git('merge', '--abort', cwd=d)
                     continue
                 if files and not joined(files, t, d):
@@ -2031,7 +1950,7 @@ def land(tid: str, branch: str, merged: str) -> str | None:
         return f'{ELSEWHERE} ({cur or "a detached HEAD"}, not {branch})'
     msg = ['-m', f'{tid}: the tested merge, onto commits {branch} got during the tests']
     ref = renumber_doubles(merged, 'HEAD', tid, ROOT)
-    while git('merge', '-q', *msg, ref).returncode and \
+    while git('merge', '-q', *msg, ref, **task_env(tid)).returncode and \
             git('rev-parse', '--verify', '-q', 'MERGE_HEAD').returncode:
         if time.time() - t0 > LAND_WAIT:
             return f'{EDITED} to files the merge changes'

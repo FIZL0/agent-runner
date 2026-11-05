@@ -374,6 +374,72 @@ def test_similar():
            'a file every task names is not a match by itself')
 
 
+def test_merge3():
+    print('plan: a task list merges by section and task, each part against the base')
+    m = lambda o, b, t, own=None: plan.merge3(o.split('\n'), b.split('\n'), t.split('\n'), own)
+    base = '### Critical\n\n### Next (in order)\n- [ ] **M1** first\n- [ ] **M2** then\n- [ ] **K2** another\n'
+    main = '### Critical\n- [ ] **K2** another\n\n### Next (in order)\n- [ ] **M1** first\n- [ ] **M2** then\n'
+    branch = '### Critical\n\n### Next (in order)\n- [ ] **M1** first — a note\n- [ ] **M2** then\n- [ ] **K2** another\n'
+    eq(m(main, base, branch, 'M1'),
+       ['### Critical', '- [ ] **K2** another', '', '### Next (in order)', '- [ ] **M1** first — a note',
+        '- [ ] **M2** then', ''],
+       'a task main moved and a note beside it on the branch: each heading once, the move and the note both '
+       '(the union doubled the heading here, K33)')
+    base = '### A\n- [ ] **A1** a\n- [ ] **A2** b\n'
+    eq(m('### A\n- [ ] **A1** a — main\'s note\n- [ ] **A2** b\n', base, '### A\n- [ ] **A2** b\n', 'A1'),
+       ['### A', '- [ ] **A2** b', ''], 'a task one side ticked (gone to DONE.md) stays gone, though the other noted it')
+    eq(m('### A\n- [ ] **A1** a — one\n- [ ] **A2** b\n', base, '### A\n- [ ] **A1** a — two\n- [ ] **A2** b\n'),
+       ['### A', '- [ ] **A1** a — one — two', '- [ ] **A2** b', ''], 'two notes on one line: both')
+    eq(m('### A\n- [ ] **A1** a — a note\n- [ ] **A2** b\n', base,
+         '### A\n- [~] **A1** a BLOCKED: needs X\n- [ ] **A2** b\n', 'A1'),
+       ['### A', '- [~] **A1** a — a note BLOCKED: needs X', '- [ ] **A2** b', ''],
+       'a block and a note: the block mark, the note, then BLOCKED last')
+    eq(m('### A\n- [ ] **A2** b\n- [ ] **A1** a\n', base, '### A\n- [ ] **A1** a\n- [ ] **A2** b\n- [ ] **A3** c\n'),
+       ['### A', '- [ ] **A2** b', '- [ ] **A3** c', '- [ ] **A1** a', ''],
+       'a re-sort on one side and a task added on the other: both, the new one after the task it followed')
+    eq(m('### A\n- [ ] **A1** a\n- [ ] **A2** b\n- [ ] **A4** d\n', base,
+         '### A\n- [ ] **A1** a\n- [ ] **A3** c\n- [ ] **A2** b\n'),
+       ['### A', '- [ ] **A1** a', '- [ ] **A3** c', '- [ ] **A2** b', '- [ ] **A4** d', ''],
+       'tasks added on both sides, each where its side put it')
+    eq(m('### A\n- [ ] **A1** a\n- [ ] **A2** b\n- [ ] **A3** mine\n', base,
+         '### A\n- [ ] **A1** a\n- [ ] **A2** b\n- [ ] **A3** theirs\n'),
+       ['### A', '- [ ] **A1** a', '- [ ] **A2** b', '- [ ] **A3** mine', '- [ ] **A3** theirs', ''],
+       'one id both sides handed out: both tasks, for `tick` to refuse rather than one to vanish')
+    eq(m('### A (in order)\n- [ ] **A1** a\n- [ ] **A2** b\n', base, '### A\n- [ ] **A1** a\n- [ ] **A2** b\n- [ ] **A3** c\n'),
+       ['### A (in order)', '- [ ] **A1** a', '- [ ] **A2** b', '- [ ] **A3** c', ''],
+       'a heading one side renamed: the other side\'s new task goes under the new name')
+    base = '### A\nsome words\n- [ ] **A1** a\n'
+    eq(m('### A\nmain\'s words\n- [ ] **A1** a\n', base, '### A\nthe branch\'s words\n- [ ] **A1** a\n'), None,
+       'prose both sides rewrote is not for it to choose: git\'s own merge, which conflicts')
+
+
+def test_merge_driver():
+    print('plan: git merges the task list through merge3 once install_driver ran')
+    with tempfile.TemporaryDirectory() as tmp:
+        r = Path(tmp)
+        git(r, 'init', '-q', '-b', 'main')
+        (r / 'plan').mkdir()
+        todo = r / 'plan' / 'TODO.md'
+        todo.write_text('### Critical\n\n### Next\n- [ ] **M1** first\n- [ ] **K2** another\n', encoding='utf-8')
+        git(r, 'add', '-A'); git(r, 'commit', '-qm', 'base')
+        git(r, 'checkout', '-qb', 'task/M1')
+        todo.write_text('### Critical\n\n### Next\n- [ ] **M1** first — a note\n- [ ] **K2** another\n', encoding='utf-8')
+        git(r, 'commit', '-qam', 'note')
+        git(r, 'checkout', '-q', 'main')
+        todo.write_text('### Critical\n- [ ] **K2** another\n\n### Next\n- [ ] **M1** first\n', encoding='utf-8')
+        git(r, 'commit', '-qam', 'move')
+        plan.install_driver(r, ['plan/TODO.md'])
+        plan.install_driver(r, ['plan/TODO.md'])
+        att = (r / '.git' / 'info' / 'attributes').read_text(encoding='utf-8')
+        eq(att.count('merge=agent-runner-plan'), 1, 'installed twice, listed once')
+        p = subprocess.run(['git', 'merge', '-q', '--no-edit', 'task/M1'], cwd=r, capture_output=True, text=True,
+                           env={**os.environ, 'AGENT_RUNNER_TASK': 'M1'})
+        eq(p.returncode, 0, 'the edits beside each other merge without a conflict: ' + p.stdout + p.stderr)
+        eq(todo.read_text(encoding='utf-8'),
+           '### Critical\n- [ ] **K2** another\n\n### Next\n- [ ] **M1** first — a note\n', 'by task')
+
+
 if __name__ == '__main__':
     sys.exit(report([test_plan_roundtrip, test_plan_reopen, test_plan_index_and_sections, test_brief, test_brief_outline,
-                     test_split_parents, test_add_bottom, test_add_pri, test_add_subtask, test_kinds, test_hand_edits_commit, test_similar]))
+                     test_split_parents, test_add_bottom, test_add_pri, test_add_subtask, test_kinds, test_hand_edits_commit, test_similar,
+                     test_merge3, test_merge_driver]))

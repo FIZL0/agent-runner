@@ -57,6 +57,7 @@ change is not rewritten at all (so mtimes stay meaningful and git stays quiet).
 """
 from __future__ import annotations
 
+import difflib
 import os
 import re
 import shlex
@@ -229,8 +230,8 @@ def archive(todo, done) -> int:
     """Move every top-level [x] task (with its sub-lines) from todo into done, under the same ### heading;
     a split parent goes too once its subtasks are all done.
 
-    Needed because a merge can bring a tick in from a branch without moving the line, and because a human
-    sometimes ticks by hand anyway. Running it is always safe.
+    Needed because a session or a human sometimes ticks by hand, and a merge then brings that tick in
+    without moving the line. Running it is always safe.
     """
     ls, dl, sec, moved = list(lines(todo)), list(lines(done)), '', 0
     if not dl:
@@ -756,6 +757,239 @@ def outline(cmd: str, path: str, root) -> list[str]:
     text = r.stdout.rstrip()
     cut = f'  … (outline cut at {OUTLINE_MAX} chars)' if len(text) > OUTLINE_MAX else ''
     return ['  outline:', *(f'    {l}' for l in text[:OUTLINE_MAX].splitlines()), *([cut] if cut else [])]
+
+
+# --- merging --------------------------------------------------------------------
+#
+# Merged as text, a task list goes wrong in ways nothing after the merge can undo for certain: two edits
+# beside each other conflict, a union keeps both sides, and a moved heading comes out twice or a task one
+# side ticked comes back open. `merge3` merges what the file is made of, each part against the base:
+# sections by heading, tasks by id wherever they moved, and the parts of a task's line (its box, its
+# text, each ` — note`, its BLOCKED) one by one. git runs it as the merge of the task list and its
+# archive (`install_driver`), so a merge, a rebase or a pull gets it, the runner's and anybody's.
+
+DRIVER = 'agent-runner-plan'
+SEG = re.compile(r'(?= — | BLOCKED: )')  # where a task line's parts start: `note` and `block` append these
+BOX = re.compile(r'^(\s*- \[)(.)(\] )(.*)$')
+
+
+def _parse(ls: list[str]) -> list[tuple]:
+    """[(section key, heading line, [(item key, lines)])], the lines above the first heading first (key
+    None). A top-level task is one item, its block with it, keyed ('t', id, n); any other line is keyed
+    ('l', section key, text, n), the nth such text in its section, so a blank line has a place too."""
+    secs: list[tuple] = [(None, None, [])]
+    heads, seen = Counter(), Counter()
+    i = 0
+    while i < len(ls):
+        l = ls[i]
+        if _level(l):
+            heads[l] += 1
+            secs.append(((l, heads[l]), l, []))
+            i += 1
+            continue
+        m = ITEM.match(l)
+        if m and not m.group(1):
+            b = _item_block(ls, i)
+            tid = m.group(3).rstrip('.')
+            seen[tid] += 1
+            secs[-1][2].append((('t', tid, seen[tid]), b))
+            i += len(b)
+            continue
+        seen[(secs[-1][0], l)] += 1
+        secs[-1][2].append((('l', secs[-1][0], l, seen[(secs[-1][0], l)]), [l]))
+        i += 1
+    return secs
+
+
+def _kept(k, o: dict, b: dict, t: dict) -> bool:
+    """Whether a part stays: one in the base stays while both sides kept it (a side that dropped it, as a
+    tick drops a task from the list, wins over an edit on the other); one the base lacks, while a side
+    brought it in."""
+    return (k in o and k in t) if k in b else (k in o or k in t)
+
+
+def _order(want: set, o: list, b: list, t: list) -> list:
+    """`want` in order: ours, unless only theirs re-sorted what all three have; what the other side brought
+    in or moved goes after the part before it there, past what the first side added in the same place."""
+    keep = set(o) & set(t)
+    common = [k for k in b if k in keep]
+    co, ct = [k for k in o if k in set(common)], [k for k in t if k in set(common)]
+    first, other = (t, o) if co == common and ct != common else (o, t)
+    out = [k for k in first if k in want]
+    have, mine, bs = set(out), set(other), set(b)
+    for i, k in enumerate(other):
+        if k not in want or k in have:
+            continue
+        j = next((out.index(p) + 1 for p in reversed(other[:i]) if p in have), 0)
+        while j < len(out) and out[j] not in mine and out[j] not in bs:
+            j += 1
+        out.insert(j, k)
+        have.add(k)
+    return out + [k for k in want if k not in have]
+
+
+def _resolve(b: list[str], o: list[str], t: list[str]) -> list[str]:
+    """One stretch both sides changed: ours, less what theirs dropped, with what theirs brought in where its
+    first drop was (an edited part keeps its place), else after."""
+    new, out, put = [x for x in t if x not in b and x not in o], [], False
+    for x in o:
+        if x in b and x not in t:
+            out += [] if put else new
+            put = True
+        else:
+            out.append(x)
+    return out if put else out + new
+
+
+def _merge_parts(o: list[str], b: list[str], t: list[str]) -> list[str]:
+    """A three-way merge of a list of parts (a line's notes, a task's sub-lines): between the parts all
+    three keep, each stretch is the side that changed it, or with both, `_resolve`'s join of the two."""
+    def kept(x):
+        sm = difflib.SequenceMatcher(None, b, x, autojunk=False)
+        return {i: j for a, j0, n in sm.get_matching_blocks() for i, j in zip(range(a, a + n), range(j0, j0 + n))}
+    mo, mt = kept(o), kept(t)
+    out, i, j, k = [], 0, 0, 0
+    for s in [*(s for s in range(len(b)) if s in mo and s in mt), len(b)]:
+        js, ks = (mo[s], mt[s]) if s < len(b) else (len(o), len(t))
+        bc, oc, tc = b[i:s], o[j:js], t[k:ks]
+        out += tc if oc == bc else oc if tc == bc or oc == tc else _resolve(bc, oc, tc)
+        out += b[s:s + 1]
+        i, j, k = s + 1, js + 1, ks + 1
+    return out
+
+
+def _pick(o, b, t, theirs: bool):
+    """One value both sides may have changed: the side that changed it, or with both, theirs for the
+    branch's own task, else ours."""
+    return t if o == b else o if t == b else t if theirs else o
+
+
+def _merge_line(o: str, b: str, t: str, theirs: bool) -> str:
+    if o == b or o == t:
+        return t
+    if t == b:
+        return o
+    mo, mb, mt = BOX.match(o), BOX.match(b), BOX.match(t)
+    if not (mo and mb and mt):
+        mo = mb = mt = None
+    po, pb, pt = (SEG.split(m.group(4) if m else l) for m, l in ((mo, o), (mb, b), (mt, t)))
+    head = _pick(po[0], pb[0], pt[0], theirs)  # the task's own words: one side's, never both
+    text = head + ''.join(_merge_parts(po[1:], pb[1:], pt[1:]))
+    if not mo:
+        return text
+    return mo.group(1) + _pick(mo.group(2), mb.group(2), mt.group(2), theirs) + mo.group(3) + text
+
+
+def _merge_block(o: list[str], b: list[str], t: list[str], theirs: bool) -> list[str]:
+    if len(o) == len(b) == len(t):
+        return [_merge_line(*ls, theirs) for ls in zip(o, b, t)]
+    return [_merge_line(o[0], b[0], t[0], theirs), *_merge_parts(o[1:], b[1:], t[1:])]
+
+
+def _moves(base: list[tuple], side: list[tuple]) -> dict:
+    """{base section key: where `side` put most of its tasks}, for each section `side` no longer has (a
+    renamed heading): a task the other side filed under the old heading goes to the new one."""
+    at = {k: s for s, _, items in side for k, _ in items}
+    out = {}
+    for s, _, items in base:
+        if s is None or any(s == x for x, _, _ in side):
+            continue
+        went = Counter(at[k] for k, _ in items if k[0] == 't' and k in at)
+        if went:
+            out[s] = went.most_common(1)[0][0]
+    return out
+
+
+def merge3(ours: list[str], base: list[str], theirs: list[str], own: str | None = None) -> list[str] | None:
+    """The task list `ours` and `theirs` make from `base`, or None when both rewrote the same prose (the
+    lines between tasks), which needs somebody to read it. `own` is the task the merged branch did: where
+    both sides changed the same part of its line, the branch's wins; everywhere else the target's does."""
+    if ours == theirs or theirs == base:
+        return list(ours)
+    if ours == base:
+        return list(theirs)
+    O, B, T = _parse(ours), _parse(base), _parse(theirs)
+    so, sb, st = ({s: h for s, h, _ in X} for X in (O, B, T))
+    io, ib, it = ({k: (s, ls) for s, _, items in X for k, ls in items} for X in (O, B, T))
+
+    def prose(X, s):
+        return {k for k, (x, ls) in X.items() if k[0] == 'l' and x == s and ls[0].strip()}
+
+    for s in {**so, **sb, **st}:
+        do, dt = prose(io, s) ^ prose(ib, s), prose(it, s) ^ prose(ib, s)
+        if do and dt and do != dt:
+            return None
+    for k in [k for k in io if k in it and k not in ib and io[k][1] != it[k][1]]:  # one id, two new tasks
+        it = {(k[0], k[1], ('theirs', k[2])) if x == k else x: v for x, v in it.items()}  # keep both
+    mo, mt = _moves(B, O), _moves(B, T)
+    for X, mv in ((io, mo), (it, mt)):  # a renamed section's own lines are still the base's: one key for both
+        back = {(n, x, c): (s, x, c) for s, n in mv.items() for _, s_, x, c in [k for k in ib if k[0] == 'l'] if s_ == s}
+        for k in [k for k in X if k[0] == 'l' and k[1:] in back]:
+            X[('l', *back[k[1:]])] = X.pop(k)
+    lines, place = {}, {}
+    for k in {**io, **it}:
+        if not _kept(k, io, ib, it):
+            continue
+        lo, lb, lt = (X[k][1] if k in X else None for X in (io, ib, it))
+        mine = k[0] == 't' and k[1] == own
+        if lo is None or lt is None:
+            lines[k] = lo or lt
+        elif lb is None:
+            lines[k] = lo
+        else:
+            lines[k] = _merge_block(lo, lb, lt, mine)
+        so_, sb_, st_ = (X[k][0] if k in X else None for X in (io, ib, it))
+        s = so_ if st_ is None or (so_ is not None and so_ != sb_) else st_
+        if s in sb and s not in so and s in mo:  # filed under a heading ours renamed: under the new one
+            s = mo[s]
+        elif s in sb and s not in st and s in mt:  # or one theirs renamed
+            s = mt[s]
+        place[k] = s
+    heads = {**sb, **so, **st}
+    want = {s for s in heads if _kept(s, so, sb, st)} | set(place.values())
+    out = []
+    for s in _order(want, list(so), list(sb), list(st)):
+        if heads[s] is not None:
+            out.append(heads[s])
+        here = {k for k, x in place.items() if x == s}
+        seq = lambda X: [k for k, (x, _) in X.items() if {**mt, **mo}.get(x, x) == s]  # a renamed one by its new name
+        for k in _order(here, seq(io), seq(ib), seq(it)):
+            out += lines[k]
+    return out
+
+
+def merge_file(base: str, ours: str, theirs: str) -> int:
+    """git's merge driver (%O %A %B): the merged task list into `ours`. When `merge3` can't merge it, git's
+    own text merge, and 1 with its conflict marks when that conflicts too. The branch's task is
+    AGENT_RUNNER_TASK when the runner merges."""
+    read = lambda p: Path(p).read_text(encoding='utf-8', errors='replace')
+    o, b, t = read(ours), read(base), read(theirs)
+    got = merge3(o.splitlines(), b.splitlines(), t.splitlines(), os.environ.get('AGENT_RUNNER_TASK') or None)
+    if got is None:
+        r = subprocess.run(['git', 'merge-file', '-L', 'ours', '-L', 'base', '-L', 'theirs', ours, base, theirs])
+        return 0 if r.returncode == 0 else 1
+    Path(ours).write_text('\n'.join(got) + ('\n' if o.endswith('\n') or not o else ''), encoding='utf-8')
+    return 0
+
+
+def install_driver(cwd, rels: list[str]) -> None:
+    """Make `merge_file` git's merge for `rels` (paths from the top of the repository at `cwd`): the driver
+    in the repository's config, the paths in its info/attributes, both shared by every worktree and never
+    committed. Run again it changes nothing, unless the runner moved (another interpreter)."""
+    from agent_runner.config import runner_cmd
+    g = partial(git, cwd=cwd)
+    r = g('rev-parse', '--path-format=absolute', '--git-common-dir')
+    if r.returncode:
+        return
+    cmd = shlex.join([*runner_cmd(), 'merge-plan']) + ' %O %A %B'
+    if g('config', f'merge.{DRIVER}.driver').stdout.strip() != cmd:
+        g('config', f'merge.{DRIVER}.name', 'agent-runner: a task list merged by section and task')
+        g('config', f'merge.{DRIVER}.driver', cmd)
+    att = Path(r.stdout.strip()) / 'info' / 'attributes'
+    have = att.read_text(encoding='utf-8').splitlines() if att.exists() else []
+    if missing := [w for w in (f'/{p} merge={DRIVER}' for p in rels) if w not in have]:
+        att.parent.mkdir(parents=True, exist_ok=True)
+        att.write_text('\n'.join(have + missing) + '\n', encoding='utf-8')
 
 
 # --- the command ---------------------------------------------------------------

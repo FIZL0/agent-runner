@@ -6,8 +6,8 @@ the code (`[plan] dir`, default `[run] home`/plan), shared by the main checkout 
 
 * a read pulls first (at most every PULL_EVERY s), so a pick sees everybody's edits;
 * an edit holds `locked`, pulls, edits, commits and pushes; a rejected push pulls and pushes again;
-* a pull that diverged merges with `merge=union` on *.md (the clone's .git/info/attributes): plan files are
-  one record per line. Then `tidy` drops an open TODO line whose task DONE.md has ticked;
+* a pull that diverged merges the task list and its archive by section and task (`plan.merge3`, git's
+  merge driver for them in the clone), and other *.md with `merge=union`;
 * `claim`: a runner pushes claims/<ID> before it starts a task, so two runners never take the same task.
   A claim file has no .md, so two runners claiming one task conflict, and the later one backs off.
 
@@ -70,6 +70,14 @@ def ensure_clone(c) -> None:
         raise SystemExit(f'agent-runner: cannot clone [plan] repo {c.plan_repo}: {r.stderr.strip()}')
     (c.plan_dir / '.git' / 'info').mkdir(exist_ok=True)
     (c.plan_dir / '.git' / 'info' / 'attributes').write_text('*.md merge=union\n')
+    drive(c)
+
+
+def drive(c) -> None:
+    """The clone merges its task list and archive through `plan.merge3` (later lines in its attributes win
+    over `*.md merge=union`); run on every pull, so a clone made before it gets it too."""
+    from agent_runner import plan as P
+    P.install_driver(c.plan_dir, [p.relative_to(c.plan_dir).as_posix() for p in (c.todo, c.done)])
 
 
 def _branch(c) -> str:
@@ -90,31 +98,11 @@ def pull(c, force: bool = False) -> bool:
         g = lambda *a: git(*a, cwd=c.plan_dir)
         if g('rev-parse', '--verify', '-q', up).returncode:
             return True  # an empty plan repo: the first publish creates the branch
-        before = g('rev-parse', '-q', 'HEAD').stdout.strip()
+        drive(c)
         if g('merge', '-q', '--no-edit', up).returncode:
             g('merge', '--abort')
             return False
-        if before and g('rev-parse', '-q', 'HEAD^2').stdout.strip():  # a real merge: lines may now repeat
-            tidy(c)
-            g('commit', '-qam', 'plan: drop lines a merge left open for ticked tasks')
         return True
-
-
-def tidy(c) -> None:
-    """Drop every top-level TODO task (with its sub-lines) that DONE.md has ticked: the union of a tick on
-    one side and a note on the other keeps the old open line next to the archived one."""
-    from agent_runner import plan as P
-    if not (c.todo.exists() and c.done.exists()):
-        return
-    done = {m.group(3).rstrip('.') for l in P.lines(c.done) if (m := P.ITEM.match(l)) and m.group(2) == 'x'}
-    ls, i = list(P.lines(c.todo)), 0
-    while i < len(ls):
-        m = P.ITEM.match(ls[i])
-        if m and not m.group(1) and m.group(3).rstrip('.') in done:
-            del ls[i:i + len(P._item_block(ls, i))]
-        else:
-            i += 1
-    P._write(c.todo, ls)
 
 
 def publish(c, msg: str) -> str:
