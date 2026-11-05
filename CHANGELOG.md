@@ -2,6 +2,17 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
+## 0.19.2 (2026-11-05)
+
+- An adopted gate that failed is no longer thrown away: its merge is reused as it was gated and the
+  failure handling (retests, the repair session) goes from that result, instead of a new batch with the
+  tasks that finished meanwhile and a whole gate run again. The log says how an adopted gate ended.
+- A gate that ended while no run was up counts as it ended (its exit code is read from disk), and a merge
+  built ahead (merge2) survives a restart: its turn reuses it and waits for its gate by tree.
+- A failed gate's output is kept a week (`.runner/gates/<key>.failed`); it used to be deleted.
+- Two turns waiting on the same gate run read one result; the second used to find nothing and rerun it.
+- The riders of a merge an earlier run gated wait from startup, so its turn finds them and reuses it.
+
 ## 0.19.1 (2026-11-05)
 
 - A gate that passed under an earlier run is not wasted when tasks finish or plan commits land in

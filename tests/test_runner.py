@@ -1433,6 +1433,52 @@ def test_adopted_gate_merge(repo: Path):
         ran.unlink(missing_ok=True)
 
 
+def test_adopted_gate_results(repo: Path):
+    print('run: a gate that failed, or ended, while no run was up counts as it ended')
+    if R.plat.WINDOWS:
+        return
+    R.init(repo)
+    ran = R.SLOTS_DIR / 'gate-ran.log'
+    test, R.C.run['test'] = R.C.run['test'], f'echo ok >> {ran}; test -e only_gate_fail && exit 3; true'
+    try:
+        d = R.worktree('merge', 'main')
+        git(d, 'checkout', '-q', '--detach', 'main')
+        gates = R.C.notes(R.GATES)
+        gates.mkdir(exist_ok=True)
+        out = gates / f'{R.gate_key(d)}.out'
+        rec = out.with_suffix('.json')
+        # ended while no run was up: its exit code is on disk, its record still names it
+        out.write_text('FAIL t_x\n'), out.with_suffix('.rc').write_text('3\n')
+        rec.write_text(R.json.dumps({'tid': 'W1', 'pid': 999999999, 'out': str(out), 'until': 0, 'cwd': str(d),
+                                     'rec': str(rec)}))
+        eq(R.merge_gate('W1', d, R.merge_env()), (3, 'FAIL t_x'), 'a gate that ended unwatched counts')
+        check(not ran.exists(), 'and is not run again')
+        check(out.with_suffix('.failed').exists() and not rec.exists(), 'its output is kept, its record gone')
+        # adopted while running, it fails: the merge's turn goes from that result
+        commit_on(repo, 'W2', {'w2.py': '2\n'}, 'W2: two')
+        base = git(repo, 'rev-parse', 'main')
+        git(d, 'merge', '-q', '--no-edit', 'task/W2')
+        out = gates / f'{R.gate_key(d)}.out'
+        rec = out.with_suffix('.json')
+        with open(out, 'w') as fh:
+            p = R.sp.Popen(f'(sleep 1; echo FAIL t_y; exit 3\n); echo $? > {out.with_suffix(".rc")}', shell=True,
+                           cwd=str(d), stdout=fh, stderr=R.sp.STDOUT, start_new_session=True)
+        rec.write_text(R.json.dumps({'tid': 'W2', 'pid': p.pid, 'out': str(out), 'until': R.time.time() + 60,
+                                     'cwd': str(d), 'rec': str(rec), 'base': base, 'tids': ['W2'],
+                                     'head': git(d, 'rev-parse', 'HEAD')}))
+        R.adopt_merge(d)
+        p.wait()
+        has((repo / '.runner/run.log').read_text(), r'W2: the adopted gate on W2 failed \(exit 3\)', 'said so')
+        eq(len(R.AHEADS), 1, 'its merge is kept for its turn')
+        eq(R.merge_gate('W2', d, R.merge_env()), (3, 'FAIL t_y'), 'which goes from that failure')
+        check(not ran.exists(), 'without a gate run of its own')
+        R.AHEADS.clear()
+        git(repo, 'branch', '-D', 'task/W2')
+    finally:
+        R.C.run['test'] = test
+        ran.unlink(missing_ok=True)
+
+
 def test_land_gives_merge_back(repo: Path):
     print('run: a tested merge blocked by edits gives MERGE back after LAND_WAIT, and the branch knows when it is free')
     R.init(repo)
@@ -1912,7 +1958,7 @@ def main() -> int:
                        lambda: test_gate_and_batches(repo, tmp),
                        lambda: test_platform(repo, tmp), lambda: test_shutdown(repo), lambda: test_merge_into(tmp),
                        lambda: test_leftovers(repo), lambda: test_renumber(repo),
-                       lambda: test_stop_waiter(tmp), lambda: test_stop_hook_grace(tmp), lambda: test_land_waits_aloud(repo), lambda: test_merge_ahead(repo), lambda: test_adopted_gate_merge(repo), lambda: test_land_gives_merge_back(repo),
+                       lambda: test_stop_waiter(tmp), lambda: test_stop_hook_grace(tmp), lambda: test_land_waits_aloud(repo), lambda: test_merge_ahead(repo), lambda: test_adopted_gate_merge(repo), lambda: test_adopted_gate_results(repo), lambda: test_land_gives_merge_back(repo),
                        lambda: test_edited_elsewhere(repo, tmp),
                        lambda: test_resume(repo, tmp),
                        lambda: test_session_tmp(repo, tmp), lambda: test_end_orphans(repo), lambda: test_tested_ref(repo, tmp),
