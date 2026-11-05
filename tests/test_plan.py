@@ -374,6 +374,49 @@ def test_similar():
            'a file every task names is not a match by itself')
 
 
+def test_add_refuses_a_duplicate():
+    print('plan: add refuses what looks like an open task (nothing written); --force adds; drop closes one')
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        git(root, 'init', '-q')
+        env = {**os.environ, 'AGENT_RUNNER_REPO': str(root)}
+        env.pop('AGENT_RUNNER', None)
+        for text in ("the radar's map names go inside the minimap → src/hud.rs",
+                     'world tiles pop in at once; stream them nearest first → src/tiles.rs · src/main.rs',
+                     'the menu sound plays when a slider moves → src/menu.rs · src/main.rs'):
+            eq(run(root, 'plan', 'add', 'V', text, env=env).returncode, 0, 'the first adds')
+        before = (root / 'plan' / 'TODO.md').read_text(encoding='utf-8')
+        r = run(root, 'plan', 'add', 'B', "show the map names inside the radar's minimap → src/hud.rs", env=env)
+        eq(r.returncode, 3, 'the same work again is refused')
+        has(r.stderr, r'V1: the radar', 'naming the open task')
+        has(r.stderr, r'note <ID> TEXT.*--force', 'and what to do instead')
+        eq((root / 'plan' / 'TODO.md').read_text(encoding='utf-8'), before, 'with nothing written')
+        r = run(root, 'plan', 'add', 'B', "show the map names inside the radar's minimap → src/hud.rs", '--force',
+                env=env)
+        has(r.stdout, r'added B1', '--force adds it')
+        r = run(root, 'plan', 'drop', 'B1', 'the same as V1', env=env)
+        has(r.stdout, r'dropped B1', 'drop closes it')
+        check('**B1**' not in (root / 'plan' / 'TODO.md').read_text(encoding='utf-8'), 'gone from the list')
+        has((root / 'plan' / 'DONE.md').read_text(encoding='utf-8'), r'- \[x\] \*\*B1\*\*.* — dropped: the same as V1',
+            'and archived saying why, so its id stays used')
+        eq(run(root, 'plan', 'newid', 'B', env=env).stdout.strip(), 'B2', 'B1 is not handed out again')
+        r = run(root, 'plan', 'add', 'V1', 'the map names part of it', env=env)
+        has(r.stdout, 'added V1a', "a split of a task is not refused for looking like it")
+
+
+def test_carry_notes():
+    print('plan: a note added to a task the other side ticked goes onto it in DONE.md')
+    base = ['### A', '- [ ] **A1** a — old', '- [ ] **A2** b']
+    noted = ['### A', '- [ ] **A1** a — old — a person\'s note', '- [ ] **A2** b — another']
+    ticked = ['### A', '- [ ] **A2** b']
+    done = ['# DONE', '', '### A', '- [x] **A1** a — old — landed abc', '- [x] **Z1** z']
+    eq(plan.carry_notes(done, base, [ticked, noted]),
+       ['# DONE', '', '### A', "- [x] **A1** a — old — landed abc — a person's note", '- [x] **Z1** z'],
+       'the new note only, not one the base had, nor one on a task still open')
+    eq(plan.carry_notes(plan.carry_notes(done, base, [ticked, noted]), base, [ticked, noted]),
+       plan.carry_notes(done, base, [ticked, noted]), 'and carried once')
+
+
 def test_merge3():
     print('plan: a task list merges by section and task, each part against the base')
     m = lambda o, b, t, own=None: plan.merge3(o.split('\n'), b.split('\n'), t.split('\n'), own)
@@ -441,5 +484,5 @@ def test_merge_driver():
 
 if __name__ == '__main__':
     sys.exit(report([test_plan_roundtrip, test_plan_reopen, test_plan_index_and_sections, test_brief, test_brief_outline,
-                     test_split_parents, test_add_bottom, test_add_pri, test_add_subtask, test_kinds, test_hand_edits_commit, test_similar,
+                     test_split_parents, test_add_bottom, test_add_pri, test_add_subtask, test_kinds, test_hand_edits_commit, test_similar, test_add_refuses_a_duplicate, test_carry_notes,
                      test_merge3, test_merge_driver]))

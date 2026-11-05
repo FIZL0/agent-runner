@@ -344,6 +344,24 @@ def test_done(repo: Path, tmp: Path):
         'block records only the id still open: T1 was ticked first')
 
 
+def test_note_on_a_ticked_task(repo: Path):
+    print('run: a note main added while the branch ticked the task is kept, on the task in DONE.md')
+    R.init(repo)
+    git(repo, 'checkout', '-q', 'main')
+    todo = repo / 'plan/TODO.md'
+    todo.write_text(todo.read_text().replace('### Stretch', '- [ ] **U2** noted → u2.py\n\n### Stretch'))
+    git(repo, 'commit', '-qam', 'plan: U2')
+    d = task_branch(repo, 1, 'U2')
+    (d / 'u2.py').write_text('# u2\n')
+    R.P.tick('U2', d / 'plan/TODO.md', d / 'plan/DONE.md')
+    git(d, 'add', '-A'), git(d, 'commit', '-qm', 'U2: u2'), git(d, 'checkout', '-q', '--detach')
+    R.P.note('U2', 'a person said this', todo=todo)
+    git(repo, 'commit', '-qam', 'plan: note U2')
+    eq(R.merge('U2', 'main'), None, 'the merge lands')
+    check('**U2**' not in todo.read_text(), 'the tick wins in TODO.md')
+    has((repo / 'plan/DONE.md').read_text(), r'\*\*U2\*\* noted.* — a person said this', 'and the note went with it')
+
+
 def test_merge(repo: Path, tmp: Path):
     print('run: a finished branch is joined, tested, landed, pushed, and frees what it blocked')
     R.init(repo)
@@ -1776,7 +1794,7 @@ def main() -> int:
                        lambda: test_session_tmp(repo, tmp), lambda: test_end_orphans(repo), lambda: test_tested_ref(repo, tmp),
                        lambda: test_no_pane(repo, tmp), lambda: test_other_repos_panes(repo, tmp),
                        lambda: test_limit_lets_go(repo),
-                       lambda: test_shared_push(repo, tmp), lambda: test_followups(repo), lambda: test_ci_watch(repo), test_update_notice,
+                       lambda: test_shared_push(repo, tmp), lambda: test_note_on_a_ticked_task(repo), lambda: test_followups(repo), lambda: test_ci_watch(repo), test_update_notice,
                        lambda: test_stalled(tmp)])
 
 

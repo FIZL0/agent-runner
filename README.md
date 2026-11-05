@@ -179,6 +179,12 @@ the branch is pushed after each task.
   the prompt lists them so an agent picks the right one, `plan kinds` prints them, and `plan add` refuses
   a letter the table lacks. With no table, the generic `B F T D R C` (bug, feature, tests and tooling,
   docs, research, cleanup) are suggested but not enforced.
+- `plan add` also refuses (exit 3, nothing written) text that looks like an open task's work, naming it:
+  `plan note` that task instead, or `--force` for different work. A task's own split (`plan add P13 …`)
+  is never refused for looking like P13. `plan drop ID WHY` closes a task nobody will do (a duplicate,
+  overtaken): archived with `dropped: WHY`, so its id stays used and what waits on it reopens.
+- A note one side adds to a task the other side ticks is kept: the tick wins in TODO.md, and the runner
+  appends the note to the task's line in DONE.md after the merge.
 - `→ files…` lists the files the task will touch, separated by `·`, spaces or commas. Mode d uses this
   list to keep two running tasks off the same file, and the brief pastes those files in. Files that don't
   exist yet still count, and so do patterns: `dir/**` (everything under it) and `dir/*.rs`.

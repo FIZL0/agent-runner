@@ -2,6 +2,18 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
+## 0.17.0 (2026-11-05)
+
+- `plan add` refuses text that looks like an open task's work (exit 3, nothing written), naming the open
+  task: `plan note` it there, or add again with `--force` when it is different work. It used to add the
+  task and then warn "may be the same work … drop this one", which agents kept reading as a refusal, so
+  duplicates landed (three times in one repository in a week). A task's own split is never refused for
+  looking like its parent; the runner's own filings (flaky tests, CI) are unchanged.
+- `plan drop ID WHY`: close a task nobody will do, archived with `dropped: WHY` so its id stays used and
+  what waits on it reopens. The old warning named a drop that did not exist.
+- A note one side added to a task the other side ticked is no longer lost: the tick still wins in TODO.md,
+  and after the merge the runner appends the note to the task's line in DONE.md (`plan.carry_notes`).
+
 ## 0.16.0 (2026-11-05)
 
 - The task list and its archive merge by section and task instead of by line. `run` makes

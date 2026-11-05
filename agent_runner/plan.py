@@ -14,8 +14,10 @@ re-reads it on every turn pays again. So the backlog is a command instead:
     ./run plan block <ID> [--after X,Y] WHY   [~] with "BLOCKED: (after X, Y) WHY" appended
     ./run plan unblock <ID> [NOTE]   reopen: [ ], drop "BLOCKED: …", append NOTE (what unblocked it)
     ./run plan move <ID> WHERE   WHERE = top | before ID | after ID | in SECTION (its end); sub-items follow
-    ./run plan add PREFIX TEXT [--pri LEVEL] [@ WHERE]   new "- [ ] **<next free id>** TEXT"; prints the id, and
-                                 any open task that looks like the same work (nothing when none does)
+    ./run plan add PREFIX TEXT [--pri LEVEL] [--force] [@ WHERE]   new "- [ ] **<next free id>** TEXT"; prints
+                                 the id. Refused (exit 3, nothing written) when an open task looks like the
+                                 same work: `plan note` it there, or --force when it is different work
+    ./run plan drop <ID> WHY     not done but not wanted (a duplicate, overtaken): archived with "dropped: WHY"
     ./run plan kinds             what each id letter means ([plan] kinds): an id's prefix says the kind of work
     ./run plan note <ID> TEXT    append " — TEXT" to the task (user details, priority reasons)
     ./run plan newid PREFIX      the next free id, e.g. L -> L7; a task's id gives its next subtask, L3 -> L3a
@@ -74,7 +76,7 @@ from agent_runner.gitops import git
 PROG = './run plan'  # the name in messages; a wrapper sets its own ('./kit plan')
 # The library API a wrapping project may call; names and signatures here change only in a major version.
 __all__ = ['PROG', 'HELP', 'lines', 'index', 'section', 'ensure', 'archive', 'tick', 'block', 'reopen',
-           'unblock', 'move', 'next_id', 'add', 'similar', 'note', 'next_task', 'files_on_line', 'overlap', 'brief', 'open_ids',
+           'unblock', 'move', 'next_id', 'add', 'similar', 'note', 'drop', 'next_task', 'files_on_line', 'overlap', 'brief', 'open_ids',
            'write_atomic', 'child', 'subtasks', 'main', 'PRI', 'kinds', 'check_kind']
 
 ITEM = re.compile(r'^(\s*)- \[(.)\] \*\*([^\s*]+)')
@@ -280,6 +282,13 @@ def tick(tid: str, todo=None, done=None, plan_dir=None) -> int:
         _write(own, [re.sub(rf'^(\s*)- \[[ ~]\] \*\*{re.escape(tid)}\b', rf'\1- [x] **{tid}', l)
                      for l in lines(own)])
     return archive(todo, done)
+
+
+def drop(tid: str, why: str, todo=None, done=None) -> int:
+    """Close a task nobody will do (a duplicate, work another task overtook): noted, then archived as ticked,
+    so its id stays used and what waits on it reopens. """
+    note(tid, f'dropped: {why}', todo=todo)
+    return tick(tid, todo, done)
 
 
 TASKS = 'tasks'  # a task's long form is <plan dir>/tasks/<ID>.md, so the top level stays TODO.md and overviews
@@ -958,6 +967,24 @@ def merge3(ours: list[str], base: list[str], theirs: list[str], own: str | None 
     return out
 
 
+def carry_notes(done: list[str], base: list[str], sides: list[list[str]]) -> list[str]:
+    """`done` (a merged DONE.md) with each ` — note` a side's TODO.md added to a task the other side ticked: the
+    tick wins in TODO.md (`_kept`), and git merges DONE.md apart from it, so the note would go with the line."""
+    def tops(ls):
+        return {m.group(3).rstrip('.'): l for l in ls if (m := ITEM.match(l)) and not m.group(1)}
+    was, out = tops(base), list(done)
+    for i, l in enumerate(out):
+        m = ITEM.match(l)
+        if not (m and not m.group(1)) or (tid := m.group(3).rstrip('.')) not in was:
+            continue
+        old = set(SEG.split(was[tid])[1:])
+        for side in sides:
+            for part in SEG.split(tops(side).get(tid, ''))[1:]:
+                if part.startswith(' — ') and part not in old and part not in out[i]:
+                    out[i] += part
+    return out
+
+
 def merge_file(base: str, ours: str, theirs: str) -> int:
     """git's merge driver (%O %A %B): the merged task list into `ours`. When `merge3` can't merge it, git's
     own text merge, and 1 with its conflict marks when that conflicts too. The branch's task is
@@ -1012,7 +1039,7 @@ def _commit(root: Path, paths: list[Path], msg: str) -> None:
         g('commit', '-q', '-m', f'plan: {msg}', '--', *map(str, paths))
 
 
-EDITS = ('tick', 'block', 'reopen', 'unblock', 'move', 'add', 'note', 'archive')
+EDITS = ('tick', 'block', 'reopen', 'unblock', 'move', 'add', 'note', 'archive', 'drop')
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -1046,6 +1073,9 @@ def _main(argv: list[str], c) -> int:
     if argv[:1] == ['tick'] and len(argv) == 2:
         n = tick(argv[1])
         return say(f'ticked {argv[1]}' + (f', moved {n} line(s) to {plan_dir.name}/DONE.md' if n else ''))
+    if argv[:1] == ['drop'] and len(argv) > 2:
+        drop(argv[1], ' '.join(argv[2:]))
+        return say(f'dropped {argv[1]}')
     if argv[:1] == ['block'] and len(argv) > 2:
         after, rest = None, argv[2:]
         if rest[0] == '--after' and len(rest) > 2:
@@ -1067,6 +1097,8 @@ def _main(argv: list[str], c) -> int:
                    + ('' if own else '\n(the defaults: set [plan] kinds in runner.toml to name your own)'))
     if argv[:1] == ['add'] and len(argv) > 2:
         rest, pri = argv[2:], add_default()
+        if force := '--force' in rest:
+            rest = [a for a in rest if a != '--force']
         if given := '--pri' in rest[:-1]:
             k = rest.index('--pri')
             pri, rest = rest[k + 1], rest[:k] + rest[k + 2:]
@@ -1077,14 +1109,17 @@ def _main(argv: list[str], c) -> int:
         w = where.split(maxsplit=1) or [None]
         if not given and not where and (fam := family_end(argv[1])):
             w, pri = ['after', fam[0]], fam[1]  # a split stays with its parent (module doc)
+        fam = argv[1] if re.search(r'\d', argv[1]) else None  # a split is like its parent, by design
+        same = [s for s in similar(text) if not (fam and s.split(':')[0].startswith(fam))]
+        if same and not force:
+            print(f'{PROG}: not added: already open, and may be the same work:\n  ' + '\n  '.join(same)
+                  + f'\n`{PROG} note <ID> TEXT` it there; if it is different work, add it again with --force',
+                  file=sys.stderr)
+            return 3
         tid = add(argv[1], text, w[0], (w[1:] or [None])[0], pri=pri)
-        same = similar(text, skip=tid)
         msg = f'added {tid}' + (f' ({pri})' if pri else '')
         if pri == 'critical' and os.environ.get('AGENT_RUNNER') == '1':
             msg += '\ncritical goes ahead of the queued work: its text must say what it breaks or blocks'
-        if same:
-            msg += ('\nalready open, and may be the same work (if so, `plan note` it there and drop this one):\n  '
-                    + '\n  '.join(same))
         return say(msg)
     if argv[:1] == ['note'] and len(argv) > 2:
         note(argv[1], ' '.join(argv[2:]))
