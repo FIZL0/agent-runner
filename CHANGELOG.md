@@ -2,6 +2,12 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
+## 0.19.4 (2026-11-05)
+
+- A critical follow-up goes into the plan's own Critical section when it has one (a heading naming
+  "critical"), at its end, rather than to the top of the leading "Next" section, where in an ordered
+  section it held up the queued work.
+
 ## 0.19.3 (2026-11-05)
 
 - `[run] copies`: git-ignored files copied into a new worktree once, where `links` would share one file

@@ -285,6 +285,13 @@ def test_add_pri():
         plan.add('T', 'placed by hand', pri='low', where='top', **kw)
         eq(plan.next_task(todo=todo), 'T7', '@ WHERE still overrides the level\'s place')
         eq(plan.similar('(follow-up, normal) the rider leans', todo=todo), [], 'the tag is no word to match on')
+        crit = d / 'CRIT.md'
+        crit.write_text('\n'.join(['# TODO', '', '### Critical: beside the rest', '', '- [ ] **B1** red', '',
+                                    '### Next (in this order)', '', '- [ ] **B2** queued', '']), encoding='utf-8')
+        plan.add('T', 'flaky test', pri='critical', todo=crit, done=done)
+        eq(plan.index(crit), ['# TODO', '### Critical: beside the rest', '[ ] B1', '[ ] T1',
+                              '### Next (in this order)', '[ ] B2'],
+           'a plan\'s own Critical section takes critical follow-ups, in order, not the ordered Next')
         try:
             plan.add('T', 'x', pri='urgent', **kw)
             check(False, 'an unknown level is refused')

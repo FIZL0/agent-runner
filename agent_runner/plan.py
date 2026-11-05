@@ -30,7 +30,8 @@ re-reads it on every turn pays again. So the backlog is a command instead:
 given a `--pri` (and every follow-up a running agent files, which is `normal` unless it says) is tagged
 `(follow-up, LEVEL)` and filed by its level, so the work a person queued always comes first:
 
-    critical   the top of the leading section, behind earlier critical ones: it breaks or blocks other work
+    critical   the plan's Critical section if it has one, else the top of the leading section, behind
+               earlier critical ones: it breaks or blocks other work
     normal     `### Follow-ups`, made after the person's sections (before Stretch/Parked): the usual follow-up
     low        the same section, behind every normal one: a check, a small tidy-up, a nice-to-have
     later      `### Parked`, which a run never starts: big future work for a person to schedule
@@ -489,7 +490,10 @@ def _make_section(ls: list[str], name: str, before: tuple[str, ...]) -> int:
 
 def _place_pri(ls: list[str], pri: str) -> int:
     """Index to file a follow-up of level `pri` at (see the module doc); may add its section to `ls`."""
-    if pri == 'critical':
+    if pri == 'critical':  # a plan's own Critical section, if it has one (it runs beside the ordered work)
+        h = next((i for i, l in enumerate(ls) if _level(l) and 'critical' in l.lower()), None)
+        if h is not None:  # everything there is critical: in order, at its end
+            return _section_end(ls, h)
         i = _place(ls, 'top', None)
         while i < len(ls) and ITEM.match(ls[i]) and (t := PRI_TAG.search(ls[i])) and t.group(1) == 'critical':
             i += len(_item_block(ls, i))
