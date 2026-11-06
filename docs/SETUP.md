@@ -384,7 +384,8 @@ git-ignored.
 ## Versions
 
 [Semantic versioning](https://semver.org). The version is in `agent_runner.__version__` and
-`agent-runner --version`. Every release is a tag `vX.Y.Z` with an entry in [CHANGELOG.md](../CHANGELOG.md).
+`agent-runner --version`. Every release is a tag `vX.Y.Z` with an entry in [CHANGELOG.md](../CHANGELOG.md):
+the `release` workflow tags and releases each new version pushed to `main`.
 
 **Breaking (a major bump; minor while 0.x)** is anything that makes a repo's existing setup stop working:
 

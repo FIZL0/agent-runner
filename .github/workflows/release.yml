@@ -1,0 +1,25 @@
+# Tags and releases the version in agent_runner/__init__.py when a push to main carries a new one.
+name: release
+on:
+  push:
+    branches: [main]
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Tag and release a new version
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # ponytail: releases only the pushed head's version; a push skipping versions leaves the middle ones untagged
+          version=$(sed -n "s/^__version__ = '\(.*\)'/\1/p" agent_runner/__init__.py)
+          tag="v$version"
+          if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null; then
+            echo "$tag already released"
+            exit 0
+          fi
+          notes=$(awk -v h="## $version " 'index($0, h) == 1 {f = 1; next} /^## / {f = 0} f' CHANGELOG.md)
+          gh release create "$tag" --target "$GITHUB_SHA" --title "$tag" --notes "${notes:-$tag}"
