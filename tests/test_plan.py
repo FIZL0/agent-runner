@@ -343,6 +343,33 @@ def test_kinds():
         has(r.stdout, 'added Q1a', "a task's id is a subtask, whatever the kinds")
 
 
+def test_need_files():
+    print('plan: with [plan] need_files, a new line names its files or its test')
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        git(root, 'init', '-q')
+        (root / 'src').mkdir()
+        (root / 'src' / 'race.rs').write_text('', encoding='utf-8')
+        git(root, 'add', '-A'); git(root, 'commit', '-qm', 'start')
+        env = {**os.environ, 'AGENT_RUNNER_REPO': str(root)}
+        env.pop('AGENT_RUNNER', None)
+        r = run(root, 'plan', 'add', 'S', 'the gates', env=env)
+        eq(r.returncode, 0, 'off by default, a bare line is added')
+        (root / 'runner.toml').write_text('[plan]\nneed_files = true\n', encoding='utf-8')
+        r = run(root, 'plan', 'add', 'S', 'the start drop', env=env)
+        eq(r.returncode, 2, 'a line naming no file and no test is refused')
+        has(r.stderr, r'→ path/to/file.*\| t: test', 'and the refusal says how to name them')
+        r = run(root, 'plan', 'add', 'S', 'port the gate walk of race.rs', env=env)
+        check(r.returncode == 0, 'a line whose prose names a file is added', r.stderr)
+        todo = (root / 'plan' / 'TODO.md').read_text(encoding='utf-8')
+        has(todo, r'port the gate walk of race\.rs → src/race\.rs', 'with that file as its → list, resolved')
+        for words in (['the finish line → src/finish.rs'], ['prove the finish | t: finish_width']):
+            r = run(root, 'plan', 'add', 'S', *words, env=env)
+            check(r.returncode == 0, f'a → list or a | t: test is enough: {words[0]}', r.stderr)
+        eq(plan.with_files('the a/b.rs and a/c.rs walk', root), 'the a/b.rs and a/c.rs walk → a/b.rs · a/c.rs',
+           'several files, in order')
+
+
 def test_hand_edits_commit():
     print('plan: a hand edit in the main checkout commits at once; mid-merge it waits')
     with tempfile.TemporaryDirectory() as tmp:
@@ -491,5 +518,5 @@ def test_merge_driver():
 
 if __name__ == '__main__':
     sys.exit(report([test_plan_roundtrip, test_plan_reopen, test_plan_index_and_sections, test_brief, test_brief_outline,
-                     test_split_parents, test_add_bottom, test_add_pri, test_add_subtask, test_kinds, test_hand_edits_commit, test_similar, test_add_refuses_a_duplicate, test_carry_notes,
+                     test_split_parents, test_add_bottom, test_add_pri, test_add_subtask, test_kinds, test_need_files, test_hand_edits_commit, test_similar, test_add_refuses_a_duplicate, test_carry_notes,
                      test_merge3, test_merge_driver]))

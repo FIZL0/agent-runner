@@ -2396,7 +2396,7 @@ def file_flaky(rel: str) -> list[str]:
             continue
         out.append(P.add(kind, f'make the test `{name}` robust: it failed under load in {tid}\'s merge gate and '
                                f'passed alone. Find what it races (wall-clock time, shared ports or files, '
-                               f'other processes) and remove that, rather than widening a timeout',
+                               f'other processes) and remove that, rather than widening a timeout | t: `{name}`',
                          todo=ROOT / rel, pri='critical'))
         open_text += '\n' + name
     return out

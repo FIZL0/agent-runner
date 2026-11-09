@@ -2,6 +2,12 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
+## 0.19.5 (2026-11-09)
+
+- `[plan] need_files`: `plan add` refuses a task line that names no file and no test (no `→` list, no
+  `| t:`), and gives one whose prose names repo files a `→` list of them. Mode `d` keeps running tasks apart
+  by those files, so a line naming none ran beside anything. A load-flake task names its test (`| t:`).
+
 ## 0.19.4 (2026-11-05)
 
 - A critical follow-up goes into the plan's own Critical section when it has one (a heading naming

@@ -587,6 +587,7 @@ outline = ""              # a command printing one file's outline; {file} is the
                           # "python3 tools/outline.py {file}": the brief shows it under each file the line names
 brief = ""                # a command whose output *is* the brief (the project's own brief tool); {id}
 kinds = {}                # id prefix -> kind of work, e.g. { B = "bug", N = "netplay" }; `plan add` keeps to it
+need_files = false        # `plan add` refuses a line naming no file and no test; prose files become its → list
 
 [git]
 master_branch = ""        # optional local shared branch; must exist and be checked out

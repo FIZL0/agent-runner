@@ -644,6 +644,21 @@ def files_on_line(text: str, root=None, tracked=None) -> list[str]:
     return list(dict.fromkeys(out))
 
 
+def with_files(text: str, root=None) -> str | None:
+    """`text` as a task line naming its files, or None when it names neither a file nor a test.
+
+    Mode `d` keeps running tasks apart by the files their lines name; a line naming none overlaps nothing
+    and runs beside anything. A line with a `→` list or a `| t:` test is kept as it is; one whose prose
+    names repo files gets them as its `→` list (the files `files_on_line` already read off it)."""
+    if '→' in text or '| t:' in text:
+        return text
+    import fnmatch
+    files = files_on_line(text, root)
+    pats = [f for f in files if '*' in f]
+    files = [f for f in files if '*' in f or not any(fnmatch.fnmatch(f, f'*{p}') for p in pats)]
+    return f'{text} → {" · ".join(files)}' if files else None
+
+
 def overlap(a: set[str], b: set[str]) -> set[str]:
     """Paths and patterns (`dir/**`, `dir/*.rs`) of `a` that meet `b`'s: equal, or one matching the other."""
     import fnmatch
@@ -1120,6 +1135,14 @@ def _main(argv: list[str], c) -> int:
                   + f'\n`{PROG} note <ID> TEXT` it there; if it is different work, add it again with --force',
                   file=sys.stderr)
             return 3
+        if cfg().raw['plan'].get('need_files'):
+            if (named := with_files(text)) is None:
+                print(f'{PROG}: not added: the line names no file and no test. End it with `→ path/to/file` '
+                      f'(the files the task will change) or `| t: test` (the test it adds): the runner keeps '
+                      f'running tasks apart by those, and a line naming none runs beside anything',
+                      file=sys.stderr)
+                return 2
+            text = named
         tid = add(argv[1], text, w[0], (w[1:] or [None])[0], pri=pri)
         msg = f'added {tid}' + (f' ({pri})' if pri else '')
         if pri == 'critical' and os.environ.get('AGENT_RUNNER') == '1':
