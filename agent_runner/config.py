@@ -134,6 +134,7 @@ DEFAULTS: dict = {
         'fix_timeout': 1800,
         'fix_ahead': True,      # that session runs before the merge lock, in the task's slot worktree: the
                                 # other merges go on meanwhile (a rider with a conflict waits for its turn)
+        'fix_ahead_max': 2,     # at most this many at once: the fix worktrees (fix1…) never outnumber it
         'build': '',            # a quick build, not the gate: a fix session runs it before it commits, so a
                                 # clash git merged without a conflict (one name defined twice) is caught there
         'repair_merges': True,  # a merge (or a batch) that fails the gate gets one session to repair it first

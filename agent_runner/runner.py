@@ -1116,6 +1116,16 @@ def low_disk(free_slots) -> bool:
                 MERGE.release()
         if (d := SLOTS_DIR / 'merge2').is_dir() and not AHEAD_BUSY.locked() and not AHEADS:
             trim(d, 'merge-ahead worktree', why)
+        with FIX_DIRS_LOCK:
+            idle = [d for d in SLOTS_DIR.glob('fix*') if re.fullmatch(r'fix\d+', d.name) and int(d.name[3:]) not in FIX_DIRS]
+            FIX_DIRS.update(int(d.name[3:]) for d in idle)  # held while cleaned, so no fix starts in one
+        try:
+            for d in idle:
+                trim(d, f'fix worktree {d.name[3:]}', why)
+        finally:
+            with FIX_DIRS_LOCK:
+                FIX_DIRS.difference_update(int(d.name[3:]) for d in idle)
+                FIX_DIRS_LOCK.notify_all()
         if free_gb() >= want:
             return False
     if not DISK_SAID[0]:
@@ -2140,7 +2150,7 @@ def refix(tid: str, branch: str, ref: str, files: list[str], d: Path, undo: bool
 
 
 FIX_DIRS: set[int] = set()  # the fix worktrees (fix<k>) in use by a fix ahead of the lock
-FIX_DIRS_LOCK = threading.Lock()
+FIX_DIRS_LOCK = threading.Condition()  # at most `[run] fix_ahead_max` of them at once
 FIXED = 'refs/agent-runner/fixed/'  # + <ID>/<task sha>: a fix session's merge of task/<ID> with the shared branch
 AGAIN = 'conflicts again with the shared branch'  # merge_batch's why when a fix ahead of the lock is due
 
@@ -2158,7 +2168,9 @@ def fix_ahead(tid: str, branch: str) -> str | None:
     lock is taken: None when there is none, or a fix session resolved it, else why not.
 
     The session merges task/<tid> into the branch's head in a fix worktree of its own (fix1, fix2, …: kept,
-    so their builds stay warm), and the merge it commits is kept as `fixed(tid)`. The other
+    so their builds stay warm; at most `[run] fix_ahead_max` at once, so the worktrees and their builds never
+    outnumber that, and each waits on `[run] before_start` as a slot does), and the merge it commits is kept
+    as `fixed(tid)`. The other
     finished tasks merge and gate meanwhile; this one then takes the lock with that merge, which goes in
     clean unless the branch has meanwhile touched the same lines again (another, smaller fix). So
     `[run] fix_timeout` holds up nobody but this task."""
@@ -2174,10 +2186,16 @@ def fix_ahead(tid: str, branch: str) -> str | None:
     if r.returncode != 1:  # 0: it merges clean; else git cannot say, and the locked merge finds out
         return None
     with FIX_DIRS_LOCK:
-        k = min(set(range(1, len(FIX_DIRS) + 2)) - FIX_DIRS)
+        while not (free := set(range(1, max(1, C.run['fix_ahead_max']) + 1)) - FIX_DIRS):
+            FIX_DIRS_LOCK.wait()  # each one builds and runs an agent: wait for a turn
+        k = min(free)
         FIX_DIRS.add(k)
     d = SLOTS_DIR / f'fix{k}'
     try:
+        while C.run['before_start'] and before_start_fails():  # no room (memory, say): as a slot waits
+            time.sleep(60)
+        if d.is_dir():
+            trim(d, f'fix worktree {k}')
         worktree(f'fix{k}', base)
         git('merge', '--abort', cwd=d)
         clean(d, base)
@@ -2199,6 +2217,7 @@ def fix_ahead(tid: str, branch: str) -> str | None:
         git('checkout', '-q', '--detach', cwd=d)
         with FIX_DIRS_LOCK:
             FIX_DIRS.discard(k)
+            FIX_DIRS_LOCK.notify()
 
 
 def repair_retest(tid: str, branch: str, d: Path, base: str, merged: str,

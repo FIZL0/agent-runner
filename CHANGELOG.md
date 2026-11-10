@@ -2,6 +2,14 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
+## 0.20.1 (2026-11-10)
+
+- At most `[run] fix_ahead_max` (2) fixes ahead of the lock at once: a run started with many finished,
+  conflicting branches would have opened a worktree, a build and an agent session for each of them. The
+  rest wait their turn, so there are never more fix worktrees than the cap. Each also waits on
+  `[run] before_start` (the room check) as a slot does, is trimmed past `slot_max_gb`, and an idle one is
+  cleaned under `min_free_gb`.
+
 ## 0.20.0 (2026-11-10)
 
 - A conflict the join cannot do gets its fix session before the merge lock is taken (`[run] fix_ahead`, on by

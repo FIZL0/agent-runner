@@ -632,6 +632,24 @@ def test_fix_ahead(repo: Path, tmp: Path):
         has(log, r'F1: conflicts again with the shared branch', 'the second because main moved under the first')
         eq((repo / 'e.py').read_text(), '# F1 version\n', 'its resolution landed')
         eq(git(repo, 'for-each-ref', 'refs/agent-runner/fixed/'), '', 'and its fixed merge ref is gone')
+        R.FIX_DIRS.update({1, 2})
+        R.C.run['fix_ahead_max'] = 2
+        took = []
+        t = R.threading.Thread(target=lambda: took.append(R.fix_ahead('F2', 'main')), daemon=True)
+        commit_on(repo, 'F2', {'e.py': '# F2 version\n'}, 'F2: e')
+        (repo / 'e.py').write_text('# main, third\n', encoding='utf-8')
+        git(repo, 'commit', '-qam', 'main edits e.py a third time')
+        t.start()
+        t.join(1)
+        check(t.is_alive(), 'with fix_ahead_max fix worktrees busy, the next fix waits its turn')
+        with R.FIX_DIRS_LOCK:
+            R.FIX_DIRS.discard(2)
+            R.FIX_DIRS_LOCK.notify()
+        t.join(30)
+        eq((took, sorted(p.name for p in R.SLOTS_DIR.glob('fix*'))), ([None], ['fix1', 'fix2']),
+           'then fixes in the freed one: never more worktrees than the cap')
+        R.FIX_DIRS.clear()
+        git(repo, 'branch', '-D', 'task/F2')
     finally:
         os.environ.pop('FAKE_FIX', None)
         R.fix_session = original_session

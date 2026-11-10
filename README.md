@@ -437,7 +437,8 @@ turn.
 A conflict the line join cannot resolve goes to one fresh session, run with the conflict in place. With
 `[run] fix_ahead` (the default) that happens before the merge lock is taken: the task's branch is merged
 into the shared branch's head in a fix worktree of its own (`.runner/slots/fix1`, `fix2`, …, kept so their
-builds stay warm), the session commits the resolution there, and the runner keeps it as
+builds stay warm; at most `fix_ahead_max`, 2, at once, the others waiting a turn, and each waiting on
+`before_start` as a slot does), the session commits the resolution there, and the runner keeps it as
 `refs/agent-runner/fixed/<ID>/<sha>`. Other tasks merge and gate meanwhile. The task then takes the lock with
 that merge, which goes in clean unless the shared branch touched the same lines again in the meantime: then
 it goes back out for another, smaller fix. Its third try fixes under the lock, in the merge worktree. Under tmux it is an interactive session in a window of its own, "master", so you can
@@ -654,6 +655,7 @@ fix_merges = true
 fix_model = "opus"
 fix_timeout = 1800
 fix_ahead = true          # fix a conflict before the merge lock, in a fix worktree: other merges go on meanwhile
+fix_ahead_max = 2         # fixes ahead at once (and so fix worktrees, fix1…): the rest wait their turn
 build = ""                # a quick build a fix or repair session runs before it commits (not the gate)
 repair_merges = true      # a merge failing the gate gets one repair session before it is parked
 home = "~/runs/{repo}"    # the worktrees (s1…, merge) and a [plan] repo clone (plan/), outside your
