@@ -1351,8 +1351,11 @@ def test_edited_elsewhere(repo: Path, tmp: Path):
     try:
         (hand / 'g.py').write_text('# g, edited by hand\n', encoding='utf-8')
         (s1 / 'f.py').write_text('# f, a slot of its own\n', encoding='utf-8')
+        fix = R.worktree('fix9', 'main')
+        (fix / 'g.py').write_text('# g, a fix ahead of the lock\n', encoding='utf-8')
         eq(R.edited_elsewhere({'g.py', 'f.py', 'h.py'}), [f'{hand} (g.py)'],
-           "a hand worktree's edit is named; a runner slot's is its own business")
+           "a hand worktree's edit is named; a runner slot's or fix worktree's is its own business")
+        git(repo, 'worktree', 'remove', '--force', str(fix))
         (repo / 'f.py').write_text('# f, in the main checkout\n', encoding='utf-8')
         has('\n'.join(R.edited_elsewhere({'f.py'})), rf'^{re.escape(str(repo))} \(f\.py\)$', 'the main checkout counts too')
         eq(R.edited_elsewhere({'h.py'}), [], 'files nobody edits: nothing')

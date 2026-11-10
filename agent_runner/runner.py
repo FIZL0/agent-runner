@@ -968,7 +968,7 @@ def edited_elsewhere(files) -> list[str]:
     out = []
     listed = git('worktree', 'list', '--porcelain', cwd=ROOT).stdout.splitlines()
     for d in (Path(l[len('worktree '):]) for l in listed if l.startswith('worktree ')):
-        if d.parent == SLOTS_DIR and re.fullmatch(r's\d+|merge', d.name):
+        if d.parent == SLOTS_DIR and re.fullmatch(r's\d+|merge\d*|fix\d+', d.name):
             continue
         if not d.is_dir():  # a worktree whose folder was deleted (git lists it as prunable)
             continue

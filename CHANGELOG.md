@@ -2,6 +2,11 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
+## 0.20.3 (2026-11-10)
+
+- A fix worktree (and `merge2`) is the runner's own: a task starting on files a fix ahead of the lock has
+  open was logged as heading into "uncommitted edits outside the runner".
+
 ## 0.20.2 (2026-11-10)
 
 - `[run] suspect` flags a block a merge adds, not a blocked line edited some other way (`fill_files` adding its
