@@ -513,7 +513,7 @@ def pane(name: str, cwd: Path, cmd: str, env=(), logfile: Path | None = None) ->
     w = window('master' if name == 'master' else 'agents')
     where = ['new-window', '-n', w]
     if name == 'master':
-        pass  # one session at a time (it runs under MERGE), and its window closes with it
+        pass  # a window per session (fixes ahead of the lock run side by side); it closes with it
     elif wid := window_id(w):
         here = sorted((int(h[1:]), p) for p, h in
                       (l.split('\t') for l in tmux('list-panes', '-t', wid, '-F',
@@ -1879,8 +1879,8 @@ def fix_cmd(prompt: str) -> list[str]:
 def fix_merge(tid: str, branch: str, files: list[str], cwd: Path, start: str = '', ref: str = '') -> str | None:
     """Give a conflict the join cannot do to a fresh agent session, in `cwd`. None when it landed.
 
-    One session per merge, run to completion while the caller waits: the merge lock is held anyway, so
-    there is nothing to gain from doing it in the background. Each one starts with an empty context and the
+    One session per merge, run to completion while the caller waits: ahead of the merge lock (`fix_ahead`),
+    in the task's own slot worktree, or under it in the merge worktree on a last try. Each one starts with an empty context and the
     ledger's tail, so the twentieth costs what the first did. (See the README for why this replaced a
     long-lived "master" session. Under tmux it still runs in a window named "master": see `fix_session`.)
 
@@ -2064,28 +2064,33 @@ def merge(tid: str, branch: str) -> str | None:
     Returns None when it landed, else why it was left alone. The shared branch is then as it was, and the
     task branch is still there.
     """
-    WAITING.add(tid)
-    with MERGE:
-        WAITING.discard(tid)
-        if tid in LANDED:  # it went in with an earlier task's batch
-            base, merged = LANDED.pop(tid)
-        elif why := merge_batch(tid, branch):
+    for tries in range(3):
+        if tid not in LANDED and (why := fix_ahead(tid, branch)):
             return why
-        else:
+        WAITING.add(tid)
+        with MERGE:
+            WAITING.discard(tid)
+            if tid not in LANDED:  # else it went in with an earlier task's batch
+                if (why := merge_batch(tid, branch, inline=tries == 2)) == AGAIN:
+                    log(f'{tid}: {AGAIN}; it is fixed outside the lock again while the others merge')
+                    continue
+                if why:
+                    return why
             base, merged = LANDED.pop(tid)
-        git('branch', '-d', f'task/{tid}')
-        git('update-ref', '-d', TESTED + tid)
-        for h in git('for-each-ref', '--format=%(refname)', f'{HELD}{tid}/').stdout.split():
-            git('update-ref', '-d', h)
-        land_tick(tid, merged)
-        line = next((l for l in plan_text(branch) if f'**{tid}**' in l), '')
-        state = 'blocked' if line.startswith('- [~]') else 'part' if line else 'ticked'
-        msg = f'{tid}: merged, {state}' + (f'; SUSPECT, recheck: {sus}' if (sus := suspect(base, merged)) else '')
-        note(msg)
-        log(msg)
-        reopen_landed(branch, tid)  # before the push, so the reopen goes out with the merge
-        published(tid, branch)
-        return None
+            git('branch', '-d', f'task/{tid}')
+            git('update-ref', '-d', TESTED + tid)
+            for h in git('for-each-ref', '--format=%(refname)', f'{HELD}{tid}/', f'{FIXED}{tid}/').stdout.split():
+                git('update-ref', '-d', h)
+            land_tick(tid, merged)
+            line = next((l for l in plan_text(branch) if f'**{tid}**' in l), '')
+            state = 'blocked' if line.startswith('- [~]') else 'part' if line else 'ticked'
+            msg = f'{tid}: merged, {state}' + (f'; SUSPECT, recheck: {sus}' if (sus := suspect(base, merged)) else '')
+            note(msg)
+            log(msg)
+            reopen_landed(branch, tid)  # before the push, so the reopen goes out with the merge
+            published(tid, branch)
+            return None
+    return f'{tid}: no merge landed in three tries'
 
 
 def task_env(tid: str) -> dict:
@@ -2132,6 +2137,68 @@ def refix(tid: str, branch: str, ref: str, files: list[str], d: Path, undo: bool
         git('merge', '--abort', cwd=d)
         clean(d, at)
     return why
+
+
+FIX_DIRS: set[int] = set()  # the fix worktrees (fix<k>) in use by a fix ahead of the lock
+FIX_DIRS_LOCK = threading.Lock()
+FIXED = 'refs/agent-runner/fixed/'  # + <ID>/<task sha>: a fix session's merge of task/<ID> with the shared branch
+AGAIN = 'conflicts again with the shared branch'  # merge_batch's why when a fix ahead of the lock is due
+
+
+def fixed(tid: str) -> str:
+    """task/<tid>, or the merge a fix session made of it with the shared branch ahead of the lock (`fix_ahead`),
+    while task/<tid> is still the commit that merge was made from."""
+    sha = git('rev-parse', '-q', '--verify', f'task/{tid}').stdout.strip()
+    ref = f'{FIXED}{tid}/{sha}'
+    return ref if sha and git('rev-parse', '-q', '--verify', ref).returncode == 0 else f'task/{tid}'
+
+
+def fix_ahead(tid: str, branch: str) -> str | None:
+    """A conflict between task/<tid> and the shared branch that the join cannot do, resolved before the merge
+    lock is taken: None when there is none, or a fix session resolved it, else why not.
+
+    The session merges task/<tid> into the branch's head in a fix worktree of its own (fix1, fix2, …: kept,
+    so their builds stay warm), and the merge it commits is kept as `fixed(tid)`. The other
+    finished tasks merge and gate meanwhile; this one then takes the lock with that merge, which goes in
+    clean unless the branch has meanwhile touched the same lines again (another, smaller fix). So
+    `[run] fix_timeout` holds up nobody but this task."""
+    if not (C.run['fix_merges'] and C.run['fix_ahead']):
+        return None
+    task = git('rev-parse', '-q', '--verify', f'task/{tid}').stdout.strip()
+    base = git('rev-parse', branch).stdout.strip()
+    if not task or fixed(tid) != f'task/{tid}' and \
+            not git('merge-base', '--is-ancestor', base, fixed(tid)).returncode:
+        return None
+    src = fixed(tid)  # a merge fixed ahead before, which the branch has since moved past: only the new part
+    r = git('merge-tree', '--write-tree', '--name-only', '--no-messages', base, src, **task_env(tid))
+    if r.returncode != 1:  # 0: it merges clean; else git cannot say, and the locked merge finds out
+        return None
+    with FIX_DIRS_LOCK:
+        k = min(set(range(1, len(FIX_DIRS) + 2)) - FIX_DIRS)
+        FIX_DIRS.add(k)
+    d = SLOTS_DIR / f'fix{k}'
+    try:
+        worktree(f'fix{k}', base)
+        git('merge', '--abort', cwd=d)
+        clean(d, base)
+        git('checkout', '-q', '--detach', base, cwd=d)
+        ref = renumber_doubles(src, base, tid, d)
+        msg = merge_message(tid, f'task/{tid}' if src != f'task/{tid}' else ref)
+        if (files := merge_into(d, ref, msg, tid)) is None:
+            return None  # git refused it here: the locked merge says so
+        if files and not joined(files, tid, d):
+            git('merge', '--abort', cwd=d)
+            git('merge', '--no-edit', '-m', msg, ref, cwd=d, **task_env(tid))
+            log(f'{tid}: resolving its conflicts with {branch} outside the merge lock, in {d.name}')
+            if why := fix_merge(tid, branch, files, d):
+                return why
+        git('update-ref', f'{FIXED}{tid}/{task}', git('rev-parse', 'HEAD', cwd=d).stdout.strip())
+        return None
+    finally:
+        git('merge', '--abort', cwd=d)
+        git('checkout', '-q', '--detach', cwd=d)
+        with FIX_DIRS_LOCK:
+            FIX_DIRS.discard(k)
 
 
 def repair_retest(tid: str, branch: str, d: Path, base: str, merged: str,
@@ -2185,8 +2252,13 @@ def carry_notes(base: str, d: Path) -> None:
         path.write_text('\n'.join(got) + '\n', encoding='utf-8')
 
 
-def merge_batch(tid: str, branch: str) -> str | None:
-    """`merge`'s part under the lock: build, test and land task/<tid> and its riders; record them in LANDED."""
+def merge_batch(tid: str, branch: str, inline: bool = False) -> str | None:
+    """`merge`'s part under the lock: build, test and land task/<tid> and its riders; record them in LANDED.
+
+    A conflict of task/<tid> that the join cannot do returns AGAIN, for `fix_ahead` to take outside the lock,
+    unless `inline` (its last try) or `fix_ahead` is off: then a fix session takes it here. A rider with one
+    waits for its own turn."""
+    ahead_fix = C.run['fix_merges'] and C.run['fix_ahead'] and not inline
     d = worktree('merge', branch)
     adopt_merge(d)
     if trim(d, 'merge worktree'):
@@ -2195,7 +2267,7 @@ def merge_batch(tid: str, branch: str) -> str | None:
     repairs: list[str] = []  # a repair session's commits, replayed when the merge is built again
     repaired = False
     batch_repaired = False  # one repair session per batch; a batch that still fails is split
-    batch_fixes = C.run['fix_merges']  # a rider's conflict a join cannot do gets a fix session in the batch
+    batch_fixes = C.run['fix_merges'] and not C.run['fix_ahead']  # a rider's conflict: a fix session in the batch
     try:
         for attempt in range(3):
             git('merge', '--abort', cwd=d)
@@ -2218,19 +2290,23 @@ def merge_batch(tid: str, branch: str) -> str | None:
             else:
                 if AHEADS:
                     drop_ahead()  # the branch moved some other way, or its tasks are gone: not this merge
-                ref = renumber_doubles(f'task/{tid}', base, tid, d)
-                msg = merge_message(tid, ref)
+                own = fixed(tid)
+                ref = renumber_doubles(own, base, tid, d)
+                msg = merge_message(tid, f'task/{tid}' if own != f'task/{tid}' else ref)
                 if (files := merge_into(d, ref, msg, tid)) is None:
                     return f'git refused to merge task/{tid} into {branch} (see the merge worktree, {d})'
                 if files:
                     if joined(files, tid, d):
                         log(f'{tid}: joined both sides of {", ".join(files)}')
+                    elif ahead_fix:
+                        return AGAIN
                     elif why := refix(tid, branch, ref, files, d, msg=msg):
                         return why
                 riders = []
                 for t in ([] if solo else sorted(WAITING - set(LANDED))):
-                    ref = renumber_doubles(f'task/{t}', 'HEAD', t, d)
-                    msg = merge_message(t, ref)
+                    own = fixed(t)
+                    ref = renumber_doubles(own, 'HEAD', t, d)
+                    msg = merge_message(t, f'task/{t}' if own != f'task/{t}' else ref)
                     if (files := merge_into(d, ref, msg, t)) is None:
                         git('merge', '--abort', cwd=d)
                         continue
@@ -2689,6 +2765,8 @@ def _finish(tid: str, n: int, sid: str, branch: str) -> bool:
     # would then skip the task for good. As wip/ the task can start again, with the old attempt to read.
     if not git('branch', '-M', f'task/{tid}', wip := free_branch(f'wip/{tid}')).returncode:
         git('update-ref', '-d', TESTED + tid)
+        for h in git('for-each-ref', '--format=%(refname)', f'{FIXED}{tid}/').stdout.split():
+            git('update-ref', '-d', h)
         log(f'{tid}: its branch is parked as {wip}; the task stays open and can start again')
         if out := push(ROOT, wip):  # the one copy of that work: get it off this disk
             log(f'{tid}: {out}')
@@ -2949,7 +3027,7 @@ def sweep_tmp(force: bool = False) -> None:
         return
     end_orphans()
     keep = live_sessions() | {q[1] for q in queued().values()}
-    mine = {project_slug(d) for d in SLOTS_DIR.glob('*') if re.fullmatch(r's\d+|merge', d.name)}
+    mine = {project_slug(d) for d in SLOTS_DIR.glob('*') if re.fullmatch(r's\d+|merge|fix\d+', d.name)}
     cutoff, freed = time.time() - SESSION_TMP_KEEP, 0
     for root in tmp_roots():
         for proj in root.glob('claude-*/*'):

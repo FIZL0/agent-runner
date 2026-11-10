@@ -434,13 +434,18 @@ turn.
 
 ### Fix sessions
 
-A conflict the line join cannot resolve goes to one fresh session, run in the merge worktree with the
-conflict in place. Under tmux it is an interactive session in a window of its own, "master", so you can
+A conflict the line join cannot resolve goes to one fresh session, run with the conflict in place. With
+`[run] fix_ahead` (the default) that happens before the merge lock is taken: the task's branch is merged
+into the shared branch's head in a fix worktree of its own (`.runner/slots/fix1`, `fix2`, …, kept so their
+builds stay warm), the session commits the resolution there, and the runner keeps it as
+`refs/agent-runner/fixed/<ID>/<sha>`. Other tasks merge and gate meanwhile. The task then takes the lock with
+that merge, which goes in clean unless the shared branch touched the same lines again in the meantime: then
+it goes back out for another, smaller fix. Its third try fixes under the lock, in the merge worktree. Under tmux it is an interactive session in a window of its own, "master", so you can
 watch it or take it over by typing; its Stop hook ends it once it has been idle 90 s after its answer
 (without tmux, where there is no window for it: `claude -p`). Its prompt (`FIXER` in `runner.py`) includes the tail of the ledger. It either
 commits the resolution or runs `git merge --abort` and states why; its output goes to
-`.runner/fixer.log`. The merge lock is held while it runs, and it is capped at `[run] fix_timeout`
-(30 min). Set `fix_merges = false` to park every such conflict as `wip/<ID>` instead. With `[run] build`
+`.runner/fixer.log`. It is capped at `[run] fix_timeout` (30 min); ahead of the lock that holds up only
+its own task. Set `fix_merges = false` to park every such conflict as `wip/<ID>` instead. With `[run] build`
 set, the fix session runs it before it commits and fixes what the two sides broke between them: git
 merges the files it did not stop on without reading them, so a function both sides added under one name
 builds on neither side's branch and breaks only the merge.
@@ -455,8 +460,8 @@ the first failure.
 A batch (`batch = true`) is repaired the same way, as a whole: when the branches merged together fail the
 gate, one repair session sees every merge in the batch (`REPAIR_BATCH`) and fixes where they clash, and the
 gate runs once more for all of them. Only if that fails too is the batch split, each branch merged on its
-own. A rider whose conflict the line join cannot do gets its fix session inside the batch, so it shares the
-batch's gate run instead of waiting for a turn of its own.
+own. A rider whose conflict the line join cannot do waits for its own turn, where it is fixed ahead of the
+lock; with `fix_ahead = false` it gets its fix session inside the batch and shares the batch's gate run.
 
 Tasks that finish while a batch is in its gate do not wait for it to end (`merge_ahead = true`). They are
 merged on top of the merge under test in a second worktree (`.runner/slots/merge2`) and their gate starts
@@ -648,6 +653,7 @@ joinable = []             # globs of record-per-line files a conflict may be joi
 fix_merges = true
 fix_model = "opus"
 fix_timeout = 1800
+fix_ahead = true          # fix a conflict before the merge lock, in a fix worktree: other merges go on meanwhile
 build = ""                # a quick build a fix or repair session runs before it commits (not the gate)
 repair_merges = true      # a merge failing the gate gets one repair session before it is parked
 home = "~/runs/{repo}"    # the worktrees (s1…, merge) and a [plan] repo clone (plan/), outside your

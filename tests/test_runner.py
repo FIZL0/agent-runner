@@ -601,6 +601,44 @@ def test_conflicts(repo: Path, tmp: Path):
     R.fix_cmd = original_fix_cmd
 
 
+def test_fix_ahead(repo: Path, tmp: Path):
+    print('run: a conflict is fixed outside the merge lock, again if the branch moves under it')
+    R.init(repo)
+    agent = tmp / 'fake-agent'
+    agent.write_text(FAKE_AGENT, encoding='utf-8')
+    agent.chmod(0o755)
+    R.C.run['agent'] = str(agent)
+    original_fix_cmd = use_fake_fix_agent(agent)
+    original_session = R.fix_session
+    locked, moves = [], ['# main again\n']
+
+    def session(prompt, cwd, fh, keep=None):
+        locked.append(R.MERGE.locked())
+        code = original_session(prompt, cwd, fh, keep)
+        if moves:  # main touches the same lines while the session worked
+            (repo / 'e.py').write_text(moves.pop(), encoding='utf-8')
+            git(repo, 'commit', '-qam', 'main edits e.py again')
+        return code
+    R.fix_session = session
+    os.environ['FAKE_FIX'] = 'theirs'
+    try:
+        commit_on(repo, 'F1', {'e.py': '# F1 version\n'}, 'F1: e')
+        (repo / 'e.py').write_text('# main version\n', encoding='utf-8')
+        git(repo, 'commit', '-qam', 'main edits e.py')
+        eq(R.merge('F1', 'main'), None, 'it lands')
+        eq(locked, [False, False], 'two sessions, neither under the merge lock')
+        log = (repo / '.runner/run.log').read_text()
+        has(log, r'F1: resolving its conflicts with main outside the merge lock, in fix1', 'in a fix worktree')
+        has(log, r'F1: conflicts again with the shared branch', 'the second because main moved under the first')
+        eq((repo / 'e.py').read_text(), '# F1 version\n', 'its resolution landed')
+        eq(git(repo, 'for-each-ref', 'refs/agent-runner/fixed/'), '', 'and its fixed merge ref is gone')
+    finally:
+        os.environ.pop('FAKE_FIX', None)
+        R.fix_session = original_session
+        R.fix_cmd = original_fix_cmd
+        R.C.run['agent'] = 'claude'
+
+
 def test_repair(repo: Path, tmp: Path):
     print('run: a merge that fails the gate gets one repair session; one that commits nothing is parked')
     R.init(repo)
@@ -1061,11 +1099,23 @@ def test_gate_and_batches(repo: Path, tmp: Path):
         commit_on(repo, 'B8', {'g.py': '# g, B8\n', 'b8.py': '8\n'}, 'B8: g too')
         R.WAITING.add('B8')
         os.environ['FAKE_FIX'] = 'theirs'
+        r['fix_ahead'] = False
         eq(R.merge('B7', 'main'), None, 'a rider whose conflict a join cannot do')
-        has((repo / '.runner/run.log').read_text(), r'B8: the fix session resolved g\.py', 'gets a fix session in the batch')
+        has((repo / '.runner/run.log').read_text(), r'B8: the fix session resolved g\.py',
+            'gets a fix session in the batch, with fix_ahead off')
         check((repo / 'b8.py').exists() and 'B8' in R.LANDED, 'and lands with it, in one gate run')
         R.WAITING.discard('B8')
         eq(R.merge('B8', 'main'), None, 'its own turn only does the bookkeeping')
+        r['fix_ahead'] = True
+        commit_on(repo, 'B9', {'g.py': '# g, B9\n'}, 'B9: g')
+        commit_on(repo, 'B10', {'g.py': '# g, B10\n', 'b10.py': '10\n'}, 'B10: g too')
+        R.WAITING.add('B10')
+        eq(R.merge('B9', 'main'), None, 'with fix_ahead on, the batch lands')
+        check(not (repo / 'b10.py').exists() and 'B10' not in R.LANDED,
+              'without the rider whose conflict needs a session: no session under the lock')
+        R.WAITING.discard('B10')
+        eq(R.merge('B10', 'main'), None, 'which takes its own turn, fixed ahead of the lock')
+        check((repo / 'b10.py').exists(), 'and lands')
     finally:
         os.environ.pop('FAKE_FIX', None)
         r['agent'] = 'claude'
@@ -2018,7 +2068,7 @@ def main() -> int:
         repo = make_repo(tmp)
         return report([lambda: test_master_branch_option(tmp), lambda: test_picking(repo), lambda: test_split_parents(repo), lambda: test_blockers_first(repo), lambda: test_done(repo, tmp), lambda: test_merge(repo, tmp),
                        lambda: test_retry(repo), lambda: test_unmerged(repo),
-                       lambda: test_conflicts(repo, tmp), lambda: test_repair(repo, tmp),
+                       lambda: test_conflicts(repo, tmp), lambda: test_fix_ahead(repo, tmp), lambda: test_repair(repo, tmp),
                        lambda: test_prompt_and_hooks(repo),
                        lambda: test_hooks(repo, tmp), lambda: test_run_policies(repo, tmp),
                        lambda: test_gate_and_batches(repo, tmp),

@@ -2,6 +2,17 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
+## 0.20.0 (2026-11-10)
+
+- A conflict the join cannot do gets its fix session before the merge lock is taken (`[run] fix_ahead`, on by
+  default), in a fix worktree of its own (`fix1`, `fix2`, …, kept warm). The other finished tasks merge and
+  gate meanwhile; the fixed merge (`refs/agent-runner/fixed/<ID>/<sha>`) then goes in under the lock, clean,
+  or with a second, smaller fix ahead if the shared branch touched the same lines again. The third try fixes
+  under the lock as before. `fix_timeout` now holds up only that task: one fix session used to hold every merge
+  for up to 40 min.
+- With `fix_ahead`, a batch rider whose conflict needs a session waits for its own turn instead of taking a
+  session inside the batch.
+
 ## 0.19.6 (2026-11-09)
 
 - A task line's files are its `→` list when it has one; prose file names count only on a line without one.
