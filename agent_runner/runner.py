@@ -2046,9 +2046,11 @@ def suspect(base: str, merged: str) -> str:
     if not (pat := C.run['suspect']):
         return ''
     rx = re.compile(pat, re.I)
-    added = git('diff', base, merged, '--', plan_rel('TODO.md'), plan_rel('DONE.md')).stdout
-    return next((l[1:].strip()[:200] for l in added.splitlines()
-                 if l.startswith('+') and not l.startswith('+++') and rx.search(l)), '')
+    diff = git('diff', base, merged, '--', plan_rel('TODO.md'), plan_rel('DONE.md')).stdout.splitlines()
+    gone = [l for l in diff if l.startswith('-') and not l.startswith('---')]
+    # a line edited elsewhere (its files filled in, a note added) keeps its old block: that is not a new one
+    return next((l[1:].strip()[:200] for l in diff if l.startswith('+') and not l.startswith('+++') and
+                 (m := rx.search(l)) and not any(m.group(0) in g for g in gone)), '')
 
 
 LAND_WAIT = 10 * 60  # how long a tested merge holds MERGE waiting on edits in the main checkout

@@ -2,6 +2,11 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
+## 0.20.2 (2026-11-10)
+
+- `[run] suspect` flags a block a merge adds, not a blocked line edited some other way (`fill_files` adding its
+  `→` list made S283's merge flag S251's old block).
+
 ## 0.20.1 (2026-11-10)
 
 - At most `[run] fix_ahead_max` (2) fixes ahead of the lock at once: a run started with many finished,

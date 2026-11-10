@@ -838,6 +838,12 @@ def test_hooks(repo: Path, tmp: Path):
         git(repo, 'commit', '-qam', 'T6: blocked')
         has(R.suspect(before, git(repo, 'rev-parse', 'HEAD')), r'T6.*emulator', '[run] suspect flags a block a merge adds')
         eq(R.suspect(before, before), '', 'and nothing when none was added')
+        blocked = git(repo, 'rev-parse', 'HEAD')
+        todo = repo / 'plan/TODO.md'
+        todo.write_text(re.sub(r'(\*\*T6\*\*.*)', r'\1 → z.py', todo.read_text(encoding='utf-8'), count=1),
+                        encoding='utf-8')
+        git(repo, 'commit', '-qam', 'T6: its files')
+        eq(R.suspect(blocked, git(repo, 'rev-parse', 'HEAD')), '', 'nor when a blocked line only gets its files')
     finally:
         R.C.run['suspect'] = ''
 
