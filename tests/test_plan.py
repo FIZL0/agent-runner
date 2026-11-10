@@ -370,6 +370,27 @@ def test_need_files():
            'several files, in order')
 
 
+def test_list_is_the_files():
+    print('plan: a → list is the line\'s files; a hand-written line gets its prose\'s files at the merge')
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        git(root, 'init', '-q')
+        for f in ('src/race.rs', 'src/menu.rs', 'src/ai.rs'):
+            (root / f).parent.mkdir(exist_ok=True)
+            (root / f).write_text('', encoding='utf-8')
+        git(root, 'add', '-A'); git(root, 'commit', '-qm', 'start')
+        eq(plan.files_on_line('**P327** the menu, with what race.rs has → src/menu.rs', root), ['src/menu.rs'],
+           'prose about race.rs it only reads does not reserve it')
+        eq(plan.files_on_line('**S1** the walk of race.rs | t: walk', root), ['src/race.rs'],
+           'without a list the prose still names the files')
+        todo = root / 'TODO.md'
+        todo.write_text('# TODO\n\n### Next\n\n- [ ] **S304** run it in ai.rs\n- [~] **R18** read a log BLOCKED: later\n'
+                        '- [ ] **S1** kept → src/race.rs\n- [x] **S2** done in menu.rs\n', encoding='utf-8')
+        eq(plan.fill_files(todo, root), (['S304'], ['R18']), 'filled, and the one naming nothing told')
+        has(todo.read_text(encoding='utf-8'), r'run it in ai\.rs → src/ai\.rs\n', 'with its file as the list')
+        has(todo.read_text(encoding='utf-8'), r'\*\*S2\*\* done in menu\.rs\n', 'a ticked line is left alone')
+
+
 def test_hand_edits_commit():
     print('plan: a hand edit in the main checkout commits at once; mid-merge it waits')
     with tempfile.TemporaryDirectory() as tmp:
@@ -518,5 +539,5 @@ def test_merge_driver():
 
 if __name__ == '__main__':
     sys.exit(report([test_plan_roundtrip, test_plan_reopen, test_plan_index_and_sections, test_brief, test_brief_outline,
-                     test_split_parents, test_add_bottom, test_add_pri, test_add_subtask, test_kinds, test_need_files, test_hand_edits_commit, test_similar, test_add_refuses_a_duplicate, test_carry_notes,
+                     test_split_parents, test_add_bottom, test_add_pri, test_add_subtask, test_kinds, test_need_files, test_list_is_the_files, test_hand_edits_commit, test_similar, test_add_refuses_a_duplicate, test_carry_notes,
                      test_merge3, test_merge_driver]))

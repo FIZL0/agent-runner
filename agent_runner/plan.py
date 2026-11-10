@@ -620,10 +620,13 @@ def files_on_line(text: str, root=None, tracked=None) -> list[str]:
     paths (`_tracked`), when the caller reads them once for many lines."""
     root = Path(root or cfg().root)
     text = text.split('| t:')[0]
-    names = list(dict.fromkeys(FILE_TOKEN.findall(text)))
     # what follows `→` is the task's file list by the line format, so a new top-level file counts there;
-    # the list ends with its line (a brief appends the task's long form, whose prose is no list)
-    listed = set(FILE_TOKEN.findall(text.partition('→')[2].split('\n')[0])) if '→' in text else set()
+    # the list ends with its line (a brief appends the task's long form, whose prose is no list). A line
+    # with a list names those files only: prose that mentions `race.rs` it reads but never edits would
+    # otherwise hold it off every task on race.rs
+    listed = FILE_TOKEN.findall(text.partition('→')[2].split('\n')[0]) if '→' in text else []
+    names = list(dict.fromkeys(listed or FILE_TOKEN.findall(text)))
+    listed = set(listed)
     tracked = _tracked(root) if tracked is None else tracked
     out = []
     for n in names:
@@ -657,6 +660,26 @@ def with_files(text: str, root=None) -> str | None:
     pats = [f for f in files if '*' in f]
     files = [f for f in files if '*' in f or not any(fnmatch.fnmatch(f, f'*{p}') for p in pats)]
     return f'{text} → {" · ".join(files)}' if files else None
+
+
+def fill_files(todo, root=None) -> tuple[list[str], list[str]]:
+    """Give every open or blocked task line in `todo` that names no files and no test the files its prose
+    names (`with_files`), in place: a session that writes a line into TODO.md by hand skips `plan add`'s
+    check. Returns (the ids filled, the ids still naming nothing)."""
+    ls, filled, left = list(lines(todo)), [], []
+    for i, l in enumerate(ls):
+        m = ITEM.match(l)
+        if not m or m.group(2) == 'x' or '→' in l or '| t:' in l:
+            continue
+        tid = m.group(3).rstrip('.')
+        if got := with_files(l, root):
+            ls[i] = got
+            filled.append(tid)
+        else:
+            left.append(tid)
+    if filled:
+        _write(todo, ls)
+    return filled, left
 
 
 def overlap(a: set[str], b: set[str]) -> set[str]:

@@ -2,6 +2,19 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
+## 0.19.6 (2026-11-09)
+
+- A task line's files are its `→` list when it has one; prose file names count only on a line without one.
+  A menu task that said "what race.rs already has" waited on every task touching race.rs.
+- Picking: a task that a waiting task depends on (`(after X)`, `BLOCKED: (after X)`) takes that task's place
+  in the order, transitively; Stretch and Parked lines pull nothing up. A Next task blocked on Follow-ups
+  waited behind every task between them.
+- The plan is read from the remote's shared branch when it is strictly ahead (fetched at most once a
+  minute): a hand merge pushed from another worktree left the main checkout's plan showing that task open,
+  and the next free slot would have started it again.
+- With `[plan] need_files`, each merge gives task lines written into TODO.md by hand their prose's files
+  (`plan.fill_files`) and logs, once each, the ones naming nothing.
+
 ## 0.19.5 (2026-11-09)
 
 - `[plan] need_files`: `plan add` refuses a task line that names no file and no test (no `→` list, no

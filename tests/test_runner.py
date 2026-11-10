@@ -20,6 +20,7 @@ import sys
 import tempfile
 import time
 from pathlib import Path
+from unittest import mock
 
 from _check import RUN, check, eq, git, has, report, run
 
@@ -244,6 +245,54 @@ def test_split_parents(repo: Path):
     finally:
         git(repo, 'worktree', 'remove', '--force', str(d))
         git(repo, 'branch', '-D', 'splitcheck')
+
+
+def test_blockers_first(repo: Path):
+    print('run: what a waiting task is blocked on takes its place; a pushed plan is read before the merge')
+    R.init(repo)
+    d = R.worktree('wait', 'main')
+    git(d, 'checkout', '-q', '-B', 'waitcheck', 'main')
+    (d / 'plan/TODO.md').write_text("""# TODO
+
+### Next: races (in this order)
+
+- [~] **S12e** the AI riders → e.py BLOCKED: (after S282) needs the route follower
+- [ ] **S13c** laps → c.py
+
+### Follow-ups
+
+- [ ] **M1** a car → m.py
+- [ ] **S283** the AI character → a.py
+- [ ] **S282** the route follower (after S283) → a.py
+
+### Stretch
+
+- [ ] **Z1** someday (after M1) → z.py
+""", encoding='utf-8')
+    git(d, 'commit', '-qam', 'wait check')
+    try:
+        ids = [t[0] for t in R.tasks('waitcheck')]
+        eq(ids, ['S283', 'S13c', 'M1'], 'S283 (S282 waits on it, S12e on S282) goes first; Stretch pulls nothing')
+        git(d, 'checkout', '-q', '--detach')
+        git(repo, 'update-ref', 'refs/remotes/origin/waitcheck', 'waitcheck')
+        git(d, 'checkout', '-q', 'waitcheck')
+        (d / 'plan/TODO.md').write_text((d / 'plan/TODO.md').read_text(encoding='utf-8').replace(
+            '- [ ] **S13c**', '- [x] **S13c**'), encoding='utf-8')
+        git(d, 'commit', '-qam', 'S13c landed elsewhere')
+        git(repo, 'update-ref', 'refs/remotes/origin/waitcheck', 'waitcheck')
+        git(repo, 'update-ref', 'refs/heads/waitcheck', 'waitcheck~1')
+        cls = type(R.C)
+        with mock.patch.object(cls, 'push_remote', new=property(lambda s: 'origin')), \
+                mock.patch.object(cls, 'push_merge', new=property(lambda s: True)):
+            R.FETCHED[0] = time.time()  # no fetch: the ref above stands in for one
+            check('S13c' not in [t[0] for t in R.tasks('waitcheck')], 'the remote, ahead, is the plan read')
+            git(repo, 'update-ref', 'refs/heads/waitcheck', 'refs/remotes/origin/waitcheck')
+            git(repo, 'update-ref', 'refs/remotes/origin/waitcheck', 'waitcheck~1')
+            eq(R.newest('waitcheck'), 'waitcheck', 'a remote behind the branch is not read')
+    finally:
+        git(repo, 'worktree', 'remove', '--force', str(d))
+        git(repo, 'branch', '-D', 'waitcheck')
+        git(repo, 'update-ref', '-d', 'refs/remotes/origin/waitcheck')
 
 
 def task_branch(repo: Path, n: int, tid: str) -> Path:
@@ -1967,7 +2016,7 @@ def main() -> int:
         tmp = Path(t)
         os.environ['CLAUDE_CONFIG_DIR'] = str(tmp)  # Claude.trust writes here, never to the real ~/.claude.json
         repo = make_repo(tmp)
-        return report([lambda: test_master_branch_option(tmp), lambda: test_picking(repo), lambda: test_split_parents(repo), lambda: test_done(repo, tmp), lambda: test_merge(repo, tmp),
+        return report([lambda: test_master_branch_option(tmp), lambda: test_picking(repo), lambda: test_split_parents(repo), lambda: test_blockers_first(repo), lambda: test_done(repo, tmp), lambda: test_merge(repo, tmp),
                        lambda: test_retry(repo), lambda: test_unmerged(repo),
                        lambda: test_conflicts(repo, tmp), lambda: test_repair(repo, tmp),
                        lambda: test_prompt_and_hooks(repo),

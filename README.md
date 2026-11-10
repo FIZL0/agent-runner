@@ -290,7 +290,11 @@ prints this summary; `./run run --dry-run N` shows what N free slots would start
 
 ## Picking
 
-`pick` walks TODO.md in order and starts the first task that passes all of these checks:
+`pick` walks TODO.md in order and starts the first task that passes all of these checks. The order is the
+file's, except that a task a waiting one depends on (`(after X)` on an open line, `BLOCKED: (after X)` on a
+blocked one) moves up to where that one stands, down the whole chain: a Next task blocked on a Follow-up
+does not wait behind every task between them. The plan read is the shared branch's, or its remote's when a
+push from outside the run has put that ahead (fetched at most once a minute).
 
 | skipped | why |
 |---|---|
@@ -303,6 +307,11 @@ prints this summary; `./run run --dry-run N` shows what N free slots would start
 | tried this run | one attempt per run: if it failed, a human looks next |
 | `task/<ID>` has commits not yet merged | it's finished and waiting for the merge |
 | mode d: names a file a running task names (minus `[run] shared_files`) | keeps merges clean |
+
+A line's files are its `→` list when it has one; the prose's file names count only on a line without one, so
+"uses what race.rs has" before `→ src/menu.rs` does not hold the task off `race.rs`. With `[plan] need_files`,
+each merge also gives a line written into TODO.md by hand (not through `plan add`) its prose's files, and logs
+one naming none.
 
 Mode **d** (the default) runs tasks in parallel on different files. Mode **p** follows strict plan order
 and lets files overlap, which is useful when the order matters more than clean merges.

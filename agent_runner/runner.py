@@ -215,10 +215,31 @@ def plan_text(branch: str) -> list[str]:
     if C.plan_external:
         plansync.pull(C)
         return P.lines(C.todo)
-    r = git('show', f'{branch}:{plan_rel("TODO.md")}')
+    r = git('show', f'{newest(branch)}:{plan_rel("TODO.md")}')
     if r.returncode == 0:
         return r.stdout.splitlines()
     return P.lines(C.todo)
+
+
+FETCHED = [0.0]  # when `newest` last fetched
+
+
+def newest(branch: str) -> str:
+    """`branch`, or the remote's when that is strictly ahead of it (fetched at most once a minute): a push
+    from outside the run (a hand merge in another worktree) lands in the shared branch only at the next
+    merge, and until then the picks would read a plan where that task is still open and start it again."""
+    remote = C.push_remote
+    if not (C.push_merge and remote):
+        return branch
+    if time.time() - FETCHED[0] > 60:
+        FETCHED[0] = time.time()
+        if git('remote', 'get-url', remote).returncode == 0:
+            _net(ROOT)('fetch', '-q', remote, branch)
+    ref = f'refs/remotes/{remote}/{branch}'
+    if git('rev-parse', '-q', '--verify', ref).returncode or git('rev-parse', ref).stdout == git('rev-parse', branch).stdout \
+            or git('merge-base', '--is-ancestor', branch, ref).returncode:
+        return branch
+    return ref
 
 
 def stopping() -> bool:
@@ -303,7 +324,34 @@ def tasks(branch: str) -> list[tuple[str, str, set[str], set[str]]]:
         named = set(P.TASK_ID.findall(rest)) & every - {tid}
         tracked = P._tracked(C.root) if tracked is None else tracked  # one ls-files for every line
         out.append((tid, section, set(P.files_on_line(rest, C.root, tracked)), named))
-    return out
+    return by_waiters(ls, out)
+
+
+def by_waiters(ls: list[str], out: list[tuple]) -> list[tuple]:
+    """`out` with each task a waiting one depends on moved up to where that one stands: a task in a Next
+    section blocked `(after S281)` on a Follow-up would otherwise wait for every task between them, and
+    so would everything waiting on it. Transitive; Stretch and Parked lines pull nothing up."""
+    rank, waits, section = {}, {}, ''
+    for l in ls:
+        if l.startswith('### '):
+            section = l[4:]
+            continue
+        m = TASK.match(l)
+        if not m or m.group(1) == 'x':
+            continue
+        rank.setdefault(m.group(2), len(rank))
+        if not section.startswith(P.SKIPPED):
+            waits[m.group(2)] = {i for a in re.findall(r'\(after ([^)]*)\)', l) for i in P.TASK_ID.findall(a)}
+    for _ in range(len(waits)):  # each pass moves a rank one link down a chain
+        moved = False
+        for w, deps in waits.items():
+            for dep in deps:
+                if dep in rank and rank[w] < rank[dep]:
+                    rank[dep], moved = rank[w], True
+        if not moved:
+            break
+    order = {t[0]: (rank.get(t[0], len(rank)), k) for k, t in enumerate(out)}
+    return sorted(out, key=lambda t: order[t[0]])
 
 
 def ahead(branch: str) -> list[str]:
@@ -400,6 +448,7 @@ def pick(running: dict, tried: set, mode: str, branch: str, claim: bool = False)
 
 
 PASSED: set[str] = set()  # tasks `pick` could not claim, said once each
+BARE: set[str] = set()  # task lines naming no files and no test, said once each
 
 
 # --- worktrees and panes -------------------------------------------------------
@@ -2209,6 +2258,13 @@ def merge_batch(tid: str, branch: str) -> str | None:
             if not C.plan_external:  # outside, `done` and `land_tick` archive as they tick
                 carry_notes(base, d)
                 P.archive(d / plan_rel('TODO.md'), d / plan_rel('DONE.md'))
+                if C.raw['plan'].get('need_files'):  # a line written in by hand skipped `plan add`'s check
+                    filled, left = P.fill_files(d / plan_rel('TODO.md'), d)
+                    if filled:
+                        log(f'{tid}: named the files on {", ".join(filled)} from their prose')
+                    if left := [t for t in left if t not in BARE]:
+                        BARE.update(left)
+                        log(f'{tid}: {", ".join(left)} name no files and no test; mode d runs them beside anything')
             plan_files = [plan_rel('TODO.md'), plan_rel('DONE.md')]
             if git('status', '--porcelain', '--', *plan_files, cwd=d).stdout.strip():
                 git('commit', '-qm', f'{tid}: archive ticked tasks', '--', *plan_files, cwd=d)
