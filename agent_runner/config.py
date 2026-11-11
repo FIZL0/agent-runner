@@ -145,6 +145,10 @@ DEFAULTS: dict = {
                                 # before its next task (runner.trim); 0 = never
         'min_free_gb': 10,      # less free disk than this: free worktrees are cleaned, and no new task starts
                                 # until there is room again; 0 = never
+        'proc_max_gb': 'auto',  # a process of the run's (a session's tool, a gate's test) resident past this
+                                # is ended, so a runaway eats one test and not the machine; 'auto': a quarter
+                                # of the memory; 0 = never
+        'min_free_mem_gb': 4,   # less memory available than this: the run's biggest process is ended; 0 = never
         'slot_clean': '',       # a project's own clean, run instead of the trim and of the low-disk
                                 # `git clean -ffdXq` (every git-ignored file; `links` come back on their own)
         'timeout': 3600,        # seconds the gate, a retest or a hook command (join, before_start, on_exit) may

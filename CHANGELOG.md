@@ -2,6 +2,13 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
+## 0.21.0 (2026-11-11)
+
+- A memory watch (Linux): a process of the run's (in one of its worktrees, or started from a slot; never an
+  agent) resident past `[run] proc_max_gb` ("auto": a quarter of the memory) is killed, alone, and logged;
+  under `[run] min_free_mem_gb` (4) available, the run's biggest is. A test looping over a tree in RAM had
+  grown to 52 GB in each of three slots' gates, and the machine's OOM handling ended other work for it.
+
 ## 0.20.3 (2026-11-10)
 
 - A fix worktree (and `merge2`) is the runner's own: a task starting on files a fix ahead of the lock has

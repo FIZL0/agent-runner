@@ -2067,6 +2067,46 @@ def test_end_orphans(repo: Path):
             p.wait()
 
 
+def test_memory_watch(repo: Path):
+    print("memory: a runaway of the run's past proc_max_gb is picked, or its biggest under min_free_mem_gb; "
+          "only the run's own processes, never an agent")
+    R.init(repo)
+    G = R.GB
+    saved = R.C.run['proc_max_gb'], R.C.run['min_free_mem_gb']
+    try:
+        R.C.run['proc_max_gb'], R.C.run['min_free_mem_gb'] = 'auto', 4
+        procs = [(1, 40 * G, 'test a'), (2, 2 * G, 'cargo'), (3, 10 * G, 'test b')]
+        check([p for p, _ in R.mem_hogs(procs, 60 * G, 128 * G)] == [1], 'auto: past a quarter of 128 GB')
+        check(R.mem_hogs(procs[1:], 60 * G, 128 * G) == [], 'nothing past it, and memory to spare: none')
+        check([p for p, _ in R.mem_hogs(procs[1:], 3 * G, 128 * G)] == [3], 'under the floor: the biggest')
+        check(R.mem_hogs([(2, G // 2, 'small')], 3 * G, 128 * G) == [], 'not a process under a GB')
+        R.C.run['proc_max_gb'], R.C.run['min_free_mem_gb'] = 0, 0
+        check(R.mem_hogs(procs, 1, 128 * G) == [], '0 and 0: never')
+        R.C.run['proc_max_gb'] = 8
+        check([p for p, _ in R.mem_hogs(procs, 60 * G, 128 * G)] == [1, 3], 'a number of GB')
+    finally:
+        R.C.run['proc_max_gb'], R.C.run['min_free_mem_gb'] = saved
+    if not Path('/proc/meminfo').exists():
+        return
+    d = R.SLOTS_DIR / 's7'
+    d.mkdir(parents=True, exist_ok=True)
+    base = {k: v for k, v in os.environ.items() if k != 'AGENT_RUNNER'}
+    sleep = lambda env, cwd, *extra: subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(30)', *extra],
+                                                      env={**base, **env}, cwd=str(cwd))
+    in_slot, tagged = sleep({}, d), sleep({'AGENT_RUNNER': '1'}, repo)
+    agent = sleep({}, d, '--session-id', str(__import__('uuid').uuid4()))
+    outside = sleep({}, repo)
+    try:
+        time.sleep(0.5)
+        found = {p for p, _, _ in R.runner_procs()}
+        check({in_slot.pid, tagged.pid} <= found, "a process in a slot and one with AGENT_RUNNER=1 are the run's")
+        check(not {agent.pid, outside.pid} & found, 'an agent and a process outside the run are not')
+    finally:
+        for p in (in_slot, tagged, agent, outside):
+            p.kill()
+            p.wait()
+
+
 def test_stalled(tmp: Path):
     print('run: a session quiet through a long tool run is not stalled at a prompt the moment the tool ends')
     t = tmp / 'stall.jsonl'
@@ -2104,7 +2144,7 @@ def main() -> int:
                        lambda: test_stop_waiter(tmp), lambda: test_stop_hook_grace(tmp), lambda: test_land_waits_aloud(repo), lambda: test_merge_ahead(repo), lambda: test_adopted_gate_merge(repo), lambda: test_adopted_gate_results(repo), lambda: test_copies(repo), lambda: test_land_gives_merge_back(repo),
                        lambda: test_edited_elsewhere(repo, tmp),
                        lambda: test_resume(repo, tmp),
-                       lambda: test_session_tmp(repo, tmp), lambda: test_end_orphans(repo), lambda: test_tested_ref(repo, tmp),
+                       lambda: test_session_tmp(repo, tmp), lambda: test_end_orphans(repo), lambda: test_memory_watch(repo), lambda: test_tested_ref(repo, tmp),
                        lambda: test_no_pane(repo, tmp), lambda: test_other_repos_panes(repo, tmp),
                        lambda: test_limit_lets_go(repo),
                        lambda: test_shared_push(repo, tmp), lambda: test_note_on_a_ticked_task(repo), lambda: test_adopt_merge(repo), lambda: test_followups(repo), lambda: test_ci_watch(repo), test_update_notice,

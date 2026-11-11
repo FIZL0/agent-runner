@@ -391,6 +391,14 @@ The whole clean is `git clean -ffdXq`: everything git ignores goes, and `links` 
 knows its layout better sets `slot_clean`, which then runs in both cases instead, e.g. one that drops only
 per-task build folders and keeps the shared ones: `slot_clean = "rm -rf build/task-* out/runs"`.
 
+Memory is watched the same way (Linux), every 10 s, over the run's own processes: anything working in one
+of its worktrees or started from a slot, the agents themselves aside.
+
+- **A process past `proc_max_gb`** (`"auto"`: a quarter of the machine's memory) is killed, that process
+  alone: its gate or session sees one test die and goes on, and the run logs `ended pid …` with the
+  command. A test walking a looping tree held 52 GB in each of three gates at once before this.
+- **Under `min_free_mem_gb` (4) available**, the run's biggest process (if it holds a GB) is killed instead.
+
 ### It stays up
 
 The parallel run never exits on its own. Only `once` ends by itself; otherwise use Ctrl-C or
@@ -664,6 +672,8 @@ home = "~/runs/{repo}"    # the worktrees (s1…, merge) and a [plan] repo clone
                           # Scripts ask `agent-runner home [slots|plan]` rather than rebuild the path
 slot_max_gb = 50          # a worktree over this loses its stalest build output before its next task; 0 = never
 min_free_gb = 10          # under this much free disk: free worktrees cleaned, no new task starts; 0 = never
+proc_max_gb = "auto"      # a process of the run's resident past this is killed; "auto": a quarter of RAM; 0 = never
+min_free_mem_gb = 4       # under this much memory available: the run's biggest process is killed; 0 = never
 slot_clean = ""           # a project's own clean, run instead of the trim and the full git clean -ffdXq
 timeout = 3600            # s the gate, a retest or a hook (join, before_start, on_exit) may run: past it, failed
 

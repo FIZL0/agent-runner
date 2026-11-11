@@ -3068,6 +3068,65 @@ def sweep_tmp(force: bool = False) -> None:
         log(f'swept {freed / 2**20:,.0f} MB of ended sessions\' temp folders')
 
 
+MEM_EVERY = 10  # seconds between memory_watch's looks
+
+
+def runner_procs() -> list[tuple[int, int, str]]:
+    """(pid, resident bytes, command) of each process the run started, the agents themselves aside (Linux):
+    one working in a worktree of ours (s1…, merge, merge2, fix…) or carrying a slot's AGENT_RUNNER=1."""
+    home, out = str(SLOTS_DIR.resolve()), []
+    for d in Path('/proc').iterdir():
+        if not d.name.isdigit() or int(d.name) == os.getpid():
+            continue
+        try:
+            cwd = os.readlink(d / 'cwd')
+            ours = cwd == home or cwd.startswith(home + os.sep) or b'\0AGENT_RUNNER=1\0' in b'\0' + (d / 'environ').read_bytes()
+            rss = next(int(l.split()[1]) * 1024 for l in (d / 'status').read_text().splitlines() if l.startswith('VmRSS:'))
+        except (OSError, StopIteration, ValueError):
+            continue
+        if ours and not sids(args := plat.cmdline(int(d.name)) or []):
+            out.append((int(d.name), rss, ' '.join(args).strip()[:100]))
+    return out
+
+
+def mem_hogs(procs: list[tuple[int, int, str]], avail: int, total: int) -> list[tuple[int, str]]:
+    """Which of `procs` (`runner_procs`) `memory_watch` ends, each with why: any resident past `[run]
+    proc_max_gb`; failing that, while less than `[run] min_free_mem_gb` is available, the biggest one (if it
+    holds a GB: a leak outside the run is not the gates' to pay for one by one)."""
+    cap = C.run['proc_max_gb']
+    cap = total // 4 if cap == 'auto' else int(float(cap) * GB)
+    out = [(p, f'{rss / GB:.1f} GB resident, past [run] proc_max_gb ({cap / GB:.0f} GB)')
+           for p, rss, _ in procs if cap and rss > cap]
+    floor = C.run['min_free_mem_gb'] * GB
+    if not out and floor and avail < floor and procs:
+        p, rss, _ = max(procs, key=lambda x: x[1])
+        if rss >= GB:
+            out.append((p, f"the run's biggest process ({rss / GB:.1f} GB) with {avail / GB:.1f} GB of memory "
+                           f'left, under [run] min_free_mem_gb ({C.run["min_free_mem_gb"]} GB)'))
+    return out
+
+
+def memory_watch() -> None:
+    """End a runaway before it takes the machine (Linux): every MEM_EVERY s, `mem_hogs`' picks get SIGKILL,
+    that process alone, so its gate or session sees one test die and goes on. A test that walked a looping
+    tree in RAM held 52 GB in each of three slots' gates (openmx, 11-10), and the desktop's OOM handling
+    ended other work for it."""
+    while True:
+        time.sleep(MEM_EVERY)
+        try:
+            info = {l.split(':')[0]: int(l.split()[1]) * 1024 for l in Path('/proc/meminfo').read_text().splitlines()}
+            procs = runner_procs()
+            hogs = mem_hogs(procs, info['MemAvailable'], info['MemTotal'])
+        except (OSError, ValueError, IndexError, KeyError):
+            continue
+        for pid, why in hogs:
+            log(f'ended pid {pid}, {why}: {next(c for p, _, c in procs if p == pid)}')
+            try:
+                os.kill(pid, signal.SIGKILL)
+            except OSError:
+                pass
+
+
 def live_session(sid: str) -> int | None:
     """The pid of a process still running session `sid` (its command line names it), or None: a session
     in a pane no run tagged, or another tmux session, is not cut off however its transcript ends. POSIX
@@ -3535,6 +3594,8 @@ def run(argv: list[str], prog: str) -> int:
         return 2
 
     threading.Thread(target=update_notice, daemon=True).start()
+    if Path('/proc/meminfo').exists() and (r['proc_max_gb'] or r['min_free_mem_gb']):
+        threading.Thread(target=memory_watch, daemon=True).start()
     if sys.stdin.isatty():
         threading.Thread(target=read_keys, daemon=True).start()
         log('type s + Enter here to stop gently (the running tasks finish and merge first); s again: undo')
