@@ -263,7 +263,8 @@ A follow-up an agent files gets a level (`--pri`, default `normal`), tagged on i
 
 A test that fails under load and passes alone (a `retest` pass, or a name `[run] flaky` finds in a passing
 gate's output) gets a `critical` follow-up to make it robust when the merge lands, unless an open task
-names it already.
+names it already. So does a test the memory watch ended (below): the runner names it from the killed
+process's thread names and the binary's `--list`, and the task says how much it held and where.
 
 The run reads GitHub Actions too. By default (`[run] ci_watch = "auto"`) it watches every workflow in
 `.github/workflows/` that runs on a push to the shared branch, and only those workflows' push runs, so a
@@ -271,7 +272,9 @@ nightly, release or manual run never files a task; `ci_watch = ["pages.yml"]` na
 event), and `ci_watch = false` turns it off. Every 5 min (and only when no merge holds the lock) it asks
 `gh` for the newest finished run of each workflow on the shared branch. A `gh` that cannot see the repository
 (not installed, not logged in, the wrong account) is said once in the run log rather than read as "no runs". A red one
-(a cancelled run says nothing; the one before it decides) gets a single `critical` task, its failed jobs on the
+(a cancelled run says nothing; the one before it decides; while a newer run is under way, nothing is judged)
+is first run again, its failed jobs only (`gh run rerun --failed`, `[run] ci_rerun`), since a runner GitHub
+never handed the job or a network outage reads as red too; only a red second attempt gets a single `critical` task, its failed jobs on the
 line and the last 40 lines of `gh run view --log-failed` in `plan/tasks/<ID>.md`. No second one while that task
 is open, and no run is judged twice (`<notes>/ci-<workflow>.seen`), so a broken workflow is one task, not
 an email per push. Landing never waits on CI.
@@ -396,7 +399,8 @@ of its worktrees or started from a slot, the agents themselves aside.
 
 - **A process past `proc_max_gb`** (`"auto"`: a quarter of the machine's memory) is killed, that process
   alone: its gate or session sees one test die and goes on, and the run logs `ended pid …` with the
-  command. A test walking a looping tree held 52 GB in each of three gates at once before this.
+  command. A test walking a looping tree held 52 GB in each of three gates at once before this. When the
+  process was a test binary, the test it was running gets a `critical` task at the next merge.
 - **Under `min_free_mem_gb` (4) available**, the run's biggest process (if it holds a GB) is killed instead.
 
 ### It stays up
@@ -653,6 +657,7 @@ flaky_kind = "T"          # the prefix of the critical "make <test> robust" foll
 ci_watch = "auto"         # "auto": workflows run on a push to the shared branch; ["pages.yml"]; false: off. A red newest finished run on the shared branch
                           # files one critical task (needs `gh` logged in)
 ci_kind = "B"             # the prefix of that task
+ci_rerun = true           # a red run's failed jobs are run once more before a task is filed (GitHub's own outages)
 batch = true              # finished branches waiting for the merge go in together under one gate run
 merge_ahead = true        # tasks finishing during a batch's gate are merged on it and tested beside it
 before_start = ""         # a command that must pass before any session starts (a display, a device)

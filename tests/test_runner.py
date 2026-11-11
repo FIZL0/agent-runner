@@ -16,6 +16,7 @@ import os
 import subprocess
 import re
 import shutil
+import signal
 import sys
 import tempfile
 import time
@@ -1906,7 +1907,7 @@ def test_followups(repo: Path):
             r'- \[ \] \*\*T\d+\*\* \(follow-up, critical\) make the test `a::one` robust',
             'a flaky test gets a critical task at the top, behind earlier critical ones')
         check('`b::two` robust' not in text, 'unless an open task names it already')
-        has(git(repo, 'log', '-1', '--format=%s'), r'^Plan: T\d+ to fix flaky tests \(T2', 'committed on its own')
+        has(git(repo, 'log', '-1', '--format=%s'), r'^Plan: T\d+ to fix flaky or runaway tests \(T2', 'committed on its own')
         eq(R.FLAKY, {}, 'and each is filed once')
     finally:
         git(repo, 'reset', '-q', '--hard', head)
@@ -1920,7 +1921,7 @@ def test_ci_watch(repo: Path):
              'url': 'https://example/runs/7', 'displayTitle': 'T9: something', 'createdAt': '2026-11-02T13:53:00Z'},
             {'databaseId': 8, 'status': 'completed', 'conclusion': 'cancelled', 'headSha': 'f', 'url': '',
              'displayTitle': '', 'createdAt': ''},
-            {'databaseId': 9, 'status': 'in_progress', 'conclusion': '', 'headSha': 'e', 'url': '',
+            {'databaseId': 5, 'status': 'in_progress', 'conclusion': '', 'headSha': 'e', 'url': '',
              'displayTitle': '', 'createdAt': ''}]
     log = ('ci / test\tUNKNOWN STEP\t2026-11-02T13:54:29.1Z   The system library `alsa` was not found.\n'
            'ci / test\tUNKNOWN STEP\t2026-11-02T13:54:38.1Z ##[error]Process completed with exit code 101.\n'
@@ -1939,7 +1940,7 @@ def test_ci_watch(repo: Path):
         return subprocess.CompletedProcess(a, 0, out, '')
     head, real = git(repo, 'rev-parse', 'HEAD'), ci.gh_in
     ci.gh_in = lambda cwd: gh
-    R.C.run['ci_watch'] = ['pages.yml']
+    R.C.run['ci_watch'], R.C.run['ci_rerun'] = ['pages.yml'], False
     seen = ci.seen_file(R.C.notes, 'pages.yml')
     seen.unlink(missing_ok=True)
     try:
@@ -1970,8 +1971,23 @@ def test_ci_watch(repo: Path):
         eq((R.watch_ci('main', force=True), len(asked)), ([], n), 'a plan with uncommitted edits is left alone')
         git(repo, 'checkout', '-q', '--', 'plan/TODO.md')
         eq(len(R.watch_ci('main', force=True)), 1, 'a red run after the task closed files again')
+        git(repo, 'reset', '-q', '--hard', head)
+        runs.insert(0, {**runs[0], 'databaseId': 13, 'conclusion': 'failure'})
+        runs.insert(0, {**runs[0], 'databaseId': 14, 'status': 'in_progress', 'conclusion': ''})
+        eq((R.watch_ci('main', force=True), seen.read_text().strip()), ([], '12'),
+           'a red run with a newer one still going: not judged until that one ends')
+        runs.pop(0)
+        R.C.run['ci_rerun'] = True
+        n = len(asked)
+        eq(R.watch_ci('main', force=True), [], 'ci_rerun: a red first attempt files nothing')
+        check(('run', 'rerun', '13', '--failed') in asked[n:], 'its failed jobs are run again')
+        eq(seen.read_text().strip(), '12', 'and it is judged again when the rerun ends')
+        runs[0] = {**runs[0], 'attempt': 2}
+        n = len(asked)
+        eq(len(R.watch_ci('main', force=True)), 1, 'red on the second attempt: filed')
+        check(not any(a[:2] == ('run', 'rerun') for a in asked[n:]), 'with no third try')
     finally:
-        ci.gh_in, R.C.run['ci_watch'] = real, []
+        ci.gh_in, R.C.run['ci_watch'], R.C.run['ci_rerun'] = real, [], True
         git(repo, 'reset', '-q', '--hard', head)
         seen.unlink(missing_ok=True)
 
@@ -2105,6 +2121,53 @@ def test_memory_watch(repo: Path):
         for p in (in_slot, tagged, agent, outside):
             p.kill()
             p.wait()
+
+    print('memory: a test the watch ended is named from its thread and the binary\'s --list, and filed once')
+    named = subprocess.Popen([sys.executable, '-c', 'import ctypes, threading, time\n'
+                              'def t():\n    ctypes.CDLL(None).prctl(15, b"the_parts_box_i")\n    time.sleep(30)\n'
+                              'threading.Thread(target=t).start()\ntime.sleep(30)'])
+    try:
+        time.sleep(0.5)
+        check('the_parts_box_i' in R.thread_names(named.pid), "a thread's name, the main one's aside")
+    finally:
+        named.kill()
+        named.wait()
+    exe = d / 'fake_test'
+    exe.write_text('#!/bin/sh\nprintf "the_parts_box_is_the_originals: test\\nthe_parts_list: test\\nbench_x: bench\\n"\n')
+    exe.chmod(0o755)
+    eq(R.test_names(str(exe), {'the_parts_box_i'}, str(d)), ['the_parts_box_is_the_originals'], 'the whole name')
+    eq(R.test_names(str(exe), {'cargo'}, str(d)), [], 'a thread no test is named after: none')
+    eq(R.test_names('/bin/true', {'the_parts_box_i'}, str(d)), [], 'not a test binary: none')
+    rel = R.plan_rel('TODO.md')
+    head = git(repo, 'rev-parse', 'HEAD')
+    try:
+        R.HOGS['the_parts_box_is_the_originals'] = ('31', 's3')
+        got = R.file_flaky(rel)
+        eq(len(got), 1, 'one task')
+        has((repo / rel).read_text(), rf'\*\*{got[0]}\*\* \(follow-up, critical\) make the test '
+            r'`the_parts_box_is_the_originals` stop growing: it held 31 GB in s3', 'critical, naming the test')
+        R.HOGS['the_parts_box_is_the_originals'] = ('31', 's1')
+        eq(R.file_flaky(rel), [], 'not again while that task is open')
+    finally:
+        R.HOGS.clear()
+        git(repo, 'checkout', '-q', '--', rel)
+        git(repo, 'reset', '-q', '--hard', head)
+
+    print('drop_ahead: a merge2 gate is stopped and its record removed; another worktree\'s is left')
+    gd = R.C.notes(R.GATES)
+    gd.mkdir(parents=True, exist_ok=True)
+    sleeper = subprocess.Popen(['sleep', '60'], start_new_session=True)
+    try:
+        (gd / 'a.json').write_text(json.dumps({'pid': sleeper.pid, 'cwd': str(d / 'merge2'), 'until': 0}))
+        (gd / 'b.json').write_text(json.dumps({'pid': 999999, 'cwd': str(d / 'merge2'), 'until': 0}))
+        (gd / 'c.json').write_text(json.dumps({'pid': 999999, 'cwd': str(d / 'merge'), 'until': 0}))
+        R.drop_ahead()
+        eq(sorted(f.name for f in gd.glob('*.json')), ['c.json'], "merge2's records gone, merge's kept")
+        eq(sleeper.wait(10), -signal.SIGTERM, 'the live merge2 gate stopped')
+    finally:
+        sleeper.kill()
+        for f in gd.glob('*.json'):
+            f.unlink()
 
 
 def test_stalled(tmp: Path):

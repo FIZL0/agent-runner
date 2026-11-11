@@ -124,6 +124,7 @@ DEFAULTS: dict = {
                                 # shared branch is read while a run is up: a red one files one critical task.
                                 # "auto": every workflow that runs on a push to it (push runs only); false: off
         'ci_kind': 'B',         # the id prefix that task gets
+        'ci_rerun': True,       # a red run's failed jobs are run once more first; only a second red files it
         'batch': True,          # finished branches waiting for the merge go in together under one gate run
         'merge_ahead': True,    # tasks finishing during a batch's gate are merged on it and tested beside it
         'before_start': '',     # a command that must succeed before a session starts; the slot waits on it

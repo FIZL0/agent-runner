@@ -149,7 +149,7 @@ def newest_finished(gh: Gh, workflow: str, branch: str, event: str = '') -> dict
     (none yet, every recent one cancelled, or `gh` could not answer: not logged in, offline). `event`
     (`push`): only runs that event started."""
     r = gh('run', 'list', '-w', workflow, '-b', branch, '-L', '20', *(['-e', event] if event else []),
-           '--json', 'databaseId,status,conclusion,headSha,url,displayTitle,createdAt')
+           '--json', 'databaseId,status,conclusion,headSha,url,displayTitle,createdAt,attempt')
     if r.returncode:
         return None
     try:
@@ -157,7 +157,10 @@ def newest_finished(gh: Gh, workflow: str, branch: str, event: str = '') -> dict
     except ValueError:
         return None
     done = [x for x in runs if x.get('status') == 'completed' and x.get('conclusion') not in QUIET]
-    return max(done, key=lambda x: x['databaseId'], default=None)
+    if not (run := max(done, key=lambda x: x['databaseId'], default=None)):
+        return None
+    # a newer run still going: what it says is the news (`to_file` waits for it)
+    return {**run, 'newer': any(x['databaseId'] > run['databaseId'] and x.get('status') != 'completed' for x in runs)}
 
 
 def failed_jobs(gh: Gh, run_id: int) -> list[str]:
@@ -196,19 +199,30 @@ def seen_file(notes: Callable[[str], Path], workflow: str) -> Path:
 
 
 def to_file(gh: Gh, workflow: str, branch: str, seen: Path, open_text: str,
-            event: str = '') -> tuple[str, list[str]] | None:
+            event: str = '', rerun: bool = False, say: Callable[[str], None] = lambda _: None
+            ) -> tuple[str, list[str]] | None:
     """(task line text, long form lines) for a red run nobody has been told about, else None.
 
     The newest finished run is judged once: its id goes in `seen` whatever it says, and a run no newer than
-    that is not looked at again. A red one with a task for this workflow still open files nothing."""
+    that is not looked at again. Not while a newer run is still going: that one is judged when it ends. A
+    red one with a task for this workflow still open files nothing. With `rerun`, a red run on its first
+    attempt has its failed jobs run again (`gh run rerun --failed`) instead, and is judged on the second:
+    a hosted runner that never came, or a network that dropped, is not the code's to fix. Only the newest
+    run is ever rerun, so an older commit's deploy never lands over a newer one's."""
     run = newest_finished(gh, workflow, branch, event)
-    if not run:
+    if not run or run.get('newer'):
         return None
     try:
         last = int(seen.read_text().strip() or 0)
     except (OSError, ValueError):
         last = 0
     if run['databaseId'] <= last:
+        return None
+    if rerun and run['conclusion'] in RED and run.get('attempt', 1) < 2 and \
+            marker(workflow, branch) not in open_text and \
+            not gh('run', 'rerun', str(run['databaseId']), '--failed').returncode:
+        say(f'`{workflow}` run {run["databaseId"]} on {branch} is red ({", ".join(failed_jobs(gh, run["databaseId"])) or "no job named"}); '
+            f'its failed jobs are running again, and only a second red files a task')
         return None
     seen.write_text(f'{run["databaseId"]}\n')
     if run['conclusion'] not in RED or marker(workflow, branch) in open_text:

@@ -1763,11 +1763,14 @@ def reusable(a: dict, tid: str, base: str) -> bool:
 
 
 def drop_ahead() -> None:
-    """The batches built ahead are on a merge that will not land as it is: their gates are stopped."""
+    """The batches built ahead are on a merge that will not land as it is: their gates are stopped, and their
+    records gone with them (one left behind reads as a gate still to wait on)."""
     AHEADS.clear()
     for s in gate_runs():
-        if Path(s.get('cwd', '')).name == 'merge2' and alive(s['pid']):
-            os.killpg(s['pid'], signal.SIGTERM)
+        if Path(s.get('cwd', '')).name == 'merge2':
+            if alive(s['pid']):
+                os.killpg(s['pid'], signal.SIGTERM)
+            Path(s['rec']).unlink(missing_ok=True)
 
 
 GATES = 'gates'  # <notes>/gates/<key>.pass: a tree the merge gate passed on (`merge_gate`)
@@ -2538,11 +2541,19 @@ def file_flaky(rel: str) -> list[str]:
 
     A rerun alone lets the merge through, but the flake is still there and costs every later gate a rerun (or a
     red one, when it flakes twice), so it is fixed before the queued work rather than worked around."""
-    if not FLAKY:
+    if not FLAKY and not HOGS:
         return []
     ls = P.lines(ROOT / rel)
     open_text = '\n'.join(l for l in ls if (m := P.ITEM.match(l)) and m.group(2) != 'x')
     kind, out = C.run['flaky_kind'], []
+    for name, (gb, where) in list(HOGS.items()):
+        del HOGS[name]
+        if name in open_text:
+            continue
+        out.append(P.add(kind, f'make the test `{name}` stop growing: it held {gb} GB in {where} until the run\'s '
+                               f'memory watch ended it. Find what it allocates without bound (a walk that loops, '
+                               f'a list grown per case) and bound it | t: `{name}`', todo=ROOT / rel, pri='critical'))
+        open_text += '\n' + name
     for name, tid in list(FLAKY.items()):
         del FLAKY[name]
         if name in open_text:
@@ -2599,12 +2610,12 @@ def _reopen_landed(branch: str, why: str) -> None:
     if git('branch', '--show-current').stdout.strip() != branch or git('status', '--porcelain', '--', rel).stdout.strip():
         return
     if filed := file_flaky(rel):
-        if not commit_plan(f'Plan: {", ".join(filed)} to fix flaky tests ({why}\'s gate met them)', rel):
+        if not commit_plan(f'Plan: {", ".join(filed)} to fix flaky or runaway tests ({why}\'s merge)', rel):
             git('checkout', '-q', '--', rel)
         else:
             for t in filed:
-                note(f'{t}: filed, a flaky test to make robust')
-                log(f'{t}: filed (critical), a flaky test to make robust')
+                note(f'{t}: filed, a flaky or runaway test to fix')
+                log(f'{t}: filed (critical), a flaky or runaway test to fix')
     if not (got := P.reopen(ROOT / rel)):
         return
     names = ', '.join(t for t, _ in got)
@@ -2718,7 +2729,7 @@ def watch_ci(branch: str, force: bool = False) -> list[str]:
             open_text = '\n'.join(l for l in ls if (m := P.ITEM.match(l)) and m.group(2) != 'x')
             seen = ci.seen_file(C.notes, wf)
             was = seen.read_text() if seen.exists() else ''
-            if not (got := ci.to_file(gh, wf, branch, seen, open_text, event)):
+            if not (got := ci.to_file(gh, wf, branch, seen, open_text, event, C.run['ci_rerun'], log)):
                 continue
             text, long = got
             tid = P.add(C.run['ci_kind'], text, todo=ROOT / rel, pri='critical')
@@ -3120,11 +3131,52 @@ def memory_watch() -> None:
         except (OSError, ValueError, IndexError, KeyError):
             continue
         for pid, why in hogs:
-            log(f'ended pid {pid}, {why}: {next(c for p, _, c in procs if p == pid)}')
+            rss, cmd = next((r, c) for p, r, c in procs if p == pid)
+            cut, cwd = thread_names(pid), plat_cwd(pid)
+            log(f'ended pid {pid}, {why}: {cmd}')
             try:
                 os.kill(pid, signal.SIGKILL)
             except OSError:
                 pass
+            home = str(SLOTS_DIR.resolve()) + os.sep
+            where = cwd[len(home):].split(os.sep)[0] if cwd.startswith(home) else cwd
+            for name in test_names(cmd.split(' ')[0], cut, cwd):
+                log(f'{name}: the test it was running; a task to fix it is filed at the next merge')
+                HOGS.setdefault(name, (f'{rss / GB:.0f}', where))
+
+
+HOGS: dict[str, tuple[str, str]] = {}  # a test memory_watch ended -> (GB it held, the worktree): `file_flaky` files it
+
+
+def plat_cwd(pid: int) -> str:
+    try:
+        return os.readlink(f'/proc/{pid}/cwd')
+    except OSError:
+        return ''
+
+
+def thread_names(pid: int) -> set[str]:
+    """The names of `pid`'s threads but its main one's: a Rust test binary names each test's thread after the
+    test (cut to 15 characters by the kernel)."""
+    try:
+        main = Path(f'/proc/{pid}/comm').read_text().strip()
+        return {n for t in Path(f'/proc/{pid}/task').iterdir() if (n := (t / 'comm').read_text().strip()) != main}
+    except OSError:
+        return set()
+
+
+def test_names(exe: str, cut: set[str], cwd: str) -> list[str]:
+    """The whole names of the tests whose threads are `cut`, from the binary's own `--list`; none when `exe`
+    is not a test binary (a build, a tool) or no test matches."""
+    if not cut or not exe:
+        return []
+    try:
+        ls = sp.run([exe, '--list', '--format', 'terse'], capture_output=True, text=True, timeout=60,
+                    cwd=cwd or None, stdin=sp.DEVNULL).stdout
+    except (OSError, sp.SubprocessError, ValueError):
+        return []
+    names = [l[:-len(': test')] for l in ls.splitlines() if l.endswith(': test')]
+    return sorted({n for c in cut for n in names if n.startswith(c)} if len(names) else set())
 
 
 def live_session(sid: str) -> int | None:

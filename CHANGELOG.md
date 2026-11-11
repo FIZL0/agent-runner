@@ -2,6 +2,15 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
+## 0.22.0 (2026-11-11)
+
+- CI watch: a red run's failed jobs are run once more (`[run] ci_rerun`, on by default) before a task is
+  filed, and nothing is judged while a newer run of the workflow is under way. A runner GitHub never handed
+  the job and a DNS outage had each filed a task for a branch that was fine.
+- A test the memory watch ends is named (thread names, then the binary's `--list`) and gets a `critical`
+  task at the next merge, like a flaky one.
+- `drop_ahead` removes `merge2`'s gate records with the gates it stops: one left behind read as a gate to wait on.
+
 ## 0.21.0 (2026-11-11)
 
 - A memory watch (Linux): a process of the run's (in one of its worktrees, or started from a slot; never an
