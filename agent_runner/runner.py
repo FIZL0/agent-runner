@@ -2085,6 +2085,8 @@ def merge(tid: str, branch: str) -> str | None:
         WAITING.add(tid)
         with MERGE:
             WAITING.discard(tid)
+            if tid not in LANDED and UNPUSHED:  # a batch whose last task has not taken the lock yet: its
+                push_landed(UNPUSHED[-1], branch)  # push goes out now, not after this one's gate
             if tid not in LANDED:  # else it went in with an earlier task's batch
                 if (why := merge_batch(tid, branch, inline=tries == 2)) == AGAIN:
                     log(f'{tid}: {AGAIN}; it is fixed outside the lock again while the others merge')
@@ -2493,14 +2495,29 @@ def published(tid: str, branch: str) -> None:
     push is logged, not fatal: the merge landed locally and the next one pushes both. With `[git] push_merge
     = false` the merge stays local and the `git push` to run is logged instead; `drop_if_merged` then keeps
     the task branch on the remote until the shared branch there has it.
+
+    A batch is pushed once, by the last of its tasks to land: while the others are still waiting for the lock
+    to record theirs, this one's push is left to them (each push is a CI run on the shared branch).
     """
+    UNPUSHED.append(tid)
+    if not (C.push_merge and LANDED and set(LANDED) <= WAITING):
+        push_landed(tid, branch)
+
+
+def push_landed(tid: str, branch: str) -> None:
+    """`published`'s push, for `tid` and the tasks of its batch whose push was left to it."""
     if C.push_merge:
         if out := push(ROOT, branch, shared=True):
-            log(f'{tid}: {out}')
+            log(f'{tid}: {out}' + (f' (with {", ".join(UNPUSHED[:-1])})' if len(UNPUSHED) > 1 else ''))
     elif C.push_remote:
         log(f'{tid}: merged, not pushed ([git] push_merge is off): git push {C.push_remote} {branch}')
-    if out := drop_if_merged(ROOT, f'task/{tid}'):
-        log(f'{tid}: {out}')
+    for t in UNPUSHED:
+        if out := drop_if_merged(ROOT, f'task/{t}'):
+            log(f'{t}: {out}')
+    UNPUSHED.clear()
+
+
+UNPUSHED: list[str] = []  # tasks landed whose push `published` left to the last of their batch
 
 
 REOPENED: set[str] = set()  # tasks `reopen_landed` put back to [ ]: `cmd_run` lets them be tried again

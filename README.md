@@ -658,7 +658,7 @@ ci_watch = "auto"         # "auto": workflows run on a push to the shared branch
                           # files one critical task (needs `gh` logged in)
 ci_kind = "B"             # the prefix of that task
 ci_rerun = true           # a red run's failed jobs are run once more before a task is filed (GitHub's own outages)
-batch = true              # finished branches waiting for the merge go in together under one gate run
+batch = true              # finished branches waiting for the merge go in together under one gate run, and one push
 merge_ahead = true        # tasks finishing during a batch's gate are merged on it and tested beside it
 before_start = ""         # a command that must pass before any session starts (a display, a device)
 not_attempt = ""          # regex on a branch's last commit subject ({id}): a phase, not the run's one try

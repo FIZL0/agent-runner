@@ -2,6 +2,12 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
+## 0.23.0 (2026-11-11)
+
+- A batch is pushed once, by the last of its tasks to record its landing (`… pushed main -> origin (with …)`),
+  not once per task: each push to the shared branch is a CI run. A merge that takes the lock first pushes the
+  batch before its own gate.
+
 ## 0.22.0 (2026-11-11)
 
 - CI watch: a red run's failed jobs are run once more (`[run] ci_rerun`, on by default) before a task is

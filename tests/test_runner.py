@@ -1086,9 +1086,16 @@ def test_gate_and_batches(repo: Path, tmp: Path):
     eq(R.merge('B1', 'main'), None, 'a batch lands')
     has((repo / '.runner/run.log').read_text(), r'B1: merging together with B2', 'B2 rode along with B1')
     check((repo / 'b1.py').exists() and (repo / 'b2.py').exists(), 'both are in main')
+    if R.C.push_merge:
+        check(git(repo, 'rev-parse', 'main') != git(tmp / 'origin.git', 'rev-parse', 'main'),
+              'not pushed yet: the push is left to B2, still waiting to record its landing')
     R.WAITING.discard('B2')
     eq(R.merge('B2', 'main'), None, 'the rider\'s own turn only does the bookkeeping')
     check(git(repo, 'branch', '--list', 'task/B2') == '' and not R.LANDED, 'its branch is gone')
+    if R.C.push_merge:
+        eq(git(repo, 'rev-parse', 'main'), git(tmp / 'origin.git', 'rev-parse', 'main'), 'and B2 pushed the batch, once')
+        has((repo / '.runner/run.log').read_text(), r'B2: pushed main -> origin.* \(with B1\)', 'naming B1 with it')
+        check(not {'task/B1', 'task/B2'} & set(remote_branches(tmp)), 'both remote branches dropped')
 
     agent = tmp / 'fake-agent'
     agent.write_text(FAKE_AGENT, encoding='utf-8')
