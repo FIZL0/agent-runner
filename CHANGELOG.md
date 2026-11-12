@@ -2,6 +2,15 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
+## 0.24.0 (2026-11-12)
+
+- `[run] test_since`: a merge's gate tests only what changed since `{base}`, the commit the merge is on (one
+  that passed a gate), and the whole `test` runs again once `[run] full_every_hours` (24) pass without one.
+  The log says which ran.
+- The prompt tells sessions to run `done` and whole test suites as a background command and wait: a gate
+  waiting for a lock outlasted agents' own command time limits, and a cut-off `done` commits nothing.
+- README: "Making it fast", what a many-slot setup needs from its gate.
+
 ## 0.23.0 (2026-11-11)
 
 - A batch is pushed once, by the last of its tasks to record its landing (`… pushed main -> origin (with …)`),

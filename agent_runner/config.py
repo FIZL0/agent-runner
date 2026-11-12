@@ -84,6 +84,9 @@ DEFAULTS: dict = {
     },
     'run': {
         'test': '',             # the gate: `done` and every merge run it; empty means no gate
+        'test_since': '',       # a merge's gate on what changed since {base} (a commit that passed the gate);
+                                # '' = the whole `test` every time
+        'full_every_hours': 24, # with test_since: the whole `test` again once none has passed for this long; 0 = never
         'slots': 3,
         'mux': '',              # terminal per slot: tmux, wt, console, none; '' = tmux (Windows: wt, else console)
         'mode': 'p',            # d = never two running tasks on the same file; p = strict plan order

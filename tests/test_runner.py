@@ -1613,6 +1613,40 @@ def test_adopted_gate_results(repo: Path):
         ran.unlink(missing_ok=True)
 
 
+def test_gate_since(repo: Path):
+    print('run: with test_since a merge tests what changed since its base, the whole test once a day')
+    if R.plat.WINDOWS:
+        return
+    R.init(repo)
+    ran = R.SLOTS_DIR / 'gate-ran.log'
+    saved = dict(R.C.run)
+    R.C.run.update(test=f'echo full >> {ran}', test_since=f'echo since {{base}} >> {ran}', full_every_hours=24)
+    last = R.C.notes(R.GATES) / R.FULL_PASS
+    try:
+        d = R.worktree('merge', 'main')
+        git(d, 'checkout', '-q', '--detach', 'main')
+        base = git(repo, 'rev-parse', 'main')
+        last.unlink(missing_ok=True)
+        eq(R.gate_cmd(base), (R.C.run['test'], True), 'no whole test passed yet: the whole test')
+        eq(R.merge_gate('V1', d, R.merge_env(), {'base': base, 'tids': ['V1']})[0], 0, 'which passes')
+        check(last.exists(), 'and is remembered')
+        eq(R.gate_cmd(''), (R.C.run['test'], True), 'no base: the whole test')
+        eq(R.gate_cmd(base), (f'echo since {base} >> {ran}', False), 'a fresh whole pass: only what changed')
+        commit_on(repo, 'V2', {'v2.py': '2\n'}, 'V2: two')
+        git(d, 'merge', '-q', '--no-edit', 'task/V2')
+        eq(R.merge_gate('V2', d, R.merge_env(), {'base': base, 'tids': ['V2']})[0], 0, 'the selective gate')
+        eq(ran.read_text().split('\n')[:2], ['full', f'since {base}'], 'ran with its base')
+        has((repo / '.runner/run.log').read_text(), r'V2: the gate tests what changed since', 'and said so')
+        os.utime(last, (0, 0))
+        eq(R.gate_cmd(base)[1], True, 'a day on: the whole test again')
+        R.C.run['full_every_hours'] = 0
+        eq(R.gate_cmd(base)[1], False, 'unless full_every_hours is 0')
+        git(repo, 'branch', '-D', 'task/V2')
+    finally:
+        R.C.run.clear(), R.C.run.update(saved)
+        ran.unlink(missing_ok=True)
+
+
 def test_copies(repo: Path):
     print('run: [run] copies puts its own copy of a git-ignored file in a new worktree')
     R.init(repo)
@@ -2211,7 +2245,7 @@ def main() -> int:
                        lambda: test_gate_and_batches(repo, tmp),
                        lambda: test_platform(repo, tmp), lambda: test_shutdown(repo), lambda: test_merge_into(tmp),
                        lambda: test_leftovers(repo), lambda: test_renumber(repo),
-                       lambda: test_stop_waiter(tmp), lambda: test_stop_hook_grace(tmp), lambda: test_land_waits_aloud(repo), lambda: test_merge_ahead(repo), lambda: test_adopted_gate_merge(repo), lambda: test_adopted_gate_results(repo), lambda: test_copies(repo), lambda: test_land_gives_merge_back(repo),
+                       lambda: test_stop_waiter(tmp), lambda: test_stop_hook_grace(tmp), lambda: test_land_waits_aloud(repo), lambda: test_merge_ahead(repo), lambda: test_adopted_gate_merge(repo), lambda: test_adopted_gate_results(repo), lambda: test_gate_since(repo), lambda: test_copies(repo), lambda: test_land_gives_merge_back(repo),
                        lambda: test_edited_elsewhere(repo, tmp),
                        lambda: test_resume(repo, tmp),
                        lambda: test_session_tmp(repo, tmp), lambda: test_end_orphans(repo), lambda: test_memory_watch(repo), lambda: test_tested_ref(repo, tmp),

@@ -111,7 +111,9 @@ dependency or sibling repo the task needed) are pushed as usual; never publish b
 Rules: {rules}. {test}
 {journal}
 Finish with `{runner} done {tid} "<commit message>"`. It runs the test gate, ticks the task, commits and \
-pushes, and it refuses to tick when the gate fails.
+pushes, and it refuses to tick when the gate fails. Run it, and any whole test suite, as a background command \
+and wait for it to end: beside the other slots a gate can outlast your own command time limit, and one cut \
+off there commits nothing. Never start a second one while the first still runs.
 
 If you are stuck (a tool hangs, the same fix fails twice, it needs a human, about 20 minutes with no \
 progress), commit what is solid and run `{runner} done {tid} "<msg>" --blocked "<why + what would unblock \
@@ -1813,9 +1815,26 @@ def _gate_done(s: dict) -> tuple[int, str] | None:
     if not code:
         out.with_suffix('.pass').write_text(s['tid'] + '\n', encoding='utf-8')
         out.unlink(missing_ok=True)
+        if s.get('full', True):
+            (out.parent / FULL_PASS).touch()
     else:  # kept a week, for whoever looks into why it failed
         out.replace(out.with_suffix('.failed'))
     return code, text
+
+
+FULL_PASS = 'full.last'  # <notes>/gates/full.last: touched when a whole `test` passes on a merge
+
+
+def gate_cmd(base: str) -> tuple[str, bool]:
+    """The command a merge's gate runs, and whether it is the whole `test`. With `[run] test_since`, only what
+    changed since `base` is tested: the shared branch only moves on a passed gate, and the merge built ahead
+    is on a merge whose own gate is still running (a failure there drops it). The whole `test` runs anyway
+    once none has passed for `full_every_hours`, for what a selection misses."""
+    since, hours = C.run['test_since'], C.run['full_every_hours']
+    last = C.notes(GATES) / FULL_PASS
+    if not since or not base or hours and (not last.exists() or last.stat().st_mtime < time.time() - hours * 3600):
+        return C.run['test'], True
+    return since.replace('{base}', base), False
 
 
 def merge_gate(tid: str, d: Path, env: dict, batch: dict | None = None) -> tuple[int, str]:
@@ -1849,6 +1868,9 @@ def merge_gate(tid: str, d: Path, env: dict, batch: dict | None = None) -> tuple
                 return r
     out = gates / f'{key}.out'
     timeout = C.run['timeout']
+    cmd, full = gate_cmd((batch or {}).get('base', ''))
+    if not full:
+        log(f'{tid}: the gate tests what changed since {batch["base"][:9]} ([run] test_since)')
     out.with_suffix('.rc').unlink(missing_ok=True)  # a gate killed before its end must not read as an old one's
     with GATE_DONE:
         GATE_RESULTS.pop(str(out), None)
@@ -1856,7 +1878,7 @@ def merge_gate(tid: str, d: Path, env: dict, batch: dict | None = None) -> tuple
         p = sp.Popen(f'({cmd}\n); echo $? > {shlex.quote(str(out.with_suffix(".rc")))}', shell=True, cwd=str(d),
                      env=env, stdout=fh, stderr=sp.STDOUT, stdin=sp.DEVNULL, start_new_session=True)
     s = {'tid': tid, 'pid': p.pid, 'out': str(out), 'until': time.time() + timeout, 'cwd': str(d), 'rec': str(rec),
-         **(batch or {}), 'head': git('rev-parse', 'HEAD', cwd=d).stdout.strip()}
+         'full': full, **(batch or {}), 'head': git('rev-parse', 'HEAD', cwd=d).stdout.strip()}
     rec.write_text(json.dumps(s), encoding='utf-8')
     try:
         p.wait(timeout=timeout)

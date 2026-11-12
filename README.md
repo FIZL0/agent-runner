@@ -516,11 +516,41 @@ A merge skips the gate only when `task/<ID>` is the very tree `done`'s gate pass
   `shared_files` so mode d doesn't treat it as overlap, and `joinable` so a conflict in it is joined
   rather than sent to a fix session.
 
+### Making it fast
+
+With several slots, the gate is what fills the machine and what holds the queue up: every `done` runs it,
+and every merge runs it again. What made one 32-thread, 7-slot setup go from load 120 and two-hour merges
+to load 15 and one-hour merges:
+
+- **Run gates under a lock, not one per slot.** A wrapper that lets at most a few gates run at once (a
+  `flock` on one of N lock files) and gives each `nproc / N` jobs beats seven gates fighting for every
+  core. The merge's gate can take more: the queue waits on it.
+- **Workers × threads ≤ jobs.** A test harness that runs several test binaries at once, each with its
+  own thread pool the size of the machine, runs jobs² threads. Give the binaries one shared budget of
+  threads, each taking no more than it has tests: a binary of three long tests needs three, not thirty.
+- **Light debug info in test builds.** Line tables are enough for a backtrace; full debug info made every
+  slot's target directory four times the size and every link slower (`[profile.test] debug =
+  "line-tables-only"`, and none for dependencies, in Rust).
+- **Long commands in the background.** The prompt tells sessions to run `done` and whole suites as a
+  background command and wait for it: an agent's own command time limit cuts off a gate that waited for a
+  lock, and a cut-off `done` commits nothing.
+- **Union merges for append-only files.** A log or index every task appends to conflicts on every merge;
+  `path merge=union` in `.gitattributes` joins both sides without a fix session.
+- **Split hot test files.** A test file every task adds to is a conflict and a rebuild of that whole
+  binary every time. A folder of modules (`tests/x/main.rs` + `tests/x/a.rs`) keeps tasks apart.
+- **Test what changed on merges, all of it daily.** With `[run] test_since`, a merge's gate gets
+  `{base}`, a commit that already passed: the shared branch only moves on a passed gate. Pick the tests
+  that what changed since then can reach (a library change reaches everything that uses it, a test file
+  only itself) and the merge of a test-only task takes minutes. The whole `test` still runs once
+  `full_every_hours` pass without one, for whatever a selection misses.
+- **One push per batch.** Each push to the shared branch is a CI run, so the runner pushes a batch once,
+  when its last task lands.
+
 ### The prompt
 
 The first turn of every session is `PROMPT` in `agent_runner/runner.py`, filled in for the task. It says:
 nobody will answer questions, do this task only, commit only on `task/<ID>`, read the rules file, pass
-the gate, keep a journal, finish with `done` (or `done --blocked … --after …` when stuck), a usage limit
+the gate, keep a journal, finish with `done` run in the background (or `done --blocked … --after …` when stuck), a usage limit
 isn't being stuck, use `plan` as a tool rather than reading TODO.md, and never hand-edit a box. Then
 comes the brief.
 
@@ -624,6 +654,8 @@ push_merge = true         # push the shared branch after each tested merge
 
 [run]
 test = ""                 # the gate, run by `done` and on every merge, e.g. "make test"
+test_since = ""           # a merge's gate on what changed since {base}, e.g. "make test-since REV={base}"
+full_every_hours = 24     # with test_since: the whole `test` once none has passed for this long; 0 = never
 slots = 3
 mux = ""                  # tmux, wt, console or none; "" = tmux (Windows: wt, else console)
 mode = "p"                # p: plan order; d: different files
