@@ -1064,6 +1064,16 @@ def test_gate_and_batches(repo: Path, tmp: Path):
         eq(R.tested('X', d, base), None, 'a failure that passes when rerun alone counts as passing')
         r['retest'] = 'echo FAIL {names} & exit /b 1' if R.plat.WINDOWS else 'echo FAIL {names}; false'
         eq(R.tested('X', d, base), None, 'one the base fails the same way merges anyway')
+        eq(R.BROKEN.pop('t_a', None), ('X', base, False), 'and is kept to file: the shared branch fails it')
+        last = R.C.notes(R.GATES) / R.FULL_PASS
+        last.parent.mkdir(parents=True, exist_ok=True)
+        last.unlink(missing_ok=True)
+        r['test_since'] = 'echo since {base}'
+        eq(R.tested('X', d, base), None, 'with test_since, the whole test finding it')
+        check(last.exists(), 'counts as the day\'s whole run')
+        eq(R.BROKEN.pop('t_a', None), ('X', base, True), 'filed as the daily run\'s')
+        r['test_since'] = ''
+        last.unlink(missing_ok=True)
         r['retest'] = ('if exist only_on_head (echo FAIL t_a & exit /b 1)'
                        if R.plat.WINDOWS else 'test ! -e only_on_head || { echo FAIL t_a; exit 1; }')
         has(R.tested('X', d, base) or '', r'tests fail after the merge', 'one only the merge fails stops it')
@@ -1948,7 +1958,7 @@ def test_followups(repo: Path):
             r'- \[ \] \*\*T\d+\*\* \(follow-up, critical\) make the test `a::one` robust',
             'a flaky test gets a critical task at the top, behind earlier critical ones')
         check('`b::two` robust' not in text, 'unless an open task names it already')
-        has(git(repo, 'log', '-1', '--format=%s'), r'^Plan: T\d+ to fix flaky or runaway tests \(T2', 'committed on its own')
+        has(git(repo, 'log', '-1', '--format=%s'), r'^Plan: T\d+ to fix flaky, runaway or failing tests \(T2', 'committed on its own')
         eq(R.FLAKY, {}, 'and each is filed once')
     finally:
         git(repo, 'reset', '-q', '--hard', head)
@@ -2189,6 +2199,11 @@ def test_memory_watch(repo: Path):
             r'`the_parts_box_is_the_originals` stop growing: it held 31 GB in s3', 'critical, naming the test')
         R.HOGS['the_parts_box_is_the_originals'] = ('31', 's1')
         eq(R.file_flaky(rel), [], 'not again while that task is open')
+        R.BROKEN['the_rider_leaf'] = ('X', 'a' * 40, True)
+        got = R.file_flaky(rel)
+        eq(len(got), 1, 'a test the shared branch fails: one task')
+        has((repo / rel).read_text(), rf'\*\*{got[0]}\*\* \(follow-up, critical\) make the test `the_rider_leaf` '
+            r'pass again: it fails on the shared branch \(aaaaaaaaaa\).*selection reach', 'critical, saying to widen the selection')
     finally:
         R.HOGS.clear()
         git(repo, 'checkout', '-q', '--', rel)

@@ -2,6 +2,14 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
+## 0.25.0 (2026-11-12)
+
+- A gate failure the base fails the same way still merges anyway, and now files a critical task to make the
+  test pass again (once, while none is open), so the shared branch is not left failing it unnoticed.
+- With `[run] test_since`, a whole `test` that found only failures the base already has counts as the day's
+  whole run: they are filed, and the merges after it go back to the selective gate rather than each running
+  the whole `test` again to find the same failure. The task says to widen the selection too.
+
 ## 0.24.0 (2026-11-12)
 
 - `[run] test_since`: a merge's gate tests only what changed since `{base}`, the commit the merge is on (one

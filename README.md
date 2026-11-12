@@ -542,7 +542,11 @@ to load 15 and one-hour merges:
   `{base}`, a commit that already passed: the shared branch only moves on a passed gate. Pick the tests
   that what changed since then can reach (a library change reaches everything that uses it, a test file
   only itself) and the merge of a test-only task takes minutes. The whole `test` still runs once
-  `full_every_hours` pass without one, for whatever a selection misses.
+  `full_every_hours` pass without one, for whatever a selection misses. What that run finds is already on
+  the shared branch, so with `failures` and `retest` set the merge it ran on still lands, and a critical
+  task is filed to fix the test (and widen the selection). In the selection, a guess at what a slow test
+  proves can spare a slot's own check, but the merge's gate should only drop a test that what changed
+  cannot reach.
 - **One push per batch.** Each push to the shared branch is a CI run, so the runner pushes a batch once,
   when its last task lands.
 

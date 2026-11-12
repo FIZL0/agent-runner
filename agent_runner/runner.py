@@ -2017,8 +2017,13 @@ def tested(tid: str, d: Path, base: str, tids: list[str] | None = None) -> str |
     With `[run] failures` and `retest`, a failure gets two more looks before it counts: rerun alone (a test
     that timed out under the other slots' load passes then), and rerun on `base`, the branch it merges into
     (one that already fails there the same way is not this task's doing, so it merges anyway, and says so).
+    That one is the shared branch's own failure, though, so a critical task is filed to fix it (`file_flaky`);
+    and when the whole `test` found it (`[run] test_since`'s daily run), it counts as that day's whole run:
+    the failure is filed, and every later merge running the whole `test` again only to find it again would
+    undo what `test_since` saves.
     """
     env = merge_env()
+    full = gate_cmd(base)[1]
     rc, out = merge_gate(tid, d, env, {'base': base, 'tids': tids or [tid]})
     if not rc:
         if rx := C.run['flaky']:  # the gate's own rerun of a load flake passed: still a test to fix
@@ -2058,6 +2063,11 @@ def tested(tid: str, d: Path, base: str, tids: list[str] | None = None) -> str |
     # ponytail: name-level match; a branch that breaks an already-failing test some other way slips through
     if r and r.returncode and set(re.findall(rx, r.stdout + r.stderr, re.M)) >= set(names):
         log(f'{tid}: {", ".join(names)} already fail without it; merged anyway')
+        for n in names:
+            BROKEN.setdefault(n, (tid, base, full and bool(C.run['test_since'])))
+        if full and C.run['test_since']:
+            (C.notes(GATES) / FULL_PASS).touch()
+            log(f'{tid}: the whole test ran and found only those; counted as the day\'s whole run')
         return None
     return why
 
@@ -2568,6 +2578,8 @@ def retry_reopened(tried: set[str], closed: set[str], branch: str) -> None:
 
 
 FLAKY: dict[str, str] = {}  # a test that failed under load and passed alone -> the task whose gate saw it
+# a test that failed on the merge and on its base too -> (the task, the base, whether the daily whole test found it)
+BROKEN: dict[str, tuple[str, str, bool]] = {}
 
 
 def flaky(tid: str, names: list[str]) -> None:
@@ -2576,11 +2588,12 @@ def flaky(tid: str, names: list[str]) -> None:
 
 
 def file_flaky(rel: str) -> list[str]:
-    """File a critical follow-up to make each flaky test robust, unless an open task names it already.
+    """File a critical follow-up to make each flaky test robust, each runaway one bounded, and each one the
+    shared branch already fails passing again, unless an open task names it already.
 
     A rerun alone lets the merge through, but the flake is still there and costs every later gate a rerun (or a
     red one, when it flakes twice), so it is fixed before the queued work rather than worked around."""
-    if not FLAKY and not HOGS:
+    if not FLAKY and not HOGS and not BROKEN:
         return []
     ls = P.lines(ROOT / rel)
     open_text = '\n'.join(l for l in ls if (m := P.ITEM.match(l)) and m.group(2) != 'x')
@@ -2592,6 +2605,17 @@ def file_flaky(rel: str) -> list[str]:
         out.append(P.add(kind, f'make the test `{name}` stop growing: it held {gb} GB in {where} until the run\'s '
                                f'memory watch ended it. Find what it allocates without bound (a walk that loops, '
                                f'a list grown per case) and bound it | t: `{name}`', todo=ROOT / rel, pri='critical'))
+        open_text += '\n' + name
+    for name, (tid, base, daily) in list(BROKEN.items()):
+        del BROKEN[name]
+        if name in open_text:
+            continue
+        how = (' The daily whole test found it: a selective gate ([run] test_since) let in whatever broke it, so '
+               'also make the selection reach this test from what it reads.') if daily else ''
+        out.append(P.add(kind, f'make the test `{name}` pass again: it fails on the shared branch ({base[:10]}), '
+                               f'found by {tid}\'s merge gate, which merged anyway as not its doing. Find the '
+                               f'merge that broke it (git bisect from the last gate it passed) and fix the code '
+                               f'or the test.{how} | t: `{name}`', todo=ROOT / rel, pri='critical'))
         open_text += '\n' + name
     for name, tid in list(FLAKY.items()):
         del FLAKY[name]
@@ -2649,12 +2673,12 @@ def _reopen_landed(branch: str, why: str) -> None:
     if git('branch', '--show-current').stdout.strip() != branch or git('status', '--porcelain', '--', rel).stdout.strip():
         return
     if filed := file_flaky(rel):
-        if not commit_plan(f'Plan: {", ".join(filed)} to fix flaky or runaway tests ({why}\'s merge)', rel):
+        if not commit_plan(f'Plan: {", ".join(filed)} to fix flaky, runaway or failing tests ({why}\'s merge)', rel):
             git('checkout', '-q', '--', rel)
         else:
             for t in filed:
-                note(f'{t}: filed, a flaky or runaway test to fix')
-                log(f'{t}: filed (critical), a flaky or runaway test to fix')
+                note(f'{t}: filed, a flaky, runaway or failing test to fix')
+                log(f'{t}: filed (critical), a flaky, runaway or failing test to fix')
     if not (got := P.reopen(ROOT / rel)):
         return
     names = ', '.join(t for t, _ in got)
