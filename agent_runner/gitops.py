@@ -45,7 +45,9 @@ def _net(cwd: Path):
 
 
 def shared_name(cwd: Path, remote: str, default: str | None = 'main') -> str | None:
-    """The branch everybody reads: what the remote's HEAD points at, else main/master/trunk, else `default`."""
+    """The shared branch: configured `[git] master_branch`, remote HEAD, main/master/trunk, then `default`."""
+    if branch := cfg(cwd).master_branch:
+        return branch
     g = _git(cwd)
     r = g('symbolic-ref', '--short', f'refs/remotes/{remote}/HEAD')
     if not r.returncode and (head := r.stdout.strip()):
@@ -90,7 +92,7 @@ def push(cwd: Path, branch: str, shared: bool = False) -> str:
     if not shared and shared_branch(cwd, remote, branch):
         return ''
     if not net('push', '-q', remote, branch).returncode:
-        return f'pushed {branch} → {remote}'
+        return f'pushed {branch} -> {remote}'
     if shared:
         net('fetch', '-q', remote)
         return (f'! {branch} did not push: {remote}/{branch} has moved (or refused it). Not merged here, since '
@@ -104,7 +106,7 @@ def push(cwd: Path, branch: str, shared: bool = False) -> str:
                 f'Nothing is lost — resolve it by hand, then push.')
     if net('push', '-q', remote, branch).returncode:
         return f'! {branch} did not push (it is committed locally; push it by hand)'
-    return f'pushed {branch} → {remote}, after merging {remote}/{branch} into it'
+    return f'pushed {branch} -> {remote}, after merging {remote}/{branch} into it'
 
 
 def drop_if_merged(cwd: Path, branch: str) -> str:

@@ -4,6 +4,7 @@ How to install agent-runner, add it to a repo, wrap it from a project's own CLI,
 own copy over to it, and what a version number promises.
 
 - [Installing](#installing)
+- [Pi and enterprise Copilot](#pi-and-enterprise-copilot)
 - [A new repo from scratch](#a-new-repo-from-scratch)
 - [Wrapping it from your own CLI](#wrapping-it-from-your-own-cli)
 - [Migrating a repo that carries its own copy](#migrating-a-repo-that-carries-its-own-copy)
@@ -52,6 +53,71 @@ new major version may rename a config key.
 and call `~/agent-runner/run …`. A clone needs no install. `uv tool install --editable ~/agent-runner`
 makes the `agent-runner` command run the clone's code.
 
+## Pi and enterprise Copilot
+
+Claude Code is the default backend and needs nothing here. Use Pi when sessions should run on another
+provider (GitHub Copilot, enterprise Copilot, Codex, other Pi logins): `backend = "pi"` in `[run]`, or
+`AGENT_RUNNER_BACKEND=pi` for one run. Pi on an Anthropic model bills the account's extra usage, not the plan.
+Pi 1.4.0 or newer is supported. Install it with Node.js 22.19+:
+
+```powershell
+npm install --global --ignore-scripts @earendil-works/pi-coding-agent
+pi
+```
+
+Inside Pi, run `/login`, choose **GitHub Copilot**, enter your full enterprise hostname, and complete
+the device authorization in your browser. Run `/model` to choose a model. Authentication remains in
+Pi's private user directory, never in `runner.toml`.
+
+Check authentication and the account's models without printing credentials:
+
+```powershell
+pi auth check --provider github-copilot --json
+pi --offline --list-models github-copilot
+```
+
+Configure the repository:
+
+```toml
+[run]
+agent = "pi"
+backend = "pi"            # optional for an executable named pi; required for a differently named wrapper
+model = "github-copilot/claude-sonnet-5.5"
+fix_model = "github-copilot/claude-sonnet-5.5"
+slots = 1
+slot_env = ["AGENT_SLOT={n}", "NODE_USE_SYSTEM_CA=1"]
+```
+
+Choose an ID your account lists. Provider-qualified IDs prevent ambient AWS or other provider
+credentials from selecting the wrong service. If `model` is omitted, Pi uses its own model selection;
+an omitted `fix_model` follows `model`. Other Pi providers work through their own qualified IDs and login.
+`NODE_USE_SYSTEM_CA=1` uses the OS certificate trust store for corporate TLS interception; it requires a
+Node.js release supporting that setting (Node.js 22.19+). It does not disable certificate verification.
+If Pi itself reports an issuer-certificate error, set `$env:NODE_USE_SYSTEM_CA = "1"` before starting it.
+
+From a clone on Windows, use `python -m agent_runner run once`; an installed runner uses
+`agent-runner run once`. Normal terminal selection, parallel worktrees, `done`, test gates, and merging
+are unchanged.
+
+Other terminal agents (Copilot CLI, Codex, opencode, …) are evaluated in [AGENTS-EVAL.md](AGENTS-EVAL.md);
+`python tests/agent_matrix.py --auth pi` checks that Pi is installed and logged in.
+
+Pi sessions are interactive, like Claude's: each slot's pane (and the `master-<repo>` window for fix
+sessions) shows Pi's interface, and you can take a session over by typing. The bundled extension
+`pi_idle.ts`, loaded with `-e` even under `lean`, does what Claude's Stop hook does: once Pi has settled at
+its prompt for `idle` seconds with nothing in the editor, it exits. Fix sessions without tmux use print
+mode. Prompts are passed as files (`@file`), at any size, including on Windows. Sessions are retained under
+`.runner/pi-sessions` for `agent-runner resume ID`, restart adoption, usage statistics, and stall checks.
+Transient network/server errors can resume up to the existing resume limit in worktree mode. Pi's own
+provider retries apply, but Claude-specific weekly caps and usage-reset detection do not apply to Pi;
+authentication, billing, and other non-transient errors are reported for a human rather than retried.
+In sequential mode a failed Pi process returns its nonzero exit code.
+
+With `lean = true` (the default), Pi gets read/edit/write and a shell (`powershell` on Windows, `bash`
+elsewhere), with extensions, MCP, skills, prompt templates, and themes disabled. Repository context
+files remain available. Set `lean = false` to use Pi's normal resource configuration. Fix/repair sessions
+also use Pi print mode and the non-slot-specific environment from `slot_env`.
+
 ## A new repo from scratch
 
 ```sh
@@ -81,6 +147,9 @@ file), and `after X` holds a task until X is ticked. `plan/A1.md`, if present, i
 test = "make test"        # the gate: `done` and every merge run it
 rules = "AGENTS.md"       # what every session reads first
 notes = ".runner"
+
+[git]
+master_branch = "main"    # optional: explicit local shared branch; it must exist and be checked out
 ```
 
 **AGENTS.md** (or CLAUDE.md): the repo's rules for an agent. It holds how to build and test, what not to
@@ -175,11 +244,14 @@ The names in each module's `__all__` are the stable API (see [Versions](#version
 | `[plan] brief` | a command (`{id}`) whose output is the whole brief, for a project with its own brief tool |
 | `[run] untested` | globs of files the gate can't see (`!glob` takes one back); a merge differing only in them isn't retested |
 | `[run] failures`, `retest` | a regex naming failed tests in the gate output, and the gate for just `{names}`: rerun alone, then on the base |
+| `[run] flaky`, `flaky_kind` | a regex naming tests a *passing* gate passed only on its own rerun; each (and each `retest` pass) gets a critical `flaky_kind` follow-up to make it robust |
+| `[plan] kinds` | id prefix -> kind of work; listed in the prompt, and `plan add` refuses any other prefix |
+| `[plan] need_files` | `plan add` refuses a line that names no file and no test, and gives a line whose prose names files a `→` list of them, so mode `d` can keep it apart from the running tasks |
 | `[run] before_start` | a check that must pass before any session starts |
 | `[run] timeout` | seconds the gate, a retest, a `[run.join]` command, `before_start` or the sequential run's `on_exit` may run before it is stopped and counts as failed (3600) |
 | `[run] not_attempt` | a regex on the last commit subject (`{id}`): that session was a phase, not the run's one attempt |
 
-The brief already holds the task line, `plan/<ID>.md`, the newest journal entry, and the git log of the
+The brief already holds the task line, `plan/tasks/<ID>.md`, the newest journal entry, and the git log of the
 files the task names. `brief_extra` is for anything else.
 
 ### Worked mapping: ps2-decomp-kit
@@ -228,7 +300,7 @@ rules = "AGENT.md"
 prompt = "tools/runner-prompt.md"   # sessions finish with tools/done.sh (audit, tests, --spec / --blocked)
 links = ["context", "mods", "replacements", "*.iso"]
 shared_files = ["play.rs"]
-joinable = ["plan/*.md", "research/journal/*", "RELEASE_NOTES.md"]
+joinable = ["research/journal/*", "RELEASE_NOTES.md"]
 slot_env = ["HST_PCSX2={n}", "HST_BG=1", "RUSTC_WRAPPER=sccache", "SCCACHE_CACHE_SIZE=60G"]
 pass_env = ["HST_PCSX2_MAX_HOLD"]
 on_exit = "tools/pcsx2.sh tools/pcsx2-hst.sh stop"
@@ -313,7 +385,8 @@ git-ignored.
 ## Versions
 
 [Semantic versioning](https://semver.org). The version is in `agent_runner.__version__` and
-`agent-runner --version`. Every release is a tag `vX.Y.Z` with an entry in [CHANGELOG.md](../CHANGELOG.md).
+`agent-runner --version`. Every release is a tag `vX.Y.Z` with an entry in [CHANGELOG.md](../CHANGELOG.md):
+the `release` workflow tags and releases each new version pushed to `main`.
 
 **Breaking (a major bump; minor while 0.x)** is anything that makes a repo's existing setup stop working:
 

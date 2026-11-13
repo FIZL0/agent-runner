@@ -6,7 +6,7 @@ re-reads it on every turn pays again. So the backlog is a command instead:
 
     ./run plan                   index of plan/TODO.md: every heading and task id, one line each
     ./run plan next              the first open task, with its sub-items
-    ./run plan <ID>              a task's full text: plan/<ID>.md, else its line in TODO.md or DONE.md
+    ./run plan <ID>              a task's full text: plan/tasks/<ID>.md, else its line in TODO.md or DONE.md
     ./run plan <name>            a heading's section (case-insensitive substring) in the plan files
     ./run plan -f FILE <name>    the same, on any other markdown file
     ./run plan brief <ID>        everything a task starts from, in one shot (see `brief`)
@@ -14,12 +14,33 @@ re-reads it on every turn pays again. So the backlog is a command instead:
     ./run plan block <ID> [--after X,Y] WHY   [~] with "BLOCKED: (after X, Y) WHY" appended
     ./run plan unblock <ID> [NOTE]   reopen: [ ], drop "BLOCKED: …", append NOTE (what unblocked it)
     ./run plan move <ID> WHERE   WHERE = top | before ID | after ID | in SECTION (its end); sub-items follow
-    ./run plan add PREFIX TEXT [@ WHERE]   new "- [ ] **<next free id>** TEXT"; prints the id, and any open task
-                                 that looks like the same work (nothing when none does)
+    ./run plan add PREFIX TEXT [--pri LEVEL] [--force] [@ WHERE]   new "- [ ] **<next free id>** TEXT"; prints
+                                 the id. Refused (exit 3, nothing written) when an open task looks like the
+                                 same work: `plan note` it there, or --force when it is different work
+    ./run plan drop <ID> WHY     not done but not wanted (a duplicate, overtaken): archived with "dropped: WHY"
+    ./run plan kinds             what each id letter means ([plan] kinds): an id's prefix says the kind of work
     ./run plan note <ID> TEXT    append " — TEXT" to the task (user details, priority reasons)
     ./run plan newid PREFIX      the next free id, e.g. L -> L7; a task's id gives its next subtask, L3 -> L3a
     ./run plan archive           move every [x] line left in TODO.md to DONE.md (after merges, hand edits)
     ./run plan reopen            unblock every task whose BLOCKED (after X, Y) tasks are all done now
+    ./run plan claims            [plan] repo: which run has which task, and since when (STALE: no refresh in 3 h)
+    ./run plan unclaim <ID>      drop a claim, whoever's: for a run that crashed or was switched off
+
+**Where `add` files a task.** A person's task goes to the top of the leading section, as before. A task
+given a `--pri` (and every follow-up a running agent files, which is `normal` unless it says) is tagged
+`(follow-up, LEVEL)` and filed by its level, so the work a person queued always comes first:
+
+    critical   the plan's Critical section if it has one, else the top of the leading section, behind
+               earlier critical ones: it breaks or blocks other work
+    normal     `### Follow-ups`, made after the person's sections (before Stretch/Parked): the usual follow-up
+    low        the same section, behind every normal one: a check, a small tidy-up, a nice-to-have
+    later      `### Parked`, which a run never starts: big future work for a person to schedule
+
+`@ WHERE` still overrides the place (the tag stays).
+
+**A subtask keeps its parent's place.** `add P17 …` (a task's id as the prefix: a split of that task) files
+P17a after P17 and its earlier subtasks, under P17's own tag or none, with no level of its own unless `--pri`
+gives one: the rest of a person's task stays where the person queued it, not behind every follow-up.
 
 The line format is `- [ ] **ID** text → files… | t: tests | j: journal-dir`, under `###` headings, and the
 checkbox is `[ ]` open, `[x]` done, `[~]` blocked.
@@ -32,35 +53,39 @@ from the open task ids its WHY names, so a session that forgets `--after` still 
 **Design rule: checkboxes are only ever changed through this tool.** Never hand-edit a `- [ ]` in TODO.md or
 DONE.md. Ticking by hand is how a task ends up done in one file and open in another, how a `(after X)`
 dependency silently stops being satisfied, and how two parallel agents both pick the same task. `tick` is one
-transaction: mark it, mirror the mark into `plan/<ID>.md`, move the block to DONE.md under the same heading.
+transaction: mark it, mirror the mark into `plan/tasks/<ID>.md`, move the block to DONE.md under the same heading.
 
 Everything here is plain text and atomic: a temp file plus `os.replace`, and a file whose content did not
 change is not rewritten at all (so mtimes stay meaningful and git stays quiet).
 """
 from __future__ import annotations
 
+import difflib
 import os
 import re
+import shlex
 import subprocess
 import sys
 from collections import Counter
 from functools import partial
 from pathlib import Path
 
+from agent_runner import plansync
 from agent_runner.config import cfg
 from agent_runner.gitops import git
 
 PROG = './run plan'  # the name in messages; a wrapper sets its own ('./kit plan')
 # The library API a wrapping project may call; names and signatures here change only in a major version.
 __all__ = ['PROG', 'HELP', 'lines', 'index', 'section', 'ensure', 'archive', 'tick', 'block', 'reopen',
-           'unblock', 'move', 'next_id', 'add', 'similar', 'note', 'next_task', 'files_on_line', 'brief', 'open_ids',
-           'write_atomic', 'child', 'subtasks', 'main']
+           'unblock', 'move', 'next_id', 'add', 'similar', 'note', 'drop', 'next_task', 'files_on_line', 'overlap', 'brief', 'open_ids',
+           'write_atomic', 'child', 'subtasks', 'main', 'PRI', 'kinds', 'check_kind']
 
 ITEM = re.compile(r'^(\s*)- \[(.)\] \*\*([^\s*]+)')
 HEAD = re.compile(r'(#+) ')
 # A path-ish token on a task line: `src/main.c`, `crates/sim/src/lib.rs`, `runner.toml`, `docs/api.md`,
 # `play/*.rs`. Anything with a dot and a short extension; checked against the repo before it is believed.
-FILE_TOKEN = re.compile(r'(?<![\w/.`-])([\w.*-]+(?:/[\w.*-]+)*\.[A-Za-z][\w+]{0,5})')
+FILE_TOKEN = re.compile(r'(?<![\w/.`-])([\w.*-]+(?:/[\w.*-]+)*\.[A-Za-z][\w+]{0,5}|[\w.-]+(?:/[\w.-]+)*/\*\*?)')
+BARE_MAX = 5  # a bare file name in a task's text matching more tracked paths than this names none of them
 JOURNAL_MAX = 12000  # chars of the newest journal file pasted into a brief; the rest is a Read away
 
 
@@ -208,8 +233,8 @@ def archive(todo, done) -> int:
     """Move every top-level [x] task (with its sub-lines) from todo into done, under the same ### heading;
     a split parent goes too once its subtasks are all done.
 
-    Needed because a merge can bring a tick in from a branch without moving the line, and because a human
-    sometimes ticks by hand anyway. Running it is always safe.
+    Needed because a session or a human sometimes ticks by hand, and a merge then brings that tick in
+    without moving the line. Running it is always safe.
     """
     ls, dl, sec, moved = list(lines(todo)), list(lines(done)), '', 0
     if not dl:
@@ -253,11 +278,28 @@ def tick(tid: str, todo=None, done=None, plan_dir=None) -> int:
                          f'(`{PROG} newid`) before ticking, or the other is archived with it')
     _mark(ls, _find(ls, tid), 'x')
     _write(todo, ls)
-    own = os.path.join(plan_dir, f'{tid}.md')
+    own = long_form(plan_dir, tid)
     if os.path.exists(own):
         _write(own, [re.sub(rf'^(\s*)- \[[ ~]\] \*\*{re.escape(tid)}\b', rf'\1- [x] **{tid}', l)
                      for l in lines(own)])
     return archive(todo, done)
+
+
+def drop(tid: str, why: str, todo=None, done=None) -> int:
+    """Close a task nobody will do (a duplicate, work another task overtook): noted, then archived as ticked,
+    so its id stays used and what waits on it reopens. """
+    note(tid, f'dropped: {why}', todo=todo)
+    return tick(tid, todo, done)
+
+
+TASKS = 'tasks'  # a task's long form is <plan dir>/tasks/<ID>.md, so the top level stays TODO.md and overviews
+
+
+def long_form(plan_dir, tid: str) -> Path:
+    """The task's long form: <plan dir>/tasks/<ID>.md. A plan from before 0.9 keeps it at <plan dir>/<ID>.md,
+    which still counts until it is moved (`git mv`)."""
+    new, old = Path(plan_dir) / TASKS / f'{tid}.md', Path(plan_dir) / f'{tid}.md'
+    return old if old.exists() and not new.exists() else new
 
 
 TASK_ID = re.compile(r'\b([A-Z]+\d+[a-z0-9]*)\b')
@@ -385,17 +427,116 @@ def next_id(prefix: str, paths=None) -> str:
     return f'{prefix}{max(n, default=0) + 1}'
 
 
-def add_default() -> str:
-    """Where `plan add` files a task when no `@` says: a running agent's follow-up goes to the bottom of the
-    leading section, behind the work a person queued; a person's own task goes to the top."""
-    return 'bottom' if os.environ.get('AGENT_RUNNER') == '1' else 'top'
+PRI = ('critical', 'normal', 'low', 'later')  # a follow-up's level, most urgent first
+PRI_TAG = re.compile(r'\(follow-up, (' + '|'.join(PRI) + r')\)')
+FOLLOW_UPS, PARKED = 'Follow-ups', 'Parked'  # the sections `add` makes for levels normal/low and later
+# Sections a run never starts tasks from (a heading starting with one of these)
+SKIPPED = ('Stretch', PARKED)
+# The id letters when a repo names none in [plan] kinds: kinds of work any project has
+KINDS = {'B': 'bug: something that worked, or should, is broken', 'F': 'feature: new behaviour',
+         'T': 'tests and tooling: the gate, scripts, CI, the build', 'D': 'docs',
+         'R': 'research: find out, measure or check; no product change', 'C': 'cleanup: refactor, remove, tidy'}
 
 
-def add(prefix: str, text: str, where: str = 'top', ref: str | None = None, todo=None, done=None) -> str:
+def kinds() -> tuple[dict[str, str], bool]:
+    """What each id prefix means, and whether the repo set them (then `add` refuses any other prefix)."""
+    k = cfg().raw['plan'].get('kinds') or {}
+    return (dict(k), True) if k else (KINDS, False)
+
+
+def check_kind(prefix: str) -> str | None:
+    """Why `prefix` is the wrong id letter, or None. A task's own id (P17 -> P17a) is a subtask, always fine."""
+    if prefix[-1:].isdigit():
+        return None
+    k, own = kinds()
+    if prefix in k:
+        return None
+    listing = '\n  '.join(f'{p}  {m}' for p, m in k.items())
+    return (f'{PROG}: {prefix!r} is not a kind of task here; pick the letter for the kind of work '
+            f'(or a task id, for a subtask):\n  {listing}') if own else None
+
+
+def add_default() -> str | None:
+    """The level `plan add` files a task at when none is given: a running agent's follow-up is `normal`, behind
+    the work a person queued; a person's own task (None) goes to the top."""
+    return 'normal' if os.environ.get('AGENT_RUNNER') == '1' else None
+
+
+def _section_end(ls: list[str], h: int) -> int:
+    """Index after the last non-blank line of the section headed at ls[h]."""
+    j = h + 1
+    while j < len(ls) and not (0 < _level(ls[j]) <= _level(ls[h])):
+        j += 1
+    while j - 1 > h + 1 and ls[j - 1].strip() == '':  # keep the blank line under the heading
+        j -= 1
+    return j
+
+
+def _heading(ls: list[str], name: str) -> int | None:
+    return next((i for i, l in enumerate(ls) if _level(l) == 3 and l[4:].strip().startswith(name)), None)
+
+
+def _make_section(ls: list[str], name: str, before: tuple[str, ...]) -> int:
+    """Index of the `### name` heading, made before the first of the `before` sections (else at the end)."""
+    h = _heading(ls, name)
+    if h is not None:
+        return h
+    at = min((i for b in before if (i := _heading(ls, b)) is not None), default=len(ls))
+    while at > 0 and ls[at - 1].strip() == '':
+        at -= 1
+    ls[at:at] = ['', f'### {name}', ''] + ([''] if at < len(ls) else [])
+    return at + 1
+
+
+def _place_pri(ls: list[str], pri: str) -> int:
+    """Index to file a follow-up of level `pri` at (see the module doc); may add its section to `ls`."""
+    if pri == 'critical':  # a plan's own Critical section, if it has one (it runs beside the ordered work)
+        h = next((i for i, l in enumerate(ls) if _level(l) and 'critical' in l.lower()), None)
+        if h is not None:  # everything there is critical: in order, at its end
+            return _section_end(ls, h)
+        i = _place(ls, 'top', None)
+        while i < len(ls) and ITEM.match(ls[i]) and (t := PRI_TAG.search(ls[i])) and t.group(1) == 'critical':
+            i += len(_item_block(ls, i))
+        return i
+    if pri == 'later':
+        return _section_end(ls, _make_section(ls, PARKED, ()))
+    h = _make_section(ls, FOLLOW_UPS, SKIPPED)
+    end = _section_end(ls, h)
+    if pri == 'normal':  # before the first low one
+        return next((i for i in range(h + 1, end) if (m := ITEM.match(ls[i])) and not m.group(1)
+                     and (t := PRI_TAG.search(ls[i])) and t.group(1) == 'low'), end)
+    return end
+
+
+def family_end(prefix: str, todo=None) -> tuple[str, str | None] | None:
+    """For a subtask prefix (a task id open in TODO.md): the last id of its family, the parent and its
+    subtasks, which a new subtask files after, and the parent's level tag; None when no such task is open."""
+    if not prefix[-1:].isdigit():
+        return None
+    todo, _ = ensure(todo, None)
+    last, tag = None, None
+    for l in lines(todo):
+        m = ITEM.match(l)
+        if m and not m.group(1) and m.group(2) != 'x':
+            t = m.group(3).rstrip('.')
+            if t == prefix:
+                last, tag = t, (PRI_TAG.search(l) or [None, None])[1]
+            elif last and re.fullmatch(rf'{re.escape(prefix)}[a-z]\w*', t):
+                last = t
+    return (last, tag) if last else None
+
+
+def add(prefix: str, text: str, where: str | None = None, ref: str | None = None, todo=None, done=None,
+        pri: str | None = None) -> str:
+    """File a new task; with `pri` it is tagged `(follow-up, pri)` and, unless `where` says, filed by its level."""
+    if pri is not None and pri not in PRI:
+        raise SystemExit(f'{PROG}: --pri must be one of {" | ".join(PRI)}, not {pri!r}')
     todo, done = ensure(todo, done)
     tid = next_id(prefix, [todo, done])
     ls = list(lines(todo))
-    j = _place(ls, where, ref)
+    if pri and not PRI_TAG.search(text):
+        text = f'(follow-up, {pri}) {text}'
+    j = _place_pri(ls, pri) if pri and not where else _place(ls, where or 'top', ref)
     ls[j:j] = [f'- [ ] **{tid}** {text}']
     _write(todo, ls)
     return tid
@@ -411,7 +552,7 @@ through today under until what when where which while with without would your'''
 def _words(text: str) -> set[str]:
     """The words of a task's text before its file list: no ids, no dated user quotes' brackets."""
     text = text.split('→')[0].split('| t:')[0]
-    text = re.sub(r'\*\*[^*]+\*\*|\([^)]*\d{4}-\d\d-\d\d[^)]*\)', ' ', text)
+    text = re.sub(r'\*\*[^*]+\*\*|\([^)]*\d{4}-\d\d-\d\d[^)]*\)', ' ', PRI_TAG.sub(' ', text))
     return {w for w in re.findall(r'[a-z][a-z-]{3,}', text.lower()) if w not in _STOP}
 
 
@@ -479,24 +620,74 @@ def files_on_line(text: str, root=None, tracked=None) -> list[str]:
     paths (`_tracked`), when the caller reads them once for many lines."""
     root = Path(root or cfg().root)
     text = text.split('| t:')[0]
-    names = list(dict.fromkeys(FILE_TOKEN.findall(text)))
-    # what follows `→` is the task's file list by the line format, so a new top-level file counts there
-    listed = set(FILE_TOKEN.findall(text.partition('→')[2])) if '→' in text else set()
+    # what follows `→` is the task's file list by the line format, so a new top-level file counts there;
+    # the list ends with its line (a brief appends the task's long form, whose prose is no list). A line
+    # with a list names those files only: prose that mentions `race.rs` it reads but never edits would
+    # otherwise hold it off every task on race.rs
+    listed = FILE_TOKEN.findall(text.partition('→')[2].split('\n')[0]) if '→' in text else []
+    names = list(dict.fromkeys(listed or FILE_TOKEN.findall(text)))
+    listed = set(listed)
     tracked = _tracked(root) if tracked is None else tracked
     out = []
     for n in names:
         n = n.rstrip('.,;:')
-        if '*' in n:  # `play/*.rs` on a line means every file in that directory
+        if '*' in n:  # `play/*.rs`, `play/**` on a line mean every file there
             import fnmatch
-            out += [t for t in tracked if fnmatch.fnmatch(t, f'*{n}')]
+            # the pattern itself too: files it names that this checkout lacks (made on another branch) still overlap
+            out += [t for t in tracked if fnmatch.fnmatch(t, f'*{n}')] + [n]
             continue
         hits = [t for t in tracked if t == n or t.endswith('/' + n)]
+        if '/' not in n and n not in listed and len(hits) > BARE_MAX:
+            continue  # prose about a kind of file (`README.md`, `mod.json`), not one of the task's files
         # A path that does not exist yet is still the task's file: half the backlog creates its files, and
         # `brief` wants to say "missing — this task creates it" rather than quietly listing nothing. Only
         # names that look like paths or follow the `→`, though, or prose about `fpu.rs` becomes a file the
         # runner reserves.
         out += hits or ([n] if '/' in n or n in listed or (root / n).exists() else [])
     return list(dict.fromkeys(out))
+
+
+def with_files(text: str, root=None) -> str | None:
+    """`text` as a task line naming its files, or None when it names neither a file nor a test.
+
+    Mode `d` keeps running tasks apart by the files their lines name; a line naming none overlaps nothing
+    and runs beside anything. A line with a `→` list or a `| t:` test is kept as it is; one whose prose
+    names repo files gets them as its `→` list (the files `files_on_line` already read off it)."""
+    if '→' in text or '| t:' in text:
+        return text
+    import fnmatch
+    files = files_on_line(text, root)
+    pats = [f for f in files if '*' in f]
+    files = [f for f in files if '*' in f or not any(fnmatch.fnmatch(f, f'*{p}') for p in pats)]
+    return f'{text} → {" · ".join(files)}' if files else None
+
+
+def fill_files(todo, root=None) -> tuple[list[str], list[str]]:
+    """Give every open or blocked task line in `todo` that names no files and no test the files its prose
+    names (`with_files`), in place: a session that writes a line into TODO.md by hand skips `plan add`'s
+    check. Returns (the ids filled, the ids still naming nothing)."""
+    ls, filled, left = list(lines(todo)), [], []
+    for i, l in enumerate(ls):
+        m = ITEM.match(l)
+        if not m or m.group(2) == 'x' or '→' in l or '| t:' in l:
+            continue
+        tid = m.group(3).rstrip('.')
+        if got := with_files(l, root):
+            ls[i] = got
+            filled.append(tid)
+        else:
+            left.append(tid)
+    if filled:
+        _write(todo, ls)
+    return filled, left
+
+
+def overlap(a: set[str], b: set[str]) -> set[str]:
+    """Paths and patterns (`dir/**`, `dir/*.rs`) of `a` that meet `b`'s: equal, or one matching the other."""
+    import fnmatch
+    pa, pb = [x for x in a if '*' in x], [y for y in b if '*' in y]  # few: only patterns need fnmatch
+    return (a & b) | {x for x in pa for y in b if fnmatch.fnmatch(y, x)} | {
+        x for x in a for y in pb if fnmatch.fnmatch(x, y)}
 
 
 def _tracked(root) -> list[str]:
@@ -519,16 +710,18 @@ def brief(tid: str, root=None, plan_dir=None, journal=None) -> list[str]:
     """Everything a task starts from, in one command.
 
     This is the highest-value thing in the module. A fresh session otherwise spends its first five or six
-    turns finding the task line, looking for a `plan/<ID>.md`, hunting the journal directory, opening the
+    turns finding the task line, looking for a `plan/tasks/<ID>.md`, hunting the journal directory, opening the
     files and running `git log` on them — all of it predictable, all of it paid for again on every turn after.
     `brief` assembles it once:
 
       * the task's own line (and sub-items) from TODO.md or DONE.md,
-      * `plan/<ID>.md` in full, if the task has a long form,
+      * `plan/tasks/<ID>.md` in full, if the task has a long form,
       * its journal directory: the file list, and the newest entry pasted in (capped at JOURNAL_MAX chars,
         because the newest entry is where the last session said whose move it is),
       * the files named on the line: where they actually are, how long they are, and their last 3 commits —
-        so the session knows whether someone changed them yesterday before it reads a single one,
+        so the session knows whether someone changed them yesterday before it reads a single one — and,
+        with `[plan] outline` (a command; {file} is the path), each file's outline: the map of what is
+        where, so a session reads the part it needs instead of paging through the file to find it,
       * and the output of `[plan] brief_extra` (a command; {id} is the task), for what only the project
         knows how to find.
 
@@ -551,9 +744,10 @@ def brief(tid: str, root=None, plan_dir=None, journal=None) -> list[str]:
         raise SystemExit(f'{PROG}: no task {tid!r} in {plan_dir}/TODO.md or DONE.md')
     text = '\n'.join(line)
     out = [f'## Task {tid} ({plan_dir.name}/TODO.md)', *line]
-    own = plan_dir / f'{tid}.md'
+    own = long_form(plan_dir, tid)
+    own_rel = f'{plan_dir.name}/{own.relative_to(plan_dir).as_posix()}'
     if own.exists():
-        out += ['', f'## {plan_dir.name}/{tid}.md', *lines(own)]
+        out += ['', f'## {own_rel}', *lines(own)]
         text += '\n' + '\n'.join(lines(own))
 
     # journals: the ones the line points at (`j: <dir>`) and any whose name carries this id
@@ -562,21 +756,23 @@ def brief(tid: str, root=None, plan_dir=None, journal=None) -> list[str]:
         dirs = sorted(d for d in os.listdir(journal) if (journal / d).is_dir()) if journal else []
     except OSError:
         dirs = []
-    own_j = [d for d in dirs if re.search(rf'-{re.escape(tid.lower())}(-|$)', d.lower())]
-    for j in dict.fromkeys(named + own_j):
+    own_j = [d for d in dirs if d == tid or re.search(rf'-{re.escape(tid.lower())}(-|$)', d.lower())]
+    for j in dict.fromkeys(named + own_j) if journal else ():  # `j:` on a line with no journal dir set
         d = journal / j
         if not d.is_dir():
             continue
-        files = sorted(f for f in os.listdir(d) if f.endswith('.md'))
+        # entries: its .md files and those one folder down (an `id` layout's repeat attempts, <date>-<slug>/)
+        files = sorted(p.relative_to(d).as_posix() for p in [*d.glob('*.md'), *d.glob('*/*.md')])
         rel = os.path.relpath(d, root).replace(os.sep, '/')
         out += ['', f'## Journal {rel}/: {" · ".join(files)}']
         if files and j in own_j:  # journals the line only points at are listed, not pasted
-            body = (d / files[-1]).read_text(encoding='utf-8', errors='replace')
+            newest = max(files, key=lambda f: (m[0] if (m := DATE.search(f)) else '', f))  # dated beats undated
+            body = (d / newest).read_text(encoding='utf-8', errors='replace')
             cut = len(body) > JOURNAL_MAX
-            out += [f'### {files[-1]}' + (f' (first {JOURNAL_MAX} chars)' if cut else ''),
+            out += [f'### {newest}' + (f' (first {JOURNAL_MAX} chars)' if cut else ''),
                     body[:JOURNAL_MAX].rstrip()]
 
-    where = [p for p in files_on_line(text, root) if p != f'{plan_dir.name}/{tid}.md']
+    where = [p for p in files_on_line(text, root) if p != own_rel and '*' not in p]
     if where:
         out += ['', '## Files on the line, and their last commits']
         for t in where:
@@ -587,12 +783,283 @@ def brief(tid: str, root=None, plan_dir=None, journal=None) -> list[str]:
             except OSError:
                 size = 'missing — this task creates it'
             out += [f'- `{t}` ({size})', *[f'  - {l[:120]}' for l in log]]
+            if (cmd := c.raw['plan']['outline']) and size[0].isdigit():
+                out += outline(cmd, t, root)
     if cmd := c.raw['plan']['brief_extra']:  # what only the project knows: its oracle names, a spec, …
         r = subprocess.run(cmd.format(id=tid), shell=True, cwd=str(root), capture_output=True, text=True,
                            errors='replace')
         if extra := (r.stdout.rstrip() or (f'({cmd} failed: {r.stderr.strip()[:200]})' if r.returncode else '')):
             out += ['', *extra.splitlines()]
     return out
+
+
+DATE = re.compile(r'\d{4}-\d{2}-\d{2}')
+OUTLINE_MAX = 6000  # chars of one file's outline in a brief
+
+
+def outline(cmd: str, path: str, root) -> list[str]:
+    """`[plan] outline` for one file, indented under its entry in the brief; a failure says so in one line."""
+    cmd = cmd.format(file=shlex.quote(path))
+    try:
+        r = subprocess.run(cmd, shell=True, cwd=str(root), capture_output=True, text=True, timeout=60)
+    except subprocess.TimeoutExpired:
+        return [f'  (outline: `{cmd}` ran past 60 s)']
+    if r.returncode or not r.stdout.strip():
+        return [f'  (outline: `{cmd}` failed: {r.stderr.strip()[:150]})'] if r.returncode else []
+    text = r.stdout.rstrip()
+    cut = f'  … (outline cut at {OUTLINE_MAX} chars)' if len(text) > OUTLINE_MAX else ''
+    return ['  outline:', *(f'    {l}' for l in text[:OUTLINE_MAX].splitlines()), *([cut] if cut else [])]
+
+
+# --- merging --------------------------------------------------------------------
+#
+# Merged as text, a task list goes wrong in ways nothing after the merge can undo for certain: two edits
+# beside each other conflict, a union keeps both sides, and a moved heading comes out twice or a task one
+# side ticked comes back open. `merge3` merges what the file is made of, each part against the base:
+# sections by heading, tasks by id wherever they moved, and the parts of a task's line (its box, its
+# text, each ` — note`, its BLOCKED) one by one. git runs it as the merge of the task list and its
+# archive (`install_driver`), so a merge, a rebase or a pull gets it, the runner's and anybody's.
+
+DRIVER = 'agent-runner-plan'
+SEG = re.compile(r'(?= — | BLOCKED: )')  # where a task line's parts start: `note` and `block` append these
+BOX = re.compile(r'^(\s*- \[)(.)(\] )(.*)$')
+
+
+def _parse(ls: list[str]) -> list[tuple]:
+    """[(section key, heading line, [(item key, lines)])], the lines above the first heading first (key
+    None). A top-level task is one item, its block with it, keyed ('t', id, n); any other line is keyed
+    ('l', section key, text, n), the nth such text in its section, so a blank line has a place too."""
+    secs: list[tuple] = [(None, None, [])]
+    heads, seen = Counter(), Counter()
+    i = 0
+    while i < len(ls):
+        l = ls[i]
+        if _level(l):
+            heads[l] += 1
+            secs.append(((l, heads[l]), l, []))
+            i += 1
+            continue
+        m = ITEM.match(l)
+        if m and not m.group(1):
+            b = _item_block(ls, i)
+            tid = m.group(3).rstrip('.')
+            seen[tid] += 1
+            secs[-1][2].append((('t', tid, seen[tid]), b))
+            i += len(b)
+            continue
+        seen[(secs[-1][0], l)] += 1
+        secs[-1][2].append((('l', secs[-1][0], l, seen[(secs[-1][0], l)]), [l]))
+        i += 1
+    return secs
+
+
+def _kept(k, o: dict, b: dict, t: dict) -> bool:
+    """Whether a part stays: one in the base stays while both sides kept it (a side that dropped it, as a
+    tick drops a task from the list, wins over an edit on the other); one the base lacks, while a side
+    brought it in."""
+    return (k in o and k in t) if k in b else (k in o or k in t)
+
+
+def _order(want: set, o: list, b: list, t: list) -> list:
+    """`want` in order: ours, unless only theirs re-sorted what all three have; what the other side brought
+    in or moved goes after the part before it there, past what the first side added in the same place."""
+    keep = set(o) & set(t)
+    common = [k for k in b if k in keep]
+    co, ct = [k for k in o if k in set(common)], [k for k in t if k in set(common)]
+    first, other = (t, o) if co == common and ct != common else (o, t)
+    out = [k for k in first if k in want]
+    have, mine, bs = set(out), set(other), set(b)
+    for i, k in enumerate(other):
+        if k not in want or k in have:
+            continue
+        j = next((out.index(p) + 1 for p in reversed(other[:i]) if p in have), 0)
+        while j < len(out) and out[j] not in mine and out[j] not in bs:
+            j += 1
+        out.insert(j, k)
+        have.add(k)
+    return out + [k for k in want if k not in have]
+
+
+def _resolve(b: list[str], o: list[str], t: list[str]) -> list[str]:
+    """One stretch both sides changed: ours, less what theirs dropped, with what theirs brought in where its
+    first drop was (an edited part keeps its place), else after."""
+    new, out, put = [x for x in t if x not in b and x not in o], [], False
+    for x in o:
+        if x in b and x not in t:
+            out += [] if put else new
+            put = True
+        else:
+            out.append(x)
+    return out if put else out + new
+
+
+def _merge_parts(o: list[str], b: list[str], t: list[str]) -> list[str]:
+    """A three-way merge of a list of parts (a line's notes, a task's sub-lines): between the parts all
+    three keep, each stretch is the side that changed it, or with both, `_resolve`'s join of the two."""
+    def kept(x):
+        sm = difflib.SequenceMatcher(None, b, x, autojunk=False)
+        return {i: j for a, j0, n in sm.get_matching_blocks() for i, j in zip(range(a, a + n), range(j0, j0 + n))}
+    mo, mt = kept(o), kept(t)
+    out, i, j, k = [], 0, 0, 0
+    for s in [*(s for s in range(len(b)) if s in mo and s in mt), len(b)]:
+        js, ks = (mo[s], mt[s]) if s < len(b) else (len(o), len(t))
+        bc, oc, tc = b[i:s], o[j:js], t[k:ks]
+        out += tc if oc == bc else oc if tc == bc or oc == tc else _resolve(bc, oc, tc)
+        out += b[s:s + 1]
+        i, j, k = s + 1, js + 1, ks + 1
+    return out
+
+
+def _pick(o, b, t, theirs: bool):
+    """One value both sides may have changed: the side that changed it, or with both, theirs for the
+    branch's own task, else ours."""
+    return t if o == b else o if t == b else t if theirs else o
+
+
+def _merge_line(o: str, b: str, t: str, theirs: bool) -> str:
+    if o == b or o == t:
+        return t
+    if t == b:
+        return o
+    mo, mb, mt = BOX.match(o), BOX.match(b), BOX.match(t)
+    if not (mo and mb and mt):
+        mo = mb = mt = None
+    po, pb, pt = (SEG.split(m.group(4) if m else l) for m, l in ((mo, o), (mb, b), (mt, t)))
+    head = _pick(po[0], pb[0], pt[0], theirs)  # the task's own words: one side's, never both
+    text = head + ''.join(_merge_parts(po[1:], pb[1:], pt[1:]))
+    if not mo:
+        return text
+    return mo.group(1) + _pick(mo.group(2), mb.group(2), mt.group(2), theirs) + mo.group(3) + text
+
+
+def _merge_block(o: list[str], b: list[str], t: list[str], theirs: bool) -> list[str]:
+    if len(o) == len(b) == len(t):
+        return [_merge_line(*ls, theirs) for ls in zip(o, b, t)]
+    return [_merge_line(o[0], b[0], t[0], theirs), *_merge_parts(o[1:], b[1:], t[1:])]
+
+
+def _moves(base: list[tuple], side: list[tuple]) -> dict:
+    """{base section key: where `side` put most of its tasks}, for each section `side` no longer has (a
+    renamed heading): a task the other side filed under the old heading goes to the new one."""
+    at = {k: s for s, _, items in side for k, _ in items}
+    out = {}
+    for s, _, items in base:
+        if s is None or any(s == x for x, _, _ in side):
+            continue
+        went = Counter(at[k] for k, _ in items if k[0] == 't' and k in at)
+        if went:
+            out[s] = went.most_common(1)[0][0]
+    return out
+
+
+def merge3(ours: list[str], base: list[str], theirs: list[str], own: str | None = None) -> list[str] | None:
+    """The task list `ours` and `theirs` make from `base`, or None when both rewrote the same prose (the
+    lines between tasks), which needs somebody to read it. `own` is the task the merged branch did: where
+    both sides changed the same part of its line, the branch's wins; everywhere else the target's does."""
+    if ours == theirs or theirs == base:
+        return list(ours)
+    if ours == base:
+        return list(theirs)
+    O, B, T = _parse(ours), _parse(base), _parse(theirs)
+    so, sb, st = ({s: h for s, h, _ in X} for X in (O, B, T))
+    io, ib, it = ({k: (s, ls) for s, _, items in X for k, ls in items} for X in (O, B, T))
+
+    def prose(X, s):
+        return {k for k, (x, ls) in X.items() if k[0] == 'l' and x == s and ls[0].strip()}
+
+    for s in {**so, **sb, **st}:
+        do, dt = prose(io, s) ^ prose(ib, s), prose(it, s) ^ prose(ib, s)
+        if do and dt and do != dt:
+            return None
+    for k in [k for k in io if k in it and k not in ib and io[k][1] != it[k][1]]:  # one id, two new tasks
+        it = {(k[0], k[1], ('theirs', k[2])) if x == k else x: v for x, v in it.items()}  # keep both
+    mo, mt = _moves(B, O), _moves(B, T)
+    for X, mv in ((io, mo), (it, mt)):  # a renamed section's own lines are still the base's: one key for both
+        back = {(n, x, c): (s, x, c) for s, n in mv.items() for _, s_, x, c in [k for k in ib if k[0] == 'l'] if s_ == s}
+        for k in [k for k in X if k[0] == 'l' and k[1:] in back]:
+            X[('l', *back[k[1:]])] = X.pop(k)
+    lines, place = {}, {}
+    for k in {**io, **it}:
+        if not _kept(k, io, ib, it):
+            continue
+        lo, lb, lt = (X[k][1] if k in X else None for X in (io, ib, it))
+        mine = k[0] == 't' and k[1] == own
+        if lo is None or lt is None:
+            lines[k] = lo or lt
+        elif lb is None:
+            lines[k] = lo
+        else:
+            lines[k] = _merge_block(lo, lb, lt, mine)
+        so_, sb_, st_ = (X[k][0] if k in X else None for X in (io, ib, it))
+        s = so_ if st_ is None or (so_ is not None and so_ != sb_) else st_
+        if s in sb and s not in so and s in mo:  # filed under a heading ours renamed: under the new one
+            s = mo[s]
+        elif s in sb and s not in st and s in mt:  # or one theirs renamed
+            s = mt[s]
+        place[k] = s
+    heads = {**sb, **so, **st}
+    want = {s for s in heads if _kept(s, so, sb, st)} | set(place.values())
+    out = []
+    for s in _order(want, list(so), list(sb), list(st)):
+        if heads[s] is not None:
+            out.append(heads[s])
+        here = {k for k, x in place.items() if x == s}
+        seq = lambda X: [k for k, (x, _) in X.items() if {**mt, **mo}.get(x, x) == s]  # a renamed one by its new name
+        for k in _order(here, seq(io), seq(ib), seq(it)):
+            out += lines[k]
+    return out
+
+
+def carry_notes(done: list[str], base: list[str], sides: list[list[str]]) -> list[str]:
+    """`done` (a merged DONE.md) with each ` — note` a side's TODO.md added to a task the other side ticked: the
+    tick wins in TODO.md (`_kept`), and git merges DONE.md apart from it, so the note would go with the line."""
+    def tops(ls):
+        return {m.group(3).rstrip('.'): l for l in ls if (m := ITEM.match(l)) and not m.group(1)}
+    was, out = tops(base), list(done)
+    for i, l in enumerate(out):
+        m = ITEM.match(l)
+        if not (m and not m.group(1)) or (tid := m.group(3).rstrip('.')) not in was:
+            continue
+        old = set(SEG.split(was[tid])[1:])
+        for side in sides:
+            for part in SEG.split(tops(side).get(tid, ''))[1:]:
+                if part.startswith(' — ') and part not in old and part not in out[i]:
+                    out[i] += part
+    return out
+
+
+def merge_file(base: str, ours: str, theirs: str) -> int:
+    """git's merge driver (%O %A %B): the merged task list into `ours`. When `merge3` can't merge it, git's
+    own text merge, and 1 with its conflict marks when that conflicts too. The branch's task is
+    AGENT_RUNNER_TASK when the runner merges."""
+    read = lambda p: Path(p).read_text(encoding='utf-8', errors='replace')
+    o, b, t = read(ours), read(base), read(theirs)
+    got = merge3(o.splitlines(), b.splitlines(), t.splitlines(), os.environ.get('AGENT_RUNNER_TASK') or None)
+    if got is None:
+        r = subprocess.run(['git', 'merge-file', '-L', 'ours', '-L', 'base', '-L', 'theirs', ours, base, theirs])
+        return 0 if r.returncode == 0 else 1
+    Path(ours).write_text('\n'.join(got) + ('\n' if o.endswith('\n') or not o else ''), encoding='utf-8')
+    return 0
+
+
+def install_driver(cwd, rels: list[str]) -> None:
+    """Make `merge_file` git's merge for `rels` (paths from the top of the repository at `cwd`): the driver
+    in the repository's config, the paths in its info/attributes, both shared by every worktree and never
+    committed. Run again it changes nothing, unless the runner moved (another interpreter)."""
+    from agent_runner.config import runner_cmd
+    g = partial(git, cwd=cwd)
+    r = g('rev-parse', '--path-format=absolute', '--git-common-dir')
+    if r.returncode:
+        return
+    cmd = shlex.join([*runner_cmd(), 'merge-plan']) + ' %O %A %B'
+    if g('config', f'merge.{DRIVER}.driver').stdout.strip() != cmd:
+        g('config', f'merge.{DRIVER}.name', 'agent-runner: a task list merged by section and task')
+        g('config', f'merge.{DRIVER}.driver', cmd)
+    att = Path(r.stdout.strip()) / 'info' / 'attributes'
+    have = att.read_text(encoding='utf-8').splitlines() if att.exists() else []
+    if missing := [w for w in (f'/{p} merge={DRIVER}' for p in rels) if w not in have]:
+        att.parent.mkdir(parents=True, exist_ok=True)
+        att.write_text('\n'.join(have + missing) + '\n', encoding='utf-8')
 
 
 # --- the command ---------------------------------------------------------------
@@ -615,24 +1082,43 @@ def _commit(root: Path, paths: list[Path], msg: str) -> None:
         g('commit', '-q', '-m', f'plan: {msg}', '--', *map(str, paths))
 
 
+EDITS = ('tick', 'block', 'reopen', 'unblock', 'move', 'add', 'note', 'archive', 'drop')
+
+
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     if argv and argv[0] in ('-h', '--help', 'help'):
         print(HELP)
         return 0
     c = cfg()
+    if not c.plan_external:
+        return _main(argv, c)
+    edit = argv[:1] and argv[0] in EDITS
+    with plansync.locked(c):  # a read pulls too, so it sees other people's edits
+        plansync.pull(c, force=bool(edit))
+        return _main(argv, c)
+
+
+def _main(argv: list[str], c) -> int:
     plan_dir = c.plan_dir
     todo, done = ensure()
 
     def say(msg):
         print(msg)
-        if argv[0] in ('tick', 'block', 'reopen', 'unblock', 'move', 'add', 'note'):
-            _commit(c.root, [todo, done], ' '.join(argv)[:70])
+        if argv[0] in EDITS:
+            if c.plan_external:
+                if out := plansync.publish(c, ' '.join(argv)[:70]):
+                    print(out, file=sys.stderr)
+            elif argv[0] != 'archive':
+                _commit(c.root, [todo, done], ' '.join(argv)[:70])
         return 0
 
     if argv[:1] == ['tick'] and len(argv) == 2:
         n = tick(argv[1])
         return say(f'ticked {argv[1]}' + (f', moved {n} line(s) to {plan_dir.name}/DONE.md' if n else ''))
+    if argv[:1] == ['drop'] and len(argv) > 2:
+        drop(argv[1], ' '.join(argv[2:]))
+        return say(f'dropped {argv[1]}')
     if argv[:1] == ['block'] and len(argv) > 2:
         after, rest = None, argv[2:]
         if rest[0] == '--after' and len(rest) > 2:
@@ -648,15 +1134,43 @@ def main(argv: list[str] | None = None) -> int:
     if argv[:1] == ['move'] and len(argv) > 2:
         move(argv[1], argv[2], ' '.join(argv[3:]) or None)
         return say(f'moved {argv[1]} {" ".join(argv[2:])}')
+    if argv == ['kinds']:
+        k, own = kinds()
+        return say('\n'.join(f'{p}  {m}' for p, m in k.items())
+                   + ('' if own else '\n(the defaults: set [plan] kinds in runner.toml to name your own)'))
     if argv[:1] == ['add'] and len(argv) > 2:
-        text, _, where = ' '.join(argv[2:]).partition(' @ ')
-        w = where.split(maxsplit=1) or [add_default()]
-        tid = add(argv[1], text, w[0], (w[1:] or [None])[0])
-        same = similar(text, skip=tid)
-        msg = f'added {tid}'
-        if same:
-            msg += ('\nalready open, and may be the same work (if so, `plan note` it there and drop this one):\n  '
-                    + '\n  '.join(same))
+        rest, pri = argv[2:], add_default()
+        if force := '--force' in rest:
+            rest = [a for a in rest if a != '--force']
+        if given := '--pri' in rest[:-1]:
+            k = rest.index('--pri')
+            pri, rest = rest[k + 1], rest[:k] + rest[k + 2:]
+        if why := check_kind(argv[1]):
+            print(why, file=sys.stderr)
+            return 2
+        text, _, where = ' '.join(rest).partition(' @ ')
+        w = where.split(maxsplit=1) or [None]
+        if not given and not where and (fam := family_end(argv[1])):
+            w, pri = ['after', fam[0]], fam[1]  # a split stays with its parent (module doc)
+        fam = argv[1] if re.search(r'\d', argv[1]) else None  # a split is like its parent, by design
+        same = [s for s in similar(text) if not (fam and s.split(':')[0].startswith(fam))]
+        if same and not force:
+            print(f'{PROG}: not added: already open, and may be the same work:\n  ' + '\n  '.join(same)
+                  + f'\n`{PROG} note <ID> TEXT` it there; if it is different work, add it again with --force',
+                  file=sys.stderr)
+            return 3
+        if cfg().raw['plan'].get('need_files'):
+            if (named := with_files(text)) is None:
+                print(f'{PROG}: not added: the line names no file and no test. End it with `→ path/to/file` '
+                      f'(the files the task will change) or `| t: test` (the test it adds): the runner keeps '
+                      f'running tasks apart by those, and a line naming none runs beside anything',
+                      file=sys.stderr)
+                return 2
+            text = named
+        tid = add(argv[1], text, w[0], (w[1:] or [None])[0], pri=pri)
+        msg = f'added {tid}' + (f' ({pri})' if pri else '')
+        if pri == 'critical' and os.environ.get('AGENT_RUNNER') == '1':
+            msg += '\ncritical goes ahead of the queued work: its text must say what it breaks or blocks'
         return say(msg)
     if argv[:1] == ['note'] and len(argv) > 2:
         note(argv[1], ' '.join(argv[2:]))
@@ -667,6 +1181,14 @@ def main(argv: list[str] | None = None) -> int:
         return say('\n'.join(brief(argv[1])))
     if argv == ['archive']:
         return say(f'archived {archive(todo, done)}')
+    if argv == ['claims']:
+        got = sorted(plansync.claims(c).items())
+        return say('\n'.join(f'{t}  {plansync.label(cl)}' for t, cl in got) or 'no claims')
+    if argv[:1] == ['unclaim'] and len(argv) == 2:
+        if not plansync.unclaim(c, argv[1]):
+            print(f'{PROG}: no claim on {argv[1]}', file=sys.stderr)
+            return 1
+        return say(f'unclaimed {argv[1]}')
 
     # a lookup: an id, a section name, or `next`
     paths = [todo, plan_dir / 'REFERENCE.md', plan_dir / 'HUMAN.md', done]
@@ -678,11 +1200,12 @@ def main(argv: list[str] | None = None) -> int:
             print(f'{PROG} -f FILE <name>', file=sys.stderr)
             return 2
         paths, argv = [argv[1]], argv[2:]
-    task_file = plan_dir / f'{argv[0]}.md' if argv else None
+    task_file = long_form(plan_dir, argv[0]) if argv else None
     if len(paths) > 1 and task_file and task_file.exists():
         out = lines(task_file)
     elif not argv:
-        out = index(todo)
+        out, cl = index(todo), plansync.claims(c)
+        out = [f'{l}  [{plansync.label(cl[t])}]' if (t := l.rsplit(' ', 1)[-1]) in cl else l for l in out]
     else:
         out = next((o for p in paths if (o := section(p, argv[0]))), [])
     if not out:

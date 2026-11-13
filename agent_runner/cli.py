@@ -18,7 +18,7 @@ See and change the task list
     agent-runner plan next            the task that starts next
     agent-runner plan B646            one task's full text
     agent-runner plan add B "Fix the menu flicker"
-                                      new task B647: may run beside anything
+                                      new task B647 (B: the kind of work, see `plan kinds`)
     agent-runner plan add B646 "Bake the letter sheet"
                                       new subtask B646a: never runs beside B646
     agent-runner plan block B12 --after B646 "needs the new sheet"
@@ -31,6 +31,8 @@ Finish a task (what an agent runs at the end)
     agent-runner done B646 "Halved part of it" --blocked "needs a browser to measure"
 
 More
+    agent-runner cost                 where the workers' tokens go, by kind of tool call (last 7 days)
+    agent-runner home [slots|plan]    where this project's runner files are ([run] home): for scripts
     agent-runner help order           what runs when, and how to make one task wait for another
     agent-runner run --help           every runner option
     agent-runner --version
@@ -59,9 +61,13 @@ Choose what goes first:
     agent-runner plan move B12 top            first in line
     agent-runner plan move B12 after B646     right behind B646
     agent-runner plan add B "Fix it" @ after B646
-    agent-runner plan add B "Fix it" @ bottom    last in the leading section (an agent's default)
+    agent-runner plan add B "Fix it" @ bottom    last in the leading section
+    agent-runner plan add B "Check it" --pri low
+        -> a follow-up: critical (top: it breaks or blocks work), normal (an agent's default) and low go
+           after the queued sections, in ### Follow-ups; later is parked in ### Parked.
+    agent-runner plan kinds                   what each id letter means ([plan] kinds)
 
-Never started: blocked [~] tasks, ### Stretch, a task with open subtasks, a task that already failed this run,
+Never started: blocked [~] tasks, ### Stretch and ### Parked, a task with open subtasks, a task that already failed this run,
 and a finished task waiting to merge. In mode d, also a task that names a file a running task names.
 
 Modes (runner.toml mode, or --mode): p = strictly top to bottom; d = only tasks on different files at once.
@@ -80,12 +86,27 @@ def main(argv: list[str] | None = None) -> int:
     if cmd == 'plan':
         from agent_runner import plan
         return plan.main(rest)
+    if cmd == 'merge-plan' and len(rest) == 3:  # git's merge driver for the task list (plan.install_driver)
+        from agent_runner import plan
+        return plan.merge_file(*rest)
     if cmd == 'done':
         from agent_runner import done
         return done.main(rest)
     if cmd == 'run':
         from agent_runner import runner
         return runner.cmd_run(rest)
+    if cmd == 'cost':
+        from agent_runner import cost
+        return cost.main(rest)
+    if cmd == 'home':  # one answer for every script: never rebuild these paths by hand
+        from agent_runner.config import cfg
+        c = cfg()
+        what = {'': c.home, 'slots': c.slots_dir, 'plan': c.plan_dir}.get(rest[0] if rest else '')
+        if what is None or len(rest) > 1:
+            print('agent-runner home [slots|plan]', file=sys.stderr)
+            return 2
+        print(what)
+        return 0
     if cmd == 'resume':
         from agent_runner import runner
         return runner.cmd_resume(rest)

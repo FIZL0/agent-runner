@@ -1,0 +1,286 @@
+"""`[plan] repo`: the task list in its own git repo, so every clone and every runner reads one queue.
+
+Inside the code repo every branch carries its own TODO.md, and two coordinators see each other's edits only
+after a code merge, which nearly always conflicts on TODO.md. With `repo` set, the plan is one clone outside
+the code (`[plan] dir`, default `[run] home`/plan), shared by the main checkout and every worktree:
+
+* a read pulls first (at most every PULL_EVERY s), so a pick sees everybody's edits;
+* an edit holds `locked`, pulls, edits, commits and pushes; a rejected push pulls and pushes again;
+* a pull that diverged merges the task list and its archive by section and task (`plan.merge3`, git's
+  merge driver for them in the clone), and other *.md with `merge=union`;
+* `claim`: a runner pushes claims/<ID> before it starts a task, so two runners never take the same task.
+  A claim file has no .md, so two runners claiming one task conflict, and the later one backs off.
+
+A `[plan] dir` outside the code repo without `repo` (a synced folder) gets the lock and nothing else.
+"""
+from __future__ import annotations
+
+import getpass
+import re
+import socket
+import threading
+import time
+from contextlib import contextmanager
+from pathlib import Path
+from typing import NamedTuple
+
+from agent_runner import plat
+from agent_runner.gitops import _net, git
+
+PULL_EVERY = 20  # s: reads within this of the last fetch use the clone as it is
+LOCK_WAIT = 300  # s an edit waits on another process's plan edit before giving up
+_TL = threading.RLock()
+_HELD: list = []  # [open lock file, depth] while this process holds the plan
+
+
+def _lock_path(c) -> Path:
+    return c.plan_dir / '.git' / 'agent-runner.lock' if c.plan_repo else c.notes('plan.lock')
+
+
+@contextmanager
+def locked(c):
+    """One plan edit at a time across the slots, the runner and people: pull, edit, publish inside it.
+    Re-entrant within a process; the file lock goes with the process however it ends."""
+    with _TL:
+        if not _HELD:
+            ensure_clone(c)
+            t0 = time.time()
+            while not (f := plat.lock(_lock_path(c))):
+                if time.time() - t0 > LOCK_WAIT:
+                    raise SystemExit(f'agent-runner: the plan in {c.plan_dir} stayed locked {LOCK_WAIT}s')
+                time.sleep(0.2)
+            _HELD[:] = [f, 0]
+        _HELD[1] += 1
+        try:
+            yield
+        finally:
+            _HELD[1] -= 1
+            if not _HELD[1]:
+                _HELD.pop(0).close()
+                _HELD.clear()
+
+
+def ensure_clone(c) -> None:
+    if not c.plan_repo or (c.plan_dir / '.git').exists():
+        return
+    if c.plan_dir.exists() and any(c.plan_dir.iterdir()):
+        raise SystemExit(f'agent-runner: [plan] dir {c.plan_dir} has files but is no git clone of {c.plan_repo}')
+    c.plan_dir.parent.mkdir(parents=True, exist_ok=True)
+    if (r := _net(c.plan_dir.parent)('clone', '-q', c.plan_repo, str(c.plan_dir))).returncode:
+        raise SystemExit(f'agent-runner: cannot clone [plan] repo {c.plan_repo}: {r.stderr.strip()}')
+    (c.plan_dir / '.git' / 'info').mkdir(exist_ok=True)
+    (c.plan_dir / '.git' / 'info' / 'attributes').write_text('*.md merge=union\n')
+    drive(c)
+
+
+def drive(c) -> None:
+    """The clone merges its task list and archive through `plan.merge3` (later lines in its attributes win
+    over `*.md merge=union`); run on every pull, so a clone made before it gets it too."""
+    from agent_runner import plan as P
+    P.install_driver(c.plan_dir, [p.relative_to(c.plan_dir).as_posix() for p in (c.todo, c.done)])
+
+
+def _branch(c) -> str:
+    return git('branch', '--show-current', cwd=c.plan_dir).stdout.strip() or 'main'
+
+
+def pull(c, force: bool = False) -> bool:
+    """Bring the clone up to its remote. False when a merge conflicted (only a claim can) and was undone."""
+    if not c.plan_repo:
+        return True
+    with locked(c):
+        fh = c.plan_dir / '.git' / 'FETCH_HEAD'
+        if not force and fh.exists() and time.time() - fh.stat().st_mtime < PULL_EVERY:
+            return True
+        if _net(c.plan_dir)('fetch', '-q', 'origin').returncode:
+            return True  # offline: work on what is here, publish pushes it later
+        up = f'refs/remotes/origin/{_branch(c)}'
+        g = lambda *a: git(*a, cwd=c.plan_dir)
+        if g('rev-parse', '--verify', '-q', up).returncode:
+            return True  # an empty plan repo: the first publish creates the branch
+        drive(c)
+        if g('merge', '-q', '--no-edit', up).returncode:
+            g('merge', '--abort')
+            return False
+        return True
+
+
+def publish(c, msg: str) -> str:
+    """Commit everything in the clone and push it. '' when pushed (or nothing to do), else one line to print;
+    an unpushed commit stays and goes out with the next publish."""
+    if not c.plan_repo:
+        return ''
+    g = lambda *a: git(*a, cwd=c.plan_dir)
+    with locked(c):
+        g('add', '-A')
+        if g('diff', '--cached', '--quiet').returncode:
+            g('commit', '-qm', f'plan: {msg}'[:72])
+        if g('rev-parse', '-q', '--verify', 'HEAD').returncode:
+            return ''
+        for _ in range(3):
+            if not _net(c.plan_dir)('push', '-q', 'origin', f'HEAD:{_branch(c)}').returncode:
+                return ''
+            if not pull(c, force=True):
+                return f'! plan: {msg}: merging the remote conflicts; committed in {c.plan_dir}, not pushed'
+        return f'! plan: {msg}: not pushed (offline?); committed in {c.plan_dir}, the next edit pushes it'
+
+
+# --- claims: which runner has which task ------------------------------------------------------
+
+def owner(c) -> str:
+    from agent_runner.config import main_checkout
+    return f'{socket.gethostname()}:{main_checkout(c.root)}'
+
+
+REFRESH = 15 * 60  # s between a live run's refreshes of its claims (one commit for all of them)
+STALE = 90 * 60  # s without a refresh after which a claim is a dead run's: it holds its task, not its files
+_STAMP = '%Y-%m-%d %H:%M'
+# The claim file, one field a line. 0.13 and older write the first three and read only those, so both read
+# each other's claims; a claim without a version is from a runner that ignores the files claims hold.
+#   owner (host:checkout) / refreshed (_STAMP) / user@host / version / claimed at (epoch) / files, tab-separated
+MIN_PEER = (0, 14, 0)  # the first version that keeps off the files another runner's claims hold
+
+
+class Claim(NamedTuple):
+    owner: str
+    at: float  # when last claimed or refreshed
+    who: str  # user@host
+    version: str = ''  # '' from a runner older than 0.14
+    since: float = 0.0  # when first claimed: the earlier of two clashing claims keeps its task
+    files: frozenset = frozenset()  # the task line's files and the ones its session has touched
+
+
+def claims(c) -> dict[str, Claim]:
+    """Every claim: id -> Claim."""
+    d = c.plan_dir / 'claims'
+    if not c.plan_repo or not d.is_dir():
+        return {}
+    out = {}
+    for f in d.iterdir():
+        if f.is_file():
+            ls = f.read_text().splitlines() + [''] * 6
+            try:
+                at = time.mktime(time.strptime(ls[1], _STAMP))
+            except ValueError:
+                at = 0.0
+            try:
+                since = float(ls[4])
+            except ValueError:
+                since = at
+            out[f.name] = Claim(ls[0], at, ls[2] or ls[0].split(':')[0], ls[3], since,
+                                frozenset(x for x in ls[5].split('\t') if x))
+    return out
+
+
+def version_tuple(v: str) -> tuple[int, ...]:
+    """'0.14.0' -> (0, 14, 0); () for '' or anything unreadable."""
+    try:
+        return tuple(int(x) for x in v.split('.')[:3])
+    except ValueError:
+        return ()
+
+
+def outdated(cl: Claim) -> bool:
+    """Its runner predates MIN_PEER, so it does not keep off this run's files."""
+    return version_tuple(cl.version) < MIN_PEER
+
+
+def stale(cl: Claim) -> bool:
+    return time.time() - cl[1] > STALE
+
+
+def label(cl: Claim) -> str:
+    """`alex@laptop 14:02`, the date too when it is not today, the runner's version, and STALE past STALE."""
+    at = time.localtime(cl[1])
+    when = time.strftime('%H:%M' if at[:3] == time.localtime()[:3] else '%m-%d %H:%M', at)
+    return f'{cl.who} {when} ' + (f'v{cl.version}' if cl.version else 'pre-0.14') + (' STALE' if stale(cl) else '')
+
+
+def taken(c) -> set[str]:
+    """Tasks another runner (another machine, or another checkout here) has claimed."""
+    me = owner(c)
+    return {t for t, cl in claims(c).items() if cl.owner != me}
+
+
+def _stamp(c, f: Path, files=None) -> None:
+    """Write (or re-stamp) a claim of this runner's: when it was first claimed is kept; `files` replaces the
+    held files when given."""
+    from agent_runner import __version__
+    old = f.read_text().splitlines() + [''] * 6 if f.exists() else [''] * 6
+    since = old[4] or f'{time.time():.3f}'
+    held = '\t'.join(sorted(files)) if files is not None else old[5]
+    f.write_text(f'{owner(c)}\n{time.strftime(_STAMP)}\n{getpass.getuser()}@{socket.gethostname()}\n'
+                 f'{__version__}\n{since}\n{held}\n')
+
+
+def claim(c, tid: str, files=()) -> bool:
+    """Push claims/<tid> before starting it. False when another runner has it, got there first, or the claim
+    could not be pushed (offline): a claim nobody else can see protects nothing, so the task waits."""
+    if not c.plan_repo or not re.fullmatch(r'[\w.-]+', tid):
+        return True
+    with locked(c):
+        if not pull(c, force=True) or tid in taken(c):
+            return False
+        f = c.plan_dir / 'claims' / tid
+        if f.exists():
+            return True  # ours already (a restarted run)
+        f.parent.mkdir(exist_ok=True)
+        _stamp(c, f, files)
+        if publish(c, f'claim {tid}'):  # not pushed: lost the race (a conflict), or no remote to tell
+            git('reset', '-q', '--hard', 'HEAD~1', cwd=c.plan_dir)
+            pull(c, force=True)
+            return False
+        return True
+
+
+def release(c, tid: str) -> None:
+    """Drop this runner's claim on `tid` (never another's)."""
+    if not c.plan_repo:
+        return
+    with locked(c):
+        pull(c, force=True)
+        f = c.plan_dir / 'claims' / tid
+        if f.exists() and f.read_text().split('\n')[0] == owner(c):
+            f.unlink()
+            publish(c, f'release {tid}')
+
+
+def refresh(c, tids, files=None) -> None:
+    """Re-stamp this runner's claims on `tids` (running, or waiting to merge), so others can tell a live
+    claim from one a crashed run left behind, and drop the rest of its claims: a task that ended while this
+    run was down, or was ticked elsewhere, holds nothing. `files`: id -> the files that claim holds now.
+    One commit for all of them."""
+    if not c.plan_repo:
+        return
+    files = files or {}
+    with locked(c):
+        pull(c, force=True)
+        me = owner(c)
+        for t, cl in claims(c).items():
+            if cl.owner != me:
+                continue
+            f = c.plan_dir / 'claims' / t
+            if t in tids:
+                _stamp(c, f, files.get(t))
+            else:
+                f.unlink()
+        publish(c, 'refresh claims')
+
+
+def unclaim(c, tid: str) -> bool:
+    """Drop the claim on `tid`, whoever's it is: for a run that is gone. False when there is none."""
+    with locked(c):
+        pull(c, force=True)
+        f = c.plan_dir / 'claims' / tid
+        if not f.is_file():
+            return False
+        f.unlink()
+        publish(c, f'unclaim {tid}')
+        return True
+
+
+def ticks(c) -> Path:
+    """Where `done` in a runner's slot leaves <ID> for the runner to tick once the merge lands."""
+    d = c.notes('ticks', '.')
+    d.mkdir(parents=True, exist_ok=True)
+    return d

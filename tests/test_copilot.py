@@ -109,12 +109,12 @@ def test_utf8_merge(tmp: Path):
     (d / 'plan/TODO.md').write_text(head + '- [ ] **A1** one → a.py\n- [ ] **A3** three … c.py\n', encoding='utf-8')
     git(d, 'commit', '-qam', 'A3')
     R.init(d)
-    eq(R.merge_into(d, 'task/A2', 'm'), ['plan/TODO.md'], 'the two added lines conflict')
-    check(R.union(['plan/TODO.md'], 'A2', d), 'and the join goes through')
+    base = git(d, 'rev-parse', 'HEAD')
+    eq(R.merge_into(d, 'task/A2', 'm'), [], 'the task-list merge driver joins both added lines')
     text = (d / 'plan/TODO.md').read_text(encoding='utf-8')
     check('“open”' in text and '**A2** two ·' in text and '**A3** three …' in text,
-          'with both lines and the text unchanged', text)
-    git(d, 'merge', '--abort')
+          'with both lines and non-ASCII text unchanged', text)
+    git(d, 'reset', '--hard', base)
 
     print('windows: a task id both sides gave away is renumbered, non-ASCII text intact')
     git(d, 'checkout', '-qb', 'task/A4', 'main~1')
@@ -210,21 +210,24 @@ def test_transcript(tmp: Path):
 def test_pi(repo: Path):
     print('pi: command lines, the extension, the session files, stats and resuming a failed call')
     R.init(repo)
-    R.C.run['agent'], R.C.run['model'], R.C.run['fix_model'] = 'pi', 'github-copilot/m1', 'github-copilot/m2'
+    R.C.run['agent'], R.C.run['backend'], R.C.run['model'], R.C.run['fix_model'] = (
+        'pi', 'pi', 'github-copilot/m1', 'github-copilot/m2')
     try:
         check(R.pi() and not R.copilot(), '[run] agent = "pi" is recognised')
         argv = R.agent_argv('do T1', 'sid-p', 'github-copilot/m1', 45, 'slotP')
-        eq(argv[-2:], ['--', 'do T1'], 'Pi reads its options first, the prompt after --')
+        eq(argv[-2:], ['--', f'@{R.C.notes("slotP.prompt")}'], 'Pi reads its options, the prompt from a file')
+        eq(R.C.notes('slotP.prompt').read_text(encoding='utf-8'), 'do T1', 'the prompt file keeps the full task')
         eq(argv[argv.index('--session-id') + 1], 'sid-p', 'the session id is ours')
         eq(Path(argv[argv.index('--session-dir') + 1]), R.pi_sessions(), 'in a session folder of this run')
         eq(argv[argv.index('--model') + 1], 'github-copilot/m1', 'with the model')
-        ext = Path(argv[argv.index('-e') + 1])
-        text = ext.read_text(encoding='utf-8')
-        check('"--stop-hook", "--idle", "45"' in text, 'the extension calls this runner back after agent_settled')
-        check('const NO_PUSH: boolean = true' in text, 'and refuses git push, since pushing is off')
+        exts = [Path(argv[i + 1]) for i, arg in enumerate(argv[:-1]) if arg == '-e']
+        check([p.name for p in exts] == ['pi_hooks.ts', 'pi_idle.ts'] and '--runner-idle' in argv and
+              argv[argv.index('--runner-idle') + 1] == '45', 'the extensions bridge hooks and stop idle sessions')
+        eq(R.env_vars(R.slot_env(1)).get('GIT_CONFIG_COUNT'), str(len(R.NO_PUSH_URLS)),
+           'the Pi session inherits the no-push git config')
         fix = R.fix_cmd('fix it')
-        check('-p' in fix and '--no-session' in fix and fix[fix.index('--model') + 1] == 'github-copilot/m2',
-              'a fix session is print mode, keeps no session, uses fix_model')
+        check('--print' in fix and fix[fix.index('--model') + 1] == 'github-copilot/m2',
+              'a fix session is print mode and uses fix_model')
 
         ev = lambda ts, **m: json.dumps({'type': 'message', 'timestamp': ts, 'message': m},  # noqa: E731
                                         separators=(',', ':'))
@@ -253,7 +256,8 @@ def test_pi(repo: Path):
             fh.write(ev('2020-01-01T10:12:00.000Z', role='user', content=R.RESUME) + '\n')
         eq(R.agent_failed('sid-p'), None, 'once resumed it is not failed any more')
     finally:
-        R.C.run['agent'], R.C.run['model'], R.C.run['fix_model'] = 'copilot', 'm1', 'm2'
+        R.C.run['agent'], R.C.run['backend'], R.C.run['model'], R.C.run['fix_model'] = (
+            'copilot', 'claude', 'm1', 'm2')
 
 
 def main() -> int:

@@ -21,7 +21,7 @@ The README describes each mechanism. In short:
   - blocked tasks and split parents,
   - tasks with an open `(after X, Y)`,
   - tasks whose line names a running task,
-  - the Stretch section, anything tried this run, and branches waiting to be merged.
+  - the Stretch and Parked sections, anything tried this run, and branches waiting to be merged.
 
   Siblings never run together. An ordered section runs one task at a time. Mode d keeps tasks off each
   other's files.
@@ -51,6 +51,7 @@ import argparse
 import datetime as dt
 import fnmatch
 import glob
+import hashlib
 import json
 import os
 import re
@@ -64,16 +65,17 @@ import tempfile
 import threading
 import time
 import uuid
+from contextlib import ExitStack
 from pathlib import Path
 
 from agent_runner import plan as P
-from agent_runner import gitops, plat
+from agent_runner import ci, gitops, plat, plansync
 
 # The library API a wrapping project may call; these change only in a major version. `cmd_run(argv)` and
 # `cmd_stop(argv)` are the commands; `PROMPT`, `FIXER` and `OTHERS` may be replaced before `cmd_run`.
 __all__ = ['init', 'cmd_run', 'cmd_stop', 'pick', 'tasks', 'prompt_for', 'reopen_landed', 'retry_reopened',
            'ask_stop', 'stopping', 'cmd_resume', 'PROMPT', 'FIXER', 'OTHERS']
-from agent_runner.config import RUNNER, Config, cfg, finished_mark, main_checkout, runner_cmd
+from agent_runner.config import RUNNER, Config, cfg, finished_mark, main_checkout, runner_cmd, ensure_local
 from agent_runner.done import TESTED, gate
 from agent_runner.gitops import _net, drop_if_merged, push, shared_name
 
@@ -82,7 +84,7 @@ TAG = '@runner'  # the tmux pane option a slot's pane is found by
 REPO_TAG = '@runner-repo'  # the main checkout a pane's runner works for: two repos' runners share a tmux session
 
 ROOT = Path('.')       # the main checkout; set by `init`
-SLOTS_DIR = Path('.')  # <repo>-slots/ beside it: s1, s2, …, and `merge`
+SLOTS_DIR = Path('.')  # `[run] home` (~/runs/<repo>/): s1, s2, …, and `merge`
 C: Config
 
 
@@ -90,8 +92,10 @@ def init(root=None) -> Config:
     """Point the runner at the repository around `root` (default: the current directory)."""
     global ROOT, SLOTS_DIR, C
     ROOT = main_checkout(root)
-    SLOTS_DIR = ROOT.parent / f'{ROOT.name}-slots'
     C = cfg(ROOT)
+    SLOTS_DIR = C.slots_dir
+    if not C.plan_external:  # the task list merges by task, in every merge of this repository
+        P.install_driver(ROOT, [plan_rel('TODO.md'), plan_rel('DONE.md')])
     return C
 
 
@@ -103,7 +107,9 @@ touch the main checkout, and never merge, rebase or push the main branch. {publi
 Rules: {rules}. {test}
 {journal}
 Finish with `{runner} done {tid} "<commit message>"`. It runs the test gate, ticks the task, commits and \
-pushes, and it refuses to tick when the gate fails.
+pushes, and it refuses to tick when the gate fails. Run it, and any whole test suite, as a background command \
+and wait for it to end: beside the other slots a gate can outlast your own command time limit, and one cut \
+off there commits nothing. Never start a second one while the first still runs.
 
 If you are stuck (a tool hangs, the same fix fails twice, it needs a human, about 20 minutes with no \
 progress), commit what is solid and run `{runner} done {tid} "<msg>" --blocked "<why + what would unblock \
@@ -112,13 +118,31 @@ it>"`, then stop. If all it waits on is another task landing (its code is not on
 
 A usage limit is not being stuck: do not block the task. The session waits for the reset and carries on.
 
-The task list is a tool, not a file to read whole: `{runner} plan` lists the tasks, `{runner} plan <ID>` \
-shows one, and `{runner} plan add <PREFIX> "<text>"` files a follow-up you find but must not do now (it queues at the bottom of the leading section). Never \
-hand-edit a checkbox.
+Wait for and stop only processes you started, by the pid you kept (`$!`): `wait` on it, `kill` it. Never \
+match processes by a command-line pattern (`pgrep -f`, `pkill -f`, `ps | grep`/`awk`, `killall`): a wait \
+loop's pattern matches the loop itself and never ends, and every agent's command line holds this whole \
+prompt, so a pattern kill can end the other sessions on this machine. Every wait gets a time limit \
+(`timeout 600 <cmd>`, or a deadline in the loop): a loop waiting for a line that a dead process will never \
+print runs for ever. Never search the whole disk (`find /`); look where the thing can be.
+
+{followups}
 {extra}
 The task's brief (`{runner} plan brief {tid}`) follows, so don't gather it again.
 
 {brief}"""
+
+FOLLOWUPS = """\
+The task list is a tool, not a file to read whole: `{runner} plan` lists the tasks, `{runner} plan <ID>` \
+shows one, and `{runner} plan add <KIND> "<text>" [--pri LEVEL]` files a follow-up you find but must not do \
+now. Never hand-edit a checkbox. KIND is the id letter for the kind of work: {kinds}. LEVEL is where it queues: \
+`critical` only when it breaks or blocks other work (it goes ahead of everything, so its text says what it \
+breaks); `normal`, the default, after the work a person queued; `low` for a check or a small tidy-up, after \
+normal; `later` for big future work, parked for a person to schedule and never started by a run. To split \
+your own task, give its id as KIND (`plan add P17 …` files P17a, P17b…), which keeps its place in the queue. `plan add` \
+refuses (exit 3, nothing filed) when an open task looks like the same work: `plan note` that task instead, or add again \
+with `--force` if it really is different work. A test that \
+fails under load and passes alone is a bug in the test: if one gets in your way, make it robust (what it \
+races, not a longer timeout), or file it as critical."""
 
 OTHERS = ('Other agents are working on other tasks at the same time, in other worktrees. Keep your changes '
           'local: add functions and new files, and don\'t move, rename or reformat code you did not come '
@@ -172,22 +196,60 @@ def note(msg: str) -> None:
 
 
 def plan_rel(name: str) -> str:
-    """A plan file's path as git names it: forward slashes on Windows too (`git show`, the union's file list)."""
+    """A plan file's path as git names it: forward slashes on Windows too (`git show`, the union's file list).
+    A plan outside the repo is its absolute path: git ignores it there, and `ROOT / rel` still finds it."""
+    if C.plan_external:
+        return str(C.plan_dir / name)
     return os.path.relpath(C.plan_dir / name, C.root).replace(os.sep, '/')
 
 
 def default_branch() -> str:
-    """The branch worktrees start from and finished work is merged into: `shared_name`, else the one out here."""
+    """The branch worktrees start from and finished work is merged into: configured or discovered shared branch."""
+    if branch := C.master_branch:
+        if git('check-ref-format', '--branch', branch).returncode:
+            raise SystemExit(f'[git] master_branch is not a valid branch name: {branch!r}')
+        if git('show-ref', '--verify', '--quiet', f'refs/heads/{branch}').returncode:
+            raise SystemExit(f'[git] master_branch {branch!r} does not exist as a local branch')
+        current = git('branch', '--show-current').stdout.strip()
+        if current != branch:
+            raise SystemExit(f'[git] master_branch {branch!r} must be checked out in the main checkout '
+                             f'(currently {current or "detached HEAD"!r})')
+        return branch
     return (shared_name(ROOT, C.push_remote or 'origin', None)
             or git('branch', '--show-current').stdout.strip() or 'main')
 
 
 def plan_text(branch: str) -> list[str]:
-    """TODO.md as the merge target has it — not a worktree's copy, so a branch mid-task cannot skew picks."""
-    r = git('show', f'{branch}:{plan_rel("TODO.md")}')
+    """TODO.md as the merge target has it — not a worktree's copy, so a branch mid-task cannot skew picks.
+    A plan outside the repo has one copy: pulled (now and then) and read."""
+    if C.plan_external:
+        plansync.pull(C)
+        return P.lines(C.todo)
+    r = git('show', f'{newest(branch)}:{plan_rel("TODO.md")}')
     if r.returncode == 0:
         return r.stdout.splitlines()
     return P.lines(C.todo)
+
+
+FETCHED = [0.0]  # when `newest` last fetched
+
+
+def newest(branch: str) -> str:
+    """`branch`, or the remote's when that is strictly ahead of it (fetched at most once a minute): a push
+    from outside the run (a hand merge in another worktree) lands in the shared branch only at the next
+    merge, and until then the picks would read a plan where that task is still open and start it again."""
+    remote = C.push_remote
+    if not (C.push_merge and remote):
+        return branch
+    if time.time() - FETCHED[0] > 60:
+        FETCHED[0] = time.time()
+        if git('remote', 'get-url', remote).returncode == 0:
+            _net(ROOT)('fetch', '-q', remote, branch)
+    ref = f'refs/remotes/{remote}/{branch}'
+    if git('rev-parse', '-q', '--verify', ref).returncode or git('rev-parse', ref).stdout == git('rev-parse', branch).stdout \
+            or git('merge-base', '--is-ancestor', branch, ref).returncode:
+        return branch
+    return ref
 
 
 def stopping() -> bool:
@@ -241,6 +303,11 @@ def open_tasks(branch: str) -> set[str]:
     return {m.group(2) for l in plan_text(branch) if (m := TASK.match(l)) and m.group(1) == ' '}
 
 
+def blocked_tasks(branch: str) -> set[str]:
+    """Ids of the blocked ([~]) top-level tasks in `branch`'s TODO.md."""
+    return {m.group(2) for l in plan_text(branch) if (m := TASK.match(l)) and m.group(1) == '~'}
+
+
 def tasks(branch: str) -> list[tuple[str, str, set[str], set[str]]]:
     """Open tasks in TODO.md order: (id, section, files named on the line, task ids named on it)."""
     ls = plan_text(branch)
@@ -253,7 +320,7 @@ def tasks(branch: str) -> list[tuple[str, str, set[str], set[str]]]:
             section = l[4:]
             continue
         m = TASK.match(l)
-        if not m or m.group(1) != ' ' or section.startswith('Stretch'):
+        if not m or m.group(1) != ' ' or section.startswith(P.SKIPPED):
             continue
         tid, rest = m.group(2), m.group(3)
         # a split parent: its subtasks run first, blocked ones included, then it runs (or `archive` ticks it).
@@ -267,7 +334,34 @@ def tasks(branch: str) -> list[tuple[str, str, set[str], set[str]]]:
         named = set(P.TASK_ID.findall(rest)) & every - {tid}
         tracked = P._tracked(C.root) if tracked is None else tracked  # one ls-files for every line
         out.append((tid, section, set(P.files_on_line(rest, C.root, tracked)), named))
-    return out
+    return by_waiters(ls, out)
+
+
+def by_waiters(ls: list[str], out: list[tuple]) -> list[tuple]:
+    """`out` with each task a waiting one depends on moved up to where that one stands: a task in a Next
+    section blocked `(after S281)` on a Follow-up would otherwise wait for every task between them, and
+    so would everything waiting on it. Transitive; Stretch and Parked lines pull nothing up."""
+    rank, waits, section = {}, {}, ''
+    for l in ls:
+        if l.startswith('### '):
+            section = l[4:]
+            continue
+        m = TASK.match(l)
+        if not m or m.group(1) == 'x':
+            continue
+        rank.setdefault(m.group(2), len(rank))
+        if not section.startswith(P.SKIPPED):
+            waits[m.group(2)] = {i for a in re.findall(r'\(after ([^)]*)\)', l) for i in P.TASK_ID.findall(a)}
+    for _ in range(len(waits)):  # each pass moves a rank one link down a chain
+        moved = False
+        for w, deps in waits.items():
+            for dep in deps:
+                if dep in rank and rank[w] < rank[dep]:
+                    rank[dep], moved = rank[w], True
+        if not moved:
+            break
+    order = {t[0]: (rank.get(t[0], len(rank)), k) for k, t in enumerate(out)}
+    return sorted(out, key=lambda t: order[t[0]])
 
 
 def ahead(branch: str) -> list[str]:
@@ -282,32 +376,89 @@ def family(tid: str) -> str:
     return m.group() if m else tid
 
 
-def pick(running: dict, tried: set, mode: str, branch: str):
-    """The next task a free slot may take, or None. See the module docstring for the rules."""
-    busy = list(running.values())
-    # A section whose heading says its tasks are ordered ("Next (in this order)") runs one task at a time:
-    # its second task usually depends on the first having landed, whatever the files say.
-    busy_sections = {b[1] for b in busy}
-    busy_ids = {b[0] for b in busy} | {q[0] for q in queued().values()}  # one waiting to resume is running
+def ordered(section: str) -> bool:
+    """A section whose heading says its tasks are ordered ("Next (in this order)") runs one task at a time:
+    its second task usually depends on the first having landed, whatever the files say."""
+    return section.startswith('Next') or 'in this order' in section
+
+
+def clash(t: tuple, b: tuple, mode: str, shared: set[str]) -> bool:
+    """Task `t` may not run beside `b` (running here, or claimed by another runner): siblings, a line naming
+    it, and in mode d also a shared ordered section or overlapping files (`shared_files` aside)."""
+    tid, section, files, named = t
+    if family(tid) == family(b[0]) or b[0] in named:
+        return True
+    if mode == 'p':
+        return False
+    return (ordered(section) and section == b[1]) or bool(P.overlap(set(files) - shared, set(b[2])))
+
+
+def claimed_elsewhere(cls: dict, todo: list) -> list[tuple]:
+    """Other runners' live claims as busy tasks: the claimed line's section, files and named ids, plus the
+    files its claim says its session has touched. A stale claim (a crashed run's) holds only its own task."""
+    me, lines = plansync.owner(C), {t[0]: t for t in todo}
+    out = []
+    for tid, cl in cls.items():
+        if cl.owner == me or plansync.stale(cl):
+            continue
+        t = lines.get(tid, (tid, '', set(), set()))
+        out.append((tid, t[1], set(t[2]) | set(cl.files), t[3]))
+    return out
+
+
+def pick(running: dict, tried: set, mode: str, branch: str, claim: bool = False):
+    """The next task a free slot may take, or None. See the module docstring for the rules.
+
+    `claim` (a run about to start it): with `[plan] repo`, the task is claimed and the claim pushed first;
+    one another runner has, or got just now, is passed over for the next. Another runner's live claim counts
+    as a task running here, so its files, ordered section and family wait for it too."""
     shared = set(C.run['shared_files'])
     todo = tasks(branch)
+
+    def pick_(t):
+        if not claim or not C.plan_repo:
+            return t
+        if not plansync.claim(C, t[0], t[2]):
+            return None
+        if t[0] not in open_tasks(branch):  # the claim pulled: the pick may have read a plan up to 20 s old
+            plansync.release(C, t[0])  # closed meanwhile (ticked or blocked by someone else)
+            return None
+        # Two runners can claim clashing tasks from plans read seconds apart; both see both claims now, and
+        # the later one gives way (claim time, then owner: both sides reach the same verdict).
+        now = plansync.claims(C)
+        mine = now.get(t[0])
+        for b in claimed_elsewhere(now, todo):
+            cl = now[b[0]]
+            if mine and (cl.since, cl.owner) < (mine.since, mine.owner) and clash(t, b, mode, shared):
+                plansync.release(C, t[0])
+                log(f'{t[0]}: {cl.who} claimed {b[0]} first and it clashes; given way')
+                return None
+        return t
+
+    busy = list(running.values()) + claimed_elsewhere(plansync.claims(C), todo)  # {} without [plan] repo
+    busy_ids = {b[0] for b in busy} | {q[0] for q in queued().values()}  # one waiting to resume is running
     finished = set(ahead(branch)) if todo else set()
-    for tid, section, files, named in todo:
+    finished |= plansync.taken(C)  # another runner's: on its slots
+    for t in todo:
+        tid, named = t[0], t[3]
         if tid not in busy_ids and tid in finished:
             continue  # finished, its branch is waiting to be merged: restarting it would reset the branch
-        if any(family(tid) == family(b[0]) for b in busy):
-            continue
         if tid in tried or tid in busy_ids:
             continue
-        if named & busy_ids:
-            continue  # its line names a task that is running now: it is built on that, so it waits for it
-        if mode == 'p':
-            return tid, section, files, named
-        if (section.startswith('Next') or 'in this order' in section) and section in busy_sections:
-            continue
-        if all(not ((files - shared) & b[2]) for b in busy):
-            return tid, section, files, named
+        if named & busy_ids or any(clash(t, b, mode, shared) for b in busy):
+            continue  # a running task's sibling, dependant, ordered-section mate or file neighbour waits
+        if got := pick_(t):
+            PASSED.discard(tid)
+            return got
+        if tid not in PASSED:
+            PASSED.add(tid)
+            log(f'{tid}: claimed by another runner, closed since the pick read the plan, the claim did not push, '
+                'or a clashing claim came first; passed over')
     return None
+
+
+PASSED: set[str] = set()  # tasks `pick` could not claim, said once each
+BARE: set[str] = set()  # task lines naming no files and no test, said once each
 
 
 # --- worktrees and panes -------------------------------------------------------
@@ -320,6 +471,11 @@ def worktree(n, branch: str) -> Path:
         SLOTS_DIR.mkdir(parents=True, exist_ok=True)
         git('worktree', 'prune')
         git('worktree', 'add', '-q', '--detach', str(d), branch)
+    for pat in C.run['copies']:  # git-ignored files a worktree needs its own copy of (a local config)
+        for src in map(Path, glob.glob(str(ROOT / pat))):
+            if src.is_file() and not (dst := d / src.relative_to(ROOT)).exists():
+                dst.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(src, dst)
     for pat in [*C.run['links'], 'runner.toml']:
         for src in map(Path, glob.glob(str(ROOT / pat))):
             dst = d / src.relative_to(ROOT)
@@ -329,6 +485,10 @@ def worktree(n, branch: str) -> Path:
                     plat.link(src, dst)  # a symlink; on Windows without Developer Mode a junction or hard link
                 except OSError:
                     pass
+    if copilot():
+        copilot_trust(d)
+    else:
+        backend().trust(d)
     return d
 
 
@@ -366,7 +526,7 @@ def pane(name: str, cwd: Path, cmd: str, env=(), logfile: Path | None = None) ->
     w = window('master' if name == 'master' else 'agents')
     where = ['new-window', '-n', w]
     if name == 'master':
-        pass  # one session at a time (it runs under MERGE), and its window closes with it
+        pass  # a window per session (fixes ahead of the lock run side by side); it closes with it
     elif wid := window_id(w):
         here = sorted((int(h[1:]), p) for p, h in
                       (l.split('\t') for l in tmux('list-panes', '-t', wid, '-F',
@@ -438,7 +598,8 @@ def adopt(branch: str) -> dict[int, tuple]:
 
 
 def unmerged(branch: str, idle: list[int]) -> list[str]:
-    """Open tasks whose task/<ID> has commits `branch` lacks: work finished while no run was up. The idle
+    """Open tasks whose task/<ID> has commits `branch` lacks: work that finished, or was merging, when no run
+    was up to merge it. The idle
     slots in `idle` are detached first, so a slot whose session ended still on its branch neither hides
     that branch from the scan nor keeps start() from taking it later."""
     for n in idle:
@@ -446,8 +607,23 @@ def unmerged(branch: str, idle: list[int]) -> list[str]:
             git('checkout', '-q', '--detach', cwd=SLOTS_DIR / f's{n}')
     held = {l.removeprefix('branch refs/heads/') for l in
             git('worktree', 'list', '--porcelain').stdout.splitlines() if l.startswith('branch ')}
-    open_ids = open_tasks(branch)
+    # blocked too: a session that ended its task blocked (a concept round handing over) still has its journal
+    # to merge, and its claim would otherwise be refreshed for as long as the branch sits
+    open_ids = open_tasks(branch) | blocked_tasks(branch)
     return [t for t in ahead(branch) if f'task/{t}' not in held and t in open_ids]
+
+
+def left_merging() -> set[str]:
+    """The tasks whose fix or repair session or gate run an earlier run left going (`adopt_merge`)."""
+    out = set()
+    try:
+        runs = [json.loads(C.notes('master.json').read_text(encoding='utf-8'))]
+    except (OSError, ValueError):
+        runs = []
+    for s in runs + (gate_runs() if C.notes(GATES).is_dir() else []):
+        if alive(s.get('pid')) and Path(s.get('cwd', '')).name != 'merge2':
+            out.add(s['tid'])
+    return out
 
 
 def single_run() -> object:
@@ -541,21 +717,180 @@ def lean() -> list[str]:
     return ['--tools', 'Bash,Read,Edit,Write', '--setting-sources', 'project,local', '--strict-mcp-config']
 
 
-def agent_flags(sid: str, model: str, idle: int, resume: bool = False) -> list[str]:
-    """Everything after the prompt. The Stop hook is this runner in --stop-hook mode. `resume` continues the
-    session `sid` instead of starting it (its transcript keeps the id); Pi and Copilot CLI continue a session
-    given its own `--session-id` again."""
-    if pi():  # its Stop hook and the push guard are an extension (pi_extension)
-        return ['--session-id', sid, '--session-dir', str(pi_sessions()), '--model', model, '--approve',
-                '-e', str(pi_extension(idle)), *lean()]
+ARG_PROMPT_MAX = 96 * 1024  # Linux's MAX_ARG_STRLEN is 128 KiB for one argument; leave room
+ARGV_PROMPT_MAX = 24000  # Windows' CreateProcess takes 32 767 characters, flags and paths included
+LONG_BRIEF = 'Your instructions for this session are in your system prompt, under "{marker}". Follow them.'
+
+
+class Claude:
+    """Claude Code: an interactive session ended by its Stop hook once `idle` s at the prompt; the brief is
+    the first message; transcripts under ~/.claude/projects, in the shape the rest of the runner reads.
+
+    A backend is everything the runner does differently per agent CLI. To add one, subclass this and
+    override what differs, then name it in BACKENDS (and `config.py`'s backend check).
+    """
+    report_exit = False  # log a session's last words at exit, and fail a sequential run on a nonzero exit
+
+    def flags(self, sid: str, model: str, idle: int, resume: bool, once: bool) -> list[str]:
+        stop = [{'hooks': [{'type': 'command', 'command': plat.command_text(
+            [*runner_cmd(), 'run', '--stop-hook', '--idle', str(idle)])}]}]
+        brief = C.notes(f'{sid}.brief')
+        return ['--resume' if resume else '--session-id', sid, '--permission-mode', 'bypassPermissions',
+                '--disallowedTools', 'AskUserQuestion', '--model', model, *lean(),
+                *(['--append-system-prompt-file', str(brief)] if brief.exists() else []),
+                # lean() drops user settings, where the bypass dialog's opt-out lives; nobody is there to answer it
+                '--settings', json.dumps({'skipDangerousModePermissionPrompt': True,
+                                          'hooks': {'Stop': stop, 'StopFailure': stop}})]
+
+    def cmd(self, prompt: str, pf: Path, sid: str, flags: list[str]) -> str:
+        """sh reads the prompt file into the one argument (tmux refuses a command over about 16 KB). Past
+        ARG_PROMPT_MAX bytes even that fails (Linux takes one argument of 128 KB at most, and the agent
+        exits at once, "Argument list too long"), so the brief goes in as the system prompt (`long_brief`)."""
+        if len(prompt.encode('utf-8')) > ARG_PROMPT_MAX:
+            pf = pf.with_suffix('.cmd-prompt')
+            pf.write_text(self.long_brief(prompt, sid), encoding='utf-8')
+        return shlex.quote(C.run['agent']) + f' "$(cat {shlex.quote(str(pf))})" ' + shlex.join(flags)
+
+    def argv(self, prompt: str, pf: Path, sid: str, flags: list[str]) -> list[str]:
+        if len(prompt) > ARGV_PROMPT_MAX:
+            prompt = self.long_brief(prompt, sid)
+        return [plat.exe(C.run['agent']), prompt, *flags]
+
+    @staticmethod
+    def long_brief(prompt: str, sid: str) -> str:
+        """Keep a brief too long for a command line in `<notes>/<sid>.brief`, which `flags` hands to every
+        start and resume of `sid` as the system prompt (a resumed session does not keep the one it started
+        with); the short first message that points at it. Read whole, unlike a file the agent would have to
+        page through with its Read tool."""
+        marker = 'agent-runner task brief'
+        C.notes(f'{sid}.brief').write_text(f'# {marker}\n\n{prompt}', encoding='utf-8')
+        return LONG_BRIEF.format(marker=marker)
+
+    @staticmethod
+    def trust(d: Path) -> None:
+        """Accept Claude Code's "do you trust this folder?" dialog for `d` ahead of time: an interactive session
+        in a new worktree otherwise waits on it, and no setting turns it off. The answer lives per folder in
+        `~/.claude.json` (or `$CLAUDE_CONFIG_DIR/.claude.json`)."""
+        # ponytail: read-modify-replace; a running Claude rewriting the file at the same instant can drop it,
+        # and the next start writes it again
+        cfg_dir = os.environ.get('CLAUDE_CONFIG_DIR')
+        f = Path(cfg_dir) / '.claude.json' if cfg_dir else Path.home() / '.claude.json'
+        try:
+            data = json.loads(f.read_text(encoding='utf-8')) if f.exists() else {}
+        except (OSError, ValueError):
+            return  # unreadable or mid-write: leave it; the dialog shows, as before
+        proj = data.setdefault('projects', {}).setdefault(str(d.resolve()), {})
+        if proj.get('hasTrustDialogAccepted'):
+            return
+        proj['hasTrustDialogAccepted'] = True
+        tmp = f.with_name(f'{f.name}.agent-runner.tmp')
+        tmp.write_text(json.dumps(data, indent=2), encoding='utf-8')
+        os.replace(tmp, f)
+
+    def fix_cmd(self, prompt: str) -> list[str]:
+        return [plat.exe(C.run['agent']), '-p', prompt, '--permission-mode', 'bypassPermissions',
+                '--disallowedTools', 'AskUserQuestion', '--model', C.run['fix_model'], *lean()]
+
+    def find_transcript(self, sid: str) -> str | None:
+        return next(iter(glob.glob(os.path.expanduser(f'~/.claude/projects/*/{sid}.jsonl'))), None)
+
+    def entry(self, d: dict) -> dict | None:
+        return d
+
+    def limits(self) -> bool:
+        """Claude's usage-limit text ("resets 3pm") and its handling (`limit_only`) apply."""
+        return True
+
+
+class Pi(Claude):
+    """Pi: interactive too, ended by the bundled `pi_idle.ts` extension after `idle` s settled at the prompt
+    with nothing in the editor; `once` is print mode (exits after its turn), for a fix session with no pane.
+    `pi_hooks.ts` runs the repo's Claude PreToolUse hooks. Pi reads the prompt file itself (`@file`), at any size. Sessions live in `<notes>/pi-sessions`, their
+    entries turned into Claude's shape (`entry`)."""
+    report_exit = True
+
+    @staticmethod
+    def trust(d):
+        pass  # Pi asks no folder question
+
+    def flags(self, sid, model, idle, resume, once):
+        if resume and not transcript(sid):
+            raise FileNotFoundError(f'Pi session {sid} is missing')
+        ext = lambda name: ['-e', str(Path(__file__).with_name(name))]
+        flags = ext('pi_hooks.ts')  # the repo's Claude PreToolUse guards, in print mode too
+        flags += ['--print'] if once else [*ext('pi_idle.ts'), '--runner-idle', str(idle)]
+        flags += ['--session-id', sid, '--session-dir', str(C.notes('pi-sessions')), '--approve']
+        if model:
+            flags += ['--model', model]
+        if C.run['lean']:
+            shell = 'powershell' if plat.WINDOWS else 'bash'
+            flags += ['--tools', f'read,{shell},edit,write', '--no-extensions', '--no-mcp',
+                      '--no-skills', '--no-prompt-templates', '--no-themes']
+        return flags
+
+    def cmd(self, prompt, pf, sid, flags):
+        return shlex.join([C.run['agent'], *flags, '--', f'@{pf}'])
+
+    def argv(self, prompt, pf, sid, flags):
+        return [plat.exe(C.run['agent']), *flags, '--', f'@{pf}']
+
+    def fix_cmd(self, prompt):
+        return agent_argv(prompt, str(uuid.uuid4()), C.run['fix_model'], MASTER_IDLE, 'master', once=True)
+
+    def find_transcript(self, sid):
+        return next((str(p) for p in C.notes('pi-sessions').glob(f'*_{sid}.jsonl')), None)
+
+    def entry(self, entry):
+        """A Pi session record as a Claude one: role -> type, Pi's stop reasons and usage keys, and errors
+        marked as API errors (transient ones resumable). None for a message that is neither user nor
+        assistant. Pi retries rate limits itself, so one that reaches here is not resumed."""
+        if entry.get('type') != 'message':
+            return entry
+        message = entry.get('message', {})
+        role = message.get('role')
+        if role not in ('user', 'assistant', 'toolResult'):
+            return None
+        entry['type'] = 'assistant' if role == 'assistant' else 'user'
+        message['stop_reason'] = {'stop': 'end_turn', 'toolUse': 'tool_use',
+                                  'length': 'max_tokens'}.get(message.get('stopReason'))
+        if usage := message.get('usage'):
+            message['usage'] = {
+                'input_tokens': usage.get('input', 0),
+                'cache_read_input_tokens': usage.get('cacheRead', 0),
+                'cache_creation_input_tokens': usage.get('cacheWrite', 0),
+            }
+        if message.get('stopReason') == 'error':
+            text = message.get('errorMessage') or 'Pi model request failed'
+            entry['isApiErrorMessage'] = True
+            permanent = re.search(
+                r'\b(?:400|401|403|404|413|422|429)\b|authentication|unauthorized|'
+                r'forbidden|billing|rate.?limit|invalid.?request', text, re.I)
+            transient = re.search(
+                r'network|fetch failed|ECONN|EAI_AGAIN|ETIMEDOUT|timeout|timed? out|'
+                r'connection|\b5\d\d\b|overloaded|unavailable', text, re.I)
+            entry['error'] = 'server_error' if transient and not permanent else 'invalid_request'
+            message['content'] = [{'type': 'text', 'text': text}]
+        return entry
+
+    def limits(self):
+        return False  # Claude's reset text and sidecar cleanup do not apply to Pi providers
+
+
+BACKENDS = {'claude': Claude(), 'pi': Pi()}
+
+
+def backend() -> Claude:
+    """The configured backend: `[run] backend`, settled by `Config`."""
+    return BACKENDS[C.run['backend']]
+
+
+def agent_flags(sid: str, model: str, idle: int, resume: bool = False, once: bool = False) -> list[str]:
+    """The session flags after the prompt. `resume` continues the session `sid` instead of starting it (its
+    transcript keeps the id); `once` is a session with no pane, which exits after one answer."""
     if copilot():  # its Stop hook is written into the checkout by copilot_hooks
         return ['--session-id', sid, '--allow-all', '--no-ask-user', '--no-auto-update', '--model', model,
                 *deny_push(), *lean()]
-    stop = [{'hooks': [{'type': 'command',
-                        'command': plat.command_text([*runner_cmd(), 'run', '--stop-hook', '--idle', str(idle)])}]}]
-    return ['--resume' if resume else '--session-id', sid, '--permission-mode', 'bypassPermissions',
-            '--disallowedTools', 'AskUserQuestion', '--model', model, *lean(),
-            '--settings', json.dumps({'hooks': {'Stop': stop, 'StopFailure': stop}})]
+    return backend().flags(sid, model, idle, resume, once)
 
 
 def prompt_flag() -> list[str]:
@@ -608,42 +943,34 @@ def copilot_trust(*dirs: Path) -> None:
 
 
 def agent_cmd(prompt: str, sid: str, model: str, idle: int, name: str, resume: bool = False) -> str:
-    """The agent command line for one task, for sh (tmux, and the POSIX sequential run).
-
-    The prompt goes through a file (`<notes>/<name>.prompt`), read by the shell that runs the command:
-    tmux refuses a command over about 16 KB, and a long brief (a task with a big journal) can exceed it.
-    """
+    """The agent command line for one task, for sh (tmux, and the POSIX sequential run). The prompt is
+    written to `<notes>/<name>.prompt` and goes in from there (`Claude.cmd`, `Pi.cmd`)."""
     pf = C.notes(f'{name}.prompt')
     pf.write_text(prompt, encoding='utf-8')
-    if pi():  # Pi reads its options first, then the messages after `--`
-        return shlex.join([C.run['agent'], *agent_flags(sid, model, idle, resume), '--']) + \
-            f' "$(cat {shlex.quote(str(pf))})"'
-    return shlex.join([C.run['agent'], *prompt_flag()]) + f' "$(cat {shlex.quote(str(pf))})" ' + \
-        shlex.join(agent_flags(sid, model, idle, resume))
+    if copilot():
+        return shlex.join([C.run['agent'], *prompt_flag()]) + f' "$(cat {shlex.quote(str(pf))})" ' + \
+            shlex.join(agent_flags(sid, model, idle, resume))
+    return backend().cmd(prompt, pf, sid, agent_flags(sid, model, idle, resume))
 
 
-ARGV_PROMPT_MAX = 24000  # Windows' CreateProcess takes 32 767 characters, flags and paths included
-
-
-def agent_argv(prompt: str, sid: str, model: str, idle: int, name: str, resume: bool = False) -> list[str]:
-    """The same command as an argv, for Windows, where no POSIX shell stands between us and the agent.
-
-    The prompt is written to `<notes>/<name>.prompt` all the same. When it is too long for a Windows
-    command line, the session is handed a short prompt that points at that file instead.
-    """
+def agent_argv(prompt: str, sid: str, model: str, idle: int, name: str, resume: bool = False,
+               once: bool = False) -> list[str]:
+    """The same command as an argv, for Windows, where no POSIX shell stands between us and the agent. The
+    prompt is written to `<notes>/<name>.prompt` all the same."""
     pf = C.notes(f'{name}.prompt')
     pf.write_text(prompt, encoding='utf-8')
-    if len(prompt) > ARGV_PROMPT_MAX:
-        prompt = (f'Your instructions for this session are in {pf.as_posix()}, too long to pass on a Windows '
-                  f'command line. Read that whole file first, then follow it.')
-    if pi():
-        return [*pi_argv0(), *agent_flags(sid, model, idle, resume), '--', prompt]
-    return [plat.exe(C.run['agent']), *prompt_flag(), prompt, *agent_flags(sid, model, idle, resume)]
+    if copilot():
+        if len(prompt) > ARGV_PROMPT_MAX:
+            prompt = (f'Your instructions for this session are in {pf.as_posix()}, too long to pass on a Windows '
+                      f'command line. Read that whole file first, then follow it.')
+        return [plat.exe(C.run['agent']), *prompt_flag(), prompt, *agent_flags(sid, model, idle, resume, once)]
+    return backend().argv(prompt, pf, sid, agent_flags(sid, model, idle, resume, once))
 
 
 def brief_for(tid: str, cwd: Path) -> str:
     try:
-        return '\n'.join(P.brief(tid, root=cwd, plan_dir=cwd / os.path.relpath(C.plan_dir, C.root)))
+        plan_dir = C.plan_dir if C.plan_external else cwd / os.path.relpath(C.plan_dir, C.root)
+        return '\n'.join(P.brief(tid, root=cwd, plan_dir=plan_dir))
     except SystemExit as e:
         return f'({C.command} plan brief {tid} produced nothing: {e})'
 
@@ -652,11 +979,14 @@ def prompt_for(tid: str, n: int, slots: int, cwd: Path, branch: str) -> str:
     """The first turn of a task's session: `[run] prompt` (a file) if set, else PROMPT, filled in.
 
     Placeholders a custom template may use: {tid} {n} {runner} {branch} {others} {earlier} {rules} {test}
-    {journal} {extra} {brief}. Any other `{name}` is left as it is. `[run] prompt_extra` may use them too
+    {journal} {extra} {followups} {brief}. Any other `{name}` is left as it is. `[run] prompt_extra` may use them too
     (a slot's own emulator, say: "KIT_PCSX2={n} is set").
     """
     r = C.run
     journal = os.path.relpath(C.journal, C.root).replace(os.sep, '/') if C.journal else ''
+    journal_at = (f'{journal}/{tid}/notes.md (if it exists, an earlier attempt wrote it: then '
+                  f'{journal}/{tid}/<date>-<slug>/notes.md)' if C.raw['plan']['journal_layout'] == 'id'
+                  else f'{journal}/<date>-{tid.lower()}-<slug>/')
     wip = not git('rev-parse', '--verify', '-q', f'refs/heads/wip/{tid}').returncode
     vals = dict(
         tid=tid, n=n, runner=C.command, branch=branch,
@@ -668,16 +998,26 @@ def prompt_for(tid: str, n: int, slots: int, cwd: Path, branch: str) -> str:
         rules=f'read {r["rules"]} first' if r['rules'] else 'the README, and AGENTS.md or CLAUDE.md if there is one',
         test=(f'The test gate is `{r["test"]}`. `done` runs it, and it must pass.' if r['test'] else
               'There is no test gate, so say in the commit message how you checked the work.'),
-        journal=(f'\nWrite the task\'s journal as you go, in {journal}/<date>-{tid.lower()}-<slug>/: what you did, '
+        journal=(f'\nWrite the task\'s journal as you go, in {journal_at}: what you did, '
                  f'what you tried that failed, and under **Not verified** everything you could not check, with '
                  f'why (or `none`). A skipped check that is written down is useful; a silent one is a bug '
                  f'nobody will find.\n' if journal else ''),
         extra=f'\n{r["prompt_extra"].strip()}\n' if r['prompt_extra'] else '',
         brief=brief_for(tid, cwd),
     )
+    kinds, _ = P.kinds()
+    vals['followups'] = FOLLOWUPS.format(runner=C.command, kinds='; '.join(f'{k} {v}' for k, v in kinds.items()))
     vals['extra'] = vals['extra'].format_map(_Keep(vals))  # `prompt_extra` may say {n}, {tid}, {runner}
     template = (ROOT / r['prompt']).read_text(encoding='utf-8') if r['prompt'] else PROMPT
-    return template.format_map(_Keep(vals))
+    prompt = template.format_map(_Keep(vals))
+    policies = []
+    if r['include_task_id_in_commit']:
+        policies.append(f'Include task ID `{tid}` at the start of the commit subject.')
+    else:
+        policies.append(f'Do not include task ID `{tid}` in the commit subject; task tracking is separate.')
+    if r['comment_policy'] == 'minimal':
+        policies.append('Only add comments when necessary to explain non-obvious intent or constraints.')
+    return f'{prompt.rstrip()}\n\nProject policies:\n' + '\n'.join(f'- {policy}' for policy in policies)
 
 
 class _Keep(dict):
@@ -746,6 +1086,8 @@ def save_leftovers(d: Path, tid: str, branch: str) -> str | None:
         if g('read-tree', 'HEAD').returncode or g('add', '-A').returncode:
             return None
         tree = g('write-tree').stdout.strip()
+        if tree and tree == git('rev-parse', 'HEAD^{tree}', cwd=d).stdout.strip():
+            return ''  # only what a commit can't hold changed (a submodule's own edits, say): nothing to keep
         msg = f'{tid} wip: uncommitted when the session ended (saved by the runner before the slot was reset)'
         c = g('commit-tree', tree, '-p', 'HEAD', '-m', msg).stdout.strip()
     finally:
@@ -785,7 +1127,9 @@ def edited_elsewhere(files) -> list[str]:
     out = []
     listed = git('worktree', 'list', '--porcelain', cwd=ROOT).stdout.splitlines()
     for d in (Path(l[len('worktree '):]) for l in listed if l.startswith('worktree ')):
-        if d.parent == SLOTS_DIR and re.fullmatch(r's\d+|merge', d.name):
+        if d.parent == SLOTS_DIR and re.fullmatch(r's\d+|merge\d*|fix\d+', d.name):
+            continue
+        if not d.is_dir():  # a worktree whose folder was deleted (git lists it as prunable)
             continue
         st = git('status', '--porcelain', '--untracked-files=no', cwd=d)
         if st.returncode:
@@ -815,6 +1159,163 @@ def slot_header(n: int, what: str) -> tuple[Path, int]:
     return logfile, since
 
 
+# --- disk: worktrees keep their builds warm, within limits ----------------------
+
+GB = 1 << 30
+DISK_AT = [0.0]  # when `low_disk` last cleaned
+DISK_SAID = [False]
+
+
+def usage(p: Path) -> tuple[int, float]:
+    """(bytes on disk, newest write) under `p`, symlinks not followed (a `links` target is not the slot's)."""
+    total, newest = 0, 0.0
+    walk = os.walk(p) if p.is_dir() and not p.is_symlink() else [(str(p.parent), [], [p.name])]
+    for root, _, files in walk:
+        for f in files:
+            try:
+                st = os.lstat(os.path.join(root, f))
+            except OSError:
+                continue
+            total += getattr(st, 'st_blocks', 0) * 512 or st.st_size
+            newest = max(newest, st.st_mtime)
+    return total, newest
+
+
+def du(d: Path) -> int:
+    return usage(d)[0]
+
+
+def stale_first(d: Path, split: int, least: int) -> list[tuple[float, int, Path]]:
+    """`d`'s git-ignored files and folders, least recently written first: (newest write, bytes, path). A folder
+    bigger than `split` is broken into what is in it (three levels at most), so a build tree's stale parts go
+    one by one and its live ones stay: target/debug/incremental before target/debug/deps. Nothing under `least`
+    bytes: small ignored files free nothing and may be someone's notes or settings."""
+    out: list[tuple[float, int, Path]] = []
+
+    def add(p: Path, depth: int) -> None:
+        if p.is_symlink():
+            return  # `links`, runner.toml: put there by `worktree`, not build output
+        size, newest = usage(p)
+        if p.is_dir() and size > split and depth < 3:
+            for k in p.iterdir():
+                add(k, depth + 1)
+        elif size >= least:
+            out.append((newest, size, p))
+
+    for rel in git('ls-files', '--others', '--ignored', '--exclude-standard', '--directory', '-z',
+                   cwd=d).stdout.split('\0'):
+        if rel:
+            add(d / rel.rstrip('/'), 0)
+    return sorted(out, key=lambda t: t[0])
+
+
+def trim(d: Path, what: str, why: str = '') -> bool:
+    """Shrink worktree `d` when it is over `[run] slot_max_gb`, or clean it whole when `why` says it must be (the
+    disk is nearly full). Only ever for a worktree nobody works in: a free slot before its next task, the merge
+    worktree under MERGE. True when it removed anything (`worktree` puts `links` back).
+
+    Over the cap, by default the least recently written git-ignored parts go until it is at half the cap: the
+    build folders recent tasks used stay warm, the ones old tasks left behind go. `[run] slot_clean`, when set,
+    is run instead, in both cases."""
+    cap = C.run['slot_max_gb'] * GB
+    size = du(d)
+    if not why:
+        if not cap or size <= cap:
+            return False
+        why = f'over [run] slot_max_gb ({C.run["slot_max_gb"]} GB)'
+        if not C.run['slot_clean']:
+            gone, names = 0, []
+            for _, n, p in stale_first(d, cap // 4, cap // 500):  # 50 GB: folders over 12 GB split, none under 100 MB
+                if size - gone <= cap // 2:
+                    break
+                if p.is_dir():
+                    shutil.rmtree(p, ignore_errors=True)
+                else:
+                    p.unlink(missing_ok=True)
+                for q in p.parents:  # no empty folders left behind
+                    if q == d or any(q.iterdir()):
+                        break
+                    q.rmdir()
+                gone += n
+                names.append(p.relative_to(d).as_posix())
+            more = f' and {len(names) - 5} more' if len(names) > 5 else ''
+            log(f'{what}: {size / GB:.1f} GB, {why}: removed the least recently written build output '
+                f'({", ".join(names[:5])}{more}), now {du(d) / GB:.1f} GB')
+            return bool(names)
+    cmd = C.run['slot_clean'] or 'git clean -ffdXq'
+    try:
+        sp.run(cmd, shell=True, cwd=str(d), capture_output=True, timeout=C.run['timeout'])
+    except sp.TimeoutExpired:
+        log(f'{what}: `{cmd}` ran past [run] timeout; stopped')
+    log(f'{what}: {size / GB:.1f} GB, {why}: cleaned with `{cmd}`, now {du(d) / GB:.1f} GB')
+    return True
+
+
+def free_gb() -> float:
+    return shutil.disk_usage(SLOTS_DIR if SLOTS_DIR.is_dir() else ROOT).free / GB
+
+
+def low_disk(free_slots) -> bool:
+    """Less free disk than `[run] min_free_gb`: clean the free slots and the merge worktree (at most every 10 min),
+    and True while it stays low, so no new task starts and fills the disk up."""
+    want = C.run['min_free_gb']
+    if not want or free_gb() >= want:
+        DISK_SAID[0] = False
+        return False
+    if time.time() - DISK_AT[0] > 600:
+        DISK_AT[0] = time.time()
+        why = f'the disk is under [run] min_free_gb ({want} GB free)'
+        for n in free_slots:
+            if (d := SLOTS_DIR / f's{n}').is_dir():
+                trim(d, f'slot {n}', why)
+        if (d := SLOTS_DIR / 'merge').is_dir() and MERGE.acquire(blocking=False):
+            try:
+                trim(d, 'merge worktree', why)
+            finally:
+                MERGE.release()
+        if (d := SLOTS_DIR / 'merge2').is_dir() and not AHEAD_BUSY.locked() and not AHEADS:
+            trim(d, 'merge-ahead worktree', why)
+        with FIX_DIRS_LOCK:
+            idle = [d for d in SLOTS_DIR.glob('fix*') if re.fullmatch(r'fix\d+', d.name) and int(d.name[3:]) not in FIX_DIRS]
+            FIX_DIRS.update(int(d.name[3:]) for d in idle)  # held while cleaned, so no fix starts in one
+        try:
+            for d in idle:
+                trim(d, f'fix worktree {d.name[3:]}', why)
+        finally:
+            with FIX_DIRS_LOCK:
+                FIX_DIRS.difference_update(int(d.name[3:]) for d in idle)
+                FIX_DIRS_LOCK.notify_all()
+        if free_gb() >= want:
+            return False
+    if not DISK_SAID[0]:
+        DISK_SAID[0] = True
+        log(f'disk: {free_gb():.1f} GB free, under [run] min_free_gb ({want} GB), even with the free worktrees '
+            f'cleaned: no new task starts until there is room')
+        print('\a', end='', flush=True)
+    return True
+
+
+def drop_extra_slots(slots: int, busy) -> None:
+    """Remove slot worktrees past this run's count (`slots` was lowered) that nothing uses: no session, nothing
+    uncommitted. Moved aside at once, deleted in the background; a task branch lives on in the repo."""
+    rm = lambda t: threading.Thread(target=shutil.rmtree, args=(t,), kwargs={'ignore_errors': True},
+                                    daemon=True).start()
+    for t in SLOTS_DIR.glob('.removed-*'):  # what a run that was stopped mid-delete left
+        rm(t)
+    for d in SLOTS_DIR.glob('s*'):
+        if not re.fullmatch(r's\d+', d.name) or int(d.name[1:]) <= slots or int(d.name[1:]) in busy:
+            continue
+        if git('status', '--porcelain', cwd=d).stdout.strip() or git('rev-parse', cwd=d).returncode:
+            log(f'slot {d.name[1:]}: past the {slots} slots, but it has uncommitted work (or is not a worktree): kept')
+            continue
+        size = du(d)
+        trash = SLOTS_DIR / f'.removed-{d.name}-{int(time.time())}'
+        d.rename(trash)
+        git('worktree', 'prune')
+        rm(trash)
+        log(f'slot {d.name[1:]}: past the {slots} slots and unused: removed ({size / GB:.1f} GB)')
+
+
 def start(n: int, task, branch: str, model: str, idle: int, slots: int):
     tid = task[0]
     finished_mark(n).unlink(missing_ok=True)  # the last task's `done`, not this one's
@@ -822,6 +1323,8 @@ def start(n: int, task, branch: str, model: str, idle: int, slots: int):
     head = git('symbolic-ref', '-q', '--short', 'HEAD', cwd=d).stdout.strip()
     if not vacate(n, d, head, branch, f'for {tid}'):
         return None
+    if trim(d, f'slot {n}'):
+        worktree(n, branch)  # the `links` the clean took
     co = git('checkout', '-q', '-B', f'task/{tid}', branch, cwd=d)
     if co.returncode:  # e.g. another worktree still holds task/<ID>: never start an agent on the wrong branch
         log(f'slot {n}: checkout task/{tid} failed: {co.stderr.strip()[:200]}')
@@ -1017,12 +1520,15 @@ LANDING = threading.Lock()  # held while `land` moves the main checkout: an inte
 def joinable(f: str) -> bool:
     """True when the runner may join both sides of a conflict in `f` itself (`[run] joinable`, globs).
 
-    Only for files where a line is a whole record and two agents each added records: the task list and its
-    archive, a changelog, a journal. Never prose, even prose that is only appended to. A union joins
+    Only for files where a line is a whole record and two agents each added records: a changelog, a
+    journal. Not the task list and its archive, whatever the config says: git merges those by task
+    (`plan.merge3`), and a conflict left there is in prose. Never prose, even prose that is only appended to. A union joins
     *lines*, and two sides that both reflowed one paragraph give it no line to agree on. It then stitches
     them into something that reads like a sentence and is not one, and a reader believes it. A paragraph
     needs reading, so it goes to a fix session.
     """
+    if f in (plan_rel('TODO.md'), plan_rel('DONE.md')):
+        return False  # git merged it by task already (`plan.merge3`): what still conflicts there is prose
     return any(fnmatch.fnmatch(f, g) for g in [*C.run['joinable'], *C.run['join']])
 
 
@@ -1061,11 +1567,9 @@ def custom_join(f: str, sides: list[str], text: str, tid: str, cwd: Path) -> str
 
 
 def union(files: list[str], tid: str, cwd: Path) -> bool:
-    """Join both sides of a conflict in every file `joinable` allows. Then, in the task list, drop a task
-    line that came out twice and any TODO line whose task DONE.md already has; and a file with a
-    `[run.join]` command goes through it (`custom_join`), which may refuse."""
-    todo, done = plan_rel('TODO.md'), plan_rel('DONE.md')
-    for f in sorted(files, key=lambda f: f != done):  # DONE.md first: TODO.md reads it
+    """Join both sides of a conflict in every file `joinable` allows; a file with a `[run.join]` command
+    goes through it (`custom_join`), which may refuse."""
+    for f in files:
         sides = []
         for stage in (2, 1, 3):  # ours, base, theirs
             t = C.notes(f'union.{stage}')
@@ -1075,23 +1579,6 @@ def union(files: list[str], tid: str, cwd: Path) -> bool:
         if out.returncode < 0:
             return False
         text = out.stdout
-        if f in (todo, done):
-            gone = {m.group(2).rstrip('.') for l in (cwd / done).read_text(encoding='utf-8').splitlines()
-                    if (m := TASK.match(l)) and '- [x]' in l} if f == todo else set()
-            mine = git('show', f'task/{tid}:{f}', cwd=cwd).stdout.splitlines()
-            kept, seen = [], {}
-            for l in text.split('\n'):
-                if m := TASK.match(l):
-                    k = m.group(2).rstrip('.')
-                    if k in gone:
-                        continue
-                    if k in seen:  # keep the branch's copy of its own task, the target's copy of the rest
-                        if (k == tid) == (l in mine):
-                            kept[seen[k]] = l
-                        continue
-                    seen[k] = len(kept)
-                kept.append(l)
-            text = '\n'.join(kept)
         if any(fnmatch.fnmatch(f, g) for g in C.run['join']) and \
                 (text := custom_join(f, sides, text, tid, cwd)) is None:
             return False
@@ -1115,8 +1602,8 @@ def renumber_doubles(ref: str, onto: str, tid: str, cwd: Path) -> str:
     """`ref`, or a commit on top of it that renumbers the tasks it added under an id `onto` already uses.
 
     A branch files a follow-up with the next id its own copy of the plan has free, while main, meanwhile,
-    may have handed that id to another task. Both lines then come out of the merge, and the join (or a tick)
-    keeps one and drops the other: P118's two follow-ups vanished that way. So before a merge the branch's
+    may have handed that id to another task. The merge keeps both lines (`plan.merge3`), but under one id, so a
+    tick or a pick would take one for the other: P118's two follow-ups vanished that way. So before a merge the branch's
     new task gets the next id free on both sides, and every line the branch added or changed that names it
     follows; the change is logged. Run before each merge, the tested one and the one onto main."""
     files = [plan_rel('TODO.md'), plan_rel('DONE.md')]
@@ -1246,17 +1733,22 @@ def last_words(sid: str) -> str:
     return said.strip()
 
 
-def fix_session(prompt: str, cwd: Path, fh) -> int:
+def fix_session(prompt: str, cwd: Path, fh, keep: dict | None = None) -> int:
     """Run one fix or repair session in `cwd` to its end; its exit code. Raises what `sp.run` raises for a
     missing agent or a timeout.
 
-    Under tmux it is an ordinary session in the window "master-<repo>", so a human can watch
-    it work, or take it over by typing; the Stop hook ends it once it has been idle `MASTER_IDLE` seconds,
-    and its last words go to `fh`. Without tmux (Windows, the sequential run) it is `-p`, its output in `fh`.
+    Under tmux it is an ordinary session in the window "master-<repo>", so a human can watch it work, or
+    take it over by typing; the Stop hook (Pi: `pi_idle.ts`) ends it once it has been idle `MASTER_IDLE`
+    seconds, and its last words go to `fh`. Without tmux it is `-p` (Pi: `--print`), its output in `fh`.
+    A pane session outlives the runner: `keep` (what it was started on) goes to `<notes>/master.json` with
+    its pid, so the next run adopts it (`adopt_merge`) instead of starting the merge over under it.
     """
     timeout = C.run['fix_timeout']
     if not MASTER_PANE:
-        env = {**os.environ, **env_vars(shared_env()), **no_push_env()}
+        env = {**os.environ, **env_vars(slot_env(None))}
+        if not copilot():
+            return sp.run(fix_cmd(prompt), cwd=str(cwd), stdout=fh, stderr=sp.STDOUT, stdin=sp.DEVNULL,
+                          env=env, timeout=timeout).returncode
         for attempt in range(3):  # Copilot CLI gives up on a model call that failed (a network drop): retry
             fh.flush()
             start = os.path.getsize(fh.name)
@@ -1284,25 +1776,324 @@ def fix_session(prompt: str, cwd: Path, fh) -> int:
         fh.write(f'{e}\n')
         return 1
     until = time.time() + timeout
-    while alive(pid):
-        if time.time() >= until:
-            for p in [*plat.children(pid), pid]:
-                plat.terminate(p)
+    if keep:
+        C.notes('master.json').write_text(json.dumps({**keep, 'pid': pid, 'sid': sid, 'until': until}), encoding='utf-8')
+    try:
+        if not wait_session(pid, until):
             fh.write(last_words(sid) + '\n')
             raise sp.TimeoutExpired(cmd, timeout)
-        time.sleep(5)
+    finally:
+        C.notes('master.json').unlink(missing_ok=True)
     fh.write(last_words(sid) + '\n')
     return 0
 
 
-def fixer(head: str, prompt: str, cwd: Path, kind: str, to: str) -> tuple[int | None, str]:
+def wait_session(pid: int, until: float) -> bool:
+    """Wait for the session `pid` to end: False when it ran to `until` and was ended."""
+    while alive(pid):
+        if time.time() >= until:
+            for p in [*plat.children(pid), pid]:
+                plat.terminate(p)
+            return False
+        time.sleep(5)
+    return True
+
+
+HELD = 'refs/agent-runner/held/'  # + <ID>/<start>[-<ref>]: what a fix or repair session made from there
+
+
+def held(tid: str, start: str, ref: str = '') -> str:
+    return f'{HELD}{tid}/{start}' + (f'-{ref}' if ref else '')
+
+
+def kept(tid: str, start: str, ref: str, d: Path, kind: str) -> bool:
+    """A fix (`ref` merged onto `start`) or repair (commits on `start`) session made the same thing in an
+    earlier run, or before a rebuild: `d` is moved to what it made, and no session runs again."""
+    if not (h := git('rev-parse', '-q', '--verify', held(tid, start, ref)).stdout.strip()):
+        return False
+    git('merge', '--abort', cwd=d)
+    clean(d, h)
+    log(f'{tid}: reused what the {kind} session made of this merge before ({h[:12]})')
+    return True
+
+
+def keep_made(s: dict, d: Path) -> bool:
+    """Record what the session `s` (master.json) made in `d`, when it made what its kind should: a fix commits
+    the merge of `ref` onto `start`, a repair commits on top of `start` and leaves nothing uncommitted."""
+    head = git('rev-parse', 'HEAD', cwd=d).stdout.strip()
+    if s['kind'] == 'fix':
+        ok = git('rev-parse', '-q', '--verify', 'MERGE_HEAD', cwd=d).returncode != 0 and \
+            git('rev-parse', '-q', '--verify', 'HEAD^2', cwd=d).stdout.strip() == s['ref'] and \
+            git('rev-parse', '-q', '--verify', 'HEAD^1', cwd=d).stdout.strip() == s['start']
+    else:
+        ok = head != s['start'] and not git('merge-base', '--is-ancestor', s['start'], head, cwd=d).returncode and \
+            not git('status', '--porcelain', '--untracked-files=no', cwd=d).stdout.strip()
+    if ok:
+        git('update-ref', held(s['tid'], s['start'], s.get('ref', '')), head)
+    return ok
+
+
+def adopt_merge(d: Path) -> None:
+    """Before a merge resets the merge worktree `d`: wait out what an earlier run left going in it, a fix or
+    repair session in the master window or a gate run, and keep what they made (`held`, `GATES`). The merge
+    is then built again as it was, and reuses them instead of doing them again."""
+    m = C.notes('master.json')
+    try:
+        s = json.loads(m.read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        s = None
+    if s and Path(s.get('cwd', '')) == d:
+        if alive(s['pid']) and MUX.session_id(s['pid']) == s['sid']:
+            log(f'{s["tid"]}: adopted the {s["kind"]} session an earlier run left going in the master window')
+            if not wait_session(s['pid'], s['until']):
+                log(f'{s["tid"]}: the adopted {s["kind"]} session ran past [run] fix_timeout; ended')
+        if keep_made(s, d):
+            log(f'{s["tid"]}: kept what the {s["kind"]} session made ({git("rev-parse", "--short", "HEAD", cwd=d).stdout.strip()})')
+    m.unlink(missing_ok=True)
+    for s in sorted(gate_runs(), key=lambda s: Path(s.get('cwd', '')) != d):  # the merge's, then merge2's
+        batch = s.get('head') and git('cat-file', '-e', f'{s["head"]}^{{commit}}').returncode == 0 and \
+            {'base': s['base'], 'tids': s['tids'], 'merged': s['head']}
+        if Path(s.get('cwd', '')) != d:
+            if batch:  # built ahead (merge2): its turn reuses it, and `merge_gate` waits for its gate by tree
+                AHEADS.append(batch)
+            continue
+        if alive(s['pid']):
+            log(f'{s["tid"]}: adopted the gate run an earlier run left going on the merge; waiting for it')
+        r = wait_gate(s)
+        what = ' and '.join(s.get('tids') or [s['tid']])
+        if r is None:
+            log(f'{s["tid"]}: the adopted gate on {what} left no exit code; the merge is built and tested again')
+            continue
+        log(f'{s["tid"]}: the adopted gate on {what} ' + ('passed' if not r[0] else f'failed (exit {r[0]})'))
+        if batch:
+            AHEADS.insert(0, batch)  # its turn reuses that merge, as it was gated
+            key = gate_key(d, s['head'])  # under this version's key too
+            if r[0]:
+                ADOPTED[key] = r  # the failure is that merge's: retests and repairs go from it, not a new gate
+            else:
+                (C.notes(GATES) / f'{key}.pass').touch()
+
+
+ADOPTED: dict[str, tuple[int, str]] = {}  # a failed gate an earlier run left, by key: `merge_gate` answers it once
+
+
+def gate_runs() -> list[dict]:
+    """The merge gates running, or left by a run that ended: `<notes>/gates/<key>.json`."""
+    out = []
+    for f in sorted(C.notes(GATES).glob('*.json')) if C.notes(GATES).is_dir() else []:
+        try:
+            out.append({**json.loads(f.read_text(encoding='utf-8')), 'rec': str(f)})
+        except (OSError, ValueError):
+            f.unlink(missing_ok=True)
+    return out
+
+
+def wait_gate(s: dict) -> tuple[int, str] | None:
+    """Wait for the gate run `s` (another thread's or an earlier run's) to end: `gate_done`'s answer."""
+    while alive(s['pid']) and time.time() < s['until']:
+        time.sleep(5)
+    if alive(s['pid']):
+        os.killpg(s['pid'], signal.SIGTERM)
+    r = gate_done(s)
+    Path(s['rec']).unlink(missing_ok=True)
+    return r
+
+
+AHEAD_BUSY = threading.Lock()  # held while build_ahead uses merge2
+AHEAD_POLL = 30  # seconds between looks for tasks that finished during a gate
+AHEADS: list[dict] = []  # merges built and gated already, for later turns: {'base', 'tids', 'merged'}
+# (`build_ahead`, or adopted from an earlier run, `adopt_merge`); each turn takes the one on its base
+
+
+def build_ahead(branch: str, base: str, done: threading.Event, taken: set[str]) -> None:
+    """While the merge `base` is in its gate: the tasks that finished since, merged on top of it in a second
+    worktree (merge2) and tested there beside it. When `base` lands, their turn reuses that merge, and with
+    it the gate run already passed or under way (`merge_gate` goes by tree), instead of a gate from the start.
+    A conflict a join cannot do is left for that task's turn (one fix session at a time)."""
+    while not done.wait(AHEAD_POLL):
+        if cands := sorted(WAITING - taken - set(LANDED)):
+            break
+    else:
+        return
+    with AHEAD_BUSY:
+        _build_ahead(branch, base, cands)
+
+
+def _build_ahead(branch: str, base: str, cands: list[str]) -> None:
+    d = worktree('merge2', branch)
+    git('merge', '--abort', cwd=d)
+    clean(d)
+    git('checkout', '-q', '--detach', base, cwd=d)
+    tids = []
+    for t in cands:
+        ref = renumber_doubles(f'task/{t}', 'HEAD', t, d)
+        if (files := merge_into(d, ref, merge_message(t, ref), t)) is None or files and not joined(files, t, d):
+            git('merge', '--abort', cwd=d)
+            continue
+        tids.append(t)
+    if not tids:
+        return
+    if not C.plan_external:
+        carry_notes(base, d)
+        P.archive(d / plan_rel('TODO.md'), d / plan_rel('DONE.md'))
+    plan_files = [plan_rel('TODO.md'), plan_rel('DONE.md')]
+    if git('status', '--porcelain', '--', *plan_files, cwd=d).stdout.strip():
+        git('commit', '-qm', f'{tids[0]}: archive ticked tasks', '--', *plan_files, cwd=d)
+    batch = {'base': base, 'tids': tids, 'merged': git('rev-parse', 'HEAD', cwd=d).stdout.strip()}
+    AHEADS.append(batch)
+    log(f'{", ".join(tids)}: merged ahead on the merge under test; its gate runs beside that one')
+    key = gate_key(d)
+    rc, text = merge_gate(tids[0], d, merge_env(), {'base': base, 'tids': tids})
+    log(f'{", ".join(tids)}: the gate on the merge built ahead ' + ('passed' if not rc else
+        f'failed (exit {rc}; {C.notes(GATES) / key}.failed)'))
+    if rc and batch in AHEADS:  # its turn has not come yet: it goes from this result, not a gate of its own
+        ADOPTED[key] = rc, text
+
+
+def reusable(a: dict, tid: str, base: str) -> bool:
+    """Whether the merge `a`, built and gated already, is tid's turn's merge on the branch at `base`: built on
+    it (or on a commit the branch moved on from by untested files only), with tid and riders still waiting."""
+    return tid in a['tids'] and set(a['tids']) - {tid} <= WAITING - set(LANDED) and (
+        a['base'] == base or git('merge-base', '--is-ancestor', a['base'], base).returncode == 0
+        and all(map(untestable, git('diff', '--name-only', a['base'], base).stdout.split())))
+
+
+def drop_ahead() -> None:
+    """The batches built ahead are on a merge that will not land as it is: their gates are stopped, and their
+    records gone with them (one left behind reads as a gate still to wait on)."""
+    AHEADS.clear()
+    for s in gate_runs():
+        if Path(s.get('cwd', '')).name == 'merge2':
+            if alive(s['pid']):
+                os.killpg(s['pid'], signal.SIGTERM)
+            Path(s['rec']).unlink(missing_ok=True)
+
+
+GATES = 'gates'  # <notes>/gates/<key>.pass: a tree the merge gate passed on (`merge_gate`)
+
+
+def gate_key(d: Path, rev: str = 'HEAD') -> str:
+    """The merge in `d`'s tree, with the gate command: a pass is one of this command on this tree. Files the
+    gate does not test (`[run] untested`: the plan, notes) are left out, so a plan commit or a ticked task
+    does not make a passed merge new."""
+    files = git('ls-tree', '-r', rev, cwd=d).stdout.splitlines()
+    tree = hashlib.sha1('\n'.join(f for f in files if not untestable(f.split('\t', 1)[-1])).encode()).hexdigest()
+    return f'{tree}-{uuid.uuid5(uuid.NAMESPACE_OID, C.run["test"]).hex[:12]}'
+
+
+GATE_DONE = threading.Lock()
+
+
+def gate_done(s: dict) -> tuple[int, str] | None:
+    """The finished gate run `s` (gates/<key>.json): (exit code, output), its pass kept; None when it never
+    got to the end (ended, or killed with the machine), or another thread read it first."""
+    with GATE_DONE:  # the ahead thread and the turn that reuses its merge both wait on merge2's gate
+        if s['out'] not in GATE_RESULTS:
+            GATE_RESULTS[s['out']] = _gate_done(s)
+        return GATE_RESULTS[s['out']]
+
+
+GATE_RESULTS: dict[str, tuple[int, str] | None] = {}  # what each gate run ended with, read once from its files
+
+
+def _gate_done(s: dict) -> tuple[int, str] | None:
+    out, rc = Path(s['out']), Path(s['out']).with_suffix('.rc')
+    if out.with_suffix('.pass').exists():
+        return 0, ''
+    try:
+        code, text = int(rc.read_text().strip()), out.read_text(encoding='utf-8', errors='replace').strip()
+    except (OSError, ValueError):
+        return None
+    finally:
+        rc.unlink(missing_ok=True)
+    if not code:
+        out.with_suffix('.pass').write_text(s['tid'] + '\n', encoding='utf-8')
+        out.unlink(missing_ok=True)
+        if s.get('full', True):
+            (out.parent / FULL_PASS).touch()
+    else:  # kept a week, for whoever looks into why it failed
+        out.replace(out.with_suffix('.failed'))
+    return code, text
+
+
+FULL_PASS = 'full.last'  # <notes>/gates/full.last: touched when a whole `test` passes on a merge
+
+
+def gate_cmd(base: str) -> tuple[str, bool]:
+    """The command a merge's gate runs, and whether it is the whole `test`. With `[run] test_since`, only what
+    changed since `base` is tested: the shared branch only moves on a passed gate, and the merge built ahead
+    is on a merge whose own gate is still running (a failure there drops it). The whole `test` runs anyway
+    once none has passed for `full_every_hours`, for what a selection misses."""
+    since, hours = C.run['test_since'], C.run['full_every_hours']
+    last = C.notes(GATES) / FULL_PASS
+    if not since or not base or hours and (not last.exists() or last.stat().st_mtime < time.time() - hours * 3600):
+        return C.run['test'], True
+    return since.replace('{base}', base), False
+
+
+def merge_gate(tid: str, d: Path, env: dict, batch: dict | None = None) -> tuple[int, str]:
+    """`gate(d, full=True)` for a merge, as a run of its own that outlives the runner (a restart adopts it:
+    `adopt_merge`), and one a tree it already passed on skips: a gate can take an hour."""
+    if not (cmd := C.run['test']):
+        return 0, ''
+    if plat.WINDOWS:
+        return gate(d, full=True, env=env)
+    gates = C.notes(GATES)
+    gates.mkdir(exist_ok=True)
+    for f in gates.iterdir():
+        if f.stat().st_mtime < time.time() - 7 * 86400:
+            f.unlink(missing_ok=True)
+    key = gate_key(d)
+    if (gates / f'{key}.pass').exists():
+        log(f'{tid}: the gate already passed on this exact merge; not run again')
+        return 0, ''
+    if r := ADOPTED.pop(key, None):
+        log(f'{tid}: the gate failed on this exact merge under an earlier run; going from that result')
+        return r
+    rec = gates / f'{key}.json'
+    for s in gate_runs():
+        if s['rec'] == str(rec):
+            if running := alive(s['pid']):
+                log(f'{tid}: a gate on this exact merge is already running (built ahead, or left by an earlier '
+                    f'run); waiting for it')
+            if (r := wait_gate(s)) is not None:
+                if not running:
+                    log(f'{tid}: the gate on this exact merge ended with exit {r[0]}; that result counts')
+                return r
+    out = gates / f'{key}.out'
+    timeout = C.run['timeout']
+    cmd, full = gate_cmd((batch or {}).get('base', ''))
+    if not full:
+        log(f'{tid}: the gate tests what changed since {batch["base"][:9]} ([run] test_since)')
+    out.with_suffix('.rc').unlink(missing_ok=True)  # a gate killed before its end must not read as an old one's
+    with GATE_DONE:
+        GATE_RESULTS.pop(str(out), None)
+    with open(out, 'w', encoding='utf-8') as fh:
+        p = sp.Popen(f'({cmd}\n); echo $? > {shlex.quote(str(out.with_suffix(".rc")))}', shell=True, cwd=str(d),
+                     env=env, stdout=fh, stderr=sp.STDOUT, stdin=sp.DEVNULL, start_new_session=True)
+    s = {'tid': tid, 'pid': p.pid, 'out': str(out), 'until': time.time() + timeout, 'cwd': str(d), 'rec': str(rec),
+         'full': full, **(batch or {}), 'head': git('rev-parse', 'HEAD', cwd=d).stdout.strip()}
+    rec.write_text(json.dumps(s), encoding='utf-8')
+    try:
+        p.wait(timeout=timeout)
+    except sp.TimeoutExpired:
+        os.killpg(p.pid, signal.SIGTERM)
+        p.wait()
+        gate_done(s)
+        return 124, f'`{cmd}` ran past [run] timeout ({timeout}s): counted as failing'
+    finally:
+        rec.unlink(missing_ok=True)
+    return gate_done(s) or (p.returncode or 1, f'`{cmd}` left no exit code')
+
+
+def fixer(head: str, prompt: str, cwd: Path, kind: str, to: str, keep: dict | None = None) -> tuple[int | None, str]:
     """`fix_session` under a `head` line in fixer.log: (its exit code, ''), or why it did not run to its end
     (code 0 when there is no agent command, None when it timed out)."""
     with open(C.notes('fixer.log'), 'a', encoding='utf-8') as fh:
         fh.write(f'\n=== {dt.datetime.now().isoformat(timespec="seconds")} {head}\n')
         fh.flush()
         try:
-            return fix_session(prompt, cwd, fh), ''
+            return fix_session(prompt, cwd, fh, keep), ''
         except FileNotFoundError:
             return 0, f'no agent command to {to} with ([run] agent = {C.run["agent"]!r})'
         except sp.TimeoutExpired:
@@ -1311,21 +2102,17 @@ def fixer(head: str, prompt: str, cwd: Path, kind: str, to: str) -> tuple[int | 
 
 def fix_cmd(prompt: str) -> list[str]:
     """A fix session: one prompt, one answer, no session to keep — `-p`, so nothing types into a pane."""
-    if pi():
-        return [*pi_argv0(), '-p', '--no-session', '--model', C.run['fix_model'], '--approve',
-                '-e', str(pi_extension(C.run['idle'])), *lean(), '--', prompt]
     if copilot():
         return [plat.exe(C.run['agent']), '-p', prompt, '--allow-all', '--no-ask-user', '--no-auto-update',
                 '--model', C.run['fix_model'], *deny_push(), *lean()]
-    return [plat.exe(C.run['agent']), '-p', prompt, '--permission-mode', 'bypassPermissions',
-            '--disallowedTools', 'AskUserQuestion', '--model', C.run['fix_model'], *lean()]
+    return backend().fix_cmd(prompt)
 
 
-def fix_merge(tid: str, branch: str, files: list[str], cwd: Path) -> str | None:
+def fix_merge(tid: str, branch: str, files: list[str], cwd: Path, start: str = '', ref: str = '') -> str | None:
     """Give a conflict the join cannot do to a fresh agent session, in `cwd`. None when it landed.
 
-    One session per merge, run to completion while the caller waits: the merge lock is held anyway, so
-    there is nothing to gain from doing it in the background. Each one starts with an empty context and the
+    One session per merge, run to completion while the caller waits: ahead of the merge lock (`fix_ahead`),
+    in the task's own slot worktree, or under it in the merge worktree on a last try. Each one starts with an empty context and the
     ledger's tail, so the twentieth costs what the first did. (See the README for why this replaced a
     long-lived "master" session. Under tmux it still runs in a window named "master": see `fix_session`.)
 
@@ -1341,7 +2128,8 @@ def fix_merge(tid: str, branch: str, files: list[str], cwd: Path) -> str | None:
                           build_step=BUILD_STEP.format(build=C.run['build'], branch=branch) if C.run['build'] else '')
     logfile = C.notes('fixer.log')
     log(f'{tid}: conflicts in {", ".join(files)} need reading — handing them to a fix session')
-    code, why = fixer(f'{tid} {", ".join(files)}', prompt, cwd, 'fix', 'fix the conflicts')
+    keep = {'kind': 'fix', 'tid': tid, 'start': start, 'ref': ref, 'cwd': str(cwd)} if start else None
+    code, why = fixer(f'{tid} {", ".join(files)}', prompt, cwd, 'fix', 'fix the conflicts', keep)
     if why:
         if code is None:
             note(f'{tid}: the fix session timed out after {C.run["fix_timeout"]}s')
@@ -1350,6 +2138,8 @@ def fix_merge(tid: str, branch: str, files: list[str], cwd: Path) -> str | None:
         return f'the fix session did not finish the merge (exit {code}); see {logfile}'
     if git('merge-base', '--is-ancestor', f'task/{tid}', 'HEAD', cwd=cwd).returncode:
         return f'the fix session aborted the merge; its reason is in {logfile}'
+    if keep:
+        keep_made(keep, cwd)
     note(f'{tid}: conflicts in {", ".join(files)} resolved by a fix session')
     log(f'{tid}: the fix session resolved {", ".join(files)} and committed the merge')
     return None
@@ -1383,8 +2173,11 @@ def repair_merge(tid: str, branch: str, cwd: Path, riders: list[str] = (), base:
                                merge=merge)
         log(f'{tid}: the merge fails the gate — handing it to a repair session')
     before = git('rev-parse', 'HEAD', cwd=cwd).stdout.strip()
+    if kept(tid, before, '', cwd, 'repair'):
+        return None
     logfile = C.notes('fixer.log')
-    if why := fixer(f'{ids} repair (gate failed)', prompt, cwd, 'repair', 'repair it')[1]:
+    keep = {'kind': 'repair', 'tid': tid, 'start': before, 'cwd': str(cwd)}
+    if why := fixer(f'{ids} repair (gate failed)', prompt, cwd, 'repair', 'repair it', keep)[1]:
         return why
     head = git('rev-parse', 'HEAD', cwd=cwd).stdout.strip()
     if head == before:
@@ -1393,6 +2186,7 @@ def repair_merge(tid: str, branch: str, cwd: Path, riders: list[str] = (), base:
         return f'the repair session rewrote the merge instead of committing on top; see {logfile}'
     if git('status', '--porcelain', '--untracked-files=no', cwd=cwd).stdout.strip():
         return f'the repair session left edits uncommitted; see {logfile}'
+    keep_made(keep, cwd)
     log(f'{tid}: the repair session committed {git("rev-list", "--count", f"{before}..{head}", cwd=cwd).stdout.strip()} '
         f'fix(es) on the merge: {git("log", "-1", "--format=%s", cwd=cwd).stdout.strip()[:200]}')
     return None
@@ -1414,16 +2208,23 @@ def gated(tid: str) -> bool:
     return bool(tree) and tree == git('rev-parse', '-q', '--verify', f'task/{tid}^{{tree}}').stdout.strip()
 
 
-def tested(tid: str, d: Path, base: str) -> str | None:
+def tested(tid: str, d: Path, base: str, tids: list[str] | None = None) -> str | None:
     """Run the gate on the merge checked out in `d`: None when it passes, else why.
 
     With `[run] failures` and `retest`, a failure gets two more looks before it counts: rerun alone (a test
     that timed out under the other slots' load passes then), and rerun on `base`, the branch it merges into
     (one that already fails there the same way is not this task's doing, so it merges anyway, and says so).
+    That one is the shared branch's own failure, though, so a critical task is filed to fix it (`file_flaky`);
+    and when the whole `test` found it (`[run] test_since`'s daily run), it counts as that day's whole run:
+    the failure is filed, and every later merge running the whole `test` again only to find it again would
+    undo what `test_since` saves.
     """
     env = merge_env()
-    rc, out = gate(d, full=True, env=env)
+    full = gate_cmd(base)[1]
+    rc, out = merge_gate(tid, d, env, {'base': base, 'tids': tids or [tid]})
     if not rc:
+        if rx := C.run['flaky']:  # the gate's own rerun of a load flake passed: still a test to fix
+            flaky(tid, [n for g in re.findall(rx, out, re.M) for n in re.split(r'[,\s]+', g) if n])
         return None
     C.notes('merge-gate.log').write_text(out + '\n', encoding='utf-8')  # for a repair session
     if rc in (130, -2):  # the run's Ctrl-C reached the gate: the main thread exits the process within moments
@@ -1443,6 +2244,7 @@ def tested(tid: str, d: Path, base: str) -> str | None:
 
     if (r := retest()) and not r.returncode:
         log(f'{tid}: {", ".join(names)} failed, then passed alone (load); counted as passing')
+        flaky(tid, names)
         return None
     head = git('rev-parse', 'HEAD', cwd=d).stdout.strip()
     # the gate may have left files behind, and a checkout that refuses would rerun the tests on the merge
@@ -1458,6 +2260,11 @@ def tested(tid: str, d: Path, base: str) -> str | None:
     # ponytail: name-level match; a branch that breaks an already-failing test some other way slips through
     if r and r.returncode and set(re.findall(rx, r.stdout + r.stderr, re.M)) >= set(names):
         log(f'{tid}: {", ".join(names)} already fail without it; merged anyway')
+        for n in names:
+            BROKEN.setdefault(n, (tid, base, full and bool(C.run['test_since'])))
+        if full and C.run['test_since']:
+            (C.notes(GATES) / FULL_PASS).touch()
+            log(f'{tid}: the whole test ran and found only those; counted as the day\'s whole run')
         return None
     return why
 
@@ -1471,9 +2278,11 @@ def suspect(base: str, merged: str) -> str:
     if not (pat := C.run['suspect']):
         return ''
     rx = re.compile(pat, re.I)
-    added = git('diff', base, merged, '--', plan_rel('TODO.md'), plan_rel('DONE.md')).stdout
-    return next((l[1:].strip()[:200] for l in added.splitlines()
-                 if l.startswith('+') and not l.startswith('+++') and rx.search(l)), '')
+    diff = git('diff', base, merged, '--', plan_rel('TODO.md'), plan_rel('DONE.md')).stdout.splitlines()
+    gone = [l for l in diff if l.startswith('-') and not l.startswith('---')]
+    # a line edited elsewhere (its files filled in, a note added) keeps its old block: that is not a new one
+    return next((l[1:].strip()[:200] for l in diff if l.startswith('+') and not l.startswith('+++') and
+                 (m := rx.search(l)) and not any(m.group(0) in g for g in gone)), '')
 
 
 LAND_WAIT = 10 * 60  # how long a tested merge holds MERGE waiting on edits in the main checkout
@@ -1488,7 +2297,7 @@ LANDED: dict[str, tuple[str, str]] = {}  # a task that landed in another's batch
 def merge(tid: str, branch: str) -> str | None:
     """Merge task/<tid> into the shared branch: merge, archive ticks, test, land, push, delete the branch.
 
-    The merge is built and tested in its own worktree (`<repo>-slots/merge`), and the shared branch only
+    The merge is built and tested in its own worktree (`[run] home`/merge), and the shared branch only
     moves once the tests pass. So the main checkout never holds an untested merge: whoever works there keeps
     committing the whole time, nothing is reset under them, and their edits are never stashed.
 
@@ -1499,34 +2308,50 @@ def merge(tid: str, branch: str) -> str | None:
     Returns None when it landed, else why it was left alone. The shared branch is then as it was, and the
     task branch is still there.
     """
-    WAITING.add(tid)
-    with MERGE:
-        WAITING.discard(tid)
-        if tid in LANDED:  # it went in with an earlier task's batch
-            base, merged = LANDED.pop(tid)
-        elif why := merge_batch(tid, branch):
+    for tries in range(3):
+        if tid not in LANDED and (why := fix_ahead(tid, branch)):
             return why
-        else:
+        WAITING.add(tid)
+        with MERGE:
+            WAITING.discard(tid)
+            if tid not in LANDED and UNPUSHED:  # a batch whose last task has not taken the lock yet: its
+                push_landed(UNPUSHED[-1], branch)  # push goes out now, not after this one's gate
+            if tid not in LANDED:  # else it went in with an earlier task's batch
+                if (why := merge_batch(tid, branch, inline=tries == 2)) == AGAIN:
+                    log(f'{tid}: {AGAIN}; it is fixed outside the lock again while the others merge')
+                    continue
+                if why:
+                    return why
             base, merged = LANDED.pop(tid)
-        git('branch', '-d', f'task/{tid}')
-        git('update-ref', '-d', TESTED + tid)
-        line = next((l for l in plan_text(branch) if f'**{tid}**' in l), '')
-        state = 'blocked' if line.startswith('- [~]') else 'part' if line else 'ticked'
-        msg = f'{tid}: merged, {state}' + (f'; SUSPECT, recheck: {sus}' if (sus := suspect(base, merged)) else '')
-        note(msg)
-        log(msg)
-        reopen_landed(branch, tid)  # before the push, so the reopen goes out with the merge
-        published(tid, branch)
-        return None
+            git('branch', '-d', f'task/{tid}')
+            git('update-ref', '-d', TESTED + tid)
+            for h in git('for-each-ref', '--format=%(refname)', f'{HELD}{tid}/', f'{FIXED}{tid}/').stdout.split():
+                git('update-ref', '-d', h)
+            land_tick(tid, merged)
+            line = next((l for l in plan_text(branch) if f'**{tid}**' in l), '')
+            state = 'blocked' if line.startswith('- [~]') else 'part' if line else 'ticked'
+            msg = f'{tid}: merged, {state}' + (f'; SUSPECT, recheck: {sus}' if (sus := suspect(base, merged)) else '')
+            note(msg)
+            log(msg)
+            reopen_landed(branch, tid)  # before the push, so the reopen goes out with the merge
+            published(tid, branch)
+            return None
+    return f'{tid}: no merge landed in three tries'
 
 
-def merge_into(d: Path, ref: str, msg: str) -> list[str] | None:
+def task_env(tid: str) -> dict:
+    """The environment for a git merge of `tid`'s branch: the task list's merge driver (`plan.merge3`) lets the
+    branch's own words win where both sides edited the same part of that task's line."""
+    return {'env': {**os.environ, 'AGENT_RUNNER_TASK': tid}} if tid else {}
+
+
+def merge_into(d: Path, ref: str, msg: str, tid: str = '') -> list[str] | None:
     """`git merge ref` in d: the files left in conflict ([] when it merged), or None when git refused it.
 
     A failed merge with nothing in conflict is either git rerere having replayed an earlier resolution of
     every file (the merge is still open: committed here) or git refusing to start (e.g. an untracked file
     in the way), which must not pass for a merge."""
-    if not git('merge', '--no-edit', '-m', msg, ref, cwd=d).returncode:
+    if not git('merge', '--no-edit', '-m', msg, ref, cwd=d, **task_env(tid)).returncode:
         return []
     if files := git('diff', '--name-only', '--diff-filter=U', cwd=d).stdout.split():
         return files
@@ -1550,11 +2375,85 @@ def refix(tid: str, branch: str, ref: str, files: list[str], d: Path, undo: bool
     it did not finish is taken back off `d`, so the batch goes on without it."""
     git('merge', '--abort', cwd=d)
     at = git('rev-parse', 'HEAD', cwd=d).stdout.strip()
-    git('merge', '--no-edit', '-m', msg or f"Merge branch 'task/{tid}'", ref, cwd=d)
-    if (why := fix_merge(tid, branch, files, d)) and undo:
+    sha = git('rev-parse', ref, cwd=d).stdout.strip()
+    if kept(tid, at, sha, d, 'fix'):
+        return None
+    git('merge', '--no-edit', '-m', msg or f"Merge branch 'task/{tid}'", ref, cwd=d, **task_env(tid))
+    if (why := fix_merge(tid, branch, files, d, at, sha)) and undo:
         git('merge', '--abort', cwd=d)
         clean(d, at)
     return why
+
+
+FIX_DIRS: set[int] = set()  # the fix worktrees (fix<k>) in use by a fix ahead of the lock
+FIX_DIRS_LOCK = threading.Condition()  # at most `[run] fix_ahead_max` of them at once
+FIXED = 'refs/agent-runner/fixed/'  # + <ID>/<task sha>: a fix session's merge of task/<ID> with the shared branch
+AGAIN = 'conflicts again with the shared branch'  # merge_batch's why when a fix ahead of the lock is due
+
+
+def fixed(tid: str) -> str:
+    """task/<tid>, or the merge a fix session made of it with the shared branch ahead of the lock (`fix_ahead`),
+    while task/<tid> is still the commit that merge was made from."""
+    sha = git('rev-parse', '-q', '--verify', f'task/{tid}').stdout.strip()
+    ref = f'{FIXED}{tid}/{sha}'
+    return ref if sha and git('rev-parse', '-q', '--verify', ref).returncode == 0 else f'task/{tid}'
+
+
+def fix_ahead(tid: str, branch: str) -> str | None:
+    """A conflict between task/<tid> and the shared branch that the join cannot do, resolved before the merge
+    lock is taken: None when there is none, or a fix session resolved it, else why not.
+
+    The session merges task/<tid> into the branch's head in a fix worktree of its own (fix1, fix2, …: kept,
+    so their builds stay warm; at most `[run] fix_ahead_max` at once, so the worktrees and their builds never
+    outnumber that, and each waits on `[run] before_start` as a slot does), and the merge it commits is kept
+    as `fixed(tid)`. The other
+    finished tasks merge and gate meanwhile; this one then takes the lock with that merge, which goes in
+    clean unless the branch has meanwhile touched the same lines again (another, smaller fix). So
+    `[run] fix_timeout` holds up nobody but this task."""
+    if not (C.run['fix_merges'] and C.run['fix_ahead']):
+        return None
+    task = git('rev-parse', '-q', '--verify', f'task/{tid}').stdout.strip()
+    base = git('rev-parse', branch).stdout.strip()
+    if not task or fixed(tid) != f'task/{tid}' and \
+            not git('merge-base', '--is-ancestor', base, fixed(tid)).returncode:
+        return None
+    src = fixed(tid)  # a merge fixed ahead before, which the branch has since moved past: only the new part
+    r = git('merge-tree', '--write-tree', '--name-only', '--no-messages', base, src, **task_env(tid))
+    if r.returncode != 1:  # 0: it merges clean; else git cannot say, and the locked merge finds out
+        return None
+    with FIX_DIRS_LOCK:
+        while not (free := set(range(1, max(1, C.run['fix_ahead_max']) + 1)) - FIX_DIRS):
+            FIX_DIRS_LOCK.wait()  # each one builds and runs an agent: wait for a turn
+        k = min(free)
+        FIX_DIRS.add(k)
+    d = SLOTS_DIR / f'fix{k}'
+    try:
+        while C.run['before_start'] and before_start_fails():  # no room (memory, say): as a slot waits
+            time.sleep(60)
+        if d.is_dir():
+            trim(d, f'fix worktree {k}')
+        worktree(f'fix{k}', base)
+        git('merge', '--abort', cwd=d)
+        clean(d, base)
+        git('checkout', '-q', '--detach', base, cwd=d)
+        ref = renumber_doubles(src, base, tid, d)
+        msg = merge_message(tid, f'task/{tid}' if src != f'task/{tid}' else ref)
+        if (files := merge_into(d, ref, msg, tid)) is None:
+            return None  # git refused it here: the locked merge says so
+        if files and not joined(files, tid, d):
+            git('merge', '--abort', cwd=d)
+            git('merge', '--no-edit', '-m', msg, ref, cwd=d, **task_env(tid))
+            log(f'{tid}: resolving its conflicts with {branch} outside the merge lock, in {d.name}')
+            if why := fix_merge(tid, branch, files, d):
+                return why
+        git('update-ref', f'{FIXED}{tid}/{task}', git('rev-parse', 'HEAD', cwd=d).stdout.strip())
+        return None
+    finally:
+        git('merge', '--abort', cwd=d)
+        git('checkout', '-q', '--detach', cwd=d)
+        with FIX_DIRS_LOCK:
+            FIX_DIRS.discard(k)
+            FIX_DIRS_LOCK.notify()
 
 
 def repair_retest(tid: str, branch: str, d: Path, base: str, merged: str,
@@ -1580,44 +2479,102 @@ def upstream(branch: str, d: Path) -> str:
     return ref
 
 
-def merge_batch(tid: str, branch: str) -> str | None:
-    """`merge`'s part under the lock: build, test and land task/<tid> and its riders; record them in LANDED."""
+def merge_message(tid: str, ref: str) -> str:
+    if C.run['include_task_id_in_commit']:
+        return f"Merge branch 'task/{tid}'"
+    subject = git('log', '-1', '--format=%s', ref).stdout.strip()
+    prefix = f'{tid}:'
+    if subject.startswith(prefix):
+        subject = subject[len(prefix):].lstrip(' \t')
+    return f'Merge: {subject or "task changes"}'
+
+
+def carry_notes(base: str, d: Path) -> None:
+    """Each merge since `base` in `d`: a note one side added to a task the other side ticked goes onto the
+    task in DONE.md (`plan.carry_notes`), not lost with the TODO.md line the tick removed."""
+    show = lambda rev: git('show', f'{rev}:{plan_rel("TODO.md")}', cwd=d).stdout.splitlines()
+    path = d / plan_rel('DONE.md')
+    if not path.exists():
+        return
+    have = path.read_text(encoding='utf-8').splitlines()
+    got = have
+    for m in git('rev-list', '--merges', f'{base}..HEAD', cwd=d).stdout.split():
+        parents = git('rev-parse', f'{m}^1', f'{m}^2', cwd=d).stdout.split()
+        mb = git('merge-base', *parents, cwd=d).stdout.strip()
+        if len(parents) == 2 and mb:
+            got = P.carry_notes(got, show(mb), [show(p) for p in parents])
+    if got != have:
+        path.write_text('\n'.join(got) + '\n', encoding='utf-8')
+
+
+def merge_batch(tid: str, branch: str, inline: bool = False) -> str | None:
+    """`merge`'s part under the lock: build, test and land task/<tid> and its riders; record them in LANDED.
+
+    A conflict of task/<tid> that the join cannot do returns AGAIN, for `fix_ahead` to take outside the lock,
+    unless `inline` (its last try) or `fix_ahead` is off: then a fix session takes it here. A rider with one
+    waits for its own turn."""
+    ahead_fix = C.run['fix_merges'] and C.run['fix_ahead'] and not inline
     d = worktree('merge', branch)
+    adopt_merge(d)
+    if trim(d, 'merge worktree'):
+        worktree('merge', branch)
     solo = not C.run['batch']
     repairs: list[str] = []  # a repair session's commits, replayed when the merge is built again
     repaired = False
     batch_repaired = False  # one repair session per batch; a batch that still fails is split
-    batch_fixes = C.run['fix_merges']  # a rider's conflict a join cannot do gets a fix session in the batch
+    batch_fixes = C.run['fix_merges'] and not C.run['fix_ahead']  # a rider's conflict: a fix session in the batch
     try:
         for attempt in range(3):
             git('merge', '--abort', cwd=d)
             clean(d)
             base = git('rev-parse', branch).stdout.strip()
             git('checkout', '-q', '--detach', base, cwd=d)
-            ref = renumber_doubles(f'task/{tid}', base, tid, d)
-            if (files := merge_into(d, ref, f"Merge branch 'task/{tid}'")) is None:
-                return f'git refused to merge task/{tid} into {branch} (see the merge worktree, {d})'
-            if files:
-                if joined(files, tid, d):
-                    log(f'{tid}: joined both sides of {", ".join(files)}')
-                elif why := refix(tid, branch, ref, files, d):
-                    return why
-            riders = []
-            for t in ([] if solo else sorted(WAITING - set(LANDED))):
-                ref = renumber_doubles(f'task/{t}', 'HEAD', t, d)
-                if (files := merge_into(d, ref, f"Merge branch 'task/{t}'")) is None:
-                    git('merge', '--abort', cwd=d)
-                    continue
-                if files and not joined(files, t, d):
-                    if not batch_fixes:
+            ahead = next((a for a in AHEADS if reusable(a, tid, base)), None)
+            if ahead:
+                AHEADS.remove(ahead)
+                clean(d, ahead['merged'])
+                riders = [t for t in ahead['tids'] if t != tid]
+                log(f'{tid}: reusing the merge already built and gated (ahead, or by an earlier run)' +
+                    (f' with {", ".join(riders)}' if riders else ''))
+                if ahead['base'] != base:  # the branch moved by untested files only: take them in
+                    if (files := merge_into(d, base, f'Merge {branch} into the merge of task/{tid}')) is None or \
+                            files and not joined(files, tid, d):
                         git('merge', '--abort', cwd=d)
-                        continue  # it waits for its own turn, where a fix session can take the conflict
-                    # a fix session takes the conflict here, so the rider shares this gate run
-                    if refix(t, branch, ref, files, d, undo=True):
-                        continue  # it waits for its own turn
-                riders.append(t)
-            if riders:
-                log(f'{tid}: merging together with {", ".join(riders)} (one gate run)')
+                        log(f'{tid}: {branch} moved and conflicts with it; building the merge again')
+                        continue
+            else:
+                if AHEADS:
+                    drop_ahead()  # the branch moved some other way, or its tasks are gone: not this merge
+                own = fixed(tid)
+                ref = renumber_doubles(own, base, tid, d)
+                msg = merge_message(tid, f'task/{tid}' if own != f'task/{tid}' else ref)
+                if (files := merge_into(d, ref, msg, tid)) is None:
+                    return f'git refused to merge task/{tid} into {branch} (see the merge worktree, {d})'
+                if files:
+                    if joined(files, tid, d):
+                        log(f'{tid}: joined both sides of {", ".join(files)}')
+                    elif ahead_fix:
+                        return AGAIN
+                    elif why := refix(tid, branch, ref, files, d, msg=msg):
+                        return why
+                riders = []
+                for t in ([] if solo else sorted(WAITING - set(LANDED))):
+                    own = fixed(t)
+                    ref = renumber_doubles(own, 'HEAD', t, d)
+                    msg = merge_message(t, f'task/{t}' if own != f'task/{t}' else ref)
+                    if (files := merge_into(d, ref, msg, t)) is None:
+                        git('merge', '--abort', cwd=d)
+                        continue
+                    if files and not joined(files, t, d):
+                        if not batch_fixes:
+                            git('merge', '--abort', cwd=d)
+                            continue  # it waits for its own turn, where a fix session can take the conflict
+                        # a fix session takes the conflict here, so the rider shares this gate run
+                        if refix(t, branch, ref, files, d, undo=True, msg=msg):
+                            continue  # it waits for its own turn
+                    riders.append(t)
+                if riders:
+                    log(f'{tid}: merging together with {", ".join(riders)} (one gate run)')
             if up := upstream(branch, d):  # someone pushed to the remote: take it in, the gate tests it too
                 msg = f"Merge {up.removeprefix('refs/remotes/')} into {branch}"
                 if (files := merge_into(d, up, msg)) is None:
@@ -1629,7 +2586,16 @@ def merge_batch(tid: str, branch: str) -> str | None:
                 git('cherry-pick', '--abort', cwd=d)
                 log(f'{tid}: the repair no longer applies to the merge; testing it without')
                 repairs = []
-            P.archive(d / plan_rel('TODO.md'), d / plan_rel('DONE.md'))
+            if not C.plan_external:  # outside, `done` and `land_tick` archive as they tick
+                carry_notes(base, d)
+                P.archive(d / plan_rel('TODO.md'), d / plan_rel('DONE.md'))
+                if C.raw['plan'].get('need_files'):  # a line written in by hand skipped `plan add`'s check
+                    filled, left = P.fill_files(d / plan_rel('TODO.md'), d)
+                    if filled:
+                        log(f'{tid}: named the files on {", ".join(filled)} from their prose')
+                    if left := [t for t in left if t not in BARE]:
+                        BARE.update(left)
+                        log(f'{tid}: {", ".join(left)} name no files and no test; mode d runs them beside anything')
             plan_files = [plan_rel('TODO.md'), plan_rel('DONE.md')]
             if git('status', '--porcelain', '--', *plan_files, cwd=d).stdout.strip():
                 git('commit', '-qm', f'{tid}: archive ticked tasks', '--', *plan_files, cwd=d)
@@ -1639,7 +2605,16 @@ def merge_batch(tid: str, branch: str) -> str | None:
             # commits made after `done`, nor a session that never ran it: its tested ref is not the branch
             if riders or not gated(tid) or \
                     not all(map(untestable, git('diff', '--name-only', f'task/{tid}', merged, cwd=d).stdout.split())):
-                if why := tested(tid, d, base):
+                ahead_done = threading.Event()
+                if C.run['merge_ahead']:
+                    threading.Thread(target=build_ahead, args=(branch, merged, ahead_done, {tid, *riders}),
+                                     daemon=True).start()
+                try:
+                    why = tested(tid, d, base, [tid, *riders])
+                finally:
+                    ahead_done.set()
+                if why:
+                    drop_ahead()  # built on a merge that does not land as it is
                     if riders and not batch_repaired and C.run['repair_merges']:
                         batch_repaired = True
                         not_fixed, still, fixes = repair_retest(tid, branch, d, base, merged, riders)
@@ -1721,7 +2696,7 @@ def land(tid: str, branch: str, merged: str) -> str | None:
         return f'{ELSEWHERE} ({cur or "a detached HEAD"}, not {branch})'
     msg = ['-m', f'{tid}: the tested merge, onto commits {branch} got during the tests']
     ref = renumber_doubles(merged, 'HEAD', tid, ROOT)
-    while git('merge', '-q', *msg, ref).returncode and \
+    while git('merge', '-q', *msg, ref, **task_env(tid)).returncode and \
             git('rev-parse', '--verify', '-q', 'MERGE_HEAD').returncode:
         if time.time() - t0 > LAND_WAIT:
             return f'{EDITED} to files the merge changes'
@@ -1749,14 +2724,29 @@ def published(tid: str, branch: str) -> None:
     push is logged, not fatal: the merge landed locally and the next one pushes both. With `[git] push_merge
     = false` the merge stays local and the `git push` to run is logged instead; `drop_if_merged` then keeps
     the task branch on the remote until the shared branch there has it.
+
+    A batch is pushed once, by the last of its tasks to land: while the others are still waiting for the lock
+    to record theirs, this one's push is left to them (each push is a CI run on the shared branch).
     """
+    UNPUSHED.append(tid)
+    if not (C.push_merge and LANDED and set(LANDED) <= WAITING):
+        push_landed(tid, branch)
+
+
+def push_landed(tid: str, branch: str) -> None:
+    """`published`'s push, for `tid` and the tasks of its batch whose push was left to it."""
     if C.push_merge:
         if out := push(ROOT, branch, shared=True):
-            log(f'{tid}: {out}')
+            log(f'{tid}: {out}' + (f' (with {", ".join(UNPUSHED[:-1])})' if len(UNPUSHED) > 1 else ''))
     elif C.push_remote:
         log(f'{tid}: merged, not pushed ([git] push_merge is off): git push {C.push_remote} {branch}')
-    if out := drop_if_merged(ROOT, f'task/{tid}'):
-        log(f'{tid}: {out}')
+    for t in UNPUSHED:
+        if out := drop_if_merged(ROOT, f'task/{t}'):
+            log(f'{t}: {out}')
+    UNPUSHED.clear()
+
+
+UNPUSHED: list[str] = []  # tasks landed whose push `published` left to the last of their batch
 
 
 REOPENED: set[str] = set()  # tasks `reopen_landed` put back to [ ]: `cmd_run` lets them be tried again
@@ -1784,8 +2774,94 @@ def retry_reopened(tried: set[str], closed: set[str], branch: str) -> None:
             log(f'{t}: open again since it was tried; back in the pool')
 
 
+FLAKY: dict[str, str] = {}  # a test that failed under load and passed alone -> the task whose gate saw it
+# a test that failed on the merge and on its base too -> (the task, the base, whether the daily whole test found it)
+BROKEN: dict[str, tuple[str, str, bool]] = {}
+
+
+def flaky(tid: str, names: list[str]) -> None:
+    for n in names:
+        FLAKY.setdefault(n, tid)
+
+
+def file_flaky(rel: str) -> list[str]:
+    """File a critical follow-up to make each flaky test robust, each runaway one bounded, and each one the
+    shared branch already fails passing again, unless an open task names it already.
+
+    A rerun alone lets the merge through, but the flake is still there and costs every later gate a rerun (or a
+    red one, when it flakes twice), so it is fixed before the queued work rather than worked around."""
+    if not FLAKY and not HOGS and not BROKEN:
+        return []
+    ls = P.lines(ROOT / rel)
+    open_text = '\n'.join(l for l in ls if (m := P.ITEM.match(l)) and m.group(2) != 'x')
+    kind, out = C.run['flaky_kind'], []
+    for name, (gb, where) in list(HOGS.items()):
+        del HOGS[name]
+        if name in open_text:
+            continue
+        out.append(P.add(kind, f'make the test `{name}` stop growing: it held {gb} GB in {where} until the run\'s '
+                               f'memory watch ended it. Find what it allocates without bound (a walk that loops, '
+                               f'a list grown per case) and bound it | t: `{name}`', todo=ROOT / rel, pri='critical'))
+        open_text += '\n' + name
+    for name, (tid, base, daily) in list(BROKEN.items()):
+        del BROKEN[name]
+        if name in open_text:
+            continue
+        how = (' The daily whole test found it: a selective gate ([run] test_since) let in whatever broke it, so '
+               'also make the selection reach this test from what it reads.') if daily else ''
+        out.append(P.add(kind, f'make the test `{name}` pass again: it fails on the shared branch ({base[:10]}), '
+                               f'found by {tid}\'s merge gate, which merged anyway as not its doing. Find the '
+                               f'merge that broke it (git bisect from the last gate it passed) and fix the code '
+                               f'or the test.{how} | t: `{name}`', todo=ROOT / rel, pri='critical'))
+        open_text += '\n' + name
+    for name, tid in list(FLAKY.items()):
+        del FLAKY[name]
+        if name in open_text:
+            continue
+        out.append(P.add(kind, f'make the test `{name}` robust: it failed under load in {tid}\'s merge gate and '
+                               f'passed alone. Find what it races (wall-clock time, shared ports or files, '
+                               f'other processes) and remove that, rather than widening a timeout | t: `{name}`',
+                         todo=ROOT / rel, pri='critical'))
+        open_text += '\n' + name
+    return out
+
+
+def land_tick(tid: str, merged: str) -> None:
+    """A plan outside the repo: tick what `done` finished, now that its code is on the shared branch, with
+    where it landed. Ticked at `done` instead, a merge left for a human would leave the task closed."""
+    mark = plansync.ticks(C) / tid
+    if not C.plan_external or not mark.exists():
+        return
+    with plansync.locked(C):
+        plansync.pull(C, force=True)
+        if tid in P.open_ids(P.lines(C.todo)):
+            P.note(tid, f'landed {merged[:10]}', todo=C.todo)
+            P.tick(tid, C.todo, C.done)
+            if out := plansync.publish(C, f'tick {tid} (landed {merged[:10]})'):
+                log(f'{tid}: {out}')
+    mark.unlink(missing_ok=True)
+
+
+def commit_plan(msg: str, *rels: str) -> bool:
+    """Commit a runner's plan edit: in the main checkout, or, for a plan outside it, in the plan's clone."""
+    if C.plan_external:
+        if out := plansync.publish(C, msg):
+            log(out)
+        return True
+    return not git('commit', '-qm', msg, '--', *rels).returncode
+
+
 def reopen_landed(branch: str, why: str) -> None:
-    """Unblock what a merge freed (`plan.reopen`) and commit it, in the main checkout, holding MERGE.
+    if not C.plan_external:
+        return _reopen_landed(branch, why)
+    with plansync.locked(C):
+        plansync.pull(C, force=True)
+        _reopen_landed(branch, why)
+
+
+def _reopen_landed(branch: str, why: str) -> None:
+    """File the flaky tests the gate met (`file_flaky`), and unblock what a merge freed (`plan.reopen`), each
+    committed in the main checkout, holding MERGE.
 
     Without it, a task blocked on "X is not merged yet" stays blocked until a human reads the prose. Left alone when TODO.md has edits nobody
     committed (somebody mid-edit), so it never commits theirs; the next merge tries again.
@@ -1793,16 +2869,148 @@ def reopen_landed(branch: str, why: str) -> None:
     rel = plan_rel('TODO.md')
     if git('branch', '--show-current').stdout.strip() != branch or git('status', '--porcelain', '--', rel).stdout.strip():
         return
+    if filed := file_flaky(rel):
+        if not commit_plan(f'Plan: {", ".join(filed)} to fix flaky, runaway or failing tests ({why}\'s merge)', rel):
+            git('checkout', '-q', '--', rel)
+        else:
+            for t in filed:
+                note(f'{t}: filed, a flaky, runaway or failing test to fix')
+                log(f'{t}: filed (critical), a flaky, runaway or failing test to fix')
     if not (got := P.reopen(ROOT / rel)):
         return
     names = ', '.join(t for t, _ in got)
-    if git('commit', '-qm', f'Plan: reopen {names} ({why} landed what they waited on)', '--', rel).returncode:
+    if not commit_plan(f'Plan: reopen {names} ({why} landed what they waited on)', rel):
         git('checkout', '-q', '--', rel)
         return
     REOPENED.update(t for t, _ in got)
     for t, ids in got:
         note(f'{t}: reopened, {", ".join(ids)} landed')
         log(f'{t}: reopened, {", ".join(ids)} landed')
+
+
+CLAIMS_AT = [0.0]
+STALE_SAID: set[str] = set()
+
+
+def touched(tid: str, branch: str, slot: Path | None) -> set[str]:
+    """Files task `tid` has changed so far: its branch's commits past `branch`, and in its slot what is not
+    committed yet. A claim carries them, so another runner keeps off them even when the task line lists
+    none (or too few)."""
+    out = set(git('diff', '--name-only', f'{branch}...task/{tid}').stdout.split())
+    if slot and slot.is_dir():
+        st = git('status', '--porcelain', '--untracked-files=all', cwd=slot)
+        if not st.returncode:
+            out |= {l[3:].split(' -> ')[-1].strip('"') for l in st.stdout.splitlines()}
+    return out
+
+
+def keep_claims(running: dict, branch: str) -> None:
+    """`[plan] repo`, every plansync.REFRESH s: re-stamp this run's claims (running, or waiting to merge) with
+    the files each holds (the line's and the ones its session has touched), drop its claims on anything else,
+    and say once of each other run's claim gone stale (a crashed run's would hold that task for good) and of
+    each other runner too old to keep off this run's files."""
+    if not C.plan_repo or time.time() - CLAIMS_AT[0] < plansync.REFRESH:
+        return
+    CLAIMS_AT[0] = time.time()
+    slots = {t[0]: (SLOTS_DIR / f's{n}', t[2]) for n, t in running.items() if isinstance(n, int)}
+    keep = set(slots) | set(ahead(branch)) | {q[0] for q in queued().values()}  # queued: waiting to resume
+    lines = {t[0]: t[2] for t in tasks(branch)}
+    files = {t: set(slots.get(t, (None, lines.get(t, set())))[1]) | touched(t, branch, slots.get(t, (None,))[0])
+             for t in keep}
+    plansync.refresh(C, keep, files)
+    me = plansync.owner(C)
+    for t, cl in plansync.claims(C).items():
+        if cl.owner == me:
+            continue
+        if plansync.stale(cl) and t not in STALE_SAID:
+            STALE_SAID.add(t)
+            log(f'{t}: claimed by {plansync.label(cl)}, not refreshed since: if that run is gone, '
+                f'`{C.command} plan unclaim {t}`')
+        elif not plansync.stale(cl) and plansync.outdated(cl) and cl.owner not in OUTDATED_SAID:
+            OUTDATED_SAID.add(cl.owner)
+            log(f'! {cl.who} runs agent-runner {cl.version or "older than 0.14"}, which does not keep off the '
+                f'files this run holds: upgrade it to {".".join(map(str, plansync.MIN_PEER))} or later')
+
+
+OUTDATED_SAID: set[str] = set()  # other runners already reported as too old, by owner
+
+
+def ci_flows(branch: str) -> tuple[list[str], str]:
+    """`[run] ci_watch` as (workflow files, event their runs must come from): "auto" (the default) is every
+    workflow that runs on a push to `branch`, push runs only; a name or list is just those, any event;
+    false, [] or "" is none."""
+    w = C.run['ci_watch']
+    if w == 'auto':
+        return ci.push_workflows(ROOT, branch), 'push'
+    if not w:
+        return [], ''
+    return ([w] if isinstance(w, str) else list(w)), ''
+
+
+CI_UNSEEN: list[str] = []  # why gh could not see the repository, once it has been said
+CI_AT = [0.0]  # when `watch_ci` last asked GitHub
+
+
+def watch_ci(branch: str, force: bool = False) -> list[str]:
+    """`[run] ci_watch`: file one critical task for a red workflow run on the shared branch (see `ci`).
+
+    Every `ci.CI_POLL` s from the run loop, and only when MERGE is free: the task is committed in the main
+    checkout like `reopen_landed`'s, and a loop that waited out a gate here would start nothing for an hour.
+    Left alone, as there, while TODO.md has edits nobody committed. The ids filed.
+    """
+    if not force and time.time() - CI_AT[0] < ci.CI_POLL:
+        return []
+    flows, event = ci_flows(branch)
+    if not flows:
+        return []
+    if not MERGE.acquire(blocking=False):
+        return []
+    filed: list[str] = []
+    hold = ExitStack()
+    try:
+        CI_AT[0] = time.time()
+        if C.plan_external:  # the whole look: a gh call or two, seconds
+            hold.enter_context(plansync.locked(C))
+            plansync.pull(C, force=True)
+        rel = plan_rel('TODO.md')
+        if git('branch', '--show-current').stdout.strip() != branch or \
+                git('status', '--porcelain', '--', plan_rel('')).stdout.strip():
+            return []
+        gh = ci.gh_in(ROOT)
+        if why := ci.reachable(gh):
+            if not CI_UNSEEN:
+                CI_UNSEEN.append(why)
+                log(f'! ci_watch: gh cannot see this repository ({why}); CI on {branch} is not watched until it '
+                    f'can (`gh auth status`; `ci_watch = false` in [run] to stop looking)')
+            return []
+        CI_UNSEEN.clear()
+        for wf in flows:
+            ls = P.lines(ROOT / rel)
+            open_text = '\n'.join(l for l in ls if (m := P.ITEM.match(l)) and m.group(2) != 'x')
+            seen = ci.seen_file(C.notes, wf)
+            was = seen.read_text() if seen.exists() else ''
+            if not (got := ci.to_file(gh, wf, branch, seen, open_text, event, C.run['ci_rerun'], log)):
+                continue
+            text, long = got
+            tid = P.add(C.run['ci_kind'], text, todo=ROOT / rel, pri='critical')
+            own = plan_rel(f'{P.TASKS}/{tid}.md')
+            (ROOT / own).parent.mkdir(parents=True, exist_ok=True)
+            (ROOT / own).write_text('\n'.join([f'# {tid} — CI: {ci.marker(wf, branch)}', '', *long, '']),
+                                    encoding='utf-8')
+            git('add', '--', own)
+            if not commit_plan(f'Plan: {tid}, {ci.marker(wf, branch)}', rel, own):
+                git('reset', '-q', '--', own)
+                git('checkout', '-q', '--', rel)
+                (ROOT / own).unlink(missing_ok=True)
+                seen.write_text(was)  # not filed: the next look tries that run again
+                continue
+            filed.append(tid)
+            note(f'{tid}: filed (critical), {ci.marker(wf, branch)}')
+            log(f'{tid}: filed (critical), {ci.marker(wf, branch)}: {text[:200]}')
+    finally:
+        hold.close()
+        MERGE.release()
+    return filed
 
 
 def not_attempt(tid: str, branch: str) -> bool:
@@ -1816,20 +3024,22 @@ def not_attempt(tid: str, branch: str) -> bool:
 def finish(tid: str, n: int, sid: str, branch: str) -> None:
     """After a slot's session: merge its branch, or park it as wip/<ID> and say why."""
     try:
-        _finish(tid, n, sid, branch)
+        if _finish(tid, n, sid, branch):
+            (plansync.ticks(C) / tid).unlink(missing_ok=True)
+            plansync.release(C, tid)
     except Exception as e:  # a merge thread that dies silently leaves the branch unmerged with no word why
         note(f'{tid}: LEFT FOR A HUMAN — the merge crashed: {e!r}')
         log(f'{tid}: LEFT FOR A HUMAN — the merge crashed: {e!r}')
 
-
-def _finish(tid: str, n: int, sid: str, branch: str) -> None:
+def _finish(tid: str, n: int, sid: str, branch: str) -> bool:
+    """False when task/<tid> waits for the next run to merge it."""
     commits = git('log', '--format=%s', f'{branch}..task/{tid}').stdout.splitlines()
     if not commits:
         git('branch', '-D', f'task/{tid}')
         git('update-ref', '-d', TESTED + tid)
         note(f'{tid}: no commits — nothing to merge')
         log(f'{tid}: no commits — nothing to merge')
-        return
+        return True
     while (why := merge(tid, branch)) and why.startswith((EDITED, ELSEWHERE)):
         # Tested and only waiting on somebody's edits: parking it would throw the work away for a fresh
         # attempt. The branch stays task/<ID> (`pick` leaves it alone, the next run's `unmerged` takes it).
@@ -1839,19 +3049,22 @@ def _finish(tid: str, n: int, sid: str, branch: str) -> None:
         while blocked_by_edits(tid, branch):
             if stopping():
                 log(f'{tid}: the run stops; task/{tid} waits for the next run to merge it')
-                return
+                return False
             time.sleep(EDITS_POLL)
     if not why:
-        return
+        return True
     note(f'{tid}: LEFT FOR A HUMAN — {why}')
     log(f'{tid}: LEFT FOR A HUMAN — {why}. Its {len(commits)} commits: {" / ".join(commits)[:300]}')
     # Parked as wip/<ID>: a task/<ID> ahead of the branch reads as finished-and-waiting to `pick`, which
     # would then skip the task for good. As wip/ the task can start again, with the old attempt to read.
     if not git('branch', '-M', f'task/{tid}', wip := free_branch(f'wip/{tid}')).returncode:
         git('update-ref', '-d', TESTED + tid)
+        for h in git('for-each-ref', '--format=%(refname)', f'{FIXED}{tid}/').stdout.split():
+            git('update-ref', '-d', h)
         log(f'{tid}: its branch is parked as {wip}; the task stays open and can start again')
         if out := push(ROOT, wip):  # the one copy of that work: get it off this disk
             log(f'{tid}: {out}')
+    return True
 
 
 STAGED_SAID: set[str] = set()
@@ -1880,13 +3093,11 @@ TRANSCRIPTS: dict[str, str] = {}  # sid -> its transcript, once found: `stalled`
 def transcript(sid: str) -> str | None:
     if (t := TRANSCRIPTS.get(sid)) and os.path.exists(t):
         return t
-    if pi():
-        t = next(iter(glob.glob(str(pi_sessions() / f'*_{glob.escape(sid)}.jsonl'))), None)
-    elif copilot():
+    if copilot():
         f = copilot_home() / 'session-state' / sid / 'events.jsonl'
         t = str(f) if f.exists() else None
     else:
-        t = next(iter(glob.glob(os.path.expanduser(f'~/.claude/projects/*/{sid}.jsonl'))), None)
+        t = backend().find_transcript(sid)
     if t:
         TRANSCRIPTS[sid] = t
     return t
@@ -1894,7 +3105,8 @@ def transcript(sid: str) -> str | None:
 
 def entries(sid: str, skip_bad: bool = False):
     """Session `sid`'s transcript entries, in order; none without a transcript. A line that is not JSON ends
-    them (the one being written), or with `skip_bad` is passed over."""
+    them (the one being written), or with `skip_bad` is passed over. Every backend's come in Claude's shape."""
+    shape = backend().entry
     try:
         with open(transcript(sid) or os.devnull, encoding='utf-8', errors='replace') as f:
             for l in f:
@@ -1904,7 +3116,8 @@ def entries(sid: str, skip_bad: bool = False):
                     if skip_bad:
                         continue
                     return
-                yield d
+                if (d := shape(d)) is not None:
+                    yield d
     except OSError:
         return
 
@@ -1935,14 +3148,22 @@ def stats(sid: str) -> str:
     return f'{int(span.total_seconds()) // 60} min, {calls} calls, context {ctx[0] // 1000}k first, {max(ctx) // 1000}k peak'
 
 
+_busy_at: dict[str, float] = {}  # session id → when stalled() last saw it running a tool
+
+
 def stalled(pid: int, sid: str, limit: int) -> str | None:
     """Why a live session looks stuck, else None: quiet for `limit` seconds with no tool running (a prompt or
     a dialog the idle hook never sees), or quiet for longer than the Bash timeout even with one (a hung tool).
+    A tool's run writes nothing to the transcript, so the prompt's quiet counts from the last look that saw
+    one running: a 20-minute test run then a minute's thinking is not 21 minutes at a prompt (openmx's P38).
     """
     t = transcript(sid)
-    quiet = time.time() - os.path.getmtime(t) if t and os.path.exists(t) else 0
-    busy = bool(plat.children(pid))
-    if quiet > 65 * 60 or (quiet > limit and not busy):
+    now = time.time()
+    quiet = now - os.path.getmtime(t) if t and os.path.exists(t) else 0
+    if busy := bool(plat.children(pid)):
+        _busy_at[sid] = now
+    idle = min(quiet, now - _busy_at.get(sid, 0))
+    if quiet > 65 * 60 or (idle > limit and not busy):
         return f'no transcript activity for {int(quiet // 60)} min' + \
                (' with a tool still running' if busy else ' at a prompt')
     return None
@@ -2031,9 +3252,10 @@ def tmp_roots() -> list[Path]:
 
 
 def drop_session_tmp(sid: str) -> None:
-    """Delete session `sid`'s temp folder: it has ended for good (not queued to resume)."""
+    """Delete session `sid`'s temp folder and long brief: it has ended for good (not queued to resume)."""
     if not re.fullmatch(r'[0-9a-f-]{36}', sid or ''):
         return
+    C.notes(f'{sid}.brief').unlink(missing_ok=True)
     for root in tmp_roots():
         for d in root.glob(f'claude-*/*/{sid}'):
             shutil.rmtree(d, ignore_errors=True)
@@ -2054,6 +3276,40 @@ def live_sessions() -> set[str]:
             continue
         out.update(sids(args))
     return out
+
+
+def end_orphans() -> None:
+    """End what ended sessions left running (POSIX). Killing a session leaves its tools' processes behind,
+    reparented to init: partyboard collected Gradle daemons and `find /` crawls of an sftp mount that ran
+    for 20 h, 5 GB and two cores between them. Each carries AGENT_RUNNER=1 and its session's
+    CLAUDE_CODE_SESSION_ID in its environment (a detached daemon too); one whose session no agent runs
+    any more gets SIGTERM, then SIGKILL."""
+    if plat.WINDOWS:
+        return
+    live, found = live_sessions(), []
+    for f in Path('/proc').glob('[0-9]*/environ'):
+        try:
+            env = dict(v.split('=', 1) for v in f.read_bytes().decode(errors='replace').split('\0') if '=' in v)
+        except OSError:
+            continue
+        pid = int(f.parent.name)
+        if env.get('AGENT_RUNNER') == '1' and (s := env.get('CLAUDE_CODE_SESSION_ID')) and s not in live \
+                and pid != os.getpid():
+            found.append((pid, s, ' '.join(plat.cmdline(pid) or [])[:80]))
+    for pid, s, what in found:
+        log(f'ending pid {pid} left by session {s}: {what}')
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except OSError:
+            pass
+    end = time.monotonic() + 5
+    while (found := [f for f in found if alive(f[0])]) and time.monotonic() < end:
+        time.sleep(0.25)
+    for pid, *_ in found:
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except OSError:
+            pass
 
 
 def newest_write(d: Path) -> float:
@@ -2077,8 +3333,9 @@ def sweep_tmp(force: bool = False) -> None:
     _swept[0] = time.monotonic()
     if plat.WINDOWS:  # no /proc to tell a live session from a finished one
         return
+    end_orphans()
     keep = live_sessions() | {q[1] for q in queued().values()}
-    mine = {project_slug(d) for d in SLOTS_DIR.glob('*') if re.fullmatch(r's\d+|merge', d.name)}
+    mine = {project_slug(d) for d in SLOTS_DIR.glob('*') if re.fullmatch(r's\d+|merge|fix\d+', d.name)}
     cutoff, freed = time.time() - SESSION_TMP_KEEP, 0
     for root in tmp_roots():
         for proj in root.glob('claude-*/*'):
@@ -2098,11 +3355,128 @@ def sweep_tmp(force: bool = False) -> None:
         log(f'swept {freed / 2**20:,.0f} MB of ended sessions\' temp folders')
 
 
-def queue_cut_off(branch: str, slots: list[int]) -> None:
+MEM_EVERY = 10  # seconds between memory_watch's looks
+
+
+def runner_procs() -> list[tuple[int, int, str]]:
+    """(pid, resident bytes, command) of each process the run started, the agents themselves aside (Linux):
+    one working in a worktree of ours (s1…, merge, merge2, fix…) or carrying a slot's AGENT_RUNNER=1."""
+    home, out = str(SLOTS_DIR.resolve()), []
+    for d in Path('/proc').iterdir():
+        if not d.name.isdigit() or int(d.name) == os.getpid():
+            continue
+        try:
+            cwd = os.readlink(d / 'cwd')
+            ours = cwd == home or cwd.startswith(home + os.sep) or b'\0AGENT_RUNNER=1\0' in b'\0' + (d / 'environ').read_bytes()
+            rss = next(int(l.split()[1]) * 1024 for l in (d / 'status').read_text().splitlines() if l.startswith('VmRSS:'))
+        except (OSError, StopIteration, ValueError):
+            continue
+        if ours and not sids(args := plat.cmdline(int(d.name)) or []):
+            out.append((int(d.name), rss, ' '.join(args).strip()[:100]))
+    return out
+
+
+def mem_hogs(procs: list[tuple[int, int, str]], avail: int, total: int) -> list[tuple[int, str]]:
+    """Which of `procs` (`runner_procs`) `memory_watch` ends, each with why: any resident past `[run]
+    proc_max_gb`; failing that, while less than `[run] min_free_mem_gb` is available, the biggest one (if it
+    holds a GB: a leak outside the run is not the gates' to pay for one by one)."""
+    cap = C.run['proc_max_gb']
+    cap = total // 4 if cap == 'auto' else int(float(cap) * GB)
+    out = [(p, f'{rss / GB:.1f} GB resident, past [run] proc_max_gb ({cap / GB:.0f} GB)')
+           for p, rss, _ in procs if cap and rss > cap]
+    floor = C.run['min_free_mem_gb'] * GB
+    if not out and floor and avail < floor and procs:
+        p, rss, _ = max(procs, key=lambda x: x[1])
+        if rss >= GB:
+            out.append((p, f"the run's biggest process ({rss / GB:.1f} GB) with {avail / GB:.1f} GB of memory "
+                           f'left, under [run] min_free_mem_gb ({C.run["min_free_mem_gb"]} GB)'))
+    return out
+
+
+def memory_watch() -> None:
+    """End a runaway before it takes the machine (Linux): every MEM_EVERY s, `mem_hogs`' picks get SIGKILL,
+    that process alone, so its gate or session sees one test die and goes on. A test that walked a looping
+    tree in RAM held 52 GB in each of three slots' gates (openmx, 11-10), and the desktop's OOM handling
+    ended other work for it."""
+    while True:
+        time.sleep(MEM_EVERY)
+        try:
+            info = {l.split(':')[0]: int(l.split()[1]) * 1024 for l in Path('/proc/meminfo').read_text().splitlines()}
+            procs = runner_procs()
+            hogs = mem_hogs(procs, info['MemAvailable'], info['MemTotal'])
+        except (OSError, ValueError, IndexError, KeyError):
+            continue
+        for pid, why in hogs:
+            rss, cmd = next((r, c) for p, r, c in procs if p == pid)
+            cut, cwd = thread_names(pid), plat_cwd(pid)
+            log(f'ended pid {pid}, {why}: {cmd}')
+            try:
+                os.kill(pid, signal.SIGKILL)
+            except OSError:
+                pass
+            home = str(SLOTS_DIR.resolve()) + os.sep
+            where = cwd[len(home):].split(os.sep)[0] if cwd.startswith(home) else cwd
+            for name in test_names(cmd.split(' ')[0], cut, cwd):
+                log(f'{name}: the test it was running; a task to fix it is filed at the next merge')
+                HOGS.setdefault(name, (f'{rss / GB:.0f}', where))
+
+
+HOGS: dict[str, tuple[str, str]] = {}  # a test memory_watch ended -> (GB it held, the worktree): `file_flaky` files it
+
+
+def plat_cwd(pid: int) -> str:
+    try:
+        return os.readlink(f'/proc/{pid}/cwd')
+    except OSError:
+        return ''
+
+
+def thread_names(pid: int) -> set[str]:
+    """The names of `pid`'s threads but its main one's: a Rust test binary names each test's thread after the
+    test (cut to 15 characters by the kernel)."""
+    try:
+        main = Path(f'/proc/{pid}/comm').read_text().strip()
+        return {n for t in Path(f'/proc/{pid}/task').iterdir() if (n := (t / 'comm').read_text().strip()) != main}
+    except OSError:
+        return set()
+
+
+def test_names(exe: str, cut: set[str], cwd: str) -> list[str]:
+    """The whole names of the tests whose threads are `cut`, from the binary's own `--list`; none when `exe`
+    is not a test binary (a build, a tool) or no test matches."""
+    if not cut or not exe:
+        return []
+    try:
+        ls = sp.run([exe, '--list', '--format', 'terse'], capture_output=True, text=True, timeout=60,
+                    cwd=cwd or None, stdin=sp.DEVNULL).stdout
+    except (OSError, sp.SubprocessError, ValueError):
+        return []
+    names = [l[:-len(': test')] for l in ls.splitlines() if l.endswith(': test')]
+    return sorted({n for c in cut for n in names if n.startswith(c)} if len(names) else set())
+
+
+def live_session(sid: str) -> int | None:
+    """The pid of a process still running session `sid` (its command line names it), or None: a session
+    in a pane no run tagged, or another tmux session, is not cut off however its transcript ends. POSIX
+    only; the Windows terminals' job files name every session they started."""
+    if plat.WINDOWS or not sid:
+        return None
+    for d in Path('/proc').iterdir():
+        if d.name.isdigit() and int(d.name) != os.getpid() and (args := plat.cmdline(int(d.name))) \
+                and sid in sids(args) and not any(a.startswith('--stop-') for a in args):
+            return int(d.name)
+    return None
+
+
+def queue_cut_off(branch: str, slots: list[int]) -> dict[int, int]:
     """Startup: a slot still on task/<ID> whose session was cut off while no run was up (a reboot, the runner
-    killed, the network down at its exit) is queued to resume instead of being reset for a new task."""
+    killed, the network down at its exit) is queued to resume instead of being reset for a new task.
+    Returns {slot: pid} of the slots whose session still runs outside this run's panes (one opened before
+    panes carried @runner-repo, say): resuming it would put a second agent in the worktree, so the slot is
+    held until that process ends."""
     open_ids = open_tasks(branch)
     waiting = queued()
+    held = {}
     for n in slots:
         if n in waiting or not (SLOTS_DIR / f's{n}').is_dir():
             continue
@@ -2110,9 +3484,14 @@ def queue_cut_off(branch: str, slots: list[int]) -> None:
         if tid not in open_ids or (last_session(tid) or (0,))[0] != n:
             continue
         sid = last_session(tid)[1]
-        if (why := cut_off(sid, mid_turn=True)) and resumes(n, sid) < RESUMES_MAX:
+        if pid := live_session(sid):
+            held[n] = pid
+            log(f'slot {n}: {tid}\'s session still runs (pid {pid}) in a pane this run does not know; slot held '
+                f'until it ends (to adopt it, `tmux set-option -p -t <pane> {REPO_TAG} {ROOT}` and restart)')
+        elif (why := cut_off(sid, mid_turn=True)) and resumes(n, sid) < RESUMES_MAX:
             queue_resume(tid, n, sid, why)
             log(f'slot {n}: {tid} was cut off while no run was up ({why}); it resumes there')
+    return held
 
 
 _api = [-1e9, True]
@@ -2236,6 +3615,8 @@ def limit_only(sid: str, slot_log: Path, since: int) -> dt.datetime | None:
     """
     if copilot():
         return copilot_limit_only(sid)
+    if not backend().limits():
+        return None
     t = transcript(sid)
     text = open(t, encoding='utf-8', errors='replace').read() if t else ''
     try:
@@ -2327,7 +3708,7 @@ def stop_hook(idle: int) -> int:
         return 0
     if pi_last_error(t)[0]:
         return 0  # Pi settles after a failed model call too: the run resumes that session instead
-    if ev.get('background_tasks'):
+    if ev.get('background_tasks') and not finished():  # a finished task's leftovers get no grace
         idle = max(idle, int(os.environ.get('AGENT_RUNNER_IDLE_BG', 1800)))
     # POSIX: the hook's parent is the agent. Windows: the hook runs under Git Bash, whose pid is not the
     # agent's, so the pid comes from the marker the slot's shim keeps (run_session)
@@ -2356,6 +3737,11 @@ def _user_entries(t: str) -> int:
 WAITER_POLL = 60  # s between looks at a session whose background command is still running
 
 
+def finished() -> bool:
+    """This slot's `done` has succeeded (`finished_mark`)."""
+    return bool((m := finished_mark()) and m.exists())
+
+
 def stop_waiter(pid: int, t: str, n: int, idle: int) -> int:
     until = time.time() + max(idle, int(os.environ.get('AGENT_RUNNER_IDLE_MAX', 10800)))
     time.sleep(idle)
@@ -2373,7 +3759,7 @@ def stop_waiter(pid: int, t: str, n: int, idle: int) -> int:
         # with its session, and the work it was about to commit went with it): it ends and wakes the agent.
         # Once `done` has succeeded there is nothing left to protect: a leftover background command (a wait
         # loop that never ends) must not hold the slot for hours
-        if not plat.children(pid) or time.time() >= until or ((m := finished_mark()) and m.exists()):
+        if not plat.children(pid) or time.time() >= until or finished():
             break
         time.sleep(WAITER_POLL)
     plat.terminate(pid)
@@ -2422,7 +3808,7 @@ def sequential(branch: str, model: str, idle: int, pause: int, force: bool, once
     idle_said, idle_at = False, 0.0
     while not stopping():
         retry_reopened(tried, closed, here)
-        if not (task := pick({}, tried, 'p', here)):
+        if not (task := pick({}, tried, 'p', here, claim=True)):
             if once:
                 break
             if not idle_said:
@@ -2435,6 +3821,9 @@ def sequential(branch: str, model: str, idle: int, pause: int, force: bool, once
         if idle_said:
             log(f'run busy: new work ({task[0]})')
             idle_said = False
+        if low_disk([]):
+            time.sleep(30)
+            continue
         if (w := capped(force)) is not None:
             log(f'weekly usage {w}% >= {C.run["weekly_max"]}%: waiting for the reset (--force to go on)')
             time.sleep(300)
@@ -2447,12 +3836,13 @@ def sequential(branch: str, model: str, idle: int, pause: int, force: bool, once
         if copilot():
             copilot_hooks(ROOT, idle)
         if plat.WINDOWS:  # no sh to read the prompt file; the marker is how the Stop hook finds the agent
-            run_session(agent_argv(prompt_for(tid, 1, 1, ROOT, here), sid, model, idle, 'slot1'), str(ROOT), env,
-                        C.notes('slot1.live'))
+            code = run_session(agent_argv(prompt_for(tid, 1, 1, ROOT, here), sid, model, idle, 'slot1'),
+                               str(ROOT), env, C.notes('slot1.live'))
         else:
-            sp.run(agent_cmd(prompt_for(tid, 1, 1, ROOT, here), sid, model, idle, 'slot1'), shell=True,
-                   cwd=str(ROOT), env={**os.environ, **env})
+            code = sp.run(agent_cmd(prompt_for(tid, 1, 1, ROOT, here), sid, model, idle, 'slot1'), shell=True,
+                          cwd=str(ROOT), env={**os.environ, **env}).returncode
         log(f'{tid}: session ended ({stats(sid)})')
+        end_orphans()
         drop_session_tmp(sid)
         if C.run['on_exit']:
             try:
@@ -2460,11 +3850,16 @@ def sequential(branch: str, model: str, idle: int, pause: int, force: bool, once
                        env={**os.environ, **env})
             except sp.TimeoutExpired:
                 log(f'`{C.run["on_exit"]}` ran past [run] timeout ({C.run["timeout"]}s); stopped')
+        if backend().report_exit and code:
+            log(f'{tid}: {C.run["backend"]} failed (exit {code}): {last_words(sid) or "see terminal output"}')
+            plansync.release(C, tid)
+            return code
         if r := limit_only(sid, C.notes('slot1.log'), 0):
             log(f'{tid}: only hit the usage limit; sleeping until {r:%H:%M}')
             time.sleep(max(0, (r - dt.datetime.now()).total_seconds()) + pause)
             continue
         tried.add(tid)
+        plansync.release(C, tid)  # committed here, ticked by its `done`: nothing left to hold
         if git('rev-parse', 'HEAD').stdout.strip() != before:
             note(f'{tid}: committed on {here}')
             with MERGE:
@@ -2597,6 +3992,7 @@ def run(argv: list[str], prog: str) -> int:
     lock = single_run()  # noqa: F841 — held until the process ends
     if copilot():
         copilot_trust(ROOT, SLOTS_DIR)
+    ensure_local(ROOT)  # this machine's runner.local.toml: made once (all comments), never rewritten, git-ignored
     if stopping():  # left by a run that was killed before it saw it; a stop is for the run that is up
         C.notes('STOP').unlink(missing_ok=True)
         log('cleared a stop request left by an earlier run')
@@ -2620,6 +4016,8 @@ def run(argv: list[str], prog: str) -> int:
         return 2
 
     threading.Thread(target=update_notice, daemon=True).start()
+    if Path('/proc/meminfo').exists() and (r['proc_max_gb'] or r['min_free_mem_gb']):
+        threading.Thread(target=memory_watch, daemon=True).start()
     if sys.stdin.isatty():
         threading.Thread(target=read_keys, daemon=True).start()
         log('type s + Enter here to stop gently (the running tasks finish and merge first); s again: undo')
@@ -2641,10 +4039,16 @@ def run(argv: list[str], prog: str) -> int:
         procs[n], running[n] = proc, task
         free_at.setdefault(n, dt.datetime.min)
 
-    queue_cut_off(branch, [n for n in range(1, slots + 1) if n not in procs])
+    foreign = queue_cut_off(branch, [n for n in range(1, slots + 1) if n not in procs])
     sweep_tmp(force=True)
-    for tid in unmerged(branch, [n for n in free_at if n not in procs and n not in queued()]):
-        log(f'{tid}: finished while no run was up; merging it now')
+    drop_extra_slots(slots, set(procs) | set(queued()) | set(foreign))
+    left = left_merging()
+    finished = unmerged(branch, [n for n in free_at if n not in procs and n not in queued() and n not in foreign])
+    # the riders of a merge an earlier run gated wait from the start, so its turn finds them and reuses it
+    WAITING.update(set(finished) & {t for g in gate_runs() for t in g.get('tids', [])})
+    for tid in sorted(finished, key=lambda t: t not in left):  # the merge an earlier run left going first: it adopts that
+        log(f'{tid}: ' + ('its merge was under way when the last run ended; adopting it' if tid in left else
+                          'finished, not merged yet; merging it now'))
         tried.add(tid)
         t = threading.Thread(target=finish, args=(tid, 0, '(unknown)', branch))
         t.start()
@@ -2670,6 +4074,9 @@ def run(argv: list[str], prog: str) -> int:
             if n in procs and not alive(procs[n][0]):
                 (pid, sid, since), task = procs.pop(n), running.pop(n)
                 log(f'slot {n}: {task[0]} exited ({stats(sid)})')
+                end_orphans()
+                if backend().report_exit and (said := last_words(sid)):
+                    log(f'slot {n}: {task[0]} {r["backend"]}: {said[:500]}')
                 if r['on_exit']:
                     sp.Popen(r['on_exit'], shell=True, cwd=str(SLOTS_DIR / f's{n}'),
                              env={**os.environ, **env_vars(slot_env(n))},
@@ -2701,8 +4108,20 @@ def run(argv: list[str], prog: str) -> int:
             if n in procs and procs[n][1] not in stall_said and \
                     (why := stalled(procs[n][0], procs[n][1], stall)):
                 stall_said.add(procs[n][1])
-                log(f'slot {n}: {running[n][0]} looks stalled ({why}); look at {MUX.where(n)}')
-                print('\a', end='', flush=True)
+                if (m := finished_mark(n)) and m.exists():
+                    # its `done` succeeded, so the Stop hook's waiter should have ended it; that waiter can
+                    # be lost (Clay's R18 and H1 sat finished for hours), so the run ends it: next tick reaps it
+                    log(f'slot {n}: {running[n][0]} finished but {why}; ending it')
+                    plat.terminate(procs[n][0])
+                else:
+                    log(f'slot {n}: {running[n][0]} looks stalled ({why}); look at {MUX.where(n)}')
+                    print('\a', end='', flush=True)
+            if n not in procs and n in foreign:
+                if alive(foreign[n]):
+                    continue  # see queue_cut_off: never a second agent in its worktree
+                log(f'slot {n}: the session no run knew (pid {foreign.pop(n)}) ended')
+                foreign.update(queue_cut_off(branch, [n]))
+                continue
             if n not in procs and tagged is None:
                 tagged = MUX.panes()  # a session that ended this tick is in it with a dead pid, as before
             if n not in procs and (old := tagged.get(f's{n}')) and alive(old[1]):
@@ -2712,8 +4131,11 @@ def run(argv: list[str], prog: str) -> int:
                     stall_said.add(f'pid{old[1]}')
                     log(f'slot {n}: an untracked session (pid {old[1]}, pane {old[0]}) still runs there; slot held')
                 continue
-            if n > slots:
-                continue  # an adopted slot past this run's count: watched to the end, never refilled
+            if n > slots:  # an adopted slot past this run's count: watched to the end, never refilled
+                if n not in procs and n not in waiting and n not in foreign:
+                    free_at.pop(n)
+                    drop_extra_slots(slots, set(procs) | set(queued()) | set(foreign))
+                continue
             if n not in procs and n in waiting:  # a running task, not a new one: no stop or usage cap holds it
                 if api_down(stall_said):
                     continue
@@ -2742,6 +4164,9 @@ def run(argv: list[str], prog: str) -> int:
                 cap_said = False
                 if api_down(stall_said):
                     continue
+                if low_disk([m for m in range(1, slots + 1) if m not in procs and m not in waiting
+                             and m not in foreign]):
+                    continue
                 if r['before_start'] and before_start_fails():
                     if 'before_start' not in stall_said:
                         stall_said.add('before_start')
@@ -2749,7 +4174,7 @@ def run(argv: list[str], prog: str) -> int:
                         print('\a', end='', flush=True)
                     continue
                 stall_said.discard('before_start')
-                if task := pick(running, tried, mode, branch):
+                if task := pick(running, tried, mode, branch, claim=True):
                     if p := start(n, task, branch, model, idle, slots):
                         procs[n], running[n] = p, task
                         if once:  # one task: nothing new starts, and the run exits once it has merged
@@ -2759,6 +4184,7 @@ def run(argv: list[str], prog: str) -> int:
                             idle_said = False
                     else:
                         failed_starts[task[0]] = failed_starts.get(task[0], 0) + 1
+                        plansync.release(C, task[0])  # this start failed; another attempt can claim it
                         if failed_starts[task[0]] >= START_TRIES:
                             tried.add(task[0])
                         else:  # a terminal that was slow to open, or an agent that failed once: again later
@@ -2769,6 +4195,8 @@ def run(argv: list[str], prog: str) -> int:
             tried -= REOPENED  # a task reopened by a merge is a new attempt, not the one that blocked
             REOPENED.clear()
         merging = [t for t in merging if t.is_alive()]
+        watch_ci(branch)
+        keep_claims(running, branch)
         take_keys()
         waiting = {n: q for n, q in queued().items() if n in free_at and n <= slots}  # an exit may have queued one
         # a slot asleep until a usage reset does not hold the stop; a session waiting to resume does
