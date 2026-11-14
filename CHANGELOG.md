@@ -2,6 +2,16 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
+## 0.26.0 (2026-11-14)
+
+- A batch that fails the gate looks for the task that breaks it by itself: each branch is merged alone and
+  `retest` runs just the failing tests. Those tasks merge in their own turn; the rest are gated together
+  again, instead of every branch going alone. With no branch failing alone, the batch repair runs as before.
+- A one-task repair starts as a copy of the session that did the task (Claude only), so it knows the change.
+  The repair prompt no longer assumes the branch passed the gate on its own.
+- `[run] batch_wait` / `batch_min`: a finished task can wait for others before its gate run while slots
+  still work, so one gate run covers more tasks. Off by default.
+
 ## 0.25.0 (2026-11-12)
 
 - A gate failure the base fails the same way still merges anyway, and now files a critical task to make the

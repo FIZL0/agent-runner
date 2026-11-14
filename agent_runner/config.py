@@ -130,6 +130,9 @@ DEFAULTS: dict = {
         'ci_rerun': True,       # a red run's failed jobs are run once more first; only a second red files it
         'batch': True,          # finished branches waiting for the merge go in together under one gate run
         'merge_ahead': True,    # tasks finishing during a batch's gate are merged on it and tested beside it
+        'batch_wait': 0,        # s a finished task holds the merge for others while slots still work, so one
+                                # gate run takes more of them; 0 = merge at once
+        'batch_min': 3,         # how many tasks ready to merge end that wait early
         'before_start': '',     # a command that must succeed before a session starts; the slot waits on it
         'not_attempt': '',      # a regex on a finished branch's first commit subject ({id}): such a session
                                 # (a spec phase, say) is not the run's one attempt at the task

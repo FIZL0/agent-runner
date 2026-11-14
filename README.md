@@ -468,10 +468,15 @@ session before it is parked: the same kind of session, in the merge worktree on 
 the gate's output (`.runner/merge-gate.log`). It commits a fix on top, or nothing and says why. The gate
 then runs once more; a second failure parks the branch as before. A repair is replayed onto the merge when
 the shared branch moves during the tests and the merge is built again. `repair_merges = false` parks at
-the first failure.
+the first failure. When the runner still has the session that did the task, the repair session starts as a
+copy of it (Claude's `--resume <id> --fork-session`), so it knows the change it is repairing; otherwise it
+starts fresh.
 
-A batch (`batch = true`) is repaired the same way, as a whole: when the branches merged together fail the
-gate, one repair session sees every merge in the batch (`REPAIR_BATCH`) and fixes where they clash, and the
+When a batch (`batch = true`) fails the gate, the runner first looks for the task that breaks it by
+itself (with `failures` and `retest` set): each branch is merged alone on the base and `retest` runs just
+the failing tests there. Those that fail them merge in a turn of their own, where their repair goes as
+above; the rest are built and gated again together. If no branch fails alone, the batch is repaired as a
+whole: one repair session sees every merge in the batch (`REPAIR_BATCH`) and fixes where they clash, and the
 gate runs once more for all of them. Only if that fails too is the batch split, each branch merged on its
 own. A rider whose conflict the line join cannot do waits for its own turn, where it is fixed ahead of the
 lock; with `fix_ahead = false` it gets its fix session inside the batch and shares the batch's gate run.
@@ -696,6 +701,8 @@ ci_kind = "B"             # the prefix of that task
 ci_rerun = true           # a red run's failed jobs are run once more before a task is filed (GitHub's own outages)
 batch = true              # finished branches waiting for the merge go in together under one gate run, and one push
 merge_ahead = true        # tasks finishing during a batch's gate are merged on it and tested beside it
+batch_wait = 0            # s a finished task holds the merge for more tasks while slots still work; 0 = at once
+batch_min = 3             # tasks ready to merge that end that wait early
 before_start = ""         # a command that must pass before any session starts (a display, a device)
 not_attempt = ""          # regex on a branch's last commit subject ({id}): a phase, not the run's one try
 shared_files = []         # files nearly every task names; mode d ignores them

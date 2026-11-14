@@ -613,7 +613,7 @@ def test_fix_ahead(repo: Path, tmp: Path):
     original_session = R.fix_session
     locked, moves = [], ['# main again\n']
 
-    def session(prompt, cwd, fh, keep=None):
+    def session(prompt, cwd, fh, keep=None, fork=""):
         locked.append(R.MERGE.locked())
         code = original_session(prompt, cwd, fh, keep)
         if moves:  # main touches the same lines while the session worked
@@ -1807,6 +1807,71 @@ def test_tested_ref(repo: Path, tmp: Path):
         git(repo, 'branch', '-D', 'task/G2')
 
 
+def test_blame_and_own_repair(repo: Path, tmp: Path):
+    print('run: a failed batch finds the task that breaks it alone; that task\'s repair is its own session; batch_wait')
+    R.init(repo)
+    r = R.C.run
+    gate = 'test ! -e BROKEN || { echo FAIL t_b; exit 1; }'
+    saved = dict(test=r['test'], failures=r['failures'], retest=r['retest'], agent=r['agent'])
+    r.update(test=gate, failures=r'^FAIL (\S+)', retest=gate)
+    agent = tmp / 'fake-agent'
+    agent.write_text(FAKE_AGENT, encoding='utf-8')
+    agent.chmod(0o755)
+    r['agent'] = str(agent)
+    original_fix_cmd = use_fake_fix_agent(agent)
+    fork_was = R.Claude.fork_flags
+    prompt = tmp / 'own-prompt.txt'
+    try:
+        commit_on(repo, 'C1', {'c1.py': '1\n'}, 'C1: fine')
+        commit_on(repo, 'C2', {'BROKEN': ''}, 'C2: breaks the tests by itself')
+        commit_on(repo, 'C3', {'c3.py': '3\n'}, 'C3: fine too')
+        R.WAITING.update({'C2', 'C3'})
+        os.environ['FAKE_FIX'] = 'abort'
+        eq(R.merge('C1', 'main'), None, 'a batch with one broken task lands')
+        log = (repo / '.runner/run.log').read_text()
+        has(log, r'C1: the batch fails t_b; C2 fails them alone', 'having found the broken one by retesting each alone')
+        check('C1: the batch (C1' not in log, 'with no batch repair session')
+        check((repo / 'c1.py').exists() and (repo / 'c3.py').exists() and not (repo / 'BROKEN').exists(),
+              'the others land together, without it')
+        eq(R.ALONE, {'C2'}, 'which merges in a turn of its own')
+        R.WAITING.discard('C3')
+        eq(R.merge('C3', 'main'), None, 'the rider\'s turn only does the bookkeeping')
+        R.WAITING.discard('C2')
+        R.TASK_SID['C2'] = 'the-c2-session'
+        R.Claude.fork_flags = lambda self, sid: ['--fork-of', sid]
+        os.environ['FAKE_PROMPT'] = str(prompt)
+        has(R.merge('C2', 'main') or '', r'tests fail after the merge', 'its own turn fails the gate')
+        has(prompt.read_text(), r'^This is a copy of your own session from task C2',
+            'and the repair goes to a copy of the session that did C2')
+        has((repo / '.runner/run.log').read_text(), r'C2: .*the task\'s own session \(a copy of the-c2-session\)',
+            'saying so')
+        check(not R.ALONE and 'C2' not in R.TASK_SID, 'and what was kept about C2 is dropped')
+        git(repo, 'branch', '-D', 'task/C2')
+
+        R.BUSY[0], r['batch_wait'], r['batch_min'] = 1, 1, 2
+        poll, R.BATCH_POLL = R.BATCH_POLL, 0.1
+        t0 = time.time()
+        R.wait_for_batch('W1')
+        check(time.time() - t0 >= 1, 'batch_wait holds a lone task while slots work')
+        R.WAITING.add('W2')
+        t0 = time.time()
+        R.wait_for_batch('W1')
+        check(time.time() - t0 < 0.5, 'and not once batch_min tasks are ready')
+        R.WAITING.discard('W2')
+        R.BUSY[0] = 0
+        t0 = time.time()
+        R.wait_for_batch('W1')
+        check(time.time() - t0 < 0.5, 'nor with no slot at work')
+        R.BATCH_POLL = poll
+    finally:
+        os.environ.pop('FAKE_FIX', None)
+        os.environ.pop('FAKE_PROMPT', None)
+        R.Claude.fork_flags = fork_was
+        R.fix_cmd = original_fix_cmd
+        R.BUSY[0], r['batch_wait'], r['batch_min'] = 0, 0, 3
+        r.update(saved)
+
+
 def test_no_pane(repo: Path, tmp: Path):
     print('run: tmux refusing a pane fails that one start or fix session, not the run')
     R.init(repo)
@@ -2257,7 +2322,7 @@ def main() -> int:
                        lambda: test_conflicts(repo, tmp), lambda: test_fix_ahead(repo, tmp), lambda: test_repair(repo, tmp),
                        lambda: test_prompt_and_hooks(repo),
                        lambda: test_hooks(repo, tmp), lambda: test_run_policies(repo, tmp),
-                       lambda: test_gate_and_batches(repo, tmp),
+                       lambda: test_gate_and_batches(repo, tmp), lambda: test_blame_and_own_repair(repo, tmp),
                        lambda: test_platform(repo, tmp), lambda: test_shutdown(repo), lambda: test_merge_into(tmp),
                        lambda: test_leftovers(repo), lambda: test_renumber(repo),
                        lambda: test_stop_waiter(tmp), lambda: test_stop_hook_grace(tmp), lambda: test_land_waits_aloud(repo), lambda: test_merge_ahead(repo), lambda: test_adopted_gate_merge(repo), lambda: test_adopted_gate_results(repo), lambda: test_gate_since(repo), lambda: test_copies(repo), lambda: test_land_gives_merge_back(repo),

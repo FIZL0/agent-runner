@@ -710,6 +710,11 @@ class Claude:
     def find_transcript(self, sid: str) -> str | None:
         return next(iter(glob.glob(os.path.expanduser(f'~/.claude/projects/*/{sid}.jsonl'))), None)
 
+    def fork_flags(self, sid: str) -> list[str]:
+        """Added to a fix session's flags: it starts as a copy of session `sid` (a task's own), from any folder,
+        under an id of its own. [] where the backend cannot: the session starts fresh."""
+        return ['--resume', sid, '--fork-session'] if self.find_transcript(sid) else []
+
     def entry(self, d: dict) -> dict | None:
         return d
 
@@ -755,6 +760,9 @@ class Pi(Claude):
 
     def find_transcript(self, sid):
         return next((str(p) for p in C.notes('pi-sessions').glob(f'*_{sid}.jsonl')), None)
+
+    def fork_flags(self, sid):
+        return []  # ponytail: Pi sessions could be copied under a new id; a repair starts fresh there
 
     def entry(self, entry):
         """A Pi session record as a Claude one: role -> type, Pi's stop reasons and usage keys, and errors
@@ -1508,11 +1516,12 @@ is not yours: leave it.
 
 REPAIR = """[[The merge of task/{tid} into {branch} is|The merges of {tasks} into {branch} are]] committed in this \
 checkout[[ (as {merge})|, one after another on top of {base}]], and the test gate fails on [[it. task/{tid}|the \
-result. Each branch]] passed the gate on its own before it was merged, so the likely cause is a clash between \
-[[the two sides|them]] that git merged without a conflict: an item [[both|two of them]] added under one name, a \
-caller of something [[the other side|another]] renamed or removed, a test that checks what [[the other \
-side|another]] changed on purpose. Repair it[[|, so all of them land after one more gate run]]. Nobody will \
-answer questions: decide, and say what you decided.
+result. Each branch]] may or may not have passed the gate on its own (where a run leaves the testing to the \
+gate, it never ran it), so the cause is [[its own change, or |]]a clash between [[the two sides|them]] that git \
+merged without a conflict: an item [[both|two of them]] added under one name, a caller of something [[the other \
+side|another]] renamed or removed, a test that checks what [[the other side|another]] changed on purpose. Repair \
+it[[|, so all of them land after one more gate run]]. Nobody will answer questions: decide, and say what you \
+decided.
 
 The gate's output ends with this (all of it is in {log}):
 
@@ -1529,10 +1538,17 @@ to the merged behaviour, and you say so.
 repair the [[merge|batch merge of {ids}]] into {branch}: <what clashed>"`. Do not amend or reset the merge[[|s]], \
 do not push, do not merge, rebase or delete anything else, do not `git stash`, and do not touch the other \
 worktrees under {slots_dir}. The runner runs the whole gate again when you are done.
-4. If it is not a clash you can fix honestly (the failure is {branch}'s own, [[the two sides contradict|one branch \
-is broken by itself, two branches contradict]] each other and picking needs a human), commit nothing and say why \
-in one line. [[|The runner then merges each branch on its own. ]]That is a real answer.
+4. If you cannot fix it honestly (the failure is {branch}'s own, [[the two sides contradict|one branch is broken by \
+itself, two branches contradict]] each other and picking needs a human), commit nothing and say why in one line. [[|The runner then merges each branch on its own. ]]That is a real answer.
 """  # [[one merge|a batch]]: `repair_prompt` keeps one side
+
+
+OWN = """This is a copy of your own session from task {tid}, picked up again by the runner: task/{tid} is \
+finished and merged into {branch}, and the merge fails the test gate. You know the change, so you repair it. \
+You are in another checkout now, {cwd}: work only there. Your old worktree belongs to another task, and the paths \
+you used before are under another folder.
+
+"""  # put before a one-task REPAIR when the repair session is a copy of the task's own (`fork_flags`)
 
 
 def repair_prompt(batch: bool, **vals) -> str:
@@ -1554,7 +1570,7 @@ def last_words(sid: str) -> str:
     return said.strip()
 
 
-def fix_session(prompt: str, cwd: Path, fh, keep: dict | None = None) -> int:
+def fix_session(prompt: str, cwd: Path, fh, keep: dict | None = None, fork: str = '') -> int:
     """Run one fix or repair session in `cwd` to its end; its exit code. Raises what `sp.run` raises for a
     missing agent or a timeout.
 
@@ -1563,18 +1579,20 @@ def fix_session(prompt: str, cwd: Path, fh, keep: dict | None = None) -> int:
     seconds, and its last words go to `fh`. Without tmux it is `-p` (Pi: `--print`), its output in `fh`.
     A pane session outlives the runner: `keep` (what it was started on) goes to `<notes>/master.json` with
     its pid, so the next run adopts it (`adopt_merge`) instead of starting the merge over under it.
+    With `fork` (a session id), it starts as a copy of that session (`fork_flags`), knowing what it did.
     """
     timeout = C.run['fix_timeout']
+    more = backend().fork_flags(fork) if fork else []
     if not MASTER_PANE:
         env = {**os.environ, **env_vars(slot_env(None))}  # as the master pane gets it
-        return sp.run(fix_cmd(prompt), cwd=str(cwd), stdout=fh, stderr=sp.STDOUT, stdin=sp.DEVNULL,
+        return sp.run(fix_cmd(prompt) + more, cwd=str(cwd), stdout=fh, stderr=sp.STDOUT, stdin=sp.DEVNULL,
                       env=env, timeout=timeout).returncode
     if not shutil.which(C.run['agent']):
         raise FileNotFoundError(C.run['agent'])
     sid = str(uuid.uuid4())
     fh.write(f'in tmux window "{window("master")}", session {sid}\n')
     fh.flush()
-    cmd = agent_cmd(prompt, sid, C.run['fix_model'], MASTER_IDLE, 'master')
+    cmd = agent_cmd(prompt, sid, C.run['fix_model'], MASTER_IDLE, 'master') + (' ' + shlex.join(more) if more else '')
     try:
         pid = pane('master', cwd, cmd, slot_env(None))
     except RuntimeError as e:  # no session ran: the caller reads the merge as one it did not finish
@@ -1717,7 +1735,7 @@ def build_ahead(branch: str, base: str, done: threading.Event, taken: set[str]) 
     it the gate run already passed or under way (`merge_gate` goes by tree), instead of a gate from the start.
     A conflict a join cannot do is left for that task's turn (one fix session at a time)."""
     while not done.wait(AHEAD_POLL):
-        if cands := sorted(WAITING - taken - set(LANDED)):
+        if cands := sorted(WAITING - taken - set(LANDED) - ALONE):
             break
     else:
         return
@@ -1892,14 +1910,15 @@ def merge_gate(tid: str, d: Path, env: dict, batch: dict | None = None) -> tuple
     return gate_done(s) or (p.returncode or 1, f'`{cmd}` left no exit code')
 
 
-def fixer(head: str, prompt: str, cwd: Path, kind: str, to: str, keep: dict | None = None) -> tuple[int | None, str]:
+def fixer(head: str, prompt: str, cwd: Path, kind: str, to: str, keep: dict | None = None,
+          fork: str = '') -> tuple[int | None, str]:
     """`fix_session` under a `head` line in fixer.log: (its exit code, ''), or why it did not run to its end
     (code 0 when there is no agent command, None when it timed out)."""
     with open(C.notes('fixer.log'), 'a', encoding='utf-8') as fh:
         fh.write(f'\n=== {dt.datetime.now().isoformat(timespec="seconds")} {head}\n')
         fh.flush()
         try:
-            return fix_session(prompt, cwd, fh, keep), ''
+            return fix_session(prompt, cwd, fh, keep, fork), ''
         except FileNotFoundError:
             return 0, f'no agent command to {to} with ([run] agent = {C.run["agent"]!r})'
         except sp.TimeoutExpired:
@@ -1967,6 +1986,7 @@ def repair_merge(tid: str, branch: str, cwd: Path, riders: list[str] = (), base:
              f'({r["retest"] or r["test"]}). ' if r['build'] else
              f'Check it with the failing tests alone if you can; not the whole gate (`{r["test"]}`). ')
     ids = ', '.join([tid, *riders])
+    own = ''
     if riders:
         prompt = repair_prompt(True, tid=tid, branch=branch, log=gate_log, tail=tail, check=check, slots_dir=SLOTS_DIR,
                                base=base[:12], ids=ids, tasks=', '.join(f'task/{t}' for t in [tid, *riders]))
@@ -1974,13 +1994,18 @@ def repair_merge(tid: str, branch: str, cwd: Path, riders: list[str] = (), base:
     else:
         prompt = repair_prompt(False, tid=tid, branch=branch, log=gate_log, tail=tail, check=check, slots_dir=SLOTS_DIR,
                                merge=merge)
-        log(f'{tid}: the merge fails the gate — handing it to a repair session')
+        if (own := TASK_SID.get(tid, '')) and backend().fork_flags(own):
+            prompt = OWN.format(tid=tid, branch=branch, cwd=cwd) + prompt
+            log(f'{tid}: the merge fails the gate — handing it back to the task\'s own session (a copy of {own})')
+        else:
+            own = ''
+            log(f'{tid}: the merge fails the gate — handing it to a repair session')
     before = git('rev-parse', 'HEAD', cwd=cwd).stdout.strip()
     if kept(tid, before, '', cwd, 'repair'):
         return None
     logfile = C.notes('fixer.log')
     keep = {'kind': 'repair', 'tid': tid, 'start': before, 'cwd': str(cwd)}
-    if why := fixer(f'{ids} repair (gate failed)', prompt, cwd, 'repair', 'repair it', keep)[1]:
+    if why := fixer(f'{ids} repair (gate failed)', prompt, cwd, 'repair', 'repair it', keep, own)[1]:
         return why
     head = git('rev-parse', 'HEAD', cwd=cwd).stdout.strip()
     if head == before:
@@ -2036,6 +2061,7 @@ def tested(tid: str, d: Path, base: str, tids: list[str] | None = None) -> str |
     rx, cmd = C.run['failures'], C.run['retest']
     if not (rx and cmd and (names := sorted(set(re.findall(rx, out, re.M))))):
         return why
+    FAILED[tid] = names  # for `blame`, if this is a batch that fails
     cmd = cmd.replace('{names}', ' '.join(map(plat.quote, names)))
 
     def retest() -> sp.CompletedProcess | None:
@@ -2095,6 +2121,49 @@ ELSEWHERE = 'the main checkout has another branch out'  # and for that: never sw
 
 WAITING: set[str] = set()  # finished tasks queued on MERGE: whoever merges next takes them along
 LANDED: dict[str, tuple[str, str]] = {}  # a task that landed in another's batch -> (base, merged)
+ALONE: set[str] = set()  # tasks `blame` found breaking a batch: they merge in a turn of their own
+FAILED: dict[str, list[str]] = {}  # the tests `tested` last saw fail on a task's merge, by the task
+TASK_SID: dict[str, str] = {}  # the session that did a task, kept for its repair (`repair_merge`)
+BUSY = [0]  # slots with a session at work, from the run loop: `wait_for_batch` waits on them
+BATCH_POLL = 15  # s between `wait_for_batch`'s looks
+
+
+def wait_for_batch(tid: str) -> None:
+    """With `[run] batch_wait`, hold the merge lock up to that many seconds while fewer than `batch_min` tasks
+    are ready and slots are still at work: the tasks finishing meanwhile share this task's gate run."""
+    until, said = time.time() + C.run['batch_wait'], False
+    while len(WAITING - set(LANDED) - ALONE) + 1 < C.run['batch_min'] and BUSY[0] and time.time() < until \
+            and not stopping():
+        if not said:
+            log(f'{tid}: waiting up to {C.run["batch_wait"]}s for more tasks to share its gate run')
+            said = True
+        time.sleep(BATCH_POLL)
+    if said:
+        log(f'{tid}: merging' + (f' with {", ".join(sorted(w))}' if (w := WAITING - set(LANDED) - ALONE) else ' alone'))
+
+
+def blame(tids: list[str], d: Path, base: str, names: list[str]) -> list[str]:
+    """The tasks of a batch whose gate failed `names` that fail them by themselves: each merged alone on `base`,
+    then `[run] retest` of just those. [] when none does (a clash between them) or there is no retest. Leaves
+    `d` clean, detached at `base`; a task that will not merge alone is not blamed."""
+    cmd = C.run['retest'].replace('{names}', ' '.join(map(plat.quote, names)))
+    env, bad = merge_env(), []
+    for t in tids:
+        git('merge', '--abort', cwd=d)
+        clean(d)
+        git('checkout', '-q', '--detach', base, cwd=d)
+        if (files := merge_into(d, fixed(t), f'Merge task/{t} alone', t)) is None or files and not joined(files, t, d):
+            continue
+        try:
+            r = sp.run(cmd, shell=True, cwd=str(d), capture_output=True, text=True, env=env, timeout=C.run['timeout'])
+        except sp.TimeoutExpired:
+            continue
+        if r.returncode and set(re.findall(C.run['failures'], r.stdout + r.stderr, re.M)) & set(names):
+            bad.append(t)
+    git('merge', '--abort', cwd=d)
+    clean(d)
+    git('checkout', '-q', '--detach', base, cwd=d)
+    return bad
 
 
 def merge(tid: str, branch: str) -> str | None:
@@ -2120,12 +2189,16 @@ def merge(tid: str, branch: str) -> str | None:
             if tid not in LANDED and UNPUSHED:  # a batch whose last task has not taken the lock yet: its
                 push_landed(UNPUSHED[-1], branch)  # push goes out now, not after this one's gate
             if tid not in LANDED:  # else it went in with an earlier task's batch
+                if C.run['batch'] and C.run['batch_wait'] and tid not in ALONE:
+                    wait_for_batch(tid)
                 if (why := merge_batch(tid, branch, inline=tries == 2)) == AGAIN:
                     log(f'{tid}: {AGAIN}; it is fixed outside the lock again while the others merge')
                     continue
                 if why:
+                    forget(tid)
                     return why
             base, merged = LANDED.pop(tid)
+            forget(tid)
             git('branch', '-d', f'task/{tid}')
             git('update-ref', '-d', TESTED + tid)
             for h in git('for-each-ref', '--format=%(refname)', f'{HELD}{tid}/', f'{FIXED}{tid}/').stdout.split():
@@ -2140,6 +2213,13 @@ def merge(tid: str, branch: str) -> str | None:
             published(tid, branch)
             return None
     return f'{tid}: no merge landed in three tries'
+
+
+def forget(tid: str) -> None:
+    """Drop what the merge kept about `tid` (`ALONE`, `FAILED`, `TASK_SID`) once its merge is over."""
+    ALONE.discard(tid)
+    FAILED.pop(tid, None)
+    TASK_SID.pop(tid, None)
 
 
 def task_env(tid: str) -> dict:
@@ -2321,7 +2401,7 @@ def merge_batch(tid: str, branch: str, inline: bool = False) -> str | None:
     adopt_merge(d)
     if trim(d, 'merge worktree'):
         worktree('merge', branch)
-    solo = not C.run['batch']
+    solo = not C.run['batch'] or tid in ALONE
     repairs: list[str] = []  # a repair session's commits, replayed when the merge is built again
     repaired = False
     batch_repaired = False  # one repair session per batch; a batch that still fails is split
@@ -2361,7 +2441,7 @@ def merge_batch(tid: str, branch: str, inline: bool = False) -> str | None:
                     elif why := refix(tid, branch, ref, files, d, msg=msg):
                         return why
                 riders = []
-                for t in ([] if solo else sorted(WAITING - set(LANDED))):
+                for t in ([] if solo else sorted(WAITING - set(LANDED) - ALONE)):
                     own = fixed(t)
                     ref = renumber_doubles(own, 'HEAD', t, d)
                     msg = merge_message(t, f'task/{t}' if own != f'task/{t}' else ref)
@@ -2418,6 +2498,16 @@ def merge_batch(tid: str, branch: str, inline: bool = False) -> str | None:
                     ahead_done.set()
                 if why:
                     drop_ahead()  # built on a merge that does not land as it is
+                    names = FAILED.pop(tid, [])
+                    if riders and names and (bad := blame([tid, *riders], d, base, names)):
+                        ALONE.update(bad)
+                        log(f'{tid}: the batch fails {", ".join(names)}; {", ".join(bad)} '
+                            f'fail{"s" if len(bad) == 1 else ""} them alone, so '
+                            f'{"it merges" if len(bad) == 1 else "they merge"} in a turn of {"its" if len(bad) == 1 else "their"} own')
+                        solo, repairs = solo or tid in bad, []
+                        continue
+                    if riders and names:
+                        git('checkout', '-q', '--detach', merged, cwd=d)  # blame left it on the base
                     if riders and not batch_repaired and C.run['repair_merges']:
                         batch_repaired = True
                         not_fixed, still, fixes = repair_retest(tid, branch, d, base, merged, riders)
@@ -2841,6 +2931,8 @@ def _finish(tid: str, n: int, sid: str, branch: str) -> bool:
         note(f'{tid}: no commits — nothing to merge')
         log(f'{tid}: no commits — nothing to merge')
         return True
+    if sid and sid != '(unknown)':
+        TASK_SID[tid] = sid  # its repair, if the merge fails the gate, starts from this session
     while (why := merge(tid, branch)) and why.startswith((EDITED, ELSEWHERE)):
         # Tested and only waiting on somebody's edits: parking it would throw the work away for a fresh
         # attempt. The branch stays task/<ID> (`pick` leaves it alone, the next run's `unmerged` takes it).
@@ -3749,6 +3841,7 @@ def run(argv: list[str], prog: str) -> int:
             reopen_landed(branch, 'a merge before this run')
 
     while True:
+        BUSY[0] = len(procs)
         sweep_tmp()
         waiting = {n: q for n, q in queued().items() if n in free_at and n <= slots}
         tagged = None  # MUX.panes(), looked at once a tick and only for a free slot
