@@ -166,8 +166,8 @@ def test_sessions(repo: Path):
                                             'errorMessage': 'limit resets 3pm'})
     eq(R.limit_only('limited', R.C.notes('slot1.log'), 0), None, 'Claude usage-reset handling is not used for Pi')
     check(limited.exists(), 'Pi transcripts are never deleted by Claude-specific cleanup')
-    with patch.object(R, 'weekly', side_effect=AssertionError('must not query Claude')):
-        eq(R.capped(False), None, 'Pi does not query Claude weekly usage')
+    with patch.object(R, 'account_usage', side_effect=AssertionError('must not query Claude')):
+        eq(R.capped(False), None, 'Pi does not query Claude usage')
 
 
 def test_fixer(repo: Path):

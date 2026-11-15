@@ -346,8 +346,8 @@ refuses to push `main`.
 
 **A usage limit is not a failed task.** When a session's only outcome is the usage limit (its transcript
 or slot log says "resets 3pm"), the transcript is dropped, the task returns to the pool, and the slot
-sleeps until the reset. Past `[run] weekly_max`% of the 7-day usage, no new task starts unless `--force`
-is given.
+sleeps until the reset. Past `[run] session_max`% of the 5-hour session usage, or `[run] weekly_max`% of
+the 7-day usage, no new task starts unless `--force` is given.
 
 **A cut-off session resumes.** A session whose turn ended on an API error (the network dropped, the
 API was down) is not finished, though the idle stop ends it. Its worktree is left as it is, and once the
@@ -678,6 +678,7 @@ idle = 90                 # s quiet after finishing before a session is ended
 stall = 1200              # s quiet at a prompt that counts as stalled
 pause = 60                # s between one session ending and the next starting in that slot
 weekly_max = 90           # % of 7-day usage past which nothing new starts
+session_max = 90          # % of 5-hour session usage past which nothing new starts
 notes = ".runner"         # logs + ledger (git-ignore it)
 links = []                # git-ignored paths symlinked into every worktree (data, big files)
 copies = []               # git-ignored files copied into a new worktree once (a local config file)

@@ -100,6 +100,7 @@ DEFAULTS: dict = {
         'stall': 1200,          # seconds of quiet at a prompt that count as stalled
         'pause': 60,            # seconds between one session ending and the next starting in that slot
         'weekly_max': 90,       # % of the account's 7-day usage past which no new task starts
+        'session_max': 90,      # % of the account's 5-hour session usage past which no new task starts
         'notes': '.runner',     # logs and the ledger; keep it git-ignored
         'links': [],            # git-ignored paths symlinked into every worktree (data, big files)
         'copies': [],           # git-ignored files copied into a new worktree once (a local config)
@@ -237,6 +238,7 @@ LOCAL_TEMPLATE = """\
 
 # [run]
 # weekly_max = 90        # % of the account's 7-day usage past which no new task starts
+# session_max = 90       # % of the account's 5-hour session usage past which no new task starts
 # slots = 3              # parallel sessions on this machine
 # model = "opus"
 # min_free_gb = 10       # below this free disk space no new task starts

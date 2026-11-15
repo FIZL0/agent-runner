@@ -3438,25 +3438,38 @@ def limit_only(sid: str, slot_log: Path, since: int) -> dt.datetime | None:
     return max(at, now)
 
 
-_weekly = [-1e9, None]
+_account = [-1e9, None]
 
 
-def weekly() -> float | None:
-    """The account's 7-day usage %, from the endpoint Claude Code's `/usage` reads (the local login's OAuth
-    token; costs no tokens), checked at most every 5 minutes. None when it cannot be read: "don't cap"."""
-    if time.time() - _weekly[0] < 300:
-        return _weekly[1]
+def account_usage() -> dict | None:
+    """The account's usage from the endpoint Claude Code's `/usage` reads (the local login's OAuth token; costs
+    no tokens), checked at most every 5 minutes. None when it cannot be read: "don't cap"."""
+    if time.time() - _account[0] < 300:
+        return _account[1]
     import urllib.request
     try:
         tok = json.load(open(os.path.expanduser('~/.claude/.credentials.json')))['claudeAiOauth']['accessToken']
         req = urllib.request.Request('https://api.anthropic.com/api/oauth/usage',
                                      headers={'Authorization': f'Bearer {tok}',
                                               'anthropic-beta': 'oauth-2025-04-20'})
-        _weekly[1] = json.load(urllib.request.urlopen(req, timeout=10))['seven_day']['utilization']
+        _account[1] = json.load(urllib.request.urlopen(req, timeout=10))
     except Exception:
-        _weekly[1] = None
-    _weekly[0] = time.time()
-    return _weekly[1]
+        _account[1] = None
+    _account[0] = time.time()
+    return _account[1]
+
+
+def usage_pct(name: str) -> float | None:
+    """One window's usage %: 'seven_day' or 'five_hour' (the session limit). None when it cannot be read."""
+    try:
+        return account_usage()[name]['utilization']
+    except (TypeError, KeyError):
+        return None
+
+
+def weekly() -> float | None:
+    """The account's 7-day usage %, or None."""
+    return usage_pct('seven_day')
 
 
 LATEST = 'https://raw.githubusercontent.com/FIZL0/agent-runner/main/agent_runner/__init__.py'
@@ -3558,12 +3571,16 @@ def stop_waiter(pid: int, t: str, n: int, idle: int) -> int:
 
 # --- sequential run ------------------------------------------------------------
 
-def capped(force: bool) -> float | None:
-    """The weekly usage % when it is at or past `[run] weekly_max` (and not --force), else None."""
+def capped(force: bool) -> str | None:
+    """Why no new task may start: the 5-hour session usage at or past `[run] session_max`, or the 7-day usage
+    at or past `[run] weekly_max` (and not --force). None when neither is."""
     if force or C.run['agent'] != 'claude':
         return None
-    w = weekly()
-    return w if w is not None and w >= C.run['weekly_max'] else None
+    for name, what, key in (('five_hour', 'session', 'session_max'), ('seven_day', 'weekly', 'weekly_max')):
+        w = usage_pct(name)
+        if w is not None and w >= C.run[key]:
+            return f'{what} usage {w}% >= {C.run[key]}%'
+    return None
 
 
 SHUTDOWN = False  # --shutdown: power the machine off once the run has nothing left to do
@@ -3615,7 +3632,7 @@ def sequential(branch: str, model: str, idle: int, pause: int, force: bool, once
             time.sleep(30)
             continue
         if (w := capped(force)) is not None:
-            log(f'weekly usage {w}% >= {C.run["weekly_max"]}%: waiting for the reset (--force to go on)')
+            log(f'{w}: waiting for the reset (--force to go on)')
             time.sleep(300)
             continue
         tid = task[0]
@@ -3730,7 +3747,7 @@ def run(argv: list[str], prog: str) -> int:
                     help="how many agents at once (default [run] slots), or 'once' for one task then stop")
     ap.add_argument('--mode', choices=['p', 'd'], default=None,
                     help='p = plan order, overlapping files allowed; d = different files (default [run] mode)')
-    ap.add_argument('--force', action='store_true', help='keep starting tasks past the weekly usage cap')
+    ap.add_argument('--force', action='store_true', help='keep starting tasks past the session and weekly usage caps')
     ap.add_argument('--shutdown', action='store_true',
                     help=f'power the computer off once nothing is running or merging and no open task may start '
                          f'(after {SHUTDOWN_GRACE} s idle)')
@@ -3817,7 +3834,7 @@ def run(argv: list[str], prog: str) -> int:
     stall_said: set[str] = set()
     cap_said = stop_said = False
     log(f'run: {slots} slots in {MUX.name}, mode {mode}, merging into {branch}' +
-        (f', weekly usage {weekly()}%' if not a.force and r['agent'] == 'claude' else ''))
+        (f', session usage {usage_pct("five_hour")}%, weekly usage {weekly()}%' if not a.force and r['agent'] == 'claude' else ''))
 
     for n, (proc, task) in adopt(branch).items():
         procs[n], running[n] = proc, task
@@ -3933,7 +3950,7 @@ def run(argv: list[str], prog: str) -> int:
                     continue
                 if (w := capped(a.force)) is not None:
                     if not cap_said:
-                        log(f'weekly usage {w}% >= {r["weekly_max"]}%: no new tasks until it resets '
+                        log(f'{w}: no new tasks until it resets '
                             f'(restart with --force to go on now)')
                         cap_said = True
                     continue

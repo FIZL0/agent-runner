@@ -2,6 +2,12 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
+## 0.27.0 (2026-11-15)
+
+- `[run] session_max` (default 90): past that % of the account's 5-hour session usage, no new task starts,
+  as `weekly_max` does for the 7-day usage. Before, only the weekly figure was watched, so a run of several
+  slots could spend the whole session limit and leave every slot stuck at the limit prompt.
+
 ## 0.26.1 (2026-11-14)
 
 - `batch_wait` skips a task whose gate is already running (adopted after a restart, or built ahead): a task
