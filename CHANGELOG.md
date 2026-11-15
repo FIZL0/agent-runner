@@ -2,6 +2,11 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
+## 0.26.1 (2026-11-14)
+
+- `batch_wait` skips a task whose gate is already running (adopted after a restart, or built ahead): a task
+  joining it would start that gate over.
+
 ## 0.26.0 (2026-11-14)
 
 - A batch that fails the gate looks for the task that breaks it by itself: each branch is merged alone and

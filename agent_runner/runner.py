@@ -2189,8 +2189,9 @@ def merge(tid: str, branch: str) -> str | None:
             if tid not in LANDED and UNPUSHED:  # a batch whose last task has not taken the lock yet: its
                 push_landed(UNPUSHED[-1], branch)  # push goes out now, not after this one's gate
             if tid not in LANDED:  # else it went in with an earlier task's batch
-                if C.run['batch'] and C.run['batch_wait'] and tid not in ALONE:
-                    wait_for_batch(tid)
+                if C.run['batch'] and C.run['batch_wait'] and tid not in ALONE and \
+                        not any(tid in g.get('tids', ()) for g in [*gate_runs(), *AHEADS]):
+                    wait_for_batch(tid)  # not with its gate already under way: a rider would start it over
                 if (why := merge_batch(tid, branch, inline=tries == 2)) == AGAIN:
                     log(f'{tid}: {AGAIN}; it is fixed outside the lock again while the others merge')
                     continue
