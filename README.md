@@ -337,7 +337,7 @@ it has another branch than `main` out, a tested merge stays `task/<ID>` and land
 a file it changes, and nearly every merge changes `TODO.md`. `run plan add/note/move/tick/block/unblock/
 reopen`, run by hand in the main checkout, therefore commits the plan immediately (not mid-merge, and not
 in a worktree, where `done` commits). For code work alongside a run, use your own worktree
-(`git worktree add ../<repo>-<slug>`, or `claude -w <slug>`) and merge it when done; never use a slot's
+(`git worktree add "$(agent-runner home)/wt/<slug>"`, outside the folder of main checkouts, or `claude -w <slug>`) and merge it when done; never use a slot's
 worktree, which the runner reuses.
 
 **The shared branch is pushed only after a merge passes the gate.** `done` pushes `task/<ID>` and
