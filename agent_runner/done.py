@@ -3,17 +3,13 @@
     ./run done T4 "T4: the parser reads nested lists"
     ./run done T4 "T4 (part): lists parse, maps do not" --blocked "maps need T7's tokenizer" --after T7
 
-In order: the test gate (`[run] test`), the pre-commit check (`[run] precommit`), then tick the task (or
+In order: the test gate (`[run] test`), then tick the task (or
 block it), `git add -A`, commit, and push the branch it committed on — unless that is the shared branch,
 which only the runner pushes, after a merge.
 
 One command rather than five because each of the five is a step a session forgets: a tick without the
 commit, a commit without the tests, a branch never pushed. A failing gate commits nothing and ticks
 nothing, so a "done" task is always one whose tests passed.
-
-`[run] precommit` is for what must never be committed at all, whatever the tests say (a project's audit
-for leaked secrets or names). It runs on the worktree before anything is staged; `--skip-check` commits
-anyway, for the one deliberate case, and the commit message should say why.
 
 `--blocked WHY` marks it `[~]` instead. Say what would unblock it. If what it waits on is another task
 landing, `--after ID[,ID]` (or just naming the open ids in WHY) lets a run reopen it once they merge.
@@ -33,7 +29,7 @@ from agent_runner.gitops import git, push, shared_branch
 
 PROG = 'run done'  # the name in messages; a wrapper sets its own ('kit done')
 TESTED = 'refs/agent-runner/tested/'  # + <ID>: the commit whose tree `done`'s gate passed on
-__all__ = ['gate', 'check', 'main', 'PROG']
+__all__ = ['gate', 'main', 'PROG']
 
 
 def gate(cwd: Path, key: str = 'test', full: bool = False, env: dict | None = None) -> tuple[int, str]:
@@ -50,11 +46,6 @@ def gate(cwd: Path, key: str = 'test', full: bool = False, env: dict | None = No
     return r.returncode, out if full else '\n'.join(out.splitlines()[-15:])
 
 
-def check(cwd: Path) -> tuple[int, str]:
-    """The pre-commit check, `[run] precommit`, as `gate` runs the tests."""
-    return gate(cwd, 'precommit')
-
-
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog=PROG, description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -64,8 +55,6 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument('--after', metavar='IDS', default=None,
                     help='with --blocked: the tasks it waits on, comma-separated (default: read off WHY)')
     ap.add_argument('--no-test', action='store_true', help='skip the gate (say why in the message)')
-    ap.add_argument('--skip-check', action='store_true',
-                    help='commit even though [run] precommit failed (say why in the message)')
     a = ap.parse_args(argv)
     c = cfg()
     cwd = c.root
@@ -79,16 +68,6 @@ def main(argv: list[str] | None = None) -> int:
             return 1
         if c.run['test']:
             print(f'gate passed: {c.run["test"]}')
-
-    if c.run['precommit']:
-        rc, tail = check(cwd)
-        if rc and not a.skip_check:
-            print(tail)
-            print(f'\nThe pre-commit check failed ({c.run["precommit"]}): nothing ticked, nothing committed. '
-                  f'Fix what it found, or, if this one is deliberate,\n    {PROG} {a.id} "<msg>" --skip-check',
-                  file=sys.stderr)
-            return 1
-        print(f'check {"failed, skipped (--skip-check)" if rc else "passed"}: {c.run["precommit"]}')
 
     if not c.plan_external:
         return record(a, c)

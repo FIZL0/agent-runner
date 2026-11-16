@@ -7,23 +7,23 @@ starts an agent session with the task's brief already pasted into the first turn
 next task.
 
     ./run run once            one task, then stop (the way to try it the first time)
-    ./run run                 [run] slots agents (3), mode p (plan order), in tmux
-    ./run run 5 --mode p      5 agents, strictly in TODO.md order, files may overlap
+    ./run run                 [run] slots agents (3), in tmux
+    ./run run 5               5 agents
     ./run run 1               one agent, in a worktree and a pane like any count (no tmux: in this checkout)
     ./run run --dry-run 4     print what 4 free slots would start now, and start nothing
     ./run stop                finish what is running, start nothing new, then exit (or type s + Enter
                               in the runner's pane; s again takes it back)
     (every form but `once` stays up when the work runs out: it logs `run idle` and waits for more)
 
-The README describes each mechanism. In short:
+docs/REFERENCE.md describes each mechanism. In short:
 
 * **picking** (`tasks`, `pick`) goes down TODO.md in order and skips
   - blocked tasks and split parents,
   - tasks whose `| after: X, Y` names a task not done yet,
   - the Stretch and Parked sections, anything tried this run, and branches waiting to be merged.
 
-  Siblings never run together. An ordered section runs one task at a time. Mode d keeps tasks off each
-  other's files: a line's `| files:` and, for a task running or waiting to merge, the files it has touched.
+  Siblings never run together. An ordered section runs one task at a time. Two tasks never run on the same
+  files: a line's `| files:` and, for a task running or waiting to merge, the files it has touched.
 * **one worktree per slot**, kept warm between tasks, with `[run] links` symlinked in;
 * **an idle stop** (the Stop hook): a finished session is ended once its transcript is quiet;
 * **a usage limit is not a failed task**: the transcript is dropped and the slot sleeps to the reset;
@@ -364,7 +364,7 @@ def ahead(branch: str) -> list[str]:
 
 
 def family(tid: str) -> str:
-    """L3a, L3b, L3 -> L3; A11k4 -> A11. Siblings share it and never run side by side, in any mode."""
+    """L3a, L3b, L3 -> L3; A11k4 -> A11. Siblings share it and never run side by side."""
     m = re.match(r'[A-Za-z]*\d*', tid)
     return m.group() if m else tid
 
@@ -377,14 +377,12 @@ def ordered(section: str) -> bool:
 
 
 
-def clash(t: tuple, b: tuple, mode: str, shared: set[str]) -> bool:
+def clash(t: tuple, b: tuple, shared: set[str]) -> bool:
     """Task `t` may not run beside `b` (running here, waiting to merge, or claimed by another runner): siblings,
-    and in mode d also a shared ordered section or overlapping files (`shared_files` aside)."""
+    a shared ordered section, or overlapping files (`shared_files` aside)."""
     tid, section, files, _ = t
     if family(tid) == family(b[0]):
         return True
-    if mode == 'p':
-        return False
     return (ordered(section) and section == b[1]) or bool(P.overlap(set(files) - shared, set(b[2])))
 
 
@@ -401,7 +399,7 @@ def claimed_elsewhere(cls: dict, todo: list) -> list[tuple]:
     return out
 
 
-def pick(running: dict, tried: set, mode: str, branch: str, claim: bool = False):
+def pick(running: dict, tried: set, branch: str, claim: bool = False):
     """The next task a free slot may take, or None. See the module docstring for the rules.
 
     `claim` (a run about to start it): with `[plan] repo`, the task is claimed and the claim pushed first;
@@ -424,7 +422,7 @@ def pick(running: dict, tried: set, mode: str, branch: str, claim: bool = False)
         mine = now.get(t[0])
         for b in claimed_elsewhere(now, todo):
             cl = now[b[0]]
-            if mine and (cl.since, cl.owner) < (mine.since, mine.owner) and clash(t, b, mode, shared):
+            if mine and (cl.since, cl.owner) < (mine.since, mine.owner) and clash(t, b, shared):
                 plansync.release(C, t[0])
                 log(f'{t[0]}: {cl.who} claimed {b[0]} first and it clashes; given way')
                 return None
@@ -440,8 +438,7 @@ def pick(running: dict, tried: set, mode: str, branch: str, claim: bool = False)
     slots = {t[0]: SLOTS_DIR / f's{n}' for n, t in running.items() if isinstance(n, int)}
     for tid, t in {**{f: lines.get(f, (f, '', set(), set())) for f in mine},
                    **{t[0]: t for t in running.values()}}.items():
-        extra = touched(tid, branch, slots.get(tid)) if mode == 'd' else set()
-        busy.append((tid, t[1], set(t[2]) | extra, t[3]))
+        busy.append((tid, t[1], set(t[2]) | touched(tid, branch, slots.get(tid)), t[3]))
     busy_ids |= {b[0] for b in busy if b[0] not in mine}
     for t in todo:
         tid = t[0]
@@ -449,7 +446,7 @@ def pick(running: dict, tried: set, mode: str, branch: str, claim: bool = False)
             continue  # finished, its branch is waiting to be merged: restarting it would reset the branch
         if tid in tried or tid in busy_ids:
             continue
-        if any(clash(t, b, mode, shared) for b in busy):
+        if any(clash(t, b, shared) for b in busy):
             continue  # a running or merge-waiting task's sibling, ordered-section mate or file neighbour waits
 
         if got := pick_(t):
@@ -1989,9 +1986,9 @@ def fix_merge(tid: str, branch: str, files: list[str], cwd: Path, start: str = '
     """Give a conflict the join cannot do to a fresh agent session, in `cwd`. None when it landed.
 
     One session per merge, run to completion while the caller waits: ahead of the merge lock (`fix_ahead`),
-    in the task's own slot worktree, or under it in the merge worktree on a last try. Each one starts with an empty context and the
-    ledger's tail, so the twentieth costs what the first did. (See the README for why this replaced a
-    long-lived "master" session. Under tmux it still runs in a window named "master": see `fix_session`.)
+    in a fix worktree of its own (fix1…), or under it in the merge worktree on a last try. Each one starts with an empty context and the
+    ledger's tail, so the twentieth costs what the first did. (This replaced a long-lived
+    "master" session. Under tmux it still runs in a window named "master": see `fix_session`.)
 
     Never fatal. A fixer that fails, times out, aborts or is not installed leaves the merge for the caller
     to abort, and the task is left for a human.
@@ -2179,24 +2176,6 @@ LANDED: dict[str, tuple[str, str]] = {}  # a task that landed in another's batch
 ALONE: set[str] = set()  # tasks `blame` found breaking a batch: they merge in a turn of their own
 FAILED: dict[str, list[str]] = {}  # the tests `tested` last saw fail on a task's merge, by the task
 TASK_SID: dict[str, str] = {}  # the session that did a task, kept for its repair (`repair_merge`)
-BUSY = [0]  # slots with a session at work, from the run loop: `wait_for_batch` waits on them
-BATCH_POLL = 15  # s between `wait_for_batch`'s looks
-
-
-def wait_for_batch(tid: str) -> None:
-    """With `[run] batch_wait`, hold the merge lock up to that many seconds while fewer than `batch_min` tasks
-    are ready and slots are still at work: the tasks finishing meanwhile share this task's gate run."""
-    until, said = time.time() + C.run['batch_wait'], False
-    while len(WAITING - set(LANDED) - ALONE) + 1 < C.run['batch_min'] and BUSY[0] and time.time() < until \
-            and not stopping():
-        if not said:
-            log(f'{tid}: waiting up to {C.run["batch_wait"]}s for more tasks to share its gate run')
-            said = True
-        time.sleep(BATCH_POLL)
-    if said:
-        log(f'{tid}: merging' + (f' with {", ".join(sorted(w))}' if (w := WAITING - set(LANDED) - ALONE) else ' alone'))
-
-
 def blame(tids: list[str], d: Path, base: str, names: list[str]) -> list[str]:
     """The tasks of a batch whose gate failed `names` that fail them by themselves: each merged alone on `base`,
     then `[run] retest` of just those. [] when none does (a clash between them) or there is no retest. Leaves
@@ -2254,9 +2233,6 @@ def merge_tries(tid: str, branch: str) -> str | None:
             if tid not in LANDED and UNPUSHED:  # a batch whose last task has not taken the lock yet: its
                 push_landed(UNPUSHED[-1], branch)  # push goes out now, not after this one's gate
             if tid not in LANDED:  # else it went in with an earlier task's batch
-                if C.run['batch'] and C.run['batch_wait'] and tid not in ALONE and \
-                        not any(tid in g.get('tids', ()) for g in [*gate_runs(), *AHEADS]):
-                    wait_for_batch(tid)  # not with its gate already under way: a rider would start it over
                 if (why := merge_batch(tid, branch, inline=tries == 2)) == AGAIN:
                     log(f'{tid}: {AGAIN}; it is fixed outside the lock again while the others merge')
                     continue
@@ -2363,7 +2339,7 @@ def fix_ahead(tid: str, branch: str) -> str | None:
 
     A conflict in a file that another task, fixed ahead and not merged yet, had in conflict waits for that
     task's merge to end: fixed side by side, whichever lands second would be fixed again (`FIXING`)."""
-    if not (C.run['fix_merges'] and C.run['fix_ahead']):
+    if not (C.run['fix_merges'] and C.run['fix_ahead_max']):
         return None
     said = False
     while True:
@@ -2480,9 +2456,9 @@ def merge_batch(tid: str, branch: str, inline: bool = False) -> str | None:
     """`merge`'s part under the lock: build, test and land task/<tid> and its riders; record them in LANDED.
 
     A conflict of task/<tid> that the join cannot do returns AGAIN, for `fix_ahead` to take outside the lock,
-    unless `inline` (its last try) or `fix_ahead` is off: then a fix session takes it here. A rider with one
+    unless `inline` (its last try) or `fix_ahead_max` is 0: then a fix session takes it here. A rider with one
     waits for its own turn."""
-    ahead_fix = C.run['fix_merges'] and C.run['fix_ahead'] and not inline
+    ahead_fix = C.run['fix_merges'] and C.run['fix_ahead_max'] and not inline
     d = worktree('merge', branch)
     adopt_merge(d)
     if trim(d, 'merge worktree'):
@@ -2491,7 +2467,7 @@ def merge_batch(tid: str, branch: str, inline: bool = False) -> str | None:
     repairs: list[str] = []  # a repair session's commits, replayed when the merge is built again
     repaired = False
     batch_repaired = False  # one repair session per batch; a batch that still fails is split
-    batch_fixes = C.run['fix_merges'] and not C.run['fix_ahead']  # a rider's conflict: a fix session in the batch
+    batch_fixes = C.run['fix_merges'] and not C.run['fix_ahead_max']  # a rider's conflict: a fix session in the batch
     try:
         for attempt in range(3):
             git('merge', '--abort', cwd=d)
@@ -2926,6 +2902,7 @@ def ci_flows(branch: str) -> tuple[list[str], str]:
 
 
 CI_UNSEEN: list[str] = []  # why gh could not see the repository, once it has been said
+CI_RERUN = True  # a red run's failed jobs run once more before a task is filed: GitHub's own outages read red too
 CI_AT = [0.0]  # when `watch_ci` last asked GitHub
 
 
@@ -2967,7 +2944,7 @@ def watch_ci(branch: str, force: bool = False) -> list[str]:
             open_text = '\n'.join(l for l in ls if (m := P.ITEM.match(l)) and m.group(2) != 'x')
             seen = ci.seen_file(C.notes, wf)
             was = seen.read_text() if seen.exists() else ''
-            if not (got := ci.to_file(gh, wf, branch, seen, open_text, event, C.run['ci_rerun'], log)):
+            if not (got := ci.to_file(gh, wf, branch, seen, open_text, event, CI_RERUN, log)):
                 continue
             text, long = got
             tid = P.add(C.run['ci_kind'], text, todo=ROOT / rel, pri='critical')
@@ -3699,7 +3676,7 @@ def sequential(branch: str, model: str, idle: int, pause: int, force: bool, once
     idle_said, idle_at = False, 0.0
     while not stopping():
         retry_reopened(tried, closed, here)
-        if not (task := pick({}, tried, 'p', here, claim=True)):
+        if not (task := pick({}, tried, here, claim=True)):
             if once:
                 break
             if not idle_said:
@@ -3778,11 +3755,11 @@ def before_start_fails() -> bool:
         return True
 
 
-def dry_run(slots: int, mode: str, branch: str) -> int:
+def dry_run(slots: int, branch: str) -> int:
     """What `slots` free slots would start right now, in order, and why the rest of the open tasks wait."""
     running: dict = {}
     for n in range(1, slots + 1):
-        if not (t := pick(running, set(), mode, branch)):
+        if not (t := pick(running, set(), branch)):
             break
         running[n] = t
         print(f'slot {n}: {t[0]}  ({t[1]}; {", ".join(sorted(t[2])) or "no files listed"})')
@@ -3830,8 +3807,7 @@ def run(argv: list[str], prog: str) -> int:
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('slots', nargs='?', default=None,
                     help="how many agents at once (default [run] slots), or 'once' for one task then stop")
-    ap.add_argument('--mode', choices=['p', 'd'], default=None,
-                    help='p = plan order, overlapping files allowed; d = different files (default [run] mode)')
+    ap.add_argument('--mode', help=argparse.SUPPRESS)  # ponytail: gone in 0.31 (always different files); accepted so wrappers passing it still run
     ap.add_argument('--force', action='store_true', help='keep starting tasks past the session and weekly usage caps')
     ap.add_argument('--shutdown', action='store_true',
                     help=f'power the computer off once nothing is running or merging and no open task may start '
@@ -3866,7 +3842,6 @@ def run(argv: list[str], prog: str) -> int:
         slots = 1 if once else int(a.slots or r['slots'])
     except ValueError:
         ap.error(f"slots must be a number or 'once', not {a.slots!r}")
-    mode = a.mode or r['mode']
     global SLOTS
     SLOTS = slots
     idle, stall, pause = a.idle or r['idle'], a.stall or r['stall'], a.pause or r['pause']
@@ -3877,7 +3852,7 @@ def run(argv: list[str], prog: str) -> int:
         print(f'no branch {branch!r} to merge into — commit something first', file=sys.stderr)
         return 2
     if a.dry_run:
-        return dry_run(slots, mode, branch)
+        return dry_run(slots, branch)
 
     lock = single_run()  # noqa: F841 — held until the process ends
     ensure_local(ROOT)  # this machine's runner.local.toml: made once (all comments), never rewritten, git-ignored
@@ -3900,7 +3875,7 @@ def run(argv: list[str], prog: str) -> int:
         log('Windows Terminal (wt.exe) is not installed: each slot gets a console window of its own')
     if choice == 'tmux' and not os.environ.get('TMUX'):
         print(f'Run me inside tmux, so the sessions get panes you can attach to:\n'
-              f'    tmux new -s runner {prog} {a.slots or slots} --mode {mode}', file=sys.stderr)
+              f'    tmux new -s runner {prog} {a.slots or slots}', file=sys.stderr)
         return 2
 
     threading.Thread(target=update_notice, daemon=True).start()
@@ -3918,7 +3893,7 @@ def run(argv: list[str], prog: str) -> int:
     merging: list[threading.Thread] = []
     stall_said: set[str] = set()
     cap_said = stop_said = False
-    log(f'run: {slots} slots in {MUX.name}, mode {mode}, merging into {branch}' +
+    log(f'run: {slots} slots in {MUX.name}, merging into {branch}' +
         (f', session usage {usage_pct("five_hour")}%, weekly usage {weekly()}%' if not a.force and r['agent'] == 'claude' else ''))
     from agent_runner import context
     if heavy := context.warning(ROOT, r['rules'], C.raw['plan']['context_kb']):
@@ -3947,7 +3922,6 @@ def run(argv: list[str], prog: str) -> int:
             reopen_landed(branch, 'a merge before this run')
 
     while True:
-        BUSY[0] = len(procs)
         sweep_tmp()
         waiting = {n: q for n, q in queued().items() if n in free_at and n <= slots}
         tagged = None  # MUX.panes(), looked at once a tick and only for a free slot
@@ -3991,7 +3965,7 @@ def run(argv: list[str], prog: str) -> int:
                 stall_said.add(procs[n][1])
                 if (m := finished_mark(n)) and m.exists():
                     # its `done` succeeded, so the Stop hook's waiter should have ended it; that waiter can
-                    # be lost (Clay's R18 and H1 sat finished for hours), so the run ends it: next tick reaps it
+                    # be lost (two tasks once sat finished for hours), so the run ends it: next tick reaps it
                     log(f'slot {n}: {running[n][0]} finished but {why}; ending it')
                     plat.terminate(procs[n][0])
                 else:
@@ -4055,7 +4029,7 @@ def run(argv: list[str], prog: str) -> int:
                         print('\a', end='', flush=True)
                     continue
                 stall_said.discard('before_start')
-                if task := pick(running, tried, mode, branch, claim=True):
+                if task := pick(running, tried, branch, claim=True):
                     if p := start(n, task, branch, model, idle, slots):
                         procs[n], running[n] = p, task
                         if once:  # one task: nothing new starts, and the run exits once it has merged
@@ -4088,7 +4062,7 @@ def run(argv: list[str], prog: str) -> int:
         # watches run.log for `run idle`; the process itself ends only on Ctrl-C or `./run stop`.
         # one pick, and only when its answer is needed: to end `once`, to say idle, or to power off
         if quiet and (once and not stopping() or not idle_said
-                      or SHUTDOWN and time.time() - idle_at >= SHUTDOWN_GRACE) and not pick(running, tried, mode, branch):
+                      or SHUTDOWN and time.time() - idle_at >= SHUTDOWN_GRACE) and not pick(running, tried, branch):
             if once and not stopping():
                 log('run done: nothing it may start (once)')
                 return 0

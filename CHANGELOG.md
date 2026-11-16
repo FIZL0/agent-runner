@@ -2,6 +2,23 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
+## 0.32.0 (2026-11-16)
+
+Breaking: settings removed. A config that still sets them is not an error; they are ignored.
+
+- Mode p is gone: a run never starts two tasks on the same files (what mode d did), and an "in this order"
+  section always runs one task at a time. `[run] mode` is ignored; `run --mode` is still accepted, and ignored,
+  so wrapping CLIs that pass it keep working.
+- `[run] fix_ahead` is folded into `fix_ahead_max`: `0` fixes conflicts under the lock, as `fix_ahead = false` did.
+- Removed `[run] precommit` and `done --skip-check` (chain the check into `[run] test`, or run it in a wrapper
+  before `done`), `[plan] brief` (use `brief_extra` and `outline`), `[run] ci_rerun` (a red CI run's failed jobs
+  are always run once more first), and `[run] batch_wait` / `batch_min`.
+- A remote given as a relative path (`origin = ../origin.git`, a relative `[plan] repo`) is the main checkout's:
+  `done` in a slot's worktree pushes to it instead of failing. A push to a remote that cannot be reached says
+  so with git's own message, not "has moved and merging it conflicts".
+- README rewritten as an overview; the full behaviour and every key moved to docs/REFERENCE.md. The context
+  numbers are re-measured over 1,836 slot sessions.
+
 ## 0.31.0 (2026-11-16)
 
 - `agent-runner context [--check]`: what every session loads before it starts ([run] rules, CLAUDE.md,

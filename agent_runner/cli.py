@@ -53,14 +53,14 @@ Make a task wait for another (writing "after B646" in its text is not enough):
         -> B646a. B646, B646a, B646b never run at the same time, so they go one by one, top to bottom.
 
     agent-runner plan add B "Use the sheet" --after B646 --files src/menu.rs
-        -> a fresh task with `| after: B646 | files: src/menu.rs`: it waits for B646, and mode d keeps it off
+        -> a fresh task with `| after: B646 | files: src/menu.rs`: it waits for B646, and stays off
            the files a running or finished-unmerged task touches.
 
     agent-runner plan block B12 --after B646 "needs the new sheet"
         -> B12 is blocked until B646 is done, then reopens by itself.
 
     A heading saying "in this order" or "one at a time"
-        -> one task from that section at a time (mode d only; mode p ignores it).
+        -> one task from that section at a time.
 
 Choose what goes first:
 
@@ -74,9 +74,7 @@ Choose what goes first:
     agent-runner plan kinds                   what each id letter means ([plan] kinds)
 
 Never started: blocked [~] tasks, ### Stretch and ### Parked, a task with open subtasks, a task that already failed this run,
-and a finished task waiting to merge. In mode d, also a task that names a file a running task names.
-
-Modes (runner.toml mode, or --mode): p = strictly top to bottom; d = only tasks on different files at once.
+and a finished task waiting to merge. Nor a task that names a file a running task names.
 
     agent-runner run --dry-run 3      what 3 free agents would start now, and why the rest wait
 """

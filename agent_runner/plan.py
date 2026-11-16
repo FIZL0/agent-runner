@@ -53,7 +53,7 @@ gives one: the rest of a person's task stays where the person queued it, not beh
 
 The line format is `- [ ] **ID** text | files: a, b | after: X, Y | test: name | journal: dir`, under `###`
 headings, and the checkbox is `[ ]` open, `[x]` done, `[~]` blocked. The keyed fields are the only thing read
-off a line: `files:` keeps mode d's running tasks apart, `after:` holds a task until those ids are done, `test:`
+off a line: `files:` keeps running tasks apart, `after:` holds a task until those ids are done, `test:`
 names the test it adds, `journal:` a journal dir its brief lists. Prose is never parsed for files or ids.
 
 **A block that only waits on another task says which**, as `BLOCKED: (after X, Y) why`, and `reopen` (which a
@@ -654,7 +654,7 @@ def prose(line: str) -> str:
 
 
 def files_on_line(text: str) -> list[str]:
-    """The `files:` of a task line: paths and patterns (`dir/**`, `dir/*.rs`). Mode d keeps two running tasks
+    """The `files:` of a task line: paths and patterns (`dir/**`, `dir/*.rs`). The run keeps two running tasks
     apart by them (`overlap`)."""
     return fields(text).get('files', [])
 
@@ -695,11 +695,6 @@ def brief(tid: str, root=None, plan_dir=None, journal=None) -> list[str]:
     """
     c = cfg(root)
     root = c.root
-    if cmd := c.raw['plan']['brief']:
-        r = subprocess.run(cmd.format(id=tid), shell=True, cwd=str(root), capture_output=True, text=True)
-        if r.returncode:
-            raise SystemExit(f'{PROG}: `{cmd.format(id=tid)}` failed: {r.stderr.strip()[:300]}')
-        return r.stdout.rstrip().splitlines()
     plan_dir = Path(plan_dir or c.plan_dir)
     journal = Path(journal) if journal else c.journal
     paths = [plan_dir / 'TODO.md', plan_dir / 'DONE.md']
@@ -1133,7 +1128,7 @@ def _main(argv: list[str], c) -> int:
             return 3
         if not {'files', 'test'} & set(fields(text)):
             why = (f'the line has no `files:`: pass `--files path/a,dir/**` (the files the task will change) '
-                   f'or `--test name` (the test it adds); mode d keeps running tasks apart by them, and a line '
+                   f'or `--test name` (the test it adds); the run keeps running tasks apart by them, and a line '
                    f'naming none runs beside anything')
             if cfg().raw['plan'].get('need_files'):
                 print(f'{PROG}: not added: {why}', file=sys.stderr)

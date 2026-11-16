@@ -89,7 +89,7 @@ def make_repo(tmp: Path) -> Path:
     # the gate: fails while a file named BROKEN exists
     (repo / 'check.py').write_text('import os, sys\nsys.exit(1 if os.path.exists("BROKEN") else 0)\n')
     (repo / 'runner.toml').write_text(
-        '[run]\nmode = "d"\ntest = "python3 check.py"\nshared_files = ["CHANGELOG.md"]\n'
+        '[run]\ntest = "python3 check.py"\nshared_files = ["CHANGELOG.md"]\n'
     'min_free_gb = 0\n'
         'joinable = ["plan/TODO.md", "plan/DONE.md", "CHANGELOG.md"]\n', encoding='utf-8')
     (repo / '.gitignore').write_text('.runner/\n', encoding='utf-8')
@@ -121,36 +121,35 @@ def test_picking(repo: Path):
     check('S1' not in ids, 'Stretch is never offered to a run')
     check('T4' not in ids, '`after: T1, T5` holds the task while either is open — every id, not just the first')
     check('T6' not in ids, 'and `after: T1` holds T6')
-    first = R.pick({}, set(), 'd', 'main')
+    first = R.pick({}, set(), 'main')
     eq(first[0], 'T1', 'an empty run starts at the top')
-    second = R.pick({1: first}, set(), 'd', 'main')
+    second = R.pick({1: first}, set(), 'main')
     eq(second[0], 'T5', 'with T1 running: not T2 (ordered section), T3 (same file), T6 (after: T1)')
     check(not R.ordered('Next (user priorities, in order)') and R.ordered('Next (in this order)')
           and R.ordered('Bugs (one at a time)'), 'a priority order starts side by side; "in this order" runs one at a time')
-    third = R.pick({1: first, 2: second}, set(), 'd', 'main')
+    third = R.pick({1: first, 2: second}, set(), 'main')
     eq(third[0], 'L3a', 'CHANGELOG.md is a shared file, so it is not an overlap')
-    check((R.pick({1: first, 2: second, 3: third}, set(), 'd', 'main') or ('',))[0] != 'L3b',
+    check((R.pick({1: first, 2: second, 3: third}, set(), 'main') or ('',))[0] != 'L3b',
           'a sibling of a running task waits')
-    eq(R.pick({1: first}, set(), 'p', 'main')[0], 'T2', 'mode p just follows the plan order')
     touched, ahead = R.touched, R.ahead
     R.touched = lambda tid, branch, slot: {'d.py'} if tid == 'T1' else set()
     try:
-        eq(R.pick({1: first}, set(), 'd', 'main')[0], 'L3a', 'a file the running T1 has touched (d.py) holds T5 too')
+        eq(R.pick({1: first}, set(), 'main')[0], 'L3a', 'a file the running T1 has touched (d.py) holds T5 too')
         R.ahead = lambda branch: ['T1']
-        eq(R.pick({}, set(), 'd', 'main')[0], 'L3a',
+        eq(R.pick({}, set(), 'main')[0], 'L3a',
            'a finished T1 waiting to merge still holds its section, its line files and the files it touched')
     finally:
         R.touched, R.ahead = touched, ahead
     Claim, me = R.plansync.Claim, R.plansync.owner(R.C)
     claims, R.plansync.claims = R.plansync.claims, lambda c: {'T1': Claim('elsewhere:/x', time.time(), 'ian@desk')}
     try:
-        eq(R.pick({}, set(), 'd', 'main')[0], 'T5',
+        eq(R.pick({}, set(), 'main')[0], 'T5',
            "another runner's live claim on T1 holds its files, section and dependants here too")
         R.plansync.claims = lambda c: {'T1': Claim('elsewhere:/x', time.time() - 4 * 3600, 'ian@desk')}
-        eq(R.pick({}, set(), 'd', 'main')[0], 'T2', "a stale claim (a crashed run's) holds only its own task")
+        eq(R.pick({}, set(), 'main')[0], 'T2', "a stale claim (a crashed run's) holds only its own task")
         R.plansync.claims = lambda c: {'S9': Claim('elsewhere:/x', time.time(), 'ian@desk', '0.14.0', 1.0,
                                                    frozenset({'a.py'}))}
-        check(R.pick({}, set(), 'd', 'main')[0] not in ('T1', 'T3'),
+        check(R.pick({}, set(), 'main')[0] not in ('T1', 'T3'),
               "files a claim says its session touched hold too, whatever its line lists")
         # the race: both runners pick from plans read before the other's claim, and both claims push
         st, gave = {}, []
@@ -170,14 +169,14 @@ def test_picking(repo: Path):
         R.C.raw['plan']['repo'], R.log = 'plan.git', lambda m: None
         try:
             st['theirs'] = 1.0
-            got = R.pick({}, set(), 'd', 'main', claim=True)[0]
+            got = R.pick({}, set(), 'main', claim=True)[0]
             check(got not in ('T1', 'T3'), 'the later of two clashing claims gives way: T1 shares a file with their T3',
                   got)
             eq(gave[:1], ['T1'], 'releasing the claim it gave way on')
             gave.clear()
             st.clear()
             st['theirs'] = 3.0
-            eq(R.pick({}, set(), 'd', 'main', claim=True)[0], 'T1', 'the earlier claim keeps its task')
+            eq(R.pick({}, set(), 'main', claim=True)[0], 'T1', 'the earlier claim keeps its task')
             eq(gave, [], 'and releases nothing')
         finally:
             R.plansync.claim, R.plansync.release, R.C.raw['plan']['repo'], R.log = saved
@@ -190,7 +189,7 @@ def test_picking(repo: Path):
     check(not R.P.overlap({'Assets/Settings/**'}, {'Assets/Audio/Mix.cs'}), 'but not a path elsewhere')
     check(R.P.overlap({'src/menu.rs'}, {'app/src/menu.rs'}) and not R.P.overlap({'menu.rs'}, {'app/submenu.rs'}),
           'a short path meets the full one it is the tail of, at a / only')
-    eq(R.pick({}, set(ids), 'd', 'main'), None, 'nothing left once everything has been tried')
+    eq(R.pick({}, set(ids), 'main'), None, 'nothing left once everything has been tried')
     check(R.joinable('CHANGELOG.md'), 'CHANGELOG.md is in [run] joinable, so a conflict there is joined')
     for f in ('README.md', 'a.py', 'plan/T1.md', 'plan/TODO.md', 'plan/DONE.md'):
         check(not R.joinable(f), f'{f} is not (the task list: git merged it by task already), so it needs reading')
@@ -323,7 +322,7 @@ def test_run_policies(repo: Path, tmp: Path):
     fixture.mkdir()
     policy_repo = make_repo(fixture)
     (policy_repo / 'runner.toml').write_text(
-        '[run]\nmode = "d"\n'
+        '[run]\n'
         f'home = "{fixture.as_posix()}/runner-home/{{repo}}"\n'
         'include_task_id_in_commit = false\ncomment_policy = "minimal"\n'
         '[git]\npush = false\n', encoding='utf-8')
@@ -804,19 +803,18 @@ def test_prompt_and_hooks(repo: Path):
 
 
 def test_hooks(repo: Path, tmp: Path):
-    print('hooks a wrapping project uses: its own config file, a pre-commit check, joiners, suspect, brief')
+    print('hooks a wrapping project uses: its own config file, joiners, suspect')
     from agent_runner import config
     kit = tmp / 'kit.toml'
-    precommit = 'if exist SECRET exit /b 1' if R.plat.WINDOWS else 'test ! -e SECRET'
     kit.write_text('[git]\nkit_owns_this = true\n\n[agent-runner.run]\ntest = "python3 check.py"\n'
-                   f'precommit = "{precommit}"\ncommand = "./kit"\n\n[agent-runner.git]\npush = false\n',
+                   'command = "./kit"\n\n[agent-runner.git]\npush = false\n',
                    encoding='utf-8')
     env = {**os.environ, 'AGENT_RUNNER_CONFIG': str(kit)}
     os.environ['AGENT_RUNNER_CONFIG'] = str(kit)
     try:
         c = config.Config(repo)
         eq(c.file, kit.resolve(), 'AGENT_RUNNER_CONFIG wins over runner.toml')
-        check(c.run['precommit'] == precommit and c.push_remote is None,
+        check(c.run['test'] == 'python3 check.py' and c.push_remote is None,
               'and its [agent-runner] table is the config')
         check('kit_owns_this' not in c.raw['git'], "the project's own [git] does not leak in")
         eq(c.command, './kit', '[run] command is what sessions are told to call')
@@ -837,12 +835,8 @@ def test_hooks(repo: Path, tmp: Path):
 
     d = task_branch(repo, 2, 'T2')
     (d / 'b.py').write_text('def show(x):\n    return str(x)\n', encoding='utf-8')
-    (d / 'SECRET').write_text('', encoding='utf-8')
     r = run(d, 'done', 'T2', 'T2: the printer', env=env)
-    check(r.returncode == 1 and 'pre-commit check failed' in r.stderr, '[run] precommit refuses', r.stdout + r.stderr)
-    eq(git(d, 'rev-list', '--count', 'main..HEAD'), '0', 'and commits nothing')
-    r = run(d, 'done', 'T2', 'T2: the printer (SECRET is a fixture)', '--skip-check', env=env)
-    check(r.returncode == 0 and 'skipped (--skip-check)' in r.stdout, '--skip-check commits anyway', r.stdout + r.stderr)
+    check(r.returncode == 0, 'done commits under the wrapping config', r.stdout + r.stderr)
     check('pushed' not in r.stdout and 'task/T2' not in remote_branches(tmp), "and [agent-runner.git] push = false holds")
     git(d, 'checkout', '-q', '--detach')
 
@@ -1174,14 +1168,14 @@ def test_gate_and_batches(repo: Path, tmp: Path):
         commit_on(repo, 'B8', {'g.py': '# g, B8\n', 'b8.py': '8\n'}, 'B8: g too')
         R.WAITING.add('B8')
         os.environ['FAKE_FIX'] = 'theirs'
-        r['fix_ahead'] = False
+        r['fix_ahead_max'] = 0
         eq(R.merge('B7', 'main'), None, 'a rider whose conflict a join cannot do')
         has((repo / '.runner/run.log').read_text(), r'B8: the fix session resolved g\.py',
-            'gets a fix session in the batch, with fix_ahead off')
+            'gets a fix session in the batch, with fix_ahead_max = 0')
         check((repo / 'b8.py').exists() and 'B8' in R.LANDED, 'and lands with it, in one gate run')
         R.WAITING.discard('B8')
         eq(R.merge('B8', 'main'), None, 'its own turn only does the bookkeeping')
-        r['fix_ahead'] = True
+        r['fix_ahead_max'] = 2
         commit_on(repo, 'B9', {'g.py': '# g, B9\n'}, 'B9: g')
         commit_on(repo, 'B10', {'g.py': '# g, B10\n', 'b10.py': '10\n'}, 'B10: g too')
         R.WAITING.add('B10')
@@ -1204,12 +1198,6 @@ def test_gate_and_batches(repo: Path, tmp: Path):
     r['not_attempt'] = ''
     git(repo, 'branch', '-D', 'task/S1', 'task/S2')
 
-    R.C.raw['plan']['brief'] = (f'"{sys.executable}" -c "print(\'the project brief for {{id}}\')"'
-                                if R.plat.WINDOWS else 'echo "the project brief for {id}"')
-    try:
-        eq(P.brief('T6', root=repo), ['the project brief for T6'], '[plan] brief replaces the built-in brief')
-    finally:
-        R.C.raw['plan']['brief'] = ''
 
 
 def test_leftovers(repo: Path):
@@ -1481,7 +1469,7 @@ def test_resume(repo: Path, tmp: Path):
         git(repo, 'branch', '-D', 'task/T2')
         R.queue_resume('T2', 2, 'net', 'resumed by hand')
         eq(R.queued(), {2: ('T2', 'net', 'resumed by hand')}, 'a queued resume is kept in the notes')
-        check('T2' not in [t[0] for t in [R.pick({}, set(), 'p', 'main')] if t], 'and no slot starts that task afresh')
+        check('T2' not in [t[0] for t in [R.pick({}, set(), 'main')] if t], 'and no slot starts that task afresh')
         opened = []
 
         class Mux:
@@ -1852,7 +1840,7 @@ def test_tested_ref(repo: Path, tmp: Path):
 
 
 def test_blame_and_own_repair(repo: Path, tmp: Path):
-    print('run: a failed batch finds the task that breaks it alone; that task\'s repair is its own session; batch_wait')
+    print('run: a failed batch finds the task that breaks it alone; that task\'s repair is its own session')
     R.init(repo)
     r = R.C.run
     gate = 'test ! -e BROKEN || { echo FAIL t_b; exit 1; }'
@@ -1892,27 +1880,11 @@ def test_blame_and_own_repair(repo: Path, tmp: Path):
         check(not R.ALONE and 'C2' not in R.TASK_SID, 'and what was kept about C2 is dropped')
         git(repo, 'branch', '-D', 'task/C2')
 
-        R.BUSY[0], r['batch_wait'], r['batch_min'] = 1, 1, 2
-        poll, R.BATCH_POLL = R.BATCH_POLL, 0.1
-        t0 = time.time()
-        R.wait_for_batch('W1')
-        check(time.time() - t0 >= 1, 'batch_wait holds a lone task while slots work')
-        R.WAITING.add('W2')
-        t0 = time.time()
-        R.wait_for_batch('W1')
-        check(time.time() - t0 < 0.5, 'and not once batch_min tasks are ready')
-        R.WAITING.discard('W2')
-        R.BUSY[0] = 0
-        t0 = time.time()
-        R.wait_for_batch('W1')
-        check(time.time() - t0 < 0.5, 'nor with no slot at work')
-        R.BATCH_POLL = poll
     finally:
         os.environ.pop('FAKE_FIX', None)
         os.environ.pop('FAKE_PROMPT', None)
         R.Claude.fork_flags = fork_was
         R.fix_cmd = original_fix_cmd
-        R.BUSY[0], r['batch_wait'], r['batch_min'] = 0, 0, 3
         r.update(saved)
 
 
@@ -2101,7 +2073,7 @@ def test_ci_watch(repo: Path):
         return subprocess.CompletedProcess(a, 0, out, '')
     head, real = git(repo, 'rev-parse', 'HEAD'), ci.gh_in
     ci.gh_in = lambda cwd: gh
-    R.C.run['ci_watch'], R.C.run['ci_rerun'] = ['pages.yml'], False
+    R.C.run['ci_watch'], R.CI_RERUN = ['pages.yml'], False
     seen = ci.seen_file(R.C.notes, 'pages.yml')
     seen.unlink(missing_ok=True)
     try:
@@ -2138,9 +2110,9 @@ def test_ci_watch(repo: Path):
         eq((R.watch_ci('main', force=True), seen.read_text().strip()), ([], '12'),
            'a red run with a newer one still going: not judged until that one ends')
         runs.pop(0)
-        R.C.run['ci_rerun'] = True
+        R.CI_RERUN = True
         n = len(asked)
-        eq(R.watch_ci('main', force=True), [], 'ci_rerun: a red first attempt files nothing')
+        eq(R.watch_ci('main', force=True), [], 'a red first attempt files nothing')
         check(('run', 'rerun', '13', '--failed') in asked[n:], 'its failed jobs are run again')
         eq(seen.read_text().strip(), '12', 'and it is judged again when the rerun ends')
         runs[0] = {**runs[0], 'attempt': 2}
@@ -2148,7 +2120,7 @@ def test_ci_watch(repo: Path):
         eq(len(R.watch_ci('main', force=True)), 1, 'red on the second attempt: filed')
         check(not any(a[:2] == ('run', 'rerun') for a in asked[n:]), 'with no third try')
     finally:
-        ci.gh_in, R.C.run['ci_watch'], R.C.run['ci_rerun'] = real, [], True
+        ci.gh_in, R.C.run['ci_watch'], R.CI_RERUN = real, [], True
         git(repo, 'reset', '-q', '--hard', head)
         seen.unlink(missing_ok=True)
 
@@ -2358,12 +2330,41 @@ def test_stalled(tmp: Path):
         R.transcript, R.plat.children = saved
 
 
+def test_relative_remote(tmp: Path):
+    print('a remote given as a relative path is the main checkout\'s: a worktree elsewhere still pushes to it')
+    from agent_runner import config
+    from agent_runner.gitops import push
+    base = tmp / 'relremote'
+    base.mkdir()
+    git(base, 'init', '-q', '--bare', '-b', 'main', 'o.git')
+    main = base / 'r'
+    main.mkdir()
+    git(main, 'init', '-q', '-b', 'main')
+    git(main, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '--allow-empty', '-m', 'i')
+    git(main, 'remote', 'add', 'origin', '../o.git')
+    wt = tmp / 'elsewhere' / 's1'
+    wt.parent.mkdir()
+    git(main, 'worktree', 'add', '-q', str(wt), '-b', 'task/X')
+    git(wt, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '--allow-empty', '-m', 'x')
+    config._cfg.cache_clear()
+    try:
+        eq(push(wt, 'task/X'), 'pushed task/X -> origin', 'task/X pushes from the worktree')
+        eq(git(base / 'o.git', 'rev-parse', 'task/X'), git(wt, 'rev-parse', 'HEAD'), 'to the remote next to the main checkout')
+        git(main, 'remote', 'set-url', 'origin', '../gone.git')
+        git(wt, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '--allow-empty', '-m', 'y')
+        out = push(wt, 'task/X')
+        check('did not push (it is committed locally)' in out and 'has moved' not in out,
+              'an unreachable remote is said as such, not as a remote that moved', out)
+    finally:
+        config._cfg.cache_clear()
+
+
 def main() -> int:
     with tempfile.TemporaryDirectory() as t:
         tmp = Path(t)
         os.environ['CLAUDE_CONFIG_DIR'] = str(tmp)  # Claude.trust writes here, never to the real ~/.claude.json
         repo = make_repo(tmp)
-        return report([lambda: test_master_branch_option(tmp), lambda: test_picking(repo), lambda: test_split_parents(repo), lambda: test_blockers_first(repo), lambda: test_done(repo, tmp), lambda: test_merge(repo, tmp),
+        return report([lambda: test_master_branch_option(tmp), lambda: test_relative_remote(tmp), lambda: test_picking(repo), lambda: test_split_parents(repo), lambda: test_blockers_first(repo), lambda: test_done(repo, tmp), lambda: test_merge(repo, tmp),
                        lambda: test_retry(repo), lambda: test_unmerged(repo),
                        lambda: test_conflicts(repo, tmp), lambda: test_fix_ahead(repo, tmp), lambda: test_repair(repo, tmp),
                        lambda: test_prompt_and_hooks(repo),
