@@ -502,10 +502,12 @@ A merge skips the gate only when `task/<ID>` is the very tree `done`'s gate pass
 - **Small tasks that name their files.** One session, one task, one commit is the unit. A task line that
   says `→ src/a.py · tests/test_a.py` lets mode d run tasks side by side and gives the brief the right
   files. A task that would take a human more than an afternoon should be split into subtasks first.
-- **Write dependencies as `(after X)`, not prose.** The run reads ids, not sentences.
-- **Keep an ordered "Next" section.** `### Next (in this order)` runs strictly one task at a time, top
-  down. Put the critical path there and the independent work under other headings, so other slots stay
-  busy.
+- **Write dependencies as `(after X)`.** A line also waits on an id it names right after *after, needs, once,
+  requires, builds on, on top of, waits for/on, depends on* or *blocked by*; any other id on it is context and
+  holds nothing, so cross-references don't serialise unrelated work.
+- **Order only what must be ordered.** `### Next (in this order)` (or `… one at a time`) runs strictly one task
+  at a time, top down: the critical path. A plain `### Next` or `(in order)` is a priority order: its tasks
+  start side by side whenever their files don't overlap.
 - **One task per session.** The prompt says "do task X and nothing else". Follow-ups go in with
   `./run plan add`, not into the same branch.
 - **Journal and notes.** Set `[plan] journal` and each session writes `journal/<date>-<id>-<slug>/` (or, with

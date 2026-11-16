@@ -323,7 +323,7 @@ def tasks(branch: str) -> list[tuple[str, str, set[str], set[str]]]:
         # `(after S41, S45, S46)` waits on every id in the list
         if any(set(P.TASK_ID.findall(a)) & (open_ids - {tid}) for a in re.findall(r'\(after ([^)]*)\)', l)):
             continue
-        named = set(P.TASK_ID.findall(rest)) & every - {tid}
+        named = set(WAITS_ON.findall(rest)) & every - {tid}
         tracked = P._tracked(C.root) if tracked is None else tracked  # one ls-files for every line
         out.append((tid, section, set(P.files_on_line(rest, C.root, tracked)), named))
     return by_waiters(ls, out)
@@ -369,9 +369,15 @@ def family(tid: str) -> str:
 
 
 def ordered(section: str) -> bool:
-    """A section whose heading says its tasks are ordered ("Next (in this order)") runs one task at a time:
-    its second task usually depends on the first having landed, whatever the files say."""
-    return section.startswith('Next') or 'in this order' in section
+    """A section whose heading says its tasks run in sequence ("Next (in this order)", "… one at a time") runs
+    one task at a time: its second task usually depends on the first having landed, whatever the files say.
+    A plain "Next" or "(in order)" is a priority order: its tasks start side by side, by files."""
+    return 'in this order' in section or 'one at a time' in section
+
+
+# an id the line says it waits on; an id it only mentions (context, a related task) holds nothing
+WAITS_ON = re.compile(r"\b(?:after|needs?|once|requires?|builds? on|on top of|waits? (?:for|on)|depends? on|"
+                      r"blocked by)\s+(?:the\s+)?([A-Z]+\d+[a-z0-9]*)")
 
 
 def clash(t: tuple, b: tuple, mode: str, shared: set[str]) -> bool:

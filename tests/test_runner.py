@@ -123,7 +123,11 @@ def test_picking(repo: Path):
     first = R.pick({}, set(), 'd', 'main')
     eq(first[0], 'T1', 'an empty run starts at the top')
     second = R.pick({1: first}, set(), 'd', 'main')
-    eq(second[0], 'T5', 'with T1 running: not T2 (ordered section), T3 (same file), T6 (names T1)')
+    eq(second[0], 'T5', 'with T1 running: not T2 (ordered section), T3 (same file), T6 (builds on T1)')
+    eq(R.WAITS_ON.findall("like T1's parser (T2), needs T3, once T4 lands, after the T5 fix"), ['T3', 'T4', 'T5'],
+       'an id waits only where the line says so; one it mentions for context holds nothing')
+    check(not R.ordered('Next (user priorities, in order)') and R.ordered('Next (in this order)')
+          and R.ordered('Bugs (one at a time)'), 'a priority order starts side by side; "in this order" runs one at a time')
     third = R.pick({1: first, 2: second}, set(), 'd', 'main')
     eq(third[0], 'L3a', 'CHANGELOG.md is a shared file, so it is not an overlap')
     check((R.pick({1: first, 2: second, 3: third}, set(), 'd', 'main') or ('',))[0] != 'L3b',
