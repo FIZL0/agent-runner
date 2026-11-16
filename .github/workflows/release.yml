@@ -26,7 +26,7 @@ jobs:
             exit 0
           fi
           notes=$(awk -v h="## $version " 'index($0, h) == 1 {f = 1; next} /^## / {f = 0} f' CHANGELOG.md)
-          install=$(printf '## Install this version\n\n```sh\nuv tool install --force git+https://github.com/FIZL0/agent-runner@%s\n```\n\n[Setup and other installation options](https://github.com/FIZL0/agent-runner/blob/%s/docs/SETUP.md)' "$tag" "$tag")
+          install=$(printf '## Install latest (tracks main)\n\n```sh\nuv tool install --force git+https://github.com/FIZL0/agent-runner\n```\n\n## Install this release (pinned)\n\n```sh\nuv tool install --force git+https://github.com/FIZL0/agent-runner@%s\n```\n\n[Setup and other installation options](https://github.com/FIZL0/agent-runner/blob/%s/docs/SETUP.md)' "$tag" "$tag")
           gh release create "$tag" --target "$GITHUB_SHA" --title "$tag" --notes "${notes:-$tag}
 
           $install"

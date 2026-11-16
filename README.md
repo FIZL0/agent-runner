@@ -43,7 +43,15 @@ PowerShell on Windows and Bash on Linux/macOS; npm-installed Pi is launched thro
 ### Versions and updates
 
 The version badge links to the latest numbered [release](https://github.com/FIZL0/agent-runner/releases/latest),
-with release notes and a copyable install command. To install a specific release:
+with release notes and commands for both the latest code and that specific release.
+
+Install latest (tracks `main`):
+
+```sh
+uv tool install --force git+https://github.com/FIZL0/agent-runner
+```
+
+Or install a specific release (pinned):
 
 ```sh
 uv tool install --force git+https://github.com/FIZL0/agent-runner@v0.30.2
