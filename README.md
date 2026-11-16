@@ -7,7 +7,13 @@
 Install latest (tracks `main`):
 
 ```sh
-uv tool install --force git+https://github.com/FIZL0/agent-runner
+uv tool install git+https://github.com/FIZL0/agent-runner
+```
+
+Upgrade an existing installation:
+
+```sh
+uv tool upgrade agent-runner
 ```
 
 agent-runner runs N terminal coding agents unattended against a git repository with a markdown task list.
@@ -54,13 +60,19 @@ with release notes and commands for both the latest code and that specific relea
 Install latest (tracks `main`):
 
 ```sh
-uv tool install --force git+https://github.com/FIZL0/agent-runner
+uv tool install git+https://github.com/FIZL0/agent-runner
+```
+
+Upgrade an existing installation:
+
+```sh
+uv tool upgrade agent-runner
 ```
 
 Or install a specific release (pinned):
 
 ```sh
-uv tool install --force git+https://github.com/FIZL0/agent-runner@v0.30.2
+uv tool install git+https://github.com/FIZL0/agent-runner@v0.30.2
 ```
 
 The unpinned install above follows `main`. For an existing installation, use `uv tool upgrade agent-runner`
