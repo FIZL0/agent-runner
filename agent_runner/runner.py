@@ -2434,6 +2434,12 @@ def merge_batch(tid: str, branch: str, inline: bool = False) -> str | None:
                         continue
             else:
                 if AHEADS:
+                    if a := next((a for a in AHEADS if tid in a['tids']), None):  # say why its gate is thrown away
+                        moved = [f for f in git('diff', '--name-only', a['base'], base).stdout.split()
+                                 if not untestable(f)]
+                        log(f'{tid}: not reusing the merge gated with {", ".join(t for t in a["tids"] if t != tid)}: '
+                            + (f'{branch} moved in tested files ({", ".join(moved[:5])}; `[run] untested` leaves '
+                               f'them in)' if moved else 'its tasks changed'))
                     drop_ahead()  # the branch moved some other way, or its tasks are gone: not this merge
                 own = fixed(tid)
                 ref = renumber_doubles(own, base, tid, d)
