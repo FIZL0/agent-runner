@@ -105,6 +105,19 @@ def test_commands(repo: Path):
     R.C.run['lean'] = False
     check('--no-extensions' not in R.agent_flags('test-session', model, 90),
           'lean=false preserves normal Pi resource loading')
+    with patch.object(R.plat, 'WINDOWS', False), patch.object(R.plat, 'exe', return_value='pi'):
+        argv = R.Pi().argv('prompt', R.C.notes('slot1.prompt'), 'test-session', [])
+    eq(argv[0], 'pi', 'Linux keeps launching Pi through its configured executable')
+    with tempfile.TemporaryDirectory() as d:
+        npm = Path(d)
+        cli = npm / 'node_modules' / '@earendil-works' / 'pi-coding-agent' / 'dist' / 'bundle' / 'cli.js'
+        node = npm / 'node.exe'
+        cli.parent.mkdir(parents=True)
+        cli.touch()
+        node.touch()
+        with patch.object(R.plat, 'WINDOWS', True), patch.object(R.plat, 'exe', return_value=str(npm / 'pi.cmd')):
+            argv = R.Pi().argv('prompt', R.C.notes('slot1.prompt'), 'test-session', [])
+        eq(argv[:2], [str(node), str(cli)], "Windows launches the Node CLI instead of npm's .cmd shim")
 
 
 def write_session(sid: str, *messages: dict) -> Path:
