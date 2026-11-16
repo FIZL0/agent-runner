@@ -2232,6 +2232,16 @@ def merge(tid: str, branch: str) -> str | None:
     Returns None when it landed, else why it was left alone. The shared branch is then as it was, and the
     task branch is still there.
     """
+    try:
+        return merge_tries(tid, branch)
+    finally:
+        with FIX_DIRS_LOCK:  # its fixed-ahead files are free for the next fix, which now sees this merge
+            if FIXING.pop(tid, None) is not None:
+                FIX_DIRS_LOCK.notify_all()
+
+
+def merge_tries(tid: str, branch: str) -> str | None:
+    """`merge`'s three tries."""
     for tries in range(3):
         if tid not in LANDED and (why := fix_ahead(tid, branch)):
             return why
@@ -2323,6 +2333,7 @@ def refix(tid: str, branch: str, ref: str, files: list[str], d: Path, undo: bool
 
 FIX_DIRS: set[int] = set()  # the fix worktrees (fix<k>) in use by a fix ahead of the lock
 FIX_DIRS_LOCK = threading.Condition()  # at most `[run] fix_ahead_max` of them at once
+FIXING: dict[str, set[str]] = {}  # a task fixed ahead and not merged yet -> its conflicted files (FIX_DIRS_LOCK)
 FIXED = 'refs/agent-runner/fixed/'  # + <ID>/<task sha>: a fix session's merge of task/<ID> with the shared branch
 AGAIN = 'conflicts again with the shared branch'  # merge_batch's why when a fix ahead of the lock is due
 
@@ -2345,23 +2356,42 @@ def fix_ahead(tid: str, branch: str) -> str | None:
     as `fixed(tid)`. The other
     finished tasks merge and gate meanwhile; this one then takes the lock with that merge, which goes in
     clean unless the branch has meanwhile touched the same lines again (another, smaller fix). So
-    `[run] fix_timeout` holds up nobody but this task."""
+    `[run] fix_timeout` holds up nobody but this task.
+
+    A conflict in a file that another task, fixed ahead and not merged yet, had in conflict waits for that
+    task's merge to end: fixed side by side, whichever lands second would be fixed again (`FIXING`)."""
     if not (C.run['fix_merges'] and C.run['fix_ahead']):
         return None
-    task = git('rev-parse', '-q', '--verify', f'task/{tid}').stdout.strip()
-    base = git('rev-parse', branch).stdout.strip()
-    if not task or fixed(tid) != f'task/{tid}' and \
-            not git('merge-base', '--is-ancestor', base, fixed(tid)).returncode:
-        return None
-    src = fixed(tid)  # a merge fixed ahead before, which the branch has since moved past: only the new part
-    r = git('merge-tree', '--write-tree', '--name-only', '--no-messages', base, src, **task_env(tid))
-    if r.returncode != 1:  # 0: it merges clean; else git cannot say, and the locked merge finds out
-        return None
-    with FIX_DIRS_LOCK:
-        while not (free := set(range(1, max(1, C.run['fix_ahead_max']) + 1)) - FIX_DIRS):
-            FIX_DIRS_LOCK.wait()  # each one builds and runs an agent: wait for a turn
-        k = min(free)
-        FIX_DIRS.add(k)
+    said = False
+    while True:
+        task = git('rev-parse', '-q', '--verify', f'task/{tid}').stdout.strip()
+        base = git('rev-parse', branch).stdout.strip()
+        if not task or fixed(tid) != f'task/{tid}' and \
+                not git('merge-base', '--is-ancestor', base, fixed(tid)).returncode:
+            return None
+        src = fixed(tid)  # a merge fixed ahead before, which the branch has since moved past: only the new part
+        r = git('merge-tree', '--write-tree', '--name-only', '--no-messages', base, src, **task_env(tid))
+        if r.returncode != 1:  # 0: it merges clean; else git cannot say, and the locked merge finds out
+            return None
+        files = {f for f in r.stdout.splitlines()[1:] if f}
+        with FIX_DIRS_LOCK:
+            def ahead() -> list[str]:
+                return sorted(t for t, fs in FIXING.items() if t != tid and fs & files)
+            if before := ahead():
+                if not said:
+                    said = True
+                    log(f'{tid}: waits for {", ".join(before)} to merge first: its conflicts are in the same '
+                        'files, and fixed side by side one of them would be fixed twice')
+                FIX_DIRS_LOCK.wait_for(lambda: not ahead())
+                continue  # the branch has moved: look again
+            while not (free := set(range(1, max(1, C.run['fix_ahead_max']) + 1)) - FIX_DIRS):
+                FIX_DIRS_LOCK.wait()  # each one builds and runs an agent: wait for a turn
+            if ahead():
+                continue  # one that took a worktree first claimed the same files meanwhile
+            k = min(free)
+            FIX_DIRS.add(k)
+            FIXING[tid] = FIXING.get(tid, set()) | files
+        break
     d = SLOTS_DIR / f'fix{k}'
     try:
         while C.run['before_start'] and before_start_fails():  # no room (memory, say): as a slot waits
@@ -2389,7 +2419,7 @@ def fix_ahead(tid: str, branch: str) -> str | None:
         git('checkout', '-q', '--detach', cwd=d)
         with FIX_DIRS_LOCK:
             FIX_DIRS.discard(k)
-            FIX_DIRS_LOCK.notify()
+            FIX_DIRS_LOCK.notify_all()  # a turn for a worktree, or for files: notify() could wake the wrong one
 
 
 def repair_retest(tid: str, branch: str, d: Path, base: str, merged: str,

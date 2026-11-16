@@ -2,6 +2,12 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
+## 0.30.3 (2026-11-16)
+
+- A conflict fixed ahead of the merge lock waits while another task, fixed ahead and not merged yet, had a
+  conflict in one of the same files. It is then fixed once against that merge, instead of side by side and
+  again after the first lands (`waits for X to merge first` in the log).
+
 ## 0.30.2 (2026-11-16)
 
 - Windows Pi sessions launch the Node CLI directly instead of npm's `.cmd` shim; Linux/macOS keep

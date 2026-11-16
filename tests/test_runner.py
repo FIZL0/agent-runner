@@ -664,7 +664,26 @@ def test_fix_ahead(repo: Path, tmp: Path):
         eq((took, sorted(p.name for p in R.SLOTS_DIR.glob('fix*'))), ([None], ['fix1', 'fix2']),
            'then fixes in the freed one: never more worktrees than the cap')
         R.FIX_DIRS.clear()
+        R.FIXING.clear()  # F2 went through fix_ahead alone: no merge to end and let go of its files
         git(repo, 'branch', '-D', 'task/F2')
+        R.FIXING['F3'] = {'e.py'}  # fixed ahead in e.py, its merge not over yet
+        took = []
+        t = R.threading.Thread(target=lambda: took.append(R.fix_ahead('F4', 'main')), daemon=True)
+        commit_on(repo, 'F4', {'e.py': '# F4 version\n'}, 'F4: e')
+        (repo / 'e.py').write_text('# main, fourth\n', encoding='utf-8')
+        git(repo, 'commit', '-qam', 'main edits e.py a fourth time')
+        t.start()
+        t.join(1)
+        check(t.is_alive(), 'a conflict in a file another pending fix had waits for that merge')
+        has((repo / '.runner/run.log').read_text(), r'F4: waits for F3 to merge first: its conflicts are in the same files',
+            'and says why')
+        with R.FIX_DIRS_LOCK:
+            R.FIXING.pop('F3')
+            R.FIX_DIRS_LOCK.notify_all()
+        t.join(30)
+        eq((took, R.FIXING), ([None], {'F4': {'e.py'}}), 'then it is fixed, and holds e.py until its own merge ends')
+        R.FIXING.clear()
+        git(repo, 'branch', '-D', 'task/F4')
     finally:
         os.environ.pop('FAKE_FIX', None)
         R.fix_session = original_session
