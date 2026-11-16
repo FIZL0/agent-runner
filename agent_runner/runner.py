@@ -732,6 +732,17 @@ class Claude:
         return True
 
 
+def pi_argv0() -> list[str]:
+    """Run Pi's Node CLI directly on Windows instead of through npm's .cmd shim."""
+    exe = plat.exe(C.run['agent'])
+    if plat.WINDOWS and exe.lower().endswith('.cmd'):
+        cli = Path(exe).parent / 'node_modules' / '@earendil-works' / 'pi-coding-agent' / 'dist' / 'bundle' / 'cli.js'
+        node = Path(exe).parent / 'node.exe'
+        if cli.exists():
+            return [str(node) if node.exists() else (shutil.which('node') or 'node'), str(cli)]
+    return [exe]
+
+
 class Pi(Claude):
     """Pi: interactive too, ended by the bundled `pi_idle.ts` extension after `idle` s settled at the prompt
     with nothing in the editor; `once` is print mode (exits after its turn), for a fix session with no pane.
@@ -759,10 +770,10 @@ class Pi(Claude):
         return flags
 
     def cmd(self, prompt, pf, sid, flags):
-        return shlex.join([C.run['agent'], *flags, '--', f'@{pf}'])
+        return shlex.join([*pi_argv0(), *flags, '--', f'@{pf}'])
 
     def argv(self, prompt, pf, sid, flags):
-        return [plat.exe(C.run['agent']), *flags, '--', f'@{pf}']
+        return [*pi_argv0(), *flags, '--', f'@{pf}']
 
     def fix_cmd(self, prompt):
         return agent_argv(prompt, str(uuid.uuid4()), C.run['fix_model'], MASTER_IDLE, 'master', once=True)
