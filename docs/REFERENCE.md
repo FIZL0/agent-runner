@@ -505,7 +505,7 @@ the running tasks merge. A run left up keeps picking up whatever you commit to T
 ```
 agent-runner plan [...]                the task list as a tool (agent-runner plan help)
 agent-runner done ID "MSG" [--blocked WHY [--after X,Y]] [--no-test]
-agent-runner run [N|once] [--dry-run] [--no-tmux] [--mux tmux|wt|console|none] [--model M] [--idle S] [--stall S] [--pause S] [--force] [--shutdown]
+agent-runner run [N|once] [--dry-run] [--no-tmux] [--mux tmux|wt|console|none] [--model M] [--idle S] [--stall S] [--pause S] [--force] [--shutdown|--suspend]
 agent-runner stop                      finish what's running, start nothing new, exit (or s + Enter in the runner's pane)
 agent-runner resume ID...              continue each task's last session in its slot, once that slot is free
 agent-runner cost [--days N]           where the workers' tokens went, by kind of tool call
@@ -519,6 +519,9 @@ agent-runner --version
 `--shutdown` powers the computer off once no task is running or merging and no open task can start, after
 120 s idle; new work in that window cancels it. On Linux it runs `systemctl poweroff`, which needs the
 logged-in session's polkit permission; if the command is refused the run stays up.
+`--suspend` is the same but puts the computer to sleep (`systemctl suspend`, `pmset sleepnow` on macOS,
+`SetSuspendState` on Windows, which hibernates instead where hibernation is on). The run stays: when the
+computer wakes it carries on, and it suspends again only after it has had work and gone idle again.
 
 `plan` and `done` work on the checkout you're in (the agent's worktree). `run` always merges into the
 main checkout. Set `AGENT_RUNNER_REPO` to use a repo from outside it.

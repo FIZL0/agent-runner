@@ -2,6 +2,19 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
+## 0.34.0 (2026-11-16)
+
+- Run sessions with GitHub Copilot CLI as well as Claude Code and Pi, including session recovery and fix sessions.
+- Support local-only runs with `[git] push = false`, while preserving inherited Git configuration.
+- Improve Windows terminal sessions, startup diagnostics and UTF-8 Git output.
+
+## 0.33.0 (2026-11-16)
+
+- `run --suspend`: like `--shutdown`, but the computer sleeps instead of powering off. On waking the run
+  carries on, and it suspends again only after it has had work and gone idle again.
+- README: *How it works* rewritten step by step (what makes a task wait, what happens in a merge), and a
+  section on filing tasks from a Claude Code chat, with an example.
+
 ## 0.32.1 (2026-11-16)
 
 - The runner's pane is in colour: starts blue, merges and pushes green, blocks and conflicts yellow, failures red,

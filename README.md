@@ -11,8 +11,8 @@
 
 agent-runner runs several coding agents at once, unattended, against a git repository and a plain markdown
 task list. Each agent gets one task, in its own git worktree and terminal. When it finishes, the runner
-tests its branch, merges it, pushes, and starts the next task. Sessions run on Claude Code by default, or on
-[Pi](#other-providers) for other providers.
+tests its branch, merges it, pushes, and starts the next task. Sessions run on Claude Code by default, on
+[Pi](#other-providers) for other providers, or on [Copilot CLI](docs/SETUP.md#copilot-cli).
 
 - **Parallel without chaos.** Tasks that touch different files run side by side; tasks that share files,
   or wait on each other, never do.
@@ -51,27 +51,48 @@ Adding it to an existing repo and wrapping it from your own CLI are in [docs/SET
 
 ## How it works
 
+The runner keeps a number of **slots** busy (3 by default). A slot is one agent on one task, in its own git
+worktree and terminal.
+
 ```
-plan/TODO.md ──pick──▶ slot N: worktree ~/runs/<repo>/sN on task/<ID>, a tmux pane running the agent
-                         …the agent works, then `agent-runner done <ID> "msg"`: test gate → tick → commit → push
-               ◀─merge── merge worktree: main + task/<ID>, fix session for real conflicts, test gate again
-                         → land in your checkout → reopen what it unblocked → push main
+plan/TODO.md
+   │  pick the first task that may start
+   ▼
+slot N: worktree on task/<ID>, a terminal running the agent
+   │  the agent runs `agent-runner done <ID> "msg"`: tests → tick → commit → push task/<ID>
+   ▼
+merge worktree: main + task/<ID> (+ other finished branches)
+   │  a conflict → fix session · tests fail → repair session · tests pass ↓
+   ▼
+main moves and is pushed; the slot picks its next task
 ```
 
-1. **Pick.** A free slot reads `plan/TODO.md` from the top and takes the first task it's allowed to start.
-2. **Start.** The slot gets a worktree on `task/<ID>` and a terminal (a tmux pane; a Windows Terminal tab
-   on Windows) running the agent, with a prompt and the task's brief: its line, its long form, the files
-   it names, and the newest journal entry.
-3. **Finish.** The agent runs `done`, which runs the test gate, ticks the task, commits and pushes the
-   branch. If it's stuck it runs `done --blocked "why"` instead. A quiet session is then ended.
-4. **Merge.** In a separate worktree the runner merges the branch, merges the task list by task and joins
-   conflicts in files you list (a changelog) line by line, hands real conflicts to a fix session, and runs the gate again. Only a tested
-   merge moves your checkout, and `main` is pushed.
-5. **Repeat.** Unblocked tasks reopen on their own. When nothing can start, the run idles and picks up
-   whatever you commit to TODO.md next.
+1. **Pick.** A free slot reads `plan/TODO.md` from the top and takes the first task that may start. A task
+   waits while it is blocked, while a task in its `after:` is not done, while it shares `files:` with a
+   task that is running or not merged yet, or while another task of its family is running.
+2. **Work.** The slot gets a worktree on branch `task/<ID>` and a terminal (a tmux pane; a Windows Terminal
+   tab on Windows). The agent starts from a short brief: the task's line, its long form, the files it
+   names, and its newest journal entry.
+3. **Finish.** The agent runs `done`. It runs your test gate, ticks the task, commits and pushes the
+   branch, and refuses while the tests fail. A stuck agent runs `done --blocked "why"` instead. Once the
+   session goes quiet, the runner ends it.
+4. **Merge.** Merges are built in a separate worktree, one at a time, so your checkout never holds an
+   untested merge.
+   - Other finished branches waiting their turn ride along: one test run covers them all.
+   - The task list merges task by task, and files you list as `joinable` (a changelog) join line by line.
+   - A conflict that needs reading goes to a short **fix session**. It runs ahead of the queue, so it
+     holds up nobody else. Two fixes on the same files take turns, so neither is done twice.
+   - The test gate runs on the merge. If it fails, a **repair session** gets one try. A batch that still
+     fails is split, and each task tries alone.
+   - Only a passing merge moves `main`, and then `main` is pushed.
+   - A task that can't land in three tries is parked as `wip/<ID>` for a human, with the reason in
+     `.runner/ledger.md`.
+5. **Repeat.** Tasks the merge unblocked open up. When nothing can start, the run logs `run idle` and
+   waits: whatever you add to TODO.md later starts without a restart.
 
-Stop gently with `s` + Enter in the runner's pane (or `agent-runner stop`): nothing new starts, running
-tasks finish and merge, then it exits.
+**Stopping.** Type `s` + Enter in the runner's pane, or run `agent-runner stop`. Nothing new starts; the
+running tasks finish and merge, then the run exits (`s` again takes it back). To leave the machine to it,
+start the run with `--shutdown` to power off, or `--suspend` to sleep, once the work runs out.
 
 ## The task list
 
@@ -171,6 +192,46 @@ where the remaining tokens go, by kind of tool call.
   section starts tasks side by side whenever their files don't overlap.
 - **Start small.** `once`, then 2 or 3 slots. More only helps when the plan has that many tasks on
   different files, and usage limits are per account: five slots spend them five times as fast.
+
+### Filing tasks from a chat
+
+The easiest way to feed a run is a normal Claude Code session in your main checkout, beside it. You say
+what you saw in your own words; the session finds the files, writes the task line and files it. It
+doesn't do the fix itself: the run picks the task up like any other. Put the rule in your `CLAUDE.md`
+so every session follows it:
+
+```markdown
+## New asks go to the plan
+
+When I report a bug or ask for a feature, don't fix it here. File it with `agent-runner plan add`:
+- the kind letter from `agent-runner plan kinds`, and my words quoted with the date;
+- `--files` naming every file the fix will touch (look them up first), `--after` if it needs another task;
+- what "done" looks like, so the agent can test it. Long context goes in plan/tasks/<ID>.md.
+If `plan add` says it looks like an open task, `plan note` that task instead.
+Only do the work here when I say "do it here".
+```
+
+An exchange like the ones that fill [openmx](https://github.com/FIZL0/openmx)'s plan:
+
+> **You:** the buggy and monster truck drive straight through walls and props
+>
+> **Claude:** *(reads the car code, then runs)*
+> ```sh
+> agent-runner plan add S "The buggy and the monster truck have no body collision: the body passes \
+>   through walls and props (user 2026-11-16 'drive straight through walls and props'). Port the \
+>   original's car-vs-world and car-vs-prop contacts; done when a car driven into a wall stops" \
+>   --files crates/game-sim/src/car.rs,crates/game-sim/tests/car_props.rs
+> ```
+> Filed as **S335**, top of the list. The next free slot picks it up.
+
+That puts this line in `plan/TODO.md`:
+
+```markdown
+- [ ] **S335** The buggy and the monster truck have no body collision: … | files: crates/game-sim/src/car.rs, crates/game-sim/tests/car_props.rs
+```
+
+The same session is handy for the rest of the loop: "status?" (it reads `.runner/run.log` and the
+ledger), "move S335 up", "why is P12 blocked?", or "split P40 into steps".
 
 After a run, `.runner/ledger.md` has one line per branch (merged, blocked, or **left for a human, and
 why**), `agent-runner plan` shows what's blocked, and `git branch --list 'wip/*'` lists branches that

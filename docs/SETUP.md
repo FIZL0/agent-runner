@@ -99,7 +99,7 @@ From a clone on Windows, use `python -m agent_runner run once`; an installed run
 `agent-runner run once`. Normal terminal selection, parallel worktrees, `done`, test gates, and merging
 are unchanged.
 
-Other terminal agents (Copilot CLI, Codex, opencode, …) are evaluated in [AGENTS-EVAL.md](AGENTS-EVAL.md);
+Other terminal agents (Codex, opencode, …) are evaluated in [AGENTS-EVAL.md](AGENTS-EVAL.md);
 `python tests/agent_matrix.py --auth pi` checks that Pi is installed and logged in.
 
 Pi sessions are interactive, like Claude's: each slot's pane (and the `master-<repo>` window for fix
@@ -117,6 +117,19 @@ With `lean = true` (the default), Pi gets read/edit/write and a shell (`powershe
 elsewhere), with extensions, MCP, skills, prompt templates, and themes disabled. Repository context
 files remain available. Set `lean = false` to use Pi's normal resource configuration. Fix/repair sessions
 also use Pi print mode and the non-slot-specific environment from `slot_env`.
+
+## Copilot CLI
+
+Install and sign in to GitHub Copilot CLI, then select it in `runner.toml`:
+
+```toml
+[run]
+agent = "copilot"
+model = "auto"
+fix_model = "auto"
+```
+
+Set `[git] push = false` to keep commits local for review. On Windows, slots use Windows Terminal tabs.
 
 ## A new repo from scratch
 

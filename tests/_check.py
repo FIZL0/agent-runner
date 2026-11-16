@@ -39,7 +39,10 @@ def has(text, pat, what):
 
 
 def git(cwd, *a) -> str:
-    r = subprocess.run(['git', *a], cwd=str(cwd), capture_output=True, text=True)
+    cwd = Path(cwd)
+    bare = (cwd / 'HEAD').is_file() and (cwd / 'objects').is_dir() and (cwd / 'refs').is_dir()
+    args = ['git', '--git-dir', str(cwd.resolve()), *a] if bare else ['git', *a]
+    r = subprocess.run(args, cwd=str(cwd), capture_output=True, text=True)
     if r.returncode:
         raise RuntimeError(f'git {" ".join(a)}: {r.stderr}')
     return r.stdout.strip()

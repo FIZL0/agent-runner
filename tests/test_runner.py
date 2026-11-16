@@ -422,7 +422,7 @@ def test_note_on_a_ticked_task(repo: Path):
     git(repo, 'commit', '-qam', 'plan: note U2')
     eq(R.merge('U2', 'main'), None, 'the merge lands')
     check('**U2**' not in todo.read_text(), 'the tick wins in TODO.md')
-    has((repo / 'plan/DONE.md').read_text(), r'\*\*U2\*\* noted.* — a person said this', 'and the note went with it')
+    has((repo / 'plan/DONE.md').read_text(encoding='utf-8'), r'\*\*U2\*\* noted.* — a person said this', 'and the note went with it')
 
 
 def test_adopt_merge(repo: Path):
@@ -595,7 +595,7 @@ def test_conflicts(repo: Path, tmp: Path):
         git(repo, 'commit', '-qam', f'main edits {f}')
         os.environ['FAKE_FIX'] = mode
         R.finish(tid, n, 'sid', 'main')
-    led = (repo / '.runner/ledger.md').read_text()
+    led = (repo / '.runner/ledger.md').read_text(encoding='utf-8')
     has(led, r'T3: conflicts in a\.py resolved by a fix session', 'T3: the fix session resolved it')
     has((tmp / 'fix-prompt.txt').read_text(), r'run `make quick` \(a build, not the tests\)',
         'with [run] build, the fix session builds before it commits')
@@ -641,7 +641,7 @@ def test_fix_ahead(repo: Path, tmp: Path):
         git(repo, 'commit', '-qam', 'main edits e.py')
         eq(R.merge('F1', 'main'), None, 'it lands')
         eq(locked, [False, False], 'two sessions, neither under the merge lock')
-        log = (repo / '.runner/run.log').read_text()
+        log = (repo / '.runner/run.log').read_text(encoding='utf-8')
         has(log, r'F1: resolving its conflicts with main outside the merge lock, in fix1', 'in a fix worktree')
         has(log, r'F1: conflicts again with the shared branch', 'the second because main moved under the first')
         eq((repo / 'e.py').read_text(), '# F1 version\n', 'its resolution landed')
@@ -1046,26 +1046,34 @@ def commit_on(repo: Path, tid: str, files: dict[str, str], subject: str) -> None
 
 
 def test_shutdown(repo: Path):
-    print('run: --shutdown powers off only after the grace period, and stays up when refused')
+    print('run: --shutdown powers off only after the grace period, and stays up when refused; --suspend once per idle')
     R.init(repo)
-    calls: list[int] = []
-    saved = R.plat.power_off, R.pick, R.SHUTDOWN, R.SHUTDOWN_GRACE
+    calls: list[str] = []
+    saved = R.plat.power_off, R.plat.suspend, R.pick, R.POWER, R.SHUTDOWN_GRACE
     try:
-        R.plat.power_off = lambda: calls.append(1) or 0
-        R.SHUTDOWN, R.SHUTDOWN_GRACE = False, 0
+        R.plat.power_off = lambda: calls.append('off') or 0
+        R.plat.suspend = lambda: calls.append('sleep') or 0
+        R.POWER, R.SHUTDOWN_GRACE = '', 0
         check(not R.shut_down(0) and not calls, 'without --shutdown nothing happens')
-        R.SHUTDOWN, R.SHUTDOWN_GRACE = True, 3600
+        R.POWER, R.SHUTDOWN_GRACE = 'shutdown', 3600
         check(not R.shut_down(time.time()) and not calls, 'not before the grace period')
         R.SHUTDOWN_GRACE = 0
-        R.plat.power_off = lambda: calls.append(1) or 1
-        check(not R.shut_down(0) and calls == [1], 'a refused power-off keeps the run up')
+        R.plat.power_off = lambda: calls.append('off') or 1
+        check(not R.shut_down(0) and calls == ['off'], 'a refused power-off keeps the run up')
         calls.clear()
-        R.plat.power_off = lambda: calls.append(1) or 0
+        R.plat.power_off = lambda: calls.append('off') or 0
         R.pick = lambda *a, **k: None
         eq(R.sequential('main', 'opus', 90, 0, False), 0, 'an idle sequential run ends after powering off')
-        eq(calls, [1], 'and powered off once')
+        eq(calls, ['off'], 'and powered off once')
+        calls.clear()
+        R.POWER = 'suspend'
+        check(not R.shut_down(5.0) and calls == ['sleep'], '--suspend suspends, and the run stays')
+        check(not R.shut_down(5.0) and not R.power_due(5.0) and calls == ['sleep'],
+              'woken in the same idle stretch, it does not suspend again')
+        check(not R.shut_down(9.0) and calls == ['sleep', 'sleep'], 'after work and a new idle stretch, it does')
     finally:
-        R.plat.power_off, R.pick, R.SHUTDOWN, R.SHUTDOWN_GRACE = saved
+        R.plat.power_off, R.plat.suspend, R.pick, R.POWER, R.SHUTDOWN_GRACE = saved
+        R.SLEPT_AT[0] = -1.0
 
 
 def test_gate_and_batches(repo: Path, tmp: Path):
@@ -1145,7 +1153,7 @@ def test_gate_and_batches(repo: Path, tmp: Path):
         R.WAITING.add('B4')
         os.environ['FAKE_FIX'] = 'abort'
         eq(R.merge('B3', 'main'), None, 'a batch that fails the gate still lands its own task')
-        log = (repo / '.runner/run.log').read_text()
+        log = (repo / '.runner/run.log').read_text(encoding='utf-8')
         has(log, r'B3: the batch \(B3, B4\) fails the gate — handing it to a repair session', 'after a batch repair session')
         has(log, r'B3: the batch fails the gate', 'that commits nothing, alone, after saying so')
         check((repo / 'b3.py').exists() and not (repo / 'BROKEN').exists(), 'without the rider')
@@ -1849,7 +1857,8 @@ def test_blame_and_own_repair(repo: Path, tmp: Path):
     print('run: a failed batch finds the task that breaks it alone; that task\'s repair is its own session')
     R.init(repo)
     r = R.C.run
-    gate = 'test ! -e BROKEN || { echo FAIL t_b; exit 1; }'
+    gate = ('if exist BROKEN (echo FAIL t_b & exit /b 1)' if R.plat.WINDOWS
+            else 'test ! -e BROKEN || { echo FAIL t_b; exit 1; }')
     saved = dict(test=r['test'], failures=r['failures'], retest=r['retest'], agent=r['agent'])
     r.update(test=gate, failures=r'^FAIL (\S+)', retest=gate)
     agent = tmp / 'fake-agent'
@@ -1857,6 +1866,13 @@ def test_blame_and_own_repair(repo: Path, tmp: Path):
     agent.chmod(0o755)
     r['agent'] = str(agent)
     original_fix_cmd = use_fake_fix_agent(agent)
+    original_merge_gate = R.merge_gate
+    if R.plat.WINDOWS:
+        def merge_gate(tid, cwd, env, batch=None):
+            result = subprocess.run(gate, shell=True, cwd=str(cwd), env=env,
+                                    capture_output=True, text=True)
+            return result.returncode, result.stdout + result.stderr
+        R.merge_gate = merge_gate
     fork_was = R.Claude.fork_flags
     prompt = tmp / 'own-prompt.txt'
     try:
@@ -1891,6 +1907,7 @@ def test_blame_and_own_repair(repo: Path, tmp: Path):
         os.environ.pop('FAKE_PROMPT', None)
         R.Claude.fork_flags = fork_was
         R.fix_cmd = original_fix_cmd
+        R.merge_gate = original_merge_gate
         r.update(saved)
 
 
@@ -2037,11 +2054,11 @@ def test_followups(repo: Path):
     eq(R.FLAKY, {'a::one': 'T2', 'b::two': 'T2'}, '[run] flaky reads the names a passing gate reran')
     head = git(repo, 'rev-parse', 'HEAD')
     todo = repo / 'plan/TODO.md'
-    todo.write_text(todo.read_text() + '- [ ] **X1** something about b::two\n', encoding='utf-8')
+    todo.write_text(todo.read_text(encoding='utf-8') + '- [ ] **X1** something about b::two\n', encoding='utf-8')
     git(repo, 'commit', '-qam', 'X1')
     try:
         R.reopen_landed('main', 'T2')
-        text = todo.read_text()
+        text = todo.read_text(encoding='utf-8')
         has(text, r'### Next \(in this order\)\n\n(- \[ \] \*\*T\d+\*\* \(follow-up, critical\).*\n)*'
             r'- \[ \] \*\*T\d+\*\* \(follow-up, critical\) make the test `a::one` robust',
             'a flaky test gets a critical task at the top, behind earlier critical ones')
@@ -2087,11 +2104,11 @@ def test_ci_watch(repo: Path):
         eq((R.watch_ci('main'), asked), ([], []), 'not before CI_POLL has passed since the last look')
         got = R.watch_ci('main', force=True)
         eq(len(got), 1, 'the newest finished run is red (a cancelled one says nothing): one task')
-        todo = (repo / 'plan/TODO.md').read_text()
+        todo = (repo / 'plan/TODO.md').read_text(encoding='utf-8')
         has(todo, rf'- \[ \] \*\*{got[0]}\*\* \(follow-up, critical\) CI: `pages.yml` on main is red '
             r'\(failure, run 7 on abc12345.*failed ci / test\.', 'a critical task naming the failed jobs')
         check(got[0].startswith('B'), '[run] ci_kind, B by default')
-        own = (repo / f'plan/tasks/{got[0]}.md').read_text()
+        own = (repo / f'plan/tasks/{got[0]}.md').read_text(encoding='utf-8')
         has(own, r'Process completed with exit code 101\.\n```', 'the log tail, in the long form, to the last error')
         check('Post job cleanup' not in own and 'ci / test:   The system library' in own,
               'without the cleanup after it, nor the timestamps')
@@ -2106,7 +2123,8 @@ def test_ci_watch(repo: Path):
         eq(R.watch_ci('main', force=True), [], 'a green run files nothing')
         runs.insert(0, {**runs[0], 'databaseId': 12, 'conclusion': 'failure'})
         n = len(asked)
-        (repo / 'plan/TODO.md').write_text((repo / 'plan/TODO.md').read_text() + '\n- [ ] **Z1** mid-edit\n')
+        (repo / 'plan/TODO.md').write_text((repo / 'plan/TODO.md').read_text(encoding='utf-8') + '\n- [ ] **Z1** mid-edit\n',
+                                          encoding='utf-8')
         eq((R.watch_ci('main', force=True), len(asked)), ([], n), 'a plan with uncommitted edits is left alone')
         git(repo, 'checkout', '-q', '--', 'plan/TODO.md')
         eq(len(R.watch_ci('main', force=True)), 1, 'a red run after the task closed files again')

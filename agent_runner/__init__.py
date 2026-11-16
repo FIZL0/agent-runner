@@ -1,2 +1,2 @@
-"""agent-runner: N terminal coding agents (Claude Code or Pi) working through a markdown task list, unattended."""
-__version__ = "0.32.1"
+"""agent-runner: N terminal coding agents working through a markdown task list, unattended."""
+__version__ = "0.34.0"

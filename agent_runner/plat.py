@@ -314,6 +314,22 @@ def mux_choice(want: str, tmux_ok: bool, wt_ok: bool, windows: bool = WINDOWS) -
     return 'tmux' if tmux_ok else 'sequential'
 
 
+def suspend() -> int:
+    """Suspend (sleep) the computer now; the command's exit code (non-zero: refused). It returns at once, the
+    sleep follows.
+    On Windows SetSuspendState hibernates instead where hibernation is on."""
+    if WINDOWS:
+        cmd = ['rundll32.exe', 'powrprof.dll,SetSuspendState', '0,1,0']
+    elif sys.platform == 'darwin':
+        cmd = ['pmset', 'sleepnow']
+    else:
+        cmd = ['systemctl', 'suspend']
+    try:
+        return sp.run(cmd).returncode
+    except OSError:
+        return 127
+
+
 def power_off() -> int:
     """Shut the computer down now; the command's exit code (non-zero: refused, e.g. no permission)."""
     if WINDOWS:
