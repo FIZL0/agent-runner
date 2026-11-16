@@ -72,6 +72,15 @@ def alive(pid: int | None) -> bool:
         return True
 
 
+def started(pid: int) -> str | None:
+    """When `pid` started, in clock ticks since boot (Linux /proc), or None where the OS doesn't say: with the
+    pid it names one process, which a pid alone stops doing once the pid is reused."""
+    try:
+        return Path(f'/proc/{pid}/stat').read_text().rsplit(')', 1)[1].split()[19]
+    except (OSError, IndexError):
+        return None
+
+
 def _snapshot() -> list[tuple[int, int, str]]:
     """(pid, parent pid, image name) of every process (Windows): `tasklist` cannot give a parent pid."""
     import ctypes

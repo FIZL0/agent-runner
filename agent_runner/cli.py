@@ -51,10 +51,14 @@ Make a task wait for another (writing "after B646" in its text is not enough):
     agent-runner plan add B646 "Bake the letter sheet"
         -> B646a. B646, B646a, B646b never run at the same time, so they go one by one, top to bottom.
 
+    agent-runner plan add B "Use the sheet" --after B646 --files src/menu.rs
+        -> a fresh task with `| after: B646 | files: src/menu.rs`: it waits for B646, and mode d keeps it off
+           the files a running or finished-unmerged task touches.
+
     agent-runner plan block B12 --after B646 "needs the new sheet"
         -> B12 is blocked until B646 is done, then reopens by itself.
 
-    A heading starting with "Next" or saying "in this order"
+    A heading saying "in this order" or "one at a time"
         -> one task from that section at a time (mode d only; mode p ignores it).
 
 Choose what goes first:

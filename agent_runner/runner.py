@@ -19,12 +19,11 @@ The README describes each mechanism. In short:
 
 * **picking** (`tasks`, `pick`) goes down TODO.md in order and skips
   - blocked tasks and split parents,
-  - tasks with an open `(after X, Y)`,
-  - tasks whose line names a running task,
+  - tasks whose `| after: X, Y` names a task not done yet,
   - the Stretch and Parked sections, anything tried this run, and branches waiting to be merged.
 
   Siblings never run together. An ordered section runs one task at a time. Mode d keeps tasks off each
-  other's files.
+  other's files: a line's `| files:` and, for a task running or waiting to merge, the files it has touched.
 * **one worktree per slot**, kept warm between tasks, with `[run] links` symlinked in;
 * **an idle stop** (the Stop hook): a finished session is ended once its transcript is quiet;
 * **a usage limit is not a failed task**: the transcript is dropped and the slot sleeps to the reset;
@@ -301,12 +300,11 @@ def blocked_tasks(branch: str) -> set[str]:
 
 
 def tasks(branch: str) -> list[tuple[str, str, set[str], set[str]]]:
-    """Open tasks in TODO.md order: (id, section, files named on the line, task ids named on it)."""
+    """Open tasks in TODO.md order: (id, section, its `files:`, its `after:`)."""
     ls = plan_text(branch)
-    # open and blocked: neither is done, so a split parent or an `(after X)` still waits on a blocked X
+    # open and blocked: neither is done, so a split parent or an `after:` still waits on a blocked X
     open_ids = {m.group(2) for l in ls if (m := TASK.match(l)) and m.group(1) != 'x'}
-    every = {m.group(2) for l in ls if (m := TASK.match(l))}
-    out, section, tracked = [], '', None
+    out, section = [], ''
     for l in ls:
         if l.startswith('### '):
             section = l[4:]
@@ -314,24 +312,22 @@ def tasks(branch: str) -> list[tuple[str, str, set[str], set[str]]]:
         m = TASK.match(l)
         if not m or m.group(1) != ' ' or section.startswith(P.SKIPPED):
             continue
-        tid, rest = m.group(2), m.group(3)
+        tid, f = m.group(2), P.fields(l)
         # a split parent: its subtasks run first, blocked ones included, then it runs (or `archive` ticks it).
         # Read by id and by its `(split into …)` list, never by the words alone, so prose that happens to say
         # "split into" is not taken for a split
         if P.subtasks(tid, l, open_ids):
             continue
-        # `(after S41, S45, S46)` waits on every id in the list
-        if any(set(P.TASK_ID.findall(a)) & (open_ids - {tid}) for a in re.findall(r'\(after ([^)]*)\)', l)):
+        after = set(f.get('after', [])) - {tid}
+        if after & open_ids:
             continue
-        named = set(WAITS_ON.findall(rest)) & every - {tid}
-        tracked = P._tracked(C.root) if tracked is None else tracked  # one ls-files for every line
-        out.append((tid, section, set(P.files_on_line(rest, C.root, tracked)), named))
+        out.append((tid, section, set(f.get('files', [])), after))
     return by_waiters(ls, out)
 
 
 def by_waiters(ls: list[str], out: list[tuple]) -> list[tuple]:
     """`out` with each task a waiting one depends on moved up to where that one stands: a task in a Next
-    section blocked `(after S281)` on a Follow-up would otherwise wait for every task between them, and
+    section with `after: S281` on a Follow-up would otherwise wait for every task between them, and
     so would everything waiting on it. Transitive; Stretch and Parked lines pull nothing up."""
     rank, waits, section = {}, {}, ''
     for l in ls:
@@ -343,7 +339,8 @@ def by_waiters(ls: list[str], out: list[tuple]) -> list[tuple]:
             continue
         rank.setdefault(m.group(2), len(rank))
         if not section.startswith(P.SKIPPED):
-            waits[m.group(2)] = {i for a in re.findall(r'\(after ([^)]*)\)', l) for i in P.TASK_ID.findall(a)}
+            waits[m.group(2)] = set(P.fields(l).get('after', [])) | {
+                i for a in P.WAITS.findall(l) for i in P.TASK_ID.findall(a)}  # and a block's `(after X)`
     for _ in range(len(waits)):  # each pass moves a rank one link down a chain
         moved = False
         for w, deps in waits.items():
@@ -375,16 +372,12 @@ def ordered(section: str) -> bool:
     return 'in this order' in section or 'one at a time' in section
 
 
-# an id the line says it waits on; an id it only mentions (context, a related task) holds nothing
-WAITS_ON = re.compile(r"\b(?:after|needs?|once|requires?|builds? on|on top of|waits? (?:for|on)|depends? on|"
-                      r"blocked by)\s+(?:the\s+)?([A-Z]+\d+[a-z0-9]*)")
-
 
 def clash(t: tuple, b: tuple, mode: str, shared: set[str]) -> bool:
-    """Task `t` may not run beside `b` (running here, or claimed by another runner): siblings, a line naming
-    it, and in mode d also a shared ordered section or overlapping files (`shared_files` aside)."""
-    tid, section, files, named = t
-    if family(tid) == family(b[0]) or b[0] in named:
+    """Task `t` may not run beside `b` (running here, waiting to merge, or claimed by another runner): siblings,
+    and in mode d also a shared ordered section or overlapping files (`shared_files` aside)."""
+    tid, section, files, _ = t
+    if family(tid) == family(b[0]):
         return True
     if mode == 'p':
         return False
@@ -433,18 +426,28 @@ def pick(running: dict, tried: set, mode: str, branch: str, claim: bool = False)
                 return None
         return t
 
-    busy = list(running.values()) + claimed_elsewhere(plansync.claims(C), todo)  # {} without [plan] repo
+    busy = claimed_elsewhere(plansync.claims(C), todo)  # [] without [plan] repo
     busy_ids = {b[0] for b in busy} | {q[0] for q in queued().values()}  # one waiting to resume is running
-    finished = set(ahead(branch)) if todo else set()
-    finished |= plansync.taken(C)  # another runner's: on its slots
+    mine = set(ahead(branch)) if todo else set()  # finished here, waiting to be merged
+    finished = mine | plansync.taken(C)  # another runner's: on its slots
+    lines = {t[0]: t for t in todo}
+    # Running and merge-waiting tasks hold the files they have touched as well as their line's: a line can
+    # name too few, and a finished task's files stay busy until its merge lands
+    slots = {t[0]: SLOTS_DIR / f's{n}' for n, t in running.items() if isinstance(n, int)}
+    for tid, t in {**{f: lines.get(f, (f, '', set(), set())) for f in mine},
+                   **{t[0]: t for t in running.values()}}.items():
+        extra = touched(tid, branch, slots.get(tid)) if mode == 'd' else set()
+        busy.append((tid, t[1], set(t[2]) | extra, t[3]))
+    busy_ids |= {b[0] for b in busy if b[0] not in mine}
     for t in todo:
-        tid, named = t[0], t[3]
+        tid = t[0]
         if tid not in busy_ids and tid in finished:
             continue  # finished, its branch is waiting to be merged: restarting it would reset the branch
         if tid in tried or tid in busy_ids:
             continue
-        if named & busy_ids or any(clash(t, b, mode, shared) for b in busy):
-            continue  # a running task's sibling, dependant, ordered-section mate or file neighbour waits
+        if any(clash(t, b, mode, shared) for b in busy):
+            continue  # a running or merge-waiting task's sibling, ordered-section mate or file neighbour waits
+
         if got := pick_(t):
             PASSED.discard(tid)
             return got
@@ -456,7 +459,6 @@ def pick(running: dict, tried: set, mode: str, branch: str, claim: bool = False)
 
 
 PASSED: set[str] = set()  # tasks `pick` could not claim, said once each
-BARE: set[str] = set()  # task lines naming no files and no test, said once each
 
 
 # --- worktrees and panes -------------------------------------------------------
@@ -616,7 +618,7 @@ def left_merging() -> set[str]:
     except (OSError, ValueError):
         runs = []
     for s in runs + (gate_runs() if C.notes(GATES).is_dir() else []):
-        if alive(s.get('pid')) and Path(s.get('cwd', '')).name != 'merge2':
+        if gate_alive(s) and Path(s.get('cwd', '')).name != 'merge2':
             out.add(s['tid'])
     return out
 
@@ -1384,7 +1386,7 @@ def custom_join(f: str, sides: list[str], text: str, tid: str, cwd: Path) -> str
     CLI (`./kit oracle-join ...`) is the one place that knows the format.
     """
     cmd = next(c for g, c in C.run['join'].items() if fnmatch.fnmatch(f, g))
-    u, out = C.notes('union.joined'), C.notes('union.out')
+    u, out = C.notes(f'union.{tid}.joined'), C.notes(f'union.{tid}.out')  # per task: joins run in threads at once
     u.write_text(text, encoding='utf-8')
     out.write_text(text, encoding='utf-8')
     vals = dict(ours=sides[0], base=sides[1], theirs=sides[2], union=str(u), out=str(out), file=f)
@@ -1398,7 +1400,11 @@ def custom_join(f: str, sides: list[str], text: str, tid: str, cwd: Path) -> str
         log(f'{tid}: the [run.join] command for {f} refused the join (exit {r.returncode}): '
             + ' / '.join((r.stdout + r.stderr).strip().splitlines()[-3:])[:300])
         return None
-    return out.read_text(encoding='utf-8')
+    try:
+        return out.read_text(encoding='utf-8')
+    finally:
+        u.unlink(missing_ok=True)
+        out.unlink(missing_ok=True)
 
 
 def union(files: list[str], tid: str, cwd: Path) -> bool:
@@ -1407,15 +1413,16 @@ def union(files: list[str], tid: str, cwd: Path) -> bool:
     for f in files:
         sides = []
         for stage in (2, 1, 3):  # ours, base, theirs
-            t = C.notes(f'union.{stage}')
+            t = C.notes(f'union.{tid}.{stage}')  # per task: joins run in threads at once
             t.write_text(git('show', f':{stage}:{f}', cwd=cwd).stdout, encoding='utf-8')
             sides.append(str(t))
         out = git('merge-file', '-p', '--union', *sides, cwd=cwd)
-        if out.returncode < 0:
-            return False
-        text = out.stdout
-        if any(fnmatch.fnmatch(f, g) for g in C.run['join']) and \
-                (text := custom_join(f, sides, text, tid, cwd)) is None:
+        text = out.stdout if out.returncode >= 0 else None
+        if text is not None and any(fnmatch.fnmatch(f, g) for g in C.run['join']):
+            text = custom_join(f, sides, text, tid, cwd)
+        for t in sides:
+            Path(t).unlink(missing_ok=True)
+        if text is None:
             return False
         (cwd / f).write_text(text, encoding='utf-8')
         git('add', f, cwd=cwd)
@@ -1458,7 +1465,7 @@ def renumber_doubles(ref: str, onto: str, tid: str, cwd: Path) -> str:
         new[k] = _next_free(k, taken)
         taken.add(new[k])
     pat = re.compile(r'\b(' + '|'.join(map(re.escape, new)) + r')\b')
-    idx = C.notes('renumber.index')
+    idx = C.notes(f'renumber.{tid}.index')  # one per task: merges of different tasks run in threads at once
     env = {**os.environ, 'GIT_INDEX_FILE': str(idx)}
     g = lambda *a, **kw: git(*a, cwd=cwd, env=env, **kw)
     try:
@@ -1470,6 +1477,12 @@ def renumber_doubles(ref: str, onto: str, tid: str, cwd: Path) -> str:
             text = '\n'.join(l if l in was else pat.sub(lambda m: new[m.group(1)], l) for l in now) + '\n'
             blob = g('hash-object', '-w', '--stdin', input=text).stdout.strip()
             g('update-index', '--cacheinfo', f'100644,{blob},{f}')
+        for k, v in new.items():  # the long form the branch wrote for it goes with it
+            was, now = plan_rel(f'{P.TASKS}/{k}.md'), plan_rel(f'{P.TASKS}/{v}.md')
+            blob = git('rev-parse', '-q', '--verify', f'{ref}:{was}', cwd=cwd).stdout.strip()
+            if blob and git('cat-file', '-e', f'{base}:{was}', cwd=cwd).returncode:
+                g('update-index', '--force-remove', was)
+                g('update-index', '--add', '--cacheinfo', f'100644,{blob},{now}')
         tree = g('write-tree').stdout.strip()
         pairs = ', '.join(f'{k} -> {v}' for k, v in new.items())
         c = g('commit-tree', tree, '-p', ref, '-m',
@@ -1613,7 +1626,13 @@ def fix_session(prompt: str, cwd: Path, fh, keep: dict | None = None, fork: str 
             fh.write(last_words(sid) + '\n')
             raise sp.TimeoutExpired(cmd, timeout)
     finally:
-        C.notes('master.json').unlink(missing_ok=True)
+        if keep:  # only this session's record: a fix-ahead session (no keep) beside a locked repair leaves its own
+            m = C.notes('master.json')
+            try:
+                if json.loads(m.read_text(encoding='utf-8')).get('sid') == sid:
+                    m.unlink()
+            except (OSError, ValueError):
+                pass
     fh.write(last_words(sid) + '\n')
     return 0
 
@@ -1687,7 +1706,7 @@ def adopt_merge(d: Path) -> None:
             if batch:  # built ahead (merge2): its turn reuses it, and `merge_gate` waits for its gate by tree
                 AHEADS.append(batch)
             continue
-        if alive(s['pid']):
+        if gate_alive(s):
             log(f'{s["tid"]}: adopted the gate run an earlier run left going on the merge; waiting for it')
         r = wait_gate(s)
         what = ' and '.join(s.get('tids') or [s['tid']])
@@ -1707,6 +1726,21 @@ def adopt_merge(d: Path) -> None:
 ADOPTED: dict[str, tuple[int, str]] = {}  # a failed gate an earlier run left, by key: `merge_gate` answers it once
 
 
+def gate_alive(s: dict) -> bool:
+    """A gate (or session) record's process is still the one it names: its pid is alive and, where the OS
+    tells (`plat.started`), started when the record says. After a reboot a days-old record's pid can be
+    anyone's. A record without a start time (an older runner's) goes by the pid alone."""
+    return alive(s.get('pid')) and ('start' not in s or s['start'] == plat.started(s['pid']))
+
+
+def end_group(pid: int) -> None:
+    """SIGTERM a gate's process group; gone already (or never a group leader) is fine."""
+    try:
+        os.killpg(pid, signal.SIGTERM)
+    except (ProcessLookupError, PermissionError):
+        pass
+
+
 def gate_runs() -> list[dict]:
     """The merge gates running, or left by a run that ended: `<notes>/gates/<key>.json`."""
     out = []
@@ -1720,10 +1754,10 @@ def gate_runs() -> list[dict]:
 
 def wait_gate(s: dict) -> tuple[int, str] | None:
     """Wait for the gate run `s` (another thread's or an earlier run's) to end: `gate_done`'s answer."""
-    while alive(s['pid']) and time.time() < s['until']:
+    while gate_alive(s) and time.time() < s['until']:
         time.sleep(5)
-    if alive(s['pid']):
-        os.killpg(s['pid'], signal.SIGTERM)
+    if gate_alive(s):
+        end_group(s['pid'])
     r = gate_done(s)
     Path(s['rec']).unlink(missing_ok=True)
     return r
@@ -1794,8 +1828,8 @@ def drop_ahead() -> None:
     AHEADS.clear()
     for s in gate_runs():
         if Path(s.get('cwd', '')).name == 'merge2':
-            if alive(s['pid']):
-                os.killpg(s['pid'], signal.SIGTERM)
+            if gate_alive(s):
+                end_group(s['pid'])
             Path(s['rec']).unlink(missing_ok=True)
 
 
@@ -1883,7 +1917,7 @@ def merge_gate(tid: str, d: Path, env: dict, batch: dict | None = None) -> tuple
     rec = gates / f'{key}.json'
     for s in gate_runs():
         if s['rec'] == str(rec):
-            if running := alive(s['pid']):
+            if running := gate_alive(s):
                 log(f'{tid}: a gate on this exact merge is already running (built ahead, or left by an earlier '
                     f'run); waiting for it')
             if (r := wait_gate(s)) is not None:
@@ -1901,7 +1935,7 @@ def merge_gate(tid: str, d: Path, env: dict, batch: dict | None = None) -> tuple
     with open(out, 'w', encoding='utf-8') as fh:
         p = sp.Popen(f'({cmd}\n); echo $? > {shlex.quote(str(out.with_suffix(".rc")))}', shell=True, cwd=str(d),
                      env=env, stdout=fh, stderr=sp.STDOUT, stdin=sp.DEVNULL, start_new_session=True)
-    s = {'tid': tid, 'pid': p.pid, 'out': str(out), 'until': time.time() + timeout, 'cwd': str(d), 'rec': str(rec),
+    s = {'tid': tid, 'pid': p.pid, 'start': plat.started(p.pid), 'out': str(out), 'until': time.time() + timeout, 'cwd': str(d), 'rec': str(rec),
          'full': full, **(batch or {}), 'head': git('rev-parse', 'HEAD', cwd=d).stdout.strip()}
     rec.write_text(json.dumps(s), encoding='utf-8')
     try:
@@ -2485,13 +2519,6 @@ def merge_batch(tid: str, branch: str, inline: bool = False) -> str | None:
             if not C.plan_external:  # outside, `done` and `land_tick` archive as they tick
                 carry_notes(base, d)
                 P.archive(d / plan_rel('TODO.md'), d / plan_rel('DONE.md'))
-                if C.raw['plan'].get('need_files'):  # a line written in by hand skipped `plan add`'s check
-                    filled, left = P.fill_files(d / plan_rel('TODO.md'), d)
-                    if filled:
-                        log(f'{tid}: named the files on {", ".join(filled)} from their prose')
-                    if left := [t for t in left if t not in BARE]:
-                        BARE.update(left)
-                        log(f'{tid}: {", ".join(left)} name no files and no test; mode d runs them beside anything')
             plan_files = [plan_rel('TODO.md'), plan_rel('DONE.md')]
             if git('status', '--porcelain', '--', *plan_files, cwd=d).stdout.strip():
                 git('commit', '-qm', f'{tid}: archive ticked tasks', '--', *plan_files, cwd=d)
@@ -2547,9 +2574,11 @@ def merge_batch(tid: str, branch: str, inline: bool = False) -> str | None:
                     merged = git('rev-parse', 'HEAD', cwd=d).stdout.strip()
                     note(f'{tid}: the merge failed the gate; a repair session fixed it')
             moved = git('diff', '--name-only', base, branch).stdout.split()
-            if attempt < 2 and not all(map(untestable, moved)):
-                log(f'{tid}: {branch} got code commits during the tests; testing the merge again')
-                continue
+            if not all(map(untestable, moved)):  # landing now would put untested code on the shared branch
+                if attempt < 2:
+                    log(f'{tid}: {branch} got code commits during the tests; testing the merge again')
+                    continue
+                break
             with LANDING:
                 why = land(tid, branch, merged)
             if why == 'conflict' and attempt < 2:
@@ -2646,7 +2675,11 @@ def push_landed(tid: str, branch: str) -> None:
             log(f'{tid}: {out}' + (f' (with {", ".join(UNPUSHED[:-1])})' if len(UNPUSHED) > 1 else ''))
     elif C.push_remote:
         log(f'{tid}: merged, not pushed ([git] push_merge is off): git push {C.push_remote} {branch}')
-    for t in UNPUSHED:
+    # this batch's branches, and any an earlier failed push left behind (nothing else retries those)
+    r = C.push_remote
+    left = git('for-each-ref', f'--merged=refs/remotes/{r}/{branch}', '--format=%(refname:lstrip=4)',
+               f'refs/remotes/{r}/task/').stdout.split() if C.push_merge and r else []
+    for t in dict.fromkeys(UNPUSHED + left):
         if out := drop_if_merged(ROOT, f'task/{t}'):
             log(f'{t}: {out}')
     UNPUSHED.clear()
@@ -2707,7 +2740,7 @@ def file_flaky(rel: str) -> list[str]:
             continue
         out.append(P.add(kind, f'make the test `{name}` stop growing: it held {gb} GB in {where} until the run\'s '
                                f'memory watch ended it. Find what it allocates without bound (a walk that loops, '
-                               f'a list grown per case) and bound it | t: `{name}`', todo=ROOT / rel, pri='critical'))
+                               f'a list grown per case) and bound it | test: {name}', todo=ROOT / rel, pri='critical'))
         open_text += '\n' + name
     for name, (tid, base, daily) in list(BROKEN.items()):
         del BROKEN[name]
@@ -2718,7 +2751,7 @@ def file_flaky(rel: str) -> list[str]:
         out.append(P.add(kind, f'make the test `{name}` pass again: it fails on the shared branch ({base[:10]}), '
                                f'found by {tid}\'s merge gate, which merged anyway as not its doing. Find the '
                                f'merge that broke it (git bisect from the last gate it passed) and fix the code '
-                               f'or the test.{how} | t: `{name}`', todo=ROOT / rel, pri='critical'))
+                               f'or the test.{how} | test: {name}', todo=ROOT / rel, pri='critical'))
         open_text += '\n' + name
     for name, tid in list(FLAKY.items()):
         del FLAKY[name]
@@ -2726,7 +2759,7 @@ def file_flaky(rel: str) -> list[str]:
             continue
         out.append(P.add(kind, f'make the test `{name}` robust: it failed under load in {tid}\'s merge gate and '
                                f'passed alone. Find what it races (wall-clock time, shared ports or files, '
-                               f'other processes) and remove that, rather than widening a timeout | t: `{name}`',
+                               f'other processes) and remove that, rather than widening a timeout | test: {name}',
                          todo=ROOT / rel, pri='critical'))
         open_text += '\n' + name
     return out
@@ -2813,8 +2846,7 @@ def touched(tid: str, branch: str, slot: Path | None) -> set[str]:
 def keep_claims(running: dict, branch: str) -> None:
     """`[plan] repo`, every plansync.REFRESH s: re-stamp this run's claims (running, or waiting to merge) with
     the files each holds (the line's and the ones its session has touched), drop its claims on anything else,
-    and say once of each other run's claim gone stale (a crashed run's would hold that task for good) and of
-    each other runner too old to keep off this run's files."""
+    and say once of each other run's claim gone stale (a crashed run's would hold that task for good)."""
     if not C.plan_repo or time.time() - CLAIMS_AT[0] < plansync.REFRESH:
         return
     CLAIMS_AT[0] = time.time()
@@ -2832,13 +2864,8 @@ def keep_claims(running: dict, branch: str) -> None:
             STALE_SAID.add(t)
             log(f'{t}: claimed by {plansync.label(cl)}, not refreshed since: if that run is gone, '
                 f'`{C.command} plan unclaim {t}`')
-        elif not plansync.stale(cl) and plansync.outdated(cl) and cl.owner not in OUTDATED_SAID:
-            OUTDATED_SAID.add(cl.owner)
-            log(f'! {cl.who} runs agent-runner {cl.version or "older than 0.14"}, which does not keep off the '
-                f'files this run holds: upgrade it to {".".join(map(str, plansync.MIN_PEER))} or later')
 
 
-OUTDATED_SAID: set[str] = set()  # other runners already reported as too old, by owner
 
 
 def ci_flows(branch: str) -> tuple[list[str], str]:
@@ -2965,7 +2992,7 @@ def _finish(tid: str, n: int, sid: str, branch: str) -> bool:
     # would then skip the task for good. As wip/ the task can start again, with the old attempt to read.
     if not git('branch', '-M', f'task/{tid}', wip := free_branch(f'wip/{tid}')).returncode:
         git('update-ref', '-d', TESTED + tid)
-        for h in git('for-each-ref', '--format=%(refname)', f'{FIXED}{tid}/').stdout.split():
+        for h in git('for-each-ref', '--format=%(refname)', f'{HELD}{tid}/', f'{FIXED}{tid}/').stdout.split():
             git('update-ref', '-d', h)
         log(f'{tid}: its branch is parked as {wip}; the task stays open and can start again')
         if out := push(ROOT, wip):  # the one copy of that work: get it off this disk
@@ -3721,7 +3748,8 @@ def dry_run(slots: int, mode: str, branch: str) -> int:
     waits = [m.group(2) for l in ls if (m := TASK.match(l)) and m.group(1) == ' ' and m.group(2) not in can]
     blocked = [m.group(2) for l in ls if (m := TASK.match(l)) and m.group(1) == '~']
     if waits:
-        print(f'waiting on an (after …), a subtask or Stretch: {", ".join(waits)}')
+        print(f'waiting on an after:, a subtask or Stretch: {", ".join(waits)}')
+
     if blocked:
         print(f'blocked: {", ".join(blocked)}')
     return 0

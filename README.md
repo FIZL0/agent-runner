@@ -123,7 +123,7 @@ plan/TODO.md ──pick──▶ slot N: git worktree ~/runs/<repo>/sN on task/<
    - the gate runs again if the merged code differs from what `done` tested.
    Only then is the main checkout moved to the tested merge. That takes seconds, it never stashes, and it
    waits if someone has uncommitted edits to the files involved.
-6. **After the merge.** `plan reopen` unblocks tasks whose `(after X)` just landed and commits that.
+6. **After the merge.** `plan reopen` unblocks tasks whose `BLOCKED: (after X)` just landed and commits that.
    Then `main` is pushed (`[git] push_merge`), and the remote `task/<ID>` is deleted once the remote `main`
    contains it.
 7. **Repeat** until nothing can start. Then the run [goes idle](#it-stays-up) and waits for new tasks.
@@ -160,10 +160,10 @@ the branch is pushed after each task.
 ```markdown
 ### Next (in this order)
 
-- [ ] **P12** the parser reads nested lists → src/parse.py · tests/test_parse.py | t: tests/test_parse.py
-- [ ] **P13** maps too → src/parse.py (after P12)
+- [ ] **P12** the parser reads nested lists | files: src/parse.py, tests/test_parse.py | test: test_parse
+- [ ] **P13** maps too | files: src/parse.py | after: P12
   - [ ] **P13a** the empty map
-- [~] **P14** a fuzz harness → tools/fuzz.py BLOCKED: (after P12, P13) needs both grammars landed
+- [~] **P14** a fuzz harness | files: tools/fuzz.py BLOCKED: (after P12, P13) needs both grammars landed
 
 ### Later
 
@@ -189,11 +189,14 @@ the branch is pushed after each task.
   overtaken): archived with `dropped: WHY`, so its id stays used and what waits on it reopens.
 - A note one side adds to a task the other side ticks is kept: the tick wins in TODO.md, and the runner
   appends the note to the task's line in DONE.md after the merge.
-- `→ files…` lists the files the task will touch, separated by `·`, spaces or commas. Mode d uses this
-  list to keep two running tasks off the same file, and the brief pastes those files in. Files that don't
-  exist yet still count, and so do patterns: `dir/**` (everything under it) and `dir/*.rs`.
-- `| t: tests` names the tests that prove it. `| j: dir` names its journal folder.
-- `(after X, Y)` means don't start until X and Y are done. **Every id** in the parentheses counts.
+- After the prose come keyed fields, each ` | key: a, b` (comma-separated), in any order; a ` — note` or
+  `BLOCKED: …` may follow them. **Prose is never parsed** for files or ids: only the fields count.
+  - `files:` the files the task will touch. Mode d keeps two running tasks off the same file, and the brief
+    pastes them in. Files that don't exist yet count, and so do patterns: `dir/**` and `dir/*.rs`. A path
+    meets its own tail (`src/menu.rs` meets `app/src/menu.rs`).
+  - `after:` ids that must be done first. **Every id** listed counts.
+  - `test:` the tests that prove it. `journal:` its journal folder.
+  - `plan add P "text" --files a,b --after X --test name` writes them.
 - `BLOCKED: (after X, Y) why` is what `plan block`/`done --blocked` write. The `(after …)` list is what
   lets the run reopen the task by itself.
 - `plan/tasks/<ID>.md`, if it exists, is the task's long form. The brief uses it instead of the one-line text.
@@ -286,7 +289,7 @@ Writing "follows A12" in its text isn't enough: if A12 hasn't started, the task 
 |---|---|---|
 | B is part of A's work | `plan add A12 "…"` gives `A12a`, then `A12b` | one family (A12, A12a, A12b) never runs two tasks at once, so they go one at a time, top to bottom |
 | B needs A merged first | `plan block B3 --after A12 "why"` | B3 stays `[~]` until A12 is done, then the run reopens it |
-| a list that must go in order | a section heading starting with *Next* or saying *in this order* | one task from it runs at a time (mode d only) |
+| a list that must go in order | a section heading saying *in this order* or *one at a time* | one task from it runs at a time (mode d only) |
 
 A plain new number (`plan add A "…"`) is an independent task and may run beside anything. `agent-runner help order`
 prints this summary; `./run run --dry-run N` shows what N free slots would start now, and why the rest wait.
@@ -294,7 +297,7 @@ prints this summary; `./run run --dry-run N` shows what N free slots would start
 ## Picking
 
 `pick` walks TODO.md in order and starts the first task that passes all of these checks. The order is the
-file's, except that a task a waiting one depends on (`(after X)` on an open line, `BLOCKED: (after X)` on a
+file's, except that a task a waiting one depends on (`after: X` on an open line, `BLOCKED: (after X)` on a
 blocked one) moves up to where that one stands, down the whole chain: a Next task blocked on a Follow-up
 does not wait behind every task between them. The plan read is the shared branch's, or its remote's when a
 push from outside the run has put that ahead (fetched at most once a minute).
@@ -302,19 +305,15 @@ push from outside the run has put that ahead (fetched at most once a minute).
 | skipped | why |
 |---|---|
 | `[~]` blocked, and split parents (a task with open subtasks) | the subtasks are the work |
-| an open `(after X, Y)`, for **any** id listed | every listed dependency must be done |
-| a line that names a running task's id | prose such as "uses P36's menu" is treated as a dependency |
+| an open id in `after:`, for **any** id listed | every listed dependency must be done |
 | a sibling of a running task (same family) | P13 and P13a edit the same thing |
-| a task in a section whose heading starts with *Next* or says *in this order*, while another task from that section runs | an ordered section runs one task at a time |
+| a task in a section whose heading says *in this order* or *one at a time*, while another task from that section runs | an ordered section runs one task at a time |
 | `### Stretch`, `### Parked` | never unattended |
 | tried this run | one attempt per run: if it failed, a human looks next |
 | `task/<ID>` has commits not yet merged | it's finished and waiting for the merge |
-| mode d: names a file a running task names (minus `[run] shared_files`) | keeps merges clean |
+| mode d: a `files:` entry meets one of a running or finished-unmerged task's (its line's, and the files its branch has touched), minus `[run] shared_files` | keeps merges clean |
 
-A line's files are its `→` list when it has one; the prose's file names count only on a line without one, so
-"uses what race.rs has" before `→ src/menu.rs` does not hold the task off `race.rs`. With `[plan] need_files`,
-each merge also gives a line written into TODO.md by hand (not through `plan add`) its prose's files, and logs
-one naming none.
+`plan add` warns of a line with no `files:` and no `test:` (`[plan] need_files` makes that an error).
 
 Mode **d** (the default) runs tasks in parallel on different files. Mode **p** follows strict plan order
 and lets files overlap, which is useful when the order matters more than clean merges.
@@ -371,9 +370,6 @@ the slot reset.
 **Stall watchdog.** A session quiet at a prompt with no tool running for `[run] stall` seconds (20 min),
 or quiet for over 65 minutes with a tool running, is logged with the terminal to look at, and the bell
 rings.
-
-**A line that names a running task waits.** A task whose line mentions a running task's id is not
-started alongside it.
 
 ### Disk
 
@@ -448,7 +444,7 @@ turn.
 
 A conflict the line join cannot resolve goes to one fresh session, run with the conflict in place. With
 `[run] fix_ahead` (the default) that happens before the merge lock is taken: the task's branch is merged
-into the shared branch's head in a fix worktree of its own (`.runner/slots/fix1`, `fix2`, …, kept so their
+into the shared branch's head in a fix worktree of its own (`fix1`, `fix2`, … under `[run] home`, kept so their
 builds stay warm; at most `fix_ahead_max`, 2, at once, the others waiting a turn, and each waiting on
 `before_start` as a slot does), the session commits the resolution there, and the runner keeps it as
 `refs/agent-runner/fixed/<ID>/<sha>`. Other tasks merge and gate meanwhile. The task then takes the lock with
@@ -482,7 +478,7 @@ own. A rider whose conflict the line join cannot do waits for its own turn, wher
 lock; with `fix_ahead = false` it gets its fix session inside the batch and shares the batch's gate run.
 
 Tasks that finish while a batch is in its gate do not wait for it to end (`merge_ahead = true`). They are
-merged on top of the merge under test in a second worktree (`.runner/slots/merge2`) and their gate starts
+merged on top of the merge under test in a second worktree (`merge2` under `[run] home`) and their gate starts
 beside that one. When the first batch lands, the next one's turn finds the same merge built ahead and
 waits for the gate already under way on that exact tree, so two batches cost about one gate's wait. If
 the first batch fails or the branch moves another way, the merge built ahead is dropped and its gate
@@ -500,11 +496,10 @@ A merge skips the gate only when `task/<ID>` is the very tree `done`'s gate pass
 ## Working with it well
 
 - **Small tasks that name their files.** One session, one task, one commit is the unit. A task line that
-  says `→ src/a.py · tests/test_a.py` lets mode d run tasks side by side and gives the brief the right
+  says `| files: src/a.py, tests/test_a.py` lets mode d run tasks side by side and gives the brief the right
   files. A task that would take a human more than an afternoon should be split into subtasks first.
-- **Write dependencies as `(after X)`.** A line also waits on an id it names right after *after, needs, once,
-  requires, builds on, on top of, waits for/on, depends on* or *blocked by*; any other id on it is context and
-  holds nothing, so cross-references don't serialise unrelated work.
+- **Write dependencies as `after: X`.** Ids in the prose are context and hold nothing, so cross-references
+  don't serialise unrelated work.
 - **Order only what must be ordered.** `### Next (in this order)` (or `… one at a time`) runs strictly one task
   at a time, top down: the critical path. A plain `### Next` or `(in order)` is a priority order: its tasks
   start side by side whenever their files don't overlap.
@@ -655,7 +650,7 @@ outline = ""              # a command printing one file's outline; {file} is the
                           # "python3 tools/outline.py {file}": the brief shows it under each file the line names
 brief = ""                # a command whose output *is* the brief (the project's own brief tool); {id}
 kinds = {}                # id prefix -> kind of work, e.g. { B = "bug", N = "netplay" }; `plan add` keeps to it
-need_files = false        # `plan add` refuses a line naming no file and no test; prose files become its → list
+need_files = false        # `plan add` refuses a line with no files: and no test: field (else it warns)
 
 [git]
 master_branch = ""        # optional local shared branch; must exist and be checked out
@@ -719,7 +714,7 @@ build = ""                # a quick build a fix or repair session runs before it
 repair_merges = true      # a merge failing the gate gets one repair session before it is parked
 home = "~/runs/{repo}"    # the worktrees (s1…, merge) and a [plan] repo clone (plan/), outside your
                           # repos folder; {repo} = the checkout's folder name. AGENT_RUNNER_HOME overrides
-                          # it on one machine. Worktrees still in the old <repo>-slots/ are used until moved
+                          # it on one machine
                           # Scripts ask `agent-runner home [slots|plan]` rather than rebuild the path
 slot_max_gb = 50          # a worktree over this loses its stalest build output before its next task; 0 = never
 min_free_gb = 10          # under this much free disk: free worktrees cleaned, no new task starts; 0 = never

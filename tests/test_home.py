@@ -30,11 +30,7 @@ eq(Config(repo).home, tmp / 'mine/proj', '[run] home, with {repo} filled in')
 os.environ['AGENT_RUNNER_HOME'] = str(tmp / 'machine/{repo}')
 eq(Config(repo).home, tmp / 'machine/proj', 'AGENT_RUNNER_HOME wins: one machine, without editing the shared config')
 
-print('worktrees a run before 0.13 left beside the checkout keep being used until they are moved')
-(tmp / 'proj-slots/s1').mkdir(parents=True)
-eq(Config(repo).slots_dir, tmp / 'proj-slots', 'the old <repo>-slots/ is used while home has none')
-(tmp / 'machine/proj/s1').mkdir(parents=True)
-eq(Config(repo).slots_dir, tmp / 'machine/proj', 'once home has them, home it is')
+eq(Config(repo).slots_dir, tmp / 'machine/proj', 'the worktrees are in home')
 
 print('`agent-runner home` answers scripts from the same settings')
 from _check import run  # noqa: E402

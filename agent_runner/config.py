@@ -80,7 +80,7 @@ DEFAULTS: dict = {
                                 # the path. The brief shows it under each file the task line names
         'brief': '',            # a command whose output *is* the brief, replacing the built-in one; {id}
         'kinds': {},            # id prefix -> the kind of work it marks (`plan kinds`); empty = plan.KINDS
-        'need_files': False,    # `plan add` wants a line naming its files or its test (`with_files`)
+        'need_files': False,    # `plan add` refuses a line with no files: or test: field
         'lookup': [],           # more markdown files `plan <name>` searches for a heading (after TODO, REFERENCE,
                                 # HUMAN, DONE and [run] rules), e.g. ["PLAN.md"]
     },
@@ -118,7 +118,7 @@ DEFAULTS: dict = {
         'suspect': '',          # a regex: a block line a merge adds that matches it is flagged in the ledger
         'precommit': '',        # a check `done` runs after the gate, before it ticks (--skip-check skips it)
         'command': '',          # what the prompt tells sessions to call (default: this runner); e.g. ./kit
-        'untested': ['*.md'],   # globs of files the gate cannot see (`!glob` takes one back): a merge that
+        'untested': ['*.md', 'LICENSE*', 'COPYING*'],   # globs of files the gate cannot see (`!glob` takes one back): a merge that
                                 # differs from what was tested only in these is not tested again
         'failures': '',         # a regex whose group 1 names a failing test in the gate's output
         'retest': '',           # the gate for just some tests; {names} is those `failures` found. A failure
@@ -292,10 +292,7 @@ class Config:
         raw = {**raw, 'run': supplied}
         self.raw = {k: {**v, **raw.get(k, {})} for k, v in DEFAULTS.items()}
         if self.raw['plan']['repo'] and 'dir' not in raw.get('plan', {}):
-            name = Path(self.raw['plan']['repo'].rstrip('/')).name.removesuffix('.git')
-            legacy = Path(f'~/.cache/agent-runner/{name}').expanduser()  # before 0.13; `git mv`-free to move
-            self.raw['plan']['dir'] = str(legacy if legacy.is_dir() and not (self.home / 'plan').exists()
-                                          else self.home / 'plan')
+            self.raw['plan']['dir'] = str(self.home / 'plan')
         self.run = self.raw['run']
         if not isinstance(self.run['include_task_id_in_commit'], bool):
             raise SystemExit('agent-runner: [run] include_task_id_in_commit must be a boolean')
@@ -335,12 +332,8 @@ class Config:
 
     @property
     def slots_dir(self) -> Path:
-        """The worktrees: `home`, or `<repo>-slots/` beside the checkout while a run from before 0.13 left them."""
-        main, home = main_checkout(self.root), self.home
-        legacy = main.parent / f'{main.name}-slots'
-        if legacy.is_dir() and not any((home / n).is_dir() for n in ('s1', 'merge')):
-            return legacy
-        return home
+        """The worktrees: `home`."""
+        return self.home
 
     @property
     def plan_external(self) -> bool:

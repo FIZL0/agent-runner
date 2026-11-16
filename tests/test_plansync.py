@@ -16,7 +16,7 @@ from _check import check, eq, git, has, report, run
 from agent_runner import config, plansync  # noqa: E402
 from agent_runner import plan as P  # noqa: E402
 
-TODO = '# TODO\n\n### Tasks\n\n- [ ] **T1** first → a.py\n- [ ] **T2** second → b.py\n- [ ] **T3** third → c.py\n'
+TODO = '# TODO\n\n### Tasks\n\n- [ ] **T1** first | files: a.py\n- [ ] **T2** second | files: b.py\n- [ ] **T3** third | files: c.py\n'
 
 
 def setup(tmp: Path) -> tuple[Path, Path, Path]:
@@ -142,7 +142,7 @@ def test_all(tmp: Path):
     R.init(a)
     nxt = R.C.plan_dir / 'TODO.md'
     keep = nxt.read_text()
-    nxt.write_text(keep.replace('### Tasks', '### Next'))
+    nxt.write_text(keep.replace('### Tasks', '### Next (in this order)'))
     try:
         eq(R.pick({}, set(), 'd', 'main'), None, "an ordered section waits while another runner has one of its tasks")
     finally:
@@ -159,27 +159,16 @@ def test_all(tmp: Path):
     from agent_runner import __version__
     cl = plansync.claims(cb)[ta[0]]
     eq(cl.version, __version__, 'a claim records its runner version')
-    check(cl.since > 0 and not plansync.outdated(cl), 'and when it was claimed, so a later clashing claim can give way')
+    check(cl.since > 0, 'and when it was claimed, so a later clashing claim can give way')
     check(plansync.claim(ca, 'Z9', {'z.py', 'lib/**'}), 'a claim with files')
     eq(plansync.claims(ca)['Z9'].files, frozenset({'z.py', 'lib/**'}), 'records the files it holds')
     plansync.release(ca, 'Z9')
-    old_style = ca.plan_dir / 'claims' / 'OLD1'
-    old_style.write_text(f'elsewhere:/x\n{time.strftime(plansync._STAMP)}\nian@desk\n')
-    old_cl = plansync.claims(ca)['OLD1']
-    check(plansync.outdated(old_cl) and not plansync.stale(old_cl), "a 0.13 runner's claim reads as live but outdated")
     R.init(a)
     R.CLAIMS_AT[0] = 0.0
-    said = []
-    saved, R.log = R.log, said.append
-    try:
-        R.keep_claims({1: ta}, 'main')
-    finally:
-        R.log = saved
-    has('\n'.join(said), r'ian@desk runs agent-runner older than 0\.14.*upgrade', 'a run warns of an outdated peer')
+    R.keep_claims({1: ta}, 'main')
     plansync.pull(ca, force=True)
     check(ta[0] in plansync.claims(ca), 'its live claim is kept')
     check('T3' not in plansync.claims(ca), "and its claim on a task it no longer runs or holds is dropped")
-    old_style.unlink(missing_ok=True)
     plansync.publish(ca, 'drop OLD1')
 
     print('claims on the board')

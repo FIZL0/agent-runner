@@ -33,21 +33,21 @@ TODO = """# TODO
 
 ### Next (in this order)
 
-- [ ] **T1** the parser → a.py
-- [ ] **T2** the printer → b.py
+- [ ] **T1** the parser | files: a.py
+- [ ] **T2** the printer | files: b.py
 
 ### Later
 
-- [ ] **T3** speed up the parser → a.py
-- [ ] **T6** builds on T1's parser → c.py
-- [ ] **T5** the logger → d.py · CHANGELOG.md
-- [ ] **T4** the report (after T1, T5) → e.py
-- [ ] **L3a** half of it → f.py
-- [ ] **L3b** the other half → g.py
+- [ ] **T3** speed up the parser | files: a.py
+- [ ] **T6** builds on T1's parser | files: c.py | after: T1
+- [ ] **T5** the logger | files: d.py, CHANGELOG.md
+- [ ] **T4** the report | files: e.py | after: T1, T5
+- [ ] **L3a** half of it | files: f.py
+- [ ] **L3b** the other half | files: g.py
 
 ### Stretch
 
-- [ ] **S1** a web page → web/index.html
+- [ ] **S1** a web page | files: web/index.html
 """
 
 FAKE_AGENT = r'''#!/usr/bin/env python3
@@ -119,13 +119,12 @@ def test_picking(repo: Path):
     ids = [t[0] for t in R.tasks('main')]
     eq(ids[0], 'T1', 'the first startable task is the first line of the backlog')
     check('S1' not in ids, 'Stretch is never offered to a run')
-    check('T4' not in ids, '(after T1, T5) holds the task while either is open — every id, not just the first')
+    check('T4' not in ids, '`after: T1, T5` holds the task while either is open — every id, not just the first')
+    check('T6' not in ids, 'and `after: T1` holds T6')
     first = R.pick({}, set(), 'd', 'main')
     eq(first[0], 'T1', 'an empty run starts at the top')
     second = R.pick({1: first}, set(), 'd', 'main')
-    eq(second[0], 'T5', 'with T1 running: not T2 (ordered section), T3 (same file), T6 (builds on T1)')
-    eq(R.WAITS_ON.findall("like T1's parser (T2), needs T3, once T4 lands, after the T5 fix"), ['T3', 'T4', 'T5'],
-       'an id waits only where the line says so; one it mentions for context holds nothing')
+    eq(second[0], 'T5', 'with T1 running: not T2 (ordered section), T3 (same file), T6 (after: T1)')
     check(not R.ordered('Next (user priorities, in order)') and R.ordered('Next (in this order)')
           and R.ordered('Bugs (one at a time)'), 'a priority order starts side by side; "in this order" runs one at a time')
     third = R.pick({1: first, 2: second}, set(), 'd', 'main')
@@ -133,6 +132,15 @@ def test_picking(repo: Path):
     check((R.pick({1: first, 2: second, 3: third}, set(), 'd', 'main') or ('',))[0] != 'L3b',
           'a sibling of a running task waits')
     eq(R.pick({1: first}, set(), 'p', 'main')[0], 'T2', 'mode p just follows the plan order')
+    touched, ahead = R.touched, R.ahead
+    R.touched = lambda tid, branch, slot: {'d.py'} if tid == 'T1' else set()
+    try:
+        eq(R.pick({1: first}, set(), 'd', 'main')[0], 'L3a', 'a file the running T1 has touched (d.py) holds T5 too')
+        R.ahead = lambda branch: ['T1']
+        eq(R.pick({}, set(), 'd', 'main')[0], 'L3a',
+           'a finished T1 waiting to merge still holds its section, its line files and the files it touched')
+    finally:
+        R.touched, R.ahead = touched, ahead
     Claim, me = R.plansync.Claim, R.plansync.owner(R.C)
     claims, R.plansync.claims = R.plansync.claims, lambda c: {'T1': Claim('elsewhere:/x', time.time(), 'ian@desk')}
     try:
@@ -175,11 +183,13 @@ def test_picking(repo: Path):
             R.plansync.claim, R.plansync.release, R.C.raw['plan']['repo'], R.log = saved
     finally:
         R.plansync.claims = claims
-    files = set(R.P.files_on_line('menu → Assets/Settings/** · docs/a.md | t: x', repo))
+    files = set(R.P.files_on_line('menu | files: Assets/Settings/**, docs/a.md | test: x'))
     check({'Assets/Settings/**', 'docs/a.md'} <= files, 'a `dir/**` on the line is a file pattern', str(files))
     check(R.P.overlap({'Assets/Settings/**'}, {'Assets/Settings/Page.cs'}), 'a pattern meets a path under it')
     check(R.P.overlap({'Assets/Settings/**'}, {'Assets/Settings/**'}), 'and the same pattern on another line')
     check(not R.P.overlap({'Assets/Settings/**'}, {'Assets/Audio/Mix.cs'}), 'but not a path elsewhere')
+    check(R.P.overlap({'src/menu.rs'}, {'app/src/menu.rs'}) and not R.P.overlap({'menu.rs'}, {'app/submenu.rs'}),
+          'a short path meets the full one it is the tail of, at a / only')
     eq(R.pick({}, set(ids), 'd', 'main'), None, 'nothing left once everything has been tried')
     check(R.joinable('CHANGELOG.md'), 'CHANGELOG.md is in [run] joinable, so a conflict there is joined')
     for f in ('README.md', 'a.py', 'plan/T1.md', 'plan/TODO.md', 'plan/DONE.md'):
@@ -235,11 +245,11 @@ def test_split_parents(repo: Path):
 
 ### Later
 
-- [ ] **P1** the importer (split into P1a, X2) → a.py
-- [~] **P1a** read the header → a.py BLOCKED: needs a sample file
-- [ ] **X2** read the body → b.py
-- [ ] **B9** the settings page, split into two tabs → c.py
-- [ ] **Q1** the exporter (split into Q1a) → d.py
+- [ ] **P1** the importer (split into P1a, X2) | files: a.py
+- [~] **P1a** read the header | files: a.py BLOCKED: needs a sample file
+- [ ] **X2** read the body | files: b.py
+- [ ] **B9** the settings page, split into two tabs | files: c.py
+- [ ] **Q1** the exporter (split into Q1a) | files: d.py
 """, encoding='utf-8')
     git(d, 'commit', '-qam', 'split check')
     try:
@@ -261,18 +271,18 @@ def test_blockers_first(repo: Path):
 
 ### Next: races (in this order)
 
-- [~] **S12e** the AI riders → e.py BLOCKED: (after S282) needs the route follower
-- [ ] **S13c** laps → c.py
+- [~] **S12e** the AI riders | files: e.py BLOCKED: (after S282) needs the route follower
+- [ ] **S13c** laps | files: c.py
 
 ### Follow-ups
 
-- [ ] **M1** a car → m.py
-- [ ] **S283** the AI character → a.py
-- [ ] **S282** the route follower (after S283) → a.py
+- [ ] **M1** a car | files: m.py
+- [ ] **S283** the AI character | files: a.py
+- [ ] **S282** the route follower | files: a.py | after: S283
 
 ### Stretch
 
-- [ ] **Z1** someday (after M1) → z.py
+- [ ] **Z1** someday | files: z.py | after: M1
 """, encoding='utf-8')
     git(d, 'commit', '-qam', 'wait check')
     try:
@@ -403,7 +413,7 @@ def test_note_on_a_ticked_task(repo: Path):
     R.init(repo)
     git(repo, 'checkout', '-q', 'main')
     todo = repo / 'plan/TODO.md'
-    todo.write_text(todo.read_text().replace('### Stretch', '- [ ] **U2** noted → u2.py\n\n### Stretch'))
+    todo.write_text(todo.read_text().replace('### Stretch', '- [ ] **U2** noted | files: u2.py\n\n### Stretch'))
     git(repo, 'commit', '-qam', 'plan: U2')
     d = task_branch(repo, 1, 'U2')
     (d / 'u2.py').write_text('# u2\n')
@@ -845,7 +855,7 @@ def test_hooks(repo: Path, tmp: Path):
         eq(R.suspect(before, before), '', 'and nothing when none was added')
         blocked = git(repo, 'rev-parse', 'HEAD')
         todo = repo / 'plan/TODO.md'
-        todo.write_text(re.sub(r'(\*\*T6\*\*.*)', r'\1 → z.py', todo.read_text(encoding='utf-8'), count=1),
+        todo.write_text(re.sub(r'(\*\*T6\*\*.*)', r'\1 | files: z.py', todo.read_text(encoding='utf-8'), count=1),
                         encoding='utf-8')
         git(repo, 'commit', '-qam', 'T6: its files')
         eq(R.suspect(blocked, git(repo, 'rev-parse', 'HEAD')), '', 'nor when a blocked line only gets its files')
@@ -1231,9 +1241,19 @@ def test_renumber(repo: Path):
     todo = 'plan/TODO.md'
     P.add('Q', 'the follow-up, after Q1 is read', 'bottom', todo=d / todo, done=d / 'plan/DONE.md')
     P.add('Q', 'and its sequel, after Q1', 'bottom', todo=d / todo, done=d / 'plan/DONE.md')
+    (d / 'plan/tasks').mkdir(exist_ok=True)
+    (d / 'plan/tasks/Q1.md').write_text('# Q1 the follow-up\n', encoding='utf-8')
+    git(d, 'add', 'plan/tasks/Q1.md')
     git(d, 'commit', '-qam', 'N1: follow-ups Q1, Q2')
-    P.add('Q', "the person's own task", todo=repo / todo, done=repo / 'plan/DONE.md')
+    # `add` counts the slot's ids now (`_other_checkouts`), so the clash comes from a checkout it can't see
+    # (one gone since, another machine): written by hand here
+    ls = (repo / todo).read_text().split('\n')
+    k = next(i for i, l in enumerate(ls) if l.startswith('- ['))
+    (repo / todo).write_text('\n'.join(ls[:k] + ["- [ ] **Q1** the person's own task"] + ls[k:]))
     git(repo, 'commit', '-qam', 'plan: add Q1')
+    eq(P.add('Q', 'x', todo=d / todo, done=d / 'plan/DONE.md'), 'Q3',
+       "a session's add counts the ids in the repo's other checkouts too")
+    git(d, 'checkout', '-q', '--', todo)
     eq(R.renumber_doubles('main', 'main', 'N1', repo), 'main', 'nothing doubled: the ref is merged as it is')
     ref = R.renumber_doubles('task/N1', 'main', 'N1', repo)
     check(ref != 'task/N1', 'a doubled id gets a commit of its own on top of the branch')
@@ -1242,6 +1262,7 @@ def test_renumber(repo: Path):
         'and a line the branch wrote that names it follows')
     has(t, r'\*\*Q2\*\* and its sequel, after Q3', 'an id main does not use stays, and its mention follows')
     eq(git(repo, 'rev-parse', f'{ref}^'), git(repo, 'rev-parse', 'task/N1'), 'on top of the branch, not instead of it')
+    eq(git(repo, 'ls-tree', '--name-only', ref, 'plan/tasks/'), 'plan/tasks/Q3.md', 'its long form is renamed with it')
     git(repo, 'merge', '-q', '--no-edit', ref)
     t = (repo / todo).read_text()
     check(all(x in t for x in ("**Q1** the person's own task", '**Q3** the follow-up', '**Q2** and its sequel')),
@@ -1775,7 +1796,7 @@ def test_tested_ref(repo: Path, tmp: Path):
     R.init(repo)
     git(repo, 'checkout', '-q', 'main')
     todo = repo / 'plan/TODO.md'
-    todo.write_text(todo.read_text().replace('### Stretch', '- [ ] **G1** gated → g1.py\n\n### Stretch'))
+    todo.write_text(todo.read_text().replace('### Stretch', '- [ ] **G1** gated | files: g1.py\n\n### Stretch'))
     git(repo, 'commit', '-qam', 'plan: G1')
     d = task_branch(repo, 1, 'G1')
     (d / 'g1.py').write_text('# g1\n', encoding='utf-8')
@@ -1987,7 +2008,7 @@ def test_shared_push(repo: Path, tmp: Path):
     print('...the next merge takes the remote\'s commits in, tests them with it, and pushes')
     R.init(repo)
     todo = repo / 'plan/TODO.md'
-    todo.write_text(todo.read_text().replace('### Stretch', '- [ ] **U1** upstream → u1.py\n\n### Stretch'))
+    todo.write_text(todo.read_text().replace('### Stretch', '- [ ] **U1** upstream | files: u1.py\n\n### Stretch'))
     git(repo, 'commit', '-qam', 'plan: U1')
     commit_on(repo, 'U1', {'u1.py': '# u1\n'}, 'U1: u1')
     eq(R.merge('U1', 'main'), None, 'the merge lands')
