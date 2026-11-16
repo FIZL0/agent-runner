@@ -81,6 +81,8 @@ DEFAULTS: dict = {
         'brief': '',            # a command whose output *is* the brief, replacing the built-in one; {id}
         'kinds': {},            # id prefix -> the kind of work it marks (`plan kinds`); empty = plan.KINDS
         'need_files': False,    # `plan add` wants a line naming its files or its test (`with_files`)
+        'lookup': [],           # more markdown files `plan <name>` searches for a heading (after TODO, REFERENCE,
+                                # HUMAN, DONE and [run] rules), e.g. ["PLAN.md"]
     },
     'run': {
         'test': '',             # the gate: `done` and every merge run it; empty means no gate

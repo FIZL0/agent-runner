@@ -38,6 +38,14 @@ given a `--pri` (and every follow-up a running agent files, which is `normal` un
 
 `@ WHERE` still overrides the place (the tag stays).
 
+**Subtask or fresh id.** `add B646 …` makes B646a, which never runs beside B646 or its other subtasks: use it
+only when the work can't start before its parent lands (it needs the parent's code, data or verdict). Work that
+merely shares a topic, or came out of that task, gets a fresh letter (`add B …`) so a run starts it in parallel;
+`add` notes this whenever it hands out a subtask id.
+
+**Commits.** An edit in the main checkout commits at once (`plan: <command>`); a worktree's waits for `done`.
+`AGENT_RUNNER_NOCOMMIT=1` leaves it uncommitted, for a script that commits it with its own change.
+
 **A subtask keeps its parent's place.** `add P17 …` (a task's id as the prefix: a split of that task) files
 P17a after P17 and its earlier subtasks, under P17's own tag or none, with no level of its own unless `--pri`
 gives one: the rest of a person's task stays where the person queued it, not behind every follow-up.
@@ -1076,6 +1084,8 @@ def _commit(root: Path, paths: list[Path], msg: str) -> None:
     agents') commit through `done`; mid-merge the edit stays uncommitted for whoever is merging."""
     g = partial(git, cwd=root)
     gd, cd = (g('rev-parse', '--path-format=absolute', f).stdout.strip() for f in ('--git-dir', '--git-common-dir'))
+    if os.environ.get('AGENT_RUNNER_NOCOMMIT'):  # the caller commits the edit with its own change
+        return
     if gd and gd == cd and not os.path.exists(os.path.join(gd, 'MERGE_HEAD')):
         g('add', '--', *map(str, paths))  # a fresh plan/ is untracked, and commit -- PATH skips those
         g('commit', '-q', '-m', f'plan: {msg}', '--', *map(str, paths))
@@ -1168,6 +1178,10 @@ def _main(argv: list[str], c) -> int:
             text = named
         tid = add(argv[1], text, w[0], (w[1:] or [None])[0], pri=pri)
         msg = f'added {tid}' + (f' ({pri})' if pri else '')
+        if fam:  # a subtask queues behind its family: only right when it needs the parent's code, data or verdict
+            print(f'{PROG}: note: {tid} never runs beside {argv[1]}\'s family; if it could start now, add it '
+                  f'with a fresh letter instead (`{PROG} add {re.match(r"[A-Za-z]+", argv[1]).group()} …`)',
+                  file=sys.stderr)
         if pri == 'critical' and os.environ.get('AGENT_RUNNER') == '1':
             msg += '\ncritical goes ahead of the queued work: its text must say what it breaks or blocks'
         return say(msg)
@@ -1193,6 +1207,7 @@ def _main(argv: list[str], c) -> int:
     paths = [todo, plan_dir / 'REFERENCE.md', plan_dir / 'HUMAN.md', done]
     if c.run['rules']:
         paths.append(c.root / c.run['rules'])
+    paths += [c.root / f for f in c.raw['plan']['lookup']]
     paths = [str(p) for p in paths if os.path.exists(p)]
     if argv[:1] == ['-f']:
         if len(argv) < 3:

@@ -319,6 +319,9 @@ def test_add_subtask():
         text = todo.read_text()
         has(text, r'\*\*A1a\*\* the first part', 'a person\'s task\'s subtask carries no follow-up tag')
         has(text, r'\*\*A3a\*\* \(follow-up, low\) part of the check', 'a follow-up\'s subtask keeps its level')
+        r = run(root, 'plan', 'add', 'A1', 'a third part', env=env)
+        has(r.stderr, r'A1c never runs beside A1', 'a subtask id comes with a note to use a fresh letter if it could start now')
+        has(run(root, 'plan', 'add', 'A', 'unrelated work', env=env).stderr, r'^$', 'a fresh id gets no note')
 
 
 def test_kinds():
@@ -404,6 +407,14 @@ def test_hand_edits_commit():
         (root / '.git/MERGE_HEAD').write_text(git(root, 'rev-parse', 'HEAD') + '\n', encoding='utf-8')
         run(root, 'plan', 'note', 'R1', 'mid-merge')
         has(git(root, 'status', '--porcelain', '--', 'plan'), r'TODO\.md', 'mid-merge the edit stays uncommitted')
+        (root / '.git/MERGE_HEAD').unlink()
+        run(root, 'plan', 'note', 'R1', 'now')
+        eq(git(root, 'status', '--porcelain', '--', 'plan'), '', 'after the merge the next edit commits both')
+        run(root, 'plan', 'note', 'R1', 'by a script', env={**os.environ, 'AGENT_RUNNER_NOCOMMIT': '1'})
+        has(git(root, 'status', '--porcelain', '--', 'plan'), r'TODO\.md', 'AGENT_RUNNER_NOCOMMIT leaves it for the caller')
+        (root / 'runner.toml').write_text('[plan]\nlookup = ["NOTES.md"]\n', encoding='utf-8')
+        (root / 'NOTES.md').write_text('# Notes\n\n## When blocked\n\nmove on\n', encoding='utf-8')
+        has(run(root, 'plan', 'when blocked').stdout, r'move on', '[plan] lookup adds files that name lookups search')
 
 
 def test_similar():
