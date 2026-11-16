@@ -1,6 +1,7 @@
 """The one entry point: `./run <command>` (or `agent-runner <command>`)."""
 from __future__ import annotations
 
+import os
 import sys
 
 USAGE = """agent-runner: AI agents work through plan/TODO.md, one task each, in parallel.
@@ -85,6 +86,8 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if cmd == 'plan':
         from agent_runner import plan
+        if os.path.basename(sys.argv[0]) == 'agent-runner':  # installed: name it as the user types it
+            plan.PROG = 'agent-runner plan'
         return plan.main(rest)
     if cmd == 'merge-plan' and len(rest) == 3:  # git's merge driver for the task list (plan.install_driver)
         from agent_runner import plan
