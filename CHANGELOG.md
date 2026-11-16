@@ -2,6 +2,17 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
+## 0.31.0 (2026-11-16)
+
+- `agent-runner context [--check]`: what every session loads before it starts ([run] rules, CLAUDE.md,
+  AGENTS.md and their `@` imports), per file and biggest section first, against `[plan] context_kb` (12 KB).
+  `run` logs a warning at start when it's over; `--check` exits 1.
+- `plan <name>` prefers a heading named exactly that over one that only contains it (`plan hst` no longer
+  stops at `hst-data`), across every file it searches.
+- `[plan] lookup` takes globs (`"plan/guide/*.md"`).
+- The agents' prompt says reference material they write goes under its own heading in a lookup file, not in
+  the rules file every session loads.
+
 ## 0.30.3 (2026-11-16)
 
 - A conflict fixed ahead of the merge lock waits while another task, fixed ahead and not merged yet, had a

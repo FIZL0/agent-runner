@@ -389,6 +389,17 @@ def test_hand_edits_commit():
         (root / 'runner.toml').write_text('[plan]\nlookup = ["NOTES.md"]\n', encoding='utf-8')
         (root / 'NOTES.md').write_text('# Notes\n\n## When blocked\n\nmove on\n', encoding='utf-8')
         has(run(root, 'plan', 'when blocked').stdout, r'move on', '[plan] lookup adds files that name lookups search')
+        (root / 'runner.toml').write_text('[plan]\nlookup = ["NOTES.md", "guide/*.md"]\n', encoding='utf-8')
+        (root / 'guide').mkdir()
+        (root / 'guide/MAP.md').write_text('# Map\n\n## app-core\n\ncore\n\n## app\n\nthe app\n', encoding='utf-8')
+        has(run(root, 'plan', 'app').stdout, r'the app', 'a heading named exactly that wins over one containing it')
+        has(run(root, 'plan', 'core').stdout, r'^## app-core', 'a substring still finds a heading, through a glob')
+        (root / 'CLAUDE.md').write_text('rules\n@guide/BIG.md\n', encoding='utf-8')
+        (root / 'guide/BIG.md').write_text('## Huge\n' + 'x' * 13000 + '\n', encoding='utf-8')
+        out = run(root, 'context', check=False)
+        has(out.stdout, r'OVER', 'context counts CLAUDE.md and what it @-imports against the budget')
+        has(out.stdout, r'12\.7 KB  Huge', 'and names the biggest section')
+        eq(run(root, 'context', '--check', check=False).returncode, 1, '--check fails over budget')
 
 
 def test_similar():

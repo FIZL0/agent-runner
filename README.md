@@ -553,6 +553,13 @@ A merge skips the gate only when `task/<ID>` is the very tree `done`'s gate pass
   `journal_layout = "id"`, `journal/<ID>/notes.md` and a retry's `journal/<ID>/<date>-<slug>/notes.md`): what
   it did, what failed, and a **Not verified** list. The newest entry for a task goes into the next brief,
   so a retry starts from what the last attempt learned.
+- **Keep the rules file small.** Whatever `[run] rules`, CLAUDE.md, AGENTS.md and their `@` imports hold is
+  re-read on every turn of every session, and agents keep adding to it (opentennis's grew to 28 KB, half of it a
+  code map each task appended a line to). Leave the rules there; put code maps, how-tos and background in
+  `[plan] lookup` files, one `## section` each, with a one-line pointer in the rules (`./run plan hst-base`,
+  `./run plan "Driving the game"`). A heading named exactly that wins over one that only contains it.
+  `./run context` shows what every session loads, biggest sections first, against `[plan] context_kb` (12 KB);
+  `run` warns at start when it's over, and the prompt tells agents where new reference material goes.
 - **A real test gate.** `[run] test` is the only thing between an unattended session and `main`. Make it
   fast enough to run on every `done` and every merge, and strict enough that you trust it.
 - **Slots.** Start with `once`, then 2 or 3. More slots only help if the plan has that many tasks on
@@ -647,6 +654,7 @@ the running tasks merge. A run left up keeps picking up whatever you commit to T
 ./run plan [...]                       the task list as a tool (./run plan help)
 ./run done ID "MSG" [--blocked WHY [--after X,Y]] [--no-test] [--skip-check]
 ./run run [N|once] [--mode d|p] [--dry-run] [--no-tmux] [--mux tmux|wt|console|none] [--model M] [--idle S] [--stall S] [--pause S] [--force] [--shutdown]
+./run context [--check]                what every session loads, by file and section; --check fails over budget
 ./run stop                             finish what's running, start nothing new, exit (or s + Enter in the runner's pane)
 ./run resume ID...                     continue each task's last session in its slot, once that slot is free
 ./run --version
@@ -695,6 +703,8 @@ outline = ""              # a command printing one file's outline; {file} is the
 brief = ""                # a command whose output *is* the brief (the project's own brief tool); {id}
 kinds = {}                # id prefix -> kind of work, e.g. { B = "bug", N = "netplay" }; `plan add` keeps to it
 need_files = false        # `plan add` refuses a line with no files: and no test: field (else it warns)
+lookup = []               # more files `plan <name>` searches for a heading, e.g. ["PLAN.md", "plan/guide/*.md"]
+context_kb = 12           # budget for what every session loads (`context`); `run` warns past it, 0 = never
 
 [git]
 master_branch = ""        # optional local shared branch; must exist and be checked out

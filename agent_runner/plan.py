@@ -134,8 +134,9 @@ def index(path) -> list[str]:
     return out
 
 
-def section(path, name: str) -> list[str]:
-    """One named part of a markdown file: the first open task (`next`), a task by id, or a heading's section."""
+def section(path, name: str, exact: bool = False) -> list[str]:
+    """One named part of a markdown file: the first open task (`next`), a task by id, or a heading's section (with
+    `exact`, only a heading that is `name` whole, any case)."""
     ls = lines(path)
     if name == 'next':
         for i, line in enumerate(ls):
@@ -149,7 +150,7 @@ def section(path, name: str) -> list[str]:
             return _item_block(ls, i)
     for i, line in enumerate(ls):
         lv = _level(line)
-        if lv and name.lower() in line.lower():
+        if lv and (name.lower() == line.lstrip('#').strip().lower() if exact else name.lower() in line.lower()):
             j = i + 1
             while j < len(ls) and not (0 < _level(ls[j]) <= lv):
                 j += 1
@@ -1170,7 +1171,7 @@ def _main(argv: list[str], c) -> int:
     paths = [todo, plan_dir / 'REFERENCE.md', plan_dir / 'HUMAN.md', done]
     if c.run['rules']:
         paths.append(c.root / c.run['rules'])
-    paths += [c.root / f for f in c.raw['plan']['lookup']]
+    paths += [p for f in c.raw['plan']['lookup'] for p in (sorted(c.root.glob(f)) if any(ch in f for ch in '*?[') else [c.root / f])]
     paths = [str(p) for p in paths if os.path.exists(p)]
     if argv[:1] == ['-f']:
         if len(argv) < 3:
@@ -1184,7 +1185,8 @@ def _main(argv: list[str], c) -> int:
         out, cl = index(todo), plansync.claims(c)
         out = [f'{l}  [{plansync.label(cl[t])}]' if (t := l.rsplit(' ', 1)[-1]) in cl else l for l in out]
     else:
-        out = next((o for p in paths if (o := section(p, argv[0]))), [])
+        # a heading named exactly that, in any file, before one that only contains it (`hst` before `hst-data`)
+        out = next((o for ex in (True, False) for p in paths if (o := section(p, argv[0], ex))), [])
     if not out:
         print(f'{PROG}: nothing named {argv[0]!r} — run `{PROG}` for the index', file=sys.stderr)
         return 1

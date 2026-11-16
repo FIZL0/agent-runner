@@ -33,6 +33,7 @@ Finish a task (what an agent runs at the end)
 
 More
     agent-runner cost                 where the workers' tokens go, by kind of tool call (last 7 days)
+    agent-runner context              what every session loads (rules, CLAUDE.md, AGENTS.md) and what to move out
     agent-runner home [slots|plan]    where this project's runner files are ([run] home): for scripts
     agent-runner help order           what runs when, and how to make one task wait for another
     agent-runner run --help           every runner option
@@ -102,6 +103,9 @@ def main(argv: list[str] | None = None) -> int:
     if cmd == 'run':
         from agent_runner import runner
         return runner.cmd_run(rest)
+    if cmd == 'context':
+        from agent_runner import context
+        return context.main(rest)
     if cmd == 'cost':
         from agent_runner import cost
         return cost.main(rest)

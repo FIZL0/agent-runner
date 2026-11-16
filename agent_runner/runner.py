@@ -146,7 +146,10 @@ your own task, give its id as KIND (`plan add P17 …` files P17a, P17b…), whi
 refuses (exit 3, nothing filed) when an open task looks like the same work: `plan note` that task instead, or add again \
 with `--force` if it really is different work. A test that \
 fails under load and passes alone is a bug in the test: if one gets in your way, make it robust (what it \
-races, not a longer timeout), or file it as critical."""
+races, not a longer timeout), or file it as critical.
+Reference material you write for later sessions (module lists, how-tos, findings) goes in the files \
+`{runner} plan "<section>"` searches, under its own heading, not in the rules file every session loads.
+"""
 
 OTHERS = ('Other agents are working on other tasks at the same time, in other worktrees. Keep your changes '
           'local: add functions and new files, and don\'t move, rename or reformat code you did not come '
@@ -3917,6 +3920,9 @@ def run(argv: list[str], prog: str) -> int:
     cap_said = stop_said = False
     log(f'run: {slots} slots in {MUX.name}, mode {mode}, merging into {branch}' +
         (f', session usage {usage_pct("five_hour")}%, weekly usage {weekly()}%' if not a.force and r['agent'] == 'claude' else ''))
+    from agent_runner import context
+    if heavy := context.warning(ROOT, r['rules'], C.raw['plan']['context_kb']):
+        log(heavy)
 
     for n, (proc, task) in adopt(branch).items():
         procs[n], running[n] = proc, task

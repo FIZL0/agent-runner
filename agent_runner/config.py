@@ -82,7 +82,9 @@ DEFAULTS: dict = {
         'kinds': {},            # id prefix -> the kind of work it marks (`plan kinds`); empty = plan.KINDS
         'need_files': False,    # `plan add` refuses a line with no files: or test: field
         'lookup': [],           # more markdown files `plan <name>` searches for a heading (after TODO, REFERENCE,
-                                # HUMAN, DONE and [run] rules), e.g. ["PLAN.md"]
+                                # HUMAN, DONE and [run] rules), e.g. ["PLAN.md", "plan/*.md"]; globs allowed
+        'context_kb': 12,       # budget for what every session loads (rules, CLAUDE.md, AGENTS.md, @-imports):
+                                # `agent-runner context` reports it, `run` warns past it; 0 = no warning
     },
     'run': {
         'test': '',             # the gate: `done` and every merge run it; empty means no gate
