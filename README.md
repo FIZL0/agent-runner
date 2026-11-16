@@ -1,7 +1,7 @@
 # agent-runner
 
 <p align="center">
-  <a href="https://github.com/FIZL0/agent-runner/releases/latest"><img alt="Latest version" src="https://img.shields.io/badge/dynamic/regex?url=https%3A%2F%2Fraw.githubusercontent.com%2FFIZL0%2Fagent-runner%2Fmain%2Fagent_runner%2F__init__.py&search=__version__%20%3D%20%27(.*)%27&replace=v%241&label=version&color=2ea44f"></a>
+  <a href="https://github.com/FIZL0/agent-runner/releases/latest"><img alt="Latest version" src="https://img.shields.io/github/v/release/FIZL0/agent-runner?label=version&amp;color=2ea44f"></a>
 </p>
 
 agent-runner runs N terminal coding agents unattended against a git repository with a markdown task list.
@@ -35,6 +35,24 @@ agent-runner run --dry-run 3       # what three slots would start right now
 agent-runner run once              # one task, one session, then stop: try it like this first
 tmux new -s runner agent-runner run 3
 ```
+
+On Windows, use Windows Terminal instead of tmux: run `agent-runner run 3` directly.
+From a clone, use `python -m agent_runner` in place of `./run`. Pi sessions use
+PowerShell on Windows and Bash on Linux/macOS; npm-installed Pi is launched through Node on Windows.
+
+### Versions and updates
+
+The version badge links to the latest numbered [release](https://github.com/FIZL0/agent-runner/releases/latest),
+with release notes and a copyable install command. To install a specific release:
+
+```sh
+uv tool install --force git+https://github.com/FIZL0/agent-runner@v0.30.2
+```
+
+The unpinned install above follows `main`. For an existing installation, use `uv tool upgrade agent-runner`
+(or `pipx upgrade agent-runner`); for a clone, use `git pull`. Upgrade after the current run finishes.
+The runner checks the version file on `main` for update notices; GitHub releases are not required for
+that check, but provide versioned installation links and notes.
 
 `examples/demo.sh` copies `examples/hello` (a tiny repo with a plan) to a temp dir, gives it a bare
 "origin", and shows `plan`, `plan brief` and `run --dry-run` without starting any agent.

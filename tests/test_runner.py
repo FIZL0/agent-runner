@@ -2189,7 +2189,8 @@ def test_update_notice():
     said, real_log, real_open = [], R.log, urllib.request.urlopen
     R.log = said.append
     try:
-        for remote, want in (("__version__ = '999.0.0'\n", 1), ("__version__ = '0.0.1'\n", 0), ('garbage', 0)):
+        for remote, want in (("__version__ = '999.0.0'\n", 1), ('__version__ = "999.0.0"\n', 1),
+                             ("__version__ = '0.0.1'\n", 0), ('__version__ = "0.0.1"\n', 0), ('garbage', 0)):
             urllib.request.urlopen = lambda *a, **k: io.BytesIO(remote.encode())
             said.clear()
             R.update_notice()

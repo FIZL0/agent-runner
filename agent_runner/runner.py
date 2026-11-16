@@ -3533,7 +3533,7 @@ def update_notice() -> None:
     from agent_runner import __version__
     try:
         text = urllib.request.urlopen(LATEST, timeout=5).read().decode()
-        latest = re.search(r"__version__ = '([\d.]+)'", text)[1]
+        latest = re.search(r"""^__version__\s*=\s*['"](\d+(?:\.\d+)+)['"]""", text, re.M)[1]
         newer = tuple(map(int, latest.split('.'))) > tuple(map(int, __version__.split('.')))
     except Exception:
         return

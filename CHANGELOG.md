@@ -2,6 +2,14 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
+## 0.30.2 (2026-11-16)
+
+- Windows Pi sessions launch the Node CLI directly instead of npm's `.cmd` shim; Linux/macOS keep
+  their configured executable.
+- Update notices accept single- and double-quoted version strings. Release automation reads the version
+  as Python, rejects invalid versions, and publishes numbered releases with installation commands.
+- The README version badge uses GitHub releases and links to installation instructions and release notes.
+
 ## 0.30.1 (2026-11-16)
 
 - The agents' prompt tells them to file follow-ups with `--files` (and `--after`), not text alone.
