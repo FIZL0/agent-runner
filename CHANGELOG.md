@@ -2,6 +2,10 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
+## 0.30.1 (2026-11-16)
+
+- The agents' prompt tells them to file follow-ups with `--files` (and `--after`), not text alone.
+
 ## 0.30.0 (2026-11-16)
 
 Breaking: a new task line format, and the old one is no longer read. Rewrite TODO.md once.

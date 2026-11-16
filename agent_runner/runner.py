@@ -136,8 +136,9 @@ The task's brief (`{runner} plan brief {tid}`) follows, so don't gather it again
 
 FOLLOWUPS = """\
 The task list is a tool, not a file to read whole: `{runner} plan` lists the tasks, `{runner} plan <ID>` \
-shows one, and `{runner} plan add <KIND> "<text>" [--pri LEVEL]` files a follow-up you find but must not do \
-now. Never hand-edit a checkbox. KIND is the id letter for the kind of work: {kinds}. LEVEL is where it queues: \
+shows one, and `{runner} plan add <KIND> "<text>" --files a,dir/** [--after ID] [--test name] [--pri LEVEL]` files a \
+follow-up you find but must not do now: `--files` the files it will change (the run keeps running tasks apart \
+by them), `--after` the ids it must wait for; the text is never read for files or ids. Never hand-edit a checkbox. KIND is the id letter for the kind of work: {kinds}. LEVEL is where it queues: \
 `critical` only when it breaks or blocks other work (it goes ahead of everything, so its text says what it \
 breaks); `normal`, the default, after the work a person queued; `low` for a check or a small tidy-up, after \
 normal; `later` for big future work, parked for a person to schedule and never started by a run. To split \

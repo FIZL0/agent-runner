@@ -2020,7 +2020,8 @@ def test_followups(repo: Path):
     print('run: follow-up levels and kinds in the prompt, Parked never starts, flaky tests get a task')
     R.init(repo)
     p = R.prompt_for('T2', 1, 1, repo, 'main')
-    has(p, r'plan add <KIND> "<text>" \[--pri LEVEL\]', 'the prompt shows --pri')
+    has(p, r'plan add <KIND> "<text>" --files a,dir/\*\* \[--after ID\] \[--test name\] \[--pri LEVEL\]',
+        'the prompt shows --files, --after and --pri')
     has(p, r'B bug: .*; F feature', 'and the id letters, from plan.KINDS with none set')
     has(p, r'passes alone is a bug in the test', 'and says a flaky test is to be made robust')
     plan_text = R.plan_text
