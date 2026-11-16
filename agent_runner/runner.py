@@ -3663,14 +3663,33 @@ def capped(force: bool) -> str | None:
     return None
 
 
-SHUTDOWN = False  # --shutdown: power the machine off once the run has nothing left to do
+POWER = ''  # 'shutdown' or 'suspend' (--shutdown, --suspend): what the machine does once the run has nothing left to do
 SHUTDOWN_GRACE = 120  # s the run must stay idle first; new work or a stop in that time cancels it
+SLEPT_AT = [-1.0]  # the idle stretch (its idle_at) the machine was suspended in: once per stretch, not on every wake
+
+
+def power_due(idle_at: float) -> bool:
+    """--shutdown or --suspend, and the run has been idle SHUTDOWN_GRACE s, in a stretch not slept through yet."""
+    return bool(POWER) and time.time() - idle_at >= SHUTDOWN_GRACE and SLEPT_AT[0] != idle_at
 
 
 def shut_down(idle_at: float) -> bool:
-    """With --shutdown, after SHUTDOWN_GRACE s idle: power off. The caller checked that nothing runs, merges
-    or may start. True once the power-off command has been accepted; a refused one is logged and the run stays."""
-    if not SHUTDOWN or time.time() - idle_at < SHUTDOWN_GRACE or stopping():
+    """With --shutdown or --suspend, after SHUTDOWN_GRACE s idle: power off, or suspend. The caller checked
+    that nothing runs, merges or may start. True once the power-off command has been accepted, so the run
+    ends; a refused one is logged and the run stays.
+
+    A suspend returns False: when the machine wakes, the run is still there and carries on, idle. It does not
+    suspend again until it has had work and gone idle again, so someone who wakes the machine to use it is
+    not put back to sleep two minutes later."""
+    if not power_due(idle_at) or stopping():
+        return False
+    if POWER == 'suspend':
+        log('nothing left to do and nothing merging: suspending the computer (--suspend)')
+        SLEPT_AT[0] = idle_at
+        if rc := plat.suspend():
+            log(f'the suspend command failed (exit {rc}); staying awake')
+        else:
+            log('suspend accepted: on waking the run carries on, and suspends again only after its next work')
         return False
     log('nothing left to do and nothing merging: shutting the computer down (--shutdown)')
     if rc := plat.power_off():
@@ -3828,9 +3847,13 @@ def run(argv: list[str], prog: str) -> int:
                     help="how many agents at once (default [run] slots), or 'once' for one task then stop")
     ap.add_argument('--mode', help=argparse.SUPPRESS)  # ponytail: gone in 0.31 (always different files); accepted so wrappers passing it still run
     ap.add_argument('--force', action='store_true', help='keep starting tasks past the session and weekly usage caps')
-    ap.add_argument('--shutdown', action='store_true',
-                    help=f'power the computer off once nothing is running or merging and no open task may start '
-                         f'(after {SHUTDOWN_GRACE} s idle)')
+    power = ap.add_mutually_exclusive_group()
+    power.add_argument('--shutdown', action='store_true',
+                       help=f'power the computer off once nothing is running or merging and no open task may start '
+                            f'(after {SHUTDOWN_GRACE} s idle)')
+    power.add_argument('--suspend', action='store_true',
+                       help='as --shutdown, but suspend (sleep) instead; on waking the run carries on, and '
+                            'suspends again only after its next work')
     ap.add_argument('--idle', type=int, default=None, help='seconds of quiet before a session is ended')
     ap.add_argument('--stall', type=int, default=None, help='seconds of quiet that count as stalled')
     ap.add_argument('--pause', type=int, default=None, help='seconds between a session ending and the next')
@@ -3855,8 +3878,8 @@ def run(argv: list[str], prog: str) -> int:
     init()
     r = C.run
     once = a.slots == 'once'
-    global SHUTDOWN
-    SHUTDOWN = a.shutdown and not once
+    global POWER
+    POWER = '' if once else 'shutdown' if a.shutdown else 'suspend' if a.suspend else ''
     try:
         slots = 1 if once else int(a.slots or r['slots'])
     except ValueError:
@@ -4081,7 +4104,7 @@ def run(argv: list[str], prog: str) -> int:
         # watches run.log for `run idle`; the process itself ends only on Ctrl-C or `./run stop`.
         # one pick, and only when its answer is needed: to end `once`, to say idle, or to power off
         if quiet and (once and not stopping() or not idle_said
-                      or SHUTDOWN and time.time() - idle_at >= SHUTDOWN_GRACE) and not pick(running, tried, branch):
+                      or power_due(idle_at)) and not pick(running, tried, branch):
             if once and not stopping():
                 log('run done: nothing it may start (once)')
                 return 0

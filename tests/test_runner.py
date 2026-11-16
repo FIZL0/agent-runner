@@ -1046,26 +1046,34 @@ def commit_on(repo: Path, tid: str, files: dict[str, str], subject: str) -> None
 
 
 def test_shutdown(repo: Path):
-    print('run: --shutdown powers off only after the grace period, and stays up when refused')
+    print('run: --shutdown powers off only after the grace period, and stays up when refused; --suspend once per idle')
     R.init(repo)
-    calls: list[int] = []
-    saved = R.plat.power_off, R.pick, R.SHUTDOWN, R.SHUTDOWN_GRACE
+    calls: list[str] = []
+    saved = R.plat.power_off, R.plat.suspend, R.pick, R.POWER, R.SHUTDOWN_GRACE
     try:
-        R.plat.power_off = lambda: calls.append(1) or 0
-        R.SHUTDOWN, R.SHUTDOWN_GRACE = False, 0
+        R.plat.power_off = lambda: calls.append('off') or 0
+        R.plat.suspend = lambda: calls.append('sleep') or 0
+        R.POWER, R.SHUTDOWN_GRACE = '', 0
         check(not R.shut_down(0) and not calls, 'without --shutdown nothing happens')
-        R.SHUTDOWN, R.SHUTDOWN_GRACE = True, 3600
+        R.POWER, R.SHUTDOWN_GRACE = 'shutdown', 3600
         check(not R.shut_down(time.time()) and not calls, 'not before the grace period')
         R.SHUTDOWN_GRACE = 0
-        R.plat.power_off = lambda: calls.append(1) or 1
-        check(not R.shut_down(0) and calls == [1], 'a refused power-off keeps the run up')
+        R.plat.power_off = lambda: calls.append('off') or 1
+        check(not R.shut_down(0) and calls == ['off'], 'a refused power-off keeps the run up')
         calls.clear()
-        R.plat.power_off = lambda: calls.append(1) or 0
+        R.plat.power_off = lambda: calls.append('off') or 0
         R.pick = lambda *a, **k: None
         eq(R.sequential('main', 'opus', 90, 0, False), 0, 'an idle sequential run ends after powering off')
-        eq(calls, [1], 'and powered off once')
+        eq(calls, ['off'], 'and powered off once')
+        calls.clear()
+        R.POWER = 'suspend'
+        check(not R.shut_down(5.0) and calls == ['sleep'], '--suspend suspends, and the run stays')
+        check(not R.shut_down(5.0) and not R.power_due(5.0) and calls == ['sleep'],
+              'woken in the same idle stretch, it does not suspend again')
+        check(not R.shut_down(9.0) and calls == ['sleep', 'sleep'], 'after work and a new idle stretch, it does')
     finally:
-        R.plat.power_off, R.pick, R.SHUTDOWN, R.SHUTDOWN_GRACE = saved
+        R.plat.power_off, R.plat.suspend, R.pick, R.POWER, R.SHUTDOWN_GRACE = saved
+        R.SLEPT_AT[0] = -1.0
 
 
 def test_gate_and_batches(repo: Path, tmp: Path):
