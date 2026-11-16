@@ -158,9 +158,28 @@ OTHERS = ('Other agents are working on other tasks at the same time, in other wo
 
 # --- small helpers -------------------------------------------------------------
 
+# The runner's pane in colour (run.log stays plain): a terminal, not NO_COLOR, and on Windows only Windows Terminal
+COLOR = sys.stdout.isatty() and not os.environ.get('NO_COLOR') and (not plat.WINDOWS or bool(os.environ.get('WT_SESSION')))
+TONES = [  # first match wins: (regex on the message, SGR colour)
+    (re.compile(r'LEFT FOR A HUMAN|fail|refused|error|parked|killed|ended pid|stall', re.I), '31'),  # red
+    (re.compile(r'blocked|SUSPECT|conflict|waiting|usage limit|did not push|^!', re.I), '33'),       # yellow
+    (re.compile(r'merged|pushed|passed|resolved|landed|run busy'), '32'),                             # green
+    (re.compile(r'^slot \d+: \S+ \('), '34'),                                                      # blue: a start
+    (re.compile(r'exited|run idle|not run again|dropped'), '90'),                                     # grey
+]
+
+
+def paint(stamp: str, msg: str) -> str:
+    """`stamp msg` for a terminal: the time grey, the task id bold, the message in its tone."""
+    tone = next((c for rx, c in TONES if rx.search(msg)), '0')
+    msg = re.sub(r'^((?:slot \d+: )?)([A-Za-z]+\d+[a-z0-9]*)\b', '\\1\x1b[1m\\2\x1b[22m', msg, count=1)
+    return f'\x1b[90m{stamp}\x1b[0m \x1b[{tone}m{msg}\x1b[0m'
+
+
 def log(msg: str) -> None:
-    line = f'=== {dt.datetime.now().isoformat(timespec="seconds")} {msg}'
-    print(line, flush=True)
+    stamp = dt.datetime.now().isoformat(timespec="seconds")
+    line = f'=== {stamp} {msg}'
+    print(paint(stamp, msg) if COLOR else line, flush=True)
     try:
         with open(C.notes('run.log'), 'a', encoding='utf-8') as f:
             f.write(line + '\n')

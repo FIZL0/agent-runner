@@ -2,6 +2,12 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
+## 0.32.1 (2026-11-16)
+
+- The runner's pane is in colour: starts blue, merges and pushes green, blocks and conflicts yellow, failures red,
+  exits grey, task ids bold. Only on a terminal (Windows: Windows Terminal), never with `NO_COLOR`; run.log stays
+  plain text.
+
 ## 0.32.0 (2026-11-16)
 
 Breaking: settings removed. A config that still sets them is not an error; they are ignored.

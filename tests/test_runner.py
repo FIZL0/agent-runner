@@ -2359,12 +2359,20 @@ def test_relative_remote(tmp: Path):
         config._cfg.cache_clear()
 
 
+def test_paint():
+    print('the runner pane in colour: tone by outcome, the id bold; run.log stays plain')
+    has(R.paint('t', 'P1: merged, ticked'), r'\x1b\[32m\x1b\[1mP1\x1b\[22m: merged', 'a merge is green, its id bold')
+    has(R.paint('t', 'P1: merged, blocked; SUSPECT, recheck'), r'\x1b\[33m', 'a block is yellow, though it merged')
+    has(R.paint('t', 'B9: tests fail after the merge'), r'\x1b\[31m', 'a failure is red')
+    has(R.paint('t', 'slot 2: P3 (Next; a.rs)'), r'\x1b\[34mslot 2: \x1b\[1mP3', 'a start is blue')
+
+
 def main() -> int:
     with tempfile.TemporaryDirectory() as t:
         tmp = Path(t)
         os.environ['CLAUDE_CONFIG_DIR'] = str(tmp)  # Claude.trust writes here, never to the real ~/.claude.json
         repo = make_repo(tmp)
-        return report([lambda: test_master_branch_option(tmp), lambda: test_relative_remote(tmp), lambda: test_picking(repo), lambda: test_split_parents(repo), lambda: test_blockers_first(repo), lambda: test_done(repo, tmp), lambda: test_merge(repo, tmp),
+        return report([test_paint, lambda: test_master_branch_option(tmp), lambda: test_relative_remote(tmp), lambda: test_picking(repo), lambda: test_split_parents(repo), lambda: test_blockers_first(repo), lambda: test_done(repo, tmp), lambda: test_merge(repo, tmp),
                        lambda: test_retry(repo), lambda: test_unmerged(repo),
                        lambda: test_conflicts(repo, tmp), lambda: test_fix_ahead(repo, tmp), lambda: test_repair(repo, tmp),
                        lambda: test_prompt_and_hooks(repo),
