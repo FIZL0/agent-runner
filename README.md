@@ -4,6 +4,12 @@
   <a href="https://github.com/FIZL0/agent-runner/releases/latest"><img alt="Latest version" src="https://img.shields.io/github/v/release/FIZL0/agent-runner?label=version&amp;color=2ea44f"></a>
 </p>
 
+Install latest (tracks `main`):
+
+```sh
+uv tool install --force git+https://github.com/FIZL0/agent-runner
+```
+
 agent-runner runs N terminal coding agents unattended against a git repository with a markdown task list.
 By default every session is Claude Code (Opus), with its hooks and permission setup: no configuration needed.
 Each session gets one task in its own git worktree and terminal (a tmux pane; on Windows a Windows
