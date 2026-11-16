@@ -178,32 +178,6 @@ On opentennis, five slots in parallel against a 200k window, that is the differe
 ran out of room mid-task and sessions that finish with half the window to spare. `agent-runner cost` shows
 where the remaining tokens go, by kind of tool call.
 
-### Compared with one session and subagents
-
-The same five real opentennis tasks (two test fixes, a bug, a scheduler change and a settings feature),
-reverted and run from one commit, with the full test suite as the bar. **A:** one Claude Code session with
-the whole plan in one 963 KB `TODO.md` (open tasks, reference and the done list), handing each task to a
-subagent. **B:** agent-runner with three slots and opentennis's own config.
-
-| | A: one session + subagents | B: agent-runner |
-|---|---|---|
-| tasks done, suite passing | 5 / 5 | 5 / 5 |
-| input tokens processed | 11.7M | **9.2M** (−21%) |
-| written to cache | 0.46M | **0.28M** (−39%) |
-| output tokens | 85k | **74k** |
-| context at a session's first turn | 31k main, 23k per subagent | **16k** |
-| peak context in any one session | 146k | **133k** |
-| ran to the end unattended | no: stopped once, mid-task, and had to be resumed | yes |
-
-<sub>16 Nov 2026, Opus, measured from every transcript of each arm, subagents included. Timing is left out: the
-runner tests every finish and every merge, so it ran longer (57 min against 40) without costing tokens.</sub>
-
-Neither arm ever loaded the 963 KB plan: the session grepped it and handed each subagent a short brief, much
-as the runner does. The runner's saving is mostly the coordinator: A's main session re-read 2.6M tokens on
-its own, about the gap between the two. What one session does not have is the rest: an isolated worktree
-per task, a test gate on every merge, and tasks that block on each other and reopen by themselves (here,
-three tasks waited on T26's fix to a racy test, then landed once it did).
-
 ## Working with it well
 
 - **Small tasks that name their files.** One session, one task, one commit. Anything bigger than an
