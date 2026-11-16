@@ -14,8 +14,9 @@ re-reads it on every turn pays again. So the backlog is a command instead:
     ./run plan block <ID> [--after X,Y] WHY   [~] with "BLOCKED: (after X, Y) WHY" appended
     ./run plan unblock <ID> [NOTE]   reopen: [ ], drop "BLOCKED: …", append NOTE (what unblocked it)
     ./run plan move <ID> WHERE   WHERE = top | before ID | after ID | in SECTION (its end); sub-items follow
-    ./run plan add PREFIX TEXT [--pri LEVEL] [--force] [@ WHERE]   new "- [ ] **<next free id>** TEXT"; prints
-                                 the id. Refused (exit 3, nothing written) when an open task looks like the
+    ./run plan add PREFIX TEXT [--files A,B] [--after X,Y] [--test T] [--journal D] [--pri LEVEL] [--force] [@ WHERE]
+                                 new "- [ ] **<next free id>** TEXT | files: A, B | after: X, Y …"; prints
+                                 the id (warns without --files or --test). Refused (exit 3, nothing written) when an open task looks like the
                                  same work: `plan note` it there, or --force when it is different work
     ./run plan drop <ID> WHY     not done but not wanted (a duplicate, overtaken): archived with "dropped: WHY"
     ./run plan kinds             what each id letter means ([plan] kinds): an id's prefix says the kind of work
@@ -38,12 +39,22 @@ given a `--pri` (and every follow-up a running agent files, which is `normal` un
 
 `@ WHERE` still overrides the place (the tag stays).
 
+**Subtask or fresh id.** `add B646 …` makes B646a, which never runs beside B646 or its other subtasks: use it
+only when the work can't start before its parent lands (it needs the parent's code, data or verdict). Work that
+merely shares a topic, or came out of that task, gets a fresh letter (`add B …`) so a run starts it in parallel;
+`add` notes this whenever it hands out a subtask id.
+
+**Commits.** An edit in the main checkout commits at once (`plan: <command>`); a worktree's waits for `done`.
+`AGENT_RUNNER_NOCOMMIT=1` leaves it uncommitted, for a script that commits it with its own change.
+
 **A subtask keeps its parent's place.** `add P17 …` (a task's id as the prefix: a split of that task) files
 P17a after P17 and its earlier subtasks, under P17's own tag or none, with no level of its own unless `--pri`
 gives one: the rest of a person's task stays where the person queued it, not behind every follow-up.
 
-The line format is `- [ ] **ID** text → files… | t: tests | j: journal-dir`, under `###` headings, and the
-checkbox is `[ ]` open, `[x]` done, `[~]` blocked.
+The line format is `- [ ] **ID** text | files: a, b | after: X, Y | test: name | journal: dir`, under `###`
+headings, and the checkbox is `[ ]` open, `[x]` done, `[~]` blocked. The keyed fields are the only thing read
+off a line: `files:` keeps mode d's running tasks apart, `after:` holds a task until those ids are done, `test:`
+names the test it adds, `journal:` a journal dir its brief lists. Prose is never parsed for files or ids.
 
 **A block that only waits on another task says which**, as `BLOCKED: (after X, Y) why`, and `reopen` (which a
 `./run run` calls after every merge) puts it back to `[ ]` the moment X and Y are done. Without that a task
@@ -51,7 +62,7 @@ blocked on "P36 is not merged yet" stays blocked long after P36 lands, because n
 from the open task ids its WHY names, so a session that forgets `--after` still gets one.
 
 **Design rule: checkboxes are only ever changed through this tool.** Never hand-edit a `- [ ]` in TODO.md or
-DONE.md. Ticking by hand is how a task ends up done in one file and open in another, how a `(after X)`
+DONE.md. Ticking by hand is how a task ends up done in one file and open in another, how an `after:`
 dependency silently stops being satisfied, and how two parallel agents both pick the same task. `tick` is one
 transaction: mark it, mirror the mark into `plan/tasks/<ID>.md`, move the block to DONE.md under the same heading.
 
@@ -77,15 +88,14 @@ from agent_runner.gitops import git
 PROG = './run plan'  # the name in messages; a wrapper sets its own ('./kit plan')
 # The library API a wrapping project may call; names and signatures here change only in a major version.
 __all__ = ['PROG', 'HELP', 'lines', 'index', 'section', 'ensure', 'archive', 'tick', 'block', 'reopen',
-           'unblock', 'move', 'next_id', 'add', 'similar', 'note', 'drop', 'next_task', 'files_on_line', 'overlap', 'brief', 'open_ids',
+           'unblock', 'move', 'next_id', 'add', 'similar', 'note', 'drop', 'next_task', 'files_on_line', 'fields', 'overlap', 'brief', 'open_ids',
            'write_atomic', 'child', 'subtasks', 'main', 'PRI', 'kinds', 'check_kind']
 
 ITEM = re.compile(r'^(\s*)- \[(.)\] \*\*([^\s*]+)')
 HEAD = re.compile(r'(#+) ')
-# A path-ish token on a task line: `src/main.c`, `crates/sim/src/lib.rs`, `runner.toml`, `docs/api.md`,
-# `play/*.rs`. Anything with a dot and a short extension; checked against the repo before it is believed.
-FILE_TOKEN = re.compile(r'(?<![\w/.`-])([\w.*-]+(?:/[\w.*-]+)*\.[A-Za-z][\w+]{0,5}|[\w.-]+(?:/[\w.-]+)*/\*\*?)')
-BARE_MAX = 5  # a bare file name in a task's text matching more tracked paths than this names none of them
+KEYS = ('files', 'after', 'test', 'journal')
+# ` | key: value` on a task's first line; a value ends at the next field, a note (` — `) or a BLOCKED
+FIELD = re.compile(r' \| (' + '|'.join(KEYS) + r'): (.*?)(?= \| (?:' + '|'.join(KEYS) + r'): | — | BLOCKED: |$)')
 JOURNAL_MAX = 12000  # chars of the newest journal file pasted into a brief; the rest is a Read away
 
 
@@ -427,7 +437,23 @@ def next_id(prefix: str, paths=None) -> str:
     return f'{prefix}{max(n, default=0) + 1}'
 
 
+def _other_checkouts(*plan_files) -> list[Path]:
+    """The same plan files in the repo's other worktrees (a run's slots, a session's own worktree): `add` counts
+    their ids too, so two sessions adding at once don't both take the next free one. Ids added on a branch with
+    no checkout left are still renumbered when it merges."""
+    try:
+        here = Path(git('rev-parse', '--show-toplevel', cwd=os.path.dirname(os.path.abspath(plan_files[0]))
+                        ).stdout.strip())
+        rels = [Path(os.path.abspath(f)).relative_to(here) for f in plan_files]
+        r = git('worktree', 'list', '--porcelain', cwd=here)
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return []
+    trees = [Path(l[9:]) for l in r.stdout.splitlines() if l.startswith('worktree ')]
+    return [p for t in trees if t != here for rel in rels if (p := t / rel).is_file()]
+
+
 PRI = ('critical', 'normal', 'low', 'later')  # a follow-up's level, most urgent first
+
 PRI_TAG = re.compile(r'\(follow-up, (' + '|'.join(PRI) + r')\)')
 FOLLOW_UPS, PARKED = 'Follow-ups', 'Parked'  # the sections `add` makes for levels normal/low and later
 # Sections a run never starts tasks from (a heading starting with one of these)
@@ -532,7 +558,7 @@ def add(prefix: str, text: str, where: str | None = None, ref: str | None = None
     if pri is not None and pri not in PRI:
         raise SystemExit(f'{PROG}: --pri must be one of {" | ".join(PRI)}, not {pri!r}')
     todo, done = ensure(todo, done)
-    tid = next_id(prefix, [todo, done])
+    tid = next_id(prefix, [todo, done, *_other_checkouts(todo, done)])
     ls = list(lines(todo))
     if pri and not PRI_TAG.search(text):
         text = f'(follow-up, {pri}) {text}'
@@ -550,15 +576,14 @@ through today under until what when where which while with without would your'''
 
 
 def _words(text: str) -> set[str]:
-    """The words of a task's text before its file list: no ids, no dated user quotes' brackets."""
-    text = text.split('→')[0].split('| t:')[0]
+    """The words of a task's text, its fields aside: no ids, no dated user quotes' brackets."""
+    text = prose(text)
     text = re.sub(r'\*\*[^*]+\*\*|\([^)]*\d{4}-\d\d-\d\d[^)]*\)', ' ', PRI_TAG.sub(' ', text))
     return {w for w in re.findall(r'[a-z][a-z-]{3,}', text.lower()) if w not in _STOP}
 
 
 def _files(text: str) -> set[str]:
-    text = text.split('| t:')[0]
-    return {f.rstrip('.,;:') for f in FILE_TOKEN.findall(text.partition('→')[2] or text)}
+    return set(fields(text).get('files', []))
 
 
 def similar(text: str, todo=None, skip: str | None = None, limit: int = 3) -> list[str]:
@@ -592,7 +617,8 @@ def similar(text: str, todo=None, skip: str | None = None, limit: int = 3) -> li
     hits.sort(key=lambda h: -h[0])
     out = []
     for _, tid, line in hits[:limit]:
-        body = re.sub(r'^\s*- \[.\] \*\*[^*]+\*\*\s*', '', line).split('→')[0].strip()
+        body = prose(re.sub(r'^\s*- \[.\] \*\*[^*]+\*\*\s*', '', line)).strip()
+
         out.append(f'{tid}: {body[:90]}{"…" if len(body) > 90 else ""}')
     return out
 
@@ -614,96 +640,33 @@ def next_task(todo=None) -> str | None:
     return ITEM.match(blk[0]).group(3).rstrip('.') if blk else None
 
 
-def files_on_line(text: str, root=None, tracked=None) -> list[str]:
-    """Repo paths named on a task line, resolved against the repo. Also used by `./run run` in mode `d`
-    to keep two running agents off the same files, so the matching lives here, once. `tracked`: the repo's
-    paths (`_tracked`), when the caller reads them once for many lines."""
-    root = Path(root or cfg().root)
-    text = text.split('| t:')[0]
-    # what follows `→` is the task's file list by the line format, so a new top-level file counts there;
-    # the list ends with its line (a brief appends the task's long form, whose prose is no list). A line
-    # with a list names those files only: prose that mentions `race.rs` it reads but never edits would
-    # otherwise hold it off every task on race.rs
-    listed = FILE_TOKEN.findall(text.partition('→')[2].split('\n')[0]) if '→' in text else []
-    names = list(dict.fromkeys(listed or FILE_TOKEN.findall(text)))
-    listed = set(listed)
-    tracked = _tracked(root) if tracked is None else tracked
-    out = []
-    for n in names:
-        n = n.rstrip('.,;:')
-        if '*' in n:  # `play/*.rs`, `play/**` on a line mean every file there
-            import fnmatch
-            # the pattern itself too: files it names that this checkout lacks (made on another branch) still overlap
-            out += [t for t in tracked if fnmatch.fnmatch(t, f'*{n}')] + [n]
-            continue
-        hits = [t for t in tracked if t == n or t.endswith('/' + n)]
-        if '/' not in n and n not in listed and len(hits) > BARE_MAX:
-            continue  # prose about a kind of file (`README.md`, `mod.json`), not one of the task's files
-        # A path that does not exist yet is still the task's file: half the backlog creates its files, and
-        # `brief` wants to say "missing — this task creates it" rather than quietly listing nothing. Only
-        # names that look like paths or follow the `→`, though, or prose about `fpu.rs` becomes a file the
-        # runner reserves.
-        out += hits or ([n] if '/' in n or n in listed or (root / n).exists() else [])
-    return list(dict.fromkeys(out))
+def fields(line: str) -> dict[str, list[str]]:
+    """A task line's keyed fields (`| files: a, b | after: X`), comma lists, read off its first line only (a
+    brief appends the long form, whose prose is no field)."""
+    return {k: [x for v in re.split(r',\s*', val) if (x := v.strip().strip('`'))]
+            for k, val in FIELD.findall(line.split('\n')[0].split(' BLOCKED: ')[0])}
 
 
-def with_files(text: str, root=None) -> str | None:
-    """`text` as a task line naming its files, or None when it names neither a file nor a test.
-
-    Mode `d` keeps running tasks apart by the files their lines name; a line naming none overlaps nothing
-    and runs beside anything. A line with a `→` list or a `| t:` test is kept as it is; one whose prose
-    names repo files gets them as its `→` list (the files `files_on_line` already read off it)."""
-    if '→' in text or '| t:' in text:
-        return text
-    import fnmatch
-    files = files_on_line(text, root)
-    pats = [f for f in files if '*' in f]
-    files = [f for f in files if '*' in f or not any(fnmatch.fnmatch(f, f'*{p}') for p in pats)]
-    return f'{text} → {" · ".join(files)}' if files else None
+def prose(line: str) -> str:
+    """A task line without its keyed fields."""
+    return FIELD.sub('', line)
 
 
-def fill_files(todo, root=None) -> tuple[list[str], list[str]]:
-    """Give every open or blocked task line in `todo` that names no files and no test the files its prose
-    names (`with_files`), in place: a session that writes a line into TODO.md by hand skips `plan add`'s
-    check. Returns (the ids filled, the ids still naming nothing)."""
-    ls, filled, left = list(lines(todo)), [], []
-    for i, l in enumerate(ls):
-        m = ITEM.match(l)
-        if not m or m.group(2) == 'x' or '→' in l or '| t:' in l:
-            continue
-        tid = m.group(3).rstrip('.')
-        if got := with_files(l, root):
-            ls[i] = got
-            filled.append(tid)
-        else:
-            left.append(tid)
-    if filled:
-        _write(todo, ls)
-    return filled, left
+def files_on_line(text: str) -> list[str]:
+    """The `files:` of a task line: paths and patterns (`dir/**`, `dir/*.rs`). Mode d keeps two running tasks
+    apart by them (`overlap`)."""
+    return fields(text).get('files', [])
 
 
 def overlap(a: set[str], b: set[str]) -> set[str]:
-    """Paths and patterns (`dir/**`, `dir/*.rs`) of `a` that meet `b`'s: equal, or one matching the other."""
+    """Paths and patterns (`dir/**`, `dir/*.rs`) of `a` that meet `b`'s: equal, one a tail of the other
+    (`src/menu.rs` is `app/src/menu.rs`), or one matching the other as a pattern."""
     import fnmatch
-    pa, pb = [x for x in a if '*' in x], [y for y in b if '*' in y]  # few: only patterns need fnmatch
-    return (a & b) | {x for x in pa for y in b if fnmatch.fnmatch(y, x)} | {
-        x for x in a for y in pb if fnmatch.fnmatch(x, y)}
 
-
-def _tracked(root) -> list[str]:
-    """Every tracked path, from git; a filesystem walk when this isn't a git checkout (tests, a fresh copy)."""
-    try:
-        r = git('ls-files', cwd=root, timeout=20)
-        if r.returncode == 0 and r.stdout.strip():
-            return r.stdout.split()
-    except (OSError, subprocess.SubprocessError):
-        pass
-    out = []
-    for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = [d for d in dirnames if d not in ('.git', 'target', 'node_modules', '__pycache__')]
-        for f in filenames:
-            out.append(os.path.relpath(os.path.join(dirpath, f), root).replace(os.sep, '/'))
-    return out
+    def meet(x: str, y: str) -> bool:
+        return (x == y or x.endswith('/' + y) or y.endswith('/' + x)
+                or ('*' in x and fnmatch.fnmatch(y, f'*{x}')) or ('*' in y and fnmatch.fnmatch(x, f'*{y}')))
+    return {x for x in a for y in b if meet(x, y)}
 
 
 def brief(tid: str, root=None, plan_dir=None, journal=None) -> list[str]:
@@ -751,7 +714,7 @@ def brief(tid: str, root=None, plan_dir=None, journal=None) -> list[str]:
         text += '\n' + '\n'.join(lines(own))
 
     # journals: the ones the line points at (`j: <dir>`) and any whose name carries this id
-    named = re.findall(r'\bj: ([\w.-]+)', text)
+    named = fields(text).get('journal', [])
     try:
         dirs = sorted(d for d in os.listdir(journal) if (journal / d).is_dir()) if journal else []
     except OSError:
@@ -772,7 +735,7 @@ def brief(tid: str, root=None, plan_dir=None, journal=None) -> list[str]:
             out += [f'### {newest}' + (f' (first {JOURNAL_MAX} chars)' if cut else ''),
                     body[:JOURNAL_MAX].rstrip()]
 
-    where = [p for p in files_on_line(text, root) if p != own_rel and '*' not in p]
+    where = [p for p in files_on_line(text) if p != own_rel and '*' not in p]
     if where:
         out += ['', '## Files on the line, and their last commits']
         for t in where:
@@ -1067,7 +1030,7 @@ def install_driver(cwd, rels: list[str]) -> None:
 HELP = __doc__ + """
 Ids are permanent: `tick` moves a line to DONE.md but never renumbers, and `newid`/`add` count DONE.md too,
 so a finished id is never handed out again. That matters because journal directories, commit messages and
-`(after X)` dependencies all name tasks by id.
+`after:` fields all name tasks by id.
 """
 
 
@@ -1077,6 +1040,8 @@ def _commit(root: Path, paths: list[Path], msg: str) -> None:
     agents') commit through `done`; mid-merge the edit stays uncommitted for whoever is merging."""
     g = partial(git, cwd=root)
     gd, cd = (g('rev-parse', '--path-format=absolute', f).stdout.strip() for f in ('--git-dir', '--git-common-dir'))
+    if os.environ.get('AGENT_RUNNER_NOCOMMIT'):  # the caller commits the edit with its own change
+        return
     if gd and gd == cd and not os.path.exists(os.path.join(gd, 'MERGE_HEAD')):
         g('add', '--', *map(str, paths))  # a fresh plan/ is untracked, and commit -- PATH skips those
         g('commit', '-q', '-m', f'plan: {msg}', '--', *map(str, paths))
@@ -1145,10 +1110,17 @@ def _main(argv: list[str], c) -> int:
         if given := '--pri' in rest[:-1]:
             k = rest.index('--pri')
             pri, rest = rest[k + 1], rest[:k] + rest[k + 2:]
+        keyed = ''
+        for key in KEYS:  # `--files a,b` → ` | files: a, b`, in KEYS order
+            if f'--{key}' in rest[:-1]:
+                k = rest.index(f'--{key}')
+                val = rest[k + 1] if key == 'test' else ', '.join(re.split(r'[,\s]+', rest[k + 1].strip(', ')))
+                keyed, rest = keyed + f' | {key}: {val}', rest[:k] + rest[k + 2:]
         if why := check_kind(argv[1]):
             print(why, file=sys.stderr)
             return 2
         text, _, where = ' '.join(rest).partition(' @ ')
+        text += keyed
         w = where.split(maxsplit=1) or [None]
         if not given and not where and (fam := family_end(argv[1])):
             w, pri = ['after', fam[0]], fam[1]  # a split stays with its parent (module doc)
@@ -1159,16 +1131,21 @@ def _main(argv: list[str], c) -> int:
                   + f'\n`{PROG} note <ID> TEXT` it there; if it is different work, add it again with --force',
                   file=sys.stderr)
             return 3
-        if cfg().raw['plan'].get('need_files'):
-            if (named := with_files(text)) is None:
-                print(f'{PROG}: not added: the line names no file and no test. End it with `→ path/to/file` '
-                      f'(the files the task will change) or `| t: test` (the test it adds): the runner keeps '
-                      f'running tasks apart by those, and a line naming none runs beside anything',
-                      file=sys.stderr)
+        if not {'files', 'test'} & set(fields(text)):
+            why = (f'the line has no `files:`: pass `--files path/a,dir/**` (the files the task will change) '
+                   f'or `--test name` (the test it adds); mode d keeps running tasks apart by them, and a line '
+                   f'naming none runs beside anything')
+            if cfg().raw['plan'].get('need_files'):
+                print(f'{PROG}: not added: {why}', file=sys.stderr)
                 return 2
-            text = named
+            print(f'{PROG}: warning: {why}', file=sys.stderr)
+
         tid = add(argv[1], text, w[0], (w[1:] or [None])[0], pri=pri)
         msg = f'added {tid}' + (f' ({pri})' if pri else '')
+        if fam:  # a subtask queues behind its family: only right when it needs the parent's code, data or verdict
+            print(f'{PROG}: note: {tid} never runs beside {argv[1]}\'s family; if it could start now, add it '
+                  f'with a fresh letter instead (`{PROG} add {re.match(r"[A-Za-z]+", argv[1]).group()} …`)',
+                  file=sys.stderr)
         if pri == 'critical' and os.environ.get('AGENT_RUNNER') == '1':
             msg += '\ncritical goes ahead of the queued work: its text must say what it breaks or blocks'
         return say(msg)
@@ -1194,6 +1171,7 @@ def _main(argv: list[str], c) -> int:
     paths = [todo, plan_dir / 'REFERENCE.md', plan_dir / 'HUMAN.md', done]
     if c.run['rules']:
         paths.append(c.root / c.run['rules'])
+    paths += [c.root / f for f in c.raw['plan']['lookup']]
     paths = [str(p) for p in paths if os.path.exists(p)]
     if argv[:1] == ['-f']:
         if len(argv) < 3:

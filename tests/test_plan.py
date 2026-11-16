@@ -27,9 +27,9 @@ def test_plan_roundtrip():
         check(os.path.exists(todo) and os.path.exists(done), 'ensure creates both files in a fresh checkout')
         kw = dict(todo=todo, done=done)
 
-        a = plan.add('D', 'the parser → src/parse.py', **kw)
-        b = plan.add('D', 'the printer → src/print.py · docs/API.md', **kw)
-        c = plan.add('F', 'the formatter → src/fmt.py', **kw)
+        a = plan.add('D', 'the parser | files: src/parse.py', **kw)
+        b = plan.add('D', 'the printer | files: src/print.py, docs/API.md', **kw)
+        c = plan.add('F', 'the formatter | files: src/fmt.py', **kw)
         eq((a, b, c), ('D1', 'D2', 'F1'), 'add hands out the next free id per prefix')
         eq(plan.next_task(todo=todo), 'F1', 'add puts a new task at the top, so next_task is the newest')
 
@@ -87,7 +87,7 @@ def test_plan_reopen():
         d = Path(tmp) / 'plan'
         todo, done = plan.ensure(d / 'TODO.md', d / 'DONE.md')
         kw = dict(todo=todo, done=done)
-        for text in ('the menu → menu.py', 'the settings → settings.py', 'the lobby → lobby.py', 'a demo → d.py'):
+        for text in ('the menu | files: menu.py', 'the settings | files: settings.py', 'the lobby | files: lobby.py', 'a demo | files: d.py'):
             plan.add('P', text, **kw)
         plan.block('P2', "needs P1's menu (in flight) and V22's split, done long ago", todo=todo)
         has(Path(todo).read_text(), r'\*\*P2\*\*.* BLOCKED: \(after P1\) needs',
@@ -120,26 +120,24 @@ def test_plan_index_and_sections():
         todo, _ = plan.ensure(d / 'TODO.md', d / 'DONE.md')
         Path(todo).write_text('\n'.join([
             '# TODO', '', '### Next (in this order)', '',
-            '- [ ] **R1** the parser → src/parse.py · API.md | t: tests/test_parse.py | j: r1-parser',
+            '- [ ] **R1** the parser | files: src/parse.py, API.md | test: tests/test_parse.py | journal: r1-parser',
             '  - a sub-line that belongs to R1',
-            '- [~] **R2** the printer → src/print.py BLOCKED: needs R1',
-            '', '### Stretch', '', '- [ ] **K1** a web page → web/index.html', '']), encoding='utf-8')
+            '- [~] **R2** the printer | files: src/print.py BLOCKED: needs R1',
+            '', '### Stretch', '', '- [ ] **K1** a web page | files: web/index.html', '']), encoding='utf-8')
         eq(plan.index(todo), ['# TODO', '### Next (in this order)', '[ ] R1', '[~] R2', '### Stretch', '[ ] K1'],
            'index is headings and ids only — the whole backlog in a screenful')
         eq(plan.section(todo, 'R1'),
-           ['- [ ] **R1** the parser → src/parse.py · API.md | t: tests/test_parse.py | j: r1-parser',
+           ['- [ ] **R1** the parser | files: src/parse.py, API.md | test: tests/test_parse.py | journal: r1-parser',
             '  - a sub-line that belongs to R1'], 'a task by id brings its sub-lines with it')
-        eq(plan.section(todo, 'Stretch'), ['### Stretch', '', '- [ ] **K1** a web page → web/index.html'],
+        eq(plan.section(todo, 'Stretch'), ['### Stretch', '', '- [ ] **K1** a web page | files: web/index.html'],
            'a section by heading substring')
         eq(plan.section(todo, 'nope'), [], 'an unknown name is empty, not an error')
-        eq(plan.files_on_line('→ src/parse.py · API.md | t: tests/test_parse.py', root=root),
-           ['src/parse.py', 'docs/API.md'],
-           'files_on_line resolves a bare name against the repo, and stops at the tests')
-        eq(plan.files_on_line('mentions notes.py in prose → new.py', root=root), ['new.py'],
-           'a new top-level file after the → counts; one named only in prose does not')
-        many = [f'd{i}/README.md' for i in range(plan.BARE_MAX + 1)] + ['src/parse.py']
-        eq(plan.files_on_line('the dataset card is a README.md → src/parse.py', root=root, tracked=many), ['src/parse.py'],
-           'a bare name that many files share is prose, not a file of the task')
+        eq(plan.fields('- [ ] **R1** a — b | files: src/parse.py, `API.md` | after: R0 | test: t1 — a note BLOCKED: x'),
+           {'files': ['src/parse.py', 'API.md'], 'after': ['R0'], 'test': ['t1']},
+           'keyed fields are comma lists; a value ends at the next field, a note or a BLOCKED')
+        eq(plan.files_on_line('mentions notes.py in prose | files: new.py'), ['new.py'],
+           'the files are the `files:` field; prose names none')
+        eq(plan.files_on_line('mentions notes.py in prose'), [], 'and a line without one names none')
 
 
 def test_brief():
@@ -152,7 +150,7 @@ def test_brief():
         (root / 'docs/API.md').write_text('a\nb\nc\n', encoding='utf-8')
         (root / 'runner.toml').write_text('[plan]\njournal = "journal"\n', encoding='utf-8')
         (root / 'plan/TODO.md').write_text(
-            '# TODO\n\n### Next\n\n- [ ] **D3** the printer → docs/API.md · src/new.py | t: none | j: d3-printer\n',
+            '# TODO\n\n### Next\n\n- [ ] **D3** the printer | files: docs/API.md, src/new.py | test: none | journal: d3-printer\n',
             encoding='utf-8')
         (root / 'plan/DONE.md').write_text('# DONE\n', encoding='utf-8')
         (root / 'plan/D3.md').write_text('# D3 — the printer\n\nThe long form.\n', encoding='utf-8')
@@ -203,7 +201,7 @@ def test_brief_outline():
         (root / 'outline.py').write_text('import sys\nfor l in open(sys.argv[1]):\n'
                                           '    print(l.rstrip()) if l.startswith("def ") else None\n')
         (root / 'runner.toml').write_text('[plan]\noutline = "python3 outline.py {file}"\n', encoding='utf-8')
-        (root / 'plan/TODO.md').write_text('# TODO\n\n### Next\n\n- [ ] **D1** both → src/ab.py · src/new.py\n',
+        (root / 'plan/TODO.md').write_text('# TODO\n\n### Next\n\n- [ ] **D1** both | files: src/ab.py, src/new.py\n',
                                            encoding='utf-8')
         (root / 'plan/DONE.md').write_text('# DONE\n', encoding='utf-8')
         git(root, 'add', '-A')
@@ -319,6 +317,9 @@ def test_add_subtask():
         text = todo.read_text()
         has(text, r'\*\*A1a\*\* the first part', 'a person\'s task\'s subtask carries no follow-up tag')
         has(text, r'\*\*A3a\*\* \(follow-up, low\) part of the check', 'a follow-up\'s subtask keeps its level')
+        r = run(root, 'plan', 'add', 'A1', 'a third part', env=env)
+        has(r.stderr, r'A1c never runs beside A1', 'a subtask id comes with a note to use a fresh letter if it could start now')
+        has(run(root, 'plan', 'add', 'A', 'unrelated work', env=env).stderr, r'^$', 'a fresh id gets no note')
 
 
 def test_kinds():
@@ -344,51 +345,27 @@ def test_kinds():
 
 
 def test_need_files():
-    print('plan: with [plan] need_files, a new line names its files or its test')
+    print('plan: add writes --files/--after/--test as fields; a line without files: warns, or with need_files is refused')
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
         git(root, 'init', '-q')
-        (root / 'src').mkdir()
-        (root / 'src' / 'race.rs').write_text('', encoding='utf-8')
+        (root / 'a.txt').write_text('', encoding='utf-8')
         git(root, 'add', '-A'); git(root, 'commit', '-qm', 'start')
         env = {**os.environ, 'AGENT_RUNNER_REPO': str(root)}
         env.pop('AGENT_RUNNER', None)
         r = run(root, 'plan', 'add', 'S', 'the gates', env=env)
         eq(r.returncode, 0, 'off by default, a bare line is added')
+        has(r.stderr, r'warning: the line has no `files:`', 'with a warning')
+        r = run(root, 'plan', 'add', 'S', 'the race walk', '--files', 'src/race.rs,src/menu.rs', '--after', 'S1',
+                '--test', 'walk', env=env)
+        check(r.returncode == 0 and 'warning' not in r.stderr, 'flags name the fields', r.stderr)
+        has((root / 'plan' / 'TODO.md').read_text(encoding='utf-8'),
+            r'the race walk \| files: src/race\.rs, src/menu\.rs \| after: S1 \| test: walk$', 'in KEYS order')
         (root / 'runner.toml').write_text('[plan]\nneed_files = true\n', encoding='utf-8')
-        r = run(root, 'plan', 'add', 'S', 'the start drop', env=env)
-        eq(r.returncode, 2, 'a line naming no file and no test is refused')
-        has(r.stderr, r'→ path/to/file.*\| t: test', 'and the refusal says how to name them')
         r = run(root, 'plan', 'add', 'S', 'port the gate walk of race.rs', env=env)
-        check(r.returncode == 0, 'a line whose prose names a file is added', r.stderr)
-        todo = (root / 'plan' / 'TODO.md').read_text(encoding='utf-8')
-        has(todo, r'port the gate walk of race\.rs → src/race\.rs', 'with that file as its → list, resolved')
-        for words in (['the finish line → src/finish.rs'], ['prove the finish | t: finish_width']):
-            r = run(root, 'plan', 'add', 'S', *words, env=env)
-            check(r.returncode == 0, f'a → list or a | t: test is enough: {words[0]}', r.stderr)
-        eq(plan.with_files('the a/b.rs and a/c.rs walk', root), 'the a/b.rs and a/c.rs walk → a/b.rs · a/c.rs',
-           'several files, in order')
-
-
-def test_list_is_the_files():
-    print('plan: a → list is the line\'s files; a hand-written line gets its prose\'s files at the merge')
-    with tempfile.TemporaryDirectory() as tmp:
-        root = Path(tmp)
-        git(root, 'init', '-q')
-        for f in ('src/race.rs', 'src/menu.rs', 'src/ai.rs'):
-            (root / f).parent.mkdir(exist_ok=True)
-            (root / f).write_text('', encoding='utf-8')
-        git(root, 'add', '-A'); git(root, 'commit', '-qm', 'start')
-        eq(plan.files_on_line('**P327** the menu, with what race.rs has → src/menu.rs', root), ['src/menu.rs'],
-           'prose about race.rs it only reads does not reserve it')
-        eq(plan.files_on_line('**S1** the walk of race.rs | t: walk', root), ['src/race.rs'],
-           'without a list the prose still names the files')
-        todo = root / 'TODO.md'
-        todo.write_text('# TODO\n\n### Next\n\n- [ ] **S304** run it in ai.rs\n- [~] **R18** read a log BLOCKED: later\n'
-                        '- [ ] **S1** kept → src/race.rs\n- [x] **S2** done in menu.rs\n', encoding='utf-8')
-        eq(plan.fill_files(todo, root), (['S304'], ['R18']), 'filled, and the one naming nothing told')
-        has(todo.read_text(encoding='utf-8'), r'run it in ai\.rs → src/ai\.rs\n', 'with its file as the list')
-        has(todo.read_text(encoding='utf-8'), r'\*\*S2\*\* done in menu\.rs\n', 'a ticked line is left alone')
+        eq(r.returncode, 2, 'with need_files a line naming no files: and no test: is refused, prose or not')
+        r = run(root, 'plan', 'add', 'S', 'prove the finish', '--test', 'finish_width', env=env)
+        check(r.returncode == 0, 'a test: is enough', r.stderr)
 
 
 def test_hand_edits_commit():
@@ -404,6 +381,14 @@ def test_hand_edits_commit():
         (root / '.git/MERGE_HEAD').write_text(git(root, 'rev-parse', 'HEAD') + '\n', encoding='utf-8')
         run(root, 'plan', 'note', 'R1', 'mid-merge')
         has(git(root, 'status', '--porcelain', '--', 'plan'), r'TODO\.md', 'mid-merge the edit stays uncommitted')
+        (root / '.git/MERGE_HEAD').unlink()
+        run(root, 'plan', 'note', 'R1', 'now')
+        eq(git(root, 'status', '--porcelain', '--', 'plan'), '', 'after the merge the next edit commits both')
+        run(root, 'plan', 'note', 'R1', 'by a script', env={**os.environ, 'AGENT_RUNNER_NOCOMMIT': '1'})
+        has(git(root, 'status', '--porcelain', '--', 'plan'), r'TODO\.md', 'AGENT_RUNNER_NOCOMMIT leaves it for the caller')
+        (root / 'runner.toml').write_text('[plan]\nlookup = ["NOTES.md"]\n', encoding='utf-8')
+        (root / 'NOTES.md').write_text('# Notes\n\n## When blocked\n\nmove on\n', encoding='utf-8')
+        has(run(root, 'plan', 'when blocked').stdout, r'move on', '[plan] lookup adds files that name lookups search')
 
 
 def test_similar():
@@ -412,20 +397,20 @@ def test_similar():
         d = Path(tmp) / 'plan'
         todo, done = plan.ensure(d / 'TODO.md', d / 'DONE.md')
         kw = dict(todo=todo, done=done)
-        plan.add('V', "the radar's map names go inside the minimap → src/hud.rs", **kw)
-        plan.add('V', 'world tiles pop in at once; stream them nearest first → src/tiles.rs · src/main.rs', **kw)
-        plan.add('P', 'the menu sound plays when a slider moves → src/menu.rs · src/main.rs', **kw)
-        plan.add('P', 'the garage shows each bike in its own colours → src/garage.rs · src/main.rs', **kw)
-        plan.add('S', 'a done one about the radar and its minimap names → src/hud.rs', **kw)
+        plan.add('V', "the radar's map names go inside the minimap | files: src/hud.rs", **kw)
+        plan.add('V', 'world tiles pop in at once; stream them nearest first | files: src/tiles.rs, src/main.rs', **kw)
+        plan.add('P', 'the menu sound plays when a slider moves | files: src/menu.rs, src/main.rs', **kw)
+        plan.add('P', 'the garage shows each bike in its own colours | files: src/garage.rs, src/main.rs', **kw)
+        plan.add('S', 'a done one about the radar and its minimap names | files: src/hud.rs', **kw)
         plan.tick('S1', **kw)
-        got = plan.similar("show the map names inside the radar's minimap → src/hud.rs", todo=todo)
+        got = plan.similar("show the map names inside the radar's minimap | files: src/hud.rs", todo=todo)
         eq([g.split(':')[0] for g in got], ['V1'], 'the same work is named, and a done task is not')
         has(got[0], r"^V1: the radar's map names go inside the minimap$", 'as its id and the start of its text')
-        eq(plan.similar('the rider leans too far in a berm → src/rider.rs', todo=todo), [],
+        eq(plan.similar('the rider leans too far in a berm | files: src/rider.rs', todo=todo), [],
            'unrelated work prints nothing, so an agent pays nothing for it')
-        eq([g.split(':')[0] for g in plan.similar('stream tiles nearest first, they pop in → src/tiles.rs', todo=todo)],
+        eq([g.split(':')[0] for g in plan.similar('stream tiles nearest first, they pop in | files: src/tiles.rs', todo=todo)],
            ['V2'], 'a shared rare file and some of the words is enough')
-        eq(plan.similar('the main menu → src/main.rs', todo=todo, skip='P1'), [],
+        eq(plan.similar('the main menu | files: src/main.rs', todo=todo, skip='P1'), [],
            'a file every task names is not a match by itself')
 
 
@@ -436,17 +421,17 @@ def test_add_refuses_a_duplicate():
         git(root, 'init', '-q')
         env = {**os.environ, 'AGENT_RUNNER_REPO': str(root)}
         env.pop('AGENT_RUNNER', None)
-        for text in ("the radar's map names go inside the minimap → src/hud.rs",
-                     'world tiles pop in at once; stream them nearest first → src/tiles.rs · src/main.rs',
-                     'the menu sound plays when a slider moves → src/menu.rs · src/main.rs'):
+        for text in ("the radar's map names go inside the minimap | files: src/hud.rs",
+                     'world tiles pop in at once; stream them nearest first | files: src/tiles.rs, src/main.rs',
+                     'the menu sound plays when a slider moves | files: src/menu.rs, src/main.rs'):
             eq(run(root, 'plan', 'add', 'V', text, env=env).returncode, 0, 'the first adds')
         before = (root / 'plan' / 'TODO.md').read_text(encoding='utf-8')
-        r = run(root, 'plan', 'add', 'B', "show the map names inside the radar's minimap → src/hud.rs", env=env)
+        r = run(root, 'plan', 'add', 'B', "show the map names inside the radar's minimap | files: src/hud.rs", env=env)
         eq(r.returncode, 3, 'the same work again is refused')
         has(r.stderr, r'V1: the radar', 'naming the open task')
         has(r.stderr, r'note <ID> TEXT.*--force', 'and what to do instead')
         eq((root / 'plan' / 'TODO.md').read_text(encoding='utf-8'), before, 'with nothing written')
-        r = run(root, 'plan', 'add', 'B', "show the map names inside the radar's minimap → src/hud.rs", '--force',
+        r = run(root, 'plan', 'add', 'B', "show the map names inside the radar's minimap | files: src/hud.rs", '--force',
                 env=env)
         has(r.stdout, r'added B1', '--force adds it')
         r = run(root, 'plan', 'drop', 'B1', 'the same as V1', env=env)
@@ -539,5 +524,5 @@ def test_merge_driver():
 
 if __name__ == '__main__':
     sys.exit(report([test_plan_roundtrip, test_plan_reopen, test_plan_index_and_sections, test_brief, test_brief_outline,
-                     test_split_parents, test_add_bottom, test_add_pri, test_add_subtask, test_kinds, test_need_files, test_list_is_the_files, test_hand_edits_commit, test_similar, test_add_refuses_a_duplicate, test_carry_notes,
+                     test_split_parents, test_add_bottom, test_add_pri, test_add_subtask, test_kinds, test_need_files, test_hand_edits_commit, test_similar, test_add_refuses_a_duplicate, test_carry_notes,
                      test_merge3, test_merge_driver]))

@@ -105,6 +105,17 @@ def test_commands(repo: Path):
     R.C.run['lean'] = False
     check('--no-extensions' not in R.agent_flags('test-session', model, 90),
           'lean=false preserves normal Pi resource loading')
+    with tempfile.TemporaryDirectory() as d:
+        npm = Path(d)
+        shim = npm / 'pi.cmd'
+        cli = npm / 'node_modules' / '@earendil-works' / 'pi-coding-agent' / 'dist' / 'bundle' / 'cli.js'
+        node = npm / 'node.exe'
+        cli.parent.mkdir(parents=True)
+        cli.touch()
+        node.touch()
+        with patch.object(R.plat, 'WINDOWS', True), patch.object(R.plat, 'exe', return_value=str(shim)):
+            argv = R.Pi().argv('prompt', R.C.notes('slot1.prompt'), 'test-session', [])
+        eq(argv[:2], [str(node), str(cli)], 'Windows Pi launches node and the CLI, not the npm .cmd shim')
 
 
 def write_session(sid: str, *messages: dict) -> Path:
@@ -166,8 +177,8 @@ def test_sessions(repo: Path):
                                             'errorMessage': 'limit resets 3pm'})
     eq(R.limit_only('limited', R.C.notes('slot1.log'), 0), None, 'Claude usage-reset handling is not used for Pi')
     check(limited.exists(), 'Pi transcripts are never deleted by Claude-specific cleanup')
-    with patch.object(R, 'weekly', side_effect=AssertionError('must not query Claude')):
-        eq(R.capped(False), None, 'Pi does not query Claude weekly usage')
+    with patch.object(R, 'account_usage', side_effect=AssertionError('must not query Claude')):
+        eq(R.capped(False), None, 'Pi does not query Claude usage')
 
 
 def test_fixer(repo: Path):

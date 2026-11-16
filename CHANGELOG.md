@@ -2,6 +2,55 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
+## 0.30.1 (2026-11-16)
+
+- The agents' prompt tells them to file follow-ups with `--files` (and `--after`), not text alone.
+
+## 0.30.0 (2026-11-16)
+
+Breaking: a new task line format, and the old one is no longer read. Rewrite TODO.md once.
+
+- A task line is `- [ ] **ID** prose | files: a, b | after: X, Y | test: name | journal: dir`, then an optional
+  ` — note` and `BLOCKED: …`. Only the fields count; prose is never parsed for files or ids. `→ files`,
+  `(after X)`, `| t:` and `| j:` are gone, and so is the rule that a line naming a running task's id waits.
+- `plan add --files/--after/--test/--journal` writes the fields; a line with no `files:` and no `test:` gets a
+  warning (an error with `[plan] need_files`). Its next free id counts the plan in every worktree of the repo,
+  so two sessions adding at once no longer take the same id.
+- Mode d keeps a task off the files of running and finished-but-unmerged tasks: their lines' and the ones
+  their branches have touched. A path meets its own tail (`src/menu.rs` meets `app/src/menu.rs`).
+- An ordered section is one whose heading says *in this order* or *one at a time* (no longer any *Next*).
+- `LICENSE*` and `COPYING*` join `*.md` in the default `untested`: a license commit landing mid-gate no longer
+  throws the passed gate away.
+- Fixes: a merge whose branch kept getting code commits during its gate is no longer landed untested on the
+  third try; gate records check the process start time, so a reused pid is not mistaken for a live gate;
+  renumbering a doubled id renames its `plan/tasks/<ID>.md` too; the union/renumber scratch files are per
+  task (two merges in threads no longer share one); `master.json` is removed only by its own session;
+  a remote `task/*` branch an earlier failed push left behind is deleted once main has it; a branch left for a
+  human drops its held refs as well as its fixed ones.
+- Removed: support for pre-0.14 claims, the pre-0.13 `~/.cache/agent-runner` plan clone and `<repo>-slots/`
+  worktrees.
+
+## 0.27.0 (2026-11-15)
+
+- `[run] session_max` (default 90): past that % of the account's 5-hour session usage, no new task starts,
+  as `weekly_max` does for the 7-day usage. Before, only the weekly figure was watched, so a run of several
+  slots could spend the whole session limit and leave every slot stuck at the limit prompt.
+
+## 0.26.1 (2026-11-14)
+
+- `batch_wait` skips a task whose gate is already running (adopted after a restart, or built ahead): a task
+  joining it would start that gate over.
+
+## 0.26.0 (2026-11-14)
+
+- A batch that fails the gate looks for the task that breaks it by itself: each branch is merged alone and
+  `retest` runs just the failing tests. Those tasks merge in their own turn; the rest are gated together
+  again, instead of every branch going alone. With no branch failing alone, the batch repair runs as before.
+- A one-task repair starts as a copy of the session that did the task (Claude only), so it knows the change.
+  The repair prompt no longer assumes the branch passed the gate on its own.
+- `[run] batch_wait` / `batch_min`: a finished task can wait for others before its gate run while slots
+  still work, so one gate run covers more tasks. Off by default.
+
 ## 0.25.0 (2026-11-12)
 
 - A gate failure the base fails the same way still merges anyway, and now files a critical task to make the

@@ -80,7 +80,9 @@ DEFAULTS: dict = {
                                 # the path. The brief shows it under each file the task line names
         'brief': '',            # a command whose output *is* the brief, replacing the built-in one; {id}
         'kinds': {},            # id prefix -> the kind of work it marks (`plan kinds`); empty = plan.KINDS
-        'need_files': False,    # `plan add` wants a line naming its files or its test (`with_files`)
+        'need_files': False,    # `plan add` refuses a line with no files: or test: field
+        'lookup': [],           # more markdown files `plan <name>` searches for a heading (after TODO, REFERENCE,
+                                # HUMAN, DONE and [run] rules), e.g. ["PLAN.md"]
     },
     'run': {
         'test': '',             # the gate: `done` and every merge run it; empty means no gate
@@ -100,6 +102,7 @@ DEFAULTS: dict = {
         'stall': 1200,          # seconds of quiet at a prompt that count as stalled
         'pause': 60,            # seconds between one session ending and the next starting in that slot
         'weekly_max': 90,       # % of the account's 7-day usage past which no new task starts
+        'session_max': 90,      # % of the account's 5-hour session usage past which no new task starts
         'notes': '.runner',     # logs and the ledger; keep it git-ignored
         'links': [],            # git-ignored paths symlinked into every worktree (data, big files)
         'copies': [],           # git-ignored files copied into a new worktree once (a local config)
@@ -115,7 +118,7 @@ DEFAULTS: dict = {
         'suspect': '',          # a regex: a block line a merge adds that matches it is flagged in the ledger
         'precommit': '',        # a check `done` runs after the gate, before it ticks (--skip-check skips it)
         'command': '',          # what the prompt tells sessions to call (default: this runner); e.g. ./kit
-        'untested': ['*.md'],   # globs of files the gate cannot see (`!glob` takes one back): a merge that
+        'untested': ['*.md', 'LICENSE*', 'COPYING*'],   # globs of files the gate cannot see (`!glob` takes one back): a merge that
                                 # differs from what was tested only in these is not tested again
         'failures': '',         # a regex whose group 1 names a failing test in the gate's output
         'retest': '',           # the gate for just some tests; {names} is those `failures` found. A failure
@@ -130,6 +133,9 @@ DEFAULTS: dict = {
         'ci_rerun': True,       # a red run's failed jobs are run once more first; only a second red files it
         'batch': True,          # finished branches waiting for the merge go in together under one gate run
         'merge_ahead': True,    # tasks finishing during a batch's gate are merged on it and tested beside it
+        'batch_wait': 0,        # s a finished task holds the merge for others while slots still work, so one
+                                # gate run takes more of them; 0 = merge at once
+        'batch_min': 3,         # how many tasks ready to merge end that wait early
         'before_start': '',     # a command that must succeed before a session starts; the slot waits on it
         'not_attempt': '',      # a regex on a finished branch's first commit subject ({id}): such a session
                                 # (a spec phase, say) is not the run's one attempt at the task
@@ -234,6 +240,7 @@ LOCAL_TEMPLATE = """\
 
 # [run]
 # weekly_max = 90        # % of the account's 7-day usage past which no new task starts
+# session_max = 90       # % of the account's 5-hour session usage past which no new task starts
 # slots = 3              # parallel sessions on this machine
 # model = "opus"
 # min_free_gb = 10       # below this free disk space no new task starts
@@ -285,10 +292,7 @@ class Config:
         raw = {**raw, 'run': supplied}
         self.raw = {k: {**v, **raw.get(k, {})} for k, v in DEFAULTS.items()}
         if self.raw['plan']['repo'] and 'dir' not in raw.get('plan', {}):
-            name = Path(self.raw['plan']['repo'].rstrip('/')).name.removesuffix('.git')
-            legacy = Path(f'~/.cache/agent-runner/{name}').expanduser()  # before 0.13; `git mv`-free to move
-            self.raw['plan']['dir'] = str(legacy if legacy.is_dir() and not (self.home / 'plan').exists()
-                                          else self.home / 'plan')
+            self.raw['plan']['dir'] = str(self.home / 'plan')
         self.run = self.raw['run']
         if not isinstance(self.run['include_task_id_in_commit'], bool):
             raise SystemExit('agent-runner: [run] include_task_id_in_commit must be a boolean')
@@ -328,12 +332,8 @@ class Config:
 
     @property
     def slots_dir(self) -> Path:
-        """The worktrees: `home`, or `<repo>-slots/` beside the checkout while a run from before 0.13 left them."""
-        main, home = main_checkout(self.root), self.home
-        legacy = main.parent / f'{main.name}-slots'
-        if legacy.is_dir() and not any((home / n).is_dir() for n in ('s1', 'merge')):
-            return legacy
-        return home
+        """The worktrees: `home`."""
+        return self.home
 
     @property
     def plan_external(self) -> bool:

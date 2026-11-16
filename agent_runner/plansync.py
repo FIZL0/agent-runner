@@ -135,17 +135,15 @@ def owner(c) -> str:
 REFRESH = 15 * 60  # s between a live run's refreshes of its claims (one commit for all of them)
 STALE = 90 * 60  # s without a refresh after which a claim is a dead run's: it holds its task, not its files
 _STAMP = '%Y-%m-%d %H:%M'
-# The claim file, one field a line. 0.13 and older write the first three and read only those, so both read
-# each other's claims; a claim without a version is from a runner that ignores the files claims hold.
+# The claim file, one field a line:
 #   owner (host:checkout) / refreshed (_STAMP) / user@host / version / claimed at (epoch) / files, tab-separated
-MIN_PEER = (0, 14, 0)  # the first version that keeps off the files another runner's claims hold
 
 
 class Claim(NamedTuple):
     owner: str
     at: float  # when last claimed or refreshed
     who: str  # user@host
-    version: str = ''  # '' from a runner older than 0.14
+    version: str = ''
     since: float = 0.0  # when first claimed: the earlier of two clashing claims keeps its task
     files: frozenset = frozenset()  # the task line's files and the ones its session has touched
 
@@ -172,19 +170,6 @@ def claims(c) -> dict[str, Claim]:
     return out
 
 
-def version_tuple(v: str) -> tuple[int, ...]:
-    """'0.14.0' -> (0, 14, 0); () for '' or anything unreadable."""
-    try:
-        return tuple(int(x) for x in v.split('.')[:3])
-    except ValueError:
-        return ()
-
-
-def outdated(cl: Claim) -> bool:
-    """Its runner predates MIN_PEER, so it does not keep off this run's files."""
-    return version_tuple(cl.version) < MIN_PEER
-
-
 def stale(cl: Claim) -> bool:
     return time.time() - cl[1] > STALE
 
@@ -193,7 +178,7 @@ def label(cl: Claim) -> str:
     """`alex@laptop 14:02`, the date too when it is not today, the runner's version, and STALE past STALE."""
     at = time.localtime(cl[1])
     when = time.strftime('%H:%M' if at[:3] == time.localtime()[:3] else '%m-%d %H:%M', at)
-    return f'{cl.who} {when} ' + (f'v{cl.version}' if cl.version else 'pre-0.14') + (' STALE' if stale(cl) else '')
+    return f'{cl.who} {when} ' + f'v{cl.version}' + (' STALE' if stale(cl) else '')
 
 
 def taken(c) -> set[str]:
