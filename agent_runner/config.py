@@ -78,11 +78,12 @@ DEFAULTS: dict = {
         'brief_extra': '',      # a command whose output ends the brief; {id} is the task id
         'outline': '',          # a command printing one file's outline (its symbols, sections); {file} is
                                 # the path. The brief shows it under each file the task line names
-        'brief': '',            # a command whose output *is* the brief, replacing the built-in one; {id}
         'kinds': {},            # id prefix -> the kind of work it marks (`plan kinds`); empty = plan.KINDS
         'need_files': False,    # `plan add` refuses a line with no files: or test: field
         'lookup': [],           # more markdown files `plan <name>` searches for a heading (after TODO, REFERENCE,
-                                # HUMAN, DONE and [run] rules), e.g. ["PLAN.md"]
+                                # HUMAN, DONE and [run] rules), e.g. ["PLAN.md", "plan/*.md"]; globs allowed
+        'context_kb': 12,       # budget for what every session loads (rules, CLAUDE.md, AGENTS.md, @-imports):
+                                # `agent-runner context` reports it, `run` warns past it; 0 = no warning
     },
     'run': {
         'test': '',             # the gate: `done` and every merge run it; empty means no gate
@@ -91,7 +92,6 @@ DEFAULTS: dict = {
         'full_every_hours': 24, # with test_since: the whole `test` again once none has passed for this long; 0 = never
         'slots': 3,
         'mux': '',              # terminal per slot: tmux, wt, console, none; '' = tmux (Windows: wt, else console)
-        'mode': 'd',            # d = never two running tasks on the same file; p = strict plan order
         'agent': 'claude',      # the CLI that runs a session: claude, or copilot (GitHub Copilot CLI)
         'include_task_id_in_commit': True,
         'comment_policy': 'normal',
@@ -110,13 +110,12 @@ DEFAULTS: dict = {
         'pass_env': [],         # names of the runner's own environment variables handed on to every slot
         'on_exit': '',          # a command run in the slot's worktree when its session ends
         'rules': '',            # the repo's rules file the prompt points at (AGENTS.md, CLAUDE.md, …)
-        'prompt': '',           # path to a prompt template replacing the built-in one (see README)
+        'prompt': '',           # path to a prompt template replacing the built-in one (see docs/REFERENCE.md)
         'prompt_extra': '',     # a paragraph added to the built-in prompt (what each slot owns, …)
-        'shared_files': [],     # files nearly every task names; mode d ignores them
+        'shared_files': [],     # files nearly every task names; not counted as an overlap
         'joinable': [],  # record-per-line files a conflict may be joined in (the task list merges by task anyway)
         'join': {},             # glob -> a command that joins a conflict in that file (see runner.custom_join)
         'suspect': '',          # a regex: a block line a merge adds that matches it is flagged in the ledger
-        'precommit': '',        # a check `done` runs after the gate, before it ticks (--skip-check skips it)
         'command': '',          # what the prompt tells sessions to call (default: this runner); e.g. ./kit
         'untested': ['*.md', 'LICENSE*', 'COPYING*'],   # globs of files the gate cannot see (`!glob` takes one back): a merge that
                                 # differs from what was tested only in these is not tested again
@@ -130,21 +129,16 @@ DEFAULTS: dict = {
                                 # shared branch is read while a run is up: a red one files one critical task.
                                 # "auto": every workflow that runs on a push to it (push runs only); false: off
         'ci_kind': 'B',         # the id prefix that task gets
-        'ci_rerun': True,       # a red run's failed jobs are run once more first; only a second red files it
         'batch': True,          # finished branches waiting for the merge go in together under one gate run
         'merge_ahead': True,    # tasks finishing during a batch's gate are merged on it and tested beside it
-        'batch_wait': 0,        # s a finished task holds the merge for others while slots still work, so one
-                                # gate run takes more of them; 0 = merge at once
-        'batch_min': 3,         # how many tasks ready to merge end that wait early
         'before_start': '',     # a command that must succeed before a session starts; the slot waits on it
         'not_attempt': '',      # a regex on a finished branch's first commit subject ({id}): such a session
                                 # (a spec phase, say) is not the run's one attempt at the task
         'fix_merges': True,     # give a conflict the join cannot do to a one-shot agent session
         'fix_model': 'opus',
         'fix_timeout': 1800,
-        'fix_ahead': True,      # that session runs before the merge lock, in the task's slot worktree: the
-                                # other merges go on meanwhile (a rider with a conflict waits for its turn)
-        'fix_ahead_max': 2,     # at most this many at once: the fix worktrees (fix1…) never outnumber it
+        'fix_ahead_max': 2,     # conflicts fixed before the merge lock at once, each in a fix worktree (fix1…)
+                                # while other merges go on; 0 = fix them under the lock, in the merge worktree
         'build': '',            # a quick build, not the gate: a fix session runs it before it commits, so a
                                 # clash git merged without a conflict (one name defined twice) is caught there
         'repair_merges': True,  # a merge (or a batch) that fails the gate gets one session to repair it first
@@ -321,7 +315,9 @@ class Config:
 
     @property
     def plan_repo(self) -> str:
-        return self.raw['plan']['repo']
+        """`[plan] repo`; a relative path (`../plan.git`) is the main checkout's, wherever git runs."""
+        r = self.raw['plan']['repo']
+        return str((main_checkout(self.root) / r).resolve()) if r.startswith(('./', '../')) else r
 
     @property
     def home(self) -> Path:

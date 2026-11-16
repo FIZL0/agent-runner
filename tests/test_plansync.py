@@ -136,26 +136,26 @@ def test_all(tmp: Path):
 
     print('run: two runners on one queue')
     R.init(a)
-    ta = R.pick({}, set(), 'd', 'main', claim=True)
+    ta = R.pick({}, set(), 'main', claim=True)
     R.init(b)
-    tb = R.pick({}, set(), 'd', 'main', claim=True)
+    tb = R.pick({}, set(), 'main', claim=True)
     check(ta and tb and ta[0] != tb[0], 'each run claims a different task as it picks', f'{ta} {tb}')
     check('G1' not in (ta[0], tb[0]), 'never one ticked since the pick last read the plan (G1, just above)')
     has(git(bare, 'show', f'main:claims/{ta[0]}'), re.escape(str(a)),
         "A's claim is pushed before its slot starts")
-    eq(R.pick({}, set(), 'd', 'main')[0], tb[0], 'a pick that does not start (dry run) claims nothing new')
+    eq(R.pick({}, set(), 'main')[0], tb[0], 'a pick that does not start (dry run) claims nothing new')
     R.init(a)
     nxt = R.C.plan_dir / 'TODO.md'
     keep = nxt.read_text()
     nxt.write_text(keep.replace('### Tasks', '### Next (in this order)'))
     try:
-        eq(R.pick({}, set(), 'd', 'main'), None, "an ordered section waits while another runner has one of its tasks")
+        eq(R.pick({}, set(), 'main'), None, "an ordered section waits while another runner has one of its tasks")
     finally:
         nxt.write_text(keep)
     R.init(b)
     (tmp / 'plan.git').rename(tmp / 'away.git')
     try:
-        left = R.pick({}, {tb[0], 'T2'}, 'd', 'main', claim=True)  # T2: B's, pushed earlier
+        left = R.pick({}, {tb[0], 'T2'}, 'main', claim=True)  # T2: B's, pushed earlier
         eq(left, None, 'with the plan repo out of reach, a run starts nothing: its claim would be unseen')
     finally:
         (tmp / 'away.git').rename(tmp / 'plan.git')

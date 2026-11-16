@@ -29,16 +29,33 @@ def _git(cwd: Path):
 NET_TIMEOUT = 300  # s a push or fetch may take; one that asks for a password fails at once instead
 
 
+def local_urls(cwd: Path) -> list[str]:
+    """`-c url.<absolute>.insteadOf=<relative>` for each remote whose URL is a relative path (`../origin.git`).
+    git resolves such a path from wherever it runs, so from a slot's worktree it points nowhere; it was
+    written relative to the main checkout, so that is where it is resolved. [] outside a repository."""
+    try:
+        main = main_checkout(cwd)
+    except SystemExit:  # a plan clone's parent folder, say
+        return []
+    out = []
+    for line in _git(cwd)('config', '--get-regexp', r'^remote\..*\.url$').stdout.splitlines():
+        url = line.partition(' ')[2]
+        if url.startswith(('./', '../')) and (main / url).exists():
+            out += ['-c', f'url.{(main / url).resolve()}.insteadOf={url}']
+    return out
+
+
 def _net(cwd: Path):
     """git that talks to the remote: no stdin, no terminal or ssh prompt to wait on, NET_TIMEOUT to answer.
     A push runs under the merge lock, so one that hangs on a passphrase would stop every merge."""
     env = {**os.environ, 'GIT_TERMINAL_PROMPT': '0'}
     if not env.get('GIT_SSH_COMMAND') and not env.get('GIT_SSH') and _git(cwd)('config', 'core.sshCommand').returncode:
         env['GIT_SSH_COMMAND'] = 'ssh -oBatchMode=yes'
+    urls = local_urls(cwd)
 
     def g(*a: str):
         try:
-            return git(*a, cwd=cwd, stdin=subprocess.DEVNULL, env=env, timeout=NET_TIMEOUT)
+            return git(*urls, *a, cwd=cwd, stdin=subprocess.DEVNULL, env=env, timeout=NET_TIMEOUT)
         except subprocess.TimeoutExpired:
             return subprocess.CompletedProcess(['git', *a], 124, '', f'timed out after {NET_TIMEOUT}s')
     return g
@@ -91,15 +108,19 @@ def push(cwd: Path, branch: str, shared: bool = False) -> str:
         return ''
     if not shared and shared_branch(cwd, remote, branch):
         return ''
-    if not net('push', '-q', remote, branch).returncode:
+    if not (first := net('push', '-q', remote, branch)).returncode:
         return f'pushed {branch} -> {remote}'
+    why = (first.stderr.strip().splitlines() or ['no message'])[-1][:200]
     if shared:
         net('fetch', '-q', remote)
         return (f'! {branch} did not push: {remote}/{branch} has moved (or refused it). Not merged here, since '
                 f'that merge would go out untested: the next merge takes it in before its gate, then pushes.')
     if g('branch', '--show-current').stdout.strip() != branch:
         return f'! {branch} did not push (it is committed locally; push it by hand)'
-    net('fetch', '-q', remote)
+    if net('fetch', '-q', remote).returncode:  # the remote cannot be reached: it has not "moved"
+        return f'! {branch} did not push (it is committed locally): {why}'
+    if g('rev-parse', '--verify', '-q', f'refs/remotes/{remote}/{branch}').returncode:
+        return f'! {branch} did not push (it is committed locally): {why}'  # refused, not moved: nothing to merge
     if g('merge', '--no-edit', f'{remote}/{branch}').returncode:
         g('merge', '--abort')
         return (f'! {branch} did not push: {remote}/{branch} has moved and merging it conflicts. '

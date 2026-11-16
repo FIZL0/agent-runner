@@ -53,7 +53,7 @@ gives one: the rest of a person's task stays where the person queued it, not beh
 
 The line format is `- [ ] **ID** text | files: a, b | after: X, Y | test: name | journal: dir`, under `###`
 headings, and the checkbox is `[ ]` open, `[x]` done, `[~]` blocked. The keyed fields are the only thing read
-off a line: `files:` keeps mode d's running tasks apart, `after:` holds a task until those ids are done, `test:`
+off a line: `files:` keeps running tasks apart, `after:` holds a task until those ids are done, `test:`
 names the test it adds, `journal:` a journal dir its brief lists. Prose is never parsed for files or ids.
 
 **A block that only waits on another task says which**, as `BLOCKED: (after X, Y) why`, and `reopen` (which a
@@ -134,8 +134,9 @@ def index(path) -> list[str]:
     return out
 
 
-def section(path, name: str) -> list[str]:
-    """One named part of a markdown file: the first open task (`next`), a task by id, or a heading's section."""
+def section(path, name: str, exact: bool = False) -> list[str]:
+    """One named part of a markdown file: the first open task (`next`), a task by id, or a heading's section (with
+    `exact`, only a heading that is `name` whole, any case)."""
     ls = lines(path)
     if name == 'next':
         for i, line in enumerate(ls):
@@ -149,7 +150,7 @@ def section(path, name: str) -> list[str]:
             return _item_block(ls, i)
     for i, line in enumerate(ls):
         lv = _level(line)
-        if lv and name.lower() in line.lower():
+        if lv and (name.lower() == line.lstrip('#').strip().lower() if exact else name.lower() in line.lower()):
             j = i + 1
             while j < len(ls) and not (0 < _level(ls[j]) <= lv):
                 j += 1
@@ -653,7 +654,7 @@ def prose(line: str) -> str:
 
 
 def files_on_line(text: str) -> list[str]:
-    """The `files:` of a task line: paths and patterns (`dir/**`, `dir/*.rs`). Mode d keeps two running tasks
+    """The `files:` of a task line: paths and patterns (`dir/**`, `dir/*.rs`). The run keeps two running tasks
     apart by them (`overlap`)."""
     return fields(text).get('files', [])
 
@@ -694,11 +695,6 @@ def brief(tid: str, root=None, plan_dir=None, journal=None) -> list[str]:
     """
     c = cfg(root)
     root = c.root
-    if cmd := c.raw['plan']['brief']:
-        r = subprocess.run(cmd.format(id=tid), shell=True, cwd=str(root), capture_output=True, text=True)
-        if r.returncode:
-            raise SystemExit(f'{PROG}: `{cmd.format(id=tid)}` failed: {r.stderr.strip()[:300]}')
-        return r.stdout.rstrip().splitlines()
     plan_dir = Path(plan_dir or c.plan_dir)
     journal = Path(journal) if journal else c.journal
     paths = [plan_dir / 'TODO.md', plan_dir / 'DONE.md']
@@ -1133,7 +1129,7 @@ def _main(argv: list[str], c) -> int:
             return 3
         if not {'files', 'test'} & set(fields(text)):
             why = (f'the line has no `files:`: pass `--files path/a,dir/**` (the files the task will change) '
-                   f'or `--test name` (the test it adds); mode d keeps running tasks apart by them, and a line '
+                   f'or `--test name` (the test it adds); the run keeps running tasks apart by them, and a line '
                    f'naming none runs beside anything')
             if cfg().raw['plan'].get('need_files'):
                 print(f'{PROG}: not added: {why}', file=sys.stderr)
@@ -1171,7 +1167,7 @@ def _main(argv: list[str], c) -> int:
     paths = [todo, plan_dir / 'REFERENCE.md', plan_dir / 'HUMAN.md', done]
     if c.run['rules']:
         paths.append(c.root / c.run['rules'])
-    paths += [c.root / f for f in c.raw['plan']['lookup']]
+    paths += [p for f in c.raw['plan']['lookup'] for p in (sorted(c.root.glob(f)) if any(ch in f for ch in '*?[') else [c.root / f])]
     paths = [str(p) for p in paths if os.path.exists(p)]
     if argv[:1] == ['-f']:
         if len(argv) < 3:
@@ -1185,7 +1181,8 @@ def _main(argv: list[str], c) -> int:
         out, cl = index(todo), plansync.claims(c)
         out = [f'{l}  [{plansync.label(cl[t])}]' if (t := l.rsplit(' ', 1)[-1]) in cl else l for l in out]
     else:
-        out = next((o for p in paths if (o := section(p, argv[0]))), [])
+        # a heading named exactly that, in any file, before one that only contains it (`hst` before `hst-data`)
+        out = next((o for ex in (True, False) for p in paths if (o := section(p, argv[0], ex))), [])
     if not out:
         print(f'{PROG}: nothing named {argv[0]!r} — run `{PROG}` for the index', file=sys.stderr)
         return 1

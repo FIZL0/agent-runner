@@ -41,9 +41,6 @@ def test_config(repo: Path):
     c = configure(repo, '')
     eq((c.run['agent'], c.run['backend'], c.run['model'], c.run['fix_model']),
        ('claude', 'claude', 'opus', 'opus'), 'unconfigured repositories retain Claude defaults')
-    eq(c.run['mode'], 'd', 'unconfigured repositories default to different-file mode')
-    c = configure(repo, 'mode = "d"\n')
-    eq(c.run['mode'], 'd', 'repositories can explicitly select different-file mode')
     flags = R.agent_flags('sid', 'opus', 90)
     check(flags[:2] == ['--session-id', 'sid'] and '--settings' in flags and '--print' not in flags,
           'Claude still uses its interactive session flags and Stop hooks')
@@ -105,17 +102,19 @@ def test_commands(repo: Path):
     R.C.run['lean'] = False
     check('--no-extensions' not in R.agent_flags('test-session', model, 90),
           'lean=false preserves normal Pi resource loading')
+    with patch.object(R.plat, 'WINDOWS', False), patch.object(R.plat, 'exe', return_value='pi'):
+        argv = R.Pi().argv('prompt', R.C.notes('slot1.prompt'), 'test-session', [])
+    eq(argv[0], 'pi', 'Linux keeps launching Pi through its configured executable')
     with tempfile.TemporaryDirectory() as d:
         npm = Path(d)
-        shim = npm / 'pi.cmd'
         cli = npm / 'node_modules' / '@earendil-works' / 'pi-coding-agent' / 'dist' / 'bundle' / 'cli.js'
         node = npm / 'node.exe'
         cli.parent.mkdir(parents=True)
         cli.touch()
         node.touch()
-        with patch.object(R.plat, 'WINDOWS', True), patch.object(R.plat, 'exe', return_value=str(shim)):
+        with patch.object(R.plat, 'WINDOWS', True), patch.object(R.plat, 'exe', return_value=str(npm / 'pi.cmd')):
             argv = R.Pi().argv('prompt', R.C.notes('slot1.prompt'), 'test-session', [])
-        eq(argv[:2], [str(node), str(cli)], 'Windows Pi launches node and the CLI, not the npm .cmd shim')
+        eq(argv[:2], [str(node), str(cli)], "Windows launches the Node CLI instead of npm's .cmd shim")
 
 
 def write_session(sid: str, *messages: dict) -> Path:

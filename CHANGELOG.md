@@ -2,6 +2,54 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
+## 0.32.1 (2026-11-16)
+
+- The runner's pane is in colour: starts blue, merges and pushes green, blocks and conflicts yellow, failures red,
+  exits grey, task ids bold. Only on a terminal (Windows: Windows Terminal), never with `NO_COLOR`; run.log stays
+  plain text.
+
+## 0.32.0 (2026-11-16)
+
+Breaking: settings removed. A config that still sets them is not an error; they are ignored.
+
+- Mode p is gone: a run never starts two tasks on the same files (what mode d did), and an "in this order"
+  section always runs one task at a time. `[run] mode` is ignored; `run --mode` is still accepted, and ignored,
+  so wrapping CLIs that pass it keep working.
+- `[run] fix_ahead` is folded into `fix_ahead_max`: `0` fixes conflicts under the lock, as `fix_ahead = false` did.
+- Removed `[run] precommit` and `done --skip-check` (chain the check into `[run] test`, or run it in a wrapper
+  before `done`), `[plan] brief` (use `brief_extra` and `outline`), `[run] ci_rerun` (a red CI run's failed jobs
+  are always run once more first), and `[run] batch_wait` / `batch_min`.
+- A remote given as a relative path (`origin = ../origin.git`, a relative `[plan] repo`) is the main checkout's:
+  `done` in a slot's worktree pushes to it instead of failing. A push to a remote that cannot be reached says
+  so with git's own message, not "has moved and merging it conflicts".
+- README rewritten as an overview; the full behaviour and every key moved to docs/REFERENCE.md. The context
+  numbers are re-measured over 1,836 slot sessions.
+
+## 0.31.0 (2026-11-16)
+
+- `agent-runner context [--check]`: what every session loads before it starts ([run] rules, CLAUDE.md,
+  AGENTS.md and their `@` imports), per file and biggest section first, against `[plan] context_kb` (12 KB).
+  `run` logs a warning at start when it's over; `--check` exits 1.
+- `plan <name>` prefers a heading named exactly that over one that only contains it (`plan hst` no longer
+  stops at `hst-data`), across every file it searches.
+- `[plan] lookup` takes globs (`"plan/guide/*.md"`).
+- The agents' prompt says reference material they write goes under its own heading in a lookup file, not in
+  the rules file every session loads.
+
+## 0.30.3 (2026-11-16)
+
+- A conflict fixed ahead of the merge lock waits while another task, fixed ahead and not merged yet, had a
+  conflict in one of the same files. It is then fixed once against that merge, instead of side by side and
+  again after the first lands (`waits for X to merge first` in the log).
+
+## 0.30.2 (2026-11-16)
+
+- Windows Pi sessions launch the Node CLI directly instead of npm's `.cmd` shim; Linux/macOS keep
+  their configured executable.
+- Update notices accept single- and double-quoted version strings. Release automation reads the version
+  as Python, rejects invalid versions, and publishes numbered releases with installation commands.
+- The README version badge uses GitHub releases and links to installation instructions and release notes.
+
 ## 0.30.1 (2026-11-16)
 
 - The agents' prompt tells them to file follow-ups with `--files` (and `--after`), not text alone.

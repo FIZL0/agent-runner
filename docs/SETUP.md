@@ -29,8 +29,8 @@ That puts `agent-runner` on your PATH. It is the same CLI as `./run` in a clone:
 **Windows:** Python 3.11+ from python.org (not the Store's `python3` alias), Git for Windows (Claude Code
 runs hooks and Bash calls in its Git Bash), and Windows Terminal for a tab per slot. Without Windows
 Terminal each slot gets a console window. tmux isn't needed. Run `agent-runner run 3` from any terminal.
-`[run] links` need no Developer Mode: without it they become junctions and hard links. See the README's
-[Terminals, and Windows](../README.md#terminals-and-windows).
+`[run] links` need no Developer Mode: without it they become junctions and hard links. See the reference's
+[Terminals, and Windows](REFERENCE.md#terminals-and-windows).
 
 **Latest, or a tag.** Without `@…` it installs `main`, which is always the latest release (every commit
 there is one). To hold a machine at a version, name its tag instead: `…/agent-runner@v0.6.18`.
@@ -134,13 +134,13 @@ mkdir plan
 - [ ] **A2** Cache the parsed config · `src/config.py` · after A1
 ```
 
-The id is bold, the files after a `·` are what the task may touch (mode `d` keeps two slots off the same
+The id is bold, the files after a `·` are what the task may touch (the run keeps two slots off the same
 file), and `after X` holds a task until X is ticked. `plan/A1.md`, if present, is the long brief. See the
-[README](../README.md#the-task-list) for the full format.
+[reference](REFERENCE.md#the-task-list) for the full format.
 
 **plan/DONE.md** can start empty; finished tasks move there.
 
-**runner.toml** (every key is optional; see the [README](../README.md#runnertoml)):
+**runner.toml** (every key is optional; see the [reference](REFERENCE.md#runnertoml)):
 
 ```toml
 [run]
@@ -208,8 +208,9 @@ done.PROG = './kit done'
 
 def kit_plan(argv): return plan.main(argv)
 def kit_done(argv):
-    argv = ['--skip-check' if a == '--skip-audit' else a for a in argv]   # the kit's old flag
-    rc = done.main(argv)
+    if '--skip-audit' not in argv and kit_audit():                        # the kit's own check, first
+        return 1
+    rc = done.main([a for a in argv if a != '--skip-audit'])
     print('journal: ./kit journal finish', file=sys.stderr)              # anything extra after
     return rc
 def kit_run(argv):
@@ -222,7 +223,7 @@ def kit_stop(argv): return runner.cmd_stop(argv)
 `cfg().run['links'].append('context')`.
 
 The names in each module's `__all__` are the stable API (see [Versions](#versions)): `plan.main`,
-`plan.brief`, `plan.tick`, `plan.open_ids` …, `done.main`, `done.gate`, `done.check`, `runner.cmd_run`,
+`plan.brief`, `plan.tick`, `plan.open_ids` …, `done.main`, `done.gate`, `runner.cmd_run`,
 `runner.cmd_stop`, `runner.pick`, `runner.tasks`, `runner.ask_stop`, `runner.PROMPT`, …
 
 ### The hooks a wrapping project gets
@@ -230,7 +231,6 @@ The names in each module's `__all__` are the stable API (see [Versions](#version
 | hook | what it does |
 |---|---|
 | `[run] test` | the gate run by `done` and after every merge |
-| `[run] precommit` | a second check `done` runs after the gate, before it ticks or commits; `done --skip-check` skips it |
 | `[run.join]` | `"glob" = "command"`: the project joins a conflict in that file itself. `{ours} {base} {theirs} {union} {out} {file}`; exit 0 keeps `{out}`, non-zero sends it to a fix session |
 | `[run] suspect` | a regex; a `BLOCKED` line a merge adds to the plan that matches it is flagged `SUSPECT, recheck` in the ledger |
 | `[run] slot_env` | `NAME=value` per slot, with `{n}` (slot) and `{slots}` (how many) |
@@ -241,12 +241,12 @@ The names in each module's `__all__` are the stable API (see [Versions](#version
 | `[run] links` | git-ignored paths symlinked into every worktree |
 | `[plan] journal` | per-task journal folders; the newest entry goes into the brief |
 | `[plan] brief_extra` | a command (`{id}`) whose output ends the brief |
-| `[plan] brief` | a command (`{id}`) whose output is the whole brief, for a project with its own brief tool |
+| `[plan] outline` | a command (`{file}`) printing one file's outline, shown under each file the task line names |
 | `[run] untested` | globs of files the gate can't see (`!glob` takes one back); a merge differing only in them isn't retested |
 | `[run] failures`, `retest` | a regex naming failed tests in the gate output, and the gate for just `{names}`: rerun alone, then on the base |
 | `[run] flaky`, `flaky_kind` | a regex naming tests a *passing* gate passed only on its own rerun; each (and each `retest` pass) gets a critical `flaky_kind` follow-up to make it robust |
 | `[plan] kinds` | id prefix -> kind of work; listed in the prompt, and `plan add` refuses any other prefix |
-| `[plan] need_files` | `plan add` refuses a line with no `files:` and no `test:` field (without it, a warning), so mode `d` can keep it apart from the running tasks |
+| `[plan] need_files` | `plan add` refuses a line with no `files:` and no `test:` field (without it, a warning), so the run can keep it apart from the running tasks |
 | `[run] before_start` | a check that must pass before any session starts |
 | `[run] timeout` | seconds the gate, a retest, a `[run.join]` command, `before_start` or the sequential run's `on_exit` may run before it is stopped and counts as failed (3600) |
 | `[run] not_attempt` | a regex on the last commit subject (`{id}`): that session was a phase, not the run's one attempt |
@@ -261,7 +261,7 @@ What each `./kit` feature becomes:
 | ps2 kit feature | agent-runner |
 |---|---|
 | `./kit check` (tests + lint) as the gate | `test = "./kit check"` |
-| the address audit, `./kit done --skip-audit` | `precommit = "./kit audit --quiet"`; the wrapper maps `--skip-audit` to `--skip-check` |
+| the address audit, `./kit done --skip-audit` | the wrapper runs it before `done.main` and drops `--skip-audit` |
 | joining `research/oracle.txt` address lists, refusing when one name gets two addresses | `[agent-runner.run.join] "research/oracle.txt" = "./kit oracle join {union} {out}"` (a kit subcommand that reuses its address parser and exits 1 on a clash) |
 | the SUSPECT check on blocks that blame the emulator | `suspect = 'BLOCKED:.*(pcsx2\|pine\|capture\|record\|screenshot\|save state\|unattended)'` |
 | `KIT_PCSX2=<slot>`, `KIT_RUN=1` | `slot_env = ["KIT_PCSX2={n}", "KIT_RUN=1"]` |
@@ -288,12 +288,11 @@ Conflicts go to a fix session each, and merges never stash the main checkout.
 [plan]
 dir = "plan"
 journal = "research/journal"
-brief = "tools/ctx.py brief {id}"   # also writes the .cleanroom lock for a port phase
+brief_extra = "tools/cleanroom.py {id}"   # a spec/port phase; also writes the .cleanroom lock
 
 [run]
 test = "tools/check.sh"
 slots = 5
-mode = "p"
 weekly_max = 94
 notes = "context/notes"
 rules = "AGENT.md"
@@ -316,7 +315,7 @@ suspect = 'BLOCKED:.*(pcsx2|pine|capture|record|screenshot|save state|unattended
 |---|---|
 | tmux `hst` panes, `HST_PCSX2=N` per slot, PCSX2 stopped when a session ends | `slot_env`, `on_exit` |
 | no new tasks without a Wayland session (bell, log once) | `before_start` |
-| `ctx.py brief` pasted into the prompt (and its `.cleanroom` lock) | `[plan] brief` |
+| the clean-room phase pasted into the prompt (and its `.cleanroom` lock) | `[plan] brief_extra` |
 | `tested_by_cargo` | `untested` |
 | net:: flakes rerun once; "already failing on main → merge anyway" | `failures` + `retest` |
 | WAITING/LANDED batch merges | `batch = true` |
@@ -340,7 +339,7 @@ one over:
    value from the old code: the gate, the slot env, the prompt paragraph, the links, the notes folder.
    Use the mapping table above. Set `AGENT_RUNNER_CONFIG` where the CLI starts.
 3. **Move the special cases into hooks.** A custom join becomes a `[run.join]` command; an audit
-   becomes `precommit`; a transcript check becomes `suspect`.
+   runs in the wrapper before `done.main`; a transcript check becomes `suspect`.
 4. **Replace the commands with wrappers** (above), keeping the old flags as aliases.
 5. **Check parity on a scratch copy of the plan,** never on the live one:
 

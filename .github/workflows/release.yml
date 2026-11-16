@@ -15,11 +15,18 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           # ponytail: releases only the pushed head's version; a push skipping versions leaves the middle ones untagged
-          version=$(sed -n "s/^__version__ = '\(.*\)'/\1/p" agent_runner/__init__.py)
+          version=$(python -c 'import runpy; print(runpy.run_path("agent_runner/__init__.py")["__version__"])')
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Invalid release version: $version"
+            exit 1
+          fi
           tag="v$version"
-          if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null; then
+          if gh release view "$tag" >/dev/null 2>&1; then
             echo "$tag already released"
             exit 0
           fi
           notes=$(awk -v h="## $version " 'index($0, h) == 1 {f = 1; next} /^## / {f = 0} f' CHANGELOG.md)
-          gh release create "$tag" --target "$GITHUB_SHA" --title "$tag" --notes "${notes:-$tag}"
+          install=$(printf '## Install latest (tracks main)\n\n```sh\nuv tool install git+https://github.com/FIZL0/agent-runner\n```\n\n## Upgrade an existing installation\n\n```sh\nuv tool upgrade agent-runner\n```\n\n## Install this release (pinned)\n\n```sh\nuv tool install git+https://github.com/FIZL0/agent-runner@%s\n```\n\n[Setup and other installation options](https://github.com/FIZL0/agent-runner/blob/%s/docs/SETUP.md)' "$tag" "$tag")
+          gh release create "$tag" --target "$GITHUB_SHA" --title "$tag" --notes "${notes:-$tag}
+
+          $install"
