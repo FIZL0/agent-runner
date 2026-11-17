@@ -2,6 +2,11 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
+## 0.36.1 (2026-11-17)
+
+- A finished task waiting to merge holds only the files it changed, not every file its plan line names. One
+  line naming `tests/**` kept 38 tasks from starting while merges were behind.
+
 ## 0.36.0 (2026-11-17)
 
 - A failing batch's culprit is found by halving the batch: about 5 retests for 16 tasks, not 16.

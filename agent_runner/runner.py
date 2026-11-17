@@ -23,7 +23,8 @@ docs/REFERENCE.md describes each mechanism. In short:
   - the Stretch and Parked sections, anything tried this run, and branches waiting to be merged.
 
   Siblings never run together. An ordered section runs one task at a time. Two tasks never run on the same
-  files: a line's `| files:` and, for a task running or waiting to merge, the files it has touched.
+  files: a line's `| files:` and, for a task running, the files it has touched; a finished one waiting to merge
+  holds only the files it changed.
 * **one worktree per slot**, kept warm between tasks, with `[run] links` symlinked in;
 * **an idle stop** (the Stop hook): a finished session is ended once its transcript is quiet;
 * **a usage limit is not a failed task**: the transcript is dropped and the slot sleeps to the reset;
@@ -460,12 +461,16 @@ def pick(running: dict, tried: set, branch: str, claim: bool = False):
     mine = set(ahead(branch)) if todo else set()  # finished here, waiting to be merged
     finished = mine | plansync.taken(C)  # another runner's: on its slots
     lines = {t[0]: t for t in todo}
-    # Running and merge-waiting tasks hold the files they have touched as well as their line's: a line can
-    # name too few, and a finished task's files stay busy until its merge lands
+    # A running task holds the files it has touched as well as its line's (a line can name too few). A finished
+    # one holds only the files it changed, until its merge lands: its line's names were a guess, and a broad
+    # one (`tests/**`) would keep dozens of tasks from starting while the merges catch up
     slots = {t[0]: SLOTS_DIR / f's{n}' for n, t in running.items() if isinstance(n, int)}
+    live = {t[0] for t in running.values()}
     for tid, t in {**{f: lines.get(f, (f, '', set(), set())) for f in mine},
                    **{t[0]: t for t in running.values()}}.items():
-        busy.append((tid, t[1], set(t[2]) | touched(tid, branch, slots.get(tid)), t[3]))
+        files = touched(tid, branch, slots.get(tid))
+        done_ = tid in mine and tid not in busy_ids and tid not in live and files  # finished, not running
+        busy.append((tid, t[1], files if done_ else set(t[2]) | files, t[3]))
     busy_ids |= {b[0] for b in busy if b[0] not in mine}
     for t in todo:
         tid = t[0]

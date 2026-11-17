@@ -137,8 +137,8 @@ def test_picking(repo: Path):
     try:
         eq(R.pick({1: first}, set(), 'main')[0], 'L3a', 'a file the running T1 has touched (d.py) holds T5 too')
         R.ahead = lambda branch: ['T1']
-        eq(R.pick({}, set(), 'main')[0], 'L3a',
-           'a finished T1 waiting to merge still holds its section, its line files and the files it touched')
+        eq(R.pick({}, set(), 'main')[0], 'T3',
+           'a finished T1 waiting to merge holds its section and the files it changed (d.py), not its line\'s a.py')
     finally:
         R.touched, R.ahead = touched, ahead
     Claim, me = R.plansync.Claim, R.plansync.owner(R.C)
