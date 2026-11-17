@@ -2,6 +2,12 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
+## 0.37.3 (2026-11-17)
+
+- A task tried and failed in a run goes back in the pool once its line is edited (a `plan note` with what to
+  do differently, a corrected line), not only once it is blocked and unblocked. A failed task waited for the
+  next run even after it was given the fix: Cydian's I2 sat out a day-long run with its note saying what broke.
+
 ## 0.37.2 (2026-11-17)
 
 - A merge turn that finds a merge already gated for other waiting tasks gives its turn up to them, once,

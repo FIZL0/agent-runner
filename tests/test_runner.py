@@ -548,6 +548,17 @@ def test_retry(repo: Path):
     check('T4' not in tried and not closed, 'opened again, it leaves tried')
     has((repo / '.runner/run.log').read_text(), r'T4: open again since it was tried', 'and the log says so')
 
+    print('run: a tried task whose line a human edits (a note) is back in the pool')
+    tried = {'T4'}
+    R.retry_reopened(tried, closed, 'main')
+    R.retry_reopened(tried, closed, 'main')
+    check('T4' in tried, 'unchanged, it stays tried')
+    P.note('T4', 'use the other API this time', todo=repo / 'plan/TODO.md')
+    git(repo, 'commit', '-qam', 'Plan: note T4')
+    R.retry_reopened(tried, closed, 'main')
+    check('T4' not in tried and 'T4' not in R.TRIED_TEXT, 'edited, it leaves tried')
+    has((repo / '.runner/run.log').read_text(), r'T4: its line changed since it was tried', 'and the log says so')
+
 
 def test_unmerged(repo: Path):
     print('run: a branch finished while no run was up is found, even in a slot still on it')

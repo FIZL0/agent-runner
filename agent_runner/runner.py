@@ -20,7 +20,7 @@ docs/REFERENCE.md describes each mechanism. In short:
 * **picking** (`tasks`, `pick`) goes down TODO.md in order and skips
   - blocked tasks and split parents,
   - tasks whose `| after: X, Y` names a task not done yet,
-  - the Stretch and Parked sections, anything tried this run, and branches waiting to be merged.
+  - the Stretch and Parked sections, anything tried this run (until its line is edited), and branches waiting to be merged.
 
   Siblings never run together. An ordered section runs one task at a time. Two tasks never run on the same
   files: a line's `| files:` and, for a task running, the files it has touched; a finished one waiting to merge
@@ -3112,24 +3112,42 @@ def idle_line() -> str:
     return f'run idle: no task it may start; waiting for TODO.md to change (Ctrl-C or {C.command} stop to end it)'
 
 
+TRIED_TEXT: dict[str, str] = {}  # a tried task's line as it read once it was tried: `retry_reopened` compares
+
+
 def retry_reopened(tried: set[str], closed: set[str], branch: str) -> None:
-    """Put back in the pool every tried task whose line has closed and opened again since it was tried.
+    """Put back in the pool every tried task whose line has closed and opened again, or been edited, since it was
+    tried.
 
     `tried` keeps a task from being started twice in a run, which is right for one that ended still open
-    (it failed: a human looks next) and wrong for one that blocked and was then unblocked by hand — that is
-    new information, and a run that stays up for days would otherwise never try it again. `closed` is the
-    tried tasks seen blocked or gone from TODO.md since; one seen open again after that is retried.
+    (it failed: a human looks next) and wrong once the human has looked: a task blocked and then unblocked by
+    hand, or one whose text changed (a `plan note` with what to do differently, a corrected line) carries new
+    information, and a run that stays up for days would otherwise never try it again. `closed` is the tried
+    tasks seen blocked or gone from TODO.md since; one seen open again after that is retried. An open one is
+    retried when its line differs from how it read the first time this saw it tried (moving it doesn't count).
     """
     if not tried:
+        TRIED_TEXT.clear()
         return
-    box = {m.group(2): m.group(1) for l in plan_text(branch) if (m := TASK.match(l))}
+    lines = {m.group(2): (m.group(1), l.strip()) for l in plan_text(branch) if (m := TASK.match(l))}
+    for t in list(TRIED_TEXT):
+        if t not in tried:
+            del TRIED_TEXT[t]
     for t in list(tried):
-        if box.get(t) != ' ':
+        box, text = lines.get(t, (None, ''))
+        if box != ' ':
             closed.add(t)
+            TRIED_TEXT.pop(t, None)
         elif t in closed:
             tried.discard(t)
             closed.discard(t)
             log(f'{t}: open again since it was tried; back in the pool')
+        elif t not in TRIED_TEXT:
+            TRIED_TEXT[t] = text
+        elif TRIED_TEXT[t] != text:
+            tried.discard(t)
+            del TRIED_TEXT[t]
+            log(f'{t}: its line changed since it was tried; back in the pool')
 
 
 FLAKY: dict[str, str] = {}  # a test that failed under load and passed alone -> the task whose gate saw it
