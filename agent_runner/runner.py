@@ -2072,6 +2072,8 @@ def build_ahead(branch: str, base: str, done: threading.Event, taken: set[str]) 
     it the gate run already passed or under way (`merge_gate` goes by tree), instead of a gate from the start.
     A conflict a join cannot do is left for that task's turn (one fix session at a time)."""
     while not done.wait(AHEAD_POLL):
+        if ahead_gate_running():  # the gate `base` waits on is merge2's own: checking out there swaps its tree
+            continue
         if cands := sorted(WAITING - taken - set(LANDED) - ALONE - criticals(branch)):
             break
     else:
@@ -2079,7 +2081,15 @@ def build_ahead(branch: str, base: str, done: threading.Event, taken: set[str]) 
     if C.run['batch_max']:
         cands = cands[:C.run['batch_max']]
     with AHEAD_BUSY:
-        _build_ahead(branch, base, cands)
+        if not ahead_gate_running():
+            _build_ahead(branch, base, cands)
+
+
+def ahead_gate_running() -> bool:
+    """A gate still running in merge2 that no ahead thread holds: one built ahead under an earlier run, which a
+    restart adopted and a turn now waits on. A merge built ahead checks out over it, and the gate builds and
+    tests a tree that is not the one it reports on (MD168b's gate, 11-17, ran P347's code)."""
+    return any(Path(s.get('cwd', '')).name == 'merge2' and gate_alive(s) for s in gate_runs())
 
 
 def _build_ahead(branch: str, base: str, cands: list[str]) -> None:

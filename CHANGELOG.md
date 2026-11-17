@@ -2,6 +2,13 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
+## 0.37.1 (2026-11-17)
+
+- A merge built ahead waits while a gate still runs in merge2. After a restart, a turn could adopt the gate an
+  earlier run left there, and the next merge-ahead checked out over it: the gate then built and tested the
+  new tree and reported its failures as the adopted merge's, and the retest on the real merge passed, so
+  three tests were filed as load flakes that were never flaky.
+
 ## 0.37.0 (2026-11-17)
 
 - With `[run] test_since`, a shared branch that gets code commits during a merge's gate no longer means
