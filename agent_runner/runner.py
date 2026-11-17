@@ -1736,10 +1736,11 @@ def renumber_doubles(ref: str, onto: str, tid: str, cwd: Path) -> str:
     doubled = [k for k in theirs if k not in old and k in ours and k != tid and theirs[k] != ours[k]]
     if not doubled:
         return ref
-    taken, new = set(old) | set(theirs) | set(ours), {}
+    taken, new = set(old) | set(theirs) | set(ours) | P.reserved(cwd), {}
     for k in doubled:
         new[k] = _next_free(k, taken)
         taken.add(new[k])
+    P.reserve(cwd, *new.values())  # or the next branch's renumber takes the same one (MD175 -> 180 -> 181 -> 182)
     pat = re.compile(r'\b(' + '|'.join(map(re.escape, new)) + r')\b')
     idx = C.notes(f'renumber.{tid}.index')  # one per task: merges of different tasks run in threads at once
     env = {**os.environ, 'GIT_INDEX_FILE': str(idx)}
@@ -2465,33 +2466,42 @@ ALONE: set[str] = set()  # tasks `blame` found breaking a batch: they merge in a
 FAILED: dict[str, list[str]] = {}  # the tests `tested` last saw fail on a task's merge, by the task
 TASK_SID: dict[str, str] = {}  # the session that did a task, kept for its repair (`repair_merge`)
 def blame(tids: list[str], d: Path, base: str, names: list[str]) -> list[str]:
-    """The tasks of a batch whose gate failed `names` that fail them by themselves: each merged alone on `base`,
-    then `[run] retest` of just those. [] when none does (a clash between them) or there is no retest. Leaves
-    `d` clean, detached at `base`; a task that will not merge alone is not blamed."""
+    """The task of a batch whose gate failed `names` that fails them by itself, found by halving: half the batch
+    merged on `base` and `[run] retest` of just those; the half that fails is halved again, or, when it passes,
+    the other half is. So a batch of 10 costs about 4 retests, not 10. Only a task seen failing alone is
+    blamed; a second culprit in the half not searched stays in the batch, whose next gate finds it. [] when
+    none fails alone (a clash between them) or there is no retest. Leaves `d` clean, detached at `base`."""
     cmd = C.run['retest'].replace('{names}', ' '.join(map(plat.quote, names)))
-    env, bad = merge_env(), []
-    for t in tids:
+    env = merge_env()
+
+    def fails(group: list[str]) -> bool | None:
+        """Whether `group` merged on the base fails `names`; None when it will not merge there."""
         git('merge', '--abort', cwd=d)
         clean(d)
         git('checkout', '-q', '--detach', base, cwd=d)
-        if (files := merge_into(d, fixed(t), f'Merge task/{t} alone', t)) is None or files and not joined(files, t, d):
-            continue
+        for t in group:
+            if (files := merge_into(d, fixed(t), f'Merge task/{t} alone', t)) is None or files and not joined(files, t, d):
+                return None
         try:
             r = sp.run(cmd, shell=True, cwd=str(d), capture_output=True, text=True, env=env, timeout=C.run['timeout'])
         except sp.TimeoutExpired:
-            continue
-        if r.returncode and set(re.findall(C.run['failures'], r.stdout + r.stderr, re.M)) & set(names):
-            bad.append(t)
-    git('merge', '--abort', cwd=d)
-    clean(d)
-    git('checkout', '-q', '--detach', base, cwd=d)
-    if len(tids) >= 4 and len(bad) * 2 > len(tids):
-        # most of a batch cannot each break the same tests: the base (or the machine) does, and putting them all
-        # aside would merge them one gate at a time
-        log(f'{tids[0]}: {len(bad)} of the batch\'s {len(tids)} tasks fail {", ".join(names)} alone, so it is not '
-            f'theirs; none is put aside')
-        return []
-    return bad
+            return None
+        return bool(r.returncode and set(re.findall(C.run['failures'], r.stdout + r.stderr, re.M)) & set(names))
+
+    def search(group: list[str], failing: bool) -> list[str]:
+        if len(group) == 1:
+            return group if failing or fails(group) else []
+        half, rest = group[:len(group) // 2], group[len(group) // 2:]
+        if (f := fails(half)) is None:  # cannot build the half: each of the group alone
+            return next(([t] for t in group if fails([t])), [])
+        return search(half, True) if f else search(rest, False)  # `rest` may pass too: a clash across halves
+
+    try:
+        return search(tids, False)
+    finally:
+        git('merge', '--abort', cwd=d)
+        clean(d)
+        git('checkout', '-q', '--detach', base, cwd=d)
 
 
 def merge(tid: str, branch: str) -> str | None:
@@ -4230,12 +4240,27 @@ def dry_run(slots: int, branch: str) -> int:
     return 0
 
 
+def reserve_branch_ids() -> None:
+    """Hold the ids the unmerged task branches added (`plan.reserved`), so ids handed out before the list
+    existed, or by a session that wrote its plan line by hand, are not handed out again."""
+    files = [plan_rel('TODO.md'), plan_rel('DONE.md')]
+    have = P.reserved(C.root) | {m.group(2).rstrip('.') for f in files
+                                 for l in git('show', f'HEAD:{f}', cwd=C.root).stdout.splitlines() if (m := TASK.match(l))}
+    new = set()
+    for b in git('for-each-ref', '--format=%(refname:short)', 'refs/heads/task/', cwd=C.root).stdout.split():
+        for f in files:
+            new |= {t for l in git('show', f'{b}:{f}', cwd=C.root).stdout.splitlines()
+                    if (m := TASK.match(l)) and (t := m.group(2).rstrip('.')) not in have}
+    P.reserve(C.root, *sorted(new))
+
+
 def backlog_slots(slots: int, behind: int) -> int:
     """How many slots may run while `behind` finished tasks wait for the merge: all of them up to
-    `[run] max_unmerged`, then one fewer for each task past it, so the run eases off as the merges fall behind
-    and picks up again as they land, instead of piling up finished work the gate cannot take."""
-    cap = C.run['max_unmerged']
-    return slots if not cap else max(0, slots - max(0, behind - cap))
+    `[run] max_unmerged`, then one fewer for each half batch (`batch_max` / 2 tasks) past it, so the run eases
+    off as the merges fall a few gates behind and picks up again as they land, instead of piling up finished
+    work that goes stale (more conflicts, more fix sessions) before the gate can take it."""
+    cap, step = C.run['max_unmerged'], max(1, C.run['batch_max'] // 2)
+    return slots if not cap else max(0, slots - -(-max(0, behind - cap) // step))
 
 
 def backlog_line(slots: int, allowed: int, behind: int) -> str:
@@ -4370,6 +4395,7 @@ def run(argv: list[str], prog: str) -> int:
     failed_starts: dict[str, int] = {}  # task -> sessions that did not start
     cap_said = stop_said = False
     held_said = slots  # the slot count `max_unmerged` last held the run to, as logged
+    reserve_branch_ids()
     log(f'run: {slots} slots in {MUX.name}, merging into {branch}' +
         (f', session usage {usage_pct("five_hour")}%, weekly usage {weekly()}%' if not a.force and r['agent'] == 'claude' else ''))
     from agent_runner import context

@@ -1253,6 +1253,7 @@ def test_leftovers(repo: Path):
 def test_renumber(repo: Path):
     print("a follow-up filed under an id main gave away meanwhile is renumbered, not dropped by the join")
     R.init(repo)
+    (repo / '.git' / P.RESERVED).unlink(missing_ok=True)  # ids other tests handed out
     d = task_branch(repo, 4, 'N1')
     todo = 'plan/TODO.md'
     P.add('Q', 'the follow-up, after Q1 is read', 'bottom', todo=d / todo, done=d / 'plan/DONE.md')
@@ -1270,6 +1271,7 @@ def test_renumber(repo: Path):
     eq(P.add('Q', 'x', todo=d / todo, done=d / 'plan/DONE.md'), 'Q3',
        "a session's add counts the ids in the repo's other checkouts too")
     git(d, 'checkout', '-q', '--', todo)
+    (repo / '.git' / P.RESERVED).unlink()  # that probe's Q3 is held, or the renumber below takes Q4
     eq(R.renumber_doubles('main', 'main', 'N1', repo), 'main', 'nothing doubled: the ref is merged as it is')
     ref = R.renumber_doubles('task/N1', 'main', 'N1', repo)
     check(ref != 'task/N1', 'a doubled id gets a commit of its own on top of the branch')
@@ -1958,9 +1960,9 @@ def test_red_base_and_batch_caps(repo: Path, tmp: Path):
         R.WAITING.update({'E2', 'E3', 'E4'})
         R.merge('E1', 'main')
         log = (repo / '.runner/run.log').read_text()
-        has(log, r"E1: 4 of the batch's 4 tasks fail t_x alone, so it is not theirs; none is put aside",
-            'a batch whose every task "fails alone" is not split into turns of their own')
-        eq(R.ALONE, set(), 'none of them is set aside')
+        has(log, r'E1: the batch fails t_x; E1 fails them alone, so it merges', 'halving finds one culprit, and only it '
+            'is set aside')
+        R.ALONE.clear()
         R.WAITING.clear()
         for i in range(1, 5):
             git(repo, 'branch', '-D', f'task/E{i}')
@@ -1985,6 +1987,22 @@ def test_red_base_and_batch_caps(repo: Path, tmp: Path):
         R.WAITING.clear()
         R.ALONE.clear()
         r.update(saved)
+
+
+def test_reserved_ids(repo: Path):
+    print('plan: an id handed out once is never handed out again, even off every checkout')
+    R.init(repo)
+    todo, done = repo / 'plan/TODO.md', repo / 'plan/DONE.md'
+    was = todo.read_text(encoding='utf-8')
+    try:
+        a = P.add('Z', 'one', todo=todo, done=done)
+        todo.write_text(was, encoding='utf-8')  # its branch is gone from every checkout, not merged yet
+        b = P.add('Z', 'two', todo=todo, done=done)
+        check(a != b, 'the next add skips the id still on an unmerged branch', f'{a} {b}')
+        check({a, b} <= P.reserved(todo), 'both are held')
+        eq(R._next_free('Z1', {'Z1'} | P.reserved(repo)), 'Z3', 'and a renumber skips them too')
+    finally:
+        todo.write_text(was, encoding='utf-8')
 
 
 def test_merge_order_and_backlog(repo: Path):
@@ -2022,12 +2040,14 @@ def test_merge_order_and_backlog(repo: Path):
     r = R.C.run
     saved = r['max_unmerged']
     try:
-        r['max_unmerged'] = 12
-        eq([R.backlog_slots(6, n) for n in (0, 12, 13, 15, 18, 40)], [6, 6, 5, 3, 0, 0],
-           'one slot fewer for each finished task waiting past max_unmerged')
+        r['max_unmerged'], bm = 32, r['batch_max']
+        r['batch_max'] = 16
+        eq([R.backlog_slots(6, n) for n in (0, 32, 33, 40, 41, 72, 73, 200)], [6, 6, 5, 5, 4, 1, 0, 0],
+           'one slot fewer for each half batch waiting past max_unmerged')
+        r['batch_max'] = bm
         has(R.backlog_line(6, 3, 15), r'15 finished tasks wait.*3 of 6 slots', 'and it says so')
         r['max_unmerged'] = 0
-        eq(R.backlog_slots(6, 40), 6, '0 turns it off')
+        eq(R.backlog_slots(6, 400), 6, '0 turns it off')
     finally:
         r['max_unmerged'] = saved
 
@@ -2523,7 +2543,7 @@ def main() -> int:
                        lambda: test_prompt_and_hooks(repo),
                        lambda: test_hooks(repo, tmp), lambda: test_run_policies(repo, tmp),
                        lambda: test_gate_and_batches(repo, tmp), lambda: test_blame_and_own_repair(repo, tmp),
-                       lambda: test_red_base_and_batch_caps(repo, tmp), lambda: test_merge_order_and_backlog(repo),
+                       lambda: test_red_base_and_batch_caps(repo, tmp), lambda: test_merge_order_and_backlog(repo), lambda: test_reserved_ids(repo),
                        lambda: test_platform(repo, tmp), lambda: test_shutdown(repo), lambda: test_merge_into(tmp),
                        lambda: test_leftovers(repo), lambda: test_renumber(repo),
                        lambda: test_stop_waiter(tmp), lambda: test_stop_hook_grace(tmp), lambda: test_land_waits_aloud(repo), lambda: test_merge_ahead(repo), lambda: test_adopted_gate_merge(repo), lambda: test_adopted_gate_results(repo), lambda: test_gate_since(repo), lambda: test_copies(repo), lambda: test_land_gives_merge_back(repo),

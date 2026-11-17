@@ -424,18 +424,51 @@ def move(tid: str, where: str, ref: str | None = None, todo=None) -> None:
     _write(todo, ls)
 
 
-def next_id(prefix: str, paths=None) -> str:
+def next_id(prefix: str, paths=None, taken=()) -> str:
     """The next free id with this prefix, counting DONE.md too: ids are permanent and never reused. A task's own id
-    gives its next subtask (P17 -> P17a, P17a -> P17a1), which the runner keeps from running beside its family."""
+    gives its next subtask (P17 -> P17a, P17a -> P17a1), which the runner keeps from running beside its family.
+    `taken`: more ids in use (those `reserved` holds)."""
     if paths is None:
         paths = list(ensure())
+    ids = [m.group(1) for p in paths for l in lines(p) if (m := re.match(r'\s*- \[.\] \*\*([^*\s]+)\*\*', l))]
+    ids += list(taken)
     if prefix[-1:].isdigit():
-        k = [m.group(1) for p in paths for l in lines(p)
-             if (m := re.match(rf'\s*- \[.\] \*\*{re.escape(prefix)}([a-z])\b', l))]
+        k = [m.group(1) for t in ids if (m := re.fullmatch(rf'{re.escape(prefix)}([a-z])', t.rstrip('.')))]
         return prefix + chr(ord(max(k, default='`')) + 1)
-    n = [int(m.group(1)) for p in paths for l in lines(p)
-         if (m := re.match(rf'\s*- \[.\] \*\*{re.escape(prefix)}(\d+)\b', l))]
+    n = [int(m.group(1)) for t in ids if (m := re.fullmatch(rf'{re.escape(prefix)}(\d+)', t.rstrip('.')))]
     return f'{prefix}{max(n, default=0) + 1}'
+
+
+RESERVED = 'agent-runner-ids'  # in the repo's git dir: every id `add` (or a renumber) handed out, one a line
+
+
+def _reserved_file(at) -> Path | None:
+    try:
+        d = os.path.dirname(os.path.abspath(at)) if os.path.isfile(at) else str(at)
+        r = git('rev-parse', '--git-common-dir', cwd=d)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return (Path(d) / r.stdout.strip()) / RESERVED if not r.returncode and r.stdout.strip() else None
+
+
+def reserved(at) -> set[str]:
+    """The ids handed out in this repo so far, by any checkout: a branch's new tasks sit only on that branch until
+    it merges, and once its slot moves on to the next task no checkout shows them, so the next free id is
+    counted against this list too, or two branches take the same one and the second is renumbered at its merge."""
+    f = _reserved_file(at)
+    try:
+        return set(f.read_text(encoding='utf-8').split()) if f else set()
+    except OSError:
+        return set()
+
+
+def reserve(at, *ids: str) -> None:
+    if (f := _reserved_file(at)) and ids:
+        try:
+            with open(f, 'a', encoding='utf-8') as out:
+                out.write(''.join(f'{t}\n' for t in ids))
+        except OSError:
+            pass
 
 
 def _other_checkouts(*plan_files) -> list[Path]:
@@ -562,7 +595,8 @@ def add(prefix: str, text: str, where: str | None = None, ref: str | None = None
     if pri is not None and pri not in PRI:
         raise SystemExit(f'{PROG}: --pri must be one of {" | ".join(PRI)}, not {pri!r}')
     todo, done = ensure(todo, done)
-    tid = next_id(prefix, [todo, done, *_other_checkouts(todo, done)])
+    tid = next_id(prefix, [todo, done, *_other_checkouts(todo, done)], reserved(todo))
+    reserve(todo, tid)
     ls = list(lines(todo))
     if pri and not PRI_TAG.search(text):
         text = f'(follow-up, {pri}) {text}'

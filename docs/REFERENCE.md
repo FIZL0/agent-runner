@@ -387,28 +387,32 @@ copy of it (Claude's `--resume <id> --fork-session`), so it knows the change it 
 starts fresh.
 
 When a batch (`batch = true`) fails the gate, the runner first looks for the task that breaks it by
-itself (with `failures` and `retest` set): each branch is merged alone on the base and `retest` runs just
-the failing tests there. Those that fail them merge in a turn of their own, where their repair goes as
-above; the rest are built and gated again together. If no branch fails alone, the batch is repaired as a
+itself (with `failures` and `retest` set), by halving the batch as below. That one merges in a turn of
+its own, where its repair goes as above; the rest are built and gated again together. If no branch fails alone, the batch is repaired as a
 whole: one repair session sees every merge in the batch (`REPAIR_BATCH`) and fixes where they clash, and the
 gate runs once more for all of them. Only if that fails too is the batch split, each branch merged on its
 own. A rider whose conflict the line join cannot do waits for its own turn, where it is fixed ahead of the
 lock; with `fix_ahead_max = 0` it gets its fix session inside the batch and shares the batch's gate run.
 
 A test the base fails already (checked with `retest` on the base) never counts against a batch: when a
-batch fails it and a new test, only the new one is looked for task by task, and when it fails only tests
-the base fails too, it lands. If most of a batch (at least 4 tasks) fails alone, the base or the machine is
-to blame, and no task is put in a turn of its own. A batch takes at most `batch_max` tasks (10); the rest
-take the next one, so a failing gate holds up fewer.
+batch fails it and a new test, only the new one counts, and when it fails only tests the base fails too,
+it lands.
+
+When a batch fails a new test, the task that breaks it is found by halving: half the batch is merged on
+the base and only the failing tests rerun, then the half that fails is halved again (a batch of 16 costs
+about 5 retests). That task merges in a turn of its own; the rest are gated again together, and a second
+culprit among them is found the same way. A batch takes at most `batch_max` tasks (16); the rest take the
+next one.
 
 Critical tasks (an open `(follow-up, critical)` tag, or a plan section whose heading says Critical) merge
 alone, never ride in a batch or a merge built ahead, and take the merge lock before anyone else waiting:
 they are the fixes every other gate is waiting on. The lock goes next to a merge built ahead whose gate is
 under way, then to the rest in the order they finished.
 
-When more than `max_unmerged` finished tasks (12) wait for the merge, each one past that keeps one slot
-from starting a new task (with 6 slots, 13 waiting run 5 at most, 18 run none). Sessions under way go on;
-slots pick up again as merges land. The runner says when it holds slots back and when it stops.
+When more than `max_unmerged` finished tasks (32) wait for the merge, each half batch past that keeps one
+slot from starting a new task (with 6 slots and `batch_max` 16, 33 waiting run 5 at most, 73 run none).
+Sessions under way go on; slots pick up again as merges land. The runner says when it holds slots back
+and when it stops.
 
 Tasks that finish while a batch is in its gate do not wait for it to end (`merge_ahead = true`). They are
 merged on top of the merge under test in a second worktree (`merge2` under `[run] home`) and their gate starts
@@ -622,8 +626,8 @@ ci_watch = "auto"         # "auto": workflows run on a push to the shared branch
 ci_kind = "B"             # the prefix of that task
 batch = true              # finished branches waiting for the merge go in together under one gate run, and one push
 merge_ahead = true        # tasks finishing during a batch's gate are merged on it and tested beside it
-batch_max = 10            # at most this many tasks in one batch; 0 = no cap
-max_unmerged = 12         # past this many finished tasks waiting for the merge, each one more holds a slot; 0 = off
+batch_max = 16            # at most this many tasks in one batch; 0 = no cap
+max_unmerged = 32         # past this many finished tasks waiting for the merge, each half batch more holds a slot; 0 = off
 before_start = ""         # a command that must pass before any session starts (a display, a device)
 not_attempt = ""          # regex on a branch's last commit subject ({id}): a phase, not the run's one try
 shared_files = []         # files nearly every task names; not counted as an overlap

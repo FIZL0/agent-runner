@@ -2,6 +2,14 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
+## 0.36.0 (2026-11-17)
+
+- A failing batch's culprit is found by halving the batch: about 5 retests for 16 tasks, not 16.
+- Task ids are held in a list in the git dir once handed out (by `plan add`, a renumber, or an unmerged
+  branch at `run` start), so two branches no longer take the same id and get renumbered at merge, again
+  and again.
+- Gentler backpressure: `batch_max` 16, `max_unmerged` 32, one slot held per half batch past it.
+
 ## 0.35.0 (2026-11-16)
 
 - A test the base already fails no longer blames a batch's tasks. Before, one inherited failure beside a
