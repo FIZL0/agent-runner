@@ -131,6 +131,9 @@ DEFAULTS: dict = {
         'ci_kind': 'B',         # the id prefix that task gets
         'batch': True,          # finished branches waiting for the merge go in together under one gate run
         'merge_ahead': True,    # tasks finishing during a batch's gate are merged on it and tested beside it
+        'batch_max': 10,        # at most this many tasks in one batch (the rest take the next one); 0 = no cap
+        'max_unmerged': 12,     # past this many finished tasks waiting for the merge, each one more holds one slot
+                                # free (6 slots: 13 waiting runs 5, 18 runs none), until merges catch up; 0 = off
         'before_start': '',     # a command that must succeed before a session starts; the slot waits on it
         'not_attempt': '',      # a regex on a finished branch's first commit subject ({id}): such a session
                                 # (a spec phase, say) is not the run's one attempt at the task

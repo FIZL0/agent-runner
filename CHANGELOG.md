@@ -2,6 +2,14 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
+## 0.35.0 (2026-11-16)
+
+- A test the base already fails no longer blames a batch's tasks. Before, one inherited failure beside a
+  new one put every task of the batch in a merge of its own, and the merges fell 70 tasks behind.
+- If most of a batch fails alone, nobody is put aside: it is the base or the machine.
+- Critical tasks merge alone and first; a merge built ahead goes next, then the rest in order.
+- `[run] batch_max` (10) caps a batch; `[run] max_unmerged` (12) eases slots off while merges fall behind.
+
 ## 0.34.1 (2026-11-16)
 
 - `plan add MD39b …` files the subtask MD39b1: a task id ending in a letter is taken as KIND when it is an

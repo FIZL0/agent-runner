@@ -19,6 +19,7 @@ import shutil
 import signal
 import sys
 import tempfile
+import threading
 import time
 from pathlib import Path
 from unittest import mock
@@ -1911,6 +1912,126 @@ def test_blame_and_own_repair(repo: Path, tmp: Path):
         r.update(saved)
 
 
+def test_red_base_and_batch_caps(repo: Path, tmp: Path):
+    print('run: a test the base fails already never blames a batch\'s tasks; batch_max caps a batch')
+    if R.plat.WINDOWS:
+        print('  (POSIX gate only)')
+        return
+    R.init(repo)
+    r = R.C.run
+    gate = ('for f in OLDRED BROKEN X_*; do test -e "$f" || continue; case $f in OLDRED) echo FAIL t_old;; '
+            'BROKEN) echo FAIL t_b;; *) echo FAIL t_x;; esac; done | sort -u > .out; cat .out; rm -f .out; '
+            'test -z "$(ls OLDRED BROKEN X_* 2>/dev/null)"')
+    saved = dict(test=r['test'], failures=r['failures'], retest=r['retest'], agent=r['agent'],
+                 batch_max=r['batch_max'])
+    r.update(test=gate, failures=r'^FAIL (\S+)', retest=gate)
+    agent = tmp / 'fake-agent'
+    agent.write_text(FAKE_AGENT, encoding='utf-8')
+    agent.chmod(0o755)
+    r['agent'] = str(agent)
+    original_fix_cmd = use_fake_fix_agent(agent)
+    os.environ['FAKE_FIX'] = 'abort'
+    try:
+        (repo / 'OLDRED').write_text('', encoding='utf-8')
+        git(repo, 'add', 'OLDRED')
+        git(repo, 'commit', '-qm', 'main breaks t_old by itself')
+        commit_on(repo, 'D1', {'d1.py': '1\n'}, 'D1: fine')
+        commit_on(repo, 'D2', {'BROKEN': ''}, 'D2: breaks t_b')
+        commit_on(repo, 'D3', {'d3.py': '3\n'}, 'D3: fine too')
+        R.WAITING.update({'D2', 'D3'})
+        eq(R.merge('D1', 'main'), None, 'a batch failing a test the base fails too, and one of its own, lands')
+        log = (repo / '.runner/run.log').read_text()
+        has(log, r'D1: t_old already fail without it; only t_b count against it', 'the old failure is set aside')
+        has(log, r'D1: the batch fails t_b; D2 fails them alone', 'and only the task breaking the new one is blamed')
+        eq(R.ALONE, {'D2'}, 'D2 alone merges in a turn of its own')
+        R.BROKEN.clear()
+        R.WAITING.discard('D3')
+        eq(R.merge('D3', 'main'), None, 'the rider\'s turn only does the bookkeeping')
+        R.ALONE.clear()
+        R.WAITING.discard('D2')
+        git(repo, 'branch', '-D', 'task/D2')
+        git(repo, 'rm', '-q', 'OLDRED')
+        git(repo, 'commit', '-qm', 'main green again')
+
+        for i in range(1, 5):
+            commit_on(repo, f'E{i}', {f'X_{i}': ''}, f'E{i}: each breaks t_x')
+        R.WAITING.update({'E2', 'E3', 'E4'})
+        R.merge('E1', 'main')
+        log = (repo / '.runner/run.log').read_text()
+        has(log, r"E1: 4 of the batch's 4 tasks fail t_x alone, so it is not theirs; none is put aside",
+            'a batch whose every task "fails alone" is not split into turns of their own')
+        eq(R.ALONE, set(), 'none of them is set aside')
+        R.WAITING.clear()
+        for i in range(1, 5):
+            git(repo, 'branch', '-D', f'task/E{i}')
+        R.FAILED.clear()
+        R.BROKEN.clear()
+
+        r['batch_max'] = 2
+        for t in ('F1', 'F2', 'F3'):
+            commit_on(repo, t, {f'{t.lower()}.py': '1\n'}, f'{t}: fine')
+        R.WAITING.update({'F2', 'F3'})
+        eq(R.merge('F1', 'main'), None, 'a capped batch lands')
+        log = (repo / '.runner/run.log').read_text()
+        has(log, r'F1: merging together with F2 \(one gate run\)', 'with batch_max - 1 riders')
+        check('F3' not in R.LANDED, 'the rest wait for the next batch')
+        R.WAITING.discard('F2')
+        eq(R.merge('F2', 'main'), None, 'the rider\'s bookkeeping')
+        R.WAITING.discard('F3')
+        eq(R.merge('F3', 'main'), None, 'and the next batch lands')
+    finally:
+        os.environ.pop('FAKE_FIX', None)
+        R.fix_cmd = original_fix_cmd
+        R.WAITING.clear()
+        R.ALONE.clear()
+        r.update(saved)
+
+
+def test_merge_order_and_backlog(repo: Path):
+    print('run: MERGE goes by rank (critical first, then a merge gated ahead); max_unmerged eases slots off')
+    R.init(repo)
+    lock, order = R.TurnLock(), []
+    lock.acquire()
+
+    def wait(name, rank):
+        with lock.turn(lambda: rank):
+            order.append(name)
+    threads = []
+    for name, rank in (('plain', 3), ('critical', 1), ('ahead', 2)):
+        threads.append(threading.Thread(target=wait, args=(name, rank)))
+        threads[-1].start()
+        time.sleep(0.1)
+    check(not lock.acquire(blocking=False), 'a non-blocking acquire never jumps the waiters')
+    lock.release()
+    for t in threads:
+        t.join(10)
+    eq(order, ['critical', 'ahead', 'plain'], 'waiters take the lock by rank, not by arrival')
+    check(not lock.locked(), 'and leave it free')
+
+    plan = ['### Critical: breakages', '', '- [ ] **K1** fix a red test', '', '### Later', '',
+            '- [ ] **K2** (follow-up, critical) another', '- [ ] **P1** plain', '- [x] **K3** (follow-up, critical) done']
+    with mock.patch.object(R, 'plan_text', lambda branch: plan):
+        eq(R.criticals('main'), {'K1', 'K2'}, 'critical by section or by tag, open ones only')
+    R.AHEADS.append({'base': 'x', 'tids': ['P2'], 'merged': 'y'})
+    try:
+        eq([R.merge_rank('P2', False), R.merge_rank('K1', True), R.merge_rank('P1', False)], [2, 1, 3],
+           'critical, then built ahead, then the rest')
+    finally:
+        R.AHEADS.clear()
+
+    r = R.C.run
+    saved = r['max_unmerged']
+    try:
+        r['max_unmerged'] = 12
+        eq([R.backlog_slots(6, n) for n in (0, 12, 13, 15, 18, 40)], [6, 6, 5, 3, 0, 0],
+           'one slot fewer for each finished task waiting past max_unmerged')
+        has(R.backlog_line(6, 3, 15), r'15 finished tasks wait.*3 of 6 slots', 'and it says so')
+        r['max_unmerged'] = 0
+        eq(R.backlog_slots(6, 40), 6, '0 turns it off')
+    finally:
+        r['max_unmerged'] = saved
+
+
 def test_no_pane(repo: Path, tmp: Path):
     print('run: tmux refusing a pane fails that one start or fix session, not the run')
     R.init(repo)
@@ -2402,6 +2523,7 @@ def main() -> int:
                        lambda: test_prompt_and_hooks(repo),
                        lambda: test_hooks(repo, tmp), lambda: test_run_policies(repo, tmp),
                        lambda: test_gate_and_batches(repo, tmp), lambda: test_blame_and_own_repair(repo, tmp),
+                       lambda: test_red_base_and_batch_caps(repo, tmp), lambda: test_merge_order_and_backlog(repo),
                        lambda: test_platform(repo, tmp), lambda: test_shutdown(repo), lambda: test_merge_into(tmp),
                        lambda: test_leftovers(repo), lambda: test_renumber(repo),
                        lambda: test_stop_waiter(tmp), lambda: test_stop_hook_grace(tmp), lambda: test_land_waits_aloud(repo), lambda: test_merge_ahead(repo), lambda: test_adopted_gate_merge(repo), lambda: test_adopted_gate_results(repo), lambda: test_gate_since(repo), lambda: test_copies(repo), lambda: test_land_gives_merge_back(repo),

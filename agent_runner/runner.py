@@ -64,7 +64,7 @@ import tempfile
 import threading
 import time
 import uuid
-from contextlib import ExitStack
+from contextlib import ExitStack, contextmanager
 from pathlib import Path
 
 from agent_runner import plan as P
@@ -1563,7 +1563,70 @@ MUX: TmuxMux | ShimMux = TmuxMux()  # what `cmd_run` picked
 
 # --- merging a finished branch -------------------------------------------------
 
-MERGE = threading.Lock()  # one merge into the shared branch at a time
+class TurnLock:
+    """A lock whose waiters take it by rank, not in whatever order the scheduler wakes them: `acquire(rank=f)`
+    waits until the lock is free and its `f()` (then its arrival) is the lowest of everyone waiting. Ranks are
+    read when the lock comes free, so they may change while a waiter waits. A non-blocking acquire, or one
+    without a rank, never jumps a waiter."""
+
+    def __init__(self) -> None:
+        self._cv = threading.Condition()
+        self._held = False
+        self._waiters: dict[int, object] = {}  # arrival -> rank function
+        self._seq = 0
+
+    def _first(self) -> int:
+        return min(self._waiters, key=lambda k: (self._waiters[k](), k))
+
+    def acquire(self, blocking: bool = True, timeout: float = -1, rank=None) -> bool:
+        with self._cv:
+            if not self._held and not self._waiters:
+                self._held = True
+                return True
+            if not blocking:
+                return False
+            self._seq += 1
+            me = self._seq
+            self._waiters[me] = rank or (lambda: 9)
+            end = None if timeout is None or timeout < 0 else time.monotonic() + timeout
+            try:
+                while self._held or self._first() != me:
+                    left = None if end is None else end - time.monotonic()
+                    if left is not None and left <= 0:
+                        return False
+                    self._cv.wait(left if left is not None else 5)  # 5 s: a rank may change without a release
+                self._held = True
+                return True
+            finally:
+                del self._waiters[me]
+                self._cv.notify_all()
+
+    def release(self) -> None:
+        with self._cv:
+            if not self._held:
+                raise RuntimeError('release unlocked TurnLock')
+            self._held = False
+            self._cv.notify_all()
+
+    def locked(self) -> bool:
+        return self._held
+
+    @contextmanager
+    def turn(self, rank):
+        self.acquire(rank=rank)
+        try:
+            yield
+        finally:
+            self.release()
+
+    def __enter__(self) -> bool:
+        return self.acquire()
+
+    def __exit__(self, *exc) -> None:
+        self.release()
+
+
+MERGE = TurnLock()  # one merge into the shared branch at a time (`merge_rank` orders who goes next)
 LANDING = threading.Lock()  # held while `land` moves the main checkout: an interrupted run waits for it
 
 
@@ -2003,10 +2066,12 @@ def build_ahead(branch: str, base: str, done: threading.Event, taken: set[str]) 
     it the gate run already passed or under way (`merge_gate` goes by tree), instead of a gate from the start.
     A conflict a join cannot do is left for that task's turn (one fix session at a time)."""
     while not done.wait(AHEAD_POLL):
-        if cands := sorted(WAITING - taken - set(LANDED) - ALONE):
+        if cands := sorted(WAITING - taken - set(LANDED) - ALONE - criticals(branch)):
             break
     else:
         return
+    if C.run['batch_max']:
+        cands = cands[:C.run['batch_max']]
     with AHEAD_BUSY:
         _build_ahead(branch, base, cands)
 
@@ -2358,14 +2423,18 @@ def tested(tid: str, d: Path, base: str, tids: list[str] | None = None) -> str |
         clean(d)
         git('checkout', '-q', '--detach', head, cwd=d)
     # ponytail: name-level match; a branch that breaks an already-failing test some other way slips through
-    if r and r.returncode and set(re.findall(rx, r.stdout + r.stderr, re.M)) >= set(names):
+    old = set(re.findall(rx, r.stdout + r.stderr, re.M)) & set(names) if r and r.returncode else set()
+    for n in old:
+        BROKEN.setdefault(n, (tid, base, full and bool(C.run['test_since'])))
+    if old >= set(names):
         log(f'{tid}: {", ".join(names)} already fail without it; merged anyway')
-        for n in names:
-            BROKEN.setdefault(n, (tid, base, full and bool(C.run['test_since'])))
         if full and C.run['test_since']:
             (C.notes(GATES) / FULL_PASS).touch()
             log(f'{tid}: the whole test ran and found only those; counted as the day\'s whole run')
         return None
+    if old:  # only the new failures count against it, or `blame` finds every task of a batch "failing" the old
+        FAILED[tid] = [n for n in names if n not in old]
+        log(f'{tid}: {", ".join(sorted(old))} already fail without it; only {", ".join(FAILED[tid])} count against it')
     return why
 
 
@@ -2416,6 +2485,12 @@ def blame(tids: list[str], d: Path, base: str, names: list[str]) -> list[str]:
     git('merge', '--abort', cwd=d)
     clean(d)
     git('checkout', '-q', '--detach', base, cwd=d)
+    if len(tids) >= 4 and len(bad) * 2 > len(tids):
+        # most of a batch cannot each break the same tests: the base (or the machine) does, and putting them all
+        # aside would merge them one gate at a time
+        log(f'{tids[0]}: {len(bad)} of the batch\'s {len(tids)} tasks fail {", ".join(names)} alone, so it is not '
+            f'theirs; none is put aside')
+        return []
     return bad
 
 
@@ -2441,13 +2516,42 @@ def merge(tid: str, branch: str) -> str | None:
                 FIX_DIRS_LOCK.notify_all()
 
 
+def criticals(branch: str) -> set[str]:
+    """The tasks critical in the plan (a `(follow-up, critical)` tag, or a section named Critical): fixes for a
+    red shared branch or a flaky test, which every other merge's gate is waiting on. They merge alone, first."""
+    out, section = set(), ''
+    for l in plan_text(branch):
+        if l.startswith('### '):
+            section = l[4:]
+        elif (m := TASK.match(l)) and m.group(1) != 'x' and ('critical' in section.lower() or
+                                       ((t := P.PRI_TAG.search(l)) and t.group(1) == 'critical')):
+            out.add(m.group(2))
+    return out
+
+
+def critical(tid: str, branch: str) -> bool:
+    return tid in criticals(branch)
+
+
+def merge_rank(tid: str, crit: bool) -> int:
+    """Who takes MERGE next: a task already landed in a batch (only bookkeeping left), then a critical one (it
+    unjams the gate for the rest), then one whose merge is built ahead with its gate under way (another turn
+    first would drop that gate), then everyone else in the order they finished."""
+    if tid in LANDED:
+        return 0
+    if crit:
+        return 1
+    return 2 if any(tid in a['tids'] for a in AHEADS) else 3
+
+
 def merge_tries(tid: str, branch: str) -> str | None:
     """`merge`'s three tries."""
     for tries in range(3):
         if tid not in LANDED and (why := fix_ahead(tid, branch)):
             return why
         WAITING.add(tid)
-        with MERGE:
+        crit = critical(tid, branch)
+        with MERGE.turn(lambda: merge_rank(tid, crit)):
             WAITING.discard(tid)
             if tid not in LANDED and UNPUSHED:  # a batch whose last task has not taken the lock yet: its
                 push_landed(UNPUSHED[-1], branch)  # push goes out now, not after this one's gate
@@ -2682,7 +2786,8 @@ def merge_batch(tid: str, branch: str, inline: bool = False) -> str | None:
     adopt_merge(d)
     if trim(d, 'merge worktree'):
         worktree('merge', branch)
-    solo = not C.run['batch'] or tid in ALONE
+    crit = criticals(branch)
+    solo = not C.run['batch'] or tid in ALONE or tid in crit
     repairs: list[str] = []  # a repair session's commits, replayed when the merge is built again
     repaired = False
     batch_repaired = False  # one repair session per batch; a batch that still fails is split
@@ -2728,7 +2833,9 @@ def merge_batch(tid: str, branch: str, inline: bool = False) -> str | None:
                     elif why := refix(tid, branch, ref, files, d, msg=msg):
                         return why
                 riders = []
-                for t in ([] if solo else sorted(WAITING - set(LANDED) - ALONE)):
+                for t in ([] if solo else sorted(WAITING - set(LANDED) - ALONE - crit)):
+                    if C.run['batch_max'] and len(riders) + 1 >= C.run['batch_max']:
+                        break  # the rest go in the next batch: a failure here costs fewer tasks a retest
                     own = fixed(t)
                     ref = renumber_doubles(own, 'HEAD', t, d)
                     msg = merge_message(t, f'task/{t}' if own != f'task/{t}' else ref)
@@ -4123,6 +4230,21 @@ def dry_run(slots: int, branch: str) -> int:
     return 0
 
 
+def backlog_slots(slots: int, behind: int) -> int:
+    """How many slots may run while `behind` finished tasks wait for the merge: all of them up to
+    `[run] max_unmerged`, then one fewer for each task past it, so the run eases off as the merges fall behind
+    and picks up again as they land, instead of piling up finished work the gate cannot take."""
+    cap = C.run['max_unmerged']
+    return slots if not cap else max(0, slots - max(0, behind - cap))
+
+
+def backlog_line(slots: int, allowed: int, behind: int) -> str:
+    if allowed == slots:
+        return f'merges caught up ({behind} waiting): all {slots} slots take new tasks again'
+    return (f'{behind} finished tasks wait for the merge ([run] max_unmerged {C.run["max_unmerged"]}): '
+            f'new tasks start in {allowed} of {slots} slots until it catches up')
+
+
 def cmd_run(argv: list[str], prog: str = f'{RUNNER} run') -> int:
     """`prog` is what --help shows; a wrapping CLI passes its own (e.g. './kit run')."""
     if not plat.WINDOWS and threading.current_thread() is threading.main_thread():
@@ -4247,6 +4369,7 @@ def run(argv: list[str], prog: str) -> int:
     failed_resumes: dict[str, int] = {}  # session id -> times it was resumed after a failed model call
     failed_starts: dict[str, int] = {}  # task -> sessions that did not start
     cap_said = stop_said = False
+    held_said = slots  # the slot count `max_unmerged` last held the run to, as logged
     log(f'run: {slots} slots in {MUX.name}, merging into {branch}' +
         (f', session usage {usage_pct("five_hour")}%, weekly usage {weekly()}%' if not a.force and r['agent'] == 'claude' else ''))
     from agent_runner import context
@@ -4380,6 +4503,12 @@ def run(argv: list[str], prog: str) -> int:
                         cap_said = True
                     continue
                 cap_said = False
+                allowed = backlog_slots(slots, sum(t.is_alive() for t in merging))
+                if allowed != held_said:
+                    log(backlog_line(slots, allowed, sum(t.is_alive() for t in merging)))
+                    held_said = allowed
+                if allowed < slots and sum(m <= slots for m in procs) >= allowed:
+                    continue
                 if api_down(stall_said):
                     continue
                 if low_disk([m for m in range(1, slots + 1) if m not in procs and m not in waiting
