@@ -1738,6 +1738,26 @@ def test_gate_catch_up(repo: Path):
         ran.unlink(missing_ok=True), flag.unlink(missing_ok=True)
 
 
+def test_owed_merge_goes_first(repo: Path):
+    print('run: a turn that finds a merge already gated for other waiting tasks gives the turn up to them')
+    R.init(repo)
+    base = git(repo, 'rev-parse', 'main')
+    a = {'base': base, 'tids': ['OA', 'OB'], 'merged': base}
+    R.AHEADS[:] = [a]
+    R.WAITING.update({'OA', 'OB'})
+    try:
+        eq(R.merge_batch('OC', 'main'), R.LATER, 'the turn is given up')
+        eq(R.AHEADS, [a], 'and the gated merge is kept')
+        eq(R.owed('OA', base), None, 'a task in that merge takes its own turn')
+        R.WAITING.discard('OB')
+        eq(R.owed('OC', base), None, 'not when one of its tasks is not waiting')
+        R.WAITING.add('OB')
+        eq(R.merge_rank('OA', False) < R.merge_rank('OC', False), True, 'its tasks rank ahead of the one that gave way')
+    finally:
+        R.AHEADS.clear()
+        R.WAITING.difference_update({'OA', 'OB'})
+
+
 def test_copies(repo: Path):
     print('run: [run] copies puts its own copy of a git-ignored file in a new worktree')
     R.init(repo)
@@ -2578,7 +2598,7 @@ def main() -> int:
                        lambda: test_red_base_and_batch_caps(repo, tmp), lambda: test_merge_order_and_backlog(repo), lambda: test_reserved_ids(repo),
                        lambda: test_platform(repo, tmp), lambda: test_shutdown(repo), lambda: test_merge_into(tmp),
                        lambda: test_leftovers(repo), lambda: test_renumber(repo),
-                       lambda: test_stop_waiter(tmp), lambda: test_stop_hook_grace(tmp), lambda: test_land_waits_aloud(repo), lambda: test_merge_ahead(repo), lambda: test_adopted_gate_merge(repo), lambda: test_adopted_gate_results(repo), lambda: test_gate_since(repo), lambda: test_gate_catch_up(repo), lambda: test_copies(repo), lambda: test_land_gives_merge_back(repo),
+                       lambda: test_stop_waiter(tmp), lambda: test_stop_hook_grace(tmp), lambda: test_land_waits_aloud(repo), lambda: test_merge_ahead(repo), lambda: test_adopted_gate_merge(repo), lambda: test_adopted_gate_results(repo), lambda: test_gate_since(repo), lambda: test_gate_catch_up(repo), lambda: test_owed_merge_goes_first(repo), lambda: test_copies(repo), lambda: test_land_gives_merge_back(repo),
                        lambda: test_edited_elsewhere(repo, tmp),
                        lambda: test_resume(repo, tmp),
                        lambda: test_session_tmp(repo, tmp), lambda: test_end_orphans(repo), lambda: test_memory_watch(repo), lambda: test_tested_ref(repo, tmp),

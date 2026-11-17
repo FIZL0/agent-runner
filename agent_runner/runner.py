@@ -2571,7 +2571,8 @@ def merge_rank(tid: str, crit: bool) -> int:
 
 def merge_tries(tid: str, branch: str) -> str | None:
     """`merge`'s three tries."""
-    for tries in range(3):
+    yields, tries = True, -1
+    while (tries := tries + 1) < 3:
         if tid not in LANDED and (why := fix_ahead(tid, branch)):
             return why
         WAITING.add(tid)
@@ -2581,7 +2582,10 @@ def merge_tries(tid: str, branch: str) -> str | None:
             if tid not in LANDED and UNPUSHED:  # a batch whose last task has not taken the lock yet: its
                 push_landed(UNPUSHED[-1], branch)  # push goes out now, not after this one's gate
             if tid not in LANDED:  # else it went in with an earlier task's batch
-                if (why := merge_batch(tid, branch, inline=tries == 2)) == AGAIN:
+                if (why := merge_batch(tid, branch, inline=tries == 2, yields=yields)) == LATER:
+                    yields, tries = False, tries - 1  # once, and not a try: it queues again behind that batch
+                    continue
+                if why == AGAIN:
                     log(f'{tid}: {AGAIN}; it is fixed outside the lock again while the others merge')
                     continue
                 if why:
@@ -2663,6 +2667,7 @@ FIX_DIRS_LOCK = threading.Condition()  # at most `[run] fix_ahead_max` of them a
 FIXING: dict[str, set[str]] = {}  # a task fixed ahead and not merged yet -> its conflicted files (FIX_DIRS_LOCK)
 FIXED = 'refs/agent-runner/fixed/'  # + <ID>/<task sha>: a fix session's merge of task/<ID> with the shared branch
 AGAIN = 'conflicts again with the shared branch'  # merge_batch's why when a fix ahead of the lock is due
+LATER = 'a merge already gated for other tasks goes first'  # merge_batch's why when it gives its turn up
 
 
 def fixed(tid: str) -> str:
@@ -2830,15 +2835,28 @@ def caught_up(tid: str, branch: str, d: Path, base: str, merged: str, tids: list
     return None
 
 
-def merge_batch(tid: str, branch: str, inline: bool = False) -> str | None:
+def owed(tid: str, base: str) -> dict | None:
+    """A merge built and gated for other tasks, all of them waiting for the lock, that still lands on `base`,
+    when `tid` is in none: after a restart `adopt_merge` finds it only once a turn has begun, and that turn's
+    own merge would drop a gate that took an hour (P347's turn dropped R38's passed batch, 11-17)."""
+    if any(tid in a['tids'] for a in AHEADS):
+        return None
+    return next((a for a in AHEADS if reusable(a, a['tids'][0], base) and a['tids'][0] in WAITING), None)
+
+
+def merge_batch(tid: str, branch: str, inline: bool = False, yields: bool = True) -> str | None:
     """`merge`'s part under the lock: build, test and land task/<tid> and its riders; record them in LANDED.
 
     A conflict of task/<tid> that the join cannot do returns AGAIN, for `fix_ahead` to take outside the lock,
     unless `inline` (its last try) or `fix_ahead_max` is 0: then a fix session takes it here. A rider with one
-    waits for its own turn."""
+    waits for its own turn. With `yields`, a merge already gated for other waiting tasks (`owed`) returns
+    LATER: those tasks rank ahead now (`merge_rank`), so the caller queues again."""
     ahead_fix = C.run['fix_merges'] and C.run['fix_ahead_max'] and not inline
     d = worktree('merge', branch)
     adopt_merge(d)
+    if yields and tid not in criticals(branch) and (a := owed(tid, git('rev-parse', branch).stdout.strip())):
+        log(f'{tid}: the merge of {", ".join(a["tids"])} is already gated; it lands first, then this turn')
+        return LATER
     if trim(d, 'merge worktree'):
         worktree('merge', branch)
     crit = criticals(branch)

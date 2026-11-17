@@ -2,6 +2,12 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
+## 0.37.2 (2026-11-17)
+
+- A merge turn that finds a merge already gated for other waiting tasks gives its turn up to them, once,
+  instead of dropping that merge. After a restart, the gate a run left is adopted inside whichever turn
+  comes first; P347's turn threw away R38's batch of 16 tasks, which had just passed a 42-minute gate.
+
 ## 0.37.1 (2026-11-17)
 
 - A merge built ahead waits while a gate still runs in merge2. After a restart, a turn could adopt the gate an
