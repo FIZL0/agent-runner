@@ -2,6 +2,13 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
+## 0.37.0 (2026-11-17)
+
+- With `[run] test_since`, a shared branch that gets code commits during a merge's gate no longer means
+  building and testing the whole merge again. The new commits are merged into the tested merge, and the
+  gate runs on what they change, from that merge. A conflict or a failure there still builds it all
+  again. One kit commit to main during a 54-minute batch gate had cost a second 54 minutes.
+
 ## 0.36.1 (2026-11-17)
 
 - A finished task waiting to merge holds only the files it changed, not every file its plan line names. One

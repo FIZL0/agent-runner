@@ -470,7 +470,9 @@ to load 15 and one-hour merges:
   the shared branch, so with `failures` and `retest` set the merge it ran on still lands, and a critical
   task is filed to fix the test (and widen the selection). In the selection, a guess at what a slow test
   proves can spare a slot's own check, but the merge's gate should only drop a test that what changed
-  cannot reach.
+  cannot reach. When the shared branch gets code commits during a merge's gate, they are merged into the
+  tested merge and only what they change is tested, from that merge: an hour's batch gate is not run again
+  for a commit that landed in its last minutes. A conflict there, or a failure, builds the merge again.
 - **One push per batch.** Each push to the shared branch is a CI run, so the runner pushes a batch once,
   when its last task lands.
 

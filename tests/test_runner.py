@@ -1706,6 +1706,38 @@ def test_gate_since(repo: Path):
         ran.unlink(missing_ok=True)
 
 
+def test_gate_catch_up(repo: Path):
+    print('run: the shared branch got code during a gate: only what it got is tested, from the tested merge')
+    if R.plat.WINDOWS:
+        return
+    R.init(repo)
+    ran, flag = R.SLOTS_DIR / 'gate-ran.log', R.SLOTS_DIR / 'gate-moved'
+    saved = dict(R.C.run)
+    move = (f'if [ ! -e {flag} ]; then touch {flag}; cd {repo} && echo 1 > m.py && git add m.py && '
+            f'git commit -qm "M: meanwhile" >/dev/null; fi')
+    R.C.run.update(test=f'echo full >> {ran}', test_since=f'echo since {{base}} >> {ran}; {move}',
+                   full_every_hours=24, merge_ahead=False)
+    last = R.C.notes(R.GATES) / R.FULL_PASS
+    last.parent.mkdir(exist_ok=True)
+    last.touch()
+    try:
+        commit_on(repo, 'U1', {'u1.py': '1\n'}, 'U1: one')
+        base = git(repo, 'rev-parse', 'main')
+        eq(R.merge('U1', 'main'), None, 'it lands')
+        lines = ran.read_text().split()
+        eq(len(lines), 4, 'two gates: the merge, then what main got during it')
+        eq(lines[1], base, 'the first from main as it was')
+        merged = lines[3]
+        check(lines[3] != base and git(repo, 'merge-base', '--is-ancestor', merged, 'main') == '',
+              'the second from the tested merge, which landed under it')
+        check((repo / 'm.py').exists() and (repo / 'u1.py').exists(), 'with both')
+        has((repo / '.runner/run.log').read_text(), r'U1: main got code commits during the tests \(m.py\); testing',
+            'said so')
+    finally:
+        R.C.run.clear(), R.C.run.update(saved)
+        ran.unlink(missing_ok=True), flag.unlink(missing_ok=True)
+
+
 def test_copies(repo: Path):
     print('run: [run] copies puts its own copy of a git-ignored file in a new worktree')
     R.init(repo)
@@ -2546,7 +2578,7 @@ def main() -> int:
                        lambda: test_red_base_and_batch_caps(repo, tmp), lambda: test_merge_order_and_backlog(repo), lambda: test_reserved_ids(repo),
                        lambda: test_platform(repo, tmp), lambda: test_shutdown(repo), lambda: test_merge_into(tmp),
                        lambda: test_leftovers(repo), lambda: test_renumber(repo),
-                       lambda: test_stop_waiter(tmp), lambda: test_stop_hook_grace(tmp), lambda: test_land_waits_aloud(repo), lambda: test_merge_ahead(repo), lambda: test_adopted_gate_merge(repo), lambda: test_adopted_gate_results(repo), lambda: test_gate_since(repo), lambda: test_copies(repo), lambda: test_land_gives_merge_back(repo),
+                       lambda: test_stop_waiter(tmp), lambda: test_stop_hook_grace(tmp), lambda: test_land_waits_aloud(repo), lambda: test_merge_ahead(repo), lambda: test_adopted_gate_merge(repo), lambda: test_adopted_gate_results(repo), lambda: test_gate_since(repo), lambda: test_gate_catch_up(repo), lambda: test_copies(repo), lambda: test_land_gives_merge_back(repo),
                        lambda: test_edited_elsewhere(repo, tmp),
                        lambda: test_resume(repo, tmp),
                        lambda: test_session_tmp(repo, tmp), lambda: test_end_orphans(repo), lambda: test_memory_watch(repo), lambda: test_tested_ref(repo, tmp),

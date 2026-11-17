@@ -2790,6 +2790,36 @@ def carry_notes(base: str, d: Path) -> None:
         path.write_text('\n'.join(got) + '\n', encoding='utf-8')
 
 
+def caught_up(tid: str, branch: str, d: Path, base: str, merged: str, tids: list[str]) -> tuple[str, str] | None:
+    """The tested merge in `d`, with what `branch` got since `base` during its gate merged in and tested: the
+    branch's commit it is on and the commit to land, or None for the caller to build and test the whole merge again. `merged` passed the gate
+    and the branch's new commits passed theirs, so only what those commits change is tested again, from
+    `merged` (`[run] test_since`): an hour's batch gate is not rerun for a commit main got in its last minutes.
+    Commits in `[run] untested` files only are not tested; a conflict or a failure builds it all again."""
+    for _ in range(3):
+        moved = git('diff', '--name-only', base, branch).stdout.split()
+        if all(map(untestable, moved)):
+            return base, merged
+        new = git('rev-parse', branch).stdout.strip()
+        if not C.run['test_since']:
+            log(f'{tid}: {branch} got code commits during the tests; testing the merge again')
+            return None
+        files = merge_into(d, new, f'Merge {branch} into the merge of task/{tid}', tid)
+        if files is None or files and not joined(files, tid, d):
+            git('merge', '--abort', cwd=d)
+            log(f'{tid}: {branch} got commits during the tests that conflict with the merge; building it again')
+            return None
+        log(f'{tid}: {branch} got code commits during the tests ({", ".join([f for f in moved if not untestable(f)][:5])}); '
+            f'testing what they change since the tested merge {merged[:9]}')
+        if why := tested(tid, d, merged, tids):
+            FAILED.pop(tid, None)  # not the batch's own failure: `blame` must not read it
+            log(f'{tid}: the merge with {branch}\'s new commits fails the gate; building it again ({why[:200]})')
+            return None
+        base, merged = new, git('rev-parse', 'HEAD', cwd=d).stdout.strip()
+    log(f'{tid}: {branch} kept moving during the catch-up gates; building the merge again')
+    return None
+
+
 def merge_batch(tid: str, branch: str, inline: bool = False) -> str | None:
     """`merge`'s part under the lock: build, test and land task/<tid> and its riders; record them in LANDED.
 
@@ -2935,12 +2965,11 @@ def merge_batch(tid: str, branch: str, inline: bool = False) -> str | None:
                         return still + ' (after a repair session)'
                     merged = git('rev-parse', 'HEAD', cwd=d).stdout.strip()
                     note(f'{tid}: the merge failed the gate; a repair session fixed it')
-            moved = git('diff', '--name-only', base, branch).stdout.split()
-            if not all(map(untestable, moved)):  # landing now would put untested code on the shared branch
+            if (got := caught_up(tid, branch, d, base, merged, [tid, *riders])) is None:
                 if attempt < 2:
-                    log(f'{tid}: {branch} got code commits during the tests; testing the merge again')
                     continue
                 break
+            base, merged = got
             with LANDING:
                 why = land(tid, branch, merged)
             if why == 'conflict' and attempt < 2:
