@@ -2,6 +2,11 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
+## 0.34.1 (2026-11-16)
+
+- `plan add MD39b …` files the subtask MD39b1: a task id ending in a letter is taken as KIND when it is an
+  open task's id, as one ending in a digit always was. A letter-ending id that is no open task is still refused.
+
 ## 0.34.0 (2026-11-16)
 
 - Run sessions with GitHub Copilot CLI as well as Claude Code and Pi, including session recovery and fix sessions.

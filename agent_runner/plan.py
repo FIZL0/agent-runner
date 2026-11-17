@@ -472,8 +472,11 @@ def kinds() -> tuple[dict[str, str], bool]:
 
 
 def check_kind(prefix: str) -> str | None:
-    """Why `prefix` is the wrong id letter, or None. A task's own id (P17 -> P17a) is a subtask, always fine."""
+    """Why `prefix` is the wrong id letter, or None. A task's own id (P17 -> P17a, MD39b -> MD39b1) is a subtask,
+    always fine: one ending in a digit whatever it is, one ending in a letter if it is an open task's id."""
     if prefix[-1:].isdigit():
+        return None
+    if re.search(r'\d', prefix) and prefix in open_ids(lines(ensure()[0])):
         return None
     k, own = kinds()
     if prefix in k:

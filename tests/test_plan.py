@@ -342,6 +342,10 @@ def test_kinds():
         has(r.stdout, r'added U1 \(low\)', 'a named letter is fine, and --pri anywhere in the words is read')
         r = run(root, 'plan', 'add', 'Q1', 'a subtask', env=env)
         has(r.stdout, 'added Q1a', "a task's id is a subtask, whatever the kinds")
+        r = run(root, 'plan', 'add', 'Q1a', 'a subtask of a subtask', env=env)
+        has(r.stdout, 'added Q1a1', 'an open task id ending in a letter is a subtask too')
+        r = run(root, 'plan', 'add', 'Q9z', 'no such task', env=env)
+        eq(r.returncode, 2, 'a letter-ending id that is no open task is refused')
 
 
 def test_need_files():
