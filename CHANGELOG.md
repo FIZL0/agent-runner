@@ -2,6 +2,15 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
+## 0.39.0 (2026-11-18)
+
+- Runs claim tasks with the plan in the code repo too, not only with `[plan] repo`: a claim is a ref on the
+  code's remote (`refs/agent-runner/claims/<ID>`), and the first push wins. Two runs, on two machines or in
+  two clones on one machine and account, never start the same task, and keep off each other's files.
+- `agent-runner guide`: how an agent session a person starts in the repo should work with the runner (queue
+  work with `plan add` instead of editing TODO.md or doing it on a branch, leave `task/*` and `wip/*` alone,
+  how to unstick a task). Each run keeps it installed as a Claude Code skill in `~/.claude/skills/agent-runner`,
+  rewritten whenever its text changes; `[run] install_skill = false` turns that off.
 
 ## 0.38.1
 

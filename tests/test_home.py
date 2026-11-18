@@ -82,5 +82,18 @@ check(any('did you mean slots' in w for w in c.warnings), 'a typo gets the neare
 (repo / 'runner.toml').write_text('[run]\nslots = 3\n', encoding='utf-8')
 eq(Config(repo).warnings, [], 'a clean config says nothing')
 
+print('the guide: printed, and kept installed as a Claude Code skill')
+from agent_runner import guide  # noqa: E402
+eq(run(repo, 'guide').returncode, 0, '`guide` prints it')
+cc = tmp / 'claude'
+os.environ['CLAUDE_CONFIG_DIR'] = str(cc)
+eq(guide.install(), '', 'no Claude config dir: nothing written')
+cc.mkdir()
+check(guide.install(), 'installed, and the run log says so')
+check(guide.skill_file().read_text(encoding='utf-8').startswith('---\nname: agent-runner'), 'as a skill')
+eq(guide.install(), '', 'the same text: left alone, nothing said')
+guide.skill_file().write_text('old', encoding='utf-8')
+check(guide.install(), 'another runner version\'s text: rewritten')
+
 os.environ['AGENT_RUNNER_HOME'] = env
 raise SystemExit(1 if FAILED else print('\nall checks passed'))

@@ -205,9 +205,57 @@ def test_all(tmp: Path):
     eq(run(b, 'plan', 'unclaim', ta[0]).returncode, 1, 'unclaiming nothing says so')
 
 
+def test_in_repo(tmp: Path):
+    """A plan in the code repo: claims are refs on the code's remote, so two clones on one machine (or two)
+    never take one task."""
+    seed = tmp / 'seed'
+    seed.mkdir(parents=True)
+    git(seed, 'init', '-q', '-b', 'main')
+    (seed / 'plan').mkdir()
+    (seed / 'plan' / 'TODO.md').write_text(TODO, encoding='utf-8')
+    git(seed, 'add', '-A')
+    git(seed, 'commit', '-qm', 'start')
+    git(tmp, 'clone', '-q', '--bare', str(seed), 'code.git')
+    a, b = tmp / 'A', tmp / 'B'
+    for d in (a, b):
+        git(tmp, 'clone', '-q', str(tmp / 'code.git'), d.name)
+    ca, cb = config.Config(a), config.Config(b)
+    check(not ca.plan_external and plansync.enabled(ca), 'an in-repo plan with a remote claims tasks')
+    print('in-repo claims: two clones on one machine')
+    check(plansync.claim(ca, 'T1', {'a.py'}), 'A claims T1')
+    check(not plansync.claim(cb, 'T1'), 'B cannot: the claim is on the remote')
+    eq(plansync.taken(cb), {'T1'}, 'T1 is taken, seen from B')
+    eq(plansync.claims(cb)['T1'].files, frozenset({'a.py'}), 'with the files it holds')
+    eq(plansync.taken(ca), set(), 'not from A, whose claim it is')
+    check(git(a, 'branch', '-r').count('claims') == 0, 'no branch for it: clones and CI never see one')
+    plansync.release(cb, 'T1')
+    eq(plansync.taken(cb), {'T1'}, "B cannot release A's claim")
+    plansync.refresh(ca, {'T1'}, {'T1': {'a.py', 'b.py'}})
+    plansync.SYNCED.clear()
+    eq(plansync.claims(cb)['T1'].files, frozenset({'a.py', 'b.py'}), 'a refresh re-stamps it (a fast-forward)')
+    check(plansync.claim(ca, 'T2'), 'A claims T2')
+    plansync.refresh(ca, {'T1'})
+    plansync.SYNCED.clear()
+    eq(set(plansync.claims(cb)), {'T1'}, 'a refresh drops the claims A no longer holds')
+    plansync.release(ca, 'T1')
+    check(plansync.claim(cb, 'T1'), 'once A releases it, B can')
+    check(plansync.claim(ca, 'T3'), 'A claims T3')
+    real = plansync._Refs.sync
+    plansync._Refs.sync = lambda self: True  # B's read misses A's claim, as if A pushed just after it
+    try:
+        check(not plansync.claim(cb, 'T3'), "B, not having seen A's claim, loses the race on push")
+    finally:
+        plansync._Refs.sync = real
+    check(plansync.unclaim(cb, 'T3'), 'unclaim drops anyone\'s')
+    plansync.SYNCED.clear()
+    eq(plansync.taken(ca), {'T1'}, 'and the remote has only B\'s T1 left')
+    git(a, 'remote', 'remove', 'origin')
+    check(not plansync.enabled(config.Config(a)), 'no remote: no claims (a local-only run is the only one)')
+
+
 def main() -> int:
     with tempfile.TemporaryDirectory() as t:
-        return report([lambda: test_all(Path(t))])
+        return report([lambda: test_all(Path(t)), lambda: test_in_repo(Path(t) / 'in-repo')])
 
 
 if __name__ == '__main__':

@@ -36,6 +36,7 @@ More
     agent-runner context              what every session loads (rules, CLAUDE.md, AGENTS.md) and what to move out
     agent-runner home [slots|plan]    where this project's runner files are ([run] home): for scripts
     agent-runner help order           what runs when, and how to make one task wait for another
+    agent-runner guide                how an agent you start in this repo should work with the runner
     agent-runner run --help           every runner option
     agent-runner --version
 
@@ -122,6 +123,10 @@ def main(argv: list[str] | None = None) -> int:
     if cmd == 'stop':
         from agent_runner import runner
         return runner.cmd_stop(rest)
+    if cmd == 'guide':
+        from agent_runner.guide import GUIDE
+        print(GUIDE, end='')
+        return 0
     if cmd == 'help' and rest[:1] == ['order']:
         print(ORDER)
         return 0

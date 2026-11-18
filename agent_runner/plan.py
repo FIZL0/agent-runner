@@ -24,7 +24,7 @@ re-reads it on every turn pays again. So the backlog is a command instead:
     ./run plan newid PREFIX      the next free id, e.g. L -> L7; a task's id gives its next subtask, L3 -> L3a
     ./run plan archive           move every [x] line left in TODO.md to DONE.md (after merges, hand edits)
     ./run plan reopen            unblock every task whose BLOCKED (after X, Y) tasks are all done now
-    ./run plan claims            [plan] repo: which run has which task, and since when (STALE: no refresh in 3 h)
+    ./run plan claims            which run has which task (with a remote to claim through), and since when (STALE: no refresh in 3 h)
     ./run plan unclaim <ID>      drop a claim, whoever's: for a run that crashed or was switched off
 
 **Where `add` files a task.** A person's task goes to the top of the leading section, as before. A task

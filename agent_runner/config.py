@@ -98,6 +98,7 @@ DEFAULTS: dict = {
         'backend': '',          # '' = Claude Code (or pi when `agent` is a pi executable); pi = other providers
         'model': 'opus',
         'lean': True,           # agents get Bash/Read/Edit/Write only, no MCP, no user settings
+        'install_skill': True,  # keep the `agent-runner guide` skill in ~/.claude/skills, for sessions a person starts
         'idle': 90,             # seconds a finished session sits at its prompt before it is ended
         'stall': 1200,          # seconds of quiet at a prompt that count as stalled
         'pause': 60,            # seconds between one session ending and the next starting in that slot

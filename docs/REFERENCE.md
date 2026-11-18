@@ -168,6 +168,15 @@ repo = "git@github.com:you/project-plan.git"   # or a local path
 - Moving an existing plan over, keeping its history: `git subtree split -P plan -b plan-only`, push that
   branch to the new repo as `main`, set `[plan] repo`, then `git rm -r plan` in the code repo.
 
+**Claims with the plan in the code repo.** Runs claim tasks the same way without `[plan] repo`, whenever the code
+has a remote (`[git] push`): each claim is a ref, `refs/agent-runner/claims/<ID>`, on that remote. The first push
+of a claim wins and any later one is turned down, so two runs never take one task, whether they are on two
+machines, or on one machine and one account in two clones (a claim's owner is host and checkout). Claims hold
+files, go stale, show in `plan` and `plan claims`, and `plan unclaim` drops one, all as above. The refs are
+outside branches and tags, so clones, CI and the GitHub UI never see them. A `plan add` in a main checkout
+commits there but does not push: another machine sees the task once that commit is pushed (the next merge
+the run there pushes does it).
+
 ## What runs when
 
 Each free slot reads `plan/TODO.md` from the top and starts the first task it's allowed to, so the order of the

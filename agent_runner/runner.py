@@ -430,17 +430,18 @@ def claimed_elsewhere(cls: dict, todo: list) -> list[tuple]:
 def pick(running: dict, tried: set, branch: str, claim: bool = False):
     """The next task a free slot may take, or None. See the module docstring for the rules.
 
-    `claim` (a run about to start it): with `[plan] repo`, the task is claimed and the claim pushed first;
+    `claim` (a run about to start it): with a remote to share claims through, the task is claimed and the claim pushed first;
     one another runner has, or got just now, is passed over for the next. Another runner's live claim counts
     as a task running here, so its files, ordered section and family wait for it too."""
     shared = set(C.run['shared_files'])
     todo = tasks(branch)
 
     def pick_(t):
-        if not claim or not C.plan_repo:
+        if not claim or not plansync.enabled(C):
             return t
         if not plansync.claim(C, t[0], t[2]):
             return None
+        FETCHED[0] = 0.0  # in-repo: the merge that closed it may have landed since the last fetch
         if t[0] not in open_tasks(branch):  # the claim pulled: the pick may have read a plan up to 20 s old
             plansync.release(C, t[0])  # closed meanwhile (ticked or blocked by someone else)
             return None
@@ -456,7 +457,7 @@ def pick(running: dict, tried: set, branch: str, claim: bool = False):
                 return None
         return t
 
-    busy = claimed_elsewhere(plansync.claims(C), todo)  # [] without [plan] repo
+    busy = claimed_elsewhere(plansync.claims(C), todo)  # [] with no remote to claim through
     busy_ids = {b[0] for b in busy} | {q[0] for q in queued().values()}  # one waiting to resume is running
     mine = set(ahead(branch)) if todo else set()  # finished here, waiting to be merged
     finished = mine | plansync.taken(C)  # another runner's: on its slots
@@ -3318,10 +3319,10 @@ def touched(tid: str, branch: str, slot: Path | None) -> set[str]:
 
 
 def keep_claims(running: dict, branch: str) -> None:
-    """`[plan] repo`, every plansync.REFRESH s: re-stamp this run's claims (running, or waiting to merge) with
+    """Every plansync.REFRESH s: re-stamp this run's claims (running, or waiting to merge) with
     the files each holds (the line's and the ones its session has touched), drop its claims on anything else,
     and say once of each other run's claim gone stale (a crashed run's would hold that task for good)."""
-    if not C.plan_repo or time.time() - CLAIMS_AT[0] < plansync.REFRESH:
+    if time.time() - CLAIMS_AT[0] < plansync.REFRESH or not plansync.enabled(C):
         return
     CLAIMS_AT[0] = time.time()
     slots = {t[0]: (SLOTS_DIR / f's{n}', t[2]) for n, t in running.items() if isinstance(n, int)}
@@ -4539,6 +4540,10 @@ def run(argv: list[str], prog: str) -> int:
     threading.Thread(target=update_notice, daemon=True).start()
     for w in C.warnings:
         log(w)
+    if r['install_skill']:
+        from agent_runner.guide import install
+        if said := install():
+            log(said)
     if Path('/proc/meminfo').exists() and (r['proc_max_gb'] or r['min_free_mem_gb']):
         threading.Thread(target=memory_watch, daemon=True).start()
     if sys.stdin.isatty():

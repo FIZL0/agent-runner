@@ -11,6 +11,8 @@ the code (`[plan] dir`, default `[run] home`/plan), shared by the main checkout 
 * `claim`: a runner pushes claims/<ID> before it starts a task, so two runners never take the same task.
   A claim file has no .md, so two runners claiming one task conflict, and the later one backs off.
 
+Claims work for a plan inside the code repo too: refs on the code's remote (`_Refs`).
+
 A `[plan] dir` outside the code repo without `repo` (a synced folder) gets the lock and nothing else.
 """
 from __future__ import annotations
@@ -148,25 +150,115 @@ class Claim(NamedTuple):
     files: frozenset = frozenset()  # the task line's files and the ones its session has touched
 
 
+class _Files:
+    """`[plan] repo`: claims/<ID> files in the plan clone, pushed with the plan. A claim file has no .md, so two
+    runners claiming one task conflict, and the later one backs off."""
+    def __init__(self, c):
+        self.c, self.d = c, c.plan_dir / 'claims'
+
+    def sync(self) -> bool:
+        return pull(self.c, force=True)
+
+    def texts(self) -> dict[str, str]:
+        return {f.name: f.read_text() for f in self.d.iterdir() if f.is_file()} if self.d.is_dir() else {}
+
+    def put(self, tid: str, text: str, new: bool = False) -> bool:
+        self.d.mkdir(exist_ok=True)
+        (self.d / tid).write_text(text)
+        return True
+
+    def drop(self, tid: str) -> None:
+        (self.d / tid).unlink(missing_ok=True)
+
+    def flush(self, msg: str) -> bool:
+        return not publish(self.c, msg)
+
+    def undo(self) -> None:  # a claim commit that did not push: lost the race, or no remote to tell
+        git('reset', '-q', '--hard', 'HEAD~1', cwd=self.c.plan_dir)
+        pull(self.c, force=True)
+
+
+class _Refs:
+    """A plan in the code repo: refs/agent-runner/claims/<ID> on the code's remote, each a commit whose message
+    is the claim file. Creating one is a push of a parentless commit, which the remote turns down when the ref
+    is there already: two runners claiming one task, on one machine or two, and the later one backs off. A
+    re-stamp is a child commit (a fast-forward); a drop deletes the ref only if it is still the one read.
+    Outside the branches and tags, so no clone, CI or UI sees them."""
+    NS = 'refs/agent-runner/claims/'
+
+    def __init__(self, c, remote: str):
+        self.c, self.remote = c, remote
+        self.net, self.g = _net(c.root), lambda *a: git(*a, cwd=c.root)
+
+    def sync(self) -> bool:
+        self.net('fetch', '-q', '--prune', self.remote, f'+{self.NS}*:{self.NS}*')
+        return True  # offline: what was read last; a claim push still has to win
+
+    def texts(self) -> dict[str, str]:
+        out = self.g('for-each-ref', f'--format=%(refname:lstrip=3)%00%(contents)%00', self.NS).stdout
+        parts = out.split('\0')
+        return {parts[i].strip(): parts[i + 1] for i in range(0, len(parts) - 1, 2)}
+
+    def put(self, tid: str, text: str, new: bool = False) -> bool:
+        ref = self.NS + tid
+        old = '' if new else self.g('rev-parse', '-q', '--verify', ref).stdout.strip()
+        tree = git('mktree', cwd=self.c.root, input='').stdout.strip()
+        sha = self.g('commit-tree', tree, *(['-p', old] if old else []), '-m', text).stdout.strip()
+        if not sha or self.net('push', '-q', self.remote, f'{sha}:{ref}').returncode:
+            return False
+        self.g('update-ref', ref, sha)
+        return True
+
+    def drop(self, tid: str) -> None:
+        ref = self.NS + tid
+        if old := self.g('rev-parse', '-q', '--verify', ref).stdout.strip():
+            self.net('push', '-q', f'--force-with-lease={ref}:{old}', self.remote, f':{ref}')
+            self.g('update-ref', '-d', ref)
+
+    def flush(self, msg: str) -> bool:
+        return True
+
+    def undo(self) -> None:
+        self.sync()
+
+
+def store(c):
+    """Where this repo's claims live: the plan clone, the code's remote, or nowhere (no remote to share them
+    through: a local-only run is the only runner)."""
+    if c.plan_repo:
+        return _Files(c)
+    if not c.plan_external and (r := c.push_remote) and not git('remote', 'get-url', r, cwd=c.root).returncode:
+        return _Refs(c, r)
+    return None
+
+
+def enabled(c) -> bool:
+    return store(c) is not None
+
+
+SYNCED: dict = {}  # store kind -> when a read last synced (a claim, release or refresh always does)
+
+
 def claims(c) -> dict[str, Claim]:
     """Every claim: id -> Claim."""
-    d = c.plan_dir / 'claims'
-    if not c.plan_repo or not d.is_dir():
+    if not (st := store(c)):
         return {}
+    if isinstance(st, _Refs) and time.time() - SYNCED.get(str(c.root), 0) > PULL_EVERY:
+        SYNCED[str(c.root)] = time.time()
+        st.sync()  # a plan clone syncs on its own reads (`pull`)
     out = {}
-    for f in d.iterdir():
-        if f.is_file():
-            ls = f.read_text().splitlines() + [''] * 6
-            try:
-                at = time.mktime(time.strptime(ls[1], _STAMP))
-            except ValueError:
-                at = 0.0
-            try:
-                since = float(ls[4])
-            except ValueError:
-                since = at
-            out[f.name] = Claim(ls[0], at, ls[2] or ls[0].split(':')[0], ls[3], since,
-                                frozenset(x for x in ls[5].split('\t') if x))
+    for tid, text in st.texts().items():
+        ls = text.splitlines() + [''] * 6
+        try:
+            at = time.mktime(time.strptime(ls[1], _STAMP))
+        except ValueError:
+            at = 0.0
+        try:
+            since = float(ls[4])
+        except ValueError:
+            since = at
+        out[tid] = Claim(ls[0], at, ls[2] or ls[0].split(':')[0], ls[3], since,
+                         frozenset(x for x in ls[5].split('\t') if x))
     return out
 
 
@@ -187,80 +279,79 @@ def taken(c) -> set[str]:
     return {t for t, cl in claims(c).items() if cl.owner != me}
 
 
-def _stamp(c, f: Path, files=None) -> None:
-    """Write (or re-stamp) a claim of this runner's: when it was first claimed is kept; `files` replaces the
+def _stamp(c, old: str | None, files=None) -> str:
+    """A claim of this runner's, new or re-stamped: when it was first claimed is kept; `files` replaces the
     held files when given."""
     from agent_runner import __version__
-    old = f.read_text().splitlines() + [''] * 6 if f.exists() else [''] * 6
-    since = old[4] or f'{time.time():.3f}'
-    held = '\t'.join(sorted(files)) if files is not None else old[5]
-    f.write_text(f'{owner(c)}\n{time.strftime(_STAMP)}\n{getpass.getuser()}@{socket.gethostname()}\n'
-                 f'{__version__}\n{since}\n{held}\n')
+    old_ls = (old or '').splitlines() + [''] * 6
+    since = old_ls[4] or f'{time.time():.3f}'
+    held = '\t'.join(sorted(files)) if files is not None else old_ls[5]
+    return (f'{owner(c)}\n{time.strftime(_STAMP)}\n{getpass.getuser()}@{socket.gethostname()}\n'
+            f'{__version__}\n{since}\n{held}\n')
+
+
+def _mine(c, text: str | None) -> bool:
+    return bool(text) and text.split('\n')[0] == owner(c)
 
 
 def claim(c, tid: str, files=()) -> bool:
-    """Push claims/<tid> before starting it. False when another runner has it, got there first, or the claim
-    could not be pushed (offline): a claim nobody else can see protects nothing, so the task waits."""
-    if not c.plan_repo or not re.fullmatch(r'[\w.-]+', tid):
+    """Claim `tid` before starting it. False when another runner has it, got there first, or the claim could
+    not be published (offline): a claim nobody else can see protects nothing, so the task waits."""
+    if not (st := store(c)) or not re.fullmatch(r'[\w.-]+', tid):
         return True
     with locked(c):
-        if not pull(c, force=True) or tid in taken(c):
+        if not st.sync():
             return False
-        f = c.plan_dir / 'claims' / tid
-        if f.exists():
-            return True  # ours already (a restarted run)
-        f.parent.mkdir(exist_ok=True)
-        _stamp(c, f, files)
-        if publish(c, f'claim {tid}'):  # not pushed: lost the race (a conflict), or no remote to tell
-            git('reset', '-q', '--hard', 'HEAD~1', cwd=c.plan_dir)
-            pull(c, force=True)
+        have = st.texts().get(tid)
+        if have is not None:
+            return _mine(c, have)  # ours already (a restarted run), or another runner's
+        if not (st.put(tid, _stamp(c, None, files), new=True) and st.flush(f'claim {tid}')):
+            st.undo()
             return False
         return True
 
 
 def release(c, tid: str) -> None:
     """Drop this runner's claim on `tid` (never another's)."""
-    if not c.plan_repo:
+    if not (st := store(c)):
         return
     with locked(c):
-        pull(c, force=True)
-        f = c.plan_dir / 'claims' / tid
-        if f.exists() and f.read_text().split('\n')[0] == owner(c):
-            f.unlink()
-            publish(c, f'release {tid}')
+        st.sync()
+        if _mine(c, st.texts().get(tid)):
+            st.drop(tid)
+            st.flush(f'release {tid}')
 
 
 def refresh(c, tids, files=None) -> None:
     """Re-stamp this runner's claims on `tids` (running, or waiting to merge), so others can tell a live
     claim from one a crashed run left behind, and drop the rest of its claims: a task that ended while this
     run was down, or was ticked elsewhere, holds nothing. `files`: id -> the files that claim holds now.
-    One commit for all of them."""
-    if not c.plan_repo:
+    One commit for all of them (in a plan clone)."""
+    if not (st := store(c)):
         return
     files = files or {}
     with locked(c):
-        pull(c, force=True)
-        me = owner(c)
-        for t, cl in claims(c).items():
-            if cl.owner != me:
+        st.sync()
+        for t, text in st.texts().items():
+            if not _mine(c, text):
                 continue
-            f = c.plan_dir / 'claims' / t
             if t in tids:
-                _stamp(c, f, files.get(t))
+                st.put(t, _stamp(c, text, files.get(t)))
             else:
-                f.unlink()
-        publish(c, 'refresh claims')
+                st.drop(t)
+        st.flush('refresh claims')
 
 
 def unclaim(c, tid: str) -> bool:
     """Drop the claim on `tid`, whoever's it is: for a run that is gone. False when there is none."""
+    if not (st := store(c)):
+        return False
     with locked(c):
-        pull(c, force=True)
-        f = c.plan_dir / 'claims' / tid
-        if not f.is_file():
+        st.sync()
+        if tid not in st.texts():
             return False
-        f.unlink()
-        publish(c, f'unclaim {tid}')
+        st.drop(tid)
+        st.flush(f'unclaim {tid}')
         return True
 
 
