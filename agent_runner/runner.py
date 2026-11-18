@@ -442,6 +442,15 @@ def clash(t: tuple, b: tuple, shared: set[str]) -> bool:
     return (ordered(section) and section == b[1]) or bool(P.overlap(set(files) - shared, set(b[2])))
 
 
+def clash_why(t: tuple, b: tuple, shared: set) -> tuple[str, str]:
+    """Why `clash(t, b)`: (the kind of wait, what holds it), for the dry run."""
+    if family(t[0]) == family(b[0]):
+        return 'waiting for a sibling', b[0]
+    if ordered(t[1]) and t[1] == b[1]:
+        return f'one at a time in "{t[1]}"', b[0]
+    return 'waiting for files', f'{", ".join(sorted(P.overlap(set(t[2]) - shared, set(b[2])))[:3])} held by {b[0]}'
+
+
 def claimed_elsewhere(cls: dict, todo: list) -> list[tuple]:
     """Other runners' live claims as busy tasks: the claimed line's section, files and named ids, plus the
     files its claim says its session has touched. A stale claim (a crashed run's) holds only its own task."""
@@ -455,12 +464,15 @@ def claimed_elsewhere(cls: dict, todo: list) -> list[tuple]:
     return out
 
 
-def pick(running: dict, tried: set, branch: str, claim: bool = False):
+def pick(running: dict, tried: set, branch: str, claim: bool = False, why: dict | None = None):
     """The next task a free slot may take, or None. See the module docstring for the rules.
 
     `claim` (a run about to start it): with a remote to share claims through, the task is claimed and the claim pushed first;
     one another runner has, or got just now, is passed over for the next. Another runner's live claim counts
-    as a task running here, so its files, ordered section and family wait for it too."""
+    as a task running here, so its files, ordered section and family wait for it too.
+
+    `why` (the dry run): pick nothing, and fill it with every open task's reason instead, as
+    {tid: (kind, detail)}; a task free to start gets ('free', '')."""
     shared = set(C.run['shared_files'])
     todo = tasks(branch)
 
@@ -501,14 +513,26 @@ def pick(running: dict, tried: set, branch: str, claim: bool = False):
         done_ = tid in mine and tid not in busy_ids and tid not in live and files  # finished, not running
         busy.append((tid, t[1], files if done_ else set(t[2]) | files, t[3]))
     busy_ids |= {b[0] for b in busy if b[0] not in mine}
+    claimed = {t: cl.who for t, cl in plansync.claims(C).items()} if why is not None else {}
     for t in todo:
         tid = t[0]
         if tid not in busy_ids and tid in finished:
+            if why is not None:
+                why[tid] = ('claimed by another runner', claimed.get(tid, '')) if tid not in mine else \
+                    ('finished, waiting to merge', '')
             continue  # finished, its branch is waiting to be merged: restarting it would reset the branch
         if tid in tried or tid in busy_ids:
+            if why is not None:
+                why[tid] = ('tried this run', '') if tid in tried else \
+                    ('running', f'claimed by {claimed[tid]}' if tid in claimed else '')
             continue
-        if any(clash(t, b, shared) for b in busy):
+        if b := next((b for b in busy if clash(t, b, shared)), None):
+            if why is not None:
+                why[tid] = clash_why(t, b, shared)
             continue  # a running or merge-waiting task's sibling, ordered-section mate or file neighbour waits
+        if why is not None:
+            why[tid] = ('free', '')
+            continue
 
         if got := pick_(t):
             PASSED.discard(tid)
@@ -2919,7 +2943,8 @@ def merge_batch(tid: str, branch: str, inline: bool = False, yields: bool = True
     crit = criticals(branch)
     solo = not C.run['batch'] or tid in ALONE or tid in crit
     repairs: list[str] = []  # a repair session's commits, replayed when the merge is built again
-    repaired = False
+    repaired_on = ''  # the base the last repair session ran on: one repair per failure, not per task, so a
+    # rebuild that fails on commits the shared branch got since that repair gets a repair of its own
     batch_repaired = False  # one repair session per batch; a batch that still fails is split
     batch_fixes = C.run['fix_merges'] and not C.run['fix_ahead_max']  # a rider's conflict: a fix session in the batch
     try:
@@ -3040,10 +3065,14 @@ def merge_batch(tid: str, branch: str, inline: bool = False, yields: bool = True
                         solo, repairs = True, []
                         continue
                 if why:
-                    if repaired:
+                    if repaired_on == base:
                         return why + (' (after a repair session)' if repairs else '')
-                    repaired = solo = True  # a rebuild replays the repair onto this task alone
-                    not_fixed, still, repairs = repair_retest(tid, branch, d, base, merged)
+                    if repaired_on:
+                        log(f'{tid}: {branch} moved since the repair ({repaired_on[:10]}..{base[:10]}) and the merge '
+                            f'fails again: a new failure, so a new repair session')
+                    repaired_on, solo = base, True  # a rebuild replays the repairs onto this task alone
+                    not_fixed, still, fixes = repair_retest(tid, branch, d, base, merged)
+                    repairs = repairs + fixes
                     if not_fixed:
                         note(f'{tid}: no repair: {not_fixed}')
                         return why
@@ -3528,17 +3557,22 @@ def _finish(tid: str, n: int, sid: str, branch: str) -> bool:
         log(f'{tid}: the main checkout is clear again; merging task/{tid} now')
     if not why:
         return True
-    note(f'{tid}: LEFT FOR A HUMAN — {why}')
-    log(f'{tid}: LEFT FOR A HUMAN — {why}. Its {len(commits)} commits: {" / ".join(commits)[:300]}')
     # Parked as wip/<ID>: a task/<ID> ahead of the branch reads as finished-and-waiting to `pick`, which
     # would then skip the task for good. As wip/ the task can start again, with the old attempt to read.
-    if not git('branch', '-M', f'task/{tid}', wip := free_branch(f'wip/{tid}')).returncode:
-        git('update-ref', '-d', TESTED + tid)
-        for h in git('for-each-ref', '--format=%(refname)', f'{HELD}{tid}/', f'{FIXED}{tid}/').stdout.split():
-            git('update-ref', '-d', h)
-        log(f'{tid}: its branch is parked as {wip}; the task stays open and can start again')
-        if out := push(ROOT, wip):  # the one copy of that work: get it off this disk
-            log(f'{tid}: {out}')
+    if git('branch', '-M', f'task/{tid}', wip := free_branch(f'wip/{tid}')).returncode:
+        note(f'{tid}: LEFT FOR A HUMAN — {why}; task/{tid} could not be parked, so nothing restarts it')
+        log(f'{tid}: LEFT FOR A HUMAN — {why}. task/{tid} could not be renamed to {wip}, so no run restarts the '
+            f'task until it is merged, renamed or deleted by hand. Its {len(commits)} commits: {" / ".join(commits)[:300]}')
+        return True
+    git('update-ref', '-d', TESTED + tid)
+    for h in git('for-each-ref', '--format=%(refname)', f'{HELD}{tid}/', f'{FIXED}{tid}/').stdout.split():
+        git('update-ref', '-d', h)
+    note(f'{tid}: not merged, parked as {wip} — {why}')
+    log(f'{tid}: not merged, parked as {wip} — {why}. Its {len(commits)} commits are kept there. The task stays '
+        f'open and starts again by itself in the next run (in this one once its line is edited: '
+        f'`{C.command} plan note {tid} "..."`), its next attempt pointed at {wip}')
+    if out := push(ROOT, wip):  # the one copy of that work: get it off this disk
+        log(f'{tid}: {out}')
     return True
 
 
@@ -4451,16 +4485,24 @@ def dry_run(slots: int, branch: str) -> int:
         running[n] = t
         print(f'slot {n}: {t[0]}  ({t[1]}; {", ".join(sorted(t[2])) or "no files listed"})')
     if not running:
-        print('nothing to start: every open task is blocked, waiting on another, or already finished')
-    can = {t[0] for t in tasks(branch)}
+        print('nothing to start now; every open task, and why it waits:')
+    held: dict = {}
+    pick(running, set(), branch, why=held)  # with these slots taken: why each open task does not start
+    started = {t[0] for t in running.values()}
+    groups: dict[str, list[str]] = {}
+    for tid, (kind, detail) in held.items():
+        if tid in started:
+            continue
+        kind = 'next, once a slot is free' if kind == 'free' else kind
+        groups.setdefault(kind, []).append(f'{tid} ({detail})' if detail else tid)
     ls = plan_text(branch)
-    waits = [m.group(2) for l in ls if (m := TASK.match(l)) and m.group(1) == ' ' and m.group(2) not in can]
-    blocked = [m.group(2) for l in ls if (m := TASK.match(l)) and m.group(1) == '~']
-    if waits:
-        print(f'waiting on an after:, a subtask or Stretch: {", ".join(waits)}')
-
-    if blocked:
-        print(f'blocked: {", ".join(blocked)}')
+    can = set(held) | started
+    groups['waiting on an after:, a subtask, or Stretch/Parked'] = \
+        [m.group(2) for l in ls if (m := TASK.match(l)) and m.group(1) == ' ' and m.group(2) not in can]
+    groups['blocked'] = [m.group(2) for l in ls if (m := TASK.match(l)) and m.group(1) == '~']
+    for kind, ids in groups.items():
+        if ids:
+            print(f'{kind}: {", ".join(ids)}')
     return 0
 
 

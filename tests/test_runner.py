@@ -197,6 +197,11 @@ def test_picking(repo: Path):
     r = run(repo, 'run', '--dry-run', '3')
     has(r.stdout, r'slot 1: T1.*\nslot 2: T5.*\nslot 3: L3a', '`run run --dry-run 3` prints the three picks')
     has(r.stdout, r'waiting on .*T4', 'and what waits')
+    has(r.stdout, r'waiting for files: [^\n]*T3 \([^)]* held by T1\)', 'a file clash names the file and who holds it')
+    has(r.stdout, r'one at a time in "[^"]*": [^\n]*T2 \(T1\)', 'an ordered section names the task ahead')
+    has(r.stdout, r'waiting for a sibling: [^\n]*L3b \(L3a\)', 'and a sibling names its running sibling')
+    r = run(repo, 'run', '--dry-run', '1')
+    has(r.stdout, r'next, once a slot is free: [^\n]*T5', 'a task free to start but out of slots is listed as next')
 
 
 def test_master_branch_option(tmp: Path):
@@ -612,7 +617,7 @@ def test_conflicts(repo: Path, tmp: Path):
     has((tmp / 'fix-prompt.txt').read_text(), r'run `make quick` \(a build, not the tests\)',
         'with [run] build, the fix session builds before it commits')
     eq((repo / 'a.py').read_text(), '# T3 version\n', 'and its resolution landed on main')
-    has(led, r'T6: LEFT FOR A HUMAN — the fix session aborted', 'T6: the fix session gave up, and the ledger says so')
+    has(led, r'T6: not merged, parked as wip/T6 — the fix session aborted', 'T6: the fix session gave up, and the ledger says so')
     eq((repo / 'c.py').read_text(), '# main version of c.py\n', 'main is as it was')
     check(git(repo, 'branch', '--list', 'wip/T6') != '' and git(repo, 'branch', '--list', 'task/T6') == '',
           'T6 is parked as wip/T6, so the task can start again')
@@ -2442,6 +2447,38 @@ def test_restart_if_upgraded():
         R.log, R._upgrade_seen = real_log, None
 
 
+def test_repair_per_failure(repo: Path):
+    """One repair per failure, not per task: a rebuild that fails on commits main got since gets another."""
+    print('merge: a repaired merge that fails again after main moved gets a second repair session')
+    R.init(repo)
+    git(repo, 'checkout', '-q', '-b', 'task/R1')
+    (repo / 'r1.py').write_text('# r1\n')
+    git(repo, 'add', 'r1.py')
+    git(repo, 'commit', '-qm', 'R1: r1')
+    git(repo, 'checkout', '-q', 'main')
+    calls, gates, saved = [], [], (R.repair_retest, R.tested, R.caught_up, R.land, R.log)
+    said = []
+
+    def repair(tid, branch, d, base, merged, riders=()):
+        calls.append(base)
+        if len(calls) == 1:  # main moves right after the first repair: the rebuild is on a new base
+            git(repo, 'commit', '-q', '--allow-empty', '-m', 'main moved')
+        return None, None, []
+
+    R.repair_retest, R.tested = repair, lambda *a, **k: (gates.append(1), 'the tests fail after the merge: x')[1]
+    R.caught_up = lambda tid, branch, d, base, merged, tids: None  # the shared branch moved: build again
+    R.log = said.append
+    try:
+        why = R.merge_batch('R1', 'main')
+    finally:
+        R.repair_retest, R.tested, R.caught_up, R.land, R.log = saved
+        git(repo, 'branch', '-D', 'task/R1')
+    eq(len(calls), 2, 'a second repair session, on the new base')
+    check(len(set(calls)) == 2, 'each on the base it failed on')
+    check(any('moved since the repair' in s for s in said), 'and the log says why a second one runs')
+    check(why, 'still failing on the same base after that: no third repair, it gives up')
+
+
 def test_flake_repair(tmp: Path):
     """A repair that answers FLAKE: commits nothing; the gate runs once more before anything is parked."""
     log = tmp / 'fixer-flake.log'
@@ -2661,7 +2698,7 @@ def main() -> int:
                        lambda: test_session_tmp(repo, tmp), lambda: test_end_orphans(repo), lambda: test_memory_watch(repo), lambda: test_tested_ref(repo, tmp),
                        lambda: test_no_pane(repo, tmp), lambda: test_other_repos_panes(repo, tmp),
                        lambda: test_limit_lets_go(repo),
-                       lambda: test_shared_push(repo, tmp), lambda: test_note_on_a_ticked_task(repo), lambda: test_adopt_merge(repo), lambda: test_followups(repo), lambda: test_ci_watch(repo), test_update_notice, test_restart_if_upgraded, lambda: test_flake_repair(tmp),
+                       lambda: test_shared_push(repo, tmp), lambda: test_note_on_a_ticked_task(repo), lambda: test_adopt_merge(repo), lambda: test_followups(repo), lambda: test_ci_watch(repo), test_update_notice, test_restart_if_upgraded, lambda: test_flake_repair(tmp), lambda: test_repair_per_failure(repo),
                        lambda: test_stalled(tmp)])
 
 

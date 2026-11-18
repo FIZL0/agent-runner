@@ -32,8 +32,9 @@ AGENT_RUNNER_SLOT set you are one of the runner's agents: follow your brief, not
    starts a queued task within a minute. Good tasks name their `--files` (tasks on the same files never
    run at once) and say how to check the result.
 3. **Leave the runner's branches alone**: never merge, rebase, push or delete `task/*` or `wip/*`, and never
-   tick a task by hand. The runner merges after its test gate; a `wip/<ID>` branch was left for a person,
-   so tell the person and point at `.runner/run.log`.
+   tick a task by hand. The runner merges after its test gate. A `wip/<ID>` branch is a parked attempt
+   (`.runner/run.log` says why): the task stays open and starts again by itself in the next run, or in this
+   one once its line is edited, so `plan note` what the next attempt should do differently.
 4. **To unstick a task**, read why it stopped (`agent-runner plan ID`, its journal, `.runner/run.log`),
    then `plan note` what to do differently, or `plan unblock ID "what changed"`. An edited task goes back
    in the pool, even in the same run.

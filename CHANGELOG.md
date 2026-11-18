@@ -2,6 +2,19 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
+## 0.42.0 (2026-11-18)
+
+- One repair session per failure, not per task: a repaired merge rebuilt on commits the shared branch got after
+  the repair, which fails the gate again, is a new failure and gets a repair session of its own (logged as such).
+  The same failure on the same base still gives up after one.
+- `run --dry-run` accounts for every open task: one held by a file clash says which files and who holds them
+  (`waiting for files: F171 (web/app/** held by B20)`), and others say the running sibling, the task ahead in an
+  ordered section, running, finished and waiting to merge, claimed by another runner, tried this run, or next
+  once a slot is free. "Nothing to start" no longer leaves an open task out of every list.
+- A branch that does not merge is logged as `not merged, parked as wip/<ID> — why`, with when the task starts
+  again by itself (the next run, or this one once its line is edited). "LEFT FOR A HUMAN" is kept for what truly
+  is: a crashed merge, or a branch that could not be parked.
+
 ## 0.41.0 (2026-11-18)
 
 - Every command a person runs (`plan`, `--version`, `help`, …) keeps the `agent-runner guide` skill installed, not

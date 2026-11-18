@@ -515,10 +515,11 @@ These policy instructions are appended to built-in and custom prompts.
 To end the run first, type `s` + Enter in its terminal ([Stopping a run](#stopping-a-run)) and let
 the running tasks merge. A run left up keeps picking up whatever you commit to TODO.md.
 
-1. `.runner/ledger.md` has one line per branch: merged, blocked, reopened, or **LEFT FOR A HUMAN, and
-   why**.
-2. `git branch --list 'wip/*'` lists branches that couldn't be merged. Merge one by hand, or delete it and
-   let the task run again.
+1. `.runner/ledger.md` has one line per branch: merged, blocked, reopened, **parked as wip/<ID>, and why**,
+   or, when even parking failed, LEFT FOR A HUMAN.
+2. `git branch --list 'wip/*'` lists parked attempts. Their tasks stay open and start again by themselves in the
+   next run (in a run that is up, once the line is edited), each pointed at its wip branch. Merge one by hand
+   instead if it is right as it is.
 3. `agent-runner plan` shows what's blocked (`[~]`). Each block says what would unblock it. `agent-runner plan unblock
    ID "decided: …"` puts a task back, and a run that's still up picks it up again.
 4. `.runner/run.log` is the full timeline. `.runner/slotN.log` is what each pane showed, and
