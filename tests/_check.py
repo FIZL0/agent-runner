@@ -21,6 +21,7 @@ _gitconfig.close()
 os.environ.update(GIT_CONFIG_GLOBAL=_gitconfig.name, GIT_CONFIG_NOSYSTEM='1')
 os.environ.pop('AGENT_RUNNER_REPO', None)
 os.environ['AGENT_RUNNER_NO_NOTIFY'] = '1'  # an alarm in a test rings no tmux message or desktop notification
+os.environ['CLAUDE_CONFIG_DIR'] = tempfile.mkdtemp(prefix='agent-runner-test-claude-')  # never the real ~/.claude
 # worktrees and plan clones go under a temp folder, never the real ~/runs
 os.environ['AGENT_RUNNER_HOME'] = str(Path(tempfile.mkdtemp(prefix='agent-runner-test-runs-')) / '{repo}')
 

@@ -54,6 +54,38 @@ description: Use in a session a person started (not a runner slot) in a git repo
 """
 
 
+POINTER = ('Tasks: this repo is worked by agent-runner. Use the agent-runner skill (or run `{cmd} guide`): queue '
+           'work with `{cmd} plan add`, never edit the plan\'s TODO.md by hand, never merge task/* or wip/* branches.')
+
+
+def rules_file(c) -> Path | None:
+    """The repo's rules file every session loads: `[run] rules`, else AGENTS.md or CLAUDE.md; None when it has
+    none (the runner never creates one)."""
+    names = [c.run['rules']] if c.run['rules'] else ['AGENTS.md', 'CLAUDE.md']
+    return next((c.root / n for n in names if (c.root / n).is_file()), None)
+
+
+def point_rules(c, git) -> str:
+    """Add POINTER to the rules file once, committed on its own, so every session in the repo (on a machine
+    without the skill, or one that would not pick it) learns to work with the runner. Never into a file with
+    uncommitted edits, nor mid-merge. A line for the run log, or ''. Off with `[run] rules_pointer = false`."""
+    if not c.run['rules_pointer'] or not (f := rules_file(c)):
+        return ''
+    text = f.read_text(encoding='utf-8')
+    rel = f.relative_to(c.root).as_posix()
+    cmd = c.run['command'] or 'agent-runner'  # what everyone types, never this machine's path to a clone
+    if f'{cmd} guide' in text or 'agent-runner guide' in text or \
+            git('status', '--porcelain', '--', rel).stdout.strip() or \
+            not git('rev-parse', '-q', '--verify', 'MERGE_HEAD').returncode:
+        return ''
+    f.write_text(text + ('' if text.endswith('\n') or not text else '\n') + '\n' + POINTER.format(cmd=cmd) + '\n',
+                 encoding='utf-8')
+    if git('commit', '-q', '-m', f'{rel}: point sessions at the agent-runner skill', '--', rel).returncode:
+        git('checkout', '--', rel)
+        return ''
+    return f'added a line to {rel} pointing every session at the agent-runner skill (committed)'
+
+
 def skill_file() -> Path:
     return Path(os.environ.get('CLAUDE_CONFIG_DIR') or Path.home() / '.claude') / 'skills' / 'agent-runner' / 'SKILL.md'
 

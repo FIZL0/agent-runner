@@ -81,9 +81,25 @@ and a finished task waiting to merge. Nor a task that names a file a running tas
 """
 
 
+def skill() -> None:
+    """Keep the guide installed as a Claude Code skill from every command a person runs, not only `run`: anyone
+    who has typed agent-runner on this machine has it. Off with `[run] install_skill = false`."""
+    try:
+        from agent_runner.config import cfg
+        if not cfg().run['install_skill']:
+            return
+    except (Exception, SystemExit):  # outside a repo, or a config the command itself will complain about
+        pass
+    from agent_runner.guide import install
+    if said := install():
+        print(said, file=sys.stderr)
+
+
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     cmd, rest = (argv[0], argv[1:]) if argv else ('', [])
+    if cmd != 'merge-plan' and not os.environ.get('AGENT_RUNNER_SLOT'):  # not git's driver, not a slot's agent
+        skill()
     if cmd in ('--version', '-V', 'version'):
         from agent_runner import __version__
         print(f'agent-runner {__version__}')

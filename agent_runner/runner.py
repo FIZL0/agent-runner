@@ -4604,10 +4604,11 @@ def run(argv: list[str], prog: str) -> int:
     threading.Thread(target=update_notice, daemon=True).start()
     for w in C.warnings:
         log(w)
-    if r['install_skill']:
-        from agent_runner.guide import install
-        if said := install():
-            log(said)
+    from agent_runner.guide import install, point_rules
+    if r['install_skill'] and (said := install()):
+        log(said)
+    if said := point_rules(C, git):
+        log(said)
     if Path('/proc/meminfo').exists() and (r['proc_max_gb'] or r['min_free_mem_gb']):
         threading.Thread(target=memory_watch, daemon=True).start()
     if sys.stdin.isatty():

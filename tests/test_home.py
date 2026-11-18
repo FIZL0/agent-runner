@@ -5,7 +5,7 @@ import os
 import tempfile
 from pathlib import Path
 
-from _check import FAILED, eq, git
+from _check import FAILED, eq, git, has
 
 from agent_runner.config import Config
 
@@ -94,6 +94,24 @@ check(guide.skill_file().read_text(encoding='utf-8').startswith('---\nname: agen
 eq(guide.install(), '', 'the same text: left alone, nothing said')
 guide.skill_file().write_text('old', encoding='utf-8')
 check(guide.install(), 'another runner version\'s text: rewritten')
+guide.skill_file().unlink()
+r = run(repo, '--version')
+check(guide.skill_file().is_file() and 'installed the agent-runner skill' in r.stderr, '--version installs it too, said on stderr')
+eq(r.stdout.strip().split()[0], 'agent-runner', 'and stdout stays the command\'s own')
+
+print("the rules file gets one line pointing at the skill, committed")
+g = lambda *a: __import__('agent_runner.gitops', fromlist=['git']).git(*a, cwd=repo)
+eq(guide.point_rules(Config(repo), g), '', 'no rules file: none is made')
+(repo / 'AGENTS.md').write_text('# Rules\nBuild with make.', encoding='utf-8')
+git(repo, 'add', 'AGENTS.md')
+git(repo, 'commit', '-qm', 'rules')
+(repo / 'AGENTS.md').write_text('# Rules\nBuild with make.\nmine, uncommitted\n', encoding='utf-8')
+eq(guide.point_rules(Config(repo), g), '', 'not into a file somebody is editing')
+git(repo, 'checkout', '--', 'AGENTS.md')
+check(guide.point_rules(Config(repo), g), 'AGENTS.md gets the pointer')
+has((repo / 'AGENTS.md').read_text(encoding='utf-8'), r'Build with make\.\n\nTasks: .*agent-runner guide', 'appended')
+eq(git(repo, 'status', '--porcelain', 'AGENTS.md'), '', 'and committed')
+eq(guide.point_rules(Config(repo), g), '', 'only once')
 
 os.environ['AGENT_RUNNER_HOME'] = env
 raise SystemExit(1 if FAILED else print('\nall checks passed'))

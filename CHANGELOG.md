@@ -2,6 +2,15 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
+## 0.41.0 (2026-11-18)
+
+- Every command a person runs (`plan`, `--version`, `help`, …) keeps the `agent-runner guide` skill installed, not
+  only `run`: anyone who has typed agent-runner on a machine has it. Said once on stderr when written.
+- A run adds one line to the repo's rules file (`[run] rules`, else AGENTS.md or CLAUDE.md), committed on its own,
+  pointing every session at the skill and `agent-runner guide`: the guidance reaches sessions on machines without
+  the skill, and ones that would not pick it. Never into a file with uncommitted edits; it never creates a rules
+  file; `[run] rules_pointer = false` turns it off.
+
 ## 0.40.0 (2026-11-18)
 
 - A repair session that finds a flaky test, not a clash, ends with `FLAKE: <test>`. The runner then runs the gate
