@@ -165,6 +165,8 @@ DEFAULTS: dict = {
         'master_branch': '',    # explicit local branch for tasks and tested merges; empty discovers it as before
         'push': 'origin',       # where finished work goes; false turns every push off
         'push_merge': True,     # push the shared branch after each merge that passed the gate
+        'land_edited': 'wait',  # a tested merge blocked by uncommitted edits in the main checkout: "wait" for them,
+                                # or "wip": after LAND_WAIT_WIP move them to a wip/main-checkout-<time> branch and land
     },
 }
 
@@ -416,6 +418,11 @@ class Config:
     @property
     def push_merge(self) -> bool:
         return bool(self.raw['git']['push_merge']) and bool(self.push_remote)
+
+    @property
+    def land_edited(self) -> str:
+        v = str(self.raw['git'].get('land_edited', 'wait')).lower()
+        return v if v in ('wait', 'wip') else 'wait'
 
 
 @cache

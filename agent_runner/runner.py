@@ -2471,6 +2471,7 @@ def suspect(base: str, merged: str) -> str:
 
 
 LAND_WAIT = 10 * 60  # how long a tested merge holds MERGE waiting on edits in the main checkout
+LAND_WAIT_WIP = 3 * 60  # with [git] land_edited = "wip": how long before those edits go to a wip branch
 EDITS_POLL = 60  # then how often its thread looks whether those edits are committed
 EDITED = 'uncommitted edits in the main checkout'  # land()'s why for them; finish() keeps the branch
 ELSEWHERE = 'the main checkout has another branch out'  # and for that: never switched under whoever works there
@@ -3019,6 +3020,40 @@ def edited() -> set[str]:
         set(git('ls-files', '--others', '--exclude-standard').stdout.split())
 
 
+def move_edits_aside(tid: str) -> str | None:
+    """[git] land_edited = "wip": the main checkout's uncommitted edits (new files included) as one commit on
+    wip/main-checkout-<time>, on top of HEAD, pushed when the shared branch is; then a stash of them (a second
+    copy) clears the checkout so the tested merge can land. The branch name, or None when there was nothing."""
+    files = sorted(edited())
+    if not files:
+        return None
+    name = f'wip/main-checkout-{time.strftime("%Y-%m-%d-%H%M%S")}'
+    idx = os.path.join(git('rev-parse', '--git-dir').stdout.strip() or '.git', 'agent-runner-wip-index')
+    env = {**os.environ, 'GIT_INDEX_FILE': idx}
+    try:
+        sp.run(['git', 'read-tree', 'HEAD'], cwd=ROOT, env=env, check=True, capture_output=True)
+        sp.run(['git', 'add', '-A', '--', *files], cwd=ROOT, env=env, check=True, capture_output=True)
+        tree = sp.run(['git', 'write-tree'], cwd=ROOT, env=env, check=True, capture_output=True, text=True).stdout.strip()
+    finally:
+        try:
+            os.remove(idx)
+        except OSError:
+            pass
+    msg = f'Uncommitted edits from the main checkout, moved aside so {tid} could land ({len(files)} files)'
+    commit = git('commit-tree', tree, '-p', 'HEAD', '-m', msg).stdout.strip()
+    if not commit or git('branch', name, commit).returncode:
+        return None
+    if git('stash', 'push', '-u', '-q', '-m', f'{name} (agent-runner)', '--', *files).returncode:
+        return None
+    remote = C.push_remote
+    if C.push_merge and remote:
+        git('push', '-q', remote, name)
+    more = f' and {len(files) - 6} more' if len(files) > 6 else ''
+    log(f'{tid}: moved uncommitted edits in the main checkout ({", ".join(files[:6])}{more}) to {name} '
+        f'(and a stash) so the tested merge could land: git checkout {name}, or git stash pop')
+    return name
+
+
 def land(tid: str, branch: str, merged: str) -> str | None:
     """Move the shared branch in the main checkout to the tested merge: seconds, not a test run.
 
@@ -3052,6 +3087,8 @@ def land(tid: str, branch: str, merged: str) -> str | None:
     ref = renumber_doubles(merged, 'HEAD', tid, ROOT)
     while git('merge', '-q', *msg, ref, **task_env(tid)).returncode and \
             git('rev-parse', '--verify', '-q', 'MERGE_HEAD').returncode:
+        if C.land_edited == 'wip' and time.time() - t0 > LAND_WAIT_WIP and move_edits_aside(tid):
+            continue
         if time.time() - t0 > LAND_WAIT:
             return f'{EDITED} to files the merge changes'
         if not said:

@@ -2,6 +2,13 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
+
+## 0.38.1
+
+- `[git] land_edited = "wip"`: a tested merge that uncommitted edits in the main checkout would block no longer
+  waits forever. After 3 minutes the edits (new files included) go to a `wip/main-checkout-<time>` branch, pushed
+  with the shared branch, plus a stash; the log names the files and how to get them back, and the merge lands.
+  The default stays `"wait"`.
 ## 0.38.0 (2026-11-17)
 
 - A run restarts itself on a new version installed under it (`uv tool upgrade`, `pipx upgrade`, a pull in a
