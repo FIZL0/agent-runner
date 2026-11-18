@@ -2422,6 +2422,26 @@ def test_update_notice():
         R.log, urllib.request.urlopen = real_log, real_open
 
 
+def test_restart_if_upgraded():
+    import agent_runner
+    eq([R.breaking('0.37.1', v) for v in ('0.37.9', '0.38.0', '1.0.0', '10.0.0')], [False, False, True, True], 'breaking')
+    said, execs, real_log = [], [], R.log
+    R.log = said.append
+    try:
+        with mock.patch.object(R.os, 'execv', lambda *a: execs.append(a)), mock.patch.object(R.plat, 'WINDOWS', False):
+            for installed, ticks, want in ((agent_runner.__version__, 3, 0),  # nothing new
+                                           ('9999.0.0', 3, 0),  # breaking: said, never exec
+                                           ('.'.join(agent_runner.__version__.split('.')[:2]) + '.999', 1, 0),  # one tick: wait
+                                           ('.'.join(agent_runner.__version__.split('.')[:2]) + '.999', 1, 1)):  # seen twice
+                with mock.patch.object(R.Path, 'read_text', lambda *a, **k: f'__version__ = "{installed}"\n'):
+                    for _ in range(ticks):
+                        R.restart_if_upgraded()
+                eq(len(execs), want, f'restart on {installed}')
+        eq(sum('breaking' in s for s in said), 1, 'a breaking version is said once')
+    finally:
+        R.log, R._upgrade_seen = real_log, None
+
+
 def test_end_orphans(repo: Path):
     print("what an ended session left running is ended; a live session's and others' are not")
     if R.plat.WINDOWS:
@@ -2615,7 +2635,7 @@ def main() -> int:
                        lambda: test_session_tmp(repo, tmp), lambda: test_end_orphans(repo), lambda: test_memory_watch(repo), lambda: test_tested_ref(repo, tmp),
                        lambda: test_no_pane(repo, tmp), lambda: test_other_repos_panes(repo, tmp),
                        lambda: test_limit_lets_go(repo),
-                       lambda: test_shared_push(repo, tmp), lambda: test_note_on_a_ticked_task(repo), lambda: test_adopt_merge(repo), lambda: test_followups(repo), lambda: test_ci_watch(repo), test_update_notice,
+                       lambda: test_shared_push(repo, tmp), lambda: test_note_on_a_ticked_task(repo), lambda: test_adopt_merge(repo), lambda: test_followups(repo), lambda: test_ci_watch(repo), test_update_notice, test_restart_if_upgraded,
                        lambda: test_stalled(tmp)])
 
 

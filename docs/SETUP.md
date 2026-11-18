@@ -44,8 +44,9 @@ pipx upgrade agent-runner
 ```
 
 Both fetch `main` again (a tag install stays on its tag). A run says when `main` has a newer version and
-which of these to type. Do it between runs (see [below](#switch-between-runs)). Read [CHANGELOG.md](../CHANGELOG.md) first: a
-new major version may rename a config key.
+which of these to type. A run up at the time restarts itself on the new version once no merge is going,
+and adopts its sessions, merges and gates like any restart. It does not on Windows, nor across a major
+version: read [CHANGELOG.md](../CHANGELOG.md) and restart it yourself, as a new major version may rename a config key.
 
 **Roll back** the same way, naming the older tag: `uv tool install --force …@v0.2.0`.
 

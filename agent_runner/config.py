@@ -257,6 +257,44 @@ def ensure_local(root: Path) -> Path:
     return f
 
 
+# A key renamed in a release: (table, old) -> new. A config with the old name still works; the run log says
+# to rename it. Add an entry with every rename, so an upgrade never needs anyone to edit a config first.
+RENAMED: dict[tuple[str, str], str] = {}
+
+# A key a release removed: (table, key) -> what to do instead. Ignored, and the run log says so.
+REMOVED: dict[tuple[str, str], str] = {
+    ('run', 'mode'): 'a run never starts two tasks on the same files (0.32.0); delete it',
+    ('run', 'fix_ahead'): '`fix_ahead_max = 0` is what `fix_ahead = false` was (0.32.0)',
+    ('run', 'precommit'): 'chain the check into `[run] test` (0.32.0)',
+    ('run', 'ci_rerun'): "a red CI run's failed jobs are always run once more (0.32.0); delete it",
+    ('run', 'batch_wait'): 'removed in 0.32.0; delete it',
+    ('run', 'batch_min'): 'removed in 0.32.0; delete it',
+    ('plan', 'brief'): 'use `brief_extra` and `outline` (0.32.0)',
+}
+
+
+def migrate(raw: dict, where: str) -> list[str]:
+    """Apply RENAMED to `raw` in place; what the run log should say about old, removed or unknown keys in the
+    tables the runner reads (another table in a wrapper's file is its own business)."""
+    import difflib
+    said = []
+    for (t, old), new in RENAMED.items():
+        if isinstance(tab := raw.get(t), dict) and old in tab:
+            v = tab.pop(old)
+            tab.setdefault(new, v)
+            said.append(f'{where}: [{t}] {old} is now {new}; rename it')
+    for t, keys in DEFAULTS.items():
+        for k in raw.get(t, {}) if isinstance(raw.get(t), dict) else ():
+            if k in keys:
+                continue
+            if hint := REMOVED.get((t, k)):
+                said.append(f'{where}: [{t}] {k} is ignored: {hint}')
+            else:
+                near = difflib.get_close_matches(k, keys, 1)
+                said.append(f'{where}: [{t}] {k} is not a setting, ignored' + (f'; did you mean {near[0]}?' if near else ''))
+    return said
+
+
 def _load(f: Path) -> dict:
     with open(f, 'rb') as fh:
         raw = tomllib.load(fh)
@@ -267,15 +305,18 @@ class Config:
     def __init__(self, root: Path):
         self.root = root
         raw: dict = {}
+        self.warnings: list[str] = []  # old, removed or unknown keys; the run logs them at its start
         self.file = config_file(root)
         if self.file:
             raw = _load(self.file)
+            self.warnings += migrate(raw, self.file.name)
         self.local = local_file(root)
         if self.local:
             try:
                 mine = _load(self.local)
             except tomllib.TOMLDecodeError as e:
                 raise SystemExit(f'agent-runner: {self.local}: {e}')
+            self.warnings += migrate(mine, self.local.name)
             raw = {**raw, **{k: ({**raw.get(k, {}), **v} if isinstance(v, dict) and isinstance(raw.get(k), dict)
                                  else v) for k, v in mine.items()}}
             keep_local_ignored(self.local.parent)

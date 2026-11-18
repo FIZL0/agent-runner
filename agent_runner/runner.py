@@ -4048,6 +4048,7 @@ def weekly() -> float | None:
 
 
 LATEST = 'https://raw.githubusercontent.com/FIZL0/agent-runner/main/agent_runner/__init__.py'
+VERSION = re.compile(r"""^__version__\s*=\s*['"](\d+(?:\.\d+)+)['"]""", re.M)
 
 
 def update_notice() -> None:
@@ -4057,14 +4058,55 @@ def update_notice() -> None:
     from agent_runner import __version__
     try:
         text = urllib.request.urlopen(LATEST, timeout=5).read().decode()
-        latest = re.search(r"""^__version__\s*=\s*['"](\d+(?:\.\d+)+)['"]""", text, re.M)[1]
+        latest = VERSION.search(text)[1]
         newer = tuple(map(int, latest.split('.'))) > tuple(map(int, __version__.split('.')))
     except Exception:
         return
     if newer:
         how = ('pipx upgrade agent-runner' if 'pipx' in sys.prefix else
                'uv tool upgrade agent-runner' if f'{os.sep}uv{os.sep}' in sys.prefix else 'git pull')
-        log(f'agent-runner {latest} is out (this is {__version__}); to upgrade after this run: {how}')
+        then = ('the run restarts on it by itself' if not plat.WINDOWS and not breaking(__version__, latest)
+                else 'then restart the run')
+        log(f'agent-runner {latest} is out (this is {__version__}); upgrade with `{how}`, {then}')
+
+
+def breaking(old: str, new: str) -> bool:
+    """`new` is another major version. ponytail: a 0.x minor may break too (docs/SETUP.md#versions), but most
+    are features and the rare breaking one ignores old keys; gate on its CHANGELOG entry if that bites."""
+    return old.split('.')[0] != new.split('.')[0]
+
+
+_upgrade_seen: str | None = None
+
+
+def restart_if_upgraded() -> None:
+    """Re-exec this run on the version now installed under it (`uv tool upgrade`, a pull in a clone), so the
+    loop never runs older code than the `done` and Stop hook the sessions call by path. The new process
+    adopts the sessions, merges and gates like any restart. Called only with no merge thread going.
+
+    Not on Windows (no real exec: the console would get a second process), and not across a breaking
+    version, whose CHANGELOG a human reads first. The new version must be seen on two ticks, so a restart
+    never lands mid-install."""
+    global _upgrade_seen
+    from agent_runner import __version__
+    try:
+        new = VERSION.search((Path(__file__).parent / '__init__.py').read_text(encoding='utf-8'))[1]
+    except (OSError, TypeError):
+        return
+    if new == __version__ or plat.WINDOWS:
+        return
+    if breaking(__version__, new):
+        if _upgrade_seen != new:
+            log(f'agent-runner {new} is installed (this run is {__version__}): a breaking version, so no restart '
+                f'by itself; read CHANGELOG.md, then restart the run')
+        _upgrade_seen = new
+        return
+    if _upgrade_seen != new:
+        _upgrade_seen = new  # once more next tick, then restart
+        return
+    log(f'agent-runner {new} is installed (this run is {__version__}); restarting on it')
+    sys.stdout.flush()
+    os.execv(sys.executable, sys.orig_argv)  # run.lock's fd closes on exec; the new process takes it again
 
 
 # --- the idle stop hook --------------------------------------------------------
@@ -4458,6 +4500,8 @@ def run(argv: list[str], prog: str) -> int:
         return 2
 
     threading.Thread(target=update_notice, daemon=True).start()
+    for w in C.warnings:
+        log(w)
     if Path('/proc/meminfo').exists() and (r['proc_max_gb'] or r['min_free_mem_gb']):
         threading.Thread(target=memory_watch, daemon=True).start()
     if sys.stdin.isatty():
@@ -4648,6 +4692,8 @@ def run(argv: list[str], prog: str) -> int:
             tried -= REOPENED  # a task reopened by a merge is a new attempt, not the one that blocked
             REOPENED.clear()
         merging = [t for t in merging if t.is_alive()]
+        if not merging and not stopping():
+            restart_if_upgraded()
         watch_ci(branch)
         keep_claims(running, branch)
         take_keys()

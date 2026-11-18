@@ -44,7 +44,8 @@ tmux new -s runner agent-runner run 3
 > No repo handy? `examples/demo.sh` builds a tiny one with a plan in a temp dir and shows `plan`,
 > `plan brief` and `run --dry-run` without starting an agent. `examples/demo.sh --run` also does one real task.
 
-Upgrade with `uv tool upgrade agent-runner` (or `pipx upgrade`) once the current run has finished, or pin a
+Upgrade with `uv tool upgrade agent-runner` (or `pipx upgrade`) any time: a running run restarts itself on the
+new version and adopts its sessions (not on Windows, nor across a major version). Or pin a
 [release](https://github.com/FIZL0/agent-runner/releases/latest): `uv tool install git+https://github.com/FIZL0/agent-runner@v<version>`.
 On Windows, run `agent-runner run 3` directly: each slot gets a Windows Terminal tab instead of a tmux pane.
 Adding it to an existing repo and wrapping it from your own CLI are in [docs/SETUP.md](docs/SETUP.md).

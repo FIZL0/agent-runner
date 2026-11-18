@@ -2,6 +2,16 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
+## 0.38.0 (2026-11-17)
+
+- A run restarts itself on a new version installed under it (`uv tool upgrade`, `pipx upgrade`, a pull in a
+  clone), once no merge is going, and adopts its sessions, merges and gates. Before, the loop kept running
+  the old code while the sessions' `done` and Stop hook ran the new one. Not on Windows, and not across a
+  major version: that one is logged once for a human to restart.
+- The run log names every stale key in `runner.toml` / `runner.local.toml` at the start of a run: a renamed one
+  (it still works under its old name, from a table of renames each release adds to), a removed one with what to
+  do instead, and an unknown one with the nearest real setting. An upgrade never needs a config edited first.
+
 ## 0.37.3 (2026-11-17)
 
 - A task tried and failed in a run goes back in the pool once its line is edited (a `plan note` with what to
