@@ -12,6 +12,16 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+# One text for both audiences: the runner's own sessions get it in their prompt (they load no skills), the
+# sessions a person starts get it in GUIDE.
+SAFE_SHELL = ('Change files with your file-editing tool, never with `sed -i`, `perl -i`, or a script fed through a '
+              'heredoc or `python -c`, and give the shell one plain command at a time, not a chain of `;`/`&&`/pipes '
+              'mixing edits, redirects and nested quotes: a command your safety check cannot read stops for a human '
+              'to decode, and in an unattended session nobody is there, so it is refused and the minutes are lost. '
+              'Delete only paths you name in full (never `rm -rf` on a variable or a glob), and never `git reset '
+              '--hard`, `git clean`, `git checkout -- .`, `git stash` or `git push --force`: they destroy work you '
+              'cannot get back.')
+
 GUIDE = """\
 # Working in a repo that agent-runner works
 
@@ -43,6 +53,9 @@ AGENT_RUNNER_SLOT set you are one of the runner's agents: follow your brief, not
    unless the person asks: it runs in their tmux. `agent-runner stop` lets running tasks finish first.
 6. **Work you did yourself** in the main checkout on a task id: `agent-runner done ID "message"` runs the
    test gate, ticks the task and commits.
+7. **No dangerous or unreadable commands.** The main checkout is where the runner lands merges, and its
+   worktrees and `task/*` branches hold agents' unmerged work. """ + SAFE_SHELL + """ Leave the runner's
+   home (`~/runs/<repo>/`) and `.runner/` alone, and ask the person before anything that deletes.
 
 `agent-runner help order` explains what runs when; `agent-runner --help` lists every command.
 """

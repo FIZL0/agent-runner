@@ -2,6 +2,15 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
+## 0.42.1 (2026-11-18)
+
+- Agents are told to edit files with their editing tool, not `sed -i`, `perl -i` or a script in a heredoc, and
+  to run one plain shell command at a time: a command Claude Code's safety check cannot read stops for a human,
+  and in an unattended session it waits, is refused, and the minutes are lost. Also: no `rm -rf` on a variable
+  or glob, no `git reset --hard`, `git clean`, `git checkout -- .`, `git stash` or `git push --force`. The same
+  text is in the runner's prompt and in the guide skill (a new rule 7, which also keeps sessions out of the
+  runner's home and `.runner/`).
+
 ## 0.42.0 (2026-11-18)
 
 - One repair session per failure, not per task: a repaired merge rebuilt on commits the shared branch got after

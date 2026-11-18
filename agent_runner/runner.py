@@ -78,6 +78,7 @@ __all__ = ['init', 'cmd_run', 'cmd_stop', 'pick', 'tasks', 'prompt_for', 'reopen
 from agent_runner.config import RUNNER, Config, cfg, finished_mark, main_checkout, runner_cmd, ensure_local
 from agent_runner.done import TESTED, gate
 from agent_runner.gitops import _net, drop_if_merged, push, shared_name
+from agent_runner.guide import SAFE_SHELL
 
 TASK = re.compile(r'^- \[(.)\] \*\*([^*\s]+)\*\*(.*)')  # a top-level task line: its box, its id, the rest
 TAG = '@runner'  # the tmux pane option a slot's pane is found by
@@ -124,6 +125,8 @@ loop's pattern matches the loop itself and never ends, and every agent's command
 prompt, so a pattern kill can end the other sessions on this machine. Every wait gets a time limit \
 (`timeout 600 <cmd>`, or a deadline in the loop): a loop waiting for a line that a dead process will never \
 print runs for ever. Never search the whole disk (`find /`); look where the thing can be.
+
+""" + SAFE_SHELL + """ Delete only inside your worktree.
 
 {followups}
 {extra}
