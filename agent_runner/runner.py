@@ -170,7 +170,7 @@ NO_PUSH_URLS = ('https://', 'http://', 'ssh://', 'git://', 'git@', 'file://')
 # The runner's pane in colour (run.log stays plain): a terminal, not NO_COLOR, and on Windows only Windows Terminal
 COLOR = sys.stdout.isatty() and not os.environ.get('NO_COLOR') and (not plat.WINDOWS or bool(os.environ.get('WT_SESSION')))
 TONES = [  # first match wins: (regex on the message, SGR colour)
-    (re.compile(r'LEFT FOR A HUMAN|fail|refused|error|parked|killed|ended pid|stall', re.I), '31'),  # red
+    (re.compile(r'LEFT FOR A HUMAN|STOPPED|fail|refused|error|parked|killed|ended pid|stall', re.I), '31'),  # red
     (re.compile(r'blocked|SUSPECT|conflict|waiting|usage limit|did not push|^!', re.I), '33'),       # yellow
     (re.compile(r'merged|pushed|passed|resolved|landed|run busy'), '32'),                             # green
     (re.compile(r'^slot \d+: \S+ \('), '34'),                                                      # blue: a start
@@ -193,6 +193,34 @@ def log(msg: str) -> None:
         with open(C.notes('run.log'), 'a', encoding='utf-8') as f:
             f.write(line + '\n')
     except OSError:
+        pass
+
+
+NOTIFY = not os.environ.get('AGENT_RUNNER_NO_NOTIFY')  # alarm()'s tmux message and desktop notification
+
+
+def alarm(title: str, detail: str) -> None:
+    """A stoppage only a person can clear (their uncommitted edits hold a tested merge): a red banner in the
+    runner's pane, the bell, a tmux message and a desktop notification, so it is seen from across the room,
+    not found in run.log hours later. The log line starts STOPPED."""
+    import textwrap
+    log(f'STOPPED: {title}: {detail}')
+    if COLOR:
+        body = [title.upper(), *textwrap.wrap(detail, 96)]
+        w = max(map(len, body)) + 4
+        bar = lambda t='': f'\x1b[1;97;41m  {t.ljust(w - 2)}\x1b[0m'
+        print('\n'.join([bar(), *map(bar, body), bar()]), flush=True)
+    print('\a', end='', flush=True)
+    try:
+        if not NOTIFY:
+            return
+        if os.environ.get('TMUX'):
+            sp.run(['tmux', 'display-message', '-d', '15000', f'agent-runner STOPPED: {title}'],
+                   capture_output=True, timeout=5)
+        if shutil.which('notify-send'):
+            sp.run(['notify-send', '-u', 'critical', '-a', 'agent-runner', f'agent-runner stopped: {title}', detail],
+                   capture_output=True, timeout=5)
+    except (OSError, sp.TimeoutExpired):
         pass
 
 
@@ -1842,6 +1870,7 @@ do not push, do not merge, rebase or delete anything else, do not `git stash`, a
 worktrees under {slots_dir}. The runner runs the whole gate again when you are done.
 4. If you cannot fix it honestly (the failure is {branch}'s own, [[the two sides contradict|one branch is broken by \
 itself, two branches contradict]] each other and picking needs a human), commit nothing and say why in one line. [[|The runner then merges each branch on its own. ]]That is a real answer.
+5. If it is a flaky test (it passes when you rerun it, and nothing [[the merge|these merges]] changed touches what it checks), commit nothing and make your last line `FLAKE: <test name>[, <test name>…]`. The runner runs the gate once more and files the flake to be fixed.
 """  # [[one merge|a batch]]: `repair_prompt` keeps one side
 
 
@@ -2362,6 +2391,8 @@ def repair_merge(tid: str, branch: str, cwd: Path, riders: list[str] = (), base:
         return why
     head = git('rev-parse', 'HEAD', cwd=cwd).stdout.strip()
     if head == before:
+        if names := flake_said(logfile):
+            return FLAKE + ', '.join(names)
         return f'the repair session committed nothing; its reason is in {logfile}'
     if git('merge-base', '--is-ancestor', before, head, cwd=cwd).returncode:
         return f'the repair session rewrote the merge instead of committing on top; see {logfile}'
@@ -2474,6 +2505,7 @@ def suspect(base: str, merged: str) -> str:
 LAND_WAIT = 10 * 60  # how long a tested merge holds MERGE waiting on edits in the main checkout
 LAND_WAIT_WIP = 3 * 60  # with [git] land_edited = "wip": how long before those edits go to a wip branch
 EDITS_POLL = 60  # then how often its thread looks whether those edits are committed
+REMIND_EVERY = 30 * 60  # and how often it raises the alarm again while they are not
 EDITED = 'uncommitted edits in the main checkout'  # land()'s why for them; finish() keeps the branch
 ELSEWHERE = 'the main checkout has another branch out'  # and for that: never switched under whoever works there
 
@@ -2756,12 +2788,35 @@ def fix_ahead(tid: str, branch: str) -> str | None:
             FIX_DIRS_LOCK.notify_all()  # a turn for a worktree, or for files: notify() could wake the wrong one
 
 
+FLAKE = 'the repair session found a flaky test, no clash: '  # repair_merge's why when its last line is FLAKE: …
+
+
+def flake_said(logfile: Path) -> list[str]:
+    """The tests a repair session named on a last `FLAKE:` line (fixer.log ends with its answer), or []."""
+    try:
+        tail = logfile.read_text(encoding='utf-8', errors='replace').rsplit('\n=== ', 1)[-1].rstrip().splitlines()[-5:]
+    except OSError:
+        return []
+    m = next((m for l in reversed(tail) if (m := re.match(r'\W*FLAKE:\s*(.+)', l))), None)
+    return [n.strip(' `*') for n in re.split(r'[,\s]+', m[1]) if n.strip(' `*')] if m else []
+
+
 def repair_retest(tid: str, branch: str, d: Path, base: str, merged: str,
                   riders: list[str] = ()) -> tuple[str | None, str | None, list[str]]:
     """A repair session on `merged`, which fails the gate (`repair_merge`), then the gate again: (why there is
-    no repair, why the repaired merge still fails, the repair's commits)."""
+    no repair, why the repaired merge still fails, the repair's commits). A repair that says the failure is a
+    flake commits nothing, and the gate runs once more on the merge as it is before anything is parked; the
+    flake is filed to be fixed either way."""
     if not_fixed := repair_merge(tid, branch, d, riders, base):
-        return not_fixed, None, []
+        if not not_fixed.startswith(FLAKE):
+            return not_fixed, None, []
+        names = not_fixed[len(FLAKE):].split(', ')
+        flaky(tid, names)
+        log(f'{tid}: {not_fixed}; running the gate once more before parking it')
+        if why := tested(tid, d, base, [tid, *riders]):
+            return f'{not_fixed}, and the gate failed again: {why}', None, []
+        log(f'{tid}: the gate passed on the rerun; {", ".join(names)} filed to be fixed')
+        return None, None, []
     return None, tested(tid, d, base), git('rev-list', '--reverse', f'{merged}..HEAD', cwd=d).stdout.split()
 
 
@@ -2974,7 +3029,8 @@ def merge_batch(tid: str, branch: str, inline: bool = False, yields: bool = True
                         batch_repaired = True
                         not_fixed, still, fixes = repair_retest(tid, branch, d, base, merged, riders)
                         if not not_fixed and not still:
-                            note(f'{tid}: the batch ({", ".join(riders)} with it) failed the gate; a repair session fixed it')
+                            note(f'{tid}: the batch ({", ".join(riders)} with it) failed the gate; ' +
+                                 ('a repair session fixed it' if fixes else 'a flake, by the repair session: it passed on a rerun'))
                             # replayed if the batch is built again because the shared branch moved
                             repairs, merged, why = fixes, git('rev-parse', 'HEAD', cwd=d).stdout.strip(), None
                         else:
@@ -2994,7 +3050,8 @@ def merge_batch(tid: str, branch: str, inline: bool = False, yields: bool = True
                     if still:
                         return still + ' (after a repair session)'
                     merged = git('rev-parse', 'HEAD', cwd=d).stdout.strip()
-                    note(f'{tid}: the merge failed the gate; a repair session fixed it')
+                    note(f'{tid}: the merge failed the gate; ' + ('a repair session fixed it' if repairs else
+                                                                  'a flake, by the repair session: it passed on a rerun'))
             if (got := caught_up(tid, branch, d, base, merged, [tid, *riders])) is None:
                 if attempt < 2:
                     continue
@@ -3067,19 +3124,15 @@ def land(tid: str, branch: str, merged: str) -> str | None:
     t0 = time.time()
     said = False
 
-    def waiting(why: str) -> None:
-        """Say once why the landing waits: it can be an hour, and a quiet run looks hung."""
-        nonlocal said
-        if not said:
-            said = True
-            log(f'{tid}: tested, waiting to land on {branch}: {why}')
-            print('\a', end='', flush=True)
-
     while git('diff', '--name-only', '--diff-filter=U').stdout.strip() or \
             git('rev-parse', '--verify', '-q', 'MERGE_HEAD').returncode == 0:
         if time.time() - t0 > 60 * 60:
             return 'the main checkout has a merge or unmerged paths of its own, for 60 min'
-        waiting(f'the main checkout ({ROOT}) is in the middle of a merge of its own; finish or abort it')
+        if not said:
+            said = True
+            alarm(f'{tid} cannot land: {ROOT.name} is mid-merge',
+                  f'the main checkout ({ROOT}) is in the middle of a merge of its own; finish or abort it, and '
+                  f'{tid} lands on {branch}.')
         time.sleep(10)
     cur = git('branch', '--show-current').stdout.strip()
     if cur != branch:
@@ -3096,8 +3149,11 @@ def land(tid: str, branch: str, merged: str) -> str | None:
             mine = edited()
             files = sorted(mine & set(git('diff', '--name-only', 'HEAD', ref).stdout.split())) or sorted(mine)
             more = f' and {len(files) - 6} more' if len(files) > 6 else ''
-            waiting(f'uncommitted edits in the main checkout ({ROOT}) to {", ".join(files[:6])}{more}, '
-                    'which the merge changes; commit them or move them to a branch')
+            said = True
+            alarm(f'{tid} cannot land: uncommitted edits in {ROOT.name}',
+                  f'{tid} is tested and waits to land on {branch}, but the main checkout ({ROOT}) has uncommitted '
+                  f'edits to {", ".join(files[:6])}{more}, which the merge changes. Commit them, or move them to a '
+                  f'branch, and it lands within a minute.')
         time.sleep(10)
     if git('rev-parse', '--verify', '-q', 'MERGE_HEAD').returncode == 0:
         files = git('diff', '--name-only', '--diff-filter=U').stdout.split()
@@ -3454,14 +3510,22 @@ def _finish(tid: str, n: int, sid: str, branch: str) -> bool:
     while (why := merge(tid, branch)) and why.startswith((EDITED, ELSEWHERE)):
         # Tested and only waiting on somebody's edits: parking it would throw the work away for a fresh
         # attempt. The branch stays task/<ID> (`pick` leaves it alone, the next run's `unmerged` takes it).
-        log(f'{tid}: {why}; task/{tid} stays and merges again once ' +
-            ('they are committed' if why.startswith(EDITED) else f'{branch} is checked out there'))
-        print('\a', end='', flush=True)
+        alarm(f'{tid} is not merging: ' + ('uncommitted edits in the main checkout' if why.startswith(EDITED)
+                                           else f'{branch} is not checked out'),
+              f'{why}. task/{tid} stays, tested, and merges again once ' +
+              ('they are committed (or moved to a branch).' if why.startswith(EDITED) else
+               f'{branch} is checked out in {ROOT} again.'))
+        since = time.time()
         while blocked_by_edits(tid, branch):
             if stopping():
                 log(f'{tid}: the run stops; task/{tid} waits for the next run to merge it')
                 return False
+            if time.time() - since > REMIND_EVERY:  # still nobody: say it again, as loud
+                since = time.time()
+                alarm(f'{tid} is still not merging', f'{why}. task/{tid} has waited since '
+                      f'{dt.datetime.fromtimestamp(since - REMIND_EVERY):%H:%M} or earlier.')
             time.sleep(EDITS_POLL)
+        log(f'{tid}: the main checkout is clear again; merging task/{tid} now')
     if not why:
         return True
     note(f'{tid}: LEFT FOR A HUMAN — {why}')
@@ -3489,8 +3553,8 @@ def blocked_by_edits(tid: str, branch: str) -> bool:
     if git('diff', '--cached', '--quiet').returncode:
         if tid not in STAGED_SAID:
             STAGED_SAID.add(tid)
-            log(f'{tid}: staged changes in the main checkout ({ROOT}) block the merge, whatever files they are; '
-                'commit them or unstage them')
+            alarm(f'{tid} is not merging: staged changes in the main checkout',
+                  f'they ({ROOT}) block the merge, whatever files they are; commit them or unstage them')
         return True
     STAGED_SAID.discard(tid)
     return bool(edited() & set(git('diff', '--name-only', f'{branch}...task/{tid}').stdout.split()))

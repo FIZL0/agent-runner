@@ -1403,19 +1403,19 @@ def test_land_waits_aloud(repo: Path):
         t = threading.Thread(target=lambda: out.append(R.land('W1', 'main', merged)))
         t.start()
         for _ in range(100):
-            if 'W1: tested, waiting' in (repo / '.runner/run.log').read_text():
+            if 'STOPPED: W1 cannot land' in (repo / '.runner/run.log').read_text():
                 break
             sleep(0.05)
         has((repo / '.runner/run.log').read_text(),
-            r'W1: tested, waiting to land on main: uncommitted edits in the main checkout .* to g\.py, which the merge changes',
-            'the log names the edited file the merge needs, before an hour of silence')
+            r'STOPPED: W1 cannot land: uncommitted edits in \S+: .* to g\.py, which the merge changes',
+            'a loud STOPPED names the edited file the merge needs, before an hour of silence')
         check(t.is_alive(), 'and it still waits for them')
         git(repo, 'checkout', '--', 'g.py')
         t.join(10)
     finally:
         R.time.sleep = sleep
     eq(out, [None], 'once the edit is gone it lands')
-    eq((repo / '.runner/run.log').read_text().count('W1: tested, waiting'), 1, 'said once, not every 10 s')
+    eq((repo / '.runner/run.log').read_text().count('STOPPED: W1'), 1, 'said once, not every 10 s')
 
 
 def test_edited_elsewhere(repo: Path, tmp: Path):
@@ -1810,7 +1810,7 @@ def test_land_gives_merge_back(repo: Path):
         check(not R.blocked_by_edits('W2', 'main'), 'edits to files the branch does not touch never hold it')
         git(repo, 'add', 'other.py')
         check(R.blocked_by_edits('W2', 'main'), 'staged ones do: git merges onto no index but HEAD\'s')
-        has((repo / '.runner/run.log').read_text(), r'W2: staged changes in the main checkout .* block the merge',
+        has((repo / '.runner/run.log').read_text(), r'STOPPED: W2 is not merging: staged changes in the main checkout: .* block the merge',
             'and the log says so')
         git(repo, 'rm', '-q', '--cached', 'other.py')
         (repo / 'other.py').unlink()
@@ -2442,6 +2442,32 @@ def test_restart_if_upgraded():
         R.log, R._upgrade_seen = real_log, None
 
 
+def test_flake_repair(tmp: Path):
+    """A repair that answers FLAKE: commits nothing; the gate runs once more before anything is parked."""
+    log = tmp / 'fixer-flake.log'
+    log.write_text('\n=== old\nFLAKE: OldTest\n\n=== now\nchecked it\n', encoding='utf-8')
+    eq(R.flake_said(log), [], "an earlier session's FLAKE line is not this one's")
+    log.write_text(log.read_text() + 'it passes alone, nothing here touches it\nFLAKE: `LogPanelTest`, TimerTest\n')
+    eq(R.flake_said(log), ['LogPanelTest', 'TimerTest'], 'the tests the last session named')
+    saved = R.repair_merge, R.tested, R.log, dict(R.FLAKY)
+    R.log = lambda m: None
+    try:
+        R.repair_merge = lambda *a, **k: R.FLAKE + 'LogPanelTest'
+        R.tested = lambda *a, **k: None
+        eq(R.repair_retest('Q1', 'main', tmp, 'base', 'merged'), (None, None, []), 'a flake that passes the rerun lands')
+        check('LogPanelTest' in R.FLAKY, 'and is filed to be fixed')
+        R.tested = lambda *a, **k: 'the tests fail after the merge: boom'
+        why = R.repair_retest('Q1', 'main', tmp, 'base', 'merged')[0]
+        check(why and 'failed again' in why, 'a flake that fails the rerun too is no repair', why)
+        R.repair_merge = lambda *a, **k: 'the repair session committed nothing; its reason is in x'
+        eq(R.repair_retest('Q1', 'main', tmp, 'base', 'merged')[0][:31], 'the repair session committed no',
+           'any other empty repair parks as before, with no rerun')
+    finally:
+        R.repair_merge, R.tested, R.log = saved[:3]
+        R.FLAKY.clear()
+        R.FLAKY.update(saved[3])
+
+
 def test_end_orphans(repo: Path):
     print("what an ended session left running is ended; a live session's and others' are not")
     if R.plat.WINDOWS:
@@ -2635,7 +2661,7 @@ def main() -> int:
                        lambda: test_session_tmp(repo, tmp), lambda: test_end_orphans(repo), lambda: test_memory_watch(repo), lambda: test_tested_ref(repo, tmp),
                        lambda: test_no_pane(repo, tmp), lambda: test_other_repos_panes(repo, tmp),
                        lambda: test_limit_lets_go(repo),
-                       lambda: test_shared_push(repo, tmp), lambda: test_note_on_a_ticked_task(repo), lambda: test_adopt_merge(repo), lambda: test_followups(repo), lambda: test_ci_watch(repo), test_update_notice, test_restart_if_upgraded,
+                       lambda: test_shared_push(repo, tmp), lambda: test_note_on_a_ticked_task(repo), lambda: test_adopt_merge(repo), lambda: test_followups(repo), lambda: test_ci_watch(repo), test_update_notice, test_restart_if_upgraded, lambda: test_flake_repair(tmp),
                        lambda: test_stalled(tmp)])
 
 

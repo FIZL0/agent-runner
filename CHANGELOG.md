@@ -2,6 +2,15 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
+## 0.40.0 (2026-11-18)
+
+- A repair session that finds a flaky test, not a clash, ends with `FLAKE: <test>`. The runner then runs the gate
+  once more on the merge as it is before parking anything, and files the flaky test to be fixed either way. A
+  flake used to park a tested branch as `wip/<ID>` for a person.
+- A merge held by uncommitted or staged edits in the main checkout is a loud STOPPED: a red banner in the runner's
+  pane, the bell, a tmux message and a desktop notification (`notify-send`), raised again every 30 min while it
+  holds, and a line when it clears. It was one yellow log line, easy to miss for hours.
+
 ## 0.39.0 (2026-11-18)
 
 - Runs claim tasks with the plan in the code repo too, not only with `[plan] repo`: a claim is a ref on the
