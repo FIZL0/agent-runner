@@ -14,6 +14,8 @@ Run the agents
     agent-runner stop                 let running tasks finish, start no new ones
     agent-runner stop --force         end the sessions now; each resumes in the next run
     agent-runner stop --shutdown      stop, then shut the computer down (--suspend: sleep)
+    agent-runner take B646            do B646 in your own session or a subagent, beside a run: prints its worktree and prompt
+    agent-runner take B646 --merge    after `done` there: the runner tests and merges it (--drop: give it back)
     agent-runner resume B646          continue B646's last session, cut off by a dropped network or a reboot
 
 See and change the task list
@@ -138,6 +140,9 @@ def main(argv: list[str] | None = None) -> int:
     if cmd == 'resume':
         from agent_runner import runner
         return runner.cmd_resume(rest)
+    if cmd == 'take':
+        from agent_runner import runner
+        return runner.cmd_take(rest)
     if cmd == 'stop':
         from agent_runner import runner
         return runner.cmd_stop(rest)

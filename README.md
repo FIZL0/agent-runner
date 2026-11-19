@@ -91,6 +91,10 @@ main moves and is pushed; the slot picks its next task
 5. **Repeat.** Tasks the merge unblocked open up. When nothing can start, the run logs `run idle` and
    waits: whatever you add to TODO.md later starts without a restart.
 
+**One task by hand.** `agent-runner take B646` gives B646 a worktree of its own and prints its prompt, for
+your own session or a subagent, while a run goes on (the run keeps off it and its files). Finish with
+`agent-runner done B646 "..."` there, then `agent-runner take B646 --merge`: the runner tests and merges it.
+
 **Stopping.** Type `s` + Enter in the runner's pane, or run `agent-runner stop`. Nothing new starts; the
 running tasks finish and merge, then the run exits (`s` again takes it back). `s!` (`stop --force`) ends the
 sessions now instead, each to resume in the next run. `p` pauses, `u` upgrades agent-runner (the run restarts on it; `run --upgrade` does it at launch), `f` starts tasks past the usage caps (as `--force`), `+`/`-` change the slot count, and `z` or

@@ -55,8 +55,13 @@ AGENT_RUNNER_SLOT set you are one of the runner's agents: follow your brief, not
    `timeout 4h bash -c 'until tail -n1 .runner/run.log | grep -q "run idle"; do sleep 60; done'`. Never
    `tail -f run.log | grep -m1 'run idle'`: grep exits on the match, but tail only dies when it next
    writes, and an idle run writes nothing more, so the wait never ends.
-6. **Work you did yourself** in the main checkout on a task id: `agent-runner done ID "message"` runs the
-   test gate, ticks the task and commits.
+6. **To do one task yourself now** (the person asks, or it is urgent), with or without a run going:
+   `agent-runner take ID` makes it a worktree and branch `task/ID` of its own (a run then leaves the task
+   and its files alone) and prints the prompt for whoever does it. Hand that prompt to a subagent with the
+   worktree as its working directory, or work there yourself; it finishes with `agent-runner done ID "msg"`
+   there, then `agent-runner take ID --merge` (the runner tests and merges it, or the run that is up does).
+   `take ID --drop` gives it back untouched. Several takes on tasks with different files can go at once.
+   Work already done in the main checkout on a task id: `agent-runner done ID "message"` there.
 7. **No dangerous or unreadable commands.** The main checkout is where the runner lands merges, and its
    worktrees and `task/*` branches hold agents' unmerged work. """ + SAFE_SHELL + """ Leave the runner's
    home (`~/runs/<repo>/`) and `.runner/` alone, and ask the person before anything that deletes.

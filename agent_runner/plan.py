@@ -414,11 +414,17 @@ def _place(ls: list[str], where: str, ref: str | None) -> int:
 
 
 def move(tid: str, where: str, ref: str | None = None, todo=None) -> None:
+    """Move `tid` and its subtasks with it (P17a, P17a1 … stay right after P17, in their order): a parent moved to
+    the top must not leave the rest of its work behind in Parked, where no run starts it."""
     todo, _ = ensure(todo)
     ls = list(lines(todo))
-    i = _find(ls, tid)
-    blk = _item_block(ls, i)
-    del ls[i:i + len(blk)]
+    blk = []
+    for t in [tid] + [m.group(3).rstrip('.') for l in ls if (m := ITEM.match(l)) and not m.group(1)
+                      and child(tid, m.group(3).rstrip('.'))]:
+        i = _find(ls, t)
+        got = _item_block(ls, i)
+        del ls[i:i + len(got)]
+        blk += got
     j = _place(ls, where, ref)
     ls[j:j] = blk
     _write(todo, ls)
@@ -574,9 +580,7 @@ def _place_pri(ls: list[str], pri: str) -> int:
 def family_end(prefix: str, todo=None) -> tuple[str, str | None] | None:
     """For a subtask prefix (a task id open in TODO.md): the last id of its family, the parent and its
     subtasks, which a new subtask files after, and the parent's level tag; None when no such task is open."""
-    if not prefix[-1:].isdigit():
-        return None
-    todo, _ = ensure(todo, None)
+    todo, _ = ensure(todo, None)  # a kind letter (B) matches no open id, so it gets None below
     last, tag = None, None
     for l in lines(todo):
         m = ITEM.match(l)
@@ -584,7 +588,7 @@ def family_end(prefix: str, todo=None) -> tuple[str, str | None] | None:
             t = m.group(3).rstrip('.')
             if t == prefix:
                 last, tag = t, (PRI_TAG.search(l) or [None, None])[1]
-            elif last and re.fullmatch(rf'{re.escape(prefix)}[a-z]\w*', t):
+            elif last and child(prefix, t):  # P17 -> P17a, P17a -> P17a1
                 last = t
     return (last, tag) if last else None
 

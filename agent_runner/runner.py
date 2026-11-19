@@ -640,6 +640,10 @@ def pick(running: dict, tried: set, branch: str, claim: bool = False, why: dict 
         return t
 
     busy = claimed_elsewhere(plansync.claims(C), todo)  # [] with no remote to claim through
+    lines_ = {t[0]: t for t in todo}
+    for tid, d in taken().items():  # `take`: a person's session or subagent has it, in its own worktree
+        t = lines_.get(tid, (tid, '', set(), set()))
+        busy.append((tid, t[1], set(t[2]) | touched(tid, branch, d), t[3]))
     busy_ids = {b[0] for b in busy} | {q[0] for q in queued().values()}  # one waiting to resume is running
     mine = set(ahead(branch)) if todo else set()  # finished here, waiting to be merged
     finished = mine | plansync.taken(C)  # another runner's: on its slots
@@ -666,7 +670,8 @@ def pick(running: dict, tried: set, branch: str, claim: bool = False, why: dict 
         if tid in tried or tid in busy_ids:
             if why is not None:
                 why[tid] = ('tried this run', '') if tid in tried else \
-                    ('running', f'claimed by {claimed[tid]}' if tid in claimed else '')
+                    ('running', f'claimed by {claimed[tid]}' if tid in claimed else
+                     'taken by hand (`take`)' if tid in taken() else '')
             continue
         if b := next((b for b in busy if clash(t, b, shared)), None):
             if why is not None:
@@ -4893,7 +4898,7 @@ def run(argv: list[str], prog: str) -> int:
         log(f'{tid}: ' + ('its merge was under way when the last run ended; adopting it' if tid in left else
                           'finished, not merged yet; merging it now'))
         tried.add(tid)
-        t = threading.Thread(target=finish, args=(tid, 0, '(unknown)', branch))
+        t = threading.Thread(target=finish, args=(tid, 0, '(unknown)', branch), name=f'merge:{tid}')
         t.start()
         merging.append(t)
     if not merging:  # blocks freed by merges made while no run was up (a merge started above reopens by itself)
@@ -4951,7 +4956,7 @@ def run(argv: list[str], prog: str) -> int:
                     if not not_attempt(task[0], branch):
                         tried.add(task[0])  # one attempt per run: ticked, blocked or failed, a human looks next
                     git('checkout', '-q', '--detach', cwd=SLOTS_DIR / f's{n}')
-                    t = threading.Thread(target=finish, args=(task[0], n, sid, branch))
+                    t = threading.Thread(target=finish, args=(task[0], n, sid, branch), name=f'merge:{task[0]}')
                     t.start()
                     merging.append(t)
                     free_at[n] = dt.datetime.now() + dt.timedelta(seconds=pause)
@@ -5056,6 +5061,8 @@ def run(argv: list[str], prog: str) -> int:
         if not merging and not stopping():
             restart_if_upgraded()
         watch_ci(branch)
+        if not stopping():
+            sweep_unmerged(branch, merging)
         keep_claims(running, branch)
         take_keys()
         waiting = {n: q for n, q in queued().items() if n in free_at and n <= slots}  # an exit may have queued one
@@ -5085,6 +5092,100 @@ def run(argv: list[str], prog: str) -> int:
             if shut_down(idle_at):
                 return 0
         nap(10)
+
+
+def taken() -> dict[str, Path]:
+    """Tasks `take` handed to a person's session: {id: its worktree}. The worktree is the claim: while it is
+    there, the run starts nothing on the task or its files; once `take --merge` removes it, task/<ID> is
+    finished work like a slot's, merged by the run (`sweep_unmerged`) or by `take --merge` itself."""
+    return {d.name.removeprefix('take-'): d for d in SLOTS_DIR.glob('take-*') if (d / '.git').exists()}
+
+
+SWEPT: set[str] = set()  # tasks sweep_unmerged started a merge of: once each per run
+SWEEP_AT = [0.0]
+
+
+def sweep_unmerged(branch: str, merging: list) -> None:
+    """Every 30 s: merge a task/<ID> that finished outside this run's slots (`take --merge`), as a run
+    start merges what finished while no run was up. Once per task per run: a merge that crashes is said once."""
+    if time.time() - SWEEP_AT[0] < 30:
+        return
+    SWEEP_AT[0] = time.time()
+    live = {t.name for t in merging if t.is_alive()}
+    for tid in unmerged(branch, []):
+        if tid in SWEPT or f'merge:{tid}' in live:
+            continue
+        SWEPT.add(tid)
+        log(f'{tid}: finished outside the slots; merging it now')
+        t = threading.Thread(target=finish, args=(tid, 0, '(unknown)', branch), name=f'merge:{tid}')
+        t.start()
+        merging.append(t)
+
+
+TAKEN = """
+
+You were handed this task by `{runner} take {tid}`, outside the runner's slots: you are in its worktree {d}. \
+After `{runner} done {tid} ...` has committed, run `{runner} take {tid} --merge`: the runner tests and merges \
+task/{tid} (or the run that is up does it within a minute). Never merge it yourself."""
+
+
+def cmd_take(argv: list[str], prog: str = f'{RUNNER} take') -> int:
+    """`take ID`: a worktree on task/<ID> for a person's own session or subagent, beside a run or without one."""
+    ap = argparse.ArgumentParser(prog=prog, description='Do one chosen task in your own session (or a subagent) '
+                                 'in a worktree of its own; a run that is up leaves the task and its files alone.')
+    ap.add_argument('id', metavar='ID')
+    what = ap.add_mutually_exclusive_group()
+    what.add_argument('--merge', action='store_true', help='after `done`: remove the worktree and merge task/<ID>')
+    what.add_argument('--drop', action='store_true', help='give the task back: remove the worktree, keep no commits')
+    a = ap.parse_args(argv)
+    init()
+    tid, branch = a.id, default_branch()
+    d = SLOTS_DIR / f'take-{tid}'
+    if a.merge or a.drop:
+        if not d.is_dir():
+            print(f'{tid}: not taken (no {d})', file=sys.stderr)
+            return 1
+        if git('status', '--porcelain', cwd=d).stdout.strip():
+            print(f'{tid}: {d} has uncommitted edits: `{C.command} done {tid} "..."` there first'
+                  + (', or commit or delete them' if a.drop else ''), file=sys.stderr)
+            return 1
+        ahead_ = git('rev-list', '--count', f'{branch}..task/{tid}').stdout.strip() not in ('', '0')
+        if a.drop and ahead_:
+            print(f'{tid}: task/{tid} has commits; --merge them, or delete the branch yourself first', file=sys.stderr)
+            return 1
+        git('worktree', 'remove', str(d))
+        if not ahead_:
+            git('branch', '-D', f'task/{tid}')
+            print(f'{tid}: given back; the run may start it' if a.drop else f'{tid}: no commits, nothing to merge')
+            return 0
+        if not plat.lock(C.notes('run.lock')):
+            print(f'{tid}: the run that is up merges task/{tid} within a minute (see {C.notes("run.log")})')
+            return 0
+        finish(tid, 0, '', branch)  # no run is up: this process holds run.lock and merges it now
+        merged = git('rev-parse', '--verify', '-q', f'refs/heads/task/{tid}').returncode != 0
+        print(f'{tid}: merged into {branch}' if merged and tid not in open_tasks(branch) else
+              f'{tid}: not merged; {C.notes("run.log")} says why')
+        return 0
+    if tid not in open_tasks(branch):
+        print(f'{tid}: not an open task on {branch}', file=sys.stderr)
+        return 1
+    held = {l.removeprefix('branch refs/heads/') for l in
+            git('worktree', 'list', '--porcelain').stdout.splitlines() if l.startswith('branch ')}
+    why = ('taken already, in ' + str(d) if d.is_dir() else
+           'running in a slot' if f'task/{tid}' in held or tid in {q[0] for q in queued().values()} else
+           'finished, waiting to merge' if tid in ahead(branch) else
+           f'claimed by {plansync.claims(C)[tid].who}' if tid in plansync.taken(C) else '')
+    if why:
+        print(f'{tid}: {why}', file=sys.stderr)
+        return 1
+    worktree(f'take-{tid}', branch)
+    if (co := git('checkout', '-q', '-B', f'task/{tid}', branch, cwd=d)).returncode:
+        print(f'{tid}: checkout failed: {co.stderr.strip()}', file=sys.stderr)
+        return 1
+    print(f'{tid} is yours, in {d} (branch task/{tid}); a run leaves it and its files alone.\n'
+          f'Give the agent that does it this prompt, with {d} as its working directory:\n')
+    print(prompt_for(tid, 0, 2, d, branch) + TAKEN.format(runner=C.command, tid=tid, d=d))
+    return 0
 
 
 def cmd_resume(argv: list[str], prog: str = f'{RUNNER} resume') -> int:

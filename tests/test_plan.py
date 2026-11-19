@@ -320,6 +320,10 @@ def test_add_subtask():
         r = run(root, 'plan', 'add', 'A1', 'a third part', env=env)
         has(r.stderr, r'A1c never runs beside A1', 'a subtask id comes with a note to use a fresh letter if it could start now')
         has(run(root, 'plan', 'add', 'A', 'unrelated work', env=env).stderr, r'^$', 'a fresh id gets no note')
+        eq(run(root, 'plan', 'add', 'A3a', 'measure the cache warmup', env=env).returncode, 0, 'add A3a')
+        eq(run(root, 'plan', 'move', 'A3', 'top', env=env).returncode, 0, 'move A3 top')
+        eq(plan.index(todo)[:5], ['# TODO', '### Next', '[ ] A3', '[ ] A3a', '[ ] A3a1'],
+           "a subtask's subtask files after it, and a moved parent takes its subtasks along")
 
 
 def test_kinds():

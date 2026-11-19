@@ -593,6 +593,51 @@ def test_unmerged(repo: Path):
     git(repo, 'branch', '-D', 'task/T2')
 
 
+def test_take(repo: Path):
+    print('take: one chosen task in a person\'s own session, beside a run or without one')
+    R.init(repo)
+    add = run(repo, 'plan', 'add', 'T', 'take me: write z.py', '--files', 'z.py')
+    tid = re.search(r'\b(T\d+)\b', add.stdout + add.stderr)[1]
+    r = run(repo, 'take', tid)
+    eq(r.returncode, 0, f'`take {tid}` hands it over: {r.stderr}')
+    d = R.SLOTS_DIR / f'take-{tid}'
+    has(r.stdout, rf'take {tid} --merge', 'and prints the prompt, ending with how to merge it')
+    eq(git(d, 'branch', '--show-current'), f'task/{tid}', 'in a worktree of its own, on task/<ID>')
+    check(tid in R.taken(), 'the worktree is the claim')
+    why: dict = {}
+    R.pick({}, set(), 'main', why=why)
+    eq(why.get(tid), ('running', 'taken by hand (`take`)'), 'a run leaves it alone')
+    check(run(repo, 'take', tid).returncode == 1, 'and it cannot be taken twice')
+    (d / 'z.py').write_text('# z\n', encoding='utf-8')
+    check(run(repo, 'take', tid, '--merge').returncode == 1, '--merge refuses while edits are uncommitted')
+    eq(run(d, 'done', tid, f'{tid}: z.py').returncode, 0, '`done` in its worktree commits')
+    r = run(repo, 'take', tid, '--merge')
+    has(r.stdout, rf'{tid}: merged into main', f'with no run up, --merge merges it: {r.stdout}{r.stderr}')
+    check(not d.exists() and tid not in R.open_tasks('main'), 'the worktree is gone and the task ticked')
+    add = run(repo, 'plan', 'add', 'T', 'take me and give me back', '--files', 'y.py')
+    tid = re.search(r'\b(T\d+)\b', add.stdout + add.stderr)[1]
+    run(repo, 'take', tid)
+    has(run(repo, 'take', tid, '--drop').stdout, 'given back', '--drop gives it back')
+    check(tid not in R.taken() and not git(repo, 'branch', '--list', f'task/{tid}'), 'worktree and branch gone')
+    d = task_branch(repo, 4, tid)
+    (d / 'y.py').write_text('# y\n', encoding='utf-8')
+    git(d, 'add', 'y.py'), git(d, 'commit', '-qm', f'{tid}: y.py'), git(d, 'checkout', '-q', '--detach')
+    started, real = [], R.finish
+    R.finish = lambda *a: started.append(a[0])
+    try:
+        R.SWEEP_AT[0] = 0.0
+        merging: list = []
+        R.sweep_unmerged('main', merging)
+        [t.join() for t in merging]
+        R.SWEEP_AT[0] = 0.0
+        R.sweep_unmerged('main', merging)
+        [t.join() for t in merging]
+    finally:
+        R.finish = real
+    eq(started, [tid], 'a running run merges a branch finished outside its slots, once')
+    git(repo, 'branch', '-D', f'task/{tid}')
+
+
 def test_conflicts(repo: Path, tmp: Path):
     print('run: a conflict a join cannot do goes to a fix session; one it gives up on is parked')
     agent = tmp / 'fake-agent'
@@ -2771,7 +2816,7 @@ def main() -> int:
                        lambda: test_no_pane(repo, tmp), lambda: test_other_repos_panes(repo, tmp),
                        lambda: test_limit_lets_go(repo),
                        lambda: test_shared_push(repo, tmp), lambda: test_note_on_a_ticked_task(repo), lambda: test_adopt_merge(repo), lambda: test_followups(repo), lambda: test_ci_watch(repo), test_update_notice, test_restart_if_upgraded, lambda: test_flake_repair(tmp), lambda: test_repair_per_failure(repo),
-                       lambda: test_stalled(tmp)])
+                       lambda: test_stalled(tmp), lambda: test_take(repo)])
 
 
 if __name__ == '__main__':

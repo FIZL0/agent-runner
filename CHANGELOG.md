@@ -2,6 +2,18 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
+## 0.46.0 (2026-11-19)
+
+- `agent-runner take ID`: one chosen task for a person's own session or a subagent, beside a run or without
+  one. It gets a worktree in the runner's home (`take-ID`, on `task/ID`) and the prompt a slot would get; a
+  run that is up treats it as running and keeps other tasks off its files. Finish with `done` there, then
+  `take ID --merge`: with no run up it is tested and merged at once, otherwise the run merges it within a
+  minute. `take ID --drop` gives it back. The guide skill says when to use it.
+- A run merges any `task/` branch that finished outside its slots while it is up, not only at its start.
+- `plan move P17 top` takes P17's subtasks with it: they no longer stay behind in Parked, where no run starts them.
+- A subtask of a subtask (`plan add P17a …` -> P17a1) files after its family like any other subtask, not at the
+  top of Next.
+
 ## 0.45.1 (2026-11-19)
 
 - A newer agent-runner shows as a green banner in the runner's pane, shaped like the STOPPED one, saying how to

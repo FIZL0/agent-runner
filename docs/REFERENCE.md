@@ -559,6 +559,8 @@ agent-runner run [N|once] [--dry-run] [--no-tmux] [--mux tmux|wt|console|none] [
 agent-runner stop [--force] [--suspend|--shutdown]
                                        finish what's running, start nothing new, exit (or s + Enter in the
                                        runner's pane); --force ends the sessions now, to resume next run
+agent-runner take ID [--merge|--drop]  one task in your own session or a subagent: a worktree on task/ID
+                                       and its prompt; a run keeps off it. --merge after `done` there
 agent-runner resume ID...              continue each task's last session in its slot, once that slot is free
 agent-runner cost [--days N]           where the workers' tokens went, by kind of tool call
 agent-runner home [slots|plan]         where this project's worktrees and plan clone live
