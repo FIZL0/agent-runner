@@ -225,6 +225,7 @@ def test_sequential_failure(repo: Path):
     os.chdir(repo)
     try:
         with patch.object(R, 'pick', return_value=task), patch.object(R, 'retry_reopened'), \
+                patch.object(R, 'low_disk', return_value=False), \
                 patch.object(R, 'prompt_for', return_value='test'), \
                 patch.object(R, 'run_session', return_value=7), \
                 patch.object(R.sp, 'run', side_effect=execute):
