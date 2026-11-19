@@ -2,6 +2,18 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
+## 0.47.0 (2026-11-19)
+
+- `agent-runner take "TEXT" --kind K [--files A,B]`: queue a task and take it in one step, no id needed.
+  `take --here` (with TEXT or an ID) moves the main checkout's uncommitted edits, new files too, into the new
+  worktree, leaving the main checkout clean.
+- The line a run puts in the rules file (AGENTS.md/CLAUDE.md) now says: asked to do something now, use
+  `take`; never edit the main checkout. A run rewrites the older line in place. The guide says it too.
+- Edits in the main checkout that hold a landing: the STOPPED line, and the log line when `land_edited =
+  "wip"` moves them aside, say to use `take --here` next time. `plan claims` and `run --dry-run` list the
+  `wip/main-checkout-*` branches, so they are not forgotten.
+- A subtask of a parent tagged `later` but moved out of Parked is no longer tagged `later` itself.
+
 ## 0.46.1 (2026-11-19)
 
 - A session whose `done` succeeded is ended 5 s after its last turn, not `[run] idle` (90 s): the slot's next

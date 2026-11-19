@@ -16,6 +16,8 @@ Run the agents
     agent-runner stop --shutdown      stop, then shut the computer down (--suspend: sleep)
     agent-runner take B646            do B646 in your own session or a subagent, beside a run: prints its worktree and prompt
     agent-runner take B646 --merge    after `done` there: the runner tests and merges it (--drop: give it back)
+    agent-runner take "TEXT" --kind B [--files A,B] [--here]
+                                      queue a task and take it at once; --here moves the main checkout's edits into it
     agent-runner resume B646          continue B646's last session, cut off by a dropped network or a reboot
 
 See and change the task list

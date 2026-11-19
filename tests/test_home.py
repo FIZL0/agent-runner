@@ -114,6 +114,13 @@ check(guide.point_rules(Config(repo), g), 'AGENTS.md gets the pointer')
 has((repo / 'AGENTS.md').read_text(encoding='utf-8'), r'Build with make\.\n\nTasks: .*agent-runner guide', 'appended')
 eq(git(repo, 'status', '--porcelain', 'AGENTS.md'), '', 'and committed')
 eq(guide.point_rules(Config(repo), g), '', 'only once')
+has((repo / 'AGENTS.md').read_text(encoding='utf-8'), r'Asked to do something now\? Use `\S+ take', 'it says to take "do it now" work')
+cmd = Config(repo).run['command'] or 'agent-runner'
+(repo / 'AGENTS.md').write_text(f'# Rules\n\n{guide.OLD_POINTERS[0].format(cmd=cmd)}\nmore rules\n', encoding='utf-8')
+git(repo, 'commit', '-qam', 'an older pointer')
+check(guide.point_rules(Config(repo), g).startswith('updated'), 'an older pointer line is rewritten')
+eq((repo / 'AGENTS.md').read_text(encoding='utf-8'), f'# Rules\n\n{guide.POINTER.format(cmd=cmd)}\nmore rules\n',
+   'in place, once')
 
 os.environ['AGENT_RUNNER_HOME'] = env
 raise SystemExit(1 if FAILED else print('\nall checks passed'))

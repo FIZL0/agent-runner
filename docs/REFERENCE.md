@@ -263,9 +263,9 @@ it has another branch than `main` out, a tested merge stays `task/<ID>` and land
 **Commit your own edits in the main checkout.** A merge lands only when no uncommitted edit there touches
 a file it changes, and nearly every merge changes `TODO.md`. `run plan add/note/move/tick/block/unblock/
 reopen`, run by hand in the main checkout, therefore commits the plan immediately (not mid-merge, and not
-in a worktree, where `done` commits). For code work alongside a run, use your own worktree
-(`git worktree add "$(agent-runner home)/wt/<slug>"`, outside the folder of main checkouts, or `claude -w <slug>`) and merge it when done; never use a slot's
-worktree, which the runner reuses.
+in a worktree, where `done` commits). For code work alongside a run, `agent-runner take "TEXT" --kind K`
+(or `take ID`) gives it a worktree and `task/` branch the runner tests and merges; `take --here` moves edits
+already made in the main checkout there. Never use a slot's worktree, which the runner reuses.
 
 **The shared branch is pushed only after a merge passes the gate.** `done` pushes `task/<ID>` and
 refuses to push `main`.
@@ -453,6 +453,9 @@ first gate in merge2 builds from cold, and merge2 has a build directory of its o
 A tested merge that cannot land because of uncommitted edits in the main checkout to files it changes (or
 anything staged there, which git refuses to merge onto) waits 10 minutes, then gives the merge lock back
 and stays `task/<ID>`; it is merged again once those files are committed. It is never parked for that.
+With `[git] land_edited = "wip"` the edits go to a `wip/main-checkout-<time>` branch (and a stash) after 3
+minutes instead; the log line names the files and `take --here`, and `plan claims` and `run --dry-run` list
+those branches until someone deletes them.
 
 A merge skips the gate only when `task/<ID>` is the very tree `done`'s gate passed on (recorded as
 `refs/agent-runner/tested/<ID>`) and the merge differs from it only in `[run] untested` files. After
@@ -561,6 +564,9 @@ agent-runner stop [--force] [--suspend|--shutdown]
                                        runner's pane); --force ends the sessions now, to resume next run
 agent-runner take ID [--merge|--drop]  one task in your own session or a subagent: a worktree on task/ID
                                        and its prompt; a run keeps off it. --merge after `done` there
+agent-runner take "TEXT" --kind K [--files A,B] [--here]
+                                       queue it (as `plan add`) and take it in one step; --here (also with
+                                       an ID) moves the main checkout's uncommitted edits into the worktree
 agent-runner resume ID...              continue each task's last session in its slot, once that slot is free
 agent-runner cost [--days N]           where the workers' tokens went, by kind of tool call
 agent-runner home [slots|plan]         where this project's worktrees and plan clone live

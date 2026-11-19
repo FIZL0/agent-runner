@@ -53,6 +53,7 @@ import datetime as dt
 import fnmatch
 import glob
 import hashlib
+import io
 import json
 import os
 import re
@@ -66,7 +67,7 @@ import tempfile
 import threading
 import time
 import uuid
-from contextlib import ExitStack, contextmanager
+from contextlib import ExitStack, contextmanager, redirect_stdout
 from pathlib import Path
 
 from agent_runner import plan as P
@@ -3254,6 +3255,16 @@ def edited() -> set[str]:
         set(git('ls-files', '--others', '--exclude-standard').stdout.split())
 
 
+def here_hint() -> str:
+    return (f'Next time, `{C.command} take --here ID` (or `take --here "TEXT" --kind K`) moves edits like these '
+            f'into a worktree of their own')
+
+
+def wip_main() -> list[str]:
+    """The wip/main-checkout-* branches `move_edits_aside` made, so they are not forgotten."""
+    return git('for-each-ref', '--format=%(refname:short)', 'refs/heads/wip/main-checkout-*').stdout.split()
+
+
 def move_edits_aside(tid: str) -> str | None:
     """[git] land_edited = "wip": the main checkout's uncommitted edits (new files included) as one commit on
     wip/main-checkout-<time>, on top of HEAD, pushed when the shared branch is; then a stash of them (a second
@@ -3284,7 +3295,7 @@ def move_edits_aside(tid: str) -> str | None:
         git('push', '-q', remote, name)
     more = f' and {len(files) - 6} more' if len(files) > 6 else ''
     log(f'{tid}: moved uncommitted edits in the main checkout ({", ".join(files[:6])}{more}) to {name} '
-        f'(and a stash) so the tested merge could land: git checkout {name}, or git stash pop')
+        f'(and a stash) so the tested merge could land: git checkout {name}, or git stash pop. {here_hint()}')
     return name
 
 
@@ -3329,7 +3340,7 @@ def land(tid: str, branch: str, merged: str) -> str | None:
             alarm(f'{tid} cannot land: uncommitted edits in {ROOT.name}',
                   f'{tid} is tested and waits to land on {branch}, but the main checkout ({ROOT}) has uncommitted '
                   f'edits to {", ".join(files[:6])}{more}, which the merge changes. Commit them, or move them to a '
-                  f'branch, and it lands within a minute.')
+                  f'branch, and it lands within a minute. {here_hint()}')
         time.sleep(10)
     if git('rev-parse', '--verify', '-q', 'MERGE_HEAD').returncode == 0:
         files = git('diff', '--name-only', '--diff-filter=U').stdout.split()
@@ -4707,6 +4718,8 @@ def dry_run(slots: int, branch: str) -> int:
     for kind, ids in groups.items():
         if ids:
             print(f'{kind}: {", ".join(ids)}')
+    if wips := wip_main():
+        print(f'main-checkout edits moved aside, still to pick up: {", ".join(wips)}')
     return 0
 
 
@@ -5134,15 +5147,28 @@ After `{runner} done {tid} ...` has committed, run `{runner} take {tid} --merge`
 task/{tid} (or the run that is up does it within a minute). Never merge it yourself."""
 
 
+def stash_ref(sha: str) -> str:
+    """stash@{n} of the stash entry `sha`: `stash pop`/`drop` take no bare commit, and a run may stash meanwhile."""
+    shas = git('stash', 'list', '--format=%H').stdout.split()
+    return f'stash@{{{shas.index(sha)}}}' if sha in shas else sha
+
+
 def cmd_take(argv: list[str], prog: str = f'{RUNNER} take') -> int:
-    """`take ID`: a worktree on task/<ID> for a person's own session or subagent, beside a run or without one."""
+    """`take ID`: a worktree on task/<ID> for a person's own session or subagent, beside a run or without one.
+    `take "TEXT" --kind K` queues the task first; `--here` carries the main checkout's uncommitted edits along."""
     ap = argparse.ArgumentParser(prog=prog, description='Do one chosen task in your own session (or a subagent) '
                                  'in a worktree of its own; a run that is up leaves the task and its files alone.')
-    ap.add_argument('id', metavar='ID')
+    ap.add_argument('id', metavar='ID|TEXT', help="an open task's id; with --kind, the text of a new task")
+    ap.add_argument('--kind', metavar='K', help='queue TEXT as a new task of this kind (`plan kinds`), then take it')
+    ap.add_argument('--files', metavar='A,B', help='with --kind: the files it changes, as for `plan add`')
+    ap.add_argument('--here', action='store_true', help="move the main checkout's uncommitted edits into the "
+                    'new worktree, leaving the main checkout clean')
     what = ap.add_mutually_exclusive_group()
     what.add_argument('--merge', action='store_true', help='after `done`: remove the worktree and merge task/<ID>')
     what.add_argument('--drop', action='store_true', help='give the task back: remove the worktree, keep no commits')
     a = ap.parse_args(argv)
+    if (a.merge or a.drop) and (a.kind or a.files or a.here):
+        ap.error('--merge and --drop take only an ID')
     init()
     tid, branch = a.id, default_branch()
     d = SLOTS_DIR / f'take-{tid}'
@@ -5171,9 +5197,31 @@ def cmd_take(argv: list[str], prog: str = f'{RUNNER} take') -> int:
         print(f'{tid}: merged into {branch}' if merged and tid not in open_tasks(branch) else
               f'{tid}: not merged; {C.notes("run.log")} says why')
         return 0
-    if tid not in open_tasks(branch):
-        print(f'{tid}: not an open task on {branch}', file=sys.stderr)
+    stash = ''
+    if a.here and edited():  # stashed first, so the plan edit `--kind` commits never meets them
+        if git('stash', 'push', '-u', '-q', '-m', 'agent-runner take --here').returncode:
+            print('could not stash the main checkout\'s edits; nothing taken', file=sys.stderr)
+            return 1
+        stash = git('rev-parse', 'stash@{0}').stdout.strip()
+
+    def fail(msg: str) -> int:
+        print(msg, file=sys.stderr)
+        if stash and git('stash', 'pop', '-q', stash_ref(stash)).returncode:
+            print(f'your edits are in the stash ({stash}): `git stash pop` to get them back', file=sys.stderr)
         return 1
+
+    if a.kind:
+        out = io.StringIO()
+        with redirect_stdout(out):
+            rc = P.main(['add', a.kind, tid] + (['--files', a.files] if a.files else []))
+        if rc or not (m := re.match(r'added (\S+)', out.getvalue())):
+            return fail(out.getvalue().strip() or 'not queued')
+        tid = m[1]
+        print(f'queued {tid}', file=sys.stderr)
+        d = SLOTS_DIR / f'take-{tid}'
+        # ponytail: a run polling in the moment between this commit and the worktree below could start tid too
+    if tid not in open_tasks(branch):
+        return fail(f'{tid}: not an open task on {branch}' + ('' if a.kind else ' (new work: `--kind K "TEXT"`)'))
     held = {l.removeprefix('branch refs/heads/') for l in
             git('worktree', 'list', '--porcelain').stdout.splitlines() if l.startswith('branch ')}
     why = ('taken already, in ' + str(d) if d.is_dir() else
@@ -5181,12 +5229,18 @@ def cmd_take(argv: list[str], prog: str = f'{RUNNER} take') -> int:
            'finished, waiting to merge' if tid in ahead(branch) else
            f'claimed by {plansync.claims(C)[tid].who}' if tid in plansync.taken(C) else '')
     if why:
-        print(f'{tid}: {why}', file=sys.stderr)
-        return 1
+        return fail(f'{tid}: {why}')
     worktree(f'take-{tid}', branch)
     if (co := git('checkout', '-q', '-B', f'task/{tid}', branch, cwd=d)).returncode:
-        print(f'{tid}: checkout failed: {co.stderr.strip()}', file=sys.stderr)
-        return 1
+        return fail(f'{tid}: checkout failed: {co.stderr.strip()}')
+    if stash:
+        if git('stash', 'apply', '-q', '--index', stash, cwd=d).returncode and \
+                git('stash', 'apply', '-q', stash, cwd=d).returncode:
+            print(f'{tid}: your edits did not apply cleanly in {d}; they are kept in the stash ({stash})',
+                  file=sys.stderr)
+        else:
+            git('stash', 'drop', '-q', stash_ref(stash))
+            print(f'{tid}: moved your uncommitted edits from {ROOT} into {d}', file=sys.stderr)
     print(f'{tid} is yours, in {d} (branch task/{tid}); a run leaves it and its files alone.\n'
           f'Give the agent that does it this prompt, with {d} as its working directory:\n')
     print(prompt_for(tid, 0, 2, d, branch) + TAKEN.format(runner=C.command, tid=tid, d=d))

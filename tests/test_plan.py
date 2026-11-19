@@ -324,6 +324,16 @@ def test_add_subtask():
         eq(run(root, 'plan', 'move', 'A3', 'top', env=env).returncode, 0, 'move A3 top')
         eq(plan.index(todo)[:5], ['# TODO', '### Next', '[ ] A3', '[ ] A3a', '[ ] A3a1'],
            "a subtask's subtask files after it, and a moved parent takes its subtasks along")
+        for args in (['A', 'big future work', '--pri', 'later'], ['A', 'more future work', '--pri', 'later']):
+            run(root, 'plan', 'add', *args, '--force', env=env)
+        run(root, 'plan', 'move', 'A6', 'top', env=env)
+        for p in ('A6', 'A7'):
+            eq(run(root, 'plan', 'add', p, f'split of {p}', '--force', env=env).returncode, 0, f'add {p}')
+        ix, text = plan.index(todo), todo.read_text()
+        eq(ix[:4], ['# TODO', '### Next', '[ ] A6', '[ ] A6a'], 'a parked parent moved to the top takes its new subtask')
+        has(text, r'\*\*A6a\*\* split of A6', 'which is not tagged later, so a run starts it')
+        eq(ix[-3:], ['### Parked', '[ ] A7', '[ ] A7a'], 'a parent still parked parks its subtask with it')
+        has(text, r'\*\*A7a\*\* \(follow-up, later\)', 'tagged later like its parent')
 
 
 def test_kinds():

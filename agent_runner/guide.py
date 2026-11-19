@@ -40,7 +40,9 @@ AGENT_RUNNER_SLOT set you are one of the runner's agents: follow your brief, not
    - read: `agent-runner plan`, `plan ID`, `plan next`, `plan claims`, `plan help`
 2. **Queue work instead of doing it**, unless the person asks you to do it yourself now. A running runner
    starts a queued task within a minute. Good tasks name their `--files` (tasks on the same files never
-   run at once) and say how to check the result.
+   run at once) and say how to check the result. **Never edit files in the main checkout**: uncommitted
+   edits there hold every merge, and may be moved to a `wip/main-checkout-*` branch out of your sight.
+   Asked to do it now? `agent-runner take` (6) gives you a worktree of your own.
 3. **Leave the runner's branches alone**: never merge, rebase, push or delete `task/*` or `wip/*`, and never
    tick a task by hand. The runner merges after its test gate. A `wip/<ID>` branch is a parked attempt
    (`.runner/run.log` says why): the task stays open and starts again by itself in the next run, or in this
@@ -57,11 +59,13 @@ AGENT_RUNNER_SLOT set you are one of the runner's agents: follow your brief, not
    writes, and an idle run writes nothing more, so the wait never ends.
 6. **To do one task yourself now** (the person asks, or it is urgent), with or without a run going:
    `agent-runner take ID` makes it a worktree and branch `task/ID` of its own (a run then leaves the task
-   and its files alone) and prints the prompt for whoever does it. Hand that prompt to a subagent with the
+   and its files alone) and prints the prompt for whoever does it. Work not queued yet:
+   `agent-runner take "what, why, how to check" --kind K --files a.py` queues it and takes it in one step.
+   Already started editing in the main checkout? Add `--here`: your uncommitted edits move into the new
+   worktree and the main checkout is left clean. Hand that prompt to a subagent with the
    worktree as its working directory, or work there yourself; it finishes with `agent-runner done ID "msg"`
    there, then `agent-runner take ID --merge` (the runner tests and merges it, or the run that is up does).
    `take ID --drop` gives it back untouched. Several takes on tasks with different files can go at once.
-   Work already done in the main checkout on a task id: `agent-runner done ID "message"` there.
 7. **No dangerous or unreadable commands.** The main checkout is where the runner lands merges, and its
    worktrees and `task/*` branches hold agents' unmerged work. """ + SAFE_SHELL + """ Leave the runner's
    home (`~/runs/<repo>/`) and `.runner/` alone, and ask the person before anything that deletes.
@@ -78,7 +82,12 @@ description: Use in a session a person started (not a runner slot) in a git repo
 
 
 POINTER = ('Tasks: this repo is worked by agent-runner. Use the agent-runner skill (or run `{cmd} guide`): queue '
-           'work with `{cmd} plan add`, never edit the plan\'s TODO.md by hand, never merge task/* or wip/* branches.')
+           'work with `{cmd} plan add`, never edit the plan\'s TODO.md by hand, never merge task/* or wip/* branches. '
+           'Asked to do something now? Use `{cmd} take "what" --kind K` (a worktree of your own; `--here` brings '
+           'edits already made along); never edit the main checkout.')
+OLD_POINTERS = [('Tasks: this repo is worked by agent-runner. Use the agent-runner skill (or run `{cmd} guide`): '
+                 'queue work with `{cmd} plan add`, never edit the plan\'s TODO.md by hand, never merge task/* or '
+                 'wip/* branches.')]  # rewritten to POINTER where a run finds them
 
 
 def rules_file(c) -> Path | None:
@@ -97,16 +106,19 @@ def point_rules(c, git) -> str:
     text = f.read_text(encoding='utf-8')
     rel = f.relative_to(c.root).as_posix()
     cmd = c.run['command'] or 'agent-runner'  # what everyone types, never this machine's path to a clone
-    if f'{cmd} guide' in text or 'agent-runner guide' in text or \
+    new = POINTER.format(cmd=cmd)
+    old = next((o for p in OLD_POINTERS if (o := p.format(cmd=cmd)) in text), None)
+    if new in text or (old is None and (f'{cmd} guide' in text or 'agent-runner guide' in text)) or \
             git('status', '--porcelain', '--', rel).stdout.strip() or \
             not git('rev-parse', '-q', '--verify', 'MERGE_HEAD').returncode:
         return ''
-    f.write_text(text + ('' if text.endswith('\n') or not text else '\n') + '\n' + POINTER.format(cmd=cmd) + '\n',
-                 encoding='utf-8')
+    f.write_text(text.replace(old, new) if old else
+                 text + ('' if text.endswith('\n') or not text else '\n') + '\n' + new + '\n', encoding='utf-8')
+    what = 'updated the agent-runner line in' if old else 'added a line to'
     if git('commit', '-q', '-m', f'{rel}: point sessions at the agent-runner skill', '--', rel).returncode:
         git('checkout', '--', rel)
         return ''
-    return f'added a line to {rel} pointing every session at the agent-runner skill (committed)'
+    return f'{what} {rel} pointing every session at the agent-runner skill (committed)'
 
 
 def skill_file() -> Path:

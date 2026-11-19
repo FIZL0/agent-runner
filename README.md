@@ -94,6 +94,8 @@ main moves and is pushed; the slot picks its next task
 **One task by hand.** `agent-runner take B646` gives B646 a worktree of its own and prints its prompt, for
 your own session or a subagent, while a run goes on (the run keeps off it and its files). Finish with
 `agent-runner done B646 "..."` there, then `agent-runner take B646 --merge`: the runner tests and merges it.
+Work not queued yet: `agent-runner take "what, why, how to check" --kind B --files a.py` queues and takes it
+in one step. Edits already made in the main checkout: add `--here`, and they move into the new worktree.
 
 **Stopping.** Type `s` + Enter in the runner's pane, or run `agent-runner stop`. Nothing new starts; the
 running tasks finish and merge, then the run exits (`s` again takes it back). `s!` (`stop --force`) ends the

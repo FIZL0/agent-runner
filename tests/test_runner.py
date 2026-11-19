@@ -638,6 +638,44 @@ def test_take(repo: Path):
     git(repo, 'branch', '-D', f'task/{tid}')
 
 
+def test_take_text_and_here(repo: Path):
+    print('take "TEXT" --kind: queue and take in one step; --here carries the main checkout\'s edits along')
+    R.init(repo)
+    git(repo, 'checkout', '-q', 'main')
+    r = run(repo, 'take', 'write the q module', '--kind', 'T', '--files', 'q.py')
+    eq(r.returncode, 0, f'take TEXT --kind queues and takes: {r.stderr}')
+    tid = re.search(r'queued (T\d+)', r.stderr)[1]
+    d = R.SLOTS_DIR / f'take-{tid}'
+    eq(git(d, 'branch', '--show-current'), f'task/{tid}', 'in a worktree of its own')
+    has(git(d, 'show', 'HEAD:plan/TODO.md'), rf'\*\*{tid}\*\* write the q module \| files: q\.py',
+        'the new task is on the branch it works on')
+    has(r.stdout, rf'take {tid} --merge', 'and it prints the brief')
+    eq(run(repo, 'take', tid, '--drop').returncode, 0, 'and it gives back like any take')
+    check(run(repo, 'take', 'no kind given').returncode == 1, 'TEXT without --kind is no task id')
+
+    (repo / 'prompt.txt').unlink(missing_ok=True)  # an earlier test's
+    (repo / 'a.py').write_text('# a, edited in the main checkout\n', encoding='utf-8')
+    (repo / 'new.py').write_text('# a new file\n', encoding='utf-8')
+    r = run(repo, 'take', '--here', 'finish the a.py edit', '--kind', 'T', '--files', 'a.py,new.py')
+    eq(r.returncode, 0, f'take --here: {r.stderr}')
+    tid = re.search(r'queued (T\d+)', r.stderr)[1]
+    d = R.SLOTS_DIR / f'take-{tid}'
+    eq(git(repo, 'status', '--porcelain'), '', 'the main checkout is left clean')
+    eq((d / 'a.py').read_text(), '# a, edited in the main checkout\n', 'the edit is in the worktree')
+    check((d / 'new.py').is_file(), 'new files too')
+    eq(git(repo, 'stash', 'list'), '', 'and no stash is left behind')
+    git(d, 'checkout', '--', '.'), (d / 'new.py').unlink()
+    r = run(repo, 'take', tid, '--drop')
+    eq(r.returncode, 0, f'drop it: {r.stderr}')
+
+    (repo / 'a.py').write_text('# a, edited again\n', encoding='utf-8')
+    name = R.move_edits_aside('W9')
+    has((repo / '.runner/run.log').read_text(), rf'to {name} .*take --here', 'moving edits aside names take --here')
+    check(name in R.wip_main(), 'the wip/main-checkout branch is listed')
+    has(run(repo, 'plan', 'claims').stdout, rf'{name}  main-checkout edits moved aside', '`plan claims` shows it')
+    git(repo, 'branch', '-D', name), git(repo, 'stash', 'drop', '-q')
+
+
 def test_conflicts(repo: Path, tmp: Path):
     print('run: a conflict a join cannot do goes to a fix session; one it gives up on is parked')
     agent = tmp / 'fake-agent'
@@ -1519,6 +1557,8 @@ def test_land_waits_aloud(repo: Path):
         has((repo / '.runner/run.log').read_text(),
             r'STOPPED: W1 cannot land: uncommitted edits in \S+: .* to g\.py, which the merge changes',
             'a loud STOPPED names the edited file the merge needs, before an hour of silence')
+        has((repo / '.runner/run.log').read_text(), r'STOPPED: W1 .*Next time, `\S+ take --here',
+            'and says how to keep such edits out of the main checkout next time')
         check(t.is_alive(), 'and it still waits for them')
         git(repo, 'checkout', '--', 'g.py')
         t.join(10)
@@ -2816,7 +2856,7 @@ def main() -> int:
                        lambda: test_no_pane(repo, tmp), lambda: test_other_repos_panes(repo, tmp),
                        lambda: test_limit_lets_go(repo),
                        lambda: test_shared_push(repo, tmp), lambda: test_note_on_a_ticked_task(repo), lambda: test_adopt_merge(repo), lambda: test_followups(repo), lambda: test_ci_watch(repo), test_update_notice, test_restart_if_upgraded, lambda: test_flake_repair(tmp), lambda: test_repair_per_failure(repo),
-                       lambda: test_stalled(tmp), lambda: test_take(repo)])
+                       lambda: test_stalled(tmp), lambda: test_take(repo), lambda: test_take_text_and_here(repo)])
 
 
 if __name__ == '__main__':

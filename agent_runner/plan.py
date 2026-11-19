@@ -24,7 +24,8 @@ re-reads it on every turn pays again. So the backlog is a command instead:
     ./run plan newid PREFIX      the next free id, e.g. L -> L7; a task's id gives its next subtask, L3 -> L3a
     ./run plan archive           move every [x] line left in TODO.md to DONE.md (after merges, hand edits)
     ./run plan reopen            unblock every task whose BLOCKED (after X, Y) tasks are all done now
-    ./run plan claims            which run has which task (with a remote to claim through), and since when (STALE: no refresh in 3 h)
+    ./run plan claims            which run has which task (with a remote to claim through), and since when (STALE: no refresh in 3 h),
+                                 and any wip/main-checkout-* branches of edits moved aside to land a merge
     ./run plan unclaim <ID>      drop a claim, whoever's: for a run that crashed or was switched off
 
 **Where `add` files a task.** A person's task goes to the top of the leading section, as before. A task
@@ -49,7 +50,8 @@ merely shares a topic, or came out of that task, gets a fresh letter (`add B …
 
 **A subtask keeps its parent's place.** `add P17 …` (a task's id as the prefix: a split of that task) files
 P17a after P17 and its earlier subtasks, under P17's own tag or none, with no level of its own unless `--pri`
-gives one: the rest of a person's task stays where the person queued it, not behind every follow-up.
+gives one: the rest of a person's task stays where the person queued it, not behind every follow-up. A parent
+tagged `later` that was moved out of Parked passes on no tag: a person scheduled it, so its split runs too.
 
 The line format is `- [ ] **ID** text | files: a, b | after: X, Y | test: name | journal: dir`, under `###`
 headings, and the checkbox is `[ ]` open, `[x]` done, `[~]` blocked. The keyed fields are the only thing read
@@ -579,15 +581,20 @@ def _place_pri(ls: list[str], pri: str) -> int:
 
 def family_end(prefix: str, todo=None) -> tuple[str, str | None] | None:
     """For a subtask prefix (a task id open in TODO.md): the last id of its family, the parent and its
-    subtasks, which a new subtask files after, and the parent's level tag; None when no such task is open."""
+    subtasks, which a new subtask files after, and the parent's level tag; None when no such task is open.
+    A parent tagged `later` but moved out of Parked gives no tag: a person scheduled it, so its split runs too."""
     todo, _ = ensure(todo, None)  # a kind letter (B) matches no open id, so it gets None below
-    last, tag = None, None
+    last, tag, sec = None, None, ''
     for l in lines(todo):
+        if _level(l) == 3:
+            sec = l[4:].strip()
         m = ITEM.match(l)
         if m and not m.group(1) and m.group(2) != 'x':
             t = m.group(3).rstrip('.')
             if t == prefix:
                 last, tag = t, (PRI_TAG.search(l) or [None, None])[1]
+                if tag == 'later' and not sec.startswith(SKIPPED):
+                    tag = None
             elif last and child(prefix, t):  # P17 -> P17a, P17a -> P17a1
                 last = t
     return (last, tag) if last else None
@@ -1197,7 +1204,9 @@ def _main(argv: list[str], c) -> int:
         return say(f'archived {archive(todo, done)}')
     if argv == ['claims']:
         got = sorted(plansync.claims(c).items())
-        return say('\n'.join(f'{t}  {plansync.label(cl)}' for t, cl in got) or 'no claims')
+        wips = git('for-each-ref', '--format=%(refname:short)', 'refs/heads/wip/main-checkout-*', cwd=c.root).stdout.split()
+        return say('\n'.join([f'{t}  {plansync.label(cl)}' for t, cl in got] or ['no claims'])
+                   + ''.join(f'\n{w}  main-checkout edits moved aside: pick them up' for w in wips))
     if argv[:1] == ['unclaim'] and len(argv) == 2:
         if not plansync.unclaim(c, argv[1]):
             print(f'{PROG}: no claim on {argv[1]}', file=sys.stderr)
