@@ -2,6 +2,13 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
+## 0.44.0 (2026-11-19)
+
+- `f` in the runner's pane forces past the session and weekly usage caps, as `--force` does, without a
+  restart; `f` again puts them back. An upgrade restart keeps it.
+- Hitting a usage cap raises the same loud STOPPED alarm as edits holding a merge (banner, bell, tmux message,
+  desktop notification), saying how to go on: `f` + Enter, or a restart with `--force`.
+
 ## 0.43.0 (2026-11-18)
 
 - More keys in the runner's pane, listed in a ruled-off block when the run starts and on `?` + Enter:

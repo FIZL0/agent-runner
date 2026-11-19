@@ -273,7 +273,7 @@ refuses to push `main`.
 **A usage limit is not a failed task.** When a session's only outcome is the usage limit (its transcript
 or slot log says "resets 3pm"), the transcript is dropped, the task returns to the pool, and the slot
 sleeps until the reset. Past `[run] session_max`% of the 5-hour session usage, or `[run] weekly_max`% of
-the 7-day usage, no new task starts unless `--force` is given.
+the 7-day usage, no new task starts unless `--force` is given (or `f` typed in the runner's pane); hitting one raises the STOPPED alarm with that hint.
 
 **A cut-off session resumes.** A session whose turn ended on an API error (the network dropped, the
 API was down) is not finished, though the idle stop ends it. Its worktree is left as it is, and once the
@@ -361,6 +361,7 @@ The other keys, listed by `?` + Enter (and printed when the run starts), ruled o
 | key | what it does |
 |---|---|
 | `p` | pause: no new tasks, and the run stays up; `p` again goes on |
+| `f` | force: start tasks past the session and weekly usage caps, as `--force`; `f` again: the caps hold |
 | `+` / `-` | one slot more / fewer; a slot taken away finishes its running task first |
 | `z` | suspend the computer once the run stops, or when it goes idle as `--suspend` would; `z` again: off |
 | `x` | the same, shutting down (`--shutdown`); `x` again: off |

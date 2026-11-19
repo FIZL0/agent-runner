@@ -93,7 +93,7 @@ main moves and is pushed; the slot picks its next task
 
 **Stopping.** Type `s` + Enter in the runner's pane, or run `agent-runner stop`. Nothing new starts; the
 running tasks finish and merge, then the run exits (`s` again takes it back). `s!` (`stop --force`) ends the
-sessions now instead, each to resume in the next run. `p` pauses, `+`/`-` change the slot count, and `z` or
+sessions now instead, each to resume in the next run. `p` pauses, `f` starts tasks past the usage caps (as `--force`), `+`/`-` change the slot count, and `z` or
 `x` suspend or shut the computer down once the run stops (or goes idle); `?` lists the keys. To leave the
 machine to it from the start, run with `--shutdown` or `--suspend`.
 

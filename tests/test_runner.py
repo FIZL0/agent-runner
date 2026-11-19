@@ -832,6 +832,12 @@ def test_prompt_and_hooks(repo: Path):
         R.KEYS.extend(['p', '+', '+', '-', 'z'])
         R.take_keys()
         check(R.PAUSED[0] and R.SLOTS == 3 and R.POWER == 'suspend', '`p` pauses, `+`/`-` change slots, `z` suspends')
+        R.KEYS.extend(['f'])
+        R.take_keys()
+        check(R.FORCED[0] and 'usage caps off' in R.state_line(), '`f` forces past the usage caps')
+        R.KEYS.extend(['f'])
+        R.take_keys()
+        check(not R.FORCED[0], 'and `f` again takes it back')
         R.KEYS.extend(['x', 'p', 'x', '-', '-', '-'])
         R.take_keys()
         check(not R.PAUSED[0] and R.POWER == '' and R.SLOTS == 1,
@@ -857,7 +863,7 @@ def test_prompt_and_hooks(repo: Path):
         (repo / '.runner/T9.resume').unlink()
     finally:
         R.POWER, R.SLOTS = saved
-        R.PAUSED[0] = False
+        R.PAUSED[0] = R.FORCED[0] = False
 
 
 def test_hooks(repo: Path, tmp: Path):
@@ -2484,8 +2490,8 @@ def test_restart_if_upgraded():
                         R.restart_if_upgraded()
                 eq(len(execs), want, f'restart on {installed}')
         eq(sum('breaking' in s for s in said), 1, 'a breaking version is said once')
-        eq(R.kept_keys(), {'slots': R.SLOTS, 'paused': False, 'power': R.POWER, 'stop': R.stopping()},
-           'the restart hands the new process what the keys set: slots, pause, power, stop')
+        eq(R.kept_keys(), {'slots': R.SLOTS, 'paused': False, 'power': R.POWER, 'stop': R.stopping(), 'forced': False},
+           'the restart hands the new process what the keys set: slots, pause, power, stop, force')
         eq(R.kept_keys(), {}, 'once')
     finally:
         R.log, R._upgrade_seen = real_log, None

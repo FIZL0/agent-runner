@@ -204,7 +204,7 @@ NOTIFY = not os.environ.get('AGENT_RUNNER_NO_NOTIFY')  # alarm()'s tmux message 
 
 
 def alarm(title: str, detail: str) -> None:
-    """A stoppage only a person can clear (their uncommitted edits hold a tested merge): a red banner in the
+    """A stoppage only a person can clear (their uncommitted edits hold a tested merge, a usage cap): a red banner in the
     runner's pane, the bell, a tmux message and a desktop notification, so it is seen from across the room,
     not found in run.log hours later. The log line starts STOPPED."""
     import textwrap
@@ -342,6 +342,7 @@ KEYS_LOCK = threading.Lock()  # the reader thread and the loop both take keys
 WAKE = threading.Event()  # set by a key, so the loop acts on it now instead of after its 10 s nap
 READING = [False]  # the reader thread is up: the loop naps on WAKE
 PAUSED = [False]  # `p`: no new tasks, and the run stays up
+FORCED = [False]  # `f`: the usage caps no longer hold new tasks, as with --force
 
 
 def nap(s: float) -> None:
@@ -372,6 +373,8 @@ def state_line() -> str:
         what.append('stopping now (s!)' if forced() else f'stopping ({stopped_by()})')
     if PAUSED[0]:
         what.append('paused')
+    if FORCED[0]:
+        what.append('usage caps off (f)')
     if POWER:
         what.append(f'{POWER} when ' + ('it stops' if stopping() else 'idle'))
     return ', '.join(what)
@@ -387,13 +390,14 @@ runner keys: type one in this pane and press Enter
     s!       stop now: end the agent sessions (each resumes where it was in the next run),
              finish the merges under way, then exit
     p        pause: no new tasks, and the run stays up
+    f        force: start tasks past the session and weekly usage caps (as --force)
     +        one slot more
     -        one slot fewer (a running task in it finishes first)
     z        suspend the computer once the run stops, or when it goes idle
     x        shut the computer down once the run stops, or when it goes idle
     ?        this help
 
-    s, p, z and x take themselves back when typed again.
+    s, p, f, z and x take themselves back when typed again.
     Ctrl-C ends the runner only: sessions keep running, and the next run adopts them.
 
 now: {state_line()}
@@ -427,6 +431,10 @@ def take_keys() -> None:
                 PAUSED[0] = not PAUSED[0]
                 log('paused: no new tasks; the run stays up (p again: go on)' if PAUSED[0] else
                     'pause taken back: starting tasks again')
+            elif k == 'f':
+                FORCED[0] = not FORCED[0]
+                log('forced: starting tasks past the usage caps (f again: undo)' if FORCED[0] else
+                    'force taken back: the usage caps hold new tasks again')
             elif k in ('+', '-'):
                 if k == '-' and SLOTS == 1:
                     log('one slot is the fewest; s stops the run')
@@ -4368,7 +4376,7 @@ def restart_if_upgraded() -> None:
     sys.stdout.flush()
     # what the keys set lives in this process: the new one takes it over (see `kept_keys`)
     os.environ['AGENT_RUNNER_KEEP'] = json.dumps({'slots': SLOTS, 'paused': PAUSED[0], 'power': POWER,
-                                                  'stop': stopping()})
+                                                  'stop': stopping(), 'forced': FORCED[0]})
     os.execv(sys.executable, sys.orig_argv)  # run.lock's fd closes on exec; the new process takes it again
 
 
@@ -4740,7 +4748,7 @@ def run(argv: list[str], prog: str) -> int:
     SLOTS = slots
     if keep := kept_keys():  # restarted on an upgrade: the slot count, pause, power and stop typed before it hold
         SLOTS = slots = keep['slots']
-        POWER, PAUSED[0] = keep['power'], keep['paused']
+        POWER, PAUSED[0], FORCED[0] = keep['power'], keep['paused'], keep.get('forced', False)
     idle, stall, pause = a.idle or r['idle'], a.stall or r['stall'], a.pause or r['pause']
     model = a.model or r['model']
 
@@ -4940,10 +4948,10 @@ def run(argv: list[str], prog: str) -> int:
                     continue
                 if PAUSED[0]:
                     continue
-                if (w := capped(a.force)) is not None:
+                if (w := capped(a.force or FORCED[0])) is not None:
                     if not cap_said:
-                        log(f'{w}: no new tasks until it resets '
-                            f'(restart with --force to go on now)')
+                        alarm(f'{w}: no new tasks', 'the running tasks finish and merge; new ones wait for the '
+                              'reset. To go on now: type f + Enter in this pane, or restart with --force.')
                         cap_said = True
                     continue
                 cap_said = False
