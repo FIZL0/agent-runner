@@ -2,6 +2,12 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
+## 0.45.1 (2026-11-19)
+
+- A newer agent-runner shows as a green banner in the runner's pane, shaped like the STOPPED one, saying how to
+  upgrade (`u` + Enter when the pane reads keys). The run looks every 6 hours, not only at the start, says each
+  version once, and `?` keeps listing it.
+
 ## 0.45.0 (2026-11-19)
 
 - `u` in the runner's pane upgrades agent-runner (`uv tool upgrade`, `pipx upgrade`, or `git pull --ff-only` in

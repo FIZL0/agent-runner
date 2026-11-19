@@ -2477,14 +2477,23 @@ def test_update_notice():
                              ("__version__ = '0.0.1'\n", 0), ('__version__ = "0.0.1"\n', 0), ('garbage', 0)):
             urllib.request.urlopen = lambda *a, **k: io.BytesIO(remote.encode())
             said.clear()
+            R.LATEST_SAID[0] = ''
             R.update_notice()
             eq(len(said), want, f'update notice for {remote.strip()!r}')
+        urllib.request.urlopen = lambda *a, **k: io.BytesIO(b"__version__ = '999.0.0'\n")
+        R.LATEST_SAID[0] = ''
+        said.clear()
+        R.update_notice()
+        R.update_notice()
+        eq(len(said), 1, 'a version is announced once, not on every look')
+        has(said[0], r'999\.0\.0 is out.*To upgrade', 'saying how to upgrade')
         urllib.request.urlopen = lambda *a, **k: (_ for _ in ()).throw(OSError('offline'))
         said.clear()
         R.update_notice()
         eq(said, [], 'offline: no notice, no crash')
     finally:
         R.log, urllib.request.urlopen = real_log, real_open
+        R.LATEST_SAID[0] = ''
 
 
 def test_restart_if_upgraded():

@@ -203,17 +203,22 @@ def log(msg: str) -> None:
 NOTIFY = not os.environ.get('AGENT_RUNNER_NO_NOTIFY')  # alarm()'s tmux message and desktop notification
 
 
+def banner(title: str, detail: str, bg: str = '41') -> None:
+    """`title: detail` logged, and in colour a block in the runner's pane (red, or `bg`) that stands out."""
+    import textwrap
+    log(f'{title}: {detail}')
+    if COLOR:
+        body = [title.upper(), *textwrap.wrap(detail, 96)]
+        w = max(map(len, body)) + 4
+        bar = lambda t='': f'\x1b[1;97;{bg}m  {t.ljust(w - 2)}\x1b[0m'
+        print('\n'.join([bar(), *map(bar, body), bar()]), flush=True)
+
+
 def alarm(title: str, detail: str) -> None:
     """A stoppage only a person can clear (their uncommitted edits hold a tested merge, a usage cap): a red banner in the
     runner's pane, the bell, a tmux message and a desktop notification, so it is seen from across the room,
     not found in run.log hours later. The log line starts STOPPED."""
-    import textwrap
-    log(f'STOPPED: {title}: {detail}')
-    if COLOR:
-        body = [title.upper(), *textwrap.wrap(detail, 96)]
-        w = max(map(len, body)) + 4
-        bar = lambda t='': f'\x1b[1;97;41m  {t.ljust(w - 2)}\x1b[0m'
-        print('\n'.join([bar(), *map(bar, body), bar()]), flush=True)
+    banner(f'STOPPED: {title}', detail)
     print('\a', end='', flush=True)
     try:
         if not NOTIFY:
@@ -375,6 +380,8 @@ def state_line() -> str:
         what.append('paused')
     if FORCED[0]:
         what.append('usage caps off (f)')
+    if LATEST_SAID[0]:
+        what.append(f'agent-runner {LATEST_SAID[0]} is out (u upgrades)')
     if POWER:
         what.append(f'{POWER} when ' + ('it stops' if stopping() else 'idle'))
     return ', '.join(what)
@@ -4322,9 +4329,20 @@ LATEST = 'https://raw.githubusercontent.com/FIZL0/agent-runner/main/agent_runner
 VERSION = re.compile(r"""^__version__\s*=\s*['"](\d+(?:\.\d+)+)['"]""", re.M)
 
 
+LATEST_SAID = ['']  # the newer version update_notice last announced: once per version
+UPDATE_EVERY = 6 * 3600  # s between looks at main for a newer version
+
+
+def update_watch() -> None:
+    """A daemon thread for the whole run: `update_notice` at the start and every UPDATE_EVERY s."""
+    while True:
+        update_notice()
+        time.sleep(UPDATE_EVERY)
+
+
 def update_notice() -> None:
-    """Says so when main has a newer version than this one. Run in a thread at the start of a run; silent
-    when it cannot tell (offline, GitHub down, a clone ahead of main)."""
+    """A green banner when main has a newer version than this one, once per version, saying how to upgrade
+    (`u` when the pane reads keys). Silent when it cannot tell (offline, GitHub down, a clone ahead of main)."""
     import urllib.request
     from agent_runner import __version__
     try:
@@ -4333,11 +4351,13 @@ def update_notice() -> None:
         newer = tuple(map(int, latest.split('.'))) > tuple(map(int, __version__.split('.')))
     except Exception:
         return
-    if newer:
-        how = ' '.join(upgrade_argv()[:3]) if upgrade_argv()[0] != 'git' else 'git pull'
+    if newer and latest != LATEST_SAID[0]:
+        LATEST_SAID[0] = latest
+        how = 'type u + Enter in this pane' if READING[0] else \
+            f'run `{" ".join(upgrade_argv()[:3]) if upgrade_argv()[0] != "git" else "git pull"}`'
         then = ('the run restarts on it by itself' if not plat.WINDOWS and not breaking(__version__, latest)
-                else 'then restart the run')
-        log(f'agent-runner {latest} is out (this is {__version__}); upgrade with `{how}`, {then}')
+                else 'then read CHANGELOG.md and restart the run')
+        banner(f'agent-runner {latest} is out', f'this run is {__version__}. To upgrade: {how}; {then}.', '42')
 
 
 def breaking(old: str, new: str) -> bool:
@@ -4825,7 +4845,7 @@ def run(argv: list[str], prog: str) -> int:
               f'    tmux new -s runner {prog} {a.slots or slots}', file=sys.stderr)
         return 2
 
-    threading.Thread(target=update_notice, daemon=True).start()
+    threading.Thread(target=update_watch, daemon=True).start()
     for w in C.warnings:
         log(w)
     from agent_runner.guide import install, point_rules
