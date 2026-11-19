@@ -51,6 +51,10 @@ AGENT_RUNNER_SLOT set you are one of the runner's agents: follow your brief, not
 5. **Is it running, and what next?** `tail -20 .runner/run.log` (the `[run] notes` dir), and
    `agent-runner run --dry-run 3` for what would start and why the rest wait. Do not start or stop a run
    unless the person asks: it runs in their tmux. `agent-runner stop` lets running tasks finish first.
+   To act once the run is done, wait in the background until run.log's last line is `run idle`:
+   `timeout 4h bash -c 'until tail -n1 .runner/run.log | grep -q "run idle"; do sleep 60; done'`. Never
+   `tail -f run.log | grep -m1 'run idle'`: grep exits on the match, but tail only dies when it next
+   writes, and an idle run writes nothing more, so the wait never ends.
 6. **Work you did yourself** in the main checkout on a task id: `agent-runner done ID "message"` runs the
    test gate, ticks the task and commits.
 7. **No dangerous or unreadable commands.** The main checkout is where the runner lands merges, and its
