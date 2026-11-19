@@ -4442,6 +4442,9 @@ def restart_if_upgraded() -> None:
 
 # --- the idle stop hook --------------------------------------------------------
 
+DONE_IDLE = 5  # s a session whose `done` succeeded stays at its prompt: the next task starts that much sooner
+
+
 def stop_hook(idle: int) -> int:
     """Stop hook for a session this runner started: end it once it has been idle for `idle` seconds.
 
@@ -4467,7 +4470,9 @@ def stop_hook(idle: int) -> int:
         return 0
     if pi_last_error(t)[0]:
         return 0  # Pi settles after a failed model call too: the run resumes that session instead
-    if ev.get('background_tasks') and not finished():  # a finished task's leftovers get no grace
+    if finished():  # `done` succeeded: nothing left to wait for, and its leftovers get no grace
+        idle = min(idle, DONE_IDLE)
+    elif ev.get('background_tasks'):
         idle = max(idle, int(os.environ.get('AGENT_RUNNER_IDLE_BG', 1800)))
     # POSIX: the hook's parent is the agent. Windows: the hook runs under Git Bash, whose pid is not the
     # agent's, so the pid comes from the marker the slot's shim keeps (run_session)
@@ -4789,7 +4794,7 @@ def run(argv: list[str], prog: str) -> int:
     a = ap.parse_args(argv)
 
     if a.stop_hook:  # these two run inside an agent session and need no repository
-        return stop_hook(a.idle or 90)
+        return stop_hook(a.idle or 30)
     if a.stop_waiter:
         pid, t, n, idle = a.stop_waiter
         return stop_waiter(int(pid), t, int(n), int(idle))

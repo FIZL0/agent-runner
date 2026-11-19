@@ -27,7 +27,7 @@ plan/TODO.md ──pick──▶ slot N: git worktree ~/runs/<repo>/sN on task/<
    (`[x]`, and the line moves to DONE.md), commits, and pushes `task/<ID>`. If the gate fails, nothing is
    ticked or committed. A session that's stuck runs `done --blocked "why"` instead.
 4. **End the session.** The session goes quiet at its prompt. The Stop hook's detached timer sees no new
-   transcript entries for `[run] idle` seconds (90) and ends it. If a human typed in the pane, or a usage
+   transcript entries for 5 s once `done` has succeeded, or `[run] idle` seconds (30) when it stopped without it, and ends it. If a human typed in the pane, or a usage
    limit is being waited out, the timer leaves the session alone. A session still running a background
    command (a `done` queued behind other test runs) is left alone until that command ends, up to 3 h.
    Whatever a session leaves uncommitted is saved on `wip/<ID>` (or `leftover/<ID>` when it has commits)
@@ -396,7 +396,7 @@ builds stay warm; at most `fix_ahead_max` at once, the others waiting a turn, an
 `refs/agent-runner/fixed/<ID>/<sha>`. Other tasks merge and gate meanwhile. The task then takes the lock with
 that merge, which goes in clean unless the shared branch touched the same lines again in the meantime: then
 it goes back out for another, smaller fix. Its third try fixes under the lock, in the merge worktree. Under tmux it is an interactive session in a window of its own, "master", so you can
-watch it or take it over by typing; its Stop hook ends it once it has been idle 90 s after its answer
+watch it or take it over by typing; its Stop hook ends it once it has been idle 30 s (`[run] idle`) after its answer
 (without tmux, where there is no window for it: `claude -p`). Its prompt (`FIXER` in `runner.py`) includes the tail of the ledger. It either
 commits the resolution or runs `git merge --abort` and states why; its output goes to
 `.runner/fixer.log`. It is capped at `[run] fix_timeout` (30 min); ahead of the lock that holds up only
@@ -635,7 +635,7 @@ agent = "claude"
 backend = ""              # claude or pi; empty detects pi from the agent executable's name
 model = "opus"
 lean = true               # sessions get Bash/Read/Edit/Write only, no MCP servers or user settings
-idle = 90                 # s quiet after finishing before a session is ended
+idle = 30                 # s quiet after a turn ends before a session without a successful `done` is ended (with one: 5 s)
 stall = 1200              # s quiet at a prompt that counts as stalled
 pause = 60                # s between one session ending and the next starting in that slot
 weekly_max = 90           # % of 7-day usage past which nothing new starts

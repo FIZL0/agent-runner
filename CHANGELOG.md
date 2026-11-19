@@ -2,6 +2,12 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
+## 0.46.1 (2026-11-19)
+
+- A session whose `done` succeeded is ended 5 s after its last turn, not `[run] idle` (90 s): the slot's next
+  task starts sooner. A session that stops without `done` still gets `[run] idle`, so a person can take it over,
+  and `idle` now defaults to 30 s (was 90).
+
 ## 0.46.0 (2026-11-19)
 
 - `agent-runner take ID`: one chosen task for a person's own session or a subagent, beside a run or without

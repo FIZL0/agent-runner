@@ -1483,7 +1483,7 @@ def test_stop_hook_grace(tmp: Path):
                 R.finished_mark().touch()
             sys.stdin = io.StringIO(json.dumps({'transcript_path': str(t), 'background_tasks': [{'id': 'b1'}]}))
             R.stop_hook(90)
-        eq(seen, ['1800', '90'], 'idle handed to the waiter: before done, after done')
+        eq(seen, ['1800', '5'], 'idle handed to the waiter: before done, and 5 s once done succeeded')
     finally:
         R.plat.spawn_detached, sys.stdin = spawn, stdin
         os.environ.pop('AGENT_RUNNER_SLOT', None)
