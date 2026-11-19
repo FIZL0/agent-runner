@@ -390,6 +390,7 @@ runner keys: type one in this pane and press Enter
     s!       stop now: end the agent sessions (each resumes where it was in the next run),
              finish the merges under way, then exit
     p        pause: no new tasks, and the run stays up
+    u        upgrade agent-runner now; the run restarts on the new version by itself
     f        force: start tasks past the session and weekly usage caps (as --force)
     +        one slot more
     -        one slot fewer (a running task in it finishes first)
@@ -435,6 +436,8 @@ def take_keys() -> None:
                 FORCED[0] = not FORCED[0]
                 log('forced: starting tasks past the usage caps (f again: undo)' if FORCED[0] else
                     'force taken back: the usage caps hold new tasks again')
+            elif k == 'u':
+                threading.Thread(target=upgrade, daemon=True).start()  # the loop restarts on what it installs
             elif k in ('+', '-'):
                 if k == '-' and SLOTS == 1:
                     log('one slot is the fewest; s stops the run')
@@ -4331,8 +4334,7 @@ def update_notice() -> None:
     except Exception:
         return
     if newer:
-        how = ('pipx upgrade agent-runner' if 'pipx' in sys.prefix else
-               'uv tool upgrade agent-runner' if f'{os.sep}uv{os.sep}' in sys.prefix else 'git pull')
+        how = ' '.join(upgrade_argv()[:3]) if upgrade_argv()[0] != 'git' else 'git pull'
         then = ('the run restarts on it by itself' if not plat.WINDOWS and not breaking(__version__, latest)
                 else 'then restart the run')
         log(f'agent-runner {latest} is out (this is {__version__}); upgrade with `{how}`, {then}')
@@ -4342,6 +4344,42 @@ def breaking(old: str, new: str) -> bool:
     """`new` is another major version. ponytail: a 0.x minor may break too (docs/SETUP.md#versions), but most
     are features and the rare breaking one ignores old keys; gate on its CHANGELOG entry if that bites."""
     return old.split('.')[0] != new.split('.')[0]
+
+
+def upgrade_argv() -> list[str]:
+    """The command that upgrades this install: pipx, uv tool, or a pull in the clone it runs from."""
+    if 'pipx' in sys.prefix:
+        return ['pipx', 'upgrade', 'agent-runner']
+    if f'{os.sep}uv{os.sep}' in sys.prefix:
+        return ['uv', 'tool', 'upgrade', 'agent-runner']
+    return ['git', '-C', str(Path(__file__).resolve().parents[1]), 'pull', '-q', '--ff-only']
+
+
+def installed_version() -> str | None:
+    """The version on disk under this process, which an upgrade changes and the running code does not."""
+    try:
+        return VERSION.search((Path(__file__).parent / '__init__.py').read_text(encoding='utf-8'))[1]
+    except (OSError, TypeError):
+        return None
+
+
+def upgrade() -> bool:
+    """`u` in the runner's pane, or `run --upgrade`: run `upgrade_argv`, logged. True when it worked."""
+    argv = upgrade_argv()
+    log(f'upgrading: {" ".join(argv)}')
+    try:
+        p = sp.run(argv, capture_output=True, text=True, timeout=300)
+    except (OSError, sp.TimeoutExpired) as e:
+        log(f'the upgrade failed: {e}')
+        return False
+    if p.returncode:
+        log(f'the upgrade failed (exit {p.returncode}): {(p.stderr or p.stdout).strip()[-300:]}')
+        return False
+    from agent_runner import __version__
+    new = installed_version()
+    log(f'upgraded to {new}; the run restarts on it' if new and new != __version__ else
+        f'already the latest ({__version__})')
+    return True
 
 
 _upgrade_seen: str | None = None
@@ -4357,11 +4395,8 @@ def restart_if_upgraded() -> None:
     never lands mid-install."""
     global _upgrade_seen
     from agent_runner import __version__
-    try:
-        new = VERSION.search((Path(__file__).parent / '__init__.py').read_text(encoding='utf-8'))[1]
-    except (OSError, TypeError):
-        return
-    if new == __version__ or plat.WINDOWS:
+    new = installed_version()
+    if not new or new == __version__ or plat.WINDOWS:
         return
     if breaking(__version__, new):
         if _upgrade_seen != new:
@@ -4714,6 +4749,7 @@ def run(argv: list[str], prog: str) -> int:
     power.add_argument('--suspend', action='store_true',
                        help='as --shutdown, but suspend (sleep) instead; on waking the run carries on, and '
                             'suspends again only after its next work')
+    ap.add_argument('--upgrade', action='store_true', help='upgrade agent-runner first, then run the new version')
     ap.add_argument('--idle', type=int, default=None, help='seconds of quiet before a session is ended')
     ap.add_argument('--stall', type=int, default=None, help='seconds of quiet that count as stalled')
     ap.add_argument('--pause', type=int, default=None, help='seconds between a session ending and the next')
@@ -4736,6 +4772,9 @@ def run(argv: list[str], prog: str) -> int:
         return slot_shim(a.slot_shim)
 
     init()
+    if a.upgrade and upgrade() and installed_version() != __import__('agent_runner').__version__ \
+            and not plat.WINDOWS:  # Windows has no real exec: the next start runs it
+        os.execv(sys.executable, [x for x in sys.orig_argv if x != '--upgrade'])
     r = C.run
     once = a.slots == 'once'
     global POWER

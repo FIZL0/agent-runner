@@ -2,6 +2,12 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
+## 0.45.0 (2026-11-19)
+
+- `u` in the runner's pane upgrades agent-runner (`uv tool upgrade`, `pipx upgrade`, or `git pull --ff-only` in
+  a clone); the run restarts on the new version as it does after any upgrade. `run --upgrade` upgrades first,
+  then starts on the new version.
+
 ## 0.44.0 (2026-11-19)
 
 - `f` in the runner's pane forces past the session and weekly usage caps, as `--force` does, without a

@@ -361,6 +361,7 @@ The other keys, listed by `?` + Enter (and printed when the run starts), ruled o
 | key | what it does |
 |---|---|
 | `p` | pause: no new tasks, and the run stays up; `p` again goes on |
+| `u` | upgrade agent-runner now (`uv tool upgrade`, `pipx upgrade`, or a pull in a clone); the run restarts on the new version as with any upgrade. `run --upgrade` upgrades before the run starts |
 | `f` | force: start tasks past the session and weekly usage caps, as `--force`; `f` again: the caps hold |
 | `+` / `-` | one slot more / fewer; a slot taken away finishes its running task first |
 | `z` | suspend the computer once the run stops, or when it goes idle as `--suspend` would; `z` again: off |

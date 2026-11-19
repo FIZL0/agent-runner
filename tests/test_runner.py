@@ -838,6 +838,19 @@ def test_prompt_and_hooks(repo: Path):
         R.KEYS.extend(['f'])
         R.take_keys()
         check(not R.FORCED[0], 'and `f` again takes it back')
+        from unittest import mock
+        ran, real = [], subprocess.run
+        fail = lambda argv, **k: (real(argv, **k) if argv != R.upgrade_argv() else
+                                  ran.append(argv) or subprocess.CompletedProcess(argv, 1, '', 'no network'))
+        with mock.patch.object(R.sp, 'run', fail):
+            R.KEYS.extend(['u'])
+            R.take_keys()
+            for _ in range(50):
+                if ran:
+                    break
+                time.sleep(0.1)
+            check(not R.upgrade(), 'a failed upgrade says so')
+        eq(ran, [R.upgrade_argv()] * 2, '`u` runs the upgrade command (and so does upgrade())')
         R.KEYS.extend(['x', 'p', 'x', '-', '-', '-'])
         R.take_keys()
         check(not R.PAUSED[0] and R.POWER == '' and R.SLOTS == 1,
