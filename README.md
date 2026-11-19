@@ -92,8 +92,10 @@ main moves and is pushed; the slot picks its next task
    waits: whatever you add to TODO.md later starts without a restart.
 
 **Stopping.** Type `s` + Enter in the runner's pane, or run `agent-runner stop`. Nothing new starts; the
-running tasks finish and merge, then the run exits (`s` again takes it back). To leave the machine to it,
-start the run with `--shutdown` to power off, or `--suspend` to sleep, once the work runs out.
+running tasks finish and merge, then the run exits (`s` again takes it back). `s!` (`stop --force`) ends the
+sessions now instead, each to resume in the next run. `p` pauses, `+`/`-` change the slot count, and `z` or
+`x` suspend or shut the computer down once the run stops (or goes idle); `?` lists the keys. To leave the
+machine to it from the start, run with `--shutdown` or `--suspend`.
 
 ## The task list
 

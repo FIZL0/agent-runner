@@ -352,8 +352,25 @@ nothing new starts, the running tasks finish and merge, and then the run logs `r
 `run stopped (./run stop)`) and exits with 0. Typing `s` again before then takes the stop back, and tasks
 start again.
 
-Both write `.runner/STOP` (with who asked), and the loop checks that file on every pass, so `s` can take
-back a `agent-runner stop` and the reverse. A daemon thread reads the runner's terminal (it works on Windows
+`s!` + Enter (or `agent-runner stop --force`) stops now: every agent session is ended and queued to resume
+in its slot when a run next starts (its worktree stays as it was, nothing of it is merged); the merges
+already under way finish, then the run exits.
+
+The other keys, listed by `?` + Enter (and printed when the run starts), ruled off from the log:
+
+| key | what it does |
+|---|---|
+| `p` | pause: no new tasks, and the run stays up; `p` again goes on |
+| `+` / `-` | one slot more / fewer; a slot taken away finishes its running task first |
+| `z` | suspend the computer once the run stops, or when it goes idle as `--suspend` would; `z` again: off |
+| `x` | the same, shutting down (`--shutdown`); `x` again: off |
+
+After a stop, power goes off at once, with no idle grace. `agent-runner stop --suspend` (or `--shutdown`) does
+the same from outside the pane, through `.runner/POWER`. A line the runner does not know is echoed back with
+the key list. Each key is acted on as it is typed; ending sessions and adding a slot wake the loop at once.
+
+Both write `.runner/STOP` (with who asked; `.runner/STOP.force` for a stop now), and the loop checks that
+file on every pass, so `s` can take back a `agent-runner stop` and the reverse. A daemon thread reads the runner's terminal (it works on Windows
 consoles too) and only starts when stdin is a terminal. The sequential run has no `s` key, because its
 agent session reads the same terminal; use `agent-runner stop` there, which takes effect between tasks. A STOP
 file left behind by a run that was killed is cleared when the next run starts.
@@ -537,7 +554,9 @@ the running tasks merge. A run left up keeps picking up whatever you commit to T
 agent-runner plan [...]                the task list as a tool (agent-runner plan help)
 agent-runner done ID "MSG" [--blocked WHY [--after X,Y]] [--no-test]
 agent-runner run [N|once] [--dry-run] [--no-tmux] [--mux tmux|wt|console|none] [--model M] [--idle S] [--stall S] [--pause S] [--force] [--shutdown|--suspend]
-agent-runner stop                      finish what's running, start nothing new, exit (or s + Enter in the runner's pane)
+agent-runner stop [--force] [--suspend|--shutdown]
+                                       finish what's running, start nothing new, exit (or s + Enter in the
+                                       runner's pane); --force ends the sessions now, to resume next run
 agent-runner resume ID...              continue each task's last session in its slot, once that slot is free
 agent-runner cost [--days N]           where the workers' tokens went, by kind of tool call
 agent-runner home [slots|plan]         where this project's worktrees and plan clone live

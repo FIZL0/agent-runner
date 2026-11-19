@@ -12,7 +12,8 @@ next task.
     ./run run 1               one agent, in a worktree and a pane like any count (no tmux: in this checkout)
     ./run run --dry-run 4     print what 4 free slots would start now, and start nothing
     ./run stop                finish what is running, start nothing new, then exit (or type s + Enter
-                              in the runner's pane; s again takes it back)
+                              in the runner's pane; ? + Enter there lists every key)
+    ./run stop --force        end the sessions now (each resumes in the next run), then exit
     (every form but `once` stays up when the work runs out: it logs `run idle` and waits for more)
 
 docs/REFERENCE.md describes each mechanism. In short:
@@ -311,9 +312,22 @@ def stopping() -> bool:
     return C.notes('STOP').exists()
 
 
-def ask_stop(how: str) -> None:
-    """The one stop mechanism: the STOP file, saying who asked. `./run stop` and `s` + Enter both write it."""
+def forced() -> bool:
+    """`s!` or `./run stop --force`: the agent sessions are ended now, each queued to resume in the next run."""
+    return C.notes('STOP.force').exists()
+
+
+def ask_stop(how: str, force: bool = False) -> None:
+    """The one stop mechanism: the STOP file, saying who asked (and STOP.force for a stop now). `./run stop`
+    and `s` + Enter both write it."""
     C.notes('STOP').write_text(f'{dt.datetime.now().isoformat(timespec="seconds")} {how}\n', encoding='utf-8')
+    if force:
+        C.notes('STOP.force').touch()
+
+
+def clear_stop() -> None:
+    C.notes('STOP').unlink(missing_ok=True)
+    C.notes('STOP.force').unlink(missing_ok=True)
 
 
 def stopped_by() -> str:
@@ -324,30 +338,137 @@ def stopped_by() -> str:
 
 
 KEYS: list[str] = []  # lines typed into the runner's pane
+KEYS_LOCK = threading.Lock()  # the reader thread and the loop both take keys
+WAKE = threading.Event()  # set by a key, so the loop acts on it now instead of after its 10 s nap
+READING = [False]  # the reader thread is up: the loop naps on WAKE
+PAUSED = [False]  # `p`: no new tasks, and the run stays up
+
+
+def nap(s: float) -> None:
+    if READING[0]:
+        WAKE.wait(s)
+        WAKE.clear()
+    else:
+        time.sleep(s)
 
 
 def read_keys() -> None:
-    """A daemon thread's loop: every line typed into the runner's pane goes on KEYS for the loop to read.
+    """A daemon thread's loop: every line typed into the runner's pane is acted on at once (`take_keys`), and
+    the loop is woken for what only it can do (ending sessions, a new slot).
 
     A thread rather than select() on stdin, which only works on POSIX. Started only when stdin is a tty, and
     never by the sequential run, whose agent session reads the same terminal.
     """
     for line in sys.stdin:
         KEYS.append(line.strip().lower())
+        take_keys()
+        WAKE.set()
+
+
+def state_line() -> str:
+    """What the keys have set, for `?` and after each key."""
+    what = [f'{SLOTS} slot{"s" if SLOTS != 1 else ""}']
+    if stopping():
+        what.append('stopping now (s!)' if forced() else f'stopping ({stopped_by()})')
+    if PAUSED[0]:
+        what.append('paused')
+    if POWER:
+        what.append(f'{POWER} when ' + ('it stops' if stopping() else 'idle'))
+    return ', '.join(what)
+
+
+def keys_help() -> str:
+    """The `?` block, shaped like `agent-runner help`, ruled off so it stands out from the log."""
+    rule = '-' * 78
+    return f"""{rule}
+runner keys: type one in this pane and press Enter
+
+    s        stop gently: no new tasks, the running ones finish and merge, then the run exits
+    s!       stop now: end the agent sessions (each resumes where it was in the next run),
+             finish the merges under way, then exit
+    p        pause: no new tasks, and the run stays up
+    +        one slot more
+    -        one slot fewer (a running task in it finishes first)
+    z        suspend the computer once the run stops, or when it goes idle
+    x        shut the computer down once the run stops, or when it goes idle
+    ?        this help
+
+    s, p, z and x take themselves back when typed again.
+    Ctrl-C ends the runner only: sessions keep running, and the next run adopts them.
+
+now: {state_line()}
+{rule}"""
 
 
 def take_keys() -> None:
-    """`s` + Enter toggles the stop, as opentennis's parallel runner does: nothing new starts, the running
-    tasks finish and merge, then the run ends. `s` again takes it back. Ctrl-C cuts sessions off mid-task."""
-    while KEYS:
-        if KEYS.pop(0) != 's':
-            continue
-        if stopping():
-            C.notes('STOP').unlink(missing_ok=True)
-            log('stop taken back: starting tasks again')
-        else:
-            ask_stop('s')
-            log('stopping: no new tasks; the running ones finish and merge, then the run ends (s again: undo)')
+    """Act on the lines typed into the runner's pane (see `keys_help`), and on a power choice `./run stop
+    --suspend|--shutdown` left. Logged at once; ending sessions and adding a slot happen on the loop's next
+    pass, which a key wakes."""
+    global POWER, SLOTS
+    with KEYS_LOCK:
+        if (f := C.notes('POWER')).exists():
+            POWER = f.read_text(encoding='utf-8').strip()
+            f.unlink(missing_ok=True)
+        while KEYS:
+            k = KEYS.pop(0)
+            if not k:
+                continue
+            if k == 's' and stopping():
+                clear_stop()
+                log('stop taken back: starting tasks again')
+            elif k == 's':
+                ask_stop('s')
+                log('stopping: no new tasks; the running ones finish and merge, then the run ends (s again: undo)')
+            elif k == 's!':
+                ask_stop('s!', force=True)
+                log('stopping now: ending the agent sessions (each resumes in the next run); the merges under way '
+                    'finish, then the run ends')
+            elif k == 'p':
+                PAUSED[0] = not PAUSED[0]
+                log('paused: no new tasks; the run stays up (p again: go on)' if PAUSED[0] else
+                    'pause taken back: starting tasks again')
+            elif k in ('+', '-'):
+                if k == '-' and SLOTS == 1:
+                    log('one slot is the fewest; s stops the run')
+                    continue
+                SLOTS += 1 if k == '+' else -1
+                log(f'slots: {SLOTS}' + (f' (slot {SLOTS + 1} closes once its task ends)' if k == '-' else ''))
+            elif k in ('z', 'x'):
+                want = 'suspend' if k == 'z' else 'shutdown'
+                POWER = '' if POWER == want else want
+                log(f'{want} once the run stops, or when it goes idle ({k} again: undo)' if POWER else
+                    f'{want} taken back: the computer stays on')
+            elif k in ('?', 'h', 'help'):
+                print(keys_help(), flush=True)
+            else:
+                print(f'unknown key {k!r}\n{keys_help()}', flush=True)
+
+
+def kept_keys() -> dict:
+    """What the run before an upgrade restart had set with its keys (`restart_if_upgraded`), once."""
+    try:
+        return json.loads(os.environ.pop('AGENT_RUNNER_KEEP', '') or '{}')
+    except ValueError:
+        return {}
+
+
+def end_sessions(procs: dict, running: dict) -> None:
+    """`s!`: end every agent session now, each queued to resume in its slot when a run next starts. Its
+    worktree stays as the session left it; nothing it did is merged."""
+    for n, (pid, sid, _) in list(procs.items()):
+        tid = running[n][0]
+        queue_resume(tid, n, sid, 'stopped with s!')
+        plat.terminate(pid)
+        log(f'slot {n}: {tid} ended (s!); it resumes in this slot in the next run')
+    procs.clear()
+    running.clear()
+
+
+def power_now() -> None:
+    """After a stop, with `z`, `x`, --suspend or --shutdown: suspend or power off now, no idle grace."""
+    log(f'run stopped: {"suspending" if POWER == "suspend" else "shutting down"} the computer')
+    if rc := (plat.suspend if POWER == 'suspend' else plat.power_off)():
+        log(f'the {POWER} command failed (exit {rc})')
 
 
 # --- picking the next task -----------------------------------------------------
@@ -4243,8 +4364,11 @@ def restart_if_upgraded() -> None:
     if _upgrade_seen != new:
         _upgrade_seen = new  # once more next tick, then restart
         return
-    log(f'agent-runner {new} is installed (this run is {__version__}); restarting on it')
+    log(f'agent-runner {new} is installed (this run is {__version__}); restarting on it, keeping {state_line()}')
     sys.stdout.flush()
+    # what the keys set lives in this process: the new one takes it over (see `kept_keys`)
+    os.environ['AGENT_RUNNER_KEEP'] = json.dumps({'slots': SLOTS, 'paused': PAUSED[0], 'power': POWER,
+                                                  'stop': stopping()})
     os.execv(sys.executable, sys.orig_argv)  # run.lock's fd closes on exec; the new process takes it again
 
 
@@ -4462,8 +4586,12 @@ def sequential(branch: str, model: str, idle: int, pause: int, force: bool, once
             log(f'{tid}: done (once)')
             return 0
         time.sleep(pause)
-    C.notes('STOP').unlink(missing_ok=True)
+    asked = stopping()
+    clear_stop()
+    take_keys()  # no keys here, but `./run stop --suspend|--shutdown` leaves its choice the same way
     log('sequential run done: ' + ('nothing it may start (once)' if once else 'stop asked for'))
+    if asked and POWER:
+        power_now()
     return 0
 
 
@@ -4610,6 +4738,9 @@ def run(argv: list[str], prog: str) -> int:
         ap.error(f"slots must be a number or 'once', not {a.slots!r}")
     global SLOTS
     SLOTS = slots
+    if keep := kept_keys():  # restarted on an upgrade: the slot count, pause, power and stop typed before it hold
+        SLOTS = slots = keep['slots']
+        POWER, PAUSED[0] = keep['power'], keep['paused']
     idle, stall, pause = a.idle or r['idle'], a.stall or r['stall'], a.pause or r['pause']
     model = a.model or r['model']
 
@@ -4624,9 +4755,10 @@ def run(argv: list[str], prog: str) -> int:
     if copilot():
         copilot_trust(ROOT, SLOTS_DIR)
     ensure_local(ROOT)  # this machine's runner.local.toml: made once (all comments), never rewritten, git-ignored
-    if stopping():  # left by a run that was killed before it saw it; a stop is for the run that is up
-        C.notes('STOP').unlink(missing_ok=True)
+    if stopping() and not keep.get('stop'):  # left by a run killed before it saw it; a stop is for the run that is up
+        clear_stop()
         log('cleared a stop request left by an earlier run')
+    C.notes('POWER').unlink(missing_ok=True)
     want = 'none' if a.no_tmux else (a.mux or r['mux'])
     choice = plat.mux_choice(want, shutil.which('tmux') is not None, shutil.which('wt.exe') is not None)
     if choice == 'sequential':
@@ -4657,8 +4789,9 @@ def run(argv: list[str], prog: str) -> int:
     if Path('/proc/meminfo').exists() and (r['proc_max_gb'] or r['min_free_mem_gb']):
         threading.Thread(target=memory_watch, daemon=True).start()
     if sys.stdin.isatty():
+        READING[0] = True
         threading.Thread(target=read_keys, daemon=True).start()
-        log('type s + Enter here to stop gently (the running tasks finish and merge first); s again: undo')
+        print(keys_help(), flush=True)
     running: dict[int, tuple] = {}
     procs: dict[int, tuple] = {}
     tried: set[str] = set()
@@ -4702,6 +4835,13 @@ def run(argv: list[str], prog: str) -> int:
 
     while True:
         sweep_tmp()
+        take_keys()
+        if SLOTS != slots:  # `+` or `-`: a slot past the count is watched to its end, never refilled
+            slots = SLOTS
+            for m in range(1, slots + 1):
+                free_at.setdefault(m, dt.datetime.min)
+        if forced() and procs:
+            end_sessions(procs, running)
         waiting = {n: q for n, q in queued().items() if n in free_at and n <= slots}
         tagged = None  # MUX.panes(), looked at once a tick and only for a free slot
         for n in list(free_at):
@@ -4779,7 +4919,7 @@ def run(argv: list[str], prog: str) -> int:
                     free_at.pop(n)
                     drop_extra_slots(slots, set(procs) | set(queued()) | set(foreign))
                 continue
-            if n not in procs and n in waiting:  # a running task, not a new one: no stop or usage cap holds it
+            if n not in procs and n in waiting and not forced():  # a running task, not a new one: no stop or usage cap holds it
                 if api_down(stall_said):
                     continue
                 tid, sid, why = waiting.pop(n)
@@ -4794,9 +4934,11 @@ def run(argv: list[str], prog: str) -> int:
                 if not stopping():
                     stop_said = False  # taken back (s again, or the STOP file removed)
                 else:
-                    if not stop_said:
+                    if not stop_said and stopped_by() not in ('s', 's!'):  # a key logged its own
                         log('stop asked for: no new tasks; exiting once the running ones are merged')
-                        stop_said = True
+                    stop_said = True
+                    continue
+                if PAUSED[0]:
                     continue
                 if (w := capped(a.force)) is not None:
                     if not cap_said:
@@ -4851,10 +4993,12 @@ def run(argv: list[str], prog: str) -> int:
         take_keys()
         waiting = {n: q for n, q in queued().items() if n in free_at and n <= slots}  # an exit may have queued one
         # a slot asleep until a usage reset does not hold the stop; a session waiting to resume does
-        if stopping() and not procs and not waiting and not merging:
+        if stopping() and not procs and (not waiting or forced()) and not merging:
             how = stopped_by()
-            C.notes('STOP').unlink(missing_ok=True)
+            clear_stop()
             log(f'run stopped ({how}); tried this run: {", ".join(sorted(tried)) or "none"}')
+            if POWER:
+                power_now()
             return 0
         quiet = not procs and not waiting and not merging and all(dt.datetime.now() >= t for t in free_at.values())
         # Idle, never exit: tasks a human or a session commits later start without anyone restarting the
@@ -4862,8 +5006,8 @@ def run(argv: list[str], prog: str) -> int:
         # behind. A script waiting on the run
         # watches run.log for `run idle`; the process itself ends only on Ctrl-C or `./run stop`.
         # one pick, and only when its answer is needed: to end `once`, to say idle, or to power off
-        if quiet and (once and not stopping() or not idle_said
-                      or power_due(idle_at)) and not pick(running, tried, branch):
+        if quiet and not PAUSED[0] and (once and not stopping() or not idle_said
+                                        or power_due(idle_at)) and not pick(running, tried, branch):
             if once and not stopping():
                 log('run done: nothing it may start (once)')
                 return 0
@@ -4873,7 +5017,7 @@ def run(argv: list[str], prog: str) -> int:
                 idle_said, idle_at = True, time.time()
             if shut_down(idle_at):
                 return 0
-        time.sleep(10)
+        nap(10)
 
 
 def cmd_resume(argv: list[str], prog: str = f'{RUNNER} resume') -> int:
@@ -4908,9 +5052,19 @@ def cmd_resume(argv: list[str], prog: str = f'{RUNNER} resume') -> int:
 
 def cmd_stop(argv: list[str], prog: str = f'{RUNNER} stop') -> int:
     """`./run stop`: the running sessions finish and merge, nothing new starts, and the run exits."""
-    argparse.ArgumentParser(prog=prog, description='Finish the running tasks, start nothing new, then exit.'
-                            ).parse_args(argv)
+    ap = argparse.ArgumentParser(prog=prog, description='Finish the running tasks, start nothing new, then exit.')
+    ap.add_argument('--force', action='store_true',
+                    help='end the agent sessions now (each resumes in the next run), as s! in the pane')
+    power = ap.add_mutually_exclusive_group()
+    power.add_argument('--suspend', action='store_true', help='then suspend the computer')
+    power.add_argument('--shutdown', action='store_true', help='then shut the computer down')
+    a = ap.parse_args(argv)
     init()
-    ask_stop(f'{C.command} stop')
-    print(f'asked the run to stop ({C.notes("STOP")}); it exits once the running tasks are merged')
+    if a.suspend or a.shutdown:
+        C.notes('POWER').write_text('suspend' if a.suspend else 'shutdown', encoding='utf-8')
+    ask_stop(f'{C.command} stop' + (' --force' if a.force else ''), force=a.force)
+    print(f'asked the run to stop ({C.notes("STOP")}); it exits once '
+          + ('its sessions are ended and the merges under way are done' if a.force else
+             'the running tasks are merged')
+          + (f', then {"suspends" if a.suspend else "shuts down"} the computer' if a.suspend or a.shutdown else ''))
     return 0

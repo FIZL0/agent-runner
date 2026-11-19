@@ -12,6 +12,8 @@ Run the agents
     agent-runner run 3                3 agents at once
     agent-runner run --dry-run 3      show what 3 agents would start now, start nothing
     agent-runner stop                 let running tasks finish, start no new ones
+    agent-runner stop --force         end the sessions now; each resumes in the next run
+    agent-runner stop --shutdown      stop, then shut the computer down (--suspend: sleep)
     agent-runner resume B646          continue B646's last session, cut off by a dropped network or a reboot
 
 See and change the task list

@@ -2,6 +2,16 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
+## 0.43.0 (2026-11-18)
+
+- More keys in the runner's pane, listed in a ruled-off block when the run starts and on `?` + Enter:
+  `s!` stops now (ends the agent sessions, each queued to resume in its slot next run, then exits once the
+  merges under way finish), `p` pauses without exiting, `+`/`-` add or take away a slot, and `z`/`x` suspend or
+  shut the computer down once the run stops (or goes idle). A line it does not know is echoed back with the list.
+- `stop` takes `--force`, `--suspend` and `--shutdown`, the same as `s!`, `z` and `x`.
+- A key is acted on and logged the moment it is typed: `stopping` no longer waits up to a loop pass.
+- A restart on an upgrade keeps what the keys set: the slot count, a pause, a suspend or shutdown, and a stop.
+
 ## 0.42.1 (2026-11-18)
 
 - Agents are told to edit files with their editing tool, not `sed -i`, `perl -i` or a script in a heredoc, and

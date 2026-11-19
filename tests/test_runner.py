@@ -812,11 +812,52 @@ def test_prompt_and_hooks(repo: Path):
     R.KEYS.extend(['s'])
     R.take_keys()
     check(not R.stopping(), '`s` in the runner\'s pane takes a stop back')
-    R.KEYS.extend(['', 'x', 's'])
+    R.KEYS.extend(['', 's'])
     R.take_keys()
     check(R.stopping() and R.stopped_by() == 's', 'and `s` again asks for one, through the same STOP file')
     check(not R.KEYS, 'every line typed is read')
-    (repo / '.runner/STOP').unlink()
+    R.clear_stop()
+
+    import contextlib
+    import io
+    saved = R.POWER, R.SLOTS
+    try:
+        R.POWER, R.SLOTS = '', 2
+        R.KEYS.extend(['s!'])
+        R.take_keys()
+        check(R.stopping() and R.forced(), '`s!` asks for a stop now')
+        R.KEYS.extend(['s'])
+        R.take_keys()
+        check(not R.stopping() and not R.forced(), 'and `s` takes it back, force and all')
+        R.KEYS.extend(['p', '+', '+', '-', 'z'])
+        R.take_keys()
+        check(R.PAUSED[0] and R.SLOTS == 3 and R.POWER == 'suspend', '`p` pauses, `+`/`-` change slots, `z` suspends')
+        R.KEYS.extend(['x', 'p', 'x', '-', '-', '-'])
+        R.take_keys()
+        check(not R.PAUSED[0] and R.POWER == '' and R.SLOTS == 1,
+              '`x` switches to shutdown and back off, `p` again unpauses, slots never go below 1')
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            R.KEYS.extend(['?', 'frob'])
+            R.take_keys()
+        text = out.getvalue()
+        check(text.count('-' * 78) == 4 and 's!' in text and 'now: 1 slot' in text,
+              '`?` prints the ruled-off key list with the current state')
+        check("unknown key 'frob'" in text, 'an unknown line says so, then shows the keys')
+        run(repo, 'stop', '--force', '--shutdown')
+        R.take_keys()
+        check(R.forced() and R.POWER == 'shutdown' and not (repo / '.runner/POWER').exists(),
+              '`stop --force --shutdown` reaches the run through the same files')
+        R.clear_stop()
+        p = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'])
+        procs, running = {2: (p.pid, 'sid-x', 0.0)}, {2: ('T9', '', set(), set())}
+        R.end_sessions(procs, running)
+        check(p.wait(timeout=10) is not None and not procs and not running, '`s!` ends the session')
+        eq(R.queued().get(2), ('T9', 'sid-x', 'stopped with s!'), 'and queues it to resume in its slot')
+        (repo / '.runner/T9.resume').unlink()
+    finally:
+        R.POWER, R.SLOTS = saved
+        R.PAUSED[0] = False
 
 
 def test_hooks(repo: Path, tmp: Path):
@@ -2443,6 +2484,9 @@ def test_restart_if_upgraded():
                         R.restart_if_upgraded()
                 eq(len(execs), want, f'restart on {installed}')
         eq(sum('breaking' in s for s in said), 1, 'a breaking version is said once')
+        eq(R.kept_keys(), {'slots': R.SLOTS, 'paused': False, 'power': R.POWER, 'stop': R.stopping()},
+           'the restart hands the new process what the keys set: slots, pause, power, stop')
+        eq(R.kept_keys(), {}, 'once')
     finally:
         R.log, R._upgrade_seen = real_log, None
 
