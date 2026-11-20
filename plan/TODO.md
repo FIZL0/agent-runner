@@ -2,6 +2,7 @@
 
 ### Next
 
+- [ ] **C11** After the split: one request(kind, payload) -> answer helper for the CLI-to-run file channels (halt_* and tell_* are the same <dir>/<ID>.json -> <ID>.done protocol written twice, plus KEYS and POWER files; plan.halt/plan.tell too). STOP and STOP.force stay as plain files (scripts and tests touch them). Check: halt/tell/keys tests pass unchanged. (Fable audit A15) | files: agent_runner/state.py, agent_runner/loop.py, agent_runner/plan.py, tests/test_loop.py, tests/test_plan.py | after: C3
 - [ ] **C10** After the split: split pick() into pick and explain (the --dry-run reasons, now five 'if why is not None' branches), with block_parked done by the caller, not inside the pick. Check: sched and dry-run tests pass unchanged. (Fable audit A9) | files: agent_runner/sched.py, tests/test_sched.py | after: C3
 - [ ] **C9** After the split: turn run()'s 14 local state variables (procs, running, tried, free_at, merging, …) into a Run object with one method per loop step; behaviour unchanged. Check: loop tests pass unchanged. (Fable audit A12) | files: agent_runner/loop.py, tests/test_loop.py | after: C3
 - [ ] **C8** After the split: break merge_batch (174 lines, 76 branches) into build, test and land steps in the merge module; behaviour unchanged. Check: merge tests pass unchanged plus a unit test per step. (Fable audit A8) | files: agent_runner/merge.py, tests/test_merge.py | after: C3
