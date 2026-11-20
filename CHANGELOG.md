@@ -17,6 +17,15 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
   settings: `control_close`, `control_idle` (1h), `control_ask_idle` (2h), `control_open`,
   `control_file_asks` and `control_ask_kind`.
 
+- Wizards for hand steps: a slot agent that blocks with `BLOCKED:` on steps only a person can take (a login,
+  a signing cert, a secret, a dashboard click) is told to also write a bash wizard to
+  `<notes>/wizards/<ID>.sh`, from the vendored `agent_runner/wizard_template.sh` (mattpocock/skills, MIT):
+  one stage per step, URLs opened, hidden entry for secrets, `.env` / `gh secret` writes, a confirm before
+  anything irreversible, checked with `bash -n`. Needs you shows `run: agent-runner wizard <ID>` under the
+  item; `agent-runner wizard <ID>` checks the script, runs it in the main checkout, and confirms the item
+  (`plan confirm`) when it ends well (`--check`: parse only; `--path`: where it is). New `[run] wizards`
+  (default true).
+
 - Control sessions opened with an ask are named after it in the Claude apps' session list: `control --new
   --ask TEXT` is "<repo> · N · <first words of TEXT>" (up to 5 words, about 40 characters; "screenshot" for
   an image-only ask) instead of "<repo> · control N", on Remote Control and as its tmux window. N stays, so

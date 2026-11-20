@@ -220,6 +220,12 @@ where the remaining tokens go, by kind of tool call.
   every session loads against a 12 KB budget (`[plan] context_kb`).
 - **Order only what must be ordered.** An *in this order* section runs one task at a time; a plain
   section starts tasks side by side whenever their files don't overlap.
+- **Hand steps come as a wizard.** When an agent blocks on something only you can do (a login, a signing
+  certificate, a secret, a dashboard click), it also writes a step-by-step bash wizard, and `status` shows
+  `run: agent-runner wizard <ID>` under the item. The wizard opens each page, takes secrets with hidden
+  entry, writes `.env` or `gh secret`, asks before anything irreversible, and confirms the item when it
+  ends. Its template comes from [mattpocock/skills](https://github.com/mattpocock/skills/tree/main/skills/engineering/wizard)
+  (MIT). `[run] wizards = false` turns it off.
 - **Start small.** `once`, then 2 or 3 slots. More only helps when the plan has that many tasks on
   different files, and usage limits are per account: five slots spend them five times as fast.
 
