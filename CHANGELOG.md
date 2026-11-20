@@ -4,6 +4,13 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- `plan edit ID "TEXT"` corrects a task in place: TEXT replaces its whole description, appended notes included,
+  so a corrected instruction no longer sits after the stale one; the id, checkbox, BLOCKED text, follow-up tag
+  and `| files:`/`after:`/… fields stay. `--files`, `--after`, `--test`, `--journal` change those fields, and
+  `--pri` retags the task and moves it where `add` files that level. It commits as `plan: edit ID`, goes back
+  in the pool like a noted task, and a slot running it is told "Your task changed" as on `plan change`.
+  Control sessions use it to correct a task and `plan note` only for extra detail (F45).
+
 - `agent-runner --help` puts what a person types first (start, attach, control, status, since, pause, stop,
   slots, wizard, guide, plan) and the rest under "Mostly for agents (you can run these too)", one short line
   each. Bare `agent-runner wizard` runs the one waiting wizard, lists them when several wait, or says there

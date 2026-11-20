@@ -25,6 +25,11 @@ re-reads it on every turn pays again. So the backlog is a command instead:
                                  and fields kept, "dropped: WHY" removed; WHERE as `move` (default: top)
     ./run plan kinds             what each id letter means ([plan] kinds): an id's prefix says the kind of work
     ./run plan note <ID> TEXT    append " — TEXT" to the task (user details, priority reasons)
+    ./run plan edit <ID> [TEXT] [--files A,B] [--after X,Y] [--test T] [--journal D] [--pri LEVEL]
+                                 rewrite the task in place: TEXT replaces its whole description, notes included;
+                                 id, checkbox, BLOCKED, tag and fields kept, but each flag replaces its field and
+                                 --pri retags it and moves it as `add` files that level. A corrected instruction
+                                 goes here, not in a note. A slot running it is told "Your task changed: …"
     ./run plan goal [TEXT]       print the `Goal:` paragraph above TODO.md's first heading; with TEXT replace it
                                  (title, fields-format line, other paragraphs, headings and tasks untouched)
     ./run plan newid PREFIX      the next free id, e.g. L -> L7; a task's id gives its next subtask, L3 -> L3a
@@ -129,7 +134,7 @@ __all__ = ['PROG', 'HELP', 'lines', 'index', 'section', 'ensure', 'archive', 'ti
            'unblock', 'move', 'next_id', 'add', 'similar', 'note', 'drop', 'next_task', 'files_on_line', 'fields', 'overlap', 'brief', 'open_ids',
            'write_atomic', 'child', 'subtasks', 'main', 'PRI', 'kinds', 'check_kind',
            'concept', 'concept_done', 'waiting', 'approve', 'revise',
-           'asking', 'asks', 'confirm', 'change', 'shelve', 'unshelve']
+           'asking', 'asks', 'confirm', 'change', 'shelve', 'unshelve', 'edit']
 
 ITEM = re.compile(r'^(\s*)- \[(.)\] \*\*([^\s*]+)')
 HEAD = re.compile(r'(#+) ')
@@ -887,6 +892,44 @@ def note(tid: str, text: str, todo=None) -> None:
     i = _find(ls, tid)
     ls[i + len(_item_block(ls, i)) - 1] += f' — {text}'
     _write(todo, ls)
+
+
+def edit(tid: str, text: str = '', keyed: str = '', pri: str | None = None, todo=None) -> str:
+    """F45: rewrite a task in place. `text` replaces its whole description, notes (` — …`) included, so a
+    corrected instruction does not sit after the stale one; '' keeps them. The id, the checkbox, the
+    `BLOCKED: …` tail, the `(follow-up, LEVEL)` tag and the keyed fields stay, except that fields given in
+    `text` or in `keyed` (` | files: a | after: X`, as `add_args` builds it) replace those keys. With `pri` the
+    tag becomes that level and the line moves where `add` files that level. Returns the new first line."""
+    if pri is not None and pri not in PRI:
+        raise SystemExit(f'{PROG}: --pri must be one of {" | ".join(PRI)}, not {pri!r}')
+    todo, _ = ensure(todo)
+    ls = list(lines(todo))
+    i = _find(ls, tid)
+    first = ls[i]
+    m = re.match(r'^(\s*- \[.\] \*\*[^*]+\*\*)\s*', first)
+    head, rest = m.group(1), first[m.end():]
+    body = _unblocked(rest)
+    tail = rest[len(body):]  # ` BLOCKED: …` with whatever followed it
+    old = dict(FIELD.findall(body))
+    tag = PRI_TAG.search(body)
+    tag = f'(follow-up, {pri})' if pri else (tag.group(0) if tag else '')
+    if text.strip():
+        desc = prose(text).strip()
+        new = dict(FIELD.findall(text))
+    else:
+        desc, new = ' '.join(PRI_TAG.sub('', prose(body)).split()), {}
+    vals = {**old, **new, **dict(FIELD.findall(keyed))}
+    fieldtext = ''.join(f' | {k}: {vals[k]}' for k in KEYS if k in vals)
+    line = ' '.join(x for x in (head, tag, desc) if x) + fieldtext + tail
+    if not pri:
+        ls[i] = line
+    else:  # moved like `add` files that level
+        blk = [line] + _item_block(ls, i)[1:]
+        del ls[i:i + len(blk)]
+        j = _place_pri(ls, pri)
+        ls[j:j] = blk
+    _write(todo, ls)
+    return line
 
 
 # --- the goal paragraph (F24) ------------------------------------------------------------------------------
@@ -1895,7 +1938,7 @@ def _commit(root: Path, paths: list[Path], msg: str) -> None:
 
 
 EDITS = ('tick', 'block', 'reopen', 'unblock', 'move', 'add', 'note', 'archive', 'drop', 'approve', 'revise',
-         'confirm', 'change', 'shelve', 'unshelve', 'restore')
+         'confirm', 'change', 'shelve', 'unshelve', 'restore', 'edit')
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -1919,6 +1962,11 @@ def main(argv: list[str] | None = None) -> int:
         with plansync.locked(c):  # a read pulls too, so it sees other people's edits
             plansync.pull(c, force=bool(edit))
             rc = _main(argv, c)
+    if not rc and argv[0] == 'edit' and len(argv) > 2:  # F45: a slot running it hears of it, as on a change
+        text = add_args(argv[2:])[0].strip()
+        if not text:
+            return rc  # only fields changed: nothing to tell the agent
+        argv = ['change', argv[1], f'its description is now: {text}']
     if not rc and argv[0] in ('drop', 'change') and len(argv) > 2:
         # B19: outside the lock, so the run can read the plan while it stops and restarts the slot
         if argv[0] == 'change' and not restart:  # F16: tell the agent instead of stopping it
@@ -2057,6 +2105,21 @@ def _main(argv: list[str], c) -> int:
     if argv[:1] == ['note'] and len(argv) > 2:
         note(argv[1], ' '.join(argv[2:]))
         return say(f'noted {argv[1]}')
+    if argv[:1] == ['edit'] and len(argv) > 2:
+        if refused := [a for a in argv[2:] if a in ('@', '--last', '--force')]:
+            print(f'{PROG}: edit takes no {refused[0]} (`{PROG} move ID WHERE` moves a task)', file=sys.stderr)
+            return 2
+        try:
+            text, _, keyed, pri, _ = add_args(argv[2:])
+        except SystemExit as e:
+            print(str(e).replace('not added', 'not edited'), file=sys.stderr)
+            return 2
+        if not (text.strip() or keyed or pri):
+            print(f'{PROG} edit <ID> "new text" [--files A,B] [--after X,Y] [--test T] [--journal D] [--pri LEVEL]',
+                  file=sys.stderr)
+            return 2
+        edit(argv[1], text, keyed, pri or None)
+        return say(f'edited {argv[1]}')
     if argv[:1] == ['goal']:
         if len(argv) == 1:
             if not (got := goal()):

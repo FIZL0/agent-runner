@@ -36,8 +36,11 @@ AGENT_RUNNER_SLOT set you are one of the runner's agents: follow your brief, not
    - queue: `agent-runner plan add <KIND> "what, why, how to check" --files a.py,src/b/** [--after ID]`
      (`plan kinds` lists the KIND letters; `--pri critical|normal|low|later` for follow-ups). Name the exact
      files, the test file too (`tests/test_menu.py`, not `tests/**`): a task waits for any other on its files
-   - change: `plan note ID "..."`, `plan move ID top|after X`, `plan block ID [--after X] "why"`,
-     `plan unblock ID`, `plan drop ID "why"`, `plan restore ID` (undo a mistaken tick or drop)
+   - change: `plan edit ID "corrected text" [--files …] [--after …] [--pri …]` to correct a task (it
+     replaces the description and its notes, so no stale instruction stays beside the new one; id, status
+     and fields kept), `plan note ID "..."` only to add detail, `plan move ID top|after X`,
+     `plan block ID [--after X] "why"`, `plan unblock ID`, `plan drop ID "why"`, `plan restore ID` (undo a
+     mistaken tick or drop)
    - read: `agent-runner plan`, `plan ID`, `plan next`, `plan claims`, `plan help`
    - a person asking to see a concept or options ("show me a concept first") gets the page from you, in
      this session (an Artifact page you write and open), not a K task; queue K only when they say queue it
@@ -169,7 +172,10 @@ What the person asks, and what you run (`{cmd}` is the runner):
   wait for a task: the run starts it once those merge (a watch only to tell the person is "notify me when").
   After you queue, end with one hint line naming the new id: 'Say "do F48 here" to start it in this session
   now instead of waiting for a slot.' (one id; with several, name them and ask which).
-  Change the queue with `{cmd} plan note|move|block|unblock|drop`; read it with `{cmd} plan`, `{cmd} plan ID`.
+  Change the queue with `{cmd} plan edit|note|move|block|unblock|drop`; read it with `{cmd} plan`, `{cmd} plan ID`.
+  A correction of a queued task ("not on arm", "use X, not Y", the wrong files): `{cmd} plan edit ID "<the
+  whole corrected text>"` (with `--files`/`--after`/`--test`/`--pri` to change those), which rewrites it in
+  place, stale notes included; `plan note` only adds detail that does not contradict the line.
   The goal above the first heading: `{cmd} plan goal` prints it; when it is stale (the person's aim moved on,
   or it names done work as the aim) reword it with `{cmd} plan goal "TEXT"`, never a task to edit TODO.md.
 - More of what they say, and what you run:

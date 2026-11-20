@@ -918,8 +918,66 @@ def test_unlabelled_block():
             'with the person\'s words noted')
 
 
+def test_edit():
+    print('plan: F45 edit rewrites a task\'s description in place, keeping id, status and fields')
+    with tempfile.TemporaryDirectory() as tmp:
+        todo, done = plan.ensure(Path(tmp) / 'plan' / 'TODO.md', Path(tmp) / 'plan' / 'DONE.md')
+        kw = dict(todo=todo)
+        plan.add('A', 'a person first', todo=todo)
+        plan.add('F', 'build ifizbox on arm | files: box.py, b/** | after: A1 | test: test_box', pri='normal', todo=todo)
+        plan.note('F1', 'use the cache', **kw)
+        plan.block('F1', 'DECIDE: which board?', after=[], **kw)
+        before = Path(todo).read_text(encoding='utf-8')
+        line = plan.edit('F1', 'build ifizbox, not on arm', **kw)
+        eq(line.split(' BLOCKED: ')[0],
+           '- [~] **F1** (follow-up, normal) build ifizbox, not on arm | files: box.py, b/** | after: A1 | test: test_box',
+           'the description and its notes are replaced; checkbox, tag and fields kept')
+        has(line, r' BLOCKED: DECIDE: which board\? \(asked \d{4}-\d\d-\d\d \d\d:\d\d\)$', 'and the BLOCKED text')
+        check('use the cache' not in Path(todo).read_text(encoding='utf-8'), 'the stale note is gone')
+        eq([x for x in plan.index(todo) if 'F1' in x], ['[~] F1'], 'same id, still blocked')
+        eq(len(Path(todo).read_text(encoding='utf-8').splitlines()), len(before.splitlines()), 'no line added or lost')
+        line = plan.edit('F1', 'build it | test: test_board', ' | files: c.py | after: A1, F9', **kw)
+        has(line, r'build it \| files: c\.py \| after: A1, F9 \| test: test_board BLOCKED: DECIDE',
+            'fields in the text or flags replace those keys, in the usual order')
+        line = plan.edit('F1', '', ' | journal: j', **kw)
+        has(line, r'\*\* \(follow-up, normal\) build it \| files: c\.py .* \| journal: j BLOCKED',
+            'no text: the description stays, only the field changes')
+        plan.edit('F1', 'park it', pri='later', **kw)
+        eq(plan.index(todo)[-2:], ['### Parked', '[~] F1'], '--pri moves it where add files that level')
+        has(Path(todo).read_text(encoding='utf-8'), r'\*\*F1\*\* \(follow-up, later\) park it \|', 'and retags it')
+        for bad in ('Z9', 'F'):
+            try:
+                plan.edit(bad, 'x', **kw)
+                check(False, f'edit of unknown id {bad} errors')
+            except SystemExit as e:
+                has(str(e), 'no task', f'edit of unknown id {bad} errors')
+        try:
+            plan.edit('A1', 'x', pri='urgent', **kw)
+            check(False, 'an unknown level is refused')
+        except SystemExit as e:
+            has(str(e), 'critical \\| normal', 'an unknown level is refused')
+        t, _, keyed, pri, _ = plan.add_args(['new words', '--files', 'x.py,y/**', '--pri', 'low'])
+        plan.edit('A1', t, keyed, pri, **kw)
+        has(Path(todo).read_text(encoding='utf-8'), r'- \[ \] \*\*A1\*\* \(follow-up, low\) new words \| files: x\.py, y/\*\*',
+            'the CLI flags parse as add\'s do')
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        git(root, 'init', '-q')
+        git(root, 'commit', '-q', '--allow-empty', '-m', 'start')
+        run(root, 'plan', 'add', 'R', 'the parser on arm', '--files', 'p.py')
+        r = run(root, 'plan', 'edit', 'R1', 'the parser, not on arm', '--after', 'R0')
+        check(r.returncode == 0, '`run plan edit` works', r.stderr)
+        has(git(root, 'log', '-1', '--format=%s'), r'^plan: edit R1 ', 'and commits as plan: edit ID')
+        has((root / 'plan/TODO.md').read_text(encoding='utf-8'),
+            r'- \[ \] \*\*R1\*\* the parser, not on arm \| files: p\.py \| after: R0\n', 'the line, rewritten')
+        r = run(root, 'plan', 'edit', 'R9', 'x', check=False)
+        check(r.returncode != 0 and 'no task' in r.stderr, 'an unknown id errors on the command line', r.stderr)
+        r = run(root, 'plan', 'edit', 'R1', 'x', '@', 'top', check=False)
+        eq(r.returncode, 2, 'edit refuses a place (move does that)')
+
+
 if __name__ == '__main__':
-    sys.exit(report([test_unlabelled_block, test_restore, test_plan_last,test_goal,test_plan_roundtrip, test_plan_reopen, test_plan_index_and_sections, test_brief, test_brief_outline,
+    sys.exit(report([test_edit, test_unlabelled_block, test_restore, test_plan_last,test_goal,test_plan_roundtrip, test_plan_reopen, test_plan_index_and_sections, test_brief, test_brief_outline,
                      test_split_parents, test_add_bottom, test_add_pri, test_add_subtask, test_kinds, test_need_files, test_add_stray_args, test_hand_edits_commit, test_similar, test_add_refuses_a_duplicate, test_carry_notes,
                      test_merge3, test_concurrent_add, test_merge_driver, test_concepts, test_needs_you,
                      test_needs_config]))

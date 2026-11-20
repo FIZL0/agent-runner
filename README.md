@@ -146,7 +146,9 @@ machine to it from the start, run with `--shutdown` or `--suspend`.
 
 - `[ ]` open, `[x]` done (moved to `DONE.md`), `[~]` blocked. Only the tool changes a box: use
   `agent-runner plan add|tick|block|note|move …`, never edit one by hand. A mistaken tick or drop comes
-  back with `plan restore ID`: open again, same id and fields.
+  back with `plan restore ID`: open again, same id and fields. A task that needs correcting takes
+  `plan edit ID "the corrected text"`: the description and its notes are replaced in place, the id, box,
+  BLOCKED text and fields kept (`--files`/`--after`/`--test`/`--pri` change those); `plan note` only adds.
 - `files:` lets two tasks run side by side when they don't overlap, and puts those files in the brief.
   `after:` holds a task until every id listed is done. Prose is never parsed for either.
 - `P13a` is a subtask of `P13`: a family never runs two tasks at once.
