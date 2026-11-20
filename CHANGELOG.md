@@ -11,6 +11,10 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
   `[run] review_min_lines` (default 50) changed lines when the task has no long form. Every commit message
   ends `review: nothing`, `review: fixed <what>`, `review: filed <IDs>` or `review: skipped (small)`.
   `[run] review = false` turns it off; while on, lean Claude sessions also get the Agent tool.
+- `plan restore ID [WHERE]` brings a ticked or dropped task back from `DONE.md` to `TODO.md` as open `[ ]`,
+  same id, its text, fields and sub-items kept and its `dropped: WHY` note removed; at the top of the leading
+  section unless WHERE (as `plan move`) says. A mistaken tick or drop no longer means re-adding the task
+  under a new id. An unknown or still-open id is an error.
 - **Breaking:** `plan answer` and its regex reply-guessing are gone, with `[needs] map_replies` (now
   ignored, with a warning). The control session and the runner feed map a reply that names no item ("yes",
   "B", "later") to the item's id themselves and run `plan confirm|change|shelve ID`, asking the person which
