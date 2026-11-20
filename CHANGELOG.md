@@ -24,6 +24,13 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
   opens in any tmux run, not only the background one. The feed loads no auto memory.
 - `since --follow --keep-mark` leaves the last-look mark alone; `control --ask TEXT` gives a control session
   its first message.
+- The board follows the run. It ends when the run does: after a plain stop once the running tasks are done, a
+  force stop, or a crash. The runner feed's process ends, so "<repo> · runner" goes offline in the apps and the
+  window closes. The next run opens a new board. While the run is idle, or paused or stopping with nothing
+  running or merging, the feed holds its lines: no Haiku turns, no pushes, no tokens. When the run starts
+  something (a task added, the run unpaused) it prints what was logged meanwhile and carries on. You can still
+  type to it while it holds. The board window now runs `since --board [--feed] --run-pid PID`, and STATE says
+  `idle`, `paused` and `stopping`. A board left by an earlier version is replaced when the run starts.
 - Known limit of the quiet launch (checked by hand on a phone): Remote Control's own "session ready" push
   ignores `CLAUDE_CLIENT_PRESENCE_FILE`, so each Remote Control slot start (`remote_slots = true`) buzzes the
   phone even with `.runner/quiet-slots` in place, and the runner cannot stop it. The presence file only keeps

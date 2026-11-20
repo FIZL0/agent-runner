@@ -1363,9 +1363,12 @@ def test_short_titles_and_since(repo: Path):
                   and '--strict-mcp-config' in fa, 'Bash only for the runner command; no settings or MCP', fa)
             check('control --new --ask' in opt('--system-prompt') and 'since --follow --keep-mark' in fa[1],
                   'it hands other asks to a control session and follows without moving the mark', fa)
-            check('--remote-control' in R.board_command(), 'the board runs the feed with remote on')
+            bc = R.board_command()
+            check(bc.endswith(f'since --board --feed --run-pid {os.getpid()}'),
+                  'the board runs the feed with remote on, ended with this run', bc)
         with mock.patch.object(R, 'remote_on', lambda: False):
-            check(R.board_command().endswith('since --board'), 'and the free text feed with it off')
+            check(R.board_command().endswith(f'since --board --run-pid {os.getpid()}'),
+                  'and the free text feed with it off', R.board_command())
             check('since --follow --needs-you`, once' in R.control_brief()
                   and '--needs-you' in R.control_argv(1, 'sid', False)[1],
                   'without the feed, control sessions keep their own needs-you watch')
@@ -1388,6 +1391,93 @@ def test_short_titles_and_since(repo: Path):
         else:
             notes.write_text(keep, encoding='utf-8')
         R.since_mark_file().unlink(missing_ok=True)
+
+
+def test_board_follows_run(repo: Path, tmp: Path):
+    print('the board follows the run: it ends when the run does (force stop, crash, plain stop), and the feed '
+          'holds while the run is idle, or paused or stopping with nothing running')
+    import contextlib
+    import io
+    R.init(repo)
+    state = R.C.notes('STATE')
+    keep = state.read_text(encoding='utf-8') if state.exists() else None
+    notes = R.C.notes('run.log')
+    keep_log = notes.read_text(encoding='utf-8') if notes.exists() else None
+    try:
+        # STATE carries what the hold reads
+        saved = R.IDLE[0], R.PAUSED[0]
+        R.IDLE[0], R.PAUSED[0] = True, False
+        try:
+            R.write_state({})
+        finally:
+            R.IDLE[0], R.PAUSED[0] = saved
+        st = json.loads(state.read_text(encoding='utf-8'))
+        eq((st['idle'], st['paused'], st['stopping']), (True, False, False), 'STATE says idle, paused, stopping')
+
+        def held(up=True, **st):
+            state.write_text(json.dumps({'running': {}, 'merging': [], **st}), encoding='utf-8')
+            with mock.patch.object(R, 'run_up', lambda: up):
+                return R.board_held()
+        check(held(idle=True), 'idle: the feed holds')
+        check(held(paused=True), 'paused with nothing running: it holds')
+        check(held(stopping=True), 'stopping with nothing running: it holds')
+        check(not held(paused=True, running={'1': 'F5'}), 'paused while a task runs: what lands still shows')
+        check(not held(stopping=True, merging=['F5']), 'stopping while a merge runs: still shows')
+        check(not held(), 'a working run: no hold')
+        check(not held(up=False, idle=True), 'no run up: a stale STATE holds nothing')
+
+        # the feed's stream: nothing while held, then what was logged meanwhile once work resumes
+        hold = [True]
+        stamp = R.dt.datetime.now().replace(microsecond=0).isoformat()
+        def add():
+            with notes.open('a', encoding='utf-8') as fh:
+                fh.write(f'=== {stamp} F5: merged, ticked\n')
+        notes.parent.mkdir(parents=True, exist_ok=True)
+        notes.touch()
+        threading.Timer(0.3, add).start()
+        threading.Timer(1.2, lambda: hold.__setitem__(0, False)).start()
+        out, seen = io.StringIO(), []
+        def watch():
+            seen.append(out.getvalue().count('landed: F5'))
+        threading.Timer(0.9, watch).start()
+        with contextlib.redirect_stdout(out):
+            R.follow(poll=0.1, until=time.monotonic() + 2.5, mark=False, hold=lambda: hold[0])
+        check(seen == [0], 'held: the landed line is not printed while the run is idle', out.getvalue())
+        check('landed: F5' in out.getvalue(), 'work resumes: it prints what was logged meanwhile', out.getvalue())
+
+        # the text board ends once its run has
+        dead = subprocess.Popen([sys.executable, '-c', 'pass'])
+        dead.wait()
+        t0 = time.monotonic()
+        with contextlib.redirect_stdout(io.StringIO()):
+            R.follow(poll=0.1, until=time.monotonic() + 10, mark=False, end=lambda: not R.plat.alive(dead.pid))
+        check(time.monotonic() - t0 < 5, 'the text board ends when its run is gone')
+
+        # the runner feed ends with the run: a force stop or a crash ends the run's process
+        pidf = tmp / 'feed.pid'
+        fake = [sys.executable, '-c', f'import os,time; open({str(pidf)!r},"w").write(str(os.getpid())); '
+                                      'time.sleep(60)']
+        runp = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'])
+        threading.Timer(1.0, runp.kill).start()
+        t0 = time.monotonic()
+        with mock.patch.object(R, 'feed_argv', lambda: fake):
+            rc = R.board_feed(runp.pid, poll=0.1)
+        runp.wait()
+        eq(rc, 0, 'the board ends once its run is gone')
+        check(time.monotonic() - t0 < 10, 'and promptly')
+        pid = int(pidf.read_text())
+        check(not R.plat.alive(pid), "the feed's process is gone after the run is (offline in the apps)", pid)
+
+        # the feed ending on its own ends the board too (keep_board opens it again while the run is up)
+        with mock.patch.object(R, 'feed_argv', lambda: [sys.executable, '-c', 'raise SystemExit(3)']):
+            eq(R.board_feed(os.getpid(), poll=0.1), 3, 'the feed exiting ends the board with its code')
+        eq(run(repo, 'since', '--feed').returncode, 2, '--feed without --board is refused')
+    finally:
+        for f, k in ((state, keep), (notes, keep_log)):
+            if k is None:
+                f.unlink(missing_ok=True)
+            else:
+                f.write_text(k, encoding='utf-8')
 
 
 def test_take_text_and_here(repo: Path):
@@ -3678,7 +3768,8 @@ def main() -> int:
                        lambda: test_limit_lets_go(repo),
                        lambda: test_shared_push(repo, tmp), lambda: test_note_on_a_ticked_task(repo), lambda: test_adopt_merge(repo), lambda: test_followups(repo), lambda: test_ci_watch(repo), test_update_notice, test_restart_if_upgraded, test_auto_upgrade, lambda: test_flake_repair(tmp), lambda: test_repair_per_failure(repo),
                        lambda: test_stalled(tmp), lambda: test_take(repo), lambda: test_take_text_and_here(repo), lambda: test_background(repo), lambda: test_attach_flag(repo), lambda: test_remote_auto(tmp), lambda: test_control(repo),
-                       lambda: test_short_titles_and_since(repo), lambda: test_concepts_waiting(repo),
+                       lambda: test_short_titles_and_since(repo), lambda: test_board_follows_run(repo, tmp),
+                       lambda: test_concepts_waiting(repo),
                        lambda: test_person_waiting(repo), lambda: test_control_server_old_agent(repo, tmp)])
 
 

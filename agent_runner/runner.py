@@ -90,7 +90,8 @@ TAG = '@runner'  # the tmux pane option a slot's pane is found by
 RUN_TAG = '@runner-run'  # set on the runner's own pane to the main checkout it runs for: `attach` goes there
 HIDDEN = [False]  # `run --hidden` on Windows: slot consoles start hidden (the background run)
 REPO_TAG = '@runner-repo'  # the main checkout a pane's runner works for: two repos' runners share a tmux session
-BOARD_TAG = '@runner-board'  # on the board's pane: "feed" (the runner feed) or "text" (since --board)
+BOARD_TAG = '@runner-board'  # on the board's pane: "feed/run" (the runner feed) or "text/run" (since --board);
+# "/run": it ends with the run (B13), so a board of an earlier version (plain "feed"/"text") is replaced
 
 ROOT = Path('.')       # the main checkout; set by `init`
 SLOTS_DIR = Path('.')  # `[run] home` (~/runs/<repo>/): s1, s2, …, and `merge`
@@ -358,6 +359,7 @@ WAKE = threading.Event()  # set by a key, so the loop acts on it now instead of 
 READING = [False]  # the reader thread is up: the loop naps on WAKE
 PAUSED = [False]  # `p`: no new tasks, and the run stays up
 FORCED = [False]  # `f`: the usage caps no longer hold new tasks, as with --force
+IDLE = [False]  # the run said `run idle` and has started nothing since: STATE carries it, for the board's hold
 
 
 def nap(s: float) -> None:
@@ -545,7 +547,8 @@ def write_state(running: dict) -> None:
     tmp = C.notes('STATE.tmp')
     try:
         tmp.write_text(json.dumps({'at': dt.datetime.now().isoformat(timespec='seconds'), 'state': state_line(),
-                                   'running': work, 'since': since, 'merging': merging, 'usage': use}),
+                                   'running': work, 'since': since, 'merging': merging, 'usage': use,
+                                   'idle': IDLE[0], 'paused': PAUSED[0], 'stopping': stopping()}),
                        encoding='utf-8')
         os.replace(tmp, C.notes('STATE'))
     except OSError:  # Windows: `status` has STATE open this instant; the next pass writes it
@@ -5247,6 +5250,7 @@ def run(argv: list[str], prog: str) -> int:
     while True:
         sweep_tmp()
         take_keys()
+        IDLE[0] = idle_said
         write_state(running)
         if SLOTS != slots:  # `+` or `-`: a slot past the count is watched to its end, never refilled
             slots = SLOTS
@@ -5880,11 +5884,15 @@ def follow_lines(chunk: str, titles: dict[str, str], now: dt.datetime, needs_you
     return out, last
 
 
-def follow(poll: float = 2.0, until: float | None = None, needs_you: bool = False, mark: bool = True) -> int:
+def follow(poll: float = 2.0, until: float | None = None, needs_you: bool = False, mark: bool = True,
+           hold=None, end=None) -> int:
     """`since --follow`: print one plain line per new event as run.log gets it, moving the since mark as it
     prints; from the log's end, until killed (or `until`, a monotonic deadline, for tests). `needs_you`: only
     what needs the person (`needs_you_line`), and the mark stays put: the landed and started lines it skips
-    are still news for the next `since`. `mark=False` (the board): the mark stays put too."""
+    are still news for the next `since`. `mark=False` (the board): the mark stays put too.
+    `hold` (the runner feed, `board_held`): while it says so, nothing is read or printed, so the feed's
+    session gets no turn; what was logged meanwhile prints when it lets go. `end`: stop once it says so
+    (the board, once its run has ended)."""
     logf = C.notes('run.log')
     try:
         pos = logf.stat().st_size
@@ -5896,6 +5904,14 @@ def follow(poll: float = 2.0, until: float | None = None, needs_you: bool = Fals
           flush=True)
     buf = ''
     while until is None or time.monotonic() < until:
+        if end is not None and end():
+            return 0
+        if hold is not None and hold():
+            try:
+                time.sleep(poll)
+            except KeyboardInterrupt:
+                return 0
+            continue
         try:
             size = logf.stat().st_size
             if size < pos:  # the log was cut or replaced: read it again from the top
@@ -5935,18 +5951,26 @@ def cmd_since(argv: list[str], prog: str = f'{RUNNER} since') -> int:
                     help='with --follow: only what needs you (the run held, a task left for you, stalled, or '
                          'waiting on your answer), and the last-look mark stays put')
     ap.add_argument('--keep-mark', action='store_true',
-                    help='with --follow: leave the last-look mark where it is (the runner feed)')
+                    help='with --follow: leave the last-look mark where it is, and print nothing while the run '
+                         'is idle, or paused or stopping with nothing running (the runner feed)')
     ap.add_argument('--board', action='store_true',
                     help="the board window's feed: a header, the last 6 hours, then --follow; the last-look mark "
                          "stays put, and no tokens are used")
+    ap.add_argument('--feed', action='store_true',
+                    help='with --board: run the runner feed (the Haiku session on Remote Control) instead, and end '
+                         'it with --run-pid')
+    ap.add_argument('--run-pid', type=int, default=0, metavar='PID',
+                    help='with --board: the run that opened it; the board ends once that process has')
     a = ap.parse_args(argv)
     init()
     if a.needs_you and not a.follow:
         ap.error('--needs-you goes with --follow')
+    if (a.feed or a.run_pid) and not a.board:
+        ap.error('--feed and --run-pid go with --board')
     if a.board:
-        return board()
+        return board_feed(a.run_pid) if a.feed else board(a.run_pid)
     if a.follow:
-        return follow(needs_you=a.needs_you, mark=not a.keep_mark)
+        return follow(needs_you=a.needs_you, mark=not a.keep_mark, hold=board_held if a.keep_mark else None)
     f = since_mark_file()
     try:
         mark = f.read_text(encoding='utf-8').strip() or None
@@ -6604,8 +6628,9 @@ def board_header() -> str:
             f'    {where}\n' + '-' * 78)
 
 
-def board() -> int:
-    """`since --board`: the header, the last 6 hours, then the feed; the since mark is left for the person."""
+def board(run_pid: int = 0) -> int:
+    """`since --board`: the header, the last 6 hours, then the feed; the since mark is left for the person.
+    With `run_pid` (the run that opened it) it ends once that process has, however the run ended."""
     print(board_header())
     now = dt.datetime.now().replace(microsecond=0)
     try:
@@ -6613,7 +6638,59 @@ def board() -> int:
     except OSError:
         lines = []
     print(since_text(lines, now - dt.timedelta(hours=6), task_titles(), now, waiting=waiting_ok())[0], flush=True)
-    return follow(mark=False)
+    return follow(mark=False, end=(lambda: not plat.alive(run_pid)) if run_pid else None)
+
+
+def board_held() -> bool:
+    """Does the runner feed hold its lines (B13)? While the run is idle, or paused or stopping with nothing
+    running or merging, nothing more lands until the run starts something or a task is added: the feed then
+    prints nothing, so its Haiku session takes no turn and pushes nothing. No run up: nothing to hold for."""
+    try:
+        st = json.loads(C.notes('STATE').read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return False
+    if not isinstance(st, dict):
+        return False
+    held = bool(st.get('idle') or (st.get('paused') or st.get('stopping'))
+                and not st.get('running') and not st.get('merging'))
+    return held and run_up()  # STATE first: the lock is only probed when STATE would hold (a stale one, too)
+
+
+BOARD_POLL = 2.0  # s between the board guard's looks at the run
+BOARD_TERM = 10  # s the feed gets to end on SIGTERM before it is killed
+
+
+def board_feed(run_pid: int = 0, poll: float = BOARD_POLL) -> int:
+    """`since --board --feed`: the runner feed (`feed_argv`) as a child, ended once the run that opened it
+    (`run_pid`) has: a plain stop once its tasks are done, a force stop, or a crash. The feed then goes
+    offline in the apps and the board window closes. The feed ending on its own ends this too (`keep_board`
+    opens it again while the run is up). Ctrl-C is the feed's own (it asks before it exits)."""
+    try:
+        proc = sp.Popen(feed_argv())
+    except OSError as e:
+        print(f'board: could not start the runner feed: {e}', file=sys.stderr)
+        return 1
+    try:
+        old = signal.signal(signal.SIGINT, signal.SIG_IGN)  # after the spawn: the child keeps its own Ctrl-C
+    except ValueError:  # not the main thread (tests)
+        old = None
+    try:
+        while True:
+            try:
+                return proc.wait(timeout=poll)
+            except sp.TimeoutExpired:
+                pass
+            if run_pid and not plat.alive(run_pid):
+                proc.terminate()
+                try:
+                    proc.wait(timeout=BOARD_TERM)
+                except sp.TimeoutExpired:
+                    proc.kill()
+                    proc.wait()
+                return 0
+    finally:
+        if old is not None:
+            signal.signal(signal.SIGINT, old)
 
 
 def board_argv(sess: str, root: Path, cmd: str) -> list[str]:
@@ -6654,15 +6731,17 @@ def feed_argv() -> list[str]:
 
 
 def board_command() -> str:
-    """What the board window runs: the runner feed with `[run] remote` (in the apps too), else the free text feed."""
-    return plat.command_text(feed_argv() if feed_on() else [*runner_cmd(), 'since', '--board'])
+    """What the board window runs: the runner feed with `[run] remote` (in the apps too), else the free text feed;
+    either one ends once this run's process has (B13)."""
+    return plat.command_text([*runner_cmd(), 'since', '--board', *(['--feed'] if feed_on() else []),
+                              '--run-pid', str(os.getpid())])
 
 
 def keep_board(sess: str) -> None:
     """Keep the board window up in the background session while the run is: opened again when it is closed or
-    its feed exits. It outlives the run, and the next run finds it there."""
+    its feed exits. It ends with the run (its `--run-pid`), and the next run opens its own."""
     cmd = board_command()
-    kind = 'feed' if '--remote-control' in cmd else 'text'
+    kind = ('feed' if ' --feed' in cmd else 'text') + '/run'
     said = False
     while True:
         rows = tmux('list-panes', '-s', '-t', f'={sess}', '-F',
@@ -6678,7 +6757,7 @@ def keep_board(sess: str) -> None:
                 tmux('set-option', '-p', '-t', pane, REPO_TAG, str(ROOT))
                 tmux('set-option', '-p', '-t', pane, BOARD_TAG, kind)
             if not said or r.returncode:
-                what = f'the runner feed, "{feed_name()}" in the apps too' if kind == 'feed' else 'the text feed'
+                what = f'the runner feed, "{feed_name()}" in the apps too' if kind.startswith('feed') else 'the text feed'
                 log(f'board: window {window("board")} is up with {what} ({RUNNER} attach board)' if not r.returncode
                     else f'board: tmux could not open it: {r.stderr.strip()}')
             said = True
