@@ -998,216 +998,303 @@ def run(argv: list[str], prog: str) -> int:
         READING[0] = True
         threading.Thread(target=read_keys, daemon=True).start()
         print(keys_help(), flush=True)
-    running: dict[int, tuple] = {}
-    procs: dict[int, tuple] = {}
-    tried: set[str] = set()
-    closed: set[str] = set()  # see retry_reopened
-    idle_said, idle_at = False, 0.0
-    free_at = {n: dt.datetime.min for n in range(1, slots + 1)}
-    merging: list[threading.Thread] = []
-    stall_said: set[str] = set()
-    failed_resumes: dict[str, int] = {}  # session id -> times it was resumed after a failed model call
-    failed_starts: dict[str, int] = {}  # task -> sessions that did not start
-    cap_said = False
-    STOP_SAID[0] = False
-    held_said = slots  # the slot count `max_unmerged` last held the run to, as logged
-    reserve_branch_ids()
-    log(f'run: {slots} slots in {MUX.name}, merging into {branch}' +
-        (f', session usage {usage_pct("five_hour")}%, weekly usage {weekly()}%' if not a.force and r['agent'] == 'claude' else ''))
-    if rline := remote_line():
-        log(rline)
-    if gone := missing_remote(ROOT):
-        log(no_remote_line(gone))
-    from agent_runner import context
-    if heavy := context.warning(ROOT, r['rules'], C.raw['plan']['context_kb']):
-        log(heavy)
+    return Run(a, slots, once, branch, model, idle, stall, pause).go()
 
-    for n, (proc, task) in adopt(branch).items():
-        procs[n], running[n] = proc, task
-        free_at.setdefault(n, dt.datetime.min)
 
-    foreign = queue_cut_off(branch, [n for n in range(1, slots + 1) if n not in procs])
-    sweep_tmp(force=True)
-    drop_extra_slots(slots, set(procs) | set(queued()) | set(foreign))
-    left = left_merging()
-    finished = unmerged(branch, [n for n in free_at if n not in procs and n not in queued() and n not in foreign])
-    # the riders of a merge an earlier run gated wait from the start, so its turn finds them and reuses it
-    WAITING.update(set(finished) & {t for g in gate_runs() for t in g.get('tids', [])})
-    for tid in sorted(finished, key=lambda t: t not in left):  # the merge an earlier run left going first: it adopts that
-        log(f'{tid}: ' + ('its merge was under way when the last run ended; adopting it' if tid in left else
-                          'finished, not merged yet; merging it now'))
-        tried.add(tid)
-        t = threading.Thread(target=finish, args=(tid, 0, '(unknown)', branch), name=f'merge:{tid}')
+class Run:
+    """The parallel run once it is set up (C9): its state, and one method per step of its loop. `go` opens it
+    (adopts what an earlier run left) and ticks every 10 s until it stops; `tick` returns the exit code then."""
+
+    def __init__(self, a: argparse.Namespace, slots: int, once: bool, branch: str, model: str, idle: int,
+                 stall: int, pause: int):
+        self.a, self.r = a, C.run
+        self.slots, self.once, self.branch, self.model = slots, once, branch, model
+        self.idle, self.stall, self.pause = idle, stall, pause
+        self.running: dict[int, tuple] = {}
+        self.procs: dict[int, tuple] = {}
+        self.tried: set[str] = set()
+        self.closed: set[str] = set()  # see retry_reopened
+        self.idle_said, self.idle_at = False, 0.0
+        self.free_at = {n: dt.datetime.min for n in range(1, slots + 1)}
+        self.merging: list[threading.Thread] = []
+        self.stall_said: set[str] = set()
+        self.failed_resumes: dict[str, int] = {}  # session id -> times it was resumed after a failed model call
+        self.failed_starts: dict[str, int] = {}  # task -> sessions that did not start
+        self.cap_said = False
+        self.held_said = slots  # the slot count `max_unmerged` last held the run to, as logged
+        self.foreign: dict[int, int] = {}  # slot -> pid of a session no run knew (see queue_cut_off)
+        self.waiting: dict[int, tuple] = {}  # slot -> (task, session id, why) queued to resume there
+        self.tagged: dict | None = None  # MUX.panes(), looked at once a tick and only for a free slot
+
+    def go(self) -> int:
+        STOP_SAID[0] = False
+        self.open()
+        while True:
+            if (code := self.tick()) is not None:
+                return code
+            nap(10)
+
+    def merge_in(self, tid: str, n: int, sid: str) -> None:
+        """Merge a finished task in a thread of its own."""
+        t = threading.Thread(target=finish, args=(tid, n, sid, self.branch), name=f'merge:{tid}')
         t.start()
-        merging.append(t)
-    if not merging:  # blocks freed by merges made while no run was up (a merge started above reopens by itself)
-        with MERGE:
-            reopen_landed(branch, 'a merge before this run')
-    prune_wips(branch, force=True)  # F23: wip/<ID> of tasks ticked or dropped while no run was up
+        self.merging.append(t)
 
-    while True:
+    def open(self) -> None:
+        """Log what the run is, adopt the sessions and finished branches an earlier run left."""
+        a, r, slots, branch = self.a, self.r, self.slots, self.branch
+        procs, running, free_at = self.procs, self.running, self.free_at
+        reserve_branch_ids()
+        log(f'run: {slots} slots in {MUX.name}, merging into {branch}' +
+            (f', session usage {usage_pct("five_hour")}%, weekly usage {weekly()}%' if not a.force and r['agent'] == 'claude' else ''))
+        if rline := remote_line():
+            log(rline)
+        if gone := missing_remote(ROOT):
+            log(no_remote_line(gone))
+        from agent_runner import context
+        if heavy := context.warning(ROOT, r['rules'], C.raw['plan']['context_kb']):
+            log(heavy)
+
+        for n, (proc, task) in adopt(branch).items():
+            procs[n], running[n] = proc, task
+            free_at.setdefault(n, dt.datetime.min)
+
+        foreign = self.foreign = queue_cut_off(branch, [n for n in range(1, slots + 1) if n not in procs])
+        sweep_tmp(force=True)
+        drop_extra_slots(slots, set(procs) | set(queued()) | set(foreign))
+        left = left_merging()
+        finished = unmerged(branch, [n for n in free_at if n not in procs and n not in queued() and n not in foreign])
+        # the riders of a merge an earlier run gated wait from the start, so its turn finds them and reuses it
+        WAITING.update(set(finished) & {t for g in gate_runs() for t in g.get('tids', [])})
+        for tid in sorted(finished, key=lambda t: t not in left):  # the merge an earlier run left going first: it adopts that
+            log(f'{tid}: ' + ('its merge was under way when the last run ended; adopting it' if tid in left else
+                              'finished, not merged yet; merging it now'))
+            self.tried.add(tid)
+            self.merge_in(tid, 0, '(unknown)')
+        if not self.merging:  # blocks freed by merges made while no run was up (a merge started above reopens by itself)
+            with MERGE:
+                reopen_landed(branch, 'a merge before this run')
+        prune_wips(branch, force=True)  # F23: wip/<ID> of tasks ticked or dropped while no run was up
+
+    def tick(self) -> int | None:
+        """One pass of the loop: None to go on after a nap, else the run's exit code."""
+        self.top()
+        self.tagged = None
+        for n in list(self.free_at):
+            self.slot(n)
+        self.after()
+        return self.end()
+
+    def top(self) -> None:
+        """The start of a tick: keys typed, the slot count, forced stops, tells and halts, the stop note."""
+        procs, running = self.procs, self.running
         sweep_tmp()
-        prune_wips(branch)  # F23: now and then, for tasks ticked or dropped by hand while the run is up
+        prune_wips(self.branch)  # F23: now and then, for tasks ticked or dropped by hand while the run is up
         take_keys()
-        IDLE[0] = idle_said
+        IDLE[0] = self.idle_said
         write_state(running)
-        if SLOTS != slots:  # `+` or `-`: a slot past the count is watched to its end, never refilled
-            slots = SLOTS
-            for m in range(1, slots + 1):
-                free_at.setdefault(m, dt.datetime.min)
+        if SLOTS != self.slots:  # `+` or `-`: a slot past the count is watched to its end, never refilled
+            self.slots = SLOTS
+            for m in range(1, self.slots + 1):
+                self.free_at.setdefault(m, dt.datetime.min)
         if forced() and procs:
             end_sessions(procs, running)
         tells(procs, running)  # F16: plan tell / change, typed into a running slot's pane
-        halts(procs, running, free_at, tried, branch, model, idle, slots)  # B19: plan drop / change of a running task
-        waiting = {n: q for n, q in queued().items() if n in free_at and n <= slots}
-        if said := stop_note(stopping(), len(procs) + len(waiting) + len(foreign) +
-                             sum(t.is_alive() for t in merging), stopped_by()):
+        halts(procs, running, self.free_at, self.tried, self.branch, self.model, self.idle,
+              self.slots)  # B19: plan drop / change of a running task
+        self.waiting = {n: q for n, q in queued().items() if n in self.free_at and n <= self.slots}
+        if said := stop_note(stopping(), len(procs) + len(self.waiting) + len(self.foreign) +
+                             sum(t.is_alive() for t in self.merging), stopped_by()):
             log(said)
-        tagged = None  # MUX.panes(), looked at once a tick and only for a free slot
-        for n in list(free_at):
-            if n in procs and plat.alive(procs[n][0]) and (f := agent_failed(procs[n][1])) and \
-                    (k := failed_resumes.get(procs[n][1], 0)) < RESUME_MAX and f[1] >= RESUME_AFTER * 2 ** k:
-                pid, sid, since = procs[n]
-                failed_resumes[sid] = k + 1
-                log(f'slot {n}: {running[n][0]} stopped on a failed model call ({f[0][:120]}); resuming its '
-                    f'session ({k + 1}/{RESUME_MAX})')
-                if new := resume_failed(n, pid, sid, running[n][0], model, idle):
-                    procs[n] = (new, sid, since)
-                    stall_said.add(sid)  # its transcript is still old until the resumed session writes
-            if n in procs and not plat.alive(procs[n][0]):
-                (pid, sid, since), task = procs.pop(n), running.pop(n)
-                log(f'slot {n}: {task[0]} exited ({stats(sid)})')
-                end_orphans()
-                if backend().report_exit and (said := last_words(sid)):
-                    log(f'slot {n}: {task[0]} {r["backend"]}: {said[:500]}')
-                if r['on_exit']:
-                    sp.Popen(r['on_exit'], shell=True, cwd=str(SLOTS_DIR / f's{n}'),
-                             env={**os.environ, **env_vars(slot_env(n))},
-                             stdout=sp.DEVNULL, stderr=sp.DEVNULL)
-                if (why := cut_off(sid)) and n <= slots:
-                    if resumes(n, sid) < RESUMES_MAX:
-                        # its worktree stays as the session left it, on task/<ID>: the resume goes on there
-                        queue_resume(task[0], n, sid, why)
-                        log(f'slot {n}: {task[0]} was cut off ({why}); it resumes in this slot once the API answers')
-                        continue
-                    log(f'slot {n}: {task[0]} was cut off again ({why}) after {RESUMES_MAX} resumes; '
-                        f'taken as ended')
-                drop_session_tmp(sid)  # ended for good: a resume (above) keeps its scratchpad
-                if save_leftovers(d := SLOTS_DIR / f's{n}', task[0], branch):
-                    clean(d)  # saved: the next start finds the slot clean
-                if not not_attempt(task[0], branch):
-                    tried.add(task[0])  # one attempt per run: ticked, blocked or failed, a human looks next
-                git('checkout', '-q', '--detach', cwd=SLOTS_DIR / f's{n}')
-                t = threading.Thread(target=finish, args=(task[0], n, sid, branch), name=f'merge:{task[0]}')
-                t.start()
-                merging.append(t)
-                free_at[n] = dt.datetime.now() + dt.timedelta(seconds=pause)
-            if n in procs and procs[n][1] not in stall_said and \
-                    (why := stalled(procs[n][0], procs[n][1], stall)):
-                stall_said.add(procs[n][1])
-                if (m := finished_mark(n)) and m.exists():
-                    # its `done` succeeded, so the Stop hook's waiter should have ended it; that waiter can
-                    # be lost (two tasks once sat finished for hours), so the run ends it: next tick reaps it
-                    log(f'slot {n}: {running[n][0]} finished but {why}; ending it')
-                    plat.terminate(procs[n][0])
-                else:
-                    log(f'slot {n}: {running[n][0]} looks stalled ({why}); look at {MUX.where(n)}')
-                    print('\a', end='', flush=True)
-            if n not in procs and n in foreign:
-                if plat.alive(foreign[n]):
-                    continue  # see queue_cut_off: never a second agent in its worktree
-                log(f'slot {n}: the session no run knew (pid {foreign.pop(n)}) ended')
-                foreign.update(queue_cut_off(branch, [n]))
-                continue
-            if n not in procs and tagged is None:
-                tagged = MUX.panes()  # a session that ended this tick is in it with a dead pid, as before
-            if n not in procs and (old := tagged.get(f's{n}')) and plat.alive(old[1]):
-                # a session no run tracks still sits in this slot (adopt found no session id, or a second
-                # tmux session): never reset the worktree under it; the slot waits until that pane ends
-                if f'pid{old[1]}' not in stall_said:
-                    stall_said.add(f'pid{old[1]}')
-                    log(f'slot {n}: an untracked session (pid {old[1]}, pane {old[0]}) still runs there; slot held')
-                continue
-            if n > slots:  # an adopted slot past this run's count: watched to the end, never refilled
-                if n not in procs and n not in waiting and n not in foreign:
-                    free_at.pop(n)
-                    drop_extra_slots(slots, set(procs) | set(queued()) | set(foreign))
-                continue
-            if n not in procs and n in waiting and not forced():  # a running task, not a new one: no stop or usage cap holds it
-                if api_down(stall_said):
-                    continue
-                tid, sid, why = waiting.pop(n)
-                C.notes(f'{tid}.resume').unlink(missing_ok=True)
-                if p := resume(n, tid, sid, why, branch, model, idle):
-                    procs[n] = p
-                    running[n] = next((t for t in tasks(branch) if t[0] == tid), (tid, '', set(), set()))
-                    tried.add(tid)
-                    idle_said = False
-                continue
-            if n not in procs and dt.datetime.now() >= free_at[n]:
-                if stopping():  # said once, with how many are left, by stop_note at the top of the tick
-                    continue
-                if PAUSED[0]:
-                    continue
-                if (w := capped(a.force or FORCED[0])) is not None:
-                    if not cap_said:
-                        alarm(f'{w}: no new tasks', 'the running tasks finish and merge; new ones wait for the '
-                              'reset. To go on now: type f + Enter in this pane, or restart with --force.')
-                        cap_said = True
-                    continue
-                cap_said = False
-                allowed = backlog_slots(slots, sum(t.is_alive() for t in merging))
-                if allowed != held_said:
-                    log(backlog_line(slots, allowed, sum(t.is_alive() for t in merging)))
-                    held_said = allowed
-                if allowed < slots and sum(m <= slots for m in procs) >= allowed:
-                    continue
-                if api_down(stall_said):
-                    continue
-                if low_disk([m for m in range(1, slots + 1) if m not in procs and m not in waiting
-                             and m not in foreign]):
-                    continue
-                if r['before_start'] and before_start_fails():
-                    if 'before_start' not in stall_said:
-                        stall_said.add('before_start')
-                        log(f'`{r["before_start"]}` fails: no new session starts until it passes')
-                        print('\a', end='', flush=True)
-                    continue
-                stall_said.discard('before_start')
-                if task := pick(running, tried, branch, claim=True):
-                    if p := start(n, task, branch, model, idle, slots):
-                        procs[n], running[n] = p, task
-                        if once:  # one task: nothing new starts, and the run exits once it has merged
-                            ask_stop('once')
-                        if idle_said:
-                            log(f'run busy: new work ({task[0]})')
-                            idle_said = False
-                    else:
-                        failed_starts[task[0]] = failed_starts.get(task[0], 0) + 1
-                        plansync.release(C, task[0])  # this start failed; another attempt can claim it
-                        if failed_starts[task[0]] >= START_TRIES:
-                            tried.add(task[0])
-                        else:  # a terminal that was slow to open, or an agent that failed once: again later
-                            log(f'slot {n}: {task[0]} will be tried again in {pause} s')
-                            free_at[n] = dt.datetime.now() + dt.timedelta(seconds=pause)
-        retry_reopened(tried, closed, branch)
+
+    def slot(self, n: int) -> None:
+        """One slot's turn in a tick: watch its session, reap it when it ended, else fill the free slot."""
+        self.retry_failed_call(n)
+        if self.reap(n):
+            return
+        self.watch_stall(n)
+        if self.held(n):
+            return
+        if n not in self.procs and n in self.waiting and not forced():  # a running task, not a new one: no stop or usage cap holds it
+            self.resume_queued(n)
+            return
+        if n not in self.procs and dt.datetime.now() >= self.free_at[n]:
+            self.fill(n)
+
+    def retry_failed_call(self, n: int) -> None:
+        """A live session stopped on a failed model call: resume it, a few times, further apart each time."""
+        procs, running = self.procs, self.running
+        if n in procs and plat.alive(procs[n][0]) and (f := agent_failed(procs[n][1])) and \
+                (k := self.failed_resumes.get(procs[n][1], 0)) < RESUME_MAX and f[1] >= RESUME_AFTER * 2 ** k:
+            pid, sid, since = procs[n]
+            self.failed_resumes[sid] = k + 1
+            log(f'slot {n}: {running[n][0]} stopped on a failed model call ({f[0][:120]}); resuming its '
+                f'session ({k + 1}/{RESUME_MAX})')
+            if new := resume_failed(n, pid, sid, running[n][0], self.model, self.idle):
+                procs[n] = (new, sid, since)
+                self.stall_said.add(sid)  # its transcript is still old until the resumed session writes
+
+    def reap(self, n: int) -> bool:
+        """The slot's session ended: queue its resume if it was cut off (True: nothing more this tick), else
+        save what it left and merge its task."""
+        procs, r, branch = self.procs, self.r, self.branch
+        if n in procs and not plat.alive(procs[n][0]):
+            (pid, sid, since), task = procs.pop(n), self.running.pop(n)
+            log(f'slot {n}: {task[0]} exited ({stats(sid)})')
+            end_orphans()
+            if backend().report_exit and (said := last_words(sid)):
+                log(f'slot {n}: {task[0]} {r["backend"]}: {said[:500]}')
+            if r['on_exit']:
+                sp.Popen(r['on_exit'], shell=True, cwd=str(SLOTS_DIR / f's{n}'),
+                         env={**os.environ, **env_vars(slot_env(n))},
+                         stdout=sp.DEVNULL, stderr=sp.DEVNULL)
+            if (why := cut_off(sid)) and n <= self.slots:
+                if resumes(n, sid) < RESUMES_MAX:
+                    # its worktree stays as the session left it, on task/<ID>: the resume goes on there
+                    queue_resume(task[0], n, sid, why)
+                    log(f'slot {n}: {task[0]} was cut off ({why}); it resumes in this slot once the API answers')
+                    return True
+                log(f'slot {n}: {task[0]} was cut off again ({why}) after {RESUMES_MAX} resumes; '
+                    f'taken as ended')
+            drop_session_tmp(sid)  # ended for good: a resume (above) keeps its scratchpad
+            if save_leftovers(d := SLOTS_DIR / f's{n}', task[0], branch):
+                clean(d)  # saved: the next start finds the slot clean
+            if not not_attempt(task[0], branch):
+                self.tried.add(task[0])  # one attempt per run: ticked, blocked or failed, a human looks next
+            git('checkout', '-q', '--detach', cwd=SLOTS_DIR / f's{n}')
+            self.merge_in(task[0], n, sid)
+            self.free_at[n] = dt.datetime.now() + dt.timedelta(seconds=self.pause)
+        return False
+
+    def watch_stall(self, n: int) -> None:
+        """Say once that the slot's session looks stalled; end it if its `done` already succeeded."""
+        procs, running = self.procs, self.running
+        if n in procs and procs[n][1] not in self.stall_said and \
+                (why := stalled(procs[n][0], procs[n][1], self.stall)):
+            self.stall_said.add(procs[n][1])
+            if (m := finished_mark(n)) and m.exists():
+                # its `done` succeeded, so the Stop hook's waiter should have ended it; that waiter can
+                # be lost (two tasks once sat finished for hours), so the run ends it: next tick reaps it
+                log(f'slot {n}: {running[n][0]} finished but {why}; ending it')
+                plat.terminate(procs[n][0])
+            else:
+                log(f'slot {n}: {running[n][0]} looks stalled ({why}); look at {MUX.where(n)}')
+                print('\a', end='', flush=True)
+
+    def held(self, n: int) -> bool:
+        """True when the slot is not this run's to fill this tick: a session no run knew or tracks sits in
+        it, or it is an adopted slot past the run's count."""
+        procs, foreign = self.procs, self.foreign
+        if n not in procs and n in foreign:
+            if plat.alive(foreign[n]):
+                return True  # see queue_cut_off: never a second agent in its worktree
+            log(f'slot {n}: the session no run knew (pid {foreign.pop(n)}) ended')
+            foreign.update(queue_cut_off(self.branch, [n]))
+            return True
+        if n not in procs and self.tagged is None:
+            self.tagged = MUX.panes()  # a session that ended this tick is in it with a dead pid, as before
+        if n not in procs and (old := self.tagged.get(f's{n}')) and plat.alive(old[1]):
+            # a session no run tracks still sits in this slot (adopt found no session id, or a second
+            # tmux session): never reset the worktree under it; the slot waits until that pane ends
+            if f'pid{old[1]}' not in self.stall_said:
+                self.stall_said.add(f'pid{old[1]}')
+                log(f'slot {n}: an untracked session (pid {old[1]}, pane {old[0]}) still runs there; slot held')
+            return True
+        if n > self.slots:  # an adopted slot past this run's count: watched to the end, never refilled
+            if n not in procs and n not in self.waiting and n not in foreign:
+                self.free_at.pop(n)
+                drop_extra_slots(self.slots, set(procs) | set(queued()) | set(foreign))
+            return True
+        return False
+
+    def resume_queued(self, n: int) -> None:
+        """Resume the session queued for this slot (cut off, or ended on a usage limit) once the API answers."""
+        if api_down(self.stall_said):
+            return
+        tid, sid, why = self.waiting.pop(n)
+        C.notes(f'{tid}.resume').unlink(missing_ok=True)
+        if p := resume(n, tid, sid, why, self.branch, self.model, self.idle):
+            self.procs[n] = p
+            self.running[n] = next((t for t in tasks(self.branch) if t[0] == tid), (tid, '', set(), set()))
+            self.tried.add(tid)
+            self.idle_said = False
+
+    def fill(self, n: int) -> None:
+        """Start the next task in the free slot, unless a stop, pause, usage cap, backlog, API outage, low disk
+        or failing before_start holds it."""
+        procs, running, slots, r = self.procs, self.running, self.slots, self.r
+        if stopping():  # said once, with how many are left, by stop_note at the top of the tick
+            return
+        if PAUSED[0]:
+            return
+        if (w := capped(self.a.force or FORCED[0])) is not None:
+            if not self.cap_said:
+                alarm(f'{w}: no new tasks', 'the running tasks finish and merge; new ones wait for the '
+                      'reset. To go on now: type f + Enter in this pane, or restart with --force.')
+                self.cap_said = True
+            return
+        self.cap_said = False
+        allowed = backlog_slots(slots, sum(t.is_alive() for t in self.merging))
+        if allowed != self.held_said:
+            log(backlog_line(slots, allowed, sum(t.is_alive() for t in self.merging)))
+            self.held_said = allowed
+        if allowed < slots and sum(m <= slots for m in procs) >= allowed:
+            return
+        if api_down(self.stall_said):
+            return
+        if low_disk([m for m in range(1, slots + 1) if m not in procs and m not in self.waiting
+                     and m not in self.foreign]):
+            return
+        if r['before_start'] and before_start_fails():
+            if 'before_start' not in self.stall_said:
+                self.stall_said.add('before_start')
+                log(f'`{r["before_start"]}` fails: no new session starts until it passes')
+                print('\a', end='', flush=True)
+            return
+        self.stall_said.discard('before_start')
+        if task := pick(running, self.tried, self.branch, claim=True):
+            if p := start(n, task, self.branch, self.model, self.idle, slots):
+                procs[n], running[n] = p, task
+                if self.once:  # one task: nothing new starts, and the run exits once it has merged
+                    ask_stop('once')
+                if self.idle_said:
+                    log(f'run busy: new work ({task[0]})')
+                    self.idle_said = False
+            else:
+                self.failed_starts[task[0]] = self.failed_starts.get(task[0], 0) + 1
+                plansync.release(C, task[0])  # this start failed; another attempt can claim it
+                if self.failed_starts[task[0]] >= START_TRIES:
+                    self.tried.add(task[0])
+                else:  # a terminal that was slow to open, or an agent that failed once: again later
+                    log(f'slot {n}: {task[0]} will be tried again in {self.pause} s')
+                    self.free_at[n] = dt.datetime.now() + dt.timedelta(seconds=self.pause)
+
+    def after(self) -> None:
+        """The end of a tick: reopened tasks, finished merges, upgrades, CI, control sessions, claims."""
+        branch = self.branch
+        retry_reopened(self.tried, self.closed, branch)
         if REOPENED:
-            tried -= REOPENED  # a task reopened by a merge is a new attempt, not the one that blocked
+            self.tried -= REOPENED  # a task reopened by a merge is a new attempt, not the one that blocked
             REOPENED.clear()
-        merging = [t for t in merging if t.is_alive()]
+        self.merging = [t for t in self.merging if t.is_alive()]
         if not stopping():
-            auto_upgrade(bool(merging))
-        if not merging and not stopping():
+            auto_upgrade(bool(self.merging))
+        if not self.merging and not stopping():
             restart_if_upgraded()
         watch_ci(branch)
         if not stopping():
             close_controls(branch)  # B26
             end_closed_controls()  # B53
         if not stopping():
-            sweep_unmerged(branch, merging)
-        keep_claims(running, branch)
+            sweep_unmerged(branch, self.merging)
+        keep_claims(self.running, branch)
         take_keys()
-        waiting = {n: q for n, q in queued().items() if n in free_at and n <= slots}  # an exit may have queued one
+        # an exit may have queued one
+        self.waiting = {n: q for n, q in queued().items() if n in self.free_at and n <= self.slots}
+
+    def end(self) -> int | None:
+        """Stop the run once a stop has drained it; end `once`, say idle, or power off when nothing may start."""
+        procs, waiting, merging, tried = self.procs, self.waiting, self.merging, self.tried
         # a slot asleep until a usage reset does not hold the stop; a session waiting to resume does
         if stopping() and not procs and (not waiting or forced()) and not merging:
             how = stopped_by()
@@ -1217,24 +1304,24 @@ def run(argv: list[str], prog: str) -> int:
             if POWER:
                 power_now()
             return 0
-        quiet = not procs and not waiting and not merging and all(dt.datetime.now() >= t for t in free_at.values())
+        quiet = not procs and not waiting and not merging and all(dt.datetime.now() >= t for t in self.free_at.values())
         # Idle, never exit: tasks a human or a session commits later start without anyone restarting the
         # run. Logged once, and only with nothing running or merging, so no slot or finished branch is left
         # behind. A script waiting on the run
         # watches run.log for `run idle`; the process itself ends only on Ctrl-C or `./run stop`.
         # one pick, and only when its answer is needed: to end `once`, to say idle, or to power off
-        if quiet and not PAUSED[0] and (once and not stopping() or not idle_said
-                                        or power_due(idle_at)) and not pick(running, tried, branch):
-            if once and not stopping():
+        if quiet and not PAUSED[0] and (self.once and not stopping() or not self.idle_said
+                                        or power_due(self.idle_at)) and not pick(self.running, tried, self.branch):
+            if self.once and not stopping():
                 log('run done: nothing it may start (once)')
                 return 0
-            if not idle_said:
+            if not self.idle_said:
                 log(f'tried this run: {", ".join(sorted(tried)) or "none"}')
                 log(idle_line())
-                idle_said, idle_at = True, time.time()
-            if shut_down(idle_at):
+                self.idle_said, self.idle_at = True, time.time()
+            if shut_down(self.idle_at):
                 return 0
-        nap(10)
+        return None
 
 
 SWEPT: set[str] = set()  # tasks sweep_unmerged started a merge of: once each per run
