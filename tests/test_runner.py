@@ -3046,6 +3046,19 @@ def test_stop_waiter(tmp: Path):
         R.stop_waiter(p.pid, str(t), 1, 0)
         took = time.time() - t0
         check(p.wait(5) is not None and took < 3, 'after a successful done a leftover background command does not hold it', took)
+        mark.unlink()
+        gone = subprocess.Popen([sys.executable, '-c', 'pass'])
+        gone.wait()
+        t0 = time.time()
+        R.stop_waiter(gone.pid, str(t), 1, 3600)
+        took = time.time() - t0
+        check(took < 2, 'a waiter whose session is already gone returns at once, not after the grace', took)
+        p = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(0.5)'])
+        t0 = time.time()
+        R.stop_waiter(p.pid, str(t), 1, 3600)
+        took = time.time() - t0
+        p.wait(5)
+        check(took < 3, 'and one whose session ends during the grace returns once it has', took)
     finally:
         R.WAITER_POLL = poll
         os.environ.pop('AGENT_RUNNER_IDLE_MAX', None)

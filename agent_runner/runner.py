@@ -4853,10 +4853,25 @@ def finished() -> bool:
     return bool((m := finished_mark()) and m.exists())
 
 
+def _wait_on(pid: int, seconds: float) -> bool:
+    """Sleep up to `seconds`, looking every WAITER_POLL s whether `pid` still runs. False (at once) once it
+    is gone: a waiter for an ended session has nothing left to do, and must not linger for hours (B55)."""
+    end = time.time() + seconds
+    while plat.alive(pid):
+        left = end - time.time()
+        if left <= 0:
+            return True
+        time.sleep(min(left, WAITER_POLL))
+    return False
+
+
 def stop_waiter(pid: int, t: str, n: int, idle: int) -> int:
     until = time.time() + max(idle, int(os.environ.get('AGENT_RUNNER_IDLE_MAX', 10800)))
-    time.sleep(idle)
+    if not _wait_on(pid, idle):
+        return 0  # the session ended by itself during the grace
     while True:
+        if not plat.alive(pid):
+            return 0
         if _user_entries(t) != n:
             return 0  # the human typed, or a tool came back: the session is alive, leave it
         try:
@@ -4872,7 +4887,8 @@ def stop_waiter(pid: int, t: str, n: int, idle: int) -> int:
         # loop that never ends) must not hold the slot for hours
         if not plat.children(pid) or time.time() >= until or finished():
             break
-        time.sleep(WAITER_POLL)
+        if not _wait_on(pid, WAITER_POLL):
+            return 0
     plat.terminate(pid)
     return 0
 
