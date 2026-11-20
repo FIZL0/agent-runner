@@ -6316,7 +6316,7 @@ def needs_you_line(line: str, titles: dict[str, str], now: dt.datetime, waiting)
         for label, tid, k, ask, url, title, shelved, *_ in waiting or []:
             if e[1] in (tid, k) and not shelved:  # B27: in everyday words, no caps label
                 return f'{when(e[0], now)}  {ASK_FEED}' + '  '.join(
-                    x for x in (f'{P.plain_ask(label, ask, title or titles.get(tid) or tid, has_sheet(tid))} [{tid}]',
+                    x for x in (f'{P.plain_ask(label, ask, title or titles.get(tid) or tid, label == 'DECIDE' and has_sheet(tid))} [{tid}]',
                                 url) if x)
     return None
 
@@ -6626,7 +6626,7 @@ as a pick sheet, not as a numbered list: no option numbers anywhere. Write {path
 name), "summary" (one line that says what is ready, e.g. "12 config cleanups ready, 10 optional"), "intro" \
 (one or two sentences), and "groups": [{{"heading": <a kind of change>, "questions": [{{"id": <short key>, \
 "q": <a plain question>, "answers": [<2-3 short answers>], "recommended": <index of your pick>, "keep": \
-<index of the answer that changes nothing, if one does>, "why": <one or two lines>}}]}}]; `backticks` show as \
+<index of the answer that changes nothing; leave it out when every answer changes something>, "why": <one or two lines>}}]}}]; `backticks` show as \
 code. Check and render it with `{runner} sheet {tid} --html <a file in your scratchpad>`, publish that file \
 with the Artifact tool, and block with `--blocked "DECIDE: <the summary> <the sheet's url>"`. Needs you shows \
 the person that one line and the link; their picks (or 'go' for your recommendations) reopen {tid} with each \
@@ -6637,7 +6637,7 @@ def questionnaires_on() -> bool:
     """F18: `[run] questionnaires` (default on): a DECIDE with options is asked as a pick sheet."""
     try:
         return C.run.get('questionnaires', True) is not False
-    except AttributeError:  # no config loaded
+    except (AttributeError, NameError):  # no config loaded
         return False
 
 
@@ -6647,7 +6647,7 @@ def has_sheet(tid: str) -> bool:
         return False
     try:
         return C.notes('sheets', f'{tid}.json').is_file()
-    except (OSError, SystemExit, AttributeError):
+    except (OSError, SystemExit, AttributeError, NameError):
         return False
 
 

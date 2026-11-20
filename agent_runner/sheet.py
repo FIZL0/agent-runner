@@ -35,7 +35,7 @@ from pathlib import Path
 
 __all__ = ['load', 'problems', 'questions', 'render', 'parse_picks', 'picks_note', 'changes', 'GO']
 
-GO = ('go', 'recommended', 'ok', 'yes')  # a reply that takes the recommended set
+GO = ('go', 'recommended')  # a reply that takes the recommended set
 
 
 def load(path: Path) -> dict:
@@ -80,8 +80,8 @@ def problems(spec) -> list[str]:
             ans = q.get('answers')
             if not str(q.get('q') or '').strip():
                 out.append(f'question {qid}: no "q"')
-            if not isinstance(ans, list) or not 2 <= len(ans) <= 26 or not all(str(a).strip() for a in ans):
-                out.append(f'question {qid}: "answers" must list 2 or more answers')
+            if not isinstance(ans, list) or not 2 <= len(ans) <= 3 or not all(str(a).strip() for a in ans):
+                out.append(f'question {qid}: "answers" must list 2 or 3 answers')
                 continue
             for k in ('recommended', 'keep'):
                 v = q.get(k, 0 if k == 'recommended' else None)

@@ -59,7 +59,14 @@ def test_spec():
     bad = json.loads(json.dumps(SPEC))
     bad['groups'][0]['questions'][0]['answers'] = ['only one']
     del bad['summary']
-    has('; '.join(S.problems(bad)), r'no "summary".*backend: "answers" must list 2', 'says what is wrong')
+    has('; '.join(S.problems(bad)), r'no "summary".*backend: "answers" must list 2 or 3', 'says what is wrong')
+    bad['groups'][0]['questions'][0]['answers'] = list('abcd')
+    has('; '.join(S.problems(bad)), r'backend: "answers" must list 2 or 3', 'four answers are too many')
+    try:
+        S.parse_picks(SPEC, 'yes')
+        check(False, "'yes' is not taken as go (it may answer another item)")
+    except ValueError:
+        check(True, "'yes' is not taken as go (it may answer another item)")
     eq(S.parse_picks(SPEC, 'go'), {'backend': 0, 'silent': 0}, "'go' is the recommended set")
     eq(S.parse_picks(SPEC, 'Recommended'), {'backend': 0, 'silent': 0}, "and so is 'recommended'")
     eq(S.parse_picks(SPEC, 'F2 picks: backend=b silent=c'), {'backend': 1, 'silent': 2}, "Send's reply line")
