@@ -195,21 +195,38 @@ that mark forward, so asking twice in a row shows nothing new the second time. W
 `since --follow` stays running and prints one line per new event as run.log gets it (a landed task with the
 first sentence of its `done` message), from now on, moving the mark as it prints: the control session's
 "follow", and fine in any terminal. `since --follow --needs-you` prints only what needs you (the run held,
-with what holds it; left for a human; looks stuck; `waits for you:` a task or concept that landed or blocked
-asking for your answer, with its label, what to do and the link), skips landed, started and idle, and leaves
+with what holds it; left for a human; looks stuck; `needs you:` a task or concept that landed or blocked
+asking for your answer, in plain words with the link), skips landed, started and idle, and leaves
 the mark where it is: it is the watch every control session keeps.
 
-Both print **Waiting for your OK** first when a concept's build or a task waits for you (below), one line
-each, however old: a caps label for what is asked, the title [id], what to do, the link:
-`  CONCEPT  Settings page layout [K7]: pick an option on the page  https://claude.ai/code/artifact/…`.
+Both print **Needs you** first when a concept's build or a task waits for you (below), however old: per item
+one line in everyday words, what is asked and what to reply, its age first and its [id] last, then its link
+on a line of its own, oldest first:
+
+    Needs you:
+       2h  Pick an option for settings page layout - reply A/B/C [K7]
+        https://claude.ai/code/artifact/…
+      35m  Check the push reached your phone - reply yes/no [F1]
+
+The CONCEPT/CONFIRM/DECIDE/BLOCKED labels stay in TODO.md and `plan waiting`; the person does not see them.
+The age comes from the `(asked YYYY-MM-DD HH:MM)` stamp `plan block` adds to a block on a person (older
+blocks have none and sort first). `[needs]` in runner.toml changes it:
+
+    [needs]
+    heading = "Needs you"   # the heading in status, since and the control sessions' opening
+    ages = true             # show each item's age
+    order = "oldest"        # "newest" first, or "plan": TODO.md's order
+    map_replies = true      # `plan answer` takes a reply that names no id to the item it answers
 
 ### Tasks waiting on a person
 
 A block whose why starts with a caps label waits on a person, not a task: `CONFIRM:` (check something by
 hand and say what you saw), `DECIDE:` (answer a question or a choice), `BLOCKED:` (access, a login, or a fix
 only a person can make). An agent files one with `done R1 "msg" --blocked "CONFIRM: watch a phone for a push
-when a task lands"`; such a block never takes an `(after …)`. It lists under Waiting for your OK beside the
-concept pages, and takes one of three answers (a control session maps what the person says):
+when a task lands"`; such a block never takes an `(after …)`. It lists under Needs you beside the
+concept pages, and takes one of three answers (a control session maps what the person says; a reply that
+names no item, "yes", "B", "later", goes through `plan answer "<reply>"`, which picks the one item it fits
+and refuses, listing them, when it could be several):
 
 - `plan confirm R1 "the push came"`: a CONFIRM is ticked with that noted; a DECIDE or BLOCKED reopens with
   the answer noted; a concept is approved.

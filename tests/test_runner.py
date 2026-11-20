@@ -919,12 +919,22 @@ def test_control(repo: Path):
     for want in ('control session', f'{R.C.command} status', f'{R.C.command} plan add', f'{R.C.command} take',
                  'Never edit code', f'{R.C.command} since', f'{R.C.command} since --follow', 'Open the session',
                  '/run · /since · /follow · /control · /pause · /stop · /slots', 'Never start it unasked',
-                 f'{R.C.command} control --new', '"/new"', "Artifact tool's `open` action", '**Waiting for your\n   OK**',
+                 f'{R.C.command} control --new', '"/new"', "Artifact tool's `open` action", '**Needs you**',
                  '**Running**', '**Landed**', '**Stuck**', "status's `lately`", 'More: /since · /run -n 20',
                  f'{R.C.command} status -n 20'):
         check(want in brief, f'the brief says {want!r}')
-    check(brief.index('**Running**') < brief.index('**Landed**') < brief.index('**Stuck**'),
-          'the groups in order: Waiting for your OK, Running, Landed, Stuck')
+    check(brief.index('**Needs you**') < brief.index('**Running**') < brief.index('**Landed**')
+          < brief.index('**Stuck**'), 'the groups in order: Needs you, Running, Landed, Stuck')
+    check('Waiting for your OK' not in brief, 'B27: the old heading is gone from the brief')
+    check('never show the person those labels' in brief and 'reply yes/no' in brief,
+          'B27: the brief words each item plainly, without the caps labels', brief)
+    check(f'{R.C.command} plan answer "<their words>"' in brief,
+          'B27: a reply naming no item goes through plan answer')
+    with mock.patch.object(P, 'needs_cfg', lambda: {'heading': 'For you', 'ages': True, 'order': 'oldest',
+                                                    'map_replies': False}):
+        b2 = R.control_brief()
+    check('**For you**' in b2 and 'plan answer' not in b2 and 'map_replies is off' in b2,
+          'B27: [needs] heading names the group; map_replies = false asks which one instead', b2[:200])
     check('status · since · follow' not in brief, 'the hints line is slash commands, not bare words')
     check('--after T181' in brief and f'{R.C.command} plan block ID --after' in brief,
           '"do X after T181" queues X with --after (block --after for a queued task)')
@@ -1132,14 +1142,14 @@ def test_concepts_waiting(repo: Path):
     R.init(repo)
     w = [('CONCEPT', 'F9', 'K7', 'pick an option on the page', 'https://claude.ai/code/artifact/aaa',
           'Settings page layout', False)]
-    line = '  CONCEPT  Settings page layout [K7]: pick an option on the page  https://claude.ai/code/artifact/aaa'
+    line = ['  Pick an option for settings page layout - reply A/B/C [K7]', '    https://claude.ai/code/artifact/aaa']
     text = R.status_text(False, {}, [], {}, 0.0, waiting=w)
-    eq(text.splitlines(), ['Waiting for your OK:', line, 'no run is up'],
-       'status: waiting for your OK first, label first, with the link')
+    eq(text.splitlines(), ['Needs you:', *line, 'no run is up'],
+       'status: Needs you first, in plain words, no label, the link on its own line')
     eq(R.status_text(False, {}, [], {}, 0.0), 'no run is up', 'and nothing extra when none waits')
     now = R.dt.datetime(2026, 11, 19, 15, 0, 0)
     text, _ = R.since_text([], now - R.dt.timedelta(hours=2), {}, now, waiting=w)
-    eq(text.splitlines(), ['Waiting for your OK:', line, 'nothing new since 13:00'],
+    eq(text.splitlines(), ['Needs you:', *line, 'nothing new since 13:00'],
        'since: the same, however old the concept is')
     with tempfile.TemporaryDirectory() as tmp:
         todo = Path(tmp) / 'TODO.md'
@@ -1147,9 +1157,11 @@ def test_concepts_waiting(repo: Path):
         P.add('K', 'settings page layout | files: a.py', todo=todo)
         bid = P.concept_done('K1', 'https://x.invalid/p', todo=todo)
         with mock.patch.object(type(R.C), 'todo', property(lambda self: todo)):
-            eq(R.waiting_ok(), [('CONCEPT', bid, 'K1', 'pick an option on the page', 'https://x.invalid/p',
-                                 'settings page layout', False)],
+            got = R.waiting_ok()
+            eq([g[:7] for g in got], [('CONCEPT', bid, 'K1', 'pick an option on the page', 'https://x.invalid/p',
+                                       'settings page layout', False)],
                'waiting_ok reads the build tasks waiting on a concept page off TODO.md')
+            check(re.fullmatch(r'\d{4}-\d\d-\d\d \d\d:\d\d', got[0][7]), 'B27: with the time it was asked', got)
     prompt = R.prompt_for('K7', 1, 1, repo, 'main')
     has(prompt, r'K7 is a concept task: do not build it', 'a K task\'s prompt says to build nothing')
     has(prompt, r'done K7 "<msg>" --artifact <the page\'s URL>', 'and how to finish it')
@@ -1184,16 +1196,36 @@ def test_person_waiting(repo: Path):
            'what to do, and its link apart')
         with mock.patch.object(type(R.C), 'todo', property(lambda self: todo)):
             w = R.waiting_ok()
-        text = R.status_text(False, {}, [], {}, 0.0, waiting=w)
-        has(text, r'^Waiting for your OK:\n  BLOCKED  deploy key \[F3\]: needs a deploy key on the server\n'
-                  r'  DECIDE  pick a database \[F2\]: Postgres or SQLite\? F4 does not care\n'
-                  r'  CONFIRM  push notices \[F1\]: watch a phone for a push when a task lands, see  '
-                  r'https://x\.invalid/howto\nno run is up$',
-            'status: label, title [id]: what to do, link, in queue order')
+        check(all(re.fullmatch(r'\d{4}-\d\d-\d\d \d\d:\d\d', x[7]) for x in w),
+              'B27: each block on a person is stamped with when it was asked', w)
+        check(all('(asked' not in x[3] for x in w), 'and the stamp stays out of what it asks', w)
+        has(todo.read_text(encoding='utf-8'), r'\*\*F2\*\* .*BLOCKED: DECIDE: Postgres or SQLite\? F4 does not care '
+            r'\(asked \d{4}-\d\d-\d\d \d\d:\d\d\)$', 'the stamp is on the block line in TODO.md')
+        # fixed stamps, so the ages and the order do not hang on the clock
+        stamps = {'F1': '2026-11-19 10:00', 'F2': '2026-11-19 14:30', 'F3': '2026-11-19 12:00'}
+        w = [(*x[:7], stamps[x[1]]) for x in w]
         now = R.dt.datetime(2026, 11, 19, 15, 0, 0)
-        has(R.since_text([], now, {}, now, waiting=w)[0],
-            r'^Waiting for your OK:\n  BLOCKED  deploy key \[F3\]: .*\n  DECIDE .*\n  CONFIRM  push notices \[F1\]',
-            'since: the same')
+        text = R.status_text(False, {}, [], {}, now.timestamp(), waiting=w)
+        eq(text.splitlines(), ['Needs you:',
+                               '   5h  Watch a phone for a push when a task lands - reply yes/no [F1]',
+                               '    https://x.invalid/howto',
+                               '   3h  Needs a deploy key on the server - reply done once it is [F3]',
+                               '  30m  Postgres or SQLite? F4 does not care - reply with your answer [F2]',
+                               'no run is up'],
+           'B27 status: Needs you, oldest first with its age, what is asked and what to reply, no caps label, '
+           'the link on its own line')
+        text = R.since_text([], now, {}, now, waiting=w)[0]
+        check(text.startswith('Needs you:\n   5h  Watch a phone') and 'CONFIRM' not in text
+              and 'DECIDE' not in text and 'BLOCKED' not in text, 'since: the same', text)
+        nc = {'heading': 'Needs you', 'ages': True, 'order': 'oldest', 'map_replies': True}
+        for order, ids in (('newest', ['F2', 'F3', 'F1']), ('plan', ['F3', 'F2', 'F1'])):
+            with mock.patch.object(P, 'needs_cfg', lambda: {**nc, 'order': order}):
+                got = re.findall(r'\[(F\d)\]', '\n'.join(R.waiting_text(w, now=now)))
+            eq(got, ids, f'B27: [needs] order = "{order}"')
+        with mock.patch.object(P, 'needs_cfg', lambda: {**nc, 'ages': False, 'heading': 'Your turn'}):
+            got = R.waiting_text(w, now=now)
+        eq(got[:2], ['Your turn:', '  Watch a phone for a push when a task lands - reply yes/no [F1]'],
+           'B27: [needs] heading and ages = false')
         out = run(root, 'plan', 'waiting', env=env).stdout
         has(out, r'^CONFIRM  F1  push notices  watch a phone .* https://x\.invalid/howto$', 'plan waiting lists it')
         has(out, r'^DECIDE  F2  pick a database', 'and the decision')
@@ -1553,10 +1585,10 @@ def test_short_titles_and_since(repo: Path):
         eq(lines, ['14:32  run held, needs you: F5 cannot land: uncommitted edits in demo: commit or move them',
                    '14:33  needs you: Fix the flicker (the merge crashed: boom) [B9]',
                    '14:34  looks stuck: Control session experience [F5]',
-                   '14:35  waits for you: DECIDE  Fix the flicker: Postgres or SQLite? [B9]  https://x.invalid/b9'],
+                   '14:35  needs you: Postgres or SQLite? - reply with your answer [B9]  https://x.invalid/b9'],
            '--needs-you: STOPPED with what holds it, LEFT FOR A HUMAN, stalled, a person ask; no landed/started/idle')
         lines, _ = R.follow_lines('\n'.join(ny), titles, now, needs_you=True, waiting=[])
-        check(not any('waits for you' in l or 'landed' in l or 'started' in l for l in lines),
+        check(not any('reply' in l or 'landed' in l or 'started' in l for l in lines),
               'a blocked task asking nobody is not news for the watch', lines)
         later3 = (R.dt.datetime.fromisoformat(later2) + R.dt.timedelta(seconds=5)).isoformat()
         def add2():
@@ -1619,7 +1651,19 @@ def test_short_titles_and_since(repo: Path):
                   'without the feed, control sessions keep their own needs-you watch')
         ask = [('DECIDE', 'B9', '', 'Postgres or SQLite?', 'https://x.invalid/b9', 'Fix the flicker', False)]
         full, _ = R.follow_lines('=== 2026-11-19T14:35:00 B9: merged, blocked', titles, now, waiting=ask)
-        check(any('waits for you: DECIDE' in l for l in full), 'the full feed carries the asks too', full)
+        check(any('needs you: Postgres or SQLite? - reply with your answer [B9]' in l for l in full),
+              'the full feed carries the asks too, in plain words (B27)', full)
+        check(not any('DECIDE' in l for l in full), 'B27: no caps label in the feed', full)
+        with mock.patch.object(R, 'remote_on', lambda: True), mock.patch.dict(R.C.run, {'agent': 'claude'}):
+            fa = R.feed_argv()
+            sp_ = fa[fa.index('--system-prompt') + 1]
+            check(f'{R.C.command} plan answer "<their words>"' in sp_ and '"Needs you"' in sp_,
+                  'B27: the feed answers a reply to an item under Needs you with plan answer', sp_)
+            with mock.patch.object(P, 'needs_cfg', lambda: {'heading': 'Needs you', 'ages': True,
+                                                            'order': 'oldest', 'map_replies': False}):
+                fa = R.feed_argv()
+            check('plan answer' not in fa[fa.index('--system-prompt') + 1],
+                  'B27: and not with [needs] map_replies = false')
         started = []
         with mock.patch.object(R, 'MUX', R.TmuxMux()), mock.patch.dict(os.environ, {'TMUX_PANE': '%1'}), \
                 mock.patch.object(R, 'tmux', lambda *a, **k: subprocess.CompletedProcess(a, 0, 'mine\n', '')), \
