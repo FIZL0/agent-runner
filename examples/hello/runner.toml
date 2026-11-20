@@ -5,7 +5,10 @@ dir = "plan"                 # TODO.md, DONE.md and plan/<ID>.md long forms
 journal = "journal"          # one folder per task; the newest entry is pasted into the brief
 
 [run]
-test = "python3 -m unittest -q"   # the gate: `done` and every merge run it
+# The gate: `done` and every merge run it. python3 first (never Python 2; the only name on stock macOS and
+# many Linuxes), then python: on Windows python3 is often the Microsoft Store placeholder, which exits 9009,
+# and `||` works the same in sh and cmd.exe. A real failure under python3 just runs the tests a second time.
+test = "python3 -m unittest -q || python -m unittest -q"
 slots = 2
 rules = "AGENTS.md"          # what the prompt tells each session to read first
 joinable = ["plan/TODO.md", "plan/DONE.md", "journal/*/*.md", "CHANGELOG.md"]
