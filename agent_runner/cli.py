@@ -7,8 +7,10 @@ import sys
 USAGE = """agent-runner: AI agents work through plan/TODO.md, one task each, in parallel.
 
 Run the agents
+    agent-runner                      start the run in the background and get the prompt back
+    agent-runner attach [s2]          see the run's pane, or slot 2's (Windows: slot 2's console window)
     agent-runner run once             try it: one task, then stop
-    agent-runner run                  keep going with the slots runner.toml sets, until you stop it
+    agent-runner run                  the run in this terminal, with the slots runner.toml sets, until you stop it
     agent-runner run 3                3 agents at once
     agent-runner run --dry-run 3      show what 3 agents would start now, start nothing
     agent-runner stop                 let running tasks finish, start no new ones
@@ -130,6 +132,18 @@ def main(argv: list[str] | None = None) -> int:
     if cmd == 'run':
         from agent_runner import runner
         return runner.cmd_run(rest)
+    if not argv:  # bare: the run in the background (outside a repository: the usage, as before)
+        from agent_runner.config import toplevel
+        try:
+            toplevel()
+        except SystemExit:
+            print(USAGE, file=sys.stderr)
+            return 2
+        from agent_runner import runner
+        return runner.cmd_background(rest)
+    if cmd == 'attach':
+        from agent_runner import runner
+        return runner.cmd_attach(rest)
     if cmd == 'context':
         from agent_runner import context
         return context.main(rest)
