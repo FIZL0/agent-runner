@@ -7,8 +7,9 @@ import sys
 USAGE = """agent-runner: AI agents work through plan/TODO.md, one task each, in parallel.
 
 What you type
-    agent-runner                      start the run in the background (--attach: and watch it)
-    agent-runner attach [s2]          see the run's pane, or slot 2's (Ctrl-b d: back to the background)
+    agent-runner                      start the run in the background and get the prompt back
+    agent-runner --attach             the same, then watch its pane here (Ctrl-b d: back to the background)
+    agent-runner attach [s2]          see the run's pane, or slot 2's
     agent-runner control              a control session here: ask it "status?", to pause, add slots, file a task
     agent-runner control --new        another one beside the run; prints its claude.ai/code link
     agent-runner status               is a run up, each slot's task, merges lately, usage (-n 20: log too)
