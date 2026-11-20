@@ -1075,6 +1075,202 @@ def owed(tid: str, base: str) -> dict | None:
     return next((a for a in AHEADS if reusable(a, a['tids'][0], base) and a['tids'][0] in WAITING), None)
 
 
+BATCH_RETRY = object()  # a merge_batch step's answer: build the merge again, in the next of its three tries
+
+
+class BatchTurn:
+    """One merge_batch turn's state, shared by its steps (`batch_build`, `batch_test`, `batch_land`) and kept
+    across its three tries: what the turn is (tid, branch, the merge worktree d, the critical tasks, whether
+    a conflict goes to a fix ahead of the lock or to a fix session in the batch), whether it merges alone,
+    the repairs to replay, and the try's base, merge commit and riders."""
+
+    def __init__(self, tid: str, branch: str, d: Path, solo: bool, crit: set[str], ahead_fix: bool,
+                 batch_fixes: bool):
+        self.tid, self.branch, self.d = tid, branch, d
+        self.solo, self.crit, self.ahead_fix, self.batch_fixes = solo, crit, ahead_fix, batch_fixes
+        self.repairs: list[str] = []  # a repair session's commits, replayed when the merge is built again
+        self.repaired_on = ''  # the base the last repair session ran on: one repair per failure, not per task,
+        # so a rebuild that fails on commits the shared branch got since that repair gets a repair of its own
+        self.batch_repaired = False  # one repair session per batch; a batch that still fails is split
+        self.base = ''
+        self.merged = ''
+        self.riders: list[str] = []
+
+
+def batch_build(t: BatchTurn):
+    """merge_batch's build step: the merge of task/<tid> and its riders on the branch's head, in t.d.
+
+    Reuses a merge already built and gated ahead when it still fits; takes in the remote's commits, replays
+    t.repairs and archives ticked tasks. Sets t.base, t.riders and t.merged. Returns None when built,
+    BATCH_RETRY to build again, or why it cannot merge (AGAIN for a fix ahead of the lock)."""
+    tid, branch, d = t.tid, t.branch, t.d
+    git('merge', '--abort', cwd=d)
+    clean(d)
+    t.base = base = git('rev-parse', branch).stdout.strip()
+    git('checkout', '-q', '--detach', base, cwd=d)
+    ahead = next((a for a in AHEADS if reusable(a, tid, base)), None)
+    if ahead:
+        AHEADS.remove(ahead)
+        clean(d, ahead['merged'])
+        t.riders = riders = [x for x in ahead['tids'] if x != tid]
+        log(f'{tid}: reusing the merge already built and gated (ahead, or by an earlier run)' +
+            (f' with {", ".join(riders)}' if riders else ''))
+        if ahead['base'] != base:  # the branch moved by untested files only: take them in
+            if (files := merge_into(d, base, f'Merge {branch} into the merge of task/{tid}')) is None or \
+                    files and not joined(files, tid, d):
+                git('merge', '--abort', cwd=d)
+                log(f'{tid}: {branch} moved and conflicts with it; building the merge again')
+                return BATCH_RETRY
+    else:
+        if AHEADS:
+            if a := next((a for a in AHEADS if tid in a['tids']), None):  # say why its gate is thrown away
+                moved = [f for f in git('diff', '--name-only', a['base'], base).stdout.split()
+                         if not untestable(f)]
+                log(f'{tid}: not reusing the merge gated with {", ".join(x for x in a["tids"] if x != tid)}: '
+                    + (f'{branch} moved in tested files ({", ".join(moved[:5])}; `[run] untested` leaves '
+                       f'them in)' if moved else 'its tasks changed'))
+            drop_ahead()  # the branch moved some other way, or its tasks are gone: not this merge
+        own = fixed(tid)
+        ref = renumber_doubles(own, base, tid, d)
+        msg = merge_message(tid, f'task/{tid}' if own != f'task/{tid}' else ref)
+        if (files := merge_into(d, ref, msg, tid)) is None:
+            return f'git refused to merge task/{tid} into {branch} (see the merge worktree, {d})'
+        if files:
+            if joined(files, tid, d):
+                log(f'{tid}: joined both sides of {", ".join(files)}')
+            elif t.ahead_fix:
+                return AGAIN
+            elif why := refix(tid, branch, ref, files, d, msg=msg):
+                return why
+        t.riders = riders = []
+        for x in ([] if t.solo else sorted(WAITING - set(LANDED) - ALONE - t.crit)):
+            if C.run['batch_max'] and len(riders) + 1 >= C.run['batch_max']:
+                break  # the rest go in the next batch: a failure here costs fewer tasks a retest
+            own = fixed(x)
+            ref = renumber_doubles(own, 'HEAD', x, d)
+            msg = merge_message(x, f'task/{x}' if own != f'task/{x}' else ref)
+            if (files := merge_into(d, ref, msg, x)) is None:
+                git('merge', '--abort', cwd=d)
+                continue
+            if files and not joined(files, x, d):
+                if not t.batch_fixes:
+                    git('merge', '--abort', cwd=d)
+                    continue  # it waits for its own turn, where a fix session can take the conflict
+                # a fix session takes the conflict here, so the rider shares this gate run
+                if refix(x, branch, ref, files, d, undo=True, msg=msg):
+                    continue  # it waits for its own turn
+            riders.append(x)
+        if riders:
+            log(f'{tid}: merging together with {", ".join(riders)} (one gate run)')
+    if up := upstream(branch, d):  # someone pushed to the remote: take it in, the gate tests it too
+        msg = f"Merge {up.removeprefix('refs/remotes/')} into {branch}"
+        if (files := merge_into(d, up, msg)) is None:
+            return f'git refused to merge {up} into the merge of task/{tid} (see the merge worktree, {d})'
+        if files and not joined(files, tid, d) and (why := refix(tid, branch, up, files, d, msg=msg)):
+            return f'{up} has moved and conflicts with the merge: {why}'
+        log(f'{tid}: {up} had commits {branch} did not; merged in, so the gate tests them together')
+    if t.repairs and git('cherry-pick', '--allow-empty', *t.repairs, cwd=d).returncode:
+        git('cherry-pick', '--abort', cwd=d)
+        log(f'{tid}: the repair no longer applies to the merge; testing it without')
+        t.repairs = []
+    if not C.plan_external:  # outside, `done` and `land_tick` archive as they tick
+        carry_notes(base, d)
+        P.archive(d / plan_rel('TODO.md'), d / plan_rel('DONE.md'))
+    plan_files = [plan_rel('TODO.md'), plan_rel('DONE.md')]
+    if git('status', '--porcelain', '--', *plan_files, cwd=d).stdout.strip():
+        git('commit', '-qm', f'{tid}: archive ticked tasks', '--', *plan_files, cwd=d)
+    t.merged = git('rev-parse', 'HEAD', cwd=d).stdout.strip()
+    return None
+
+
+def batch_test(t: BatchTurn):
+    """merge_batch's test step: the gate on t.merged, unless `done` already passed it on the same code.
+
+    A failing batch is split (by blame, or after one batch repair); a failing merge alone gets one repair
+    session per base. Returns None when the merge (t.merged, perhaps repaired) may land, BATCH_RETRY to build
+    it again (t.solo, t.repairs changed), or why it fails."""
+    tid, branch, d, base, riders = t.tid, t.branch, t.d, t.base, t.riders
+    # `done` already passed the gate on the branch: rerun it only if the merged code differs
+    # from what it tested (`[run] untested` files are not code). Not after `done --no-test`, nor
+    # commits made after `done`, nor a session that never ran it: its tested ref is not the branch
+    if not (riders or not gated(tid) or
+            not all(map(untestable, git('diff', '--name-only', f'task/{tid}', t.merged, cwd=d).stdout.split()))):
+        return None
+    ahead_done = threading.Event()
+    if C.run['merge_ahead']:
+        threading.Thread(target=build_ahead, args=(branch, t.merged, ahead_done, {tid, *riders}),
+                         daemon=True).start()
+    try:
+        why = tested(tid, d, base, [tid, *riders])
+    finally:
+        ahead_done.set()
+    if not why:
+        return None
+    drop_ahead()  # built on a merge that does not land as it is
+    names = FAILED.pop(tid, [])
+    if riders and names and (bad := blame([tid, *riders], d, base, names)):
+        ALONE.update(bad)
+        log(f'{tid}: the batch fails {", ".join(names)}; {", ".join(bad)} '
+            f'fail{"s" if len(bad) == 1 else ""} them alone, so '
+            f'{"it merges" if len(bad) == 1 else "they merge"} in a turn of {"its" if len(bad) == 1 else "their"} own')
+        t.solo, t.repairs = t.solo or tid in bad, []
+        return BATCH_RETRY
+    if riders and names:
+        git('checkout', '-q', '--detach', t.merged, cwd=d)  # blame left it on the base
+    if riders and not t.batch_repaired and C.run['repair_merges']:
+        t.batch_repaired = True
+        not_fixed, still, fixes = repair_retest(tid, branch, d, base, t.merged, riders)
+        if not not_fixed and not still:
+            note(f'{tid}: the batch ({", ".join(riders)} with it) failed the gate; ' +
+                 ('a repair session fixed it' if fixes else 'a flake, by the repair session: it passed on a rerun'))
+            # replayed if the batch is built again because the shared branch moved
+            t.repairs, t.merged, why = fixes, git('rev-parse', 'HEAD', cwd=d).stdout.strip(), None
+        else:
+            note(f'{tid}: no batch repair: {not_fixed or "the repaired batch still fails the gate"}')
+    if why and riders:
+        log(f'{tid}: the batch fails the gate; {tid} again alone, the others in their own turns')
+        t.solo, t.repairs = True, []
+        return BATCH_RETRY
+    if not why:
+        return None
+    if t.repaired_on == base:
+        return why + (' (after a repair session)' if t.repairs else '')
+    if t.repaired_on:
+        log(f'{tid}: {branch} moved since the repair ({t.repaired_on[:10]}..{base[:10]}) and the merge '
+            f'fails again: a new failure, so a new repair session')
+    t.repaired_on, t.solo = base, True  # a rebuild replays the repairs onto this task alone
+    not_fixed, still, fixes = repair_retest(tid, branch, d, base, t.merged)
+    t.repairs = t.repairs + fixes
+    if not_fixed:
+        note(f'{tid}: no repair: {not_fixed}')
+        return why
+    if still:
+        return still + ' (after a repair session)'
+    t.merged = git('rev-parse', 'HEAD', cwd=d).stdout.strip()
+    note(f'{tid}: the merge failed the gate; ' + ('a repair session fixed it' if t.repairs else
+                                                  'a flake, by the repair session: it passed on a rerun'))
+    return None
+
+
+def batch_land(t: BatchTurn, last: bool = False):
+    """merge_batch's land step: catch t.merged up with the branch and land it; record the tasks in LANDED.
+
+    Returns None when landed, BATCH_RETRY when it did not catch up or (unless `last`) lost a race to land,
+    or why it did not land."""
+    if (got := caught_up(t.tid, t.branch, t.d, t.base, t.merged, [t.tid, *t.riders])) is None:
+        return BATCH_RETRY
+    t.base, t.merged = got
+    with LANDING:
+        why = land(t.tid, t.branch, t.merged)
+    if why == 'conflict' and not last:
+        return BATCH_RETRY
+    if why:
+        return why
+    for x in [t.tid, *t.riders]:
+        LANDED[x] = (t.base, t.merged)
+    return None
+
+
 def merge_batch(tid: str, branch: str, inline: bool = False, yields: bool = True) -> str | None:
     """`merge`'s part under the lock: build, test and land task/<tid> and its riders; record them in LANDED.
 
@@ -1092,159 +1288,20 @@ def merge_batch(tid: str, branch: str, inline: bool = False, yields: bool = True
         worktree('merge', branch)
     crit = criticals(branch)
     solo = not C.run['batch'] or tid in ALONE or tid in crit
-    repairs: list[str] = []  # a repair session's commits, replayed when the merge is built again
-    repaired_on = ''  # the base the last repair session ran on: one repair per failure, not per task, so a
-    # rebuild that fails on commits the shared branch got since that repair gets a repair of its own
-    batch_repaired = False  # one repair session per batch; a batch that still fails is split
     batch_fixes = C.run['fix_merges'] and not C.run['fix_ahead_max']  # a rider's conflict: a fix session in the batch
+    t = BatchTurn(tid, branch, d, solo, crit, ahead_fix, batch_fixes)
     try:
         for attempt in range(3):
-            git('merge', '--abort', cwd=d)
-            clean(d)
-            base = git('rev-parse', branch).stdout.strip()
-            git('checkout', '-q', '--detach', base, cwd=d)
-            ahead = next((a for a in AHEADS if reusable(a, tid, base)), None)
-            if ahead:
-                AHEADS.remove(ahead)
-                clean(d, ahead['merged'])
-                riders = [t for t in ahead['tids'] if t != tid]
-                log(f'{tid}: reusing the merge already built and gated (ahead, or by an earlier run)' +
-                    (f' with {", ".join(riders)}' if riders else ''))
-                if ahead['base'] != base:  # the branch moved by untested files only: take them in
-                    if (files := merge_into(d, base, f'Merge {branch} into the merge of task/{tid}')) is None or \
-                            files and not joined(files, tid, d):
-                        git('merge', '--abort', cwd=d)
-                        log(f'{tid}: {branch} moved and conflicts with it; building the merge again')
-                        continue
-            else:
-                if AHEADS:
-                    if a := next((a for a in AHEADS if tid in a['tids']), None):  # say why its gate is thrown away
-                        moved = [f for f in git('diff', '--name-only', a['base'], base).stdout.split()
-                                 if not untestable(f)]
-                        log(f'{tid}: not reusing the merge gated with {", ".join(t for t in a["tids"] if t != tid)}: '
-                            + (f'{branch} moved in tested files ({", ".join(moved[:5])}; `[run] untested` leaves '
-                               f'them in)' if moved else 'its tasks changed'))
-                    drop_ahead()  # the branch moved some other way, or its tasks are gone: not this merge
-                own = fixed(tid)
-                ref = renumber_doubles(own, base, tid, d)
-                msg = merge_message(tid, f'task/{tid}' if own != f'task/{tid}' else ref)
-                if (files := merge_into(d, ref, msg, tid)) is None:
-                    return f'git refused to merge task/{tid} into {branch} (see the merge worktree, {d})'
-                if files:
-                    if joined(files, tid, d):
-                        log(f'{tid}: joined both sides of {", ".join(files)}')
-                    elif ahead_fix:
-                        return AGAIN
-                    elif why := refix(tid, branch, ref, files, d, msg=msg):
-                        return why
-                riders = []
-                for t in ([] if solo else sorted(WAITING - set(LANDED) - ALONE - crit)):
-                    if C.run['batch_max'] and len(riders) + 1 >= C.run['batch_max']:
-                        break  # the rest go in the next batch: a failure here costs fewer tasks a retest
-                    own = fixed(t)
-                    ref = renumber_doubles(own, 'HEAD', t, d)
-                    msg = merge_message(t, f'task/{t}' if own != f'task/{t}' else ref)
-                    if (files := merge_into(d, ref, msg, t)) is None:
-                        git('merge', '--abort', cwd=d)
-                        continue
-                    if files and not joined(files, t, d):
-                        if not batch_fixes:
-                            git('merge', '--abort', cwd=d)
-                            continue  # it waits for its own turn, where a fix session can take the conflict
-                        # a fix session takes the conflict here, so the rider shares this gate run
-                        if refix(t, branch, ref, files, d, undo=True, msg=msg):
-                            continue  # it waits for its own turn
-                    riders.append(t)
-                if riders:
-                    log(f'{tid}: merging together with {", ".join(riders)} (one gate run)')
-            if up := upstream(branch, d):  # someone pushed to the remote: take it in, the gate tests it too
-                msg = f"Merge {up.removeprefix('refs/remotes/')} into {branch}"
-                if (files := merge_into(d, up, msg)) is None:
-                    return f'git refused to merge {up} into the merge of task/{tid} (see the merge worktree, {d})'
-                if files and not joined(files, tid, d) and (why := refix(tid, branch, up, files, d, msg=msg)):
-                    return f'{up} has moved and conflicts with the merge: {why}'
-                log(f'{tid}: {up} had commits {branch} did not; merged in, so the gate tests them together')
-            if repairs and git('cherry-pick', '--allow-empty', *repairs, cwd=d).returncode:
-                git('cherry-pick', '--abort', cwd=d)
-                log(f'{tid}: the repair no longer applies to the merge; testing it without')
-                repairs = []
-            if not C.plan_external:  # outside, `done` and `land_tick` archive as they tick
-                carry_notes(base, d)
-                P.archive(d / plan_rel('TODO.md'), d / plan_rel('DONE.md'))
-            plan_files = [plan_rel('TODO.md'), plan_rel('DONE.md')]
-            if git('status', '--porcelain', '--', *plan_files, cwd=d).stdout.strip():
-                git('commit', '-qm', f'{tid}: archive ticked tasks', '--', *plan_files, cwd=d)
-            merged = git('rev-parse', 'HEAD', cwd=d).stdout.strip()
-            # `done` already passed the gate on the branch: rerun it only if the merged code differs
-            # from what it tested (`[run] untested` files are not code). Not after `done --no-test`, nor
-            # commits made after `done`, nor a session that never ran it: its tested ref is not the branch
-            if riders or not gated(tid) or \
-                    not all(map(untestable, git('diff', '--name-only', f'task/{tid}', merged, cwd=d).stdout.split())):
-                ahead_done = threading.Event()
-                if C.run['merge_ahead']:
-                    threading.Thread(target=build_ahead, args=(branch, merged, ahead_done, {tid, *riders}),
-                                     daemon=True).start()
-                try:
-                    why = tested(tid, d, base, [tid, *riders])
-                finally:
-                    ahead_done.set()
-                if why:
-                    drop_ahead()  # built on a merge that does not land as it is
-                    names = FAILED.pop(tid, [])
-                    if riders and names and (bad := blame([tid, *riders], d, base, names)):
-                        ALONE.update(bad)
-                        log(f'{tid}: the batch fails {", ".join(names)}; {", ".join(bad)} '
-                            f'fail{"s" if len(bad) == 1 else ""} them alone, so '
-                            f'{"it merges" if len(bad) == 1 else "they merge"} in a turn of {"its" if len(bad) == 1 else "their"} own')
-                        solo, repairs = solo or tid in bad, []
-                        continue
-                    if riders and names:
-                        git('checkout', '-q', '--detach', merged, cwd=d)  # blame left it on the base
-                    if riders and not batch_repaired and C.run['repair_merges']:
-                        batch_repaired = True
-                        not_fixed, still, fixes = repair_retest(tid, branch, d, base, merged, riders)
-                        if not not_fixed and not still:
-                            note(f'{tid}: the batch ({", ".join(riders)} with it) failed the gate; ' +
-                                 ('a repair session fixed it' if fixes else 'a flake, by the repair session: it passed on a rerun'))
-                            # replayed if the batch is built again because the shared branch moved
-                            repairs, merged, why = fixes, git('rev-parse', 'HEAD', cwd=d).stdout.strip(), None
-                        else:
-                            note(f'{tid}: no batch repair: {not_fixed or "the repaired batch still fails the gate"}')
-                    if why and riders:
-                        log(f'{tid}: the batch fails the gate; {tid} again alone, the others in their own turns')
-                        solo, repairs = True, []
-                        continue
-                if why:
-                    if repaired_on == base:
-                        return why + (' (after a repair session)' if repairs else '')
-                    if repaired_on:
-                        log(f'{tid}: {branch} moved since the repair ({repaired_on[:10]}..{base[:10]}) and the merge '
-                            f'fails again: a new failure, so a new repair session')
-                    repaired_on, solo = base, True  # a rebuild replays the repairs onto this task alone
-                    not_fixed, still, fixes = repair_retest(tid, branch, d, base, merged)
-                    repairs = repairs + fixes
-                    if not_fixed:
-                        note(f'{tid}: no repair: {not_fixed}')
-                        return why
-                    if still:
-                        return still + ' (after a repair session)'
-                    merged = git('rev-parse', 'HEAD', cwd=d).stdout.strip()
-                    note(f'{tid}: the merge failed the gate; ' + ('a repair session fixed it' if repairs else
-                                                                  'a flake, by the repair session: it passed on a rerun'))
-            if (got := caught_up(tid, branch, d, base, merged, [tid, *riders])) is None:
-                if attempt < 2:
-                    continue
-                break
-            base, merged = got
-            with LANDING:
-                why = land(tid, branch, merged)
-            if why == 'conflict' and attempt < 2:
+            why = batch_build(t)
+            if why is None:
+                why = batch_test(t)
+            if why is None:
+                why = batch_land(t, last=attempt == 2)
+                if why is None:
+                    return None
+            if why is BATCH_RETRY:
                 continue
-            if why:
-                return why
-            for t in [tid, *riders]:
-                LANDED[t] = (base, merged)
-            return None
+            return why
         return f'{tid}: no merge landed in three tries'
     finally:
         git('merge', '--abort', cwd=d)
