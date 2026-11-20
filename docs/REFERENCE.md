@@ -148,9 +148,12 @@ task to fix X" (it files it with `plan add`), "do X now" (it uses `take`, never 
   after.
 - **With `[run] remote`** each control session starts with `--remote-control "<repo> · control N"`, and the
   run keeps `claude remote-control --spawn same-dir --name "<repo> · control" --settings <file>` running in
-  the main checkout (output in `.runner/control-server.log`), restarted when it exits (Remote Control quits
+  the main checkout (output in `.runner/control-server.log`, errors in `.runner/control-server.err`; one that
+  quits within a minute puts its last error line in `run.log`), restarted when it exits (Remote Control quits
   after about 10 minutes offline; 30 s, doubling to 10 minutes while it keeps failing), so new control
-  sessions can be started from the app. The run's end ends it. The slots stay local unless `[run]
+  sessions can be started from the app. `--settings` goes in only when `claude remote-control --help` lists
+  it (asked once a run): an older Claude Code starts without it, so its app sessions get no control brief,
+  and `run.log` says to update. The run's end ends it. The slots stay local unless `[run]
   remote_slots = true`, which starts each as "<task title> · <repo> s2 · B646".
 - **`remote = "auto"`, the default**, is on when Remote Control can work: Claude Code on a claude.ai login.
   It is off, with one `run.log` line saying why (`remote control off: …`), when the backend is pi, the agent

@@ -6751,8 +6751,40 @@ def control_new(n: int | None = None, wait: float = CONTROL_LINK_WAIT, ask: str 
 def control_server_argv() -> list[str]:
     """With `[run] remote`: Claude Code's Remote Control server in the main checkout, so new control sessions can
     be started from claude.ai/code and the Claude apps, each with the control settings (its brief)."""
-    return [plat.exe(C.run['agent']), 'remote-control', '--spawn', 'same-dir', '--name', f'{ROOT.name} · control',
-            '--permission-mode', 'bypassPermissions', '--settings', str(control_settings())]
+    exe = plat.exe(C.run['agent'])
+    return [exe, 'remote-control', '--spawn', 'same-dir', '--name', f'{ROOT.name} · control',
+            '--permission-mode', 'bypassPermissions',
+            *(['--settings', str(control_settings())] if server_takes_settings(exe) else [])]
+
+
+_SERVER_SETTINGS: dict[str, bool] = {}
+
+
+def server_takes_settings(exe: str) -> bool:
+    """Whether this agent's `remote-control` takes `--settings` (asked of its --help once a run): an older Claude
+    Code exits at once on it, which would crash-loop the control server. An agent whose help cannot be read
+    (missing, hangs, prints nothing) is taken to have it, as before."""
+    if exe not in _SERVER_SETTINGS:
+        try:
+            r = sp.run([exe, 'remote-control', '--help'], stdin=sp.DEVNULL, capture_output=True, text=True,
+                       errors='replace', timeout=30)
+            said = (r.stdout or '') + (r.stderr or '')
+            _SERVER_SETTINGS[exe] = '--settings' in said or not said.strip()
+        except (OSError, sp.SubprocessError):
+            _SERVER_SETTINGS[exe] = True
+    return _SERVER_SETTINGS[exe]
+
+
+def server_last_error(err: Path, since: int) -> str:
+    """The last non-blank line the control server wrote to stderr (`err`) after offset `since`, cut to 200."""
+    try:
+        with open(err, 'rb') as fh:
+            fh.seek(since)
+            lines = fh.read().decode('utf-8', errors='replace').splitlines()
+    except OSError:
+        return ''
+    lines = [re.sub(r'\x1b\[[0-9;?]*[A-Za-z]', '', x).strip() for x in lines]
+    return next((x[:200] for x in reversed(lines) if x), '')
 
 
 def control_server_live() -> int:
@@ -6767,9 +6799,13 @@ def keep_control_server() -> None:
     about 10 minutes offline), after 30 s, doubling to 10 minutes while it keeps failing at once. One a run
     before an upgrade restart left is adopted; the run's end ends it."""
     import atexit
-    pidf, out = C.notes('control-server.pid'), C.notes('control-server.log')
+    pidf, out, err = C.notes('control-server.pid'), C.notes('control-server.log'), C.notes('control-server.err')
     atexit.register(lambda: (pid := control_server_live()) and plat.terminate(pid))
     backend().trust(ROOT)  # it asks to trust a new folder, and has no terminal to ask on
+    if '--settings' not in control_server_argv():
+        log('control: this Claude Code\'s `remote-control` has no --settings, so the control server starts without '
+            'it: sessions started from claude.ai/code will not get the control brief. Update Claude Code '
+            '(`claude update`) to give them it')
     wait = CONTROL_SERVER_WAIT[0] // 2  # doubled at the first exit
     if (pid := control_server_live()) and server_stale(plat.cmdline(pid)):
         log(f'control: the control server an earlier run left (pid {pid}) has other flags; restarting it')
@@ -6778,13 +6814,14 @@ def keep_control_server() -> None:
         proc = None
         if not (pid := control_server_live()):
             since = out.stat().st_size if out.exists() else 0
+            err_since = err.stat().st_size if err.exists() else 0
             env = control_env()
             if silent() is not False:  # silent while it starts (silent = true: for good)
                 env[PRESENCE_ENV] = str(quiet_file('server'))
-            with open(out, 'ab') as fh:
+            with open(out, 'ab') as fh, open(err, 'ab') as eh:
                 try:
                     proc = sp.Popen(control_server_argv(), cwd=str(ROOT), env=env, stdin=sp.DEVNULL,
-                                    stdout=fh, stderr=fh, start_new_session=not plat.WINDOWS)
+                                    stdout=fh, stderr=eh, start_new_session=not plat.WINDOWS)
                 except OSError as e:
                     quiet_file('server', on=False)
                     log(f'control: the control server did not start: {e}')
@@ -6797,12 +6834,17 @@ def keep_control_server() -> None:
             log(f'control: control server up as "{ROOT.name} · control" at {REMOTE_URL} (pid {pid})')
         began = time.monotonic()
         while (proc.poll() is None) if proc else alive(pid):
-            time.sleep(10)
-        wait = CONTROL_SERVER_WAIT[0] if time.monotonic() - began > 600 else min(wait * 2, CONTROL_SERVER_WAIT[1])
-        try:
-            said = out.read_text(encoding='utf-8', errors='replace').strip().splitlines()[-1][:200]
-        except (OSError, IndexError):
-            said = ''
+            time.sleep(1 if time.monotonic() - began < 30 else 10)
+        lasted = time.monotonic() - began
+        wait = CONTROL_SERVER_WAIT[0] if lasted > 600 else min(wait * 2, CONTROL_SERVER_WAIT[1])
+        said = server_last_error(err, err_since) if proc and lasted < 60 else ''
+        if said:  # it quit at once: its error says why (an unknown option, a login)
+            said = f'after {lasted:.0f} s: {said}'
+        else:
+            try:
+                said = out.read_text(encoding='utf-8', errors='replace').strip().splitlines()[-1][:200]
+            except (OSError, IndexError):
+                said = ''
         log(f'control: the control server exited{f" ({said})" if said else ""}; restarting it in {wait} s')
         time.sleep(wait)
 
