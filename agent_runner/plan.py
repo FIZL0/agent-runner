@@ -1094,7 +1094,7 @@ def _stuck_why(tail: str) -> tuple[str, str, bool] | None:
         if any(x.strip() for x in w.group(1).split(',')):
             return None  # it waits on tasks: `reopen` frees it once they are done
         why = why[w.end():]
-    what = ASKED.sub('', why.split(' — ')[0]).strip()
+    what = ASKED.sub('', why.split(' — ')[0].split(' | ')[0]).strip()
     u = URL.search(what)
     if u:
         what = ' '.join((what[:u.start()] + what[u.end():]).split()).rstrip(' :,;')

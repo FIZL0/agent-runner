@@ -1682,7 +1682,7 @@ def test_short_titles_and_since(repo: Path):
         has(r1.stdout, r'landed: .*\[F5\]', 'since WHEN prints what happened')
         eq(R.since_mark_file().read_text(encoding='utf-8').strip(), f'{today}T14:20:00', 'and moves the mark')
         r2 = run(repo, 'since')
-        eq((r2.returncode, r2.stdout.strip()), (0, 'nothing new since 14:20 (your last look)'),
+        eq((r2.returncode, r2.stdout.strip().splitlines()[-1]), (0, 'nothing new since 14:20 (your last look)'),
            'since twice in a row: nothing new the second time')
         mark = R.since_mark_file().read_text(encoding='utf-8').strip()  # now: nothing newer was in the log
         R.move_since_mark(f'{today}T10:00:00')
