@@ -871,8 +871,8 @@ def test_control(repo: Path):
     check('summary' in c1[1] and f'{R.C.command} status' in c1[1]
           and f'{R.C.command} since' not in c1[1].replace(watch, ''),
           'control 1 opens with a status-only summary: no since')
-    from agent_runner.guide import CONTROL_START
-    check(watch in c1[1] and 'Monitor' in c1[1] and watch in CONTROL_START.format(cmd=R.C.command),
+    from agent_runner.guide import CONTROL_START_WATCH
+    check(watch in c1[1] and 'Monitor' in c1[1] and watch in CONTROL_START_WATCH.format(cmd=R.C.command),
           'CONTROL_START names the needs-you watch, under the Monitor tool', c1[1])
     check(watch in brief and 'PushNotification' in brief and 'first turn' in brief,
           'the brief: every control session starts the needs-you watch on its first turn and pushes each line')
@@ -1279,8 +1279,13 @@ def test_short_titles_and_since(repo: Path):
             fa = R.feed_argv()
             opt = lambda k: fa[fa.index(k) + 1]
             eq((opt('--model'), opt('--tools'), opt('--permission-mode'), opt('--remote-control')),
-               ('haiku', 'Bash,Monitor', 'dontAsk', f'{R.ROOT.name} · runner'),
-               'the feed: Haiku, Bash and Monitor only, dontAsk, "<repo> · runner" on Remote Control')
+               ('haiku', 'Bash,Monitor,PushNotification', 'dontAsk', f'{R.ROOT.name} · runner'),
+               'the feed: Haiku, Bash, Monitor and PushNotification only, dontAsk, "<repo> · runner" on Remote Control')
+            eq(json.loads(opt('--settings')), {'autoMemoryEnabled': False}, 'the feed loads no auto memory')
+            check('PushNotification' in opt('--system-prompt'), 'and pushes what needs the person')
+            brief, opening = R.control_brief(), R.control_argv(1, 'sid', False)[1]
+            check('start no needs-you watch' in brief and '--needs-you' not in opening,
+                  'with the feed, control sessions start no needs-you watch', (brief[:80], opening))
             check(opt('--allowedTools') == f'Bash({R.C.command} *)' and opt('--setting-sources') == ''
                   and '--strict-mcp-config' in fa, 'Bash only for the runner command; no settings or MCP', fa)
             check('control --new --ask' in opt('--system-prompt') and 'since --follow --keep-mark' in fa[1],
@@ -1288,6 +1293,19 @@ def test_short_titles_and_since(repo: Path):
             check('--remote-control' in R.board_command(), 'the board runs the feed with remote on')
         with mock.patch.object(R, 'remote_on', lambda: False):
             check(R.board_command().endswith('since --board'), 'and the free text feed with it off')
+            check('since --follow --needs-you`, once' in R.control_brief()
+                  and '--needs-you' in R.control_argv(1, 'sid', False)[1],
+                  'without the feed, control sessions keep their own needs-you watch')
+        ask = [('DECIDE', 'B9', '', 'Postgres or SQLite?', 'https://x.invalid/b9', 'Fix the flicker', False)]
+        full, _ = R.follow_lines('=== 2026-11-19T14:35:00 B9: merged, blocked', titles, now, waiting=ask)
+        check(any('waits for you: DECIDE' in l for l in full), 'the full feed carries the asks too', full)
+        started = []
+        with mock.patch.object(R, 'MUX', R.TmuxMux()), mock.patch.dict(os.environ, {'TMUX_PANE': '%1'}), \
+                mock.patch.object(R, 'tmux', lambda *a, **k: subprocess.CompletedProcess(a, 0, 'mine\n', '')), \
+                mock.patch.object(R.threading, 'Thread', lambda target=None, args=(), **k: mock.Mock(
+                    start=lambda: started.append(args))):
+            R.start_board()
+        eq(started, [('mine',)], 'the board opens in a run in your own tmux session too')
         ca = R.control_argv(3, 'sid', False, ask='fix the login flicker')
         eq(ca[1], 'fix the login flicker', 'control --ask: the handed-on request is its first message')
         eq(run(repo, 'since', '--follow', '--keep-mark', '--help').returncode, 0, 'since --keep-mark is an option')

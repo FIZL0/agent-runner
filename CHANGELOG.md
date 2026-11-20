@@ -17,6 +17,10 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
   (`control --new --ask TEXT`), answering with its link. It runs Haiku with only Bash (the runner's command,
   nothing else) and Monitor, its own short system prompt, and no settings or MCP servers: about $0.001 a
   landing at API prices. With remote off, the board stays the free text feed.
+- The runner feed is the one watch for what needs you: it pushes those lines (PushNotification), and control
+  sessions start no needs-you watch of their own while it runs (they still do without it: remote off, Windows,
+  no tmux). The full `since --follow` feed now carries the "waits for you" asks too. The board, and so the feed,
+  opens in any tmux run, not only the background one. The feed loads no auto memory.
 - `since --follow --keep-mark` leaves the last-look mark alone; `control --ask TEXT` gives a control session
   its first message.
 

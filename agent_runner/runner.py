@@ -5830,6 +5830,8 @@ def follow_lines(chunk: str, titles: dict[str, str], now: dt.datetime, needs_you
             if e[1] and e[2].startswith('landed: ') and (did := what_changed(e[1])):
                 line += f' — {did}'
             out.append(line)
+            if waiting and (nl := needs_you_line(l, titles, now, waiting)) and ' waits for you: ' in nl:
+                out.append(nl)  # the full feed carries the asks too: the runner feed is the one watch
     return out, last
 
 
@@ -5861,7 +5863,7 @@ def follow(poll: float = 2.0, until: float | None = None, needs_you: bool = Fals
                 buf += data.decode('utf-8', errors='replace')
                 chunk, _, buf = buf.rpartition('\n')
                 lines, last = follow_lines(chunk, task_titles(), dt.datetime.now(), needs_you,
-                                           waiting_ok() if needs_you and 'merged, ' in chunk else None)
+                                           waiting_ok() if 'merged, ' in chunk else None)
                 for l in lines:
                     print(l, flush=True)
                 if last and mark and not needs_you:
@@ -6269,10 +6271,11 @@ def control_ok() -> bool:
 
 def control_brief() -> str:
     """What every control session is told, through its SessionStart hook (`control --brief` prints it)."""
-    from agent_runner.guide import CONTROL
+    from agent_runner.guide import CONTROL, CONTROL_FEED_WATCH, CONTROL_WATCH
     notes = Path(C.run['notes']).expanduser()
     logf = (notes / 'run.log').as_posix() if not notes.is_absolute() else str(notes / 'run.log')
-    return CONTROL.format(repo=ROOT.name, cmd=C.command, log=logf)
+    watch = (CONTROL_FEED_WATCH if feed_on() else CONTROL_WATCH).format(repo=ROOT.name, cmd=C.command)
+    return CONTROL.format(repo=ROOT.name, cmd=C.command, log=logf, watch=watch)
 
 
 def control_settings_data() -> dict:
@@ -6335,8 +6338,10 @@ def control_argv(n: int, sid: str, resume: bool, blank: bool = False, ask: str =
     person is there (all tools, so /statusline and the like work). `blank` (`control 1 --blank`: the c1 a run
     with `[run] remote` opens): no first message either, so it costs nothing until the person types. `ask`
     (`control --new --ask TEXT`, from the runner feed): TEXT is its first message instead."""
-    from agent_runner.guide import CONTROL_START
-    first = [ask] if ask else [CONTROL_START.format(cmd=C.command)] if n == 1 and not blank else []
+    from agent_runner.guide import CONTROL_START, CONTROL_START_WATCH
+    opening = CONTROL_START.format(cmd=C.command, watch_start='' if feed_on() else
+                                   CONTROL_START_WATCH.format(cmd=C.command))
+    first = [ask] if ask else [opening] if n == 1 and not blank else []
     return [plat.exe(C.run['agent']), *first,
             '--resume' if resume else '--session-id', sid, '--model', C.run['model'],
             '--permission-mode', 'bypassPermissions',
@@ -6568,24 +6573,33 @@ def feed_name() -> str:
     return f'{ROOT.name} · runner'
 
 
+def feed_on() -> bool:
+    """Does a run here keep the runner feed (the board window, on Remote Control), the one watch that pushes what
+    needs the person? Control sessions then start no needs-you watch of their own."""
+    # ponytail: a run started with --no-tmux has no feed though tmux is here; its control sessions miss the pushes
+    return remote_on() and control_ok() and not plat.WINDOWS and shutil.which('tmux') is not None
+
+
 def feed_argv() -> list[str]:
     """With `[run] remote`: the runner feed, a lean Claude session on Remote Control as "<repo> · runner" that
     posts what lands (Monitor on `since --follow --keep-mark`), runs status/pause/stop/slots, and hands anything
-    else to a new control session. Haiku; Bash (only the runner's command, dontAsk refuses the rest) and Monitor;
+    else to a new control session; the one watch that pushes what needs the person (PushNotification), so
+    control sessions start none. Haiku; Bash (only the runner's command, dontAsk refuses the rest), Monitor;
     its own short system prompt instead of Claude Code's, no settings sources or MCP servers: ~6k tokens a turn.
     A fresh session at each start."""
     from agent_runner.guide import RUNNER_BRIEF, RUNNER_START
     cmd = C.command
     return [plat.exe(C.run['agent']), RUNNER_START.format(cmd=cmd, repo=ROOT.name),
             '--model', FEED_MODEL, '--system-prompt', RUNNER_BRIEF.format(cmd=cmd, repo=ROOT.name),
-            '--tools', 'Bash,Monitor', '--permission-mode', 'dontAsk',
-            '--allowedTools', f'Bash({cmd} *)', 'Monitor', '--strict-mcp-config', '--setting-sources', '',
+            '--tools', 'Bash,Monitor,PushNotification', '--permission-mode', 'dontAsk',
+            '--allowedTools', f'Bash({cmd} *)', 'Monitor', 'PushNotification', '--strict-mcp-config',
+            '--setting-sources', '', '--settings', json.dumps({'autoMemoryEnabled': False}),  # ~6k tokens a turn
             '--remote-control', feed_name()]
 
 
 def board_command() -> str:
     """What the board window runs: the runner feed with `[run] remote` (in the apps too), else the free text feed."""
-    return plat.command_text(feed_argv() if remote_on() and control_ok() else [*runner_cmd(), 'since', '--board'])
+    return plat.command_text(feed_argv() if feed_on() else [*runner_cmd(), 'since', '--board'])
 
 
 def keep_board(sess: str) -> None:
@@ -6616,12 +6630,12 @@ def keep_board(sess: str) -> None:
 
 
 def start_board() -> None:
-    """The board window, in the background run only (a run in your own tmux has its pane in front of you)."""
+    """The board window, in the tmux session the run is in (the background one, or yours): with `[run] remote`
+    it is the runner feed, which must be there however the run was started."""
     here = os.environ.get('TMUX_PANE', '')
     if not (isinstance(MUX, TmuxMux) and here):
         return
-    sess = tmux('display-message', '-p', '-t', here, '#{session_name}').stdout.strip()
-    if sess == background_session():
+    if sess := tmux('display-message', '-p', '-t', here, '#{session_name}').stdout.strip():
         threading.Thread(target=keep_board, args=(sess,), name='board', daemon=True).start()
 
 
