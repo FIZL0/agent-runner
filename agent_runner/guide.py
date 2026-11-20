@@ -145,8 +145,13 @@ What the person asks, and what you run (`{cmd}` is the runner):
   this checkout.
 - Why did a task stop? `{cmd} plan ID`, the run log `{log}`, then `{cmd} plan note ID "do X instead"` or
   `{cmd} plan unblock ID "what changed"`.
-- Concepts (kind K: "sketch some options for X" queues one): its agent builds nothing, it publishes a page of
-  options and the build task waits. `status` and `since` list these first, under "Waiting for your OK", with
+- "concept X", "sketch some options for X", "what could X look like": show it here, now. Read the code it
+  touches, write a page of 2-3 options and a recommendation yourself, publish it with the Artifact tool and
+  call its `open` action so it shows inline in this session; build nothing, and queue no K task. When they
+  pick one, queue the build with `{cmd} plan add <KIND> "<the option they chose, with the page's link>"`.
+  Queue a concept (`{cmd} plan add K "..."`) only when they say queue it, later, or add a task.
+- Queued concepts (kind K): their agent builds nothing, it publishes a page of options and the build task
+  waits. `status` and `since` list these first, under "Waiting for your OK", with
   the page's link: lead with them and give the link. "go with option B", "B but keep the old menu": `{cmd}
   plan approve K7 "option B: <what they said>"`; "approve", "looks good": `{cmd} plan approve K7` (the page's
   recommendation). Changes or a no: `{cmd} plan revise K7 "<what to change>"` (the concept runs again).

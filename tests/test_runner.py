@@ -937,6 +937,12 @@ def test_control(repo: Path):
         check(f'{R.C.command} {want}' in brief, f'the brief runs `{R.C.command} {want}`')
     check('Never start a watcher or Monitor to\n  wait for a task' in brief,
           'the brief forbids a watcher or Monitor that waits for a task')
+    check('"concept X", "sketch some options for X"' in brief and 'show it here, now' in brief
+          and 'queue no K task' in brief and "call its `open` action so it shows inline" in brief,
+          '"concept X" builds the options page in the control session and opens it inline, no K task')
+    check(f'{R.C.command} plan add K "..."' in brief and 'only when they say queue it, later, or add a task' in brief,
+          'a K task is queued only when the person asks to queue it')
+    check('"sketch some options for X" queues one' not in brief, 'the brief no longer queues a K for "sketch options"')
     check('tail -n 0 -F' not in brief, 'no run-log watch at the start: following is asked for')
     r = run(repo, 'control', '--brief')
     eq((r.returncode, r.stdout), (0, brief), '`control --brief` (the hook) prints it')

@@ -11,6 +11,10 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
   --pri later|low`), "do that next" (`plan move ID top`), "never mind" (`plan drop`), "split that up" (`plan add
   ID`), "sleep or shut down when done" (`stop --suspend|--shutdown`), "pick that back up" (`resume ID`), tasks
   held by a crashed run (`plan claims`, `plan unclaim ID`) and "where are the tokens going" (`cost`).
+- "concept X" / "sketch options for X" in a control session now shows the options there and then: the control
+  session writes the page of 2-3 options and a recommendation itself, publishes it and opens it inline, instead
+  of queuing a K task that waits for a run slot. It queues a concept only when the person says queue it, later
+  or add a task.
 - The runner feed ("<repo> · runner") carries on across restarts that are not a stop. An upgrade's restart
   (auto_upgrade, `u`) execs in place, so the board window and its feed stay up as they were. When the feed does
   have to start again (its board window was replaced or closed, the feed exited, a crashed run was started
