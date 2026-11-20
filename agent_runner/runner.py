@@ -1162,7 +1162,9 @@ def lean() -> list[str]:
     if pi():
         return ['--no-mcp']
     # Artifact: a task can publish a page or screenshots to claude.ai and link it, seen from any device
-    return ['--tools', 'Bash,Read,Edit,Write,Artifact', '--setting-sources', 'project,local', '--strict-mcp-config']
+    # Agent (F28): the spec review before done runs in a fresh subagent
+    tools = 'Bash,Read,Edit,Write,Artifact' + (',Agent' if review_on() else '')
+    return ['--tools', tools, '--setting-sources', 'project,local', '--strict-mcp-config']
 
 
 ARG_PROMPT_MAX = 96 * 1024  # Linux's MAX_ARG_STRLEN is 128 KiB for one argument; leave room
@@ -1520,6 +1522,8 @@ def prompt_for(tid: str, n: int, slots: int, cwd: Path, branch: str) -> str:
     elif wizards_on():
         prompt = f'{prompt.rstrip()}\n\n' + WIZARD_PROMPT.format(
             runner=C.command, tid=tid, template=WIZARD_TEMPLATE, path=C.notes('wizards', f'{tid}.sh'))
+    if review_on() and not P.concept(tid):  # a concept task changes no product code: nothing to review
+        prompt = f'{prompt.rstrip()}\n\n' + review_prompt(tid, cwd)
     return f'{prompt.rstrip()}\n\nProject policies:\n' + '\n'.join(f'- {policy}' for policy in policies)
 
 
@@ -6171,6 +6175,47 @@ belongs, `confirm` before anything irreversible); leave the library above its ST
 it with `bash -n {path}`; do not run it. Say only what you know of each page or command, not guesses. Write \
 one only for steps you cannot do yourself, never for a CONFIRM or a DECIDE, and never put a secret in it. \
 Needs you shows the person `{runner} wizard {tid}`, and finishing the wizard confirms the item."""
+
+
+REVIEW_PROMPT = """\
+Spec review, before `done` (after mattpocock/skills code-review, MIT; its Spec axis only): commit your work, \
+then give a fresh subagent (the Agent tool; with none, a fresh one-shot session of your agent CLI) only the \
+output of `git diff {base}...HEAD` and of `{runner} plan brief {tid}`, nothing of this conversation, and ask it \
+for, in under 300 words, each finding quoting the task's words: (a) what the task asked for that is missing or \
+partial, (b) what the diff does that was not asked, (c) what looks implemented but wrong. Fix (a) and (c) on \
+this branch before `done`, never file them: filing would land known-broken work. Revert (b) from this branch; \
+if the extra is worth keeping, file it as a follow-up (`{runner} plan add <KIND> "<what the review found>" \
+--files … --pri normal`), and file the same way anything broken outside this task's files or already broken \
+before it. Skip the review when the diff is under {min_lines} changed lines (`git diff --shortstat \
+{base}...HEAD`, insertions plus deletions) and the task has no long-form brief (plan/tasks/{tid}.md); {long}. \
+The commit message passed to `done` ends with exactly one line: `review: nothing`, `review: fixed <what>`, \
+`review: filed <IDs>` (with what was fixed too, if any: `review: fixed <what>; filed <IDs>`) or `review: \
+skipped (small)`."""
+
+
+def review_on() -> bool:
+    """F28: `[run] review` (default on): the slot prompt asks for a spec review before done."""
+    try:
+        return C.run.get('review', True) is not False
+    except AttributeError:  # no config loaded
+        return False
+
+
+def review_prompt(tid: str, cwd: Path) -> str:
+    """REVIEW_PROMPT filled in: the branch the diff is taken against, the skip threshold, and whether this task
+    has a long form (then it is reviewed whatever its size)."""
+    try:
+        base = default_branch()
+    except SystemExit:
+        base = 'main'
+    try:
+        plan_dir = C.plan_dir if C.plan_external else cwd / os.path.relpath(C.plan_dir, C.root)
+        has_long = P.long_form(plan_dir, tid).exists()
+    except (OSError, ValueError):
+        has_long = False
+    return REVIEW_PROMPT.format(
+        base=base, runner=C.command, tid=tid, min_lines=int(C.run.get('review_min_lines', 50)),
+        long='this task has one, so review it whatever its size' if has_long else 'this task has none')
 
 
 def wizards_on() -> bool:
