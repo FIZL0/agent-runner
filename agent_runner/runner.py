@@ -358,11 +358,26 @@ def stopped_by() -> str:
         return f'{C.command} stop'
 
 
+def stop_note(asked: bool, left: int, by: str = '') -> str | None:
+    """F42: the run.log line when a stop is newly asked for ('stop asked for: …, N left before the run exits')
+    or taken back ('stop taken back: …'), once each (`STOP_SAID`); None when nothing changed. `left`: the
+    tasks still running, waiting to resume or merging, which the stopping run waits for. A stop by a key
+    already logged what it does, so its line carries only the count."""
+    if asked == STOP_SAID[0]:
+        return None
+    STOP_SAID[0] = asked
+    if not asked:
+        return 'stop taken back: starting tasks again'
+    what = '' if by in ('s', 's!') else 'no new tasks; exiting once the running ones are merged; '
+    return f'stop asked for: {what}{left} left before the run exits'
+
+
 KEYS: list[str] = []  # lines typed into the runner's pane
 KEYS_LOCK = threading.Lock()  # the reader thread and the loop both take keys
 WAKE = threading.Event()  # set by a key, so the loop acts on it now instead of after its 10 s nap
 READING = [False]  # the reader thread is up: the loop naps on WAKE
 PAUSED = [False]  # `p`: no new tasks, and the run stays up
+STOP_SAID = [False]  # F42: the loop logged 'stop asked for: … N left' for the stop now asked for
 FORCED = [False]  # `f`: the usage caps no longer hold new tasks, as with --force
 IDLE = [False]  # the run said `run idle` and has started nothing since: STATE carries it, for the board's hold
 
@@ -465,6 +480,7 @@ def take_keys() -> None:
                 continue
             if k == 's' and stopping():
                 clear_stop()
+                STOP_SAID[0] = False  # F42: said here, so the loop does not say it again
                 log('stop taken back: starting tasks again')
             elif k == 's':
                 ask_stop('s')
@@ -5452,7 +5468,8 @@ def run(argv: list[str], prog: str) -> int:
     stall_said: set[str] = set()
     failed_resumes: dict[str, int] = {}  # session id -> times it was resumed after a failed model call
     failed_starts: dict[str, int] = {}  # task -> sessions that did not start
-    cap_said = stop_said = False
+    cap_said = False
+    STOP_SAID[0] = False
     held_said = slots  # the slot count `max_unmerged` last held the run to, as logged
     reserve_branch_ids()
     log(f'run: {slots} slots in {MUX.name}, merging into {branch}' +
@@ -5501,6 +5518,9 @@ def run(argv: list[str], prog: str) -> int:
         tells(procs, running)  # F16: plan tell / change, typed into a running slot's pane
         halts(procs, running, free_at, tried, branch, model, idle, slots)  # B19: plan drop / change of a running task
         waiting = {n: q for n, q in queued().items() if n in free_at and n <= slots}
+        if said := stop_note(stopping(), len(procs) + len(waiting) + len(foreign) +
+                             sum(t.is_alive() for t in merging), stopped_by()):
+            log(said)
         tagged = None  # MUX.panes(), looked at once a tick and only for a free slot
         for n in list(free_at):
             if n in procs and plat.alive(procs[n][0]) and (f := agent_failed(procs[n][1])) and \
@@ -5583,12 +5603,7 @@ def run(argv: list[str], prog: str) -> int:
                     idle_said = False
                 continue
             if n not in procs and dt.datetime.now() >= free_at[n]:
-                if not stopping():
-                    stop_said = False  # taken back (s again, or the STOP file removed)
-                else:
-                    if not stop_said and stopped_by() not in ('s', 's!'):  # a key logged its own
-                        log('stop asked for: no new tasks; exiting once the running ones are merged')
-                    stop_said = True
+                if stopping():  # said once, with how many are left, by stop_note at the top of the tick
                     continue
                 if PAUSED[0]:
                     continue
@@ -6117,7 +6132,11 @@ SINCE_EVENTS = [  # (pattern on a run.log line's message, kind); the first that 
     (re.compile(r'^run idle'), 'run idle: nothing left it may start'),
     (re.compile(r'^run stopped'), 'run stopped'),
     (re.compile(r'^(\S+ v?\d+(?:\.\d+)+ released\b.*)'), 'released'),  # F51: `release_line_for`'s line
+    (STOP_ASKED := re.compile(r'^stop asked for:.*?\b(\d+) left\b'), 'stop requested'),  # F42: `stop_note`'s
+    (STOP_BACK := re.compile(r'^stop taken back\b'), 'stop taken back'),
 ]
+STOP_ENDS = re.compile(r'^([A-Za-z]+\d+[a-z0-9]*): (?:merged, |not merged, parked |LEFT FOR A HUMAN |no commits — '
+                       r'|the run stops; )')  # F42: a task the stopping run no longer waits for
 
 
 RELEASE_HEAD = re.compile(r'^##\s+\[?v?(\d+(?:\.\d+)+)\b', re.M)  # a CHANGELOG.md version heading
@@ -6200,6 +6219,10 @@ def since_event(line: str, titles: dict[str, str]) -> tuple[str, str, str] | Non
         if e := rx.match(msg):
             if kind == 'released':
                 return stamp, '', e.group(1).strip()
+            if kind == 'stop requested':
+                return stamp, '', f'{kind}: {e.group(1)} left before the run exits'
+            if kind == 'stop taken back':
+                return stamp, '', f'{kind}: the run is starting tasks again'
             if kind.startswith('run '):
                 what = f'{kind}: {e.group(1).strip()}' if e.groups() else kind
                 return stamp, '', what
@@ -6326,13 +6349,27 @@ ASK_FEED = 'needs you: '  # how a feed line about an item under Needs you starts
 
 
 def follow_lines(chunk: str, titles: dict[str, str], now: dt.datetime, needs_you: bool = False,
-                 waiting=None) -> tuple[list[str], str | None]:
+                 waiting=None, stop: dict | None = None) -> tuple[list[str], str | None]:
     """The lines `since --follow` prints for new run.log text: one plain line per event, a landed task with
-    what changed; and the newest stamp read. `needs_you`: only what needs the person (`needs_you_line`)."""
+    what changed; and the newest stamp read. `needs_you`: only what needs the person (`needs_you_line`).
+    F42: once a stop is asked for, each line ends ' · N left': the tasks the stopping run still waits for,
+    from the stop line's count less each task that merged, parked or was left since; `stop` keeps that
+    count from one chunk to the next (`follow` passes the same dict each time)."""
     out, last = [], None
+    stop = {} if stop is None else stop
     for l in chunk.splitlines():
         if m := SINCE_LINE.match(l):
             last = m[1]
+            msg = m[2]
+            if s := STOP_ASKED.match(msg):
+                stop.clear()
+                stop.update(left=int(s[1]), ended=set())
+            elif STOP_BACK.match(msg) or msg.startswith('run stopped'):
+                stop.clear()
+            elif 'left' in stop and (s := STOP_ENDS.match(msg)) and s[1] not in stop['ended']:
+                stop['ended'].add(s[1])
+                stop['left'] = max(0, stop['left'] - 1)
+        left = f' · {stop["left"]} left' if 'left' in stop else ''
         if needs_you:
             if nl := needs_you_line(l, titles, now, waiting):
                 out.append(nl)
@@ -6341,7 +6378,7 @@ def follow_lines(chunk: str, titles: dict[str, str], now: dt.datetime, needs_you
             line = f'{when(e[0], now)}  {e[2]}'
             if e[1] and e[2].startswith('landed: ') and (did := what_changed(e[1])):
                 line += f' — {did}'
-            out.append(line)
+            out.append(line + ('' if e[2].startswith('stop requested: ') else left))
             if waiting and (e[1] and e[2].split(': ', 1)[0] in ('landed', 'part landed, rest stuck')) \
                     and (nl := needs_you_line(l, titles, now, waiting)):
                 out.append(nl)  # the full feed carries the asks too: the runner feed is the one watch
@@ -6364,9 +6401,11 @@ def follow(poll: float = 2.0, until: float | None = None, needs_you: bool = Fals
         pos = 0
     print(f'watching {logf} for what needs you: the run held, a task left for you, stalled, or waiting on your '
           f'answer' if needs_you else
-          f'following {logf}: one line per landed, started or stuck task, a release, and when the run goes idle or stops',
+          f'following {logf}: one line per landed, started or stuck task, a release, a stop asked for or taken back '
+          f'(then how many tasks are left), and when the run goes idle or stops',
           flush=True)
     buf = ''
+    stop: dict = {}  # F42: the stop countdown, carried from one chunk to the next
     while until is None or time.monotonic() < until:
         if end is not None and end():
             return 0
@@ -6388,7 +6427,7 @@ def follow(poll: float = 2.0, until: float | None = None, needs_you: bool = Fals
                 buf += data.decode('utf-8', errors='replace')
                 chunk, _, buf = buf.rpartition('\n')
                 lines, last = follow_lines(chunk, task_titles(), dt.datetime.now(), needs_you,
-                                           waiting_ok() if 'merged, ' in chunk else None)
+                                           waiting_ok() if 'merged, ' in chunk else None, stop)
                 for l in lines:
                     print(l, flush=True)
                 if last and mark and not needs_you:
