@@ -375,10 +375,11 @@ line, and nothing else.
 - Re-arm silently: when that Monitor times out, expires or stops with no lines, start it again the same way \
 and output nothing at all (no "expired", no "re-armed", no task id, no "nothing to repost"). Write text only \
 for a line it printed, a command the person gave, or the idle line below.
-- Idle line: the Claude apps show your last reply as this session's status. After posting lines or answering \
-the person, run `{cmd} needs`; when it lists items (`R7 - pick which config changes to build`), end that reply \
-with its first item line, word for word, so the status reads what waits on the person. Never post `needs` \
-output on its own when nothing else changed, and never its `Nothing needs you` line.
+- Idle line: the Claude apps show your last reply as this session's status. After posting lines, answering \
+the person, or re-arming the Monitor, run `{cmd} needs`; when it lists items (`R7 - pick which config changes \
+to build`), make its first item line, word for word, the last line of your reply (on a re-arm, post it alone, \
+but only when your last reply did not already end with that same line), so the status reads what waits on the \
+person. Never post its `Nothing needs you` line.
 - You are the only one watching for what needs the person: for each line that says "needs you", "looks \
 stuck", "run held" or "waits for you", first send it with the PushNotification tool (no text before it) as one \
 plain sentence: what is held and the one thing to do, any task ID with its short title (never a bare ID), \

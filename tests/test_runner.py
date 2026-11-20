@@ -5632,20 +5632,19 @@ def test_needs_cmd_f44():
     r6 = ('CONFIRM', 'R6', '', 'Windows desktop check - reply with what you saw', 'https://x.example/r6',
           'R6 long title', False, '2026-11-20 10:00')
     shelved = ('CONFIRM', 'R2', '', 'phone check', '', 'Phone', True)
-    eq(P.needs_lines([r7, shelved]), ['R7 - pick which config changes to build, reply with your answer',
+    eq(P.needs_lines([r7, shelved]), ['R7 - pick which config changes to build',
                                       '1 thing needs you'], 'F44: one item, the shelved one left out')
-    eq(P.needs_lines([r7, r6]), ['R7 - pick which config changes to build, reply with your answer',
+    eq(P.needs_lines([r7, r6]), ['R7 - pick which config changes to build',
                                  'R6 - Windows desktop check, reply with what you saw', '2 things need you'],
        'F44: two items, the agent\'s own reply hint kept and no link')
     long = ('BLOCKED', 'B9', '', 'log in to the dashboard and turn on builds. Then also do many other things '
             'that make this very long indeed', '', 't', False)
     got = P.needs_lines([long])[0]
-    check(got.startswith('B9 - log in to the dashboard and turn on builds, reply done') and 'other things' not in got,
-          'F44: a long ask keeps its first sentence only', got)
+    eq(got, 'B9 - log in to the dashboard and turn on builds', 'F44: a long ask keeps its first sentence only')
     concept = ('CONCEPT', 'F9', 'K4', P.CONCEPT_ASK, 'https://x.example/k4', 'Sync options', False)
-    eq(P.needs_lines([concept])[0], 'K4 - pick an option for sync options, reply A/B/C', 'F44: a concept by its K id')
+    eq(P.needs_lines([concept])[0], 'K4 - pick an option for sync options', 'F44: a concept by its K id')
     rb = ' '.join(RUNNER_BRIEF.format(cmd='run', repo='r', answer='').split())
-    check('`run needs`' in rb and 'first item line' in rb and 'Nothing needs you' in rb,
+    check('`run needs`' in rb and 'first item line' in rb and 're-arming the Monitor' in rb and 'Nothing needs you' in rb,
           'F44: the feed ends an idle reply with `needs`\' first item', rb)
     text = ' '.join(CONTROL.format(repo='r', cmd='./run', log='l', watch=CONTROL_WATCH.format(repo='r', cmd='./run'),
                                    needs='Needs you', answer='').split())
