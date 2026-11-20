@@ -23,6 +23,10 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
   opens in any tmux run, not only the background one. The feed loads no auto memory.
 - `since --follow --keep-mark` leaves the last-look mark alone; `control --ask TEXT` gives a control session
   its first message.
+- Known limit of the quiet launch (checked by hand on a phone): Remote Control's own "session ready" push
+  ignores `CLAUDE_CLIENT_PRESENCE_FILE`, so each Remote Control slot start (`remote_slots = true`) buzzes the
+  phone even with `.runner/quiet-slots` in place, and the runner cannot stop it. The presence file only keeps
+  the client's later pushes quiet.
 
 ## 0.49.0 (2026-11-20)
 
