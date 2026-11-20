@@ -6939,7 +6939,21 @@ def control_ask(ask: str, images: list[str] | tuple = ()) -> str:
     lines = [ask] if ask else []
     lines += [f'The person attached {attached_name(p)}, saved at "{p}": Read or open it before you answer.'
               for p in images]
+    if ask and (waiting := ask_waiting()):
+        lines.append('(From the runner feed. Waiting for the person when they said it:\n' + waiting +
+                     f'\nIf the message answers one of these, settle it with `{C.command} plan answer "<their words>"`'
+                     ' (or confirm/change ID) before anything else, as well as any task it asks for: a reply queued'
+                     ' only as a new task leaves the item waiting, B47.)')
     return '\n\n'.join(lines)
+
+
+def ask_waiting() -> str:
+    """The items under Needs you, one '- ID: ask' line each, for a handed-on request (B47); '' when none or the
+    plan cannot be read (opening the session matters more)."""
+    try:
+        return '\n'.join(f'- {a[1]}: {P.plain_ask(a[0], a[3], a[5])}' for a in P.asks())
+    except (OSError, SystemExit, ValueError):
+        return ''
 
 
 UPLOAD_ID_RE = re.compile(r'^[0-9a-f]{8}-(.+)$')
