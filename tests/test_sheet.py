@@ -103,6 +103,7 @@ def test_page():
 def test_db():
     print('F54: Send writes {id, picks} to the page\'s artifact db; the control session reads it back')
     eq(S.CAPABILITIES, {'db': {}}, 'the page declares the db capability')
+    check('wake' not in S.CAPABILITIES['db'], 'R8: no db wake list (the artifact service drops it; it wakes nothing)')
     page = S.render(SPEC, 'F2')
     has(page, re.escape("window.claude.use('db')"), 'Send opens the page\'s db')
     has(page, re.escape("db.doc('picks/'+S.tid).set({id:S.tid,picks:txt,"), 'and writes {id, picks} to picks/<ID>')

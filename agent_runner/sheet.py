@@ -46,6 +46,12 @@ GO = ('go', 'recommended')  # a reply that takes the recommended set
 # (a viewer without write access) Send falls back to the line to paste. The runtime shape the page uses,
 # `await window.claude.use('db')` then `db.doc('<collection>/<id>').set(data)`, is the one Claude Code's own
 # artifact SDK documents for the same store (the artifact-capabilities skill was not available to check).
+# R8 (2026-11-20, Claude Code 2.1.329, contract 0.2.96): no `wake` list. Claude Code's validator accepts
+# {"db": {"wake": [paths]}}, but a probe page published with {"db": {"wake": ["picks"]}} came back stored as
+# {"db": {}}: the artifact service drops it, so a Send can't wake the run that way. Declaring it also takes
+# the publish off Claude Code's no-prompt list, and the client says a local watch wakes only for a comment
+# sent to Claude. So the person still says "sent" (or the item shows again) before the control session
+# reads picks/<ID>.
 CAPABILITIES = {'db': {}}
 DB_COLLECTION = 'picks'
 
