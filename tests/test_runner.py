@@ -1005,6 +1005,31 @@ def test_control_server_old_agent(repo: Path, tmp: Path):
     R._SERVER_SETTINGS.clear()
 
 
+def test_hand_hook(tmp: Path):
+    print('F53: a session opened by hand in the main checkout gets the control brief; a runner-started one once')
+    import contextlib
+    import io
+    root = tmp / 'hand'
+    (root / '.claude').mkdir(parents=True)
+    f = root / '.claude' / 'settings.local.json'
+    f.write_text(json.dumps({'permissions': {'allow': ['Bash(ls)']}}), encoding='utf-8')
+    has(R.hand_hook(root), r'settings\.local\.json', 'the hook goes into settings.local.json')
+    eq(R.hand_hook(root), '', 'once')
+    data = json.loads(f.read_text(encoding='utf-8'))
+    eq(data['permissions'], {'allow': ['Bash(ls)']}, "the person's own settings stay")
+    hooks = [h['command'] for e in data['hooks']['SessionStart'] for h in e['hooks']]
+    check(len(hooks) == 1 and hooks[0].endswith('control --brief --hand'), 'one SessionStart hook', hooks)
+    eq(R.control_env().get(R.RUNNER_STARTED_ENV), '1', 'runner-started control sessions are marked')
+    base = {k: v for k, v in os.environ.items() if k != R.RUNNER_STARTED_ENV}
+    for env, want in (({**base, R.RUNNER_STARTED_ENV: '1'}, False), (base, True)):
+        out = io.StringIO()
+        with mock.patch.dict(os.environ, env, clear=True), mock.patch.object(R, 'init'), \
+                mock.patch.object(R, 'control_brief', lambda: 'BRIEF'), contextlib.redirect_stdout(out):
+            R.cmd_control(['--brief', '--hand'])
+        eq('BRIEF' in out.getvalue(), want, '--hand prints the brief' + (' (by hand)' if want else
+                                                                         ' only when the runner did not start it'))
+
+
 def test_control(repo: Path):
     with mock.patch.dict(os.environ, {'CLAUDE_CODE_CHILD_SESSION': '1', 'CLAUDECODE': '1', 'CLAUDE_CONFIG_DIR': '/c',
                                       'TMUX': '/tmp/t,1,0'}):
@@ -5101,7 +5126,7 @@ def main() -> int:
                        lambda: test_no_pane(repo, tmp), lambda: test_other_repos_panes(repo, tmp),
                        lambda: test_limit_resumes(repo, tmp),
                        lambda: test_shared_push(repo, tmp), lambda: test_note_on_a_ticked_task(repo), lambda: test_adopt_merge(repo), lambda: test_followups(repo), lambda: test_person_check_after(repo), lambda: test_ci_watch(repo), test_update_notice, test_restart_if_upgraded, test_auto_upgrade, lambda: test_flake_repair(tmp), lambda: test_repair_per_failure(repo),
-                       lambda: test_stalled(tmp), lambda: test_take(repo), lambda: test_take_text_and_here(repo), lambda: test_background(repo), lambda: test_attach_flag(repo), lambda: test_bare_outside_git(tmp), lambda: test_remote_auto(tmp), lambda: test_control(repo),
+                       lambda: test_stalled(tmp), lambda: test_take(repo), lambda: test_take_text_and_here(repo), lambda: test_background(repo), lambda: test_attach_flag(repo), lambda: test_bare_outside_git(tmp), lambda: test_hand_hook(tmp),lambda: test_remote_auto(tmp), lambda: test_control(repo),
                        lambda: test_short_titles_and_since(repo), lambda: test_board_follows_run(repo, tmp),
                        lambda: test_remote_sweep(repo, tmp), lambda: test_feed_resume(repo, tmp),
                        lambda: test_concepts_waiting(repo),

@@ -5431,6 +5431,8 @@ def run(argv: list[str], prog: str) -> int:
         log(said)
     if said := point_rules(C, git):
         log(said)
+    if control_ok() and (said := hand_hook(ROOT)):
+        log(said)
     if Path('/proc/meminfo').exists() and (r['proc_max_gb'] or r['min_free_mem_gb']):
         threading.Thread(target=memory_watch, daemon=True).start()
     if sys.stdin.isatty():
@@ -7249,8 +7251,35 @@ def control_sid(n: int) -> tuple[str, bool]:
 
 def control_env() -> dict:
     """The environment a control session gets: ours, without a slot's marks (`plan add` treats AGENT_RUNNER=1 as
-    one of the runner's agents)."""
-    return {k: v for k, v in os.environ.items() if k not in ('AGENT_RUNNER', 'AGENT_RUNNER_SLOT', 'AGENT_RUNNER_KEEP')}
+    one of the runner's agents), with RUNNER_STARTED_ENV: its brief comes through --settings, so the hand hook
+    (`hand_hook`) stays quiet."""
+    env = {k: v for k, v in os.environ.items() if k not in ('AGENT_RUNNER', 'AGENT_RUNNER_SLOT', 'AGENT_RUNNER_KEEP')}
+    return {**env, RUNNER_STARTED_ENV: '1'}
+
+
+RUNNER_STARTED_ENV = 'AGENT_RUNNER_CONTROL_SESSION'
+
+
+def hand_hook(root: Path) -> str:
+    """F53: a session a person opens by hand in the main checkout (the desktop app, a terminal, an IDE) gets the
+    control brief too: a SessionStart hook in `.claude/settings.local.json`, which is per machine and never
+    committed, so slot worktrees never have it. Merged into the file, added once. A line for the run log, or ''."""
+    f = root / '.claude' / 'settings.local.json'
+    cmd = plat.command_text([*runner_cmd(), 'control', '--brief', '--hand'])
+    try:
+        data = json.loads(f.read_text(encoding='utf-8')) if f.exists() else {}
+    except (OSError, ValueError):
+        return ''  # a file we cannot read is the person's: leave it
+    starts = data.setdefault('hooks', {}).setdefault('SessionStart', [])
+    if any('control --brief --hand' in h.get('command', '') for e in starts for h in e.get('hooks', [])):
+        return ''
+    starts.append({'hooks': [{'type': 'command', 'command': cmd}]})
+    try:
+        f.parent.mkdir(exist_ok=True)
+        f.write_text(json.dumps(data, indent=2) + '\n', encoding='utf-8')
+    except OSError:
+        return ''
+    return f'{f.relative_to(root).as_posix()}: sessions opened by hand here get the control brief'
 
 
 def cmd_control(argv: list[str], prog: str = f'{RUNNER} control') -> int:
@@ -7263,6 +7292,7 @@ def cmd_control(argv: list[str], prog: str = f'{RUNNER} control') -> int:
     ap.add_argument('--new', action='store_true', help='open another one without taking focus (a window in the '
                     "run's tmux session; Windows: a hidden console) and print its claude.ai/code link")
     ap.add_argument('--brief', action='store_true', help=argparse.SUPPRESS)  # the SessionStart hook
+    ap.add_argument('--hand', action='store_true', help=argparse.SUPPRESS)  # F53: the hook in settings.local.json
     ap.add_argument('--blank', action='store_true', help=argparse.SUPPRESS)  # c1 under [run] remote: no opening turn
     ap.add_argument('--local', action='store_true', help=argparse.SUPPRESS)  # c1 under [run] remote: not in the apps
     ap.add_argument('--ask', default='', metavar='TEXT', help="its first message (with --new: the runner feed hands "
@@ -7277,6 +7307,8 @@ def cmd_control(argv: list[str], prog: str = f'{RUNNER} control') -> int:
     a = ap.parse_args(argv)
     init()
     if a.brief:
+        if a.hand and os.environ.get(RUNNER_STARTED_ENV):
+            return 0  # F53: a session the runner started has its brief from --settings already
         print(control_brief(), end='')
         env_n = os.environ.get(CONTROL_N_ENV, '')
         if env_n.isdigit():  # F32: /clear or /new in control session N

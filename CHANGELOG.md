@@ -4,6 +4,12 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+## 0.54.0 (2026-11-20)
+
+- A session you open by hand in a runner repo (the Claude desktop app, a terminal, an IDE) is a control
+  session too: at run start the runner adds a SessionStart hook (`control --brief --hand`) to the main
+  checkout's `.claude/settings.local.json`, per machine and never committed, so slot worktrees never get it.
+  Control sessions the runner starts already have the brief from `--settings` and skip this one (F53).
 - Releases reach your phone: when a merge brings a release onto main (a newer version heading at the top of
   CHANGELOG.md, or a new version tag), the run logs `<repo> X.Y.Z released: <first changelog line>`,
   `since --follow` prints it, and the runner feed sends it with PushNotification. Control sessions take
