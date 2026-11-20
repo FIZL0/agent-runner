@@ -28,6 +28,11 @@ jobs:
         shell: bash
         env:
           PYTHONUTF8: '1'
+          # the default Windows temp dir is an 8.3 short path (C:\Users\RUNNER~1\...) that git and
+          # Path.resolve() print long, so tests comparing paths would fail; runner.temp is a long path
+          TMP: ${{ runner.temp }}
+          TEMP: ${{ runner.temp }}
+          TMPDIR: ${{ runner.temp }}
         run: |
           # setup-python gives `python` on every OS; Windows has no `python3`
           # runs every file, not stopping at the first failure, so one run shows all of them
