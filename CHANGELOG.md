@@ -4,6 +4,10 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- `control --new --ask` again passes on a phone or remote screenshot: Claude Code 2.1.329 records such an
+  image as an isMeta entry with `[Image: source: PATH]` text instead of an `inlined_image_paths` attachment,
+  and the feed now reads those paths too (deduped; a later text-only message still forwards none).
+
 - The run closes idle control sessions, so the Claude apps' session list stops piling up: every 5 minutes it
   reads the transcript of each live control session N (never c1) and ends it (its process, `controlN.pid`;
   the transcript stays, resumable) once it has been quiet an hour, Claude spoke last, its last message is not
