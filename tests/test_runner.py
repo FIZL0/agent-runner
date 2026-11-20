@@ -4268,6 +4268,128 @@ def test_paint():
     has(R.paint('t', 'slot 2: P3 (Next; a.rs)'), r'\x1b\[34mslot 2: \x1b\[1mP3', 'a start is blue')
 
 
+def _ts(ago: float) -> str:
+    import datetime as dt
+    return dt.datetime.fromtimestamp(time.time() - ago, dt.timezone.utc).isoformat().replace('+00:00', 'Z')
+
+
+def _person(text: str, ago: float) -> dict:
+    return {'type': 'user', 'timestamp': _ts(ago), 'message': {'role': 'user', 'content': text}}
+
+
+def _claude(text: str, ago: float) -> dict:
+    return {'type': 'assistant', 'timestamp': _ts(ago),
+            'message': {'role': 'assistant', 'content': [{'type': 'text', 'text': text}]}}
+
+
+def _call(name: str, inp: dict, uid: str, ago: float) -> dict:
+    return {'type': 'assistant', 'timestamp': _ts(ago),
+            'message': {'role': 'assistant', 'content': [{'type': 'tool_use', 'id': uid, 'name': name, 'input': inp}]}}
+
+
+def _result(uid: str, text: str, ago: float) -> dict:
+    return {'type': 'user', 'timestamp': _ts(ago), 'message': {'role': 'user', 'content': [
+        {'type': 'tool_result', 'tool_use_id': uid, 'content': text}]}}
+
+
+def test_close_idle_controls(repo: Path):
+    print('B26: idle control sessions are closed (transcript kept); an open question is filed under Needs you first')
+    R.init(repo)
+    H = 3600
+    done = [_person('what is running?', 3 * H), _claude('Two tasks run: B1 and B2. Nothing needs you.', 3 * H - 5),
+            {'type': 'bridge-session', 'bridgeSessionId': 'cse_01AbC'}]
+    ask = [_person('can T7 go first?', 3 * H), _claude('T7 is now first.\n\nWant me to pause T8 too?', 3 * H - 5)]
+    ask_young = [_person('x', 90 * 60), _claude('Done. Should I also drop T9?', 90 * 60 - 5)]
+    person = [_claude('Here is the status.', 3 * H), _person('ok and the cost?', 2 * H)]
+    recent = [_person('status', 20 * 60), _claude('All quiet.', 20 * 60 - 5)]
+    bg = [_person('run the tests', 3 * H), _call('Bash', {'command': 'x', 'run_in_background': True}, 'u1', 3 * H - 3),
+          _result('u1', 'Command running in background with ID: bk1. Output is being written to: /x', 3 * H - 2),
+          _claude('The tests run in the background; I will report.', 3 * H - 1)]
+    bg_done = bg + [{'type': 'queue-operation', 'timestamp': _ts(3 * H - 60), 'content':
+                     '<task-notification>\n<task-id>bk1</task-id>\n<status>completed</status>\n</task-notification>'},
+                    _claude('They passed.', 3 * H - 50)]
+    watch = [_person('hi', 3 * H), _call('Monitor', {'command': f'{R.C.command} since --follow --needs-you',
+                                                     'timeout_ms': 1800000}, 'u2', 3 * H - 3),
+             _result('u2', 'Monitor started (task mw1, expires in 30m unless the source ends first)', 3 * H - 2),
+             _claude('Watching for what needs you.', 3 * H - 1),
+             _call('Monitor', {'command': f'{R.C.command} since --follow --needs-you', 'timeout_ms': 1800000},
+                   'u3', 10 * 60), _result('u3', 'Monitor started (task mw2, expires in 30m)', 10 * 60)]
+    cf, now = R.control_cfg(), time.time()
+    eq((cf['close'], cf['idle'], cf['ask_idle'], cf['file_asks']), (True, 3600.0, 7200.0, True),
+       'defaults: on, control_idle 1h, control_ask_idle 2h, questions filed')
+    for name, rows, want in (('done', done, 'close'), ('question', ask, 'ask'), ('young question', ask_young, 'keep'),
+                             ('person last', person, 'keep'), ('recent', recent, 'keep'),
+                             ('background task running', bg, 'keep'), ('background task finished', bg_done, 'close'),
+                             ('only the needs-you watch, re-armed lately', watch, 'close')):
+        v = R.control_verdict(R.control_state(rows), cf, now)
+        eq(v[0], want, f'{name}: {want} ({v[1]})')
+    eq(R.control_verdict(R.control_state(ask), cf, now)[1], 'Want me to pause T8 too?', 'the question in one line')
+    eq(R.control_link(R.control_state(done)['bridge']), 'https://claude.ai/code/session_01AbC',
+       'the session link from its Remote Control id')
+    eq(R.open_question('Landed: see https://x.invalid/a?b=1', cf['open']), '', 'a ? inside a link is no question')
+    eq((R.duration('90m'), R.duration(45), R.duration('2h'), R.duration(False)), (5400.0, 45.0, 7200.0, 0.0),
+       'times read as 90m, seconds, 2h; false is off')
+    with mock.patch.dict(R.C.run, {'control_idle': '4h', 'control_open': ['should i']}):
+        eq(R.control_verdict(R.control_state(done), R.control_cfg(), now)[0], 'keep', '[run] control_idle = 4h keeps it')
+        eq(R.control_verdict(R.control_state(ask), R.control_cfg(), now)[0], 'keep',
+           '[run] control_open without "?" or "want me to": not an open question, not idle 4h either')
+
+    # close_controls end to end: c1 never looked at, sessions 2-7 by their transcripts
+    rows = {'s1': done, 's2': done, 's3': ask, 's4': person, 's5': recent, 's6': bg}
+    notes = R.C.notes()
+    notes.mkdir(parents=True, exist_ok=True)
+    for n, sid in ((1, 's1'), (2, 's2'), (3, 's3'), (4, 's4'), (5, 's5'), (6, 's6')):
+        (notes / f'control{n}.pid').write_text(f'{9000 + n} {sid}', encoding='utf-8')
+    ended, filed = [], []
+    live = lambda n: 9000 + n if (notes / f'control{n}.pid').exists() else 0
+    with mock.patch.object(R, 'control_live', live), mock.patch.object(R, 'transcript', lambda s: f'/t/{s}'), \
+            mock.patch.object(R, 'entries', lambda s, skip_bad=False: iter(rows[s])), \
+            mock.patch.object(R.plat, 'terminate', ended.append), mock.patch.object(R, 'control_ok', lambda: True), \
+            mock.patch.object(R, 'file_control_ask', lambda n, sid, q, link, branch='': filed.append((n, sid, q, link)) or 'F99'), \
+            mock.patch.object(R, 'log'), mock.patch.object(R, 'note'):
+        got = R.close_controls(force=True)
+        eq(sorted(got), [(2, 'closed', 'idle 179 min'), (3, 'asked', 'F99')], 'done -> closed, question -> filed + closed',
+           )
+        eq(sorted(ended), [9002, 9003], 'their processes ended, c1 and the rest left running')
+        eq(filed, [(3, 's3', 'Want me to pause T8 too?', '')], 'the question filed, with the session (no link here)')
+        check(not (notes / 'control2.pid').exists() and not (notes / 'control3.pid').exists()
+              and all((notes / f'control{n}.pid').exists() for n in (1, 4, 5, 6)),
+              'their pid files removed; c1, person last, recent and busy ones kept')
+        ended.clear()
+        with mock.patch.dict(R.C.run, {'control_close': False}):
+            eq(R.close_controls(force=True), [], '[run] control_close = false closes nothing')
+        with mock.patch.dict(R.C.run, {'control_file_asks': False}):
+            (notes / 'control3.pid').write_text('9003 s3', encoding='utf-8')
+            filed.clear()
+            got = R.close_controls(force=True)
+            check((3, 'asked', 'Want me to pause T8 too?') in got and not filed,
+                  '[run] control_file_asks = false: closed without filing', (got, filed))
+    for n in range(1, 7):
+        (notes / f'control{n}.pid').unlink(missing_ok=True)
+
+    # file_control_ask in a repository of its own: a task blocked DECIDE, listed under Needs you, committed
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        git(root, 'init', '-q')
+        (root / 'runner.toml').write_text('[run]\ncontrol_ask_kind = "R"\n', encoding='utf-8')
+        (root / 'plan').mkdir()
+        (root / 'plan' / 'TODO.md').write_text('# TODO\n\n### Next\n\n- [ ] **R1** other | files: a.py\n',
+                                               encoding='utf-8')
+        git(root, 'add', '-A'); git(root, 'commit', '-qm', 'start')
+        try:
+            R.init(root)
+            tid = R.file_control_ask(3, 'sid-3', 'Want me to pause T8 too?', 'https://claude.ai/code/session_01AbC')
+            eq(tid, 'R2', 'filed with [run] control_ask_kind')
+            a = [x for x in P.asks(root / 'plan' / 'TODO.md') if x[1] == tid]
+            eq([(x[0], x[3], x[4]) for x in a], [('DECIDE', 'Want me to pause T8 too?',
+                                                 'https://claude.ai/code/session_01AbC')],
+               'a DECIDE item under Needs you: the question, and the session link apart')
+            eq(git(root, 'status', '--porcelain', '--', 'plan/TODO.md'), '', 'and committed')
+            check('control 3' in git(root, 'log', '-1', '--format=%s'), 'the commit names the session')
+        finally:
+            R.init(repo)
+
+
 def main() -> int:
     with tempfile.TemporaryDirectory() as t:
         tmp = Path(t)
@@ -4294,7 +4416,8 @@ def main() -> int:
                        lambda: test_remote_sweep(repo, tmp), lambda: test_feed_resume(repo, tmp),
                        lambda: test_concepts_waiting(repo),
                        lambda: test_person_waiting(repo), lambda: test_control_server_old_agent(repo, tmp),
-                       lambda: test_drop_or_change_running(repo), lambda: test_tell_running(repo)])
+                       lambda: test_drop_or_change_running(repo), lambda: test_tell_running(repo),
+                       lambda: test_close_idle_controls(repo)])
 
 
 if __name__ == '__main__':

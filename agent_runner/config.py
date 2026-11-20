@@ -107,6 +107,14 @@ DEFAULTS: dict = {
         'silent': 'launch',     # phone pushes from the run's Remote Control sessions: launch = none while they
                                 # start (later ones arrive), true = none ever, false = Claude Code's usual
         'control': True,        # a run opens control session c1 beside it (`agent-runner control`); false: none
+        'control_close': True,  # B26: the run closes idle control sessions 2, 3, … (never c1); transcripts kept
+        'control_idle': '1h',   # quiet this long with Claude last and nothing running in it: closed
+        'control_ask_idle': '2h',  # quiet this long on an open question: filed under Needs you, then closed
+        'control_open': ['?', 'want me to', 'should i', 'shall i', 'would you like', 'do you want'],
+                                # what makes Claude's last message an open question or offer (case ignored;
+                                # one of punctuation only must end it, any other may stand anywhere in its last paragraph)
+        'control_file_asks': True,  # an open question is filed as a DECIDE item before its session closes
+        'control_ask_kind': 'F',  # the id prefix that item's task gets
         'auto_upgrade': False,  # upgrade agent-runner by itself when a newer release is out, once no merge runs,
                                 # and restart the run on it (as `u` does, without the key)
         'install_skill': True,  # keep the `agent-runner guide` skill in ~/.claude/skills, for sessions a person starts
