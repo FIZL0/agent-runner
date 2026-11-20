@@ -462,6 +462,60 @@ def test_hand_edits_commit():
         eq(run(root, 'context', '--check', check=False).returncode, 1, '--check fails over budget')
 
 
+def test_hand_edits_push():
+    print('plan: a hand edit in the main checkout pushes main (B73)')
+    from agent_runner import plat
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp = Path(tmp)
+        git(tmp, 'init', '-q', '--bare', '-b', 'main', 'origin.git')
+        root, other = tmp / 'main', tmp / 'other'
+        git(tmp, 'init', '-q', '-b', 'main', 'main')
+        git(root, 'commit', '-q', '--allow-empty', '-m', 'start')
+        git(root, 'remote', 'add', 'origin', str(tmp / 'origin.git'))
+        git(root, 'push', '-q', '-u', 'origin', 'main')
+        origin = lambda: git(tmp / 'origin.git', 'log', '-1', '--format=%s', 'main')  # noqa: E731
+        def add(what):
+            r = run(root, 'plan', 'add', 'R', what, '--files', 'x.py')
+            r.warn = ''.join(ln for ln in r.stderr.splitlines(True) if ln.startswith('!'))
+            return r
+        r = add('the parser')
+        eq(r.warn, '', 'a plan add pushes without a word')
+        has(origin(), r'^plan: add R the parser', 'and reaches origin')
+        git(tmp, 'clone', '-q', str(tmp / 'origin.git'), 'other')
+        (other / 'plan/NOTES.md').write_text('notes\n', encoding='utf-8')
+        git(other, 'add', '.')
+        git(other, '-c', 'user.name=o', '-c', 'user.email=o@x', 'commit', '-q', '-m', 'plan notes elsewhere')
+        git(other, 'push', '-q')
+        r = add('the lexer')
+        eq(r.warn, '', 'origin ahead: no warning')
+        has(origin(), r'^plan: add R the lexer', 'it rebases onto origin and pushes')
+        check((root / 'plan/NOTES.md').exists(), 'and the checkout has origin\'s change')
+        (root / '.runner').mkdir(exist_ok=True)
+        lock = plat.lock(root / '.runner/run.lock')  # a run is up here
+        git(other, 'pull', '-q')
+        (other / 'plan/NOTES.md').write_text('more notes\n', encoding='utf-8')
+        git(other, '-c', 'user.name=o', '-c', 'user.email=o@x', 'commit', '-qam', 'more notes')
+        git(other, 'push', '-q')
+        head = git(root, 'rev-parse', 'HEAD')
+        r = add('the printer')
+        has(r.warn, r'^! plan edit committed here but not pushed: .*a run is up here', 'a run up: it warns')
+        eq(git(root, 'rev-parse', 'HEAD~1'), head, 'and does not rebase the run\'s checkout')
+        lock.close()
+        (root / '.git/rebase-merge').mkdir()
+        head = git(root, 'rev-parse', 'HEAD')
+        r = add('the linker')
+        has(r.warn, r'^! plan edit left uncommitted and unpushed: a rebase is in progress', 'a rebase: it warns')
+        eq(r.warn.count('\n'), 1, 'in one line')
+        eq(git(root, 'rev-parse', 'HEAD'), head, 'and leaves HEAD alone')
+        (root / '.git/rebase-merge').rmdir()
+        git(root, 'commit', '-qam', 'the linker by hand')
+        (root / 'runner.toml').write_text('[git]\npush = false\n', encoding='utf-8')
+        before = git(tmp / 'origin.git', 'rev-parse', 'main')
+        r = add('the loader')
+        eq(r.warn, '', '[git] push = false: no warning')
+        eq(git(tmp / 'origin.git', 'rev-parse', 'main'), before, 'and nothing is pushed')
+
+
 def test_similar():
     print('plan: add names an open task that looks like the same work, and stays quiet otherwise')
     with tempfile.TemporaryDirectory() as tmp:
@@ -1004,6 +1058,6 @@ def test_edit():
 
 if __name__ == '__main__':
     sys.exit(report([test_edit, test_unlabelled_block, test_restore, test_plan_last,test_goal,test_plan_roundtrip, test_plan_reopen, test_plan_index_and_sections, test_brief, test_brief_outline,
-                     test_split_parents, test_add_bottom, test_add_pri, test_add_subtask, test_kinds, test_need_files, test_add_stray_args, test_hand_edits_commit, test_similar, test_add_refuses_a_duplicate, test_carry_notes,
+                     test_split_parents, test_add_bottom, test_add_pri, test_add_subtask, test_kinds, test_need_files, test_add_stray_args, test_hand_edits_commit, test_hand_edits_push, test_similar, test_add_refuses_a_duplicate, test_carry_notes,
                      test_merge3, test_concurrent_add, test_merge_driver, test_concepts, test_needs_you,
                      test_needs_config]))

@@ -68,7 +68,8 @@ only when the work can't start before its parent lands (it needs the parent's co
 merely shares a topic, or came out of that task, gets a fresh letter (`add B …`) so a run starts it in parallel;
 `add` notes this whenever it hands out a subtask id.
 
-**Commits.** An edit in the main checkout commits at once (`plan: <command>`); a worktree's waits for `done`.
+**Commits.** An edit in the main checkout commits at once (`plan: <command>`) and, on the shared branch, pushes
+to `[git] push` (one line on stderr when it cannot); a worktree's waits for `done`.
 `AGENT_RUNNER_NOCOMMIT=1` leaves it uncommitted, for a script that commits it with its own change.
 
 **A subtask keeps its parent's place.** `add P17 …` (a task's id as the prefix: a split of that task) files
@@ -1393,11 +1394,7 @@ def run_on(c, tid: str) -> str:
     (no run up, or the task is none of its)."""
     import json
 
-    from agent_runner import plat
-    if not c.notes('run.lock').exists():
-        return ''  # no run was ever up here (and no lock file made just to look)
-    if f := plat.lock(c.notes('run.lock')):
-        f.close()  # nobody holds it: no run is up
+    if not _run_up(c):
         return ''
     try:
         st = json.loads(c.notes('STATE').read_text(encoding='utf-8'))
@@ -1937,9 +1934,56 @@ def _commit(root: Path, paths: list[Path], msg: str) -> None:
     gd, cd = (g('rev-parse', '--path-format=absolute', f).stdout.strip() for f in ('--git-dir', '--git-common-dir'))
     if os.environ.get('AGENT_RUNNER_NOCOMMIT'):  # the caller commits the edit with its own change
         return
-    if gd and gd == cd and not os.path.exists(os.path.join(gd, 'MERGE_HEAD')):
-        g('add', '--', *map(str, paths))  # a fresh plan/ is untracked, and commit -- PATH skips those
-        g('commit', '-q', '-m', f'plan: {msg}', '--', *map(str, paths))
+    if not gd or gd != cd or os.path.exists(os.path.join(gd, 'MERGE_HEAD')):
+        return
+    if rb := next((d for d in ('rebase-merge', 'rebase-apply') if os.path.isdir(os.path.join(gd, d))), None):
+        print(f'! plan edit left uncommitted and unpushed: a rebase is in progress in {root} (.git/{rb}); '
+              f'finish it (git rebase --continue) or drop it (git rebase --abort)', file=sys.stderr)
+        return
+    g('add', '--', *map(str, paths))  # a fresh plan/ is untracked, and commit -- PATH skips those
+    if not g('commit', '-q', '-m', f'plan: {msg}', '--', *map(str, paths)).returncode and (why := _push(root)):
+        print(f'! plan edit committed here but not pushed: {why}', file=sys.stderr)
+
+
+def _run_up(c) -> bool:
+    """A run holds `<notes>/run.lock` in this repository (no lock file is made just to look)."""
+    from agent_runner import plat
+    if not c.notes('run.lock').exists():
+        return False
+    if f := plat.lock(c.notes('run.lock')):
+        f.close()
+        return False
+    return True
+
+
+def _push(root: Path) -> str:
+    """B73: publish a hand edit's commit on the shared branch to `[git] push`, fast-forward only. Rejected:
+    one rebase onto the remote (not while a run is up here: its merges land in this checkout, and its next
+    merge publishes main), then push again. Returns why it could not, or '' (pushed, or nothing to push)."""
+    from agent_runner import gitops
+    g, c = partial(git, cwd=root), cfg(root)
+    remote = c.push_remote
+    if not remote or g('remote', 'get-url', remote).returncode:
+        return ''
+    branch = g('branch', '--show-current').stdout.strip()
+    if not branch or branch != gitops.shared_name(root, remote):
+        return ''  # a branch of your own: yours to push
+    net = gitops._net(root)
+    if not (r := net('push', '-q', remote, branch)).returncode:
+        return ''
+    why = (r.stderr.strip().splitlines() or ['no message'])[-1][:200]
+    if _run_up(c):
+        return f'{remote} refused it ({why}); a run is up here, and its next merge publishes {branch}'
+    if (f := net('fetch', '-q', remote, branch)).returncode:
+        return f'offline? ({(f.stderr.strip().splitlines() or [why])[-1][:200]})'
+    if g('status', '--porcelain', '--untracked-files=no').stdout.strip():
+        return f'{remote}/{branch} has moved, and uncommitted changes here stop a rebase onto it'
+    if g('rebase', '-q', 'FETCH_HEAD').returncode:
+        g('rebase', '--abort')
+        return f'{branch} and {remote}/{branch} have diverged and do not rebase cleanly; pull and push by hand'
+    if (r := net('push', '-q', remote, branch)).returncode:
+        return (r.stderr.strip().splitlines() or ['no message'])[-1][:200]
+    return ''
 
 
 EDITS = ('tick', 'block', 'reopen', 'unblock', 'move', 'add', 'note', 'archive', 'drop', 'approve', 'revise',
