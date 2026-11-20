@@ -1789,6 +1789,15 @@ def test_short_titles_and_since(repo: Path):
                    'files re-read after a compaction are not')
                 write(hum({'type': 'text', 'text': 'sign it'}), fil(zp), res, hum({'type': 'text', 'text': 'and?'}))
                 eq(R.feed_files(), [], 'B30: a later text-only message forwards no earlier file')
+                write(hum({'type': 'image'}, {'type': 'image'}, {'type': 'text', 'text': 'look'}), res)
+                got, lost, _ = R.feed_scan()
+                eq((got, lost), ([], 2), 'images shown with no recorded path are counted (Claude Code drift)')
+                check('send the picture(s) here again' in R.image_drift_note(2, '2.1.400')
+                      and '2.1.400' in R.image_drift_note(2, '2.1.400') and R.image_drift_note(0, 'x') == '',
+                      'the new control session is told the pictures were lost and why')
+                write(hum({'type': 'image'}, {'type': 'text', 'text': 'x'}), meta('[Image: source: /u/d.png]'),
+                      pics('/u/d.png'))
+                eq(R.feed_scan()[1], 0, 'an image recorded both ways is not counted as lost')
                 write(hum({'type': 'image'}), pics('/u/c.png'))
                 Path(tdir, 'feed.sid').unlink()
                 eq(R.feed_images(), [], 'no feed.sid and no session env: nothing')

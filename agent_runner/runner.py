@@ -7268,7 +7268,15 @@ def control_new_session() -> str:
 
 
 def feed_files() -> list[str]:
-    """The files and images attached to the person's latest message in the runner feed, the one being handed on, in
+    return feed_scan()[0]
+
+
+def feed_scan() -> tuple[list[str], int, str]:
+    """(`feed_files`, images the message shows that no saved path came for, its Claude Code version). The middle
+    one is the drift check: when Claude Code changes how it records an image's path again, the new control
+    session is told so (`image_drift_note`) instead of the pictures vanishing without a word.
+
+    The files and images attached to the person's latest message in the runner feed, the one being handed on, in
     display order: Claude Code records their saved paths in the feed's transcript (an `inlined_image_paths`
     attachment after the message, since 2.1.329 an isMeta entry with '[Image: source: PATH]' text, B24, and for any
     other file, saved to ~/.claude/uploads/<sid>/<id>-<name> and @-mentioned, an attachment of type file with that
@@ -7283,12 +7291,14 @@ def feed_files() -> list[str]:
         try:
             sid = C.notes(REMOTE_DIR, FEED_SID).read_text(encoding='utf-8').strip()
         except OSError:
-            return []
+            return [], 0, ''
     t = transcript(sid) if SID_RE.fullmatch(sid) else None
     if not t:
-        return []
+        return [], 0, ''
     paths: list[str] = []
     rereads = False
+    shown = found = 0  # images in the latest message; image paths recorded for it (B24's two forms count twice)
+    version = ''
     try:
         with open(t, encoding='utf-8') as f:
             for line in f:
@@ -7298,7 +7308,9 @@ def feed_files() -> list[str]:
                     continue
                 att = d.get('attachment') or {}
                 if att.get('type') == 'inlined_image_paths':
-                    paths += [p for p in att.get('paths', []) if isinstance(p, str) and p not in paths]
+                    got = [p for p in att.get('paths', []) if isinstance(p, str)]
+                    found += len(got)
+                    paths += [p for p in got if p not in paths]
                 elif att.get('type') == 'file':
                     p = att.get('filename')
                     if not rereads and isinstance(p, str) and p and p not in paths:
@@ -7306,12 +7318,30 @@ def feed_files() -> list[str]:
                 elif d.get('type') == 'user' and d.get('isCompactSummary'):
                     rereads = True
                 elif d.get('type') == 'user' and d.get('isMeta'):
-                    paths += [p for p in meta_image_paths(d) if p not in paths]
+                    got = meta_image_paths(d)
+                    found += len(got)
+                    paths += [p for p in got if p not in paths]
                 elif d.get('type') == 'user' and person_message(d):
-                    paths, rereads = [], False
+                    paths, rereads, found = [], False, 0
+                    c = (d.get('message') or {}).get('content')
+                    shown = sum(isinstance(x, dict) and x.get('type') == 'image' for x in c) if isinstance(c, list) else 0
+                    version = str(d.get('version') or '')
     except OSError:
-        return []
-    return paths
+        return [], 0, ''
+    return paths, max(shown - found, 0), version
+
+
+def image_drift_note(lost: int, version: str) -> str:
+    """Added to a handed-on ask when `lost` attached images came with no saved path (`feed_scan`)."""
+    if not lost:
+        return ''
+    return (f'The person attached {lost} image(s) that could not be passed on: Claude Code '
+            f'{version or "(this version)"} no longer records where it saves them in a way agent-runner reads. '
+            'Ask them to send the picture(s) here again, and tell them agent-runner needs a fix for this '
+            "Claude Code change (its runner feed reads the saved paths from the feed's transcript).")
+
+
+
 
 
 feed_images = feed_files  # the name before B30
@@ -7350,7 +7380,10 @@ def control_new(n: int | None = None, wait: float = CONTROL_LINK_WAIT, ask: str 
         return 1
     images = [str(Path(i).resolve()) for i in images]
     if ask:
-        images += [i for i in feed_files() if i not in images]
+        got, lost, version = feed_scan()
+        images += [i for i in got if i not in images]
+        if note := image_drift_note(lost, version):
+            ask = f'{ask}\n\n{note}'
     cmd = [*runner_cmd(), 'control', str(n), *(['--ask', ask] if ask else []),
            *[x for i in images for x in ('--file', i)]]
     name = control_name(n, ask, images)

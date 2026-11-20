@@ -4,6 +4,10 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- When a message handed on from the runner feed shows images that Claude Code recorded no saved path for (it
+  changed how it records them again), the new control session's first message says so, with the Claude Code
+  version, and asks the person to send the pictures there again, instead of the pictures vanishing silently.
+
 - `plan goal` prints the `Goal:` paragraph above TODO.md's first heading, and `plan goal "TEXT"` replaces it
   (prefixed `Goal: ` when TEXT has none; added after the title line when there is none yet) and commits like
   other plan edits. The title, the fields-format line, other paragraphs, headings and task lines stay
