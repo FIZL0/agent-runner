@@ -7,7 +7,7 @@ gets the native equivalent from the standard library and `ctypes` only (no psuti
     alive / children      OpenProcess + GetExitCodeProcess; a CreateToolhelp32Snapshot of parent pids
     terminate             WM_CLOSE to the windows of the process tree (an emulator saves and exits), a short
                           wait, then `taskkill /T /F` (no SIGTERM; the agent may be a .cmd around node)
-    spawn_detached        DETACHED_PROCESS + a new process group (+ breakaway from a job when allowed)
+    spawn_detached        CREATE_NO_WINDOW + a new process group (+ breakaway from a job when allowed)
     spawn_console         a new console window (CREATE_NEW_CONSOLE), the fallback without Windows Terminal
     lock                  msvcrt.locking on one byte, which goes with the handle however the process ends
     link                  a symlink; failing that (no Developer Mode) a junction for a directory, a hard link
@@ -34,7 +34,7 @@ from pathlib import Path
 WINDOWS = sys.platform.startswith('win')
 
 # process creation flags (winbase.h)
-DETACHED_PROCESS = 0x00000008
+CREATE_NO_WINDOW = 0x08000000  # a console with no window; children inherit it
 CREATE_NEW_CONSOLE = 0x00000010
 CREATE_NEW_PROCESS_GROUP = 0x00000200
 CREATE_BREAKAWAY_FROM_JOB = 0x01000000
@@ -209,8 +209,10 @@ def spawn_detached(argv: list[str], out: Path | None = None) -> sp.Popen:
     try:
         if not WINDOWS:
             return sp.Popen(argv, start_new_session=True, **kw)
-        # Claude Code may run hooks in a job that is killed with them: break away when the job allows it
-        flags = DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
+        # Claude Code may run hooks in a job that is killed with them: break away when the job allows it.
+        # Not DETACHED_PROCESS: uv's Scripts\python.exe is a launcher, and the python it starts would get a
+        # new console of its own, shown on screen; CREATE_NO_WINDOW's windowless console is inherited instead
+        flags = CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP
         try:
             return sp.Popen(argv, creationflags=flags | CREATE_BREAKAWAY_FROM_JOB, **kw)
         except OSError:
@@ -248,7 +250,7 @@ def show_console(pid: int) -> bool:
     output, so a helper with no console of its own does it (`_show_console`)."""
     code = (f'import sys; sys.path.insert(0, {str(Path(__file__).resolve().parents[1])!r}); '
             f'from agent_runner import plat; sys.exit(0 if plat._show_console({int(pid)}) else 1)')
-    return sp.run([sys.executable, '-c', code], creationflags=DETACHED_PROCESS).returncode == 0
+    return sp.run([sys.executable, '-c', code], creationflags=CREATE_NO_WINDOW).returncode == 0
 
 
 def _show_console(pid: int) -> bool:
@@ -256,6 +258,7 @@ def _show_console(pid: int) -> bool:
     k = ctypes.WinDLL('kernel32', use_last_error=True)
     u = ctypes.WinDLL('user32', use_last_error=True)
     k.GetConsoleWindow.restype = ctypes.c_void_p
+    k.FreeConsole()  # its own windowless console (CREATE_NO_WINDOW): one console per process
     if not k.AttachConsole(int(pid)) or not (hwnd := k.GetConsoleWindow()):
         return False
     u.ShowWindow(ctypes.c_void_p(hwnd), SW_RESTORE)

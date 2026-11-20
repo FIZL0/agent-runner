@@ -4,6 +4,12 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+## 0.53.2 (2026-11-20)
+
+- Windows: no more visible `...\Scripts\python.exe` console for the background run, the Stop hook's timer or
+  `attach`'s helper. They started with `DETACHED_PROCESS`, and uv's `python.exe` launcher then gave the
+  real python a new, visible console; they now start with `CREATE_NO_WINDOW` (B64).
+
 ## 0.53.1 (2026-11-20)
 
 - `s!` (`stop --force`) on a session that never began (held at a dialog, so no transcript) no longer queues
