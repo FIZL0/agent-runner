@@ -4895,6 +4895,27 @@ def test_control_do_it_here(repo: Path):
           'the do-it-now bullet maps "do F48 here" to take ID, then take ID --merge, and asks which with several', text)
 
 
+def test_upgrade_cmd(repo: Path):
+    """B49: `upgrade` runs the existing upgrade() (as `u` does), and the control brief names the command."""
+    import contextlib
+    import io
+    from agent_runner import cli
+    from agent_runner.guide import CONTROL, CONTROL_WATCH
+    calls = []
+    with mock.patch.object(cli, 'skill', lambda: None), \
+            mock.patch.object(R, 'upgrade', lambda: calls.append(1) or True), \
+            mock.patch.object(R, 'installed_version', lambda: __import__('agent_runner').__version__):
+        rc = cli.main(['upgrade'])
+    eq((rc, calls), (0, [1]), 'agent-runner upgrade calls upgrade() once and exits 0')
+    with mock.patch.object(cli, 'skill', lambda: None), mock.patch.object(R, 'upgrade', lambda: False), \
+            contextlib.redirect_stderr(io.StringIO()):
+        eq(cli.main(['upgrade']), 1, 'a failed upgrade exits 1')
+    text = CONTROL.format(repo='r', cmd='./run', log='l', watch=CONTROL_WATCH.format(repo='r', cmd='./run'),
+                          needs='Needs you', answer='')
+    check('Update agent-runner: `./run upgrade`' in text, 'the rendered control brief names `upgrade`', text)
+    check('agent-runner upgrade' in cli.USAGE, 'the command list names `upgrade`', cli.USAGE)
+
+
 def main() -> int:
     with tempfile.TemporaryDirectory() as t:
         tmp = Path(t)
@@ -4924,7 +4945,7 @@ def main() -> int:
                        lambda: test_drop_or_change_running(repo), lambda: test_tell_running(repo),
                        lambda: test_close_idle_controls(repo), lambda: test_renamed_control_kept(repo),
                        lambda: test_control_summary_title(repo), lambda: test_control_task_name(repo), lambda: test_progress_and_release(repo),
-                       lambda: test_control_status_rules(repo), lambda: test_control_do_it_here(repo),
+                       lambda: test_control_status_rules(repo), lambda: test_control_do_it_here(repo), lambda: test_upgrade_cmd(repo),
                        lambda: test_plan_last(repo)])
 
 

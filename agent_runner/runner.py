@@ -5864,6 +5864,25 @@ def cmd_key(argv: list[str], prog: str = f'{RUNNER} key') -> int:
     return 0
 
 
+def cmd_upgrade(argv: list[str], prog: str = f'{RUNNER} upgrade') -> int:
+    """B49 `agent-runner upgrade`: what `u` in the runner's pane does, from any terminal or a control session.
+    It runs `upgrade` (pipx, uv tool, or a pull, per `upgrade_argv`) here; a run that is up sees the new version
+    on disk and restarts on it by itself (`restart_if_upgraded`), as after `u`."""
+    ap = argparse.ArgumentParser(prog=prog, description='Upgrade agent-runner (pipx, uv tool, or a git pull in '
+                                 'its clone); a run that is up restarts on the new version by itself.')
+    ap.parse_args(argv)
+    init()
+    if not upgrade():
+        print(f'the upgrade failed: run `{" ".join(upgrade_argv())}` by hand to see why', file=sys.stderr)
+        return 1
+    from agent_runner import __version__
+    new = installed_version()
+    if new and new != __version__ and run_up():
+        print('the run that is up restarts on it by itself' if not plat.WINDOWS and not breaking(__version__, new)
+              else 'read CHANGELOG.md, then restart the run')
+    return 0
+
+
 def cmd_status(argv: list[str], prog: str = f'{RUNNER} status') -> int:
     """`agent-runner status`: is a run up, what its keys have set, each slot's task, and the log's end."""
     ap = argparse.ArgumentParser(prog=prog, description='What the run is doing.')

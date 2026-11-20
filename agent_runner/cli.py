@@ -56,6 +56,7 @@ Finish a task (what an agent runs at the end)
 
 More
     agent-runner cost                 where the workers' tokens go, by kind of tool call (last 7 days)
+    agent-runner upgrade              update agent-runner (pipx, uv tool or git pull); a run that is up restarts on it
     agent-runner context              what every session loads (rules, CLAUDE.md, AGENTS.md) and what to move out
     agent-runner home [slots|plan]    where this project's runner files are ([run] home): for scripts
     agent-runner help order           what runs when, and how to make one task wait for another
@@ -216,6 +217,9 @@ def main(argv: list[str] | None = None) -> int:
     if cmd in ('pause', 'force', 'slots', 'key'):
         from agent_runner import runner
         return runner.cmd_key(rest, f'{runner.RUNNER} {cmd}')
+    if cmd == 'upgrade':  # B49
+        from agent_runner import runner
+        return runner.cmd_upgrade(rest)
     if cmd == 'guide':
         from agent_runner.guide import GUIDE
         print(GUIDE, end='')
