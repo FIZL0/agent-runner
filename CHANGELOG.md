@@ -4,6 +4,11 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- A waiting task whose line guesses a whole directory (`tests/**`, `dir/*`) no longer waits just because a
+  running or merge-waiting task touched one file in it; it still waits for a task whose line names a file or
+  glob there. This repo's runner.toml sets `shared_files = ["CHANGELOG.md"]`, and the `plan add` guides say to
+  name the exact test file, not `tests/**`.
+
 - `status` says how the run is getting on: `merged 11 in the last 24h · 23 tasks left (2 blocked)` (tasks left
   leave out Parked and shelved ones; `status --window 2h` counts over another window), and, when a release
   task is queued, `release: waits on 7 of 25 tasks (T5)`. The control sessions' opening headline uses both,

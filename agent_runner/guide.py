@@ -34,7 +34,8 @@ AGENT_RUNNER_SLOT set you are one of the runner's agents: follow your brief, not
    commands keep the format the runner, its merges and its claims read, and in the main checkout they
    commit themselves (`plan: <command>`): do not commit plan files by hand.
    - queue: `agent-runner plan add <KIND> "what, why, how to check" --files a.py,src/b/** [--after ID]`
-     (`plan kinds` lists the KIND letters; `--pri critical|normal|low|later` for follow-ups)
+     (`plan kinds` lists the KIND letters; `--pri critical|normal|low|later` for follow-ups). Name the exact
+     files, the test file too (`tests/test_menu.py`, not `tests/**`): a task waits for any other on its files
    - change: `plan note ID "..."`, `plan move ID top|after X`, `plan block ID [--after X] "why"`,
      `plan unblock ID`, `plan drop ID "why"`
    - read: `agent-runner plan`, `plan ID`, `plan next`, `plan claims`, `plan help`
@@ -142,6 +143,7 @@ What the person asks, and what you run (`{cmd}` is the runner):
   `{cmd} stop --force` (now; they resume next run), `{cmd} stop --undo`; "/stop" alone: `{cmd} stop`. Start a run when none is up: `{cmd}`.
 - "add a task", "fix X", "can someone…": queue it with `{cmd} plan add <KIND> "what, why, how to check"
   --files a.py,dir/**` (`{cmd} plan kinds` lists KIND letters; `--pri critical` only when it blocks work).
+  Name the exact files, the test file too (`tests/test_menu.py`, not `tests/**`): tasks on the same files wait.
   "after T181", "once X lands", "when that's merged": add `--after T181` (ids, comma-separated); for a task
   already queued, `{cmd} plan block ID --after T181 "waits for T181"`. Never start a watcher or Monitor to
   wait for a task: the run starts it once those merge.

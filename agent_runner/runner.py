@@ -154,7 +154,7 @@ FOLLOWUPS = """\
 The task list is a tool, not a file to read whole: `{runner} plan` lists the tasks, `{runner} plan <ID>` \
 shows one, and `{runner} plan add <KIND> "<text>" --files a,dir/** [--after ID] [--test name] [--pri LEVEL]` files a \
 follow-up you find but must not do now: `--files` the files it will change (the run keeps running tasks apart \
-by them), `--after` the ids it must wait for; the text is never read for files or ids. Never hand-edit a checkbox. KIND is the id letter for the kind of work: {kinds}. LEVEL is where it queues: \
+by them; name the exact test file, not `tests/**`), `--after` the ids it must wait for; the text is never read for files or ids. Never hand-edit a checkbox. KIND is the id letter for the kind of work: {kinds}. LEVEL is where it queues: \
 `critical` only when it breaks or blocks other work (it goes ahead of everything, so its text says what it \
 breaks); `normal`, the default, after the work a person queued; `low` for a check or a small tidy-up, after \
 normal; `later` for big future work, parked for a person to schedule and never started by a run. To split \
@@ -836,13 +836,29 @@ def ordered(section: str) -> bool:
 
 
 
+def whole_dir(f: str) -> bool:
+    """A `files:` entry that names a whole directory (`tests/**`, `dir/*`): a guess, not a file list."""
+    return (f.endswith('/**') or f.endswith('/*')) and '*' not in f.rsplit('/', 1)[0]
+
+
+def file_overlap(files, b: tuple, shared: set) -> set[str]:
+    """The entries of a waiting task's `files` that meet busy task `b`'s. A whole-directory glob (`tests/**`)
+    meets only what `b`'s line names (a file or glob there), never by itself the files `b` has touched (`b[4]`,
+    when given, is its line's files): one task changing one test file would otherwise hold every task whose line
+    guessed `tests/**` (T6)."""
+    files = set(files) - shared
+    line = set(b[4]) if len(b) > 4 else set(b[2])
+    dirs = {f for f in files if whole_dir(f)}
+    return P.overlap(files - dirs, set(b[2])) | P.overlap(dirs, line)
+
+
 def clash(t: tuple, b: tuple, shared: set[str]) -> bool:
     """Task `t` may not run beside `b` (running here, waiting to merge, or claimed by another runner): siblings,
-    a shared ordered section, or overlapping files (`shared_files` aside)."""
+    a shared ordered section, or overlapping files (`shared_files` aside; see `file_overlap`)."""
     tid, section, files, _ = t
     if family(tid) == family(b[0]):
         return True
-    return (ordered(section) and section == b[1]) or bool(P.overlap(set(files) - shared, set(b[2])))
+    return (ordered(section) and section == b[1]) or bool(file_overlap(files, b, shared))
 
 
 def clash_why(t: tuple, b: tuple, shared: set) -> tuple[str, str]:
@@ -851,7 +867,7 @@ def clash_why(t: tuple, b: tuple, shared: set) -> tuple[str, str]:
         return 'waiting for a sibling', b[0]
     if ordered(t[1]) and t[1] == b[1]:
         return f'one at a time in "{t[1]}"', b[0]
-    return 'waiting for files', f'{", ".join(sorted(P.overlap(set(t[2]) - shared, set(b[2])))[:3])} held by {b[0]}'
+    return 'waiting for files', f'{", ".join(sorted(file_overlap(t[2], b, shared))[:3])} held by {b[0]}'
 
 
 def claimed_elsewhere(cls: dict, todo: list) -> list[tuple]:
@@ -863,7 +879,7 @@ def claimed_elsewhere(cls: dict, todo: list) -> list[tuple]:
         if cl.owner == me or plansync.stale(cl):
             continue
         t = lines.get(tid, (tid, '', set(), set()))
-        out.append((tid, t[1], set(t[2]) | set(cl.files), t[3]))
+        out.append((tid, t[1], set(t[2]) | set(cl.files), t[3], set(t[2])))
     return out
 
 
@@ -904,7 +920,7 @@ def pick(running: dict, tried: set, branch: str, claim: bool = False, why: dict 
     lines_ = {t[0]: t for t in todo}
     for tid, d in taken().items():  # `take`: a person's session or subagent has it, in its own worktree
         t = lines_.get(tid, (tid, '', set(), set()))
-        busy.append((tid, t[1], set(t[2]) | touched(tid, branch, d), t[3]))
+        busy.append((tid, t[1], set(t[2]) | touched(tid, branch, d), t[3], set(t[2])))
     busy_ids = {b[0] for b in busy} | {q[0] for q in queued().values()}  # one waiting to resume is running
     mine = set(ahead(branch)) if todo else set()  # finished here, waiting to be merged
     finished = mine | plansync.taken(C)  # another runner's: on its slots
@@ -918,7 +934,7 @@ def pick(running: dict, tried: set, branch: str, claim: bool = False, why: dict 
                    **{t[0]: t for t in running.values()}}.items():
         files = touched(tid, branch, slots.get(tid))
         done_ = tid in mine and tid not in busy_ids and tid not in live and files  # finished, not running
-        busy.append((tid, t[1], files if done_ else set(t[2]) | files, t[3]))
+        busy.append((tid, t[1], files if done_ else set(t[2]) | files, t[3], set() if done_ else set(t[2])))
     busy_ids |= {b[0] for b in busy if b[0] not in mine}
     claimed = {t: cl.who for t, cl in plansync.claims(C).items()} if why is not None else {}
     parked = parked_attempts() if todo else {}
