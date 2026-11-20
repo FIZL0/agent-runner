@@ -3862,9 +3862,9 @@ def file_flaky(rel: str) -> list[str]:
         del HOGS[name]
         if name in open_text:
             continue
-        out.append(P.add(kind, f'make the test `{name}` stop growing: it held {gb} GB in {where} until the run\'s '
+        out.append(add_test_task(kind, name, f'stop growing: it held {gb} GB in {where} until the run\'s '
                                f'memory watch ended it. Find what it allocates without bound (a walk that loops, '
-                               f'a list grown per case) and bound it | test: {name}', todo=ROOT / rel, pri='critical'))
+                               f'a list grown per case) and bound it', rel))
         open_text += '\n' + name
     for name, (tid, base, daily) in list(BROKEN.items()):
         del BROKEN[name]
@@ -3872,21 +3872,32 @@ def file_flaky(rel: str) -> list[str]:
             continue
         how = (' The daily whole test found it: a selective gate ([run] test_since) let in whatever broke it, so '
                'also make the selection reach this test from what it reads.') if daily else ''
-        out.append(P.add(kind, f'make the test `{name}` pass again: it fails on the shared branch ({base[:10]}), '
+        out.append(add_test_task(kind, name, f'pass again: it fails on the shared branch ({base[:10]}), '
                                f'found by {tid}\'s merge gate, which merged anyway as not its doing. Find the '
                                f'merge that broke it (git bisect from the last gate it passed) and fix the code '
-                               f'or the test.{how} | test: {name}', todo=ROOT / rel, pri='critical'))
+                               f'or the test.{how}', rel))
         open_text += '\n' + name
     for name, tid in list(FLAKY.items()):
         del FLAKY[name]
         if name in open_text:
             continue
-        out.append(P.add(kind, f'make the test `{name}` robust: it failed under load in {tid}\'s merge gate and '
+        out.append(add_test_task(kind, name, f'robust: it failed under load in {tid}\'s merge gate and '
                                f'passed alone. Find what it races (wall-clock time, shared ports or files, '
-                               f'other processes) and remove that, rather than widening a timeout | test: {name}',
-                         todo=ROOT / rel, pri='critical'))
+                               f'other processes) and remove that, rather than widening a timeout', rel))
         open_text += '\n' + name
     return out
+
+
+def add_test_task(kind: str, name: str, what: str, rel: str) -> str:
+    """`file_flaky`'s task "make the test `name` <what>", critical and stamped with the day it was filed; the
+    third within a week for one test (B34, `ci.closed_repeats`) is filed blocked on a person instead."""
+    tid = P.add(kind, f'make the test `{name}` {what} {ci.filed_stamp()} | test: {name}', todo=ROOT / rel,
+                pri='critical')
+    earlier = ci.closed_repeats(P.lines(ROOT / plan_rel('DONE.md')), f'make the test `{name}` ')
+    if len(earlier) >= ci.REPEAT_LIMIT - 1:
+        P.block(tid, ci.repeat_ask(f'the test `{name}`', earlier), todo=ROOT / rel, after=[])
+        log(f'{tid}: the test `{name}` failed again after {", ".join(earlier)} closed; blocked on a person')
+    return tid
 
 
 def land_tick(tid: str, merged: str) -> None:
@@ -4051,6 +4062,9 @@ def watch_ci(branch: str, force: bool = False) -> list[str]:
                 continue
             text, long = got
             tid = P.add(C.run['ci_kind'], text, todo=ROOT / rel, pri='critical')
+            if len(earlier := ci.closed_repeats(P.lines(ROOT / plan_rel('DONE.md')), ci.marker(wf, branch))) \
+                    >= ci.REPEAT_LIMIT - 1:  # B34: the third in a week waits on a person, not ahead of all work
+                P.block(tid, ci.repeat_ask(f'`{wf}` on {branch}', earlier), todo=ROOT / rel, after=[])
             own = plan_rel(f'{P.TASKS}/{tid}.md')
             (ROOT / own).parent.mkdir(parents=True, exist_ok=True)
             (ROOT / own).write_text('\n'.join([f'# {tid} — CI: {ci.marker(wf, branch)}', '', *long, '']),
@@ -4063,8 +4077,9 @@ def watch_ci(branch: str, force: bool = False) -> list[str]:
                 seen.write_text(was)  # not filed: the next look tries that run again
                 continue
             filed.append(tid)
-            note(f'{tid}: filed (critical), {ci.marker(wf, branch)}')
-            log(f'{tid}: filed (critical), {ci.marker(wf, branch)}: {text[:200]}')
+            how = f'blocked on a person, after {", ".join(earlier)}' if len(earlier) >= ci.REPEAT_LIMIT - 1 else 'critical'
+            note(f'{tid}: filed ({how}), {ci.marker(wf, branch)}')
+            log(f'{tid}: filed ({how}), {ci.marker(wf, branch)}: {text[:200]}')
     finally:
         hold.close()
         MERGE.release()

@@ -3973,6 +3973,35 @@ def test_ci_watch(repo: Path):
         n = len(asked)
         eq(len(R.watch_ci('main', force=True)), 1, 'red on the second attempt: filed')
         check(not any(a[:2] == ('run', 'rerun') for a in asked[n:]), 'with no third try')
+        has((repo / 'plan/TODO.md').read_text(encoding='utf-8'), r'is red .*\(filed \d{4}-\d\d-\d\d\)',
+            'the line says the day it was filed')
+
+        print('run: the third CI task in a week for one workflow is filed blocked on a person (B34)')
+        git(repo, 'reset', '-q', '--hard', head)
+        today, old = R.dt.date.today(), (R.dt.date.today() - R.dt.timedelta(days=9)).isoformat()
+        done = repo / 'plan/DONE.md'
+        before = done.read_text(encoding='utf-8') if done.exists() else '# DONE — the archive\n'
+        closed = lambda tid, day: f'- [x] **{tid}** (follow-up, critical) CI: `pages.yml` on main is red (failure). (filed {day}) u\n'
+        done.write_text(before + '\n### Next\n\n' + closed('B901', today) + closed('B800', old), encoding='utf-8')
+        git(repo, 'commit', '-qam', 'one closed CI task this week, one older')
+        runs.insert(0, {**runs[0], 'databaseId': 20, 'attempt': 2})
+        got = R.watch_ci('main', force=True)
+        has((repo / 'plan/TODO.md').read_text(encoding='utf-8'), rf'- \[ \] \*\*{got[0]}\*\* \(follow-up, critical\) CI',
+            'one closed in the week (an older one does not count): filed open, as before')
+        git(repo, 'reset', '-q', '--hard', head)
+        done.write_text(before + '\n### Next\n\n' + closed('B901', today) + closed('B902', today) + closed('B800', old)
+                        + '- [x] **B903** (follow-up, critical) CI: `other.yml` on main is red. (filed ' + str(today) + ')\n',
+                        encoding='utf-8')
+        git(repo, 'commit', '-qam', 'two closed CI tasks for pages.yml this week')
+        runs.insert(0, {**runs[0], 'databaseId': 21, 'attempt': 2})
+        got = R.watch_ci('main', force=True)
+        eq(len(got), 1, 'still one task')
+        has((repo / 'plan/TODO.md').read_text(encoding='utf-8'),
+            rf'- \[~\] \*\*{got[0]}\*\* .*`pages.yml` on main is red.* BLOCKED: BLOCKED: `pages.yml` on main has had '
+            r'2 auto-filed tasks closed in 7 days while it still fails \(B901, B902\)',
+            'the third is filed blocked on a person, the earlier ids listed (not another workflow\'s)')
+        eq(git(repo, 'status', '--porcelain', '--', 'plan'), '', 'committed')
+        eq(R.watch_ci('main', force=True), [], 'and while it waits, nothing more is filed')
     finally:
         ci.gh_in, R.C.run['ci_watch'], R.CI_RERUN = real, [], True
         git(repo, 'reset', '-q', '--hard', head)
@@ -4262,7 +4291,21 @@ def test_memory_watch(repo: Path):
         eq(len(got), 1, 'a test the shared branch fails: one task')
         has((repo / rel).read_text(), rf'\*\*{got[0]}\*\* \(follow-up, critical\) make the test `the_rider_leaf` '
             r'pass again: it fails on the shared branch \(aaaaaaaaaa\).*selection reach', 'critical, saying to widen the selection')
+        print('run: the third flaky-test task in a week for one test is filed blocked on a person (B34)')
+        git(repo, 'reset', '-q', '--hard', head)
+        done = repo / R.plan_rel('DONE.md')
+        before = done.read_text(encoding='utf-8') if done.exists() else '# DONE — the archive\n'
+        day = R.dt.date.today().isoformat()
+        done.write_text(before + '\n### Next\n\n' + ''.join(
+            f'- [x] **T9{i}** (follow-up, critical) make the test `a::racy` robust: x (filed {day}) | test: a::racy\n'
+            for i in (1, 2)), encoding='utf-8')
+        git(repo, 'commit', '-qam', 'two closed flaky tasks for a::racy')
+        R.FLAKY['a::racy'] = 'X'
+        got = R.file_flaky(rel)
+        has((repo / rel).read_text(), rf'- \[~\] \*\*{got[0]}\*\* .*make the test `a::racy` robust.* BLOCKED: BLOCKED: '
+            r'the test `a::racy` has had 2 auto-filed tasks closed in 7 days.*\(T91, T92\)', 'blocked on a person')
     finally:
+        R.FLAKY.clear()
         R.HOGS.clear()
         git(repo, 'checkout', '-q', '--', rel)
         git(repo, 'reset', '-q', '--hard', head)
