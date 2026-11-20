@@ -1,0 +1,5 @@
+# agent-runner's own settings for this repo (every key: docs/REFERENCE.md#runnertoml)
+
+[run]
+# The gate `done` and every merge run: each tests/test_*.py suite in turn, stopping at the first failure.
+test = "for t in tests/test_*.py; do echo \"== $t\"; python3 \"$t\" || exit 1; done"

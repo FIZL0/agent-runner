@@ -20,6 +20,10 @@ _gitconfig.write('[user]\n\tname = test\n\temail = test@example.invalid\n[init]\
 _gitconfig.close()
 os.environ.update(GIT_CONFIG_GLOBAL=_gitconfig.name, GIT_CONFIG_NOSYSTEM='1')
 os.environ.pop('AGENT_RUNNER_REPO', None)
+# a gate run by `done` in a slot inherits the slot session's markers: without this the code under test acts
+# as a slot's agent (no skill install, a different plan path) and the suites fail only inside a run
+os.environ.pop('AGENT_RUNNER_SLOT', None)
+os.environ.pop('AGENT_RUNNER', None)
 os.environ['AGENT_RUNNER_NO_NOTIFY'] = '1'  # an alarm in a test rings no tmux message or desktop notification
 os.environ['CLAUDE_CONFIG_DIR'] = tempfile.mkdtemp(prefix='agent-runner-test-claude-')  # never the real ~/.claude
 # worktrees and plan clones go under a temp folder, never the real ~/runs
