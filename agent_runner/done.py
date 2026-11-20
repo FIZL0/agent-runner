@@ -9,7 +9,8 @@ which only the runner pushes, after a merge.
 
 One command rather than five because each of the five is a step a session forgets: a tick without the
 commit, a commit without the tests, a branch never pushed. A failing gate commits nothing and ticks
-nothing, so a "done" task is always one whose tests passed.
+nothing, so a "done" task is always one whose tests passed. Failed gates are counted per task in the
+worktree's git dir: after three, `done` refuses to run a fourth until the task is blocked (a pass resets it).
 
 `--blocked WHY` marks it `[~]` instead. Say what would unblock it. If what it waits on is another task
 landing, `--after ID[,ID]` (or just naming the open ids in WHY) lets a run reopen it once they merge.
@@ -37,6 +38,7 @@ from agent_runner.gitops import git, push, shared_branch
 
 PROG = 'run done'  # the name in messages; a wrapper sets its own ('kit done')
 TESTED = 'refs/agent-runner/tested/'  # + <ID>: the commit whose tree `done`'s gate passed on
+MAX_FAILS = 3  # failed gates a task gets in one worktree; the next `done` refuses to run a fourth
 __all__ = ['gate', 'main', 'PROG']
 
 
@@ -72,15 +74,28 @@ def main(argv: list[str] | None = None) -> int:
         print(why, file=sys.stderr)
         return 2
 
+    if not a.blocked and not a.no_test and fails(cwd, a.id) >= MAX_FAILS:
+        print(f'{PROG}: the test gate failed {MAX_FAILS} times on {a.id}: a fourth is not run. Commit what is '
+              f'solid and\n    {PROG} {a.id} "<msg>" --blocked "<why + what unblocks it>"\nNothing ticked.',
+              file=sys.stderr)
+        return 1
     if not a.no_test:
         rc, tail = gate(cwd)
         if rc:
             print(tail)
-            print(f'\nThe test gate failed: nothing ticked, nothing committed. Fix it, or commit what is solid '
-                  f'and\n    {PROG} {a.id} "<msg>" --blocked "<why + what unblocks it>"', file=sys.stderr)
+            if a.blocked:
+                last = 'Commit only what is solid, and'
+            elif (n := fails(cwd, a.id, add=True)) >= MAX_FAILS:
+                last = f'That is {n} failed gates on {a.id}: {PROG} refuses a fourth. Commit what is solid and'
+            else:
+                last = f'Failed gate {n} of {MAX_FAILS}. Fix it, or commit what is solid and'
+            print(f'\nThe test gate failed: nothing ticked, nothing committed. {last}\n'
+                  f'    {PROG} {a.id} "<msg>" --blocked "<why + what unblocks it>"', file=sys.stderr)
             return 1
         if c.run['test']:
             print(f'gate passed: {c.run["test"]}')
+    if a.blocked or not a.no_test:  # a pass, or a block: the next session on it starts its count afresh
+        fails(cwd, a.id, reset=True)
 
     if not c.plan_external:
         return record(a, c)
@@ -148,6 +163,30 @@ def record(a, c) -> int:
     elif here and (remote := c.push_remote) and shared_branch(cwd, remote, here):
         print(f'{here} is not pushed: done only pushes a task branch (git push {remote} {here} to publish)')
     return finished(c, a)
+
+
+def fails(cwd: Path, tid: str, add: bool = False, reset: bool = False) -> int:
+    """The failed `done` gates counted for `tid` in this worktree (its own git dir, so slots never share a
+    count): `add` one, or `reset` to none (a pass, or a block). The count after."""
+    r = git('rev-parse', '--absolute-git-dir', cwd=cwd)
+    if r.returncode:
+        return 0
+    f = Path(r.stdout.strip()) / 'agent-runner' / 'failed-gates' / tid
+    if reset:
+        f.unlink(missing_ok=True)
+        return 0
+    try:
+        n = int(f.read_text().strip() or 0)
+    except (OSError, ValueError):
+        n = 0
+    if add:
+        n += 1
+        try:
+            f.parent.mkdir(parents=True, exist_ok=True)
+            f.write_text(f'{n}\n')
+        except OSError:
+            pass
+    return n
 
 
 def artifact_refusal(a) -> str | None:

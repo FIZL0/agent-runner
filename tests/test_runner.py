@@ -438,12 +438,23 @@ def test_done(repo: Path, tmp: Path):
     check(r.returncode == 1 and 'gate failed' in r.stderr, 'a failing gate refuses', r.stdout + r.stderr)
     check('- [ ] **T5**' in (d / 'plan/TODO.md').read_text(), 'and ticks nothing')
     eq(git(d, 'rev-list', '--count', 'main..HEAD'), '0', 'and commits nothing')
+    has(r.stderr, r'Failed gate 1 of 3', 'and counts the failure')
+    for n in (1, 2, 3):  # a session that keeps re-running a failing gate on Z9
+        r = run(d, 'done', 'Z9', 'Z9: loops')
+    check(r.returncode == 1 and 'refuses a fourth' in r.stderr, 'the third failed gate says a fourth is refused',
+          r.stdout + r.stderr)
     (d / 'BROKEN').unlink()
+    r = run(d, 'done', 'Z9', 'Z9: loops')
+    check(r.returncode == 1 and 'a fourth is not run' in r.stderr and 'gate passed' not in r.stdout,
+          'and the fourth refuses without running the gate (which would pass now)', r.stdout + r.stderr)
+    eq(git(d, 'rev-list', '--count', 'main..HEAD'), '0', 'committing nothing')
     with open(d / 'CHANGELOG.md', 'a') as f:
         f.write('- T5: the logger\n')
     output_env = {**os.environ, 'PYTHONIOENCODING': 'cp1252'}
     r = run(d, 'done', 'T5', 'T5: the logger', env=output_env)
     check(r.returncode == 0, 'a passing gate goes through', r.stdout + r.stderr)
+    from agent_runner import done as D
+    eq((D.fails(d, 'T5'), D.fails(d, 'Z9')), (0, 3), "and clears T5's failed-gate count, not Z9's")
     has(r.stdout, r'pushed task/T5 -> origin', 'and pushes the task branch with CP1252 output enabled')
     check('task/T5' in remote_branches(tmp), 'which is on the remote now')
     has((d / 'plan/DONE.md').read_text(), r'- \[x\] \*\*T5\*\*', 'T5 is ticked into DONE.md on the branch')
