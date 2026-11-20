@@ -1068,6 +1068,12 @@ def test_user_hook(tmp: Path):
         cmds = [h['command'] for e in data['hooks']['SessionStart'] for h in e['hooks']]
         check(data['model'] == 'x' and cmds[0] == 'mine' and len(cmds) == 2 and CF.USER_HOOK in cmds[1],
               "the person's own settings and hooks stay, ours is added", cmds)
+        gone = f'/nonexistent/python3 /nonexistent/run {CF.USER_HOOK} 2>/dev/null || true'
+        data['hooks']['SessionStart'][1]['hooks'][0]['command'] = gone
+        f.write_text(json.dumps(data))
+        has(CF.install_user_hook(), r'settings\.json', 'a hook naming a clone that is gone is repaired')
+        cmds = [h['command'] for e in json.loads(f.read_text())['hooks']['SessionStart'] for h in e['hooks']]
+        check(cmds[1] == CF.user_hook_command() and len(cmds) == 2, 'in place, still one', cmds)
         bad = home / 'settings.json'
         bad.write_text('{not json')
         eq(CF.install_user_hook(), '', 'a settings file that is not JSON is left alone')

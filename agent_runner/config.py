@@ -520,6 +520,15 @@ def user_hook_command() -> str:
     return plat.command_text([*runner_cmd(), *USER_HOOK.split()]) + ' 2>/dev/null || true'
 
 
+def user_hook_stale(command: str) -> bool:
+    """A user hook command whose interpreter or script (its absolute paths) no longer exists."""
+    try:
+        words = shlex.split(command.split(' 2>/dev/null')[0])
+    except ValueError:
+        return False
+    return any(Path(w).is_absolute() and not Path(w).exists() for w in words[:2])
+
+
 def install_user_hook() -> str:
     """Merge the user-level SessionStart hook into Claude Code's user settings, once. Only where Claude Code is
     used (its config dir exists), never from a clone that is a worktree (a slot's copy goes away), and never
@@ -535,10 +544,16 @@ def install_user_hook() -> str:
         starts = hooks.setdefault('SessionStart', []) if isinstance(hooks, dict) else None
         if not isinstance(starts, list):
             return ''
-        if any(USER_HOOK in str(h.get('command', '')) for e in starts if isinstance(e, dict)
-               for h in e.get('hooks', []) if isinstance(h, dict)):
-            return ''
-        starts.append({'hooks': [{'type': 'command', 'command': user_hook_command()}]})
+        cmd = user_hook_command()
+        ours = [h for e in starts if isinstance(e, dict) for h in e.get('hooks', [])
+                if isinstance(h, dict) and USER_HOOK in str(h.get('command', ''))]
+        if ours and all(h['command'] == cmd or not user_hook_stale(str(h['command'])) for h in ours):
+            return ''  # there, and it runs (a hook from another clone that still exists is left alone)
+        if ours:
+            for h in ours:  # the clone or interpreter it names is gone: it would fail silently for ever
+                h['command'] = cmd
+        else:
+            starts.append({'hooks': [{'type': 'command', 'command': cmd}]})
         tmp = f.with_name(f.name + '.agent-runner.tmp')
         tmp.write_text(json.dumps(data, indent=2) + '\n', encoding='utf-8')
         os.replace(tmp, f)
