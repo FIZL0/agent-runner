@@ -5622,6 +5622,37 @@ def test_idle_control_not_waiting():
     check('?' not in start, 'B56: the feed\'s opening line asks nothing', start)
 
 
+def test_needs_cmd_f44():
+    """F44: `needs` prints only what waits on the person, 'ID - what to do' each, then a summary line; the feed
+    brief ends an idle reply with its first item and the control brief answers 'what is waiting on me' with it."""
+    from agent_runner import plan as P
+    from agent_runner.guide import CONTROL, CONTROL_WATCH, RUNNER_BRIEF
+    eq(P.needs_lines([]), ['Nothing needs you'], 'F44: nothing waiting')
+    r7 = ('DECIDE', 'R7', '', 'pick which config changes to build', '', 'Config review', False)
+    r6 = ('CONFIRM', 'R6', '', 'Windows desktop check - reply with what you saw', 'https://x.example/r6',
+          'R6 long title', False, '2026-11-20 10:00')
+    shelved = ('CONFIRM', 'R2', '', 'phone check', '', 'Phone', True)
+    eq(P.needs_lines([r7, shelved]), ['R7 - pick which config changes to build, reply with your answer',
+                                      '1 thing needs you'], 'F44: one item, the shelved one left out')
+    eq(P.needs_lines([r7, r6]), ['R7 - pick which config changes to build, reply with your answer',
+                                 'R6 - Windows desktop check, reply with what you saw', '2 things need you'],
+       'F44: two items, the agent\'s own reply hint kept and no link')
+    long = ('BLOCKED', 'B9', '', 'log in to the dashboard and turn on builds. Then also do many other things '
+            'that make this very long indeed', '', 't', False)
+    got = P.needs_lines([long])[0]
+    check(got.startswith('B9 - log in to the dashboard and turn on builds, reply done') and 'other things' not in got,
+          'F44: a long ask keeps its first sentence only', got)
+    concept = ('CONCEPT', 'F9', 'K4', P.CONCEPT_ASK, 'https://x.example/k4', 'Sync options', False)
+    eq(P.needs_lines([concept])[0], 'K4 - pick an option for sync options, reply A/B/C', 'F44: a concept by its K id')
+    rb = ' '.join(RUNNER_BRIEF.format(cmd='run', repo='r', answer='').split())
+    check('`run needs`' in rb and 'first item line' in rb and 'Nothing needs you' in rb,
+          'F44: the feed ends an idle reply with `needs`\' first item', rb)
+    text = ' '.join(CONTROL.format(repo='r', cmd='./run', log='l', watch=CONTROL_WATCH.format(repo='r', cmd='./run'),
+                                   needs='Needs you', answer='').split())
+    check('"what is waiting on me?"' in text and '`./run needs`' in text.split('"what is waiting on me?"', 1)[1][:200],
+          'F44: the control brief answers "what is waiting on me" with `needs`', text)
+
+
 def test_control_push_when_asked():
     """B81: the control brief pushes what the person asked to hear (its own subagent/take finishing included),
     and finished/stuck/needs-you events while they are away; it never promises a push it cannot send."""
@@ -5997,7 +6028,7 @@ def main() -> int:
                        lambda: test_closed_online_controls(repo),
                        lambda: test_renamed_control_kept(repo),
                        lambda: test_control_summary_title(repo), lambda: test_control_task_name(repo), lambda: test_progress_and_release(repo),
-                       lambda: test_control_status_rules(repo), lambda: test_control_do_it_here(repo), lambda: test_control_retitle_on_topic(repo), test_control_push_when_asked, test_idle_control_not_waiting, lambda: test_take_running_slot(repo), lambda: test_upgrade_cmd(repo), test_control_no_upgrade_watcher,
+                       lambda: test_control_status_rules(repo), lambda: test_control_do_it_here(repo), lambda: test_control_retitle_on_topic(repo), test_control_push_when_asked, test_needs_cmd_f44, test_idle_control_not_waiting, lambda: test_take_running_slot(repo), lambda: test_upgrade_cmd(repo), test_control_no_upgrade_watcher,
                        lambda: test_plan_last(repo), lambda: test_release_push(repo),
                        lambda: test_help_order_and_bare_wizard(tmp), lambda: test_setup(tmp),
                        lambda: test_stop_countdown(repo), lambda: test_real_claude_json_guard(tmp)])

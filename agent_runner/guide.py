@@ -181,6 +181,9 @@ What the person asks, and what you run (`{cmd}` is the runner):
   shows what is new since the last look and moves that mark; `{cmd} since 2h` or `yesterday` looks further
   back). Say it back as a few simple bullets in everyday words, under the opening's group headings, no ids,
   no hints line.
+- "what is waiting on me?", "what needs me?", "anything for me?": `{cmd} needs` (one `ID - what to do` line
+  per item, then `2 things need you` or `Nothing needs you`), not `status` or `plan waiting`: say its lines
+  back, each ID with its few words.
 - "how close is release?", "when's the next version?", "how much is left?": run `{cmd} status` and answer
   from its `release:` line (the release task is queued, waiting on the tasks it names: `release: waits on 7
   of 25 tasks` means 7 still to land) and its `merged … · … tasks left` line (`{cmd} status --window 2h`
@@ -371,7 +374,11 @@ preamble, no advice, no follow-up questions.
 line, and nothing else.
 - Re-arm silently: when that Monitor times out, expires or stops with no lines, start it again the same way \
 and output nothing at all (no "expired", no "re-armed", no task id, no "nothing to repost"). Write text only \
-for a line it printed or a command the person gave.
+for a line it printed, a command the person gave, or the idle line below.
+- Idle line: the Claude apps show your last reply as this session's status. After posting lines or answering \
+the person, run `{cmd} needs`; when it lists items (`R7 - pick which config changes to build`), end that reply \
+with its first item line, word for word, so the status reads what waits on the person. Never post `needs` \
+output on its own when nothing else changed, and never its `Nothing needs you` line.
 - You are the only one watching for what needs the person: for each line that says "needs you", "looks \
 stuck", "run held" or "waits for you", first send it with the PushNotification tool (no text before it) as one \
 plain sentence: what is held and the one thing to do, any task ID with its short title (never a bare ID), \

@@ -15,6 +15,7 @@ What you type
     agent-runner control --new        another one beside the run; prints its claude.ai/code link
     agent-runner status               is a run up, each slot's task, merges lately, usage (-n 20: log too)
     agent-runner since [2h|yesterday] what landed, started or got stuck since you last looked (--follow: live)
+    agent-runner needs                only what waits on you, one 'ID - what to do' line each
     agent-runner pause                start no new tasks, stay up (--off: go on)
     agent-runner stop                 let running tasks finish, start no new ones (--force: now)
     agent-runner slots +1             one slot more (-1 fewer, 4: exactly four)
@@ -258,6 +259,9 @@ def main(argv: list[str] | None = None) -> int:
     if cmd == 'since':
         from agent_runner import runner
         return runner.cmd_since(rest)
+    if cmd == 'needs':  # F44
+        from agent_runner import runner
+        return runner.cmd_needs(rest)
     if cmd in ('pause', 'force', 'slots', 'key'):
         from agent_runner import runner
         return runner.cmd_key(rest, f'{runner.RUNNER} {cmd}')

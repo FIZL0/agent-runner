@@ -6513,6 +6513,18 @@ def cmd_since(argv: list[str], prog: str = f'{RUNNER} since') -> int:
     return 0
 
 
+def cmd_needs(argv: list[str], prog: str = f'{RUNNER} needs') -> int:
+    """F44 `agent-runner needs`: only what waits on the person, one 'ID - what to do' line each in Needs you
+    order, then '2 things need you' or 'Nothing needs you'; no bodies, notes or lately, so a feed or control
+    session spends almost no context on it."""
+    argparse.ArgumentParser(prog=prog, description='What waits on you, one line each.').parse_args(argv)
+    init()
+    w = waiting_ok()
+    stamps = {a[1]: a[7] for a in w if len(a) > 7 and a[7]}
+    print('\n'.join(P.needs_lines(P.in_order(w, stamps, P.needs_cfg()['order']), has_sheet)))
+    return 0
+
+
 def waiting_ok() -> list[tuple]:
     """What waits for the person (`plan.asks`, shelved ones too), from the main checkout's TODO.md: concept pages
     and tasks blocked on a person."""

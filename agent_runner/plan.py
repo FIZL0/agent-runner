@@ -135,7 +135,7 @@ __all__ = ['PROG', 'HELP', 'lines', 'index', 'section', 'ensure', 'archive', 'ti
            'unblock', 'move', 'next_id', 'add', 'similar', 'note', 'drop', 'next_task', 'files_on_line', 'fields', 'overlap', 'brief', 'open_ids',
            'write_atomic', 'child', 'subtasks', 'main', 'PRI', 'kinds', 'check_kind',
            'concept', 'concept_done', 'waiting', 'approve', 'revise',
-           'asking', 'asks', 'confirm', 'change', 'shelve', 'unshelve', 'edit']
+           'asking', 'asks', 'confirm', 'change', 'shelve', 'unshelve', 'edit', 'needs_lines']
 
 ITEM = re.compile(r'^(\s*)- \[(.)\] \*\*([^\s*]+)')
 HEAD = re.compile(r'(#+) ')
@@ -1370,6 +1370,33 @@ def in_order(items: list, stamps: dict[str, str], order: str = 'oldest') -> list
         return list(items)
     key = lambda a: stamps.get(a[1], '')
     return sorted(items, key=key, reverse=order == 'newest')
+
+
+NEEDS_WIDTH = 72  # chars of an ask's first sentence `needs` keeps, before its reply hint
+
+
+def needs_lines(items: list, sheet=lambda tid: False) -> list[str]:
+    """F44 `needs`: per ask that is not shelved one 'ID - what to do' line ('R7 - pick which config changes to
+    build, reply with your answer'), then one summary line ('2 things need you', 'Nothing needs you'). `items`
+    are asks tuples in the order to show; `sheet(tid)` says a DECIDE has a pick sheet. No links, bodies or notes."""
+    out = []
+    for label, tid, k, what, _url, title, sh, *_ in items:
+        if sh:
+            continue
+        own = re.search(r'[\s,;:.–—-]*\b(reply (?:with|yes|no|done|go|A/)[^.;]*)[.;]?\s*$', what or '')
+        what = what[:own.start()] if own else what  # the agent's own 'reply with …' replaces the generic hint
+        ask = plain_ask(label, what, title, label == 'DECIDE' and sheet(tid))
+        said, _, hint = ask.rpartition(' - ')
+        if not said:  # a pick sheet's ask: 'Pick the stack. Pick on the sheet or reply go'
+            said, hint = ask.replace('. Pick on the sheet', ', pick on the sheet'), ''
+        hint = own.group(1) if own else hint
+        said = re.split(r'(?<=[.?!])\s', said, maxsplit=1)[0].rstrip('.')  # its first sentence
+        if len(said) > NEEDS_WIDTH:
+            said = said[:NEEDS_WIDTH].rsplit(' ', 1)[0].rstrip(' :,;-(') + '…'
+        said = what.strip()[:1] + said[1:] if what and said[:1].lower() == what.strip()[:1].lower() else _lower_first(said)
+        out.append(f'{k or tid} - {said}' + (f', {hint}' if hint else ''))
+    n = len(out)
+    return out + ['Nothing needs you' if not n else '1 thing needs you' if n == 1 else f'{n} things need you']
 
 
 # --- B19: drop or change a task a run's slot is on: the run stops that slot too ------------------------------
