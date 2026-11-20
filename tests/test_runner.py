@@ -833,9 +833,12 @@ def test_remote_auto(tmp: Path):
 
 
 def test_control(repo: Path):
-    with mock.patch.dict(os.environ, {'CLAUDE_CODE_CHILD_SESSION': '1', 'CLAUDECODE': '1', 'CLAUDE_CONFIG_DIR': '/c'}):
-        with mock.patch.object(R, 'run', return_value=0):
+    with mock.patch.dict(os.environ, {'CLAUDE_CODE_CHILD_SESSION': '1', 'CLAUDECODE': '1', 'CLAUDE_CONFIG_DIR': '/c',
+                                      'TMUX': '/tmp/t,1,0'}):
+        with mock.patch.object(R, 'run', return_value=0), mock.patch.object(R, 'tmux') as tm:
             R.cmd_run([])
+        check(mock.call('set-environment', '-u', 'CLAUDE_CODE_CHILD_SESSION') in tm.call_args_list,
+              'and out of its tmux session, whose new windows (the slots) would inherit them')
         check('CLAUDE_CODE_CHILD_SESSION' not in os.environ and 'CLAUDECODE' not in os.environ
               and os.environ.get('CLAUDE_CONFIG_DIR') == '/c',
               "a run started from a Claude session drops its markers (no slot transcripts otherwise), keeps config")

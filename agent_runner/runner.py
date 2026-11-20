@@ -5032,8 +5032,13 @@ SESSION_ENV = ('CLAUDECODE', 'CLAUDE_CODE_CHILD_SESSION', 'CLAUDE_CODE_SESSION_I
 
 
 def drop_session_env() -> None:
+    """Out of this process, and out of the tmux session it runs in: `new-session -e` stores a variable on the
+    session, and every window opened in it later (each slot's) inherits it."""
     for k in SESSION_ENV:
         os.environ.pop(k, None)
+    if os.environ.get('TMUX') and shutil.which('tmux'):
+        for k in SESSION_ENV:
+            tmux('set-environment', '-u', k)
 
 
 def cmd_run(argv: list[str], prog: str = f'{RUNNER} run') -> int:
@@ -6187,6 +6192,8 @@ def cmd_background(argv: list[str]) -> int:
         return 0
     win = window('runner')
     exists = not tmux('has-session', '-t', f'={sess}').returncode
+    for k in SESSION_ENV if exists else ():  # a session an earlier launch made from a Claude session holds them
+        tmux('set-environment', '-t', f'={sess}', '-u', k)
     if exists:  # a dead runner window left from a failed start would take the name
         tmux('kill-window', '-t', f'={sess}:{win}')
     cmd = plat.command_text([*runner_cmd(), 'run'])
