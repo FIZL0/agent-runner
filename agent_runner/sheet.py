@@ -21,10 +21,14 @@ one preselected and labelled, a collapsible Why, and a sticky bar: N changes pic
 the agent publishes with the Artifact tool and names in its DECIDE line. Needs you and the feed then show one
 line, '<summary>. Pick on the sheet or reply go', with the sheet's link.
 
-Send shows the picks as one reply line, `<ID> picks: backend=a batch=b` (letters in answer order), and copies
-it; pasted in the chat with the run, the session answers the item with `agent-runner sheet <ID> --picks
-"<that line>"`, and 'go' answers it with the recommended set (`--go`). Either way the task reopens (`plan
-confirm`) with each question's answer spelled out in its note.
+Send shows the picks as one reply line, `<ID> picks: backend=a batch=b` (letters in answer order; 'go' when
+they are the recommended set), and (F54) writes it to the page's artifact db as the document `picks/<ID>`,
+`{"id": "<ID>", "picks": "<that line>", "at": "<ISO time>"}`: the page is published with `CAPABILITIES`
+(`{"db": {}}`). The control session reads that document with the ArtifactData tool (`get`, collection `picks`,
+doc_id the ID, on the sheet's url) and answers the item with `agent-runner sheet <ID> --picks "<its picks>"`
+(the whole document as JSON works too). Where the page has no db (an older sheet, a write that fails) Send
+copies the line instead, to paste in the chat with the run; 'go' answers it with the recommended set (`--go`).
+Either way the task reopens (`plan confirm`) with each question's answer spelled out in its note.
 """
 from __future__ import annotations
 
@@ -33,9 +37,14 @@ import json
 import re
 from pathlib import Path
 
-__all__ = ['load', 'problems', 'questions', 'render', 'parse_picks', 'picks_note', 'changes', 'GO']
+__all__ = ['load', 'problems', 'questions', 'render', 'parse_picks', 'picks_note', 'changes', 'GO',
+           'CAPABILITIES', 'DB_COLLECTION']
 
 GO = ('go', 'recommended')  # a reply that takes the recommended set
+# F54: the sheet's page keeps the picks Send sent in its artifact db, document `picks/<ID>`. The owner (who
+# picks) can write with the default rules, so the declaration needs no rules of its own.
+CAPABILITIES = {'db': {}}
+DB_COLLECTION = 'picks'
 
 
 def load(path: Path) -> dict:
@@ -102,7 +111,18 @@ def rec(q: dict) -> int:
 def parse_picks(spec: dict, text: str) -> dict[str, int]:
     """{question id: answer index} from Send's reply line (`R7 picks: backend=a batch=b`, the `R7 picks:`
     optional) or a bare 'go' / 'recommended' (the recommended set). A question it does not name keeps its
-    recommended answer. ValueError on an id or a letter the sheet does not have."""
+    recommended answer. ValueError on an id or a letter the sheet does not have.
+
+    F54: `text` may also be the `picks/<ID>` document Send wrote to the page's db, as JSON
+    (`{"id": "R7", "picks": "R7 picks: backend=a"}`): its `picks` is read the same way."""
+    if text.lstrip().startswith('{'):
+        try:
+            doc = json.loads(text)
+        except json.JSONDecodeError as e:
+            raise ValueError(f'not the document Send wrote: {e}') from None
+        if not isinstance(doc, dict) or not isinstance(doc.get('picks'), str):
+            raise ValueError('not the document Send wrote: it has no "picks" line')
+        text = doc['picks']
     qs = {q['id']: q for q in questions(spec)}
     picks = {k: rec(q) for k, q in qs.items()}
     body = re.sub(r'^\s*\S+\s+picks:\s*', '', text.strip(), flags=re.I)
@@ -228,13 +248,29 @@ function render(){
 }
 qs.addEventListener('click',e=>{const b=e.target.closest('button[data-k]');if(!b)return;pick[b.dataset.k]=+b.dataset.i;render()});
 document.getElementById('reset').onclick=()=>{all.forEach(q=>pick[q.id]=q.r);render()};
-document.getElementById('send').onclick=()=>{
+async function store(txt){
+  // F54: the picks go to this page's artifact db, picks/<ID>, where the run's control session reads them
+  try{
+    const db=window.claude&&window.claude.use?await window.claude.use('db'):null;
+    if(!db)return false;
+    await db.doc('picks/'+S.tid).set({id:S.tid,picks:txt,at:new Date().toISOString()});
+    return true;
+  }catch(e){return false}
+}
+document.getElementById('send').onclick=async()=>{
   const changed=all.filter(q=>pick[q.id]!==q.r);
   const txt=changed.length?S.tid+' picks: '+all.map(q=>q.id+'='+String.fromCharCode(97+pick[q.id])).join(' '):'go';
-  const out=document.getElementById('out'), said=document.getElementById('said');
+  const out=document.getElementById('out'), said=document.getElementById('said'), send=document.getElementById('send');
   out.textContent=txt;document.getElementById('sent').hidden=false;
-  const done=ok=>{said.textContent=(ok?'Copied. ':'Copy this line. ')+'Paste it in the chat with the run, and it answers {{tid}} with these picks.'};
-  try{navigator.clipboard.writeText(txt).then(()=>done(true),()=>done(false))}catch(e){done(false)}
+  send.disabled=true;said.textContent='Sending…';
+  if(await store(txt)){
+    send.disabled=false;send.textContent='Send again';
+    said.textContent='Sent. The run answers {{tid}} with these picks; say "sent" in the chat with the run to have it read them now.';
+  }else{
+    send.disabled=false;
+    const done=ok=>{said.textContent=(ok?'Copied. ':'Copy this line. ')+'Paste it in the chat with the run, and it answers {{tid}} with these picks.'};
+    try{navigator.clipboard.writeText(txt).then(()=>done(true),()=>done(false))}catch(e){done(false)}
+  }
   out.scrollIntoView({behavior:'smooth',block:'center'});
 };
 render();

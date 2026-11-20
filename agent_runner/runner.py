@@ -6628,7 +6628,7 @@ name), "summary" (one line that says what is ready, e.g. "12 config cleanups rea
 "q": <a plain question>, "answers": [<2-3 short answers>], "recommended": <index of your pick>, "keep": \
 <index of the answer that changes nothing; leave it out when every answer changes something>, "why": <one or two lines>}}]}}]; `backticks` show as \
 code. Check and render it with `{runner} sheet {tid} --html <a file in your scratchpad>`, publish that file \
-with the Artifact tool, and block with `--blocked "DECIDE: <the summary> <the sheet's url>"`. Needs you shows \
+with the Artifact tool with capabilities {{"db": {{}}}} (its Send writes the picks there), and block with `--blocked "DECIDE: <the summary> <the sheet's url>"`. Needs you shows \
 the person that one line and the link; their picks (or 'go' for your recommendations) reopen {tid} with each \
 answer in its note."""
 
@@ -6675,7 +6675,8 @@ def cmd_sheet(argv: list[str], prog: str = f'{RUNNER} sheet') -> int:
         return 1
     if a.html:
         Path(a.html).write_text(sheet.render(spec, a.id), encoding='utf-8')
-        print(f'{a.html}: {len(sheet.questions(spec))} questions; publish it with the Artifact tool')
+        print(f'{a.html}: {len(sheet.questions(spec))} questions; publish it with the Artifact tool, with '
+              f'capabilities {json.dumps(sheet.CAPABILITIES)} (F54: Send writes the picks to its db)')
         return 0
     if a.picks is None and not a.go:
         print(f'{f}: {len(sheet.questions(spec))} questions, ok')

@@ -100,6 +100,30 @@ def test_page():
     check(not re.search(r'>\s*\d+\s*[.)-]\s', page), 'no option numbers on the page')
 
 
+def test_db():
+    print('F54: Send writes {id, picks} to the page\'s artifact db; the control session reads it back')
+    eq(S.CAPABILITIES, {'db': {}}, 'the page declares the db capability')
+    page = S.render(SPEC, 'F2')
+    has(page, re.escape("window.claude.use('db')"), 'Send opens the page\'s db')
+    has(page, re.escape("db.doc('picks/'+S.tid).set({id:S.tid,picks:txt,"), 'and writes {id, picks} to picks/<ID>')
+    has(page, r'navigator\.clipboard\.writeText', 'and copies the line where there is no db')
+    doc = json.dumps({'id': 'F2', 'picks': 'F2 picks: backend=b silent=c', 'at': '2026-11-20T15:00:00Z'})
+    eq(S.parse_picks(SPEC, doc), {'backend': 1, 'silent': 2}, 'the document read back is taken as the picks')
+    eq(S.parse_picks(SPEC, json.dumps({'id': 'F2', 'picks': 'go'})), {'backend': 0, 'silent': 0}, 'a go document')
+    for wrong in ('{"id": "F2"}', '{nope'):
+        try:
+            S.parse_picks(SPEC, wrong)
+            check(False, f'{wrong!r} is refused')
+        except ValueError:
+            check(True, f'{wrong!r} is refused')
+    from agent_runner import guide as G
+    brief = G.__dict__
+    text = '\n'.join(v for v in brief.values() if isinstance(v, str))
+    has(text, r'ArtifactData tool \(`get`, the\s+sheet\'s url, collection `picks`', 'the control brief reads the db')
+    has(G.FEED_ANSWER, r'ArtifactData tool \(`get`, the sheet\'s url, collection `picks`', 'and so does the feed rule')
+    has(R.SHEET_PROMPT, re.escape('capabilities {{"db": {{}}}}'), 'the slot brief says to publish with the db')
+
+
 def test_needs_you():
     print('a DECIDE with a sheet: one line and its link in status, the feed and the control brief')
     with tempfile.TemporaryDirectory() as t:
@@ -163,6 +187,7 @@ def test_answer():
         r = run(root, 'sheet', 'F2', '--html', str(out), env=env)
         check(r.returncode == 0 and out.is_file() and 'How should the runner' in out.read_text(encoding='utf-8'),
               '--html writes the page', r.stdout + r.stderr)
+        has(r.stdout, re.escape('capabilities {"db": {}}'), 'and says to publish it with the db capability')
         r = run(root, 'sheet', 'F2', '--picks', 'F2 picks: backend=z', env=env)
         check(r.returncode == 2 and 'backend=z' in r.stderr, 'a pick the sheet has not is refused', r.stderr)
         has(todo.read_text(encoding='utf-8'), r'^- \[~\] \*\*F2\*\*', 'and the task still waits')
@@ -189,4 +214,4 @@ def test_go():
 
 
 if __name__ == '__main__':
-    raise SystemExit(report([test_spec, test_page, test_needs_you, test_answer, test_go]))
+    raise SystemExit(report([test_spec, test_page, test_db, test_needs_you, test_answer, test_go]))

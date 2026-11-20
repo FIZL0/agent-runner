@@ -238,9 +238,13 @@ What the person asks, and what you run (`{cmd}` is the runner):
   terminal, and finishing it confirms the item, so they need not reply.
   A DECIDE with options (F18, `[run] questionnaires`) has a pick sheet: its line reads "<what is ready>. Pick
   on the sheet or reply go" with the sheet's link; give the link (call the Artifact tool's `open` on it). The
-  sheet's Send gives a line like `R7 picks: backend=a batch=b`: when they paste it, run `{cmd} sheet R7
-  --picks "<that line>"`; "go" (or "recommended") is `{cmd} sheet R7 --go`. Both reopen the task with each
-  answer spelled out in its note; never retype the picks into `plan confirm` yourself.
+  sheet's Send writes their picks to the sheet's artifact db (F54): when they say they sent it ("sent",
+  "done", "picked"), and whenever you show that item again, read it with the ArtifactData tool (`get`, the
+  sheet's url, collection `picks`, doc_id the ID); if the document is there, run `{cmd} sheet R7 --picks
+  "<its picks field>"`. An older sheet, or one whose write failed, gives a line like `R7 picks: backend=a
+  batch=b` to paste instead: run `{cmd} sheet R7 --picks "<that line>"`. "go" (or "recommended") is `{cmd}
+  sheet R7 --go`. All reopen the task with each answer spelled out in its note; never retype the picks into
+  `plan confirm` yourself.
 
 """ + SAFE_SHELL + """
 """
@@ -340,7 +344,9 @@ FEED_ANSWER = ('- A reply to something under "{needs}" ("yes", "no", "B", "later
                'ID "<their words>"` for a no or a "do X instead", `{cmd} plan shelve ID` for a later; answer with '
                'what it prints. When you cannot tell which item, ask which one they mean, naming the items; never '
                'guess. An item that says "Pick on the sheet or reply go" takes `{cmd} sheet ID --go` for a go and '
-               '`{cmd} sheet ID --picks "<the line>"` for the `ID picks: …` line its sheet\'s Send gave.\n')
+               '`{cmd} sheet ID --picks "<the line>"` for the `ID picks: …` line its sheet\'s Send gave; for a '
+               '"sent" (or "done", "picked"), read the picks Send wrote with the ArtifactData tool (`get`, the '
+               'sheet\'s url, collection `picks`, doc_id the ID) and pass its `picks` field the same way.\n')
 
 CONTROL_WATCH = """\
 **Tell the person, unasked, when the run needs them.** Every control session, on its first turn (with the
