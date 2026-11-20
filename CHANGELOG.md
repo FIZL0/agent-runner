@@ -4,6 +4,11 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+## 0.53.0 (2026-11-20)
+
+- Windows: slots no longer hang in their hidden console on Claude Code's "Do you trust this folder?" dialog.
+  The runner wrote the trust to `~/.claude.json` under `C:\Users\...`, but Claude keys folders
+  `C:/Users/...`, so it never saw it (B61).
 - The runner deletes its own `wip/<ID>` and `wip/<ID>-N` branches, here and on `[git] push`, once the task
   is ticked or dropped (F23): after the merge that ticks it, on a `plan drop` of a running task, at the start
   of a run and every 10 minutes for tasks ticked or dropped by hand. An open or blocked task's wip stays.

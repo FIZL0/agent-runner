@@ -443,7 +443,7 @@ def test_done(repo: Path, tmp: Path):
     print('done: gate, tick, commit, push the task branch — never the shared one')
     d = task_branch(repo, 1, 'T5')
     check((d / 'runner.toml').exists(), 'the worktree has the runner.toml')
-    trusted = json.loads((tmp / '.claude.json').read_text())['projects'][str(d.resolve())]
+    trusted = json.loads((tmp / '.claude.json').read_text())['projects'][d.resolve().as_posix()]
     check(trusted.get('hasTrustDialogAccepted'), "the worktree is a folder Claude Code already trusts", trusted)
     check(any('"skipDangerousModePermissionPrompt": true' in a for a in R.Claude().flags('s', 'opus', 30, False, False)),
           'a session skips the bypass-mode warning, which lean mode would otherwise bring back')
