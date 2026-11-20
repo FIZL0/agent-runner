@@ -450,6 +450,42 @@ def test_run_policies(repo: Path, tmp: Path):
         R.init(repo)
 
 
+def test_no_remote(repo: Path, tmp: Path):
+    print('git: [git] push names a remote this repo does not have: said once, not silently skipped (B70)')
+    fixture = tmp / 'no-remote-fixture'
+    fixture.mkdir()
+    lone = make_repo(fixture)
+    git(lone, 'remote', 'remove', 'origin')
+    with open(lone / 'runner.toml', 'a', encoding='utf-8') as f:
+        f.write(f'home = "{fixture.as_posix()}/runner-home/{{repo}}"\n[git]\npush = "origin"\npush_merge = true\n')
+    git(lone, 'add', 'runner.toml')
+    git(lone, 'commit', '-qm', 'configure no-remote fixture')
+    env = {**os.environ, 'AGENT_RUNNER_CONFIG': str(lone / 'runner.toml')}
+    old_config = os.environ.get('AGENT_RUNNER_CONFIG')
+    os.environ['AGENT_RUNNER_CONFIG'] = env['AGENT_RUNNER_CONFIG']
+    R.init(lone)
+    try:
+        from agent_runner import config
+        R.C = config.Config(lone)
+        eq(gitops.missing_remote(lone), 'origin', 'missing_remote names the configured remote that is not there')
+        eq(gitops.missing_remote(repo), None, 'and nothing where the remote exists')
+        has(R.no_remote_line('origin'), r'^\[git\] push = origin: no such remote here, merges stay local; '
+            r'git remote add origin <url> to publish$', 'the run start line says it, and how to fix it')
+        p = R.prompt_for('T2', 1, 1, lone, 'main')
+        check('one copy of your work' not in p and 'no remote `origin`' in p,
+              'the prompt does not claim done pushes the one off-disk copy', p)
+        git(lone, 'checkout', '-q', '-b', 'task/T2', 'main')
+        result = run(lone, 'done', 'T2', 'T2: the printer', env=env)
+        check(result.returncode == 0, 'done goes through without a remote', result.stdout + result.stderr)
+        has(result.stdout, r'^task/T2 not pushed: no remote origin', 'and says the branch is not pushed')
+    finally:
+        if old_config is None:
+            os.environ.pop('AGENT_RUNNER_CONFIG', None)
+        else:
+            os.environ['AGENT_RUNNER_CONFIG'] = old_config
+        R.init(repo)
+
+
 def test_done(repo: Path, tmp: Path):
     print('done: gate, tick, commit, push the task branch — never the shared one')
     d = task_branch(repo, 1, 'T5')
@@ -5610,6 +5646,7 @@ def main() -> int:
                        lambda: test_conflicts(repo, tmp), lambda: test_fix_ahead(repo, tmp), lambda: test_repair(repo, tmp),
                        lambda: test_prompt_and_hooks(repo),
                        lambda: test_hooks(repo, tmp), lambda: test_run_policies(repo, tmp),
+                       lambda: test_no_remote(repo, tmp),
                        lambda: test_gate_and_batches(repo, tmp), lambda: test_blame_and_own_repair(repo, tmp),
                        lambda: test_red_base_and_batch_caps(repo, tmp), lambda: test_merge_order_and_backlog(repo), lambda: test_reserved_ids(repo),
                        lambda: test_platform(repo, tmp), lambda: test_shutdown(repo), lambda: test_merge_into(tmp),

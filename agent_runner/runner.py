@@ -85,6 +85,7 @@ __all__ = ['init', 'cmd_run', 'cmd_stop', 'pick', 'tasks', 'prompt_for', 'reopen
 from agent_runner.config import RUNNER, Config, cfg, finished_mark, main_checkout, runner_cmd, ensure_local
 from agent_runner.done import TESTED, gate
 from agent_runner.gitops import _net, drop_if_merged, push, shared_name
+from agent_runner.gitops import missing_remote
 from agent_runner.guide import SAFE_SHELL
 from agent_runner.guide import VERIFY
 
@@ -179,6 +180,18 @@ PUBLISH = ('When your session ends, the runner merges your branch, tests the mer
            'done` pushes task/{tid} for you, which is the one copy of your work that is not on this disk. Commits '
            'you make in other repositories (a dependency or sibling repo the task needed) are pushed as usual; '
            'never publish beyond git (releases, uploads, stores) unless the task says to.')
+NO_REMOTE = ('When your session ends, the runner merges your branch and tests the merge. This repository has no '
+             'remote `{remote}` (`[git] push`), so nothing is pushed: your commits and the merge stay on this disk. '
+             'Commits you make in other repositories (a dependency or sibling repo the task needed) are pushed as '
+             'usual; never publish beyond git (releases, uploads, stores) unless the task says to.')
+
+
+def no_remote_line(remote: str) -> str:
+    """The run's one log line when `[git] push` names a remote this repository does not have (B70)."""
+    return (f'[git] push = {remote}: no such remote here, merges stay local; '
+            f'git remote add {remote} <url> to publish')
+
+
 NO_PUSH = ('When your session ends, the runner merges your branch and tests the merge. Pushing is off for this '
            'run: never run `git push`, here or in any other repository, and never publish anything else '
            '(releases, uploads, stores). A human reviews and pushes.')
@@ -1519,7 +1532,8 @@ def prompt_for(tid: str, n: int, slots: int, cwd: Path, branch: str) -> str:
     wip = not git('rev-parse', '--verify', '-q', f'refs/heads/wip/{tid}').returncode
     vals = dict(
         tid=tid, n=n, runner=C.command, branch=branch,
-        publish=(PUBLISH if C.push_remote else NO_PUSH).format(runner=C.command, tid=tid),
+        publish=(NO_REMOTE if C.push_remote and missing_remote(C.root) else PUBLISH if C.push_remote
+                 else NO_PUSH).format(runner=C.command, tid=tid, remote=C.push_remote),
         others=OTHERS if slots > 1 else '',
         earlier=(f'An earlier attempt that could not be merged is on wip/{tid} (`git log {branch}..wip/{tid}`, '
                  f'and the ledger line in {r["notes"]}/ledger.md says why). Read it before starting over.\n'
@@ -3739,7 +3753,7 @@ def move_edits_aside(tid: str) -> str | None:
     if git('stash', 'push', '-u', '-q', '-m', f'{name} (agent-runner)', '--', *files).returncode:
         return None
     remote = C.push_remote
-    if C.push_merge and remote:
+    if C.push_merge and remote and not git('remote', 'get-url', remote).returncode:
         git('push', '-q', remote, name)
     more = f' and {len(files) - 6} more' if len(files) > 6 else ''
     log(f'{tid}: moved uncommitted edits in the main checkout ({", ".join(files[:6])}{more}) to {name} '
@@ -5479,6 +5493,8 @@ def run(argv: list[str], prog: str) -> int:
         (f', session usage {usage_pct("five_hour")}%, weekly usage {weekly()}%' if not a.force and r['agent'] == 'claude' else ''))
     if rline := remote_line():
         log(rline)
+    if gone := missing_remote(ROOT):
+        log(no_remote_line(gone))
     from agent_runner import context
     if heavy := context.warning(ROOT, r['rules'], C.raw['plan']['context_kb']):
         log(heavy)
