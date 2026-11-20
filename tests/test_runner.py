@@ -2198,6 +2198,7 @@ def test_short_titles_and_since(repo: Path):
                     eq(R.feed_files(), ['/u/c.png'], 'without feed.sid the calling session is read (B22)')
         test_feed_forward()
         test_feed_handoff_b74()
+        test_feed_sid_from_record_b83()
         h = run(repo, 'control', '--help')
         check('--image' in h.stdout and '--file' in h.stdout, 'control --file (alias --image) is an option',
               h.stdout)
@@ -2282,6 +2283,55 @@ def test_feed_forward():
                 got = R.forward_late(9, sid, wait=0.3)
             eq(got, R.feed_lost_note(), 'B72: a message that never shows opens the session saying so, not with an '
                'older one')
+
+
+def test_feed_sid_from_record_b83():
+    print('B83: a feed started before B15 (no feed.sid, no sid in its record) whose Bash has no '
+          'CLAUDE_CODE_SESSION_ID: the hand-off finds its session through the record and Claude Code\'s '
+          'sessions/<pid>.json, and logs it')
+    sid = '3d37d373-b242-4ef6-8ad3-2e052fcbb51e'
+    ask = 'is there a better way to handle this situation?'
+    shot = f'/tmp/claude-1000/-home-ryha-repos-agent-runner/{sid}/images/1.png'
+    with tempfile.TemporaryDirectory() as tdir:
+        remote, sessions = Path(tdir, 'remote'), Path(tdir, 'sessions')
+        remote.mkdir()
+        sessions.mkdir()
+        tr = Path(tdir, 'feed.jsonl')
+        meta = {'version': '2.1.329', 'sessionId': sid}
+        tr.write_text(''.join(json.dumps(e) + '\n' for e in (
+            {'type': 'user', 'uuid': 'u1', 'origin': {'kind': 'human'}, 'imagePasteIds': [1], **meta,
+             'message': {'role': 'user', 'content': [
+                 {'type': 'image', 'source': {'type': 'base64', 'media_type': 'image/png', 'data': 'iVBOR'}},
+                 {'type': 'text', 'text': ask}]}},
+            {'type': 'user', 'isMeta': True, 'uuid': 'm1', **meta,
+             'message': {'role': 'user', 'content': [{'type': 'text', 'text': f'[Image: source: {shot}]'}]}})))
+        pid = os.getpid()
+        start = R.plat.started(pid)
+        rec = {'kind': 'feed', 'name': 'proj · runner', 'pid': pid, 'run': '1:2', 'sid': ''}
+        if start is not None:
+            rec['start'] = start
+        Path(remote, f'feed-{pid}.json').write_text(json.dumps(rec))
+        env = {k: v for k, v in os.environ.items() if k != 'CLAUDE_CODE_SESSION_ID'}
+        with mock.patch.object(R.C, 'notes', lambda *a: Path(tdir, *a)), \
+                mock.patch.object(R, 'transcript', lambda s: str(tr) if s == sid else None), \
+                mock.patch.object(R, 'claude_sessions_dir', lambda: sessions), \
+                mock.patch.dict(os.environ, env, clear=True):
+            eq(R.feed_sid(), '', 'B83: no sessions/<pid>.json for the feed yet: still no session')
+            Path(sessions, f'{pid}.json').write_text(json.dumps(
+                {'pid': pid, 'sessionId': sid, 'procStart': start or '', 'kind': 'interactive'}))
+            eq(R.feed_sid(), sid, 'B83: the live feed record\'s pid names its session in sessions/<pid>.json')
+            eq(R.feed_wait(ask, 2), (True, [shot], 0, '2.1.329'), 'B83: so the screenshot is handed on')
+            last = Path(remote, R.FEED_LOG).read_text().splitlines()[-1]
+            check(f'sid {sid} (feed record)' in last and shot in last, 'B83: the log says the id came from the '
+                  'feed record', last)
+            if start is not None:
+                Path(sessions, f'{pid}.json').write_text(json.dumps({'pid': pid, 'sessionId': sid,
+                                                                     'procStart': f'{start}9'}))
+                eq(R.feed_sid(), '', 'B83: a sessions file of another process with that pid is not the feed\'s')
+            Path(remote, f'feed-{pid}.json').write_text(json.dumps({**rec, 'sid': sid}))
+            eq(R.feed_sid(), sid, 'B83: a sid in the record itself is used first')
+            Path(remote, 'feed.sid').write_text('11111111-2222-3333-4444-555555555555\n')
+            eq(R.feed_sid(), '11111111-2222-3333-4444-555555555555', 'B83: feed.sid still comes before the record')
 
 
 def test_feed_handoff_b74():
