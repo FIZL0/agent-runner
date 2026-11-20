@@ -784,7 +784,7 @@ def test_bare_outside_git(tmp: Path):
             with contextlib.redirect_stderr(err):
                 eq(cli.main([]), 2, 'no repo, no runner files: it fails')
             has(err.getvalue(), r'not a git repository', "and passes on git's reason")
-            check('Run the agents' not in err.getvalue(), 'not the whole usage')
+            check('What you type' not in err.getvalue(), 'not the whole usage')
             check(not (plain / '.git').exists() and not started, 'a plain folder is left alone')
             os.chdir(proj)
             with contextlib.redirect_stderr(io.StringIO()):
@@ -5080,6 +5080,54 @@ def test_release_push(repo: Path):
           'the control brief covers "notify me when": watch, push once, stop, and say what it watches for', text)
 
 
+def test_help_order_and_bare_wizard(tmp: Path):
+    """F48: --help lists what a person types before the agents' section; bare `wizard` runs the one that
+    waits, lists them when several, says when there are none."""
+    from agent_runner import cli
+    cut = cli.USAGE.index('Mostly for agents')
+    for c in ('attach', 'control', 'status', 'wizard', 'guide', 'plan add'):
+        check(0 <= cli.USAGE.find(f'agent-runner {c}') < cut, f'`{c}` is in the person section')
+    for c in ('take B646', 'done B646', 'resume', 'plan block', 'run once', 'force'):
+        check(cli.USAGE.find(f'agent-runner {c}') > cut, f'`{c}` is in the agents section')
+    check('agent-runner wizard B646' not in cli.USAGE, 'the wizard line has no id')
+    if not shutil.which('bash'):
+        print('  skip: no bash here')
+        return
+    root = tmp / 'f48'
+    root.mkdir()
+    git(root, 'init', '-q')
+    (root / 'runner.toml').write_text('[run]\nremote = false\n', encoding='utf-8')
+    (root / '.gitignore').write_text('.runner/\n', encoding='utf-8')
+    git(root, 'add', '-A')
+    git(root, 'commit', '-qm', 'start')
+    env = {**os.environ, 'AGENT_RUNNER_REPO': str(root)}
+    env.pop('AGENT_RUNNER', None)
+    for text in ('signing setup | files: a.py', 'store login | files: b.py', 'push cert | files: c.py'):
+        check(run(root, 'plan', 'add', 'F', text, env=env).returncode == 0, f'added {text}')
+    r = run(root, 'wizard', env=env)
+    check(r.returncode == 0 and 'No wizard waits' in r.stdout, 'none waiting: says so', r.stdout + r.stderr)
+    wiz = root / '.runner' / 'wizards'
+    wiz.mkdir(parents=True)
+    for tid in ('F1', 'F2'):
+        r = run(root, 'done', tid, f'{tid}: hand step', '--no-test', '--blocked', 'BLOCKED: a login', env=env)
+        check(r.returncode == 0, f'{tid} blocked with BLOCKED:', r.stdout + r.stderr)
+        (wiz / f'{tid}.sh').write_text(f'#!/usr/bin/env bash\necho ran > {tid}.out\n', encoding='utf-8')
+    (wiz / 'F2.sh').rename(wiz / 'F2.later')
+    r = run(root, 'wizard', env=env, stdin=subprocess.DEVNULL)
+    check(r.returncode == 0 and (root / 'F1.out').is_file(), 'one waiting: runs it', r.stdout + r.stderr)
+    has((root / 'plan' / 'TODO.md').read_text(encoding='utf-8'), r'^- \[ \] \*\*F1\*\* .*the wizard ran',
+        'and confirms it')
+    (wiz / 'F1.sh').write_text('#!/usr/bin/env bash\necho again > F1.again\n', encoding='utf-8')
+    (wiz / 'F2.later').rename(wiz / 'F2.sh')
+    r = run(root, 'done', 'F3', 'F3: hand step', '--no-test', '--blocked', 'BLOCKED: a cert', env=env)
+    check(r.returncode == 0, 'F3 blocked with BLOCKED:', r.stdout + r.stderr)
+    (wiz / 'F3.sh').write_text('#!/usr/bin/env bash\necho ran > F3.out\n', encoding='utf-8')
+    r = run(root, 'wizard', env=env, stdin=subprocess.DEVNULL)
+    check(r.returncode == 0 and '2 wizards' in r.stdout and 'F2' in r.stdout and 'F3' in r.stdout
+          and 'F1' not in r.stdout, 'several waiting: lists them (not F1, confirmed)', r.stdout + r.stderr)
+    check(not any((root / n).exists() for n in ('F1.again', 'F2.out', 'F3.out')), 'and runs none')
+
+
 def main() -> int:
     with tempfile.TemporaryDirectory() as t:
         tmp = Path(t)
@@ -5110,7 +5158,8 @@ def main() -> int:
                        lambda: test_close_idle_controls(repo), lambda: test_renamed_control_kept(repo),
                        lambda: test_control_summary_title(repo), lambda: test_control_task_name(repo), lambda: test_progress_and_release(repo),
                        lambda: test_control_status_rules(repo), lambda: test_control_do_it_here(repo), lambda: test_take_running_slot(repo), lambda: test_upgrade_cmd(repo), test_control_no_upgrade_watcher,
-                       lambda: test_plan_last(repo), lambda: test_release_push(repo)])
+                       lambda: test_plan_last(repo), lambda: test_release_push(repo),
+                       lambda: test_help_order_and_bare_wizard(tmp)])
 
 
 if __name__ == '__main__':

@@ -4,6 +4,11 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- `agent-runner --help` puts what a person types first (start, attach, control, status, since, pause, stop,
+  slots, wizard, guide, plan) and the rest under "Mostly for agents (you can run these too)", one short line
+  each. Bare `agent-runner wizard` runs the one waiting wizard, lists them when several wait, or says there
+  are none (F48).
+
 - Releases reach your phone: when a merge brings a release onto main (a newer version heading at the top of
   CHANGELOG.md, or a new version tag), the run logs `<repo> X.Y.Z released: <first changelog line>`,
   `since --follow` prints it, and the runner feed sends it with PushNotification. Control sessions take
