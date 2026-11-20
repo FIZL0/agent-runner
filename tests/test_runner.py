@@ -943,6 +943,8 @@ def test_control(repo: Path):
     check(f'{R.C.command} plan add K "..."' in brief and 'only when they say queue it, later, or add a task' in brief,
           'a K task is queued only when the person asks to queue it')
     check('"sketch some options for X" queues one' not in brief, 'the brief no longer queues a K for "sketch options"')
+    check('"show me a concept first"' in brief and 'no `take`' in brief and 'plan drop ID "shown inline"' in brief,
+          '"show me concept first" is shown inline too, never a K task or a take (B23)')
     check('tail -n 0 -F' not in brief, 'no run-log watch at the start: following is asked for')
     r = run(repo, 'control', '--brief')
     eq((r.returncode, r.stdout), (0, brief), '`control --brief` (the hook) prints it')

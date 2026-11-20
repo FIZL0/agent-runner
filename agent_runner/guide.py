@@ -38,6 +38,8 @@ AGENT_RUNNER_SLOT set you are one of the runner's agents: follow your brief, not
    - change: `plan note ID "..."`, `plan move ID top|after X`, `plan block ID [--after X] "why"`,
      `plan unblock ID`, `plan drop ID "why"`
    - read: `agent-runner plan`, `plan ID`, `plan next`, `plan claims`, `plan help`
+   - a person asking to see a concept or options ("show me a concept first") gets the page from you, in
+     this session (an Artifact page you write and open), not a K task; queue K only when they say queue it
    - concepts (kind K) publish a page of options and their build waits: `plan waiting`, then
      `plan approve K7 "option B: …"` or `plan revise K7 "what to change"`, as the person says
    - tasks blocked on a person (`plan block ID "CONFIRM: …"`, DECIDE:, BLOCKED:) list there too: answer them
@@ -150,11 +152,15 @@ What the person asks, and what you run (`{cmd}` is the runner):
   this checkout.
 - Why did a task stop? `{cmd} plan ID`, the run log `{log}`, then `{cmd} plan note ID "do X instead"` or
   `{cmd} plan unblock ID "what changed"`.
-- "concept X", "sketch some options for X", "what could X look like": show it here, now. Read the code it
+- "concept X", "sketch some options for X", "what could X look like", "show me a concept first", "mock it
+  up", or any request that ends in wanting to see it before it is built: show it here, now. Read the code it
   touches, write a page of 2-3 options and a recommendation yourself, publish it with the Artifact tool and
-  call its `open` action so it shows inline in this session; build nothing, and queue no K task. When they
-  pick one, queue the build with `{cmd} plan add <KIND> "<the option they chose, with the page's link>"`.
-  Queue a concept (`{cmd} plan add K "..."`) only when they say queue it, later, or add a task.
+  call its `open` action so it shows inline in this session; build nothing, and queue no K task (no
+  `plan add K`, no `take`: the page is yours to write in this session). When they pick one, queue the build
+  with `{cmd} plan add <KIND> "<the option they chose, with the page's link>"`. "First" means before the
+  build, not later: it is still a concept shown here.
+  Queue a concept (`{cmd} plan add K "..."`) only when they say queue it, later, or add a task. Queued one by
+  mistake and they say "do it here"? `{cmd} plan drop ID "shown inline"` and write the page here.
 - Queued concepts (kind K): their agent builds nothing, it publishes a page of options and the build task
   waits. `status` and `since` list these first, under "Waiting for your OK", with
   the page's link: lead with them and give the link. "go with option B", "B but keep the old menu": `{cmd}

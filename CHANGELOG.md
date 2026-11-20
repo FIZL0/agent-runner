@@ -4,6 +4,10 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Control sessions show a concept inline for any "show me first" wording ("show me a concept first", "mock it
+  up"), not only "concept X": they no longer queue a K task for it, nor `take` one on "do it here" (a K queued
+  by mistake is dropped and the page written in the session). The agent-runner skill says the same.
+
 - Images reach the new control session from a runner feed started by an older runner: `control --new --ask`
   reads the calling session's transcript (`CLAUDE_CODE_SESSION_ID`) for the handed-on message's images, and
   `<notes>/remote/feed.sid` only when that is unset. A feed started before 0.50 never wrote feed.sid, so it
