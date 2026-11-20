@@ -4,6 +4,15 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- The run closes idle control sessions, so the Claude apps' session list stops piling up: every 5 minutes it
+  reads the transcript of each live control session N (never c1) and ends it (its process, `controlN.pid`;
+  the transcript stays, resumable) once it has been quiet an hour, Claude spoke last, its last message is not
+  an open question or offer ("?", "want me to", "should I"), and nothing runs in it (a background task or
+  Monitor; the needs-you watch does not count). One left on an open question for 2 hours has that question
+  filed under Needs you as a DECIDE item (the question and the session link), then is closed. New `[run]`
+  settings: `control_close`, `control_idle` (1h), `control_ask_idle` (2h), `control_open`,
+  `control_file_asks` and `control_ask_kind`.
+
 - Control sessions opened with an ask are named after it in the Claude apps' session list: `control --new
   --ask TEXT` is "<repo> · N · <first words of TEXT>" (up to 5 words, about 40 characters; "screenshot" for
   an image-only ask) instead of "<repo> · control N", on Remote Control and as its tmux window. N stays, so

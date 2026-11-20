@@ -5579,6 +5579,8 @@ def run(argv: list[str], prog: str) -> int:
             restart_if_upgraded()
         watch_ci(branch)
         if not stopping():
+            close_controls(branch)  # B26
+        if not stopping():
             sweep_unmerged(branch, merging)
         keep_claims(running, branch)
         take_keys()
@@ -7154,6 +7156,257 @@ def control_new(n: int | None = None, wait: float = CONTROL_LINK_WAIT, ask: str 
         time.sleep(1)
     print(f'control {n} is up in {where}, but showed no link in {wait:g} s: find "{name}" at {REMOTE_URL}')
     return 0
+
+
+# --- B26: idle control sessions are closed, so the apps' session list stops piling up ----------------------
+#
+# Every CONTROL_CLOSE_EVERY s the run reads the transcript of each live control session N (not c1, the kept
+# one) and closes it (ends its process, removes controlN.pid; the transcript stays, resumable) when Claude
+# spoke last, nothing runs in it, and it has been quiet `[run] control_idle`; or, when its last message is an
+# open question or offer (`[run] control_open`), quiet `[run] control_ask_idle`: then the question is filed
+# under Needs you as a DECIDE item first (`[run] control_file_asks`). `[run] control_close = false` turns it off.
+
+CONTROL_CLOSE_EVERY = 300  # s between looks
+CONTROL_CLOSE_AT = [0.0]
+CONTROL_WATCH_CMD = 'since --follow --needs-you'  # a control session's standing watch: not work in progress
+TASK_STARTED = re.compile(r'Monitor started \(task (\w+)|running in background with ID: (\w+)')
+TASK_ENDED = re.compile(r'<task-id>(\w+)</task-id>|\(task (\w+)\)')
+EXPIRES = re.compile(r'expires in (\d+)\s*([smh])')
+DURATION = re.compile(r'^\s*(\d+(?:\.\d+)?)\s*([smhd]?)\s*$')
+
+
+def duration(v, default: float = 0.0) -> float:
+    """A config time in seconds: a number (seconds) or '90s', '30m', '1h', '2d'; false/0: 0 (off)."""
+    if v is True or v is None:
+        return default
+    if v is False:
+        return 0.0
+    if isinstance(v, (int, float)):
+        return float(v)
+    m = DURATION.match(str(v).lower())
+    if not m:
+        return default
+    return float(m[1]) * {'': 1, 's': 1, 'm': 60, 'h': 3600, 'd': 86400}[m[2]]
+
+
+def _stamp(d: dict) -> float | None:
+    try:
+        return dt.datetime.fromisoformat(str(d['timestamp']).replace('Z', '+00:00')).timestamp()
+    except (KeyError, ValueError, TypeError):
+        return None
+
+
+def _texts(d: dict) -> list[str]:
+    """Every piece of text in a transcript entry: its message's text items and tool results, a queued
+    notification's content."""
+    out = [d['content']] if isinstance(d.get('content'), str) else []
+    c = (d.get('message') or {}).get('content')
+    if isinstance(c, str):
+        return out + [c]
+    for x in c if isinstance(c, list) else ():
+        if not isinstance(x, dict):
+            continue
+        if isinstance(x.get('text'), str):
+            out.append(x['text'])
+        r = x.get('content')
+        if isinstance(r, str):
+            out.append(r)
+        elif isinstance(r, list):
+            out += [y['text'] for y in r if isinstance(y, dict) and isinstance(y.get('text'), str)]
+    return out
+
+
+def control_state(rows) -> dict:
+    """What a control session's transcript entries `rows` say: {'last': 'person' | 'claude' | 'tool' | '',
+    'text': Claude's last message when it spoke last, 'at': when it was last active (epoch s, 0 unknown),
+    'running': ids of background tasks and Monitors still live, 'bridge': its Remote Control session id or ''}.
+    Activity is a person's message or a turn of Claude's; the standing needs-you watch (CONTROL_WATCH_CMD)
+    being re-armed is neither activity nor work in progress, and the events it brings are not activity."""
+    st = {'last': '', 'text': '', 'at': 0.0, 'running': set(), 'bridge': ''}
+    uses: dict[str, dict] = {}  # tool_use id -> its tool call
+    expiry: dict[str, float] = {}  # task id -> when a Monitor with a timeout ends on its own
+    for d in rows:
+        if not isinstance(d, dict):
+            continue
+        kind, at = d.get('type'), _stamp(d)
+        if kind == 'bridge-session' and isinstance(d.get('bridgeSessionId'), str):
+            st['bridge'] = d['bridgeSessionId']
+            continue
+        texts = _texts(d)
+        if any('<status>' in t for t in texts) or any('<task-notification>' in t and 'expired' in t.lower()
+                                                      for t in texts):
+            for t in texts:
+                for m in TASK_ENDED.finditer(t):
+                    st['running'].discard(m[1] or m[2])
+        if kind == 'assistant':
+            items = [x for x in (d.get('message') or {}).get('content') or [] if isinstance(x, dict)]
+            said = '\n'.join(x['text'] for x in items if x.get('type') == 'text' and isinstance(x.get('text'), str)
+                             and x['text'].strip())
+            calls = [x for x in items if x.get('type') == 'tool_use']
+            work = False
+            for x in calls:
+                uses[str(x.get('id'))] = x
+                inp = x.get('input') or {}
+                if x.get('name') in ('TaskStop', 'KillShell', 'KillBash'):
+                    st['running'].discard(str(inp.get('task_id') or inp.get('shell_id') or ''))
+                if not (x.get('name') == 'Monitor' and CONTROL_WATCH_CMD in str(inp.get('command', ''))):
+                    work = True
+            if said:
+                st['last'], st['text'] = 'claude', said
+            elif work:
+                st['last'], st['text'] = 'tool', ''
+            if (said or work) and at:
+                st['at'] = max(st['at'], at)
+        elif kind == 'user':
+            c = (d.get('message') or {}).get('content')
+            for x in c if isinstance(c, list) else ():
+                if not (isinstance(x, dict) and x.get('type') == 'tool_result'):
+                    continue
+                call = uses.get(str(x.get('tool_use_id')), {})
+                if call.get('name') == 'Monitor' and CONTROL_WATCH_CMD in str((call.get('input') or {}).get('command', '')):
+                    continue
+                for t in _texts({'message': {'content': [x]}}):
+                    if m := TASK_STARTED.search(t):
+                        tid = m[1] or m[2]
+                        persistent = (call.get('input') or {}).get('persistent')
+                        if (e := EXPIRES.search(t)) and at and not persistent:
+                            expiry[tid] = at + int(e[1]) * {'s': 1, 'm': 60, 'h': 3600}[e[2]]
+                        st['running'].add(tid)
+            if person_message(d):
+                st['last'], st['text'] = 'person', ''
+                if at:
+                    st['at'] = max(st['at'], at)
+    now = time.time()
+    st['running'] = {t for t in st['running'] if not (t in expiry and expiry[t] <= now)}
+    return st
+
+
+def control_cfg() -> dict:
+    """`[run] control_close`, `control_idle`, `control_ask_idle` (seconds), `control_open` (lowercase),
+    `control_file_asks`, `control_ask_kind`."""
+    r = C.run
+    opens = r.get('control_open', ['?', 'want me to', 'should i'])
+    return {'close': r.get('control_close', True) is not False,
+            'idle': duration(r.get('control_idle', '1h'), 3600.0),
+            'ask_idle': duration(r.get('control_ask_idle', '2h'), 7200.0),
+            'open': [str(p).lower() for p in ([opens] if isinstance(opens, str) else opens or [])],
+            'file_asks': r.get('control_file_asks', True) is not False,
+            'kind': str(r.get('control_ask_kind', 'F') or 'F')}
+
+
+def open_question(text: str, phrases: list[str]) -> str:
+    """The open question or offer Claude's last message `text` ends on, as one line ('' for none): its last
+    paragraph, when that ends in a phrase that is only punctuation ('?') or holds any other (`want me to`),
+    narrowed to the last sentence that does."""
+    paras = [p for p in re.split(r'\n\s*\n', text.strip()) if p.strip()]
+    if not paras:
+        return ''
+    last = ' '.join(paras[-1].split())
+    bare = last.rstrip(' *_`"\')]')
+
+    def hit(s: str) -> bool:
+        s2, low = s.rstrip(' *_`"\')]'), s.lower()
+        return any(s2.endswith(p) if not re.search(r'\w', p) else p in low for p in phrases if p)
+    if not hit(bare) and not hit(last):
+        return ''
+    sentences = [s for s in re.split(r'(?<=[.!?])\s+', last) if s.strip()]
+    q = next((s for s in reversed(sentences) if hit(s)), last).strip(' *_')
+    return q if len(q) <= 240 else q[:239].rsplit(' ', 1)[0] + '…'
+
+
+def control_verdict(st: dict, cf: dict, now: float) -> tuple[str, str]:
+    """('close' | 'ask' | 'keep', why or the question) for control session state `st` (`control_state`)."""
+    if st['last'] != 'claude':
+        return 'keep', {'person': 'the person spoke last', 'tool': 'a turn is under way'}.get(st['last'], 'no turn yet')
+    if st['running']:
+        return 'keep', f'{len(st["running"])} background task(s) still running'
+    quiet = now - st['at'] if st['at'] else 0
+    if q := open_question(st['text'], cf['open']):
+        if cf['ask_idle'] and quiet >= cf['ask_idle']:
+            return 'ask', q
+        return 'keep', 'its open question is not old enough'
+    if cf['idle'] and quiet >= cf['idle']:
+        return 'close', f'idle {int(quiet // 60)} min'
+    return 'keep', 'active lately'
+
+
+def control_link(bridge: str) -> str:
+    """A Remote Control session id (cse_…) as its claude.ai/code link; '' for none."""
+    return f'{REMOTE_URL}/session_{bridge[4:]}' if bridge.startswith('cse_') else ''
+
+
+def control_live_numbers() -> list[int]:
+    """The numbers of the control sessions with a pid file and a live process, c1 left out."""
+    out = []
+    for f in C.notes().glob('control*.pid'):
+        if (m := re.fullmatch(r'control(\d+)\.pid', f.name)) and int(m[1]) > 1 and control_live(int(m[1])):
+            out.append(int(m[1]))
+    return sorted(out)
+
+
+def file_control_ask(n: int, sid: str, q: str, link: str, branch: str = '') -> str:
+    """File control session `n`'s open question under Needs you: a task blocked `DECIDE: <q> <link>`, committed
+    as `watch_ci` commits its tasks (MERGE free, TODO.md clean). Its id, or '' when it could not be filed now."""
+    if not MERGE.acquire(blocking=False):
+        return ''
+    hold = ExitStack()
+    try:
+        if C.plan_external:
+            hold.enter_context(plansync.locked(C))
+            plansync.pull(C, force=True)
+        rel = plan_rel('TODO.md')
+        if not C.plan_external and (git('status', '--porcelain', '--', rel).stdout.strip() or branch and
+                                    git('branch', '--show-current').stdout.strip() != branch):
+            return ''  # somebody mid-edit, or the main checkout on another branch: the next look files it
+        where = link or f'resume it with `{plat.exe(C.run["agent"])} --resume {sid}`'
+        tid = P.add(control_cfg()['kind'], f'Control session {n} asked the person: "{q}" Carry on from their '
+                    f'answer (the session, closed while it waited: {where})', todo=ROOT / rel, pri='normal')
+        P.block(tid, f'DECIDE: {q} {link}'.strip(), todo=ROOT / rel, after=[])
+        if not commit_plan(f'Plan: {tid}, control {n} asked the person', rel):
+            if not C.plan_external:
+                git('checkout', '-q', '--', rel)
+            return ''
+        return tid
+    finally:
+        hold.close()
+        MERGE.release()
+
+
+def close_controls(branch: str = '', force: bool = False, now: float | None = None) -> list[tuple[int, str, str]]:
+    """B26: close the idle control sessions (see above), every CONTROL_CLOSE_EVERY s from the run loop.
+    [(n, 'closed' | 'asked', why or the task id filed)] for those closed."""
+    cf = control_cfg()
+    if not cf['close'] or not control_ok() or (not force and time.time() - CONTROL_CLOSE_AT[0] < CONTROL_CLOSE_EVERY):
+        return []
+    CONTROL_CLOSE_AT[0] = time.time()
+    now = time.time() if now is None else now
+    out = []
+    for n in control_live_numbers():
+        pidf = C.notes(f'control{n}.pid')
+        try:
+            pid_s, _, sid = pidf.read_text(encoding='utf-8').strip().partition(' ')
+            pid = int(pid_s)
+        except (OSError, ValueError):
+            continue
+        if not sid or not transcript(sid):
+            continue
+        st = control_state(entries(sid, skip_bad=True))
+        verdict, why = control_verdict(st, cf, now)
+        if verdict == 'keep':
+            continue
+        link = control_link(st['bridge'])
+        if verdict == 'ask' and cf['file_asks']:
+            if not (tid := file_control_ask(n, sid, why, link, branch)):
+                continue  # TODO.md busy: the next look files it
+            log(f'{tid}: filed, control {n} asked "{why}" (DECIDE, under {P.needs_cfg()["heading"]})')
+            note(f'{tid}: filed, an open question of control {n}')
+            why = tid
+        plat.terminate(pid)
+        pidf.unlink(missing_ok=True)
+        log(f'control {n}: closed, ' + (f'its question filed as {why}' if verdict == 'ask' and cf['file_asks']
+                                        else why) + f' (transcript kept: {plat.exe(C.run["agent"])} --resume {sid})')
+        out.append((n, 'asked' if verdict == 'ask' else 'closed', why))
+    return out
 
 
 def control_server_argv() -> list[str]:
