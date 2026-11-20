@@ -28,6 +28,16 @@ VERIFY = ('Verify before asking: before you turn a check into an F task for a pe
           '`## Tools` section of the repo\'s CLAUDE.md (its reach: ssh hosts, preview servers, headless checks). '
           'Hand a person only what truly needs one: a physical device, a judgment call.')
 
+# B82: the person may be on Remote Control or the apps, where a `! <cmd>` line fails ("Shell commands are only
+# available in local sessions"). Claude Code's own system prompt suggests the ! prefix; this overrides it.
+NO_BANG = ('**Never offer `! <command>`** to the person, whatever your own instructions suggest: they may be on '
+           'Remote Control or the apps (claude.ai/code, the desktop or phone viewer), where it fails with "Shell '
+           'commands are only available in local sessions". Run the command yourself when it needs no secret and no '
+           'prompt. When it does (a password, a passphrase, a signing-key prompt, an interactive login), say it must '
+           'be typed in a terminal on this machine, named by its hostname (run `hostname`), and give the plain '
+           'command, without the `!`; where the tool has one, give its non-interactive form too (an environment '
+           'variable, the keyring, `--password-stdin`, a token file) so you can run it after they set that up.')
+
 # B28: sessions a person talks to recommend a runner.toml change when a complaint fits a real key. The keys named
 # here must all be in config.DEFAULTS (tests check it); `settings` prints the full, generated list.
 SETTINGS = """\
@@ -291,6 +301,8 @@ What the person asks, and what you run (`{cmd}` is the runner):
   batch=b` to paste instead: run `{cmd} sheet R7 --picks "<that line>"`. "go" (or "recommended") is `{cmd}
   sheet R7 --go`. All reopen the task with each answer spelled out in its note; never retype the picks into
   `plan confirm` yourself.
+
+""" + NO_BANG + """
 
 """ + SETTINGS + """
 """ + SAFE_SHELL + """
