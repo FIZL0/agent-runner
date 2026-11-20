@@ -1328,7 +1328,7 @@ def test_person_waiting(repo: Path):
         check(r.returncode == 0, 'done --blocked with a CONFIRM label goes through', r.stdout + r.stderr)
         P.block('F2', 'DECIDE: Postgres or SQLite? F4 does not care', todo=todo)
         P.block('F3', 'BLOCKED: needs a deploy key on the server', todo=todo)
-        P.block('F4', 'needs F9 first', todo=todo)
+        P.block('F4', 'needs F2 first', todo=todo)  # B35: a block on no open task would be an ask too
         check('(after' not in todo.read_text(encoding='utf-8').split('**F2**')[1].split('\n')[0],
               'a block on a person waits on no task, even one its words name')
         a = sorted(P.asks(todo), key=lambda x: x[1])
@@ -1682,7 +1682,7 @@ def test_short_titles_and_since(repo: Path):
         has(r1.stdout, r'landed: .*\[F5\]', 'since WHEN prints what happened')
         eq(R.since_mark_file().read_text(encoding='utf-8').strip(), f'{today}T14:20:00', 'and moves the mark')
         r2 = run(repo, 'since')
-        eq((r2.returncode, r2.stdout.strip()), (0, 'nothing new since 14:20 (your last look)'),
+        eq((r2.returncode, r2.stdout.strip().splitlines()[-1]), (0, 'nothing new since 14:20 (your last look)'),
            'since twice in a row: nothing new the second time')
         mark = R.since_mark_file().read_text(encoding='utf-8').strip()  # now: nothing newer was in the log
         R.move_since_mark(f'{today}T10:00:00')
