@@ -6808,12 +6808,88 @@ def control_name(n: int, ask: str = '', images: list[str] | tuple = ()) -> str:
 CONTROL_N_ENV = 'AGENT_RUNNER_CONTROL'  # F29: a control session's number, in its tools' environment
 
 
+SUMMARY_TASK_RE = re.compile(r'^([A-Z]\d+[a-z]?)[:,.;]?$')  # F32: a summary's leading task id (R43, P17a)
+
+
 def control_summary_name(n: int, summary: str) -> str:
-    """F29: the name control session `n` takes once it has read its first message: "<repo> · N · <summary>",
-    the summary one line trimmed as an ask's title is (`control_title`), so `attach cN` still matches and
-    `control_renamed` does not take it for the person's; "" for an empty summary."""
-    title = control_title(' '.join(str(summary or '').replace('"', ' ').replace('`', ' ').split()))
+    """F29/F32: the name control session `n` takes once it has read its first message: "<repo> · <ID> ·
+    <rest>" when the summary starts with a task id (one task: `iFizBox · R43 · site deploy via tags`), else
+    "<repo> · N · <summary>"; the summary one line trimmed as an ask's title is (`control_title`); "" for an
+    empty summary. `control_given` keeps it, so `control_renamed` does not take it for the person's."""
+    words = ' '.join(str(summary or '').replace('"', ' ').replace('`', ' ').split()).split(' ')
+    if (m := SUMMARY_TASK_RE.match(words[0])):
+        rest = control_title(' '.join(words[1:]))
+        return ' · '.join(x for x in (ROOT.name, m[1], rest) if x)
+    title = control_title(' '.join(words))
     return f'{ROOT.name} · {n} · {title}' if title else ''
+
+
+def control_base_name(n: int) -> str:
+    """F32: control session `n`'s name with no ask of its own yet: "<repo> · N" (after /new or /clear)."""
+    return f'{ROOT.name} · {n}'
+
+
+def control_given(n: int) -> str:
+    """F32: the name the runner last gave control session `n` (`<notes>/control<n>.title`), '' for none."""
+    try:
+        return C.notes(f'control{n}.title').read_text(encoding='utf-8').strip()
+    except OSError:
+        return ''
+
+
+def control_give(n: int, name: str) -> None:
+    """F32: record `name` as the one the runner last gave control session `n` (see `control_renamed`)."""
+    try:
+        C.notes(f'control{n}.title').write_text(name + '\n', encoding='utf-8')
+    except OSError:
+        pass
+
+
+def control_session_start(n: int, hook: dict) -> str:
+    """F32: the SessionStart hook of control session `n` (`control --brief`, its JSON input `hook`). On
+    source 'clear' (/clear, and /new, its alias) the session starts afresh in a new transcript: the pid file
+    follows it to the new session id, and a name the runner gave it for the old ask (a task's) goes back to
+    "<repo> · N" until the new conversation has its own; a name the person typed stays. Returns the name it
+    was reset to, or ''."""
+    if not n or not isinstance(hook, dict) or hook.get('source') != 'clear':
+        return ''
+    pidf = C.notes(f'control{n}.pid')
+    try:
+        pid_s, _, old = pidf.read_text(encoding='utf-8').strip().partition(' ')
+    except OSError:
+        pid_s, old = '', ''
+    new = str(hook.get('session_id') or '')
+    if pid_s and new and new != old:
+        try:
+            pidf.write_text(f'{pid_s} {new}', encoding='utf-8')
+        except OSError:
+            pass
+    if old and transcript(old) and control_renamed(control_state(entries(old, skip_bad=True)), n):
+        return ''  # the person named it: never overwritten
+    base, given = control_base_name(n), control_given(n)
+    if not given or given in (base, control_name(n)):
+        return ''
+    if not (pane := control_pane(n)) or not send_to_pane(pane, f'/rename {base}'):
+        return ''
+    tmux('rename-window', '-t', pane, base)
+    control_give(n, base)
+    return base
+
+
+def control_hook_input() -> dict:
+    """The JSON a Claude Code hook gets on stdin, {} when there is none to read at once (a person running
+    `control --brief` by hand, or a stdin left open)."""
+    try:
+        if sys.stdin is None or sys.stdin.isatty():
+            return {}
+        if not plat.WINDOWS:
+            import select
+            if not select.select([sys.stdin], [], [], 1.0)[0]:
+                return {}
+        d = json.loads(sys.stdin.read() or '{}')
+    except (OSError, ValueError, TypeError):
+        return {}
+    return d if isinstance(d, dict) else {}
 
 
 def control_pane(n: int) -> str:
@@ -6850,10 +6926,7 @@ def control_set_title(n: int, summary: str) -> int:
         print(f'control {n} has no tmux pane to rename it in; it stays as it is', file=sys.stderr)
         return 1
     tmux('rename-window', '-t', pane, name)
-    try:
-        C.notes(f'control{n}.title').write_text(name + '\n', encoding='utf-8')
-    except OSError:
-        pass
+    control_give(n, name)
     print(f'control {n} is renamed "{name}" when this turn ends')
     return 0
 
@@ -6976,6 +7049,10 @@ def cmd_control(argv: list[str], prog: str = f'{RUNNER} control') -> int:
     init()
     if a.brief:
         print(control_brief(), end='')
+        env_n = os.environ.get(CONTROL_N_ENV, '')
+        if env_n.isdigit():  # F32: /clear or /new in control session N
+            sys.stdout.flush()
+            control_session_start(int(env_n), control_hook_input())
         return 0
     if a.title is not None:
         env_n = os.environ.get(CONTROL_N_ENV, '')
@@ -6994,6 +7071,8 @@ def cmd_control(argv: list[str], prog: str = f'{RUNNER} control') -> int:
         return 1
     sid, resume = control_sid(n)
     argv = control_argv(n, sid, resume, blank=a.blank, ask=a.ask, local=a.local, images=a.file)
+    if not resume:  # F32: a fresh session N never keeps an earlier session N's (or task's) name
+        control_give(n, control_name(n, a.ask, a.file))
     backend().trust(ROOT)
     os.chdir(ROOT)
     pidf = C.notes(f'control{n}.pid')
@@ -7649,10 +7728,11 @@ def open_question(text: str, phrases: list[str]) -> str:
 
 def control_renamed(st: dict, n: int = 0) -> bool:
     """B41: whether the person renamed control session `n` (state `st`): its custom title is set and is not a
-    name the runner gives it (`control_name`, with or without an ask's title; the runner's own name writes no
-    custom-title entry, so with `n` 0 any custom title counts)."""
+    name the runner gives it: `control_name(n)`, "<repo> · N", or the name it last gave session N (F32:
+    `control_given`, its ask's or `control --title`'s), not any "<repo> · N ·" name; with `n` 0 any custom
+    title counts."""
     t = st.get('title') or ''
-    return bool(t) and not (n and (t == control_name(n) or t.startswith(f'{ROOT.name} · {n} · ')))
+    return bool(t) and not (n and t in (control_name(n), control_base_name(n), control_given(n)))
 
 
 def control_verdict(st: dict, cf: dict, now: float, n: int = 0) -> tuple[str, str]:
