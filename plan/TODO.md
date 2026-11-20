@@ -2,6 +2,7 @@
 
 ### Next
 
+- [ ] **C10** After the split: split pick() into pick and explain (the --dry-run reasons, now five 'if why is not None' branches), with block_parked done by the caller, not inside the pick. Check: sched and dry-run tests pass unchanged. (Fable audit A9) | files: agent_runner/sched.py, tests/test_sched.py | after: C3
 - [ ] **C9** After the split: turn run()'s 14 local state variables (procs, running, tried, free_at, merging, …) into a Run object with one method per loop step; behaviour unchanged. Check: loop tests pass unchanged. (Fable audit A12) | files: agent_runner/loop.py, tests/test_loop.py | after: C3
 - [ ] **C8** After the split: break merge_batch (174 lines, 76 branches) into build, test and land steps in the merge module; behaviour unchanged. Check: merge tests pass unchanged plus a unit test per step. (Fable audit A8) | files: agent_runner/merge.py, tests/test_merge.py | after: C3
 - [ ] **R7** Audit the config surface (agent_runner/config.py DEFAULTS, 94 keys; docs/REFERENCE.md) and recommend, change nothing: keys superseded by later ones or with a better alternative, groups that could become one key, keys whose name or doc should be reworded, and keys only worth keeping as constants. Useful keys stay even if no local project sets them (e.g. master_branch). Check the runner*.toml files in ~/repos/*/ for real use. Write the list (key, recommendation, why) in plan notes, then block with DECIDE so the person picks. (Fable audit A18) | files: plan/TODO.md
