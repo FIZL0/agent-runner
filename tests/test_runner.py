@@ -4987,6 +4987,56 @@ def test_control_no_upgrade_watcher():
           'the control brief rules out an upgrade watcher', text)
 
 
+def test_release_push(repo: Path):
+    """F51: a merge that brings a release logs '<repo> X.Y.Z released: <first changelog line>', which
+    `since --follow` prints and the runner feed pushes; and the control brief covers 'notify me when'."""
+    import contextlib
+    import io
+    from agent_runner.guide import CONTROL, CONTROL_WATCH, RUNNER_BRIEF
+    R.init(repo)
+    base = git(repo, 'rev-parse', 'HEAD')
+    (repo / 'CHANGELOG.md').write_text(
+        '# Changelog\n\n## Unreleased\n\n## 1.2.0 (2026-11-20)\n\n- Phones hear releases: the feed pushes\n'
+        '  one line. More words here.\n- Another change.\n\n## 1.1.0\n\n- Old.\n', encoding='utf-8')
+    git(repo, 'commit', '-qam', 'release 1.2.0')
+    merged = git(repo, 'rev-parse', 'HEAD')
+    try:
+        eq(R.release_line_for(base, merged), f'{repo.name} 1.2.0 released: Phones hear releases: the feed pushes one line.',
+           'a new top version heading is a release, with its first bullet, unwrapped, to its first sentence')
+        eq(R.release_line_for(merged, merged), None, 'no new heading: no release')
+        git(repo, 'commit', '-q', '--allow-empty', '-m', 'tagged')
+        tagged = git(repo, 'rev-parse', 'HEAD')
+        git(repo, 'tag', 'v1.2.1')
+        eq(R.release_line_for(merged, tagged), f'{repo.name} 1.2.1 released: tagged',
+           'a new version tag is a release too, with its subject when the changelog has no entry')
+        logf = R.C.notes('run.log')
+        logf.parent.mkdir(parents=True, exist_ok=True)
+        R.RELEASES_SAID.discard('1.2.0')
+        def land():
+            R.announce_release(base, merged)
+            R.announce_release(base, merged)  # a batch: the second task of the same merge
+        threading.Timer(0.5, land).start()
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), mock.patch.object(R, 'move_since_mark', lambda s: None):
+            R.follow(poll=0.1, until=time.monotonic() + 2)
+        got = [l for l in out.getvalue().splitlines() if 'released' in l and not l.startswith('===')]  # log() echoes
+        eq(len(got), 1, f'since --follow prints the release once: {out.getvalue()}')
+        check(got and got[0].endswith(f'  {repo.name} 1.2.0 released: Phones hear releases: the feed pushes one line.'),
+              'the release line reaches since --follow as it is', got)
+    finally:
+        git(repo, 'tag', '-d', 'v1.2.1')
+        git(repo, 'reset', '-q', '--hard', base)
+    rb = ' '.join(RUNNER_BRIEF.format(cmd='run', repo='r', answer='').split())
+    check('released' in rb and 'PushNotification' in rb.split('Releases:', 1)[-1].split('- Commands', 1)[0],
+          'the feed brief says to push each release line', rb)
+    text = ' '.join(CONTROL.format(repo='r', cmd='./run', log='l', watch=CONTROL_WATCH.format(repo='r', cmd='./run'),
+                                   needs='Needs you', answer='').split())
+    part = text.split('"notify me when X"', 1)[-1].split(' - ', 1)[0]
+    check('"notify me when X"' in text and 'since --follow' in part and 'PushNotification' in part
+          and 'stop that Monitor' in part and 'say back in one line what you will watch for' in part,
+          'the control brief covers "notify me when": watch, push once, stop, and say what it watches for', text)
+
+
 def main() -> int:
     with tempfile.TemporaryDirectory() as t:
         tmp = Path(t)
@@ -5017,7 +5067,7 @@ def main() -> int:
                        lambda: test_close_idle_controls(repo), lambda: test_renamed_control_kept(repo),
                        lambda: test_control_summary_title(repo), lambda: test_control_task_name(repo), lambda: test_progress_and_release(repo),
                        lambda: test_control_status_rules(repo), lambda: test_control_do_it_here(repo), lambda: test_take_running_slot(repo), lambda: test_upgrade_cmd(repo), test_control_no_upgrade_watcher,
-                       lambda: test_plan_last(repo)])
+                       lambda: test_plan_last(repo), lambda: test_release_push(repo)])
 
 
 if __name__ == '__main__':

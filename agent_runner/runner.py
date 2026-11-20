@@ -3092,6 +3092,7 @@ def merge_tries(tid: str, branch: str) -> str | None:
             log(msg)
             reopen_landed(branch, tid)  # before the push, so the reopen goes out with the merge
             published(tid, branch)
+            announce_release(base, merged)
             return None
     return f'{tid}: no merge landed in three tries'
 
@@ -6107,7 +6108,78 @@ SINCE_EVENTS = [  # (pattern on a run.log line's message, kind); the first that 
     (re.compile(r'^STOPPED: ([^:]+)'), 'run held, needs you'),
     (re.compile(r'^run idle'), 'run idle: nothing left it may start'),
     (re.compile(r'^run stopped'), 'run stopped'),
+    (re.compile(r'^(\S+ v?\d+(?:\.\d+)+ released\b.*)'), 'released'),  # F51: `release_line_for`'s line
 ]
+
+
+RELEASE_HEAD = re.compile(r'^##\s+\[?v?(\d+(?:\.\d+)+)\b', re.M)  # a CHANGELOG.md version heading
+RELEASE_TAG = re.compile(r'^v?(\d+(?:\.\d+)+)$')
+RELEASES_SAID: set[str] = set()  # versions `announce_release` logged this run: a batch lands once per task
+
+
+def _vtuple(v: str) -> tuple[int, ...]:
+    return tuple(int(x) for x in v.split('.'))
+
+
+def changelog_entry(rev: str, version: str | None = None) -> tuple[str, str] | None:
+    """(version, its first changelog line) from CHANGELOG.md at `rev`: the newest version heading, or the one
+    for `version`; None when there is none. The first line is the entry's first bullet (or paragraph),
+    unwrapped, to its first sentence, at most 160 characters; '' when the entry is empty."""
+    r = git('show', f'{rev}:CHANGELOG.md')
+    if r.returncode:
+        return None
+    text = r.stdout
+    heads = [h for h in RELEASE_HEAD.finditer(text) if version is None or h[1] == version]
+    if not heads:
+        return None
+    h = heads[0]
+    nxt = re.search(r'^#', text[h.end():], re.M)
+    body = text[h.end():h.end() + nxt.start() if nxt else None].split('\n', 1)[1:]
+    first = []
+    for l in (body[0] if body else '').splitlines():
+        s = l.strip()
+        if not s:
+            if first:
+                break
+            continue
+        if first and s.startswith(('- ', '* ')):
+            break
+        first.append(s[2:] if not first and s.startswith(('- ', '* ')) else s)
+    line = re.split(r'(?<=[.!?])\s', ' '.join(first), maxsplit=1)[0] if first else ''
+    if len(line) > 160:
+        line = line[:159].rsplit(' ', 1)[0] + '…'
+    return h[1], line
+
+
+def release_line_for(base: str, merged: str) -> str | None:
+    """F51: '<repo> 0.53.0 released: <first changelog line>' when the merge `base`..`merged` brought a release
+    onto the shared branch (a newer version heading at the top of CHANGELOG.md, or a new version tag), else
+    None."""
+    new, old = changelog_entry(merged), changelog_entry(base)
+    version, first = None, ''
+    if new and (not old or _vtuple(new[0]) > _vtuple(old[0])):
+        version, first = new
+    else:
+        tags = [t for t in git('tag', '--merged', merged, '--no-merged', base).stdout.split() if RELEASE_TAG.match(t)]
+        if tags:
+            tag = max(tags, key=lambda t: _vtuple(RELEASE_TAG.match(t)[1]))
+            version = RELEASE_TAG.match(tag)[1]
+            got = changelog_entry(merged, version)
+            first = got[1] if got else git('tag', '-l', '--format=%(contents:subject)', tag).stdout.strip()
+    if not version:
+        return None
+    return f'{ROOT.name} {version} released' + (f': {first}' if first else '')
+
+
+def announce_release(base: str, merged: str) -> None:
+    """Log `release_line_for`'s line once per version, for `since --follow` (and so the runner feed's push)."""
+    try:
+        line = release_line_for(base, merged)
+    except Exception:
+        return
+    if line and (v := line.split(' ')[1]) not in RELEASES_SAID:
+        RELEASES_SAID.add(v)
+        log(line)
 
 
 def since_event(line: str, titles: dict[str, str]) -> tuple[str, str, str] | None:
@@ -6118,6 +6190,8 @@ def since_event(line: str, titles: dict[str, str]) -> tuple[str, str, str] | Non
     stamp, msg = m.groups()
     for rx, kind in SINCE_EVENTS:
         if e := rx.match(msg):
+            if kind == 'released':
+                return stamp, '', e.group(1).strip()
             if kind.startswith('run '):
                 what = f'{kind}: {e.group(1).strip()}' if e.groups() else kind
                 return stamp, '', what
@@ -6281,7 +6355,7 @@ def follow(poll: float = 2.0, until: float | None = None, needs_you: bool = Fals
         pos = 0
     print(f'watching {logf} for what needs you: the run held, a task left for you, stalled, or waiting on your '
           f'answer' if needs_you else
-          f'following {logf}: one line per landed, started or stuck task, and when the run goes idle or stops',
+          f'following {logf}: one line per landed, started or stuck task, a release, and when the run goes idle or stops',
           flush=True)
     buf = ''
     while until is None or time.monotonic() < until:
