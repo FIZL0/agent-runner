@@ -7934,9 +7934,12 @@ def feed_latest(sid: str | None = None) -> tuple[list[str], int, str, str | None
     `control_new` can tell whether Claude Code has written the message being handed on yet (B46). `sid`: the
     feed session to read (default `feed_sid`)."""
     sid = feed_sid() if sid is None else sid
+    FEED_LOOK.clear()
+    FEED_LOOK.update(sid=sid, transcript=None, lines=0, shown=0)
     if not sid:
         return [], 0, '', None
     t = transcript(sid) if SID_RE.fullmatch(sid) else None
+    FEED_LOOK['transcript'] = t
     if not t:
         return [], 0, '', None
     paths: list[str] = []
@@ -7946,6 +7949,7 @@ def feed_latest(sid: str | None = None) -> tuple[list[str], int, str, str | None
     try:
         with open(t, encoding='utf-8') as f:
             for line in f:
+                FEED_LOOK['lines'] += 1
                 try:
                     d = json.loads(line)
                 except ValueError:
@@ -7969,32 +7973,69 @@ def feed_latest(sid: str | None = None) -> tuple[list[str], int, str, str | None
                     paths, rereads, found = [], False, 0
                     c = (d.get('message') or {}).get('content')
                     shown = sum(isinstance(x, dict) and x.get('type') == 'image' for x in c) if isinstance(c, list) else 0
+                    pasted = d.get('imagePasteIds')  # B74: the images Claude Code says came with it, block or not
+                    shown = max(shown, len(pasted) if isinstance(pasted, list) else 0)
                     version = str(d.get('version') or '')
                     said = c if isinstance(c, str) else ' '.join(
                         x.get('text', '') for x in c if isinstance(x, dict) and x.get('type') == 'text') \
                         if isinstance(c, list) else ''
     except OSError:
         return [], 0, '', None
+    FEED_LOOK.update(shown=shown, said=said)
     return paths, max(shown - found, 0), version, said
 
 
+FEED_LOOK: dict = {}  # what the last `feed_latest` read: sid, transcript, lines, shown, said (B74's hand-off log)
 FEED_WAIT = 5.0  # s control --new --ask waits for the feed's transcript to hold the message it hands on (B46)
 FEED_LATE_WAIT = 60.0  # s the new `control N` then keeps waiting for it before starting claude (B57)
+FEED_LOG = 'handoff.log'  # <notes>/remote/handoff.log: what feed_wait saw at each hand-off (B74)
 
 
-def feed_wait(ask: str, wait: float, sid: str | None = None) -> tuple[bool, list[str], int, str]:
+def feed_wait(ask: str, wait: float, sid: str | None = None,
+              where: str = 'control --new') -> tuple[bool, list[str], int, str]:
     """Wait up to `wait` s for the feed transcript (`sid`, default `feed_sid`) to hold the message `ask` hands on
-    with every image's saved path: (found it, its files, images with no path, Claude Code version). With no
-    transcript to read at all, found is True: there is nothing to wait for (an older feed, a typed --ask)."""
-    deadline = time.monotonic() + wait
+    with every image's saved path: (found it, its files, images with no path, Claude Code version). With no feed
+    session at all, found is True: there is nothing to wait for (a typed --ask). A feed session whose transcript
+    cannot be found or read yet is waited for like a message not written yet, never taken as found with no
+    files (B74). What it saw is logged (`feed_log`), `where` naming the step."""
+    t0 = time.monotonic()
+    sid = feed_sid() if sid is None else sid
+    looks = 0
     while True:
         got, lost, version, said = feed_latest(sid)
-        if said is None:
-            return True, [], 0, ''
-        match = same_words(said, ask)
-        if (match and not lost) or time.monotonic() >= deadline:
-            return match, (got if match else []), (lost if match else 0), version
+        looks += 1
+        if said is None and not sid:
+            out = True, [], 0, ''
+            break
+        match = said is not None and same_words(said, ask)
+        if (match and not lost) or time.monotonic() - t0 >= wait:
+            out = match, (got if match else []), (lost if match else 0), version
+            break
         time.sleep(0.2)
+    feed_log(where, sid, ask, time.monotonic() - t0, looks, out)
+    return out
+
+
+def feed_log(where: str, sid: str, ask: str, took: float, looks: int, out: tuple) -> None:
+    """One line in <notes>/remote/handoff.log for a hand-off: the feed session and where its id came from, the
+    transcript and how much of it was read, the latest person message there and its images, and what was
+    handed on, so a picture that went missing can be traced (B74). Never fails the hand-off."""
+    found, got, lost, version = out
+    look = FEED_LOOK
+    src = ('none' if not sid else '--feed-sid' if '--feed-sid' in where
+           else 'env' if os.environ.get('CLAUDE_CODE_SESSION_ID', '').strip() == sid else 'feed.sid')
+    said = look.get('said')
+    head = lambda s: json.dumps(re.sub(r'\s+', ' ', s)[:60], ensure_ascii=False)
+    line = (f'{dt.datetime.now().isoformat(timespec="seconds")} {where}: ask {head(ask)}; sid {sid or "-"} ({src}),'
+            f' transcript {look.get("transcript") or "none"} ({look.get("lines", 0)} lines); latest '
+            f'{head(said) if isinstance(said, str) else "none"} with {look.get("shown", 0)} image(s); '
+            f'{looks} look(s) in {took:.1f} s -> {"found" if found else "NOT found"}, {len(got)} file(s)'
+            f'{" " + " ".join(got) if got else ""}, {lost} lost, Claude Code {version or "?"}')
+    try:
+        with open(C.notes(REMOTE_DIR, FEED_LOG), 'a', encoding='utf-8') as f:
+            f.write(line + '\n')
+    except OSError:
+        pass
 
 
 def feed_unread_note() -> str:
@@ -8008,7 +8049,7 @@ def control_late_files(ask: str, images: list[str], sid: str, wait: float | None
     """`control N --ask … --feed-sid SID` (B57): the feed's transcript did not hold the message being handed on
     when `control --new` started this session, so wait here (FEED_LATE_WAIT) for it before claude starts. The
     ask and files to start with: its files added, or a note that attachments may have been lost."""
-    found, got, lost, version = feed_wait(ask, FEED_LATE_WAIT if wait is None else wait, sid)
+    found, got, lost, version = feed_wait(ask, FEED_LATE_WAIT if wait is None else wait, sid, 'control N --feed-sid')
     images = [*images, *(i for i in got if i not in images)]
     if not found:
         return f'{ask}\n\n{feed_unread_note()}', images
@@ -8019,9 +8060,14 @@ def control_late_files(ask: str, images: list[str], sid: str, wait: float | None
 
 def same_words(said: str, ask: str) -> bool:
     """The feed hands the person's message on word for word, give or take quoting and spacing: compare letters
-    and digits only, either one holding the other."""
+    and digits only, either one holding the other. A short one must be all of it (B74): an earlier "openmx" is not
+    the new "openmx is failing again", whose pictures may not be written yet."""
     a, b = (re.sub(r'\W+', '', x).lower() for x in (said, ask))
-    return bool(a and b) and (a in b or b in a)
+    short, long_ = sorted((a, b), key=len)
+    return bool(a and b) and short in long_ and (short == long_ or len(short) >= SAME_WORDS_MIN)
+
+
+SAME_WORDS_MIN = 16  # letters: a message shorter than this matches only in full (B74)
 
 
 def image_drift_note(lost: int, version: str) -> str:
@@ -8214,13 +8260,14 @@ def control_new(n: int | None = None, wait: float = CONTROL_LINK_WAIT, ask: str 
             fwd, ask = [FORWARD_FLAG, '--feed-sid', sid], ''
         else:
             ask = feed_lost_note() if text is None else text
-    if ask:
+    if ask and ask != feed_lost_note():
         # Claude Code writes the feed's transcript lazily: the message being handed on, and the saved paths of
         # its pictures, can land a while after this command starts (B46, B57: more than FEED_WAIT), so wait
         # briefly for them here, and when they are still missing let the new session's own process wait longer
         # (--feed-sid) instead of taking the previous message's files.
         sid = feed_sid()
-        found, got, lost, version = feed_wait(ask, FEED_WAIT, sid)
+        found, got, lost, version = feed_wait(ask, FEED_WAIT, sid,
+                                              'control --new --forward' if forward else 'control --new')
         images += [i for i in got if i not in images]
         if not found:
             late = sid
