@@ -4,6 +4,13 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- `agent_runner/runner.py` (9,100 lines) is split by responsibility into thirteen modules, each under 1,500
+  lines and importing only those below it: `state`, `brief`, `sched`, `slots`, `watch`, `join`, `land`,
+  `merge`, `control`, `status`, `feed`, `loop`, `cmds` (runner.py's docstring lists what each holds). Code
+  moved, behaviour unchanged: `runner` re-exports every name, and `runner.X = v` still reaches every module
+  that uses X. Open tasks that named runner.py now name the modules they touch, so they can run side by
+  side (C3).
+
 - Idle control sessions close at two more speeds: one the runner opened for a single ask (a reply from the
   feed) that ended with a task queued, no open question and no second message from the person closes after
   `[run] control_idle_quick` (5 min); one the person sent a second message in stays `[run]

@@ -5795,6 +5795,49 @@ def test_control_no_upgrade_watcher():
           'the control brief rules out an upgrade watcher', text)
 
 
+def test_split_modules_c3():
+    """C3: runner.py is split into modules that import each other with no cycle (module-level imports), and
+    `runner.X = v` (a test's stand-in, a wrapping project's PROMPT) reaches every module that uses X."""
+    import ast
+    pkg = Path(R.__file__).parent
+    deps = {}
+    for f in pkg.glob('*.py'):
+        names = set()
+        for node in ast.parse(f.read_text(encoding='utf-8')).body:
+            if isinstance(node, ast.ImportFrom) and node.module == 'agent_runner':
+                names.update(a.name for a in node.names)
+            elif isinstance(node, ast.ImportFrom) and (node.module or '').startswith('agent_runner.'):
+                names.add(node.module.split('.')[1])
+        deps[f.stem] = {n for n in names if (pkg / f'{n}.py').exists()}
+    seen, cycle = {}, []
+
+    def visit(m: str, path: list[str]) -> None:
+        seen[m] = 1
+        for d in sorted(deps.get(m, ())):
+            if seen.get(d) == 1 and not cycle:
+                cycle.extend(path[path.index(d):] + [d])
+            elif d not in seen:
+                visit(d, path + [d])
+        seen[m] = 2
+
+    for m in sorted(deps):
+        if m not in seen:
+            visit(m, [m])
+    check(not cycle, 'no agent_runner module imports in a cycle', ' -> '.join(cycle))
+    big = {f.stem: n for f in pkg.glob('*.py') if f.stem in R.FAMILY
+           and (n := len(f.read_text(encoding='utf-8').splitlines())) > 1500}
+    check(not big, 'each module runner.py was split into is under 1500 lines', big)
+    from agent_runner import loop, merge, slots
+    was = R.AHEAD_POLL, R.SLOTS
+    try:
+        R.AHEAD_POLL, R.SLOTS = 0.25, 7
+        check(merge.AHEAD_POLL == 0.25 and slots.SLOTS == 7 and loop.SLOTS == 7,
+              'runner.X = v sets X in the modules that use it')
+    finally:
+        R.AHEAD_POLL, R.SLOTS = was
+    check(merge.AHEAD_POLL == was[0] and slots.SLOTS == was[1], 'and putting it back puts it back everywhere')
+
+
 def test_release_push(repo: Path):
     """F51: a merge that brings a release logs '<repo> X.Y.Z released: <first changelog line>', which
     `since --follow` prints and the runner feed pushes; and the control brief covers 'notify me when'."""
@@ -6085,7 +6128,7 @@ def main() -> int:
                        lambda: test_renamed_control_kept(repo),
                        lambda: test_control_summary_title(repo), lambda: test_control_task_name(repo), lambda: test_progress_and_release(repo),
                        lambda: test_control_status_rules(repo), lambda: test_control_do_it_here(repo), lambda: test_control_retitle_on_topic(repo), test_control_push_when_asked, test_needs_cmd_f44, test_idle_control_not_waiting, lambda: test_take_running_slot(repo), lambda: test_upgrade_cmd(repo), lambda: test_runner_route_b54(repo), test_control_no_upgrade_watcher,
-                       lambda: test_plan_last(repo), lambda: test_release_push(repo),
+                       test_split_modules_c3, lambda: test_plan_last(repo), lambda: test_release_push(repo),
                        lambda: test_help_order_and_bare_wizard(tmp), lambda: test_setup(tmp),
                        lambda: test_stop_countdown(repo), lambda: test_real_claude_json_guard(tmp)])
 

@@ -1,0 +1,753 @@
+"""Watching sessions: transcripts, stalls, cut-offs and resumes, temp folders, memory, the API and
+usage caps, upgrades, and the idle Stop hook."""
+
+from __future__ import annotations
+
+import datetime as dt
+import json
+import os
+import re
+import shutil
+import signal
+import socket
+import subprocess as sp
+import sys
+import threading
+import time
+from pathlib import Path
+
+from agent_runner import plat
+from agent_runner.config import finished_mark, runner_cmd
+from agent_runner.state import (banner, C, FORCED, forced, git, log, PAUSED, POWER, queued, READING, REPO_TAG, ROOT,
+    SLOTS_DIR, stopped_by, stopping)
+from agent_runner.sched import open_tasks
+from agent_runner.slots import entries, GB, marker_pid, MUX, pi, sids, slot_env, SLOTS, tmp_roots, transcript
+
+
+def state_line() -> str:
+    """What the keys have set, for `?` and after each key."""
+    what = [f'{SLOTS} slot{"s" if SLOTS != 1 else ""}']
+    if stopping():
+        what.append('stopping now (s!)' if forced() else f'stopping ({stopped_by()})')
+    if PAUSED[0]:
+        what.append('paused')
+    if FORCED[0]:
+        what.append('usage caps off (f)')
+    if LATEST_SAID[0]:
+        what.append(f'agent-runner {LATEST_SAID[0]} is out (u upgrades)')
+    if POWER:
+        what.append(f'{POWER} when ' + ('it stops' if stopping() else 'idle'))
+    return ', '.join(what)
+
+
+def stats(sid: str) -> str:
+    """'N min, N calls, context Nk first, Nk peak' for the exit line. Watch the peak over a run: if it keeps
+    creeping up, or more tasks come back blocked, the tasks are too big."""
+    calls, ctx, ts = 0, [], []
+    for d in entries(sid):
+        if not isinstance(d, dict):
+            continue
+        ts += [d['timestamp']] if 'timestamp' in d else []
+        if d.get('type') == 'message' and (m := d.get('message', {})).get('role') == 'assistant' \
+                and (u := m.get('usage')):  # Pi
+            calls += 1
+            ctx.append(u.get('input', 0) + u.get('cacheRead', 0) + u.get('cacheWrite', 0))
+        elif d.get('type') == 'assistant' and (u := d.get('message', {}).get('usage')):
+            calls += 1
+            ctx.append(sum(u.get(k, 0) for k in ('input_tokens', 'cache_read_input_tokens',
+                                                 'cache_creation_input_tokens')))
+    if not ctx or not ts:
+        return 'no transcript'
+    span = (dt.datetime.fromisoformat(ts[-1].replace('Z', '+00:00')) -
+            dt.datetime.fromisoformat(ts[0].replace('Z', '+00:00')))
+    return f'{int(span.total_seconds()) // 60} min, {calls} calls, context {ctx[0] // 1000}k first, {max(ctx) // 1000}k peak'
+
+
+_busy_at: dict[str, float] = {}  # session id → when stalled() last saw it running a tool
+
+
+def stalled(pid: int, sid: str, limit: int) -> str | None:
+    """Why a live session looks stuck, else None: quiet for `limit` seconds with no tool running (a prompt or
+    a dialog the idle hook never sees), or quiet for longer than the Bash timeout even with one (a hung tool).
+    A tool's run writes nothing to the transcript, so the prompt's quiet counts from the last look that saw
+    one running: a 20-minute test run then a minute's thinking is not 21 minutes at a prompt (openmx's P38).
+    """
+    t = transcript(sid)
+    now = time.time()
+    quiet = now - os.path.getmtime(t) if t and os.path.exists(t) else 0
+    if busy := bool(plat.children(pid)):
+        _busy_at[sid] = now
+    idle = min(quiet, now - _busy_at.get(sid, 0))
+    if quiet > 65 * 60 or (idle > limit and not busy):
+        return f'no transcript activity for {int(quiet // 60)} min' + \
+               (' with a tool still running' if busy else ' at a prompt')
+    return None
+
+
+RESUMES_MAX = 3  # resumes of one session before a cut-off is taken for the end of it
+NOT_RESUMED = {'invalid_request', 'authentication_failed', 'billing_error'}  # would fail again
+
+
+def cut_off(sid: str, mid_turn: bool = False) -> str | None:
+    """Why the session ended without finishing its turn, else None. An API error ends a turn in Claude Code
+    and the idle stop then ends the session, though nothing was finished: the network dropped, or the API
+    was down, or the account hit its usage limit. A request the API refused is not that: it would fail again. With `mid_turn`, also a transcript
+    that stops inside a turn: the machine went down under it. A finished session ends on a turn it ended."""
+    last = None
+    for d in entries(sid, skip_bad=True):
+        if d.get('type') in ('user', 'assistant') and not d.get('isSidechain') and not d.get('isMeta'):
+            last = d
+    if not last:
+        return None
+    m = last.get('message') if isinstance(last.get('message'), dict) else {}
+    if last.get('isApiErrorMessage'):
+        c = m.get('content')
+        text = c if isinstance(c, str) else ' '.join(x.get('text', '') for x in c or [] if isinstance(x, dict))
+        text = ' '.join(text.split())
+        if last.get('error') in NOT_RESUMED:
+            return None
+        return text[:160] or f'API error {last.get("error")}'
+    if mid_turn and (last['type'] == 'user' or m.get('stop_reason') in (None, 'tool_use')):
+        return 'its transcript stops mid-turn'
+    return None
+
+
+def queue_resume(tid: str, n: int, sid: str, why: str) -> None:
+    C.notes(f'{tid}.resume').write_text(json.dumps({'slot': n, 'sid': sid, 'why': why}), encoding='utf-8')
+
+
+HEADER = re.compile(r'^=== (\S+) (\S+) (?:session|resume) (\S+)')
+
+
+def resumes(n: int, sid: str) -> int:
+    """How often session `sid` has been resumed (its slot log's resume headers)."""
+    try:
+        with open(C.notes(f'slot{n}.log'), encoding='utf-8', errors='replace') as f:
+            return sum(1 for l in f if l.startswith('=== ') and f' resume {sid} ' in l)
+    except OSError:
+        return 0
+
+
+def last_session(tid: str) -> tuple[int, str] | None:
+    """(slot, session) of task `tid`'s latest session, from the slot logs' headers."""
+    best = None
+    for f in C.notes().glob('slot*.log'):
+        if not re.fullmatch(r'slot\d+', f.stem):
+            continue
+        with open(f, encoding='utf-8', errors='replace') as fh:
+            for l in fh:
+                if (m := HEADER.match(l)) and m.group(2) == tid and (not best or m.group(1) >= best[0]):
+                    best = (m.group(1), int(f.stem[4:]), m.group(3))
+    return best and best[1:]
+
+
+SESSION_TMP_KEEP = 24 * 3600  # s with no file written before a session's temp folder that nothing runs is swept
+SWEEP_EVERY = 6 * 3600        # s between sweeps in a long run
+_swept = [-1e9]
+
+
+def drop_session_tmp(sid: str) -> None:
+    """Delete session `sid`'s temp folder and long brief: it has ended for good (not queued to resume)."""
+    if not re.fullmatch(r'[0-9a-f-]{36}', sid or ''):
+        return
+    C.notes(f'{sid}.brief').unlink(missing_ok=True)
+    for root in tmp_roots():
+        for d in root.glob(f'claude-*/*/{sid}'):
+            shutil.rmtree(d, ignore_errors=True)
+
+
+def project_slug(p: Path) -> str:
+    """Claude Code's folder name for a working directory: every character but [A-Za-z0-9] as '-'."""
+    return re.sub(r'[^A-Za-z0-9]', '-', str(p.resolve()))
+
+
+def live_sessions() -> set[str]:
+    """The session ids of every agent process running now (POSIX; empty where /proc is missing)."""
+    out = set()
+    for f in Path('/proc').glob('[0-9]*/cmdline'):
+        try:
+            args = f.read_text(errors='replace').split('\0')
+        except OSError:
+            continue
+        out.update(sids(args))
+    return out
+
+
+def end_orphans() -> None:
+    """End what ended sessions left running (POSIX). Killing a session leaves its tools' processes behind,
+    reparented to init: partyboard collected Gradle daemons and `find /` crawls of an sftp mount that ran
+    for 20 h, 5 GB and two cores between them. Each carries AGENT_RUNNER=1 and its session's
+    CLAUDE_CODE_SESSION_ID in its environment (a detached daemon too); one whose session no agent runs
+    any more gets SIGTERM, then SIGKILL."""
+    if plat.WINDOWS:
+        return
+    live, found = live_sessions(), []
+    for f in Path('/proc').glob('[0-9]*/environ'):
+        try:
+            env = dict(v.split('=', 1) for v in f.read_bytes().decode(errors='replace').split('\0') if '=' in v)
+        except OSError:
+            continue
+        pid = int(f.parent.name)
+        if env.get('AGENT_RUNNER') == '1' and (s := env.get('CLAUDE_CODE_SESSION_ID')) and s not in live \
+                and pid != os.getpid():
+            found.append((pid, s, ' '.join(plat.cmdline(pid) or [])[:80]))
+    for pid, s, what in found:
+        log(f'ending pid {pid} left by session {s}: {what}')
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except OSError:
+            pass
+    end = time.monotonic() + 5
+    while (found := [f for f in found if plat.alive(f[0])]) and time.monotonic() < end:
+        time.sleep(0.25)
+    for pid, *_ in found:
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except OSError:
+            pass
+
+
+def newest_write(d: Path) -> float:
+    newest = d.stat().st_mtime
+    for top, dirs, files in os.walk(d):
+        for name in dirs + files:
+            try:
+                newest = max(newest, os.lstat(os.path.join(top, name)).st_mtime)
+            except OSError:
+                pass
+    return newest
+
+
+def sweep_tmp(force: bool = False) -> None:
+    """Delete this repository's sessions' temp folders (the slots' and the merge worktree's) that no process
+    runs, no resume waits for, and nothing wrote to in SESSION_TMP_KEEP: a session that ended while no run
+    was up or under a Ctrl-C'd run. Not the main checkout's: a person's interactive session
+    there has no session id on its command line to tell it is still running."""
+    if not force and time.monotonic() - _swept[0] < SWEEP_EVERY:
+        return
+    _swept[0] = time.monotonic()
+    if plat.WINDOWS:  # no /proc to tell a live session from a finished one
+        return
+    end_orphans()
+    keep = live_sessions() | {q[1] for q in queued().values()}
+    mine = {project_slug(d) for d in SLOTS_DIR.glob('*') if re.fullmatch(r's\d+|merge|fix\d+', d.name)}
+    cutoff, freed = time.time() - SESSION_TMP_KEEP, 0
+    for root in tmp_roots():
+        for proj in root.glob('claude-*/*'):
+            if proj.name not in mine:
+                continue
+            for d in proj.iterdir():
+                if not re.fullmatch(r'[0-9a-f-]{36}', d.name) or d.name in keep or not d.is_dir():
+                    continue
+                try:
+                    if newest_write(d) > cutoff:
+                        continue
+                    freed += sum(f.stat().st_size for f in d.rglob('*') if f.is_file() and not f.is_symlink())
+                except OSError:
+                    continue
+                shutil.rmtree(d, ignore_errors=True)
+    if freed:
+        log(f'swept {freed / 2**20:,.0f} MB of ended sessions\' temp folders')
+
+
+MEM_EVERY = 10  # seconds between memory_watch's looks
+
+
+def runner_procs() -> list[tuple[int, int, str]]:
+    """(pid, resident bytes, command) of each process the run started, the agents themselves aside (Linux):
+    one working in a worktree of ours (s1…, merge, merge2, fix…) or carrying a slot's AGENT_RUNNER=1."""
+    home, out = str(SLOTS_DIR.resolve()), []
+    for d in Path('/proc').iterdir():
+        if not d.name.isdigit() or int(d.name) == os.getpid():
+            continue
+        try:
+            cwd = os.readlink(d / 'cwd')
+            ours = cwd == home or cwd.startswith(home + os.sep) or b'\0AGENT_RUNNER=1\0' in b'\0' + (d / 'environ').read_bytes()
+            rss = next(int(l.split()[1]) * 1024 for l in (d / 'status').read_text().splitlines() if l.startswith('VmRSS:'))
+        except (OSError, StopIteration, ValueError):
+            continue
+        if ours and not sids(args := plat.cmdline(int(d.name)) or []):
+            out.append((int(d.name), rss, ' '.join(args).strip()[:100]))
+    return out
+
+
+def mem_hogs(procs: list[tuple[int, int, str]], avail: int, total: int) -> list[tuple[int, str]]:
+    """Which of `procs` (`runner_procs`) `memory_watch` ends, each with why: any resident past `[run]
+    proc_max_gb`; failing that, while less than `[run] min_free_mem_gb` is available, the biggest one (if it
+    holds a GB: a leak outside the run is not the gates' to pay for one by one)."""
+    cap = C.run['proc_max_gb']
+    cap = total // 4 if cap == 'auto' else int(float(cap) * GB)
+    out = [(p, f'{rss / GB:.1f} GB resident, past [run] proc_max_gb ({cap / GB:.0f} GB)')
+           for p, rss, _ in procs if cap and rss > cap]
+    floor = C.run['min_free_mem_gb'] * GB
+    if not out and floor and avail < floor and procs:
+        p, rss, _ = max(procs, key=lambda x: x[1])
+        if rss >= GB:
+            out.append((p, f"the run's biggest process ({rss / GB:.1f} GB) with {avail / GB:.1f} GB of memory "
+                           f'left, under [run] min_free_mem_gb ({C.run["min_free_mem_gb"]} GB)'))
+    return out
+
+
+def memory_watch() -> None:
+    """End a runaway before it takes the machine (Linux): every MEM_EVERY s, `mem_hogs`' picks get SIGKILL,
+    that process alone, so its gate or session sees one test die and goes on. A test that walked a looping
+    tree in RAM held 52 GB in each of three slots' gates (openmx, 11-10), and the desktop's OOM handling
+    ended other work for it."""
+    while True:
+        time.sleep(MEM_EVERY)
+        try:
+            info = {l.split(':')[0]: int(l.split()[1]) * 1024 for l in Path('/proc/meminfo').read_text().splitlines()}
+            procs = runner_procs()
+            hogs = mem_hogs(procs, info['MemAvailable'], info['MemTotal'])
+        except (OSError, ValueError, IndexError, KeyError):
+            continue
+        for pid, why in hogs:
+            rss, cmd = next((r, c) for p, r, c in procs if p == pid)
+            cut, cwd = thread_names(pid), plat_cwd(pid)
+            log(f'ended pid {pid}, {why}: {cmd}')
+            try:
+                os.kill(pid, signal.SIGKILL)
+            except OSError:
+                pass
+            home = str(SLOTS_DIR.resolve()) + os.sep
+            where = cwd[len(home):].split(os.sep)[0] if cwd.startswith(home) else cwd
+            for name in test_names(cmd.split(' ')[0], cut, cwd):
+                log(f'{name}: the test it was running; a task to fix it is filed at the next merge')
+                HOGS.setdefault(name, (f'{rss / GB:.0f}', where))
+
+
+HOGS: dict[str, tuple[str, str]] = {}  # a test memory_watch ended -> (GB it held, the worktree): `file_flaky` files it
+
+
+def plat_cwd(pid: int) -> str:
+    try:
+        return os.readlink(f'/proc/{pid}/cwd')
+    except OSError:
+        return ''
+
+
+def thread_names(pid: int) -> set[str]:
+    """The names of `pid`'s threads but its main one's: a Rust test binary names each test's thread after the
+    test (cut to 15 characters by the kernel)."""
+    try:
+        main = Path(f'/proc/{pid}/comm').read_text().strip()
+        return {n for t in Path(f'/proc/{pid}/task').iterdir() if (n := (t / 'comm').read_text().strip()) != main}
+    except OSError:
+        return set()
+
+
+def test_names(exe: str, cut: set[str], cwd: str) -> list[str]:
+    """The whole names of the tests whose threads are `cut`, from the binary's own `--list`; none when `exe`
+    is not a test binary (a build, a tool) or no test matches."""
+    if not cut or not exe:
+        return []
+    try:
+        ls = sp.run([exe, '--list', '--format', 'terse'], capture_output=True, text=True, timeout=60,
+                    cwd=cwd or None, stdin=sp.DEVNULL).stdout
+    except (OSError, sp.SubprocessError, ValueError):
+        return []
+    names = [l[:-len(': test')] for l in ls.splitlines() if l.endswith(': test')]
+    return sorted({n for c in cut for n in names if n.startswith(c)} if len(names) else set())
+
+
+def live_session(sid: str) -> int | None:
+    """The pid of a process still running session `sid` (its command line names it), or None: a session
+    in a pane no run tagged, or another tmux session, is not cut off however its transcript ends. POSIX
+    only; the Windows terminals' job files name every session they started."""
+    if plat.WINDOWS or not sid:
+        return None
+    for d in Path('/proc').iterdir():
+        if d.name.isdigit() and int(d.name) != os.getpid() and (args := plat.cmdline(int(d.name))) \
+                and sid in sids(args) and not any(a.startswith('--stop-') for a in args):
+            return int(d.name)
+    return None
+
+
+def queue_cut_off(branch: str, slots: list[int]) -> dict[int, int]:
+    """Startup: a slot still on task/<ID> whose session was cut off while no run was up (a reboot, the runner
+    killed, the network down at its exit) is queued to resume instead of being reset for a new task.
+    Returns {slot: pid} of the slots whose session still runs outside this run's panes (one opened before
+    panes carried @runner-repo, say): resuming it would put a second agent in the worktree, so the slot is
+    held until that process ends."""
+    open_ids = open_tasks(branch)
+    waiting = queued()
+    held = {}
+    for n in slots:
+        if n in waiting or not (SLOTS_DIR / f's{n}').is_dir():
+            continue
+        tid = git('branch', '--show-current', cwd=SLOTS_DIR / f's{n}').stdout.strip().removeprefix('task/')
+        if tid not in open_ids or (last_session(tid) or (0,))[0] != n:
+            continue
+        sid = last_session(tid)[1]
+        if pid := live_session(sid):
+            held[n] = pid
+            log(f'slot {n}: {tid}\'s session still runs (pid {pid}) in a pane this run does not know; slot held '
+                f'until it ends (to adopt it, `tmux set-option -p -t <pane> {REPO_TAG} {ROOT}` and restart)')
+        elif (why := cut_off(sid, mid_turn=True)) and resumes(n, sid) < RESUMES_MAX:
+            queue_resume(tid, n, sid, why)
+            log(f'slot {n}: {tid} was cut off while no run was up ({why}); it resumes there')
+    return held
+
+
+_api = [-1e9, True]
+
+
+def api_down(said: set[str]) -> bool:
+    """`api_up` is False: said once (in `said`) until it is up again."""
+    if api_up():
+        said.discard('api')
+        return False
+    if 'api' not in said:
+        said.add('api')
+        log('the API cannot be reached: nothing resumes or starts until it can')
+    return True
+
+
+def api_up() -> bool:
+    """Whether the agent's API can be reached (a TCP connect), checked at most every 10 s. A session started
+    or resumed while it cannot be dies at its first call. True for another agent, or behind a proxy."""
+    if C.run['agent'] != 'claude' or any(os.environ.get(k) for k in ('HTTPS_PROXY', 'https_proxy')):
+        return True
+    if time.time() - _api[0] >= 10:
+        host = re.sub(r'^\w+://|[:/].*$', '', os.environ.get('ANTHROPIC_BASE_URL') or 'api.anthropic.com')
+        try:
+            socket.create_connection((host, 443), timeout=5).close()
+            _api[1] = True
+        except OSError:
+            _api[1] = False
+        _api[0] = time.time()
+    return _api[1]
+
+
+RESUME_AFTER = 120  # s after a failed model call before the session is resumed; doubles with each resume
+RESUME_MAX = 5
+START_TRIES = 3  # a task whose session will not start is tried this many times in a run
+RESUME_FAILED = ('The connection to the model failed and this session stopped mid-task. Carry on with task {tid} from '
+          'where you left off.')
+
+
+def pi_last_error(t: str) -> tuple[str, str]:
+    """(error message, timestamp) when a Pi transcript's last turn ended in a failed model call, else ('', '')."""
+    err, ts = '', ''
+    try:
+        for l in open(t, encoding='utf-8', errors='replace'):
+            if '"role":"assistant"' in l and '"stopReason":"error"' in l:
+                d = json.loads(l)
+                err = d.get('message', {}).get('errorMessage') or 'a failed model call'
+                ts = d.get('timestamp', '')
+            elif any(f'"role":"{r}"' in l for r in ('user', 'toolResult', 'assistant')):
+                err = ''
+    except (OSError, ValueError):
+        return '', ''
+    return err, ts
+
+
+def agent_failed(sid: str) -> tuple[str, float] | None:
+    """(message, age in s) when the session stopped on a failed model call and should be resumed."""
+    if not pi() or not (t := transcript(sid)):
+        return None
+    err, ts = pi_last_error(t)
+    if not err or not ts:
+        return None
+    at = dt.datetime.fromisoformat(ts.replace('Z', '+00:00'))
+    return err, (dt.datetime.now(dt.timezone.utc) - at).total_seconds()
+
+
+def resume_failed(n: int, pid: int, sid: str, tid: str, model: str, idle: int) -> int | None:
+    """End slot n's session and start it again on the same session id, told to carry on; the new pid."""
+    plat.terminate(pid)
+    marker = C.notes(f'slot{n}.live')
+    for _ in range(50):  # the old shim removes its marker as it exits: wait, so it cannot remove the new one
+        if not marker.exists():
+            break
+        time.sleep(0.2)
+    return MUX.open(n, SLOTS_DIR / f's{n}', RESUME_FAILED.format(tid=tid), sid, model, idle, slot_env(n),
+                    C.notes(f'slot{n}.log'))
+
+
+_account = [-1e9, None]
+
+
+def account_usage() -> dict | None:
+    """The account's usage from the endpoint Claude Code's `/usage` reads (the local login's OAuth token; costs
+    no tokens), checked at most every 5 minutes. None when it cannot be read: "don't cap"."""
+    if time.time() - _account[0] < 300:
+        return _account[1]
+    import urllib.request
+    try:
+        tok = json.load(open(os.path.expanduser('~/.claude/.credentials.json')))['claudeAiOauth']['accessToken']
+        req = urllib.request.Request('https://api.anthropic.com/api/oauth/usage',
+                                     headers={'Authorization': f'Bearer {tok}',
+                                              'anthropic-beta': 'oauth-2025-04-20'})
+        _account[1] = json.load(urllib.request.urlopen(req, timeout=10))
+    except Exception:
+        _account[1] = None
+    _account[0] = time.time()
+    return _account[1]
+
+
+def usage_pct(name: str) -> float | None:
+    """One window's usage %: 'seven_day' or 'five_hour' (the session limit). None when it cannot be read."""
+    try:
+        return account_usage()[name]['utilization']
+    except (TypeError, KeyError):
+        return None
+
+
+def weekly() -> float | None:
+    """The account's 7-day usage %, or None."""
+    return usage_pct('seven_day')
+
+
+LATEST = 'https://raw.githubusercontent.com/FIZL0/agent-runner/main/agent_runner/__init__.py'
+VERSION = re.compile(r"""^__version__\s*=\s*['"](\d+(?:\.\d+)+)['"]""", re.M)
+
+
+LATEST_SAID = ['']  # the newer version update_notice last announced: once per version
+UPDATE_EVERY = 6 * 3600  # s between looks at main for a newer version
+
+
+def update_watch() -> None:
+    """A daemon thread for the whole run: `update_notice` at the start and every UPDATE_EVERY s."""
+    while True:
+        update_notice()
+        time.sleep(UPDATE_EVERY)
+
+
+def update_notice() -> None:
+    """A green banner when main has a newer version than this one, once per version, saying how to upgrade
+    (`u` when the pane reads keys). Silent when it cannot tell (offline, GitHub down, a clone ahead of main)."""
+    import urllib.request
+    from agent_runner import __version__
+    try:
+        text = urllib.request.urlopen(LATEST, timeout=5).read().decode()
+        latest = VERSION.search(text)[1]
+        newer = tuple(map(int, latest.split('.'))) > tuple(map(int, __version__.split('.')))
+    except Exception:
+        return
+    if newer and latest != LATEST_SAID[0]:
+        LATEST_SAID[0] = latest
+        how = 'nothing, [run] auto_upgrade does it once no merge runs' if AUTO_UPGRADE[0] and \
+            not plat.WINDOWS and not breaking(__version__, latest) else 'type u + Enter in this pane' if READING[0] else \
+            f'run `{" ".join(upgrade_argv()[:3]) if upgrade_argv()[0] != "git" else "git pull"}`'
+        then = ('the run restarts on it by itself' if not plat.WINDOWS and not breaking(__version__, latest)
+                else 'then read CHANGELOG.md and restart the run')
+        banner(f'agent-runner {latest} is out', f'this run is {__version__}. To upgrade: {how}; {then}.', '42')
+
+
+def breaking(old: str, new: str) -> bool:
+    """`new` is another major version. ponytail: a 0.x minor may break too (docs/SETUP.md#versions), but most
+    are features and the rare breaking one ignores old keys; gate on its CHANGELOG entry if that bites."""
+    return old.split('.')[0] != new.split('.')[0]
+
+
+def upgrade_argv() -> list[str]:
+    """The command that upgrades this install: pipx, uv tool, or a pull in the clone it runs from."""
+    if 'pipx' in sys.prefix:
+        return ['pipx', 'upgrade', 'agent-runner']
+    if f'{os.sep}uv{os.sep}' in sys.prefix:
+        return ['uv', 'tool', 'upgrade', 'agent-runner']
+    return ['git', '-C', str(Path(__file__).resolve().parents[1]), 'pull', '-q', '--ff-only']
+
+
+def installed_version() -> str | None:
+    """The version on disk under this process, which an upgrade changes and the running code does not."""
+    try:
+        return VERSION.search((Path(__file__).parent / '__init__.py').read_text(encoding='utf-8'))[1]
+    except (OSError, TypeError):
+        return None
+
+
+def upgrade() -> bool:
+    """`u` in the runner's pane, or `run --upgrade`: run `upgrade_argv`, logged. True when it worked."""
+    argv = upgrade_argv()
+    log(f'upgrading: {" ".join(argv)}')
+    try:
+        p = sp.run(argv, capture_output=True, text=True, timeout=300)
+    except (OSError, sp.TimeoutExpired) as e:
+        log(f'the upgrade failed: {e}')
+        return False
+    if p.returncode:
+        log(f'the upgrade failed (exit {p.returncode}): {(p.stderr or p.stdout).strip()[-300:]}')
+        return False
+    from agent_runner import __version__
+    new = installed_version()
+    log(f'upgraded to {new}; the run restarts on it' if new and new != __version__ else
+        f'already the latest ({__version__})')
+    return True
+
+
+AUTO_UPGRADE = [False]  # [run] auto_upgrade: the run presses `u` itself when update_notice sees a newer version
+AUTO_TRIED = ['']  # the version auto_upgrade last ran the upgrade for: once per version, even when it failed
+
+
+def vtuple(v: str) -> tuple[int, ...]:
+    return tuple(map(int, v.split('.')))
+
+
+def auto_upgrade_due(latest: str, current: str, installed: str | None, merging: bool, tried: str,
+                     windows: bool = False) -> bool:
+    """[run] auto_upgrade: upgrade now? Only for a newer release the update check saw, not yet installed
+    and not tried already, and only between merges (a merge in flight finishes first, then the next tick
+    upgrades). Never across a major version or on Windows, where `restart_if_upgraded` would not restart."""
+    try:
+        newer = bool(latest) and vtuple(latest) > vtuple(current)
+        on_disk = bool(installed) and vtuple(installed) >= vtuple(latest)
+    except ValueError:
+        return False
+    return newer and not on_disk and not merging and latest != tried and not windows \
+        and not breaking(current, latest)
+
+
+def auto_upgrade(merging: bool) -> threading.Thread | None:
+    """The run loop's tick: start `upgrade` in a thread when `auto_upgrade_due`. The loop's own
+    `restart_if_upgraded` then restarts on what it installed, keeping the keys (AGENT_RUNNER_KEEP)."""
+    from agent_runner import __version__
+    latest = LATEST_SAID[0]
+    if not AUTO_UPGRADE[0] or not auto_upgrade_due(latest, __version__, installed_version(), merging,
+                                                   AUTO_TRIED[0], plat.WINDOWS):
+        return None
+    AUTO_TRIED[0] = latest
+    log(f'agent-runner {latest} is out (this run is {__version__}): upgrading by itself ([run] auto_upgrade)')
+    t = threading.Thread(target=upgrade, daemon=True)
+    t.start()
+    return t
+
+
+_upgrade_seen: str | None = None
+
+
+def restart_if_upgraded() -> None:
+    """Re-exec this run on the version now installed under it (`uv tool upgrade`, a pull in a clone), so the
+    loop never runs older code than the `done` and Stop hook the sessions call by path. The new process
+    adopts the sessions, merges and gates like any restart. Called only with no merge thread going.
+
+    Not on Windows (no real exec: the console would get a second process), and not across a breaking
+    version, whose CHANGELOG a human reads first. The new version must be seen on two ticks, so a restart
+    never lands mid-install."""
+    global _upgrade_seen
+    from agent_runner import __version__
+    new = installed_version()
+    if not new or new == __version__ or plat.WINDOWS:
+        return
+    if breaking(__version__, new):
+        if _upgrade_seen != new:
+            log(f'agent-runner {new} is installed (this run is {__version__}): a breaking version, so no restart '
+                f'by itself; read CHANGELOG.md, then restart the run')
+        _upgrade_seen = new
+        return
+    if _upgrade_seen != new:
+        _upgrade_seen = new  # once more next tick, then restart
+        return
+    log(f'agent-runner {new} is installed (this run is {__version__}); restarting on it, keeping {state_line()}')
+    sys.stdout.flush()
+    # what the keys set lives in this process: the new one takes it over (see `kept_keys`)
+    os.environ['AGENT_RUNNER_KEEP'] = json.dumps({'slots': SLOTS, 'paused': PAUSED[0], 'power': POWER,
+                                                  'stop': stopping(), 'forced': FORCED[0]})
+    os.execv(sys.executable, sys.orig_argv)  # run.lock's fd closes on exec; the new process takes it again
+
+
+# --- the idle stop hook --------------------------------------------------------
+
+DONE_IDLE = 5  # s a session whose `done` succeeded stays at its prompt: the next task starts that much sooner
+
+
+def stop_hook(idle: int) -> int:
+    """Stop hook for a session this runner started: end it once it has been idle for `idle` seconds.
+
+    A finished agent otherwise sits at its prompt forever, and the loop never starts the next task. "Idle"
+    means no new user or tool-result entry in the transcript, so typing into the pane keeps the session
+    alive: you can take one over by hand. A session with a background task running gets a much longer
+    grace (`AGENT_RUNNER_IDLE_BG`, 1800 s), because a background task normally ends and wakes it. Past the
+    grace the waiter still leaves alone a session whose agent has a child process (its background command:
+    a `done` queued behind other test runs can take longer than any grace), up to
+    `AGENT_RUNNER_IDLE_MAX` (10800 s) after the stop.
+
+    A usage limit is deliberately *not* idleness: Claude Code prints "continuing automatically at <reset>"
+    and resumes by itself, so the waiter leaves such a session alone.
+    """
+    if not os.environ.get('AGENT_RUNNER'):
+        return 0  # a hook file in a checkout also fires for a person's own session there: never end that one
+    try:
+        ev = json.load(sys.stdin)
+    except Exception:
+        return 0
+    t = ev.get('transcript_path') or ev.get('transcriptPath')
+    if not t or not os.path.exists(t):
+        return 0
+    if pi_last_error(t)[0]:
+        return 0  # Pi settles after a failed model call too: the run resumes that session instead
+    if finished():  # `done` succeeded: nothing left to wait for, and its leftovers get no grace
+        idle = min(idle, DONE_IDLE)
+    elif ev.get('background_tasks'):
+        idle = max(idle, int(os.environ.get('AGENT_RUNNER_IDLE_BG', 1800)))
+    # POSIX: the hook's parent is the agent. Windows: the hook runs under Git Bash, whose pid is not the
+    # agent's, so the pid comes from the marker the slot's shim keeps (run_session)
+    pid = os.getppid()
+    if plat.WINDOWS and (m := os.environ.get('AGENT_RUNNER_MARKER')):
+        pid = marker_pid(Path(m)) or pid
+    try:
+        plat.spawn_detached([*runner_cmd(), 'run', '--stop-waiter', str(pid), t, str(_user_entries(t)), str(idle)])
+    except Exception:
+        pass
+    return 0
+
+
+# Claude Code; Pi (a user message or a tool result)
+USER_ENTRY = re.compile(r'"type":"user"|"role":"(user|toolResult)"')
+
+
+def _user_entries(t: str) -> int:
+    try:
+        with open(t, encoding='utf-8', errors='replace') as f:
+            return sum(1 for l in f if USER_ENTRY.search(l))
+    except OSError:
+        return -1
+
+
+WAITER_POLL = 60  # s between looks at a session whose background command is still running
+
+
+def finished() -> bool:
+    """This slot's `done` has succeeded (`finished_mark`)."""
+    return bool((m := finished_mark()) and m.exists())
+
+
+def _wait_on(pid: int, seconds: float) -> bool:
+    """Sleep up to `seconds`, looking every WAITER_POLL s whether `pid` still runs. False (at once) once it
+    is gone: a waiter for an ended session has nothing left to do, and must not linger for hours (B55)."""
+    end = time.time() + seconds
+    while plat.alive(pid):
+        left = end - time.time()
+        if left <= 0:
+            return True
+        time.sleep(min(left, WAITER_POLL))
+    return False
+
+
+def stop_waiter(pid: int, t: str, n: int, idle: int) -> int:
+    until = time.time() + max(idle, int(os.environ.get('AGENT_RUNNER_IDLE_MAX', 10800)))
+    if not _wait_on(pid, idle):
+        return 0  # the session ended by itself during the grace
+    while True:
+        if not plat.alive(pid):
+            return 0
+        if _user_entries(t) != n:
+            return 0  # the human typed, or a tool came back: the session is alive, leave it
+        try:
+            text = open(t, encoding='utf-8', errors='replace').read()
+        except OSError:
+            text = ''
+        tail = text[text.rfind('continuing automatically'):] if 'continuing automatically' in text else ''
+        if tail and '"tool_use"' not in tail:
+            return 0  # waiting out a usage limit; Claude Code resumes it at the reset
+        # a child is a command the agent still runs (a `done` that waited 30 min for a test slot was killed
+        # with its session, and the work it was about to commit went with it): it ends and wakes the agent.
+        # Once `done` has succeeded there is nothing left to protect: a leftover background command (a wait
+        # loop that never ends) must not hold the slot for hours
+        if not plat.children(pid) or time.time() >= until or finished():
+            break
+        if not _wait_on(pid, WAITER_POLL):
+            return 0
+    plat.terminate(pid)
+    return 0
