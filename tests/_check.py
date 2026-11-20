@@ -24,6 +24,9 @@ os.environ.pop('AGENT_RUNNER_REPO', None)
 # as a slot's agent (no skill install, a different plan path) and the suites fail only inside a run
 os.environ.pop('AGENT_RUNNER_SLOT', None)
 os.environ.pop('AGENT_RUNNER', None)
+# nor the slot's tmux: code under test would set options on the real pane (tests that need tmux mock these)
+os.environ.pop('TMUX', None)
+os.environ.pop('TMUX_PANE', None)
 os.environ['AGENT_RUNNER_NO_NOTIFY'] = '1'  # an alarm in a test rings no tmux message or desktop notification
 os.environ['CLAUDE_CONFIG_DIR'] = tempfile.mkdtemp(prefix='agent-runner-test-claude-')  # never the real ~/.claude
 # worktrees and plan clones go under a temp folder, never the real ~/runs
