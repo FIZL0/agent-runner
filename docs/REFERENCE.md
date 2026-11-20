@@ -418,7 +418,7 @@ The other keys, listed by `?` + Enter (and printed when the run starts), ruled o
 | key | what it does |
 |---|---|
 | `p` | pause: no new tasks, and the run stays up; `p` again goes on |
-| `u` | upgrade agent-runner now (`uv tool upgrade`, `pipx upgrade`, or a pull in a clone); the run restarts on the new version as with any upgrade. `run --upgrade` upgrades before the run starts |
+| `u` | upgrade agent-runner now (`uv tool upgrade`, `pipx upgrade`, or a pull in a clone); the run restarts on the new version as with any upgrade. `run --upgrade` upgrades before the run starts. `[run] auto_upgrade = true` presses it for you: when the update check (at the start, then every 6 h) sees a newer release, the run upgrades once no merge is under way, logs it, and restarts on the new version keeping what the keys set; never across a major version, nor on Windows. It works the same in a run started in a terminal (`agent-runner run`) and in the background (bare `agent-runner`) |
 | `f` | force: start tasks past the session and weekly usage caps, as `--force`; `f` again: the caps hold |
 | `+` / `-` | one slot more / fewer; a slot taken away finishes its running task first |
 | `z` | suspend the computer once the run stops, or when it goes idle as `--suspend` would; `z` again: off |
@@ -715,6 +715,7 @@ lean = true               # sessions get Bash/Read/Edit/Write/Artifact only, no 
 remote = false            # control sessions on Remote Control, and a control server to start more from claude.ai/code or the Claude apps; Enter in the runner's pane opens it
 remote_slots = false      # the slots on Remote Control too ("<repo> · s2 · B646")
 control = true            # a run opens control session c1 beside it; false: none (`agent-runner control` still works)
+auto_upgrade = false      # upgrade by itself when a newer release is out, as `u` does, once no merge runs; the run restarts on it
 idle = 30                 # s quiet after a turn ends before a session without a successful `done` is ended (with one: 5 s)
 stall = 1200              # s quiet at a prompt that counts as stalled
 pause = 60                # s between one session ending and the next starting in that slot
