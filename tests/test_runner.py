@@ -5745,6 +5745,13 @@ def test_runner_route_b54(repo: Path):
           and 'AGENT_RUNNER_REPO' not in kw['env'], 'B54: opened in agent-runner\'s checkout, labelled', cmd)
     check(out.getvalue().startswith('agent-runner control 3 is up: https://claude.ai/code/x'),
           'B54: the feed is told it went to agent-runner', out.getvalue())
+    runs.clear()
+    with mock.patch.object(R, 'runner_checkout', lambda: other), mock.patch.object(R, 'feed_sid', lambda: 's'), \
+            mock.patch.object(R, 'feed_take', lambda sid, w: None), mock.patch.object(R.sp, 'run', done), \
+            contextlib.redirect_stdout(io.StringIO()):
+        R.control_new_runner()
+    check(runs and runs[0][1]['cwd'] == str(other) and any(R.feed_lost_note() in x for x in runs[0][0][0]),
+          'B54: an unreadable message still goes to agent-runner, which asks for it again', runs)
     opened = []
     with mock.patch.object(R, 'runner_checkout', lambda: R.ROOT), \
             mock.patch.object(R, 'control_new', lambda *a, **k: opened.append(k) or 0):

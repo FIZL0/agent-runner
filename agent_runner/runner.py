@@ -7631,7 +7631,7 @@ def cmd_control(argv: list[str], prog: str = f'{RUNNER} control') -> int:
     if not control_ok():
         print(f'control sessions are Claude Code sessions; [run] agent is {C.run["agent"]}', file=sys.stderr)
         return 1
-    if a.runner and (a.new or a.forward) and not a.feed_sid:
+    if a.runner and a.forward and not a.feed_sid:
         return control_new_runner(a.n, images=a.file)
     if a.new or (a.forward and not a.feed_sid):
         return control_new(a.n, ask=a.ask, images=a.file, forward=a.forward and not a.from_feed,
@@ -8479,8 +8479,9 @@ def runner_checkout() -> Path | None:
     one (an installed package with no runs of agent-runner on this machine)."""
     from agent_runner.config import CLONE_ENTRY
     cands = [CLONE_ENTRY.parent] if CLONE_ENTRY.exists() else []
-    t = os.environ.get('AGENT_RUNNER_HOME') or str(C.raw.get('run', {}).get('home') or '')
-    if '{repo}' in t:
+    for t in (os.environ.get('AGENT_RUNNER_HOME') or '', str(C.raw.get('run', {}).get('home') or ''), '~/runs/{repo}'):
+        if '{repo}' not in t:  # a home without {repo} is one project's own, not agent-runner's
+            continue
         home = ROOT / Path(t.replace('{repo}', 'agent-runner')).expanduser()
         if home.is_dir():
             cands += [home / 'merge', *sorted(p for p in home.iterdir() if re.fullmatch(r's\d+', p.name))]
@@ -8513,9 +8514,10 @@ def control_new_runner(n: int | None = None, images: list[str] | tuple = ()) -> 
         return control_new(n, images=images, forward=True)
     sid = feed_sid()
     text = feed_take(sid, FEED_LATE_WAIT) if sid else None
-    if text is None:
-        return control_new(n, images=images, forward=True)
-    found, got, lost, version = feed_wait(text, FEED_WAIT, sid, 'control --new --runner')
+    if text is None:  # still agent-runner's: its session asks the person to send it again
+        text, found, got, lost, version = feed_lost_note(), False, [], 0, ''
+    else:
+        found, got, lost, version = feed_wait(text, FEED_WAIT, sid, 'control --new --runner')
     images = [str(Path(i).resolve()) for i in images]
     images += [i for i in got if i not in images]
     ask = runner_label(text, ROOT.name)

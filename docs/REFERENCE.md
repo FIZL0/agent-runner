@@ -778,7 +778,8 @@ agent-runner control --new --forward   the same, with the person's latest runner
                                        paths; the runner feed hands requests on this way
   … --forward --runner                 the same, opened in agent-runner's own checkout (the clone it runs from,
                                        or a worktree under its [run] home) and labelled with this project: the
-                                       feed hands asks about agent-runner itself (updates, releases, its bugs) on
+                                       feed hands asks about agent-runner itself (updates, releases, its bugs)
+                                       on this way
 agent-runner since [WHEN] [--follow]   what landed, started or got stuck since the last look (or WHEN: 2h,
                                        yesterday); --follow prints each new event as it happens
 agent-runner plan [...]                the task list as a tool (agent-runner plan help)
