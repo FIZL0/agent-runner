@@ -830,6 +830,15 @@ def test_remote_auto(tmp: Path):
 
 
 def test_control(repo: Path):
+    said = []
+    with mock.patch.object(R, 'run', side_effect=RuntimeError('boom')), mock.patch.object(R, 'log', said.append):
+        try:
+            R.cmd_run([])
+            check(False, 'a crash is raised again')
+        except RuntimeError:
+            pass
+    check(said and said[0].startswith('run crashed:') and 'RuntimeError: boom' in said[0],
+          'a crashed run writes its traceback to run.log (its window closes with it)', said)
     print('control sessions: the settings file and its brief, the argv, c1 kept, tmux default-command, status')
     R.init(repo)
     data = R.control_settings_data()

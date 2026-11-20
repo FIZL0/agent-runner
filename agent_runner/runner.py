@@ -65,6 +65,7 @@ import subprocess as sp
 import sys
 import tempfile
 import threading
+import traceback
 import time
 import urllib.parse
 import uuid
@@ -5030,6 +5031,12 @@ def cmd_run(argv: list[str], prog: str = f'{RUNNER} run') -> int:
         if LANDING.locked() and not git('rev-parse', '-q', '--verify', 'MERGE_HEAD').returncode:
             LANDING.acquire(timeout=60)  # mid-merge in the main checkout: let it commit or abort first
         os._exit(130)
+    except Exception:  # its window closes with it: run.log is the only place the traceback survives
+        try:
+            log('run crashed:\n' + traceback.format_exc().rstrip())
+        except Exception:
+            pass
+        raise
 
 
 def _interrupted(*_) -> None:
