@@ -5305,6 +5305,66 @@ def test_setup(tmp: Path):
     eq(cli.USAGE[cut:].splitlines()[1].split()[:2], ['agent-runner', 'setup'], "setup heads the person section")
 
 
+def test_stop_countdown(repo: Path):
+    """F42: once a stop is asked for, each feed line says how many tasks the stopping run still waits for;
+    the stop and its undo are feed and since events themselves; no count before a stop or after its undo."""
+    R.init(repo)
+    titles = {'C20': 'node.mjs', 'F5': 'Control session experience', 'B9': 'Fix the flicker'}
+    now = R.dt.datetime(2026, 11, 19, 15, 0)
+    log = ['=== 2026-11-19T13:40:00 slot 1: B9 (Next; a.py)',
+           '=== 2026-11-19T13:41:00 F5: merged, ticked',
+           '=== 2026-11-19T13:50:00 stopping: no new tasks; the running ones finish and merge, then the run ends',
+           '=== 2026-11-19T13:50:01 stop asked for: 4 left before the run exits',
+           '=== 2026-11-19T13:54:00 C20: merged, ticked',
+           '=== 2026-11-19T13:54:30 C20: merged and pushed',  # the same task again: counted once
+           '=== 2026-11-19T13:55:00 B9: not merged, parked as wip/B9 — tests fail. Its 2 commits are kept there.',
+           '=== 2026-11-19T13:56:00 slot 2: F5 looks stalled (no output for 20 min); look at s2']
+    with mock.patch.object(R, 'what_changed', lambda tid: ''):
+        lines, _ = R.follow_lines('\n'.join(log), titles, now)
+        eq(lines, ['13:40  started: Fix the flicker [B9]',
+                   '13:41  landed: Control session experience [F5]',
+                   '13:50  stop requested: 4 left before the run exits',
+                   '13:54  landed: node.mjs [C20] · 3 left',
+                   '13:55  stuck, not merged: Fix the flicker (tests fail) [B9] · 2 left',
+                   '13:56  looks stuck: Control session experience [F5] · 2 left'],
+           'no count before the stop; then each line says how many are left')
+        lines, _ = R.follow_lines('\n'.join(log), titles, now, needs_you=True)
+        eq(lines, ['13:55  stuck, not merged: Fix the flicker (tests fail) [B9] · 2 left',
+                   '13:56  looks stuck: Control session experience [F5] · 2 left'], 'the needs-you watch counts too')
+        ask = [('DECIDE', 'C20', '', 'Postgres or SQLite?', '', 'node.mjs', False)]
+        lines, _ = R.follow_lines('\n'.join(log[:5]), titles, now, waiting=ask)
+        check(lines[-1].startswith('13:54  needs you: Postgres or SQLite?') and lines[-1].endswith(' · 3 left'),
+              'an ask a landed line brings carries the count too', lines)
+        stop: dict = {}  # follow keeps the count from one chunk to the next
+        R.follow_lines('\n'.join(log[:4]), titles, now, stop=stop)
+        lines, _ = R.follow_lines('\n'.join(log[4:5]), titles, now, stop=stop)
+        eq(lines, ['13:54  landed: node.mjs [C20] · 3 left'], 'the count carries across chunks')
+        R.follow_lines('=== 2026-11-19T13:57:00 dropped F5; stopped s2', titles, now, stop=stop)
+        eq(stop['left'], 2, 'a task dropped while it ran is no longer waited for')
+        back = ['=== 2026-11-19T14:00:00 stop taken back: starting tasks again',
+                '=== 2026-11-19T14:01:00 F5: merged, ticked']
+        lines, _ = R.follow_lines('\n'.join(back), titles, now, stop=stop)
+        eq(lines, ['14:00  stop taken back: the run is starting tasks again',
+                   '14:01  landed: Control session experience [F5]'], 'taken back: said, and no count after it')
+    text, _ = R.since_text(log + back, R.since_start('today', None, now), titles, now)
+    check('  13:50  stop requested: 4 left before the run exits' in text.splitlines()
+          and '  14:00  stop taken back: the run is starting tasks again' in text.splitlines(),
+          'since lists the stop and its undo too', text)
+    # the runner's side: one line per change, with what the loop counts
+    with mock.patch.object(R, 'STOP_SAID', [False]):
+        eq(R.stop_note(False, 3), None, 'no stop: nothing said')
+        eq(R.stop_note(True, 3, 'agent-runner stop'),
+           'stop asked for: no new tasks; exiting once the running ones are merged; 3 left before the run exits',
+           'a stop from the command says what it does and how many are left')
+        eq(R.stop_note(True, 2), None, 'said once')
+        eq(R.stop_note(False, 2), 'stop taken back: starting tasks again', 'run stop --undo is said too')
+        eq(R.stop_note(True, 1, 's'), 'stop asked for: 1 left before the run exits',
+           'a key logged its own words: only the count')
+        R.stop_note(False, 0)
+        said = R.stop_note(True, 5, 'agent-runner stop')
+        check((m := R.STOP_ASKED.match(said)) and m[1] == '5', 'the feed reads the count back', said)
+
+
 def main() -> int:
     with tempfile.TemporaryDirectory() as t:
         tmp = Path(t)
@@ -5337,7 +5397,8 @@ def main() -> int:
                        lambda: test_control_summary_title(repo), lambda: test_control_task_name(repo), lambda: test_progress_and_release(repo),
                        lambda: test_control_status_rules(repo), lambda: test_control_do_it_here(repo), lambda: test_take_running_slot(repo), lambda: test_upgrade_cmd(repo), test_control_no_upgrade_watcher,
                        lambda: test_plan_last(repo), lambda: test_release_push(repo),
-                       lambda: test_help_order_and_bare_wizard(tmp), lambda: test_setup(tmp)])
+                       lambda: test_help_order_and_bare_wizard(tmp), lambda: test_setup(tmp),
+                       lambda: test_stop_countdown(repo)])
 
 
 if __name__ == '__main__':
