@@ -3143,7 +3143,7 @@ def test_stop_waiter(tmp: Path):
         check(p.poll() is None, 'a session that moved on is left alone')
         p.kill()
         os.environ['AGENT_RUNNER_IDLE_MAX'] = '60'
-        os.environ['AGENT_RUNNER_SLOT'] = '9'
+        os.environ['AGENT_RUNNER_SLOT'] = f'9{os.getpid()}'  # its own mark: parallel gates share the notes dir
         t.write_text('{"type":"user"}\n', encoding='utf-8')
         mark = R.finished_mark()
         mark.touch()
@@ -3183,7 +3183,7 @@ def test_stop_hook_grace(tmp: Path):
     was_runner = os.environ.get('AGENT_RUNNER')
     R.plat.spawn_detached = lambda argv: seen.append(argv[-1])
     os.environ['AGENT_RUNNER'] = '1'
-    os.environ['AGENT_RUNNER_SLOT'] = '9'
+    os.environ['AGENT_RUNNER_SLOT'] = f'9{os.getpid()}'  # its own mark: parallel gates share the notes dir
     try:
         for done in (False, True):
             if done:
@@ -3193,6 +3193,7 @@ def test_stop_hook_grace(tmp: Path):
         eq(seen, ['1800', '5'], 'idle handed to the waiter: before done, and 5 s once done succeeded')
     finally:
         R.plat.spawn_detached, sys.stdin = spawn, stdin
+        R.finished_mark().unlink(missing_ok=True)
         os.environ.pop('AGENT_RUNNER_SLOT', None)
         if was_runner is None:
             os.environ.pop('AGENT_RUNNER', None)
