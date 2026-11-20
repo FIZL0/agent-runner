@@ -4105,6 +4105,49 @@ def test_followups(repo: Path):
         git(repo, 'reset', '-q', '--hard', head)
 
 
+def test_person_check_after(repo: Path):
+    print('B60: a person check made to wait --after X comes back under Needs you when X lands, not to the queue')
+    R.init(repo)
+    head = git(repo, 'rev-parse', 'HEAD')
+    todo = repo / 'plan/TODO.md'
+    todo.write_text(todo.read_text(encoding='utf-8').replace(
+        '### Stretch', '- [ ] **X7** upstream fix | files: x7.py\n- [ ] **R7** check it on Windows | files: r7.py\n'
+        '- [ ] **R8** check it on a Mac | files: r8.py\n- [ ] **R9** sign it | files: r9.py\n\n### Stretch'),
+        encoding='utf-8')
+    try:
+        P.block('R7', 'CONFIRM: run it on Windows and say what you saw', todo=todo)
+        P.block('R7', 'needs X7 first', todo=todo, after=['X7'])  # the blocked ask itself sent to wait
+        P.block('R9', 'BLOCKED: needs the signing key', todo=todo)
+        P.block('R9', 'needs X7 first', todo=todo, after=['X7'])
+        P.block('R8', 'DECIDE: zip or dmg?', todo=todo)
+        P.change('R8', 'wait for X7, then ask me again', todo=todo)  # R6's route: change reopens it ...
+        git(repo, 'commit', '-qam', 'R8 changed')
+        check('R8' in [t[0] for t in R.tasks('main')], 'a change reopens the check for an agent')
+        P.block('R8', 'X7 first', todo=todo, after=['X7'])  # ... then a block --after
+        eq({a[1] for a in P.asks(todo)} & {'R7', 'R8', 'R9'}, set(), 'while X7 is open none is under Needs you')
+        has(todo.read_text(encoding='utf-8'), r'\*\*R7\*\* .*BLOCKED: \(after X7\) CONFIRM: run it on Windows',
+            'the block keeps the kind and its question')
+        git(repo, 'commit', '-qam', 'plan: R7, R8, R9 wait on X7')
+        P.tick('X7', todo=todo)
+        git(repo, 'commit', '-qam', 'X7 landed')
+        R.reopen_landed('main', 'X7')
+        a = {x[1]: x for x in P.asks(todo)}
+        eq([a.get(t, ('',))[0] for t in ('R7', 'R8', 'R9')], ['CONFIRM', 'DECIDE', 'BLOCKED'],
+           'when X7 lands all are back under Needs you with their kind')
+        eq([a[t][3] for t in ('R7', 'R8', 'R9')],
+           ['run it on Windows and say what you saw', 'zip or dmg?', 'needs the signing key'], 'and their question')
+        env = {**os.environ, 'AGENT_RUNNER_REPO': str(repo)}
+        env.pop('AGENT_RUNNER', None)
+        r = run(repo, 'plan', 'waiting', env=env)
+        check(all(t in r.stdout for t in ('R7', 'R8', 'R9')), 'plan waiting lists them', r.stdout + r.stderr)
+        picked = [t[0] for t in R.tasks('main')]
+        check(not {'R7', 'R8', 'R9'} & set(picked), 'and no slot picks them', picked)
+        has(git(repo, 'log', '-1', '--format=%s'), r'^Plan: reopen R7, R8, R9', 'the plan edit is committed')
+        eq(P.confirm('R7', 'works', todo=todo), 'confirmed and ticked R7', 'the person answers it as before')
+    finally:
+        git(repo, 'reset', '-q', '--hard', head)
+
+
 def test_ci_watch(repo: Path):
     print('run: a red workflow run on the shared branch files one critical task, once')
     from agent_runner import ci
@@ -5057,7 +5100,7 @@ def main() -> int:
                        lambda: test_session_tmp(repo, tmp), lambda: test_end_orphans(repo), lambda: test_memory_watch(repo), lambda: test_tested_ref(repo, tmp),
                        lambda: test_no_pane(repo, tmp), lambda: test_other_repos_panes(repo, tmp),
                        lambda: test_limit_resumes(repo, tmp),
-                       lambda: test_shared_push(repo, tmp), lambda: test_note_on_a_ticked_task(repo), lambda: test_adopt_merge(repo), lambda: test_followups(repo), lambda: test_ci_watch(repo), test_update_notice, test_restart_if_upgraded, test_auto_upgrade, lambda: test_flake_repair(tmp), lambda: test_repair_per_failure(repo),
+                       lambda: test_shared_push(repo, tmp), lambda: test_note_on_a_ticked_task(repo), lambda: test_adopt_merge(repo), lambda: test_followups(repo), lambda: test_person_check_after(repo), lambda: test_ci_watch(repo), test_update_notice, test_restart_if_upgraded, test_auto_upgrade, lambda: test_flake_repair(tmp), lambda: test_repair_per_failure(repo),
                        lambda: test_stalled(tmp), lambda: test_take(repo), lambda: test_take_text_and_here(repo), lambda: test_background(repo), lambda: test_attach_flag(repo), lambda: test_bare_outside_git(tmp), lambda: test_remote_auto(tmp), lambda: test_control(repo),
                        lambda: test_short_titles_and_since(repo), lambda: test_board_follows_run(repo, tmp),
                        lambda: test_remote_sweep(repo, tmp), lambda: test_feed_resume(repo, tmp),

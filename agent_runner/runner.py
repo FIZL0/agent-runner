@@ -3977,9 +3977,11 @@ def _reopen_landed(branch: str, why: str) -> None:
         git('checkout', '-q', '--', rel)
         return
     REOPENED.update(t for t, _ in got)
+    back = {a[1] for a in P.asks(ROOT / rel)}  # B60: a person's check that waited on a task goes back to them
     for t, ids in got:
-        note(f'{t}: reopened, {", ".join(ids)} landed')
-        log(f'{t}: reopened, {", ".join(ids)} landed')
+        said = f'{t}: back under Needs you' if t in back else f'{t}: reopened'
+        note(f'{said}, {", ".join(ids)} landed')
+        log(f'{said}, {", ".join(ids)} landed')
 
 
 CLAIMS_AT = [0.0]

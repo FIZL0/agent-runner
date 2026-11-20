@@ -474,6 +474,8 @@ def block(tid: str, why: str, todo=None, after=None) -> None:
         live = open_ids(ls)
         after = [t for t in dict.fromkeys(TASK_ID.findall(why))
                  if t in live and t != tid and not t.startswith(tid)]
+    if after and not asking(why) and (kept := _last_ask(ls, i)):  # B60: it waits on X, then on the person again
+        why = f'{kept} — {why}'
     if not after and not ASKED.search(why):  # B35: it waits on no task, so it lists under Needs you, with an age
         why = f'{why} (asked {__import__("datetime").datetime.now().strftime("%Y-%m-%d %H:%M")})'
     _mark(ls, i, '~')
@@ -501,7 +503,8 @@ def reopen(todo=None) -> list[tuple[str, list[str]]]:
         if ids and not set(ids) & live:
             out.append((m.group(3).rstrip('.'), ids))
     for tid, ids in out:
-        unblock(tid, f'reopened: {", ".join(ids)} landed', todo=todo)
+        if not _reask(tid, ids, todo):
+            unblock(tid, f'reopened: {", ".join(ids)} landed', todo=todo)
     return out
 
 
@@ -1067,13 +1070,54 @@ def _block_at(tail: str) -> int:
     """Where a task's last ` BLOCKED: ` starts in its last line (-1 for none), not counting the label of a
     `BLOCKED: BLOCKED: …` or `BLOCKED: shelved: BLOCKED: …`."""
     at = [m.start() for m in re.finditer(' BLOCKED: ', tail)
-          if not tail[:m.start()].endswith((' BLOCKED:', ' shelved:'))]
+          if not tail[:m.start()].endswith((' BLOCKED:', ' shelved:'))
+          and not re.search(r' BLOCKED: \(after [^)]*\)$', tail[:m.start()])]  # B60's `(after X) BLOCKED: …`
     return at[-1] if at else -1
 
 
 def asking(why: str) -> bool:
     """Does a block's why wait on a person: it starts with CONFIRM:, DECIDE: or BLOCKED:."""
     return bool(re.match(r'(' + '|'.join(ASK_LABELS) + r'): ', why.strip()))
+
+
+# B60: a person's check (CONFIRM/DECIDE/BLOCKED) sent back to wait on a task (`change`, then `block --after X`,
+# or `block --after X` on the blocked ask itself) keeps its kind: the block reads `BLOCKED: (after X) CONFIRM:
+# <what it asked> — <why>`, which waits on X like any other (off Needs you, no slot takes it), and once X lands
+# `reopen` puts it back under Needs you with its question instead of opening it for an agent.
+CHANGED = re.compile(r'you said, on (' + '|'.join(ASK_LABELS) + r') (.*?): do this instead: ')
+ANSWERED = re.compile(r'(?:confirmed by you \(|your answer \((?:' + '|'.join(ASK_LABELS) + r') |'
+                      r'you said, on stuck )')
+REASK = re.compile(r'BLOCKED: \(after [^)]*\) ((?:' + '|'.join(ASK_LABELS) + r'): .*)$')
+
+
+def _last_ask(ls: list[str], i: int) -> str:
+    """'LABEL: what it asked' when the task at ls[i]'s last block was a person's check still to do: blocked on it
+    now, or sent back to the queue by `change` (no answer since). '' otherwise."""
+    tail = ls[i + len(_item_block(ls, i)) - 1]
+    at = _block_at(tail)
+    if ITEM.match(ls[i]).group(2) == '~' and at >= 0:
+        t = tail[at:].lstrip()
+        if (a := ASKING.match(t)) and not a.group(1):
+            return f'{a.group(2)}: {a.group(3)}'
+        return m.group(1) if (m := REASK.match(t)) else ''
+    c = list(CHANGED.finditer(tail))
+    if not c or any(m.start() > c[-1].start() for m in ANSWERED.finditer(tail)):
+        return ''
+    return f'{c[-1].group(1)}: {c[-1].group(2)}'
+
+
+def _reask(tid: str, ids: list[str], todo) -> bool:
+    """Put task `tid`, whose `(after ids)` block keeps a person's check (`_last_ask`), back under Needs you."""
+    ls = list(lines(todo))
+    i = _find(ls, tid)
+    end = i + len(_item_block(ls, i)) - 1
+    at = _block_at(ls[end])
+    if at < 0 or not (m := REASK.match(ls[end][at:].lstrip())):
+        return False
+    ask = re.sub(r' — back for you: [^—]*?landed(?= —|$)', '', ASKED.sub('', m.group(1)))  # one, not a pile
+    ls[end] = ls[end][:at] + ' BLOCKED: ' + stamp_ask(f'{ask} — back for you: {", ".join(ids)} landed')
+    _write(todo, ls)
+    return True
 
 
 # B35: a block with no caps label that waits on no open task (`done --blocked 'tests flake, unclear why'`) is
