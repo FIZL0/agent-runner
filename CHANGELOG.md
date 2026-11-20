@@ -4,6 +4,10 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- The idle-stop waiter (`run --stop-waiter`) exits as soon as the session it watches is gone, also during
+  its grace, instead of sleeping out the grace (up to hours) and then signalling a pid that may since belong
+  to another process.
+
 - A session that ends on a usage limit is a cut-off like any other: its worktree stays as it was and it
   resumes in its slot (at most 3 times), instead of the run dropping its transcript and sleeping the slot to
   the reset. The special usage-limit path (`limit_only`, the backends' `limits`) is gone; the `session_max` /
