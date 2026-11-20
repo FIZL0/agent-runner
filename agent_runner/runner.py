@@ -6201,7 +6201,6 @@ def cmd_attach(argv: list[str], prog: str = f'{RUNNER} attach') -> int:
 
 # --- control sessions: a person runs the run from an interactive session in the main checkout -------------
 
-CONTROL_TOOLS = 'Bash,Read,Edit,Write,Artifact,Monitor'  # with [run] lean: a slot's tools, and Monitor for run.log
 CONTROL_SERVER_WAIT = (30, 600)  # s before the control server restarts after it exits, doubling to the second
 
 
@@ -6222,13 +6221,13 @@ def control_settings_data() -> dict:
     """`<notes>/control-settings.json`, given to every control session and the control server with --settings:
     a SessionStart hook (every source: startup, resume, clear, compact) that prints the control brief, so each
     one gets it the same way however it started; and the runner's commands, Read and Monitor allowed without a
-    prompt, so "status?" from a phone does not wait on a permission question. No Stop hook: a control session is
-    never ended on idle."""
+    prompt. Control sessions run with bypassPermissions (`control_argv`, `control_server_argv`), so a person on a
+    phone never waits on a permission question; the bypass dialog is skipped here for the same reason. No Stop
+    hook: a control session is never ended on idle."""
     hook = plat.command_text([*runner_cmd(), 'control', '--brief'])
-    allow = [f'Bash({c}:*)' for c in dict.fromkeys([C.command, 'agent-runner'])] + \
-        ['Bash(tail:*)', 'Bash(git status:*)', 'Bash(git log:*)', 'Read', 'Monitor']
     return {'hooks': {'SessionStart': [{'hooks': [{'type': 'command', 'command': hook}]}]},
-            'permissions': {'allow': allow, 'additionalDirectories': [str(control_skills_dir())]}}
+            'skipDangerousModePermissionPrompt': True,
+            'permissions': {'additionalDirectories': [str(control_skills_dir())]}}
 
 
 CONTROL_SKILL = 'control'  # the slash command: Claude Code's /new is /clear's alias, so not that
@@ -6271,11 +6270,13 @@ def control_name(n: int) -> str:
 def control_argv(n: int, sid: str, resume: bool) -> list[str]:
     """Control session `n`: interactive, on `[run] model` (no model of its own), the brief from its settings
     file, a first message that starts its run-log watch; with `[run] remote` on Remote Control as
-    "<repo> · control N". No --permission-mode: a person is there to answer what the allow list leaves."""
+    "<repo> · control N". bypassPermissions, as the slots: it is driven from a phone or the web as often as from
+    here, and a permission prompt there stalls it. Not lean: a person is there (all tools, so /statusline and the
+    like work)."""
     from agent_runner.guide import CONTROL_START
     return [plat.exe(C.run['agent']), CONTROL_START.format(cmd=C.command),
             '--resume' if resume else '--session-id', sid, '--model', C.run['model'],
-            *(['--tools', CONTROL_TOOLS] if C.run['lean'] else []),
+            '--permission-mode', 'bypassPermissions',
             '--settings', str(control_settings()), '--add-dir', str(control_skills_dir()),
             *(['--remote-control', control_name(n)] if remote_on() else [])]
 
@@ -6531,7 +6532,7 @@ def control_server_argv() -> list[str]:
     """With `[run] remote`: Claude Code's Remote Control server in the main checkout, so new control sessions can
     be started from claude.ai/code and the Claude apps, each with the control settings (its brief)."""
     return [plat.exe(C.run['agent']), 'remote-control', '--spawn', 'same-dir', '--name', f'{ROOT.name} · control',
-            '--settings', str(control_settings())]
+            '--permission-mode', 'bypassPermissions', '--settings', str(control_settings())]
 
 
 def control_server_live() -> int:

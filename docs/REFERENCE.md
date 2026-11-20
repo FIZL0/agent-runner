@@ -126,9 +126,9 @@ task to fix X" (it files it with `plan add`), "do X now" (it uses `take`, never 
   works either way.
 - **Their settings**: every control session, and the control server, gets `.runner/control-settings.json`
   with `--settings`: a SessionStart hook that runs `agent-runner control --brief`, which prints the control
-  brief (so a resumed or compacted session gets it again), and the runner's commands, `tail`, Read and
-  Monitor allowed without a prompt. They run on `[run] model`, with `--tools
-  Bash,Read,Edit,Write,Artifact,Monitor` under `[run] lean`, and no bypass mode: a person answers the rest.
+  brief (so a resumed or compacted session gets it again). They run on `[run] model` with every tool
+  (`[run] lean` is for slots) and in bypassPermissions mode, as the slots do: driven from a phone or the web,
+  a permission prompt would stall them.
 - **The opening**: the first message has the session run `agent-runner status` and `agent-runner since` and
   say, in plain bullets, what the run is doing now (each running task by its short title, no ids) and what
   landed, got stuck or needs you since you last looked, then one line of hints: `status · since · follow ·

@@ -837,8 +837,7 @@ def test_control(repo: Path):
     check(hook['type'] == 'command' and hook['command'].endswith('control --brief'),
           'a SessionStart hook prints the control brief', hook)
     check('Stop' not in data['hooks'], 'no Stop hook: a control session is never ended on idle')
-    check(f'Bash({R.C.command}:*)' in data['permissions']['allow'] and 'Monitor' in data['permissions']['allow'],
-          "the runner's commands and Monitor need no permission prompt")
+    check(data['skipDangerousModePermissionPrompt'], 'no bypass dialog: nobody may be at the terminal to answer it')
     f = R.control_settings()
     eq(f, repo / '.runner' / 'control-settings.json', 'the file is <notes>/control-settings.json')
     eq(json.loads(f.read_text(encoding='utf-8')), data, 'and holds that')
@@ -863,16 +862,18 @@ def test_control(repo: Path):
           'its first message asks for the opening summary, and starts no watch')
     i = argv.index('--session-id')
     eq(argv[i:i + 4], ['--session-id', 'sid-2', '--model', R.C.run['model']], 'a new session on [run] model')
-    eq(argv[argv.index('--tools') + 1], 'Bash,Read,Edit,Write,Artifact,Monitor', 'lean: the slot tools and Monitor')
+    check('--tools' not in argv, 'not lean: a person is there, so every tool (Agent for /statusline)')
     eq(argv[argv.index('--settings') + 1], str(f), 'the settings file')
-    check('--permission-mode' not in argv and '--remote-control' not in argv, 'no bypass; local without [run] remote')
+    eq(argv[argv.index('--permission-mode') + 1], 'bypassPermissions', 'bypass: no permission prompts')
+    check('--remote-control' not in argv, 'local without [run] remote')
     with mock.patch.dict(R.C.run, {'remote': True}):
         argv = R.control_argv(3, 'sid-3', resume=True)
     eq(argv[-2:], ['--remote-control', f'{R.ROOT.name} · control 3'], 'with [run] remote it is on Remote Control')
     check('--resume' in argv, 'resume continues the session')
     with mock.patch.dict(R.C.run, {'remote': True}):
         sv = R.control_server_argv()
-    eq(sv[1:], ['remote-control', '--spawn', 'same-dir', '--name', f'{R.ROOT.name} · control', '--settings', str(f)],
+    eq(sv[1:], ['remote-control', '--spawn', 'same-dir', '--name', f'{R.ROOT.name} · control',
+                '--permission-mode', 'bypassPermissions', '--settings', str(f)],
        'the control server: claude remote-control in the main checkout, with the control settings')
 
     sid, resume = R.control_sid(1)
