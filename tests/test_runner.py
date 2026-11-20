@@ -5152,6 +5152,20 @@ def test_control_do_it_here(repo: Path):
           'the do-it-now bullet maps "do F48 here" to take ID, then take ID --merge, and asks which with several', text)
 
 
+def test_control_retitle_on_topic(repo: Path):
+    """F55: the control brief retitles the session when the topic changes, not for drift, never over the person's name."""
+    from agent_runner.guide import CONTROL, CONTROL_WATCH
+    text = ' '.join(CONTROL.format(repo='r', cmd='./run', log='l', watch=CONTROL_WATCH.format(repo='r', cmd='./run'),
+                                   needs='Needs you', answer='').split())
+    check('`./run control --title "' in text, 'the brief names control --title', text)
+    check('Run it again whenever the conversation moves on to a different task or topic' in text,
+          'it retitles when the conversation moves on to another task', text)
+    check('not for drift within one topic' in text, 'not for drift within one topic', text)
+    check('A name the person gave the session is never overwritten' in text, 'B41: never over the person\'s name', text)
+    check('first message, run `./run control --title' in text and '" once (e.g.' not in text,
+          'no longer "once": the name may follow the topic', text)
+
+
 def test_take_running_slot(repo: Path):
     """F52: `take ID` on a task a slot runs names the slot, its claude.ai/code link and how to steer it."""
     from agent_runner.guide import CONTROL, CONTROL_WATCH
@@ -5471,7 +5485,7 @@ def main() -> int:
                        lambda: test_close_idle_controls(repo), lambda: test_closed_online_controls(repo),
                        lambda: test_renamed_control_kept(repo),
                        lambda: test_control_summary_title(repo), lambda: test_control_task_name(repo), lambda: test_progress_and_release(repo),
-                       lambda: test_control_status_rules(repo), lambda: test_control_do_it_here(repo), lambda: test_take_running_slot(repo), lambda: test_upgrade_cmd(repo), test_control_no_upgrade_watcher,
+                       lambda: test_control_status_rules(repo), lambda: test_control_do_it_here(repo), lambda: test_control_retitle_on_topic(repo), lambda: test_take_running_slot(repo), lambda: test_upgrade_cmd(repo), test_control_no_upgrade_watcher,
                        lambda: test_plan_last(repo), lambda: test_release_push(repo),
                        lambda: test_help_order_and_bare_wizard(tmp), lambda: test_setup(tmp),
                        lambda: test_stop_countdown(repo)])
