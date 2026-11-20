@@ -7096,10 +7096,11 @@ def control_brief() -> str:
     from agent_runner.guide import CONTROL, CONTROL_ANSWER, CONTROL_FEED_WATCH, CONTROL_WATCH
     notes = Path(C.run['notes']).expanduser()
     logf = (notes / 'run.log').as_posix() if not notes.is_absolute() else str(notes / 'run.log')
-    watch = (CONTROL_FEED_WATCH if feed_on() else CONTROL_WATCH).format(repo=ROOT.name, cmd=C.command)
+    # B71: the runner itself, not [run] command: a project's command may wrap only part of it (openmx's ./kit)
+    watch = (CONTROL_FEED_WATCH if feed_on() else CONTROL_WATCH).format(repo=ROOT.name, cmd=RUNNER)
     cf = P.needs_cfg()  # B27: the heading's words
-    answer = CONTROL_ANSWER.format(cmd=C.command)
-    return CONTROL.format(repo=ROOT.name, cmd=C.command, log=logf, watch=watch, needs=cf['heading'], answer=answer)
+    answer = CONTROL_ANSWER.format(cmd=RUNNER)
+    return CONTROL.format(repo=ROOT.name, cmd=RUNNER, log=logf, watch=watch, needs=cf['heading'], answer=answer)
 
 
 def control_settings_data() -> dict:
@@ -7123,7 +7124,7 @@ def control_skills_dir() -> Path:
     additionalDirectories), holding `.claude/skills/control/SKILL.md`, the /control slash command that opens
     another control session. Never in the person's repo files."""
     from agent_runner.guide import control_skills  # /control, and the opening hints line's /run /since …
-    for name, text in control_skills(C.command, CONTROL_SKILL).items():
+    for name, text in control_skills(RUNNER, CONTROL_SKILL).items():
         f = C.notes('control-skills', '.claude', 'skills', name, 'SKILL.md')
         try:
             if not f.is_file() or f.read_text(encoding='utf-8') != text:
@@ -7309,7 +7310,7 @@ def control_ask(ask: str, images: list[str] | tuple = ()) -> str:
               for p in images]
     if ask and (waiting := ask_waiting()):
         lines.append('(From the runner feed. Waiting for the person when they said it:\n' + waiting +
-                     f'\nIf the message answers one of these, settle it by its id with `{C.command} plan confirm|change|shelve ID`'
+                     f'\nIf the message answers one of these, settle it by its id with `{RUNNER} plan confirm|change|shelve ID`'
                      ' (ask the person when unsure which) before anything else, as well as any task it asks for: a reply queued'
                      ' only as a new task leaves the item waiting, B47.)')
     return '\n\n'.join(lines)
@@ -7352,8 +7353,8 @@ def control_argv(n: int, sid: str, resume: bool, blank: bool = False, ask: str =
     (`control --new --ask TEXT`, from the runner feed): TEXT is its first message instead; `images` (`--file
     PATH`, alias `--image`, repeatable) adds a line per attached file to it (`control_ask`)."""
     from agent_runner.guide import CONTROL_START, CONTROL_START_WATCH
-    opening = CONTROL_START.format(cmd=C.command, watch_start='' if feed_on() else
-                                   CONTROL_START_WATCH.format(cmd=C.command))
+    opening = CONTROL_START.format(cmd=RUNNER, watch_start='' if feed_on() else  # B71: the runner, not [run] command
+                                   CONTROL_START_WATCH.format(cmd=RUNNER))
     ask_text, ask = ask, control_ask(ask, images)
     first = [ask] if ask else [opening] if n == 1 and not blank else []
     return [plat.exe(C.run['agent']), *first,
@@ -7795,7 +7796,7 @@ def feed_argv() -> list[str]:
     its own short system prompt instead of Claude Code's, no settings sources or MCP servers: ~6k tokens a turn.
     `board_feed` adds the session flags: one session from the run's first start to a real stop (`feed_session`)."""
     from agent_runner.guide import FEED_ANSWER, RUNNER_BRIEF, RUNNER_START
-    cmd = C.command
+    cmd = RUNNER  # B71: the runner itself: [run] command may wrap only part of it (openmx's ./kit has no since)
     cf = P.needs_cfg()  # B27: a reply to an item under Needs you is mapped to its id and answered here
     answer = FEED_ANSWER.format(cmd=cmd, needs=cf['heading'])
     return [plat.exe(C.run['agent']), RUNNER_START.format(cmd=cmd, repo=ROOT.name),
