@@ -832,8 +832,44 @@ def test_plan_last():
         eq(plan.last_waits(todo), [('T1', ['C1'])], 'a task blocked on something other than a person still holds it')
 
 
+def test_restore():
+    print('plan: restore brings a ticked or dropped task back open, same id and fields (F47)')
+    with tempfile.TemporaryDirectory() as tmp:
+        d = Path(tmp) / 'plan'
+        todo, done = plan.ensure(d / 'TODO.md', d / 'DONE.md')
+        kw = dict(todo=todo, done=done)
+        plan.add('F', 'the parser | files: src/parse.py | test: test_parse', **kw)
+        plan.add('B', 'the printer | files: src/print.py | after: F1', **kw)
+        plan.add('C', 'keep me first | files: x.py', **kw)
+        Path(todo).write_text(Path(todo).read_text().replace('after: F1', 'after: F1\n  - [ ] a sub-item'))
+        before = {t: plan.section(todo, t) for t in ('F1', 'B1')}
+        (d / 'tasks').mkdir()
+        (d / 'tasks' / 'F1.md').write_text('# F1\n\n- [ ] **F1** the parser\n', encoding='utf-8')
+        plan.tick('F1', plan_dir=d, **kw)
+        plan.drop('B1', 'overtaken by C1', **kw)
+        check('**F1**' not in Path(todo).read_text() and '**B1**' not in Path(todo).read_text(), 'both archived')
+
+        plan.restore('F1', plan_dir=d, **kw)
+        plan.restore('B1', 'after', 'C1', **kw)
+        eq({t: plan.section(todo, t) for t in ('F1', 'B1')}, before,
+           'restored open, same id, text, fields and sub-items; the dropped note gone')
+        eq([l[4:] for l in plan.index(todo) if l.startswith('[ ] ')], ['F1', 'C1', 'B1'],
+           'at the top by default, or where WHERE says')
+        t = Path(done).read_text()
+        check('**F1**' not in t and '**B1**' not in t, 'gone from DONE.md', t)
+        has((d / 'tasks' / 'F1.md').read_text(), r'- \[ \] \*\*F1\*\*', 'its plan/tasks/<ID>.md reopened too')
+
+        for tid, why in (('F1', 'still open'), ('Z9', 'no task')):
+            try:
+                plan.restore(tid, **kw)
+                check(False, f'restore {tid} errors')
+            except SystemExit as e:
+                has(str(e), why, f'restore of a {why} id errors')
+        eq([l[4:] for l in plan.index(todo) if l.startswith('[ ] ')], ['F1', 'C1', 'B1'], 'and changes nothing')
+
+
 if __name__ == '__main__':
-    sys.exit(report([test_plan_last, test_goal,test_plan_roundtrip, test_plan_reopen, test_plan_index_and_sections, test_brief, test_brief_outline,
+    sys.exit(report([test_restore, test_plan_last,test_goal,test_plan_roundtrip, test_plan_reopen, test_plan_index_and_sections, test_brief, test_brief_outline,
                      test_split_parents, test_add_bottom, test_add_pri, test_add_subtask, test_kinds, test_need_files, test_add_stray_args, test_hand_edits_commit, test_similar, test_add_refuses_a_duplicate, test_carry_notes,
                      test_merge3, test_concurrent_add, test_merge_driver, test_concepts, test_needs_you,
                      test_needs_config]))

@@ -21,6 +21,8 @@ re-reads it on every turn pays again. So the backlog is a command instead:
                                  --last: at the end of Next, with `after: all above` (below)
     ./run plan drop <ID> WHY     not done but not wanted (a duplicate, overtaken): archived with "dropped: WHY";
                                  a slot running it is stopped, its branch deleted unmerged (B19)
+    ./run plan restore <ID> [WHERE]   undo a mistaken tick or drop: back from DONE.md as open [ ], same id, text
+                                 and fields kept, "dropped: WHY" removed; WHERE as `move` (default: top)
     ./run plan kinds             what each id letter means ([plan] kinds): an id's prefix says the kind of work
     ./run plan note <ID> TEXT    append " — TEXT" to the task (user details, priority reasons)
     ./run plan goal [TEXT]       print the `Goal:` paragraph above TODO.md's first heading; with TEXT replace it
@@ -339,6 +341,45 @@ def drop(tid: str, why: str, todo=None, done=None) -> int:
     so its id stays used and what waits on it reopens. """
     note(tid, f'dropped: {why}', todo=todo)
     return tick(tid, todo, done)
+
+
+DROPPED = ' — dropped: '
+
+
+def restore(tid: str, where: str = 'top', ref: str | None = None, todo=None, done=None, plan_dir=None) -> None:
+    """Undo a mistaken tick or drop (F47): the task's block goes from DONE.md back to TODO.md as open [ ], same id,
+    its text, fields and sub-items kept, less the ` — dropped: WHY` its drop appended; at the top of the leading
+    section unless `where` (as `move`) says. A tick made but not archived yet is reopened where it stands."""
+    todo, done = ensure(todo, done)
+    plan_dir = str(plan_dir or os.path.dirname(todo))
+    ls, dl = list(lines(todo)), list(lines(done))
+    here = next((i for i, l in enumerate(ls) if (m := ITEM.match(l)) and not m.group(1)
+                 and m.group(3).rstrip('.') == tid), None)
+    if here is not None and ITEM.match(ls[here]).group(2) != 'x':
+        raise SystemExit(f'{PROG}: {tid} is still open in {Path(todo).name}: nothing to restore')
+    if here is None:
+        try:
+            j = _find(dl, tid)
+        except SystemExit:
+            raise SystemExit(f'{PROG}: no task {tid!r} in {Path(done).name} to restore') from None
+        blk = _item_block(dl, j)
+        del dl[j:j + len(blk)]
+        if j < len(dl) and not dl[j].strip() and j and not dl[j - 1].strip():
+            del dl[j]  # don't leave a double blank line behind
+        here = _place(ls, where, ref)
+        ls[here:here] = blk
+    else:
+        blk = _item_block(ls, here)
+    for k in range(here + len(blk) - 1, here - 1, -1):  # the drop's note is the last one on the block
+        if DROPPED in ls[k]:
+            ls[k] = ls[k][:ls[k].rindex(DROPPED)]
+            break
+    _mark(ls, here, ' ')
+    _write(todo, ls)
+    _write(done, dl)
+    own = long_form(plan_dir, tid)
+    if os.path.exists(own):
+        _write(own, [re.sub(rf'^(\s*)- \[x\] \*\*{re.escape(tid)}\b', rf'\1- [ ] **{tid}', l) for l in lines(own)])
 
 
 TASKS = 'tasks'  # a task's long form is <plan dir>/tasks/<ID>.md, so the top level stays TODO.md and overviews
@@ -1755,7 +1796,7 @@ def _commit(root: Path, paths: list[Path], msg: str) -> None:
 
 
 EDITS = ('tick', 'block', 'reopen', 'unblock', 'move', 'add', 'note', 'archive', 'drop', 'approve', 'revise',
-         'confirm', 'change', 'shelve', 'unshelve')
+         'confirm', 'change', 'shelve', 'unshelve', 'restore')
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -1828,6 +1869,9 @@ def _main(argv: list[str], c) -> int:
     if argv[:1] == ['drop'] and len(argv) > 2:
         drop(argv[1], ' '.join(argv[2:]))
         return say(f'dropped {argv[1]}')
+    if argv[:1] == ['restore'] and len(argv) > 1:
+        restore(argv[1], argv[2] if len(argv) > 2 else 'top', ' '.join(argv[3:]) or None)
+        return say(f'restored {argv[1]}: open again in {Path(todo).name}')
     if argv[:1] == ['block'] and len(argv) > 2:
         after, rest = None, argv[2:]
         if rest[0] == '--after' and len(rest) > 2:
