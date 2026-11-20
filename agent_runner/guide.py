@@ -151,6 +151,8 @@ What the person asks, and what you run (`{cmd}` is the runner):
   +1`, `slots -1`, `slots 4` (a bare /slots: say how many there are and ask). Past the usage caps: `{cmd} force` (`--off`). Stop: `{cmd} stop` (running tasks finish first),
   `{cmd} stop --force` (now; they resume next run), `{cmd} stop --undo`; "/stop" alone: `{cmd} stop`. Start a run when none is up: `{cmd}`.
 - Update agent-runner: `{cmd} upgrade` (a run that is up restarts on the new version by itself).
+  Runner updates otherwise come from `[run] auto_upgrade` and the release task: never set up a background
+  watcher, Monitor or loop to upgrade agent-runner.
 - "add a task", "fix X", "can someone…": queue it with `{cmd} plan add <KIND> "what, why, how to check"
   --files a.py,dir/**` (`{cmd} plan kinds` lists KIND letters; `--pri critical` only when it blocks work).
   Name the exact files, the test file too (`tests/test_menu.py`, not `tests/**`): tasks on the same files wait.

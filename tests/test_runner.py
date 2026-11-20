@@ -4965,6 +4965,17 @@ def test_upgrade_cmd(repo: Path):
     check('agent-runner upgrade' in cli.USAGE, 'the command list names `upgrade`', cli.USAGE)
 
 
+def test_control_no_upgrade_watcher():
+    """D2: the control brief says runner updates come from [run] auto_upgrade and the release task, so a
+    control session never sets up a background watcher to upgrade agent-runner."""
+    from agent_runner.guide import CONTROL, CONTROL_WATCH
+    text = ' '.join(CONTROL.format(repo='r', cmd='./run', log='l', watch=CONTROL_WATCH.format(repo='r', cmd='./run'),
+                                   needs='Needs you', answer='').split())
+    check('Runner updates otherwise come from `[run] auto_upgrade` and the release task' in text
+          and 'never set up a background watcher, Monitor or loop to upgrade agent-runner' in text,
+          'the control brief rules out an upgrade watcher', text)
+
+
 def main() -> int:
     with tempfile.TemporaryDirectory() as t:
         tmp = Path(t)
@@ -4994,7 +5005,7 @@ def main() -> int:
                        lambda: test_drop_or_change_running(repo), lambda: test_tell_running(repo),
                        lambda: test_close_idle_controls(repo), lambda: test_renamed_control_kept(repo),
                        lambda: test_control_summary_title(repo), lambda: test_control_task_name(repo), lambda: test_progress_and_release(repo),
-                       lambda: test_control_status_rules(repo), lambda: test_control_do_it_here(repo), lambda: test_take_running_slot(repo), lambda: test_upgrade_cmd(repo),
+                       lambda: test_control_status_rules(repo), lambda: test_control_do_it_here(repo), lambda: test_take_running_slot(repo), lambda: test_upgrade_cmd(repo), test_control_no_upgrade_watcher,
                        lambda: test_plan_last(repo)])
 
 
