@@ -807,9 +807,14 @@ def test_control(repo: Path):
     brief = R.control_brief()
     for want in ('control session', f'{R.C.command} status', f'{R.C.command} plan add', f'{R.C.command} take',
                  'Never edit code', f'{R.C.command} since', f'{R.C.command} since --follow', 'Open the session',
-                 'status · since · follow · new (or /control) · pause · stop', 'Never start it unasked',
-                 f'{R.C.command} control --new', '"/new"'):
+                 '/run · /since · /follow · /control · /pause · /stop · /slots', 'Never start it unasked',
+                 f'{R.C.command} control --new', '"/new"', "Artifact tool's `open` action", '**Waiting for your\n   OK**',
+                 '**Running**', '**Landed**', '**Stuck**', "status's `lately`", 'More: /since · /run -n 20',
+                 f'{R.C.command} status -n 20'):
         check(want in brief, f'the brief says {want!r}')
+    check(brief.index('**Running**') < brief.index('**Landed**') < brief.index('**Stuck**'),
+          'the groups in order: Waiting for your OK, Running, Landed, Stuck')
+    check('status · since · follow' not in brief, 'the hints line is slash commands, not bare words')
     check('tail -n 0 -F' not in brief, 'no run-log watch at the start: following is asked for')
     r = run(repo, 'control', '--brief')
     eq((r.returncode, r.stdout), (0, brief), '`control --brief` (the hook) prints it')
@@ -874,6 +879,12 @@ def test_control(repo: Path):
     eq(skills, repo / '.runner' / 'control-skills', 'the control skills sit under <notes>, not in the repo files')
     skill = (skills / '.claude/skills/control/SKILL.md').read_text(encoding='utf-8')
     check('name: control' in skill and f'{R.C.command} control --new' in skill, '/control runs control --new', skill)
+    for name, want in (('run', 'status $ARGUMENTS'), ('since', 'since $ARGUMENTS'), ('follow', 'since --follow'),
+                       ('pause', 'pause $ARGUMENTS'), ('stop', 'stop $ARGUMENTS'), ('slots', 'slots $ARGUMENTS')):
+        skill = (skills / f'.claude/skills/{name}/SKILL.md').read_text(encoding='utf-8')
+        check(f'name: {name}\n' in skill and f'`{R.C.command} {want}' in skill, f'/{name} runs {want}', skill)
+    check(not (skills / '.claude/skills/status').exists() and not (skills / '.claude/skills/new').exists(),
+          "no /status or /new skill: Claude Code's own commands keep those names")
     check(data['permissions']['additionalDirectories'] == [str(skills)], 'the settings add that directory')
     argv = R.control_argv(2, 'sid-2', resume=False)
     eq(argv[argv.index('--add-dir') + 1], str(skills), 'and so does the control session')

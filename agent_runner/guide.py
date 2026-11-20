@@ -86,26 +86,37 @@ The runner's own agents do the tasks, each in a worktree of its own. **Never edi
 uncommitted edits in the main checkout hold every merge. Answer in a few short lines: the person may be on a
 phone.
 
-**Open the session** with a summary, before anything else: run `{cmd} status` and `{cmd} since`, then say
-first what waits for the person's OK (concept pages, with their links), then in plain bullets what the run is doing now (each running task in a few everyday words: its title, never its
-id or its full line), and what landed, got stuck or needs the person since they last looked. No task ids:
-the `[F5]` at the end of each line is for you, to act on a task or when the person asks which one. End the
-opening (only the opening) with one line of hints:
-`status · since · follow · new (or /control) · pause · stop · more slots · or just describe a bug or idea to queue it`
+**Open the session** with a short summary, before anything else. Run `{cmd} status` and `{cmd} since`, and
+call the Artifact tool's `open` action on the link of each concept page under "Waiting for your OK", so the
+page shows inline and not just as a link. Then write, compact enough for a phone:
+1. One headline line: `Since <when>: 11 landed, 1 stuck, 1 waits for you. Run up, idle, 3 slots.` (or
+   `No run is up.`), counting only what there is.
+2. Groups, each a heading on a line of its own with plain bullets under it, in this order: **Waiting for your
+   OK** (label first when it is not a concept, the title, its link on a line of its own), **Running** (each
+   running task in a few everyday words), **Landed** (newest first, at most 5, then `…and 6 more`), **Stuck**
+   (what stopped it, in a few words). Leave an empty group out. Say the group word once, in its heading:
+   never `Landed:` or `Stuck:` again on each bullet.
+3. Cover what `since` shows and status's `lately` both, each event once, so nothing earlier is dropped when
+   `since` has little. When anything was cut, or there is more before it, one line: `More: /since · /run -n 20`.
+Bullets are titles in everyday words, never ids or full lines: the `[F5]` at the end of each line is for you,
+to act on a task or when the person asks which one. End the opening (only the opening) with one line of hints:
+`/run · /since · /follow · /control · /pause · /stop · /slots · or just describe a bug or idea to queue it`
 
 What the person asks, and what you run (`{cmd}` is the runner):
-- "status?", "what's running?", "how's it going?": `{cmd} status`; "since", "what happened?", "anything
-  new?": `{cmd} since` (it shows what is new since the last look and moves that mark; `{cmd} since 2h` or
-  `yesterday` looks further back). Say it back as a few simple bullets in everyday words, no ids, no hints line.
+- "status?", "/run", "what's running?", "how's it going?": `{cmd} status` (`/run -n 20`: `{cmd} status -n 20`,
+  with the run log's last lines); "since", "/since", "what happened?", "anything new?": `{cmd} since` (it
+  shows what is new since the last look and moves that mark; `{cmd} since 2h` or `yesterday` looks further
+  back). Say it back as a few simple bullets in everyday words, under the opening's group headings, no ids,
+  no hints line.
 - "follow", "live", "/follow": start the Monitor tool on `{cmd} since --follow` (one plain line per landed,
   started or stuck task, and when the run goes idle or stops) and post each line it brings as one short
   bullet, without its id. "stop following": stop that Monitor. Never start it unasked.
 - "new", "new session", "/new", "/control", "another control session": `{cmd} control --new` opens one
   beside the run without taking focus and prints its claude.ai/code link: answer with just that link (on its
   own line, so it can be tapped), or what it printed when there is none.
-- pause / go on: `{cmd} pause` / `{cmd} pause --off`. More or fewer agents: `{cmd} slots +1`, `slots -1`,
-  `slots 4`. Past the usage caps: `{cmd} force` (`--off`). Stop: `{cmd} stop` (running tasks finish first),
-  `{cmd} stop --force` (now; they resume next run), `{cmd} stop --undo`. Start a run when none is up: `{cmd}`.
+- pause / go on, "/pause": `{cmd} pause` / `{cmd} pause --off`. More or fewer agents, "/slots": `{cmd} slots
+  +1`, `slots -1`, `slots 4` (a bare /slots: say how many there are and ask). Past the usage caps: `{cmd} force` (`--off`). Stop: `{cmd} stop` (running tasks finish first),
+  `{cmd} stop --force` (now; they resume next run), `{cmd} stop --undo`; "/stop" alone: `{cmd} stop`. Start a run when none is up: `{cmd}`.
 - "add a task", "fix X", "can someone…": queue it with `{cmd} plan add <KIND> "what, why, how to check"
   --files a.py,dir/**` (`{cmd} plan kinds` lists KIND letters; `--pri critical` only when it blocks work).
   Change the queue with `{cmd} plan note|move|block|unblock|drop`; read it with `{cmd} plan`, `{cmd} plan ID`.
@@ -146,8 +157,48 @@ claude.ai/code link once that session shows it. Answer with just the link on a l
 tapped on a phone; when it printed no link, say in one line what it printed instead.
 """
 
-CONTROL_START = ("Open with the summary your control brief describes (`{cmd} status` and `{cmd} since`, as plain "
-                 "bullets, then the hints line), and wait for me.")
+# The opening's hints line as real slash commands, one skill each beside /control (Claude Code's own /status
+# and /new are taken, hence /run and /control). {name: (description, what to do)}; `{cmd}` is the runner.
+HINT_SKILLS = {
+    'run': ("The agent-runner run's status (the person typed /run).",
+            'Run `{cmd} status $ARGUMENTS` (e.g. `-n 20` adds the run log\'s last lines) and say it back as a few '
+            'short bullets in everyday words, grouped as the control brief says, without task ids.'),
+    'since': ('What the agent-runner run did since the last look (the person typed /since).',
+              'Run `{cmd} since $ARGUMENTS` (e.g. `2h`, `yesterday`) and say it back as a few short bullets in '
+              'everyday words, grouped under Landed / Stuck / Running, without task ids.'),
+    'follow': ('Follow the agent-runner run live (the person typed /follow).',
+               'Start the Monitor tool on `{cmd} since --follow` and post each line it brings as one short bullet, '
+               'without its id, until the person says to stop following.'),
+    'pause': ('Pause the agent-runner run, or go on (the person typed /pause).',
+              'Run `{cmd} pause $ARGUMENTS` (`--off` goes on) and say in one line what it printed.'),
+    'stop': ('Stop the agent-runner run (the person typed /stop).',
+             'Run `{cmd} stop $ARGUMENTS` (bare: running tasks finish first; `--force` now; `--undo`) and say in one '
+             'line what it printed.'),
+    'slots': ('More or fewer agent-runner agents (the person typed /slots).',
+              'With an argument (`+1`, `-1`, `4`) run `{cmd} slots $ARGUMENTS` and say in one line what it printed; '
+              'without one, say how many slots the run has (`{cmd} status`) and ask how many they want.'),
+}
+
+HINT_SKILL_TEXT = """\
+---
+name: {name}
+description: {description}
+---
+{body}
+"""
+
+
+def control_skills(cmd: str, control: str = 'control') -> dict[str, str]:
+    """{slash command name: its SKILL.md text}: /control (another control session) and the hints line's commands."""
+    out = {control: CONTROL_SKILL_TEXT.format(cmd=cmd, name=control)}
+    for name, (desc, body) in HINT_SKILLS.items():
+        out[name] = HINT_SKILL_TEXT.format(name=name, description=desc, body=body.format(cmd=cmd))
+    return out
+
+
+CONTROL_START = ("Open with the summary your control brief describes (`{cmd} status` and `{cmd} since`: open each "
+                 "waiting concept page, a headline, the groups under their headings, then the hints line), and "
+                 "wait for me.")
 
 
 SKILL = """\
