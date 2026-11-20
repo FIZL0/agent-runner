@@ -1236,7 +1236,8 @@ class Claude:
             data = json.loads(f.read_text(encoding='utf-8')) if f.exists() else {}
         except (OSError, ValueError):
             return  # unreadable or mid-write: leave it; the dialog shows, as before
-        proj = data.setdefault('projects', {}).setdefault(str(d.resolve()), {})
+        # as_posix: Claude keys a Windows folder C:/Users/..., so C:\Users\... is never found (the slot hangs)
+        proj = data.setdefault('projects', {}).setdefault(d.resolve().as_posix(), {})
         if proj.get('hasTrustDialogAccepted'):
             return
         proj['hasTrustDialogAccepted'] = True
