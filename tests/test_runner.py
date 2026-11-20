@@ -2781,6 +2781,37 @@ def test_restart_if_upgraded():
         R.log, R._upgrade_seen = real_log, None
 
 
+def test_auto_upgrade():
+    import agent_runner
+    due = R.auto_upgrade_due
+    check(due('0.49.0', '0.48.0', '0.48.0', False, ''), 'newer seen + no merge: upgrade')
+    check(not due('0.49.0', '0.48.0', '0.48.0', True, ''), 'mid-merge: wait')
+    check(not due('0.49.0', '0.48.0', '0.49.0', False, ''), 'already installed: restart_if_upgraded takes it')
+    check(not due('0.49.0', '0.48.0', '0.48.0', False, '0.49.0'), 'tried for this version: once')
+    check(not due('0.48.0', '0.48.0', '0.48.0', False, ''), 'nothing newer')
+    check(not due('', '0.48.0', '0.48.0', False, ''), 'no update check yet')
+    check(not due('1.0.0', '0.48.0', '0.48.0', False, ''), 'never across a major version')
+    check(not due('0.49.0', '0.48.0', '0.48.0', False, '', windows=True), 'not on Windows')
+    newer = '.'.join(agent_runner.__version__.split('.')[:2]) + '.999'
+    said, ran, real_log = [], [], R.log
+    R.log = said.append
+    try:
+        with mock.patch.object(R, 'upgrade', lambda: ran.append(1)), mock.patch.object(R.plat, 'WINDOWS', False), \
+                mock.patch.object(R.Path, 'read_text', lambda *a, **k: f'__version__ = "{agent_runner.__version__}"\n'):
+            R.LATEST_SAID[0], R.AUTO_TRIED[0] = newer, ''
+            eq(R.auto_upgrade(False), None, 'auto_upgrade off (the default): nothing')
+            R.AUTO_UPGRADE[0] = True
+            eq(R.auto_upgrade(True), None, 'mid-merge: it waits')
+            t = R.auto_upgrade(False)
+            check(t is not None, 'idle: the upgrade starts with no key pressed')
+            t.join(5)
+            eq(ran, [1], 'upgrade() ran once')
+            eq(R.auto_upgrade(False), None, 'and not again for the same version')
+            has(said[0], rf'{re.escape(newer)} is out.*upgrading by itself', 'logged')
+    finally:
+        R.log, R.LATEST_SAID[0], R.AUTO_TRIED[0], R.AUTO_UPGRADE[0] = real_log, '', '', False
+
+
 def test_repair_per_failure(repo: Path):
     """One repair per failure, not per task: a rebuild that fails on commits main got since gets another."""
     print('merge: a repaired merge that fails again after main moved gets a second repair session')
@@ -3032,7 +3063,7 @@ def main() -> int:
                        lambda: test_session_tmp(repo, tmp), lambda: test_end_orphans(repo), lambda: test_memory_watch(repo), lambda: test_tested_ref(repo, tmp),
                        lambda: test_no_pane(repo, tmp), lambda: test_other_repos_panes(repo, tmp),
                        lambda: test_limit_lets_go(repo),
-                       lambda: test_shared_push(repo, tmp), lambda: test_note_on_a_ticked_task(repo), lambda: test_adopt_merge(repo), lambda: test_followups(repo), lambda: test_ci_watch(repo), test_update_notice, test_restart_if_upgraded, lambda: test_flake_repair(tmp), lambda: test_repair_per_failure(repo),
+                       lambda: test_shared_push(repo, tmp), lambda: test_note_on_a_ticked_task(repo), lambda: test_adopt_merge(repo), lambda: test_followups(repo), lambda: test_ci_watch(repo), test_update_notice, test_restart_if_upgraded, test_auto_upgrade, lambda: test_flake_repair(tmp), lambda: test_repair_per_failure(repo),
                        lambda: test_stalled(tmp), lambda: test_take(repo), lambda: test_take_text_and_here(repo), lambda: test_background(repo), lambda: test_control(repo)])
 
 

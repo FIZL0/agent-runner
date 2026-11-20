@@ -4465,7 +4465,8 @@ def update_notice() -> None:
         return
     if newer and latest != LATEST_SAID[0]:
         LATEST_SAID[0] = latest
-        how = 'type u + Enter in this pane' if READING[0] else \
+        how = 'nothing, [run] auto_upgrade does it once no merge runs' if AUTO_UPGRADE[0] and \
+            not plat.WINDOWS and not breaking(__version__, latest) else 'type u + Enter in this pane' if READING[0] else \
             f'run `{" ".join(upgrade_argv()[:3]) if upgrade_argv()[0] != "git" else "git pull"}`'
         then = ('the run restarts on it by itself' if not plat.WINDOWS and not breaking(__version__, latest)
                 else 'then read CHANGELOG.md and restart the run')
@@ -4512,6 +4513,43 @@ def upgrade() -> bool:
     log(f'upgraded to {new}; the run restarts on it' if new and new != __version__ else
         f'already the latest ({__version__})')
     return True
+
+
+AUTO_UPGRADE = [False]  # [run] auto_upgrade: the run presses `u` itself when update_notice sees a newer version
+AUTO_TRIED = ['']  # the version auto_upgrade last ran the upgrade for: once per version, even when it failed
+
+
+def vtuple(v: str) -> tuple[int, ...]:
+    return tuple(map(int, v.split('.')))
+
+
+def auto_upgrade_due(latest: str, current: str, installed: str | None, merging: bool, tried: str,
+                     windows: bool = False) -> bool:
+    """[run] auto_upgrade: upgrade now? Only for a newer release the update check saw, not yet installed
+    and not tried already, and only between merges (a merge in flight finishes first, then the next tick
+    upgrades). Never across a major version or on Windows, where `restart_if_upgraded` would not restart."""
+    try:
+        newer = bool(latest) and vtuple(latest) > vtuple(current)
+        on_disk = bool(installed) and vtuple(installed) >= vtuple(latest)
+    except ValueError:
+        return False
+    return newer and not on_disk and not merging and latest != tried and not windows \
+        and not breaking(current, latest)
+
+
+def auto_upgrade(merging: bool) -> threading.Thread | None:
+    """The run loop's tick: start `upgrade` in a thread when `auto_upgrade_due`. The loop's own
+    `restart_if_upgraded` then restarts on what it installed, keeping the keys (AGENT_RUNNER_KEEP)."""
+    from agent_runner import __version__
+    latest = LATEST_SAID[0]
+    if not AUTO_UPGRADE[0] or not auto_upgrade_due(latest, __version__, installed_version(), merging,
+                                                   AUTO_TRIED[0], plat.WINDOWS):
+        return None
+    AUTO_TRIED[0] = latest
+    log(f'agent-runner {latest} is out (this run is {__version__}): upgrading by itself ([run] auto_upgrade)')
+    t = threading.Thread(target=upgrade, daemon=True)
+    t.start()
+    return t
 
 
 _upgrade_seen: str | None = None
@@ -4974,6 +5012,7 @@ def run(argv: list[str], prog: str) -> int:
     start_control()  # c1 beside the run ([run] control), and with [run] remote the control server
     start_control_server()
 
+    AUTO_UPGRADE[0] = bool(r['auto_upgrade'])
     threading.Thread(target=update_watch, daemon=True).start()
     for w in C.warnings:
         log(w)
@@ -5187,6 +5226,8 @@ def run(argv: list[str], prog: str) -> int:
             tried -= REOPENED  # a task reopened by a merge is a new attempt, not the one that blocked
             REOPENED.clear()
         merging = [t for t in merging if t.is_alive()]
+        if not stopping():
+            auto_upgrade(bool(merging))
         if not merging and not stopping():
             restart_if_upgraded()
         watch_ci(branch)

@@ -102,6 +102,8 @@ DEFAULTS: dict = {
                                 # the run, watched and steered from claude.ai/code and the Claude apps
         'remote_slots': False,  # the slots on Remote Control too, each "<repo> · s2 · B646"
         'control': True,        # a run opens control session c1 beside it (`agent-runner control`); false: none
+        'auto_upgrade': False,  # upgrade agent-runner by itself when a newer release is out, once no merge runs,
+                                # and restart the run on it (as `u` does, without the key)
         'install_skill': True,  # keep the `agent-runner guide` skill in ~/.claude/skills, for sessions a person starts
         'rules_pointer': True,  # a run adds one line to the rules file (`rules`, AGENTS.md, CLAUDE.md) pointing at it
         'idle': 30,             # seconds a finished session sits at its prompt before it is ended
