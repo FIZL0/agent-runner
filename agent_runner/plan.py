@@ -913,21 +913,26 @@ def edit(tid: str, text: str = '', keyed: str = '', pri: str | None = None, todo
     old = dict(FIELD.findall(body))
     tag = PRI_TAG.search(body)
     tag = f'(follow-up, {pri})' if pri else (tag.group(0) if tag else '')
+    old_blk = _item_block(ls, i)
+    rest_blk = old_blk[1:]
     if text.strip():
         desc = prose(text).strip()
         new = dict(FIELD.findall(text))
+        # continuation lines before the first sub-item are description too (and `note` appends to a block's
+        # last line): they go, sub-items stay, and a BLOCKED on a dropped last line moves to the first line
+        k = next((n for n, l in enumerate(rest_blk) if ITEM.match(l)), len(rest_blk))
+        if rest_blk and k == len(rest_blk) and ' BLOCKED: ' in rest_blk[-1]:
+            tail = ' BLOCKED: ' + rest_blk[-1].split(' BLOCKED: ', 1)[1]
+        rest_blk = rest_blk[k:]
     else:
         desc, new = ' '.join(PRI_TAG.sub('', prose(body)).split()), {}
     vals = {**old, **new, **dict(FIELD.findall(keyed))}
     fieldtext = ''.join(f' | {k}: {vals[k]}' for k in KEYS if k in vals)
     line = ' '.join(x for x in (head, tag, desc) if x) + fieldtext + tail
-    if not pri:
-        ls[i] = line
-    else:  # moved like `add` files that level
-        blk = [line] + _item_block(ls, i)[1:]
-        del ls[i:i + len(blk)]
-        j = _place_pri(ls, pri)
-        ls[j:j] = blk
+    blk = [line] + rest_blk
+    del ls[i:i + len(old_blk)]
+    j = _place_pri(ls, pri) if pri else i  # with --pri, moved like `add` files that level
+    ls[j:j] = blk
     _write(todo, ls)
     return line
 
@@ -1952,21 +1957,20 @@ def main(argv: list[str] | None = None) -> int:
     restart = False
     if argv[:1] == ['change'] and '--restart' in argv[2:]:
         restart, argv = True, [a for a in argv if a != '--restart']
-    edit = argv[:1] and (argv[0] in EDITS or argv[0] == 'goal' and len(argv) > 1)
+    editing = argv[:1] and (argv[0] in EDITS or argv[0] == 'goal' and len(argv) > 1)
     if not c.plan_external:
-        if not edit:
+        if not editing:
             return _main(argv, c)  # a read of the checkout's own file needs no lock
         with plansync.locked(c):  # two sessions filing at once would take the same id, and one write drop the other
             rc = _main(argv, c)
     else:
         with plansync.locked(c):  # a read pulls too, so it sees other people's edits
-            plansync.pull(c, force=bool(edit))
+            plansync.pull(c, force=bool(editing))
             rc = _main(argv, c)
     if not rc and argv[0] == 'edit' and len(argv) > 2:  # F45: a slot running it hears of it, as on a change
-        text = add_args(argv[2:])[0].strip()
-        if not text:
-            return rc  # only fields changed: nothing to tell the agent
-        argv = ['change', argv[1], f'its description is now: {text}']
+        got = section(ensure()[0], argv[1])[:1]
+        now = re.sub(r'^\s*- \[.\] \*\*[^*]+\*\*\s*', '', _unblocked(got[0])) if got else ''
+        argv = ['change', argv[1], f'it now reads: {now}']
     if not rc and argv[0] in ('drop', 'change') and len(argv) > 2:
         # B19: outside the lock, so the run can read the plan while it stops and restarts the slot
         if argv[0] == 'change' and not restart:  # F16: tell the agent instead of stopping it

@@ -974,6 +974,32 @@ def test_edit():
         check(r.returncode != 0 and 'no task' in r.stderr, 'an unknown id errors on the command line', r.stderr)
         r = run(root, 'plan', 'edit', 'R1', 'x', '@', 'top', check=False)
         eq(r.returncode, 2, 'edit refuses a place (move does that)')
+        told, cwd, real = [], os.getcwd(), plan.tell
+        plan.tell = lambda c, tid, text, how='tell', wait=None: (told.append((tid, text, how)), (True, 'told s1'))[1]
+        try:
+            os.chdir(root)
+            eq(plan.main(['edit', 'R1', '--test', 'test_p']), 0, 'a field-only edit')
+        finally:
+            os.chdir(cwd)
+            plan.tell = real
+        eq(told, [('R1', 'it now reads: the parser, not on arm | files: p.py | after: R0 | test: test_p', 'change')],
+           'a slot running it is told the line as it now reads ("Your task changed: …"), fields included')
+    with tempfile.TemporaryDirectory() as tmp:
+        todo = Path(tmp) / 'TODO.md'
+        todo.write_text('\n'.join(['# TODO', '', '### Next', '',
+                                   '- [ ] **M1** old words | files: m.py',
+                                   '  more old words — a stale note',
+                                   '- [ ] **M2** keeps its sub-item',
+                                   '  - [ ] **M2a** the sub-item — its note',
+                                   '- [~] **M3** blocked | files: q.py',
+                                   '  continued BLOCKED: DECIDE: which? (asked 2026-11-20 10:00)', '']), encoding='utf-8')
+        plan.edit('M1', 'new words', todo=todo)
+        plan.edit('M2', 'new two', todo=todo)
+        plan.edit('M3', 'new three', todo=todo)
+        eq(Path(todo).read_text(encoding='utf-8').splitlines()[4:],
+           ['- [ ] **M1** new words | files: m.py', '- [ ] **M2** new two', '  - [ ] **M2a** the sub-item — its note',
+            '- [~] **M3** new three | files: q.py BLOCKED: DECIDE: which? (asked 2026-11-20 10:00)'],
+           'a multi-line task loses its old continuation lines and the note on them; sub-items and BLOCKED stay')
 
 
 if __name__ == '__main__':
