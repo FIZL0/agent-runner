@@ -61,6 +61,15 @@ def _net(cwd: Path):
     return g
 
 
+def missing_remote(cwd: Path) -> str | None:
+    """`[git] push` when this repository has no remote of that name (a project downloaded without git, say),
+    else None: every push then returns '' quietly, so the run and `done` say it once instead (B70)."""
+    remote = cfg(cwd).push_remote
+    if remote and _git(cwd)('remote', 'get-url', remote).returncode:
+        return remote
+    return None
+
+
 def shared_name(cwd: Path, remote: str, default: str | None = 'main') -> str | None:
     """The shared branch: configured `[git] master_branch`, remote HEAD, main/master/trunk, then `default`."""
     if branch := cfg(cwd).master_branch:

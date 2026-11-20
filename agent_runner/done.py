@@ -33,7 +33,7 @@ from pathlib import Path
 
 from agent_runner import plan, plansync
 from agent_runner.config import cfg, finished_mark
-from agent_runner.gitops import git, push, shared_branch
+from agent_runner.gitops import git, missing_remote, push, shared_branch
 
 
 PROG = 'run done'  # the name in messages; a wrapper sets its own ('kit done')
@@ -162,6 +162,8 @@ def record(a, c) -> int:
         print(line)
     elif here and (remote := c.push_remote) and shared_branch(cwd, remote, here):
         print(f'{here} is not pushed: done only pushes a task branch (git push {remote} {here} to publish)')
+    elif here and (gone := missing_remote(cwd)):
+        print(f'{here} not pushed: no remote {gone} (git remote add {gone} <url> to publish)')
     return finished(c, a)
 
 
