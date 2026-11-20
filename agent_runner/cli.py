@@ -6,61 +6,43 @@ import sys
 
 USAGE = """agent-runner: AI agents work through plan/TODO.md, one task each, in parallel.
 
-Run the agents
+What you type
     agent-runner                      start the run in the background and get the prompt back
-    agent-runner --attach             the same, then its pane in this terminal (Ctrl-b d: back to the background)
-    agent-runner attach [s2]          see the run's pane, or slot 2's (Windows: slot 2's console window)
+    agent-runner --attach             the same, then watch its pane here (Ctrl-b d: back to the background)
+    agent-runner attach [s2]          see the run's pane, or slot 2's
     agent-runner control              a control session here: ask it "status?", to pause, add slots, file a task
-                                      (a run opens c1 beside it; a new pane in its tmux session is another)
-    agent-runner control --new        open another beside the run, without taking focus; prints its claude.ai/code link
-    agent-runner run once             try it: one task, then stop
-    agent-runner run                  the run in this terminal, with the slots runner.toml sets, until you stop it
-    agent-runner run 3                3 agents at once
-    agent-runner run --dry-run 3      show what 3 agents would start now, start nothing
-    agent-runner stop                 let running tasks finish, start no new ones
-    agent-runner stop --force         end the sessions now; each resumes in the next run
-    agent-runner stop --shutdown      stop, then shut the computer down (--suspend: sleep)
-    agent-runner stop --undo          take a stop back: start tasks again
-    agent-runner status               is a run up, each slot's task and minutes, merges lately, usage (-n 20: log too)
+    agent-runner control --new        another one beside the run; prints its claude.ai/code link
+    agent-runner status               is a run up, each slot's task, merges lately, usage (-n 20: log too)
     agent-runner since [2h|yesterday] what landed, started or got stuck since you last looked (--follow: live)
     agent-runner pause                start no new tasks, stay up (--off: go on)
+    agent-runner stop                 let running tasks finish, start no new ones (--force: now)
     agent-runner slots +1             one slot more (-1 fewer, 4: exactly four)
-    agent-runner force                start tasks past the usage caps (--off: caps hold)
-    agent-runner key z                any key the runner's pane takes (? lists them)
-    agent-runner take B646            do B646 in your own session or a subagent, beside a run: prints its worktree and prompt
-    agent-runner take B646 --merge    after `done` there: the runner tests and merges it (--drop: give it back)
-    agent-runner take "TEXT" --kind B [--files A,B] [--here]
-                                      queue a task and take it at once; --here moves the main checkout's edits into it
-    agent-runner resume B646          continue B646's last session, cut off by a dropped network or a reboot
-    agent-runner wip [show|restore|drop NAME]
-                                      your main-checkout edits a merge moved to wip/main-checkout-*: look,
-                                      restore into a take worktree (`wip restore NAME ID`), or delete
-    agent-runner wizard B646          walk through the hand steps a blocked task left a wizard for, then confirm it
-
-See and change the task list
+    agent-runner wizard               walk through the hand steps a blocked task waits on, then confirm it
+    agent-runner guide                how an agent you start in this repo should work with the runner
     agent-runner plan                 every task id, one line each
-    agent-runner plan next            the task that starts next
-    agent-runner plan B646            one task's full text
     agent-runner plan add B "Fix the menu flicker"
                                       new task B647 (B: the kind of work, see `plan kinds`)
-    agent-runner plan add B646 "Bake the letter sheet"
-                                      new subtask B646a: never runs beside B646
-    agent-runner plan block B12 --after B646 "needs the new sheet"
-                                      B12 waits, and reopens by itself once B646 is done
+    agent-runner plan B646            one task's full text
+    agent-runner wip                  your main-checkout edits a merge moved aside (show|restore|drop NAME)
+    agent-runner upgrade              update agent-runner; a run that is up restarts on it
+
+Mostly for agents (you can run these too)
+    agent-runner take B646            do B646 in your own session beside a run: prints its worktree and prompt
+    agent-runner take B646 --merge    after `done` there: the runner tests and merges it (--drop: give it back)
+    agent-runner resume B646          continue B646's last session, cut off by a dropped network or a reboot
+    agent-runner done B646 "Halve the sheet's memory" [--blocked "why"]
+    agent-runner plan block B12 --after B646 "why"
     agent-runner plan move B12 top    B12 to the top: the next free agent takes it
+    agent-runner plan next            the task that starts next
     agent-runner plan help            every plan command
-
-Finish a task (what an agent runs at the end)
-    agent-runner done B646 "Halve the sheet's memory"
-    agent-runner done B646 "Halved part of it" --blocked "needs a browser to measure"
-
-More
-    agent-runner cost                 where the workers' tokens go, by kind of tool call (last 7 days)
-    agent-runner upgrade              update agent-runner (pipx, uv tool or git pull); a run that is up restarts on it
+    agent-runner key z                any key the runner's pane takes (? lists them)
+    agent-runner home [slots|plan]    where this project's runner files are: for scripts
     agent-runner context              what every session loads (rules, CLAUDE.md, AGENTS.md) and what to move out
-    agent-runner home [slots|plan]    where this project's runner files are ([run] home): for scripts
+    agent-runner cost                 where the workers' tokens go, by kind of tool call (last 7 days)
+    agent-runner run once             one task in this terminal, then stop (run 3: three agents)
+    agent-runner run --dry-run 3      what 3 agents would start now; starts nothing
+    agent-runner force                start tasks past the usage caps (--off: caps hold)
     agent-runner help order           what runs when, and how to make one task wait for another
-    agent-runner guide                how an agent you start in this repo should work with the runner
     agent-runner run --help           every runner option
     agent-runner --version
 

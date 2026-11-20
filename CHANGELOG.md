@@ -4,6 +4,11 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- `agent-runner --help` puts what a person types first (start, attach, control, status, since, pause, stop,
+  slots, wizard, guide, plan) and the rest under "Mostly for agents (you can run these too)", one short line
+  each. Bare `agent-runner wizard` runs the one waiting wizard, lists them when several wait, or says there
+  are none (F48).
+
 ## 0.54.0 (2026-11-20)
 
 - A session you open by hand in a runner repo (the Claude desktop app, a terminal, an IDE) is a control

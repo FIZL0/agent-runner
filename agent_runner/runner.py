@@ -6545,15 +6545,45 @@ def wizard_cmd(tid: str) -> str:
     return f'{C.command} wizard {tid}'
 
 
+def waiting_wizards() -> list[tuple[str, str]]:
+    """F48: (id, title) of each item under Needs you (not the shelved ones) that has a wizard, in TODO order."""
+    out = []
+    for label, tid, _k, _what, _url, title, sh, *_ in waiting_ok():
+        if label != 'CONCEPT' and not sh and wizard_file(tid) and tid not in [t for t, _ in out]:
+            out.append((tid, title))
+    return out
+
+
 def cmd_wizard(argv: list[str], prog: str = f'{RUNNER} wizard') -> int:
-    """`agent-runner wizard ID`: run the wizard an agent left for a BLOCKED item, then confirm the item."""
+    """`agent-runner wizard [ID]`: run the wizard an agent left for a BLOCKED item, then confirm the item."""
     ap = argparse.ArgumentParser(prog=prog, description='Walk through the hand steps a blocked task needs '
                                  '(a login, a cert, a secret), then confirm it.')
-    ap.add_argument('id', help='the task id, as Needs you shows it')
+    ap.add_argument('id', nargs='?', help='the task id, as Needs you shows it (none: the one that waits)')
     ap.add_argument('--check', action='store_true', help='only check the script (bash -n), run nothing')
     ap.add_argument('--path', action='store_true', help='print where the script is, run nothing')
     a = ap.parse_args(argv)
     init()
+    if not a.id:  # F48: bare `wizard` runs the one waiting, or lists them to pick
+        ids = waiting_wizards()
+        if not ids:
+            print('No wizard waits for you.')
+            return 0
+        if len(ids) > 1:
+            print(f'{len(ids)} wizards wait for you:')
+            for i, (tid, title) in enumerate(ids, 1):
+                print(f'  {i}. {tid}  {title}')
+            pick = ''
+            if sys.stdin.isatty():
+                try:
+                    pick = input('Which one (number or id, Enter: none)? ').strip()
+                except EOFError:
+                    pick = ''
+            chosen = [t for i, (t, _) in enumerate(ids, 1) if pick in (str(i), t)] if pick else []
+            if not chosen:
+                print(f'Run one with `{wizard_cmd("ID")}`.')
+                return 0 if not pick else 2
+            ids = [(chosen[0], '')]
+        a.id = ids[0][0]
     f = C.notes('wizards', f'{a.id}.sh')
     if a.path:
         print(f)
