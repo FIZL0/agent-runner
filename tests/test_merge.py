@@ -119,11 +119,14 @@ def test_test(repo: Path):
             check('B2' in R.ALONE and not t.solo, 'B2 merges in a turn of its own; B1 may still batch')
         finally:
             R.ALONE.discard('B2')
-        R.blame = lambda tids, d, base, names: []
+        blamed = []
+        R.blame = lambda tids, d, base, names: (blamed.append(names), [])[1]
+        R.FAILED['B1'] = ['test_x']
         repair_merges, R.C.run['repair_merges'] = R.C.run['repair_merges'], False
         t = turn(d, solo=False)
         t.base, t.merged, t.riders = git(d, 'rev-parse', 'HEAD'), git(d, 'rev-parse', 'HEAD'), ['B2']
         eq(M.batch_test(t) is M.BATCH_RETRY, True, 'a failing batch nobody is blamed for: build again')
+        eq(blamed, [['test_x']], 'blame ran on the failing tests and named nobody')
         check(t.solo and t.repairs == [], 'B1 again alone, without repairs')
         R.C.run['repair_merges'] = repair_merges
     finally:
