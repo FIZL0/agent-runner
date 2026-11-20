@@ -1642,7 +1642,8 @@ def test_short_titles_and_since(repo: Path):
             write = lambda *es: tr.write_text(''.join(json.dumps(e) + '\n' for e in es))
             sid = '12345678-1234-1234-1234-123456789abc'
             with mock.patch.object(R.C, 'notes', lambda *a: Path(tdir, 'feed.sid')), \
-                    mock.patch.object(R, 'transcript', lambda s: str(tr) if s == sid else None):
+                    mock.patch.object(R, 'transcript', lambda s: str(tr) if s == sid else None), \
+                    mock.patch.dict(os.environ, {'CLAUDE_CODE_SESSION_ID': ''}):
                 Path(tdir, 'feed.sid').write_text(sid + '\n')
                 write(hum({'type': 'text', 'text': 'old'}), pics('/u/old.png'),
                       hum({'type': 'image'}, {'type': 'image'}, {'type': 'text', 'text': 'look'}),
@@ -1651,6 +1652,11 @@ def test_short_titles_and_since(repo: Path):
                    'control --new --ask passes on the images of the message being handed on')
                 write(hum({'type': 'image'}), pics('/u/a.png'), res, hum({'type': 'text', 'text': 'and this?'}))
                 eq(R.feed_images(), [], 'a later text-only message forwards no earlier images')
+                write(hum({'type': 'image'}), pics('/u/c.png'))
+                Path(tdir, 'feed.sid').unlink()
+                eq(R.feed_images(), [], 'no feed.sid and no session env: nothing')
+                with mock.patch.dict(os.environ, {'CLAUDE_CODE_SESSION_ID': sid}):
+                    eq(R.feed_images(), ['/u/c.png'], 'without feed.sid the calling session is read (B22)')
         h = run(repo, 'control', '--help')
         check('--image' in h.stdout, 'control --image is an option', h.stdout)
         eq(run(repo, 'since', '--follow', '--keep-mark', '--help').returncode, 0, 'since --keep-mark is an option')

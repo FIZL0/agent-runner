@@ -4,6 +4,11 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Images reach the new control session from a runner feed started by an older runner: `control --new --ask`
+  reads the calling session's transcript (`CLAUDE_CODE_SESSION_ID`) for the handed-on message's images, and
+  `<notes>/remote/feed.sid` only when that is unset. A feed started before 0.50 never wrote feed.sid, so it
+  forwarded no pictures and the control session went looking for screenshots on the desktop instead.
+
 ## 0.50.2 (2026-11-20)
 
 - Changes reach a running agent instead of restarting it. `plan change ID TEXT` on a task a slot is running

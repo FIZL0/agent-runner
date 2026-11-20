@@ -7028,11 +7028,15 @@ def feed_images() -> list[str]:
     """The images attached to the person's latest message in the runner feed, the one being handed on, in display
     order: Claude Code records their saved paths in the feed's transcript (an `inlined_image_paths` attachment
     after the message). `control --new --ask` passes them on itself, so a feed on an older brief, or a Haiku that
-    skips the step, still forwards the pictures, and a later text-only message forwards none."""
-    try:
-        sid = C.notes(REMOTE_DIR, FEED_SID).read_text(encoding='utf-8').strip()
-    except OSError:
-        return []
+    skips the step, still forwards the pictures, and a later text-only message forwards none. The session is the
+    one running this command (Claude Code's CLAUDE_CODE_SESSION_ID: the feed handing the message on), else
+    <notes>/remote/feed.sid (a feed started by an older runner never wrote that file, B22)."""
+    sid = os.environ.get('CLAUDE_CODE_SESSION_ID', '').strip()
+    if not SID_RE.fullmatch(sid):
+        try:
+            sid = C.notes(REMOTE_DIR, FEED_SID).read_text(encoding='utf-8').strip()
+        except OSError:
+            return []
     t = transcript(sid) if SID_RE.fullmatch(sid) else None
     if not t:
         return []
