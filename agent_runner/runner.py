@@ -5779,13 +5779,43 @@ def what_changed(tid: str) -> str:
     return subj if len(subj) <= 100 else subj[:99].rsplit(' ', 1)[0] + '…'
 
 
-def follow_lines(chunk: str, titles: dict[str, str], now: dt.datetime) -> tuple[list[str], str | None]:
+NEEDS_YOU = ('needs you', 'looks stuck', 'run held, needs you')  # since_event kinds only a person can clear
+
+
+def needs_you_line(line: str, titles: dict[str, str], now: dt.datetime, waiting) -> str | None:
+    """A run.log line as `since --follow --needs-you` prints it, or None when it does not need the person: the run
+    held (STOPPED, with what holds it), a task left for a human, one that looks stalled, and a task that landed
+    or blocked waiting on a person's answer (a CONFIRM/DECIDE/BLOCKED ask, or a concept page waiting for an OK:
+    `waiting` is `waiting_ok()`'s list, read after the line was logged)."""
+    if not (e := since_event(line, titles)):
+        return None
+    kind = e[2].split(': ', 1)[0]
+    if kind in NEEDS_YOU:
+        what = e[2]
+        if kind == 'run held, needs you' and (m := SINCE_LINE.match(line)):
+            held = m[2][len('STOPPED: '):].strip()
+            what = f'{kind}: {held if len(held) <= 240 else held[:239].rsplit(" ", 1)[0] + "…"}'
+        return f'{when(e[0], now)}  {what}'
+    if e[1] and kind in ('landed', 'part landed, rest stuck'):
+        for label, tid, k, ask, url, title, shelved in waiting or []:
+            if e[1] in (tid, k) and not shelved:
+                return f'{when(e[0], now)}  waits for you: ' + '  '.join(
+                    x for x in (label, f'{title or titles.get(tid) or tid}: {ask} [{tid}]', url) if x)
+    return None
+
+
+def follow_lines(chunk: str, titles: dict[str, str], now: dt.datetime, needs_you: bool = False,
+                 waiting=None) -> tuple[list[str], str | None]:
     """The lines `since --follow` prints for new run.log text: one plain line per event, a landed task with
-    what changed; and the newest stamp read."""
+    what changed; and the newest stamp read. `needs_you`: only what needs the person (`needs_you_line`)."""
     out, last = [], None
     for l in chunk.splitlines():
         if m := SINCE_LINE.match(l):
             last = m[1]
+        if needs_you:
+            if nl := needs_you_line(l, titles, now, waiting):
+                out.append(nl)
+            continue
         if e := since_event(l, titles):
             line = f'{when(e[0], now)}  {e[2]}'
             if e[1] and e[2].startswith('landed: ') and (did := what_changed(e[1])):
@@ -5794,15 +5824,19 @@ def follow_lines(chunk: str, titles: dict[str, str], now: dt.datetime) -> tuple[
     return out, last
 
 
-def follow(poll: float = 2.0, until: float | None = None) -> int:
+def follow(poll: float = 2.0, until: float | None = None, needs_you: bool = False) -> int:
     """`since --follow`: print one plain line per new event as run.log gets it, moving the since mark as it
-    prints; from the log's end, until killed (or `until`, a monotonic deadline, for tests)."""
+    prints; from the log's end, until killed (or `until`, a monotonic deadline, for tests). `needs_you`: only
+    what needs the person (`needs_you_line`), and the mark stays put: the landed and started lines it skips
+    are still news for the next `since`."""
     logf = C.notes('run.log')
     try:
         pos = logf.stat().st_size
     except OSError:
         pos = 0
-    print(f'following {logf}: one line per landed, started or stuck task, and when the run goes idle or stops',
+    print(f'watching {logf} for what needs you: the run held, a task left for you, stalled, or waiting on your '
+          f'answer' if needs_you else
+          f'following {logf}: one line per landed, started or stuck task, and when the run goes idle or stops',
           flush=True)
     buf = ''
     while until is None or time.monotonic() < until:
@@ -5817,10 +5851,11 @@ def follow(poll: float = 2.0, until: float | None = None) -> int:
                 pos += len(data)
                 buf += data.decode('utf-8', errors='replace')
                 chunk, _, buf = buf.rpartition('\n')
-                lines, last = follow_lines(chunk, task_titles(), dt.datetime.now())
+                lines, last = follow_lines(chunk, task_titles(), dt.datetime.now(), needs_you,
+                                           waiting_ok() if needs_you and 'merged, ' in chunk else None)
                 for l in lines:
                     print(l, flush=True)
-                if last:
+                if last and not needs_you:
                     move_since_mark(last)
         except OSError:
             pass
@@ -5840,10 +5875,15 @@ def cmd_since(argv: list[str], prog: str = f'{RUNNER} since') -> int:
     ap.add_argument('when', nargs='?', help='2h, 30m, 1d, today, yesterday, or a date/time; default: the last `since`')
     ap.add_argument('--follow', '-f', action='store_true',
                     help='stay running and print one line per new event as it happens')
+    ap.add_argument('--needs-you', action='store_true',
+                    help='with --follow: only what needs you (the run held, a task left for you, stalled, or '
+                         'waiting on your answer), and the last-look mark stays put')
     a = ap.parse_args(argv)
     init()
+    if a.needs_you and not a.follow:
+        ap.error('--needs-you goes with --follow')
     if a.follow:
-        return follow()
+        return follow(needs_you=a.needs_you)
     f = since_mark_file()
     try:
         mark = f.read_text(encoding='utf-8').strip() or None

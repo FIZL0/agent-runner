@@ -105,6 +105,16 @@ Bullets are titles in everyday words, never ids or full lines: the `[F5]` at the
 to act on a task or when the person asks which one. End the opening (only the opening) with one line of hints:
 `/run · /since · /follow · /control · /pause · /stop · /slots · or just describe a bug or idea to queue it`
 
+**Tell the person, unasked, when the run needs them.** Every control session, on its first turn (with the
+opening, or before answering the first message of a blank one), starts the Monitor tool on
+`{cmd} since --follow --needs-you`, once: it prints a line only when the run is held (STOPPED: uncommitted edits or a
+mid-merge in the main checkout, staged changes, a usage cap), a task is left for a human, looks stalled, or
+waits on the person's answer (CONFIRM/DECIDE/BLOCKED, a concept page waiting for an OK). Nobody watches the
+runner's pane any more, so this is how they hear it. On each line, post one plain bullet: what is held and the
+one thing to do (`Commit or move the uncommitted edits in {repo}: they hold a tested merge`, `F5 asks you to
+check the push arrived on your phone`, with the link when there is one), and send that bullet with the
+PushNotification tool so a phone hears it. Do not start it twice; it never moves the last-look mark.
+
 What the person asks, and what you run (`{cmd}` is the runner):
 - "status?", "/run", "what's running?", "how's it going?": `{cmd} status` (`/run -n 20`: `{cmd} status -n 20`,
   with the run log's last lines); "since", "/since", "what happened?", "anything new?": `{cmd} since` (it
@@ -113,7 +123,9 @@ What the person asks, and what you run (`{cmd}` is the runner):
   no hints line.
 - "follow", "live", "/follow": start the Monitor tool on `{cmd} since --follow` (one plain line per landed,
   started or stuck task, and when the run goes idle or stops) and post each line it brings as one short
-  bullet, without its id. "stop following": stop that Monitor. Never start it unasked.
+  bullet, without its id. "stop following": stop that Monitor. Never start it unasked. It is the full feed,
+  needs-you lines included, so while it runs stop the needs-you watch (one watch is enough; push its needs-you
+  lines as above), and start the needs-you watch again when the person stops following.
 - "new", "new session", "/new", "/control", "another control session": `{cmd} control --new` opens one
   beside the run without taking focus and prints its claude.ai/code link: answer with just that link (on its
   own line, so it can be tapped), or what it printed when there is none.
@@ -171,7 +183,8 @@ HINT_SKILLS = {
               'everyday words, grouped under Landed / Stuck / Running, without task ids.'),
     'follow': ('Follow the agent-runner run live (the person typed /follow).',
                'Start the Monitor tool on `{cmd} since --follow` and post each line it brings as one short bullet, '
-               'without its id, until the person says to stop following.'),
+               'without its id, until the person says to stop following. It carries the needs-you lines too, so '
+               'stop the `since --follow --needs-you` watch while it runs and start that again afterwards.'),
     'pause': ('Pause the agent-runner run, or go on (the person typed /pause).',
               'Run `{cmd} pause $ARGUMENTS` (`--off` goes on) and say in one line what it printed.'),
     'stop': ('Stop the agent-runner run (the person typed /stop).',
@@ -200,8 +213,9 @@ def control_skills(cmd: str, control: str = 'control') -> dict[str, str]:
 
 
 CONTROL_START = ("Open with the summary your control brief describes (`{cmd} status` only, not since: open each "
-                 "waiting concept page, a headline, the groups under their headings, then the hints line), and "
-                 "wait for me.")
+                 "waiting concept page, a headline, the groups under their headings, then the hints line), start "
+                 "the needs-you watch your brief describes (the Monitor tool on `{cmd} since --follow --needs-you`), "
+                 "and wait for me.")
 
 
 SKILL = """\

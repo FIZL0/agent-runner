@@ -858,8 +858,15 @@ def test_control(repo: Path):
 
     c1 = R.control_argv(1, 'sid-1', resume=False)
     eq(c1[0], R.plat.exe(R.C.run['agent']), 'the agent')
-    check('summary' in c1[1] and f'{R.C.command} status' in c1[1] and f'{R.C.command} since' not in c1[1]
-          and 'watch' not in c1[1], 'control 1 opens with a status-only summary: no since, no watch')
+    watch = f'{R.C.command} since --follow --needs-you'
+    check('summary' in c1[1] and f'{R.C.command} status' in c1[1]
+          and f'{R.C.command} since' not in c1[1].replace(watch, ''),
+          'control 1 opens with a status-only summary: no since')
+    from agent_runner.guide import CONTROL_START
+    check(watch in c1[1] and 'Monitor' in c1[1] and watch in CONTROL_START.format(cmd=R.C.command),
+          'CONTROL_START names the needs-you watch, under the Monitor tool', c1[1])
+    check(watch in brief and 'PushNotification' in brief and 'first turn' in brief,
+          'the brief: every control session starts the needs-you watch on its first turn and pushes each line')
     eq(c1[2:4], ['--session-id', 'sid-1'], 'control 1: the prompt, then its session')
     argv = R.control_argv(2, 'sid-2', resume=False)
     eq(argv[0], R.plat.exe(R.C.run['agent']), 'the agent')
@@ -1199,6 +1206,41 @@ def test_short_titles_and_since(repo: Path):
         eq(len(got), 2, f'follow: its header, then only the new line, not the backlog: {got}')
         check('landed: F5 [F5]' in got[-1],'follow prints a landed task as it lands', got)
         eq(R.since_mark_file().read_text(encoding='utf-8').strip(), later2, 'and moves the since mark')
+
+        # --needs-you: only what a person must clear; landed and started are skipped
+        ny = ['=== 2026-11-19T14:30:00 slot 1: B9 (Next; a.py)',
+              '=== 2026-11-19T14:31:00 F5: merged, ticked',
+              '=== 2026-11-19T14:32:00 STOPPED: F5 cannot land: uncommitted edits in demo: commit or move them',
+              '=== 2026-11-19T14:33:00 B9: LEFT FOR A HUMAN — the merge crashed: boom',
+              '=== 2026-11-19T14:34:00 slot 2: F5 looks stalled (no output for 20 min); look at s2',
+              '=== 2026-11-19T14:35:00 B9: merged, blocked',
+              '=== 2026-11-19T14:36:00 run idle: no task it may start']
+        ask = [('DECIDE', 'B9', '', 'Postgres or SQLite?', 'https://x.invalid/b9', 'Fix the flicker', False)]
+        lines, last = R.follow_lines('\n'.join(ny), titles, now, needs_you=True, waiting=ask)
+        eq(lines, ['14:32  run held, needs you: F5 cannot land: uncommitted edits in demo: commit or move them',
+                   '14:33  needs you: Fix the flicker (the merge crashed: boom) [B9]',
+                   '14:34  looks stuck: Control session experience [F5]',
+                   '14:35  waits for you: DECIDE  Fix the flicker: Postgres or SQLite? [B9]  https://x.invalid/b9'],
+           '--needs-you: STOPPED with what holds it, LEFT FOR A HUMAN, stalled, a person ask; no landed/started/idle')
+        lines, _ = R.follow_lines('\n'.join(ny), titles, now, needs_you=True, waiting=[])
+        check(not any('waits for you' in l or 'landed' in l or 'started' in l for l in lines),
+              'a blocked task asking nobody is not news for the watch', lines)
+        later3 = (R.dt.datetime.fromisoformat(later2) + R.dt.timedelta(seconds=5)).isoformat()
+        def add2():
+            with notes.open('a', encoding='utf-8') as fh:
+                fh.write(f'=== {later3} F5: merged, ticked\n'
+                         f'=== {later3} STOPPED: F5 cannot land: {R.ROOT.name} is mid-merge: finish it\n'
+                         f'=== {later3} B9: LEFT FOR A HUMAN — the merge crashed: boom\n')
+        threading.Timer(0.5, add2).start()
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            R.follow(poll=0.1, until=time.monotonic() + 2, needs_you=True)
+        got = out.getvalue().splitlines()
+        eq(len(got), 3, f'follow --needs-you: its header, the STOPPED and the LEFT FOR A HUMAN lines: {got}')
+        check('needs you' in got[0] and 'run held, needs you: F5 cannot land' in got[1]
+              and 'needs you: B9' in got[2] and not any('landed' in g for g in got), 'and skips the landed one', got)
+        eq(R.since_mark_file().read_text(encoding='utf-8').strip(), later2, 'the needs-you watch leaves the mark')
+        eq(run(repo, 'since', '--needs-you').returncode, 2, '--needs-you without --follow is refused')
     finally:
         if keep is None:
             notes.unlink(missing_ok=True)

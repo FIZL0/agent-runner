@@ -134,9 +134,18 @@ task to fix X" (it files it with `plan add`), "do X now" (it uses `take`, never 
   landed, got stuck or needs you since you last looked, then one line of hints: `status · since · follow ·
   new (or /control) · pause · stop · more slots · or just describe a bug or idea to queue it`. Later answers are bullets too, ids
   only when you ask or the session acts on one.
-- **Following**: a session never watches the run by itself. Say "follow" (or "live", "/follow") and it runs
-  `agent-runner since --follow` under the Monitor tool and posts each line it prints as a bullet; "stop
-  following" ends it (see [status and since](#status-and-since)).
+- **Needs you, unasked**: every control session starts the Monitor tool on `agent-runner since --follow
+  --needs-you` on its first turn (control 1's opening message names it; a blank session starts it before
+  answering your first message). It prints only what needs you: the run held (`STOPPED`: uncommitted edits or
+  a mid-merge in the main checkout, staged changes, a usage cap), a task left for a human, one that looks
+  stalled, and a task waiting on your answer (`CONFIRM:`/`DECIDE:`/`BLOCKED:`, a concept page waiting for your
+  OK). On each line the session posts one plain bullet, what is held and the one thing to do, and sends it
+  with PushNotification so a phone hears it: the runner's pane, tmux message and `notify-send` are seen by
+  nobody when the run is driven from the web or a phone.
+- **Following**: say "follow" (or "live", "/follow") and the session runs `agent-runner since --follow` under
+  the Monitor tool and posts each line it prints as a bullet; "stop following" ends it (see [status and
+  since](#status-and-since)). It is the full feed, so the needs-you watch stops while it runs and starts again
+  after.
 - **With `[run] remote`** each control session starts with `--remote-control "<repo> · control N"`, and the
   run keeps `claude remote-control --spawn same-dir --name "<repo> · control" --settings <file>` running in
   the main checkout (output in `.runner/control-server.log`), restarted when it exits (Remote Control quits
@@ -178,7 +187,10 @@ that mark forward, so asking twice in a row shows nothing new the second time. W
 
 `since --follow` stays running and prints one line per new event as run.log gets it (a landed task with the
 first sentence of its `done` message), from now on, moving the mark as it prints: the control session's
-"follow", and fine in any terminal.
+"follow", and fine in any terminal. `since --follow --needs-you` prints only what needs you (the run held,
+with what holds it; left for a human; looks stuck; `waits for you:` a task or concept that landed or blocked
+asking for your answer, with its label, what to do and the link), skips landed, started and idle, and leaves
+the mark where it is: it is the watch every control session keeps.
 
 Both print **Waiting for your OK** first when a concept's build or a task waits for you (below), one line
 each, however old: a caps label for what is asked, the title [id], what to do, the link:
