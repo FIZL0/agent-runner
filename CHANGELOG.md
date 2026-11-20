@@ -8,9 +8,10 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
   needs you, the last 6 hours then live), under a line saying to steer from a control session. No LLM, so no
   tokens; it leaves the last-look mark alone, and the run opens it again within 30 s when it is closed.
   `agent-runner attach board` goes there.
-- With `[run] remote` on, the run opens c1 beside it again (0.49.0 left it out), so it is in tmux and in the
-  apps ("<repo> · control 1", beside the control server's entry). It opens blank, with no summary turn, so it
-  uses no tokens until you type in it.
+- With `[run] remote` on, the run opens c1 beside it again (0.49.0 left it out), in tmux (or its Windows
+  console) for the terminal only: it is not on Remote Control, so the apps show no "<repo> · control 1" beside
+  the control server's "<repo> · control" (the one app entry for starting control sessions) and its start pushes
+  nothing. It opens blank, with no summary turn, so it uses no tokens until you type in it.
 - The runner feed: with `[run] remote` on, the board window is a lean Claude session that is also in the apps,
   as "<repo> · runner". It posts each line of `since --follow --keep-mark` as it lands, runs status, pause,
   stop, force, slots N and `control --new` when asked, and hands anything else to a new control session
