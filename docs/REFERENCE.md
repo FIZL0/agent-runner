@@ -719,6 +719,13 @@ the gate, keep a journal, finish with `done` run in the background (or `done --b
 isn't being stuck, use `plan` as a tool rather than reading TODO.md, and never hand-edit a box. Then
 comes the brief.
 
+It also tells the session to verify before asking: before it turns a check into an F task for a person, it
+tries what is already here, `~/.claude/ACCESS.md` (this machine's logins) and the `## Tools`
+section of the repo's CLAUDE.md (the repo's reach: ssh hosts, preview servers, headless checks). Only what
+truly needs a person (a physical device, a judgment call) goes to one. `agent-runner setup` adds an empty
+`## Tools` heading to CLAUDE.md (creating the file if needed), with a one-line comment on what goes there,
+when it has none; a rerun leaves it alone. There is no separate TOOLS.md: every agent already loads CLAUDE.md.
+
 You can customise it in three ways, from smallest to largest:
 
 - `[run] rules = "AGENTS.md"` sets the file the prompt tells the session to read first.
