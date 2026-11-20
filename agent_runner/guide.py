@@ -243,9 +243,10 @@ comes with images (a note says `The attached image is also saved at "<path>"`), 
 each, so the control session gets the pictures too, not only the text.
 """
 
-RUNNER_START = ("Start the Monitor tool (persistent) on `{cmd} since --follow --keep-mark`, then say only: "
-                "\"{repo} runner feed: what lands shows here. Status, pause, stop or slots N work here; anything "
-                "else opens a control session.\"")
+RUNNER_START = ("Start the Monitor tool (persistent, timeout_ms 1800000) on `{cmd} since --follow --keep-mark`, "
+                "then say only: \"{repo} runner feed: what lands shows here. Status, pause, stop or slots N work "
+                "here; anything else opens a control session.\" When that Monitor times out with no lines, start "
+                "it again the same way and say nothing at all; speak only for a line it printed.")
 
 
 CONTROL_WATCH = """\
@@ -257,7 +258,9 @@ waits on the person's answer (CONFIRM/DECIDE/BLOCKED, a concept page waiting for
 runner's pane any more, so this is how they hear it. On each line, post one plain bullet: what is held and the
 one thing to do (`Commit or move the uncommitted edits in {repo}: they hold a tested merge`, `F5 asks you to
 check the push arrived on your phone`, with the link when there is one), and send that bullet with the
-PushNotification tool so a phone hears it. Do not start it twice; it never moves the last-look mark."""
+PushNotification tool so a phone hears it. Start it with timeout_ms 1800000 (the cap). When it times out with
+no lines, re-arm it silently: start it again with no text at all (no "still watching", no "nothing needs
+you"); speak only for a line it printed. Do not start it twice; it never moves the last-look mark."""
 
 CONTROL_FEED_WATCH = """\
 **The runner feed tells the person when the run needs them.** The session "{repo} · runner" watches the run
@@ -267,7 +270,8 @@ CONTROL_START = ("Open with the summary your control brief describes (`{cmd} sta
                  "waiting concept page, a headline, the groups under their headings, then the hints line), "
                  "{watch_start}and wait for me.")
 CONTROL_START_WATCH = ("start the needs-you watch your brief describes (the Monitor tool on "
-                       "`{cmd} since --follow --needs-you`), ")
+                       "`{cmd} since --follow --needs-you`, timeout_ms 1800000, re-armed silently when it times "
+                       "out), ")
 
 
 SKILL = """\

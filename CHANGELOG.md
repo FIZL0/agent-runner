@@ -4,6 +4,11 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- A control session's needs-you watch no longer posts "Still watching. Nothing needs you right now." every
+  five minutes: it starts the Monitor with `timeout_ms 1800000` (the cap) instead of the 5-minute default, and
+  on a timeout with no lines re-arms it with no text at all, speaking only for a line it printed. The runner
+  feed's Monitor does the same.
+
 - The runner feed no longer drops pictures when it hands a message on: `control --new --ask TEXT` takes
   `--image PATH` (repeatable), which adds a line per image to the new control session's first message, naming
   its path and saying to Read it before answering. The feed's brief passes each image the message came with

@@ -958,6 +958,11 @@ def test_control(repo: Path):
           'CONTROL_START names the needs-you watch, under the Monitor tool', c1[1])
     check(watch in brief and 'PushNotification' in brief and 'first turn' in brief,
           'the brief: every control session starts the needs-you watch on its first turn and pushes each line')
+    from agent_runner.guide import RUNNER_START
+    rs = RUNNER_START.format(cmd=R.C.command, repo='x')
+    check('timeout_ms 1800000' in brief and 're-arm it silently' in brief and 'with no text at all' in brief
+          and 'timeout_ms 1800000' in c1[1] and 'timeout_ms 1800000' in rs and 'say nothing at all' in rs,
+          'the needs-you watch and the feed start at timeout_ms 1800000 and re-arm silently on an empty expiry')
     eq(c1[2:4], ['--session-id', 'sid-1'], 'control 1: the prompt, then its session')
     argv = R.control_argv(2, 'sid-2', resume=False)
     eq(argv[0], R.plat.exe(R.C.run['agent']), 'the agent')

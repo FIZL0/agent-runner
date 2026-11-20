@@ -141,7 +141,9 @@ task to fix X" (it files it with `plan add`), "do X now" (it uses `take`, never 
   stalled, and a task waiting on your answer (`CONFIRM:`/`DECIDE:`/`BLOCKED:`, a concept page waiting for your
   OK). On each line the session posts one plain bullet, what is held and the one thing to do, and sends it
   with PushNotification so a phone hears it: the runner's pane, tmux message and `notify-send` are seen by
-  nobody when the run is driven from the web or a phone.
+  nobody when the run is driven from the web or a phone. The watch starts with `timeout_ms 1800000` (the
+  Monitor tool's cap); when it times out with nothing printed the session starts it again silently, with no
+  "still watching" line, so a quiet run posts nothing. The runner feed's own Monitor does the same.
 - **Following**: say "follow" (or "live", "/follow") and the session runs `agent-runner since --follow` under
   the Monitor tool and posts each line it prints as a bullet; "stop following" ends it (see [status and
   since](#status-and-since)). It is the full feed, so the needs-you watch stops while it runs and starts again
