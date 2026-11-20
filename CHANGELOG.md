@@ -4,6 +4,12 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Releases reach your phone: when a merge brings a release onto main (a newer version heading at the top of
+  CHANGELOG.md, or a new version tag), the run logs `<repo> X.Y.Z released: <first changelog line>`,
+  `since --follow` prints it, and the runner feed sends it with PushNotification. Control sessions take
+  "notify me when X" ("ping me when B56 merges", "tell me when the run is idle"): they say what they will
+  watch for, watch `since --follow` (or poll `status`) with Monitor, push once when it happens, and stop (F51).
+
 ## 0.53.2 (2026-11-20)
 
 - Windows: no more visible `...\Scripts\python.exe` console for the background run, the Stop hook's timer or

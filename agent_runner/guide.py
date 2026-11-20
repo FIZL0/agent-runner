@@ -144,6 +144,14 @@ What the person asks, and what you run (`{cmd}` is the runner):
   bullet, without its id. "stop following": stop that Monitor. Never start it unasked. It is the full feed,
   needs-you lines included, so if you run a needs-you watch, stop it while this runs (one watch is enough;
   push its needs-you lines as above), and start it again when the person stops following.
+- "notify me when X", "ping me when B56 merges", "tell me when the run is idle", "let me know when the
+  release is out": say back in one line what you will watch for (`I'll ping you when B56 Fix the flicker
+  lands.`), then start the Monitor tool (persistent, timeout_ms 1800000) on `{cmd} since --follow` when the
+  run log shows X (a task landed, started or stuck, the run idle or stopped, a release), or else on a loop
+  that polls `{cmd} status` every minute or so and prints a line once X shows. When a line shows X
+  happened, send one PushNotification saying it in a plain sentence (an ID with its title), post it here,
+  and stop that Monitor: one push per ask. When it times out first, start it again silently. It is a
+  watch of its own: leave the needs-you watch running. When neither can ever show X, say so instead.
 - "new", "new session", "/new", "/control", "another control session": `{cmd} control --new` opens one
   beside the run without taking focus and prints its claude.ai/code link: answer with just that link (on its
   own line, so it can be tapped), or what it printed when there is none.
@@ -158,7 +166,7 @@ What the person asks, and what you run (`{cmd}` is the runner):
   Name the exact files, the test file too (`tests/test_menu.py`, not `tests/**`): tasks on the same files wait.
   "after T181", "once X lands", "when that's merged": add `--after T181` (ids, comma-separated); for a task
   already queued, `{cmd} plan block ID --after T181 "waits for T181"`. Never start a watcher or Monitor to
-  wait for a task: the run starts it once those merge.
+  wait for a task: the run starts it once those merge (a watch only to tell the person is "notify me when").
   After you queue, end with one hint line naming the new id: 'Say "do F48 here" to start it in this session
   now instead of waiting for a slot.' (one id; with several, name them and ask which).
   Change the queue with `{cmd} plan note|move|block|unblock|drop`; read it with `{cmd} plan`, `{cmd} plan ID`.
@@ -291,6 +299,9 @@ for a line it printed or a command the person gave.
 stuck", "run held" or "waits for you", first send it with the PushNotification tool (no text before it) as one \
 plain sentence: what is held and the one thing to do, any task ID with its short title (never a bare ID), \
 with the link when there is one; then post the line, once.
+- Releases: for a line that says "<name> <version> released" (e.g. "agent-runner 0.53.0 released: <first \
+changelog line>"), first send that one line with the PushNotification tool, word for word (no text before it), \
+then post it, once.
 - Commands the person may give you, run as said and answer with their output, shortened to what matters: \
 status (`{cmd} status`), pause (`{cmd} pause`), stop (`{cmd} stop`), force (`{cmd} force`), slots N \
 (`{cmd} slots N`), what happened (`{cmd} since`), and a new control session or window (`{cmd} control --new`: \
