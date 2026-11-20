@@ -1035,6 +1035,16 @@ def test_control(repo: Path):
           and 'timeout_ms 1800000' in c1[1] and 'timeout_ms 1800000' in rs and 'say nothing at all' in rs,
           'the needs-you watch and the feed start at timeout_ms 1800000 and re-arm silently on an empty expiry')
     eq(c1[2:4], ['--session-id', 'sid-1'], 'control 1: the prompt, then its session')
+    # B47: a handed-on ask carries what waits under Needs you, so a reply to it is answered, not just queued
+    item = ('DECIDE', 'R43', '', 'Deploy on every push or on v* tags?', '', 'How should the site deploy')
+    with mock.patch.object(R.P, 'asks', lambda *a, **k: [item]):
+        msg = R.control_ask('deploy with tags instead of every push')
+    check(msg.startswith('deploy with tags') and '- R43: Deploy on every push or on v* tags?' in msg
+          and 'plan answer' in msg, 'a handed-on ask lists the waiting items and says to plan answer')
+    with mock.patch.object(R.P, 'asks', lambda *a, **k: []):
+        eq(R.control_ask('add dark mode'), 'add dark mode', 'nothing waiting: the ask as it was')
+    with mock.patch.object(R.P, 'asks', lambda *a, **k: (_ for _ in ()).throw(OSError())):
+        eq(R.control_ask('add dark mode'), 'add dark mode', 'an unreadable plan never stops the session opening')
     argv = R.control_argv(2, 'sid-2', resume=False)
     eq(argv[0], R.plat.exe(R.C.run['agent']), 'the agent')
     eq(argv[1], '--session-id', 'a --new session has no first message: blank until the person types')
@@ -1731,7 +1741,7 @@ def test_short_titles_and_since(repo: Path):
             R.start_board()
         eq(started, [('mine',)], 'the board opens in a run in your own tmux session too')
         ca = R.control_argv(3, 'sid', False, ask='fix the login flicker')
-        eq(ca[1], 'fix the login flicker', 'control --ask: the handed-on request is its first message')
+        check(ca[1].startswith('fix the login flicker'), 'control --ask: the handed-on request is its first message')
         ca = R.control_argv(3, 'sid', False, ask='why is this red?', images=['/t/a.png', '/t/b b.png'])
         check(ca[1].startswith('why is this red?') and '"/t/a.png"' in ca[1] and '"/t/b b.png"' in ca[1]
               and ca[1].count('Read or open it') == 2 and 'attached a.png' in ca[1],
