@@ -751,6 +751,39 @@ def test_attach_flag(repo: Path):
     has(out.getvalue(), r'agent-runner --attach ', '--help lists --attach')
 
 
+def test_bare_outside_git(tmp: Path):
+    print('bare agent-runner outside git: a runner folder becomes a repo; elsewhere git says why, not the usage')
+    import contextlib
+    import io
+    from agent_runner import cli
+    plain, proj = tmp / 'bare-plain', tmp / 'bare-proj'
+    plain.mkdir(), (proj / 'plan').mkdir(parents=True)
+    (proj / 'runner.toml').write_text('', encoding='utf-8')
+    (proj / 'plan' / 'TODO.md').write_text('# hi\n', encoding='utf-8')
+    started: list = []
+    env = {k: v for k, v in os.environ.items() if k != 'AGENT_RUNNER_REPO'}
+    env |= {'GIT_CEILING_DIRECTORIES': str(tmp), 'GIT_AUTHOR_NAME': 't', 'GIT_AUTHOR_EMAIL': 't@t',
+            'GIT_COMMITTER_NAME': 't', 'GIT_COMMITTER_EMAIL': 't@t'}
+    cwd = Path.cwd()
+    with mock.patch.dict(os.environ, env, clear=True), mock.patch.object(cli, 'skill'), \
+            mock.patch.object(R, 'cmd_background', lambda a: started.append(1) or 0):
+        try:
+            os.chdir(plain)
+            err = io.StringIO()
+            with contextlib.redirect_stderr(err):
+                eq(cli.main([]), 2, 'no repo, no runner files: it fails')
+            has(err.getvalue(), r'not a git repository', "and passes on git's reason")
+            check('Run the agents' not in err.getvalue(), 'not the whole usage')
+            check(not (plain / '.git').exists() and not started, 'a plain folder is left alone')
+            os.chdir(proj)
+            with contextlib.redirect_stderr(io.StringIO()):
+                eq(cli.main([]), 0, 'a runner folder with no git')
+            eq(started, [1], 'it starts the run')
+            has(git(proj, 'log', '--format=%s'), r'Start', 'after making it a repo with its files committed')
+        finally:
+            os.chdir(cwd)
+
+
 def test_background(repo: Path):
     print('bare agent-runner: the run in a detached tmux session, or hidden consoles on Windows; attach')
     R.init(repo)
@@ -4831,7 +4864,7 @@ def main() -> int:
                        lambda: test_no_pane(repo, tmp), lambda: test_other_repos_panes(repo, tmp),
                        lambda: test_limit_resumes(repo, tmp),
                        lambda: test_shared_push(repo, tmp), lambda: test_note_on_a_ticked_task(repo), lambda: test_adopt_merge(repo), lambda: test_followups(repo), lambda: test_ci_watch(repo), test_update_notice, test_restart_if_upgraded, test_auto_upgrade, lambda: test_flake_repair(tmp), lambda: test_repair_per_failure(repo),
-                       lambda: test_stalled(tmp), lambda: test_take(repo), lambda: test_take_text_and_here(repo), lambda: test_background(repo), lambda: test_attach_flag(repo), lambda: test_remote_auto(tmp), lambda: test_control(repo),
+                       lambda: test_stalled(tmp), lambda: test_take(repo), lambda: test_take_text_and_here(repo), lambda: test_background(repo), lambda: test_attach_flag(repo), lambda: test_bare_outside_git(tmp), lambda: test_remote_auto(tmp), lambda: test_control(repo),
                        lambda: test_short_titles_and_since(repo), lambda: test_board_follows_run(repo, tmp),
                        lambda: test_remote_sweep(repo, tmp), lambda: test_feed_resume(repo, tmp),
                        lambda: test_concepts_waiting(repo),

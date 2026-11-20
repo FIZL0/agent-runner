@@ -207,7 +207,7 @@ def toplevel(cwd: Path | str | None = None) -> Path:
     r = subprocess.run(['git', 'rev-parse', '--show-toplevel'], cwd=str(cwd or Path.cwd()),
                        capture_output=True, text=True)
     if r.returncode:
-        raise SystemExit('agent-runner: not inside a git repository (or set AGENT_RUNNER_REPO)')
+        raise SystemExit(f'agent-runner: not inside a git repository (or set AGENT_RUNNER_REPO): {r.stderr.strip()}')
     return Path(r.stdout.strip()).resolve()
 
 
