@@ -1101,6 +1101,16 @@ def _stuck_why(tail: str) -> tuple[str, str, bool] | None:
     return what or 'it says nothing more', u.group(0) if u else '', shelved
 
 
+def _waiters(ls: list[str]) -> dict[str, list[str]]:
+    """{id: the tasks its `BLOCKED: (after …)` waits on} for each blocked task."""
+    out = {}
+    for i, l in enumerate(ls):
+        if (m := ITEM.match(l)) and not m.group(1) and m.group(2) == '~':
+            if w := WAITS.findall(ls[i + len(_item_block(ls, i)) - 1]):
+                out[m.group(3).rstrip('.')] = [t.strip() for t in w[-1].split(',') if t.strip()]
+    return out
+
+
 def asks(todo=None, all: bool = False) -> list[tuple[str, str, str, str, str, str, bool]]:
     """Everything waiting on a person, in TODO.md order: (label, task id, its concept id or '', what to do, link
     or '', the task's title, shelved). Label CONCEPT is a build task waiting on a concept page (`waiting`);
@@ -1126,7 +1136,9 @@ def asks(todo=None, all: bool = False) -> list[tuple[str, str, str, str, str, st
                 what = ' '.join((what[:u.start()] + what[u.end():]).split()).rstrip(' :,;')
             item = (a.group(2), tid, '', what, u.group(0) if u else '', title_of(l), bool(a.group(1)))
         elif s := _stuck_why(tail):
-            item = (STUCK, tid, '', s[0], s[1], title_of(l), s[2])
+            held = [h for h, ids in _waiters(ls).items() if tid in ids]
+            what = s[0] + (f' (holds {", ".join(held)} too)' if held else '')  # answering it frees those
+            item = (STUCK, tid, '', what, s[1], title_of(l), s[2])
         else:
             continue
         if all or not item[6]:

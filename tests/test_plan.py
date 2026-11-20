@@ -881,14 +881,16 @@ def test_unlabelled_block():
         eq(plan.reopen(todo=todo), [], 'reopen frees none of them')
         a = {x[1]: x for x in plan.asks(todo)}
         eq(sorted(a), ['F1', 'F3'], 'the two blocks waiting on no task are asks; F2 waits on F1, which is listed')
-        eq((a['F1'][0], a['F1'][3]), (plan.STUCK, 'tests flake, unclear why'), 'label STUCK, what it says')
+        eq((a['F1'][0], a['F1'][3]), (plan.STUCK, 'tests flake, unclear why (holds F2 too)'),
+           'label STUCK, what it says, and the task waiting on it')
+        eq(a['F3'][3], 'waits on Z9', 'one nothing waits on says only what it says')
         check(set(plan.asked_at(todo)) >= {'F1', 'F3'}, 'and stamped, so Needs you shows its age', plan.asked_at(todo))
-        eq(plan.plain_ask(*[a['F1'][i] for i in (0, 3, 5)]), 'Stuck: tests flake, unclear why - reply with what to do',
-           'in plain words, no caps label')
+        eq(plan.plain_ask(*[a['F1'][i] for i in (0, 3, 5)]),
+           'Stuck: tests flake, unclear why (holds F2 too) - reply with what to do', 'in plain words, no caps label')
         now = __import__('datetime').datetime(2026, 11, 20, 15, 0)
         line = '=== 2026-11-20T14:35:00 F1: merged, blocked'
         nl = R.needs_you_line(line, {}, now, [(*x, '') for x in plan.asks(todo, all=True)])
-        eq(nl, '14:35  needs you: Stuck: tests flake, unclear why - reply with what to do [F1]',
+        eq(nl, '14:35  needs you: Stuck: tests flake, unclear why (holds F2 too) - reply with what to do [F1]',
            'since --follow --needs-you prints a line for the unlabelled block')
         plan.shelve('F3', todo=todo)
         eq([x[1] for x in plan.asks(todo)], ['F1'], 'shelve takes it off')
