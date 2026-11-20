@@ -1,3 +1,4 @@
 # TODO — open tasks, in order
 
 ### Next
+- [ ] **F1** [run] auto_upgrade = true: a run upgrades agent-runner by itself when a newer release is out, without asking (user 2026-11-19 'autoupdate option in toml that works for both (updates runner without asking)'). Both ways a run is started: foreground 'agent-runner run' and the background launch (bare 'agent-runner'). Reuse what u does (upgrade(), restart_if_upgraded): upgrade only once the run is idle or between tasks, never mid-merge, and the run restarts on the new version keeping its keys (AGENT_RUNNER_KEEP). Default off. Done when: with auto_upgrade on and a newer version reported by the update check, the run logs the upgrade and restarts on it with no key pressed; a test covers the decision (newer seen + idle -> upgrade; mid-merge -> wait). | files: agent_runner/runner.py, agent_runner/config.py, docs/REFERENCE.md, tests/test_runner.py
