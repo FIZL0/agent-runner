@@ -5133,7 +5133,7 @@ def run(argv: list[str], prog: str) -> int:
         return 2
     if choice == 'tmux' and os.environ.get('TMUX_PANE'):  # `attach` finds the runner's pane by this
         tmux('set-option', '-p', '-t', os.environ['TMUX_PANE'], RUN_TAG, str(ROOT))
-    start_control()  # c1 beside the run ([run] control), and with [run] remote the control server
+    start_control()  # c1 beside the run ([run] control) unless [run] remote, where the control server stands in
     start_control_server()
 
     AUTO_UPGRADE[0] = bool(r['auto_upgrade'])
@@ -6056,7 +6056,8 @@ def started_note(slots: int, where: str) -> str:
              f'    {RUNNER} attach     {attach}',
              f'    {RUNNER} stop       finish the running tasks, then end it (--force: now)']
     if C.run['control'] and control_ok():
-        lines.append(f'    {RUNNER} control    a control session in this terminal (c1 runs beside the run: attach c1)')
+        beside = ('the control server opens the others' if remote_on() else 'c1 runs beside the run: attach c1')
+        lines.append(f'    {RUNNER} control    a control session in this terminal ({beside})')
     if remote_on():
         lines.append(f'    {REMOTE_URL}  the control sessions, from any device or the Claude apps')
     elif remote_slots_on():
@@ -6427,8 +6428,9 @@ def control_pane_argv(target: str, background: bool, sess: str, root: Path, cmd:
 
 
 def start_control() -> None:
-    """The run opens control session c1 beside it, unless `[run] control = false` or c1 already runs (it
-    outlives a stopped run). tmux: under the runner's pane, or in the background session's own window, whose
+    """The run opens control session c1 beside it, unless `[run] control = false`, `[run] remote` is on (the
+    control server starts control sessions from claude.ai and the apps, where c1 would be a second entry) or c1
+    already runs (it outlives a stopped run). tmux: under the runner's pane, or in the background session's own window, whose
     default-command makes every new pane a control session. Windows: a console of its own (hidden in the
     background run)."""
     if not C.run['control'] or not control_ok():
@@ -6443,6 +6445,10 @@ def start_control() -> None:
             tmux('set-option', '-t', f'={sess}', 'default-command', control_default_command(ROOT))
             for e in env:
                 tmux('set-environment', '-t', f'={sess}', *e.split('=', 1))
+    if remote_on():  # the control server starts control sessions from claude.ai and the apps; c1 would be a second entry
+        log(f'control: no c1 beside the run, the control server opens control sessions at {REMOTE_URL} '
+            f'({RUNNER} control opens one in a terminal)')
+        return
     if pid := control_live(1):
         log(f'control: c1 already runs (pid {pid})')
         return

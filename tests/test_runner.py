@@ -902,7 +902,8 @@ def test_control(repo: Path):
     calls = []
     with mock.patch.object(R, 'MUX', R.TmuxMux()), mock.patch.dict(os.environ, {'TMUX_PANE': '%1'}), \
             mock.patch.object(R, 'tmux', lambda *a, **k: calls.append(a) or subprocess.CompletedProcess(a, 0, 'ar-proj\n', '')), \
-            mock.patch.object(R.sp, 'run', lambda *a, **k: calls.append(a[0]) or subprocess.CompletedProcess(a, 0, '%9\n', '')):
+            mock.patch.object(R.sp, 'run', lambda *a, **k: calls.append(a[0]) or subprocess.CompletedProcess(a, 0, '%9\n', '')), \
+            mock.patch.object(R, 'remote_on', lambda: False):
         R.start_control()
         check(any(c[:4] == ('set-option', '-t', '=ar-proj', 'default-command') for c in calls),
               "the background session's default-command is set", calls)
@@ -912,6 +913,31 @@ def test_control(repo: Path):
         with mock.patch.dict(R.C.run, {'control': False}):
             R.start_control()
         eq(calls, [], '[run] control = false: none')
+        note = R.started_note(2, 'here')
+        check('c1 runs beside the run: attach c1' in note and R.REMOTE_URL not in note,
+              'remote off: started_note points at c1', note)
+    started = []
+
+    class FakeThread:
+        def __init__(self, target=None, name='', daemon=None):
+            self.name = name
+
+        def start(self):
+            started.append(self.name)
+    calls = []
+    with mock.patch.object(R, 'MUX', R.TmuxMux()), mock.patch.dict(os.environ, {'TMUX_PANE': '%1'}), \
+            mock.patch.object(R, 'tmux', lambda *a, **k: calls.append(a) or subprocess.CompletedProcess(a, 0, 'ar-proj\n', '')), \
+            mock.patch.object(R.sp, 'run', lambda *a, **k: calls.append(a[0]) or subprocess.CompletedProcess(a, 0, '%9\n', '')), \
+            mock.patch.object(R, 'remote_on', lambda: True), mock.patch.object(R.threading, 'Thread', FakeThread):
+        R.start_control()
+        R.start_control_server()
+        check(not any(isinstance(c, list) and c[:2] in (['tmux', 'new-window'], ['tmux', 'split-window']) for c in calls),
+              'remote on: no c1 pane', calls)
+        check(not any(c[:5] == ('set-option', '-p', '-t', '%9', R.TAG) for c in calls), 'and none tagged c1', calls)
+        eq(started, ['control-server'], 'remote on: the control server thread starts')
+        note = R.started_note(2, 'here')
+        check('attach c1' not in note and 'the control server opens the others' in note and R.REMOTE_URL in note,
+              'remote on: started_note says the control server stands in for c1', note)
 
     skills = R.control_skills_dir()
     eq(skills, repo / '.runner' / 'control-skills', 'the control skills sit under <notes>, not in the repo files')
