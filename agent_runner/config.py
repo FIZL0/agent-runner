@@ -215,7 +215,7 @@ Where: runner.toml (committed, shared by everyone who runs the repo: project beh
 review) or runner.local.toml (this machine only, git-ignored, laid over runner.toml key by key: slots,
 weekly_max, session_max, model, remote, silent, control_idle). Both sit at the main checkout's root; set a key
 in its table ([run], [plan], ...) with the value written as below.
-How: a runner.toml change is a commit, so make it through `{cmd} take "set [run] KEY = VALUE: why" --kind C
+How: a runner.toml change is a commit, so make it through `{cmd} take "set [TABLE] KEY = VALUE: why" --kind C
 --files runner.toml` (its own worktree, then `take ID --merge`), never as an edit in the main checkout.
 runner.local.toml is git-ignored, so it holds no merge: edit it in place (`{cmd} run` creates it, all
 comments).

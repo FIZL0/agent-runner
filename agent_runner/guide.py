@@ -38,14 +38,14 @@ apply on the next run; `{cmd} slots N` changes the run that is up now. When what
 setting, recommend the one change in one line, `[table] key = value`: what it does, and ask. Only a key that
 `{cmd} settings` lists; when no key fits, say so and offer a task instead. For example:
   - "too many control sessions", "close them faster": `[run] control_idle = "1h"` (idle ones close sooner;
-    `control_close = false` keeps them open)
+    `[run] control_close = false` keeps them open)
   - "too many agents", "fewer sessions": `[run] slots = 2` (or `{cmd} slots 2` for the run that is up)
   - "stop pushing to my phone": `[run] silent = true`; "not on my phone at all": `[run] remote = false`
-  - "stop before my usage runs out": `[run] weekly_max = 70` / `session_max = 70`
-  - "skip the review on small fixes": `[run] review_min_lines = 150`; none at all: `review = false`
+  - "stop before my usage runs out": `[run] weekly_max = 70` / `[run] session_max = 70`
+  - "skip the review on small fixes": `[run] review_min_lines = 150`; none at all: `[run] review = false`
 On yes, make it: this person's or machine's taste (slots, usage caps, phone, control sessions) in
 runner.local.toml, edited in place (git ignores it, so it holds no merge); the project's behaviour (test,
-review, rules) in runner.toml, as a commit through `{cmd} take "set [run] key = value: why" --kind C --files runner.toml` (its own
+review, rules) in runner.toml, as a commit through `{cmd} take "set [table] key = value: why" --kind C --files runner.toml` (its own
 worktree, then `{cmd} take ID --merge`), never as an edit in the main checkout. Say when it takes effect.
 """
 

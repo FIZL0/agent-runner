@@ -16,10 +16,17 @@ ref = settings_reference('agent-runner')
 
 print('every [run] and [plan] key is in the reference, with its default and its comment')
 lines = ref.splitlines()
+sections: dict[str, list[str]] = {}
+cur = None
+for s in lines:
+    if re.fullmatch(r'\[\w+\]', s):
+        cur = sections.setdefault(s[1:-1], [])
+    elif cur is not None and s:
+        cur.append(s)
 for table in ('run', 'plan', 'git', 'needs'):
-    check(f'[{table}]' in lines, f'[{table}] has a heading')
+    check(table in sections, f'[{table}] has a heading')
     for k, v in DEFAULTS[table].items():
-        line = next((s for s in lines if s.startswith(f'{k} = ')), '')
+        line = next((s for s in sections.get(table, []) if s.startswith(f'{k} = ')), '')
         check(line, f'[{table}] {k} is listed')
         if line:  # the value as written parses back to the default
             val = re.split(r'  # ', line, maxsplit=1)[0]
@@ -30,7 +37,7 @@ check(all(docs['plan'][k] for k in DEFAULTS['plan']), 'every [plan] key too')
 has(ref, r'control_idle = "3h"  # quiet this long', 'a key reads as `key = default  # what it does`')
 has(ref, r'apply on the next run', 'it says when a change applies')
 has(ref, r'runner\.local\.toml \(this machine only', 'and runner.toml vs runner.local.toml')
-has(ref, r'take "set \[run\] KEY = VALUE', 'and that a runner.toml change goes through take, not the main checkout')
+has(ref, r'take "set \[TABLE\] KEY = VALUE','and that a runner.toml change goes through take, not the main checkout')
 check('control_close = true  # the run closes' in ref, 'a ticket tag (B26:) is dropped from a comment')
 
 print('`agent-runner settings` prints it')
@@ -45,10 +52,10 @@ for name, text in (('GUIDE', guide.GUIDE), ('CONTROL', guide.CONTROL)):
     check('settings` prints every key' in text, f'{name} points at `settings`')
     check('recommend the one change in one line' in text, f'{name} says to recommend a setting in one line')
     check('apply on the next run' in text, f'{name} says when it applies')
-    check('never as an edit in the main checkout' in text and 'take "set [run]' in text,
+    check('never as an edit in the main checkout' in text and 'take "set [table] key' in text,
           f'{name} makes a runner.toml change through take')
-named = [(t, k) for t, k in re.findall(r'`\[(\w+)\] (\w+) = ', guide.SETTINGS) if t != 'table'] + [
-    ('run', k) for k in re.findall(r'`(\w+) = ', guide.SETTINGS)]
+named = [(t, k) for t, k in re.findall(r'`\[(\w+)\] (\w+) = ', guide.SETTINGS) if t != 'table']
+eq(re.findall(r'`(\w+) = ', guide.SETTINGS), [], 'every example names its table')
 check(len(named) >= 6, 'the brief names several example keys', str(named))
 for table, k in named:
     check(k in DEFAULTS.get(table, {}), f'example [{table}] {k} is a real key')
