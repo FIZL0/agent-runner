@@ -5708,6 +5708,50 @@ def stash_ref(sha: str) -> str:
     return f'stash@{{{shas.index(sha)}}}' if sha in shas else sha
 
 
+def running_slot(tid: str) -> int:
+    """F52: the slot whose worktree is on task/<tid>, or that queued its resume; 0 for none."""
+    path = ''
+    for l in git('worktree', 'list', '--porcelain').stdout.splitlines():
+        if l.startswith('worktree '):
+            path = l.removeprefix('worktree ')
+        elif l == f'branch refs/heads/task/{tid}' and re.fullmatch(r's\d+', Path(path).name) \
+                and Path(path).parent.resolve() == SLOTS_DIR.resolve():
+            return int(Path(path).name[1:])
+    return next((n for n, q in queued().items() if q[0] == tid), 0)
+
+
+def slot_link(n: int, tid: str = '') -> str:
+    """F52: slot `n`'s claude.ai/code link: its pane's pid -> session id -> the transcript's bridge-session
+    entry; '' when `[run] remote_slots` is off or any step is missing."""
+    if not remote_slots_on():
+        return ''
+    try:
+        pane = MUX.panes().get(f's{n}')
+        sid = (MUX.session_id(pane[1]) if pane and plat.alive(pane[1]) else None) or \
+            next((q[1] for m, q in queued().items() if m == n and (not tid or q[0] == tid)), None)
+    except Exception:  # a multiplexer that is not there: no link, the rest of the message stands
+        return ''
+    if not sid:
+        return ''
+    bridge = ''
+    for d in entries(sid, skip_bad=True):
+        if isinstance(d, dict) and d.get('type') == 'bridge-session' and isinstance(d.get('bridgeSessionId'), str):
+            bridge = d['bridgeSessionId']
+    return control_link(bridge)
+
+
+def slot_running(tid: str) -> str:
+    """F52: why `take tid` refuses a task a slot runs, with where to watch and steer it instead."""
+    n = running_slot(tid)
+    if not n:
+        return 'running in a slot'
+    link = slot_link(n, tid)
+    return (f'running in slot s{n}; nothing taken. Watch or steer it there instead:\n'
+            + (f'  {link}\n' if link else '')
+            + f'  {C.command} attach s{n}\n'
+            + f'  {C.command} plan tell {tid} "what to do differently"')
+
+
 def cmd_take(argv: list[str], prog: str = f'{RUNNER} take') -> int:
     """`take ID`: a worktree on task/<ID> for a person's own session or subagent, beside a run or without one.
     `take "TEXT" --kind K` queues the task first; `--here` carries the main checkout's uncommitted edits along."""
@@ -5783,6 +5827,8 @@ def cmd_take(argv: list[str], prog: str = f'{RUNNER} take') -> int:
            'running in a slot' if f'task/{tid}' in held or tid in {q[0] for q in queued().values()} else
            'finished, waiting to merge' if tid in ahead(branch) else
            f'claimed by {plansync.claims(C)[tid].who}' if tid in plansync.taken(C) else '')
+    if why == 'running in a slot':
+        why = slot_running(tid)
     if why:
         return fail(f'{tid}: {why}')
     worktree(f'take-{tid}', branch)
