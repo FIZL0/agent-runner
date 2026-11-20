@@ -6919,6 +6919,7 @@ def cmd_control(argv: list[str], prog: str = f'{RUNNER} control') -> int:
                     help='a file or image the person attached to the --ask message (repeatable): the first message '
                     'names it and its path and says to Read or open it')
     ap.add_argument('--unquiet', action='store_true', help=argparse.SUPPRESS)  # `unquiet_when_up`, for session N
+    ap.add_argument('--feed-sid', default='', help=argparse.SUPPRESS)  # B57: wait for the handed-on message's files
     ap.add_argument('--title', default=None, metavar='SUMMARY', help='from inside control session N, once it has '
                     'read its first message: name it "<repo> · N · SUMMARY" for what it is for')
     a = ap.parse_args(argv)
@@ -6945,6 +6946,13 @@ def cmd_control(argv: list[str], prog: str = f'{RUNNER} control') -> int:
     if pid := control_live(n):
         print(f'control {n} already runs (pid {pid}): {RUNNER} control starts another', file=sys.stderr)
         return 1
+    if a.feed_sid and a.ask and SID_RE.fullmatch(a.feed_sid):
+        print('waiting for the runner feed to record the message and its attachments…', flush=True)
+        try:  # hold number n while waiting, so another control --new does not take it
+            C.notes(f'control{n}.pid').write_text(f'{os.getpid()}', encoding='utf-8')
+        except OSError:
+            pass
+        a.ask, a.file = control_late_files(a.ask, a.file, a.feed_sid)
     sid, resume = control_sid(n)
     argv = control_argv(n, sid, resume, blank=a.blank, ask=a.ask, local=a.local, images=a.file)
     if not resume:  # F32: a fresh session N never keeps an earlier session N's (or task's) name
@@ -7306,15 +7314,25 @@ def feed_scan() -> tuple[list[str], int, str]:
     return feed_latest()[:3]
 
 
-def feed_latest() -> tuple[list[str], int, str, str | None]:
-    """`feed_scan`, plus the text of that latest person message (None: no feed transcript to read), so
-    `control_new` can tell whether Claude Code has written the message being handed on yet (B46)."""
+def feed_sid() -> str:
+    """The feed session handing a message on: the one running this command (CLAUDE_CODE_SESSION_ID), else
+    <notes>/remote/feed.sid; '' when neither names one."""
     sid = os.environ.get('CLAUDE_CODE_SESSION_ID', '').strip()
     if not SID_RE.fullmatch(sid):
         try:
             sid = C.notes(REMOTE_DIR, FEED_SID).read_text(encoding='utf-8').strip()
         except OSError:
-            return [], 0, '', None
+            return ''
+    return sid if SID_RE.fullmatch(sid) else ''
+
+
+def feed_latest(sid: str | None = None) -> tuple[list[str], int, str, str | None]:
+    """`feed_scan`, plus the text of that latest person message (None: no feed transcript to read), so
+    `control_new` can tell whether Claude Code has written the message being handed on yet (B46). `sid`: the
+    feed session to read (default `feed_sid`)."""
+    sid = feed_sid() if sid is None else sid
+    if not sid:
+        return [], 0, '', None
     t = transcript(sid) if SID_RE.fullmatch(sid) else None
     if not t:
         return [], 0, '', None
@@ -7358,6 +7376,42 @@ def feed_latest() -> tuple[list[str], int, str, str | None]:
 
 
 FEED_WAIT = 5.0  # s control --new --ask waits for the feed's transcript to hold the message it hands on (B46)
+FEED_LATE_WAIT = 60.0  # s the new `control N` then keeps waiting for it before starting claude (B57)
+
+
+def feed_wait(ask: str, wait: float, sid: str | None = None) -> tuple[bool, list[str], int, str]:
+    """Wait up to `wait` s for the feed transcript (`sid`, default `feed_sid`) to hold the message `ask` hands on
+    with every image's saved path: (found it, its files, images with no path, Claude Code version). With no
+    transcript to read at all, found is True: there is nothing to wait for (an older feed, a typed --ask)."""
+    deadline = time.monotonic() + wait
+    while True:
+        got, lost, version, said = feed_latest(sid)
+        if said is None:
+            return True, [], 0, ''
+        match = same_words(said, ask)
+        if (match and not lost) or time.monotonic() >= deadline:
+            return match, (got if match else []), (lost if match else 0), version
+        time.sleep(0.2)
+
+
+def feed_unread_note() -> str:
+    """Added to a handed-on ask when the feed transcript never showed the message (B57)."""
+    return ('The person may have attached images or files to this message, but agent-runner could not read them '
+            "from the runner feed's transcript in time. If the message refers to a picture or file you don't "
+            'have, ask them to send it here again.')
+
+
+def control_late_files(ask: str, images: list[str], sid: str, wait: float | None = None) -> tuple[str, list[str]]:
+    """`control N --ask … --feed-sid SID` (B57): the feed's transcript did not hold the message being handed on
+    when `control --new` started this session, so wait here (FEED_LATE_WAIT) for it before claude starts. The
+    ask and files to start with: its files added, or a note that attachments may have been lost."""
+    found, got, lost, version = feed_wait(ask, FEED_LATE_WAIT if wait is None else wait, sid)
+    images = [*images, *(i for i in got if i not in images)]
+    if not found:
+        return f'{ask}\n\n{feed_unread_note()}', images
+    if note := image_drift_note(lost, version):
+        ask = f'{ask}\n\n{note}'
+    return ask, images
 
 
 def same_words(said: str, ask: str) -> bool:
@@ -7414,20 +7468,21 @@ def control_new(n: int | None = None, wait: float = CONTROL_LINK_WAIT, ask: str 
         print(f'control {n} already runs (pid {pid})', file=sys.stderr)
         return 1
     images = [str(Path(i).resolve()) for i in images]
+    late = ''
     if ask:
         # Claude Code writes the feed's transcript lazily: the message being handed on, and the saved paths of
-        # its pictures, can land a moment after this command starts (B46), so wait briefly for them.
-        deadline = time.monotonic() + FEED_WAIT
-        while True:
-            got, lost, version, said = feed_latest()
-            if said is None or (same_words(said, ask) and not lost) or time.monotonic() >= deadline:
-                break
-            time.sleep(0.2)
+        # its pictures, can land a while after this command starts (B46, B57: more than FEED_WAIT), so wait
+        # briefly for them here, and when they are still missing let the new session's own process wait longer
+        # (--feed-sid) instead of taking the previous message's files.
+        sid = feed_sid()
+        found, got, lost, version = feed_wait(ask, FEED_WAIT, sid)
         images += [i for i in got if i not in images]
-        if note := image_drift_note(lost, version):
+        if not found:
+            late = sid
+        elif note := image_drift_note(lost, version):
             ask = f'{ask}\n\n{note}'
     cmd = [*runner_cmd(), 'control', str(n), *(['--ask', ask] if ask else []),
-           *[x for i in images for x in ('--file', i)]]
+           *[x for i in images for x in ('--file', i)], *(['--feed-sid', late] if late else [])]
     name = control_name(n, ask, images)
     if plat.WINDOWS:
         plat.spawn_console(cmd, ROOT, control_env(), hidden=True)
