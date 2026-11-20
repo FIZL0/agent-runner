@@ -7,7 +7,8 @@ is red (failure, timed out, startup failure; a cancelled one says nothing and th
 a single `critical` task is filed with the failed jobs, and the last lines of `gh run view --log-failed`
 go in its long form, plan/tasks/<ID>.md. No second task while one for that workflow is open (its line says
 `<workflow>` on <branch> is red), and a run already judged is never filed again: the newest judged run
-is kept in `<notes>/ci-<workflow>.seen`. A landing never waits on any of this.
+is kept in `<notes>/ci-<workflow>.seen`. With two closed in a week for the workflow (`closed_repeats`), the
+third is filed blocked on a person rather than ahead of all work. A landing never waits on any of this.
 
 `ci_watch = "auto"` (the default) watches every workflow in `.github/workflows/` that runs on a push to the
 shared branch (`push_workflows`), and only its push runs: a nightly or a manual run is not about the code that
@@ -18,6 +19,7 @@ The parts that talk to `gh` take a `gh` callable, so the tests give them canned 
 """
 from __future__ import annotations
 
+import datetime as dt
 import json
 import os
 import re
@@ -234,9 +236,46 @@ def to_file(gh: Gh, workflow: str, branch: str, seen: Path, open_text: str,
             f'{run["createdAt"][:16].replace("T", " ")} UTC): failed {", ".join(jobs) or "(no job named)"}. '
             f'Make it green; the log\'s last lines are in this task\'s long form, the rest is '
             f'`gh run view {run["databaseId"]} --log-failed`. While this is open no other CI task is filed '
-            f'for `{workflow}`. {run["url"]}')
+            f'for `{workflow}`. {filed_stamp()} {run["url"]}')
     long = [f'CI run {run["url"]}', '', f'Commit {run.get("headSha", "")}: {run.get("displayTitle", "")}', '',
             f'Failed jobs: {", ".join(jobs) or "(none named)"}', '',
             f'Last {len(tail)} lines of `gh run view {run["databaseId"]} --log-failed`, to the last error:', '',
             '```', *tail, '```']
     return text, long
+
+
+# B34: an auto-filed critical task that closes while what it was for still fails is filed again, ahead of all
+# queued work: a fix that does not fix would chain them with no person in the loop. Each one carries the day
+# it was filed, and the third within REPEAT_DAYS for one workflow (or test) is filed blocked on a person.
+REPEAT_LIMIT = 3     # the nth auto-filed task for one failure within REPEAT_DAYS is filed blocked
+REPEAT_DAYS = 7
+FILED = re.compile(r'\(filed (\d{4}-\d\d-\d\d)\)')
+DONE_ITEM = re.compile(r'^- \[x\] \*\*([^\s*]+?)\*\*')
+
+
+def filed_stamp(today: str = '') -> str:
+    """What an auto-filed task's line carries, so its closed copy in DONE.md says when it was filed."""
+    return f'(filed {today or dt.date.today().isoformat()})'
+
+
+def closed_repeats(done_lines: list[str], key: str, today: str = '', days: int = REPEAT_DAYS) -> list[str]:
+    """Ids of the closed (DONE.md) top-level tasks whose line holds `key` and a filed stamp no older than
+    `days`, oldest first: the auto-filed tasks for this failure that closed while it went on failing."""
+    now = dt.date.fromisoformat(today) if today else dt.date.today()
+    out = []
+    for l in done_lines:
+        if not (m := DONE_ITEM.match(l)) or key not in l or not (f := FILED.search(l)):
+            continue
+        try:
+            if (now - dt.date.fromisoformat(f[1])).days <= days:
+                out.append(m[1])
+        except ValueError:
+            continue
+    return out
+
+
+def repeat_ask(what: str, earlier: list[str]) -> str:
+    """The why a repeat is blocked with (see `closed_repeats`): a person decides, the earlier tasks named."""
+    return (f'BLOCKED: {what} has had {len(earlier)} auto-filed tasks closed in {REPEAT_DAYS} days while it still '
+            f'fails ({", ".join(earlier)}); look at why their fixes did not hold before another agent tries. '
+            f'`plan unblock` to let a run try again, or drop it')

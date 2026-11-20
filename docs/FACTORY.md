@@ -37,8 +37,8 @@ landing); a person re-enters through Needs you, the ledger and `wip/` branches i
 | **repair** (merge gate failure) | the merge's gate fails, not from load and not a failure its base has too | merge worktree, `merge-gate.log`; a forked copy of the task's session when kept | the gate once more; a red batch is halved to find the culprit | parked as `wip/<ID>` with the reason in the ledger | one repair per merge, then park; `refs/agent-runner/held/<ID>/` keeps its commit for a restarted run |
 | **park / retry** | `merge_tries` gives up (3 tries) or the repair fails | renames `task/<ID>` → `wip/<ID>[-N]`, pushes it, ledger line | the task stays open: the next run (or an upgrade restart) starts it again, pointed at `wip/<ID>`; parked twice, the next pick blocks it `DECIDE:` on a person instead (`block_parked`) | `since` shows "stuck, not merged", and the needs-you feed carries it and the block | `tried` keeps it out for the rest of this run; across runs the `wip/<ID>*` branches count the attempts (B32) |
 | **cut-off resume** | a session's turn ended on an API error, or a reboot left one mid-turn | the slot's worktree as it was; `claude --resume` | the same session, told it was cut off | the pane | one slot per task; `resumes()` caps a session at 3 resumes; nothing resumes while the API is down |
-| **CI watch** | every 5 min, with the merge lock free, a red run of a watched workflow on the shared branch | `gh run list/view/rerun`; writes one critical task + its long form, `<notes>/ci-<wf>.seen` | first a rerun of the failed jobs; only a second red files the task | the critical task (top of the queue); `ci_watch = false` | `.seen` judges each run once; none filed while a task carrying the workflow's marker is open; a newer run in progress defers judging. **Once that task closes, a still-red workflow files another, without limit** (gap **B34**) |
-| **flaky / broken / runaway test filer** | a merge where `retest` passed a test alone, a test the base fails too, or the memory watch killed a test | writes a critical follow-up per test name at landing | a slot pick, ahead of the queue | the critical task | none filed while an open task names the test. **Re-files after it closes, without limit** (gap **B34**) |
+| **CI watch** | every 5 min, with the merge lock free, a red run of a watched workflow on the shared branch | `gh run list/view/rerun`; writes one critical task + its long form, `<notes>/ci-<wf>.seen` | first a rerun of the failed jobs; only a second red files the task | the critical task (top of the queue); `ci_watch = false` | `.seen` judges each run once; none filed while a task carrying the workflow's marker is open; a newer run in progress defers judging. Each task carries `(filed <day>)`: with two closed (DONE.md) for the workflow in a week, the third is filed `BLOCKED:` on a person, the earlier ids named (B34) |
+| **flaky / broken / runaway test filer** | a merge where `retest` passed a test alone, a test the base fails too, or the memory watch killed a test | writes a critical follow-up per test name at landing | a slot pick, ahead of the queue | the critical task | none filed while an open task names the test; the third in a week for one test is filed `BLOCKED:` on a person (B34) |
 | **concept (K)** | a K task picked like any other | its session publishes an Artifact page; `done --artifact` ticks K and files the build `[~]` "waiting for your OK on <url>" | nothing until a person answers; then a slot pick of the build | Needs you lists the page; `plan approve/revise/shelve` | the build's block names no task, so `plan reopen` never frees it; `done` refuses a K task without `--artifact`; one build per concept round (`revise` drops the old one) |
 | **Needs you replies** | a person answers an item (control session, the feed's `plan answer`) | reads `plan asks/waiting`; writes the item's line (tick, reopen with the answer noted, or shelve) | the reopened task's slot pick | this is the re-entry | `plan answer` refuses a reply that could fit several items; an answered item no longer waits, so it cannot be answered twice. Blocks with **no caps label and no task to wait on never reach Needs you** (gap **B35**) |
 | **plan reopen** | every landed merge (`reopen_landed`) | rewrites `[~] … BLOCKED: (after X)` to `[ ]` once every X is done; commits the plan | a slot pick | `plan unblock` by hand | it runs under the merge lock; a task blocked twice keeps only its last list |
@@ -51,8 +51,8 @@ landing); a person re-enters through Needs you, the ledger and `wip/` branches i
 | a person / control session (`plan add`, `take "TEXT"`) | `similar()` refuses a strong match with any open or blocked task (exit 3, `plan note` it instead, `--force` to override), under the plan lock |
 | runner feed (`feed --ask`) | it files nothing itself; the control session it opens goes through `plan add` |
 | agents' follow-ups in slots | `similar()` against the slot's branch copy only; parallel slots can file the same one twice (**B33**) |
-| CI watch | one task per workflow while one is open, each run judged once (`.seen`), a rerun before filing; unlimited re-filing after it closes (**B34**) |
-| flaky / broken / runaway tests | one task per test name while one is open; same re-filing gap (**B34**) |
+| CI watch | one task per workflow while one is open, each run judged once (`.seen`), a rerun before filing; the third in a week waits on a person (B34) |
+| flaky / broken / runaway tests | one task per test name while one is open; the third in a week waits on a person (B34) |
 | concept builds (`done --artifact`) | one build per concept round; `revise` drops the waiting one before the next round files anew |
 | splits (`plan add P17 …`) | the family rule: a subtask never runs beside its parent's family; `similar()` ignores matches within the family by design |
 
@@ -66,7 +66,7 @@ landing); a person re-enters through Needs you, the ledger and `wip/` branches i
 | repair capped | yes | one repair per merge, then park; a batch is halved, never repaired twice |
 | resumes capped | yes | 3 per session (`resumes`) |
 | backend retries capped | yes | Copilot model-call retries: 3 |
-| CI reruns capped | yes per run | one `rerun --failed` per red run; no cap on successive CI tasks (**B34**) |
+| CI reruns capped | yes | one `rerun --failed` per red run; two closed CI tasks for a workflow in a week block the third on a person (B34) |
 | task retries capped | yes | `tried` holds one attempt per run; two parked attempts (`wip/<ID>*`) block the task on a person (B32) |
 | a session's own gate loop capped | no | only the prompt (**B38**) |
 | usage caps | yes | `session_max` / `weekly_max` stop new starts and raise STOPPED |
@@ -80,7 +80,6 @@ Each has a filed task; the evidence is in its line (`agent-runner plan <ID>`).
 | task | gap |
 |---|---|
 | **B33** | follow-ups filed by parallel slots are deduped only against each slot's branch copy of the plan |
-| **B34** | CI and flaky/broken/runaway-test tasks re-file without limit once the previous one closes |
 | **B35** | a block with no caps label and no task to wait on never reaches Needs you |
 | **B36** | an empty `[run] test` merges and pushes with no gate and no warning |
 | **B37** | the sequential run pushes the shared branch after any commit, gated or not |
