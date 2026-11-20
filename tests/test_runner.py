@@ -713,7 +713,8 @@ def test_control(repo: Path):
     brief = R.control_brief()
     for want in ('control session', f'{R.C.command} status', f'{R.C.command} plan add', f'{R.C.command} take',
                  'Never edit code', f'{R.C.command} since', f'{R.C.command} since --follow', 'Open the session',
-                 'status · since · follow · pause · stop', 'Never start it unasked'):
+                 'status · since · follow · new (or /control) · pause · stop', 'Never start it unasked',
+                 f'{R.C.command} control --new', '"/new"'):
         check(want in brief, f'the brief says {want!r}')
     check('tail -n 0 -F' not in brief, 'no run-log watch at the start: following is asked for')
     r = run(repo, 'control', '--brief')
@@ -774,6 +775,49 @@ def test_control(repo: Path):
         with mock.patch.dict(R.C.run, {'control': False}):
             R.start_control()
         eq(calls, [], '[run] control = false: none')
+
+    skills = R.control_skills_dir()
+    eq(skills, repo / '.runner' / 'control-skills', 'the control skills sit under <notes>, not in the repo files')
+    skill = (skills / '.claude/skills/control/SKILL.md').read_text(encoding='utf-8')
+    check('name: control' in skill and f'{R.C.command} control --new' in skill, '/control runs control --new', skill)
+    check(data['permissions']['additionalDirectories'] == [str(skills)], 'the settings add that directory')
+    argv = R.control_argv(2, 'sid-2', resume=False)
+    eq(argv[argv.index('--add-dir') + 1], str(skills), 'and so does the control session')
+
+    import contextlib
+    import io
+    link = 'https://claude.ai/code/session_01AbCdEf'
+    shown = iter(['starting…\n', f'Remote Control active · {link}\n'])
+    calls = []
+
+    def fake_tmux(*a, **k):
+        calls.append(a)
+        out = {'display-message': 'ar-proj\n', 'new-window': '%12\n'}.get(a[0], '')
+        if a[0] == 'capture-pane':
+            out = next(shown)
+        return subprocess.CompletedProcess(a, 0, out, '')
+    out = io.StringIO()
+    with mock.patch.object(R, 'tmux', fake_tmux), mock.patch.dict(os.environ, {'TMUX_PANE': '%1'}), \
+            mock.patch.object(R.shutil, 'which', lambda x: '/usr/bin/tmux'), mock.patch.object(R.time, 'sleep', lambda s: None), \
+            mock.patch.dict(R.C.run, {'remote': True}), contextlib.redirect_stdout(out):
+        eq(R.control_new(2), 0, 'control --new opens one')
+    nw = next(c for c in calls if c[0] == 'new-window')
+    eq(nw[1:6], ('-d', '-t', '=ar-proj:', '-n', R.window('control2')),
+       'a window of its own in this tmux session, without taking focus')
+    check(nw[-1].endswith('control 2'), 'running control 2', nw)
+    check(('set-option', '-p', '-t', '%12', R.TAG, 'c2') in calls, 'tagged c2 (attach c2)')
+    check(link in out.getvalue(), 'and prints the link its pane shows', out.getvalue())
+    calls.clear()
+    out = io.StringIO()
+    with mock.patch.object(R, 'tmux', fake_tmux), mock.patch.dict(os.environ, {'TMUX_PANE': '%1'}), \
+            mock.patch.object(R.shutil, 'which', lambda x: '/usr/bin/tmux'), contextlib.redirect_stdout(out):
+        eq(R.control_new(2), 0, 'local (no [run] remote)')
+    check(not any(c[0] == 'capture-pane' for c in calls) and 'local' in out.getvalue(),
+          'no link to wait for without [run] remote', out.getvalue())
+    with mock.patch.object(R, 'tmux', lambda *a, **k: subprocess.CompletedProcess(a, 1, '', '')), \
+            mock.patch.dict(os.environ, {'TMUX_PANE': ''}), mock.patch.object(R.shutil, 'which', lambda x: '/usr/bin/tmux'), \
+            contextlib.redirect_stderr(io.StringIO()):
+        eq(R.control_new(), 1, 'no tmux session to open it in: an error, nothing opened')
 
     lines = ['=== 2026-11-19T21:02:45 F2: merged, ticked', '=== 2026-11-19T21:03:00 B9: not merged, parked as wip/B9 — x',
              '=== 2026-11-19T21:04:00 slot 1: F3 (Next; a.py)', '=== 2026-11-19T21:05:00 run idle: no task']

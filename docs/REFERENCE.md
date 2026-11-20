@@ -112,6 +112,17 @@ task to fix X" (it files it with `plan add`), "do X now" (it uses `take`, never 
   next free number, `.runner/control<N>.pid`). In the background session every new pane or window a person
   opens is one: the run sets that session's tmux `default-command` to `cd <main checkout> && agent-runner
   control` (a shell stays if it cannot start). A run in your own tmux session leaves its default-command alone.
+- **A new one from inside one** (the phone apps have no new-session button): `agent-runner control --new [N]`
+  opens the next free control session without taking focus, in window `controlN-<repo>` of the tmux session
+  it runs in (else `ar-<repo>`, while the run is up; Windows: a hidden console), tagged `cN` for `attach cN`.
+  With `[run] remote` it watches the new pane for up to 90 s and prints its `claude.ai/code/session_…` link,
+  so the control session that ran it answers with a link to tap. Tell a control session "new", "new
+  session", "/new" or type `/control`: its brief maps those to `control --new`. `/control` is a skill only
+  control sessions get, in `.runner/control-skills/.claude/skills/control/SKILL.md`, added with `--add-dir`
+  and the settings' `permissions.additionalDirectories`, never in your repo's files. It is not named `/new`
+  because Claude Code's `/new` is an alias of `/clear`, which would wipe the session instead. Whether the
+  phone app passes a typed `/control` through to the session is still to be checked by a person; "new"
+  works either way.
 - **Their settings**: every control session, and the control server, gets `.runner/control-settings.json`
   with `--settings`: a SessionStart hook that runs `agent-runner control --brief`, which prints the control
   brief (so a resumed or compacted session gets it again), and the runner's commands, `tail`, Read and
@@ -120,7 +131,7 @@ task to fix X" (it files it with `plan add`), "do X now" (it uses `take`, never 
 - **The opening**: the first message has the session run `agent-runner status` and `agent-runner since` and
   say, in plain bullets, what the run is doing now (each running task by its short title, no ids) and what
   landed, got stuck or needs you since you last looked, then one line of hints: `status · since · follow ·
-  pause · stop · more slots · or just describe a bug or idea to queue it`. Later answers are bullets too, ids
+  new (or /control) · pause · stop · more slots · or just describe a bug or idea to queue it`. Later answers are bullets too, ids
   only when you ask or the session acts on one.
 - **Following**: a session never watches the run by itself. Say "follow" (or "live", "/follow") and it runs
   `agent-runner since --follow` under the Monitor tool and posts each line it prints as a bullet; "stop
@@ -672,6 +683,7 @@ agent-runner                           the run in the background (a detached tmu
                                        Windows), the prompt straight back; `help` prints the usage
 agent-runner attach [sN|c1|master]     the runner's pane, or a slot's (Windows: the slot's console window)
 agent-runner control [N]               a control session in this terminal (c1: the kept one, resumed)
+agent-runner control --new [N]         another one beside the run, without taking focus; prints its claude.ai/code link
 agent-runner since [WHEN] [--follow]   what landed, started or got stuck since the last look (or WHEN: 2h,
                                        yesterday); --follow prints each new event as it happens
 agent-runner plan [...]                the task list as a tool (agent-runner plan help)

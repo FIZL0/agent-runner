@@ -11,6 +11,7 @@ Run the agents
     agent-runner attach [s2]          see the run's pane, or slot 2's (Windows: slot 2's console window)
     agent-runner control              a control session here: ask it "status?", to pause, add slots, file a task
                                       (a run opens c1 beside it; a new pane in its tmux session is another)
+    agent-runner control --new        open another beside the run, without taking focus; prints its claude.ai/code link
     agent-runner run once             try it: one task, then stop
     agent-runner run                  the run in this terminal, with the slots runner.toml sets, until you stop it
     agent-runner run 3                3 agents at once

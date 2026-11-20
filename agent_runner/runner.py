@@ -6083,7 +6083,25 @@ def control_settings_data() -> dict:
     allow = [f'Bash({c}:*)' for c in dict.fromkeys([C.command, 'agent-runner'])] + \
         ['Bash(tail:*)', 'Bash(git status:*)', 'Bash(git log:*)', 'Read', 'Monitor']
     return {'hooks': {'SessionStart': [{'hooks': [{'type': 'command', 'command': hook}]}]},
-            'permissions': {'allow': allow}}
+            'permissions': {'allow': allow, 'additionalDirectories': [str(control_skills_dir())]}}
+
+
+CONTROL_SKILL = 'control'  # the slash command: Claude Code's /new is /clear's alias, so not that
+
+
+def control_skills_dir() -> Path:
+    """`<notes>/control-skills`: a directory only control sessions add (`--add-dir`, and the settings'
+    additionalDirectories), holding `.claude/skills/control/SKILL.md`, the /control slash command that opens
+    another control session. Never in the person's repo files."""
+    from agent_runner.guide import CONTROL_SKILL_TEXT
+    f = C.notes('control-skills', '.claude', 'skills', CONTROL_SKILL, 'SKILL.md')
+    text = CONTROL_SKILL_TEXT.format(cmd=C.command, name=CONTROL_SKILL)
+    try:
+        if not f.is_file() or f.read_text(encoding='utf-8') != text:
+            f.write_text(text, encoding='utf-8')
+    except OSError:
+        pass
+    return f.parents[3]
 
 
 def control_settings() -> Path:
@@ -6113,7 +6131,7 @@ def control_argv(n: int, sid: str, resume: bool) -> list[str]:
     return [plat.exe(C.run['agent']), CONTROL_START.format(cmd=C.command),
             '--resume' if resume else '--session-id', sid, '--model', C.run['model'],
             *(['--tools', CONTROL_TOOLS] if C.run['lean'] else []),
-            '--settings', str(control_settings()),
+            '--settings', str(control_settings()), '--add-dir', str(control_skills_dir()),
             *(['--remote-control', control_name(n)] if C.run['remote'] else [])]
 
 
@@ -6168,6 +6186,8 @@ def cmd_control(argv: list[str], prog: str = f'{RUNNER} control') -> int:
     ap = argparse.ArgumentParser(prog=prog, description='A control session here: ask it for status, pause, '
                                  'slots, stop; it files asks with plan add and does do-it-now work with take.')
     ap.add_argument('n', nargs='?', type=int, help='its number (1 resumes the kept session); default the first free')
+    ap.add_argument('--new', action='store_true', help='open another one without taking focus (a window in the '
+                    "run's tmux session; Windows: a hidden console) and print its claude.ai/code link")
     ap.add_argument('--brief', action='store_true', help=argparse.SUPPRESS)  # the SessionStart hook
     a = ap.parse_args(argv)
     init()
@@ -6177,6 +6197,8 @@ def cmd_control(argv: list[str], prog: str = f'{RUNNER} control') -> int:
     if not control_ok():
         print(f'control sessions are Claude Code sessions; [run] agent is {C.run["agent"]}', file=sys.stderr)
         return 1
+    if a.new:
+        return control_new(a.n)
     n = a.n or control_number()
     if pid := control_live(n):
         print(f'control {n} already runs (pid {pid}): {RUNNER} control starts another', file=sys.stderr)
@@ -6250,6 +6272,67 @@ def start_control() -> None:
     else:
         return
     log(f'control: c1 is up in {where} ({RUNNER} control opens another{more})')
+
+
+CONTROL_LINK_WAIT = 90  # s `control --new` watches the new pane for its claude.ai/code link
+SESSION_LINK = re.compile(r'https://claude\.ai/code/session_[A-Za-z0-9_-]+')
+
+
+def control_new_session() -> str:
+    """The tmux session `control --new` opens its window in: the one this pane is in (a control session beside
+    the run), else the run's background session while it is up; '' when there is none."""
+    if here := os.environ.get('TMUX_PANE', ''):
+        r = tmux('display-message', '-p', '-t', here, '#{session_name}')
+        if r.returncode == 0 and r.stdout.strip():
+            return r.stdout.strip()
+    sess = background_session()
+    return sess if tmux('has-session', '-t', f'={sess}').returncode == 0 else ''
+
+
+def control_new(n: int | None = None, wait: float = CONTROL_LINK_WAIT) -> int:
+    """`control --new`: another control session, opened without taking focus (a window of its own in the run's
+    tmux session; Windows: a hidden console), on Remote Control as "<repo> · control N" with `[run] remote`.
+    Prints its claude.ai/code link once its pane shows it, so the session that ran it can answer with a link."""
+    n = n or control_number()
+    if pid := control_live(n):
+        print(f'control {n} already runs (pid {pid})', file=sys.stderr)
+        return 1
+    cmd = [*runner_cmd(), 'control', str(n)]
+    name = control_name(n)
+    if plat.WINDOWS:
+        plat.spawn_console(cmd, ROOT, control_env(), hidden=True)
+        print(f'control {n} is up in a hidden console' +
+              (f': "{name}" at {REMOTE_URL}' if C.run['remote'] else f' ({RUNNER} attach c{n} shows it)'))
+        return 0
+    if not shutil.which('tmux') or not (sess := control_new_session()):
+        print(f'no tmux session to open it in (no run is up): start a run with {RUNNER}, or run {RUNNER} control '
+              f'in a terminal', file=sys.stderr)
+        return 1
+    env = [e for e in background_env() if not e.startswith(('AGENT_RUNNER=', 'AGENT_RUNNER_SLOT=', 'AGENT_RUNNER_KEEP='))]
+    envs = [x for e in env for x in ('-e', e)]
+    win = window(f'control{n}')
+    r = tmux('new-window', '-d', '-t', f'={sess}:', '-n', win, '-c', str(ROOT), *envs, '-P', '-F', '#{pane_id}',
+             plat.command_text(cmd))
+    if r.returncode or not (pane := r.stdout.strip()):
+        print(f'tmux could not open control {n}: {r.stderr.strip()}', file=sys.stderr)
+        return 1
+    tmux('set-option', '-p', '-t', pane, TAG, f'c{n}')
+    tmux('set-option', '-p', '-t', pane, REPO_TAG, str(ROOT))
+    where = f'window {win} of tmux session {sess} ({RUNNER} attach c{n} goes there)'
+    if not C.run['remote']:
+        print(f'control {n} is up in {where}; it is local: [run] remote = true puts control sessions on claude.ai/code')
+        return 0
+    deadline = time.monotonic() + wait
+    while True:
+        shown = tmux('capture-pane', '-p', '-J', '-t', pane, '-S', '-200')
+        if m := SESSION_LINK.search(shown.stdout or ''):
+            print(f'control {n} is up: {m.group(0)}\n("{name}", in {where})')
+            return 0
+        if shown.returncode or time.monotonic() >= deadline:
+            break
+        time.sleep(1)
+    print(f'control {n} is up in {where}, but showed no link in {wait:g} s: find "{name}" at {REMOTE_URL}')
+    return 0
 
 
 def control_server_argv() -> list[str]:

@@ -89,7 +89,7 @@ first what waits for the person's OK (concept pages, with their links), then in 
 id or its full line), and what landed, got stuck or needs the person since they last looked. No task ids:
 the `[F5]` at the end of each line is for you, to act on a task or when the person asks which one. End the
 opening (only the opening) with one line of hints:
-`status · since · follow · pause · stop · more slots · or just describe a bug or idea to queue it`
+`status · since · follow · new (or /control) · pause · stop · more slots · or just describe a bug or idea to queue it`
 
 What the person asks, and what you run (`{cmd}` is the runner):
 - "status?", "what's running?", "how's it going?": `{cmd} status`; "since", "what happened?", "anything
@@ -98,6 +98,9 @@ What the person asks, and what you run (`{cmd}` is the runner):
 - "follow", "live", "/follow": start the Monitor tool on `{cmd} since --follow` (one plain line per landed,
   started or stuck task, and when the run goes idle or stops) and post each line it brings as one short
   bullet, without its id. "stop following": stop that Monitor. Never start it unasked.
+- "new", "new session", "/new", "/control", "another control session": `{cmd} control --new` opens one
+  beside the run without taking focus and prints its claude.ai/code link: answer with just that link (on its
+  own line, so it can be tapped), or what it printed when there is none.
 - pause / go on: `{cmd} pause` / `{cmd} pause --off`. More or fewer agents: `{cmd} slots +1`, `slots -1`,
   `slots 4`. Past the usage caps: `{cmd} force` (`--off`). Stop: `{cmd} stop` (running tasks finish first),
   `{cmd} stop --force` (now; they resume next run), `{cmd} stop --undo`. Start a run when none is up: `{cmd}`.
@@ -118,6 +121,16 @@ What the person asks, and what you run (`{cmd}` is the runner):
   `{cmd} plan waiting` lists them.
 
 """ + SAFE_SHELL + """
+"""
+
+CONTROL_SKILL_TEXT = """\
+---
+name: {name}
+description: Open another agent-runner control session (the person typed /{name}, or asked for a new session).
+---
+Run `{cmd} control --new`. It opens another control session beside the run without taking focus and prints its
+claude.ai/code link once that session shows it. Answer with just the link on a line of its own, so it can be
+tapped on a phone; when it printed no link, say in one line what it printed instead.
 """
 
 CONTROL_START = ("Open with the summary your control brief describes (`{cmd} status` and `{cmd} since`, as plain "
