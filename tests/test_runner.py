@@ -804,6 +804,9 @@ def test_remote_auto(tmp: Path):
     with mock.patch.dict(R.C.run, {'remote_slots': True}):
         env = R.env_vars(R.slot_env(2))
         flags = R.agent_flags('sid-q', 'opus', 30)
+    with mock.patch.dict(os.environ, {'CLAUDE_CODE_TMPDIR': ''}):
+        eq(R.env_vars(R.slot_env(2))['CLAUDE_CODE_TMPDIR'], str(R.C.home / 'tmp'),
+           "a slot's Claude Code temp folder is on disk under the run home, not /tmp's tmpfs")
     f = Path(env[R.PRESENCE_ENV])
     check(f.exists() and f.name == 'quiet-slots', 'a slot on Remote Control names a presence file that exists')
     s = json.loads(flags[flags.index('--settings') + 1])
@@ -830,6 +833,12 @@ def test_remote_auto(tmp: Path):
 
 
 def test_control(repo: Path):
+    with mock.patch.dict(os.environ, {'CLAUDE_CODE_CHILD_SESSION': '1', 'CLAUDECODE': '1', 'CLAUDE_CONFIG_DIR': '/c'}):
+        with mock.patch.object(R, 'run', return_value=0):
+            R.cmd_run([])
+        check('CLAUDE_CODE_CHILD_SESSION' not in os.environ and 'CLAUDECODE' not in os.environ
+              and os.environ.get('CLAUDE_CONFIG_DIR') == '/c',
+              "a run started from a Claude session drops its markers (no slot transcripts otherwise), keeps config")
     said = []
     with mock.patch.object(R, 'run', side_effect=RuntimeError('boom')), mock.patch.object(R, 'log', said.append):
         try:

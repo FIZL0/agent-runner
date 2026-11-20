@@ -1497,6 +1497,7 @@ def slot_env(n: int | None) -> list[str]:
     slot_env` with {n} (the slot) and {slots} filled in. `n=None` is the master window's: `shared_env` in
     place of `[run] slot_env`, so it builds in the merge worktree the way the gate there does."""
     env = ['AGENT_RUNNER=1'] + ([] if n is None else [f'AGENT_RUNNER_SLOT={n}'])  # `finished_mark`
+    env.append(f'CLAUDE_CODE_TMPDIR={session_tmp()}')
     if os.environ.get('AGENT_RUNNER_CONFIG') and C.file:
         env.append(f'AGENT_RUNNER_CONFIG={C.file}')
     env += [f'{k}={os.environ[k]}' for k in C.run['pass_env'] if k in os.environ]
@@ -4136,8 +4137,17 @@ def tmp_roots() -> list[Path]:
     """Where Claude Code keeps its per-session temp folders, `<root>/claude-<uid>/<project>/<session>/`
     (the scratchpad and background tasks' output). It never deletes them, and agents build in them: one
     tmpfs with a per-user quota filled to EDQUOT with 40 GB of finished sessions' cargo target dirs."""
-    roots = [os.environ.get('CLAUDE_CODE_TMPDIR'), tempfile.gettempdir(), '/tmp']
+    roots = [os.environ.get('CLAUDE_CODE_TMPDIR'), C.home / 'tmp', tempfile.gettempdir(), '/tmp']
     return list(dict.fromkeys(Path(r) for r in roots if r))
+
+
+def session_tmp() -> Path:
+    """The CLAUDE_CODE_TMPDIR a slot's agent gets: the person's own, else `<home>/tmp` on disk. Claude Code's
+    default is /tmp, often a small tmpfs: 12 GB of sessions' scratch there filled a 16 GB one and every
+    tool call of every agent failed."""
+    d = Path(os.environ.get('CLAUDE_CODE_TMPDIR') or C.home / 'tmp')
+    d.mkdir(parents=True, exist_ok=True)
+    return d
 
 
 def drop_session_tmp(sid: str) -> None:
@@ -5013,8 +5023,22 @@ def backlog_line(slots: int, allowed: int, behind: int) -> str:
             f'new tasks start in {allowed} of {slots} slots until it catches up')
 
 
+# A Claude Code session's own markers, which its Bash commands inherit. A run started from one (a person's
+# session, a control session) must not hand them on: CLAUDE_CODE_CHILD_SESSION turns off every slot's
+# transcript, and the runner reads a session as dead without one. Config (CLAUDE_CONFIG_DIR, ANTHROPIC_*) stays.
+SESSION_ENV = ('CLAUDECODE', 'CLAUDE_CODE_CHILD_SESSION', 'CLAUDE_CODE_SESSION_ID', 'CLAUDE_PID', 'CLAUDE_EFFORT',
+               'CLAUDE_CODE_ENTRYPOINT', 'CLAUDE_CODE_EXECPATH', 'CLAUDE_CODE_SESSION_ATTENDED',
+               'CLAUDE_CODE_CHILD_NOTES_DIR', 'CLAUDE_CODE_MESSAGING_SOCKET', 'CLAUDE_CODE_MESSAGING_TOKEN')
+
+
+def drop_session_env() -> None:
+    for k in SESSION_ENV:
+        os.environ.pop(k, None)
+
+
 def cmd_run(argv: list[str], prog: str = f'{RUNNER} run') -> int:
     """`prog` is what --help shows; a wrapping CLI passes its own (e.g. './kit run')."""
+    drop_session_env()
     if not plat.WINDOWS and threading.current_thread() is threading.main_thread():
         for s in (signal.SIGTERM, signal.SIGHUP):  # a kill, a closed terminal: the same exit as Ctrl-C
             signal.signal(s, _interrupted)
@@ -6134,6 +6158,7 @@ def cmd_background(argv: list[str]) -> int:
     """Bare `agent-runner`: start the run where no terminal shows it, and give the prompt back. POSIX: a detached
     tmux session "ar-<repo>" running `agent-runner run`, its slots' window in the same session. Windows: the run
     as a detached process, each slot in a console window that starts hidden."""
+    drop_session_env()
     init()
     sess = background_session()
     if run_up():
@@ -6397,6 +6422,7 @@ def control_env() -> dict:
 def cmd_control(argv: list[str], prog: str = f'{RUNNER} control') -> int:
     """`agent-runner control [N]`: a control session in this terminal, in the main checkout. No N: c1 (the kept
     session, resumed) when it is not running, else the next free number."""
+    drop_session_env()
     ap = argparse.ArgumentParser(prog=prog, description='A control session here: ask it for status, pause, '
                                  'slots, stop; it files asks with plan add and does do-it-now work with take.')
     ap.add_argument('n', nargs='?', type=int, help='its number (1 resumes the kept session); default the first free')
