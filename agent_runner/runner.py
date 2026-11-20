@@ -667,6 +667,8 @@ def halts(procs: dict, running: dict, free_at: dict, tried: set, branch: str, mo
         msg = f'{verb} {tid}; {stopped}' + (f', removed its work ({", ".join(did)})' if did else '')
         if how == 'drop':
             plansync.release(C, tid)
+            if wd := drop_wips(tid):  # F23: dropped, so its parked attempts are read by nobody
+                msg += f'; {", ".join(wd)}'
         else:
             tried.discard(tid)  # the new text is a new attempt
             task = next((t for t in tasks(branch) if t[0] == tid), None)
@@ -3536,6 +3538,150 @@ def wip_main() -> list[str]:
     return git('for-each-ref', '--format=%(refname:short)', 'refs/heads/wip/main-checkout-*').stdout.split()
 
 
+def wip_main_info() -> list[tuple[str, float, int]]:
+    """F23: (name, when it was made as a unix time, files it holds) for each wip/main-checkout-* branch, oldest
+    first: a person's uncommitted edits, which the run never deletes, so Needs you lists them."""
+    out = []
+    for l in git('for-each-ref', '--sort=committerdate', '--format=%(refname:short)%09%(committerdate:unix)',
+                 'refs/heads/wip/main-checkout-*').stdout.splitlines():
+        name, _, when = l.partition('\t')
+        n = len(git('diff', '--name-only', f'{name}^', name, '--').stdout.split())
+        out.append((name, float(when or 0), n))
+    return out
+
+
+def wip_lines(wips, now: dt.datetime | None = None) -> list[str]:
+    """F23: the Needs you lines for `wip_main_info`'s branches, each with its age and file count."""
+    now = now or dt.datetime.now()
+    out = []
+    for name, when, n in wips:
+        old = P.age(dt.datetime.fromtimestamp(when).strftime('%Y-%m-%d %H:%M'), now) if when else ''
+        out.append('  ' + (f'{old:>3}  ' if old else '') +
+                   f'Main-checkout edits moved aside ({n} file{"s" * (n != 1)}) - '
+                   f'{C.command} wip show|restore|drop {name.removeprefix("wip/")} [{name}]')
+    return out
+
+
+WIP = re.compile(r'wip/([A-Za-z]+\d+[a-z0-9]*?)(?:-\d+)?')  # a task's parked or saved attempt: wip/<ID>, wip/<ID>-N
+
+
+def done_ids(branch: str) -> set[str]:
+    """F23: ids of the tasks DONE.md holds (ticked, or dropped: both are archived there), as the merge target
+    has it; a plan outside the repo has one copy, read."""
+    r = git('show', f'{newest(branch)}:{plan_rel("DONE.md")}') if not C.plan_external else None
+    ls = r.stdout.splitlines() if r is not None and r.returncode == 0 else P.lines(C.done)
+    return {m.group(2).rstrip('.') for l in ls if (m := TASK.match(l)) and m.group(1) == 'x'}
+
+
+def drop_wips(tid: str) -> list[str]:
+    """F23: delete wip/<tid> and wip/<tid>-N, here and on `[git] push`: the task is ticked or dropped, so its
+    parked attempts are read by nobody any more. Returns what it did. Never a wip/main-checkout-* branch."""
+    did = []
+    names = set(git('for-each-ref', '--format=%(refname:short)', f'refs/heads/wip/{tid}',
+                    f'refs/heads/wip/{tid}-*').stdout.split())
+    if r := C.push_remote:
+        names |= {f'wip/{x}' for x in git('for-each-ref', '--format=%(refname:lstrip=4)',
+                                          f'refs/remotes/{r}/wip/{tid}', f'refs/remotes/{r}/wip/{tid}-*').stdout.split()
+                  if x.startswith(tid)}
+    for name in sorted(names):
+        if name.startswith('wip/main-checkout') or not ((m := WIP.fullmatch(name)) and m[1] == tid):
+            continue
+        if not git('rev-parse', '--verify', '-q', f'refs/heads/{name}').returncode and \
+                not git('branch', '-D', name).returncode:
+            did.append(f'deleted {name}')
+        if out := gitops.drop_remote(ROOT, name):
+            did.append(out)
+    return did
+
+
+PRUNED = [0.0]  # when `prune_wips` last looked
+PRUNE_EVERY = 600
+
+
+def prune_wips(branch: str, force: bool = False) -> list[str]:
+    """F23: every wip/<ID> (and wip/<ID>-N) whose task is done or dropped (in DONE.md and no longer open or blocked
+    in TODO.md) deleted, here and on the remote: a task ticked or dropped by hand, or while no run was up,
+    leaves its parked attempts behind otherwise. At most every PRUNE_EVERY seconds unless `force`."""
+    if not force and time.time() - PRUNED[0] < PRUNE_EVERY:
+        return []
+    PRUNED[0] = time.time()
+    refs = git('for-each-ref', '--format=%(refname:short)', 'refs/heads/wip/').stdout.split()
+    if r := C.push_remote:
+        refs += [f'wip/{x}' for x in git('for-each-ref', '--format=%(refname:lstrip=4)',
+                                         f'refs/remotes/{r}/wip/').stdout.split()]
+    ids = {m[1] for x in refs if not x.startswith('wip/main-checkout') and (m := WIP.fullmatch(x))}
+    if not ids:
+        return []
+    live = {m.group(2) for l in plan_text(branch) if (m := TASK.match(l)) and m.group(1) != 'x'}
+    did = []
+    for tid in sorted((ids & done_ids(branch)) - live):
+        if got := drop_wips(tid):
+            did.append(f'{tid}: done, so its parked attempts went: {", ".join(got)}')
+            log(did[-1])
+    return did
+
+
+def wip_name(arg: str) -> str:
+    """`main-checkout-…` or `wip/main-checkout-…`: the branch `agent-runner wip` means."""
+    return arg if arg.startswith('wip/') else f'wip/{arg}'
+
+
+def cmd_wip(argv: list[str], prog: str = f'{RUNNER} wip') -> int:
+    """F23 `agent-runner wip [show|restore|drop NAME]`: the wip/main-checkout-* branches of a person's edits that
+    a merge moved aside. The run never deletes them; this is how a person looks, takes them back or lets go."""
+    ap = argparse.ArgumentParser(prog=prog, description='The main checkout\'s uncommitted edits a merge moved to a '
+                                 'wip/main-checkout-* branch: list them, show one, restore it into a take worktree, '
+                                 'or drop it (here and on the remote).')
+    ap.add_argument('what', nargs='?', choices=('list', 'show', 'restore', 'drop'), default='list')
+    ap.add_argument('name', nargs='?', help='the branch, with or without wip/')
+    ap.add_argument('id', nargs='?', help='restore: the task whose take worktree gets the edits (`take ID` first); '
+                                          'default the one take worktree there is')
+    a = ap.parse_args(argv)
+    init()
+    if a.what == 'list':
+        wips = wip_main_info()
+        print('\n'.join(wip_lines(wips)) if wips else 'no wip/main-checkout-* branches')
+        return 0
+    if not a.name:
+        ap.error(f'{a.what} needs NAME')
+    name = wip_name(a.name)
+    if git('rev-parse', '--verify', '-q', f'refs/heads/{name}').returncode:
+        print(f'{name}: no such branch here', file=sys.stderr)
+        return 1
+    if a.what == 'show':
+        print(git('show', '--stat', '--format=%h %ci%n%s%n', name).stdout.rstrip())
+        return 0
+    if a.what == 'drop':
+        if git('branch', '-D', name).returncode:
+            print(f'{name}: could not be deleted', file=sys.stderr)
+            return 1
+        print(f'deleted {name}')
+        if out := gitops.drop_remote(ROOT, name):
+            print(out)
+        return 0
+    takes = sorted(p for p in SLOTS_DIR.glob('take-*') if p.is_dir())
+    if a.id:
+        d = SLOTS_DIR / f'take-{a.id}'
+        if not d.is_dir():
+            print(f'{a.id}: not taken (no {d}); `{C.command} take {a.id}` first', file=sys.stderr)
+            return 1
+    elif len(takes) == 1:
+        d = takes[0]
+    else:
+        print(f'restore {name} into which take worktree? `{C.command} take ID` first, then '
+              f'`{C.command} wip restore {a.name} ID`' + (f' (taken: {", ".join(p.name[5:] for p in takes)})'
+                                                         if takes else ''), file=sys.stderr)
+        return 1
+    r = git('cherry-pick', '--no-commit', name, cwd=d)
+    if r.returncode:
+        print(f'{name} did not apply cleanly in {d}: {r.stderr.strip()}\nresolve the conflicts there (the edits '
+              f'are uncommitted), or `git cherry-pick --abort` in it; {name} is kept', file=sys.stderr)
+        return 1
+    git('reset', '-q', cwd=d)  # uncommitted and unstaged, as they were in the main checkout
+    print(f'{name}: its edits are in {d}, uncommitted; `{C.command} wip drop {a.name}` once you have them')
+    return 0
+
+
 def move_edits_aside(tid: str) -> str | None:
     """[git] land_edited = "wip": the main checkout's uncommitted edits (new files included) as one commit on
     wip/main-checkout-<time>, on top of HEAD, pushed when the shared branch is; then a stash of them (a second
@@ -3965,6 +4111,10 @@ def finish(tid: str, n: int, sid: str, branch: str) -> None:
         if _finish(tid, n, sid, branch):
             (plansync.ticks(C) / tid).unlink(missing_ok=True)
             plansync.release(C, tid)
+            try:
+                prune_wips(branch, force=True)  # F23: ticked by this merge: its wip/<ID> go with it
+            except Exception as e:  # never reads as a crashed merge
+                log(f'{tid}: could not clear the wip branches of done tasks: {e!r}')
     except Exception as e:  # a merge thread that dies silently leaves the branch unmerged with no word why
         note(f'{tid}: LEFT FOR A HUMAN — the merge crashed: {e!r}')
         log(f'{tid}: LEFT FOR A HUMAN — the merge crashed: {e!r}')
@@ -5318,9 +5468,11 @@ def run(argv: list[str], prog: str) -> int:
     if not merging:  # blocks freed by merges made while no run was up (a merge started above reopens by itself)
         with MERGE:
             reopen_landed(branch, 'a merge before this run')
+    prune_wips(branch, force=True)  # F23: wip/<ID> of tasks ticked or dropped while no run was up
 
     while True:
         sweep_tmp()
+        prune_wips(branch)  # F23: now and then, for tasks ticked or dropped by hand while the run is up
         take_keys()
         IDLE[0] = idle_said
         write_state(running)
@@ -5728,7 +5880,7 @@ def cmd_status(argv: list[str], prog: str = f'{RUNNER} status') -> int:
         lines = C.notes('run.log').read_text(encoding='utf-8', errors='replace').splitlines()
     except OSError:
         lines = []
-    print(status_text(up, st, lines, task_titles(), time.time(), waiting=waiting_ok(),
+    print(status_text(up, st, lines, task_titles(), time.time(), waiting=waiting_ok(), wips=wip_main_info(),
                       progress='\n'.join(x for x in (progress_line(a.window), release_line(P.lines(C.todo))) if x)))
     if lines and a.n:
         print('\nrun.log:\n' + '\n'.join(f'  {l}' for l in lines[-a.n:]))
@@ -5933,12 +6085,12 @@ def when(stamp: str, now: dt.datetime) -> str:
 
 
 def since_text(log_lines: list[str], start: dt.datetime, titles: dict[str, str], now: dt.datetime,
-               since_mark: bool = False, waiting=None) -> tuple[str, str | None]:
+               since_mark: bool = False, waiting=None, wips=None) -> tuple[str, str | None]:
     """(what `since` prints, the newest stamp it read or None): the concepts waiting for the person's OK first
     (`waiting`, however old), then each event after `start`, oldest first, one short line each; or one line
     saying there is nothing new."""
     text, last = _since_events(log_lines, start, titles, now, since_mark)
-    return '\n'.join([*waiting_text(waiting, now=now), text]), last
+    return '\n'.join([*waiting_text(waiting, now=now, wips=wips), text]), last
 
 
 def _since_events(log_lines: list[str], start: dt.datetime, titles: dict[str, str], now: dt.datetime,
@@ -6138,7 +6290,7 @@ def cmd_since(argv: list[str], prog: str = f'{RUNNER} since') -> int:
     except OSError:
         lines = []
     text, last = since_text(lines, start, task_titles(), now, since_mark=not a.when and bool(mark),
-                            waiting=waiting_ok())
+                            waiting=waiting_ok(), wips=wip_main_info())
     print(text)
     move_since_mark(last or now.isoformat())
     return 0
@@ -6273,13 +6425,14 @@ def cmd_wizard(argv: list[str], prog: str = f'{RUNNER} wizard') -> int:
     return plan.main(['confirm', a.id, 'the wizard ran to the end'])
 
 
-def waiting_text(waiting, width: int = 60, now: dt.datetime | None = None) -> list[str]:
+def waiting_text(waiting, width: int = 60, now: dt.datetime | None = None, wips=None) -> list[str]:
     """B27: '[needs] heading' ('Needs you:') and per ask one line in everyday words, what is asked and what to
     reply, with its age first ('2h', when `[needs] ages`) and its [id] last, then its link on a line of its
     own; in `[needs] order` (oldest first); a count of the shelved ones last. [] for none. `waiting` is
     `waiting_ok()`'s list: asks tuples, an `(asked …)` stamp eighth when there is one. No caps labels."""
-    if not waiting:
+    if not waiting and not wips:
         return []
+    waiting = waiting or []
     cf = P.needs_cfg()
     now = now or dt.datetime.now()
     stamps = {w[1]: w[7] for w in waiting if len(w) > 7 and w[7]}
@@ -6295,6 +6448,7 @@ def waiting_text(waiting, width: int = 60, now: dt.datetime | None = None) -> li
             out.append(f'    {url}')
         if label != 'CONCEPT' and wizard_file(tid):  # F17: the one command that walks them through it
             out.append(f'    run: {wizard_cmd(tid)}')
+    out += wip_lines(wips or [], now)  # F23: a person's edits moved aside, never deleted by the run
     if not out:
         return []  # only shelved ones: they asked to leave this list
     if shelved:
@@ -6303,11 +6457,11 @@ def waiting_text(waiting, width: int = 60, now: dt.datetime | None = None) -> li
 
 
 def status_text(up: bool, st: dict, log_lines: list[str], titles: dict[str, str], now: float, width: int = 60,
-                waiting=None, progress: str = '') -> str:
+                waiting=None, progress: str = '', wips=None) -> str:
     """`agent-runner status`, short enough for a phone: concepts waiting for the person's OK first, then the
     run's state, `progress` (`progress_line`, `release_line`), each slot's task, title and minutes, what is
     merging, the last few merged / blocked / parked, and usage."""
-    out = waiting_text(waiting, now=dt.datetime.fromtimestamp(now) if now else None)
+    out = waiting_text(waiting, now=dt.datetime.fromtimestamp(now) if now else None, wips=wips)
     out.append(f'run up: {st.get("state", "starting")}' if up else 'no run is up')
     out += progress.splitlines()
     for n, tid in sorted(st.get('running', {}).items(), key=lambda kv: (not kv[0].isdigit(), kv[0].zfill(4))):
@@ -7138,7 +7292,8 @@ def board(run_pid: int = 0) -> int:
         lines = C.notes('run.log').read_text(encoding='utf-8', errors='replace').splitlines()
     except OSError:
         lines = []
-    print(since_text(lines, now - dt.timedelta(hours=6), task_titles(), now, waiting=waiting_ok())[0], flush=True)
+    print(since_text(lines, now - dt.timedelta(hours=6), task_titles(), now, waiting=waiting_ok(),
+                     wips=wip_main_info())[0], flush=True)
     return follow(mark=False, end=(lambda: not plat.alive(run_pid)) if run_pid else None)
 
 

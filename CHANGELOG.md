@@ -4,6 +4,13 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- The runner deletes its own `wip/<ID>` and `wip/<ID>-N` branches, here and on `[git] push`, once the task
+  is ticked or dropped (F23): after the merge that ticks it, on a `plan drop` of a running task, at the start
+  of a run and every 10 minutes for tasks ticked or dropped by hand. An open or blocked task's wip stays.
+  `wip/main-checkout-*` (a person's uncommitted edits) is never deleted: each is listed under Needs you in
+  `status` and `since` with its age and file count, and the new `agent-runner wip [show|restore|drop NAME]`
+  lists, shows, restores it into a `take` worktree (`wip restore NAME ID`, uncommitted) or deletes it here
+  and on the remote.
 - Spec review before `done` (F28, after mattpocock/skills code-review's Spec axis, MIT): the slot prompt has
   the agent give a fresh subagent only `git diff <base>...HEAD` and `plan brief <ID>`, asking for what is
   missing or partial, what was not asked, and what looks wrong, each quoting the task. Missing and wrong get

@@ -108,7 +108,8 @@ main moves and is pushed; the slot picks its next task
      fails is split, and each task tries alone.
    - Only a passing merge moves `main`, and then `main` is pushed.
    - A task that can't land in three tries is parked as `wip/<ID>` for a human, with the reason in
-     `.runner/ledger.md`.
+     `.runner/ledger.md`. Once the task is ticked or dropped, the run deletes its `wip/<ID>` branches,
+     here and on the remote.
 5. **Repeat.** Tasks the merge unblocked open up. When nothing can start, the run logs `run idle` and
    waits: whatever you add to TODO.md later starts without a restart.
 
@@ -273,7 +274,9 @@ ledger), "move S335 up", "why is P12 blocked?", or "split P40 into steps".
 
 After a run, `.runner/ledger.md` has one line per branch (merged, blocked, or **left for a human, and
 why**), `agent-runner plan` shows what's blocked, and `git branch --list 'wip/*'` lists branches that
-couldn't be merged.
+couldn't be merged. Edits of yours that a merge moved off the main checkout (`wip/main-checkout-*`) are
+never deleted by the run: they show under Needs you in `status` and `since`, and
+`agent-runner wip show|restore|drop NAME` looks at one, puts it in a `take` worktree, or deletes it.
 
 ## Used by
 
