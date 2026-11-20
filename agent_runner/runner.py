@@ -7314,10 +7314,11 @@ def _texts(d: dict) -> list[str]:
 def control_state(rows) -> dict:
     """What a control session's transcript entries `rows` say: {'last': 'person' | 'claude' | 'tool' | '',
     'text': Claude's last message when it spoke last, 'at': when it was last active (epoch s, 0 unknown),
-    'running': ids of background tasks and Monitors still live, 'bridge': its Remote Control session id or ''}.
+    'running': ids of background tasks and Monitors still live, 'bridge': its Remote Control session id or '',
+    'title': the latest name the person gave it in the apps (a custom-title entry, B41) or ''}.
     Activity is a person's message or a turn of Claude's; the standing needs-you watch (CONTROL_WATCH_CMD)
     being re-armed is neither activity nor work in progress, and the events it brings are not activity."""
-    st = {'last': '', 'text': '', 'at': 0.0, 'running': set(), 'bridge': ''}
+    st = {'last': '', 'text': '', 'at': 0.0, 'running': set(), 'bridge': '', 'title': ''}
     uses: dict[str, dict] = {}  # tool_use id -> its tool call
     expiry: dict[str, float] = {}  # task id -> when a Monitor with a timeout ends on its own
     for d in rows:
@@ -7326,6 +7327,9 @@ def control_state(rows) -> dict:
         kind, at = d.get('type'), _stamp(d)
         if kind == 'bridge-session' and isinstance(d.get('bridgeSessionId'), str):
             st['bridge'] = d['bridgeSessionId']
+            continue
+        if kind == 'custom-title':
+            st['title'] = str(d.get('customTitle') or '').strip()
             continue
         texts = _texts(d)
         if any('<status>' in t for t in texts) or any('<task-notification>' in t and 'expired' in t.lower()
@@ -7409,8 +7413,19 @@ def open_question(text: str, phrases: list[str]) -> str:
     return q if len(q) <= 240 else q[:239].rsplit(' ', 1)[0] + '…'
 
 
-def control_verdict(st: dict, cf: dict, now: float) -> tuple[str, str]:
-    """('close' | 'ask' | 'keep', why or the question) for control session state `st` (`control_state`)."""
+def control_renamed(st: dict, n: int = 0) -> bool:
+    """B41: whether the person renamed control session `n` (state `st`): its custom title is set and is not a
+    name the runner gives it (`control_name`, with or without an ask's title; the runner's own name writes no
+    custom-title entry, so with `n` 0 any custom title counts)."""
+    t = st.get('title') or ''
+    return bool(t) and not (n and (t == control_name(n) or t.startswith(f'{ROOT.name} · {n} · ')))
+
+
+def control_verdict(st: dict, cf: dict, now: float, n: int = 0) -> tuple[str, str]:
+    """('close' | 'ask' | 'keep', why or the question) for control session `n`'s state `st` (`control_state`).
+    One the person renamed is kept (B41): they named it to keep it."""
+    if control_renamed(st, n):
+        return 'keep', 'renamed by the person'
     if st['last'] != 'claude':
         return 'keep', {'person': 'the person spoke last', 'tool': 'a turn is under way'}.get(st['last'], 'no turn yet')
     if st['running']:
@@ -7486,7 +7501,7 @@ def close_controls(branch: str = '', force: bool = False, now: float | None = No
         if not sid or not transcript(sid):
             continue
         st = control_state(entries(sid, skip_bad=True))
-        verdict, why = control_verdict(st, cf, now)
+        verdict, why = control_verdict(st, cf, now, n)
         if verdict == 'keep':
             continue
         link = control_link(st['bridge'])

@@ -4302,6 +4302,24 @@ def _result(uid: str, text: str, ago: float) -> dict:
         {'type': 'tool_result', 'tool_use_id': uid, 'content': text}]}}
 
 
+def test_renamed_control_kept(repo: Path):
+    print('B41: idle-close keeps a control session the person renamed (a custom-title entry), and files no question')
+    R.init(repo)
+    H, cf, now = 3600, R.control_cfg(), time.time()
+    done = [_person('watch the push', 3 * H), _claude('Pushed; waiting on CI.', 3 * H - 5)]
+    ask = [_person('can T7 go first?', 3 * H), _claude('T7 is now first.\n\nWant me to pause T8 too?', 3 * H - 5)]
+    title = lambda t: {'type': 'custom-title', 'customTitle': t, 'sessionId': 'x'}
+    eq(R.control_verdict(R.control_state(done), cf, now, 4)[0], 'close', 'without a rename: idle past control_idle closes')
+    renamed = done[:1] + [title('PUSH CRUCIAL')] + done[1:]
+    eq(R.control_state(renamed)['title'], 'PUSH CRUCIAL', 'control_state records the custom title')
+    eq(R.control_verdict(R.control_state(renamed), cf, now, 4), ('keep', 'renamed by the person'),
+       'renamed, Claude last and idle 3h: kept')
+    eq(R.control_verdict(R.control_state(ask + [title('mine')]), cf, now, 4)[0], 'keep', 'its open question not filed')
+    eq(R.control_state(renamed + [title('later name')])['title'], 'later name', 'the latest rename counts')
+    for t in (R.control_name(4), R.control_name(4, 'can T7 go first?')):
+        eq(R.control_verdict(R.control_state(done + [title(t)]), cf, now, 4)[0], 'close', f'the runner\'s own name {t!r}: not a rename')
+
+
 def test_close_idle_controls(repo: Path):
     print('B26: idle control sessions are closed (transcript kept); an open question is filed under Needs you first')
     R.init(repo)
@@ -4427,7 +4445,7 @@ def main() -> int:
                        lambda: test_concepts_waiting(repo),
                        lambda: test_person_waiting(repo), lambda: test_control_server_old_agent(repo, tmp),
                        lambda: test_drop_or_change_running(repo), lambda: test_tell_running(repo),
-                       lambda: test_close_idle_controls(repo)])
+                       lambda: test_close_idle_controls(repo), lambda: test_renamed_control_kept(repo)])
 
 
 if __name__ == '__main__':
