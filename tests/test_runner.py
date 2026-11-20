@@ -5547,6 +5547,42 @@ def test_stop_countdown(repo: Path):
         check((m := R.STOP_ASKED.match(said)) and m[1] == '5', 'the feed reads the count back', said)
 
 
+def test_real_claude_json_guard(tmp: Path):
+    print('B68: a trust entry a suite leaks into the real ~/.claude.json fails it; other sessions\' entries do not')
+    import _check
+    fake = tmp / 'b68-real' / '.claude.json'
+    fake.parent.mkdir()
+    fake.write_text(json.dumps({'projects': {'/old/entry': {}}}), encoding='utf-8')
+    ours, other = _check.TMP_ROOT / 'b68-slot', tmp.parent.parent / 'elsewhere-b68'
+    with mock.patch.object(_check, 'REAL_CLAUDE_JSON', [fake]), \
+            mock.patch.object(_check, '_REAL_BEFORE', {fake: _check._projects(fake)}):
+        eq(_check.claude_json_leaks(), [], 'an untouched file: no leak')
+        with mock.patch.dict(os.environ, {'CLAUDE_CONFIG_DIR': str(fake.parent)}):
+            R.Claude.trust(ours)
+            data = json.loads(fake.read_text(encoding='utf-8'))
+            data['projects'][other.as_posix()] = {'hasTrustDialogAccepted': True}  # a real session, meanwhile
+            data['projects']['C:\\Users\\x\\AppData\\Local\\Temp\\proj-slots\\s1'] = {}
+            fake.write_text(json.dumps(data), encoding='utf-8')
+        eq(_check.claude_json_leaks(), [ours.resolve().as_posix()], 'the suite\'s own temp folder is a leak; '
+                                                                    'the other session\'s entry is not')
+    check(Path(tempfile.gettempdir()) == _check.TMP_ROOT and os.environ.get('TMPDIR') == str(_check.TMP_ROOT),
+          'the suite and its subprocesses make temp folders under its own root')
+    check(all(f != Path(os.environ['CLAUDE_CONFIG_DIR']) / '.claude.json' for f in _check.REAL_CLAUDE_JSON),
+          'the suite\'s Claude config is never the real one')
+    sys_tmp = _check.SYS_TMP.as_posix()
+    data = {'projects': {f'{sys_tmp}/tmpab/proj-slots/s1': {'hasTrustDialogAccepted': True},
+                         f'{sys_tmp}/claude-1/x/scratchpad': {'hasTrustDialogAccepted': True, 'lastCost': 1},
+                         '/home/me/repo': {'hasTrustDialogAccepted': True}}}
+    eq(_check.stale_test_entries(data), [f'{sys_tmp}/tmpab/proj-slots/s1'],
+       'cleanup: only a bare trust entry under the temp dir is stale, not a real session\'s or a repo\'s')
+    fake.write_text(json.dumps(data), encoding='utf-8')
+    with mock.patch.object(_check, 'REAL_CLAUDE_JSON', [fake]), \
+            mock.patch('sys.stdout', new_callable=__import__('io').StringIO):
+        _check.clean_real_claude_json(['--clean'])
+    eq(sorted(json.loads(fake.read_text(encoding='utf-8'))['projects']),
+       sorted([f'{sys_tmp}/claude-1/x/scratchpad', '/home/me/repo']), 'and --clean removes just those')
+
+
 def main() -> int:
     with tempfile.TemporaryDirectory() as t:
         tmp = Path(t)
@@ -5580,7 +5616,7 @@ def main() -> int:
                        lambda: test_control_status_rules(repo), lambda: test_control_do_it_here(repo), lambda: test_control_retitle_on_topic(repo), lambda: test_take_running_slot(repo), lambda: test_upgrade_cmd(repo), test_control_no_upgrade_watcher,
                        lambda: test_plan_last(repo), lambda: test_release_push(repo),
                        lambda: test_help_order_and_bare_wizard(tmp), lambda: test_setup(tmp),
-                       lambda: test_stop_countdown(repo)])
+                       lambda: test_stop_countdown(repo), lambda: test_real_claude_json_guard(tmp)])
 
 
 if __name__ == '__main__':
