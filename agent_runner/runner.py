@@ -7302,6 +7302,7 @@ def hand_hook(root: Path) -> str:
         return ''  # a file we cannot read is the person's: leave it
     starts = data.setdefault('hooks', {}).setdefault('SessionStart', [])
     if any('control --brief --hand' in h.get('command', '') for e in starts for h in e.get('hooks', [])):
+        hand_hook_exclude(root)  # B66: a machine that got the hook before the exclude gets it now
         return ''
     starts.append({'hooks': [{'type': 'command', 'command': cmd}]})
     try:
@@ -7309,7 +7310,30 @@ def hand_hook(root: Path) -> str:
         f.write_text(json.dumps(data, indent=2) + '\n', encoding='utf-8')
     except OSError:
         return ''
+    hand_hook_exclude(root)
     return f'{f.relative_to(root).as_posix()}: sessions opened by hand here get the control brief'
+
+
+def hand_hook_exclude(root: Path) -> None:
+    """B66: `.claude/settings.local.json` ignored in `root`'s repo. Where git has no rule for it (no global
+    ignore, as on a fresh Windows machine) it shows as untracked, and a `git add -A` would commit this machine's
+    hook, handing every slot worktree the control brief. Added to `info/exclude` in the common git dir, which
+    every worktree shares, only when `git check-ignore` says it is not ignored yet."""
+    rel = '.claude/settings.local.json'
+    if git('check-ignore', '-q', rel, cwd=root).returncode != 1:
+        return  # ignored already (0), or not a git repo / git failed (128): nothing to do
+    r = git('rev-parse', '--git-common-dir', cwd=root)
+    if r.returncode != 0 or not r.stdout.strip():
+        return
+    common = Path(r.stdout.strip())
+    ex = (common if common.is_absolute() else root / common) / 'info' / 'exclude'
+    try:
+        old = ex.read_text(encoding='utf-8') if ex.exists() else ''
+        ex.parent.mkdir(parents=True, exist_ok=True)
+        sep = '' if not old or old.endswith('\n') else '\n'
+        ex.write_text(f'{old}{sep}/{rel}\n', encoding='utf-8')
+    except OSError:
+        pass
 
 
 def cmd_control(argv: list[str], prog: str = f'{RUNNER} control') -> int:

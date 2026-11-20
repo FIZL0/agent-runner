@@ -1028,6 +1028,28 @@ def test_hand_hook(tmp: Path):
             R.cmd_control(['--brief', '--hand'])
         eq('BRIEF' in out.getvalue(), want, '--hand prints the brief' + (' (by hand)' if want else
                                                                          ' only when the runner did not start it'))
+    print('B66: hand_hook ignores settings.local.json where git has no rule for it, in every worktree')
+    rel = '.claude/settings.local.json'
+    gl = tmp / 'hand-noglobal'
+    gl.mkdir()
+    (gl / 'gitconfig').write_text('[user]\n\tname = t\n\temail = t@t\n', encoding='utf-8')
+    genv = {'GIT_CONFIG_GLOBAL': str(gl / 'gitconfig'), 'XDG_CONFIG_HOME': str(gl), 'HOME': str(gl)}
+    with mock.patch.dict(os.environ, genv):
+        repo = tmp / 'hand-repo'
+        repo.mkdir()
+        R.git('init', '-q', cwd=repo)
+        R.git('commit', '-q', '--allow-empty', '-m', 'init', cwd=repo)
+        eq(R.git('check-ignore', '-q', rel, cwd=repo).returncode, 1, 'no ignore rule to start with')
+        has(R.hand_hook(repo), r'settings\.local\.json', 'the hook is written in a repo with no ignore rule')
+        eq(R.git('check-ignore', '-q', rel, cwd=repo).returncode, 0, 'and git check-ignore passes after it')
+        eq(R.git('status', '--porcelain', cwd=repo).stdout, '', 'git status no longer shows ?? .claude/')
+        wt = tmp / 'hand-wt'
+        R.git('worktree', 'add', '-q', str(wt), cwd=repo)
+        eq(R.git('check-ignore', '-q', rel, cwd=wt).returncode, 0, 'a worktree shares the exclude (common dir)')
+        R.hand_hook(repo)
+        R.hand_hook_exclude(wt)
+        ex = (repo / '.git' / 'info' / 'exclude').read_text(encoding='utf-8')
+        check(ex.count(rel) == 1, 'added once', ex)
 
 
 def test_control(repo: Path):
