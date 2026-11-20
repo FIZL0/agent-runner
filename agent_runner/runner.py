@@ -6960,35 +6960,44 @@ def control_new_session() -> str:
     return sess if tmux('has-session', '-t', f'={sess}').returncode == 0 else ''
 
 
-FEED_IMAGES_SENT = 'feed-images.sent'  # <notes>/remote/: touched on each forward; older uploads are not sent again
-FEED_IMAGE_AGE = 300  # s: an upload older than this is not the message being handed on
-
-
-def feed_images(now: float | None = None) -> list[str]:
-    """Images the person just attached in the runner feed (Claude Code saves them under
-    <config>/uploads/<feed session id>/), oldest first: those newer than the last forward and at most
-    FEED_IMAGE_AGE old. `control --new --ask` passes them on itself, so a feed on an older brief, or a Haiku
-    that skips the step, still forwards the pictures."""
-    # ponytail: an mtime window, not the message's own attachment list (the feed's Bash cannot see that)
-    notes = C.notes(REMOTE_DIR)
+def feed_images() -> list[str]:
+    """The images attached to the person's latest message in the runner feed, the one being handed on, in display
+    order: Claude Code records their saved paths in the feed's transcript (an `inlined_image_paths` attachment
+    after the message). `control --new --ask` passes them on itself, so a feed on an older brief, or a Haiku that
+    skips the step, still forwards the pictures, and a later text-only message forwards none."""
     try:
-        sid = (notes / FEED_SID).read_text(encoding='utf-8').strip()
+        sid = C.notes(REMOTE_DIR, FEED_SID).read_text(encoding='utf-8').strip()
     except OSError:
         return []
-    if not SID_RE.fullmatch(sid):
+    t = transcript(sid) if SID_RE.fullmatch(sid) else None
+    if not t:
         return []
-    now = time.time() if now is None else now
-    mark = notes / FEED_IMAGES_SENT
-    since = max(now - FEED_IMAGE_AGE, mark.stat().st_mtime if mark.exists() else 0)
-    up = Path(os.environ.get('CLAUDE_CONFIG_DIR') or Path.home() / '.claude') / 'uploads' / sid
+    paths: list[str] = []
     try:
-        files = sorted((f.stat().st_mtime, str(f)) for f in up.iterdir() if f.is_file())
+        with open(t, encoding='utf-8') as f:
+            for line in f:
+                try:
+                    d = json.loads(line)
+                except ValueError:
+                    continue
+                att = d.get('attachment') or {}
+                if att.get('type') == 'inlined_image_paths':
+                    paths += [p for p in att.get('paths', []) if isinstance(p, str)]
+                elif d.get('type') == 'user' and person_message(d):
+                    paths = []
     except OSError:
         return []
-    new = [f for t, f in files if t > since]
-    if new:
-        mark.touch()
-    return new
+    return paths
+
+
+def person_message(d: dict) -> bool:
+    """A transcript entry the person typed (not a tool result or a task notification)."""
+    if (d.get('origin') or {}).get('kind', 'human') != 'human':
+        return False
+    c = (d.get('message') or {}).get('content')
+    if isinstance(c, str):
+        return not c.startswith('<task-notification>')
+    return isinstance(c, list) and any(isinstance(x, dict) and x.get('type') in ('text', 'image') for x in c)
 
 
 def control_new(n: int | None = None, wait: float = CONTROL_LINK_WAIT, ask: str = '',

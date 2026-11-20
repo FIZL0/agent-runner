@@ -1531,28 +1531,24 @@ def test_short_titles_and_since(repo: Path):
               ca[1])
         from agent_runner.guide import RUNNER_BRIEF
         check('--image' not in RUNNER_BRIEF, 'the feed brief leaves images to control --new', RUNNER_BRIEF)
-        with tempfile.TemporaryDirectory() as cfg, mock.patch.dict(os.environ, {'CLAUDE_CONFIG_DIR': cfg}):
-            rdir = R.C.notes(R.REMOTE_DIR)
-            rdir.mkdir(parents=True, exist_ok=True)
-            fsid = rdir / R.FEED_SID
-            had = fsid.read_text() if fsid.exists() else None
+        with tempfile.TemporaryDirectory() as tdir:
+            tr = Path(tdir, 'feed.jsonl')
+            hum = lambda *c: {'type': 'user', 'origin': {'kind': 'human'}, 'message': {'content': list(c)}}
+            pics = lambda *p: {'type': 'attachment', 'attachment': {'type': 'inlined_image_paths', 'paths': list(p)}}
+            note = {'type': 'user', 'origin': {'kind': 'task-notification'}, 'message': {'content': '<task-notification>x'}}
+            res = {'type': 'user', 'message': {'content': [{'type': 'tool_result', 'content': 'ok'}]}}
+            write = lambda *es: tr.write_text(''.join(json.dumps(e) + '\n' for e in es))
             sid = '12345678-1234-1234-1234-123456789abc'
-            fsid.write_text(sid + '\n')
-            (rdir / R.FEED_IMAGES_SENT).unlink(missing_ok=True)
-            up = Path(cfg, 'uploads', sid)
-            up.mkdir(parents=True)
-            now = time.time()
-            for name, age in (('old.png', 900), ('a.png', 20), ('b.png', 10)):
-                (up / name).write_bytes(b'x')
-                os.utime(up / name, (now - age, now - age))
-            eq([Path(f).name for f in R.feed_images(now)], ['a.png', 'b.png'],
-               'control --new --ask picks up the images just attached in the feed, oldest first')
-            eq(R.feed_images(now + 1), [], 'an image already handed on is not sent again')
-            (rdir / R.FEED_IMAGES_SENT).unlink()
-            if had is None:
-                fsid.unlink()
-            else:
-                fsid.write_text(had)
+            with mock.patch.object(R.C, 'notes', lambda *a: Path(tdir, 'feed.sid')), \
+                    mock.patch.object(R, 'transcript', lambda s: str(tr) if s == sid else None):
+                Path(tdir, 'feed.sid').write_text(sid + '\n')
+                write(hum({'type': 'text', 'text': 'old'}), pics('/u/old.png'),
+                      hum({'type': 'image'}, {'type': 'image'}, {'type': 'text', 'text': 'look'}),
+                      pics('/u/a.png', '/u/b.png'), note, res)
+                eq(R.feed_images(), ['/u/a.png', '/u/b.png'],
+                   'control --new --ask passes on the images of the message being handed on')
+                write(hum({'type': 'image'}), pics('/u/a.png'), res, hum({'type': 'text', 'text': 'and this?'}))
+                eq(R.feed_images(), [], 'a later text-only message forwards no earlier images')
         h = run(repo, 'control', '--help')
         check('--image' in h.stdout, 'control --image is an option', h.stdout)
         eq(run(repo, 'since', '--follow', '--keep-mark', '--help').returncode, 0, 'since --keep-mark is an option')
