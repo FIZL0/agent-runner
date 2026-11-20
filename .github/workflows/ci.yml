@@ -30,4 +30,7 @@ jobs:
           PYTHONUTF8: '1'
         run: |
           # setup-python gives `python` on every OS; Windows has no `python3`
-          for t in tests/test_*.py; do echo "== $t"; python "$t" || exit 1; done
+          # runs every file, not stopping at the first failure, so one run shows all of them
+          failed=
+          for t in tests/test_*.py; do echo "== $t"; python "$t" || failed="$failed $t"; done
+          if [ -n "$failed" ]; then echo "::error::failed:$failed"; exit 1; fi
