@@ -288,9 +288,9 @@ CONTROL_ANSWER = ('run `{cmd} plan answer "<their words>"`: it takes the reply t
                   'which one, ask the person, naming the items in plain words.')
 CONTROL_NO_ANSWER = ('ask which one they mean, in plain words ([needs] map_replies is off here), then answer it by '
                      'its id as below.')
-FEED_ANSWER = ('- A reply to something under "{needs}" ("yes", "no", "B", "later", "use SQLite"): run `{cmd} plan '
-               'answer "<their words>"` and answer with what it prints. When it says it cannot tell which item, '
-               'hand the message to a control session as below.\n')
+FEED_ANSWER = ('- A reply to something under "{needs}" ("yes", "no", "B", "later", "use SQLite", "do X instead" '
+               'right after that item was shown): run `{cmd} plan answer "<their words>"` and answer with what it '
+               'prints. When it says it cannot tell which item, hand the message to a control session as below.\n')
 
 CONTROL_WATCH = """\
 **Tell the person, unasked, when the run needs them.** Every control session, on its first turn (with the
