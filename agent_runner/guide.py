@@ -137,7 +137,10 @@ short lines: the person may be on a phone.
 
 **Open the session.** Control 1 (started with the run) opens with a short summary, before anything else; a
 session opened later (`control --new`, /control) starts blank: answer the person's first message, with no
-summary first unless they ask for one. In any session but control 1, once you have read its first message, run
+summary first unless they ask for one. A first message handed on from the runner feed may end with a
+`<runner-waiting>` block: the runner added it, it is not the person's ask. Answer the person's words above it;
+settle an item listed there only if those words answer it, and otherwise say nothing about the waiting items
+(never that the message did not answer them). In any session but control 1, once you have read its first message, run
 `{cmd} control --title "<what it is for, 2-5 words, a task id first if there is one>"` (e.g. `R43 site
 deploy via tags`): it names the session for that in the apps, in place of the ask's cut-off first words. Run it
 again whenever the conversation moves on to a different task or topic (another task id, another feature or

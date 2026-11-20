@@ -1302,6 +1302,18 @@ def test_control(repo: Path):
     check(msg.startswith('deploy with tags') and '- R43: Deploy on every push or on v* tags?' in msg
           and 'plan confirm|change|shelve ID' in msg and 'plan answer' not in msg,
           'a handed-on ask lists the waiting items and says to settle one by its id')
+    # B84: the list is fenced off as runner-added, after the person's words and any attached file, and the brief
+    # names the tag: settle only when the words answer it, else say nothing of the waiting items
+    with mock.patch.object(R.P, 'asks', lambda *a, **k: [item]):
+        msg = R.control_ask('what is wrong in my screenshot?', ['/tmp/shot.png'])
+    head, tag, block = msg.partition('\n\n<runner-waiting>\n')
+    check(tag and head.startswith('what is wrong') and 'shot.png' in head and 'R43' not in head
+          and block.endswith('</runner-waiting>') and "not the person's ask" in block
+          and 'say nothing of these' in block and 'From the runner feed' not in msg,
+          'B84: the waiting items sit in a tagged runner block after the person\'s words, never part of them')
+    check('<runner-waiting>' in brief and 'not the person\'s ask' in brief
+          and 'say nothing about the waiting items' in brief,
+          'B84: the brief names the runner block: answer the person, settle an item only if their words answer it')
     with mock.patch.object(R.P, 'asks', lambda *a, **k: []):
         eq(R.control_ask('add dark mode'), 'add dark mode', 'nothing waiting: the ask as it was')
     with mock.patch.object(R.P, 'asks', lambda *a, **k: (_ for _ in ()).throw(OSError())):

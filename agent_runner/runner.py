@@ -7351,11 +7351,16 @@ def control_ask(ask: str, images: list[str] | tuple = ()) -> str:
     lines += [f'The person attached {attached_name(p)}, saved at "{p}": Read or open it before you answer.'
               for p in images]
     if ask and (waiting := ask_waiting()):
-        lines.append('(From the runner feed. Waiting for the person when they said it:\n' + waiting +
-                     f'\nIf the message answers one of these, settle it by its id with `{RUNNER} plan confirm|change|shelve ID`'
-                     ' (ask the person when unsure which) before anything else, as well as any task it asks for: a reply queued'
-                     ' only as a new task leaves the item waiting, B47.)')
+        lines.append(ask_waiting_block(waiting))
     return '\n\n'.join(lines)
+
+
+def ask_waiting_block(waiting: str) -> str:
+    """B84: the Needs you items a handed-on ask carries (B47), fenced off as runner-added and placed after the
+    person's words, so the session answers the person and not the list; the control brief names the tag."""
+    return ('<runner-waiting>\nAdded by the runner, not the person\'s ask. Waiting under Needs you:\n' + waiting +
+            f'\nSettle one by its id (`{RUNNER} plan confirm|change|shelve ID`, not only a new task) only if the '
+            'words above answer it; else say nothing of these.\n</runner-waiting>')
 
 
 def ask_waiting() -> str:
