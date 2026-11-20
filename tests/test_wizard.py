@@ -78,6 +78,10 @@ def test_status_and_brief():
         has(p, r'only for steps you cannot do yourself', 'only for steps the agent cannot do')
         has(p, re.escape(f'{R.C.command} wizard F1'), 'and the command the person gets')
         check(p.index('When you block with `BLOCKED:`') < p.index('Project policies:'), 'before the policies')
+        has(p, r'Before a `BLOCKED:` on access, check what this machine already has', 'F30: check access first')
+        for probe in ('`gh auth status`', '`wrangler whoami`', '`ssh -T`', '~/.claude/ACCESS.md'):
+            check(probe in p, f'F30: the check-first sentence names {probe}', p)
+        has(p, r'names the exact command that failed and its error', 'F30: and BLOCKED: names the failure')
 
         R.C.run['wizards'] = False
         try:

@@ -4,6 +4,10 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- A slot's brief now tells it to check the access this machine already has before blocking with `BLOCKED:`
+  on a login or token (`gh auth status`, `wrangler whoami`, the service's own CLI login, `ssh -T`,
+  `~/.claude/ACCESS.md`) and to name the exact command that failed and its error in the `BLOCKED:` line.
+
 - When a message handed on from the runner feed shows images that Claude Code recorded no saved path for (it
   changed how it records them again), the new control session's first message says so, with the Claude Code
   version, and asks the person to send the pictures there again, instead of the pictures vanishing silently.
