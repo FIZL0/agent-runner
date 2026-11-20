@@ -2,6 +2,13 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
+## Unreleased
+
+- The background run keeps a board window, "board-<repo>": `since --board` (what landed, started, stalled or
+  needs you, the last 6 hours then live), under a line saying to steer from a control session. No LLM, so no
+  tokens; it leaves the last-look mark alone, and the run opens it again within 30 s when it is closed.
+  `agent-runner attach board` goes there.
+
 ## 0.49.0 (2026-11-20)
 
 - Bare `agent-runner` starts the run in the background; `agent-runner attach [sN]` attaches to its pane (or a

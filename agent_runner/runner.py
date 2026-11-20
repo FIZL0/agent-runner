@@ -5135,6 +5135,7 @@ def run(argv: list[str], prog: str) -> int:
         tmux('set-option', '-p', '-t', os.environ['TMUX_PANE'], RUN_TAG, str(ROOT))
     start_control()  # c1 beside the run ([run] control) unless [run] remote, where the control server stands in
     start_control_server()
+    start_board()  # the background run's board window: what lands and needs you, no tokens; reopened if closed
 
     AUTO_UPGRADE[0] = bool(r['auto_upgrade'])
     threading.Thread(target=update_watch, daemon=True).start()
@@ -5824,11 +5825,11 @@ def follow_lines(chunk: str, titles: dict[str, str], now: dt.datetime, needs_you
     return out, last
 
 
-def follow(poll: float = 2.0, until: float | None = None, needs_you: bool = False) -> int:
+def follow(poll: float = 2.0, until: float | None = None, needs_you: bool = False, mark: bool = True) -> int:
     """`since --follow`: print one plain line per new event as run.log gets it, moving the since mark as it
     prints; from the log's end, until killed (or `until`, a monotonic deadline, for tests). `needs_you`: only
     what needs the person (`needs_you_line`), and the mark stays put: the landed and started lines it skips
-    are still news for the next `since`."""
+    are still news for the next `since`. `mark=False` (the board): the mark stays put too."""
     logf = C.notes('run.log')
     try:
         pos = logf.stat().st_size
@@ -5855,7 +5856,7 @@ def follow(poll: float = 2.0, until: float | None = None, needs_you: bool = Fals
                                            waiting_ok() if needs_you and 'merged, ' in chunk else None)
                 for l in lines:
                     print(l, flush=True)
-                if last and not needs_you:
+                if last and mark and not needs_you:
                     move_since_mark(last)
         except OSError:
             pass
@@ -5878,10 +5879,15 @@ def cmd_since(argv: list[str], prog: str = f'{RUNNER} since') -> int:
     ap.add_argument('--needs-you', action='store_true',
                     help='with --follow: only what needs you (the run held, a task left for you, stalled, or '
                          'waiting on your answer), and the last-look mark stays put')
+    ap.add_argument('--board', action='store_true',
+                    help="the board window's feed: a header, the last 6 hours, then --follow; the last-look mark "
+                         "stays put, and no tokens are used")
     a = ap.parse_args(argv)
     init()
     if a.needs_you and not a.follow:
         ap.error('--needs-you goes with --follow')
+    if a.board:
+        return board()
     if a.follow:
         return follow(needs_you=a.needs_you)
     f = since_mark_file()
@@ -6210,7 +6216,8 @@ def cmd_background_attach(argv: list[str]) -> int:
 def cmd_attach(argv: list[str], prog: str = f'{RUNNER} attach') -> int:
     """`agent-runner attach [sN]`: the runner's pane, or a slot's; on Windows a slot's console window."""
     ap = argparse.ArgumentParser(prog=prog, description="Show the run's pane, or a slot's (s2, or 2).")
-    ap.add_argument('slot', nargs='?', default='', help='s2 (or 2) for slot 2; master for a fix session; none: the runner')
+    ap.add_argument('slot', nargs='?', default='', help='s2 (or 2) for slot 2; master for a fix session; board for the board '
+                    'window; none: the runner')
     a = ap.parse_args(argv)
     init()
     which = f's{a.slot}' if a.slot.isdigit() else (a.slot or 'runner')
@@ -6511,6 +6518,65 @@ def start_control() -> None:
     else:
         return
     log(f'control: c1 is up in {where} ({RUNNER} control opens another{more})')
+
+
+BOARD_EVERY = 30  # s between the run's checks that the board window is still there
+
+
+def board_header() -> str:
+    """The board's top lines: it only shows, and where to steer the run from."""
+    where = (f'claude.ai/code: "{ROOT.name} · control" opens a control session' if remote_on() else
+             f'{RUNNER} control (or a new pane in this tmux session)')
+    return (f'{ROOT.name} board: what lands and what needs you, no tokens used. Steer from a control session:\n'
+            f'    {where}\n' + '-' * 78)
+
+
+def board() -> int:
+    """`since --board`: the header, the last 6 hours, then the feed; the since mark is left for the person."""
+    print(board_header())
+    now = dt.datetime.now().replace(microsecond=0)
+    try:
+        lines = C.notes('run.log').read_text(encoding='utf-8', errors='replace').splitlines()
+    except OSError:
+        lines = []
+    print(since_text(lines, now - dt.timedelta(hours=6), task_titles(), now, waiting=waiting_ok())[0], flush=True)
+    return follow(mark=False)
+
+
+def board_argv(sess: str, root: Path, cmd: str) -> list[str]:
+    """Open the board window in the background session `sess`, without taking focus."""
+    return ['tmux', 'new-window', '-d', '-t', f'={sess}:', '-n', window('board'), '-c', str(root),
+            '-P', '-F', '#{pane_id}', cmd]
+
+
+def keep_board(sess: str) -> None:
+    """Keep the board window up in the background session while the run is: opened again when it is closed or
+    its feed exits. It outlives the run, and the next run finds it there."""
+    cmd = plat.command_text([*runner_cmd(), 'since', '--board'])
+    said = False
+    while True:
+        rows = tmux('list-panes', '-s', '-t', f'={sess}', '-F',
+                    f'#{{session_name}}\t#{{pane_id}}\t#{{{TAG}}}\t#{{{REPO_TAG}}}\t#{{{RUN_TAG}}}')
+        if rows.returncode == 0 and not attach_target(rows.stdout.splitlines(), ROOT, 'board'):  # by tag: a rename keeps it
+            r = sp.run(board_argv(sess, ROOT, cmd), capture_output=True, text=True)
+            if pane := r.stdout.strip():  # `attach board` finds it by these
+                tmux('set-option', '-p', '-t', pane, TAG, 'board')
+                tmux('set-option', '-p', '-t', pane, REPO_TAG, str(ROOT))
+            if not said or r.returncode:
+                log(f'board: window {window("board")} is up ({RUNNER} attach board)' if not r.returncode else
+                    f'board: tmux could not open it: {r.stderr.strip()}')
+            said = True
+        time.sleep(BOARD_EVERY)
+
+
+def start_board() -> None:
+    """The board window, in the background run only (a run in your own tmux has its pane in front of you)."""
+    here = os.environ.get('TMUX_PANE', '')
+    if not (isinstance(MUX, TmuxMux) and here):
+        return
+    sess = tmux('display-message', '-p', '-t', here, '#{session_name}').stdout.strip()
+    if sess == background_session():
+        threading.Thread(target=keep_board, args=(sess,), name='board', daemon=True).start()
 
 
 CONTROL_LINK_WAIT = 90  # s `control --new` watches the new pane for its claude.ai/code link

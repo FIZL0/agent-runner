@@ -1241,6 +1241,23 @@ def test_short_titles_and_since(repo: Path):
               and 'needs you: B9' in got[2] and not any('landed' in g for g in got), 'and skips the landed one', got)
         eq(R.since_mark_file().read_text(encoding='utf-8').strip(), later2, 'the needs-you watch leaves the mark')
         eq(run(repo, 'since', '--needs-you').returncode, 2, '--needs-you without --follow is refused')
+
+        # the board: a header pointing at control sessions, a feed, and the mark left for the person
+        later4 = (R.dt.datetime.fromisoformat(later3) + R.dt.timedelta(seconds=5)).isoformat()
+        def add3():
+            with notes.open('a', encoding='utf-8') as fh:
+                fh.write(f'=== {later4} F5: merged, ticked\n')
+        threading.Timer(0.5, add3).start()
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            R.follow(poll=0.1, until=time.monotonic() + 2, mark=False)
+        check('landed: F5' in out.getvalue(), 'the board feed prints what lands', out.getvalue())
+        eq(R.since_mark_file().read_text(encoding='utf-8').strip(), later2, 'and leaves the mark')
+        check(f'{R.RUNNER} control' in R.board_header() or 'claude.ai/code' in R.board_header(),
+              'its header says where to steer from', R.board_header())
+        argv = R.board_argv('ar-demo', repo, 'agent-runner since --board')
+        check(argv[:5] == ['tmux', 'new-window', '-d', '-t', '=ar-demo:'] and R.window('board') in argv,
+              'the board opens in the background session without taking focus', argv)
     finally:
         if keep is None:
             notes.unlink(missing_ok=True)
