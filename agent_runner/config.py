@@ -59,6 +59,8 @@ def _typed() -> str:
     if plat.WINDOWS:
         exe = shutil.which('agent-runner')
         return plat.command_text([exe] if exe else runner_cmd())
+    if Path(sys.argv[0]).name == 'agent-runner' and shutil.which('agent-runner'):
+        return 'agent-runner'  # typed from PATH (an editable install of a clone too): echo that, not the clone's path
     if CLONE_ENTRY.exists():
         return str(CLONE_ENTRY)
     return shutil.which('agent-runner') or shlex.join(runner_cmd())
