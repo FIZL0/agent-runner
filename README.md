@@ -47,8 +47,9 @@ agent-runner stop                  # finish the running tasks, then end it
 Bare `agent-runner` starts the run in a detached tmux session `ar-<repo>`, with the slots' window in it, so
 no terminal is taken and nothing pops up. `agent-runner run 3` is the same run in this terminal (inside tmux).
 Either way the run opens a control session, c1, beside it: a Claude Code session in the main checkout that
-you ask for status, to pause, to add slots or stop, to queue a task, or to do one now; it posts a line when
-a task merges or is parked. Any new pane in the `ar-<repo>` session is another one. With `[run] remote` the
+you ask for status, to pause, to add slots or stop, to queue a task, or to do one now. It opens with what is
+running and what happened since you last looked (`agent-runner since`), and when you say "follow" it posts each
+task as it lands. Any new pane in the `ar-<repo>` session is another one. With `[run] remote` the
 control sessions are on Remote Control, so you run the run from claude.ai/code or the Claude apps
 ([docs/REFERENCE.md](docs/REFERENCE.md#control-sessions)).
 

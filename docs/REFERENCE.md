@@ -117,8 +117,14 @@ task to fix X" (it files it with `plan add`), "do X now" (it uses `take`, never 
   brief (so a resumed or compacted session gets it again), and the runner's commands, `tail`, Read and
   Monitor allowed without a prompt. They run on `[run] model`, with `--tools
   Bash,Read,Edit,Write,Artifact,Monitor` under `[run] lean`, and no bypass mode: a person answers the rest.
-  The first message has the session start Monitor on `run.log`, filtered to merges, parked and stalled tasks,
-  `run idle` and `run stopped`, and post one short line for each, so a remote viewer sees progress unasked.
+- **The opening**: the first message has the session run `agent-runner status` and `agent-runner since` and
+  say, in plain bullets, what the run is doing now (each running task by its short title, no ids) and what
+  landed, got stuck or needs you since you last looked, then one line of hints: `status · since · follow ·
+  pause · stop · more slots · or just describe a bug or idea to queue it`. Later answers are bullets too, ids
+  only when you ask or the session acts on one.
+- **Following**: a session never watches the run by itself. Say "follow" (or "live", "/follow") and it runs
+  `agent-runner since --follow` under the Monitor tool and posts each line it prints as a bullet; "stop
+  following" ends it (see [status and since](#status-and-since)).
 - **With `[run] remote`** each control session starts with `--remote-control "<repo> · control N"`, and the
   run keeps `claude remote-control --spawn same-dir --name "<repo> · control" --settings <file>` running in
   the main checkout (output in `.runner/control-server.log`), restarted when it exits (Remote Control quits
@@ -129,6 +135,23 @@ task to fix X" (it files it with `plan add`), "do X now" (it uses `take`, never 
 `--no-tmux` (or no tmux / Windows Terminal installed) is the sequential run. It's one session at a time,
 in your checkout, on the branch you have out. There's no worktree and no merge: `done` already ran the gate, and
 the branch is pushed after each task.
+
+### status and since
+
+`agent-runner status` and `agent-runner since` name each task by a short title, the first sentence of its line
+cut to about 60 characters, without its fields, quotes, dates or file lists, with the id in brackets at the
+end: `s1  Control session experience [F5]  12 min`.
+
+`agent-runner since [WHEN]` lists what happened, oldest first, one line each: started, landed, part landed
+with the rest stuck (`done --blocked`), stuck and not merged (parked on `wip/`), needs you (left for a human,
+or the run held by a stoppage only you can clear), looks stuck (stalled), run idle, run stopped. With no
+WHEN it starts where the last `since` left off (`.runner/since.last`; a day back the first time) and moves
+that mark forward, so asking twice in a row shows nothing new the second time. WHEN is `2h`, `30m`, `1d`,
+`today`, `yesterday` or a date/time (`2026-11-19T14:00`); it moves the mark too, never back.
+
+`since --follow` stays running and prints one line per new event as run.log gets it (a landed task with the
+first sentence of its `done` message), from now on, moving the mark as it prints: the control session's
+"follow", and fine in any terminal.
 
 ## The task list
 
@@ -627,6 +650,8 @@ agent-runner                           the run in the background (a detached tmu
                                        Windows), the prompt straight back; `help` prints the usage
 agent-runner attach [sN|c1|master]     the runner's pane, or a slot's (Windows: the slot's console window)
 agent-runner control [N]               a control session in this terminal (c1: the kept one, resumed)
+agent-runner since [WHEN] [--follow]   what landed, started or got stuck since the last look (or WHEN: 2h,
+                                       yesterday); --follow prints each new event as it happens
 agent-runner plan [...]                the task list as a tool (agent-runner plan help)
 agent-runner done ID "MSG" [--blocked WHY [--after X,Y]] [--no-test]
 agent-runner run [N|once] [--dry-run] [--no-tmux] [--mux tmux|wt|console|none] [--model M] [--idle S] [--stall S] [--pause S] [--force] [--shutdown|--suspend]

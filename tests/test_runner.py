@@ -712,14 +712,17 @@ def test_control(repo: Path):
     eq(json.loads(f.read_text(encoding='utf-8')), data, 'and holds that')
     brief = R.control_brief()
     for want in ('control session', f'{R.C.command} status', f'{R.C.command} plan add', f'{R.C.command} take',
-                 'Never edit code', "tail -n 0 -F .runner/run.log | grep --line-buffered -E ': merged, |"):
+                 'Never edit code', f'{R.C.command} since', f'{R.C.command} since --follow', 'Open the session',
+                 'status · since · follow · pause · stop', 'Never start it unasked'):
         check(want in brief, f'the brief says {want!r}')
+    check('tail -n 0 -F' not in brief, 'no run-log watch at the start: following is asked for')
     r = run(repo, 'control', '--brief')
     eq((r.returncode, r.stdout), (0, brief), '`control --brief` (the hook) prints it')
 
     argv = R.control_argv(2, 'sid-2', resume=False)
     eq(argv[0], R.plat.exe(R.C.run['agent']), 'the agent')
-    check('watch' in argv[1] and 'status' in argv[1], 'its first message starts the watch and asks for status')
+    check('summary' in argv[1] and 'status' in argv[1] and 'since' in argv[1] and 'watch' not in argv[1],
+          'its first message asks for the opening summary, and starts no watch')
     i = argv.index('--session-id')
     eq(argv[i:i + 4], ['--session-id', 'sid-2', '--model', R.C.run['model']], 'a new session on [run] model')
     eq(argv[argv.index('--tools') + 1], 'Bash,Read,Edit,Write,Artifact,Monitor', 'lean: the slot tools and Monitor')
@@ -776,10 +779,96 @@ def test_control(repo: Path):
              '=== 2026-11-19T21:04:00 slot 1: F3 (Next; a.py)', '=== 2026-11-19T21:05:00 run idle: no task']
     st = {'state': '3 slots', 'running': {'1': 'T3'}, 'since': {'1': 1000.0}, 'merging': ['T1'],
           'usage': {'five_hour': 40.0, 'seven_day': 10.4}}
-    text = R.status_text(True, st, lines, {'T3': 'speed up the parser ' * 4}, 1000 + 12 * 60)
-    eq(text.splitlines(), ['run up: 3 slots', '  s1  T3  speed up the parser speed up the parser spe…  12 min',
-                           'merging: T1', 'lately:', '  21:02 F2 merged, ticked', '  21:03 B9 not merged, parked as wip/B9',
-                           '  21:05 run idle', 'usage: session 40%, week 10%'], 'status reads well on a phone')
+    text = R.status_text(True, st, lines, {'T3': 'speed up the parser', 'F2': 'background run'}, 1000 + 12 * 60)
+    eq(text.splitlines(), ['run up: 3 slots', '  s1  speed up the parser [T3]  12 min',
+                           'merging: T1', 'lately:', '  21:02 landed: background run [F2]',
+                           '  21:03 stuck, not merged: B9 (x) [B9]',
+                           '  21:05 run idle: nothing left it may start', 'usage: session 40%, week 10%'],
+       'status reads well on a phone: titles first, ids in brackets at the end')
+
+
+def test_short_titles_and_since(repo: Path):
+    print('short titles for a person, and since: what happened since the last look, with its mark')
+    st = R.short_title
+    eq(st(" Control session experience (user 2026-11-19: 'commands (and) hints'). (1) A control session opens"),
+       'Control session experience', 'no quoted asides, dates or later sentences')
+    eq(st(' (follow-up, normal) Fix the menu flicker | files: a.py, b/c.rs | after: B1'), 'Fix the menu flicker',
+       'no follow-up tag and no fields')
+    eq(st(' **Bake** the `letter` sheet (see src/sheet.rs, plan/TODO.md) — it is slow'), 'Bake the letter sheet',
+       'no bold, backticks or file lists')
+    eq(st(' Keep the (small) cache warm: the gate runs faster'), 'Keep the (small) cache warm: the gate runs faster',
+       'a plain aside and a lower-case clause stay')
+    long = st(' ' + 'word ' * 30)
+    check(len(long) <= 60 and long.endswith('word…'), 'cut at a word to about 60 characters', long)
+
+    R.init(repo)
+    titles = {'F5': 'Control session experience', 'B9': 'Fix the flicker'}
+    now = R.dt.datetime(2026, 11, 19, 15, 0, 0)
+    log = ['=== 2026-11-18T21:00:00 slot 1: B9 (Next; a.py)',
+           '=== 2026-11-19T13:00:00 slot 2: F5 (Next; agent_runner/runner.py)',
+           '=== 2026-11-19T13:01:00 F5: dropped task/F5 from origin',
+           '=== 2026-11-19T14:00:00 F5: merged, ticked',
+           '=== 2026-11-19T14:10:00 B9: not merged, parked as wip/B9 — tests fail after the merge. More words',
+           '=== 2026-11-19T14:20:00 run idle: no task it may start']
+    eq(R.since_start('2h', None, now), now - R.dt.timedelta(hours=2), '2h')
+    eq(R.since_start('yesterday', None, now), R.dt.datetime(2026, 11, 18), 'yesterday: from its midnight')
+    eq(R.since_start(None, '2026-11-19T13:30:00', now), R.dt.datetime(2026, 11, 19, 13, 30), 'no WHEN: the mark')
+    eq(R.since_start(None, None, now), now - R.dt.timedelta(hours=24), 'no mark yet: a day back')
+    text, last = R.since_text(log, R.since_start('yesterday', None, now), titles, now)
+    eq(text.splitlines(), ['since yesterday 00:00:', '  yesterday 21:00  started: Fix the flicker [B9]',
+                           '  13:00  started: Control session experience [F5]',
+                           '  14:00  landed: Control session experience [F5]',
+                           '  14:10  stuck, not merged: Fix the flicker (tests fail after the merge) [B9]',
+                           '  14:20  run idle: nothing left it may start'], 'oldest first, one short line each')
+    eq(last, '2026-11-19T14:20:00', 'the newest stamp read')
+
+    notes = R.C.notes('run.log')
+    keep = notes.read_text(encoding='utf-8') if notes.exists() else None
+    R.since_mark_file().unlink(missing_ok=True)
+    try:
+        today = R.dt.date.today().isoformat()  # the command reads the clock: today's stamps read as times
+        notes.write_text('\n'.join(l.replace('2026-11-19', today) for l in log) + '\n', encoding='utf-8')
+        r1 = run(repo, 'since', f'{today}T12:00')
+        has(r1.stdout, r'landed: .*\[F5\]', 'since WHEN prints what happened')
+        eq(R.since_mark_file().read_text(encoding='utf-8').strip(), f'{today}T14:20:00', 'and moves the mark')
+        r2 = run(repo, 'since')
+        eq((r2.returncode, r2.stdout.strip()), (0, 'nothing new since 14:20 (your last look)'),
+           'since twice in a row: nothing new the second time')
+        mark = R.since_mark_file().read_text(encoding='utf-8').strip()  # now: nothing newer was in the log
+        R.move_since_mark(f'{today}T10:00:00')
+        eq(R.since_mark_file().read_text(encoding='utf-8').strip(), mark, 'the mark never goes back')
+        later = (R.dt.datetime.fromisoformat(mark) + R.dt.timedelta(seconds=1)).isoformat()
+        with notes.open('a', encoding='utf-8') as f:
+            f.write(f'=== {later} slot 1: B9 (Next; a.py)\n')
+        has(run(repo, 'since').stdout, r'^since \S+ \(your last look\):\n  .*started: .*\[B9\]$',
+            'then only the new')
+        eq(run(repo, 'since').stdout.count('B9'), 0, 'and that once')
+        eq(run(repo, 'since', 'soon').returncode, 1, 'a WHEN that is no time is refused')
+        lines, last = R.follow_lines('\n'.join(log[3:5]), titles, now)
+        eq(len(lines), 2, 'follow: a line per event')
+        check(lines[0].startswith('14:00  landed: Control session experience [F5]'), 'follow: landed with its title',
+              lines)
+        eq(last, '2026-11-19T14:10:00', 'follow moves the mark to what it read')
+        import contextlib
+        import io
+        later2 = (R.dt.datetime.fromisoformat(later) + R.dt.timedelta(seconds=5)).isoformat()
+        def add():
+            with notes.open('a', encoding='utf-8') as fh:
+                fh.write(f'=== {later2} F5: merged, ticked\n')
+        threading.Timer(0.5, add).start()
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            R.follow(poll=0.1, until=time.monotonic() + 2)
+        got = out.getvalue().splitlines()
+        eq(len(got), 2, f'follow: its header, then only the new line, not the backlog: {got}')
+        check('landed: F5 [F5]' in got[-1],'follow prints a landed task as it lands', got)
+        eq(R.since_mark_file().read_text(encoding='utf-8').strip(), later2, 'and moves the since mark')
+    finally:
+        if keep is None:
+            notes.unlink(missing_ok=True)
+        else:
+            notes.write_text(keep, encoding='utf-8')
+        R.since_mark_file().unlink(missing_ok=True)
 
 
 def test_take_text_and_here(repo: Path):
@@ -1121,7 +1210,7 @@ def test_prompt_and_hooks(repo: Path):
             out = io.StringIO()
             with contextlib.redirect_stdout(out):
                 R.cmd_status(['-n', '0'])
-        check('run up: 1 slot' in out.getvalue() and re.search(r'^  s1  T3  (.+  )?0 min$', out.getvalue(), re.M),
+        check('run up: 1 slot' in out.getvalue() and re.search(r'^  s1  (.+ \[T3\]|T3)  0 min$', out.getvalue(), re.M),
               '`status` shows the state and each slot\'s task and minutes', out.getvalue())
         run(repo, 'stop', '--force', '--shutdown')
         R.take_keys()
@@ -3064,7 +3153,8 @@ def main() -> int:
                        lambda: test_no_pane(repo, tmp), lambda: test_other_repos_panes(repo, tmp),
                        lambda: test_limit_lets_go(repo),
                        lambda: test_shared_push(repo, tmp), lambda: test_note_on_a_ticked_task(repo), lambda: test_adopt_merge(repo), lambda: test_followups(repo), lambda: test_ci_watch(repo), test_update_notice, test_restart_if_upgraded, test_auto_upgrade, lambda: test_flake_repair(tmp), lambda: test_repair_per_failure(repo),
-                       lambda: test_stalled(tmp), lambda: test_take(repo), lambda: test_take_text_and_here(repo), lambda: test_background(repo), lambda: test_control(repo)])
+                       lambda: test_stalled(tmp), lambda: test_take(repo), lambda: test_take_text_and_here(repo), lambda: test_background(repo), lambda: test_control(repo),
+                       lambda: test_short_titles_and_since(repo)])
 
 
 if __name__ == '__main__':
