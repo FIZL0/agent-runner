@@ -26,7 +26,8 @@ docs/REFERENCE.md describes each mechanism. In short:
 
   Siblings never run together. An ordered section runs one task at a time. Two tasks never run on the same
   files: a line's `| files:` and, for a task running, the files it has touched; a finished one waiting to merge
-  holds only the files it changed.
+  holds only the files it changed. A whole-directory glob (`dir/**`) is a guess, not a lock: it meets only
+  another such glob, so a task naming a file under it waits only for the files the glob's task has touched.
 * **one worktree per slot**, kept warm between tasks, with `[run] links` symlinked in;
 * **an idle stop** (the Stop hook): a finished session is ended once its transcript is quiet;
 * **a cut-off session resumes**: one ended by an API error or a usage limit (or, at startup, mid-turn) is resumed
@@ -849,14 +850,17 @@ def whole_dir(f: str) -> bool:
 
 
 def file_overlap(files, b: tuple, shared: set) -> set[str]:
-    """The entries of a waiting task's `files` that meet busy task `b`'s. A whole-directory glob (`tests/**`)
-    meets only what `b`'s line names (a file or glob there), never by itself the files `b` has touched (`b[4]`,
-    when given, is its line's files): one task changing one test file would otherwise hold every task whose line
-    guessed `tests/**` (T6)."""
+    """The entries of a waiting task's `files` that meet busy task `b`'s. A whole-directory glob (`tests/**`) is a
+    guess, not a lock: it meets only another whole-directory glob, both ways. The waiting task's other entries
+    meet `b`'s files (`b[2]`: its line's and those it has touched) minus its line's whole-directory globs; its
+    whole-directory globs meet only the whole-directory globs on `b`'s line (`b[4]`, when given, is its line's
+    files). So a big rewrite (`native/**`) neither waits for nor holds every task naming a file under that dir,
+    only the files it has touched, while two rewrites of one dir still exclude each other (T6, B62)."""
     files = set(files) - shared
     line = set(b[4]) if len(b) > 4 else set(b[2])
     dirs = {f for f in files if whole_dir(f)}
-    return P.overlap(files - dirs, set(b[2])) | P.overlap(dirs, line)
+    held = {f for f in b[2] if not whole_dir(f)}
+    return P.overlap(files - dirs, held) | P.overlap(dirs, {f for f in line if whole_dir(f)})
 
 
 def clash(t: tuple, b: tuple, shared: set[str]) -> bool:

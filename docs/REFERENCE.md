@@ -339,7 +339,8 @@ repo = "git@github.com:you/project-plan.git"   # or a local path
   pushes `claims/<ID>` (host and checkout) before anything starts. Other runs skip a claimed task and treat it as
   running there: a task sharing its files, its ordered section or its family waits for it. The claim
   holds the line's files and, refreshed as the session works, every file it has touched, so a task whose
-  line lists too few is still kept clear. Two that claim one task at once conflict on push, and the later
+  line lists too few is still kept clear (a whole-directory glob on its line, `dir/**`, holds only another such
+  glob, as under Picking). Two that claim one task at once conflict on push, and the later
   moves on; two that claim clashing tasks from plans read seconds apart both push, see each other, and the
   later claim gives way. A claim that cannot be pushed (offline) starts nothing, since nobody else would
   see it. The claim goes when the task merges or is left for a human, and a run drops any of its own
@@ -432,7 +433,7 @@ push from outside the run has put that ahead (fetched at most once a minute).
 | `### Stretch`, `### Parked` | never unattended |
 | tried this run | one attempt per run: if it failed, a human looks next |
 | `task/<ID>` has commits not yet merged | it's finished and waiting for the merge |
-| a `files:` entry meets one of a running or finished-unmerged task's (its line's, and the files its branch has touched), minus `[run] shared_files`; a whole-directory entry (`tests/**`) meets only its line's | keeps merges clean |
+| a `files:` entry meets one of a running or finished-unmerged task's (its line's, and the files its branch has touched), minus `[run] shared_files`; a whole-directory entry (`tests/**`) is a guess, not a lock: it meets only another whole-directory entry, so a named file under it meets only what that task has touched | keeps merges clean |
 
 `plan add` warns of a line with no `files:` and no `test:` (`[plan] need_files` makes that an error).
 

@@ -195,15 +195,26 @@ def test_picking(repo: Path):
     waiting = ('W1', 'Next', {'tests/**', 'w.py'}, set())
     toucher = ('B1', 'Other', {'b.py', 'tests/test_x.py'}, set(), {'b.py'})  # touched tests/test_x.py
     check(not R.clash(waiting, toucher, set()), 'tests/** does not clash with a test file B1 only touched')
-    check(R.clash(waiting, ('B1', 'Other', {'tests/test_x.py'}, set(), {'tests/test_x.py'}), set()),
-          'but it does with a test file named on B1\'s line')
+    check(not R.clash(waiting, ('B1', 'Other', {'tests/test_x.py'}, set(), {'tests/test_x.py'}), set()),
+          'nor with a test file named on B1\'s line (B62: a whole-dir glob meets only another)')
     check(R.clash(waiting, ('B1', 'Other', {'tests/**'}, set(), {'tests/**'}), set()),
           'and with the same glob on B1\'s line')
     check(R.clash(('W2', 'Next', {'tests/test_x.py'}, set()), toucher, set()),
           'a named file still clashes with a file B1 touched')
     check(R.clash(waiting, ('B1', 'Other', {'w.py'}, set(), set()), set()), 'a named file beside the glob still clashes')
-    check(R.clash(waiting, ('B1', 'Other', {'tests/test_x.py'}, set()), set()),
+    check(R.clash(waiting, ('B1', 'Other', {'tests/**'}, set()), set()),
           'a busy tuple without its line files counts all its files as named')
+    # B62: a whole-dir glob is a hard lock only against another whole-dir glob, both ways
+    rewrite = ('W3', 'Next', {'native/**'}, set())
+    check(not R.clash(rewrite, ('B2', 'Other', {'native/a.py'}, set(), {'native/a.py'}), set()),
+          'a waiting native/** starts beside a busy task whose line names native/a.py')
+    named = ('W4', 'Next', {'native/a.py'}, set())
+    check(not R.clash(named, ('B3', 'Other', {'native/**', 'native/b.py'}, set(), {'native/**'}), set()),
+          'a waiting native/a.py starts beside a busy native/** that touched only native/b.py')
+    check(R.clash(named, ('B3', 'Other', {'native/**', 'native/a.py'}, set(), {'native/**'}), set()),
+          'but waits once it touched native/a.py')
+    check(R.clash(rewrite, ('B3', 'Other', {'native/**'}, set(), {'native/**'}), set()),
+          'native/** vs native/** still clash')
     check(R.whole_dir('tests/**') and R.whole_dir('src/ui/*') and not R.whole_dir('src/*.rs')
           and not R.whole_dir('a.py'), 'what counts as a whole-directory glob')
     eq(R.pick({}, set(ids), 'main'), None, 'nothing left once everything has been tried')
