@@ -8052,10 +8052,10 @@ def feed_pending(sid: str) -> tuple[str, str, bool] | None:
                 elif d.get('type') == 'assistant' and text is not None:
                     c = (d.get('message') or {}).get('content')
                     for x in c if isinstance(c, list) else []:
-                        if isinstance(x, dict) and x.get('type') == 'tool_use':
+                        if isinstance(x, dict) and x.get('type') == 'tool_use' and x.get('name') == 'Bash':
                             cmd = str((x.get('input') or {}).get('command', ''))
-                            if not ('control' in cmd and FORWARD_FLAG in cmd):
-                                other = True
+                            if not ('control' in cmd and FORWARD_FLAG in cmd) and ' since' not in cmd:
+                                other = True  # a run command of its own (status, pause…); not a Monitor re-arm
     except OSError:
         return None
     if text is None:

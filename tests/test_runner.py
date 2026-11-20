@@ -2066,8 +2066,12 @@ def test_feed_forward():
                 mock.patch.object(R, 'control_new_session', lambda: 'ar-proj'), \
                 mock.patch.object(R.shutil, 'which', lambda x: '/usr/bin/tmux'), \
                 mock.patch.object(R, 'remote_on', lambda: False):
+            mon = {'type': 'assistant', 'message': {'content': [
+                {'type': 'tool_use', 'name': 'Monitor', 'input': {'command': 'run since --follow --keep-mark'}},
+                {'type': 'tool_use', 'name': 'PushNotification', 'input': {'message': 'x'}}]}}
             write(hum('status', 'u1'), call('run status'), res,
-                  hum(msg, 'u2'), pics('/u/shot.png'), call('run control --new --forward'))
+                  hum(msg, 'u2'), pics('/u/shot.png'), mon, call('run since --follow --keep-mark'),
+                  call('run control --new --forward'))
             with contextlib.redirect_stdout(io.StringIO()):
                 rc = R.control_new(9, forward=True)
             cmd = next(c for c in opened if c[0] == 'new-window')[-1]
