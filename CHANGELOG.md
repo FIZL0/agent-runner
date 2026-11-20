@@ -2,7 +2,34 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
-## Unreleased
+## 0.49.0 (2026-11-20)
+
+- Bare `agent-runner` starts the run in the background; `agent-runner attach [sN]` attaches to its pane (or a
+  slot's), and `agent-runner --attach` does both: starts the run, or finds the one up in this repo, then attaches.
+- `[run] auto_upgrade = true`: a run upgrades agent-runner by itself when the update check sees a newer
+  release, once no merge is under way, and restarts on it keeping what the keys set. Never across a major
+  version, nor on Windows.
+- Control sessions: interactive Claude sessions in the main checkout for steering the run.
+  `agent-runner control` opens one (`control --new` another, without taking focus, printing its claude.ai/code
+  link). With Remote Control off, the run opens c1 beside it (`[run] control = false`: none); with it on, a
+  control server starts them from claude.ai/code and the Claude apps, and the run opens no c1. Control sessions
+  and the control server run with `bypassPermissions`, so the web and the phone see no permission prompts.
+  Control 1 opens with a short status summary (a headline, then Waiting for your OK / Running / Landed / Stuck,
+  concept pages opened inline) and a hints line of slash commands (`/run /since /follow /control /pause /stop
+  /slots N`); later ones start blank. Each watches `since --follow --needs-you` and tells you, unasked, when
+  the run is held, a task is left for a human, a slot looks stalled, or something waits on your answer.
+- `agent-runner since [WHEN] [--follow] [--needs-you]`: what happened since you last looked, or a live feed.
+- **Changed: `[run] remote` now means the control sessions and the control server; the slots go on Remote
+  Control only with `[run] remote_slots = true`** (in 0.48.0 `remote = true` put the slots there). Remote slot
+  sessions are named "<task title> · <repo> s2 · B646".
+- Concept tasks (kind K) publish an Artifact page of options and build nothing: `done K7 --artifact URL`
+  notes the link and files the build blocked "waiting for your OK on URL"; `plan approve` / `revise` /
+  `waiting`. Tasks blocked on a person (CONFIRM / DECIDE / BLOCKED) are listed beside concepts under
+  "Waiting for your OK"; `plan confirm` / `change` / `shelve` / `unshelve`, `plan waiting --all`.
+- Hints print the command you typed (`agent-runner` from PATH, not the clone's `./run`).
+- A run restarts an adopted control server that was started with other flags.
+- Fixes: concurrent `plan add` on an in-repo plan never reuse an id; Claude trust creates a missing
+  `$CLAUDE_CONFIG_DIR` (and skips trust if it cannot write there).
 
 - `[run] silent` picks how quiet a run's Remote Control sessions are on the phone: `"launch"` (the default, the
   quiet launch below), `true` (no push ever, control sessions included), or `false` (no presence files or push
@@ -22,6 +49,8 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
   with `remote_slots` keep theirs (`.runner/quiet-slots`) for good, and get `agentPushNotifEnabled` and
   `inputNeededNotifEnabled` off in their settings too. Not yet checked by hand on a phone, and the docs don't
   say whether Remote Control's own "session ready" push honours the presence file.
+
+## 0.48.0 (2026-11-19)
 
 - Every key of the runner's pane is a command too, for a person in another terminal or a remote session:
   `agent-runner pause` / `force` (`--off` to take back), `slots N|+N|-N`, `stop --undo`, and `key <k>` for the
