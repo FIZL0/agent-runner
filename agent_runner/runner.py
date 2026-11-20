@@ -1102,8 +1102,12 @@ class Claude:
             return
         proj['hasTrustDialogAccepted'] = True
         tmp = f.with_name(f'{f.name}.agent-runner.tmp')
-        tmp.write_text(json.dumps(data, indent=2), encoding='utf-8')
-        os.replace(tmp, f)
+        try:
+            f.parent.mkdir(parents=True, exist_ok=True)  # a $CLAUDE_CONFIG_DIR not made yet: Claude makes it too
+            tmp.write_text(json.dumps(data, indent=2), encoding='utf-8')
+            os.replace(tmp, f)
+        except OSError:
+            return  # cannot write there: the dialog shows, as before
 
     def fix_cmd(self, prompt: str) -> list[str]:
         return [plat.exe(C.run['agent']), '-p', prompt, '--permission-mode', 'bypassPermissions',

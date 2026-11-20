@@ -6,5 +6,3 @@
 - [ ] **F4** [run] remote defaults to 'auto' (user 2026-11-19 'users will likely want the remote version by default'): Remote Control on for Claude Code sessions (slots, control sessions, the control server) when it can work, off with one log line saying why when it cannot: backend pi, agent copilot, ANTHROPIC_API_KEY or ANTHROPIC_AUTH_TOKEN set, CLAUDE_CODE_USE_BEDROCK/VERTEX/FOUNDRY, ANTHROPIC_BASE_URL not api.anthropic.com. true/false still force it. It changes a default, so the CHANGELOG says so plainly. Done when: a test covers each auto case on and off, and config accepts auto/true/false and rejects anything else. | files: agent_runner/config.py, agent_runner/runner.py, docs/REFERENCE.md, tests/test_runner.py | after: F3 — After F3: 'auto' applies to control sessions (remote) and stays off for slots unless remote_slots is set.
 
 ### Follow-ups
-
-- [ ] **B3** (follow-up, low) Claude.trust (runner.py) crashes the run with FileNotFoundError when $CLAUDE_CONFIG_DIR names a folder that does not exist yet: make the folder first (or skip trust) | files: agent_runner/runner.py
