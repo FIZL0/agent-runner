@@ -5031,14 +5031,21 @@ SESSION_ENV = ('CLAUDECODE', 'CLAUDE_CODE_CHILD_SESSION', 'CLAUDE_CODE_SESSION_I
                'CLAUDE_CODE_CHILD_NOTES_DIR', 'CLAUDE_CODE_MESSAGING_SOCKET', 'CLAUDE_CODE_MESSAGING_TOKEN')
 
 
+def session_env_masks(sess: str = '') -> list[list[str]]:
+    """The tmux commands that keep SESSION_ENV out of every process a session starts later. `-r`, not `-u`: a
+    tmux server first started from a Claude Code Bash tool holds the markers in its global environment, which
+    shows through a session where they are merely unset; `-r` removes them from each new window's env."""
+    return [['set-environment', *(['-t', f'={sess}'] if sess else []), '-r', k] for k in SESSION_ENV]
+
+
 def drop_session_env() -> None:
     """Out of this process, and out of the tmux session it runs in: `new-session -e` stores a variable on the
     session, and every window opened in it later (each slot's) inherits it."""
     for k in SESSION_ENV:
         os.environ.pop(k, None)
     if os.environ.get('TMUX') and shutil.which('tmux'):
-        for k in SESSION_ENV:
-            tmux('set-environment', '-u', k)
+        for c in session_env_masks():
+            tmux(*c)
 
 
 def cmd_run(argv: list[str], prog: str = f'{RUNNER} run') -> int:
@@ -6196,8 +6203,8 @@ def cmd_background(argv: list[str]) -> int:
         return 0
     win = window('runner')
     exists = not tmux('has-session', '-t', f'={sess}').returncode
-    for k in SESSION_ENV if exists else ():  # a session an earlier launch made from a Claude session holds them
-        tmux('set-environment', '-t', f'={sess}', '-u', k)
+    for c in session_env_masks(sess) if exists else ():  # an earlier launch from a Claude session left them
+        tmux(*c)
     if exists:  # a dead runner window left from a failed start would take the name
         tmux('kill-window', '-t', f'={sess}:{win}')
     cmd = plat.command_text([*runner_cmd(), 'run'])
@@ -6205,6 +6212,8 @@ def cmd_background(argv: list[str]) -> int:
     if r.returncode:
         print(f'tmux could not start the run: {r.stderr.strip()}', file=sys.stderr)
         return 1
+    for c in session_env_masks(sess) if not exists else ():  # a new session takes the server's global env
+        tmux(*c)
     target = f'={sess}:{win}'
 
     def gone() -> bool:

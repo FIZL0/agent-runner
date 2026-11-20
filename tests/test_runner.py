@@ -691,6 +691,14 @@ def test_background(repo: Path):
     eq(argv[1:5], ['new-window', '-d', '-t', '=ar-proj:'], 'a session already there gets a new window instead')
     eq(R.background_argv()[-2:], ['run', '--hidden'], 'Windows: the run, its slot consoles hidden')
     has('\n'.join(R.background_env()), r'^PATH=', 'the tmux session gets this PATH')
+    with mock.patch.dict(os.environ, {'CLAUDE_CODE_CHILD_SESSION': '1', 'CLAUDE_CODE_SESSION_ID': 's1',
+                                      'CLAUDE_CODE_MESSAGING_TOKEN': 't', 'CLAUDE_CONFIG_DIR': '/c'}):
+        os.environ.pop('TMUX', None)
+        R.drop_session_env()
+        spawn = '\n'.join(R.background_env())
+        check('CLAUDE_CODE_CHILD_SESSION' not in spawn and 'CLAUDE_CODE_SESSION_ID' not in spawn
+              and 'CLAUDE_CODE_MESSAGING' not in spawn and 'CLAUDE_CONFIG_DIR=/c' in spawn,
+              "the run's tmux session gets no Claude session markers from a parent that had them, keeps config")
 
     from agent_runner import plat
     si = plat.hidden_startupinfo()
@@ -837,8 +845,10 @@ def test_control(repo: Path):
                                       'TMUX': '/tmp/t,1,0'}):
         with mock.patch.object(R, 'run', return_value=0), mock.patch.object(R, 'tmux') as tm:
             R.cmd_run([])
-        check(mock.call('set-environment', '-u', 'CLAUDE_CODE_CHILD_SESSION') in tm.call_args_list,
+        check(mock.call('set-environment', '-r', 'CLAUDE_CODE_CHILD_SESSION') in tm.call_args_list,
               'and out of its tmux session, whose new windows (the slots) would inherit them')
+        check(['set-environment', '-t', '=ar-x', '-r', 'CLAUDE_CODE_SESSION_ID'] in R.session_env_masks('ar-x'),
+              "masked with -r, which hides a value the tmux server's global env still holds; -u would not")
         check('CLAUDE_CODE_CHILD_SESSION' not in os.environ and 'CLAUDECODE' not in os.environ
               and os.environ.get('CLAUDE_CONFIG_DIR') == '/c',
               "a run started from a Claude session drops its markers (no slot transcripts otherwise), keeps config")
