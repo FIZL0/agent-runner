@@ -23,7 +23,7 @@ SAFE_SHELL = ('Change files with your file-editing tool, never with `sed -i`, `p
               'cannot get back.')
 
 # B80: slots try what the machine and the repo already reach before handing a check to a person.
-VERIFY = ('Verify before asking: before you turn a check into an F task or a `CONFIRM:` for a person, try it '
+VERIFY = ('Verify before asking: before you turn a check into an F task for a person, try it '
           'yourself with what is already here: ~/.claude/ACCESS.md if it exists (this machine\'s logins) and the '
           '`## Tools` section of the repo\'s CLAUDE.md (its reach: ssh hosts, preview servers, headless checks). '
           'Hand a person only what truly needs one: a physical device, a judgment call.')

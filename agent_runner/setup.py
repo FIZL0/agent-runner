@@ -178,9 +178,7 @@ tooling, D docs, C cleanup, R research). `--files` names the files a task will c
 agents off the same file.
    - `{plan}` to see the list it wrote.
 4. The repo context agents need: a short `## Agent notes` section in CLAUDE.md, or AGENTS.md if the repo has one \
-(build and test commands, where things live, what not to touch). Under CLAUDE.md's `## Tools`, list what you find \
-agents can reach to check their own work (ssh hosts, preview servers, headless checks), or leave it empty. Keep \
-it short: every session loads it. Make \
+(build and test commands, where things live, what not to touch). Keep it short: every session loads it. Make \
 sure `.runner/` is in .gitignore.
 5. Commit runner.toml, plan/, the notes and .gitignore in one commit on the current branch.
 

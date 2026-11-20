@@ -56,5 +56,25 @@ def test_setup_tools():
         eq(f.read_text(encoding='utf-8').count('## Tools'), 1, 'one heading')
 
 
+def test_setup_main():
+    print('agent-runner setup adds the section, and a rerun leaves it alone')
+    with tempfile.TemporaryDirectory() as t:
+        root = Path(t)
+        git(root, 'init', '-q')
+        (root / 'CLAUDE.md').write_text('# Rules\n', encoding='utf-8')
+        git(root, 'add', '-A')
+        git(root, 'commit', '-qm', 'start')
+        launch = S.launch
+        S.launch = lambda r, text: 0  # no Claude session in a test
+        try:
+            eq(S.main(['--yes'], cwd=root), 0, 'setup ran')
+            text = (root / 'CLAUDE.md').read_text(encoding='utf-8')
+            eq(text.count('## Tools'), 1, 'CLAUDE.md has the heading')
+            eq(S.main(['--yes'], cwd=root), 0, 'setup ran again')
+            eq((root / 'CLAUDE.md').read_text(encoding='utf-8'), text, 'and left CLAUDE.md as it was')
+        finally:
+            S.launch = launch
+
+
 if __name__ == '__main__':
-    raise SystemExit(report([test_brief, test_setup_tools]))
+    raise SystemExit(report([test_brief, test_setup_tools, test_setup_main]))
