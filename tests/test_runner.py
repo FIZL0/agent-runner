@@ -1123,6 +1123,12 @@ def test_control(repo: Path):
     check('"sketch some options for X" queues one' not in brief, 'the brief no longer queues a K for "sketch options"')
     check('"show me a concept first"' in brief and 'no `take`' in brief and 'plan drop ID "shown inline"' in brief,
           '"show me concept first" is shown inline too, never a K task or a take (B23)')
+    check('even when the project has its own\n  concept-task or concept-branch convention' in brief
+          and "don't search the plan, DONE or the guide for precedent" in brief,
+          'B76: a project\'s own concept-task convention does not turn "concept X" into a queued task')
+    check('"here and now"' in brief and 'with no question, even when a slot already took it' in brief
+          and 'the drop stops that slot\'s session' in brief,
+          'B76: "here and now" after a queued concept drops it (stopping its slot) and shows it, no question')
     check('tail -n 0 -F' not in brief, 'no run-log watch at the start: following is asked for')
     r = run(repo, 'control', '--brief')
     eq((r.returncode, r.stdout), (0, brief), '`control --brief` (the hook) prints it')

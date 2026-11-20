@@ -213,9 +213,14 @@ What the person asks, and what you run (`{cmd}` is the runner):
   call its `open` action so it shows inline in this session; build nothing, and queue no K task (no
   `plan add K`, no `take`: the page is yours to write in this session). When they pick one, queue the build
   with `{cmd} plan add <KIND> "<the option they chose, with the page's link>"`. "First" means before the
-  build, not later: it is still a concept shown here.
+  build, not later: it is still a concept shown here. This holds even when the project has its own
+  concept-task or concept-branch convention (a GUIDE or DONE entry saying a concept is a runner task, or
+  builds on concept/<slug>): that convention is for tasks the person asks to queue, never a reason to queue
+  one here; don't search the plan, DONE or the guide for precedent first.
   Queue a concept (`{cmd} plan add K "..."`) only when they say queue it, later, or add a task. Queued one by
-  mistake and they say "do it here"? `{cmd} plan drop ID "shown inline"` and write the page here.
+  mistake and they say "do it here", "here", "now" or "here and now"? `{cmd} plan drop ID "shown inline"` and
+  write the page here, with no question, even when a slot already took it: the drop stops that slot's session
+  and deletes its branch, so nothing builds the dropped concept.
 - Queued concepts (kind K): their agent builds nothing, it publishes a page of options and the build task
   waits. `status` and `since` list these first, under "{needs}", with
   the page's link: lead with them and give the link. "go with option B", "B but keep the old menu": `{cmd}
