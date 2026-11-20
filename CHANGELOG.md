@@ -4,6 +4,9 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Control sessions queue "do X after T181" with `plan add … --after T181` (or `plan block ID --after T181`
+  for a queued task) instead of starting a watcher or Monitor that waits for T181: the run starts the task
+  once those merge.
 - Old Remote Control entries no longer pile up in claude.ai/code and the apps. Claude Code has no command to
   end or archive a session from outside. It archives its own entry when it exits on SIGTERM, SIGHUP or Ctrl-C,
   and an entry stays listed only when its process dies without that (SIGKILL, a crash, a reboot, a power-off

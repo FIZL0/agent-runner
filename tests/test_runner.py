@@ -926,6 +926,10 @@ def test_control(repo: Path):
     check(brief.index('**Running**') < brief.index('**Landed**') < brief.index('**Stuck**'),
           'the groups in order: Waiting for your OK, Running, Landed, Stuck')
     check('status · since · follow' not in brief, 'the hints line is slash commands, not bare words')
+    check('--after T181' in brief and f'{R.C.command} plan block ID --after' in brief,
+          '"do X after T181" queues X with --after (block --after for a queued task)')
+    check('Never start a watcher or Monitor to\n  wait for a task' in brief,
+          'the brief forbids a watcher or Monitor that waits for a task')
     check('tail -n 0 -F' not in brief, 'no run-log watch at the start: following is asked for')
     r = run(repo, 'control', '--brief')
     eq((r.returncode, r.stdout), (0, brief), '`control --brief` (the hook) prints it')
