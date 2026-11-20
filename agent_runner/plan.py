@@ -18,7 +18,8 @@ re-reads it on every turn pays again. So the backlog is a command instead:
                                  new "- [ ] **<next free id>** TEXT | files: A, B | after: X, Y …"; prints
                                  the id (warns without --files or --test). Refused (exit 3, nothing written) when an open task looks like the
                                  same work: `plan note` it there, or --force when it is different work
-    ./run plan drop <ID> WHY     not done but not wanted (a duplicate, overtaken): archived with "dropped: WHY"
+    ./run plan drop <ID> WHY     not done but not wanted (a duplicate, overtaken): archived with "dropped: WHY";
+                                 a slot running it is stopped, its branch deleted unmerged (B19)
     ./run plan kinds             what each id letter means ([plan] kinds): an id's prefix says the kind of work
     ./run plan note <ID> TEXT    append " — TEXT" to the task (user details, priority reasons)
     ./run plan newid PREFIX      the next free id, e.g. L -> L7; a task's id gives its next subtask, L3 -> L3a
@@ -28,7 +29,8 @@ re-reads it on every turn pays again. So the backlog is a command instead:
                                  person, each with a label (CONCEPT, CONFIRM, DECIDE, BLOCKED); --all adds the shelved
     ./run plan confirm <ID> [WHAT YOU SAW]   yes / it worked: a CONFIRM is ticked, a DECIDE or BLOCKED reopens
                                  with the answer noted, a concept is approved
-    ./run plan change <ID> WHAT  do WHAT instead: noted and reopened (a concept: revised)
+    ./run plan change <ID> WHAT  do WHAT instead: noted and reopened (a concept: revised); a slot running it
+                                 is stopped and starts it again from the new text
     ./run plan shelve <ID>       later: stays blocked, off Waiting for your OK; `unshelve <ID>` brings it back
     ./run plan approve <ID> [CHOICE]   OK a concept (or its build task's id): the build opens, CHOICE noted on it
     ./run plan revise <ID> WHY   changes asked: the concept reopens with WHY noted, its waiting build is dropped
@@ -903,11 +905,90 @@ def confirm(tid: str, said: str = '', todo=None, done=None) -> str:
 def change(tid: str, instead: str, todo=None, done=None) -> str:
     """'Do X instead': the task reopens with `instead` noted; a concept is sent back (`revise`)."""
     todo, done = ensure(todo, done)
-    label, t, k, what, _, _, _ = _ask(tid, todo)
+    try:
+        label, t, k, what, _, _, _ = _ask(tid, todo)
+    except SystemExit:  # B19: an open task (one a slot may be running) takes a change too: noted, stays open
+        ls = list(lines(todo))
+        if tid not in open_ids(ls) or ls[_find(ls, tid)].lstrip().startswith('- [~]'):
+            raise
+        note(tid, f'you said: do this instead: {instead}', todo=todo)
+        return f'{tid} has your change noted'
     if label == 'CONCEPT':
         return f'{revise(tid, instead, todo=todo, done=done)} is open again with your changes noted'
     unblock(t, f'you said, on {label} {what}: do this instead: {instead}', todo=todo)
     return f'{t} is open again with your change noted, and a run starts it'
+
+
+# --- B19: drop or change a task a run's slot is on: the run stops that slot too ------------------------------
+#
+# `drop` and `change` edit the plan, which a running session never rereads, so on their own the slot's agent
+# would work on and its branch could still merge. When a run in this repository is on the task (a slot runs
+# it, a cut-off session waits to resume it, or its finished branch waits to merge), the command leaves a
+# request in <notes>/halt/<ID>.json ({"how": "drop" | "change"}) and waits up to HALT_WAIT s for the run's
+# answer in <notes>/halt/<ID>.done, which it prints. The run (`runner.halts`, every pass of its loop) ends the
+# session, deletes task/<ID> here and on the remote, resets the worktree and frees the slot; on a change it
+# starts the task again in that slot, from the new text. A drop of a finished branch is never merged.
+
+HALT_WAIT = 30.0  # s `drop`/`change` wait for the run to say what it did
+
+
+def halt_dir(c) -> Path:
+    return c.notes('halt', 'x').parent  # notes() makes the folder
+
+
+def run_on(c, tid: str) -> str:
+    """What a run up in this repository is doing with `tid` ('s2', 'merging'), from its STATE; '' for nothing
+    (no run up, or the task is none of its)."""
+    import json
+
+    from agent_runner import plat
+    if not c.notes('run.lock').exists():
+        return ''  # no run was ever up here (and no lock file made just to look)
+    if f := plat.lock(c.notes('run.lock')):
+        f.close()  # nobody holds it: no run is up
+        return ''
+    try:
+        st = json.loads(c.notes('STATE').read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        st = {}
+    if n := next((n for n, t in (st.get('running') or {}).items() if t == tid), None):
+        return f's{n}'
+    try:
+        return f's{json.loads(c.notes(f"{tid}.resume").read_text(encoding="utf-8"))["slot"]}'
+    except (OSError, ValueError, KeyError, TypeError):
+        pass
+    return 'merging' if tid in (st.get('merging') or []) else ''
+
+
+def halt(c, tid: str, how: str, wait: float | None = None) -> str:
+    """Ask the run to stop what it does with `tid` (`how`: 'drop' or 'change') and return what it did, or
+    what it will do when it has not answered within `wait` s; '' when no run is on the task."""
+    import json
+    import time
+    where = run_on(c, tid)
+    if not where:
+        return ''
+    d = halt_dir(c)
+    (d / f'{tid}.done').unlink(missing_ok=True)
+    tmp = d / f'{tid}.json.tmp'
+    tmp.write_text(json.dumps({'how': how, 'at': time.time()}), encoding='utf-8')
+    os.replace(tmp, d / f'{tid}.json')
+    end = time.time() + (HALT_WAIT if wait is None else wait)
+    while True:
+        try:
+            said = (d / f'{tid}.done').read_text(encoding='utf-8').strip()
+            (d / f'{tid}.done').unlink(missing_ok=True)
+            return said
+        except OSError:
+            pass
+        if time.time() >= end:
+            break
+        time.sleep(0.25)
+    if where == 'merging':
+        return f'asked the run not to land {tid}: unless its merge is already landing, task/{tid} is deleted unmerged'
+    return (f'asked the run to stop {where}: within seconds it ends that session, deletes task/{tid} and its work'
+            + (', then starts it again from the new text' if how == 'change' else '')
+            + f' (`{c.command} since` shows it)')
 
 
 def _shelf(tid: str, on: bool, todo) -> str:
@@ -1363,10 +1444,16 @@ def main(argv: list[str] | None = None) -> int:
         if not edit:
             return _main(argv, c)  # a read of the checkout's own file needs no lock
         with plansync.locked(c):  # two sessions filing at once would take the same id, and one write drop the other
-            return _main(argv, c)
-    with plansync.locked(c):  # a read pulls too, so it sees other people's edits
-        plansync.pull(c, force=bool(edit))
-        return _main(argv, c)
+            rc = _main(argv, c)
+    else:
+        with plansync.locked(c):  # a read pulls too, so it sees other people's edits
+            plansync.pull(c, force=bool(edit))
+            rc = _main(argv, c)
+    if not rc and argv[0] in ('drop', 'change') and len(argv) > 2:
+        # B19: outside the lock, so the run can read the plan while it stops and restarts the slot
+        if said := halt(c, argv[1], argv[0]):
+            print(said)
+    return rc
 
 
 def _main(argv: list[str], c) -> int:
