@@ -4883,6 +4883,18 @@ def test_control_status_rules(repo: Path):
     check('never a bare ID' in RUNNER_BRIEF, 'the runner feed pushes name tasks with their titles', RUNNER_BRIEF)
 
 
+def test_control_do_it_here(repo: Path):
+    """F50: after queueing, the control brief offers to run the task in this session, and maps that ask to take ID."""
+    from agent_runner.guide import CONTROL, CONTROL_WATCH
+    text = CONTROL.format(repo='r', cmd='./run', log='l', watch=CONTROL_WATCH.format(repo='r', cmd='./run'),
+                          needs='Needs you', answer='')
+    check('Say "do F48 here" to start it in this session' in text and 'instead of waiting for a slot' in text,
+          'the add-a-task bullet ends with the do-it-here hint', text)
+    check('"do it here"' in text and '`./run take F48` on the queued task' in text
+          and '`./run take F48 --merge`' in text and 'ask which' in text,
+          'the do-it-now bullet maps "do F48 here" to take ID, then take ID --merge, and asks which with several', text)
+
+
 def main() -> int:
     with tempfile.TemporaryDirectory() as t:
         tmp = Path(t)
@@ -4912,7 +4924,7 @@ def main() -> int:
                        lambda: test_drop_or_change_running(repo), lambda: test_tell_running(repo),
                        lambda: test_close_idle_controls(repo), lambda: test_renamed_control_kept(repo),
                        lambda: test_control_summary_title(repo), lambda: test_control_task_name(repo), lambda: test_progress_and_release(repo),
-                       lambda: test_control_status_rules(repo),
+                       lambda: test_control_status_rules(repo), lambda: test_control_do_it_here(repo),
                        lambda: test_plan_last(repo)])
 
 
