@@ -6274,7 +6274,7 @@ def since_start(arg: str | None, mark: str | None, now: dt.datetime) -> dt.datet
     try:
         return dt.datetime.fromisoformat(arg.strip())
     except ValueError:
-        raise SystemExit(f'{RUNNER} since: {arg!r} is not a time: 2h, 30m, 1d, today, yesterday, or 2026-11-19T14:00')
+        raise SystemExit(f'{shown_cmd()} since: {arg!r} is not a time: 2h, 30m, 1d, today, yesterday, or 2026-11-19T14:00')
 
 
 def when(stamp: str, now: dt.datetime) -> str:
@@ -7055,7 +7055,7 @@ def cmd_background_attach(argv: list[str]) -> int:
     pane in this terminal, as `attach` shows it; Ctrl-b d sends it back. Inside tmux it switches the client.
     Windows: the run has no pane to attach, so it is bare `agent-runner`, and says so."""
     if argv:
-        print(f'{RUNNER} --attach takes nothing more (got {" ".join(argv)})', file=sys.stderr)
+        print(f'{shown_cmd()} --attach takes nothing more (got {" ".join(argv)})', file=sys.stderr)
         return 2
     init()
     if plat.WINDOWS:
