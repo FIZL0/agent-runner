@@ -1114,7 +1114,7 @@ def _reask(tid: str, ids: list[str], todo) -> bool:
     at = _block_at(ls[end])
     if at < 0 or not (m := REASK.match(ls[end][at:].lstrip())):
         return False
-    ask = ASKED.sub('', m.group(1))
+    ask = re.sub(r' — back for you: [^—]*?landed(?= —|$)', '', ASKED.sub('', m.group(1)))  # one, not a pile
     ls[end] = ls[end][:at] + ' BLOCKED: ' + stamp_ask(f'{ask} — back for you: {", ".join(ids)} landed')
     _write(todo, ls)
     return True
