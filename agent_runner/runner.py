@@ -7064,7 +7064,7 @@ def control_new_session() -> str:
 def feed_images() -> list[str]:
     """The images attached to the person's latest message in the runner feed, the one being handed on, in display
     order: Claude Code records their saved paths in the feed's transcript (an `inlined_image_paths` attachment
-    after the message). `control --new --ask` passes them on itself, so a feed on an older brief, or a Haiku that
+    after the message, or since 2.1.329 an isMeta entry with '[Image: source: PATH]' text, B24). `control --new --ask` passes them on itself, so a feed on an older brief, or a Haiku that
     skips the step, still forwards the pictures, and a later text-only message forwards none. The session is the
     one running this command (Claude Code's CLAUDE_CODE_SESSION_ID: the feed handing the message on), else
     <notes>/remote/feed.sid (a feed started by an older runner never wrote that file, B22)."""
@@ -7087,12 +7087,26 @@ def feed_images() -> list[str]:
                     continue
                 att = d.get('attachment') or {}
                 if att.get('type') == 'inlined_image_paths':
-                    paths += [p for p in att.get('paths', []) if isinstance(p, str)]
+                    paths += [p for p in att.get('paths', []) if isinstance(p, str) and p not in paths]
+                elif d.get('type') == 'user' and d.get('isMeta'):
+                    paths += [p for p in meta_image_paths(d) if p not in paths]
                 elif d.get('type') == 'user' and person_message(d):
                     paths = []
     except OSError:
         return []
     return paths
+
+
+IMAGE_SOURCE_RE = re.compile(r'\[Image: source: ([^\]\n]+?)\]')
+
+
+def meta_image_paths(d: dict) -> list[str]:
+    """The image paths in a Claude Code isMeta companion entry: 2.1.329 records a phone/remote image as
+    '[Image: source: /tmp/claude-<uid>/<proj>/<sid>/images/1.png]' text, with no inlined_image_paths attachment (B24)."""
+    c = (d.get('message') or {}).get('content')
+    texts = [c] if isinstance(c, str) else [x.get('text', '') for x in c or [] if isinstance(x, dict)] \
+        if isinstance(c, list) else []
+    return [m.strip() for t in texts if isinstance(t, str) for m in IMAGE_SOURCE_RE.findall(t)]
 
 
 def person_message(d: dict) -> bool:

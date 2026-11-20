@@ -1716,6 +1716,16 @@ def test_short_titles_and_since(repo: Path):
                    'control --new --ask passes on the images of the message being handed on')
                 write(hum({'type': 'image'}), pics('/u/a.png'), res, hum({'type': 'text', 'text': 'and this?'}))
                 eq(R.feed_images(), [], 'a later text-only message forwards no earlier images')
+                src = '/tmp/claude-1000/p/7479c552/images/1.png'
+                meta = lambda t: {'type': 'user', 'isMeta': True, 'origin': {'kind': 'human'},
+                                  'message': {'content': [{'type': 'text', 'text': t}]}}
+                write(hum({'type': 'text', 'text': 'old'}), meta('[Image: source: /u/old.png]'),
+                      hum({'type': 'image'}, {'type': 'text', 'text': 'see this'}),
+                      meta(f'[Image: source: {src}]'), pics(src), res)
+                eq(R.feed_images(), [src], 'B24: an isMeta [Image: source: PATH] companion is passed on, deduped')
+                write(hum({'type': 'image'}, {'type': 'text', 'text': 'see'}), meta(f'[Image: source: {src}]'),
+                      res, hum({'type': 'text', 'text': 'and this?'}))
+                eq(R.feed_images(), [], 'B24: a later text-only message forwards no companion image')
                 write(hum({'type': 'image'}), pics('/u/c.png'))
                 Path(tdir, 'feed.sid').unlink()
                 eq(R.feed_images(), [], 'no feed.sid and no session env: nothing')
