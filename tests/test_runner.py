@@ -817,6 +817,11 @@ def test_background(repo: Path):
         eq(kw['startupinfo'].wShowWindow, plat.SW_HIDE, 'its window starts hidden')
         plat.spawn_console(['a'], repo, {})
         check('startupinfo' not in popen.call_args.kwargs, 'a console window otherwise shows, as before')
+    with mock.patch.object(plat.sp, 'Popen') as popen, mock.patch.object(plat, 'WINDOWS', True):
+        plat.spawn_detached(['a'])
+        f = popen.call_args.kwargs['creationflags']
+        check(f & plat.CREATE_NO_WINDOW and not f & 0x8, 'Windows: a detached process gets a windowless console, '
+              "not DETACHED_PROCESS (uv's python launcher would then open a visible one)")
 
     rows = ['other\t%1\ts1\t/elsewhere\t', 'ar-proj\t%2\t\t\t' + str(repo), 'ar-proj\t%3\ts1\t' + str(repo) + '\t',
             'ar-proj\t%4\ts2\t' + str(repo) + '\t']
