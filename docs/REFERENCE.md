@@ -165,9 +165,11 @@ task to fix X" (it files it with `plan add`), "do X now" (it uses `take`, never 
   file exists Claude Code sends no mobile push; 2.1.181+). A control session's `.runner/quiet-c<N>` is made
   as it starts and removed once its claude.ai/code link shows in its pane (`control N --unquiet`, a small
   detached helper, watches; without tmux, after 30 s); the control server's `.runner/quiet-server` once a link
-  shows in its log. So starting a run is silent, and later pushes still reach the phone. Slots with
-  `remote_slots` keep `.runner/quiet-slots` for good and get `agentPushNotifEnabled` and
-  `inputNeededNotifEnabled` false in their `--settings`: a slot never pushes.
+  shows in its log. Slots with `remote_slots` keep `.runner/quiet-slots` for good and get
+  `agentPushNotifEnabled: false` in their `--settings` (no PushNotification tool). Known limit: Remote
+  Control's "session ready" push goes out as a session registers, before the presence file can count, so
+  each Remote Control slot start, and most likely each control session start, still pushes. No setting or
+  environment variable stops it, short of turning off the Claude app's notifications on the phone.
   `[run] silent` sets this: `"launch"` (the default) as above; `true` keeps every file for good, so no
   session the run starts ever pushes; `false` sets none, and Claude Code pushes as it would anyway.
 

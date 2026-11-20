@@ -1065,8 +1065,10 @@ class Claude:
                 # lean() drops user settings, where the bypass dialog's opt-out lives; nobody is there to answer it
                 '--settings', json.dumps({'skipDangerousModePermissionPrompt': True,
                                           'hooks': {'Stop': stop, 'StopFailure': stop},
-                                          # on Remote Control a slot never pushes (`quiet_file` too)
-                                          **({'agentPushNotifEnabled': False, 'inputNeededNotifEnabled': False}
+                                          # on Remote Control a slot's own PushNotification tool stays off (R2:
+                                          # inputNeededNotifEnabled is not here, as Claude Code only sends it to
+                                          # the server from /config, so --settings never reaches the push)
+                                          **({'agentPushNotifEnabled': False}
                                              if remote_slots_on() and silent() is not False else {})})]
 
     def cmd(self, prompt: str, pf: Path, sid: str, flags: list[str]) -> str:
@@ -1507,7 +1509,10 @@ def slot_env(n: int | None) -> list[str]:
          else [])
 
 
-PRESENCE_ENV = 'CLAUDE_CLIENT_PRESENCE_FILE'  # while the file it names exists, Claude Code sends no mobile push
+# While the file it names exists, Claude Code pulses "client present" just before each push-triggering state
+# (needs input, turn done), so the server skips those pushes. It cannot stop the "session ready" push: the server
+# sends that as the session registers, before the first pulse (R2, from the Claude Code 2.1.329 binary).
+PRESENCE_ENV = 'CLAUDE_CLIENT_PRESENCE_FILE'
 
 
 def silent() -> bool | str:
@@ -1518,8 +1523,8 @@ def silent() -> bool | str:
 
 def quiet_file(who: str, on: bool = True) -> Path:
     """`<notes>/quiet-<who>`, the file a Remote Control session's CLAUDE_CLIENT_PRESENCE_FILE names: made (`on`) or
-    removed. "slots" is kept for good (a slot never pushes to the phone); a control session's and the control
-    server's are there only while it starts, so its launch is silent and its later pushes still arrive."""
+    removed. "slots" is kept for good (a slot's later pushes stay quiet; not its start push, see PRESENCE_ENV);
+    a control session's and the control server's are there only while it starts, so its later pushes arrive."""
     f = C.notes(f'quiet-{who}')
     try:
         f.touch() if on else f.unlink(missing_ok=True)

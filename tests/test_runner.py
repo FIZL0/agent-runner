@@ -818,7 +818,8 @@ def test_remote_auto(tmp: Path):
     f = Path(env[R.PRESENCE_ENV])
     check(f.exists() and f.name == 'quiet-slots', 'a slot on Remote Control names a presence file that exists')
     s = json.loads(flags[flags.index('--settings') + 1])
-    eq((s['agentPushNotifEnabled'], s['inputNeededNotifEnabled']), (False, False), 'and its pushes are off')
+    eq(s['agentPushNotifEnabled'], False, 'and its PushNotification tool is off')
+    check('inputNeededNotifEnabled' not in s, 'no inputNeededNotifEnabled: from --settings it never reaches the server')
     with mock.patch.dict(R.C.run, {'remote_slots': False}):
         check(R.PRESENCE_ENV not in R.env_vars(R.slot_env(2)), 'a local slot has none')
         check('agentPushNotifEnabled' not in R.agent_flags('sid-q', 'opus', 30)[-1], 'nor the settings')

@@ -27,6 +27,17 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
   ignores `CLAUDE_CLIENT_PRESENCE_FILE`, so each Remote Control slot start (`remote_slots = true`) buzzes the
   phone even with `.runner/quiet-slots` in place, and the runner cannot stop it. The presence file only keeps
   the client's later pushes quiet.
+- `remote_slots = true` means slots on Remote Control, and each slot start pushes to the phone. Nothing the
+  runner can set stops that push (found in the Claude Code 2.1.329 binary): the server sends "session ready" as
+  the session registers, and the presence pulses only start after that. `agentPushNotifEnabled` and
+  `inputNeededNotifEnabled` are account settings on the server, which Claude Code only updates when you change
+  them in /config, never from `--settings`, and no environment variable turns the push off. Slots keep
+  `.runner/quiet-slots`, because Claude Code pulses it just before a needs-input or turn-done push, so those
+  pushes should stay quiet. They keep `agentPushNotifEnabled: false`, which blocks a slot's own
+  PushNotification tool. They no longer get `inputNeededNotifEnabled`, which did nothing. `remote_slots` stays
+  off by default. To stop every push, turn notifications off for the Claude app on the phone (that covers all
+  sessions). For the same reason, the control sessions' and the control server's quiet launch most likely
+  does not silence their start push either.
 
 ## 0.49.0 (2026-11-20)
 
