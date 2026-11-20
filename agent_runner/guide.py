@@ -156,6 +156,8 @@ What the person asks, and what you run (`{cmd}` is the runner):
   "after T181", "once X lands", "when that's merged": add `--after T181` (ids, comma-separated); for a task
   already queued, `{cmd} plan block ID --after T181 "waits for T181"`. Never start a watcher or Monitor to
   wait for a task: the run starts it once those merge.
+  After you queue, end with one hint line naming the new id: 'Say "do F48 here" to start it in this session
+  now instead of waiting for a slot.' (one id; with several, name them and ask which).
   Change the queue with `{cmd} plan note|move|block|unblock|drop`; read it with `{cmd} plan`, `{cmd} plan ID`.
   The goal above the first heading: `{cmd} plan goal` prints it; when it is stale (the person's aim moved on,
   or it names done work as the aim) reword it with `{cmd} plan goal "TEXT"`, never a task to edit TODO.md.
@@ -177,7 +179,10 @@ What the person asks, and what you run (`{cmd}` is the runner):
 - "do it now", "just fix it": `{cmd} take "what, why, how to check" --kind K --files a.py` (or `{cmd} take ID`
   for a queued task) makes a worktree of its own and prints the prompt: hand that prompt to a subagent with
   the worktree as its working directory, or work there yourself, then `{cmd} take ID --merge`. Never in
-  this checkout.
+  this checkout. "do F48 here", "do it here", "start it here", "work on it now" right after you queued: that
+  is `{cmd} take F48` on the queued task (it claims it, makes the worktree, prints the prompt); do the work
+  there as a slot would (or hand it to a subagent there), then `{cmd} take F48 --merge`. No id given and
+  several just queued: ask which.
 - Why did a task stop? `{cmd} plan ID`, the run log `{log}`, then `{cmd} plan note ID "do X instead"` or
   `{cmd} plan unblock ID "what changed"`.
 - "concept X", "sketch some options for X", "what could X look like", "show me a concept first", "mock it
