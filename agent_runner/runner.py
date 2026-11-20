@@ -127,7 +127,7 @@ it>"`, then stop. If all it waits on is another task landing (its code is not on
 `--after <ID>[,<ID>]`, and the run reopens it the moment those merge. If it waits on a person, start WHY with \
 what you ask of them: `CONFIRM: <what to check by hand>`, `DECIDE: <the question or choice>` or `BLOCKED: \
 <the access, login or fix only a person can make>`, then one short line, and the link if there is one; it \
-lists under Waiting for your OK until they answer.
+lists under Needs you until they answer.
 
 A usage limit is not being stuck: do not block the task. The session waits for the reset and carries on.
 
@@ -5960,7 +5960,7 @@ def since_text(log_lines: list[str], start: dt.datetime, titles: dict[str, str],
     (`waiting`, however old), then each event after `start`, oldest first, one short line each; or one line
     saying there is nothing new."""
     text, last = _since_events(log_lines, start, titles, now, since_mark)
-    return '\n'.join([*waiting_text(waiting), text]), last
+    return '\n'.join([*waiting_text(waiting, now=now), text]), last
 
 
 def _since_events(log_lines: list[str], start: dt.datetime, titles: dict[str, str], now: dt.datetime,
@@ -6027,11 +6027,14 @@ def needs_you_line(line: str, titles: dict[str, str], now: dt.datetime, waiting)
             what = f'{kind}: {held if len(held) <= 240 else held[:239].rsplit(" ", 1)[0] + "…"}'
         return f'{when(e[0], now)}  {what}'
     if e[1] and kind in ('landed', 'part landed, rest stuck'):
-        for label, tid, k, ask, url, title, shelved in waiting or []:
-            if e[1] in (tid, k) and not shelved:
-                return f'{when(e[0], now)}  waits for you: ' + '  '.join(
-                    x for x in (label, f'{title or titles.get(tid) or tid}: {ask} [{tid}]', url) if x)
+        for label, tid, k, ask, url, title, shelved, *_ in waiting or []:
+            if e[1] in (tid, k) and not shelved:  # B27: in everyday words, no caps label
+                return f'{when(e[0], now)}  {ASK_FEED}' + '  '.join(
+                    x for x in (f'{P.plain_ask(label, ask, title or titles.get(tid) or tid)} [{tid}]', url) if x)
     return None
+
+
+ASK_FEED = 'needs you: '  # how a feed line about an item under Needs you starts (B27; was 'waits for you: ')
 
 
 def follow_lines(chunk: str, titles: dict[str, str], now: dt.datetime, needs_you: bool = False,
@@ -6051,7 +6054,8 @@ def follow_lines(chunk: str, titles: dict[str, str], now: dt.datetime, needs_you
             if e[1] and e[2].startswith('landed: ') and (did := what_changed(e[1])):
                 line += f' — {did}'
             out.append(line)
-            if waiting and (nl := needs_you_line(l, titles, now, waiting)) and ' waits for you: ' in nl:
+            if waiting and (e[1] and e[2].split(': ', 1)[0] in ('landed', 'part landed, rest stuck')) \
+                    and (nl := needs_you_line(l, titles, now, waiting)):
                 out.append(nl)  # the full feed carries the asks too: the runner feed is the one watch
     return out, last
 
@@ -6165,28 +6169,39 @@ def waiting_ok() -> list[tuple]:
     """What waits for the person (`plan.asks`, shelved ones too), from the main checkout's TODO.md: concept pages
     and tasks blocked on a person."""
     try:
-        return P.asks(C.todo, all=True) if C.todo.exists() else []
+        if not C.todo.exists():
+            return []
+        stamps = P.asked_at(C.todo)
+        return [(*a, stamps.get(a[1], '')) for a in P.asks(C.todo, all=True)]
     except (OSError, SystemExit):
         return []
 
 
-def waiting_text(waiting, width: int = 60) -> list[str]:
-    """'Waiting for your OK:' and a line per ask: its caps label (CONCEPT, CONFIRM, DECIDE, BLOCKED), the title
-    [id], what to do, the link; a count of the shelved ones last. [] for none."""
+def waiting_text(waiting, width: int = 60, now: dt.datetime | None = None) -> list[str]:
+    """B27: '[needs] heading' ('Needs you:') and per ask one line in everyday words, what is asked and what to
+    reply, with its age first ('2h', when `[needs] ages`) and its [id] last, then its link on a line of its
+    own; in `[needs] order` (oldest first); a count of the shelved ones last. [] for none. `waiting` is
+    `waiting_ok()`'s list: asks tuples, an `(asked …)` stamp eighth when there is one. No caps labels."""
     if not waiting:
         return []
+    cf = P.needs_cfg()
+    now = now or dt.datetime.now()
+    stamps = {w[1]: w[7] for w in waiting if len(w) > 7 and w[7]}
     out, shelved = [], 0
-    for label, tid, k, what, url, title, sh in waiting:
+    for label, tid, k, what, url, title, sh, *_ in P.in_order(waiting, stamps, cf['order']):
         if sh:
             shelved += 1
             continue
         title = title if len(title) <= width else title[:width - 1].rstrip() + '…'
-        out.append('  ' + '  '.join(x for x in (label, f'{title or tid} [{k or tid}]: {what}', url) if x))
+        old = P.age(stamps.get(tid, ''), now) if cf['ages'] else ''
+        out.append('  ' + (f'{old:>3}  ' if old else '') + f'{P.plain_ask(label, what, title)} [{k or tid}]')
+        if url:
+            out.append(f'    {url}')
     if not out:
         return []  # only shelved ones: they asked to leave this list
     if shelved:
         out.append(f'  ({shelved} shelved: plan waiting --all)')
-    return ['Waiting for your OK:'] + out
+    return [f'{cf["heading"]}:'] + out
 
 
 def status_text(up: bool, st: dict, log_lines: list[str], titles: dict[str, str], now: float, width: int = 60,
@@ -6194,7 +6209,7 @@ def status_text(up: bool, st: dict, log_lines: list[str], titles: dict[str, str]
     """`agent-runner status`, short enough for a phone: concepts waiting for the person's OK first, then the
     run's state, each slot's task, title and minutes, what is merging, the last few merged / blocked / parked,
     and usage."""
-    out = waiting_text(waiting)
+    out = waiting_text(waiting, now=dt.datetime.fromtimestamp(now) if now else None)
     out.append(f'run up: {st.get("state", "starting")}' if up else 'no run is up')
     for n, tid in sorted(st.get('running', {}).items(), key=lambda kv: (not kv[0].isdigit(), kv[0].zfill(4))):
         title = titles.get(tid, '')
@@ -6518,11 +6533,13 @@ def control_ok() -> bool:
 
 def control_brief() -> str:
     """What every control session is told, through its SessionStart hook (`control --brief` prints it)."""
-    from agent_runner.guide import CONTROL, CONTROL_FEED_WATCH, CONTROL_WATCH
+    from agent_runner.guide import CONTROL, CONTROL_ANSWER, CONTROL_FEED_WATCH, CONTROL_NO_ANSWER, CONTROL_WATCH
     notes = Path(C.run['notes']).expanduser()
     logf = (notes / 'run.log').as_posix() if not notes.is_absolute() else str(notes / 'run.log')
     watch = (CONTROL_FEED_WATCH if feed_on() else CONTROL_WATCH).format(repo=ROOT.name, cmd=C.command)
-    return CONTROL.format(repo=ROOT.name, cmd=C.command, log=logf, watch=watch)
+    cf = P.needs_cfg()  # B27: the heading's words, and whether a reply naming no id maps to an item
+    answer = (CONTROL_ANSWER if cf['map_replies'] else CONTROL_NO_ANSWER).format(cmd=C.command)
+    return CONTROL.format(repo=ROOT.name, cmd=C.command, log=logf, watch=watch, needs=cf['heading'], answer=answer)
 
 
 def control_settings_data() -> dict:
@@ -6971,10 +6988,12 @@ def feed_argv() -> list[str]:
     control sessions start none. Haiku; Bash (only the runner's command, dontAsk refuses the rest), Monitor;
     its own short system prompt instead of Claude Code's, no settings sources or MCP servers: ~6k tokens a turn.
     `board_feed` adds the session flags: one session from the run's first start to a real stop (`feed_session`)."""
-    from agent_runner.guide import RUNNER_BRIEF, RUNNER_START
+    from agent_runner.guide import FEED_ANSWER, RUNNER_BRIEF, RUNNER_START
     cmd = C.command
+    cf = P.needs_cfg()  # B27: a reply to an item under Needs you is answered here, with no id, when it may be
+    answer = FEED_ANSWER.format(cmd=cmd, needs=cf['heading']) if cf['map_replies'] else ''
     return [plat.exe(C.run['agent']), RUNNER_START.format(cmd=cmd, repo=ROOT.name),
-            '--model', FEED_MODEL, '--system-prompt', RUNNER_BRIEF.format(cmd=cmd, repo=ROOT.name),
+            '--model', FEED_MODEL, '--system-prompt', RUNNER_BRIEF.format(cmd=cmd, repo=ROOT.name, answer=answer),
             '--tools', 'Bash,Monitor,PushNotification', '--permission-mode', 'dontAsk',
             '--allowedTools', f'Bash({cmd} *)', 'Monitor', 'PushNotification', '--strict-mcp-config',
             '--setting-sources', '', '--settings', json.dumps({'autoMemoryEnabled': False}),  # ~6k tokens a turn

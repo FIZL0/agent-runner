@@ -43,7 +43,9 @@ AGENT_RUNNER_SLOT set you are one of the runner's agents: follow your brief, not
    - concepts (kind K) publish a page of options and their build waits: `plan waiting`, then
      `plan approve K7 "option B: …"` or `plan revise K7 "what to change"`, as the person says
    - tasks blocked on a person (`plan block ID "CONFIRM: …"`, DECIDE:, BLOCKED:) list there too: answer them
-     with `plan confirm ID "what they saw"`, `plan change ID "do X instead"` or `plan shelve ID`
+     with `plan confirm ID "what they saw"`, `plan change ID "do X instead"` or `plan shelve ID`; a reply
+     that names no item ("yes", "B", "later") goes through `plan answer "<their words>"`. `status` and
+     `since` show all of these under "Needs you", one plain line each, oldest first
 2. **Queue work instead of doing it**, unless the person asks you to do it yourself now. A running runner
    starts a queued task within a minute. Good tasks name their `--files` (tasks on the same files never
    run at once) and say how to check the result. **Never edit files in the main checkout**: uncommitted
@@ -92,12 +94,13 @@ phone.
 session opened later (`control --new`, /control) starts blank: answer the person's first message, with no
 summary first unless they ask for one. For the summary, run `{cmd} status` (not `since`: it moves the
 last-look mark, and the person has not seen those updates yet; `since` is for when they ask), and
-call the Artifact tool's `open` action on the link of each concept page under "Waiting for your OK", so the
+call the Artifact tool's `open` action on the link of each concept page under "{needs}", so the
 page shows inline and not just as a link. Then write, compact enough for a phone:
-1. One headline line: `Lately: 11 landed, 1 stuck, 1 waits for you. Run up, idle, 3 slots.` (or
+1. One headline line: `Lately: 11 landed, 1 stuck, 1 needs you. Run up, idle, 3 slots.` (or
    `No run is up.`), counting only what there is.
-2. Groups, each a heading on a line of its own with plain bullets under it, in this order: **Waiting for your
-   OK** (label first when it is not a concept, the title, its link on a line of its own), **Running** (each
+2. Groups, each a heading on a line of its own with plain bullets under it, in this order: **{needs}** (each
+   item as status words it: what is asked and what to reply, its age, then its link on a line of its own;
+   oldest first as listed; never a CONCEPT/CONFIRM/DECIDE/BLOCKED label), **Running** (each
    running task in a few everyday words), **Landed** (newest first, at most 5, then `…and 6 more`), **Stuck**
    (what stopped it, in a few words). Leave an empty group out. Say the group word once, in its heading:
    never `Landed:` or `Stuck:` again on each bullet.
@@ -162,15 +165,18 @@ What the person asks, and what you run (`{cmd}` is the runner):
   Queue a concept (`{cmd} plan add K "..."`) only when they say queue it, later, or add a task. Queued one by
   mistake and they say "do it here"? `{cmd} plan drop ID "shown inline"` and write the page here.
 - Queued concepts (kind K): their agent builds nothing, it publishes a page of options and the build task
-  waits. `status` and `since` list these first, under "Waiting for your OK", with
+  waits. `status` and `since` list these first, under "{needs}", with
   the page's link: lead with them and give the link. "go with option B", "B but keep the old menu": `{cmd}
   plan approve K7 "option B: <what they said>"`; "approve", "looks good": `{cmd} plan approve K7` (the page's
   recommendation). Changes or a no: `{cmd} plan revise K7 "<what to change>"` (the concept runs again).
   `{cmd} plan waiting` lists them.
-- Waiting for your OK also lists tasks blocked on a person, each line led by what it asks: CONCEPT (pick an
-  option on the page), CONFIRM (check something by hand, say what you saw), DECIDE (answer a question or a
-  choice), BLOCKED (access, a login or a fix only a person can make). Lead with these, one line each, label
-  first, with the link. Map the person's answer to one of three:
+- {needs} also lists tasks blocked on a person, each one plain line: what is asked and what to reply
+  ("Check the push reached your phone - reply yes/no"), its age, its [id], and its link on the next line.
+  Internally each is a CONCEPT (pick an option on the page), CONFIRM (check something by hand), DECIDE
+  (answer a question or a choice) or BLOCKED (access, a login or a fix only a person can make), as `{cmd}
+  plan waiting` shows; never show the person those labels. Lead with these, as status words them, with the
+  link on a line of its own. A reply that clearly answers one of them needs no id: {answer}
+  Map an answer that names its item to one of three:
   - done / yes: "it worked", "I saw the push", "use Postgres", "I logged in": `{cmd} plan confirm ID "<what
     they said or saw>"` (a CONFIRM is ticked, a DECIDE or BLOCKED reopens with the answer, a concept approved)
   - change: "do X instead", "that didn't work, try Y": `{cmd} plan change ID "<what to do>"` (noted and
@@ -247,7 +253,7 @@ plain sentence: what is held and the one thing to do, with the link when there i
 status (`{cmd} status`), pause (`{cmd} pause`), stop (`{cmd} stop`), force (`{cmd} force`), slots N \
 (`{cmd} slots N`), what happened (`{cmd} since`), and a new control session or window (`{cmd} control --new`: \
 answer with the link it prints).
-- Anything else (a task, a question, a fix, an idea, a plan change): do not answer it or start it. Run \
+{answer}- Anything else (a task, a question, a fix, an idea, a plan change): do not answer it or start it. Run \
 `{cmd} control --new --ask "<their message, word for word>"` and answer only: "That goes to a control \
 session: <the link it prints>". Control sessions do the work; this feed only shows the run.
 """
@@ -257,6 +263,17 @@ RUNNER_START = ("Start the Monitor tool (persistent, timeout_ms 1800000) on `{cm
                 "here; anything else opens a control session.\" When that Monitor times out with no lines, start "
                 "it again the same way and say nothing at all; speak only for a line it printed.")
 
+
+# B27: a reply that answers an item under Needs you without naming it ({needs} is `[needs] heading`)
+CONTROL_ANSWER = ('run `{cmd} plan answer "<their words>"`: it takes the reply to the one item it fits (yes/no to '
+                  'a check, a letter to a concept page, done to a block, other words to a decision, later or not '
+                  'now to shelve it) and prints what it did and which item; say that back in a line. When it asks '
+                  'which one, ask the person, naming the items in plain words.')
+CONTROL_NO_ANSWER = ('ask which one they mean, in plain words ([needs] map_replies is off here), then answer it by '
+                     'its id as below.')
+FEED_ANSWER = ('- A reply to something under "{needs}" ("yes", "no", "B", "later", "use SQLite"): run `{cmd} plan '
+               'answer "<their words>"` and answer with what it prints. When it says it cannot tell which item, '
+               'hand the message to a control session as below.\n')
 
 CONTROL_WATCH = """\
 **Tell the person, unasked, when the run needs them.** Every control session, on its first turn (with the

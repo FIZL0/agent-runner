@@ -181,6 +181,12 @@ DEFAULTS: dict = {
         'land_edited': 'wait',  # a tested merge blocked by uncommitted edits in the main checkout: "wait" for them,
                                 # or "wip": after LAND_WAIT_WIP move them to a wip/main-checkout-<time> branch and land
     },
+    'needs': {                  # B27: what waits on a person (concept pages, CONFIRM/DECIDE/BLOCKED asks)
+        'heading': 'Needs you', # its heading in status, since and the control sessions' opening
+        'ages': True,           # each item shows how long it has waited ("2h")
+        'order': 'oldest',      # oldest first; "newest" first; "plan": the order TODO.md has them in
+        'map_replies': True,    # `plan answer "yes"`: a reply naming no id goes to the one item it answers
+    },
 }
 
 

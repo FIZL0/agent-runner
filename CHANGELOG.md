@@ -9,6 +9,16 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
   an image-only ask) instead of "<repo> · control N", on Remote Control and as its tmux window. N stays, so
   higher is newer and `attach cN` still works; control 1 and a blank `control --new` keep the old name.
 
+- "Waiting for your OK" is now **Needs you**, and reads plainly: each item is one line saying what is asked
+  and what to reply (`Check the push reached your phone - reply yes/no`, `Pick an option for the new menu -
+  reply A/B/C`), with its age (`2h`) first and its link on a line of its own, oldest first. The
+  CONCEPT/CONFIRM/DECIDE/BLOCKED labels stay in the plan and in `plan waiting`, but no longer show in
+  `status`, `since`, the feed or the control sessions' opening. A block on a person is stamped `(asked
+  <time>)` when it is filed, which is where the age comes from. A reply that names no id ("yes", "B",
+  "later", "use SQLite") goes to the one item it clearly answers: `plan answer "<reply>"`, which control
+  sessions and the runner feed now run; it asks which one when the reply could fit several. New `[needs]`
+  settings: `heading`, `ages`, `order` (`oldest`, `newest`, `plan`) and `map_replies`.
+
 ## 0.50.3 (2026-11-20)
 
 - Control sessions show a concept inline for any "show me first" wording ("show me a concept first", "mock it

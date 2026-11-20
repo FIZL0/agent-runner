@@ -578,7 +578,8 @@ def test_concepts():
             'the concept is ticked with its page noted')
         t = todo.read_text(encoding='utf-8')
         has(t, r'^- \[~\] \*\*F1\*\* Build the option a person approves on concept K1\'s page: settings page layout '
-               r'\| files: src/settings\.py BLOCKED: waiting for your OK on ' + re.escape(url) + '$',
+               r'\| files: src/settings\.py BLOCKED: waiting for your OK on ' + re.escape(url)
+               + r' \(asked \d{4}-\d\d-\d\d \d\d:\d\d\)$',
             'the build task is blocked with the link, on the concept\'s files')
         notes = list((root / 'journal').glob('*-k1-concept/notes.md'))
         check(len(notes) == 1 and url in notes[0].read_text(encoding='utf-8'), 'the link is in the task\'s journal',
@@ -614,6 +615,99 @@ def test_concepts():
         check(r.returncode == 0, 'a repo whose kinds lack K has no concepts: K9 is done as any task', r.stderr)
 
 
+def test_needs_you():
+    print('plan: B27 Needs you: plain words for each ask, ages, and replies that name no id')
+    eq(plan.plain_ask('CONFIRM', 'check the push reached your phone', 'push notices'),
+       'Check the push reached your phone - reply yes/no', 'a check: what to check, reply yes/no')
+    eq(plan.plain_ask('CONCEPT', 'pick an option on the page', 'The new menu'),
+       'Pick an option for the new menu - reply A/B/C', 'a concept page: pick an option, reply A/B/C')
+    eq(plan.plain_ask('DECIDE', 'Postgres or SQLite?', 'db'), 'Postgres or SQLite? - reply with your answer',
+       'a decision')
+    eq(plan.plain_ask('BLOCKED', 'add the deploy key, see', 'deploy'),
+       'Add the deploy key - reply done once it is', 'a block: what to do, reply done; no dangling "see"')
+    now = __import__('datetime').datetime(2026, 11, 20, 15, 0)
+    eq([plan.age(s, now) for s in ('2026-11-20 15:00', '2026-11-20 14:25', '2026-11-20 13:00', '2026-11-17 15:00',
+                                   '')], ['now', '35m', '2h', '3d', ''], 'ages read short')
+    for text, kind in (('yes', 'yes'), ('Yep, it came', 'yes'), ('B', 'pick'), ('option a', 'pick'),
+                       ('go with C please', 'pick'), ('a push came', 'other'), ('later', 'shelve'),
+                       ('not now', 'shelve'), ("no, nothing came", 'no'), ('try the CI token instead', 'change'),
+                       ('done', 'done'), ('use SQLite', 'other')):
+        eq(plan.reply_kind(text), kind, f'{text!r} reads as {kind}')
+    with tempfile.TemporaryDirectory() as tmp:
+        todo = Path(tmp) / 'plan' / 'TODO.md'
+        plan.ensure(todo)
+        for text in ('push notices | files: a.py', 'pick a database | files: b.py', 'deploy key | files: c.py',
+                     'menu layout | files: m.py'):
+            plan.add('F', text, todo=todo)
+        plan.block('F1', 'CONFIRM: check the push reached your phone', todo=todo)
+        plan.block('F2', 'DECIDE: Postgres or SQLite for the database?', todo=todo)
+        plan.block('F3', 'BLOCKED: add the deploy key on the server', todo=todo)
+        check(set(plan.asked_at(todo)) == {'F1', 'F2', 'F3'}, 'each block on a person is stamped', plan.asked_at(todo))
+        plan.block('F4', 'needs F1 first', todo=todo)
+        check('(asked' not in todo.read_text(encoding='utf-8').split('**F4**')[1].split('\n')[0],
+              'a plain block is not stamped')
+        items = plan.asks(todo)
+        eq(plan.answered('yes', items)[1], 'F1', '"yes" goes to the one check')
+        eq(plan.answered('done', items)[1], 'F3', '"done" goes to the one block')
+        eq(plan.answered('use SQLite', items)[1], 'F2', 'other words go to the one decision')
+        eq(plan.answered('F3 is later', items)[1], 'F3', 'an id it names wins')
+        eq(plan.answered('later', items), None, 'a bare "later" could be any of them: none')
+        eq(plan.answered('the deploy key: later', items)[1], 'F3', 'unless its words point at one')
+        said = plan.answer('the deploy key can wait, later', todo=todo)
+        check(said.startswith('shelved F3') and 'Add the deploy key on the server - reply done once it is' in said,
+              'answer shelves on a later and says which item it went to', said)
+        said = plan.answer('yes, it came within a minute', todo=todo)
+        check(said.startswith('confirmed and ticked F1'), 'answer confirms a check on a yes', said)
+        said = plan.answer('SQLite', todo=todo)
+        has(todo.read_text(encoding='utf-8'), r'\*\*F2\*\* .*your answer \(DECIDE Postgres or SQLite for the database\?\)'
+            r': SQLite$', 'and answers the decision, unblocked with the answer noted (no stamp in the note)')
+        try:
+            plan.answer('yes', todo=todo)
+            check(False, 'nothing left to answer: refused')
+        except SystemExit as e:
+            check('nothing needs you' in str(e), 'nothing left to answer: refused', str(e))
+        plan.unshelve('F3', todo=todo)
+        plan.block('F2', 'CONFIRM: check the menu on a phone', todo=todo)
+        eq(plan.answered('yes', plan.asks(todo))[1], 'F2', 'one check and a block: "yes" is the check\'s')
+        plan.unblock('F4', todo=todo)
+        plan.block('F4', 'CONFIRM: check the menu on a tablet', todo=todo)
+        try:
+            plan.answer('yes', todo=todo)
+            check(False, 'two checks and a bare yes: refused')
+        except SystemExit as e:
+            check('which one' in str(e) and 'F2: Check the menu on a phone - reply yes/no' in str(e),
+                  'two checks and a bare yes: it asks which one, listing them in plain words', str(e))
+        orig = plan.needs_cfg
+        plan.needs_cfg = lambda: {'heading': 'Needs you', 'ages': True, 'order': 'oldest', 'map_replies': False}
+        try:
+            plan.answer('the deploy key is in, done', todo=todo)
+            check(False, 'map_replies = false: refused')
+        except SystemExit as e:
+            check('map_replies' in str(e), 'with [needs] map_replies = false a reply needs its id', str(e))
+        finally:
+            plan.needs_cfg = orig
+        stamps = {'F2': '2026-11-20 14:00', 'F3': '2026-11-20 09:00'}
+        a = [('X', 'F2'), ('X', 'F3'), ('X', 'F9')]
+        eq([x[1] for x in plan.in_order(a, stamps)], ['F9', 'F3', 'F2'], 'oldest first, unstamped first of all')
+        eq([x[1] for x in plan.in_order(a, stamps, 'newest')], ['F2', 'F3', 'F9'], 'newest first')
+        eq([x[1] for x in plan.in_order(a, stamps, 'plan')], ['F2', 'F3', 'F9'], 'or the plan\'s order')
+
+
+def test_needs_config():
+    print('config: B27 [needs] heading, ages, order, map_replies are settings, with defaults')
+    from agent_runner.config import Config
+    with tempfile.TemporaryDirectory() as tmp:
+        r = Path(tmp)
+        git(r, 'init', '-q')
+        eq(Config(r).raw['needs'], {'heading': 'Needs you', 'ages': True, 'order': 'oldest', 'map_replies': True},
+           'the defaults')
+        (r / 'runner.toml').write_text('[needs]\nheading = "For you"\nages = false\n', encoding='utf-8')
+        c = Config(r)
+        eq((c.raw['needs']['heading'], c.raw['needs']['ages'], c.raw['needs']['order']), ('For you', False, 'oldest'),
+           'runner.toml sets them')
+        eq(c.warnings, [], 'and they are known settings')
+
+
 def test_merge_driver():
     print('plan: git merges the task list through merge3 once install_driver ran')
     with tempfile.TemporaryDirectory() as tmp:
@@ -643,4 +737,5 @@ def test_merge_driver():
 if __name__ == '__main__':
     sys.exit(report([test_plan_roundtrip, test_plan_reopen, test_plan_index_and_sections, test_brief, test_brief_outline,
                      test_split_parents, test_add_bottom, test_add_pri, test_add_subtask, test_kinds, test_need_files, test_hand_edits_commit, test_similar, test_add_refuses_a_duplicate, test_carry_notes,
-                     test_merge3, test_concurrent_add, test_merge_driver, test_concepts]))
+                     test_merge3, test_concurrent_add, test_merge_driver, test_concepts, test_needs_you,
+                     test_needs_config]))
