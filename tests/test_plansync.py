@@ -255,8 +255,7 @@ def test_in_repo(tmp: Path):
 
 def main() -> int:
     with tempfile.TemporaryDirectory() as t:
-        t = Path(t).resolve()  # Windows CI's temp dir is an 8.3 short path (RUNNER~1); git prints the long one
-        return report([lambda: test_all(t), lambda: test_in_repo(t / 'in-repo')])
+        return report([lambda: test_all(Path(t)), lambda: test_in_repo(Path(t) / 'in-repo')])
 
 
 if __name__ == '__main__':
