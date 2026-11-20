@@ -108,7 +108,7 @@ DEFAULTS: dict = {
                                 # start (later ones arrive), true = none ever, false = Claude Code's usual
         'control': True,        # a run opens control session c1 beside it (`agent-runner control`); false: none
         'control_close': True,  # B26: the run closes idle control sessions 2, 3, … (never c1); transcripts kept
-        'control_idle': '1h',   # quiet this long with Claude last and nothing running in it: closed
+        'control_idle': '3h',   # quiet this long with Claude last and nothing running in it: closed
         'control_ask_idle': '2h',  # quiet this long on an open question: filed under Needs you, then closed
         'control_open': ['?', 'want me to', 'should i', 'shall i', 'would you like', 'do you want'],
                                 # what makes Claude's last message an open question or offer (case ignored;

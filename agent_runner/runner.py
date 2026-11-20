@@ -8220,7 +8220,7 @@ def control_cfg() -> dict:
     r = C.run
     opens = r.get('control_open', ['?', 'want me to', 'should i'])
     return {'close': r.get('control_close', True) is not False,
-            'idle': duration(r.get('control_idle', '1h'), 3600.0),
+            'idle': duration(r.get('control_idle', '3h'), 10800.0),
             'ask_idle': duration(r.get('control_ask_idle', '2h'), 7200.0),
             'open': [str(p).lower() for p in ([opens] if isinstance(opens, str) else opens or [])],
             'file_asks': r.get('control_file_asks', True) is not False,

@@ -4,6 +4,9 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- `[run] control_idle` defaults to 3h (was 1h): idle control sessions 2, 3, … close after 3 hours quiet;
+  `control_ask_idle` stays 2h (T11).
+
 - `plan edit ID "TEXT"` corrects a task in place: TEXT replaces its whole description, appended notes included,
   so a corrected instruction no longer sits after the stale one; the id, checkbox, BLOCKED text, follow-up tag
   and `| files:`/`after:`/… fields stay. `--files`, `--after`, `--test`, `--journal` change those fields, and
