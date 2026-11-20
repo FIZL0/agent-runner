@@ -1049,6 +1049,8 @@ def test_control(repo: Path):
     eq(argv[0], R.plat.exe(R.C.run['agent']), 'the agent')
     eq(argv[1], '--session-id', 'a --new session has no first message: blank until the person types')
     check('blank' in brief and 'not `since`' in brief, 'the brief: later sessions start blank, the opening runs no since')
+    check('never touch another\nrepository' in brief and 'explicitly asks' in brief,
+          'B50: the brief: no change to another repository unless the person explicitly asks')
     mark = R.since_mark_file()
     before = mark.read_text() if mark.exists() else None
     R.control_argv(1, 'sid-1', resume=False)
