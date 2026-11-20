@@ -676,6 +676,69 @@ def halts(procs: dict, running: dict, free_at: dict, tried: set, branch: str, mo
         halt_answer(tid, msg)
 
 
+def send_to_pane(pane_id: str, text: str) -> bool:
+    """F16: type `text` into tmux pane `pane_id` and press Enter: a bracketed paste (so a newline in it does
+    not send early) then Enter, which an interactive Claude Code (or Pi) queues for its next turn while busy."""
+    buf = f'agent-runner-{os.getpid()}'
+    if tmux('load-buffer', '-b', buf, '-', input=text).returncode:
+        return False
+    if tmux('paste-buffer', '-d', '-p', '-b', buf, '-t', pane_id).returncode:
+        tmux('delete-buffer', '-b', buf)
+        return False
+    time.sleep(0.3)  # let the TUI take the paste before Enter, or Enter lands inside it
+    return not tmux('send-keys', '-t', pane_id, 'Enter').returncode
+
+
+def tell_requests() -> dict[str, dict]:
+    """{task: request}: what `plan tell` / `plan change` asked this run to pass on (see plan.tell)."""
+    out = {}
+    for f in P.tell_dir(C).glob('*.json'):
+        try:
+            req = json.loads(f.read_text(encoding='utf-8'))
+        except (OSError, ValueError):
+            continue
+        if isinstance(req, dict) and req.get('how') in ('tell', 'change') and isinstance(req.get('text'), str):
+            out[f.stem] = req
+    return out
+
+
+def tell_answer(tid: str, told: bool, msg: str) -> None:
+    d = P.tell_dir(C)
+    tmp = d / f'{tid}.done.tmp'
+    tmp.write_text(json.dumps({'told': told, 'msg': msg}), encoding='utf-8')
+    os.replace(tmp, d / f'{tid}.done')
+    (d / f'{tid}.json').unlink(missing_ok=True)
+    log(msg)
+    if told:
+        note(msg)
+
+
+def tells(procs: dict, running: dict) -> None:
+    """F16: pass each `plan tell` / `plan change` message on to the slot running its task, by typing it into
+    the slot's tmux pane. No live pane (not tmux, the session ended, a cut-off one waiting to resume): told
+    false, and `plan change` falls back to the B19 halt."""
+    reqs = tell_requests()
+    if not reqs:
+        return
+    tagged = MUX.panes() if isinstance(MUX, TmuxMux) else {}
+    for tid, req in reqs.items():
+        n = next((m for m, t in running.items() if t[0] == tid), None)
+        if n is None:
+            tell_answer(tid, False, f'no slot runs {tid} now')
+            continue
+        hit = tagged.get(f's{n}')
+        if not isinstance(MUX, TmuxMux):
+            why = f'no live pane for s{n} ({tid}): its terminal ({MUX.name}) takes no typed text'
+        elif not hit or not alive(hit[1]) or (n in procs and not alive(procs[n][0])):
+            why = f'no live pane for s{n} ({tid}): its session has ended'
+        elif not send_to_pane(hit[0], P.tell_text(req['how'], req['text'])):
+            why = f'no live pane for s{n} ({tid}): tmux could not type into {hit[0]}'
+        else:
+            tell_answer(tid, True, f'told s{n} ({tid})')
+            continue
+        tell_answer(tid, False, why)
+
+
 def power_now() -> None:
     """After a stop, with `z`, `x`, --suspend or --shutdown: suspend or power off now, no idle grace."""
     log(f'run stopped: {"suspending" if POWER == "suspend" else "shutting down"} the computer')
@@ -5364,6 +5427,7 @@ def run(argv: list[str], prog: str) -> int:
                 free_at.setdefault(m, dt.datetime.min)
         if forced() and procs:
             end_sessions(procs, running)
+        tells(procs, running)  # F16: plan tell / change, typed into a running slot's pane
         halts(procs, running, free_at, tried, branch, model, idle, slots)  # B19: plan drop / change of a running task
         waiting = {n: q for n, q in queued().items() if n in free_at and n <= slots}
         tagged = None  # MUX.panes(), looked at once a tick and only for a free slot

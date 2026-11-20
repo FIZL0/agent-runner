@@ -29,8 +29,11 @@ re-reads it on every turn pays again. So the backlog is a command instead:
                                  person, each with a label (CONCEPT, CONFIRM, DECIDE, BLOCKED); --all adds the shelved
     ./run plan confirm <ID> [WHAT YOU SAW]   yes / it worked: a CONFIRM is ticked, a DECIDE or BLOCKED reopens
                                  with the answer noted, a concept is approved
-    ./run plan change <ID> WHAT  do WHAT instead: noted and reopened (a concept: revised); a slot running it
-                                 is stopped and starts it again from the new text
+    ./run plan change <ID> [--restart] WHAT  do WHAT instead: noted and reopened (a concept: revised); a slot
+                                 running it is told "Your task changed: WHAT" in its pane and works on; with
+                                 --restart, or no live pane, it is stopped and starts again from the new text
+    ./run plan tell <ID> TEXT    type TEXT into the pane of the slot running ID (queued for its next turn); no
+                                 plan edit; an error when no slot runs ID
     ./run plan shelve <ID>       later: stays blocked, off Waiting for your OK; `unshelve <ID>` brings it back
     ./run plan approve <ID> [CHOICE]   OK a concept (or its build task's id): the build opens, CHOICE noted on it
     ./run plan revise <ID> WHY   changes asked: the concept reopens with WHY noted, its waiting build is dropped
@@ -991,6 +994,55 @@ def halt(c, tid: str, how: str, wait: float | None = None) -> str:
             + f' (`{c.command} since` shows it)')
 
 
+# --- F16: tell a running agent something, without stopping it ---------------------------------------------
+#
+# A slot runs an interactive session in a tmux pane, where text typed while it works queues for its next turn.
+# `plan tell ID TEXT` (and `plan change ID TEXT` on a running task, unless --restart) leaves a request in
+# <notes>/tell/<ID>.json ({"how": "tell" | "change", "text": …}); the run (`runner.tells`, every pass of its
+# loop) finds the slot's pane, pastes the message into it and presses Enter, and answers in
+# <notes>/tell/<ID>.done ({"told": true|false, "msg": …}). With no live pane (not tmux, a cut-off session
+# waiting to resume, the task merging) it answers told false and `change` falls back to the B19 halt.
+
+TELL_WAIT = 30.0  # s `tell`/`change` wait for the run to pass the message on
+
+
+def tell_dir(c) -> Path:
+    return c.notes('tell', 'x').parent  # notes() makes the folder
+
+
+def tell_text(how: str, text: str) -> str:
+    """What the agent reads in its pane."""
+    return f'Your task changed: {text}' if how == 'change' else f'A note on your task, from the person running this run: {text}'
+
+
+def tell(c, tid: str, text: str, how: str = 'tell', wait: float | None = None) -> tuple[bool | None, str]:
+    """Ask the run to type `text` into the pane of the slot running `tid`. (True, 'told s1 (F297)') when it
+    did; (False, why) when it could not (no live pane, or no slot of a run runs it: then why is ''); (None,
+    what was asked) when the run did not answer within `wait` s."""
+    import json
+    import time
+    where = run_on(c, tid)
+    if not where or where == 'merging':
+        return False, ''
+    d = tell_dir(c)
+    (d / f'{tid}.done').unlink(missing_ok=True)
+    tmp = d / f'{tid}.json.tmp'
+    tmp.write_text(json.dumps({'how': how, 'text': text, 'at': time.time()}), encoding='utf-8')
+    os.replace(tmp, d / f'{tid}.json')
+    end = time.time() + (TELL_WAIT if wait is None else wait)
+    while True:
+        try:
+            got = json.loads((d / f'{tid}.done').read_text(encoding='utf-8'))
+            (d / f'{tid}.done').unlink(missing_ok=True)
+            return bool(got.get('told')), str(got.get('msg', ''))
+        except (OSError, ValueError):
+            pass
+        if time.time() >= end:
+            break
+        time.sleep(0.25)
+    return None, f'asked the run to pass it on to {where} ({tid}); it has not answered yet (`{c.command} since` shows it)'
+
+
 def _shelf(tid: str, on: bool, todo) -> str:
     todo, _ = ensure(todo)
     t = _ask(tid, todo)[1]
@@ -1439,6 +1491,11 @@ def main(argv: list[str] | None = None) -> int:
         print(HELP)
         return 0
     c = cfg()
+    if argv[:1] == ['tell']:  # F16: no plan edit, so no lock
+        return _tell(c, argv[1:])
+    restart = False
+    if argv[:1] == ['change'] and '--restart' in argv[2:]:
+        restart, argv = True, [a for a in argv if a != '--restart']
     edit = argv[:1] and argv[0] in EDITS
     if not c.plan_external:
         if not edit:
@@ -1451,9 +1508,31 @@ def main(argv: list[str] | None = None) -> int:
             rc = _main(argv, c)
     if not rc and argv[0] in ('drop', 'change') and len(argv) > 2:
         # B19: outside the lock, so the run can read the plan while it stops and restarts the slot
+        if argv[0] == 'change' and not restart:  # F16: tell the agent instead of stopping it
+            told, said = tell(c, argv[1], ' '.join(argv[2:]), 'change')
+            if told is not False:
+                print(said)
+                return rc
+            if said:
+                print(f'{said}; stopping it and starting it again from the new text instead (as --restart)')
         if said := halt(c, argv[1], argv[0]):
             print(said)
     return rc
+
+
+def _tell(c, argv: list[str]) -> int:
+    """`plan tell ID TEXT`: a note typed into the pane of the slot running ID; the plan is not edited."""
+    if len(argv) < 2:
+        print(f'{PROG} tell <ID> TEXT', file=sys.stderr)
+        return 2
+    tid, text = argv[0], ' '.join(argv[1:])
+    told, said = tell(c, tid, text)
+    if told is False:
+        print(f'{PROG}: {said or f"{tid} is not running: no slot of a run here is on it"}'
+              + ('' if said else f' (`{PROG} note {tid} TEXT` notes it for the next attempt)'), file=sys.stderr)
+        return 1
+    print(said)
+    return 0
 
 
 def _main(argv: list[str], c) -> int:

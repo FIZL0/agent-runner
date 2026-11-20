@@ -1322,7 +1322,7 @@ def test_drop_or_change_running(repo: Path):
         R.write_state(running)
         R.start = lambda n, task, *a: (started.append((n, task[0], '\n'.join(R.plan_text('main')))),
                                        (4343, 'sid-h2b', 0))[1]
-        p = plan_cmd('change', 'H2', 'use a table instead')
+        p = plan_cmd('change', 'H2', '--restart', 'use a table instead')  # F16: else it is told, not stopped
         check(asked('H2'), 'plan change leaves a request for the run')
         tried = {'H2'}
         R.halts(procs, running, free_at, tried, 'main', 'opus', 30, 2)
@@ -1349,6 +1349,108 @@ def test_drop_or_change_running(repo: Path):
         for s in sessions:
             s.kill()
             s.wait()
+        lock.close()
+        R.write_state({})
+
+
+def test_tell_running(repo: Path):
+    print('F16: plan change on a running task types the change into its pane and does not stop it; plan tell')
+    R.init(repo)
+    git(repo, 'checkout', '-q', 'main')
+    todo = repo / 'plan/TODO.md'
+    todo.write_text(todo.read_text().replace('### Stretch', '- [ ] **G1** the told | files: tl1.py\n\n### Stretch'))
+    git(repo, 'commit', '-qam', 'plan: G1')
+    git(repo, 'push', '-q', 'origin', 'main')
+    lock = R.plat.lock(R.C.notes('run.lock'))  # this test stands in for the run that is up
+    sess = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(120)'])
+    calls: list[tuple] = []
+    real = (R.tmux, R.MUX)
+
+    def fake_tmux(*a, **kw):
+        calls.append((a, kw.get('input')))
+        return subprocess.CompletedProcess(['tmux', *a], 0, '', '')
+
+    class Mux(R.TmuxMux):
+        live = True
+
+        def panes(self):
+            return {'s1': ('%9', sess.pid)} if self.live else {}
+
+    def plan_cmd(*a: str) -> subprocess.Popen:
+        return subprocess.Popen([sys.executable, str(RUN), 'plan', *a], cwd=str(repo), env={**os.environ},
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+
+    def asked(d: Path, tid: str) -> bool:
+        end = time.time() + 30
+        while time.time() < end and not (d / f'{tid}.json').exists():
+            time.sleep(0.1)
+        return (d / f'{tid}.json').exists()
+
+    tells, halts = R.P.tell_dir(R.C), R.P.halt_dir(R.C)
+    try:
+        R.tmux, R.MUX = fake_tmux, Mux()
+        procs, running = {1: (sess.pid, 'sid-g1', 0)}, {1: ('G1', 'Later', {'tl1.py'}, set())}
+        R.write_state(running)
+
+        # --- change on a running task: told, not halted ---
+        p = plan_cmd('change', 'G1', 'publish anyway, B171 is fine')
+        check(asked(tells, 'G1'), 'plan change leaves a tell request for the run')
+        check(not (halts / 'G1.json').exists(), 'and no halt request')
+        R.tells(procs, running)
+        out, err = p.communicate(timeout=60)
+        check(p.returncode == 0, 'plan change goes through', err)
+        has(out, r'^G1 has your change noted$', 'the plan line is edited as before')
+        has(out, r'^told s1 \(G1\)$', 'and it says the agent has the message')
+        eq([c[0][0] for c in calls], ['load-buffer', 'paste-buffer', 'send-keys'], 'paste, then Enter')
+        eq(calls[0][1], 'Your task changed: publish anyway, B171 is fine', 'the agent reads the change')
+        check('%9' in calls[1][0] and calls[2][0][-2:] == ('%9', 'Enter'), 'into s1\'s pane', calls)
+        eq(running.get(1, ('',))[0], 'G1', 'the slot still runs it')
+        check(sess.poll() is None, 'its session is not ended')
+        check(not (halts / 'G1.json').exists(), 'nothing asked the run to halt it')
+        has(todo.read_text(encoding='utf-8'), r'do this instead: publish anyway', 'the change is noted in the plan')
+
+        # --- tell: no plan edit ---
+        calls.clear()
+        before = todo.read_text(encoding='utf-8')
+        p = plan_cmd('tell', 'G1', 'look at the gate log first')
+        check(asked(tells, 'G1'), 'plan tell leaves a request')
+        R.tells(procs, running)
+        out, err = p.communicate(timeout=60)
+        check(p.returncode == 0, 'plan tell goes through', err)
+        eq(out.strip(), 'told s1 (G1)', 'it prints told')
+        has(calls[0][1] if calls else '', r'look at the gate log first$', 'the agent reads the note')
+        eq(todo.read_text(encoding='utf-8'), before, 'the plan is not edited')
+
+        # --- tell on a task no slot runs: an error, no request ---
+        r = run(repo, 'plan', 'tell', 'G9', 'hello')
+        check(r.returncode != 0, 'tell on a task that is not running fails')
+        has(r.stderr, r'G9 is not running', 'and says so')
+        eq(R.tell_requests(), {}, 'no request left for the run')
+
+        # --- --restart keeps the B19 halt ---
+        p = plan_cmd('change', 'G1', '--restart', 'start over with a table')
+        check(asked(halts, 'G1'), '--restart asks the run to halt it')
+        check(not (tells / 'G1.json').exists(), 'and tells it nothing')
+        R.halt_answer('G1', 'changed G1; stopped s1')
+        out, err = p.communicate(timeout=60)
+        has(out, r'^changed G1; stopped s1$', 'it prints what the run did')
+        check('--restart' not in todo.read_text(encoding='utf-8'), 'the flag is not noted as text')
+
+        # --- no live pane: falls back to the halt, and says so ---
+        R.MUX.live = False
+        p = plan_cmd('change', 'G1', 'use a list')
+        check(asked(tells, 'G1'), 'plan change asks the run to tell it first')
+        R.tells(procs, running)
+        check(asked(halts, 'G1'), 'no pane: then it asks the run to halt it')
+        R.halt_answer('G1', 'changed G1; stopped s1')
+        out, err = p.communicate(timeout=60)
+        has(out, r'^no live pane for s1 \(G1\): its session has ended; stopping it and starting it again',
+            'it says why it falls back')
+        has(out, r'^changed G1; stopped s1$', 'and what the run did')
+    finally:
+        R.tmux, R.MUX = real
+        sess.kill()
+        sess.wait()
         lock.close()
         R.write_state({})
 
@@ -4122,7 +4224,7 @@ def main() -> int:
                        lambda: test_remote_sweep(repo, tmp), lambda: test_feed_resume(repo, tmp),
                        lambda: test_concepts_waiting(repo),
                        lambda: test_person_waiting(repo), lambda: test_control_server_old_agent(repo, tmp),
-                       lambda: test_drop_or_change_running(repo)])
+                       lambda: test_drop_or_change_running(repo), lambda: test_tell_running(repo)])
 
 
 if __name__ == '__main__':

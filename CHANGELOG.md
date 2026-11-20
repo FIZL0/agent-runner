@@ -4,6 +4,15 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Changes reach a running agent instead of restarting it. `plan change ID TEXT` on a task a slot is running
+  notes the change as before, then types `Your task changed: TEXT` into the slot's tmux pane (Claude Code
+  queues it for its next turn) and leaves the agent working, instead of ending its session, throwing its
+  work away and starting over. `plan change ID --restart TEXT` keeps the old stop-and-restart, and so does a
+  slot with no live pane (Windows terminals, a session that ended), which the command says. New
+  `plan tell ID TEXT` sends a note to the running agent without editing the plan, and fails when no slot
+  runs ID. Both go through the run (`<notes>/tell/<ID>.json`) and print e.g. `told s1 (F297)`. The control
+  brief maps "tell it…" and small corrections of a running task to them.
+
 - Pictures sent to the runner feed reach the control session it opens: `control --new --ask` picks up the
   images attached to the person's latest message in the feed (the saved paths Claude Code records in the
   feed's transcript) and passes them on as `--image`. The feed no longer has to do it, which a feed started

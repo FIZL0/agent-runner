@@ -270,6 +270,15 @@ waiting for your OK on <url>`. That block names no task, so no run starts it and
   `plan note` that task instead, or `--force` for different work. A task's own split (`plan add P13 …`)
   is never refused for looking like P13. `plan drop ID WHY` closes a task nobody will do (a duplicate,
   overtaken): archived with `dropped: WHY`, so its id stays used and what waits on it reopens.
+- Reaching a running agent: `plan tell ID TEXT` types `A note on your task, from the person running this
+  run: TEXT` into the tmux pane of the slot running ID (Claude Code queues it for its next turn while busy)
+  and edits no plan; it fails when no slot of a run here runs ID. `plan change ID TEXT` on a running task
+  notes the change in the plan as usual, then types `Your task changed: TEXT` into the pane, and the agent
+  works on. Both print `told s1 (ID)` once the text is in. They go through the run like a halt: a request in
+  `<notes>/tell/<ID>.json`, answered in `<notes>/tell/<ID>.done`. With no live pane (Windows terminals, a
+  session that ended, a cut-off one waiting to resume, a finished branch merging), `change` says so and
+  falls back to stopping the slot and starting the task again from the new text, which
+  `plan change ID --restart TEXT` asks for outright.
 - A note one side adds to a task the other side ticks is kept: the tick wins in TODO.md, and the runner
   appends the note to the task's line in DONE.md after the merge.
 - After the prose come keyed fields, each ` | key: a, b` (comma-separated), in any order; a ` — note` or

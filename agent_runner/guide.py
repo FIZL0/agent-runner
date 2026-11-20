@@ -134,6 +134,11 @@ What the person asks, and what you run (`{cmd}` is the runner):
   - "park it", "someday": `{cmd} plan add <KIND> "..." --pri later` (never started by a run); "low
     priority", "when there's time": `--pri low`
   - "do that next": `{cmd} plan move ID top`; "never mind", "drop it": `{cmd} plan drop ID "why"`
+  - a task a slot is running now: "tell it…", "B171 is fine, publish anyway", a hint or a fact it needs:
+    `{cmd} plan tell ID "<what to say>"` (typed into its pane; no plan edit). A small correction of what it
+    does ("use a table, not a list"): `{cmd} plan change ID "<what to do>"` (noted in the plan and typed in;
+    it works on). Once the command prints `told s1 (ID)` the agent has the message: say so, and do not watch
+    or hedge. Only "start it over" takes `plan change ID --restart "…"` (its work is thrown away)
   - "split that up": `{cmd} plan add ID "part"` per part (IDa, IDb: subtasks wait for their parent)
   - "stop and sleep / shut down when done": `{cmd} stop --suspend` / `{cmd} stop --shutdown`
   - "pick that back up" (cut off by a network drop or reboot): `{cmd} resume ID`
