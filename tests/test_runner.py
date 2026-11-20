@@ -1866,6 +1866,30 @@ def test_short_titles_and_since(repo: Path):
             check(f'{R.C.command} plan confirm ID "<their words>"' in sp_ and f'{R.C.command} plan shelve ID' in sp_
                   and '"Needs you"' in sp_ and 'plan answer' not in sp_ and 'ask which one they mean' in sp_,
                   'C5: the feed maps a reply under Needs you to its id, and asks when it cannot tell', sp_)
+        # B71: a project's [run] command may wrap only part of the runner (openmx's ./kit: run/stop/plan/done)
+        with mock.patch.object(R, 'remote_on', lambda: True), \
+                mock.patch.dict(R.C.run, {'agent': 'claude', 'command': './kit'}):
+            eq(R.C.command, './kit', 'B71: the test sets a wrapper command')
+            fa = R.feed_argv()
+            opt = lambda k: fa[fa.index(k) + 1]
+            check(f'`{R.RUNNER} since --follow --keep-mark`' in fa[1] and './kit' not in fa[1],
+                  'B71: the feed Monitors the runner itself, not [run] command', fa[1])
+            check(f'`{R.RUNNER} control --new --forward`' in opt('--system-prompt')
+                  and f'{R.RUNNER} plan confirm ID' in opt('--system-prompt') and './kit' not in opt('--system-prompt'),
+                  'B71: the feed system prompt names the runner', opt('--system-prompt'))
+            eq(opt('--allowedTools'), f'Bash({R.RUNNER} *)', 'B71: the feed may run the runner, not ./kit')
+            brief = R.control_brief()
+            check(f'`{R.RUNNER} status`' in brief and f'{R.RUNNER} plan confirm' in brief and './kit' not in brief,
+                  'B71: the control brief names the runner', brief[:200])
+            with mock.patch.object(R, 'feed_on', lambda: False):
+                opening = R.control_argv(1, 'sid', False)[1]
+                check(f'`{R.RUNNER} status`' in opening and f'{R.RUNNER} since --follow --needs-you' in opening
+                      and './kit' not in opening, 'B71: the control opening names the runner', opening)
+                check('./kit' not in R.control_brief(), 'B71: and so does its needs-you watch')
+            skills = R.control_skills_dir() / '.claude' / 'skills'
+            check(f'{R.RUNNER} control --new' in (skills / 'control' / 'SKILL.md').read_text(encoding='utf-8')
+                  and './kit' not in (skills / 'since' / 'SKILL.md').read_text(encoding='utf-8'),
+                  'B71: the /control and /since skills call the runner')
         started = []
         with mock.patch.object(R, 'MUX', R.TmuxMux()), mock.patch.dict(os.environ, {'TMUX_PANE': '%1'}), \
                 mock.patch.object(R, 'tmux', lambda *a, **k: subprocess.CompletedProcess(a, 0, 'mine\n', '')), \
