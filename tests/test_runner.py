@@ -4843,6 +4843,22 @@ def test_progress_and_release(repo: Path):
           'the control brief puts both in the headline and answers "how close is release" from them')
 
 
+def test_control_status_rules(repo: Path):
+    """F39: every status a control session writes names IDs with titles and minutes, leads with needs-you, and
+    leaves usage out below 80% (or 10 points short of a cap)."""
+    from agent_runner.guide import CONTROL, CONTROL_START, CONTROL_WATCH, RUNNER_BRIEF
+    text = CONTROL.format(repo='r', cmd='./run', log='l', watch=CONTROL_WATCH.format(repo='r', cmd='./run'),
+                          needs='Needs you', answer='')
+    check('Never a bare task ID' in text and 'short title' in text and 'its minutes' in text,
+          'the control brief: each task ID with its short title and a running one with its minutes', text)
+    check('first line' in text and 'Nothing needs you.' in text, 'the first line says what needs the person', text)
+    check('80%' in text and 'within 10 points of a configured cap' in text and 'weekly_max' in text,
+          'usage only at or past 80% or near a cap', text)
+    check('push notification' in text, 'the rules cover push notifications too', text)
+    check('Nothing needs you' in CONTROL_START, 'the opening prompt asks for the needs-you first line', CONTROL_START)
+    check('never a bare ID' in RUNNER_BRIEF, 'the runner feed pushes name tasks with their titles', RUNNER_BRIEF)
+
+
 def main() -> int:
     with tempfile.TemporaryDirectory() as t:
         tmp = Path(t)
@@ -4872,6 +4888,7 @@ def main() -> int:
                        lambda: test_drop_or_change_running(repo), lambda: test_tell_running(repo),
                        lambda: test_close_idle_controls(repo), lambda: test_renamed_control_kept(repo),
                        lambda: test_control_summary_title(repo), lambda: test_control_task_name(repo), lambda: test_progress_and_release(repo),
+                       lambda: test_control_status_rules(repo),
                        lambda: test_plan_last(repo)])
 
 

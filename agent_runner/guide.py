@@ -103,20 +103,27 @@ deploy via tags`): it names the session for that in the apps, in place of the as
 last-look mark, and the person has not seen those updates yet; `since` is for when they ask), and
 call the Artifact tool's `open` action on the link of each concept page under "{needs}", so the
 page shows inline and not just as a link. Then write, compact enough for a phone:
-1. One headline line: `Lately: 11 landed, 1 stuck, 1 needs you. Run up, idle, 3 slots.` (or
-   `No run is up.`), counting only what there is, then status's `merged … · … tasks left` line in plain
+1. The first line says what needs the person: `Needs you: F12 Push on phone (check it arrived), 2h.` (all of
+   them, briefly), or `Nothing needs you.` when "{needs}" is empty. Then one headline line: `Lately: 11
+   landed, 1 stuck. Run up, idle, 3 slots.` (or `No run is up.`), counting only what there is, then status's `merged … · … tasks left` line in plain
    words: `11 merged in the last 24h, 23 tasks left (2 blocked).` and, when status has a `release:` line,
    `Release waits on 7 of 25 tasks.`
 2. Groups, each a heading on a line of its own with plain bullets under it, in this order: **{needs}** (each
    item as status words it: what is asked and what to reply, its age, then its link on a line of its own;
    oldest first as listed; never a CONCEPT/CONFIRM/DECIDE/BLOCKED label), **Running** (each
-   running task in a few everyday words), **Landed** (newest first, at most 5, then `…and 6 more`), **Stuck**
+   running task in a few everyday words and its minutes: `F314 Retry flaky uploads, 12 min`), **Landed** (newest first, at most 5, then `…and 6 more`), **Stuck**
    (what stopped it, in a few words). Leave an empty group out. Say the group word once, in its heading:
    never `Landed:` or `Stuck:` again on each bullet.
 3. Cover what status's `lately` shows, each event once. When anything was cut, or there is more before it,
    one line: `More: /since · /run -n 20`.
-Bullets are titles in everyday words, never ids or full lines: the `[F5]` at the end of each line is for you,
-to act on a task or when the person asks which one. End the opening (only the opening) with one line of hints:
+Bullets are titles in everyday words, never full lines: the `[F5]` at the end of each line is for you,
+to act on a task or when the person asks which one.
+**Every status you write** (the opening, a later status or update, a needs-you bullet, a push notification)
+keeps three rules. Never a bare task ID: each ID you name carries its short title as `{cmd} status` prints
+it, and a running one its minutes (`B192 Fix merge retry, 14 min`, not `Running: B192, F314`). The first line
+says what needs the person, or `Nothing needs you.` Usage only when it matters: name session or week usage
+only at or past 80%, or within 10 points of a configured cap (`weekly_max`, `session_max`); `Week usage
+32%` is noise, leave it out. End the opening (only the opening) with one line of hints:
 `/run · /since · /follow · /control · /pause · /stop · /slots · or just describe a bug or idea to queue it`
 
 {watch}
@@ -272,7 +279,8 @@ and output nothing at all (no "expired", no "re-armed", no task id, no "nothing 
 for a line it printed or a command the person gave.
 - You are the only one watching for what needs the person: for each line that says "needs you", "looks \
 stuck", "run held" or "waits for you", first send it with the PushNotification tool (no text before it) as one \
-plain sentence: what is held and the one thing to do, with the link when there is one; then post the line, once.
+plain sentence: what is held and the one thing to do, any task ID with its short title (never a bare ID), \
+with the link when there is one; then post the line, once.
 - Commands the person may give you, run as said and answer with their output, shortened to what matters: \
 status (`{cmd} status`), pause (`{cmd} pause`), stop (`{cmd} stop`), force (`{cmd} force`), slots N \
 (`{cmd} slots N`), what happened (`{cmd} since`), and a new control session or window (`{cmd} control --new`: \
@@ -308,8 +316,8 @@ opening, or before answering the first message of a blank one), starts the Monit
 mid-merge in the main checkout, staged changes, a usage cap), a task is left for a human, looks stalled, or
 waits on the person's answer (CONFIRM/DECIDE/BLOCKED, a concept page waiting for an OK). Nobody watches the
 runner's pane any more, so this is how they hear it. On each line, post one plain bullet: what is held and the
-one thing to do (`Commit or move the uncommitted edits in {repo}: they hold a tested merge`, `F5 asks you to
-check the push arrived on your phone`, with the link when there is one), and send that bullet with the
+one thing to do (`Commit or move the uncommitted edits in {repo}: they hold a tested merge`, `F5 Push on phone asks
+you to check the push arrived`: an ID always with its title), with the link when there is one), and send that bullet with the
 PushNotification tool so a phone hears it. Start it with timeout_ms 1800000 (the cap). When it times out with
 no lines, re-arm it silently: start it again with no text at all (no "still watching", no "nothing needs
 you"); speak only for a line it printed. Do not start it twice; it never moves the last-look mark."""
@@ -319,7 +327,7 @@ CONTROL_FEED_WATCH = """\
 and pushes what needs the person to their phone, so start no needs-you watch of your own."""
 
 CONTROL_START = ("Open with the summary your control brief describes (`{cmd} status` only, not since: open each "
-                 "waiting concept page, a headline, the groups under their headings, then the hints line), "
+                 "waiting concept page, a first line saying what needs me or 'Nothing needs you', a headline, the groups under their headings, then the hints line), "
                  "{watch_start}and wait for me.")
 CONTROL_START_WATCH = ("start the needs-you watch your brief describes (the Monitor tool on "
                        "`{cmd} since --follow --needs-you`, timeout_ms 1800000, re-armed silently when it times "
