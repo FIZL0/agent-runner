@@ -7,6 +7,10 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 - Control sessions queue "do X after T181" with `plan add … --after T181` (or `plan block ID --after T181`
   for a queued task) instead of starting a watcher or Monitor that waits for T181: the run starts the task
   once those merge.
+- The control brief maps more everyday requests to their commands: "park it" / "low priority" (`plan add
+  --pri later|low`), "do that next" (`plan move ID top`), "never mind" (`plan drop`), "split that up" (`plan add
+  ID`), "sleep or shut down when done" (`stop --suspend|--shutdown`), "pick that back up" (`resume ID`), tasks
+  held by a crashed run (`plan claims`, `plan unclaim ID`) and "where are the tokens going" (`cost`).
 - The runner feed ("<repo> · runner") carries on across restarts that are not a stop. An upgrade's restart
   (auto_upgrade, `u`) execs in place, so the board window and its feed stay up as they were. When the feed does
   have to start again (its board window was replaced or closed, the feed exited, a crashed run was started

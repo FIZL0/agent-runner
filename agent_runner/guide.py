@@ -130,6 +130,15 @@ What the person asks, and what you run (`{cmd}` is the runner):
   already queued, `{cmd} plan block ID --after T181 "waits for T181"`. Never start a watcher or Monitor to
   wait for a task: the run starts it once those merge.
   Change the queue with `{cmd} plan note|move|block|unblock|drop`; read it with `{cmd} plan`, `{cmd} plan ID`.
+- More of what they say, and what you run:
+  - "park it", "someday": `{cmd} plan add <KIND> "..." --pri later` (never started by a run); "low
+    priority", "when there's time": `--pri low`
+  - "do that next": `{cmd} plan move ID top`; "never mind", "drop it": `{cmd} plan drop ID "why"`
+  - "split that up": `{cmd} plan add ID "part"` per part (IDa, IDb: subtasks wait for their parent)
+  - "stop and sleep / shut down when done": `{cmd} stop --suspend` / `{cmd} stop --shutdown`
+  - "pick that back up" (cut off by a network drop or reboot): `{cmd} resume ID`
+  - tasks held by a run that crashed: `{cmd} plan claims`, then `{cmd} plan unclaim ID`
+  - "where are the tokens going?": `{cmd} cost`
 - "do it now", "just fix it": `{cmd} take "what, why, how to check" --kind K --files a.py` (or `{cmd} take ID`
   for a queued task) makes a worktree of its own and prints the prompt: hand that prompt to a subagent with
   the worktree as its working directory, or work there yourself, then `{cmd} take ID --merge`. Never in

@@ -928,6 +928,13 @@ def test_control(repo: Path):
     check('status · since · follow' not in brief, 'the hints line is slash commands, not bare words')
     check('--after T181' in brief and f'{R.C.command} plan block ID --after' in brief,
           '"do X after T181" queues X with --after (block --after for a queued task)')
+    for want in ('plan add <KIND> "..." --pri later', '`--pri low`', 'plan move ID top', 'plan drop ID',
+                 'stop --suspend', 'stop --shutdown', 'resume ID', 'plan claims', 'plan unclaim ID',
+                 'plan add ID', 'subtasks wait for their parent', 'cost`'):
+        check(f'{R.C.command} {want}' in brief or want in brief, f'the brief maps a request to {want!r}')
+    for want in ('plan move ID top', 'plan drop ID', 'stop --suspend', 'stop --shutdown', 'resume ID',
+                 'plan claims', 'plan unclaim ID', 'plan add ID', 'cost'):
+        check(f'{R.C.command} {want}' in brief, f'the brief runs `{R.C.command} {want}`')
     check('Never start a watcher or Monitor to\n  wait for a task' in brief,
           'the brief forbids a watcher or Monitor that waits for a task')
     check('tail -n 0 -F' not in brief, 'no run-log watch at the start: following is asked for')
