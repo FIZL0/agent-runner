@@ -1052,6 +1052,61 @@ def test_hand_hook(tmp: Path):
         check(ex.count(rel) == 1, 'added once', ex)
 
 
+def test_user_hook(tmp: Path):
+    print('B79: a user-level SessionStart hook gives the control brief in a runner repo no run has started in')
+    from agent_runner import config as CF
+    home = tmp / 'uh-claude'
+    home.mkdir()
+    f = home / 'settings.json'
+    f.write_text(json.dumps({'model': 'x', 'hooks': {'SessionStart': [{'hooks': [{'type': 'command',
+                                                                                    'command': 'mine'}]}]}}))
+    with mock.patch.dict(os.environ, {'CLAUDE_CONFIG_DIR': str(home)}), \
+            mock.patch.object(CF, 'HERE', tmp / 'uh-installed' / 'agent_runner'):
+        has(CF.install_user_hook(), r'settings\.json', 'merged into the user settings')
+        eq(CF.install_user_hook(), '', 'once')
+        data = json.loads(f.read_text())
+        cmds = [h['command'] for e in data['hooks']['SessionStart'] for h in e['hooks']]
+        check(data['model'] == 'x' and cmds[0] == 'mine' and len(cmds) == 2 and CF.USER_HOOK in cmds[1],
+              "the person's own settings and hooks stay, ours is added", cmds)
+        bad = home / 'settings.json'
+        bad.write_text('{not json')
+        eq(CF.install_user_hook(), '', 'a settings file that is not JSON is left alone')
+        eq(bad.read_text(), '{not json', 'untouched')
+    with mock.patch.dict(os.environ, {'CLAUDE_CONFIG_DIR': str(home)}), \
+            mock.patch.object(CF, 'HERE', tmp / 'uh-wt' / 'agent_runner'):
+        (tmp / 'uh-wt').mkdir()
+        (tmp / 'uh-wt' / '.git').write_text('gitdir: x\n')
+        f.unlink()
+        eq(CF.install_user_hook(), '', 'never from a clone that is a worktree (a slot of the runner itself)')
+    repo = tmp / 'uh-repo'
+    repo.mkdir()
+    R.git('init', '-q', cwd=repo)
+    (repo / 'runner.toml').write_text('[run]\nslots = 1\n')
+    R.git('add', '-A', cwd=repo)
+    R.git('commit', '-q', '-m', 'init', cwd=repo)
+    wt = tmp / 'uh-slot'
+    R.git('worktree', 'add', '-q', str(wt), cwd=repo)
+    plain = tmp / 'uh-plain'
+    plain.mkdir()
+    R.git('init', '-q', cwd=plain)
+    env = {k: v for k, v in os.environ.items() if k not in CF.SESSION_ENVS}
+    (repo / 'sub').mkdir()
+    for where, want in ((repo, True), (repo / 'sub', True), (wt, False), (plain, False), (tmp, False)):
+        r = subprocess.run(CF.user_hook_command(), shell=True, cwd=where, env=env, capture_output=True, text=True,
+                   timeout=60)
+        eq((r.returncode, bool(r.stdout.strip()), r.stderr), (0, want, ''),
+           f'{where.name}: ' + ('the brief' if want else 'nothing, exit 0, no stderr'))
+        if want:
+            has(r.stdout, 'control session', 'it is the control brief')
+    r = subprocess.run(CF.user_hook_command(), shell=True, cwd=repo, env={**env, R.RUNNER_STARTED_ENV: '1'},
+               capture_output=True, text=True, timeout=60)
+    eq(r.stdout, '', 'nothing in a control session the runner started (its brief comes through --settings)')
+    eq(CF.user_hook_root(repo, {'AGENT_RUNNER_SLOT': '2'}), None, "nothing in a slot's session")
+    (repo / '.claude').mkdir()
+    (repo / '.claude' / 'settings.local.json').write_text('{"x": "control --brief --hand"}')
+    eq(CF.user_hook_root(repo, {}), None, "nothing where the repo's own hook (F53) prints it: never twice")
+
+
 def test_control(repo: Path):
     with mock.patch.dict(os.environ, {'CLAUDE_CODE_CHILD_SESSION': '1', 'CLAUDECODE': '1', 'CLAUDE_CONFIG_DIR': '/c',
                                       'TMUX': '/tmp/t,1,0'}):
@@ -5500,7 +5555,7 @@ def main() -> int:
                        lambda: test_no_pane(repo, tmp), lambda: test_other_repos_panes(repo, tmp),
                        lambda: test_limit_resumes(repo, tmp),
                        lambda: test_shared_push(repo, tmp), lambda: test_note_on_a_ticked_task(repo), lambda: test_adopt_merge(repo), lambda: test_followups(repo), lambda: test_person_check_after(repo), lambda: test_ci_watch(repo), test_update_notice, test_restart_if_upgraded, test_auto_upgrade, lambda: test_flake_repair(tmp), lambda: test_repair_per_failure(repo),
-                       lambda: test_stalled(tmp), lambda: test_take(repo), lambda: test_take_text_and_here(repo), lambda: test_background(repo), lambda: test_attach_flag(repo), lambda: test_bare_outside_git(tmp), lambda: test_hand_hook(tmp),lambda: test_remote_auto(tmp), lambda: test_control(repo),
+                       lambda: test_stalled(tmp), lambda: test_take(repo), lambda: test_take_text_and_here(repo), lambda: test_background(repo), lambda: test_attach_flag(repo), lambda: test_bare_outside_git(tmp), lambda: test_hand_hook(tmp), lambda: test_user_hook(tmp), lambda: test_remote_auto(tmp), lambda: test_control(repo),
                        lambda: test_short_titles_and_since(repo), lambda: test_board_follows_run(repo, tmp),
                        lambda: test_remote_sweep(repo, tmp), lambda: test_feed_resume(repo, tmp),
                        lambda: test_concepts_waiting(repo),

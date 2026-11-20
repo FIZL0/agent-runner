@@ -103,6 +103,40 @@ def skill() -> None:
         print(said, file=sys.stderr)
 
 
+def user_hook() -> None:
+    """B79: keep the user-level SessionStart hook (the control brief in a runner repo's main checkout) in
+    Claude Code's user settings, from every command a person runs, as the skill. Off with
+    `[run] install_skill = false` too."""
+    try:
+        from agent_runner.config import cfg, install_user_hook
+        try:
+            if not cfg().run['install_skill']:
+                return
+        except (Exception, SystemExit):
+            pass
+        if said := install_user_hook():
+            print(said, file=sys.stderr)
+    except Exception:
+        pass
+
+
+def user_brief() -> int:
+    """B79: the user-level hook's command. The control brief when the session's directory is a runner repo's
+    main checkout, else nothing; never an error (it runs in every session on the machine)."""
+    try:
+        from agent_runner.config import user_hook_root
+        if (root := user_hook_root()) is None:
+            return 0
+        from agent_runner import runner
+        text = runner.user_brief(root)
+        if text:
+            sys.stdout.write(text)
+            sys.stdout.flush()
+    except BaseException:  # noqa: B036 (SystemExit from git or a bad runner.toml too): the session starts plain
+        pass
+    return 0
+
+
 def adopt_folder() -> bool:
     """A runner project with no git yet (a downloaded copy of examples/hello): make it a repo with one commit,
     so the bare command can start the run. Only a folder that holds runner.toml or plan/TODO.md."""
@@ -123,8 +157,11 @@ def adopt_folder() -> bool:
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     cmd, rest = (argv[0], argv[1:]) if argv else ('', [])
+    if argv == ['control', '--brief', '--user']:  # B79: the user-level hook, in every session on the machine
+        return user_brief()
     if cmd != 'merge-plan' and not os.environ.get('AGENT_RUNNER_SLOT'):  # not git's driver, not a slot's agent
         skill()
+        user_hook()
     if cmd in ('--version', '-V', 'version'):
         from agent_runner import __version__
         print(f'agent-runner {__version__}')

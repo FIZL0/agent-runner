@@ -4,6 +4,13 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- A session opened by hand in a runner repo where no run has started yet (a fresh repo in the desktop app)
+  gets the control brief too: any agent-runner command adds, once, a SessionStart hook
+  (`control --brief --user`) to Claude Code's user settings (`~/.claude/settings.json`). It prints the brief
+  only in the main checkout of a repo with `runner.toml`, `plan/TODO.md` or `.runner`, and nothing in a slot
+  worktree, a control session the runner started, a repo whose own F53 hook prints it, or anywhere else;
+  it is quick and silent on any error. `[run] install_skill = false` turns it off with the skill (B79).
+
 - `[run] control_idle` defaults to 3h (was 1h): idle control sessions 2, 3, … close after 3 hours quiet;
   `control_ask_idle` stays 2h (T11).
 
