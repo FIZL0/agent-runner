@@ -1328,7 +1328,7 @@ def test_person_waiting(repo: Path):
         check(r.returncode == 0, 'done --blocked with a CONFIRM label goes through', r.stdout + r.stderr)
         P.block('F2', 'DECIDE: Postgres or SQLite? F4 does not care', todo=todo)
         P.block('F3', 'BLOCKED: needs a deploy key on the server', todo=todo)
-        P.block('F4', 'needs F9 first', todo=todo)
+        P.block('F4', 'needs F2 first', todo=todo)  # B35: a block on no open task would be an ask too
         check('(after' not in todo.read_text(encoding='utf-8').split('**F2**')[1].split('\n')[0],
               'a block on a person waits on no task, even one its words name')
         a = sorted(P.asks(todo), key=lambda x: x[1])

@@ -474,6 +474,8 @@ def block(tid: str, why: str, todo=None, after=None) -> None:
         live = open_ids(ls)
         after = [t for t in dict.fromkeys(TASK_ID.findall(why))
                  if t in live and t != tid and not t.startswith(tid)]
+    if not after and not ASKED.search(why):  # B35: it waits on no task, so it lists under Needs you, with an age
+        why = f'{why} (asked {__import__("datetime").datetime.now().strftime("%Y-%m-%d %H:%M")})'
     _mark(ls, i, '~')
     end = i + len(_item_block(ls, i)) - 1
     ls[end] += ' BLOCKED: ' + (f'(after {", ".join(after)}) ' if after else '') + why
@@ -1072,10 +1074,37 @@ def asking(why: str) -> bool:
     return bool(re.match(r'(' + '|'.join(ASK_LABELS) + r'): ', why.strip()))
 
 
+# B35: a block with no caps label that waits on no open task (`done --blocked 'tests flake, unclear why'`) is
+# freed by nothing: `reopen` has no `(after …)` to wait out. It lists under Needs you too, as label STUCK, in
+# plain words: what it says, reply with what to do (`change` reopens it with that noted, `confirm` reopens it).
+# A task waiting `(after X)` on such an X stays off the list: X is on it, and answering X frees both.
+STUCK = 'STUCK'
+
+
+def _stuck_why(tail: str) -> tuple[str, str, bool] | None:
+    """(what it says, its link or '', shelved) when `tail` (a task's last line, from its last ` BLOCKED: `) is a
+    block with no caps label and no concept page that waits on no task, else None."""
+    t = tail.strip()
+    if not t.startswith('BLOCKED: ') or ASKING.match(t) or WAIT_ANY.match(t):
+        return None
+    why = t[len('BLOCKED: '):]
+    shelved = why.startswith(SHELVED)
+    why = why[len(SHELVED):] if shelved else why
+    if (w := re.match(r'\(after ([^)]*)\)\s*', why)):
+        if any(x.strip() for x in w.group(1).split(',')):
+            return None  # it waits on tasks: `reopen` frees it once they are done
+        why = why[w.end():]
+    what = ASKED.sub('', why.split(' — ')[0]).strip()
+    u = URL.search(what)
+    if u:
+        what = ' '.join((what[:u.start()] + what[u.end():]).split()).rstrip(' :,;')
+    return what or 'it says nothing more', u.group(0) if u else '', shelved
+
+
 def asks(todo=None, all: bool = False) -> list[tuple[str, str, str, str, str, str, bool]]:
     """Everything waiting on a person, in TODO.md order: (label, task id, its concept id or '', what to do, link
-    or '', the task's title, shelved). Label CONCEPT is a build task waiting on a concept page (`waiting`).
-    Shelved ones only with `all`."""
+    or '', the task's title, shelved). Label CONCEPT is a build task waiting on a concept page (`waiting`);
+    label STUCK a block with no caps label that waits on no task (B35). Shelved ones only with `all`."""
     todo, _ = ensure(todo)
     ls, out = lines(todo), []
     for i, l in enumerate(ls):
@@ -1096,6 +1125,8 @@ def asks(todo=None, all: bool = False) -> list[tuple[str, str, str, str, str, st
             if u:
                 what = ' '.join((what[:u.start()] + what[u.end():]).split()).rstrip(' :,;')
             item = (a.group(2), tid, '', what, u.group(0) if u else '', title_of(l), bool(a.group(1)))
+        elif s := _stuck_why(tail):
+            item = (STUCK, tid, '', s[0], s[1], title_of(l), s[2])
         else:
             continue
         if all or not item[6]:
@@ -1122,6 +1153,9 @@ def confirm(tid: str, said: str = '', todo=None, done=None) -> str:
         unblock(t, f'confirmed by you ({what}): {said or "it worked"}', todo=todo)
         tick(t, todo=todo, done=done)
         return f'confirmed and ticked {t}'
+    if label == STUCK:  # B35
+        unblock(t, f'you said, on stuck ({what}): {said or "try again"}', todo=todo)
+        return f'{t} is open again with your answer noted, and a run starts it'
     unblock(t, f'your answer ({label} {what}): {said or "done"}', todo=todo)
     return f'{t} is open again with your answer noted, and a run starts it'
 
@@ -1139,7 +1173,7 @@ def change(tid: str, instead: str, todo=None, done=None) -> str:
         return f'{tid} has your change noted'
     if label == 'CONCEPT':
         return f'{revise(tid, instead, todo=todo, done=done)} is open again with your changes noted'
-    unblock(t, f'you said, on {label} {what}: do this instead: {instead}', todo=todo)
+    unblock(t, f'you said, on {"stuck" if label == STUCK else label} {what}: do this instead: {instead}', todo=todo)
     return f'{t} is open again with your change noted, and a run starts it'
 
 
@@ -1155,7 +1189,7 @@ def change(tid: str, instead: str, todo=None, done=None) -> str:
 
 ASKED = re.compile(r' ?\(asked (\d{4}-\d\d-\d\d \d\d:\d\d)\)')
 REPLY_HINT = {'CONCEPT': 'reply A/B/C', 'CONFIRM': 'reply yes/no', 'DECIDE': 'reply with your answer',
-              'BLOCKED': 'reply done once it is'}
+              'BLOCKED': 'reply done once it is', 'STUCK': 'reply with what to do'}
 
 
 def needs_cfg() -> dict:
@@ -1202,6 +1236,8 @@ def plain_ask(label: str, what: str, title: str) -> str:
         said = (what or title or 'Have a look').rstrip(' .')
         said = re.sub(r'[\s,;:]+(see|at|via|here)$', '', said)  # what led to a link that now has its own line
         said = said[:1].upper() + said[1:]
+        if label == STUCK:  # B35: it asks nothing itself, so say it is stuck
+            said = f'Stuck: {_lower_first(said)}'
     return f'{said} - {REPLY_HINT.get(label, "reply when you can")}'
 
 

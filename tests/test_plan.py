@@ -868,8 +868,39 @@ def test_restore():
         eq([l[4:] for l in plan.index(todo) if l.startswith('[ ] ')], ['F1', 'C1', 'B1'], 'and changes nothing')
 
 
+def test_unlabelled_block():
+    print('plan: B35 a block with no caps label and no task to wait on lists under Needs you, and the watch says so')
+    from agent_runner import runner as R
+    with tempfile.TemporaryDirectory() as tmp:
+        todo, done = plan.ensure(Path(tmp) / 'plan' / 'TODO.md', Path(tmp) / 'plan' / 'DONE.md')
+        for text in ('flaky tests | files: a.py', 'waits on F1 | files: b.py', 'stale wait | files: c.py'):
+            plan.add('F', text, todo=todo)
+        plan.block('F1', 'tests flake, unclear why — see https://x.invalid/log', todo=todo)
+        plan.block('F2', 'needs F1 first', todo=todo)
+        plan.block('F3', 'waits on Z9', todo=todo)  # names no open task: nothing would ever free it
+        eq(plan.reopen(todo=todo), [], 'reopen frees none of them')
+        a = {x[1]: x for x in plan.asks(todo)}
+        eq(sorted(a), ['F1', 'F3'], 'the two blocks waiting on no task are asks; F2 waits on F1, which is listed')
+        eq((a['F1'][0], a['F1'][3]), (plan.STUCK, 'tests flake, unclear why'), 'label STUCK, what it says')
+        check(set(plan.asked_at(todo)) >= {'F1', 'F3'}, 'and stamped, so Needs you shows its age', plan.asked_at(todo))
+        eq(plan.plain_ask(*[a['F1'][i] for i in (0, 3, 5)]), 'Stuck: tests flake, unclear why - reply with what to do',
+           'in plain words, no caps label')
+        now = __import__('datetime').datetime(2026, 11, 20, 15, 0)
+        line = '=== 2026-11-20T14:35:00 F1: merged, blocked'
+        nl = R.needs_you_line(line, {}, now, [(*x, '') for x in plan.asks(todo, all=True)])
+        eq(nl, '14:35  needs you: Stuck: tests flake, unclear why - reply with what to do [F1]',
+           'since --follow --needs-you prints a line for the unlabelled block')
+        plan.shelve('F3', todo=todo)
+        eq([x[1] for x in plan.asks(todo)], ['F1'], 'shelve takes it off')
+        eq([x[1] for x in plan.asks(todo, all=True) if x[6]], ['F3'], 'and waiting --all still has it')
+        has(plan.change('F1', 'mark the flaky test skip', todo=todo, done=done), 'F1 is open again',
+            'change reopens it')
+        has(Path(todo).read_text(encoding='utf-8'), r'- \[ \] \*\*F1\*\* .*do this instead: mark the flaky test skip$',
+            'with the person\'s words noted')
+
+
 if __name__ == '__main__':
-    sys.exit(report([test_restore, test_plan_last,test_goal,test_plan_roundtrip, test_plan_reopen, test_plan_index_and_sections, test_brief, test_brief_outline,
+    sys.exit(report([test_unlabelled_block, test_restore, test_plan_last,test_goal,test_plan_roundtrip, test_plan_reopen, test_plan_index_and_sections, test_brief, test_brief_outline,
                      test_split_parents, test_add_bottom, test_add_pri, test_add_subtask, test_kinds, test_need_files, test_add_stray_args, test_hand_edits_commit, test_similar, test_add_refuses_a_duplicate, test_carry_notes,
                      test_merge3, test_concurrent_add, test_merge_driver, test_concepts, test_needs_you,
                      test_needs_config]))
