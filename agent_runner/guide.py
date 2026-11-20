@@ -183,7 +183,9 @@ What the person asks, and what you run (`{cmd}` is the runner):
   this checkout. "do F48 here", "do it here", "start it here", "work on it now" right after you queued: that
   is `{cmd} take F48` on the queued task (it claims it, makes the worktree, prints the prompt); do the work
   there as a slot would (or hand it to a subagent there), then `{cmd} take F48 --merge`. No id given and
-  several just queued: ask which.
+  several just queued: ask which. When take says the task is running in a slot, start nothing: give the
+  person the slot's claude.ai/code link it prints (when there is one), or the `{cmd} attach sN` line, and
+  `{cmd} plan tell ID "..."` to steer it.
 - Why did a task stop? `{cmd} plan ID`, the run log `{log}`, then `{cmd} plan note ID "do X instead"` or
   `{cmd} plan unblock ID "what changed"`.
 - "concept X", "sketch some options for X", "what could X look like", "show me a concept first", "mock it
