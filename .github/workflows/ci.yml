@@ -13,8 +13,8 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
-    # Windows still fails test_runner (B77) and test_wizard (B75); its job reports them without
-    # failing the run until those land, then this line goes
+    # Windows still fails test_runner (B77); its job reports it without failing the run until
+    # that lands, then this line goes (test_wizard was B75)
     continue-on-error: ${{ matrix.os == 'windows-latest' }}
     timeout-minutes: 30
     steps:

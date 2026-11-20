@@ -6619,6 +6619,20 @@ def waiting_wizards() -> list[tuple[str, str]]:
     return out
 
 
+def bash_exe() -> str:
+    """B75: the bash to run wizards with. A bare 'bash' on Windows makes CreateProcess search System32 before PATH
+    and get the WSL launcher (C:\\Windows\\System32\\bash.exe), not Git Bash; resolve it on PATH instead, and
+    there skip a System32 bash when another is on PATH."""
+    found = shutil.which('bash')
+    if os.name == 'nt':
+        sysdir = os.path.normcase(os.path.join(os.environ.get('SystemRoot', r'C:\Windows'), 'System32'))
+        for d in os.environ.get('PATH', '').split(os.pathsep):
+            exe = shutil.which('bash', path=d) if d else None
+            if exe and os.path.normcase(os.path.dirname(os.path.abspath(exe))) != sysdir:
+                return exe
+    return found or 'bash'
+
+
 def cmd_wizard(argv: list[str], prog: str = f'{RUNNER} wizard') -> int:
     """`agent-runner wizard [ID]`: run the wizard an agent left for a BLOCKED item, then confirm the item."""
     ap = argparse.ArgumentParser(prog=prog, description='Walk through the hand steps a blocked task needs '
@@ -6656,14 +6670,15 @@ def cmd_wizard(argv: list[str], prog: str = f'{RUNNER} wizard') -> int:
     if not f.is_file():
         print(f'{prog}: {a.id} has no wizard ({f})', file=sys.stderr)
         return 1
-    chk = sp.run(['bash', '-n', str(f)], capture_output=True, text=True)
+    bash = bash_exe()
+    chk = sp.run([bash, '-n', str(f)], capture_output=True, text=True)
     if chk.returncode:
         print(f'{prog}: {f} does not parse, so it was not run:\n{chk.stderr.strip()}', file=sys.stderr)
         return 1
     if a.check:
         print(f'{f}: ok')
         return 0
-    r = sp.run(['bash', str(f)], cwd=str(C.root))
+    r = sp.run([bash, str(f)], cwd=str(C.root))
     if r.returncode:
         print(f'{prog}: the wizard stopped (exit {r.returncode}); {a.id} still needs you. '
               f'Run `{wizard_cmd(a.id)}` again to carry on.', file=sys.stderr)

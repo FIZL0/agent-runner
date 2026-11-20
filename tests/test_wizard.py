@@ -42,7 +42,8 @@ def test_template():
     t = R.WIZARD_TEMPLATE
     check(t.is_file(), 'agent_runner/wizard_template.sh is there', t)
     if shutil.which('bash'):
-        r = subprocess.run(['bash', '-n', str(t)], capture_output=True, text=True)
+        # B75: R.bash_exe(), not a bare 'bash' (on Windows that is System32's WSL launcher)
+        r = subprocess.run([R.bash_exe(), '-n', str(t)], capture_output=True, text=True)
         eq(r.returncode, 0, 'bash -n passes on it')
     text = t.read_text(encoding='utf-8')
     has(text, r'mattpocock/skills', 'with its source')
