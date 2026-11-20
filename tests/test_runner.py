@@ -4902,6 +4902,43 @@ def test_control_do_it_here(repo: Path):
           'the do-it-now bullet maps "do F48 here" to take ID, then take ID --merge, and asks which with several', text)
 
 
+def test_take_running_slot(repo: Path):
+    """F52: `take ID` on a task a slot runs names the slot, its claude.ai/code link and how to steer it."""
+    from agent_runner.guide import CONTROL, CONTROL_WATCH
+    R.init(repo)
+    add = run(repo, 'plan', 'add', 'T', 'a slot runs me', '--files', 'w52.py')
+    tid = re.search(r'\b(T\d+)\b', add.stdout + add.stderr)[1]
+    d = task_branch(repo, 5, tid)
+    try:
+        r = run(repo, 'take', tid)
+        eq(r.returncode, 1, 'take refuses a task a slot runs')
+        has(r.stderr, rf'{tid}: running in slot s5', f'and names the slot: {r.stderr}')
+        has(r.stderr, r'attach s5', 'with the attach line')
+        has(r.stderr, rf'plan tell {tid} ', 'and how to steer it')
+        check('claude.ai/code' not in r.stderr, 'no link while remote_slots is off', r.stderr)
+        check(not (R.SLOTS_DIR / f'take-{tid}').exists(), 'and starts nothing')
+        eq(R.running_slot(tid), 5, 'running_slot finds the slot worktree on task/<ID>')
+        rows = [{'type': 'user', 'message': {'content': 'hi'}}, {'type': 'bridge-session', 'bridgeSessionId': 'cse_abc'}]
+        with mock.patch.object(R, 'remote_slots_on', lambda: True), \
+                mock.patch.object(R.MUX, 'panes', lambda: {'s5': ('%1', 4242)}), \
+                mock.patch.object(R.MUX, 'session_id', lambda pid: 'sid-52' if pid == 4242 else None), \
+                mock.patch.object(R.plat, 'alive', lambda pid: True), \
+                mock.patch.object(R, 'entries', lambda sid, skip_bad=False: iter(rows if sid == 'sid-52' else [])):
+            msg = R.slot_running(tid)
+        has(msg, rf'running in slot s5', msg)
+        check(f'{R.REMOTE_URL}/session_abc' in msg, 'pane pid -> session -> bridge-session -> its link', msg)
+        with mock.patch.object(R, 'remote_slots_on', lambda: False):
+            eq(R.slot_link(5, tid), '', 'remote_slots off: no link')
+    finally:
+        git(d, 'checkout', '-q', '--detach')
+        git(repo, 'branch', '-D', f'task/{tid}')
+    text = CONTROL.format(repo='r', cmd='./run', log='l', watch=CONTROL_WATCH.format(repo='r', cmd='./run'),
+                          needs='Needs you', answer='')
+    check('When take says the task is running in a slot, start nothing' in text and '`./run attach sN`' in text
+          and '`./run plan tell ID "..."`' in text and 'claude.ai/code link' in text,
+          'the do-here bullet: a running slot means give the link or attach line, start nothing', text)
+
+
 def test_upgrade_cmd(repo: Path):
     """B49: `upgrade` runs the existing upgrade() (as `u` does), and the control brief names the command."""
     import contextlib
@@ -4952,7 +4989,7 @@ def main() -> int:
                        lambda: test_drop_or_change_running(repo), lambda: test_tell_running(repo),
                        lambda: test_close_idle_controls(repo), lambda: test_renamed_control_kept(repo),
                        lambda: test_control_summary_title(repo), lambda: test_control_task_name(repo), lambda: test_progress_and_release(repo),
-                       lambda: test_control_status_rules(repo), lambda: test_control_do_it_here(repo), lambda: test_upgrade_cmd(repo),
+                       lambda: test_control_status_rules(repo), lambda: test_control_do_it_here(repo), lambda: test_take_running_slot(repo), lambda: test_upgrade_cmd(repo),
                        lambda: test_plan_last(repo)])
 
 
