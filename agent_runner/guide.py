@@ -28,6 +28,27 @@ VERIFY = ('Verify before asking: before you turn a check into an F task for a pe
           '`## Tools` section of the repo\'s CLAUDE.md (its reach: ssh hosts, preview servers, headless checks). '
           'Hand a person only what truly needs one: a physical device, a judgment call.')
 
+# B28: sessions a person talks to recommend a runner.toml change when a complaint fits a real key. The keys named
+# here must all be in config.DEFAULTS (tests check it); `settings` prints the full, generated list.
+SETTINGS = """\
+**Settings (runner.toml).** `{cmd} settings` prints every key the runner takes, its default and what it
+does, generated from the runner's own defaults: read it rather than guess a key. runner.toml is shared and
+committed; runner.local.toml (git-ignored, laid over it key by key) holds this machine's own values. Most keys
+apply on the next run; `{cmd} slots N` changes the run that is up now. When what the person says fits a
+setting, recommend the one change in one line, `[table] key = value`: what it does, and ask. Only a key that
+`{cmd} settings` lists; when no key fits, say so and offer a task instead. For example:
+  - "too many control sessions", "close them faster": `[run] control_idle = "1h"` (idle ones close sooner;
+    `[run] control_close = false` keeps them open)
+  - "too many agents", "fewer sessions": `[run] slots = 2` (or `{cmd} slots 2` for the run that is up)
+  - "stop pushing to my phone": `[run] silent = true`; "not on my phone at all": `[run] remote = false`
+  - "stop before my usage runs out": `[run] weekly_max = 70` / `[run] session_max = 70`
+  - "skip the review on small fixes": `[run] review_min_lines = 150`; none at all: `[run] review = false`
+On yes, make it: this person's or machine's taste (slots, usage caps, phone, control sessions) in
+runner.local.toml, edited in place (git ignores it, so it holds no merge); the project's behaviour (test,
+review, rules) in runner.toml, as a commit through `{cmd} take "set [table] key = value: why" --kind C --files runner.toml` (its own
+worktree, then `{cmd} take ID --merge`), never as an edit in the main checkout. Say when it takes effect.
+"""
+
 GUIDE = """\
 # Working in a repo that agent-runner works
 
@@ -89,6 +110,7 @@ AGENT_RUNNER_SLOT set you are one of the runner's agents: follow your brief, not
    worktrees and `task/*` branches hold agents' unmerged work. """ + SAFE_SHELL + """ Leave the runner's
    home (`~/runs/<repo>/`) and `.runner/` alone, and ask the person before anything that deletes.
 
+""" + SETTINGS.format(cmd='agent-runner') + """
 `agent-runner help order` explains what runs when; `agent-runner --help` lists every command.
 """
 
@@ -270,6 +292,7 @@ What the person asks, and what you run (`{cmd}` is the runner):
   sheet R7 --go`. All reopen the task with each answer spelled out in its note; never retype the picks into
   `plan confirm` yourself.
 
+""" + SETTINGS + """
 """ + SAFE_SHELL + """
 """
 
