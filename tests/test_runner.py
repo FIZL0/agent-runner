@@ -5454,8 +5454,7 @@ def test_close_control_tiers(repo: Path):
     eq(R.control_state(talked(0))['said'], 2, 'two person messages')
     eq(v(talked(11 * H))[0], 'keep', 'talked: open at 11 h')
     eq(v(talked(12 * H)), ('close', 'idle 720 min (talked)'), 'talked: closed at 12 h')
-    eq(v(talked(11 * H, 'Done. Should I also drop T9?'))[0], 'keep', 'talked, open question: kept past control_ask_idle')
-    eq(v(talked(12 * H, 'Done. Should I also drop T9?'))[0], 'ask', 'and filed at 12 h')
+    eq(v(talked(2 * H, 'Done. Should I also drop T9?'))[0], 'ask', 'talked, open question: control_ask_idle as before')
     eq(v(talked(4 * H), c={**cf, 'talked': 0.0})[0], 'close', 'control_idle_talked = false: control_idle')
     with mock.patch.dict(R.C.run, {'control_idle_quick': False, 'control_idle_talked': '1d'}):
         eq((R.control_cfg()['quick'], R.control_cfg()['talked']), (0.0, 86400.0), 'read from [run]')

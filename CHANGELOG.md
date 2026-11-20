@@ -7,7 +7,7 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 - Idle control sessions close at two more speeds: one the runner opened for a single ask (a reply from the
   feed) that ended with a task queued, no open question and no second message from the person closes after
   `[run] control_idle_quick` (5 min); one the person sent a second message in stays `[run]
-  control_idle_talked` (12 h), on an open question too. Everything else keeps `control_idle`; false turns a
+  control_idle_talked` (12 h). Everything else keeps `control_idle`; false turns a
   tier off, and c1 is still never closed. The runner's `/rename` and hook or system turns no longer count as
   the person speaking last (F56).
 

@@ -8577,8 +8577,7 @@ def control_renamed(st: dict, n: int = 0) -> bool:
 def control_verdict(st: dict, cf: dict, now: float, n: int = 0, one_ask: bool = False) -> tuple[str, str]:
     """('close' | 'ask' | 'keep', why or the question) for control session `n`'s state `st` (`control_state`).
     One the person renamed is kept (B41): they named it to keep it. F56, which idle time applies: a session the
-    person sent more than one message in, `control_idle_talked` (for an open question too, when longer than
-    `control_ask_idle`); one opened for one ask (`one_ask`: the runner gave it its first message) that the person
+    person sent more than one message in, `control_idle_talked`; one opened for one ask (`one_ask`: the runner gave it its first message) that the person
     sent nothing more to and that queued a task, with no open question, `control_idle_quick`; else (or with that
     tier off) `control_idle`."""
     if control_renamed(st, n):
@@ -8590,8 +8589,7 @@ def control_verdict(st: dict, cf: dict, now: float, n: int = 0, one_ask: bool = 
     quiet = now - st['at'] if st['at'] else 0
     talked = st.get('said', 0) > 1 and cf.get('talked')
     if q := open_question(st['text'], cf['open']):
-        wait = max(cf['ask_idle'], cf['talked']) if talked and cf['ask_idle'] else cf['ask_idle']
-        if wait and quiet >= wait:
+        if cf['ask_idle'] and quiet >= cf['ask_idle']:
             return 'ask', q
         return 'keep', 'its open question is not old enough'
     if talked:
