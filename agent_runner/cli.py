@@ -19,6 +19,7 @@ What you type
     agent-runner slots +1             one slot more (-1 fewer, 4: exactly four)
     agent-runner wizard               walk through the hand steps a blocked task waits on, then confirm it
     agent-runner guide                how an agent you start in this repo should work with the runner
+    agent-runner sheet ID --go        answer a pick sheet with its recommended picks (--picks "<Send's line>")
     agent-runner plan                 every task id, one line each
     agent-runner plan add B "Fix the menu flicker"
                                       new task B647 (B: the kind of work, see `plan kinds`)
@@ -181,6 +182,9 @@ def main(argv: list[str] | None = None) -> int:
     if cmd == 'wizard':  # F17
         from agent_runner import runner
         return runner.cmd_wizard(rest)
+    if cmd == 'sheet':  # F18
+        from agent_runner import runner
+        return runner.cmd_sheet(rest)
     if cmd == 'take':
         from agent_runner import runner
         return runner.cmd_take(rest)

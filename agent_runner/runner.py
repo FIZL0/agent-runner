@@ -1532,6 +1532,9 @@ def prompt_for(tid: str, n: int, slots: int, cwd: Path, branch: str) -> str:
     elif wizards_on():
         prompt = f'{prompt.rstrip()}\n\n' + WIZARD_PROMPT.format(
             runner=C.command, tid=tid, template=WIZARD_TEMPLATE, path=C.notes('wizards', f'{tid}.sh'))
+    if questionnaires_on() and not P.concept(tid):  # F18
+        prompt = f'{prompt.rstrip()}\n\n' + SHEET_PROMPT.format(
+            runner=C.command, tid=tid, path=C.notes('sheets', f'{tid}.json'))
     if review_on() and not P.concept(tid):  # a concept task changes no product code: nothing to review
         prompt = f'{prompt.rstrip()}\n\n' + review_prompt(tid, cwd)
     return f'{prompt.rstrip()}\n\nProject policies:\n' + '\n'.join(f'- {policy}' for policy in policies)
@@ -6313,7 +6316,8 @@ def needs_you_line(line: str, titles: dict[str, str], now: dt.datetime, waiting)
         for label, tid, k, ask, url, title, shelved, *_ in waiting or []:
             if e[1] in (tid, k) and not shelved:  # B27: in everyday words, no caps label
                 return f'{when(e[0], now)}  {ASK_FEED}' + '  '.join(
-                    x for x in (f'{P.plain_ask(label, ask, title or titles.get(tid) or tid)} [{tid}]', url) if x)
+                    x for x in (f'{P.plain_ask(label, ask, title or titles.get(tid) or tid, has_sheet(tid))} [{tid}]',
+                                url) if x)
     return None
 
 
@@ -6607,6 +6611,84 @@ def cmd_wizard(argv: list[str], prog: str = f'{RUNNER} wizard') -> int:
     return plan.main(['confirm', a.id, 'the wizard ran to the end'])
 
 
+# --- F18: pick sheets for a DECIDE with options (agent_runner/sheet.py) ---------------------------------------
+#
+# An agent that blocks with `DECIDE:` on a choice writes it as questions with answers to <notes>/sheets/<ID>.json,
+# renders the page with `agent-runner sheet <ID> --html FILE`, publishes it (the Artifact tool) and blocks with
+# `DECIDE: <summary> <the sheet's url>`. Needs you, the feed and the control brief show one line, '<summary>.
+# Pick on the sheet or reply go', and the link. The sheet's Send gives a reply line (`<ID> picks: a=b …`) that
+# the session the person talks to passes to `sheet <ID> --picks`; 'go' is `sheet <ID> --go`. Both reopen the
+# task (`plan confirm`) with each answer spelled out in its note. `[run] questionnaires = false` turns it off.
+
+SHEET_PROMPT = """\
+When you block with `DECIDE:` on a choice (options, a pick-list, settings to change or keep), write the choice \
+as a pick sheet, not as a numbered list: no option numbers anywhere. Write {path} as JSON: "title" (a short \
+name), "summary" (one line that says what is ready, e.g. "12 config cleanups ready, 10 optional"), "intro" \
+(one or two sentences), and "groups": [{{"heading": <a kind of change>, "questions": [{{"id": <short key>, \
+"q": <a plain question>, "answers": [<2-3 short answers>], "recommended": <index of your pick>, "keep": \
+<index of the answer that changes nothing, if one does>, "why": <one or two lines>}}]}}]; `backticks` show as \
+code. Check and render it with `{runner} sheet {tid} --html <a file in your scratchpad>`, publish that file \
+with the Artifact tool, and block with `--blocked "DECIDE: <the summary> <the sheet's url>"`. Needs you shows \
+the person that one line and the link; their picks (or 'go' for your recommendations) reopen {tid} with each \
+answer in its note."""
+
+
+def questionnaires_on() -> bool:
+    """F18: `[run] questionnaires` (default on): a DECIDE with options is asked as a pick sheet."""
+    try:
+        return C.run.get('questionnaires', True) is not False
+    except AttributeError:  # no config loaded
+        return False
+
+
+def has_sheet(tid: str) -> bool:
+    """Has `tid` a pick sheet (<notes>/sheets/<tid>.json), with questionnaires on."""
+    if not questionnaires_on():
+        return False
+    try:
+        return C.notes('sheets', f'{tid}.json').is_file()
+    except (OSError, SystemExit, AttributeError):
+        return False
+
+
+def cmd_sheet(argv: list[str], prog: str = f'{RUNNER} sheet') -> int:
+    """`agent-runner sheet ID`: render a DECIDE's pick sheet, or answer the item with the picks sent from it."""
+    from agent_runner import sheet
+    ap = argparse.ArgumentParser(prog=prog, description='The pick sheet of a DECIDE: render its page, or answer it '
+                                 'with the picks sent from the page (or the recommended ones).')
+    ap.add_argument('id', help='the task id, as Needs you shows it')
+    do = ap.add_mutually_exclusive_group()
+    do.add_argument('--html', metavar='FILE', help='check the sheet and write its page to FILE, to publish')
+    do.add_argument('--picks', metavar='REPLY', help="the line the sheet's Send gave ('ID picks: a=b …'), or 'go'")
+    do.add_argument('--go', action='store_true', help='answer with the recommended picks')
+    do.add_argument('--path', action='store_true', help='print where the sheet is')
+    a = ap.parse_args(argv)
+    init()
+    f = C.notes('sheets', f'{a.id}.json')
+    if a.path:
+        print(f)
+        return 0
+    try:
+        spec = sheet.load(f)
+    except ValueError as e:
+        print(f'{prog}: {e}', file=sys.stderr)
+        return 1
+    if a.html:
+        Path(a.html).write_text(sheet.render(spec, a.id), encoding='utf-8')
+        print(f'{a.html}: {len(sheet.questions(spec))} questions; publish it with the Artifact tool')
+        return 0
+    if a.picks is None and not a.go:
+        print(f'{f}: {len(sheet.questions(spec))} questions, ok')
+        return 0
+    try:
+        picks = sheet.parse_picks(spec, 'go' if a.go else a.picks)
+    except ValueError as e:
+        print(f'{prog}: {e}', file=sys.stderr)
+        return 2
+    from agent_runner import plan
+    return plan.main(['confirm', a.id, sheet.picks_note(spec, picks)])
+
+
 def waiting_text(waiting, width: int = 60, now: dt.datetime | None = None, wips=None) -> list[str]:
     """B27: '[needs] heading' ('Needs you:') and per ask one line in everyday words, what is asked and what to
     reply, with its age first ('2h', when `[needs] ages`) and its [id] last, then its link on a line of its
@@ -6625,7 +6707,8 @@ def waiting_text(waiting, width: int = 60, now: dt.datetime | None = None, wips=
             continue
         title = title if len(title) <= width else title[:width - 1].rstrip() + '…'
         old = P.age(stamps.get(tid, ''), now) if cf['ages'] else ''
-        out.append('  ' + (f'{old:>3}  ' if old else '') + f'{P.plain_ask(label, what, title)} [{k or tid}]')
+        out.append('  ' + (f'{old:>3}  ' if old else '') +
+                   f'{P.plain_ask(label, what, title, label == "DECIDE" and has_sheet(tid))} [{k or tid}]')
         if url:
             out.append(f'    {url}')
         if label != 'CONCEPT' and wizard_file(tid):  # F17: the one command that walks them through it
@@ -7194,7 +7277,8 @@ def ask_waiting() -> str:
     """The items under Needs you, one '- ID: ask' line each, for a handed-on request (B47); '' when none or the
     plan cannot be read (opening the session matters more)."""
     try:
-        return '\n'.join(f'- {a[1]}: {P.plain_ask(a[0], a[3], a[5])}' for a in P.asks())
+        return '\n'.join(f'- {a[1]}: {P.plain_ask(a[0], a[3], a[5], a[0] == "DECIDE" and has_sheet(a[1]))}'
+                         + (f' {a[4]}' if a[4] and a[0] == 'DECIDE' and has_sheet(a[1]) else '') for a in P.asks())
     except (OSError, SystemExit, ValueError):
         return ''
 

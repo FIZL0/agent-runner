@@ -8,6 +8,15 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
   slots, wizard, guide, plan) and the rest under "Mostly for agents (you can run these too)", one short line
   each. Bare `agent-runner wizard` runs the one waiting wizard, lists them when several wait, or says there
   are none (F48).
+- Choices come as a pick sheet. An agent that blocks with `DECIDE:` on options writes them as plain questions
+  with 2-3 answers each (no option numbers) to `.runner/sheets/<ID>.json`, renders the page with
+  `agent-runner sheet <ID> --html FILE` and publishes it: questions grouped by kind of change, answer buttons
+  with the recommended one preselected and labelled, a collapsible Why, and a sticky bar with "N changes
+  picked", Recommended and Send. Needs you, the feed and the control brief show one line, "<what is ready>.
+  Pick on the sheet or reply go", with the sheet's link. Send gives a reply line (`R7 picks: backend=a …`);
+  pasted in the chat, the session runs `agent-runner sheet R7 --picks "…"`, and "go" runs `sheet R7 --go`
+  (the recommended set). Either reopens the task with each answer spelled out in its note. `[run]
+  questionnaires = false` turns it off (F18).
 
 ## 0.54.0 (2026-11-20)
 

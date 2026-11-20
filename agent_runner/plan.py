@@ -1286,8 +1286,13 @@ def _lower_first(s: str) -> str:
     return s[:1].lower() + s[1:] if s[:2] != s[:2].upper() else s
 
 
-def plain_ask(label: str, what: str, title: str) -> str:
-    """One ask in everyday words, without its caps label: what is asked, then what to reply."""
+def plain_ask(label: str, what: str, title: str, sheet: bool = False) -> str:
+    """One ask in everyday words, without its caps label: what is asked, then what to reply. `sheet`: a DECIDE
+    with a pick sheet (F18), whose answer is picked on the sheet's page or 'go' for the recommended set."""
+    if sheet and label == 'DECIDE':
+        said = (what or title or 'Pick on the sheet').rstrip(' .')
+        said = re.sub(r'[\s,;:]+(see|at|via|here|on the sheet)$', '', said)
+        return f'{said[:1].upper() + said[1:]}. Pick on the sheet or reply go'
     if label == 'CONCEPT':
         said = f'Pick an option for {_lower_first(title)}' if title else 'Pick an option on the page'
     else:
