@@ -5645,6 +5645,7 @@ def run(argv: list[str], prog: str) -> int:
         watch_ci(branch)
         if not stopping():
             close_controls(branch)  # B26
+            end_closed_controls()  # B53
         if not stopping():
             sweep_unmerged(branch, merging)
         keep_claims(running, branch)
@@ -7464,7 +7465,7 @@ def cmd_control(argv: list[str], prog: str = f'{RUNNER} control') -> int:
         return 1
     if a.new:
         return control_new(a.n, ask=a.ask, images=a.file)
-    n = a.n or control_number()
+    n = a.n or free_control_number()
     if pid := control_live(n):
         print(f'control {n} already runs (pid {pid}): {RUNNER} control starts another', file=sys.stderr)
         return 1
@@ -7986,7 +7987,7 @@ def control_new(n: int | None = None, wait: float = CONTROL_LINK_WAIT, ask: str 
     """`control --new`: another control session, opened without taking focus (a window of its own in the run's
     tmux session; Windows: a hidden console), on Remote Control as "<repo> · control N" with `[run] remote`.
     Prints its claude.ai/code link once its pane shows it, so the session that ran it can answer with a link."""
-    n = n or control_number()
+    n = n or free_control_number()
     if pid := control_live(n):
         print(f'control {n} already runs (pid {pid})', file=sys.stderr)
         return 1
@@ -8310,6 +8311,96 @@ def close_controls(branch: str = '', force: bool = False, now: float | None = No
                                         else why) + f' (transcript kept: {plat.exe(C.run["agent"])} --resume {sid})')
         out.append((n, 'asked' if verdict == 'ask' else 'closed', why))
     return out
+
+
+# --- B53: control sessions closed online (archived or deleted in claude.ai/code or the apps) end here too ----
+#
+# Claude Code keeps running when its Remote Control session is archived or deleted elsewhere: it only writes a
+# system entry to its transcript, "Remote Control disconnected — this session was ended or archived from
+# another device or app (code 4090)" (or "— the server no longer reports this session — it may have been
+# deleted …", same code), and goes on locally. So its controlN.pid stays live and control_number() never hands
+# N out again. Every CONTROL_CLOSE_EVERY s (and before `control --new` picks a number) each live control
+# session N > 1 whose transcript's last word is that disconnect, with no message the person typed since (one
+# typed in its terminal after it means they still use it there) and no new Remote Control session since, is
+# ended: its process, its tmux pane, controlN.pid and controlN.title. The transcript stays, resumable.
+
+RC_CLOSED = re.compile(r'Remote Control disconnected\b.*\(code 4090\)')
+CONTROL_GONE_AT = [0.0]
+
+
+def closed_online(rows) -> bool:
+    """Whether a control session's transcript entries `rows` say its Remote Control session was closed online
+    (archived or deleted) and nobody used it since: a code-4090 disconnect entry, and after it no message the
+    person typed and no bridge-session entry naming another Remote Control session (a reconnect)."""
+    closed, bridge = False, ''
+    for d in rows:
+        if not isinstance(d, dict):
+            continue
+        kind = d.get('type')
+        if kind == 'bridge-session' and isinstance(d.get('bridgeSessionId'), str):
+            if closed and d['bridgeSessionId'] != bridge:
+                closed = False  # connected again, as another session
+            bridge = d['bridgeSessionId']
+        elif kind == 'system' and isinstance(d.get('content'), str) and RC_CLOSED.search(d['content']):
+            closed = True
+        elif kind == 'user' and person_message(d):
+            closed = False
+    return closed
+
+
+def control_window(n: int, pid: int) -> str:
+    """The tmux pane control session `n` (process `pid`) runs in, found by its c<n> tag for this repository or
+    by its pane pid; '' for none. Never $TMUX_PANE: the caller is the run, not that session."""
+    if not shutil.which('tmux'):
+        return ''
+    rows = tmux('list-panes', '-a', '-F', f'#{{session_name}}\t#{{pane_id}}\t#{{{TAG}}}\t#{{{REPO_TAG}}}\t'
+                f'#{{{RUN_TAG}}}\t#{{pane_pid}}')
+    if rows.returncode:
+        return ''
+    lines = rows.stdout.splitlines()
+    if hit := attach_target([l.rsplit('\t', 1)[0] for l in lines], ROOT, f'c{n}'):
+        return hit[1]
+    for l in lines:
+        f = l.split('\t')
+        if len(f) >= 6 and f[5] == str(pid):
+            return f[1]
+    return ''
+
+
+def end_closed_controls(force: bool = False) -> list[int]:
+    """B53: end the control sessions closed online (see above). The numbers ended."""
+    if not control_ok() or (not force and time.time() - CONTROL_GONE_AT[0] < CONTROL_CLOSE_EVERY):
+        return []
+    CONTROL_GONE_AT[0] = time.time()
+    out = []
+    for n in control_live_numbers():
+        pidf = C.notes(f'control{n}.pid')
+        try:
+            pid_s, _, sid = pidf.read_text(encoding='utf-8').strip().partition(' ')
+            pid = int(pid_s)
+        except (OSError, ValueError):
+            continue
+        if not sid or not transcript(sid) or not closed_online(entries(sid, skip_bad=True)):
+            continue
+        pane = control_window(n, pid)
+        plat.terminate(pid)
+        if pane:  # a pane opened by the background session's default-command falls back to a shell: close it
+            tmux('kill-pane', '-t', pane)
+        pidf.unlink(missing_ok=True)
+        C.notes(f'control{n}.title').unlink(missing_ok=True)
+        log(f'control {n}: ended, its Remote Control session was closed online '
+            f'(transcript kept: {plat.exe(C.run["agent"])} --resume {sid})')
+        out.append(n)
+    return out
+
+
+def free_control_number() -> int:
+    """control_number() once the control sessions closed online have ended (B53), so their numbers count free."""
+    try:
+        end_closed_controls(force=True)
+    except Exception as e:  # never stop a new session from starting
+        log(f'control: could not check for sessions closed online: {e}')
+    return control_number()
 
 
 def control_server_argv() -> list[str]:
