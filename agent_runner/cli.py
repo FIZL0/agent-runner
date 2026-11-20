@@ -115,6 +115,23 @@ def skill() -> None:
         print(said, file=sys.stderr)
 
 
+def adopt_folder() -> bool:
+    """A runner project with no git yet (a downloaded copy of examples/hello): make it a repo with one commit,
+    so the bare command can start the run. Only a folder that holds runner.toml or plan/TODO.md."""
+    import subprocess
+    from pathlib import Path
+    if Path('.git').exists() or not (Path('runner.toml').is_file() or Path('plan/TODO.md').is_file()):
+        return False
+    print('agent-runner: no git repository here: making this folder one, with its files as the first commit',
+          file=sys.stderr)
+    for cmd in (['init', '-q', '-b', 'main'], ['add', '-A'], ['commit', '-qm', 'Start: the files as they came']):
+        r = subprocess.run(['git', *cmd], capture_output=True, text=True)
+        if r.returncode:
+            print(f'agent-runner: git {cmd[0]} failed: {(r.stderr or r.stdout).strip()}', file=sys.stderr)
+            return False
+    return True
+
+
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     cmd, rest = (argv[0], argv[1:]) if argv else ('', [])
@@ -142,9 +159,10 @@ def main(argv: list[str] | None = None) -> int:
         from agent_runner.config import toplevel
         try:
             toplevel()
-        except SystemExit:
-            print(USAGE, file=sys.stderr)
-            return 2
+        except SystemExit as e:
+            if not adopt_folder():
+                print(f'{e}\nagent-runner --help: every command', file=sys.stderr)
+                return 2
         from agent_runner import runner
         return runner.cmd_background(rest)
     if cmd == '--attach':  # bare, then attach: the run's pane in this terminal
