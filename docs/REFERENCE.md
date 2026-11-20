@@ -765,11 +765,10 @@ agent-runner                           the run in the background (a detached tmu
 agent-runner attach [sN|c1|master]     the runner's pane, or a slot's (Windows: the slot's console window)
 agent-runner control [N]               a control session in this terminal (c1: the kept one, resumed)
 agent-runner control --new [N]         another one beside the run, without taking focus; prints its claude.ai/code link
-agent-runner control --new --ask TEXT [--image PATH]...
-                                       the same, with TEXT as its first message (the runner feed hands a request
-                                       on this way); each --image adds a line naming that attached image's path
-                                       and telling the session to Read it before answering; images the person
-                                       just attached in the runner feed are added on their own
+agent-runner control --new --forward   the same, with the person's latest runner-feed message as its first
+                                       message, read word for word from the feed's transcript (never retyped
+                                       in a shell), and the files or images attached to it named with their
+                                       paths; the runner feed hands requests on this way
 agent-runner since [WHEN] [--follow]   what landed, started or got stuck since the last look (or WHEN: 2h,
                                        yesterday); --follow prints each new event as it happens
 agent-runner plan [...]                the task list as a tool (agent-runner plan help)

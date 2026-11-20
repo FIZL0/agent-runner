@@ -7475,10 +7475,13 @@ def cmd_control(argv: list[str], prog: str = f'{RUNNER} control') -> int:
     ap.add_argument('--hand', action='store_true', help=argparse.SUPPRESS)  # F53: the hook in settings.local.json
     ap.add_argument('--blank', action='store_true', help=argparse.SUPPRESS)  # c1 under [run] remote: no opening turn
     ap.add_argument('--local', action='store_true', help=argparse.SUPPRESS)  # c1 under [run] remote: not in the apps
-    ap.add_argument('--ask', default='', metavar='TEXT', help="its first message (with --new: the runner feed hands "
-                    'a person\'s request on this way)')
+    ap.add_argument('--ask', default='', help=argparse.SUPPRESS)  # its first message: tests and older feeds (B72)
+    ap.add_argument('--ask-file', default='', help=argparse.SUPPRESS)  # B72: the forwarded message, from a file
+    ap.add_argument(FORWARD_FLAG, action='store_true', help='open another one (as --new) whose first message is '
+                    "the person's latest message in the runner feed, word for word, with its attachments (the "
+                    'feed hands requests on this way)')
     ap.add_argument('--file', '--image', dest='file', action='append', default=[], metavar='PATH',
-                    help='a file or image the person attached to the --ask message (repeatable): the first message '
+                    help='a file or image the person attached to the first message (repeatable): the first message '
                     'names it and its path and says to Read or open it')
     ap.add_argument('--unquiet', action='store_true', help=argparse.SUPPRESS)  # `unquiet_when_up`, for session N
     ap.add_argument('--feed-sid', default='', help=argparse.SUPPRESS)  # B57: wait for the handed-on message's files
@@ -7504,8 +7507,13 @@ def cmd_control(argv: list[str], prog: str = f'{RUNNER} control') -> int:
     if not control_ok():
         print(f'control sessions are Claude Code sessions; [run] agent is {C.run["agent"]}', file=sys.stderr)
         return 1
-    if a.new:
-        return control_new(a.n, ask=a.ask, images=a.file)
+    if a.new or (a.forward and not a.feed_sid):
+        return control_new(a.n, ask=a.ask, images=a.file, forward=a.forward)
+    if a.ask_file:
+        a.ask = read_ask_file(a.ask_file) or a.ask
+    if a.forward and a.feed_sid and SID_RE.fullmatch(a.feed_sid):
+        a.ask = forward_late(a.n or free_control_number(), a.feed_sid)
+        a.feed_sid = '' if a.ask == feed_lost_note() else a.feed_sid
     n = a.n or free_control_number()
     if pid := control_live(n):
         print(f'control {n} already runs (pid {pid}): {RUNNER} control starts another', file=sys.stderr)
@@ -7996,6 +8004,136 @@ def image_drift_note(lost: int, version: str) -> str:
             "Claude Code change (its runner feed reads the saved paths from the feed's transcript).")
 
 
+# --- B72: the feed hands a message on with `control --new --forward`, no text of the person's in a shell -------
+#
+# A long pasted message (quotes, backticks, $(...), newlines) retyped as `--ask "<words>"` by the feed's model
+# made a broken shell command. So the feed runs a fixed command, and the message is read here, word for word,
+# from the feed's own transcript: its latest person message, the one the feed is answering.
+
+FEED_FORWARDED = 'feed.forwarded'  # <notes>/remote/feed.forwarded: "<sid> <uuid>" of the message last handed on
+FORWARD_FLAG = '--forward'
+
+
+def message_text(d: dict) -> str:
+    """A transcript entry's text, as the person typed it: a string content as is, else its text blocks joined
+    by newlines."""
+    c = (d.get('message') or {}).get('content')
+    if isinstance(c, str):
+        return c
+    if isinstance(c, list):
+        return '\n'.join(x.get('text', '') for x in c if isinstance(x, dict) and x.get('type') == 'text'
+                         and isinstance(x.get('text'), str))
+    return ''
+
+
+def feed_pending(sid: str) -> tuple[str, str, bool] | None:
+    """The feed's latest person message: (its text word for word, its id, ready). None when the transcript holds
+    none. Ready means it is the message the feed is answering now: it is not the one last handed on
+    (FEED_FORWARDED), and nothing the feed did after it is a tool call other than `control … --forward`, so a
+    transcript that has not caught up yet (B46) does not hand on the previous message, which the feed answered
+    with a command of its own (status, pause, …)."""
+    t = transcript(sid) if SID_RE.fullmatch(sid or '') else None
+    if not t:
+        return None
+    text = mid = None
+    other = False
+    try:
+        with open(t, encoding='utf-8') as f:
+            for line in f:
+                try:
+                    d = json.loads(line)
+                except ValueError:
+                    continue
+                if not isinstance(d, dict):
+                    continue
+                if d.get('type') == 'user' and not d.get('isMeta') and not d.get('isCompactSummary') \
+                        and person_message(d):
+                    text, mid, other = message_text(d), str(d.get('uuid') or d.get('timestamp') or ''), False
+                elif d.get('type') == 'assistant' and text is not None:
+                    c = (d.get('message') or {}).get('content')
+                    for x in c if isinstance(c, list) else []:
+                        if isinstance(x, dict) and x.get('type') == 'tool_use':
+                            cmd = str((x.get('input') or {}).get('command', ''))
+                            if not ('control' in cmd and FORWARD_FLAG in cmd):
+                                other = True
+    except OSError:
+        return None
+    if text is None:
+        return None
+    try:
+        last = C.notes(REMOTE_DIR, FEED_FORWARDED).read_text(encoding='utf-8').split()
+    except OSError:
+        last = []
+    done = bool(mid) and last == [sid, mid]
+    return text, mid, not done and not other
+
+
+def feed_forwarded(sid: str, mid: str) -> None:
+    """Mark message `mid` of feed `sid` handed on, so a second `--forward` before the next one waits."""
+    if not mid:
+        return
+    try:
+        f = C.notes(REMOTE_DIR, FEED_FORWARDED)
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_text(f'{sid} {mid}\n', encoding='utf-8')
+    except OSError:
+        pass
+
+
+def feed_take(sid: str, wait: float) -> str | None:
+    """Wait up to `wait` s for the feed's message being handed on (`feed_pending` ready) and take it: its text,
+    marked handed on. None when it did not show: never a guess at an older message."""
+    deadline = time.monotonic() + wait
+    while True:
+        got = feed_pending(sid)
+        if got and got[2]:
+            feed_forwarded(sid, got[1])
+            return got[0]
+        if time.monotonic() >= deadline:
+            return None
+        time.sleep(0.2)
+
+
+def feed_lost_note() -> str:
+    """The first message of a session `--forward` opened when the feed's message could not be read at all."""
+    return ('The runner feed handed a message on to this session, but agent-runner could not read it from the '
+            "feed's transcript. Ask the person to send it here again.")
+
+
+def forward_ask_file(n: int, text: str) -> Path:
+    """Where `control --new --forward` leaves the message for `control N --ask-file` (read and removed there):
+    a file, so the text never passes through a shell or tmux command line."""
+    f = C.notes(f'control{n}.ask')
+    f.write_text(text, encoding='utf-8')
+    return f
+
+
+def forward_late(n: int, sid: str, wait: float | None = None) -> str:
+    """`control N --forward --feed-sid SID` (B72): the feed's message was not in its transcript when `control
+    --new --forward` ran, so wait here (FEED_LATE_WAIT) before claude starts, holding number N. The message, or,
+    when no message shows at all, a first message saying it could not be read."""
+    print('waiting for the runner feed to record the message…', flush=True)
+    try:
+        C.notes(f'control{n}.pid').write_text(f'{os.getpid()}', encoding='utf-8')
+    except OSError:
+        pass
+    text = feed_take(sid, FEED_LATE_WAIT if wait is None else wait)
+    return feed_lost_note() if text is None else text
+
+
+def read_ask_file(path: str) -> str:
+    """`control N --ask-file PATH`: the handed-on message, the file removed once read."""
+    try:
+        text = Path(path).read_text(encoding='utf-8')
+    except OSError:
+        return ''
+    try:
+        Path(path).unlink()
+    except OSError:
+        pass
+    return text
+
+
 
 
 
@@ -8024,16 +8162,28 @@ def person_message(d: dict) -> bool:
 
 
 def control_new(n: int | None = None, wait: float = CONTROL_LINK_WAIT, ask: str = '',
-                images: list[str] | tuple = ()) -> int:
+                images: list[str] | tuple = (), forward: bool = False) -> int:
     """`control --new`: another control session, opened without taking focus (a window of its own in the run's
     tmux session; Windows: a hidden console), on Remote Control as "<repo> · control N" with `[run] remote`.
-    Prints its claude.ai/code link once its pane shows it, so the session that ran it can answer with a link."""
+    Prints its claude.ai/code link once its pane shows it, so the session that ran it can answer with a link.
+    `forward` (`control --new --forward`, B72): its first message is the runner feed's latest person message,
+    read word for word from the feed's transcript (`feed_take`) and handed to `control N` in a file, never on a
+    command line; when it has not reached the transcript in FEED_WAIT s, `control N --forward --feed-sid` waits
+    for it itself."""
     n = n or free_control_number()
     if pid := control_live(n):
         print(f'control {n} already runs (pid {pid})', file=sys.stderr)
         return 1
     images = [str(Path(i).resolve()) for i in images]
     late = ''
+    fwd: list[str] = []
+    if forward:
+        sid = feed_sid()
+        text = feed_take(sid, FEED_WAIT) if sid else None
+        if text is None and sid and transcript(sid):
+            fwd, ask = [FORWARD_FLAG, '--feed-sid', sid], ''
+        else:
+            ask = feed_lost_note() if text is None else text
     if ask:
         # Claude Code writes the feed's transcript lazily: the message being handed on, and the saved paths of
         # its pictures, can land a while after this command starts (B46, B57: more than FEED_WAIT), so wait
@@ -8046,7 +8196,11 @@ def control_new(n: int | None = None, wait: float = CONTROL_LINK_WAIT, ask: str 
             late = sid
         elif note := image_drift_note(lost, version):
             ask = f'{ask}\n\n{note}'
-    cmd = [*runner_cmd(), 'control', str(n), *(['--ask', ask] if ask else []),
+    if forward and ask:
+        given = ['--ask-file', str(forward_ask_file(n, ask))]
+    else:
+        given = ['--ask', ask] if ask else []
+    cmd = [*runner_cmd(), 'control', str(n), *given, *fwd,
            *[x for i in images for x in ('--file', i)], *(['--feed-sid', late] if late else [])]
     name = control_name(n, ask, images)
     if plat.WINDOWS:
