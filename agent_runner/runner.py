@@ -644,9 +644,9 @@ def halts(procs: dict, running: dict, free_at: dict, tried: set, branch: str, mo
             running.pop(n)
             plat.terminate(pid)
             end = time.monotonic() + 10
-            while alive(pid) and time.monotonic() < end:
+            while plat.alive(pid) and time.monotonic() < end:
                 time.sleep(0.2)
-            if alive(pid):  # it ignored SIGTERM: its tree gets one, then whatever is left is ended below
+            if plat.alive(pid):  # it ignored SIGTERM: its tree gets one, then whatever is left is ended below
                 for p in [*plat.descendants(pid), pid]:
                     plat.terminate(p)
             stopped = f'stopped s{n}'
@@ -733,7 +733,7 @@ def tells(procs: dict, running: dict) -> None:
         hit = tagged.get(f's{n}')
         if not isinstance(MUX, TmuxMux):
             why = f'no live pane for s{n} ({tid}): its terminal ({MUX.name}) takes no typed text'
-        elif not hit or not alive(hit[1]) or (n in procs and not alive(procs[n][0])):
+        elif not hit or not plat.alive(hit[1]) or (n in procs and not plat.alive(procs[n][0])):
             why = f'no live pane for s{n} ({tid}): its session has ended'
         elif not send_to_pane(hit[0], P.tell_text(req['how'], req['text'])):
             why = f'no live pane for s{n} ({tid}): tmux could not type into {hit[0]}'
@@ -1002,10 +1002,7 @@ def worktree(n, branch: str) -> Path:
                     plat.link(src, dst)  # a symlink; on Windows without Developer Mode a junction or hard link
                 except OSError:
                     pass
-    if copilot():
-        copilot_trust(d)
-    else:
-        backend().trust(d)
+    backend().trust(d)
     return d
 
 
@@ -1067,9 +1064,6 @@ def pane(name: str, cwd: Path, cmd: str, env=(), logfile: Path | None = None) ->
     return int(pid)
 
 
-alive = plat.alive
-
-
 def panes() -> dict[str, tuple[str, int]]:
     """{name: (pane id, pid)} of this repo's tagged panes in this tmux session: another repo's runner may
     share the session, with slots of the same names, so a pane is ours only when its @runner-repo is this
@@ -1101,7 +1095,7 @@ def adopt(branch: str) -> dict[int, tuple]:
     known = {t[0]: t for t in tasks(branch)}
     out = {}
     for name, (_, pid) in MUX.panes().items():
-        if not re.fullmatch(r's\d+', name) or not alive(pid) or not (sid := MUX.session_id(pid)):
+        if not re.fullmatch(r's\d+', name) or not plat.alive(pid) or not (sid := MUX.session_id(pid)):
             continue
         n = int(name[1:])
         tid = git('branch', '--show-current', cwd=SLOTS_DIR / name).stdout.strip().removeprefix('task/')
@@ -1154,72 +1148,9 @@ def single_run() -> object:
 
 # --- starting a session --------------------------------------------------------
 
-def copilot() -> bool:
-    """`[run] agent` is GitHub Copilot CLI rather than Claude Code."""
-    return Path(C.run['agent']).stem.lower() == 'copilot'
-
-
-def copilot_home() -> Path:
-    return Path(os.environ.get('COPILOT_HOME') or Path.home() / '.copilot')
-
-
 def pi() -> bool:
     """`[run] agent` is the Pi coding agent (pi.dev)."""
     return Path(C.run['agent']).stem.lower() == 'pi'
-
-
-def pi_sessions() -> Path:
-    """Where Pi keeps this run's sessions (`--session-dir`), as `<timestamp>_<session id>.jsonl`."""
-    return C.notes('pi-sessions', 'x').parent
-
-
-def pi_argv0() -> list[str]:
-    """Pi itself. On Windows its npm `.cmd` shim is skipped: cmd.exe would cut a multi-line prompt short and
-    ask "Terminate batch job?" on Ctrl-C, so node runs the CLI the shim names."""
-    exe = plat.exe(C.run['agent'])
-    if plat.WINDOWS and exe.lower().endswith('.cmd'):
-        cli = Path(exe).parent / 'node_modules' / '@earendil-works' / 'pi-coding-agent' / 'dist' / 'bundle' / 'cli.js'
-        node = Path(exe).parent / 'node.exe'
-        if cli.exists():
-            return [str(node) if node.exists() else (shutil.which('node') or 'node'), str(cli)]
-    return [exe]
-
-
-PI_EXTENSION = """// Written by agent-runner for each run: the idle Stop hook and, when pushing is off, no git push.
-import { spawn } from "node:child_process";
-
-const HOOK: string[] = %(hook)s;
-const NO_PUSH: boolean = %(no_push)s;
-const PUSH = /\\bgit(\\s+-[Cc]\\s+\\S+)*\\s+push\\b/;
-
-export default function (pi: any) {
-  pi.on("agent_settled", async (_event: any, ctx: any) => {
-    if (!process.env.AGENT_RUNNER) return;  // a person's own Pi session: never end it
-    const child = spawn(HOOK[0], HOOK.slice(1), { stdio: ["pipe", "ignore", "ignore"], detached: true, windowsHide: true });
-    child.on("error", () => {});
-    child.stdin.end(JSON.stringify({
-      transcript_path: ctx.sessionManager.getSessionFile(),
-      session_id: ctx.sessionManager.getSessionId(),
-    }));
-    child.unref();
-  });
-  pi.on("tool_call", async (event: any) => {
-    if (!NO_PUSH || (event.toolName !== "bash" && event.toolName !== "powershell")) return undefined;
-    if (PUSH.test(String(event.input?.command ?? ""))) {
-      return { block: true, reason: "Pushing is off for this run: never run git push. A human pushes." };
-    }
-    return undefined;
-  });
-}
-"""
-
-
-def pi_extension(idle: int) -> Path:
-    """The extension every Pi session of this run loads (`-e`): Pi has no hook settings, only extensions."""
-    f = C.notes('agent-runner-pi.ts')
-    f.write_text(PI_EXTENSION % {'hook': json.dumps([*runner_cmd(), 'run', '--stop-hook', '--idle', str(idle)]),
-                                 'no_push': 'false' if C.push_remote else 'true'}, encoding='utf-8')
-    return f
 
 
 def lean() -> list[str]:
@@ -1227,8 +1158,6 @@ def lean() -> list[str]:
     user-level setting (a status line, a hook that asks) is something nobody is there to answer."""
     if not C.run['lean']:
         return []
-    if copilot():
-        return ['--disable-builtin-mcps']
     if pi():
         return ['--no-mcp']
     # Artifact: a task can publish a page or screenshots to claude.ai and link it, seen from any device
@@ -1335,7 +1264,8 @@ class Claude:
 
 
 def pi_argv0() -> list[str]:
-    """Run Pi's Node CLI directly on Windows instead of through npm's .cmd shim."""
+    """Pi itself. On Windows its npm `.cmd` shim is skipped: cmd.exe would cut a multi-line prompt short and
+    ask "Terminate batch job?" on Ctrl-C, so node runs the CLI the shim names."""
     exe = plat.exe(C.run['agent'])
     if plat.WINDOWS and exe.lower().endswith('.cmd'):
         cli = Path(exe).parent / 'node_modules' / '@earendil-works' / 'pi-coding-agent' / 'dist' / 'bundle' / 'cli.js'
@@ -1433,59 +1363,7 @@ def backend() -> Claude:
 def agent_flags(sid: str, model: str, idle: int, resume: bool = False, once: bool = False) -> list[str]:
     """The session flags after the prompt. `resume` continues the session `sid` instead of starting it (its
     transcript keeps the id); `once` is a session with no pane, which exits after one answer."""
-    if copilot():  # its Stop hook is written into the checkout by copilot_hooks
-        return ['--session-id', sid, '--allow-all', '--no-ask-user', '--no-auto-update', '--model', model,
-                *deny_push(), *lean()]
     return backend().flags(sid, model, idle, resume, once)
-
-
-def prompt_flag() -> list[str]:
-    """What goes before the prompt: Copilot CLI takes it as `-i`, Claude Code as its first argument."""
-    return ['-i'] if copilot() else []
-
-
-def deny_push() -> list[str]:
-    """Copilot CLI refuses `git push` itself when `[git] push = false`, so the agent is told why at once."""
-    return [] if C.push_remote else ['--deny-tool', 'shell(git push)']
-
-
-def copilot_hooks(cwd: Path, idle: int) -> None:
-    """Copilot CLI has no `--settings`: the Stop hook goes in the checkout's `.github/copilot/settings.local.json`
-    (keep it git-ignored), which Copilot reads for a trusted folder. Other keys in that file are kept."""
-    f = cwd / '.github' / 'copilot' / 'settings.local.json'
-    try:
-        cur = json.loads(f.read_text(encoding='utf-8'))
-    except (OSError, ValueError):
-        cur = {}
-    exe, *args = [*runner_cmd(), 'run', '--stop-hook', '--idle', str(idle)]
-    cur.setdefault('hooks', {})['Stop'] = [{'type': 'command', 'exec': exe, 'args': args, 'timeoutSec': 30}]
-    f.parent.mkdir(parents=True, exist_ok=True)
-    f.write_text(json.dumps(cur, indent=2) + '\n', encoding='utf-8')
-
-
-def copilot_trust(*dirs: Path) -> None:
-    """Add `dirs` to Copilot CLI's trusted folders: it asks before working in an untrusted one, and loads no
-    repo hooks there, and nobody is there to answer."""
-    f = copilot_home() / 'config.json'
-    try:
-        lines = f.read_text(encoding='utf-8-sig').splitlines(keepends=True)
-        n = next((i for i, l in enumerate(lines) if not l.lstrip().startswith('//')), len(lines))
-        head = lines[:n]  # Copilot writes `//` comment lines above the JSON
-        conf = json.loads(''.join(lines[n:]))
-    except (OSError, ValueError):
-        log(f'could not read {f}: trust {", ".join(map(str, dirs))} in Copilot CLI by hand')
-        return
-    have = conf.setdefault('trustedFolders', [])
-    norm = lambda p: os.path.normcase(os.path.abspath(p)).rstrip('\\/')  # noqa: E731
-    new = [str(d) for d in dirs if not any(norm(d) == norm(t) or norm(d).startswith(norm(t) + os.sep)
-                                           for t in have)]
-    if not new:
-        return
-    have += new
-    tmp = f.with_name(f.name + '.agent-runner')
-    tmp.write_text(''.join(head) + json.dumps(conf, indent=2) + '\n', encoding='utf-8')
-    os.replace(tmp, f)
-    log(f'Copilot CLI now trusts {", ".join(new)} (trustedFolders in {f})')
 
 
 REMOTE_ENV_FLAGS = ('CLAUDE_CODE_USE_BEDROCK', 'CLAUDE_CODE_USE_VERTEX', 'CLAUDE_CODE_USE_FOUNDRY')
@@ -1493,13 +1371,11 @@ REMOTE_ENV_FLAGS = ('CLAUDE_CODE_USE_BEDROCK', 'CLAUDE_CODE_USE_VERTEX', 'CLAUDE
 
 def remote_off_why(dialog: bool = True) -> str:
     """Why `[run] remote = 'auto'` leaves Remote Control off, or '' when it can work: Remote Control is Claude
-    Code on a claude.ai login, so not pi or Copilot CLI, not an API key or token, not Bedrock, Vertex or Foundry,
+    Code on a claude.ai login, so not pi, not an API key or token, not Bedrock, Vertex or Foundry,
     not another ANTHROPIC_BASE_URL. `dialog`: also off while Claude Code's one-time "Enable Remote Control?" has
     not been answered yes (`remote_ready` asks it at a terminal), which would hold a session in a hidden pane."""
     if pi():
         return 'backend pi (Remote Control is Claude Code\'s)'
-    if copilot():
-        return 'agent copilot (Remote Control is Claude Code\'s)'
     for k in ('ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN'):
         if os.environ.get(k):
             return f'{k} is set (Remote Control needs a claude.ai login)'
@@ -1524,16 +1400,16 @@ def remote_dialog_seen() -> bool:
 
 def remote_on() -> bool:
     """`[run] remote`, resolved: control sessions and the control server on Remote Control. 'auto' is on when
-    `remote_off_why` finds nothing; true forces it (still never for pi or Copilot CLI); false keeps it off."""
+    `remote_off_why` finds nothing; true forces it (still never for pi); false keeps it off."""
     v = C.run['remote']
     if v == 'auto':
         return not remote_off_why()
-    return bool(v) and not copilot() and not pi()
+    return bool(v) and not pi()
 
 
 def remote_slots_on() -> bool:
-    """`[run] remote_slots`: the slots on Remote Control too (never under 'auto' alone, and never pi or Copilot)."""
-    return C.run['remote_slots'] is True and not copilot() and not pi()
+    """`[run] remote_slots`: the slots on Remote Control too (never under 'auto' alone, and never pi)."""
+    return C.run['remote_slots'] is True and not pi()
 
 
 def remote_any() -> bool:
@@ -1554,7 +1430,7 @@ def remote_line() -> str:
 def remote_flags(name: str, cwd: Path | None) -> list[str]:
     """`[run] remote_slots`: the session shows in claude.ai/code and the Claude apps as "<task title> · <repo> s2 ·
     B646" (the title leads, the id stays for referring to it), where a person can watch it and type to it. Claude
-    Code only, and only an interactive session (not Pi, not Copilot).
+    Code only, and only an interactive session (not Pi).
     (`[run] remote` alone puts only the control sessions there: `control_argv`.)"""
     if not remote_slots_on():
         return []
@@ -1582,9 +1458,6 @@ def agent_cmd(prompt: str, sid: str, model: str, idle: int, name: str, resume: b
     written to `<notes>/<name>.prompt` and goes in from there (`Claude.cmd`, `Pi.cmd`)."""
     pf = C.notes(f'{name}.prompt')
     pf.write_text(prompt, encoding='utf-8')
-    if copilot():
-        return shlex.join([C.run['agent'], *prompt_flag()]) + f' "$(cat {shlex.quote(str(pf))})" ' + \
-            shlex.join(agent_flags(sid, model, idle, resume))
     return backend().cmd(prompt, pf, sid, agent_flags(sid, model, idle, resume) + remote_flags(name, cwd))
 
 
@@ -1594,11 +1467,6 @@ def agent_argv(prompt: str, sid: str, model: str, idle: int, name: str, resume: 
     prompt is written to `<notes>/<name>.prompt` all the same."""
     pf = C.notes(f'{name}.prompt')
     pf.write_text(prompt, encoding='utf-8')
-    if copilot():
-        if len(prompt) > ARGV_PROMPT_MAX:
-            prompt = (f'Your instructions for this session are in {pf.as_posix()}, too long to pass on a Windows '
-                      f'command line. Read that whole file first, then follow it.')
-        return [plat.exe(C.run['agent']), *prompt_flag(), prompt, *agent_flags(sid, model, idle, resume, once)]
     return backend().argv(prompt, pf, sid, agent_flags(sid, model, idle, resume, once) +
                           ([] if once else remote_flags(name, cwd)))
 
@@ -2011,8 +1879,6 @@ def start(n: int, task, branch: str, model: str, idle: int, slots: int):
         log(f'slot {n}: checkout task/{tid} failed: {co.stderr.strip()[:200]}')
         return None
     sid = str(uuid.uuid4())
-    if copilot():
-        copilot_hooks(d, idle)
     prompt = prompt_for(tid, n, slots, d, branch)
     logfile, since = slot_header(n, f'{tid} session {sid}')
     if not (pid := MUX.open(n, d, prompt, sid, model, idle, slot_env(n), logfile)):
@@ -2513,23 +2379,8 @@ def fix_session(prompt: str, cwd: Path, fh, keep: dict | None = None, fork: str 
     more = backend().fork_flags(fork) if fork else []
     if not MASTER_PANE:
         env = {**os.environ, **env_vars(slot_env(None))}  # as the master pane gets it
-        if not copilot():
-            return sp.run(fix_cmd(prompt) + more, cwd=str(cwd), stdout=fh, stderr=sp.STDOUT, stdin=sp.DEVNULL,
-                          env=env, timeout=timeout).returncode
-        for attempt in range(3):  # Copilot CLI gives up on a model call that failed (a network drop): retry
-            fh.flush()
-            start = os.path.getsize(fh.name)
-            r = sp.run(fix_cmd(prompt) + more, cwd=str(cwd), stdout=fh, stderr=sp.STDOUT, stdin=sp.DEVNULL, env=env,
-                       timeout=timeout)
-            fh.flush()
-            with open(fh.name, 'rb') as f:
-                f.seek(start)
-                said = f.read().decode('utf-8', errors='replace')
-            if not r.returncode or attempt == 2 or not COPILOT_FAILED.search(said):
-                return r.returncode
-            wait = RESUME_AFTER * 2 ** attempt
-            log(f'the fix session could not reach the model; trying again in {wait}s')
-            time.sleep(wait)
+        return sp.run(fix_cmd(prompt) + more, cwd=str(cwd), stdout=fh, stderr=sp.STDOUT, stdin=sp.DEVNULL,
+                      env=env, timeout=timeout).returncode
     if not shutil.which(C.run['agent']):
         raise FileNotFoundError(C.run['agent'])
     sid = str(uuid.uuid4())
@@ -2563,7 +2414,7 @@ def fix_session(prompt: str, cwd: Path, fh, keep: dict | None = None, fork: str 
 
 def wait_session(pid: int, until: float) -> bool:
     """Wait for the session `pid` to end: False when it ran to `until` and was ended."""
-    while alive(pid):
+    while plat.alive(pid):
         if time.time() >= until:
             for p in [*plat.children(pid), pid]:
                 plat.terminate(p)
@@ -2616,7 +2467,7 @@ def adopt_merge(d: Path) -> None:
     except (OSError, ValueError):
         s = None
     if s and Path(s.get('cwd', '')) == d:
-        if alive(s['pid']) and MUX.session_id(s['pid']) == s['sid']:
+        if plat.alive(s['pid']) and MUX.session_id(s['pid']) == s['sid']:
             log(f'{s["tid"]}: adopted the {s["kind"]} session an earlier run left going in the master window')
             if not wait_session(s['pid'], s['until']):
                 log(f'{s["tid"]}: the adopted {s["kind"]} session ran past [run] fix_timeout; ended')
@@ -2654,7 +2505,7 @@ def gate_alive(s: dict) -> bool:
     """A gate (or session) record's process is still the one it names: its pid is alive and, where the OS
     tells (`plat.started`), started when the record says. After a reboot a days-old record's pid can be
     anyone's. A record without a start time (an older runner's) goes by the pid alone."""
-    return alive(s.get('pid')) and ('start' not in s or s['start'] == plat.started(s['pid']))
+    return plat.alive(s.get('pid')) and ('start' not in s or s['start'] == plat.started(s['pid']))
 
 
 def end_group(pid: int) -> None:
@@ -2903,9 +2754,6 @@ def fixer(head: str, prompt: str, cwd: Path, kind: str, to: str, keep: dict | No
 
 def fix_cmd(prompt: str) -> list[str]:
     """A fix session: one prompt, one answer, no session to keep — `-p`, so nothing types into a pane."""
-    if copilot():
-        return [plat.exe(C.run['agent']), '-p', prompt, '--allow-all', '--no-ask-user', '--no-auto-update',
-                '--model', C.run['fix_model'], *deny_push(), *lean()]
     return backend().fix_cmd(prompt)
 
 
@@ -4286,11 +4134,7 @@ TRANSCRIPTS: dict[str, str] = {}  # sid -> its transcript, once found: `stalled`
 def transcript(sid: str) -> str | None:
     if (t := TRANSCRIPTS.get(sid)) and os.path.exists(t):
         return t
-    if copilot():
-        f = copilot_home() / 'session-state' / sid / 'events.jsonl'
-        t = str(f) if f.exists() else None
-    else:
-        t = backend().find_transcript(sid)
+    t = backend().find_transcript(sid)
     if t:
         TRANSCRIPTS[sid] = t
     return t
@@ -4323,10 +4167,7 @@ def stats(sid: str) -> str:
         if not isinstance(d, dict):
             continue
         ts += [d['timestamp']] if 'timestamp' in d else []
-        if d.get('type') == 'session.usage_record' and (u := d.get('data', {}).get('usage')):  # Copilot
-            calls += 1
-            ctx.append(u.get('inputTokens', 0))
-        elif d.get('type') == 'message' and (m := d.get('message', {})).get('role') == 'assistant' \
+        if d.get('type') == 'message' and (m := d.get('message', {})).get('role') == 'assistant' \
                 and (u := m.get('usage')):  # Pi
             calls += 1
             ctx.append(u.get('input', 0) + u.get('cacheRead', 0) + u.get('cacheWrite', 0))
@@ -4505,7 +4346,7 @@ def end_orphans() -> None:
         except OSError:
             pass
     end = time.monotonic() + 5
-    while (found := [f for f in found if alive(f[0])]) and time.monotonic() < end:
+    while (found := [f for f in found if plat.alive(f[0])]) and time.monotonic() < end:
         time.sleep(0.25)
     for pid, *_ in found:
         try:
@@ -4727,35 +4568,11 @@ def api_up() -> bool:
 
 
 LIMIT = re.compile(r'limit\D{0,12}resets? (\d+(?::\d+)?\s?[ap]m)', re.I)
-COPILOT_LIMIT = re.compile(r'"type":"session\.error".*(rate.?limit|quota|usage limit|too many requests)', re.I)
-COPILOT_LIMIT_WAIT = 30 * 60  # Copilot does not say when a rate limit resets: try again after this long
-COPILOT_FAILED = re.compile(r'Failed to get response from the AI model|could not retrieve the list of available models',
-                            re.I)
-PROGRESS = ('"type":"user.message"', '"type":"assistant.turn_start"', '"type":"tool.execution_start"')
 RESUME_AFTER = 120  # s after a failed model call before the session is resumed; doubles with each resume
 RESUME_MAX = 5
 START_TRIES = 3  # a task whose session will not start is tried this many times in a run
 RESUME_FAILED = ('The connection to the model failed and this session stopped mid-task. Carry on with task {tid} from '
           'where you left off.')
-
-
-def copilot_failed(sid: str) -> tuple[str, float] | None:
-    """(message, age in s) when the session's last word is a model call that failed (a network drop), else None.
-    Copilot gives up after a few quick retries and sits at its prompt, and no Stop hook fires."""
-    t = transcript(sid)
-    if not t:
-        return None
-    err, ts = '', ''
-    for l in open(t, encoding='utf-8', errors='replace'):
-        if '"type":"session.error"' in l and COPILOT_FAILED.search(l):
-            d = json.loads(l)
-            err, ts = d.get('data', {}).get('message', 'a failed model call'), d.get('timestamp', '')
-        elif any(p in l for p in PROGRESS):
-            err = ''
-    if not err or not ts:
-        return None
-    at = dt.datetime.fromisoformat(ts.replace('Z', '+00:00'))
-    return err, (dt.datetime.now(dt.timezone.utc) - at).total_seconds()
 
 
 def pi_last_error(t: str) -> tuple[str, str]:
@@ -4776,8 +4593,6 @@ def pi_last_error(t: str) -> tuple[str, str]:
 
 def agent_failed(sid: str) -> tuple[str, float] | None:
     """(message, age in s) when the session stopped on a failed model call and should be resumed."""
-    if copilot():
-        return copilot_failed(sid)
     if not pi() or not (t := transcript(sid)):
         return None
     err, ts = pi_last_error(t)
@@ -4799,24 +4614,12 @@ def resume_failed(n: int, pid: int, sid: str, tid: str, model: str, idle: int) -
                     C.notes(f'slot{n}.log'))
 
 
-def copilot_limit_only(sid: str) -> dt.datetime | None:
-    """`limit_only` for Copilot CLI: a session whose only errors are rate limits and that ran no tool."""
-    t = transcript(sid)
-    text = open(t, encoding='utf-8', errors='replace').read() if t else ''
-    if not COPILOT_LIMIT.search(text) or '"type":"tool.execution_complete"' in text:
-        return None
-    shutil.rmtree(Path(t).parent, ignore_errors=True)
-    return dt.datetime.now() + dt.timedelta(seconds=COPILOT_LIMIT_WAIT)
-
-
 def limit_only(sid: str, slot_log: Path, since: int) -> dt.datetime | None:
     """If the session did nothing but hit the usage limit: discard its transcript, return the reset time.
 
     A limited session produced no work, so counting it as an attempt would drop the task from the run;
     and keeping its transcript would make the next run resume a session that never started.
     """
-    if copilot():
-        return copilot_limit_only(sid)
     if not backend().limits():
         return None
     t = transcript(sid)
@@ -5070,8 +4873,8 @@ def stop_hook(idle: int) -> int:
     return 0
 
 
-# Claude Code; Copilot CLI; Pi (a user message or a tool result)
-USER_ENTRY = re.compile(r'"type":"(user|user\.message|tool\.execution_complete)"|"role":"(user|toolResult)"')
+# Claude Code; Pi (a user message or a tool result)
+USER_ENTRY = re.compile(r'"type":"user"|"role":"(user|toolResult)"')
 
 
 def _user_entries(t: str) -> int:
@@ -5204,8 +5007,6 @@ def sequential(branch: str, model: str, idle: int, pause: int, force: bool, once
         before = git('rev-parse', 'HEAD').stdout.strip()
         log(f'{tid}: starting ({task[1]})')
         env = env_vars(slot_env(1))
-        if copilot():
-            copilot_hooks(ROOT, idle)
         if plat.WINDOWS:  # no sh to read the prompt file; the marker is how the Stop hook finds the agent
             code = run_session(agent_argv(prompt_for(tid, 1, 1, ROOT, here), sid, model, idle, 'slot1'),
                                str(ROOT), env, C.notes('slot1.live'))
@@ -5388,7 +5189,6 @@ def run(argv: list[str], prog: str) -> int:
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('slots', nargs='?', default=None,
                     help="how many agents at once (default [run] slots), or 'once' for one task then stop")
-    ap.add_argument('--mode', help=argparse.SUPPRESS)  # ponytail: gone in 0.31 (always different files); accepted so wrappers passing it still run
     ap.add_argument('--force', action='store_true', help='keep starting tasks past the session and weekly usage caps')
     power = ap.add_mutually_exclusive_group()
     power.add_argument('--shutdown', action='store_true',
@@ -5448,8 +5248,6 @@ def run(argv: list[str], prog: str) -> int:
         return dry_run(slots, branch)
 
     lock = single_run()  # noqa: F841 — held until the process ends
-    if copilot():
-        copilot_trust(ROOT, SLOTS_DIR)
     ensure_local(ROOT)  # this machine's runner.local.toml: made once (all comments), never rewritten, git-ignored
     if stopping() and not keep.get('stop'):  # left by a run killed before it saw it; a stop is for the run that is up
         clear_stop()
@@ -5559,7 +5357,7 @@ def run(argv: list[str], prog: str) -> int:
         waiting = {n: q for n, q in queued().items() if n in free_at and n <= slots}
         tagged = None  # MUX.panes(), looked at once a tick and only for a free slot
         for n in list(free_at):
-            if n in procs and alive(procs[n][0]) and (f := agent_failed(procs[n][1])) and \
+            if n in procs and plat.alive(procs[n][0]) and (f := agent_failed(procs[n][1])) and \
                     (k := failed_resumes.get(procs[n][1], 0)) < RESUME_MAX and f[1] >= RESUME_AFTER * 2 ** k:
                 pid, sid, since = procs[n]
                 failed_resumes[sid] = k + 1
@@ -5568,7 +5366,7 @@ def run(argv: list[str], prog: str) -> int:
                 if new := resume_failed(n, pid, sid, running[n][0], model, idle):
                     procs[n] = (new, sid, since)
                     stall_said.add(sid)  # its transcript is still old until the resumed session writes
-            if n in procs and not alive(procs[n][0]):
+            if n in procs and not plat.alive(procs[n][0]):
                 (pid, sid, since), task = procs.pop(n), running.pop(n)
                 log(f'slot {n}: {task[0]} exited ({stats(sid)})')
                 end_orphans()
@@ -5614,14 +5412,14 @@ def run(argv: list[str], prog: str) -> int:
                     log(f'slot {n}: {running[n][0]} looks stalled ({why}); look at {MUX.where(n)}')
                     print('\a', end='', flush=True)
             if n not in procs and n in foreign:
-                if alive(foreign[n]):
+                if plat.alive(foreign[n]):
                     continue  # see queue_cut_off: never a second agent in its worktree
                 log(f'slot {n}: the session no run knew (pid {foreign.pop(n)}) ended')
                 foreign.update(queue_cut_off(branch, [n]))
                 continue
             if n not in procs and tagged is None:
                 tagged = MUX.panes()  # a session that ended this tick is in it with a dead pid, as before
-            if n not in procs and (old := tagged.get(f's{n}')) and alive(old[1]):
+            if n not in procs and (old := tagged.get(f's{n}')) and plat.alive(old[1]):
                 # a session no run tracks still sits in this slot (adopt found no session id, or a second
                 # tmux session): never reset the worktree under it; the slot waits until that pane ends
                 if f'pid{old[1]}' not in stall_said:
@@ -6785,7 +6583,7 @@ def cmd_attach(argv: list[str], prog: str = f'{RUNNER} attach') -> int:
                   f'{C.notes("run.log")}. {RUNNER} attach s1 shows slot 1.')
             return 0
         pid = marker_pid(C.notes(f'slot{which[1:]}.live')) if re.fullmatch(r's\d+', which) else 0
-        if not (pid and alive(pid)):
+        if not (pid and plat.alive(pid)):
             print(f'{which} is not running: {RUNNER} status lists the slots', file=sys.stderr)
             return 1
         if not plat.show_console(pid):
@@ -6811,8 +6609,8 @@ CONTROL_SERVER_WAIT = (30, 600)  # s before the control server restarts after it
 
 
 def control_ok() -> bool:
-    """Control sessions are Claude Code sessions: none for Copilot CLI or pi."""
-    return not copilot() and not pi()
+    """Control sessions are Claude Code sessions: none for pi."""
+    return not pi()
 
 
 def control_brief() -> str:
@@ -7094,7 +6892,7 @@ def control_live(n: int) -> int:
         pid = int(pid_s)
     except (OSError, ValueError):
         return 0
-    if not alive(pid) or pid == os.getpid():
+    if not plat.alive(pid) or pid == os.getpid():
         return 0
     args = plat.cmdline(pid)
     return pid if args is None or not sid or sid in args or 'control' in args else 0
@@ -7610,7 +7408,6 @@ def image_drift_note(lost: int, version: str) -> str:
 
 
 
-feed_images = feed_files  # the name before B30
 
 
 IMAGE_SOURCE_RE = re.compile(r'\[Image: source: ([^\]\n]+?)\]')
@@ -8007,8 +7804,8 @@ def server_last_error(err: Path, since: int) -> str:
 def control_server_live() -> int:
     """The pid of the control server a run started (`<notes>/control-server.pid`), still up, or 0."""
     pid = marker_pid(C.notes('control-server.pid'))
-    args = plat.cmdline(pid) if pid and alive(pid) else None
-    return pid if pid and alive(pid) and (args is None or 'remote-control' in args) else 0
+    args = plat.cmdline(pid) if pid and plat.alive(pid) else None
+    return pid if pid and plat.alive(pid) and (args is None or 'remote-control' in args) else 0
 
 
 def keep_control_server() -> None:
@@ -8053,7 +7850,7 @@ def keep_control_server() -> None:
         else:  # adopted from an earlier run: this run's now (B12: the start's sweep leaves it to us)
             rc_record('server', f'{ROOT.name} · control', pid, os.getpid())
         began = time.monotonic()
-        while (proc.poll() is None) if proc else alive(pid):
+        while (proc.poll() is None) if proc else plat.alive(pid):
             time.sleep(1 if time.monotonic() - began < 30 else 10)
         rc_forget(C.notes(REMOTE_DIR) / f'server-{pid}.json')
         lasted = time.monotonic() - began

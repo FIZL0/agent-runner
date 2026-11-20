@@ -11,8 +11,8 @@
 
 agent-runner runs several coding agents at once, unattended, against a git repository and a plain markdown
 task list. Each agent gets one task, in its own git worktree and terminal. When it finishes, the runner
-tests its branch, merges it, pushes, and starts the next task. Sessions run on Claude Code by default, on
-[Pi](#other-providers) for other providers, or on [Copilot CLI](docs/SETUP.md#copilot-cli).
+tests its branch, merges it, pushes, and starts the next task. Sessions run on Claude Code by default, or on
+[Pi](#other-providers) for other providers (GitHub Copilot among them).
 
 - **Parallel without chaos.** Tasks that touch different files run side by side; tasks that share files,
   or wait on each other, never do.

@@ -862,9 +862,8 @@ def test_remote_auto(tmp: Path):
         with mock.patch.dict(os.environ, base | {'CLAUDE_CODE_USE_BEDROCK': '0'}, clear=True):
             check(R.remote_on(), 'auto, CLAUDE_CODE_USE_BEDROCK=0: on')
         with mock.patch.dict(os.environ, base, clear=True):
-            for name, why in (('copilot', 'agent copilot'), ('pi', 'backend pi')):
-                with mock.patch.object(R, name, lambda: True):
-                    check(not R.remote_on() and R.remote_off_why().startswith(why), f'auto, {why}: off')
+            with mock.patch.object(R, 'pi', lambda: True):
+                check(not R.remote_on() and R.remote_off_why().startswith('backend pi'), 'auto, backend pi: off')
             seen.write_text('{}', encoding='utf-8')
             check(not R.remote_on() and 'remote-control' in R.remote_off_why(),
                   'auto, Remote Control never allowed in Claude Code: off')
@@ -1803,20 +1802,20 @@ def test_short_titles_and_since(repo: Path):
                 write(hum({'type': 'text', 'text': 'old'}), pics('/u/old.png'),
                       hum({'type': 'image'}, {'type': 'image'}, {'type': 'text', 'text': 'look'}),
                       pics('/u/a.png', '/u/b.png'), note, res)
-                eq(R.feed_images(), ['/u/a.png', '/u/b.png'],
+                eq(R.feed_files(), ['/u/a.png', '/u/b.png'],
                    'control --new --ask passes on the images of the message being handed on')
                 write(hum({'type': 'image'}), pics('/u/a.png'), res, hum({'type': 'text', 'text': 'and this?'}))
-                eq(R.feed_images(), [], 'a later text-only message forwards no earlier images')
+                eq(R.feed_files(), [], 'a later text-only message forwards no earlier images')
                 src = '/tmp/claude-1000/p/7479c552/images/1.png'
                 meta = lambda t: {'type': 'user', 'isMeta': True, 'origin': {'kind': 'human'},
                                   'message': {'content': [{'type': 'text', 'text': t}]}}
                 write(hum({'type': 'text', 'text': 'old'}), meta('[Image: source: /u/old.png]'),
                       hum({'type': 'image'}, {'type': 'text', 'text': 'see this'}),
                       meta(f'[Image: source: {src}]'), pics(src), res)
-                eq(R.feed_images(), [src], 'B24: an isMeta [Image: source: PATH] companion is passed on, deduped')
+                eq(R.feed_files(), [src], 'B24: an isMeta [Image: source: PATH] companion is passed on, deduped')
                 write(hum({'type': 'image'}, {'type': 'text', 'text': 'see'}), meta(f'[Image: source: {src}]'),
                       res, hum({'type': 'text', 'text': 'and this?'}))
-                eq(R.feed_images(), [], 'B24: a later text-only message forwards no companion image')
+                eq(R.feed_files(), [], 'B24: a later text-only message forwards no companion image')
                 fil = lambda p: {'type': 'attachment', 'attachment': {'type': 'file', 'filename': p}}
                 zp, ip = '/h/.claude/uploads/s/d6c7a610-app.zip', '/h/.claude/uploads/s/9a72958e-shot.png'
                 summ = {'type': 'user', 'isCompactSummary': True, 'message': {'content': 'continued'}}
@@ -1871,9 +1870,9 @@ def test_short_titles_and_since(repo: Path):
                           took)
                 write(hum({'type': 'image'}), pics('/u/c.png'))
                 Path(tdir, 'feed.sid').unlink()
-                eq(R.feed_images(), [], 'no feed.sid and no session env: nothing')
+                eq(R.feed_files(), [], 'no feed.sid and no session env: nothing')
                 with mock.patch.dict(os.environ, {'CLAUDE_CODE_SESSION_ID': sid}):
-                    eq(R.feed_images(), ['/u/c.png'], 'without feed.sid the calling session is read (B22)')
+                    eq(R.feed_files(), ['/u/c.png'], 'without feed.sid the calling session is read (B22)')
         h = run(repo, 'control', '--help')
         check('--image' in h.stdout and '--file' in h.stdout, 'control --file (alias --image) is an option',
               h.stdout)
