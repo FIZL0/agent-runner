@@ -216,7 +216,6 @@ blocks have none and sort first). `[needs]` in runner.toml changes it:
     heading = "Needs you"   # the heading in status, since and the control sessions' opening
     ages = true             # show each item's age
     order = "oldest"        # "newest" first, or "plan": TODO.md's order
-    map_replies = true      # `plan answer` takes a reply that names no id to the item it answers
 
 ### Tasks waiting on a person
 
@@ -224,9 +223,9 @@ A block whose why starts with a caps label waits on a person, not a task: `CONFI
 hand and say what you saw), `DECIDE:` (answer a question or a choice), `BLOCKED:` (access, a login, or a fix
 only a person can make). An agent files one with `done R1 "msg" --blocked "CONFIRM: watch a phone for a push
 when a task lands"`; such a block never takes an `(after …)`. It lists under Needs you beside the
-concept pages, and takes one of three answers (a control session maps what the person says; a reply that
-names no item, "yes", "B", "later", goes through `plan answer "<reply>"`, which picks the one item it fits
-and refuses, listing them, when it could be several):
+concept pages, and takes one of three answers (the control session or the runner feed maps what the person
+says to the item's id, a reply that names no item, "yes", "B", "later", included, and asks which one when it
+cannot tell):
 
 - `plan confirm R1 "the push came"`: a CONFIRM is ticked with that noted; a DECIDE or BLOCKED reopens with
   the answer noted; a concept is approved.

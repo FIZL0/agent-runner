@@ -38,9 +38,6 @@ re-reads it on every turn pays again. So the backlog is a command instead:
     ./run plan tell <ID> TEXT    type TEXT into the pane of the slot running ID (queued for its next turn); no
                                  plan edit; an error when no slot runs ID
     ./run plan shelve <ID>       later: stays blocked, off Needs you; `unshelve <ID>` brings it back
-    ./run plan answer REPLY      a reply naming no id ("yes", "B", "later", "use SQLite"): goes to the one item
-                                 under Needs you it clearly answers (confirm, change or shelve); refused,
-                                 with the items, when it could be more than one ([needs] map_replies)
     ./run plan approve <ID> [CHOICE]   OK a concept (or its build task's id): the build opens, CHOICE noted on it
     ./run plan revise <ID> WHY   changes asked: the concept reopens with WHY noted, its waiting build is dropped
     ./run plan claims            which run has which task (with a remote to claim through), and since when (STALE: no refresh in 3 h),
@@ -1105,14 +1102,15 @@ def change(tid: str, instead: str, todo=None, done=None) -> str:
     return f'{t} is open again with your change noted, and a run starts it'
 
 
-# --- B27: "Needs you": each ask in everyday words, with its age, and replies that name no id ----------------
+# --- B27: "Needs you": each ask in everyday words, with its age --------------------------------------------
 #
 # What waits on a person shows under `[needs] heading` ("Needs you") as one plain line each: what is asked and
 # what to reply ("Check the push reached your phone - reply yes/no"), its link on a line of its own, oldest
 # first with its age. The caps labels stay in TODO.md and in `asks`, for the tools; the person never reads
 # them. A block on a person is stamped `(asked YYYY-MM-DD HH:MM)` when it is filed, which is where the age
-# comes from (older blocks have none and sort first). `answer TEXT` takes a reply that names no id ("yes",
-# "B", "later", "use SQLite") to the one item it clearly answers, and confirms, changes or shelves it.
+# comes from (older blocks have none and sort first). A reply that names no id ("yes", "B", "later") is mapped
+# to its item by the session the person talks to (control or feed), which then runs confirm, change or
+# shelve with that id, and asks the person when it cannot tell which item (C5: no regex guessing here).
 
 ASKED = re.compile(r' ?\(asked (\d{4}-\d\d-\d\d \d\d:\d\d)\)')
 REPLY_HINT = {'CONCEPT': 'reply A/B/C', 'CONFIRM': 'reply yes/no', 'DECIDE': 'reply with your answer',
@@ -1120,12 +1118,11 @@ REPLY_HINT = {'CONCEPT': 'reply A/B/C', 'CONFIRM': 'reply yes/no', 'DECIDE': 're
 
 
 def needs_cfg() -> dict:
-    """`[needs]`: heading, ages, order, map_replies (config.DEFAULTS has them all)."""
+    """`[needs]`: heading, ages, order (config.DEFAULTS has them all)."""
     try:
-        return {'heading': 'Needs you', 'ages': True, 'order': 'oldest', 'map_replies': True,
-                **(cfg().raw.get('needs') or {})}
+        return {'heading': 'Needs you', 'ages': True, 'order': 'oldest', **(cfg().raw.get('needs') or {})}
     except SystemExit:  # outside a repository: the defaults
-        return {'heading': 'Needs you', 'ages': True, 'order': 'oldest', 'map_replies': True}
+        return {'heading': 'Needs you', 'ages': True, 'order': 'oldest'}
 
 
 def stamp_ask(why: str, now=None) -> str:
@@ -1184,84 +1181,6 @@ def in_order(items: list, stamps: dict[str, str], order: str = 'oldest') -> list
         return list(items)
     key = lambda a: stamps.get(a[1], '')
     return sorted(items, key=key, reverse=order == 'newest')
-
-
-SHELVE_REPLY = re.compile(r"^\W*(later|not now|skip( (it|that|this))?|someday|park (it|that)|shelve( it)?|"
-                          r"no time)\b|\b(later|not now|someday)\W*$", re.I)
-PICK_REPLY = re.compile(r'^\W*(?:(?:option|go with(?: option)?|pick|choose|take)\s+([A-Ca-c])\b|'
-                        r'([A-C])\s*(?:[.!]?\s*$|[,:\-–—]))')
-NO_REPLY = re.compile(r"^\W*(no|nope|nah|didn'?t|did not|doesn'?t|does not|it failed|failed|not working|"
-                      r"broken|nothing came)\b", re.I)
-CHANGE_REPLY = re.compile(r'\b(instead|rather|try)\b', re.I)
-YES_REPLY = re.compile(r"^\W*(yes|yep|yeah|y|ok|okay|it worked|works|worked|confirm(ed)?|looks good|"
-                       r"approved?|lgtm|i saw|saw it|got it|it came|sure)\b", re.I)
-DONE_REPLY = re.compile(r'^\W*(done|logged in|added( it)?|fixed( it)?|set( it)? up)\b', re.I)
-
-
-def reply_kind(text: str) -> str:
-    """What a bare reply does: 'shelve', 'pick' (an option letter), 'no', 'change', 'yes', 'done' or 'other'."""
-    for kind, rx in (('shelve', SHELVE_REPLY), ('pick', PICK_REPLY), ('no', NO_REPLY), ('change', CHANGE_REPLY),
-                     ('yes', YES_REPLY), ('done', DONE_REPLY)):
-        if rx.search(text):
-            return kind
-    return 'other'
-
-
-def _words(s: str) -> set[str]:
-    return {w for w in re.findall(r'[a-z0-9]+', s.lower()) if len(w) > 3}
-
-
-def answered(text: str, items: list) -> tuple | None:
-    """The one item (asks tuple) that `text`, a reply naming no id, clearly answers; None when it could be more
-    than one or none. An id it names wins; then the kind of reply (a letter answers a concept, yes/no a check,
-    done a block, free words a decision); then the one whose words it shares most."""
-    named = [a for a in items if any(x and re.search(rf'\b{re.escape(x)}\b', text) for x in a[1:3])]
-    if len(named) == 1:
-        return named[0]
-    kind = reply_kind(text)
-    labels = {'pick': ('CONCEPT',), 'yes': ('CONFIRM', 'CONCEPT'), 'no': ('CONFIRM', 'CONCEPT'),
-              'done': ('BLOCKED', 'CONFIRM'), 'other': ('DECIDE',)}.get(kind, ())
-    fit = items
-    for want in ((labels[0],) if labels else ()), labels:
-        if want and (f := [a for a in items if a[0] in want]):
-            fit = f
-            break
-    if len(fit) == 1:
-        return fit[0]
-    said = _words(text)
-    score = sorted(((len(said & _words(f'{a[3]} {a[5]}')), n) for n, a in enumerate(fit)), reverse=True)
-    if score and score[0][0] and (len(score) == 1 or score[1][0] < score[0][0]):
-        return fit[score[0][1]]
-    return None
-
-
-def answer(text: str, todo=None, done=None) -> str:
-    """A reply that names no id ("yes", "B", "later", "use SQLite"), taken to the one item under Needs you it
-    clearly answers: shelved on a later, changed on a no or a "do X instead", else confirmed (a concept
-    approved). Refused, with the items listed, when it could answer more than one."""
-    todo, done = ensure(todo, done)
-    if not needs_cfg()['map_replies']:
-        raise SystemExit(f'{PROG}: replies go to an item only by its id here ([needs] map_replies = false): '
-                         f'`{PROG} confirm|change|shelve ID`')
-    items = asks(todo)
-    if not items:
-        raise SystemExit(f'{PROG}: nothing needs you now')
-    a = answered(text, items)
-    if a is None:
-        listing = '\n  '.join(f'{x[1]}: {plain_ask(x[0], x[3], x[5])}' for x in items)
-        raise SystemExit(f'{PROG}: which one does that answer? Say it with the id (`{PROG} confirm|change|shelve '
-                         f'ID`):\n  {listing}')
-    kind, t = reply_kind(text), a[1]
-    if kind == 'shelve':
-        did = f'shelved {shelve(t, todo=todo)}: still blocked, off {needs_cfg()["heading"]}'
-    elif kind in ('no', 'change'):
-        did = change(t, text, todo=todo, done=done)
-    else:
-        if kind == 'pick' and (m := PICK_REPLY.search(text)):
-            letter = (m.group(1) or m.group(2)).upper()
-            text = text if text.strip().upper().strip('.! ') != letter else f'option {letter}'
-        did = confirm(t, text, todo=todo, done=done)
-    return f'{did} (your reply went to: {plain_ask(a[0], a[3], a[5])})'
 
 
 # --- B19: drop or change a task a run's slot is on: the run stops that slot too ------------------------------
@@ -1948,8 +1867,6 @@ def _main(argv: list[str], c) -> int:
         if argv[0] == 'shelve':
             return say(f'shelved {shelve(argv[1])}: still blocked, off {needs_cfg()["heading"]} (`{PROG} unshelve` brings it back)')
         return say(f'{unshelve(argv[1])} is back on {needs_cfg()["heading"]}')
-    if argv[:1] == ['answer'] and len(argv) > 1:
-        return say(answer(' '.join(argv[1:])))
     if argv == ['kinds']:
         k, own = kinds()
         return say('\n'.join(f'{p}  {m}' for p, m in k.items())

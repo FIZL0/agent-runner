@@ -1001,13 +1001,12 @@ def test_control(repo: Path):
     check('Waiting for your OK' not in brief, 'B27: the old heading is gone from the brief')
     check('never show the person those labels' in brief and 'reply yes/no' in brief,
           'B27: the brief words each item plainly, without the caps labels', brief)
-    check(f'{R.C.command} plan answer "<their words>"' in brief,
-          'B27: a reply naming no item goes through plan answer')
-    with mock.patch.object(P, 'needs_cfg', lambda: {'heading': 'For you', 'ages': True, 'order': 'oldest',
-                                                    'map_replies': False}):
+    check('plan answer' not in brief and f'{R.C.command} plan confirm|change|shelve ID' in brief
+          and 'ask the person, naming the items' in brief,
+          'C5: a reply naming no item is mapped to its id by the session, which asks when it cannot tell')
+    with mock.patch.object(P, 'needs_cfg', lambda: {'heading': 'For you', 'ages': True, 'order': 'oldest'}):
         b2 = R.control_brief()
-    check('**For you**' in b2 and 'plan answer' not in b2 and 'map_replies is off' in b2,
-          'B27: [needs] heading names the group; map_replies = false asks which one instead', b2[:200])
+    check('**For you**' in b2, 'B27: [needs] heading names the group', b2[:200])
     check('status · since · follow' not in brief, 'the hints line is slash commands, not bare words')
     check('--after T181' in brief and f'{R.C.command} plan block ID --after' in brief,
           '"do X after T181" queues X with --after (block --after for a queued task)')
@@ -1054,7 +1053,8 @@ def test_control(repo: Path):
     with mock.patch.object(R.P, 'asks', lambda *a, **k: [item]):
         msg = R.control_ask('deploy with tags instead of every push')
     check(msg.startswith('deploy with tags') and '- R43: Deploy on every push or on v* tags?' in msg
-          and 'plan answer' in msg, 'a handed-on ask lists the waiting items and says to plan answer')
+          and 'plan confirm|change|shelve ID' in msg and 'plan answer' not in msg,
+          'a handed-on ask lists the waiting items and says to settle one by its id')
     with mock.patch.object(R.P, 'asks', lambda *a, **k: []):
         eq(R.control_ask('add dark mode'), 'add dark mode', 'nothing waiting: the ask as it was')
     with mock.patch.object(R.P, 'asks', lambda *a, **k: (_ for _ in ()).throw(OSError())):
@@ -1302,7 +1302,7 @@ def test_person_waiting(repo: Path):
         text = R.since_text([], now, {}, now, waiting=w)[0]
         check(text.startswith('Needs you:\n   5h  Watch a phone') and 'CONFIRM' not in text
               and 'DECIDE' not in text and 'BLOCKED' not in text, 'since: the same', text)
-        nc = {'heading': 'Needs you', 'ages': True, 'order': 'oldest', 'map_replies': True}
+        nc = {'heading': 'Needs you', 'ages': True, 'order': 'oldest'}
         for order, ids in (('newest', ['F2', 'F3', 'F1']), ('plan', ['F3', 'F2', 'F1'])):
             with mock.patch.object(P, 'needs_cfg', lambda: {**nc, 'order': order}):
                 got = re.findall(r'\[(F\d)\]', '\n'.join(R.waiting_text(w, now=now)))
@@ -1742,13 +1742,9 @@ def test_short_titles_and_since(repo: Path):
         with mock.patch.object(R, 'remote_on', lambda: True), mock.patch.dict(R.C.run, {'agent': 'claude'}):
             fa = R.feed_argv()
             sp_ = fa[fa.index('--system-prompt') + 1]
-            check(f'{R.C.command} plan answer "<their words>"' in sp_ and '"Needs you"' in sp_,
-                  'B27: the feed answers a reply to an item under Needs you with plan answer', sp_)
-            with mock.patch.object(P, 'needs_cfg', lambda: {'heading': 'Needs you', 'ages': True,
-                                                            'order': 'oldest', 'map_replies': False}):
-                fa = R.feed_argv()
-            check('plan answer' not in fa[fa.index('--system-prompt') + 1],
-                  'B27: and not with [needs] map_replies = false')
+            check(f'{R.C.command} plan confirm ID "<their words>"' in sp_ and f'{R.C.command} plan shelve ID' in sp_
+                  and '"Needs you"' in sp_ and 'plan answer' not in sp_ and 'ask which one they mean' in sp_,
+                  'C5: the feed maps a reply under Needs you to its id, and asks when it cannot tell', sp_)
         started = []
         with mock.patch.object(R, 'MUX', R.TmuxMux()), mock.patch.dict(os.environ, {'TMUX_PANE': '%1'}), \
                 mock.patch.object(R, 'tmux', lambda *a, **k: subprocess.CompletedProcess(a, 0, 'mine\n', '')), \

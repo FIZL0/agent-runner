@@ -483,6 +483,20 @@ def test_similar():
            ['V2'], 'a shared rare file and some of the words is enough')
         eq(plan.similar('the main menu | files: src/main.rs', todo=todo, skip='P1'), [],
            'a file every task names is not a match by itself')
+    # C5: a second _words (plan answer's) shadowed this one, so ids, fields and stop words were matched on
+    eq(plan._words('**B12** the radar minimap | files: src/hud.rs, docs/guide.md'), {'radar', 'minimap'},
+       'C5: _words drops the id and the files field')
+    eq(plan._words('about which those through radar'), {'radar'}, 'C5: _words drops stop words')
+    with tempfile.TemporaryDirectory() as tmp:
+        d = Path(tmp) / 'plan'
+        todo, done = plan.ensure(d / 'TODO.md', d / 'DONE.md')
+        kw = dict(todo=todo, done=done)
+        plan.add('V', 'the radar shows names | files: src/hud.rs', **kw)
+        plan.add('V', 'the garage paints bikes | files: src/garage.rs', **kw)
+        plan.add('V', 'stream tiles nearest first | files: src/tiles.rs', **kw)
+        eq(plan.similar('about which those through every would | files: src/hud.rs, src/garage.rs, src/tiles.rs',
+                        todo=todo), [], 'C5: similar matches no task on stop words, file paths or ids alone')
+        eq(plan.similar('V1 V2 V3 should those | files: x.rs', todo=todo), [], 'C5: nor on the ids it names')
 
 
 def test_add_refuses_a_duplicate():
@@ -669,11 +683,8 @@ def test_needs_you():
     now = __import__('datetime').datetime(2026, 11, 20, 15, 0)
     eq([plan.age(s, now) for s in ('2026-11-20 15:00', '2026-11-20 14:25', '2026-11-20 13:00', '2026-11-17 15:00',
                                    '')], ['now', '35m', '2h', '3d', ''], 'ages read short')
-    for text, kind in (('yes', 'yes'), ('Yep, it came', 'yes'), ('B', 'pick'), ('option a', 'pick'),
-                       ('go with C please', 'pick'), ('a push came', 'other'), ('later', 'shelve'),
-                       ('not now', 'shelve'), ("no, nothing came", 'no'), ('try the CI token instead', 'change'),
-                       ('done', 'done'), ('use SQLite', 'other')):
-        eq(plan.reply_kind(text), kind, f'{text!r} reads as {kind}')
+    for gone in ('reply_kind', 'answered', 'answer', 'SHELVE_REPLY', 'PICK_REPLY', 'DONE_REPLY'):
+        check(not hasattr(plan, gone), f'C5: plan.{gone} is gone (sessions map replies to ids)')
     with tempfile.TemporaryDirectory() as tmp:
         todo = Path(tmp) / 'plan' / 'TODO.md'
         plan.ensure(todo)
@@ -687,46 +698,11 @@ def test_needs_you():
         plan.block('F4', 'needs F1 first', todo=todo)
         check('(asked' not in todo.read_text(encoding='utf-8').split('**F4**')[1].split('\n')[0],
               'a plain block is not stamped')
-        items = plan.asks(todo)
-        eq(plan.answered('yes', items)[1], 'F1', '"yes" goes to the one check')
-        eq(plan.answered('done', items)[1], 'F3', '"done" goes to the one block')
-        eq(plan.answered('use SQLite', items)[1], 'F2', 'other words go to the one decision')
-        eq(plan.answered('F3 is later', items)[1], 'F3', 'an id it names wins')
-        eq(plan.answered('later', items), None, 'a bare "later" could be any of them: none')
-        eq(plan.answered('the deploy key: later', items)[1], 'F3', 'unless its words point at one')
-        said = plan.answer('the deploy key can wait, later', todo=todo)
-        check(said.startswith('shelved F3') and 'Add the deploy key on the server - reply done once it is' in said,
-              'answer shelves on a later and says which item it went to', said)
-        said = plan.answer('yes, it came within a minute', todo=todo)
-        check(said.startswith('confirmed and ticked F1'), 'answer confirms a check on a yes', said)
-        said = plan.answer('SQLite', todo=todo)
+        eq(sorted(a[1] for a in plan.asks(todo)), ['F1', 'F2', 'F3'], 'the three asks wait under Needs you')
+        has(plan.confirm('F2', 'SQLite', todo=todo), 'F2', 'a reply mapped to its id is answered with confirm')
         has(todo.read_text(encoding='utf-8'), r'\*\*F2\*\* .*your answer \(DECIDE Postgres or SQLite for the database\?\)'
-            r': SQLite$', 'and answers the decision, unblocked with the answer noted (no stamp in the note)')
-        try:
-            plan.answer('yes', todo=todo)
-            check(False, 'nothing left to answer: refused')
-        except SystemExit as e:
-            check('nothing needs you' in str(e), 'nothing left to answer: refused', str(e))
-        plan.unshelve('F3', todo=todo)
-        plan.block('F2', 'CONFIRM: check the menu on a phone', todo=todo)
-        eq(plan.answered('yes', plan.asks(todo))[1], 'F2', 'one check and a block: "yes" is the check\'s')
-        plan.unblock('F4', todo=todo)
-        plan.block('F4', 'CONFIRM: check the menu on a tablet', todo=todo)
-        try:
-            plan.answer('yes', todo=todo)
-            check(False, 'two checks and a bare yes: refused')
-        except SystemExit as e:
-            check('which one' in str(e) and 'F2: Check the menu on a phone - reply yes/no' in str(e),
-                  'two checks and a bare yes: it asks which one, listing them in plain words', str(e))
-        orig = plan.needs_cfg
-        plan.needs_cfg = lambda: {'heading': 'Needs you', 'ages': True, 'order': 'oldest', 'map_replies': False}
-        try:
-            plan.answer('the deploy key is in, done', todo=todo)
-            check(False, 'map_replies = false: refused')
-        except SystemExit as e:
-            check('map_replies' in str(e), 'with [needs] map_replies = false a reply needs its id', str(e))
-        finally:
-            plan.needs_cfg = orig
+            r': SQLite$', 'the decision is unblocked with the answer noted (no stamp in the note)')
+        check('plan answer' not in plan.HELP, 'C5: plan help no longer offers plan answer')
         stamps = {'F2': '2026-11-20 14:00', 'F3': '2026-11-20 09:00'}
         a = [('X', 'F2'), ('X', 'F3'), ('X', 'F9')]
         eq([x[1] for x in plan.in_order(a, stamps)], ['F9', 'F3', 'F2'], 'oldest first, unstamped first of all')
@@ -735,18 +711,21 @@ def test_needs_you():
 
 
 def test_needs_config():
-    print('config: B27 [needs] heading, ages, order, map_replies are settings, with defaults')
+    print('config: B27 [needs] heading, ages, order are settings, with defaults (C5: map_replies is gone)')
     from agent_runner.config import Config
     with tempfile.TemporaryDirectory() as tmp:
         r = Path(tmp)
         git(r, 'init', '-q')
-        eq(Config(r).raw['needs'], {'heading': 'Needs you', 'ages': True, 'order': 'oldest', 'map_replies': True},
-           'the defaults')
+        eq(Config(r).raw['needs'], {'heading': 'Needs you', 'ages': True, 'order': 'oldest'}, 'the defaults')
         (r / 'runner.toml').write_text('[needs]\nheading = "For you"\nages = false\n', encoding='utf-8')
         c = Config(r)
         eq((c.raw['needs']['heading'], c.raw['needs']['ages'], c.raw['needs']['order']), ('For you', False, 'oldest'),
            'runner.toml sets them')
         eq(c.warnings, [], 'and they are known settings')
+        (r / 'runner.toml').write_text('[needs]\nmap_replies = true\n', encoding='utf-8')
+        c = Config(r)
+        check(any('map_replies is ignored' in w for w in c.warnings), 'C5: an old map_replies is ignored, said why',
+              c.warnings)
 
 
 def test_merge_driver():
