@@ -1628,6 +1628,9 @@ def prompt_for(tid: str, n: int, slots: int, cwd: Path, branch: str) -> str:
         policies.append('Only add comments when necessary to explain non-obvious intent or constraints.')
     if P.concept(tid):
         prompt = f'{prompt.rstrip()}\n\n' + CONCEPT_PROMPT.format(runner=C.command, tid=tid)
+    elif wizards_on():
+        prompt = f'{prompt.rstrip()}\n\n' + WIZARD_PROMPT.format(
+            runner=C.command, tid=tid, template=WIZARD_TEMPLATE, path=C.notes('wizards', f'{tid}.sh'))
     return f'{prompt.rstrip()}\n\nProject policies:\n' + '\n'.join(f'- {policy}' for policy in policies)
 
 
@@ -6177,6 +6180,82 @@ def waiting_ok() -> list[tuple]:
         return []
 
 
+# --- F17: wizards for BLOCKED items a person must do by hand --------------------------------------------------
+#
+# A slot agent that blocks with `BLOCKED:` on steps only a person can take (a login, a cert, a secret, a
+# dashboard click) also writes a bash wizard to `<notes>/wizards/<ID>.sh`, from `wizard_template.sh` (vendored
+# from mattpocock/skills, MIT). Needs you then shows `run: agent-runner wizard <ID>` under the item, and that
+# command checks it with `bash -n`, runs it in the main checkout, and on exit 0 confirms the item
+# (`plan confirm`). `[run] wizards = false` turns it off: no brief paragraph, no run line.
+
+WIZARD_TEMPLATE = Path(__file__).with_name('wizard_template.sh')
+
+WIZARD_PROMPT = """\
+When you block with `BLOCKED:` because of steps only a person can take (a login, a certificate or signing key, \
+a secret, a click in a third-party dashboard), also write a wizard that walks them through those steps: copy \
+{template} to {path} and replace its example with one `stage` per step, in order (`open_url` before asking \
+for what that page shows, `ask_secret` for anything secret, `write_env` / `set_secret` where each value \
+belongs, `confirm` before anything irreversible); leave the library above its STAGES marker as it is. Check \
+it with `bash -n {path}`; do not run it. Say only what you know of each page or command, not guesses. Write \
+one only for steps you cannot do yourself, never for a CONFIRM or a DECIDE, and never put a secret in it. \
+Needs you shows the person `{runner} wizard {tid}`, and finishing the wizard confirms the item."""
+
+
+def wizards_on() -> bool:
+    try:
+        return C.run.get('wizards', True) is not False
+    except AttributeError:  # no config loaded
+        return False
+
+
+def wizard_file(tid: str) -> Path | None:
+    """`<notes>/wizards/<tid>.sh` when wizards are on and one is there, else None."""
+    if not wizards_on():
+        return None
+    try:
+        f = C.notes('wizards', f'{tid}.sh')
+    except (OSError, SystemExit):
+        return None
+    return f if f.is_file() else None
+
+
+def wizard_cmd(tid: str) -> str:
+    """The one command Needs you gives for `tid`'s wizard."""
+    return f'{C.command} wizard {tid}'
+
+
+def cmd_wizard(argv: list[str], prog: str = f'{RUNNER} wizard') -> int:
+    """`agent-runner wizard ID`: run the wizard an agent left for a BLOCKED item, then confirm the item."""
+    ap = argparse.ArgumentParser(prog=prog, description='Walk through the hand steps a blocked task needs '
+                                 '(a login, a cert, a secret), then confirm it.')
+    ap.add_argument('id', help='the task id, as Needs you shows it')
+    ap.add_argument('--check', action='store_true', help='only check the script (bash -n), run nothing')
+    ap.add_argument('--path', action='store_true', help='print where the script is, run nothing')
+    a = ap.parse_args(argv)
+    init()
+    f = C.notes('wizards', f'{a.id}.sh')
+    if a.path:
+        print(f)
+        return 0
+    if not f.is_file():
+        print(f'{prog}: {a.id} has no wizard ({f})', file=sys.stderr)
+        return 1
+    chk = sp.run(['bash', '-n', str(f)], capture_output=True, text=True)
+    if chk.returncode:
+        print(f'{prog}: {f} does not parse, so it was not run:\n{chk.stderr.strip()}', file=sys.stderr)
+        return 1
+    if a.check:
+        print(f'{f}: ok')
+        return 0
+    r = sp.run(['bash', str(f)], cwd=str(C.root))
+    if r.returncode:
+        print(f'{prog}: the wizard stopped (exit {r.returncode}); {a.id} still needs you. '
+              f'Run `{wizard_cmd(a.id)}` again to carry on.', file=sys.stderr)
+        return r.returncode
+    from agent_runner import plan
+    return plan.main(['confirm', a.id, 'the wizard ran to the end'])
+
+
 def waiting_text(waiting, width: int = 60, now: dt.datetime | None = None) -> list[str]:
     """B27: '[needs] heading' ('Needs you:') and per ask one line in everyday words, what is asked and what to
     reply, with its age first ('2h', when `[needs] ages`) and its [id] last, then its link on a line of its
@@ -6197,6 +6276,8 @@ def waiting_text(waiting, width: int = 60, now: dt.datetime | None = None) -> li
         out.append('  ' + (f'{old:>3}  ' if old else '') + f'{P.plain_ask(label, what, title)} [{k or tid}]')
         if url:
             out.append(f'    {url}')
+        if label != 'CONCEPT' and wizard_file(tid):  # F17: the one command that walks them through it
+            out.append(f'    run: {wizard_cmd(tid)}')
     if not out:
         return []  # only shelved ones: they asked to leave this list
     if shelved:

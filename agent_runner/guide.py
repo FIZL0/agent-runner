@@ -45,7 +45,8 @@ AGENT_RUNNER_SLOT set you are one of the runner's agents: follow your brief, not
    - tasks blocked on a person (`plan block ID "CONFIRM: …"`, DECIDE:, BLOCKED:) list there too: answer them
      with `plan confirm ID "what they saw"`, `plan change ID "do X instead"` or `plan shelve ID`; a reply
      that names no item ("yes", "B", "later") goes through `plan answer "<their words>"`. `status` and
-     `since` show all of these under "Needs you", one plain line each, oldest first
+     `since` show all of these under "Needs you", one plain line each, oldest first; one with a wizard
+     shows `run: agent-runner wizard ID` (it walks the person through the hand steps, then confirms)
 2. **Queue work instead of doing it**, unless the person asks you to do it yourself now. A running runner
    starts a queued task within a minute. Good tasks name their `--files` (tasks on the same files never
    run at once) and say how to check the result. **Never edit files in the main checkout**: uncommitted
@@ -184,6 +185,9 @@ What the person asks, and what you run (`{cmd}` is the runner):
   - shelve: "later", "not now", "skip that": `{cmd} plan shelve ID` (stays blocked, leaves the list;
     `{cmd} plan waiting --all` still shows it, `{cmd} plan unshelve ID` brings it back)
   When an agent needs a person, it blocks with `--blocked "CONFIRM: …"` (or DECIDE:, BLOCKED:).
+  A BLOCKED item with a wizard (F17, `[run] wizards`) shows `run: {cmd} wizard ID` under it: a step-by-step
+  script for the hand steps (a login, a cert, a secret). Pass that line on as it is; the person runs it in a
+  terminal, and finishing it confirms the item, so they need not reply.
 
 """ + SAFE_SHELL + """
 """
