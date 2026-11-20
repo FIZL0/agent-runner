@@ -93,13 +93,13 @@ DEFAULTS: dict = {
         'test_since': '',       # a merge's gate on what changed since {base} (a commit that passed the gate);
                                 # '' = the whole `test` every time
         'full_every_hours': 24, # with test_since: the whole `test` again once none has passed for this long; 0 = never
-        'slots': 3,
+        'slots': 3,             # tasks (agent sessions) at once; `agent-runner slots N` changes a running run
         'mux': '',              # terminal per slot: tmux, wt, console, none; '' = tmux (Windows: wt, else console)
         'agent': 'claude',      # the CLI that runs a session: claude, or a pi executable
-        'include_task_id_in_commit': True,
-        'comment_policy': 'normal',
+        'include_task_id_in_commit': True,  # agents start each commit subject with the task id
+        'comment_policy': 'normal',  # 'minimal': agents add code comments only for non-obvious intent
         'backend': '',          # '' = Claude Code (or pi when `agent` is a pi executable); pi = other providers
-        'model': 'opus',
+        'model': 'opus',        # the model the task sessions run on
         'lean': True,           # agents get Bash/Read/Edit/Write/Artifact only, no MCP, no user settings
         'remote': 'auto',       # control sessions on Remote Control, and a control server there to start more:
                                 # the run, watched and steered from claude.ai/code and the Claude apps; auto = on
@@ -168,8 +168,8 @@ DEFAULTS: dict = {
         'not_attempt': '',      # a regex on a finished branch's first commit subject ({id}): such a session
                                 # (a spec phase, say) is not the run's one attempt at the task
         'fix_merges': True,     # give a conflict the join cannot do to a one-shot agent session
-        'fix_model': 'opus',
-        'fix_timeout': 1800,
+        'fix_model': 'opus',    # the model a merge-conflict fix session runs on
+        'fix_timeout': 1800,    # seconds a fix session may take before it is stopped
         'fix_ahead_max': 2,     # conflicts fixed before the merge lock at once, each in a fix worktree (fix1…)
                                 # while other merges go on; 0 = fix them under the lock, in the merge worktree
         'build': '',            # a quick build, not the gate: a fix session runs it before it commits, so a
@@ -204,6 +204,71 @@ DEFAULTS: dict = {
         'order': 'oldest',      # oldest first; "newest" first; "plan": the order TODO.md has them in
     },
 }
+
+
+# B28: `agent-runner settings` prints these keys with their defaults and the comments above, read from this file
+# itself, so the reference sessions recommend changes from never drifts from what the runner takes.
+SETTINGS_HEAD = """\
+# agent-runner settings: every key, its default and what it does (generated from config.py)
+
+Where: runner.toml (committed, shared by everyone who runs the repo: project behaviour such as test, rules,
+review) or runner.local.toml (this machine only, git-ignored, laid over runner.toml key by key: slots,
+weekly_max, session_max, model, remote, silent, control_idle). Both sit at the main checkout's root; set a key
+in its table ([run], [plan], ...) with the value written as below.
+How: a runner.toml change is a commit, so make it through `{cmd} take "set [run] KEY = VALUE: why" --kind C
+--files runner.toml` (its own worktree, then `take ID --merge`), never as an edit in the main checkout.
+runner.local.toml is git-ignored, so it holds no merge: edit it in place (`{cmd} run` creates it, all
+comments).
+When: a run reads both files when it starts, so most keys apply on the next run (a run that is up keeps what
+it read until it stops); `{cmd} slots N`, `pause` and `force` change the run that is up now.
+"""
+
+
+def _toml_value(v) -> str:
+    if isinstance(v, bool):
+        return 'true' if v else 'false'
+    if isinstance(v, (str, list)):
+        return json.dumps(v)
+    if isinstance(v, dict):
+        return '{ ' + ', '.join(f'{json.dumps(k)} = {_toml_value(x)}' for k, x in v.items()) + ' }' if v else '{}'
+    return str(v)
+
+
+def default_docs() -> dict[str, dict[str, str]]:
+    """{table: {key: its comment in DEFAULTS}}, read from this file's source (a key with none gets '')."""
+    import re
+    docs: dict[str, dict[str, str]] = {t: {k: '' for k in keys} for t, keys in DEFAULTS.items()}
+    try:
+        lines = Path(__file__).read_text(encoding='utf-8').splitlines()
+    except OSError:
+        return docs
+    start = next((i for i, s in enumerate(lines) if s.startswith('DEFAULTS')), len(lines))
+    table = key = None
+    for s in lines[start + 1:]:
+        if s.startswith('}'):
+            break
+        if m := re.match(r"    '(\w+)': \{", s):
+            table, key = m.group(1), None
+        elif table and (m := re.match(r"        '(\w+)': [^#]*(?:#\s*(.*))?$", s)):
+            key = m.group(1)
+            docs.setdefault(table, {})[key] = re.sub(r'^[A-Z]\d+: ', '', (m.group(2) or '').strip())
+        elif table and key and (m := re.match(r'\s+#\s*(.*)$', s)):
+            docs[table][key] = (docs[table][key] + ' ' + m.group(1).strip()).strip()
+    return docs
+
+
+def settings_reference(cmd: str | None = None) -> str:
+    """The text `agent-runner settings` prints: where and how to change a key, then every [plan], [run],
+    [git] and [needs] key as `key = default  # what it does`."""
+    docs = default_docs()
+    out = [SETTINGS_HEAD.format(cmd=cmd or RUNNER)]
+    for table, keys in DEFAULTS.items():
+        out.append(f'[{table}]')
+        for k, v in keys.items():
+            doc = docs.get(table, {}).get(k, '')
+            out.append(f'{k} = {_toml_value(v)}' + (f'  # {doc}' if doc else ''))
+        out.append('')
+    return '\n'.join(out)
 
 
 def toplevel(cwd: Path | str | None = None) -> Path:

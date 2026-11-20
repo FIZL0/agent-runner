@@ -4,6 +4,13 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- `agent-runner settings` prints every runner.toml key with its default and what it does, generated from
+  the runner's own defaults (and their comments), with where to set it (runner.toml vs runner.local.toml),
+  how (a runner.toml change through `take`, never in the main checkout) and when it applies (the next run).
+  The skill (`guide`) and the control brief point at it and recommend a change in one line,
+  `[table] key = value`, when what the person says fits a real key (too many control sessions:
+  `control_idle`; fewer agents: `slots`; no phone pushes: `silent`), and make it on yes (B28).
+
 - Slots verify before asking: the slot brief tells agents to try `~/.claude/ACCESS.md` and the `## Tools`
   section of the repo's CLAUDE.md (ssh hosts, preview servers, headless checks) before turning a check into
   an F task for a person. `agent-runner setup` adds an empty `## Tools` heading to CLAUDE.md

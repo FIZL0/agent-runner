@@ -20,6 +20,7 @@ What you type
     agent-runner slots +1             one slot more (-1 fewer, 4: exactly four)
     agent-runner wizard               walk through the hand steps a blocked task waits on, then confirm it
     agent-runner guide                how an agent you start in this repo should work with the runner
+    agent-runner settings             every runner.toml key, its default and what it does; how to change one
     agent-runner sheet ID --go        answer a pick sheet with its recommended picks (--picks "<Send's line>")
     agent-runner plan                 every task id, one line each
     agent-runner plan add B "Fix the menu flicker"
@@ -250,6 +251,10 @@ def main(argv: list[str] | None = None) -> int:
     if cmd == 'guide':
         from agent_runner.guide import GUIDE
         print(GUIDE, end='')
+        return 0
+    if cmd == 'settings':  # B28
+        from agent_runner.config import settings_reference
+        print(settings_reference(), end='')
         return 0
     if cmd == 'help' and rest[:1] == ['order']:
         print(ORDER)
