@@ -227,7 +227,8 @@ where the remaining tokens go, by kind of tool call.
   certificate, a secret, a dashboard click), it also writes a step-by-step bash wizard, and `status` shows
   `run: agent-runner wizard <ID>` under the item. The wizard opens each page, takes secrets with hidden
   entry, writes `.env` or `gh secret`, asks before anything irreversible, and confirms the item when it
-  ends. Its template comes from [mattpocock/skills](https://github.com/mattpocock/skills/tree/main/skills/engineering/wizard)
+  ends. Bare `agent-runner wizard` runs the one that waits, or lists them when there are several. Its
+  template comes from [mattpocock/skills](https://github.com/mattpocock/skills/tree/main/skills/engineering/wizard)
   (MIT). `[run] wizards = false` turns it off.
 - **Start small.** `once`, then 2 or 3 slots. More only helps when the plan has that many tasks on
   different files, and usage limits are per account: five slots spend them five times as fast.
