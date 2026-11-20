@@ -1783,6 +1783,10 @@ def test_short_titles_and_since(repo: Path):
             eq(ca[ca.index('--remote-control') + 1], f'{rn} · control 6', 'B25: without an ask, the old name')
         from agent_runner.guide import RUNNER_BRIEF
         check('--image' not in RUNNER_BRIEF and '--file' not in RUNNER_BRIEF, 'the feed brief leaves images to control --new', RUNNER_BRIEF)
+        rb = RUNNER_BRIEF.format(cmd='run', repo='r', answer='')
+        check('start it again the same way and output nothing at all' in rb and 'expires' in rb
+              and 're-armed' in rb and 'nothing to repost' in rb,
+              'B48: the standing feed brief says to re-arm the Monitor silently', rb)
         with tempfile.TemporaryDirectory() as tdir:
             tr = Path(tdir, 'feed.jsonl')
             hum = lambda *c: {'type': 'user', 'origin': {'kind': 'human'}, 'message': {'content': list(c)}}
