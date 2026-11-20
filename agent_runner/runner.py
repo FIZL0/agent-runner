@@ -7441,6 +7441,16 @@ def hand_hook(root: Path) -> str:
     return f'{f.relative_to(root).as_posix()}: sessions opened by hand here get the control brief'
 
 
+def user_brief(root: Path) -> str:
+    """B79: the control brief for a session opened by hand in `root`, a runner repo's main checkout, by the
+    user-level SessionStart hook (`config.install_user_hook`): a repo where no run has started yet has no hook
+    of its own (`hand_hook`). '' where control sessions are not Claude Code's (`[run] agent` is pi)."""
+    import contextlib
+    with contextlib.redirect_stderr(io.StringIO()):  # init's git calls and merge driver: nothing on the screen
+        init(root)
+        return control_brief() if control_ok() else ''
+
+
 def hand_hook_exclude(root: Path) -> None:
     """B66: `.claude/settings.local.json` ignored in `root`'s repo. Where git has no rule for it (no global
     ignore, as on a fresh Windows machine) it shows as untracked, and a `git add -A` would commit this machine's

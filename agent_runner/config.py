@@ -30,6 +30,7 @@ adding it to the clone's `.git/info/exclude`.
 """
 from __future__ import annotations
 
+import json
 import os
 import shlex
 import shutil
@@ -473,3 +474,90 @@ def finished_mark(slot: str | int | None = None) -> Path | None:
     and the stop waiter stops protecting the session's leftover background commands once it exists."""
     slot = slot if slot is not None else os.environ.get('AGENT_RUNNER_SLOT')
     return cfg().notes(f'slot{slot}.finished') if slot not in (None, '') else None
+
+
+# B79: a user-level SessionStart hook, so a session opened by hand in a runner repo's main checkout (the desktop
+# app, before any run started there and wrote the repo's own hook, F53) gets the control brief. It runs in every
+# session on the machine, so the check is cheap (no git, no config) and every failure is silent.
+USER_HOOK = 'control --brief --user'
+SESSION_ENVS = ('AGENT_RUNNER', 'AGENT_RUNNER_SLOT', 'AGENT_RUNNER_CONTROL_SESSION')  # slots, runner-started control
+
+
+def user_hook_root(cwd: Path | str | None = None, env: dict | None = None) -> Path | None:
+    """The runner repo whose main checkout `cwd` is in, or None: a session the runner started (a slot, a control
+    session: its brief comes another way), a worktree (its `.git` is a file), no git, or a repo with no runner
+    files (runner.toml, plan/TODO.md, .runner). None too where the repo's own hook (F53, settings.local.json)
+    prints the brief already, so it is never printed twice."""
+    env = os.environ if env is None else env
+    if any(env.get(k) for k in SESSION_ENVS):
+        return None
+    d = Path(cwd or os.getcwd()).resolve()
+    for root in (d, *d.parents):
+        git = root / '.git'
+        if not git.exists():
+            continue
+        if not git.is_dir():
+            return None  # a worktree (a slot's, `merge`), or a submodule
+        if not ((root / 'runner.toml').is_file() or (root / 'plan' / 'TODO.md').is_file()
+                or (root / '.runner').is_dir()):
+            return None
+        try:
+            if 'control --brief --hand' in (root / '.claude' / 'settings.local.json').read_text(encoding='utf-8'):
+                return None
+        except (OSError, ValueError):
+            pass
+        return root
+    return None
+
+
+def user_settings_file() -> Path:
+    """Claude Code's user settings: `~/.claude/settings.json` (or `$CLAUDE_CONFIG_DIR/settings.json`)."""
+    return Path(os.environ.get('CLAUDE_CONFIG_DIR') or Path.home() / '.claude') / 'settings.json'
+
+
+def user_hook_command() -> str:
+    """The hook's command: the runner, quiet whatever happens (a moved clone, a missing interpreter)."""
+    return plat.command_text([*runner_cmd(), *USER_HOOK.split()]) + ' 2>/dev/null || true'
+
+
+def user_hook_stale(command: str) -> bool:
+    """A user hook command whose interpreter or script (its absolute paths) no longer exists."""
+    try:
+        words = shlex.split(command.split(' 2>/dev/null')[0])
+    except ValueError:
+        return False
+    return any(Path(w).is_absolute() and not Path(w).exists() for w in words[:2])
+
+
+def install_user_hook() -> str:
+    """Merge the user-level SessionStart hook into Claude Code's user settings, once. Only where Claude Code is
+    used (its config dir exists), never from a clone that is a worktree (a slot's copy goes away), and never
+    over a settings file that does not read as JSON (the person's: left alone). A line to show, or ''."""
+    f = user_settings_file()
+    if not f.parent.is_dir() or (HERE.parent / '.git').is_file():
+        return ''
+    try:
+        data = json.loads(f.read_text(encoding='utf-8')) if f.exists() else {}
+        if not isinstance(data, dict):
+            return ''
+        hooks = data.setdefault('hooks', {})
+        starts = hooks.setdefault('SessionStart', []) if isinstance(hooks, dict) else None
+        if not isinstance(starts, list):
+            return ''
+        cmd = user_hook_command()
+        ours = [h for e in starts if isinstance(e, dict) for h in e.get('hooks', [])
+                if isinstance(h, dict) and USER_HOOK in str(h.get('command', ''))]
+        if ours and all(h['command'] == cmd or not user_hook_stale(str(h['command'])) for h in ours):
+            return ''  # there, and it runs (a hook from another clone that still exists is left alone)
+        if ours:
+            for h in ours:  # the clone or interpreter it names is gone: it would fail silently for ever
+                h['command'] = cmd
+        else:
+            starts.append({'hooks': [{'type': 'command', 'command': cmd}]})
+        tmp = f.with_name(f.name + '.agent-runner.tmp')
+        tmp.write_text(json.dumps(data, indent=2) + '\n', encoding='utf-8')
+        os.replace(tmp, f)
+    except (OSError, ValueError, TypeError, AttributeError):
+        return ''
+    return (f'added a SessionStart hook to {f}: a session opened in a runner repo\'s main checkout gets the '
+            'control brief (nothing anywhere else)')
