@@ -69,6 +69,15 @@ def _typed() -> str:
 
 RUNNER = _typed()  # for a prompt or a log line
 
+
+def shown_cmd() -> str:
+    """C15: the command as a line a person reads names it (start hints, run log tips, control hints). On Windows
+    RUNNER is the full C:/Users/.../agent-runner.EXE path, so slot shells always find it; when `agent-runner` is
+    on PATH a person types just that. Prompts and hooks keep RUNNER."""
+    if plat.WINDOWS and shutil.which('agent-runner'):
+        return 'agent-runner'
+    return RUNNER
+
 DEFAULTS: dict = {
     'plan': {
         'dir': 'plan',          # TODO.md and DONE.md live here; plan/tasks/<ID>.md is a task's long form. Outside

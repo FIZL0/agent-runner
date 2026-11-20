@@ -831,6 +831,26 @@ def test_bare_outside_git(tmp: Path):
             os.chdir(cwd)
 
 
+def test_short_name_hints():
+    print('C15: on Windows the hints a person reads say agent-runner when it is on PATH; prompts keep the full path')
+    from agent_runner import config
+    exe = 'C:/Users/me/AppData/Roaming/Python/Scripts/agent-runner.EXE'
+    with mock.patch.object(R.plat, 'WINDOWS', True), mock.patch.object(config, 'RUNNER', exe), \
+            mock.patch.object(R, 'RUNNER', exe), mock.patch.object(R, 'control_ok', lambda: True), \
+            mock.patch.object(R, 'remote_on', lambda: False), mock.patch.object(R, 'remote_slots_on', lambda: False), \
+            mock.patch.dict(R.C.run, {'control': True}):
+        with mock.patch.object(config.shutil, 'which', lambda c, *a, **k: exe if c == 'agent-runner' else None):
+            note = R.started_note(2, 'slot consoles hidden')
+            check('    agent-runner status' in note and '    agent-runner control' in note and exe not in note,
+                  'on PATH: the start hints say agent-runner', note)
+            check(exe not in R.tmux_hint() and 'agent-runner run' in R.tmux_hint(), 'and the tmux hint', R.tmux_hint())
+            check(f'{exe} status' in R.control_brief(), "a control session's brief keeps the full path")
+        with mock.patch.object(config.shutil, 'which', lambda *a, **k: None):
+            check(f'    {exe} status' in R.started_note(2, 'here'), 'not on PATH: the full path, which works')
+    with mock.patch.object(R.plat, 'WINDOWS', False), mock.patch.object(config, 'RUNNER', '/x/run'):
+        eq(config.shown_cmd(), '/x/run', 'elsewhere: RUNNER as it was')
+
+
 def test_background(repo: Path):
     print('bare agent-runner: the run in a detached tmux session, or hidden consoles on Windows; attach')
     R.init(repo)
@@ -5781,7 +5801,7 @@ def main() -> int:
                        lambda: test_no_pane(repo, tmp), lambda: test_other_repos_panes(repo, tmp),
                        lambda: test_limit_resumes(repo, tmp),
                        lambda: test_shared_push(repo, tmp), lambda: test_note_on_a_ticked_task(repo), lambda: test_adopt_merge(repo), lambda: test_followups(repo), lambda: test_person_check_after(repo), lambda: test_ci_watch(repo), test_update_notice, test_restart_if_upgraded, test_auto_upgrade, lambda: test_flake_repair(tmp), lambda: test_repair_per_failure(repo),
-                       lambda: test_stalled(tmp), lambda: test_take(repo), lambda: test_take_text_and_here(repo), lambda: test_background(repo), lambda: test_attach_flag(repo), lambda: test_bare_outside_git(tmp), lambda: test_hand_hook(tmp), lambda: test_user_hook(tmp), lambda: test_remote_auto(tmp), lambda: test_control(repo),
+                       lambda: test_stalled(tmp), lambda: test_take(repo), lambda: test_take_text_and_here(repo), lambda: test_background(repo), test_short_name_hints, lambda: test_attach_flag(repo), lambda: test_bare_outside_git(tmp), lambda: test_hand_hook(tmp), lambda: test_user_hook(tmp), lambda: test_remote_auto(tmp), lambda: test_control(repo),
                        lambda: test_short_titles_and_since(repo), lambda: test_board_follows_run(repo, tmp),
                        lambda: test_remote_sweep(repo, tmp), lambda: test_feed_resume(repo, tmp),
                        lambda: test_concepts_waiting(repo),

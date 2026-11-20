@@ -83,6 +83,7 @@ from agent_runner import ci, gitops, plat, plansync
 __all__ = ['init', 'cmd_run', 'cmd_stop', 'pick', 'tasks', 'prompt_for', 'reopen_landed', 'retry_reopened',
            'ask_stop', 'stopping', 'cmd_resume', 'PROMPT', 'FIXER', 'OTHERS']
 from agent_runner.config import RUNNER, Config, cfg, finished_mark, main_checkout, runner_cmd, ensure_local
+from agent_runner.config import shown_cmd
 from agent_runner.done import TESTED, gate
 from agent_runner.gitops import _net, drop_if_merged, push, shared_name
 from agent_runner.gitops import missing_remote
@@ -1425,7 +1426,7 @@ def remote_off_why(dialog: bool = True) -> str:
         return f'ANTHROPIC_BASE_URL is {base}, not api.anthropic.com'
     if dialog and not remote_dialog_seen():
         return ('Claude Code has not been told yes to Remote Control yet (run `claude remote-control` once, or '
-                f'{RUNNER} at a terminal, and answer y)')
+                f'{shown_cmd()} at a terminal, and answer y)')
     return ''
 
 
@@ -5449,7 +5450,7 @@ def run(argv: list[str], prog: str) -> int:
     if choice == 'tmux' and not os.environ.get('TMUX'):
         print(f'Run me inside tmux, so the sessions get panes you can attach to:\n'
               f'    tmux new -s runner {prog} {a.slots or slots}\n'
-              f'or start the run in the background: {RUNNER}', file=sys.stderr)
+              f'or start the run in the background: {shown_cmd()}', file=sys.stderr)
         return 2
     if choice == 'tmux' and os.environ.get('TMUX_PANE'):  # `attach` finds the runner's pane by this
         tmux('set-option', '-p', '-t', os.environ['TMUX_PANE'], RUN_TAG, str(ROOT))
@@ -6897,7 +6898,7 @@ def remote_ready(tty: bool | None = None, ask=input) -> bool:
         return True  # off for this run: remote_off_why says so in its log
     if not (sys.stdin.isatty() if tty is None else tty) or data is None:
         print(f'[run] remote is on, and Claude Code asks once, at a terminal, before Remote Control starts.\n'
-              f'Run `claude remote-control` in a terminal and answer y (it does not ask again), then {RUNNER} again;\n'
+              f'Run `claude remote-control` in a terminal and answer y (it does not ask again), then {shown_cmd()} again;\n'
               f'or set [run] remote = false (runner.local.toml for this machine). Nothing started.', file=sys.stderr)
         return False
     print('[run] remote is on: sessions start on Remote Control, which Claude Code asks about once.\n'
@@ -6945,13 +6946,13 @@ def started_note(slots: int, where: str) -> str:
     attach = ("its pane (attach s2: slot 2's); detach again with Ctrl-b d" if not plat.WINDOWS else
               "slot 2's console window: attach s2 (closing that window ends the session)")
     lines = [f'the run is up in the background: {slots or 1} slot{"s" if slots != 1 else ""}{"" if slots else " (sequential)"}, {where}',
-             f'    {RUNNER} status     what it is doing',
-             f'    {RUNNER} attach     {attach}',
-             f'    {RUNNER} stop       finish the running tasks, then end it (--force: now)']
+             f'    {shown_cmd()} status     what it is doing',
+             f'    {shown_cmd()} attach     {attach}',
+             f'    {shown_cmd()} stop       finish the running tasks, then end it (--force: now)']
     if C.run['control'] and control_ok():
         beside = 'c1 runs beside the run: attach c1' + (' (terminal only; the apps start control sessions from '
                                                         'the control server)' if remote_on() else '')
-        lines.append(f'    {RUNNER} control    a control session in this terminal ({beside})')
+        lines.append(f'    {shown_cmd()} control    a control session in this terminal ({beside})')
     if remote_on():
         lines.append(f'    {REMOTE_URL}  the control sessions, from any device or the Claude apps')
     elif remote_slots_on():
@@ -6963,7 +6964,7 @@ def tmux_hint() -> str:
     how = ('brew install tmux' if sys.platform == 'darwin' else
            'sudo apt install tmux, sudo dnf install tmux or sudo pacman -S tmux, as your system has it')
     return (f'tmux is not installed: the background run lives in a detached tmux session. Install it ({how}),\n'
-            f'then {RUNNER} again; or run in this terminal: {RUNNER} run. Nothing started.')
+            f'then {shown_cmd()} again; or run in this terminal: {shown_cmd()} run. Nothing started.')
 
 
 def cmd_background(argv: list[str]) -> int:
@@ -6974,8 +6975,8 @@ def cmd_background(argv: list[str]) -> int:
     init()
     sess = background_session()
     if run_up():
-        print(f'a run is already up in this repository: {RUNNER} status, {RUNNER} attach '
-              f'(tmux attach -t {sess} when it was started in the background), {RUNNER} stop')
+        print(f'a run is already up in this repository: {shown_cmd()} status, {shown_cmd()} attach '
+              f'(tmux attach -t {sess} when it was started in the background), {shown_cmd()} stop')
         return 0
     if not plat.WINDOWS and not shutil.which('tmux'):
         print(tmux_hint(), file=sys.stderr)
@@ -7058,7 +7059,7 @@ def cmd_background_attach(argv: list[str]) -> int:
         return 2
     init()
     if plat.WINDOWS:
-        print(f'on Windows the run has no window to attach: --attach starts it as {RUNNER} does')
+        print(f'on Windows the run has no window to attach: --attach starts it as {shown_cmd()} does')
         return cmd_background([])
     if not run_up():
         if r := cmd_background([]):
@@ -7076,12 +7077,12 @@ def cmd_attach(argv: list[str], prog: str = f'{RUNNER} attach') -> int:
     which = f's{a.slot}' if a.slot.isdigit() else (a.slot or 'runner')
     if plat.WINDOWS:
         if which == 'runner':
-            print(f'on Windows the run has no window of its own: {RUNNER} status shows it, and its log is '
-                  f'{C.notes("run.log")}. {RUNNER} attach s1 shows slot 1.')
+            print(f'on Windows the run has no window of its own: {shown_cmd()} status shows it, and its log is '
+                  f'{C.notes("run.log")}. {shown_cmd()} attach s1 shows slot 1.')
             return 0
         pid = marker_pid(C.notes(f'slot{which[1:]}.live')) if re.fullmatch(r's\d+', which) else 0
         if not (pid and plat.alive(pid)):
-            print(f'{which} is not running: {RUNNER} status lists the slots', file=sys.stderr)
+            print(f'{which} is not running: {shown_cmd()} status lists the slots', file=sys.stderr)
             return 1
         if not plat.show_console(pid):
             print(f'{which} runs as pid {pid}, but its console window could not be shown', file=sys.stderr)
@@ -7092,7 +7093,7 @@ def cmd_attach(argv: list[str], prog: str = f'{RUNNER} attach') -> int:
     hit = attach_target(rows.stdout.splitlines(), ROOT, which) if not rows.returncode else None
     if not hit:
         print((f'no pane {which} in tmux for this repository' if which != 'runner' else
-               'no run in tmux for this repository') + f': {RUNNER} status; {RUNNER} starts the run', file=sys.stderr)
+               'no run in tmux for this repository') + f': {shown_cmd()} status; {shown_cmd()} starts the run', file=sys.stderr)
         return 1
     *select, go = attach_argv(*hit, inside=bool(os.environ.get('TMUX')))
     for c in select:
@@ -7546,7 +7547,7 @@ def cmd_control(argv: list[str], prog: str = f'{RUNNER} control') -> int:
         a.feed_sid = '' if a.ask == feed_lost_note() else a.feed_sid
     n = a.n or free_control_number()
     if pid := control_live(n):
-        print(f'control {n} already runs (pid {pid}): {RUNNER} control starts another', file=sys.stderr)
+        print(f'control {n} already runs (pid {pid}): {shown_cmd()} control starts another', file=sys.stderr)
         return 1
     if a.feed_sid and a.ask and SID_RE.fullmatch(a.feed_sid):
         print('waiting for the runner feed to record the message and its attachments…', flush=True)
@@ -7669,7 +7670,7 @@ def start_control() -> None:
         where, more = 'a console of its own' + (' (hidden)' if HIDDEN[0] else ''), ''
     else:
         return
-    log(f'control: c1 is up in {where} ({RUNNER} control opens another{more})')
+    log(f'control: c1 is up in {where} ({shown_cmd()} control opens another{more})')
 
 
 BOARD_EVERY = 30  # s between the run's checks that the board window is still there
@@ -7678,7 +7679,7 @@ BOARD_EVERY = 30  # s between the run's checks that the board window is still th
 def board_header() -> str:
     """The board's top lines: it only shows, and where to steer the run from."""
     where = (f'claude.ai/code: "{ROOT.name} · control" opens a control session' if remote_on() else
-             f'{RUNNER} control (or a new pane in this tmux session)')
+             f'{shown_cmd()} control (or a new pane in this tmux session)')
     return (f'{ROOT.name} board: what lands and what needs you, no tokens used. Steer from a control session:\n'
             f'    {where}\n' + '-' * 78)
 
@@ -7864,7 +7865,7 @@ def keep_board(sess: str) -> None:
                 tmux('set-option', '-p', '-t', pane, BOARD_TAG, kind)
             if not said or r.returncode:
                 what = f'the runner feed, "{feed_name()}" in the apps too' if kind.startswith('feed') else 'the text feed'
-                log(f'board: window {window("board")} is up with {what} ({RUNNER} attach board)' if not r.returncode
+                log(f'board: window {window("board")} is up with {what} ({shown_cmd()} attach board)' if not r.returncode
                     else f'board: tmux could not open it: {r.stderr.strip()}')
             said = True
         time.sleep(BOARD_EVERY)
@@ -8283,10 +8284,10 @@ def control_new(n: int | None = None, wait: float = CONTROL_LINK_WAIT, ask: str 
     if plat.WINDOWS:
         plat.spawn_console(cmd, ROOT, control_env(), hidden=True)
         print(f'control {n} is up in a hidden console' +
-              (f': "{name}" at {REMOTE_URL}' if remote_on() else f' ({RUNNER} attach c{n} shows it)'))
+              (f': "{name}" at {REMOTE_URL}' if remote_on() else f' ({shown_cmd()} attach c{n} shows it)'))
         return 0
     if not shutil.which('tmux') or not (sess := control_new_session()):
-        print(f'no tmux session to open it in (no run is up): start a run with {RUNNER}, or run {RUNNER} control '
+        print(f'no tmux session to open it in (no run is up): start a run with {shown_cmd()}, or run {shown_cmd()} control '
               f'in a terminal', file=sys.stderr)
         return 1
     env = [e for e in background_env() if not e.startswith(('AGENT_RUNNER=', 'AGENT_RUNNER_SLOT=', 'AGENT_RUNNER_KEEP='))]
@@ -8299,7 +8300,7 @@ def control_new(n: int | None = None, wait: float = CONTROL_LINK_WAIT, ask: str 
         return 1
     tmux('set-option', '-p', '-t', pane, TAG, f'c{n}')
     tmux('set-option', '-p', '-t', pane, REPO_TAG, str(ROOT))
-    where = f'window {win} of tmux session {sess} ({RUNNER} attach c{n} goes there)'
+    where = f'window {win} of tmux session {sess} ({shown_cmd()} attach c{n} goes there)'
     if not remote_on():
         why = remote_off_why() if C.run['remote'] == 'auto' else ''
         print(f'control {n} is up in {where}; it is local' +
