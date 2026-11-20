@@ -4,6 +4,8 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+## 0.51.0 (2026-11-20)
+
 - `plan add … --last` files a task at the end of Next with `after: all above`, a marker the run resolves on
   every pick to each task above it in its own section that is not done (ones added later included), so an
   end-of-queue task like a release waits for the whole section without a hand-kept `after:` list going
