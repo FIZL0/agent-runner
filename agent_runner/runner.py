@@ -6270,12 +6270,14 @@ def control_name(n: int) -> str:
 
 def control_argv(n: int, sid: str, resume: bool) -> list[str]:
     """Control session `n`: interactive, on `[run] model` (no model of its own), the brief from its settings
-    file, a first message that starts its run-log watch; with `[run] remote` on Remote Control as
-    "<repo> · control N". bypassPermissions, as the slots: it is driven from a phone or the web as often as from
-    here, and a permission prompt there stalls it. Not lean: a person is there (all tools, so /statusline and the
-    like work)."""
+    file; with `[run] remote` on Remote Control as "<repo> · control N". Control 1 (the kept session the run
+    starts) gets a first message asking for the status summary (`status` only: `since` would move the last-look
+    mark past updates the person has not seen); any other (`control --new`, /control) gets none and stays blank
+    until the person types, its brief still loaded by the SessionStart hook. bypassPermissions, as the slots: it
+    is driven from a phone or the web as often as from here, and a permission prompt there stalls it. Not lean: a
+    person is there (all tools, so /statusline and the like work)."""
     from agent_runner.guide import CONTROL_START
-    return [plat.exe(C.run['agent']), CONTROL_START.format(cmd=C.command),
+    return [plat.exe(C.run['agent']), *([CONTROL_START.format(cmd=C.command)] if n == 1 else []),
             '--resume' if resume else '--session-id', sid, '--model', C.run['model'],
             '--permission-mode', 'bypassPermissions',
             '--settings', str(control_settings()), '--add-dir', str(control_skills_dir()),

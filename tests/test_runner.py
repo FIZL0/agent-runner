@@ -856,10 +856,20 @@ def test_control(repo: Path):
     r = run(repo, 'control', '--brief')
     eq((r.returncode, r.stdout), (0, brief), '`control --brief` (the hook) prints it')
 
+    c1 = R.control_argv(1, 'sid-1', resume=False)
+    eq(c1[0], R.plat.exe(R.C.run['agent']), 'the agent')
+    check('summary' in c1[1] and f'{R.C.command} status' in c1[1] and f'{R.C.command} since' not in c1[1]
+          and 'watch' not in c1[1], 'control 1 opens with a status-only summary: no since, no watch')
+    eq(c1[2:4], ['--session-id', 'sid-1'], 'control 1: the prompt, then its session')
     argv = R.control_argv(2, 'sid-2', resume=False)
     eq(argv[0], R.plat.exe(R.C.run['agent']), 'the agent')
-    check('summary' in argv[1] and 'status' in argv[1] and 'since' in argv[1] and 'watch' not in argv[1],
-          'its first message asks for the opening summary, and starts no watch')
+    eq(argv[1], '--session-id', 'a --new session has no first message: blank until the person types')
+    check('blank' in brief and 'not `since`' in brief, 'the brief: later sessions start blank, the opening runs no since')
+    mark = R.since_mark_file()
+    before = mark.read_text() if mark.exists() else None
+    R.control_argv(1, 'sid-1', resume=False)
+    R.control_argv(2, 'sid-2', resume=False)
+    eq(mark.read_text() if mark.exists() else None, before, 'opening a control session leaves the since mark')
     i = argv.index('--session-id')
     eq(argv[i:i + 4], ['--session-id', 'sid-2', '--model', R.C.run['model']], 'a new session on [run] model')
     check('--tools' not in argv, 'not lean: a person is there, so every tool (Agent for /statusline)')

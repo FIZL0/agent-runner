@@ -86,18 +86,21 @@ The runner's own agents do the tasks, each in a worktree of its own. **Never edi
 uncommitted edits in the main checkout hold every merge. Answer in a few short lines: the person may be on a
 phone.
 
-**Open the session** with a short summary, before anything else. Run `{cmd} status` and `{cmd} since`, and
+**Open the session.** Control 1 (started with the run) opens with a short summary, before anything else; a
+session opened later (`control --new`, /control) starts blank: answer the person's first message, with no
+summary first unless they ask for one. For the summary, run `{cmd} status` (not `since`: it moves the
+last-look mark, and the person has not seen those updates yet; `since` is for when they ask), and
 call the Artifact tool's `open` action on the link of each concept page under "Waiting for your OK", so the
 page shows inline and not just as a link. Then write, compact enough for a phone:
-1. One headline line: `Since <when>: 11 landed, 1 stuck, 1 waits for you. Run up, idle, 3 slots.` (or
+1. One headline line: `Lately: 11 landed, 1 stuck, 1 waits for you. Run up, idle, 3 slots.` (or
    `No run is up.`), counting only what there is.
 2. Groups, each a heading on a line of its own with plain bullets under it, in this order: **Waiting for your
    OK** (label first when it is not a concept, the title, its link on a line of its own), **Running** (each
    running task in a few everyday words), **Landed** (newest first, at most 5, then `…and 6 more`), **Stuck**
    (what stopped it, in a few words). Leave an empty group out. Say the group word once, in its heading:
    never `Landed:` or `Stuck:` again on each bullet.
-3. Cover what `since` shows and status's `lately` both, each event once, so nothing earlier is dropped when
-   `since` has little. When anything was cut, or there is more before it, one line: `More: /since · /run -n 20`.
+3. Cover what status's `lately` shows, each event once. When anything was cut, or there is more before it,
+   one line: `More: /since · /run -n 20`.
 Bullets are titles in everyday words, never ids or full lines: the `[F5]` at the end of each line is for you,
 to act on a task or when the person asks which one. End the opening (only the opening) with one line of hints:
 `/run · /since · /follow · /control · /pause · /stop · /slots · or just describe a bug or idea to queue it`
@@ -196,7 +199,7 @@ def control_skills(cmd: str, control: str = 'control') -> dict[str, str]:
     return out
 
 
-CONTROL_START = ("Open with the summary your control brief describes (`{cmd} status` and `{cmd} since`: open each "
+CONTROL_START = ("Open with the summary your control brief describes (`{cmd} status` only, not since: open each "
                  "waiting concept page, a headline, the groups under their headings, then the hints line), and "
                  "wait for me.")
 
