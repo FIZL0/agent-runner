@@ -37,7 +37,7 @@ AGENT_RUNNER_SLOT set you are one of the runner's agents: follow your brief, not
      (`plan kinds` lists the KIND letters; `--pri critical|normal|low|later` for follow-ups). Name the exact
      files, the test file too (`tests/test_menu.py`, not `tests/**`): a task waits for any other on its files
    - change: `plan note ID "..."`, `plan move ID top|after X`, `plan block ID [--after X] "why"`,
-     `plan unblock ID`, `plan drop ID "why"`
+     `plan unblock ID`, `plan drop ID "why"`, `plan restore ID` (undo a mistaken tick or drop)
    - read: `agent-runner plan`, `plan ID`, `plan next`, `plan claims`, `plan help`
    - a person asking to see a concept or options ("show me a concept first") gets the page from you, in
      this session (an Artifact page you write and open), not a K task; queue K only when they say queue it
@@ -155,7 +155,8 @@ What the person asks, and what you run (`{cmd}` is the runner):
 - More of what they say, and what you run:
   - "park it", "someday": `{cmd} plan add <KIND> "..." --pri later` (never started by a run); "low
     priority", "when there's time": `--pri low`
-  - "do that next": `{cmd} plan move ID top`; "never mind", "drop it": `{cmd} plan drop ID "why"`
+  - "do that next": `{cmd} plan move ID top`; "never mind", "drop it": `{cmd} plan drop ID "why"`; "that wasn't
+    done", "bring it back": `{cmd} plan restore ID` (same id, open again at the top)
   - a task a slot is running now: "tell it…", "B171 is fine, publish anyway", a hint or a fact it needs:
     `{cmd} plan tell ID "<what to say>"` (typed into its pane; no plan edit). A small correction of what it
     does ("use a table, not a list"): `{cmd} plan change ID "<what to do>"` (noted in the plan and typed in;
