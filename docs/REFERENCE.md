@@ -976,3 +976,5 @@ before 0.41.0 (2026-11-18) other than `test_runner.py` had no such isolation and
 `…/Temp/tmpXXXX/proj-slots/s1` and `…/agent-runner-test-runs-XXXX/proj/s1` behind, on Linux and Windows alike.
 `python3 tests/_check.py` lists them (bare trust entries under the system temp folder, never a folder a Claude
 session itself ran in); `python3 tests/_check.py --clean` removes them, best with no Claude Code session open.
+The `policy-fixture` entries seen only on Windows did not reproduce on Linux (every trust call there goes to the
+temp config); if a suite still leaks on Windows, its check names the entries it added.
