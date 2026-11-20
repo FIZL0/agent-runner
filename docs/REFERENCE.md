@@ -443,7 +443,10 @@ once all of those ids are done, and the run picks it up again.
 
 **Unmergeable branches are parked.** A conflict the line join cannot resolve goes to a fix session
 (below). A branch the fix session gives up on is renamed `wip/<ID>` and pushed; the task is open again,
-and its next prompt points at the earlier attempt.
+and its next prompt points at the earlier attempt. Parked twice (`wip/<ID>`, `wip/<ID>-2`, counted across
+runs and restarts; a slot's saved edits do not count), the next pick blocks it `DECIDE:` on a person, with
+the ledger's reasons, instead of starting it a third time; `plan unblock <ID>` lets it run again (the attempts it was blocked over, kept in
+`.runner/parked-seen.json`, no longer count).
 
 **Merges happen in a merge worktree.** The merge is built and tested in `~/runs/<repo>/merge`; the main
 checkout moves only to a tested commit, and nothing in it is stashed. Nor is its branch ever switched: while

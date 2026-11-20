@@ -21,7 +21,8 @@ docs/REFERENCE.md describes each mechanism. In short:
 * **picking** (`tasks`, `pick`) goes down TODO.md in order and skips
   - blocked tasks and split parents,
   - tasks whose `| after: X, Y` names a task not done yet,
-  - the Stretch and Parked sections, anything tried this run (until its line is edited), and branches waiting to be merged.
+  - the Stretch and Parked sections, anything tried this run (until its line is edited), and branches waiting to be merged,
+  - a task parked twice (wip/<ID>, wip/<ID>-2): the run blocks it on a person instead (`block_parked`).
 
   Siblings never run together. An ordered section runs one task at a time. Two tasks never run on the same
   files: a line's `| files:` and, for a task running, the files it has touched; a finished one waiting to merge
@@ -917,6 +918,7 @@ def pick(running: dict, tried: set, branch: str, claim: bool = False, why: dict 
         busy.append((tid, t[1], files if done_ else set(t[2]) | files, t[3]))
     busy_ids |= {b[0] for b in busy if b[0] not in mine}
     claimed = {t: cl.who for t, cl in plansync.claims(C).items()} if why is not None else {}
+    parked = parked_attempts() if todo else {}
     for t in todo:
         tid = t[0]
         if tid not in busy_ids and tid in finished:
@@ -929,6 +931,12 @@ def pick(running: dict, tried: set, branch: str, claim: bool = False, why: dict 
                 why[tid] = ('tried this run', '') if tid in tried else \
                     ('running', f'claimed by {claimed[tid]}' if tid in claimed else
                      'taken by hand (`take`)' if tid in taken() else '')
+            continue
+        if len(parked.get(tid, [])) >= PARK_LIMIT:  # B32: failed its merge that often; a person decides
+            if why is not None:
+                why[tid] = (f'parked {len(parked[tid])} times, needs a person', ', '.join(sorted(parked[tid])))
+            elif claim:
+                block_parked(tid, parked[tid], branch)
             continue
         if b := next((b for b in busy if clash(t, b, shared)), None):
             if why is not None:
@@ -4133,7 +4141,89 @@ def _finish(tid: str, n: int, sid: str, branch: str) -> bool:
         f'`{C.command} plan note {tid} "..."`), its next attempt pointed at {wip}')
     if out := push(ROOT, wip):  # the one copy of that work: get it off this disk
         log(f'{tid}: {out}')
+    if len(parked_attempts().get(tid, [])) >= PARK_LIMIT:
+        log(f'{tid}: parked {PARK_LIMIT} times now; the next pick blocks it on a person instead of starting it again')
     return True
+
+
+PARK_LIMIT = 2  # B32: a task parked this many times (wip/<ID>, wip/<ID>-2, …) is blocked on a person, not retried
+
+
+def parked_attempts() -> dict[str, list[str]]:
+    """{task id: its parked branches} (`_finish`'s wip/<ID>, wip/<ID>-2, …), in one `git for-each-ref`. Counted
+    across runs and restarts, since the branches outlive both. A wip/<ID> holding only the edits a reset slot
+    saved (`save_leftovers`, "<ID> wip: uncommitted …") is no failed merge and does not count, nor do the
+    wip/main-checkout-* branches."""
+    out: dict[str, list[str]] = {}
+    refs = git('for-each-ref', '--format=%(refname:short)%09%(subject)', 'refs/heads/wip/').stdout.splitlines()
+    for r in refs:
+        name, _, subj = r.partition('\t')
+        if not (m := re.fullmatch(r'wip/([A-Za-z]+\d+[a-z0-9]*?)(?:-\d+)?', name)) or name.startswith('wip/main-checkout'):
+            continue
+        if subj.startswith(f'{m[1]} wip: uncommitted'):
+            continue
+        out.setdefault(m[1], []).append(name)
+    seen = parked_seen()  # attempts a person was already asked about: unblocked, the task gets PARK_LIMIT more
+    return {t: left for t, ws in out.items() if (left := [w for w in ws if w not in seen.get(t, ())])}
+
+
+def parked_seen() -> dict[str, list[str]]:
+    """{task id: the parked branches `block_parked` already blocked it over}, from `<notes>/parked-seen.json`."""
+    try:
+        d = json.loads(C.notes('parked-seen.json').read_text(encoding='utf-8'))
+        return d if isinstance(d, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def parked_reasons(tid: str) -> list[str]:
+    """Why each parked attempt of `tid` did not merge, oldest first, from the ledger's "not merged, parked as" lines."""
+    try:
+        led = C.notes('ledger.md').read_text(encoding='utf-8', errors='replace').splitlines()
+    except OSError:
+        return []
+    rx = re.compile(rf'{re.escape(tid)}: not merged, parked as (\S+) — (.*)')
+    return [f'{m[1]}: {m[2][:160].rstrip()}' for l in led if (m := rx.search(l))]
+
+
+def block_parked(tid: str, wips: list[str], branch: str) -> bool:
+    """B32: block `tid` on a person, its parked attempts and the ledger's reasons in the why, committed as
+    `file_control_ask` commits (MERGE free, TODO.md clean). False when it could not be done now (the next pick
+    tries again; until then `pick` skips the task all the same)."""
+    if not MERGE.acquire(blocking=False):
+        return False
+    hold = ExitStack()
+    try:
+        if C.plan_external:
+            hold.enter_context(plansync.locked(C))
+            plansync.pull(C, force=True)
+        rel = plan_rel('TODO.md')
+        if tid not in open_tasks(branch):
+            return True  # blocked, ticked or dropped meanwhile
+        if not C.plan_external and (git('status', '--porcelain', '--', rel).stdout.strip() or branch and
+                                    git('branch', '--show-current').stdout.strip() != branch):
+            return False
+        why = '; '.join(parked_reasons(tid)) or 'the ledger has no reason'
+        P.block(tid, f'DECIDE: {tid} failed its merge {len(wips)} times (parked as {", ".join(sorted(wips))}): '
+                f'merge one by hand, change the task, or drop it; `plan unblock {tid}` starts it again. Why: {why}',
+                todo=ROOT / rel, after=[])
+        if not commit_plan(f'Plan: block {tid}, parked {len(wips)} times without merging', rel):
+            if not C.plan_external:
+                git('checkout', '-q', '--', rel)
+            return False
+        note(f'{tid}: LEFT FOR A HUMAN — parked {len(wips)} times without merging; blocked on a person')
+        log(f'{tid}: LEFT FOR A HUMAN — parked {len(wips)} times without merging ({", ".join(sorted(wips))}); '
+            f'blocked on a person instead of starting it again')
+        seen = parked_seen()
+        seen[tid] = sorted(set(seen.get(tid, [])) | set(wips))
+        try:
+            C.notes('parked-seen.json').write_text(json.dumps(seen, indent=1), encoding='utf-8')
+        except OSError as e:
+            log(f'{tid}: could not note its parked attempts as seen ({e}); unblocked, it is blocked again')
+        return True
+    finally:
+        hold.close()
+        MERGE.release()
 
 
 STAGED_SAID: set[str] = set()
@@ -6014,7 +6104,8 @@ def what_changed(tid: str) -> str:
     return subj if len(subj) <= 100 else subj[:99].rsplit(' ', 1)[0] + '…'
 
 
-NEEDS_YOU = ('needs you', 'looks stuck', 'run held, needs you')  # since_event kinds only a person can clear
+NEEDS_YOU = ('needs you', 'looks stuck', 'run held, needs you',
+             'stuck, not merged')  # since_event kinds only a person can clear (B32: a parked task too)
 
 
 def needs_you_line(line: str, titles: dict[str, str], now: dt.datetime, waiting) -> str | None:

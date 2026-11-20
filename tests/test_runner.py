@@ -242,6 +242,54 @@ def test_master_branch_option(tmp: Path):
         check(False, 'a missing override fails clearly')
 
 
+def test_parked_twice(repo: Path, tmp: Path):
+    print('run: a task parked twice is blocked on a person, not started a third time (B32)')
+    R.init(repo)
+    rel = 'plan/TODO.md'
+    before = (repo / rel).read_text(encoding='utf-8')
+    # a slot's saved edits (save_leftovers) are no failed merge: they never count
+    saved = git(repo, 'commit-tree', 'main^{tree}', '-p', 'main', '-m', 'T5 wip: uncommitted edits').strip()
+    git(repo, 'branch', 'wip/T5', saved)
+    try:
+        with mock.patch.object(R, 'merge', lambda tid, branch: 'tests fail after the merge'):
+            for k in (1, 2):
+                sha = git(repo, 'commit-tree', 'main^{tree}', '-p', 'main', '-m', f'T2 attempt {k}').strip()
+                git(repo, 'branch', 'task/T2', sha)
+                R.finish('T2', 1, 'sid', 'main')
+                if k == 1:
+                    eq(R.pick({}, {'T1'}, 'main')[0], 'T2', 'parked once: the task starts again')
+        eq(sorted(R.parked_attempts().get('T2', [])), ['wip/T2', 'wip/T2-2'], 'parked twice, as wip/T2 and wip/T2-2')
+        check('T5' not in R.parked_attempts(), 'a wip/<ID> of saved edits is not a parked attempt')
+        why = {}
+        R.pick({}, {'T1'}, 'main', why=why)
+        eq(why.get('T2', ('',))[0], 'parked 2 times, needs a person', 'the dry run says why it waits')
+        got = R.pick({}, {'T1'}, 'main', claim=True)
+        check(got is None or got[0] != 'T2', 'the third pick skips it', got)
+        check('T2' in R.blocked_tasks('main'), 'and blocks it')
+        a = [x for x in P.asks(repo / rel) if x[1] == 'T2']
+        eq([x[0] for x in a], ['DECIDE'], 'on a person: listed under Needs you')
+        has(a[0][3] if a else '', r'wip/T2, wip/T2-2.*tests fail after the merge', 'with the branches and the ledger reasons')
+        eq(git(repo, 'status', '--porcelain', '--', rel), '', 'committed')
+        logged = (repo / '.runner/run.log').read_text(encoding='utf-8').splitlines()
+        parked = [l for l in logged if 'T2: not merged, parked as wip/T2-2' in l]
+        left = [l for l in logged if 'T2: LEFT FOR A HUMAN — parked 2 times' in l]
+        check(parked and left, 'run.log has the parked and the blocked lines', logged[-4:])
+        now = R.dt.datetime.now()
+        check(parked and R.needs_you_line(parked[-1], {}, now, []) and left and R.needs_you_line(left[-1], {}, now, []),
+              'both reach the needs-you feed')
+        P.unblock('T2', 'try once more', todo=repo / rel)
+        git(repo, 'commit', '-qm', 'test: unblock T2', '--', rel)
+        eq(R.pick({}, {'T1'}, 'main')[0], 'T2', 'unblocked by a person: the attempts it was blocked over no longer count')
+    finally:
+        R.C.notes('parked-seen.json').unlink(missing_ok=True)
+        for b in ('wip/T2', 'wip/T2-2', 'wip/T5', 'task/T2'):
+            subprocess.run(['git', 'branch', '-D', b], cwd=repo, capture_output=True)
+            subprocess.run(['git', 'push', '-q', 'origin', '--delete', b], cwd=repo, capture_output=True)
+        if (repo / rel).read_text(encoding='utf-8') != before:
+            (repo / rel).write_text(before, encoding='utf-8')
+            git(repo, 'commit', '-qm', 'test: T2 open again', '--', rel)
+
+
 def test_split_parents(repo: Path):
     print('run: split parents wait for their subtasks, blocked ones too; the words alone hold nothing')
     R.init(repo)
@@ -4439,7 +4487,7 @@ def main() -> int:
         tmp = Path(t)
         os.environ['CLAUDE_CONFIG_DIR'] = str(tmp)  # Claude.trust writes here, never to the real ~/.claude.json
         repo = make_repo(tmp)
-        return report([test_paint, lambda: test_master_branch_option(tmp), lambda: test_relative_remote(tmp), lambda: test_picking(repo), lambda: test_split_parents(repo), lambda: test_blockers_first(repo), lambda: test_done(repo, tmp), lambda: test_merge(repo, tmp),
+        return report([test_paint, lambda: test_master_branch_option(tmp), lambda: test_relative_remote(tmp), lambda: test_picking(repo), lambda: test_parked_twice(repo, tmp), lambda: test_split_parents(repo), lambda: test_blockers_first(repo), lambda: test_done(repo, tmp), lambda: test_merge(repo, tmp),
                        lambda: test_retry(repo), lambda: test_unmerged(repo),
                        lambda: test_conflicts(repo, tmp), lambda: test_fix_ahead(repo, tmp), lambda: test_repair(repo, tmp),
                        lambda: test_prompt_and_hooks(repo),
