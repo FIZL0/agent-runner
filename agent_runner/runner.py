@@ -90,6 +90,7 @@ TAG = '@runner'  # the tmux pane option a slot's pane is found by
 RUN_TAG = '@runner-run'  # set on the runner's own pane to the main checkout it runs for: `attach` goes there
 HIDDEN = [False]  # `run --hidden` on Windows: slot consoles start hidden (the background run)
 REPO_TAG = '@runner-repo'  # the main checkout a pane's runner works for: two repos' runners share a tmux session
+BOARD_TAG = '@runner-board'  # on the board's pane: "feed" (the runner feed) or "text" (since --board)
 
 ROOT = Path('.')       # the main checkout; set by `init`
 SLOTS_DIR = Path('.')  # `[run] home` (~/runs/<repo>/): s1, s2, …, and `merge`
@@ -5886,6 +5887,8 @@ def cmd_since(argv: list[str], prog: str = f'{RUNNER} since') -> int:
     ap.add_argument('--needs-you', action='store_true',
                     help='with --follow: only what needs you (the run held, a task left for you, stalled, or '
                          'waiting on your answer), and the last-look mark stays put')
+    ap.add_argument('--keep-mark', action='store_true',
+                    help='with --follow: leave the last-look mark where it is (the runner feed)')
     ap.add_argument('--board', action='store_true',
                     help="the board window's feed: a header, the last 6 hours, then --follow; the last-look mark "
                          "stays put, and no tokens are used")
@@ -5896,7 +5899,7 @@ def cmd_since(argv: list[str], prog: str = f'{RUNNER} since') -> int:
     if a.board:
         return board()
     if a.follow:
-        return follow(needs_you=a.needs_you)
+        return follow(needs_you=a.needs_you, mark=not a.keep_mark)
     f = since_mark_file()
     try:
         mark = f.read_text(encoding='utf-8').strip() or None
@@ -6322,7 +6325,7 @@ def control_name(n: int) -> str:
     return f'{ROOT.name} · control {n}'
 
 
-def control_argv(n: int, sid: str, resume: bool, blank: bool = False) -> list[str]:
+def control_argv(n: int, sid: str, resume: bool, blank: bool = False, ask: str = '') -> list[str]:
     """Control session `n`: interactive, on `[run] model` (no model of its own), the brief from its settings
     file; with `[run] remote` on Remote Control as "<repo> · control N". Control 1 (the kept session the run
     starts) gets a first message asking for the status summary (`status` only: `since` would move the last-look
@@ -6330,9 +6333,11 @@ def control_argv(n: int, sid: str, resume: bool, blank: bool = False) -> list[st
     until the person types, its brief still loaded by the SessionStart hook. bypassPermissions, as the slots: it
     is driven from a phone or the web as often as from here, and a permission prompt there stalls it. Not lean: a
     person is there (all tools, so /statusline and the like work). `blank` (`control 1 --blank`: the c1 a run
-    with `[run] remote` opens): no first message either, so it costs nothing until the person types."""
+    with `[run] remote` opens): no first message either, so it costs nothing until the person types. `ask`
+    (`control --new --ask TEXT`, from the runner feed): TEXT is its first message instead."""
     from agent_runner.guide import CONTROL_START
-    return [plat.exe(C.run['agent']), *([CONTROL_START.format(cmd=C.command)] if n == 1 and not blank else []),
+    first = [ask] if ask else [CONTROL_START.format(cmd=C.command)] if n == 1 and not blank else []
+    return [plat.exe(C.run['agent']), *first,
             '--resume' if resume else '--session-id', sid, '--model', C.run['model'],
             '--permission-mode', 'bypassPermissions',
             '--settings', str(control_settings()), '--add-dir', str(control_skills_dir()),
@@ -6394,6 +6399,8 @@ def cmd_control(argv: list[str], prog: str = f'{RUNNER} control') -> int:
                     "run's tmux session; Windows: a hidden console) and print its claude.ai/code link")
     ap.add_argument('--brief', action='store_true', help=argparse.SUPPRESS)  # the SessionStart hook
     ap.add_argument('--blank', action='store_true', help=argparse.SUPPRESS)  # c1 under [run] remote: no opening turn
+    ap.add_argument('--ask', default='', metavar='TEXT', help="its first message (with --new: the runner feed hands "
+                    'a person\'s request on this way)')
     ap.add_argument('--unquiet', action='store_true', help=argparse.SUPPRESS)  # `unquiet_when_up`, for session N
     a = ap.parse_args(argv)
     init()
@@ -6407,13 +6414,13 @@ def cmd_control(argv: list[str], prog: str = f'{RUNNER} control') -> int:
         print(f'control sessions are Claude Code sessions; [run] agent is {C.run["agent"]}', file=sys.stderr)
         return 1
     if a.new:
-        return control_new(a.n)
+        return control_new(a.n, ask=a.ask)
     n = a.n or control_number()
     if pid := control_live(n):
         print(f'control {n} already runs (pid {pid}): {RUNNER} control starts another', file=sys.stderr)
         return 1
     sid, resume = control_sid(n)
-    argv = control_argv(n, sid, resume, blank=a.blank)
+    argv = control_argv(n, sid, resume, blank=a.blank, ask=a.ask)
     backend().trust(ROOT)
     os.chdir(ROOT)
     pidf = C.notes(f'control{n}.pid')
@@ -6554,22 +6561,56 @@ def board_argv(sess: str, root: Path, cmd: str) -> list[str]:
             '-P', '-F', '#{pane_id}', cmd]
 
 
+FEED_MODEL = 'haiku'  # ponytail: fixed; the feed only echoes lines and runs one command, a knob if that ever falls short
+
+
+def feed_name() -> str:
+    return f'{ROOT.name} · runner'
+
+
+def feed_argv() -> list[str]:
+    """With `[run] remote`: the runner feed, a lean Claude session on Remote Control as "<repo> · runner" that
+    posts what lands (Monitor on `since --follow --keep-mark`), runs status/pause/stop/slots, and hands anything
+    else to a new control session. Haiku; Bash (only the runner's command, dontAsk refuses the rest) and Monitor;
+    its own short system prompt instead of Claude Code's, no settings sources or MCP servers: ~6k tokens a turn.
+    A fresh session at each start."""
+    from agent_runner.guide import RUNNER_BRIEF, RUNNER_START
+    cmd = C.command
+    return [plat.exe(C.run['agent']), RUNNER_START.format(cmd=cmd, repo=ROOT.name),
+            '--model', FEED_MODEL, '--system-prompt', RUNNER_BRIEF.format(cmd=cmd, repo=ROOT.name),
+            '--tools', 'Bash,Monitor', '--permission-mode', 'dontAsk',
+            '--allowedTools', f'Bash({cmd} *)', 'Monitor', '--strict-mcp-config', '--setting-sources', '',
+            '--remote-control', feed_name()]
+
+
+def board_command() -> str:
+    """What the board window runs: the runner feed with `[run] remote` (in the apps too), else the free text feed."""
+    return plat.command_text(feed_argv() if remote_on() and control_ok() else [*runner_cmd(), 'since', '--board'])
+
+
 def keep_board(sess: str) -> None:
     """Keep the board window up in the background session while the run is: opened again when it is closed or
     its feed exits. It outlives the run, and the next run finds it there."""
-    cmd = plat.command_text([*runner_cmd(), 'since', '--board'])
+    cmd = board_command()
+    kind = 'feed' if '--remote-control' in cmd else 'text'
     said = False
     while True:
         rows = tmux('list-panes', '-s', '-t', f'={sess}', '-F',
                     f'#{{session_name}}\t#{{pane_id}}\t#{{{TAG}}}\t#{{{REPO_TAG}}}\t#{{{RUN_TAG}}}')
-        if rows.returncode == 0 and not attach_target(rows.stdout.splitlines(), ROOT, 'board'):  # by tag: a rename keeps it
+        hit = attach_target(rows.stdout.splitlines(), ROOT, 'board') if rows.returncode == 0 else ('', '')
+        if hit and hit[1] and tmux('show-options', '-p', '-v', '-t', hit[1], BOARD_TAG).stdout.strip() != kind:
+            tmux('kill-pane', '-t', hit[1])  # an earlier run's other kind (remote turned on or off): this run's instead
+            hit = None
+        if not hit:  # found by tag, not name: a rename keeps it
             r = sp.run(board_argv(sess, ROOT, cmd), capture_output=True, text=True)
             if pane := r.stdout.strip():  # `attach board` finds it by these
                 tmux('set-option', '-p', '-t', pane, TAG, 'board')
                 tmux('set-option', '-p', '-t', pane, REPO_TAG, str(ROOT))
+                tmux('set-option', '-p', '-t', pane, BOARD_TAG, kind)
             if not said or r.returncode:
-                log(f'board: window {window("board")} is up ({RUNNER} attach board)' if not r.returncode else
-                    f'board: tmux could not open it: {r.stderr.strip()}')
+                what = f'the runner feed, "{feed_name()}" in the apps too' if kind == 'feed' else 'the text feed'
+                log(f'board: window {window("board")} is up with {what} ({RUNNER} attach board)' if not r.returncode
+                    else f'board: tmux could not open it: {r.stderr.strip()}')
             said = True
         time.sleep(BOARD_EVERY)
 
@@ -6599,7 +6640,7 @@ def control_new_session() -> str:
     return sess if tmux('has-session', '-t', f'={sess}').returncode == 0 else ''
 
 
-def control_new(n: int | None = None, wait: float = CONTROL_LINK_WAIT) -> int:
+def control_new(n: int | None = None, wait: float = CONTROL_LINK_WAIT, ask: str = '') -> int:
     """`control --new`: another control session, opened without taking focus (a window of its own in the run's
     tmux session; Windows: a hidden console), on Remote Control as "<repo> · control N" with `[run] remote`.
     Prints its claude.ai/code link once its pane shows it, so the session that ran it can answer with a link."""
@@ -6607,7 +6648,7 @@ def control_new(n: int | None = None, wait: float = CONTROL_LINK_WAIT) -> int:
     if pid := control_live(n):
         print(f'control {n} already runs (pid {pid})', file=sys.stderr)
         return 1
-    cmd = [*runner_cmd(), 'control', str(n)]
+    cmd = [*runner_cmd(), 'control', str(n), *(['--ask', ask] if ask else [])]
     name = control_name(n)
     if plat.WINDOWS:
         plat.spawn_console(cmd, ROOT, control_env(), hidden=True)

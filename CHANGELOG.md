@@ -11,6 +11,14 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 - With `[run] remote` on, the run opens c1 beside it again (0.49.0 left it out), so it is in tmux and in the
   apps ("<repo> · control 1", beside the control server's entry). It opens blank, with no summary turn, so it
   uses no tokens until you type in it.
+- The runner feed: with `[run] remote` on, the board window is a lean Claude session that is also in the apps,
+  as "<repo> · runner". It posts each line of `since --follow --keep-mark` as it lands, runs status, pause,
+  stop, force, slots N and `control --new` when asked, and hands anything else to a new control session
+  (`control --new --ask TEXT`), answering with its link. It runs Haiku with only Bash (the runner's command,
+  nothing else) and Monitor, its own short system prompt, and no settings or MCP servers: about $0.001 a
+  landing at API prices. With remote off, the board stays the free text feed.
+- `since --follow --keep-mark` leaves the last-look mark alone; `control --ask TEXT` gives a control session
+  its first message.
 
 ## 0.49.0 (2026-11-20)
 

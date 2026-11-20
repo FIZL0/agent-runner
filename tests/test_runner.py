@@ -1273,6 +1273,24 @@ def test_short_titles_and_since(repo: Path):
         argv = R.board_argv('ar-demo', repo, 'agent-runner since --board')
         check(argv[:5] == ['tmux', 'new-window', '-d', '-t', '=ar-demo:'] and R.window('board') in argv,
               'the board opens in the background session without taking focus', argv)
+
+        # the runner feed: with [run] remote the board is a lean Haiku session in the apps too
+        with mock.patch.object(R, 'remote_on', lambda: True), mock.patch.dict(R.C.run, {'agent': 'claude'}):
+            fa = R.feed_argv()
+            opt = lambda k: fa[fa.index(k) + 1]
+            eq((opt('--model'), opt('--tools'), opt('--permission-mode'), opt('--remote-control')),
+               ('haiku', 'Bash,Monitor', 'dontAsk', f'{R.ROOT.name} · runner'),
+               'the feed: Haiku, Bash and Monitor only, dontAsk, "<repo> · runner" on Remote Control')
+            check(opt('--allowedTools') == f'Bash({R.C.command} *)' and opt('--setting-sources') == ''
+                  and '--strict-mcp-config' in fa, 'Bash only for the runner command; no settings or MCP', fa)
+            check('control --new --ask' in opt('--system-prompt') and 'since --follow --keep-mark' in fa[1],
+                  'it hands other asks to a control session and follows without moving the mark', fa)
+            check('--remote-control' in R.board_command(), 'the board runs the feed with remote on')
+        with mock.patch.object(R, 'remote_on', lambda: False):
+            check(R.board_command().endswith('since --board'), 'and the free text feed with it off')
+        ca = R.control_argv(3, 'sid', False, ask='fix the login flicker')
+        eq(ca[1], 'fix the login flicker', 'control --ask: the handed-on request is its first message')
+        eq(run(repo, 'since', '--follow', '--keep-mark', '--help').returncode, 0, 'since --keep-mark is an option')
     finally:
         if keep is None:
             notes.unlink(missing_ok=True)
