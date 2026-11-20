@@ -180,8 +180,23 @@ that mark forward, so asking twice in a row shows nothing new the second time. W
 first sentence of its `done` message), from now on, moving the mark as it prints: the control session's
 "follow", and fine in any terminal.
 
-Both print **Waiting for your OK** first when a concept's build waits for you (below), one line each with
-the page's link, however old: `  Settings page layout [K7]  https://claude.ai/code/artifact/…`.
+Both print **Waiting for your OK** first when a concept's build or a task waits for you (below), one line
+each, however old: a caps label for what is asked, the title [id], what to do, the link:
+`  CONCEPT  Settings page layout [K7]: pick an option on the page  https://claude.ai/code/artifact/…`.
+
+### Tasks waiting on a person
+
+A block whose why starts with a caps label waits on a person, not a task: `CONFIRM:` (check something by
+hand and say what you saw), `DECIDE:` (answer a question or a choice), `BLOCKED:` (access, a login, or a fix
+only a person can make). An agent files one with `done R1 "msg" --blocked "CONFIRM: watch a phone for a push
+when a task lands"`; such a block never takes an `(after …)`. It lists under Waiting for your OK beside the
+concept pages, and takes one of three answers (a control session maps what the person says):
+
+- `plan confirm R1 "the push came"`: a CONFIRM is ticked with that noted; a DECIDE or BLOCKED reopens with
+  the answer noted; a concept is approved.
+- `plan change R1 "do X instead"`: noted and reopened (a concept: `revise`).
+- `plan shelve R1`: stays blocked (`BLOCKED: shelved: …`) but leaves the list; `plan waiting --all` still
+  shows it, and `plan unshelve R1` brings it back. Concepts shelve the same way.
 
 ### Concept tasks
 

@@ -928,27 +928,110 @@ def test_control(repo: Path):
 def test_concepts_waiting(repo: Path):
     print('concepts: status and since list what waits for your OK first; a K task\'s prompt says build nothing')
     R.init(repo)
-    w = [('F9', 'K7', 'https://claude.ai/code/artifact/aaa', 'Settings page layout')]
+    w = [('CONCEPT', 'F9', 'K7', 'pick an option on the page', 'https://claude.ai/code/artifact/aaa',
+          'Settings page layout', False)]
+    line = '  CONCEPT  Settings page layout [K7]: pick an option on the page  https://claude.ai/code/artifact/aaa'
     text = R.status_text(False, {}, [], {}, 0.0, waiting=w)
-    eq(text.splitlines(), ['Waiting for your OK:', '  Settings page layout [K7]  https://claude.ai/code/artifact/aaa',
-                           'no run is up'], 'status: waiting for your OK first, with the link')
+    eq(text.splitlines(), ['Waiting for your OK:', line, 'no run is up'],
+       'status: waiting for your OK first, label first, with the link')
     eq(R.status_text(False, {}, [], {}, 0.0), 'no run is up', 'and nothing extra when none waits')
     now = R.dt.datetime(2026, 11, 19, 15, 0, 0)
     text, _ = R.since_text([], now - R.dt.timedelta(hours=2), {}, now, waiting=w)
-    eq(text.splitlines(), ['Waiting for your OK:', '  Settings page layout [K7]  https://claude.ai/code/artifact/aaa',
-                           'nothing new since 13:00'], 'since: the same, however old the concept is')
+    eq(text.splitlines(), ['Waiting for your OK:', line, 'nothing new since 13:00'],
+       'since: the same, however old the concept is')
     with tempfile.TemporaryDirectory() as tmp:
         todo = Path(tmp) / 'TODO.md'
         P.ensure(todo)
         P.add('K', 'settings page layout | files: a.py', todo=todo)
         bid = P.concept_done('K1', 'https://x.invalid/p', todo=todo)
         with mock.patch.object(type(R.C), 'todo', property(lambda self: todo)):
-            eq(R.waiting_ok(), [(bid, 'K1', 'https://x.invalid/p', 'settings page layout')],
+            eq(R.waiting_ok(), [('CONCEPT', bid, 'K1', 'pick an option on the page', 'https://x.invalid/p',
+                                 'settings page layout', False)],
                'waiting_ok reads the build tasks waiting on a concept page off TODO.md')
     prompt = R.prompt_for('K7', 1, 1, repo, 'main')
     has(prompt, r'K7 is a concept task: do not build it', 'a K task\'s prompt says to build nothing')
     has(prompt, r'done K7 "<msg>" --artifact <the page\'s URL>', 'and how to finish it')
     check('concept task' not in R.prompt_for('T2', 1, 1, repo, 'main'), 'other tasks\' prompts do not')
+
+
+def test_person_waiting(repo: Path):
+    print('waiting for your OK: tasks blocked on a person list with a caps label; confirm, change and shelve move them')
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        git(root, 'init', '-q')
+        (root / 'runner.toml').write_text('[plan]\njournal = "journal"\n', encoding='utf-8')
+        git(root, 'add', '-A'); git(root, 'commit', '-qm', 'start')
+        env = {**os.environ, 'AGENT_RUNNER_REPO': str(root)}
+        env.pop('AGENT_RUNNER', None)
+        todo, done = root / 'plan' / 'TODO.md', root / 'plan' / 'DONE.md'
+        for text in ('push notices | files: a.py', 'pick a database | files: b.py', 'deploy key | files: c.py',
+                     'other work | files: d.py'):
+            check(run(root, 'plan', 'add', 'F', text, env=env).returncode == 0, f'added {text}')
+        r = run(root, 'done', 'F1', 'F1: pushes', '--no-test', '--blocked',
+                'CONFIRM: watch a phone for a push when a task lands, see https://x.invalid/howto', env=env)
+        check(r.returncode == 0, 'done --blocked with a CONFIRM label goes through', r.stdout + r.stderr)
+        P.block('F2', 'DECIDE: Postgres or SQLite? F4 does not care', todo=todo)
+        P.block('F3', 'BLOCKED: needs a deploy key on the server', todo=todo)
+        P.block('F4', 'needs F9 first', todo=todo)
+        check('(after' not in todo.read_text(encoding='utf-8').split('**F2**')[1].split('\n')[0],
+              'a block on a person waits on no task, even one its words name')
+        a = sorted(P.asks(todo), key=lambda x: x[1])
+        eq([(x[0], x[1]) for x in a], [('CONFIRM', 'F1'), ('DECIDE', 'F2'), ('BLOCKED', 'F3')],
+           'asks lists the person-blocked tasks with their labels, not a plain block')
+        eq((a[0][3], a[0][4]), ('watch a phone for a push when a task lands, see', 'https://x.invalid/howto'),
+           'what to do, and its link apart')
+        with mock.patch.object(type(R.C), 'todo', property(lambda self: todo)):
+            w = R.waiting_ok()
+        text = R.status_text(False, {}, [], {}, 0.0, waiting=w)
+        has(text, r'^Waiting for your OK:\n  BLOCKED  deploy key \[F3\]: needs a deploy key on the server\n'
+                  r'  DECIDE  pick a database \[F2\]: Postgres or SQLite\? F4 does not care\n'
+                  r'  CONFIRM  push notices \[F1\]: watch a phone for a push when a task lands, see  '
+                  r'https://x\.invalid/howto\nno run is up$',
+            'status: label, title [id]: what to do, link, in queue order')
+        now = R.dt.datetime(2026, 11, 19, 15, 0, 0)
+        has(R.since_text([], now, {}, now, waiting=w)[0],
+            r'^Waiting for your OK:\n  BLOCKED  deploy key \[F3\]: .*\n  DECIDE .*\n  CONFIRM  push notices \[F1\]',
+            'since: the same')
+        out = run(root, 'plan', 'waiting', env=env).stdout
+        has(out, r'^CONFIRM  F1  push notices  watch a phone .* https://x\.invalid/howto$', 'plan waiting lists it')
+        has(out, r'^DECIDE  F2  pick a database', 'and the decision')
+
+        r = run(root, 'plan', 'shelve', 'F3', env=env)
+        check(r.returncode == 0, 'shelve goes through', r.stderr)
+        has(todo.read_text(encoding='utf-8'), r'^- \[~\] \*\*F3\*\* .*BLOCKED: shelved: BLOCKED: needs a deploy key',
+            'shelved: still blocked')
+        check('F3' not in run(root, 'plan', 'waiting', env=env).stdout, 'and off plan waiting')
+        has(run(root, 'plan', 'waiting', '--all', env=env).stdout, r'^BLOCKED  F3 .*\(shelved\)$', 'but --all shows it')
+        with mock.patch.object(type(R.C), 'todo', property(lambda self: todo)):
+            text = R.status_text(False, {}, [], {}, 0.0, waiting=R.waiting_ok())
+        check('[F3]' not in text, 'status leaves it out', text)
+        has(text, r'\(1 shelved: plan waiting --all\)', 'and counts it')
+        run(root, 'plan', 'unshelve', 'F3', env=env)
+        has(run(root, 'plan', 'waiting', env=env).stdout, r'^BLOCKED  F3 ', 'unshelve brings it back')
+
+        r = run(root, 'plan', 'confirm', 'F1', 'the push came within a minute', env=env)
+        check(r.returncode == 0, 'confirm goes through', r.stderr)
+        has(done.read_text(encoding='utf-8'), r'- \[x\] \*\*F1\*\* .*confirmed by you .*: the push came within a minute',
+            'a CONFIRM is ticked with what they saw')
+        r = run(root, 'plan', 'confirm', 'F2', 'SQLite', env=env)
+        has(todo.read_text(encoding='utf-8'), r'^- \[ \] \*\*F2\*\* .*your answer \(DECIDE .*\): SQLite$',
+            'a DECIDE reopens with the answer noted')
+        r = run(root, 'plan', 'change', 'F3', 'use the CI deploy token instead', env=env)
+        check(r.returncode == 0, 'change goes through', r.stderr)
+        t = todo.read_text(encoding='utf-8')
+        has(t, r'^- \[ \] \*\*F3\*\* .*do this instead: use the CI deploy token instead$', 'change: noted and reopened')
+        check(' BLOCKED: ' not in t.split('**F3**')[1].split('\n')[0], 'without its block')
+        has(run(root, 'plan', 'waiting', env=env).stdout, r'^nothing waits for your OK', 'nothing waits now')
+        eq(run(root, 'plan', 'confirm', 'F4', env=env).returncode != 0, True, 'a plain block takes no confirm')
+        eq(git(root, 'status', '--porcelain'), '', 'every answer committed')
+
+        k = P.add('K', 'menu layout | files: m.py', todo=todo)
+        bid = P.concept_done(k, 'https://x.invalid/k', todo=todo)
+        P.shelve(k, todo=todo)
+        eq(P.asks(todo), [], 'a concept page shelves too')
+        eq([x[0] for x in P.asks(todo, all=True)], ['CONCEPT'], 'and --all still lists it')
+        eq(P.confirm(k, 'option A', todo=todo), f'approved: {bid} is open now, and a run starts it',
+           'confirm on a concept approves it, shelved or not')
 
 
 def test_short_titles_and_since(repo: Path):
@@ -3318,7 +3401,8 @@ def main() -> int:
                        lambda: test_limit_lets_go(repo),
                        lambda: test_shared_push(repo, tmp), lambda: test_note_on_a_ticked_task(repo), lambda: test_adopt_merge(repo), lambda: test_followups(repo), lambda: test_ci_watch(repo), test_update_notice, test_restart_if_upgraded, test_auto_upgrade, lambda: test_flake_repair(tmp), lambda: test_repair_per_failure(repo),
                        lambda: test_stalled(tmp), lambda: test_take(repo), lambda: test_take_text_and_here(repo), lambda: test_background(repo), lambda: test_remote_auto(tmp), lambda: test_control(repo),
-                       lambda: test_short_titles_and_since(repo), lambda: test_concepts_waiting(repo)])
+                       lambda: test_short_titles_and_since(repo), lambda: test_concepts_waiting(repo),
+                       lambda: test_person_waiting(repo)])
 
 
 if __name__ == '__main__':

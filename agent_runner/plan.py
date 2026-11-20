@@ -24,7 +24,12 @@ re-reads it on every turn pays again. So the backlog is a command instead:
     ./run plan newid PREFIX      the next free id, e.g. L -> L7; a task's id gives its next subtask, L3 -> L3a
     ./run plan archive           move every [x] line left in TODO.md to DONE.md (after merges, hand edits)
     ./run plan reopen            unblock every task whose BLOCKED (after X, Y) tasks are all done now
-    ./run plan waiting           build tasks waiting for your OK on a concept's page (K tasks: below)
+    ./run plan waiting [--all]   what waits for your OK: concept pages (K tasks: below) and tasks blocked on a
+                                 person, each with a label (CONCEPT, CONFIRM, DECIDE, BLOCKED); --all adds the shelved
+    ./run plan confirm <ID> [WHAT YOU SAW]   yes / it worked: a CONFIRM is ticked, a DECIDE or BLOCKED reopens
+                                 with the answer noted, a concept is approved
+    ./run plan change <ID> WHAT  do WHAT instead: noted and reopened (a concept: revised)
+    ./run plan shelve <ID>       later: stays blocked, off Waiting for your OK; `unshelve <ID>` brings it back
     ./run plan approve <ID> [CHOICE]   OK a concept (or its build task's id): the build opens, CHOICE noted on it
     ./run plan revise <ID> WHY   changes asked: the concept reopens with WHY noted, its waiting build is dropped
     ./run plan claims            which run has which task (with a remote to claim through), and since when (STALE: no refresh in 3 h),
@@ -73,6 +78,11 @@ after it, `BLOCKED: waiting for your OK on URL`, which no run starts and `reopen
 which option; `approve` opens the build with the choice noted, `revise` sends the concept back. A repo whose
 `[plan] kinds` lack K has no concepts.
 
+**A task blocked on a person says what it asks**, with a caps label first: `block ID "CONFIRM: watch a phone
+for a push"` (check by hand, say what you saw), `"DECIDE: …"` (a question or a choice), `"BLOCKED: …"` (access,
+a login, a fix only a person can make). Such a block waits on no task, lists under Waiting for your OK (`waiting`,
+and `status`/`since`) beside the concept pages, and takes `confirm`, `change` or `shelve`.
+
 **Design rule: checkboxes are only ever changed through this tool.** Never hand-edit a `- [ ]` in TODO.md or
 DONE.md. Ticking by hand is how a task ends up done in one file and open in another, how an `after:`
 dependency silently stops being satisfied, and how two parallel agents both pick the same task. `tick` is one
@@ -102,7 +112,8 @@ PROG = './run plan'  # the name in messages; a wrapper sets its own ('./kit plan
 __all__ = ['PROG', 'HELP', 'lines', 'index', 'section', 'ensure', 'archive', 'tick', 'block', 'reopen',
            'unblock', 'move', 'next_id', 'add', 'similar', 'note', 'drop', 'next_task', 'files_on_line', 'fields', 'overlap', 'brief', 'open_ids',
            'write_atomic', 'child', 'subtasks', 'main', 'PRI', 'kinds', 'check_kind',
-           'concept', 'concept_done', 'waiting', 'approve', 'revise']
+           'concept', 'concept_done', 'waiting', 'approve', 'revise',
+           'asking', 'asks', 'confirm', 'change', 'shelve', 'unshelve']
 
 ITEM = re.compile(r'^(\s*)- \[(.)\] \*\*([^\s*]+)')
 HEAD = re.compile(r'(#+) ')
@@ -345,6 +356,8 @@ def block(tid: str, why: str, todo=None, after=None) -> None:
     todo, _ = ensure(todo)
     ls = list(lines(todo))
     i = _find(ls, tid)
+    if after is None and asking(why):
+        after = []  # it waits on a person (`asks`), not on a task its words happen to name
     if after is None:
         live = open_ids(ls)
         after = [t for t in dict.fromkeys(TASK_ID.findall(why))
@@ -742,8 +755,9 @@ def concept_done(tid: str, url: str, todo=None, done=None) -> str:
     return bid
 
 
-def waiting(todo=None) -> list[tuple[str, str, str, str]]:
-    """Build tasks waiting for a person's OK on a concept page: (build id, concept id or '', url, title)."""
+def waiting(todo=None, all: bool = False) -> list[tuple[str, str, str, str]]:
+    """Build tasks waiting for a person's OK on a concept page: (build id, concept id or '', url, title).
+    Shelved ones (`shelve`) only with `all`."""
     todo, _ = ensure(todo)
     ls, out = lines(todo), []
     for i, l in enumerate(ls):
@@ -751,7 +765,8 @@ def waiting(todo=None) -> list[tuple[str, str, str, str]]:
         if not (m and not m.group(1) and m.group(2) == '~'):
             continue
         tail = ls[i + len(_item_block(ls, i)) - 1]
-        if w := WAITING.findall(tail):
+        if w := (WAIT_ANY if all else WAITING).findall(tail):
+            w = [x[-1] if isinstance(x, tuple) else x for x in w]
             k = FROM_CONCEPT.search(l)
             title = re.sub(r'^Build the option a person approves on concept \S+ page: ', '', title_of(l))
             out.append((m.group(3).rstrip('.'), k.group(1) if k else '', w[-1], title))
@@ -760,7 +775,7 @@ def waiting(todo=None) -> list[tuple[str, str, str, str]]:
 
 def _waiter(tid: str, todo) -> tuple[str, str, str, str]:
     """The waiting build task `tid` names: the build task itself or its concept."""
-    for w in waiting(todo):
+    for w in waiting(todo, all=True):
         if tid in (w[0], w[1]):
             return w
     raise SystemExit(f'{PROG}: nothing waits for an OK on {tid!r}: `{PROG} waiting` lists what does')
@@ -797,6 +812,129 @@ def revise(tid: str, why: str, todo=None, done=None) -> str:
     note(k, f'changes asked on {url}: {why}', todo=todo)
     drop(b, f'concept {k} sent back for changes', todo=todo, done=done)
     return k
+
+
+# --- tasks waiting on a person: "Waiting for your OK" ----------------------------------------------------
+#
+# A block whose why starts with a caps label waits on a person, not on a task: `BLOCKED: CONFIRM: watch a
+# phone for a push` (check something by hand and say what you saw), `DECIDE: …` (answer a question or a
+# choice), `BLOCKED: …` (access, a login, or a fix only a person can make). An agent files one with
+# `done ID "msg" --blocked "CONFIRM: …"`. They list under "Waiting for your OK" beside the concept pages
+# (label CONCEPT), and take three answers: `confirm` (it worked / what they saw: a CONFIRM is ticked, a DECIDE
+# or BLOCKED reopens with the answer noted, a concept is approved), `change` ("do X instead": noted and
+# reopened; a concept is revised) and `shelve` (stays blocked, leaves the list until `waiting --all` or
+# `unshelve`). A shelved block reads `BLOCKED: shelved: …`.
+
+ASK_LABELS = ('CONFIRM', 'DECIDE', 'BLOCKED')
+SHELVED = 'shelved: '
+ASKING = re.compile(r'BLOCKED: (shelved: )?(' + '|'.join(ASK_LABELS) + r'): (.*)$')
+WAIT_ANY = re.compile(r'BLOCKED: (shelved: )?' + re.escape(WAIT_OK) + r'(\S+)')
+URL = re.compile(r'https?://\S+')
+CONCEPT_ASK = 'pick an option on the page'
+
+
+def _block_at(tail: str) -> int:
+    """Where a task's last ` BLOCKED: ` starts in its last line (-1 for none), not counting the label of a
+    `BLOCKED: BLOCKED: …` or `BLOCKED: shelved: BLOCKED: …`."""
+    at = [m.start() for m in re.finditer(' BLOCKED: ', tail)
+          if not tail[:m.start()].endswith((' BLOCKED:', ' shelved:'))]
+    return at[-1] if at else -1
+
+
+def asking(why: str) -> bool:
+    """Does a block's why wait on a person: it starts with CONFIRM:, DECIDE: or BLOCKED:."""
+    return bool(re.match(r'(' + '|'.join(ASK_LABELS) + r'): ', why.strip()))
+
+
+def asks(todo=None, all: bool = False) -> list[tuple[str, str, str, str, str, str, bool]]:
+    """Everything waiting on a person, in TODO.md order: (label, task id, its concept id or '', what to do, link
+    or '', the task's title, shelved). Label CONCEPT is a build task waiting on a concept page (`waiting`).
+    Shelved ones only with `all`."""
+    todo, _ = ensure(todo)
+    ls, out = lines(todo), []
+    for i, l in enumerate(ls):
+        m = ITEM.match(l)
+        if not (m and not m.group(1) and m.group(2) == '~'):
+            continue
+        tid = m.group(3).rstrip('.')
+        tail = ls[i + len(_item_block(ls, i)) - 1]
+        at = _block_at(tail)
+        tail = tail[at:] if at >= 0 else ''
+        if w := WAIT_ANY.match(tail.lstrip()):
+            k = FROM_CONCEPT.search(l)
+            title = re.sub(r'^Build the option a person approves on concept \S+ page: ', '', title_of(l))
+            item = ('CONCEPT', tid, k.group(1) if k else '', CONCEPT_ASK, w.group(2), title, bool(w.group(1)))
+        elif a := ASKING.match(tail.lstrip()):
+            what = a.group(3).split(' — ')[0].strip()
+            u = URL.search(what)
+            if u:
+                what = ' '.join((what[:u.start()] + what[u.end():]).split()).rstrip(' :,;')
+            item = (a.group(2), tid, '', what, u.group(0) if u else '', title_of(l), bool(a.group(1)))
+        else:
+            continue
+        if all or not item[6]:
+            out.append(item)
+    return out
+
+
+def _ask(tid: str, todo) -> tuple[str, str, str, str, str, str, bool]:
+    """What `tid` (a task waiting on a person, or a concept whose build waits) asks, shelved or not."""
+    for a in asks(todo, all=True):
+        if tid in (a[1], a[2]):
+            return a
+    raise SystemExit(f'{PROG}: {tid!r} waits on no answer from you: `{PROG} waiting --all` lists what does')
+
+
+def confirm(tid: str, said: str = '', todo=None, done=None) -> str:
+    """The person's yes ("it worked", or what they saw): a CONFIRM is ticked with it noted, a DECIDE or BLOCKED
+    reopens with the answer noted (so a run picks it up), a concept is approved. Returns what happened."""
+    todo, done = ensure(todo, done)
+    label, t, k, what, _, _, _ = _ask(tid, todo)
+    if label == 'CONCEPT':
+        return f'approved: {approve(tid, said, todo=todo)} is open now, and a run starts it'
+    if label == 'CONFIRM':
+        unblock(t, f'confirmed by you ({what}): {said or "it worked"}', todo=todo)
+        tick(t, todo=todo, done=done)
+        return f'confirmed and ticked {t}'
+    unblock(t, f'your answer ({label} {what}): {said or "done"}', todo=todo)
+    return f'{t} is open again with your answer noted, and a run starts it'
+
+
+def change(tid: str, instead: str, todo=None, done=None) -> str:
+    """'Do X instead': the task reopens with `instead` noted; a concept is sent back (`revise`)."""
+    todo, done = ensure(todo, done)
+    label, t, k, what, _, _, _ = _ask(tid, todo)
+    if label == 'CONCEPT':
+        return f'{revise(tid, instead, todo=todo, done=done)} is open again with your changes noted'
+    unblock(t, f'you said, on {label} {what}: do this instead: {instead}', todo=todo)
+    return f'{t} is open again with your change noted, and a run starts it'
+
+
+def _shelf(tid: str, on: bool, todo) -> str:
+    todo, _ = ensure(todo)
+    t = _ask(tid, todo)[1]
+    ls = list(lines(todo))
+    i = _find(ls, t)
+    end = i + len(_item_block(ls, i)) - 1
+    at = _block_at(ls[end])
+    head, why = ls[end][:at], ls[end][at + len(' BLOCKED: '):]
+    if on and not why.startswith(SHELVED):
+        why = SHELVED + why
+    elif not on and why.startswith(SHELVED):
+        why = why[len(SHELVED):]
+    ls[end] = f'{head} BLOCKED: {why}'
+    _write(todo, ls)
+    return t
+
+
+def shelve(tid: str, todo=None) -> str:
+    """'Later': the task stays blocked but leaves Waiting for your OK (`waiting --all` still lists it)."""
+    return _shelf(tid, True, todo)
+
+
+def unshelve(tid: str, todo=None) -> str:
+    """Back on Waiting for your OK."""
+    return _shelf(tid, False, todo)
 
 
 # --- what a session starts from ----------------------------------------------
@@ -1210,7 +1348,8 @@ def _commit(root: Path, paths: list[Path], msg: str) -> None:
         g('commit', '-q', '-m', f'plan: {msg}', '--', *map(str, paths))
 
 
-EDITS = ('tick', 'block', 'reopen', 'unblock', 'move', 'add', 'note', 'archive', 'drop', 'approve', 'revise')
+EDITS = ('tick', 'block', 'reopen', 'unblock', 'move', 'add', 'note', 'archive', 'drop', 'approve', 'revise',
+         'confirm', 'change', 'shelve', 'unshelve')
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -1271,11 +1410,21 @@ def _main(argv: list[str], c) -> int:
     if argv[:1] == ['revise'] and len(argv) > 2:
         k = revise(argv[1], ' '.join(argv[2:]))
         return say(f'{k} is open again with your changes noted; its build task is dropped until the next round')
-    if argv == ['waiting']:
-        w = waiting()
-        print('\n'.join(f'{b}  {t}  {u}' + (f'  (concept {k})' if k else '') for b, k, u, t in w)
-              or 'nothing waits for your OK')
+    if argv in (['waiting'], ['waiting', '--all']):
+        w = asks(all=len(argv) > 1)
+        print('\n'.join('  '.join(x for x in (label, t, title, '' if label == 'CONCEPT' else what, u,
+                                              f'(concept {k})' if k else '', '(shelved)' if sh else '') if x)
+                        for label, t, k, what, u, title, sh in w)
+              or 'nothing waits for your OK' + ('' if len(argv) > 1 else f' (`{PROG} waiting --all` adds the shelved)'))
         return 0
+    if argv[:1] == ['confirm'] and len(argv) > 1:
+        return say(confirm(argv[1], ' '.join(argv[2:])))
+    if argv[:1] == ['change'] and len(argv) > 2:
+        return say(change(argv[1], ' '.join(argv[2:])))
+    if argv[:1] in (['shelve'], ['unshelve']) and len(argv) == 2:
+        if argv[0] == 'shelve':
+            return say(f'shelved {shelve(argv[1])}: still blocked, off Waiting for your OK (`{PROG} unshelve` brings it back)')
+        return say(f'{unshelve(argv[1])} is back on Waiting for your OK')
     if argv == ['kinds']:
         k, own = kinds()
         return say('\n'.join(f'{p}  {m}' for p, m in k.items())

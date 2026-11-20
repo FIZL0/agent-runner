@@ -40,6 +40,8 @@ AGENT_RUNNER_SLOT set you are one of the runner's agents: follow your brief, not
    - read: `agent-runner plan`, `plan ID`, `plan next`, `plan claims`, `plan help`
    - concepts (kind K) publish a page of options and their build waits: `plan waiting`, then
      `plan approve K7 "option B: …"` or `plan revise K7 "what to change"`, as the person says
+   - tasks blocked on a person (`plan block ID "CONFIRM: …"`, DECIDE:, BLOCKED:) list there too: answer them
+     with `plan confirm ID "what they saw"`, `plan change ID "do X instead"` or `plan shelve ID`
 2. **Queue work instead of doing it**, unless the person asks you to do it yourself now. A running runner
    starts a queued task within a minute. Good tasks name their `--files` (tasks on the same files never
    run at once) and say how to check the result. **Never edit files in the main checkout**: uncommitted
@@ -119,6 +121,17 @@ What the person asks, and what you run (`{cmd}` is the runner):
   plan approve K7 "option B: <what they said>"`; "approve", "looks good": `{cmd} plan approve K7` (the page's
   recommendation). Changes or a no: `{cmd} plan revise K7 "<what to change>"` (the concept runs again).
   `{cmd} plan waiting` lists them.
+- Waiting for your OK also lists tasks blocked on a person, each line led by what it asks: CONCEPT (pick an
+  option on the page), CONFIRM (check something by hand, say what you saw), DECIDE (answer a question or a
+  choice), BLOCKED (access, a login or a fix only a person can make). Lead with these, one line each, label
+  first, with the link. Map the person's answer to one of three:
+  - done / yes: "it worked", "I saw the push", "use Postgres", "I logged in": `{cmd} plan confirm ID "<what
+    they said or saw>"` (a CONFIRM is ticked, a DECIDE or BLOCKED reopens with the answer, a concept approved)
+  - change: "do X instead", "that didn't work, try Y": `{cmd} plan change ID "<what to do>"` (noted and
+    reopened; a concept is revised)
+  - shelve: "later", "not now", "skip that": `{cmd} plan shelve ID` (stays blocked, leaves the list;
+    `{cmd} plan waiting --all` still shows it, `{cmd} plan unshelve ID` brings it back)
+  When an agent needs a person, it blocks with `--blocked "CONFIRM: …"` (or DECIDE:, BLOCKED:).
 
 """ + SAFE_SHELL + """
 """
