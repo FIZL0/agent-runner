@@ -5328,10 +5328,19 @@ def test_stop_countdown(repo: Path):
                    '13:55  stuck, not merged: Fix the flicker (tests fail) [B9] · 2 left',
                    '13:56  looks stuck: Control session experience [F5] · 2 left'],
            'no count before the stop; then each line says how many are left')
+        lines, _ = R.follow_lines('\n'.join(log), titles, now, needs_you=True)
+        eq(lines, ['13:55  stuck, not merged: Fix the flicker (tests fail) [B9] · 2 left',
+                   '13:56  looks stuck: Control session experience [F5] · 2 left'], 'the needs-you watch counts too')
+        ask = [('DECIDE', 'C20', '', 'Postgres or SQLite?', '', 'node.mjs', False)]
+        lines, _ = R.follow_lines('\n'.join(log[:5]), titles, now, waiting=ask)
+        check(lines[-1].startswith('13:54  needs you: Postgres or SQLite?') and lines[-1].endswith(' · 3 left'),
+              'an ask a landed line brings carries the count too', lines)
         stop: dict = {}  # follow keeps the count from one chunk to the next
         R.follow_lines('\n'.join(log[:4]), titles, now, stop=stop)
         lines, _ = R.follow_lines('\n'.join(log[4:5]), titles, now, stop=stop)
         eq(lines, ['13:54  landed: node.mjs [C20] · 3 left'], 'the count carries across chunks')
+        R.follow_lines('=== 2026-11-19T13:57:00 dropped F5; stopped s2', titles, now, stop=stop)
+        eq(stop['left'], 2, 'a task dropped while it ran is no longer waited for')
         back = ['=== 2026-11-19T14:00:00 stop taken back: starting tasks again',
                 '=== 2026-11-19T14:01:00 F5: merged, ticked']
         lines, _ = R.follow_lines('\n'.join(back), titles, now, stop=stop)

@@ -6132,11 +6132,12 @@ SINCE_EVENTS = [  # (pattern on a run.log line's message, kind); the first that 
     (re.compile(r'^run idle'), 'run idle: nothing left it may start'),
     (re.compile(r'^run stopped'), 'run stopped'),
     (re.compile(r'^(\S+ v?\d+(?:\.\d+)+ released\b.*)'), 'released'),  # F51: `release_line_for`'s line
-    (STOP_ASKED := re.compile(r'^stop asked for:.*?\b(\d+) left\b'), 'stop requested'),  # F42: `stop_note`'s
+    (STOP_ASKED := re.compile(r'^stop asked for:.*?\b(\d+) left before the run exits$'), 'stop requested'),  # F42: `stop_note`'s
     (STOP_BACK := re.compile(r'^stop taken back\b'), 'stop taken back'),
 ]
-STOP_ENDS = re.compile(r'^([A-Za-z]+\d+[a-z0-9]*): (?:merged, |not merged, parked |LEFT FOR A HUMAN |no commits — '
-                       r'|the run stops; )')  # F42: a task the stopping run no longer waits for
+STOP_ENDS = re.compile(r'^(?:([A-Za-z]+\d+[a-z0-9]*): (?:merged, |not merged, parked |LEFT FOR A HUMAN |no commits — '
+                       r'|the run stops; )|dropped ([A-Za-z]+\d+[a-z0-9]*); )')
+# F42: a task the stopping run no longer waits for (B19's `halts` logs 'dropped <ID>; …')
 
 
 RELEASE_HEAD = re.compile(r'^##\s+\[?v?(\d+(?:\.\d+)+)\b', re.M)  # a CHANGELOG.md version heading
@@ -6366,13 +6367,13 @@ def follow_lines(chunk: str, titles: dict[str, str], now: dt.datetime, needs_you
                 stop.update(left=int(s[1]), ended=set())
             elif STOP_BACK.match(msg) or msg.startswith('run stopped'):
                 stop.clear()
-            elif 'left' in stop and (s := STOP_ENDS.match(msg)) and s[1] not in stop['ended']:
-                stop['ended'].add(s[1])
+            elif 'left' in stop and (s := STOP_ENDS.match(msg)) and (s[1] or s[2]) not in stop['ended']:
+                stop['ended'].add(s[1] or s[2])
                 stop['left'] = max(0, stop['left'] - 1)
         left = f' · {stop["left"]} left' if 'left' in stop else ''
         if needs_you:
             if nl := needs_you_line(l, titles, now, waiting):
-                out.append(nl)
+                out.append(nl + left)
             continue
         if e := since_event(l, titles):
             line = f'{when(e[0], now)}  {e[2]}'
@@ -6381,7 +6382,7 @@ def follow_lines(chunk: str, titles: dict[str, str], now: dt.datetime, needs_you
             out.append(line + ('' if e[2].startswith('stop requested: ') else left))
             if waiting and (e[1] and e[2].split(': ', 1)[0] in ('landed', 'part landed, rest stuck')) \
                     and (nl := needs_you_line(l, titles, now, waiting)):
-                out.append(nl)  # the full feed carries the asks too: the runner feed is the one watch
+                out.append(nl + left)  # the full feed carries the asks too: the runner feed is the one watch
     return out, last
 
 
