@@ -136,6 +136,8 @@ What the person asks, and what you run (`{cmd}` is the runner):
   already queued, `{cmd} plan block ID --after T181 "waits for T181"`. Never start a watcher or Monitor to
   wait for a task: the run starts it once those merge.
   Change the queue with `{cmd} plan note|move|block|unblock|drop`; read it with `{cmd} plan`, `{cmd} plan ID`.
+  The goal above the first heading: `{cmd} plan goal` prints it; when it is stale (the person's aim moved on,
+  or it names done work as the aim) reword it with `{cmd} plan goal "TEXT"`, never a task to edit TODO.md.
 - More of what they say, and what you run:
   - "park it", "someday": `{cmd} plan add <KIND> "..." --pri later` (never started by a run); "low
     priority", "when there's time": `--pri low`

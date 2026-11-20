@@ -4,6 +4,11 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- `plan goal` prints the `Goal:` paragraph above TODO.md's first heading, and `plan goal "TEXT"` replaces it
+  (prefixed `Goal: ` when TEXT has none; added after the title line when there is none yet) and commits like
+  other plan edits. The title, the fields-format line, other paragraphs, headings and task lines stay
+  byte-identical. A stale goal no longer needs a task in a worktree to reword it: the control brief says to use it.
+
 - `control --new --ask` passes on any file the person drops in the runner feed, not only images: a .zip,
   .p12 or .txt that Claude Code saves to `~/.claude/uploads/<sid>/<id>-<name>` (an attachment of type file)
   reaches the new control session as "The person attached NAME, saved at PATH: Read or open it before you

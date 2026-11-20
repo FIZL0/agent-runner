@@ -22,6 +22,8 @@ re-reads it on every turn pays again. So the backlog is a command instead:
                                  a slot running it is stopped, its branch deleted unmerged (B19)
     ./run plan kinds             what each id letter means ([plan] kinds): an id's prefix says the kind of work
     ./run plan note <ID> TEXT    append " — TEXT" to the task (user details, priority reasons)
+    ./run plan goal [TEXT]       print the `Goal:` paragraph above TODO.md's first heading; with TEXT replace it
+                                 (title, fields-format line, other paragraphs, headings and tasks untouched)
     ./run plan newid PREFIX      the next free id, e.g. L -> L7; a task's id gives its next subtask, L3 -> L3a
     ./run plan archive           move every [x] line left in TODO.md to DONE.md (after merges, hand edits)
     ./run plan reopen            unblock every task whose BLOCKED (after X, Y) tasks are all done now
@@ -713,6 +715,56 @@ def note(tid: str, text: str, todo=None) -> None:
     i = _find(ls, tid)
     ls[i + len(_item_block(ls, i)) - 1] += f' — {text}'
     _write(todo, ls)
+
+
+# --- the goal paragraph (F24) ------------------------------------------------------------------------------
+#
+# The text between TODO.md's title line and its first heading or task is the project's preamble: a `Goal:`
+# paragraph, the line that explains the keyed fields, sometimes rules. `plan goal` reads and replaces only the
+# paragraph that starts with `Goal:`, so a control session can reword a stale goal without a task; the title, the
+# fields-format line, other paragraphs, headings and task lines stay byte-identical.
+
+GOAL = re.compile(r'goal:', re.I)
+
+
+def _goal_span(ls: list[str]) -> tuple[int, int, int]:
+    """(start, end, preamble end) of the `Goal:` paragraph in ls; start == end == where a new one goes when
+    there is none (after the title line and its blank)."""
+    top = 1 if ls and _level(ls[0]) == 1 else 0
+    stop = next((k for k in range(top, len(ls)) if _level(ls[k]) or ITEM.match(ls[k])), len(ls))
+    k = top
+    while k < stop:
+        if not ls[k].strip():
+            k += 1
+            continue
+        j = k
+        while j < stop and ls[j].strip():
+            j += 1
+        if GOAL.match(ls[k].lstrip()):
+            return k, j, stop
+        k = j
+    at = top + 1 if top and top < len(ls) and not ls[top].strip() else top
+    return at, at, stop
+
+
+def goal(text: str | None = None, todo=None) -> str:
+    """The goal paragraph; with text, replace it (prefixed `Goal: ` when text has no such start) and return it."""
+    todo, _ = ensure(todo)
+    ls = list(lines(todo))
+    a, b, _ = _goal_span(ls)
+    if text is None:
+        return '\n'.join(ls[a:b])
+    text = text.strip()
+    if not GOAL.match(text):
+        text = f'Goal: {text}'
+    new = [l.rstrip() for l in text.splitlines()]
+    if a == b:  # a new paragraph: keep a blank line on each side
+        before = [''] if a and ls[a - 1].strip() else []
+        after = [''] if a >= len(ls) or ls[a].strip() else []
+        new = before + new + after
+    ls[a:b] = new
+    _write(todo, ls)
+    return text
 
 
 # --- concept tasks: an Artifact page of options, and a build that waits for a person's OK ----------------
@@ -1671,7 +1723,7 @@ def main(argv: list[str] | None = None) -> int:
     restart = False
     if argv[:1] == ['change'] and '--restart' in argv[2:]:
         restart, argv = True, [a for a in argv if a != '--restart']
-    edit = argv[:1] and argv[0] in EDITS
+    edit = argv[:1] and (argv[0] in EDITS or argv[0] == 'goal' and len(argv) > 1)
     if not c.plan_external:
         if not edit:
             return _main(argv, c)  # a read of the checkout's own file needs no lock
@@ -1716,7 +1768,7 @@ def _main(argv: list[str], c) -> int:
 
     def say(msg):
         print(msg)
-        if argv[0] in EDITS:
+        if argv[0] in EDITS or argv[0] == 'goal' and len(argv) > 1:
             if c.plan_external:
                 if out := plansync.publish(c, ' '.join(argv)[:70]):
                     print(out, file=sys.stderr)
@@ -1821,6 +1873,16 @@ def _main(argv: list[str], c) -> int:
     if argv[:1] == ['note'] and len(argv) > 2:
         note(argv[1], ' '.join(argv[2:]))
         return say(f'noted {argv[1]}')
+    if argv[:1] == ['goal']:
+        if len(argv) == 1:
+            if not (got := goal()):
+                print(f'{PROG}: no `Goal:` paragraph above the first heading in {Path(todo).name}; '
+                      f'`{PROG} goal "TEXT"` writes one', file=sys.stderr)
+                return 1
+            print(got)
+            return 0
+        goal(' '.join(argv[1:]))
+        return say('goal set')
     if argv[:1] == ['newid'] and len(argv) == 2:
         return say(next_id(argv[1]))
     if argv[:1] == ['brief'] and len(argv) == 2:
