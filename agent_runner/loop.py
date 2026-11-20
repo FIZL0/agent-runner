@@ -25,8 +25,8 @@ from agent_runner.config import RUNNER, ensure_local, finished_mark, shown_cmd
 from agent_runner.done import TESTED
 from agent_runner.gitops import missing_remote, push
 from agent_runner.state import (alarm, ask_stop, C, clean, clear_stop, commit_plan, default_branch, FORCED, forced,
-    git, HIDDEN, IDLE, init, KEYS, KEYS_LOCK, LANDING, log, MERGE, note, PAUSED, plan_rel, plan_text, POWER, queued,
-    READING, ROOT, RUN_TAG, share, SLOTS_DIR, stop_note, STOP_SAID, stopped_by, stopping, TASK, WAKE)
+    git, HIDDEN, hook, IDLE, init, KEYS, KEYS_LOCK, LANDING, log, MERGE, note, PAUSED, plan_rel, plan_text, POWER, queued,
+    READING, ROOT, RUN_TAG, share, SLOTS_DIR, stop_note, STOP_SAID, stopped_by, stopping, WAKE)
 from agent_runner.brief import no_remote_line, prompt_for
 from agent_runner.sched import blocked_by_edits, keep_claims, PARK_LIMIT, parked_attempts, pick, tasks
 from agent_runner.slots import (adopt, agent_argv, agent_cmd, backend, DISK_AT, DISK_SAID, du, env_vars, free_branch,
@@ -729,11 +729,7 @@ def sequential(branch: str, model: str, idle: int, pause: int, force: bool, once
         end_orphans()
         drop_session_tmp(sid)
         if C.run['on_exit']:
-            try:
-                sp.run(C.run['on_exit'], shell=True, cwd=str(ROOT), capture_output=True, timeout=C.run['timeout'],
-                       env={**os.environ, **env})
-            except sp.TimeoutExpired:
-                log(f'`{C.run["on_exit"]}` ran past [run] timeout ({C.run["timeout"]}s); stopped')
+            hook('on_exit', C.run['on_exit'], ROOT, {**os.environ, **env})
         if backend().report_exit and code:
             log(f'{tid}: {C.run["backend"]} failed (exit {code}): {last_words(sid) or "see terminal output"}')
             plansync.release(C, tid)
@@ -783,8 +779,8 @@ def dry_run(slots: int, branch: str) -> int:
     ls = plan_text(branch)
     can = set(held) | started
     groups['waiting on an after:, a subtask, or Stretch/Parked'] = \
-        [m.group(2) for l in ls if (m := TASK.match(l)) and m.group(1) == ' ' and m.group(2) not in can]
-    groups['blocked'] = [m.group(2) for l in ls if (m := TASK.match(l)) and m.group(1) == '~']
+        [tid for _, box, tid, _, _ in P.iter_tasks(ls) if box == ' ' and tid not in can]
+    groups['blocked'] = [tid for _, box, tid, _, _ in P.iter_tasks(ls) if box == '~']
     for kind, ids in groups.items():
         if ids:
             print(f'{kind}: {", ".join(ids)}')
@@ -797,13 +793,13 @@ def reserve_branch_ids() -> None:
     """Hold the ids the unmerged task branches added (`plan.reserved`), so ids handed out before the list
     existed, or by a session that wrote its plan line by hand, are not handed out again."""
     files = [plan_rel('TODO.md'), plan_rel('DONE.md')]
-    have = P.reserved(C.root) | {m.group(2).rstrip('.') for f in files
-                                 for l in git('show', f'HEAD:{f}', cwd=C.root).stdout.splitlines() if (m := TASK.match(l))}
+    have = P.reserved(C.root) | {tid.rstrip('.') for f in files
+                                 for _, _, tid, _, _ in P.iter_tasks(git('show', f'HEAD:{f}', cwd=C.root).stdout.splitlines())}
     new = set()
     for b in git('for-each-ref', '--format=%(refname:short)', 'refs/heads/task/', cwd=C.root).stdout.split():
         for f in files:
-            new |= {t for l in git('show', f'{b}:{f}', cwd=C.root).stdout.splitlines()
-                    if (m := TASK.match(l)) and (t := m.group(2).rstrip('.')) not in have}
+            new |= {t for _, _, tid, _, _ in P.iter_tasks(git('show', f'{b}:{f}', cwd=C.root).stdout.splitlines())
+                    if (t := tid.rstrip('.')) not in have}
     P.reserve(C.root, *sorted(new))
 
 

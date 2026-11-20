@@ -15,7 +15,7 @@ from agent_runner import ci, gitops, plan as P, plansync
 from agent_runner.config import RUNNER
 from agent_runner.gitops import drop_if_merged, push
 from agent_runner.state import (alarm, C, commit_plan, edited, git, init, log, newest, note, plan_rel, plan_text,
-    ROOT, SLOTS_DIR, TASK)
+    ROOT, SLOTS_DIR)
 from agent_runner.watch import HOGS
 from agent_runner.join import (EDITED, ELSEWHERE, joined, LAND_WAIT, LAND_WAIT_WIP, LANDED, renumber_doubles,
     task_env, WAITING)
@@ -63,7 +63,7 @@ def done_ids(branch: str) -> set[str]:
     has it; a plan outside the repo has one copy, read."""
     r = git('show', f'{newest(branch)}:{plan_rel("DONE.md")}') if not C.plan_external else None
     ls = r.stdout.splitlines() if r is not None and r.returncode == 0 else P.lines(C.done)
-    return {m.group(2).rstrip('.') for l in ls if (m := TASK.match(l)) and m.group(1) == 'x'}
+    return {tid.rstrip('.') for _, box, tid, _, _ in P.iter_tasks(ls) if box == 'x'}
 
 
 def drop_wips(tid: str) -> list[str]:
@@ -105,7 +105,7 @@ def prune_wips(branch: str, force: bool = False) -> list[str]:
     ids = {m[1] for x in refs if not x.startswith('wip/main-checkout') and (m := WIP.fullmatch(x))}
     if not ids:
         return []
-    live = {m.group(2) for l in plan_text(branch) if (m := TASK.match(l)) and m.group(1) != 'x'}
+    live = {tid for _, box, tid, _, _ in P.iter_tasks(plan_text(branch)) if box != 'x'}
     did = []
     for tid in sorted((ids & done_ids(branch)) - live):
         if got := drop_wips(tid):
@@ -320,7 +320,8 @@ def retry_reopened(tried: set[str], closed: set[str], branch: str) -> None:
     if not tried:
         TRIED_TEXT.clear()
         return
-    lines = {m.group(2): (m.group(1), l.strip()) for l in plan_text(branch) if (m := TASK.match(l))}
+    ls = plan_text(branch)
+    lines = {tid: (box, ls[i].strip()) for _, box, tid, _, i in P.iter_tasks(ls)}
     for t in list(TRIED_TEXT):
         if t not in tried:
             del TRIED_TEXT[t]

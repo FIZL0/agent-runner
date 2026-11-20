@@ -9,7 +9,7 @@ import time
 
 from agent_runner import plan as P
 from agent_runner.config import shown_cmd
-from agent_runner.state import C, default_branch, git, TASK, task_titles
+from agent_runner.state import C, default_branch, git
 from agent_runner.brief import has_sheet, wizard_cmd, wizard_file
 from agent_runner.land import wip_lines
 
@@ -19,15 +19,10 @@ def tasks_left(ls: list[str]) -> tuple[int, int]:
     not those under a section a run never starts (Parked, where `--pri later` files, and Stretch), nor shelved
     ones (`plan shelve`: blocked, off Needs you until a person brings them back)."""
     left = blocked = 0
-    section = ''
-    for i, l in enumerate(ls):
-        if l.startswith('### '):
-            section = l[4:].strip()
+    for section, box, _, _, i in P.iter_tasks(ls):
+        if box not in ' ~' or section.startswith(P.SKIPPED):
             continue
-        m = TASK.match(l)
-        if not m or m.group(1) not in ' ~' or section.startswith(P.SKIPPED):
-            continue
-        if m.group(1) == '~':
+        if box == '~':
             tail = ' '.join(P._item_block(ls, i))
             at = P._block_at(tail)
             if at >= 0 and tail[at:].lstrip().startswith('BLOCKED: ' + P.SHELVED):
@@ -70,23 +65,19 @@ def release_line(ls: list[str]) -> str:
     title starts "Release" or "Cut the next version"): of the tasks it waits on (its last block's `(after …)`,
     else its `after:` field), how many are still open. '' when none is queued. A task whose `after:` says
     `all above` (`plan add --last`, F43) gets a line too, 'last:' unless it is a release, naming what holds it."""
-    live, out, section = P.open_ids(ls), [], ''
-    for i, l in enumerate(ls):
-        if l.startswith('### '):
-            section = l[4:].strip()
+    live, out = P.open_ids(ls), []
+    for section, box, tid, rest, i in P.iter_tasks(ls):
+        last = P.LAST in P.fields(ls[i]).get('after', [])
+        if box not in ' ~' or section.startswith(P.SKIPPED) or not (RELEASE_TASK.match(rest) or last):
             continue
-        m = TASK.match(l)
-        last = bool(m) and P.LAST in P.fields(l).get('after', [])
-        if not m or m.group(1) not in ' ~' or section.startswith(P.SKIPPED) or not (RELEASE_TASK.match(m.group(3)) or last):
-            continue
-        kind = 'release' if RELEASE_TASK.match(m.group(3)) else 'last'
-        w = P.WAITS.findall(' '.join(P._item_block(ls, i))) if m.group(1) == '~' else []
+        kind = 'release' if RELEASE_TASK.match(rest) else 'last'
+        w = P.WAITS.findall(' '.join(P._item_block(ls, i))) if box == '~' else []
         ids = [t.strip() for t in w[-1].split(',') if t.strip()] if w else P.waits_on(ls, i)
-        ids = [t for t in dict.fromkeys(ids) if t != m.group(2)]
+        ids = [t for t in dict.fromkeys(ids) if t != tid]
         held = [t for t in ids if t in live]
         named = f': {", ".join(held[:6])}{" …" if len(held) > 6 else ""}' if last and not w else ''
-        out.append(f'{kind}: waits on {len(held)} of {len(ids)} task{"" if len(ids) == 1 else "s"} ({m.group(2)}){named}'
-                   if held else f'{kind}: ready, nothing left to wait on ({m.group(2)})')
+        out.append(f'{kind}: waits on {len(held)} of {len(ids)} task{"" if len(ids) == 1 else "s"} ({tid}){named}'
+                   if held else f'{kind}: ready, nothing left to wait on ({tid})')
     return '\n'.join(out)
 
 
@@ -332,7 +323,7 @@ def follow(poll: float = 2.0, until: float | None = None, needs_you: bool = Fals
                 pos += len(data)
                 buf += data.decode('utf-8', errors='replace')
                 chunk, _, buf = buf.rpartition('\n')
-                lines, last = follow_lines(chunk, task_titles(), dt.datetime.now(), needs_you,
+                lines, last = follow_lines(chunk, P.titles(C.done, C.todo), dt.datetime.now(), needs_you,
                                            waiting_ok() if 'merged, ' in chunk else None, stop)
                 for l in lines:
                     print(l, flush=True)

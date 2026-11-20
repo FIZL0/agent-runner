@@ -18,9 +18,9 @@ from pathlib import Path
 from agent_runner import gitops, plan as P, plansync, plat
 from agent_runner.config import Config, cfg, main_checkout
 from agent_runner.gitops import _net, shared_name
+from agent_runner.plan import short_title  # noqa: F401  (C13: now in plan.py; `runner.short_title` reads as before)
 
 
-TASK = re.compile(r'^- \[(.)\] \*\*([^*\s]+)\*\*(.*)')  # a top-level task line: its box, its id, the rest
 TAG = '@runner'  # the tmux pane option a slot's pane is found by
 RUN_TAG = '@runner-run'  # set on the runner's own pane to the main checkout it runs for: `attach` goes there
 HIDDEN = [False]  # `run --hidden` on Windows: slot consoles start hidden (the background run)
@@ -367,54 +367,15 @@ def run_up() -> bool:
     return True
 
 
-def task_titles() -> dict[str, str]:
-    """{id: its short title (`short_title`)} from TODO.md, and DONE.md for the tasks that landed and moved there."""
-    out = {}
-    for f in (C.done, C.todo):  # TODO.md last: its line wins
-        try:
-            text = f.read_text(encoding='utf-8')
-        except OSError:
-            continue
-        for l in text.splitlines():
-            if m := TASK.match(l):
-                out[m.group(2)] = short_title(m.group(3))
-    return out
-
-
-def _drop_asides(t: str) -> str:
-    """`t` without its (…) asides that hold a date, a quote or a file path: "(user 2026-11-19: 'make it…')",
-    "(see runner.py, plan/TODO.md)". Nested brackets count; an aside that is plain words stays."""
-    out, depth, start = [], 0, 0
-    for i, ch in enumerate(t):
-        if ch == '(':
-            if depth == 0:
-                out.append(t[start:i])
-                start = i
-            depth += 1
-        elif ch == ')' and depth:
-            depth -= 1
-            if depth == 0:
-                aside = t[start:i + 1]
-                noisy = re.search(r"^\((?:follow-up|user|asked)\b|\d{4}-\d\d-\d\d|['\"`‘’“”]|/|\w\.(?:py|md|toml|json|rs|ts|js|sh|txt|ya?ml)\b", aside)
-                out.append('' if noisy else aside)
-                start = i + 1
-    out.append(t[start:])  # an unclosed ( keeps its tail
-    return ''.join(out)
-
-
-def short_title(rest: str, width: int = 60) -> str:
-    """A task's line, after its id, as a few plain words for a person: its first sentence, without the ` | `
-    fields, asides with dates, quotes or file lists, quote marks and bold, cut at a word to about `width`."""
-    t = _drop_asides(rest.split(' | ')[0])
-    t = re.sub(r'\b\d{4}-\d\d-\d\d\b', '', t)
-    t = re.sub(r"(?<!\w)(['\"`])\1(?!\w)", 'empty', t)  # `''` read aloud
-    t = re.sub(r"[*`\"“”‘’]|(?<!\w)'|'(?!\w)", '', t)
-    t = re.sub(r'[\w./-]*\w::(?:\w+::)*(\w+)', r'\1', t)  # a Rust/pytest path a::b::c reads as its name, c
-    t = re.split(r'(?<=[.!?;:])\s+(?=[A-Z(\d])|\s+—\s+|\s+--\s+', re.sub(r' ([,.;:])', r'\1', ' '.join(t.split())), maxsplit=1)[0]
-    t = t.strip(' .,;:—-')
-    if len(t) > width:
-        cut = t[:width - 1].rsplit(' ', 1)[0].rstrip(' ,;:—-')
-        if len(cut) < width // 2:  # one long word: cut inside it rather than drop it
-            cut = t[:width - 1].rstrip(' ,;:—-')
-        t = cut + '…'
-    return t
+def hook(name: str, cmd: str, cwd, env: dict | None = None) -> tuple[int | None, str]:
+    """Run a project's command (`[run] slot_clean`, `join`, `retest`, `on_exit`, `before_start`) in a shell at
+    `cwd`, for at most `[run] timeout`: (its exit code, stdout and stderr). One that runs past is stopped,
+    logged as "<name>: `cmd` ran past [run] timeout (Ns); stopped" and read as (None, ''): not 0, so a caller
+    that counts a non-zero exit as failing counts it too."""
+    try:
+        r = sp.run(cmd, shell=True, cwd=str(cwd), capture_output=True, text=True, errors='replace', env=env,
+                   timeout=C.run['timeout'])
+    except sp.TimeoutExpired:
+        log(f'{name}: `{cmd}` ran past [run] timeout ({C.run["timeout"]}s); stopped')
+        return None, ''
+    return r.returncode, (r.stdout or '') + (r.stderr or '')

@@ -135,7 +135,8 @@ __all__ = ['PROG', 'HELP', 'lines', 'index', 'section', 'ensure', 'archive', 'ti
            'unblock', 'move', 'next_id', 'add', 'similar', 'note', 'drop', 'next_task', 'files_on_line', 'fields', 'overlap', 'brief', 'open_ids',
            'write_atomic', 'child', 'subtasks', 'main', 'PRI', 'kinds', 'check_kind',
            'concept', 'concept_done', 'waiting', 'approve', 'revise',
-           'asking', 'asks', 'confirm', 'change', 'shelve', 'unshelve', 'edit', 'needs_lines']
+           'asking', 'asks', 'confirm', 'change', 'shelve', 'unshelve', 'edit', 'needs_lines',
+           'iter_tasks', 'titles', 'short_title']
 
 ITEM = re.compile(r'^(\s*)- \[(.)\] \*\*([^\s*]+)')
 HEAD = re.compile(r'(#+) ')
@@ -1019,6 +1020,70 @@ def title_of(line: str) -> str:
     t = re.sub(r'^\s*- \[.\] \*\*[^*]+\*\*\s*', '', line.split('\n')[0])
     t = re.split(r' — | BLOCKED: ', t)[0]
     return ' '.join(PRI_TAG.sub('', prose(t)).split())
+
+
+TASK_LINE = re.compile(r'^- \[(.)\] \*\*([^*\s]+)\*\*(.*)')  # a top-level task line: its box, its id, the rest
+
+
+def iter_tasks(ls: list[str]):
+    """Each top-level task line of a plan's lines `ls`, in order, as (section, box, id, rest, index): `section`
+    is the last `### ` heading above it ('' before any), `box` the character in its [ ], `rest` the line after
+    its `**ID**`, `index` its place in `ls` (for `_item_block`, `waits_on`)."""
+    section = ''
+    for i, l in enumerate(ls):
+        if l.startswith('### '):
+            section = l[4:].strip()
+        elif m := TASK_LINE.match(l):
+            yield section, m.group(1), m.group(2), m.group(3), i
+
+
+def titles(*paths, width: int = 60) -> dict[str, str]:
+    """{id: its `short_title`} from the plan files `paths` (TODO.md, DONE.md); a later file's line wins, so
+    pass DONE.md before TODO.md. A missing file adds nothing."""
+    out = {}
+    for f in paths:
+        for _, _, tid, rest, _ in iter_tasks(lines(f)):
+            out[tid] = short_title(rest, width)
+    return out
+
+
+def _drop_asides(t: str) -> str:
+    """`t` without its (…) asides that hold a date, a quote or a file path: "(user 2026-11-19: 'make it…')",
+    "(see runner.py, plan/TODO.md)". Nested brackets count; an aside that is plain words stays."""
+    out, depth, start = [], 0, 0
+    for i, ch in enumerate(t):
+        if ch == '(':
+            if depth == 0:
+                out.append(t[start:i])
+                start = i
+            depth += 1
+        elif ch == ')' and depth:
+            depth -= 1
+            if depth == 0:
+                aside = t[start:i + 1]
+                noisy = re.search(r"^\((?:follow-up|user|asked)\b|\d{4}-\d\d-\d\d|['\"`‘’“”]|/|\w\.(?:py|md|toml|json|rs|ts|js|sh|txt|ya?ml)\b", aside)
+                out.append('' if noisy else aside)
+                start = i + 1
+    out.append(t[start:])  # an unclosed ( keeps its tail
+    return ''.join(out)
+
+
+def short_title(rest: str, width: int = 60) -> str:
+    """A task's line, after its id, as a few plain words for a person: its first sentence, without the ` | `
+    fields, asides with dates, quotes or file lists, quote marks and bold, cut at a word to about `width`."""
+    t = _drop_asides(rest.split(' | ')[0])
+    t = re.sub(r'\b\d{4}-\d\d-\d\d\b', '', t)
+    t = re.sub(r"(?<!\w)(['\"`])\1(?!\w)", 'empty', t)  # `''` read aloud
+    t = re.sub(r"[*`\"“”‘’]|(?<!\w)'|'(?!\w)", '', t)
+    t = re.sub(r'[\w./-]*\w::(?:\w+::)*(\w+)', r'\1', t)  # a Rust/pytest path a::b::c reads as its name, c
+    t = re.split(r'(?<=[.!?;:])\s+(?=[A-Z(\d])|\s+—\s+|\s+--\s+', re.sub(r' ([,.;:])', r'\1', ' '.join(t.split())), maxsplit=1)[0]
+    t = t.strip(' .,;:—-')
+    if len(t) > width:
+        cut = t[:width - 1].rsplit(' ', 1)[0].rstrip(' ,;:—-')
+        if len(cut) < width // 2:  # one long word: cut inside it rather than drop it
+            cut = t[:width - 1].rstrip(' ,;:—-')
+        t = cut + '…'
+    return t
 
 
 def concept_done(tid: str, url: str, todo=None, done=None) -> str:

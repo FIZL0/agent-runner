@@ -1056,8 +1056,53 @@ def test_edit():
            'a multi-line task loses its old continuation lines and the note on them; sub-items and BLOCKED stay')
 
 
+def test_iter_tasks_and_titles():
+    print('plan: iter_tasks reads top-level task lines with their section; titles maps ids to short titles')
+    ls = ['# TODO', '- [ ] **A1** before any section', '### Next (in this order)  ', '',
+          '- [ ] **A2** Fix the menu flicker | files: a.py', '  - [ ] **A2a** a sub-item is not top-level',
+          '- [~] **A3** blocked one BLOCKED: x', '### Parked', '- [x] **A4.** done, with a dot', 'prose - [ ] **A5** no']
+    eq(list(plan.iter_tasks(ls)),
+       [('', ' ', 'A1', ' before any section', 1),
+        ('Next (in this order)', ' ', 'A2', ' Fix the menu flicker | files: a.py', 4),
+        ('Next (in this order)', '~', 'A3', ' blocked one BLOCKED: x', 6),
+        ('Parked', 'x', 'A4.', ' done, with a dot', 8)],
+       '(section, box, id, rest, index) for each top-level task; sub-items and prose skipped, the heading stripped')
+    eq(list(plan.iter_tasks([])), [], 'no lines, no tasks')
+    with tempfile.TemporaryDirectory() as tmp:
+        todo, done = Path(tmp) / 'TODO.md', Path(tmp) / 'DONE.md'
+        todo.write_text('### Next\n- [ ] **B1** (follow-up, normal) Fix the menu flicker | files: a.py\n'
+                        '- [ ] **B2** Keep the cache warm. Then more words\n', encoding='utf-8')
+        done.write_text('- [x] **B1** an older wording\n- [x] **B0** Landed long ago — note\n', encoding='utf-8')
+        eq(plan.titles(done, todo), {'B1': 'Fix the menu flicker', 'B0': 'Landed long ago', 'B2': 'Keep the cache warm'},
+           'DONE.md then TODO.md: the later file wins; short titles drop tags, fields, notes and later sentences')
+        eq(plan.titles(todo, width=12)['B2'], 'Keep the…', 'width cuts at a word')
+        eq(plan.titles(Path(tmp) / 'missing.md'), {}, 'a missing file adds nothing')
+
+
+def test_hook():
+    print('state.hook: runs a project command with [run] timeout, logs one that runs past')
+    import types
+    from agent_runner import state
+    saved = state.C
+    with tempfile.TemporaryDirectory() as tmp:
+        state.C = types.SimpleNamespace(run={'timeout': 5}, notes=lambda name: Path(tmp) / name)
+        try:
+            rc, out = state.hook('t', f'"{sys.executable}" -c "import sys; print(1); sys.exit(3)"', tmp)
+            eq((rc, out.strip()), (3, '1'), 'its exit code and output')
+            rc, out = state.hook('t', f'"{sys.executable}" -c "import os; print(os.environ[\'HOOK_X\'])"', tmp,
+                                 {**os.environ, 'HOOK_X': 'yes'})
+            eq((rc, out.strip()), (0, 'yes'), 'the env it is given')
+            state.C.run['timeout'] = 0.5
+            rc, out = state.hook('T9: the retest', f'"{sys.executable}" -c "import time; time.sleep(5)"', tmp)
+            eq((rc, out), (None, ''), 'one that runs past [run] timeout reads as (None, "")')
+            has((Path(tmp) / 'run.log').read_text(encoding='utf-8'), 'T9: the retest: `', 'and is logged under its name')
+            has((Path(tmp) / 'run.log').read_text(encoding='utf-8'), re.escape('ran past [run] timeout (0.5s)'), 'with the limit')
+        finally:
+            state.C = saved
+
+
 if __name__ == '__main__':
-    sys.exit(report([test_edit, test_unlabelled_block, test_restore, test_plan_last,test_goal,test_plan_roundtrip, test_plan_reopen, test_plan_index_and_sections, test_brief, test_brief_outline,
+    sys.exit(report([test_iter_tasks_and_titles, test_hook, test_edit, test_unlabelled_block, test_restore, test_plan_last,test_goal,test_plan_roundtrip, test_plan_reopen, test_plan_index_and_sections, test_brief, test_brief_outline,
                      test_split_parents, test_add_bottom, test_add_pri, test_add_subtask, test_kinds, test_need_files, test_add_stray_args, test_hand_edits_commit, test_hand_edits_push, test_similar, test_add_refuses_a_duplicate, test_carry_notes,
                      test_merge3, test_concurrent_add, test_merge_driver, test_concepts, test_needs_you,
                      test_needs_config]))
