@@ -121,6 +121,10 @@ DEFAULTS: dict = {
         'rules_pointer': True,  # a run adds one line to the rules file (`rules`, AGENTS.md, CLAUDE.md) pointing at it
         'wizards': True,        # F17: an agent blocking with BLOCKED: (a login, cert, secret) writes a bash wizard
                                 # to <notes>/wizards/<ID>.sh; Needs you shows `agent-runner wizard <ID>` to run it
+        'review': True,         # F28: before done, a fresh subagent reads the diff against the task's brief (spec
+                                # only: missing, unasked, wrong); the commit ends 'review: …'; false: no review
+        'review_min_lines': 50, # a diff smaller than this (changed lines) skips the review, unless the task has a
+                                # long form (plan/tasks/<ID>.md)
         'idle': 30,             # seconds a finished session sits at its prompt before it is ended
         'stall': 1200,          # seconds of quiet at a prompt that count as stalled
         'pause': 60,            # seconds between one session ending and the next starting in that slot

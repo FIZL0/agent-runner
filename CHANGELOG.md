@@ -4,6 +4,13 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Spec review before `done` (F28, after mattpocock/skills code-review's Spec axis, MIT): the slot prompt has
+  the agent give a fresh subagent only `git diff <base>...HEAD` and `plan brief <ID>`, asking for what is
+  missing or partial, what was not asked, and what looks wrong, each quoting the task. Missing and wrong get
+  fixed before `done`; an unasked extra is reverted (and filed if worth keeping). Skipped under
+  `[run] review_min_lines` (default 50) changed lines when the task has no long form. Every commit message
+  ends `review: nothing`, `review: fixed <what>`, `review: filed <IDs>` or `review: skipped (small)`.
+  `[run] review = false` turns it off; while on, lean Claude sessions also get the Agent tool.
 - **Breaking:** `plan answer` and its regex reply-guessing are gone, with `[needs] map_replies` (now
   ignored, with a warning). The control session and the runner feed map a reply that names no item ("yes",
   "B", "later") to the item's id themselves and run `plan confirm|change|shelve ID`, asking the person which

@@ -17,9 +17,10 @@ hold. Each gap found has a B task; the ids are in [Gaps](#gaps).
 | runner | a slot: worktree `sN` under `[run] home` and one agent session. Not disposable: builds stay warm between tasks, and a run's memory of earlier ones is the plan, git (`wip/`, `refs/agent-runner/*`), the journal and `.runner/` |
 | observability | `.runner/run.log`, `ledger.md`, `slotN.log`, `fixer.log`; `status`, `since`, the board / runner feed |
 
-Brakes: the **automated check** is `[run] test`, run by every `done` and every merge. There is no separate
-**automated review** run: the fix and repair sessions resolve conflicts and gate failures, they do not read
-the diff against the ticket. **Human review** is not on every merge by design (the point is unattended
+Brakes: the **automated check** is `[run] test`, run by every `done` and every merge. The
+**automated review** (F28, `[run] review`) is a spec review in the slot itself: before `done`, a fresh subagent
+reads only the diff and the task's brief and lists what is missing, unasked or wrong; the fix and repair
+sessions resolve conflicts and gate failures and do not review. **Human review** is not on every merge by design (the point is unattended
 landing); a person re-enters through Needs you, the ledger and `wip/` branches instead.
 
 ## Triggers
@@ -70,7 +71,7 @@ landing); a person re-enters through Needs you, the ledger and `wip/` branches i
 | task retries capped | yes | `tried` holds one attempt per run; two parked attempts (`wip/<ID>*`) block the task on a person (B32) |
 | a session's own gate loop capped | no | only the prompt (**B38**) |
 | usage caps | yes | `session_max` / `weekly_max` stop new starts and raise STOPPED |
-| automated review | absent | no run reads a diff cold against the task before it lands; not filed as a bug: a design choice for a person (a K task if wanted) |
+| automated review | spec only (F28) | before `done`, a fresh subagent reads `git diff <base>...HEAD` and the brief cold: missing, unasked, wrong; skipped under `[run] review_min_lines` (50) changed lines without a long form; each commit ends `review: nothing / fixed … / filed … / skipped (small)` so its yield can be counted; `[run] review = false` turns it off. No standards axis: the rules file and gate cover that |
 | human review | by exception | Needs you, `wip/` branches, the ledger; not on every merge, by design |
 
 ## Gaps
@@ -86,5 +87,5 @@ Each has a filed task; the evidence is in its line (`agent-runner plan <ID>`).
 | **B38** | nothing caps a session's failed `done` gates |
 | **B40** | a task text quoting the block marker loses its `files:` (found while filing the above: B31 and B39 were dropped for it) |
 
-Not filed: no automated review run (a design choice), and the in-repo plan having no claims across
+Not filed: the in-repo plan having no claims across
 machines (documented: a plan repo is the multi-machine setup).
