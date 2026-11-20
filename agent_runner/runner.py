@@ -5726,9 +5726,10 @@ def slot_link(n: int, tid: str = '') -> str:
     if not remote_slots_on():
         return ''
     try:
-        pane = MUX.panes().get(f's{n}')
-        sid = (MUX.session_id(pane[1]) if pane and plat.alive(pane[1]) else None) or \
-            next((q[1] for m, q in queued().items() if m == n and (not tid or q[0] == tid)), None)
+        # a resume queued for this task names its session; the pane then may run another task's
+        sid = next((q[1] for m, q in queued().items() if m == n and (not tid or q[0] == tid)), None)
+        if not sid and (pane := MUX.panes().get(f's{n}')) and plat.alive(pane[1]):
+            sid = MUX.session_id(pane[1])
     except Exception:  # a multiplexer that is not there: no link, the rest of the message stands
         return ''
     if not sid:
