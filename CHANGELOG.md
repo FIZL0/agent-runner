@@ -4,6 +4,11 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Control sessions push what the person asked to hear: "notify me when" on the session's own background
+  work (a subagent or `take` it started) now ends in a PushNotification when that work reports, not just a
+  line in the conversation; finished or stuck takes and anything that needs the person are pushed unasked
+  while they are away, and a session that cannot push says so instead of promising to (B81).
+
 - Slots verify before asking: the slot brief tells agents to try `~/.claude/ACCESS.md` and the `## Tools`
   section of the repo's CLAUDE.md (ssh hosts, preview servers, headless checks) before turning a check into
   an F task for a person. `agent-runner setup` adds an empty `## Tools` heading to CLAUDE.md

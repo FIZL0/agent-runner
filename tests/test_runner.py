@@ -5257,6 +5257,23 @@ def test_control_retitle_on_topic(repo: Path):
           'no longer "once": the name may follow the topic', text)
 
 
+def test_control_push_when_asked():
+    """B81: the control brief pushes what the person asked to hear (its own subagent/take finishing included),
+    and finished/stuck/needs-you events while they are away; it never promises a push it cannot send."""
+    from agent_runner.guide import CONTROL, CONTROL_WATCH
+    text = ' '.join(CONTROL.format(repo='r', cmd='./run', log='l', watch=CONTROL_WATCH.format(repo='r', cmd='./run'),
+                                   needs='Needs you', answer='').split())
+    part = text.split('Push what the person asked to hear', 1)[-1].split(' - ', 1)[0]
+    check('Push what the person asked to hear' in text and 'PushNotification' in part
+          and 'ToolSearch `select:PushNotification`' in part, 'the brief says to push, loading the tool via ToolSearch', part)
+    check('subagent' in part and '`take`' in part and 'no Monitor sees it' in part,
+          'a "notify me" ask on its own background work (subagent, take) is pushed when it reports', part)
+    check('finished or got stuck' in part and 'needs the person' in part and 'not written here' in part,
+          'finished-take, stuck and needs-you events are pushed unasked while the person is away', part)
+    check('Never promise a notification you cannot send' in part and 'say so' in part,
+          'it never promises a push it cannot send', part)
+
+
 def test_take_running_slot(repo: Path):
     """F52: `take ID` on a task a slot runs names the slot, its claude.ai/code link and how to steer it."""
     from agent_runner.guide import CONTROL, CONTROL_WATCH
@@ -5613,7 +5630,7 @@ def main() -> int:
                        lambda: test_close_idle_controls(repo), lambda: test_closed_online_controls(repo),
                        lambda: test_renamed_control_kept(repo),
                        lambda: test_control_summary_title(repo), lambda: test_control_task_name(repo), lambda: test_progress_and_release(repo),
-                       lambda: test_control_status_rules(repo), lambda: test_control_do_it_here(repo), lambda: test_control_retitle_on_topic(repo), lambda: test_take_running_slot(repo), lambda: test_upgrade_cmd(repo), test_control_no_upgrade_watcher,
+                       lambda: test_control_status_rules(repo), lambda: test_control_do_it_here(repo), lambda: test_control_retitle_on_topic(repo), test_control_push_when_asked, lambda: test_take_running_slot(repo), lambda: test_upgrade_cmd(repo), test_control_no_upgrade_watcher,
                        lambda: test_plan_last(repo), lambda: test_release_push(repo),
                        lambda: test_help_order_and_bare_wizard(tmp), lambda: test_setup(tmp),
                        lambda: test_stop_countdown(repo), lambda: test_real_claude_json_guard(tmp)])

@@ -164,6 +164,16 @@ What the person asks, and what you run (`{cmd}` is the runner):
   happened, send one PushNotification saying it in a plain sentence (an ID with its title), post it here,
   and stop that Monitor: one push per ask. When it times out first, start it again silently. It is a
   watch of its own: leave the needs-you watch running. When neither can ever show X, say so instead.
+- **Push what the person asked to hear, and what they would want while away.** Text you write here reaches
+  no phone; only the PushNotification tool does (when it is listed only by name, as a deferred tool, load it
+  with ToolSearch `select:PushNotification` first). So send one push, before you post it here, whenever you
+  report something the person asked to be told about, the X of a "notify me" ask included when it is your
+  own background work (a subagent or a `take` you started, a background command): its completion arrives
+  in this conversation, not in the run log, so no Monitor sees it and the push is yours to send. Do the same,
+  unasked, for a take or subagent of yours that finished or got stuck, or anything that needs the person,
+  when they have not written here in the last few minutes. Never promise a notification you cannot send:
+  when the tool is not there, or a push fails, say so (`I can't push to your phone from this session: check
+  back here`) instead of "will do".
 - "new", "new session", "/new", "/control", "another control session": `{cmd} control --new` opens one
   beside the run without taking focus and prints its claude.ai/code link: answer with just that link (on its
   own line, so it can be tapped), or what it printed when there is none.
