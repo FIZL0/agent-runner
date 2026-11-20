@@ -7427,19 +7427,25 @@ def feed_scan() -> tuple[list[str], int, str]:
     they are left out. The session is the one running this command (Claude Code's CLAUDE_CODE_SESSION_ID: the
     feed handing the message on), else <notes>/remote/feed.sid (a feed started by an older runner never wrote that
     file, B22)."""
+    return feed_latest()[:3]
+
+
+def feed_latest() -> tuple[list[str], int, str, str | None]:
+    """`feed_scan`, plus the text of that latest person message (None: no feed transcript to read), so
+    `control_new` can tell whether Claude Code has written the message being handed on yet (B46)."""
     sid = os.environ.get('CLAUDE_CODE_SESSION_ID', '').strip()
     if not SID_RE.fullmatch(sid):
         try:
             sid = C.notes(REMOTE_DIR, FEED_SID).read_text(encoding='utf-8').strip()
         except OSError:
-            return [], 0, ''
+            return [], 0, '', None
     t = transcript(sid) if SID_RE.fullmatch(sid) else None
     if not t:
-        return [], 0, ''
+        return [], 0, '', None
     paths: list[str] = []
     rereads = False
     shown = found = 0  # images in the latest message; image paths recorded for it (B24's two forms count twice)
-    version = ''
+    version = said = ''
     try:
         with open(t, encoding='utf-8') as f:
             for line in f:
@@ -7467,9 +7473,22 @@ def feed_scan() -> tuple[list[str], int, str]:
                     c = (d.get('message') or {}).get('content')
                     shown = sum(isinstance(x, dict) and x.get('type') == 'image' for x in c) if isinstance(c, list) else 0
                     version = str(d.get('version') or '')
+                    said = c if isinstance(c, str) else ' '.join(
+                        x.get('text', '') for x in c if isinstance(x, dict) and x.get('type') == 'text') \
+                        if isinstance(c, list) else ''
     except OSError:
-        return [], 0, ''
-    return paths, max(shown - found, 0), version
+        return [], 0, '', None
+    return paths, max(shown - found, 0), version, said
+
+
+FEED_WAIT = 5.0  # s control --new --ask waits for the feed's transcript to hold the message it hands on (B46)
+
+
+def same_words(said: str, ask: str) -> bool:
+    """The feed hands the person's message on word for word, give or take quoting and spacing: compare letters
+    and digits only, either one holding the other."""
+    a, b = (re.sub(r'\W+', '', x).lower() for x in (said, ask))
+    return bool(a and b) and (a in b or b in a)
 
 
 def image_drift_note(lost: int, version: str) -> str:
@@ -7521,7 +7540,14 @@ def control_new(n: int | None = None, wait: float = CONTROL_LINK_WAIT, ask: str 
         return 1
     images = [str(Path(i).resolve()) for i in images]
     if ask:
-        got, lost, version = feed_scan()
+        # Claude Code writes the feed's transcript lazily: the message being handed on, and the saved paths of
+        # its pictures, can land a moment after this command starts (B46), so wait briefly for them.
+        deadline = time.monotonic() + FEED_WAIT
+        while True:
+            got, lost, version, said = feed_latest()
+            if said is None or (same_words(said, ask) and not lost) or time.monotonic() >= deadline:
+                break
+            time.sleep(0.2)
         images += [i for i in got if i not in images]
         if note := image_drift_note(lost, version):
             ask = f'{ask}\n\n{note}'
