@@ -4427,6 +4427,42 @@ def test_renamed_control_kept(repo: Path):
         eq(R.control_verdict(R.control_state(done + [title(t)]), cf, now, 4)[0], 'close', f'the runner\'s own name {t!r}: not a rename')
 
 
+def test_control_summary_title(repo: Path):
+    print('F29: a control session opened with a long ask names itself with a summary once it has read it, and is '
+          'still closed or kept as before')
+    R.init(repo)
+    rn, H, cf, now = R.ROOT.name, 3600, R.control_cfg(), time.time()
+    ask = 'deploy with tags instead of pushing to the site branch, and say what breaks if we do'
+    cut = R.control_name(11, ask)
+    eq(cut, f'{rn} · 11 · deploy with tags instead of', 'the opening name is the ask cut mid-thought')
+    sent, renamed, here = [], [], os.getcwd()
+    os.chdir(repo)  # cmd_control's init() reads the repository from here
+    try:
+        with mock.patch.dict(os.environ, {R.CONTROL_N_ENV: '11', 'TMUX_PANE': '%42'}), \
+                mock.patch.object(R, 'send_to_pane', lambda p, t: sent.append((p, t)) or True), \
+                mock.patch.object(R, 'tmux', lambda *a, **k: renamed.append(a) or subprocess.CompletedProcess(a, 0, '', '')):
+            eq(R.cmd_control(['--title', 'R43 site deploy via tags']), 0, 'control --title from session 11 works')
+        with mock.patch.dict(os.environ, {R.CONTROL_N_ENV: '', 'TMUX_PANE': ''}):
+            eq(R.cmd_control(['--title', 'x y']), 2, 'outside a control session, with no N: refused')
+    finally:
+        os.chdir(here)
+    want = f'{rn} · 11 · R43 site deploy via tags'
+    eq(sent, [('%42', f'/rename {want}')], 'it types /rename with the summary name into its own pane')
+    check(('rename-window', '-t', '%42', want) in renamed, 'its tmux window takes the name too', renamed)
+    eq(R.control_summary_name(11, '  "R43 site\ndeploy"  '), f'{rn} · 11 · R43 site deploy', 'one line, no quotes')
+    eq(R.control_summary_name(11, ''), '', 'no summary, no name')
+    title = lambda t: {'type': 'custom-title', 'customTitle': t, 'sessionId': 'x'}
+    done = [_person(ask, 3 * H), title(want), _claude('Tags deploy fine; nothing breaks.', 3 * H - 5)]
+    st = R.control_state(done)
+    eq(st['title'], want, 'the transcript ends up with the summary title, not the cut-off one')
+    check(not R.control_renamed(st, 11), 'the summary name is not a rename by the person')
+    eq(R.control_verdict(st, cf, now, 11)[0], 'close', 'idle past control_idle: still closed')
+    recent = [_person(ask, 60), title(want), _claude('On it.', 50)]
+    eq(R.control_verdict(R.control_state(recent), cf, now, 11)[0], 'keep', 'active lately: still kept')
+    mine = done + [title('MY DEPLOY')]
+    eq(R.control_verdict(R.control_state(mine), cf, now, 11)[0], 'keep', 'a later rename by the person still keeps it')
+
+
 def test_close_idle_controls(repo: Path):
     print('B26: idle control sessions are closed (transcript kept); an open question is filed under Needs you first')
     R.init(repo)
@@ -4552,7 +4588,8 @@ def main() -> int:
                        lambda: test_concepts_waiting(repo),
                        lambda: test_person_waiting(repo), lambda: test_control_server_old_agent(repo, tmp),
                        lambda: test_drop_or_change_running(repo), lambda: test_tell_running(repo),
-                       lambda: test_close_idle_controls(repo), lambda: test_renamed_control_kept(repo)])
+                       lambda: test_close_idle_controls(repo), lambda: test_renamed_control_kept(repo),
+                       lambda: test_control_summary_title(repo)])
 
 
 if __name__ == '__main__':
