@@ -6134,6 +6134,23 @@ def attach_argv(sess: str, pane_id: str, inside: bool) -> list[list[str]]:
             ['tmux', 'switch-client' if inside else 'attach-session', '-t', sess]]
 
 
+def cmd_background_attach(argv: list[str]) -> int:
+    """`agent-runner --attach`: the background run (started now, or the one already up in this repo), then its
+    pane in this terminal, as `attach` shows it; Ctrl-b d sends it back. Inside tmux it switches the client.
+    Windows: the run has no pane to attach, so it is bare `agent-runner`, and says so."""
+    if argv:
+        print(f'{RUNNER} --attach takes nothing more (got {" ".join(argv)})', file=sys.stderr)
+        return 2
+    init()
+    if plat.WINDOWS:
+        print(f'on Windows the run has no window to attach: --attach starts it as {RUNNER} does')
+        return cmd_background([])
+    if not run_up():
+        if r := cmd_background([]):
+            return r
+    return cmd_attach([])
+
+
 def cmd_attach(argv: list[str], prog: str = f'{RUNNER} attach') -> int:
     """`agent-runner attach [sN]`: the runner's pane, or a slot's; on Windows a slot's console window."""
     ap = argparse.ArgumentParser(prog=prog, description="Show the run's pane, or a slot's (s2, or 2).")
