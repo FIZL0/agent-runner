@@ -6511,7 +6511,18 @@ def control_name(n: int) -> str:
     return f'{ROOT.name} · control {n}'
 
 
-def control_argv(n: int, sid: str, resume: bool, blank: bool = False, ask: str = '', local: bool = False) -> list[str]:
+def control_ask(ask: str, images: list[str] | tuple = ()) -> str:
+    """The first message a handed-on request opens a control session with: `ask`, and for each `--image PATH`
+    a line saying the person attached that image, with its path, and to Read it before answering (the runner
+    feed forwards text only, so a screenshot reaches the new session by its saved path)."""
+    lines = [ask] if ask else []
+    lines += [f'The person attached an image to this message, saved at "{p}": Read it before you answer.'
+              for p in images]
+    return '\n\n'.join(lines)
+
+
+def control_argv(n: int, sid: str, resume: bool, blank: bool = False, ask: str = '', local: bool = False,
+                 images: list[str] | tuple = ()) -> list[str]:
     """Control session `n`: interactive, on `[run] model` (no model of its own), the brief from its settings
     file; with `[run] remote` on Remote Control as "<repo> · control N". Control 1 (the kept session the run
     starts) gets a first message asking for the status summary (`status` only: `since` would move the last-look
@@ -6522,10 +6533,12 @@ def control_argv(n: int, sid: str, resume: bool, blank: bool = False, ask: str =
     with `[run] remote` opens): no first message either, so it costs nothing until the person types. `local`
     (`control 1 --local`, the same c1): not on Remote Control even with `[run] remote` on, so it is in the
     terminal only and its start pushes nothing; the control server is the apps' one entry. `ask`
-    (`control --new --ask TEXT`, from the runner feed): TEXT is its first message instead."""
+    (`control --new --ask TEXT`, from the runner feed): TEXT is its first message instead; `images` (`--image
+    PATH`, repeatable) adds a line per attached image to it (`control_ask`)."""
     from agent_runner.guide import CONTROL_START, CONTROL_START_WATCH
     opening = CONTROL_START.format(cmd=C.command, watch_start='' if feed_on() else
                                    CONTROL_START_WATCH.format(cmd=C.command))
+    ask = control_ask(ask, images)
     first = [ask] if ask else [opening] if n == 1 and not blank else []
     return [plat.exe(C.run['agent']), *first,
             '--resume' if resume else '--session-id', sid, '--model', C.run['model'],
@@ -6593,6 +6606,8 @@ def cmd_control(argv: list[str], prog: str = f'{RUNNER} control') -> int:
     ap.add_argument('--local', action='store_true', help=argparse.SUPPRESS)  # c1 under [run] remote: not in the apps
     ap.add_argument('--ask', default='', metavar='TEXT', help="its first message (with --new: the runner feed hands "
                     'a person\'s request on this way)')
+    ap.add_argument('--image', action='append', default=[], metavar='PATH', help='an image the person attached '
+                    'to the --ask message (repeatable): the first message names its path and says to Read it')
     ap.add_argument('--unquiet', action='store_true', help=argparse.SUPPRESS)  # `unquiet_when_up`, for session N
     a = ap.parse_args(argv)
     init()
@@ -6606,13 +6621,13 @@ def cmd_control(argv: list[str], prog: str = f'{RUNNER} control') -> int:
         print(f'control sessions are Claude Code sessions; [run] agent is {C.run["agent"]}', file=sys.stderr)
         return 1
     if a.new:
-        return control_new(a.n, ask=a.ask)
+        return control_new(a.n, ask=a.ask, images=a.image)
     n = a.n or control_number()
     if pid := control_live(n):
         print(f'control {n} already runs (pid {pid}): {RUNNER} control starts another', file=sys.stderr)
         return 1
     sid, resume = control_sid(n)
-    argv = control_argv(n, sid, resume, blank=a.blank, ask=a.ask, local=a.local)
+    argv = control_argv(n, sid, resume, blank=a.blank, ask=a.ask, local=a.local, images=a.image)
     backend().trust(ROOT)
     os.chdir(ROOT)
     pidf = C.notes(f'control{n}.pid')
@@ -6945,7 +6960,8 @@ def control_new_session() -> str:
     return sess if tmux('has-session', '-t', f'={sess}').returncode == 0 else ''
 
 
-def control_new(n: int | None = None, wait: float = CONTROL_LINK_WAIT, ask: str = '') -> int:
+def control_new(n: int | None = None, wait: float = CONTROL_LINK_WAIT, ask: str = '',
+                images: list[str] | tuple = ()) -> int:
     """`control --new`: another control session, opened without taking focus (a window of its own in the run's
     tmux session; Windows: a hidden console), on Remote Control as "<repo> · control N" with `[run] remote`.
     Prints its claude.ai/code link once its pane shows it, so the session that ran it can answer with a link."""
@@ -6953,7 +6969,8 @@ def control_new(n: int | None = None, wait: float = CONTROL_LINK_WAIT, ask: str 
     if pid := control_live(n):
         print(f'control {n} already runs (pid {pid})', file=sys.stderr)
         return 1
-    cmd = [*runner_cmd(), 'control', str(n), *(['--ask', ask] if ask else [])]
+    cmd = [*runner_cmd(), 'control', str(n), *(['--ask', ask] if ask else []),
+           *[x for i in images for x in ('--image', str(Path(i).resolve()))]]
     name = control_name(n)
     if plat.WINDOWS:
         plat.spawn_console(cmd, ROOT, control_env(), hidden=True)

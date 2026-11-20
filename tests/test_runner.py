@@ -1520,6 +1520,15 @@ def test_short_titles_and_since(repo: Path):
         eq(started, [('mine',)], 'the board opens in a run in your own tmux session too')
         ca = R.control_argv(3, 'sid', False, ask='fix the login flicker')
         eq(ca[1], 'fix the login flicker', 'control --ask: the handed-on request is its first message')
+        ca = R.control_argv(3, 'sid', False, ask='why is this red?', images=['/t/a.png', '/t/b b.png'])
+        check(ca[1].startswith('why is this red?') and '"/t/a.png"' in ca[1] and '"/t/b b.png"' in ca[1]
+              and ca[1].count('Read it') == 2, 'control --image: each attached image is named in the first message',
+              ca[1])
+        from agent_runner.guide import RUNNER_BRIEF
+        check('--image' in RUNNER_BRIEF and 'is also saved at' in RUNNER_BRIEF,
+              'the runner feed passes attached images on with --image')
+        h = run(repo, 'control', '--help')
+        check('--image' in h.stdout, 'control --image is an option', h.stdout)
         eq(run(repo, 'since', '--follow', '--keep-mark', '--help').returncode, 0, 'since --keep-mark is an option')
     finally:
         if keep is None:

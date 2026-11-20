@@ -4,6 +4,10 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- The runner feed no longer drops pictures when it hands a message on: `control --new --ask TEXT` takes
+  `--image PATH` (repeatable), which adds a line per image to the new control session's first message, naming
+  its path and saying to Read it before answering. The feed's brief passes each image the message came with
+  (the path the apps note it is saved at).
 - `plan drop` and `plan change` on a task the run is on now stop it too, instead of only editing the plan
   while the slot's agent worked on and its branch could still merge. The command leaves a request for the run
   (`<notes>/halt/<ID>.json`); within seconds the run ends that slot's session, deletes task/<ID> here and on the
