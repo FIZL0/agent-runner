@@ -4,6 +4,8 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+## 0.50.0 (2026-11-20)
+
 - Old Remote Control entries no longer pile up in claude.ai/code and the apps. Claude Code has no command to
   end or archive a session from outside. It archives its own entry when it exits on SIGTERM, SIGHUP or Ctrl-C,
   and an entry stays listed only when its process dies without that (SIGKILL, a crash, a reboot, a power-off
