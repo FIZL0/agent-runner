@@ -64,7 +64,7 @@ that file. The rest of the Windows differences are in `agent_runner/plat.py`: th
 `msvcrt.locking`, process checks go through kernel32 (stdlib `ctypes`, no psutil), an ended session's
 windowed processes (an emulator, say) get WM_CLOSE and up to 10 s to exit before `taskkill /T /F`, and `[run] links` become a junction (directory) or hard link (file) when symlinks
 need Developer Mode. Two things work differently there. Nothing captures a console's output, so
-`.runner/slotN.log` has only the header lines and a usage limit is read from the transcript alone. A
+`.runner/slotN.log` has only the header lines. A
 prompt over 24,000 characters (a Windows command line holds 32,767) is handed over as a file the session
 is told to read. `[run] test`, `on_exit`, `before_start` and the other commands run in the platform's
 shell, which on Windows is `cmd.exe`.
@@ -462,17 +462,15 @@ already made in the main checkout there. Never use a slot's worktree, which the 
 **The shared branch is pushed only after a merge passes the gate.** `done` pushes `task/<ID>` and
 refuses to push `main`.
 
-**A usage limit is not a failed task.** When a session's only outcome is the usage limit (its transcript
-or slot log says "resets 3pm"), the transcript is dropped, the task returns to the pool, and the slot
-sleeps until the reset. Past `[run] session_max`% of the 5-hour session usage, or `[run] weekly_max`% of
+**Usage caps.** Past `[run] session_max`% of the 5-hour session usage, or `[run] weekly_max`% of
 the 7-day usage, no new task starts unless `--force` is given (or `f` typed in the runner's pane); hitting one raises the STOPPED alarm with that hint.
 
 **A cut-off session resumes.** A session whose turn ended on an API error (the network dropped, the
-API was down) is not finished, though the idle stop ends it. Its worktree is left as it is, and once the
+API was down, the account hit its usage limit) is not finished, though the idle stop ends it. Its worktree is left as it is, and once the
 API answers again it is resumed in the same slot (`claude --resume`, with its whole conversation) and told
 it was cut off. While the API cannot be reached, no session resumes or starts. At startup, a slot still on
 `task/<ID>` whose session stopped mid-turn while no run was up (a reboot, the runner killed) is resumed
-the same way. A usage limit or a request the API refused is not a cut-off, and one session is resumed at
+the same way. A request the API refused is not a cut-off (it would fail again), and one session is resumed at
 most 3 times. `agent-runner resume <ID>` resumes a task's last session by hand, for one the run already ended:
 when its slot is free, the edits it left come back from `wip/<ID>` (kept as `resumed/<ID>`).
 
@@ -960,10 +958,8 @@ python3 tests/test_disk.py      # slot_max_gb, min_free_gb, extra slots removed
 python3 tests/test_cost.py      # agent-runner cost: kinds of call, size × turns, Claude and Pi transcripts
 python3 tests/test_plansync.py  # [plan] repo: two checkouts on one plan repo, merges, claims, tick on landing
 python3 tests/test_runner.py    # picking, done, merge/join/land/push, fix sessions, wip parking,
-                                # retry after unblock, prompt, Stop hook, usage limits, adopt,
+                                # retry after unblock, prompt, Stop hook, resume, adopt,
                                 # batches, flaky/inherited failures, the platform layer and the
                                 # Windows slot shim (temp repos, fake agent)
 python3 tests/test_pi.py        # Pi configuration, prompts, sessions, errors, and merge fixers (no network)
-python3 tests/agent_matrix.py   # which terminal agents are installed and have the flags a backend needs;
-                                # --live runs tiny real tasks (needs a login, spends tokens)
 ```

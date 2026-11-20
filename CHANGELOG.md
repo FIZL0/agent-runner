@@ -4,6 +4,12 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- A session that ends on a usage limit is a cut-off like any other: its worktree stays as it was and it
+  resumes in its slot (at most 3 times), instead of the run dropping its transcript and sleeping the slot to
+  the reset. The special usage-limit path (`limit_only`, the backends' `limits`) is gone; the `session_max` /
+  `weekly_max` caps on starting new tasks are unchanged. Also removed: the agent evaluation probe
+  `tests/agent_matrix.py` and `docs/AGENTS-EVAL.md` (`pi auth check` checks a Pi login).
+
 - **Breaking:** the GitHub Copilot CLI backend (`[run] agent = "copilot"`) is gone; Pi with its
   `github-copilot` provider replaced it. A config that still names it stops the run with a message saying
   what to set instead: `backend = "pi"` and `model = "github-copilot/<model>"` (see

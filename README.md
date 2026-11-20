@@ -287,5 +287,4 @@ couldn't be merged.
 |---|---|
 | [docs/SETUP.md](docs/SETUP.md) | installing, Windows, Pi, adding it to a repo, wrapping it from your own CLI |
 | [docs/REFERENCE.md](docs/REFERENCE.md) | picking, merging, fix and repair sessions, disk and memory limits, CI, the prompt, every command and config key |
-| [docs/AGENTS-EVAL.md](docs/AGENTS-EVAL.md) | which other terminal agents could become backends |
 | [CHANGELOG.md](CHANGELOG.md) | what changed in each version |
