@@ -4,6 +4,8 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+## 0.50.2 (2026-11-20)
+
 - Changes reach a running agent instead of restarting it. `plan change ID TEXT` on a task a slot is running
   notes the change as before, then types `Your task changed: TEXT` into the slot's tmux pane (Claude Code
   queues it for its next turn) and leaves the agent working, instead of ending its session, throwing its
