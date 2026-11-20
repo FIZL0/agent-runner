@@ -745,8 +745,52 @@ def test_merge_driver():
            '### Critical\n- [ ] **K2** another\n\n### Next\n- [ ] **M1** first — a note\n', 'by task')
 
 
+def test_goal():
+    print('plan goal: prints and replaces only the Goal: paragraph; title, fields line, headings, tasks untouched')
+    head = '# TODO: open tasks, in order\n\n'
+    old = 'Goal: the old aim,\nover two lines.\nRules: `AGENTS.md`.\n'
+    fmt = '\nTask lines end in keyed fields: `| files: a, dir/** | after: ID` (only the fields are parsed).\n'
+    body = ('\n### Next\n\n- [ ] **F1** first | files: a.py\n  - sub-item\n- [~] **B2** second — BLOCKED: why\n'
+            '\n## Later\n\nGoal: not this one, it is below a heading\n- [ ] **D3** third\n')
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        todo = root / 'TODO.md'
+        todo.write_text(head + old + fmt + body, encoding='utf-8')
+        eq(plan.goal(todo=todo), old.rstrip('\n'), 'goal() reads the paragraph above the first heading')
+        plan.goal('A new aim: ship it.', todo=todo)
+        eq(todo.read_text(encoding='utf-8'), head + 'Goal: A new aim: ship it.\n' + fmt + body,
+           'only the paragraph changes (prefixed Goal:), every other byte stays')
+        plan.goal('Goal: two\nlines', todo=todo)
+        eq(todo.read_text(encoding='utf-8'), head + 'Goal: two\nlines\n' + fmt + body, 'a multi-line goal')
+        eq(plan.goal(todo=todo), 'Goal: two\nlines', 'and reads back')
+
+        todo.write_text(head + fmt.lstrip('\n') + body, encoding='utf-8')
+        eq(plan.goal(todo=todo), '', 'no Goal: paragraph: empty, the fields line is not a goal')
+        plan.goal('first aim', todo=todo)
+        eq(todo.read_text(encoding='utf-8'), head + 'Goal: first aim\n\n' + fmt.lstrip('\n') + body,
+           'a new goal goes after the title, before the fields line')
+        todo.write_text('# TODO\n### Next\n- [ ] **F1** x\n', encoding='utf-8')
+        plan.goal('aim', todo=todo)
+        eq(todo.read_text(encoding='utf-8'), '# TODO\n\nGoal: aim\n\n### Next\n- [ ] **F1** x\n',
+           'blank lines around a goal added to a tight file')
+
+        git(root, 'init', '-q')
+        git(root, 'commit', '-q', '--allow-empty', '-m', 'start')
+        run(root, 'plan', 'add', 'R', 'the parser')
+        r = run(root, 'plan', 'goal', check=False)
+        eq(r.returncode, 1, '`plan goal` with no goal fails, and says how to set one')
+        has(r.stderr, r'plan goal "TEXT"', 'the hint')
+        r = run(root, 'plan', 'goal', 'parse', 'everything')
+        has(git(root, 'log', '-1', '--format=%s'), r'^plan: goal parse everything', 'plan goal TEXT commits like other edits')
+        eq(git(root, 'status', '--porcelain', '--', 'plan'), '', 'nothing left uncommitted')
+        eq(run(root, 'plan', 'goal').stdout.strip(), 'Goal: parse everything', '`plan goal` prints it')
+        has(run(root, 'plan', 'R1').stdout, r'the parser', 'the task is still there')
+    from agent_runner import guide
+    has(guide.CONTROL, r'plan goal "TEXT"', 'the control brief says to reword a stale goal with plan goal')
+
+
 if __name__ == '__main__':
-    sys.exit(report([test_plan_roundtrip, test_plan_reopen, test_plan_index_and_sections, test_brief, test_brief_outline,
+    sys.exit(report([test_goal,test_plan_roundtrip, test_plan_reopen, test_plan_index_and_sections, test_brief, test_brief_outline,
                      test_split_parents, test_add_bottom, test_add_pri, test_add_subtask, test_kinds, test_need_files, test_hand_edits_commit, test_similar, test_add_refuses_a_duplicate, test_carry_notes,
                      test_merge3, test_concurrent_add, test_merge_driver, test_concepts, test_needs_you,
                      test_needs_config]))
