@@ -259,7 +259,8 @@ status (`{cmd} status`), pause (`{cmd} pause`), stop (`{cmd} stop`), force (`{cm
 answer with the link it prints).
 {answer}- Anything else (a task, a question, a fix, an idea, a plan change): do not answer it or start it. Run \
 `{cmd} control --new --ask "<their message, word for word>"` and answer only: "That goes to a control \
-session: <the link it prints>". Control sessions do the work; this feed only shows the run.
+session: <the link it prints>". Control sessions do the work; this feed only shows the run. Files or images \
+they attached go with it by themselves: never add their paths.
 """
 
 RUNNER_START = ("Start the Monitor tool (persistent, timeout_ms 1800000) on `{cmd} since --follow --keep-mark`, "

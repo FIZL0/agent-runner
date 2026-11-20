@@ -6673,7 +6673,8 @@ def control_settings() -> Path:
 
 def control_title(ask: str = '', images: list[str] | tuple = ()) -> str:
     """A short title for a control session opened with `--ask`: the ask's first words (up to 5, trimmed at a word
-    to about 40 characters, trailing punctuation dropped); "screenshot" for an image-only ask; "" without one."""
+    to about 40 characters, trailing punctuation dropped); for a files-only ask "screenshot" when they are all
+    images, else the first file's name (B30); "" without one."""
     words = (ask or '').split()[:5]
     while len(' '.join(words)) > 40 and len(words) > 1:
         words.pop()
@@ -6681,7 +6682,11 @@ def control_title(ask: str = '', images: list[str] | tuple = ()) -> str:
     if len(title) > 40:
         title = title[:39].rstrip() + '…'
     title = title.rstrip(' ,.;:-–—')
-    return title or ('screenshot' if images else '')
+    if title or not images:
+        return title
+    if all(Path(i).suffix.lower() in IMAGE_EXTS for i in images):
+        return 'screenshot'
+    return attached_name(images[0])[:40]
 
 
 def control_name(n: int, ask: str = '', images: list[str] | tuple = ()) -> str:
@@ -6692,13 +6697,26 @@ def control_name(n: int, ask: str = '', images: list[str] | tuple = ()) -> str:
 
 
 def control_ask(ask: str, images: list[str] | tuple = ()) -> str:
-    """The first message a handed-on request opens a control session with: `ask`, and for each `--image PATH`
-    a line saying the person attached that image, with its path, and to Read it before answering (the runner
-    feed forwards text only, so a screenshot reaches the new session by its saved path)."""
+    """The first message a handed-on request opens a control session with: `ask`, and for each `--file PATH`
+    (`--image`: an alias) a line saying the person attached that file, by name and saved path, and to Read or open
+    it before answering (the runner feed forwards text only, so a screenshot or an upload reaches the new session
+    by its saved path, B30)."""
     lines = [ask] if ask else []
-    lines += [f'The person attached an image to this message, saved at "{p}": Read it before you answer.'
+    lines += [f'The person attached {attached_name(p)}, saved at "{p}": Read or open it before you answer.'
               for p in images]
     return '\n\n'.join(lines)
+
+
+UPLOAD_ID_RE = re.compile(r'^[0-9a-f]{8}-(.+)$')
+IMAGE_EXTS = ('.png', '.jpg', '.jpeg', '.gif', '.webp', '.heic', '.bmp')
+
+
+def attached_name(path: str) -> str:
+    """The name the person gave a file they attached: Claude Code saves an upload as
+    ~/.claude/uploads/<sid>/<8-hex id>-<name> (B30), so the id prefix is dropped there; else the base name."""
+    p = Path(path)
+    m = UPLOAD_ID_RE.match(p.name)
+    return m.group(1) if m and 'uploads' in p.parts else p.name
 
 
 def control_argv(n: int, sid: str, resume: bool, blank: bool = False, ask: str = '', local: bool = False,
@@ -6713,8 +6731,8 @@ def control_argv(n: int, sid: str, resume: bool, blank: bool = False, ask: str =
     with `[run] remote` opens): no first message either, so it costs nothing until the person types. `local`
     (`control 1 --local`, the same c1): not on Remote Control even with `[run] remote` on, so it is in the
     terminal only and its start pushes nothing; the control server is the apps' one entry. `ask`
-    (`control --new --ask TEXT`, from the runner feed): TEXT is its first message instead; `images` (`--image
-    PATH`, repeatable) adds a line per attached image to it (`control_ask`)."""
+    (`control --new --ask TEXT`, from the runner feed): TEXT is its first message instead; `images` (`--file
+    PATH`, alias `--image`, repeatable) adds a line per attached file to it (`control_ask`)."""
     from agent_runner.guide import CONTROL_START, CONTROL_START_WATCH
     opening = CONTROL_START.format(cmd=C.command, watch_start='' if feed_on() else
                                    CONTROL_START_WATCH.format(cmd=C.command))
@@ -6786,8 +6804,9 @@ def cmd_control(argv: list[str], prog: str = f'{RUNNER} control') -> int:
     ap.add_argument('--local', action='store_true', help=argparse.SUPPRESS)  # c1 under [run] remote: not in the apps
     ap.add_argument('--ask', default='', metavar='TEXT', help="its first message (with --new: the runner feed hands "
                     'a person\'s request on this way)')
-    ap.add_argument('--image', action='append', default=[], metavar='PATH', help='an image the person attached '
-                    'to the --ask message (repeatable): the first message names its path and says to Read it')
+    ap.add_argument('--file', '--image', dest='file', action='append', default=[], metavar='PATH',
+                    help='a file or image the person attached to the --ask message (repeatable): the first message '
+                    'names it and its path and says to Read or open it')
     ap.add_argument('--unquiet', action='store_true', help=argparse.SUPPRESS)  # `unquiet_when_up`, for session N
     a = ap.parse_args(argv)
     init()
@@ -6801,13 +6820,13 @@ def cmd_control(argv: list[str], prog: str = f'{RUNNER} control') -> int:
         print(f'control sessions are Claude Code sessions; [run] agent is {C.run["agent"]}', file=sys.stderr)
         return 1
     if a.new:
-        return control_new(a.n, ask=a.ask, images=a.image)
+        return control_new(a.n, ask=a.ask, images=a.file)
     n = a.n or control_number()
     if pid := control_live(n):
         print(f'control {n} already runs (pid {pid}): {RUNNER} control starts another', file=sys.stderr)
         return 1
     sid, resume = control_sid(n)
-    argv = control_argv(n, sid, resume, blank=a.blank, ask=a.ask, local=a.local, images=a.image)
+    argv = control_argv(n, sid, resume, blank=a.blank, ask=a.ask, local=a.local, images=a.file)
     backend().trust(ROOT)
     os.chdir(ROOT)
     pidf = C.notes(f'control{n}.pid')
@@ -7142,13 +7161,17 @@ def control_new_session() -> str:
     return sess if tmux('has-session', '-t', f'={sess}').returncode == 0 else ''
 
 
-def feed_images() -> list[str]:
-    """The images attached to the person's latest message in the runner feed, the one being handed on, in display
-    order: Claude Code records their saved paths in the feed's transcript (an `inlined_image_paths` attachment
-    after the message, or since 2.1.329 an isMeta entry with '[Image: source: PATH]' text, B24). `control --new --ask` passes them on itself, so a feed on an older brief, or a Haiku that
-    skips the step, still forwards the pictures, and a later text-only message forwards none. The session is the
-    one running this command (Claude Code's CLAUDE_CODE_SESSION_ID: the feed handing the message on), else
-    <notes>/remote/feed.sid (a feed started by an older runner never wrote that file, B22)."""
+def feed_files() -> list[str]:
+    """The files and images attached to the person's latest message in the runner feed, the one being handed on, in
+    display order: Claude Code records their saved paths in the feed's transcript (an `inlined_image_paths`
+    attachment after the message, since 2.1.329 an isMeta entry with '[Image: source: PATH]' text, B24, and for any
+    other file, saved to ~/.claude/uploads/<sid>/<id>-<name> and @-mentioned, an attachment of type file with that
+    path as filename, B30). `control --new --ask` passes them on itself, so a feed on an older brief, or a Haiku
+    that drops or mangles the @-mention, still forwards them, and a later text-only message forwards none. File
+    attachments after a compaction summary are Claude Code re-reading files, not the person attaching them, so
+    they are left out. The session is the one running this command (Claude Code's CLAUDE_CODE_SESSION_ID: the
+    feed handing the message on), else <notes>/remote/feed.sid (a feed started by an older runner never wrote that
+    file, B22)."""
     sid = os.environ.get('CLAUDE_CODE_SESSION_ID', '').strip()
     if not SID_RE.fullmatch(sid):
         try:
@@ -7159,6 +7182,7 @@ def feed_images() -> list[str]:
     if not t:
         return []
     paths: list[str] = []
+    rereads = False
     try:
         with open(t, encoding='utf-8') as f:
             for line in f:
@@ -7169,13 +7193,22 @@ def feed_images() -> list[str]:
                 att = d.get('attachment') or {}
                 if att.get('type') == 'inlined_image_paths':
                     paths += [p for p in att.get('paths', []) if isinstance(p, str) and p not in paths]
+                elif att.get('type') == 'file':
+                    p = att.get('filename')
+                    if not rereads and isinstance(p, str) and p and p not in paths:
+                        paths.append(p)
+                elif d.get('type') == 'user' and d.get('isCompactSummary'):
+                    rereads = True
                 elif d.get('type') == 'user' and d.get('isMeta'):
                     paths += [p for p in meta_image_paths(d) if p not in paths]
                 elif d.get('type') == 'user' and person_message(d):
-                    paths = []
+                    paths, rereads = [], False
     except OSError:
         return []
     return paths
+
+
+feed_images = feed_files  # the name before B30
 
 
 IMAGE_SOURCE_RE = re.compile(r'\[Image: source: ([^\]\n]+?)\]')
@@ -7211,9 +7244,9 @@ def control_new(n: int | None = None, wait: float = CONTROL_LINK_WAIT, ask: str 
         return 1
     images = [str(Path(i).resolve()) for i in images]
     if ask:
-        images += [i for i in feed_images() if i not in images]
+        images += [i for i in feed_files() if i not in images]
     cmd = [*runner_cmd(), 'control', str(n), *(['--ask', ask] if ask else []),
-           *[x for i in images for x in ('--image', i)]]
+           *[x for i in images for x in ('--file', i)]]
     name = control_name(n, ask, images)
     if plat.WINDOWS:
         plat.spawn_console(cmd, ROOT, control_env(), hidden=True)
