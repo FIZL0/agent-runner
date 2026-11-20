@@ -107,19 +107,9 @@ def test_db():
     has(page, re.escape("window.claude.use('db')"), 'Send opens the page\'s db')
     has(page, re.escape("db.doc('picks/'+S.tid).set({id:S.tid,picks:txt,"), 'and writes {id, picks} to picks/<ID>')
     has(page, r'navigator\.clipboard\.writeText', 'and copies the line where there is no db')
-    doc = json.dumps({'id': 'F2', 'picks': 'F2 picks: backend=b silent=c', 'at': '2026-11-20T15:00:00Z'})
-    eq(S.parse_picks(SPEC, doc), {'backend': 1, 'silent': 2}, 'the document read back is taken as the picks')
-    eq(S.parse_picks(SPEC, json.dumps({'id': 'F2', 'picks': 'go'})), {'backend': 0, 'silent': 0}, 'a go document')
-    for wrong in ('{"id": "F2"}', '{nope'):
-        try:
-            S.parse_picks(SPEC, wrong)
-            check(False, f'{wrong!r} is refused')
-        except ValueError:
-            check(True, f'{wrong!r} is refused')
+    has(page, r'Say "sent" in the chat with the run', 'and tells the person how the run hears of it')
     from agent_runner import guide as G
-    brief = G.__dict__
-    text = '\n'.join(v for v in brief.values() if isinstance(v, str))
-    has(text, r'ArtifactData tool \(`get`, the\s+sheet\'s url, collection `picks`', 'the control brief reads the db')
+    has(G.CONTROL, r'ArtifactData tool \(`get`, the\s+sheet\'s url, collection `picks`', 'the control brief reads the db')
     has(G.FEED_ANSWER, r'ArtifactData tool \(`get`, the sheet\'s url, collection `picks`', 'and so does the feed rule')
     has(R.SHEET_PROMPT, re.escape('capabilities {{"db": {{}}}}'), 'the slot brief says to publish with the db')
 

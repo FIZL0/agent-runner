@@ -25,8 +25,8 @@ Send shows the picks as one reply line, `<ID> picks: backend=a batch=b` (letters
 they are the recommended set), and (F54) writes it to the page's artifact db as the document `picks/<ID>`,
 `{"id": "<ID>", "picks": "<that line>", "at": "<ISO time>"}`: the page is published with `CAPABILITIES`
 (`{"db": {}}`). The control session reads that document with the ArtifactData tool (`get`, collection `picks`,
-doc_id the ID, on the sheet's url) and answers the item with `agent-runner sheet <ID> --picks "<its picks>"`
-(the whole document as JSON works too). Where the page has no db (an older sheet, a write that fails) Send
+doc_id the ID, on the sheet's url) and answers the item with `agent-runner sheet <ID> --picks "<its picks>"`.
+Where the page has no db (an older sheet, a write that fails) Send
 copies the line instead, to paste in the chat with the run; 'go' answers it with the recommended set (`--go`).
 Either way the task reopens (`plan confirm`) with each question's answer spelled out in its note.
 """
@@ -42,7 +42,10 @@ __all__ = ['load', 'problems', 'questions', 'render', 'parse_picks', 'picks_note
 
 GO = ('go', 'recommended')  # a reply that takes the recommended set
 # F54: the sheet's page keeps the picks Send sent in its artifact db, document `picks/<ID>`. The owner (who
-# picks) can write with the default rules, so the declaration needs no rules of its own.
+# picks) is expected to write with the default rules, so the declaration names none; where a write is refused
+# (a viewer without write access) Send falls back to the line to paste. The runtime shape the page uses,
+# `await window.claude.use('db')` then `db.doc('<collection>/<id>').set(data)`, is the one Claude Code's own
+# artifact SDK documents for the same store (the artifact-capabilities skill was not available to check).
 CAPABILITIES = {'db': {}}
 DB_COLLECTION = 'picks'
 
@@ -111,18 +114,7 @@ def rec(q: dict) -> int:
 def parse_picks(spec: dict, text: str) -> dict[str, int]:
     """{question id: answer index} from Send's reply line (`R7 picks: backend=a batch=b`, the `R7 picks:`
     optional) or a bare 'go' / 'recommended' (the recommended set). A question it does not name keeps its
-    recommended answer. ValueError on an id or a letter the sheet does not have.
-
-    F54: `text` may also be the `picks/<ID>` document Send wrote to the page's db, as JSON
-    (`{"id": "R7", "picks": "R7 picks: backend=a"}`): its `picks` is read the same way."""
-    if text.lstrip().startswith('{'):
-        try:
-            doc = json.loads(text)
-        except json.JSONDecodeError as e:
-            raise ValueError(f'not the document Send wrote: {e}') from None
-        if not isinstance(doc, dict) or not isinstance(doc.get('picks'), str):
-            raise ValueError('not the document Send wrote: it has no "picks" line')
-        text = doc['picks']
+    recommended answer. ValueError on an id or a letter the sheet does not have."""
     qs = {q['id']: q for q in questions(spec)}
     picks = {k: rec(q) for k, q in qs.items()}
     body = re.sub(r'^\s*\S+\s+picks:\s*', '', text.strip(), flags=re.I)
@@ -265,7 +257,7 @@ document.getElementById('send').onclick=async()=>{
   send.disabled=true;said.textContent='Sending…';
   if(await store(txt)){
     send.disabled=false;send.textContent='Send again';
-    said.textContent='Sent. The run answers {{tid}} with these picks; say "sent" in the chat with the run to have it read them now.';
+    said.textContent='Sent: saved on this page. Say "sent" in the chat with the run, and it reads them and answers {{tid}} with these picks.';
   }else{
     send.disabled=false;
     const done=ok=>{said.textContent=(ok?'Copied. ':'Copy this line. ')+'Paste it in the chat with the run, and it answers {{tid}} with these picks.'};
