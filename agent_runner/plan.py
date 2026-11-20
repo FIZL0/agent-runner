@@ -406,7 +406,7 @@ def unblock(tid: str, note: str = '', todo=None) -> None:
     i = _find(ls, tid)
     _mark(ls, i, ' ')
     end = i + len(_item_block(ls, i)) - 1
-    ls[end] = ls[end].split(' BLOCKED: ')[0] + (f' — {note}' if note else '')
+    ls[end] = (_unblocked(ls[end]) if end == i else ls[end].split(' BLOCKED: ')[0]) + (f' — {note}' if note else '')
     _write(todo, ls)
 
 
@@ -1246,7 +1246,19 @@ def fields(line: str) -> dict[str, list[str]]:
     """A task line's keyed fields (`| files: a, b | after: X`), comma lists, read off its first line only (a
     brief appends the long form, whose prose is no field)."""
     return {k: [x for v in re.split(r',\s*', val) if (x := v.strip().strip('`'))]
-            for k, val in FIELD.findall(line.split('\n')[0].split(' BLOCKED: ')[0])}
+            for k, val in FIELD.findall(_unblocked(line.split('\n')[0]))}
+
+
+FIELD_START = re.compile(r' \| (?:' + '|'.join(KEYS) + r'): ')
+
+
+def _unblocked(line: str) -> str:
+    """A task line without the ` BLOCKED: …` that `block` appends. That marker comes after the keyed fields, so
+    one the task's prose quotes (before its fields) is kept: only a marker after the first field is cut, or the
+    first marker when the line has no field."""
+    f = FIELD_START.search(line)
+    at = line.find(' BLOCKED: ', f.start() if f else 0)
+    return line if at < 0 else line[:at]
 
 
 def prose(line: str) -> str:
