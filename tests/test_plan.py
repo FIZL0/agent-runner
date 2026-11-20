@@ -525,6 +525,29 @@ def test_merge3():
        'prose both sides rewrote is not for it to choose: git\'s own merge, which conflicts')
 
 
+def test_concurrent_add():
+    print('plan: two `plan add` at once on an in-repo plan each land, with distinct ids')
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        git(root, 'init', '-q')
+        git(root, 'commit', '-q', '--allow-empty', '-m', 'start')
+        fails = []
+        for i in range(20):
+            ps = [subprocess.Popen([sys.executable, str(ROOT / 'run'), 'plan', 'add', 'F',
+                                    f'round {i} filer {k} work', '--files', f'src/r{i}k{k}.py', '--force'],
+                                   cwd=root, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                  for k in (0, 1)]
+            for p in ps:
+                out, err = p.communicate(timeout=120)
+                if p.returncode:
+                    fails.append(err.strip())
+        eq(fails, [], 'every add exits 0')
+        ids = [l[4:] for l in plan.index(root / 'plan' / 'TODO.md') if l.startswith('[ ] ')]
+        eq(len(ids), 40, 'all 40 tasks are in TODO.md')
+        eq(len(set(ids)), 40, 'each with its own id')
+        eq(git(root, 'status', '--porcelain', '--', 'plan'), '', 'and every add committed')
+
+
 def test_merge_driver():
     print('plan: git merges the task list through merge3 once install_driver ran')
     with tempfile.TemporaryDirectory() as tmp:
@@ -554,4 +577,4 @@ def test_merge_driver():
 if __name__ == '__main__':
     sys.exit(report([test_plan_roundtrip, test_plan_reopen, test_plan_index_and_sections, test_brief, test_brief_outline,
                      test_split_parents, test_add_bottom, test_add_pri, test_add_subtask, test_kinds, test_need_files, test_hand_edits_commit, test_similar, test_add_refuses_a_duplicate, test_carry_notes,
-                     test_merge3, test_merge_driver]))
+                     test_merge3, test_concurrent_add, test_merge_driver]))

@@ -1100,9 +1100,12 @@ def main(argv: list[str] | None = None) -> int:
         print(HELP)
         return 0
     c = cfg()
-    if not c.plan_external:
-        return _main(argv, c)
     edit = argv[:1] and argv[0] in EDITS
+    if not c.plan_external:
+        if not edit:
+            return _main(argv, c)  # a read of the checkout's own file needs no lock
+        with plansync.locked(c):  # two sessions filing at once would take the same id, and one write drop the other
+            return _main(argv, c)
     with plansync.locked(c):  # a read pulls too, so it sees other people's edits
         plansync.pull(c, force=bool(edit))
         return _main(argv, c)
