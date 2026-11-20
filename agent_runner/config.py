@@ -119,6 +119,10 @@ DEFAULTS: dict = {
         'control': True,        # a run opens control session c1 beside it (`agent-runner control`); false: none
         'control_close': True,  # B26: the run closes idle control sessions 2, 3, … (never c1); transcripts kept
         'control_idle': '3h',   # quiet this long with Claude last and nothing running in it: closed
+        'control_idle_quick': '5m',  # F56: a session opened for one ask (a feed reply) that queued a task, the
+                                # person's only message that ask and no open question: closed this soon (false: control_idle)
+        'control_idle_talked': '12h',  # F56: a session the person sent a second message in: kept this long, also
+                                # on an open question (false: control_idle and control_ask_idle)
         'control_ask_idle': '2h',  # quiet this long on an open question: filed under Needs you, then closed
         'control_open': ['?', 'want me to', 'should i', 'shall i', 'would you like', 'do you want'],
                                 # what makes Claude's last message an open question or offer (case ignored;

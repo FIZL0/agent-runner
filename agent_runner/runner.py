@@ -7234,6 +7234,28 @@ def control_give(n: int, name: str) -> None:
         pass
 
 
+def control_mark_ask(n: int, sid: str) -> None:
+    """F56: record that control session `n`, as conversation `sid`, was opened for one ask (the runner gave it
+    its first message: a feed reply, `control --new --ask`), in `<notes>/control<n>.ask`; '' clears it."""
+    f = C.notes(f'control{n}.ask')
+    try:
+        if sid:
+            f.write_text(sid + '\n', encoding='utf-8')
+        else:
+            f.unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
+def control_one_ask(n: int, sid: str) -> bool:
+    """F56: whether control session `n`'s conversation `sid` is the one it was opened for one ask with (after
+    /clear or /new it is another conversation, and is not)."""
+    try:
+        return bool(sid) and C.notes(f'control{n}.ask').read_text(encoding='utf-8').strip() == sid
+    except OSError:
+        return False
+
+
 def control_session_start(n: int, hook: dict) -> str:
     """F32: the SessionStart hook of control session `n` (`control --brief`, its JSON input `hook`). On
     source 'clear' (/clear, and /new, its alias) the session starts afresh in a new transcript: the pid file
@@ -7560,6 +7582,7 @@ def cmd_control(argv: list[str], prog: str = f'{RUNNER} control') -> int:
     argv = control_argv(n, sid, resume, blank=a.blank, ask=a.ask, local=a.local, images=a.file)
     if not resume:  # F32: a fresh session N never keeps an earlier session N's (or task's) name
         control_give(n, control_name(n, a.ask, a.file))
+        control_mark_ask(n, sid if a.ask and n > 1 else '')  # F56: opened for one ask
     backend().trust(ROOT)
     os.chdir(ROOT)
     pidf = C.notes(f'control{n}.pid')
@@ -8273,6 +8296,23 @@ def person_message(d: dict) -> bool:
     return isinstance(c, list) and any(isinstance(x, dict) and x.get('type') in ('text', 'image') for x in c)
 
 
+RUNNER_TURN = ('<command-name>', '<command-message>', '<command-args>', '<local-command-', '<system-reminder>',
+               '<task-notification>', '<user-prompt-submit-hook>', 'Caveat: ')
+
+
+def person_turn(d: dict) -> bool:
+    """F56: a message the person sent, as counted for a control session's close tiers: `person_message`, but
+    not a meta or compact-summary entry, and not a turn that is only a slash command (the runner's `/rename`),
+    its output, a hook's or system text (RUNNER_TURN): an image, or any text item that is none of those."""
+    if not person_message(d) or d.get('isMeta') or d.get('isCompactSummary'):
+        return False
+    c = (d.get('message') or {}).get('content')
+    items = [c] if isinstance(c, str) else [x.get('text') if x.get('type') == 'text' else x.get('type')
+                                            for x in c if isinstance(x, dict) and x.get('type') in ('text', 'image')]
+    return any(i == 'image' or (isinstance(i, str) and i.strip() and not i.lstrip().startswith(RUNNER_TURN))
+               for i in items)
+
+
 def control_new(n: int | None = None, wait: float = CONTROL_LINK_WAIT, ask: str = '',
                 images: list[str] | tuple = (), forward: bool = False) -> int:
     """`control --new`: another control session, opened without taking focus (a window of its own in the run's
@@ -8368,6 +8408,8 @@ CONTROL_WATCH_CMD = 'since --follow --needs-you'  # a control session's standing
 TASK_STARTED = re.compile(r'Monitor started \(task (\w+)|running in background with ID: (\w+)')
 TASK_ENDED = re.compile(r'<task-id>(\w+)</task-id>|\(task (\w+)\)')
 EXPIRES = re.compile(r'expires in (\d+)\s*([smh])')
+PLAN_ADD_CMD = re.compile(r'\bplan\s+add\s')  # F56: a control session queueing a task
+PLAN_ADDED = re.compile(r'(?m)^added [A-Z]+\d+\w*\b')  # what `plan add` prints when it filed one
 DURATION = re.compile(r'^\s*(\d+(?:\.\d+)?)\s*([smhd]?)\s*$')
 
 
@@ -8416,10 +8458,13 @@ def control_state(rows) -> dict:
     """What a control session's transcript entries `rows` say: {'last': 'person' | 'claude' | 'tool' | '',
     'text': Claude's last message when it spoke last, 'at': when it was last active (epoch s, 0 unknown),
     'running': ids of background tasks and Monitors still live, 'bridge': its Remote Control session id or '',
-    'title': the latest name the person gave it in the apps (a custom-title entry, B41) or ''}.
+    'title': the latest name the person gave it in the apps (a custom-title entry, B41) or '',
+    'said': how many messages the person sent (`person_turn`, F56), 'queued': whether it added a task (a
+    `plan add` that printed "added <ID>", F56)}.
     Activity is a person's message or a turn of Claude's; the standing needs-you watch (CONTROL_WATCH_CMD)
     being re-armed is neither activity nor work in progress, and the events it brings are not activity."""
-    st = {'last': '', 'text': '', 'at': 0.0, 'running': set(), 'bridge': '', 'title': ''}
+    st = {'last': '', 'text': '', 'at': 0.0, 'running': set(), 'bridge': '', 'title': '', 'said': 0,
+          'queued': False}
     uses: dict[str, dict] = {}  # tool_use id -> its tool call
     expiry: dict[str, float] = {}  # task id -> when a Monitor with a timeout ends on its own
     for d in rows:
@@ -8466,14 +8511,18 @@ def control_state(rows) -> dict:
                 if call.get('name') == 'Monitor' and CONTROL_WATCH_CMD in str((call.get('input') or {}).get('command', '')):
                     continue
                 for t in _texts({'message': {'content': [x]}}):
+                    if (call.get('name') == 'Bash' and PLAN_ADD_CMD.search(str((call.get('input') or {}).get('command', '')))
+                            and PLAN_ADDED.search(t)):
+                        st['queued'] = True
                     if m := TASK_STARTED.search(t):
                         tid = m[1] or m[2]
                         persistent = (call.get('input') or {}).get('persistent')
                         if (e := EXPIRES.search(t)) and at and not persistent:
                             expiry[tid] = at + int(e[1]) * {'s': 1, 'm': 60, 'h': 3600}[e[2]]
                         st['running'].add(tid)
-            if person_message(d):
+            if person_turn(d):  # F56: not a slash command (the runner's /rename) or a hook's or system turn
                 st['last'], st['text'] = 'person', ''
+                st['said'] += 1
                 if at:
                     st['at'] = max(st['at'], at)
     now = time.time()
@@ -8482,12 +8531,14 @@ def control_state(rows) -> dict:
 
 
 def control_cfg() -> dict:
-    """`[run] control_close`, `control_idle`, `control_ask_idle` (seconds), `control_open` (lowercase),
-    `control_file_asks`, `control_ask_kind`."""
+    """`[run] control_close`, `control_idle`, `control_idle_quick` (quick), `control_idle_talked` (talked),
+    `control_ask_idle` (seconds; 0 off), `control_open` (lowercase), `control_file_asks`, `control_ask_kind`."""
     r = C.run
     opens = r.get('control_open', ['?', 'want me to', 'should i'])
     return {'close': r.get('control_close', True) is not False,
             'idle': duration(r.get('control_idle', '3h'), 10800.0),
+            'quick': duration(r.get('control_idle_quick', '5m'), 300.0),
+            'talked': duration(r.get('control_idle_talked', '12h'), 43200.0),
             'ask_idle': duration(r.get('control_ask_idle', '2h'), 7200.0),
             'open': [str(p).lower() for p in ([opens] if isinstance(opens, str) else opens or [])],
             'file_asks': r.get('control_file_asks', True) is not False,
@@ -8523,9 +8574,13 @@ def control_renamed(st: dict, n: int = 0) -> bool:
     return bool(t) and not (n and t in (control_name(n), control_base_name(n), control_given(n)))
 
 
-def control_verdict(st: dict, cf: dict, now: float, n: int = 0) -> tuple[str, str]:
+def control_verdict(st: dict, cf: dict, now: float, n: int = 0, one_ask: bool = False) -> tuple[str, str]:
     """('close' | 'ask' | 'keep', why or the question) for control session `n`'s state `st` (`control_state`).
-    One the person renamed is kept (B41): they named it to keep it."""
+    One the person renamed is kept (B41): they named it to keep it. F56, which idle time applies: a session the
+    person sent more than one message in, `control_idle_talked` (for an open question too, when longer than
+    `control_ask_idle`); one opened for one ask (`one_ask`: the runner gave it its first message) that the person
+    sent nothing more to and that queued a task, with no open question, `control_idle_quick`; else (or with that
+    tier off) `control_idle`."""
     if control_renamed(st, n):
         return 'keep', 'renamed by the person'
     if st['last'] != 'claude':
@@ -8533,12 +8588,20 @@ def control_verdict(st: dict, cf: dict, now: float, n: int = 0) -> tuple[str, st
     if st['running']:
         return 'keep', f'{len(st["running"])} background task(s) still running'
     quiet = now - st['at'] if st['at'] else 0
+    talked = st.get('said', 0) > 1 and cf.get('talked')
     if q := open_question(st['text'], cf['open']):
-        if cf['ask_idle'] and quiet >= cf['ask_idle']:
+        wait = max(cf['ask_idle'], cf['talked']) if talked and cf['ask_idle'] else cf['ask_idle']
+        if wait and quiet >= wait:
             return 'ask', q
         return 'keep', 'its open question is not old enough'
-    if cf['idle'] and quiet >= cf['idle']:
-        return 'close', f'idle {int(quiet // 60)} min'
+    if talked:
+        idle, tier = cf['talked'], ' (talked)'
+    elif one_ask and st.get('said', 0) == 1 and st.get('queued') and cf.get('quick'):
+        idle, tier = cf['quick'], ' (one ask, queued)'
+    else:
+        idle, tier = cf['idle'], ''
+    if idle and quiet >= idle:
+        return 'close', f'idle {int(quiet // 60)} min{tier}'
     return 'keep', 'active lately'
 
 
@@ -8603,7 +8666,7 @@ def close_controls(branch: str = '', force: bool = False, now: float | None = No
         if not sid or not transcript(sid):
             continue
         st = control_state(entries(sid, skip_bad=True))
-        verdict, why = control_verdict(st, cf, now, n)
+        verdict, why = control_verdict(st, cf, now, n, control_one_ask(n, sid))
         if verdict == 'keep':
             continue
         link = control_link(st['bridge'])

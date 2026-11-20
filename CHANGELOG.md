@@ -4,6 +4,13 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Idle control sessions close at two more speeds: one the runner opened for a single ask (a reply from the
+  feed) that ended with a task queued, no open question and no second message from the person closes after
+  `[run] control_idle_quick` (5 min); one the person sent a second message in stays `[run]
+  control_idle_talked` (12 h), on an open question too. Everything else keeps `control_idle`; false turns a
+  tier off, and c1 is still never closed. The runner's `/rename` and hook or system turns no longer count as
+  the person speaking last (F56).
+
 - Control sessions push what the person asked to hear: "notify me when" on the session's own background
   work (a subagent or `take` it started) now ends in a PushNotification when that work reports, not just a
   line in the conversation; finished or stuck takes and anything that needs the person are pushed unasked

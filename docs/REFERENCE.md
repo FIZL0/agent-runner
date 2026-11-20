@@ -870,6 +870,8 @@ silent = "launch"         # phone pushes from those sessions: launch = none whil
 control = true            # a run opens control session c1 beside it; false: none (`agent-runner control` still works)
 control_close = true      # close idle control sessions 2, 3, … (never c1): process ended, controlN.pid removed, transcript kept (`claude --resume <sid>`)
 control_idle = "3h"       # closed once quiet this long, Claude spoke last, its last message is no open question, and nothing runs in it (a background task or Monitor; the needs-you watch does not count)
+control_idle_quick = "5m"   # a session opened for one ask (a feed reply, `control --new --ask`) where the person sent only that message, a task got queued (`plan add` printed "added <ID>") and the last message is no open question: closed after this instead (looked at every 5 min, so 5-10 min); false: control_idle
+control_idle_talked = "12h" # a session the person sent a second message in: closed after this instead, and an open question in it waits this long too when longer than control_ask_idle; false: control_idle. Slash commands (the runner's /rename), hook and system turns are not the person's messages
 control_ask_idle = "2h"   # a last message that is an open question: after this long it is filed under Needs you as a DECIDE item (the question + the session link), then closed
 control_open = ["?", "want me to", "should i", "shall i", "would you like", "do you want"]  # what makes a last message open (case ignored; "?" must end its last paragraph, the rest may stand anywhere in it)
 control_file_asks = true  # false: an open question's session closes after control_ask_idle without filing it
