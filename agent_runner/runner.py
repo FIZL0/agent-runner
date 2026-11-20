@@ -6903,7 +6903,10 @@ def control_argv(n: int, sid: str, resume: bool, blank: bool = False, ask: str =
 
 def control_live(n: int) -> int:
     """The pid control session `n` runs as (`<notes>/control<n>.pid`: "pid sid"), or 0. The sid in its command
-    line tells it from a process that got the pid since (where the command line can be read)."""
+    line tells it from a process that got the pid since (where the command line can be read). B59: after /clear
+    or /new the pid file holds the new sid (`control_session_start`) while the argv keeps the --session-id it
+    started with, so a process whose argv names a control file (its control-settings.json) also counts: tested
+    as a substring of each arg, since `plat.cmdline` gives a list."""
     try:
         pid_s, _, sid = C.notes(f'control{n}.pid').read_text(encoding='utf-8').strip().partition(' ')
         pid = int(pid_s)
@@ -6912,7 +6915,7 @@ def control_live(n: int) -> int:
     if not plat.alive(pid) or pid == os.getpid():
         return 0
     args = plat.cmdline(pid)
-    return pid if args is None or not sid or sid in args or 'control' in args else 0
+    return pid if args is None or not sid or sid in args or any('control' in a for a in args) else 0
 
 
 def control_number() -> int:

@@ -1138,6 +1138,30 @@ def test_control(repo: Path):
         p.kill()
         p.wait()
     eq(R.control_live(1), 0, 'a dead pid is not a session')
+    # B59: control 2 did /new, so its pid file holds a sid its argv (the original --session-id) does not
+    p = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)', '--session-id', 'old-sid',
+                          '--settings', str(repo / '.runner/control-settings.json')])
+    q = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)', '--session-id', 'other'])
+    try:
+        (repo / '.runner/control1.pid').write_text(f'{q.pid} {sid}')
+        (repo / '.runner/control2.pid').write_text(f'{p.pid} new-sid')
+        eq(R.control_live(2), p.pid, 'a control session that did /new stays live')
+        eq(R.control_live(1), 0, 'a pid now held by another process is not a session')
+        (repo / '.runner/control1.pid').write_text(f'{os.getpid()} {sid}')
+        eq(R.control_number(), 1, 'c1 free: the first is c1')
+        p2 = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)', 'control'])
+        try:
+            (repo / '.runner/control1.pid').write_text(f'{p2.pid} {sid}')
+            eq(R.control_number(), 3, 'control 2 after /new is skipped: the next is 3')
+        finally:
+            p2.kill()
+            p2.wait()
+    finally:
+        for x in (p, q):
+            x.kill()
+            x.wait()
+    (repo / '.runner/control1.pid').unlink(missing_ok=True)
+    (repo / '.runner/control2.pid').unlink(missing_ok=True)
 
     dc = R.control_default_command(repo)
     check(dc.startswith(f'cd {repo} && ') and ' control ' in dc + ' ' and dc.endswith('|| exec "${SHELL:-/bin/sh}"'),
