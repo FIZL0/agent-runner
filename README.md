@@ -232,6 +232,11 @@ where the remaining tokens go, by kind of tool call.
   ends. Bare `agent-runner wizard` runs the one that waits, or lists them when there are several. Its
   template comes from [mattpocock/skills](https://github.com/mattpocock/skills/tree/main/skills/engineering/wizard)
   (MIT). `[run] wizards = false` turns it off.
+- **Choices come as a pick sheet.** When an agent needs you to choose (options, settings to change or keep),
+  it publishes a page of plain questions with the recommended answers preselected, and Needs you shows one
+  line with its link. Send gives a line to paste in the chat with the run, or reply go for the recommended
+  set; the task reopens with your answers noted (`agent-runner sheet <ID>`). `[run] questionnaires = false`
+  turns it off.
 - **Start small.** `once`, then 2 or 3 slots. More only helps when the plan has that many tasks on
   different files, and usage limits are per account: five slots spend them five times as fast.
 

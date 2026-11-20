@@ -14,6 +14,15 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
   writes the goal and a first task list through `plan goal` / `plan add`, the gate and a short notes section
   in CLAUDE.md or AGENTS.md. It ends with what it set up and `agent-runner` to start. On a repo with a plan it
   asks first (`--yes` skips the question). It heads the person section of `--help` (F49).
+- Choices come as a pick sheet. An agent that blocks with `DECIDE:` on options writes them as plain questions
+  with 2-3 answers each (no option numbers) to `.runner/sheets/<ID>.json`, renders the page with
+  `agent-runner sheet <ID> --html FILE` and publishes it: questions grouped by kind of change, answer buttons
+  with the recommended one preselected and labelled, a collapsible Why, and a sticky bar with "N changes
+  picked", Recommended and Send. Needs you, the feed and the control brief show one line, "<what is ready>.
+  Pick on the sheet or reply go", with the sheet's link. Send gives a reply line (`R7 picks: backend=a …`);
+  pasted in the chat, the session runs `agent-runner sheet R7 --picks "…"`, and "go" runs `sheet R7 --go`
+  (the recommended set). Either reopens the task with each answer spelled out in its note. `[run]
+  questionnaires = false` turns it off (F18).
 
 ## 0.54.0 (2026-11-20)
 

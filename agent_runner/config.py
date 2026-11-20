@@ -121,6 +121,8 @@ DEFAULTS: dict = {
         'rules_pointer': True,  # a run adds one line to the rules file (`rules`, AGENTS.md, CLAUDE.md) pointing at it
         'wizards': True,        # F17: an agent blocking with BLOCKED: (a login, cert, secret) writes a bash wizard
                                 # to <notes>/wizards/<ID>.sh; Needs you shows `agent-runner wizard <ID>` to run it
+        'questionnaires': True, # F18: a DECIDE with options is asked as a pick sheet (<notes>/sheets/<ID>.json, a
+                                # page with `agent-runner sheet <ID>`); Needs you shows one line and its link
         'review': True,         # F28: before done, a fresh subagent reads the diff against the task's brief (spec
                                 # only: missing, unasked, wrong); the commit ends 'review: …'; false: no review
         'review_min_lines': 50, # a diff smaller than this (changed lines) skips the review, unless the task has a
