@@ -2333,6 +2333,11 @@ def test_feed_handoff_b74():
                 rc, argv = new(ask=ask)
             check('--feed-sid' in argv, 'B74: a feed transcript still missing after FEED_WAIT: control N waits for it',
                   argv)
+            write(*base, msg(ask), *companion)
+            eq(R.control_late_files(ask, [], sid, wait=5), (ask, [shot]), 'B74: control N --feed-sid gets it too')
+            last = Path(tdir, 'remote', R.FEED_LOG).read_text().splitlines()[-1]
+            check('control N --feed-sid:' in last and '(--feed-sid)' in last, 'B74: the log names that step and '
+                  'where its feed session id came from', last)
             eq(R.feed_wait(ask, 5, ''), (True, [], 0, ''), 'B74: no feed session at all: nothing to wait for')
             # a stale match: an earlier short message held in the new ask is not the message being handed on
             write(old, res, {**msg('openmx', image=False, uid='o1'), 'imagePasteIds': []}, res)

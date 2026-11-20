@@ -7947,7 +7947,7 @@ def feed_latest(sid: str | None = None) -> tuple[list[str], int, str, str | None
     shown = found = 0  # images in the latest message; image paths recorded for it (B24's two forms count twice)
     version = said = ''
     try:
-        with open(t, encoding='utf-8', errors='replace') as f:
+        with open(t, encoding='utf-8') as f:
             for line in f:
                 FEED_LOOK['lines'] += 1
                 try:
@@ -8022,8 +8022,8 @@ def feed_log(where: str, sid: str, ask: str, took: float, looks: int, out: tuple
     handed on, so a picture that went missing can be traced (B74). Never fails the hand-off."""
     found, got, lost, version = out
     look = FEED_LOOK
-    src = ('env' if sid and os.environ.get('CLAUDE_CODE_SESSION_ID', '').strip() == sid
-           else 'feed.sid' if sid else 'none')
+    src = ('none' if not sid else '--feed-sid' if '--feed-sid' in where
+           else 'env' if os.environ.get('CLAUDE_CODE_SESSION_ID', '').strip() == sid else 'feed.sid')
     said = look.get('said')
     head = lambda s: json.dumps(re.sub(r'\s+', ' ', s)[:60], ensure_ascii=False)
     line = (f'{dt.datetime.now().isoformat(timespec="seconds")} {where}: ask {head(ask)}; sid {sid or "-"} ({src}),'
