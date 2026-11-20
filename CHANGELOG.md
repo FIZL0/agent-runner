@@ -7,6 +7,12 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 - Control sessions queue "do X after T181" with `plan add … --after T181` (or `plan block ID --after T181`
   for a queued task) instead of starting a watcher or Monitor that waits for T181: the run starts the task
   once those merge.
+- The runner feed ("<repo> · runner") carries on across restarts that are not a stop. An upgrade's restart
+  (auto_upgrade, `u`) execs in place, so the board window and its feed stay up as they were. When the feed does
+  have to start again (its board window was replaced or closed, the feed exited, a crashed run was started
+  again), it resumes the same Claude session (`--resume`, its id kept in `<notes>/remote/feed.sid`), so its
+  history and its app entry carry on instead of a new one. A stop still ends it, and the next run's feed is a
+  new session. A resume that fails at once (the transcript is gone) makes the next start a fresh session.
 
 ## 0.50.0 (2026-11-20)
 

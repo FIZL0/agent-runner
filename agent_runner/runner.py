@@ -6667,12 +6667,15 @@ def board_feed(run_pid: int = 0, poll: float = BOARD_POLL) -> int:
     (`run_pid`) has: a plain stop once its tasks are done, a force stop, or a crash. The feed then goes
     offline in the apps and the board window closes. The feed ending on its own ends this too (`keep_board`
     opens it again while the run is up). Ctrl-C is the feed's own (it asks before it exits)."""
+    sid, resume = feed_session() if run_pid else ('', False)  # B15: the run's feed carries on its one session
     try:
-        proc = sp.Popen(feed_argv())
+        proc = sp.Popen([*feed_argv(), *feed_session_args(sid, resume)])
     except OSError as e:
         print(f'board: could not start the runner feed: {e}', file=sys.stderr)
         return 1
-    rec = rc_record('feed', feed_name(), proc.pid, run_pid) if run_pid else None  # B12: one by hand is not the run's
+    t0 = time.monotonic()
+    # B12: one by hand is not the run's
+    rec = rc_record('feed', feed_name(), proc.pid, run_pid, sid) if run_pid else None
     killed = False
     try:
         old = signal.signal(signal.SIGINT, signal.SIG_IGN)  # after the spawn: the child keeps its own Ctrl-C
@@ -6681,7 +6684,12 @@ def board_feed(run_pid: int = 0, poll: float = BOARD_POLL) -> int:
     try:
         while True:
             try:
-                return proc.wait(timeout=poll)
+                rc = proc.wait(timeout=poll)
+                if resume and rc and time.monotonic() - t0 < FEED_RESUME_FAIL:
+                    feed_forget_session()  # its transcript is gone, say: the next start is a fresh session
+                    print(f'board: the runner feed could not resume session {sid} (exit {rc}); the next start '
+                          f'opens a new one', file=sys.stderr)
+                return rc
             except sp.TimeoutExpired:
                 pass
             if run_pid and not plat.alive(run_pid):
@@ -6697,6 +6705,42 @@ def board_feed(run_pid: int = 0, poll: float = BOARD_POLL) -> int:
         rc_forget(rec, killed=killed)
         if old is not None:
             signal.signal(signal.SIGINT, old)
+
+
+FEED_SID = 'feed.sid'  # <notes>/remote/feed.sid: the runner feed's Claude session id, kept until a real stop
+FEED_RESUME_FAIL = 15  # s: a resumed feed failing sooner than this could not resume; the next start is fresh
+SID_RE = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
+
+
+def feed_session() -> tuple[str, bool]:
+    """(session id, resume) for the run's runner feed (B15). The id is kept in <notes>/remote/ from the feed's
+    first start until a real stop (`rc_sweep_stop`), so any restart that is not one (an upgrade's, a board
+    window replaced or closed, the feed exiting, a crashed run started again) resumes the same Claude session:
+    its history and its app entry carry on. None kept yet: a new id, recorded, and a fresh session."""
+    f = C.notes(REMOTE_DIR, FEED_SID)
+    try:
+        sid = f.read_text(encoding='utf-8').strip()
+    except OSError:
+        sid = ''
+    if SID_RE.fullmatch(sid):
+        return sid, True
+    sid = str(uuid.uuid4())
+    try:
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_text(sid + '\n', encoding='utf-8')
+    except OSError:
+        pass
+    return sid, False
+
+
+def feed_session_args(sid: str, resume: bool) -> list[str]:
+    """The agent flags that start the feed's session `sid`, or resume it."""
+    return ['--resume', sid] if resume and sid else ['--session-id', sid] if sid else []
+
+
+def feed_forget_session() -> None:
+    """A real stop (or a resume that failed): the next feed starts a fresh session."""
+    C.notes(REMOTE_DIR, FEED_SID).unlink(missing_ok=True)
 
 
 def board_argv(sess: str, root: Path, cmd: str) -> list[str]:
@@ -6725,7 +6769,7 @@ def feed_argv() -> list[str]:
     else to a new control session; the one watch that pushes what needs the person (PushNotification), so
     control sessions start none. Haiku; Bash (only the runner's command, dontAsk refuses the rest), Monitor;
     its own short system prompt instead of Claude Code's, no settings sources or MCP servers: ~6k tokens a turn.
-    A fresh session at each start."""
+    `board_feed` adds the session flags: one session from the run's first start to a real stop (`feed_session`)."""
     from agent_runner.guide import RUNNER_BRIEF, RUNNER_START
     cmd = C.command
     return [plat.exe(C.run['agent']), RUNNER_START.format(cmd=cmd, repo=ROOT.name),
@@ -7069,4 +7113,5 @@ def rc_sweep_stop() -> None:
     """The run's stop: end its feed and control server now and wait for their teardown, so their entries are
     archived before the run exits (and before a suspend or power-off)."""
     RC_ENDING[0] = True
+    feed_forget_session()  # B15: a real stop ends the feed's session; any other restart resumes it
     rc_sweep(os.getpid(), stopping=True)

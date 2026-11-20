@@ -1592,6 +1592,81 @@ def test_remote_sweep(repo: Path, tmp: Path):
 R_sweep = R.rc_sweep
 
 
+def test_feed_resume(repo: Path, tmp: Path):
+    print('B15: a restart that is not a stop keeps the runner feed (an upgrade\'s exec keeps the run\'s key, so '
+          'its feed is left up) or resumes the same Claude session; a real stop ends it and the next is fresh')
+    import contextlib
+    import io
+    R.init(repo)
+    me = os.getpid()
+    sidf = R.C.notes(R.REMOTE_DIR, R.FEED_SID)
+    argf = tmp / 'feed-argv.json'
+    fake = [sys.executable, '-c', f'import json,sys,time; json.dump(sys.argv[1:], open({str(argf)!r},"w")); '
+                                  'time.sleep(0.3)']
+
+    def start(argv=fake, run_pid=me):
+        argf.unlink(missing_ok=True)
+        with mock.patch.object(R, 'feed_argv', lambda: argv), contextlib.redirect_stderr(io.StringIO()):
+            rc = R.board_feed(run_pid, poll=0.1)
+        return rc, (json.loads(argf.read_text()) if argf.exists() else [])
+
+    keeper = None
+    try:
+        sidf.unlink(missing_ok=True)
+        seen = []
+        orig = R.rc_record
+        with mock.patch.object(R, 'rc_record', lambda *a, **k: seen.append(a) or orig(*a, **k)):
+            _, a1 = start()
+        check('--session-id' in a1 and '--resume' not in a1, 'the first feed starts a session of its own', a1)
+        sid = a1[a1.index('--session-id') + 1]
+        eq(sidf.read_text().strip(), sid, 'its session id is kept in <notes>/remote/')
+        eq(seen[0][4] if len(seen[0]) > 4 else '', sid, 'and recorded with the feed')
+
+        # an upgrade restart execs in place: same pid and start, so the same run key and the same board
+        keeper = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'])
+        R.rc_record('feed', 'repo · runner', keeper.pid, me, sid)
+        eq(R.run_key(me), R.run_key(os.getpid()), 'the run keeps its key across exec')
+        with contextlib.redirect_stdout(io.StringIO()):
+            ended, _ = R.rc_sweep(me, wait=1)
+        eq(ended, [], "the restarted run's sweep leaves its live feed up (no new entry)")
+        check(R.plat.alive(keeper.pid), 'the feed process is still the same one')
+        check(R.board_command().endswith(f'--run-pid {me}'), 'and its board command is unchanged')
+
+        # a feed the board has to start again (window replaced, feed exited, run started again) resumes
+        _, a2 = start()
+        check(a2[a2.index('--resume') + 1] == sid and '--session-id' not in a2,
+              'a restarted feed resumes the same session (history and app entry carry on)', a2)
+        _, a3 = start(run_pid=0)
+        check('--resume' not in a3 and '--session-id' not in a3, 'a feed started by hand is its own', a3)
+        eq(sidf.read_text().strip(), sid, 'and leaves the run\'s session alone')
+
+        # a resume that fails at once (its transcript gone): the next start is fresh, not a loop of failures
+        rc, _ = start(argv=[sys.executable, '-c', 'raise SystemExit(1)'])
+        eq(rc, 1, 'the failed resume ends the board with its code')
+        check(not sidf.exists(), 'and forgets the session')
+        _, a4 = start()
+        check('--session-id' in a4, 'so the next feed starts fresh', a4)
+
+        # a real stop ends the feed and its session: the next run's feed is a new one
+        sid = a4[a4.index('--session-id') + 1]
+        with mock.patch.object(R, 'RC_ENDING', [False]), contextlib.redirect_stdout(io.StringIO()), \
+                mock.patch.object(R, 'rc_sweep', lambda *a, **k: R_sweep(*a, **{**k, 'wait': 3})):
+            R.rc_sweep_stop()
+        keeper.wait(timeout=10)
+        check(not sidf.exists(), 'the stop forgets the feed\'s session')
+        check(not R.plat.alive(keeper.pid), 'and ends the feed')
+        _, a5 = start()
+        check('--session-id' in a5 and a5[a5.index('--session-id') + 1] != sid, 'the next start is a new session', a5)
+    finally:
+        if keeper and keeper.poll() is None:
+            keeper.kill()
+        sidf.unlink(missing_ok=True)
+        d = R.C.notes(R.REMOTE_DIR)
+        if d.is_dir():
+            for f in d.glob('*.json'):
+                f.unlink()
+
+
 def test_take_text_and_here(repo: Path):
     print('take "TEXT" --kind: queue and take in one step; --here carries the main checkout\'s edits along')
     R.init(repo)
@@ -3881,7 +3956,7 @@ def main() -> int:
                        lambda: test_shared_push(repo, tmp), lambda: test_note_on_a_ticked_task(repo), lambda: test_adopt_merge(repo), lambda: test_followups(repo), lambda: test_ci_watch(repo), test_update_notice, test_restart_if_upgraded, test_auto_upgrade, lambda: test_flake_repair(tmp), lambda: test_repair_per_failure(repo),
                        lambda: test_stalled(tmp), lambda: test_take(repo), lambda: test_take_text_and_here(repo), lambda: test_background(repo), lambda: test_attach_flag(repo), lambda: test_remote_auto(tmp), lambda: test_control(repo),
                        lambda: test_short_titles_and_since(repo), lambda: test_board_follows_run(repo, tmp),
-                       lambda: test_remote_sweep(repo, tmp),
+                       lambda: test_remote_sweep(repo, tmp), lambda: test_feed_resume(repo, tmp),
                        lambda: test_concepts_waiting(repo),
                        lambda: test_person_waiting(repo), lambda: test_control_server_old_agent(repo, tmp)])
 
