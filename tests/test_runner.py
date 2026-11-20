@@ -2586,10 +2586,17 @@ def test_prompt_and_hooks(repo: Path):
         R.clear_stop()
         p = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'])
         procs, running = {2: (p.pid, 'sid-x', 0.0)}, {2: ('T9', '', set(), set())}
-        R.end_sessions(procs, running)
+        with mock.patch.object(R, 'transcript', lambda sid: '/t.jsonl'):
+            R.end_sessions(procs, running)
         check(p.wait(timeout=10) is not None and not procs and not running, '`s!` ends the session')
         eq(R.queued().get(2), ('T9', 'sid-x', 'stopped with s!'), 'and queues it to resume in its slot')
         (repo / '.runner/T9.resume').unlink()
+        p = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'])
+        procs, running = {2: (p.pid, 'sid-never', 0.0)}, {2: ('T9', '', set(), set())}
+        with mock.patch.object(R, 'transcript', lambda sid: None):
+            R.end_sessions(procs, running)
+        check(p.wait(timeout=10) is not None and not procs, '`s!` ends a session that never began')
+        eq(R.queued(), {}, 'and queues no resume (--resume would find no session): the task starts afresh')
     finally:
         R.POWER, R.SLOTS = saved
         R.PAUSED[0] = R.FORCED[0] = False

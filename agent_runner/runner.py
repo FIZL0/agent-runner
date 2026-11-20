@@ -572,8 +572,11 @@ def end_sessions(procs: dict, running: dict) -> None:
     worktree stays as the session left it; nothing it did is merged."""
     for n, (pid, sid, _) in list(procs.items()):
         tid = running[n][0]
-        queue_resume(tid, n, sid, 'stopped with s!')
         plat.terminate(pid)
+        if not transcript(sid):  # it never started (held at a dialog): `--resume` would find no session and sit
+            log(f'slot {n}: {tid} ended (s!) before its session began; it starts afresh in the next run')
+            continue
+        queue_resume(tid, n, sid, 'stopped with s!')
         log(f'slot {n}: {tid} ended (s!); it resumes in this slot in the next run')
     procs.clear()
     running.clear()
