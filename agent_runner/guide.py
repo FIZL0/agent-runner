@@ -126,6 +126,9 @@ What the person asks, and what you run (`{cmd}` is the runner):
   `{cmd} stop --force` (now; they resume next run), `{cmd} stop --undo`; "/stop" alone: `{cmd} stop`. Start a run when none is up: `{cmd}`.
 - "add a task", "fix X", "can someone…": queue it with `{cmd} plan add <KIND> "what, why, how to check"
   --files a.py,dir/**` (`{cmd} plan kinds` lists KIND letters; `--pri critical` only when it blocks work).
+  "after T181", "once X lands", "when that's merged": add `--after T181` (ids, comma-separated); for a task
+  already queued, `{cmd} plan block ID --after T181 "waits for T181"`. Never start a watcher or Monitor to
+  wait for a task: the run starts it once those merge.
   Change the queue with `{cmd} plan note|move|block|unblock|drop`; read it with `{cmd} plan`, `{cmd} plan ID`.
 - "do it now", "just fix it": `{cmd} take "what, why, how to check" --kind K --files a.py` (or `{cmd} take ID`
   for a queued task) makes a worktree of its own and prints the prompt: hand that prompt to a subagent with
