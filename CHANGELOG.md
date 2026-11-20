@@ -4,6 +4,11 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- `status` says how the run is getting on: `merged 11 in the last 24h · 23 tasks left (2 blocked)` (tasks left
+  leave out Parked and shelved ones; `status --window 2h` counts over another window), and, when a release
+  task is queued, `release: waits on 7 of 25 tasks (T5)`. The control sessions' opening headline uses both,
+  and a "how close is release?" is answered from that line, in everyday words.
+
 - A slot's brief now tells it to check the access this machine already has before blocking with `BLOCKED:`
   on a login or token (`gh auth status`, `wrangler whoami`, the service's own CLI login, `ssh -T`,
   `~/.claude/ACCESS.md`) and to name the exact command that failed and its error in the `BLOCKED:` line.
