@@ -4725,6 +4725,32 @@ def test_close_idle_controls(repo: Path):
             R.init(repo)
 
 
+def test_plan_last(repo: Path):
+    print('run: F43 a task with `after: all above` starts only once every task above it in its section is done')
+    R.init(repo)
+    head = ['# TODO', '', '### Next', '']
+    rel = '- [ ] **T5** Release: cut the next version | files: CHANGELOG.md | after: all above'
+    fu = ['', '### Follow-ups', '', '- [ ] **B9** a follow-up | files: z.py']
+    plan = {'ls': []}
+    saved = R.plan_text
+    R.plan_text = lambda branch: plan['ls']
+    try:
+        ids = lambda: [t[0] for t in R.tasks('main')]
+        plan['ls'] = head + ['- [ ] **F1** one | files: a.py', '- [~] **F2** two BLOCKED: (after F1) waits', rel] + fu
+        eq(ids(), ['F1', 'B9'], 'held while an open or a blocked task above it is not done')
+        plan['ls'] = head + ['- [~] **F2** two BLOCKED: DECIDE: which?', rel] + fu
+        eq(ids(), ['T5', 'B9'], 'picked once the rest are done: a task blocked on a person does not hold it, '
+                                'nor does an open Follow-up')
+        eq(R.pick({}, set(), 'main')[0], 'T5', 'and a free slot takes it')
+        plan['ls'] = head + ['- [ ] **F7** added later | files: q.py', '- [~] **F2** two BLOCKED: DECIDE: which?', rel] + fu
+        eq(ids(), ['F7', 'B9'], 'a task added above it later holds it again')
+        eq(R.release_line(plan['ls']), 'release: waits on 1 of 1 task (T5): F7', 'status names what it still waits on')
+        plan['ls'] = head + [rel.replace('Release: cut the next version', 'Tidy up last')] + fu
+        eq(R.release_line(plan['ls']), 'last: ready, nothing left to wait on (T5)', 'a non-release last task gets a line too')
+    finally:
+        R.plan_text = saved
+
+
 def test_progress_and_release(repo: Path):
     print('status: merged in the window, tasks left and blocked, and how close a queued release is')
     R.init(repo)
@@ -4785,7 +4811,8 @@ def main() -> int:
                        lambda: test_person_waiting(repo), lambda: test_control_server_old_agent(repo, tmp),
                        lambda: test_drop_or_change_running(repo), lambda: test_tell_running(repo),
                        lambda: test_close_idle_controls(repo), lambda: test_renamed_control_kept(repo),
-                       lambda: test_control_summary_title(repo), lambda: test_control_task_name(repo), lambda: test_progress_and_release(repo)])
+                       lambda: test_control_summary_title(repo), lambda: test_control_task_name(repo), lambda: test_progress_and_release(repo),
+                       lambda: test_plan_last(repo)])
 
 
 if __name__ == '__main__':

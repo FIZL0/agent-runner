@@ -303,7 +303,11 @@ waiting for your OK on <url>`. That block names no task, so no run starts it and
   - `files:` the files the task will touch. The run keeps two running tasks off the same file, and the brief
     pastes them in. Files that don't exist yet count, and so do patterns: `dir/**` and `dir/*.rs`. A path
     meets its own tail (`src/menu.rs` meets `app/src/menu.rs`).
-  - `after:` ids that must be done first. **Every id** listed counts.
+  - `after:` ids that must be done first. **Every id** listed counts. `after: all above` (what `plan add
+    --last` writes, filing the task at the end of Next) is no list: the run resolves it on every pick to each
+    task above it in its own section that is not done, ones added later included, so a release waits for the
+    whole section without a list going stale. Tasks blocked on a person don't hold it until they reopen;
+    Follow-ups never do. `plan reopen`, `plan waiting` and `status` say what it still waits on.
   - `test:` the tests that prove it. `journal:` its journal folder.
   - `plan add P "text" --files a,b --after X --test name` writes them.
 - `BLOCKED: (after X, Y) why` is what `plan block`/`done --blocked` write. The `(after …)` list is what

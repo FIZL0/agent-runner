@@ -768,7 +768,7 @@ def tasks(branch: str) -> list[tuple[str, str, set[str], set[str]]]:
     # open and blocked: neither is done, so a split parent or an `after:` still waits on a blocked X
     open_ids = {m.group(2) for l in ls if (m := TASK.match(l)) and m.group(1) != 'x'}
     out, section = [], ''
-    for l in ls:
+    for i, l in enumerate(ls):
         if l.startswith('### '):
             section = l[4:]
             continue
@@ -776,6 +776,8 @@ def tasks(branch: str) -> list[tuple[str, str, set[str], set[str]]]:
         if not m or m.group(1) != ' ' or section.startswith(P.SKIPPED):
             continue
         tid, f = m.group(2), P.fields(l)
+        if P.LAST in f.get('after', []):  # `after: all above`, resolved afresh on every pick (F43)
+            f['after'] = P.waits_on(ls, i)
         # a split parent: its subtasks run first, blocked ones included, then it runs (or `archive` ticks it).
         # Read by id and by its `(split into …)` list, never by the words alone, so prose that happens to say
         # "split into" is not taken for a split
@@ -5783,21 +5785,25 @@ RELEASE_TASK = re.compile(r'\W*(?:release\b|cut (?:a|the next) (?:release|versio
 def release_line(ls: list[str]) -> str:
     """'release: waits on 7 of 25 tasks (T5)' for each queued release task in TODO.md's lines `ls` (one whose
     title starts "Release" or "Cut the next version"): of the tasks it waits on (its last block's `(after …)`,
-    else its `after:` field), how many are still open. '' when none is queued."""
+    else its `after:` field), how many are still open. '' when none is queued. A task whose `after:` says
+    `all above` (`plan add --last`, F43) gets a line too, 'last:' unless it is a release, naming what holds it."""
     live, out, section = P.open_ids(ls), [], ''
     for i, l in enumerate(ls):
         if l.startswith('### '):
             section = l[4:].strip()
             continue
         m = TASK.match(l)
-        if not m or m.group(1) not in ' ~' or section.startswith(P.SKIPPED) or not RELEASE_TASK.match(m.group(3)):
+        last = bool(m) and P.LAST in P.fields(l).get('after', [])
+        if not m or m.group(1) not in ' ~' or section.startswith(P.SKIPPED) or not (RELEASE_TASK.match(m.group(3)) or last):
             continue
+        kind = 'release' if RELEASE_TASK.match(m.group(3)) else 'last'
         w = P.WAITS.findall(' '.join(P._item_block(ls, i))) if m.group(1) == '~' else []
-        ids = [t.strip() for t in w[-1].split(',') if t.strip()] if w else P.fields(l).get('after', [])
+        ids = [t.strip() for t in w[-1].split(',') if t.strip()] if w else P.waits_on(ls, i)
         ids = [t for t in dict.fromkeys(ids) if t != m.group(2)]
-        waiting = sum(t in live for t in ids)
-        out.append(f'release: waits on {waiting} of {len(ids)} task{"" if len(ids) == 1 else "s"} ({m.group(2)})'
-                   if waiting else f'release: ready, nothing left to wait on ({m.group(2)})')
+        held = [t for t in ids if t in live]
+        named = f': {", ".join(held[:6])}{" …" if len(held) > 6 else ""}' if last and not w else ''
+        out.append(f'{kind}: waits on {len(held)} of {len(ids)} task{"" if len(ids) == 1 else "s"} ({m.group(2)}){named}'
+                   if held else f'{kind}: ready, nothing left to wait on ({m.group(2)})')
     return '\n'.join(out)
 
 

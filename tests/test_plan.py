@@ -819,8 +819,42 @@ def test_goal():
     has(guide.CONTROL, r'plan goal "TEXT"', 'the control brief says to reword a stale goal with plan goal')
 
 
+def test_plan_last():
+    print('plan: add --last files at the end of Next with `after: all above`, resolved to what is above it now')
+    t, where, keyed, _, _ = plan.add_args(['the release', '--files', 'CHANGELOG.md', '--last'])
+    eq((t, where, keyed), ('the release', 'bottom', ' | files: CHANGELOG.md | after: all above'),
+       '--last: the bottom of the leading section, `after: all above`')
+    eq(plan.add_args(['r', '--after', 'X1,Y2', '--last'])[2], ' | after: X1, Y2, all above',
+       'beside --after ids, the marker comes last')
+    eq(plan.add_args(['r', '--last', '@', 'top'])[1], 'top', '@ WHERE still overrides the place')
+    with tempfile.TemporaryDirectory() as tmp:
+        d = Path(tmp) / 'plan'
+        todo, done = plan.ensure(d / 'TODO.md', d / 'DONE.md')
+        kw = dict(todo=todo, done=done)
+        plan.add('F', 'one | files: a.py', 'bottom', **kw)
+        plan.add('F', 'two | files: b.py', 'bottom', **kw)
+        rel = plan.add('T', 'release' + keyed, where, **kw)
+        plan.add('B', 'a follow-up | files: c.py', pri='normal', **kw)
+        plan.add('C', 'a person asks | files: d.py', 'before', rel, **kw)
+        plan.block('C1', 'DECIDE: which one?', todo=todo)
+        eq([l[4:] for l in plan.index(todo) if l[:4] in ('[ ] ', '[~] ')], ['F1', 'F2', 'C1', 'T1', 'B1'],
+           'the last task sits at the end of Next, the follow-up in its own section below')
+        eq(plan.last_waits(todo), [('T1', ['F1', 'F2'])],
+           'it waits on every task above it in Next, not on one blocked on a person, nor on Follow-ups')
+        plan.add('F', 'three | files: e.py', **kw)  # a person's task: the top of Next
+        eq(plan.last_waits(todo), [('T1', ['F3', 'F1', 'F2'])], 'a task added above it later holds it too')
+        has('\n'.join(plan.last_lines(todo)), r'T1 waits on all above: F3, F1, F2 \(3 open\)', 'last_lines says so')
+        for tid in ('F1', 'F2', 'F3'):
+            plan.tick(tid, **kw)
+        eq(plan.last_waits(todo), [('T1', [])], 'once they are done it waits on nothing')
+        plan.unblock('C1', 'answered: the first', todo=todo)
+        eq(plan.last_waits(todo), [('T1', ['C1'])], 'a person-blocked task reopened holds it again')
+        plan.block('C1', 'needs F9 first', todo=todo, after=[])
+        eq(plan.last_waits(todo), [('T1', ['C1'])], 'a task blocked on something other than a person still holds it')
+
+
 if __name__ == '__main__':
-    sys.exit(report([test_goal,test_plan_roundtrip, test_plan_reopen, test_plan_index_and_sections, test_brief, test_brief_outline,
+    sys.exit(report([test_plan_last, test_goal,test_plan_roundtrip, test_plan_reopen, test_plan_index_and_sections, test_brief, test_brief_outline,
                      test_split_parents, test_add_bottom, test_add_pri, test_add_subtask, test_kinds, test_need_files, test_add_stray_args, test_hand_edits_commit, test_similar, test_add_refuses_a_duplicate, test_carry_notes,
                      test_merge3, test_concurrent_add, test_merge_driver, test_concepts, test_needs_you,
                      test_needs_config]))

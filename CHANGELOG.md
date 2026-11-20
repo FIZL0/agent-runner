@@ -4,6 +4,12 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- `plan add … --last` files a task at the end of Next with `after: all above`, a marker the run resolves on
+  every pick to each task above it in its own section that is not done (ones added later included), so an
+  end-of-queue task like a release waits for the whole section without a hand-kept `after:` list going
+  stale. Tasks blocked on a person don't hold it until they reopen, and Follow-ups never do. `plan reopen`,
+  `plan waiting` and `status` say what it still waits on. The release task T5 uses it now.
+
 - The idle-stop waiter (`run --stop-waiter`) exits as soon as the session it watches is gone, also during
   its grace, instead of sleeping out the grace (up to hours) and then signalling a pid that may since belong
   to another process.
