@@ -6206,14 +6206,14 @@ def control_skills_dir() -> Path:
     """`<notes>/control-skills`: a directory only control sessions add (`--add-dir`, and the settings'
     additionalDirectories), holding `.claude/skills/control/SKILL.md`, the /control slash command that opens
     another control session. Never in the person's repo files."""
-    from agent_runner.guide import CONTROL_SKILL_TEXT
-    f = C.notes('control-skills', '.claude', 'skills', CONTROL_SKILL, 'SKILL.md')
-    text = CONTROL_SKILL_TEXT.format(cmd=C.command, name=CONTROL_SKILL)
-    try:
-        if not f.is_file() or f.read_text(encoding='utf-8') != text:
-            f.write_text(text, encoding='utf-8')
-    except OSError:
-        pass
+    from agent_runner.guide import control_skills  # /control, and the opening hints line's /run /since …
+    for name, text in control_skills(C.command, CONTROL_SKILL).items():
+        f = C.notes('control-skills', '.claude', 'skills', name, 'SKILL.md')
+        try:
+            if not f.is_file() or f.read_text(encoding='utf-8') != text:
+                f.write_text(text, encoding='utf-8')
+        except OSError:
+            pass
     return f.parents[3]
 
 
