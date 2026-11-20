@@ -4,6 +4,11 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+## 0.53.1 (2026-11-20)
+
+- `s!` (`stop --force`) on a session that never began (held at a dialog, so no transcript) no longer queues
+  it to resume: `claude --resume` found no session and the slot sat there. The task starts afresh (B63).
+
 ## 0.53.0 (2026-11-20)
 
 - Windows: slots no longer hang in their hidden console on Claude Code's "Do you trust this folder?" dialog.
