@@ -142,7 +142,7 @@ task to fix X" (it files it with `plan add`), "do X now" (it uses `take`, never 
   the main checkout (output in `.runner/control-server.log`), restarted when it exits (Remote Control quits
   after about 10 minutes offline; 30 s, doubling to 10 minutes while it keeps failing), so new control
   sessions can be started from the app. The run's end ends it. The slots stay local unless `[run]
-  remote_slots = true`, which starts each as "<repo> · s2 · B646".
+  remote_slots = true`, which starts each as "<task title> · <repo> s2 · B646".
 - **`remote = "auto"`, the default**, is on when Remote Control can work: Claude Code on a claude.ai login.
   It is off, with one `run.log` line saying why (`remote control off: …`), when the backend is pi, the agent
   is Copilot CLI, `ANTHROPIC_API_KEY` or `ANTHROPIC_AUTH_TOKEN` is set, `CLAUDE_CODE_USE_BEDROCK`, `_VERTEX` or
@@ -804,7 +804,7 @@ backend = ""              # claude or pi; empty detects pi from the agent execut
 model = "opus"
 lean = true               # sessions get Bash/Read/Edit/Write/Artifact only, no MCP servers or user settings
 remote = "auto"           # control sessions on Remote Control, and a control server to start more from claude.ai/code or the Claude apps; Enter in the runner's pane opens it. auto: on where it can work (see Control sessions); true/false force it
-remote_slots = false      # the slots on Remote Control too ("<repo> · s2 · B646")
+remote_slots = false      # the slots on Remote Control too ("<task title> · <repo> s2 · B646")
 silent = "launch"         # phone pushes from those sessions: launch = none while they start, true = none ever, false = Claude Code's usual
 control = true            # a run opens control session c1 beside it; false: none (`agent-runner control` still works)
 auto_upgrade = false      # upgrade by itself when a newer release is out, as `u` does, once no merge runs; the run restarts on it

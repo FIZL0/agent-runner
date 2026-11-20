@@ -103,7 +103,7 @@ DEFAULTS: dict = {
         'remote': 'auto',       # control sessions on Remote Control, and a control server there to start more:
                                 # the run, watched and steered from claude.ai/code and the Claude apps; auto = on
                                 # when it can work (Claude Code on a claude.ai login), true/false force it
-        'remote_slots': False,  # the slots on Remote Control too, each "<repo> · s2 · B646"
+        'remote_slots': False,  # the slots on Remote Control too, each "<task title> · <repo> s2 · B646"
         'silent': 'launch',     # phone pushes from the run's Remote Control sessions: launch = none while they
                                 # start (later ones arrive), true = none ever, false = Claude Code's usual
         'control': True,        # a run opens control session c1 beside it (`agent-runner control`); false: none

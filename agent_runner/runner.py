@@ -1354,13 +1354,28 @@ def remote_line() -> str:
 
 
 def remote_flags(name: str, cwd: Path | None) -> list[str]:
-    """`[run] remote_slots`: the session shows in claude.ai/code and the Claude apps as "<repo> · s2 · B646", where a
-    person can watch it and type to it. Claude Code only, and only an interactive session (not Pi, not Copilot).
+    """`[run] remote_slots`: the session shows in claude.ai/code and the Claude apps as "<task title> · <repo> s2 ·
+    B646" (the title leads, the id stays for referring to it), where a person can watch it and type to it. Claude
+    Code only, and only an interactive session (not Pi, not Copilot).
     (`[run] remote` alone puts only the control sessions there: `control_argv`.)"""
     if not remote_slots_on():
         return []
     tid = git('branch', '--show-current', cwd=cwd).stdout.strip().removeprefix('task/') if cwd else ''
-    return ['--remote-control', ' · '.join(x for x in (ROOT.name, name.replace('slot', 's'), tid) if x)]
+    title = short_title_of(tid, 50) if tid else ''
+    return ['--remote-control', ' · '.join(x for x in (title, f"{ROOT.name} {name.replace('slot', 's')}", tid) if x)]
+
+
+def short_title_of(tid: str, width: int = 60) -> str:
+    """Task `tid`'s `short_title` from TODO.md or DONE.md, '' when neither has it."""
+    for f in (C.todo, C.done):
+        try:
+            text = f.read_text(encoding='utf-8')
+        except OSError:
+            continue
+        for l in text.splitlines():
+            if (m := TASK.match(l)) and m.group(2) == tid:
+                return short_title(m.group(3), width)
+    return ''
 
 
 def agent_cmd(prompt: str, sid: str, model: str, idle: int, name: str, resume: bool = False,

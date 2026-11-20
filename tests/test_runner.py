@@ -1460,8 +1460,13 @@ def test_prompt_and_hooks(repo: Path):
         eq(opened, [R.REMOTE_URL], 'with [run] remote, Enter opens the sessions page')
         eq(flags, [], '[run] remote alone leaves the slots local (only control sessions go on Remote Control)')
         with mock.patch.dict(R.C.run, {'remote_slots': True}):
-            eq(R.remote_flags('slot2', None), ['--remote-control', f'{R.ROOT.name} · s2'],
+            eq(R.remote_flags('slot2', None), ['--remote-control', f'{R.ROOT.name} s2'],
                'with [run] remote_slots a slot starts on Remote Control, named')
+            with mock.patch.object(R, 'git', return_value=mock.Mock(stdout='task/F10\n')), \
+                    mock.patch.object(R, 'short_title_of', return_value='Attach to the background run'):
+                eq(R.remote_flags('slot2', R.ROOT), ['--remote-control',
+                                                     f'Attach to the background run · {R.ROOT.name} s2 · F10'],
+                   'the task title leads the session name, its id last')
         eq(R.remote_flags('slot2', None), [], 'no Remote Control unless [run] remote_slots')
         R.write_state({1: ('T3', '', set(), set())})
         with mock.patch.object(R, 'run_up', lambda: True), mock.patch.object(R, 'init', lambda: None):
