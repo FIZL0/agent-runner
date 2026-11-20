@@ -1809,6 +1809,39 @@ def test_short_titles_and_since(repo: Path):
                 write(hum({'type': 'image'}, {'type': 'text', 'text': 'x'}), meta('[Image: source: /u/d.png]'),
                       pics('/u/d.png'))
                 eq(R.feed_scan()[1], 0, 'an image recorded both ways is not counted as lost')
+                import contextlib
+                import io
+                opened = []
+
+                def new_window(*a, **k):
+                    opened.append(a)
+                    return subprocess.CompletedProcess(a, 0, '%9\n' if a[0] == 'new-window' else '', '')
+                late = lambda: (R.time.sleep(0.6), tr.write_text(tr.read_text() + ''.join(json.dumps(e) + '\n' for e in (
+                    hum({'type': 'image'}, {'type': 'text', 'text': 'how many have "merged"?'}),
+                    meta(f'[Image: source: {src}]')))))
+                quiet = contextlib.redirect_stdout(io.StringIO())
+                with mock.patch.object(R, 'tmux', new_window), mock.patch.object(R, 'control_live', lambda n: None), \
+                        mock.patch.object(R, 'control_new_session', lambda: 'ar-proj'), \
+                        mock.patch.object(R.shutil, 'which', lambda x: '/usr/bin/tmux'), \
+                        mock.patch.object(R, 'remote_on', lambda: False):
+                    write(hum({'type': 'text', 'text': 'older, text only'}), res)
+                    th = R.threading.Thread(target=late)
+                    th.start()
+                    with quiet:
+                        rc = R.control_new(9, ask='how many have merged?')
+                    th.join()
+                    cmd = next(c for c in opened if c[0] == 'new-window')[-1]
+                    check(rc == 0 and src in cmd and 'could not be passed on' not in cmd,
+                          'B46: a photo whose message reaches the feed transcript just after control --new starts '
+                          'is still passed on', cmd)
+                    opened.clear()
+                    t0 = time.monotonic()
+                    with contextlib.redirect_stdout(io.StringIO()):
+                        rc = R.control_new(9, ask='how many have merged?')
+                    took = time.monotonic() - t0
+                    cmd = next(c for c in opened if c[0] == 'new-window')[-1]
+                    check(rc == 0 and took < 1 and src in cmd, 'B46: no wait once the transcript holds the message',
+                          took)
                 write(hum({'type': 'image'}), pics('/u/c.png'))
                 Path(tdir, 'feed.sid').unlink()
                 eq(R.feed_images(), [], 'no feed.sid and no session env: nothing')
