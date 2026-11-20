@@ -1864,6 +1864,33 @@ def test_short_titles_and_since(repo: Path):
                     cmd = next(c for c in opened if c[0] == 'new-window')[-1]
                     check(rc == 0 and took < 1 and src in cmd, 'B46: no wait once the transcript holds the message',
                           took)
+                    # B57: the message (3 images) lands well after FEED_WAIT (8 s in the field, scaled down here)
+                    shots = [f'/tmp/claude-1000/p/7479c552/images/{i}.png' for i in (1, 2, 3)]
+                    later = lambda: (R.time.sleep(1.2), tr.write_text(tr.read_text() + ''.join(
+                        json.dumps(e) + '\n' for e in (hum({'type': 'image'}, {'type': 'image'}, {'type': 'image'},
+                                                           {'type': 'text', 'text': 'fix these three'}),
+                                                       pics(*shots)))))
+                    write(hum({'type': 'text', 'text': 'older'}), pics('/u/old.png'), res)
+                    opened.clear()
+                    th = R.threading.Thread(target=later)
+                    th.start()
+                    with quiet, mock.patch.object(R, 'FEED_WAIT', 0.3):
+                        rc = R.control_new(9, ask='fix these three')
+                    cmd = next(c for c in opened if c[0] == 'new-window')[-1]
+                    check(rc == 0 and f'--feed-sid {sid}' in cmd and '/u/old.png' not in cmd
+                          and not any(s in cmd for s in shots),
+                          'B57: a message not in the transcript after FEED_WAIT: the new session waits for it '
+                          "itself (--feed-sid), and the previous message's files are not taken", cmd)
+                    ask2, files = R.control_late_files('fix these three', [], sid, wait=10)
+                    th.join()
+                    eq((ask2, files), ('fix these three', shots),
+                       'B57: control N --feed-sid waits for the late message and gets --file for each image')
+                    ask2, files = R.control_late_files('something never written', ['/u/x.png'], sid, wait=0.3)
+                    check(files == ['/u/x.png'] and 'could not read them' in ask2
+                          and ask2.startswith('something never written'),
+                          'B57: when the message never shows, the first message says attachments may be missing', ask2)
+                    eq(R.control_late_files('hi', [], '', wait=5), ('hi', []),
+                       'B57: no feed transcript to read: no wait, no note')
                 write(hum({'type': 'image'}), pics('/u/c.png'))
                 Path(tdir, 'feed.sid').unlink()
                 eq(R.feed_files(), [], 'no feed.sid and no session env: nothing')
