@@ -4,6 +4,8 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+## 0.52.0 (2026-11-20)
+
 - Spec review before `done` (F28, after mattpocock/skills code-review's Spec axis, MIT): the slot prompt has
   the agent give a fresh subagent only `git diff <base>...HEAD` and `plan brief <ID>`, asking for what is
   missing or partial, what was not asked, and what looks wrong, each quoting the task. Missing and wrong get
@@ -20,6 +22,10 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
   "B", "later") to the item's id themselves and run `plan confirm|change|shelve ID`, asking the person which
   one when they cannot tell. This also fixes `plan add`'s duplicate check: a second `_words` in plan.py had
   shadowed the first, so it matched on ids, fields and stop words again.
+- Bare `agent-runner` in a folder holding `runner.toml` or `plan/TODO.md` but no git (a downloaded copy of
+  `examples/hello`) makes it a repository with its files as the first commit, then starts the run; it used
+  to print the usage. Outside a runner folder it says why git refused, not the whole usage (B58).
+  `examples/hello/runner.toml` drops the removed `[run] mode`.
 
 ## 0.51.0 (2026-11-20)
 
