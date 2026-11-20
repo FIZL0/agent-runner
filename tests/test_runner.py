@@ -1229,6 +1229,125 @@ def test_person_waiting(repo: Path):
            'confirm on a concept approves it, shelved or not')
 
 
+def test_drop_or_change_running(repo: Path):
+    print('B19: plan drop / change on a task a slot runs stops that slot; a dropped branch never reaches main')
+    R.init(repo)
+    git(repo, 'checkout', '-q', 'main')
+    todo = repo / 'plan/TODO.md'
+    todo.write_text(todo.read_text().replace('### Stretch', '- [ ] **H1** the halt | files: dr1.py\n'
+                                             '- [ ] **H2** the change | files: dr2.py\n'
+                                             '- [ ] **H3** finished first | files: dr3.py\n\n### Stretch'))
+    git(repo, 'commit', '-qam', 'plan: H1-H3')
+    git(repo, 'push', '-q', 'origin', 'main')
+    lock = R.plat.lock(R.C.notes('run.lock'))  # this test stands in for the run that is up
+    sessions = []
+
+    def session() -> int:
+        p = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(120)'])
+        sessions.append(p)
+        return p.pid
+
+    def on_slot(n: int, tid: str, f: str) -> Path:
+        d = task_branch(repo, n, tid)
+        (d / f).write_text(f'# {tid}\n', encoding='utf-8')
+        git(d, 'add', '-A'), git(d, 'commit', '-qm', f'{tid}: work')
+        git(d, 'push', '-q', 'origin', f'task/{tid}')
+        (d / 'scratch.txt').write_text('uncommitted\n', encoding='utf-8')
+        return d
+
+    def plan_cmd(*a: str) -> subprocess.Popen:
+        env = {**os.environ}
+        return subprocess.Popen([sys.executable, str(RUN), 'plan', *a], cwd=str(repo), env=env,
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+
+    def asked(tid: str) -> bool:
+        end = time.time() + 30
+        while time.time() < end and not (R.P.halt_dir(R.C) / f'{tid}.json').exists():
+            time.sleep(0.1)
+        return (R.P.halt_dir(R.C) / f'{tid}.json').exists()
+
+    on_main = lambda: git(repo, 'ls-tree', '--name-only', 'main').split()
+    started = []
+    real_start = R.start
+    try:
+        # --- drop mid-run ---
+        d1 = on_slot(1, 'H1', 'dr1.py')
+        pid = session()
+        procs, running = {1: (pid, 'sid-h1', 0)}, {1: ('H1', 'Later', {'dr1.py'}, set())}
+        free_at = {1: R.dt.datetime.max}
+        tried: set[str] = set()
+        R.write_state(running)
+        eq(R.P.run_on(R.C, 'H1'), 's1', 'plan sees from the run state that s1 runs H1')
+        p = plan_cmd('drop', 'H1', 'not wanted after all')
+        check(asked('H1'), 'plan drop leaves a request for the run')
+        R.halts(procs, running, free_at, tried, 'main', 'opus', 30, 2)
+        out, err = p.communicate(timeout=60)
+        check(p.returncode == 0, 'plan drop goes through', err)
+        has(out, r'^dropped H1$', 'it says the plan edit')
+        has(out, r'^dropped H1; stopped s1, removed its work \(reset s1, deleted task/H1, deleted task/H1 from origin\)$',
+            'and what the run did')
+        check(sessions[0].wait(10) is not None, 'the session is ended')
+        eq((procs, running), ({}, {}), 'the slot is no longer running it')
+        check(free_at[1] <= R.dt.datetime.now(), 'and is free for the next task at once')
+        check(git(repo, 'branch', '--list', 'task/H1') == '', 'task/H1 is deleted here')
+        check('task/H1' not in remote_branches(repo.parent), 'and on the remote')
+        eq(git(d1, 'status', '--porcelain'), '', 'the worktree is reset clean')
+        eq(git(d1, 'rev-parse', '--abbrev-ref', 'HEAD'), 'HEAD', 'and detached, off the deleted branch')
+        has((repo / 'plan/DONE.md').read_text(encoding='utf-8'), r'\*\*H1\*\* .*dropped: not wanted after all', 'the plan archives it')
+        eq(R.halt_requests(), {}, 'the request is answered and gone')
+        R.finish('H1', 1, 'sid-h1', 'main')  # the session's exit, had the run reaped it, finds nothing to merge
+        check('dr1.py' not in on_main(), 'nothing of H1 reached main')
+
+        # --- a finished branch waiting to merge: dropped before its merge, it never lands ---
+        on_slot(2, 'H3', 'dr3.py')
+        git(R.SLOTS_DIR / 's2', 'checkout', '-q', '--detach')
+        (R.P.halt_dir(R.C) / 'H3.json').write_text(json.dumps({'how': 'drop'}), encoding='utf-8')
+        R.finish('H3', 2, 'sid-h3', 'main')
+        check('dr3.py' not in on_main(), 'a dropped finished branch is not merged')
+        check(git(repo, 'branch', '--list', 'task/H3') == '', 'and is deleted')
+        R.halts({}, {}, {}, set(), 'main', 'opus', 30, 2)
+        has((R.P.halt_dir(R.C) / 'H3.done').read_text(encoding='utf-8'), r'^dropped H3; its finished branch never merged',
+            'the run says so')
+
+        # --- change mid-run: stopped the same way, restarted with the new text ---
+        on_slot(1, 'H2', 'dr2.py')
+        pid = session()
+        procs, running = {1: (pid, 'sid-h2', 0)}, {1: ('H2', 'Later', {'dr2.py'}, set())}
+        free_at = {1: R.dt.datetime.max}
+        R.write_state(running)
+        R.start = lambda n, task, *a: (started.append((n, task[0], '\n'.join(R.plan_text('main')))),
+                                       (4343, 'sid-h2b', 0))[1]
+        p = plan_cmd('change', 'H2', 'use a table instead')
+        check(asked('H2'), 'plan change leaves a request for the run')
+        tried = {'H2'}
+        R.halts(procs, running, free_at, tried, 'main', 'opus', 30, 2)
+        out, err = p.communicate(timeout=60)
+        check(p.returncode == 0, 'plan change on a running task goes through', err)
+        has(out, r'^H2 has your change noted$', 'the change is noted on the open task')
+        has(out, r'^changed H2; stopped s1, removed its work \(.*deleted task/H2.*\); restarted it in s1 with the new text$',
+            'the run stops and restarts it')
+        eq([s[:2] for s in started], [(1, 'H2')], 'restarted in the same slot')
+        has(started[0][2] if started else '', r'do this instead: use a table instead', 'and its brief has the new text')
+        eq(running.get(1, ('',))[0], 'H2', 'the slot runs it again')
+        eq(procs.get(1), (4343, 'sid-h2b', 0), 'in a new session')
+        check(git(repo, 'branch', '--list', 'task/H2') == '' and 'task/H2' not in remote_branches(repo.parent),
+              'the old attempt\'s branch is gone')
+
+        # nothing running it: plan says the edit and nothing more
+        R.write_state({})
+        r = run(repo, 'plan', 'note', 'H2', 'just a note')
+        check('stopped' not in r.stdout, 'a plain note never asks the run anything')
+        eq(R.P.halt(R.C, 'H2', 'drop', wait=0), '', 'a task no slot runs: no request')
+        eq(R.halt_requests(), {}, '(none left)')
+    finally:
+        R.start = real_start
+        for s in sessions:
+            s.kill()
+            s.wait()
+        lock.close()
+        R.write_state({})
+
+
 def test_short_titles_and_since(repo: Path):
     print('short titles for a person, and since: what happened since the last look, with its mark')
     st = R.short_title
@@ -3971,7 +4090,8 @@ def main() -> int:
                        lambda: test_short_titles_and_since(repo), lambda: test_board_follows_run(repo, tmp),
                        lambda: test_remote_sweep(repo, tmp), lambda: test_feed_resume(repo, tmp),
                        lambda: test_concepts_waiting(repo),
-                       lambda: test_person_waiting(repo), lambda: test_control_server_old_agent(repo, tmp)])
+                       lambda: test_person_waiting(repo), lambda: test_control_server_old_agent(repo, tmp),
+                       lambda: test_drop_or_change_running(repo)])
 
 
 if __name__ == '__main__':

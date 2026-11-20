@@ -4,6 +4,14 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- `plan drop` and `plan change` on a task the run is on now stop it too, instead of only editing the plan
+  while the slot's agent worked on and its branch could still merge. The command leaves a request for the run
+  (`<notes>/halt/<ID>.json`); within seconds the run ends that slot's session, deletes task/<ID> here and on the
+  remote, resets the worktree (nothing is saved: the work is unwanted) and frees the slot. A change then starts
+  the task again in that slot from the new text. A dropped task whose finished branch waits to merge is deleted
+  unmerged, and a cut-off session waiting to resume it is taken back. The command prints what the run did, e.g.
+  `dropped F297; stopped s1, removed its work (reset s1, deleted task/F297, deleted task/F297 from origin)`.
+  `plan change` now takes an open task as well (noted, stays open), not only one waiting on a person.
 - Control sessions queue "do X after T181" with `plan add … --after T181` (or `plan block ID --after T181`
   for a queued task) instead of starting a watcher or Monitor that waits for T181: the run starts the task
   once those merge.

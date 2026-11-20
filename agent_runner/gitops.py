@@ -153,3 +153,20 @@ def drop_if_merged(cwd: Path, branch: str) -> str:
     if net('push', '-q', remote, '--delete', branch).returncode:
         return ''
     return f'dropped {branch} from {remote}: {remote}/{shared} has the merge now'
+
+
+def drop_remote(cwd: Path, branch: str) -> str:
+    """Delete `branch` from `[git] push` whatever it holds: work nobody wants any more (a dropped task's
+    branch, B19). Returns one line to print, or '' when the remote has no such branch or there is none."""
+    remote = cfg(cwd).push_remote
+    if not remote:
+        return ''
+    g, net = _git(cwd), _net(cwd)
+    if g('remote', 'get-url', remote).returncode:
+        return ''
+    if not net('ls-remote', '--exit-code', '--heads', remote, branch).stdout.strip():
+        return ''
+    if net('push', '-q', remote, '--delete', branch).returncode:
+        return f'! {branch} could not be deleted from {remote}: delete it by hand'
+    g('update-ref', '-d', f'refs/remotes/{remote}/{branch}')
+    return f'deleted {branch} from {remote}'

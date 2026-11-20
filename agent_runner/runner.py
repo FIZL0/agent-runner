@@ -575,6 +575,107 @@ def end_sessions(procs: dict, running: dict) -> None:
     running.clear()
 
 
+DISCARDED: dict[str, str] = {}  # B19: task -> what `_finish` did with a branch a drop or change got to first
+
+
+def halt_requests() -> dict[str, str]:
+    """{task: 'drop' | 'change'}: what `plan drop` / `plan change` asked of this run (see plan.halt)."""
+    out = {}
+    for f in P.halt_dir(C).glob('*.json'):
+        try:
+            how = json.loads(f.read_text(encoding='utf-8'))['how']
+        except (OSError, ValueError, KeyError, TypeError):
+            continue
+        if how in ('drop', 'change'):
+            out[f.stem] = how
+    return out
+
+
+def halt_answer(tid: str, msg: str) -> None:
+    """Tell the waiting `plan drop`/`change` what happened, log it, and take its request away."""
+    d = P.halt_dir(C)
+    tmp = d / f'{tid}.done.tmp'
+    tmp.write_text(msg + '\n', encoding='utf-8')
+    os.replace(tmp, d / f'{tid}.done')
+    (d / f'{tid}.json').unlink(missing_ok=True)
+    log(msg)
+    note(msg)
+
+
+def discard_task(tid: str, n: int | None, sid: str = '') -> list[str]:
+    """Throw away everything of task `tid`'s attempt: its worktree (slot n) reset clean and detached, task/<tid>
+    deleted here and on the remote, its tested ref and its session's scratch gone. Nothing is saved: it was
+    dropped or changed, so nobody wants this work. Returns what it did, for the message."""
+    did = []
+    if n is not None and (d := SLOTS_DIR / f's{n}').is_dir():
+        if git('symbolic-ref', '-q', '--short', 'HEAD', cwd=d).stdout.strip() == f'task/{tid}':
+            clean(d)
+            git('checkout', '-q', '--detach', cwd=d)
+            did.append(f'reset s{n}')
+        finished_mark(n).unlink(missing_ok=True)
+    if not git('rev-parse', '--verify', '-q', f'refs/heads/task/{tid}').returncode:
+        git('branch', '-D', f'task/{tid}')
+        did.append(f'deleted task/{tid}')
+    git('update-ref', '-d', TESTED + tid)
+    if out := gitops.drop_remote(ROOT, f'task/{tid}'):
+        did.append(out)
+    (plansync.ticks(C) / tid).unlink(missing_ok=True)  # a `done` it got to: never ticked by a merge now
+    if sid:
+        drop_session_tmp(sid)
+    return did
+
+
+def halts(procs: dict, running: dict, free_at: dict, tried: set, branch: str, model: str, idle: int,
+          slots: int) -> None:
+    """B19: act on `plan drop` / `plan change` of a task this run is on. Its session is ended, its work thrown
+    away (`discard_task`) and its slot freed at once; a change starts it again in that slot from the new
+    text. A finished branch waiting to merge is deleted unmerged (by `_finish`, which checks first)."""
+    for tid, how in halt_requests().items():
+        verb = 'dropped' if how == 'drop' else 'changed'
+        n = next((m for m, t in running.items() if t[0] == tid), None)
+        q = next((m for m, x in queued().items() if x[0] == tid), None)
+        sid = ''
+        if n is not None:
+            pid, sid, _ = procs.pop(n)
+            running.pop(n)
+            plat.terminate(pid)
+            end = time.monotonic() + 10
+            while alive(pid) and time.monotonic() < end:
+                time.sleep(0.2)
+            if alive(pid):  # it ignored SIGTERM: its tree gets one, then whatever is left is ended below
+                for p in [*plat.descendants(pid), pid]:
+                    plat.terminate(p)
+            stopped = f'stopped s{n}'
+        elif q is not None:
+            n, sid = q, queued()[q][1]
+            C.notes(f'{tid}.resume').unlink(missing_ok=True)
+            stopped = f'took back its resume in s{n}'
+        elif any(t.name == f'merge:{tid}' and t.is_alive() for t in threading.enumerate()) and tid not in DISCARDED:
+            continue  # its merge thread reads the request before it merges (`_finish`)
+        elif tid in DISCARDED:
+            stopped = DISCARDED.pop(tid)
+        else:
+            stopped = 'no slot was on it any more'
+        did = discard_task(tid, n, sid) if n is not None else []
+        if n is not None:
+            end_orphans()
+            free_at[n] = dt.datetime.now()
+        msg = f'{verb} {tid}; {stopped}' + (f', removed its work ({", ".join(did)})' if did else '')
+        if how == 'drop':
+            plansync.release(C, tid)
+        else:
+            tried.discard(tid)  # the new text is a new attempt
+            task = next((t for t in tasks(branch) if t[0] == tid), None)
+            if n is not None and task and n <= slots and (p := start(n, task, branch, model, idle, slots)):
+                procs[n], running[n] = p, task
+                tried.add(tid)
+                msg += f'; restarted it in s{n} with the new text'
+            else:
+                plansync.release(C, tid)
+                msg += '; it starts again with the new text when a slot is free'
+        halt_answer(tid, msg)
+
+
 def power_now() -> None:
     """After a stop, with `z`, `x`, --suspend or --shutdown: suspend or power off now, no idle grace."""
     log(f'run stopped: {"suspending" if POWER == "suspend" else "shutting down"} the computer')
@@ -3916,6 +4017,10 @@ def finish(tid: str, n: int, sid: str, branch: str) -> None:
 
 def _finish(tid: str, n: int, sid: str, branch: str) -> bool:
     """False when task/<tid> waits for the next run to merge it."""
+    if tid in halt_requests():  # B19: dropped or changed before its merge: never lands
+        did = discard_task(tid, None)
+        DISCARDED[tid] = 'its finished branch never merged' + (f' ({", ".join(did)})' if did else '')
+        return True
     commits = git('log', '--format=%s', f'{branch}..task/{tid}').stdout.splitlines()
     if not commits:
         git('branch', '-D', f'task/{tid}')
@@ -5259,6 +5364,7 @@ def run(argv: list[str], prog: str) -> int:
                 free_at.setdefault(m, dt.datetime.min)
         if forced() and procs:
             end_sessions(procs, running)
+        halts(procs, running, free_at, tried, branch, model, idle, slots)  # B19: plan drop / change of a running task
         waiting = {n: q for n, q in queued().items() if n in free_at and n <= slots}
         tagged = None  # MUX.panes(), looked at once a tick and only for a free slot
         for n in list(free_at):
