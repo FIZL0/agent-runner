@@ -1028,17 +1028,18 @@ def test_control(repo: Path):
         R.start_control()
         R.start_control_server()
         opened = [c for c in calls if isinstance(c, list) and c[:2] in (['tmux', 'new-window'], ['tmux', 'split-window'])]
-        check(len(opened) == 1 and opened[0][-1].endswith('control 1 --blank'),
-              'remote on: c1 opens in tmux too, blank (no opening turn, so free till you type)', calls)
+        check(len(opened) == 1 and opened[0][-1].endswith('control 1 --blank --local'),
+              'remote on: c1 opens in tmux too, blank (free till you type) and local (not in the apps)', calls)
         check(('set-option', '-p', '-t', '%9', R.TAG, 'c1') in calls, 'and tagged c1', calls)
         eq(started, ['control-server'], 'remote on: the control server thread starts')
         note = R.started_note(2, 'here')
-        check('attach c1' in note and 'the control server opens others' in note and R.REMOTE_URL in note,
-              'remote on: started_note points at c1 and the control server', note)
+        check('attach c1' in note and 'terminal only' in note and 'control server' in note and R.REMOTE_URL in note,
+              'remote on: started_note points at c1 (terminal only) and the control server', note)
     with mock.patch.object(R, 'remote_on', lambda: True):
-        argv = R.control_argv(1, 'sid', False, blank=True)
-        check(not any('summary' in a for a in argv) and '--remote-control' in argv,
-              'a blank c1 has no first message, and is on Remote Control', argv)
+        argv = R.control_argv(1, 'sid', False, blank=True, local=True)
+        check(not any('summary' in a for a in argv) and '--remote-control' not in argv,
+              'the c1 the run opens has no first message, and no --remote-control: the server is the one app entry', argv)
+        check('--remote-control' in R.control_argv(1, 'sid', False, blank=True), 'c1 by hand without --local is on it')
         check(any('summary' in a for a in R.control_argv(1, 'sid', False)), 'c1 by hand still opens with the summary')
 
     skills = R.control_skills_dir()
