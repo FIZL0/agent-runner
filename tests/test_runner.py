@@ -840,6 +840,48 @@ def test_remote_auto(tmp: Path):
     check(not q.exists() and not t.is_alive(), 'and loud again once its link shows')
 
 
+def test_control_server_old_agent(repo: Path, tmp: Path):
+    print('control server: an older Claude Code without remote-control --settings starts without it, and says so')
+    R.init(repo)
+    old, new = tmp / 'old-claude', tmp / 'new-claude'
+    old.write_text("#!/bin/sh\necho 'Usage: claude remote-control [options]'\necho '  --name <name>'\n"
+                   "echo '  --spawn <mode>'\n", encoding='utf-8')
+    new.write_text("#!/bin/sh\necho 'Usage: claude remote-control [options]'\necho '  --settings <file>'\n",
+                   encoding='utf-8')
+    for f in (old, new):
+        f.chmod(0o755)
+    R._SERVER_SETTINGS.clear()
+    with mock.patch.dict(R.C.run, {'agent': str(new)}):
+        check('--settings' in R.control_server_argv(), 'one whose help lists --settings gets the control settings')
+    said, started = [], []
+
+    real_popen = R.sp.Popen
+
+    def popen(argv, *a, **k):
+        if 'remote-control' not in argv or '--help' in argv:
+            return real_popen(argv, *a, **k)  # git, and the --help probe
+        started.append(argv)
+        raise OSError('stop here')
+    with mock.patch.dict(R.C.run, {'agent': str(old)}), mock.patch.object(R, 'log', said.append), \
+            mock.patch.object(R, 'backend') as be, mock.patch.object(R, 'control_server_live', lambda: 0), \
+            mock.patch.object(R.sp, 'Popen', popen), mock.patch('atexit.register'):
+        be.return_value.trust = lambda root: None
+        R.keep_control_server()
+        R.control_server_argv()
+    check(started and '--settings' not in started[0] and 'remote-control' in started[0],
+          'the server starts without --settings', started)
+    check(any('no --settings' in s and 'claude.ai/code' in s and 'control brief' in s and 'Update Claude Code' in s
+              for s in said), 'one run.log line says sessions from claude.ai/code miss the brief, and to update', said)
+    err = tmp / 'server.err'
+    err.write_text('old noise\n', encoding='utf-8')
+    since = err.stat().st_size
+    eq(R.server_last_error(err, since), '', 'nothing new on stderr: no line')
+    with open(err, 'a', encoding='utf-8') as fh:
+        fh.write("\x1b[31merror: unknown option '--settings'\x1b[0m\n\n")
+    eq(R.server_last_error(err, since), "error: unknown option '--settings'", 'its last stderr line since it started')
+    R._SERVER_SETTINGS.clear()
+
+
 def test_control(repo: Path):
     with mock.patch.dict(os.environ, {'CLAUDE_CODE_CHILD_SESSION': '1', 'CLAUDECODE': '1', 'CLAUDE_CONFIG_DIR': '/c',
                                       'TMUX': '/tmp/t,1,0'}):
@@ -918,14 +960,15 @@ def test_control(repo: Path):
         argv = R.control_argv(3, 'sid-3', resume=True)
     eq(argv[-2:], ['--remote-control', f'{R.ROOT.name} · control 3'], 'with [run] remote it is on Remote Control')
     check('--resume' in argv, 'resume continues the session')
-    with mock.patch.dict(R.C.run, {'remote': True}):
+    with mock.patch.dict(R.C.run, {'remote': True}), mock.patch.object(R, 'server_takes_settings', lambda e: True):
         sv = R.control_server_argv()
     eq(sv[1:], ['remote-control', '--spawn', 'same-dir', '--name', f'{R.ROOT.name} · control',
                 '--permission-mode', 'bypassPermissions', '--settings', str(f)],
        'the control server: claude remote-control in the main checkout, with the control settings')
-    check(not R.server_stale(None) and not R.server_stale([*sv, '']), 'an adopted server with these flags stays')
-    check(R.server_stale([sv[0], 'remote-control', '--spawn', 'same-dir', '--settings', str(f)]),
-          'one started with other flags is restarted')
+    with mock.patch.object(R, 'server_takes_settings', lambda e: True):
+        check(not R.server_stale(None) and not R.server_stale([*sv, '']), 'an adopted server with these flags stays')
+        check(R.server_stale([sv[0], 'remote-control', '--spawn', 'same-dir', '--settings', str(f)]),
+              'one started with other flags is restarted')
 
     sid, resume = R.control_sid(1)
     eq(((repo / '.runner/control.sid').read_text().strip(), resume), (sid, False), 'c1 keeps a new session id')
@@ -3634,7 +3677,7 @@ def main() -> int:
                        lambda: test_shared_push(repo, tmp), lambda: test_note_on_a_ticked_task(repo), lambda: test_adopt_merge(repo), lambda: test_followups(repo), lambda: test_ci_watch(repo), test_update_notice, test_restart_if_upgraded, test_auto_upgrade, lambda: test_flake_repair(tmp), lambda: test_repair_per_failure(repo),
                        lambda: test_stalled(tmp), lambda: test_take(repo), lambda: test_take_text_and_here(repo), lambda: test_background(repo), lambda: test_attach_flag(repo), lambda: test_remote_auto(tmp), lambda: test_control(repo),
                        lambda: test_short_titles_and_since(repo), lambda: test_concepts_waiting(repo),
-                       lambda: test_person_waiting(repo)])
+                       lambda: test_person_waiting(repo), lambda: test_control_server_old_agent(repo, tmp)])
 
 
 if __name__ == '__main__':
