@@ -863,7 +863,7 @@ remote_slots = false      # the slots on Remote Control too ("<task title> · <r
 silent = "launch"         # phone pushes from those sessions: launch = none while they start, true = none ever, false = Claude Code's usual
 control = true            # a run opens control session c1 beside it; false: none (`agent-runner control` still works)
 control_close = true      # close idle control sessions 2, 3, … (never c1): process ended, controlN.pid removed, transcript kept (`claude --resume <sid>`)
-control_idle = "1h"       # closed once quiet this long, Claude spoke last, its last message is no open question, and nothing runs in it (a background task or Monitor; the needs-you watch does not count)
+control_idle = "3h"       # closed once quiet this long, Claude spoke last, its last message is no open question, and nothing runs in it (a background task or Monitor; the needs-you watch does not count)
 control_ask_idle = "2h"   # a last message that is an open question: after this long it is filed under Needs you as a DECIDE item (the question + the session link), then closed
 control_open = ["?", "want me to", "should i", "shall i", "would you like", "do you want"]  # what makes a last message open (case ignored; "?" must end its last paragraph, the rest may stand anywhere in it)
 control_file_asks = true  # false: an open question's session closes after control_ask_idle without filing it

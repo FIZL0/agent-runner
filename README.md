@@ -57,8 +57,8 @@ you ask for status, to pause, to add slots or stop, to queue a task, or to do on
 running and what happened since you last looked (`agent-runner since`), and when you say "follow" it posts each
 task as it lands. Any new pane in the `ar-<repo>` session is another one. With `[run] remote` the
 control sessions are on Remote Control, so you run the run from claude.ai/code or the Claude apps
-([docs/REFERENCE.md](docs/REFERENCE.md#control-sessions)). The run closes the extra ones (never c1) after an
-hour of quiet once Claude has answered, so the apps' list stays short; one left on an open question goes under
+([docs/REFERENCE.md](docs/REFERENCE.md#control-sessions)). The run closes the extra ones (never c1) after
+3 hours of quiet once Claude has answered, so the apps' list stays short; one left on an open question goes under
 Needs you first (`[run] control_close`, `control_idle`, `control_ask_idle`).
 
 > [!TIP]

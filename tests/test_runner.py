@@ -4777,14 +4777,14 @@ def test_renamed_control_kept(repo: Path):
     print('B41: idle-close keeps a control session the person renamed (a custom-title entry), and files no question')
     R.init(repo)
     H, cf, now = 3600, R.control_cfg(), time.time()
-    done = [_person('watch the push', 3 * H), _claude('Pushed; waiting on CI.', 3 * H - 5)]
+    done = [_person('watch the push', 4 * H), _claude('Pushed; waiting on CI.', 4 * H - 5)]
     ask = [_person('can T7 go first?', 3 * H), _claude('T7 is now first.\n\nWant me to pause T8 too?', 3 * H - 5)]
     title = lambda t: {'type': 'custom-title', 'customTitle': t, 'sessionId': 'x'}
     eq(R.control_verdict(R.control_state(done), cf, now, 4)[0], 'close', 'without a rename: idle past control_idle closes')
     renamed = done[:1] + [title('PUSH CRUCIAL')] + done[1:]
     eq(R.control_state(renamed)['title'], 'PUSH CRUCIAL', 'control_state records the custom title')
     eq(R.control_verdict(R.control_state(renamed), cf, now, 4), ('keep', 'renamed by the person'),
-       'renamed, Claude last and idle 3h: kept')
+       'renamed, Claude last and idle 4h: kept')
     eq(R.control_verdict(R.control_state(ask + [title('mine')]), cf, now, 4)[0], 'keep', 'its open question not filed')
     eq(R.control_state(renamed + [title('later name')])['title'], 'later name', 'the latest rename counts')
     R.control_give(4, R.control_name(4, 'can T7 go first?'))  # F32: the name the runner gave session 4
@@ -4817,7 +4817,7 @@ def test_control_summary_title(repo: Path):
     eq(R.control_summary_name(11, '  "R43 site\ndeploy"  '), f'{rn} · R43 · site deploy', 'one line, no quotes')
     eq(R.control_summary_name(11, ''), '', 'no summary, no name')
     title = lambda t: {'type': 'custom-title', 'customTitle': t, 'sessionId': 'x'}
-    done = [_person(ask, 3 * H), title(want), _claude('Tags deploy fine; nothing breaks.', 3 * H - 5)]
+    done = [_person(ask, 4 * H), title(want), _claude('Tags deploy fine; nothing breaks.', 4 * H - 5)]
     st = R.control_state(done)
     eq(st['title'], want, 'the transcript ends up with the summary title, not the cut-off one')
     check(not R.control_renamed(st, 11), 'the summary name is not a rename by the person')
@@ -4896,27 +4896,27 @@ def test_close_idle_controls(repo: Path):
     print('B26: idle control sessions are closed (transcript kept); an open question is filed under Needs you first')
     R.init(repo)
     H = 3600
-    done = [_person('what is running?', 3 * H), _claude('Two tasks run: B1 and B2. Nothing needs you.', 3 * H - 5),
+    done = [_person('what is running?', 210 * 60), _claude('Two tasks run: B1 and B2. Nothing needs you.', 210 * 60 - 5),
             {'type': 'bridge-session', 'bridgeSessionId': 'cse_01AbC'}]
     ask = [_person('can T7 go first?', 3 * H), _claude('T7 is now first.\n\nWant me to pause T8 too?', 3 * H - 5)]
     ask_young = [_person('x', 90 * 60), _claude('Done. Should I also drop T9?', 90 * 60 - 5)]
     person = [_claude('Here is the status.', 3 * H), _person('ok and the cost?', 2 * H)]
     recent = [_person('status', 20 * 60), _claude('All quiet.', 20 * 60 - 5)]
-    bg = [_person('run the tests', 3 * H), _call('Bash', {'command': 'x', 'run_in_background': True}, 'u1', 3 * H - 3),
-          _result('u1', 'Command running in background with ID: bk1. Output is being written to: /x', 3 * H - 2),
-          _claude('The tests run in the background; I will report.', 3 * H - 1)]
-    bg_done = bg + [{'type': 'queue-operation', 'timestamp': _ts(3 * H - 60), 'content':
+    bg = [_person('run the tests', 4 * H), _call('Bash', {'command': 'x', 'run_in_background': True}, 'u1', 4 * H - 3),
+          _result('u1', 'Command running in background with ID: bk1. Output is being written to: /x', 4 * H - 2),
+          _claude('The tests run in the background; I will report.', 4 * H - 1)]
+    bg_done = bg + [{'type': 'queue-operation', 'timestamp': _ts(4 * H - 60), 'content':
                      '<task-notification>\n<task-id>bk1</task-id>\n<status>completed</status>\n</task-notification>'},
-                    _claude('They passed.', 3 * H - 50)]
-    watch = [_person('hi', 3 * H), _call('Monitor', {'command': f'{R.C.command} since --follow --needs-you',
-                                                     'timeout_ms': 1800000}, 'u2', 3 * H - 3),
-             _result('u2', 'Monitor started (task mw1, expires in 30m unless the source ends first)', 3 * H - 2),
-             _claude('Watching for what needs you.', 3 * H - 1),
+                    _claude('They passed.', 4 * H - 50)]
+    watch = [_person('hi', 4 * H), _call('Monitor', {'command': f'{R.C.command} since --follow --needs-you',
+                                                     'timeout_ms': 1800000}, 'u2', 4 * H - 3),
+             _result('u2', 'Monitor started (task mw1, expires in 30m unless the source ends first)', 4 * H - 2),
+             _claude('Watching for what needs you.', 4 * H - 1),
              _call('Monitor', {'command': f'{R.C.command} since --follow --needs-you', 'timeout_ms': 1800000},
                    'u3', 10 * 60), _result('u3', 'Monitor started (task mw2, expires in 30m)', 10 * 60)]
     cf, now = R.control_cfg(), time.time()
-    eq((cf['close'], cf['idle'], cf['ask_idle'], cf['file_asks']), (True, 3600.0, 7200.0, True),
-       'defaults: on, control_idle 1h, control_ask_idle 2h, questions filed')
+    eq((cf['close'], cf['idle'], cf['ask_idle'], cf['file_asks']), (True, 10800.0, 7200.0, True),
+       'defaults: on, control_idle 3h, control_ask_idle 2h, questions filed')
     for name, rows, want in (('done', done, 'close'), ('question', ask, 'ask'), ('young question', ask_young, 'keep'),
                              ('person last', person, 'keep'), ('recent', recent, 'keep'),
                              ('background task running', bg, 'keep'), ('background task finished', bg_done, 'close'),
@@ -4948,7 +4948,7 @@ def test_close_idle_controls(repo: Path):
             mock.patch.object(R, 'file_control_ask', lambda n, sid, q, link, branch='': filed.append((n, sid, q, link)) or 'F99'), \
             mock.patch.object(R, 'log'), mock.patch.object(R, 'note'):
         got = R.close_controls(force=True)
-        eq(sorted(got), [(2, 'closed', 'idle 179 min'), (3, 'asked', 'F99')], 'done -> closed, question -> filed + closed',
+        eq(sorted(got), [(2, 'closed', 'idle 209 min'), (3, 'asked', 'F99')], 'done -> closed, question -> filed + closed',
            )
         eq(sorted(ended), [9002, 9003], 'their processes ended, c1 and the rest left running')
         eq(filed, [(3, 's3', 'Want me to pause T8 too?', '')], 'the question filed, with the session (no link here)')
