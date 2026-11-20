@@ -7,14 +7,14 @@ import sys
 USAGE = """agent-runner: AI agents work through plan/TODO.md, one task each, in parallel.
 
 What you type
-    agent-runner                      start the run in the background and get the prompt back (--attach: and watch it)
+    agent-runner                      start the run in the background (--attach: and watch it)
     agent-runner attach [s2]          see the run's pane, or slot 2's (Ctrl-b d: back to the background)
     agent-runner control              a control session here: ask it "status?", to pause, add slots, file a task
     agent-runner control --new        another one beside the run; prints its claude.ai/code link
     agent-runner status               is a run up, each slot's task, merges lately, usage (-n 20: log too)
     agent-runner since [2h|yesterday] what landed, started or got stuck since you last looked (--follow: live)
     agent-runner pause                start no new tasks, stay up (--off: go on)
-    agent-runner stop                 let running tasks finish, start no new ones (--force: now; --undo: go on)
+    agent-runner stop                 let running tasks finish, start no new ones (--force: now)
     agent-runner slots +1             one slot more (-1 fewer, 4: exactly four)
     agent-runner wizard               walk through the hand steps a blocked task waits on, then confirm it
     agent-runner guide                how an agent you start in this repo should work with the runner
@@ -38,7 +38,8 @@ Mostly for agents (you can run these too)
     agent-runner home [slots|plan]    where this project's runner files are: for scripts
     agent-runner context              what every session loads (rules, CLAUDE.md, AGENTS.md) and what to move out
     agent-runner cost                 where the workers' tokens go, by kind of tool call (last 7 days)
-    agent-runner run once             one task in this terminal, then stop (run 3: 3 agents; --dry-run 3: show only)
+    agent-runner run once             one task in this terminal, then stop (run 3: three agents)
+    agent-runner run --dry-run 3      what 3 agents would start now; starts nothing
     agent-runner force                start tasks past the usage caps (--off: caps hold)
     agent-runner help order           what runs when, and how to make one task wait for another
     agent-runner run --help           every runner option

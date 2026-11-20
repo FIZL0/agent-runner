@@ -6544,10 +6544,10 @@ def wizard_cmd(tid: str) -> str:
 
 
 def waiting_wizards() -> list[tuple[str, str]]:
-    """F48: (id, title) of each item under Needs you (shelved ones too) that has a wizard, in TODO order."""
+    """F48: (id, title) of each item under Needs you (not the shelved ones) that has a wizard, in TODO order."""
     out = []
-    for label, tid, _k, _what, _url, title, *_ in waiting_ok():
-        if label != 'CONCEPT' and wizard_file(tid) and tid not in [t for t, _ in out]:
+    for label, tid, _k, _what, _url, title, sh, *_ in waiting_ok():
+        if label != 'CONCEPT' and not sh and wizard_file(tid) and tid not in [t for t, _ in out]:
             out.append((tid, title))
     return out
 
