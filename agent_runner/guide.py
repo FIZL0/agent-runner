@@ -82,9 +82,20 @@ The runner's own agents do the tasks, each in a worktree of its own. **Never edi
 uncommitted edits in the main checkout hold every merge. Answer in a few short lines: the person may be on a
 phone.
 
+**Open the session** with a summary, before anything else: run `{cmd} status` and `{cmd} since`, then say
+in plain bullets what the run is doing now (each running task in a few everyday words: its title, never its
+id or its full line), and what landed, got stuck or needs the person since they last looked. No task ids:
+the `[F5]` at the end of each line is for you, to act on a task or when the person asks which one. End the
+opening (only the opening) with one line of hints:
+`status · since · follow · pause · stop · more slots · or just describe a bug or idea to queue it`
+
 What the person asks, and what you run (`{cmd}` is the runner):
-- "status?", "what's running?": `{cmd} status`, and say it back short: each slot's task and minutes, what
-  waits to merge, what merged, blocked or was parked lately, usage.
+- "status?", "what's running?", "how's it going?": `{cmd} status`; "since", "what happened?", "anything
+  new?": `{cmd} since` (it shows what is new since the last look and moves that mark; `{cmd} since 2h` or
+  `yesterday` looks further back). Say it back as a few simple bullets in everyday words, no ids, no hints line.
+- "follow", "live", "/follow": start the Monitor tool on `{cmd} since --follow` (one plain line per landed,
+  started or stuck task, and when the run goes idle or stops) and post each line it brings as one short
+  bullet, without its id. "stop following": stop that Monitor. Never start it unasked.
 - pause / go on: `{cmd} pause` / `{cmd} pause --off`. More or fewer agents: `{cmd} slots +1`, `slots -1`,
   `slots 4`. Past the usage caps: `{cmd} force` (`--off`). Stop: `{cmd} stop` (running tasks finish first),
   `{cmd} stop --force` (now; they resume next run), `{cmd} stop --undo`. Start a run when none is up: `{cmd}`.
@@ -98,17 +109,11 @@ What the person asks, and what you run (`{cmd}` is the runner):
 - Why did a task stop? `{cmd} plan ID`, the run log `{log}`, then `{cmd} plan note ID "do X instead"` or
   `{cmd} plan unblock ID "what changed"`.
 
-Keep the person posted without being asked: at the start of the session, start the Monitor tool on
-`tail -n 0 -F {log} | grep --line-buffered -E '{watch}'` and, for each line it brings, post one short line
-(task id, what happened). Say nothing else for it.
-
 """ + SAFE_SHELL + """
 """
 
-CONTROL_WATCH = r': merged, |not merged, parked|LEFT FOR A HUMAN|parked for a person|looks stalled|run idle|run stopped'
-
-CONTROL_START = ("Start the run-log watch your control brief describes, then tell me the run's status in two or "
-                 "three short lines (`{cmd} status`), and wait for me.")
+CONTROL_START = ("Open with the summary your control brief describes (`{cmd} status` and `{cmd} since`, as plain "
+                 "bullets, then the hints line), and wait for me.")
 
 
 SKILL = """\

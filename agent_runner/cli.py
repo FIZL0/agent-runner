@@ -20,6 +20,7 @@ Run the agents
     agent-runner stop --shutdown      stop, then shut the computer down (--suspend: sleep)
     agent-runner stop --undo          take a stop back: start tasks again
     agent-runner status               is a run up, each slot's task and minutes, merges lately, usage (-n 20: log too)
+    agent-runner since [2h|yesterday] what landed, started or got stuck since you last looked (--follow: live)
     agent-runner pause                start no new tasks, stay up (--off: go on)
     agent-runner slots +1             one slot more (-1 fewer, 4: exactly four)
     agent-runner force                start tasks past the usage caps (--off: caps hold)
@@ -176,6 +177,9 @@ def main(argv: list[str] | None = None) -> int:
     if cmd == 'status':
         from agent_runner import runner
         return runner.cmd_status(rest)
+    if cmd == 'since':
+        from agent_runner import runner
+        return runner.cmd_since(rest)
     if cmd in ('pause', 'force', 'slots', 'key'):
         from agent_runner import runner
         return runner.cmd_key(rest, f'{runner.RUNNER} {cmd}')

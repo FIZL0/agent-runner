@@ -5494,19 +5494,249 @@ EVENT = re.compile(r'^=== \S*T(\d\d:\d\d)\S* (?:(\S+): (merged, (?:ticked|blocke
 
 
 def task_titles() -> dict[str, str]:
-    """{id: its title} from TODO.md: the words after the id, up to the first ` | ` field or sentence end."""
+    """{id: its short title (`short_title`)} from TODO.md, and DONE.md for the tasks that landed and moved there."""
     out = {}
-    try:
-        text = C.todo.read_text(encoding='utf-8')
-    except OSError:
-        return out
-    for l in text.splitlines():
-        if m := TASK.match(l):
-            out[m.group(2)] = m.group(3).split(' | ')[0].strip()
+    for f in (C.done, C.todo):  # TODO.md last: its line wins
+        try:
+            text = f.read_text(encoding='utf-8')
+        except OSError:
+            continue
+        for l in text.splitlines():
+            if m := TASK.match(l):
+                out[m.group(2)] = short_title(m.group(3))
     return out
 
 
-def status_text(up: bool, st: dict, log_lines: list[str], titles: dict[str, str], now: float, width: int = 44) -> str:
+def _drop_asides(t: str) -> str:
+    """`t` without its (…) asides that hold a date, a quote or a file path: "(user 2026-11-19: 'make it…')",
+    "(see runner.py, plan/TODO.md)". Nested brackets count; an aside that is plain words stays."""
+    out, depth, start = [], 0, 0
+    for i, ch in enumerate(t):
+        if ch == '(':
+            if depth == 0:
+                out.append(t[start:i])
+                start = i
+            depth += 1
+        elif ch == ')' and depth:
+            depth -= 1
+            if depth == 0:
+                aside = t[start:i + 1]
+                noisy = re.search(r"^\((?:follow-up|user|asked)\b|\d{4}-\d\d-\d\d|['\"`‘’“”]|/|\w\.(?:py|md|toml|json|rs|ts|js|sh|txt|ya?ml)\b", aside)
+                out.append('' if noisy else aside)
+                start = i + 1
+    out.append(t[start:])  # an unclosed ( keeps its tail
+    return ''.join(out)
+
+
+def short_title(rest: str, width: int = 60) -> str:
+    """A task's line, after its id, as a few plain words for a person: its first sentence, without the ` | `
+    fields, asides with dates, quotes or file lists, quote marks and bold, cut at a word to about `width`."""
+    t = _drop_asides(rest.split(' | ')[0])
+    t = re.sub(r'\b\d{4}-\d\d-\d\d\b', '', t)
+    t = re.sub(r"(?<!\w)(['\"`])\1(?!\w)", 'empty', t)  # `''` read aloud
+    t = re.sub(r"[*`\"“”‘’]|(?<!\w)'|'(?!\w)", '', t)
+    t = re.split(r'(?<=[.!?;:])\s+(?=[A-Z(\d])|\s+—\s+|\s+--\s+', re.sub(r' ([,.;:])', r'\1', ' '.join(t.split())), maxsplit=1)[0]
+    t = t.strip(' .,;:—-')
+    if len(t) > width:
+        t = t[:width - 1].rsplit(' ', 1)[0].rstrip(' ,;:—-') + '…'
+    return t
+
+
+# --- since: what happened since the person last looked ----------------------------------------------------
+
+SINCE_LINE = re.compile(r'^=== (\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d)\S* (.*)$')
+SINCE_EVENTS = [  # (pattern on a run.log line's message, kind); the first that matches names it
+    (re.compile(r'^([A-Za-z]+\d+[a-z0-9]*): merged, (?:ticked|part)'), 'landed'),
+    (re.compile(r'^([A-Za-z]+\d+[a-z0-9]*): merged, blocked'), 'part landed, rest stuck'),
+    (re.compile(r'^([A-Za-z]+\d+[a-z0-9]*): not merged, parked as \S+ — (.*)'), 'stuck, not merged'),
+    (re.compile(r'^([A-Za-z]+\d+[a-z0-9]*): LEFT FOR A HUMAN — (.*)'), 'needs you'),
+    (re.compile(r'^slot \d+: ([A-Za-z]+\d+[a-z0-9]*) looks stalled'), 'looks stuck'),
+    (re.compile(r'^slot \d+: ([A-Za-z]+\d+[a-z0-9]*) \([^;)]*;'), 'started'),
+    (re.compile(r'^STOPPED: ([^:]+)'), 'run held, needs you'),
+    (re.compile(r'^run idle'), 'run idle: nothing left it may start'),
+    (re.compile(r'^run stopped'), 'run stopped'),
+]
+
+
+def since_event(line: str, titles: dict[str, str]) -> tuple[str, str, str] | None:
+    """A run.log line as (its ISO stamp, the task id or '', one plain phrase: "landed: <title> [F5]"), or None
+    when it is not something a person wants told."""
+    if not (m := SINCE_LINE.match(line)):
+        return None
+    stamp, msg = m.groups()
+    for rx, kind in SINCE_EVENTS:
+        if e := rx.match(msg):
+            if kind.startswith('run '):
+                what = f'{kind}: {e.group(1).strip()}' if e.groups() else kind
+                return stamp, '', what
+            tid = e.group(1)
+            why = e.group(2) if rx.groups > 1 else ''
+            why = f' ({why.split(". ")[0][:60].rstrip(" .")})' if why else ''
+            return stamp, tid, f'{kind}: {titles.get(tid) or tid}{why} [{tid}]'
+    return None
+
+
+def since_start(arg: str | None, mark: str | None, now: dt.datetime) -> dt.datetime:
+    """Where `since` starts: `arg` ("2h", "30m", "1d", "today", "yesterday", or a date/time), else the mark
+    the last `since` left, else 24 hours back."""
+    if not arg:
+        try:
+            return dt.datetime.fromisoformat(mark) if mark else now - dt.timedelta(hours=24)
+        except ValueError:
+            return now - dt.timedelta(hours=24)
+    a = arg.strip().lower()
+    midnight = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    if a == 'today':
+        return midnight
+    if a == 'yesterday':
+        return midnight - dt.timedelta(days=1)
+    if m := re.fullmatch(r'(\d+(?:\.\d+)?)\s*(m|min|mins|h|hr|hrs|hours?|d|days?|w|weeks?)', a):
+        n, u = float(m[1]), m[2][0]
+        return now - dt.timedelta(**{{'m': 'minutes', 'h': 'hours', 'd': 'days', 'w': 'weeks'}[u]: n})
+    try:
+        return dt.datetime.fromisoformat(arg.strip())
+    except ValueError:
+        raise SystemExit(f'{RUNNER} since: {arg!r} is not a time: 2h, 30m, 1d, today, yesterday, or 2026-11-19T14:00')
+
+
+def when(stamp: str, now: dt.datetime) -> str:
+    """An ISO stamp as a person reads it: "14:05" today, "yesterday 21:02", else "11-17 21:02"."""
+    t = dt.datetime.fromisoformat(stamp)
+    days = (now.date() - t.date()).days
+    return t.strftime('%H:%M') if days == 0 else ('yesterday ' if days == 1 else t.strftime('%m-%d ')) + t.strftime('%H:%M')
+
+
+def since_text(log_lines: list[str], start: dt.datetime, titles: dict[str, str], now: dt.datetime,
+               since_mark: bool = False) -> tuple[str, str | None]:
+    """(what `since` prints, the newest stamp it read or None): each event after `start`, oldest first, one
+    short line each; or one line saying there is nothing new."""
+    out, last = [], None
+    for l in log_lines:
+        if not (m := SINCE_LINE.match(l)):
+            continue
+        try:
+            if dt.datetime.fromisoformat(m[1]) <= start:
+                continue
+        except ValueError:
+            continue
+        last = m[1]
+        if e := since_event(l, titles):
+            out.append(f'  {when(e[0], now)}  {e[2]}')
+    head = f'since {when(start.isoformat(timespec="seconds"), now)}' + (' (your last look)' if since_mark else '')
+    return (f'{head}:\n' + '\n'.join(out) if out else f'nothing new {head}'), last
+
+
+def since_mark_file() -> Path:
+    return C.notes('since.last')
+
+
+def move_since_mark(stamp: str) -> None:
+    """Move `<notes>/since.last` forward to `stamp` (never back: a `since yesterday` does not show again what
+    the last look saw)."""
+    f = since_mark_file()
+    try:
+        old = f.read_text(encoding='utf-8').strip()
+        if old and dt.datetime.fromisoformat(old) >= dt.datetime.fromisoformat(stamp):
+            return
+    except (OSError, ValueError):
+        pass
+    tmp = f.with_name(f.name + '.tmp')
+    tmp.write_text(stamp + '\n', encoding='utf-8')
+    os.replace(tmp, f)
+
+
+def what_changed(tid: str) -> str:
+    """The first sentence of the commit subject a task landed with (its `done` message), without the id; ''."""
+    r = git('log', '-n', '1', '-E', f'--grep=^{re.escape(tid)}( |:|$)', '--format=%s', 'HEAD')
+    subj = r.stdout.strip() if not r.returncode else ''
+    subj = re.sub(rf'^{re.escape(tid)}[: ]\s*', '', subj)
+    subj = re.split(r'(?<=[.;:])\s|\s—\s|, (?=and |so |which )', subj, maxsplit=1)[0].rstrip(' .;:')
+    return subj if len(subj) <= 100 else subj[:99].rsplit(' ', 1)[0] + '…'
+
+
+def follow_lines(chunk: str, titles: dict[str, str], now: dt.datetime) -> tuple[list[str], str | None]:
+    """The lines `since --follow` prints for new run.log text: one plain line per event, a landed task with
+    what changed; and the newest stamp read."""
+    out, last = [], None
+    for l in chunk.splitlines():
+        if m := SINCE_LINE.match(l):
+            last = m[1]
+        if e := since_event(l, titles):
+            line = f'{when(e[0], now)}  {e[2]}'
+            if e[1] and e[2].startswith('landed: ') and (did := what_changed(e[1])):
+                line += f' — {did}'
+            out.append(line)
+    return out, last
+
+
+def follow(poll: float = 2.0, until: float | None = None) -> int:
+    """`since --follow`: print one plain line per new event as run.log gets it, moving the since mark as it
+    prints; from the log's end, until killed (or `until`, a monotonic deadline, for tests)."""
+    logf = C.notes('run.log')
+    try:
+        pos = logf.stat().st_size
+    except OSError:
+        pos = 0
+    print(f'following {logf}: one line per landed, started or stuck task, and when the run goes idle or stops',
+          flush=True)
+    buf = ''
+    while until is None or time.monotonic() < until:
+        try:
+            size = logf.stat().st_size
+            if size < pos:  # the log was cut or replaced: read it again from the top
+                pos = 0
+            if size > pos:
+                with open(logf, 'rb') as f:
+                    f.seek(pos)
+                    data = f.read()
+                pos += len(data)
+                buf += data.decode('utf-8', errors='replace')
+                chunk, _, buf = buf.rpartition('\n')
+                lines, last = follow_lines(chunk, task_titles(), dt.datetime.now())
+                for l in lines:
+                    print(l, flush=True)
+                if last:
+                    move_since_mark(last)
+        except OSError:
+            pass
+        except KeyboardInterrupt:
+            return 0
+        try:
+            time.sleep(poll)
+        except KeyboardInterrupt:
+            return 0
+    return 0
+
+
+def cmd_since(argv: list[str], prog: str = f'{RUNNER} since') -> int:
+    """`agent-runner since [2h|yesterday|…] [--follow]`: what happened since the last look, one short line each."""
+    ap = argparse.ArgumentParser(prog=prog, description='What happened since you last looked (or since WHEN): '
+                                 'landed, started, stuck, needs you, run idle or stopped, oldest first.')
+    ap.add_argument('when', nargs='?', help='2h, 30m, 1d, today, yesterday, or a date/time; default: the last `since`')
+    ap.add_argument('--follow', '-f', action='store_true',
+                    help='stay running and print one line per new event as it happens')
+    a = ap.parse_args(argv)
+    init()
+    if a.follow:
+        return follow()
+    f = since_mark_file()
+    try:
+        mark = f.read_text(encoding='utf-8').strip() or None
+    except OSError:
+        mark = None
+    now = dt.datetime.now().replace(microsecond=0)
+    start = since_start(a.when, mark, now)
+    try:
+        lines = C.notes('run.log').read_text(encoding='utf-8', errors='replace').splitlines()
+    except OSError:
+        lines = []
+    text, last = since_text(lines, start, task_titles(), now, since_mark=not a.when and bool(mark))
+    print(text)
+    move_since_mark(last or now.isoformat())
+    return 0
+
+
+def status_text(up: bool, st: dict, log_lines: list[str], titles: dict[str, str], now: float, width: int = 60) -> str:
     """`agent-runner status`, short enough for a phone: the run's state, each slot's task, title and minutes,
     what is merging, the last few merged / blocked / parked, and usage."""
     out = [f'run up: {st.get("state", "starting")}' if up else 'no run is up']
@@ -5514,15 +5744,16 @@ def status_text(up: bool, st: dict, log_lines: list[str], titles: dict[str, str]
         title = titles.get(tid, '')
         title = title if len(title) <= width else title[:width - 1].rstrip() + '…'
         mins = f'{int((now - st["since"][n]) // 60)} min' if n in st.get('since', {}) else ''
-        out.append('  ' + '  '.join(x for x in (f's{n}' if n.isdigit() else n, tid, title, mins) if x))
+        out.append('  ' + '  '.join(x for x in (f's{n}' if n.isdigit() else n, f'{title} [{tid}]' if title else tid,
+                                                 mins) if x))
     if up and not st.get('running'):
         out.append('  no task running')
     if st.get('merging'):
-        out.append(f'merging: {", ".join(st["merging"])}')
-    events = [m for l in log_lines[-2000:] if (m := EVENT.match(l))]
+        out.append('merging: ' + ', '.join(f'{titles[t]} [{t}]' if titles.get(t) else t for t in st['merging']))
+    events = [m for l in log_lines[-2000:] if EVENT.match(l) and (m := since_event(l, titles))]
     if events:
         out.append('lately:')
-        out += [f'  {m.group(1)} ' + (f'{m.group(2)} {m.group(3)}' if m.group(2) else m.group(4)) for m in events[-5:]]
+        out += [f'  {m[0][11:16]} {m[2]}' for m in events[-5:]]
     use = st.get('usage') or {}
     if any(v is not None for v in use.values()):
         out.append('usage: ' + ', '.join(f'{w} {use[k]:.0f}%' for k, w in (('five_hour', 'session'), ('seven_day', 'week'))
@@ -5798,10 +6029,10 @@ def control_ok() -> bool:
 
 def control_brief() -> str:
     """What every control session is told, through its SessionStart hook (`control --brief` prints it)."""
-    from agent_runner.guide import CONTROL, CONTROL_WATCH
+    from agent_runner.guide import CONTROL
     notes = Path(C.run['notes']).expanduser()
     logf = (notes / 'run.log').as_posix() if not notes.is_absolute() else str(notes / 'run.log')
-    return CONTROL.format(repo=ROOT.name, cmd=C.command, log=logf, watch=CONTROL_WATCH)
+    return CONTROL.format(repo=ROOT.name, cmd=C.command, log=logf)
 
 
 def control_settings_data() -> dict:
