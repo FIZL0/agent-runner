@@ -6102,7 +6102,7 @@ def started_note(slots: int, where: str) -> str:
              f'    {RUNNER} attach     {attach}',
              f'    {RUNNER} stop       finish the running tasks, then end it (--force: now)']
     if C.run['control'] and control_ok():
-        beside = ('the control server opens the others' if remote_on() else 'c1 runs beside the run: attach c1')
+        beside = 'c1 runs beside the run: attach c1' + ('; the control server opens others' if remote_on() else '')
         lines.append(f'    {RUNNER} control    a control session in this terminal ({beside})')
     if remote_on():
         lines.append(f'    {REMOTE_URL}  the control sessions, from any device or the Claude apps')
@@ -6315,16 +6315,17 @@ def control_name(n: int) -> str:
     return f'{ROOT.name} · control {n}'
 
 
-def control_argv(n: int, sid: str, resume: bool) -> list[str]:
+def control_argv(n: int, sid: str, resume: bool, blank: bool = False) -> list[str]:
     """Control session `n`: interactive, on `[run] model` (no model of its own), the brief from its settings
     file; with `[run] remote` on Remote Control as "<repo> · control N". Control 1 (the kept session the run
     starts) gets a first message asking for the status summary (`status` only: `since` would move the last-look
     mark past updates the person has not seen); any other (`control --new`, /control) gets none and stays blank
     until the person types, its brief still loaded by the SessionStart hook. bypassPermissions, as the slots: it
     is driven from a phone or the web as often as from here, and a permission prompt there stalls it. Not lean: a
-    person is there (all tools, so /statusline and the like work)."""
+    person is there (all tools, so /statusline and the like work). `blank` (`control 1 --blank`: the c1 a run
+    with `[run] remote` opens): no first message either, so it costs nothing until the person types."""
     from agent_runner.guide import CONTROL_START
-    return [plat.exe(C.run['agent']), *([CONTROL_START.format(cmd=C.command)] if n == 1 else []),
+    return [plat.exe(C.run['agent']), *([CONTROL_START.format(cmd=C.command)] if n == 1 and not blank else []),
             '--resume' if resume else '--session-id', sid, '--model', C.run['model'],
             '--permission-mode', 'bypassPermissions',
             '--settings', str(control_settings()), '--add-dir', str(control_skills_dir()),
@@ -6385,6 +6386,7 @@ def cmd_control(argv: list[str], prog: str = f'{RUNNER} control') -> int:
     ap.add_argument('--new', action='store_true', help='open another one without taking focus (a window in the '
                     "run's tmux session; Windows: a hidden console) and print its claude.ai/code link")
     ap.add_argument('--brief', action='store_true', help=argparse.SUPPRESS)  # the SessionStart hook
+    ap.add_argument('--blank', action='store_true', help=argparse.SUPPRESS)  # c1 under [run] remote: no opening turn
     ap.add_argument('--unquiet', action='store_true', help=argparse.SUPPRESS)  # `unquiet_when_up`, for session N
     a = ap.parse_args(argv)
     init()
@@ -6404,7 +6406,7 @@ def cmd_control(argv: list[str], prog: str = f'{RUNNER} control') -> int:
         print(f'control {n} already runs (pid {pid}): {RUNNER} control starts another', file=sys.stderr)
         return 1
     sid, resume = control_sid(n)
-    argv = control_argv(n, sid, resume)
+    argv = control_argv(n, sid, resume, blank=a.blank)
     backend().trust(ROOT)
     os.chdir(ROOT)
     pidf = C.notes(f'control{n}.pid')
@@ -6478,14 +6480,14 @@ def control_pane_argv(target: str, background: bool, sess: str, root: Path, cmd:
 
 
 def start_control() -> None:
-    """The run opens control session c1 beside it, unless `[run] control = false`, `[run] remote` is on (the
-    control server starts control sessions from claude.ai and the apps, where c1 would be a second entry) or c1
-    already runs (it outlives a stopped run). tmux: under the runner's pane, or in the background session's own window, whose
+    """The run opens control session c1 beside it, unless `[run] control = false` or c1 already runs (it outlives
+    a stopped run). With `[run] remote` it opens blank (no opening summary, so no tokens until the person types)
+    and is in the apps too as "<repo> · control 1", beside the control server's entry. tmux: under the runner's pane, or in the background session's own window, whose
     default-command makes every new pane a control session. Windows: a console of its own (hidden in the
     background run)."""
     if not C.run['control'] or not control_ok():
         return
-    cmd = [*runner_cmd(), 'control', '1']
+    cmd = [*runner_cmd(), 'control', '1', *(['--blank'] if remote_on() else [])]  # remote: idle, so free, till you type
     here = os.environ.get('TMUX_PANE', '')
     if isinstance(MUX, TmuxMux) and here:
         sess = tmux('display-message', '-p', '-t', here, '#{session_name}').stdout.strip()
@@ -6495,10 +6497,6 @@ def start_control() -> None:
             tmux('set-option', '-t', f'={sess}', 'default-command', control_default_command(ROOT))
             for e in env:
                 tmux('set-environment', '-t', f'={sess}', *e.split('=', 1))
-    if remote_on():  # the control server starts control sessions from claude.ai and the apps; c1 would be a second entry
-        log(f'control: no c1 beside the run, the control server opens control sessions at {REMOTE_URL} '
-            f'({RUNNER} control opens one in a terminal)')
-        return
     if pid := control_live(1):
         log(f'control: c1 already runs (pid {pid})')
         return

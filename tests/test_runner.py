@@ -952,13 +952,19 @@ def test_control(repo: Path):
             mock.patch.object(R, 'remote_on', lambda: True), mock.patch.object(R.threading, 'Thread', FakeThread):
         R.start_control()
         R.start_control_server()
-        check(not any(isinstance(c, list) and c[:2] in (['tmux', 'new-window'], ['tmux', 'split-window']) for c in calls),
-              'remote on: no c1 pane', calls)
-        check(not any(c[:5] == ('set-option', '-p', '-t', '%9', R.TAG) for c in calls), 'and none tagged c1', calls)
+        opened = [c for c in calls if isinstance(c, list) and c[:2] in (['tmux', 'new-window'], ['tmux', 'split-window'])]
+        check(len(opened) == 1 and opened[0][-1].endswith('control 1 --blank'),
+              'remote on: c1 opens in tmux too, blank (no opening turn, so free till you type)', calls)
+        check(('set-option', '-p', '-t', '%9', R.TAG, 'c1') in calls, 'and tagged c1', calls)
         eq(started, ['control-server'], 'remote on: the control server thread starts')
         note = R.started_note(2, 'here')
-        check('attach c1' not in note and 'the control server opens the others' in note and R.REMOTE_URL in note,
-              'remote on: started_note says the control server stands in for c1', note)
+        check('attach c1' in note and 'the control server opens others' in note and R.REMOTE_URL in note,
+              'remote on: started_note points at c1 and the control server', note)
+    with mock.patch.object(R, 'remote_on', lambda: True):
+        argv = R.control_argv(1, 'sid', False, blank=True)
+        check(not any('summary' in a for a in argv) and '--remote-control' in argv,
+              'a blank c1 has no first message, and is on Remote Control', argv)
+        check(any('summary' in a for a in R.control_argv(1, 'sid', False)), 'c1 by hand still opens with the summary')
 
     skills = R.control_skills_dir()
     eq(skills, repo / '.runner' / 'control-skills', 'the control skills sit under <notes>, not in the repo files')
