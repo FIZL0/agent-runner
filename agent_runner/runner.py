@@ -67,6 +67,7 @@ import tempfile
 import threading
 import time
 import uuid
+import webbrowser
 from contextlib import ExitStack, contextmanager, redirect_stdout
 from pathlib import Path
 
@@ -404,6 +405,7 @@ runner keys: type one in this pane and press Enter
     -        one slot fewer (a running task in it finishes first)
     z        suspend the computer once the run stops, or when it goes idle
     x        shut the computer down once the run stops, or when it goes idle
+    Enter    open the slots' sessions at claude.ai/code (with [run] remote)
     ?        this help
 
     s, p, f, z and x take themselves back when typed again.
@@ -422,9 +424,29 @@ def take_keys() -> None:
         if (f := C.notes('POWER')).exists():
             POWER = f.read_text(encoding='utf-8').strip()
             f.unlink(missing_ok=True)
+        KEYS.extend(cli_keys())
         while KEYS:
-            k = KEYS.pop(0)
+            k, _, want = KEYS.pop(0).partition(' ')
             if not k:
+                if C.run['remote']:
+                    open_remote()
+                continue
+            on = {'s': stopping, 'p': lambda: PAUSED[0], 'f': lambda: FORCED[0],
+                  'z': lambda: POWER == 'suspend', 'x': lambda: POWER == 'shutdown'}.get(k)
+            if on and want in ('on', 'off') and on() == (want == 'on'):
+                log(f'{k} {want}: already so ({state_line()})')
+                continue
+            if k == 'slots':
+                try:
+                    n = SLOTS + int(want) if want[:1] in '+-' else int(want)
+                except ValueError:
+                    log(f'slots wants a number, +N or -N, not {want!r}')
+                    continue
+                if n < 1:
+                    log('one slot is the fewest; s stops the run')
+                    continue
+                was, SLOTS = SLOTS, n
+                log(f'slots: {SLOTS}' + (f' (slots past {SLOTS} close once their tasks end)' if n < was else ''))
                 continue
             if k == 's' and stopping():
                 clear_stop()
@@ -461,6 +483,52 @@ def take_keys() -> None:
                 print(keys_help(), flush=True)
             else:
                 print(f'unknown key {k!r}\n{keys_help()}', flush=True)
+
+
+def cli_keys() -> list[str]:
+    """The keys `agent-runner pause|force|slots|key` left in `<notes>/KEYS`, one a line, taken once. Moved
+    aside before it is read, so a key written meanwhile goes in a new file for the next pass."""
+    f = C.notes('KEYS')
+    taken = f.with_name(f'KEYS.{os.getpid()}')
+    try:
+        f.replace(taken)
+    except OSError:
+        return []
+    try:
+        return [k for l in taken.read_text(encoding='utf-8').splitlines() if (k := l.strip().lower())]
+    finally:
+        taken.unlink(missing_ok=True)
+
+
+REMOTE_URL = 'https://claude.ai/code'  # every Remote Control session of the account, slots and control alike
+
+
+def open_remote() -> None:
+    """Enter in the runner's pane, with `[run] remote`: the sessions page, in the default browser (a claude.ai
+    link the desktop app is set to take opens there). No browser here (ssh): the link, to open elsewhere."""
+    try:
+        ok = webbrowser.open(REMOTE_URL)
+    except Exception:  # noqa: BLE001 - a broken browser setup must not take the key reader down
+        ok = False
+    log(f'opening {REMOTE_URL}' if ok else f'no browser here: open {REMOTE_URL} on any device, or the Claude app')
+
+
+def send_key(*keys: str) -> None:
+    """What a typed key does, from any terminal or a remote session: the run takes it on its next pass."""
+    with open(C.notes('KEYS'), 'a', encoding='utf-8') as f:
+        f.write(''.join(f'{k}\n' for k in keys))
+
+
+def write_state(running: dict) -> None:
+    """`<notes>/STATE`, for `agent-runner status`: what the keys have set and what each slot is on."""
+    work = {str(n): t[0] for n, t in running.items()}
+    tmp = C.notes('STATE.tmp')
+    try:
+        tmp.write_text(json.dumps({'at': dt.datetime.now().isoformat(timespec='seconds'), 'state': state_line(),
+                                   'running': work}), encoding='utf-8')
+        os.replace(tmp, C.notes('STATE'))
+    except OSError:  # Windows: `status` has STATE open this instant; the next pass writes it
+        pass
 
 
 def kept_keys() -> dict:
@@ -940,7 +1008,7 @@ def pi_extension(idle: int) -> Path:
 
 
 def lean() -> list[str]:
-    """Bash/Read/Edit/Write and the repo's own settings only: an unattended agent needs no MCP servers, and a
+    """Bash/Read/Edit/Write/Artifact and the repo's own settings only: an unattended agent needs no MCP servers, and a
     user-level setting (a status line, a hook that asks) is something nobody is there to answer."""
     if not C.run['lean']:
         return []
@@ -948,7 +1016,8 @@ def lean() -> list[str]:
         return ['--disable-builtin-mcps']
     if pi():
         return ['--no-mcp']
-    return ['--tools', 'Bash,Read,Edit,Write', '--setting-sources', 'project,local', '--strict-mcp-config']
+    # Artifact: a task can publish a page or screenshots to claude.ai and link it, seen from any device
+    return ['--tools', 'Bash,Read,Edit,Write,Artifact', '--setting-sources', 'project,local', '--strict-mcp-config']
 
 
 ARG_PROMPT_MAX = 96 * 1024  # Linux's MAX_ARG_STRLEN is 128 KiB for one argument; leave room
@@ -1195,7 +1264,17 @@ def copilot_trust(*dirs: Path) -> None:
     log(f'Copilot CLI now trusts {", ".join(new)} (trustedFolders in {f})')
 
 
-def agent_cmd(prompt: str, sid: str, model: str, idle: int, name: str, resume: bool = False) -> str:
+def remote_flags(name: str, cwd: Path | None) -> list[str]:
+    """`[run] remote`: the session shows in claude.ai/code and the Claude apps as "<repo> · s2 · B646", where a
+    person can watch it and type to it. Claude Code only, and only an interactive session (not Pi, not Copilot)."""
+    if not C.run['remote'] or copilot() or pi():
+        return []
+    tid = git('branch', '--show-current', cwd=cwd).stdout.strip().removeprefix('task/') if cwd else ''
+    return ['--remote-control', ' · '.join(x for x in (ROOT.name, name.replace('slot', 's'), tid) if x)]
+
+
+def agent_cmd(prompt: str, sid: str, model: str, idle: int, name: str, resume: bool = False,
+              cwd: Path | None = None) -> str:
     """The agent command line for one task, for sh (tmux, and the POSIX sequential run). The prompt is
     written to `<notes>/<name>.prompt` and goes in from there (`Claude.cmd`, `Pi.cmd`)."""
     pf = C.notes(f'{name}.prompt')
@@ -1203,11 +1282,11 @@ def agent_cmd(prompt: str, sid: str, model: str, idle: int, name: str, resume: b
     if copilot():
         return shlex.join([C.run['agent'], *prompt_flag()]) + f' "$(cat {shlex.quote(str(pf))})" ' + \
             shlex.join(agent_flags(sid, model, idle, resume))
-    return backend().cmd(prompt, pf, sid, agent_flags(sid, model, idle, resume))
+    return backend().cmd(prompt, pf, sid, agent_flags(sid, model, idle, resume) + remote_flags(name, cwd))
 
 
 def agent_argv(prompt: str, sid: str, model: str, idle: int, name: str, resume: bool = False,
-               once: bool = False) -> list[str]:
+               once: bool = False, cwd: Path | None = None) -> list[str]:
     """The same command as an argv, for Windows, where no POSIX shell stands between us and the agent. The
     prompt is written to `<notes>/<name>.prompt` all the same."""
     pf = C.notes(f'{name}.prompt')
@@ -1217,7 +1296,8 @@ def agent_argv(prompt: str, sid: str, model: str, idle: int, name: str, resume: 
             prompt = (f'Your instructions for this session are in {pf.as_posix()}, too long to pass on a Windows '
                       f'command line. Read that whole file first, then follow it.')
         return [plat.exe(C.run['agent']), *prompt_flag(), prompt, *agent_flags(sid, model, idle, resume, once)]
-    return backend().argv(prompt, pf, sid, agent_flags(sid, model, idle, resume, once))
+    return backend().argv(prompt, pf, sid, agent_flags(sid, model, idle, resume, once) +
+                          ([] if once else remote_flags(name, cwd)))
 
 
 def brief_for(tid: str, cwd: Path) -> str:
@@ -1646,7 +1726,7 @@ class TmuxMux:
     def open(self, n: int, cwd: Path, prompt: str, sid: str, model: str, idle: int, env: list[str],
              logfile: Path, resume: bool = False) -> int | None:
         try:
-            return pane(f's{n}', cwd, agent_cmd(prompt, sid, model, idle, f'slot{n}', resume), env, logfile)
+            return pane(f's{n}', cwd, agent_cmd(prompt, sid, model, idle, f'slot{n}', resume, cwd), env, logfile)
         except RuntimeError as e:
             log(f'slot {n}: {e}')
             return None
@@ -1682,7 +1762,7 @@ class ShimMux:
         marker.unlink(missing_ok=True)
         ended.unlink(missing_ok=True)
         envd = env_vars(env)
-        job.write_text(json.dumps({'argv': agent_argv(prompt, sid, model, idle, f'slot{n}', resume), 'cwd': str(cwd),
+        job.write_text(json.dumps({'argv': agent_argv(prompt, sid, model, idle, f'slot{n}', resume, cwd=cwd), 'cwd': str(cwd),
                                    'env': envd, 'marker': str(marker)}), encoding='utf-8')
         shim = [*runner_cmd(), 'run', '--slot-shim', str(job)]
         if self.name == 'wt':
@@ -4897,6 +4977,8 @@ def run(argv: list[str], prog: str) -> int:
     reserve_branch_ids()
     log(f'run: {slots} slots in {MUX.name}, merging into {branch}' +
         (f', session usage {usage_pct("five_hour")}%, weekly usage {weekly()}%' if not a.force and r['agent'] == 'claude' else ''))
+    if r['remote'] and not copilot() and not pi():
+        log(f'remote control on: the slots show at {REMOTE_URL} and in the Claude apps; Enter here opens it')
     from agent_runner import context
     if heavy := context.warning(ROOT, r['rules'], C.raw['plan']['context_kb']):
         log(heavy)
@@ -4926,6 +5008,7 @@ def run(argv: list[str], prog: str) -> int:
     while True:
         sweep_tmp()
         take_keys()
+        write_state(running)
         if SLOTS != slots:  # `+` or `-`: a slot past the count is watched to its end, never refilled
             slots = SLOTS
             for m in range(1, slots + 1):
@@ -5277,6 +5360,67 @@ def cmd_resume(argv: list[str], prog: str = f'{RUNNER} resume') -> int:
     return 1 if bad else 0
 
 
+def run_up() -> bool:
+    """A run holds `<notes>/run.lock` in this repository."""
+    if f := plat.lock(C.notes('run.lock')):
+        f.close()
+        return False
+    return True
+
+
+def cmd_key(argv: list[str], prog: str = f'{RUNNER} key') -> int:
+    """`pause`, `force`, `slots` and `key`: the runner pane's keys from any terminal, or from a remote session.
+    Unlike a typed key, `pause` and `force` say which way (on, or off with --off), so saying it twice is safe."""
+    cmd = prog.split()[-1]
+    ap = argparse.ArgumentParser(prog=prog, description={
+        'pause': 'Start no new tasks; the run stays up (--off: start them again).',
+        'force': 'Start tasks past the session and weekly usage caps (--off: the caps hold again).',
+        'slots': 'Change the running slot count: N, +N or -N (a slot past the count finishes its task first).',
+        'key': 'Send keys to the run as if typed in its pane (? lists them).'}[cmd])
+    if cmd == 'slots':
+        ap.add_argument('count', help='N, +N or -N')
+    elif cmd == 'key':
+        ap.add_argument('keys', nargs='+')
+    else:
+        ap.add_argument('--off', action='store_true')
+    a = ap.parse_args(argv)
+    init()
+    if not run_up():
+        print(f'no run is up in this repository: `{C.command} run` starts one', file=sys.stderr)
+        return 1
+    keys = {'slots': lambda: [f'slots {a.count}'], 'key': lambda: a.keys}.get(
+        cmd, lambda: [f'{cmd[0]} {"off" if a.off else "on"}'])()
+    send_key(*keys)
+    print(f'sent to the run: {", ".join(keys)} (it acts within 10 s; `{C.command} status` shows it)')
+    return 0
+
+
+def cmd_status(argv: list[str], prog: str = f'{RUNNER} status') -> int:
+    """`agent-runner status`: is a run up, what its keys have set, each slot's task, and the log's end."""
+    ap = argparse.ArgumentParser(prog=prog, description='What the run is doing.')
+    ap.add_argument('-n', type=int, default=12, help='log lines to show (default 12)')
+    a = ap.parse_args(argv)
+    init()
+    up = run_up()
+    try:
+        st = json.loads(C.notes('STATE').read_text(encoding='utf-8')) if up else {}
+    except (OSError, ValueError):
+        st = {}
+    if not up:
+        print('no run is up')
+    else:
+        print(f'run up: {st.get("state", "starting")}' + (f' (as of {st["at"]})' if st.get('at') else ''))
+        for n, tid in sorted(st.get('running', {}).items(), key=lambda kv: (not kv[0].isdigit(), kv[0].zfill(4))):
+            print(f'  {"slot " + n if n.isdigit() else n}: {tid}')
+    try:
+        tail = C.notes('run.log').read_text(encoding='utf-8', errors='replace').splitlines()[-a.n:]
+    except OSError:
+        tail = []
+    if tail and a.n:
+        print('\nrun.log:\n' + '\n'.join(f'  {l}' for l in tail))
+    return 0
+
+
 def cmd_stop(argv: list[str], prog: str = f'{RUNNER} stop') -> int:
     """`./run stop`: the running sessions finish and merge, nothing new starts, and the run exits."""
     ap = argparse.ArgumentParser(prog=prog, description='Finish the running tasks, start nothing new, then exit.')
@@ -5285,8 +5429,15 @@ def cmd_stop(argv: list[str], prog: str = f'{RUNNER} stop') -> int:
     power = ap.add_mutually_exclusive_group()
     power.add_argument('--suspend', action='store_true', help='then suspend the computer')
     power.add_argument('--shutdown', action='store_true', help='then shut the computer down')
+    power.add_argument('--undo', action='store_true', help='take a gentle stop back: start tasks again')
     a = ap.parse_args(argv)
     init()
+    if a.undo:
+        if a.force:
+            ap.error('--undo takes back a gentle stop; a stop now (--force) is under way already')
+        send_key('s off') if run_up() else clear_stop()
+        print('stop taken back')
+        return 0
     if a.suspend or a.shutdown:
         C.notes('POWER').write_text('suspend' if a.suspend else 'shutdown', encoding='utf-8')
     ask_stop(f'{C.command} stop' + (' --force' if a.force else ''), force=a.force)

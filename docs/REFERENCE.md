@@ -371,6 +371,14 @@ After a stop, power goes off at once, with no idle grace. `agent-runner stop --s
 the same from outside the pane, through `.runner/POWER`. A line the runner does not know is echoed back with
 the key list. Each key is acted on as it is typed; ending sessions and adding a slot wake the loop at once.
 
+**The same from any terminal, or a remote session.** Each key has a command, so nothing needs the pane:
+`agent-runner pause` (`--off` goes on), `force` (`--off`), `slots 4` (or `+1`, `-1`), `stop --undo` (takes a
+gentle stop back), and `key <k>` for any other (`key z`, `key u`). Unlike a typed key, `pause`, `force` and
+`stop` say which way they go, so asking twice does not undo them. They append to `.runner/KEYS`, which the
+loop reads on every pass, so the run acts within 10 s; with no run up they say so and exit 1.
+`agent-runner status` prints whether a run is up, what the keys have set, each slot's task (from
+`.runner/STATE`, rewritten every pass) and the end of `run.log` (`-n 30` for more).
+
 Both write `.runner/STOP` (with who asked; `.runner/STOP.force` for a stop now), and the loop checks that
 file on every pass, so `s` can take back a `agent-runner stop` and the reverse. A daemon thread reads the runner's terminal (it works on Windows
 consoles too) and only starts when stdin is a terminal. The sequential run has no `s` key, because its
@@ -640,7 +648,8 @@ comment_policy = "normal"
 agent = "claude"
 backend = ""              # claude or pi; empty detects pi from the agent executable's name
 model = "opus"
-lean = true               # sessions get Bash/Read/Edit/Write only, no MCP servers or user settings
+lean = true               # sessions get Bash/Read/Edit/Write/Artifact only, no MCP servers or user settings
+remote = false            # slots on Remote Control: watch and type to them at claude.ai/code or in the Claude apps; Enter in the runner's pane opens it
 idle = 30                 # s quiet after a turn ends before a session without a successful `done` is ended (with one: 5 s)
 stall = 1200              # s quiet at a prompt that counts as stalled
 pause = 60                # s between one session ending and the next starting in that slot

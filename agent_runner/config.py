@@ -97,7 +97,8 @@ DEFAULTS: dict = {
         'comment_policy': 'normal',
         'backend': '',          # '' = Claude Code (or pi when `agent` is a pi executable); pi = other providers
         'model': 'opus',
-        'lean': True,           # agents get Bash/Read/Edit/Write only, no MCP, no user settings
+        'lean': True,           # agents get Bash/Read/Edit/Write/Artifact only, no MCP, no user settings
+        'remote': False,        # slots on Remote Control: watched and typed to from claude.ai/code and the Claude apps
         'install_skill': True,  # keep the `agent-runner guide` skill in ~/.claude/skills, for sessions a person starts
         'rules_pointer': True,  # a run adds one line to the rules file (`rules`, AGENTS.md, CLAUDE.md) pointing at it
         'idle': 30,             # seconds a finished session sits at its prompt before it is ended

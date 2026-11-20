@@ -14,6 +14,12 @@ Run the agents
     agent-runner stop                 let running tasks finish, start no new ones
     agent-runner stop --force         end the sessions now; each resumes in the next run
     agent-runner stop --shutdown      stop, then shut the computer down (--suspend: sleep)
+    agent-runner stop --undo          take a stop back: start tasks again
+    agent-runner status               is a run up, each slot's task, the end of its log
+    agent-runner pause                start no new tasks, stay up (--off: go on)
+    agent-runner slots +1             one slot more (-1 fewer, 4: exactly four)
+    agent-runner force                start tasks past the usage caps (--off: caps hold)
+    agent-runner key z                any key the runner's pane takes (? lists them)
     agent-runner take B646            do B646 in your own session or a subagent, beside a run: prints its worktree and prompt
     agent-runner take B646 --merge    after `done` there: the runner tests and merges it (--drop: give it back)
     agent-runner take "TEXT" --kind B [--files A,B] [--here]
@@ -148,6 +154,12 @@ def main(argv: list[str] | None = None) -> int:
     if cmd == 'stop':
         from agent_runner import runner
         return runner.cmd_stop(rest)
+    if cmd == 'status':
+        from agent_runner import runner
+        return runner.cmd_status(rest)
+    if cmd in ('pause', 'force', 'slots', 'key'):
+        from agent_runner import runner
+        return runner.cmd_key(rest, f'{runner.RUNNER} {cmd}')
     if cmd == 'guide':
         from agent_runner.guide import GUIDE
         print(GUIDE, end='')

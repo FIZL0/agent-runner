@@ -946,6 +946,36 @@ def test_prompt_and_hooks(repo: Path):
         check(text.count('-' * 78) == 4 and 's!' in text and 'now: 1 slot' in text,
               '`?` prints the ruled-off key list with the current state')
         check("unknown key 'frob'" in text, 'an unknown line says so, then shows the keys')
+        r = run(repo, 'pause')
+        check(r.returncode == 1 and 'no run is up' in r.stderr, '`pause` with no run up says so')
+        R.send_key('p on', 'p on', 'slots +2', 'slots 1', 'slots 0', 'slots x', 'f on')
+        R.take_keys()
+        check(R.PAUSED[0] and R.SLOTS == 1 and R.FORCED[0] and not (repo / '.runner/KEYS').exists(),
+              'keys left by the CLI are taken: `p on` twice stays paused, slots set and checked')
+        R.send_key('p off', 'f off', 'f off', 's on', 's on')
+        R.take_keys()
+        check(not R.PAUSED[0] and not R.FORCED[0] and R.stopping(), '`off` takes back, `on` twice stops once')
+        run(repo, 'stop', '--undo')
+        check(not R.stopping(), '`stop --undo` with no run up clears the stop')
+        opened = []
+        with mock.patch.object(R.webbrowser, 'open', lambda u: opened.append(u) or True):
+            R.KEYS.append('')
+            R.take_keys()
+            check(not opened, 'Enter does nothing without [run] remote')
+            with mock.patch.dict(R.C.run, {'remote': True}):
+                R.KEYS.append('')
+                R.take_keys()
+                flags = R.remote_flags('slot2', None)
+        eq(opened, [R.REMOTE_URL], 'with [run] remote, Enter opens the sessions page')
+        eq(flags, ['--remote-control', f'{R.ROOT.name} · s2'], 'and a slot starts on Remote Control, named')
+        eq(R.remote_flags('slot2', None), [], 'no Remote Control unless [run] remote')
+        R.write_state({1: ('T3', '', set(), set())})
+        with mock.patch.object(R, 'run_up', lambda: True), mock.patch.object(R, 'init', lambda: None):
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                R.cmd_status(['-n', '0'])
+        check('run up: 1 slot' in out.getvalue() and 'slot 1: T3' in out.getvalue(),
+              '`status` shows the state and each slot\'s task', out.getvalue())
         run(repo, 'stop', '--force', '--shutdown')
         R.take_keys()
         check(R.forced() and R.POWER == 'shutdown' and not (repo / '.runner/POWER').exists(),

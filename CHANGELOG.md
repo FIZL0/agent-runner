@@ -2,6 +2,18 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
+## 0.48.0 (2026-11-19)
+
+- Every key of the runner's pane is a command too, for a person in another terminal or a remote session:
+  `agent-runner pause` / `force` (`--off` to take back), `slots N|+N|-N`, `stop --undo`, and `key <k>` for the
+  rest. `pause`, `force` and `stop` say which way they go, so saying one twice does not undo it.
+- `agent-runner status`: whether a run is up, what its keys have set, each slot's task, and the end of its log.
+- A slot can publish a page or screenshots to claude.ai with the Artifact tool and link it (lean sessions
+  now get `Bash,Read,Edit,Write,Artifact`). It needs a claude.ai login; print-mode fix sessions don't have it.
+- `[run] remote = true`: every slot starts on Remote Control, named "<repo> · s2 · B646", so it can be watched
+  and typed to from claude.ai/code, the desktop app or the phone apps. Enter in the runner's pane opens
+  claude.ai/code. Claude Code only; needs a claude.ai login (not an API key).
+
 ## 0.47.0 (2026-11-19)
 
 - `agent-runner take "TEXT" --kind K [--files A,B]`: queue a task and take it in one step, no id needed.
