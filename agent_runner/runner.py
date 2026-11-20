@@ -6802,6 +6802,59 @@ def control_name(n: int, ask: str = '', images: list[str] | tuple = ()) -> str:
     return f'{ROOT.name} · {n} · {title}' if title else f'{ROOT.name} · control {n}'
 
 
+CONTROL_N_ENV = 'AGENT_RUNNER_CONTROL'  # F29: a control session's number, in its tools' environment
+
+
+def control_summary_name(n: int, summary: str) -> str:
+    """F29: the name control session `n` takes once it has read its first message: "<repo> · N · <summary>",
+    the summary one line trimmed as an ask's title is (`control_title`), so `attach cN` still matches and
+    `control_renamed` does not take it for the person's; "" for an empty summary."""
+    title = control_title(' '.join(str(summary or '').replace('"', ' ').replace('`', ' ').split()))
+    return f'{ROOT.name} · {n} · {title}' if title else ''
+
+
+def control_pane(n: int) -> str:
+    """The tmux pane control session `n` runs in: $TMUX_PANE when the caller is that session's own tool (its
+    shells inherit the pane), else the pane tagged c<n> for this repository; '' for none."""
+    if pane := os.environ.get('TMUX_PANE', ''):
+        return pane
+    if not shutil.which('tmux'):
+        return ''
+    rows = tmux('list-panes', '-a', '-F', f'#{{session_name}}\t#{{pane_id}}\t#{{{TAG}}}\t#{{{REPO_TAG}}}\t#{{{RUN_TAG}}}')
+    hit = attach_target(rows.stdout.splitlines(), ROOT, f'c{n}') if not rows.returncode else None
+    return hit[1] if hit else ''
+
+
+def control_set_title(n: int, summary: str) -> int:
+    """F29 `control --title SUMMARY`: control session `n` (its own $AGENT_RUNNER_CONTROL) names itself for what
+    it is for, once it has read its first message: types `/rename <repo> · N · SUMMARY` into its pane (queued
+    until its turn ends) and renames its tmux window. Not over a name the person gave it (B41)."""
+    if not n:
+        print(f'no control session number: run it from a control session, or give N ({RUNNER} control N --title …)',
+              file=sys.stderr)
+        return 2
+    if not (name := control_summary_name(n, summary)):
+        print('--title needs a few words saying what the session is for', file=sys.stderr)
+        return 2
+    try:
+        sid = C.notes(f'control{n}.pid').read_text(encoding='utf-8').strip().partition(' ')[2]
+    except OSError:
+        sid = ''
+    if sid and transcript(sid) and control_renamed(control_state(entries(sid, skip_bad=True)), n):
+        print(f'control {n} keeps the name the person gave it')
+        return 0
+    if not (pane := control_pane(n)) or not send_to_pane(pane, f'/rename {name}'):
+        print(f'control {n} has no tmux pane to rename it in; it stays as it is', file=sys.stderr)
+        return 1
+    tmux('rename-window', '-t', pane, name)
+    try:
+        C.notes(f'control{n}.title').write_text(name + '\n', encoding='utf-8')
+    except OSError:
+        pass
+    print(f'control {n} is renamed "{name}" when this turn ends')
+    return 0
+
+
 def control_ask(ask: str, images: list[str] | tuple = ()) -> str:
     """The first message a handed-on request opens a control session with: `ask`, and for each `--file PATH`
     (`--image`: an alias) a line saying the person attached that file, by name and saved path, and to Read or open
@@ -6914,11 +6967,16 @@ def cmd_control(argv: list[str], prog: str = f'{RUNNER} control') -> int:
                     help='a file or image the person attached to the --ask message (repeatable): the first message '
                     'names it and its path and says to Read or open it')
     ap.add_argument('--unquiet', action='store_true', help=argparse.SUPPRESS)  # `unquiet_when_up`, for session N
+    ap.add_argument('--title', default=None, metavar='SUMMARY', help='from inside control session N, once it has '
+                    'read its first message: name it "<repo> · N · SUMMARY" for what it is for')
     a = ap.parse_args(argv)
     init()
     if a.brief:
         print(control_brief(), end='')
         return 0
+    if a.title is not None:
+        env_n = os.environ.get(CONTROL_N_ENV, '')
+        return control_set_title(a.n or (int(env_n) if env_n.isdigit() else 0), a.title)
     if a.unquiet:
         unquiet_when_up(f'c{a.n}', os.environ.get('TMUX_PANE', ''))
         return 0
@@ -6937,6 +6995,7 @@ def cmd_control(argv: list[str], prog: str = f'{RUNNER} control') -> int:
     os.chdir(ROOT)
     pidf = C.notes(f'control{n}.pid')
     env = control_env()
+    env[CONTROL_N_ENV] = str(n)  # F29: `control --title` from its tools knows which session it is
     if '--remote-control' in argv and silent() is not False:  # no push while it starts (silent: ever)
         env[PRESENCE_ENV] = str(quiet_file(f'c{n}'))
         if silent() is True:  # the file stays: this session never pushes

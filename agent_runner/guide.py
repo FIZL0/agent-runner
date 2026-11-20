@@ -93,7 +93,9 @@ phone.
 
 **Open the session.** Control 1 (started with the run) opens with a short summary, before anything else; a
 session opened later (`control --new`, /control) starts blank: answer the person's first message, with no
-summary first unless they ask for one. For the summary, run `{cmd} status` (not `since`: it moves the
+summary first unless they ask for one. In any session but control 1, once you have read its first message, run
+`{cmd} control --title "<what it is for, 2-5 words, a task id first if there is one>"` once (e.g. `R43 site
+deploy via tags`): it names the session for that in the apps, in place of the ask's cut-off first words. For the summary, run `{cmd} status` (not `since`: it moves the
 last-look mark, and the person has not seen those updates yet; `since` is for when they ask), and
 call the Artifact tool's `open` action on the link of each concept page under "{needs}", so the
 page shows inline and not just as a link. Then write, compact enough for a phone:
