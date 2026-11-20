@@ -100,7 +100,9 @@ last-look mark, and the person has not seen those updates yet; `since` is for wh
 call the Artifact tool's `open` action on the link of each concept page under "{needs}", so the
 page shows inline and not just as a link. Then write, compact enough for a phone:
 1. One headline line: `Lately: 11 landed, 1 stuck, 1 needs you. Run up, idle, 3 slots.` (or
-   `No run is up.`), counting only what there is.
+   `No run is up.`), counting only what there is, then status's `merged … · … tasks left` line in plain
+   words: `11 merged in the last 24h, 23 tasks left (2 blocked).` and, when status has a `release:` line,
+   `Release waits on 7 of 25 tasks.`
 2. Groups, each a heading on a line of its own with plain bullets under it, in this order: **{needs}** (each
    item as status words it: what is asked and what to reply, its age, then its link on a line of its own;
    oldest first as listed; never a CONCEPT/CONFIRM/DECIDE/BLOCKED label), **Running** (each
@@ -121,6 +123,11 @@ What the person asks, and what you run (`{cmd}` is the runner):
   shows what is new since the last look and moves that mark; `{cmd} since 2h` or `yesterday` looks further
   back). Say it back as a few simple bullets in everyday words, under the opening's group headings, no ids,
   no hints line.
+- "how close is release?", "when's the next version?", "how much is left?": run `{cmd} status` and answer
+  from its `release:` line (the release task is queued, waiting on the tasks it names: `release: waits on 7
+  of 25 tasks` means 7 still to land) and its `merged … · … tasks left` line (`{cmd} status --window 2h`
+  counts merges over another window). With no `release:` line, say no release task is queued. Answer in
+  everyday words: no task ids, no slot names.
 - "follow", "live", "/follow": start the Monitor tool on `{cmd} since --follow` (one plain line per landed,
   started or stuck task, and when the run goes idle or stops) and post each line it brings as one short
   bullet, without its id. "stop following": stop that Monitor. Never start it unasked. It is the full feed,

@@ -5929,6 +5929,8 @@ def cmd_status(argv: list[str], prog: str = f'{RUNNER} status') -> int:
     """`agent-runner status`: is a run up, what its keys have set, each slot's task, and the log's end."""
     ap = argparse.ArgumentParser(prog=prog, description='What the run is doing.')
     ap.add_argument('-n', type=int, default=0, help='also the last N lines of run.log (default none)')
+    ap.add_argument('--window', default='24h', metavar='W',
+                    help='count merges over this window: 2h, 30m, 1d, today, yesterday, or a date/time (default 24h)')
     a = ap.parse_args(argv)
     init()
     up = run_up()
@@ -5940,10 +5942,83 @@ def cmd_status(argv: list[str], prog: str = f'{RUNNER} status') -> int:
         lines = C.notes('run.log').read_text(encoding='utf-8', errors='replace').splitlines()
     except OSError:
         lines = []
-    print(status_text(up, st, lines, task_titles(), time.time(), waiting=waiting_ok()))
+    print(status_text(up, st, lines, task_titles(), time.time(), waiting=waiting_ok(),
+                      progress='\n'.join(x for x in (progress_line(a.window), release_line(P.lines(C.todo))) if x)))
     if lines and a.n:
         print('\nrun.log:\n' + '\n'.join(f'  {l}' for l in lines[-a.n:]))
     return 0
+
+
+def tasks_left(ls: list[str]) -> tuple[int, int]:
+    """(tasks left, how many of those are blocked) in TODO.md's lines `ls`: the open and blocked top-level tasks,
+    not those under a section a run never starts (Parked, where `--pri later` files, and Stretch), nor shelved
+    ones (`plan shelve`: blocked, off Needs you until a person brings them back)."""
+    left = blocked = 0
+    section = ''
+    for i, l in enumerate(ls):
+        if l.startswith('### '):
+            section = l[4:].strip()
+            continue
+        m = TASK.match(l)
+        if not m or m.group(1) not in ' ~' or section.startswith(P.SKIPPED):
+            continue
+        if m.group(1) == '~':
+            tail = ' '.join(P._item_block(ls, i))
+            at = P._block_at(tail)
+            if at >= 0 and tail[at:].lstrip().startswith('BLOCKED: ' + P.SHELVED):
+                continue
+            blocked += 1
+        left += 1
+    return left, blocked
+
+
+def merges_since(start: dt.datetime) -> int:
+    """How many merge commits the shared branch has since `start` (`git log --merges --since`)."""
+    try:
+        branch = default_branch()
+    except SystemExit:  # a misconfigured [git] master_branch: status still answers, counting HEAD
+        branch = 'HEAD'
+    r = git('log', '--merges', f'--since={start.isoformat(timespec="seconds")}', '--format=%H', branch)
+    return len(r.stdout.split()) if r.returncode == 0 else 0
+
+
+def progress_line(window: str = '24h', now: dt.datetime | None = None) -> str:
+    """'merged 11 in the last 24h · 23 tasks left (2 blocked)': the line `status` and the control sessions'
+    opening headline give for how the run is getting on."""
+    now = now or dt.datetime.now()
+    start = since_start(window, None, now)
+    if start.tzinfo is None:
+        start = start.astimezone()  # local time, as git reads a --since with no zone
+    w = window.strip()
+    span = f'in the last {w}' if re.fullmatch(r'\d+(?:\.\d+)?\s*[a-zA-Z]+', w) else \
+        'today' if w.lower() == 'today' else f'since {w}'
+    left, blocked = tasks_left(P.lines(C.todo))
+    return (f'merged {merges_since(start)} {span} · {left} task{"" if left == 1 else "s"} left'
+            + (f' ({blocked} blocked)' if blocked else ''))
+
+
+RELEASE_TASK = re.compile(r'\W*(?:release\b|cut (?:a|the next) (?:release|version)\b)', re.I)
+
+
+def release_line(ls: list[str]) -> str:
+    """'release: waits on 7 of 25 tasks (T5)' for each queued release task in TODO.md's lines `ls` (one whose
+    title starts "Release" or "Cut the next version"): of the tasks it waits on (its last block's `(after …)`,
+    else its `after:` field), how many are still open. '' when none is queued."""
+    live, out, section = P.open_ids(ls), [], ''
+    for i, l in enumerate(ls):
+        if l.startswith('### '):
+            section = l[4:].strip()
+            continue
+        m = TASK.match(l)
+        if not m or m.group(1) not in ' ~' or section.startswith(P.SKIPPED) or not RELEASE_TASK.match(m.group(3)):
+            continue
+        w = P.WAITS.findall(' '.join(P._item_block(ls, i))) if m.group(1) == '~' else []
+        ids = [t.strip() for t in w[-1].split(',') if t.strip()] if w else P.fields(l).get('after', [])
+        ids = [t for t in dict.fromkeys(ids) if t != m.group(2)]
+        waiting = sum(t in live for t in ids)
+        out.append(f'release: waits on {waiting} of {len(ids)} task{"" if len(ids) == 1 else "s"} ({m.group(2)})'
+                   if waiting else f'release: ready, nothing left to wait on ({m.group(2)})')
+    return '\n'.join(out)
 
 
 EVENT = re.compile(r'^=== \S*T(\d\d:\d\d)\S* (?:(\S+): (merged, (?:ticked|blocked|part)|not merged, parked as \S+|LEFT FOR A HUMAN)\b'
@@ -6397,12 +6472,13 @@ def waiting_text(waiting, width: int = 60, now: dt.datetime | None = None) -> li
 
 
 def status_text(up: bool, st: dict, log_lines: list[str], titles: dict[str, str], now: float, width: int = 60,
-                waiting=None) -> str:
+                waiting=None, progress: str = '') -> str:
     """`agent-runner status`, short enough for a phone: concepts waiting for the person's OK first, then the
-    run's state, each slot's task, title and minutes, what is merging, the last few merged / blocked / parked,
-    and usage."""
+    run's state, `progress` (`progress_line`, `release_line`), each slot's task, title and minutes, what is
+    merging, the last few merged / blocked / parked, and usage."""
     out = waiting_text(waiting, now=dt.datetime.fromtimestamp(now) if now else None)
     out.append(f'run up: {st.get("state", "starting")}' if up else 'no run is up')
+    out += progress.splitlines()
     for n, tid in sorted(st.get('running', {}).items(), key=lambda kv: (not kv[0].isdigit(), kv[0].zfill(4))):
         title = titles.get(tid, '')
         title = title if len(title) <= width else title[:width - 1].rstrip() + '…'
