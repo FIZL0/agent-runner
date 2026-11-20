@@ -4,6 +4,11 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Slots verify before asking: the slot brief tells agents to try `~/.claude/ACCESS.md` and the `## Tools`
+  section of the repo's CLAUDE.md (ssh hosts, preview servers, headless checks) before turning a check into
+  an F task or a `CONFIRM:` for a person. `agent-runner setup` adds an empty `## Tools` heading to CLAUDE.md
+  when it has none (B80).
+
 - A session opened by hand in a runner repo where no run has started yet (a fresh repo in the desktop app)
   gets the control brief too: any agent-runner command adds, once, a SessionStart hook
   (`control --brief --user`) to Claude Code's user settings (`~/.claude/settings.json`). It prints the brief

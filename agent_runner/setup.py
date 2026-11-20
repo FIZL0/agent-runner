@@ -2,7 +2,8 @@
 
 1. Save what is there: uncommitted work (tracked edits and untracked files) is committed to a backup branch,
    runner-setup-backup-<date>, through a scratch index, so the checkout, its index and HEAD stay as they were.
-2. Write runner.toml when there is none, with a guessed gate.
+2. Write runner.toml when there is none, with a guessed gate, and add an empty `## Tools` section to CLAUDE.md
+   when it has none (B80).
 3. Start one full Claude session (normal tools, CLAUDE.md, not the lean slot brief) whose first message asks it to
    read the repo and write the plan through `plan goal` / `plan add`, set the gate and a short notes section.
 4. Print what it set up, and `agent-runner` to start the run.
@@ -122,6 +123,29 @@ def write_toml(root: Path) -> tuple[bool, str | None]:
     return True, test
 
 
+TOOLS_HEADING = '## Tools'
+TOOLS_SECTION = (TOOLS_HEADING + '\n\n<!-- What agents here can reach to check their own work: ssh hosts, preview '
+                 'servers, headless checks (machine logins go in ~/.claude/ACCESS.md). -->\n')
+
+
+def ensure_tools(root: Path) -> str | None:
+    """B80: add an empty `## Tools` section to CLAUDE.md (created when missing) unless it has one; slots read it
+    before handing a check to a person. The file name when it was changed, else None."""
+    f = root / 'CLAUDE.md'
+    try:
+        text = f.read_text(encoding='utf-8') if f.is_file() else ''
+    except OSError:
+        return None
+    if any(l.strip() == TOOLS_HEADING for l in text.splitlines()):
+        return None
+    sep = '' if not text or text.endswith('\n\n') else '\n' if text.endswith('\n') else '\n\n'
+    try:
+        f.write_text(text + sep + TOOLS_SECTION, encoding='utf-8')
+    except OSError:
+        return None
+    return f.name
+
+
 def todo_path(root: Path) -> Path:
     """Where this repo's TODO.md is ([plan] dir or repo, as the run reads it); plan/TODO.md when the config
     cannot be read."""
@@ -154,7 +178,9 @@ tooling, D docs, C cleanup, R research). `--files` names the files a task will c
 agents off the same file.
    - `{plan}` to see the list it wrote.
 4. The repo context agents need: a short `## Agent notes` section in CLAUDE.md, or AGENTS.md if the repo has one \
-(build and test commands, where things live, what not to touch). Keep it short: every session loads it. Make \
+(build and test commands, where things live, what not to touch). Under CLAUDE.md's `## Tools`, list what you find \
+agents can reach to check their own work (ssh hosts, preview servers, headless checks), or leave it empty. Keep \
+it short: every session loads it. Make \
 sure `.runner/` is in .gitignore.
 5. Commit runner.toml, plan/, the notes and .gitignore in one commit on the current branch.
 
@@ -211,6 +237,9 @@ def main(argv: list[str], cwd: Path | None = None) -> int:
     said.append('runner.toml written' + (f', gate `{gate}`' if gate else ', no gate found yet') if written
                 else 'runner.toml kept as it was')
     print(f'agent-runner setup: {said[-1]}')
+    if tools := ensure_tools(root):
+        said.append(f'added an empty `{TOOLS_HEADING}` section to {tools}: list what agents can reach there')
+        print(f'agent-runner setup: {said[-1]}')
     todo = todo_path(root)
     existing = todo.is_file()
     text = prompt(root, gate, existing)

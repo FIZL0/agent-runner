@@ -86,6 +86,7 @@ from agent_runner.config import RUNNER, Config, cfg, finished_mark, main_checkou
 from agent_runner.done import TESTED, gate
 from agent_runner.gitops import _net, drop_if_merged, push, shared_name
 from agent_runner.guide import SAFE_SHELL
+from agent_runner.guide import VERIFY
 
 TASK = re.compile(r'^- \[(.)\] \*\*([^*\s]+)\*\*(.*)')  # a top-level task line: its box, its id, the rest
 TAG = '@runner'  # the tmux pane option a slot's pane is found by
@@ -133,6 +134,8 @@ lists under Needs you until they answer. Before a `BLOCKED:` on access, check wh
 and try it: `gh auth status`, `wrangler whoami`, the service's own CLI login, `ssh -T`, and \
 ~/.claude/ACCESS.md if it exists; the `BLOCKED:` line then names the exact command that failed and its error \
 (e.g. `wrangler OAuth login cannot change Workers Builds settings: Authentication error`).
+
+""" + VERIFY + """
 
 A usage limit is not being stuck: do not block the task. The session waits for the reset and carries on.
 
