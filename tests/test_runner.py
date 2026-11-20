@@ -4757,6 +4757,16 @@ def test_closed_online_controls(repo: Path):
             ended.clear()
             eq(R.free_control_number(), 2, 'control --new ends a session closed online first, then takes its number')
             eq(ended, [9102], 'so a new session never comes up past the closed ones')
+            rows['s3'] = None  # unreadable: logged and skipped, never raised into the run loop
+            (notes / 'control2.pid').write_text('9102 s2', encoding='utf-8')
+            eq(R.end_closed_controls(force=True), [2], 'one session that cannot be read does not stop the others')
+        listing = (f'run\t%60\tc2\t{R.ROOT}\t\t111\nrun\t%61\tc3\t/elsewhere\t\t222\n'
+                   f'run\t%62\t\t\t\t333\n')
+        with mock.patch.object(R.shutil, 'which', lambda x: '/usr/bin/tmux'), \
+                mock.patch.object(R, 'tmux', lambda *a, **kw: subprocess.CompletedProcess(a, 0, listing, '')):
+            eq(R.control_window(2, 999), '%60', 'its pane by its c2 tag for this repository')
+            eq(R.control_window(3, 333), '%62', 'another repo\'s c3 is not it: found by its pane pid instead')
+            eq(R.control_window(4, 444), '', 'no pane: nothing to close')
     finally:
         for n in range(1, 6):
             (notes / f'control{n}.pid').unlink(missing_ok=True)

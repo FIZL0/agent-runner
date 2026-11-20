@@ -8322,7 +8322,8 @@ def close_controls(branch: str = '', force: bool = False, now: float | None = No
 # N out again. Every CONTROL_CLOSE_EVERY s (and before `control --new` picks a number) each live control
 # session N > 1 whose transcript's last word is that disconnect, with no message the person typed since (one
 # typed in its terminal after it means they still use it there) and no new Remote Control session since, is
-# ended: its process, its tmux pane, controlN.pid and controlN.title. The transcript stays, resumable.
+# ended: its process, its tmux pane, controlN.pid and controlN.title. The transcript stays, resumable. c1 is
+# left alone: it is the run's kept session (resumed across runs, local-only under [run] remote), as in B26.
 
 RC_CLOSED = re.compile(r'Remote Control disconnected\b.*\(code 4090\)')
 CONTROL_GONE_AT = [0.0]
@@ -8380,11 +8381,15 @@ def end_closed_controls(force: bool = False) -> list[int]:
             pid = int(pid_s)
         except (OSError, ValueError):
             continue
-        if not sid or not transcript(sid) or not closed_online(entries(sid, skip_bad=True)):
+        try:
+            if not sid or not transcript(sid) or not closed_online(entries(sid, skip_bad=True)):
+                continue
+            pane = control_window(n, pid)
+        except Exception as e:  # one unreadable session never stops the run loop or a new session
+            log(f'control {n}: could not tell whether it was closed online: {e}')
             continue
-        pane = control_window(n, pid)
         plat.terminate(pid)
-        if pane:  # a pane opened by the background session's default-command falls back to a shell: close it
+        if pane:  # its pane only (a window of its own closes with it); one whose command falls back to a shell too
             tmux('kill-pane', '-t', pane)
         pidf.unlink(missing_ok=True)
         C.notes(f'control{n}.title').unlink(missing_ok=True)
@@ -8396,10 +8401,7 @@ def end_closed_controls(force: bool = False) -> list[int]:
 
 def free_control_number() -> int:
     """control_number() once the control sessions closed online have ended (B53), so their numbers count free."""
-    try:
-        end_closed_controls(force=True)
-    except Exception as e:  # never stop a new session from starting
-        log(f'control: could not check for sessions closed online: {e}')
+    end_closed_controls(force=True)
     return control_number()
 
 
