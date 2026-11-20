@@ -2043,7 +2043,7 @@ def test_short_titles_and_since(repo: Path):
             res = {'type': 'user', 'message': {'content': [{'type': 'tool_result', 'content': 'ok'}]}}
             write = lambda *es: tr.write_text(''.join(json.dumps(e) + '\n' for e in es))
             sid = '12345678-1234-1234-1234-123456789abc'
-            with mock.patch.object(R.C, 'notes', lambda *a: Path(tdir, 'feed.sid')), \
+            with mock.patch.object(R.C, 'notes', lambda *a: Path(tdir, a[-1])), \
                     mock.patch.object(R, 'transcript', lambda s: str(tr) if s == sid else None), \
                     mock.patch.dict(os.environ, {'CLAUDE_CODE_SESSION_ID': ''}):
                 Path(tdir, 'feed.sid').write_text(sid + '\n')
@@ -2149,6 +2149,7 @@ def test_short_titles_and_since(repo: Path):
                 with mock.patch.dict(os.environ, {'CLAUDE_CODE_SESSION_ID': sid}):
                     eq(R.feed_files(), ['/u/c.png'], 'without feed.sid the calling session is read (B22)')
         test_feed_forward()
+        test_feed_handoff_b74()
         h = run(repo, 'control', '--help')
         check('--image' in h.stdout and '--file' in h.stdout, 'control --file (alias --image) is an option',
               h.stdout)
@@ -2233,6 +2234,123 @@ def test_feed_forward():
                 got = R.forward_late(9, sid, wait=0.3)
             eq(got, R.feed_lost_note(), 'B72: a message that never shows opens the session saying so, not with an '
                'older one')
+
+
+def test_feed_handoff_b74():
+    print('B74: a phone screenshot handed on from the feed reaches the new control session (--file), replayed as '
+          'Claude Code 2.1.329 writes it: the message, then its isMeta companion a moment later')
+    import contextlib
+    import io
+    sid = '3d37d373-b242-4ef6-8ad3-2e052fcbb51e'
+    ask = 'this title session is out of date, should we update when the heading changes?'
+    shot = f'/tmp/claude-1000/-home-ryha-repos-agent-runner/{sid}/images/6.png'
+    with tempfile.TemporaryDirectory() as tdir:
+        tr = Path(tdir, 'feed.jsonl')
+        meta = {'version': '2.1.329', 'sessionId': sid, 'userType': 'external', 'entrypoint': 'cli'}
+        old = {'type': 'user', 'uuid': 'u0', 'origin': {'kind': 'human'}, **meta, 'message': {'role': 'user', 'content': [
+            {'type': 'text', 'text': 'agent runner task failed? do we check and handle those automatically?'}]}}
+        call = lambda cmd, uid='a0': {'type': 'assistant', 'uuid': uid, **meta, 'message': {'content': [
+            {'type': 'tool_use', 'name': 'Bash', 'input': {'command': cmd}}]}}
+        res = {'type': 'user', 'uuid': 'r0', **meta, 'message': {'content': [{'type': 'tool_result', 'content': 'ok'}]}}
+        notif = {'type': 'user', 'uuid': 'n0', 'origin': {'kind': 'task-notification'}, **meta,
+                 'message': {'role': 'user', 'content': '<task-notification>\nMonitor event</task-notification>'}}
+
+        def msg(text: str, image: bool = True, uid: str = 'f40a'):
+            c = ([{'type': 'image', 'source': {'type': 'base64', 'media_type': 'image/png', 'data': 'iVBOR'}}]
+                 if image else []) + [{'text': text, 'type': 'text'}]
+            return {'parentUuid': 'p', 'isSidechain': False, 'promptId': 'bc2f', 'type': 'user', 'uuid': uid,
+                    'message': {'role': 'user', 'content': c}, 'imagePasteIds': [6], 'origin': {'kind': 'human'},
+                    'promptSource': 'queued', **meta}
+        companion = [
+            {'type': 'attachment', 'uuid': 'dc9e', **meta, 'attachment': {
+                'type': 'total_tokens_reminder', 'text': '<total_tokens>15000000 tokens left</total_tokens>'}},
+            {'type': 'user', 'isMeta': True, 'turnCompanion': True, 'uuid': '1ea5', **meta,
+             'message': {'role': 'user', 'content': [{'type': 'text', 'text': f'[Image: source: {shot}]'}]}},
+            {'type': 'api-request-blob', 'sessionId': sid, 'message': {'role': 'user', 'content': [
+                {'type': 'image', 'source': {'type': 'base64', 'data': 'iVBOR'}}, {'type': 'text', 'text': ask},
+                {'type': 'text', 'text': f'[Image: source: {shot}]'}]}},
+            {'type': 'last-prompt', 'lastPrompt': ask, 'leafUuid': '1ea5', 'sessionId': sid}]
+        lines = lambda *es: ''.join(json.dumps(e) + '\n' for e in es)
+        write = lambda *es: tr.write_text(lines(*es))
+        add = lambda *es: tr.write_text(tr.read_text() + lines(*es))
+        later = lambda s, *es: threading.Thread(target=lambda: (time.sleep(s), add(*es)))
+        opened = []
+
+        def tm(*a, **k):
+            opened.append(a)
+            return subprocess.CompletedProcess(a, 0, '%9\n' if a[0] == 'new-window' else '', '')
+
+        def new(**kw):
+            opened.clear()
+            with contextlib.redirect_stdout(io.StringIO()):
+                rc = R.control_new(9, **kw)
+            return rc, R.shlex.split(next(c for c in opened if c[0] == 'new-window')[-1])
+        with mock.patch.object(R.C, 'notes', lambda *a: Path(tdir, *a)), \
+                mock.patch.object(R, 'transcript', lambda s: str(tr) if s == sid and tr.exists() else None), \
+                mock.patch.dict(os.environ, {'CLAUDE_CODE_SESSION_ID': sid}), \
+                mock.patch.object(R, 'tmux', tm), mock.patch.object(R, 'control_live', lambda n: None), \
+                mock.patch.object(R, 'control_new_session', lambda: 'ar-proj'), \
+                mock.patch.object(R.shutil, 'which', lambda x: '/usr/bin/tmux'), \
+                mock.patch.object(R, 'remote_on', lambda: False):
+            Path(tdir, 'remote').mkdir()  # C.notes makes it; the stand-in does not
+            base = (old, call('run control --new --ask "agent runner task failed?"'), res, notif)
+            # the message lands just after control --new starts, its companion a few tenths of a second later
+            write(*base)
+            th = threading.Thread(target=lambda: (time.sleep(0.4), add(
+                {'type': 'queue-operation', 'operation': 'dequeue'}, msg(ask)), time.sleep(0.6), add(*companion)))
+            th.start()
+            rc, argv = new(ask=ask)
+            th.join()
+            check(rc == 0 and shot in argv and argv[argv.index(shot) - 1] == '--file' and '--feed-sid' not in argv
+                  and 'could not be passed on' not in ' '.join(argv),
+                  'B74: message then isMeta companion in steps: the control session still gets --file', argv)
+            log = Path(tdir, 'remote', R.FEED_LOG).read_text()
+            check(sid in log and '(env)' in log and '-> found, 1 file(s)' in log and shot in log
+                  and 'with 1 image(s)' in log, 'B74: the hand-off log says what feed_wait saw', log)
+            # the message is in, its companion not yet: one image shown and no path is waited for
+            write(*base, msg(ask))
+            th = later(0.5, *companion)
+            th.start()
+            rc, argv = new(ask=ask)
+            th.join()
+            check(shot in argv, 'B74: a message whose companion is not written yet waits for it', argv)
+            # imagePasteIds says an image came even when the entry holds no image block yet (shown was 0)
+            write(*base, msg(ask, image=False))
+            th = later(0.5, *companion)
+            th.start()
+            rc, argv = new(ask=ask)
+            th.join()
+            check(shot in argv, 'B74: imagePasteIds counts as an image shown, so its path is waited for', argv)
+            # the feed's transcript cannot be found at first: not "found, no files" at once (said None)
+            tr.unlink()
+            th = threading.Thread(target=lambda: (time.sleep(0.5), write(*base, msg(ask), *companion)))
+            th.start()
+            rc, argv = new(ask=ask)
+            th.join()
+            check(shot in argv, 'B74: a feed transcript not there yet is waited for, never taken as no files', argv)
+            tr.unlink()
+            with mock.patch.object(R, 'FEED_WAIT', 0.3):
+                rc, argv = new(ask=ask)
+            check('--feed-sid' in argv, 'B74: a feed transcript still missing after FEED_WAIT: control N waits for it',
+                  argv)
+            eq(R.feed_wait(ask, 5, ''), (True, [], 0, ''), 'B74: no feed session at all: nothing to wait for')
+            # a stale match: an earlier short message held in the new ask is not the message being handed on
+            write(old, res, {**msg('openmx', image=False, uid='o1'), 'imagePasteIds': []}, res)
+            with mock.patch.object(R, 'FEED_WAIT', 0.3):
+                rc, argv = new(ask='openmx is failing again')
+            check('--feed-sid' in argv and argv[argv.index('--feed-sid') + 1] == sid,
+                  'B74: an earlier short message inside the new ask is not taken for it', argv)
+            check(R.same_words('how many have "merged"?', 'how many have merged') and
+                  R.same_words(ask + ' thanks', ask) and not R.same_words('openmx', 'openmx is failing again'),
+                  'B74: same_words still allows quoting and a long message trimmed or added to')
+            # B72's --forward passes images the same way: text from the transcript, the companion a moment later
+            write(*base, msg(ask), call('run control --new --forward', 'a1'))
+            th = later(0.5, *companion)
+            th.start()
+            rc, argv = new(forward=True)
+            th.join()
+            check(rc == 0 and '--ask-file' in argv and shot in argv and argv[argv.index(shot) - 1] == '--file',
+                  'B74: control --new --forward passes the screenshot as --file too', argv)
 
 
 def test_board_follows_run(repo: Path, tmp: Path):
