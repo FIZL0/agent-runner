@@ -4,6 +4,8 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+## 0.50.1 (2026-11-20)
+
 - A control session's needs-you watch no longer posts "Still watching. Nothing needs you right now." every
   five minutes: it starts the Monitor with `timeout_ms 1800000` (the cap) instead of the 5-minute default, and
   on a timeout with no lines re-arms it with no text at all, speaking only for a line it printed. The runner
