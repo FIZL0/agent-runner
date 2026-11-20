@@ -4,6 +4,12 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- `control --new --ask` passes on any file the person drops in the runner feed, not only images: a .zip,
+  .p12 or .txt that Claude Code saves to `~/.claude/uploads/<sid>/<id>-<name>` (an attachment of type file)
+  reaches the new control session as "The person attached NAME, saved at PATH: Read or open it before you
+  answer", even when the feed drops or mangles the @-mention. `control --image` is now `--file` (`--image`
+  still works); files Claude Code re-reads after a compaction are not counted as attached.
+
 - `control --new --ask` again passes on a phone or remote screenshot: Claude Code 2.1.329 records such an
   image as an isMeta entry with `[Image: source: PATH]` text instead of an `inlined_image_paths` attachment,
   and the feed now reads those paths too (deduped; a later text-only message still forwards none).

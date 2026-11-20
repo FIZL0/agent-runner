@@ -1675,8 +1675,13 @@ def test_short_titles_and_since(repo: Path):
         eq(ca[1], 'fix the login flicker', 'control --ask: the handed-on request is its first message')
         ca = R.control_argv(3, 'sid', False, ask='why is this red?', images=['/t/a.png', '/t/b b.png'])
         check(ca[1].startswith('why is this red?') and '"/t/a.png"' in ca[1] and '"/t/b b.png"' in ca[1]
-              and ca[1].count('Read it') == 2, 'control --image: each attached image is named in the first message',
-              ca[1])
+              and ca[1].count('Read or open it') == 2 and 'attached a.png' in ca[1],
+              'control --image: each attached image is named in the first message', ca[1])
+        up = '/h/.claude/uploads/77e72152/b292b0ab-pass word.txt'
+        ca = R.control_argv(3, 'sid', False, ask='use this', images=[up])
+        check('The person attached pass word.txt, saved at "' + up + '": Read or open it' in ca[1],
+              'B30: an upload is named without its id prefix, with its path', ca[1])
+        eq(R.control_title('', [up]), 'pass word.txt', 'B30: a file-only ask is titled by its name')
         rn = R.ROOT.name
         eq(R.control_name(3), f'{rn} · control 3', 'B25: no ask keeps the old control name')
         eq(R.control_name(7, 'fix the login flicker'), f'{rn} · 7 · fix the login flicker',
@@ -1696,7 +1701,7 @@ def test_short_titles_and_since(repo: Path):
             ca = R.control_argv(6, 'sid', False)
             eq(ca[ca.index('--remote-control') + 1], f'{rn} · control 6', 'B25: without an ask, the old name')
         from agent_runner.guide import RUNNER_BRIEF
-        check('--image' not in RUNNER_BRIEF, 'the feed brief leaves images to control --new', RUNNER_BRIEF)
+        check('--image' not in RUNNER_BRIEF and '--file' not in RUNNER_BRIEF, 'the feed brief leaves images to control --new', RUNNER_BRIEF)
         with tempfile.TemporaryDirectory() as tdir:
             tr = Path(tdir, 'feed.jsonl')
             hum = lambda *c: {'type': 'user', 'origin': {'kind': 'human'}, 'message': {'content': list(c)}}
@@ -1726,13 +1731,24 @@ def test_short_titles_and_since(repo: Path):
                 write(hum({'type': 'image'}, {'type': 'text', 'text': 'see'}), meta(f'[Image: source: {src}]'),
                       res, hum({'type': 'text', 'text': 'and this?'}))
                 eq(R.feed_images(), [], 'B24: a later text-only message forwards no companion image')
+                fil = lambda p: {'type': 'attachment', 'attachment': {'type': 'file', 'filename': p}}
+                zp, ip = '/h/.claude/uploads/s/d6c7a610-app.zip', '/h/.claude/uploads/s/9a72958e-shot.png'
+                summ = {'type': 'user', 'isCompactSummary': True, 'message': {'content': 'continued'}}
+                write(hum({'type': 'text', 'text': 'old'}), fil('/u/old.txt'),
+                      hum({'type': 'image'}, {'type': 'text', 'text': f'@"{zp}" sign it'}), fil(zp), pics(ip), res,
+                      summ, fil(zp), fil('/repo/memory/x.md'))
+                eq(R.feed_files(), [zp, ip], 'B30: a file attachment and an image are both passed on, in order; '
+                   'files re-read after a compaction are not')
+                write(hum({'type': 'text', 'text': 'sign it'}), fil(zp), res, hum({'type': 'text', 'text': 'and?'}))
+                eq(R.feed_files(), [], 'B30: a later text-only message forwards no earlier file')
                 write(hum({'type': 'image'}), pics('/u/c.png'))
                 Path(tdir, 'feed.sid').unlink()
                 eq(R.feed_images(), [], 'no feed.sid and no session env: nothing')
                 with mock.patch.dict(os.environ, {'CLAUDE_CODE_SESSION_ID': sid}):
                     eq(R.feed_images(), ['/u/c.png'], 'without feed.sid the calling session is read (B22)')
         h = run(repo, 'control', '--help')
-        check('--image' in h.stdout, 'control --image is an option', h.stdout)
+        check('--image' in h.stdout and '--file' in h.stdout, 'control --file (alias --image) is an option',
+              h.stdout)
         eq(run(repo, 'since', '--follow', '--keep-mark', '--help').returncode, 0, 'since --keep-mark is an option')
     finally:
         if keep is None:
