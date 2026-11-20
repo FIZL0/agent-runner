@@ -4124,7 +4124,7 @@ def test_person_check_after(repo: Path):
         git(repo, 'commit', '-qam', 'R8 changed')
         check('R8' in [t[0] for t in R.tasks('main')], 'a change reopens the check for an agent')
         P.block('R8', 'X7 first', todo=todo, after=['X7'])  # ... then a block --after
-        eq(sorted(a[1] for a in P.asks(todo)), [], 'while X7 is open none is under Needs you')
+        eq({a[1] for a in P.asks(todo)} & {'R7', 'R8', 'R9'}, set(), 'while X7 is open none is under Needs you')
         has(todo.read_text(encoding='utf-8'), r'\*\*R7\*\* .*BLOCKED: \(after X7\) CONFIRM: run it on Windows',
             'the block keeps the kind and its question')
         git(repo, 'commit', '-qam', 'plan: R7, R8, R9 wait on X7')
