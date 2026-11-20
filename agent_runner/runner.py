@@ -5686,10 +5686,14 @@ def short_title(rest: str, width: int = 60) -> str:
     t = re.sub(r'\b\d{4}-\d\d-\d\d\b', '', t)
     t = re.sub(r"(?<!\w)(['\"`])\1(?!\w)", 'empty', t)  # `''` read aloud
     t = re.sub(r"[*`\"“”‘’]|(?<!\w)'|'(?!\w)", '', t)
+    t = re.sub(r'[\w./-]*\w::(?:\w+::)*(\w+)', r'\1', t)  # a Rust/pytest path a::b::c reads as its name, c
     t = re.split(r'(?<=[.!?;:])\s+(?=[A-Z(\d])|\s+—\s+|\s+--\s+', re.sub(r' ([,.;:])', r'\1', ' '.join(t.split())), maxsplit=1)[0]
     t = t.strip(' .,;:—-')
     if len(t) > width:
-        t = t[:width - 1].rsplit(' ', 1)[0].rstrip(' ,;:—-') + '…'
+        cut = t[:width - 1].rsplit(' ', 1)[0].rstrip(' ,;:—-')
+        if len(cut) < width // 2:  # one long word: cut inside it rather than drop it
+            cut = t[:width - 1].rstrip(' ,;:—-')
+        t = cut + '…'
     return t
 
 

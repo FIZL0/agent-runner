@@ -1167,6 +1167,12 @@ def test_short_titles_and_since(repo: Path):
        'a plain aside and a lower-case clause stay')
     long = st(' ' + 'word ' * 30)
     check(len(long) <= 60 and long.endswith('word…'), 'cut at a word to about 60 characters', long)
+    eq(st(' make the test `releases::tests::registers_the_discs_beside_and_their_voices` pass again | files: a'),
+       'make the test registers_the_discs_beside_and_their_voices…', 'a test path a::b::c shows as its name')
+    eq(st(' make `tests/test_x.py::test_y` pass'), 'make test_y pass', 'a pytest path too')
+    one = st(' fix ' + 'x' * 80)
+    check(len(one) == 60 and one.startswith('fix xxx') and one.endswith('x…'),
+          'one word longer than the width: cut inside it, not down to the first word', one)
 
     R.init(repo)
     titles = {'F5': 'Control session experience', 'B9': 'Fix the flicker'}
