@@ -9,6 +9,8 @@ USAGE = """agent-runner: AI agents work through plan/TODO.md, one task each, in 
 Run the agents
     agent-runner                      start the run in the background and get the prompt back
     agent-runner attach [s2]          see the run's pane, or slot 2's (Windows: slot 2's console window)
+    agent-runner control              a control session here: ask it "status?", to pause, add slots, file a task
+                                      (a run opens c1 beside it; a new pane in its tmux session is another)
     agent-runner run once             try it: one task, then stop
     agent-runner run                  the run in this terminal, with the slots runner.toml sets, until you stop it
     agent-runner run 3                3 agents at once
@@ -17,7 +19,7 @@ Run the agents
     agent-runner stop --force         end the sessions now; each resumes in the next run
     agent-runner stop --shutdown      stop, then shut the computer down (--suspend: sleep)
     agent-runner stop --undo          take a stop back: start tasks again
-    agent-runner status               is a run up, each slot's task, the end of its log
+    agent-runner status               is a run up, each slot's task and minutes, merges lately, usage (-n 20: log too)
     agent-runner pause                start no new tasks, stay up (--off: go on)
     agent-runner slots +1             one slot more (-1 fewer, 4: exactly four)
     agent-runner force                start tasks past the usage caps (--off: caps hold)
@@ -144,6 +146,9 @@ def main(argv: list[str] | None = None) -> int:
     if cmd == 'attach':
         from agent_runner import runner
         return runner.cmd_attach(rest)
+    if cmd == 'control':
+        from agent_runner import runner
+        return runner.cmd_control(rest)
     if cmd == 'context':
         from agent_runner import context
         return context.main(rest)

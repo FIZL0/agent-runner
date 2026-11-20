@@ -92,10 +92,39 @@ Detach with Ctrl-b d. On Windows, `attach s2` shows and raises slot 2's console 
 again: closing it ends that session, which resumes in the next run. The runner has no window there, so
 `agent-runner status` and `.runner/run.log` show it.
 
-With `[run] remote`, Claude Code asks once, at a terminal, "Enable Remote Control? (y/n)". In a hidden pane
-that question would hold every slot. So before going to the background the launch checks `remoteDialogSeen` in
+With `[run] remote` (or `remote_slots`), Claude Code asks once, at a terminal, "Enable Remote Control? (y/n)".
+In a hidden pane that question would hold every session. So before going to the background the launch checks `remoteDialogSeen` in
 `~/.claude.json` (or `$CLAUDE_CONFIG_DIR/.claude.json`). If it is not set, the launch asks the question in this
 terminal and records the yes there. A no, or no terminal to ask in, starts nothing.
+
+### Control sessions
+
+A control session is an interactive Claude Code session in the main checkout where a person runs the run, at
+the terminal or from claude.ai/code and the Claude apps: "status?", "pause", "one slot more", "stop", "add a
+task to fix X" (it files it with `plan add`), "do X now" (it uses `take`, never edits the main checkout).
+
+- **c1 comes with the run** (`[run] control = true`, the default; false: none). A run in a terminal splits a
+  pane under its own for it; the background run opens it in window `control-<repo>` of `ar-<repo>`; on Windows
+  it gets a console of its own, hidden in the background mode. `agent-runner attach c1` goes there. c1 keeps
+  its session id in `.runner/control.sid` and resumes it in every run while the transcript is there. It has no
+  Stop hook, is never ended on idle, and outlives a stopped run: a run that finds c1 still up opens no other.
+- **More of them**: `agent-runner control` starts one in this terminal (c1 when it is not running, else the
+  next free number, `.runner/control<N>.pid`). In the background session every new pane or window a person
+  opens is one: the run sets that session's tmux `default-command` to `cd <main checkout> && agent-runner
+  control` (a shell stays if it cannot start). A run in your own tmux session leaves its default-command alone.
+- **Their settings**: every control session, and the control server, gets `.runner/control-settings.json`
+  with `--settings`: a SessionStart hook that runs `agent-runner control --brief`, which prints the control
+  brief (so a resumed or compacted session gets it again), and the runner's commands, `tail`, Read and
+  Monitor allowed without a prompt. They run on `[run] model`, with `--tools
+  Bash,Read,Edit,Write,Artifact,Monitor` under `[run] lean`, and no bypass mode: a person answers the rest.
+  The first message has the session start Monitor on `run.log`, filtered to merges, parked and stalled tasks,
+  `run idle` and `run stopped`, and post one short line for each, so a remote viewer sees progress unasked.
+- **With `[run] remote`** each control session starts with `--remote-control "<repo> · control N"`, and the
+  run keeps `claude remote-control --spawn same-dir --name "<repo> · control" --settings <file>` running in
+  the main checkout (output in `.runner/control-server.log`), restarted when it exits (Remote Control quits
+  after about 10 minutes offline; 30 s, doubling to 10 minutes while it keeps failing), so new control
+  sessions can be started from the app. The run's end ends it. The slots stay local unless `[run]
+  remote_slots = true`, which starts each as "<repo> · s2 · B646".
 
 `--no-tmux` (or no tmux / Windows Terminal installed) is the sequential run. It's one session at a time,
 in your checkout, on the branch you have out. There's no worktree and no merge: `done` already ran the gate, and
@@ -404,8 +433,10 @@ the key list. Each key is acted on as it is typed; ending sessions and adding a 
 gentle stop back), and `key <k>` for any other (`key z`, `key u`). Unlike a typed key, `pause`, `force` and
 `stop` say which way they go, so asking twice does not undo them. They append to `.runner/KEYS`, which the
 loop reads on every pass, so the run acts within 10 s; with no run up they say so and exit 1.
-`agent-runner status` prints whether a run is up, what the keys have set, each slot's task (from
-`.runner/STATE`, rewritten every pass) and the end of `run.log` (`-n 30` for more).
+`agent-runner status` is short enough for a phone: whether a run is up and what the keys have set, each
+slot's task id, title and minutes running (from `.runner/STATE`, rewritten every pass), what is merging, the
+last five merged, blocked or parked tasks from `run.log`, and the account's usage as the caps last read it.
+`-n 30` adds the end of `run.log`.
 
 Both write `.runner/STOP` (with who asked; `.runner/STOP.force` for a stop now), and the loop checks that
 file on every pass, so `s` can take back a `agent-runner stop` and the reverse. A daemon thread reads the runner's terminal (it works on Windows
@@ -594,7 +625,8 @@ the running tasks merge. A run left up keeps picking up whatever you commit to T
 ```
 agent-runner                           the run in the background (a detached tmux session; hidden consoles on
                                        Windows), the prompt straight back; `help` prints the usage
-agent-runner attach [sN|master]        the runner's pane, or a slot's (Windows: the slot's console window)
+agent-runner attach [sN|c1|master]     the runner's pane, or a slot's (Windows: the slot's console window)
+agent-runner control [N]               a control session in this terminal (c1: the kept one, resumed)
 agent-runner plan [...]                the task list as a tool (agent-runner plan help)
 agent-runner done ID "MSG" [--blocked WHY [--after X,Y]] [--no-test]
 agent-runner run [N|once] [--dry-run] [--no-tmux] [--mux tmux|wt|console|none] [--model M] [--idle S] [--stall S] [--pause S] [--force] [--shutdown|--suspend]
@@ -680,7 +712,9 @@ agent = "claude"
 backend = ""              # claude or pi; empty detects pi from the agent executable's name
 model = "opus"
 lean = true               # sessions get Bash/Read/Edit/Write/Artifact only, no MCP servers or user settings
-remote = false            # slots on Remote Control: watch and type to them at claude.ai/code or in the Claude apps; Enter in the runner's pane opens it
+remote = false            # control sessions on Remote Control, and a control server to start more from claude.ai/code or the Claude apps; Enter in the runner's pane opens it
+remote_slots = false      # the slots on Remote Control too ("<repo> · s2 · B646")
+control = true            # a run opens control session c1 beside it; false: none (`agent-runner control` still works)
 idle = 30                 # s quiet after a turn ends before a session without a successful `done` is ended (with one: 5 s)
 stall = 1200              # s quiet at a prompt that counts as stalled
 pause = 60                # s between one session ending and the next starting in that slot
