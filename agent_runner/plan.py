@@ -14,10 +14,11 @@ re-reads it on every turn pays again. So the backlog is a command instead:
     ./run plan block <ID> [--after X,Y] WHY   [~] with "BLOCKED: (after X, Y) WHY" appended
     ./run plan unblock <ID> [NOTE]   reopen: [ ], drop "BLOCKED: …", append NOTE (what unblocked it)
     ./run plan move <ID> WHERE   WHERE = top | before ID | after ID | in SECTION (its end); sub-items follow
-    ./run plan add PREFIX TEXT [--files A,B] [--after X,Y] [--test T] [--journal D] [--pri LEVEL] [--force] [@ WHERE]
+    ./run plan add PREFIX TEXT [--files A,B] [--after X,Y] [--test T] [--journal D] [--pri LEVEL] [--last] [--force] [@ WHERE]
                                  new "- [ ] **<next free id>** TEXT | files: A, B | after: X, Y …"; prints
                                  the id (warns without --files or --test). Refused (exit 3, nothing written) when an open task looks like the
-                                 same work: `plan note` it there, or --force when it is different work
+                                 same work: `plan note` it there, or --force when it is different work.
+                                 --last: at the end of Next, with `after: all above` (below)
     ./run plan drop <ID> WHY     not done but not wanted (a duplicate, overtaken): archived with "dropped: WHY";
                                  a slot running it is stopped, its branch deleted unmerged (B19)
     ./run plan kinds             what each id letter means ([plan] kinds): an id's prefix says the kind of work
@@ -75,6 +76,12 @@ The line format is `- [ ] **ID** text | files: a, b | after: X, Y | test: name |
 headings, and the checkbox is `[ ]` open, `[x]` done, `[~]` blocked. The keyed fields are the only thing read
 off a line: `files:` keeps running tasks apart, `after:` holds a task until those ids are done, `test:`
 names the test it adds, `journal:` a journal dir its brief lists. Prose is never parsed for files or ids.
+
+**A task that goes last** (a release) is filed with `add … --last`: at the end of Next, with `after: all above`.
+That marker is no list to keep up: the run resolves it on every pick to each task above it in its own section
+that is not done (open or blocked), tasks added above it later included, so it starts once the section has
+drained. Tasks blocked on a person (CONFIRM, DECIDE, BLOCKED, a concept's OK) do not hold it until they reopen,
+and other sections (Follow-ups) never do. `reopen`, `waiting` and `status` say what it still waits on.
 
 **A block that only waits on another task says which**, as `BLOCKED: (after X, Y) why`, and `reopen` (which a
 `./run run` calls after every merge) puts it back to `[ ]` the moment X and Y are done. Without that a task
@@ -356,6 +363,62 @@ def open_ids(ls: list[str]) -> set[str]:
     return {m.group(3).rstrip('.') for l in ls if (m := ITEM.match(l)) and not m.group(1) and m.group(2) != 'x'}
 
 
+LAST = 'all above'  # an `after:` value (`plan add --last`): every task above it in its section not done yet (F43)
+
+
+def _on_person(ls: list[str], i: int) -> bool:
+    """Is the task at ls[i] blocked on a person: a CONFIRM/DECIDE/BLOCKED ask (shelved too) or a concept's OK."""
+    m = ITEM.match(ls[i])
+    if not m or m.group(2) != '~':
+        return False
+    tail = ls[i + len(_item_block(ls, i)) - 1]
+    at = _block_at(tail)
+    t = tail[at:].lstrip() if at >= 0 else ''
+    return bool(ASKING.match(t) or WAIT_ANY.match(t))
+
+
+def above(ls: list[str], i: int) -> list[str]:
+    """What `after: all above` on the task at ls[i] stands for, read afresh each time: the top-level tasks above
+    it in its own section (back to the nearest heading) that are not done, open or blocked, in order. A task
+    blocked on a person (`asks`) does not hold it: a release does not wait on a Windows check nobody has done;
+    once the person answers and it reopens, it holds it again. Other sections (Follow-ups) never count."""
+    out = []
+    for j in range(i - 1, -1, -1):
+        if _level(ls[j]):
+            break
+        m = ITEM.match(ls[j])
+        if m and not m.group(1) and m.group(2) != 'x' and not _on_person(ls, j):
+            out.append(m.group(3).rstrip('.'))
+    return out[::-1]
+
+
+def waits_on(ls: list[str], i: int) -> list[str]:
+    """The ids the task at ls[i] names in its `after:` field, `all above` resolved (`above`), itself left out.
+    Done ones included: the caller checks which are still open."""
+    tid = ITEM.match(ls[i]).group(3).rstrip('.')
+    ids: list[str] = []
+    for a in fields(ls[i]).get('after', []):
+        ids += above(ls, i) if a == LAST else [a]
+    return [t for t in dict.fromkeys(ids) if t != tid]
+
+
+def last_waits(todo=None) -> list[tuple[str, list[str]]]:
+    """(id, the open tasks it still waits on) for every task not done whose `after:` says `all above`, in order."""
+    todo, _ = ensure(todo)
+    ls = list(lines(todo))
+    live = open_ids(ls)
+    return [(m.group(3).rstrip('.'), [t for t in waits_on(ls, i) if t in live])
+            for i, l in enumerate(ls)
+            if (m := ITEM.match(l)) and not m.group(1) and m.group(2) != 'x' and LAST in fields(l).get('after', [])]
+
+
+def last_lines(todo=None) -> list[str]:
+    """'T5 waits on all above: F43, B54 (2 open)' for each `after: all above` task (`reopen`, `waiting`)."""
+    return [f'{t} waits on all above: {", ".join(ids)} ({len(ids)} open)' if ids
+            else f'{t} waits on all above: nothing left above it'
+            for t, ids in last_waits(todo)]
+
+
 def block(tid: str, why: str, todo=None, after=None) -> None:
     """[~] plus "BLOCKED: why". The why must say what would unblock it, or the next session just re-reads it.
 
@@ -562,7 +625,7 @@ def add_args(rest: list[str]) -> tuple[str, str, str, bool, bool]:
     text: list[str] = []
     where: list[str] = []
     vals: dict[str, str] = {}
-    pri, force, after_flag, in_where = '', False, False, False
+    pri, force, after_flag, in_where, last = '', False, False, False, False
 
     def no(why: str):
         raise SystemExit(f'{PROG}: not added: {why}\nquote the text and each flag value: '
@@ -573,6 +636,8 @@ def add_args(rest: list[str]) -> tuple[str, str, str, bool, bool]:
         a = rest[k]
         if a == '--force':
             force = True
+        elif a == '--last':  # F43: at the end of the leading section, `after: all above`
+            last, after_flag, in_where = True, False, False
         elif a == '--pri' or a.lstrip('-') in KEYS and a.startswith('--'):
             if k + 1 >= len(rest) or rest[k + 1].startswith('--'):
                 no(f'{a} needs a value')
@@ -600,12 +665,15 @@ def add_args(rest: list[str]) -> tuple[str, str, str, bool, bool]:
         k += 1
     if in_where and not where:
         no('@ needs a place (top, bottom, before ID, after ID, in SECTION)')
+    if last:
+        vals['--after'] = ', '.join(x for x in (vals.get('--after', '').strip(', '), LAST) if x)
     keyed = ''
     for key in KEYS:  # `--files a,b` → ` | files: a, b`, in KEYS order
         if (v := vals.get(f'--{key}')) is not None:
-            keyed += f' | {key}: ' + (v if key == 'test' else ', '.join(re.split(r'[,\s]+', v.strip(', '))))
+            keyed += f' | {key}: ' + (v if key == 'test' else ', '.join(
+                LAST if x == LAST else ', '.join(re.split(r'[,\s]+', x)) for x in re.split(r',\s*', v.strip(', '))))
     t, _, w = ' '.join(text).partition(' @ ')
-    return t, ' '.join(where) or w, keyed, pri, force
+    return t, ' '.join(where) or w or ('bottom' if last else ''), keyed, pri, force
 
 
 def check_kind(prefix: str) -> str | None:
@@ -1849,7 +1917,8 @@ def _main(argv: list[str], c) -> int:
         return say(f'blocked {argv[1]}')
     if argv == ['reopen']:
         got = reopen()
-        return say('\n'.join(f'reopened {t} ({", ".join(ids)} landed)' for t, ids in got) or 'nothing to reopen')
+        return say('\n'.join([f'reopened {t} ({", ".join(ids)} landed)' for t, ids in got] or ['nothing to reopen']
+                             + last_lines()))
     if argv[:1] == ['unblock'] and len(argv) > 1:
         unblock(argv[1], ' '.join(argv[2:]))
         return say(f'unblocked {argv[1]}')
@@ -1868,6 +1937,8 @@ def _main(argv: list[str], c) -> int:
                                               f'(concept {k})' if k else '', '(shelved)' if sh else '') if x)
                         for label, t, k, what, u, title, sh in w)
               or 'nothing waits for your OK' + ('' if len(argv) > 1 else f' (`{PROG} waiting --all` adds the shelved)'))
+        if ll := last_lines():
+            print('\n'.join(ll))
         return 0
     if argv[:1] == ['confirm'] and len(argv) > 1:
         return say(confirm(argv[1], ' '.join(argv[2:])))

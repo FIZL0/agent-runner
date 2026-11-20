@@ -154,6 +154,7 @@ To make one task wait for another, say it in a way the runner reads:
 |---|---|
 | B is part of A's work | `plan add A12 "…"` gives subtask `A12a` |
 | B needs A merged first | `after: A12` on B's line, or `plan block B3 --after A12 "why"` |
+| B goes last (a release) | `plan add T "…" --last`: end of Next, `after: all above` (every task above it there) |
 | a list that must go in order | a section heading containing *in this order* or *one at a time* |
 
 The plan can also live in [its own git repo](docs/REFERENCE.md#the-plan-in-its-own-repo), shared by every
