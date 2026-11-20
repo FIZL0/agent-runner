@@ -65,6 +65,15 @@ def test_config(repo: Path):
         has(str(e), 'unknown.*backend', 'unknown backends fail explicitly')
     else:
         check(False, 'unknown backends must fail')
+    for agent in ('copilot', 'C:\\\\tools\\\\copilot.exe'):
+        (repo / 'runner.toml').write_text(f'[run]\nagent = "{agent}"\n', encoding='utf-8')
+        try:
+            Config(repo)
+        except SystemExit as e:
+            has(str(e), 'copilot.*is gone.*backend = "pi".*github-copilot/',
+                f'agent = {agent!r} (the removed Copilot CLI backend) fails, pointing to Pi + github-copilot')
+        else:
+            check(False, f'agent = {agent!r} must fail')
 
 
 def test_commands(repo: Path):
@@ -236,6 +245,79 @@ def test_sequential_failure(repo: Path):
         os.chdir(saved)
 
 
+def test_backend_end_to_end(repo: Path):
+    print('pi: command lines, the extensions, the session files, stats and resuming a failed call')
+    configure(repo, 'backend = "pi"\nmodel = "github-copilot/m1"\nfix_model = "github-copilot/m2"\n')
+    sessions = R.C.notes('pi-sessions')
+    argv = R.agent_argv('do T1', 'sid-p', 'github-copilot/m1', 45, 'slotP')
+    eq(argv[-2:], ['--', f'@{R.C.notes("slotP.prompt")}'], 'Pi reads its options, the prompt from a file')
+    eq(R.C.notes('slotP.prompt').read_text(encoding='utf-8'), 'do T1', 'the prompt file keeps the full task')
+    eq(argv[argv.index('--session-id') + 1], 'sid-p', 'the session id is ours')
+    eq(Path(argv[argv.index('--session-dir') + 1]), sessions, 'in a session folder of this run')
+    eq(argv[argv.index('--model') + 1], 'github-copilot/m1', 'with the model')
+    exts = [Path(argv[i + 1]) for i, arg in enumerate(argv[:-1]) if arg == '-e']
+    check([p.name for p in exts] == ['pi_hooks.ts', 'pi_idle.ts'] and '--runner-idle' in argv and
+          argv[argv.index('--runner-idle') + 1] == '45', 'the extensions bridge hooks and stop idle sessions')
+    fix = R.fix_cmd('fix it')
+    check('--print' in fix and fix[fix.index('--model') + 1] == 'github-copilot/m2',
+          'a fix session is print mode and uses fix_model')
+
+    ev = lambda ts, **m: json.dumps({'type': 'message', 'timestamp': ts, 'message': m},  # noqa: E731
+                                    separators=(',', ':'))
+    lines = [json.dumps({'type': 'session', 'id': 'sid-p', 'timestamp': '2020-01-01T10:00:00.000Z'},
+                        separators=(',', ':')),
+             ev('2020-01-01T10:00:01.000Z', role='user', content='go'),
+             ev('2020-01-01T10:00:05.000Z', role='assistant', stopReason='toolUse',
+                usage={'input': 2, 'cacheRead': 18000, 'cacheWrite': 2000, 'output': 50}),
+             ev('2020-01-01T10:00:06.000Z', role='toolResult', toolName='bash'),
+             ev('2020-01-01T10:09:00.000Z', role='assistant', stopReason='stop',
+                usage={'input': 2, 'cacheRead': 40000, 'cacheWrite': 1000, 'output': 80})]
+    sessions.mkdir(parents=True, exist_ok=True)
+    f = sessions / '2020-01-01T10-00-00-000Z_sid-p.jsonl'
+    f.write_text('\n'.join(lines) + '\n', encoding='utf-8')
+    eq(R.transcript('sid-p'), str(f), 'the transcript is <timestamp>_<id>.jsonl in the session folder')
+    eq(R.stats('sid-p'), '9 min, 2 calls, context 20k first, 41k peak', 'stats read the assistant usage')
+    eq(R._user_entries(str(f)), 2, 'a user message and a tool result count as activity')
+    eq(R.agent_failed('sid-p'), None, 'a session that ended its turn is not failed')
+    with open(f, 'a', encoding='utf-8') as fh:
+        fh.write(ev('2020-01-01T10:10:00.000Z', role='assistant', stopReason='error',
+                    errorMessage='fetch failed', usage={}) + '\n')
+    got = R.agent_failed('sid-p')
+    check(got is not None and got[0] == 'fetch failed' and got[1] > R.RESUME_AFTER,
+          'a failed model call is found, to be resumed', str(got))
+    check(R.pi_last_error(str(f))[0] == 'fetch failed', 'and the Stop hook leaves that session alone')
+    with open(f, 'a', encoding='utf-8') as fh:
+        fh.write(ev('2020-01-01T10:12:00.000Z', role='user', content=R.RESUME) + '\n')
+    eq(R.agent_failed('sid-p'), None, 'once resumed it is not failed any more')
+
+
+def test_no_push(repo: Path):
+    print('with [git] push = false, no agent session can push')
+    configure(repo, 'backend = "pi"\n\n[git]\npush = false\n')
+    p = R.prompt_for('SA1', 1, 1, repo, 'main')
+    check('Pushing is off' in p and 'pushes task/' not in p, 'the prompt says pushing is off, not that done pushes')
+    env = dict(e.split('=', 1) for e in R.slot_env(1))
+    count = int(os.environ.get('GIT_CONFIG_COUNT', '0'))
+    eq(env.get('GIT_CONFIG_COUNT'), str(count + len(R.NO_PUSH_URLS)), 'the session gets the no-push git config')
+    with patch.dict(os.environ, {'GIT_CONFIG_COUNT': '1', 'GIT_CONFIG_KEY_0': 'safe.bareRepository',
+                                 'GIT_CONFIG_VALUE_0': 'explicit'}):
+        inherited = R.env_vars(R.slot_env(1))
+        eq(inherited['GIT_CONFIG_KEY_0'], 'safe.bareRepository', 'existing git config keys are retained')
+        eq(inherited['GIT_CONFIG_VALUE_0'], 'explicit', 'existing git config values are retained')
+        eq(inherited['GIT_CONFIG_COUNT'], str(1 + len(R.NO_PUSH_URLS)), 'no-push settings are appended')
+    git(repo, 'remote', 'add', 'origin', 'https://example.invalid/x.git')
+    try:
+        r = subprocess.run(['git', 'push', 'origin', 'main'], cwd=str(repo), capture_output=True, text=True,
+                           env={**os.environ, **env})
+        check(r.returncode != 0 and 'agent-runner-no-push' in r.stderr, 'a git push from the session fails before '
+              'it reaches the network', r.stderr)
+        r = subprocess.run(['git', '-C', str(repo), 'push', '--dry-run', 'origin', 'main'], capture_output=True,
+                           text=True, env={**os.environ, **env})
+        check(r.returncode != 0 and 'agent-runner-no-push' in r.stderr, 'in whatever form it is typed', r.stderr)
+    finally:
+        git(repo, 'remote', 'remove', 'origin')
+
+
 def main() -> int:
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp) / 'repo with spaces'
@@ -246,7 +328,8 @@ def main() -> int:
         git(repo, 'commit', '-qm', 'start')
         return report([lambda: test_config(repo), lambda: test_commands(repo),
                        lambda: test_sessions(repo), lambda: test_fixer(repo),
-                       lambda: test_sequential_failure(repo)])
+                       lambda: test_sequential_failure(repo), lambda: test_backend_end_to_end(repo),
+                       lambda: test_no_push(repo)])
 
 
 if __name__ == '__main__':

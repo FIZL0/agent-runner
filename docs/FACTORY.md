@@ -65,7 +65,7 @@ landing); a person re-enters through Needs you, the ledger and `wip/` branches i
 | fix sessions capped | yes | 3 merge tries (`merge_tries`), `fix_timeout` 30 min, `fix_ahead_max` 2 at once, then park |
 | repair capped | yes | one repair per merge, then park; a batch is halved, never repaired twice |
 | resumes capped | yes | 3 per session (`resumes`) |
-| backend retries capped | yes | Copilot model-call retries: 3 |
+| backend retries capped | yes | a failed model call is resumed at most `RESUME_MAX` (5) times, waits doubling |
 | CI reruns capped | yes | one `rerun --failed` per red run; two closed CI tasks for a workflow in a week block the third on a person (B34) |
 | task retries capped | yes | `tried` holds one attempt per run; two parked attempts (`wip/<ID>*`) block the task on a person (B32) |
 | a session's own gate loop capped | no | only the prompt (**B38**) |

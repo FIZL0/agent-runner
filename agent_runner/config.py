@@ -94,7 +94,7 @@ DEFAULTS: dict = {
         'full_every_hours': 24, # with test_since: the whole `test` again once none has passed for this long; 0 = never
         'slots': 3,
         'mux': '',              # terminal per slot: tmux, wt, console, none; '' = tmux (Windows: wt, else console)
-        'agent': 'claude',      # the CLI that runs a session: claude, or copilot (GitHub Copilot CLI)
+        'agent': 'claude',      # the CLI that runs a session: claude, or a pi executable
         'include_task_id_in_commit': True,
         'comment_policy': 'normal',
         'backend': '',          # '' = Claude Code (or pi when `agent` is a pi executable); pi = other providers
@@ -288,10 +288,6 @@ def ensure_local(root: Path) -> Path:
     return f
 
 
-# A key renamed in a release: (table, old) -> new. A config with the old name still works; the run log says
-# to rename it. Add an entry with every rename, so an upgrade never needs anyone to edit a config first.
-RENAMED: dict[tuple[str, str], str] = {}
-
 # A key a release removed: (table, key) -> what to do instead. Ignored, and the run log says so.
 REMOVED: dict[tuple[str, str], str] = {
     ('run', 'mode'): 'a run never starts two tasks on the same files (0.32.0); delete it',
@@ -305,15 +301,10 @@ REMOVED: dict[tuple[str, str], str] = {
 
 
 def migrate(raw: dict, where: str) -> list[str]:
-    """Apply RENAMED to `raw` in place; what the run log should say about old, removed or unknown keys in the
-    tables the runner reads (another table in a wrapper's file is its own business)."""
+    """What the run log should say about removed or unknown keys in the tables the runner reads (another
+    table in a wrapper's file is its own business)."""
     import difflib
     said = []
-    for (t, old), new in RENAMED.items():
-        if isinstance(tab := raw.get(t), dict) and old in tab:
-            v = tab.pop(old)
-            tab.setdefault(new, v)
-            said.append(f'{where}: [{t}] {old} is now {new}; rename it')
     for t, keys in DEFAULTS.items():
         for k in raw.get(t, {}) if isinstance(raw.get(t), dict) else ():
             if k in keys:
@@ -363,6 +354,10 @@ class Config:
         if self.raw['plan']['repo'] and 'dir' not in raw.get('plan', {}):
             self.raw['plan']['dir'] = str(self.home / 'plan')
         self.run = self.raw['run']
+        if Path(str(self.run['agent']).replace('\\', '/')).stem.lower() == 'copilot':
+            raise SystemExit('agent-runner: [run] agent = "copilot" is gone (GitHub Copilot CLI support was '
+                             'removed); use Pi with its github-copilot provider: backend = "pi", '
+                             'model = "github-copilot/<model>"')
         if not isinstance(self.run['include_task_id_in_commit'], bool):
             raise SystemExit('agent-runner: [run] include_task_id_in_commit must be a boolean')
         if not (isinstance(self.run['remote'], bool) or self.run['remote'] == 'auto'):

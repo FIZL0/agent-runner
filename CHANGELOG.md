@@ -4,6 +4,13 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- **Breaking:** the GitHub Copilot CLI backend (`[run] agent = "copilot"`) is gone; Pi with its
+  `github-copilot` provider replaced it. A config that still names it stops the run with a message saying
+  what to set instead: `backend = "pi"` and `model = "github-copilot/<model>"` (see
+  [docs/SETUP.md](docs/SETUP.md#pi-and-enterprise-copilot)). Dead code went with it: the unused Pi extension
+  writer, a shadowed `pi_argv0`, the `feed_images` and `alive` aliases, the hidden `run --mode` flag (a
+  wrapper still passing it now gets an argparse error) and the empty config-rename table.
+
 - A waiting task whose line guesses a whole directory (`tests/**`, `dir/*`) no longer waits just because a
   running or merge-waiting task touched one file in it; it still waits for a task whose line names a file or
   glob there. This repo's runner.toml sets `shared_files = ["CHANGELOG.md"]`, and the `plan add` guides say to

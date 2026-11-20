@@ -119,19 +119,6 @@ elsewhere), with extensions, MCP, skills, prompt templates, and themes disabled.
 files remain available. Set `lean = false` to use Pi's normal resource configuration. Fix/repair sessions
 also use Pi print mode and the non-slot-specific environment from `slot_env`.
 
-## Copilot CLI
-
-Install and sign in to GitHub Copilot CLI, then select it in `runner.toml`:
-
-```toml
-[run]
-agent = "copilot"
-model = "auto"
-fix_model = "auto"
-```
-
-Set `[git] push = false` to keep commits local for review. On Windows, slots use Windows Terminal tabs.
-
 ## A new repo from scratch
 
 ```sh

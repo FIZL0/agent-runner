@@ -66,17 +66,10 @@ else:
     check(False, 'a broken one stops the run naming the file')
 f.unlink()
 
-print('old, removed and unknown keys: still runs, and the run log says what to change')
-from agent_runner import config as cfgmod  # noqa: E402
-(repo / 'runner.toml').write_text('[run]\nslotz = 2\nmode = "d"\nold_slots = 4\n[kit]\nanything = 1\n', encoding='utf-8')
-cfgmod.RENAMED[('run', 'old_slots')] = 'slots'
-try:
-    c = Config(repo)
-finally:
-    del cfgmod.RENAMED[('run', 'old_slots')]
-eq(c.run['slots'], 4, 'a renamed key still takes effect under its new name')
-eq(len(c.warnings), 3, 'one line per stale key, none for a table that is not ours')
-check(any('old_slots is now slots' in w for w in c.warnings), 'the rename is said')
+print('removed and unknown keys: still runs, and the run log says what to change')
+(repo / 'runner.toml').write_text('[run]\nslotz = 2\nmode = "d"\n[kit]\nanything = 1\n', encoding='utf-8')
+c = Config(repo)
+eq(len(c.warnings), 2, 'one line per stale key, none for a table that is not ours')
 check(any('mode is ignored' in w for w in c.warnings), 'a removed key says what to do instead')
 check(any('did you mean slots' in w for w in c.warnings), 'a typo gets the nearest setting')
 (repo / 'runner.toml').write_text('[run]\nslots = 3\n', encoding='utf-8')

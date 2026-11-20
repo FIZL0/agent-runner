@@ -158,10 +158,10 @@ task to fix X" (it files it with `plan add`), "do X now" (it uses `take`, never 
   and `run.log` says to update. The run's end ends it. The slots stay local unless `[run]
   remote_slots = true`, which starts each as "<task title> · <repo> s2 · B646".
 - **`remote = "auto"`, the default**, is on when Remote Control can work: Claude Code on a claude.ai login.
-  It is off, with one `run.log` line saying why (`remote control off: …`), when the backend is pi, the agent
-  is Copilot CLI, `ANTHROPIC_API_KEY` or `ANTHROPIC_AUTH_TOKEN` is set, `CLAUDE_CODE_USE_BEDROCK`, `_VERTEX` or
+  It is off, with one `run.log` line saying why (`remote control off: …`), when the backend is pi,
+  `ANTHROPIC_API_KEY` or `ANTHROPIC_AUTH_TOKEN` is set, `CLAUDE_CODE_USE_BEDROCK`, `_VERTEX` or
   `_FOUNDRY` is set, `ANTHROPIC_BASE_URL` names a host other than api.anthropic.com, or Claude Code's
-  "Enable Remote Control?" has not been answered yes. `true` forces it on (never for pi or Copilot), `false`
+  "Enable Remote Control?" has not been answered yes. `true` forces it on (never for pi), `false`
   keeps it off; any other value is refused.
 - **Quiet launch.** Every Remote Control session the run starts gets `CLAUDE_CLIENT_PRESENCE_FILE` (while that
   file exists Claude Code sends no mobile push; 2.1.181+). A control session's `.runner/quiet-c<N>` is made
