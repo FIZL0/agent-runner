@@ -106,6 +106,17 @@ def test_plan_reopen():
         eq([t for t, _ in plan.reopen(todo)], ['P3'], 'and reopens once the last of its list is done')
         has(Path(todo).read_text(), r'^- \[~\] \*\*P4\*\*', 'a block that names no task is never reopened')
         eq(plan.reopen(todo), [], 'reopen is idempotent')
+        # B40: prose that quotes the block marker keeps its files, through block and unblock
+        plan.add('P', 'fields() cuts at " BLOCKED: " in prose | files: q.py, r.py', **kw)
+        def line():
+            return next(l for l in plan.lines(todo) if '**P5**' in l)
+        eq(plan.files_on_line(line()), ['q.py', 'r.py'], 'a quoted marker keeps the files')
+        plan.block('P5', 'needs a human', todo=todo, after=[])
+        eq(plan.files_on_line(line()), ['q.py', 'r.py'], 'and keeps them once blocked')
+        plan.unblock('P5', 'back', todo=todo)
+        last = line()
+        check(last.endswith('| files: q.py, r.py — back') and 'needs a human' not in last,
+              'unblock drops only the real block, not the quoted marker: ' + last)
 
 
 def test_plan_index_and_sections():
