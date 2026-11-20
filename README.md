@@ -38,6 +38,7 @@ agent-runner plan                  # what the runner sees in plan/TODO.md
 agent-runner run --dry-run 3       # what three slots would start right now, and why the rest wait
 agent-runner run once              # one task, one session, then stop: try it like this first
 agent-runner                       # the run in the background; the prompt comes straight back
+agent-runner --attach              # the same (or the run already up), then its pane here; Ctrl-b d: background again
 agent-runner status                # is it up, each slot's task and minutes, what merged lately
 agent-runner attach                # watch it (attach s2: slot 2; c1: the control session); Ctrl-b d to detach again
 agent-runner control               # a control session here: "status?", "pause", "add a task to fix X"

@@ -8,6 +8,7 @@ USAGE = """agent-runner: AI agents work through plan/TODO.md, one task each, in 
 
 Run the agents
     agent-runner                      start the run in the background and get the prompt back
+    agent-runner --attach             the same, then its pane in this terminal (Ctrl-b d: back to the background)
     agent-runner attach [s2]          see the run's pane, or slot 2's (Windows: slot 2's console window)
     agent-runner control              a control session here: ask it "status?", to pause, add slots, file a task
                                       (a run opens c1 beside it; a new pane in its tmux session is another)
@@ -145,6 +146,9 @@ def main(argv: list[str] | None = None) -> int:
             return 2
         from agent_runner import runner
         return runner.cmd_background(rest)
+    if cmd == '--attach':  # bare, then attach: the run's pane in this terminal
+        from agent_runner import runner
+        return runner.cmd_background_attach(rest)
     if cmd == 'attach':
         from agent_runner import runner
         return runner.cmd_attach(rest)

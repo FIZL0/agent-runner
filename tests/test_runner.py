@@ -639,6 +639,44 @@ def test_take(repo: Path):
     git(repo, 'branch', '-D', f'task/{tid}')
 
 
+def test_attach_flag(repo: Path):
+    print('agent-runner --attach: the background run, started or found, then its pane in this terminal')
+    import contextlib
+    import io
+    from agent_runner import cli
+    R.init(repo)
+    calls: list[str] = []
+    bg = lambda argv: calls.append('start') or 0
+    at = lambda argv: calls.append('attach') or 0
+    with mock.patch.object(R, 'init'), mock.patch.object(R.plat, 'WINDOWS', False), \
+            mock.patch.object(R, 'cmd_background', bg), mock.patch.object(R, 'cmd_attach', at), \
+            mock.patch.object(cli, 'skill'):
+        with mock.patch.object(R, 'run_up', lambda: False):
+            eq(cli.main(['--attach']), 0, '--attach with no run up')
+        eq(calls, ['start', 'attach'], 'no run up: it starts the run, then attaches')
+        calls.clear()
+        with mock.patch.object(R, 'run_up', lambda: True):
+            eq(cli.main(['--attach']), 0, '--attach with a run up')
+        eq(calls, ['attach'], 'a run up: it only attaches')
+        calls.clear()
+        with mock.patch.object(R, 'run_up', lambda: False), mock.patch.object(R, 'cmd_background', lambda a: 1):
+            eq(cli.main(['--attach']), 1, 'a run that does not come up fails --attach')
+        eq(calls, [], 'and nothing is attached')
+        out = io.StringIO()
+        with mock.patch.object(R.plat, 'WINDOWS', True), contextlib.redirect_stdout(out):
+            eq(cli.main(['--attach']), 0, 'Windows: --attach')
+        eq(calls, ['start'], 'Windows: it starts the run as bare does, no attach')
+        has(out.getvalue(), r'on Windows', 'and says so')
+        calls.clear()
+        with contextlib.redirect_stderr(io.StringIO()):
+            eq(cli.main(['--attach', 'x']), 2, '--attach takes no more arguments')
+        eq(calls, [], 'a bad --attach starts nothing')
+    out = io.StringIO()
+    with mock.patch.object(cli, 'skill'), contextlib.redirect_stdout(out):
+        cli.main(['--help'])
+    has(out.getvalue(), r'agent-runner --attach ', '--help lists --attach')
+
+
 def test_background(repo: Path):
     print('bare agent-runner: the run in a detached tmux session, or hidden consoles on Windows; attach')
     R.init(repo)
@@ -3416,7 +3454,7 @@ def main() -> int:
                        lambda: test_no_pane(repo, tmp), lambda: test_other_repos_panes(repo, tmp),
                        lambda: test_limit_lets_go(repo),
                        lambda: test_shared_push(repo, tmp), lambda: test_note_on_a_ticked_task(repo), lambda: test_adopt_merge(repo), lambda: test_followups(repo), lambda: test_ci_watch(repo), test_update_notice, test_restart_if_upgraded, test_auto_upgrade, lambda: test_flake_repair(tmp), lambda: test_repair_per_failure(repo),
-                       lambda: test_stalled(tmp), lambda: test_take(repo), lambda: test_take_text_and_here(repo), lambda: test_background(repo), lambda: test_remote_auto(tmp), lambda: test_control(repo),
+                       lambda: test_stalled(tmp), lambda: test_take(repo), lambda: test_take_text_and_here(repo), lambda: test_background(repo), lambda: test_attach_flag(repo), lambda: test_remote_auto(tmp), lambda: test_control(repo),
                        lambda: test_short_titles_and_since(repo), lambda: test_concepts_waiting(repo),
                        lambda: test_person_waiting(repo)])
 
