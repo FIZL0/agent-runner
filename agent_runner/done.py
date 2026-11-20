@@ -160,10 +160,10 @@ def record(a, c) -> int:
     here = g('branch', '--show-current').stdout.strip()
     if here and (line := push(cwd, here)):
         print(line)
+    elif here and (gone := missing_remote(cwd)):
+        print(f'{here} not pushed: no remote {gone}')
     elif here and (remote := c.push_remote) and shared_branch(cwd, remote, here):
         print(f'{here} is not pushed: done only pushes a task branch (git push {remote} {here} to publish)')
-    elif here and (gone := missing_remote(cwd)):
-        print(f'{here} not pushed: no remote {gone} (git remote add {gone} <url> to publish)')
     return finished(c, a)
 
 

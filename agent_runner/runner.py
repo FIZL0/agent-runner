@@ -3755,7 +3755,7 @@ def move_edits_aside(tid: str) -> str | None:
     remote = C.push_remote
     if C.push_merge and remote and not git('remote', 'get-url', remote).returncode:
         git('push', '-q', remote, name)
-    more =f' and {len(files) - 6} more' if len(files) > 6 else ''
+    more = f' and {len(files) - 6} more' if len(files) > 6 else ''
     log(f'{tid}: moved uncommitted edits in the main checkout ({", ".join(files[:6])}{more}) to {name} '
         f'(and a stash) so the tested merge could land: git checkout {name}, or git stash pop. {here_hint()}')
     return name
