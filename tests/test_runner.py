@@ -851,6 +851,34 @@ def test_short_name_hints():
         eq(config.shown_cmd(), '/x/run', 'elsewhere: RUNNER as it was')
 
 
+def test_utf8_streams():
+    print('B67: on Windows main writes UTF-8 to stdout and stderr, so a pipe (ssh, a Bash tool) reads it right')
+    import contextlib
+    import io
+    from agent_runner import cli
+
+    class Stream(io.StringIO):
+        def __init__(self):
+            super().__init__()
+            self.calls: list[dict] = []
+
+        def reconfigure(self, **kw):
+            self.calls.append(kw)
+
+    for windows, want in ((True, [{'encoding': 'utf-8', 'errors': 'replace'}]), (False, [])):
+        out, err = Stream(), Stream()
+        with mock.patch.object(R.plat, 'WINDOWS', windows), mock.patch.object(cli, 'skill'), \
+                mock.patch.object(cli, 'user_hook'), mock.patch.object(sys, 'stdout', out), \
+                mock.patch.object(sys, 'stderr', err):
+            cli.main(['--version'])
+        eq(out.calls, want, f'WINDOWS={windows}: stdout reconfigured' if windows else 'elsewhere: stdout left as it is')
+        eq(err.calls, want, f'WINDOWS={windows}: stderr reconfigured' if windows else 'elsewhere: stderr left as it is')
+    with mock.patch.object(R.plat, 'WINDOWS', True), mock.patch.object(cli, 'skill'), \
+            mock.patch.object(cli, 'user_hook'), contextlib.redirect_stdout(io.StringIO()) as plain:
+        cli.main(['--version'])
+    has(plain.getvalue(), r'agent-runner ', 'a stream with no reconfigure (a StringIO) is left alone')
+
+
 def test_background(repo: Path):
     print('bare agent-runner: the run in a detached tmux session, or hidden consoles on Windows; attach')
     R.init(repo)
@@ -5801,7 +5829,7 @@ def main() -> int:
                        lambda: test_no_pane(repo, tmp), lambda: test_other_repos_panes(repo, tmp),
                        lambda: test_limit_resumes(repo, tmp),
                        lambda: test_shared_push(repo, tmp), lambda: test_note_on_a_ticked_task(repo), lambda: test_adopt_merge(repo), lambda: test_followups(repo), lambda: test_person_check_after(repo), lambda: test_ci_watch(repo), test_update_notice, test_restart_if_upgraded, test_auto_upgrade, lambda: test_flake_repair(tmp), lambda: test_repair_per_failure(repo),
-                       lambda: test_stalled(tmp), lambda: test_take(repo), lambda: test_take_text_and_here(repo), lambda: test_background(repo), test_short_name_hints, lambda: test_attach_flag(repo), lambda: test_bare_outside_git(tmp), lambda: test_hand_hook(tmp), lambda: test_user_hook(tmp), lambda: test_remote_auto(tmp), lambda: test_control(repo),
+                       lambda: test_stalled(tmp), lambda: test_take(repo), lambda: test_take_text_and_here(repo), lambda: test_background(repo), test_short_name_hints, test_utf8_streams, lambda: test_attach_flag(repo), lambda: test_bare_outside_git(tmp), lambda: test_hand_hook(tmp), lambda: test_user_hook(tmp), lambda: test_remote_auto(tmp), lambda: test_control(repo),
                        lambda: test_short_titles_and_since(repo), lambda: test_board_follows_run(repo, tmp),
                        lambda: test_remote_sweep(repo, tmp), lambda: test_feed_resume(repo, tmp),
                        lambda: test_concepts_waiting(repo),

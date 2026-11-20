@@ -155,7 +155,23 @@ def adopt_folder() -> bool:
     return True
 
 
+def utf8_streams() -> None:
+    """B67: on Windows, write UTF-8 to stdout and stderr, not the console code page (cp1252): a pipe's reader
+    (ssh, a control session's Bash tool) expects UTF-8 and shows '·' as '�' otherwise."""
+    from agent_runner import plat
+    if not plat.WINDOWS:
+        return
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, 'reconfigure', None)  # a StringIO in place of the stream has none
+        if reconfigure:
+            try:
+                reconfigure(encoding='utf-8', errors='replace')
+            except (ValueError, OSError):  # a stream already written in a way it cannot change: leave it
+                pass
+
+
 def main(argv: list[str] | None = None) -> int:
+    utf8_streams()
     argv = list(sys.argv[1:] if argv is None else argv)
     cmd, rest = (argv[0], argv[1:]) if argv else ('', [])
     if argv == ['control', '--brief', '--user']:  # B79: the user-level hook, in every session on the machine
