@@ -407,7 +407,7 @@ runner keys: type one in this pane and press Enter
     -        one slot fewer (a running task in it finishes first)
     z        suspend the computer once the run stops, or when it goes idle
     x        shut the computer down once the run stops, or when it goes idle
-    Enter    open the slots' sessions at claude.ai/code (with [run] remote)
+    Enter    open the control sessions at claude.ai/code (with [run] remote)
     ?        this help
 
     s, p, f, z and x take themselves back when typed again.
@@ -430,7 +430,7 @@ def take_keys() -> None:
         while KEYS:
             k, _, want = KEYS.pop(0).partition(' ')
             if not k:
-                if C.run['remote']:
+                if C.run['remote'] or C.run['remote_slots']:
                     open_remote()
                 continue
             on = {'s': stopping, 'p': lambda: PAUSED[0], 'f': lambda: FORCED[0],
@@ -521,13 +521,26 @@ def send_key(*keys: str) -> None:
         f.write(''.join(f'{k}\n' for k in keys))
 
 
+RUNNING_SINCE: dict[tuple[str, str], float] = {}  # (slot, task) -> when write_state first saw it running
+
+
 def write_state(running: dict) -> None:
-    """`<notes>/STATE`, for `agent-runner status`: what the keys have set and what each slot is on."""
+    """`<notes>/STATE`, for `agent-runner status`: what the keys have set, what each slot is on and since when,
+    what is merging, and the account's usage (as the cap reads it, at most every 5 minutes)."""
     work = {str(n): t[0] for n, t in running.items()}
+    now = time.time()
+    for k in [k for k in RUNNING_SINCE if work.get(k[0]) != k[1]]:
+        RUNNING_SINCE.pop(k)
+    since = {n: RUNNING_SINCE.setdefault((n, tid), now) for n, tid in work.items()}
+    merging = sorted({t.name[6:] for t in threading.enumerate() if t.name.startswith('merge:') and t.is_alive()})
+    # what the cap last read (`capped`, the start line); never a fetch of its own from here
+    got = _account[1] if isinstance(_account[1], dict) else {}
+    use = {k: got[k].get('utilization') for k in ('five_hour', 'seven_day') if isinstance(got.get(k), dict)}
     tmp = C.notes('STATE.tmp')
     try:
         tmp.write_text(json.dumps({'at': dt.datetime.now().isoformat(timespec='seconds'), 'state': state_line(),
-                                   'running': work}), encoding='utf-8')
+                                   'running': work, 'since': since, 'merging': merging, 'usage': use}),
+                       encoding='utf-8')
         os.replace(tmp, C.notes('STATE'))
     except OSError:  # Windows: `status` has STATE open this instant; the next pass writes it
         pass
@@ -1267,9 +1280,10 @@ def copilot_trust(*dirs: Path) -> None:
 
 
 def remote_flags(name: str, cwd: Path | None) -> list[str]:
-    """`[run] remote`: the session shows in claude.ai/code and the Claude apps as "<repo> · s2 · B646", where a
-    person can watch it and type to it. Claude Code only, and only an interactive session (not Pi, not Copilot)."""
-    if not C.run['remote'] or copilot() or pi():
+    """`[run] remote_slots`: the session shows in claude.ai/code and the Claude apps as "<repo> · s2 · B646", where a
+    person can watch it and type to it. Claude Code only, and only an interactive session (not Pi, not Copilot).
+    (`[run] remote` alone puts only the control sessions there: `control_argv`.)"""
+    if not C.run['remote_slots'] or copilot() or pi():
         return []
     tid = git('branch', '--show-current', cwd=cwd).stdout.strip().removeprefix('task/') if cwd else ''
     return ['--remote-control', ' · '.join(x for x in (ROOT.name, name.replace('slot', 's'), tid) if x)]
@@ -4957,6 +4971,8 @@ def run(argv: list[str], prog: str) -> int:
         return 2
     if choice == 'tmux' and os.environ.get('TMUX_PANE'):  # `attach` finds the runner's pane by this
         tmux('set-option', '-p', '-t', os.environ['TMUX_PANE'], RUN_TAG, str(ROOT))
+    start_control()  # c1 beside the run ([run] control), and with [run] remote the control server
+    start_control_server()
 
     threading.Thread(target=update_watch, daemon=True).start()
     for w in C.warnings:
@@ -4987,8 +5003,10 @@ def run(argv: list[str], prog: str) -> int:
     reserve_branch_ids()
     log(f'run: {slots} slots in {MUX.name}, merging into {branch}' +
         (f', session usage {usage_pct("five_hour")}%, weekly usage {weekly()}%' if not a.force and r['agent'] == 'claude' else ''))
-    if r['remote'] and not copilot() and not pi():
-        log(f'remote control on: the slots show at {REMOTE_URL} and in the Claude apps; Enter here opens it')
+    if (r['remote'] or r['remote_slots']) and not copilot() and not pi():
+        log(f'remote control on: the ' + ('control sessions' if not r['remote_slots'] else 'slots' if not r['remote']
+                                          else 'control sessions and the slots') +
+            f' show at {REMOTE_URL} and in the Claude apps; Enter here opens it')
     from agent_runner import context
     if heavy := context.warning(ROOT, r['rules'], C.raw['plan']['context_kb']):
         log(heavy)
@@ -5408,7 +5426,7 @@ def cmd_key(argv: list[str], prog: str = f'{RUNNER} key') -> int:
 def cmd_status(argv: list[str], prog: str = f'{RUNNER} status') -> int:
     """`agent-runner status`: is a run up, what its keys have set, each slot's task, and the log's end."""
     ap = argparse.ArgumentParser(prog=prog, description='What the run is doing.')
-    ap.add_argument('-n', type=int, default=12, help='log lines to show (default 12)')
+    ap.add_argument('-n', type=int, default=0, help='also the last N lines of run.log (default none)')
     a = ap.parse_args(argv)
     init()
     up = run_up()
@@ -5416,19 +5434,55 @@ def cmd_status(argv: list[str], prog: str = f'{RUNNER} status') -> int:
         st = json.loads(C.notes('STATE').read_text(encoding='utf-8')) if up else {}
     except (OSError, ValueError):
         st = {}
-    if not up:
-        print('no run is up')
-    else:
-        print(f'run up: {st.get("state", "starting")}' + (f' (as of {st["at"]})' if st.get('at') else ''))
-        for n, tid in sorted(st.get('running', {}).items(), key=lambda kv: (not kv[0].isdigit(), kv[0].zfill(4))):
-            print(f'  {"slot " + n if n.isdigit() else n}: {tid}')
     try:
-        tail = C.notes('run.log').read_text(encoding='utf-8', errors='replace').splitlines()[-a.n:]
+        lines = C.notes('run.log').read_text(encoding='utf-8', errors='replace').splitlines()
     except OSError:
-        tail = []
-    if tail and a.n:
-        print('\nrun.log:\n' + '\n'.join(f'  {l}' for l in tail))
+        lines = []
+    print(status_text(up, st, lines, task_titles(), time.time()))
+    if lines and a.n:
+        print('\nrun.log:\n' + '\n'.join(f'  {l}' for l in lines[-a.n:]))
     return 0
+
+
+EVENT = re.compile(r'^=== \S*T(\d\d:\d\d)\S* (?:(\S+): (merged, (?:ticked|blocked|part)|not merged, parked as \S+|LEFT FOR A HUMAN)\b'
+                   r'|(run stopped|run idle))')  # what `status` lists under "lately"
+
+
+def task_titles() -> dict[str, str]:
+    """{id: its title} from TODO.md: the words after the id, up to the first ` | ` field or sentence end."""
+    out = {}
+    try:
+        text = C.todo.read_text(encoding='utf-8')
+    except OSError:
+        return out
+    for l in text.splitlines():
+        if m := TASK.match(l):
+            out[m.group(2)] = m.group(3).split(' | ')[0].strip()
+    return out
+
+
+def status_text(up: bool, st: dict, log_lines: list[str], titles: dict[str, str], now: float, width: int = 44) -> str:
+    """`agent-runner status`, short enough for a phone: the run's state, each slot's task, title and minutes,
+    what is merging, the last few merged / blocked / parked, and usage."""
+    out = [f'run up: {st.get("state", "starting")}' if up else 'no run is up']
+    for n, tid in sorted(st.get('running', {}).items(), key=lambda kv: (not kv[0].isdigit(), kv[0].zfill(4))):
+        title = titles.get(tid, '')
+        title = title if len(title) <= width else title[:width - 1].rstrip() + '…'
+        mins = f'{int((now - st["since"][n]) // 60)} min' if n in st.get('since', {}) else ''
+        out.append('  ' + '  '.join(x for x in (f's{n}' if n.isdigit() else n, tid, title, mins) if x))
+    if up and not st.get('running'):
+        out.append('  no task running')
+    if st.get('merging'):
+        out.append(f'merging: {", ".join(st["merging"])}')
+    events = [m for l in log_lines[-2000:] if (m := EVENT.match(l))]
+    if events:
+        out.append('lately:')
+        out += [f'  {m.group(1)} ' + (f'{m.group(2)} {m.group(3)}' if m.group(2) else m.group(4)) for m in events[-5:]]
+    use = st.get('usage') or {}
+    if any(v is not None for v in use.values()):
+        out.append('usage: ' + ', '.join(f'{w} {use[k]:.0f}%' for k, w in (('five_hour', 'session'), ('seven_day', 'week'))
+                                         if use.get(k) is not None))
+    return '\n'.join(out)
 
 
 def cmd_stop(argv: list[str], prog: str = f'{RUNNER} stop') -> int:
@@ -5501,7 +5555,7 @@ def remote_ready(tty: bool | None = None, ask=input) -> bool:
     """With `[run] remote`: will Claude Code start a slot without its one-time "Enable Remote Control? (y/n)"?
     In a hidden pane that question would hold every slot, so it is asked here, in this terminal, and the
     answer kept where Claude Code keeps it (`remoteDialogSeen` in ~/.claude.json). False: start nothing."""
-    if not C.run['remote'] or copilot() or pi():
+    if not (C.run['remote'] or C.run['remote_slots']) or copilot() or pi():
         return True
     f = claude_json()
     try:
@@ -5515,8 +5569,8 @@ def remote_ready(tty: bool | None = None, ask=input) -> bool:
               f'Run `claude remote-control` in a terminal and answer y (it does not ask again), then {RUNNER} again;\n'
               f'or set [run] remote = false (runner.local.toml for this machine). Nothing started.', file=sys.stderr)
         return False
-    print('[run] remote is on: every slot starts on Remote Control, which Claude Code asks about once.\n'
-          'Answered here, the slots in the background will not stop at the question.')
+    print('[run] remote is on: sessions start on Remote Control, which Claude Code asks about once.\n'
+          'Answered here, the sessions in the background will not stop at the question.')
     try:
         yes = ask('Enable Remote Control? (y/n) ').strip().lower() in ('y', 'yes')
     except EOFError:
@@ -5559,7 +5613,11 @@ def started_note(slots: int, where: str) -> str:
              f'    {RUNNER} status     what it is doing',
              f'    {RUNNER} attach     {attach}',
              f'    {RUNNER} stop       finish the running tasks, then end it (--force: now)']
+    if C.run['control'] and control_ok():
+        lines.append(f'    {RUNNER} control    a control session in this terminal (c1 runs beside the run: attach c1)')
     if C.run['remote'] and not copilot() and not pi():
+        lines.append(f'    {REMOTE_URL}  the control sessions, from any device or the Claude apps')
+    elif C.run['remote_slots'] and not copilot() and not pi():
         lines.append(f'    {REMOTE_URL}  the slots, from any device or the Claude apps')
     return '\n'.join(lines)
 
@@ -5680,3 +5738,254 @@ def cmd_attach(argv: list[str], prog: str = f'{RUNNER} attach') -> int:
     for c in select:
         sp.run(c, capture_output=True)
     return sp.call(go)
+
+
+# --- control sessions: a person runs the run from an interactive session in the main checkout -------------
+
+CONTROL_TOOLS = 'Bash,Read,Edit,Write,Artifact,Monitor'  # with [run] lean: a slot's tools, and Monitor for run.log
+CONTROL_SERVER_WAIT = (30, 600)  # s before the control server restarts after it exits, doubling to the second
+
+
+def control_ok() -> bool:
+    """Control sessions are Claude Code sessions: none for Copilot CLI or pi."""
+    return not copilot() and not pi()
+
+
+def control_brief() -> str:
+    """What every control session is told, through its SessionStart hook (`control --brief` prints it)."""
+    from agent_runner.guide import CONTROL, CONTROL_WATCH
+    notes = Path(C.run['notes']).expanduser()
+    logf = (notes / 'run.log').as_posix() if not notes.is_absolute() else str(notes / 'run.log')
+    return CONTROL.format(repo=ROOT.name, cmd=C.command, log=logf, watch=CONTROL_WATCH)
+
+
+def control_settings_data() -> dict:
+    """`<notes>/control-settings.json`, given to every control session and the control server with --settings:
+    a SessionStart hook (every source: startup, resume, clear, compact) that prints the control brief, so each
+    one gets it the same way however it started; and the runner's commands, Read and Monitor allowed without a
+    prompt, so "status?" from a phone does not wait on a permission question. No Stop hook: a control session is
+    never ended on idle."""
+    hook = plat.command_text([*runner_cmd(), 'control', '--brief'])
+    allow = [f'Bash({c}:*)' for c in dict.fromkeys([C.command, 'agent-runner'])] + \
+        ['Bash(tail:*)', 'Bash(git status:*)', 'Bash(git log:*)', 'Read', 'Monitor']
+    return {'hooks': {'SessionStart': [{'hooks': [{'type': 'command', 'command': hook}]}]},
+            'permissions': {'allow': allow}}
+
+
+def control_settings() -> Path:
+    """Write the control settings file when its text changed; its path."""
+    f = C.notes('control-settings.json')
+    text = json.dumps(control_settings_data(), indent=2) + '\n'
+    try:
+        if f.read_text(encoding='utf-8') == text:
+            return f
+    except OSError:
+        pass
+    tmp = f.with_name(f.name + '.tmp')
+    tmp.write_text(text, encoding='utf-8')
+    os.replace(tmp, f)
+    return f
+
+
+def control_name(n: int) -> str:
+    return f'{ROOT.name} · control {n}'
+
+
+def control_argv(n: int, sid: str, resume: bool) -> list[str]:
+    """Control session `n`: interactive, on `[run] model` (no model of its own), the brief from its settings
+    file, a first message that starts its run-log watch; with `[run] remote` on Remote Control as
+    "<repo> · control N". No --permission-mode: a person is there to answer what the allow list leaves."""
+    from agent_runner.guide import CONTROL_START
+    return [plat.exe(C.run['agent']), CONTROL_START.format(cmd=C.command),
+            '--resume' if resume else '--session-id', sid, '--model', C.run['model'],
+            *(['--tools', CONTROL_TOOLS] if C.run['lean'] else []),
+            '--settings', str(control_settings()),
+            *(['--remote-control', control_name(n)] if C.run['remote'] else [])]
+
+
+def control_live(n: int) -> int:
+    """The pid control session `n` runs as (`<notes>/control<n>.pid`: "pid sid"), or 0. The sid in its command
+    line tells it from a process that got the pid since (where the command line can be read)."""
+    try:
+        pid_s, _, sid = C.notes(f'control{n}.pid').read_text(encoding='utf-8').strip().partition(' ')
+        pid = int(pid_s)
+    except (OSError, ValueError):
+        return 0
+    if not alive(pid) or pid == os.getpid():
+        return 0
+    args = plat.cmdline(pid)
+    return pid if args is None or not sid or sid in args or 'control' in args else 0
+
+
+def control_number() -> int:
+    """The first control number with no live session: 1 (the kept session) when it is free."""
+    n = 1
+    while control_live(n):
+        n += 1
+    return n
+
+
+def control_sid(n: int) -> tuple[str, bool]:
+    """(session id, resume?): c1 keeps its id in `<notes>/control.sid` and resumes it across runs while its
+    transcript is there; any other control session starts fresh."""
+    f = C.notes('control.sid')
+    if n == 1:
+        try:
+            sid = f.read_text(encoding='utf-8').strip()
+        except OSError:
+            sid = ''
+        if sid and backend().find_transcript(sid):
+            return sid, True
+    sid = str(uuid.uuid4())
+    if n == 1:
+        f.write_text(sid + '\n', encoding='utf-8')
+    return sid, False
+
+
+def control_env() -> dict:
+    """The environment a control session gets: ours, without a slot's marks (`plan add` treats AGENT_RUNNER=1 as
+    one of the runner's agents)."""
+    return {k: v for k, v in os.environ.items() if k not in ('AGENT_RUNNER', 'AGENT_RUNNER_SLOT', 'AGENT_RUNNER_KEEP')}
+
+
+def cmd_control(argv: list[str], prog: str = f'{RUNNER} control') -> int:
+    """`agent-runner control [N]`: a control session in this terminal, in the main checkout. No N: c1 (the kept
+    session, resumed) when it is not running, else the next free number."""
+    ap = argparse.ArgumentParser(prog=prog, description='A control session here: ask it for status, pause, '
+                                 'slots, stop; it files asks with plan add and does do-it-now work with take.')
+    ap.add_argument('n', nargs='?', type=int, help='its number (1 resumes the kept session); default the first free')
+    ap.add_argument('--brief', action='store_true', help=argparse.SUPPRESS)  # the SessionStart hook
+    a = ap.parse_args(argv)
+    init()
+    if a.brief:
+        print(control_brief(), end='')
+        return 0
+    if not control_ok():
+        print(f'control sessions are Claude Code sessions; [run] agent is {C.run["agent"]}', file=sys.stderr)
+        return 1
+    n = a.n or control_number()
+    if pid := control_live(n):
+        print(f'control {n} already runs (pid {pid}): {RUNNER} control starts another', file=sys.stderr)
+        return 1
+    sid, resume = control_sid(n)
+    argv = control_argv(n, sid, resume)
+    backend().trust(ROOT)
+    os.chdir(ROOT)
+    pidf = C.notes(f'control{n}.pid')
+    if not plat.WINDOWS:  # exec: the pid in the file is the session's own
+        pidf.write_text(f'{os.getpid()} {sid}', encoding='utf-8')
+        os.execvpe(argv[0], argv, control_env())
+    p = sp.Popen(argv, env=control_env())
+    pidf.write_text(f'{p.pid} {sid}', encoding='utf-8')
+    while True:
+        try:
+            return p.wait()
+        except KeyboardInterrupt:
+            continue  # Ctrl-C is the session's (it interrupts a turn)
+
+
+def control_default_command(root: Path) -> str:
+    """tmux's default-command for the run's background session: every pane or window a person opens there
+    becomes a control session in the main checkout; a shell stays if one cannot start."""
+    return (f'cd {shlex.quote(str(root))} && {plat.command_text([*runner_cmd(), "control"])} '
+            f'|| exec "${{SHELL:-/bin/sh}}"')
+
+
+def control_pane_argv(target: str, background: bool, sess: str, root: Path, cmd: str, env: list[str]) -> list[str]:
+    """The tmux command opening c1: a pane split under the runner's pane `target` (a run in a terminal), or a
+    window of its own, "control-<repo>", in the background session `sess`."""
+    envs = [a for e in env for a in ('-e', e)]
+    where = (['new-window', '-d', '-t', f'={sess}:', '-n', window('control')] if background else
+             ['split-window', '-v', '-d', '-l', '40%', '-t', target])
+    return ['tmux', *where, '-c', str(root), *envs, '-P', '-F', '#{pane_id}', cmd]
+
+
+def start_control() -> None:
+    """The run opens control session c1 beside it, unless `[run] control = false` or c1 already runs (it
+    outlives a stopped run). tmux: under the runner's pane, or in the background session's own window, whose
+    default-command makes every new pane a control session. Windows: a console of its own (hidden in the
+    background run)."""
+    if not C.run['control'] or not control_ok():
+        return
+    cmd = [*runner_cmd(), 'control', '1']
+    here = os.environ.get('TMUX_PANE', '')
+    if isinstance(MUX, TmuxMux) and here:
+        sess = tmux('display-message', '-p', '-t', here, '#{session_name}').stdout.strip()
+        background = sess == background_session()
+        env = [e for e in background_env() if not e.startswith(('AGENT_RUNNER=', 'AGENT_RUNNER_SLOT=', 'AGENT_RUNNER_KEEP='))]
+        if background:
+            tmux('set-option', '-t', f'={sess}', 'default-command', control_default_command(ROOT))
+            for e in env:
+                tmux('set-environment', '-t', f'={sess}', *e.split('=', 1))
+    if pid := control_live(1):
+        log(f'control: c1 already runs (pid {pid})')
+        return
+    if isinstance(MUX, TmuxMux) and here:
+        r = sp.run(control_pane_argv(here, background, sess, ROOT, plat.command_text(cmd), env),
+                   capture_output=True, text=True)
+        if r.returncode or not (pane_id := r.stdout.strip()):
+            log(f'control: tmux could not open c1: {r.stderr.strip()}')
+            return
+        tmux('set-option', '-p', '-t', pane_id, TAG, 'c1')
+        tmux('set-option', '-p', '-t', pane_id, REPO_TAG, str(ROOT))
+        where = f'window {window("control")}' if background else 'the pane under this one'
+        more = '; a new pane in this tmux session is another' if background else ''
+    elif plat.WINDOWS:
+        plat.spawn_console(cmd, ROOT, control_env(), hidden=HIDDEN[0])
+        where, more = 'a console of its own' + (' (hidden)' if HIDDEN[0] else ''), ''
+    else:
+        return
+    log(f'control: c1 is up in {where} ({RUNNER} control opens another{more})')
+
+
+def control_server_argv() -> list[str]:
+    """With `[run] remote`: Claude Code's Remote Control server in the main checkout, so new control sessions can
+    be started from claude.ai/code and the Claude apps, each with the control settings (its brief)."""
+    return [plat.exe(C.run['agent']), 'remote-control', '--spawn', 'same-dir', '--name', f'{ROOT.name} · control',
+            '--settings', str(control_settings())]
+
+
+def control_server_live() -> int:
+    """The pid of the control server a run started (`<notes>/control-server.pid`), still up, or 0."""
+    pid = marker_pid(C.notes('control-server.pid'))
+    args = plat.cmdline(pid) if pid and alive(pid) else None
+    return pid if pid and alive(pid) and (args is None or 'remote-control' in args) else 0
+
+
+def keep_control_server() -> None:
+    """Keep the control server running while the run is up: restarted when it exits (Remote Control quits after
+    about 10 minutes offline), after 30 s, doubling to 10 minutes while it keeps failing at once. One a run
+    before an upgrade restart left is adopted; the run's end ends it."""
+    import atexit
+    pidf, out = C.notes('control-server.pid'), C.notes('control-server.log')
+    atexit.register(lambda: (pid := control_server_live()) and plat.terminate(pid))
+    backend().trust(ROOT)  # it asks to trust a new folder, and has no terminal to ask on
+    wait = CONTROL_SERVER_WAIT[0] // 2  # doubled at the first exit
+    while True:
+        proc = None
+        if not (pid := control_server_live()):
+            with open(out, 'ab') as fh:
+                try:
+                    proc = sp.Popen(control_server_argv(), cwd=str(ROOT), env=control_env(), stdin=sp.DEVNULL,
+                                    stdout=fh, stderr=fh, start_new_session=not plat.WINDOWS)
+                except OSError as e:
+                    log(f'control: the control server did not start: {e}')
+                    return
+            pid = proc.pid
+            pidf.write_text(str(pid), encoding='utf-8')
+            log(f'control: control server up as "{ROOT.name} · control" at {REMOTE_URL} (pid {pid})')
+        began = time.monotonic()
+        while (proc.poll() is None) if proc else alive(pid):
+            time.sleep(10)
+        wait = CONTROL_SERVER_WAIT[0] if time.monotonic() - began > 600 else min(wait * 2, CONTROL_SERVER_WAIT[1])
+        try:
+            said = out.read_text(encoding='utf-8', errors='replace').strip().splitlines()[-1][:200]
+        except (OSError, IndexError):
+            said = ''
+        log(f'control: the control server exited{f" ({said})" if said else ""}; restarting it in {wait} s')
+        time.sleep(wait)
+
+
+def start_control_server() -> None:
+    if C.run['remote'] and C.run['control'] and control_ok():
+        threading.Thread(target=keep_control_server, name='control-server', daemon=True).start()

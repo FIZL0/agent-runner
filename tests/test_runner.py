@@ -697,6 +697,91 @@ def test_background(repo: Path):
         R.C.run['remote'] = False
 
 
+def test_control(repo: Path):
+    print('control sessions: the settings file and its brief, the argv, c1 kept, tmux default-command, status')
+    R.init(repo)
+    data = R.control_settings_data()
+    hook = data['hooks']['SessionStart'][0]['hooks'][0]
+    check(hook['type'] == 'command' and hook['command'].endswith('control --brief'),
+          'a SessionStart hook prints the control brief', hook)
+    check('Stop' not in data['hooks'], 'no Stop hook: a control session is never ended on idle')
+    check(f'Bash({R.C.command}:*)' in data['permissions']['allow'] and 'Monitor' in data['permissions']['allow'],
+          "the runner's commands and Monitor need no permission prompt")
+    f = R.control_settings()
+    eq(f, repo / '.runner' / 'control-settings.json', 'the file is <notes>/control-settings.json')
+    eq(json.loads(f.read_text(encoding='utf-8')), data, 'and holds that')
+    brief = R.control_brief()
+    for want in ('control session', f'{R.C.command} status', f'{R.C.command} plan add', f'{R.C.command} take',
+                 'Never edit code', "tail -n 0 -F .runner/run.log | grep --line-buffered -E ': merged, |"):
+        check(want in brief, f'the brief says {want!r}')
+    r = run(repo, 'control', '--brief')
+    eq((r.returncode, r.stdout), (0, brief), '`control --brief` (the hook) prints it')
+
+    argv = R.control_argv(2, 'sid-2', resume=False)
+    eq(argv[0], R.plat.exe(R.C.run['agent']), 'the agent')
+    check('watch' in argv[1] and 'status' in argv[1], 'its first message starts the watch and asks for status')
+    i = argv.index('--session-id')
+    eq(argv[i:i + 4], ['--session-id', 'sid-2', '--model', R.C.run['model']], 'a new session on [run] model')
+    eq(argv[argv.index('--tools') + 1], 'Bash,Read,Edit,Write,Artifact,Monitor', 'lean: the slot tools and Monitor')
+    eq(argv[argv.index('--settings') + 1], str(f), 'the settings file')
+    check('--permission-mode' not in argv and '--remote-control' not in argv, 'no bypass; local without [run] remote')
+    with mock.patch.dict(R.C.run, {'remote': True}):
+        argv = R.control_argv(3, 'sid-3', resume=True)
+    eq(argv[-2:], ['--remote-control', f'{R.ROOT.name} · control 3'], 'with [run] remote it is on Remote Control')
+    check('--resume' in argv, 'resume continues the session')
+    with mock.patch.dict(R.C.run, {'remote': True}):
+        sv = R.control_server_argv()
+    eq(sv[1:], ['remote-control', '--spawn', 'same-dir', '--name', f'{R.ROOT.name} · control', '--settings', str(f)],
+       'the control server: claude remote-control in the main checkout, with the control settings')
+
+    sid, resume = R.control_sid(1)
+    eq(((repo / '.runner/control.sid').read_text().strip(), resume), (sid, False), 'c1 keeps a new session id')
+    with mock.patch.object(R.Claude, 'find_transcript', lambda self, s: '/x.jsonl'):
+        eq(R.control_sid(1), (sid, True), 'and resumes it while its transcript is there')
+        check(R.control_sid(2)[0] != sid and not R.control_sid(2)[1], 'any other control session starts fresh')
+    eq(R.control_number(), 1, 'no control session running: the first is c1')
+    p = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)', 'control'])
+    try:
+        (repo / '.runner/control1.pid').write_text(f'{p.pid} {sid}')
+        eq(R.control_live(1), p.pid, 'c1 runs')
+        eq(R.control_number(), 2, 'so the next is c2')
+    finally:
+        p.kill()
+        p.wait()
+    eq(R.control_live(1), 0, 'a dead pid is not a session')
+
+    dc = R.control_default_command(repo)
+    check(dc.startswith(f'cd {repo} && ') and ' control ' in dc + ' ' and dc.endswith('|| exec "${SHELL:-/bin/sh}"'),
+          'tmux default-command: a new pane is a control session in the main checkout', dc)
+    a = R.control_pane_argv('%5', False, 'mine', repo, 'ar control 1', ['PATH=/bin'])
+    eq(a[:8], ['tmux', 'split-window', '-v', '-d', '-l', '40%', '-t', '%5'], 'a foreground run: split under its pane')
+    eq(a[-4:], ['-P', '-F', '#{pane_id}', 'ar control 1'], 'running control 1')
+    a = R.control_pane_argv('%5', True, 'ar-proj', repo, 'x', [])
+    eq(a[1:7], ['new-window', '-d', '-t', '=ar-proj:', '-n', 'control-proj'], 'the background run: a window of its own')
+    calls = []
+    with mock.patch.object(R, 'MUX', R.TmuxMux()), mock.patch.dict(os.environ, {'TMUX_PANE': '%1'}), \
+            mock.patch.object(R, 'tmux', lambda *a, **k: calls.append(a) or subprocess.CompletedProcess(a, 0, 'ar-proj\n', '')), \
+            mock.patch.object(R.sp, 'run', lambda *a, **k: calls.append(a[0]) or subprocess.CompletedProcess(a, 0, '%9\n', '')):
+        R.start_control()
+        check(any(c[:4] == ('set-option', '-t', '=ar-proj', 'default-command') for c in calls),
+              "the background session's default-command is set", calls)
+        check(any(c[:2] == ['tmux', 'new-window'] for c in calls if isinstance(c, list)), 'c1 opened in its window')
+        check(('set-option', '-p', '-t', '%9', R.TAG, 'c1') in calls, 'tagged c1 (attach c1)')
+        calls.clear()
+        with mock.patch.dict(R.C.run, {'control': False}):
+            R.start_control()
+        eq(calls, [], '[run] control = false: none')
+
+    lines = ['=== 2026-11-19T21:02:45 F2: merged, ticked', '=== 2026-11-19T21:03:00 B9: not merged, parked as wip/B9 — x',
+             '=== 2026-11-19T21:04:00 slot 1: F3 (Next; a.py)', '=== 2026-11-19T21:05:00 run idle: no task']
+    st = {'state': '3 slots', 'running': {'1': 'T3'}, 'since': {'1': 1000.0}, 'merging': ['T1'],
+          'usage': {'five_hour': 40.0, 'seven_day': 10.4}}
+    text = R.status_text(True, st, lines, {'T3': 'speed up the parser ' * 4}, 1000 + 12 * 60)
+    eq(text.splitlines(), ['run up: 3 slots', '  s1  T3  speed up the parser speed up the parser spe…  12 min',
+                           'merging: T1', 'lately:', '  21:02 F2 merged, ticked', '  21:03 B9 not merged, parked as wip/B9',
+                           '  21:05 run idle', 'usage: session 40%, week 10%'], 'status reads well on a phone')
+
+
 def test_take_text_and_here(repo: Path):
     print('take "TEXT" --kind: queue and take in one step; --here carries the main checkout\'s edits along')
     R.init(repo)
@@ -1026,15 +1111,18 @@ def test_prompt_and_hooks(repo: Path):
                 R.take_keys()
                 flags = R.remote_flags('slot2', None)
         eq(opened, [R.REMOTE_URL], 'with [run] remote, Enter opens the sessions page')
-        eq(flags, ['--remote-control', f'{R.ROOT.name} · s2'], 'and a slot starts on Remote Control, named')
-        eq(R.remote_flags('slot2', None), [], 'no Remote Control unless [run] remote')
+        eq(flags, [], '[run] remote alone leaves the slots local (only control sessions go on Remote Control)')
+        with mock.patch.dict(R.C.run, {'remote_slots': True}):
+            eq(R.remote_flags('slot2', None), ['--remote-control', f'{R.ROOT.name} · s2'],
+               'with [run] remote_slots a slot starts on Remote Control, named')
+        eq(R.remote_flags('slot2', None), [], 'no Remote Control unless [run] remote_slots')
         R.write_state({1: ('T3', '', set(), set())})
         with mock.patch.object(R, 'run_up', lambda: True), mock.patch.object(R, 'init', lambda: None):
             out = io.StringIO()
             with contextlib.redirect_stdout(out):
                 R.cmd_status(['-n', '0'])
-        check('run up: 1 slot' in out.getvalue() and 'slot 1: T3' in out.getvalue(),
-              '`status` shows the state and each slot\'s task', out.getvalue())
+        check('run up: 1 slot' in out.getvalue() and re.search(r'^  s1  T3  (.+  )?0 min$', out.getvalue(), re.M),
+              '`status` shows the state and each slot\'s task and minutes', out.getvalue())
         run(repo, 'stop', '--force', '--shutdown')
         R.take_keys()
         check(R.forced() and R.POWER == 'shutdown' and not (repo / '.runner/POWER').exists(),
@@ -2945,7 +3033,7 @@ def main() -> int:
                        lambda: test_no_pane(repo, tmp), lambda: test_other_repos_panes(repo, tmp),
                        lambda: test_limit_lets_go(repo),
                        lambda: test_shared_push(repo, tmp), lambda: test_note_on_a_ticked_task(repo), lambda: test_adopt_merge(repo), lambda: test_followups(repo), lambda: test_ci_watch(repo), test_update_notice, test_restart_if_upgraded, lambda: test_flake_repair(tmp), lambda: test_repair_per_failure(repo),
-                       lambda: test_stalled(tmp), lambda: test_take(repo), lambda: test_take_text_and_here(repo), lambda: test_background(repo)])
+                       lambda: test_stalled(tmp), lambda: test_take(repo), lambda: test_take_text_and_here(repo), lambda: test_background(repo), lambda: test_control(repo)])
 
 
 if __name__ == '__main__':

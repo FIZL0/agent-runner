@@ -38,13 +38,19 @@ agent-runner plan                  # what the runner sees in plan/TODO.md
 agent-runner run --dry-run 3       # what three slots would start right now, and why the rest wait
 agent-runner run once              # one task, one session, then stop: try it like this first
 agent-runner                       # the run in the background; the prompt comes straight back
-agent-runner status                # is it up, each slot's task, the end of its log
-agent-runner attach                # watch it (attach s2: slot 2); Ctrl-b d to detach again
+agent-runner status                # is it up, each slot's task and minutes, what merged lately
+agent-runner attach                # watch it (attach s2: slot 2; c1: the control session); Ctrl-b d to detach again
+agent-runner control               # a control session here: "status?", "pause", "add a task to fix X"
 agent-runner stop                  # finish the running tasks, then end it
 ```
 
 Bare `agent-runner` starts the run in a detached tmux session `ar-<repo>`, with the slots' window in it, so
 no terminal is taken and nothing pops up. `agent-runner run 3` is the same run in this terminal (inside tmux).
+Either way the run opens a control session, c1, beside it: a Claude Code session in the main checkout that
+you ask for status, to pause, to add slots or stop, to queue a task, or to do one now; it posts a line when
+a task merges or is parked. Any new pane in the `ar-<repo>` session is another one. With `[run] remote` the
+control sessions are on Remote Control, so you run the run from claude.ai/code or the Claude apps
+([docs/REFERENCE.md](docs/REFERENCE.md#control-sessions)).
 
 > [!TIP]
 > No repo handy? `examples/demo.sh` builds a tiny one with a plan in a temp dir and shows `plan`,
