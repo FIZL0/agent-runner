@@ -1,0 +1,33 @@
+# Runs the test gate (tests/test_*.py) on Linux and Windows for every push and pull request,
+# so paths, quoting and process flags are tested on Windows too.
+name: ci
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Git identity for tests that commit
+        run: |
+          git config --global user.name ci
+          git config --global user.email ci@example.invalid
+          git config --global init.defaultBranch main
+      - name: Test gate
+        shell: bash
+        env:
+          PYTHONUTF8: '1'
+        run: |
+          # setup-python gives `python` on every OS; Windows has no `python3`
+          for t in tests/test_*.py; do echo "== $t"; python "$t" || exit 1; done
