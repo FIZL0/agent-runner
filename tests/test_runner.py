@@ -1305,7 +1305,7 @@ def test_control(repo: Path):
     # B84: the list is fenced off as runner-added, after the person's words and any attached file, and the brief
     # names the tag: settle only when the words answer it, else say nothing of the waiting items
     with mock.patch.object(R.P, 'asks', lambda *a, **k: [item]):
-        msg = R.control_ask('what is wrong in my screenshot?', ['/tmp/shot.png'])
+        msg = R.control_ask('what is wrong with the push deploy in my screenshot?', ['/tmp/shot.png'])
     head, tag, block = msg.partition('\n\n<runner-waiting>\n')
     check(tag and head.startswith('what is wrong') and 'shot.png' in head and 'R43' not in head
           and block.endswith('</runner-waiting>') and "not the person's ask" in block
@@ -5706,6 +5706,56 @@ def test_take_running_slot(repo: Path):
           'the do-here bullet: a running slot means give the link or attach line, start nothing', text)
 
 
+def test_runner_route_b54(repo: Path):
+    """B54: the feed sends an ask about agent-runner itself to agent-runner's own control session, labelled with
+    the project, and a hand-off whose words share nothing with the waiting items carries none of them."""
+    import contextlib
+    import io
+    from agent_runner.guide import RUNNER_BRIEF
+    rb = ' '.join(RUNNER_BRIEF.format(cmd='run', repo='iFizBox', answer='').split())
+    check('`run control --new --forward --runner`' in rb and 'agent-runner itself' in rb and 'releases' in rb
+          and '"Sent to agent-runner control N: <the link>"' in rb, 'B54: the feed brief routes agent-runner asks', rb)
+    check('`run upgrade`' in rb and 'update runner' in rb, 'B54: updating this run is still answered in the feed', rb)
+    item = ('DECIDE', 'R43', '', 'Deploy on every push or on v* tags?', '', 'How should the site deploy')
+    with mock.patch.object(R.P, 'asks', lambda *a, **k: [item]):
+        eq(R.control_ask('update runner, when is release?'), 'update runner, when is release?',
+           'B54: an ask that shares nothing with the waiting items carries none, and no order to settle one')
+        check('<runner-waiting>' in R.control_ask('R43: tags please'), 'B54: an ask naming the item carries it')
+        check('<runner-waiting>' in R.control_ask('yes'), 'B54: a bare reply carries the items it can answer')
+        check('<runner-waiting>' in R.control_ask('deploy only on tags'), 'B54: an ask on the same subject carries it')
+    eq(R.waiting_for_ask('fix the login page', '- R43: Deploy on every push?\n- B9: login page shows an error'),
+       '- B9: login page shows an error', 'B54: only the related item of several')
+    # the route: the feed's message read here, opened in agent-runner's checkout with the label, no waiting block
+    other = repo.parent / 'agent-runner-co'
+    other.mkdir(exist_ok=True)
+    runs = []
+    done = lambda *a, **k: runs.append((a, k)) or R.sp.CompletedProcess(a, 0, 'control 3 is up: https://claude.ai/code/x\n', '')
+    out = io.StringIO()
+    with mock.patch.object(R, 'runner_checkout', lambda: other), mock.patch.object(R, 'feed_sid', lambda: 's'), \
+            mock.patch.object(R, 'feed_take', lambda sid, w: 'update runner, when is release?'), \
+            mock.patch.object(R, 'feed_wait', lambda *a, **k: (True, ['/tmp/p.png'], 0, '')), \
+            mock.patch.object(R.sp, 'run', done), contextlib.redirect_stdout(out):
+        rc = R.control_new_runner()
+    cmd, kw = runs[0][0][0], runs[0][1]
+    ask = next(x for x in cmd if x.startswith('--ask='))
+    eq(rc, 0, 'B54: control --new --runner exits as the session it opened')
+    check(kw['cwd'] == str(other) and cmd[cmd.index('--from-feed') + 1] == R.ROOT.name and '--new' in cmd
+          and 'update runner, when is release?' in ask and f'from the {R.ROOT.name} runner feed' in ask
+          and '<runner-waiting>' not in ask and cmd[cmd.index('--file') + 1] == '/tmp/p.png'
+          and 'AGENT_RUNNER_REPO' not in kw['env'], 'B54: opened in agent-runner\'s checkout, labelled', cmd)
+    check(out.getvalue().startswith('agent-runner control 3 is up: https://claude.ai/code/x'),
+          'B54: the feed is told it went to agent-runner', out.getvalue())
+    opened = []
+    with mock.patch.object(R, 'runner_checkout', lambda: R.ROOT), \
+            mock.patch.object(R, 'control_new', lambda *a, **k: opened.append(k) or 0):
+        R.control_new_runner()
+    eq(opened[0].get('forward'), True, 'B54: in agent-runner itself, a plain --forward')
+    from agent_runner.config import CLONE_ENTRY
+    if CLONE_ENTRY.exists():
+        found = R.runner_checkout()
+        check(found is not None and (found / R.RUNNER_REPO_MARK).is_file(), 'B54: the clone this runs from is found', found)
+
+
 def test_upgrade_cmd(repo: Path):
     """B49: `upgrade` runs the existing upgrade() (as `u` does), and the control brief names the command."""
     import contextlib
@@ -6027,7 +6077,7 @@ def main() -> int:
                        lambda: test_closed_online_controls(repo),
                        lambda: test_renamed_control_kept(repo),
                        lambda: test_control_summary_title(repo), lambda: test_control_task_name(repo), lambda: test_progress_and_release(repo),
-                       lambda: test_control_status_rules(repo), lambda: test_control_do_it_here(repo), lambda: test_control_retitle_on_topic(repo), test_control_push_when_asked, test_needs_cmd_f44, test_idle_control_not_waiting, lambda: test_take_running_slot(repo), lambda: test_upgrade_cmd(repo), test_control_no_upgrade_watcher,
+                       lambda: test_control_status_rules(repo), lambda: test_control_do_it_here(repo), lambda: test_control_retitle_on_topic(repo), test_control_push_when_asked, test_needs_cmd_f44, test_idle_control_not_waiting, lambda: test_take_running_slot(repo), lambda: test_upgrade_cmd(repo), lambda: test_runner_route_b54(repo), test_control_no_upgrade_watcher,
                        lambda: test_plan_last(repo), lambda: test_release_push(repo),
                        lambda: test_help_order_and_bare_wizard(tmp), lambda: test_setup(tmp),
                        lambda: test_stop_countdown(repo), lambda: test_real_claude_json_guard(tmp)])

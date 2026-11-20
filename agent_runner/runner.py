@@ -7377,9 +7377,45 @@ def control_ask(ask: str, images: list[str] | tuple = ()) -> str:
     lines = [ask] if ask else []
     lines += [f'The person attached {attached_name(p)}, saved at "{p}": Read or open it before you answer.'
               for p in images]
-    if ask and (waiting := ask_waiting()):
+    if ask and (waiting := waiting_for_ask(ask, ask_waiting())):
         lines.append(ask_waiting_block(waiting))
     return '\n\n'.join(lines)
+
+
+# B54: a handed-on ask carries only the waiting items it plausibly answers: one it names by id, one it shares two
+# words with, or all of them for a bare reply ("yes", "B", "later") whose item it does not name.
+ASK_STOP = frozenset('''about after again also been before being both does done each from have here into just
+like make more much need needs only other over please should some still such than that their them then there
+these they this those very want what when where which while will with would could your runner task item'''.split())
+ASK_REPLY = frozenset('yes no ok okay go later done sure fine approve approved confirm confirmed shelve skip'.split())
+
+
+def ask_words(text: str) -> set[str]:
+    """The words of `text` that can tie an ask to an item: 4+ letters, not ASK_STOP, a plural's s dropped."""
+    out = set()
+    for w in re.findall(r'[a-z0-9]+', text.lower()):
+        w = w[:-1] if len(w) > 4 and w.endswith('s') and not w.endswith('ss') else w
+        if len(w) >= 4 and w not in ASK_STOP:
+            out.add(w)
+    return out
+
+
+def waiting_for_ask(ask: str, waiting: str) -> str:
+    """B54: the lines of `waiting` ('- ID: ask' each) that the handed-on `ask` plausibly answers; '' for none, so a
+    hand-off about something else carries no item and no order to settle one."""
+    words = re.findall(r'[a-z0-9]+', ask.lower())
+    if words and len(words) <= 3 and all(w in ASK_REPLY or len(w) == 1 for w in words):
+        return waiting  # a bare reply: it can only be to an item
+    mine = ask_words(ask)
+    keep = []
+    for line in waiting.splitlines():
+        m = re.match(r'-\s*(\S+?):\s*(.*)', line)
+        if not m:
+            continue
+        named = re.search(rf'(?<![A-Za-z0-9]){re.escape(m[1])}(?![A-Za-z0-9])', ask, re.I)
+        if named or len(mine & ask_words(m[2])) >= 2:
+            keep.append(line)
+    return '\n'.join(keep)
 
 
 def ask_waiting_block(waiting: str) -> str:
@@ -7565,6 +7601,9 @@ def cmd_control(argv: list[str], prog: str = f'{RUNNER} control') -> int:
     ap.add_argument(FORWARD_FLAG, action='store_true', help='open another one (as --new) whose first message is '
                     "the person's latest message in the runner feed, word for word, with its attachments (the "
                     'feed hands requests on this way)')
+    ap.add_argument('--runner', action='store_true', help='with --forward: open it in agent-runner\'s own checkout '
+                    'instead, labelled with this project (the feed hands asks about agent-runner itself on this way)')
+    ap.add_argument('--from-feed', default='', help=argparse.SUPPRESS)  # B54: the project a --runner ask came from
     ap.add_argument('--file', '--image', dest='file', action='append', default=[], metavar='PATH',
                     help='a file or image the person attached to the first message (repeatable): the first message '
                     'names it and its path and says to Read or open it')
@@ -7592,8 +7631,11 @@ def cmd_control(argv: list[str], prog: str = f'{RUNNER} control') -> int:
     if not control_ok():
         print(f'control sessions are Claude Code sessions; [run] agent is {C.run["agent"]}', file=sys.stderr)
         return 1
+    if a.runner and (a.new or a.forward) and not a.feed_sid:
+        return control_new_runner(a.n, images=a.file)
     if a.new or (a.forward and not a.feed_sid):
-        return control_new(a.n, ask=a.ask, images=a.file, forward=a.forward)
+        return control_new(a.n, ask=a.ask, images=a.file, forward=a.forward and not a.from_feed,
+                           handed=bool(a.from_feed))
     if a.ask_file:
         a.ask = read_ask_file(a.ask_file) or a.ask
     if a.forward and a.feed_sid and SID_RE.fullmatch(a.feed_sid):
@@ -8346,7 +8388,7 @@ def person_turn(d: dict) -> bool:
 
 
 def control_new(n: int | None = None, wait: float = CONTROL_LINK_WAIT, ask: str = '',
-                images: list[str] | tuple = (), forward: bool = False) -> int:
+                images: list[str] | tuple = (), forward: bool = False, handed: bool = False) -> int:
     """`control --new`: another control session, opened without taking focus (a window of its own in the run's
     tmux session; Windows: a hidden console), on Remote Control as "<repo> · control N" with `[run] remote`.
     Prints its claude.ai/code link once its pane shows it, so the session that ran it can answer with a link.
@@ -8368,7 +8410,7 @@ def control_new(n: int | None = None, wait: float = CONTROL_LINK_WAIT, ask: str 
             fwd, ask = [FORWARD_FLAG, '--feed-sid', sid], ''
         else:
             ask = feed_lost_note() if text is None else text
-    if ask and ask != feed_lost_note():
+    if ask and ask != feed_lost_note() and not handed:  # B54 handed: another project's feed read it already
         # Claude Code writes the feed's transcript lazily: the message being handed on, and the saved paths of
         # its pictures, can land a while after this command starts (B46, B57: more than FEED_WAIT), so wait
         # briefly for them here, and when they are still missing let the new session's own process wait longer
@@ -8381,7 +8423,7 @@ def control_new(n: int | None = None, wait: float = CONTROL_LINK_WAIT, ask: str 
             late = sid
         elif note := image_drift_note(lost, version):
             ask = f'{ask}\n\n{note}'
-    if forward and ask:
+    if (forward or handed) and ask:
         given = ['--ask-file', str(forward_ask_file(n, ask))]
     else:
         given = ['--ask', ask] if ask else []
@@ -8424,6 +8466,74 @@ def control_new(n: int | None = None, wait: float = CONTROL_LINK_WAIT, ask: str 
         time.sleep(1)
     print(f'control {n} is up in {where}, but showed no link in {wait:g} s: find "{name}" at {REMOTE_URL}')
     return 0
+
+
+# --- B54: the feed hands an ask about agent-runner itself to agent-runner's own control session ---------------
+
+RUNNER_REPO_MARK = Path('agent_runner', 'runner.py')  # what tells agent-runner's checkout from another repo
+
+
+def runner_checkout() -> Path | None:
+    """agent-runner's own main checkout: the clone this install runs from (its `run`), else the main checkout of a
+    worktree under agent-runner's `[run] home` (the `{repo}` in it read as agent-runner); None when neither is
+    one (an installed package with no runs of agent-runner on this machine)."""
+    from agent_runner.config import CLONE_ENTRY
+    cands = [CLONE_ENTRY.parent] if CLONE_ENTRY.exists() else []
+    t = os.environ.get('AGENT_RUNNER_HOME') or str(C.raw.get('run', {}).get('home') or '')
+    if '{repo}' in t:
+        home = ROOT / Path(t.replace('{repo}', 'agent-runner')).expanduser()
+        if home.is_dir():
+            cands += [home / 'merge', *sorted(p for p in home.iterdir() if re.fullmatch(r's\d+', p.name))]
+    for c in cands:
+        if not c.is_dir():
+            continue
+        try:
+            root = main_checkout(c)
+        except (SystemExit, OSError):
+            continue
+        if (root / RUNNER_REPO_MARK).is_file():
+            return root
+    return None
+
+
+def runner_label(ask: str, repo: str) -> str:
+    """The handed-on ask as agent-runner's control session gets it: the person's words, then where they came from."""
+    return (f'{ask}\n\n(Handed on from the {repo} runner feed: the person asked this there, about agent-runner '
+            f'itself, not {repo}.)')
+
+
+def control_new_runner(n: int | None = None, images: list[str] | tuple = ()) -> int:
+    """`control --new --forward --runner`: the feed's latest person message (read as `--forward` does) opens a
+    control session in agent-runner's own checkout (`runner_checkout`), labelled with this project and carrying
+    none of this project's waiting items; in this project itself, or with no checkout found, a plain `--forward`."""
+    root = runner_checkout()
+    if root is None or root == ROOT:
+        if root is None:
+            print("agent-runner's own checkout was not found on this machine, so this opens here")
+        return control_new(n, images=images, forward=True)
+    sid = feed_sid()
+    text = feed_take(sid, FEED_LATE_WAIT) if sid else None
+    if text is None:
+        return control_new(n, images=images, forward=True)
+    found, got, lost, version = feed_wait(text, FEED_WAIT, sid, 'control --new --runner')
+    images = [str(Path(i).resolve()) for i in images]
+    images += [i for i in got if i not in images]
+    ask = runner_label(text, ROOT.name)
+    if found and (note := image_drift_note(lost, version)):
+        ask = f'{ask}\n\n{note}'
+    env = {k: v for k, v in os.environ.items() if k not in ('AGENT_RUNNER_REPO', 'AGENT_RUNNER_CONFIG', CONTROL_N_ENV)}
+    cmd = [*runner_cmd(), 'control', '--new', '--from-feed', ROOT.name, f'--ask={ask}',
+           *[x for i in images for x in ('--file', i)]]
+    try:
+        p = sp.run(cmd, cwd=str(root), env=env, capture_output=True, text=True, timeout=CONTROL_LINK_WAIT + 120)
+    except (OSError, sp.TimeoutExpired) as e:
+        print(f"agent-runner's control session did not open: {e}", file=sys.stderr)
+        return 1
+    if out := p.stdout.strip():
+        print(f'agent-runner {out}')
+    if err := p.stderr.strip():
+        print(f'agent-runner: {err}', file=sys.stderr)
+    return p.returncode
 
 
 # --- B26: idle control sessions are closed, so the apps' session list stops piling up ----------------------

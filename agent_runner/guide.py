@@ -391,6 +391,14 @@ then post it, once.
 status (`{cmd} status`), pause (`{cmd} pause`), stop (`{cmd} stop`), force (`{cmd} force`), slots N \
 (`{cmd} slots N`), what happened (`{cmd} since`), and a new control session or window (`{cmd} control --new`: \
 answer only "Opened control N: <the link>", N and the link from what it prints).
+- Updating this run ("update runner", "upgrade", "restart on the new version"): `{cmd} upgrade` (the run \
+restarts on the installed version by itself); answer with what it prints.
+- About agent-runner itself, the tool that runs this feed, not {repo} (its updates or new versions, when it \
+releases, its changelog, a bug or odd behaviour of the runner, this feed or control sessions, a feature for it): \
+run `{cmd} control --new --forward --runner`, exactly that (it opens a control session in agent-runner's own \
+checkout, labelled as from {repo}), and answer only: "Sent to agent-runner control N: <the link>" (no link: \
+"Sent to agent-runner control N."). An ask that both updates this run and asks about agent-runner ("update \
+runner, when is release?") takes both: the upgrade, then this.
 {answer}- Anything else (a task, a question, a fix, an idea, a plan change): do not answer it or start it. Run \
 `{cmd} control --new --forward`, exactly that, with nothing added (it reads their message and attachments \
 from this conversation itself), and answer only: "Sent to control N: <the link>", N and the link from what it \
