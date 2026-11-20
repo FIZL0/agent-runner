@@ -32,6 +32,7 @@ Run the agents
     agent-runner take "TEXT" --kind B [--files A,B] [--here]
                                       queue a task and take it at once; --here moves the main checkout's edits into it
     agent-runner resume B646          continue B646's last session, cut off by a dropped network or a reboot
+    agent-runner wizard B646          walk through the hand steps a blocked task left a wizard for, then confirm it
 
 See and change the task list
     agent-runner plan                 every task id, one line each
@@ -173,6 +174,9 @@ def main(argv: list[str] | None = None) -> int:
     if cmd == 'resume':
         from agent_runner import runner
         return runner.cmd_resume(rest)
+    if cmd == 'wizard':  # F17
+        from agent_runner import runner
+        return runner.cmd_wizard(rest)
     if cmd == 'take':
         from agent_runner import runner
         return runner.cmd_take(rest)
