@@ -7920,14 +7920,48 @@ def feed_scan() -> tuple[list[str], int, str]:
 
 def feed_sid() -> str:
     """The feed session handing a message on: the one running this command (CLAUDE_CODE_SESSION_ID), else
-    <notes>/remote/feed.sid; '' when neither names one."""
+    <notes>/remote/feed.sid, else the live feed's own session (`feed_record_sid`, B83); '' when none names one."""
     sid = os.environ.get('CLAUDE_CODE_SESSION_ID', '').strip()
     if not SID_RE.fullmatch(sid):
-        try:
-            sid = C.notes(REMOTE_DIR, FEED_SID).read_text(encoding='utf-8').strip()
-        except OSError:
-            return ''
+        sid = feed_sid_file()
+    if not SID_RE.fullmatch(sid):
+        sid = feed_record_sid()
     return sid if SID_RE.fullmatch(sid) else ''
+
+
+def feed_sid_file() -> str:
+    """What <notes>/remote/feed.sid holds, stripped; '' without one."""
+    try:
+        return C.notes(REMOTE_DIR, FEED_SID).read_text(encoding='utf-8').strip()
+    except OSError:
+        return ''
+
+
+def claude_sessions_dir() -> Path:
+    """Where Claude Code keeps one <pid>.json per live session, its sessionId among the fields."""
+    return Path(os.environ.get('CLAUDE_CONFIG_DIR') or Path.home() / '.claude') / 'sessions'
+
+
+def feed_record_sid() -> str:
+    """The session id of the live runner feed (B83): its Remote Control record's sid, else the sessionId Claude Code
+    wrote for its pid (`claude_sessions_dir`). A feed started by a runner from before B15 has no feed.sid and no
+    sid in its record, and a Bash call of its own may not carry CLAUDE_CODE_SESSION_ID, so a hand-off from it read
+    no transcript and dropped the person's pictures. '' when no live feed is recorded or none names its session."""
+    for rec in rc_records():
+        if rec.get('kind') != 'feed' or not isinstance(rec.get('pid'), int) or not plat.alive(rec['pid']):
+            continue
+        if SID_RE.fullmatch(str(rec.get('sid') or '')):
+            return rec['sid']
+        try:
+            d = json.loads((claude_sessions_dir() / f'{rec["pid"]}.json').read_text(encoding='utf-8'))
+        except (OSError, ValueError):
+            continue
+        if not isinstance(d, dict) or (rec.get('start') and d.get('procStart')
+                                       and str(d['procStart']) != str(rec['start'])):
+            continue  # another process now has that pid
+        if SID_RE.fullmatch(str(d.get('sessionId') or '')):
+            return d['sessionId']
+    return ''
 
 
 def feed_latest(sid: str | None = None) -> tuple[list[str], int, str, str | None]:
@@ -8024,7 +8058,8 @@ def feed_log(where: str, sid: str, ask: str, took: float, looks: int, out: tuple
     found, got, lost, version = out
     look = FEED_LOOK
     src = ('none' if not sid else '--feed-sid' if '--feed-sid' in where
-           else 'env' if os.environ.get('CLAUDE_CODE_SESSION_ID', '').strip() == sid else 'feed.sid')
+           else 'env' if os.environ.get('CLAUDE_CODE_SESSION_ID', '').strip() == sid
+           else 'feed.sid' if feed_sid_file() == sid else 'feed record')
     said = look.get('said')
     head = lambda s: json.dumps(re.sub(r'\s+', ' ', s)[:60], ensure_ascii=False)
     line = (f'{dt.datetime.now().isoformat(timespec="seconds")} {where}: ask {head(ask)}; sid {sid or "-"} ({src}),'
