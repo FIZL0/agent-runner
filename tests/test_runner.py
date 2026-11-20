@@ -4706,6 +4706,73 @@ def _result(uid: str, text: str, ago: float) -> dict:
         {'type': 'tool_result', 'tool_use_id': uid, 'content': text}]}}
 
 
+def test_closed_online_controls(repo: Path):
+    print('B53: a control session closed online (archived or deleted in the apps) ends here, and its number is free')
+    R.init(repo)
+    H = 3600
+    gone = {'type': 'system', 'subtype': 'informational', 'level': 'warning', 'timestamp': _ts(H),
+            'content': 'Remote Control disconnected — this session was ended or archived from another device or app '
+                       '(code 4090)'}
+    deleted = dict(gone, content='Remote Control disconnected — the server no longer reports this session — it may '
+                                 'have been deleted from another device or app (code 4090)')
+    bridge = {'type': 'bridge-session', 'bridgeSessionId': 'cse_01A'}
+    base = [bridge, _person('status?', 2 * H), _claude('All quiet.', 2 * H - 5)]
+    archived = base + [gone, bridge]  # Claude Code rewrites the same bridge entry after it
+    removed = base + [deleted, _claude('A needs-you event came in.', 30)]  # a watch waking it is not the person
+    used_here = base + [gone, _person('still here, carry on', 60)]  # typed in its terminal: in use
+    reconnected = base + [gone, {'type': 'bridge-session', 'bridgeSessionId': 'cse_01B'}]
+    for name, rows, want in (('open', base, False), ('archived', archived, True), ('deleted', removed, True),
+                             ('used in its terminal since', used_here, False), ('reconnected', reconnected, False)):
+        eq(R.closed_online(rows), want, f'{name}: closed online {want}')
+
+    rows = {'s1': archived, 's2': archived, 's3': base, 's4': removed, 's5': used_here}
+    notes = R.C.notes()
+    notes.mkdir(parents=True, exist_ok=True)
+    for n in range(1, 6):
+        (notes / f'control{n}.pid').write_text(f'{9100 + n} s{n}', encoding='utf-8')
+        (notes / f'control{n}.title').write_text(f'agent-runner · {n}\n', encoding='utf-8')
+    ended, tm = [], []
+    live = lambda n: 9100 + n if (notes / f'control{n}.pid').exists() else 0
+    panes = {2: '%52', 4: ''}
+
+    def tmux(*a, **kw):
+        tm.append(a)
+        return subprocess.CompletedProcess(a, 0, '', '')
+    try:
+        with mock.patch.object(R, 'control_live', live), mock.patch.object(R, 'transcript', lambda s: f'/t/{s}'), \
+                mock.patch.object(R, 'entries', lambda s, skip_bad=False: iter(rows[s])), \
+                mock.patch.object(R.plat, 'terminate', ended.append), mock.patch.object(R, 'control_ok', lambda: True), \
+                mock.patch.object(R, 'control_window', lambda n, pid: panes.get(n, '')), \
+                mock.patch.object(R, 'tmux', tmux), mock.patch.object(R, 'log'):
+            eq(R.control_number(), 6, 'before: every number up to 5 is held')
+            eq(R.end_closed_controls(force=True), [2, 4], 'the archived and the deleted one are ended')
+            eq(sorted(ended), [9102, 9104], 'their processes ended; c1, the open one and the one in use left running')
+            check(('kill-pane', '-t', '%52') in tm, 'its tmux pane closed', tm)
+            check(all(not (notes / f'control{n}.{x}').exists() for n in (2, 4) for x in ('pid', 'title')),
+                  'their controlN.pid and controlN.title removed')
+            check(all((notes / f'control{n}.pid').exists() for n in (1, 3, 5)), 'the others keep theirs')
+            eq(R.control_number(), 2, 'control_number() hands out 2 again')
+            eq(R.end_closed_controls(), [], 'within CONTROL_CLOSE_EVERY: no second look')
+            (notes / 'control2.pid').write_text('9102 s2', encoding='utf-8')
+            ended.clear()
+            eq(R.free_control_number(), 2, 'control --new ends a session closed online first, then takes its number')
+            eq(ended, [9102], 'so a new session never comes up past the closed ones')
+            rows['s3'] = None  # unreadable: logged and skipped, never raised into the run loop
+            (notes / 'control2.pid').write_text('9102 s2', encoding='utf-8')
+            eq(R.end_closed_controls(force=True), [2], 'one session that cannot be read does not stop the others')
+        listing = (f'run\t%60\tc2\t{R.ROOT}\t\t111\nrun\t%61\tc3\t/elsewhere\t\t222\n'
+                   f'run\t%62\t\t\t\t333\n')
+        with mock.patch.object(R.shutil, 'which', lambda x: '/usr/bin/tmux'), \
+                mock.patch.object(R, 'tmux', lambda *a, **kw: subprocess.CompletedProcess(a, 0, listing, '')):
+            eq(R.control_window(2, 999), '%60', 'its pane by its c2 tag for this repository')
+            eq(R.control_window(3, 333), '%62', 'another repo\'s c3 is not it: found by its pane pid instead')
+            eq(R.control_window(4, 444), '', 'no pane: nothing to close')
+    finally:
+        for n in range(1, 6):
+            (notes / f'control{n}.pid').unlink(missing_ok=True)
+            (notes / f'control{n}.title').unlink(missing_ok=True)
+
+
 def test_renamed_control_kept(repo: Path):
     print('B41: idle-close keeps a control session the person renamed (a custom-title entry), and files no question')
     R.init(repo)
@@ -5265,7 +5332,8 @@ def main() -> int:
                        lambda: test_concepts_waiting(repo),
                        lambda: test_person_waiting(repo), lambda: test_control_server_old_agent(repo, tmp),
                        lambda: test_drop_or_change_running(repo), lambda: test_tell_running(repo),
-                       lambda: test_close_idle_controls(repo), lambda: test_renamed_control_kept(repo),
+                       lambda: test_close_idle_controls(repo), lambda: test_closed_online_controls(repo),
+                       lambda: test_renamed_control_kept(repo),
                        lambda: test_control_summary_title(repo), lambda: test_control_task_name(repo), lambda: test_progress_and_release(repo),
                        lambda: test_control_status_rules(repo), lambda: test_control_do_it_here(repo), lambda: test_take_running_slot(repo), lambda: test_upgrade_cmd(repo), test_control_no_upgrade_watcher,
                        lambda: test_plan_last(repo), lambda: test_release_push(repo),
