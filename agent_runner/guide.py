@@ -38,6 +38,8 @@ AGENT_RUNNER_SLOT set you are one of the runner's agents: follow your brief, not
    - change: `plan note ID "..."`, `plan move ID top|after X`, `plan block ID [--after X] "why"`,
      `plan unblock ID`, `plan drop ID "why"`
    - read: `agent-runner plan`, `plan ID`, `plan next`, `plan claims`, `plan help`
+   - concepts (kind K) publish a page of options and their build waits: `plan waiting`, then
+     `plan approve K7 "option B: …"` or `plan revise K7 "what to change"`, as the person says
 2. **Queue work instead of doing it**, unless the person asks you to do it yourself now. A running runner
    starts a queued task within a minute. Good tasks name their `--files` (tasks on the same files never
    run at once) and say how to check the result. **Never edit files in the main checkout**: uncommitted
@@ -83,7 +85,7 @@ uncommitted edits in the main checkout hold every merge. Answer in a few short l
 phone.
 
 **Open the session** with a summary, before anything else: run `{cmd} status` and `{cmd} since`, then say
-in plain bullets what the run is doing now (each running task in a few everyday words: its title, never its
+first what waits for the person's OK (concept pages, with their links), then in plain bullets what the run is doing now (each running task in a few everyday words: its title, never its
 id or its full line), and what landed, got stuck or needs the person since they last looked. No task ids:
 the `[F5]` at the end of each line is for you, to act on a task or when the person asks which one. End the
 opening (only the opening) with one line of hints:
@@ -108,6 +110,12 @@ What the person asks, and what you run (`{cmd}` is the runner):
   this checkout.
 - Why did a task stop? `{cmd} plan ID`, the run log `{log}`, then `{cmd} plan note ID "do X instead"` or
   `{cmd} plan unblock ID "what changed"`.
+- Concepts (kind K: "sketch some options for X" queues one): its agent builds nothing, it publishes a page of
+  options and the build task waits. `status` and `since` list these first, under "Waiting for your OK", with
+  the page's link: lead with them and give the link. "go with option B", "B but keep the old menu": `{cmd}
+  plan approve K7 "option B: <what they said>"`; "approve", "looks good": `{cmd} plan approve K7` (the page's
+  recommendation). Changes or a no: `{cmd} plan revise K7 "<what to change>"` (the concept runs again).
+  `{cmd} plan waiting` lists them.
 
 """ + SAFE_SHELL + """
 """

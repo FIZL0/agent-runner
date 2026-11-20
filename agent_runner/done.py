@@ -13,10 +13,18 @@ nothing, so a "done" task is always one whose tests passed.
 
 `--blocked WHY` marks it `[~]` instead. Say what would unblock it. If what it waits on is another task
 landing, `--after ID[,ID]` (or just naming the open ids in WHY) lets a run reopen it once they merge.
+
+`--artifact URL` is the page a concept task (kind K) published: required for one, which builds nothing.
+It notes the link on the task (and in its journal), and files the build task blocked until a person
+approves an option (`plan approve`).
+
+    ./run done K7 "K7: three layouts for the settings page" --artifact https://claude.ai/code/artifact/…
 """
 from __future__ import annotations
 
 import argparse
+import datetime as dt
+import re
 import subprocess
 import sys
 from functools import partial
@@ -54,10 +62,15 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument('--blocked', metavar='WHY', help='mark it [~] instead of done: why, and what unblocks it')
     ap.add_argument('--after', metavar='IDS', default=None,
                     help='with --blocked: the tasks it waits on, comma-separated (default: read off WHY)')
+    ap.add_argument('--artifact', metavar='URL',
+                    help="the page a concept task (K) published; required for one: its build waits for a person's OK")
     ap.add_argument('--no-test', action='store_true', help='skip the gate (say why in the message)')
     a = ap.parse_args(argv)
     c = cfg()
     cwd = c.root
+    if why := artifact_refusal(a):
+        print(why, file=sys.stderr)
+        return 2
 
     if not a.no_test:
         rc, tail = gate(cwd)
@@ -82,6 +95,14 @@ def record(a, c) -> int:
     cwd = c.root
     kept = {p: p.read_bytes() for p in (c.todo, c.done, plan.long_form(c.plan_dir, a.id)) if p.exists()}
     later = c.plan_external and not a.blocked and finished_mark() is not None
+    if a.artifact and not a.blocked:
+        journal_link(c, a.id, a.artifact)
+        if plan.concept(a.id):
+            bid = plan.concept_done(a.id, a.artifact)
+            print(f'{bid} filed to build it, blocked until a person approves an option '
+                  f'(`plan approve {a.id} "option B: …"`)')
+        else:
+            plan.note(a.id, f'page: {a.artifact}')
     if a.blocked:
         plan.block(a.id, a.blocked, after=None if a.after is None else [t for t in a.after.split(',') if t])
         print(f'blocked {a.id}')
@@ -127,6 +148,38 @@ def record(a, c) -> int:
     elif here and (remote := c.push_remote) and shared_branch(cwd, remote, here):
         print(f'{here} is not pushed: done only pushes a task branch (git push {remote} {here} to publish)')
     return finished(c, a)
+
+
+def artifact_refusal(a) -> str | None:
+    """Why `done` refuses these arguments, or None: a concept task finishes only with the page it published."""
+    if a.artifact and not re.match(r'https?://\S+$', a.artifact):
+        return f'{PROG}: --artifact takes the page\'s URL (https://…), not {a.artifact!r}'
+    if plan.concept(a.id) and not a.artifact and not a.blocked:
+        return (f'{PROG}: {a.id} is a concept task: it builds nothing, it publishes a page of options. Publish it '
+                f'(the Artifact tool), then\n    {PROG} {a.id} "<msg>" --artifact <its url>\nNothing ticked.')
+    return None
+
+
+def journal_link(c, tid: str, url: str) -> Path | None:
+    """Write the page's link into the task's journal, when the repo keeps one (`[plan] journal`): the newest
+    folder named for the task, else a new one in the repo's layout. The file it wrote to, or None."""
+    if not (j := c.journal):
+        return None
+    try:
+        dirs = sorted(d for d in j.iterdir() if d.is_dir() and
+                      (d.name == tid or re.search(rf'-{re.escape(tid.lower())}(-|$)', d.name.lower())))
+    except OSError:
+        dirs = []
+    d = dirs[-1] if dirs else j / (tid if c.raw['plan']['journal_layout'] == 'id'
+                                   else f'{dt.date.today().isoformat()}-{tid.lower()}-concept')
+    f = d / 'notes.md'
+    try:
+        d.mkdir(parents=True, exist_ok=True)
+        with f.open('a', encoding='utf-8') as fh:
+            fh.write(f'\n**Page:** {url}\n')
+    except OSError:
+        return None
+    return f
 
 
 def finished(c=None, a=None) -> int:

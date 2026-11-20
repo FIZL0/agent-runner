@@ -153,6 +153,28 @@ that mark forward, so asking twice in a row shows nothing new the second time. W
 first sentence of its `done` message), from now on, moving the mark as it prints: the control session's
 "follow", and fine in any terminal.
 
+Both print **Waiting for your OK** first when a concept's build waits for you (below), one line each with
+the page's link, however old: `  Settings page layout [K7]  https://claude.ai/code/artifact/…`.
+
+### Concept tasks
+
+A task of kind `K` (concept; one of the default kinds) builds nothing. Its session researches the repo and
+publishes one Artifact page laying out the options, usually two or three, each with what it looks like or
+does, the files it touches and its trade-off, plus a recommendation. It finishes with
+`done K7 "msg" --artifact <url>`; `done` refuses a K task without `--artifact` (unless `--blocked`). Then
+`done` notes the link on K7 (and in its journal, when `[plan] journal` is set), ticks K7, and files the build
+task right after it, `- [~] **F12** Build the option a person approves on concept K7's page: … BLOCKED:
+waiting for your OK on <url>`. That block names no task, so no run starts it and `plan reopen` never frees it.
+
+- **Approve**: tell a control session "go with option B" (or "approve" for the recommendation). It runs
+  `plan approve K7 "option B: …"` (K7 or F12 both work): F12 opens with `approved (<url>): option B: …` on its
+  line, and a run picks it up.
+- **Changes or a no**: `plan revise K7 "what to change"` reopens K7 (back from DONE.md) with the request
+  noted and drops F12; the next round's `done` files a new build task.
+- `plan waiting` lists what waits for an OK.
+- The build gets `F` where the kinds have it, else their first non-K letter. A repo whose `[plan] kinds`
+  lack `K` has no concepts: a K-lettered id there is an ordinary task.
+
 ## The task list
 
 `plan/TODO.md` is ordinary markdown. The runner only looks at task lines under `###` headings:
@@ -181,8 +203,8 @@ first sentence of its `done` message), from now on, moving the mark as it prints
   subtask of `P13`, and P13 and P13a are *family*, so they never run at the same time.
 - The prefix says the kind of work. `[plan] kinds` names each letter (`B = "bug"`, `N = "netplay"`, …);
   the prompt lists them so an agent picks the right one, `plan kinds` prints them, and `plan add` refuses
-  a letter the table lacks. With no table, the generic `B F T D R C` (bug, feature, tests and tooling,
-  docs, research, cleanup) are suggested but not enforced.
+  a letter the table lacks. With no table, the generic `B F T D R C K` (bug, feature, tests and tooling,
+  docs, research, cleanup, concept) are suggested but not enforced. `K` is the concept flow (above).
 - `plan add` also refuses (exit 3, nothing written) text that looks like an open task's work, naming it:
   `plan note` that task instead, or `--force` for different work. A task's own split (`plan add P13 …`)
   is never refused for looking like P13. `plan drop ID WHY` closes a task nobody will do (a duplicate,
@@ -205,7 +227,7 @@ first sentence of its `done` message), from now on, moving the mark as it prints
   `git mv plan/<ID>.md plan/tasks/`.
 
 `agent-runner plan help` lists every subcommand: `next`, `<ID>`, `brief`, `tick`, `block`, `unblock`, `reopen`,
-`add`, `move`, `note`, `newid` and `archive`.
+`add`, `move`, `note`, `newid`, `archive`, and for concepts `waiting`, `approve` and `revise`.
 
 ### The plan in its own repo
 
@@ -653,7 +675,8 @@ agent-runner control [N]               a control session in this terminal (c1: t
 agent-runner since [WHEN] [--follow]   what landed, started or got stuck since the last look (or WHEN: 2h,
                                        yesterday); --follow prints each new event as it happens
 agent-runner plan [...]                the task list as a tool (agent-runner plan help)
-agent-runner done ID "MSG" [--blocked WHY [--after X,Y]] [--no-test]
+agent-runner done ID "MSG" [--blocked WHY [--after X,Y]] [--artifact URL] [--no-test]
+                                       --artifact: a concept's page (required for a K task)
 agent-runner run [N|once] [--dry-run] [--no-tmux] [--mux tmux|wt|console|none] [--model M] [--idle S] [--stall S] [--pause S] [--force] [--shutdown|--suspend]
 agent-runner stop [--force] [--suspend|--shutdown]
                                        finish what's running, start nothing new, exit (or s + Enter in the

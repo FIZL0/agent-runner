@@ -24,6 +24,9 @@ re-reads it on every turn pays again. So the backlog is a command instead:
     ./run plan newid PREFIX      the next free id, e.g. L -> L7; a task's id gives its next subtask, L3 -> L3a
     ./run plan archive           move every [x] line left in TODO.md to DONE.md (after merges, hand edits)
     ./run plan reopen            unblock every task whose BLOCKED (after X, Y) tasks are all done now
+    ./run plan waiting           build tasks waiting for your OK on a concept's page (K tasks: below)
+    ./run plan approve <ID> [CHOICE]   OK a concept (or its build task's id): the build opens, CHOICE noted on it
+    ./run plan revise <ID> WHY   changes asked: the concept reopens with WHY noted, its waiting build is dropped
     ./run plan claims            which run has which task (with a remote to claim through), and since when (STALE: no refresh in 3 h),
                                  and any wip/main-checkout-* branches of edits moved aside to land a merge
     ./run plan unclaim <ID>      drop a claim, whoever's: for a run that crashed or was switched off
@@ -63,6 +66,13 @@ names the test it adds, `journal:` a journal dir its brief lists. Prose is never
 blocked on "P36 is not merged yet" stays blocked long after P36 lands, because nothing reads prose. `block` fills the list in by itself
 from the open task ids its WHY names, so a session that forgets `--after` still gets one.
 
+**Concept tasks (kind K) build nothing.** Their session researches the repo and publishes an Artifact page of
+2-3 options (what each looks like or does, the files it touches, the trade-off) and a recommendation, then
+`done K7 "msg" --artifact URL` (refused without it). That notes the link on K7 and files the build task right
+after it, `BLOCKED: waiting for your OK on URL`, which no run starts and `reopen` never frees. A person says
+which option; `approve` opens the build with the choice noted, `revise` sends the concept back. A repo whose
+`[plan] kinds` lack K has no concepts.
+
 **Design rule: checkboxes are only ever changed through this tool.** Never hand-edit a `- [ ]` in TODO.md or
 DONE.md. Ticking by hand is how a task ends up done in one file and open in another, how an `after:`
 dependency silently stops being satisfied, and how two parallel agents both pick the same task. `tick` is one
@@ -91,7 +101,8 @@ PROG = './run plan'  # the name in messages; a wrapper sets its own ('./kit plan
 # The library API a wrapping project may call; names and signatures here change only in a major version.
 __all__ = ['PROG', 'HELP', 'lines', 'index', 'section', 'ensure', 'archive', 'tick', 'block', 'reopen',
            'unblock', 'move', 'next_id', 'add', 'similar', 'note', 'drop', 'next_task', 'files_on_line', 'fields', 'overlap', 'brief', 'open_ids',
-           'write_atomic', 'child', 'subtasks', 'main', 'PRI', 'kinds', 'check_kind']
+           'write_atomic', 'child', 'subtasks', 'main', 'PRI', 'kinds', 'check_kind',
+           'concept', 'concept_done', 'waiting', 'approve', 'revise']
 
 ITEM = re.compile(r'^(\s*)- \[(.)\] \*\*([^\s*]+)')
 HEAD = re.compile(r'(#+) ')
@@ -503,7 +514,9 @@ SKIPPED = ('Stretch', PARKED)
 # The id letters when a repo names none in [plan] kinds: kinds of work any project has
 KINDS = {'B': 'bug: something that worked, or should, is broken', 'F': 'feature: new behaviour',
          'T': 'tests and tooling: the gate, scripts, CI, the build', 'D': 'docs',
-         'R': 'research: find out, measure or check; no product change', 'C': 'cleanup: refactor, remove, tidy'}
+         'R': 'research: find out, measure or check; no product change', 'C': 'cleanup: refactor, remove, tidy',
+         'K': 'concept: nothing is built yet; research the repo and publish an Artifact page of 2-3 options and a '
+              'recommendation; the build waits for a person\'s OK'}
 
 
 def kinds() -> tuple[dict[str, str], bool]:
@@ -678,6 +691,112 @@ def note(tid: str, text: str, todo=None) -> None:
     i = _find(ls, tid)
     ls[i + len(_item_block(ls, i)) - 1] += f' — {text}'
     _write(todo, ls)
+
+
+# --- concept tasks: an Artifact page of options, and a build that waits for a person's OK ----------------
+#
+# A K task builds nothing: its session publishes a page of 2-3 options and finishes with `done K7 "msg"
+# --artifact URL`. `done` notes the link on K7 and files the build after it, blocked as "waiting for your OK on
+# URL" (no `after:`, so `reopen` never frees it). `plan approve K7 "option B: …"` unblocks the build with the
+# choice noted; `plan revise K7 WHY` sends the concept back for another round. A repo whose [plan] kinds lack K
+# has no concepts: a K-lettered id there is an ordinary task.
+
+CONCEPT = 'K'
+WAIT_OK = 'waiting for your OK on '
+WAITING = re.compile(r'BLOCKED: ' + re.escape(WAIT_OK) + r'(\S+)')
+FROM_CONCEPT = re.compile(r'\bconcept ([A-Z]+\d+[a-z0-9]*)\b')
+
+
+def concept(tid: str) -> bool:
+    """Is `tid` a concept task: its letters are K, and this repo's kinds have K."""
+    m = re.match(r'([A-Za-z]+)\d', tid)
+    return bool(m) and m.group(1) == CONCEPT and CONCEPT in kinds()[0]
+
+
+def build_kind() -> str:
+    """The id letter a concept's build task gets: F (feature) where the kinds have it, else the first other one."""
+    k = kinds()[0]
+    return 'F' if 'F' in k else next((p for p in k if p != CONCEPT), 'F')
+
+
+def title_of(line: str) -> str:
+    """A task line's own words: after its `**ID**`, without the fields, the follow-up tag, notes or BLOCKED."""
+    t = re.sub(r'^\s*- \[.\] \*\*[^*]+\*\*\s*', '', line.split('\n')[0])
+    t = re.split(r' — | BLOCKED: ', t)[0]
+    return ' '.join(PRI_TAG.sub('', prose(t)).split())
+
+
+def concept_done(tid: str, url: str, todo=None, done=None) -> str:
+    """Note the concept's page on `tid` and file its build task right after it, blocked until a person approves
+    an option. Returns the build task's id. The concept itself is ticked by the caller (`done`)."""
+    todo, done = ensure(todo, done)
+    ls = lines(todo)
+    line = ls[_find(ls, tid)]
+    files = fields(line).get('files', [])
+    note(tid, f'concept page: {url}', todo=todo)
+    text = f'Build the option a person approves on concept {tid}\'s page: {title_of(line)}'
+    if files:
+        text += ' | files: ' + ', '.join(files)
+    bid = add(build_kind(), text, 'after', tid, todo=todo, done=done)
+    block(bid, WAIT_OK + url, todo=todo, after=[])
+    return bid
+
+
+def waiting(todo=None) -> list[tuple[str, str, str, str]]:
+    """Build tasks waiting for a person's OK on a concept page: (build id, concept id or '', url, title)."""
+    todo, _ = ensure(todo)
+    ls, out = lines(todo), []
+    for i, l in enumerate(ls):
+        m = ITEM.match(l)
+        if not (m and not m.group(1) and m.group(2) == '~'):
+            continue
+        tail = ls[i + len(_item_block(ls, i)) - 1]
+        if w := WAITING.findall(tail):
+            k = FROM_CONCEPT.search(l)
+            title = re.sub(r'^Build the option a person approves on concept \S+ page: ', '', title_of(l))
+            out.append((m.group(3).rstrip('.'), k.group(1) if k else '', w[-1], title))
+    return out
+
+
+def _waiter(tid: str, todo) -> tuple[str, str, str, str]:
+    """The waiting build task `tid` names: the build task itself or its concept."""
+    for w in waiting(todo):
+        if tid in (w[0], w[1]):
+            return w
+    raise SystemExit(f'{PROG}: nothing waits for an OK on {tid!r}: `{PROG} waiting` lists what does')
+
+
+def approve(tid: str, choice: str = '', todo=None) -> str:
+    """A person's OK: unblock the build task of concept `tid` (or the build task `tid`) with the choice noted, so
+    a run starts it. Returns the build task's id."""
+    todo, _ = ensure(todo)
+    w = _waiter(tid, todo)
+    unblock(w[0], f'approved ({w[2]}): {choice}' if choice else f'approved as recommended on {w[2]}', todo=todo)
+    return w[0]
+
+
+def revise(tid: str, why: str, todo=None, done=None) -> str:
+    """Changes asked for: drop the waiting build task and reopen the concept with `why` noted, so its next
+    session publishes a new round. Returns the concept's id."""
+    todo, done = ensure(todo, done)
+    b, k, url, _ = _waiter(tid, todo)
+    if not k:
+        raise SystemExit(f'{PROG}: {b} names no concept to send back; `{PROG} note` and `{PROG} unblock` it by hand')
+    ls, dl = lines(todo), lines(done)
+    at = next((i for i, l in enumerate(ls) if (m := ITEM.match(l)) and not m.group(1) and m.group(3) == k), None)
+    if at is None:  # archived: move its block back from DONE.md to where the build task stands
+        j = _find(dl, k)
+        blk = _item_block(dl, j)
+        del dl[j:j + len(blk)]
+        _write(done, dl)
+        i = _find(ls, b)
+        ls[i:i] = blk
+        at = i
+    _mark(ls, at, ' ')
+    _write(todo, ls)
+    note(k, f'changes asked on {url}: {why}', todo=todo)
+    drop(b, f'concept {k} sent back for changes', todo=todo, done=done)
+    return k
 
 
 # --- what a session starts from ----------------------------------------------
@@ -1091,7 +1210,7 @@ def _commit(root: Path, paths: list[Path], msg: str) -> None:
         g('commit', '-q', '-m', f'plan: {msg}', '--', *map(str, paths))
 
 
-EDITS = ('tick', 'block', 'reopen', 'unblock', 'move', 'add', 'note', 'archive', 'drop')
+EDITS = ('tick', 'block', 'reopen', 'unblock', 'move', 'add', 'note', 'archive', 'drop', 'approve', 'revise')
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -1146,6 +1265,17 @@ def _main(argv: list[str], c) -> int:
     if argv[:1] == ['move'] and len(argv) > 2:
         move(argv[1], argv[2], ' '.join(argv[3:]) or None)
         return say(f'moved {argv[1]} {" ".join(argv[2:])}')
+    if argv[:1] == ['approve'] and len(argv) > 1:
+        bid = approve(argv[1], ' '.join(argv[2:]))
+        return say(f'approved: {bid} is open now, and a run starts it')
+    if argv[:1] == ['revise'] and len(argv) > 2:
+        k = revise(argv[1], ' '.join(argv[2:]))
+        return say(f'{k} is open again with your changes noted; its build task is dropped until the next round')
+    if argv == ['waiting']:
+        w = waiting()
+        print('\n'.join(f'{b}  {t}  {u}' + (f'  (concept {k})' if k else '') for b, k, u, t in w)
+              or 'nothing waits for your OK')
+        return 0
     if argv == ['kinds']:
         k, own = kinds()
         return say('\n'.join(f'{p}  {m}' for p, m in k.items())

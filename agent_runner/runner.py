@@ -1370,7 +1370,19 @@ def prompt_for(tid: str, n: int, slots: int, cwd: Path, branch: str) -> str:
         policies.append(f'Do not include task ID `{tid}` in the commit subject; task tracking is separate.')
     if r['comment_policy'] == 'minimal':
         policies.append('Only add comments when necessary to explain non-obvious intent or constraints.')
+    if P.concept(tid):
+        prompt = f'{prompt.rstrip()}\n\n' + CONCEPT_PROMPT.format(runner=C.command, tid=tid)
     return f'{prompt.rstrip()}\n\nProject policies:\n' + '\n'.join(f'- {policy}' for policy in policies)
+
+
+CONCEPT_PROMPT = """\
+{tid} is a concept task: do not build it. Research the repo (the code, the plan, how similar things are done \
+here) and publish one page with the Artifact tool that lays out the options, usually two or three: for each, \
+what it looks like or does (a sketch, a mock-up or an example where that says it best), the files it touches, \
+and its trade-off; then your recommendation and why. A person picks one from that page, often on a phone, so \
+make it short, concrete and readable at a glance. Change no product code; commit only notes you wrote (the \
+journal). Finish with `{runner} done {tid} "<msg>" --artifact <the page's URL>`: it is refused without one, and \
+it files the build task, blocked until the person approves an option."""
 
 
 class _Keep(dict):
@@ -5483,7 +5495,7 @@ def cmd_status(argv: list[str], prog: str = f'{RUNNER} status') -> int:
         lines = C.notes('run.log').read_text(encoding='utf-8', errors='replace').splitlines()
     except OSError:
         lines = []
-    print(status_text(up, st, lines, task_titles(), time.time()))
+    print(status_text(up, st, lines, task_titles(), time.time(), waiting=waiting_ok()))
     if lines and a.n:
         print('\nrun.log:\n' + '\n'.join(f'  {l}' for l in lines[-a.n:]))
     return 0
@@ -5607,9 +5619,16 @@ def when(stamp: str, now: dt.datetime) -> str:
 
 
 def since_text(log_lines: list[str], start: dt.datetime, titles: dict[str, str], now: dt.datetime,
-               since_mark: bool = False) -> tuple[str, str | None]:
-    """(what `since` prints, the newest stamp it read or None): each event after `start`, oldest first, one
-    short line each; or one line saying there is nothing new."""
+               since_mark: bool = False, waiting=None) -> tuple[str, str | None]:
+    """(what `since` prints, the newest stamp it read or None): the concepts waiting for the person's OK first
+    (`waiting`, however old), then each event after `start`, oldest first, one short line each; or one line
+    saying there is nothing new."""
+    text, last = _since_events(log_lines, start, titles, now, since_mark)
+    return '\n'.join([*waiting_text(waiting), text]), last
+
+
+def _since_events(log_lines: list[str], start: dt.datetime, titles: dict[str, str], now: dt.datetime,
+                  since_mark: bool) -> tuple[str, str | None]:
     out, last = [], None
     for l in log_lines:
         if not (m := SINCE_LINE.match(l)):
@@ -5730,16 +5749,35 @@ def cmd_since(argv: list[str], prog: str = f'{RUNNER} since') -> int:
         lines = C.notes('run.log').read_text(encoding='utf-8', errors='replace').splitlines()
     except OSError:
         lines = []
-    text, last = since_text(lines, start, task_titles(), now, since_mark=not a.when and bool(mark))
+    text, last = since_text(lines, start, task_titles(), now, since_mark=not a.when and bool(mark),
+                            waiting=waiting_ok())
     print(text)
     move_since_mark(last or now.isoformat())
     return 0
 
 
-def status_text(up: bool, st: dict, log_lines: list[str], titles: dict[str, str], now: float, width: int = 60) -> str:
-    """`agent-runner status`, short enough for a phone: the run's state, each slot's task, title and minutes,
-    what is merging, the last few merged / blocked / parked, and usage."""
-    out = [f'run up: {st.get("state", "starting")}' if up else 'no run is up']
+def waiting_ok() -> list[tuple[str, str, str, str]]:
+    """Concepts whose build waits for the person's OK (`plan.waiting`), from the main checkout's TODO.md."""
+    try:
+        return P.waiting(C.todo) if C.todo.exists() else []
+    except (OSError, SystemExit):
+        return []
+
+
+def waiting_text(waiting) -> list[str]:
+    """'Waiting for your OK:' and a line per concept page: its title, [its concept's id], the link. [] for none."""
+    if not waiting:
+        return []
+    return ['Waiting for your OK:'] + [f'  {title or bid} [{k or bid}]  {url}' for bid, k, url, title in waiting]
+
+
+def status_text(up: bool, st: dict, log_lines: list[str], titles: dict[str, str], now: float, width: int = 60,
+                waiting=None) -> str:
+    """`agent-runner status`, short enough for a phone: concepts waiting for the person's OK first, then the
+    run's state, each slot's task, title and minutes, what is merging, the last few merged / blocked / parked,
+    and usage."""
+    out = waiting_text(waiting)
+    out.append(f'run up: {st.get("state", "starting")}' if up else 'no run is up')
     for n, tid in sorted(st.get('running', {}).items(), key=lambda kv: (not kv[0].isdigit(), kv[0].zfill(4))):
         title = titles.get(tid, '')
         title = title if len(title) <= width else title[:width - 1].rstrip() + '…'

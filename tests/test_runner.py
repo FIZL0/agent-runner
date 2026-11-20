@@ -787,6 +787,32 @@ def test_control(repo: Path):
        'status reads well on a phone: titles first, ids in brackets at the end')
 
 
+def test_concepts_waiting(repo: Path):
+    print('concepts: status and since list what waits for your OK first; a K task\'s prompt says build nothing')
+    R.init(repo)
+    w = [('F9', 'K7', 'https://claude.ai/code/artifact/aaa', 'Settings page layout')]
+    text = R.status_text(False, {}, [], {}, 0.0, waiting=w)
+    eq(text.splitlines(), ['Waiting for your OK:', '  Settings page layout [K7]  https://claude.ai/code/artifact/aaa',
+                           'no run is up'], 'status: waiting for your OK first, with the link')
+    eq(R.status_text(False, {}, [], {}, 0.0), 'no run is up', 'and nothing extra when none waits')
+    now = R.dt.datetime(2026, 11, 19, 15, 0, 0)
+    text, _ = R.since_text([], now - R.dt.timedelta(hours=2), {}, now, waiting=w)
+    eq(text.splitlines(), ['Waiting for your OK:', '  Settings page layout [K7]  https://claude.ai/code/artifact/aaa',
+                           'nothing new since 13:00'], 'since: the same, however old the concept is')
+    with tempfile.TemporaryDirectory() as tmp:
+        todo = Path(tmp) / 'TODO.md'
+        P.ensure(todo)
+        P.add('K', 'settings page layout | files: a.py', todo=todo)
+        bid = P.concept_done('K1', 'https://x.invalid/p', todo=todo)
+        with mock.patch.object(type(R.C), 'todo', property(lambda self: todo)):
+            eq(R.waiting_ok(), [(bid, 'K1', 'https://x.invalid/p', 'settings page layout')],
+               'waiting_ok reads the build tasks waiting on a concept page off TODO.md')
+    prompt = R.prompt_for('K7', 1, 1, repo, 'main')
+    has(prompt, r'K7 is a concept task: do not build it', 'a K task\'s prompt says to build nothing')
+    has(prompt, r'done K7 "<msg>" --artifact <the page\'s URL>', 'and how to finish it')
+    check('concept task' not in R.prompt_for('T2', 1, 1, repo, 'main'), 'other tasks\' prompts do not')
+
+
 def test_short_titles_and_since(repo: Path):
     print('short titles for a person, and since: what happened since the last look, with its mark')
     st = R.short_title
@@ -3154,7 +3180,7 @@ def main() -> int:
                        lambda: test_limit_lets_go(repo),
                        lambda: test_shared_push(repo, tmp), lambda: test_note_on_a_ticked_task(repo), lambda: test_adopt_merge(repo), lambda: test_followups(repo), lambda: test_ci_watch(repo), test_update_notice, test_restart_if_upgraded, test_auto_upgrade, lambda: test_flake_repair(tmp), lambda: test_repair_per_failure(repo),
                        lambda: test_stalled(tmp), lambda: test_take(repo), lambda: test_take_text_and_here(repo), lambda: test_background(repo), lambda: test_control(repo),
-                       lambda: test_short_titles_and_since(repo)])
+                       lambda: test_short_titles_and_since(repo), lambda: test_concepts_waiting(repo)])
 
 
 if __name__ == '__main__':
