@@ -5598,6 +5598,30 @@ def test_control_retitle_on_topic(repo: Path):
           'no longer "once": the name may follow the topic', text)
 
 
+def test_idle_control_not_waiting():
+    """B56: an idle control session is not waiting on the person: its run.log lines put out no needs-you line
+    (so the feed pushes nothing), and the feed's hand-off and other replies read as reports, never as an ask
+    (the Claude apps show the feed's last reply as its status)."""
+    from agent_runner.guide import RUNNER_BRIEF, RUNNER_START
+    now = R.dt.datetime.now()
+    stamp = now.isoformat(timespec='seconds')
+    for msg in ('control 4: closed, quiet 1h', 'control: c1 is up in window c1 (run control opens another)',
+                'control 3: ended, its Remote Control session was closed online',
+                'control: control server up as "r · control" at https://claude.ai/code (pid 12)'):
+        line = f'=== {stamp} {msg}'
+        eq(R.needs_you_line(line, {}, now, []), None, f'B56: no needs-you line for {msg!r}')
+        got, _ = R.follow_lines(line, {}, now, needs_you=True, waiting=[])
+        eq(got, [], f'B56: since --follow --needs-you stays quiet for {msg!r}')
+    rb = ' '.join(RUNNER_BRIEF.format(cmd='run', repo='r', answer='').split())
+    check('That goes to a control session' not in rb and '"Sent to control N: <the link>"' in rb,
+          'B56: the feed hands an ask off with a report, not "That goes to a control session"', rb)
+    check('"Opened control N: <the link>"' in rb, 'B56: a new control session is reported, not offered', rb)
+    check('never an ask' in rb and 'last reply as its status' in rb,
+          'B56: the feed brief says every reply is a report, since the apps read an ask as waiting on you', rb)
+    start = RUNNER_START.format(cmd='run', repo='r')
+    check('?' not in start, 'B56: the feed\'s opening line asks nothing', start)
+
+
 def test_control_push_when_asked():
     """B81: the control brief pushes what the person asked to hear (its own subagent/take finishing included),
     and finished/stuck/needs-you events while they are away; it never promises a push it cannot send."""
@@ -5973,7 +5997,7 @@ def main() -> int:
                        lambda: test_closed_online_controls(repo),
                        lambda: test_renamed_control_kept(repo),
                        lambda: test_control_summary_title(repo), lambda: test_control_task_name(repo), lambda: test_progress_and_release(repo),
-                       lambda: test_control_status_rules(repo), lambda: test_control_do_it_here(repo), lambda: test_control_retitle_on_topic(repo), test_control_push_when_asked, lambda: test_take_running_slot(repo), lambda: test_upgrade_cmd(repo), test_control_no_upgrade_watcher,
+                       lambda: test_control_status_rules(repo), lambda: test_control_do_it_here(repo), lambda: test_control_retitle_on_topic(repo), test_control_push_when_asked, test_idle_control_not_waiting, lambda: test_take_running_slot(repo), lambda: test_upgrade_cmd(repo), test_control_no_upgrade_watcher,
                        lambda: test_plan_last(repo), lambda: test_release_push(repo),
                        lambda: test_help_order_and_bare_wizard(tmp), lambda: test_setup(tmp),
                        lambda: test_stop_countdown(repo), lambda: test_real_claude_json_guard(tmp)])

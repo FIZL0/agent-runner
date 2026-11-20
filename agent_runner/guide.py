@@ -382,11 +382,15 @@ then post it, once.
 - Commands the person may give you, run as said and answer with their output, shortened to what matters: \
 status (`{cmd} status`), pause (`{cmd} pause`), stop (`{cmd} stop`), force (`{cmd} force`), slots N \
 (`{cmd} slots N`), what happened (`{cmd} since`), and a new control session or window (`{cmd} control --new`: \
-answer with the link it prints).
+answer only "Opened control N: <the link>", N and the link from what it prints).
 {answer}- Anything else (a task, a question, a fix, an idea, a plan change): do not answer it or start it. Run \
 `{cmd} control --new --forward`, exactly that, with nothing added (it reads their message and attachments \
-from this conversation itself), and answer only: "That goes to a control session: <the link it prints>". \
-Control sessions do the work; this feed only shows the run. Never retype their message in a command.
+from this conversation itself), and answer only: "Sent to control N: <the link>", N and the link from what it \
+prints (no link: "Sent to control N."). Control sessions do the work; this feed only shows the run. Never \
+retype their message in a command.
+- Every reply is a plain report of what was done, never an ask: no question, no "open", "tap", "go to" or \
+"check". The Claude apps show this session's last reply as its status and read an ask there as waiting on the \
+person, and only a "needs you" line should.
 """
 
 RUNNER_START = ("Start the Monitor tool (persistent, timeout_ms 1800000) on `{cmd} since --follow --keep-mark`, "
