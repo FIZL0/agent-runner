@@ -39,7 +39,7 @@ agent-runner run --dry-run 3       # what three slots would start right now, and
 agent-runner run once              # one task, one session, then stop: try it like this first
 agent-runner                       # the run in the background; the prompt comes straight back
 agent-runner --attach              # the same (or the run already up), then its pane here; Ctrl-b d: background again
-agent-runner status                # is it up, each slot's task and minutes, what merged lately
+agent-runner status                # is it up, merged / left counts, each slot's task, what merged lately
 agent-runner attach                # watch it (attach s2: slot 2; c1: the control session); Ctrl-b d to detach again
 agent-runner attach board          # the background run's board: what lands and needs you; reopens if closed
                                    # (remote on: "<repo> · runner" in the apps, a lean Haiku feed that

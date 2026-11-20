@@ -4646,6 +4646,38 @@ def test_close_idle_controls(repo: Path):
             R.init(repo)
 
 
+def test_progress_and_release(repo: Path):
+    print('status: merged in the window, tasks left and blocked, and how close a queued release is')
+    R.init(repo)
+    ls = ['# TODO', '', '### Next', '',
+          '- [ ] **F1** a feature | files: a.py',
+          '- [~] **B2** a bug BLOCKED: (after F1) waits for F1',
+          '- [~] **B3** asks BLOCKED: shelved: DECIDE: which one?',
+          '- [x] **F4** done already',
+          '- [~] **T5** Release: cut the next version | after: B9 BLOCKED: (after B9) old BLOCKED: (after F1, B2, F4, D7) all of it',
+          '  - a note under it',
+          '', '### Parked', '', '- [ ] **F6** big future work (follow-up, later)']
+    eq(R.tasks_left(ls), (3, 2), 'left: open and blocked, not done, not shelved, not Parked; 2 of them blocked')
+    eq(R.release_line(ls), 'release: waits on 2 of 4 tasks (T5)',
+       'release: its last block\'s list, done and dropped ones not counted as waiting')
+    eq(R.release_line(ls[:4] + ['- [ ] **T5** Release v2 | after: F4']), 'release: ready, nothing left to wait on (T5)',
+       'an open release task whose `after:` all landed is ready')
+    eq(R.release_line(ls[:5]), '', 'no release task queued: no line')
+    now = R.dt.datetime.now()
+    since = (now - R.dt.timedelta(hours=2)).astimezone().isoformat(timespec='seconds')
+    want = len(git(repo, 'log', '--merges', f'--since={since}', '--format=%H', R.default_branch()).split())
+    line = R.progress_line('2h', now)
+    check(line.startswith(f'merged {want} in the last 2h · '), 'the count matches git log --merges --since', line)
+    left, blocked = R.tasks_left(P.lines(R.C.todo))
+    check(f'· {left} task' in line and (f'({blocked} blocked)' in line) == bool(blocked), 'and the TODO\'s counts', line)
+    eq(R.progress_line('yesterday', now).split(' · ')[0].split(' ', 2)[2], 'since yesterday', 'yesterday counts from its midnight')
+    text = R.status_text(False, {}, [], {}, 0.0, progress=line + '\nrelease: waits on 2 of 4 tasks (T5)')
+    eq(text.splitlines(), ['no run is up', line, 'release: waits on 2 of 4 tasks (T5)'], 'status: right under the run line')
+    from agent_runner.guide import CONTROL
+    check('release:' in CONTROL and 'tasks left' in CONTROL and 'how close is release' in CONTROL,
+          'the control brief puts both in the headline and answers "how close is release" from them')
+
+
 def main() -> int:
     with tempfile.TemporaryDirectory() as t:
         tmp = Path(t)
@@ -4674,7 +4706,7 @@ def main() -> int:
                        lambda: test_person_waiting(repo), lambda: test_control_server_old_agent(repo, tmp),
                        lambda: test_drop_or_change_running(repo), lambda: test_tell_running(repo),
                        lambda: test_close_idle_controls(repo), lambda: test_renamed_control_kept(repo),
-                       lambda: test_control_summary_title(repo), lambda: test_control_task_name(repo)])
+                       lambda: test_control_summary_title(repo), lambda: test_control_task_name(repo), lambda: test_progress_and_release(repo)])
 
 
 if __name__ == '__main__':
