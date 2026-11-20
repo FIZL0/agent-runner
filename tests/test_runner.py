@@ -1480,6 +1480,114 @@ def test_board_follows_run(repo: Path, tmp: Path):
                 f.write_text(k, encoding='utf-8')
 
 
+def test_remote_sweep(repo: Path, tmp: Path):
+    print('B12: a stop or a restart ends the Remote Control processes an earlier run recorded (SIGTERM, so Claude '
+          'Code archives their entries), never kills one, and leaves the current run\'s, control sessions and '
+          'unrecorded sessions alone')
+    import contextlib
+    import io
+    R.init(repo)
+    notes = R.C.notes('run.log')
+    keep_log = notes.read_text(encoding='utf-8') if notes.exists() else None
+    procs = []
+
+    def spawn(ignore_term=False):
+        ready = tmp / f'rc-ready-{len(procs)}'
+        code = ('import os,signal,time\n' + ('signal.signal(signal.SIGTERM, signal.SIG_IGN)\n' if ignore_term else '')
+                + f'open({str(ready)!r},"w").close()\ntime.sleep(60)\n')
+        p = subprocess.Popen([sys.executable, '-c', code])
+        procs.append(p)
+        end = time.monotonic() + 10
+        while not ready.exists() and time.monotonic() < end:
+            time.sleep(0.05)
+        return p
+
+    def reap(p):  # the test's children: a dead one stays a zombie until waited for
+        threading.Thread(target=p.wait, daemon=True).start()
+
+    try:
+        d = R.C.notes(R.REMOTE_DIR)
+        if d.is_dir():
+            for f in d.glob('*.json'):
+                f.unlink()
+        earlier = subprocess.Popen([sys.executable, '-c', 'pass'])  # the earlier run: gone
+        earlier.wait()
+        me = os.getpid()
+        old_feed, old_server, old_c2, cur_feed, stranger, stubborn = (spawn(), spawn(), spawn(), spawn(), spawn(),
+                                                                        spawn(ignore_term=True))
+        for p in (old_feed, old_server, old_c2, cur_feed, stranger, stubborn):
+            reap(p)
+        R.rc_record('feed', 'repo · runner', old_feed.pid, earlier.pid)
+        R.rc_record('server', 'repo · control', old_server.pid, earlier.pid)
+        R.rc_record('control', 'repo · control 2', old_c2.pid, earlier.pid)
+        R.rc_record('feed', 'repo · runner', cur_feed.pid, me)
+        R.rc_record('feed', 'repo · runner (stuck)', stubborn.pid, earlier.pid)
+        dead = subprocess.Popen([sys.executable, '-c', 'pass'])
+        dead.wait()
+        R.rc_forget(R.rc_record('feed', 'repo · killed feed', dead.pid, earlier.pid), killed=True)
+
+        # a restart that adopts the control server: the earlier feed ends, everything else stays
+        with mock.patch.object(R.plat, 'terminate', wraps=R.plat.terminate) as term:
+            ended, left = R.rc_sweep(me, keep_server=True, wait=3)
+        sent = {c.args[0] for c in term.call_args_list}
+        eq(sorted(ended), ['repo · runner'], "the earlier run's feed is ended")
+        eq(left, ['repo · runner (stuck)'], 'one that ignores SIGTERM is left running, not killed')
+        eq(sent, {old_feed.pid, stubborn.pid}, 'SIGTERM went to the earlier run\'s feeds only')
+        time.sleep(0.3)
+        check(not R.plat.alive(old_feed.pid), 'the earlier feed is gone (its teardown archives its entry)')
+        check(R.plat.alive(stubborn.pid), 'never SIGKILLed: a killed session would stay listed')
+        check(R.plat.alive(old_server.pid), 'the control server this run adopts is left up (no new entry)')
+        check(R.plat.alive(old_c2.pid), "an earlier run's control session is the person's: left up")
+        check(R.plat.alive(cur_feed.pid), "the current run's feed is left alone")
+        check(R.plat.alive(stranger.pid), 'a session nobody recorded is never touched')
+        kinds = sorted((s['kind'], s['name']) for s in R.rc_records())
+        check(('feed', 'repo · killed feed') not in kinds and ('feed', 'repo · runner') in kinds and
+              len([k for k in kinds if k[1] == 'repo · runner']) == 1, 'gone records are dropped', kinds)
+        has(notes.read_text(encoding='utf-8'), '"repo · killed feed" was killed before it could archive itself',
+            'a killed one is named as possibly still listed')
+
+        # a restart without the server (remote now off): the earlier server ends too
+        ended, _ = R.rc_sweep(me, keep_server=False, wait=3)
+        eq(ended, ['repo · control'], "the earlier run's control server is ended when this run will not adopt it")
+
+        # the stop: the current run's own feed ends as well; control sessions stay
+        with mock.patch.object(R, 'RC_ENDING', [False]):
+            with mock.patch.object(R, 'rc_sweep', lambda *a, **k: R_sweep(*a, **{**k, 'wait': 3})):
+                R.rc_sweep_stop()
+            check(R.RC_ENDING[0], 'the stop keeps the board from opening a new feed')
+        time.sleep(0.3)
+        check(not R.plat.alive(cur_feed.pid), "the stop ends the run's own feed")
+        check(R.plat.alive(old_c2.pid) and R.plat.alive(stranger.pid), 'control sessions and strangers stay up')
+
+        # the feed's guard records its claude and drops the record once it ends
+        fake = [sys.executable, '-c', 'import time; time.sleep(0.5)']
+        seen = []
+        orig = R.rc_record
+        with mock.patch.object(R, 'feed_argv', lambda: fake), \
+                mock.patch.object(R, 'rc_record', lambda *a, **k: seen.append(a) or orig(*a, **k)):
+            with contextlib.redirect_stdout(io.StringIO()):
+                R.board_feed(me, poll=0.1)
+            R.board_feed(0, poll=0.1)
+        eq([a[0] for a in seen], ['feed'], 'the run\'s feed is recorded; one started by hand is not')
+        check(not any(s['kind'] == 'feed' and s['pid'] == seen[0][2] for s in R.rc_records()),
+              'and its record goes when it ends')
+    finally:
+        for p in procs:
+            if p.poll() is None:
+                p.kill()
+        d = R.C.notes(R.REMOTE_DIR)
+        if d.is_dir():
+            for f in d.glob('*.json'):
+                f.unlink()
+        if keep_log is None:
+            notes.unlink(missing_ok=True)
+        else:
+            notes.write_text(keep_log, encoding='utf-8')
+
+
+R_sweep = R.rc_sweep
+
+
 def test_take_text_and_here(repo: Path):
     print('take "TEXT" --kind: queue and take in one step; --here carries the main checkout\'s edits along')
     R.init(repo)
@@ -3769,6 +3877,7 @@ def main() -> int:
                        lambda: test_shared_push(repo, tmp), lambda: test_note_on_a_ticked_task(repo), lambda: test_adopt_merge(repo), lambda: test_followups(repo), lambda: test_ci_watch(repo), test_update_notice, test_restart_if_upgraded, test_auto_upgrade, lambda: test_flake_repair(tmp), lambda: test_repair_per_failure(repo),
                        lambda: test_stalled(tmp), lambda: test_take(repo), lambda: test_take_text_and_here(repo), lambda: test_background(repo), lambda: test_attach_flag(repo), lambda: test_remote_auto(tmp), lambda: test_control(repo),
                        lambda: test_short_titles_and_since(repo), lambda: test_board_follows_run(repo, tmp),
+                       lambda: test_remote_sweep(repo, tmp),
                        lambda: test_concepts_waiting(repo),
                        lambda: test_person_waiting(repo), lambda: test_control_server_old_agent(repo, tmp)])
 

@@ -4,6 +4,16 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Old Remote Control entries no longer pile up in claude.ai/code and the apps. Claude Code has no command to
+  end or archive a session from outside. It archives its own entry when it exits on SIGTERM, SIGHUP or Ctrl-C,
+  and an entry stays listed only when its process dies without that (SIGKILL, a crash, a reboot, a power-off
+  right after a stop). The run now records the Remote Control processes it starts for itself, the runner feed
+  and the control server, in `<notes>/remote/`. A stop ends them with SIGTERM and waits up to 20 s for them to
+  archive themselves before the run exits, suspends or powers off. The next start does the same for any an
+  earlier run left (a control server that run's restart adopts stays up instead: no new entry). None is
+  SIGKILLed: one that outlives the wait is left running and named in run.log, and a feed the board had to kill
+  is named at the next start, so you can archive it by hand. Control sessions are yours and stay up, and
+  sessions the run did not start are never touched.
 - The background run keeps a board window, "board-<repo>": `since --board` (what landed, started, stalled or
   needs you, the last 6 hours then live), under a line saying to steer from a control session. No LLM, so no
   tokens; it leaves the last-look mark alone, and the run opens it again within 30 s when it is closed.

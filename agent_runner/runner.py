@@ -5185,6 +5185,7 @@ def run(argv: list[str], prog: str) -> int:
         return 2
     if choice == 'tmux' and os.environ.get('TMUX_PANE'):  # `attach` finds the runner's pane by this
         tmux('set-option', '-p', '-t', os.environ['TMUX_PANE'], RUN_TAG, str(ROOT))
+    rc_sweep_start()  # B12: end the feed or control server an earlier run left on Remote Control
     start_control()  # c1 beside the run ([run] control) unless [run] remote, where the control server stands in
     start_control_server()
     start_board()  # the background run's board window: what lands and needs you, no tokens; reopened if closed
@@ -5417,6 +5418,7 @@ def run(argv: list[str], prog: str) -> int:
             how = stopped_by()
             clear_stop()
             log(f'run stopped ({how}); tried this run: {", ".join(sorted(tried)) or "none"}')
+            rc_sweep_stop()  # B12: its feed and control server archive their entries before it exits
             if POWER:
                 power_now()
             return 0
@@ -6670,6 +6672,8 @@ def board_feed(run_pid: int = 0, poll: float = BOARD_POLL) -> int:
     except OSError as e:
         print(f'board: could not start the runner feed: {e}', file=sys.stderr)
         return 1
+    rec = rc_record('feed', feed_name(), proc.pid, run_pid) if run_pid else None  # B12: one by hand is not the run's
+    killed = False
     try:
         old = signal.signal(signal.SIGINT, signal.SIG_IGN)  # after the spawn: the child keeps its own Ctrl-C
     except ValueError:  # not the main thread (tests)
@@ -6687,8 +6691,10 @@ def board_feed(run_pid: int = 0, poll: float = BOARD_POLL) -> int:
                 except sp.TimeoutExpired:
                     proc.kill()
                     proc.wait()
+                    killed = True
                 return 0
     finally:
+        rc_forget(rec, killed=killed)
         if old is not None:
             signal.signal(signal.SIGINT, old)
 
@@ -6750,7 +6756,7 @@ def keep_board(sess: str) -> None:
         if hit and hit[1] and tmux('show-options', '-p', '-v', '-t', hit[1], BOARD_TAG).stdout.strip() != kind:
             tmux('kill-pane', '-t', hit[1])  # an earlier run's other kind (remote turned on or off): this run's instead
             hit = None
-        if not hit:  # found by tag, not name: a rename keeps it
+        if not hit and not RC_ENDING[0]:  # found by tag, not name: a rename keeps it; none once the run ends
             r = sp.run(board_argv(sess, ROOT, cmd), capture_output=True, text=True)
             if pane := r.stdout.strip():  # `attach board` finds it by these
                 tmux('set-option', '-p', '-t', pane, TAG, 'board')
@@ -6920,10 +6926,14 @@ def keep_control_server() -> None:
                                  daemon=True).start()
             pid = proc.pid
             pidf.write_text(str(pid), encoding='utf-8')
+            rc_record('server', f'{ROOT.name} · control', pid, os.getpid())  # B12
             log(f'control: control server up as "{ROOT.name} · control" at {REMOTE_URL} (pid {pid})')
+        else:  # adopted from an earlier run: this run's now (B12: the start's sweep leaves it to us)
+            rc_record('server', f'{ROOT.name} · control', pid, os.getpid())
         began = time.monotonic()
         while (proc.poll() is None) if proc else alive(pid):
             time.sleep(1 if time.monotonic() - began < 30 else 10)
+        rc_forget(C.notes(REMOTE_DIR) / f'server-{pid}.json')
         lasted = time.monotonic() - began
         wait = CONTROL_SERVER_WAIT[0] if lasted > 600 else min(wait * 2, CONTROL_SERVER_WAIT[1])
         said = server_last_error(err, err_since) if proc and lasted < 60 else ''
@@ -6947,3 +6957,116 @@ def server_stale(args: list[str] | None) -> bool:
 def start_control_server() -> None:
     if remote_on() and C.run['control'] and control_ok():
         threading.Thread(target=keep_control_server, name='control-server', daemon=True).start()
+
+
+# --- Remote Control sessions a run started (B12) ---------------------------------
+# Claude Code offers no command to end or archive a Remote Control session from outside it, and none to list
+# them; it archives its own entry in claude.ai/code and the apps when it exits on SIGTERM, SIGHUP or SIGINT
+# (its teardown: "archiving session", "environment deregistered"). An entry stays listed only when its
+# process dies without that teardown: SIGKILL, a crash, a reboot, or a power-off right after a stop. So the
+# run records each Remote Control process it starts, ends them with SIGTERM and waits for the teardown (on a
+# stop, and at the next start for those an earlier run left), and never SIGKILLs one.
+
+REMOTE_DIR = 'remote'  # <notes>/remote/<kind>-<pid>.json: a Remote Control process a run started
+RC_TEARDOWN = 20  # s a Remote Control process gets after SIGTERM to archive its entry and exit
+RC_RUN_KINDS = ('feed', 'server')  # what a run starts for itself; control sessions are the person's, left up
+RC_ENDING = [False]  # set by the stop's sweep: keep_board opens no new feed while the run ends
+
+
+def run_key(pid: int) -> str:
+    """One run's identity: its pid and start time (after it ends, its pid can be anyone's)."""
+    return f'{pid}:{plat.started(pid) or ""}'
+
+
+def rc_record(kind: str, name: str, pid: int, run_pid: int, sid: str = '') -> Path:
+    """Record Remote Control process `pid` ("<name>" in the apps), started for the run `run_pid`."""
+    d = C.notes(REMOTE_DIR)
+    d.mkdir(parents=True, exist_ok=True)
+    f = d / f'{kind}-{pid}.json'
+    rec = {'kind': kind, 'name': name, 'pid': pid, 'run': run_key(run_pid), 'sid': sid}
+    if (start := plat.started(pid)) is not None:
+        rec['start'] = start
+    f.write_text(json.dumps(rec), encoding='utf-8')
+    return f
+
+
+def rc_records() -> list[dict]:
+    """The recorded Remote Control processes, each with its file as 'rec'."""
+    d = C.notes(REMOTE_DIR)
+    out = []
+    for f in sorted(d.glob('*.json')) if d.is_dir() else []:
+        try:
+            out.append({**json.loads(f.read_text(encoding='utf-8')), 'rec': str(f)})
+        except (OSError, ValueError):
+            f.unlink(missing_ok=True)
+    return out
+
+
+def rc_forget(rec: dict | Path | None, killed: bool = False) -> None:
+    """Drop a record whose process ended (its teardown archived its entry); `killed` (SIGKILL: no teardown)
+    keeps it, marked, for the next start to name as possibly still listed."""
+    if not rec:
+        return
+    f = Path(rec['rec'] if isinstance(rec, dict) else rec)
+    if not killed:
+        f.unlink(missing_ok=True)
+        return
+    try:
+        f.write_text(json.dumps({**json.loads(f.read_text(encoding='utf-8')), 'killed': True}), encoding='utf-8')
+    except (OSError, ValueError):
+        pass
+
+
+def rc_sweep(run_pid: int, stopping: bool = False, wait: float = RC_TEARDOWN,
+             keep_server: bool = False) -> tuple[list[str], list[str]]:
+    """End the Remote Control processes the run owns, so the apps list only live sessions: on a run's start,
+    those an earlier run left (its feed, its control server unless `keep_server`: this run adopts it, so no new
+    entry); with `stopping`, this run's own as well. Each gets SIGTERM and up to `wait` s for its teardown,
+    which archives its entry; one still up then is left (the next start tries again), never SIGKILLed.
+    Control sessions are the person's and stay up, and nothing the run did not record (a session the person
+    started) is touched. A record whose process is gone is dropped, named in run.log when it died killed
+    (no teardown: its entry may still be listed). Returns (names ended, names left running)."""
+    mine = run_key(run_pid)
+    ending = []
+    for s in rc_records():
+        if not gate_alive(s):
+            if s.get('killed'):
+                log(f'remote: "{s.get("name")}" was killed before it could archive itself; if it is still listed '
+                    f'at {REMOTE_URL}, archive it there')
+            rc_forget(s)
+        elif s.get('kind') not in RC_RUN_KINDS or s.get('run') == mine and not stopping:
+            continue  # a control session, or this run's own while it runs
+        elif s.get('kind') == 'server' and keep_server and s.get('run') != mine:
+            continue  # keep_control_server adopts it (or restarts it when its flags differ)
+        else:
+            ending.append(s)
+    for s in ending:
+        plat.terminate(s['pid'])
+    end = time.monotonic() + wait
+    while (up := [s for s in ending if gate_alive(s)]) and time.monotonic() < end:
+        time.sleep(0.25)
+    gone = [s for s in ending if s not in up]
+    for s in gone:
+        rc_forget(s)
+    if gone:
+        names = ', '.join(f'"{s["name"]}"' for s in gone)
+        log(f'remote: ended {names} '
+            f'({"this run" if stopping else "left by an earlier run"}); their entries are archived')
+    for s in up:
+        log(f'remote: "{s["name"]}" (pid {s["pid"]}) did not end within {wait:g} s of SIGTERM; left running, '
+            f'the next start ends it')
+    return [s['name'] for s in gone], [s['name'] for s in up]
+
+
+def rc_sweep_start() -> None:
+    """The run's start: end what an earlier run left on Remote Control, in the background (it can wait)."""
+    keep = remote_on() and bool(C.run['control']) and control_ok()
+    threading.Thread(target=rc_sweep, args=(os.getpid(),), kwargs={'keep_server': keep},
+                     name='remote-sweep', daemon=True).start()
+
+
+def rc_sweep_stop() -> None:
+    """The run's stop: end its feed and control server now and wait for their teardown, so their entries are
+    archived before the run exits (and before a suspend or power-off)."""
+    RC_ENDING[0] = True
+    rc_sweep(os.getpid(), stopping=True)
