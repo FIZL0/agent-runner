@@ -429,7 +429,7 @@ push from outside the run has put that ahead (fetched at most once a minute).
 | `### Stretch`, `### Parked` | never unattended |
 | tried this run | one attempt per run: if it failed, a human looks next |
 | `task/<ID>` has commits not yet merged | it's finished and waiting for the merge |
-| a `files:` entry meets one of a running or finished-unmerged task's (its line's, and the files its branch has touched), minus `[run] shared_files` | keeps merges clean |
+| a `files:` entry meets one of a running or finished-unmerged task's (its line's, and the files its branch has touched), minus `[run] shared_files`; a whole-directory entry (`tests/**`) meets only its line's | keeps merges clean |
 
 `plan add` warns of a line with no `files:` and no `test:` (`[plan] need_files` makes that an error).
 

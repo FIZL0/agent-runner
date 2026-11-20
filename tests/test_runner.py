@@ -191,6 +191,21 @@ def test_picking(repo: Path):
     check(not R.P.overlap({'Assets/Settings/**'}, {'Assets/Audio/Mix.cs'}), 'but not a path elsewhere')
     check(R.P.overlap({'src/menu.rs'}, {'app/src/menu.rs'}) and not R.P.overlap({'menu.rs'}, {'app/submenu.rs'}),
           'a short path meets the full one it is the tail of, at a / only')
+    # T6: a waiting line's whole-directory guess (`tests/**`) does not wait on files another task touched
+    waiting = ('W1', 'Next', {'tests/**', 'w.py'}, set())
+    toucher = ('B1', 'Other', {'b.py', 'tests/test_x.py'}, set(), {'b.py'})  # touched tests/test_x.py
+    check(not R.clash(waiting, toucher, set()), 'tests/** does not clash with a test file B1 only touched')
+    check(R.clash(waiting, ('B1', 'Other', {'tests/test_x.py'}, set(), {'tests/test_x.py'}), set()),
+          'but it does with a test file named on B1\'s line')
+    check(R.clash(waiting, ('B1', 'Other', {'tests/**'}, set(), {'tests/**'}), set()),
+          'and with the same glob on B1\'s line')
+    check(R.clash(('W2', 'Next', {'tests/test_x.py'}, set()), toucher, set()),
+          'a named file still clashes with a file B1 touched')
+    check(R.clash(waiting, ('B1', 'Other', {'w.py'}, set(), set()), set()), 'a named file beside the glob still clashes')
+    check(R.clash(waiting, ('B1', 'Other', {'tests/test_x.py'}, set()), set()),
+          'a busy tuple without its line files counts all its files as named')
+    check(R.whole_dir('tests/**') and R.whole_dir('src/ui/*') and not R.whole_dir('src/*.rs')
+          and not R.whole_dir('a.py'), 'what counts as a whole-directory glob')
     eq(R.pick({}, set(ids), 'main'), None, 'nothing left once everything has been tried')
     check(R.joinable('CHANGELOG.md'), 'CHANGELOG.md is in [run] joinable, so a conflict there is joined')
     for f in ('README.md', 'a.py', 'plan/T1.md', 'plan/TODO.md', 'plan/DONE.md'):
