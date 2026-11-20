@@ -737,7 +737,8 @@ agent-runner control --new [N]         another one beside the run, without takin
 agent-runner control --new --ask TEXT [--image PATH]...
                                        the same, with TEXT as its first message (the runner feed hands a request
                                        on this way); each --image adds a line naming that attached image's path
-                                       and telling the session to Read it before answering
+                                       and telling the session to Read it before answering; images the person
+                                       just attached in the runner feed are added on their own
 agent-runner since [WHEN] [--follow]   what landed, started or got stuck since the last look (or WHEN: 2h,
                                        yesterday); --follow prints each new event as it happens
 agent-runner plan [...]                the task list as a tool (agent-runner plan help)

@@ -4,6 +4,11 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Pictures sent to the runner feed reach the control session it opens: `control --new --ask` picks up the
+  images just attached in the feed's session (Claude Code's uploads folder for it, newer than the last forward,
+  at most 5 minutes old) and passes them on as `--image`. The feed no longer has to do it, which a feed started
+  before 0.50.1 (one session from the run's start to a real stop) never knew to, nor reliably did on Haiku.
+
 ## 0.50.1 (2026-11-20)
 
 - A control session's needs-you watch no longer posts "Still watching. Nothing needs you right now." every

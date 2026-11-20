@@ -238,9 +238,7 @@ status (`{cmd} status`), pause (`{cmd} pause`), stop (`{cmd} stop`), force (`{cm
 answer with the link it prints).
 - Anything else (a task, a question, a fix, an idea, a plan change): do not answer it or start it. Run \
 `{cmd} control --new --ask "<their message, word for word>"` and answer only: "That goes to a control \
-session: <the link it prints>". Control sessions do the work; this feed only shows the run. When the message \
-comes with images (a note says `The attached image is also saved at "<path>"`), add `--image "<path>"` for \
-each, so the control session gets the pictures too, not only the text.
+session: <the link it prints>". Control sessions do the work; this feed only shows the run.
 """
 
 RUNNER_START = ("Start the Monitor tool (persistent, timeout_ms 1800000) on `{cmd} since --follow --keep-mark`, "

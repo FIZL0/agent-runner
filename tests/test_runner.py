@@ -1530,8 +1530,29 @@ def test_short_titles_and_since(repo: Path):
               and ca[1].count('Read it') == 2, 'control --image: each attached image is named in the first message',
               ca[1])
         from agent_runner.guide import RUNNER_BRIEF
-        check('--image' in RUNNER_BRIEF and 'is also saved at' in RUNNER_BRIEF,
-              'the runner feed passes attached images on with --image')
+        check('--image' not in RUNNER_BRIEF, 'the feed brief leaves images to control --new', RUNNER_BRIEF)
+        with tempfile.TemporaryDirectory() as cfg, mock.patch.dict(os.environ, {'CLAUDE_CONFIG_DIR': cfg}):
+            rdir = R.C.notes(R.REMOTE_DIR)
+            rdir.mkdir(parents=True, exist_ok=True)
+            fsid = rdir / R.FEED_SID
+            had = fsid.read_text() if fsid.exists() else None
+            sid = '12345678-1234-1234-1234-123456789abc'
+            fsid.write_text(sid + '\n')
+            (rdir / R.FEED_IMAGES_SENT).unlink(missing_ok=True)
+            up = Path(cfg, 'uploads', sid)
+            up.mkdir(parents=True)
+            now = time.time()
+            for name, age in (('old.png', 900), ('a.png', 20), ('b.png', 10)):
+                (up / name).write_bytes(b'x')
+                os.utime(up / name, (now - age, now - age))
+            eq([Path(f).name for f in R.feed_images(now)], ['a.png', 'b.png'],
+               'control --new --ask picks up the images just attached in the feed, oldest first')
+            eq(R.feed_images(now + 1), [], 'an image already handed on is not sent again')
+            (rdir / R.FEED_IMAGES_SENT).unlink()
+            if had is None:
+                fsid.unlink()
+            else:
+                fsid.write_text(had)
         h = run(repo, 'control', '--help')
         check('--image' in h.stdout, 'control --image is an option', h.stdout)
         eq(run(repo, 'since', '--follow', '--keep-mark', '--help').returncode, 0, 'since --keep-mark is an option')
