@@ -875,6 +875,9 @@ def test_control(repo: Path):
     eq(sv[1:], ['remote-control', '--spawn', 'same-dir', '--name', f'{R.ROOT.name} · control',
                 '--permission-mode', 'bypassPermissions', '--settings', str(f)],
        'the control server: claude remote-control in the main checkout, with the control settings')
+    check(not R.server_stale(None) and not R.server_stale([*sv, '']), 'an adopted server with these flags stays')
+    check(R.server_stale([sv[0], 'remote-control', '--spawn', 'same-dir', '--settings', str(f)]),
+          'one started with other flags is restarted')
 
     sid, resume = R.control_sid(1)
     eq(((repo / '.runner/control.sid').read_text().strip(), resume), (sid, False), 'c1 keeps a new session id')

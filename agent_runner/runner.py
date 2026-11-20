@@ -6557,6 +6557,9 @@ def keep_control_server() -> None:
     atexit.register(lambda: (pid := control_server_live()) and plat.terminate(pid))
     backend().trust(ROOT)  # it asks to trust a new folder, and has no terminal to ask on
     wait = CONTROL_SERVER_WAIT[0] // 2  # doubled at the first exit
+    if (pid := control_server_live()) and server_stale(plat.cmdline(pid)):
+        log(f'control: the control server an earlier run left (pid {pid}) has other flags; restarting it')
+        plat.terminate(pid)
     while True:
         proc = None
         if not (pid := control_server_live()):
@@ -6588,6 +6591,12 @@ def keep_control_server() -> None:
             said = ''
         log(f'control: the control server exited{f" ({said})" if said else ""}; restarting it in {wait} s')
         time.sleep(wait)
+
+
+def server_stale(args: list[str] | None) -> bool:
+    """A running control server's argv (None: unreadable, so kept) started with other flags than this run's:
+    `--settings` is read once, and the flags apply to every session it starts, so an adopted one must match."""
+    return args is not None and [a for a in args if a][1:] != control_server_argv()[1:]
 
 
 def start_control_server() -> None:
