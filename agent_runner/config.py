@@ -102,6 +102,8 @@ DEFAULTS: dict = {
                                 # the run, watched and steered from claude.ai/code and the Claude apps; auto = on
                                 # when it can work (Claude Code on a claude.ai login), true/false force it
         'remote_slots': False,  # the slots on Remote Control too, each "<repo> · s2 · B646"
+        'silent': 'launch',     # phone pushes from the run's Remote Control sessions: launch = none while they
+                                # start (later ones arrive), true = none ever, false = Claude Code's usual
         'control': True,        # a run opens control session c1 beside it (`agent-runner control`); false: none
         'auto_upgrade': False,  # upgrade agent-runner by itself when a newer release is out, once no merge runs,
                                 # and restart the run on it (as `u` does, without the key)
@@ -347,6 +349,8 @@ class Config:
             raise SystemExit('agent-runner: [run] include_task_id_in_commit must be a boolean')
         if not (isinstance(self.run['remote'], bool) or self.run['remote'] == 'auto'):
             raise SystemExit(f"agent-runner: [run] remote must be 'auto', true or false, not {self.run['remote']!r}")
+        if not (isinstance(self.run['silent'], bool) or self.run['silent'] == 'launch'):
+            raise SystemExit(f"agent-runner: [run] silent must be 'launch', true or false, not {self.run['silent']!r}")
         if self.run['comment_policy'] not in ('normal', 'minimal'):
             raise SystemExit("agent-runner: [run] comment_policy must be 'normal' or 'minimal'")
         backend = infer(self.run)

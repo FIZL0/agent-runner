@@ -1062,7 +1062,7 @@ class Claude:
                                           'hooks': {'Stop': stop, 'StopFailure': stop},
                                           # on Remote Control a slot never pushes (`quiet_file` too)
                                           **({'agentPushNotifEnabled': False, 'inputNeededNotifEnabled': False}
-                                             if remote_slots_on() else {})})]
+                                             if remote_slots_on() and silent() is not False else {})})]
 
     def cmd(self, prompt: str, pf: Path, sid: str, flags: list[str]) -> str:
         """sh reads the prompt file into the one argument (tmux refuses a command over about 16 KB). Past
@@ -1482,10 +1482,17 @@ def slot_env(n: int | None) -> list[str]:
     env += [f'{k}={os.environ[k]}' for k in C.run['pass_env'] if k in os.environ]
     return env + (shared_env() if n is None else [e.format(n=n, slots=SLOTS) for e in C.run['slot_env']]) + \
         [f'{k}={v}' for k, v in no_push_env().items()] + \
-        ([f'{PRESENCE_ENV}={quiet_file("slots")}'] if n is not None and remote_slots_on() else [])
+        ([f'{PRESENCE_ENV}={quiet_file("slots")}'] if n is not None and remote_slots_on() and silent() is not False
+         else [])
 
 
 PRESENCE_ENV = 'CLAUDE_CLIENT_PRESENCE_FILE'  # while the file it names exists, Claude Code sends no mobile push
+
+
+def silent() -> bool | str:
+    """`[run] silent`: 'launch' (a Remote Control session is quiet only while it starts), True (quiet for good),
+    False (no presence file: Claude Code pushes as it would for any session)."""
+    return C.run['silent']
 
 
 def quiet_file(who: str, on: bool = True) -> Path:
@@ -6303,9 +6310,11 @@ def cmd_control(argv: list[str], prog: str = f'{RUNNER} control') -> int:
     os.chdir(ROOT)
     pidf = C.notes(f'control{n}.pid')
     env = control_env()
-    if '--remote-control' in argv:  # a silent launch: no push while it starts, later ones as usual
+    if '--remote-control' in argv and silent() is not False:  # no push while it starts (silent: ever)
         env[PRESENCE_ENV] = str(quiet_file(f'c{n}'))
-        if plat.WINDOWS:
+        if silent() is True:  # the file stays: this session never pushes
+            pass
+        elif plat.WINDOWS:
             threading.Thread(target=unquiet_when_up, args=(f'c{n}', ''), daemon=True).start()
         else:
             try:
@@ -6497,7 +6506,9 @@ def keep_control_server() -> None:
         proc = None
         if not (pid := control_server_live()):
             since = out.stat().st_size if out.exists() else 0
-            env = {**control_env(), PRESENCE_ENV: str(quiet_file('server'))}  # silent while it starts
+            env = control_env()
+            if silent() is not False:  # silent while it starts (silent = true: for good)
+                env[PRESENCE_ENV] = str(quiet_file('server'))
             with open(out, 'ab') as fh:
                 try:
                     proc = sp.Popen(control_server_argv(), cwd=str(ROOT), env=env, stdin=sp.DEVNULL,
@@ -6506,8 +6517,9 @@ def keep_control_server() -> None:
                     quiet_file('server', on=False)
                     log(f'control: the control server did not start: {e}')
                     return
-            threading.Thread(target=unquiet_when_up, args=('server',), kwargs={'log_file': out, 'since': since},
-                             daemon=True).start()
+            if silent() == 'launch':
+                threading.Thread(target=unquiet_when_up, args=('server',), kwargs={'log_file': out, 'since': since},
+                                 daemon=True).start()
             pid = proc.pid
             pidf.write_text(str(pid), encoding='utf-8')
             log(f'control: control server up as "{ROOT.name} · control" at {REMOTE_URL} (pid {pid})')

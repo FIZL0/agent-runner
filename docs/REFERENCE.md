@@ -156,6 +156,8 @@ task to fix X" (it files it with `plan add`), "do X now" (it uses `take`, never 
   shows in its log. So starting a run is silent, and later pushes still reach the phone. Slots with
   `remote_slots` keep `.runner/quiet-slots` for good and get `agentPushNotifEnabled` and
   `inputNeededNotifEnabled` false in their `--settings`: a slot never pushes.
+  `[run] silent` sets this: `"launch"` (the default) as above; `true` keeps every file for good, so no
+  session the run starts ever pushes; `false` sets none, and Claude Code pushes as it would anyway.
 
 `--no-tmux` (or no tmux / Windows Terminal installed) is the sequential run. It's one session at a time,
 in your checkout, on the branch you have out. There's no worktree and no merge: `done` already ran the gate, and
@@ -788,6 +790,7 @@ model = "opus"
 lean = true               # sessions get Bash/Read/Edit/Write/Artifact only, no MCP servers or user settings
 remote = "auto"           # control sessions on Remote Control, and a control server to start more from claude.ai/code or the Claude apps; Enter in the runner's pane opens it. auto: on where it can work (see Control sessions); true/false force it
 remote_slots = false      # the slots on Remote Control too ("<repo> · s2 · B646")
+silent = "launch"         # phone pushes from those sessions: launch = none while they start, true = none ever, false = Claude Code's usual
 control = true            # a run opens control session c1 beside it; false: none (`agent-runner control` still works)
 auto_upgrade = false      # upgrade by itself when a newer release is out, as `u` does, once no merge runs; the run restarts on it
 idle = 30                 # s quiet after a turn ends before a session without a successful `done` is ended (with one: 5 s)

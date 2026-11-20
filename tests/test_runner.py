@@ -773,6 +773,9 @@ def test_remote_auto(tmp: Path):
     with mock.patch.dict(R.C.run, {'remote_slots': False}):
         check(R.PRESENCE_ENV not in R.env_vars(R.slot_env(2)), 'a local slot has none')
         check('agentPushNotifEnabled' not in R.agent_flags('sid-q', 'opus', 30)[-1], 'nor the settings')
+    with mock.patch.dict(R.C.run, {'remote_slots': True, 'silent': False}):
+        check(R.PRESENCE_ENV not in R.env_vars(R.slot_env(2)), 'silent = false: a remote slot has no presence file')
+        check('agentPushNotifEnabled' not in R.agent_flags('sid-q', 'opus', 30)[-1], 'nor the push settings')
     # a control session's (and the server's) file goes once its link shows
     log_f = R.C.notes('quiet-test.log')
     log_f.write_text('old https://claude.ai/code line\n', encoding='utf-8')

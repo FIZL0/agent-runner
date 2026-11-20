@@ -4,6 +4,9 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- `[run] silent` picks how quiet a run's Remote Control sessions are on the phone: `"launch"` (the default, the
+  quiet launch below), `true` (no push ever, control sessions included), or `false` (no presence files or push
+  settings: Claude Code's usual pushes). Anything else is refused.
 - **Changed default: `[run] remote` is now `auto`, so control sessions and the control server go on Remote
   Control by default** (they were local unless you set `remote = true`). Auto turns it on only where it can
   work and otherwise leaves it off with one line in `run.log` saying why: the backend is pi, the agent is
