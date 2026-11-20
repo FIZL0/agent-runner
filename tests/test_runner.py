@@ -5210,8 +5210,9 @@ def test_setup(tmp: Path):
         eq(git(root, 'rev-parse', f'{name}^'), git(root, 'rev-parse', 'main'), 'on top of main')
         eq(git(root, 'rev-parse', '--abbrev-ref', 'HEAD'), 'main', 'still on main')
         eq((root / 'app.py').read_text(encoding='utf-8'), 'print(2)\n', "main's working tree unchanged")
-        check(git(root, 'status', '--porcelain').startswith(status.splitlines()[0]) and 'new.txt' in
-              git(root, 'status', '--porcelain'), 'the same files still uncommitted', git(root, 'status'))
+        eq((root / 'new.txt').read_text(encoding='utf-8'), 'draft\n', 'the untracked file too')
+        after = [l for l in git(root, 'status', '--porcelain').splitlines() if 'runner.toml' not in l]
+        eq(after, status.splitlines(), 'the same files still uncommitted, nothing staged')
         toml = (root / 'runner.toml').read_text(encoding='utf-8')
         has(toml, r'^test = "make test"', 'runner.toml written, with the Makefile gate')
         eq(len(launched), 1, 'one session launched (no plan yet: no question)')

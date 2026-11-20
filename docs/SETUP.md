@@ -134,7 +134,6 @@ The short way is `agent-runner setup` in the repo's folder (a folder with no git
 4. It prints what it set up; `agent-runner` then starts the run.
 
 Run again on a repo that has a plan, it asks before the session touches it (`--yes`: go on without asking).
-`--no-session` does only steps 1 and 2 and prints the session's prompt.
 
 By hand:
 

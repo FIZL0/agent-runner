@@ -199,7 +199,6 @@ def main(argv: list[str], cwd: Path | None = None) -> int:
                                  'uncommitted work to a branch, write runner.toml if missing, and start a Claude '
                                  'session that reads the repo and writes the plan, the gate and the notes.')
     ap.add_argument('--yes', '-y', action='store_true', help='a repo that has a plan already: go on without asking')
-    ap.add_argument('--no-session', action='store_true', help='only the backup and runner.toml; print the prompt')
     a = ap.parse_args(argv)
     root = repo_root(Path(cwd or Path.cwd()))
     said: list[str] = []
@@ -215,9 +214,7 @@ def main(argv: list[str], cwd: Path | None = None) -> int:
     todo = todo_path(root)
     existing = todo.is_file()
     text = prompt(root, gate, existing)
-    if a.no_session:
-        print(text)
-    elif existing and not a.yes and not ask(f'{todo} exists: start a session that reads it and adds to it?'):
+    if existing and not a.yes and not ask(f'{todo} exists: start a session that reads it and adds to it?'):
         said.append('plan left alone (re-run with --yes to let the session add to it)')
     else:
         code = launch(root, text)
