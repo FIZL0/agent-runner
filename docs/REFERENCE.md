@@ -966,3 +966,13 @@ python3 tests/test_runner.py    # picking, done, merge/join/land/push, fix sessi
                                 # Windows slot shim (temp repos, fake agent)
 python3 tests/test_pi.py        # Pi configuration, prompts, sessions, errors, and merge fixers (no network)
 ```
+
+### Test entries in ~/.claude.json
+
+The suites keep Claude Code's config in a temp `CLAUDE_CONFIG_DIR` (`tests/_check.py`), so the folder-trust entries
+`Claude.trust` writes for test worktrees never reach the real `~/.claude.json`; every suite fails if one does (each
+suite's temp folders sit under one root of its own, so other sessions' entries are never blamed). Suites from
+before 0.41.0 (2026-11-18) other than `test_runner.py` had no such isolation and left entries like
+`…/Temp/tmpXXXX/proj-slots/s1` and `…/agent-runner-test-runs-XXXX/proj/s1` behind, on Linux and Windows alike.
+`python3 tests/_check.py` lists them (bare trust entries under the system temp folder, never a folder a Claude
+session itself ran in); `python3 tests/_check.py --clean` removes them, best with no Claude Code session open.
