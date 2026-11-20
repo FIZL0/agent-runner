@@ -4,6 +4,12 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- **Breaking:** `plan answer` and its regex reply-guessing are gone, with `[needs] map_replies` (now
+  ignored, with a warning). The control session and the runner feed map a reply that names no item ("yes",
+  "B", "later") to the item's id themselves and run `plan confirm|change|shelve ID`, asking the person which
+  one when they cannot tell. This also fixes `plan add`'s duplicate check: a second `_words` in plan.py had
+  shadowed the first, so it matched on ids, fields and stop words again.
+
 ## 0.51.0 (2026-11-20)
 
 - `plan add … --last` files a task at the end of Next with `after: all above`, a marker the run resolves on

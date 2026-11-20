@@ -195,7 +195,6 @@ DEFAULTS: dict = {
         'heading': 'Needs you', # its heading in status, since and the control sessions' opening
         'ages': True,           # each item shows how long it has waited ("2h")
         'order': 'oldest',      # oldest first; "newest" first; "plan": the order TODO.md has them in
-        'map_replies': True,    # `plan answer "yes"`: a reply naming no id goes to the one item it answers
     },
 }
 
@@ -297,6 +296,7 @@ REMOVED: dict[tuple[str, str], str] = {
     ('run', 'batch_wait'): 'removed in 0.32.0; delete it',
     ('run', 'batch_min'): 'removed in 0.32.0; delete it',
     ('plan', 'brief'): 'use `brief_extra` and `outline` (0.32.0)',
+    ('needs', 'map_replies'): 'sessions map a reply to its item themselves; `plan answer` is gone (0.52.0); delete it',
 }
 
 

@@ -6587,12 +6587,12 @@ def control_ok() -> bool:
 
 def control_brief() -> str:
     """What every control session is told, through its SessionStart hook (`control --brief` prints it)."""
-    from agent_runner.guide import CONTROL, CONTROL_ANSWER, CONTROL_FEED_WATCH, CONTROL_NO_ANSWER, CONTROL_WATCH
+    from agent_runner.guide import CONTROL, CONTROL_ANSWER, CONTROL_FEED_WATCH, CONTROL_WATCH
     notes = Path(C.run['notes']).expanduser()
     logf = (notes / 'run.log').as_posix() if not notes.is_absolute() else str(notes / 'run.log')
     watch = (CONTROL_FEED_WATCH if feed_on() else CONTROL_WATCH).format(repo=ROOT.name, cmd=C.command)
-    cf = P.needs_cfg()  # B27: the heading's words, and whether a reply naming no id maps to an item
-    answer = (CONTROL_ANSWER if cf['map_replies'] else CONTROL_NO_ANSWER).format(cmd=C.command)
+    cf = P.needs_cfg()  # B27: the heading's words
+    answer = CONTROL_ANSWER.format(cmd=C.command)
     return CONTROL.format(repo=ROOT.name, cmd=C.command, log=logf, watch=watch, needs=cf['heading'], answer=answer)
 
 
@@ -6803,8 +6803,8 @@ def control_ask(ask: str, images: list[str] | tuple = ()) -> str:
               for p in images]
     if ask and (waiting := ask_waiting()):
         lines.append('(From the runner feed. Waiting for the person when they said it:\n' + waiting +
-                     f'\nIf the message answers one of these, settle it with `{C.command} plan answer "<their words>"`'
-                     ' (or confirm/change ID) before anything else, as well as any task it asks for: a reply queued'
+                     f'\nIf the message answers one of these, settle it by its id with `{C.command} plan confirm|change|shelve ID`'
+                     ' (ask the person when unsure which) before anything else, as well as any task it asks for: a reply queued'
                      ' only as a new task leaves the item waiting, B47.)')
     return '\n\n'.join(lines)
 
@@ -7215,8 +7215,8 @@ def feed_argv() -> list[str]:
     `board_feed` adds the session flags: one session from the run's first start to a real stop (`feed_session`)."""
     from agent_runner.guide import FEED_ANSWER, RUNNER_BRIEF, RUNNER_START
     cmd = C.command
-    cf = P.needs_cfg()  # B27: a reply to an item under Needs you is answered here, with no id, when it may be
-    answer = FEED_ANSWER.format(cmd=cmd, needs=cf['heading']) if cf['map_replies'] else ''
+    cf = P.needs_cfg()  # B27: a reply to an item under Needs you is mapped to its id and answered here
+    answer = FEED_ANSWER.format(cmd=cmd, needs=cf['heading'])
     return [plat.exe(C.run['agent']), RUNNER_START.format(cmd=cmd, repo=ROOT.name),
             '--model', FEED_MODEL, '--system-prompt', RUNNER_BRIEF.format(cmd=cmd, repo=ROOT.name, answer=answer),
             '--tools', 'Bash,Monitor,PushNotification', '--permission-mode', 'dontAsk',

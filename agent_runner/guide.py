@@ -45,7 +45,7 @@ AGENT_RUNNER_SLOT set you are one of the runner's agents: follow your brief, not
      `plan approve K7 "option B: …"` or `plan revise K7 "what to change"`, as the person says
    - tasks blocked on a person (`plan block ID "CONFIRM: …"`, DECIDE:, BLOCKED:) list there too: answer them
      with `plan confirm ID "what they saw"`, `plan change ID "do X instead"` or `plan shelve ID`; a reply
-     that names no item ("yes", "B", "later") goes through `plan answer "<their words>"`. `status` and
+     that names no item ("yes", "B", "later") you map to its item's id yourself, asking when unsure. `status` and
      `since` show all of these under "Needs you", one plain line each, oldest first; one with a wizard
      shows `run: agent-runner wizard ID` (it walks the person through the hand steps, then confirms)
 2. **Queue work instead of doing it**, unless the person asks you to do it yourself now. A running runner
@@ -286,15 +286,16 @@ RUNNER_START = ("Start the Monitor tool (persistent, timeout_ms 1800000) on `{cm
 
 
 # B27: a reply that answers an item under Needs you without naming it ({needs} is `[needs] heading`)
-CONTROL_ANSWER = ('run `{cmd} plan answer "<their words>"`: it takes the reply to the one item it fits (yes/no to '
-                  'a check, a letter to a concept page, done to a block, other words to a decision, later or not '
-                  'now to shelve it) and prints what it did and which item; say that back in a line. When it asks '
-                  'which one, ask the person, naming the items in plain words.')
-CONTROL_NO_ANSWER = ('ask which one they mean, in plain words ([needs] map_replies is off here), then answer it by '
-                     'its id as below.')
+CONTROL_ANSWER = ('work out which item it answers (yes/no fits a check, a letter a concept page, done a block, '
+                  'other words a decision, later or not now shelves one), then run `{cmd} plan confirm|change|shelve '
+                  'ID` with that item\'s id as below and say in a line what it did to which item. When you cannot '
+                  'tell which item it answers, ask the person, naming the items in plain words; never guess.')
 FEED_ANSWER = ('- A reply to something under "{needs}" ("yes", "no", "B", "later", "use SQLite", "do X instead" '
-               'right after that item was shown): run `{cmd} plan answer "<their words>"` and answer with what it '
-               'prints. When it says it cannot tell which item, hand the message to a control session as below.\n')
+               'right after that item was shown): work out which item it answers (its [ID] is on the line) and run '
+               '`{cmd} plan confirm ID "<their words>"` for a yes, done, a letter or an answer, `{cmd} plan change '
+               'ID "<their words>"` for a no or a "do X instead", `{cmd} plan shelve ID` for a later; answer with '
+               'what it prints. When you cannot tell which item, ask which one they mean, naming the items; never '
+               'guess.\n')
 
 CONTROL_WATCH = """\
 **Tell the person, unasked, when the run needs them.** Every control session, on its first turn (with the
