@@ -549,6 +549,65 @@ def kinds() -> tuple[dict[str, str], bool]:
     return (dict(k), True) if k else (KINDS, False)
 
 
+def _pathish(arg: str) -> bool:
+    """An argument that reads as a file path: a slash, a file extension, or a file that exists here."""
+    return ' ' not in arg and ('/' in arg or bool(re.search(r'\.[A-Za-z0-9]{1,8}$', arg)) or Path(arg).exists())
+
+
+def add_args(rest: list[str]) -> tuple[str, str, str, bool, bool]:
+    """`plan add`'s arguments after PREFIX → (text, where, keyed fields, given --pri value or '', force), or
+    SystemExit(2) with what is wrong (B43): an unquoted `--files dir/*` is expanded by the shell, so its first path
+    becomes the value and the rest would be folded into the text. Text is the first argument (one quoted string,
+    or bare words before any flag when none reads as a path); any other free argument is refused."""
+    text: list[str] = []
+    where: list[str] = []
+    vals: dict[str, str] = {}
+    pri, force, after_flag, in_where = '', False, False, False
+
+    def no(why: str):
+        raise SystemExit(f'{PROG}: not added: {why}\nquote the text and each flag value: '
+                         f'{PROG} add KIND "the text" --files \'a,dir/**\' (a bare dir/* is expanded by the shell)')
+
+    k = 0
+    while k < len(rest):
+        a = rest[k]
+        if a == '--force':
+            force = True
+        elif a == '--pri' or a.lstrip('-') in KEYS and a.startswith('--'):
+            if k + 1 >= len(rest) or rest[k + 1].startswith('--'):
+                no(f'{a} needs a value')
+            if a in vals or (a == '--pri' and pri):
+                no(f'{a} given twice')
+            if a == '--pri':
+                pri = rest[k + 1]
+            else:
+                vals[a] = rest[k + 1]
+            k, after_flag, in_where = k + 1, True, False
+        elif a.startswith('--'):
+            no(f'unknown flag {a}')
+        elif a == '@' and not in_where:
+            in_where = True
+        elif in_where:
+            where.append(a)
+        elif after_flag:
+            no(f'stray argument {a!r} after a flag value' + (' (a path: was a --files value unquoted?)'
+                                                            if _pathish(a) else ''))
+        elif text and (' ' in text[0] or _pathish(a)):
+            no(f'a second text argument {a!r}: the text is already {text[0]!r}' if ' ' in text[0]
+               else f'{a!r} reads as a path, not text')
+        else:
+            text.append(a)
+        k += 1
+    if in_where and not where:
+        no('@ needs a place (top, bottom, before ID, after ID, in SECTION)')
+    keyed = ''
+    for key in KEYS:  # `--files a,b` → ` | files: a, b`, in KEYS order
+        if (v := vals.get(f'--{key}')) is not None:
+            keyed += f' | {key}: ' + (v if key == 'test' else ', '.join(re.split(r'[,\s]+', v.strip(', '))))
+    t, _, w = ' '.join(text).partition(' @ ')
+    return t, ' '.join(where) or w, keyed, pri, force
+
+
 def check_kind(prefix: str) -> str | None:
     """Why `prefix` is the wrong id letter, or None. A task's own id (P17 -> P17a, MD39b -> MD39b1) is a subtask,
     always fine: one ending in a digit whatever it is, one ending in a letter if it is an open task's id."""
@@ -1825,22 +1884,16 @@ def _main(argv: list[str], c) -> int:
         return say('\n'.join(f'{p}  {m}' for p, m in k.items())
                    + ('' if own else '\n(the defaults: set [plan] kinds in runner.toml to name your own)'))
     if argv[:1] == ['add'] and len(argv) > 2:
-        rest, pri = argv[2:], add_default()
-        if force := '--force' in rest:
-            rest = [a for a in rest if a != '--force']
-        if given := '--pri' in rest[:-1]:
-            k = rest.index('--pri')
-            pri, rest = rest[k + 1], rest[:k] + rest[k + 2:]
-        keyed = ''
-        for key in KEYS:  # `--files a,b` → ` | files: a, b`, in KEYS order
-            if f'--{key}' in rest[:-1]:
-                k = rest.index(f'--{key}')
-                val = rest[k + 1] if key == 'test' else ', '.join(re.split(r'[,\s]+', rest[k + 1].strip(', ')))
-                keyed, rest = keyed + f' | {key}: {val}', rest[:k] + rest[k + 2:]
+        try:
+            text, where, keyed, pri, force = add_args(argv[2:])
+        except SystemExit as e:
+            print(e, file=sys.stderr)
+            return 2
+        if not (given := bool(pri)):
+            pri = add_default()
         if why := check_kind(argv[1]):
             print(why, file=sys.stderr)
             return 2
-        text, _, where = ' '.join(rest).partition(' @ ')
         text += keyed
         w = where.split(maxsplit=1) or [None]
         if not given and not where and (fam := family_end(argv[1])):

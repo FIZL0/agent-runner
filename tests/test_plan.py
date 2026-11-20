@@ -398,6 +398,36 @@ def test_need_files():
         check(r.returncode == 0, 'a test: is enough', r.stderr)
 
 
+def test_add_stray_args():
+    print('plan: add refuses arguments folded into the text: an unquoted --files dir/* or a second text (B43)')
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        git(root, 'init', '-q')
+        git(root, 'commit', '-q', '--allow-empty', '-m', 'start')
+        env = {**os.environ, 'AGENT_RUNNER_REPO': str(root)}
+        env.pop('AGENT_RUNNER', None)
+        eq(run(root, 'plan', 'add', 'R', 'the parser', '--files', 'p.py', env=env).returncode, 0, 'a first add')
+        todo = root / 'plan' / 'TODO.md'
+        before, head = todo.read_text(encoding='utf-8'), git(root, 'rev-parse', 'HEAD')
+        for args, what in ((['x', '--files', 'a', 'b', 'c'], 'an unquoted --files a b c'),
+                           (['x', '--files', 'journal/1.md', 'journal/2.md'], 'a shell-expanded journal/*'),
+                           (['the whole text', 'more'], 'a second text argument'),
+                           (['x', 'journal/1.md', '--files', 'a'], 'a path where text goes on'),
+                           (['x', '--files'], 'a flag with no value'),
+                           (['x', '--file', 'a'], 'an unknown flag')):
+            r = run(root, 'plan', 'add', 'R', *args, env=env)
+            eq(r.returncode, 2, f'{what} is refused')
+            has(r.stderr, r'quote', f'{what}: the message says to quote')
+        eq(todo.read_text(encoding='utf-8'), before, 'TODO.md is unchanged')
+        eq(git(root, 'rev-parse', 'HEAD'), head, 'and nothing was committed')
+        r = run(root, 'plan', 'add', 'R', 'the lexer', '--files', 'a,b', '--pri', 'low', '@', 'after', 'R1', env=env)
+        check(r.returncode == 0, 'a quoted --files a,b still works', r.stderr)
+        has(todo.read_text(encoding='utf-8'), r'the lexer \| files: a, b$', 'with its fields')
+        r = run(root, 'plan', 'add', 'R', 'tidy', 'the', 'tokens', '--files', 'c', env=env)
+        check(r.returncode == 0, 'bare words before any flag still make the text', r.stderr)
+        has(todo.read_text(encoding='utf-8'), r'tidy the tokens \| files: c$', 'joined')
+
+
 def test_hand_edits_commit():
     print('plan: a hand edit in the main checkout commits at once; mid-merge it waits')
     with tempfile.TemporaryDirectory() as tmp:
@@ -791,6 +821,6 @@ def test_goal():
 
 if __name__ == '__main__':
     sys.exit(report([test_goal,test_plan_roundtrip, test_plan_reopen, test_plan_index_and_sections, test_brief, test_brief_outline,
-                     test_split_parents, test_add_bottom, test_add_pri, test_add_subtask, test_kinds, test_need_files, test_hand_edits_commit, test_similar, test_add_refuses_a_duplicate, test_carry_notes,
+                     test_split_parents, test_add_bottom, test_add_pri, test_add_subtask, test_kinds, test_need_files, test_add_stray_args, test_hand_edits_commit, test_similar, test_add_refuses_a_duplicate, test_carry_notes,
                      test_merge3, test_concurrent_add, test_merge_driver, test_concepts, test_needs_you,
                      test_needs_config]))
