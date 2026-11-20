@@ -100,8 +100,7 @@ From a clone on Windows, use `python -m agent_runner run once`; an installed run
 `agent-runner run once`. Normal terminal selection, parallel worktrees, `done`, test gates, and merging
 are unchanged.
 
-Other terminal agents (Codex, opencode, …) are evaluated in [AGENTS-EVAL.md](AGENTS-EVAL.md);
-`python tests/agent_matrix.py --auth pi` checks that Pi is installed and logged in.
+`pi auth check --provider <provider> --json` checks that Pi is installed and logged in.
 
 Pi sessions are interactive, like Claude's: each slot's pane (and the `master-<repo>` window for fix
 sessions) shows Pi's interface, and you can take a session over by typing. The bundled extension

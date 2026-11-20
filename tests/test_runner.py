@@ -2361,7 +2361,7 @@ def test_repair(repo: Path, tmp: Path):
 
 
 def test_prompt_and_hooks(repo: Path):
-    print('run: the prompt, a custom template, the Stop hook, a usage limit')
+    print('run: the prompt, a custom template, the Stop hook')
     (repo / 'prompt.txt').write_text('Do {tid} with {runner}; keep {unknown}.\n{brief}', encoding='utf-8')
     R.C.run['prompt'] = 'prompt.txt'
     p = R.prompt_for('T2', 1, 1, repo, 'main')
@@ -2397,12 +2397,6 @@ def test_prompt_and_hooks(repo: Path):
         r = subprocess.run([sys.executable, str(RUN), 'run', '--stop-hook'], input=payload,
                            capture_output=True, text=True, cwd='/')
         eq(r.returncode, 0, f'--stop-hook exits 0 on {payload[:28]} (outside any repo)')
-    with tempfile.NamedTemporaryFile('w', suffix='.log', delete=False) as f:
-        f.write("You've hit your limit · resets 3pm (Europe/London)\n")
-    got = R.limit_only('no-such-session', Path(f.name), 0)
-    check(got is not None and (got.hour, got.minute) == (15, 0),
-          'a session that only hit the limit gives the reset time', str(got))
-    os.unlink(f.name)
     for cmd in (['help'], ['plan', 'help'], ['run', '--help'], ['done', '--help']):
         r = run(repo, *cmd)
         check(r.returncode == 0 and len(r.stdout) > 200, f'`run {" ".join(cmd)}` explains itself')
@@ -3179,8 +3173,8 @@ def test_resume(repo: Path, tmp: Path):
         has(R.cut_off(said('net', ask, tool, result, error(dns))) or '', 'EAI_AGAIN',
             'an API error that ended the turn is a cut-off, and says what the API said')
         eq(R.cut_off(said('fin', ask, tool, result, end)), None, 'a turn that ended is not')
-        eq(R.cut_off(said('lim', ask, error("You've hit your limit · resets 3pm", 'rate_limit'))), None,
-           'nor is a usage limit (the slot sleeps to the reset instead)')
+        has(R.cut_off(said('lim', ask, error("You've hit your limit · resets 3pm", 'rate_limit'))) or '',
+            'hit your limit', 'a usage limit is a cut-off too: the session resumes like any other (C7)')
         eq(R.cut_off(said('bad', ask, error('prompt is too long', 'invalid_request'))), None,
            'nor a request the API refused, which would fail again')
         eq(R.cut_off(said('mid', ask, tool, result)), None, 'a transcript that stops mid-turn is no cut-off ...')
@@ -3869,18 +3863,26 @@ def test_other_repos_panes(repo: Path, tmp: Path):
         R.tmux = tmux
 
 
-def test_limit_lets_go(repo: Path):
-    print('run: a slot asleep until a usage reset lets go of its task, so another slot may take it')
+def test_limit_resumes(repo: Path, tmp: Path):
+    print('run: a slot whose session ends on a usage limit goes through the cut-off path and resumes there')
     R.init(repo)
     git(repo, 'checkout', '-q', 'main')
+    ts, opened = {}, []
+    ask = {'type': 'user', 'message': {'role': 'user', 'content': 'do it'}}
+    limit = {'type': 'assistant', 'isApiErrorMessage': True, 'error': 'rate_limit',
+             'message': {'stop_reason': 'stop_sequence',
+                         'content': [{'type': 'text', 'text': "You've hit your limit · resets 3pm"}]}}
+    end = {'type': 'assistant', 'message': {'stop_reason': 'end_turn', 'content': [{'type': 'text', 'text': 'ok'}]}}
 
     class Mux:
         name = 'fake'
 
         def open(self, n, cwd, prompt, sid, model, idle, env, logfile, resume=False):
-            with open(logfile, 'a', encoding='utf-8') as f:
-                f.write("You've hit your limit · resets 3pm\n")
-            R.ask_stop('test')  # the run ends once the slot is asleep
+            opened.append((sid, resume))
+            ts[sid] = str(tmp / f'{sid}.jsonl')
+            Path(ts[sid]).write_text(''.join(json.dumps(e) + '\n' for e in (ask, end if resume else limit)),
+                                     encoding='utf-8')
+            R.ask_stop('test')  # the run ends once the resumed session has ended
             p = subprocess.Popen([sys.executable, '-c', 'pass'])
             p.wait()
             return p.pid
@@ -3894,9 +3896,10 @@ def test_limit_lets_go(repo: Path):
         def where(self, n):
             return f'slot {n}'
 
-    saved = R.TmuxMux, R.MUX, R.plat.mux_choice, R.time.sleep, os.environ.get('TMUX')
+    saved = R.TmuxMux, R.MUX, R.plat.mux_choice, R.time.sleep, os.environ.get('TMUX'), R.transcript
     sleep = R.time.sleep
     R.TmuxMux, R.plat.mux_choice, R.time.sleep = Mux, lambda *a, **k: 'tmux', lambda s: sleep(min(s, 0.05))
+    R.transcript = lambda sid: ts.get(sid)
     os.environ['TMUX'] = 'test'
     R.C.run['agent'] = 'fake'
     here = os.getcwd()
@@ -3907,12 +3910,16 @@ def test_limit_lets_go(repo: Path):
         os.chdir(here)
         R.TmuxMux, R.MUX, R.plat.mux_choice, R.time.sleep = saved[:4]
         os.environ.pop('TMUX') if saved[4] is None else os.environ.update(TMUX=saved[4])
+        R.transcript = saved[5]
         R.C.run['agent'], R.MASTER_PANE = 'claude', False
-    m = re.search(r'slot 1: (\S+) only hit the usage limit', (repo / '.runner/run.log').read_text())
-    check(m, 'the session only hit the usage limit')
-    eq(git(R.SLOTS_DIR / 's1', 'branch', '--show-current'), '', 'and the sleeping slot let go of its task branch')
-    if m:
-        git(repo, 'branch', '-D', f'task/{m.group(1)}')
+    text = (repo / '.runner/run.log').read_text()
+    m = re.search(r'slot 1: (\S+) was cut off \(You\'ve hit your limit', text)
+    check(m, 'the session that hit the usage limit was taken for a cut-off', text[-1500:])
+    check('only hit the usage limit' not in text and 'sleeps until' not in text, 'and the slot did not sleep')
+    eq([r for _, r in opened[:2]], [False, True], 'it was resumed')
+    check(len(opened) >= 2 and opened[0][0] == opened[1][0], 'on the same session id', opened)
+    if m:  # the resumed session committed nothing, so its finish normally drops the branch already
+        subprocess.run(['git', 'branch', '-D', f'task/{m.group(1)}'], cwd=repo, capture_output=True)
 
 
 def test_shared_push(repo: Path, tmp: Path):
@@ -4756,7 +4763,7 @@ def main() -> int:
                        lambda: test_resume(repo, tmp),
                        lambda: test_session_tmp(repo, tmp), lambda: test_end_orphans(repo), lambda: test_memory_watch(repo), lambda: test_tested_ref(repo, tmp),
                        lambda: test_no_pane(repo, tmp), lambda: test_other_repos_panes(repo, tmp),
-                       lambda: test_limit_lets_go(repo),
+                       lambda: test_limit_resumes(repo, tmp),
                        lambda: test_shared_push(repo, tmp), lambda: test_note_on_a_ticked_task(repo), lambda: test_adopt_merge(repo), lambda: test_followups(repo), lambda: test_ci_watch(repo), test_update_notice, test_restart_if_upgraded, test_auto_upgrade, lambda: test_flake_repair(tmp), lambda: test_repair_per_failure(repo),
                        lambda: test_stalled(tmp), lambda: test_take(repo), lambda: test_take_text_and_here(repo), lambda: test_background(repo), lambda: test_attach_flag(repo), lambda: test_remote_auto(tmp), lambda: test_control(repo),
                        lambda: test_short_titles_and_since(repo), lambda: test_board_follows_run(repo, tmp),

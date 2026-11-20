@@ -29,8 +29,8 @@ docs/REFERENCE.md describes each mechanism. In short:
   holds only the files it changed.
 * **one worktree per slot**, kept warm between tasks, with `[run] links` symlinked in;
 * **an idle stop** (the Stop hook): a finished session is ended once its transcript is quiet;
-* **a usage limit is not a failed task**: the transcript is dropped and the slot sleeps to the reset;
-* **a cut-off session resumes**: one ended by an API error (or, at startup, mid-turn) is resumed in its slot;
+* **a cut-off session resumes**: one ended by an API error or a usage limit (or, at startup, mid-turn) is resumed
+  in its slot;
 * **a stall watchdog**: belled and logged, with the pane to attach to;
 * **merges in a merge worktree**: tested before the shared branch moves, so the main checkout never
   holds an untested merge and nobody's edits are stashed;
@@ -1032,9 +1032,8 @@ def pane(name: str, cwd: Path, cmd: str, env=(), logfile: Path | None = None) ->
     window of their own, "master-<repo>", so the slots' layout does not squeeze them to a column.
 
     Panes are found by their tag rather than their position, so you can break them out, join them or swap
-    them around while the run goes on. The pane's output is piped to `logfile`, which is where a usage
-    limit's "resets 3pm" shows up when the transcript does not have it. Raises RuntimeError when tmux
-    will not open it.
+    them around while the run goes on. The pane's output is piped to `logfile`. Raises RuntimeError when
+    tmux will not open it.
     """
     envs = [a for e in env for a in ('-e', e)]
     w = window('master' if name == 'master' else 'agents')
@@ -1258,10 +1257,6 @@ class Claude:
     def entry(self, d: dict) -> dict | None:
         return d
 
-    def limits(self) -> bool:
-        """Claude's usage-limit text ("resets 3pm") and its handling (`limit_only`) apply."""
-        return True
-
 
 def pi_argv0() -> list[str]:
     """Pi itself. On Windows its npm `.cmd` shim is skipped: cmd.exe would cut a multi-line prompt short and
@@ -1347,9 +1342,6 @@ class Pi(Claude):
             entry['error'] = 'server_error' if transient and not permanent else 'invalid_request'
             message['content'] = [{'type': 'text', 'text': text}]
         return entry
-
-    def limits(self):
-        return False  # Claude's reset text and sidecar cleanup do not apply to Pi providers
 
 
 BACKENDS = {'claude': Claude(), 'pi': Pi()}
@@ -1700,7 +1692,7 @@ def vacate(n: int, d: Path, head: str, branch: str, what: str) -> bool:
 
 
 def slot_header(n: int, what: str) -> tuple[Path, int]:
-    """A session's header line in slot n's log: (the log, its size before the line, where `limit_only` reads from)."""
+    """A session's header line in slot n's log: (the log, its size before the line)."""
     logfile = C.notes(f'slot{n}.log')
     since = logfile.stat().st_size if logfile.exists() else 0  # in append mode tell() is not that
     with open(logfile, 'a', encoding='utf-8') as f:
@@ -1961,7 +1953,7 @@ class ShimMux:
     `<notes>/slotN.job`, starts the agent, and keeps its pid in `<notes>/slotN.live` while it runs. The
     loop, a restart's adopt and the Stop hook all read that marker. The console window gets the shim too,
     so the two behave the same. Nothing captures a console's output, so the slot log has only the header
-    lines here, and a usage limit is read from the transcript alone.
+    lines here.
     """
 
     def __init__(self, name: str):
@@ -4204,13 +4196,13 @@ def stalled(pid: int, sid: str, limit: int) -> str | None:
 
 
 RESUMES_MAX = 3  # resumes of one session before a cut-off is taken for the end of it
-NOT_RESUMED = {'invalid_request', 'authentication_failed', 'billing_error', 'rate_limit'}  # would fail again
+NOT_RESUMED = {'invalid_request', 'authentication_failed', 'billing_error'}  # would fail again
 
 
 def cut_off(sid: str, mid_turn: bool = False) -> str | None:
     """Why the session ended without finishing its turn, else None. An API error ends a turn in Claude Code
     and the idle stop then ends the session, though nothing was finished: the network dropped, or the API
-    was down. A usage limit or a request the API refused is not that. With `mid_turn`, also a transcript
+    was down, or the account hit its usage limit. A request the API refused is not that: it would fail again. With `mid_turn`, also a transcript
     that stops inside a turn: the machine went down under it. A finished session ends on a turn it ended."""
     last = None
     for d in entries(sid, skip_bad=True):
@@ -4223,7 +4215,7 @@ def cut_off(sid: str, mid_turn: bool = False) -> str | None:
         c = m.get('content')
         text = c if isinstance(c, str) else ' '.join(x.get('text', '') for x in c or [] if isinstance(x, dict))
         text = ' '.join(text.split())
-        if LIMIT.search(text) or last.get('error') in NOT_RESUMED:
+        if last.get('error') in NOT_RESUMED:
             return None
         return text[:160] or f'API error {last.get("error")}'
     if mid_turn and (last['type'] == 'user' or m.get('stop_reason') in (None, 'tool_use')):
@@ -4567,7 +4559,6 @@ def api_up() -> bool:
     return _api[1]
 
 
-LIMIT = re.compile(r'limit\D{0,12}resets? (\d+(?::\d+)?\s?[ap]m)', re.I)
 RESUME_AFTER = 120  # s after a failed model call before the session is resumed; doubles with each resume
 RESUME_MAX = 5
 START_TRIES = 3  # a task whose session will not start is tried this many times in a run
@@ -4612,37 +4603,6 @@ def resume_failed(n: int, pid: int, sid: str, tid: str, model: str, idle: int) -
         time.sleep(0.2)
     return MUX.open(n, SLOTS_DIR / f's{n}', RESUME_FAILED.format(tid=tid), sid, model, idle, slot_env(n),
                     C.notes(f'slot{n}.log'))
-
-
-def limit_only(sid: str, slot_log: Path, since: int) -> dt.datetime | None:
-    """If the session did nothing but hit the usage limit: discard its transcript, return the reset time.
-
-    A limited session produced no work, so counting it as an attempt would drop the task from the run;
-    and keeping its transcript would make the next run resume a session that never started.
-    """
-    if not backend().limits():
-        return None
-    t = transcript(sid)
-    text = open(t, encoding='utf-8', errors='replace').read() if t else ''
-    try:
-        with open(slot_log, encoding='utf-8', errors='replace') as f:
-            f.seek(since)
-            text += f.read()
-    except OSError:
-        pass
-    m = LIMIT.findall(text)
-    if not m or '"type":"tool_use"' in text:
-        return None
-    if t:
-        os.remove(t)
-        shutil.rmtree(t[:-6], ignore_errors=True)  # and its sidecar dir, if this build keeps one
-    s = m[-1].replace(' ', '').lower()
-    when = dt.datetime.strptime(s, '%I:%M%p' if ':' in s else '%I%p')
-    now = dt.datetime.now()
-    at = now.replace(hour=when.hour, minute=when.minute, second=0, microsecond=0)
-    if at < now - dt.timedelta(minutes=10):
-        at += dt.timedelta(days=1)
-    return max(at, now)
 
 
 _account = [-1e9, None]
@@ -5026,10 +4986,6 @@ def sequential(branch: str, model: str, idle: int, pause: int, force: bool, once
             log(f'{tid}: {C.run["backend"]} failed (exit {code}): {last_words(sid) or "see terminal output"}')
             plansync.release(C, tid)
             return code
-        if r := limit_only(sid, C.notes('slot1.log'), 0):
-            log(f'{tid}: only hit the usage limit; sleeping until {r:%H:%M}')
-            time.sleep(max(0, (r - dt.datetime.now()).total_seconds()) + pause)
-            continue
         tried.add(tid)
         plansync.release(C, tid)  # committed here, ticked by its `done`: nothing left to hold
         if git('rev-parse', 'HEAD').stdout.strip() != before:
@@ -5387,19 +5343,13 @@ def run(argv: list[str], prog: str) -> int:
                 drop_session_tmp(sid)  # ended for good: a resume (above) keeps its scratchpad
                 if save_leftovers(d := SLOTS_DIR / f's{n}', task[0], branch):
                     clean(d)  # saved: the next start finds the slot clean
-                if reset := limit_only(sid, C.notes(f'slot{n}.log'), since):
-                    git('checkout', '-q', '--detach', cwd=SLOTS_DIR / f's{n}')  # another slot may take the task
-                    free_at[n] = reset + dt.timedelta(seconds=pause)
-                    log(f'slot {n}: {task[0]} only hit the usage limit; transcript dropped, the task goes '
-                        f'back in the pool and the slot sleeps until {reset:%H:%M}')
-                else:
-                    if not not_attempt(task[0], branch):
-                        tried.add(task[0])  # one attempt per run: ticked, blocked or failed, a human looks next
-                    git('checkout', '-q', '--detach', cwd=SLOTS_DIR / f's{n}')
-                    t = threading.Thread(target=finish, args=(task[0], n, sid, branch), name=f'merge:{task[0]}')
-                    t.start()
-                    merging.append(t)
-                    free_at[n] = dt.datetime.now() + dt.timedelta(seconds=pause)
+                if not not_attempt(task[0], branch):
+                    tried.add(task[0])  # one attempt per run: ticked, blocked or failed, a human looks next
+                git('checkout', '-q', '--detach', cwd=SLOTS_DIR / f's{n}')
+                t = threading.Thread(target=finish, args=(task[0], n, sid, branch), name=f'merge:{task[0]}')
+                t.start()
+                merging.append(t)
+                free_at[n] = dt.datetime.now() + dt.timedelta(seconds=pause)
             if n in procs and procs[n][1] not in stall_said and \
                     (why := stalled(procs[n][0], procs[n][1], stall)):
                 stall_said.add(procs[n][1])
