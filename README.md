@@ -37,8 +37,14 @@ cd your-repo
 agent-runner plan                  # what the runner sees in plan/TODO.md
 agent-runner run --dry-run 3       # what three slots would start right now, and why the rest wait
 agent-runner run once              # one task, one session, then stop: try it like this first
-tmux new -s runner agent-runner run 3
+agent-runner                       # the run in the background; the prompt comes straight back
+agent-runner status                # is it up, each slot's task, the end of its log
+agent-runner attach                # watch it (attach s2: slot 2); Ctrl-b d to detach again
+agent-runner stop                  # finish the running tasks, then end it
 ```
+
+Bare `agent-runner` starts the run in a detached tmux session `ar-<repo>`, with the slots' window in it, so
+no terminal is taken and nothing pops up. `agent-runner run 3` is the same run in this terminal (inside tmux).
 
 > [!TIP]
 > No repo handy? `examples/demo.sh` builds a tiny one with a plan in a temp dir and shows `plan`,
@@ -47,7 +53,9 @@ tmux new -s runner agent-runner run 3
 Upgrade with `uv tool upgrade agent-runner` (or `pipx upgrade`) any time: a running run restarts itself on the
 new version and adopts its sessions (not on Windows, nor across a major version). Or pin a
 [release](https://github.com/FIZL0/agent-runner/releases/latest): `uv tool install git+https://github.com/FIZL0/agent-runner@v<version>`.
-On Windows, run `agent-runner run 3` directly: each slot gets a Windows Terminal tab instead of a tmux pane.
+On Windows, bare `agent-runner` runs the runner as a hidden process and each slot in a console window that
+starts hidden (`agent-runner attach s2` shows one); `agent-runner run 3` in a terminal gives each slot a
+Windows Terminal tab instead of a tmux pane.
 Adding it to an existing repo and wrapping it from your own CLI are in [docs/SETUP.md](docs/SETUP.md).
 
 ## How it works

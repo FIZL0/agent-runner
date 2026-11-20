@@ -638,6 +638,65 @@ def test_take(repo: Path):
     git(repo, 'branch', '-D', f'task/{tid}')
 
 
+def test_background(repo: Path):
+    print('bare agent-runner: the run in a detached tmux session, or hidden consoles on Windows; attach')
+    R.init(repo)
+    eq(R.background_session(), 'ar-proj', 'the session is named for the repo')
+    argv = R.tmux_launch_argv('ar-proj', 'runner-proj', repo, 'py -m agent_runner run', ['PATH=/bin'], exists=False)
+    eq(argv[:4], ['tmux', 'new-session', '-d', '-s'], 'a new detached session (it never takes this terminal)')
+    eq(argv[4:12], ['ar-proj', '-n', 'runner-proj', '-c', str(repo), '-e', 'PATH=/bin', 'py -m agent_runner run'],
+       'named, in the main checkout, with this shell\'s PATH, running `run`')
+    eq(argv[12:], [';', 'set-option', '-w', '-t', '=ar-proj:runner-proj', 'remain-on-exit', 'on'],
+       'its window outlives a run that fails at once, to show why')
+    argv = R.tmux_launch_argv('ar-proj', 'runner-proj', repo, 'x', [], exists=True)
+    eq(argv[1:5], ['new-window', '-d', '-t', '=ar-proj:'], 'a session already there gets a new window instead')
+    eq(R.background_argv()[-2:], ['run', '--hidden'], 'Windows: the run, its slot consoles hidden')
+    has('\n'.join(R.background_env()), r'^PATH=', 'the tmux session gets this PATH')
+
+    from agent_runner import plat
+    si = plat.hidden_startupinfo()
+    eq((si.dwFlags & plat.STARTF_USESHOWWINDOW, si.wShowWindow), (1, 0), 'STARTUPINFO: wShowWindow = SW_HIDE')
+    with mock.patch.object(plat.sp, 'Popen') as popen:
+        plat.spawn_console(['a'], repo, {}, hidden=True)
+        kw = popen.call_args.kwargs
+        check(kw['creationflags'] & plat.CREATE_NEW_CONSOLE, 'a hidden slot still gets a console of its own (a TTY)')
+        eq(kw['startupinfo'].wShowWindow, plat.SW_HIDE, 'its window starts hidden')
+        plat.spawn_console(['a'], repo, {})
+        check('startupinfo' not in popen.call_args.kwargs, 'a console window otherwise shows, as before')
+
+    rows = ['other\t%1\ts1\t/elsewhere\t', 'ar-proj\t%2\t\t\t' + str(repo), 'ar-proj\t%3\ts1\t' + str(repo) + '\t',
+            'ar-proj\t%4\ts2\t' + str(repo) + '\t']
+    eq(R.attach_target(rows, repo, 'runner'), ('ar-proj', '%2'), "attach: the runner's own pane")
+    eq(R.attach_target(rows, repo, 's1'), ('ar-proj', '%3'), "attach s1: this repo's s1, not another repo's")
+    eq(R.attach_target(rows, repo, 's9'), None, 'no such slot')
+    eq(R.attach_argv('ar-proj', '%3', inside=False)[-1], ['tmux', 'attach-session', '-t', 'ar-proj'],
+       'outside tmux it attaches this terminal')
+    eq(R.attach_argv('ar-proj', '%3', inside=True)[-1], ['tmux', 'switch-client', '-t', 'ar-proj'],
+       'inside tmux it switches the client')
+
+    for line, want in (('=== 2026-11-19T10:00:00 run: 3 slots in tmux, merging into main', 3),
+                       ('=== 2026-11-19T10:00:00 sequential run on main (one session at a time, …)', 0)):
+        log = R.C.notes('run.log')
+        since = log.stat().st_size if log.exists() else 0
+        with open(log, 'a', encoding='utf-8') as f:
+            f.write(line + '\n')
+        eq(R.wait_started(since, lambda: False, timeout=2), want, f'the launch sees the run come up ({want} slots)')
+    eq(R.wait_started(R.C.notes('run.log').stat().st_size, lambda: True, timeout=2), None, 'or that it ended first')
+
+    R.C.run['remote'] = True
+    try:
+        f = R.claude_json()
+        f.write_text('{"x": 1}', encoding='utf-8')
+        eq(R.remote_ready(tty=False), False, 'remote, never answered, no terminal: nothing starts')
+        eq(R.remote_ready(tty=True, ask=lambda q: 'n'), False, 'answered no here: nothing starts')
+        eq(R.remote_ready(tty=True, ask=lambda q: 'y'), True, 'answered yes here: it starts')
+        eq(json.loads(f.read_text(encoding='utf-8')), {'x': 1, 'remoteDialogSeen': True},
+           'and Claude Code will not ask in the hidden panes')
+        eq(R.remote_ready(tty=False, ask=lambda q: 1 / 0), True, 'asked once only')
+    finally:
+        R.C.run['remote'] = False
+
+
 def test_take_text_and_here(repo: Path):
     print('take "TEXT" --kind: queue and take in one step; --here carries the main checkout\'s edits along')
     R.init(repo)
@@ -2886,7 +2945,7 @@ def main() -> int:
                        lambda: test_no_pane(repo, tmp), lambda: test_other_repos_panes(repo, tmp),
                        lambda: test_limit_lets_go(repo),
                        lambda: test_shared_push(repo, tmp), lambda: test_note_on_a_ticked_task(repo), lambda: test_adopt_merge(repo), lambda: test_followups(repo), lambda: test_ci_watch(repo), test_update_notice, test_restart_if_upgraded, lambda: test_flake_repair(tmp), lambda: test_repair_per_failure(repo),
-                       lambda: test_stalled(tmp), lambda: test_take(repo), lambda: test_take_text_and_here(repo)])
+                       lambda: test_stalled(tmp), lambda: test_take(repo), lambda: test_take_text_and_here(repo), lambda: test_background(repo)])
 
 
 if __name__ == '__main__':

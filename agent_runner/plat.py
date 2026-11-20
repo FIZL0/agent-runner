@@ -201,24 +201,66 @@ def terminate(pid: int) -> None:
         pass
 
 
-def spawn_detached(argv: list[str]) -> None:
-    """Start a process that outlives this one and every terminal around it (the Stop hook's timer)."""
-    kw: dict = dict(stdin=sp.DEVNULL, stdout=sp.DEVNULL, stderr=sp.DEVNULL)
-    if not WINDOWS:
-        sp.Popen(argv, start_new_session=True, **kw)
-        return
-    # Claude Code may run hooks in a job that is killed with them: break away when the job allows it
-    flags = DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
+def spawn_detached(argv: list[str], out: Path | None = None) -> sp.Popen:
+    """Start a process that outlives this one and every terminal around it (the Stop hook's timer, the
+    background run on Windows). `out`: a file its output goes to, else nowhere."""
+    f = open(out, 'ab') if out else sp.DEVNULL
+    kw: dict = dict(stdin=sp.DEVNULL, stdout=f, stderr=f if out else sp.DEVNULL)
     try:
-        sp.Popen(argv, creationflags=flags | CREATE_BREAKAWAY_FROM_JOB, **kw)
-    except OSError:
-        sp.Popen(argv, creationflags=flags, **kw)
+        if not WINDOWS:
+            return sp.Popen(argv, start_new_session=True, **kw)
+        # Claude Code may run hooks in a job that is killed with them: break away when the job allows it
+        flags = DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
+        try:
+            return sp.Popen(argv, creationflags=flags | CREATE_BREAKAWAY_FROM_JOB, **kw)
+        except OSError:
+            return sp.Popen(argv, creationflags=flags, **kw)
+    finally:
+        if out:
+            f.close()
 
 
-def spawn_console(argv: list[str], cwd: Path, env: dict) -> int:
-    """Start `argv` in a console window of its own (Windows); returns its pid."""
+STARTF_USESHOWWINDOW = 0x00000001
+SW_HIDE, SW_RESTORE = 0, 9
+
+
+def hidden_startupinfo():
+    """A STARTUPINFO whose window starts hidden (SW_HIDE). The process still gets a real console, so the agent
+    in it has a TTY; only the window is not shown. (A stand-in object off Windows, for the tests.)"""
+    si = sp.STARTUPINFO() if hasattr(sp, 'STARTUPINFO') else type('STARTUPINFO', (), {'dwFlags': 0, 'wShowWindow': 0})()
+    si.dwFlags |= STARTF_USESHOWWINDOW
+    si.wShowWindow = SW_HIDE
+    return si
+
+
+def spawn_console(argv: list[str], cwd: Path, env: dict, hidden: bool = False) -> int:
+    """Start `argv` in a console window of its own (Windows); returns its pid. `hidden`: the window starts
+    hidden (the background run); `show_console` brings it up."""
+    kw = {'startupinfo': hidden_startupinfo()} if hidden else {}
     return sp.Popen(argv, cwd=str(cwd), env=env,
-                    creationflags=CREATE_NEW_CONSOLE | CREATE_NEW_PROCESS_GROUP).pid
+                    creationflags=CREATE_NEW_CONSOLE | CREATE_NEW_PROCESS_GROUP, **kw).pid
+
+
+def show_console(pid: int) -> bool:
+    """Show and raise the console window `pid` runs in (Windows); False when there is none to show. A console
+    window belongs to its host (conhost), not to the program, so it is found by attaching to that process's
+    console. A process can attach to one console only, and giving up our own would break this terminal's
+    output, so a helper with no console of its own does it (`_show_console`)."""
+    code = (f'import sys; sys.path.insert(0, {str(Path(__file__).resolve().parents[1])!r}); '
+            f'from agent_runner import plat; sys.exit(0 if plat._show_console({int(pid)}) else 1)')
+    return sp.run([sys.executable, '-c', code], creationflags=DETACHED_PROCESS).returncode == 0
+
+
+def _show_console(pid: int) -> bool:
+    import ctypes
+    k = ctypes.WinDLL('kernel32', use_last_error=True)
+    u = ctypes.WinDLL('user32', use_last_error=True)
+    k.GetConsoleWindow.restype = ctypes.c_void_p
+    if not k.AttachConsole(int(pid)) or not (hwnd := k.GetConsoleWindow()):
+        return False
+    u.ShowWindow(ctypes.c_void_p(hwnd), SW_RESTORE)
+    u.SetForegroundWindow(ctypes.c_void_p(hwnd))
+    return True
 
 
 def exe(name: str) -> str:

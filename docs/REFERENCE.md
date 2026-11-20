@@ -69,6 +69,34 @@ prompt over 24,000 characters (a Windows command line holds 32,767) is handed ov
 is told to read. `[run] test`, `on_exit`, `before_start` and the other commands run in the platform's
 shell, which on Windows is `cmd.exe`.
 
+### In the background
+
+Bare `agent-runner` starts the run where no terminal shows it and returns within seconds. On Linux and macOS
+that is a detached tmux session `ar-<repo>` (`tmux new-session -d`) whose window `runner-<repo>` runs
+`agent-runner run`. The slots' window `agents-<repo>` opens in the same session. The new session gets this
+shell's `PATH`, the `AGENT_RUNNER*`, `CLAUDE_*` and `ANTHROPIC_*` variables and `[run] pass_env`. The launch
+waits for the run's start line in `run.log`, then prints the slot count and the commands: `status`, `attach`,
+`stop`, and claude.ai/code with `[run] remote`. If the run fails within that time, its window is kept long
+enough to print the pane's last lines, and then it is closed. If a run is already up it says so and starts
+nothing. Without tmux it says how to install it and starts nothing. If the session is still there from an earlier run
+(its slots' window still open), the run starts in a new window of that session and adopts those panes.
+
+On Windows the runner is a detached process (`run --hidden`, its output in `.runner/background.out`). Each
+slot gets a console window that starts hidden (`STARTUPINFO.wShowWindow = SW_HIDE`). It's still a real
+console, so the agent has a TTY. There are no Windows Terminal tabs in this mode.
+
+`agent-runner attach` goes to the runner's pane: it is tagged `@runner-run` = the main checkout, so this works
+for a run started with `agent-runner run` in a tmux session too. `attach s2` goes to slot 2's pane, and
+`attach master` to a fix session. Inside tmux it switches the client; outside, it attaches this terminal.
+Detach with Ctrl-b d. On Windows, `attach s2` shows and raises slot 2's console window. Minimize it to hide it
+again: closing it ends that session, which resumes in the next run. The runner has no window there, so
+`agent-runner status` and `.runner/run.log` show it.
+
+With `[run] remote`, Claude Code asks once, at a terminal, "Enable Remote Control? (y/n)". In a hidden pane
+that question would hold every slot. So before going to the background the launch checks `remoteDialogSeen` in
+`~/.claude.json` (or `$CLAUDE_CONFIG_DIR/.claude.json`). If it is not set, the launch asks the question in this
+terminal and records the yes there. A no, or no terminal to ask in, starts nothing.
+
 `--no-tmux` (or no tmux / Windows Terminal installed) is the sequential run. It's one session at a time,
 in your checkout, on the branch you have out. There's no worktree and no merge: `done` already ran the gate, and
 the branch is pushed after each task.
@@ -564,6 +592,9 @@ the running tasks merge. A run left up keeps picking up whatever you commit to T
 ## Commands
 
 ```
+agent-runner                           the run in the background (a detached tmux session; hidden consoles on
+                                       Windows), the prompt straight back; `help` prints the usage
+agent-runner attach [sN|master]        the runner's pane, or a slot's (Windows: the slot's console window)
 agent-runner plan [...]                the task list as a tool (agent-runner plan help)
 agent-runner done ID "MSG" [--blocked WHY [--after X,Y]] [--no-test]
 agent-runner run [N|once] [--dry-run] [--no-tmux] [--mux tmux|wt|console|none] [--model M] [--idle S] [--stall S] [--pause S] [--force] [--shutdown|--suspend]
