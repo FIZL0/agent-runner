@@ -4443,6 +4443,7 @@ def test_renamed_control_kept(repo: Path):
        'renamed, Claude last and idle 3h: kept')
     eq(R.control_verdict(R.control_state(ask + [title('mine')]), cf, now, 4)[0], 'keep', 'its open question not filed')
     eq(R.control_state(renamed + [title('later name')])['title'], 'later name', 'the latest rename counts')
+    R.control_give(4, R.control_name(4, 'can T7 go first?'))  # F32: the name the runner gave session 4
     for t in (R.control_name(4), R.control_name(4, 'can T7 go first?')):
         eq(R.control_verdict(R.control_state(done + [title(t)]), cf, now, 4)[0], 'close', f'the runner\'s own name {t!r}: not a rename')
 
@@ -4466,10 +4467,10 @@ def test_control_summary_title(repo: Path):
             eq(R.cmd_control(['--title', 'x y']), 2, 'outside a control session, with no N: refused')
     finally:
         os.chdir(here)
-    want = f'{rn} · 11 · R43 site deploy via tags'
+    want = f'{rn} · R43 · site deploy via tags'  # F32: about one task, the task id in place of N
     eq(sent, [('%42', f'/rename {want}')], 'it types /rename with the summary name into its own pane')
     check(('rename-window', '-t', '%42', want) in renamed, 'its tmux window takes the name too', renamed)
-    eq(R.control_summary_name(11, '  "R43 site\ndeploy"  '), f'{rn} · 11 · R43 site deploy', 'one line, no quotes')
+    eq(R.control_summary_name(11, '  "R43 site\ndeploy"  '), f'{rn} · R43 · site deploy', 'one line, no quotes')
     eq(R.control_summary_name(11, ''), '', 'no summary, no name')
     title = lambda t: {'type': 'custom-title', 'customTitle': t, 'sessionId': 'x'}
     done = [_person(ask, 3 * H), title(want), _claude('Tags deploy fine; nothing breaks.', 3 * H - 5)]
@@ -4481,6 +4482,70 @@ def test_control_summary_title(repo: Path):
     eq(R.control_verdict(R.control_state(recent), cf, now, 11)[0], 'keep', 'active lately: still kept')
     mine = done + [title('MY DEPLOY')]
     eq(R.control_verdict(R.control_state(mine), cf, now, 11)[0], 'keep', 'a later rename by the person still keeps it')
+
+
+def test_control_task_name(repo: Path):
+    print('F32: a control session about one task is named "<repo> · ID · summary"; /new or /clear puts it back to '
+          '"<repo> · N"; attach cN finds it either way; a name the person typed is never overwritten')
+    import io
+    from contextlib import redirect_stdout
+    R.init(repo)
+    rn = R.ROOT.name
+    title = lambda t: {'type': 'custom-title', 'customTitle': t, 'sessionId': 'x'}
+    eq(R.control_summary_name(11, 'R43 site deploy via tags'), f'{rn} · R43 · site deploy via tags', 'one task: its id')
+    eq(R.control_summary_name(11, 'R43: site deploy'), f'{rn} · R43 · site deploy', 'a colon after the id dropped')
+    eq(R.control_summary_name(11, 'P17a'), f'{rn} · P17a', 'the id alone')
+    eq(R.control_summary_name(11, 'deploy with tags'), f'{rn} · 11 · deploy with tags', 'no single task: N kept')
+    pidf, titlef = R.C.notes('control11.pid'), R.C.notes('control11.title')
+    pidf.write_text('999 old-sid', encoding='utf-8')
+    titlef.unlink(missing_ok=True)
+    sent, tm, here = [], [], os.getcwd()
+    talk = {'old-sid': [title(R.control_name(11, 'deploy with tags instead of'))], 'new-sid': []}
+    task = f'{rn} · R43 · site deploy via tags'
+    os.chdir(repo)
+    try:
+        with mock.patch.dict(os.environ, {R.CONTROL_N_ENV: '11', 'TMUX_PANE': '%42'}), \
+                mock.patch.object(R, 'send_to_pane', lambda p, t: sent.append((p, t)) or True), \
+                mock.patch.object(R, 'transcript', lambda sid: f'/x/{sid}.jsonl' if sid in talk else None), \
+                mock.patch.object(R, 'entries', lambda sid, skip_bad=False: list(talk.get(sid, []))), \
+                mock.patch.object(R, 'tmux', lambda *a, **k: tm.append(a) or subprocess.CompletedProcess(a, 0, '', '')):
+            R.control_give(11, R.control_name(11, 'deploy with tags instead of'))
+            eq(R.cmd_control(['--title', 'R43 site deploy via tags']), 0, '--title about R43 works')
+            eq(sent[-1], ('%42', f'/rename {task}'), 'an ask about R43 names it "<repo> · R43 · …"')
+            eq(R.control_given(11), task, 'the runner keeps the name it gave session 11')
+            talk['old-sid'].append(title(task))
+            check(not R.control_renamed(R.control_state(talk['old-sid']), 11), 'its own task name is not a rename')
+            check(R.control_renamed(R.control_state([title(f'{rn} · 11 · something else')]), 11),
+                  'a "<repo> · 11 ·" name the runner did not give counts as the person\'s')
+            eq(R.control_session_start(11, {'source': 'startup', 'session_id': 'old-sid'}), '', 'startup: no reset')
+            n = len(sent)
+            out = io.StringIO()
+            with mock.patch.object(R, 'control_hook_input', lambda: {'source': 'clear', 'session_id': 'new-sid'}), \
+                    redirect_stdout(out):
+                eq(R.cmd_control(['--brief']), 0, 'the SessionStart hook runs')
+            check('control session' in out.getvalue(), 'it still prints the brief')
+            eq(sent[n:], [('%42', f'/rename {rn} · 11')], 'after /new or /clear the name goes back to "<repo> · 11"')
+            check(('rename-window', '-t', '%42', f'{rn} · 11') in tm, 'its tmux window too')
+            eq(R.control_given(11), f'{rn} · 11', 'the base name is the one given now')
+            eq(pidf.read_text(encoding='utf-8'), '999 new-sid', 'the pid file follows the new conversation')
+            talk['new-sid'].append(title(f'{rn} · 11'))
+            check(not R.control_renamed(R.control_state(talk['new-sid']), 11), 'the base name is not a rename')
+            n = len(sent)
+            eq(R.control_session_start(11, {'source': 'clear', 'session_id': 'new-sid'}), '', 'already the base: kept')
+            eq(R.cmd_control(['--title', 'deploy docs']), 0, 'the new conversation names itself')
+            eq(sent[n:], [('%42', f'/rename {rn} · 11 · deploy docs')], 'its own ask, no single task: "<repo> · 11 · …"')
+            # the person types a name: never overwritten, by --title or by /clear
+            talk['new-sid'].append(title('MY DOCS'))
+            n = len(sent)
+            eq(R.cmd_control(['--title', 'R50 other thing']), 0, '--title over the person\'s name: a no-op')
+            eq(R.control_session_start(11, {'source': 'clear', 'session_id': 'third-sid'}), '', '/clear keeps it too')
+            eq(sent[n:], [], 'nothing typed over the person\'s name')
+    finally:
+        os.chdir(here)
+        pidf.unlink(missing_ok=True)
+        titlef.unlink(missing_ok=True)
+    rows = [f'run\t%42\tc11\t{R.ROOT}\t', f'run\t%43\tc12\t{R.ROOT}\t']
+    eq(R.attach_target(rows, R.ROOT, 'c11'), ('run', '%42'), 'attach c11 finds it by its pane tag, whatever its name')
 
 
 def test_close_idle_controls(repo: Path):
@@ -4609,7 +4674,7 @@ def main() -> int:
                        lambda: test_person_waiting(repo), lambda: test_control_server_old_agent(repo, tmp),
                        lambda: test_drop_or_change_running(repo), lambda: test_tell_running(repo),
                        lambda: test_close_idle_controls(repo), lambda: test_renamed_control_kept(repo),
-                       lambda: test_control_summary_title(repo)])
+                       lambda: test_control_summary_title(repo), lambda: test_control_task_name(repo)])
 
 
 if __name__ == '__main__':
