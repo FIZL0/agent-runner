@@ -121,7 +121,10 @@ off there commits nothing. Never start a second one while the first still runs.
 If you are stuck (a tool hangs, the same fix fails twice, it needs a human, about 20 minutes with no \
 progress), commit what is solid and run `{runner} done {tid} "<msg>" --blocked "<why + what would unblock \
 it>"`, then stop. If all it waits on is another task landing (its code is not on the main branch yet), add \
-`--after <ID>[,<ID>]`, and the run reopens it the moment those merge.
+`--after <ID>[,<ID>]`, and the run reopens it the moment those merge. If it waits on a person, start WHY with \
+what you ask of them: `CONFIRM: <what to check by hand>`, `DECIDE: <the question or choice>` or `BLOCKED: \
+<the access, login or fix only a person can make>`, then one short line, and the link if there is one; it \
+lists under Waiting for your OK until they answer.
 
 A usage limit is not being stuck: do not block the task. The session waits for the reset and carries on.
 
@@ -5844,19 +5847,32 @@ def cmd_since(argv: list[str], prog: str = f'{RUNNER} since') -> int:
     return 0
 
 
-def waiting_ok() -> list[tuple[str, str, str, str]]:
-    """Concepts whose build waits for the person's OK (`plan.waiting`), from the main checkout's TODO.md."""
+def waiting_ok() -> list[tuple]:
+    """What waits for the person (`plan.asks`, shelved ones too), from the main checkout's TODO.md: concept pages
+    and tasks blocked on a person."""
     try:
-        return P.waiting(C.todo) if C.todo.exists() else []
+        return P.asks(C.todo, all=True) if C.todo.exists() else []
     except (OSError, SystemExit):
         return []
 
 
-def waiting_text(waiting) -> list[str]:
-    """'Waiting for your OK:' and a line per concept page: its title, [its concept's id], the link. [] for none."""
+def waiting_text(waiting, width: int = 60) -> list[str]:
+    """'Waiting for your OK:' and a line per ask: its caps label (CONCEPT, CONFIRM, DECIDE, BLOCKED), the title
+    [id], what to do, the link; a count of the shelved ones last. [] for none."""
     if not waiting:
         return []
-    return ['Waiting for your OK:'] + [f'  {title or bid} [{k or bid}]  {url}' for bid, k, url, title in waiting]
+    out, shelved = [], 0
+    for label, tid, k, what, url, title, sh in waiting:
+        if sh:
+            shelved += 1
+            continue
+        title = title if len(title) <= width else title[:width - 1].rstrip() + '…'
+        out.append('  ' + '  '.join(x for x in (label, f'{title or tid} [{k or tid}]: {what}', url) if x))
+    if not out:
+        return []  # only shelved ones: they asked to leave this list
+    if shelved:
+        out.append(f'  ({shelved} shelved: plan waiting --all)')
+    return ['Waiting for your OK:'] + out
 
 
 def status_text(up: bool, st: dict, log_lines: list[str], titles: dict[str, str], now: float, width: int = 60,

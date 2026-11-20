@@ -585,7 +585,7 @@ def test_concepts():
               notes)
         eq(git(root, 'status', '--porcelain'), '', 'all of it committed')
         has(run(root, 'plan', 'reopen', env=env).stdout, 'nothing to reopen', 'reopen never frees a build waiting for an OK')
-        has(run(root, 'plan', 'waiting', env=env).stdout, r'^F1  settings page layout  ' + re.escape(url) + r'  \(concept K1\)',
+        has(run(root, 'plan', 'waiting', env=env).stdout, r'^CONCEPT  F1  settings page layout  ' + re.escape(url) + r'  \(concept K1\)',
             'plan waiting lists it')
 
         r = run(root, 'plan', 'revise', 'K1', 'add a dark one', env=env)
