@@ -7,6 +7,7 @@ import sys
 USAGE = """agent-runner: AI agents work through plan/TODO.md, one task each, in parallel.
 
 What you type
+    agent-runner setup                make this repo ready: back up uncommitted work, runner.toml, a first plan
     agent-runner                      start the run in the background and get the prompt back
     agent-runner --attach             the same, then watch its pane here (Ctrl-b d: back to the background)
     agent-runner attach [s2]          see the run's pane, or slot 2's
@@ -138,6 +139,9 @@ def main(argv: list[str] | None = None) -> int:
     if cmd == 'done':
         from agent_runner import done
         return done.main(rest)
+    if cmd == 'setup':  # F49
+        from agent_runner import setup
+        return setup.main(rest)
     if cmd == 'run':
         from agent_runner import runner
         return runner.cmd_run(rest)

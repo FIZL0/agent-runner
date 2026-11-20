@@ -120,6 +120,24 @@ also use Pi print mode and the non-slot-specific environment from `slot_env`.
 
 ## A new repo from scratch
 
+The short way is `agent-runner setup` in the repo's folder (a folder with no git becomes a repository):
+
+1. It saves what is there: uncommitted edits and untracked files are committed to a new branch,
+   `runner-setup-backup-<date>` (`-2`, `-3` … when one exists), and it prints the name. Your checkout, its
+   index and its branch are not changed: the files stay uncommitted where they are.
+2. It writes `runner.toml` when there is none, with the gate guessed from `package.json`, `Cargo.toml`,
+   `go.mod`, a Makefile `test`/`check` target or a `tests/` folder. An existing one is left as it is.
+3. It starts one full Claude session in the repo (your normal tools, settings and CLAUDE.md, not a slot's
+   lean brief) that reads the repo, checks the gate, writes the goal and a first task list with
+   `agent-runner plan goal` and `plan add`, adds a short `## Agent notes` section to CLAUDE.md or AGENTS.md,
+   and commits it all.
+4. It prints what it set up; `agent-runner` then starts the run.
+
+Run again on a repo that has a plan, it asks before the session touches it (`--yes`: go on without asking).
+`--no-session` does only steps 1 and 2 and prints the session's prompt.
+
+By hand:
+
 ```sh
 cd your-repo
 mkdir plan

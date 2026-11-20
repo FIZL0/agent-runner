@@ -8,6 +8,12 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
   slots, wizard, guide, plan) and the rest under "Mostly for agents (you can run these too)", one short line
   each. Bare `agent-runner wizard` runs the one waiting wizard, lists them when several wait, or says there
   are none (F48).
+- `agent-runner setup` makes the repo in this folder ready for a run: it commits any uncommitted work to a
+  backup branch `runner-setup-backup-<date>` (your checkout stays as it was) and says its name, writes
+  `runner.toml` if missing with a guessed gate, and starts one full Claude session that reads the repo and
+  writes the goal and a first task list through `plan goal` / `plan add`, the gate and a short notes section
+  in CLAUDE.md or AGENTS.md. It ends with what it set up and `agent-runner` to start. On a repo with a plan it
+  asks first (`--yes` skips the question). It heads the person section of `--help` (F49).
 
 ## 0.54.0 (2026-11-20)
 

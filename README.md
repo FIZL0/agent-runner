@@ -34,6 +34,8 @@ tests its branch, merges it, pushes, and starts the next task. Sessions run on C
 ```sh
 uv tool install git+https://github.com/FIZL0/agent-runner    # tracks main; or: pipx install git+https://…
 cd your-repo
+agent-runner setup                 # a new repo: backs up uncommitted work to a branch, writes runner.toml,
+                                   # and a Claude session reads the repo and writes the gate and a first plan
 agent-runner plan                  # what the runner sees in plan/TODO.md
 agent-runner run --dry-run 3       # what three slots would start right now, and why the rest wait
 agent-runner run once              # one task, one session, then stop: try it like this first

@@ -5176,6 +5176,67 @@ def test_help_order_and_bare_wizard(tmp: Path):
     check(not any((root / n).exists() for n in ('F1.again', 'F2.out', 'F3.out')), 'and runs none')
 
 
+def test_setup(tmp: Path):
+    print('agent-runner setup: backs up dirty work to a branch, runner.toml only when missing, a plan prompt')
+    import contextlib
+    import datetime
+    import io
+    from agent_runner import cli
+    from agent_runner import setup as S
+    root = tmp / 'f49'
+    root.mkdir()
+    git(root, 'init', '-q', '-b', 'main')
+    (root / 'app.py').write_text('print(1)\n', encoding='utf-8')
+    (root / 'Makefile').write_text('test:\n\tpython3 -c pass\n', encoding='utf-8')
+    git(root, 'add', '-A')
+    git(root, 'commit', '-qm', 'start')
+    (root / 'app.py').write_text('print(2)\n', encoding='utf-8')  # a tracked edit, and an untracked file
+    (root / 'new.txt').write_text('draft\n', encoding='utf-8')
+    status = git(root, 'status', '--porcelain')
+    launched: list = []
+    out = io.StringIO()
+
+    def setup(argv: list[str]) -> int:
+        with contextlib.redirect_stdout(out):
+            return S.main(argv, cwd=root)
+
+    with mock.patch.object(S, 'launch', lambda r, text: launched.append((r, text)) or 0), \
+            mock.patch.object(S, 'ask', lambda q: launched.append(('asked', q)) or False):
+        eq(setup([]), 0, 'setup on a dirty repo')
+        name = f'runner-setup-backup-{datetime.date.today().isoformat()}'
+        has(out.getvalue(), re.escape(name), 'says the backup branch name')
+        eq(git(root, 'show', f'{name}:app.py'), 'print(2)', 'the backup has the tracked edit')
+        eq(git(root, 'show', f'{name}:new.txt'), 'draft', 'and the untracked file')
+        eq(git(root, 'rev-parse', f'{name}^'), git(root, 'rev-parse', 'main'), 'on top of main')
+        eq(git(root, 'rev-parse', '--abbrev-ref', 'HEAD'), 'main', 'still on main')
+        eq((root / 'app.py').read_text(encoding='utf-8'), 'print(2)\n', "main's working tree unchanged")
+        check(git(root, 'status', '--porcelain').startswith(status.splitlines()[0]) and 'new.txt' in
+              git(root, 'status', '--porcelain'), 'the same files still uncommitted', git(root, 'status'))
+        toml = (root / 'runner.toml').read_text(encoding='utf-8')
+        has(toml, r'^test = "make test"', 'runner.toml written, with the Makefile gate')
+        eq(len(launched), 1, 'one session launched (no plan yet: no question)')
+        r, text = launched[0]
+        eq(r, root.resolve(), 'in the repo')
+        for want in (r'plan add', r'plan goal', r'\[run\] test', 'make test', 'CLAUDE.md', 'AGENTS.md'):
+            has(text, want, f'the prompt names {want}')
+        has(out.getvalue(), r'Start the run: agent-runner', 'ends with how to start')
+        (root / 'runner.toml').write_text('[run]\ntest = "mine"\n', encoding='utf-8')
+        (root / 'plan').mkdir()
+        (root / 'plan' / 'TODO.md').write_text('# TODO\n\n### Next\n\n- [ ] **F1** x\n', encoding='utf-8')
+        launched.clear()
+        eq(setup([]), 0, 'setup again on a set-up repo')
+        eq((root / 'runner.toml').read_text(encoding='utf-8'), '[run]\ntest = "mine"\n', 'runner.toml kept')
+        check(launched and launched[0][0] == 'asked' and len(launched) == 1, 'asks first; a no starts nothing',
+              launched)
+        check(f'{name}-2' in git(root, 'branch'), 'a second backup gets its own branch')
+        launched.clear()
+        eq(setup(['--yes']), 0, 'with --yes')
+        check(len(launched) == 1 and 'already has a task list' in launched[0][1], 'it goes on, told to add to it',
+              launched)
+    cut = cli.USAGE.index('What you type')
+    eq(cli.USAGE[cut:].splitlines()[1].split()[:2], ['agent-runner', 'setup'], "setup heads the person section")
+
+
 def main() -> int:
     with tempfile.TemporaryDirectory() as t:
         tmp = Path(t)
@@ -5207,7 +5268,7 @@ def main() -> int:
                        lambda: test_control_summary_title(repo), lambda: test_control_task_name(repo), lambda: test_progress_and_release(repo),
                        lambda: test_control_status_rules(repo), lambda: test_control_do_it_here(repo), lambda: test_take_running_slot(repo), lambda: test_upgrade_cmd(repo), test_control_no_upgrade_watcher,
                        lambda: test_plan_last(repo), lambda: test_release_push(repo),
-                       lambda: test_help_order_and_bare_wizard(tmp)])
+                       lambda: test_help_order_and_bare_wizard(tmp), lambda: test_setup(tmp)])
 
 
 if __name__ == '__main__':
