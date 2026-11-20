@@ -1843,7 +1843,8 @@ def test_short_titles_and_since(repo: Path):
                   'with the feed, control sessions start no needs-you watch', (brief[:80], opening))
             check(opt('--allowedTools') == f'Bash({R.C.command} *)' and opt('--setting-sources') == ''
                   and '--strict-mcp-config' in fa, 'Bash only for the runner command; no settings or MCP', fa)
-            check('control --new --ask' in opt('--system-prompt') and 'since --follow --keep-mark' in fa[1],
+            check('control --new --forward' in opt('--system-prompt') and '--ask' not in opt('--system-prompt')
+                  and 'since --follow --keep-mark' in fa[1],
                   'it hands other asks to a control session and follows without moving the mark', fa)
             bc = R.board_command()
             check(bc.endswith(f'since --board --feed --run-pid {os.getpid()}'),
@@ -2020,8 +2021,11 @@ def test_short_titles_and_since(repo: Path):
                 eq(R.feed_files(), [], 'no feed.sid and no session env: nothing')
                 with mock.patch.dict(os.environ, {'CLAUDE_CODE_SESSION_ID': sid}):
                     eq(R.feed_files(), ['/u/c.png'], 'without feed.sid the calling session is read (B22)')
+        test_feed_forward()
         h = run(repo, 'control', '--help')
         check('--image' in h.stdout and '--file' in h.stdout, 'control --file (alias --image) is an option',
+              h.stdout)
+        check('--forward' in h.stdout and '--ask' not in h.stdout, 'B72: --forward is shown, --ask is hidden',
               h.stdout)
         eq(run(repo, 'since', '--follow', '--keep-mark', '--help').returncode, 0, 'since --keep-mark is an option')
     finally:
@@ -2030,6 +2034,78 @@ def test_short_titles_and_since(repo: Path):
         else:
             notes.write_text(keep, encoding='utf-8')
         R.since_mark_file().unlink(missing_ok=True)
+
+
+def test_feed_forward():
+    print('B72: the feed hands a message on with control --new --forward: the text comes word for word from the '
+          'feed transcript, never through a shell')
+    import contextlib
+    import io
+    msg = ('please check `git log | head -c 0` and "this" \'too\'\n\n$(rm -rf ~) ${HOME} \\n back\\slash; '
+           'echo $((1+1)) && exit\n  indented line\t tab')
+    sid = '12345678-1234-1234-1234-123456789abc'
+    with tempfile.TemporaryDirectory() as tdir:
+        tr = Path(tdir, 'feed.jsonl')
+        hum = lambda text, uid: {'type': 'user', 'uuid': uid, 'origin': {'kind': 'human'},
+                                 'message': {'content': [{'type': 'text', 'text': text}]}}
+        call = lambda cmd: {'type': 'assistant', 'message': {'content': [
+            {'type': 'tool_use', 'name': 'Bash', 'input': {'command': cmd}}]}}
+        res = {'type': 'user', 'message': {'content': [{'type': 'tool_result', 'content': 'ok'}]}}
+        pics = lambda *p: {'type': 'attachment', 'attachment': {'type': 'inlined_image_paths', 'paths': list(p)}}
+        write = lambda *es: tr.write_text(''.join(json.dumps(e) + '\n' for e in es))
+        add = lambda *es: tr.write_text(tr.read_text() + ''.join(json.dumps(e) + '\n' for e in es))
+        opened = []
+
+        def tm(*a, **k):
+            opened.append(a)
+            return subprocess.CompletedProcess(a, 0, '%9\n' if a[0] == 'new-window' else '', '')
+        with mock.patch.object(R.C, 'notes', lambda *a: Path(tdir, *a)), \
+                mock.patch.object(R, 'transcript', lambda s: str(tr) if s == sid else None), \
+                mock.patch.dict(os.environ, {'CLAUDE_CODE_SESSION_ID': sid}), \
+                mock.patch.object(R, 'tmux', tm), mock.patch.object(R, 'control_live', lambda n: None), \
+                mock.patch.object(R, 'control_new_session', lambda: 'ar-proj'), \
+                mock.patch.object(R.shutil, 'which', lambda x: '/usr/bin/tmux'), \
+                mock.patch.object(R, 'remote_on', lambda: False):
+            mon = {'type': 'assistant', 'message': {'content': [
+                {'type': 'tool_use', 'name': 'Monitor', 'input': {'command': 'run since --follow --keep-mark'}},
+                {'type': 'tool_use', 'name': 'PushNotification', 'input': {'message': 'x'}}]}}
+            write(hum('status', 'u1'), call('run status'), res,
+                  hum(msg, 'u2'), pics('/u/shot.png'), mon, call('run since --follow --keep-mark'),
+                  call('run control --new --forward'))
+            with contextlib.redirect_stdout(io.StringIO()):
+                rc = R.control_new(9, forward=True)
+            cmd = next(c for c in opened if c[0] == 'new-window')[-1]
+            argv = R.shlex.split(cmd)
+            check(rc == 0 and '--ask-file' in argv and '--ask' not in argv and 'rm -rf' not in cmd
+                  and 'head -c' not in cmd and '/u/shot.png' in argv, 'B72: the command holds no word of the '
+                  'message, only the file it is in and the attached image', cmd)
+            text = R.read_ask_file(argv[argv.index('--ask-file') + 1])
+            eq(text, msg, 'B72: quotes, backticks, $() and newlines reach the new control session unchanged')
+            check(not Path(tdir, 'control9.ask').exists(), 'B72: the message file is removed once read')
+            first = R.control_argv(9, 'sid', False, ask=text, images=['/u/shot.png'])[1]
+            check(first.startswith(msg) and '"/u/shot.png"' in first, 'B72: it is the first message, word for word',
+                  first)
+            eq(R.feed_pending(sid)[2], False, 'B72: a message handed on once is not handed on again')
+            # the feed's transcript lags (B46): the feed's latest message there is one it answered itself
+            write(hum('status', 'u1'), call('run status'), res)
+            opened.clear()
+            with contextlib.redirect_stdout(io.StringIO()), mock.patch.object(R, 'FEED_WAIT', 0.3):
+                R.control_new(9, forward=True)
+            argv = R.shlex.split(next(c for c in opened if c[0] == 'new-window')[-1])
+            check('--forward' in argv and argv[argv.index('--feed-sid') + 1] == sid and '--ask-file' not in argv
+                  and 'status' not in argv, 'B72: a message not in the transcript yet is not guessed at: control N '
+                  'waits for it itself', argv)
+            th = threading.Thread(target=lambda: (time.sleep(0.6), add(hum(msg, 'u3'),
+                                                                       call('run control --new --forward'))))
+            th.start()
+            with contextlib.redirect_stdout(io.StringIO()):
+                got = R.forward_late(9, sid, wait=10)
+            th.join()
+            eq(got, msg, 'B72: control N --forward --feed-sid takes the late message, word for word')
+            with contextlib.redirect_stdout(io.StringIO()):
+                got = R.forward_late(9, sid, wait=0.3)
+            eq(got, R.feed_lost_note(), 'B72: a message that never shows opens the session saying so, not with an '
+               'older one')
 
 
 def test_board_follows_run(repo: Path, tmp: Path):
