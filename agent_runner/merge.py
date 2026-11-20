@@ -21,7 +21,7 @@ from pathlib import Path
 from agent_runner import plan as P, plat
 from agent_runner.done import TESTED, gate
 from agent_runner.gitops import _net
-from agent_runner.state import C, clean, git, LANDING, log, MERGE, note, plan_rel, plan_text, ROOT, SLOTS_DIR, TASK
+from agent_runner.state import C, clean, git, hook, LANDING, log, MERGE, note, plan_rel, plan_text, ROOT, SLOTS_DIR
 from agent_runner.slots import (agent_cmd, backend, entries, env_vars, MASTER_IDLE, merge_env, MUX, pane, slot_env,
     trim, window, worktree)
 from agent_runner.join import joined, LANDED, merge_into, renumber_doubles, task_env, TASK_SID, WAITING
@@ -663,14 +663,10 @@ def tested(tid: str, d: Path, base: str, tids: list[str] | None = None) -> str |
     FAILED[tid] = names  # for `blame`, if this is a batch that fails
     cmd = cmd.replace('{names}', ' '.join(map(plat.quote, names)))
 
-    def retest() -> sp.CompletedProcess | None:
-        try:
-            return sp.run(cmd, shell=True, cwd=str(d), capture_output=True, text=True, env=env, timeout=C.run['timeout'])
-        except sp.TimeoutExpired:
-            log(f'{tid}: the retest of {", ".join(names)} ran past [run] timeout ({C.run["timeout"]}s); counted as failing')
-            return None
+    def retest() -> tuple[int | None, str]:
+        return hook(f'{tid}: the retest of {", ".join(names)} (counted as failing)', cmd, d, env)
 
-    if (r := retest()) and not r.returncode:
+    if retest()[0] == 0:
         log(f'{tid}: {", ".join(names)} failed, then passed alone (load); counted as passing')
         flaky(tid, names)
         return None
@@ -681,12 +677,12 @@ def tested(tid: str, d: Path, base: str, tids: list[str] | None = None) -> str |
         log(f'{tid}: could not check out {base[:12]} to rerun {", ".join(names)} there: {co.stderr.strip()[:200]}')
         return why
     try:
-        r = retest()
+        rc, said = retest()
     finally:
         clean(d)
         git('checkout', '-q', '--detach', head, cwd=d)
     # ponytail: name-level match; a branch that breaks an already-failing test some other way slips through
-    old = set(re.findall(rx, r.stdout + r.stderr, re.M)) & set(names) if r and r.returncode else set()
+    old = set(re.findall(rx, said, re.M)) & set(names) if rc else set()
     for n in old:
         BROKEN.setdefault(n, (tid, base, full and bool(C.run['test_since'])))
     if old >= set(names):
@@ -734,11 +730,10 @@ def blame(tids: list[str], d: Path, base: str, names: list[str]) -> list[str]:
         for t in group:
             if (files := merge_into(d, fixed(t), f'Merge task/{t} alone', t)) is None or files and not joined(files, t, d):
                 return None
-        try:
-            r = sp.run(cmd, shell=True, cwd=str(d), capture_output=True, text=True, env=env, timeout=C.run['timeout'])
-        except sp.TimeoutExpired:
+        rc, said = hook(f'blame: the retest of {", ".join(group)}', cmd, d, env)
+        if rc is None:
             return None
-        return bool(r.returncode and set(re.findall(C.run['failures'], r.stdout + r.stderr, re.M)) & set(names))
+        return bool(rc and set(re.findall(C.run['failures'], said, re.M)) & set(names))
 
     def search(group: list[str], failing: bool) -> list[str]:
         if len(group) == 1:
@@ -781,14 +776,8 @@ def merge(tid: str, branch: str) -> str | None:
 def criticals(branch: str) -> set[str]:
     """The tasks critical in the plan (a `(follow-up, critical)` tag, or a section named Critical): fixes for a
     red shared branch or a flaky test, which every other merge's gate is waiting on. They merge alone, first."""
-    out, section = set(), ''
-    for l in plan_text(branch):
-        if l.startswith('### '):
-            section = l[4:]
-        elif (m := TASK.match(l)) and m.group(1) != 'x' and ('critical' in section.lower() or
-                                       ((t := P.PRI_TAG.search(l)) and t.group(1) == 'critical')):
-            out.add(m.group(2))
-    return out
+    return {tid for section, box, tid, rest, _ in P.iter_tasks(plan_text(branch)) if box != 'x' and (
+        'critical' in section.lower() or ((t := P.PRI_TAG.search(rest)) and t.group(1) == 'critical'))}
 
 
 def critical(tid: str, branch: str) -> bool:
@@ -1312,9 +1301,4 @@ def merge_batch(tid: str, branch: str, inline: bool = False, yields: bool = True
 
 def before_start_fails() -> bool:
     """`[run] before_start` exits non-zero, or runs past `[run] timeout` (logged: it holds every start)."""
-    try:
-        return bool(sp.run(C.run['before_start'], shell=True, cwd=str(ROOT), capture_output=True,
-                           timeout=C.run['timeout']).returncode)
-    except sp.TimeoutExpired:
-        log(f'`{C.run["before_start"]}` ran past [run] timeout ({C.run["timeout"]}s): counted as failing')
-        return True
+    return hook('before_start (counted as failing)', C.run['before_start'], ROOT)[0] != 0

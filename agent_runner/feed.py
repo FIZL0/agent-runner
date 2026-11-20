@@ -17,7 +17,7 @@ from pathlib import Path
 
 from agent_runner import plan as P, plat
 from agent_runner.config import RUNNER, main_checkout, runner_cmd, shown_cmd
-from agent_runner.state import BOARD_TAG, C, log, REPO_TAG, ROOT, RUN_TAG, run_up, TAG, task_titles
+from agent_runner.state import BOARD_TAG, C, log, REPO_TAG, ROOT, RUN_TAG, run_up, TAG
 from agent_runner.slots import (attach_target, background_env, background_session, MUX, remote_off_why, remote_on,
     REMOTE_URL, tmux, TmuxMux, transcript, window)
 from agent_runner.land import wip_main_info
@@ -47,7 +47,7 @@ def board(run_pid: int = 0) -> int:
         lines = C.notes('run.log').read_text(encoding='utf-8', errors='replace').splitlines()
     except OSError:
         lines = []
-    print(since_text(lines, now - dt.timedelta(hours=6), task_titles(), now, waiting=waiting_ok(),
+    print(since_text(lines, now - dt.timedelta(hours=6), P.titles(C.done, C.todo), now, waiting=waiting_ok(),
                      wips=wip_main_info())[0], flush=True)
     return follow(mark=False, end=(lambda: not plat.alive(run_pid)) if run_pid else None)
 

@@ -3066,7 +3066,7 @@ def test_prompt_and_hooks(repo: Path):
             eq(R.remote_flags('slot2', None), ['--remote-control', f'{R.ROOT.name} s2'],
                'with [run] remote_slots a slot starts on Remote Control, named')
             with mock.patch.object(R, 'git', return_value=mock.Mock(stdout='task/F10\n')), \
-                    mock.patch.object(R, 'short_title_of', return_value='Attach to the background run'):
+                    mock.patch.object(R.P, 'titles', return_value={'F10': 'Attach to the background run'}):
                 eq(R.remote_flags('slot2', R.ROOT), ['--remote-control',
                                                      f'Attach to the background run · {R.ROOT.name} s2 · F10'],
                    'the task title leads the session name, its id last')

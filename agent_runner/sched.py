@@ -10,35 +10,32 @@ from contextlib import ExitStack
 
 from agent_runner import plan as P, plansync
 from agent_runner.state import (alarm, C, commit_plan, edited, FETCHED, git, log, MERGE, note, plan_rel, plan_text,
-    queued, ROOT, SLOTS_DIR, TASK)
+    queued, ROOT, SLOTS_DIR)
 
 
 # --- picking the next task -----------------------------------------------------
 
 def open_tasks(branch: str) -> set[str]:
     """Ids of the open ([ ]) top-level tasks in `branch`'s TODO.md."""
-    return {m.group(2) for l in plan_text(branch) if (m := TASK.match(l)) and m.group(1) == ' '}
+    return {tid for _, box, tid, _, _ in P.iter_tasks(plan_text(branch)) if box == ' '}
 
 
 def blocked_tasks(branch: str) -> set[str]:
     """Ids of the blocked ([~]) top-level tasks in `branch`'s TODO.md."""
-    return {m.group(2) for l in plan_text(branch) if (m := TASK.match(l)) and m.group(1) == '~'}
+    return {tid for _, box, tid, _, _ in P.iter_tasks(plan_text(branch)) if box == '~'}
 
 
 def tasks(branch: str) -> list[tuple[str, str, set[str], set[str]]]:
     """Open tasks in TODO.md order: (id, section, its `files:`, its `after:`)."""
     ls = plan_text(branch)
     # open and blocked: neither is done, so a split parent or an `after:` still waits on a blocked X
-    open_ids = {m.group(2) for l in ls if (m := TASK.match(l)) and m.group(1) != 'x'}
-    out, section = [], ''
-    for i, l in enumerate(ls):
-        if l.startswith('### '):
-            section = l[4:]
+    open_ids = {tid for _, box, tid, _, _ in P.iter_tasks(ls) if box != 'x'}
+    out = []
+    for section, box, tid, _, i in P.iter_tasks(ls):
+        if box != ' ' or section.startswith(P.SKIPPED):
             continue
-        m = TASK.match(l)
-        if not m or m.group(1) != ' ' or section.startswith(P.SKIPPED):
-            continue
-        tid, f = m.group(2), P.fields(l)
+        l = ls[i]
+        f = P.fields(l)
         if P.LAST in f.get('after', []):  # `after: all above`, resolved afresh on every pick (F43)
             f['after'] = P.waits_on(ls, i)
         # a split parent: its subtasks run first, blocked ones included, then it runs (or `archive` ticks it).
@@ -57,17 +54,14 @@ def by_waiters(ls: list[str], out: list[tuple]) -> list[tuple]:
     """`out` with each task a waiting one depends on moved up to where that one stands: a task in a Next
     section with `after: S281` on a Follow-up would otherwise wait for every task between them, and
     so would everything waiting on it. Transitive; Stretch and Parked lines pull nothing up."""
-    rank, waits, section = {}, {}, ''
-    for l in ls:
-        if l.startswith('### '):
-            section = l[4:]
+    rank, waits = {}, {}
+    for section, box, tid, _, n in P.iter_tasks(ls):
+        if box == 'x':
             continue
-        m = TASK.match(l)
-        if not m or m.group(1) == 'x':
-            continue
-        rank.setdefault(m.group(2), len(rank))
+        rank.setdefault(tid, len(rank))
         if not section.startswith(P.SKIPPED):
-            waits[m.group(2)] = set(P.fields(l).get('after', [])) | {
+            l = ls[n]
+            waits[tid] = set(P.fields(l).get('after', [])) | {
                 i for a in P.WAITS.findall(l) for i in P.TASK_ID.findall(a)}  # and a block's `(after X)`
     for _ in range(len(waits)):  # each pass moves a rank one link down a chain
         moved = False

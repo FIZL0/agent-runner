@@ -20,7 +20,7 @@ from pathlib import Path
 from agent_runner import plan as P, plansync, plat
 from agent_runner.config import RUNNER, runner_cmd, shown_cmd
 from agent_runner.state import (ask_stop, C, clear_stop, default_branch, edited, git, init, queued, REPO_TAG, ROOT,
-    RUN_TAG, run_up, SLOTS_DIR, TAG, task_titles)
+    RUN_TAG, run_up, SLOTS_DIR, TAG)
 from agent_runner.brief import has_sheet, prompt_for, wizard_cmd, wizard_file
 from agent_runner.sched import ahead, open_tasks
 from agent_runner.slots import (attach_target, backend, background_env, background_session, claude_json, entries,
@@ -285,7 +285,7 @@ def cmd_status(argv: list[str], prog: str = f'{RUNNER} status') -> int:
         lines = C.notes('run.log').read_text(encoding='utf-8', errors='replace').splitlines()
     except OSError:
         lines = []
-    print(status_text(up, st, lines, task_titles(), time.time(), waiting=waiting_ok(), wips=wip_main_info(),
+    print(status_text(up, st, lines, P.titles(C.done, C.todo),time.time(), waiting=waiting_ok(), wips=wip_main_info(),
                       progress='\n'.join(x for x in (progress_line(a.window), release_line(P.lines(C.todo))) if x)))
     if lines and a.n:
         print('\nrun.log:\n' + '\n'.join(f'  {l}' for l in lines[-a.n:]))
@@ -334,7 +334,7 @@ def cmd_since(argv: list[str], prog: str = f'{RUNNER} since') -> int:
         lines = C.notes('run.log').read_text(encoding='utf-8', errors='replace').splitlines()
     except OSError:
         lines = []
-    text, last = since_text(lines, start, task_titles(), now, since_mark=not a.when and bool(mark),
+    text, last = since_text(lines, start, P.titles(C.done, C.todo), now, since_mark=not a.when and bool(mark),
                             waiting=waiting_ok(), wips=wip_main_info())
     print(text)
     move_since_mark(last or now.isoformat())

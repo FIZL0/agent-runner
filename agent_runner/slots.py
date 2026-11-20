@@ -17,10 +17,10 @@ import urllib.parse
 import uuid
 from pathlib import Path
 
-from agent_runner import plat
+from agent_runner import plan as P, plat
 from agent_runner.config import finished_mark, runner_cmd, shown_cmd
 from agent_runner.gitops import push
-from agent_runner.state import C, clean, git, HIDDEN, log, note, REPO_TAG, ROOT, short_title, SLOTS_DIR, TAG, TASK
+from agent_runner.state import C, clean, git, HIDDEN, hook, log, note, REPO_TAG, ROOT, SLOTS_DIR, TAG
 from agent_runner.brief import NO_PUSH_URLS, prompt_for, review_on
 from agent_runner.sched import ahead, blocked_tasks, open_tasks, tasks
 
@@ -480,21 +480,8 @@ def remote_flags(name: str, cwd: Path | None) -> list[str]:
     if not remote_slots_on():
         return []
     tid = git('branch', '--show-current', cwd=cwd).stdout.strip().removeprefix('task/') if cwd else ''
-    title = short_title_of(tid, 50) if tid else ''
+    title = P.titles(C.done, C.todo, width=50).get(tid, '') if tid else ''
     return ['--remote-control', ' · '.join(x for x in (title, f"{ROOT.name} {name.replace('slot', 's')}", tid) if x)]
-
-
-def short_title_of(tid: str, width: int = 60) -> str:
-    """Task `tid`'s `short_title` from TODO.md or DONE.md, '' when neither has it."""
-    for f in (C.todo, C.done):
-        try:
-            text = f.read_text(encoding='utf-8')
-        except OSError:
-            continue
-        for l in text.splitlines():
-            if (m := TASK.match(l)) and m.group(2) == tid:
-                return short_title(m.group(3), width)
-    return ''
 
 
 def agent_cmd(prompt: str, sid: str, model: str, idle: int, name: str, resume: bool = False,
@@ -764,10 +751,7 @@ def trim(d: Path, what: str, why: str = '') -> bool:
                 f'({", ".join(names[:5])}{more}), now {du(d) / GB:.1f} GB')
             return bool(names)
     cmd = C.run['slot_clean'] or 'git clean -ffdXq'
-    try:
-        sp.run(cmd, shell=True, cwd=str(d), capture_output=True, timeout=C.run['timeout'])
-    except sp.TimeoutExpired:
-        log(f'{what}: `{cmd}` ran past [run] timeout; stopped')
+    hook(what, cmd, d)
     log(f'{what}: {size / GB:.1f} GB, {why}: cleaned with `{cmd}`, now {du(d) / GB:.1f} GB')
     return True
 

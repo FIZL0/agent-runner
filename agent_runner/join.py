@@ -10,7 +10,7 @@ import subprocess as sp
 from pathlib import Path
 
 from agent_runner import plan as P, plat
-from agent_runner.state import C, git, log, note, plan_rel, TASK
+from agent_runner.state import C, git, hook, log, note, plan_rel
 
 
 def joinable(f: str) -> bool:
@@ -49,15 +49,13 @@ def custom_join(f: str, sides: list[str], text: str, tid: str, cwd: Path) -> str
     u.write_text(text, encoding='utf-8')
     out.write_text(text, encoding='utf-8')
     vals = dict(ours=sides[0], base=sides[1], theirs=sides[2], union=str(u), out=str(out), file=f)
-    try:
-        r = sp.run(cmd.format_map({k: plat.quote(v) for k, v in vals.items()}), shell=True, cwd=str(cwd),
-                   capture_output=True, text=True, errors='replace', timeout=C.run['timeout'])
-    except sp.TimeoutExpired:
-        log(f'{tid}: the [run.join] command for {f} ran past [run] timeout ({C.run["timeout"]}s); join refused')
+    rc, said = hook(f'{tid}: the [run.join] command for {f} (join refused)',
+                    cmd.format_map({k: plat.quote(v) for k, v in vals.items()}), cwd)
+    if rc is None:  # ran past [run] timeout: `hook` logged it
         return None
-    if r.returncode:
-        log(f'{tid}: the [run.join] command for {f} refused the join (exit {r.returncode}): '
-            + ' / '.join((r.stdout + r.stderr).strip().splitlines()[-3:])[:300])
+    if rc:
+        log(f'{tid}: the [run.join] command for {f} refused the join (exit {rc}): '
+            + ' / '.join(said.strip().splitlines()[-3:])[:300])
         return None
     try:
         return out.read_text(encoding='utf-8')
@@ -112,8 +110,8 @@ def renumber_doubles(ref: str, onto: str, tid: str, cwd: Path) -> str:
     show = lambda rev, f: git('show', f'{rev}:{f}', cwd=cwd).stdout.splitlines() if rev else []
 
     def ids(rev):
-        return {m.group(2).rstrip('.'): re.sub(r'^- \[.\] ', '', l)
-                for f in files for l in show(rev, f) if (m := TASK.match(l))}
+        return {tid.rstrip('.'): f'**{tid}**{rest}'
+                for f in files for _, _, tid, rest, _ in P.iter_tasks(show(rev, f))}
 
     old, theirs, ours = ids(base), ids(ref), ids(onto)
     doubled = [k for k in theirs if k not in old and k in ours and k != tid and theirs[k] != ours[k]]
