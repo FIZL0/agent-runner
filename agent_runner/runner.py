@@ -6571,8 +6571,24 @@ def control_settings() -> Path:
     return f
 
 
-def control_name(n: int) -> str:
-    return f'{ROOT.name} · control {n}'
+def control_title(ask: str = '', images: list[str] | tuple = ()) -> str:
+    """A short title for a control session opened with `--ask`: the ask's first words (up to 5, trimmed at a word
+    to about 40 characters, trailing punctuation dropped); "screenshot" for an image-only ask; "" without one."""
+    words = (ask or '').split()[:5]
+    while len(' '.join(words)) > 40 and len(words) > 1:
+        words.pop()
+    title = ' '.join(words)
+    if len(title) > 40:
+        title = title[:39].rstrip() + '…'
+    title = title.rstrip(' ,.;:-–—')
+    return title or ('screenshot' if images else '')
+
+
+def control_name(n: int, ask: str = '', images: list[str] | tuple = ()) -> str:
+    """Control session `n`'s name in the Claude apps (B25): "<repo> · N · <title>" when opened with an ask
+    (`control_title`; N kept so higher is newer and `attach cN` still matches), else "<repo> · control N"."""
+    title = control_title(ask, images)
+    return f'{ROOT.name} · {n} · {title}' if title else f'{ROOT.name} · control {n}'
 
 
 def control_ask(ask: str, images: list[str] | tuple = ()) -> str:
@@ -6602,13 +6618,13 @@ def control_argv(n: int, sid: str, resume: bool, blank: bool = False, ask: str =
     from agent_runner.guide import CONTROL_START, CONTROL_START_WATCH
     opening = CONTROL_START.format(cmd=C.command, watch_start='' if feed_on() else
                                    CONTROL_START_WATCH.format(cmd=C.command))
-    ask = control_ask(ask, images)
+    ask_text, ask = ask, control_ask(ask, images)
     first = [ask] if ask else [opening] if n == 1 and not blank else []
     return [plat.exe(C.run['agent']), *first,
             '--resume' if resume else '--session-id', sid, '--model', C.run['model'],
             '--permission-mode', 'bypassPermissions',
             '--settings', str(control_settings()), '--add-dir', str(control_skills_dir()),
-            *(['--remote-control', control_name(n)] if remote_on() and not local else [])]
+            *(['--remote-control', control_name(n, ask_text, images)] if remote_on() and not local else [])]
 
 
 def control_live(n: int) -> int:
@@ -7082,7 +7098,7 @@ def control_new(n: int | None = None, wait: float = CONTROL_LINK_WAIT, ask: str 
         images += [i for i in feed_images() if i not in images]
     cmd = [*runner_cmd(), 'control', str(n), *(['--ask', ask] if ask else []),
            *[x for i in images for x in ('--image', i)]]
-    name = control_name(n)
+    name = control_name(n, ask, images)
     if plat.WINDOWS:
         plat.spawn_console(cmd, ROOT, control_env(), hidden=True)
         print(f'control {n} is up in a hidden console' +
@@ -7094,7 +7110,7 @@ def control_new(n: int | None = None, wait: float = CONTROL_LINK_WAIT, ask: str 
         return 1
     env = [e for e in background_env() if not e.startswith(('AGENT_RUNNER=', 'AGENT_RUNNER_SLOT=', 'AGENT_RUNNER_KEEP='))]
     envs = [x for e in env for x in ('-e', e)]
-    win = window(f'control{n}')
+    win = name if control_title(ask, images) else window(f'control{n}')
     r = tmux('new-window', '-d', '-t', f'={sess}:', '-n', win, '-c', str(ROOT), *envs, '-P', '-F', '#{pane_id}',
              plat.command_text(cmd))
     if r.returncode or not (pane := r.stdout.strip()):

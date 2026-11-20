@@ -1633,6 +1633,24 @@ def test_short_titles_and_since(repo: Path):
         check(ca[1].startswith('why is this red?') and '"/t/a.png"' in ca[1] and '"/t/b b.png"' in ca[1]
               and ca[1].count('Read it') == 2, 'control --image: each attached image is named in the first message',
               ca[1])
+        rn = R.ROOT.name
+        eq(R.control_name(3), f'{rn} · control 3', 'B25: no ask keeps the old control name')
+        eq(R.control_name(7, 'fix the login flicker'), f'{rn} · 7 · fix the login flicker',
+           'B25: an ask titles the control name, N kept')
+        eq(R.control_name(4, 'why does the merge step keep failing on Windows runners today?'),
+           f'{rn} · 4 · why does the merge step', 'B25: the title is the first five words')
+        t = R.control_title('internationalisation-of-everything ' * 3)
+        check(len(t) <= 40, 'B25: the title stays near 40 characters', t)
+        eq(R.control_title('supercalifragilistic expialidocious extraordinarily verbose'),
+           'supercalifragilistic expialidocious', 'B25: trimmed at a word')
+        eq(R.control_name(5, '', ['/t/a.png']), f'{rn} · 5 · screenshot', 'B25: an image-only ask is a screenshot')
+        eq(R.control_title('look at this:', ['/t/a.png']), 'look at this', 'B25: trailing punctuation dropped')
+        with mock.patch.object(R, 'remote_on', lambda: True):
+            ca = R.control_argv(6, 'sid', False, ask='fix the login flicker\n\nplease', images=['/t/a.png'])
+            eq(ca[ca.index('--remote-control') + 1], f'{rn} · 6 · fix the login flicker please',
+               'B25: control --ask is on Remote Control under the titled name')
+            ca = R.control_argv(6, 'sid', False)
+            eq(ca[ca.index('--remote-control') + 1], f'{rn} · control 6', 'B25: without an ask, the old name')
         from agent_runner.guide import RUNNER_BRIEF
         check('--image' not in RUNNER_BRIEF, 'the feed brief leaves images to control --new', RUNNER_BRIEF)
         with tempfile.TemporaryDirectory() as tdir:

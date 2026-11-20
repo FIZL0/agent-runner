@@ -4,6 +4,11 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Control sessions opened with an ask are named after it in the Claude apps' session list: `control --new
+  --ask TEXT` is "<repo> · N · <first words of TEXT>" (up to 5 words, about 40 characters; "screenshot" for
+  an image-only ask) instead of "<repo> · control N", on Remote Control and as its tmux window. N stays, so
+  higher is newer and `attach cN` still works; control 1 and a blank `control --new` keep the old name.
+
 ## 0.50.3 (2026-11-20)
 
 - Control sessions show a concept inline for any "show me first" wording ("show me a concept first", "mock it
