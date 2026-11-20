@@ -497,6 +497,23 @@ def test_similar():
         eq(plan.similar('about which those through every would | files: src/hud.rs, src/garage.rs, src/tiles.rs',
                         todo=todo), [], 'C5: similar matches no task on stop words, file paths or ids alone')
         eq(plan.similar('V1 V2 V3 should those | files: x.rs', todo=todo), [], 'C5: nor on the ids it names')
+    # B42: sweep tasks share a template's wording but cover different pages
+    with tempfile.TemporaryDirectory() as tmp:
+        d = Path(tmp) / 'plan'
+        todo, done = plan.ensure(d / 'TODO.md', d / 'DONE.md')
+        kw = dict(todo=todo, done=done)
+        sweep = 'sweep the page: replace hardcoded colours with theme tokens and check contrast'
+        plan.add('F', f'{sweep} | files: pages/about.html', **kw)
+        plan.add('F', 'the garage paints bikes | files: src/garage.rs', **kw)
+        plan.add('F', 'stream tiles nearest first | files: src/tiles.rs', **kw)
+        eq(plan.similar(f'{sweep} | files: pages/contact.html', todo=todo), [],
+           'B42: same words, disjoint files: different work')
+        eq([g.split(':')[0] for g in plan.similar(f'{sweep} | files: pages/about.html', todo=todo)], ['F1'],
+           'B42: same words, the same file: still a match')
+        eq([g.split(':')[0] for g in plan.similar(f'{sweep} | files: pages/**', todo=todo)], ['F1'],
+           'B42: a pattern that meets the other\'s file overlaps')
+        eq([g.split(':')[0] for g in plan.similar(sweep, todo=todo)], ['F1'],
+           'B42: a new task naming no files still matches on words')
 
 
 def test_add_refuses_a_duplicate():

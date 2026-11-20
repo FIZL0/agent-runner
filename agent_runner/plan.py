@@ -863,6 +863,8 @@ def similar(text: str, todo=None, skip: str | None = None, limit: int = 3) -> li
         return []
     hits = []
     for (tid, w2, f2), (_, line) in zip(docs, tasks):
+        if fs and f2 and not overlap(fs, f2):
+            continue  # B42: both name files and share none (a sweep's template wording on other pages): other work
         score = sum(weight(w) for w in ws & w2) / total
         rare = any(hub[f] <= 3 for f in fs & f2)
         if score >= 0.5 or (rare and score >= 0.3):
