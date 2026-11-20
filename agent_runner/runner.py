@@ -66,6 +66,7 @@ import sys
 import tempfile
 import threading
 import time
+import urllib.parse
 import uuid
 import webbrowser
 from contextlib import ExitStack, contextmanager, redirect_stdout
@@ -430,7 +431,7 @@ def take_keys() -> None:
         while KEYS:
             k, _, want = KEYS.pop(0).partition(' ')
             if not k:
-                if C.run['remote'] or C.run['remote_slots']:
+                if remote_any():
                     open_remote()
                 continue
             on = {'s': stopping, 'p': lambda: PAUSED[0], 'f': lambda: FORCED[0],
@@ -1058,7 +1059,10 @@ class Claude:
                 *(['--append-system-prompt-file', str(brief)] if brief.exists() else []),
                 # lean() drops user settings, where the bypass dialog's opt-out lives; nobody is there to answer it
                 '--settings', json.dumps({'skipDangerousModePermissionPrompt': True,
-                                          'hooks': {'Stop': stop, 'StopFailure': stop}})]
+                                          'hooks': {'Stop': stop, 'StopFailure': stop},
+                                          # on Remote Control a slot never pushes (`quiet_file` too)
+                                          **({'agentPushNotifEnabled': False, 'inputNeededNotifEnabled': False}
+                                             if remote_slots_on() else {})})]
 
     def cmd(self, prompt: str, pf: Path, sid: str, flags: list[str]) -> str:
         """sh reads the prompt file into the one argument (tmux refuses a command over about 16 KB). Past
@@ -1283,11 +1287,74 @@ def copilot_trust(*dirs: Path) -> None:
     log(f'Copilot CLI now trusts {", ".join(new)} (trustedFolders in {f})')
 
 
+REMOTE_ENV_FLAGS = ('CLAUDE_CODE_USE_BEDROCK', 'CLAUDE_CODE_USE_VERTEX', 'CLAUDE_CODE_USE_FOUNDRY')
+
+
+def remote_off_why(dialog: bool = True) -> str:
+    """Why `[run] remote = 'auto'` leaves Remote Control off, or '' when it can work: Remote Control is Claude
+    Code on a claude.ai login, so not pi or Copilot CLI, not an API key or token, not Bedrock, Vertex or Foundry,
+    not another ANTHROPIC_BASE_URL. `dialog`: also off while Claude Code's one-time "Enable Remote Control?" has
+    not been answered yes (`remote_ready` asks it at a terminal), which would hold a session in a hidden pane."""
+    if pi():
+        return 'backend pi (Remote Control is Claude Code\'s)'
+    if copilot():
+        return 'agent copilot (Remote Control is Claude Code\'s)'
+    for k in ('ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN'):
+        if os.environ.get(k):
+            return f'{k} is set (Remote Control needs a claude.ai login)'
+    for k in REMOTE_ENV_FLAGS:
+        if os.environ.get(k, '').strip().lower() not in ('', '0', 'false', 'no', 'off'):
+            return f'{k} is set (Remote Control needs a claude.ai login)'
+    if (base := os.environ.get('ANTHROPIC_BASE_URL', '').strip()) and \
+            urllib.parse.urlsplit(base).hostname != 'api.anthropic.com':
+        return f'ANTHROPIC_BASE_URL is {base}, not api.anthropic.com'
+    if dialog and not remote_dialog_seen():
+        return ('Claude Code has not been told yes to Remote Control yet (run `claude remote-control` once, or '
+                f'{RUNNER} at a terminal, and answer y)')
+    return ''
+
+
+def remote_dialog_seen() -> bool:
+    try:
+        return bool(json.loads(claude_json().read_text(encoding='utf-8')).get('remoteDialogSeen'))
+    except (OSError, ValueError, AttributeError):
+        return False
+
+
+def remote_on() -> bool:
+    """`[run] remote`, resolved: control sessions and the control server on Remote Control. 'auto' is on when
+    `remote_off_why` finds nothing; true forces it (still never for pi or Copilot CLI); false keeps it off."""
+    v = C.run['remote']
+    if v == 'auto':
+        return not remote_off_why()
+    return bool(v) and not copilot() and not pi()
+
+
+def remote_slots_on() -> bool:
+    """`[run] remote_slots`: the slots on Remote Control too (never under 'auto' alone, and never pi or Copilot)."""
+    return C.run['remote_slots'] is True and not copilot() and not pi()
+
+
+def remote_any() -> bool:
+    return remote_on() or remote_slots_on()
+
+
+def remote_line() -> str:
+    """The run's one log line on Remote Control: what is on it, or (under 'auto') why it is off."""
+    on, slots = remote_on(), remote_slots_on()
+    if on or slots:
+        what = 'control sessions and the slots' if on and slots else 'control sessions' if on else 'slots'
+        return f'remote control on: the {what} show at {REMOTE_URL} and in the Claude apps; Enter here opens it'
+    if C.run['remote'] == 'auto':
+        return f'remote control off: {remote_off_why()}; [run] remote = true forces it'
+    return ''  # false: off, as asked, and nothing to say
+
+
 def remote_flags(name: str, cwd: Path | None) -> list[str]:
     """`[run] remote_slots`: the session shows in claude.ai/code and the Claude apps as "<repo> · s2 · B646", where a
     person can watch it and type to it. Claude Code only, and only an interactive session (not Pi, not Copilot).
     (`[run] remote` alone puts only the control sessions there: `control_argv`.)"""
-    if not C.run['remote_slots'] or copilot() or pi():
+    if not remote_slots_on():
         return []
     tid = git('branch', '--show-current', cwd=cwd).stdout.strip().removeprefix('task/') if cwd else ''
     return ['--remote-control', ' · '.join(x for x in (ROOT.name, name.replace('slot', 's'), tid) if x)]
@@ -1414,7 +1481,23 @@ def slot_env(n: int | None) -> list[str]:
         env.append(f'AGENT_RUNNER_CONFIG={C.file}')
     env += [f'{k}={os.environ[k]}' for k in C.run['pass_env'] if k in os.environ]
     return env + (shared_env() if n is None else [e.format(n=n, slots=SLOTS) for e in C.run['slot_env']]) + \
-        [f'{k}={v}' for k, v in no_push_env().items()]
+        [f'{k}={v}' for k, v in no_push_env().items()] + \
+        ([f'{PRESENCE_ENV}={quiet_file("slots")}'] if n is not None and remote_slots_on() else [])
+
+
+PRESENCE_ENV = 'CLAUDE_CLIENT_PRESENCE_FILE'  # while the file it names exists, Claude Code sends no mobile push
+
+
+def quiet_file(who: str, on: bool = True) -> Path:
+    """`<notes>/quiet-<who>`, the file a Remote Control session's CLAUDE_CLIENT_PRESENCE_FILE names: made (`on`) or
+    removed. "slots" is kept for good (a slot never pushes to the phone); a control session's and the control
+    server's are there only while it starts, so its launch is silent and its later pushes still arrive."""
+    f = C.notes(f'quiet-{who}')
+    try:
+        f.touch() if on else f.unlink(missing_ok=True)
+    except OSError:
+        pass
+    return f
 
 
 def env_vars(env) -> dict[str, str]:
@@ -5058,10 +5141,8 @@ def run(argv: list[str], prog: str) -> int:
     reserve_branch_ids()
     log(f'run: {slots} slots in {MUX.name}, merging into {branch}' +
         (f', session usage {usage_pct("five_hour")}%, weekly usage {weekly()}%' if not a.force and r['agent'] == 'claude' else ''))
-    if (r['remote'] or r['remote_slots']) and not copilot() and not pi():
-        log(f'remote control on: the ' + ('control sessions' if not r['remote_slots'] else 'slots' if not r['remote']
-                                          else 'control sessions and the slots') +
-            f' show at {REMOTE_URL} and in the Claude apps; Enter here opens it')
+    if rline := remote_line():
+        log(rline)
     from agent_runner import context
     if heavy := context.warning(ROOT, r['rules'], C.raw['plan']['context_kb']):
         log(heavy)
@@ -5868,8 +5949,11 @@ def claude_json() -> Path:
 def remote_ready(tty: bool | None = None, ask=input) -> bool:
     """With `[run] remote`: will Claude Code start a slot without its one-time "Enable Remote Control? (y/n)"?
     In a hidden pane that question would hold every slot, so it is asked here, in this terminal, and the
-    answer kept where Claude Code keeps it (`remoteDialogSeen` in ~/.claude.json). False: start nothing."""
-    if not (C.run['remote'] or C.run['remote_slots']) or copilot() or pi():
+    answer kept where Claude Code keeps it (`remoteDialogSeen` in ~/.claude.json). False: start nothing.
+    Under `[run] remote = 'auto'` (and no remote_slots) it never stops a run: with no terminal to ask on, or
+    answered no, the run starts with Remote Control off, and its log says why."""
+    auto = C.run['remote'] == 'auto' and not remote_slots_on()
+    if not (remote_slots_on() or (not remote_off_why(dialog=False) if auto else remote_on())):
         return True
     f = claude_json()
     try:
@@ -5878,6 +5962,8 @@ def remote_ready(tty: bool | None = None, ask=input) -> bool:
         data = None
     if data is not None and data.get('remoteDialogSeen'):
         return True
+    if auto and (not (sys.stdin.isatty() if tty is None else tty) or data is None):
+        return True  # off for this run: remote_off_why says so in its log
     if not (sys.stdin.isatty() if tty is None else tty) or data is None:
         print(f'[run] remote is on, and Claude Code asks once, at a terminal, before Remote Control starts.\n'
               f'Run `claude remote-control` in a terminal and answer y (it does not ask again), then {RUNNER} again;\n'
@@ -5889,6 +5975,10 @@ def remote_ready(tty: bool | None = None, ask=input) -> bool:
         yes = ask('Enable Remote Control? (y/n) ').strip().lower() in ('y', 'yes')
     except EOFError:
         yes = False
+    if not yes and auto:
+        print('Remote Control stays off for this run. [run] remote = false (runner.local.toml for this machine) '
+              'stops this question.')
+        return True
     if not yes:
         print(f'Nothing started: the slots would stop at that question. Set [run] remote = false to run '
               f'without Remote Control.', file=sys.stderr)
@@ -5929,9 +6019,9 @@ def started_note(slots: int, where: str) -> str:
              f'    {RUNNER} stop       finish the running tasks, then end it (--force: now)']
     if C.run['control'] and control_ok():
         lines.append(f'    {RUNNER} control    a control session in this terminal (c1 runs beside the run: attach c1)')
-    if C.run['remote'] and not copilot() and not pi():
+    if remote_on():
         lines.append(f'    {REMOTE_URL}  the control sessions, from any device or the Claude apps')
-    elif C.run['remote_slots'] and not copilot() and not pi():
+    elif remote_slots_on():
         lines.append(f'    {REMOTE_URL}  the slots, from any device or the Claude apps')
     return '\n'.join(lines)
 
@@ -6132,7 +6222,7 @@ def control_argv(n: int, sid: str, resume: bool) -> list[str]:
             '--resume' if resume else '--session-id', sid, '--model', C.run['model'],
             *(['--tools', CONTROL_TOOLS] if C.run['lean'] else []),
             '--settings', str(control_settings()), '--add-dir', str(control_skills_dir()),
-            *(['--remote-control', control_name(n)] if C.run['remote'] else [])]
+            *(['--remote-control', control_name(n)] if remote_on() else [])]
 
 
 def control_live(n: int) -> int:
@@ -6189,10 +6279,14 @@ def cmd_control(argv: list[str], prog: str = f'{RUNNER} control') -> int:
     ap.add_argument('--new', action='store_true', help='open another one without taking focus (a window in the '
                     "run's tmux session; Windows: a hidden console) and print its claude.ai/code link")
     ap.add_argument('--brief', action='store_true', help=argparse.SUPPRESS)  # the SessionStart hook
+    ap.add_argument('--unquiet', action='store_true', help=argparse.SUPPRESS)  # `unquiet_when_up`, for session N
     a = ap.parse_args(argv)
     init()
     if a.brief:
         print(control_brief(), end='')
+        return 0
+    if a.unquiet:
+        unquiet_when_up(f'c{a.n}', os.environ.get('TMUX_PANE', ''))
         return 0
     if not control_ok():
         print(f'control sessions are Claude Code sessions; [run] agent is {C.run["agent"]}', file=sys.stderr)
@@ -6208,16 +6302,55 @@ def cmd_control(argv: list[str], prog: str = f'{RUNNER} control') -> int:
     backend().trust(ROOT)
     os.chdir(ROOT)
     pidf = C.notes(f'control{n}.pid')
+    env = control_env()
+    if '--remote-control' in argv:  # a silent launch: no push while it starts, later ones as usual
+        env[PRESENCE_ENV] = str(quiet_file(f'c{n}'))
+        if plat.WINDOWS:
+            threading.Thread(target=unquiet_when_up, args=(f'c{n}', ''), daemon=True).start()
+        else:
+            try:
+                sp.Popen([*runner_cmd(), 'control', str(n), '--unquiet'], cwd=str(ROOT), stdin=sp.DEVNULL,
+                         stdout=sp.DEVNULL, stderr=sp.DEVNULL, start_new_session=True)
+            except OSError:
+                quiet_file(f'c{n}', on=False)
+                env.pop(PRESENCE_ENV)
     if not plat.WINDOWS:  # exec: the pid in the file is the session's own
         pidf.write_text(f'{os.getpid()} {sid}', encoding='utf-8')
-        os.execvpe(argv[0], argv, control_env())
-    p = sp.Popen(argv, env=control_env())
+        os.execvpe(argv[0], argv, env)
+    p = sp.Popen(argv, env=env)
     pidf.write_text(f'{p.pid} {sid}', encoding='utf-8')
     while True:
         try:
             return p.wait()
         except KeyboardInterrupt:
             continue  # Ctrl-C is the session's (it interrupts a turn)
+
+
+QUIET_WAIT = 30  # s a starting session stays quiet where its pane cannot be read (no tmux)
+
+
+def unquiet_when_up(who: str, pane: str = '', log_file: Path | None = None, wait: float | None = None,
+                    since: int = 0) -> None:
+    """Remove `quiet_file(who)` once its session is up: its claude.ai/code link shows in tmux pane `pane`, or in
+    `log_file` past byte `since` (the control server's); or `wait` s (CONTROL_LINK_WAIT) have passed; with
+    neither to read, after QUIET_WAIT s."""
+    wait = CONTROL_LINK_WAIT if wait is None else wait
+    deadline = time.monotonic() + (wait if pane or log_file else QUIET_WAIT)
+    while time.monotonic() < deadline:
+        if pane:
+            shown = tmux('capture-pane', '-p', '-J', '-t', pane, '-S', '-200')
+            if shown.returncode or SESSION_LINK.search(shown.stdout or ''):
+                break
+        elif log_file:
+            try:
+                with open(log_file, 'rb') as fh:
+                    fh.seek(since)
+                    if REMOTE_URL.encode() in fh.read():
+                        break
+            except OSError:
+                pass
+        time.sleep(1)
+    quiet_file(who, on=False)
 
 
 def control_default_command(root: Path) -> str:
@@ -6302,7 +6435,7 @@ def control_new(n: int | None = None, wait: float = CONTROL_LINK_WAIT) -> int:
     if plat.WINDOWS:
         plat.spawn_console(cmd, ROOT, control_env(), hidden=True)
         print(f'control {n} is up in a hidden console' +
-              (f': "{name}" at {REMOTE_URL}' if C.run['remote'] else f' ({RUNNER} attach c{n} shows it)'))
+              (f': "{name}" at {REMOTE_URL}' if remote_on() else f' ({RUNNER} attach c{n} shows it)'))
         return 0
     if not shutil.which('tmux') or not (sess := control_new_session()):
         print(f'no tmux session to open it in (no run is up): start a run with {RUNNER}, or run {RUNNER} control '
@@ -6319,8 +6452,10 @@ def control_new(n: int | None = None, wait: float = CONTROL_LINK_WAIT) -> int:
     tmux('set-option', '-p', '-t', pane, TAG, f'c{n}')
     tmux('set-option', '-p', '-t', pane, REPO_TAG, str(ROOT))
     where = f'window {win} of tmux session {sess} ({RUNNER} attach c{n} goes there)'
-    if not C.run['remote']:
-        print(f'control {n} is up in {where}; it is local: [run] remote = true puts control sessions on claude.ai/code')
+    if not remote_on():
+        why = remote_off_why() if C.run['remote'] == 'auto' else ''
+        print(f'control {n} is up in {where}; it is local' +
+              (f' ({why})' if why else ': [run] remote = true puts control sessions on claude.ai/code'))
         return 0
     deadline = time.monotonic() + wait
     while True:
@@ -6361,13 +6496,18 @@ def keep_control_server() -> None:
     while True:
         proc = None
         if not (pid := control_server_live()):
+            since = out.stat().st_size if out.exists() else 0
+            env = {**control_env(), PRESENCE_ENV: str(quiet_file('server'))}  # silent while it starts
             with open(out, 'ab') as fh:
                 try:
-                    proc = sp.Popen(control_server_argv(), cwd=str(ROOT), env=control_env(), stdin=sp.DEVNULL,
+                    proc = sp.Popen(control_server_argv(), cwd=str(ROOT), env=env, stdin=sp.DEVNULL,
                                     stdout=fh, stderr=fh, start_new_session=not plat.WINDOWS)
                 except OSError as e:
+                    quiet_file('server', on=False)
                     log(f'control: the control server did not start: {e}')
                     return
+            threading.Thread(target=unquiet_when_up, args=('server',), kwargs={'log_file': out, 'since': since},
+                             daemon=True).start()
             pid = proc.pid
             pidf.write_text(str(pid), encoding='utf-8')
             log(f'control: control server up as "{ROOT.name} · control" at {REMOTE_URL} (pid {pid})')
@@ -6384,5 +6524,5 @@ def keep_control_server() -> None:
 
 
 def start_control_server() -> None:
-    if C.run['remote'] and C.run['control'] and control_ok():
+    if remote_on() and C.run['control'] and control_ok():
         threading.Thread(target=keep_control_server, name='control-server', daemon=True).start()

@@ -92,6 +92,7 @@ def make_repo(tmp: Path) -> Path:
     (repo / 'runner.toml').write_text(
         '[run]\ntest = "python3 check.py"\nshared_files = ["CHANGELOG.md"]\n'
     'min_free_gb = 0\n'
+        'remote = false\n'  # 'auto' would follow this machine's login; test_remote_auto covers it
         'joinable = ["plan/TODO.md", "plan/DONE.md", "CHANGELOG.md"]\n', encoding='utf-8')
     (repo / '.gitignore').write_text('.runner/\n', encoding='utf-8')
     git(repo, 'add', '-A')
@@ -695,6 +696,96 @@ def test_background(repo: Path):
         eq(R.remote_ready(tty=False, ask=lambda q: 1 / 0), True, 'asked once only')
     finally:
         R.C.run['remote'] = False
+
+
+def test_remote_auto(tmp: Path):
+    """[run] remote = 'auto' (the default): on for a Claude Code session on a claude.ai login, off with a reason
+    otherwise; true/false force it; the config takes nothing else. And the quiet launch's presence files."""
+    from agent_runner import config
+    d = tmp / 'remote-auto'
+    d.mkdir()
+    repo = make_repo(d)
+    for v, ok in (('"auto"', True), ('true', True), ('false', True), ('"yes"', False), ('1', False), ('"on"', False)):
+        (repo / 'runner.toml').write_text(f'[run]\nremote = {v}\n', encoding='utf-8')
+        try:
+            got = config.Config(repo).run['remote']
+        except SystemExit as e:
+            check(not ok and 'remote' in str(e), f'[run] remote = {v} is refused', str(e))
+        else:
+            check(ok, f'[run] remote = {v} is accepted ({got!r})')
+    (repo / 'runner.toml').write_text('[run]\n', encoding='utf-8')
+    eq(config.Config(repo).run['remote'], 'auto', "remote defaults to 'auto'")
+
+    rc = tmp / 'remote-auto-claude'
+    rc.mkdir()
+    base = {k: v for k, v in os.environ.items()
+            if not k.startswith('ANTHROPIC_') and k not in R.REMOTE_ENV_FLAGS} | {'CLAUDE_CONFIG_DIR': str(rc)}
+    seen = rc / '.claude.json'
+    seen.write_text('{"remoteDialogSeen": true}', encoding='utf-8')
+    off = {'ANTHROPIC_API_KEY': 'sk-x', 'ANTHROPIC_AUTH_TOKEN': 't', 'CLAUDE_CODE_USE_BEDROCK': '1',
+           'CLAUDE_CODE_USE_VERTEX': '1', 'CLAUDE_CODE_USE_FOUNDRY': 'true',
+           'ANTHROPIC_BASE_URL': 'https://llm.example.com/v1'}
+    with mock.patch.dict(R.C.run, {'remote': 'auto', 'remote_slots': False}):
+        with mock.patch.dict(os.environ, base, clear=True):
+            check(R.remote_on() and R.remote_off_why() == '', 'auto, a claude.ai login: on')
+            check('--remote-control' in R.control_argv(2, 'sid-r', resume=False), 'so control sessions are on it')
+            has(R.remote_line(), r'^remote control on: the control sessions show', 'and the log says so')
+            eq(R.remote_flags('slot2', None), [], 'auto leaves the slots local (remote_slots is false)')
+        for k, v in off.items():
+            with mock.patch.dict(os.environ, base | {k: v}, clear=True):
+                check(not R.remote_on() and k in R.remote_off_why(), f'auto, {k} set: off, and it says why')
+                has(R.remote_line(), rf'^remote control off: {k}', f'one log line for {k}')
+                check('--remote-control' not in R.control_argv(2, 'sid-r', resume=False), f'{k}: control is local')
+        for v in ('https://api.anthropic.com', 'https://api.anthropic.com/'):
+            with mock.patch.dict(os.environ, base | {'ANTHROPIC_BASE_URL': v}, clear=True):
+                check(R.remote_on(), f'auto, ANTHROPIC_BASE_URL={v}: on')
+        with mock.patch.dict(os.environ, base | {'CLAUDE_CODE_USE_BEDROCK': '0'}, clear=True):
+            check(R.remote_on(), 'auto, CLAUDE_CODE_USE_BEDROCK=0: on')
+        with mock.patch.dict(os.environ, base, clear=True):
+            for name, why in (('copilot', 'agent copilot'), ('pi', 'backend pi')):
+                with mock.patch.object(R, name, lambda: True):
+                    check(not R.remote_on() and R.remote_off_why().startswith(why), f'auto, {why}: off')
+            seen.write_text('{}', encoding='utf-8')
+            check(not R.remote_on() and 'remote-control' in R.remote_off_why(),
+                  'auto, Remote Control never allowed in Claude Code: off')
+            eq(R.remote_ready(tty=False, ask=lambda q: 1 / 0), True, 'auto, no terminal to ask on: the run starts')
+            eq(R.remote_ready(tty=True, ask=lambda q: 'n'), True, 'auto, answered no: the run starts, remote off')
+            eq(json.loads(seen.read_text(encoding='utf-8')), {}, 'and nothing is kept')
+            eq(R.remote_ready(tty=True, ask=lambda q: 'y'), True, 'auto, answered yes')
+            check(R.remote_on(), 'then on')
+        with mock.patch.dict(os.environ, base | {'ANTHROPIC_API_KEY': 'sk-x'}, clear=True):
+            eq(R.remote_ready(tty=True, ask=lambda q: 1 / 0), True, 'auto, off for another reason: nothing asked')
+    with mock.patch.dict(os.environ, base | {'ANTHROPIC_API_KEY': 'sk-x'}, clear=True):
+        with mock.patch.dict(R.C.run, {'remote': True}):
+            check(R.remote_on(), 'true forces it on')
+        with mock.patch.dict(os.environ, {'ANTHROPIC_API_KEY': ''}), mock.patch.dict(R.C.run, {'remote': False}):
+            check(not R.remote_on(), 'false keeps it off')
+            eq(R.remote_line(), '', 'and logs nothing')
+
+    # the quiet launch: slots keep their presence file, so they never push; notifications off in their settings
+    with mock.patch.dict(R.C.run, {'remote_slots': True}):
+        env = R.env_vars(R.slot_env(2))
+        flags = R.agent_flags('sid-q', 'opus', 30)
+    f = Path(env[R.PRESENCE_ENV])
+    check(f.exists() and f.name == 'quiet-slots', 'a slot on Remote Control names a presence file that exists')
+    s = json.loads(flags[flags.index('--settings') + 1])
+    eq((s['agentPushNotifEnabled'], s['inputNeededNotifEnabled']), (False, False), 'and its pushes are off')
+    with mock.patch.dict(R.C.run, {'remote_slots': False}):
+        check(R.PRESENCE_ENV not in R.env_vars(R.slot_env(2)), 'a local slot has none')
+        check('agentPushNotifEnabled' not in R.agent_flags('sid-q', 'opus', 30)[-1], 'nor the settings')
+    # a control session's (and the server's) file goes once its link shows
+    log_f = R.C.notes('quiet-test.log')
+    log_f.write_text('old https://claude.ai/code line\n', encoding='utf-8')
+    q = R.quiet_file('test')
+    t = threading.Thread(target=R.unquiet_when_up, args=('test',),
+                         kwargs={'log_file': log_f, 'since': log_f.stat().st_size, 'wait': 20})
+    t.start()
+    time.sleep(1.5)
+    check(q.exists(), 'quiet while the session starts (an old link in the log does not count)')
+    with open(log_f, 'a', encoding='utf-8') as fh:
+        fh.write(f'up: {R.REMOTE_URL}/session_abc\n')
+    t.join(10)
+    check(not q.exists() and not t.is_alive(), 'and loud again once its link shows')
 
 
 def test_control(repo: Path):
@@ -3223,7 +3314,7 @@ def main() -> int:
                        lambda: test_no_pane(repo, tmp), lambda: test_other_repos_panes(repo, tmp),
                        lambda: test_limit_lets_go(repo),
                        lambda: test_shared_push(repo, tmp), lambda: test_note_on_a_ticked_task(repo), lambda: test_adopt_merge(repo), lambda: test_followups(repo), lambda: test_ci_watch(repo), test_update_notice, test_restart_if_upgraded, test_auto_upgrade, lambda: test_flake_repair(tmp), lambda: test_repair_per_failure(repo),
-                       lambda: test_stalled(tmp), lambda: test_take(repo), lambda: test_take_text_and_here(repo), lambda: test_background(repo), lambda: test_control(repo),
+                       lambda: test_stalled(tmp), lambda: test_take(repo), lambda: test_take_text_and_here(repo), lambda: test_background(repo), lambda: test_remote_auto(tmp), lambda: test_control(repo),
                        lambda: test_short_titles_and_since(repo), lambda: test_concepts_waiting(repo)])
 
 

@@ -2,7 +2,23 @@
 
 Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md#versions).
 
-## 0.48.0 (2026-11-19)
+## Unreleased
+
+- **Changed default: `[run] remote` is now `auto`, so control sessions and the control server go on Remote
+  Control by default** (they were local unless you set `remote = true`). Auto turns it on only where it can
+  work and otherwise leaves it off with one line in `run.log` saying why: the backend is pi, the agent is
+  Copilot CLI, `ANTHROPIC_API_KEY` or `ANTHROPIC_AUTH_TOKEN` is set, `CLAUDE_CODE_USE_BEDROCK`/`VERTEX`/`FOUNDRY`
+  is set, `ANTHROPIC_BASE_URL` is not api.anthropic.com, or Claude Code's one-time "Enable Remote Control?" has
+  not been answered yes (the launch asks it at a terminal; a no, or no terminal, starts the run local instead
+  of refusing). `remote = true` / `false` still force it; anything else is refused. The slots stay local
+  unless `remote_slots = true`. To keep the old behaviour: `remote = false`.
+- Quiet launch: a run's Remote Control sessions no longer buzz the phone as they start. Each gets
+  `CLAUDE_CLIENT_PRESENCE_FILE` (Claude Code 2.1.181+ sends no mobile push while that file exists). A control
+  session's file (`.runner/quiet-c<N>`; the control server's `.runner/quiet-server`) is there only until its
+  claude.ai/code link shows, so later pushes (a concept waiting for your OK, a stuck run) still arrive. Slots
+  with `remote_slots` keep theirs (`.runner/quiet-slots`) for good, and get `agentPushNotifEnabled` and
+  `inputNeededNotifEnabled` off in their settings too. Not yet checked by hand on a phone, and the docs don't
+  say whether Remote Control's own "session ready" push honours the presence file.
 
 - Every key of the runner's pane is a command too, for a person in another terminal or a remote session:
   `agent-runner pause` / `force` (`--off` to take back), `slots N|+N|-N`, `stop --undo`, and `key <k>` for the

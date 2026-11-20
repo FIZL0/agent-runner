@@ -95,7 +95,8 @@ again: closing it ends that session, which resumes in the next run. The runner h
 With `[run] remote` (or `remote_slots`), Claude Code asks once, at a terminal, "Enable Remote Control? (y/n)".
 In a hidden pane that question would hold every session. So before going to the background the launch checks `remoteDialogSeen` in
 `~/.claude.json` (or `$CLAUDE_CONFIG_DIR/.claude.json`). If it is not set, the launch asks the question in this
-terminal and records the yes there. A no, or no terminal to ask in, starts nothing.
+terminal and records the yes there. A no, or no terminal to ask in, starts nothing. Under `remote = "auto"`
+(and no `remote_slots`) it starts the run anyway, with Remote Control off and the reason in `run.log`.
 
 ### Control sessions
 
@@ -142,6 +143,19 @@ task to fix X" (it files it with `plan add`), "do X now" (it uses `take`, never 
   after about 10 minutes offline; 30 s, doubling to 10 minutes while it keeps failing), so new control
   sessions can be started from the app. The run's end ends it. The slots stay local unless `[run]
   remote_slots = true`, which starts each as "<repo> · s2 · B646".
+- **`remote = "auto"`, the default**, is on when Remote Control can work: Claude Code on a claude.ai login.
+  It is off, with one `run.log` line saying why (`remote control off: …`), when the backend is pi, the agent
+  is Copilot CLI, `ANTHROPIC_API_KEY` or `ANTHROPIC_AUTH_TOKEN` is set, `CLAUDE_CODE_USE_BEDROCK`, `_VERTEX` or
+  `_FOUNDRY` is set, `ANTHROPIC_BASE_URL` names a host other than api.anthropic.com, or Claude Code's
+  "Enable Remote Control?" has not been answered yes. `true` forces it on (never for pi or Copilot), `false`
+  keeps it off; any other value is refused.
+- **Quiet launch.** Every Remote Control session the run starts gets `CLAUDE_CLIENT_PRESENCE_FILE` (while that
+  file exists Claude Code sends no mobile push; 2.1.181+). A control session's `.runner/quiet-c<N>` is made
+  as it starts and removed once its claude.ai/code link shows in its pane (`control N --unquiet`, a small
+  detached helper, watches; without tmux, after 30 s); the control server's `.runner/quiet-server` once a link
+  shows in its log. So starting a run is silent, and later pushes still reach the phone. Slots with
+  `remote_slots` keep `.runner/quiet-slots` for good and get `agentPushNotifEnabled` and
+  `inputNeededNotifEnabled` false in their `--settings`: a slot never pushes.
 
 `--no-tmux` (or no tmux / Windows Terminal installed) is the sequential run. It's one session at a time,
 in your checkout, on the branch you have out. There's no worktree and no merge: `done` already ran the gate, and
@@ -772,7 +786,7 @@ agent = "claude"
 backend = ""              # claude or pi; empty detects pi from the agent executable's name
 model = "opus"
 lean = true               # sessions get Bash/Read/Edit/Write/Artifact only, no MCP servers or user settings
-remote = false            # control sessions on Remote Control, and a control server to start more from claude.ai/code or the Claude apps; Enter in the runner's pane opens it
+remote = "auto"           # control sessions on Remote Control, and a control server to start more from claude.ai/code or the Claude apps; Enter in the runner's pane opens it. auto: on where it can work (see Control sessions); true/false force it
 remote_slots = false      # the slots on Remote Control too ("<repo> · s2 · B646")
 control = true            # a run opens control session c1 beside it; false: none (`agent-runner control` still works)
 auto_upgrade = false      # upgrade by itself when a newer release is out, as `u` does, once no merge runs; the run restarts on it

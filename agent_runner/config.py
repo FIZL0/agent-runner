@@ -98,8 +98,9 @@ DEFAULTS: dict = {
         'backend': '',          # '' = Claude Code (or pi when `agent` is a pi executable); pi = other providers
         'model': 'opus',
         'lean': True,           # agents get Bash/Read/Edit/Write/Artifact only, no MCP, no user settings
-        'remote': False,        # control sessions on Remote Control, and a control server there to start more:
-                                # the run, watched and steered from claude.ai/code and the Claude apps
+        'remote': 'auto',       # control sessions on Remote Control, and a control server there to start more:
+                                # the run, watched and steered from claude.ai/code and the Claude apps; auto = on
+                                # when it can work (Claude Code on a claude.ai login), true/false force it
         'remote_slots': False,  # the slots on Remote Control too, each "<repo> · s2 · B646"
         'control': True,        # a run opens control session c1 beside it (`agent-runner control`); false: none
         'auto_upgrade': False,  # upgrade agent-runner by itself when a newer release is out, once no merge runs,
@@ -344,6 +345,8 @@ class Config:
         self.run = self.raw['run']
         if not isinstance(self.run['include_task_id_in_commit'], bool):
             raise SystemExit('agent-runner: [run] include_task_id_in_commit must be a boolean')
+        if not (isinstance(self.run['remote'], bool) or self.run['remote'] == 'auto'):
+            raise SystemExit(f"agent-runner: [run] remote must be 'auto', true or false, not {self.run['remote']!r}")
         if self.run['comment_policy'] not in ('normal', 'minimal'):
             raise SystemExit("agent-runner: [run] comment_policy must be 'normal' or 'minimal'")
         backend = infer(self.run)
