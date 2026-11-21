@@ -1210,7 +1210,7 @@ def test_pane_id_not_a_path(repo: Path, tmp: Path):
     from agent_runner import config as CF
     real = subprocess.run
     pane = lambda argv, *a, **k: subprocess.CompletedProcess(argv, 0, '%9\n', '')  # noqa: E731
-    with mock.patch.object(subprocess, 'run', pane), mock.patch.dict(os.environ, {'AGENT_RUNNER_REPO': ''}):
+    with mock.patch.object(subprocess, 'run', pane):
         try:
             CF.toplevel(tmp)
             check(False, 'toplevel took "%9" for a checkout')
@@ -1450,6 +1450,7 @@ def test_control(repo: Path):
     a = R.control_pane_argv('%5', True, 'ar-proj', repo, 'x', [])
     eq(a[1:7], ['new-window', '-d', '-t', '=ar-proj:', '-n', 'control-proj'], 'the background run: a window of its own')
     calls = []
+    panes_before = {p for d in (Path.cwd(), repo, Path(__file__).parent) for p in d.glob('%*')}
     with mock.patch.object(R, 'MUX', R.TmuxMux()), mock.patch.dict(os.environ, {'TMUX_PANE': '%1'}), \
             mock.patch.object(R, 'tmux', lambda *a, **k: calls.append(a) or subprocess.CompletedProcess(a, 0, 'ar-proj\n', '')), \
             mock.patch.object(R.sp, 'run', tmux_run(calls)), \
@@ -1459,8 +1460,9 @@ def test_control(repo: Path):
               "the background session's default-command is set", calls)
         check(any(c[:2] == ['tmux', 'new-window'] for c in calls if isinstance(c, list)), 'c1 opened in its window')
         check(('set-option', '-p', '-t', '%9', R.TAG, 'c1') in calls, 'tagged c1 (attach c1)')
-        check('c1 is up in window' in R.C.notes('run.log').read_text() and not Path('%9').exists(),
-              "B52: c1's log line lands in the repo's own run.log, no %9 folder in the current directory")
+        new = {p for d in (Path.cwd(), repo, Path(__file__).parent) for p in d.glob('%*')} - panes_before
+        check('c1 is up in window' in R.C.notes('run.log').read_text() and not new,
+              "B52: c1's log line lands in the repo's own run.log, and no %N folder appears", new)
         calls.clear()
         with mock.patch.dict(R.C.run, {'control': False}):
             R.start_control()
