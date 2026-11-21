@@ -1341,6 +1341,12 @@ def test_control(repo: Path):
     check('"here and now"' in concepts and 'with no question, even when a slot already took it' in concepts
           and 'the drop stops that slot\'s session' in concepts,
           'B76: "here and now" after a queued concept drops it (stopping its slot) and shows it, no question')
+    flat = ' '.join(concepts.split())
+    check('a question or a change in their reply, even after "yes", "good" or "very good"' in flat
+          and 'is not a pick: answer it, update the same page' in flat
+          and 'Queue the build only on a plain go with no change asked ("build it", "queue it", "go with B")' in flat
+          and 'When they pick one, queue the build' not in flat,
+          'B95: praise plus a question or change updates the inline concept page; only a plain go queues the build')
     check('tail -n 0 -F' not in brief, 'no run-log watch at the start: following is asked for')
     r = run(repo, 'control', '--brief')
     eq((r.returncode, r.stdout), (0, brief), '`control --brief` (the hook) prints it')

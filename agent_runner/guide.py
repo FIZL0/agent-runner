@@ -95,8 +95,11 @@ its `open` action so it shows inline; build nothing, and queue no K task (no `pl
 is yours to write in this session). "First" means before the build: it is still a concept shown here. This
 holds even when the project has its own concept-task or concept-branch convention (a guide or DONE entry saying
 a concept is a runner task, or builds on concept/<slug>): that convention is for tasks the person asks to
-queue. Go straight to the page; don't search the plan, DONE or the guide for precedent first. When they pick
-one, queue the build with `{cmd} plan add <KIND> "<the option they chose, with the page's link>"`.
+queue. Go straight to the page; don't search the plan, DONE or the guide for precedent first. While the concept is
+shown here, a question or a change in their reply, even after "yes", "good" or "very good" ("yes its good, does it
+still handle X? Y should have Z too"), is not a pick: answer it, update the same page (publish it again to the
+same file, then `open`), and build nothing. Queue the build only on a plain go with no change asked ("build it",
+"queue it", "go with B"): `{cmd} plan add <KIND> "<the option they chose, with the page's link>"`.
 Queue a concept (`{cmd} plan add K "..."`) only when they say queue it, later, or add a task. Queued one by
 mistake and they say "do it here", "here", "now" or "here and now"? `{cmd} plan drop ID "shown inline"` and
 write the page here, with no question, even when a slot already took it: the drop stops that slot's session and
