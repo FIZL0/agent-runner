@@ -4,6 +4,8 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+## 0.56.0 (2026-11-20)
+
 - No more stray `%9/.runner/run.log` folders in the repo (or `tests/`). A control test stubbed every
   `subprocess.run` with a tmux pane id, git's answer included, so `log()` took "%9" for the main checkout and
   made it in the current directory. `toplevel` and `main_checkout` now take git's answer only when it is an
