@@ -600,7 +600,8 @@ def slot_env(n: int | None) -> list[str]:
     slot_env` with {n} (the slot) and {slots} filled in. `n=None` is the master window's: `shared_env` in
     place of `[run] slot_env`, so it builds in the merge worktree the way the gate there does."""
     # `finished_mark`; C14: AGENT_SLOT whatever `slot_env` says, which only adds to it
-    env = ['AGENT_RUNNER=1'] + ([] if n is None else [f'AGENT_RUNNER_SLOT={n}', f'AGENT_SLOT={n}'])
+    env = ['AGENT_RUNNER=1'] + ([] if n is None else [f'AGENT_RUNNER_SLOT={n}', f'AGENT_SLOT={n}',
+                                                      f'AGENT_RUNNER_WORKTREE={SLOTS_DIR / f"s{n}"}'])  # B103
     env.append(f'CLAUDE_CODE_TMPDIR={session_tmp()}')
     if os.environ.get('AGENT_RUNNER_CONFIG') and C.file:
         env.append(f'AGENT_RUNNER_CONFIG={C.file}')

@@ -1364,8 +1364,40 @@ def test_channel():
         eq(P.take(c, 'KEYS'), [], 'taken once')
 
 
+def test_slot_writes_own_plan():
+    print("plan: a slot's agent cannot write another project's plan (B103)")
+    with tempfile.TemporaryDirectory() as tmp:
+        mine, other = Path(tmp) / 'mine', Path(tmp) / 'other'
+        for root in (mine, other):
+            (root / 'plan').mkdir(parents=True)
+            (root / 'plan' / 'TODO.md').write_text('# TODO\n\n### Next\n\n- [ ] **A1** a task\n', encoding='utf-8')
+            git(root, 'init', '-q', '-b', 'main')
+            git(root, 'add', '-A')
+            git(root, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'start')
+        wt = Path(tmp) / 's1'
+        git(mine, 'worktree', 'add', '-q', '--detach', str(wt), 'main')
+        env = {k: v for k, v in os.environ.items() if k not in ('AGENT_RUNNER_REPO', plan.WORKTREE_ENV)}
+        env.update({'AGENT_RUNNER': '1', plan.WORKTREE_ENV: str(wt)})
+        todo = other / 'plan' / 'TODO.md'
+        before = todo.read_text(encoding='utf-8')
+        for args in (['plan', 'add', 'R', 'misfiled work', '--files', 'a.py'], ['plan', 'note', 'A1', 'a note'],
+                     ['plan', 'tick', 'A1'], ['done', 'A1', 'a commit']):
+            r = run(other, *args, env=env)
+            eq(r.returncode, 3, f'{args[0]} {args[1]} from another project is refused')
+            has(r.stderr, r'nothing written.*in other .*own worktree: cd ' + re.escape(str(wt)),
+                'saying to run it from its own worktree')
+        eq(todo.read_text(encoding='utf-8'), before, "and the other project's plan is untouched")
+        eq(git(other, 'log', '--oneline').count('\n'), 0, 'with nothing committed there')
+        r = run(wt, 'plan', 'add', 'R', 'own work', '--files', 'a.py', env=env)
+        eq(r.returncode, 0, f'from its own worktree the add goes through: {r.stderr}')
+        r = run(other, 'plan', 'A1', env=env)
+        eq(r.returncode, 0, 'a read from another project is not refused')
+        env[plan.WORKTREE_ENV] = ''
+        eq(run(other, 'plan', 'note', 'A1', 'a note', env=env).returncode, 0, 'outside a slot nothing is checked')
+
+
 if __name__ == '__main__':
     sys.exit(report([test_refusals, test_iter_tasks_and_titles, test_hook, test_done_gate, test_channel,test_edit, test_unlabelled_block, test_restore, test_plan_last, test_after_all, test_release_kind,test_goal,test_plan_roundtrip, test_plan_reopen, test_plan_index_and_sections, test_brief, test_brief_outline,
                      test_split_parents, test_add_bottom, test_add_pri, test_add_subtask, test_kinds, test_need_files, test_add_stray_args, test_hand_edits_commit, test_hand_edits_push, test_similar, test_add_refuses_a_duplicate, test_carry_notes,
                      test_merge3, test_concurrent_add, test_merge_driver, test_concepts, test_needs_you,
-                     test_needs_own_project, test_needs_config]))
+                     test_needs_own_project, test_needs_config, test_slot_writes_own_plan]))

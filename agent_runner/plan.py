@@ -2450,12 +2450,36 @@ EDITS = ('tick', 'block', 'reopen', 'unblock', 'move', 'add', 'note', 'archive',
          'confirm', 'change', 'shelve', 'unshelve', 'restore', 'edit', 'restyle')
 
 
+WORKTREE_ENV = 'AGENT_RUNNER_WORKTREE'  # B103: a slot's own worktree, set in its pane (slots.slot_env)
+
+
+def other_project(c, prog: str = '') -> str:
+    """B103: the refusal when a slot's agent writes the plan from another project's checkout (a `cd` elsewhere,
+    and the project is found from the current directory), else ''. The slot's worktree is $AGENT_RUNNER_WORKTREE;
+    unset or empty (no slot, or a person's shell), nothing is checked."""
+    wt = os.environ.get(WORKTREE_ENV, '')
+    if not wt:
+        return ''
+    from agent_runner.config import main_checkout
+    try:
+        mine, here = main_checkout(wt), main_checkout(c.root)
+    except SystemExit:  # the worktree is gone or no checkout: nothing to compare against
+        return ''
+    if mine == here:
+        return ''
+    return (f'{prog or PROG}: nothing written: the current directory is in {here.name} ({c.root}), but this slot '
+            f'works on {mine.name}. Run the command from its own worktree: cd {wt}')
+
+
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     if argv and argv[0] in ('-h', '--help', 'help'):
         print(HELP)
         return 0
     c = cfg()
+    if argv[:1] and (argv[0] in EDITS or argv[0] == 'goal' and len(argv) > 1) and (why := other_project(c)):
+        print(why, file=sys.stderr)
+        return 3
     if argv[:1] == ['tell']:  # F16: no plan edit, so no lock
         return _tell(c, argv[1:])
     restart = False
