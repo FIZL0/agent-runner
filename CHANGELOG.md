@@ -4,6 +4,13 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+## 0.58.3 (2026-11-21)
+
+- On Windows, `.runner/run.log` is UTF-8 with no BOM; the `·` in Remote Control names only looked garbled
+  when read with Windows PowerShell 5.1's `Get-Content`, which reads a file with no BOM as cp1252. Read it
+  with `agent-runner status -n 20` or `Get-Content -Encoding UTF8`. A test now checks the log's encoding
+  (B100).
+
 ## 0.58.2 (2026-11-21)
 
 - Control sessions in a wrapped repo name `[run] command` (e.g. openmx's `./kit`) in their brief, as the
