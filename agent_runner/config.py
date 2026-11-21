@@ -162,6 +162,9 @@ DEFAULTS: dict = {
         'command': '',          # what the prompt tells sessions to call (default: this runner); e.g. ./kit
         'untested': ['*.md', 'LICENSE*', 'COPYING*'],   # globs of files the gate cannot see (`!glob` takes one back): a merge that
                                 # differs from what was tested only in these is not tested again
+        'docs_files': ['*.md', 'docs/**'],  # globs (`!glob` takes one back): a diff whose files all match is docs
+                                # only; `done` and the merge skip the gate for it ('docs only, gate skipped')
+        'docs_check': '',       # a quick check run instead of the gate on a docs-only diff (links, anchors)
         'failures': '',         # a regex whose group 1 names a failing test in the gate's output
         'retest': '',           # the gate for just some tests; {names} is those `failures` found. A failure
                                 # that passes alone was load; one the branch's base fails too is merged anyway

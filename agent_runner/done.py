@@ -12,6 +12,9 @@ commit, a commit without the tests, a branch never pushed. A failing gate commit
 nothing, so a "done" task is always one whose tests passed. Failed gates are counted per task in the
 worktree's git dir: after three, `done` refuses to run a fourth until the task is blocked (a pass resets it).
 
+A diff that is docs only (every file the worktree changes since the shared branch matches `[run] docs_files`)
+skips the gate: `done` says 'docs only, gate skipped' and runs `[run] docs_check` instead, if one is set.
+
 `--blocked WHY` marks it `[~]` instead. Say what would unblock it. If what it waits on is another task
 landing, `--after ID[,ID]` (or just naming the open ids in WHY) lets a run reopen it once they merge.
 
@@ -25,6 +28,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import fnmatch
 import re
 import sys
 from functools import partial
@@ -32,7 +36,7 @@ from pathlib import Path
 
 from agent_runner import plan, plansync
 from agent_runner.config import cfg, finished_mark
-from agent_runner.gitops import git, missing_remote, push, shared_branch, shell
+from agent_runner.gitops import git, missing_remote, push, shared_branch, shared_name, shell
 
 
 PROG = 'run done'  # the name in messages; a wrapper sets its own ('kit done')
@@ -51,6 +55,31 @@ def gate(cwd: Path, key: str = 'test', full: bool = False, env: dict | None = No
         return 124, f'`{cmd}` ran past [run] timeout ({cfg(cwd).run["timeout"]}s): counted as failing'
     out = out.strip()
     return rc, out if full else '\n'.join(out.splitlines()[-15:])
+
+
+DOCS_SKIP = 'docs only, gate skipped'  # what `done` and the merge say when a diff is all `[run] docs_files`
+
+
+def docs_only(files: list[str], globs: list[str]) -> bool:
+    """Every one of `files` (at least one) matches `[run] docs_files` (the last glob that matches decides,
+    `!glob` takes a file back): a diff the test gate need not run on."""
+    def doc(f: str) -> bool:
+        hit = False
+        for g in globs:
+            if fnmatch.fnmatch(f, g.lstrip('!')):
+                hit = not g.startswith('!')
+        return hit
+    return bool(files) and all(map(doc, files))
+
+
+def changed(cwd: Path) -> list[str]:
+    """The files this worktree's work changes: commits since the shared branch, staged, unstaged and untracked
+    (renames as both names, so a code file moved into docs/ still counts as code)."""
+    shared = shared_name(cwd, cfg(cwd).push_remote or 'origin', default=None)
+    base = shared and git('merge-base', 'HEAD', shared, cwd=cwd).stdout.strip() or 'HEAD'
+    files = git('diff', '--name-only', '--no-renames', base, cwd=cwd).stdout.splitlines()
+    files += git('ls-files', '--others', '--exclude-standard', cwd=cwd).stdout.splitlines()
+    return sorted({f for f in files if f})
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -76,8 +105,11 @@ def main(argv: list[str] | None = None) -> int:
               f'solid and\n    {PROG} {a.id} "<msg>" --blocked "<why + what unblocks it>"\nNothing ticked.',
               file=sys.stderr)
         return 1
+    a.docs = docs = bool(not a.no_test and c.run['test'] and docs_only(changed(cwd), c.run['docs_files']))
+    if docs:  # no tested ref either: the merge decides by its own diff
+        print(DOCS_SKIP + (f' (docs check: {c.run["docs_check"]})' if c.run['docs_check'] else ''))
     if not a.no_test:
-        rc, tail = gate(cwd)
+        rc, tail = gate(cwd, 'docs_check' if docs else 'test')
         if rc:
             print(tail)
             if a.blocked:
@@ -86,10 +118,11 @@ def main(argv: list[str] | None = None) -> int:
                 last = f'That is {n} failed gates on {a.id}: {PROG} refuses a fourth. Commit what is solid and'
             else:
                 last = f'Failed gate {n} of {MAX_FAILS}. Fix it, or commit what is solid and'
-            print(f'\nThe test gate failed: nothing ticked, nothing committed. {last}\n'
+            what = f'The docs check (`{c.run["docs_check"]}`)' if docs else 'The test gate'
+            print(f'\n{what} failed: nothing ticked, nothing committed. {last}\n'
                   f'    {PROG} {a.id} "<msg>" --blocked "<why + what unblocks it>"', file=sys.stderr)
             return 1
-        if c.run['test']:
+        if c.run['test'] and not docs:
             print(f'gate passed: {c.run["test"]}')
     if a.blocked or not a.no_test:  # a pass, or a block: the next session on it starts its count afresh
         fails(cwd, a.id, reset=True)
@@ -140,7 +173,7 @@ def record(a, c) -> int:
         return untick()
     if not g('diff', '--cached', '--quiet').returncode:
         print('nothing to commit (the tick was already committed?)')
-        if not a.no_test:
+        if not a.no_test and not getattr(a, 'docs', False):
             g('update-ref', TESTED + a.id, 'HEAD')
         return finished(c, a)
     message = a.message
@@ -151,7 +184,7 @@ def record(a, c) -> int:
     if (r := g('commit', '-qm', message)).returncode:
         print(f'git commit failed: {r.stderr.strip()}', file=sys.stderr)
         return untick()
-    if not a.no_test:  # what the gate passed on, so a merge that differs from it only in [run] untested skips it
+    if not a.no_test and not getattr(a, 'docs', False):  # what the gate passed on, so a merge that differs from it only in [run] untested skips it
         g('update-ref', TESTED + a.id, 'HEAD')
     print(g('log', '-1', '--oneline').stdout.strip())
     here = g('branch', '--show-current').stdout.strip()

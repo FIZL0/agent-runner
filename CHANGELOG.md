@@ -9,6 +9,10 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
   you (CONFIRM, DECIDE, BLOCKED), shelve, claim, notes dir, remote; each with a plain definition and the words
   to avoid. The slot prompt and the control brief now say in one line to use a repo's GLOSSARY.md terms when it
   has one (any project the runner works), and the control brief says c1, not "control 1" (D1).
+- Docs-only changes skip the slow test gate, decided by the diff, not the task's letter: a merge (or `done`)
+  whose files all match the new `[run] docs_files` (default `*.md`, `docs/**`) runs only `[run] docs_check`
+  (a link/anchor check, if set) and logs `docs only, gate skipped`; a mixed diff runs the gate as before. A
+  take or slot task that only edits docs or the plan no longer needs a hand-typed `--no-test` (F37).
 - `[run] auto_upgrade` defaults to true: a run upgrades agent-runner by itself when a newer release is out
   (once no merge runs, never across a major version, nor on Windows) and restarts on it. Set
   `auto_upgrade = false` to upgrade only with `u` or `agent-runner upgrade`. `run --upgrade` is gone: `u`,
