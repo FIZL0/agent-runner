@@ -21,6 +21,7 @@ from pathlib import Path
 from contextlib import ExitStack
 
 from agent_runner import plan as P, plat, plansync
+from agent_runner.brief import findings_globs, research_task
 from agent_runner.done import DOCS_SKIP, TESTED, docs_only, gate
 from agent_runner.gitops import _net
 from agent_runner.state import C, clean, git, hook, LANDING, log, MERGE, note, plan_rel, plan_text, ROOT, SLOTS_DIR
@@ -850,20 +851,10 @@ def forget(tid: str) -> None:
     TASK_SID.pop(tid, None)
 
 
-def findings_globs() -> list[str]:
-    """F36: the files a research task may change: the plan directory, the journal and `[run] findings`."""
-    out = [plan_rel('TODO.md'), plan_rel('DONE.md')]
-    if not C.plan_external and (d := os.path.dirname(plan_rel('TODO.md'))):
-        out.append(f'{d}/**')
-    if C.journal and C.journal.is_relative_to(C.root):
-        out.append(os.path.relpath(C.journal, C.root).replace(os.sep, '/') + '/**')
-    return out + list(C.run['findings'] or [])
-
-
 def research_code(tid: str, branch: str) -> list[str]:
-    """F36: the files task/<tid> changes beyond its findings (`findings_globs`) when `tid` is a research task;
-    [] for any other task or a findings-only diff."""
-    if not P.research(tid, C.raw['plan'].get('kinds') or P.KINDS):
+    """F36: the files task/<tid> changes beyond its findings (`brief.findings_globs`, the list its brief names)
+    when `tid` is a research task; [] for any other task or a findings-only diff."""
+    if not research_task(tid):
         return []
     globs = findings_globs()
     files = git('diff', '--name-only', '--no-renames', f'{branch}...task/{tid}').stdout.split()
@@ -880,7 +871,8 @@ def research_held(tid: str, branch: str) -> str | None:
     ls = plan_text(branch)
     i = next((i for i, l in enumerate(ls) if f'**{tid}**' in l), None)
     item = '\n'.join(P._item_block(ls, i)) if i is not None and P.ITEM.match(ls[i]) else ''
-    if P.MERGE_ANYWAY.search(item.split(' BLOCKED: ')[0]):
+    item = item.split(' BLOCKED: ')[0]
+    if ' — ' in item and P.MERGE_ANYWAY.search(item[item.index(' — '):]):  # a note, not the task's title
         log(f'{tid}: research that changes code ({", ".join(code[:8])}); merged anyway, as the person answered')
         return None
     shown = ', '.join(code[:8]) + (f' and {len(code) - 8} more' if len(code) > 8 else '')

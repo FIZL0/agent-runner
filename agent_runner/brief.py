@@ -155,7 +155,7 @@ def prompt_for(tid: str, n: int, slots: int, cwd: Path, branch: str) -> str:
         policies.append('Only add comments when necessary to explain non-obvious intent or constraints.')
     if P.concept(tid):
         prompt = f'{prompt.rstrip()}\n\n' + CONCEPT_PROMPT.format(runner=C.command, tid=tid)
-    elif P.research(tid):  # F36
+    elif research_task(tid):  # F36
         prompt = f'{prompt.rstrip()}\n\n' + RESEARCH_PROMPT.format(runner=C.command, tid=tid,
                                                                    findings=findings_where())
     elif wizards_on():
@@ -183,14 +183,31 @@ RESEARCH_PROMPT = """\
 {tid} is a research task: find out, measure or check, and change no product. Write your findings where the \
 run merges them ({findings}), queue each change they call for with `{runner} plan add`, and change no code: \
 a research diff that touches any other file is not merged, and the task blocks on a person instead. If its \
-note says a person answered `merge anyway`, they accepted an earlier attempt's code (on wip/{tid}): keep it."""
+note says a person answered `follow-up`, file the earlier attempt's code (on wip/{tid}) as its own task with \
+`{runner} plan add` and commit only the findings; if it says `merge anyway`, they accepted that code: bring it \
+over from wip/{tid} with the findings."""
+
+
+def research_task(tid: str) -> bool:
+    """F36: `tid` is research by the run's own kinds (`[plan] kinds`, else plan.KINDS)."""
+    return P.research(tid, C.raw['plan'].get('kinds') or P.KINDS)
+
+
+def findings_globs() -> list[str]:
+    """F36: the files a research task may change, the one list the brief names and the merge checks: the plan
+    directory (in the repo), the journal (in the repo) and `[run] findings`."""
+    out = []
+    if not C.plan_external:
+        d = os.path.relpath(C.plan_dir, C.root).replace(os.sep, '/')
+        out += ['TODO.md', 'DONE.md'] if d == '.' else [f'{d}/**']
+    if C.journal and C.journal.is_relative_to(C.root):
+        out.append(os.path.relpath(C.journal, C.root).replace(os.sep, '/') + '/**')
+    return out + list(C.run['findings'] or [])
 
 
 def findings_where() -> str:
-    """Where a research task's findings go (F36): the plan directory, the journal and `[run] findings`."""
-    rel = lambda p: os.path.relpath(p, C.root).replace(os.sep, '/') + '/'
-    where = ([] if C.plan_external else [rel(C.plan_dir)]) + ([rel(C.journal)] if C.journal else [])
-    return ', '.join(f'`{g}`' for g in where + list(C.run['findings'] or []))
+    """Where a research task's findings go (F36), for its brief."""
+    return ', '.join(f'`{g}`' for g in findings_globs())
 
 
 class _Keep(dict):

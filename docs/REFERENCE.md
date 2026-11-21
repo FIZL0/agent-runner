@@ -271,9 +271,9 @@ starts with "research" (`Q = "research: …"`). The merge lands such a branch on
 is findings: the plan directory, the journal (`[plan] journal`) or `[run] findings` (default
 `docs/research/**` and `research/**`; `!glob` takes one back). A research diff that touches any other file
 is not merged: the branch is parked on `wip/<ID>` and the task blocks with `DECIDE: R7 is research, but its
-diff changes code (a.py, …)`, listed under Needs you. Answer `follow-up` (the next attempt files the code as
-its own task and merges the findings alone) or `merge anyway`: with those words in the task's note, its next
-merge lands the code too (F36).
+diff changes code (a.py, …)`, listed under Needs you. Answer `follow-up` (the next attempt's brief tells it
+to file the code from `wip/<ID>` as its own task and commit the findings alone) or `merge anyway`: with those
+words in a note on the task (after ` — `, not in its title), its next merge lands the code too (F36).
 
 ## The task list
 

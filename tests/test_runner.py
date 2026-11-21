@@ -2973,37 +2973,38 @@ def test_repair(repo: Path, tmp: Path):
         (repo / name).write_text('x\n', encoding='utf-8')
         git(repo, 'add', name), git(repo, 'commit', '-qm', f'main: {name}')
     try:
-        commit_on(repo, 'R1', {'BROKEN': ''}, 'R1: breaks the gate only merged')
+        # M, not R: R is research (F36), whose code diffs block instead of merging
+        commit_on(repo, 'M1', {'BROKEN': ''}, 'M1: breaks the gate only merged')
         on_main('r1.txt')
         os.environ['FAKE_FIX'], os.environ['FAKE_MAIN'] = 'repair', str(repo)
-        eq(R.merge('R1', 'main'), None, 'a repair session that fixes the merge lands it')
+        eq(R.merge('M1', 'main'), None, 'a repair session that fixes the merge lands it')
         os.environ.pop('FAKE_MAIN')
         check(not (repo / 'BROKEN').exists() and (repo / 'moved.txt').exists(),
               'with its fix on main, replayed onto main\'s commit made meanwhile')
-        eq((repo / '.runner/run.log').read_text().count('R1: the merge fails the gate'), 1,
+        eq((repo / '.runner/run.log').read_text().count('M1: the merge fails the gate'), 1,
            'one session: the rebuilt merge passes with the replayed repair')
         has(git(repo, 'log', '-3', '--format=%s', 'main'), r'repair: drop BROKEN', 'as a commit of its own')
         has(seen.read_text(), r'test gate fails on it', 'the session was told the gate fails')
         has(seen.read_text(), r'python3 -c "print\(1\)"', 'and to check with [run] build')
-        has((repo / '.runner/ledger.md').read_text(), r'R1: the merge failed the gate; a repair session fixed it',
+        has((repo / '.runner/ledger.md').read_text(), r'M1: the merge failed the gate; a repair session fixed it',
             'the ledger says so')
 
-        commit_on(repo, 'R2', {'BROKEN': ''}, 'R2: breaks the gate too')
+        commit_on(repo, 'M2', {'BROKEN': ''}, 'M2: breaks the gate too')
         on_main('r2.txt')
         os.environ['FAKE_FIX'] = 'abort'
-        has(R.merge('R2', 'main') or '', r'tests fail after the merge', 'one the session cannot repair stays unmerged')
-        has((repo / '.runner/ledger.md').read_text(), r'R2: no repair: the repair session committed nothing',
+        has(R.merge('M2', 'main') or '', r'tests fail after the merge', 'one the session cannot repair stays unmerged')
+        has((repo / '.runner/ledger.md').read_text(), r'M2: no repair: the repair session committed nothing',
             'and the ledger says why')
         check(not (repo / 'BROKEN').exists(), 'main is as it was')
-        git(repo, 'branch', '-D', 'task/R2')
+        git(repo, 'branch', '-D', 'task/M2')
 
         R.C.run['repair_merges'] = False
-        commit_on(repo, 'R3', {'BROKEN': ''}, 'R3: breaks the gate')
+        commit_on(repo, 'M3', {'BROKEN': ''}, 'M3: breaks the gate')
         on_main('r3.txt')
         seen.unlink()
-        has(R.merge('R3', 'main') or '', r'tests fail after the merge', 'repair_merges off: parked at the first failure')
+        has(R.merge('M3', 'main') or '', r'tests fail after the merge', 'repair_merges off: parked at the first failure')
         check(not seen.exists(), 'with no session')
-        git(repo, 'branch', '-D', 'task/R3')
+        git(repo, 'branch', '-D', 'task/M3')
     finally:
         for k in ('FAKE_FIX', 'FAKE_PROMPT', 'FAKE_MAIN'):
             os.environ.pop(k, None)
@@ -4341,10 +4342,11 @@ def test_research_findings_only(repo: Path):
         own = {'Q': 'research: measure it, no product change', 'R': 'refactor: tidy'}
         check(P.research('Q1', own) and not P.research('R1', own), 'a repo\'s own kinds mark research by meaning')
         (repo / rel).write_text(before.replace('### Later\n', '### Later\n\n- [ ] **R7** how slow is the parser\n'
-                                               '- [ ] **R8** why the printer drops lines\n'), encoding='utf-8')
+                                               '- [ ] **R8** why the printer drops lines (no merge anyway '
+                                               'without a person)\n'), encoding='utf-8')
         git(repo, 'commit', '-qm', 'test: R7, R8', '--', rel)
         p = R.prompt_for('R7', 1, 1, repo, 'main')
-        has(p, r'R7 is a research task.*`plan/`.*`docs/research/\*\*`.*plan add.*change no code',
+        has(p, r'R7 is a research task.*`plan/\*\*`.*`docs/research/\*\*`.*plan add.*change no code',
             'the research brief: findings where the run merges them, follow-ups queued, no code')
         check('research task' not in R.prompt_for('T1', 1, 1, repo, 'main'), 'and only a research task gets it')
         (R.worktree(1, 'main') / 'docs/research').mkdir(parents=True, exist_ok=True)
