@@ -117,6 +117,16 @@ def test_brief_fits_session_start():
         long = K.control_brief()
         check(len(long) < K.BRIEF_MAX, f'a long voice file is pointed at, not carried: {len(long)} chars')
         check('60 lines' in long and f'{cmd} guide voice' in long, 'and the brief says where its lines are')
+    # B104: Windows names python.exe and the run path, about 85 chars, in every line of the brief
+    (d / '.runner' / 'voice.md').write_text(''.join(f'- {r}\n' for r in rules), encoding='utf-8')
+    win = 'C:/hostedtoolcache/windows/Python/3.12.10/x64/python.exe D:/a/agent-runner/agent-runner/run'
+    with mock.patch.dict(R.C.run, {'command': win}), mock.patch.object(K, 'feed_on', lambda: False):
+        brief = K.control_brief()
+        check(len(brief) < K.BRIEF_MAX, f'a Windows-long [run] command still fits: {len(brief)} chars')
+        check(all(r in brief for r in rules), 'and the wording is still carried inline')
+        check(f'`{win}` is the runner' in brief and f'`{win} plan …`' in brief,
+              'the Guide pages line still names the full command')
+        check('`guide take`' in brief and '`plan add <KIND>' in brief, 'the commands after it are bare')
     check(voice.brief_fit('x', cmd, R.C) != '', 'brief_fit returns text')
 
 

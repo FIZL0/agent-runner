@@ -63,8 +63,23 @@ def control_brief() -> str:
     core = grill_fit(glossary.brief_fit(CONTROL.format(repo=ROOT.name, cmd=cmd, log=logf, watch=watch,
                                                        needs=cf['heading'], answer=answer), cmd, C), cmd, C)
     out = voice.brief_fit(core, cmd, C)
+    if len(out) >= BRIEF_MAX:  # B104: a long [run] command (Windows: python.exe and the run path) first
+        core = bare_commands(core, cmd)
+        out = voice.brief_fit(core, cmd, C)
     # B98: a long voice file would push the brief past what Claude Code shows: point at its lines instead
     return out if len(out) < BRIEF_MAX else voice.brief_fit(core, cmd, C, inline=False)
+
+
+def bare_commands(core: str, cmd: str) -> str:
+    """B104: the control brief with every runner command after its Guide pages line (`{cmd}` is the runner: a
+    bare runner command below means `{cmd} plan …`) in that bare form (`plan add …`, `guide take`), so a long
+    `[run] command` repeated in every line does not push the brief past BRIEF_MAX and the wording out of it."""
+    mark = f'`{cmd} plan …`'
+    at = core.find(mark)
+    if at < 0:
+        return core
+    at += len(mark)
+    return core[:at] + core[at:].replace(f'`{cmd} ', '`')
 
 
 # B98: Claude Code saves SessionStart output over ~10KB to a file and shows the model a 2KB preview of it
