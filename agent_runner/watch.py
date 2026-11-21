@@ -597,13 +597,17 @@ def breaking(old: str, new: str) -> bool:
     return old.split('.')[0] != new.split('.')[0]
 
 
-def upgrade_argv() -> list[str]:
-    """The command that upgrades this install: pipx, uv tool, or a pull in the clone it runs from."""
-    if 'pipx' in sys.prefix:
+def upgrade_argv(here: str | Path = __file__) -> list[str]:
+    """The command that upgrades this install: pipx, uv tool, or a pull in the clone it runs from.
+    B97: told apart by where agent_runner itself lives, not sys.prefix: a wrapper (openmx's ./kit) runs the
+    system python3 with uv's site-packages on sys.path, so sys.prefix is /usr and a pull ran in site-packages."""
+    path = Path(here).resolve()
+    parts = path.parts
+    if any('pipx' in p for p in parts):
         return ['pipx', 'upgrade', 'agent-runner']
-    if f'{os.sep}uv{os.sep}' in sys.prefix:
+    if 'uv' in parts:
         return ['uv', 'tool', 'upgrade', 'agent-runner']
-    return ['git', '-C', str(Path(__file__).resolve().parents[1]), 'pull', '-q', '--ff-only']
+    return ['git', '-C', str(path.parents[1]), 'pull', '-q', '--ff-only']
 
 
 def installed_version() -> str | None:
