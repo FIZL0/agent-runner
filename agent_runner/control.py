@@ -25,6 +25,7 @@ from agent_runner.state import (C, commit_plan, git, HIDDEN, init, log, MERGE, n
 from agent_runner.brief import has_sheet
 from agent_runner.slots import (attach_target, backend, background_env, background_session, entries, marker_pid, MUX,
     pi, PRESENCE_ENV, quiet_file, remote_on, REMOTE_URL, send_to_pane, silent, tmux, TmuxMux, transcript, window)
+from agent_runner.slots import link_drift, remote_answer_drift
 from agent_runner.merge import gate_alive
 
 
@@ -498,10 +499,15 @@ def unquiet_when_up(who: str, pane: str = '', log_file: Path | None = None, wait
     neither to read, after QUIET_WAIT s."""
     wait = CONTROL_LINK_WAIT if wait is None else wait
     deadline = time.monotonic() + (wait if pane or log_file else QUIET_WAIT)
+    linked = None  # B45: did the pane, still open, show its link?
     while time.monotonic() < deadline:
         if pane:
             shown = tmux('capture-pane', '-p', '-J', '-t', pane, '-S', '-200')
-            if shown.returncode or SESSION_LINK.search(shown.stdout or ''):
+            if shown.returncode:
+                linked = None
+                break
+            linked = bool(SESSION_LINK.search(shown.stdout or ''))
+            if linked:
                 break
         elif log_file:
             try:
@@ -513,6 +519,11 @@ def unquiet_when_up(who: str, pane: str = '', log_file: Path | None = None, wait
                 pass
         time.sleep(1)
     quiet_file(who, on=False)
+    if pane and linked is not None and remote_on():  # B45 spots 2 and 3, for c1 and the other sessions
+        if linked:
+            remote_answer_drift(who)
+        else:
+            link_drift(who, wait)
 
 
 def control_default_command(root: Path) -> str:

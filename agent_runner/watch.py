@@ -105,16 +105,14 @@ def transcript_drift(sid: str) -> bool:
         if d.get('type') in KNOWN_ENTRIES:
             _shape_seen.add(sid)
             return False
-        n += 1
+        n += 1  # the whole transcript is read: a resumed or compacted session may open with many other entries
         version = version or str(d.get('version') or '')
         seen.add(str(d.get('type')))
-        if n >= DRIFT_ENTRIES:
-            break
     if n < DRIFT_ENTRIES:
         return False
     _shape_seen.add(sid)
     types = sorted(seen)
-    return claude_drift('transcript', f"its transcript entries (a live session's first {n} are of type "
+    return claude_drift('transcript', f"its transcript entries (a live session's {n} are of type "
                         f"{', '.join(types[:5]) or 'none'}, none user or assistant)",
                         'stall detection, resuming a cut-off session and session stats', version)
 

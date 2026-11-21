@@ -6616,6 +6616,18 @@ def test_claude_drift_b45(repo: Path, tmp: Path):
         R.CLAUDE_VERSION[:] = ['2.1.401']
         new()
         eq(len(drifts('remote-answer')), 2, 'the next Claude Code version that still lacks it is told again')
+        R.CLAUDE_VERSION[:] = ['2.1.402']  # c1 and the other sessions: unquiet_when_up reads their pane too
+        with mock.patch.object(R, 'tmux', fake_tmux), mock.patch.object(R.time, 'sleep', lambda s: None), \
+                mock.patch.dict(R.C.run, {'remote': True}):
+            R.unquiet_when_up('c1', '%45', wait=0.05)
+            eq(len(drifts('remote-answer')), 3, 'c1 up on Remote Control without remoteDialogSeen: told')
+            pane.update(out='starting…\n')
+            R.unquiet_when_up('c1', '%45', wait=0.05)
+            eq(len(drifts('link')), 2, 'c1 showing no link in its wait: told')
+            pane.update(rc=1)
+            R.CLAUDE_VERSION[:] = ['2.1.403']
+            R.unquiet_when_up('c1', '%45', wait=0.05)
+            eq(len(drifts('link')), 2, 'a closed pane: nothing')
     finally:
         R.CLAUDE_VERSION[:] = saved_version
         if saved_cj is None:
