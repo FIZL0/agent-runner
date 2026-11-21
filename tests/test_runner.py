@@ -1251,7 +1251,9 @@ def tmux_run(calls: list, out: str = '%9\n'):
 def test_control(repo: Path):
     with mock.patch.dict(os.environ, {'CLAUDE_CODE_CHILD_SESSION': '1', 'CLAUDECODE': '1', 'CLAUDE_CONFIG_DIR': '/c',
                                       'TMUX': '/tmp/t,1,0'}):
-        with mock.patch.object(R, 'run', return_value=0), mock.patch.object(R, 'tmux') as tm:
+        # tmux is stood in for, so which() says it is there (Windows has none, and the masks are skipped there)
+        with mock.patch.object(R, 'run', return_value=0), mock.patch.object(R, 'tmux') as tm, \
+                mock.patch.object(R.shutil, 'which', lambda x, *a, **k: '/usr/bin/tmux'):
             R.cmd_run([])
         check(mock.call('set-environment', '-r', 'CLAUDE_CODE_CHILD_SESSION') in tm.call_args_list,
               'and out of its tmux session, whose new windows (the slots) would inherit them')
@@ -1429,7 +1431,8 @@ def test_control(repo: Path):
         (repo / '.runner/control1.pid').write_text(f'{q.pid} {sid}')
         (repo / '.runner/control2.pid').write_text(f'{p.pid} new-sid')
         eq(R.control_live(2), p.pid, 'a control session that did /new stays live')
-        eq(R.control_live(1), 0, 'a pid now held by another process is not a session')
+        if not R.plat.WINDOWS:  # Windows: plat.cmdline cannot read another process's argv, so a live pid counts
+            eq(R.control_live(1), 0, 'a pid now held by another process is not a session')
         (repo / '.runner/control1.pid').write_text(f'{os.getpid()} {sid}')
         eq(R.control_number(), 1, 'c1 free: the first is c1')
         p2 = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)', 'control'])
@@ -1447,7 +1450,7 @@ def test_control(repo: Path):
     (repo / '.runner/control2.pid').unlink(missing_ok=True)
 
     dc = R.control_default_command(repo)
-    check(dc.startswith(f'cd {repo} && ') and ' control ' in dc + ' ' and dc.endswith('|| exec "${SHELL:-/bin/sh}"'),
+    check(dc.startswith(f'cd {R.shlex.quote(str(repo))} && ') and ' control ' in dc + ' ' and dc.endswith('|| exec "${SHELL:-/bin/sh}"'),
           'tmux default-command: a new pane is a control session in the main checkout', dc)
     a = R.control_pane_argv('%5', False, 'mine', repo, 'ar control 1', ['PATH=/bin'])
     eq(a[:8], ['tmux', 'split-window', '-v', '-d', '-l', '40%', '-t', '%5'], 'a foreground run: split under its pane')
@@ -1534,6 +1537,7 @@ def test_control(repo: Path):
     out = io.StringIO()
     with mock.patch.object(R, 'tmux', fake_tmux), mock.patch.dict(os.environ, {'TMUX_PANE': '%1'}), \
             mock.patch.object(R.shutil, 'which', lambda x: '/usr/bin/tmux'), mock.patch.object(R.time, 'sleep', lambda s: None), \
+            mock.patch.object(R.plat, 'WINDOWS', False), \
             mock.patch.dict(R.C.run, {'remote': True}), contextlib.redirect_stdout(out):
         eq(R.control_new(2), 0, 'control --new opens one')
     nw = next(c for c in calls if c[0] == 'new-window')
@@ -1545,12 +1549,14 @@ def test_control(repo: Path):
     calls.clear()
     out = io.StringIO()
     with mock.patch.object(R, 'tmux', fake_tmux), mock.patch.dict(os.environ, {'TMUX_PANE': '%1'}), \
-            mock.patch.object(R.shutil, 'which', lambda x: '/usr/bin/tmux'), contextlib.redirect_stdout(out):
+            mock.patch.object(R.shutil, 'which', lambda x: '/usr/bin/tmux'), mock.patch.object(R.plat, 'WINDOWS', False), \
+            contextlib.redirect_stdout(out):
         eq(R.control_new(2), 0, 'local (no [run] remote)')
     check(not any(c[0] == 'capture-pane' for c in calls) and 'local' in out.getvalue(),
           'no link to wait for without [run] remote', out.getvalue())
     with mock.patch.object(R, 'tmux', lambda *a, **k: subprocess.CompletedProcess(a, 1, '', '')), \
             mock.patch.dict(os.environ, {'TMUX_PANE': ''}), mock.patch.object(R.shutil, 'which', lambda x: '/usr/bin/tmux'), \
+            mock.patch.object(R.plat, 'WINDOWS', False), \
             mock.patch.object(R.feed, 'hidden_control', lambda n, c, wait=None: (0, 'test: not started')), \
             contextlib.redirect_stderr(io.StringIO()) as err:
         eq(R.control_new(), 1, 'no tmux session to open it in: started hidden (F59), here refused, so an error')
@@ -2224,7 +2230,7 @@ def test_short_titles_and_since(repo: Path):
                 quiet = contextlib.redirect_stdout(io.StringIO())
                 with mock.patch.object(R, 'tmux', new_window), mock.patch.object(R, 'control_live', lambda n: None), \
                         mock.patch.object(R, 'control_new_session', lambda: 'ar-proj'), \
-                        mock.patch.object(R.shutil, 'which', lambda x: '/usr/bin/tmux'), \
+                        mock.patch.object(R.shutil, 'which', lambda x: '/usr/bin/tmux'), mock.patch.object(R.plat, 'WINDOWS', False), \
                         mock.patch.object(R, 'remote_on', lambda: False):
                     write(hum({'type': 'text', 'text': 'older, text only'}), res)
                     th = R.threading.Thread(target=late)
@@ -2325,7 +2331,7 @@ def test_feed_forward():
                 mock.patch.dict(os.environ, {'CLAUDE_CODE_SESSION_ID': sid}), \
                 mock.patch.object(R, 'tmux', tm), mock.patch.object(R, 'control_live', lambda n: None), \
                 mock.patch.object(R, 'control_new_session', lambda: 'ar-proj'), \
-                mock.patch.object(R.shutil, 'which', lambda x: '/usr/bin/tmux'), \
+                mock.patch.object(R.shutil, 'which', lambda x: '/usr/bin/tmux'), mock.patch.object(R.plat, 'WINDOWS', False), \
                 mock.patch.object(R, 'remote_on', lambda: False):
             mon = {'type': 'assistant', 'message': {'content': [
                 {'type': 'tool_use', 'name': 'Monitor', 'input': {'command': 'run since --follow --keep-mark'}},
@@ -2472,7 +2478,7 @@ def test_feed_handoff_b74():
                 mock.patch.dict(os.environ, {'CLAUDE_CODE_SESSION_ID': sid}), \
                 mock.patch.object(R, 'tmux', tm), mock.patch.object(R, 'control_live', lambda n: None), \
                 mock.patch.object(R, 'control_new_session', lambda: 'ar-proj'), \
-                mock.patch.object(R.shutil, 'which', lambda x: '/usr/bin/tmux'), \
+                mock.patch.object(R.shutil, 'which', lambda x: '/usr/bin/tmux'), mock.patch.object(R.plat, 'WINDOWS', False), \
                 mock.patch.object(R, 'remote_on', lambda: False):
             Path(tdir, 'remote').mkdir()  # C.notes makes it; the stand-in does not
             base = (old, call('run control --new --ask "agent runner task failed?"'), res, notif)
@@ -3828,7 +3834,7 @@ def test_land_waits_aloud(repo: Path):
         has((repo / '.runner/run.log').read_text(),
             r'STOPPED: W1 cannot land: uncommitted edits in \S+: .* to g\.py, which the merge changes',
             'a loud STOPPED names the edited file the merge needs, before an hour of silence')
-        has((repo / '.runner/run.log').read_text(), r'STOPPED: W1 .*Next time, `\S+ take --here',
+        has((repo / '.runner/run.log').read_text(), r'STOPPED: W1 .*Next time, `[^`]+ take --here',
             'and says how to keep such edits out of the main checkout next time')
         check(t.is_alive(), 'and it still waits for them')
         git(repo, 'checkout', '--', 'g.py')
@@ -6779,7 +6785,7 @@ def test_claude_drift_b45(repo: Path, tmp: Path):
     def new() -> str:
         out = io.StringIO()
         with mock.patch.object(R, 'tmux', fake_tmux), mock.patch.dict(os.environ, {'TMUX_PANE': '%1'}), \
-                mock.patch.object(R.shutil, 'which', lambda x: '/usr/bin/tmux'), \
+                mock.patch.object(R.shutil, 'which', lambda x: '/usr/bin/tmux'), mock.patch.object(R.plat, 'WINDOWS', False), \
                 mock.patch.object(R.time, 'sleep', lambda s: None), mock.patch.dict(R.C.run, {'remote': True}), \
                 contextlib.redirect_stdout(out):
             eq(R.control_new(45, wait=0), 0, 'control --new opens it')
@@ -7093,7 +7099,9 @@ def test_reference_keys_d3():
 
 
 def main() -> int:
-    with tempfile.TemporaryDirectory() as t:
+    # B77: Windows refuses to delete a folder a process still has open (WinError 145 on .git/info once a test
+    # crashed, its git children still running): a leftover temp dir must not hide the result of the tests
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as t:
         tmp = Path(t)
         os.environ['CLAUDE_CONFIG_DIR'] = str(tmp)  # Claude.trust writes here, never to the real ~/.claude.json
         repo = make_repo(tmp)
