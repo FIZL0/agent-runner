@@ -1185,8 +1185,46 @@ def test_done_gate():
         has(out, re.escape('ran past [run] timeout (0.5s): counted as failing'), 'and says so')
 
 
+def test_channel():
+    print('C11 channels: request waits for the answer, requests lists, respond takes it away; post and take')
+    import threading
+    import time
+    P = plan
+
+    class Notes:
+        def __init__(self, root):
+            self.root = root
+
+        def notes(self, *parts):
+            p = self.root.joinpath(*parts)
+            p.parent.mkdir(parents=True, exist_ok=True)
+            return p
+
+    with tempfile.TemporaryDirectory() as tmp:
+        c = Notes(Path(tmp))
+        eq(P.request(c, 'ask', 'X1', {'how': 'drop'}, 0), None, 'no answer in time: None')
+        eq(P.requests(c, 'ask')['X1']['how'], 'drop', 'the request stays for the run')
+        (P.channel(c, 'ask') / 'BAD.json').write_text('[1]', encoding='utf-8')
+        eq(sorted(P.requests(c, 'ask')), ['X1'], 'one not a JSON object is skipped')
+
+        def run():
+            while 'X2' not in P.requests(c, 'ask'):
+                time.sleep(0.05)
+            P.respond(c, 'ask', 'X2', 'done X2\n')
+        t = threading.Thread(target=run, daemon=True)
+        t.start()
+        eq(P.request(c, 'ask', 'X2', {'how': 'change'}, 10), 'done X2\n', 'the answer, as the run wrote it')
+        t.join(10)
+        check('X2' not in P.requests(c, 'ask') and not (P.channel(c, 'ask') / 'X2.done').exists(),
+              'request and answer both gone')
+        eq(P.take(c, 'KEYS'), [], 'nothing posted: nothing taken')
+        P.post(c, 'KEYS', 'p on', ' ', 'S off ')
+        eq(P.take(c, 'KEYS'), ['p on', 'S off'], 'posted lines, stripped, blanks left out')
+        eq(P.take(c, 'KEYS'), [], 'taken once')
+
+
 if __name__ == '__main__':
-    sys.exit(report([test_refusals, test_iter_tasks_and_titles, test_hook, test_done_gate,test_edit, test_unlabelled_block, test_restore, test_plan_last,test_goal,test_plan_roundtrip, test_plan_reopen, test_plan_index_and_sections, test_brief, test_brief_outline,
+    sys.exit(report([test_refusals, test_iter_tasks_and_titles, test_hook, test_done_gate, test_channel,test_edit, test_unlabelled_block, test_restore, test_plan_last,test_goal,test_plan_roundtrip, test_plan_reopen, test_plan_index_and_sections, test_brief, test_brief_outline,
                      test_split_parents, test_add_bottom, test_add_pri, test_add_subtask, test_kinds, test_need_files, test_add_stray_args, test_hand_edits_commit, test_hand_edits_push, test_similar, test_add_refuses_a_duplicate, test_carry_notes,
                      test_merge3, test_concurrent_add, test_merge_driver, test_concepts, test_needs_you,
                      test_needs_config]))
