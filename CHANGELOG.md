@@ -4,6 +4,11 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- `[run] auto_upgrade` defaults to true: a run upgrades agent-runner by itself when a newer release is out
+  (once no merge runs, never across a major version, nor on Windows) and restarts on it. Set
+  `auto_upgrade = false` to upgrade only with `u` or `agent-runner upgrade`. `run --upgrade` is gone: `u`,
+  `agent-runner upgrade` and the auto upgrade cover it (C6).
+
 ## 0.55.0 (2026-11-20)
 
 - `agent_runner/runner.py` (9,100 lines) is split by responsibility into thirteen modules, each under 1,500

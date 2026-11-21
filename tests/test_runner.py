@@ -4845,6 +4845,8 @@ def test_restart_if_upgraded():
 def test_auto_upgrade():
     import agent_runner
     due = R.auto_upgrade_due
+    from agent_runner.config import DEFAULTS
+    eq(DEFAULTS['run']['auto_upgrade'], True, 'C6: [run] auto_upgrade defaults to true')
     check(due('0.49.0', '0.48.0', '0.48.0', False, ''), 'newer seen + no merge: upgrade')
     check(not due('0.49.0', '0.48.0', '0.48.0', True, ''), 'mid-merge: wait')
     check(not due('0.49.0', '0.48.0', '0.49.0', False, ''), 'already installed: restart_if_upgraded takes it')
@@ -4860,7 +4862,8 @@ def test_auto_upgrade():
         with mock.patch.object(R, 'upgrade', lambda: ran.append(1)), mock.patch.object(R.plat, 'WINDOWS', False), \
                 mock.patch.object(R.Path, 'read_text', lambda *a, **k: f'__version__ = "{agent_runner.__version__}"\n'):
             R.LATEST_SAID[0], R.AUTO_TRIED[0] = newer, ''
-            eq(R.auto_upgrade(False), None, 'auto_upgrade off (the default): nothing')
+            R.AUTO_UPGRADE[0] = False
+            eq(R.auto_upgrade(False), None, 'auto_upgrade = false: nothing')
             R.AUTO_UPGRADE[0] = True
             eq(R.auto_upgrade(True), None, 'mid-merge: it waits')
             t = R.auto_upgrade(False)
@@ -4870,7 +4873,7 @@ def test_auto_upgrade():
             eq(R.auto_upgrade(False), None, 'and not again for the same version')
             has(said[0], rf'{re.escape(newer)} is out.*upgrading by itself', 'logged')
     finally:
-        R.log, R.LATEST_SAID[0], R.AUTO_TRIED[0], R.AUTO_UPGRADE[0] = real_log, '', '', False
+        R.log, R.LATEST_SAID[0], R.AUTO_TRIED[0], R.AUTO_UPGRADE[0] = real_log, '', '', True
 
 
 def test_repair_per_failure(repo: Path):

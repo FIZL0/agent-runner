@@ -123,7 +123,7 @@ in one step. Edits already made in the main checkout: add `--here`, and they mov
 
 **Stopping.** Type `s` + Enter in the runner's pane, or run `agent-runner stop`. Nothing new starts; the
 running tasks finish and merge, then the run exits (`s` again takes it back). `s!` (`stop --force`) ends the
-sessions now instead, each to resume in the next run. `p` pauses, `u` upgrades agent-runner (the run restarts on it; `run --upgrade` does it at launch), `f` starts tasks past the usage caps (as `--force`), `+`/`-` change the slot count, and `z` or
+sessions now instead, each to resume in the next run. `p` pauses, `u` upgrades agent-runner (the run restarts on it; `[run] auto_upgrade`, on by default, does it once a release is out), `f` starts tasks past the usage caps (as `--force`), `+`/`-` change the slot count, and `z` or
 `x` suspend or shut the computer down once the run stops (or goes idle); `?` lists the keys. To leave the
 machine to it from the start, run with `--shutdown` or `--suspend`.
 

@@ -33,7 +33,7 @@ from agent_runner.slots import (adopt, agent_argv, agent_cmd, backend, DISK_AT, 
     free_gb, GB, MUX, remote_any, remote_line, REMOTE_URL, resume, run_session, save_leftovers, send_to_pane,
     ShimMux, single_run, slot_env, slot_shim, SLOTS, start, tmux, TmuxMux, transcript, trim, unmerged)
 from agent_runner.watch import (_account, agent_failed, api_down, AUTO_UPGRADE, auto_upgrade, cut_off,
-    drop_session_tmp, end_orphans, installed_version, memory_watch, queue_cut_off, queue_resume, restart_if_upgraded,
+    drop_session_tmp, end_orphans, memory_watch, queue_cut_off, queue_resume, restart_if_upgraded,
     RESUME_AFTER, resume_failed, RESUME_MAX, resumes, RESUMES_MAX, stalled, START_TRIES, state_line, stats,
     stop_hook, stop_waiter, sweep_tmp, update_watch, upgrade, usage_pct, weekly)
 from agent_runner.join import EDITED, EDITS_POLL, ELSEWHERE, REMIND_EVERY, TASK_SID, WAITING
@@ -889,7 +889,6 @@ def run(argv: list[str], prog: str) -> int:
     power.add_argument('--suspend', action='store_true',
                        help='as --shutdown, but suspend (sleep) instead; on waking the run carries on, and '
                             'suspends again only after its next work')
-    ap.add_argument('--upgrade', action='store_true', help='upgrade agent-runner first, then run the new version')
     ap.add_argument('--idle', type=int, default=None, help='seconds of quiet before a session is ended')
     ap.add_argument('--stall', type=int, default=None, help='seconds of quiet that count as stalled')
     ap.add_argument('--pause', type=int, default=None, help='seconds between a session ending and the next')
@@ -913,9 +912,6 @@ def run(argv: list[str], prog: str) -> int:
         return slot_shim(a.slot_shim)
 
     init()
-    if a.upgrade and upgrade() and installed_version() != __import__('agent_runner').__version__ \
-            and not plat.WINDOWS:  # Windows has no real exec: the next start runs it
-        os.execv(sys.executable, [x for x in sys.orig_argv if x != '--upgrade'])
     r = C.run
     once = a.slots == 'once'
     global POWER
