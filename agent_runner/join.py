@@ -114,7 +114,11 @@ def renumber_doubles(ref: str, onto: str, tid: str, cwd: Path) -> str:
                 for f in files for _, _, tid, rest, _ in P.iter_tasks(show(rev, f))}
 
     old, theirs, ours = ids(base), ids(ref), ids(onto)
-    folds, blocks = fold_doubles(show(base, files[0]), show(ref, files[0]), show(onto, files[0]), tid)
+    try:
+        folds, blocks = fold_doubles(show(base, files[0]), show(ref, files[0]), show(onto, files[0]), tid)
+    except Exception as e:  # a fold is a nicety: odd plan text must not stop the merge
+        log(f'{tid}: could not hold its follow-ups against {onto} ({e}); a follow-up may land twice')
+        folds, blocks = {}, {}
     doubled = [k for k in theirs if k not in old and k in ours and k != tid and theirs[k] != ours[k]
                and k not in folds]
     if not doubled and not folds:
@@ -138,10 +142,16 @@ def renumber_doubles(ref: str, onto: str, tid: str, cwd: Path) -> str:
                 continue
             if f == files[0] and folds:
                 now = _splice(now, folds, blocks)
-            text = '\n'.join(l if l in was or isinstance(l, _Kept) else pat.sub(lambda m: moved[m.group(1)], l)
-                             for l in now) + '\n'
+            text = '\n'.join(l if l in was else _renote(l, tid, new) if isinstance(l, _Kept)
+                             else pat.sub(lambda m: moved[m.group(1)], l) for l in now) + '\n'
             blob = g('hash-object', '-w', '--stdin', input=text).stdout.strip()
             g('update-index', '--cacheinfo', f'100644,{blob},{f}')
+        for k in folds:  # the long form the branch wrote for a folded one would name a task that is not there
+            was = plan_rel(f'{P.TASKS}/{k}.md')
+            if git('rev-parse', '-q', '--verify', f'{ref}:{was}', cwd=cwd).stdout.strip() and \
+                    git('cat-file', '-e', f'{base}:{was}', cwd=cwd).returncode:
+                g('update-index', '--force-remove', was)
+                log(f'{tid}: dropped {was}, the long form of {k}, folded into {folds[k]}')
         for k, v in new.items():  # the long form the branch wrote for it goes with it
             was, now = plan_rel(f'{P.TASKS}/{k}.md'), plan_rel(f'{P.TASKS}/{v}.md')
             blob = git('rev-parse', '-q', '--verify', f'{ref}:{was}', cwd=cwd).stdout.strip()
@@ -170,7 +180,17 @@ def renumber_doubles(ref: str, onto: str, tid: str, cwd: Path) -> str:
 
 
 class _Kept(str):
-    """A plan line `renumber_doubles` copies from the other side as it is: no id in it is renumbered."""
+    """A plan line `renumber_doubles` copies from the other side as it is: only its fold notes are renumbered."""
+
+
+def _renote(line: str, tid: str, new: dict) -> str:
+    """A kept line (`_Kept`) with the ids `new` renumbers renamed in the fold notes `tid` added to it, which
+    quote the branch's words; the rest of the line is the other side's, whose ids are its own."""
+    if not new:
+        return line
+    pat = re.compile(r'\b(' + '|'.join(map(re.escape, new)) + r')\b')
+    head, *notes = line.split(f' — {tid} filed the same as ')
+    return head + ''.join(f' — {tid} filed the same as ' + pat.sub(lambda m: new[m.group(1)], n) for n in notes)
 
 
 def fold_doubles(base: list[str], ref: list[str], onto: list[str], tid: str) -> tuple[dict, dict]:

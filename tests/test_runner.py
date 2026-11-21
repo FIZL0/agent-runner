@@ -3682,10 +3682,15 @@ def test_fold_doubles_b33(repo: Path):
     k = P.add('Y', same, 'bottom', todo=d2 / todo, done=d2 / done)  # its plan lacks N1's unmerged Y1
     seq = P.add('Y', f'the reaper sequel, after {k} lands | files: agent_runner/reaper.py', 'bottom',
                 todo=d2 / todo, done=d2 / done)
+    (d2 / 'plan/tasks').mkdir(exist_ok=True)
+    (d2 / f'plan/tasks/{k}.md').write_text(f'# {k} the flaky gate test\n', encoding='utf-8')
+    git(d2, 'add', f'plan/tasks/{k}.md')
     git(d2, 'commit', '-qam', f'N2: follow-ups {k}, {seq}')
     git(repo, 'merge', '-q', '--no-edit', R.renumber_doubles('task/N1', 'main', 'N1', repo))
     ref = R.renumber_doubles('task/N2', 'main', 'N2', repo)
     check(ref != 'task/N2', 'the doubled follow-up gets a commit of its own on top of the branch')
+    eq(git(repo, 'ls-tree', '--name-only', ref, f'plan/tasks/{k}.md'), '',
+       'the long form the branch wrote for it goes, not left naming a task that is not there')
     git(repo, 'merge', '-q', '--no-edit', ref)
     t = (repo / todo).read_text()
     eq(len(re.findall(r'flaky test_gate_timeout', t.split(' — ')[0])), 1, 'one task results, not two')
