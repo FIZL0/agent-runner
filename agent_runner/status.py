@@ -40,15 +40,15 @@ MERGED_SUBJECT = re.compile(r"^(?:Merge branch '?task/)?([A-Z]+\d+[a-z0-9]*)\b")
 
 
 def merges_since(start: dt.datetime) -> int:
-    """How many tasks merged since `start` (B78): the distinct task ids the run logged as landed (or part
-    landed), so a fast-forward merge counts and a task's two merge commits, or a remerge, count once. With
+    """How many tasks merged since `start` (B78): the distinct task ids the run logged as landed ('<ID>:
+    merged, ticked|part'), so a fast-forward merge counts and a task's two merge commits, or a remerge, count once. With
     no run log (events.jsonl or run.log), the distinct task ids that head the shared branch's first-parent
     commit subjects since `start` ('B45 …', "Merge branch 'task/F33'")."""
     if events_file().exists() or C.notes('run.log').exists():
         local = start.astimezone().replace(tzinfo=None) if start.tzinfo else start  # event stamps: local time
         first = local.isoformat(timespec='seconds')
         return len({ev['id'] for ev in read_events()
-                    if ev['kind'] in (EV_LANDED, EV_PART) and ev.get('id') and ev['time'][:19] >= first})
+                    if ev['kind'] == EV_LANDED and ev.get('id') and ev['time'][:19] >= first})
     try:
         branch = default_branch()
     except SystemExit:  # a misconfigured [git] master_branch: status still answers, counting HEAD

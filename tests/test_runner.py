@@ -5848,7 +5848,8 @@ def test_progress_and_release(repo: Path):
     now = R.dt.datetime.now()
     want = R.merges_since((now - R.dt.timedelta(hours=2)).astimezone())
     line = R.progress_line('2h', now)
-    check(line.startswith(f'merged {want} in the last 2h · '), 'the count is merges_since over the window', line)
+    check(line.startswith(f'merged {want} in the last 2h · '), 'the line carries merges_since over the window '
+          '(test_merged_count_b78 checks the count itself)', line)
     left, blocked = R.tasks_left(P.lines(R.C.todo))
     check(f'· {left} task' in line and (f'({blocked} blocked)' in line) == bool(blocked), 'and the TODO\'s counts', line)
     eq(R.progress_line('yesterday', now).split(' · ')[0].split(' ', 2)[2], 'since yesterday', 'yesterday counts from its midnight')
@@ -6668,7 +6669,7 @@ def test_merged_count_b78(repo: Path):
             f'=== {old} X9: merged, ticked\n=== {recent} D1: merged, ticked\n=== {recent} F2: merged, ticked\n'
             f'=== {recent} F2: merged, ticked\n=== {recent} B3: merged, blocked: the rest waits\n'
             f'=== {recent} T4: not merged, parked as task/T4 — red gate\n', encoding='utf-8')
-        eq(R.merges_since(start), 3, 'run.log: distinct landed ids in the window (a remerge once, part landed too)')
+        eq(R.merges_since(start), 2, 'run.log: distinct landed ids in the window (a remerge once)')
         R.C.notes('events.jsonl').write_text('\n'.join(json.dumps(e) for e in [
             {'time': recent, 'kind': R.EV_LANDED, 'id': 'F5', 'text': 'F5: merged, ticked'},
             {'time': recent, 'kind': R.EV_LANDED, 'id': 'F5', 'text': 'F5: merged, ticked'},
