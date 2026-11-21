@@ -29,7 +29,7 @@ from agent_runner.slots import (attach_target, backend, background_env, backgrou
 from agent_runner.watch import breaking, installed_version, last_session, queue_resume, upgrade, upgrade_argv
 from agent_runner.land import wip_main_info
 from agent_runner.control import (control_argv, control_brief, control_env, control_give, control_hook_input,
-    control_link, control_live, control_mark_ask, CONTROL_N_ENV, control_name, control_ok, control_session_start,
+    control_link, control_live, control_mark_ask, CONTROL_N_ENV, control_name, control_ok, control_open, control_session_start,
     control_set_title, control_sid, free_control_number, RUNNER_STARTED_ENV, unquiet_when_up)
 from agent_runner.status import (follow, move_since_mark, progress_line, release_line, since_mark_file, since_start,
     since_text, status_text, waiting_ok)
@@ -809,11 +809,7 @@ def cmd_control(argv: list[str], prog: str = f'{RUNNER} control') -> int:
         except OSError:
             pass
         a.ask, a.file = control_late_files(a.ask, a.file, a.feed_sid)
-    sid, resume = control_sid(n, new_run=a.new_run)
-    argv = control_argv(n, sid, resume, blank=a.blank, ask=a.ask, local=a.local, images=a.file)
-    if not resume:  # F32: a fresh session N never keeps an earlier session N's (or task's) name
-        control_give(n, control_name(n, a.ask, a.file))
-        control_mark_ask(n, sid if a.ask and n > 1 else '')  # F56: opened for one ask
+    sid, resume, argv = control_open(n, ask=a.ask, images=a.file, new_run=a.new_run, blank=a.blank, local=a.local)
     backend().trust(ROOT)
     os.chdir(ROOT)
     pidf = C.notes(f'control{n}.pid')

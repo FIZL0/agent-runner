@@ -5,9 +5,11 @@ from __future__ import annotations
 import shutil
 import subprocess
 import tempfile
+import uuid
 from pathlib import Path
+from unittest import mock
 
-from _check import check, eq, report
+from _check import check, eq, git, report
 
 from agent_runner import control as K  # noqa: E402
 
@@ -44,5 +46,39 @@ def test_real_tmux_takes_the_option():
         subprocess.run([*t, 'kill-server'], capture_output=True, timeout=20)
 
 
+def test_handed_ask_as_c1_starts_fresh():
+    print('B96: control --new --ask that gets number 1 starts fresh, named; the kept c1 session stays kept')
+    from agent_runner import runner as R
+    d = Path(tempfile.mkdtemp(prefix='agent-runner-control-'))
+    git(d, 'init', '-q')
+    (d / '.gitignore').write_text('.runner/\n')
+    (d / 'README.md').write_text('demo\n')
+    git(d, 'add', '-A')
+    git(d, 'commit', '-qm', 'start')
+    R.init(d)
+    kept = str(uuid.uuid4())
+    sidf = R.C.notes('control.sid')
+    sidf.write_text(kept + '\n', encoding='utf-8')
+    R.C.notes('control1.title').unlink(missing_ok=True)
+    ask = 'install IPAS looks wrong'
+    with mock.patch.object(R.Claude, 'find_transcript', lambda self, s: '/x.jsonl'), \
+            mock.patch.object(K, 'remote_on', lambda: True), mock.patch.object(K, 'ask_waiting', lambda: ''):
+        eq(K.control_sid(1), (kept, True), 'c1 with no ask still resumes its kept session')
+        sid, resume, argv = K.control_open(1, ask=ask)
+        check(not resume and sid != kept, 'the ask starts a new session', (sid, resume))
+        check('--resume' not in argv, 'no --resume', argv)
+        eq(argv[argv.index('--session-id') + 1], sid, 'started with --session-id <new uuid>')
+        check(uuid.UUID(sid).version == 4, 'the new id is a uuid')
+        eq(argv[1], K.control_ask(ask), 'the ask is its first message')
+        eq(argv[argv.index('--remote-control') + 1], K.control_name(1, ask), 'Remote Control gets the ask\'s name')
+        eq(K.control_given(1), K.control_name(1, ask), 'control_give recorded that name')
+        check(K.control_one_ask(1, sid), 'marked as opened for one ask')
+        eq(sidf.read_text(encoding='utf-8').strip(), kept, 'control.sid still holds the run\'s own c1')
+        eq(K.control_sid(1), (kept, True), 'and the run\'s c1 resumes it afterwards')
+        files_only = K.control_open(1, images=['/tmp/shot.png'])
+        check(not files_only[1] and files_only[0] not in (kept, sid), 'a files-only ask starts fresh too')
+
+
 if __name__ == '__main__':
-    raise SystemExit(report([test_background_session_options_target, test_real_tmux_takes_the_option]))
+    raise SystemExit(report([test_background_session_options_target, test_real_tmux_takes_the_option,
+                             test_handed_ask_as_c1_starts_fresh]))

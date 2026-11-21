@@ -473,14 +473,18 @@ def control_bloated(sid: str) -> int:
     return last if warn > 0 and last > warn else 0
 
 
-def control_sid(n: int, new_run: bool = False) -> tuple[str, bool]:
+def control_sid(n: int, new_run: bool = False, handed: bool = False) -> tuple[str, bool]:
     """(session id, resume?): c1 keeps its id in `<notes>/control.sid` and resumes it across runs while its
     transcript is there; any other control session starts fresh. F27: `new_run` (`control 1 --new-run`, from a
     run a person started, not a restart: `run_restart`) starts c1 fresh, with a new id in control.sid, when
     the kept transcript's last context is over [run] context_warn; the plan, ledger and since hold the state,
-    so the opening summary covers it. CONTROL_FRESH then says why, in one line."""
+    so the opening summary covers it. CONTROL_FRESH then says why, in one line. B96: `handed` (a session opened
+    for a handed-on ask, `control --new --ask`, that got number 1 because c1 was not live) always starts fresh
+    and leaves control.sid as it is: that kept session stays the run's own c1."""
     f = C.notes('control.sid')
     CONTROL_FRESH[0] = ''
+    if handed:
+        return str(uuid.uuid4()), False
     if n == 1:
         try:
             sid = f.read_text(encoding='utf-8').strip()
@@ -496,6 +500,20 @@ def control_sid(n: int, new_run: bool = False) -> tuple[str, bool]:
     if n == 1:
         f.write_text(sid + '\n', encoding='utf-8')
     return sid, False
+
+
+def control_open(n: int, ask: str = '', images: list[str] | tuple = (), new_run: bool = False, blank: bool = False,
+                 local: bool = False) -> tuple[str, bool, list[str]]:
+    """(session id, resume?, argv) control session `n` starts with (`control N`). B96: one opened with an ask
+    (or files) starts fresh even as number 1 (`control_sid`). A fresh session gets the name the runner gives it
+    (F32: never an earlier session N's or a task's) and, opened for an ask, the one-ask mark (F56)."""
+    handed = bool(ask or images)
+    sid, resume = control_sid(n, new_run=new_run, handed=handed)
+    argv = control_argv(n, sid, resume, blank=blank, ask=ask, local=local, images=images)
+    if not resume:
+        control_give(n, control_name(n, ask, images))
+        control_mark_ask(n, sid if ask else '')
+    return sid, resume, argv
 
 
 def control_env() -> dict:
