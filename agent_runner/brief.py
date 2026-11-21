@@ -155,6 +155,9 @@ def prompt_for(tid: str, n: int, slots: int, cwd: Path, branch: str) -> str:
         policies.append('Only add comments when necessary to explain non-obvious intent or constraints.')
     if P.concept(tid):
         prompt = f'{prompt.rstrip()}\n\n' + CONCEPT_PROMPT.format(runner=C.command, tid=tid)
+    elif research_task(tid):  # F36
+        prompt = f'{prompt.rstrip()}\n\n' + RESEARCH_PROMPT.format(runner=C.command, tid=tid,
+                                                                   findings=findings_where())
     elif wizards_on():
         prompt = f'{prompt.rstrip()}\n\n' + WIZARD_PROMPT.format(
             runner=C.command, tid=tid, template=WIZARD_TEMPLATE, path=C.notes('wizards', f'{tid}.sh'))
@@ -174,6 +177,37 @@ and its trade-off; then your recommendation and why. A person picks one from tha
 make it short, concrete and readable at a glance. Change no product code; commit only notes you wrote (the \
 journal). Finish with `{runner} done {tid} "<msg>" --artifact <the page's URL>`: it is refused without one, and \
 it files the build task, blocked until the person approves an option."""
+
+
+RESEARCH_PROMPT = """\
+{tid} is a research task: find out, measure or check, and change no product. Write your findings where the \
+run merges them ({findings}), queue each change they call for with `{runner} plan add`, and change no code: \
+a research diff that touches any other file is not merged, and the task blocks on a person instead. If its \
+note says a person answered `follow-up`, file the earlier attempt's code (on wip/{tid}) as its own task with \
+`{runner} plan add` and commit only the findings; if it says `merge anyway`, they accepted that code: bring it \
+over from wip/{tid} with the findings."""
+
+
+def research_task(tid: str) -> bool:
+    """F36: `tid` is research by the run's own kinds (`[plan] kinds`, else plan.KINDS)."""
+    return P.research(tid, C.raw['plan'].get('kinds') or P.KINDS)
+
+
+def findings_globs() -> list[str]:
+    """F36: the files a research task may change, the one list the brief names and the merge checks: the plan
+    directory (in the repo), the journal (in the repo) and `[run] findings`."""
+    out = []
+    if not C.plan_external:
+        d = os.path.relpath(C.plan_dir, C.root).replace(os.sep, '/')
+        out += ['TODO.md', 'DONE.md'] if d == '.' else [f'{d}/**']
+    if C.journal and C.journal.is_relative_to(C.root):
+        out.append(os.path.relpath(C.journal, C.root).replace(os.sep, '/') + '/**')
+    return out + list(C.run['findings'] or [])
+
+
+def findings_where() -> str:
+    """Where a research task's findings go (F36), for its brief."""
+    return ', '.join(f'`{g}`' for g in findings_globs())
 
 
 class _Keep(dict):

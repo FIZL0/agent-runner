@@ -18,11 +18,14 @@ import time
 import uuid
 from pathlib import Path
 
-from agent_runner import plan as P, plat
+from contextlib import ExitStack
+
+from agent_runner import plan as P, plat, plansync
+from agent_runner.brief import findings_globs, research_task
 from agent_runner.done import DOCS_SKIP, TESTED, docs_only, gate
 from agent_runner.gitops import _net
 from agent_runner.state import C, clean, git, hook, LANDING, log, MERGE, note, plan_rel, plan_text, ROOT, SLOTS_DIR
-from agent_runner.state import EV_LANDED, EV_PART
+from agent_runner.state import commit_plan, EV_LANDED, EV_LEFT, EV_PART
 from agent_runner.slots import (agent_cmd, backend, entries, env_vars, MASTER_IDLE, merge_env, MUX, pane, slot_env,
     trim, window, worktree)
 from agent_runner.join import joined, LANDED, merge_into, renumber_doubles, task_env, TASK_SID, WAITING
@@ -809,6 +812,9 @@ def merge_tries(tid: str, branch: str) -> str | None:
             WAITING.discard(tid)
             if tid not in LANDED and UNPUSHED:  # a batch whose last task has not taken the lock yet: its
                 push_landed(UNPUSHED[-1], branch)  # push goes out now, not after this one's gate
+            if tid not in LANDED and (why := research_held(tid, branch)):  # F36: findings only
+                forget(tid)
+                return why
             if tid not in LANDED:  # else it went in with an earlier task's batch
                 if (why := merge_batch(tid, branch, inline=tries == 2, yields=yields)) == LATER:
                     yields, tries = False, tries - 1  # once, and not a try: it queues again behind that batch
@@ -843,6 +849,66 @@ def forget(tid: str) -> None:
     ALONE.discard(tid)
     FAILED.pop(tid, None)
     TASK_SID.pop(tid, None)
+
+
+def research_code(tid: str, branch: str) -> list[str]:
+    """F36: the files task/<tid> changes beyond its findings (`brief.findings_globs`, the list its brief names)
+    when `tid` is a research task; [] for any other task or a findings-only diff."""
+    if not research_task(tid):
+        return []
+    globs = findings_globs()
+    files = git('diff', '--name-only', '--no-renames', f'{branch}...task/{tid}').stdout.split()
+    return [f for f in files if not docs_only([f], globs)]
+
+
+def research_held(tid: str, branch: str) -> str | None:
+    """F36: why task/<tid> does not merge: a research task whose diff touches code. It is blocked on a person
+    (`DECIDE:` naming the code files) to file the code as a follow-up or merge it anyway; the branch is parked
+    on wip/ by the caller. None when it may merge: no research task, findings only, or the person's answer on
+    the task says `merge anyway`."""
+    if not (code := research_code(tid, branch)):
+        return None
+    ls = plan_text(branch)
+    i = next((i for i, l in enumerate(ls) if f'**{tid}**' in l), None)
+    item = '\n'.join(P._item_block(ls, i)) if i is not None and P.ITEM.match(ls[i]) else ''
+    item = item.split(' BLOCKED: ')[0]
+    if ' — ' in item and P.MERGE_ANYWAY.search(item[item.index(' — '):]):  # a note, not the task's title
+        log(f'{tid}: research that changes code ({", ".join(code[:8])}); merged anyway, as the person answered')
+        return None
+    shown = ', '.join(code[:8]) + (f' and {len(code) - 8} more' if len(code) > 8 else '')
+    why = f'research changes no product, and this diff changes code: {shown}'
+    ask = (f'DECIDE: {tid} is research, but its diff changes code ({shown}), so it did not merge. Answer '
+           f'`follow-up` (the code is filed as its own task and the findings merge alone) or `merge anyway` '
+           f'(the code lands with the findings); the attempt is parked on wip/{tid}')
+    if block_research(tid, branch, ask):
+        note(f'{tid}: LEFT FOR A HUMAN — {why}')
+        log(f'{tid}: LEFT FOR A HUMAN — {why}; blocked on a person', EV_LEFT, tid, why=why)
+        return f'{why}; blocked on a person to file it as a follow-up or merge it anyway'
+    return f'{why}; it could not be blocked now (TODO.md busy), so it starts again'
+
+
+def block_research(tid: str, branch: str, ask: str) -> bool:
+    """Block `tid` with `ask` in the main checkout's plan and commit it, as `block_parked` does (the caller holds
+    the MERGE turn). False when TODO.md has edits or the main checkout is on another branch."""
+    hold = ExitStack()
+    try:
+        if C.plan_external:
+            hold.enter_context(plansync.locked(C))
+            plansync.pull(C, force=True)
+        rel = plan_rel('TODO.md')
+        if not C.plan_external and (git('status', '--porcelain', '--', rel).stdout.strip() or branch and
+                                    git('branch', '--show-current').stdout.strip() != branch):
+            return False
+        if tid not in P.open_ids(P.lines(ROOT / rel)):
+            return False
+        P.block(tid, ask, todo=ROOT / rel, after=[])
+        if not commit_plan(f'Plan: block {tid}, research whose diff changes code', rel):
+            if not C.plan_external:
+                git('checkout', '-q', '--', rel)
+            return False
+        return True
+    finally:
+        hold.close()
 
 
 def refix(tid: str, branch: str, ref: str, files: list[str], d: Path, undo: bool = False, msg: str = '') -> str | None:

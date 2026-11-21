@@ -12,6 +12,11 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
   runs alone: the run starts it only once no other task runs or waits to merge, and starts nothing beside it,
   so it releases exactly what landed. `plan add V --now` (or `--pri critical`) files an interim release that
   does not wait. A release is never refused as a duplicate of another one (F38).
+- Research tasks merge only their findings. A task whose kind means research (`R`, or a repo's own `[plan]
+  kinds` entry that starts "research") lands when its diff changes only the plan directory, the journal or
+  the new `[run] findings` globs (default `docs/research/**`, `research/**`). One that touches code is parked
+  and blocks with `DECIDE:` naming the code files: answer `follow-up` or `merge anyway`. Its brief says to
+  write findings, queue follow-ups with `plan add` and change no code (F36).
 
 ## 0.56.0 (2026-11-20)
 
