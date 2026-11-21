@@ -5208,10 +5208,14 @@ def test_auto_release(repo: Path):
         evf.write_text('', encoding='utf-8')
         land('F901', 'F902')
         eq((R.auto_release('main'), releases()), ('', []), 'every = 3: two landed, none yet')
-        land('F902', 'V1')
-        eq(R.auto_release('main'), '', 'a remerge and a release landing are not counted')
-        evf.write_text('', encoding='utf-8')
-        land('F901', 'F902', 'F903')
+        land('F902')
+        eq(R.auto_release('main'), '', 'a remerge counts once')
+        land('V1')
+        eq(R.auto_release('main'), '', 'a release landing is not counted')
+        stamp = (R.dt.datetime.now() + R.dt.timedelta(minutes=2)).isoformat(timespec='seconds')
+        land('F903', 'F904')
+        eq(R.auto_release('main'), '', 'and starts the count again: two since it, none yet')
+        land('F905')
         said = []
         with mock.patch.object(R.loop, 'log', lambda m, *a, **k: said.append((m, a, k))):
             tid = R.auto_release('main')
@@ -5225,9 +5229,14 @@ def test_auto_release(repo: Path):
         eq(R.since_event({'time': stamp, 'kind': R.EV_AUTO_RELEASE, 'id': tid, 'why': '3 landed'}, {})[2],
            f'queued {tid} (auto_release: 3 landed)', 'and status lately says the same')
         check(R.EV_AUTO_RELEASE in R.LATELY, 'listed under lately')
-        land('F904', 'F905', 'F906')
+        land('F906', 'F907', 'F908')
         eq((R.auto_release('main'), R.auto_release('main', idle=True), len(releases())), ('', '', 1),
            'no second release while one is open')
+        drop(tid)
+        tid1 = R.auto_release('main')
+        check(tid1.startswith('V') and tid1 != tid, 'the open release dropped: the count queues one again, '
+                                                  'with no new landing', tid1)
+        tid = tid1
 
         print('run: auto_release idle = true queues one on idle with landed work, none with nothing landed (F63)')
         drop(tid)

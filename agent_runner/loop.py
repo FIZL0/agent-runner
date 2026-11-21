@@ -749,7 +749,7 @@ def landed_since_release(branch: str) -> list[str]:
     return out
 
 
-AUTO_RELEASE_SEEN = [None]  # events.jsonl's (size, mtime) at the last count by `every`: no new landing, no new count
+AUTO_RELEASE_SEEN = [None]  # events.jsonl's and TODO.md's size and mtime at the last count by `every`: neither changed, no new count
 
 
 def auto_release(branch: str, idle: bool = False) -> str:
@@ -760,11 +760,13 @@ def auto_release(branch: str, idle: bool = False) -> str:
     if not every and not (idle and on_idle):
         return ''
     if not idle:  # the every-tick look: only after the events file changed
-        try:
-            st = C.notes('events.jsonl').stat()
-            mark = (st.st_size, st.st_mtime)
-        except OSError:
-            mark = None
+        mark = []
+        for f in (C.notes('events.jsonl'), ROOT / plan_rel('TODO.md')):  # a landing, or a release dropped
+            try:
+                st = f.stat()
+                mark += [st.st_size, st.st_mtime]
+            except OSError:
+                mark += [None, None]
         if mark == AUTO_RELEASE_SEEN[0]:
             return ''
         AUTO_RELEASE_SEEN[0] = mark
@@ -793,7 +795,6 @@ def auto_release(branch: str, idle: bool = False) -> str:
             git('checkout', '-q', '--', rel)
             AUTO_RELEASE_SEEN[0] = None
             return ''
-        note(f'{tid}: queued (auto_release: {why})')
         log(f'queued {tid} (auto_release: {why})', EV_AUTO_RELEASE, tid, why=why)
     finally:
         hold.close()
