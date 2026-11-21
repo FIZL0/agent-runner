@@ -7014,13 +7014,16 @@ def test_merged_count_b78(repo: Path):
             f'=== {old} X9: merged, ticked\n=== {recent} D1: merged, ticked\n=== {recent} F2: merged, ticked\n'
             f'=== {recent} F2: merged, ticked\n=== {recent} B3: merged, blocked: the rest waits\n'
             f'=== {recent} T4: not merged, parked as task/T4 — red gate\n', encoding='utf-8')
-        eq(R.merges_since(start), 2, 'run.log: distinct landed ids in the window (a remerge once)')
+        eq(R.merges_since(start), 3, 'run.log: distinct landed ids in the window (a remerge once), a task merged with '
+                                     'the rest blocked too (B85), a parked one not')
         R.C.notes('events.jsonl').write_text('\n'.join(json.dumps(e) for e in [
             {'time': recent, 'kind': R.EV_LANDED, 'id': 'F5', 'text': 'F5: merged, ticked'},
             {'time': recent, 'kind': R.EV_LANDED, 'id': 'F5', 'text': 'F5: merged, ticked'},
+            {'time': recent, 'kind': R.EV_PART, 'id': 'B7', 'text': 'B7: merged, blocked: the rest waits'},
             {'time': recent, 'kind': R.EV_STARTED, 'id': 'F6', 'text': 'slot 1: F6 (…;'}]) + '\n', encoding='utf-8')
-        eq(R.merges_since(start), 1, 'events.jsonl: its landed ids, the run.log lines it covers not counted again')
-        check(R.progress_line('1h').startswith('merged 1 in the last 1h'), 'status says the same count')
+        eq(R.merges_since(start), 2, 'events.jsonl: its landed and merged-but-blocked ids, the run.log lines it covers '
+                                     'not counted again')
+        check(R.progress_line('1h').startswith('merged 2 in the last 1h'), 'status says the same count')
     R.init(repo)
 
 
