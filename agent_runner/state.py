@@ -372,10 +372,7 @@ def hook(name: str, cmd: str, cwd, env: dict | None = None) -> tuple[int | None,
     `cwd`, for at most `[run] timeout`: (its exit code, stdout and stderr). One that runs past is stopped,
     logged as "<name>: `cmd` ran past [run] timeout (Ns); stopped" and read as (None, ''): not 0, so a caller
     that counts a non-zero exit as failing counts it too."""
-    try:
-        r = sp.run(cmd, shell=True, cwd=str(cwd), capture_output=True, text=True, errors='replace', env=env,
-                   timeout=C.run['timeout'])
-    except sp.TimeoutExpired:
+    rc, out = gitops.shell(cmd, cwd, env, C.run['timeout'])
+    if rc is None:
         log(f'{name}: `{cmd}` ran past [run] timeout ({C.run["timeout"]}s); stopped')
-        return None, ''
-    return r.returncode, (r.stdout or '') + (r.stderr or '')
+    return rc, out

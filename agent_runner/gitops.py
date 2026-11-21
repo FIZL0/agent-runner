@@ -179,3 +179,15 @@ def drop_remote(cwd: Path, branch: str) -> str:
         return f'! {branch} could not be deleted from {remote}: delete it by hand'
     g('update-ref', '-d', f'refs/remotes/{remote}/{branch}')
     return f'deleted {branch} from {remote}'
+
+
+def shell(cmd: str, cwd, env: dict | None, timeout: float) -> tuple[int | None, str]:
+    """Run a project's command in a shell at `cwd` for at most `timeout` seconds: (its exit code, stdout and
+    stderr), or (None, '') when it ran past and was stopped. The core of state.hook and done.gate (C16); each
+    says in its own way that one ran past."""
+    try:
+        r = subprocess.run(cmd, shell=True, cwd=str(cwd), capture_output=True, text=True, errors='replace',
+                           env=env, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        return None, ''
+    return r.returncode, (r.stdout or '') + (r.stderr or '')
