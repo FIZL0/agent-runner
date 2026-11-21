@@ -105,3 +105,10 @@ _Said_: Claude Code changed something
 _On screen_: Claude Code X changed Y; Z no longer works
 _In code_: claude_drift, EV_DRIFT, transcript_drift, link_drift, remote_answer_drift, claude-drift.json
 _Avoid_: breakage, incompatibility
+
+**Restyle**:
+A style a person approved for the future too: a page of each current page or screen that would change, before and after, waiting for an OK; the interface work is held on it and reopens with the style once it is approved
+_Said_: the future too, make everything look like this
+_On screen_: restyle K9, held for restyle K9
+_In code_: plan.restyle, plan.hold, plan.release_held, loop.restyles, plan restyle
+_Avoid_: redesign, retheme
