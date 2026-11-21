@@ -81,10 +81,19 @@ def test_shim_once(repo: Path, tmp: Path):
     check(marker.with_suffix('.exit').read_text().startswith('could not start'), 'and says it could not start')
 
 
+def test_run_log_utf8(repo: Path):
+    print('windows: run.log is UTF-8 whatever the console code page (B100: a Remote Control name\'s "·")')
+    R.init(repo)
+    R.log('control: control server up as "hello · control" — “quoted”')
+    raw = R.C.notes('run.log').read_bytes()
+    check('hello · control'.encode('utf-8') in raw, 'the "·" is written as UTF-8 (C2 B7), not as cp1252 or cp437')
+    check(not raw.startswith(b'\xef\xbb\xbf'), 'no BOM: readers take the first line as a run.log line')
+
+
 def main() -> int:
     tmp = Path(tempfile.mkdtemp(prefix='agent-runner-windows-'))
     repo = make_repo(tmp)
-    return report([lambda: test_shim_once(repo, tmp), lambda: test_utf8_merge(tmp)])
+    return report([lambda: test_shim_once(repo, tmp), lambda: test_utf8_merge(tmp), lambda: test_run_log_utf8(repo)])
 
 
 if __name__ == '__main__':
