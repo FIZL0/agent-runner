@@ -4,6 +4,10 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- `status`'s `merged N in the last 24h` counts tasks, not merge commits: a task that fast-forwards (the
+  first task of a fresh repo, or any whose branch main had not moved past) now counts, and a task that left
+  two merge commits, or merged twice, counts once. It reads the run log's landed tasks, and with no run log
+  the task ids heading the main branch's commit subjects (B78).
 - When Claude Code changes something agent-runner reads from its internals, you are told instead of things
   going quiet: a transcript with none of the entry types it knows, a Remote Control pane that shows no
   claude.ai/code link in time, or `remoteDialogSeen` gone from `~/.claude.json` each give one needs-you line

@@ -36,14 +36,27 @@ def tasks_left(ls: list[str]) -> tuple[int, int]:
     return left, blocked
 
 
+MERGED_SUBJECT = re.compile(r"^(?:Merge branch '?task/)?([A-Z]+\d+[a-z0-9]*)\b")  # a commit subject's task id
+
+
 def merges_since(start: dt.datetime) -> int:
-    """How many merge commits the shared branch has since `start` (`git log --merges --since`)."""
+    """How many tasks merged since `start` (B78): the distinct task ids the run logged as landed (or part
+    landed), so a fast-forward merge counts and a task's two merge commits, or a remerge, count once. With
+    no run log (events.jsonl or run.log), the distinct task ids that head the shared branch's first-parent
+    commit subjects since `start` ('B45 …', "Merge branch 'task/F33'")."""
+    if events_file().exists() or C.notes('run.log').exists():
+        local = start.astimezone().replace(tzinfo=None) if start.tzinfo else start  # event stamps: local time
+        first = local.isoformat(timespec='seconds')
+        return len({ev['id'] for ev in read_events()
+                    if ev['kind'] in (EV_LANDED, EV_PART) and ev.get('id') and ev['time'][:19] >= first})
     try:
         branch = default_branch()
     except SystemExit:  # a misconfigured [git] master_branch: status still answers, counting HEAD
         branch = 'HEAD'
-    r = git('log', '--merges', f'--since={start.isoformat(timespec="seconds")}', '--format=%H', branch)
-    return len(r.stdout.split()) if r.returncode == 0 else 0
+    r = git('log', '--first-parent', f'--since={start.isoformat(timespec="seconds")}', '--format=%s', branch)
+    if r.returncode != 0:
+        return 0
+    return len({m[1] for s in r.stdout.splitlines() if (m := MERGED_SUBJECT.match(s))})
 
 
 def progress_line(window: str = '24h', now: dt.datetime | None = None) -> str:

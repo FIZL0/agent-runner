@@ -5846,10 +5846,9 @@ def test_progress_and_release(repo: Path):
        'an open release task whose `after:` all landed is ready')
     eq(R.release_line(ls[:5]), '', 'no release task queued: no line')
     now = R.dt.datetime.now()
-    since = (now - R.dt.timedelta(hours=2)).astimezone().isoformat(timespec='seconds')
-    want = len(git(repo, 'log', '--merges', f'--since={since}', '--format=%H', R.default_branch()).split())
+    want = R.merges_since((now - R.dt.timedelta(hours=2)).astimezone())
     line = R.progress_line('2h', now)
-    check(line.startswith(f'merged {want} in the last 2h · '), 'the count matches git log --merges --since', line)
+    check(line.startswith(f'merged {want} in the last 2h · '), 'the count is merges_since over the window', line)
     left, blocked = R.tasks_left(P.lines(R.C.todo))
     check(f'· {left} task' in line and (f'({blocked} blocked)' in line) == bool(blocked), 'and the TODO\'s counts', line)
     eq(R.progress_line('yesterday', now).split(' · ')[0].split(' ', 2)[2], 'since yesterday', 'yesterday counts from its midnight')
@@ -6636,6 +6635,49 @@ def test_claude_drift_b45(repo: Path, tmp: Path):
             cj.write_text(saved_cj, encoding='utf-8')
 
 
+def test_merged_count_b78(repo: Path):
+    print('status: "merged N" counts tasks, not merge commits: a fast-forward counts, two merge commits count once')
+    with tempfile.TemporaryDirectory() as t:
+        fresh = make_repo(Path(t))
+        R.init(fresh)
+        start = (R.dt.datetime.now() - R.dt.timedelta(hours=1)).astimezone()
+        git(fresh, 'checkout', '-q', '-b', 'task/D1')
+        (fresh / 'a.py').write_text('# a, documented\n', encoding='utf-8')
+        git(fresh, 'commit', '-qam', 'D1 document a')
+        git(fresh, 'checkout', '-q', 'main')
+        git(fresh, 'merge', '-q', 'task/D1', '-m', "Merge branch 'task/D1'")  # main has not moved: a fast-forward
+        eq(git(fresh, 'log', '--merges', '--format=%H').split(), [], 'the first task fast-forwards: no merge commit')
+        eq(R.merges_since(start), 1, 'no run log: the fast-forwarded task still counts, from its commit subject')
+        git(fresh, 'checkout', '-q', '-b', 'task/F2')
+        (fresh / 'b.py').write_text('# b, featured\n', encoding='utf-8')
+        git(fresh, 'commit', '-qam', 'F2 feature b')
+        git(fresh, 'checkout', '-q', 'main')
+        (fresh / 'c.py').write_text('# c, moved\n', encoding='utf-8')
+        git(fresh, 'commit', '-qam', 'Plan: tick D1')
+        git(fresh, 'checkout', '-q', '-b', 'merge')
+        git(fresh, 'merge', '-q', '--no-ff', 'task/F2', '-m', "Merge branch 'task/F2'")
+        git(fresh, 'checkout', '-q', 'main')
+        (fresh / 'd.py').write_text('# d, moved during the tests\n', encoding='utf-8')
+        git(fresh, 'commit', '-qam', 'Plan: note T5')
+        git(fresh, 'merge', '-q', '--no-ff', 'merge', '-m', 'F2: the tested merge, onto commits main got during the tests')
+        eq(len(git(fresh, 'log', '--merges', '--format=%H').split()), 2, 'one task, two merge commits')
+        eq(R.merges_since(start), 2, 'no run log: D1 and F2, each once')
+        old = (R.dt.datetime.now() - R.dt.timedelta(days=2)).isoformat(timespec='seconds')
+        recent = (R.dt.datetime.now() - R.dt.timedelta(minutes=5)).isoformat(timespec='seconds')
+        R.C.notes('run.log').write_text(
+            f'=== {old} X9: merged, ticked\n=== {recent} D1: merged, ticked\n=== {recent} F2: merged, ticked\n'
+            f'=== {recent} F2: merged, ticked\n=== {recent} B3: merged, blocked: the rest waits\n'
+            f'=== {recent} T4: not merged, parked as task/T4 — red gate\n', encoding='utf-8')
+        eq(R.merges_since(start), 3, 'run.log: distinct landed ids in the window (a remerge once, part landed too)')
+        R.C.notes('events.jsonl').write_text('\n'.join(json.dumps(e) for e in [
+            {'time': recent, 'kind': R.EV_LANDED, 'id': 'F5', 'text': 'F5: merged, ticked'},
+            {'time': recent, 'kind': R.EV_LANDED, 'id': 'F5', 'text': 'F5: merged, ticked'},
+            {'time': recent, 'kind': R.EV_STARTED, 'id': 'F6', 'text': 'slot 1: F6 (…;'}]) + '\n', encoding='utf-8')
+        eq(R.merges_since(start), 1, 'events.jsonl: its landed ids, the run.log lines it covers not counted again')
+        check(R.progress_line('1h').startswith('merged 1 in the last 1h'), 'status says the same count')
+    R.init(repo)
+
+
 def main() -> int:
     with tempfile.TemporaryDirectory() as t:
         tmp = Path(t)
@@ -6674,7 +6716,7 @@ def main() -> int:
                        lambda: test_help_order_and_bare_wizard(tmp), lambda: test_setup(tmp),
                        lambda: test_stop_countdown(repo), lambda: test_real_claude_json_guard(tmp),
                        lambda: test_hidden_slots(repo, tmp), lambda: test_hidden_run_lands(tmp),
-                       lambda: test_claude_drift_b45(repo, tmp)])
+                       lambda: test_claude_drift_b45(repo, tmp), lambda: test_merged_count_b78(repo)])
 
 
 if __name__ == '__main__':
