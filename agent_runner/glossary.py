@@ -311,8 +311,8 @@ itself, so it is the one file you change here. Never ask the person about it: wr
 - When the person, the screen and the code use three different words for one thing, offer once to queue a
   rename to the glossary's term (`{cmd} plan add C "rename … to …" --files …`); queue it only on yes.
 - When the person asks "what?" or seems lost, say it again in the glossary's terms, shorter.
-- Offer an ADR (docs/adr/NNNN-<slug>.md, queued as a D task) only for a choice that is hard to reverse,
-  surprising and a real trade-off; never for the rest.
+- Offer an ADR in docs/adr/ only for a choice that is hard to reverse, surprising and a real trade-off;
+  never for the rest.
 """
 
 SEED = """\

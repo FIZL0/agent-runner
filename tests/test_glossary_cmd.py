@@ -128,4 +128,25 @@ fitted = glossary.fit(brief.PROMPT, 'slot', 'agent-runner', on)
 check('agent-runner glossary add' in fitted and 'name new things' in fitted, 'the slot prompt carries it')
 check(run(d, 'settings').stdout.count("glossary = \"GLOSSARY.md\"") == 1, '`settings` lists [plan] glossary')
 
+print('the real briefs: control --brief seeds in a repo with none, and the slot prompt is fitted')
+d4 = repo()
+b = run(d4, 'control', '--brief').stdout
+check('glossary seed' in b and 'Do not ask first' in b, 'control --brief in a repo with no glossary: seed it', b[-400:])
+run(d4, 'glossary', 'add', 'Board', '--means', 'The screen.')
+b = run(d4, 'control', '--brief').stdout
+check('glossary add' in b and 'glossary seed' not in b, 'with one: add terms, no seed ask')
+b = run(d3, 'control', '--brief').stdout
+check(b and 'glossary add' not in b and guide.GLOSSARY not in b, 'glossary = false: control --brief skips it')
+import inspect  # noqa: E402
+check("glossary.fit(prompt, 'slot'" in inspect.getsource(brief.prompt_for), 'prompt_for fits the slot prompt')
+
+print('in a worktree, an add waits for the task\'s own commit')
+wt = d4.parent / f'{d4.name}-wt'
+git(d4, 'worktree', 'add', '-q', '-b', 'task/X1', str(wt))
+n = len(subjects(wt))
+r = run(wt, 'glossary', 'add', 'Task', '--means', 'One piece of queued work.')
+check(r.returncode == 0 and '**Task**' in (wt / 'GLOSSARY.md').read_text(), 'written in the worktree', r.stderr)
+eq(len(subjects(wt)), n, 'not committed there')
+check('**Task**' not in (d4 / 'GLOSSARY.md').read_text(), 'and the main checkout is untouched')
+
 raise SystemExit(1 if FAILED else print('\nall checks passed'))
