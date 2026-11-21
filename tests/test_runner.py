@@ -5730,6 +5730,45 @@ def test_after_all(repo: Path):
         R.plan_text = saved
 
 
+def test_release_kind(repo: Path):
+    print('run: F38 a release (kind V) waits on the earlier open tasks, and no other task starts beside it')
+    R.init(repo)
+    rel = '- [ ] **V1** Release: cut the next version | after: all'
+    plan = {'ls': []}
+    saved = R.plan_text
+    R.plan_text = lambda branch: plan['ls']
+    try:
+        ids = lambda: [t[0] for t in R.tasks('main')]
+        head = ['# TODO', '', '### Next', '']
+        plan['ls'] = head + ['- [ ] **F1** one | files: a.py', rel, '- [ ] **F2** below it | files: b.py']
+        eq(ids(), ['F1', 'F2'], 'unstarted while an earlier task is open')
+        plan['ls'] = head + [rel, '- [ ] **F2** below it | files: b.py', '- [ ] **B3** another | files: c.py']
+        v = R.pick({}, set(), 'main')
+        eq(v[0], 'V1', 'starts once nothing is ahead of it')
+        eq(R.pick({1: v}, set(), 'main'), None, 'no other task starts beside a running release, whatever its files')
+        eq(R.explain({1: v}, set(), 'main')['F2'], ('a release runs alone', 'V1 is releasing'), 'the dry run says why')
+        f2 = R.pick({}, {'V1'}, 'main')
+        eq(f2[0], 'F2', 'with the release passed over, F2 is next')
+        eq(R.pick({1: f2}, set(), 'main')[0], 'B3', 'a task beside F2 still starts')
+        check((R.pick({1: f2}, {'B3'}, 'main') or ('',))[0] != 'V1',
+              'the release waits for a task still running, even one below it')
+        eq(R.explain({1: f2}, set(), 'main')['V1'][0], 'a release runs alone', 'and the dry run says why')
+        ahead = R.ahead
+        R.ahead = lambda branch: ['F2']
+        try:
+            plan['ls'] = head + ['- [x] **F2** below it | files: b.py', rel]
+            check(R.pick({}, set(), 'main') is None, 'and for one finished but not merged: it releases what landed')
+        finally:
+            R.ahead = ahead
+        now = '- [ ] **V2** (follow-up, critical) Release: an interim one'
+        plan['ls'] = head + [now, '- [ ] **F3** queued | files: d.py']
+        v2 = R.pick({}, set(), 'main')
+        eq(v2[0], 'V2', 'an interim release (--now: no `after:`) starts at once')
+        eq(R.pick({1: v2}, set(), 'main'), None, 'and runs alone too')
+    finally:
+        R.plan_text = saved
+
+
 def test_progress_and_release(repo: Path):
     print('status: merged in the window, tasks left and blocked, and how close a queued release is')
     R.init(repo)
@@ -6460,7 +6499,7 @@ def main() -> int:
                        lambda: test_renamed_control_kept(repo),
                        lambda: test_control_summary_title(repo), lambda: test_control_task_name(repo), lambda: test_progress_and_release(repo),
                        lambda: test_control_status_rules(repo), lambda: test_control_do_it_here(repo), lambda: test_control_retitle_on_topic(repo), test_control_push_when_asked, test_needs_cmd_f44, test_idle_control_not_waiting, lambda: test_take_running_slot(repo), lambda: test_upgrade_cmd(repo), lambda: test_runner_route_b54(repo), test_control_no_upgrade_watcher,
-                       test_split_modules_c3, lambda: test_plan_last(repo), lambda: test_after_all(repo), lambda: test_release_push(repo),
+                       test_split_modules_c3, lambda: test_plan_last(repo), lambda: test_after_all(repo), lambda: test_release_kind(repo),lambda: test_release_push(repo),
                        lambda: test_help_order_and_bare_wizard(tmp), lambda: test_setup(tmp),
                        lambda: test_stop_countdown(repo), lambda: test_real_claude_json_guard(tmp),
                        lambda: test_hidden_slots(repo, tmp), lambda: test_hidden_run_lands(tmp)])

@@ -941,6 +941,42 @@ def test_after_all():
         has(plan.section(todo, 'T1')[0], r'^- \[ \] ', 'open again')
 
 
+def test_release_kind():
+    print('plan: add V files a release: `after: all` at the end of Next, the default brief, no duplicate refusal (F38)')
+    eq(plan.kinds()[0].get(plan.RELEASE, '')[:8], 'release:', 'V is a kind of task, the release')
+    check(plan.release('V3') and plan.release('V3a') and not plan.release('F3') and not plan.release(''),
+          'release() reads the id letter')
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        git(root, 'init', '-q')
+        (root / 'plan').mkdir()
+        todo = root / 'plan' / 'TODO.md'
+        todo.write_text('\n'.join(['# TODO', '', '### Next', '', '- [ ] **F1** a feature | files: a.py',
+                                    '- [ ] **F2** another | files: b.py', '', '### Follow-ups', '',
+                                    '- [ ] **B1** (follow-up, normal) a follow-up | files: c.py', '']), encoding='utf-8')
+        env = {**os.environ, 'AGENT_RUNNER_REPO': str(root), 'AGENT_RUNNER': '1'}
+        r = run(root, 'plan', 'add', 'V', env=env)
+        eq((r.returncode, r.stderr), (0, ''), 'plan add V needs no text, no --after and no --files')
+        line = plan.section(todo, 'V1')[0]
+        has(line, r'\*\*V1\*\* Release: bump the version .* \| after: all$', 'the default brief, `after: all`')
+        has(line, r'docs/SETUP\.md#versions.*CHANGELOG.*gh release view', 'the brief says what a release does')
+        eq(plan.index(todo)[2:5], ['[ ] F1', '[ ] F2', '[ ] V1'], 'at the end of Next, not a follow-up, even from an agent')
+        eq(plan.last_waits(todo), [('V1', ['F1', 'F2'])], 'it waits on the earlier open tasks')
+        r = run(root, 'plan', 'add', 'V', 'Release: cut the next version | files: CHANGELOG.md', env=env)
+        eq(r.returncode, 0, 'a second release is not refused as a duplicate of the first: ' + r.stderr)
+        r = run(root, 'plan', 'add', 'V', '--now', env=env)
+        eq(r.returncode, 0, 'add V --now: ' + r.stderr)
+        line = plan.section(todo, 'V3')[0]
+        check('after:' not in line and '(follow-up, critical)' in line, '--now: critical, no `after: all`', line)
+        eq(plan.index(todo)[2], '[ ] V3', 'and at the top: an interim release')
+        run(root, 'plan', 'add', 'V', '--pri', 'critical', '--force', env=env)
+        check('after:' not in plan.section(todo, 'V4')[0], '--pri critical: no `after: all` either')
+        run(root, 'plan', 'add', 'V', '--after', 'F1', '--force', env=env)
+        has(plan.section(todo, 'V5')[0], r'\| after: F1$', 'an --after of its own replaces `all`')
+        eq(run(root, 'plan', 'add', 'V', '--now', '--pri', 'low', env=env).returncode, 2, '--now with another level is refused')
+        eq(run(root, 'plan', 'add', 'F', 'x', '--now', '--force', env=env).returncode, 2, '--now is for a release only')
+
+
 def test_restore():
     print('plan: restore brings a ticked or dropped task back open, same id and fields (F47)')
     with tempfile.TemporaryDirectory() as tmp:
@@ -1262,7 +1298,7 @@ def test_channel():
 
 
 if __name__ == '__main__':
-    sys.exit(report([test_refusals, test_iter_tasks_and_titles, test_hook, test_done_gate, test_channel,test_edit, test_unlabelled_block, test_restore, test_plan_last, test_after_all,test_goal,test_plan_roundtrip, test_plan_reopen, test_plan_index_and_sections, test_brief, test_brief_outline,
+    sys.exit(report([test_refusals, test_iter_tasks_and_titles, test_hook, test_done_gate, test_channel,test_edit, test_unlabelled_block, test_restore, test_plan_last, test_after_all, test_release_kind,test_goal,test_plan_roundtrip, test_plan_reopen, test_plan_index_and_sections, test_brief, test_brief_outline,
                      test_split_parents, test_add_bottom, test_add_pri, test_add_subtask, test_kinds, test_need_files, test_add_stray_args, test_hand_edits_commit, test_hand_edits_push, test_similar, test_add_refuses_a_duplicate, test_carry_notes,
                      test_merge3, test_concurrent_add, test_merge_driver, test_concepts, test_needs_you,
                      test_needs_config]))

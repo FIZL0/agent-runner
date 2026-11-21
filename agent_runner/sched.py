@@ -118,9 +118,11 @@ def file_overlap(files, b: tuple, shared: set) -> set[str]:
 
 def clash(t: tuple, b: tuple, shared: set[str]) -> bool:
     """Task `t` may not run beside `b` (running here, waiting to merge, or claimed by another runner): siblings,
-    a shared ordered section, or overlapping files (`shared_files` aside; see `file_overlap`)."""
+    a shared ordered section, or overlapping files (`shared_files` aside; see `file_overlap`). A release (kind V,
+    F38) clashes with everything, either way round: it starts only when nothing else runs or waits to merge, and
+    nothing starts beside it, so it releases exactly what landed."""
     tid, section, files, _ = t
-    if family(tid) == family(b[0]):
+    if family(tid) == family(b[0]) or P.release(tid) or P.release(b[0]):  # F38: a release runs alone
         return True
     return (ordered(section) and section == b[1]) or bool(file_overlap(files, b, shared))
 
@@ -129,6 +131,10 @@ def clash_why(t: tuple, b: tuple, shared: set) -> tuple[str, str]:
     """Why `clash(t, b)`: (the kind of wait, what holds it), for the dry run."""
     if family(t[0]) == family(b[0]):
         return 'waiting for a sibling', b[0]
+    if P.release(t[0]):
+        return 'a release runs alone', f'{b[0]} is running or waiting to merge'
+    if P.release(b[0]):
+        return 'a release runs alone', f'{b[0]} is releasing'
     if ordered(t[1]) and t[1] == b[1]:
         return f'one at a time in "{t[1]}"', b[0]
     return 'waiting for files', f'{", ".join(sorted(file_overlap(t[2], b, shared))[:3])} held by {b[0]}'

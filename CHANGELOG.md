@@ -4,6 +4,13 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- A release kind, `V`. `plan add V` files a release at the end of Next that waits for everything ahead of it
+  (`after: all`, no `--after` needed), with the default release brief when given no text (bump the version,
+  move CHANGELOG Unreleased under it, commit to main, check the release workflow and `gh release view`). It
+  runs alone: the run starts it only once no other task runs or waits to merge, and starts nothing beside it,
+  so it releases exactly what landed. `plan add V --now` (or `--pri critical`) files an interim release that
+  does not wait. A release is never refused as a duplicate of another one (F38).
+
 ## 0.56.0 (2026-11-20)
 
 - No more stray `%9/.runner/run.log` folders in the repo (or `tests/`). A control test stubbed every
