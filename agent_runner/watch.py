@@ -16,7 +16,7 @@ import threading
 import time
 from pathlib import Path
 
-from agent_runner import plat
+from agent_runner import cost, plat
 from agent_runner.config import finished_mark, runner_cmd
 from agent_runner.state import (banner, C, FORCED, forced, git, log, PAUSED, POWER, queued, READING, REPO_TAG, ROOT,
     SLOTS_DIR, stopped_by, stopping)
@@ -44,6 +44,33 @@ def state_line() -> str:
 def stats(sid: str) -> str:
     """'N min, N calls, context Nk first, Nk peak' for the exit line. Watch the peak over a run: if it keeps
     creeping up, or more tasks come back blocked, the tasks are too big."""
+    calls, ctx, ts = usage(sid)
+    if not ctx or not ts:
+        return 'no transcript'
+    span = (dt.datetime.fromisoformat(ts[-1].replace('Z', '+00:00')) -
+            dt.datetime.fromisoformat(ts[0].replace('Z', '+00:00')))
+    return f'{int(span.total_seconds()) // 60} min, {calls} calls, context {ctx[0] // 1000}k first, {max(ctx) // 1000}k peak'
+
+
+def context_over(sid: str, warn_k) -> tuple[str, dict] | None:
+    """F25: when session `sid`'s context peaked past `warn_k` k tokens ([run] context_warn; 0 is off), what
+    its exit line adds, 'peaked 168k (over 150k): runner.py 61k, test_runner.py 22k', and the event's fields
+    (peak, warn, top); else None. Soft only: the fix is a smaller task or a split file."""
+    try:
+        warn = int(warn_k or 0)
+    except (TypeError, ValueError):
+        return None
+    ctx = usage(sid)[1]
+    if warn <= 0 or not ctx or (peak := max(ctx) // 1000) <= warn:
+        return None
+    t = transcript(sid)
+    top = ', '.join(f'{k} {v}k' for k, v in (cost.filled(t) if t else []))
+    return f'peaked {peak}k (over {warn}k)' + (f': {top}' if top else ''), {'peak': peak, 'warn': warn, 'top': top}
+
+
+def usage(sid: str) -> tuple[int, list[int], list[str]]:
+    """Session `sid`'s assistant calls, the context of each (input tokens, cache reads and writes too), and
+    its entries' timestamps."""
     calls, ctx, ts = 0, [], []
     for d in entries(sid):
         if not isinstance(d, dict):
@@ -57,11 +84,7 @@ def stats(sid: str) -> str:
             calls += 1
             ctx.append(sum(u.get(k, 0) for k in ('input_tokens', 'cache_read_input_tokens',
                                                  'cache_creation_input_tokens')))
-    if not ctx or not ts:
-        return 'no transcript'
-    span = (dt.datetime.fromisoformat(ts[-1].replace('Z', '+00:00')) -
-            dt.datetime.fromisoformat(ts[0].replace('Z', '+00:00')))
-    return f'{int(span.total_seconds()) // 60} min, {calls} calls, context {ctx[0] // 1000}k first, {max(ctx) // 1000}k peak'
+    return calls, ctx, ts
 
 
 _busy_at: dict[str, float] = {}  # session id → when stalled() last saw it running a tool

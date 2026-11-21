@@ -59,8 +59,20 @@ def _text(content) -> int:
     return sum(len(b.get('text', '') or '') for b in content or [] if isinstance(b, dict))
 
 
-def session(path) -> tuple[list[tuple[str, int, int]], int, int]:
+FILE_TOOLS = ('read', 'edit', 'write', 'multiedit')  # calls whose result is about one file (F25: by_file)
+
+
+def call_kind(name: str, args: dict, by_file: bool = False) -> str:
+    """`kind`, or with `by_file` a file tool's file name instead (`runner.py`), for what filled a context."""
+    if by_file and name.lower() in FILE_TOOLS and isinstance(args, dict) and \
+            (f := args.get('file_path') or args.get('path')):
+        return os.path.basename(str(f).rstrip('/\\')) or str(f)
+    return kind(name, args)
+
+
+def session(path, by_file: bool = False) -> tuple[list[tuple[str, int, int]], int, int]:
     """(kind, chars, turn it arrived), the session's assistant turns, input tokens billed (cache reads too).
+    With `by_file`, a Read (Edit, Write) counts under its file's name, not 'read'.
     Claude writes one line per content block of a turn (one message id); Pi one per message."""
     calls: dict[str, str] = {}
     out, turns, billed, last = [], 0, 0, None
@@ -91,7 +103,8 @@ def session(path) -> tuple[list[tuple[str, int, int]], int, int]:
                 if not isinstance(b, dict):
                     continue
                 if b.get('type') in ('tool_use', 'toolCall'):
-                    calls[b.get('id')] = kind(b.get('name', ''), b.get('input') or b.get('arguments') or {})
+                    calls[b.get('id')] = call_kind(b.get('name', ''), b.get('input') or b.get('arguments') or {},
+                                                   by_file)
                 elif b.get('type') == 'tool_result':
                     out.append((calls.get(b.get('tool_use_id'), 'unknown'), _text(b.get('content')), turns))
     return out, turns, billed
@@ -118,6 +131,20 @@ def report(paths) -> list[str]:
            *(f'  {k[:32]:32} {calls[k]:6} {chars[k] // 4:11,} {v // 4:13,}  {100 * v / total:4.1f}%'
              for k, v in kept.most_common())]
     return out
+
+
+def filled(path, top: int = 3) -> list[tuple[str, int]]:
+    """F25: what put the most into one session's context, largest first: (a file's name or a kind of call,
+    k tokens of results), at most `top`, each at least 1k. A file read twice counts twice (both copies stay
+    in context); compaction is ignored."""
+    sums = Counter()
+    try:
+        got, _, _ = session(path, by_file=True)
+    except OSError:
+        return []
+    for k, c, _ in got:
+        sums[k] += c
+    return [(k, c // 4000) for k, c in sums.most_common(top) if c >= 4000]
 
 
 def worker_transcripts(days: float) -> list[Path]:

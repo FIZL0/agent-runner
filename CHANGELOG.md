@@ -4,6 +4,10 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- A slot session whose context grew too big says so: past `[run] context_warn` (150k tokens by default, 0
+  off), its exit line and `since` add e.g. `B32 peaked 168k (over 150k): runner.py 61k, test_runner.py 22k`,
+  the files (or kinds of call) whose results filled it most. 10 of 51 slot sessions in two weeks passed 100k
+  unseen. Soft only: nothing is stopped; the fix is a smaller task or a split file (F25).
 - A hidden run on Linux and macOS (no tmux, or started outside a tmux session) now has control sessions: c1
   starts with it, and `control --new` no longer fails with "no tmux session", each in a terminal with no
   window through the hidden slots' shim, its output in `.runner/control<N>.log` (with `[run] remote`,

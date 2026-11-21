@@ -152,6 +152,8 @@ DEFAULTS: dict = {
                                 # long form (plan/tasks/<ID>.md)
         'idle': 30,             # seconds a finished session sits at its prompt before it is ended
         'stall': 1200,          # seconds of quiet at a prompt that count as stalled
+        'context_warn': 150,    # k tokens: a slot session whose context peaks past this says so, and what filled
+                                # it, in its exit line and `since` (soft only: nothing is stopped); 0 = off
         'pause': 60,            # seconds between one session ending and the next starting in that slot
         'weekly_max': 90,       # % of the account's 7-day usage past which no new task starts
         'session_max': 90,      # % of the account's 5-hour session usage past which no new task starts

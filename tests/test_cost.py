@@ -77,8 +77,26 @@ def test_sessions():
         has(out, r'^  cat.*\n  git diff.*\n  read', 'sorted by what stayed in context')
 
 
+def test_filled():
+    print('cost: what filled one session, by file (F25)')
+    with tempfile.TemporaryDirectory() as t:
+        f = write(Path(t) / 'c.jsonl', [
+            *claude_turn('m1', {'type': 'tool_use', 'id': 'a', 'name': 'Read', 'input': {'file_path': '/w/a/runner.py'}}),
+            result('a', 'x' * 12000),
+            *claude_turn('m2', {'type': 'tool_use', 'id': 'b', 'name': 'Read', 'input': {'file_path': '/w/a/runner.py'}}),
+            result('b', 'x' * 8000),
+            *claude_turn('m3', {'type': 'tool_use', 'id': 'c', 'name': 'Bash', 'input': {'command': 'git diff'}}),
+            result('c', 'x' * 9000),
+            *claude_turn('m4', {'type': 'tool_use', 'id': 'd', 'name': 'Read', 'input': {'file_path': 'small.py'}}),
+            result('d', 'x' * 400),
+        ])
+        eq(cost.filled(f), [('runner.py', 5), ('git diff', 2)], 'a file read twice counts twice; under 1k is left out')
+        eq(cost.session(f)[0][0][0], 'read', 'without by_file a Read is still "read"')
+        eq(cost.filled(Path(t) / 'none.jsonl'), [], 'no transcript: nothing')
+
+
 def main() -> int:
-    return report([test_kinds, test_sessions])
+    return report([test_kinds, test_sessions, test_filled])
 
 
 if __name__ == '__main__':

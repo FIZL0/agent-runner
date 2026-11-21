@@ -119,3 +119,10 @@ _Said_: control session without tmux
 _On screen_: c1 is up in a hidden terminal
 _In code_: hidden_control, control_new_hidden, controlN.log
 _Avoid_: headless control, background control
+
+**Context warning**:
+A slot session's context grew past the set size; the exit line and since say how big and which files filled it
+_Said_: context budget
+_On screen_: B32 peaked 168k (over 150k): runner.py 61k, test_runner.py 22k
+_In code_: context_warn, context_over, EV_CONTEXT, cost.filled
+_Avoid_: context limit, hard limit

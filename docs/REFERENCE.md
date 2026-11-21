@@ -200,7 +200,8 @@ end: `s1  Control session experience [F5]  12 min`.
 
 `agent-runner since [WHEN]` lists what happened, oldest first, one line each: started, landed, part landed
 with the rest stuck (`done --blocked`), stuck and not merged (parked on `wip/`), needs you (left for a human,
-or the run held by a stoppage only you can clear), looks stuck (stalled), run idle, run stopped. With no
+or the run held by a stoppage only you can clear), looks stuck (stalled), a session whose context peaked past
+`[run] context_warn` (`B32 peaked 168k (over 150k): runner.py 61k, test_runner.py 22k`), run idle, run stopped. With no
 WHEN it starts where the last `since` left off (`.runner/since.last`; a day back the first time) and moves
 that mark forward, so asking twice in a row shows nothing new the second time. WHEN is `2h`, `30m`, `1d`,
 `today`, `yesterday` or a date/time (`2026-11-19T14:00`); it moves the mark too, never back.
@@ -848,6 +849,10 @@ the running tasks merge. A run left up keeps picking up whatever you commit to T
    what a session pays for. A command that tops it is worth an outline (`[plan] outline`), a quieter
    flag, or a line in the prompt. It reads the last 7 days of this repo's slot and merge sessions, Claude
    and Pi (`--days N`, or name transcripts).
+7. A slot session whose context peaked past `[run] context_warn` (150k) ends with
+   `B32 peaked 168k (over 150k): runner.py 61k, test_runner.py 22k` in its exit line and in `since`: the
+   files (or kinds of call) whose results put the most in its context. Models get worse as context grows;
+   the fix is a smaller task or a split file. Nothing is stopped.
 
 ## Commands
 
@@ -970,6 +975,7 @@ control_ask_kind = "F"    # the id prefix of that DECIDE item's task (answering 
 auto_upgrade = true       # upgrade by itself when a newer release is out, as `u` does, once no merge runs; the run restarts on it (false: only `u` or `agent-runner upgrade`)
 idle = 30                 # s quiet after a turn ends before a session without a successful `done` is ended (with one: 5 s)
 stall = 1200              # s quiet at a prompt that counts as stalled
+context_warn = 150        # k tokens: a slot session whose context peaked past this says so in its exit line and in `since`, with what filled it ("B32 peaked 168k (over 150k): runner.py 61k, test_runner.py 22k"); soft only, nothing is stopped; 0 = off
 pause = 60                # s between one session ending and the next starting in that slot
 weekly_max = 90           # % of 7-day usage past which nothing new starts
 session_max = 90          # % of 5-hour session usage past which nothing new starts

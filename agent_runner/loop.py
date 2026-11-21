@@ -28,6 +28,8 @@ from agent_runner.state import (alarm, ask_stop, C, clean, clear_stop, commit_pl
     READING, ROOT, RUN_TAG, share, SLOTS_DIR, stop_note, STOP_SAID, stopped_by, stopping, WAKE)
 from agent_runner.state import (EV_DEFERRED, EV_DROPPED, EV_IDLE, EV_LEFT, EV_NO_COMMITS, EV_PARKED, EV_RUN_UP,
     EV_STALLED, EV_STOP_ASKED, EV_STOP_BACK, EV_STOPPED)
+from agent_runner.state import EV_CONTEXT
+from agent_runner.watch import context_over
 from agent_runner.brief import no_remote_line
 from agent_runner.sched import blocked_by_edits, keep_claims, PARK_LIMIT, parked_attempts, pick, tasks
 from agent_runner.sched import forgive_park, note_committed
@@ -1133,7 +1135,11 @@ class Run:
         procs, r, branch = self.procs, self.r, self.branch
         if n in procs and not plat.alive(procs[n][0]):
             (pid, sid, since), task = procs.pop(n), self.running.pop(n)
-            log(f'slot {n}: {task[0]} exited ({stats(sid)})')
+            if over := context_over(sid, r.get('context_warn')):  # F25: soft only, the exit line says it
+                log(f'slot {n}: {task[0]} exited ({stats(sid)}); {task[0]} {over[0]}', kind=EV_CONTEXT,
+                    tid=task[0], **over[1])
+            else:
+                log(f'slot {n}: {task[0]} exited ({stats(sid)})')
             end_orphans()
             if backend().report_exit and (said := last_words(sid)):
                 log(f'slot {n}: {task[0]} {r["backend"]}: {said[:500]}')

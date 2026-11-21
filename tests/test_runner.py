@@ -6725,6 +6725,54 @@ def test_claude_drift_b45(repo: Path, tmp: Path):
             cj.write_text(saved_cj, encoding='utf-8')
 
 
+def test_context_warn_f25(repo: Path):
+    print('F25: a slot session whose context peaks past [run] context_warn says so, and what filled it')
+    R.init(repo)
+    eq(R.C.run.get('context_warn'), 150, '[run] context_warn defaults to 150k')
+
+    def turn(mid, peak, *blocks):
+        return [{'type': 'assistant', 'timestamp': '2026-11-20T10:00:00Z', 'message': {
+            'id': mid, 'role': 'assistant', 'content': [b],
+            'usage': {'input_tokens': 2, 'cache_read_input_tokens': peak - 2}}} for b in blocks]
+
+    def result(tid, chars):
+        return {'type': 'user', 'timestamp': '2026-11-20T10:05:00Z', 'message': {'role': 'user', 'content': [
+            {'type': 'tool_result', 'tool_use_id': tid, 'content': [{'type': 'text', 'text': 'x' * chars}]}]}}
+
+    with tempfile.TemporaryDirectory() as t:
+        def transcript(peak: int) -> Path:
+            f = Path(t) / f'{peak}.jsonl'
+            es = [*turn('m1', 20000, {'type': 'tool_use', 'id': 'a', 'name': 'Read',
+                                      'input': {'file_path': '/w/agent_runner/runner.py'}}),
+                  result('a', 61000 * 4),
+                  *turn('m2', 90000, {'type': 'tool_use', 'id': 'b', 'name': 'Read',
+                                      'input': {'file_path': '/w/tests/test_runner.py'}}),
+                  result('b', 22000 * 4),
+                  *turn('m3', 120000, {'type': 'tool_use', 'id': 'c', 'name': 'Bash',
+                                       'input': {'command': 'git diff main'}}),
+                  result('c', 9000 * 4), result('c', 100),
+                  *turn('m4', peak, {'type': 'text', 'text': 'done'})]
+            f.write_text(''.join(json.dumps(e) + '\n' for e in es), encoding='utf-8')
+            return f
+        over, under = transcript(168400), transcript(149900)
+        with mock.patch.object(R, 'transcript', lambda s: str({'over': over, 'under': under}.get(s, '')) or None):
+            got = R.context_over('over', 150)
+            eq(got and got[0], 'peaked 168k (over 150k): runner.py 61k, test_runner.py 22k, git diff 9k',
+               'over the budget: the peak and the three files or calls that put the most in context')
+            eq(got and got[1], {'peak': 168, 'warn': 150, 'top': 'runner.py 61k, test_runner.py 22k, git diff 9k'},
+               'the event carries peak, warn and top')
+            eq(R.context_over('under', 150), None, 'under the budget: nothing')
+            eq(R.context_over('over', 0), None, '0 turns it off')
+            eq(R.context_over('over', 200), None, 'a higher budget: nothing')
+            eq(R.context_over('missing', 150), None, 'no transcript: nothing')
+            check(R.stats('over').endswith('context 20k first, 168k peak'), 'stats still reads the same', R.stats('over'))
+    now = R.dt.datetime(2026, 11, 20, 15, 0, 0)
+    ev = {'time': '2026-11-20T14:00:00', 'kind': R.EV_CONTEXT, 'id': 'B32', 'text': 'anything',
+          'peak': 168, 'warn': 150, 'top': 'runner.py 61k, test_runner.py 22k'}
+    eq(R.since_text([ev], now - R.dt.timedelta(hours=2), {'B32': 'a title'}, now)[0].splitlines()[1:],
+       ['  14:00  B32 peaked 168k (over 150k): runner.py 61k, test_runner.py 22k'], 'since says it, from the fields')
+
+
 def test_merged_count_b78(repo: Path):
     print('status: "merged N" counts tasks, not merge commits: a fast-forward counts, two merge commits count once')
     with tempfile.TemporaryDirectory() as t:
@@ -6807,7 +6855,7 @@ def main() -> int:
                        lambda: test_stop_countdown(repo), lambda: test_real_claude_json_guard(tmp),
                        lambda: test_hidden_slots(repo, tmp), lambda: test_hidden_run_lands(tmp),
                        lambda: test_claude_drift_b45(repo, tmp), lambda: test_merged_count_b78(repo),
-                       lambda: test_hidden_control_f59(repo, tmp)])
+                       lambda: test_hidden_control_f59(repo, tmp), lambda: test_context_warn_f25(repo)])
 
 
 if __name__ == '__main__':
