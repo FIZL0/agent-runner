@@ -859,7 +859,9 @@ the running tasks merge. A run left up keeps picking up whatever you commit to T
    (a Read, or the files a `cat`, `head`, `tail`, `sed`, `grep` or `rg` printed), with how many of those
    reads were re-reads in the same session, so the top rows name a file worth splitting or an outline worth
    adding; below it, what exact-repeat commands (the same Bash line run again in one session) added after
-   their first run.
+   their first run. A file counts under its bare name (two `__init__.py` share a row), a read of another
+   range of a file already read counts as a re-read, and a line that printed several files shares its
+   result among them evenly.
 
 ## Commands
 

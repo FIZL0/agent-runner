@@ -105,6 +105,10 @@ def test_reads():
     eq(b('cat a.py > b.py'), ['a.py'], 'a redirect target is not read')
     eq(b('git diff'), [], 'other programs read no file')
     eq(b('grep -n x \\\n  a.py'), ['a.py'], 'a continued line')
+    eq(b('grep -n "a|b; c" f.py 2>/dev/null'), ['f.py'], 'a quoted | or ; is part of the pattern')
+    eq(b("sed -i 's/a/b/' a.py"), [], 'sed -i edits, it does not read')
+    eq(b('grep -rn x agent_runner/ tests run.py'), ['run.py'], 'a recursive search: directories are not files')
+    eq(b('timeout 60 cat a.log && rg x agent_runner'), ['a.log'], 'timeout in front; rg on a directory')
     eq(cost.reads('Edit', {'file_path': 'a.py'}), [], 'an Edit is not a read')
 
 

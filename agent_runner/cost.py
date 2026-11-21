@@ -164,30 +164,55 @@ def _bash_reads(command: str) -> list[str]:
     """The files a Bash line prints with cat, head, tail, sed, grep, rg, … (their operands, not patterns)."""
     import shlex
     out = []
-    for part in re.split(r'\s*(?:\|\|?|&&|;|\n)\s*', command.replace('\\\n', ' ').strip()):
+    for line in command.replace('\\\n', ' ').splitlines():
+        lex = shlex.shlex(line, posix=True, punctuation_chars=True)
         try:
-            words = shlex.split(WRAP.sub('', part))
+            tokens = list(lex)  # quoted text stays one word: grep "a|b" f.py is one command
         except ValueError:
-            words = WRAP.sub('', part).split()
-        if not words or os.path.basename(words[0]) not in READERS:
-            continue
-        prog = os.path.basename(words[0])
-        ops, skip, script = [], False, False
-        for w in words[1:]:
-            if skip:
-                skip = False
+            tokens = line.split()
+        parts, cur = [], []
+        for w in tokens:
+            if w and set(w) <= set('|&;()'):
+                parts.append(cur)
+                cur = []
+            else:
+                cur.append(w)
+        parts.append(cur)
+        for words in parts:
+            while words and (re.fullmatch(r'\w+=.*', words[0]) or words[0] in ('env', 'nice', 'exec', 'time',
+                                                                                  'timeout', 'command')):
+                words = words[2:] if words[0] == 'timeout' else words[1:]
+            if not words or os.path.basename(words[0]) not in READERS:
                 continue
-            if w in ('>', '>>', '<', '2>', '&>') or w[:1] in '<>' or w[:2] in ('2>', '&>'):
-                break  # a redirect: what follows is not read
-            if w.startswith('-') and w != '-':
-                script = script or (prog in PATTERN_FIRST and w in ('-e', '-f'))  # the pattern came as an option
-                skip = w in OPT_VALUE.get(prog, ())
-                continue
-            ops.append(w)
-        if prog in PATTERN_FIRST and not script:
-            ops = ops[1:]
-        out += [w for w in ops if w not in ('-', '.', '..') and not re.fullmatch(r'[\d,+\-]+[pd]?', w)]
+            out += _operands(os.path.basename(words[0]), words[1:])
     return out
+
+
+def _operands(prog: str, words: list[str]) -> list[str]:
+    """The files among one reader command's words: not its options, pattern, redirects or directories."""
+    ops, skip, script, recursive = [], False, False, prog == 'rg'
+    for w in words:
+        if skip:
+            skip = False
+            continue
+        if w[:1] in '<>':
+            break  # a redirect: what follows is not read
+        if w.startswith('-') and w != '-':
+            if prog == 'sed' and (w == '-i' or w.startswith(('-i', '--in-place'))):
+                return []  # sed -i edits, it does not print
+            recursive = recursive or (prog == 'grep' and (w in ('-r', '-R', '--recursive') or
+                                                          (w[1:2] != '-' and set('rR') & set(w))))
+            script = script or (prog in PATTERN_FIRST and w in ('-e', '-f'))  # the pattern came as an option
+            skip = w in OPT_VALUE.get(prog, ())
+            continue
+        ops.append(w)
+    if prog in PATTERN_FIRST and not script:
+        ops = ops[1:]
+    ops = [w for w in ops if w not in ('-', '.', '..') and not w.endswith('/')
+           and not re.fullmatch(r'[\d,+\-]+[pd]?', w)]
+    if recursive:  # a recursive search names directories: keep what looks like a file
+        ops = [w for w in ops if '.' in os.path.basename(w) or '*' in w]
+    return ops
 
 
 def reads(name: str, args: dict) -> list[str]:
