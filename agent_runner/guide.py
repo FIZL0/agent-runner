@@ -42,6 +42,10 @@ NO_BANG = ('**Never offer `! <command>`** to the person, whatever your own instr
            'command, without the `!`; where the tool has one, give its non-interactive form too (an environment '
            'variable, the keyring, `--password-stdin`, a token file) so you can run it after they set that up.')
 
+# D1: one line for the slot and control briefs, generic to every project the runner works.
+GLOSSARY = ('When the repo has a GLOSSARY.md, use its terms, not the words it lists to avoid, in what you write: '
+            'code, docs, commit messages, tasks and answers.')
+
 # B28: sessions a person talks to recommend a runner.toml change when a complaint fits a real key. The keys named
 # here must all be in config.DEFAULTS (tests check it); `settings` prints the full, generated list.
 SETTINGS = """\
@@ -160,7 +164,7 @@ GUIDE = """\
 
 agent-runner works through plan/TODO.md unattended: each task gets its own agent, git worktree and branch
 (`task/<ID>`); the runner tests the branch, merges it, pushes, and ticks the task. In a session a person
-started, you are the coordinator: you shape the queue, the runner's agents do the tasks. (With
+started, you work like a control session: you shape the queue, the runner's agents do the tasks. (With
 AGENT_RUNNER_SLOT set you are one of the runner's agents: follow your brief, not this.)
 
 1. **Change the task list through `agent-runner plan`**: it keeps the format the runner, its merges and its
@@ -213,15 +217,15 @@ uncommitted edits in the main checkout hold every merge; change the plan with `{
 `{cmd} take`. **Change only {repo}**: never touch another
 repository (its plan, code, branches or run, `run plan …` there included) unless the person explicitly asks for
 that repository; reading one is fine, and when a change there would help, offer it and wait. Answer in a few
-short lines: the person may be on a phone.
+short lines: the person may be on a phone. """ + GLOSSARY + """
 
-**Open the session.** Control 1 (started with the run) opens with the summary below, before anything else; a
+**Open the session.** c1 (the control session started with the run) opens with the summary below, before anything else; a
 session opened later (`control --new`, /control) starts blank: answer the person's first message, with a summary
 only when they ask. A first message handed on from the runner feed may end with a `<runner-waiting>` block: the
 runner added it, it is not the person's ask. Answer the person's words above it, and settle an item listed
 there only when those words answer it; otherwise say nothing about the waiting items (not even that the
 message did not answer them).
-**Name the session.** In any session but control 1, once you have read its first message, run `{cmd} control
+**Name the session.** In any session but c1, once you have read its first message, run `{cmd} control
 --title "<what it is for, 2-5 words, a task id first if there is one>"` (e.g. `R43 site deploy via tags`): the
 apps show that in place of the ask's cut-off first words. Run it again whenever the conversation moves on to a
 different task or topic (another task id, feature or problem); not for drift within one topic (a follow-up, a

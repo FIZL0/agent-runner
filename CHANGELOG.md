@@ -4,6 +4,11 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- GLOSSARY.md (after mattpocock/skills domain-modeling, MIT) names agent-runner's own words once each: run,
+  slot, task, kind, control session, c1, runner feed, board, take, gate, fixer, merge worktree, concept, Needs
+  you (CONFIRM, DECIDE, BLOCKED), shelve, claim, notes dir, remote; each with a plain definition and the words
+  to avoid. The slot prompt and the control brief now say in one line to use a repo's GLOSSARY.md terms when it
+  has one (any project the runner works), and the control brief says c1, not "control 1" (D1).
 - `[run] auto_upgrade` defaults to true: a run upgrades agent-runner by itself when a newer release is out
   (once no merge runs, never across a major version, nor on Windows) and restarts on it. Set
   `auto_upgrade = false` to upgrade only with `u` or `agent-runner upgrade`. `run --upgrade` is gone: `u`,
