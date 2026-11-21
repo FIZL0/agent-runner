@@ -127,9 +127,10 @@ def children(pid: int) -> list[int]:
 def cmdline(pid: int) -> list[str] | None:
     """The argv of `pid` (POSIX from /proc, Windows from the process itself), or None when it cannot be read."""
     if WINDOWS:
+        import ctypes
         try:
             return _windows_cmdline(int(pid))
-        except (OSError, AttributeError, ValueError):
+        except (OSError, AttributeError, ValueError, TypeError, ctypes.ArgumentError):
             return None
     try:
         return Path(f'/proc/{pid}/cmdline').read_text().split('\0')
