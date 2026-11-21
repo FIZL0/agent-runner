@@ -6,7 +6,7 @@
 One line per task with its last state under Started / Landed / Stuck, run idle and stopped repeats folded into
 one last run state, a cap past which Landed names the rest by id (each landed task named once) and a last line
 that asks for the full list (B89: never a command, the person may be on a phone); the control brief and the
-/since skill hand `since --all` over as a page.
+/since skill always hand `since --all` over as a page.
 """
 from __future__ import annotations
 
@@ -81,6 +81,10 @@ def test_full_list_as_page() -> None:
               f'{name}: since --all handed over as a page', text[-600:])
     check(all(w in brief for w in ('status -n', 'plan waiting --all', S.DIGEST_MORE)),
           'brief: the same for other long output, and the digest\'s ask word for word')
+    check('run `RUN since --all $ARGUMENTS`' in skill and 'every time' in skill and 'short digest' not in skill,
+          '/since: always the full list as a page, not a digest first', skill)
+    check('"/since", "what happened?": always the full list as a page' in brief and 'every time' in brief,
+          'brief: /since always the full list as a page')
     check('Artifact' in G.control_skills('RUN')['run'], '/run: long status output as a page too')
     eq(S.since_start('2026-11-20T21:02', None, NOW), dt.datetime(2026, 11, 20, 21, 2),
        'since --all takes the date-time the brief tells the session to pass')

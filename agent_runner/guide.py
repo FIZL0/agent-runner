@@ -352,20 +352,17 @@ its minutes (`B192 Fix merge retry, 14 min`). The first line says what needs the
 
 What the person asks, and what you run (`{cmd}` is the runner):
 - "status?", "/run", "how's it going?": `{cmd} status` (`/run -n 20`: `{cmd} status -n 20`, with the run log's
-  last lines); "/since", "what happened?": `{cmd} since` (what is new since the last look; it moves that mark;
-  `{cmd} since 2h` or `yesterday` looks further back). Say it back as a few bullets in everyday words under the
-  summary's group headings, without ids or the hints line. It prints a short digest (`since --all` is the raw
-  log): never answer /since with "too long, run it yourself"; however much there is, say back a short digest.
-- "show all", "more", "the full list" (after a digest that ends `more: ask for the full list`): run
-  `{cmd} since --all <when>` yourself, `<when>` the time that digest started from (the one you gave it, or the
-  time its first line names as a date-time, `since yesterday 21:02` → `2026-11-20T21:02`: a bare `since` has
-  moved the last-look mark), and hand it over as a page as below, never as a command to run.
+  last lines; it stays the short summary). "/since", "what happened?": always the full list as a page (B89): run
+  `{cmd} since --all` (what is new since the last look; it moves that mark; `{cmd} since --all 2h` or
+  `yesterday` looks further back), hand its whole output over as a page as below, every time, not only when
+  they ask for more, and reply with the link and a one-line gist from it in everyday words (`Since yesterday:
+  41 landed, 2 stuck, run idle. <link>`), without ids. Never answer /since with "too long, run it yourself".
 - Long output (B89): the person may be in the Claude app or on a phone, where they cannot run a command or pass
   a flag, so never tell them to ("run X", "pass --all", "see it in a terminal"). When they want more than you
   can say back (`since --all`, `status -n 50`, `plan waiting --all`, a log), run it yourself, write its output
   as a plain HTML file (a `<pre>` of the text, under a `<title>`) in your scratchpad, publish it as a private page
   with the Artifact tool (no Artifact tool: send the file with SendUserFile), and reply with the link and a
-  one-line gist (`Full list since yesterday: 41 landed, 2 stuck. <link>`). A line the runner printed that
+  one-line gist. A line the runner printed that
   reads as an ask (`more: ask for the full list`) is one you answer this way.
 - "what is waiting on me?", "what needs me?": `{cmd} needs` (one `ID - what to do` line per item, then a count),
   not `status` or `plan waiting`: say its lines back, each ID with its few words.
@@ -473,13 +470,10 @@ HINT_SKILLS = {
             'more than you can say back (`-n 50`, the whole log), run it yourself and hand it over as a page: '
             + LONG_OUTPUT_PAGE),
     'since': ('What the agent-runner run did since the last look (the person typed /since).',
-              'Run `{cmd} since $ARGUMENTS` (e.g. `2h`, `yesterday`) and say it back as a few short bullets in '
-              'everyday words, grouped under Landed / Stuck / Running, without task ids. However long it is, '
-              'say back a short digest: never tell the person to run it themselves. When they ask for the full '
-              'list ("show all", "more"), run `{cmd} since --all <when>` yourself (`<when>` the '
-              'time the digest started from: the one given, or its first line\'s time as `2026-11-20T21:02`, since '
-              'a bare `since` moved the mark) and hand it over as a page: '
-              + LONG_OUTPUT_PAGE),
+              'Always give the full list as a page (B89): run `{cmd} since --all $ARGUMENTS` (e.g. `2h`, '
+              '`yesterday`; bare: since the last look), then '
+              + LONG_OUTPUT_PAGE + ' The gist says in everyday words what landed and what is stuck, without task '
+              'ids. Do it every time, however short or long the list; never tell the person to run it themselves.'),
     'follow': ('Follow the agent-runner run live (the person typed /follow).',
                'Start the Monitor tool on `{cmd} since --follow` and post each line it brings as one short bullet, '
                'without its id, until the person says to stop following. It carries the needs-you lines too, so '
