@@ -1689,10 +1689,16 @@ def test_person_waiting(repo: Path):
             'shelved: still blocked')
         check('F3' not in run(root, 'plan', 'waiting', env=env).stdout, 'and off plan waiting')
         has(run(root, 'plan', 'waiting', '--all', env=env).stdout, r'^BLOCKED  F3 .*\(shelved\)$', 'but --all shows it')
-        with mock.patch.object(type(R.C), 'todo', property(lambda self: todo)):
+        with mock.patch.dict(os.environ, {R.CONTROL_N_ENV: ''}), \
+                mock.patch.object(type(R.C), 'todo', property(lambda self: todo)):
             text = R.status_text(False, {}, [], {}, 0.0, waiting=R.waiting_ok())
         check('[F3]' not in text, 'status leaves it out', text)
         has(text, r'\(1 shelved: plan waiting --all\)', 'and counts it')
+        with mock.patch.dict(os.environ, {R.CONTROL_N_ENV: '2'}), \
+                mock.patch.object(type(R.C), 'todo', property(lambda self: todo)):
+            text = R.status_text(False, {}, [], {}, 0.0, waiting=R.waiting_ok())
+        has(text, r'\(1 shelved: ask to see them\)$', 'B90: a control session relays it as an ask, no command')
+        check('plan waiting' not in text, 'B90: and names no command', text)
         run(root, 'plan', 'unshelve', 'F3', env=env)
         has(run(root, 'plan', 'waiting', env=env).stdout, r'^BLOCKED  F3 ', 'unshelve brings it back')
 

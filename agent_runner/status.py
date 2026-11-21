@@ -574,8 +574,18 @@ def waiting_text(waiting, width: int = 60, now: dt.datetime | None = None, wips=
     if not out:
         return []  # only shelved ones: they asked to leave this list
     if shelved:
-        out.append(f'  ({shelved} shelved: plan waiting --all)')
+        out.append(shelved_line(shelved))
     return [needs_heading(cf['heading'])] + out
+
+
+def shelved_line(n: int) -> str:
+    """B90: Needs you's count of the shelved asks. A control session relays it to a person who may be in the
+    Claude app or on a phone, where no command runs, so there it reads as an ask (the control session answers
+    it with `plan waiting --all`); at a terminal it keeps the command."""
+    from agent_runner.control import CONTROL_N_ENV  # here, not at the top: control imports much of the runner
+    if os.environ.get(CONTROL_N_ENV, '').strip():
+        return f'  ({n} shelved: ask to see them)'
+    return f'  ({n} shelved: plan waiting --all)'
 
 
 def needs_heading(heading: str) -> str:
