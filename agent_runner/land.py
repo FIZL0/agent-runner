@@ -269,7 +269,8 @@ def published(tid: str, branch: str) -> None:
     Pushed here, and only after the gate, which is what makes publishing it unattended defensible. A failed
     push is logged, not fatal: the merge landed locally and the next one pushes both. With `[git] push_merge
     = false` the merge stays local and the `git push` to run is logged instead; `drop_if_merged` then keeps
-    the task branch on the remote until the shared branch there has it.
+    the task branch on the remote until the shared branch there has it. With no gate (`[run] test` empty)
+    the merge stays local the same way unless the config sets `push_merge` itself (`pushes_main`, B36).
 
     A batch is pushed once, by the last of its tasks to land: while the others are still waiting for the lock
     to record theirs, this one's push is left to them (each push is a CI run on the shared branch).

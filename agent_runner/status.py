@@ -509,7 +509,7 @@ def status_text(up: bool, st: dict, log_lines: list[str], titles: dict[str, str]
     merging, the last few merged / blocked / parked, and usage."""
     out = waiting_text(waiting, now=dt.datetime.fromtimestamp(now) if now else None, wips=wips)
     out.append(f'run up: {st.get("state", "starting")}' if up else 'no run is up')
-    if up and (nogate := no_gate_line()):
+    if nogate := no_gate_line():  # up or not: the next run merges untested too
         out.append(nogate)
     out += progress.splitlines()
     for n, tid in sorted(st.get('running', {}).items(), key=lambda kv: (not kv[0].isdigit(), kv[0].zfill(4))):

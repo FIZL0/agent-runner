@@ -6621,6 +6621,7 @@ def test_no_gate_b36(tmp: Path):
     eq(git(tmp / 'b36' / 'origin.git', 'rev-parse', 'main'), pushed, 'but main was not pushed, untested')
     has(log, r'T1: merged, not pushed: no test gate .*git push origin main', 'and the log says how to push it')
     has(R.status_text(True, {'state': '1 slot'}, [], {}, 0.0), r'^WARNING no test gate', 'status warns too')
+    has(R.status_text(False, {}, [], {}, 0.0), r'^WARNING no test gate', 'and with no run up')
     R.C.given.setdefault('git', set()).add('push_merge')
     try:
         check(R.pushes_main(), '[git] push_merge set in the config: an untested merge is pushed')
