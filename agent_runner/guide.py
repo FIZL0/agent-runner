@@ -137,7 +137,63 @@ batch=b` to paste instead: run `{cmd} sheet R7 --picks "<that line>"`. "go" (or 
 sheet R7 --go`. Each of these reopens the task with every answer spelled out in its note, so the sheet
 command is the whole answer (`plan confirm` is for items without a sheet).
 """,
+    'grill': """\
+# Grilling
+
+(After mattpocock/skills grilling, domain-modeling and to-tickets, MIT.) Before you queue, ask in rounds:
+- A round is every question you can ask now, numbered, each with your recommended answer and worded so "yes"
+  accepts it: `1. One per repo, not per machine? (yes)`; with options, letters: `2. Shown where? a) status
+  b) the board (a)`. Short lines: the person may be on a phone.
+- Look facts up yourself (the code, the plan, `{cmd} status`, the docs, the glossary) and never ask them; ask
+  only what needs the person: intent, taste, trade-offs, scope.
+- One reply answers a round, as on a pick sheet: "yes" (or "go") takes every recommendation; "1b 2a" or "2 no,
+  3 per machine" answers those, the rest take the recommendation. Then the next round: only what their answers
+  opened. Stop when nothing is left open, and say so in one line.
+- Words: when an answer settles what a word means, or shows two words for one thing, add it to the repo's
+  glossary when it keeps one (`{cmd} glossary add`): the project's words, never implementation detail. Offer an
+  ADR in docs/adr/ only when a choice is hard to reverse, surprising and a real trade-off.
+- Then queue, with the settled answers in the task's text. One piece of work is one `{cmd} plan add`. Several
+  (to-tickets): each a vertical slice that passes the gate and can be checked alone, a prefactor first, ordered
+  with `--after`; show the numbered breakdown (kind, title, files, after which) and get one yes before queueing
+  any of them, then queue them in that order.
+""",
 }
+
+# F20: the control brief's grilling branch, fitted to `[run] grill` (ask: only when asked; big: also big vague
+# asks; off: none) by grill_fit.
+GRILL = ('- **Grilling** ("grill me", "poke holes", "stress-test it"): read `{cmd} guide grill` first and follow '
+         'it: rounds of numbered questions, each with its recommended answer, until nothing is left open; then '
+         'queue.')
+GRILL_BIG = ('- **Grilling** ("grill me", "poke holes", "stress-test it", and before you queue a big or vague '
+             'feature ask: several parts, or its what or why unclear): read `{cmd} guide grill` first and follow '
+             'it: rounds of numbered questions, each with its recommended answer, until nothing is left open; then '
+             'queue.')
+GRILL_MODES = ('ask', 'big', 'off')
+
+
+def grill_mode(c=None) -> str:
+    """`[run] grill`: 'ask' (the default, and for anything it does not know), 'big', or 'off' (false too)."""
+    try:
+        if c is None:
+            from agent_runner.config import C as c
+        v = c.run.get('grill', 'ask')
+    except (Exception, SystemExit):
+        return 'ask'
+    if v is False:
+        return 'off'
+    v = str(v).strip().lower()
+    return v if v in GRILL_MODES else 'ask'
+
+
+def grill_fit(text: str, cmd: str, c=None) -> str:
+    """The control brief with its grilling line fitted to `[run] grill`: as is, widened to big asks, or gone."""
+    line = GRILL.format(cmd=cmd)
+    mode = grill_mode(c)
+    if mode == 'off':
+        return text.replace(line + '\n', '').replace(line, '')
+    if mode == 'big':
+        return text.replace(line, GRILL_BIG.format(cmd=cmd))
+    return text
 
 
 def topic(name: str, cmd: str = 'agent-runner', needs: str = 'Needs you') -> str:
@@ -329,6 +385,7 @@ What the person asks, and what you run (`{cmd}` is the runner):
   wants to see it before it is built), and a queued concept under "{needs}": read `{cmd} guide concepts` first
   and follow it. In short: you write the options page here and open it inline; queue a K task only when they
   say queue it.
+""" + GRILL + """
 - **Needs you items**: before you show one with a pick sheet or a `run: {cmd} wizard ID` line, and before you
   act on a reply to one ("yes", "B", "later", "sent"), read `{cmd} guide needs` (once per session is enough).
   A reply that clearly answers one item needs no id: {answer}

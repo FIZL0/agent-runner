@@ -4,6 +4,15 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Control sessions grill before queueing (after mattpocock/skills grilling, domain-modeling and to-tickets, MIT):
+  on "grill me", "poke holes" or "stress-test it" they ask rounds of numbered questions, each with its
+  recommended answer and worded so yes accepts it, look facts up themselves instead of asking, take one reply per
+  round (`yes`, or `1b 2a` as on a pick sheet), and stop when nothing is left open. Settled words go to the
+  glossary, an ADR is offered only for a hard-to-reverse trade-off, and the task's text carries the answers; an
+  ask that becomes several tasks is shown as a numbered breakdown of vertical slices (prefactor first, ordered
+  with `--after`) and queued on one yes. `agent-runner guide grill` holds the how. New `[run] grill`: `ask` (the
+  default, only when asked), `big` (also before queueing a big or vague feature ask) or `off`. GLOSSARY.md gains
+  same work, sweep and grilling (F20).
 - Every repo the runner works keeps a GLOSSARY.md: each entry names one thing as the person says it, as the app
   shows it and as the code calls it, with a plain definition and the words to avoid. New command `agent-runner
   glossary [TERM]` (`show`, `add`, `forget`, `seed FILE`, `scan [WORD]`) writes it and commits itself in the

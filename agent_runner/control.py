@@ -48,8 +48,9 @@ def control_brief() -> str:
     cf = P.needs_cfg()  # B27: the heading's words
     answer = CONTROL_ANSWER.format(cmd=RUNNER)
     from agent_runner import glossary  # F22: the glossary paragraph (and the seed ask), or none when it is off
-    return glossary.fit(CONTROL.format(repo=ROOT.name, cmd=RUNNER, log=logf, watch=watch, needs=cf['heading'],
-                                       answer=answer), 'control', RUNNER, C)
+    from agent_runner.guide import grill_fit  # F20: the grilling line fitted to [run] grill
+    return grill_fit(glossary.fit(CONTROL.format(repo=ROOT.name, cmd=RUNNER, log=logf, watch=watch, needs=cf['heading'],
+                                       answer=answer), 'control', RUNNER, C), RUNNER, C)
 
 
 def control_settings_data() -> dict:

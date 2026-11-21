@@ -139,6 +139,8 @@ DEFAULTS: dict = {
                                 # to <notes>/wizards/<ID>.sh; Needs you shows `agent-runner wizard <ID>` to run it
         'questionnaires': True, # F18: a DECIDE with options is asked as a pick sheet (<notes>/sheets/<ID>.json, a
                                 # page with `agent-runner sheet <ID>`); Needs you shows one line and its link
+        'grill': 'ask',         # F20: control sessions ask rounds of numbered questions before queueing:
+                                # ask = when the person says grill me / poke holes; big = also big vague asks; off
         'review': True,         # F28: before done, a fresh subagent reads the diff against the task's brief (spec
                                 # only: missing, unasked, wrong); the commit ends 'review: …'; false: no review
         'review_min_lines': 50, # a diff smaller than this (changed lines) skips the review, unless the task has a
