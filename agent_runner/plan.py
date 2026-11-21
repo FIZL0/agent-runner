@@ -115,6 +115,7 @@ change is not rewritten at all (so mtimes stay meaningful and git stays quiet).
 """
 from __future__ import annotations
 
+import argparse
 import difflib
 import os
 import re
@@ -124,6 +125,7 @@ import sys
 from collections import Counter
 from functools import partial
 from pathlib import Path
+from types import SimpleNamespace
 
 from agent_runner import plansync
 from agent_runner.config import cfg
@@ -2150,142 +2152,8 @@ def _main(argv: list[str], c) -> int:
                 _commit(c.root, [todo, done], ' '.join(argv)[:70])
         return 0
 
-    if argv[:1] == ['tick'] and len(argv) == 2:
-        n = tick(argv[1])
-        return say(f'ticked {argv[1]}' + (f', moved {n} line(s) to {plan_dir.name}/DONE.md' if n else ''))
-    if argv[:1] == ['drop'] and len(argv) > 2:
-        drop(argv[1], ' '.join(argv[2:]))
-        return say(f'dropped {argv[1]}')
-    if argv[:1] == ['restore'] and len(argv) > 1:
-        restore(argv[1], argv[2] if len(argv) > 2 else 'top', ' '.join(argv[3:]) or None)
-        return say(f'restored {argv[1]}: open again in {Path(todo).name}')
-    if argv[:1] == ['block'] and len(argv) > 2:
-        after, rest = None, argv[2:]
-        if rest[0] == '--after' and len(rest) > 2:
-            after, rest = [t for t in rest[1].split(',') if t], rest[2:]
-        block(argv[1], ' '.join(rest), after=after)
-        return say(f'blocked {argv[1]}')
-    if argv == ['reopen']:
-        got = reopen()
-        return say('\n'.join([f'reopened {t} ({", ".join(ids)} landed)' for t, ids in got] or ['nothing to reopen']
-                             + last_lines()))
-    if argv[:1] == ['unblock'] and len(argv) > 1:
-        unblock(argv[1], ' '.join(argv[2:]))
-        return say(f'unblocked {argv[1]}')
-    if argv[:1] == ['move'] and len(argv) > 2:
-        move(argv[1], argv[2], ' '.join(argv[3:]) or None)
-        return say(f'moved {argv[1]} {" ".join(argv[2:])}')
-    if argv[:1] == ['approve'] and len(argv) > 1:
-        bid = approve(argv[1], ' '.join(argv[2:]))
-        return say(f'approved: {bid} is open now, and a run starts it')
-    if argv[:1] == ['revise'] and len(argv) > 2:
-        k = revise(argv[1], ' '.join(argv[2:]))
-        return say(f'{k} is open again with your changes noted; its build task is dropped until the next round')
-    if argv in (['waiting'], ['waiting', '--all']):
-        w = asks(all=len(argv) > 1)
-        print('\n'.join('  '.join(x for x in (label, t, title, '' if label == 'CONCEPT' else what, u,
-                                              f'(concept {k})' if k else '', '(shelved)' if sh else '') if x)
-                        for label, t, k, what, u, title, sh in w)
-              or 'nothing waits for your OK' + ('' if len(argv) > 1 else f' (`{PROG} waiting --all` adds the shelved)'))
-        if ll := last_lines():
-            print('\n'.join(ll))
-        return 0
-    if argv[:1] == ['confirm'] and len(argv) > 1:
-        return say(confirm(argv[1], ' '.join(argv[2:])))
-    if argv[:1] == ['change'] and len(argv) > 2:
-        return say(change(argv[1], ' '.join(argv[2:])))
-    if argv[:1] in (['shelve'], ['unshelve']) and len(argv) == 2:
-        if argv[0] == 'shelve':
-            return say(f'shelved {shelve(argv[1])}: still blocked, off {needs_cfg()["heading"]} (`{PROG} unshelve` brings it back)')
-        return say(f'{unshelve(argv[1])} is back on {needs_cfg()["heading"]}')
-    if argv == ['kinds']:
-        k, own = kinds()
-        return say('\n'.join(f'{p}  {m}' for p, m in k.items())
-                   + ('' if own else '\n(the defaults: set [plan] kinds in runner.toml to name your own)'))
-    if argv[:1] == ['add'] and len(argv) > 2:
-        try:
-            text, where, keyed, pri, force = add_args(argv[2:])
-        except SystemExit as e:
-            print(e, file=sys.stderr)
-            return 2
-        if not (given := bool(pri)):
-            pri = add_default()
-        if why := check_kind(argv[1]):
-            print(why, file=sys.stderr)
-            return 2
-        text += keyed
-        w = where.split(maxsplit=1) or [None]
-        if not given and not where and (fam := family_end(argv[1])):
-            w, pri = ['after', fam[0]], fam[1]  # a split stays with its parent (module doc)
-        fam = argv[1] if re.search(r'\d', argv[1]) else None  # a split is like its parent, by design
-        same = [s for s in similar(text) if not (fam and s.split(':')[0].startswith(fam))]
-        if same and not force:
-            print(f'{PROG}: not added: already open, and may be the same work:\n  ' + '\n  '.join(same)
-                  + f'\n`{PROG} note <ID> TEXT` it there; if it is different work, add it again with --force',
-                  file=sys.stderr)
-            return 3
-        if not {'files', 'test'} & set(fields(text)):
-            why = (f'the line has no `files:`: pass `--files path/a,dir/**` (the files the task will change) '
-                   f'or `--test name` (the test it adds); the run keeps running tasks apart by them, and a line '
-                   f'naming none runs beside anything')
-            if cfg().raw['plan'].get('need_files'):
-                print(f'{PROG}: not added: {why}', file=sys.stderr)
-                return 2
-            print(f'{PROG}: warning: {why}', file=sys.stderr)
-
-        tid = add(argv[1], text, w[0], (w[1:] or [None])[0], pri=pri)
-        msg = f'added {tid}' + (f' ({pri})' if pri else '')
-        if fam:  # a subtask queues behind its family: only right when it needs the parent's code, data or verdict
-            print(f'{PROG}: note: {tid} never runs beside {argv[1]}\'s family; if it could start now, add it '
-                  f'with a fresh letter instead (`{PROG} add {re.match(r"[A-Za-z]+", argv[1]).group()} …`)',
-                  file=sys.stderr)
-        if pri == 'critical' and os.environ.get('AGENT_RUNNER') == '1':
-            msg += '\ncritical goes ahead of the queued work: its text must say what it breaks or blocks'
-        return say(msg)
-    if argv[:1] == ['note'] and len(argv) > 2:
-        note(argv[1], ' '.join(argv[2:]))
-        return say(f'noted {argv[1]}')
-    if argv[:1] == ['edit'] and len(argv) > 2:
-        if refused := [a for a in argv[2:] if a in ('@', '--last', '--force')]:
-            print(f'{PROG}: edit takes no {refused[0]} (`{PROG} move ID WHERE` moves a task)', file=sys.stderr)
-            return 2
-        try:
-            text, _, keyed, pri, _ = add_args(argv[2:])
-        except SystemExit as e:
-            print(str(e).replace('not added', 'not edited'), file=sys.stderr)
-            return 2
-        if not (text.strip() or keyed or pri):
-            print(f'{PROG} edit <ID> "new text" [--files A,B] [--after X,Y] [--test T] [--journal D] [--pri LEVEL]',
-                  file=sys.stderr)
-            return 2
-        edit(argv[1], text, keyed, pri or None)
-        return say(f'edited {argv[1]}')
-    if argv[:1] == ['goal']:
-        if len(argv) == 1:
-            if not (got := goal()):
-                print(f'{PROG}: no `Goal:` paragraph above the first heading in {Path(todo).name}; '
-                      f'`{PROG} goal "TEXT"` writes one', file=sys.stderr)
-                return 1
-            print(got)
-            return 0
-        goal(' '.join(argv[1:]))
-        return say('goal set')
-    if argv[:1] == ['newid'] and len(argv) == 2:
-        return say(next_id(argv[1]))
-    if argv[:1] == ['brief'] and len(argv) == 2:
-        return say('\n'.join(brief(argv[1])))
-    if argv == ['archive']:
-        return say(f'archived {archive(todo, done)}')
-    if argv == ['claims']:
-        got = sorted(plansync.claims(c).items())
-        wips = git('for-each-ref', '--format=%(refname:short)', 'refs/heads/wip/main-checkout-*', cwd=c.root).stdout.split()
-        return say('\n'.join([f'{t}  {plansync.label(cl)}' for t, cl in got] or ['no claims'])
-                   + ''.join(f'\n{w}  main-checkout edits moved aside: pick them up' for w in wips))
-    if argv[:1] == ['unclaim'] and len(argv) == 2:
-        if not plansync.unclaim(c, argv[1]):
-            print(f'{PROG}: no claim on {argv[1]}', file=sys.stderr)
-            return 1
-        return say(f'unclaimed {argv[1]}')
+    if (a := _parse_command(argv)) is not None:
+        return a.run(a, SimpleNamespace(c=c, plan_dir=plan_dir, todo=todo, done=done, say=say))
 
     # a lookup: an id, a section name, or `next`
     paths = [todo, plan_dir / 'REFERENCE.md', plan_dir / 'HUMAN.md', done]
@@ -2312,6 +2180,281 @@ def _main(argv: list[str], c) -> int:
         return 1
     print('\n'.join(out))
     return 0
+
+
+# --- the subcommands (C12) -------------------------------------------------------
+# Each takes the parsed words `a` and `x` (c, plan_dir, todo, done, and say: print, then commit the edit) and
+# returns the exit code. Their messages and codes are what agents read: keep them word for word.
+
+def _text(a) -> str:
+    return ' '.join(a.rest)
+
+
+def _p_tick(a, x):
+    n = tick(a.id)
+    return x.say(f'ticked {a.id}' + (f', moved {n} line(s) to {x.plan_dir.name}/DONE.md' if n else ''))
+
+
+def _p_drop(a, x):
+    drop(a.id, _text(a))
+    return x.say(f'dropped {a.id}')
+
+
+def _p_restore(a, x):
+    restore(a.id, a.rest[0] if a.rest else 'top', ' '.join(a.rest[1:]) or None)
+    return x.say(f'restored {a.id}: open again in {Path(x.todo).name}')
+
+
+def _p_block(a, x):
+    after, rest = None, a.rest
+    if rest[0] == '--after' and len(rest) > 2:
+        after, rest = [t for t in rest[1].split(',') if t], rest[2:]
+    block(a.id, ' '.join(rest), after=after)
+    return x.say(f'blocked {a.id}')
+
+
+def _p_reopen(a, x):
+    got = reopen()
+    return x.say('\n'.join([f'reopened {t} ({", ".join(ids)} landed)' for t, ids in got] or ['nothing to reopen']
+                           + last_lines()))
+
+
+def _p_unblock(a, x):
+    unblock(a.id, _text(a))
+    return x.say(f'unblocked {a.id}')
+
+
+def _p_move(a, x):
+    move(a.id, a.rest[0], ' '.join(a.rest[1:]) or None)
+    return x.say(f'moved {a.id} {_text(a)}')
+
+
+def _p_approve(a, x):
+    bid = approve(a.id, _text(a))
+    return x.say(f'approved: {bid} is open now, and a run starts it')
+
+
+def _p_revise(a, x):
+    k = revise(a.id, _text(a))
+    return x.say(f'{k} is open again with your changes noted; its build task is dropped until the next round')
+
+
+def _p_waiting(a, x):
+    every = bool(a.all)
+    w = asks(all=every)
+    print('\n'.join('  '.join(s for s in (label, t, title, '' if label == 'CONCEPT' else what, u,
+                                          f'(concept {k})' if k else '', '(shelved)' if sh else '') if s)
+                    for label, t, k, what, u, title, sh in w)
+          or 'nothing waits for your OK' + ('' if every else f' (`{PROG} waiting --all` adds the shelved)'))
+    if ll := last_lines():
+        print('\n'.join(ll))
+    return 0
+
+
+def _p_confirm(a, x):
+    return x.say(confirm(a.id, _text(a)))
+
+
+def _p_change(a, x):
+    return x.say(change(a.id, _text(a)))
+
+
+def _p_shelve(a, x):
+    return x.say(f'shelved {shelve(a.id)}: still blocked, off {needs_cfg()["heading"]} (`{PROG} unshelve` brings it back)')
+
+
+def _p_unshelve(a, x):
+    return x.say(f'{unshelve(a.id)} is back on {needs_cfg()["heading"]}')
+
+
+def _p_kinds(a, x):
+    k, own = kinds()
+    return x.say('\n'.join(f'{p}  {m}' for p, m in k.items())
+                 + ('' if own else '\n(the defaults: set [plan] kinds in runner.toml to name your own)'))
+
+
+def _p_add(a, x):
+    kind = a.kind
+    try:
+        text, where, keyed, pri, force = add_args(a.rest)
+    except SystemExit as e:
+        print(e, file=sys.stderr)
+        return 2
+    if not (given := bool(pri)):
+        pri = add_default()
+    if why := check_kind(kind):
+        print(why, file=sys.stderr)
+        return 2
+    text += keyed
+    w = where.split(maxsplit=1) or [None]
+    if not given and not where and (fam := family_end(kind)):
+        w, pri = ['after', fam[0]], fam[1]  # a split stays with its parent (module doc)
+    fam = kind if re.search(r'\d', kind) else None  # a split is like its parent, by design
+    same = [s for s in similar(text) if not (fam and s.split(':')[0].startswith(fam))]
+    if same and not force:
+        print(f'{PROG}: not added: already open, and may be the same work:\n  ' + '\n  '.join(same)
+              + f'\n`{PROG} note <ID> TEXT` it there; if it is different work, add it again with --force',
+              file=sys.stderr)
+        return 3
+    if not {'files', 'test'} & set(fields(text)):
+        why = (f'the line has no `files:`: pass `--files path/a,dir/**` (the files the task will change) '
+               f'or `--test name` (the test it adds); the run keeps running tasks apart by them, and a line '
+               f'naming none runs beside anything')
+        if cfg().raw['plan'].get('need_files'):
+            print(f'{PROG}: not added: {why}', file=sys.stderr)
+            return 2
+        print(f'{PROG}: warning: {why}', file=sys.stderr)
+
+    tid = add(kind, text, w[0], (w[1:] or [None])[0], pri=pri)
+    msg = f'added {tid}' + (f' ({pri})' if pri else '')
+    if fam:  # a subtask queues behind its family: only right when it needs the parent's code, data or verdict
+        print(f'{PROG}: note: {tid} never runs beside {kind}\'s family; if it could start now, add it '
+              f'with a fresh letter instead (`{PROG} add {re.match(r"[A-Za-z]+", kind).group()} …`)',
+              file=sys.stderr)
+    if pri == 'critical' and os.environ.get('AGENT_RUNNER') == '1':
+        msg += '\ncritical goes ahead of the queued work: its text must say what it breaks or blocks'
+    return x.say(msg)
+
+
+def _p_note(a, x):
+    note(a.id, _text(a))
+    return x.say(f'noted {a.id}')
+
+
+def _p_edit(a, x):
+    if refused := [w for w in a.rest if w in ('@', '--last', '--force')]:
+        print(f'{PROG}: edit takes no {refused[0]} (`{PROG} move ID WHERE` moves a task)', file=sys.stderr)
+        return 2
+    try:
+        text, _, keyed, pri, _ = add_args(a.rest)
+    except SystemExit as e:
+        print(str(e).replace('not added', 'not edited'), file=sys.stderr)
+        return 2
+    if not (text.strip() or keyed or pri):
+        print(f'{PROG} edit <ID> "new text" [--files A,B] [--after X,Y] [--test T] [--journal D] [--pri LEVEL]',
+              file=sys.stderr)
+        return 2
+    edit(a.id, text, keyed, pri or None)
+    return x.say(f'edited {a.id}')
+
+
+def _p_goal(a, x):
+    if not a.rest:
+        if not (got := goal()):
+            print(f'{PROG}: no `Goal:` paragraph above the first heading in {Path(x.todo).name}; '
+                  f'`{PROG} goal "TEXT"` writes one', file=sys.stderr)
+            return 1
+        print(got)
+        return 0
+    goal(_text(a))
+    return x.say('goal set')
+
+
+def _p_newid(a, x):
+    return x.say(next_id(a.kind))
+
+
+def _p_brief(a, x):
+    return x.say('\n'.join(brief(a.id)))
+
+
+def _p_archive(a, x):
+    return x.say(f'archived {archive(x.todo, x.done)}')
+
+
+def _p_claims(a, x):
+    got = sorted(plansync.claims(x.c).items())
+    wips = git('for-each-ref', '--format=%(refname:short)', 'refs/heads/wip/main-checkout-*', cwd=x.c.root).stdout.split()
+    return x.say('\n'.join([f'{t}  {plansync.label(cl)}' for t, cl in got] or ['no claims'])
+                 + ''.join(f'\n{w}  main-checkout edits moved aside: pick them up' for w in wips))
+
+
+def _p_unclaim(a, x):
+    if not plansync.unclaim(x.c, a.id):
+        print(f'{PROG}: no claim on {a.id}', file=sys.stderr)
+        return 1
+    return x.say(f'unclaimed {a.id}')
+
+
+# name: (its words in order, the least count of free words after them (None: none taken), handler). A word is a
+# name, or (name, add_argument options) for an optional one.
+SUBCOMMANDS = {
+    'tick': (('id',), None, _p_tick),
+    'drop': (('id',), 1, _p_drop),
+    'restore': (('id',), 0, _p_restore),
+    'block': (('id',), 1, _p_block),
+    'reopen': ((), None, _p_reopen),
+    'unblock': (('id',), 0, _p_unblock),
+    'move': (('id',), 1, _p_move),
+    'approve': (('id',), 0, _p_approve),
+    'revise': (('id',), 1, _p_revise),
+    'waiting': ((('all', {'nargs': '?', 'choices': ['--all']}),), None, _p_waiting),
+    'confirm': (('id',), 0, _p_confirm),
+    'change': (('id',), 1, _p_change),
+    'shelve': (('id',), None, _p_shelve),
+    'unshelve': (('id',), None, _p_unshelve),
+    'kinds': ((), None, _p_kinds),
+    'add': (('kind',), 1, _p_add),
+    'note': (('id',), 1, _p_note),
+    'edit': (('id',), 1, _p_edit),
+    'goal': ((), 0, _p_goal),
+    'newid': (('kind',), None, _p_newid),
+    'brief': (('id',), None, _p_brief),
+    'archive': ((), None, _p_archive),
+    'claims': ((), None, _p_claims),
+    'unclaim': (('id',), None, _p_unclaim),
+}
+
+
+class _NoFit(Exception):
+    """The words fit no subcommand: `_main` reads them as a lookup, as it always has."""
+
+
+class _Parser(argparse.ArgumentParser):
+    """Refuses by raising, never by printing argparse's usage and exiting: a command given the wrong count of
+    words falls through to the lookup (`plan tick` alone shows DONE.md's heading), as before argparse."""
+
+    def error(self, message):
+        raise _NoFit(message)
+
+
+_NOPREFIX = '\x01'  # no word is an option: an id or a text may start with '-', and add/edit read their own flags
+_DASHES = '\x01--'  # argparse drops a literal '--'; the words keep it (`plan note B1 -- x` notes '-- x')
+_PARSER: list[_Parser] = []
+
+
+def _parser() -> _Parser:
+    if not _PARSER:
+        p = _Parser(prog='plan', add_help=False, allow_abbrev=False, prefix_chars=_NOPREFIX)
+        sub = p.add_subparsers(dest='cmd', parser_class=_Parser)
+        for name, (words, least, run) in SUBCOMMANDS.items():
+            s = sub.add_parser(name, add_help=False, allow_abbrev=False, prefix_chars=_NOPREFIX)
+            for w in words:
+                word, opts = w if isinstance(w, tuple) else (w, {})
+                s.add_argument(word, **opts)
+            if least is not None:
+                s.add_argument('rest', nargs=argparse.REMAINDER)
+            s.set_defaults(run=run, least=least)
+        _PARSER.append(p)
+    return _PARSER[0]
+
+
+def _parse_command(argv: list[str]):
+    """argv as a subcommand's parsed words (`.run` its handler), or None: no subcommand fits, so a lookup."""
+    try:
+        a = _parser().parse_args([_DASHES if w == '--' else w for w in argv])
+    except _NoFit:
+        return None
+    if not a.cmd:
+        return None
+    for k, v in vars(a).items():
+        if v == _DASHES:
+            setattr(a, k, '--')
+        elif isinstance(v, list):
+            setattr(a, k, ['--' if w == _DASHES else w for w in v])
+    if a.least is not None and len(a.rest) < a.least:
+        return None
+    return a
 
 
 if __name__ == '__main__':

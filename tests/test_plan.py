@@ -1101,8 +1101,74 @@ def test_hook():
             state.C = saved
 
 
+def test_refusals():
+    print('plan: every refusal and usage line, and its exit code, word for word as before argparse (C12)')
+    nothing = lambda w: (1, f"./run plan: nothing named '{w}' — run `./run plan` for the index\n")
+    quote = ('quote the text and each flag value: ./run plan add KIND "the text" --files \'a,dir/**\' '
+             '(a bare dir/* is expanded by the shell)\n')
+    cases = [  # taken from the hand-rolled parser's output before C12
+        (['add', 'R'], nothing('add')), (['drop', 'R1'], nothing('drop')), (['block', 'R1'], nothing('block')),
+        (['reopen', 'x'], nothing('reopen')), (['unblock'], nothing('unblock')), (['move', 'R1'], nothing('move')),
+        (['approve'], nothing('approve')), (['revise', 'R1'], nothing('revise')),
+        (['waiting', '--x'], nothing('waiting')), (['waiting', '--al'], nothing('waiting')),
+        (['confirm'], nothing('confirm')), (['change', 'R1'], nothing('change')),
+        (['shelve', 'a', 'b'], nothing('shelve')), (['unshelve'], nothing('unshelve')), (['kinds', 'x'], nothing('kinds')),
+        (['note', 'R1'], nothing('note')), (['edit', 'R1'], nothing('edit')), (['newid', 'R', 'x'], nothing('newid')),
+        (['brief'], nothing('brief')), (['claims', 'x'], nothing('claims')), (['unclaim'], nothing('unclaim')),
+        (['nosuch'], nothing('nosuch')), (['--all'], nothing('--all')),
+        (['add', 'R', 'x', '--file', 'a'], (2, './run plan: not added: unknown flag --file\n' + quote)),
+        (['add', 'R', 'x', '--files'], (2, './run plan: not added: --files needs a value\n' + quote)),
+        (['edit', 'R1', '--force'], (2, './run plan: edit takes no --force (`./run plan move ID WHERE` moves a task)\n')),
+        (['edit', 'R1', '@'], (2, './run plan: edit takes no @ (`./run plan move ID WHERE` moves a task)\n')),
+        (['edit', 'R1', '--files'], (2, './run plan: not edited: --files needs a value\n' + quote)),
+        (['edit', 'R1', ''], (2, './run plan edit <ID> "new text" [--files A,B] [--after X,Y] [--test T] [--journal D] '
+                                 '[--pri LEVEL]\n')),
+        (['goal'], (1, './run plan: no `Goal:` paragraph above the first heading in TODO.md; '
+                       '`./run plan goal "TEXT"` writes one\n')),
+        (['unclaim', 'Z9'], (1, './run plan: no claim on Z9\n')),
+        (['-f'], (2, './run plan -f FILE <name>\n')), (['-f', 'x'], (2, './run plan -f FILE <name>\n')),
+        (['tell'], (2, './run plan tell <ID> TEXT\n')), (['tell', 'X'], (2, './run plan tell <ID> TEXT\n')),
+        (['tell', 'Z9', 'hi'], (1, './run plan: Z9 is not running: no slot of a run here is on it '
+                                   '(`./run plan note Z9 TEXT` notes it for the next attempt)\n')),
+        (['tick', 'Z99'], (1, "./run plan: no task 'Z99' (./run plan for the index)\n")),
+        (['drop', 'Z99', 'x'], (1, "./run plan: no task 'Z99' (./run plan for the index)\n")),
+        (['approve', 'R1'], (1, "./run plan: nothing waits for an OK on 'R1': `./run plan waiting` lists what does\n")),
+        (['add', 'R', 'the parser', '--files', 'p.py'],
+         (3, './run plan: not added: already open, and may be the same work:\n  R1: the parser\n'
+             '`./run plan note <ID> TEXT` it there; if it is different work, add it again with --force\n')),
+    ]
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        git(root, 'init', '-q')
+        git(root, 'commit', '-q', '--allow-empty', '-m', 'start')
+        env = {**os.environ, 'AGENT_RUNNER_REPO': str(root)}
+        env.pop('AGENT_RUNNER', None)
+        env.pop('AGENT_RUNNER_SLOT', None)
+        eq(run(root, 'plan', 'add', 'R', 'the parser', '--files', 'p.py', env=env).returncode, 0, 'a first task, R1')
+        eq(run(root, 'plan', 'add', 'R', 'the lexer', '--files', 'l.py', env=env).returncode, 0, 'and R2')
+        todo = root / 'plan' / 'TODO.md'
+        before = todo.read_text(encoding='utf-8')
+        for args, (rc, err) in cases:
+            r = run(root, 'plan', *args, env=env)
+            eq((r.returncode, r.stderr, r.stdout), (rc, err, ''), f'plan {" ".join(args)!r}')
+        eq(todo.read_text(encoding='utf-8'), before, 'no refusal edits TODO.md')
+        r = run(root, 'plan', 'tick', env=env)
+        check(r.returncode == 0 and r.stdout.startswith('# DONE'), 'a command short of words is a lookup, as before',
+              r.stdout + r.stderr)
+    parse = plan._parse_command
+    eq(parse(['note', 'B1', '--', 'x']).rest, ['--', 'x'], 'a literal -- stays in the text (argparse drops it)')
+    eq(parse(['tick', '-x']).id, '-x', 'no word reads as an option')
+    eq(parse(['block', 'B1', '--after', 'B2', 'why']).rest, ['--after', 'B2', 'why'], 'block reads its own --after')
+    eq([parse(a) for a in (['tick'], ['reopen', 'x'], ['add', 'R'], [], ['B12'])], [None] * 5,
+       'wrong counts, no command and an id are lookups')
+    from agent_runner import cli
+    import importlib
+    eq([n for n, (m, f) in cli.COMMANDS.items() if not callable(getattr(importlib.import_module(f'agent_runner.{m}'), f, None))],
+       [], "every cli.COMMANDS entry names a function that exists")
+
+
 if __name__ == '__main__':
-    sys.exit(report([test_iter_tasks_and_titles, test_hook, test_edit, test_unlabelled_block, test_restore, test_plan_last,test_goal,test_plan_roundtrip, test_plan_reopen, test_plan_index_and_sections, test_brief, test_brief_outline,
+    sys.exit(report([test_refusals, test_iter_tasks_and_titles, test_hook, test_edit, test_unlabelled_block, test_restore, test_plan_last,test_goal,test_plan_roundtrip, test_plan_reopen, test_plan_index_and_sections, test_brief, test_brief_outline,
                      test_split_parents, test_add_bottom, test_add_pri, test_add_subtask, test_kinds, test_need_files, test_add_stray_args, test_hand_edits_commit, test_hand_edits_push, test_similar, test_add_refuses_a_duplicate, test_carry_notes,
                      test_merge3, test_concurrent_add, test_merge_driver, test_concepts, test_needs_you,
                      test_needs_config]))
