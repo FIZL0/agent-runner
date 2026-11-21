@@ -975,16 +975,16 @@ def test_after_all():
         plan.add('F', 'big future | files: z.py', pri='later', **kw)
         eq(plan.last_waits(todo), [(rel, ['F1', 'B2'])],
            'every open or blocked task above it, any section; not blocked for the person (B101), shelved, Parked')
-        eq(plan.last_lines(todo), [f'{rel} waits for everything before it (2 open); not waiting on: C1, B1 (needs you)'],
-           'said as a count, then the tasks blocked for the person it skips (B101)')
+        eq(plan.last_lines(todo), [f'{rel} waits for everything before it (2 open); not waiting on: C1 (needs you)'],
+           'said as a count, then the tasks blocked for the person it skips (B101), not the shelved')
         from agent_runner import status as S
         has(S.release_line(list(plan.lines(todo))), rf'waits for everything before it \(2 open\); not waiting on: '
-            rf'C1, B1 \(needs you\)', "status's release line names them as not waited on (B101)")
+            rf'C1 \(needs you\)', "status's release line names them as not waited on (B101)")
         plan.add('F', 'queued later | files: q.py', **kw)  # the top of Next
         eq(plan.last_waits(todo), [(rel, ['F3', 'F1', 'B2'])], 'a task queued above it later holds it too')
         for tid in ('F1', 'F3', 'B2'):
             plan.tick(tid, **kw)
-        eq(plan.last_lines(todo), [f'{rel} waits for everything before it: nothing left; not waiting on: C1, B1 '
+        eq(plan.last_lines(todo), [f'{rel} waits for everything before it: nothing left; not waiting on: C1 '
                                    '(needs you)'], 'nothing an agent can do is left: it is free to run')
         plan.unblock('C1', 'chose the first', todo=todo)
         eq(plan.last_waits(todo), [(rel, ['C1'])], 'once the person answers and it reopens, it holds it again')

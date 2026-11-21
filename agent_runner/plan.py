@@ -99,7 +99,7 @@ and other sections (Follow-ups) never do. `reopen`, `waiting` and `status` say w
 all`, or `BLOCKED: (after all) why`, which the run resolves on every pick (and `reopen` after every merge) to each
 open or blocked task above it in TODO.md, in any section, tasks queued above it later included. Tasks a run never
 starts do not hold it, or it would never run: Parked (`--pri later`) and Stretch sections, shelved tasks, and
-tasks blocked for the person (CONFIRM/DECIDE/BLOCKED, a concept's OK) until they reopen. `status`, `plan ID`,
+tasks blocked for the person (a `CONFIRM:`/`DECIDE:`/`BLOCKED:` ask, a concept's OK) until they reopen. `status`, `plan ID`,
 `reopen` and `waiting` say 'T5 waits for everything before it (12 open); not waiting on: R6 (needs you)'.
 
 **A release is kind V** (F38): `add V` files it at the end of Next with `after: all`, no `--after` or `--files`
@@ -475,14 +475,14 @@ def before_all(ls: list[str], i: int) -> list[str]:
     """What `after: all` on the task at ls[i] stands for, read afresh each time (F35): every top-level task above
     it in TODO.md, in any section, that is not done (open or blocked), in order. Tasks a run never starts do not
     hold it, or it would never run: those in Parked (`--pri later`) and Stretch sections, shelved ones, and those
-    blocked for the person (CONFIRM/DECIDE/BLOCKED asks, a concept's OK: B101), which `on_person_before` lists;
+    blocked for the person (a `CONFIRM:`/`DECIDE:`/`BLOCKED:` ask, a concept's OK: B101), which `on_person_before` lists;
     once the person answers and such a task reopens, it holds it again."""
     return _before_all(ls, i)[0]
 
 
 def on_person_before(ls: list[str], i: int) -> list[str]:
     """The tasks before ls[i] that `after: all` does not wait on because they are blocked for the person (B101),
-    shelved ones included, in order: status says them as 'not waiting on: R6 (needs you)'."""
+    in order, shelved ones left out: status says them as 'not waiting on: R6 (needs you)'."""
     return _before_all(ls, i)[1]
 
 
@@ -496,10 +496,9 @@ def _before_all(ls: list[str], i: int) -> tuple[list[str], list[str]]:
         if not m or m.group(1) or m.group(2) == 'x' or section.startswith(SKIPPED):
             continue
         tid = m.group(3).rstrip('.')
-        if _on_person(ls, j):
-            person.append(tid)
-        elif not _shelved(ls, j):
-            out.append(tid)
+        if _shelved(ls, j):
+            continue  # set aside by the person: neither waited on nor said
+        (person if _on_person(ls, j) else out).append(tid)
     return out, person
 
 
