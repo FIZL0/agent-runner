@@ -295,7 +295,7 @@ DIGEST_STUCK = (EV_PART, EV_PARKED, EV_LEFT, EV_STALLED)  # a task's last state 
 
 # B89: the cut digest's last line. The person may be in the Claude app or on a phone, where no command runs, so
 # it reads as an ask; the control session answers it with `since --all` handed over as a page (guide.py).
-DIGEST_MORE = 'more in the full list: ask for it'
+DIGEST_MORE = 'more: ask for the full list'
 
 
 def since_digest(log_lines: list[str], start: dt.datetime, titles: dict[str, str], now: dt.datetime,
@@ -574,7 +574,7 @@ def waiting_text(waiting, width: int = 60, now: dt.datetime | None = None, wips=
     if not out:
         return []  # only shelved ones: they asked to leave this list
     if shelved:
-        out.append(f'  ({shelved} shelved: ask to see them)')  # B89: an ask, not a command
+        out.append(f'  ({shelved} shelved: plan waiting --all)')
     return [needs_heading(cf['heading'])] + out
 
 

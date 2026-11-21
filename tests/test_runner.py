@@ -1692,7 +1692,7 @@ def test_person_waiting(repo: Path):
         with mock.patch.object(type(R.C), 'todo', property(lambda self: todo)):
             text = R.status_text(False, {}, [], {}, 0.0, waiting=R.waiting_ok())
         check('[F3]' not in text, 'status leaves it out', text)
-        has(text, r'\(1 shelved: ask to see them\)', 'and counts it')
+        has(text, r'\(1 shelved: plan waiting --all\)', 'and counts it')
         run(root, 'plan', 'unshelve', 'F3', env=env)
         has(run(root, 'plan', 'waiting', env=env).stdout, r'^BLOCKED  F3 ', 'unshelve brings it back')
 

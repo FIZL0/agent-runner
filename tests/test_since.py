@@ -79,8 +79,11 @@ def test_full_list_as_page() -> None:
     for name, text in (('brief', brief), ('/since', skill)):
         check(all(w in text for w in ('since --all', 'Artifact', 'SendUserFile', 'link')),
               f'{name}: since --all handed over as a page', text[-600:])
-    check(all(w in brief for w in ('status -n', 'plan waiting --all', S.DIGEST_MORE.split(': ')[-1])),
-          'brief: the same for other long output, and the digest\'s ask')
+    check(all(w in brief for w in ('status -n', 'plan waiting --all', S.DIGEST_MORE)),
+          'brief: the same for other long output, and the digest\'s ask word for word')
+    check('Artifact' in G.control_skills('RUN')['run'], '/run: long status output as a page too')
+    eq(S.since_start('2026-11-20T21:02', None, NOW), dt.datetime(2026, 11, 20, 21, 2),
+       'since --all takes the date-time the brief tells the session to pass')
 
 
 def main() -> int:
