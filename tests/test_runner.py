@@ -5755,6 +5755,11 @@ def test_release_kind(repo: Path):
             check(R.pick({}, set(), 'main') is None, 'and for one finished but not merged: it releases what landed')
         finally:
             R.ahead = ahead
+        now = '- [ ] **V2** (follow-up, critical) Release: an interim one'
+        plan['ls'] = head + [now, '- [ ] **F3** queued | files: d.py']
+        v2 = R.pick({}, set(), 'main')
+        eq(v2[0], 'V2', 'an interim release (--now: no `after:`) starts at once')
+        eq(R.pick({1: v2}, set(), 'main'), None, 'and runs alone too')
     finally:
         R.plan_text = saved
 

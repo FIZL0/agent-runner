@@ -292,7 +292,8 @@ waiting for your OK on <url>`. That block names no task, so no run starts it and
   the prompt lists them so an agent picks the right one, `plan kinds` prints them, and `plan add` refuses
   a letter the table lacks. With no table, the generic `B F T D R C K V` (bug, feature, tests and tooling,
   docs, research, cleanup, concept, release) are suggested but not enforced. `K` is the concept flow (above).
-- `V` is a **release** (F38), whatever `[plan] kinds` says of the letter. `plan add V` files it at the end of
+- `V` is a **release** (F38): the run treats every `V…` id so, so a repo with its own `[plan] kinds` lists `V`
+  to file releases (and keeps the letter for nothing else). `plan add V` files it at the end of
   Next with `after: all`, so it waits for everything ahead of it (no `--after` needed), and with no text it
   gets the default brief: bump the version per the project's versioning rules (docs/SETUP.md#versions here),
   move CHANGELOG Unreleased under it, commit to main, check the release workflow and `gh release view`. It
