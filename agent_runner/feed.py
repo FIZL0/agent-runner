@@ -118,25 +118,36 @@ FEED_RESUME_FAIL = 15  # s: a resumed feed failing sooner than this could not re
 SID_RE = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
 
 
-def feed_session() -> tuple[str, bool]:
+def feed_session(cmd: str = '') -> tuple[str, bool]:
     """(session id, resume) for the run's runner feed (B15). The id is kept in <notes>/remote/ from the feed's
     first start until a real stop (`rc_sweep_stop`), so any restart that is not one (an upgrade's, a board
     window replaced or closed, the feed exiting, a crashed run started again) resumes the same Claude session:
-    its history and its app entry carry on. None kept yet: a new id, recorded, and a fresh session."""
+    its history and its app entry carry on. None kept yet: a new id, recorded, and a fresh session.
+    B91: the runner command the feed may run (`cmd`, default RUNNER) is kept on the line after the id; a kept
+    session whose command differs (or that names none: one from before B91, which may still say only
+    `./kit` is allowed, from before B71) is not resumed, so the feed's history never contradicts its rules."""
+    cmd = cmd or RUNNER
     f = C.notes(REMOTE_DIR, FEED_SID)
-    try:
-        sid = f.read_text(encoding='utf-8').strip()
-    except OSError:
-        sid = ''
-    if SID_RE.fullmatch(sid):
+    sid, kept = feed_sid_parts()
+    if SID_RE.fullmatch(sid) and kept == cmd:
         return sid, True
     sid = str(uuid.uuid4())
     try:
         f.parent.mkdir(parents=True, exist_ok=True)
-        f.write_text(sid + '\n', encoding='utf-8')
+        f.write_text(f'{sid}\n{cmd}\n', encoding='utf-8')
     except OSError:
         pass
     return sid, False
+
+
+def feed_sid_parts() -> tuple[str, str]:
+    """(session id, runner command) as <notes>/remote/feed.sid holds them (B91); '' for either one missing."""
+    try:
+        lines = C.notes(REMOTE_DIR, FEED_SID).read_text(encoding='utf-8').splitlines()
+    except OSError:
+        return '', ''
+    lines = [ln.strip() for ln in lines] + ['', '']
+    return lines[0], lines[1]
 
 
 def feed_session_args(sid: str, resume: bool) -> list[str]:
@@ -272,11 +283,8 @@ def feed_sid() -> str:
 
 
 def feed_sid_file() -> str:
-    """What <notes>/remote/feed.sid holds, stripped; '' without one."""
-    try:
-        return C.notes(REMOTE_DIR, FEED_SID).read_text(encoding='utf-8').strip()
-    except OSError:
-        return ''
+    """The session id <notes>/remote/feed.sid holds (its first line, B91), stripped; '' without one."""
+    return feed_sid_parts()[0]
 
 
 def claude_sessions_dir() -> Path:
