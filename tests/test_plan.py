@@ -1158,6 +1158,7 @@ def test_refusals():
     parse = plan._parse_command
     eq(parse(['note', 'B1', '--', 'x']).rest, ['--', 'x'], 'a literal -- stays in the text (argparse drops it)')
     eq(parse(['tick', '-x']).id, '-x', 'no word reads as an option')
+    eq((parse(['tick', '--']).id, parse(['drop', '--', 'why']).id), ('--', '--'), 'not even a -- in the id slot')
     eq(parse(['block', 'B1', '--after', 'B2', 'why']).rest, ['--after', 'B2', 'why'], 'block reads its own --after')
     eq([parse(a) for a in (['tick'], ['reopen', 'x'], ['add', 'R'], [], ['B12'])], [None] * 5,
        'wrong counts, no command and an id are lookups')

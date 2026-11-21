@@ -2419,7 +2419,8 @@ class _Parser(argparse.ArgumentParser):
 
 
 _NOPREFIX = '\x01'  # no word is an option: an id or a text may start with '-', and add/edit read their own flags
-_DASHES = '\x01--'  # argparse drops a literal '--'; the words keep it (`plan note B1 -- x` notes '-- x')
+_DASHES = '\x02--'  # argparse drops a literal '--'; the words keep it (`plan note B1 -- x` notes '-- x'). Not
+# _NOPREFIX first, or argparse reads it as an option and `plan tick --` misses its id
 _PARSER: list[_Parser] = []
 
 
