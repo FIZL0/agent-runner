@@ -230,8 +230,7 @@ on a line of its own, oldest first:
       35m  Check the push reached your phone - reply yes/no [F1]
 
 Every Needs you line names its project (the main checkout's folder), so a person who runs several knows which
-control session to answer in: the heading reads `iFizBox needs you:` (a custom `[needs] heading` keeps its words:
-`Your turn (iFizBox):`), a `--needs-you` line `iFizBox needs you: … [R43]` or `iFizBox: looks stuck: …`, and
+control session to answer in: the heading reads `iFizBox needs you:`, a `--needs-you` line `iFizBox needs you: … [R43]` or `iFizBox: looks stuck: …`, and
 the desktop notice of a held run `iFizBox needs you: run stopped: …`.
 
 **Claude Code changes.** A few things agent-runner reads are Claude Code's internals, not a documented
@@ -245,12 +244,10 @@ local warning only (nothing is filed); `.runner/claude-drift.json` keeps which v
 
 The CONCEPT/CONFIRM/DECIDE/BLOCKED labels stay in TODO.md and `plan waiting`; the person does not see them.
 The age comes from the `(asked YYYY-MM-DD HH:MM)` stamp `plan block` adds to a block on a person (older
-blocks have none and sort first). `[needs]` in runner.toml changes it:
+blocks have none and sort first). `[run] needs_order` changes the order:
 
-    [needs]
-    heading = "Needs you"   # the heading in status, since and the control sessions' opening
-    ages = true             # show each item's age
-    order = "oldest"        # "newest" first, or "plan": TODO.md's order
+    [run]
+    needs_order = "oldest"  # "newest" first, or "plan": TODO.md's order
 
 ### Tasks waiting on a person
 
@@ -702,7 +699,7 @@ the first failure. When the runner still has the session that did the task, the 
 copy of it (Claude's `--resume <id> --fork-session`), so it knows the change it is repairing; otherwise it
 starts fresh.
 
-When a batch (`batch = true`) fails the gate, the runner first looks for the task that breaks it by
+When a batch (`batch_max` above 1) fails the gate, the runner first looks for the task that breaks it by
 itself (with `failures` and `retest` set), by halving the batch as below. That one merges in a turn of
 its own, where its repair goes as above; the rest are built and gated again together. If no branch fails alone, the batch is repaired as a
 whole: one repair session sees every merge in the batch (`REPAIR_BATCH`) and fixes where they clash, and the
@@ -827,7 +824,7 @@ You can customise it in three ways, from smallest to largest:
   {branch} {others} {earlier} {rules} {test} {journal} {extra} {brief}`. Any other `{name}` is left as it
   is.
 
-Each session also gets `AGENT_RUNNER=1` and `[run] slot_env` (default `AGENT_SLOT={n}`) in its
+Each session also gets `AGENT_RUNNER=1`, `AGENT_SLOT=<n>` and anything `[run] slot_env` adds in its
 environment, so your tools can tell slots apart, for example to give each one its own port or emulator
 instance.
 
@@ -950,6 +947,8 @@ kinds = {}                # id prefix -> kind of work, e.g. { B = "bug", N = "ne
 need_files = false        # `plan add` refuses a line with no files: and no test: field (else it warns)
 lookup = []               # more files `plan <name>` searches for a heading, e.g. ["PLAN.md", "plan/guide/*.md"]
 context_kb = 12           # budget for what every session loads (`context`); `run` warns past it, 0 = never
+glossary = "GLOSSARY.md"  # the project's glossary (`agent-runner glossary`): seeded by the first control session,
+                          # named in every brief; false = off (no file written, briefs skip it)
 
 [git]
 master_branch = ""        # optional local shared branch; must exist and be checked out
@@ -957,6 +956,8 @@ master_branch = ""        # optional local shared branch; must exist and be chec
 push = "origin"           # where finished work goes; false turns every push off
 push_merge = true         # push the shared branch after each tested merge
 # with `[run] test` empty (no gate) only when set here: the default never pushes untested merges
+land_edited = "wait"      # a tested merge held by uncommitted edits in the main checkout: "wait" for them, or
+                          # "wip": move them to a wip/main-checkout-<time> branch and land (see Stopping a run)
 
 [run]
 test = ""                 # the gate, run by `done` and on every merge, e.g. "make test"
@@ -966,8 +967,8 @@ slots = 3
 mux = ""                  # tmux or hidden; "" = tmux inside a tmux session, else hidden (Windows: hidden)
 include_task_id_in_commit = true
 comment_policy = "normal"
-agent = "claude"
-backend = ""              # claude or pi; empty detects pi from the agent executable's name
+agent = "claude"          # the CLI a session runs: claude, or a pi executable (one named pi runs on the Pi
+                          # backend; AGENT_RUNNER_BACKEND=claude|pi overrides that, e.g. for a wrapper)
 model = "opus"
 lean = true               # sessions get Bash/Read/Edit/Write/Artifact only, no MCP servers or user settings
 remote = "auto"           # control sessions on Remote Control, and a control server to start more from claude.ai/code or the Claude apps; Enter in the runner's pane opens it. auto: on where it can work (see Control sessions); true/false force it
@@ -975,15 +976,21 @@ remote_slots = false      # the slots on Remote Control too ("<task title> · <r
                           # recommended: every slot start pushes to the phone
 silent = "launch"         # phone pushes from those sessions: launch = none while they start, true = none ever, false = Claude Code's usual
 control = true            # a run opens control session c1 beside it; false: none (`agent-runner control` still works)
-control_close = true      # close idle control sessions 2, 3, … (never c1): process ended, controlN.pid removed, transcript kept (`claude --resume <sid>`)
-control_idle = "3h"       # closed once quiet this long, Claude spoke last, its last message is no open question, and nothing runs in it (a background task or Monitor; the needs-you watch does not count)
+control_idle = "3h"       # close idle control sessions 2, 3, … (never c1) once quiet this long, Claude spoke last, its last message is no open question, and nothing runs in it (a background task or Monitor; the needs-you watch does not count): process ended, controlN.pid removed, transcript kept (`claude --resume <sid>`); false: none closed idle
 control_idle_quick = "5m"   # a session opened for one ask (a feed reply, `control --new --ask`) where the person sent only that message, a task got queued (`plan add` printed "added <ID>") and the last message is no open question: closed after this instead (looked at every 5 min, so 5-10 min); false: control_idle
-control_idle_talked = "12h" # a session the person sent a second message in: closed after this instead (an open question still goes by control_ask_idle); false: control_idle. Slash commands (the runner's /rename), hook and system turns are not the person's messages
-control_ask_idle = "2h"   # a last message that is an open question: after this long it is filed under Needs you as a DECIDE item (the question + the session link), then closed
+control_idle_talked = "12h" # a session the person sent a second message in: closed after this instead (an open question still goes by control_ask); false: control_idle. Slash commands (the runner's /rename), hook and system turns are not the person's messages
+control_ask = "2h"        # a last message that is an open question: after this long it is filed under Needs you as a DECIDE item (an F task with the question + the session link; answering it reopens the task for a run to carry on), then closed; false: such a session stays open and nothing is filed
 control_open = ["?", "want me to", "should i", "shall i", "would you like", "do you want"]  # what makes a last message open (case ignored; "?" must end its last paragraph, the rest may stand anywhere in it)
-control_file_asks = true  # false: an open question's session closes after control_ask_idle without filing it
-control_ask_kind = "F"    # the id prefix of that DECIDE item's task (answering it reopens the task for a run to carry on)
 auto_upgrade = true       # upgrade by itself when a newer release is out, as `u` does, once no merge runs; the run restarts on it (false: only `u` or `agent-runner upgrade`)
+install_skill = true      # keep the `agent-runner guide` skill in ~/.claude/skills and the user-level SessionStart hook (the control brief in a runner repo's main checkout) in Claude Code's user settings, from every agent-runner command, for sessions a person starts; false: neither is written
+rules_pointer = true      # a run adds one line to the rules file (`rules`, else AGENTS.md or CLAUDE.md, never created) pointing every session at the agent-runner skill, committed on its own; never into a file with uncommitted edits or mid-merge; false: never
+wizards = true            # an agent blocking with BLOCKED: (a login, a certificate, a secret) also writes a bash wizard to <notes>/wizards/<ID>.sh; Needs you shows `agent-runner wizard <ID>` to run it; false: no wizards
+questionnaires = true     # a DECIDE with options is asked as a pick sheet (<notes>/sheets/<ID>.json, a page made with `agent-runner sheet <ID>`); Needs you shows one line and its link; false: a plain DECIDE
+grill = "ask"             # control sessions ask rounds of numbered questions before queueing: "ask" = when the person says grill me / poke holes; "big" = also on big vague asks; "off"
+voice = ""                # the person's wording file (`agent-runner voice`), read by control sessions, the runner feed and task agents; "" = ~/.config/agent-runner/voice.md (a .runner/voice.md with lines overrides it for this project)
+voice_learn = "ask"       # "ask": a session that had to say something again offers one wording line to add; "off": lines are added only when the person says so
+review = true             # before done, a fresh subagent reads the diff against the task's brief (spec only: missing, unasked, wrong); the commit ends "review: …"; false: no review
+review_min_lines = 50     # a diff smaller than this (changed lines) skips the review, unless the task has a long form (plan/tasks/<ID>.md)
 idle = 30                 # s quiet after a turn ends before a session without a successful `done` is ended (with one: 5 s)
 stall = 1200              # s quiet at a prompt that counts as stalled
 context_warn = 150        # k tokens: a slot session whose context peaked past this says so in its exit line and in `since`, with what filled it ("B32 peaked 168k (over 150k): runner.py 61k, test_runner.py 22k"); soft only, nothing is stopped; 0 = off. A new run also starts c1 afresh when its kept session last stood over it (F27)
@@ -993,7 +1000,8 @@ session_max = 90          # % of 5-hour session usage past which nothing new sta
 notes = ".runner"         # logs + ledger (git-ignore it)
 links = []                # git-ignored paths symlinked into every worktree (data, big files)
 copies = []               # git-ignored files copied into a new worktree once (a local config file)
-slot_env = ["AGENT_SLOT={n}"]   # {n}: the slot, {slots}: how many
+slot_env = []             # extra environment per slot, e.g. ["EMU_SLOT={n}"] ({n}: the slot, {slots}: how many),
+                          # beside AGENT_SLOT=<n>, which every slot gets
 pass_env = []             # the runner's own environment variables handed on to every slot
 on_exit = ""              # command run in a slot's worktree, with its env, when its session ends
 rules = ""                # "AGENTS.md", "CLAUDE.md", …
@@ -1007,14 +1015,12 @@ docs_check = ""           # the quick check a docs-only diff runs instead (links
 findings = ["docs/research/**", "research/**"]  # what a research task may change beside the plan and journal
 failures = ""             # regex, group 1 = a failing test's name in the gate's output
 retest = ""               # the gate for just {names}: rerun alone (load), then on the base (already failing)
-flaky = ""                # regex, group 1 = tests a passing gate passed only on its own rerun (comma-separated)
-flaky_kind = "T"          # the prefix of the critical "make <test> robust" follow-ups
+flaky = ""                # regex, group 1 = tests a passing gate passed only on its own rerun (comma-separated); each gets a critical T task
 ci_watch = "auto"         # "auto": workflows run on a push to the shared branch; ["pages.yml"]; false: off. A red newest finished run on the shared branch
-                          # files one critical task (needs `gh` logged in)
-ci_kind = "B"             # the prefix of that task
-batch = true              # finished branches waiting for the merge go in together under one gate run, and one push
+                          # files one critical B task (needs `gh` logged in)
 merge_ahead = true        # tasks finishing during a batch's gate are merged on it and tested beside it
-batch_max = 16            # at most this many tasks in one batch; 0 = no cap
+batch_max = 16            # finished branches waiting for the merge go in together under one gate run, and one push,
+                          # at most this many (the rest take the next one); 0 = no cap, 1 = no batching
 max_unmerged = 32         # past this many finished tasks waiting for the merge, each half batch more holds a slot; 0 = off
 before_start = ""         # a command that must pass before any session starts (a display, a device)
 not_attempt = ""          # regex on a branch's last commit subject ({id}): a phase, not the run's one try
@@ -1035,12 +1041,48 @@ min_free_gb = 10          # under this much free disk: free worktrees cleaned, n
 proc_max_gb = "auto"      # a process of the run's resident past this is killed; "auto": a quarter of RAM; 0 = never
 min_free_mem_gb = 4       # under this much memory available: the run's biggest process is killed; 0 = never
 slot_clean = ""           # a project's own clean, run instead of the trim and the full git clean -ffdXq
-timeout = 3600            # s the gate, a retest or a hook (join, before_start, on_exit) may run: past it, failed
+command_timeout = 3600    # s the gate, a retest, a hook (join, before_start, on_exit) or `done`'s gate may run: past it, failed
+needs_order = "oldest"    # what waits on a person (Needs you): oldest first; "newest" first; "plan": TODO.md's order
 
 [run.join]                # glob = a command that joins a conflict in that file itself:
 # "data/addresses.txt" = "./tools/join {union} {out}"   # also {ours} {base} {theirs} {file}; exit 0 keeps {out}
 
 ```
+
+### Renamed and removed keys
+
+An old key still in a runner.toml or runner.local.toml is no error: the run's start logs it with what to
+write instead. A renamed or folded key still applies under its new name (where a file sets both, the new one
+wins); a removed one is ignored.
+
+Renamed or folded in 0.58.0 (the config trim):
+
+- `[run] timeout` is renamed `command_timeout`.
+- `[needs] order` moved to `[run] needs_order`.
+- `[run] control_ask_idle` is renamed `control_ask` (`"2h"`, or false to keep such a session open).
+- `[run] control_close` is folded into `control_idle`: `control_close = false` is read as `control_idle = false`.
+- `[run] batch` is folded into `batch_max`: `batch = false` is read as `batch_max = 1`.
+- `[run] backend` is gone: the backend follows `agent` (an executable named pi runs on Pi) and
+  `AGENT_RUNNER_BACKEND=claude|pi`; `backend = "pi"` is read as `agent = "pi"`.
+- `[run] slot_env` keeps its name but defaults to `[]`: every slot gets `AGENT_SLOT=<n>` whatever it says, so
+  a `slot_env` no longer needs to repeat it.
+
+Removed in 0.58.0 (the config trim):
+
+- `[run] control_file_asks`: an open question is always filed before its session closes; `control_ask = false`
+  keeps such a session open instead.
+- `[run] control_ask_kind`, `[run] flaky_kind`, `[run] ci_kind`: a control session's open question is always an
+  F task, a flaky test a T task, a red CI run a B task.
+- `[needs] heading` (always "Needs you") and `[needs] ages` (each item always shows its age); with
+  `[needs] order` moved, the `[needs]` table is gone.
+
+Removed earlier:
+
+- 0.52.0: `[needs] map_replies` (sessions map a reply to its item themselves).
+- 0.32.0: `[run] mode` (a run never starts two tasks on the same files), `[run] fix_ahead` (`fix_ahead_max = 0`
+  is what `fix_ahead = false` was), `[run] precommit` (chain the check into `[run] test`), `[run] ci_rerun` (a
+  red CI run's failed jobs are always run once more), `[run] batch_wait`, `[run] batch_min`, `[plan] brief`
+  (use `brief_extra` and `outline`).
 
 ## What it leaves out
 

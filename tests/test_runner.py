@@ -7065,6 +7065,33 @@ def test_config_trim_c14(tmp: Path):
         R.C = was
 
 
+def test_reference_keys_d3():
+    print("D3: docs/REFERENCE.md's runner.toml block names every DEFAULTS key and no removed or renamed one, and "
+          'says what each old name became')
+    from agent_runner.config import DEFAULTS, MOVED, REMOVED
+    text = (Path(__file__).resolve().parent.parent / 'docs' / 'REFERENCE.md').read_text(encoding='utf-8')
+    section = text.split('\n## runner.toml\n', 1)[1].split('\n## ', 1)[0]
+    documented: dict[str, set[str]] = {}
+    for block in re.findall(r'```toml\n(.*?)```', section, re.S):
+        table = None
+        for line in block.splitlines():
+            if m := re.match(r'\[([\w.]+)\]', line):
+                table = m.group(1)
+                if '.' in table:  # [run.join] documents [run] join
+                    table, key = table.split('.', 1)
+                    documented.setdefault(table, set()).add(key)
+            elif table and (m := re.match(r'(\w+)\s*=', line)):
+                documented.setdefault(table, set()).add(m.group(1))
+    for table, keys in DEFAULTS.items():
+        missing = sorted(set(keys) - documented.get(table, set()))
+        check(not missing, f'REFERENCE.md runner.toml documents every [{table}] key (missing: {missing})')
+        extra = sorted(documented.get(table, set()) - set(keys))
+        check(not extra, f'REFERENCE.md runner.toml names no [{table}] key the runner does not take (extra: {extra})')
+    check(set(documented) <= set(DEFAULTS), f'REFERENCE.md runner.toml names only tables the runner reads: {sorted(documented)}')
+    for t, k in (*MOVED, *REMOVED):
+        has(section, re.escape(f'`[{t}] {k}`'), f'REFERENCE.md says what [{t}] {k} became')
+
+
 def main() -> int:
     with tempfile.TemporaryDirectory() as t:
         tmp = Path(t)
@@ -7105,7 +7132,7 @@ def main() -> int:
                        lambda: test_hidden_slots(repo, tmp), lambda: test_hidden_run_lands(tmp), lambda: test_no_gate_b36(tmp),
                        lambda: test_claude_drift_b45(repo, tmp), lambda: test_merged_count_b78(repo),
                        lambda: test_hidden_control_f59(repo, tmp), lambda: test_context_warn_f25(repo),
-                       lambda: test_control_fresh_f27(repo), lambda: test_config_trim_c14(tmp)])
+                       lambda: test_control_fresh_f27(repo), lambda: test_config_trim_c14(tmp), test_reference_keys_d3])
 
 
 if __name__ == '__main__':
