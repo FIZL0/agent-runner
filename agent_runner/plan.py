@@ -2697,8 +2697,8 @@ def _p_add(a, x):
     if not given and not where and (fam := family_end(kind)):
         w, pri = ['after', fam[0]], fam[1]  # a split stays with its parent (module doc)
     fam = kind if re.search(r'\d', kind) else None  # a split is like its parent, by design
-    same = [s for s in similar(text) if not (fam and s.split(':')[0].startswith(fam))
-            and not (rel and release(s.split(':')[0]))]  # each release is its own
+    # B99: a release is never the same work as a build, even when its text names what it waits for
+    same = [] if rel else [s for s in similar(text) if not (fam and s.split(':')[0].startswith(fam))]
     if same and not force:
         print(f'{PROG}: not added: already open, and may be the same work:\n  ' + '\n  '.join(same)
               + f'\n`{PROG} note <ID> TEXT` it there; if it is different work, add it again with --force',

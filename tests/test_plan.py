@@ -1026,6 +1026,9 @@ def test_release_kind():
         run(root, 'plan', 'add', 'V', '--after', 'F1', '--force', env=env)
         has(plan.section(todo, 'V5')[0], r'\| after: F1$', 'an --after of its own replaces `all`')
         eq(run(root, 'plan', 'add', 'V', '--now', '--pri', 'low', env=env).returncode, 2, '--now with another level is refused')
+        eq(run(root, 'plan', 'add', 'F', 'the minimap radar', '--files', 'm.py', env=env).returncode, 0, 'a build, F3')
+        r = run(root, 'plan', 'add', 'V', 'a release after the minimap radar', '--after', 'F3', env=env)
+        eq((r.returncode, r.stderr), (0, ''), 'a release naming the work it waits for is not its duplicate (B99)')
         eq(run(root, 'plan', 'add', 'F', 'x', '--now', '--force', env=env).returncode, 2, '--now is for a release only')
 
 
