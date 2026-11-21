@@ -213,6 +213,12 @@ WHEN it starts where the last `since` left off (`.runner/since.last`; a day back
 that mark forward, so asking twice in a row shows nothing new the second time. WHEN is `2h`, `30m`, `1d`,
 `today`, `yesterday` or a date/time (`2026-11-19T14:00`); it moves the mark too, never back.
 
+By default `since` prints that as a digest, short enough for a phone (B88): a headline count, then one line per
+task with its last state under Started, Landed (newest first) and Stuck, then the run's own lines (releases, a
+hold, its last state); repeated run idle / run stopped lines and restarts fold away. Past 10 task lines, Landed
+names the rest by id only and the digest ends `full log: … since --all`. `since --all` prints every event,
+one line each, as above.
+
 `since --follow` stays running and prints one line per new event as run.log gets it (a landed task with the
 first sentence of its `done` message), from now on, moving the mark as it prints: the control session's
 "follow", and fine in any terminal. `since --follow --needs-you` prints only what needs you (the run held,
@@ -877,8 +883,8 @@ agent-runner control --new --forward   the same, with the person's latest runner
                                        or a worktree under its [run] home) and labelled with this project: the
                                        feed hands asks about agent-runner itself (updates, releases, its bugs)
                                        on this way
-agent-runner since [WHEN] [--follow]   what landed, started or got stuck since the last look (or WHEN: 2h,
-                                       yesterday); --follow prints each new event as it happens
+agent-runner since [WHEN] [--all|--follow]  what landed, started or got stuck since the last look (or WHEN:
+                                       2h, yesterday), as a digest; --all every event; --follow each new one live
 agent-runner plan [...]                the task list as a tool (agent-runner plan help)
 agent-runner done ID "MSG" [--blocked WHY [--after X,Y]] [--artifact URL] [--no-test]
                                        --artifact: a concept's page (required for a K task)

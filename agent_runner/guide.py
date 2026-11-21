@@ -354,7 +354,8 @@ What the person asks, and what you run (`{cmd}` is the runner):
 - "status?", "/run", "how's it going?": `{cmd} status` (`/run -n 20`: `{cmd} status -n 20`, with the run log's
   last lines); "/since", "what happened?": `{cmd} since` (what is new since the last look; it moves that mark;
   `{cmd} since 2h` or `yesterday` looks further back). Say it back as a few bullets in everyday words under the
-  summary's group headings, without ids or the hints line.
+  summary's group headings, without ids or the hints line. It prints a short digest (`since --all` is the raw
+  log): never answer /since with "too long, run it yourself"; however much there is, say back a short digest.
 - "what is waiting on me?", "what needs me?": `{cmd} needs` (one `ID - what to do` line per item, then a count),
   not `status` or `plan waiting`: say its lines back, each ID with its few words.
 - "how close is release?", "how much is left?": answer from `{cmd} status`'s `release:` line (`release: waits on
@@ -455,7 +456,8 @@ HINT_SKILLS = {
             'short bullets in everyday words, grouped as the control brief says, without task ids.'),
     'since': ('What the agent-runner run did since the last look (the person typed /since).',
               'Run `{cmd} since $ARGUMENTS` (e.g. `2h`, `yesterday`) and say it back as a few short bullets in '
-              'everyday words, grouped under Landed / Stuck / Running, without task ids.'),
+              'everyday words, grouped under Landed / Stuck / Running, without task ids. However long it is, '
+              'say back a short digest: never tell the person to run it themselves.'),
     'follow': ('Follow the agent-runner run live (the person typed /follow).',
                'Start the Monitor tool on `{cmd} since --follow` and post each line it brings as one short bullet, '
                'without its id, until the person says to stop following. It carries the needs-you lines too, so '

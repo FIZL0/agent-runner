@@ -261,11 +261,11 @@ def when(stamp: str, now: dt.datetime) -> str:
 
 
 def since_text(log_lines: list[str], start: dt.datetime, titles: dict[str, str], now: dt.datetime,
-               since_mark: bool = False, waiting=None, wips=None) -> tuple[str, str | None]:
+               since_mark: bool = False, waiting=None, wips=None, digest: bool = False) -> tuple[str, str | None]:
     """(what `since` prints, the newest stamp it read or None): the concepts waiting for the person's OK first
     (`waiting`, however old), then each event after `start`, oldest first, one short line each; or one line
-    saying there is nothing new."""
-    text, last = _since_events(log_lines, start, titles, now, since_mark)
+    saying there is nothing new. `digest` (B88, `since` without --all): the events folded by `since_digest`."""
+    text, last = (since_digest if digest else _since_events)(log_lines, start, titles, now, since_mark)
     return '\n'.join([*waiting_text(waiting, now=now, wips=wips), text]), last
 
 
@@ -285,6 +285,80 @@ def _since_events(log_lines: list[str], start: dt.datetime, titles: dict[str, st
             out.append(f'  {when(e[0], now)}  {e[2]}')
     head = f'since {when(start.isoformat(timespec="seconds"), now)}' + (' (your last look)' if since_mark else '')
     return (f'{head}:\n' + '\n'.join(out) if out else f'nothing new {head}'), last
+
+
+DIGEST_CAP = 10  # B88: titled lines a since digest shows before it names the rest by id
+DIGEST_WIDTH = 70  # B88: a run line (a release's words) cut to this in the digest
+DIGEST_STUCK = (EV_PART, EV_PARKED, EV_LEFT, EV_STALLED)  # a task's last state the digest lists under Stuck
+
+
+def since_digest(log_lines: list[str], start: dt.datetime, titles: dict[str, str], now: dt.datetime,
+                 since_mark: bool = False, cap: int = DIGEST_CAP) -> tuple[str, str | None]:
+    """B88 `since`'s default: the events after `start` folded into a digest short enough to say back on a
+    phone: a headline count, then one line per task with its last state under the summary's headings (Started
+    and Landed newest first, Stuck), then the run's own lines (releases, a hold, its last state); run idle / stopped
+    repeats and restarts fold away. At most `cap` titled lines: past that, Landed names the rest by id only (each
+    landed task named once) and other groups count them, then 'full log: since --all'."""
+    tasks: dict[str, tuple[str, str, str]] = {}  # id -> (stamp, kind, phrase without its state word)
+    run_lines: list[str] = []
+    run_state, last = '', None
+    for l in log_lines:
+        if not (stamp := event_stamp(l)):
+            continue
+        try:
+            if dt.datetime.fromisoformat(stamp) <= start:
+                continue
+        except ValueError:
+            continue
+        last = stamp
+        if not (e := since_event(l, titles)) or not (ev := as_event(l)):
+            continue
+        kind, tid = ev['kind'], e[1]
+        if kind == EV_CONTEXT:
+            continue  # a session's size: the full log has it
+        if tid and kind in SAID:
+            phrase = e[2].removeprefix(f'{SAID[kind]}: ')
+            if kind == EV_LEFT:
+                phrase = f'{SAID[EV_LEFT]}: {phrase}'
+            tasks.pop(tid, None)  # re-insert: the dict keeps the order of each task's last event
+            tasks[tid] = (e[0], kind, phrase)
+        elif kind in (EV_IDLE, EV_STOPPED, EV_STOP_ASKED, EV_STOP_BACK):
+            run_state = f'{e[2]} ({when(e[0], now)})'
+        else:  # released, held, Claude Code drift
+            said = e[2] if len(e[2]) <= DIGEST_WIDTH else e[2][:DIGEST_WIDTH - 1].rstrip() + '…'
+            line = f'{said} ({when(e[0], now)})'
+            if line not in run_lines:
+                run_lines.append(line)
+    head = f'since {when(start.isoformat(timespec="seconds"), now)}' + (' (your last look)' if since_mark else '')
+    if run_state:
+        run_lines.append(f'last: {run_state}')
+    if not tasks and not run_lines:
+        return f'nothing new {head}', last
+    groups = [('Started', [t for t, v in reversed(tasks.items()) if v[1] == EV_STARTED]),
+              ('Landed', [t for t, v in reversed(tasks.items()) if v[1] == EV_LANDED]),
+              ('Stuck', [t for t, v in tasks.items() if v[1] in DIGEST_STUCK])]
+    counts = [f'{len(ids)} {name.lower()}' for name, ids in groups if ids]
+    out = [f'{head}: ' + (', '.join(counts) if counts else 'no task news')]
+    room, shown = cap, {}
+    for name, ids in sorted(groups, key=lambda g: ('Stuck', 'Started', 'Landed').index(g[0])):  # the cap spares Stuck first
+        shown[name] = ids[:max(room, 0)]
+        room -= len(shown[name])
+    cut = False
+    for name, ids in groups:
+        if not ids:
+            continue
+        out.append(f'{name}:')
+        out += [f'  {tasks[t][2]}' for t in shown[name]]
+        rest = ids[len(shown[name]):]
+        if rest:
+            cut = True
+            out.append(f'  …and {len(rest)} more: {", ".join(rest)}' if name == 'Landed' else f'  …and {len(rest)} more')
+    if run_lines:
+        out.append('Run:')
+        out += [f'  {l}' for l in run_lines]
+    if cut:
+        out.append(f'full log: {shown_cmd()} since --all')
+    return '\n'.join(out), last
 
 
 def since_mark_file() -> Path:

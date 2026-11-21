@@ -299,6 +299,9 @@ def cmd_since(argv: list[str], prog: str = f'{RUNNER} since') -> int:
     ap = argparse.ArgumentParser(prog=prog, description='What happened since you last looked (or since WHEN): '
                                  'landed, started, stuck, needs you, run idle or stopped, oldest first.')
     ap.add_argument('when', nargs='?', help='2h, 30m, 1d, today, yesterday, or a date/time; default: the last `since`')
+    ap.add_argument('--all', action='store_true',
+                    help='every event, one line each, oldest first (default: a short digest, one line per task '
+                         'with its last state)')
     ap.add_argument('--follow', '-f', action='store_true',
                     help='stay running and print one line per new event as it happens')
     ap.add_argument('--needs-you', action='store_true',
@@ -333,7 +336,7 @@ def cmd_since(argv: list[str], prog: str = f'{RUNNER} since') -> int:
     now = dt.datetime.now().replace(microsecond=0)
     start = since_start(a.when, mark, now)
     text, last = since_text(read_events(), start, P.titles(C.done, C.todo), now, since_mark=not a.when and bool(mark),
-                            waiting=waiting_ok(), wips=wip_main_info())
+                            waiting=waiting_ok(), wips=wip_main_info(), digest=not a.all)
     print(text)
     move_since_mark(last or now.isoformat())
     return 0

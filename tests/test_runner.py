@@ -1992,7 +1992,7 @@ def test_short_titles_and_since(repo: Path):
     try:
         today = R.dt.date.today().isoformat()  # the command reads the clock: today's stamps read as times
         notes.write_text('\n'.join(l.replace('2026-11-19', today) for l in log) + '\n', encoding='utf-8')
-        r1 = run(repo, 'since', f'{today}T12:00')
+        r1 = run(repo, 'since', f'{today}T12:00', '--all')
         has(r1.stdout, r'landed: .*\[F5\]', 'since WHEN prints what happened')
         eq(R.since_mark_file().read_text(encoding='utf-8').strip(), f'{today}T14:20:00', 'and moves the mark')
         r2 = run(repo, 'since')
@@ -2004,8 +2004,8 @@ def test_short_titles_and_since(repo: Path):
         later = (R.dt.datetime.fromisoformat(mark) + R.dt.timedelta(seconds=1)).isoformat()
         with notes.open('a', encoding='utf-8') as f:
             f.write(f'=== {later} slot 1: B9 (Next; a.py)\n')
-        has(run(repo, 'since').stdout, r'^since \S+ \(your last look\):\n  .*started: .*\[B9\]$',
-            'then only the new')
+        has(run(repo, 'since').stdout, r'^since \S+ \(your last look\): 1 started\nStarted:\n  .*\[B9\]$',
+            'then only the new (B88: as a digest)')
         eq(run(repo, 'since').stdout.count('B9'), 0, 'and that once')
         eq(run(repo, 'since', 'soon').returncode, 1, 'a WHEN that is no time is refused')
         lines, last = R.follow_lines('\n'.join(log[3:5]), titles, now)
