@@ -4,6 +4,11 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- A hidden run on Linux and macOS (no tmux, or started outside a tmux session) now has control sessions: c1
+  starts with it, and `control --new` no longer fails with "no tmux session", each in a terminal with no
+  window through the hidden slots' shim, its output in `.runner/control<N>.log` (with `[run] remote`,
+  `control --new` still prints its claude.ai/code link). A hidden run has no board window, so its control
+  sessions keep their own needs-you watch instead of counting on a runner feed that is not there (F59).
 - `status`'s `merged N in the last 24h` counts tasks, not merge commits: a task that fast-forwards (the
   first task of a fresh repo, or any whose branch main had not moved past) now counts, and a task that left
   two merge commits, or merged twice, counts once. It reads the run log's landed tasks, and with no run log

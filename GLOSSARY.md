@@ -105,3 +105,10 @@ _Said_: Claude Code changed something
 _On screen_: Claude Code X changed Y; Z no longer works
 _In code_: claude_drift, EV_DRIFT, transcript_drift, link_drift, remote_answer_drift, claude-drift.json
 _Avoid_: breakage, incompatibility
+
+**Hidden control session**:
+A control session with no window, started by a run with no tmux pane to open it in; what it prints goes to its log
+_Said_: control session without tmux
+_On screen_: c1 is up in a hidden terminal
+_In code_: hidden_control, control_new_hidden, controlN.log
+_Avoid_: headless control, background control

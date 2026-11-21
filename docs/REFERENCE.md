@@ -118,7 +118,9 @@ task to fix X" (it files it with `plan add`), "do X now" (it uses `take`, never 
 
 - **c1 comes with the run** (`[run] control = true`, the default; false: none). A run in a terminal splits a
   pane under its own for it; the background run opens it in window `control-<repo>` of `ar-<repo>`; on Windows
-  it gets a console of its own, hidden in the background mode. `agent-runner attach c1` goes there. c1 keeps
+  it gets a console of its own, hidden in the background mode; a hidden run on Linux and macOS (no tmux, or
+  started outside a tmux session) runs it in a terminal with no window, through the same shim as a hidden
+  slot, its output in `.runner/control1.log`. `agent-runner attach c1` goes there. c1 keeps
   its session id in `.runner/control.sid` and resumes it in every run while the transcript is there. It has no
   Stop hook, is never ended on idle, and outlives a stopped run: a run that finds c1 still up opens no other.
 - **More of them**: `agent-runner control` starts one in this terminal (c1 when it is not running, else the
@@ -128,7 +130,8 @@ task to fix X" (it files it with `plan add`), "do X now" (it uses `take`, never 
 - **A new one from inside one** (the phone apps have no new-session button): `agent-runner control --new [N]`
   opens the next free control session without taking focus, in window `controlN-<repo>` of the tmux session
   it runs in (else `ar-<repo>`, while the run is up; Windows: a hidden console), tagged `cN` for `attach cN`.
-  With `[run] remote` it watches the new pane for up to 90 s and prints its `claude.ai/code/session_…` link,
+  With no tmux session to open it in (a hidden run, or no tmux), it runs hidden through the slot shim, its
+  output in `.runner/control<N>.log`. With `[run] remote` it watches the new pane (or that log) for up to 90 s and prints its `claude.ai/code/session_…` link,
   so the control session that ran it answers with a link to tap. Tell a control session "new", "new
   session", "/new" or type `/control`: its brief maps those to `control --new`. `/control` is a skill only
   control sessions get, in `.runner/control-skills/.claude/skills/control/SKILL.md`, added with `--add-dir`

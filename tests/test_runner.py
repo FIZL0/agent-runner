@@ -6525,6 +6525,90 @@ def test_hidden_run_lands(tmp: Path):
     check('sequential' not in log, 'and no sequential run')
 
 
+HIDDEN_CONTROL = r'''#!/usr/bin/env python3
+# F59: a stand-in control session in a hidden terminal: its link, whether it has a terminal, a line typed in.
+import os, sys
+print('https://claude.ai/code/session_f59hidden', flush=True)
+print('tty', os.isatty(0), 'slot', os.environ.get('AGENT_RUNNER_SLOT', '-'), flush=True)
+print('told', repr(sys.stdin.readline().strip()), flush=True)
+'''
+
+
+def test_hidden_control_f59(repo: Path, tmp: Path):
+    print('F59: a hidden run opens c1 and control --new in a pty with no window, and keeps no runner feed')
+    if R.plat.WINDOWS:
+        return
+    import contextlib
+    import io
+    R.init(repo)
+    Ctl, Fd = R.control, R.feed
+    agent = tmp / 'f59-control'
+    agent.write_text(HIDDEN_CONTROL, encoding='utf-8')
+    cmd = [sys.executable, str(agent)]
+    which = R.shutil.which
+    saved_mux = Ctl.MUX
+    pids = []
+    try:
+        # feed_on: the board window, which only a tmux run inside a tmux session has, holds the runner feed
+        with mock.patch.object(Ctl, 'remote_on', lambda: True), mock.patch.object(Ctl, 'control_ok', lambda: True), \
+                mock.patch.object(Ctl.shutil, 'which', lambda c, *a, **k: '/usr/bin/tmux' if c == 'tmux' else which(c, *a, **k)):
+            Ctl.MUX = R.TmuxMux()
+            with mock.patch.dict(os.environ, {'TMUX_PANE': '%1'}):
+                Ctl.mark_board()
+            check(Ctl.feed_on(), 'a tmux run inside tmux has its board window: the feed is on')
+            Ctl.MUX = R.HiddenMux()
+            Ctl.mark_board()
+            check(not Ctl.feed_on(), 'a hidden run with tmux installed has no board window: no feed, '
+                                     'so control sessions keep their own needs-you watch')
+        # c1 in a hidden run: through the pty shim, not skipped
+        got = []
+        with mock.patch.object(Ctl, 'hidden_control', lambda n, c, wait=None: got.append((n, c)) or (4242, '')), \
+                mock.patch.object(Ctl, 'control_live', lambda n: 0), mock.patch.dict(R.C.run, {'control': True}), \
+                mock.patch.object(Ctl, 'control_ok', lambda: True), mock.patch.dict(os.environ, {'TMUX_PANE': ''}):
+            Ctl.start_control()
+        eq(got and got[0][0], 1, 'a hidden run starts c1 hidden')
+        check(got and got[0][1][-1] in ('1', '--local'), 'with the control command line', got)
+        has(R.C.notes('run.log').read_text(encoding='utf-8'), r'c1 is up in a hidden terminal \(its output in .*control1\.log',
+            'and says where its output goes')
+        # the real shim: a terminal, the control environment, its log, a typed line, its marker gone at the end
+        with mock.patch.dict(os.environ, {'AGENT_RUNNER_SLOT': '3'}):
+            pid, why = Ctl.hidden_control(7, cmd)
+        pids.append(pid)
+        check(pid and R.plat.alive(pid), 'hidden_control starts the session and gives its pid', why)
+        eq(R.marker_pid(R.C.notes('control7.live')), pid, 'its pid is in control7.live while it runs')
+        check(R.send_fifo(R.C.notes('control7.in'), 'hello c7'), 'text is typed into it through its FIFO')
+        check(wait_dead(pid), 'it ends')
+        end = time.monotonic() + 10
+        while R.C.notes('control7.live').exists() and time.monotonic() < end:
+            time.sleep(0.1)
+        text = Ctl.hidden_control_log(7).read_text(encoding='utf-8', errors='replace')
+        has(text, r'tty True slot -', 'it ran in a terminal, with no slot marks, its output in control7.log')
+        has(text, r"told '.*hello c7", 'and read the typed line')
+        check(not R.C.notes('control7.live').exists(), 'its marker goes when it ends')
+        # control --new with no tmux session: hidden, and its link read from its log
+        out = io.StringIO()
+        with mock.patch.object(Fd, 'remote_on', lambda: True), mock.patch.object(Fd, 'remote_answer_drift', lambda w: None), \
+                contextlib.redirect_stdout(out):
+            rc = Fd.control_new_hidden(8, cmd, 'proj · control 8', wait=20)
+        pids.append(R.marker_pid(R.C.notes('control8.live')))
+        eq(rc, 0, 'control --new starts a hidden session')
+        has(out.getvalue(), r'control 8 is up: https://claude\.ai/code/session_f59hidden', 'and prints its link')
+        out = io.StringIO()
+        with mock.patch.object(Fd.shutil, 'which', lambda c, *a, **k: None if c == 'tmux' else which(c, *a, **k)), \
+                mock.patch.object(Fd, 'runner_cmd', lambda: cmd), mock.patch.object(Fd, 'remote_on', lambda: False), \
+                contextlib.redirect_stdout(out):
+            rc = Fd.control_new(9)
+        pids.append(R.marker_pid(R.C.notes('control9.live')))
+        eq(rc, 0, 'control --new with no tmux is no longer an error')
+        has(out.getvalue(), r'control 9 is up in a hidden terminal', 'it says it is hidden')
+    finally:
+        Ctl.MUX = saved_mux
+        R.C.notes(Ctl.NO_BOARD).unlink(missing_ok=True)
+        for p in pids:
+            if p and R.plat.alive(p):
+                R.plat.terminate(p)
+
+
 def test_claude_drift_b45(repo: Path, tmp: Path):
     print('B45: where Claude Code\'s internals change shape, one needs-you line per Claude Code version, per spot')
     import contextlib
@@ -6717,7 +6801,8 @@ def main() -> int:
                        lambda: test_help_order_and_bare_wizard(tmp), lambda: test_setup(tmp),
                        lambda: test_stop_countdown(repo), lambda: test_real_claude_json_guard(tmp),
                        lambda: test_hidden_slots(repo, tmp), lambda: test_hidden_run_lands(tmp),
-                       lambda: test_claude_drift_b45(repo, tmp), lambda: test_merged_count_b78(repo)])
+                       lambda: test_claude_drift_b45(repo, tmp), lambda: test_merged_count_b78(repo),
+                       lambda: test_hidden_control_f59(repo, tmp)])
 
 
 if __name__ == '__main__':
