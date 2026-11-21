@@ -93,8 +93,9 @@ def release_line(ls: list[str]) -> str:
         kind = 'release' if RELEASE_TASK.match(rest) else 'last'
         if P._waits_all(ls, i):  # `after: all` (F35): a count of what is still before it, not an id list
             held = [t for t in P.before_all(ls, i) if t in live and t != tid]
-            out.append(f'{kind}: {P.all_line(tid, len(held))}' if held
-                       else f'{kind}: ready, nothing left to wait on ({tid})')
+            person = [t for t in P.on_person_before(ls, i) if t != tid]  # B101: said, not waited on
+            out.append(f'{kind}: {P.all_line(tid, len(held), person)}' if held
+                       else f'{kind}: ready, nothing left to wait on ({tid}){P.not_waiting(person)}')
             continue
         w = P.WAITS.findall(' '.join(P._item_block(ls, i))) if box == '~' else []
         ids = [t.strip() for t in w[-1].split(',') if t.strip()] if w else P.waits_on(ls, i)

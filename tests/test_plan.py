@@ -973,14 +973,25 @@ def test_after_all():
         plan.add('B', 'a follow-up | files: c.py', pri='normal', **kw)
         rel = plan.add('R', 'release | files: CHANGELOG.md | after: all', pri='normal', **kw)
         plan.add('F', 'big future | files: z.py', pri='later', **kw)
-        eq(plan.last_waits(todo), [(rel, ['F1', 'C1', 'B2'])],
-           'every open or blocked task above it, any section, a person-blocked one too; not shelved, not Parked')
-        eq(plan.last_lines(todo), [f'{rel} waits for everything before it (3 open)'], 'said as a count, not ids')
+        eq(plan.last_waits(todo), [(rel, ['F1', 'B2'])],
+           'every open or blocked task above it, any section; not blocked for the person (B101), shelved, Parked')
+        eq(plan.last_lines(todo), [f'{rel} waits for everything before it (2 open); not waiting on: C1 (needs you)'],
+           'said as a count, then the tasks blocked for the person it skips (B101), not the shelved')
+        from agent_runner import status as S
+        has(S.release_line(list(plan.lines(todo))), rf'waits for everything before it \(2 open\); not waiting on: '
+            rf'C1 \(needs you\)', "status's release line names them as not waited on (B101)")
         plan.add('F', 'queued later | files: q.py', **kw)  # the top of Next
-        eq(plan.last_waits(todo), [(rel, ['F3', 'F1', 'C1', 'B2'])], 'a task queued above it later holds it too')
+        eq(plan.last_waits(todo), [(rel, ['F3', 'F1', 'B2'])], 'a task queued above it later holds it too')
         for tid in ('F1', 'F3', 'B2'):
             plan.tick(tid, **kw)
+        eq(plan.last_lines(todo), [f'{rel} waits for everything before it: nothing left; not waiting on: C1 '
+                                   '(needs you)'], 'nothing an agent can do is left: it is free to run')
+        plan.unblock('C1', 'chose the first', todo=todo)
+        eq(plan.last_waits(todo), [(rel, ['C1'])], 'once the person answers and it reopens, it holds it again')
+        plan.block('C1', 'needs a tool first', todo=todo, after=[])
+        eq(plan.last_waits(todo), [(rel, ['C1'])], 'a task blocked on something other than a person still holds it')
         plan.drop('C1', 'not wanted', **kw)
+        plan.drop('B1', 'not wanted', **kw)
         eq(plan.last_lines(todo), [f'{rel} waits for everything before it: nothing left'], 'and then nothing')
         # on a block: `(after all)`, freed by reopen only once nothing is left before it
         plan.add('F', 'another | files: a.py', **kw)
