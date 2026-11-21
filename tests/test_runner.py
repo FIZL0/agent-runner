@@ -5180,6 +5180,9 @@ def test_auto_release(repo: Path):
     R.init(repo)
     head, evf = git(repo, 'rev-parse', 'HEAD'), R.C.notes('events.jsonl')
     was = evf.read_text(encoding='utf-8') if evf.exists() else None
+    logf = R.C.notes('run.log')  # an empty events.jsonl reads run.log's landings: earlier tests' would count
+    log_was = logf.read_text(encoding='utf-8') if logf.exists() else None
+    logf.unlink(missing_ok=True)
     todo = repo / 'plan/TODO.md'
     stamp = (R.dt.datetime.now() + R.dt.timedelta(minutes=1)).isoformat(timespec='seconds')
 
@@ -5268,8 +5271,12 @@ def test_auto_release(repo: Path):
     finally:
         R.C.run['auto_release'] = False
         R.AUTO_RELEASE_SEEN[0] = None
-        git(repo, 'tag', '-d', 'v9.9.9')
+        subprocess.run(['git', '-C', str(repo), 'tag', '-d', 'v9.9.9'], capture_output=True)  # none if it failed early
         git(repo, 'reset', '-q', '--hard', head)
+        if log_was is None:
+            logf.unlink(missing_ok=True)
+        else:
+            logf.write_text(log_was, encoding='utf-8')
         if was is None:
             evf.unlink(missing_ok=True)
         else:
