@@ -300,7 +300,17 @@ def toplevel(cwd: Path | str | None = None) -> Path:
                        capture_output=True, text=True)
     if r.returncode:
         raise SystemExit(f'agent-runner: not inside a git repository (or set AGENT_RUNNER_REPO): {r.stderr.strip()}')
-    return Path(r.stdout.strip()).resolve()
+    if not (top := git_path(r.stdout)):
+        # B52: git prints an absolute directory; anything else (a tmux pane id "%9" from a stubbed
+        # subprocess.run) would become a folder made in the current directory
+        raise SystemExit(f'agent-runner: git rev-parse --show-toplevel printed no directory: {r.stdout.strip()!r}')
+    return top.resolve()
+
+
+def git_path(out: str) -> Path | None:
+    """The absolute, existing directory git printed in `out`, or None for anything else (B52)."""
+    p = Path(out.strip()) if out and out.strip() else None
+    return p if p and p.is_absolute() and p.is_dir() else None
 
 
 def main_checkout(cwd: Path | str | None = None) -> Path:
@@ -308,7 +318,7 @@ def main_checkout(cwd: Path | str | None = None) -> Path:
     top = toplevel(cwd)
     r = subprocess.run(['git', 'rev-parse', '--path-format=absolute', '--git-common-dir'], cwd=str(top),
                        capture_output=True, text=True)
-    common = Path(r.stdout.strip()) if not r.returncode else top / '.git'
+    common = (not r.returncode and git_path(r.stdout)) or top / '.git'
     return common.parent.resolve() if common.name == '.git' else top
 
 

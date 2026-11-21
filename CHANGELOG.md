@@ -4,6 +4,11 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- No more stray `%9/.runner/run.log` folders in the repo (or `tests/`). A control test stubbed every
+  `subprocess.run` with a tmux pane id, git's answer included, so `log()` took "%9" for the main checkout and
+  made it in the current directory. `toplevel` and `main_checkout` now take git's answer only when it is an
+  absolute, existing directory (`toplevel` stops with an error, `main_checkout` falls back to the checkout),
+  and the test stubs answer only tmux (B52).
 - One hidden slot mode for every OS, tmux optional. A hidden slot runs in a terminal with no window: on Linux
   and macOS a pseudo-terminal from Python's standard library (`pty`), its output in `.runner/slotN.log` and
   `plan tell` typed into it through `.runner/slotN.in`; on Windows a console of its own whose window starts

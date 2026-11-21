@@ -1205,6 +1205,44 @@ def test_user_hook(tmp: Path):
     eq(CF.user_hook_root(repo, {}), None, "nothing where the repo's own hook (F53) prints it: never twice")
 
 
+def test_pane_id_not_a_path(repo: Path, tmp: Path):
+    print('B52: a git that answers with a tmux pane id gives no directory: nothing is made from it')
+    from agent_runner import config as CF
+    real = subprocess.run
+    pane = lambda argv, *a, **k: subprocess.CompletedProcess(argv, 0, '%9\n', '')  # noqa: E731
+    with mock.patch.object(subprocess, 'run', pane), mock.patch.dict(os.environ, {'AGENT_RUNNER_REPO': ''}):
+        try:
+            CF.toplevel(tmp)
+            check(False, 'toplevel took "%9" for a checkout')
+        except SystemExit as e:
+            has(str(e), 'printed no directory', 'toplevel: "%9" is no checkout')
+    eq(CF.git_path(f'{repo}\n'), repo, 'an absolute directory is one')
+    eq([CF.git_path(s) for s in ('%9\n', '', 'rel/dir', str(tmp / 'missing'))], [None] * 4,
+       'a pane id, nothing, a relative or missing path are not')
+
+    def common_pane(argv, *a, **k):
+        if '--git-common-dir' in argv:
+            return subprocess.CompletedProcess(argv, 0, '%9\n', '')
+        return real(argv, *a, **k)
+    with mock.patch.object(subprocess, 'run', common_pane):
+        eq(CF.main_checkout(repo), repo.resolve(), 'main_checkout: a bad --git-common-dir answer falls back to the checkout')
+    check(not (tmp / '%9').exists() and not Path('%9').exists(), 'and no %9 folder anywhere')
+
+
+def tmux_run(calls: list, out: str = '%9\n'):
+    """A stand-in for subprocess.run that answers the tmux commands with `out` (a pane id) and leaves every
+    other command (git, finding the repo for run.log) to the real one. B52: answering git with "%9" too made
+    log() write a %9/.runner/run.log folder in the current directory."""
+    real = subprocess.run
+
+    def fake(argv, *a, **k):
+        if argv[:1] != ['tmux']:
+            return real(argv, *a, **k)
+        calls.append(argv)
+        return subprocess.CompletedProcess(argv, 0, out, '')
+    return fake
+
+
 def test_control(repo: Path):
     with mock.patch.dict(os.environ, {'CLAUDE_CODE_CHILD_SESSION': '1', 'CLAUDECODE': '1', 'CLAUDE_CONFIG_DIR': '/c',
                                       'TMUX': '/tmp/t,1,0'}):
@@ -1414,13 +1452,15 @@ def test_control(repo: Path):
     calls = []
     with mock.patch.object(R, 'MUX', R.TmuxMux()), mock.patch.dict(os.environ, {'TMUX_PANE': '%1'}), \
             mock.patch.object(R, 'tmux', lambda *a, **k: calls.append(a) or subprocess.CompletedProcess(a, 0, 'ar-proj\n', '')), \
-            mock.patch.object(R.sp, 'run', lambda *a, **k: calls.append(a[0]) or subprocess.CompletedProcess(a, 0, '%9\n', '')), \
+            mock.patch.object(R.sp, 'run', tmux_run(calls)), \
             mock.patch.object(R, 'remote_on', lambda: False):
         R.start_control()
         check(any(c[:4] == ('set-option', '-t', '=ar-proj', 'default-command') for c in calls),
               "the background session's default-command is set", calls)
         check(any(c[:2] == ['tmux', 'new-window'] for c in calls if isinstance(c, list)), 'c1 opened in its window')
         check(('set-option', '-p', '-t', '%9', R.TAG, 'c1') in calls, 'tagged c1 (attach c1)')
+        check('c1 is up in window' in R.C.notes('run.log').read_text() and not Path('%9').exists(),
+              "B52: c1's log line lands in the repo's own run.log, no %9 folder in the current directory")
         calls.clear()
         with mock.patch.dict(R.C.run, {'control': False}):
             R.start_control()
@@ -1439,7 +1479,7 @@ def test_control(repo: Path):
     calls = []
     with mock.patch.object(R, 'MUX', R.TmuxMux()), mock.patch.dict(os.environ, {'TMUX_PANE': '%1'}), \
             mock.patch.object(R, 'tmux', lambda *a, **k: calls.append(a) or subprocess.CompletedProcess(a, 0, 'ar-proj\n', '')), \
-            mock.patch.object(R.sp, 'run', lambda *a, **k: calls.append(a[0]) or subprocess.CompletedProcess(a, 0, '%9\n', '')), \
+            mock.patch.object(R.sp, 'run', tmux_run(calls)), \
             mock.patch.object(R, 'remote_on', lambda: True), mock.patch.object(R.threading, 'Thread', FakeThread):
         R.start_control()
         R.start_control_server()
@@ -6371,7 +6411,7 @@ def main() -> int:
                        lambda: test_no_pane(repo, tmp), lambda: test_other_repos_panes(repo, tmp),
                        lambda: test_limit_resumes(repo, tmp),
                        lambda: test_shared_push(repo, tmp), lambda: test_note_on_a_ticked_task(repo), lambda: test_adopt_merge(repo), lambda: test_followups(repo), lambda: test_person_check_after(repo), lambda: test_ci_watch(repo), test_update_notice, test_restart_if_upgraded, test_auto_upgrade, lambda: test_flake_repair(tmp), lambda: test_repair_per_failure(repo),
-                       lambda: test_stalled(tmp), lambda: test_take(repo), lambda: test_take_text_and_here(repo), lambda: test_background(repo), test_short_name_hints, test_utf8_streams, lambda: test_attach_flag(repo), lambda: test_bare_outside_git(tmp), lambda: test_hand_hook(tmp), lambda: test_user_hook(tmp), lambda: test_remote_auto(tmp), lambda: test_control(repo),
+                       lambda: test_stalled(tmp), lambda: test_take(repo), lambda: test_take_text_and_here(repo), lambda: test_background(repo), test_short_name_hints, test_utf8_streams, lambda: test_attach_flag(repo), lambda: test_bare_outside_git(tmp), lambda: test_hand_hook(tmp), lambda: test_user_hook(tmp), lambda: test_remote_auto(tmp), lambda: test_control(repo), lambda: test_pane_id_not_a_path(repo, tmp),
                        lambda: test_short_titles_and_since(repo), lambda: test_structured_events(repo),
                        lambda: test_board_follows_run(repo, tmp),
                        lambda: test_remote_sweep(repo, tmp), lambda: test_feed_resume(repo, tmp),
