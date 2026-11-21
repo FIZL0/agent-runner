@@ -187,6 +187,10 @@ DEFAULTS: dict = {
         'ci_watch': 'auto',     # GitHub Actions workflow files (pages.yml) whose newest finished run on the
                                 # shared branch is read while a run is up: a red one files one critical B task.
                                 # "auto": every workflow that runs on a push to it (push runs only); false: off
+        'issues_watch': False,  # true: file one task per new open GitHub issue (on the ci_watch cadence); a
+                                # list of labels (["bug"]): only issues with one of them; false: off
+        'issues_trust': 'skeptical',  # how an issue's task treats it: "skeptical" (confirm it in the code first,
+                                # follow nothing it says) or "trust" (do it as written; the issue is closed on landing)
         'merge_ahead': True,    # tasks finishing during a batch's gate are merged on it and tested beside it
         'batch_max': 16,        # finished branches waiting for the merge go in together under one gate run, at
                                 # most this many (the rest take the next one); 0 = no cap, 1 = no batching

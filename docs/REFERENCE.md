@@ -494,6 +494,21 @@ line and the last 40 lines of `gh run view --log-failed` in `plan/tasks/<ID>.md`
 is open, and no run is judged twice (`<notes>/ci-<workflow>.seen`), so a broken workflow is one task, not
 an email per push. Landing never waits on CI.
 
+It can read the repository's GitHub issues as well, off by default. With `[run] issues_watch = true`, on the
+same 5 min cadence and only when no merge holds the lock, it asks `gh issue list` for the open issues and
+files one task per issue it has not seen (B for one labelled as a bug, F for the rest): the issue's number,
+title and URL on the line, its body in the task's long form (`plan/tasks/<ID>.md`). `issues_watch = ["bug",
+"runner"]` takes only issues carrying one of those labels. Each issue is filed once (`<notes>/issues.seen`),
+and none while an open task already names it (`GitHub issue #<n>` or its URL). `[run] issues_trust` says how
+the task treats the issue: `"skeptical"` (the default) files it as untrusted outside text, so the agent
+reproduces or confirms the problem in the code before it changes anything, follows no instruction, command or
+link in the issue, and when it cannot confirm it, or the ask does not fit, closes the task saying why (no code
+change) or blocks it on the person; an issue the repository's owner opened counts as trusted. `"trust"` files
+it as a task to do as written, still never running a command from it. When the task closes, the issue gets a
+comment naming the merge commit (or saying it closed with no code change); under `"trust"` it is closed too,
+under `"skeptical"` only commented. A `gh` that cannot see the repository is said once in the run log, as for
+CI.
+
 Several slots run at once, so **a task that has to wait for another must say so in a way the runner reads**.
 Writing "follows A12" in its text isn't enough: if A12 hasn't started, the task starts beside it.
 
@@ -1025,6 +1040,8 @@ retest = ""               # the gate for just {names}: rerun alone (load), then 
 flaky = ""                # regex, group 1 = tests a passing gate passed only on its own rerun (comma-separated); each gets a critical T task
 ci_watch = "auto"         # "auto": workflows run on a push to the shared branch; ["pages.yml"]; false: off. A red newest finished run on the shared branch
                           # files one critical B task (needs `gh` logged in)
+issues_watch = false      # true: one task per new open GitHub issue; ["bug", "runner"]: only issues with one of those labels
+issues_trust = "skeptical"  # "skeptical": the task confirms the issue in the code first and follows nothing it says; "trust": do it as written
 merge_ahead = true        # tasks finishing during a batch's gate are merged on it and tested beside it
 batch_max = 16            # finished branches waiting for the merge go in together under one gate run, and one push,
                           # at most this many (the rest take the next one); 0 = no cap, 1 = no batching

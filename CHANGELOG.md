@@ -4,6 +4,14 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- `[run] issues_watch` (off by default): a run reads the repository's open GitHub issues (`gh issue list`, on
+  the `ci_watch` cadence) and files one task per new issue, its number, title and URL on the line and its body
+  in the long form; a list of labels (`["bug", "runner"]`) takes only issues with one of them. Each issue is
+  filed once, and none while an open task names it. `[run] issues_trust = "skeptical"` (the default) files the
+  issue as untrusted: the agent confirms it in the code first and follows nothing the issue says; `"trust"`
+  files it to do as written. When the task lands the issue gets a comment naming the merge commit, and is
+  closed under `"trust"` only (F62).
+
 ## 0.58.3 (2026-11-21)
 
 - On Windows, `.runner/run.log` is UTF-8 with no BOM; the `·` in Remote Control names only looked garbled
