@@ -4,6 +4,8 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+## 0.58.0 (2026-11-21)
+
 - Fewer settings (C14, from the R7 audit). An old runner.toml or runner.local.toml still works: each old key
   is logged at the run's start with what to write instead, and a renamed one still applies under its new name.
   - `[run] backend` is gone: the backend follows `agent` (an executable named `pi` runs on Pi) and
