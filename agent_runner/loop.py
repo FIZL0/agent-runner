@@ -403,7 +403,8 @@ def park_for_restyle(tid: str, rid: str, branch: str) -> str:
     commits = git('log', '--format=%s', f'{branch}..task/{tid}').stdout.splitlines()
     if not commits:
         git('branch', '-D', f'task/{tid}')
-        return f'nothing committed to park (what it left uncommitted is on wip/{tid}); it stays held for restyle {rid}'
+        git('update-ref', '-d', TESTED + tid)
+        return f'nothing committed to park (anything left uncommitted the slot saved); it stays held for restyle {rid}'
     if git('branch', '-M', f'task/{tid}', wip := free_branch(f'wip/{tid}')).returncode:
         return f'task/{tid} could not be parked as {wip}; it stays held for restyle {rid}'
     git('update-ref', '-d', TESTED + tid)
@@ -654,7 +655,7 @@ def _finish(tid: str, n: int, sid: str, branch: str) -> bool:
             return True
         C.notes(f'{tid}.restyle').unlink(missing_ok=True)
         landed_for = rs['rid']  # its done passed (it was in its test gate) or it was merging: it lands
-    commits =git('log', '--format=%s', f'{branch}..task/{tid}').stdout.splitlines()
+    commits = git('log', '--format=%s', f'{branch}..task/{tid}').stdout.splitlines()
     if not commits:
         git('branch', '-D', f'task/{tid}')
         git('update-ref', '-d', TESTED + tid)
@@ -682,6 +683,9 @@ def _finish(tid: str, n: int, sid: str, branch: str) -> bool:
                       f'{dt.datetime.fromtimestamp(since - REMIND_EVERY):%H:%M} or earlier.')
             time.sleep(EDITS_POLL)
         log(f'{tid}: the main checkout is clear again; merging task/{tid} now')
+    if late := restyle_mark(tid):  # F19: a restyle that asked while this merge ran
+        landed_for = landed_for or late['rid']
+        C.notes(f'{tid}.restyle').unlink(missing_ok=True)
     if not why:
         if landed_for:
             restyle_landed(tid, landed_for)

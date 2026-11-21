@@ -148,6 +148,10 @@ def test_run_parks(repo: Path, tmp: Path):
     has(todo.read_text(encoding='utf-8'), rf'^- \[~\] \*\*T2\*\* .*held for restyle {rid}', 'still held in the plan')
 
     print('run: one whose done already passed lands, and is listed on the restyle')
+    ours = R.finished_mark(1).resolve().is_relative_to(repo.resolve())
+    check(ours, 'the slot mark is the test repo\'s', R.finished_mark(1))
+    if not ours:
+        return  # never touch a real run's slot mark
     R.finished_mark(1).touch()
     P.request(R.C, 'restyle', 'T1', {'rid': rid, 'style': STYLE}, 0)
     with mock.patch.object(L, 'MUX', Mux()):
@@ -171,7 +175,12 @@ def main() -> int:
     with tempfile.TemporaryDirectory() as t:
         tmp = Path(t)
         repo = TR.make_repo(tmp)
-        return report([test_plan_restyle, lambda: test_run_parks(repo, tmp)])
+        here = os.getcwd()
+        os.chdir(repo)  # finished_mark reads the config of the working directory: the test repo's, never ours
+        try:
+            return report([test_plan_restyle, lambda: test_run_parks(repo, tmp)])
+        finally:
+            os.chdir(here)
 
 
 if __name__ == '__main__':

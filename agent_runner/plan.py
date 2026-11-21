@@ -1493,7 +1493,7 @@ def _stuck_why(tail: str) -> tuple[str, str, bool] | None:
     why = why[len(SHELVED):] if shelved else why
     if why.startswith(RESTYLE_HELD):
         return None  # F19: held on a restyle; its OK (listed as a concept) frees it
-    if (w :=re.match(r'\(after ([^)]*)\)\s*', why)):
+    if (w := re.match(r'\(after ([^)]*)\)\s*', why)):
         if any(x.strip() for x in w.group(1).split(',')):
             return None  # it waits on tasks: `reopen` frees it once they are done
         why = why[w.end():]
@@ -2587,6 +2587,8 @@ def _p_restyle(a, x):
         said.append(f'running, parked as wip/<ID> at a clean point and held: {", ".join(got["park"])}')
     if got['landing']:
         said.append(f'merging, lands in the old style (list it on the restyle page): {", ".join(got["landing"])}')
+    if skipped := [t for t in ids or [] if t not in got['held'] + got['park'] + got['landing']]:
+        said.append(f'not held (not open and queued, or a concept or release): {", ".join(skipped)}')
     return x.say('\n'.join(said))
 
 
