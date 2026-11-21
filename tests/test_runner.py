@@ -1058,11 +1058,17 @@ def test_remote_auto(tmp: Path):
 def test_control_server_old_agent(repo: Path, tmp: Path):
     print('control server: an older Claude Code without remote-control --settings starts without it, and says so')
     R.init(repo)
-    old, new = tmp / 'old-claude', tmp / 'new-claude'
-    old.write_text("#!/bin/sh\necho 'Usage: claude remote-control [options]'\necho '  --name <name>'\n"
-                   "echo '  --spawn <mode>'\n", encoding='utf-8')
-    new.write_text("#!/bin/sh\necho 'Usage: claude remote-control [options]'\necho '  --settings <file>'\n",
-                   encoding='utf-8')
+    if R.plat.WINDOWS:  # Windows runs no #! script: batch files, which CreateProcess starts
+        old, new = tmp / 'old-claude.cmd', tmp / 'new-claude.cmd'
+        old.write_text('@echo Usage: claude remote-control [options]\r\n@echo   --name NAME\r\n'
+                       '@echo   --spawn MODE\r\n', encoding='utf-8')
+        new.write_text('@echo Usage: claude remote-control [options]\r\n@echo   --settings FILE\r\n', encoding='utf-8')
+    else:
+        old, new = tmp / 'old-claude', tmp / 'new-claude'
+        old.write_text("#!/bin/sh\necho 'Usage: claude remote-control [options]'\necho '  --name <name>'\n"
+                       "echo '  --spawn <mode>'\n", encoding='utf-8')
+        new.write_text("#!/bin/sh\necho 'Usage: claude remote-control [options]'\necho '  --settings <file>'\n",
+                       encoding='utf-8')
     for f in (old, new):
         f.chmod(0o755)
     R._SERVER_SETTINGS.clear()
@@ -1160,7 +1166,8 @@ def test_user_hook(tmp: Path):
         cmds = [h['command'] for e in data['hooks']['SessionStart'] for h in e['hooks']]
         check(data['model'] == 'x' and cmds[0] == 'mine' and len(cmds) == 2 and CF.USER_HOOK in cmds[1],
               "the person's own settings and hooks stay, ours is added", cmds)
-        gone = f'/nonexistent/python3 /nonexistent/run {CF.USER_HOOK} 2>/dev/null || true'
+        nowhere = (tmp / 'nonexistent').as_posix()  # absolute on Windows too (a drive), as command_text writes it
+        gone = f'{nowhere}/python3 {nowhere}/run {CF.USER_HOOK} 2>/dev/null || true'
         data['hooks']['SessionStart'][1]['hooks'][0]['command'] = gone
         f.write_text(json.dumps(data))
         has(CF.install_user_hook(), r'settings\.json', 'a hook naming a clone that is gone is repaired')
@@ -1189,15 +1196,16 @@ def test_user_hook(tmp: Path):
     R.git('init', '-q', cwd=plain)
     env = {k: v for k, v in os.environ.items() if k not in CF.SESSION_ENVS}
     (repo / 'sub').mkdir()
+    # Claude Code runs hooks in bash (Git Bash on Windows), not cmd.exe, which shell=True would give there
+    hook = [R.bash_exe(), '-c', CF.user_hook_command()]
     for where, want in ((repo, True), (repo / 'sub', True), (wt, False), (plain, False), (tmp, False)):
-        r = subprocess.run(CF.user_hook_command(), shell=True, cwd=where, env=env, capture_output=True, text=True,
-                   timeout=60)
+        r = subprocess.run(hook, cwd=where, env=env, capture_output=True, text=True, timeout=60)
         eq((r.returncode, bool(r.stdout.strip()), r.stderr), (0, want, ''),
            f'{where.name}: ' + ('the brief' if want else 'nothing, exit 0, no stderr'))
         if want:
             has(r.stdout, 'control session', 'it is the control brief')
-    r = subprocess.run(CF.user_hook_command(), shell=True, cwd=repo, env={**env, R.RUNNER_STARTED_ENV: '1'},
-               capture_output=True, text=True, timeout=60)
+    r = subprocess.run(hook, cwd=repo, env={**env, R.RUNNER_STARTED_ENV: '1'}, capture_output=True, text=True,
+                       timeout=60)
     eq(r.stdout, '', 'nothing in a control session the runner started (its brief comes through --settings)')
     eq(CF.user_hook_root(repo, {'AGENT_RUNNER_SLOT': '2'}), None, "nothing in a slot's session")
     (repo / '.claude').mkdir()
@@ -1251,7 +1259,9 @@ def tmux_run(calls: list, out: str = '%9\n'):
 def test_control(repo: Path):
     with mock.patch.dict(os.environ, {'CLAUDE_CODE_CHILD_SESSION': '1', 'CLAUDECODE': '1', 'CLAUDE_CONFIG_DIR': '/c',
                                       'TMUX': '/tmp/t,1,0'}):
-        with mock.patch.object(R, 'run', return_value=0), mock.patch.object(R, 'tmux') as tm:
+        # tmux is stood in for, so which() says it is there (Windows has none, and the masks are skipped there)
+        with mock.patch.object(R, 'run', return_value=0), mock.patch.object(R, 'tmux') as tm, \
+                mock.patch.object(R.shutil, 'which', lambda x, *a, **k: '/usr/bin/tmux' if x == 'tmux' else None):
             R.cmd_run([])
         check(mock.call('set-environment', '-r', 'CLAUDE_CODE_CHILD_SESSION') in tm.call_args_list,
               'and out of its tmux session, whose new windows (the slots) would inherit them')
@@ -1429,7 +1439,8 @@ def test_control(repo: Path):
         (repo / '.runner/control1.pid').write_text(f'{q.pid} {sid}')
         (repo / '.runner/control2.pid').write_text(f'{p.pid} new-sid')
         eq(R.control_live(2), p.pid, 'a control session that did /new stays live')
-        eq(R.control_live(1), 0, 'a pid now held by another process is not a session')
+        if not R.plat.WINDOWS:  # Windows: plat.cmdline cannot read another process's argv, so a live pid counts
+            eq(R.control_live(1), 0, 'a pid now held by another process is not a session')
         (repo / '.runner/control1.pid').write_text(f'{os.getpid()} {sid}')
         eq(R.control_number(), 1, 'c1 free: the first is c1')
         p2 = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)', 'control'])
@@ -1447,7 +1458,7 @@ def test_control(repo: Path):
     (repo / '.runner/control2.pid').unlink(missing_ok=True)
 
     dc = R.control_default_command(repo)
-    check(dc.startswith(f'cd {repo} && ') and ' control ' in dc + ' ' and dc.endswith('|| exec "${SHELL:-/bin/sh}"'),
+    check(dc.startswith(f'cd {R.shlex.quote(str(repo))} && ') and ' control ' in dc + ' ' and dc.endswith('|| exec "${SHELL:-/bin/sh}"'),
           'tmux default-command: a new pane is a control session in the main checkout', dc)
     a = R.control_pane_argv('%5', False, 'mine', repo, 'ar control 1', ['PATH=/bin'])
     eq(a[:8], ['tmux', 'split-window', '-v', '-d', '-l', '40%', '-t', '%5'], 'a foreground run: split under its pane')
@@ -1477,12 +1488,20 @@ def test_control(repo: Path):
               'remote off: started_note points at c1', note)
     started = []
 
-    class FakeThread:
-        def __init__(self, target=None, name='', daemon=None):
+    real_thread = R.threading.Thread
+
+    class StandIn:
+        def __init__(self, name):
             self.name = name
 
         def start(self):
             started.append(self.name)
+
+    def FakeThread(*a, name='', **k):
+        # only the runner's own threads: subprocess on Windows reads a child's output in threads of its own
+        if a or 'args' in k:
+            return real_thread(*a, name=name, **k)
+        return StandIn(name)
     calls = []
     with mock.patch.object(R, 'MUX', R.TmuxMux()), mock.patch.dict(os.environ, {'TMUX_PANE': '%1'}), \
             mock.patch.object(R, 'tmux', lambda *a, **k: calls.append(a) or subprocess.CompletedProcess(a, 0, 'ar-proj\n', '')), \
@@ -1534,6 +1553,7 @@ def test_control(repo: Path):
     out = io.StringIO()
     with mock.patch.object(R, 'tmux', fake_tmux), mock.patch.dict(os.environ, {'TMUX_PANE': '%1'}), \
             mock.patch.object(R.shutil, 'which', lambda x: '/usr/bin/tmux'), mock.patch.object(R.time, 'sleep', lambda s: None), \
+            mock.patch.object(R.plat, 'WINDOWS', False), \
             mock.patch.dict(R.C.run, {'remote': True}), contextlib.redirect_stdout(out):
         eq(R.control_new(2), 0, 'control --new opens one')
     nw = next(c for c in calls if c[0] == 'new-window')
@@ -1545,12 +1565,14 @@ def test_control(repo: Path):
     calls.clear()
     out = io.StringIO()
     with mock.patch.object(R, 'tmux', fake_tmux), mock.patch.dict(os.environ, {'TMUX_PANE': '%1'}), \
-            mock.patch.object(R.shutil, 'which', lambda x: '/usr/bin/tmux'), contextlib.redirect_stdout(out):
+            mock.patch.object(R.shutil, 'which', lambda x: '/usr/bin/tmux'), mock.patch.object(R.plat, 'WINDOWS', False), \
+            contextlib.redirect_stdout(out):
         eq(R.control_new(2), 0, 'local (no [run] remote)')
     check(not any(c[0] == 'capture-pane' for c in calls) and 'local' in out.getvalue(),
           'no link to wait for without [run] remote', out.getvalue())
     with mock.patch.object(R, 'tmux', lambda *a, **k: subprocess.CompletedProcess(a, 1, '', '')), \
             mock.patch.dict(os.environ, {'TMUX_PANE': ''}), mock.patch.object(R.shutil, 'which', lambda x: '/usr/bin/tmux'), \
+            mock.patch.object(R.plat, 'WINDOWS', False), \
             mock.patch.object(R.feed, 'hidden_control', lambda n, c, wait=None: (0, 'test: not started')), \
             contextlib.redirect_stderr(io.StringIO()) as err:
         eq(R.control_new(), 1, 'no tmux session to open it in: started hidden (F59), here refused, so an error')
@@ -2060,8 +2082,12 @@ def test_short_titles_and_since(repo: Path):
         check(argv[:5] == ['tmux', 'new-window', '-d', '-t', '=ar-demo:'] and R.window('board') in argv,
               'the board opens in the background session without taking focus', argv)
 
-        # the runner feed: with [run] remote the board is a lean Haiku session in the apps too
-        with mock.patch.object(R, 'remote_on', lambda: True), mock.patch.dict(R.C.run, {'agent': 'claude'}):
+        # the runner feed: with [run] remote the board is a lean Haiku session in the apps too. The feed lives in
+        # the board's tmux window, so a tmux machine is stood in for (Windows has no board, and no feed)
+        which = R.shutil.which
+        with mock.patch.object(R, 'remote_on', lambda: True), mock.patch.dict(R.C.run, {'agent': 'claude'}), \
+                mock.patch.object(R.plat, 'WINDOWS', False), \
+                mock.patch.object(R.shutil, 'which', lambda c, *a, **k: '/usr/bin/tmux' if c == 'tmux' else which(c, *a, **k)):
             fa = R.feed_argv()
             opt = lambda k: fa[fa.index(k) + 1]
             eq((opt('--model'), opt('--tools'), opt('--permission-mode'), opt('--remote-control')),
@@ -2122,10 +2148,15 @@ def test_short_titles_and_since(repo: Path):
                   and './kit' not in (skills / 'since' / 'SKILL.md').read_text(encoding='utf-8'),
                   'B71: the /control and /since skills call the runner')
         started = []
+        real_thread = R.threading.Thread
+
+        def board_thread(target=None, args=(), **k):
+            if isinstance(getattr(target, '__self__', None), subprocess.Popen):  # Windows reads output in threads
+                return real_thread(target=target, args=args, **k)
+            return mock.Mock(start=lambda: started.append(args))
         with mock.patch.object(R, 'MUX', R.TmuxMux()), mock.patch.dict(os.environ, {'TMUX_PANE': '%1'}), \
                 mock.patch.object(R, 'tmux', lambda *a, **k: subprocess.CompletedProcess(a, 0, 'mine\n', '')), \
-                mock.patch.object(R.threading, 'Thread', lambda target=None, args=(), **k: mock.Mock(
-                    start=lambda: started.append(args))):
+                mock.patch.object(R.threading, 'Thread', board_thread):
             R.start_board()
         eq(started, [('mine',)], 'the board opens in a run in your own tmux session too')
         ca = R.control_argv(3, 'sid', False, ask='fix the login flicker')
@@ -2224,7 +2255,7 @@ def test_short_titles_and_since(repo: Path):
                 quiet = contextlib.redirect_stdout(io.StringIO())
                 with mock.patch.object(R, 'tmux', new_window), mock.patch.object(R, 'control_live', lambda n: None), \
                         mock.patch.object(R, 'control_new_session', lambda: 'ar-proj'), \
-                        mock.patch.object(R.shutil, 'which', lambda x: '/usr/bin/tmux'), \
+                        mock.patch.object(R.shutil, 'which', lambda x: '/usr/bin/tmux'), mock.patch.object(R.plat, 'WINDOWS', False), \
                         mock.patch.object(R, 'remote_on', lambda: False):
                     write(hum({'type': 'text', 'text': 'older, text only'}), res)
                     th = R.threading.Thread(target=late)
@@ -2325,7 +2356,7 @@ def test_feed_forward():
                 mock.patch.dict(os.environ, {'CLAUDE_CODE_SESSION_ID': sid}), \
                 mock.patch.object(R, 'tmux', tm), mock.patch.object(R, 'control_live', lambda n: None), \
                 mock.patch.object(R, 'control_new_session', lambda: 'ar-proj'), \
-                mock.patch.object(R.shutil, 'which', lambda x: '/usr/bin/tmux'), \
+                mock.patch.object(R.shutil, 'which', lambda x: '/usr/bin/tmux'), mock.patch.object(R.plat, 'WINDOWS', False), \
                 mock.patch.object(R, 'remote_on', lambda: False):
             mon = {'type': 'assistant', 'message': {'content': [
                 {'type': 'tool_use', 'name': 'Monitor', 'input': {'command': 'run since --follow --keep-mark'}},
@@ -2472,7 +2503,7 @@ def test_feed_handoff_b74():
                 mock.patch.dict(os.environ, {'CLAUDE_CODE_SESSION_ID': sid}), \
                 mock.patch.object(R, 'tmux', tm), mock.patch.object(R, 'control_live', lambda n: None), \
                 mock.patch.object(R, 'control_new_session', lambda: 'ar-proj'), \
-                mock.patch.object(R.shutil, 'which', lambda x: '/usr/bin/tmux'), \
+                mock.patch.object(R.shutil, 'which', lambda x: '/usr/bin/tmux'), mock.patch.object(R.plat, 'WINDOWS', False), \
                 mock.patch.object(R, 'remote_on', lambda: False):
             Path(tdir, 'remote').mkdir()  # C.notes makes it; the stand-in does not
             base = (old, call('run control --new --ask "agent runner task failed?"'), res, notif)
@@ -2677,12 +2708,18 @@ def test_remote_sweep(repo: Path, tmp: Path):
         with mock.patch.object(R.plat, 'terminate', wraps=R.plat.terminate) as term:
             ended, left = R.rc_sweep(me, keep_server=True, wait=3)
         sent = {c.args[0] for c in term.call_args_list}
-        eq(sorted(ended), ['repo · runner'], "the earlier run's feed is ended")
-        eq(left, ['repo · runner (stuck)'], 'one that ignores SIGTERM is left running, not killed')
+        # Windows has no SIGTERM to ignore: plat.terminate ends the tree there (taskkill /F after its grace)
+        stuck = [] if R.plat.WINDOWS else ['repo · runner (stuck)']
+        eq(sorted(ended), ['repo · runner', 'repo · runner (stuck)'] if R.plat.WINDOWS else ['repo · runner'],
+           "the earlier run's feed is ended")
+        eq(left, stuck, 'one that ignores SIGTERM is left running, not killed')
         eq(sent, {old_feed.pid, stubborn.pid}, 'SIGTERM went to the earlier run\'s feeds only')
         time.sleep(0.3)
         check(not R.plat.alive(old_feed.pid), 'the earlier feed is gone (its teardown archives its entry)')
-        check(R.plat.alive(stubborn.pid), 'never SIGKILLed: a killed session would stay listed')
+        if R.plat.WINDOWS:
+            check(not R.plat.alive(stubborn.pid), 'Windows: taskkill ends it after the grace')
+        else:
+            check(R.plat.alive(stubborn.pid), 'never SIGKILLed: a killed session would stay listed')
         check(R.plat.alive(old_server.pid), 'the control server this run adopts is left up (no new entry)')
         check(R.plat.alive(old_c2.pid), "an earlier run's control session is the person's: left up")
         check(R.plat.alive(cur_feed.pid), "the current run's feed is left alone")
@@ -3828,7 +3865,7 @@ def test_land_waits_aloud(repo: Path):
         has((repo / '.runner/run.log').read_text(),
             r'STOPPED: W1 cannot land: uncommitted edits in \S+: .* to g\.py, which the merge changes',
             'a loud STOPPED names the edited file the merge needs, before an hour of silence')
-        has((repo / '.runner/run.log').read_text(), r'STOPPED: W1 .*Next time, `\S+ take --here',
+        has((repo / '.runner/run.log').read_text(), r'STOPPED: W1 .*Next time, `[^`]+ take --here',
             'and says how to keep such edits out of the main checkout next time')
         check(t.is_alive(), 'and it still waits for them')
         git(repo, 'checkout', '--', 'g.py')
@@ -6779,7 +6816,7 @@ def test_claude_drift_b45(repo: Path, tmp: Path):
     def new() -> str:
         out = io.StringIO()
         with mock.patch.object(R, 'tmux', fake_tmux), mock.patch.dict(os.environ, {'TMUX_PANE': '%1'}), \
-                mock.patch.object(R.shutil, 'which', lambda x: '/usr/bin/tmux'), \
+                mock.patch.object(R.shutil, 'which', lambda x: '/usr/bin/tmux'), mock.patch.object(R.plat, 'WINDOWS', False), \
                 mock.patch.object(R.time, 'sleep', lambda s: None), mock.patch.dict(R.C.run, {'remote': True}), \
                 contextlib.redirect_stdout(out):
             eq(R.control_new(45, wait=0), 0, 'control --new opens it')
@@ -7093,7 +7130,9 @@ def test_reference_keys_d3():
 
 
 def main() -> int:
-    with tempfile.TemporaryDirectory() as t:
+    # B77: Windows refuses to delete a folder a process still has open (WinError 145 on .git/info once a test
+    # crashed, its git children still running): a leftover temp dir must not hide the result of the tests
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as t:
         tmp = Path(t)
         os.environ['CLAUDE_CONFIG_DIR'] = str(tmp)  # Claude.trust writes here, never to the real ~/.claude.json
         repo = make_repo(tmp)
