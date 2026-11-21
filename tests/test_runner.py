@@ -3705,7 +3705,7 @@ def test_fold_doubles_b33(repo: Path):
     folds, blocks = R.fold_doubles(base, theirs, ours, 'N3')
     eq(folds, {'Y5': 'Y5'}, 'one id on both sides for the same follow-up folds too, not renumbered')
     got = P.merge3(ours, base, R._splice(theirs, folds, blocks))
-    eq(len([l for l in got if 'flaky' in l]), 1, 'and the merge keeps the one task, noted', got)
+    eq(len([l for l in got if 'flaky' in l]), 1, 'and the merge keeps the one task, noted')
     for d, b in ((d1, 'task/N1'), (d2, 'task/N2')):
         git(d, 'checkout', '-q', '--detach')
         git(repo, 'branch', '-D', b)
