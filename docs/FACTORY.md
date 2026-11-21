@@ -29,7 +29,7 @@ landing); a person re-enters through Needs you, the ledger and `wip/` branches i
 |---|---|---|---|---|---|
 | **slot pick** (implementer) | a free slot each loop pass (`pick`), or `run once` | reads TODO.md on the shared branch (or its remote); writes worktree `sN`, branch `task/<ID>`, a pane, `.runner/STATE` | the agent's session; its `done` | the pane (`attach sN`), `plan tell/change/drop`, `p`/`s` keys, Needs you when it blocks on a person | `pick` skips running tasks, a running sibling, an ordered section already busy, tasks tried this run, `task/<ID>` with unmerged commits, and file overlap; `run.lock` allows one run per checkout; plan-repo claims across machines; `take` refuses a running/taken task |
 | **plan add** (by a person or a control session) | a person, or a control session told "add a task to fix X" | reads TODO.md; writes one line (+ `plan/tasks/<ID>.md`), committed at once in the main checkout | a slot pick, at the next pass | they are the human; `plan note/move/drop` | `similar()` refuses (exit 3) a text that strongly matches an open or blocked task; `plansync.locked` serialises two concurrent adds so ids never collide |
-| **plan add** (an agent's follow-up) | an agent in a slot, mid-task | writes the worktree's TODO.md; lands with the task's merge | a slot pick once merged, at its `--pri` level | Follow-ups/Parked sections; `later` is never started by a run | `similar()` against **the worktree's own branch copy** of the plan only; `renumber_doubles` fixes id clashes, not duplicate work (gap **B33**) |
+| **plan add** (an agent's follow-up) | an agent in a slot, mid-task | writes the worktree's TODO.md; lands with the task's merge | a slot pick once merged, at its `--pri` level | Follow-ups/Parked sections; `later` is never started by a run | `similar()` against **the worktree's own branch copy** of the plan; before the merge, `fold_doubles` notes a follow-up another slot filed meanwhile on that task instead of adding it (B33) |
 | **feed --forward** (runner feed hands work on) | a person types anything but a run command to "<repo> · runner" in the apps | reads the message; runs `control --new --forward`, which reads the message word for word from the feed transcript; writes nothing itself | a new control session whose first message is the ask | the new control session is theirs | none at the feed: one message opens one session. Duplicate filing is caught downstream by `plan add`'s `similar()` and `take`'s refusal |
 | **control --new** | a control session told "new"/`/control`, or the feed | reads `.runner/control<N>.pid`; writes a tmux window, `control<N>.pid`, quiet file | an interactive control session (on Remote Control with `[run] remote`) | it *is* a human seat | `control_live(n)` refuses a number already running; work it queues goes through `plan add`/`take` as above |
 | **gate failure in `done`** (slot) | the agent runs `done` and `[run] test` fails | reads the worktree; writes nothing (no tick, no commit) | the same agent fixes and reruns, or `done --blocked` | Needs you only if it blocks with a caps label; else `plan` | one session per task (pick). **No runner-side cap** on reruns: only the prompt's "the same fix fails twice" (gap **B38**) |
@@ -51,7 +51,7 @@ landing); a person re-enters through Needs you, the ledger and `wip/` branches i
 |---|---|
 | a person / control session (`plan add`, `take "TEXT"`) | `similar()` refuses a strong match with any open or blocked task (exit 3, `plan note` it instead, `--force` to override), under the plan lock |
 | runner feed (`feed --forward`) | it files nothing itself; the control session it opens goes through `plan add` |
-| agents' follow-ups in slots | `similar()` against the slot's branch copy only; parallel slots can file the same one twice (**B33**) |
+| agents' follow-ups in slots | `similar()` against the slot's branch copy at add; at the merge, against the open tasks the target got since the branch forked: a strong match becomes a note on that task (`fold_doubles`, B33) |
 | CI watch | one task per workflow while one is open, each run judged once (`.seen`), a rerun before filing; the third in a week waits on a person (B34) |
 | flaky / broken / runaway tests | one task per test name while one is open; the third in a week waits on a person (B34) |
 | concept builds (`done --artifact`) | one build per concept round; `revise` drops the waiting one before the next round files anew |
@@ -80,7 +80,6 @@ Each has a filed task; the evidence is in its line (`agent-runner plan <ID>`).
 
 | task | gap |
 |---|---|
-| **B33** | follow-ups filed by parallel slots are deduped only against each slot's branch copy of the plan |
 | **B35** | a block with no caps label and no task to wait on never reaches Needs you |
 | **B36** | an empty `[run] test` merges and pushes with no gate and no warning |
 | **B37** | the sequential run pushed the shared branch after any commit, gated or not (gone with the sequential run, F40) |

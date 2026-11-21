@@ -946,16 +946,18 @@ def _files(text: str) -> set[str]:
     return set(fields(text).get('files', []))
 
 
-def similar(text: str, todo=None, skip: str | None = None, limit: int = 3) -> list[str]:
+def similar(text: str, todo=None, skip: str | None = None, limit: int = 3, ls: list[str] | None = None) -> list[str]:
     """Open or blocked tasks that look like the same work as `text`, best first, as 'ID: start of its text'.
 
     Shown when a task is added, so a duplicate is caught before an agent spends a session on it. Kept quiet
     unless the match is strong, since every line lands in an agent's context: the new task's rarer words
     (weighted by how few tasks use them) mostly also on the other, or a fair share of them plus a file that
-    few open tasks name."""
+    few open tasks name. `ls`: plan lines to look in instead of the TODO.md (B33: a side of a merge)."""
     import math
-    todo, _ = ensure(todo)
-    tasks = [(m.group(3), l) for l in lines(todo)
+    if ls is None:
+        todo, _ = ensure(todo)
+        ls = lines(todo)
+    tasks = [(m.group(3), l) for l in ls
              if (m := ITEM.match(l)) and not m.group(1) and m.group(2) != 'x' and m.group(3) != skip]
     if not tasks:
         return []
@@ -2208,6 +2210,11 @@ def _moves(base: list[tuple], side: list[tuple]) -> dict:
     return out
 
 
+def noted(a: list[str], b: list[str]) -> bool:
+    """Whether task block `b` is block `a` with ` — note`s added to its last line, as `note` adds them."""
+    return len(a) == len(b) > 0 and a[:-1] == b[:-1] and b[-1].startswith(a[-1] + ' — ')
+
+
 def merge3(ours: list[str], base: list[str], theirs: list[str], own: str | None = None) -> list[str] | None:
     """The task list `ours` and `theirs` make from `base`, or None when both rewrote the same prose (the
     lines between tasks), which needs somebody to read it. `own` is the task the merged branch did: where
@@ -2227,6 +2234,8 @@ def merge3(ours: list[str], base: list[str], theirs: list[str], own: str | None 
         do, dt = prose(io, s) ^ prose(ib, s), prose(it, s) ^ prose(ib, s)
         if do and dt and do != dt:
             return None
+    for k in [k for k in io if k in it and k not in ib and noted(io[k][1], it[k][1])]:  # B33: theirs = ours + notes
+        io[k] = (io[k][0], it[k][1])  # one task, which theirs noted (`join.fold_doubles`): ours' place, theirs' words
     for k in [k for k in io if k in it and k not in ib and io[k][1] != it[k][1]]:  # one id, two new tasks
         it = {(k[0], k[1], ('theirs', k[2])) if x == k else x: v for x, v in it.items()}  # keep both
     mo, mt = _moves(B, O), _moves(B, T)

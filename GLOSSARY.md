@@ -133,3 +133,10 @@ _Said_: fresh control session
 _On screen_: c1 starts a fresh session
 _In code_: control_sid(new_run=), CONTROL_FRESH, run_restart, control_bloated, --new-run
 _Avoid_: reset c1, new c1
+
+**Fold**:
+Before a merge, a follow-up the branch filed that the target branch already got from another slot goes into that task as a note instead of becoming a second task.
+_Said_: dedupe follow-ups
+_On screen_: folded Y2 into Y1
+_In code_: fold_doubles, join.renumber_doubles
+_Avoid_: dedupe, collapse, squash

@@ -114,15 +114,19 @@ def renumber_doubles(ref: str, onto: str, tid: str, cwd: Path) -> str:
                 for f in files for _, _, tid, rest, _ in P.iter_tasks(show(rev, f))}
 
     old, theirs, ours = ids(base), ids(ref), ids(onto)
-    doubled = [k for k in theirs if k not in old and k in ours and k != tid and theirs[k] != ours[k]]
-    if not doubled:
+    folds, blocks = fold_doubles(show(base, files[0]), show(ref, files[0]), show(onto, files[0]), tid)
+    doubled = [k for k in theirs if k not in old and k in ours and k != tid and theirs[k] != ours[k]
+               and k not in folds]
+    if not doubled and not folds:
         return ref
     taken, new = set(old) | set(theirs) | set(ours) | P.reserved(cwd), {}
     for k in doubled:
         new[k] = _next_free(k, taken)
         taken.add(new[k])
-    P.reserve(cwd, *new.values())  # or the next branch's renumber takes the same one (MD175 -> 180 -> 181 -> 182)
-    pat = re.compile(r'\b(' + '|'.join(map(re.escape, new)) + r')\b')
+    if doubled:
+        P.reserve(cwd, *new.values())  # or the next branch's renumber takes the same one (MD175 -> 180 -> 181 -> 182)
+    moved = {**new, **folds}  # a line the branch wrote that names a folded task names the one it went into
+    pat = re.compile(r'\b(' + '|'.join(map(re.escape, moved)) + r')\b')
     idx = C.notes(f'renumber.{tid}.index')  # one per task: merges of different tasks run in threads at once
     env = {**os.environ, 'GIT_INDEX_FILE': str(idx)}
     g = lambda *a, **kw: git(*a, cwd=cwd, env=env, **kw)
@@ -132,7 +136,10 @@ def renumber_doubles(ref: str, onto: str, tid: str, cwd: Path) -> str:
             was, now = set(show(base, f)), show(ref, f)
             if not now:
                 continue
-            text = '\n'.join(l if l in was else pat.sub(lambda m: new[m.group(1)], l) for l in now) + '\n'
+            if f == files[0] and folds:
+                now = _splice(now, folds, blocks)
+            text = '\n'.join(l if l in was or isinstance(l, _Kept) else pat.sub(lambda m: moved[m.group(1)], l)
+                             for l in now) + '\n'
             blob = g('hash-object', '-w', '--stdin', input=text).stdout.strip()
             g('update-index', '--cacheinfo', f'100644,{blob},{f}')
         for k, v in new.items():  # the long form the branch wrote for it goes with it
@@ -143,16 +150,79 @@ def renumber_doubles(ref: str, onto: str, tid: str, cwd: Path) -> str:
                 g('update-index', '--add', '--cacheinfo', f'100644,{blob},{now}')
         tree = g('write-tree').stdout.strip()
         pairs = ', '.join(f'{k} -> {v}' for k, v in new.items())
-        c = g('commit-tree', tree, '-p', ref, '-m',
-              f'{tid}: renumber {pairs} ({onto} already uses the id)').stdout.strip()
+        into = ', '.join(f'{k} into {v}' for k, v in folds.items())
+        said = '; '.join(([f'renumber {pairs} ({onto} already uses the id)'] if new else [])
+                         + ([f'fold {into} ({onto} has the same follow-up)'] if folds else []))
+        c = g('commit-tree', tree, '-p', ref, '-m', f'{tid}: {said}').stdout.strip()
     finally:
         idx.unlink(missing_ok=True)
     if not c:
-        log(f'{tid}: could not renumber {", ".join(doubled)}; the merge may drop a task')
+        log(f'{tid}: could not renumber {", ".join([*doubled, *folds])}; the merge may drop or double a task')
         return ref
-    log(f'{tid}: renumbered {pairs}: {onto} gave the id to another task meanwhile')
-    note(f'{tid}: renumbered {pairs} before the merge')
+    if new:
+        log(f'{tid}: renumbered {pairs}: {onto} gave the id to another task meanwhile')
+        note(f'{tid}: renumbered {pairs} before the merge')
+    if folds:
+        log(f'{tid}: folded {into}: {onto} has the same follow-up, filed by another slot meanwhile; '
+            'noted there instead of adding it again')
+        note(f'{tid}: folded {into} before the merge')
     return c
+
+
+class _Kept(str):
+    """A plan line `renumber_doubles` copies from the other side as it is: no id in it is renumbered."""
+
+
+def fold_doubles(base: list[str], ref: list[str], onto: list[str], tid: str) -> tuple[dict, dict]:
+    """B33: the follow-ups a branch added that `onto` got meanwhile from another slot, as {its id: onto's id},
+    and {onto's id: onto's task block with a ` — note` per folded task}.
+
+    `plan add` turns away a follow-up like an open task (`plan.similar`), but in a slot it sees only that
+    branch's plan, not what other slots filed and have not merged: two slots that hit the same flaky test file
+    it twice, and two sessions do it. So before a merge each task the branch added (its own `tid` aside) is
+    held against the open tasks `onto` added since the branch forked, and on a match `similar` calls strong it
+    goes into that one as a note. Only those: one already there when the branch forked, `add` showed it, and
+    an add made anyway (`--force`) is other work."""
+    was = {t for _, _, t, _, _ in P.iter_tasks(base)}
+    fresh, starts = [], {}
+    for _, box, t, _, i in P.iter_tasks(onto):
+        if t.rstrip('.') not in was and box != 'x':
+            starts[t.rstrip('.')] = len(fresh)
+            fresh += P._item_block(onto, i)
+    if not fresh:
+        return {}, {}
+    folds, blocks = {}, {}
+    for _, box, t, rest, i in P.iter_tasks(ref):
+        k = t.rstrip('.')
+        if k in was or k == tid or box == 'x' or ref[i] in onto:
+            continue  # theirs from before, its own task, done, or the very line onto has (git keeps one)
+        hits = [h.split(':', 1)[0].rstrip('.') for h in P.similar(ref[i], ls=onto, limit=len(onto))]
+        if not (j := next((h for h in hits if h in starts), None)):  # all of onto's open tasks weigh the words
+            continue
+        body = P.prose(re.sub(r'^\s*- \[.\] \*\*[^*]+\*\*\s*', '', ref[i])).strip()
+        b = blocks.get(j) or fresh[starts[j]:starts[j] + len(P._item_block(fresh, starts[j]))]
+        blocks[j] = b[:-1] + [b[-1] + f' — {tid} filed the same as {k} (folded at the merge): '
+                              f'{body[:200]}{"…" if len(body) > 200 else ""}']
+        folds[k] = j
+    return folds, blocks
+
+
+def _splice(ls: list[str], folded: dict, blocks: dict) -> list[str]:
+    """Plan lines `ls` with each folded task's block (`fold_doubles`) swapped for the block of the task it went
+    into, noted, at the first one's place: `plan.merge3` then keeps one task with the notes."""
+    out, put, i = [], set(), 0
+    while i < len(ls):
+        m = P.ITEM.match(ls[i])
+        k = m.group(3).rstrip('.') if m and not m.group(1) else None
+        if k not in folded:
+            out.append(ls[i])
+            i += 1
+            continue
+        if folded[k] not in put:
+            put.add(folded[k])
+            out += [_Kept(l) for l in blocks[folded[k]]]
+        i += len(P._item_block(ls, i))
+    return out
 
 
 LAND_WAIT = 10 * 60  # how long a tested merge holds MERGE waiting on edits in the main checkout

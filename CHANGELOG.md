@@ -4,6 +4,11 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Two slots that file the same follow-up no longer give two tasks: before a merge, each task the branch added
+  is held against the open tasks the target branch got since the branch forked (`plan add`'s same likeness
+  check), and on a strong match it goes into that task as a note ("N2 filed the same as Y2 (folded at the
+  merge): …"), logged as "folded Y2 into Y1"; lines the branch wrote that name it name the kept one. Before,
+  `plan add` in a slot saw only that branch's plan, and two sessions did the same work (B33).
 - c1 no longer grows until it compacts: when a person starts a new run and c1's kept session last stood over
   `[run] context_warn` (150k by default), c1 starts a fresh session and its opening summary says so in one
   line; 4 of 32 control sessions had passed 150k. A restart keeps the session whatever its size: the
