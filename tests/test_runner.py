@@ -2148,18 +2148,24 @@ def test_short_titles_and_since(repo: Path):
             check(handoff and f'Bash({handoff.group(1)} *)' in allowed,
                   'B92: the hand-off command in the prompt is one dontAsk allows', (handoff and handoff.group(1), allowed))
             eq(R.feed_cmd(), './kit', 'B92: the feed session is kept per [run] command (B91)')
+            # B93: control sessions name [run] command too, as the feed does: the bare runner skips the kit's config
+            eq(R.control_cmd(), './kit', 'B93: a control session names [run] command')
             brief = R.control_brief()
-            check(f'`{R.RUNNER} status`' in brief and f'{R.RUNNER} plan confirm' in brief and './kit' not in brief,
-                  'B71: the control brief names the runner', brief[:200])
+            check('`./kit status`' in brief and './kit plan confirm' in brief and f'{R.RUNNER} ' not in brief,
+                  'B93: the control brief names [run] command', brief[:200])
             with mock.patch.object(R, 'feed_on', lambda: False):
                 opening = R.control_argv(1, 'sid', False)[1]
-                check(f'`{R.RUNNER} status`' in opening and f'{R.RUNNER} since --follow --needs-you' in opening
-                      and './kit' not in opening, 'B71: the control opening names the runner', opening)
-                check('./kit' not in R.control_brief(), 'B71: and so does its needs-you watch')
+                check('`./kit status`' in opening and './kit since --follow --needs-you' in opening
+                      and f'{R.RUNNER} ' not in opening, 'B93: the control opening names [run] command', opening)
+                wb = R.control_brief()
+                check('./kit since' in wb and f'{R.RUNNER} ' not in wb, 'B93: and so does its needs-you watch')
+            check('`./kit plan confirm' in R.ask_waiting_block('- R1 x'), 'B93: a handed-on ask settles by ./kit')
             skills = R.control_skills_dir() / '.claude' / 'skills'
-            check(f'{R.RUNNER} control --new' in (skills / 'control' / 'SKILL.md').read_text(encoding='utf-8')
-                  and './kit' not in (skills / 'since' / 'SKILL.md').read_text(encoding='utf-8'),
-                  'B71: the /control and /since skills call the runner')
+            ctl = (skills / 'control' / 'SKILL.md').read_text(encoding='utf-8')
+            since = (skills / 'since' / 'SKILL.md').read_text(encoding='utf-8')
+            check('./kit control --new' in ctl and f'{R.RUNNER} ' not in ctl and './kit since' in since
+                  and f'{R.RUNNER} ' not in since, 'B93: the /control and /since skills call [run] command', since)
+        R.control_skills_dir()  # the skills back to the runner for the checks after this
         started = []
         real_thread = R.threading.Thread
 

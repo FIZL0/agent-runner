@@ -39,21 +39,28 @@ def control_ok() -> bool:
     return not pi()
 
 
+def control_cmd() -> str:
+    """B93: the command a control session's brief, opening, skills and hints name: `[run] command` (e.g. openmx's
+    `./kit`, which forwards every runner command once it has loaded the kit's settings), else the runner, as the
+    feed does (B92 feed_cmd). The bare runner in a wrapped repo would skip the kit's config."""
+    return C.command
+
+
 def control_brief() -> str:
     """What every control session is told, through its SessionStart hook (`control --brief` prints it)."""
     from agent_runner.guide import CONTROL, CONTROL_ANSWER, CONTROL_FEED_WATCH, CONTROL_WATCH
     notes = Path(C.run['notes']).expanduser()
     logf = (notes / 'run.log').as_posix() if not notes.is_absolute() else str(notes / 'run.log')
-    # B71: the runner itself, not [run] command: a project's command may wrap only part of it (openmx's ./kit)
-    watch = (CONTROL_FEED_WATCH if feed_on() else CONTROL_WATCH).format(repo=ROOT.name, cmd=RUNNER)
+    cmd = control_cmd()  # B93: [run] command, not the bare runner (B71's partial ./kit is outdated)
+    watch = (CONTROL_FEED_WATCH if feed_on() else CONTROL_WATCH).format(repo=ROOT.name, cmd=cmd)
     cf = P.needs_cfg()  # B27: the heading's words
-    answer = CONTROL_ANSWER.format(cmd=RUNNER)
+    answer = CONTROL_ANSWER.format(cmd=cmd)
     from agent_runner import glossary  # F22: the glossary paragraph (and the seed ask), or none when it is off
     from agent_runner.guide import grill_fit  # F20: the grilling line fitted to [run] grill
     from agent_runner import voice  # F21: the person's wording, read fresh by every session's brief
-    return voice.fit(grill_fit(glossary.fit(CONTROL.format(repo=ROOT.name, cmd=RUNNER, log=logf, watch=watch,
-                                                           needs=cf['heading'], answer=answer), 'control', RUNNER, C),
-                               RUNNER, C), RUNNER, C)
+    return voice.fit(grill_fit(glossary.fit(CONTROL.format(repo=ROOT.name, cmd=cmd, log=logf, watch=watch,
+                                                           needs=cf['heading'], answer=answer), 'control', cmd, C),
+                               cmd, C), cmd, C)
 
 
 def control_settings_data() -> dict:
@@ -77,7 +84,7 @@ def control_skills_dir() -> Path:
     additionalDirectories), holding `.claude/skills/control/SKILL.md`, the /control slash command that opens
     another control session. Never in the person's repo files."""
     from agent_runner.guide import control_skills  # /control, and the opening hints line's /run /since …
-    for name, text in control_skills(RUNNER, CONTROL_SKILL).items():
+    for name, text in control_skills(control_cmd(), CONTROL_SKILL).items():  # B93: [run] command
         f = C.notes('control-skills', '.claude', 'skills', name, 'SKILL.md')
         try:
             if not f.is_file() or f.read_text(encoding='utf-8') != text:
@@ -328,7 +335,7 @@ def ask_waiting_block(waiting: str) -> str:
     """B84: the Needs you items a handed-on ask carries (B47), fenced off as runner-added and placed after the
     person's words, so the session answers the person and not the list; the control brief names the tag."""
     return ('<runner-waiting>\nAdded by the runner, not the person\'s ask. Waiting under Needs you:\n' + waiting +
-            f'\nSettle one by its id (`{RUNNER} plan confirm|change|shelve ID`, not only a new task) only if the '
+            f'\nSettle one by its id (`{control_cmd()} plan confirm|change|shelve ID`, not only a new task) only if the '
             'words above answer it; else say nothing of these.\n</runner-waiting>')
 
 
@@ -369,8 +376,8 @@ def control_argv(n: int, sid: str, resume: bool, blank: bool = False, ask: str =
     (`control --new --ask TEXT`, from the runner feed): TEXT is its first message instead; `images` (`--file
     PATH`, alias `--image`, repeatable) adds a line per attached file to it (`control_ask`)."""
     from agent_runner.guide import CONTROL_START, CONTROL_START_WATCH
-    opening = CONTROL_START.format(cmd=RUNNER, watch_start='' if feed_on() else  # B71: the runner, not [run] command
-                                   CONTROL_START_WATCH.format(cmd=RUNNER))
+    cmd = control_cmd()  # B93: [run] command, as the brief and the feed name it
+    opening = CONTROL_START.format(cmd=cmd, watch_start='' if feed_on() else CONTROL_START_WATCH.format(cmd=cmd))
     if n == 1 and not resume and CONTROL_FRESH[0]:  # F27: a bloated c1 started over; the summary says so first
         opening = f'Say first, in one line: "{CONTROL_FRESH[0]}." Then: {opening}'
     ask_text, ask = ask, control_ask(ask, images)
