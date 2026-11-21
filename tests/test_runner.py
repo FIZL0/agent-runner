@@ -1058,11 +1058,17 @@ def test_remote_auto(tmp: Path):
 def test_control_server_old_agent(repo: Path, tmp: Path):
     print('control server: an older Claude Code without remote-control --settings starts without it, and says so')
     R.init(repo)
-    old, new = tmp / 'old-claude', tmp / 'new-claude'
-    old.write_text("#!/bin/sh\necho 'Usage: claude remote-control [options]'\necho '  --name <name>'\n"
-                   "echo '  --spawn <mode>'\n", encoding='utf-8')
-    new.write_text("#!/bin/sh\necho 'Usage: claude remote-control [options]'\necho '  --settings <file>'\n",
-                   encoding='utf-8')
+    if R.plat.WINDOWS:  # Windows runs no #! script: batch files, which CreateProcess starts
+        old, new = tmp / 'old-claude.cmd', tmp / 'new-claude.cmd'
+        old.write_text('@echo Usage: claude remote-control [options]\r\n@echo   --name NAME\r\n'
+                       '@echo   --spawn MODE\r\n', encoding='utf-8')
+        new.write_text('@echo Usage: claude remote-control [options]\r\n@echo   --settings FILE\r\n', encoding='utf-8')
+    else:
+        old, new = tmp / 'old-claude', tmp / 'new-claude'
+        old.write_text("#!/bin/sh\necho 'Usage: claude remote-control [options]'\necho '  --name <name>'\n"
+                       "echo '  --spawn <mode>'\n", encoding='utf-8')
+        new.write_text("#!/bin/sh\necho 'Usage: claude remote-control [options]'\necho '  --settings <file>'\n",
+                       encoding='utf-8')
     for f in (old, new):
         f.chmod(0o755)
     R._SERVER_SETTINGS.clear()
@@ -2076,8 +2082,12 @@ def test_short_titles_and_since(repo: Path):
         check(argv[:5] == ['tmux', 'new-window', '-d', '-t', '=ar-demo:'] and R.window('board') in argv,
               'the board opens in the background session without taking focus', argv)
 
-        # the runner feed: with [run] remote the board is a lean Haiku session in the apps too
-        with mock.patch.object(R, 'remote_on', lambda: True), mock.patch.dict(R.C.run, {'agent': 'claude'}):
+        # the runner feed: with [run] remote the board is a lean Haiku session in the apps too. The feed lives in
+        # the board's tmux window, so a tmux machine is stood in for (Windows has no board, and no feed)
+        which = R.shutil.which
+        with mock.patch.object(R, 'remote_on', lambda: True), mock.patch.dict(R.C.run, {'agent': 'claude'}), \
+                mock.patch.object(R.plat, 'WINDOWS', False), \
+                mock.patch.object(R.shutil, 'which', lambda c, *a, **k: '/usr/bin/tmux' if c == 'tmux' else which(c, *a, **k)):
             fa = R.feed_argv()
             opt = lambda k: fa[fa.index(k) + 1]
             eq((opt('--model'), opt('--tools'), opt('--permission-mode'), opt('--remote-control')),
@@ -2698,12 +2708,16 @@ def test_remote_sweep(repo: Path, tmp: Path):
         with mock.patch.object(R.plat, 'terminate', wraps=R.plat.terminate) as term:
             ended, left = R.rc_sweep(me, keep_server=True, wait=3)
         sent = {c.args[0] for c in term.call_args_list}
-        eq(sorted(ended), ['repo · runner'], "the earlier run's feed is ended")
-        eq(left, ['repo · runner (stuck)'], 'one that ignores SIGTERM is left running, not killed')
+        # Windows has no SIGTERM to ignore: plat.terminate ends the tree there (taskkill /F after its grace)
+        stuck = [] if R.plat.WINDOWS else ['repo · runner (stuck)']
+        eq(sorted(ended), ['repo · runner', *[s for s in ['repo · runner (stuck)'] if s not in stuck]],
+           "the earlier run's feed is ended")
+        eq(left, stuck, 'one that ignores SIGTERM is left running, not killed')
         eq(sent, {old_feed.pid, stubborn.pid}, 'SIGTERM went to the earlier run\'s feeds only')
         time.sleep(0.3)
         check(not R.plat.alive(old_feed.pid), 'the earlier feed is gone (its teardown archives its entry)')
-        check(R.plat.alive(stubborn.pid), 'never SIGKILLed: a killed session would stay listed')
+        if not R.plat.WINDOWS:
+            check(R.plat.alive(stubborn.pid), 'never SIGKILLed: a killed session would stay listed')
         check(R.plat.alive(old_server.pid), 'the control server this run adopts is left up (no new entry)')
         check(R.plat.alive(old_c2.pid), "an earlier run's control session is the person's: left up")
         check(R.plat.alive(cur_feed.pid), "the current run's feed is left alone")
