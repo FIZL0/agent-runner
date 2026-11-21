@@ -559,7 +559,7 @@ def installed_version() -> str | None:
 
 
 def upgrade() -> bool:
-    """`u` in the runner's pane, or `run --upgrade`: run `upgrade_argv`, logged. True when it worked."""
+    """`u` in the runner's pane, `agent-runner upgrade` or [run] auto_upgrade: run `upgrade_argv`, logged. True when it worked."""
     argv = upgrade_argv()
     log(f'upgrading: {" ".join(argv)}')
     try:
@@ -577,7 +577,7 @@ def upgrade() -> bool:
     return True
 
 
-AUTO_UPGRADE = [False]  # [run] auto_upgrade: the run presses `u` itself when update_notice sees a newer version
+AUTO_UPGRADE = [True]  # [run] auto_upgrade (on by default): the run presses `u` itself when update_notice sees a newer version
 AUTO_TRIED = ['']  # the version auto_upgrade last ran the upgrade for: once per version, even when it failed
 
 

@@ -129,8 +129,8 @@ DEFAULTS: dict = {
                                 # one of punctuation only must end it, any other may stand anywhere in its last paragraph)
         'control_file_asks': True,  # an open question is filed as a DECIDE item before its session closes
         'control_ask_kind': 'F',  # the id prefix that item's task gets
-        'auto_upgrade': False,  # upgrade agent-runner by itself when a newer release is out, once no merge runs,
-                                # and restart the run on it (as `u` does, without the key)
+        'auto_upgrade': True,   # upgrade agent-runner by itself when a newer release is out, once no merge runs,
+                                # and restart the run on it (as `u` does, without the key); false: only `u` does
         'install_skill': True,  # keep the `agent-runner guide` skill in ~/.claude/skills, for sessions a person starts
         'rules_pointer': True,  # a run adds one line to the rules file (`rules`, AGENTS.md, CLAUDE.md) pointing at it
         'wizards': True,        # F17: an agent blocking with BLOCKED: (a login, cert, secret) writes a bash wizard
