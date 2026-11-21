@@ -76,31 +76,71 @@ TONES = [  # first match wins: (regex on the message, SGR colour)
 ]
 
 
-def paint(stamp: str, msg: str) -> str:
-    """`stamp msg` for a terminal: the time grey, the task id bold, the message in its tone."""
-    tone = next((c for rx, c in TONES if rx.search(msg)), '0')
+def paint(stamp: str, msg: str, kind: str | None = None) -> str:
+    """`stamp msg` for a terminal: the time grey, the task id bold, the message in its tone (F41: its event
+    kind's, when it has one; TONES only colours lines logged without a kind)."""
+    tone = KIND_TONES.get(kind) if kind else None
+    tone = tone or next((c for rx, c in TONES if rx.search(msg)), '0')
     msg = re.sub(r'^((?:slot \d+: )?)([A-Za-z]+\d+[a-z0-9]*)\b', '\\1\x1b[1m\\2\x1b[22m', msg, count=1)
     return f'\x1b[90m{stamp}\x1b[0m \x1b[{tone}m{msg}\x1b[0m'
 
 
-def log(msg: str) -> None:
+# F41: the kinds of run event a log() line can carry. Each one with a kind is also a record in
+# <notes>/events.jsonl, {time, kind, id, text} (plus the kind's fields: why, left, slots), which since, follow,
+# status, the runner feed and the background launch read instead of the prose in run.log.
+EV_RUN_UP = 'run up'            # the run is up (slots: its slot count, 0 for the sequential run)
+EV_STARTED = 'started'          # a slot started task `id`
+EV_STALLED = 'stalled'          # task `id`'s session looks stalled
+EV_LANDED = 'landed'            # task `id` merged and is ticked (or one part of it is)
+EV_PART = 'part landed'         # task `id` merged, and is blocked on the rest
+EV_PARKED = 'parked'            # task `id` did not merge; parked on wip/ (why)
+EV_LEFT = 'left'                # task `id` is left for a person (why)
+EV_NO_COMMITS = 'no commits'    # task `id` ended with nothing to merge
+EV_DEFERRED = 'deferred'        # the run stops; task `id` waits for the next run to merge it
+EV_DROPPED = 'dropped'          # `plan drop` ended task `id`
+EV_HELD = 'held'                # STOPPED: something only a person can clear holds the run (why)
+EV_IDLE = 'idle'                # the run has nothing left it may start
+EV_STOPPED = 'run stopped'      # the run ended
+EV_RELEASED = 'released'        # a merge brought a release (text: the line)
+EV_STOP_ASKED = 'stop asked'    # a stop was asked for (left: the tasks the run still waits for)
+EV_STOP_BACK = 'stop back'      # the stop was taken back
+KIND_TONES = {EV_STARTED: '34', EV_LANDED: '32', EV_PART: '33', EV_PARKED: '31', EV_LEFT: '31', EV_HELD: '31',
+              EV_STALLED: '31', EV_IDLE: '90', EV_DROPPED: '90', EV_NO_COMMITS: '90', EV_DEFERRED: '33',
+              EV_STOP_ASKED: '33', EV_RELEASED: '32'}
+
+
+def log(msg: str, kind: str | None = None, tid: str = '', **fields) -> None:
+    """`msg` to the runner's pane and run.log; with an event `kind` (F41: the EV_ names), also a record
+    {time, kind, id, text, **fields} in <notes>/events.jsonl, which is what readers go by: a reworded `msg`
+    changes nothing they print."""
     stamp = dt.datetime.now().isoformat(timespec="seconds")
     line = f'=== {stamp} {msg}'
-    print(paint(stamp, msg) if COLOR else line, flush=True)
+    print(paint(stamp, msg, kind) if COLOR else line, flush=True)
     try:
         with open(C.notes('run.log'), 'a', encoding='utf-8') as f:
             f.write(line + '\n')
     except OSError:
         pass
+    if kind:
+        rec = {'time': stamp, 'kind': kind, 'id': tid, 'text': msg, **fields}
+        try:
+            with open(C.notes('events.jsonl'), 'a', encoding='utf-8') as f:
+                f.write(json.dumps(rec, ensure_ascii=False) + '\n')
+        except OSError:
+            pass
 
 
 NOTIFY = not os.environ.get('AGENT_RUNNER_NO_NOTIFY')  # alarm()'s tmux message and desktop notification
 
 
-def banner(title: str, detail: str, bg: str = '41') -> None:
-    """`title: detail` logged, and in colour a block in the runner's pane (red, or `bg`) that stands out."""
+def banner(title: str, detail: str, bg: str = '41', kind: str | None = None, fields: dict | None = None) -> None:
+    """`title: detail` logged (as event `kind` with `fields`, F41), and in colour a block in the runner's pane
+    (red, or `bg`) that stands out."""
     import textwrap
-    log(f'{title}: {detail}')
+    if kind:
+        log(f'{title}: {detail}', kind, **(fields or {}))
+    else:
+        log(f'{title}: {detail}')
     if COLOR:
         body = [title.upper(), *textwrap.wrap(detail, 96)]
         w = max(map(len, body)) + 4
@@ -112,7 +152,7 @@ def alarm(title: str, detail: str) -> None:
     """A stoppage only a person can clear (their uncommitted edits hold a tested merge, a usage cap): a red banner in the
     runner's pane, the bell, a tmux message and a desktop notification, so it is seen from across the room,
     not found in run.log hours later. The log line starts STOPPED."""
-    banner(f'STOPPED: {title}', detail)
+    banner(f'STOPPED: {title}', detail, kind=EV_HELD, fields={'why': title, 'detail': detail})
     print('\a', end='', flush=True)
     try:
         if not NOTIFY:

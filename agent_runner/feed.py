@@ -24,7 +24,7 @@ from agent_runner.land import wip_main_info
 from agent_runner.control import (control_env, CONTROL_LINK_WAIT, control_live, CONTROL_N_ENV, control_name,
     control_title, feed_on, free_control_number, message_text, person_message, RC_ENDING, rc_forget, rc_record,
     rc_records, rc_sweep, REMOTE_DIR, SESSION_LINK)
-from agent_runner.status import follow, since_text, waiting_ok
+from agent_runner.status import follow, read_events, since_text, waiting_ok
 
 
 BOARD_EVERY = 30  # s between the run's checks that the board window is still there
@@ -43,11 +43,7 @@ def board(run_pid: int = 0) -> int:
     With `run_pid` (the run that opened it) it ends once that process has, however the run ended."""
     print(board_header())
     now = dt.datetime.now().replace(microsecond=0)
-    try:
-        lines = C.notes('run.log').read_text(encoding='utf-8', errors='replace').splitlines()
-    except OSError:
-        lines = []
-    print(since_text(lines, now - dt.timedelta(hours=6), P.titles(C.done, C.todo), now, waiting=waiting_ok(),
+    print(since_text(read_events(), now - dt.timedelta(hours=6), P.titles(C.done, C.todo), now, waiting=waiting_ok(),
                      wips=wip_main_info())[0], flush=True)
     return follow(mark=False, end=(lambda: not plat.alive(run_pid)) if run_pid else None)
 

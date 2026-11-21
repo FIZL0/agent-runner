@@ -16,6 +16,7 @@ from agent_runner.config import RUNNER
 from agent_runner.gitops import drop_if_merged, push
 from agent_runner.state import (alarm, C, commit_plan, edited, git, init, log, newest, note, plan_rel, plan_text,
     ROOT, SLOTS_DIR)
+from agent_runner.state import EV_RELEASED
 from agent_runner.watch import HOGS
 from agent_runner.join import (EDITED, ELSEWHERE, joined, LAND_WAIT, LAND_WAIT_WIP, LANDED, renumber_doubles,
     task_env, WAITING)
@@ -528,4 +529,4 @@ def announce_release(base: str, merged: str) -> None:
         return
     if line and (v := line.split(' ')[1]) not in RELEASES_SAID:
         RELEASES_SAID.add(v)
-        log(line)
+        log(line, EV_RELEASED)

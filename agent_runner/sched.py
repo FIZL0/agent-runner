@@ -12,6 +12,7 @@ from typing import NamedTuple
 from agent_runner import plan as P, plansync
 from agent_runner.state import (alarm, C, commit_plan, edited, FETCHED, git, log, MERGE, note, plan_rel, plan_text,
     queued, ROOT, SLOTS_DIR)
+from agent_runner.state import EV_LEFT
 
 
 # --- picking the next task -----------------------------------------------------
@@ -405,7 +406,8 @@ def block_parked(tid: str, wips: list[str], branch: str) -> bool:
             return False
         note(f'{tid}: LEFT FOR A HUMAN — parked {len(wips)} times without merging; blocked on a person')
         log(f'{tid}: LEFT FOR A HUMAN — parked {len(wips)} times without merging ({", ".join(sorted(wips))}); '
-            f'blocked on a person instead of starting it again')
+            f'blocked on a person instead of starting it again', EV_LEFT, tid,
+            why=f'parked {len(wips)} times without merging ({", ".join(sorted(wips))})')
         seen = parked_seen()
         seen[tid] = sorted(set(seen.get(tid, [])) | set(wips))
         try:

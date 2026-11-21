@@ -39,7 +39,7 @@ def test_disk(tmp: Path):
     repo = make(tmp)
     R.init(repo)
     said: list[str] = []
-    R.log = said.append
+    R.log = lambda msg, *kind, **fields: said.append(msg)
 
     print('slot_max_gb')
     d = R.worktree(1, 'main')

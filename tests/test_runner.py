@@ -928,14 +928,14 @@ def test_background(repo: Path):
     eq(R.attach_argv('ar-proj', '%3', inside=True)[-1], ['tmux', 'switch-client', '-t', 'ar-proj'],
        'inside tmux it switches the client')
 
-    for line, want in (('=== 2026-11-19T10:00:00 run: 3 slots in tmux, merging into main', 3),
-                       ('=== 2026-11-19T10:00:00 sequential run on main (one session at a time, …)', 0)):
-        log = R.C.notes('run.log')
+    for line, want in (('up with three slots, worded any way', 3), ('up one session at a time', 0)):
+        log = R.events_file()
         since = log.stat().st_size if log.exists() else 0
-        with open(log, 'a', encoding='utf-8') as f:
-            f.write(line + '\n')
+        R.log(line, R.EV_RUN_UP, slots=want)
         eq(R.wait_started(since, lambda: False, timeout=2), want, f'the launch sees the run come up ({want} slots)')
-    eq(R.wait_started(R.C.notes('run.log').stat().st_size, lambda: True, timeout=2), None, 'or that it ended first')
+    since = R.events_file().stat().st_size
+    R.log('run: 3 slots in tmux, merging into main')  # F41: the prose alone, with no event, is not the start
+    eq(R.wait_started(since, lambda: True, timeout=2), None, 'or that it ended first')
 
     R.C.run['remote'] = True
     try:
@@ -1906,6 +1906,9 @@ def test_short_titles_and_since(repo: Path):
 
     notes = R.C.notes('run.log')
     keep = notes.read_text(encoding='utf-8') if notes.exists() else None
+    evf = R.events_file()  # F41: these lines are a run.log from before events.jsonl, read as such
+    keep_ev = evf.read_text(encoding='utf-8') if evf.exists() else None
+    evf.unlink(missing_ok=True)
     R.since_mark_file().unlink(missing_ok=True)
     try:
         today = R.dt.date.today().isoformat()  # the command reads the clock: today's stamps read as times
@@ -2228,6 +2231,10 @@ def test_short_titles_and_since(repo: Path):
             notes.unlink(missing_ok=True)
         else:
             notes.write_text(keep, encoding='utf-8')
+        if keep_ev is None:
+            evf.unlink(missing_ok=True)
+        else:
+            evf.write_text(keep_ev, encoding='utf-8')
         R.since_mark_file().unlink(missing_ok=True)
 
 
@@ -2510,9 +2517,9 @@ def test_board_follows_run(repo: Path, tmp: Path):
         # the feed's stream: nothing while held, then what was logged meanwhile once work resumes
         hold = [True]
         stamp = R.dt.datetime.now().replace(microsecond=0).isoformat()
-        def add():
-            with notes.open('a', encoding='utf-8') as fh:
-                fh.write(f'=== {stamp} F5: merged, ticked\n')
+        def add():  # F41: the event the merge logs
+            with R.events_file().open('a', encoding='utf-8') as fh:
+                fh.write(json.dumps({'time': stamp, 'kind': R.EV_LANDED, 'id': 'F5', 'text': 'F5: merged, ticked'}) + '\n')
         notes.parent.mkdir(parents=True, exist_ok=True)
         notes.touch()
         threading.Timer(0.3, add).start()
@@ -5163,6 +5170,67 @@ def test_paint():
     has(R.paint('t', 'slot 2: P3 (Next; a.rs)'), r'\x1b\[34mslot 2: \x1b\[1mP3', 'a start is blue')
 
 
+def test_structured_events(repo: Path):
+    print('F41: log() with a kind writes events.jsonl, and since/follow/status read its fields, not the prose')
+    R.init(repo)
+    titles = {'F5': 'Control session experience', 'B9': 'Fix the flicker'}
+    now = R.dt.datetime(2026, 11, 19, 15, 0, 0)
+
+    def evs(words: int) -> list[dict]:
+        say = ['A', 'B'][words]  # the same events, worded two ways
+        e = lambda t, kind, tid='', **f: {'time': f'2026-11-19T{t}', 'kind': kind, 'id': tid, 'text': f'{say} {kind}', **f}
+        return [e('13:00:00', R.EV_STARTED, 'F5'), e('13:30:00', R.EV_STALLED, 'F5'), e('14:00:00', R.EV_LANDED, 'F5'),
+                e('14:05:00', R.EV_PART, 'B9'), e('14:10:00', R.EV_PARKED, 'B9', why='tests fail. more'),
+                e('14:12:00', R.EV_LEFT, 'B9', why='the merge crashed'),
+                e('14:15:00', R.EV_HELD, why='F5 cannot land', detail='commit them'),
+                e('14:16:00', R.EV_STOP_ASKED, left=2), e('14:17:00', R.EV_DROPPED, 'B9'),
+                e('14:18:00', R.EV_RELEASED, text='demo 1.2.0 released'), e('14:19:00', R.EV_STOP_BACK),
+                e('14:20:00', R.EV_IDLE), e('14:30:00', R.EV_STOPPED)]
+    start = now - R.dt.timedelta(hours=3)
+    a, b = (R.since_text(evs(w), start, titles, now) for w in (0, 1))
+    eq(a, b, 'rewording every message changes nothing since prints')
+    eq(a[0].splitlines(), ['since 12:00:', '  13:00  started: Control session experience [F5]',
+                           '  13:30  looks stuck: Control session experience [F5]',
+                           '  14:00  landed: Control session experience [F5]',
+                           '  14:05  part landed, rest stuck: Fix the flicker [B9]',
+                           '  14:10  stuck, not merged: Fix the flicker (tests fail) [B9]',
+                           '  14:12  needs you: Fix the flicker (the merge crashed) [B9]',
+                           '  14:15  run held, needs you: F5 cannot land',
+                           '  14:16  stop requested: 2 left before the run exits',
+                           '  14:18  demo 1.2.0 released',
+                           '  14:19  stop taken back: the run is starting tasks again',
+                           '  14:20  run idle: nothing left it may start', '  14:30  run stopped'],
+       'each kind its phrase, from the id and fields')
+    eq(*(R.status_text(False, {}, evs(w), titles, 0.0) for w in (0, 1)), 'nor what status lists lately')
+    has(R.status_text(False, {}, evs(0), titles, 0.0), r'lately:\n  14:05 part landed.*\n  14:10 stuck.*\n  14:12 needs '
+        r'you.*\n  14:20 run idle.*\n  14:30 run stopped$', 'lately: the last five merges, parks, holds, idles, stops')
+    with mock.patch.object(R.status, 'what_changed', lambda tid: ''):
+        fa, fb = (R.follow_lines('\n'.join(R.json.dumps(e) for e in evs(w)), titles, now)[0] for w in (0, 1))
+        eq(fa, fb, 'nor what follow prints, from events.jsonl lines')
+        check(any(l.endswith('· 1 left') for l in fa), 'the stop countdown counts the dropped task by its event', fa)
+        ny = [R.follow_lines('\n'.join(R.json.dumps(e) for e in evs(w)), titles, now, needs_you=True)[0] for w in (0, 1)]
+    eq(ny[0], ny[1], 'nor what the needs-you watch (the phone push) prints')
+    check('14:15  run held, needs you: F5 cannot land: commit them' in ny[0], 'a hold with what holds it', ny[0])
+
+    f = R.events_file()
+    keep = f.read_text(encoding='utf-8') if f.exists() else None
+    try:
+        f.unlink(missing_ok=True)
+        R.log('F5: anything at all', R.EV_LANDED, 'F5')
+        R.log('no kind: run.log only')
+        rec = [R.json.loads(l) for l in f.read_text(encoding='utf-8').splitlines()]
+        eq([(r['kind'], r['id'], r['text']) for r in rec], [(R.EV_LANDED, 'F5', 'F5: anything at all')],
+           'a kind writes {time, kind, id, text}; a line without one stays in run.log only')
+        check(R.read_events()[-1]['text'] == 'F5: anything at all', 'read_events reads it back')
+        eq(R.paint('t', 'quiet words', R.EV_LANDED)[:16], R.paint('t', 'P1: merged', None)[:16],
+           'the pane colours by kind')
+    finally:
+        if keep is None:
+            f.unlink(missing_ok=True)
+        else:
+            f.write_text(keep, encoding='utf-8')
+
+
 def _ts(ago: float) -> str:
     import datetime as dt
     return dt.datetime.fromtimestamp(time.time() - ago, dt.timezone.utc).isoformat().replace('+00:00', 'Z')
@@ -6106,7 +6174,8 @@ def test_stop_countdown(repo: Path):
            'a key logged its own words: only the count')
         R.stop_note(False, 0)
         said = R.stop_note(True, 5, 'agent-runner stop')
-        check((m := R.STOP_ASKED.match(said)) and m[1] == '5', 'the feed reads the count back', said)
+        ev = R.legacy_event(f'=== 2026-11-20T10:00:00 {said}') or {}
+        eq((ev.get('kind'), ev.get('left')), (R.EV_STOP_ASKED, 5), 'a run.log line from before F41 reads the count back')
 
 
 def test_real_claude_json_guard(tmp: Path):
@@ -6168,7 +6237,8 @@ def main() -> int:
                        lambda: test_limit_resumes(repo, tmp),
                        lambda: test_shared_push(repo, tmp), lambda: test_note_on_a_ticked_task(repo), lambda: test_adopt_merge(repo), lambda: test_followups(repo), lambda: test_person_check_after(repo), lambda: test_ci_watch(repo), test_update_notice, test_restart_if_upgraded, test_auto_upgrade, lambda: test_flake_repair(tmp), lambda: test_repair_per_failure(repo),
                        lambda: test_stalled(tmp), lambda: test_take(repo), lambda: test_take_text_and_here(repo), lambda: test_background(repo), test_short_name_hints, test_utf8_streams, lambda: test_attach_flag(repo), lambda: test_bare_outside_git(tmp), lambda: test_hand_hook(tmp), lambda: test_user_hook(tmp), lambda: test_remote_auto(tmp), lambda: test_control(repo),
-                       lambda: test_short_titles_and_since(repo), lambda: test_board_follows_run(repo, tmp),
+                       lambda: test_short_titles_and_since(repo), lambda: test_structured_events(repo),
+                       lambda: test_board_follows_run(repo, tmp),
                        lambda: test_remote_sweep(repo, tmp), lambda: test_feed_resume(repo, tmp),
                        lambda: test_concepts_waiting(repo),
                        lambda: test_person_waiting(repo), lambda: test_control_server_old_agent(repo, tmp),

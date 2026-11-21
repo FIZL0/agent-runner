@@ -37,7 +37,7 @@ def new_run(slots: int = 2, once: bool = False) -> loop.Run:
 
 def stubs(st: ExitStack, said: list, **over) -> dict:
     """Stub the loop module's collaborators; returns the mocks by name."""
-    names = dict(log=said.append, end_orphans=None, last_words=None, drop_session_tmp=None, git=None,
+    names = dict(log=lambda msg, *kind, **fields: said.append(msg), end_orphans=None, last_words=None, drop_session_tmp=None, git=None,
                  save_leftovers=False, not_attempt=False, cut_off=None, stats='1 min', resumes=0,
                  queue_resume=None, finish=None, stopping=False, forced=False, pick=None, start=None,
                  capped=None, backlog_slots=2, api_down=False, low_disk=False, power_due=False, shut_down=False,

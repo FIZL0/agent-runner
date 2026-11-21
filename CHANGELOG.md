@@ -4,6 +4,13 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Run events are structured: `log()` takes an event kind and task id, and each line with one is also a record
+  `{time, kind, id, text}` (plus its fields: `why`, `left`, `slots`) in `<notes>/events.jsonl`. `since`,
+  `since --follow` (and so the runner feed and its phone pushes), `status`'s "lately", the stop countdown and
+  the background launch's wait for the run read those fields instead of matching run.log's prose, so
+  rewording a log message changes nothing they print. run.log stays the plain log a person reads; its lines
+  from before events.jsonl existed are still read for since and status. The runner's pane colours a line by
+  its kind (F41).
 - GLOSSARY.md (after mattpocock/skills domain-modeling, MIT) names agent-runner's own words once each: run,
   slot, task, kind, control session, c1, runner feed, board, take, gate, fixer, merge worktree, concept, Needs
   you (CONFIRM, DECIDE, BLOCKED), shelve, claim, notes dir, remote; each with a plain definition and the words
