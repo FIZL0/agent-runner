@@ -98,3 +98,10 @@ _Said_: my wording, voice
 _On screen_: The person's wording
 _In code_: voice.py, agent-runner voice, [run] voice
 _Avoid_: style guide, preferences
+
+**Restyle**:
+A style a person approved for the future too: a page of each current page or screen that would change, before and after, waiting for an OK; the interface work is held on it and reopens with the style once it is approved
+_Said_: the future too, make everything look like this
+_On screen_: restyle K9, held for restyle K9
+_In code_: plan.restyle, plan.hold, plan.release_held, loop.restyles, plan restyle
+_Avoid_: redesign, retheme

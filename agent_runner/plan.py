@@ -48,6 +48,12 @@ re-reads it on every turn pays again. So the backlog is a command instead:
     ./run plan shelve <ID>       later: stays blocked, off Needs you; `unshelve <ID>` brings it back
     ./run plan approve <ID> [CHOICE]   OK a concept (or its build task's id): the build opens, CHOICE noted on it
     ./run plan revise <ID> WHY   changes asked: the concept reopens with WHY noted, its waiting build is dropped
+    ./run plan restyle STYLE --page URL [--from ID] [--ui GLOBS] [--tasks IDS] [--dry]   a style approved for the
+                                 future too: files the restyle (its page shows each page or screen that changes,
+                                 before and after) and holds every queued task that touches the interface on it;
+                                 a running one is parked as wip/<ID> at a clean point (one in its test gate or
+                                 merging lands); approving the restyle reopens them with the style noted. --dry
+                                 lists what it would hold, park and let land
     ./run plan claims            which run has which task (with a remote to claim through), and since when (STALE: no refresh in 3 h),
                                  and any wip/main-checkout-* branches of edits moved aside to land a merge
     ./run plan unclaim <ID>      drop a claim, whoever's: for a run that crashed or was switched off
@@ -148,7 +154,7 @@ PROG = './run plan'  # the name in messages; a wrapper sets its own ('./kit plan
 __all__ = ['PROG', 'HELP', 'lines', 'index', 'section', 'ensure', 'archive', 'tick', 'block', 'reopen',
            'unblock', 'move', 'next_id', 'add', 'similar', 'note', 'drop', 'next_task', 'files_on_line', 'fields', 'overlap', 'brief', 'open_ids',
            'write_atomic', 'child', 'subtasks', 'main', 'PRI', 'kinds', 'check_kind',
-           'concept', 'concept_done', 'waiting', 'approve', 'revise',
+           'concept', 'concept_done', 'waiting', 'approve', 'revise', 'restyle', 'hold', 'held_on', 'release_held',
            'asking', 'asks', 'confirm', 'change', 'shelve', 'unshelve', 'edit', 'needs_lines',
            'iter_tasks', 'titles', 'short_title']
 
@@ -1239,6 +1245,7 @@ def approve(tid: str, choice: str = '', todo=None) -> str:
     todo, _ = ensure(todo)
     w = _waiter(tid, todo)
     unblock(w[0], f'approved ({w[2]}): {choice}' if choice else f'approved as recommended on {w[2]}', todo=todo)
+    FREED[:] = release_held({x for x in w[:2] if x}, choice, todo=todo)  # F19: a restyle frees what it held
     return w[0]
 
 
@@ -1264,6 +1271,135 @@ def revise(tid: str, why: str, todo=None, done=None) -> str:
     note(k, f'changes asked on {url}: {why}', todo=todo)
     drop(b, f'concept {k} sent back for changes', todo=todo, done=done)
     return k
+
+
+# --- F19: a style for the future too: a restyle page, and the interface work held until it is approved -------
+#
+# A person approves a concept's style and says it holds from now on ("the future too", "make everything look
+# like this"). The control session publishes a restyle page (each current page or screen that changes to match,
+# before and after) and runs `plan restyle STYLE --page URL`: it files the restyle as a concept already shown
+# (a K task ticked with its page, its build waiting for an OK, as `concept_done` does) and holds every queued task
+# that touches the interface on it: `BLOCKED: held for restyle K9 (style: …): …`, kept, not dropped. A task a
+# slot runs is held too and the run asked to park it (`loop.restyles`): one already in its test gate or merging
+# lands, and is noted on the restyle to list on its page; any other is told to stop at a clean point, commit and
+# write its journal, and its branch is parked as wip/<ID>. Approving the restyle (`approve`, `confirm`) reopens
+# every task held on it with the style noted. Nothing waits in a held-open session while the person decides.
+
+UI_FILES = ('*.html', '*.htm', '*.css', '*.scss', '*.sass', '*.less', '*.vue', '*.svelte', '*.jsx', '*.tsx',
+            '*.astro', '*.erb', '*.hbs', '*.jinja', '*.j2', '*.twig', '*.liquid', '*.qml', '*.xib',
+            '*.storyboard', 'templates/**', 'static/**', 'public/**', 'assets/**', 'web/**', 'ui/**', 'site/**',
+            'frontend/**', 'components/**', 'styles/**', 'pages/**', 'screens/**', 'views/**')
+UI_WORDS = re.compile(r'\b(ui|interface|screens?|pages?|buttons?|layouts?|styles?|styling|css|themes?|menus?|'
+                      r'dialogs?|icons?|fonts?|colou?rs?|dark mode|front[- ]?end|look and feel)\b', re.I)
+RESTYLE_HELD = 'held for restyle '
+HELD = re.compile(r'BLOCKED: (?:shelved: )?held for restyle ([A-Za-z]+\d+[a-z0-9]*) \(style: (.*)\): reopens ')
+LANDED_OLD = 'landed in the old style while the restyle waits: '
+RESTYLE_PARK: list[str] = []  # the running tasks `_p_restyle` held, for `main` to ask the run to park
+FREED: list[str] = []  # the held tasks the last `approve` reopened, for its message
+
+
+def ui_task(line: str, globs=None) -> bool:
+    """Does the task line touch the interface: its `files:` meet `globs` (UI_FILES), or, naming no files, its
+    words do (a page, a screen, a button, the style)."""
+    files = fields(line).get('files', [])
+    if files:
+        return bool(overlap(set(files), set(globs or UI_FILES)))
+    return bool(UI_WORDS.search(title_of(line)))
+
+
+def restyle_targets(globs=None, ids=None, todo=None) -> list[tuple[str, str]]:
+    """(id, title) of each queued task the restyle holds: open ([ ]) top-level tasks that touch the interface
+    (`ui_task`), or exactly `ids` when given; concepts and releases never (they build no interface)."""
+    todo, _ = ensure(todo)
+    out = []
+    for _, box, tid, rest, i in iter_tasks(lines(todo)):
+        line = f'- [{box}] **{tid}**{rest}'
+        if box != ' ' or concept(tid) or release(tid):
+            continue
+        if (tid in ids) if ids else ui_task(line, globs):
+            out.append((tid, title_of(line)))
+    return out
+
+
+def hold(tid: str, rid: str, style: str, todo=None) -> None:
+    """Block `tid` on restyle `rid`: no `(after …)` (the restyle's concept is ticked at once, which must not free
+    it) and no ask stamp (it waits on no person but the restyle's own OK); `approve` frees it."""
+    todo, _ = ensure(todo)
+    ls = list(lines(todo))
+    i = _find(ls, tid)
+    _mark(ls, i, '~')
+    end = i + len(_item_block(ls, i)) - 1
+    ls[end] += (f' BLOCKED: {RESTYLE_HELD}{rid} (style: {style}): reopens with the style noted once the restyle '
+                f'page is approved')
+    _write(todo, ls)
+
+
+def held_on(rids, todo=None) -> list[tuple[str, str, str]]:
+    """(task id, restyle id, style) of each task held on one of the restyles `rids`."""
+    todo, _ = ensure(todo)
+    ls, out = lines(todo), []
+    for _, box, tid, _, i in iter_tasks(ls):
+        if box == '~' and (m := HELD.search(ls[i + len(_item_block(ls, i)) - 1])) and m.group(1) in rids:
+            out.append((tid, m.group(1), m.group(2)))
+    return out
+
+
+def release_held(rids, choice: str = '', todo=None) -> list[str]:
+    """The restyle `rids` names was approved: reopen each task held on it with the style it is to use noted."""
+    freed = []
+    for tid, rid, style in held_on(rids, todo):
+        unblock(tid, f'style to use (restyle {rid} approved): {style}' + (f'; as approved: {choice}' if choice else ''),
+                todo=todo)
+        freed.append(tid)
+    return freed
+
+
+def restyle(style: str, page: str, frm: str = '', globs=None, ids=None, files=None, running=lambda tid: '',
+            todo=None, done=None) -> dict:
+    """File the restyle of `style` (shown on `page`) and hold the interface work on it. `running(tid)` says what a
+    run does with a task ('s2', 'merging', '': `run_on`). Returns {'rid', 'build', 'held', 'park', 'landing'}:
+    the restyle's id (its concept, or its build where the kinds lack K), its build task, the queued tasks held,
+    the running ones held for the run to park, and the merging ones left to land (noted on the restyle)."""
+    todo, done = ensure(todo, done)
+    targets = restyle_targets(globs, ids, todo)
+    ui = files or sorted({f for t, _ in targets for f in fields(lines(todo)[_find(lines(todo), t)]).get('files', [])
+                          if overlap({f}, set(globs or UI_FILES))})
+    text = (f'Restyle to the style approved{" on " + frm if frm else ""} for the future too: {style}. Each current '
+            f'page or screen that changes to match it, before and after, is on the restyle page')
+    if ui:
+        text += ' | files: ' + ', '.join(ui)
+    if CONCEPT in kinds()[0]:
+        rid = add(CONCEPT, text, todo=todo, done=done)
+        bid = concept_done(rid, page, todo=todo, done=done)
+        tick(rid, todo=todo, done=done)
+    else:
+        rid = bid = add(build_kind(), text, todo=todo, done=done)
+        block(bid, WAIT_OK + page, todo=todo, after=[])
+    out = {'rid': rid, 'build': bid, 'held': [], 'park': [], 'landing': []}
+    for tid, _ in targets:
+        where = running(tid)
+        if where == 'merging':
+            out['landing'].append(tid)
+            note(bid, LANDED_OLD + tid, todo=todo)
+            continue
+        hold(tid, rid, style, todo=todo)
+        out['park' if where else 'held'].append(tid)
+    return out
+
+
+def restyle_build(rid: str, todo=None) -> str:
+    """The build task of restyle `rid` still waiting for its OK (where a landed task is listed), else `rid`."""
+    return next((w[0] for w in waiting(todo, all=True) if rid in (w[0], w[1])), rid)
+
+
+def park_text(tid: str, rid: str, style: str, runner: str = 'agent-runner') -> str:
+    """What a slot running `tid` reads when restyle `rid` parks it (F19)."""
+    return (f'Stop at a clean point: a person approved a new style for the interface for the future too ({style}), '
+            f'and {tid} now waits for its restyle page ({rid}) to be approved. If your `{runner} done` is already '
+            f'running its test gate, let it finish and do nothing else. Otherwise do not run `done`: commit what is '
+            f'solid on task/{tid}, write in your journal what is done and what is left, then end your turn. The run '
+            f'parks your branch as wip/{tid}; the task starts again from there, with the style in its note, once the '
+            f'restyle is approved.')
 
 
 # --- tasks waiting on a person: "Needs you" (B27; "Waiting for your OK" before) ------------------------------
@@ -1355,7 +1491,9 @@ def _stuck_why(tail: str) -> tuple[str, str, bool] | None:
     why = t[len('BLOCKED: '):]
     shelved = why.startswith(SHELVED)
     why = why[len(SHELVED):] if shelved else why
-    if (w := re.match(r'\(after ([^)]*)\)\s*', why)):
+    if why.startswith(RESTYLE_HELD):
+        return None  # F19: held on a restyle; its OK (listed as a concept) frees it
+    if (w :=re.match(r'\(after ([^)]*)\)\s*', why)):
         if any(x.strip() for x in w.group(1).split(',')):
             return None  # it waits on tasks: `reopen` frees it once they are done
         why = why[w.end():]
@@ -1436,7 +1574,7 @@ def confirm(tid: str, said: str = '', todo=None, done=None) -> str:
     todo, done = ensure(todo, done)
     label, t, k, what, _, _, _ = _ask(tid, todo)
     if label == 'CONCEPT':
-        return f'approved: {approve(tid, said, todo=todo)} is open now, and a run starts it'
+        return f'approved: {approve(tid, said, todo=todo)} is open now, and a run starts it' + freed_line()
     if label == 'CONFIRM':
         unblock(t, f'confirmed by you ({what}): {said or "it worked"}', todo=todo)
         tick(t, todo=todo, done=done)
@@ -2250,7 +2388,7 @@ def _push(root: Path) -> str:
 
 
 EDITS = ('tick', 'block', 'reopen', 'unblock', 'move', 'add', 'note', 'archive', 'drop', 'approve', 'revise',
-         'confirm', 'change', 'shelve', 'unshelve', 'restore', 'edit')
+         'confirm', 'change', 'shelve', 'unshelve', 'restore', 'edit', 'restyle')
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -2278,6 +2416,9 @@ def main(argv: list[str] | None = None) -> int:
         got = section(ensure()[0], argv[1])[:1]
         now = re.sub(r'^\s*- \[.\] \*\*[^*]+\*\*\s*', '', _unblocked(got[0])) if got else ''
         argv = ['change', argv[1], f'it now reads: {now}']
+    if not rc and argv[0] == 'restyle':  # F19: outside the lock, so the run can read the plan as it parks them
+        for said in park_running(c):
+            print(said)
     if not rc and argv[0] in ('drop', 'change') and len(argv) > 2:
         # B19: outside the lock, so the run can read the plan while it stops and restarts the slot
         if argv[0] == 'change' and not restart:  # F16: tell the agent instead of stopping it
@@ -2404,7 +2545,64 @@ def _p_move(a, x):
 
 def _p_approve(a, x):
     bid = approve(a.id, _text(a))
-    return x.say(f'approved: {bid} is open now, and a run starts it')
+    return x.say(f'approved: {bid} is open now, and a run starts it' + freed_line())
+
+
+def freed_line() -> str:
+    """F19: what the last `approve` reopened that its restyle held, for its message ('' for none)."""
+    return f'; reopened with the style noted: {", ".join(FREED)}' if FREED else ''
+
+
+def _p_restyle(a, x):
+    """`plan restyle STYLE --page URL [--from ID] [--ui GLOBS] [--tasks IDS] [--files A,B] [--dry]` (F19)."""
+    words, opts, it = [], {}, iter(a.rest)
+    for w in it:
+        if w in ('--page', '--from', '--ui', '--tasks', '--files'):
+            opts[w[2:]] = next(it, '')
+        elif w == '--dry':
+            opts['dry'] = True
+        else:
+            words.append(w)
+    style = ' '.join(words).strip()
+    split = lambda k: [v for v in re.split(r'[,\s]+', opts.get(k) or '') if v] or None
+    globs, ids = split('ui'), split('tasks')
+    if opts.get('dry'):
+        got = restyle_targets(globs, ids, x.todo)
+        rows = [f'{t}  {run_on(x.c, t) or "queued"}  {title}' for t, title in got]
+        print('\n'.join(rows) if rows else 'no queued task touches the interface')
+        print('(queued: held until the restyle is approved; sN: parked as wip/<ID> at a clean point, or let land when '
+              'already in its test gate; merging: lands in the old style, list it on the restyle page)')
+        return 0
+    if not style or not opts.get('page'):
+        print(f'{PROG} restyle "<the approved style>" --page <the restyle page\'s URL> [--from ID] [--ui GLOBS] '
+              f'[--tasks IDS] [--files A,B] [--dry]', file=sys.stderr)
+        return 2
+    got = restyle(style, opts['page'], opts.get('from') or '', globs, ids, split('files'),
+                  running=lambda t: run_on(x.c, t), todo=x.todo, done=x.done)
+    RESTYLE_PARK[:] = [f'{t}\t{got["rid"]}\t{style}' for t in got['park']]
+    said = [f'restyle {got["rid"]} filed (its build {got["build"]} waits for the OK on {opts["page"]})']
+    if got['held']:
+        said.append(f'held until it is approved: {", ".join(got["held"])}')
+    if got['park']:
+        said.append(f'running, parked as wip/<ID> at a clean point and held: {", ".join(got["park"])}')
+    if got['landing']:
+        said.append(f'merging, lands in the old style (list it on the restyle page): {", ".join(got["landing"])}')
+    return x.say('\n'.join(said))
+
+
+RESTYLE_WAIT = 30.0  # s `restyle` waits for the run to say what it did with each running task
+
+
+def park_running(c, wait: float | None = None) -> list[str]:
+    """Ask the run to park each running task `_p_restyle` held (`loop.restyles`); what it said for each."""
+    out = []
+    for row in RESTYLE_PARK:
+        tid, rid, style = row.split('\t', 2)
+        said = request(c, 'restyle', tid, {'rid': rid, 'style': style}, RESTYLE_WAIT if wait is None else wait)
+        out.append(said.strip() if said is not None else
+                   f'asked the run to park {tid} at a clean point; it has not answered yet (`{c.command} since` shows it)')
+    RESTYLE_PARK.clear()
+    return out
 
 
 def _p_revise(a, x):
@@ -2574,6 +2772,7 @@ SUBCOMMANDS = {
     'move': (('id',), 1, _p_move),
     'approve': (('id',), 0, _p_approve),
     'revise': (('id',), 1, _p_revise),
+    'restyle': ((), 0, _p_restyle),
     'waiting': ((('all', {'nargs': '?', 'choices': ['--all']}),), None, _p_waiting),
     'confirm': (('id',), 0, _p_confirm),
     'change': (('id',), 1, _p_change),

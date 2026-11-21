@@ -4,6 +4,12 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- A style for the future too: approve a concept's style and say it holds from now on, and the control session
+  shows a restyle page (each current page or screen that changes, before and after) and runs `plan restyle
+  "<style>" --page <url>`. Every queued task that touches the interface is held on it, kept; a running one is
+  told to stop at a clean point, commit and write its journal, and is parked as `wip/<ID>` (one already in its
+  test gate or merging lands, listed on the page). Approving the restyle reopens them all with the style in
+  their note. `--dry` lists what it would hold, park and let land (F19).
 - Your wording sticks: a voice file you shape by talking. "say X not Y", "shorter", "no ids" or "stop calling
   it Z" makes a control session add one line (`agent-runner voice add`, naming the file it went to); when you
   ask "what?" or rephrase what it said, it says it again plainly and offers one line to add, added only on
