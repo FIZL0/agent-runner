@@ -5220,7 +5220,7 @@ def test_auto_release(repo: Path):
         eq(R.auto_release('main'), '', 'and starts the count again: two since it, none yet')
         land('F905')
         said = []
-        with mock.patch.object(R.loop, 'log', lambda m, *a, **k: said.append((m, a, k))):
+        with mock.patch.object(R.state, 'log', lambda m, *a, **k: said.append((m, a, k))):
             tid = R.auto_release('main')
         check(tid.startswith('V'), 'the third landing queues one', tid)
         line = next(l for l in releases() if f'**{tid}**' in l)
