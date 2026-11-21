@@ -7,6 +7,7 @@ import json
 import re
 import time
 from contextlib import ExitStack
+from typing import NamedTuple
 
 from agent_runner import plan as P, plansync
 from agent_runner.state import (alarm, C, commit_plan, edited, FETCHED, git, log, MERGE, note, plan_rel, plan_text,
@@ -150,34 +151,38 @@ def pick(running: dict, tried: set, branch: str, claim: bool = False, why: dict 
 
     `claim` (a run about to start it): with a remote to share claims through, the task is claimed and the claim pushed first;
     one another runner has, or got just now, is passed over for the next. Another runner's live claim counts
-    as a task running here, so its files, ordered section and family wait for it too.
+    as a task running here, so its files, ordered section and family wait for it too. A task parked
+    PARK_LIMIT times is blocked on a person first (`block_parked`), here, not inside `choose`.
 
-    `why` (the dry run): pick nothing, and fill it with every open task's reason instead, as
+    `why` (the dry run): pick nothing, and fill it with every open task's reason instead (`explain`), as
     {tid: (kind, detail)}; a task free to start gets ('free', '')."""
+    if why is not None:
+        why.update(explain(running, tried, branch))
+        return None
+    h = held(running, branch)
+    if claim:
+        for tid in parked_now(tried, h):
+            block_parked(tid, h.parked[tid], branch)
+    return choose(h, tried, branch, claim)
+
+
+class Held(NamedTuple):
+    """What holds the open tasks back, read once per pick: `todo` (tasks()), `busy` (running, merge-waiting,
+    claimed and taken tasks, as clash() tuples), `busy_ids`, `mine` (finished here, waiting to merge),
+    `finished` (mine and another runner's), `parked` ({tid: its parked branches}) and `shared` (shared_files)."""
+    todo: list
+    busy: list
+    busy_ids: set
+    mine: set
+    finished: set
+    parked: dict
+    shared: set
+
+
+def held(running: dict, branch: str) -> Held:
+    """The Held for `branch` with `running` ({slot: task}) in the slots."""
     shared = set(C.run['shared_files'])
     todo = tasks(branch)
-
-    def pick_(t):
-        if not claim or not plansync.enabled(C):
-            return t
-        if not plansync.claim(C, t[0], t[2]):
-            return None
-        FETCHED[0] = 0.0  # in-repo: the merge that closed it may have landed since the last fetch
-        if t[0] not in open_tasks(branch):  # the claim pulled: the pick may have read a plan up to 20 s old
-            plansync.release(C, t[0])  # closed meanwhile (ticked or blocked by someone else)
-            return None
-        # Two runners can claim clashing tasks from plans read seconds apart; both see both claims now, and
-        # the later one gives way (claim time, then owner: both sides reach the same verdict).
-        now = plansync.claims(C)
-        mine = now.get(t[0])
-        for b in claimed_elsewhere(now, todo):
-            cl = now[b[0]]
-            if mine and (cl.since, cl.owner) < (mine.since, mine.owner) and clash(t, b, shared):
-                plansync.release(C, t[0])
-                log(f'{t[0]}: {cl.who} claimed {b[0]} first and it clashes; given way')
-                return None
-        return t
-
     busy = claimed_elsewhere(plansync.claims(C), todo)  # [] with no remote to claim through
     lines_ = {t[0]: t for t in todo}
     for tid, d in taken().items():  # `take`: a person's session or subagent has it, in its own worktree
@@ -198,36 +203,66 @@ def pick(running: dict, tried: set, branch: str, claim: bool = False, why: dict 
         done_ = tid in mine and tid not in busy_ids and tid not in live and files  # finished, not running
         busy.append((tid, t[1], files if done_ else set(t[2]) | files, t[3], set() if done_ else set(t[2])))
     busy_ids |= {b[0] for b in busy if b[0] not in mine}
-    claimed = {t: cl.who for t, cl in plansync.claims(C).items()} if why is not None else {}
     parked = parked_attempts() if todo else {}
-    for t in todo:
-        tid = t[0]
-        if tid not in busy_ids and tid in finished:
-            if why is not None:
-                why[tid] = ('claimed by another runner', claimed.get(tid, '')) if tid not in mine else \
-                    ('finished, waiting to merge', '')
-            continue  # finished, its branch is waiting to be merged: restarting it would reset the branch
-        if tid in tried or tid in busy_ids:
-            if why is not None:
-                why[tid] = ('tried this run', '') if tid in tried else \
-                    ('running', f'claimed by {claimed[tid]}' if tid in claimed else
-                     'taken by hand (`take`)' if tid in taken() else '')
-            continue
-        if len(parked.get(tid, [])) >= PARK_LIMIT:  # B32: failed its merge that often; a person decides
-            if why is not None:
-                why[tid] = (f'parked {len(parked[tid])} times, needs a person', ', '.join(sorted(parked[tid])))
-            elif claim:
-                block_parked(tid, parked[tid], branch)
-            continue
-        if b := next((b for b in busy if clash(t, b, shared)), None):
-            if why is not None:
-                why[tid] = clash_why(t, b, shared)
-            continue  # a running or merge-waiting task's sibling, ordered-section mate or file neighbour waits
-        if why is not None:
-            why[tid] = ('free', '')
-            continue
+    return Held(todo, busy, busy_ids, mine, finished, parked, shared)
 
-        if got := pick_(t):
+
+def holds(t: tuple, tried: set, h: Held) -> tuple[str, tuple | None] | None:
+    """Why open task `t` may not start now, first reason only: ('finished', None), ('tried', None),
+    ('busy', None), ('parked', None) or ('clash', the busy task it clashes with); None when it is free."""
+    tid = t[0]
+    if tid not in h.busy_ids and tid in h.finished:
+        return 'finished', None  # its branch is waiting to be merged: restarting it would reset the branch
+    if tid in tried:
+        return 'tried', None
+    if tid in h.busy_ids:
+        return 'busy', None
+    if len(h.parked.get(tid, [])) >= PARK_LIMIT:  # B32: failed its merge that often; a person decides
+        return 'parked', None
+    if b := next((b for b in h.busy if clash(t, b, h.shared)), None):
+        return 'clash', b  # a running or merge-waiting task's sibling, ordered-section mate or file neighbour
+    return None
+
+
+def parked_now(tried: set, h: Held) -> list[str]:
+    """The open tasks held back only for being parked PARK_LIMIT times: the ones `pick` blocks on a person."""
+    return [t[0] for t in h.todo if holds(t, tried, h) == ('parked', None)]
+
+
+def explain(running: dict, tried: set, branch: str) -> dict[str, tuple[str, str]]:
+    """The dry run: every open task's reason it does not start, as {tid: (kind, detail)}; ('free', '') for one
+    that may. Changes nothing."""
+    h = held(running, branch)
+    claimed = {t: cl.who for t, cl in plansync.claims(C).items()}
+    why = {}
+    for t in h.todo:
+        tid = t[0]
+        kind, b = holds(t, tried, h) or ('free', None)
+        if kind == 'finished':
+            why[tid] = ('claimed by another runner', claimed.get(tid, '')) if tid not in h.mine else \
+                ('finished, waiting to merge', '')
+        elif kind == 'tried':
+            why[tid] = ('tried this run', '')
+        elif kind == 'busy':
+            why[tid] = ('running', f'claimed by {claimed[tid]}' if tid in claimed else
+                        'taken by hand (`take`)' if tid in taken() else '')
+        elif kind == 'parked':
+            why[tid] = (f'parked {len(h.parked[tid])} times, needs a person', ', '.join(sorted(h.parked[tid])))
+        elif kind == 'clash':
+            why[tid] = clash_why(t, b, h.shared)
+        else:
+            why[tid] = ('free', '')
+    return why
+
+
+def choose(h: Held, tried: set, branch: str, claim: bool = False):
+    """The first open task nothing holds back (`holds`), claimed first when `claim` (see `claim_task`), or None.
+    Parked tasks are skipped, not blocked: that is `pick`'s part."""
+    for t in h.todo:
+        if holds(t, tried, h):
+            continue
+        tid = t[0]
+        if got := claim_task(t, h, branch) if claim else t:
             PASSED.discard(tid)
             return got
         if tid not in PASSED:
@@ -235,6 +270,30 @@ def pick(running: dict, tried: set, branch: str, claim: bool = False, why: dict 
             log(f'{tid}: claimed by another runner, closed since the pick read the plan, the claim did not push, '
                 'or a clashing claim came first; passed over')
     return None
+
+
+def claim_task(t: tuple, h: Held, branch: str):
+    """`t` once claimed and the claim pushed, or None when it could not be had (claimed elsewhere, closed
+    meanwhile, or a clashing claim came first); `t` as is with no remote to claim through."""
+    if not plansync.enabled(C):
+        return t
+    if not plansync.claim(C, t[0], t[2]):
+        return None
+    FETCHED[0] = 0.0  # in-repo: the merge that closed it may have landed since the last fetch
+    if t[0] not in open_tasks(branch):  # the claim pulled: the pick may have read a plan up to 20 s old
+        plansync.release(C, t[0])  # closed meanwhile (ticked or blocked by someone else)
+        return None
+    # Two runners can claim clashing tasks from plans read seconds apart; both see both claims now, and
+    # the later one gives way (claim time, then owner: both sides reach the same verdict).
+    now = plansync.claims(C)
+    mine = now.get(t[0])
+    for b in claimed_elsewhere(now, h.todo):
+        cl = now[b[0]]
+        if mine and (cl.since, cl.owner) < (mine.since, mine.owner) and clash(t, b, h.shared):
+            plansync.release(C, t[0])
+            log(f'{t[0]}: {cl.who} claimed {b[0]} first and it clashes; given way')
+            return None
+    return t
 
 
 PASSED: set[str] = set()  # tasks `pick` could not claim, said once each
