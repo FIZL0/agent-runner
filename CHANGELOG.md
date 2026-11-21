@@ -10,7 +10,8 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
     `AGENT_RUNNER_BACKEND=claude|pi`. An old `backend = "pi"` is read as `agent = "pi"` (beside a wrapper not
     named pi it still runs on Pi); write `agent = "pi"`, or set `AGENT_RUNNER_BACKEND=pi` for a wrapper.
   - `[run] batch` is folded into `batch_max`: `batch_max = 1` is no batching. An old `batch = false` is read
-    as `batch_max = 1`.
+    as `batch_max = 1`; past `max_unmerged`, that holds one slot free per extra waiting task (the half-batch
+    step is 1).
   - Every slot gets `AGENT_SLOT=<n>`, and `[run] slot_env` (now `[]` by default) only adds to it. Before,
     setting `slot_env` dropped `AGENT_SLOT` unless it was repeated.
   - `[run] control_close` is folded into `control_idle`: `control_idle = false` closes no idle control session.

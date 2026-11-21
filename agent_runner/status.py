@@ -495,7 +495,7 @@ def waiting_text(waiting, width: int = 60, now: dt.datetime | None = None, wips=
 
 
 def needs_heading(heading: str) -> str:
-    """F33: Needs you's heading line with its project: 'iFizBox needs you:'; another `[needs] heading` keeps its
+    """F33: Needs you's heading line with its project: 'iFizBox needs you:'; another heading keeps its
     words, the project after it ('Your turn (iFizBox):'); as is before `init` names one."""
     if not (p := project()):
         return f'{heading}:'

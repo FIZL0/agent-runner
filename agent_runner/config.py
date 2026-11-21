@@ -486,8 +486,8 @@ class Config:
         def read(f: Path, mine: dict) -> dict:
             nonlocal old_backend
             self.warnings.extend(migrate(mine, f.name))
-            if isinstance(mine.get('run'), dict) and mine['run'].get('backend') in ('claude', 'pi'):
-                old_backend = mine['run']['backend']
+            if isinstance(mine.get('run'), dict) and mine['run'].get('backend') == 'pi':
+                old_backend = 'pi'
             move_keys(mine)
             return mine
         self.file = config_file(root)

@@ -826,7 +826,7 @@ def test_needs_config():
         (r / 'runner.toml').write_text('[needs]\nheading = "For you"\nages = false\norder = "plan"\n', encoding='utf-8')
         c = Config(r)
         eq(c.run['needs_order'], 'plan', 'an old [needs] order still maps to [run] needs_order')
-        eq(len(c.warnings), 3, 'each old key warns', c.warnings)
+        eq(len(c.warnings), 3, f'each old key warns: {c.warnings}')
         check(any('[needs] order is gone, folded into [run] needs_order' in w for w in c.warnings), 'order: where', c.warnings)
         check(any('[needs] heading is ignored' in w for w in c.warnings), 'heading: ignored, said why', c.warnings)
         (r / 'runner.toml').write_text('[needs]\nmap_replies = true\n', encoding='utf-8')

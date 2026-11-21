@@ -62,8 +62,8 @@ makes the `agent-runner` command run the clone's code.
 ## Pi and enterprise Copilot
 
 Claude Code is the default backend and needs nothing here. Use Pi when sessions should run on another
-provider (GitHub Copilot, enterprise Copilot, Codex, other Pi logins): `backend = "pi"` in `[run]`, or
-`AGENT_RUNNER_BACKEND=pi` for one run. Pi on an Anthropic model bills the account's extra usage, not the plan.
+provider (GitHub Copilot, enterprise Copilot, Codex, other Pi logins): `agent = "pi"` in `[run]`, or
+`AGENT_RUNNER_BACKEND=pi` for one run (and for a wrapper not named pi). Pi on an Anthropic model bills the account's extra usage, not the plan.
 Pi 1.4.0 or newer is supported. Install it with Node.js 22.19+:
 
 ```powershell
@@ -86,12 +86,11 @@ Configure the repository:
 
 ```toml
 [run]
-agent = "pi"
-backend = "pi"            # optional for an executable named pi; required for a differently named wrapper
+agent = "pi"              # an executable named pi runs on Pi; a wrapper named otherwise needs AGENT_RUNNER_BACKEND=pi
 model = "github-copilot/claude-sonnet-5.5"
 fix_model = "github-copilot/claude-sonnet-5.5"
 slots = 1
-slot_env = ["AGENT_SLOT={n}", "NODE_USE_SYSTEM_CA=1"]
+slot_env = ["NODE_USE_SYSTEM_CA=1"]   # every slot gets AGENT_SLOT=<n> as well
 ```
 
 Choose an ID your account lists. Provider-qualified IDs prevent ambient AWS or other provider
@@ -265,12 +264,12 @@ The names in each module's `__all__` are the stable API (see [Versions](#version
 | `[plan] outline` | a command (`{file}`) printing one file's outline, shown under each file the task line names |
 | `[run] untested` | globs of files the gate can't see (`!glob` takes one back); a merge differing only in them isn't retested |
 | `[run] failures`, `retest` | a regex naming failed tests in the gate output, and the gate for just `{names}`: rerun alone, then on the base |
-| `[run] flaky`, `flaky_kind` | a regex naming tests a *passing* gate passed only on its own rerun; each (and each `retest` pass) gets a critical `flaky_kind` follow-up to make it robust |
+| `[run] flaky` | a regex naming tests a *passing* gate passed only on its own rerun; each (and each `retest` pass) gets a critical T follow-up to make it robust |
 | `[plan] kinds` | id prefix -> kind of work; listed in the prompt, and `plan add` refuses any other prefix |
 | `[plan] glossary` | the project's glossary file (`GLOSSARY.md`): the first control session seeds it, sessions add terms with `agent-runner glossary add`, every brief names it; `false` = off (no file written, briefs skip it) |
 | `[plan] need_files` | `plan add` refuses a line with no `files:` and no `test:` field (without it, a warning), so the run can keep it apart from the running tasks |
 | `[run] before_start` | a check that must pass before any session starts |
-| `[run] timeout` | seconds the gate, a retest, a `[run.join]` command, or `before_start` may run before it is stopped and counts as failed (3600) |
+| `[run] command_timeout` | seconds the gate, a retest, a `[run.join]` command, or `before_start` may run before it is stopped and counts as failed (3600) |
 | `[run] not_attempt` | a regex on the last commit subject (`{id}`): that session was a phase, not the run's one attempt |
 
 The brief already holds the task line, `plan/tasks/<ID>.md`, the newest journal entry, and the git log of the
@@ -340,7 +339,7 @@ suspect = 'BLOCKED:.*(pcsx2|pine|capture|record|screenshot|save state|unattended
 | the clean-room phase pasted into the prompt (and its `.cleanroom` lock) | `[plan] brief_extra` |
 | `tested_by_cargo` | `untested` |
 | net:: flakes rerun once; "already failing on main → merge anyway" | `failures` + `retest` |
-| WAITING/LANDED batch merges | `batch = true` |
+| WAITING/LANDED batch merges | `batch_max` (on by default; 1 = none) |
 | spec commits aren't an attempt | `not_attempt` |
 | "(split into …)" parents wait, then tick themselves | built in |
 | adopting running sessions after a restart; a slot held while an untracked pane runs; one runner at a time | built in |

@@ -189,7 +189,7 @@ laptop, a lower usage cap). Every key is in the [reference](docs/REFERENCE.md#ru
 
 ### Other providers
 
-For models Claude Code doesn't serve (GitHub Copilot, Codex, other provider logins), set `backend = "pi"`
+For models Claude Code doesn't serve (GitHub Copilot, Codex, other provider logins), set `agent = "pi"`
 to run sessions on [Pi](https://www.npmjs.com/package/@earendil-works/pi-coding-agent), or try it once with
 `AGENT_RUNNER_BACKEND=pi agent-runner run once`. Pi sessions still run the repo's Claude Code PreToolUse
 hooks. See [Pi and enterprise Copilot](docs/SETUP.md#pi-and-enterprise-copilot).
