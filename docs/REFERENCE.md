@@ -290,8 +290,16 @@ waiting for your OK on <url>`. That block names no task, so no run starts it and
   subtask of `P13`, and P13 and P13a are *family*, so they never run at the same time.
 - The prefix says the kind of work. `[plan] kinds` names each letter (`B = "bug"`, `N = "netplay"`, …);
   the prompt lists them so an agent picks the right one, `plan kinds` prints them, and `plan add` refuses
-  a letter the table lacks. With no table, the generic `B F T D R C K` (bug, feature, tests and tooling,
-  docs, research, cleanup, concept) are suggested but not enforced. `K` is the concept flow (above).
+  a letter the table lacks. With no table, the generic `B F T D R C K V` (bug, feature, tests and tooling,
+  docs, research, cleanup, concept, release) are suggested but not enforced. `K` is the concept flow (above).
+- `V` is a **release** (F38), whatever `[plan] kinds` says of the letter. `plan add V` files it at the end of
+  Next with `after: all`, so it waits for everything ahead of it (no `--after` needed), and with no text it
+  gets the default brief: bump the version per the project's versioning rules (docs/SETUP.md#versions here),
+  move CHANGELOG Unreleased under it, commit to main, check the release workflow and `gh release view`. It
+  **runs alone**: the run starts it only when no other task is running or waiting to merge, and starts
+  nothing beside it, so it releases exactly what landed. `plan add V --now` (or `--pri critical`) is an
+  interim release: filed at the top, critical, with no `after: all`, still run alone. A release is never
+  refused as a duplicate of another release, and needs no `--files`.
 - `plan add` also refuses (exit 3, nothing written) text that looks like an open task's work, naming it:
   `plan note` that task instead, or `--force` for different work. A task's own split (`plan add P13 …`)
   is never refused for looking like P13. `plan drop ID WHY` closes a task nobody will do (a duplicate,

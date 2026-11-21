@@ -358,9 +358,11 @@ What the person asks, and what you run (`{cmd}` is the runner):
   not `tests/**`): tasks on the same files wait. "after T181", "once X lands": add `--after T181` (ids,
   comma-separated); for a task already queued, `{cmd} plan block ID --after T181 "waits for T181"`. The run
   starts it once those merge, so the only watch you start is to tell the person ("notify me when"). "after
-  everything", "last", a release: `--after all` (any kind): it waits for every open task above it in TODO.md,
+  everything", "last": `--after all` (any kind): it waits for every open task above it in TODO.md,
   worked out live, tasks queued above it later included (Parked and shelved ones never hold it), so there is
-  no wait list to keep up; `plan block ID --after all "…"` for one already queued.
+  no wait list to keep up; `plan block ID --after all "…"` for one already queued. A release: `{cmd} plan add
+  V` (no text: the default release brief; `after: all` by itself, and it runs alone, nothing beside it); "release
+  now", an interim one: `{cmd} plan add V --now`.
   After you queue, end with one hint line naming the new id: 'Say "do F48 here" to start it in this session
   now instead of waiting for a slot.' (with several, name them and ask which).
 - A correction of a queued task ("not on arm", "use X, not Y", the wrong files): `{cmd} plan edit ID "<the

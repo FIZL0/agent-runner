@@ -19,6 +19,7 @@ re-reads it on every turn pays again. So the backlog is a command instead:
                                  the id (warns without --files or --test). Refused (exit 3, nothing written) when an open task looks like the
                                  same work: `plan note` it there, or --force when it is different work.
                                  --last: at the end of Next, with `after: all above` (below)
+                                 add V [TEXT] [--now]: a release (below)
     ./run plan drop <ID> WHY     not done but not wanted (a duplicate, overtaken): archived with "dropped: WHY";
                                  a slot running it is stopped, its branch deleted unmerged (B19)
     ./run plan restore <ID> [WHERE]   undo a mistaken tick or drop: back from DONE.md as open [ ], same id, text
@@ -93,6 +94,11 @@ all`, or `BLOCKED: (after all) why`, which the run resolves on every pick (and `
 open or blocked task above it in TODO.md, in any section, tasks queued above it later included. Tasks a run never
 starts do not hold it, or it would never run: Parked (`--pri later`) and Stretch sections, and shelved tasks.
 `status`, `plan ID`, `reopen` and `waiting` say 'T5 waits for everything before it (12 open)', not an id list.
+
+**A release is kind V** (F38): `add V` files it at the end of Next with `after: all`, no `--after` or `--files`
+needed, and with no text it gets the default release brief (RELEASE_BRIEF). It runs alone: the run starts it
+only when nothing else runs or waits to merge, and nothing beside it. `add V --now` (or `--pri critical`) is an
+interim release: critical, at the top, no `after: all`. A release is never refused as a duplicate of another.
 
 **A block that only waits on another task says which**, as `BLOCKED: (after X, Y) why`, and `reopen` (which a
 `./run run` calls after every merge) puts it back to `[ ]` the moment X and Y are done. Without that a task
@@ -722,7 +728,23 @@ KINDS = {'B': 'bug: something that worked, or should, is broken', 'F': 'feature:
          'T': 'tests and tooling: the gate, scripts, CI, the build', 'D': 'docs',
          'R': 'research: find out, measure or check; no product change', 'C': 'cleanup: refactor, remove, tidy',
          'K': 'concept: nothing is built yet; research the repo and publish an Artifact page of 2-3 options and a '
-              'recommendation; the build waits for a person\'s OK'}
+              'recommendation; the build waits for a person\'s OK',
+         'V': 'release: waits for everything ahead of it (--now: not) and runs alone, so it releases exactly '
+              'what landed; with no text it gets the default release brief'}
+# The release kind (F38): `add V` files `after: all` at the end of the leading section unless `--now` (or `--pri
+# critical`) says release now, gets RELEASE_BRIEF when given no text, and is never refused as a duplicate of
+# another release; a run starts no other task beside one (`sched.clash`)
+RELEASE = 'V'
+RELEASE_BRIEF = ('Release: bump the version where the project keeps it, per its versioning rules (agent-runner\'s: '
+                 'docs/SETUP.md#versions), move CHANGELOG.md\'s Unreleased entries under the new version heading, '
+                 'commit to main so the release workflow tags and publishes it. Check: the release workflow '
+                 'passed (gh run list) and gh release view shows the new tag')
+
+
+def release(tid: str) -> bool:
+    """Is `tid` a release task (kind V, F38): it waits for what is ahead of it and runs alone."""
+    m = re.match(r'[A-Za-z]+', tid or '')
+    return bool(m) and m.group() == RELEASE
 
 
 def kinds() -> tuple[dict[str, str], bool]:
@@ -2401,28 +2423,41 @@ def _p_kinds(a, x):
 
 def _p_add(a, x):
     kind = a.kind
+    rel = kind == RELEASE  # F38: a release (module doc)
+    now = rel and '--now' in a.rest
     try:
-        text, where, keyed, pri, force = add_args(a.rest)
+        text, where, keyed, pri, force = add_args([r for r in a.rest if not (rel and r == '--now')])
     except SystemExit as e:
         print(e, file=sys.stderr)
         return 2
+    if now and pri and pri != 'critical':
+        print(f'{PROG}: not added: --now is --pri critical, not {pri}', file=sys.stderr)
+        return 2
+    pri = 'critical' if now else pri
     if not (given := bool(pri)):
-        pri = add_default()
+        pri = None if rel else add_default()
     if why := check_kind(kind):
         print(why, file=sys.stderr)
         return 2
+    if rel:
+        text = text or RELEASE_BRIEF
+        if pri != 'critical' and 'after' not in fields(text + keyed):
+            keyed += f' | after: {ALL}'  # it waits for everything ahead of it
+        if not where and not given:
+            where = 'bottom'  # the end of the leading section: behind the work queued there
     text += keyed
     w = where.split(maxsplit=1) or [None]
     if not given and not where and (fam := family_end(kind)):
         w, pri = ['after', fam[0]], fam[1]  # a split stays with its parent (module doc)
     fam = kind if re.search(r'\d', kind) else None  # a split is like its parent, by design
-    same = [s for s in similar(text) if not (fam and s.split(':')[0].startswith(fam))]
+    same = [s for s in similar(text) if not (fam and s.split(':')[0].startswith(fam))
+            and not (rel and release(s.split(':')[0]))]  # each release is its own
     if same and not force:
         print(f'{PROG}: not added: already open, and may be the same work:\n  ' + '\n  '.join(same)
               + f'\n`{PROG} note <ID> TEXT` it there; if it is different work, add it again with --force',
               file=sys.stderr)
         return 3
-    if not {'files', 'test'} & set(fields(text)):
+    if not {'files', 'test'} & set(fields(text)) and not rel:  # a release runs alone, whatever its files
         why = (f'the line has no `files:`: pass `--files path/a,dir/**` (the files the task will change) '
                f'or `--test name` (the test it adds); the run keeps running tasks apart by them, and a line '
                f'naming none runs beside anything')
@@ -2579,8 +2614,8 @@ def _parse_command(argv: list[str]):
             setattr(a, k, '--')
         elif isinstance(v, list):
             setattr(a, k, ['--' if w == _DASHES else w for w in v])
-    if a.least is not None and len(a.rest) < a.least:
-        return None
+    if a.least is not None and len(a.rest) < a.least and not (a.cmd == 'add' and a.kind == RELEASE):
+        return None  # `add V` alone takes the default release brief (F38)
     return a
 
 
