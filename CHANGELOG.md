@@ -4,6 +4,16 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- The control brief and the agent-runner skill (GUIDE) are rewritten after mattpocock/skills
+  writing-for-agents (MIT): the control brief is 3,886 words down to 2,742, GUIDE 1,333 down to 1,001. What
+  only one branch needs moved behind a pointer: `agent-runner guide take` (doing a task here, now), `guide
+  concepts` (show options inline, approve or revise a queued concept) and `guide needs` (answering what needs
+  the person: confirm/change/shelve, wizards, pick sheets) print it, and GUIDE and the control brief say when
+  to read each. Prohibitions now come with the positive target ("keep the main checkout clean", "start it
+  only when asked"), restatements of `--help` (plan subcommands, stop/pause flags) are gone, and the summary
+  steps are numbered once. The slot prompt and the merge fixer and repair prompts state the same rules as
+  what to do. Every behaviour is kept; the tests now check the moved rules in their topic pages (C2).
+
 ## 0.55.0 (2026-11-20)
 
 - `agent_runner/runner.py` (9,100 lines) is split by responsibility into thirteen modules, each under 1,500

@@ -110,7 +110,9 @@ def test_db():
     has(page, r'navigator\.clipboard\.writeText', 'and copies the line where there is no db')
     has(page, r'Say "sent" in the chat with the run', 'and tells the person how the run hears of it')
     from agent_runner import guide as G
-    has(G.CONTROL, r'ArtifactData tool \(`get`, the\s+sheet\'s url, collection `picks`', 'the control brief reads the db')
+    has(G.topic('needs'), r'ArtifactData tool \(`get`, the\s+sheet\'s url, collection `picks`',
+        'the needs guide (C2: the control brief points at it) reads the db')
+    has(G.CONTROL, r'`\{cmd\} guide needs`', 'and the control brief points at it')
     has(G.FEED_ANSWER, r'ArtifactData tool \(`get`, the sheet\'s url, collection `picks`', 'and so does the feed rule')
     has(R.SHEET_PROMPT, re.escape('capabilities {{"db": {{}}}}'), 'the slot brief says to publish with the db')
 

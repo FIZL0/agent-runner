@@ -1232,7 +1232,7 @@ def test_control(repo: Path):
     brief = R.control_brief()
     for want in ('control session', f'{R.C.command} status', f'{R.C.command} plan add', f'{R.C.command} take',
                  'Never edit code', f'{R.C.command} since', f'{R.C.command} since --follow', 'Open the session',
-                 '/run · /since · /follow · /control · /pause · /stop · /slots', 'Never start it unasked',
+                 '/run · /since · /follow · /control · /pause · /stop · /slots', 'Start it only when asked',
                  f'{R.C.command} control --new', '"/new"', "Artifact tool's `open` action", '**Needs you**',
                  '**Running**', '**Landed**', '**Stuck**', "status's `lately`", 'More: /since · /run -n 20',
                  f'{R.C.command} status -n 20'):
@@ -1240,8 +1240,10 @@ def test_control(repo: Path):
     check(brief.index('**Needs you**') < brief.index('**Running**') < brief.index('**Landed**')
           < brief.index('**Stuck**'), 'the groups in order: Needs you, Running, Landed, Stuck')
     check('Waiting for your OK' not in brief, 'B27: the old heading is gone from the brief')
-    check('never show the person those labels' in brief and 'reply yes/no' in brief,
-          'B27: the brief words each item plainly, without the caps labels', brief)
+    from agent_runner.guide import topic
+    needs_page = topic('needs', R.C.command)
+    check('never a\n   CONCEPT/CONFIRM/DECIDE/BLOCKED label' in brief and 'never show the person those labels' in needs_page
+          and 'reply yes/no' in needs_page, 'B27: each item worded plainly, without the caps labels (C2: details in guide needs)', brief)
     check('plan answer' not in brief and f'{R.C.command} plan confirm|change|shelve ID' in brief
           and 'ask the person, naming the items' in brief,
           'C5: a reply naming no item is mapped to its id by the session, which asks when it cannot tell')
@@ -1258,21 +1260,25 @@ def test_control(repo: Path):
     for want in ('plan move ID top', 'plan drop ID', 'stop --suspend', 'stop --shutdown', 'resume ID',
                  'plan claims', 'plan unclaim ID', 'plan add ID', 'cost'):
         check(f'{R.C.command} {want}' in brief, f'the brief runs `{R.C.command} {want}`')
-    check('Never start a watcher or Monitor to\n  wait for a task' in brief,
-          'the brief forbids a watcher or Monitor that waits for a task')
-    check('"concept X", "sketch some options for X"' in brief and 'show it here, now' in brief
-          and 'queue no K task' in brief and "call its `open` action so it shows inline" in brief,
+    check('starts it once those merge, so the only watch you start is to tell the person' in ' '.join(brief.split()),
+          'the brief keeps a watcher or Monitor to the person\'s "notify me", never to wait for a task')
+    # C2: the concept rules are in `guide concepts`; the brief names its triggers and points there
+    concepts = topic('concepts', R.C.command)
+    check('"concept X", "sketch some options for X"' in brief and f'`{R.C.command} guide concepts`' in brief
+          and 'queue a K task only when they\n  say queue it' in brief, 'C2: the brief points concept asks at guide concepts')
+    check('show it in this session, now' in concepts and 'queue no K task' in concepts
+          and "call\nits `open` action so it shows inline" in concepts,
           '"concept X" builds the options page in the control session and opens it inline, no K task')
-    check(f'{R.C.command} plan add K "..."' in brief and 'only when they say queue it, later, or add a task' in brief,
+    check(f'{R.C.command} plan add K "..."' in concepts and 'only when they say queue it, later, or add a task' in concepts,
           'a K task is queued only when the person asks to queue it')
-    check('"sketch some options for X" queues one' not in brief, 'the brief no longer queues a K for "sketch options"')
-    check('"show me a concept first"' in brief and 'no `take`' in brief and 'plan drop ID "shown inline"' in brief,
+    check('"sketch some options for X" queues one' not in brief + concepts, 'the brief no longer queues a K for "sketch options"')
+    check('"show me a concept first"' in concepts and 'no `take`' in concepts and 'plan drop ID "shown inline"' in concepts,
           '"show me concept first" is shown inline too, never a K task or a take (B23)')
-    check('even when the project has its own\n  concept-task or concept-branch convention' in brief
-          and "don't search the plan, DONE or the guide for precedent" in brief,
+    check('even when the project has its own concept-task or concept-branch convention' in ' '.join(concepts.split())
+          and "don't search the plan, DONE or the guide for precedent" in concepts,
           'B76: a project\'s own concept-task convention does not turn "concept X" into a queued task')
-    check('"here and now"' in brief and 'with no question, even when a slot already took it' in brief
-          and 'the drop stops that slot\'s session' in brief,
+    check('"here and now"' in concepts and 'with no question, even when a slot already took it' in concepts
+          and 'the drop stops that slot\'s session' in concepts,
           'B76: "here and now" after a queued concept drops it (stopping its slot) and shows it, no question')
     check('tail -n 0 -F' not in brief, 'no run-log watch at the start: following is asked for')
     r = run(repo, 'control', '--brief')
@@ -5579,9 +5585,12 @@ def test_control_do_it_here(repo: Path):
                           needs='Needs you', answer='')
     check('Say "do F48 here" to start it in this session' in text and 'instead of waiting for a slot' in text,
           'the add-a-task bullet ends with the do-it-here hint', text)
-    check('"do it here"' in text and '`./run take F48` on the queued task' in text
-          and '`./run take F48 --merge`' in text and 'ask which' in text,
-          'the do-it-now bullet maps "do F48 here" to take ID, then take ID --merge, and asks which with several', text)
+    from agent_runner.guide import topic
+    take = ' '.join(topic('take', './run').split())
+    check('"do F48 here"' in text and '`./run guide take`' in text, 'C2: the brief points "do F48 here" at guide take', text)
+    check('"do it here"' in take and '`./run take F48` on the queued task' in take
+          and '`./run take F48 --merge`' in take and 'ask which' in take,
+          'the take guide maps "do F48 here" to take ID, then take ID --merge, and asks which with several', take)
 
 
 def test_control_retitle_on_topic(repo: Path):
@@ -5699,11 +5708,13 @@ def test_take_running_slot(repo: Path):
     finally:
         git(d, 'checkout', '-q', '--detach')
         git(repo, 'branch', '-D', f'task/{tid}')
-    text = CONTROL.format(repo='r', cmd='./run', log='l', watch=CONTROL_WATCH.format(repo='r', cmd='./run'),
-                          needs='Needs you', answer='')
+    from agent_runner.guide import topic
+    text = topic('take', './run')
     check('When take says the task is running in a slot, start nothing' in text and '`./run attach sN`' in text
           and '`./run plan tell ID "..."`' in text and 'claude.ai/code link' in text,
-          'the do-here bullet: a running slot means give the link or attach line, start nothing', text)
+          'the take guide: a running slot means give the link or attach line, start nothing', text)
+    check('`./run guide take`' in CONTROL.format(repo='r', cmd='./run', log='l', watch=CONTROL_WATCH.format(
+        repo='r', cmd='./run'), needs='Needs you', answer=''), 'C2: and the control brief points there')
 
 
 def test_runner_route_b54(repo: Path):

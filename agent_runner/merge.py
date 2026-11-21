@@ -60,9 +60,9 @@ hold, keep the one that matches {branch}'s current direction and say so.
 2. Change nothing the merge did not touch. You are not reviewing the code and you are not doing task \
 {tid}'s work: a conflict is all that is in front of you. Never hand-edit a task checkbox; if a side ticked \
 or blocked a task by hand, keep the plan tool's form of it.
-{build_step}3. Then `git commit --no-edit` to land the merge, and stop. Do not push. Do not run the test suite: \
-the runner runs it as soon as you are done. Do not merge, rebase or delete anything else, do not \
-`git stash`, and do not touch the other worktrees under {slots_dir}.
+{build_step}3. Then `git commit --no-edit` to land the merge, and stop: the runner runs the test suite as soon \
+as you are done. That commit is your only git change: no push, no other merge, rebase or delete, no \
+`git stash`, and the other worktrees under {slots_dir} left as they are.
 4. If it cannot be resolved honestly — the two sides contradict each other and picking needs a human — run \
 `git merge --abort` and say why in one line. That is a real answer, not a failure.
 
@@ -99,9 +99,10 @@ the clash does not need. You are not reviewing the code and you are not redoing 
 one [[side wrote for behaviour the other side|branch wrote for behaviour another]] changed on purpose is updated \
 to the merged behaviour, and you say so.
 3. {check}Then commit the fix on top[[ of the merge|]]: `git add` what you changed and `git commit -m "{tid}: \
-repair the [[merge|batch merge of {ids}]] into {branch}: <what clashed>"`. Do not amend or reset the merge[[|s]], \
-do not push, do not merge, rebase or delete anything else, do not `git stash`, and do not touch the other \
-worktrees under {slots_dir}. The runner runs the whole gate again when you are done.
+repair the [[merge|batch merge of {ids}]] into {branch}: <what clashed>"`. That commit is your only git \
+change: the merge[[|s]] stay[[s|]] as committed (no amend or reset), no push, no other merge, rebase or delete, no \
+`git stash`, and the other worktrees under {slots_dir} left as they are. The runner runs the whole gate again \
+when you are done.
 4. If you cannot fix it honestly (the failure is {branch}'s own, [[the two sides contradict|one branch is broken by \
 itself, two branches contradict]] each other and picking needs a human), commit nothing and say why in one line. [[|The runner then merges each branch on its own. ]]That is a real answer.
 5. If it is a flaky test (it passes when you rerun it, and nothing [[the merge|these merges]] changed touches what it checks), commit nothing and make your last line `FLAKE: <test name>[, <test name>…]`. The runner runs the gate once more and files the flake to be fixed.
