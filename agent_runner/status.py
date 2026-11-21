@@ -293,13 +293,18 @@ DIGEST_RUN = 3  # B88: the run lines (releases, holds) a digest shows, newest
 DIGEST_STUCK = (EV_PART, EV_PARKED, EV_LEFT, EV_STALLED)  # a task's last state the digest lists under Stuck
 
 
+# B89: the cut digest's last line. The person may be in the Claude app or on a phone, where no command runs, so
+# it reads as an ask; the control session answers it with `since --all` handed over as a page (guide.py).
+DIGEST_MORE = 'more in the full list: ask for it'
+
+
 def since_digest(log_lines: list[str], start: dt.datetime, titles: dict[str, str], now: dt.datetime,
                  since_mark: bool = False, cap: int = DIGEST_CAP) -> tuple[str, str | None]:
     """B88 `since`'s default: the events after `start` folded into a digest short enough to say back on a
     phone: a headline count, then one line per task with its last state under the summary's headings (Started
     and Landed newest first, Stuck), then the run's own lines (releases, a hold, its last state); run idle / stopped
     repeats and restarts fold away. At most `cap` titled lines: past that, Landed names the rest by id only (each
-    landed task named once) and other groups count them, then 'full log: since --all'."""
+    landed task named once) and other groups count them, then DIGEST_MORE (B89: an ask, never a command)."""
     tasks: dict[str, tuple[str, str, str]] = {}  # id -> (stamp, kind, phrase without its state word)
     run_lines: list[str] = []
     run_state, last = '', None
@@ -361,7 +366,7 @@ def since_digest(log_lines: list[str], start: dt.datetime, titles: dict[str, str
         out.append('Run:')
         out += [f'  {l}' for l in run_lines]
     if cut:
-        out.append(f'full log: {shown_cmd()} since --all')
+        out.append(DIGEST_MORE)
     return '\n'.join(out), last
 
 
@@ -569,7 +574,7 @@ def waiting_text(waiting, width: int = 60, now: dt.datetime | None = None, wips=
     if not out:
         return []  # only shelved ones: they asked to leave this list
     if shelved:
-        out.append(f'  ({shelved} shelved: plan waiting --all)')
+        out.append(f'  ({shelved} shelved: ask to see them)')  # B89: an ask, not a command
     return [needs_heading(cf['heading'])] + out
 
 

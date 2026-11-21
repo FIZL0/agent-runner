@@ -149,7 +149,7 @@ _In code_: fold_doubles, join.renumber_doubles
 _Avoid_: dedupe, collapse, squash
 
 **Since digest**:
-What since prints by default: one line per task with its last state under Started, Landed and Stuck, capped, with the full log one --all away
+What since prints by default: one line per task with its last state under Started, Landed and Stuck, capped, ending with an ask for the full list (the raw log, which a control session hands over as a page)
 _Said_: since summary
 _On screen_: since yesterday 00:00: 2 started, 159 landed, 2 stuck
 _In code_: since_digest, since --all

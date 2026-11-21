@@ -4,8 +4,9 @@
     python3 tests/test_since.py        (no network, no repo; well under a second)
 
 One line per task with its last state under Started / Landed / Stuck, run idle and stopped repeats folded into
-one last run state, a cap past which Landed names the rest by id (each landed task named once) and a pointer to
-`since --all`, which keeps the raw log.
+one last run state, a cap past which Landed names the rest by id (each landed task named once) and a last line
+that asks for the full list (B89: never a command, the person may be on a phone); the control brief and the
+/since skill hand `since --all` over as a page.
 """
 from __future__ import annotations
 
@@ -64,13 +65,26 @@ def test_cap() -> None:
     named = [i for i in range(200) if len([l for l in lines if f'[T{i}]' in l or f' T{i},' in l + ',']) == 1]
     eq(len(named), 200, 'every landed task named exactly once')
     check(any('(tests fail) [B9]' in l for l in lines), 'the cap spares Stuck', text)
-    eq(lines[-1].endswith('since --all'), True, 'cut: points at since --all')
+    eq(lines[-1], S.DIGEST_MORE, 'cut: ends asking for the full list')
+    check(not any(w in lines[-1] for w in ('since', '--', 'run ', '`')), 'B89: the last line names no command', lines[-1])
     eq(text.count('run idle'), 1, 'run idle once, as the last run state')
     eq((text.count(' released: '), '  …and 5 earlier' in lines), (S.DIGEST_RUN, True), 'run lines capped too')
 
 
+def test_full_list_as_page() -> None:
+    """B89: the brief and /since run `since --all` themselves and hand it over as a page, never as a command."""
+    from agent_runner import guide as G
+    brief = G.CONTROL.format(repo='r', cmd='RUN', log='l', watch='w', needs='n', answer='a')
+    skill = G.control_skills('RUN')['since']
+    for name, text in (('brief', brief), ('/since', skill)):
+        check(all(w in text for w in ('since --all', 'Artifact', 'SendUserFile', 'link')),
+              f'{name}: since --all handed over as a page', text[-600:])
+    check(all(w in brief for w in ('status -n', 'plan waiting --all', S.DIGEST_MORE.split(': ')[-1])),
+          'brief: the same for other long output, and the digest\'s ask')
+
+
 def main() -> int:
-    return report([test_fold, test_cap])
+    return report([test_fold, test_cap, test_full_list_as_page])
 
 
 if __name__ == '__main__':
