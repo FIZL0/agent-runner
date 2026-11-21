@@ -26,14 +26,13 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import re
-import subprocess
 import sys
 from functools import partial
 from pathlib import Path
 
 from agent_runner import plan, plansync
 from agent_runner.config import cfg, finished_mark
-from agent_runner.gitops import git, missing_remote, push, shared_branch
+from agent_runner.gitops import git, missing_remote, push, shared_branch, shell
 
 
 PROG = 'run done'  # the name in messages; a wrapper sets its own ('kit done')
@@ -47,13 +46,11 @@ def gate(cwd: Path, key: str = 'test', full: bool = False, env: dict | None = No
     cmd = cfg(cwd).run[key]
     if not cmd:
         return 0, ''
-    try:
-        r = subprocess.run(cmd, shell=True, cwd=str(cwd), capture_output=True, text=True, errors='replace', env=env,
-                           timeout=cfg(cwd).run['timeout'])
-    except subprocess.TimeoutExpired:
+    rc, out = shell(cmd, cwd, env, cfg(cwd).run['timeout'])
+    if rc is None:
         return 124, f'`{cmd}` ran past [run] timeout ({cfg(cwd).run["timeout"]}s): counted as failing'
-    out = (r.stdout + r.stderr).strip()
-    return r.returncode, out if full else '\n'.join(out.splitlines()[-15:])
+    out = out.strip()
+    return rc, out if full else '\n'.join(out.splitlines()[-15:])
 
 
 def main(argv: list[str] | None = None) -> int:

@@ -1101,8 +1101,24 @@ def test_hook():
             state.C = saved
 
 
+def test_done_gate():
+    print('done.gate: runs [run] test through gitops.shell, a run past [run] timeout counted as failing (124)')
+    from agent_runner import done
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        git(root, 'init', '-q')
+        py = sys.executable.replace('\\', '/')
+        (root / 'runner.toml').write_text(
+            f'[run]\ntimeout = 0.5\ntest = \'"{py}" -c "print(1); print(2); raise SystemExit(4)"\'\n'
+            f'slow = \'"{py}" -c "import time; time.sleep(5)"\'\n', encoding='utf-8')
+        eq(done.gate(root), (4, '1\n2'), 'its exit code and output, stripped')
+        rc, out = done.gate(root, 'slow')
+        eq(rc, 124, 'one that runs past fails')
+        has(out, re.escape('ran past [run] timeout (0.5s): counted as failing'), 'and says so')
+
+
 if __name__ == '__main__':
-    sys.exit(report([test_iter_tasks_and_titles, test_hook, test_edit, test_unlabelled_block, test_restore, test_plan_last,test_goal,test_plan_roundtrip, test_plan_reopen, test_plan_index_and_sections, test_brief, test_brief_outline,
+    sys.exit(report([test_iter_tasks_and_titles, test_hook, test_done_gate,test_edit, test_unlabelled_block, test_restore, test_plan_last,test_goal,test_plan_roundtrip, test_plan_reopen, test_plan_index_and_sections, test_brief, test_brief_outline,
                      test_split_parents, test_add_bottom, test_add_pri, test_add_subtask, test_kinds, test_need_files, test_add_stray_args, test_hand_edits_commit, test_hand_edits_push, test_similar, test_add_refuses_a_duplicate, test_carry_notes,
                      test_merge3, test_concurrent_add, test_merge_driver, test_concepts, test_needs_you,
                      test_needs_config]))
