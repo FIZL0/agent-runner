@@ -816,6 +816,13 @@ def capped(force: bool) -> str | None:
         if w is not None and w >= C.run[key]:
             return f'{what} usage {w}% >= {C.run[key]}%'
     return None
+
+
+def cap_stop_detail() -> str:
+    """B102: the usage-cap alarm's detail, the remote-friendly way to go on first (the runner feed, a control
+    session, `[run] command` force), the runner pane's f + Enter last."""
+    return ('the running tasks finish and merge; new ones wait for the reset. To go on now: say force in the '
+            f'runner feed or a control session, or run `{C.command} force`, or type f + Enter in the runner pane.')
 SHUTDOWN_GRACE = 120  # s the run must stay idle first; new work or a stop in that time cancels it
 SLEPT_AT = [-1.0]  # the idle stretch (its idle_at) the machine was suspended in: once per stretch, not on every wake
 
@@ -1322,8 +1329,7 @@ class Run:
             return
         if (w := capped(self.a.force or FORCED[0])) is not None:
             if not self.cap_said:
-                alarm(f'{w}: no new tasks', 'the running tasks finish and merge; new ones wait for the '
-                      'reset. To go on now: type f + Enter in this pane, or restart with --force.')
+                alarm(f'{w}: no new tasks', cap_stop_detail())
                 self.cap_said = True
             return
         self.cap_said = False

@@ -7364,6 +7364,18 @@ def test_config_trim_c14(tmp: Path):
         R.C = was
 
 
+def test_cap_stop_hint_b102():
+    """B102: the usage-cap alarm names the remote-friendly way first: force in the feed, a control session, or
+    `<[run] command> force`; the pane's f + Enter after it."""
+    print('B102: the usage-cap alarm names `<[run] command> force` before the pane')
+    from agent_runner import loop
+    d = loop.cap_stop_detail()
+    cmd = f'`{R.C.command} force`'
+    check(cmd in d, f'the cap alarm names {cmd}', d)
+    check('control session' in d and 'runner feed' in d, 'it names the runner feed and a control session', d)
+    check(cmd in d and d.index(cmd) < d.index('f + Enter'), 'the remote way comes before the pane', d)
+
+
 def test_reference_keys_d3():
     print("D3: docs/REFERENCE.md's runner.toml block names every DEFAULTS key and no removed or renamed one, and "
           'says what each old name became')
@@ -7433,7 +7445,7 @@ def main() -> int:
                        lambda: test_hidden_slots(repo, tmp), lambda: test_hidden_run_lands(tmp), lambda: test_no_gate_b36(tmp),
                        lambda: test_claude_drift_b45(repo, tmp), lambda: test_merged_count_b78(repo),
                        lambda: test_hidden_control_f59(repo, tmp), lambda: test_context_warn_f25(repo),
-                       lambda: test_control_fresh_f27(repo), lambda: test_config_trim_c14(tmp), test_reference_keys_d3])
+                       lambda: test_control_fresh_f27(repo), lambda: test_config_trim_c14(tmp), test_reference_keys_d3, test_cap_stop_hint_b102])
 
 
 if __name__ == '__main__':
