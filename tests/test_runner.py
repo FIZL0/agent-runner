@@ -6319,18 +6319,20 @@ def test_hidden_run_lands(tmp: Path):
     agent.chmod(0o755)
     which = R.shutil.which
     no_tmux = lambda c, *a, **k: None if c == 'tmux' else which(c, *a, **k)
-    env = {k: v for k, v in os.environ.items() if k not in ('TMUX', 'TMUX_PANE')}
-    env |= {'F40_RUN': str(RUN), 'F40_OUT': str(out)}
+    env = {k: v for k, v in os.environ.items()
+           if k not in ('TMUX', 'TMUX_PANE') and not (k.startswith('AGENT_RUNNER') and k != 'AGENT_RUNNER_NO_NOTIFY')}
+    # its own home: the suite's other repo is called proj too, and would share its worktrees and task branches
+    env |= {'F40_RUN': str(RUN), 'F40_OUT': str(out), 'AGENT_RUNNER_HOME': str(tmp / 'f40' / 'home')}
     saved_sleep, saved_mux = R.time.sleep, R.MUX
     here = os.getcwd()
     os.chdir(repo)
     watchdog = threading.Timer(300, lambda: R.ask_stop('test watchdog', force=True))  # never a hung suite
     try:
-        R.init(repo)
-        R.C.run['agent'] = str(agent)
         watchdog.start()
         with mock.patch.dict(os.environ, env, clear=True), mock.patch.object(R.shutil, 'which', no_tmux), \
                 mock.patch.object(R, 'nap', lambda s: saved_sleep(min(s, 0.5))):
+            R.init(repo)
+            R.C.run['agent'] = str(agent)
             eq(R.run(['once'], 'run'), 0, 'the run ends after its one task')
             eq(type(R.MUX).__name__, 'HiddenMux', 'no tmux: the slots ran hidden, not an error and not sequential')
     finally:

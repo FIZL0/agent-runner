@@ -871,7 +871,10 @@ class HiddenMux:
     has only the header lines there, and nothing can be typed into it.
     """
     name = 'hidden'
-    typed = not plat.WINDOWS
+
+    @property
+    def typed(self) -> bool:  # Windows' hidden console takes no typed text
+        return not plat.WINDOWS
 
     def open(self, n, cwd, prompt, sid, model, idle, env, logfile, resume=False):
         job, marker = C.notes(f'slot{n}.job'), C.notes(f'slot{n}.live')
