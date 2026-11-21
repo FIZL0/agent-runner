@@ -161,3 +161,10 @@ _Said_: guide topic
 _On screen_: agent-runner guide <topic>
 _In code_: guide.TOPICS, guide.CONTROL_TOPICS, control_topic()
 _Avoid_: help page, doc
+
+**Issue watch**:
+The run reading the repository's open GitHub issues and filing one task for each new one; a GitHub issue is the outside report, the task is the work on it
+_Said_: issue watch
+_On screen_: issues_watch
+_In code_: issues_watch, issues_trust, watch_issues, agent_runner/issues.py
+_Avoid_: ticket import

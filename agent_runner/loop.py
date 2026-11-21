@@ -621,6 +621,94 @@ def watch_ci(branch: str, force: bool = False) -> list[str]:
     return filed
 
 
+ISSUES_UNSEEN: list[str] = []  # why gh could not see the repository's issues, once it has been said
+ISSUES_AT = [0.0]  # when `watch_issues` last asked GitHub
+
+
+def watch_issues(branch: str, force: bool = False) -> list[str]:
+    """`[run] issues_watch`: file one task per new open GitHub issue, and answer the issues whose task closed
+    (see `issues`). On the `ci_watch` cadence and only when MERGE is free, committed in the main checkout as
+    `watch_ci` commits its tasks. The ids filed."""
+    from agent_runner import issues as I
+    labels = I.labels_of(C.run.get('issues_watch', False))
+    if labels is None or (not force and time.time() - ISSUES_AT[0] < ci.CI_POLL):
+        return []
+    if not MERGE.acquire(blocking=False):
+        return []
+    filed: list[str] = []
+    hold = ExitStack()
+    try:
+        ISSUES_AT[0] = time.time()
+        if C.plan_external:
+            hold.enter_context(plansync.locked(C))
+            plansync.pull(C, force=True)
+        rel = plan_rel('TODO.md')
+        if git('branch', '--show-current').stdout.strip() != branch or \
+                git('status', '--porcelain', '--', plan_rel('')).stdout.strip():
+            return []
+        gh = ci.gh_in(ROOT)
+        if why := ci.reachable(gh):
+            if not ISSUES_UNSEEN:
+                ISSUES_UNSEEN.append(why)
+                log(f'! issues_watch: gh cannot see this repository ({why}); its issues are not read until it '
+                    f'can (`gh auth status`; `issues_watch = false` in [run] to stop looking)')
+            return []
+        ISSUES_UNSEEN.clear()
+        seen_f, filed_f = C.notes('issues.seen'), C.notes('issues.filed')
+        book = I.read_filed(filed_f)
+        # the issues whose task has closed: a comment naming the merge commit; closed too under trust
+        plan_lines = [*P.lines(ROOT / rel), *P.lines(ROOT / plan_rel('DONE.md'))]
+
+        def commit_of(tid: str) -> str:
+            # the merge's own commit (merge.py's message); a task's commits alone could be any id's prefix
+            return git('log', '-1', '--format=%h', '-F', f"--grep=Merge branch 'task/{tid}'", branch).stdout.strip()
+        for tid, n, trust, sha, line in I.to_answer(book, plan_lines, commit_of):
+            if I.answer(gh, n, tid, trust, sha, line):
+                book.pop(tid, None)
+                I.write_filed(filed_f, book)
+                log(f'{tid}: {"closed" if trust == "trust" else "commented on"} {I.marker(n)}'
+                    + (f' (landed in {sha})' if sha else ' (no code change)'))
+        got = I.open_issues(gh, labels)
+        if got is None:
+            return []
+        seen = I.read_seen(seen_f)
+        trust = I.trust_of(C.run.get('issues_trust', 'skeptical'))
+        me = I.owner(gh) if trust == 'skeptical' and any(i['number'] not in seen for i in got) else ''
+        for issue in got:
+            n = issue['number']
+            if n in seen:
+                continue
+            ls = P.lines(ROOT / rel)
+            open_text = '\n'.join(l for l in ls if (m := P.ITEM.match(l)) and m.group(2) != 'x')
+            if I.named(issue, open_text):
+                seen.add(n)
+                I.write_seen(seen_f, seen)
+                continue
+            how = 'trust' if me and (issue.get('author') or {}).get('login') == me else trust
+            text, long = I.task(issue, how)
+            tid = P.add(I.kind_of(issue), text, todo=ROOT / rel, pri='normal')
+            own = plan_rel(f'{P.TASKS}/{tid}.md')
+            (ROOT / own).parent.mkdir(parents=True, exist_ok=True)
+            (ROOT / own).write_text('\n'.join([f'# {tid} — {I.marker(n)}', '', *long, '']), encoding='utf-8')
+            git('add', '--', own)
+            if not commit_plan(f'Plan: {tid}, {I.marker(n)}', rel, own):
+                git('reset', '-q', '--', own)
+                git('checkout', '-q', '--', rel)
+                (ROOT / own).unlink(missing_ok=True)
+                continue  # not filed: the next look tries it again
+            seen.add(n)
+            I.write_seen(seen_f, seen)
+            book[tid] = {'number': n, 'trust': how}
+            I.write_filed(filed_f, book)
+            filed.append(tid)
+            note(f'{tid}: filed ({how}), {I.marker(n)}')
+            log(f'{tid}: filed ({how}), {I.marker(n)}: {text[:200]}')
+    finally:
+        hold.close()
+        MERGE.release()
+    return filed
+
+
 def not_attempt(tid: str, branch: str) -> bool:
     """The session's last commit matches `[run] not_attempt` ({id} = the task): a phase that leaves the task open
     on purpose (a spec written for a later session to port from), so the task may start again once it merges."""
@@ -1286,6 +1374,7 @@ class Run:
         if not self.merging and not stopping():
             restart_if_upgraded()
         watch_ci(branch)
+        watch_issues(branch)
         if not stopping():
             close_controls(branch)  # B26
             end_closed_controls()  # B53
