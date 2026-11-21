@@ -487,7 +487,7 @@ def cmd_stop(argv: list[str], prog: str = f'{RUNNER} stop') -> int:
         print('stop taken back')
         return 0
     if a.suspend or a.shutdown:
-        C.notes('POWER').write_text('suspend' if a.suspend else 'shutdown', encoding='utf-8')
+        P.post(C, 'POWER', 'suspend' if a.suspend else 'shutdown')  # the run's P.take keeps the last one
     ask_stop(f'{C.command} stop' + (' --force' if a.force else ''), force=a.force)
     print(f'asked the run to stop ({C.notes("STOP")}); it exits once '
           + ('its sessions are ended and the merges under way are done' if a.force else
