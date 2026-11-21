@@ -22,7 +22,7 @@ Rules: {rules}. {test}
 Finish with `{runner} done {tid} "<commit message>"`. It runs the test gate, ticks the task, commits and \
 pushes, and it refuses to tick when the gate fails. Run it, and any whole test suite, as a background command \
 and wait for it to end: beside the other slots a gate can outlast your own command time limit, and one cut \
-off there commits nothing. Never start a second one while the first still runs.
+off there commits nothing. Run one at a time: start another only once the first has ended.
 
 If you are stuck (a tool hangs, the same fix fails twice, it needs a human, about 20 minutes with no \
 progress), commit what is solid and run `{runner} done {tid} "<msg>" --blocked "<why + what would unblock \
@@ -37,14 +37,14 @@ and try it: `gh auth status`, `wrangler whoami`, the service's own CLI login, `s
 
 """ + VERIFY + """
 
-A usage limit is not being stuck: do not block the task. The session waits for the reset and carries on.
+A usage limit is not being stuck: the session waits for the reset and carries on, so do not block the task.
 
 Wait for and stop only processes you started, by the pid you kept (`$!`): `wait` on it, `kill` it. Never \
 match processes by a command-line pattern (`pgrep -f`, `pkill -f`, `ps | grep`/`awk`, `killall`): a wait \
 loop's pattern matches the loop itself and never ends, and every agent's command line holds this whole \
 prompt, so a pattern kill can end the other sessions on this machine. Every wait gets a time limit \
 (`timeout 600 <cmd>`, or a deadline in the loop): a loop waiting for a line that a dead process will never \
-print runs for ever. Never search the whole disk (`find /`); look where the thing can be.
+print runs for ever. Search where the thing can be, not the whole disk (`find /`).
 
 """ + SAFE_SHELL + """ Delete only inside your worktree.
 

@@ -20,7 +20,7 @@ What you type
     agent-runner stop                 let running tasks finish, start no new ones (--force: now)
     agent-runner slots +1             one slot more (-1 fewer, 4: exactly four)
     agent-runner wizard               walk through the hand steps a blocked task waits on, then confirm it
-    agent-runner guide                how an agent you start in this repo should work with the runner
+    agent-runner guide                how an agent you start in this repo should work with the runner (take|concepts|needs: one case)
     agent-runner settings             every runner.toml key, its default and what it does; how to change one
     agent-runner sheet ID --go        answer a pick sheet with its recommended picks (--picks "<Send's line>")
     agent-runner plan                 every task id, one line each
@@ -242,9 +242,8 @@ def main(argv: list[str] | None = None) -> int:
         from agent_runner import runner
         return runner.cmd_key(rest, f'{runner.RUNNER} {cmd}')
     if cmd == 'guide':
-        from agent_runner.guide import GUIDE
-        print(GUIDE, end='')
-        return 0
+        from agent_runner.guide import cmd_guide  # C2: `guide <topic>` prints one branch's page
+        return cmd_guide(rest)
     if cmd == 'settings':  # B28
         from agent_runner.config import settings_reference
         print(settings_reference(), end='')

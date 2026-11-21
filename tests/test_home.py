@@ -78,6 +78,11 @@ eq(Config(repo).warnings, [], 'a clean config says nothing')
 print('the guide: printed, and kept installed as a Claude Code skill')
 from agent_runner import guide  # noqa: E402
 eq(run(repo, 'guide').returncode, 0, '`guide` prints it')
+for name in guide.TOPICS:  # C2: one branch's page each, behind a pointer in GUIDE and the control brief
+    r = run(repo, 'guide', name)
+    check(r.returncode == 0 and r.stdout.startswith('# ') and '{' not in r.stdout, f'`guide {name}` prints its page')
+    check(f'agent-runner guide {name}' in guide.GUIDE, f'and GUIDE points at it')
+eq(run(repo, 'guide', 'nope').returncode, 2, 'an unknown topic is a usage error')
 from agent_runner.runner import PROMPT  # noqa: E402
 check(guide.SAFE_SHELL in guide.GUIDE and guide.SAFE_SHELL in PROMPT, 'the shell-safety rules: in the guide and the agents\' prompt alike')
 cc = tmp / 'claude'

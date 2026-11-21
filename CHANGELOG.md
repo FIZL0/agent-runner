@@ -8,6 +8,16 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
   (once no merge runs, never across a major version, nor on Windows) and restarts on it. Set
   `auto_upgrade = false` to upgrade only with `u` or `agent-runner upgrade`. `run --upgrade` is gone: `u`,
   `agent-runner upgrade` and the auto upgrade cover it (C6).
+- The control brief and the agent-runner skill (GUIDE) are rewritten after mattpocock/skills
+  writing-for-agents (MIT): the control brief is 3,886 words down to 2,794, GUIDE 1,333 down to 1,011 (what
+  every session loads; the three topic pages below, 1,036 words in all, load only when their case comes up).
+  What only one branch needs moved behind a pointer: `agent-runner guide take` (doing a task here, now), `guide
+  concepts` (show options inline, approve or revise a queued concept) and `guide needs` (answering what needs
+  the person: confirm/change/shelve, wizards, pick sheets) print it, and GUIDE and the control brief say when
+  to read each. Prohibitions now come with the positive target ("keep the main checkout clean", "start it
+  only when asked"), restatements of `--help` (plan subcommands, stop/pause flags) are gone, and the summary
+  steps are numbered once. The slot prompt and the merge fixer and repair prompts state the same rules as
+  what to do. Every behaviour is kept; the tests now check the moved rules in their topic pages (C2).
 
 ## 0.55.0 (2026-11-20)
 
