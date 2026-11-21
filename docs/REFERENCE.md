@@ -280,6 +280,25 @@ waiting for your OK on <url>`. That block names no task, so no run starts it and
 - The build gets `F` where the kinds have it, else their first non-K letter. A repo whose `[plan] kinds`
   lack `K` has no concepts: a K-lettered id there is an ordinary task.
 
+**A style for the future too** (F19). When a person approves a concept's style and says it holds from now on
+("the future too", "make everything look like this"), the control session runs `plan restyle "<style>" --dry`
+(the queued and running tasks that touch the interface: their `files:` meet the interface patterns, `*.html`,
+`*.css`, `*.tsx`, `templates/**` and the like, or `--ui 'glob,…'`; a line naming no files by its words; or
+exactly `--tasks ID,…`), publishes a restyle page itself (each current page or screen that changes to match,
+before and after), then `plan restyle "<style>" --page <url> --from K7`:
+
+- the restyle is filed as a concept already shown: `K9` ticked with its page, its build waiting for an OK;
+- every queued interface task is held on it, kept in TODO.md: `BLOCKED: held for restyle K9 (style: …):
+  reopens …` (no `(after …)`, so `reopen` never frees it, and it is not listed as stuck);
+- a task a slot runs is held too, and the run is asked to park it: one whose `done` already passed (it was
+  in its test gate) or that is merging lands, and is noted on the restyle's build (`landed in the old style
+  while the restyle waits: ID`) for the page to list; any other is told in its pane to stop at a clean
+  point, commit and write its journal, and when its session ends its branch is parked as `wip/<ID>` (not
+  counted as a failed merge), so its next attempt starts from there. No session is held open while the
+  person decides;
+- approving the restyle (`plan approve K9`, or yes on Needs you) opens its build and reopens every task held
+  on it with `style to use (restyle K9 approved): …` noted.
+
 ### Research tasks
 
 A research task changes no product: it finds out, measures or checks, writes its findings and queues the

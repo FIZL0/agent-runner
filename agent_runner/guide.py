@@ -106,6 +106,18 @@ Queued concepts (kind K): their agent builds nothing, it publishes a page of opt
 "go with option B", "B but keep the old menu": `{cmd} plan approve K7 "option B: <what they said>"`;
 "approve", "looks good": `{cmd} plan approve K7` (the page's recommendation). Changes or a no: `{cmd} plan
 revise K7 "<what to change>"` (the concept runs again). `{cmd} plan waiting` lists them.
+
+A style for the future too: they approve a concept's style and say it holds from now on ("the future too",
+"make everything look like this", "use this style everywhere"). Approve the concept as above (or queue its build),
+then: `{cmd} plan restyle "<the style, in their words>" --dry` lists the queued and running tasks that touch the
+interface (add `--ui 'glob,glob'` for this project's interface files, `--tasks ID,ID` to name them yourself).
+Publish a restyle page yourself, here: each current page or screen that would change to match, before and after,
+and a list of the tasks marked merging (they land in the old style). Then `{cmd} plan restyle "<the style>" --page
+<its URL> --from <the concept's id>`: it files the restyle as a concept waiting for an OK and holds those tasks on
+it (kept, not dropped); a running one is told to stop at a clean point, commit and write its journal, and is parked
+as wip/<ID> (one already in its test gate lands). Give the person the link. Later, a note "landed in the old style
+while the restyle waits: ID" on the restyle: add that task to the page and publish it again. Their OK on the
+restyle (`{cmd} plan approve <its id>`) reopens every held task with the style noted.
 """,
     'needs': """\
 # Answering what needs the person

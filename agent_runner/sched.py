@@ -385,6 +385,42 @@ def parked_reasons(tid: str) -> list[str]:
     return [f'{m[1]}: {m[2][:160].rstrip()}' for l in led if (m := rx.search(l))]
 
 
+def forgive_park(tid: str, wip: str) -> None:
+    """F19: a branch parked for a restyle is no failed merge: noted as seen, so it never counts to PARK_LIMIT."""
+    seen = parked_seen()
+    seen[tid] = sorted(set(seen.get(tid, [])) | {wip})
+    try:
+        C.notes('parked-seen.json').write_text(json.dumps(seen, indent=1), encoding='utf-8')
+    except OSError as e:
+        log(f'{tid}: could not note {wip} as a restyle park ({e}); it may count as a failed merge')
+
+
+def note_committed(tid: str, text: str, msg: str, timeout: float = 600) -> bool:
+    """Note `text` on task `tid` in the plan and commit it, as `block_parked` does (MERGE held, TODO.md clean).
+    False when it could not be done (the task is gone, the plan has edits, the commit failed)."""
+    if not MERGE.acquire(timeout=timeout):
+        return False
+    hold = ExitStack()
+    try:
+        if C.plan_external:
+            hold.enter_context(plansync.locked(C))
+            plansync.pull(C, force=True)
+        rel = plan_rel('TODO.md')
+        if not C.plan_external and git('status', '--porcelain', '--', rel).stdout.strip():
+            return False
+        try:
+            P.note(tid, text, todo=ROOT / rel)
+        except SystemExit:
+            return False  # ticked or dropped meanwhile
+        if not commit_plan(msg, rel):
+            if not C.plan_external:
+                git('checkout', '-q', '--', rel)
+            return False
+        return True
+    finally:
+        hold.close()
+
+
 def block_parked(tid: str, wips: list[str], branch: str) -> bool:
     """B32: block `tid` on a person, its parked attempts and the ledger's reasons in the why, committed as
     `file_control_ask` commits (MERGE free, TODO.md clean). False when it could not be done now (the next pick
