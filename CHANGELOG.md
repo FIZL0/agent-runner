@@ -4,6 +4,12 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- `--after all`: a task that waits for everything queued ahead of it, worked out live, so a release needs no
+  wait list kept up by hand. `plan add`, `plan edit` and `plan block` take it, for any kind of task; the task
+  starts once no open or blocked task above it in TODO.md remains, in any section, tasks queued above it later
+  included. Parked (`--pri later`) and Stretch tasks and shelved ones don't hold it. `status`, `plan ID`,
+  `plan reopen` and `plan waiting` show `T5 waits for everything before it (N open)` instead of an id list
+  (F35).
 - One hidden slot mode for every OS, tmux optional. A hidden slot runs in a terminal with no window: on Linux
   and macOS a pseudo-terminal from Python's standard library (`pty`), its output in `.runner/slotN.log` and
   `plan tell` typed into it through `.runner/slotN.in`; on Windows a console of its own whose window starts
