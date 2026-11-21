@@ -1528,7 +1528,7 @@ def test_control(repo: Path):
     eq(skills, repo / '.runner' / 'control-skills', 'the control skills sit under <notes>, not in the repo files')
     skill = (skills / '.claude/skills/control/SKILL.md').read_text(encoding='utf-8')
     check('name: control' in skill and f'{R.C.command} control --new' in skill, '/control runs control --new', skill)
-    for name, want in (('run', 'status $ARGUMENTS'), ('since', 'since $ARGUMENTS'), ('follow', 'since --follow'),
+    for name, want in (('run', 'status $ARGUMENTS'), ('since', 'since --all $ARGUMENTS'), ('follow', 'since --follow'),
                        ('pause', 'pause $ARGUMENTS'), ('stop', 'stop $ARGUMENTS'), ('slots', 'slots $ARGUMENTS')):
         skill = (skills / f'.claude/skills/{name}/SKILL.md').read_text(encoding='utf-8')
         check(f'name: {name}\n' in skill and f'`{R.C.command} {want}' in skill, f'/{name} runs {want}', skill)
