@@ -855,7 +855,9 @@ You can customise it in three ways, from smallest to largest:
 
 Each session also gets `AGENT_RUNNER=1`, `AGENT_SLOT=<n>` and anything `[run] slot_env` adds in its
 environment, so your tools can tell slots apart, for example to give each one its own port or emulator
-instance.
+instance. `AGENT_RUNNER_WORKTREE` names the slot's worktree: while it is set, plan writes (`plan add`,
+`note`, `tick` and the other edits) and `done` refuse, with nothing written, when the current directory is in
+another project, and say to run the command from that worktree (B103).
 
 `include_task_id_in_commit = false` tells sessions to omit the task ID from the commit subject; `done` also
 removes a leading `<ID>:` if a session includes one anyway. The default is `true`. `comment_policy = "minimal"`
