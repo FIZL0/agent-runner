@@ -5,8 +5,9 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 ## Unreleased
 
 - The control brief and the agent-runner skill (GUIDE) are rewritten after mattpocock/skills
-  writing-for-agents (MIT): the control brief is 3,886 words down to 2,742, GUIDE 1,333 down to 1,001. What
-  only one branch needs moved behind a pointer: `agent-runner guide take` (doing a task here, now), `guide
+  writing-for-agents (MIT): the control brief is 3,886 words down to 2,794, GUIDE 1,333 down to 1,011 (what
+  every session loads; the three topic pages below, 1,036 words in all, load only when their case comes up).
+  What only one branch needs moved behind a pointer: `agent-runner guide take` (doing a task here, now), `guide
   concepts` (show options inline, approve or revise a queued concept) and `guide needs` (answering what needs
   the person: confirm/change/shelve, wizards, pick sheets) print it, and GUIDE and the control brief say when
   to read each. Prohibitions now come with the positive target ("keep the main checkout clean", "start it

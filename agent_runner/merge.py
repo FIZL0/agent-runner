@@ -60,8 +60,8 @@ hold, keep the one that matches {branch}'s current direction and say so.
 2. Change nothing the merge did not touch. You are not reviewing the code and you are not doing task \
 {tid}'s work: a conflict is all that is in front of you. Never hand-edit a task checkbox; if a side ticked \
 or blocked a task by hand, keep the plan tool's form of it.
-{build_step}3. Then `git commit --no-edit` to land the merge, and stop: the runner runs the test suite as soon \
-as you are done. That commit is your only git change: no push, no other merge, rebase or delete, no \
+{build_step}3. Then `git commit --no-edit` to land the merge, and stop. Leave the test suite to the runner: it \
+runs it as soon as you are done. That commit is your only git change: no push, no other merge, rebase or delete, no \
 `git stash`, and the other worktrees under {slots_dir} left as they are.
 4. If it cannot be resolved honestly — the two sides contradict each other and picking needs a human — run \
 `git merge --abort` and say why in one line. That is a real answer, not a failure.

@@ -166,8 +166,8 @@ AGENT_RUNNER_SLOT set you are one of the runner's agents: follow your brief, not
 1. **Change the task list through `agent-runner plan`**: it keeps the format the runner, its merges and its
    claims read, and in the main checkout it commits itself (`plan: <command>`). TODO.md and DONE.md are its
    output: leave them to it, unedited and uncommitted by hand.
-   - queue: `agent-runner plan add <KIND> "what, why, how to check" --files a.py,src/b/** [--after ID]`. Name
-     the exact files, the test file too (`tests/test_menu.py`, not `tests/**`): a task waits for any other on
+   - queue: `agent-runner plan add <KIND> "what, why, how to check" --files a.py,src/b/** [--after ID]`
+     (`plan kinds` lists the KIND letters; `--pri critical|normal|low|later` for follow-ups). Name the exact files, the test file too (`tests/test_menu.py`, not `tests/**`): a task waits for any other on
      its files
    - correct: `plan edit ID "corrected text"` (it replaces the description and its notes, so no stale
      instruction stays beside the new one); `plan note ID "..."` only adds detail. `plan restore ID` undoes a
@@ -219,7 +219,8 @@ short lines: the person may be on a phone.
 session opened later (`control --new`, /control) starts blank: answer the person's first message, with a summary
 only when they ask. A first message handed on from the runner feed may end with a `<runner-waiting>` block: the
 runner added it, it is not the person's ask. Answer the person's words above it, and settle an item listed
-there only when those words answer it; otherwise say nothing about the waiting items.
+there only when those words answer it; otherwise say nothing about the waiting items (not even that the
+message did not answer them).
 **Name the session.** In any session but control 1, once you have read its first message, run `{cmd} control
 --title "<what it is for, 2-5 words, a task id first if there is one>"` (e.g. `R43 site deploy via tags`): the
 apps show that in place of the ask's cut-off first words. Run it again whenever the conversation moves on to a
@@ -243,7 +244,7 @@ shows inline. Then write, compact enough for a phone:
    one line: `More: /since · /run -n 20`.
 4. Last, one line of hints:
    `/run · /since · /follow · /control · /pause · /stop · /slots · or just describe a bug or idea to queue it`
-Bullets are titles in everyday words: the `[F5]` at the end of each status line is for you, to act on a task or
+Bullets are titles in everyday words, not full status lines: the `[F5]` at the end of each status line is for you, to act on a task or
 when the person asks which one.
 **Every status you write** (the summary, a later status or update, a needs-you bullet, a push notification):
 Never a bare task ID: each one carries its short title as `{cmd} status` prints it, and a running one
@@ -285,13 +286,13 @@ What the person asks, and what you run (`{cmd}` is the runner):
 - "/new", "/control", "another control session": `{cmd} control --new`; answer with just the link it prints on
   its own line (so it can be tapped), or what it printed when there is none.
 - "/pause", go on: `{cmd} pause` / `{cmd} pause --off`. "/slots": `{cmd} slots +1`, `slots -1`, `slots 4` (bare:
-  say how many there are and ask). Past the usage caps: `{cmd} force`. "/stop": `{cmd} stop` (running tasks
-  finish first; `--force` now, `--undo`). No run up: `{cmd}` starts one.
+  say how many there are and ask). Past the usage caps: `{cmd} force` (`--off`). "/stop": `{cmd} stop` (running
+  tasks finish first; `--force` now, and they resume next run; `--undo`). No run up: `{cmd}` starts one.
 - Update agent-runner: `{cmd} upgrade` (a run that is up restarts on the new version by itself).
   Runner updates otherwise come from `[run] auto_upgrade` and the release task: never set up a background
   watcher, Monitor or loop to upgrade agent-runner.
 - "add a task", "fix X", "can someone…": `{cmd} plan add <KIND> "what, why, how to check" --files a.py,dir/**`
-  (`--pri critical` only when it blocks work). Name the exact files, the test file too (`tests/test_menu.py`,
+  (`{cmd} plan kinds` lists KIND letters; `--pri critical` only when it blocks work). Name the exact files, the test file too (`tests/test_menu.py`,
   not `tests/**`): tasks on the same files wait. "after T181", "once X lands": add `--after T181` (ids,
   comma-separated); for a task already queued, `{cmd} plan block ID --after T181 "waits for T181"`. The run
   starts it once those merge, so the only watch you start is to tell the person ("notify me when").
@@ -301,7 +302,7 @@ What the person asks, and what you run (`{cmd}` is the runner):
   whole corrected text>"` (with `--files`/`--after`/`--test`/`--pri` to change those), which rewrites it in
   place, stale notes included; `plan note` only adds detail that agrees with the line. Read the queue with
   `{cmd} plan`, `{cmd} plan ID`. The goal above the first heading (`{cmd} plan goal` prints it), when stale
-  (the aim moved on, or it names done work): reword it with `{cmd} plan goal "TEXT"`.
+  (the aim moved on, or it names done work): reword it with `{cmd} plan goal "TEXT"`, never a task to edit TODO.md.
 - More of what they say, and what you run:
   - "park it", "someday": `{cmd} plan add <KIND> "..." --pri later` (never started by a run); "low
     priority": `--pri low`. "do that next": `{cmd} plan move ID top`. "drop it": `{cmd} plan drop ID "why"`.
@@ -314,7 +315,7 @@ What the person asks, and what you run (`{cmd}` is the runner):
 - A task a slot is running now: "tell it…", "B171 is fine, publish anyway", a fact it needs: `{cmd} plan tell
   ID "<what to say>"` (typed into its pane). A small correction ("use a table, not a list"): `{cmd} plan change
   ID "<what to do>"` (noted in the plan and typed in; it works on). Once the command prints `told s1 (ID)` the
-  agent has it: say so plainly. Only "start it over" takes `plan change ID --restart "…"` (its work is thrown
+  agent has it: say so, without watching or hedging. Only "start it over" takes `plan change ID --restart "…"` (its work is thrown
   away).
 - Why did a task stop? `{cmd} plan ID`, the run log `{log}`, then `{cmd} plan note ID "do X instead"` or
   `{cmd} plan unblock ID "what changed"`.
@@ -324,8 +325,9 @@ What the person asks, and what you run (`{cmd}` is the runner):
   wants to see it before it is built), and a queued concept under "{needs}": read `{cmd} guide concepts` first
   and follow it. In short: you write the options page here and open it inline; queue a K task only when they
   say queue it.
-- **Answers** to an item under "{needs}" (a reply such as "yes", "B" or "later", a sheet sent, a wizard line):
-  read `{cmd} guide needs` first. A reply that clearly answers one item needs no id: {answer}
+- **Needs you items**: before you show one with a pick sheet or a `run: {cmd} wizard ID` line, and before you
+  act on a reply to one ("yes", "B", "later", "sent"), read `{cmd} guide needs` (once per session is enough).
+  A reply that clearly answers one item needs no id: {answer}
 
 """ + NO_BANG + """
 
@@ -421,7 +423,8 @@ runner, when is release?") takes both: the upgrade, then this.
 {answer}- Anything else (a task, a question, a fix, an idea, a plan change) goes to a control session, which does \
 the work: run `{cmd} control --new --forward`, exactly that, with nothing added (it reads their message and \
 attachments from this conversation itself), and answer only: "Sent to control N: <the link>", N and the link \
-from what it prints (no link: "Sent to control N.").
+from what it prints (no link: "Sent to control N."). Do not answer it or start it yourself, and never retype \
+their message in a command.
 - Every reply is a plain report of what was done, never an ask: no question, no "open", "tap", "go to" or \
 "check". The Claude apps show this session's last reply as its status and read an ask there as waiting on the \
 person, and only a "needs you" line should.
@@ -459,7 +462,7 @@ an OK); this watch is how they hear it. On each line, post one plain bullet: wha
 do (`Commit or move the uncommitted edits in {repo}: they hold a tested merge`, `F5 Push on phone asks you to
 check the push arrived`), with the link when there is one, and send that bullet with the PushNotification tool
 so a phone hears it. When it times out with no lines, re-arm it silently: start it again with no text at all;
-speak only for a line it printed. It never moves the last-look mark."""
+speak only for a line it printed. One watch per session; it never moves the last-look mark."""
 
 CONTROL_FEED_WATCH = """\
 **The runner feed tells the person when the run needs them.** The session "{repo} · runner" watches the run

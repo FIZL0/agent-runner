@@ -37,7 +37,7 @@ and try it: `gh auth status`, `wrangler whoami`, the service's own CLI login, `s
 
 """ + VERIFY + """
 
-A usage limit is not being stuck: the session waits for the reset and carries on, and the task stays open.
+A usage limit is not being stuck: the session waits for the reset and carries on, so do not block the task.
 
 Wait for and stop only processes you started, by the pid you kept (`$!`): `wait` on it, `kill` it. Never \
 match processes by a command-line pattern (`pgrep -f`, `pkill -f`, `ps | grep`/`awk`, `killall`): a wait \
@@ -50,7 +50,7 @@ print runs for ever. Search where the thing can be, not the whole disk (`find /`
 
 {followups}
 {extra}
-The task's brief (`{runner} plan brief {tid}`) follows: work from it as given.
+The task's brief (`{runner} plan brief {tid}`) follows, so don't gather it again.
 
 {brief}"""
 
