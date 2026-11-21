@@ -34,7 +34,7 @@ def test_real_tmux_takes_the_option():
         if r.returncode:
             print(f'  (tmux could not start a server: {r.stderr.strip()}; skipped)')
             return
-        for args in K.background_session_options('ar-demo', Path('/tmp/repo'), []):
+        for args in K.background_session_options('ar-demo', Path('/tmp/repo'), ['B94_X=1']):
             r = subprocess.run([*t, *args], capture_output=True, text=True, timeout=20)
             eq(r.returncode, 0, f'tmux {args[0]} succeeds ({r.stderr.strip()})')
         out = subprocess.run([*t, 'show-options', '-v', '-t', 'ar-demo', 'default-command'],
