@@ -171,6 +171,29 @@ def utf8_streams() -> None:
                 pass
 
 
+# The commands that hand their words straight on: name: (module in agent_runner, function taking the words).
+COMMANDS = {
+    'done': ('done', 'main'),
+    'setup': ('setup', 'main'),  # F49
+    'run': ('runner', 'cmd_run'),
+    '--attach': ('runner', 'cmd_background_attach'),  # bare, then attach: the run's pane in this terminal
+    'attach': ('runner', 'cmd_attach'),
+    'control': ('runner', 'cmd_control'),
+    'context': ('context', 'main'),
+    'cost': ('cost', 'main'),
+    'resume': ('runner', 'cmd_resume'),
+    'wizard': ('runner', 'cmd_wizard'),  # F17
+    'sheet': ('runner', 'cmd_sheet'),  # F18
+    'take': ('runner', 'cmd_take'),
+    'wip': ('runner', 'cmd_wip'),  # F23
+    'stop': ('runner', 'cmd_stop'),
+    'status': ('runner', 'cmd_status'),
+    'since': ('runner', 'cmd_since'),
+    'needs': ('runner', 'cmd_needs'),  # F44
+    'upgrade': ('runner', 'cmd_upgrade'),  # B49
+}
+
+
 def main(argv: list[str] | None = None) -> int:
     utf8_streams()
     argv = list(sys.argv[1:] if argv is None else argv)
@@ -192,15 +215,10 @@ def main(argv: list[str] | None = None) -> int:
     if cmd == 'merge-plan' and len(rest) == 3:  # git's merge driver for the task list (plan.install_driver)
         from agent_runner import plan
         return plan.merge_file(*rest)
-    if cmd == 'done':
-        from agent_runner import done
-        return done.main(rest)
-    if cmd == 'setup':  # F49
-        from agent_runner import setup
-        return setup.main(rest)
-    if cmd == 'run':
-        from agent_runner import runner
-        return runner.cmd_run(rest)
+    if cmd in COMMANDS:
+        import importlib
+        module, func = COMMANDS[cmd]
+        return getattr(importlib.import_module(f'agent_runner.{module}'), func)(rest)
     if not argv:  # bare: the run in the background (outside a repository: the usage, as before)
         from agent_runner.config import toplevel
         try:
@@ -211,21 +229,6 @@ def main(argv: list[str] | None = None) -> int:
                 return 2
         from agent_runner import runner
         return runner.cmd_background(rest)
-    if cmd == '--attach':  # bare, then attach: the run's pane in this terminal
-        from agent_runner import runner
-        return runner.cmd_background_attach(rest)
-    if cmd == 'attach':
-        from agent_runner import runner
-        return runner.cmd_attach(rest)
-    if cmd == 'control':
-        from agent_runner import runner
-        return runner.cmd_control(rest)
-    if cmd == 'context':
-        from agent_runner import context
-        return context.main(rest)
-    if cmd == 'cost':
-        from agent_runner import cost
-        return cost.main(rest)
     if cmd == 'home':  # one answer for every script: never rebuild these paths by hand
         from agent_runner.config import cfg
         c = cfg()
@@ -235,39 +238,9 @@ def main(argv: list[str] | None = None) -> int:
             return 2
         print(what)
         return 0
-    if cmd == 'resume':
-        from agent_runner import runner
-        return runner.cmd_resume(rest)
-    if cmd == 'wizard':  # F17
-        from agent_runner import runner
-        return runner.cmd_wizard(rest)
-    if cmd == 'sheet':  # F18
-        from agent_runner import runner
-        return runner.cmd_sheet(rest)
-    if cmd == 'take':
-        from agent_runner import runner
-        return runner.cmd_take(rest)
-    if cmd == 'wip':  # F23
-        from agent_runner import runner
-        return runner.cmd_wip(rest)
-    if cmd == 'stop':
-        from agent_runner import runner
-        return runner.cmd_stop(rest)
-    if cmd == 'status':
-        from agent_runner import runner
-        return runner.cmd_status(rest)
-    if cmd == 'since':
-        from agent_runner import runner
-        return runner.cmd_since(rest)
-    if cmd == 'needs':  # F44
-        from agent_runner import runner
-        return runner.cmd_needs(rest)
     if cmd in ('pause', 'force', 'slots', 'key'):
         from agent_runner import runner
         return runner.cmd_key(rest, f'{runner.RUNNER} {cmd}')
-    if cmd == 'upgrade':  # B49
-        from agent_runner import runner
-        return runner.cmd_upgrade(rest)
     if cmd == 'guide':
         from agent_runner.guide import GUIDE
         print(GUIDE, end='')
