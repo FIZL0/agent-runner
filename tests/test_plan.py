@@ -918,7 +918,8 @@ def test_goal():
         eq(run(root, 'plan', 'goal').stdout.strip(), 'Goal: parse everything', '`plan goal` prints it')
         has(run(root, 'plan', 'R1').stdout, r'the parser', 'the task is still there')
     from agent_runner import guide
-    has(guide.CONTROL, r'plan goal "TEXT"', 'the control brief says to reword a stale goal with plan goal')
+    has(guide.CONTROL_TOPICS['queue'], r'plan goal "TEXT"',  # B98: in `guide queue`, which the brief names
+        'the control brief says to reword a stale goal with plan goal')
 
 
 def test_plan_last():

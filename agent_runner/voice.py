@@ -133,6 +133,37 @@ def fit(brief: str, cmd: str, c=None) -> str:
     return f'{brief.rstrip()}\n\n{extra}'
 
 
+# B98: the control brief keeps the wording itself and a pointer; the paragraph is `guide voice`'s page
+POINTER = ("**The person's wording.** Follow every line below in all you write to them; on wording it wins over "
+           "this brief. When they tell you how to word things (\"say X not Y\", \"shorter\"), or say \"show my "
+           "wording\" or \"forget X\", read `guide voice` first.")
+
+
+def brief_fit(brief: str, cmd: str, c=None, inline: bool = True) -> str:
+    """B98: the control brief with the wording in effect and a pointer to `guide voice` in place of the
+    paragraph `fit` adds, so the brief stays short. `inline=False` (wording too long for the brief): a line that
+    says how many lines there are and that `guide voice` prints them, in place of the lines themselves."""
+    got = text(c)
+    if got and not inline:
+        n = len((in_effect(c) or ('', '', []))[2])
+        got = f'The wording has {n} lines, too many to carry here: read them now with `{cmd} guide voice`.'
+    extra = POINTER.format(cmd=cmd)
+    if learn_mode(c) == 'ask':
+        extra += ' So too when they ask "what?" or say back what you said in their own words.'
+    extra += '\n' + (got if got else 'No wording yet: neither file has a line.')
+    return f'{brief.rstrip()}\n\n{extra}\n'
+
+
+def topic(cmd: str, c=None) -> str:
+    """B98: `guide voice`: the wording paragraph fitted to `[run] voice_learn`, and the wording in effect."""
+    from agent_runner.guide import VOICE, VOICE_LEARN
+    learn = VOICE_LEARN.format(cmd=cmd) if learn_mode(c) == 'ask' else ''
+    out = '# The person\'s wording\n\n' + VOICE.format(cmd=cmd, file=_shown(global_path(c)),
+                                                       project=_shown(project_path(c)), learn=learn)
+    got = text(c)
+    return out + ('\n' + got + '\n' if got else '\nNo wording yet: neither file has a line.\n')
+
+
 def slot(prompt: str, c=None) -> str:
     """A task agent's brief with the wording at its end, when there is any: what it writes that status and since
     show (its commit message, done and blocked lines, tasks it files)."""

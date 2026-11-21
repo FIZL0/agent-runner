@@ -47,7 +47,10 @@ def control_cmd() -> str:
 
 
 def control_brief() -> str:
-    """What every control session is told, through its SessionStart hook (`control --brief` prints it)."""
+    """What every control session is told, through its SessionStart hook (`control --brief` prints it).
+    B98: kept under BRIEF_MAX chars: Claude Code shows a model only a 2KB preview of SessionStart output over
+    ~10KB, so the core rules are inline and the long ones behind `guide <topic>` (guide.CONTROL_TOPICS); the
+    glossary's and the wording's paragraphs are pointers too (glossary.brief_fit, voice.brief_fit)."""
     from agent_runner.guide import CONTROL, CONTROL_ANSWER, CONTROL_FEED_WATCH, CONTROL_WATCH
     notes = Path(C.run['notes']).expanduser()
     logf = (notes / 'run.log').as_posix() if not notes.is_absolute() else str(notes / 'run.log')
@@ -58,9 +61,15 @@ def control_brief() -> str:
     from agent_runner import glossary  # F22: the glossary paragraph (and the seed ask), or none when it is off
     from agent_runner.guide import grill_fit  # F20: the grilling line fitted to [run] grill
     from agent_runner import voice  # F21: the person's wording, read fresh by every session's brief
-    return voice.fit(grill_fit(glossary.fit(CONTROL.format(repo=ROOT.name, cmd=cmd, log=logf, watch=watch,
-                                                           needs=cf['heading'], answer=answer), 'control', cmd, C),
-                               cmd, C), cmd, C)
+    core = grill_fit(glossary.brief_fit(CONTROL.format(repo=ROOT.name, cmd=cmd, log=logf, watch=watch,
+                                                       needs=cf['heading'], answer=answer), cmd, C), cmd, C)
+    out = voice.brief_fit(core, cmd, C)
+    # B98: a long voice file would push the brief past what Claude Code shows: point at its lines instead
+    return out if len(out) < BRIEF_MAX else voice.brief_fit(core, cmd, C, inline=False)
+
+
+# B98: Claude Code saves SessionStart output over ~10KB to a file and shows the model a 2KB preview of it
+BRIEF_MAX = 9500
 
 
 def control_settings_data() -> dict:

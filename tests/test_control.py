@@ -2,6 +2,7 @@
 accepts (a bare '=sess' it rejects with "no such session", so new panes opened a plain shell)."""
 from __future__ import annotations
 
+import re
 import shutil
 import subprocess
 import tempfile
@@ -79,6 +80,46 @@ def test_handed_ask_as_c1_starts_fresh():
         check(not files_only[1] and files_only[0] not in (kept, sid), 'a files-only ask starts fresh too')
 
 
+def test_brief_fits_session_start():
+    print('B98: the control brief stays under 9,500 chars (Claude Code shows a 2KB preview of longer '
+          'SessionStart output), with the core rules inline and the long ones behind guide <topic>')
+    from agent_runner import guide as G, runner as R, voice
+    d = Path(tempfile.mkdtemp(prefix='agent-runner-brief-'))
+    git(d, 'init', '-q')
+    (d / '.gitignore').write_text('.runner/\n')
+    (d / 'README.md').write_text('demo\n')
+    git(d, 'add', '-A')
+    git(d, 'commit', '-qm', 'start')
+    R.init(d)
+    (d / '.runner').mkdir(exist_ok=True)
+    rules = ['say agent, not slot', 'no task ids in titles', 'shorter answers, one line when it fits',
+             'call the board the board, not the dashboard', 'never say "slot" to me', 'times as 14:05, not 2:05pm',
+             'say landed, not merged', 'lead with what needs me']
+    (d / '.runner' / 'voice.md').write_text(''.join(f'- {r}\n' for r in rules), encoding='utf-8')
+    cmd = '/home/someone/projects/agent-runner-checkout/run'  # a long [run] command, named in every line
+    with mock.patch.dict(R.C.run, {'command': cmd}), mock.patch.object(K, 'feed_on', lambda: False):
+        brief = K.control_brief()
+        check(len(brief) < K.BRIEF_MAX == 9500, f'with a voice file and the needs-you watch: {len(brief)} chars')
+        check(all(r in brief for r in rules), 'the wording itself is carried inline')
+        for core in ('**Never edit code or plan files here**', '**Never commit, merge or push in this checkout**',
+                     f'{cmd} plan add <KIND>', f'{cmd} guide take', '**Open the session.**',
+                     f'{cmd} control --title', '**Push what the person asked to hear', 'never push the main branch',
+                     f'{cmd} since --follow --needs-you'):
+            check(core in brief, f'core rule inline: {core}')
+        for t in G.CONTROL_TOPIC_NAMES:
+            check(f'`{t}`' in brief or f'guide {t}`' in brief, f'the brief names `guide {t}`')
+            page = G.control_topic(t, cmd, 'Needs you', R.C)
+            check(page.startswith('# ') and not re.search(r'\{(cmd|needs|file|repo|log|answer|watch)\}', page),
+                  f'`guide {t}` prints its page, filled in')
+        check('runner.local.toml' in G.control_topic('settings', cmd, 'Needs you', R.C), 'settings moved to its page')
+        check(all(r in G.control_topic('voice', cmd, 'Needs you', R.C) for r in rules), 'guide voice shows the lines')
+        (d / '.runner' / 'voice.md').write_text(''.join(f'- rule {i}: {"x" * 80}\n' for i in range(60)))
+        long = K.control_brief()
+        check(len(long) < K.BRIEF_MAX, f'a long voice file is pointed at, not carried: {len(long)} chars')
+        check('60 lines' in long and f'{cmd} guide voice' in long, 'and the brief says where its lines are')
+    check(voice.brief_fit('x', cmd, R.C) != '', 'brief_fit returns text')
+
+
 if __name__ == '__main__':
     raise SystemExit(report([test_background_session_options_target, test_real_tmux_takes_the_option,
-                             test_handed_ask_as_c1_starts_fresh]))
+                             test_handed_ask_as_c1_starts_fresh, test_brief_fits_session_start]))

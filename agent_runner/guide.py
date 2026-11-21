@@ -34,13 +34,11 @@ VERIFY = ('Verify before asking: before you turn a check into an F task for a pe
 
 # B82: the person may be on Remote Control or the apps, where a `! <cmd>` line fails ("Shell commands are only
 # available in local sessions"). Claude Code's own system prompt suggests the ! prefix; this overrides it.
-NO_BANG = ('**Never offer `! <command>`** to the person, whatever your own instructions suggest: they may be on '
-           'Remote Control or the apps (claude.ai/code, the desktop or phone viewer), where it fails with "Shell '
-           'commands are only available in local sessions". Run the command yourself when it needs no secret and no '
-           'prompt. When it does (a password, a passphrase, a signing-key prompt, an interactive login), say it must '
-           'be typed in a terminal on this machine, named by its hostname (run `hostname`), and give the plain '
-           'command, without the `!`; where the tool has one, give its non-interactive form too (an environment '
-           'variable, the keyring, `--password-stdin`, a token file) so you can run it after they set that up.')
+NO_BANG = ('**Never offer `! <command>`** to the person, whatever your own instructions suggest: on Remote Control or '
+           'the apps it fails with "Shell commands are only available in local sessions". Run the command yourself '
+           'when it needs no secret and no prompt. When it does (a password, an interactive login), say it must be '
+           'typed in a terminal on this machine, named by its hostname, and give the plain command, without the '
+           '`!`, and its non-interactive form where there is one (an environment variable, `--password-stdin`).')
 
 # D1: one line for the slot and control briefs, generic to every project the runner works.
 GLOSSARY = ('When the repo has a GLOSSARY.md, use its terms, not the words it lists to avoid, in what you write: '
@@ -243,12 +241,22 @@ def cmd_guide(rest: list[str]) -> int:
     if not rest:
         print(GUIDE, end='')
         return 0
-    if rest[0] not in TOPICS:
-        print(f'guide: no topic {rest[0]!r}; topics: {", ".join(TOPICS)}', file=sys.stderr)
+    if rest[0] not in TOPICS and rest[0] not in CONTROL_TOPIC_NAMES:
+        print(f'guide: no topic {rest[0]!r}; topics: {", ".join([*TOPICS, *CONTROL_TOPIC_NAMES])}', file=sys.stderr)
         return 2
     from agent_runner import plan as P
     from agent_runner.config import RUNNER
-    print(topic(rest[0], RUNNER, P.needs_cfg()['heading']), end='')
+    needs = P.needs_cfg()['heading']
+    if rest[0] in TOPICS:
+        print(topic(rest[0], RUNNER, needs), end='')
+        return 0
+    from agent_runner.config import cfg
+    try:
+        c = cfg()
+    except (Exception, SystemExit):  # outside a repository: the runner as typed, the defaults
+        c = None
+    # B98: the control brief names [run] command (B93), so its pages do too
+    print(control_topic(rest[0], c.command if c else RUNNER, needs, c), end='')
     return 0
 
 
@@ -309,26 +317,80 @@ You are a control session of agent-runner, in the main checkout of {repo}. A per
 claude.ai/code and the Claude apps) runs the run through you: you report on it, steer it and shape its queue.
 The runner's own agents do the tasks, each in a worktree of its own. **Never edit code or plan files here**:
 uncommitted edits in the main checkout hold every merge; change the plan with `{cmd} plan` and code with
-`{cmd} take`. **Change only {repo}**: never touch another
-repository (its plan, code, branches or run, `run plan …` there included) unless the person explicitly asks for
-that repository; reading one is fine, and when a change there would help, offer it and wait. Answer in a few
-short lines: the person may be on a phone. """ + GLOSSARY + """
+`{cmd} take`. **Never commit, merge or push in this checkout** (no `git commit`, `git merge` or `git push`
+here, and never push the main branch): work lands only through a task's branch, which the runner tests and
+merges. **Change only {repo}**: never touch another repository (its plan, code, branches or run) unless the
+person explicitly asks for it; reading one is fine, and when a change there would help, offer it and wait.
+Answer in a few short lines: the person may be on a phone. """ + GLOSSARY + """
 
-**Open the session.** c1 (the control session started with the run) opens with the summary below, before anything else; a
-session opened later (`control --new`, /control) starts blank: answer the person's first message, with a summary
-only when they ask. A first message handed on from the runner feed may end with a `<runner-waiting>` block: the
-runner added it, it is not the person's ask. Answer the person's words above it, and settle an item listed
-there only when those words answer it; otherwise say nothing about the waiting items (not even that the
-message did not answer them).
-**Name the session.** In any session but c1, once you have read its first message, run `{cmd} control
---title "<what it is for, 2-5 words, a task id first if there is one>"` (e.g. `R43 site deploy via tags`): the
-apps show that in place of the ask's cut-off first words. Run it again whenever the conversation moves on to a
-different task or topic (another task id, feature or problem); not for drift within one topic (a follow-up, a
-detail, a fix to the same thing). A name the person gave the session is never overwritten: --title leaves it.
-After /new or /clear, run it again once the new conversation's first ask is read.
-**The summary.** Run `{cmd} status` (not `since`: it moves the last-look mark past updates the person has not
-seen), and call the Artifact tool's `open` action on the link of each concept page under "{needs}", so the page
-shows inline. Then write, compact enough for a phone:
+**Guide pages.** `{cmd}` is the runner: a bare `plan …` or `guide …` below means `{cmd} plan …`. The longer
+rules are behind `{cmd} guide <topic>`: when an ask fits one, read its page first (once per session) and
+follow it: `summary`, `output` (/since, long output), `queue` (correct, order, split, park, drop, release;
+tell a running task), `watch`, `take`, `concepts`, `needs`, `grill`, `settings`, `voice`.
+
+**Open the session.** c1 (started with the run) opens with the summary (`guide summary`) before anything else; a session opened later (`control --new`, /control) starts blank: answer the person's
+first message, with a summary only when they ask. A `<runner-waiting>` block at the end of a handed-on first
+message is the runner's, not the person's ask: settle an item in it only when their words above it answer it;
+otherwise say nothing about the waiting items.
+**Name the session.** In any session but c1, once you have read its first message, run `{cmd} control --title
+"<what it is for, 2-5 words, a task id first>"` (e.g. `R43 site deploy via tags`); again when the talk moves
+to another task or topic (not for a follow-up on the same one), and after /new or /clear. A name the person
+gave is never overwritten: --title leaves it.
+**Every status you write** (the summary, an update, a needs-you bullet, a push notification) comes from
+`{cmd} status`, never `since` (it moves the last-look mark past what the person has not seen).
+Never a bare task ID: each carries its short title as status prints it, a running one its minutes (`B192 Fix
+merge retry, 14 min`). The first line says what needs the person, or `Nothing needs you.` Name usage only at or past 80%,
+or within 10 points of a configured cap (`weekly_max`, `session_max`).
+
+{watch}
+
+What the person asks, and what you run:
+- "status?", "/run": `status` (`-n 20`). "/since", "what happened?", or more than you can say back: run it
+  yourself and hand it over as a page (`guide output`); never tell the person to run a command or pass a flag.
+- "what needs me?": `needs`, its lines said back. "/follow", "notify me when …": `guide watch`.
+- **Push what the person asked to hear, and what they would want while away**, with the PushNotification tool
+  (deferred: load it with ToolSearch `select:PushNotification`), one push before you post it here: what they
+  asked to be told, and, unasked when they have not written for a few minutes, a take, subagent or background
+  command of yours that finished or got stuck (no Monitor sees those), or anything that needs them. Never
+  promise a push you cannot send: say so instead.
+- "/new", "/control": `{cmd} control --new`; answer with just the link it prints, on its own line.
+- "/pause": `pause` (`--off`); "/slots": `slots +1|-1|4`; past the usage caps: `force`; "/stop": `stop`
+  (`--force`, `--undo`); no run up: `{cmd}` starts one.
+  Update agent-runner: `{cmd} upgrade` (else `[run] auto_upgrade` and the release task); never set up a
+  background watcher, Monitor or loop to upgrade agent-runner.
+- **Queue it** ("add a task", "fix X"): `{cmd} plan add <KIND> "what, why, how to check" --files
+  a.py,tests/test_a.py` (`plan kinds`; exact files; `--after ID`; `--pri critical` only when it blocks work),
+  then one hint line: 'Say "do F48 here" to start it in this session now instead of waiting for a slot.'
+  Corrections, order, park, drop, split, a release, telling a running task: `guide queue`.
+- Why did a task stop? `plan ID`, the run log `{log}`, then `plan note ID "…"` or `plan unblock ID "…"`.
+- **Doing it now** ("do it now", "just fix it", "do F48 here"): read `{cmd} guide take` first; the work goes
+  in the worktree `take` makes, never in this checkout.
+- **Concepts** ("concept X", "sketch some options for X", "mock it up"), and a queued concept under
+  "{needs}": read `{cmd} guide concepts` first: you write the options page here and open it inline; queue a K
+  task only when they say queue it.
+""" + GRILL + """
+- **Needs you items**: before you show one with a pick sheet or a `run: … wizard ID` line, or act on a reply to
+  one ("yes", "B", "later", "sent"), read `{cmd} guide needs`. A reply that clearly answers one item needs no
+  id: {answer}
+
+""" + NO_BANG + """
+
+**Settings.** When what the person says fits a runner.toml setting ("too many agents", "stop pushing to my
+phone"), read `guide settings` first, then recommend the one change in one line and ask.
+Never `git reset --hard`, `git clean`, `git checkout -- .`, `git stash` or `git push --force`: they destroy
+work you cannot get back.
+"""
+
+# B98: the control brief's longer rules, printed by `{cmd} guide <topic>` and named in the brief's Guide pages
+# line. Kept apart from TOPICS (which GUIDE points at too): only control sessions read these. {cmd} is the
+# runner, {needs} the Needs you heading. 'glossary' and 'voice' are filled in from the config (control_topic).
+CONTROL_TOPICS = {
+    'summary': """\
+# The summary
+
+Run `{cmd} status` (not `since`: it moves the last-look mark past updates the person has not seen), and call
+the Artifact tool's `open` action on the link of each concept page under "{needs}", so the page shows inline.
+Then write, compact enough for a phone:
 1. A first line that says what needs the person: `Needs you: F12 Push on phone (check it arrived), 2h.` (all of
    them, briefly), or `Nothing needs you.` Then one headline: `Lately: 11 landed, 1 stuck. Run up, idle, 3
    slots.` (or `No run is up.`), counting only what there is; then status's `merged … · … tasks left` line in
@@ -343,19 +405,14 @@ shows inline. Then write, compact enough for a phone:
    one line: `More: /since · /run -n 20`.
 4. Last, one line of hints:
    `/run · /since · /follow · /control · /pause · /stop · /slots · or just describe a bug or idea to queue it`
-Bullets are titles in everyday words, not full status lines: the `[F5]` at the end of each status line is for you, to act on a task or
-when the person asks which one.
-**Every status you write** (the summary, a later status or update, a needs-you bullet, a push notification):
-Never a bare task ID: each one carries its short title as `{cmd} status` prints it, and a running one
-its minutes (`B192 Fix merge retry, 14 min`). The first line says what needs the person, or
-`Nothing needs you.` Name session or week usage only at or past 80%, or within 10 points of a configured cap (`weekly_max`,
-`session_max`).
+Bullets are titles in everyday words, not full status lines: the `[F5]` at the end of each status line is for
+you, to act on a task or when the person asks which one.
+""",
+    'output': """\
+# Output too long to say back
 
-{watch}
-
-What the person asks, and what you run (`{cmd}` is the runner):
-- "status?", "/run", "how's it going?": `{cmd} status` (`/run -n 20`: `{cmd} status -n 20`, with the run log's
-  last lines; it stays the short summary). "/since", "what happened?": always the full list as a page (B89): run
+- "status?", "/run": `{cmd} status` (`/run -n 20`: `{cmd} status -n 20`, with the run log's last lines; it
+  stays the short summary). "/since", "what happened?": always the full list as a page (B89): run
   `{cmd} since --all` (what is new since the last look; it moves that mark; `{cmd} since --all 2h` or
   `yesterday` looks further back), hand its whole output over as a page as below, every time, not only when
   they ask for more, and reply with the link and a one-line gist from it in everyday words (`Since yesterday:
@@ -374,6 +431,10 @@ What the person asks, and what you run (`{cmd}` is the runner):
 - "how close is release?", "how much is left?": answer from `{cmd} status`'s `release:` line (`release: waits on
   7 of 25 tasks` means 7 still to land; with none, no release task is queued) and its `merged … · … tasks left`
   line (`{cmd} status --window 2h` counts over another window), in everyday words, without task ids or slots.
+""",
+    'watch': """\
+# Following the run, and notify me
+
 - "/follow", "live": start the Monitor tool on `{cmd} since --follow` (a line per landed, started or stuck task,
   and when the run goes idle or stops) and post each line as one short bullet without its id, until "stop
   following" (then stop it). Start it only when asked. It carries the needs-you lines too: while it runs, stop
@@ -385,22 +446,10 @@ What the person asks, and what you run (`{cmd}` is the runner):
   line once X shows. When X happened, send one PushNotification saying it in a plain sentence, post it here,
   and stop that Monitor: one push per ask. On a timeout, start it again silently. It is a watch of its own,
   beside the needs-you watch. When neither can ever show X, say so instead.
-- **Push what the person asked to hear, and what they would want while away.** Only the PushNotification tool
-  reaches a phone (when it is listed only by name, as a deferred tool, load it with ToolSearch
-  `select:PushNotification` first). Send one push, before you post it here, whenever you report what the person asked to be told about,
-  including the X of a "notify me" ask on your own background work (a subagent or a `take` you started, a
-  background command): it reports in this conversation, where no Monitor sees it. Push unasked when a take or
-  subagent of yours finished or got stuck, or anything needs the person, and they have not written here in the
-  last few minutes. Never promise a notification you cannot send: when the tool is not there, or a push fails,
-  say so (`I can't push to your phone from this session: check back here`).
-- "/new", "/control", "another control session": `{cmd} control --new`; answer with just the link it prints on
-  its own line (so it can be tapped), or what it printed when there is none.
-- "/pause", go on: `{cmd} pause` / `{cmd} pause --off`. "/slots": `{cmd} slots +1`, `slots -1`, `slots 4` (bare:
-  say how many there are and ask). Past the usage caps: `{cmd} force` (`--off`). "/stop": `{cmd} stop` (running
-  tasks finish first; `--force` now, and they resume next run; `--undo`). No run up: `{cmd}` starts one.
-- Update agent-runner: `{cmd} upgrade` (a run that is up restarts on the new version by itself).
-  Runner updates otherwise come from `[run] auto_upgrade` and the release task: never set up a background
-  watcher, Monitor or loop to upgrade agent-runner.
+""",
+    'queue': """\
+# Shaping the queue
+
 - "add a task", "fix X", "can someone…": `{cmd} plan add <KIND> "what, why, how to check" --files a.py,dir/**`
   (`{cmd} plan kinds` lists KIND letters; `--pri critical` only when it blocks work). Name the exact files, the test file too (`tests/test_menu.py`,
   not `tests/**`): tasks on the same files wait. "after T181", "once X lands": add `--after T181` (ids,
@@ -432,24 +481,24 @@ What the person asks, and what you run (`{cmd}` is the runner):
   ID "<what to do>"` (noted in the plan and typed in; it works on). Once the command prints `told s1 (ID)` the
   agent has it: say so, without watching or hedging. Only "start it over" takes `plan change ID --restart "…"` (its work is thrown
   away).
-- Why did a task stop? `{cmd} plan ID`, the run log `{log}`, then `{cmd} plan note ID "do X instead"` or
-  `{cmd} plan unblock ID "what changed"`.
-- **Doing it now** ("do it now", "just fix it", "do F48 here", "start it here"): read `{cmd} guide take` first
-  and follow it. The work goes in the worktree `{cmd} take` makes, never in this checkout.
-- **Concepts** ("concept X", "sketch some options for X", "show me a concept first", "mock it up": anything that
-  wants to see it before it is built), and a queued concept under "{needs}": read `{cmd} guide concepts` first
-  and follow it. In short: you write the options page here and open it inline; queue a K task only when they
-  say queue it.
-""" + GRILL + """
-- **Needs you items**: before you show one with a pick sheet or a `run: {cmd} wizard ID` line, and before you
-  act on a reply to one ("yes", "B", "later", "sent"), read `{cmd} guide needs` (once per session is enough).
-  A reply that clearly answers one item needs no id: {answer}
+""",
+    'settings': '# Settings\n\n' + SETTINGS,
+}
 
-""" + NO_BANG + """
 
-""" + SETTINGS + """
-""" + SAFE_SHELL + """
-"""
+def control_topic(name: str, cmd: str = 'agent-runner', needs: str = 'Needs you', c=None) -> str:
+    """B98: one control-only page, filled in: CONTROL_TOPICS, or the glossary's and the wording's paragraphs
+    (fitted to the config, as the brief carried them before B98)."""
+    if name == 'glossary':
+        from agent_runner import glossary
+        return glossary.topic(cmd, c)
+    if name == 'voice':
+        from agent_runner import voice
+        return voice.topic(cmd, c)
+    return CONTROL_TOPICS[name].format(cmd=cmd, needs=needs)
+
+
+CONTROL_TOPIC_NAMES = (*CONTROL_TOPICS, 'glossary', 'voice')
 
 CONTROL_SKILL_TEXT = """\
 ---
@@ -562,12 +611,10 @@ RUNNER_START = ("Start the Monitor tool (persistent, timeout_ms 1800000) on `{cm
 
 
 # B27: a reply that answers an item under Needs you without naming it ({needs} is its heading)
-CONTROL_ANSWER = ('work out which item it answers (yes/no fits a check, a letter a concept page, done a block, '
-                  'other words a decision, later or not now shelves one), then run `{cmd} plan confirm|change|shelve '
-                  'ID` with that item\'s id as the needs guide says and say in a line what it did to which item. '
-                  'When you cannot tell which item it answers, ask the person, naming the items in plain words; '
-                  'never guess. Map it only to this project\'s items (F33): an item another project lists '
-                  '("<project> needs you: …") is answered in that project\'s control session, never from here.')
+CONTROL_ANSWER = ('work out which item it answers, run `{cmd} plan confirm|change|shelve ID` as the needs guide '
+                  'says, and say in a line what it did to which item. When you cannot tell which, ask the person, '
+                  'naming the items in plain words; never guess. Only this project\'s items (F33): another project\'s is answered in '
+                  'its own control session.')
 FEED_ANSWER = ('- A reply to something under "{needs}" ("yes", "no", "B", "later", "use SQLite", "do X instead" '
                'right after that item was shown): work out which item it answers (its [ID] is on the line) and run '
                '`{cmd} plan confirm ID "<their words>"` for a yes, done, a letter or an answer, `{cmd} plan change '
@@ -583,19 +630,17 @@ CONTROL_WATCH = """\
 **Tell the person, unasked, when the run needs them.** Every control session, on its first turn (with the
 summary, or before answering the first message of a blank one), starts the Monitor tool on
 `{cmd} since --follow --needs-you`, once, with timeout_ms 1800000 (the cap). It prints a line only when the run
-is held (STOPPED: uncommitted edits or a mid-merge in the main checkout, staged changes, a usage cap), a task is
-left for a human, looks stalled, or waits on the person's answer (a check, a decision, a concept page waiting for
-an OK); this watch is how they hear it. On each line, post one plain bullet: what is held and the one thing to
-do (`Commit or move the uncommitted edits in {repo}: they hold a tested merge`, `F5 Push on phone asks you to
-check the push arrived`), with the link when there is one, and send that bullet with the PushNotification tool
-so a phone hears it. When it times out with no lines, re-arm it silently: start it again with no text at all;
-speak only for a line it printed. One watch per session; it never moves the last-look mark."""
+is held, a task is left for a human or looks stalled, or one waits on the person's answer. On each line, post
+one plain bullet: what is held and the one thing to do (`F5 Push on phone asks you to check the push
+arrived`), with the link when there is one, and send it with the PushNotification tool. When it times out
+with no lines, re-arm it silently: start it again with no text at all; speak only for a line it printed. One watch per session."""
 
 CONTROL_FEED_WATCH = """\
 **The runner feed tells the person when the run needs them.** The session "{repo} · runner" watches the run
 and pushes what needs the person to their phone, so start no needs-you watch of your own."""
 
-CONTROL_START = ("Open with the summary your control brief describes (`{cmd} status` only, not since: open each "
+CONTROL_START = ("Open with the summary your control brief describes (its layout: `{cmd} guide summary`; "
+                 "`{cmd} status` only, not since: open each "
                  "waiting concept page, a first line saying what needs me or 'Nothing needs you', a headline, the groups under their headings, then the hints line), "
                  "{watch_start}and wait for me.")
 CONTROL_START_WATCH = ("start the needs-you watch your brief describes (the Monitor tool on "

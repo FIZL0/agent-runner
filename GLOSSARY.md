@@ -154,3 +154,10 @@ _Said_: since summary
 _On screen_: since yesterday 00:00: 2 started, 159 landed, 2 stuck
 _In code_: since_digest, since --all
 _Avoid_: event dump, raw log
+
+**Guide page**:
+One page of longer rules a session reads when an ask fits it; the control brief names each one instead of carrying its text.
+_Said_: guide topic
+_On screen_: agent-runner guide <topic>
+_In code_: guide.TOPICS, guide.CONTROL_TOPICS, control_topic()
+_Avoid_: help page, doc
