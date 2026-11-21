@@ -23,7 +23,7 @@ from agent_runner.slots import (attach_target, background_env, background_sessio
     REMOTE_URL, tmux, TmuxMux, transcript, window)
 from agent_runner.land import wip_main_info
 from agent_runner.control import (control_env, CONTROL_LINK_WAIT, control_live, CONTROL_N_ENV, control_name,
-    control_title, feed_on, free_control_number, message_text, person_message, RC_ENDING, rc_forget, rc_record,
+    control_title, feed_on, free_control_number, hidden_control, hidden_control_log, message_text, person_message, RC_ENDING, rc_forget, rc_record,
     rc_records, rc_sweep, REMOTE_DIR, SESSION_LINK)
 from agent_runner.status import follow, read_events, since_text, waiting_ok
 
@@ -642,9 +642,7 @@ def control_new(n: int | None = None, wait: float = CONTROL_LINK_WAIT, ask: str 
               (f': "{name}" at {REMOTE_URL}' if remote_on() else f' ({shown_cmd()} attach c{n} shows it)'))
         return 0
     if not shutil.which('tmux') or not (sess := control_new_session()):
-        print(f'no tmux session to open it in (no run is up): start a run with {shown_cmd()}, or run {shown_cmd()} control '
-              f'in a terminal', file=sys.stderr)
-        return 1
+        return control_new_hidden(n, cmd, name, wait)  # F59: no tmux session to open a window in
     env = [e for e in background_env() if not e.startswith(('AGENT_RUNNER=', 'AGENT_RUNNER_SLOT=', 'AGENT_RUNNER_KEEP='))]
     envs = [x for e in env for x in ('-e', e)]
     win = name if control_title(ask, images) else window(f'control{n}')
@@ -672,6 +670,43 @@ def control_new(n: int | None = None, wait: float = CONTROL_LINK_WAIT, ask: str 
             break
         time.sleep(1)
     if not shown.returncode:  # B45: the pane is still open, Remote Control on, and no link in all that time
+        link_drift(f'control {n}', wait)
+    print(f'control {n} is up in {where}, but showed no link in {wait:g} s: find "{name}" at {REMOTE_URL}')
+    return 0
+
+
+def control_new_hidden(n: int, cmd: list[str], name: str, wait: float = CONTROL_LINK_WAIT) -> int:
+    """F59: `control --new` on Linux and macOS with no tmux session to open a window in (a hidden run, or no
+    tmux): control session `n` in a pseudo-terminal with no window (`hidden_control`). With `[run] remote` it
+    prints its claude.ai/code link once its log shows it, as a window's pane would."""
+    out = hidden_control_log(n)
+    since = out.stat().st_size if out.exists() else 0
+    pid, why = hidden_control(n, cmd)
+    if not pid:
+        print(f'control {n} could not start hidden: {why}', file=sys.stderr)
+        return 1
+    where = f'a hidden terminal, its output in {out}'
+    if not remote_on():
+        why = remote_off_why() if C.run['remote'] == 'auto' else ''
+        print(f'control {n} is up in {where}; it is local' +
+              (f' ({why})' if why else ': [run] remote = true puts control sessions on claude.ai/code'))
+        return 0
+    deadline = time.monotonic() + wait
+    while True:
+        try:
+            with open(out, 'rb') as fh:
+                fh.seek(since)
+                shown = fh.read().decode('utf-8', 'replace')
+        except OSError:
+            shown = ''
+        if m := SESSION_LINK.search(shown):
+            print(f'control {n} is up: {m.group(0)}\n("{name}", in {where})')
+            remote_answer_drift(f'control {n}')  # B45: it came up on Remote Control, so the answer is kept
+            return 0
+        if not plat.alive(pid) or time.monotonic() >= deadline:
+            break
+        time.sleep(1)
+    if plat.alive(pid):  # B45: still running, Remote Control on, and no link in all that time
         link_drift(f'control {n}', wait)
     print(f'control {n} is up in {where}, but showed no link in {wait:g} s: find "{name}" at {REMOTE_URL}')
     return 0

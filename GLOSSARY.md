@@ -112,3 +112,10 @@ _Said_: the future too, make everything look like this
 _On screen_: restyle K9, held for restyle K9
 _In code_: plan.restyle, plan.hold, plan.release_held, loop.restyles, plan restyle
 _Avoid_: redesign, retheme
+
+**Hidden control session**:
+A control session with no window, started by a run with no tmux pane to open it in; what it prints goes to its log
+_Said_: control session without tmux
+_On screen_: c1 is up in a hidden terminal
+_In code_: hidden_control, control_new_hidden, controlN.log
+_Avoid_: headless control, background control

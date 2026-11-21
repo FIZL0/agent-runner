@@ -548,7 +548,9 @@ def start_control() -> None:
     and local (`--local`: no Remote Control, so no second app entry beside the control server's "<repo> ·
     control" and no start push; no quiet-c1 presence file either). tmux: under the runner's pane, or in the background session's own window, whose
     default-command makes every new pane a control session. Windows: a console of its own (hidden in the
-    background run)."""
+    background run). Linux and macOS with no tmux pane to open it in (a hidden run): a pseudo-terminal with no
+    window (`hidden_control`, F59)."""
+    mark_board()
     if not C.run['control'] or not control_ok():
         return
     cmd = [*runner_cmd(), 'control', '1', *(['--blank', '--local'] if remote_on() else [])]  # remote: free till you type, terminal only
@@ -577,16 +579,71 @@ def start_control() -> None:
     elif plat.WINDOWS:
         plat.spawn_console(cmd, ROOT, control_env(), hidden=HIDDEN[0])
         where, more = 'a console of its own' + (' (hidden)' if HIDDEN[0] else ''), ''
+    elif type(MUX).__name__ == 'HiddenMux':  # F59: a hidden run (no tmux, or outside a tmux session): no window
+        pid, why = hidden_control(1, cmd)
+        if not pid:
+            log(f'control: c1 could not start hidden: {why}')
+            return
+        where, more = f'a hidden terminal (its output in {hidden_control_log(1)})', ''
     else:
         return
     log(f'control: c1 is up in {where} ({shown_cmd()} control opens another{more})')
 
 
+NO_BOARD = 'no-board'  # F59: <notes>/no-board while the run that is up has no board window (a hidden run)
+
+
+def mark_board() -> None:
+    """F59: say whether this run has a board window, for `feed_on` in the control sessions' own processes: the
+    board opens only in a tmux run inside a tmux session (`start_board`). Called once as the run starts."""
+    f = C.notes(NO_BOARD)
+    if isinstance(MUX, TmuxMux) and os.environ.get('TMUX_PANE'):
+        f.unlink(missing_ok=True)
+    else:
+        f.write_text('this run has no board window, so no runner feed\n', encoding='utf-8')
+
+
+def hidden_control_log(n: int) -> Path:
+    """F59: where a hidden control session's output goes: `<notes>/control<n>.log`."""
+    return C.notes(f'control{n}.log')
+
+
+def hidden_control(n: int, cmd: list[str], wait: float | None = None) -> tuple[int, str]:
+    """F59: start control session `n` (`cmd`, a `control N` command line) with no window on Linux and macOS,
+    through the F40 pty shim (`run --slot-shim`, `run_pty`) with a job of its own, `<notes>/control<n>.job`:
+    its output goes to `hidden_control_log`, its pid to `<notes>/control<n>.live` while it runs, and text
+    written to the FIFO beside it (`control<n>.in`) is typed into it. Started detached, so it outlives the run
+    the way c1 in a pane does. (pid, '') once it is up, else (0, why)."""
+    from agent_runner.slots import SHIM_WAIT
+    job, marker = C.notes(f'control{n}.job'), C.notes(f'control{n}.live')
+    ended = marker.with_suffix('.exit')
+    marker.unlink(missing_ok=True)
+    ended.unlink(missing_ok=True)
+    job.write_text(json.dumps({'argv': cmd, 'cwd': str(ROOT), 'env': {}, 'marker': str(marker),
+                               'log': str(hidden_control_log(n))}), encoding='utf-8')
+    shim = [*runner_cmd(), 'run', '--slot-shim', str(job)]
+    try:
+        with open(C.notes(f'control{n}.shim'), 'ab') as out:  # the shim's own errors, should it fail
+            sp.Popen(shim, cwd=str(ROOT), env=control_env(), stdin=sp.DEVNULL, stdout=out, stderr=out,
+                     start_new_session=True)
+    except OSError as e:
+        return 0, f'could not start the shim: {e}'
+    end = time.monotonic() + (SHIM_WAIT if wait is None else wait)
+    while time.monotonic() < end:
+        if pid := marker_pid(marker):
+            return pid, ''
+        if ended.exists():
+            return 0, ended.read_text(encoding='utf-8').strip()[:300] or 'it ended at once'
+        time.sleep(0.2)
+    return 0, f'it did not start in {SHIM_WAIT if wait is None else wait:g} s (see {C.notes(f"control{n}.shim")})'
+
+
 def feed_on() -> bool:
     """Does a run here keep the runner feed (the board window, on Remote Control), the one watch that pushes what
-    needs the person? Control sessions then start no needs-you watch of their own."""
-    # ponytail: a run started with --no-tmux has no feed though tmux is here; its control sessions miss the pushes
-    return remote_on() and control_ok() and not plat.WINDOWS and shutil.which('tmux') is not None
+    needs the person? Control sessions then start no needs-you watch of their own. Not while the run that is up
+    has no board window (F59: a hidden run, with tmux installed or not)."""
+    return (remote_on() and control_ok() and not plat.WINDOWS and shutil.which('tmux') is not None
+            and not C.notes(NO_BOARD).exists())
 
 
 CONTROL_LINK_WAIT = 90  # s `control --new` watches the new pane for its claude.ai/code link
