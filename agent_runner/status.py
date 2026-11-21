@@ -463,9 +463,9 @@ def waiting_ok() -> list[tuple]:
 
 
 def waiting_text(waiting, width: int = 60, now: dt.datetime | None = None, wips=None) -> list[str]:
-    """B27: '[needs] heading' ('Needs you:') and per ask one line in everyday words, what is asked and what to
-    reply, with its age first ('2h', when `[needs] ages`) and its [id] last, then its link on a line of its
-    own; in `[needs] order` (oldest first); a count of the shelved ones last. [] for none. `waiting` is
+    """B27: 'Needs you:' and per ask one line in everyday words, what is asked and what to
+    reply, with its age first ('2h') and its [id] last, then its link on a line of its
+    own; in `[run] needs_order` (oldest first); a count of the shelved ones last. [] for none. `waiting` is
     `waiting_ok()`'s list: asks tuples, an `(asked …)` stamp eighth when there is one. No caps labels."""
     if not waiting and not wips:
         return []

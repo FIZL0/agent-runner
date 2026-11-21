@@ -62,7 +62,7 @@ task as it lands. Any new pane in the `ar-<repo>` session is another one. With `
 control sessions are on Remote Control, so you run the run from claude.ai/code or the Claude apps
 ([docs/REFERENCE.md](docs/REFERENCE.md#control-sessions)). The run closes the extra ones (never c1) after
 3 hours of quiet once Claude has answered, so the apps' list stays short; one left on an open question goes under
-Needs you first (`[run] control_close`, `control_idle`, `control_ask_idle`).
+Needs you first (`[run] control_idle`, `control_ask`).
 
 > [!TIP]
 > No repo handy? `examples/demo.sh` builds a tiny one with a plan in a temp dir and shows `plan`,

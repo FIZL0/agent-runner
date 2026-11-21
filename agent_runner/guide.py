@@ -56,7 +56,7 @@ changes the run that is up now. When what the person says fits a setting,
 recommend the one change in one line, `[table] key = value`: what it does, and ask. Name only keys
 `{cmd} settings` lists; when none fits, say so and offer a task instead. For example:
   - "too many control sessions", "close them faster": `[run] control_idle = "1h"` (idle ones close sooner;
-    `[run] control_close = false` keeps them open)
+    `[run] control_idle = false` keeps them open)
   - "too many agents", "fewer sessions": `[run] slots = 2` (or `{cmd} slots 2` for the run that is up)
   - "stop pushing to my phone": `[run] silent = true`; "not on my phone at all": `[run] remote = false`
   - "stop before my usage runs out": `[run] weekly_max = 70` / `[run] session_max = 70`
@@ -68,7 +68,7 @@ worktree, then `{cmd} take ID --merge`), never as an edit in the main checkout. 
 """
 
 # C2: branch-only material, printed by `{cmd} guide <topic>` when the pointer in GUIDE or the control brief fires.
-# {cmd} is the runner, {needs} the `[needs] heading`.
+# {cmd} is the runner, {needs} the Needs you heading.
 TOPICS = {
     'take': """\
 # Doing a task here, now
@@ -538,7 +538,7 @@ RUNNER_START = ("Start the Monitor tool (persistent, timeout_ms 1800000) on `{cm
                 "it again the same way and say nothing at all; speak only for a line it printed.")
 
 
-# B27: a reply that answers an item under Needs you without naming it ({needs} is `[needs] heading`)
+# B27: a reply that answers an item under Needs you without naming it ({needs} is its heading)
 CONTROL_ANSWER = ('work out which item it answers (yes/no fits a check, a letter a concept page, done a block, '
                   'other words a decision, later or not now shelves one), then run `{cmd} plan confirm|change|shelve '
                   'ID` with that item\'s id as the needs guide says and say in a line what it did to which item. '

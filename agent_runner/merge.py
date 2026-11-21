@@ -487,7 +487,7 @@ def merge_gate(tid: str, d: Path, env: dict, batch: dict | None = None) -> tuple
                     log(f'{tid}: the gate on this exact merge ended with exit {r[0]}; that result counts')
                 return r
     out = gates / f'{key}.out'
-    timeout = C.run['timeout']
+    timeout = C.run['command_timeout']
     cmd, full = gate_cmd((batch or {}).get('base', ''))
     if not full:
         log(f'{tid}: the gate tests what changed since {batch["base"][:9]} ([run] test_since)')
@@ -506,7 +506,7 @@ def merge_gate(tid: str, d: Path, env: dict, batch: dict | None = None) -> tuple
         os.killpg(p.pid, signal.SIGTERM)
         p.wait()
         gate_done(s)
-        return 124, f'`{cmd}` ran past [run] timeout ({timeout}s): counted as failing'
+        return 124, f'`{cmd}` ran past [run] command_timeout ({timeout}s): counted as failing'
     finally:
         rec.unlink(missing_ok=True)
     return gate_done(s) or (p.returncode or 1, f'`{cmd}` left no exit code')
@@ -763,7 +763,7 @@ def merge(tid: str, branch: str) -> str | None:
     moves once the tests pass. So the main checkout never holds an untested merge: whoever works there keeps
     committing the whole time, nothing is reset under them, and their edits are never stashed.
 
-    With `[run] batch`, the other finished branches waiting for the lock ride along: one gate run for all of
+    Unless `[run] batch_max` is 1, the other finished branches waiting for the lock ride along: one gate run for all of
     them (the gate is often the slow part). A rider that conflicts beyond a join waits for its own turn, and
     a batch that fails the gate is split: this task tries again alone, the riders take their own turns.
 
@@ -1369,7 +1369,7 @@ def merge_batch(tid: str, branch: str, inline: bool = False, yields: bool = True
     if trim(d, 'merge worktree'):
         worktree('merge', branch)
     crit = criticals(branch)
-    solo = not C.run['batch'] or tid in ALONE or tid in crit
+    solo = C.run['batch_max'] == 1 or tid in ALONE or tid in crit
     batch_fixes = C.run['fix_merges'] and not C.run['fix_ahead_max']  # a rider's conflict: a fix session in the batch
     t = BatchTurn(tid, branch, d, solo, crit, ahead_fix, batch_fixes)
     try:
@@ -1393,5 +1393,5 @@ def merge_batch(tid: str, branch: str, inline: bool = False, yields: bool = True
 # --- the loop ------------------------------------------------------------------
 
 def before_start_fails() -> bool:
-    """`[run] before_start` exits non-zero, or runs past `[run] timeout` (logged: it holds every start)."""
+    """`[run] before_start` exits non-zero, or runs past `[run] command_timeout` (logged: it holds every start)."""
     return hook('before_start (counted as failing)', C.run['before_start'], ROOT)[0] != 0

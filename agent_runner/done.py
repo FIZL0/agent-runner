@@ -50,9 +50,9 @@ def gate(cwd: Path, key: str = 'test', full: bool = False, env: dict | None = No
     cmd = cfg(cwd).run[key]
     if not cmd:
         return 0, ''
-    rc, out = shell(cmd, cwd, env, cfg(cwd).run['timeout'])
+    rc, out = shell(cmd, cwd, env, cfg(cwd).run['command_timeout'])
     if rc is None:
-        return 124, f'`{cmd}` ran past [run] timeout ({cfg(cwd).run["timeout"]}s): counted as failing'
+        return 124, f'`{cmd}` ran past [run] command_timeout ({cfg(cwd).run["command_timeout"]}s): counted as failing'
     out = out.strip()
     return rc, out if full else '\n'.join(out.splitlines()[-15:])
 

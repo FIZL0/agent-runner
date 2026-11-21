@@ -596,7 +596,7 @@ def watch_ci(branch: str, force: bool = False) -> list[str]:
             if not (got := ci.to_file(gh, wf, branch, seen, open_text, event, CI_RERUN, log)):
                 continue
             text, long = got
-            tid = P.add(C.run['ci_kind'], text, todo=ROOT / rel, pri='critical')
+            tid = P.add(ci.CI_KIND, text, todo=ROOT / rel, pri='critical')
             if len(earlier := ci.closed_repeats(P.lines(ROOT / plan_rel('DONE.md')), ci.marker(wf, branch))) \
                     >= ci.REPEAT_LIMIT - 1:  # B34: the third in a week waits on a person, not ahead of all work
                 P.block(tid, ci.repeat_ask(f'`{wf}` on {branch}', earlier), todo=ROOT / rel, after=[])

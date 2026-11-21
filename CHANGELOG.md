@@ -4,6 +4,26 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Fewer settings (C14, from the R7 audit). An old runner.toml or runner.local.toml still works: each old key
+  is logged at the run's start with what to write instead, and a renamed one still applies under its new name.
+  - `[run] backend` is gone: the backend follows `agent` (an executable named `pi` runs on Pi) and
+    `AGENT_RUNNER_BACKEND=claude|pi`. An old `backend = "pi"` is read as `agent = "pi"` (beside a wrapper not
+    named pi it still runs on Pi); write `agent = "pi"`, or set `AGENT_RUNNER_BACKEND=pi` for a wrapper.
+  - `[run] batch` is folded into `batch_max`: `batch_max = 1` is no batching. An old `batch = false` is read
+    as `batch_max = 1`.
+  - Every slot gets `AGENT_SLOT=<n>`, and `[run] slot_env` (now `[]` by default) only adds to it. Before,
+    setting `slot_env` dropped `AGENT_SLOT` unless it was repeated.
+  - `[run] control_close` is folded into `control_idle`: `control_idle = false` closes no idle control session.
+    An old `control_close = false` is read as `control_idle = false`.
+  - `[run] control_ask_idle`, `control_file_asks` and `control_ask_kind` become one `control_ask = "2h"`:
+    false keeps a session waiting on its open question open (nothing filed). An old `control_ask_idle` is
+    read as `control_ask`; an open question is always filed (as an F task) before its session closes.
+  - The `[needs]` table is gone: its heading is always "Needs you" and each item shows its age; its order is
+    `[run] needs_order`. An old `[needs] order` is read as `[run] needs_order`.
+  - `[run] flaky_kind` (T), `ci_kind` (B) and `control_ask_kind` (F) are constants.
+  - `[run] timeout` is renamed `command_timeout` (it covers the gate, a retest, hook commands and `done`'s
+    gate); an old `timeout` is read as `command_timeout`.
+  - `agent-runner settings` comments no longer start with a task id (`B26:`, `F17:`, …).
 - A run with no test gate (`[run] test` empty) says so: the run's start, `run --dry-run` and `status` show
   "WARNING no test gate ([run] test is empty): merges go to main untested", and its merges stay local unless
   the config sets `[git] push_merge` itself; each merge logs the `git push` to publish it. Before, it merged
