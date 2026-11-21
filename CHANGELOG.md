@@ -4,6 +4,12 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+## 0.58.1 (2026-11-21)
+
+- The runner feed in a wrapped repo names `[run] command` (e.g. openmx's `./kit`) in its prompt and hints, and
+  allows both that command and the runner itself, so it can hand an ask to a control session. Before, it named
+  the bare runner, which skipped the wrapper's settings, and refused the wrapper's own command (B92).
+
 ## 0.58.0 (2026-11-21)
 
 - Fewer settings (C14, from the R7 audit). An old runner.toml or runner.local.toml still works: each old key
