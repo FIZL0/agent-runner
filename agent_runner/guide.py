@@ -236,6 +236,8 @@ AGENT_RUNNER_SLOT set you are one of the runner's agents: follow your brief, not
      you, in this session, not a K task: read `agent-runner guide concepts` first
    - **Needs you**: a queued concept or a task blocked on a person, or the person's reply to one: read
      `agent-runner guide needs` first
+   - **grilling** ("grill me", "poke holes", "stress-test it"): rounds of questions before you queue: read
+     `agent-runner guide grill` first
 2. **Queue work instead of doing it**, unless the person asks you to do it yourself now. A running runner
    starts a queued task within a minute. Good tasks name their `--files` (tasks on the same files never
    run at once) and say how to check the result. **Keep the main checkout clean**: uncommitted edits there
