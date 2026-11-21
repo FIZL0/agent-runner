@@ -6773,6 +6773,60 @@ def test_context_warn_f25(repo: Path):
        ['  14:00  B32 peaked 168k (over 150k): runner.py 61k, test_runner.py 22k'], 'since says it, from the fields')
 
 
+def test_control_fresh_f27(repo: Path):
+    print('F27: a new run starts a bloated c1 fresh; a restart always resumes it')
+    R.init(repo)
+    from agent_runner import control as Ctl
+    sidf, evf, statef = (repo / '.runner' / n for n in ('control.sid', 'events.jsonl', 'STATE'))
+    kept = {f: f.read_bytes() if f.exists() else None for f in (sidf, evf, statef)}
+    try:
+        sidf.write_text('old-sid\n', encoding='utf-8')
+        ctx = {'old-sid': [20000, 230000, 160400]}  # its last context: 160k, over the default 150k
+        with mock.patch.object(R.Claude, 'find_transcript', lambda self, s: '/x.jsonl'), \
+                mock.patch('agent_runner.watch.usage', lambda s: (3, ctx.get(s, []), [])), \
+                mock.patch.object(Ctl, 'log', lambda *a, **k: None):
+            eq(Ctl.control_sid(1), ('old-sid', True), 'over budget on a restart (no --new-run): resumes')
+            eq(Ctl.CONTROL_FRESH[0], '', 'and says nothing')
+            ctx['old-sid'] = [20000, 230000, 149000]
+            eq(Ctl.control_sid(1, new_run=True), ('old-sid', True), 'under budget on a new run: resumes')
+            with mock.patch.dict(R.C.run, {'context_warn': 0}):
+                ctx['old-sid'] = [20000, 230000, 160400]
+                eq(Ctl.control_sid(1, new_run=True), ('old-sid', True), 'context_warn 0: always resumes')
+            sid, resume = Ctl.control_sid(1, new_run=True)
+            check(sid != 'old-sid' and not resume, 'over budget on a new run: a new session id', sid)
+            eq(sidf.read_text().strip(), sid, 'written to control.sid')
+            check('160k' in Ctl.CONTROL_FRESH[0] and 'fresh' in Ctl.CONTROL_FRESH[0], 'and one line says why',
+                  Ctl.CONTROL_FRESH[0])
+            argv = Ctl.control_argv(1, sid, resume=False)
+            check(argv[1].startswith('Say first, in one line: "c1 starts a fresh session'), 'the opening says it first',
+                  argv[1])
+            check(not Ctl.control_sid(2, new_run=True)[1] and Ctl.CONTROL_FRESH[0] == '', 'other sessions: unchanged')
+
+        now = R.dt.datetime(2026, 11, 20, 15, 0, 0).timestamp()
+
+        def events(*recs):
+            evf.write_text(''.join(json.dumps({'time': t, 'kind': k}) + '\n' for t, k in recs), encoding='utf-8')
+        statef.unlink(missing_ok=True)
+        evf.unlink(missing_ok=True)
+        check(not Ctl.run_restart(now), 'no earlier run: a new run')
+        events(('2026-11-20T09:00:00', R.EV_RUN_UP), ('2026-11-20T10:00:00', R.EV_STOPPED))
+        check(not Ctl.run_restart(now), 'the last run stopped hours ago: a new run')
+        events(('2026-11-20T09:00:00', R.EV_RUN_UP), ('2026-11-20T14:58:00', R.EV_STOPPED))
+        check(Ctl.run_restart(now), 'stopped two minutes ago: a restart')
+        events(('2026-11-20T09:00:00', R.EV_RUN_UP), ('2026-11-20T10:00:00', R.EV_STOPPED),
+               ('2026-11-20T11:00:00', R.EV_RUN_UP), ('2026-11-20T11:05:00', R.EV_LANDED))
+        check(Ctl.run_restart(now), 'the last run never logged its stop (upgrade restart, crash, kill): a restart')
+        events(('2026-11-20T09:00:00', R.EV_RUN_UP), ('2026-11-20T10:00:00', R.EV_STOPPED))
+        statef.write_text(json.dumps({'at': '2026-11-20T14:59:00'}), encoding='utf-8')
+        check(Ctl.run_restart(now), 'its last STATE a minute ago counts as its end')
+    finally:
+        for f, b in kept.items():
+            if b is None:
+                f.unlink(missing_ok=True)
+            else:
+                f.write_bytes(b)
+
+
 def test_merged_count_b78(repo: Path):
     print('status: "merged N" counts tasks, not merge commits: a fast-forward counts, two merge commits count once')
     with tempfile.TemporaryDirectory() as t:
@@ -6855,7 +6909,8 @@ def main() -> int:
                        lambda: test_stop_countdown(repo), lambda: test_real_claude_json_guard(tmp),
                        lambda: test_hidden_slots(repo, tmp), lambda: test_hidden_run_lands(tmp),
                        lambda: test_claude_drift_b45(repo, tmp), lambda: test_merged_count_b78(repo),
-                       lambda: test_hidden_control_f59(repo, tmp), lambda: test_context_warn_f25(repo)])
+                       lambda: test_hidden_control_f59(repo, tmp), lambda: test_context_warn_f25(repo),
+                       lambda: test_control_fresh_f27(repo)])
 
 
 if __name__ == '__main__':

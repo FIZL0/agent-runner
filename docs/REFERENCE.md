@@ -121,7 +121,13 @@ task to fix X" (it files it with `plan add`), "do X now" (it uses `take`, never 
   it gets a console of its own, hidden in the background mode; a hidden run on Linux and macOS (no tmux, or
   started outside a tmux session) runs it in a terminal with no window, through the same shim as a hidden
   slot, its output in `.runner/control1.log`. `agent-runner attach c1` goes there. c1 keeps
-  its session id in `.runner/control.sid` and resumes it in every run while the transcript is there. It has no
+  its session id in `.runner/control.sid` and resumes it in every run while the transcript is there. A new
+  run a person starts begins c1 afresh instead (a new id in `control.sid`) when the kept session's last
+  context is over `[run] context_warn`, and its opening summary says so in one line first (`c1 starts a fresh
+  session: the last one reached 160k context …`); the plan, ledger and `since` hold the state. A restart
+  always resumes it, whatever its size: the self-restart on `upgrade` or `auto_upgrade`, a run after a crash,
+  a kill or Ctrl-C (the last run never logged its stop), and a run started within 5 minutes of the last one
+  ending. It has no
   Stop hook, is never ended on idle, and outlives a stopped run: a run that finds c1 still up opens no other.
 - **More of them**: `agent-runner control` starts one in this terminal (c1 when it is not running, else the
   next free number, `.runner/control<N>.pid`). In the background session every new pane or window a person
@@ -971,7 +977,7 @@ control_ask_kind = "F"    # the id prefix of that DECIDE item's task (answering 
 auto_upgrade = true       # upgrade by itself when a newer release is out, as `u` does, once no merge runs; the run restarts on it (false: only `u` or `agent-runner upgrade`)
 idle = 30                 # s quiet after a turn ends before a session without a successful `done` is ended (with one: 5 s)
 stall = 1200              # s quiet at a prompt that counts as stalled
-context_warn = 150        # k tokens: a slot session whose context peaked past this says so in its exit line and in `since`, with what filled it ("B32 peaked 168k (over 150k): runner.py 61k, test_runner.py 22k"); soft only, nothing is stopped; 0 = off
+context_warn = 150        # k tokens: a slot session whose context peaked past this says so in its exit line and in `since`, with what filled it ("B32 peaked 168k (over 150k): runner.py 61k, test_runner.py 22k"); soft only, nothing is stopped; 0 = off. A new run also starts c1 afresh when its kept session last stood over it (F27)
 pause = 60                # s between one session ending and the next starting in that slot
 weekly_max = 90           # % of 7-day usage past which nothing new starts
 session_max = 90          # % of 5-hour session usage past which nothing new starts

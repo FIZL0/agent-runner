@@ -371,6 +371,8 @@ def control_argv(n: int, sid: str, resume: bool, blank: bool = False, ask: str =
     from agent_runner.guide import CONTROL_START, CONTROL_START_WATCH
     opening = CONTROL_START.format(cmd=RUNNER, watch_start='' if feed_on() else  # B71: the runner, not [run] command
                                    CONTROL_START_WATCH.format(cmd=RUNNER))
+    if n == 1 and not resume and CONTROL_FRESH[0]:  # F27: a bloated c1 started over; the summary says so first
+        opening = f'Say first, in one line: "{CONTROL_FRESH[0]}." Then: {opening}'
     ask_text, ask = ask, control_ask(ask, images)
     first = [ask] if ask else [opening] if n == 1 and not blank else []
     return [plat.exe(C.run['agent']), *first,
@@ -405,17 +407,78 @@ def control_number() -> int:
     return n
 
 
-def control_sid(n: int) -> tuple[str, bool]:
+RESTART_GAP = 300  # s: a run started this soon after the last one ended is a restart (F27: c1 resumes)
+CONTROL_FRESH = ['']  # F27: why this c1 started a fresh session, for its opening line ('' when it did not)
+
+
+def run_restart(now: float | None = None) -> bool:
+    """F27: whether the run starting now is a restart of the last one rather than a new run a person started:
+    the last run never logged its stop (the self-restart on upgrade or auto_upgrade, a crash, a kill, Ctrl-C),
+    or it stopped under RESTART_GAP ago (its last STATE counts as its end too). Called before this run logs
+    its own 'run up'; no earlier run at all is a new run."""
+    from agent_runner.state import EV_RUN_UP, EV_STOPPED
+    now = time.time() if now is None else now
+    last = None
+    try:
+        with open(C.notes('events.jsonl'), encoding='utf-8') as fh:
+            for line in fh:
+                try:
+                    d = json.loads(line)
+                except ValueError:
+                    continue
+                if isinstance(d, dict) and d.get('kind') in (EV_RUN_UP, EV_STOPPED):
+                    last = d
+    except OSError:
+        pass
+    if not last:
+        return False
+    if last['kind'] == EV_RUN_UP:
+        return True
+    ends = [str(last.get('time', ''))]
+    try:
+        ends.append(str(json.loads(C.notes('STATE').read_text(encoding='utf-8')).get('at', '')))
+    except (OSError, ValueError, AttributeError):
+        pass
+    stamps = []
+    for s in ends:
+        try:
+            stamps.append(dt.datetime.fromisoformat(s).timestamp())
+        except ValueError:
+            pass
+    return bool(stamps) and now - max(stamps) < RESTART_GAP
+
+
+def control_bloated(sid: str) -> int:
+    """F27: session `sid`'s last context in k tokens when it is over [run] context_warn (0 is off), else 0."""
+    from agent_runner.watch import usage
+    try:
+        warn = int(C.run.get('context_warn') or 0)
+    except (TypeError, ValueError):
+        return 0
+    ctx = usage(sid)[1]
+    last = ctx[-1] // 1000 if ctx else 0
+    return last if warn > 0 and last > warn else 0
+
+
+def control_sid(n: int, new_run: bool = False) -> tuple[str, bool]:
     """(session id, resume?): c1 keeps its id in `<notes>/control.sid` and resumes it across runs while its
-    transcript is there; any other control session starts fresh."""
+    transcript is there; any other control session starts fresh. F27: `new_run` (`control 1 --new-run`, from a
+    run a person started, not a restart: `run_restart`) starts c1 fresh, with a new id in control.sid, when
+    the kept transcript's last context is over [run] context_warn; the plan, ledger and since hold the state,
+    so the opening summary covers it. CONTROL_FRESH then says why, in one line."""
     f = C.notes('control.sid')
+    CONTROL_FRESH[0] = ''
     if n == 1:
         try:
             sid = f.read_text(encoding='utf-8').strip()
         except OSError:
             sid = ''
         if sid and backend().find_transcript(sid):
-            return sid, True
+            if not (new_run and (k := control_bloated(sid))):
+                return sid, True
+            CONTROL_FRESH[0] = (f'c1 starts a fresh session: the last one reached {k}k context (over [run] '
+                                f'context_warn {C.run["context_warn"]}k); the plan, ledger and since carry on')
+            log(f'control: {CONTROL_FRESH[0]}')
     sid = str(uuid.uuid4())
     if n == 1:
         f.write_text(sid + '\n', encoding='utf-8')
@@ -553,7 +616,8 @@ def start_control() -> None:
     mark_board()
     if not C.run['control'] or not control_ok():
         return
-    cmd = [*runner_cmd(), 'control', '1', *(['--blank', '--local'] if remote_on() else [])]  # remote: free till you type, terminal only
+    cmd = [*runner_cmd(), 'control', '1', *([] if run_restart() else ['--new-run']),  # F27: a restart resumes c1
+           *(['--blank', '--local'] if remote_on() else [])]  # remote: free till you type, terminal only
     here = os.environ.get('TMUX_PANE', '')
     if isinstance(MUX, TmuxMux) and here:
         sess = tmux('display-message', '-p', '-t', here, '#{session_name}').stdout.strip()

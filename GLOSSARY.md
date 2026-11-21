@@ -126,3 +126,10 @@ _Said_: context budget
 _On screen_: B32 peaked 168k (over 150k): runner.py 61k, test_runner.py 22k
 _In code_: context_warn, context_over, EV_CONTEXT, cost.filled
 _Avoid_: context limit, hard limit
+
+**Fresh c1**:
+c1 starting a new session instead of resuming the kept one, on a new run when the kept one last stood over the context warning; a restart always resumes
+_Said_: fresh control session
+_On screen_: c1 starts a fresh session
+_In code_: control_sid(new_run=), CONTROL_FRESH, run_restart, control_bloated, --new-run
+_Avoid_: reset c1, new c1

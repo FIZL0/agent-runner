@@ -749,6 +749,7 @@ def cmd_control(argv: list[str], prog: str = f'{RUNNER} control') -> int:
     ap.add_argument('--hand', action='store_true', help=argparse.SUPPRESS)  # F53: the hook in settings.local.json
     ap.add_argument('--blank', action='store_true', help=argparse.SUPPRESS)  # c1 under [run] remote: no opening turn
     ap.add_argument('--local', action='store_true', help=argparse.SUPPRESS)  # c1 under [run] remote: not in the apps
+    ap.add_argument('--new-run', action='store_true', help=argparse.SUPPRESS)  # F27: c1 of a new run (not a restart)
     ap.add_argument('--ask', default='', help=argparse.SUPPRESS)  # its first message: tests and older feeds (B72)
     ap.add_argument('--ask-file', default='', help=argparse.SUPPRESS)  # B72: the forwarded message, from a file
     ap.add_argument(FORWARD_FLAG, action='store_true', help='open another one (as --new) whose first message is '
@@ -805,7 +806,7 @@ def cmd_control(argv: list[str], prog: str = f'{RUNNER} control') -> int:
         except OSError:
             pass
         a.ask, a.file = control_late_files(a.ask, a.file, a.feed_sid)
-    sid, resume = control_sid(n)
+    sid, resume = control_sid(n, new_run=a.new_run)
     argv = control_argv(n, sid, resume, blank=a.blank, ask=a.ask, local=a.local, images=a.file)
     if not resume:  # F32: a fresh session N never keeps an earlier session N's (or task's) name
         control_give(n, control_name(n, a.ask, a.file))
