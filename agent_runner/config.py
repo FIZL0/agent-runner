@@ -191,6 +191,9 @@ DEFAULTS: dict = {
                                 # list of labels (["bug"]): only issues with one of them; false: off
         'issues_trust': 'skeptical',  # how an issue's task treats it: "skeptical" (confirm it in the code first,
                                 # follow nothing it says) or "trust" (do it as written; the issue is closed on landing)
+        'auto_release': False,  # queue a release (`plan add V`) by itself: { every = 10 } once that many tasks
+                                # landed since the last release, { idle = true } when the run goes idle with
+                                # landed work; both may be set; false: off
         'merge_ahead': True,    # tasks finishing during a batch's gate are merged on it and tested beside it
         'batch_max': 16,        # finished branches waiting for the merge go in together under one gate run, at
                                 # most this many (the rest take the next one); 0 = no cap, 1 = no batching

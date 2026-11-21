@@ -779,6 +779,17 @@ def release(tid: str) -> bool:
     return bool(m) and m.group() == RELEASE
 
 
+def open_release(ls: list[str]) -> str:
+    """The id of a release task in TODO.md's lines `ls` not done yet (open or blocked), else ''."""
+    return next((t for t in sorted(open_ids(ls)) if release(t)), '')
+
+
+def add_release(todo=None) -> str:
+    """File a release as `plan add V` with no text does (F63, `[run] auto_release`): the default brief, after
+    everything ahead of it, at the end of the leading section. Its id."""
+    return add(RELEASE, f'{RELEASE_BRIEF} | after: {ALL}', 'bottom', todo=todo)
+
+
 def kinds() -> tuple[dict[str, str], bool]:
     """What each id prefix means, and whether the repo set them (then `add` refuses any other prefix)."""
     k = cfg().raw['plan'].get('kinds') or {}

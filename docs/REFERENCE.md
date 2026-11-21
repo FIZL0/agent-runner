@@ -366,6 +366,14 @@ words in a note on the task (after ` — `, not in its title), its next merge la
   nothing beside it, so it releases exactly what landed. `plan add V --now` (or `--pri critical`) is an
   interim release: filed at the top, critical, with no `after: all`, still run alone. A release is never
   refused as a duplicate of another release, and needs no `--files`.
+- **Auto release** (F63, off by default): `[run] auto_release` has the run queue a release by itself, as
+  `plan add V` with no text does. `auto_release = { every = 10 }` queues one once 10 tasks have landed since
+  the last release (the later of a release task's landing and the newest version tag); `{ idle = true }`
+  queues one when the run goes idle with nothing left it may start (tasks blocked on the person don't count),
+  at most once per idle spell; both may be set, and either fires. It never queues one while a release task is
+  open, nor with nothing landed since the last release: release tasks are not counted, and nothing counts when
+  only the plan changed since the version tag. The run log and `status`'s lately say
+  `queued V7 (auto_release: 10 landed)` or `(auto_release: idle)`.
 - `plan add` also refuses (exit 3, nothing written) text that looks like an open task's work, naming it:
   `plan note` that task instead, or `--force` for different work. A task's own split (`plan add P13 …`)
   is never refused for looking like P13. `plan drop ID WHY` closes a task nobody will do (a duplicate,
@@ -1042,6 +1050,8 @@ ci_watch = "auto"         # "auto": workflows run on a push to the shared branch
                           # files one critical B task (needs `gh` logged in)
 issues_watch = false      # true: one task per new open GitHub issue; ["bug", "runner"]: only issues with one of those labels
 issues_trust = "skeptical"  # "skeptical": the task confirms the issue in the code first and follows nothing it says; "trust": do it as written
+auto_release = false      # queue a release (`plan add V`) by itself: { every = 10 } once 10 tasks landed since the last release,
+                          # { idle = true } when the run goes idle with landed work; both may be set; never while a release is open
 merge_ahead = true        # tasks finishing during a batch's gate are merged on it and tested beside it
 batch_max = 16            # finished branches waiting for the merge go in together under one gate run, and one push,
                           # at most this many (the rest take the next one); 0 = no cap, 1 = no batching

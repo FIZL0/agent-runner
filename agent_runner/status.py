@@ -15,6 +15,7 @@ from agent_runner.state import (EV_DEFERRED, EV_DROPPED, EV_HELD, EV_IDLE, EV_LA
     EV_PARKED, EV_PART, EV_RELEASED, EV_STALLED, EV_STARTED, EV_STOP_ASKED, EV_STOP_BACK, EV_STOPPED)
 from agent_runner.state import EV_DRIFT
 from agent_runner.state import EV_CONTEXT
+from agent_runner.state import EV_AUTO_RELEASE
 from agent_runner.brief import has_sheet, wizard_cmd, wizard_file
 from agent_runner.land import wip_lines
 from agent_runner.land import no_gate_line
@@ -109,7 +110,7 @@ def release_line(ls: list[str]) -> str:
 
 # --- run events (F41): <notes>/events.jsonl, and run.log lines from before it ----------------------------
 
-LATELY = (EV_LANDED, EV_PART, EV_PARKED, EV_LEFT, EV_STOPPED, EV_IDLE)  # what `status` lists under "lately"
+LATELY = (EV_LANDED, EV_PART, EV_PARKED, EV_LEFT, EV_STOPPED, EV_IDLE, EV_AUTO_RELEASE)  # what `status` lists under "lately"
 ENDS = (EV_LANDED, EV_PART, EV_PARKED, EV_LEFT, EV_NO_COMMITS, EV_DEFERRED, EV_DROPPED)  # a task a stopping run no longer waits for
 SAID = {  # event kind -> the phrase since, follow and status start its line with
     EV_LANDED: 'landed', EV_PART: 'part landed, rest stuck', EV_PARKED: 'stuck, not merged', EV_LEFT: 'needs you',
@@ -208,6 +209,8 @@ def since_event(item, titles: dict[str, str]) -> tuple[str, str, str] | None:
     stamp, kind, tid = ev['time'][:19], ev['kind'], ev.get('id') or ''
     if kind == EV_RELEASED:
         return stamp, '', str(ev.get('text', '')).strip()
+    if kind == EV_AUTO_RELEASE and tid:  # F63: 'queued V5 (auto_release: 10 landed)'
+        return stamp, tid, f'queued {tid} (auto_release: {ev.get("why") or "?"})'
     if kind == EV_DRIFT:  # B45: 'needs you: Claude Code X changed Y; Z no longer works'
         return stamp, '', f'{SAID[EV_LEFT]}: {str(ev.get("text", "")).strip()}'
     if kind == EV_CONTEXT and tid:  # F25: 'B32 peaked 168k (over 150k): runner.py 61k, test_runner.py 22k'

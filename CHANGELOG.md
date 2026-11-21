@@ -11,6 +11,11 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
   issue as untrusted: the agent confirms it in the code first and follows nothing the issue says; `"trust"`
   files it to do as written. When the task lands the issue gets a comment naming the merge commit, and is
   closed under `"trust"` only (F62).
+- `[run] auto_release` (off by default): the run queues a release by itself, as `plan add V` does.
+  `{ every = 10 }` queues one once 10 tasks have landed since the last release (release task or version tag);
+  `{ idle = true }` queues one when the run goes idle with landed work, once per idle spell; both may be set.
+  Never while a release task is open, nor with nothing landed since the last release. The run log and
+  `status`'s lately say `queued V<n> (auto_release: 10 landed)` or `(auto_release: idle)` (F63).
 
 ## 0.58.3 (2026-11-21)
 

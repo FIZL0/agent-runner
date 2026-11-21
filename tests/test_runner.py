@@ -5175,6 +5175,98 @@ def test_issues_watch(repo: Path):
         book.unlink(missing_ok=True)
 
 
+def test_auto_release(repo: Path):
+    print('run: auto_release queues a release by itself, by count or on idle (F63)')
+    R.init(repo)
+    head, evf = git(repo, 'rev-parse', 'HEAD'), R.C.notes('events.jsonl')
+    was = evf.read_text(encoding='utf-8') if evf.exists() else None
+    todo = repo / 'plan/TODO.md'
+    stamp = (R.dt.datetime.now() + R.dt.timedelta(minutes=1)).isoformat(timespec='seconds')
+
+    def land(*ids):
+        with open(evf, 'a', encoding='utf-8') as f:
+            for t in ids:
+                f.write(json.dumps({'time': stamp, 'kind': R.EV_LANDED, 'id': t, 'text': f'{t}: merged, ticked'}) + '\n')
+
+    def releases():
+        return [l for l in todo.read_text(encoding='utf-8').splitlines() if re.match(r'- \[[ ~]\] \*\*V\d+', l)]
+    def drop(*ids):
+        for t in ids:
+            P.drop(t, 'a test', todo=todo)
+        git(repo, 'add', '-A', 'plan')
+        git(repo, 'commit', '-qm', 'release dropped')
+    try:
+        if old := [re.search(r'\*\*(V\d+)', l)[1] for l in releases()]:
+            drop(*old)  # an earlier test's open release would hold every check below
+        evf.write_text('', encoding='utf-8')
+        eq(R.C.run['auto_release'], False, 'off by default')
+        land(*[f'F{900 + i}' for i in range(5)])
+        eq((R.auto_release('main'), R.auto_release('main', idle=True), releases()), ('', '', []),
+           'off: nothing queued, by count or on idle')
+
+        R.C.run['auto_release'] = {'every': 3}
+        evf.write_text('', encoding='utf-8')
+        land('F901', 'F902')
+        eq((R.auto_release('main'), releases()), ('', []), 'every = 3: two landed, none yet')
+        land('F902', 'V1')
+        eq(R.auto_release('main'), '', 'a remerge and a release landing are not counted')
+        evf.write_text('', encoding='utf-8')
+        land('F901', 'F902', 'F903')
+        said = []
+        with mock.patch.object(R.loop, 'log', lambda m, *a, **k: said.append((m, a, k))):
+            tid = R.auto_release('main')
+        check(tid.startswith('V'), 'the third landing queues one', tid)
+        line = next(l for l in releases() if f'**{tid}**' in l)
+        has(line, re.escape(P.RELEASE_BRIEF), 'with the default release brief, as plan add V')
+        eq(P.fields(line).get('after'), [P.ALL], 'after everything ahead of it')
+        has(git(repo, 'log', '-1', '--format=%s'), rf'^Plan: {tid}, auto release \(3 landed\)', 'committed')
+        eq(git(repo, 'status', '--porcelain', '--', 'plan'), '', 'clean')
+        eq(said[-1][0], f'queued {tid} (auto_release: 3 landed)', 'the run log says why')
+        eq(R.since_event({'time': stamp, 'kind': R.EV_AUTO_RELEASE, 'id': tid, 'why': '3 landed'}, {})[2],
+           f'queued {tid} (auto_release: 3 landed)', 'and status lately says the same')
+        check(R.EV_AUTO_RELEASE in R.LATELY, 'listed under lately')
+        land('F904', 'F905', 'F906')
+        eq((R.auto_release('main'), R.auto_release('main', idle=True), len(releases())), ('', '', 1),
+           'no second release while one is open')
+
+        print('run: auto_release idle = true queues one on idle with landed work, none with nothing landed (F63)')
+        drop(tid)
+        R.C.run['auto_release'] = {'idle': True}
+        evf.write_text('', encoding='utf-8')
+        eq((R.auto_release('main', idle=True), releases()), ('', []), 'idle with nothing landed: none')
+        land('F907')
+        eq(R.auto_release('main'), '', 'idle only: a landing alone queues none')
+        tid2 = R.auto_release('main', idle=True)
+        check(tid2.startswith('V') and tid2 != tid, 'idle with one landed: one queued', tid2)
+        has(git(repo, 'log', '-1', '--format=%s'), r'auto release \(idle\)$', 'saying idle')
+        drop(tid2)
+        land(f'{tid2}')
+        eq(R.auto_release('main', idle=True), '', 'nothing landed since the release landed: none')
+
+        print('run: auto_release counts nothing when only the plan changed since the version tag (F63)')
+        R.C.run['auto_release'] = {'idle': True, 'every': 1}
+        evf.write_text('', encoding='utf-8')
+        git(repo, 'tag', 'v9.9.9')
+        land('F908')
+        eq((R.auto_release('main'), R.auto_release('main', idle=True)), ('', ''),
+           'no change outside the plan since v9.9.9: none')
+        (repo / 'f63.txt').write_text('code\n', encoding='utf-8')
+        git(repo, 'add', 'f63.txt')
+        git(repo, 'commit', '-qm', 'F908 code')
+        R.AUTO_RELEASE_SEEN[0] = None
+        check(R.auto_release('main').startswith('V'), 'a code change after the tag: every = 1 queues one')
+        eq(R.auto_release_of({'every': True, 'idle': 'yes'}), (0, False), 'odd values are off')
+    finally:
+        R.C.run['auto_release'] = False
+        R.AUTO_RELEASE_SEEN[0] = None
+        git(repo, 'tag', '-d', 'v9.9.9')
+        git(repo, 'reset', '-q', '--hard', head)
+        if was is None:
+            evf.unlink(missing_ok=True)
+        else:
+            evf.write_text(was, encoding='utf-8')
+
+
 def test_update_notice():
     import io
     import urllib.request
@@ -7306,7 +7398,7 @@ def main() -> int:
                        lambda: test_session_tmp(repo, tmp), lambda: test_end_orphans(repo), lambda: test_memory_watch(repo), lambda: test_tested_ref(repo, tmp), lambda: test_docs_only_gate(repo), lambda: test_research_findings_only(repo),
                        lambda: test_no_pane(repo, tmp), lambda: test_other_repos_panes(repo, tmp),
                        lambda: test_limit_resumes(repo, tmp),
-                       lambda: test_shared_push(repo, tmp), lambda: test_note_on_a_ticked_task(repo), lambda: test_adopt_merge(repo), lambda: test_followups(repo), lambda: test_person_check_after(repo), lambda: test_ci_watch(repo), lambda: test_issues_watch(repo), test_update_notice, test_restart_if_upgraded, test_auto_upgrade, lambda: test_flake_repair(tmp), lambda: test_repair_per_failure(repo),
+                       lambda: test_shared_push(repo, tmp), lambda: test_note_on_a_ticked_task(repo), lambda: test_adopt_merge(repo), lambda: test_followups(repo), lambda: test_person_check_after(repo), lambda: test_ci_watch(repo), lambda: test_issues_watch(repo), lambda: test_auto_release(repo), test_update_notice, test_restart_if_upgraded, test_auto_upgrade, lambda: test_flake_repair(tmp), lambda: test_repair_per_failure(repo),
                        lambda: test_stalled(tmp), lambda: test_take(repo), lambda: test_take_text_and_here(repo), lambda: test_background(repo), test_short_name_hints, test_utf8_streams, lambda: test_attach_flag(repo), lambda: test_bare_outside_git(tmp), lambda: test_hand_hook(tmp), lambda: test_user_hook(tmp), lambda: test_remote_auto(tmp), lambda: test_control(repo), lambda: test_pane_id_not_a_path(repo, tmp),
                        lambda: test_short_titles_and_since(repo), lambda: test_structured_events(repo),
                        lambda: test_board_follows_run(repo, tmp),

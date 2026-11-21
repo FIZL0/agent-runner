@@ -29,6 +29,7 @@ from agent_runner.state import (alarm, ask_stop, C, clean, clear_stop, commit_pl
 from agent_runner.state import (EV_DEFERRED, EV_DROPPED, EV_IDLE, EV_LEFT, EV_NO_COMMITS, EV_PARKED, EV_RUN_UP,
     EV_STALLED, EV_STOP_ASKED, EV_STOP_BACK, EV_STOPPED)
 from agent_runner.state import EV_CONTEXT
+from agent_runner.state import EV_AUTO_RELEASE, EV_LANDED, EV_PART
 from agent_runner.watch import context_over
 from agent_runner.brief import no_remote_line
 from agent_runner.sched import blocked_by_edits, keep_claims, PARK_LIMIT, parked_attempts, pick, tasks
@@ -709,6 +710,97 @@ def watch_issues(branch: str, force: bool = False) -> list[str]:
     return filed
 
 
+def auto_release_of(v) -> tuple[int, bool]:
+    """`[run] auto_release` as (every: tasks landed that queue a release, 0 = not by count; idle: queue one when
+    the run goes idle). Anything but a table ({ every = 10 }, { idle = true }, both) is off."""
+    if not isinstance(v, dict):
+        return 0, False
+    every = v.get('every', 0)
+    every = every if isinstance(every, int) and not isinstance(every, bool) and every > 0 else 0
+    return every, v.get('idle') is True
+
+
+def landed_since_release(branch: str) -> list[str]:
+    """The tasks landed since the last release (F63), oldest first: the ids of the run's landed events (a
+    part landing too) after the later of the last release task's landing and the newest version tag on
+    `branch`. Release tasks are not counted, and none at all when nothing outside the plan changed since that
+    tag (plan-only and release commits)."""
+    from agent_runner.land import RELEASE_TAG, _vtuple
+    from agent_runner.status import read_events
+    since = ''
+    tags = [t for t in git('tag', '--merged', branch).stdout.split() if RELEASE_TAG.match(t)]
+    tag = max(tags, key=lambda t: _vtuple(RELEASE_TAG.match(t)[1])) if tags else ''
+    if tag:
+        when = git('log', '-1', '--format=%cI', tag).stdout.strip()
+        try:  # event stamps are local time with no zone
+            since = dt.datetime.fromisoformat(when).astimezone().replace(tzinfo=None).isoformat(timespec='seconds')
+        except ValueError:
+            pass
+        plan = plan_rel('').rstrip('/')
+        spec = ['.'] + ([f':(exclude){plan}'] if plan and not C.plan_external and plan != '.' else [])
+        if git('diff', '--quiet', tag, branch, '--', *spec).returncode == 0:
+            return []
+    evs = [e for e in read_events() if e['kind'] in (EV_LANDED, EV_PART) and e.get('id')]
+    since = max([since, *(e['time'][:19] for e in evs if P.release(e['id']))])
+    out: list[str] = []
+    for e in evs:
+        if e['time'][:19] > since and not P.release(e['id']) and e['id'] not in out:
+            out.append(e['id'])
+    return out
+
+
+AUTO_RELEASE_SEEN = [None]  # events.jsonl's (size, mtime) at the last count by `every`: no new landing, no new count
+
+
+def auto_release(branch: str, idle: bool = False) -> str:
+    """`[run] auto_release` (F63): queue a release, as `plan add V` with no text does, when `every` tasks have
+    landed since the last release, or with `idle` (the run just went idle) when anything landed. Never while a
+    release task is open. Committed in the main checkout as `watch_issues` commits its tasks. The id queued, or ''."""
+    every, on_idle = auto_release_of(C.run.get('auto_release', False))
+    if not every and not (idle and on_idle):
+        return ''
+    if not idle:  # the every-tick look: only after the events file changed
+        try:
+            st = C.notes('events.jsonl').stat()
+            mark = (st.st_size, st.st_mtime)
+        except OSError:
+            mark = None
+        if mark == AUTO_RELEASE_SEEN[0]:
+            return ''
+        AUTO_RELEASE_SEEN[0] = mark
+    if not MERGE.acquire(blocking=False):
+        AUTO_RELEASE_SEEN[0] = None  # look again next tick
+        return ''
+    tid = ''
+    hold = ExitStack()
+    try:
+        if C.plan_external:
+            hold.enter_context(plansync.locked(C))
+            plansync.pull(C, force=True)
+        rel = plan_rel('TODO.md')
+        if P.open_release(P.lines(ROOT / rel)):
+            return ''
+        landed = landed_since_release(branch)
+        why = f'{len(landed)} landed' if every and len(landed) >= every else 'idle' if idle and on_idle and landed else ''
+        if not why:
+            return ''
+        if git('branch', '--show-current').stdout.strip() != branch or \
+                git('status', '--porcelain', '--', plan_rel('')).stdout.strip():
+            AUTO_RELEASE_SEEN[0] = None
+            return ''
+        tid = P.add_release(todo=ROOT / rel)
+        if not commit_plan(f'Plan: {tid}, auto release ({why})', rel):
+            git('checkout', '-q', '--', rel)
+            AUTO_RELEASE_SEEN[0] = None
+            return ''
+        note(f'{tid}: queued (auto_release: {why})')
+        log(f'queued {tid} (auto_release: {why})', EV_AUTO_RELEASE, tid, why=why)
+    finally:
+        hold.close()
+        MERGE.release()
+    return tid
+
+
 def not_attempt(tid: str, branch: str) -> bool:
     """The session's last commit matches `[run] not_attempt` ({id} = the task): a phase that leaves the task open
     on purpose (a spec written for a later session to port from), so the task may start again once it merges."""
@@ -1376,6 +1468,8 @@ class Run:
         watch_ci(branch)
         watch_issues(branch)
         if not stopping():
+            auto_release(branch)  # F63: { every = N }
+        if not stopping():
             close_controls(branch)  # B26
             end_closed_controls()  # B53
         if not stopping():
@@ -1412,6 +1506,8 @@ class Run:
                 log(f'tried this run: {", ".join(sorted(tried)) or "none"}')
                 log(idle_line(), EV_IDLE)
                 self.idle_said, self.idle_at = True, time.time()
+                if not stopping() and auto_release(self.branch, idle=True):  # F63: once per idle spell
+                    return None  # the release it queued starts on the next tick
             if shut_down(self.idle_at):
                 return 0
         return None
