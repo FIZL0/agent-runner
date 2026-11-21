@@ -5222,6 +5222,13 @@ def test_structured_events(repo: Path):
         eq([(r['kind'], r['id'], r['text']) for r in rec], [(R.EV_LANDED, 'F5', 'F5: anything at all')],
            'a kind writes {time, kind, id, text}; a line without one stays in run.log only')
         check(R.read_events()[-1]['text'] == 'F5: anything at all', 'read_events reads it back')
+        got = []
+        for words in ('B9: merged, blocked', 'B9 is in, the rest waits'):  # through log() itself
+            f.unlink(missing_ok=True)
+            R.log(words, R.EV_PART, 'B9')
+            got.append(R.since_text(R.read_events()[-1:], R.dt.datetime(2000, 1, 1), titles, R.dt.datetime.now())[0]
+                       .splitlines()[1].split('  ', 2)[-1])
+        eq(got, ['part landed, rest stuck: Fix the flicker [B9]'] * 2, 'a reworded log() line reads the same', got)
         eq(R.paint('t', 'quiet words', R.EV_LANDED)[:16], R.paint('t', 'P1: merged', None)[:16],
            'the pane colours by kind')
     finally:
