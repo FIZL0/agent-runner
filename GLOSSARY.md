@@ -140,3 +140,10 @@ _Said_: repeated command
 _On screen_: exact-repeat commands
 _In code_: files_report, rep_kept
 _Avoid_: duplicate command
+
+**Fold**:
+Before a merge, a follow-up the branch filed that the target branch already got from another slot goes into that task as a note instead of becoming a second task.
+_Said_: dedupe follow-ups
+_On screen_: folded Y2 into Y1
+_In code_: fold_doubles, join.renumber_doubles
+_Avoid_: dedupe, collapse, squash

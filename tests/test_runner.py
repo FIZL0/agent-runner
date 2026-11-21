@@ -3669,6 +3669,48 @@ def test_renumber(repo: Path):
     git(repo, 'branch', '-D', 'task/N1')
 
 
+def test_fold_doubles_b33(repo: Path):
+    print("B33: two slots that file the same follow-up give one task, noted, not two sessions' work")
+    R.init(repo)
+    (repo / '.git' / P.RESERVED).unlink(missing_ok=True)
+    todo, done = 'plan/TODO.md', 'plan/DONE.md'
+    same = 'flaky test_gate_timeout races the slot reaper under load | files: tests/test_gate.py'
+    d1 = task_branch(repo, 4, 'N1')
+    P.add('Y', same, 'bottom', todo=d1 / todo, done=d1 / done)
+    git(d1, 'commit', '-qam', 'N1: follow-up Y1')
+    d2 = task_branch(repo, 5, 'N2')
+    k = P.add('Y', same, 'bottom', todo=d2 / todo, done=d2 / done)  # its plan lacks N1's unmerged Y1
+    seq = P.add('Y', f'the reaper sequel, after {k} lands | files: agent_runner/reaper.py', 'bottom',
+                todo=d2 / todo, done=d2 / done)
+    (d2 / 'plan/tasks').mkdir(exist_ok=True)
+    (d2 / f'plan/tasks/{k}.md').write_text(f'# {k} the flaky gate test\n', encoding='utf-8')
+    git(d2, 'add', f'plan/tasks/{k}.md')
+    git(d2, 'commit', '-qam', f'N2: follow-ups {k}, {seq}')
+    git(repo, 'merge', '-q', '--no-edit', R.renumber_doubles('task/N1', 'main', 'N1', repo))
+    ref = R.renumber_doubles('task/N2', 'main', 'N2', repo)
+    check(ref != 'task/N2', 'the doubled follow-up gets a commit of its own on top of the branch')
+    eq(git(repo, 'ls-tree', '--name-only', ref, f'plan/tasks/{k}.md'), '',
+       'the long form the branch wrote for it goes, not left naming a task that is not there')
+    git(repo, 'merge', '-q', '--no-edit', ref)
+    t = (repo / todo).read_text()
+    eq(len(re.findall(r'flaky test_gate_timeout', t.split(' — ')[0])), 1, 'one task results, not two')
+    eq(len(re.findall(r'^- \[ \] \*\*Y1\*\*', t, re.M)), 1, 'under the one id main had')
+    has(t, rf'\*\*Y1\*\* flaky test_gate_timeout.* — N2 filed the same as {k} \(folded at the merge\): flaky',
+        'the existing task carries a note of the fold')
+    has(t, r'the reaper sequel, after Y1 lands', 'a line the branch wrote that names it names the one kept')
+    has((repo / '.runner/run.log').read_text(), rf'N2: folded {k} into Y1', 'and the log says so')
+    base = ['# Plan', '- [ ] **Z1** an old task about the docs site | files: docs/x.md']
+    ours = base + [f'- [ ] **Y5** {same}']
+    theirs = base + [f'- [ ] **Y5** {same.replace("load", "heavy load")}']
+    folds, blocks = R.fold_doubles(base, theirs, ours, 'N3')
+    eq(folds, {'Y5': 'Y5'}, 'one id on both sides for the same follow-up folds too, not renumbered')
+    got = P.merge3(ours, base, R._splice(theirs, folds, blocks))
+    eq(len([l for l in got if 'flaky' in l]), 1, 'and the merge keeps the one task, noted')
+    for d, b in ((d1, 'task/N1'), (d2, 'task/N2')):
+        git(d, 'checkout', '-q', '--detach')
+        git(repo, 'branch', '-D', b)
+
+
 def test_stop_waiter(tmp: Path):
     print('the idle stop waits out a command the agent still runs, up to a cap')
     t = tmp / 'transcript.jsonl'
@@ -6886,7 +6928,7 @@ def main() -> int:
                        lambda: test_gate_and_batches(repo, tmp), lambda: test_blame_and_own_repair(repo, tmp),
                        lambda: test_red_base_and_batch_caps(repo, tmp), lambda: test_merge_order_and_backlog(repo), lambda: test_reserved_ids(repo),
                        lambda: test_platform(repo, tmp), lambda: test_shutdown(repo), lambda: test_merge_into(tmp),
-                       lambda: test_leftovers(repo), lambda: test_renumber(repo),
+                       lambda: test_leftovers(repo), lambda: test_renumber(repo), lambda: test_fold_doubles_b33(repo),
                        lambda: test_stop_waiter(tmp), lambda: test_stop_hook_grace(tmp), lambda: test_land_waits_aloud(repo), lambda: test_merge_ahead(repo), lambda: test_adopted_gate_merge(repo), lambda: test_adopted_gate_results(repo), lambda: test_gate_since(repo), lambda: test_gate_catch_up(repo), lambda: test_owed_merge_goes_first(repo), lambda: test_copies(repo), lambda: test_land_gives_merge_back(repo),
                        lambda: test_edited_elsewhere(repo, tmp),
                        lambda: test_resume(repo, tmp),
