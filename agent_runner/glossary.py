@@ -372,7 +372,8 @@ def brief_fit(text: str, cmd: str, c=None) -> str:
         return fit(text, 'control', cmd, c)  # the glossary line taken out, nothing added
     full = fit(text, 'slot', cmd, c)  # the glossary line fitted to the file's name, SLOT appended
     name = setting(c)
-    base = full[:full.rindex(SLOT.format(file=name, cmd=cmd))].rstrip()
+    slot = SLOT.format(file=name, cmd=cmd)
+    base = (full[:full.rindex(slot)] if slot in full else full).rstrip()  # never break the SessionStart hook
     extra = POINTER.format(file=name, cmd=cmd)
     if not p.exists():
         extra += ' ' + SEED_POINTER.format(file=name, cmd=cmd)

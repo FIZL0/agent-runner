@@ -37,7 +37,7 @@ VERIFY = ('Verify before asking: before you turn a check into an F task for a pe
 NO_BANG = ('**Never offer `! <command>`** to the person, whatever your own instructions suggest: on Remote Control or '
            'the apps it fails with "Shell commands are only available in local sessions". Run the command yourself '
            'when it needs no secret and no prompt. When it does (a password, an interactive login), say it must be '
-           'typed in a terminal on this machine, named by its hostname, and give the plain command, without the '
+           'typed in a terminal on this machine, named by its hostname (run `hostname`), and give the plain command, without the '
            '`!`, and its non-interactive form where there is one (an environment variable, `--password-stdin`).')
 
 # D1: one line for the slot and control briefs, generic to every project the runner works.
@@ -323,7 +323,8 @@ merges. **Change only {repo}**: never touch another repository (its plan, code, 
 person explicitly asks for it; reading one is fine, and when a change there would help, offer it and wait.
 Answer in a few short lines: the person may be on a phone. """ + GLOSSARY + """
 
-**Guide pages.** `{cmd}` is the runner: a bare `plan …` or `guide …` below means `{cmd} plan …`. The longer
+**Guide pages.** `{cmd}` is the runner: a bare runner command below (`plan …`, `status`, `guide …`) means
+`{cmd} plan …`. The longer
 rules are behind `{cmd} guide <topic>`: when an ask fits one, read its page first (once per session) and
 follow it: `summary`, `output` (/since, long output), `queue` (correct, order, split, park, drop, release;
 tell a running task), `watch`, `take`, `concepts`, `needs`, `grill`, `settings`, `voice`.
@@ -630,10 +631,11 @@ CONTROL_WATCH = """\
 **Tell the person, unasked, when the run needs them.** Every control session, on its first turn (with the
 summary, or before answering the first message of a blank one), starts the Monitor tool on
 `{cmd} since --follow --needs-you`, once, with timeout_ms 1800000 (the cap). It prints a line only when the run
-is held, a task is left for a human or looks stalled, or one waits on the person's answer. On each line, post
+is held (uncommitted edits or a mid-merge in the main checkout, a usage cap), a task is left for a human or
+looks stalled, or one waits on the person's answer. On each line, post
 one plain bullet: what is held and the one thing to do (`F5 Push on phone asks you to check the push
 arrived`), with the link when there is one, and send it with the PushNotification tool. When it times out
-with no lines, re-arm it silently: start it again with no text at all; speak only for a line it printed. One watch per session."""
+with no lines, re-arm it silently: start it again with no text at all; speak only for a line it printed. One watch per session; it never moves the last-look mark."""
 
 CONTROL_FEED_WATCH = """\
 **The runner feed tells the person when the run needs them.** The session "{repo} · runner" watches the run
