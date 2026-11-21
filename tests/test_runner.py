@@ -1160,7 +1160,8 @@ def test_user_hook(tmp: Path):
         cmds = [h['command'] for e in data['hooks']['SessionStart'] for h in e['hooks']]
         check(data['model'] == 'x' and cmds[0] == 'mine' and len(cmds) == 2 and CF.USER_HOOK in cmds[1],
               "the person's own settings and hooks stay, ours is added", cmds)
-        gone = f'/nonexistent/python3 /nonexistent/run {CF.USER_HOOK} 2>/dev/null || true'
+        nowhere = (tmp / 'nonexistent').as_posix()  # absolute on Windows too (a drive), as command_text writes it
+        gone = f'{nowhere}/python3 {nowhere}/run {CF.USER_HOOK} 2>/dev/null || true'
         data['hooks']['SessionStart'][1]['hooks'][0]['command'] = gone
         f.write_text(json.dumps(data))
         has(CF.install_user_hook(), r'settings\.json', 'a hook naming a clone that is gone is repaired')
@@ -1189,15 +1190,16 @@ def test_user_hook(tmp: Path):
     R.git('init', '-q', cwd=plain)
     env = {k: v for k, v in os.environ.items() if k not in CF.SESSION_ENVS}
     (repo / 'sub').mkdir()
+    # Claude Code runs hooks in bash (Git Bash on Windows), not cmd.exe, which shell=True would give there
+    hook = [R.bash_exe(), '-c', CF.user_hook_command()]
     for where, want in ((repo, True), (repo / 'sub', True), (wt, False), (plain, False), (tmp, False)):
-        r = subprocess.run(CF.user_hook_command(), shell=True, cwd=where, env=env, capture_output=True, text=True,
-                   timeout=60)
+        r = subprocess.run(hook, cwd=where, env=env, capture_output=True, text=True, timeout=60)
         eq((r.returncode, bool(r.stdout.strip()), r.stderr), (0, want, ''),
            f'{where.name}: ' + ('the brief' if want else 'nothing, exit 0, no stderr'))
         if want:
             has(r.stdout, 'control session', 'it is the control brief')
-    r = subprocess.run(CF.user_hook_command(), shell=True, cwd=repo, env={**env, R.RUNNER_STARTED_ENV: '1'},
-               capture_output=True, text=True, timeout=60)
+    r = subprocess.run(hook, cwd=repo, env={**env, R.RUNNER_STARTED_ENV: '1'}, capture_output=True, text=True,
+                       timeout=60)
     eq(r.stdout, '', 'nothing in a control session the runner started (its brief comes through --settings)')
     eq(CF.user_hook_root(repo, {'AGENT_RUNNER_SLOT': '2'}), None, "nothing in a slot's session")
     (repo / '.claude').mkdir()
@@ -1480,12 +1482,20 @@ def test_control(repo: Path):
               'remote off: started_note points at c1', note)
     started = []
 
-    class FakeThread:
-        def __init__(self, target=None, name='', daemon=None):
+    real_thread = R.threading.Thread
+
+    class StandIn:
+        def __init__(self, name):
             self.name = name
 
         def start(self):
             started.append(self.name)
+
+    def FakeThread(*a, name='', **k):
+        # only the runner's own threads: subprocess on Windows reads a child's output in threads of its own
+        if a or 'args' in k:
+            return real_thread(*a, name=name, **k)
+        return StandIn(name)
     calls = []
     with mock.patch.object(R, 'MUX', R.TmuxMux()), mock.patch.dict(os.environ, {'TMUX_PANE': '%1'}), \
             mock.patch.object(R, 'tmux', lambda *a, **k: calls.append(a) or subprocess.CompletedProcess(a, 0, 'ar-proj\n', '')), \
@@ -2128,10 +2138,15 @@ def test_short_titles_and_since(repo: Path):
                   and './kit' not in (skills / 'since' / 'SKILL.md').read_text(encoding='utf-8'),
                   'B71: the /control and /since skills call the runner')
         started = []
+        real_thread = R.threading.Thread
+
+        def board_thread(target=None, args=(), **k):
+            if isinstance(getattr(target, '__self__', None), subprocess.Popen):  # Windows reads output in threads
+                return real_thread(target=target, args=args, **k)
+            return mock.Mock(start=lambda: started.append(args))
         with mock.patch.object(R, 'MUX', R.TmuxMux()), mock.patch.dict(os.environ, {'TMUX_PANE': '%1'}), \
                 mock.patch.object(R, 'tmux', lambda *a, **k: subprocess.CompletedProcess(a, 0, 'mine\n', '')), \
-                mock.patch.object(R.threading, 'Thread', lambda target=None, args=(), **k: mock.Mock(
-                    start=lambda: started.append(args))):
+                mock.patch.object(R.threading, 'Thread', board_thread):
             R.start_board()
         eq(started, [('mine',)], 'the board opens in a run in your own tmux session too')
         ca = R.control_argv(3, 'sid', False, ask='fix the login flicker')
