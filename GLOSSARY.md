@@ -93,7 +93,7 @@ Setting a Needs you item aside: the task stays blocked but leaves the list until
 _Avoid_: park, snooze, defer, drop
 
 **Voice file**:
-The person's own rules for how sessions word things, one per line, grown from what they say; global, with per-project lines that win.
+The person's own rules for how sessions word things, one per line, grown from what they say; one for all projects, and a project's own that overrides it.
 _Said_: my wording, voice
 _On screen_: The person's wording
 _In code_: voice.py, agent-runner voice, [run] voice

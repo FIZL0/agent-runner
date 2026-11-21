@@ -142,8 +142,8 @@ DEFAULTS: dict = {
         'grill': 'ask',         # F20: control sessions ask rounds of numbered questions before queueing:
                                 # ask = when the person says grill me / poke holes; big = also big vague asks; off
         'voice': '',            # F21: the person's wording file (`agent-runner voice`), read by control sessions
-                                # and the runner feed; '' = ~/.config/agent-runner/voice.md; .runner/voice.md
-                                # adds this project's lines, which win where they disagree
+                                # the runner feed and task agents; '' = ~/.config/agent-runner/voice.md; a
+                                # .runner/voice.md with lines overrides it for this project
         'voice_learn': 'ask',   # ask = a session that had to say something again offers one wording line to add;
                                 # off = lines are added only when the person says so
         'review': True,         # F28: before done, a fresh subagent reads the diff against the task's brief (spec

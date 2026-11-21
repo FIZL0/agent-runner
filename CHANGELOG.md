@@ -8,9 +8,11 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
   it Z" makes a control session add one line (`agent-runner voice add`, naming the file it went to); when you
   ask "what?" or rephrase what it said, it says it again plainly and offers one line to add, added only on
   yes (`[run] voice_learn = "off"` stops the offers). The global file is `~/.config/agent-runner/voice.md`
-  (`[run] voice` moves it); `.runner/voice.md` adds one project's lines, which win where they disagree.
-  Every control session's brief and the runner feed's system prompt carry it. "show my wording" is `voice
-  show`, "forget X" is `voice forget X` (F21).
+  (`[run] voice` moves it); a `.runner/voice.md` with lines overrides it for one project (`voice add
+  --project` starts it as a copy of the global lines). Every control session's brief, the runner feed's
+  system prompt and the task agents' brief (for the commit messages status and since show) carry it. "show
+  my wording" is `voice show`, "forget X" is `voice forget X`, which removes one line and lists the matches
+  when several hold X (F21).
 
 ## 0.57.0 (2026-11-20)
 

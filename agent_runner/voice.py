@@ -2,18 +2,20 @@
 
 One list line (`- …`) per rule (`say agent, not slot`, `shorter`, `no task ids`). Every control session's brief and the runner
 feed's system prompt carry it, so what they write (answers, the summary, said-back status and since, task text)
-follows it.
+follows it; task agents get it too, for what status and since show of their work (commit messages, done and
+blocked lines).
 
-    voice show                  the wording every session reads, with the file each line is in
+    voice show                  the wording every session reads, and the file it is in
     voice add "<line>" [--project]
                                 add one line: to the global file (all projects), or with --project to this
-                                project's
-    voice forget WORDS          remove every line holding WORDS (case ignored), from both files
+                                project's (which starts as a copy of the global lines)
+    voice forget WORDS          remove the one line holding WORDS (case ignored) from the file in effect;
+                                several such lines: nothing removed, they are listed
     voice path                  the two files, whether or not they exist
 
 Where it lives: `~/.config/agent-runner/voice.md` ($XDG_CONFIG_HOME when set) for all projects, `[run] voice` to
-put it elsewhere; `<repo>/.runner/voice.md` (the notes directory) for one project. Both are read, the project's
-lines after the global ones, and where they disagree the project's line wins. `[run] voice_learn` = ask (the
+put it elsewhere; `<repo>/.runner/voice.md` (the notes directory) for one project, which overrides the global
+file: when it has a line, it is read instead. `[run] voice_learn` = ask (the
 default: a session that had to say something again offers one line to add) or off (lines come only when told).
 """
 from __future__ import annotations
@@ -92,26 +94,23 @@ def rules(p: Path) -> list[str]:
     return [s for line in text.splitlines() if (t := line.strip())[:2] in ('- ', '* ') and (s := t[2:].strip())]
 
 
-def files(c=None) -> list[tuple[str, Path, list[str]]]:
-    """[(which, path, lines)] for the global file and the project's, in reading order, those with lines only."""
-    out = []
-    for which, p in (('all projects', global_path(c)), ('this project', project_path(c))):
+def in_effect(c=None) -> tuple[str, Path, list[str]] | None:
+    """(which, path, lines) of the file sessions read: the project's when it has a line (it overrides the global
+    one), else the global one; None when neither has a line."""
+    for which, p in (('this project', project_path(c)), ('all projects', global_path(c))):
         if got := rules(p):
-            out.append((which, p, got))
-    return out
+            return which, p, got
+    return None
 
 
 def text(c=None) -> str:
-    """The wording as the briefs carry it: each file's lines under the file's name, the project's last; '' when
-    neither file has a line."""
-    got = files(c)
+    """The wording as the briefs carry it: the file in effect's lines under its name; '' when there are none."""
+    got = in_effect(c)
     if not got:
         return ''
-    parts = []
-    for which, p, lines in got:
-        note = ' (wins where it disagrees with the global lines)' if which == 'this project' and len(got) > 1 else ''
-        parts.append(f'From {_shown(p)}, {which}{note}:\n' + '\n'.join(f'- {s}' for s in lines))
-    return '\n'.join(parts)
+    which, p, lines = got
+    note = f', read instead of {_shown(global_path(c))}' if which == 'this project' and rules(global_path(c)) else ''
+    return f'From {_shown(p)} ({which}{note}):\n' + '\n'.join(f'- {s}' for s in lines)
 
 
 def _shown(p: Path) -> str:
@@ -134,6 +133,14 @@ def fit(brief: str, cmd: str, c=None) -> str:
     return f'{brief.rstrip()}\n\n{extra}'
 
 
+def slot(prompt: str, c=None) -> str:
+    """A task agent's brief with the wording at its end, when there is any: what it writes that status and since
+    show (its commit message, done and blocked lines, tasks it files)."""
+    from agent_runner.guide import VOICE_SLOT
+    got = text(c)
+    return f'{prompt.rstrip()}\n\n{VOICE_SLOT}\n{got}\n' if got else prompt
+
+
 def feed(prompt: str, c=None) -> str:
     """The runner feed's system prompt with the wording at its end, when there is any (read at the feed's start:
     it has no file tools)."""
@@ -144,14 +151,21 @@ def feed(prompt: str, c=None) -> str:
 
 # --- the file ------------------------------------------------------------------------------------------------
 
+def _write(p: Path, text: str) -> None:
+    p.parent.mkdir(parents=True, exist_ok=True)
+    tmp = p.with_name(p.name + '.tmp')
+    tmp.write_text(text, encoding='utf-8')
+    os.replace(tmp, p)
+
+
 def add(c, line: str, project: bool = False) -> str:
-    """Append one line (a file that does not exist yet gets a heading first); what was done, naming the file."""
+    """Append one line; what was done, naming the file. A file that does not exist yet gets a heading first, and
+    a project file starting out gets the global lines too: it is read instead of them, so none is lost."""
     line = ' '.join(line.split()).lstrip('-* ').strip()
     if not line:
         raise SystemExit(f'{PROG} add: the line is empty')
     p = project_path(c) if project else global_path(c)
-    have = rules(p)
-    if line.lower() in (s.lower() for s in have):
+    if line.lower() in (s.lower() for s in rules(p)):
         return f'already in {_shown(p)}: {line}'
     try:
         old = p.read_text(encoding='utf-8')
@@ -159,37 +173,40 @@ def add(c, line: str, project: bool = False) -> str:
         old = HEAD
     if old and not old.endswith('\n'):
         old += '\n'
-    p.parent.mkdir(parents=True, exist_ok=True)
-    tmp = p.with_name(p.name + '.tmp')
-    tmp.write_text(old + f'- {line}\n', encoding='utf-8')
-    os.replace(tmp, p)
-    return f'added to {_shown(p)}: {line}'
+    copied = rules(global_path(c)) if project and not rules(p) else []
+    old += ''.join(f'- {s}\n' for s in copied if s.lower() != line.lower())
+    _write(p, old + f'- {line}\n')
+    out = f'added to {_shown(p)}: {line}'
+    if copied:
+        out += f' (with the {len(copied)} lines of {_shown(global_path(c))}, which it now stands in for here)'
+    if not project and rules(project_path(c)):
+        out += f'; this project reads {_shown(project_path(c))} instead: add it there too with --project'
+    return out
 
 
 def forget(c, words: str) -> str:
-    """Remove every line holding `words` (case ignored) from both files; what was removed, naming each file."""
+    """Remove the one line holding `words` (case ignored) from the file in effect; what was removed, naming the
+    file. Several lines holding it: nothing removed, unless one is exactly `words`; they are listed instead."""
     w = ' '.join(words.split()).lower()
     if not w:
         raise SystemExit(f'{PROG} forget: say which line')
-    done = []
-    for p in (global_path(c), project_path(c)):
-        try:
-            old = p.read_text(encoding='utf-8')
-        except OSError:
-            continue
-        keep, gone = [], []
-        for line in old.splitlines(keepends=True):
-            s = line.strip()
-            if s[:2] in ('- ', '* ') and w in ' '.join(s[2:].split()).lower():
-                gone.append(s[2:].strip())
-            else:
-                keep.append(line)
-        if gone:
-            tmp = p.with_name(p.name + '.tmp')
-            tmp.write_text(''.join(keep), encoding='utf-8')
-            os.replace(tmp, p)
-            done += [f'removed from {_shown(p)}: {g}' for g in gone]
-    return '\n'.join(done) if done else f'no line holds {words.strip()!r}'
+    got = in_effect(c)
+    if not got:
+        return f'no line holds {words.strip()!r}: there is no wording yet'
+    _, p, _ = got
+    old = p.read_text(encoding='utf-8').splitlines(keepends=True)
+    norm = lambda ln: ' '.join(ln.strip()[2:].split()).lower() if ln.strip()[:2] in ('- ', '* ') else None
+    hits = [i for i, ln in enumerate(old) if norm(ln) is not None and w in norm(ln)]
+    if len(hits) > 1:
+        hits = [i for i in hits if norm(old[i]) == w] or hits
+    if not hits:
+        return f'no line in {_shown(p)} holds {words.strip()!r}'
+    if len(hits) > 1:
+        return (f'{len(hits)} lines in {_shown(p)} hold {words.strip()!r}, nothing removed; say which:\n'
+                + '\n'.join(f'- {old[i].strip()[2:].strip()}' for i in hits))
+    gone = old.pop(hits[0]).strip()[2:].strip()
+    _write(p, ''.join(old))
+    return f'removed from {_shown(p)}: {gone}'
 
 
 def show(c=None) -> str:
