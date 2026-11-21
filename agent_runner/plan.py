@@ -98,8 +98,9 @@ and other sections (Follow-ups) never do. `reopen`, `waiting` and `status` say w
 **A task that waits for everything before it** takes `--after all` (`add`, `edit`, `block`; any kind): `after:
 all`, or `BLOCKED: (after all) why`, which the run resolves on every pick (and `reopen` after every merge) to each
 open or blocked task above it in TODO.md, in any section, tasks queued above it later included. Tasks a run never
-starts do not hold it, or it would never run: Parked (`--pri later`) and Stretch sections, and shelved tasks.
-`status`, `plan ID`, `reopen` and `waiting` say 'T5 waits for everything before it (12 open)', not an id list.
+starts do not hold it, or it would never run: Parked (`--pri later`) and Stretch sections, shelved tasks, and
+tasks blocked for the person (CONFIRM/DECIDE/BLOCKED, a concept's OK) until they reopen. `status`, `plan ID`,
+`reopen` and `waiting` say 'T5 waits for everything before it (12 open); not waiting on: R6 (needs you)'.
 
 **A release is kind V** (F38): `add V` files it at the end of Next with `after: all`, no `--after` or `--files`
 needed, and with no text it gets the default release brief (RELEASE_BRIEF). It runs alone: the run starts it
@@ -473,16 +474,33 @@ def _shelved(ls: list[str], i: int) -> bool:
 def before_all(ls: list[str], i: int) -> list[str]:
     """What `after: all` on the task at ls[i] stands for, read afresh each time (F35): every top-level task above
     it in TODO.md, in any section, that is not done (open or blocked), in order. Tasks a run never starts do not
-    hold it, or it would never run: those in Parked (`--pri later`) and Stretch sections, and shelved ones."""
-    out, section = [], ''
+    hold it, or it would never run: those in Parked (`--pri later`) and Stretch sections, shelved ones, and those
+    blocked for the person (CONFIRM/DECIDE/BLOCKED asks, a concept's OK: B101), which `on_person_before` lists;
+    once the person answers and such a task reopens, it holds it again."""
+    return _before_all(ls, i)[0]
+
+
+def on_person_before(ls: list[str], i: int) -> list[str]:
+    """The tasks before ls[i] that `after: all` does not wait on because they are blocked for the person (B101),
+    shelved ones included, in order: status says them as 'not waiting on: R6 (needs you)'."""
+    return _before_all(ls, i)[1]
+
+
+def _before_all(ls: list[str], i: int) -> tuple[list[str], list[str]]:
+    """(the tasks `after: all` on ls[i] waits on, the ones blocked for the person it skips)."""
+    out, person, section = [], [], ''
     for j in range(i):
         if ls[j].startswith('### '):
             section = ls[j][4:].strip()
         m = ITEM.match(ls[j])
-        if (m and not m.group(1) and m.group(2) != 'x' and not section.startswith(SKIPPED)
-                and not _shelved(ls, j)):
-            out.append(m.group(3).rstrip('.'))
-    return out
+        if not m or m.group(1) or m.group(2) == 'x' or section.startswith(SKIPPED):
+            continue
+        tid = m.group(3).rstrip('.')
+        if _on_person(ls, j):
+            person.append(tid)
+        elif not _shelved(ls, j):
+            out.append(tid)
+    return out, person
 
 
 def resolve_after(ls: list[str], i: int, ids: list[str]) -> list[str]:
@@ -526,9 +544,18 @@ def last_waits(todo=None) -> list[tuple[str, list[str]]]:
     return out
 
 
-def all_line(tid: str, n: int) -> str:
-    """How `status` and `plan` say what an `after: all` task waits on: a count, not an id list (F35)."""
-    return f'{tid} waits for everything before it ({n} open)' if n else f'{tid} waits for everything before it: nothing left'
+def all_line(tid: str, n: int, person=()) -> str:
+    """How `status` and `plan` say what an `after: all` task waits on: a count, not an id list (F35), then the
+    tasks blocked for the person it does not wait on (`on_person_before`, B101), by id."""
+    line = (f'{tid} waits for everything before it ({n} open)' if n
+            else f'{tid} waits for everything before it: nothing left')
+    return line + not_waiting(person)
+
+
+def not_waiting(person) -> str:
+    """'; not waiting on: R6, R2 (needs you)' for the tasks blocked for the person an `after: all` task skips
+    (B101), '' for none."""
+    return f'; not waiting on: {", ".join(person)} (needs you)' if person else ''
 
 
 def last_lines(todo=None) -> list[str]:
@@ -536,9 +563,9 @@ def last_lines(todo=None) -> list[str]:
     before it (12 open)' for each `after: all` one (`reopen`, `waiting`)."""
     todo, _ = ensure(todo)
     ls = list(lines(todo))
-    every = {ITEM.match(l).group(3).rstrip('.') for i, l in enumerate(ls)
+    every = {ITEM.match(l).group(3).rstrip('.'): i for i, l in enumerate(ls)
              if ITEM.match(l) and not ITEM.match(l).group(1) and _waits_all(ls, i)}
-    return [all_line(t, len(ids)) if t in every
+    return [all_line(t, len(ids), [p for p in on_person_before(ls, every[t]) if p != t]) if t in every
             else f'{t} waits on all above: {", ".join(ids)} ({len(ids)} open)' if ids
             else f'{t} waits on all above: nothing left above it'
             for t, ids in last_waits(todo)]
