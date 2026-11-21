@@ -155,6 +155,9 @@ def prompt_for(tid: str, n: int, slots: int, cwd: Path, branch: str) -> str:
         policies.append('Only add comments when necessary to explain non-obvious intent or constraints.')
     if P.concept(tid):
         prompt = f'{prompt.rstrip()}\n\n' + CONCEPT_PROMPT.format(runner=C.command, tid=tid)
+    elif P.research(tid):  # F36
+        prompt = f'{prompt.rstrip()}\n\n' + RESEARCH_PROMPT.format(runner=C.command, tid=tid,
+                                                                   findings=findings_where())
     elif wizards_on():
         prompt = f'{prompt.rstrip()}\n\n' + WIZARD_PROMPT.format(
             runner=C.command, tid=tid, template=WIZARD_TEMPLATE, path=C.notes('wizards', f'{tid}.sh'))
@@ -174,6 +177,20 @@ and its trade-off; then your recommendation and why. A person picks one from tha
 make it short, concrete and readable at a glance. Change no product code; commit only notes you wrote (the \
 journal). Finish with `{runner} done {tid} "<msg>" --artifact <the page's URL>`: it is refused without one, and \
 it files the build task, blocked until the person approves an option."""
+
+
+RESEARCH_PROMPT = """\
+{tid} is a research task: find out, measure or check, and change no product. Write your findings where the \
+run merges them ({findings}), queue each change they call for with `{runner} plan add`, and change no code: \
+a research diff that touches any other file is not merged, and the task blocks on a person instead. If its \
+note says a person answered `merge anyway`, they accepted an earlier attempt's code (on wip/{tid}): keep it."""
+
+
+def findings_where() -> str:
+    """Where a research task's findings go (F36): the plan directory, the journal and `[run] findings`."""
+    rel = lambda p: os.path.relpath(p, C.root).replace(os.sep, '/') + '/'
+    where = ([] if C.plan_external else [rel(C.plan_dir)]) + ([rel(C.journal)] if C.journal else [])
+    return ', '.join(f'`{g}`' for g in where + list(C.run['findings'] or []))
 
 
 class _Keep(dict):

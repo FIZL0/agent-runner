@@ -169,6 +169,9 @@ DEFAULTS: dict = {
         'docs_files': ['*.md', 'docs/**'],  # globs (`!glob` takes one back): a diff whose files all match is docs
                                 # only; `done` and the merge skip the gate for it ('docs only, gate skipped')
         'docs_check': '',       # a quick check run instead of the gate on a docs-only diff (links, anchors)
+        'findings': ['docs/research/**', 'research/**'],  # F36: globs (`!glob` takes one back) a research task
+                                # (a kind meaning "research: …") may change, beside the plan directory and the
+                                # journal; a research diff touching any other file is not merged
         'failures': '',         # a regex whose group 1 names a failing test in the gate's output
         'retest': '',           # the gate for just some tests; {names} is those `failures` found. A failure
                                 # that passes alone was load; one the branch's base fails too is merged anyway

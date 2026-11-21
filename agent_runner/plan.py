@@ -1100,6 +1100,20 @@ def concept(tid: str) -> bool:
     return bool(m) and m.group(1) == CONCEPT and CONCEPT in kinds()[0]
 
 
+RESEARCH = re.compile(r'\s*research\b', re.I)  # F36: a kind whose meaning starts "research" changes no product
+
+
+def research(tid: str, kinds_map: dict[str, str] | None = None) -> bool:
+    """Is `tid` a research task (F36): its id letters name a kind whose meaning starts with "research" (R in
+    KINDS; any letter a repo's own [plan] kinds mark so). Its merge carries findings only (`[run] findings`)."""
+    m = re.match(r'([A-Za-z]+)\d', tid or '')
+    k = kinds()[0] if kinds_map is None else kinds_map
+    return bool(m) and bool(RESEARCH.match(str(k.get(m.group(1), ''))))
+
+
+MERGE_ANYWAY = re.compile(r'\bmerge[ -]anyway\b', re.I)  # F36: a person's answer that lands a research diff's code
+
+
 def build_kind() -> str:
     """The id letter a concept's build task gets: F (feature) where the kinds have it, else the first other one."""
     k = kinds()[0]

@@ -262,6 +262,19 @@ waiting for your OK on <url>`. That block names no task, so no run starts it and
 - The build gets `F` where the kinds have it, else their first non-K letter. A repo whose `[plan] kinds`
   lack `K` has no concepts: a K-lettered id there is an ordinary task.
 
+### Research tasks
+
+A research task changes no product: it finds out, measures or checks, writes its findings and queues the
+changes they call for with `plan add`; its brief says so. Which tasks those are is read from what the kind
+means, not its letter: `R` in the default kinds, and any letter whose meaning in a repo's own `[plan] kinds`
+starts with "research" (`Q = "research: …"`). The merge lands such a branch only when every file it changes
+is findings: the plan directory, the journal (`[plan] journal`) or `[run] findings` (default
+`docs/research/**` and `research/**`; `!glob` takes one back). A research diff that touches any other file
+is not merged: the branch is parked on `wip/<ID>` and the task blocks with `DECIDE: R7 is research, but its
+diff changes code (a.py, …)`, listed under Needs you. Answer `follow-up` (the next attempt files the code as
+its own task and merges the findings alone) or `merge anyway`: with those words in the task's note, its next
+merge lands the code too (F36).
+
 ## The task list
 
 `plan/TODO.md` is ordinary markdown. The runner only looks at task lines under `###` headings:
@@ -934,6 +947,7 @@ suspect = ""              # regex: a BLOCKED line a merge adds that matches it i
 untested = ["*.md", "LICENSE*", "COPYING*"]  # globs the gate can't see ("!glob" takes one back): no retest for these alone
 docs_files = ["*.md", "docs/**"]  # a diff whose files all match is docs only: done and the merge skip the gate
 docs_check = ""           # the quick check a docs-only diff runs instead (links, anchors); "" = none
+findings = ["docs/research/**", "research/**"]  # what a research task may change beside the plan and journal
 failures = ""             # regex, group 1 = a failing test's name in the gate's output
 retest = ""               # the gate for just {names}: rerun alone (load), then on the base (already failing)
 flaky = ""                # regex, group 1 = tests a passing gate passed only on its own rerun (comma-separated)

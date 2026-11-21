@@ -4327,6 +4327,61 @@ def test_docs_only_gate(repo: Path):
                 git(repo, 'branch', '-D', b)
 
 
+def test_research_findings_only(repo: Path):
+    print('run: F36 a research task merges its findings; one whose diff touches code blocks on a person')
+    R.init(repo)
+    git(repo, 'checkout', '-q', 'main')
+    rel = 'plan/TODO.md'
+    before = (repo / rel).read_text(encoding='utf-8')
+    saved_kinds = R.C.raw['plan'].get('kinds')
+    R.C.run['repair_merges'] = False
+    try:
+        check(P.research('R4', P.KINDS) and not P.research('F4', P.KINDS) and not P.research('K4', P.KINDS),
+              'R is research by its meaning in KINDS; F and K are not')
+        own = {'Q': 'research: measure it, no product change', 'R': 'refactor: tidy'}
+        check(P.research('Q1', own) and not P.research('R1', own), 'a repo\'s own kinds mark research by meaning')
+        (repo / rel).write_text(before.replace('### Later\n', '### Later\n\n- [ ] **R7** how slow is the parser\n'
+                                               '- [ ] **R8** why the printer drops lines\n'), encoding='utf-8')
+        git(repo, 'commit', '-qm', 'test: R7, R8', '--', rel)
+        p = R.prompt_for('R7', 1, 1, repo, 'main')
+        has(p, r'R7 is a research task.*`plan/`.*`docs/research/\*\*`.*plan add.*change no code',
+            'the research brief: findings where the run merges them, follow-ups queued, no code')
+        check('research task' not in R.prompt_for('T1', 1, 1, repo, 'main'), 'and only a research task gets it')
+        (R.worktree(1, 'main') / 'docs/research').mkdir(parents=True, exist_ok=True)
+        commit_on(repo, 'R7', {'docs/research/parser.md': 'it is slow\n', 'plan/notes.md': 'see parser.md\n'},
+                  'R7: findings')
+        eq(R.merge('R7', 'main'), None, 'a findings-only research diff merges')
+        check((repo / 'docs/research/parser.md').exists(), 'and its findings land')
+        commit_on(repo, 'R8', {'docs/research/printer.md': 'b.py drops\n', 'r8.py': '# fixed\n'}, 'R8: and a fix')
+        why = R.merge('R8', 'main') or ''
+        has(why, r'research changes no product.*r8\.py', 'a research diff that touches code does not merge')
+        check(not (repo / 'docs/research/printer.md').exists() and not (repo / 'r8.py').exists(),
+              'nothing of it lands')
+        a = [x for x in P.asks(repo / rel) if x[1] == 'R8']
+        eq([x[0] for x in a], ['DECIDE'], 'it blocks on a person')
+        has(a[0][3] if a else '', r'r8\.py.*`follow-up`.*`merge anyway`', 'naming the code files and the two answers')
+        eq(git(repo, 'status', '--porcelain', '--', rel), '', 'committed')
+        P.unblock('R8', 'merge anyway', todo=repo / rel)
+        git(repo, 'commit', '-qm', 'test: R8 answered', '--', rel)
+        eq(R.merge('R8', 'main'), None, 'answered `merge anyway`, the same diff merges')
+        eq((repo / 'r8.py').read_text(), '# fixed\n', 'code and all')
+        R.C.raw['plan']['kinds'] = own
+        commit_on(repo, 'R9', {'r9.py': '# tidied\n'}, 'R9: a refactor in a repo where R is not research')
+        eq(R.merge('R9', 'main'), None, 'a kind that is not research merges code as before')
+    finally:
+        R.C.run['repair_merges'] = True
+        if saved_kinds is None:
+            R.C.raw['plan'].pop('kinds', None)
+        else:
+            R.C.raw['plan']['kinds'] = saved_kinds
+        for b in ('task/R7', 'task/R8', 'task/R9'):
+            if git(repo, 'branch', '--list', b):
+                git(repo, 'branch', '-D', b)
+        if (repo / rel).read_text(encoding='utf-8') != before:
+            (repo / rel).write_text(before, encoding='utf-8')
+            git(repo, 'commit', '-qm', 'test: R7, R8 gone again', '--', rel)
+
+
 def test_blame_and_own_repair(repo: Path, tmp: Path):
     print('run: a failed batch finds the task that breaks it alone; that task\'s repair is its own session')
     R.init(repo)
@@ -6483,7 +6538,7 @@ def main() -> int:
                        lambda: test_stop_waiter(tmp), lambda: test_stop_hook_grace(tmp), lambda: test_land_waits_aloud(repo), lambda: test_merge_ahead(repo), lambda: test_adopted_gate_merge(repo), lambda: test_adopted_gate_results(repo), lambda: test_gate_since(repo), lambda: test_gate_catch_up(repo), lambda: test_owed_merge_goes_first(repo), lambda: test_copies(repo), lambda: test_land_gives_merge_back(repo),
                        lambda: test_edited_elsewhere(repo, tmp),
                        lambda: test_resume(repo, tmp),
-                       lambda: test_session_tmp(repo, tmp), lambda: test_end_orphans(repo), lambda: test_memory_watch(repo), lambda: test_tested_ref(repo, tmp), lambda: test_docs_only_gate(repo),
+                       lambda: test_session_tmp(repo, tmp), lambda: test_end_orphans(repo), lambda: test_memory_watch(repo), lambda: test_tested_ref(repo, tmp), lambda: test_docs_only_gate(repo), lambda: test_research_findings_only(repo),
                        lambda: test_no_pane(repo, tmp), lambda: test_other_repos_panes(repo, tmp),
                        lambda: test_limit_resumes(repo, tmp),
                        lambda: test_shared_push(repo, tmp), lambda: test_note_on_a_ticked_task(repo), lambda: test_adopt_merge(repo), lambda: test_followups(repo), lambda: test_person_check_after(repo), lambda: test_ci_watch(repo), test_update_notice, test_restart_if_upgraded, test_auto_upgrade, lambda: test_flake_repair(tmp), lambda: test_repair_per_failure(repo),
