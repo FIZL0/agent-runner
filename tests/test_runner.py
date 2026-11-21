@@ -2799,7 +2799,7 @@ def test_feed_resume(repo: Path, tmp: Path):
             _, a1 = start()
         check('--session-id' in a1 and '--resume' not in a1, 'the first feed starts a session of its own', a1)
         sid = a1[a1.index('--session-id') + 1]
-        eq(sidf.read_text().strip(), sid, 'its session id is kept in <notes>/remote/')
+        eq(R.feed_sid_file(), sid, 'its session id is kept in <notes>/remote/')
         eq(seen[0][4] if len(seen[0]) > 4 else '', sid, 'and recorded with the feed')
 
         # an upgrade restart execs in place: same pid and start, so the same run key and the same board
@@ -2818,7 +2818,7 @@ def test_feed_resume(repo: Path, tmp: Path):
               'a restarted feed resumes the same session (history and app entry carry on)', a2)
         _, a3 = start(run_pid=0)
         check('--resume' not in a3 and '--session-id' not in a3, 'a feed started by hand is its own', a3)
-        eq(sidf.read_text().strip(), sid, 'and leaves the run\'s session alone')
+        eq(R.feed_sid_file(), sid, 'and leaves the run\'s session alone')
 
         # a resume that fails at once (its transcript gone): the next start is fresh, not a loop of failures
         rc, _ = start(argv=[sys.executable, '-c', 'raise SystemExit(1)'])
