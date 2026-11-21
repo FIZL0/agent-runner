@@ -600,14 +600,15 @@ def breaking(old: str, new: str) -> bool:
 def upgrade_argv(here: str | Path = __file__) -> list[str]:
     """The command that upgrades this install: pipx, uv tool, or a pull in the clone it runs from.
     B97: told apart by where agent_runner itself lives, not sys.prefix: a wrapper (openmx's ./kit) runs the
-    system python3 with uv's site-packages on sys.path, so sys.prefix is /usr and a pull ran in site-packages."""
+    system python3 with uv's site-packages on sys.path, so sys.prefix is /usr and a pull ran in site-packages.
+    A clone is the one with a .git beside agent_runner/; any other install is pipx (by its path) or else uv tool,
+    the one the README installs with, wherever UV_TOOL_DIR put it."""
     path = Path(here).resolve()
-    parts = path.parts
-    if 'pipx' in parts:
+    if (path.parents[1] / '.git').exists():
+        return ['git', '-C', str(path.parents[1]), 'pull', '-q', '--ff-only']
+    if 'pipx' in path.parts:
         return ['pipx', 'upgrade', 'agent-runner']
-    if 'uv' in parts:
-        return ['uv', 'tool', 'upgrade', 'agent-runner']
-    return ['git', '-C', str(path.parents[1]), 'pull', '-q', '--ff-only']
+    return ['uv', 'tool', 'upgrade', 'agent-runner']
 
 
 def installed_version() -> str | None:

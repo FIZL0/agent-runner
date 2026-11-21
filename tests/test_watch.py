@@ -1,43 +1,57 @@
 #!/usr/bin/env python3
 """B97: `upgrade_argv` picks the upgrade command by where agent_runner itself lives, not by sys.prefix.
 
-    python3 tests/test_watch.py        (no network, no repo; well under a second)
+    python3 tests/test_watch.py        (no network; a temp folder; well under a second)
 
 A wrapper (openmx's ./kit) runs the system python3 with uv's site-packages on sys.path: sys.prefix is /usr,
-and the old test fell through to `git -C …/site-packages pull`, which fails with exit 128.
+and the old test fell through to `git -C …/site-packages pull`, which fails with exit 128. Now a clone (a .git
+beside agent_runner/) pulls, a pipx install upgrades with pipx, and any other install with uv tool, wherever
+UV_TOOL_DIR put it.
 """
 from __future__ import annotations
 
 import sys
+import tempfile
 from pathlib import Path
 
 from _check import check, eq, report
 
 from agent_runner import watch as W  # noqa: E402
 
-UV = '/home/u/.local/share/uv/tools/agent-runner/lib/python3.13/site-packages/agent_runner/watch.py'
-PIPX = '/home/u/.local/share/pipx/venvs/agent-runner/lib/python3.13/site-packages/agent_runner/watch.py'
-CLONE = '/home/u/repos/agent-runner/agent_runner/watch.py'
+UV = ['uv', 'tool', 'upgrade', 'agent-runner']
+
+
+def make(root: Path, rel: str, git: bool = False) -> Path:
+    """agent_runner/watch.py at `rel` under `root`, with a .git beside agent_runner/ when `git`."""
+    f = root / rel / 'agent_runner' / 'watch.py'
+    f.parent.mkdir(parents=True)
+    f.write_text('', encoding='utf-8')
+    if git:
+        (root / rel / '.git').mkdir()
+    return f
 
 
 def test_by_file() -> None:
     real = sys.prefix
     sys.prefix = '/usr'  # the wrapper: system python3, whatever site-packages it put on sys.path
     try:
-        eq(W.upgrade_argv(UV), ['uv', 'tool', 'upgrade', 'agent-runner'], 'uv tool install under a wrapper')
-        eq(W.upgrade_argv(PIPX), ['pipx', 'upgrade', 'agent-runner'], 'pipx install under a wrapper')
-        eq(W.upgrade_argv(CLONE), ['git', '-C', '/home/u/repos/agent-runner', 'pull', '-q', '--ff-only'],
-           'a clone pulls in its own root')
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            uv = make(root, '.local/share/uv/tools/agent-runner/lib/python3.13/site-packages')
+            moved = make(root, 'tools/agent-runner/lib/python3.13/site-packages')
+            pipx = make(root, '.local/share/pipx/venvs/agent-runner/lib/python3.13/site-packages')
+            clone = make(root, 'repos/uv/agent-runner', git=True)
+            eq(W.upgrade_argv(uv), UV, 'uv tool install under a wrapper')
+            eq(W.upgrade_argv(moved), UV, 'uv tool install under UV_TOOL_DIR, no uv in its path')
+            eq(W.upgrade_argv(pipx), ['pipx', 'upgrade', 'agent-runner'], 'pipx install under a wrapper')
+            eq(W.upgrade_argv(clone), ['git', '-C', str((root / 'repos/uv/agent-runner').resolve()), 'pull', '-q',
+                                       '--ff-only'], 'a clone pulls in its own root, even under a folder named uv')
     finally:
         sys.prefix = real
-    sys.prefix = '/home/u/.local/share/uv/tools/agent-runner'
-    try:
-        eq(W.upgrade_argv(CLONE)[0], 'git', 'a clone run by a uv python still pulls')
-    finally:
-        sys.prefix = real
-    here = W.upgrade_argv()
-    check(here[0] == 'git' and here[2] == str(Path(W.__file__).resolve().parents[1]),
-          f'this checkout pulls in itself: {here}')
+    here = Path(W.__file__).resolve().parents[1]
+    if (here / '.git').exists():
+        eq(W.upgrade_argv()[:3], ['git', '-C', str(here)], 'this checkout pulls in itself')
+    check(W.upgrade_argv()[0] != 'git' or 'site-packages' not in W.upgrade_argv()[2], 'never a pull in site-packages')
 
 
 if __name__ == '__main__':
