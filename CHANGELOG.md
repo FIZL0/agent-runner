@@ -7,8 +7,8 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 - c1 no longer grows until it compacts: when a person starts a new run and c1's kept session last stood over
   `[run] context_warn` (150k by default), c1 starts a fresh session and its opening summary says so in one
   line; 4 of 32 control sessions had passed 150k. A restart keeps the session whatever its size: the
-  self-restart on an upgrade, a run after a crash, kill or Ctrl-C, and a run started within 5 minutes of the
-  last one ending (F27).
+  self-restart on an upgrade, a run within 6 hours of a crash, kill or Ctrl-C, and a run started within 5
+  minutes of the last one ending (F27).
 - A slot session whose context grew too big says so: past `[run] context_warn` (150k tokens by default, 0
   off), its exit line and `since` add e.g. `B32 peaked 168k (over 150k): runner.py 61k, test_runner.py 22k`,
   the files (or kinds of call) whose results filled it most. 10 of 51 slot sessions in two weeks passed 100k

@@ -411,14 +411,18 @@ RESTART_GAP = 300  # s: a run started this soon after the last one ended is a re
 CONTROL_FRESH = ['']  # F27: why this c1 started a fresh session, for its opening line ('' when it did not)
 
 
+RECOVER_GAP = 6 * 3600  # s: a run that never logged its stop, and was last alive this recently, is recovered
+
+
 def run_restart(now: float | None = None) -> bool:
     """F27: whether the run starting now is a restart of the last one rather than a new run a person started:
-    the last run never logged its stop (the self-restart on upgrade or auto_upgrade, a crash, a kill, Ctrl-C),
-    or it stopped under RESTART_GAP ago (its last STATE counts as its end too). Called before this run logs
-    its own 'run up'; no earlier run at all is a new run."""
+    it stopped under RESTART_GAP ago, or it never logged its stop (the self-restart on upgrade or
+    auto_upgrade, a crash, a kill, Ctrl-C) and was last alive under RECOVER_GAP ago. Its end is its last event
+    or its last STATE, whichever is later. Called before this run logs its own 'run up'; no earlier run at all
+    is a new run."""
     from agent_runner.state import EV_RUN_UP, EV_STOPPED
     now = time.time() if now is None else now
-    last = None
+    last, latest = None, ''
     try:
         with open(C.notes('events.jsonl'), encoding='utf-8') as fh:
             for line in fh:
@@ -428,13 +432,14 @@ def run_restart(now: float | None = None) -> bool:
                     continue
                 if isinstance(d, dict) and d.get('kind') in (EV_RUN_UP, EV_STOPPED):
                     last = d
+                if isinstance(d, dict) and d.get('time'):
+                    latest = str(d['time'])
     except OSError:
         pass
     if not last:
         return False
-    if last['kind'] == EV_RUN_UP:
-        return True
-    ends = [str(last.get('time', ''))]
+    gap = RECOVER_GAP if last['kind'] == EV_RUN_UP else RESTART_GAP
+    ends = [latest]
     try:
         ends.append(str(json.loads(C.notes('STATE').read_text(encoding='utf-8')).get('at', '')))
     except (OSError, ValueError, AttributeError):
@@ -445,7 +450,7 @@ def run_restart(now: float | None = None) -> bool:
             stamps.append(dt.datetime.fromisoformat(s).timestamp())
         except ValueError:
             pass
-    return bool(stamps) and now - max(stamps) < RESTART_GAP
+    return bool(stamps) and now - max(stamps) < gap
 
 
 def control_bloated(sid: str) -> int:

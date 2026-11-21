@@ -124,9 +124,10 @@ task to fix X" (it files it with `plan add`), "do X now" (it uses `take`, never 
   its session id in `.runner/control.sid` and resumes it in every run while the transcript is there. A new
   run a person starts begins c1 afresh instead (a new id in `control.sid`) when the kept session's last
   context is over `[run] context_warn`, and its opening summary says so in one line first (`c1 starts a fresh
-  session: the last one reached 160k context …`); the plan, ledger and `since` hold the state. A restart
-  always resumes it, whatever its size: the self-restart on `upgrade` or `auto_upgrade`, a run after a crash,
-  a kill or Ctrl-C (the last run never logged its stop), and a run started within 5 minutes of the last one
+  session: the last one reached 160k context …`; with `[run] remote`, whose c1 opens blank, that line is in
+  c1's terminal and `run.log` only); the plan, ledger and `since` hold the state. A restart always resumes it,
+  whatever its size: the self-restart on `upgrade` or `auto_upgrade`, a run after a crash, a kill or Ctrl-C
+  (the last run never logged its stop) within 6 hours, and a run started within 5 minutes of the last one
   ending. It has no
   Stop hook, is never ended on idle, and outlives a stopped run: a run that finds c1 still up opens no other.
 - **More of them**: `agent-runner control` starts one in this terminal (c1 when it is not running, else the

@@ -6816,6 +6816,8 @@ def test_control_fresh_f27(repo: Path):
         events(('2026-11-20T09:00:00', R.EV_RUN_UP), ('2026-11-20T10:00:00', R.EV_STOPPED),
                ('2026-11-20T11:00:00', R.EV_RUN_UP), ('2026-11-20T11:05:00', R.EV_LANDED))
         check(Ctl.run_restart(now), 'the last run never logged its stop (upgrade restart, crash, kill): a restart')
+        events(('2026-11-19T09:00:00', R.EV_RUN_UP), ('2026-11-19T09:05:00', R.EV_LANDED))
+        check(not Ctl.run_restart(now), 'but one last alive a day ago: a new run')
         events(('2026-11-20T09:00:00', R.EV_RUN_UP), ('2026-11-20T10:00:00', R.EV_STOPPED))
         statef.write_text(json.dumps({'at': '2026-11-20T14:59:00'}), encoding='utf-8')
         check(Ctl.run_restart(now), 'its last STATE a minute ago counts as its end')
