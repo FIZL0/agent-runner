@@ -56,6 +56,7 @@ def test_cap() -> None:
         log += [ev(f'{i // 60 + 1:02d}:{i % 60:02d}', S.EV_STARTED, tid),
                 ev(f'{i // 60 + 1:02d}:{i % 60:02d}', S.EV_LANDED, tid), ev(f'{i // 60 + 1:02d}:{i % 60:02d}', S.EV_IDLE)]
     log += [ev('20:00', S.EV_STARTED, 'B9'), ev('20:01', S.EV_PARKED, 'B9', why='tests fail')]
+    log += [ev(f'21:{m:02d}', S.EV_RELEASED, text=f'agent-runner 0.{m}.0 released: more words') for m in range(8)]
     text, _ = S.since_digest(log, START, titles, NOW)
     lines = text.splitlines()
     check(len(text.encode()) < 2048, f'200 landed fit in under 2KB ({len(text.encode())} bytes)', text)
@@ -65,6 +66,7 @@ def test_cap() -> None:
     check(any('(tests fail) [B9]' in l for l in lines), 'the cap spares Stuck', text)
     eq(lines[-1].endswith('since --all'), True, 'cut: points at since --all')
     eq(text.count('run idle'), 1, 'run idle once, as the last run state')
+    eq((text.count(' released: '), '  …and 5 earlier' in lines), (S.DIGEST_RUN, True), 'run lines capped too')
 
 
 def main() -> int:

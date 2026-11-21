@@ -289,6 +289,7 @@ def _since_events(log_lines: list[str], start: dt.datetime, titles: dict[str, st
 
 DIGEST_CAP = 10  # B88: titled lines a since digest shows before it names the rest by id
 DIGEST_WIDTH = 70  # B88: a run line (a release's words) cut to this in the digest
+DIGEST_RUN = 3  # B88: the run lines (releases, holds) a digest shows, newest
 DIGEST_STUCK = (EV_PART, EV_PARKED, EV_LEFT, EV_STALLED)  # a task's last state the digest lists under Stuck
 
 
@@ -330,9 +331,7 @@ def since_digest(log_lines: list[str], start: dt.datetime, titles: dict[str, str
             if line not in run_lines:
                 run_lines.append(line)
     head = f'since {when(start.isoformat(timespec="seconds"), now)}' + (' (your last look)' if since_mark else '')
-    if run_state:
-        run_lines.append(f'last: {run_state}')
-    if not tasks and not run_lines:
+    if not tasks and not run_lines and not run_state:
         return f'nothing new {head}', last
     groups = [('Started', [t for t, v in reversed(tasks.items()) if v[1] == EV_STARTED]),
               ('Landed', [t for t, v in reversed(tasks.items()) if v[1] == EV_LANDED]),
@@ -353,6 +352,11 @@ def since_digest(log_lines: list[str], start: dt.datetime, titles: dict[str, str
         if rest:
             cut = True
             out.append(f'  …and {len(rest)} more: {", ".join(rest)}' if name == 'Landed' else f'  …and {len(rest)} more')
+    if len(run_lines) > DIGEST_RUN:  # many releases or holds: the newest, then a count
+        cut = True
+        run_lines = [f'…and {len(run_lines) - DIGEST_RUN} earlier', *run_lines[-DIGEST_RUN:]]
+    if run_state:
+        run_lines.append(f'last: {run_state}')
     if run_lines:
         out.append('Run:')
         out += [f'  {l}' for l in run_lines]
