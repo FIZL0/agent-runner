@@ -4,6 +4,8 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+## 0.57.0 (2026-11-20)
+
 - A release kind, `V`. `plan add V` files a release at the end of Next that waits for everything ahead of it
   (`after: all`, no `--after` needed), with the default release brief when given no text (bump the version,
   move CHANGELOG Unreleased under it, commit to main, check the release workflow and `gh release view`). It
