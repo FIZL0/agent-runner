@@ -2135,12 +2135,19 @@ def test_short_titles_and_since(repo: Path):
             eq(R.C.command, './kit', 'B71: the test sets a wrapper command')
             fa = R.feed_argv()
             opt = lambda k: fa[fa.index(k) + 1]
-            check(f'`{R.RUNNER} since --follow --keep-mark`' in fa[1] and './kit' not in fa[1],
-                  'B71: the feed Monitors the runner itself, not [run] command', fa[1])
-            check(f'`{R.RUNNER} control --new --forward`' in opt('--system-prompt')
-                  and f'{R.RUNNER} plan confirm ID' in opt('--system-prompt') and './kit' not in opt('--system-prompt'),
-                  'B71: the feed system prompt names the runner', opt('--system-prompt'))
-            eq(opt('--allowedTools'), f'Bash({R.RUNNER} *)', 'B71: the feed may run the runner, not ./kit')
+            # B92: ./kit now forwards every runner command, and the run's lines and hints say ./kit: the feed
+            # names it and may run both it and the runner (dontAsk refused ./kit, so nothing reached a control)
+            sp_ = opt('--system-prompt')
+            check('`./kit since --follow --keep-mark`' in fa[1], 'B92: the feed Monitors [run] command', fa[1])
+            check('`./kit control --new --forward`' in sp_ and './kit plan confirm ID' in sp_
+                  and f'{R.RUNNER} control' not in sp_, 'B92: the feed system prompt names [run] command', sp_)
+            allowed = fa[fa.index('--allowedTools') + 1:fa.index('--strict-mcp-config')]
+            eq(allowed, ['Bash(./kit *)', f'Bash({R.RUNNER} *)', 'Monitor', 'PushNotification'],
+               'B92: the feed may run both ./kit and the runner')
+            handoff = re.search(r'run `([^`]*) control --new --forward`, exactly that, with nothing added', sp_)
+            check(handoff and f'Bash({handoff.group(1)} *)' in allowed,
+                  'B92: the hand-off command in the prompt is one dontAsk allows', (handoff and handoff.group(1), allowed))
+            eq(R.feed_cmd(), './kit', 'B92: the feed session is kept per [run] command (B91)')
             brief = R.control_brief()
             check(f'`{R.RUNNER} status`' in brief and f'{R.RUNNER} plan confirm' in brief and './kit' not in brief,
                   'B71: the control brief names the runner', brief[:200])

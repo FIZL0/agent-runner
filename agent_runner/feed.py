@@ -73,7 +73,7 @@ def board_feed(run_pid: int = 0, poll: float = BOARD_POLL) -> int:
     (`run_pid`) has: a plain stop once its tasks are done, a force stop, or a crash. The feed then goes
     offline in the apps and the board window closes. The feed ending on its own ends this too (`keep_board`
     opens it again while the run is up). Ctrl-C is the feed's own (it asks before it exits)."""
-    sid, resume = feed_session() if run_pid else ('', False)  # B15: the run's feed carries on its one session
+    sid, resume = feed_session(feed_cmd()) if run_pid else ('', False)  # B15: the run's feed carries on its one session
     try:
         proc = sp.Popen([*feed_argv(), *feed_session_args(sid, resume)])
     except OSError as e:
@@ -173,6 +173,19 @@ def feed_name() -> str:
     return f'{ROOT.name} · runner'
 
 
+def feed_cmd() -> str:
+    """B92: the command the runner feed's prompt names: `[run] command` (e.g. openmx's `./kit`, which forwards
+    every runner command once it has loaded the kit's settings), else the runner. The run's own output and hints
+    say that command, so the feed copies it; the bare runner in a wrapped repo would skip the kit's config."""
+    return C.command
+
+
+def feed_allowed_bash() -> list[str]:
+    """B92: the Bash rules the feed's dontAsk allows: `[run] command` and the runner itself when they differ,
+    so neither one a line or hint names is refused."""
+    return list(dict.fromkeys(f'Bash({c} *)' for c in (feed_cmd(), RUNNER)))
+
+
 def feed_argv() -> list[str]:
     """With `[run] remote`: the runner feed, a lean Claude session on Remote Control as "<repo> · runner" that
     posts what lands (Monitor on `since --follow --keep-mark`), runs status/pause/stop/slots, and hands anything
@@ -181,7 +194,7 @@ def feed_argv() -> list[str]:
     its own short system prompt instead of Claude Code's, no settings sources or MCP servers: ~6k tokens a turn.
     `board_feed` adds the session flags: one session from the run's first start to a real stop (`feed_session`)."""
     from agent_runner.guide import FEED_ANSWER, RUNNER_BRIEF, RUNNER_START
-    cmd = RUNNER  # B71: the runner itself: [run] command may wrap only part of it (openmx's ./kit has no since)
+    cmd = feed_cmd()
     cf = P.needs_cfg()  # B27: a reply to an item under Needs you is mapped to its id and answered here
     answer = FEED_ANSWER.format(cmd=cmd, needs=cf['heading'])
     from agent_runner import voice  # F21: the person's wording, in the prompt: the feed has no file tools
@@ -189,7 +202,7 @@ def feed_argv() -> list[str]:
     return [plat.exe(C.run['agent']), RUNNER_START.format(cmd=cmd, repo=ROOT.name),
             '--model', FEED_MODEL, '--system-prompt', system,
             '--tools', 'Bash,Monitor,PushNotification', '--permission-mode', 'dontAsk',
-            '--allowedTools', f'Bash({cmd} *)', 'Monitor', 'PushNotification', '--strict-mcp-config',
+            '--allowedTools', *feed_allowed_bash(), 'Monitor', 'PushNotification', '--strict-mcp-config',
             '--setting-sources', '', '--settings', json.dumps({'autoMemoryEnabled': False}),  # ~6k tokens a turn
             '--remote-control', feed_name()]
 
