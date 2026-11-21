@@ -8,7 +8,7 @@ gets the native equivalent from the standard library and `ctypes` only (no psuti
     terminate             WM_CLOSE to the windows of the process tree (an emulator saves and exits), a short
                           wait, then `taskkill /T /F` (no SIGTERM; the agent may be a .cmd around node)
     spawn_detached        CREATE_NO_WINDOW + a new process group (+ breakaway from a job when allowed)
-    spawn_console         a new console window (CREATE_NEW_CONSOLE), the fallback without Windows Terminal
+    spawn_console         a new console (CREATE_NEW_CONSOLE) whose window starts hidden: a slot, a control session
     lock                  msvcrt.locking on one byte, which goes with the handle however the process ends
     link                  a symlink; failing that (no Developer Mode) a junction for a directory, a hard link
                           for a file
@@ -340,23 +340,19 @@ def command_text(argv: list[str]) -> str:
 
 # --- terminals ---------------------------------------------------------------
 
-def mux_choice(want: str, tmux_ok: bool, wt_ok: bool, windows: bool = WINDOWS) -> str:
-    """Which terminal a run puts its sessions in: 'sequential', 'tmux', 'wt' or 'console'.
+def mux_choice(want: str, tmux_ok: bool, inside: bool, windows: bool = WINDOWS) -> str:
+    """Where a run puts its slot sessions (F40): 'hidden' (a pseudo-terminal with no window, the slot's
+    output in its log; watched through Remote Control, status and control sessions) or 'tmux' (a pane each,
+    to attach to and type into; Linux and macOS only).
 
-    `want == 'none'` (`--no-tmux`) is the sequential run whatever is installed; one slot (and `once`) still
-    gets a worktree and a pane, like any parallel run. `want` is
-    `[run] mux`: '' (auto) picks tmux on POSIX, and on Windows a Windows Terminal tab when wt.exe is
-    there, else a console window per slot. Asking for one that is not available falls back to sequential
-    rather than to a different terminal than the one asked for.
+    `want` is `--mux` or `[run] mux`: '' (auto) is tmux when it is installed and the run is inside a tmux
+    session (`inside`; the background run always is), else hidden. 'tmux' without tmux installed, and
+    anything on Windows, is hidden too: there is no run without a worktree and the gate any more. The old
+    values 'wt', 'console' and 'none' read as hidden.
     """
-    if want == 'none':
-        return 'sequential'
-    if want:
-        ok = {'tmux': tmux_ok, 'wt': windows and wt_ok, 'console': windows}.get(want, False)
-        return want if ok else 'sequential'
-    if windows:
-        return 'wt' if wt_ok else 'console'
-    return 'tmux' if tmux_ok else 'sequential'
+    if windows or not tmux_ok or want not in ('', 'tmux'):
+        return 'hidden'
+    return 'tmux' if want == 'tmux' or inside else 'hidden'
 
 
 def suspend() -> int:

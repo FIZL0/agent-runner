@@ -1,5 +1,5 @@
-"""The run itself: the keys typed into its pane, halts and tells, CI, finishing a task, the sequential run
-and the parallel loop (`cmd_run`)."""
+"""The run itself: the keys typed into its pane, halts and tells, CI, finishing a task and the loop
+(`cmd_run`)."""
 
 from __future__ import annotations
 
@@ -15,7 +15,6 @@ import sys
 import threading
 import time
 import traceback
-import uuid
 import webbrowser
 from contextlib import ExitStack
 from pathlib import Path
@@ -25,15 +24,15 @@ from agent_runner.config import RUNNER, ensure_local, finished_mark, shown_cmd
 from agent_runner.done import TESTED
 from agent_runner.gitops import missing_remote, push
 from agent_runner.state import (alarm, ask_stop, C, clean, clear_stop, commit_plan, default_branch, FORCED, forced,
-    git, HIDDEN, hook, IDLE, init, KEYS, KEYS_LOCK, LANDING, log, MERGE, note, PAUSED, plan_rel, plan_text, POWER, queued,
+    git, HIDDEN, IDLE, init, KEYS, KEYS_LOCK, LANDING, log, MERGE, note, PAUSED, plan_rel, plan_text, POWER, queued,
     READING, ROOT, RUN_TAG, share, SLOTS_DIR, stop_note, STOP_SAID, stopped_by, stopping, WAKE)
 from agent_runner.state import (EV_DEFERRED, EV_DROPPED, EV_IDLE, EV_LEFT, EV_NO_COMMITS, EV_PARKED, EV_RUN_UP,
     EV_STALLED, EV_STOP_ASKED, EV_STOP_BACK, EV_STOPPED)
-from agent_runner.brief import no_remote_line, prompt_for
+from agent_runner.brief import no_remote_line
 from agent_runner.sched import blocked_by_edits, keep_claims, PARK_LIMIT, parked_attempts, pick, tasks
-from agent_runner.slots import (adopt, agent_argv, agent_cmd, backend, DISK_AT, DISK_SAID, du, env_vars, free_branch,
-    free_gb, GB, MUX, remote_any, remote_line, REMOTE_URL, resume, run_session, save_leftovers, send_to_pane,
-    ShimMux, single_run, slot_env, slot_shim, SLOTS, start, tmux, TmuxMux, transcript, trim, unmerged)
+from agent_runner.slots import (adopt, backend, DISK_AT, DISK_SAID, du, env_vars, free_branch,
+    free_gb, GB, hidden_line, HiddenMux, MUX, remote_any, remote_line, REMOTE_URL, resume, save_leftovers,
+    single_run, slot_env, slot_shim, SLOTS, start, tmux, TmuxMux, transcript, trim, unmerged)
 from agent_runner.watch import (_account, agent_failed, api_down, AUTO_UPGRADE, auto_upgrade, cut_off,
     drop_session_tmp, end_orphans, memory_watch, queue_cut_off, queue_resume, restart_if_upgraded,
     RESUME_AFTER, resume_failed, RESUME_MAX, resumes, RESUMES_MAX, stalled, START_TRIES, state_line, stats,
@@ -59,8 +58,7 @@ def read_keys() -> None:
     """A daemon thread's loop: every line typed into the runner's pane is acted on at once (`take_keys`), and
     the loop is woken for what only it can do (ending sessions, a new slot).
 
-    A thread rather than select() on stdin, which only works on POSIX. Started only when stdin is a tty, and
-    never by the sequential run, whose agent session reads the same terminal.
+    A thread rather than select() on stdin, which only works on POSIX. Started only when stdin is a tty.
     """
     for line in sys.stdin:
         KEYS.append(line.strip().lower())
@@ -344,24 +342,24 @@ def tell_answer(tid: str, told: bool, msg: str) -> None:
 
 def tells(procs: dict, running: dict) -> None:
     """F16: pass each `plan tell` / `plan change` message on to the slot running its task, by typing it into
-    the slot's tmux pane. No live pane (not tmux, the session ended, a cut-off one waiting to resume): told
-    false, and `plan change` falls back to the B19 halt."""
+    the slot's tmux pane, or (F40) through a hidden slot's FIFO. No live session (a Windows hidden console, the
+    session ended, a cut-off one waiting to resume): told false, and `plan change` falls back to the B19 halt."""
     reqs = tell_requests()
     if not reqs:
         return
-    tagged = MUX.panes() if isinstance(MUX, TmuxMux) else {}
+    tagged = MUX.panes() if MUX.typed else {}
     for tid, req in reqs.items():
         n = next((m for m, t in running.items() if t[0] == tid), None)
         if n is None:
             tell_answer(tid, False, f'no slot runs {tid} now')
             continue
         hit = tagged.get(f's{n}')
-        if not isinstance(MUX, TmuxMux):
+        if not MUX.typed:
             why = f'no live pane for s{n} ({tid}): its terminal ({MUX.name}) takes no typed text'
         elif not hit or not plat.alive(hit[1]) or (n in procs and not plat.alive(procs[n][0])):
             why = f'no live pane for s{n} ({tid}): its session has ended'
-        elif not send_to_pane(hit[0], P.tell_text(req['how'], req['text'])):
-            why = f'no live pane for s{n} ({tid}): tmux could not type into {hit[0]}'
+        elif not MUX.send(hit, P.tell_text(req['how'], req['text'])):
+            why = f'no live pane for s{n} ({tid}): {MUX.name} could not type into {hit[0]}'
         else:
             tell_answer(tid, True, f'told s{n} ({tid})')
             continue
@@ -601,7 +599,7 @@ def _finish(tid: str, n: int, sid: str, branch: str) -> bool:
     return True
 
 
-# --- sequential run ------------------------------------------------------------
+# --- usage caps and power ------------------------------------------------------
 
 def capped(force: bool) -> str | None:
     """Why no new task may start: the 5-hour session usage at or past `[run] session_max`, or the 7-day usage
@@ -645,85 +643,6 @@ def shut_down(idle_at: float) -> bool:
         log(f'the power-off command failed (exit {rc}); staying up')
         return False
     return True
-
-
-def sequential(branch: str, model: str, idle: int, pause: int, force: bool, once: bool = False) -> int:
-    """`--no-tmux`, or no terminal for panes: one session at a time, in this checkout, on the branch it has out.
-
-    No worktree: so a task commits straight onto the branch you are on and no merge
-    happens. `done` ran the gate before it committed, so with `push_merge` the branch is pushed after each
-    task. `once` stops after the first task, which is how to try the runner on a single task. With nothing to
-    start it does not exit: it logs `run idle` once and looks at TODO.md again every 30 s.
-    """
-    here = git('branch', '--show-current').stdout.strip() or branch
-    log(f'sequential run on {here} ({"one task, then stop" if once else "one session at a time"}, '
-        f'committing in this checkout)', EV_RUN_UP, slots=0)
-    tried: set[str] = set()
-    closed: set[str] = set()
-    idle_said, idle_at = False, 0.0
-    while not stopping():
-        retry_reopened(tried, closed, here)
-        if not (task := pick({}, tried, here, claim=True)):
-            if once:
-                break
-            if not idle_said:
-                log(idle_line(), EV_IDLE)
-                idle_said, idle_at = True, time.time()
-            if shut_down(idle_at):
-                return 0
-            time.sleep(30)
-            continue
-        if idle_said:
-            log(f'run busy: new work ({task[0]})')
-            idle_said = False
-        if low_disk([]):
-            time.sleep(30)
-            continue
-        if (w := capped(force)) is not None:
-            log(f'{w}: waiting for the reset (--force to go on)')
-            time.sleep(300)
-            continue
-        tid = task[0]
-        sid = str(uuid.uuid4())
-        before = git('rev-parse', 'HEAD').stdout.strip()
-        log(f'{tid}: starting ({task[1]})')
-        env = env_vars(slot_env(1))
-        if plat.WINDOWS:  # no sh to read the prompt file; the marker is how the Stop hook finds the agent
-            code = run_session(agent_argv(prompt_for(tid, 1, 1, ROOT, here), sid, model, idle, 'slot1'),
-                               str(ROOT), env, C.notes('slot1.live'))
-        else:
-            code = sp.run(agent_cmd(prompt_for(tid, 1, 1, ROOT, here), sid, model, idle, 'slot1'), shell=True,
-                          cwd=str(ROOT), env={**os.environ, **env}).returncode
-        log(f'{tid}: session ended ({stats(sid)})')
-        end_orphans()
-        drop_session_tmp(sid)
-        if C.run['on_exit']:
-            hook('on_exit', C.run['on_exit'], ROOT, {**os.environ, **env})
-        if backend().report_exit and code:
-            log(f'{tid}: {C.run["backend"]} failed (exit {code}): {last_words(sid) or "see terminal output"}')
-            plansync.release(C, tid)
-            return code
-        tried.add(tid)
-        plansync.release(C, tid)  # committed here, ticked by its `done`: nothing left to hold
-        if git('rev-parse', 'HEAD').stdout.strip() != before:
-            note(f'{tid}: committed on {here}')
-            with MERGE:
-                reopen_landed(here, tid)
-            tried -= REOPENED
-            REOPENED.clear()
-            if C.push_merge and (out := push(ROOT, here, shared=True)):
-                log(f'{tid}: {out}')
-        if once:
-            log(f'{tid}: done (once)')
-            return 0
-        time.sleep(pause)
-    asked = stopping()
-    clear_stop()
-    take_keys()  # no keys here, but `./run stop --suspend|--shutdown` leaves its choice the same way
-    log('sequential run done: ' + ('nothing it may start (once)' if once else 'stop asked for'))
-    if asked and POWER:
-        power_now()
-    return 0
 
 
 def dry_run(slots: int, branch: str) -> int:
@@ -862,14 +781,14 @@ def run(argv: list[str], prog: str) -> int:
     ap.add_argument('--stall', type=int, default=None, help='seconds of quiet that count as stalled')
     ap.add_argument('--pause', type=int, default=None, help='seconds between a session ending and the next')
     ap.add_argument('--model', default=None, help='the agent model (default [run] model)')
-    ap.add_argument('--no-tmux', action='store_true', help='force the single sequential session')
-    ap.add_argument('--mux', choices=['tmux', 'wt', 'console', 'none'], default=None,
-                    help='the terminal per slot (default [run] mux, else tmux; on Windows wt, else console)')
+    ap.add_argument('--mux', choices=['tmux', 'hidden'], default=None,
+                    help='where the slots run (default [run] mux, else tmux inside a tmux session, else hidden: '
+                         'no window, watched through Remote Control, status and control sessions; Windows: hidden)')
     ap.add_argument('--dry-run', action='store_true', help='print what would start, and start nothing')
     ap.add_argument('--stop-hook', action='store_true', help=argparse.SUPPRESS)
     ap.add_argument('--stop-waiter', nargs=4, metavar=('PID', 'TRANSCRIPT', 'N', 'IDLE'), help=argparse.SUPPRESS)
     ap.add_argument('--slot-shim', metavar='JOB', help=argparse.SUPPRESS)
-    ap.add_argument('--hidden', action='store_true', help=argparse.SUPPRESS)  # the background run (Windows: hidden consoles)
+    ap.add_argument('--hidden', action='store_true', help=argparse.SUPPRESS)  # the background run without tmux
     a = ap.parse_args(argv)
 
     if a.stop_hook:  # these two run inside an agent session and need no repository
@@ -911,25 +830,20 @@ def run(argv: list[str], prog: str) -> int:
         clear_stop()
         log('cleared a stop request left by an earlier run')
     C.notes('POWER').unlink(missing_ok=True)
-    want = 'none' if a.no_tmux else (a.mux or r['mux'])
-    if a.hidden and plat.WINDOWS:  # the background run: a console per slot that starts hidden, never a wt tab
-        HIDDEN[0], want = True, 'console'
-    choice = plat.mux_choice(want, shutil.which('tmux') is not None, shutil.which('wt.exe') is not None)
-    if choice == 'sequential':
-        if want != 'none':
-            log((f'{want} is not available here' if want else 'tmux is not installed') +
-                ': falling back to one sequential session (install tmux, or Windows Terminal on Windows, '
-                'for parallel slots, a terminal per session, and worktrees)')
-        return sequential(branch, model, idle, pause, a.force, once)
+    want = 'hidden' if a.hidden else (a.mux or r['mux'])  # --hidden: the background run without tmux
+    choice = plat.mux_choice(want, shutil.which('tmux') is not None, bool(os.environ.get('TMUX')))
     global MUX
-    MUX = TmuxMux() if choice == 'tmux' else ShimMux(choice)
+    MUX = TmuxMux() if choice == 'tmux' else HiddenMux()
     global MASTER_PANE
     MASTER_PANE = choice == 'tmux'
+    HIDDEN[0] = choice == 'hidden'  # Windows: c1's console starts hidden too
     share(MUX=MUX, MASTER_PANE=MASTER_PANE)
-    if choice == 'console' and HIDDEN[0]:
-        log('in the background: each slot gets a console window that starts hidden (agent-runner attach sN shows it)')
-    elif choice == 'console':
-        log('Windows Terminal (wt.exe) is not installed: each slot gets a console window of its own')
+    if choice == 'hidden':
+        if want == 'tmux' and not plat.WINDOWS:
+            log('tmux is not installed: the slots run hidden instead')
+        elif want not in ('', 'tmux', 'hidden'):
+            log(f'[run] mux = {want!r} is gone (F40): the slots run hidden')
+        log(hidden_line())
     if choice == 'tmux' and not os.environ.get('TMUX'):
         print(f'Run me inside tmux, so the sessions get panes you can attach to:\n'
               f'    tmux new -s runner {prog} {a.slots or slots}\n'

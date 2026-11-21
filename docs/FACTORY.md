@@ -43,7 +43,7 @@ landing); a person re-enters through Needs you, the ledger and `wip/` branches i
 | **concept (K)** | a K task picked like any other | its session publishes an Artifact page; `done --artifact` ticks K and files the build `[~]` "waiting for your OK on <url>" | nothing until a person answers; then a slot pick of the build | Needs you lists the page; `plan approve/revise/shelve` | the build's block names no task, so `plan reopen` never frees it; `done` refuses a K task without `--artifact`; one build per concept round (`revise` drops the old one) |
 | **Needs you replies** | a person answers an item (control session or the feed, which map the reply to its id: `plan confirm/change/shelve ID`) | reads `plan asks/waiting`; writes the item's line (tick, reopen with the answer noted, or shelve) | the reopened task's slot pick | this is the re-entry | the session asks which item when a reply could fit several; an answered item no longer waits, so it cannot be answered twice. Blocks with **no caps label and no task to wait on never reach Needs you** (gap **B35**) |
 | **plan reopen** | every landed merge (`reopen_landed`) | rewrites `[~] … BLOCKED: (after X)` to `[ ]` once every X is done; commits the plan | a slot pick | `plan unblock` by hand | it runs under the merge lock; a task blocked twice keeps only its last list |
-| **sequential run** (`--no-tmux`) | no tmux / Windows Terminal, or asked for | the main checkout, the branch it has out | push of that branch after each task | the terminal | one session at a time. **It pushes whatever was committed, gated or not** (gap **B37**) |
+| **hidden slots** (F40; replaced the sequential run) | no tmux, the run outside tmux, Windows, or `mux = "hidden"` | a slot's worktree, as with tmux; the agent in a pty (Windows: a hidden console) through `run --slot-shim` | the same `done`, merge gate and landing as any slot | `.runner/slotN.live` / `.exit`; `plan tell` through `slotN.in` (POSIX) | detached, so a restarted run adopts it. B37 (the sequential run's ungated push) went with the sequential run |
 
 ## Ticket sources: what stops a duplicate
 
@@ -62,7 +62,7 @@ landing); a person re-enters through Needs you, the ledger and `wip/` branches i
 | brake | holds? | evidence |
 |---|---|---|
 | gate on every `done` | yes, when `[run] test` is set | `done.py` returns 1 on a red gate, nothing ticked or committed. `--no-test` exists; the merge then gates it |
-| gate on every merge | yes, when `[run] test` is set | `merge_gate`; skipped only when the merge is the very tree `done` passed on, differing in `[run] untested` files. With `test` empty there is no gate anywhere and no warning (**B36**). The sequential run pushes without one (**B37**) |
+| gate on every merge | yes, when `[run] test` is set | `merge_gate`; skipped only when the merge is the very tree `done` passed on, differing in `[run] untested` files. With `test` empty there is no gate anywhere and no warning (**B36**) |
 | fix sessions capped | yes | 3 merge tries (`merge_tries`), `fix_timeout` 30 min, `fix_ahead_max` 2 at once, then park |
 | repair capped | yes | one repair per merge, then park; a batch is halved, never repaired twice |
 | resumes capped | yes | 3 per session (`resumes`) |
@@ -83,7 +83,7 @@ Each has a filed task; the evidence is in its line (`agent-runner plan <ID>`).
 | **B33** | follow-ups filed by parallel slots are deduped only against each slot's branch copy of the plan |
 | **B35** | a block with no caps label and no task to wait on never reaches Needs you |
 | **B36** | an empty `[run] test` merges and pushes with no gate and no warning |
-| **B37** | the sequential run pushes the shared branch after any commit, gated or not |
+| **B37** | the sequential run pushed the shared branch after any commit, gated or not (gone with the sequential run, F40) |
 | **B38** | nothing caps a session's failed `done` gates |
 | **B40** | a task text quoting the block marker loses its `files:` (found while filing the above: B31 and B39 were dropped for it) |
 

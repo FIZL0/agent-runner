@@ -158,7 +158,7 @@ def test_sessions(repo: Path):
     job.write_text(json.dumps({'argv': R.agent_argv('test', 'finished', '', 90, 'slot8')}),
                    encoding='utf-8')
     try:
-        mux = R.ShimMux('console')
+        mux = R.HiddenMux()
         eq(mux.session_id(os.getpid()), 'finished', 'Windows restart adoption discovers Pi session IDs')
         eq(mux.panes()['s8'][1], os.getpid(), 'Windows Pi slots remain visible through the existing shim')
     finally:
@@ -214,35 +214,6 @@ def test_fixer(repo: Path):
         eq(kw['env']['NODE_USE_SYSTEM_CA'], '1', 'fixers inherit non-slot environment settings')
         eq(kw['env'].get('AGENT_SLOT'), os.environ.get('AGENT_SLOT'), 'fixers do not inject a slot number')
     eq(R.C.notes('master.prompt').read_text(encoding='utf-8'), 'resolve the merge', 'fixer prompts also use files')
-
-
-def test_sequential_failure(repo: Path):
-    configure(repo)
-    R.C.run['on_exit'] = 'cleanup command'
-    task = ('T1', 'test', set(), set())
-    saved = Path.cwd()
-    original = subprocess.run
-    cleaned = []
-
-    def execute(argv, **kw):
-        if isinstance(argv, list) and argv[0] == 'git':
-            return original(argv, **kw)
-        if argv == 'cleanup command':
-            cleaned.append(True)
-        return subprocess.CompletedProcess(argv, 7)
-
-    os.chdir(repo)
-    try:
-        with patch.object(R, 'pick', return_value=task), patch.object(R, 'retry_reopened'), \
-                patch.object(R, 'low_disk', return_value=False), \
-                patch.object(R, 'prompt_for', return_value='test'), \
-                patch.object(R, 'run_session', return_value=7), \
-                patch.object(R.sp, 'run', side_effect=execute):
-            eq(R.sequential('main', '', 90, 0, True, once=True), 7,
-               'sequential Pi failures propagate instead of reporting success')
-            check(cleaned, 'failed Pi sessions still run on_exit cleanup')
-    finally:
-        os.chdir(saved)
 
 
 def test_backend_end_to_end(repo: Path):
@@ -328,7 +299,7 @@ def main() -> int:
         git(repo, 'commit', '-qm', 'start')
         return report([lambda: test_config(repo), lambda: test_commands(repo),
                        lambda: test_sessions(repo), lambda: test_fixer(repo),
-                       lambda: test_sequential_failure(repo), lambda: test_backend_end_to_end(repo),
+                       lambda: test_backend_end_to_end(repo),
                        lambda: test_no_push(repo)])
 
 

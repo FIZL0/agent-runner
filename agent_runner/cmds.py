@@ -509,7 +509,8 @@ def tmux_launch_argv(session: str, win: str, root: Path, cmd: str, env: list[str
 
 
 def background_argv() -> list[str]:
-    """What bare `agent-runner` starts on Windows, as a detached process: the run, its slot consoles hidden."""
+    """What bare `agent-runner` starts without tmux (Windows, or tmux not installed), as a detached process:
+    the run, its slots hidden."""
     return [*runner_cmd(), 'run', '--hidden']
 
 
@@ -558,8 +559,8 @@ def remote_ready(tty: bool | None = None, ask=input) -> bool:
 
 
 def wait_started(since: int, gone, timeout: float = 30.0) -> int | None:
-    """Wait for the run's start event (F41: `run up` in events.jsonl) past byte `since`; its slot count (0 for
-    the sequential run), or None when `gone()` says the run ended first or `timeout` passed."""
+    """Wait for the run's start event (F41: `run up` in events.jsonl) past byte `since`; its slot count, or
+    None when `gone()` says the run ended first or `timeout` passed."""
     end = time.monotonic() + timeout
     while time.monotonic() < end:
         try:
@@ -577,10 +578,11 @@ def wait_started(since: int, gone, timeout: float = 30.0) -> int | None:
     return None
 
 
-def started_note(slots: int, where: str) -> str:
-    attach = ("its pane (attach s2: slot 2's); detach again with Ctrl-b d" if not plat.WINDOWS else
-              "slot 2's console window: attach s2 (closing that window ends the session)")
-    lines = [f'the run is up in the background: {slots or 1} slot{"s" if slots != 1 else ""}{"" if slots else " (sequential)"}, {where}',
+def started_note(slots: int, where: str, hidden: bool = False) -> str:
+    attach = ("slot 2's console window: attach s2 (closing that window ends the session)" if plat.WINDOWS else
+              "where each slot's log is (the slots run hidden)" if hidden else
+              "its pane (attach s2: slot 2's); detach again with Ctrl-b d")
+    lines = [f'the run is up in the background: {slots} slot{"s" if slots != 1 else ""}, {where}',
              f'    {shown_cmd()} status     what it is doing',
              f'    {shown_cmd()} attach     {attach}',
              f'    {shown_cmd()} stop       finish the running tasks, then end it (--force: now)']
@@ -595,17 +597,10 @@ def started_note(slots: int, where: str) -> str:
     return '\n'.join(lines)
 
 
-def tmux_hint() -> str:
-    how = ('brew install tmux' if sys.platform == 'darwin' else
-           'sudo apt install tmux, sudo dnf install tmux or sudo pacman -S tmux, as your system has it')
-    return (f'tmux is not installed: the background run lives in a detached tmux session. Install it ({how}),\n'
-            f'then {shown_cmd()} again; or run in this terminal: {shown_cmd()} run. Nothing started.')
-
-
 def cmd_background(argv: list[str]) -> int:
-    """Bare `agent-runner`: start the run where no terminal shows it, and give the prompt back. POSIX: a detached
-    tmux session "ar-<repo>" running `agent-runner run`, its slots' window in the same session. Windows: the run
-    as a detached process, each slot in a console window that starts hidden."""
+    """Bare `agent-runner`: start the run where no terminal shows it, and give the prompt back. With tmux: a
+    detached tmux session "ar-<repo>" running `agent-runner run`, its slots' window in the same session.
+    Windows, or no tmux (F40): the run as a detached process, its slots hidden."""
     drop_session_env()
     init()
     sess = background_session()
@@ -613,14 +608,11 @@ def cmd_background(argv: list[str]) -> int:
         print(f'a run is already up in this repository: {shown_cmd()} status, {shown_cmd()} attach '
               f'(tmux attach -t {sess} when it was started in the background), {shown_cmd()} stop')
         return 0
-    if not plat.WINDOWS and not shutil.which('tmux'):
-        print(tmux_hint(), file=sys.stderr)
-        return 1
     if not remote_ready():
         return 1
     log_file = C.notes('run.log')
     since = events_file().stat().st_size if events_file().exists() else 0
-    if plat.WINDOWS:
+    if plat.WINDOWS or not shutil.which('tmux'):
         out = C.notes('background.out')
         proc = plat.spawn_detached(background_argv(), out=out)
         slots = wait_started(since, lambda: proc.poll() is not None)
@@ -631,7 +623,7 @@ def cmd_background(argv: list[str]) -> int:
                 said = ''
             print(f'the run did not come up' + (f':\n{said}' if said else f'; see {log_file}'), file=sys.stderr)
             return 1
-        print(started_note(slots, 'slot consoles hidden'))
+        print(started_note(slots, 'its slots hidden' + ('' if plat.WINDOWS else ' (tmux is not installed)'), hidden=True))
         return 0
     win = window('runner')
     exists = not tmux('has-session', '-t', f'={sess}').returncode
@@ -677,18 +669,33 @@ def attach_argv(sess: str, pane_id: str, inside: bool) -> list[list[str]]:
 def cmd_background_attach(argv: list[str]) -> int:
     """`agent-runner --attach`: the background run (started now, or the one already up in this repo), then its
     pane in this terminal, as `attach` shows it; Ctrl-b d sends it back. Inside tmux it switches the client.
-    Windows: the run has no pane to attach, so it is bare `agent-runner`, and says so."""
+    Windows, or no tmux: the run has no pane to attach, so it is bare `agent-runner`, and says so."""
     if argv:
         print(f'{shown_cmd()} --attach takes nothing more (got {" ".join(argv)})', file=sys.stderr)
         return 2
     init()
-    if plat.WINDOWS:
-        print(f'on Windows the run has no window to attach: --attach starts it as {shown_cmd()} does')
+    if plat.WINDOWS or not shutil.which('tmux'):
+        print(f'{"on Windows" if plat.WINDOWS else "without tmux"} the run has no window to attach: '
+              f'--attach starts it as {shown_cmd()} does')
         return cmd_background([])
     if not run_up():
         if r := cmd_background([]):
             return r
     return cmd_attach([])
+
+
+def hidden_attach(which: str) -> str:
+    """F40, POSIX: what `attach` says of a run or slot that has no tmux pane because it runs hidden: where its
+    output is and how to watch it; '' when there is no such run or slot (the caller says so)."""
+    if which == 'runner':
+        return (f'the run has no pane (it runs without tmux): {shown_cmd()} status shows it, and its log is '
+                f'{C.notes("run.log")}' if run_up() else '')
+    pid = marker_pid(C.notes(f'slot{which[1:]}.live')) if re.fullmatch(r's\d+', which) else 0
+    if not (pid and plat.alive(pid)):
+        return ''
+    remote = f'; on Remote Control ({REMOTE_URL})' if remote_slots_on() else ''
+    return (f'{which} runs hidden (pid {pid}), with no pane to attach: its output goes to '
+            f'{C.notes(f"slot{which[1:]}.log")}{remote}; {shown_cmd()} plan tell <ID> "<text>" types into it')
 
 
 def cmd_attach(argv: list[str], prog: str = f'{RUNNER} attach') -> int:
@@ -713,8 +720,12 @@ def cmd_attach(argv: list[str], prog: str = f'{RUNNER} attach') -> int:
             return 1
         print(f'{which}: its console window is up (minimize it to hide it again; closing it ends the session)')
         return 0
-    rows = tmux('list-panes', '-a', '-F', f'#{{session_name}}\t#{{pane_id}}\t#{{{TAG}}}\t#{{{REPO_TAG}}}\t#{{{RUN_TAG}}}')
-    hit = attach_target(rows.stdout.splitlines(), ROOT, which) if not rows.returncode else None
+    rows = tmux('list-panes', '-a', '-F', f'#{{session_name}}\t#{{pane_id}}\t#{{{TAG}}}\t#{{{REPO_TAG}}}\t#{{{RUN_TAG}}}') \
+        if shutil.which('tmux') else None
+    hit = attach_target(rows.stdout.splitlines(), ROOT, which) if rows and not rows.returncode else None
+    if not hit and (said := hidden_attach(which)):
+        print(said)
+        return 0
     if not hit:
         print((f'no pane {which} in tmux for this repository' if which != 'runner' else
                'no run in tmux for this repository') + f': {shown_cmd()} status; {shown_cmd()} starts the run', file=sys.stderr)

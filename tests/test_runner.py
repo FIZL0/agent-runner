@@ -769,9 +769,18 @@ def test_attach_flag(repo: Path):
     calls: list[str] = []
     bg = lambda argv: calls.append('start') or 0
     at = lambda argv: calls.append('attach') or 0
+    which = R.shutil.which
+    tmux_here = lambda c, *a, **k: '/usr/bin/tmux' if c == 'tmux' else which(c, *a, **k)
+    no_tmux = lambda c, *a, **k: None if c == 'tmux' else which(c, *a, **k)
     with mock.patch.object(R, 'init'), mock.patch.object(R.plat, 'WINDOWS', False), \
             mock.patch.object(R, 'cmd_background', bg), mock.patch.object(R, 'cmd_attach', at), \
-            mock.patch.object(cli, 'skill'):
+            mock.patch.object(cli, 'skill'), mock.patch.object(R.shutil, 'which', tmux_here):
+        out = io.StringIO()
+        with mock.patch.object(R.shutil, 'which', no_tmux), contextlib.redirect_stdout(out):
+            eq(cli.main(['--attach']), 0, 'F40: --attach without tmux')
+        eq(calls, ['start'], 'without tmux: it starts the run hidden, as bare does, no attach')
+        has(out.getvalue(), r'without tmux', 'and says so')
+        calls.clear()
         with mock.patch.object(R, 'run_up', lambda: False):
             eq(cli.main(['--attach']), 0, '--attach with no run up')
         eq(calls, ['start', 'attach'], 'no run up: it starts the run, then attaches')
@@ -840,10 +849,9 @@ def test_short_name_hints():
             mock.patch.object(R, 'remote_on', lambda: False), mock.patch.object(R, 'remote_slots_on', lambda: False), \
             mock.patch.dict(R.C.run, {'control': True}):
         with mock.patch.object(config.shutil, 'which', lambda c, *a, **k: exe if c == 'agent-runner' else None):
-            note = R.started_note(2, 'slot consoles hidden')
+            note = R.started_note(2, 'its slots hidden', hidden=True)
             check('    agent-runner status' in note and '    agent-runner control' in note and exe not in note,
                   'on PATH: the start hints say agent-runner', note)
-            check(exe not in R.tmux_hint() and 'agent-runner run' in R.tmux_hint(), 'and the tmux hint', R.tmux_hint())
             check(f'{exe} status' in R.control_brief(), "a control session's brief keeps the full path")
         with mock.patch.object(config.shutil, 'which', lambda *a, **k: None):
             check(f'    {exe} status' in R.started_note(2, 'here'), 'not on PATH: the full path, which works')
@@ -891,7 +899,7 @@ def test_background(repo: Path):
        'its window outlives a run that fails at once, to show why')
     argv = R.tmux_launch_argv('ar-proj', 'runner-proj', repo, 'x', [], exists=True)
     eq(argv[1:5], ['new-window', '-d', '-t', '=ar-proj:'], 'a session already there gets a new window instead')
-    eq(R.background_argv()[-2:], ['run', '--hidden'], 'Windows: the run, its slot consoles hidden')
+    eq(R.background_argv()[-2:], ['run', '--hidden'], 'Windows or no tmux: the run, its slots hidden')
     has('\n'.join(R.background_env()), r'^PATH=', 'the tmux session gets this PATH')
     with mock.patch.dict(os.environ, {'CLAUDE_CODE_CHILD_SESSION': '1', 'CLAUDE_CODE_SESSION_ID': 's1',
                                       'CLAUDE_CODE_MESSAGING_TOKEN': 't', 'CLAUDE_CONFIG_DIR': '/c'}):
@@ -3229,13 +3237,16 @@ def test_platform(repo: Path, tmp: Path):
     from agent_runner import plat
     windows_was = plat.WINDOWS
     choice = plat.mux_choice
-    eq(choice('', True, False, windows=False), 'tmux', 'POSIX with tmux: panes')
-    eq(choice('', False, False, windows=False), 'sequential', 'POSIX without tmux: the sequential run')
-    eq(choice('', False, True, windows=True), 'wt', 'Windows with Windows Terminal: tabs')
-    eq(choice('', True, False, windows=True), 'console', 'Windows without it: a console window per slot')
-    eq(choice('none', True, True, windows=False), 'sequential', '--no-tmux is sequential')
-    eq(choice('console', False, True, windows=True), 'console', '[run] mux picks console over wt')
-    eq(choice('wt', True, True, windows=False), 'sequential', 'a terminal that is not there falls back to sequential')
+    eq(choice('', True, True, windows=False), 'tmux', 'F40: POSIX inside tmux: panes')
+    eq(choice('', True, False, windows=False), 'hidden', 'tmux installed but the run not in it: hidden, no error')
+    eq(choice('', False, False, windows=False), 'hidden', 'POSIX without tmux: hidden, not the sequential run')
+    eq(choice('tmux', True, False, windows=False), 'tmux', 'tmux asked for: tmux (the run then says to start it in tmux)')
+    eq(choice('tmux', False, True, windows=False), 'hidden', 'tmux asked for but not installed: hidden')
+    eq(choice('hidden', True, True, windows=False), 'hidden', '--mux hidden inside tmux')
+    eq(choice('', True, True, windows=True), 'hidden', 'Windows: hidden only')
+    eq(choice('tmux', True, True, windows=True), 'hidden', 'Windows: hidden even when tmux is asked for')
+    for gone in ('none', 'wt', 'console'):
+        eq(choice(gone, True, True, windows=False), 'hidden', f'the old [run] mux = {gone!r} reads as hidden')
 
     plat.WINDOWS = False
     try:
@@ -3325,7 +3336,7 @@ def test_platform(repo: Path, tmp: Path):
     eq(R.C.notes('slotT.prompt').read_text(encoding='utf-8'), 'x' * (R.ARGV_PROMPT_MAX + 1), 'all of it')
     eq(long[2:4], ['--session-id', 'sid-1'], 'and the flags follow, as in agent_cmd')
 
-    # the shim a Windows tab runs: the agent's pid in the marker while it runs, AGENT_RUNNER_MARKER set
+    # the shim a hidden slot runs: the agent's pid in the marker while it runs, AGENT_RUNNER_MARKER set
     marker, job, seen = R.C.notes('slot7.live'), R.C.notes('slot7.job'), tmp / 'seen'
     agent = [sys.executable, '-c', 'import os, sys, time; open(sys.argv[1], "w").write(os.environ["AGENT_RUNNER_MARKER"]);'
              ' time.sleep(2)', str(seen), '--session-id', 'sid-7']
@@ -3336,10 +3347,10 @@ def test_platform(repo: Path, tmp: Path):
             if R.marker_pid(marker):
                 break
             time.sleep(0.1)
-        mux = R.ShimMux('wt')
+        mux = R.HiddenMux()
         pid = R.marker_pid(marker)
         check(pid and plat.alive(pid) and pid != shim.pid, 'the shim publishes the agent\'s own pid')
-        eq(mux.panes().get('s7', (None, None))[1], pid, 'the Windows terminals list the slot by its marker')
+        eq(mux.panes().get('s7', (None, None))[1], pid, 'hidden slots are listed by their marker')
         eq(mux.session_id(pid), 'sid-7', 'and a restart reads its session id off the job file')
         shim.wait(timeout=10)
     finally:
@@ -3374,9 +3385,7 @@ def test_shutdown(repo: Path):
         check(not R.shut_down(0) and calls == ['off'], 'a refused power-off keeps the run up')
         calls.clear()
         R.plat.power_off = lambda: calls.append('off') or 0
-        R.pick = lambda *a, **k: None
-        eq(R.sequential('main', 'opus', 90, 0, False), 0, 'an idle sequential run ends after powering off')
-        eq(calls, ['off'], 'and powered off once')
+        check(R.shut_down(0) and calls == ['off'], 'an accepted power-off ends the run, powered off once')
         calls.clear()
         R.POWER = 'suspend'
         check(not R.shut_down(5.0) and calls == ['sleep'], '--suspend suspends, and the run stays')
@@ -6221,6 +6230,123 @@ def test_real_claude_json_guard(tmp: Path):
        sorted([f'{sys_tmp}/claude-1/x/scratchpad', '/home/me/repo']), 'and --clean removes just those')
 
 
+HIDDEN_AGENT = r'''#!/usr/bin/env python3
+# F40: a stand-in agent in a hidden slot: says whether it has a terminal, waits for a line typed into it, ends.
+import os, sys
+print('tty', os.isatty(0), os.get_terminal_size().columns, flush=True)
+print('told', repr(sys.stdin.readline().strip()), flush=True)
+'''
+
+LANDING_AGENT = r'''#!/usr/bin/env python3
+# F40: a stand-in agent that does its task in a hidden slot: one edit, then `done`, as a real session would.
+import os, subprocess, sys
+tid = subprocess.run(['git', 'branch', '--show-current'], capture_output=True, text=True).stdout.strip()[5:]
+open('a.py', 'a').write('# ' + tid + ' was here\n')
+r = subprocess.run([sys.executable, os.environ['F40_RUN'], 'done', tid, tid + ' from a hidden slot'],
+                   capture_output=True, text=True)
+open(os.environ['F40_OUT'], 'a').write(f'{tid} tty={os.isatty(0)} done={r.returncode}\n{r.stdout}{r.stderr}\n')
+'''
+
+
+def wait_dead(pid: int, timeout: float = 30.0) -> bool:
+    end = time.monotonic() + timeout
+    while time.monotonic() < end:
+        if not R.plat.alive(pid):
+            return True
+        time.sleep(0.1)
+    return False
+
+
+def test_hidden_slots(repo: Path, tmp: Path):
+    print('F40: a hidden slot (a pty, no window) starts, is adopted by a restarted run, is told a line, and ends')
+    if R.plat.WINDOWS:
+        return
+    R.init(repo)
+    git(repo, 'checkout', '-q', 'main')
+    agent = tmp / 'hidden-agent'
+    agent.write_text(HIDDEN_AGENT, encoding='utf-8')
+    agent.chmod(0o755)
+    d = R.worktree(5, 'main')
+    git(d, 'checkout', '-q', '-B', 'task/Z9', 'main')
+    saved = R.MUX, R.C.run['agent']
+    R.MUX, R.C.run['agent'] = R.HiddenMux(), str(agent)
+    pid = 0
+    try:
+        logfile, _ = R.slot_header(5, 'Z9 session sid-h')
+        pid = R.MUX.open(5, d, 'do Z9', 'sid-h', 'opus', 90, R.slot_env(5), logfile)
+        check(pid and R.plat.alive(pid), 'the slot starts, and its agent\'s pid comes back', pid)
+        hit = R.MUX.panes().get('s5')
+        eq(hit and hit[1], pid, 'it is listed by its marker, which is how a restarted run finds it')
+        adopted = R.adopt('main')
+        eq(adopted.get(5, ((None, None),))[0][:2], (pid, 'sid-h'), 'a restarted run adopts it: its pid and session id')
+        eq(adopted.get(5, (None, ('',)))[1][0], 'Z9', 'and the task its worktree is on')
+        check(R.MUX.typed and R.MUX.send(hit, 'hello hidden'), 'a tell is typed into it through its FIFO')
+        check(wait_dead(pid), 'the session ends')
+        text = logfile.read_text(encoding='utf-8', errors='replace')
+        has(text, r'tty True 200', 'it ran in a terminal, 200 columns wide, its output in the slot log')
+        has(text, r"told '.*hello hidden", 'and read the line typed into it')
+        end = time.monotonic() + 10
+        while R.marker_pid(R.C.notes('slot5.live')) and time.monotonic() < end:
+            time.sleep(0.1)
+        check(not R.C.notes('slot5.live').exists() and not R.C.notes('slot5.in').exists(),
+              'its marker and FIFO go when it ends')
+        eq(R.C.notes('slot5.exit').read_text(encoding='utf-8'), f'exit code 0 (pid {pid})',
+           'how it ended, and its pid, are left for the runner')
+        fast = R.C.notes('slot6.exit')
+        with mock.patch.object(R.plat, 'spawn_detached', lambda *a, **k: fast.write_text('exit code 0 (pid 4242)')):
+            eq(R.MUX.open(6, d, 'do Z9', 'sid-f', 'opus', 90, [], logfile), 4242,
+               'a session that ran and ended between two looks at its marker counts as started (and is reaped)')
+        fast.unlink()
+        check(not R.MUX.send(hit, 'too late'), 'a tell to an ended slot is refused, not left hanging')
+        has(R.hidden_line(), r'slots run hidden', 'the run says where to watch hidden slots')
+    finally:
+        if pid and R.plat.alive(pid):
+            R.plat.terminate(pid)
+        R.MUX, R.C.run['agent'] = saved
+        git(d, 'checkout', '-q', '--detach')
+        git(repo, 'branch', '-D', 'task/Z9')
+        git(repo, 'worktree', 'remove', '--force', str(d))
+
+
+def test_hidden_run_lands(tmp: Path):
+    print('F40: a run with no tmux on PATH runs its slot hidden and lands the task (worktree, done, gate, merge)')
+    if R.plat.WINDOWS:
+        return
+    (tmp / 'f40').mkdir()
+    repo = make_repo(tmp / 'f40')
+    agent, out = tmp / 'landing-agent', tmp / 'f40' / 'agent.out'
+    agent.write_text(LANDING_AGENT, encoding='utf-8')
+    agent.chmod(0o755)
+    which = R.shutil.which
+    no_tmux = lambda c, *a, **k: None if c == 'tmux' else which(c, *a, **k)
+    env = {k: v for k, v in os.environ.items() if k not in ('TMUX', 'TMUX_PANE')}
+    env |= {'F40_RUN': str(RUN), 'F40_OUT': str(out)}
+    saved_sleep, saved_mux = R.time.sleep, R.MUX
+    here = os.getcwd()
+    os.chdir(repo)
+    watchdog = threading.Timer(300, lambda: R.ask_stop('test watchdog', force=True))  # never a hung suite
+    try:
+        R.init(repo)
+        R.C.run['agent'] = str(agent)
+        watchdog.start()
+        with mock.patch.dict(os.environ, env, clear=True), mock.patch.object(R.shutil, 'which', no_tmux), \
+                mock.patch.object(R, 'nap', lambda s: saved_sleep(min(s, 0.5))):
+            eq(R.run(['once'], 'run'), 0, 'the run ends after its one task')
+            eq(type(R.MUX).__name__, 'HiddenMux', 'no tmux: the slots ran hidden, not an error and not sequential')
+    finally:
+        watchdog.cancel()
+        os.chdir(here)
+        R.MUX, R.MASTER_PANE, R.HIDDEN[0] = saved_mux, False, False
+        R.C.run['agent'] = 'claude'
+    said = out.read_text(encoding='utf-8') if out.exists() else ''
+    check('T1 tty=True done=0' in said, 'the agent had a terminal and its done passed', said[-1500:])
+    has(git(repo, 'log', '--format=%s', 'main'), r'T1 from a hidden slot', 'and the task landed on main')
+    has(git(repo, 'show', 'main:a.py'), r'T1 was here', 'with its edit')
+    log = (repo / '.runner/run.log').read_text(encoding='utf-8')
+    check('slots run hidden' in log, 'the run said its slots run hidden', log[-1500:])
+    check('sequential' not in log, 'and no sequential run')
+
+
 def main() -> int:
     with tempfile.TemporaryDirectory() as t:
         tmp = Path(t)
@@ -6257,7 +6383,8 @@ def main() -> int:
                        lambda: test_control_status_rules(repo), lambda: test_control_do_it_here(repo), lambda: test_control_retitle_on_topic(repo), test_control_push_when_asked, test_needs_cmd_f44, test_idle_control_not_waiting, lambda: test_take_running_slot(repo), lambda: test_upgrade_cmd(repo), lambda: test_runner_route_b54(repo), test_control_no_upgrade_watcher,
                        test_split_modules_c3, lambda: test_plan_last(repo), lambda: test_release_push(repo),
                        lambda: test_help_order_and_bare_wizard(tmp), lambda: test_setup(tmp),
-                       lambda: test_stop_countdown(repo), lambda: test_real_claude_json_guard(tmp)])
+                       lambda: test_stop_countdown(repo), lambda: test_real_claude_json_guard(tmp),
+                       lambda: test_hidden_slots(repo, tmp), lambda: test_hidden_run_lands(tmp)])
 
 
 if __name__ == '__main__':

@@ -52,6 +52,9 @@ agent-runner stop                  # finish the running tasks, then end it
 
 Bare `agent-runner` starts the run in a detached tmux session `ar-<repo>`, with the slots' window in it, so
 no terminal is taken and nothing pops up. `agent-runner run 3` is the same run in this terminal (inside tmux).
+tmux is optional: without it (and always on Windows) the run is a detached process and each slot runs
+hidden, in a terminal with no window, its output in `.runner/slotN.log`; you watch and steer it through
+`agent-runner status`, control sessions and `plan tell`.
 Either way the run opens a control session, c1, beside it: a Claude Code session in the main checkout that
 you ask for status, to pause, to add slots or stop, to queue a task, or to do one now. It opens with what is
 running and what happened since you last looked (`agent-runner since`), and when you say "follow" it posts each
@@ -68,9 +71,8 @@ Needs you first (`[run] control_close`, `control_idle`, `control_ask_idle`).
 Upgrade with `uv tool upgrade agent-runner` (or `pipx upgrade`) any time: a running run restarts itself on the
 new version and adopts its sessions (not on Windows, nor across a major version). Or pin a
 [release](https://github.com/FIZL0/agent-runner/releases/latest): `uv tool install git+https://github.com/FIZL0/agent-runner@v<version>`.
-On Windows, bare `agent-runner` runs the runner as a hidden process and each slot in a console window that
-starts hidden (`agent-runner attach s2` shows one); `agent-runner run 3` in a terminal gives each slot a
-Windows Terminal tab instead of a tmux pane.
+On Windows the slots always run hidden, each in a console whose window starts hidden (`agent-runner attach s2`
+shows one), whether the run is bare `agent-runner` or `agent-runner run 3` in a terminal.
 Adding it to an existing repo and wrapping it from your own CLI are in [docs/SETUP.md](docs/SETUP.md).
 
 ## How it works
@@ -94,8 +96,8 @@ main moves and is pushed; the slot picks its next task
 1. **Pick.** A free slot reads `plan/TODO.md` from the top and takes the first task that may start. A task
    waits while it is blocked, while a task in its `after:` is not done, while it shares `files:` with a
    task that is running or not merged yet, or while another task of its family is running.
-2. **Work.** The slot gets a worktree on branch `task/<ID>` and a terminal (a tmux pane; a Windows Terminal
-   tab on Windows). The agent starts from a short brief: the task's line, its long form, the files it
+2. **Work.** The slot gets a worktree on branch `task/<ID>` and a terminal (a tmux pane, or a hidden
+   pseudo-terminal with no window: without tmux, and on Windows). The agent starts from a short brief: the task's line, its long form, the files it
    names, and its newest journal entry.
 3. **Finish.** The agent runs `done`. It runs your test gate, ticks the task, commits and pushes the
    branch, and refuses while the tests fail. A stuck agent runs `done --blocked "why"` instead. Once the

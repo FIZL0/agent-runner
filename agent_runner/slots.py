@@ -1,5 +1,5 @@
 """Slots and sessions: worktrees and panes, the agent backends (Claude Code, Pi), Remote Control, a
-slot's environment, starting and resuming a session, disk trimming and the terminals (`TmuxMux`, `ShimMux`)."""
+slot's environment, starting and resuming a session, disk trimming and the terminals (`TmuxMux`, `HiddenMux`)."""
 
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ from pathlib import Path
 from agent_runner import plan as P, plat
 from agent_runner.config import finished_mark, runner_cmd, shown_cmd
 from agent_runner.gitops import push
-from agent_runner.state import C, clean, git, HIDDEN, hook, log, note, REPO_TAG, ROOT, SLOTS_DIR, TAG
+from agent_runner.state import C, clean, git, hook, log, note, REPO_TAG, ROOT, SLOTS_DIR, TAG
 from agent_runner.state import EV_STARTED
 from agent_runner.brief import NO_PUSH_URLS, prompt_for, review_on
 from agent_runner.sched import ahead, blocked_tasks, open_tasks, tasks
@@ -228,7 +228,7 @@ class Claude:
     A backend is everything the runner does differently per agent CLI. To add one, subclass this and
     override what differs, then name it in BACKENDS (and `config.py`'s backend check).
     """
-    report_exit = False  # log a session's last words at exit, and fail a sequential run on a nonzero exit
+    report_exit = False  # log a session's last words at exit
 
     def flags(self, sid: str, model: str, idle: int, resume: bool, once: bool) -> list[str]:
         stop = [{'hooks': [{'type': 'command', 'command': plat.command_text(
@@ -487,7 +487,7 @@ def remote_flags(name: str, cwd: Path | None) -> list[str]:
 
 def agent_cmd(prompt: str, sid: str, model: str, idle: int, name: str, resume: bool = False,
               cwd: Path | None = None) -> str:
-    """The agent command line for one task, for sh (tmux, and the POSIX sequential run). The prompt is
+    """The agent command line for one task, for sh (a tmux pane). The prompt is
     written to `<notes>/<name>.prompt` and goes in from there (`Claude.cmd`, `Pi.cmd`)."""
     pf = C.notes(f'{name}.prompt')
     pf.write_text(prompt, encoding='utf-8')
@@ -496,8 +496,8 @@ def agent_cmd(prompt: str, sid: str, model: str, idle: int, name: str, resume: b
 
 def agent_argv(prompt: str, sid: str, model: str, idle: int, name: str, resume: bool = False,
                once: bool = False, cwd: Path | None = None) -> list[str]:
-    """The same command as an argv, for Windows, where no POSIX shell stands between us and the agent. The
-    prompt is written to `<notes>/<name>.prompt` all the same."""
+    """The same command as an argv, for a hidden slot (`HiddenMux`), where no shell stands between us and the
+    agent. The prompt is written to `<notes>/<name>.prompt` all the same."""
     pf = C.notes(f'{name}.prompt')
     pf.write_text(prompt, encoding='utf-8')
     return backend().argv(prompt, pf, sid, agent_flags(sid, model, idle, resume, once) +
@@ -847,21 +847,31 @@ class TmuxMux:
     def where(self, n: int) -> str:
         return f'pane s{n}'
 
+    typed = True  # `send` types into a slot's session
 
-class ShimMux:
-    """Windows: a Windows Terminal tab per slot (`wt`), or a console window per slot (`console`).
+    def send(self, hit: tuple[str, int], text: str) -> bool:
+        """Type `text` into the slot whose `panes()` entry is `hit`, and press Enter."""
+        return send_to_pane(hit[0], text)
 
-    Neither hands back the agent's pid the way tmux does: `wt.exe` only asks the running terminal to open
-    a tab and exits, and the tab gets the terminal's environment, not ours. So each slot runs through a
-    shim (`run --slot-shim <job>`, `slot_shim`): it reads the argv, directory and environment from
-    `<notes>/slotN.job`, starts the agent, and keeps its pid in `<notes>/slotN.live` while it runs. The
-    loop, a restart's adopt and the Stop hook all read that marker. The console window gets the shim too,
-    so the two behave the same. Nothing captures a console's output, so the slot log has only the header
-    lines here.
+
+SHIM_WAIT = 30.0  # s a hidden slot's shim gets to start its agent (a busy machine is slow to start Python)
+
+
+class HiddenMux:
+    """F40: a slot with no window, on every OS. Watched through Remote Control (with `[run] remote_slots`),
+    status, the slot's log and control sessions; steered by `plan tell` (POSIX).
+
+    Each slot runs through a shim (`run --slot-shim <job>`, `slot_shim`), started detached so the session
+    outlives a restarted runner and the next run adopts it: it reads the argv, directory and environment
+    from `<notes>/slotN.job`, starts the agent, and keeps the agent's pid in `<notes>/slotN.live` while it
+    runs. The loop, a restart's adopt and the Stop hook all read that marker. POSIX: the agent runs in a
+    pseudo-terminal of the standard library's `pty` (it needs a TTY), the shim copies its output to the
+    slot log and types into it what arrives on the FIFO `<notes>/slotN.in` (`send`). Windows: a console of
+    its own whose window starts hidden (`attach sN` shows it); nothing captures its output, so the slot log
+    has only the header lines there, and nothing can be typed into it.
     """
-
-    def __init__(self, name: str):
-        self.name = name
+    name = 'hidden'
+    typed = not plat.WINDOWS
 
     def open(self, n, cwd, prompt, sid, model, idle, env, logfile, resume=False):
         job, marker = C.notes(f'slot{n}.job'), C.notes(f'slot{n}.live')
@@ -870,18 +880,21 @@ class ShimMux:
         ended.unlink(missing_ok=True)
         envd = env_vars(env)
         job.write_text(json.dumps({'argv': agent_argv(prompt, sid, model, idle, f'slot{n}', resume, cwd=cwd), 'cwd': str(cwd),
-                                   'env': envd, 'marker': str(marker)}), encoding='utf-8')
+                                   'env': envd, 'marker': str(marker), 'log': str(logfile)}), encoding='utf-8')
         shim = [*runner_cmd(), 'run', '--slot-shim', str(job)]
-        if self.name == 'wt':
-            sp.Popen(['wt.exe', '-w', 'agents', 'new-tab', '--title', f's{n}', '-d', str(cwd), *shim],
-                     stdin=sp.DEVNULL, stdout=sp.DEVNULL, stderr=sp.DEVNULL)
+        if plat.WINDOWS:
+            plat.spawn_console(shim, cwd, {**os.environ, **envd}, hidden=True)
         else:
-            plat.spawn_console(shim, cwd, {**os.environ, **envd}, hidden=HIDDEN[0])
-        for _ in range(100):
+            plat.spawn_detached(shim, out=C.notes(f'slot{n}.shim'))  # its own errors, should it fail
+        end = time.monotonic() + SHIM_WAIT
+        while time.monotonic() < end:
             if pid := marker_pid(marker):
                 return pid
             if ended.exists():  # the agent ended before the marker was seen, or never started
-                log(f'slot {n}: the agent ended at once: {ended.read_text(encoding="utf-8").strip()[:300]}')
+                said = ended.read_text(encoding='utf-8').strip()
+                if m := re.match(r'exit code -?\d+ \(pid (\d+)\)', said):
+                    return int(m.group(1))  # it ran, and ended between two looks: reaped as any ended session
+                log(f'slot {n}: the agent ended at once: {said[:300]}')
                 return None
             time.sleep(0.3)
         return None
@@ -905,7 +918,120 @@ class ShimMux:
         return None
 
     def where(self, n: int) -> str:
-        return f'the "s{n}" tab' if self.name == 'wt' else f'the console window of slot {n}'
+        return (f'the hidden console of slot {n} ({shown_cmd()} attach s{n} shows it)' if plat.WINDOWS else
+                f'slot {n}\'s log, {C.notes(f"slot{n}.log")}')
+
+    def send(self, hit: tuple[str, int], text: str) -> bool:
+        """Type `text` into the slot whose marker is `hit[0]`, through its shim's FIFO, and press Enter."""
+        return not plat.WINDOWS and send_fifo(Path(hit[0]).with_suffix('.in'), text)
+
+
+def hidden_line() -> str:
+    """The run's log line for hidden slots: where to watch and steer them."""
+    see = [f'{shown_cmd()} status', f'the slot logs ({C.notes("slotN.log")})', f'{shown_cmd()} control']
+    if remote_slots_on():
+        see.insert(0, f'Remote Control ({REMOTE_URL}, the Claude apps)')
+    if plat.WINDOWS:
+        see.append(f'{shown_cmd()} attach sN (shows its console)')
+    return 'slots run hidden, with no window: watch them through ' + ', '.join(see)
+
+
+def send_fifo(inbox: Path, text: str) -> bool:
+    """F40: what `send_to_pane` does for tmux, through the FIFO a hidden slot's shim reads (`run_pty`): a
+    bracketed paste, then Enter. False when no shim reads it (the session ended)."""
+    try:
+        fd = os.open(inbox, os.O_WRONLY | os.O_NONBLOCK)  # ENXIO with no reader, rather than hang
+    except OSError:
+        return False
+    try:
+        for chunk in (b'\x1b[200~' + text.encode('utf-8') + b'\x1b[201~', b'\r'):
+            end = time.monotonic() + 10
+            while chunk:
+                try:
+                    chunk = chunk[os.write(fd, chunk):]
+                except BlockingIOError:
+                    if time.monotonic() > end:
+                        return False
+                    time.sleep(0.05)
+            time.sleep(0.3)  # let the TUI take the paste before Enter, or Enter lands inside it
+        return True
+    except OSError:
+        return False
+    finally:
+        os.close(fd)
+
+
+PTY_SIZE = (50, 200)  # rows, columns of a hidden slot's terminal: wide enough that the log reads
+
+
+def run_pty(argv: list[str], cwd: str, env: dict, marker: Path, logfile: Path | None) -> tuple[int, int]:
+    """POSIX: run one agent session in a pseudo-terminal with no window (see HiddenMux), its pid in `marker`
+    while it runs; what it prints goes to `logfile`, and what arrives on the FIFO beside the marker (slotN.in)
+    is typed into it. Returns its exit code and pid once it has ended. OSError when the agent cannot be started."""
+    import fcntl
+    import pty
+    import select
+    import struct
+    import termios
+    exe = shutil.which(argv[0], path=env.get('PATH') or os.environ.get('PATH'))
+    if not exe:
+        raise FileNotFoundError(f'{argv[0]} is not on PATH')
+    full = {**os.environ, **env, 'AGENT_RUNNER_MARKER': str(marker)}
+    if full.get('TERM', 'dumb') == 'dumb':
+        full['TERM'] = 'xterm-256color'
+    pid, fd = pty.fork()
+    if pid == 0:  # the child: its own session, the pty its controlling terminal
+        try:
+            fcntl.ioctl(0, termios.TIOCSWINSZ, struct.pack('HHHH', *PTY_SIZE, 0, 0))
+            os.chdir(cwd)
+            os.execve(exe, argv, full)
+        except BaseException as e:
+            os.write(2, f'could not start {argv[0]}: {e}\n'.encode())
+        os._exit(127)
+    marker.write_text(str(pid), encoding='utf-8')
+    inbox = marker.with_suffix('.in')
+    inbox.unlink(missing_ok=True)
+    try:
+        os.mkfifo(inbox, 0o600)
+        inq = os.open(inbox, os.O_RDWR | os.O_NONBLOCK)  # read-write: no EOF when a writer closes it
+    except OSError:
+        inq = -1
+    out = open(logfile, 'ab') if logfile else None
+    code = None
+    try:
+        while True:
+            r, _, _ = select.select([fd] + ([inq] if inq >= 0 else []), [], [], 1.0)
+            if fd in r:
+                try:
+                    data = os.read(fd, 65536)
+                except OSError:  # EIO: nothing holds the terminal open any more
+                    data = b''
+                if not data:
+                    break
+                if out:
+                    out.write(data)
+                    out.flush()
+            if inq in r:
+                try:
+                    os.write(fd, os.read(inq, 65536))
+                except OSError:
+                    pass
+            if not r:
+                done, status = os.waitpid(pid, os.WNOHANG)
+                if done:  # it ended, but something it started still holds the terminal: stop reading
+                    code = os.waitstatus_to_exitcode(status)
+                    break
+    finally:
+        if code is None:
+            code = os.waitstatus_to_exitcode(os.waitpid(pid, 0)[1])
+        if out:
+            out.close()
+        os.close(fd)
+        if inq >= 0:
+            os.close(inq)
+        inbox.unlink(missing_ok=True)
+        marker.unlink(missing_ok=True)
+    return code, pid
 
 
 def marker_pid(marker: Path) -> int:
@@ -915,15 +1041,16 @@ def marker_pid(marker: Path) -> int:
         return 0
 
 
-def run_session(argv: list[str], cwd: str, env: dict, marker: Path) -> int:
-    """Run one agent session in this terminal, its pid in `marker` while it runs (see ShimMux). The agent
-    gets AGENT_RUNNER_MARKER, which is how the Stop hook finds the pid to end on Windows."""
+def run_session(argv: list[str], cwd: str, env: dict, marker: Path) -> tuple[int, int]:
+    """Windows: run one agent session in this (hidden) console, its pid in `marker` while it runs (see
+    HiddenMux); its exit code and pid. The agent gets AGENT_RUNNER_MARKER, which is how the Stop hook finds
+    the pid to end."""
     proc = sp.Popen(argv, cwd=cwd, env={**os.environ, **env, 'AGENT_RUNNER_MARKER': str(marker)})
     marker.write_text(str(proc.pid), encoding='utf-8')
     try:
         while True:
             try:
-                return proc.wait()
+                return proc.wait(), proc.pid
             except KeyboardInterrupt:
                 continue  # Ctrl-C in the tab is for the agent (it interrupts a turn), not for the shim
     finally:
@@ -931,27 +1058,32 @@ def run_session(argv: list[str], cwd: str, env: dict, marker: Path) -> int:
 
 
 def slot_shim(job: str) -> int:
-    """`run --slot-shim <job>`: what a Windows tab or console window runs (see ShimMux).
+    """`run --slot-shim <job>`: what runs a hidden slot (see HiddenMux): a pseudo-terminal on POSIX
+    (`run_pty`), this console on Windows (`run_session`). How the agent ended goes to `slotN.exit`.
 
-    Always exits 0, so Windows Terminal closes the tab; and a job runs once, so a tab restarted with Enter
-    does not resume a finished session behind the runner's back."""
+    Always exits 0; and a job runs once, so a shim started again does not resume a finished session behind
+    the runner's back."""
     f = Path(job)
     spec = json.loads(f.read_text(encoding='utf-8'))
     if spec.get('started'):
-        print('This slot\'s session has ended; the runner starts the next one. Close this tab.')
+        print('This slot\'s session has ended; the runner starts the next one.')
         return 0
     f.write_text(json.dumps({**spec, 'started': True}), encoding='utf-8')
     ended = Path(spec['marker']).with_suffix('.exit')
     try:
-        code = run_session(spec['argv'], spec['cwd'], spec['env'], Path(spec['marker']))
-        ended.write_text(f'exit code {code}', encoding='utf-8')
+        if plat.WINDOWS:
+            code, pid = run_session(spec['argv'], spec['cwd'], spec['env'], Path(spec['marker']))
+        else:
+            code, pid = run_pty(spec['argv'], spec['cwd'], spec['env'], Path(spec['marker']),
+                                Path(spec['log']) if spec.get('log') else None)
+        ended.write_text(f'exit code {code} (pid {pid})', encoding='utf-8')  # HiddenMux.open reads the pid
     except OSError as e:
         ended.write_text(f'could not start {spec["argv"][0]}: {e}', encoding='utf-8')
         print(f'could not start the agent: {e}')
     return 0
 
 
-MUX: TmuxMux | ShimMux = TmuxMux()  # what `cmd_run` picked
+MUX: TmuxMux | HiddenMux = TmuxMux()  # what `cmd_run` picked
 MASTER_IDLE = 90     # s a master session sits at its prompt, its answer given, before the Stop hook ends it
 
 

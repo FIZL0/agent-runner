@@ -27,8 +27,13 @@ That puts `agent-runner` on your PATH. It is the same CLI as `./run` in a clone:
 `agent-runner done`, `agent-runner run`, `agent-runner stop`. `python3 -m agent_runner` works too.
 
 **Windows:** Python 3.11+ from python.org (not the Store's `python3` alias), Git for Windows (Claude Code
-runs hooks and Bash calls in its Git Bash), and Windows Terminal for a tab per slot. Without Windows
-Terminal each slot gets a console window. tmux isn't needed. Run `agent-runner run 3` from any terminal.
+runs hooks and Bash calls in its Git Bash). Each slot runs hidden, in a console whose window starts hidden
+(`agent-runner attach s2` shows it); tmux isn't needed. Run `agent-runner run 3` from any terminal.
+
+**tmux is optional** on Linux and macOS too. Without it (or with the run outside a tmux session) the slots run
+hidden, in a pseudo-terminal with no window, their output in `.runner/slotN.log`; you watch them through
+`agent-runner status` and control sessions and steer them with `plan tell`. tmux adds a pane per slot to
+attach to and type into.
 `[run] links` need no Developer Mode: without it they become junctions and hard links. See the reference's
 [Terminals, and Windows](REFERENCE.md#terminals-and-windows).
 
@@ -111,7 +116,6 @@ mode. Prompts are passed as files (`@file`), at any size, including on Windows. 
 Transient network/server errors can resume up to the existing resume limit in worktree mode. Pi's own
 provider retries apply, but Claude-specific weekly caps and usage-reset detection do not apply to Pi;
 authentication, billing, and other non-transient errors are reported for a human rather than retried.
-In sequential mode a failed Pi process returns its nonzero exit code.
 
 With `lean = true` (the default), Pi gets read/edit/write and a shell (`powershell` on Windows, `bash`
 elsewhere), with extensions, MCP, skills, prompt templates, and themes disabled. Repository context
@@ -182,7 +186,7 @@ agent-runner plan                 # what it sees
 agent-runner plan brief A1        # what the session will be handed
 agent-runner run --dry-run 3      # what three slots would start
 agent-runner run once             # one task, one session; watch it
-tmux new -s runner agent-runner run 3
+tmux new -s runner agent-runner run 3   # or agent-runner run 3 anywhere: the slots run hidden
 ```
 
 ## Wrapping it from your own CLI
@@ -266,7 +270,7 @@ The names in each module's `__all__` are the stable API (see [Versions](#version
 | `[plan] glossary` | the project's glossary file (`GLOSSARY.md`): the first control session seeds it, sessions add terms with `agent-runner glossary add`, every brief names it; `false` = off (no file written, briefs skip it) |
 | `[plan] need_files` | `plan add` refuses a line with no `files:` and no `test:` field (without it, a warning), so the run can keep it apart from the running tasks |
 | `[run] before_start` | a check that must pass before any session starts |
-| `[run] timeout` | seconds the gate, a retest, a `[run.join]` command, `before_start` or the sequential run's `on_exit` may run before it is stopped and counts as failed (3600) |
+| `[run] timeout` | seconds the gate, a retest, a `[run.join]` command, or `before_start` may run before it is stopped and counts as failed (3600) |
 | `[run] not_attempt` | a regex on the last commit subject (`{id}`): that session was a phase, not the run's one attempt |
 
 The brief already holds the task line, `plan/tasks/<ID>.md`, the newest journal entry, and the git log of the

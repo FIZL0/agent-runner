@@ -105,7 +105,7 @@ DEFAULTS: dict = {
                                 # '' = the whole `test` every time
         'full_every_hours': 24, # with test_since: the whole `test` again once none has passed for this long; 0 = never
         'slots': 3,             # tasks (agent sessions) at once; `agent-runner slots N` changes a running run
-        'mux': '',              # terminal per slot: tmux, wt, console, none; '' = tmux (Windows: wt, else console)
+        'mux': '',              # where slots run: tmux, hidden; '' = tmux inside a tmux session, else hidden (Windows: hidden)
         'agent': 'claude',      # the CLI that runs a session: claude, or a pi executable
         'include_task_id_in_commit': True,  # agents start each commit subject with the task id
         'comment_policy': 'normal',  # 'minimal': agents add code comments only for non-obvious intent

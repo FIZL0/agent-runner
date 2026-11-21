@@ -50,21 +50,32 @@ plan/TODO.md ──pick──▶ slot N: git worktree ~/runs/<repo>/sN on task/<
 
 ### Terminals, and Windows
 
-Each slot's session runs in a terminal you can watch and type into. Which one is `[run] mux` (or
-`--mux`): `tmux` panes in the window "agents-<repo>" (the default on Linux and macOS; start the run inside tmux;
-runners for different repos can share one tmux session, each finding only its own panes),
-`wt` (a Windows Terminal tab per slot, in a window named "agents", the default on Windows), or `console`
-(a console window per slot, Windows' fallback when `wt.exe` isn't installed). `none` (`--no-tmux`) is
-the sequential run below. One slot, and `once`, run like any other count: a worktree, a pane, a tested merge.
+Each slot's session runs in one of two places, `[run] mux` (or `--mux`):
 
-On Windows the runner can't get the session's pid back from `wt.exe` (it only asks the running terminal
-to open a tab), so every slot runs through a small shim, `run --slot-shim`. It starts the agent and keeps
-its pid in `.runner/slotN.live` while it runs. The loop, a restarted run's adopt and the Stop hook read
-that file. The rest of the Windows differences are in `agent_runner/plat.py`: the run lock is
+- **`hidden`**: a terminal with no window, on every OS. You watch and steer it through Remote Control
+  (claude.ai/code and the Claude apps, with `[run] remote_slots`), `agent-runner status`, the slot's log
+  `.runner/slotN.log` and control sessions; `plan tell <ID> "…"` types into it. On Linux and macOS it is a
+  pseudo-terminal from Python's standard library (`pty`), 200 columns by 50 rows, and its output goes to the slot
+  log. On Windows it is a console of its own whose window starts hidden (`attach s2` shows it); nothing
+  captures its output there, so the slot log has only the header lines, and `plan tell` cannot type into it.
+- **`tmux`** (Linux and macOS): a pane each in the window "agents-<repo>", to attach to and type into (`s` and
+  the pane keys). Runners for different repos can share one tmux session, each finding only its own panes.
+
+The default (`mux = ""`) is tmux when it is installed and the run is inside a tmux session (the background run
+always is), else hidden: without tmux the run is hidden, not an error. Asking for tmux outside a tmux session
+says to start the run in one; asking for it where tmux isn't installed runs hidden. Windows is hidden only.
+One slot, and `once`, run like any other count: a worktree, a session, a tested merge. (The old sequential run
+of `--no-tmux` / `mux = "none"`, which committed in your checkout with no worktree and no merge gate, is gone,
+and so are Windows Terminal tabs and visible console windows: `wt`, `console` and `none` now read as hidden.)
+
+A hidden slot runs through a small shim, `run --slot-shim`, started detached so the session outlives a
+restarted runner. It starts the agent and keeps its pid in `.runner/slotN.live` while it runs (and, on Linux
+and macOS, reads the FIFO `.runner/slotN.in` for what `plan tell` types). The loop, a restarted run's adopt
+and the Stop hook read that file; how the agent ended goes to `.runner/slotN.exit`. The rest of the Windows
+differences are in `agent_runner/plat.py`: the run lock is
 `msvcrt.locking`, process checks go through kernel32 (stdlib `ctypes`, no psutil), an ended session's
 windowed processes (an emulator, say) get WM_CLOSE and up to 10 s to exit before `taskkill /T /F`, and `[run] links` become a junction (directory) or hard link (file) when symlinks
-need Developer Mode. Two things work differently there. Nothing captures a console's output, so
-`.runner/slotN.log` has only the header lines. A
+need Developer Mode. A
 prompt over 24,000 characters (a Windows command line holds 32,767) is handed over as a file the session
 is told to read. `[run] test`, `on_exit`, `before_start` and the other commands run in the platform's
 shell, which on Windows is `cmd.exe`.
@@ -78,19 +89,20 @@ shell's `PATH`, the `AGENT_RUNNER*`, `CLAUDE_*` and `ANTHROPIC_*` variables and 
 waits for the run's start line in `run.log`, then prints the slot count and the commands: `status`, `attach`,
 `stop`, and claude.ai/code with `[run] remote`. If the run fails within that time, its window is kept long
 enough to print the pane's last lines, and then it is closed. If a run is already up it says so and starts
-nothing. Without tmux it says how to install it and starts nothing. If the session is still there from an earlier run
+nothing. If the session is still there from an earlier run
 (its slots' window still open), the run starts in a new window of that session and adopts those panes.
 
-On Windows the runner is a detached process (`run --hidden`, its output in `.runner/background.out`). Each
-slot gets a console window that starts hidden (`STARTUPINFO.wShowWindow = SW_HIDE`). It's still a real
-console, so the agent has a TTY. There are no Windows Terminal tabs in this mode.
+On Windows, and on Linux and macOS without tmux, the runner is a detached process (`run --hidden`, its output in
+`.runner/background.out`) and its slots run hidden (see above). On Windows each slot gets a console that
+starts hidden (`STARTUPINFO.wShowWindow = SW_HIDE`); it's still a real console, so the agent has a TTY.
 
 `agent-runner attach` goes to the runner's pane: it is tagged `@runner-run` = the main checkout, so this works
 for a run started with `agent-runner run` in a tmux session too. `attach s2` goes to slot 2's pane, and
 `attach master` to a fix session. Inside tmux it switches the client; outside, it attaches this terminal.
 Detach with Ctrl-b d. On Windows, `attach s2` shows and raises slot 2's console window. Minimize it to hide it
 again: closing it ends that session, which resumes in the next run. The runner has no window there, so
-`agent-runner status` and `.runner/run.log` show it.
+`agent-runner status` and `.runner/run.log` show it. On Linux and macOS a hidden slot has no pane to attach:
+`attach s2` says where its log is.
 
 With `[run] remote` (or `remote_slots`), Claude Code asks once, at a terminal, "Enable Remote Control? (y/n)".
 In a hidden pane that question would hold every session. So before going to the background the launch checks `remoteDialogSeen` in
@@ -156,7 +168,9 @@ task to fix X" (it files it with `plan add`), "do X now" (it uses `take`, never 
   sessions can be started from the app. `--settings` goes in only when `claude remote-control --help` lists
   it (asked once a run): an older Claude Code starts without it, so its app sessions get no control brief,
   and `run.log` says to update. The run's end ends it. The slots stay local unless `[run]
-  remote_slots = true`, which starts each as "<task title> · <repo> s2 · B646".
+  remote_slots = true`, which starts each as "<task title> · <repo> s2 · B646". That is off by default and not
+  recommended: every slot start pushes to the phone (see Quiet launch below). Watch hidden slots through
+  status and control sessions instead.
 - **`remote = "auto"`, the default**, is on when Remote Control can work: Claude Code on a claude.ai login.
   It is off, with one `run.log` line saying why (`remote control off: …`), when the backend is pi,
   `ANTHROPIC_API_KEY` or `ANTHROPIC_AUTH_TOKEN` is set, `CLAUDE_CODE_USE_BEDROCK`, `_VERTEX` or
@@ -174,10 +188,6 @@ task to fix X" (it files it with `plan add`), "do X now" (it uses `take`, never 
   environment variable stops it, short of turning off the Claude app's notifications on the phone.
   `[run] silent` sets this: `"launch"` (the default) as above; `true` keeps every file for good, so no
   session the run starts ever pushes; `false` sets none, and Claude Code pushes as it would anyway.
-
-`--no-tmux` (or no tmux / Windows Terminal installed) is the sequential run. It's one session at a time,
-in your checkout, on the branch you have out. There's no worktree and no merge: `done` already ran the gate, and
-the branch is pushed after each task.
 
 ### status and since
 
@@ -335,7 +345,7 @@ repo = "git@github.com:you/project-plan.git"   # or a local path
   20 s), every edit (`plan add/tick/block/…`, `done`, a run's reopens and filed tasks) locks it, pulls,
   commits and pushes. A rejected push pulls and pushes again; TODO.md and DONE.md merge by section and
   task (the same merge driver as in a repository), other `*.md` as `union`.
-- **Claims: two people can run at once.** The moment a run picks a task (parallel or sequential), it
+- **Claims: two people can run at once.** The moment a run picks a task, it
   pushes `claims/<ID>` (host and checkout) before anything starts. Other runs skip a claimed task and treat it as
   running there: a task sharing its files, its ordered section or its family waits for it. The claim
   holds the line's files and, refreshed as the session works, every file it has touched, so a task whose
@@ -528,8 +538,7 @@ The parallel run never exits on its own. Only `once` ends by itself; otherwise u
     run idle: no task it may start; waiting for TODO.md to change (Ctrl-C or ./run stop to end it)
 
 It keeps re-reading TODO.md on the shared branch every few seconds, so tasks you commit later start
-without a restart. When it starts work again it logs `run busy: new work (<ID>)`. The sequential run does
-the same thing, checking every 30 s.
+without a restart. When it starts work again it logs `run busy: new work (<ID>)`.
 
 A tried task normally stays tried for the rest of the run. But if its line closes (`[~]`) and later
 opens again (a human ran `plan unblock`), that's a new attempt, so it goes back in the pool and the log
@@ -577,8 +586,7 @@ last five merged, blocked or parked tasks from `run.log`, and the account's usag
 
 Both write `.runner/STOP` (with who asked; `.runner/STOP.force` for a stop now), and the loop checks that
 file on every pass, so `s` can take back a `agent-runner stop` and the reverse. A daemon thread reads the runner's terminal (it works on Windows
-consoles too) and only starts when stdin is a terminal. The sequential run has no `s` key, because its
-agent session reads the same terminal; use `agent-runner stop` there, which takes effect between tasks. A STOP
+consoles too) and only starts when stdin is a terminal. A STOP
 file left behind by a run that was killed is cleared when the next run starts.
 
 A merge a run was in the middle of is adopted by the next run too, like the slots' sessions. Its gate
@@ -776,9 +784,10 @@ the running tasks merge. A run left up keeps picking up whatever you commit to T
 ## Commands
 
 ```
-agent-runner                           the run in the background (a detached tmux session; hidden consoles on
-                                       Windows), the prompt straight back; `help` prints the usage
-agent-runner attach [sN|c1|master]     the runner's pane, or a slot's (Windows: the slot's console window)
+agent-runner                           the run in the background (a detached tmux session; without tmux or on
+                                       Windows a detached process, its slots hidden), the prompt straight back;
+                                       `help` prints the usage
+agent-runner attach [sN|c1|master]     the runner's pane, or a slot's (Windows: the slot's hidden console)
 agent-runner control [N]               a control session in this terminal (c1: the kept one, resumed)
 agent-runner control --new [N]         another one beside the run, without taking focus; prints its claude.ai/code link
 agent-runner control --new --forward   the same, with the person's latest runner-feed message as its first
@@ -794,7 +803,7 @@ agent-runner since [WHEN] [--follow]   what landed, started or got stuck since t
 agent-runner plan [...]                the task list as a tool (agent-runner plan help)
 agent-runner done ID "MSG" [--blocked WHY [--after X,Y]] [--artifact URL] [--no-test]
                                        --artifact: a concept's page (required for a K task)
-agent-runner run [N|once] [--dry-run] [--no-tmux] [--mux tmux|wt|console|none] [--model M] [--idle S] [--stall S] [--pause S] [--force] [--shutdown|--suspend]
+agent-runner run [N|once] [--dry-run] [--mux tmux|hidden] [--model M] [--idle S] [--stall S] [--pause S] [--force] [--shutdown|--suspend]
 agent-runner stop [--force] [--suspend|--shutdown]
                                        finish what's running, start nothing new, exit (or s + Enter in the
                                        runner's pane); --force ends the sessions now, to resume next run
@@ -870,7 +879,7 @@ test = ""                 # the gate, run by `done` and on every merge, e.g. "ma
 test_since = ""           # a merge's gate on what changed since {base}, e.g. "make test-since REV={base}"
 full_every_hours = 24     # with test_since: the whole `test` once none has passed for this long; 0 = never
 slots = 3
-mux = ""                  # tmux, wt, console or none; "" = tmux (Windows: wt, else console)
+mux = ""                  # tmux or hidden; "" = tmux inside a tmux session, else hidden (Windows: hidden)
 include_task_id_in_commit = true
 comment_policy = "normal"
 agent = "claude"
@@ -878,7 +887,8 @@ backend = ""              # claude or pi; empty detects pi from the agent execut
 model = "opus"
 lean = true               # sessions get Bash/Read/Edit/Write/Artifact only, no MCP servers or user settings
 remote = "auto"           # control sessions on Remote Control, and a control server to start more from claude.ai/code or the Claude apps; Enter in the runner's pane opens it. auto: on where it can work (see Control sessions); true/false force it
-remote_slots = false      # the slots on Remote Control too ("<task title> · <repo> s2 · B646")
+remote_slots = false      # the slots on Remote Control too ("<task title> · <repo> s2 · B646"); not
+                          # recommended: every slot start pushes to the phone
 silent = "launch"         # phone pushes from those sessions: launch = none while they start, true = none ever, false = Claude Code's usual
 control = true            # a run opens control session c1 beside it; false: none (`agent-runner control` still works)
 control_close = true      # close idle control sessions 2, 3, … (never c1): process ended, controlN.pid removed, transcript kept (`claude --resume <sid>`)

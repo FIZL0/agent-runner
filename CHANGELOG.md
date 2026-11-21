@@ -4,6 +4,18 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- One hidden slot mode for every OS, tmux optional. A hidden slot runs in a terminal with no window: on Linux
+  and macOS a pseudo-terminal from Python's standard library (`pty`), its output in `.runner/slotN.log` and
+  `plan tell` typed into it through `.runner/slotN.in`; on Windows a console of its own whose window starts
+  hidden. Each runs through a detached `run --slot-shim`, so a restarted run adopts it, and lands through the
+  same worktree, `done`, gate and merge as a tmux slot. You watch it through `status`, control sessions and,
+  with `[run] remote_slots`, Remote Control. `[run] mux` / `--mux` is `tmux` or `hidden`; the default is tmux
+  inside a tmux session, else hidden, so a run without tmux (or outside a tmux session) is hidden, not an
+  error, and bare `agent-runner` without tmux starts the run as a detached process. **Breaking:** the
+  sequential run (`--no-tmux`, `mux = "none"`, the no-tmux fallback that committed in your checkout with no
+  worktree and no merge gate), Windows Terminal tabs (`wt`) and visible console windows (`console`) are gone;
+  `--no-tmux` is refused, and `wt`, `console` and `none` in `[run] mux` run hidden. `remote_slots` stays off
+  by default and is now marked not recommended (every slot start pushes to the phone) (F40).
 - Control sessions grill before queueing (after mattpocock/skills grilling, domain-modeling and to-tickets, MIT):
   on "grill me", "poke holes" or "stress-test it" they ask rounds of numbered questions, each with its
   recommended answer and worded so yes accepts it, look facts up themselves instead of asking, take one reply per

@@ -2,14 +2,14 @@
 
 Most of a long project is small, checkable steps that need no human in the loop: they need the backlog,
 the tests and a commit. This is the loop that does that. It picks the next task nobody is on, opens a git
-worktree and a terminal for it (a tmux pane; on Windows a Windows Terminal tab or a console window), and
+worktree and a terminal for it (a hidden pseudo-terminal, or a tmux pane on Linux and macOS), and
 starts an agent session with the task's brief already pasted into the first turn. It waits for the session to finish, merges and tests the branch, pushes it, and starts the
 next task.
 
     ./run run once            one task, then stop (the way to try it the first time)
-    ./run run                 [run] slots agents (3), in tmux
+    ./run run                 [run] slots agents (3): tmux panes inside tmux, else hidden
     ./run run 5               5 agents
-    ./run run 1               one agent, in a worktree and a pane like any count (no tmux: in this checkout)
+    ./run run 1               one agent, in a worktree like any count
     ./run run --dry-run 4     print what 4 free slots would start now, and start nothing
     ./run stop                finish what is running, start nothing new, then exit (or type s + Enter
                               in the runner's pane; ? + Enter there lists every key)
@@ -44,15 +44,15 @@ docs/REFERENCE.md describes each mechanism. In short:
 Internal modes (used by the sessions it starts, not by you):
     --stop-hook            Stop hook: arm the idle timer for the session that is stopping
     --stop-waiter P T N S  the detached timer itself
-    --slot-shim JOB        run one slot's session in a Windows tab or console, its pid in a marker file
+    --slot-shim JOB        run one hidden slot's session (a pty, or a hidden Windows console), its pid in a marker file
 
-What depends on the OS is in `plat.py`; the terminals are `TmuxMux` and `ShimMux` in `slots.py`.
+What depends on the OS is in `plat.py`; the terminals are `TmuxMux` and `HiddenMux` in `slots.py`.
 
 C3 split this file by responsibility; each module imports only the ones before it in this list:
     state    shared state and small helpers: init, log, git, the plan file, the stop request
     brief    what a session is told: PROMPT, OTHERS, prompt_for, review/wizard/sheet paragraphs
     sched    picking the next task: tasks, pick, clashes, claims, parked tasks
-    slots    worktrees, panes, backends, a slot's environment, start/resume, disk, TmuxMux/ShimMux
+    slots    worktrees, panes, backends, a slot's environment, start/resume, disk, TmuxMux/HiddenMux
     watch    transcripts, stalls, cut-offs, temp folders, memory, API and usage, upgrades, the Stop hook
     join     joining a merge's conflicts by line, and merge state shared with landing
     land     landing a tested merge in the main checkout, wip branches, pushes, releases, flaky tests
@@ -60,7 +60,7 @@ C3 split this file by responsibility; each module imports only the ones before i
     control  control sessions, closing idle ones, the control server, Remote Control processes
     status   status, since, follow, Needs you lines
     feed     the board, the runner feed, handing a feed message on
-    loop     the run: keys, halts and tells, CI, finish, sequential and parallel (cmd_run)
+    loop     the run: keys, halts and tells, CI, finish, the loop (cmd_run)
     cmds     the other commands: take, resume, key, upgrade, status, since, needs, wizard, sheet, stop,
              control, background and attach
 This module re-exports every name of theirs, so `runner.X` reads as before; `runner.X = v` reaches every

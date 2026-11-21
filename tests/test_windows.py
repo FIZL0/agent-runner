@@ -10,7 +10,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-from _check import check, eq, git, report
+from _check import check, eq, git, has, report
 
 from agent_runner import runner as R  # noqa: E402
 
@@ -74,7 +74,7 @@ def test_shim_once(repo: Path, tmp: Path):
     eq(R.slot_shim(str(job)), 0, 'exit 0 even when the agent was killed (taskkill leaves exit code 1)')
     eq(R.slot_shim(str(job)), 0, 'a restarted tab exits at once')
     eq(count.read_text(), 'x', 'and the session ran only once')
-    eq(marker.with_suffix('.exit').read_text(), 'exit code 1', 'how the agent ended is left for the runner')
+    has(marker.with_suffix('.exit').read_text(), r'^exit code 1 \(pid \d+\)$', 'how the agent ended (and its pid) is left for the runner')
     job.write_text(json.dumps({'argv': [str(tmp / 'no-such-agent.exe')], 'cwd': str(repo), 'env': {},
                                'marker': str(marker)}), encoding='utf-8')
     eq(R.slot_shim(str(job)), 0, 'an agent that cannot start still ends the tab cleanly')
