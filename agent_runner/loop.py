@@ -27,6 +27,8 @@ from agent_runner.gitops import missing_remote, push
 from agent_runner.state import (alarm, ask_stop, C, clean, clear_stop, commit_plan, default_branch, FORCED, forced,
     git, HIDDEN, hook, IDLE, init, KEYS, KEYS_LOCK, LANDING, log, MERGE, note, PAUSED, plan_rel, plan_text, POWER, queued,
     READING, ROOT, RUN_TAG, share, SLOTS_DIR, stop_note, STOP_SAID, stopped_by, stopping, WAKE)
+from agent_runner.state import (EV_DEFERRED, EV_DROPPED, EV_IDLE, EV_LEFT, EV_NO_COMMITS, EV_PARKED, EV_RUN_UP,
+    EV_STALLED, EV_STOP_ASKED, EV_STOP_BACK, EV_STOPPED)
 from agent_runner.brief import no_remote_line, prompt_for
 from agent_runner.sched import blocked_by_edits, keep_claims, PARK_LIMIT, parked_attempts, pick, tasks
 from agent_runner.slots import (adopt, agent_argv, agent_cmd, backend, DISK_AT, DISK_SAID, du, env_vars, free_branch,
@@ -129,7 +131,7 @@ def take_keys() -> None:
             if k == 's' and stopping():
                 clear_stop()
                 STOP_SAID[0] = False  # F42: said here, so the loop does not say it again
-                log('stop taken back: starting tasks again')
+                log('stop taken back: starting tasks again', EV_STOP_BACK)
             elif k == 's':
                 ask_stop('s')
                 log('stopping: no new tasks; the running ones finish and merge, then the run ends (s again: undo)')
@@ -244,10 +246,10 @@ def halt_requests() -> dict[str, str]:
     return {tid: r['how'] for tid, r in P.requests(C, 'halt').items() if r.get('how') in ('drop', 'change')}
 
 
-def halt_answer(tid: str, msg: str) -> None:
-    """Tell the waiting `plan drop`/`change` what happened, log it, and take its request away."""
+def halt_answer(tid: str, msg: str, kind: str | None = None) -> None:
+    """Tell the waiting `plan drop`/`change` what happened, log it (as event `kind`), and take its request away."""
     P.respond(C, 'halt', tid, msg + '\n')
-    log(msg)
+    log(msg, kind, tid)
     note(msg)
 
 
@@ -324,7 +326,7 @@ def halts(procs: dict, running: dict, free_at: dict, tried: set, branch: str, mo
             else:
                 plansync.release(C, tid)
                 msg += '; it starts again with the new text when a slot is free'
-        halt_answer(tid, msg)
+        halt_answer(tid, msg, EV_DROPPED if how == 'drop' else None)
 
 
 def tell_requests() -> dict[str, dict]:
@@ -368,7 +370,7 @@ def tells(procs: dict, running: dict) -> None:
 
 def power_now() -> None:
     """After a stop, with `z`, `x`, --suspend or --shutdown: suspend or power off now, no idle grace."""
-    log(f'run stopped: {"suspending" if POWER == "suspend" else "shutting down"} the computer')
+    log(f'run stopped: {"suspending" if POWER == "suspend" else "shutting down"} the computer', EV_STOPPED)
     if rc := (plat.suspend if POWER == 'suspend' else plat.power_off)():
         log(f'the {POWER} command failed (exit {rc})')
 
@@ -539,7 +541,7 @@ def finish(tid: str, n: int, sid: str, branch: str) -> None:
                 log(f'{tid}: could not clear the wip branches of done tasks: {e!r}')
     except Exception as e:  # a merge thread that dies silently leaves the branch unmerged with no word why
         note(f'{tid}: LEFT FOR A HUMAN — the merge crashed: {e!r}')
-        log(f'{tid}: LEFT FOR A HUMAN — the merge crashed: {e!r}')
+        log(f'{tid}: LEFT FOR A HUMAN — the merge crashed: {e!r}', EV_LEFT, tid, why=f'the merge crashed: {e!r}')
 
 def _finish(tid: str, n: int, sid: str, branch: str) -> bool:
     """False when task/<tid> waits for the next run to merge it."""
@@ -552,7 +554,7 @@ def _finish(tid: str, n: int, sid: str, branch: str) -> bool:
         git('branch', '-D', f'task/{tid}')
         git('update-ref', '-d', TESTED + tid)
         note(f'{tid}: no commits — nothing to merge')
-        log(f'{tid}: no commits — nothing to merge')
+        log(f'{tid}: no commits — nothing to merge', EV_NO_COMMITS, tid)
         return True
     if sid and sid != '(unknown)':
         TASK_SID[tid] = sid  # its repair, if the merge fails the gate, starts from this session
@@ -567,7 +569,7 @@ def _finish(tid: str, n: int, sid: str, branch: str) -> bool:
         since = time.time()
         while blocked_by_edits(tid, branch):
             if stopping():
-                log(f'{tid}: the run stops; task/{tid} waits for the next run to merge it')
+                log(f'{tid}: the run stops; task/{tid} waits for the next run to merge it', EV_DEFERRED, tid)
                 return False
             if time.time() - since > REMIND_EVERY:  # still nobody: say it again, as loud
                 since = time.time()
@@ -582,7 +584,8 @@ def _finish(tid: str, n: int, sid: str, branch: str) -> bool:
     if git('branch', '-M', f'task/{tid}', wip := free_branch(f'wip/{tid}')).returncode:
         note(f'{tid}: LEFT FOR A HUMAN — {why}; task/{tid} could not be parked, so nothing restarts it')
         log(f'{tid}: LEFT FOR A HUMAN — {why}. task/{tid} could not be renamed to {wip}, so no run restarts the '
-            f'task until it is merged, renamed or deleted by hand. Its {len(commits)} commits: {" / ".join(commits)[:300]}')
+            f'task until it is merged, renamed or deleted by hand. Its {len(commits)} commits: {" / ".join(commits)[:300]}',
+            EV_LEFT, tid, why=why)
         return True
     git('update-ref', '-d', TESTED + tid)
     for h in git('for-each-ref', '--format=%(refname)', f'{HELD}{tid}/', f'{FIXED}{tid}/').stdout.split():
@@ -590,7 +593,7 @@ def _finish(tid: str, n: int, sid: str, branch: str) -> bool:
     note(f'{tid}: not merged, parked as {wip} — {why}')
     log(f'{tid}: not merged, parked as {wip} — {why}. Its {len(commits)} commits are kept there. The task stays '
         f'open and starts again by itself in the next run (in this one once its line is edited: '
-        f'`{C.command} plan note {tid} "..."`), its next attempt pointed at {wip}')
+        f'`{C.command} plan note {tid} "..."`), its next attempt pointed at {wip}', EV_PARKED, tid, why=why, wip=wip)
     if out := push(ROOT, wip):  # the one copy of that work: get it off this disk
         log(f'{tid}: {out}')
     if len(parked_attempts().get(tid, [])) >= PARK_LIMIT:
@@ -654,7 +657,7 @@ def sequential(branch: str, model: str, idle: int, pause: int, force: bool, once
     """
     here = git('branch', '--show-current').stdout.strip() or branch
     log(f'sequential run on {here} ({"one task, then stop" if once else "one session at a time"}, '
-        f'committing in this checkout)')
+        f'committing in this checkout)', EV_RUN_UP, slots=0)
     tried: set[str] = set()
     closed: set[str] = set()
     idle_said, idle_at = False, 0.0
@@ -664,7 +667,7 @@ def sequential(branch: str, model: str, idle: int, pause: int, force: bool, once
             if once:
                 break
             if not idle_said:
-                log(idle_line())
+                log(idle_line(), EV_IDLE)
                 idle_said, idle_at = True, time.time()
             if shut_down(idle_at):
                 return 0
@@ -1004,7 +1007,8 @@ class Run:
         procs, running, free_at = self.procs, self.running, self.free_at
         reserve_branch_ids()
         log(f'run: {slots} slots in {MUX.name}, merging into {branch}' +
-            (f', session usage {usage_pct("five_hour")}%, weekly usage {weekly()}%' if not a.force and r['agent'] == 'claude' else ''))
+            (f', session usage {usage_pct("five_hour")}%, weekly usage {weekly()}%' if not a.force and r['agent'] == 'claude' else ''),
+            EV_RUN_UP, slots=slots)
         if rline := remote_line():
             log(rline)
         if gone := missing_remote(ROOT):
@@ -1061,9 +1065,12 @@ class Run:
         halts(procs, running, self.free_at, self.tried, self.branch, self.model, self.idle,
               self.slots)  # B19: plan drop / change of a running task
         self.waiting = {n: q for n, q in queued().items() if n in self.free_at and n <= self.slots}
-        if said := stop_note(stopping(), len(procs) + len(self.waiting) + len(self.foreign) +
-                             sum(t.is_alive() for t in self.merging), stopped_by()):
-            log(said)
+        left = len(procs) + len(self.waiting) + len(self.foreign) + sum(t.is_alive() for t in self.merging)
+        if said := stop_note(stopping(), left, stopped_by()):
+            if STOP_SAID[0]:
+                log(said, EV_STOP_ASKED, left=left)
+            else:
+                log(said, EV_STOP_BACK)
 
     def slot(self, n: int) -> None:
         """One slot's turn in a tick: watch its session, reap it when it ended, else fill the free slot."""
@@ -1136,7 +1143,7 @@ class Run:
                 log(f'slot {n}: {running[n][0]} finished but {why}; ending it')
                 plat.terminate(procs[n][0])
             else:
-                log(f'slot {n}: {running[n][0]} looks stalled ({why}); look at {MUX.where(n)}')
+                log(f'slot {n}: {running[n][0]} looks stalled ({why}); look at {MUX.where(n)}', EV_STALLED, running[n][0])
                 print('\a', end='', flush=True)
 
     def held(self, n: int) -> bool:
@@ -1257,7 +1264,7 @@ class Run:
         if stopping() and not procs and (not waiting or forced()) and not merging:
             how = stopped_by()
             clear_stop()
-            log(f'run stopped ({how}); tried this run: {", ".join(sorted(tried)) or "none"}')
+            log(f'run stopped ({how}); tried this run: {", ".join(sorted(tried)) or "none"}', EV_STOPPED)
             rc_sweep_stop()  # B12: its feed and control server archive their entries before it exits
             if POWER:
                 power_now()
@@ -1275,7 +1282,7 @@ class Run:
                 return 0
             if not self.idle_said:
                 log(f'tried this run: {", ".join(sorted(tried)) or "none"}')
-                log(idle_line())
+                log(idle_line(), EV_IDLE)
                 self.idle_said, self.idle_at = True, time.time()
             if shut_down(self.idle_at):
                 return 0

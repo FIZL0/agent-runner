@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import json
 import os
 import re
 import time
@@ -10,6 +11,8 @@ import time
 from agent_runner import plan as P
 from agent_runner.config import shown_cmd
 from agent_runner.state import C, default_branch, git
+from agent_runner.state import (EV_DEFERRED, EV_DROPPED, EV_HELD, EV_IDLE, EV_LANDED, EV_LEFT, EV_NO_COMMITS,
+    EV_PARKED, EV_PART, EV_RELEASED, EV_STALLED, EV_STARTED, EV_STOP_ASKED, EV_STOP_BACK, EV_STOPPED)
 from agent_runner.brief import has_sheet, wizard_cmd, wizard_file
 from agent_runner.land import wip_lines
 
@@ -81,53 +84,123 @@ def release_line(ls: list[str]) -> str:
     return '\n'.join(out)
 
 
-EVENT = re.compile(r'^=== \S*T(\d\d:\d\d)\S* (?:(\S+): (merged, (?:ticked|blocked|part)|not merged, parked as \S+|LEFT FOR A HUMAN)\b'
-                   r'|(run stopped|run idle))')  # what `status` lists under "lately"
+# --- run events (F41): <notes>/events.jsonl, and run.log lines from before it ----------------------------
+
+LATELY = (EV_LANDED, EV_PART, EV_PARKED, EV_LEFT, EV_STOPPED, EV_IDLE)  # what `status` lists under "lately"
+ENDS = (EV_LANDED, EV_PART, EV_PARKED, EV_LEFT, EV_NO_COMMITS, EV_DEFERRED, EV_DROPPED)  # a task a stopping run no longer waits for
+SAID = {  # event kind -> the phrase since, follow and status start its line with
+    EV_LANDED: 'landed', EV_PART: 'part landed, rest stuck', EV_PARKED: 'stuck, not merged', EV_LEFT: 'needs you',
+    EV_STALLED: 'looks stuck', EV_STARTED: 'started', EV_HELD: 'run held, needs you',
+    EV_IDLE: 'run idle: nothing left it may start', EV_STOPPED: 'run stopped', EV_STOP_ASKED: 'stop requested',
+    EV_STOP_BACK: 'stop taken back'}
+
+SINCE_LINE = re.compile(r'^=== (\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d)\S* (.*)$')
+_ID = r'([A-Za-z]+\d+[a-z0-9]*)'
+LEGACY = [  # a run.log line written before events.jsonl (F41): (pattern on its message, event kind, its fields)
+    (re.compile(rf'^{_ID}: merged, (?:ticked|part)'), EV_LANDED, ('id',)),
+    (re.compile(rf'^{_ID}: merged, blocked'), EV_PART, ('id',)),
+    (re.compile(rf'^{_ID}: not merged, parked as \S+ — (.*)'), EV_PARKED, ('id', 'why')),
+    (re.compile(rf'^{_ID}: LEFT FOR A HUMAN — (.*)'), EV_LEFT, ('id', 'why')),
+    (re.compile(rf'^{_ID}: no commits — '), EV_NO_COMMITS, ('id',)),
+    (re.compile(rf'^{_ID}: the run stops; '), EV_DEFERRED, ('id',)),
+    (re.compile(rf'^dropped {_ID}; '), EV_DROPPED, ('id',)),
+    (re.compile(rf'^slot \d+: {_ID} looks stalled'), EV_STALLED, ('id',)),
+    (re.compile(rf'^slot \d+: {_ID} \([^;)]*;'), EV_STARTED, ('id',)),
+    (re.compile(r'^STOPPED: (.+)'), EV_HELD, ('why',)),
+    (re.compile(r'^run idle'), EV_IDLE, ()),
+    (re.compile(r'^run stopped'), EV_STOPPED, ()),
+    (re.compile(r'^\S+ v?\d+(?:\.\d+)+ released\b'), EV_RELEASED, ()),
+    (re.compile(r'^stop asked for:.*?\b(\d+) left before the run exits$'), EV_STOP_ASKED, ('left',)),
+    (re.compile(r'^stop taken back\b'), EV_STOP_BACK, ()),
+]
+
+
+def legacy_event(line: str) -> dict | None:
+    """A run.log line from before events.jsonl as the event it logged, or None (also for a line no reader wants)."""
+    if not (m := SINCE_LINE.match(line)):
+        return None
+    stamp, msg = m.groups()
+    for rx, kind, names in LEGACY:
+        if e := rx.match(msg):
+            ev = {'time': stamp, 'kind': kind, 'id': '', 'text': msg}
+            ev.update(zip(names, e.groups()))
+            if 'left' in ev:
+                ev['left'] = int(ev['left'])
+            return ev
+    return None
+
+
+def as_event(item) -> dict | None:
+    """An event from what a reader was handed: an events.jsonl record (a dict, or its JSON line) or a run.log line."""
+    if isinstance(item, dict):
+        return item if item.get('kind') and item.get('time') else None
+    if item.startswith('{'):
+        try:
+            ev = json.loads(item)
+        except ValueError:
+            return None
+        return ev if isinstance(ev, dict) and ev.get('kind') and isinstance(ev.get('time'), str) else None
+    return legacy_event(item)
+
+
+def event_stamp(item) -> str | None:
+    """The ISO stamp of a run.log line or an event, whatever it says; None when it has none."""
+    if isinstance(item, str) and (m := SINCE_LINE.match(item)):
+        return m[1]
+    ev = as_event(item)
+    return ev['time'][:19] if ev else None
+
+
+def events_file():
+    return C.notes('events.jsonl')
+
+
+def read_events() -> list[dict]:
+    """Every run event, oldest first: events.jsonl's records, after the events of run.log lines older than its
+    first (a run.log from before events.jsonl, F41)."""
+    evs = []
+    try:
+        evs = [e for l in events_file().read_text(encoding='utf-8', errors='replace').splitlines()
+               if (e := as_event(l))]
+    except OSError:
+        pass
+    first = evs[0]['time'][:19] if evs else None
+    try:
+        old = C.notes('run.log').read_text(encoding='utf-8', errors='replace').splitlines()
+    except OSError:
+        old = []
+    if first:  # the run.log lines before events.jsonl began; after that, its records say it all
+        old = [l for l in old if (m := SINCE_LINE.match(l)) and m[1] < first]
+    return [e for l in old if (e := legacy_event(l))] + evs
 
 
 # --- since: what happened since the person last looked ----------------------------------------------------
 
-SINCE_LINE = re.compile(r'^=== (\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d)\S* (.*)$')
-SINCE_EVENTS = [  # (pattern on a run.log line's message, kind); the first that matches names it
-    (re.compile(r'^([A-Za-z]+\d+[a-z0-9]*): merged, (?:ticked|part)'), 'landed'),
-    (re.compile(r'^([A-Za-z]+\d+[a-z0-9]*): merged, blocked'), 'part landed, rest stuck'),
-    (re.compile(r'^([A-Za-z]+\d+[a-z0-9]*): not merged, parked as \S+ — (.*)'), 'stuck, not merged'),
-    (re.compile(r'^([A-Za-z]+\d+[a-z0-9]*): LEFT FOR A HUMAN — (.*)'), 'needs you'),
-    (re.compile(r'^slot \d+: ([A-Za-z]+\d+[a-z0-9]*) looks stalled'), 'looks stuck'),
-    (re.compile(r'^slot \d+: ([A-Za-z]+\d+[a-z0-9]*) \([^;)]*;'), 'started'),
-    (re.compile(r'^STOPPED: ([^:]+)'), 'run held, needs you'),
-    (re.compile(r'^run idle'), 'run idle: nothing left it may start'),
-    (re.compile(r'^run stopped'), 'run stopped'),
-    (re.compile(r'^(\S+ v?\d+(?:\.\d+)+ released\b.*)'), 'released'),  # F51: `release_line_for`'s line
-    (STOP_ASKED := re.compile(r'^stop asked for:.*?\b(\d+) left before the run exits$'), 'stop requested'),  # F42: `stop_note`'s
-    (STOP_BACK := re.compile(r'^stop taken back\b'), 'stop taken back'),
-]
-STOP_ENDS = re.compile(r'^(?:([A-Za-z]+\d+[a-z0-9]*): (?:merged, |not merged, parked |LEFT FOR A HUMAN |no commits — '
-                       r'|the run stops; )|dropped ([A-Za-z]+\d+[a-z0-9]*); )')
-
-
-def since_event(line: str, titles: dict[str, str]) -> tuple[str, str, str] | None:
-    """A run.log line as (its ISO stamp, the task id or '', one plain phrase: "landed: <title> [F5]"), or None
-    when it is not something a person wants told."""
-    if not (m := SINCE_LINE.match(line)):
+def since_event(item, titles: dict[str, str]) -> tuple[str, str, str] | None:
+    """An event (or a run.log line, `as_event`) as (its ISO stamp, the task id or '', one plain phrase:
+    "landed: <title> [F5]"), or None when it is not something a person wants told. Read from the event's kind,
+    id and fields, never its text, so rewording a log message changes nothing here (F41)."""
+    if not (ev := as_event(item)):
         return None
-    stamp, msg = m.groups()
-    for rx, kind in SINCE_EVENTS:
-        if e := rx.match(msg):
-            if kind == 'released':
-                return stamp, '', e.group(1).strip()
-            if kind == 'stop requested':
-                return stamp, '', f'{kind}: {e.group(1)} left before the run exits'
-            if kind == 'stop taken back':
-                return stamp, '', f'{kind}: the run is starting tasks again'
-            if kind.startswith('run '):
-                what = f'{kind}: {e.group(1).strip()}' if e.groups() else kind
-                return stamp, '', what
-            tid = e.group(1)
-            why = e.group(2) if rx.groups > 1 else ''
-            why = f' ({why.split(". ")[0][:60].rstrip(" .")})' if why else ''
-            return stamp, tid, f'{kind}: {titles.get(tid) or tid}{why} [{tid}]'
-    return None
+    stamp, kind, tid = ev['time'][:19], ev['kind'], ev.get('id') or ''
+    if kind == EV_RELEASED:
+        return stamp, '', str(ev.get('text', '')).strip()
+    if kind not in SAID:
+        return None
+    said = SAID[kind]
+    if kind == EV_STOP_ASKED:
+        return stamp, '', f'{said}: {ev.get("left", 0)} left before the run exits'
+    if kind == EV_STOP_BACK:
+        return stamp, '', f'{said}: the run is starting tasks again'
+    if kind == EV_HELD:
+        return stamp, '', f'{said}: {str(ev.get("why", "")).split(":")[0].strip()}'
+    if kind in (EV_IDLE, EV_STOPPED):
+        return stamp, '', said
+    if not tid:
+        return None
+    why = str(ev.get('why') or '')
+    why = f' ({why.split(". ")[0][:60].rstrip(" .")})' if why else ''
+    return stamp, tid, f'{said}: {titles.get(tid) or tid}{why} [{tid}]'
 
 
 def since_start(arg: str | None, mark: str | None, now: dt.datetime) -> dt.datetime:
@@ -173,14 +246,14 @@ def _since_events(log_lines: list[str], start: dt.datetime, titles: dict[str, st
                   since_mark: bool) -> tuple[str, str | None]:
     out, last = [], None
     for l in log_lines:
-        if not (m := SINCE_LINE.match(l)):
+        if not (stamp := event_stamp(l)):
             continue
         try:
-            if dt.datetime.fromisoformat(m[1]) <= start:
+            if dt.datetime.fromisoformat(stamp) <= start:
                 continue
         except ValueError:
             continue
-        last = m[1]
+        last = stamp
         if e := since_event(l, titles):
             out.append(f'  {when(e[0], now)}  {e[2]}')
     head = f'since {when(start.isoformat(timespec="seconds"), now)}' + (' (your last look)' if since_mark else '')
@@ -219,8 +292,8 @@ NEEDS_YOU = ('needs you', 'looks stuck', 'run held, needs you',
              'stuck, not merged')  # since_event kinds only a person can clear (B32: a parked task too)
 
 
-def needs_you_line(line: str, titles: dict[str, str], now: dt.datetime, waiting) -> str | None:
-    """A run.log line as `since --follow --needs-you` prints it, or None when it does not need the person: the run
+def needs_you_line(line, titles: dict[str, str], now: dt.datetime, waiting) -> str | None:
+    """An event (or run.log line) as `since --follow --needs-you` prints it, or None when it does not need the person: the run
     held (STOPPED, with what holds it), a task left for a human, one that looks stalled, and a task that landed
     or blocked waiting on a person's answer (a CONFIRM/DECIDE/BLOCKED ask, or a concept page waiting for an OK:
     `waiting` is `waiting_ok()`'s list, read after the line was logged)."""
@@ -229,8 +302,8 @@ def needs_you_line(line: str, titles: dict[str, str], now: dt.datetime, waiting)
     kind = e[2].split(': ', 1)[0]
     if kind in NEEDS_YOU:
         what = e[2]
-        if kind == 'run held, needs you' and (m := SINCE_LINE.match(line)):
-            held = m[2][len('STOPPED: '):].strip()
+        if kind == SAID[EV_HELD] and (ev := as_event(line)):
+            held = ': '.join(x for x in (str(ev.get('why') or '').strip(), str(ev.get('detail') or '').strip()) if x)
             what = f'{kind}: {held if len(held) <= 240 else held[:239].rsplit(" ", 1)[0] + "…"}'
         return f'{when(e[0], now)}  {what}'
     if e[1] and kind in ('landed', 'part landed, rest stuck'):
@@ -255,16 +328,15 @@ def follow_lines(chunk: str, titles: dict[str, str], now: dt.datetime, needs_you
     out, last = [], None
     stop = {} if stop is None else stop
     for l in chunk.splitlines():
-        if m := SINCE_LINE.match(l):
-            last = m[1]
-            msg = m[2]
-            if s := STOP_ASKED.match(msg):
+        last = event_stamp(l) or last
+        if ev := as_event(l):
+            if ev['kind'] == EV_STOP_ASKED:
                 stop.clear()
-                stop.update(left=int(s[1]), ended=set())
-            elif STOP_BACK.match(msg) or msg.startswith('run stopped'):
+                stop.update(left=int(ev.get('left') or 0), ended=set())
+            elif ev['kind'] in (EV_STOP_BACK, EV_STOPPED):
                 stop.clear()
-            elif 'left' in stop and (s := STOP_ENDS.match(msg)) and (s[1] or s[2]) not in stop['ended']:
-                stop['ended'].add(s[1] or s[2])
+            elif 'left' in stop and ev['kind'] in ENDS and (tid := ev.get('id')) and tid not in stop['ended']:
+                stop['ended'].add(tid)
                 stop['left'] = max(0, stop['left'] - 1)
         left = f' · {stop["left"]} left' if 'left' in stop else ''
         if needs_you:
@@ -273,10 +345,11 @@ def follow_lines(chunk: str, titles: dict[str, str], now: dt.datetime, needs_you
             continue
         if e := since_event(l, titles):
             line = f'{when(e[0], now)}  {e[2]}'
-            if e[1] and e[2].startswith('landed: ') and (did := what_changed(e[1])):
+            kind = as_event(l)['kind']
+            if e[1] and kind == EV_LANDED and (did := what_changed(e[1])):
                 line += f' — {did}'
-            out.append(line + ('' if e[2].startswith('stop requested: ') else left))
-            if waiting and (e[1] and e[2].split(': ', 1)[0] in ('landed', 'part landed, rest stuck')) \
+            out.append(line + ('' if kind == EV_STOP_ASKED else left))
+            if waiting and e[1] and kind in (EV_LANDED, EV_PART) \
                     and (nl := needs_you_line(l, titles, now, waiting)):
                 out.append(nl + left)  # the full feed carries the asks too: the runner feed is the one watch
     return out, last
@@ -291,7 +364,7 @@ def follow(poll: float = 2.0, until: float | None = None, needs_you: bool = Fals
     `hold` (the runner feed, `board_held`): while it says so, nothing is read or printed, so the feed's
     session gets no turn; what was logged meanwhile prints when it lets go. `end`: stop once it says so
     (the board, once its run has ended)."""
-    logf = C.notes('run.log')
+    logf = events_file() if events_file().exists() else C.notes('run.log')  # F41: run.log only before events.jsonl
     try:
         pos = logf.stat().st_size
     except OSError:
@@ -313,6 +386,8 @@ def follow(poll: float = 2.0, until: float | None = None, needs_you: bool = Fals
                 return 0
             continue
         try:
+            if logf != events_file() and events_file().exists():  # a run that writes events came up: follow them
+                logf, pos, buf = events_file(), 0, ''
             size = logf.stat().st_size
             if size < pos:  # the log was cut or replaced: read it again from the top
                 pos = 0
@@ -323,8 +398,9 @@ def follow(poll: float = 2.0, until: float | None = None, needs_you: bool = Fals
                 pos += len(data)
                 buf += data.decode('utf-8', errors='replace')
                 chunk, _, buf = buf.rpartition('\n')
+                landed = any((e := as_event(l)) and e['kind'] in (EV_LANDED, EV_PART) for l in chunk.splitlines())
                 lines, last = follow_lines(chunk, P.titles(C.done, C.todo), dt.datetime.now(), needs_you,
-                                           waiting_ok() if 'merged, ' in chunk else None, stop)
+                                           waiting_ok() if landed else None, stop)
                 for l in lines:
                     print(l, flush=True)
                 if last and mark and not needs_you:
@@ -402,7 +478,7 @@ def status_text(up: bool, st: dict, log_lines: list[str], titles: dict[str, str]
         out.append('  no task running')
     if st.get('merging'):
         out.append('merging: ' + ', '.join(f'{titles[t]} [{t}]' if titles.get(t) else t for t in st['merging']))
-    events = [m for l in log_lines[-2000:] if EVENT.match(l) and (m := since_event(l, titles))]
+    events = [m for l in log_lines[-2000:] if (e := as_event(l)) and e['kind'] in LATELY and (m := since_event(e, titles))]
     if events:
         out.append('lately:')
         out += [f'  {m[0][11:16]} {m[2]}' for m in events[-5:]]

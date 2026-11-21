@@ -21,6 +21,7 @@ from agent_runner import plan as P, plat
 from agent_runner.config import finished_mark, runner_cmd, shown_cmd
 from agent_runner.gitops import push
 from agent_runner.state import C, clean, git, HIDDEN, hook, log, note, REPO_TAG, ROOT, SLOTS_DIR, TAG
+from agent_runner.state import EV_STARTED
 from agent_runner.brief import NO_PUSH_URLS, prompt_for, review_on
 from agent_runner.sched import ahead, blocked_tasks, open_tasks, tasks
 
@@ -779,7 +780,7 @@ def start(n: int, task, branch: str, model: str, idle: int, slots: int):
     if not (pid := MUX.open(n, d, prompt, sid, model, idle, slot_env(n), logfile)):
         log(f'slot {n}: the session for {tid} did not start in {MUX.where(n)}')
         return None
-    log(f'slot {n}: {tid} ({task[1]}; {", ".join(sorted(task[2])) or "no files listed"})')
+    log(f'slot {n}: {tid} ({task[1]}; {", ".join(sorted(task[2])) or "no files listed"})', EV_STARTED, tid)
     for where in edited_elsewhere(task[2]):
         log(f'slot {n}: {tid} heads into uncommitted edits outside the runner, in {where}: '
             f'if that is the same work, stop the slot; if not, commit it before {tid} lands')

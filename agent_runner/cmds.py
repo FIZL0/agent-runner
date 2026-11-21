@@ -33,6 +33,8 @@ from agent_runner.control import (control_argv, control_brief, control_env, cont
     control_set_title, control_sid, free_control_number, RUNNER_STARTED_ENV, unquiet_when_up)
 from agent_runner.status import (follow, move_since_mark, progress_line, release_line, since_mark_file, since_start,
     since_text, status_text, waiting_ok)
+from agent_runner.status import as_event, events_file, read_events
+from agent_runner.state import EV_RUN_UP
 from agent_runner.feed import (board, board_feed, board_held, control_late_files, control_new, control_new_runner,
     feed_lost_note, FORWARD_FLAG, forward_late, read_ask_file, SID_RE)
 from agent_runner.loop import drop_session_env, finish, send_key, session_env_masks
@@ -285,7 +287,7 @@ def cmd_status(argv: list[str], prog: str = f'{RUNNER} status') -> int:
         lines = C.notes('run.log').read_text(encoding='utf-8', errors='replace').splitlines()
     except OSError:
         lines = []
-    print(status_text(up, st, lines, P.titles(C.done, C.todo),time.time(), waiting=waiting_ok(), wips=wip_main_info(),
+    print(status_text(up, st, read_events(), P.titles(C.done, C.todo),time.time(), waiting=waiting_ok(), wips=wip_main_info(),
                       progress='\n'.join(x for x in (progress_line(a.window), release_line(P.lines(C.todo))) if x)))
     if lines and a.n:
         print('\nrun.log:\n' + '\n'.join(f'  {l}' for l in lines[-a.n:]))
@@ -330,11 +332,7 @@ def cmd_since(argv: list[str], prog: str = f'{RUNNER} since') -> int:
         mark = None
     now = dt.datetime.now().replace(microsecond=0)
     start = since_start(a.when, mark, now)
-    try:
-        lines = C.notes('run.log').read_text(encoding='utf-8', errors='replace').splitlines()
-    except OSError:
-        lines = []
-    text, last = since_text(lines, start, P.titles(C.done, C.todo), now, since_mark=not a.when and bool(mark),
+    text, last = since_text(read_events(), start, P.titles(C.done, C.todo), now, since_mark=not a.when and bool(mark),
                             waiting=waiting_ok(), wips=wip_main_info())
     print(text)
     move_since_mark(last or now.isoformat())
@@ -498,8 +496,6 @@ def cmd_stop(argv: list[str], prog: str = f'{RUNNER} stop') -> int:
 
 # --- the run in the background: bare `agent-runner`, and `attach` ----------------------------------------
 
-STARTED = re.compile(r'^=== \S+ (?:run: (\d+) slots? in|sequential run on)')  # the line a run logs once it is up
-
 
 def tmux_launch_argv(session: str, win: str, root: Path, cmd: str, env: list[str], exists: bool) -> list[str]:
     """The tmux command that starts `cmd` (`agent-runner run`) detached, in the window `win` of `session`: a new
@@ -562,19 +558,19 @@ def remote_ready(tty: bool | None = None, ask=input) -> bool:
 
 
 def wait_started(since: int, gone, timeout: float = 30.0) -> int | None:
-    """Wait for the run's start line in run.log past byte `since`; its slot count (0 for the sequential run),
-    or None when `gone()` says the run ended first or `timeout` passed."""
+    """Wait for the run's start event (F41: `run up` in events.jsonl) past byte `since`; its slot count (0 for
+    the sequential run), or None when `gone()` says the run ended first or `timeout` passed."""
     end = time.monotonic() + timeout
     while time.monotonic() < end:
         try:
-            with open(C.notes('run.log'), 'rb') as f:
+            with open(events_file(), 'rb') as f:
                 f.seek(since)
                 new = f.read().decode('utf-8', 'replace')
         except OSError:
             new = ''
         for l in new.splitlines():
-            if m := STARTED.match(l):
-                return int(m.group(1) or 0)
+            if (e := as_event(l)) and e['kind'] == EV_RUN_UP:
+                return int(e.get('slots') or 0)
         if gone():
             return None
         time.sleep(0.3)
@@ -623,7 +619,7 @@ def cmd_background(argv: list[str]) -> int:
     if not remote_ready():
         return 1
     log_file = C.notes('run.log')
-    since = log_file.stat().st_size if log_file.exists() else 0
+    since = events_file().stat().st_size if events_file().exists() else 0
     if plat.WINDOWS:
         out = C.notes('background.out')
         proc = plat.spawn_detached(background_argv(), out=out)

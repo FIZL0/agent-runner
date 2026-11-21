@@ -22,6 +22,7 @@ from agent_runner import plan as P, plat
 from agent_runner.done import DOCS_SKIP, TESTED, docs_only, gate
 from agent_runner.gitops import _net
 from agent_runner.state import C, clean, git, hook, LANDING, log, MERGE, note, plan_rel, plan_text, ROOT, SLOTS_DIR
+from agent_runner.state import EV_LANDED, EV_PART
 from agent_runner.slots import (agent_cmd, backend, entries, env_vars, MASTER_IDLE, merge_env, MUX, pane, slot_env,
     trim, window, worktree)
 from agent_runner.join import joined, LANDED, merge_into, renumber_doubles, task_env, TASK_SID, WAITING
@@ -829,7 +830,7 @@ def merge_tries(tid: str, branch: str) -> str | None:
             state = 'blocked' if line.startswith('- [~]') else 'part' if line else 'ticked'
             msg = f'{tid}: merged, {state}' + (f'; SUSPECT, recheck: {sus}' if (sus := suspect(base, merged)) else '')
             note(msg)
-            log(msg)
+            log(msg, EV_PART if state == 'blocked' else EV_LANDED, tid)
             reopen_landed(branch, tid)  # before the push, so the reopen goes out with the merge
             published(tid, branch)
             announce_release(base, merged)
