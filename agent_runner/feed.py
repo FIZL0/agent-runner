@@ -18,6 +18,7 @@ from pathlib import Path
 from agent_runner import plan as P, plat
 from agent_runner.config import RUNNER, main_checkout, runner_cmd, shown_cmd
 from agent_runner.state import BOARD_TAG, C, log, REPO_TAG, ROOT, RUN_TAG, run_up, TAG
+from agent_runner.slots import link_drift, remote_answer_drift
 from agent_runner.slots import (attach_target, background_env, background_session, MUX, remote_off_why, remote_on,
     REMOTE_URL, tmux, TmuxMux, transcript, window)
 from agent_runner.land import wip_main_info
@@ -665,10 +666,13 @@ def control_new(n: int | None = None, wait: float = CONTROL_LINK_WAIT, ask: str 
         shown = tmux('capture-pane', '-p', '-J', '-t', pane, '-S', '-200')
         if m := SESSION_LINK.search(shown.stdout or ''):
             print(f'control {n} is up: {m.group(0)}\n("{name}", in {where})')
+            remote_answer_drift(f'control {n}')  # B45: it came up on Remote Control, so the answer is kept
             return 0
         if shown.returncode or time.monotonic() >= deadline:
             break
         time.sleep(1)
+    if not shown.returncode:  # B45: the pane is still open, Remote Control on, and no link in all that time
+        link_drift(f'control {n}', wait)
     print(f'control {n} is up in {where}, but showed no link in {wait:g} s: find "{name}" at {REMOTE_URL}')
     return 0
 

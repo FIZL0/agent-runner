@@ -104,6 +104,7 @@ EV_STOPPED = 'run stopped'      # the run ended
 EV_RELEASED = 'released'        # a merge brought a release (text: the line)
 EV_STOP_ASKED = 'stop asked'    # a stop was asked for (left: the tasks the run still waits for)
 EV_STOP_BACK = 'stop back'      # the stop was taken back
+EV_DRIFT = 'claude code drift'  # B45: Claude Code changed something agent-runner reads (spot, version); once per version
 KIND_TONES = {EV_STARTED: '34', EV_LANDED: '32', EV_PART: '33', EV_PARKED: '31', EV_LEFT: '31', EV_HELD: '31',
               EV_STALLED: '31', EV_IDLE: '90', EV_DROPPED: '90', EV_NO_COMMITS: '90', EV_DEFERRED: '33',
               EV_STOP_ASKED: '33', EV_RELEASED: '32', EV_STOPPED: '31', EV_STOP_BACK: '0', EV_RUN_UP: '0'}

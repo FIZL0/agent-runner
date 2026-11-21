@@ -4,6 +4,11 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- When Claude Code changes something agent-runner reads from its internals, you are told instead of things
+  going quiet: a transcript with none of the entry types it knows, a Remote Control pane that shows no
+  claude.ai/code link in time, or `remoteDialogSeen` gone from `~/.claude.json` each give one needs-you line
+  per Claude Code version, `<project> needs you: Claude Code X changed Y; Z no longer works`, in the runner
+  feed and the control sessions' watch. Local only: nothing is filed (B45).
 - Your wording sticks: a voice file you shape by talking. "say X not Y", "shorter", "no ids" or "stop calling
   it Z" makes a control session add one line (`agent-runner voice add`, naming the file it went to); when you
   ask "what?" or rephrase what it said, it says it again plainly and offers one line to add, added only on

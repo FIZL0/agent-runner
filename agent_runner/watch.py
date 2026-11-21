@@ -22,6 +22,7 @@ from agent_runner.state import (banner, C, FORCED, forced, git, log, PAUSED, POW
     SLOTS_DIR, stopped_by, stopping)
 from agent_runner.sched import open_tasks
 from agent_runner.slots import entries, GB, marker_pid, MUX, pi, sids, slot_env, SLOTS, tmp_roots, transcript
+from agent_runner.slots import claude_drift
 
 
 def state_line() -> str:
@@ -72,6 +73,7 @@ def stalled(pid: int, sid: str, limit: int) -> str | None:
     A tool's run writes nothing to the transcript, so the prompt's quiet counts from the last look that saw
     one running: a 20-minute test run then a minute's thinking is not 21 minutes at a prompt (openmx's P38).
     """
+    transcript_drift(sid)
     t = transcript(sid)
     now = time.time()
     quiet = now - os.path.getmtime(t) if t and os.path.exists(t) else 0
@@ -82,6 +84,39 @@ def stalled(pid: int, sid: str, limit: int) -> str | None:
         return f'no transcript activity for {int(quiet // 60)} min' + \
                (' with a tool still running' if busy else ' at a prompt')
     return None
+
+
+KNOWN_ENTRIES = ('user', 'assistant')  # the transcript entry types stalls, cut-offs, stats and the feed read
+DRIFT_ENTRIES = 20  # entries a live session writes with none of KNOWN_ENTRIES before that is taken for drift (B45)
+_shape_seen: set[str] = set()  # sessions whose transcript shape `transcript_drift` has settled
+
+
+def transcript_drift(sid: str) -> bool:
+    """B45 spot 1: a live session's transcript holds DRIFT_ENTRIES entries and none of a type agent-runner
+    knows (KNOWN_ENTRIES): Claude Code changed their shape, and stall detection, cut-off resumes and session
+    stats would go quiet without a word. Says so once per Claude Code version (`claude_drift`); True when it
+    did. Each session is settled once: a known entry, or the warning."""
+    if sid in _shape_seen or C is None or pi():
+        return False
+    n, version, seen = 0, '', set()
+    for d in entries(sid, skip_bad=True):
+        if not isinstance(d, dict):
+            continue
+        if d.get('type') in KNOWN_ENTRIES:
+            _shape_seen.add(sid)
+            return False
+        n += 1
+        version = version or str(d.get('version') or '')
+        seen.add(str(d.get('type')))
+        if n >= DRIFT_ENTRIES:
+            break
+    if n < DRIFT_ENTRIES:
+        return False
+    _shape_seen.add(sid)
+    types = sorted(seen)
+    return claude_drift('transcript', f"its transcript entries (a live session's first {n} are of type "
+                        f"{', '.join(types[:5]) or 'none'}, none user or assistant)",
+                        'stall detection, resuming a cut-off session and session stats', version)
 
 
 RESUMES_MAX = 3  # resumes of one session before a cut-off is taken for the end of it

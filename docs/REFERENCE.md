@@ -223,6 +223,15 @@ control session to answer in: the heading reads `iFizBox needs you:` (a custom `
 `Your turn (iFizBox):`), a `--needs-you` line `iFizBox needs you: … [R43]` or `iFizBox: looks stuck: …`, and
 the desktop notice of a held run `iFizBox needs you: run stopped: …`.
 
+**Claude Code changes.** A few things agent-runner reads are Claude Code's internals, not a documented
+interface: its session transcripts, the claude.ai/code link a Remote Control session shows in its pane, and
+`remoteDialogSeen` in `~/.claude.json`. When the shape it expects is gone (a live session's transcript has 20
+entries and none of type user or assistant; Remote Control on and an open `control --new` pane shows no link in
+90 s; a session came up on Remote Control yet `~/.claude.json` has no `remoteDialogSeen`), the run says so once
+per Claude Code version, as a `--needs-you` line: `iFizBox needs you: Claude Code 2.1.400 changed its
+transcript entries (…); stall detection, resuming a cut-off session and session stats no longer works`. It is a
+local warning only (nothing is filed); `.runner/claude-drift.json` keeps which version each was said for.
+
 The CONCEPT/CONFIRM/DECIDE/BLOCKED labels stay in TODO.md and `plan waiting`; the person does not see them.
 The age comes from the `(asked YYYY-MM-DD HH:MM)` stamp `plan block` adds to a block on a person (older
 blocks have none and sort first). `[needs]` in runner.toml changes it:

@@ -98,3 +98,10 @@ _Said_: my wording, voice
 _On screen_: The person's wording
 _In code_: voice.py, agent-runner voice, [run] voice
 _Avoid_: style guide, preferences
+
+**Claude Code drift**:
+Claude Code changed something agent-runner reads that is not a documented interface, so a part of agent-runner stopped working; said once per Claude Code version as a Needs you line
+_Said_: Claude Code changed something
+_On screen_: Claude Code X changed Y; Z no longer works
+_In code_: claude_drift, EV_DRIFT, transcript_drift, link_drift, remote_answer_drift, claude-drift.json
+_Avoid_: breakage, incompatibility

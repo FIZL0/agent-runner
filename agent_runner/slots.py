@@ -22,6 +22,7 @@ from agent_runner.config import finished_mark, runner_cmd, shown_cmd
 from agent_runner.gitops import push
 from agent_runner.state import C, clean, git, hook, log, note, REPO_TAG, ROOT, SLOTS_DIR, TAG
 from agent_runner.state import EV_STARTED
+from agent_runner.state import EV_DRIFT
 from agent_runner.brief import NO_PUSH_URLS, prompt_for, review_on
 from agent_runner.sched import ahead, blocked_tasks, open_tasks, tasks
 
@@ -435,6 +436,81 @@ def remote_off_why(dialog: bool = True) -> str:
         return ('Claude Code has not been told yes to Remote Control yet (run `claude remote-control` once, or '
                 f'{shown_cmd()} at a terminal, and answer y)')
     return ''
+
+
+# --- B45: Claude Code drift checks ---------------------------------------------
+#
+# Where agent-runner reads Claude Code internals rather than a documented interface (its transcripts, the session
+# link in a pane, remoteDialogSeen in ~/.claude.json), a reader that finds the shape it expects gone says so once
+# per Claude Code version: a run.log line and event (EV_DRIFT) that since --follow, the runner feed and control
+# sessions' watch show as needs-you, instead of failing silently. A local warning only: nothing is filed.
+
+DRIFT_FILE = 'claude-drift.json'  # <notes>/claude-drift.json: {spot: the Claude Code version last warned about}
+CLAUDE_VERSION: list[str] = []  # `claude --version`, asked once per process (`claude_code_version`)
+
+
+def claude_code_version() -> str:
+    """The installed Claude Code's version ('2.1.330'); '' when it cannot be told (Pi, no claude found)."""
+    if not CLAUDE_VERSION:
+        v = ''
+        if not pi():
+            try:
+                r = sp.run([plat.exe(C.run['agent']), '--version'], capture_output=True, text=True, timeout=15)
+                m = re.search(r'\d+(?:\.\d+)+', r.stdout or '')
+                v = m.group(0) if m else ''
+            except (OSError, sp.TimeoutExpired):
+                pass
+        CLAUDE_VERSION.append(v)
+    return CLAUDE_VERSION[0]
+
+
+def claude_drift(spot: str, changed: str, broke: str, version: str = '') -> bool:
+    """Say 'Claude Code `version` changed `changed`; `broke` no longer works' as a needs-you line (EV_DRIFT),
+    once per Claude Code version for each `spot` ('transcript', 'link', 'remote-answer'), kept in
+    <notes>/claude-drift.json. True when it said it now; False when it was said already for this version."""
+    version = version or claude_code_version() or '(version unknown)'
+    f = C.notes(DRIFT_FILE)
+    try:
+        said = json.loads(f.read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        said = {}
+    said = said if isinstance(said, dict) else {}
+    if said.get(spot) == version:
+        return False
+    said[spot] = version
+    try:
+        tmp = f.with_name(f'{f.name}.{os.getpid()}.tmp')
+        tmp.write_text(json.dumps(said, indent=2), encoding='utf-8')
+        os.replace(tmp, f)
+    except OSError:
+        pass
+    log(f'Claude Code {version} changed {changed}; {broke} no longer works', EV_DRIFT, spot=spot, version=version)
+    return True
+
+
+def link_drift(who: str, wait: float) -> bool:
+    """B45 spot 2: Remote Control is on and session `who`'s pane, still open, showed no claude.ai/code session
+    link in `wait` s (CONTROL_LINK_WAIT): Claude Code shows it differently now."""
+    return claude_drift('link', f"how a Remote Control session shows its link ({who} showed no "
+                        f"claude.ai/code/session_ link in {wait:g} s)",
+                        "reading the session's link from its pane (control --new answering with the link)")
+
+
+def remote_answer_drift(who: str) -> bool:
+    """B45 spot 3: session `who` came up on Remote Control, so Claude Code was asked and answered yes, yet
+    ~/.claude.json has no remoteDialogSeen: it keeps that answer under another name now. Nothing when the
+    key is there or the file cannot be read."""
+    f = claude_json()
+    try:
+        data = json.loads(f.read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return False
+    if not isinstance(data, dict) or 'remoteDialogSeen' in data:
+        return False
+    return claude_drift('remote-answer', f'where it keeps the Remote Control answer (no remoteDialogSeen in {f}, '
+                        f'though {who} came up on Remote Control)',
+                        "telling whether Remote Control was answered ([run] remote = auto keeps it off, "
+                        "and a start asks again)")
 
 
 def remote_dialog_seen() -> bool:

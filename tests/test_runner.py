@@ -6525,6 +6525,105 @@ def test_hidden_run_lands(tmp: Path):
     check('sequential' not in log, 'and no sequential run')
 
 
+def test_claude_drift_b45(repo: Path, tmp: Path):
+    print('B45: where Claude Code\'s internals change shape, one needs-you line per Claude Code version, per spot')
+    import contextlib
+    import io
+    R.init(repo)
+    drift_file = R.C.notes(R.DRIFT_FILE)
+    if drift_file.exists():
+        drift_file.unlink()
+    saved_version = list(R.CLAUDE_VERSION)
+    R.CLAUDE_VERSION[:] = ['2.1.400']
+    events = R.events_file()
+
+    def drifts(spot: str) -> list[dict]:
+        try:
+            recs = [json.loads(l) for l in events.read_text(encoding='utf-8').splitlines() if l.strip()]
+        except OSError:
+            return []
+        return [e for e in recs if e.get('kind') == R.EV_DRIFT and e.get('spot') == spot]
+
+    # spot 1: a live session's transcript with entries, none of a type agent-runner knows
+    odd = tmp / 'b45-odd.jsonl'
+    odd.write_text(''.join(json.dumps({'type': 'turn', 'version': '2.1.400'}) + '\n' for _ in range(25)))
+    fine = tmp / 'b45-fine.jsonl'
+    fine.write_text(''.join(json.dumps({'type': t}) + '\n' for t in ['queue-operation', 'user', *['turn'] * 30]))
+    R.TRANSCRIPTS.update({'b45-odd': str(odd), 'b45-odd2': str(odd), 'b45-fine': str(fine)})
+    try:
+        R.stalled(os.getpid(), 'b45-fine', 10 ** 6)
+        eq(drifts('transcript'), [], 'a transcript with a user entry: no warning')
+        R.stalled(os.getpid(), 'b45-odd', 10 ** 6)
+        R.stalled(os.getpid(), 'b45-odd', 10 ** 6)
+        R.stalled(os.getpid(), 'b45-odd2', 10 ** 6)
+        got = drifts('transcript')
+        eq(len(got), 1, 'no known entry types: one warning, for this Claude Code version only')
+        has(got[0]['text'] if got else '', r'^Claude Code 2\.1\.400 changed its transcript entries.*; stall detection.* '
+            r'no longer works$', 'saying what changed and what no longer works')
+        chunk = events.read_text(encoding='utf-8')
+        lines, _ = R.follow_lines(chunk, {}, R.dt.datetime.now(), needs_you=True)
+        check(any(f'{repo.name} needs you: Claude Code 2.1.400 changed its transcript entries' in l for l in lines),
+              'since --follow --needs-you (the feed and control watch) shows it as needs-you', lines)
+        full, _ = R.follow_lines(chunk, {}, R.dt.datetime.now())
+        check(any('Claude Code 2.1.400 changed' in l for l in full), 'and so does the full feed', full)
+    finally:
+        for sid in ('b45-odd', 'b45-odd2', 'b45-fine'):
+            R.TRANSCRIPTS.pop(sid, None)
+
+    # spots 2 and 3: control --new on Remote Control, its pane read for the link
+    link = 'https://claude.ai/code/session_01B45xyz'
+    pane = {'out': '', 'rc': 0}
+
+    def fake_tmux(*a, **k):
+        out = {'display-message': 'ar-proj\n', 'new-window': '%45\n'}.get(a[0], '')
+        if a[0] == 'capture-pane':
+            return subprocess.CompletedProcess(a, pane['rc'], pane['out'], '')
+        return subprocess.CompletedProcess(a, 0, out, '')
+
+    def new() -> str:
+        out = io.StringIO()
+        with mock.patch.object(R, 'tmux', fake_tmux), mock.patch.dict(os.environ, {'TMUX_PANE': '%1'}), \
+                mock.patch.object(R.shutil, 'which', lambda x: '/usr/bin/tmux'), \
+                mock.patch.object(R.time, 'sleep', lambda s: None), mock.patch.dict(R.C.run, {'remote': True}), \
+                contextlib.redirect_stdout(out):
+            eq(R.control_new(45, wait=0), 0, 'control --new opens it')
+        return out.getvalue()
+
+    cj = R.claude_json()
+    saved_cj = cj.read_text(encoding='utf-8') if cj.exists() else None
+    try:
+        cj.write_text(json.dumps({'numStartups': 3, 'remoteDialogSeen': True}), encoding='utf-8')
+        pane.update(out='starting…\n', rc=1)
+        new()
+        eq(drifts('link'), [], 'a pane that closed before showing a link is not drift')
+        pane.update(rc=0)
+        new()
+        new()
+        got = drifts('link')
+        eq(len(got), 1, 'Remote Control on, the pane open, no link in CONTROL_LINK_WAIT: one warning')
+        has(got[0]['text'] if got else '', r'^Claude Code 2\.1\.400 changed how a Remote Control session shows its '
+            r'link.*no longer works$', 'naming the link reading')
+        pane.update(out=f'Remote Control active · {link}\n')
+        check(link in new(), 'a link shown is printed')
+        eq(drifts('remote-answer'), [], 'remoteDialogSeen kept: no warning')
+        cj.write_text(json.dumps({'numStartups': 3, 'remoteAnswer': 'yes'}), encoding='utf-8')
+        new()
+        new()
+        got = drifts('remote-answer')
+        eq(len(got), 1, 'on Remote Control but no remoteDialogSeen in ~/.claude.json: one warning')
+        has(got[0]['text'] if got else '', r'^Claude Code 2\.1\.400 changed where it keeps the Remote Control '
+            r'answer.*no longer works$', 'naming remoteDialogSeen')
+        R.CLAUDE_VERSION[:] = ['2.1.401']
+        new()
+        eq(len(drifts('remote-answer')), 2, 'the next Claude Code version that still lacks it is told again')
+    finally:
+        R.CLAUDE_VERSION[:] = saved_version
+        if saved_cj is None:
+            cj.unlink(missing_ok=True)
+        else:
+            cj.write_text(saved_cj, encoding='utf-8')
+
+
 def main() -> int:
     with tempfile.TemporaryDirectory() as t:
         tmp = Path(t)
@@ -6562,7 +6661,8 @@ def main() -> int:
                        test_split_modules_c3, lambda: test_plan_last(repo), lambda: test_after_all(repo), lambda: test_release_kind(repo),lambda: test_release_push(repo),
                        lambda: test_help_order_and_bare_wizard(tmp), lambda: test_setup(tmp),
                        lambda: test_stop_countdown(repo), lambda: test_real_claude_json_guard(tmp),
-                       lambda: test_hidden_slots(repo, tmp), lambda: test_hidden_run_lands(tmp)])
+                       lambda: test_hidden_slots(repo, tmp), lambda: test_hidden_run_lands(tmp),
+                       lambda: test_claude_drift_b45(repo, tmp)])
 
 
 if __name__ == '__main__':

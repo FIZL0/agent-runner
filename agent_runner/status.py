@@ -13,6 +13,7 @@ from agent_runner.config import shown_cmd
 from agent_runner.state import C, default_branch, git, project
 from agent_runner.state import (EV_DEFERRED, EV_DROPPED, EV_HELD, EV_IDLE, EV_LANDED, EV_LEFT, EV_NO_COMMITS,
     EV_PARKED, EV_PART, EV_RELEASED, EV_STALLED, EV_STARTED, EV_STOP_ASKED, EV_STOP_BACK, EV_STOPPED)
+from agent_runner.state import EV_DRIFT
 from agent_runner.brief import has_sheet, wizard_cmd, wizard_file
 from agent_runner.land import wip_lines
 
@@ -190,6 +191,8 @@ def since_event(item, titles: dict[str, str]) -> tuple[str, str, str] | None:
     stamp, kind, tid = ev['time'][:19], ev['kind'], ev.get('id') or ''
     if kind == EV_RELEASED:
         return stamp, '', str(ev.get('text', '')).strip()
+    if kind == EV_DRIFT:  # B45: 'needs you: Claude Code X changed Y; Z no longer works'
+        return stamp, '', f'{SAID[EV_LEFT]}: {str(ev.get("text", "")).strip()}'
     if kind not in SAID:
         return None
     said = SAID[kind]
