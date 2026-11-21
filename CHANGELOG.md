@@ -4,6 +4,10 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Docs-only changes skip the slow test gate, decided by the diff, not the task's letter: a merge (or `done`)
+  whose files all match the new `[run] docs_files` (default `*.md`, `docs/**`) runs only `[run] docs_check`
+  (a link/anchor check, if set) and logs `docs only, gate skipped`; a mixed diff runs the gate as before. A
+  take or slot task that only edits docs or the plan no longer needs a hand-typed `--no-test` (F37).
 - `[run] auto_upgrade` defaults to true: a run upgrades agent-runner by itself when a newer release is out
   (once no merge runs, never across a major version, nor on Windows) and restarts on it. Set
   `auto_upgrade = false` to upgrade only with `u` or `agent-runner upgrade`. `run --upgrade` is gone: `u`,

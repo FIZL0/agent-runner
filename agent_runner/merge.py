@@ -19,7 +19,7 @@ import uuid
 from pathlib import Path
 
 from agent_runner import plan as P, plat
-from agent_runner.done import TESTED, gate
+from agent_runner.done import DOCS_SKIP, TESTED, docs_only, gate
 from agent_runner.gitops import _net
 from agent_runner.state import C, clean, git, hook, LANDING, log, MERGE, note, plan_rel, plan_text, ROOT, SLOTS_DIR
 from agent_runner.slots import (agent_cmd, backend, entries, env_vars, MASTER_IDLE, merge_env, MUX, pane, slot_env,
@@ -1173,6 +1173,29 @@ def batch_build(t: BatchTurn):
     return None
 
 
+def docs_merge(t) -> bool:
+    """The merge t.merged changes only `[run] docs_files` on its base (every task in it, the plan's archive
+    commit and a remote's commits taken in too): the slow gate need not run on it."""
+    files = git('diff', '--name-only', '--no-renames', t.base, t.merged, cwd=t.d).stdout.split()
+    return bool(C.run['test']) and docs_only(files, C.run['docs_files'])
+
+
+def docs_checked(t) -> str | None:
+    """A docs-only merge (`docs_merge`): `[run] docs_check` in place of the gate, if there is one. None when
+    it may land, else why not."""
+    tids = ', '.join([t.tid, *t.riders])
+    if not C.run['docs_check']:
+        log(f'{tids}: {DOCS_SKIP}')
+        return None
+    rc, out = hook(f'{tids}: the docs check (counted as failing)', C.run['docs_check'], t.d, merge_env())
+    out = out.strip()
+    if rc == 0:
+        log(f'{tids}: {DOCS_SKIP}; docs check passed')
+        return None
+    C.notes('merge-gate.log').write_text(out + '\n', encoding='utf-8')
+    return 'docs only, and the docs check fails: ' + ' / '.join(out.splitlines()[-4:])[:400]
+
+
 def batch_test(t: BatchTurn):
     """merge_batch's test step: the gate on t.merged, unless `done` already passed it on the same code.
 
@@ -1186,6 +1209,8 @@ def batch_test(t: BatchTurn):
     if not (riders or not gated(tid) or
             not all(map(untestable, git('diff', '--name-only', f'task/{tid}', t.merged, cwd=d).stdout.split()))):
         return None
+    if docs_merge(t):
+        return docs_checked(t)
     ahead_done = threading.Event()
     if C.run['merge_ahead']:
         threading.Thread(target=build_ahead, args=(branch, t.merged, ahead_done, {tid, *riders}),

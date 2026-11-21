@@ -665,6 +665,15 @@ A merge skips the gate only when `task/<ID>` is the very tree `done`'s gate pass
 `refs/agent-runner/tested/<ID>`) and the merge differs from it only in `[run] untested` files. After
 `done --no-test`, commits made after `done`, or a session that never ran it, the merge is tested.
 
+Docs-only changes skip the gate, decided by the diff and not the task's letter (a D task that touches code
+is tested; a B fix that only edits the README is not). When every file a merge changes on the shared branch
+(all its tasks, the plan's archive commit, a remote's commits taken in) matches `[run] docs_files` (default
+`*.md` and `docs/**`; `!glob` takes one back), the merge runs `[run] docs_check` instead, if one is set (a
+link or anchor check), and the log says `docs only, gate skipped`; a failing docs check fails the merge.
+`done` does the same with the files its worktree changes since the shared branch (commits, edits and new
+files): it prints `docs only, gate skipped`, so a session that only edited docs or the plan needs no
+`--no-test`. It records no tested ref then; the merge decides by its own diff.
+
 ## Keeping sessions lean
 
 Whatever `[run] rules`, CLAUDE.md, AGENTS.md and their `@` imports hold is
@@ -898,6 +907,8 @@ prompt_extra = ""         # added to the prompt; takes its placeholders ({n}, {i
 command = ""              # what sessions are told to type (default: this runner), e.g. "./kit"
 suspect = ""              # regex: a BLOCKED line a merge adds that matches it is flagged in the ledger
 untested = ["*.md", "LICENSE*", "COPYING*"]  # globs the gate can't see ("!glob" takes one back): no retest for these alone
+docs_files = ["*.md", "docs/**"]  # a diff whose files all match is docs only: done and the merge skip the gate
+docs_check = ""           # the quick check a docs-only diff runs instead (links, anchors); "" = none
 failures = ""             # regex, group 1 = a failing test's name in the gate's output
 retest = ""               # the gate for just {names}: rerun alone (load), then on the base (already failing)
 flaky = ""                # regex, group 1 = tests a passing gate passed only on its own rerun (comma-separated)

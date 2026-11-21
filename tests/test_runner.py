@@ -4228,6 +4228,42 @@ def test_tested_ref(repo: Path, tmp: Path):
         git(repo, 'branch', '-D', 'task/G2')
 
 
+def test_docs_only_gate(repo: Path):
+    print("run: a merge whose diff is all [run] docs_files skips the gate (F37); a mixed one runs it")
+    R.init(repo)
+    git(repo, 'checkout', '-q', 'main')
+    calls: list = []
+    gate_was = R.merge_gate
+    R.merge_gate = lambda *a, **k: calls.append(1) or gate_was(*a, **k)
+    R.C.run['repair_merges'] = False
+    saved = R.C.run['docs_files'], R.C.run['docs_check']
+    try:
+        eq(saved[0], ['*.md', 'docs/**'], 'docs_files defaults to markdown and docs/')
+        check(R.docs_only(['README.md', 'docs/img/a.png'], saved[0]) and not R.docs_only(['README.md', 'a.py'], saved[0])
+              and not R.docs_only([], saved[0]) and not R.docs_only(['docs/x.py'], ['docs/**', '!*.py']),
+              'docs_only: every file matches, at least one, and !glob takes one back')
+        (R.worktree(1, 'main') / 'docs').mkdir(exist_ok=True)  # commit_on writes into slot 1
+        commit_on(repo, 'H1', {'BROKEN.md': 'a doc\n', 'docs/guide.txt': 'more\n'}, 'H1: docs only (a B fix, say)')
+        eq(R.merge('H1', 'main'), None, 'a docs-only branch done never gated lands')
+        eq(calls, [], 'without the gate')
+        has((repo / '.runner/run.log').read_text(), r'H1: docs only, gate skipped', 'and the log says so')
+        commit_on(repo, 'H2', {'notes.md': 'doc\n', 'BROKEN': ''}, 'H2: docs and code (a D task that touches code)')
+        has(R.merge('H2', 'main') or '', r'tests fail after the merge', 'a mixed diff runs the gate')
+        eq(len(calls), 1, 'once')
+        check(not (repo / 'BROKEN').exists(), 'and stays off main')
+        R.C.run['docs_check'] = 'echo dead link: docs/a.md#gone && exit 3'
+        commit_on(repo, 'H3', {'docs/a.md': '[x](#gone)\n'}, 'H3: a broken anchor')
+        has(R.merge('H3', 'main') or '', r'docs check fails: .*dead link', 'a docs-only merge runs [run] docs_check')
+        eq(len(calls), 1, 'and still not the gate')
+    finally:
+        R.merge_gate = gate_was
+        R.C.run['repair_merges'] = True
+        R.C.run['docs_files'], R.C.run['docs_check'] = saved
+        for b in ('task/H2', 'task/H3'):
+            if git(repo, 'branch', '--list', b):
+                git(repo, 'branch', '-D', b)
+
+
 def test_blame_and_own_repair(repo: Path, tmp: Path):
     print('run: a failed batch finds the task that breaks it alone; that task\'s repair is its own session')
     R.init(repo)
@@ -6127,7 +6163,7 @@ def main() -> int:
                        lambda: test_stop_waiter(tmp), lambda: test_stop_hook_grace(tmp), lambda: test_land_waits_aloud(repo), lambda: test_merge_ahead(repo), lambda: test_adopted_gate_merge(repo), lambda: test_adopted_gate_results(repo), lambda: test_gate_since(repo), lambda: test_gate_catch_up(repo), lambda: test_owed_merge_goes_first(repo), lambda: test_copies(repo), lambda: test_land_gives_merge_back(repo),
                        lambda: test_edited_elsewhere(repo, tmp),
                        lambda: test_resume(repo, tmp),
-                       lambda: test_session_tmp(repo, tmp), lambda: test_end_orphans(repo), lambda: test_memory_watch(repo), lambda: test_tested_ref(repo, tmp),
+                       lambda: test_session_tmp(repo, tmp), lambda: test_end_orphans(repo), lambda: test_memory_watch(repo), lambda: test_tested_ref(repo, tmp), lambda: test_docs_only_gate(repo),
                        lambda: test_no_pane(repo, tmp), lambda: test_other_repos_panes(repo, tmp),
                        lambda: test_limit_resumes(repo, tmp),
                        lambda: test_shared_push(repo, tmp), lambda: test_note_on_a_ticked_task(repo), lambda: test_adopt_merge(repo), lambda: test_followups(repo), lambda: test_person_check_after(repo), lambda: test_ci_watch(repo), test_update_notice, test_restart_if_upgraded, test_auto_upgrade, lambda: test_flake_repair(tmp), lambda: test_repair_per_failure(repo),
