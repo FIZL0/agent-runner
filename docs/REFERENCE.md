@@ -213,10 +213,15 @@ Both print **Needs you** first when a concept's build or a task waits for you (b
 one line in everyday words, what is asked and what to reply, its age first and its [id] last, then its link
 on a line of its own, oldest first:
 
-    Needs you:
+    iFizBox needs you:
        2h  Pick an option for settings page layout - reply A/B/C [K7]
         https://claude.ai/code/artifact/…
       35m  Check the push reached your phone - reply yes/no [F1]
+
+Every Needs you line names its project (the main checkout's folder), so a person who runs several knows which
+control session to answer in: the heading reads `iFizBox needs you:` (a custom `[needs] heading` keeps its words:
+`Your turn (iFizBox):`), a `--needs-you` line `iFizBox needs you: … [R43]` or `iFizBox: looks stuck: …`, and
+the desktop notice of a held run `iFizBox needs you: run stopped: …`.
 
 The CONCEPT/CONFIRM/DECIDE/BLOCKED labels stay in TODO.md and `plan waiting`; the person does not see them.
 The age comes from the `(asked YYYY-MM-DD HH:MM)` stamp `plan block` adds to a block on a person (older
@@ -242,6 +247,10 @@ cannot tell):
 - `plan change R1 "do X instead"`: noted and reopened (a concept: `revise`).
 - `plan shelve R1`: stays blocked (`BLOCKED: shelved: …`) but leaves the list; `plan waiting --all` still
   shows it, and `plan unshelve R1` brings it back. Concepts shelve the same way.
+
+Answers stay in their own project: `confirm`, `change` and `shelve` read and change only this project's plan,
+never another's. An id only another project has gets `nothing needs you here about 'R43' in <project>`, and is
+answered in that project's control session; a project that needs another's state checks it itself.
 
 ### Concept tasks
 

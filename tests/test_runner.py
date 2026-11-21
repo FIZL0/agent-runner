@@ -1573,12 +1573,12 @@ def test_concepts_waiting(repo: Path):
           'Settings page layout', False)]
     line = ['  Pick an option for settings page layout - reply A/B/C [K7]', '    https://claude.ai/code/artifact/aaa']
     text = R.status_text(False, {}, [], {}, 0.0, waiting=w)
-    eq(text.splitlines(), ['Needs you:', *line, 'no run is up'],
+    eq(text.splitlines(), [f'{R.ROOT.name} needs you:', *line, 'no run is up'],
        'status: Needs you first, in plain words, no label, the link on its own line')
     eq(R.status_text(False, {}, [], {}, 0.0), 'no run is up', 'and nothing extra when none waits')
     now = R.dt.datetime(2026, 11, 19, 15, 0, 0)
     text, _ = R.since_text([], now - R.dt.timedelta(hours=2), {}, now, waiting=w)
-    eq(text.splitlines(), ['Needs you:', *line, 'nothing new since 13:00'],
+    eq(text.splitlines(), [f'{R.ROOT.name} needs you:', *line, 'nothing new since 13:00'],
        'since: the same, however old the concept is')
     with tempfile.TemporaryDirectory() as tmp:
         todo = Path(tmp) / 'TODO.md'
@@ -1635,7 +1635,7 @@ def test_person_waiting(repo: Path):
         w = [(*x[:7], stamps[x[1]]) for x in w]
         now = R.dt.datetime(2026, 11, 19, 15, 0, 0)
         text = R.status_text(False, {}, [], {}, now.timestamp(), waiting=w)
-        eq(text.splitlines(), ['Needs you:',
+        eq(text.splitlines(), [f'{R.ROOT.name} needs you:',
                                '   5h  Watch a phone for a push when a task lands - reply yes/no [F1]',
                                '    https://x.invalid/howto',
                                '   3h  Needs a deploy key on the server - reply done once it is [F3]',
@@ -1644,7 +1644,7 @@ def test_person_waiting(repo: Path):
            'B27 status: Needs you, oldest first with its age, what is asked and what to reply, no caps label, '
            'the link on its own line')
         text = R.since_text([], now, {}, now, waiting=w)[0]
-        check(text.startswith('Needs you:\n   5h  Watch a phone') and 'CONFIRM' not in text
+        check(text.startswith(f'{R.ROOT.name} needs you:\n   5h  Watch a phone') and 'CONFIRM' not in text
               and 'DECIDE' not in text and 'BLOCKED' not in text, 'since: the same', text)
         nc = {'heading': 'Needs you', 'ages': True, 'order': 'oldest'}
         for order, ids in (('newest', ['F2', 'F3', 'F1']), ('plan', ['F3', 'F2', 'F1'])):
@@ -1653,7 +1653,7 @@ def test_person_waiting(repo: Path):
             eq(got, ids, f'B27: [needs] order = "{order}"')
         with mock.patch.object(P, 'needs_cfg', lambda: {**nc, 'ages': False, 'heading': 'Your turn'}):
             got = R.waiting_text(w, now=now)
-        eq(got[:2], ['Your turn:', '  Watch a phone for a push when a task lands - reply yes/no [F1]'],
+        eq(got[:2], [f'Your turn ({R.ROOT.name}):', '  Watch a phone for a push when a task lands - reply yes/no [F1]'],
            'B27: [needs] heading and ages = false')
         out = run(root, 'plan', 'waiting', env=env).stdout
         has(out, r'^CONFIRM  F1  push notices  watch a phone .* https://x\.invalid/howto$', 'plan waiting lists it')
@@ -2014,11 +2014,13 @@ def test_short_titles_and_since(repo: Path):
               '=== 2026-11-19T14:36:00 run idle: no task it may start']
         ask = [('DECIDE', 'B9', '', 'Postgres or SQLite?', 'https://x.invalid/b9', 'Fix the flicker', False)]
         lines, last = R.follow_lines('\n'.join(ny), titles, now, needs_you=True, waiting=ask)
-        eq(lines, ['14:32  run held, needs you: F5 cannot land: uncommitted edits in demo: commit or move them',
-                   '14:33  needs you: Fix the flicker (the merge crashed: boom) [B9]',
-                   '14:34  looks stuck: Control session experience [F5]',
-                   '14:35  needs you: Postgres or SQLite? - reply with your answer [B9]  https://x.invalid/b9'],
+        p = R.ROOT.name  # F33: each line names its project, so the person knows where to answer
+        eq(lines, [f'14:32  {p}: run held, needs you: F5 cannot land: uncommitted edits in demo: commit or move them',
+                   f'14:33  {p} needs you: Fix the flicker (the merge crashed: boom) [B9]',
+                   f'14:34  {p}: looks stuck: Control session experience [F5]',
+                   f'14:35  {p} needs you: Postgres or SQLite? - reply with your answer [B9]  https://x.invalid/b9'],
            '--needs-you: STOPPED with what holds it, LEFT FOR A HUMAN, stalled, a person ask; no landed/started/idle')
+        check(p and all(l[7:].startswith(p) for l in lines), 'F33: the needs-you lines carry the repo name', lines)
         lines, _ = R.follow_lines('\n'.join(ny), titles, now, needs_you=True, waiting=[])
         check(not any('reply' in l or 'landed' in l or 'started' in l for l in lines),
               'a blocked task asking nobody is not news for the watch', lines)
@@ -5323,7 +5325,7 @@ def test_structured_events(repo: Path):
         check(any(l.endswith('· 1 left') for l in fa), 'the stop countdown counts the dropped task by its event', fa)
         ny = [R.follow_lines('\n'.join(R.json.dumps(e) for e in evs(w)), titles, now, needs_you=True)[0] for w in (0, 1)]
     eq(ny[0], ny[1], 'nor what the needs-you watch (the phone push) prints')
-    check('14:15  run held, needs you: F5 cannot land: commit them' in ny[0], 'a hold with what holds it', ny[0])
+    check(f'14:15  {R.ROOT.name}: run held, needs you: F5 cannot land: commit them' in ny[0], 'a hold with what holds it', ny[0])
 
     f = R.events_file()
     keep = f.read_text(encoding='utf-8') if f.exists() else None
@@ -6330,11 +6332,12 @@ def test_stop_countdown(repo: Path):
                    '13:56  looks stuck: Control session experience [F5] · 2 left'],
            'no count before the stop; then each line says how many are left')
         lines, _ = R.follow_lines('\n'.join(log), titles, now, needs_you=True)
-        eq(lines, ['13:55  stuck, not merged: Fix the flicker (tests fail) [B9] · 2 left',
-                   '13:56  looks stuck: Control session experience [F5] · 2 left'], 'the needs-you watch counts too')
+        eq(lines, [f'13:55  {R.ROOT.name}: stuck, not merged: Fix the flicker (tests fail) [B9] · 2 left',
+                   f'13:56  {R.ROOT.name}: looks stuck: Control session experience [F5] · 2 left'],
+           'the needs-you watch counts too')
         ask = [('DECIDE', 'C20', '', 'Postgres or SQLite?', '', 'node.mjs', False)]
         lines, _ = R.follow_lines('\n'.join(log[:5]), titles, now, waiting=ask)
-        check(lines[-1].startswith('13:54  needs you: Postgres or SQLite?') and lines[-1].endswith(' · 3 left'),
+        check(lines[-1].startswith(f'13:54  {R.ROOT.name} needs you: Postgres or SQLite?') and lines[-1].endswith(' · 3 left'),
               'an ask a landed line brings carries the count too', lines)
         stop: dict = {}  # follow keeps the count from one chunk to the next
         R.follow_lines('\n'.join(log[:4]), titles, now, stop=stop)

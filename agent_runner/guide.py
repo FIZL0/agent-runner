@@ -509,7 +509,8 @@ CONTROL_ANSWER = ('work out which item it answers (yes/no fits a check, a letter
                   'other words a decision, later or not now shelves one), then run `{cmd} plan confirm|change|shelve '
                   'ID` with that item\'s id as the needs guide says and say in a line what it did to which item. '
                   'When you cannot tell which item it answers, ask the person, naming the items in plain words; '
-                  'never guess.')
+                  'never guess. Map it only to this project\'s items (F33): an item another project lists '
+                  '("<project> needs you: …") is answered in that project\'s control session, never from here.')
 FEED_ANSWER = ('- A reply to something under "{needs}" ("yes", "no", "B", "later", "use SQLite", "do X instead" '
                'right after that item was shown): work out which item it answers (its [ID] is on the line) and run '
                '`{cmd} plan confirm ID "<their words>"` for a yes, done, a letter or an answer, `{cmd} plan change '

@@ -781,6 +781,40 @@ def test_needs_you():
         eq([x[1] for x in plan.in_order(a, stamps, 'plan')], ['F2', 'F3', 'F9'], 'or the plan\'s order')
 
 
+def test_needs_own_project():
+    print('plan: F33 confirm/change/shelve answer only this project: an id only another project has needs nothing here')
+    with tempfile.TemporaryDirectory() as tmp:
+        here, other = Path(tmp) / 'iFizBox', Path(tmp) / 'other'
+        for r in (here, other):
+            r.mkdir()
+            git(r, 'init', '-q')
+        mine, theirs = here / 'plan' / 'TODO.md', other / 'plan' / 'TODO.md'
+        for todo in (mine, theirs):
+            plan.ensure(todo)
+            plan.add('F', 'push notices | files: a.py', todo=todo)
+        plan.add('F', 'pick a database | files: b.py', todo=theirs)
+        plan.block('F2', 'DECIDE: Postgres or SQLite?', todo=theirs)
+        before = theirs.read_text(encoding='utf-8')
+        old = os.environ.get('AGENT_RUNNER_REPO')
+        os.environ['AGENT_RUNNER_REPO'] = str(here)
+        try:
+            for name, call in (('confirm', lambda: plan.confirm('F2', 'SQLite', todo=mine)),
+                               ('change', lambda: plan.change('F2', 'use SQLite', todo=mine)),
+                               ('shelve', lambda: plan.shelve('F2', todo=mine))):
+                try:
+                    call()
+                    check(False, f'{name} F2 here answers nothing')
+                except SystemExit as e:
+                    has(str(e), r"nothing needs you here about 'F2' in iFizBox", f'{name}: nothing needs you here')
+        finally:
+            if old is None:
+                os.environ.pop('AGENT_RUNNER_REPO', None)
+            else:
+                os.environ['AGENT_RUNNER_REPO'] = old
+        eq(theirs.read_text(encoding='utf-8'), before, 'the other project\'s plan is left as it was')
+        eq([a[1] for a in plan.asks(theirs)], ['F2'], 'and its F2 still waits there')
+
+
 def test_needs_config():
     print('config: B27 [needs] heading, ages, order are settings, with defaults (C5: map_replies is gone)')
     from agent_runner.config import Config
@@ -1301,4 +1335,4 @@ if __name__ == '__main__':
     sys.exit(report([test_refusals, test_iter_tasks_and_titles, test_hook, test_done_gate, test_channel,test_edit, test_unlabelled_block, test_restore, test_plan_last, test_after_all, test_release_kind,test_goal,test_plan_roundtrip, test_plan_reopen, test_plan_index_and_sections, test_brief, test_brief_outline,
                      test_split_parents, test_add_bottom, test_add_pri, test_add_subtask, test_kinds, test_need_files, test_add_stray_args, test_hand_edits_commit, test_hand_edits_push, test_similar, test_add_refuses_a_duplicate, test_carry_notes,
                      test_merge3, test_concurrent_add, test_merge_driver, test_concepts, test_needs_you,
-                     test_needs_config]))
+                     test_needs_own_project, test_needs_config]))

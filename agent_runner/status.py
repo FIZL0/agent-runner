@@ -10,7 +10,7 @@ import time
 
 from agent_runner import plan as P
 from agent_runner.config import shown_cmd
-from agent_runner.state import C, default_branch, git
+from agent_runner.state import C, default_branch, git, project
 from agent_runner.state import (EV_DEFERRED, EV_DROPPED, EV_HELD, EV_IDLE, EV_LANDED, EV_LEFT, EV_NO_COMMITS,
     EV_PARKED, EV_PART, EV_RELEASED, EV_STALLED, EV_STARTED, EV_STOP_ASKED, EV_STOP_BACK, EV_STOPPED)
 from agent_runner.brief import has_sheet, wizard_cmd, wizard_file
@@ -310,17 +310,25 @@ def needs_you_line(line, titles: dict[str, str], now: dt.datetime, waiting) -> s
         if kind == SAID[EV_HELD] and (ev := as_event(line)):
             held = ': '.join(x for x in (str(ev.get('why') or '').strip(), str(ev.get('detail') or '').strip()) if x)
             what = f'{kind}: {held if len(held) <= 240 else held[:239].rsplit(" ", 1)[0] + "…"}'
-        return f'{when(e[0], now)}  {what}'
+        return f'{when(e[0], now)}  {named(what)}'
     if e[1] and kind in ('landed', 'part landed, rest stuck'):
         for label, tid, k, ask, url, title, shelved, *_ in waiting or []:
             if e[1] in (tid, k) and not shelved:  # B27: in everyday words, no caps label
-                return f'{when(e[0], now)}  {ASK_FEED}' + '  '.join(
+                return f'{when(e[0], now)}  {named(ASK_FEED)}' + '  '.join(
                     x for x in (f'{P.plain_ask(label, ask, title or titles.get(tid) or tid, label == 'DECIDE' and has_sheet(tid))} [{tid}]',
                                 url) if x)
     return None
 
 
 ASK_FEED = 'needs you: '  # how a feed line about an item under Needs you starts (B27; was 'waits for you: ')
+
+
+def named(what: str) -> str:
+    """F33: a Needs you line with its project first ('iFizBox needs you: … [R43]', 'iFizBox: looks stuck: …'),
+    so the person knows which project's control session answers it; as is before `init` names one."""
+    if not (p := project()):
+        return what
+    return f'{p} {what}' if what.startswith('needs you') else f'{p}: {what}'
 
 
 def follow_lines(chunk: str, titles: dict[str, str], now: dt.datetime, needs_you: bool = False,
@@ -462,7 +470,15 @@ def waiting_text(waiting, width: int = 60, now: dt.datetime | None = None, wips=
         return []  # only shelved ones: they asked to leave this list
     if shelved:
         out.append(f'  ({shelved} shelved: plan waiting --all)')
-    return [f'{cf["heading"]}:'] + out
+    return [needs_heading(cf['heading'])] + out
+
+
+def needs_heading(heading: str) -> str:
+    """F33: Needs you's heading line with its project: 'iFizBox needs you:'; another `[needs] heading` keeps its
+    words, the project after it ('Your turn (iFizBox):'); as is before `init` names one."""
+    if not (p := project()):
+        return f'{heading}:'
+    return f'{p} needs you:' if heading.lower() == 'needs you' else f'{heading} ({p}):'
 
 
 def status_text(up: bool, st: dict, log_lines: list[str], titles: dict[str, str], now: float, width: int = 60,

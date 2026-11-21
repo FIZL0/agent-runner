@@ -4,6 +4,12 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Needs you lines name their project, so a person who runs several knows which control session to answer in:
+  status and since head the list `iFizBox needs you:`, `since --follow --needs-you` prints `iFizBox needs you:
+  … [R43]` (`iFizBox: looks stuck: …` for the others), and a held run's desktop notice says `iFizBox needs
+  you: run stopped: …`. Answers stay in their own project: `plan confirm|change|shelve` with an id only another
+  project has says `nothing needs you here about 'R43' in <project>` and changes nothing (F33).
+
 ## 0.57.0 (2026-11-20)
 
 - A release kind, `V`. `plan add V` files a release at the end of Next that waits for everything ahead of it
