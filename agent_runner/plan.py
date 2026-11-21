@@ -11,7 +11,7 @@ re-reads it on every turn pays again. So the backlog is a command instead:
     ./run plan -f FILE <name>    the same, on any other markdown file
     ./run plan brief <ID>        everything a task starts from, in one shot (see `brief`)
     ./run plan tick <ID>         done: [x], and the line moves to plan/DONE.md
-    ./run plan block <ID> [--after X,Y] WHY   [~] with "BLOCKED: (after X, Y) WHY" appended
+    ./run plan block <ID> [--after X,Y] WHY   [~] with "BLOCKED: (after X, Y) WHY" appended; --after all (below)
     ./run plan unblock <ID> [NOTE]   reopen: [ ], drop "BLOCKED: …", append NOTE (what unblocked it)
     ./run plan move <ID> WHERE   WHERE = top | before ID | after ID | in SECTION (its end); sub-items follow
     ./run plan add PREFIX TEXT [--files A,B] [--after X,Y] [--test T] [--journal D] [--pri LEVEL] [--last] [--force] [@ WHERE]
@@ -87,6 +87,12 @@ That marker is no list to keep up: the run resolves it on every pick to each tas
 that is not done (open or blocked), tasks added above it later included, so it starts once the section has
 drained. Tasks blocked on a person (CONFIRM, DECIDE, BLOCKED, a concept's OK) do not hold it until they reopen,
 and other sections (Follow-ups) never do. `reopen`, `waiting` and `status` say what it still waits on.
+
+**A task that waits for everything before it** takes `--after all` (`add`, `edit`, `block`; any kind): `after:
+all`, or `BLOCKED: (after all) why`, which the run resolves on every pick (and `reopen` after every merge) to each
+open or blocked task above it in TODO.md, in any section, tasks queued above it later included. Tasks a run never
+starts do not hold it, or it would never run: Parked (`--pri later`) and Stretch sections, and shelved tasks.
+`status`, `plan ID`, `reopen` and `waiting` say 'T5 waits for everything before it (12 open)', not an id list.
 
 **A block that only waits on another task says which**, as `BLOCKED: (after X, Y) why`, and `reopen` (which a
 `./run run` calls after every merge) puts it back to `[ ]` the moment X and Y are done. Without that a task
@@ -439,29 +445,89 @@ def above(ls: list[str], i: int) -> list[str]:
     return out[::-1]
 
 
+ALL = 'all'  # an `after:` (or `block --after`) value: every task before it in TODO.md not done yet (F35)
+
+
+def _shelved(ls: list[str], i: int) -> bool:
+    """Is the task at ls[i] shelved (`shelve`): blocked, its last block reading `BLOCKED: shelved: …`."""
+    m = ITEM.match(ls[i])
+    if not m or m.group(2) != '~':
+        return False
+    tail = ls[i + len(_item_block(ls, i)) - 1]
+    at = _block_at(tail)
+    return at >= 0 and tail[at:].lstrip().startswith('BLOCKED: ' + SHELVED)
+
+
+def before_all(ls: list[str], i: int) -> list[str]:
+    """What `after: all` on the task at ls[i] stands for, read afresh each time (F35): every top-level task above
+    it in TODO.md, in any section, that is not done (open or blocked), in order. Tasks a run never starts do not
+    hold it, or it would never run: those in Parked (`--pri later`) and Stretch sections, and shelved ones."""
+    out, section = [], ''
+    for j in range(i):
+        if ls[j].startswith('### '):
+            section = ls[j][4:].strip()
+        m = ITEM.match(ls[j])
+        if (m and not m.group(1) and m.group(2) != 'x' and not section.startswith(SKIPPED)
+                and not _shelved(ls, j)):
+            out.append(m.group(3).rstrip('.'))
+    return out
+
+
+def resolve_after(ls: list[str], i: int, ids: list[str]) -> list[str]:
+    """`ids` (an `after:` field or a block's `(after …)` list) with `all above` and `all` resolved for ls[i]."""
+    out: list[str] = []
+    for a in ids:
+        out += above(ls, i) if a == LAST else before_all(ls, i) if a == ALL else [a]
+    return out
+
+
 def waits_on(ls: list[str], i: int) -> list[str]:
-    """The ids the task at ls[i] names in its `after:` field, `all above` resolved (`above`), itself left out.
-    Done ones included: the caller checks which are still open."""
+    """The ids the task at ls[i] names in its `after:` field, `all above` (`above`) and `all` (`before_all`)
+    resolved, itself left out. Done ones included: the caller checks which are still open."""
     tid = ITEM.match(ls[i]).group(3).rstrip('.')
-    ids: list[str] = []
-    for a in fields(ls[i]).get('after', []):
-        ids += above(ls, i) if a == LAST else [a]
-    return [t for t in dict.fromkeys(ids) if t != tid]
+    return [t for t in dict.fromkeys(resolve_after(ls, i, fields(ls[i]).get('after', []))) if t != tid]
+
+
+def _waits_all(ls: list[str], i: int) -> bool:
+    """Does the task at ls[i] wait on everything before it: `after: all`, or a last block's `(after all)`."""
+    if ALL in fields(ls[i]).get('after', []):
+        return True
+    w = WAITS.findall(ls[i + len(_item_block(ls, i)) - 1])
+    return bool(w) and ALL in [t.strip() for t in w[-1].split(',')]
 
 
 def last_waits(todo=None) -> list[tuple[str, list[str]]]:
-    """(id, the open tasks it still waits on) for every task not done whose `after:` says `all above`, in order."""
+    """(id, the open tasks it still waits on) for every task not done whose `after:` says `all above` or `all`
+    (or whose block waits `(after all)`), in order."""
     todo, _ = ensure(todo)
     ls = list(lines(todo))
     live = open_ids(ls)
-    return [(m.group(3).rstrip('.'), [t for t in waits_on(ls, i) if t in live])
-            for i, l in enumerate(ls)
-            if (m := ITEM.match(l)) and not m.group(1) and m.group(2) != 'x' and LAST in fields(l).get('after', [])]
+    out = []
+    for i, l in enumerate(ls):
+        if not ((m := ITEM.match(l)) and not m.group(1) and m.group(2) != 'x'):
+            continue
+        tid = m.group(3).rstrip('.')
+        if _waits_all(ls, i):
+            out.append((tid, [t for t in before_all(ls, i) if t in live and t != tid]))
+        elif LAST in fields(l).get('after', []):
+            out.append((tid, [t for t in waits_on(ls, i) if t in live]))
+    return out
+
+
+def all_line(tid: str, n: int) -> str:
+    """How `status` and `plan` say what an `after: all` task waits on: a count, not an id list (F35)."""
+    return f'{tid} waits for everything before it ({n} open)' if n else f'{tid} waits for everything before it: nothing left'
 
 
 def last_lines(todo=None) -> list[str]:
-    """'T5 waits on all above: F43, B54 (2 open)' for each `after: all above` task (`reopen`, `waiting`)."""
-    return [f'{t} waits on all above: {", ".join(ids)} ({len(ids)} open)' if ids
+    """'T5 waits on all above: F43, B54 (2 open)' for each `after: all above` task, 'T5 waits for everything
+    before it (12 open)' for each `after: all` one (`reopen`, `waiting`)."""
+    todo, _ = ensure(todo)
+    ls = list(lines(todo))
+    every = {ITEM.match(l).group(3).rstrip('.') for i, l in enumerate(ls)
+             if ITEM.match(l) and not ITEM.match(l).group(1) and _waits_all(ls, i)}
+    return [all_line(t, len(ids)) if t in every
+            else f'{t} waits on all above: {", ".join(ids)} ({len(ids)} open)' if ids
             else f'{t} waits on all above: nothing left above it'
             for t, ids in last_waits(todo)]
 
@@ -509,8 +575,9 @@ def reopen(todo=None) -> list[tuple[str, list[str]]]:
         tail = ls[i + len(_item_block(ls, i)) - 1]
         w = WAITS.findall(tail)
         ids = [t.strip() for t in w[-1].split(',') if t.strip()] if w else []
-        if ids and not set(ids) & live:
-            out.append((m.group(3).rstrip('.'), ids))
+        held = set(resolve_after(ls, i, ids)) - {m.group(3).rstrip('.')}  # `(after all)`: read afresh (F35)
+        if ids and not held & live:
+            out.append((m.group(3).rstrip('.'), ['everything before it' if t == ALL else t for t in ids]))
     for tid, ids in out:
         if not _reask(tid, ids, todo):
             unblock(tid, f'reopened: {", ".join(ids)} landed', todo=todo)
@@ -2234,6 +2301,10 @@ def _main(argv: list[str], c) -> int:
         print(f'{PROG}: nothing named {argv[0]!r} — run `{PROG}` for the index', file=sys.stderr)
         return 1
     print('\n'.join(out))
+    if argv and TASK_ID.fullmatch(argv[0]):  # `after: all` (F35): what it still waits on, as a count
+        for l in last_lines(todo):
+            if l.startswith(f'{argv[0]} waits for everything'):
+                print(l)
     return 0
 
 

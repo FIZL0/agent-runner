@@ -70,10 +70,15 @@ def release_line(ls: list[str]) -> str:
     `all above` (`plan add --last`, F43) gets a line too, 'last:' unless it is a release, naming what holds it."""
     live, out = P.open_ids(ls), []
     for section, box, tid, rest, i in P.iter_tasks(ls):
-        last = P.LAST in P.fields(ls[i]).get('after', [])
+        last = P.LAST in P.fields(ls[i]).get('after', []) or (box in ' ~' and P._waits_all(ls, i))
         if box not in ' ~' or section.startswith(P.SKIPPED) or not (RELEASE_TASK.match(rest) or last):
             continue
         kind = 'release' if RELEASE_TASK.match(rest) else 'last'
+        if P._waits_all(ls, i):  # `after: all` (F35): a count of what is still before it, not an id list
+            held = [t for t in P.before_all(ls, i) if t in live and t != tid]
+            out.append(f'{kind}: {P.all_line(tid, len(held))}' if held
+                       else f'{kind}: ready, nothing left to wait on ({tid})')
+            continue
         w = P.WAITS.findall(' '.join(P._item_block(ls, i))) if box == '~' else []
         ids = [t.strip() for t in w[-1].split(',') if t.strip()] if w else P.waits_on(ls, i)
         ids = [t for t in dict.fromkeys(ids) if t != tid]

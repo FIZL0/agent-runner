@@ -903,6 +903,44 @@ def test_plan_last():
         eq(plan.last_waits(todo), [('T1', ['C1'])], 'a task blocked on something other than a person still holds it')
 
 
+def test_after_all():
+    print('plan: --after all waits for every open task before it in TODO.md, worked out live (F35)')
+    eq(plan.add_args(['the release', '--files', 'CHANGELOG.md', '--after', 'all'])[2],
+       ' | files: CHANGELOG.md | after: all', '--after all writes `after: all`')
+    with tempfile.TemporaryDirectory() as tmp:
+        d = Path(tmp) / 'plan'
+        todo, done = plan.ensure(d / 'TODO.md', d / 'DONE.md')
+        kw = dict(todo=todo, done=done)
+        plan.add('F', 'one | files: a.py', 'bottom', **kw)
+        plan.add('C', 'asks a person | files: d.py', 'bottom', **kw)
+        plan.block('C1', 'DECIDE: which one?', todo=todo)
+        plan.add('B', 'shelved one | files: e.py', 'bottom', **kw)
+        plan.block('B1', 'DECIDE: maybe later?', todo=todo)
+        plan.shelve('B1', todo=todo)
+        plan.add('B', 'a follow-up | files: c.py', pri='normal', **kw)
+        rel = plan.add('R', 'release | files: CHANGELOG.md | after: all', pri='normal', **kw)
+        plan.add('F', 'big future | files: z.py', pri='later', **kw)
+        eq(plan.last_waits(todo), [(rel, ['F1', 'C1', 'B2'])],
+           'every open or blocked task above it, any section, a person-blocked one too; not shelved, not Parked')
+        eq(plan.last_lines(todo), [f'{rel} waits for everything before it (3 open)'], 'said as a count, not ids')
+        plan.add('F', 'queued later | files: q.py', **kw)  # the top of Next
+        eq(plan.last_waits(todo), [(rel, ['F3', 'F1', 'C1', 'B2'])], 'a task queued above it later holds it too')
+        for tid in ('F1', 'F3', 'B2'):
+            plan.tick(tid, **kw)
+        plan.drop('C1', 'not wanted', **kw)
+        eq(plan.last_lines(todo), [f'{rel} waits for everything before it: nothing left'], 'and then nothing')
+        # on a block: `(after all)`, freed by reopen only once nothing is left before it
+        plan.add('F', 'another | files: a.py', **kw)
+        plan.add('T', 'last of all | files: t.py', 'bottom', **kw)
+        plan.block('T1', 'cut once the rest lands', todo=todo, after=['all'])
+        has('\n'.join(plan.section(todo, 'T1')), r'BLOCKED: \(after all\) cut once', 'block writes (after all)')
+        eq(plan.reopen(todo), [], 'held while a task before it is open')
+        eq(dict(plan.last_waits(todo))['T1'], ['F4'], 'a blocked (after all) task lists too, not what is below it')
+        plan.tick('F4', **kw)
+        eq(plan.reopen(todo), [('T1', ['everything before it'])], 'reopened once nothing is before it')
+        has(plan.section(todo, 'T1')[0], r'^- \[ \] ', 'open again')
+
+
 def test_restore():
     print('plan: restore brings a ticked or dropped task back open, same id and fields (F47)')
     with tempfile.TemporaryDirectory() as tmp:
@@ -1224,7 +1262,7 @@ def test_channel():
 
 
 if __name__ == '__main__':
-    sys.exit(report([test_refusals, test_iter_tasks_and_titles, test_hook, test_done_gate, test_channel,test_edit, test_unlabelled_block, test_restore, test_plan_last,test_goal,test_plan_roundtrip, test_plan_reopen, test_plan_index_and_sections, test_brief, test_brief_outline,
+    sys.exit(report([test_refusals, test_iter_tasks_and_titles, test_hook, test_done_gate, test_channel,test_edit, test_unlabelled_block, test_restore, test_plan_last, test_after_all,test_goal,test_plan_roundtrip, test_plan_reopen, test_plan_index_and_sections, test_brief, test_brief_outline,
                      test_split_parents, test_add_bottom, test_add_pri, test_add_subtask, test_kinds, test_need_files, test_add_stray_args, test_hand_edits_commit, test_hand_edits_push, test_similar, test_add_refuses_a_duplicate, test_carry_notes,
                      test_merge3, test_concurrent_add, test_merge_driver, test_concepts, test_needs_you,
                      test_needs_config]))

@@ -38,7 +38,7 @@ def tasks(branch: str) -> list[tuple[str, str, set[str], set[str]]]:
             continue
         l = ls[i]
         f = P.fields(l)
-        if P.LAST in f.get('after', []):  # `after: all above`, resolved afresh on every pick (F43)
+        if {P.LAST, P.ALL} & set(f.get('after', [])):  # `all above` (F43), `all` (F35): afresh on every pick
             f['after'] = P.waits_on(ls, i)
         # a split parent: its subtasks run first, blocked ones included, then it runs (or `archive` ticks it).
         # Read by id and by its `(split into …)` list, never by the words alone, so prose that happens to say

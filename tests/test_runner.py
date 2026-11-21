@@ -5695,6 +5695,36 @@ def test_plan_last(repo: Path):
         R.plan_text = saved
 
 
+def test_after_all(repo: Path):
+    print('run: F35 an `after: all` task starts only once no open task above it in TODO.md remains')
+    R.init(repo)
+    rel = '- [ ] **T5** Release: cut the next version | files: CHANGELOG.md | after: all'
+    plan = {'ls': []}
+    saved = R.plan_text
+    R.plan_text = lambda branch: plan['ls']
+    try:
+        ids = lambda: [t[0] for t in R.tasks('main')]
+        later = ['', '### Parked', '', '- [ ] **F9** big future (follow-up, later) | files: p.py']
+        plan['ls'] = (['# TODO', '', '### Next', '', '- [ ] **F1** one | files: a.py', '',
+                       '### Follow-ups', '', '- [ ] **B2** a follow-up | files: b.py', rel] + later)
+        eq(ids(), ['F1', 'B2'], 'unstarted while an earlier open task exists, in any section')
+        eq(R.release_line(plan['ls']), 'release: T5 waits for everything before it (2 open)',
+           'status gives a count, not an id list')
+        plan['ls'] = (['# TODO', '', '### Next', '', '- [~] **C3** BLOCKED: shelved: DECIDE: some day?', '',
+                       '### Follow-ups', '', rel] + later)
+        eq(ids(), ['T5'], 'starts once they land: a shelved task and a Parked one do not hold it')
+        eq(R.pick({}, set(), 'main')[0], 'T5', 'and a free slot takes it')
+        eq(R.release_line(plan['ls']), 'release: ready, nothing left to wait on (T5)', 'status says it is ready')
+        plan['ls'] = (['# TODO', '', '### Next', '', '- [ ] **F7** queued later | files: q.py', '',
+                       '### Follow-ups', '', rel] + later)
+        eq(ids(), ['F7'], 'a task queued above it later is waited on too')
+        plan['ls'] = ['# TODO', '', '### Next', '', rel.replace('Release: cut the next version', 'Tidy up'),
+                      '- [ ] **F8** below it | files: r.py']
+        eq(ids(), ['T5', 'F8'], 'any kind; a task below it does not hold it')
+    finally:
+        R.plan_text = saved
+
+
 def test_progress_and_release(repo: Path):
     print('status: merged in the window, tasks left and blocked, and how close a queued release is')
     R.init(repo)
@@ -6425,7 +6455,7 @@ def main() -> int:
                        lambda: test_renamed_control_kept(repo),
                        lambda: test_control_summary_title(repo), lambda: test_control_task_name(repo), lambda: test_progress_and_release(repo),
                        lambda: test_control_status_rules(repo), lambda: test_control_do_it_here(repo), lambda: test_control_retitle_on_topic(repo), test_control_push_when_asked, test_needs_cmd_f44, test_idle_control_not_waiting, lambda: test_take_running_slot(repo), lambda: test_upgrade_cmd(repo), lambda: test_runner_route_b54(repo), test_control_no_upgrade_watcher,
-                       test_split_modules_c3, lambda: test_plan_last(repo), lambda: test_release_push(repo),
+                       test_split_modules_c3, lambda: test_plan_last(repo), lambda: test_after_all(repo), lambda: test_release_push(repo),
                        lambda: test_help_order_and_bare_wizard(tmp), lambda: test_setup(tmp),
                        lambda: test_stop_countdown(repo), lambda: test_real_claude_json_guard(tmp),
                        lambda: test_hidden_slots(repo, tmp), lambda: test_hidden_run_lands(tmp)])

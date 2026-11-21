@@ -317,6 +317,12 @@ waiting for your OK on <url>`. That block names no task, so no run starts it and
     task above it in its own section that is not done, ones added later included, so a release waits for the
     whole section without a list going stale. Tasks blocked on a person don't hold it until they reopen;
     Follow-ups never do. `plan reopen`, `plan waiting` and `status` say what it still waits on.
+    `after: all` (`plan add/edit/block --after all`, any kind) waits for **everything before it**: each open
+    or blocked task above it in TODO.md, in any section, resolved afresh on every pick, so a task queued above
+    it later holds it too. Parked (`--pri later`) and Stretch tasks and shelved ones don't count, or it would
+    never run. On a block it reads `BLOCKED: (after all) why`, and `plan reopen` frees it once nothing is left
+    before it. `status`, `plan ID`, `plan reopen` and `plan waiting` show it as `T5 waits for everything before
+    it (12 open)`, not an id list.
   - `test:` the tests that prove it. `journal:` its journal folder.
   - `plan add P "text" --files a,b --after X --test name` writes them.
 - `BLOCKED: (after X, Y) why` is what `plan block`/`done --blocked` write. The `(after …)` list is what
