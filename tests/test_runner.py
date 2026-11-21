@@ -1261,7 +1261,7 @@ def test_control(repo: Path):
                                       'TMUX': '/tmp/t,1,0'}):
         # tmux is stood in for, so which() says it is there (Windows has none, and the masks are skipped there)
         with mock.patch.object(R, 'run', return_value=0), mock.patch.object(R, 'tmux') as tm, \
-                mock.patch.object(R.shutil, 'which', lambda x, *a, **k: '/usr/bin/tmux'):
+                mock.patch.object(R.shutil, 'which', lambda x, *a, **k: '/usr/bin/tmux' if x == 'tmux' else None):
             R.cmd_run([])
         check(mock.call('set-environment', '-r', 'CLAUDE_CODE_CHILD_SESSION') in tm.call_args_list,
               'and out of its tmux session, whose new windows (the slots) would inherit them')
@@ -2710,13 +2710,15 @@ def test_remote_sweep(repo: Path, tmp: Path):
         sent = {c.args[0] for c in term.call_args_list}
         # Windows has no SIGTERM to ignore: plat.terminate ends the tree there (taskkill /F after its grace)
         stuck = [] if R.plat.WINDOWS else ['repo · runner (stuck)']
-        eq(sorted(ended), ['repo · runner', *[s for s in ['repo · runner (stuck)'] if s not in stuck]],
+        eq(sorted(ended), ['repo · runner', 'repo · runner (stuck)'] if R.plat.WINDOWS else ['repo · runner'],
            "the earlier run's feed is ended")
         eq(left, stuck, 'one that ignores SIGTERM is left running, not killed')
         eq(sent, {old_feed.pid, stubborn.pid}, 'SIGTERM went to the earlier run\'s feeds only')
         time.sleep(0.3)
         check(not R.plat.alive(old_feed.pid), 'the earlier feed is gone (its teardown archives its entry)')
-        if not R.plat.WINDOWS:
+        if R.plat.WINDOWS:
+            check(not R.plat.alive(stubborn.pid), 'Windows: taskkill ends it after the grace')
+        else:
             check(R.plat.alive(stubborn.pid), 'never SIGKILLed: a killed session would stay listed')
         check(R.plat.alive(old_server.pid), 'the control server this run adopts is left up (no new entry)')
         check(R.plat.alive(old_c2.pid), "an earlier run's control session is the person's: left up")
