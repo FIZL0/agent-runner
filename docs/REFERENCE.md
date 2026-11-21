@@ -216,8 +216,9 @@ that mark forward, so asking twice in a row shows nothing new the second time. W
 By default `since` prints that as a digest, short enough for a phone (B88): a headline count, then one line per
 task with its last state under Started, Landed (newest first) and Stuck, then the run's own lines (releases, a
 hold, its last state); repeated run idle / run stopped lines and restarts fold away. Past 10 task lines, Landed
-names the rest by id only and the digest ends `full log: … since --all`. `since --all` prints every event,
-one line each, as above.
+names the rest by id only and the digest ends `more: ask for the full list` (B89: an ask, not a command,
+since the person may be on a phone). In a control session, /since always runs `since --all` and hands the whole
+list over as a private page, with its link and a one-line gist; `status` stays the short summary. `since --all` prints every event, one line each, as above.
 
 `since --follow` stays running and prints one line per new event as run.log gets it (a landed task with the
 first sentence of its `done` message), from now on, moving the mark as it prints: the control session's
