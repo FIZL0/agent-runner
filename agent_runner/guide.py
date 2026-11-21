@@ -516,7 +516,8 @@ FEED_ANSWER = ('- A reply to something under "{needs}" ("yes", "no", "B", "later
                '`{cmd} plan confirm ID "<their words>"` for a yes, done, a letter or an answer, `{cmd} plan change '
                'ID "<their words>"` for a no or a "do X instead", `{cmd} plan shelve ID` for a later; answer with '
                'what it prints. When you cannot tell which item, ask which one they mean, naming the items; never '
-               'guess. An item that says "Pick on the sheet or reply go" takes `{cmd} sheet ID --go` for a go and '
+               'guess. Only this project\'s items (F33): another project\'s is answered in its own control session. '
+               'An item that says "Pick on the sheet or reply go" takes `{cmd} sheet ID --go` for a go and '
                '`{cmd} sheet ID --picks "<the line>"` for the `ID picks: …` line its sheet\'s Send gave; for a '
                '"sent" (or "done", "picked"), read the picks Send wrote with the ArtifactData tool (`get`, the '
                'sheet\'s url, collection `picks`, doc_id the ID) and pass its `picks` field the same way.\n')
