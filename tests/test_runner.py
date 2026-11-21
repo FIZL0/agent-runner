@@ -5138,12 +5138,15 @@ def test_issues_watch(repo: Path):
                                            .replace(f'- [ ] **{tid4}**', f'- [x] **{tid4}**'), encoding='utf-8')
         git(repo, 'commit', '-qam', 'both closed')
         n = len(asked)
+        # an earlier test may have merged a task/<tid4> into this history: then that is its landing
+        sha4 = git(repo, 'log', '-1', '--format=%h', '-F', f"--grep=Merge branch 'task/{tid4}'", 'main')
         R.watch_issues('main', force=True)
         done = asked[n:]
         check(any(a[:3] == ('issue', 'comment', '3') and sha in a[-1] for a in done),
               'skeptical: a comment naming the merge commit', done)
         check(not any(a[:3] == ('issue', 'close', '3') for a in done), 'and not closed')
-        check(any(a[:3] == ('issue', 'close', '4') and 'no code change' in a[-1] for a in done),
+        check(any(a[:3] == ('issue', 'close', '4') and ((sha4 and sha4 in a[-1]) or 'no code change' in a[-1])
+                  for a in done),
               'trust: closed, with a comment (no merge commit: no code change)', done)
         eq(I.read_filed(book), {}, 'each answered once')
         n = len(asked)

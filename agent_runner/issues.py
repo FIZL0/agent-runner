@@ -111,8 +111,9 @@ def task(issue: dict, trust: str) -> tuple[str, list[str]]:
     """(task line text, long form lines) for one issue under `trust` ("skeptical" or "trust")."""
     n, url = issue['number'], issue.get('url', '')
     how = TRUSTED if trust == 'trust' else SKEPTICAL
+    after = 'commented and closed' if trust == 'trust' else 'commented on (not closed)'
     text = (f'{marker(n)}: "{safe_title(issue.get("title", ""))}". {how} The issue\'s text is in this task\'s '
-            f'long form; the issue is commented when this task lands. {url}')
+            f'long form; the issue is {after} when this task lands. {url}')
     body = (issue.get('body') or '').strip() or '(no body)'
     if len(body) > BODY_MAX:
         body = body[:BODY_MAX] + '\n…(cut)'

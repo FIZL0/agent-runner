@@ -660,10 +660,8 @@ def watch_issues(branch: str, force: bool = False) -> list[str]:
         plan_lines = [*P.lines(ROOT / rel), *P.lines(ROOT / plan_rel('DONE.md'))]
 
         def commit_of(tid: str) -> str:
-            for pat in (f"^Merge branch 'task/{tid}'", f'^{tid}\\b'):
-                if sha := git('log', '-1', '--format=%h', '-E', f'--grep={pat}', branch).stdout.strip():
-                    return sha
-            return ''
+            # the merge's own commit (merge.py's message); a task's commits alone could be any id's prefix
+            return git('log', '-1', '--format=%h', '-F', f"--grep=Merge branch 'task/{tid}'", branch).stdout.strip()
         for tid, n, trust, sha, line in I.to_answer(book, plan_lines, commit_of):
             if I.answer(gh, n, tid, trust, sha, line):
                 book.pop(tid, None)
