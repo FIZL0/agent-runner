@@ -12,7 +12,6 @@ import re
 import shutil
 import subprocess as sp
 import sys
-import threading
 import time
 from contextlib import redirect_stdout
 from pathlib import Path
@@ -30,7 +29,7 @@ from agent_runner.watch import breaking, installed_version, last_session, queue_
 from agent_runner.land import wip_main_info
 from agent_runner.control import (control_argv, control_brief, control_env, control_give, control_hook_input,
     control_link, control_live, control_mark_ask, CONTROL_N_ENV, control_name, control_ok, control_open, control_session_start,
-    control_set_title, control_sid, free_control_number, RUNNER_STARTED_ENV, unquiet_when_up)
+    control_set_title, control_sid, free_control_number, RUNNER_STARTED_ENV)
 from agent_runner.status import (follow, move_since_mark, progress_line, release_line, since_mark_file, since_start,
     since_text, status_text, waiting_ok)
 from agent_runner.status import as_event, events_file, read_events
@@ -764,7 +763,6 @@ def cmd_control(argv: list[str], prog: str = f'{RUNNER} control') -> int:
     ap.add_argument('--file', '--image', dest='file', action='append', default=[], metavar='PATH',
                     help='a file or image the person attached to the first message (repeatable): the first message '
                     'names it and its path and says to Read or open it')
-    ap.add_argument('--unquiet', action='store_true', help=argparse.SUPPRESS)  # `unquiet_when_up`, for session N
     ap.add_argument('--feed-sid', default='', help=argparse.SUPPRESS)  # B57: wait for the handed-on message's files
     ap.add_argument('--title', default=None, metavar='SUMMARY', help='from inside control session N, once it has '
                     'read its first message: name it "<repo> · N · SUMMARY" for what it is for')
@@ -782,9 +780,6 @@ def cmd_control(argv: list[str], prog: str = f'{RUNNER} control') -> int:
     if a.title is not None:
         env_n = os.environ.get(CONTROL_N_ENV, '')
         return control_set_title(a.n or (int(env_n) if env_n.isdigit() else 0), a.title)
-    if a.unquiet:
-        unquiet_when_up(f'c{a.n}', os.environ.get('TMUX_PANE', ''))
-        return 0
     if not control_ok():
         print(f'control sessions are Claude Code sessions; [run] agent is {C.run["agent"]}', file=sys.stderr)
         return 1
@@ -815,19 +810,8 @@ def cmd_control(argv: list[str], prog: str = f'{RUNNER} control') -> int:
     pidf = C.notes(f'control{n}.pid')
     env = control_env()
     env[CONTROL_N_ENV] = str(n)  # F29: `control --title` from its tools knows which session it is
-    if '--remote-control' in argv and silent() is not False:  # no push while it starts (silent: ever)
+    if '--remote-control' in argv and silent():  # no push after its start push (that one cannot be stopped)
         env[PRESENCE_ENV] = str(quiet_file(f'c{n}'))
-        if silent() is True:  # the file stays: this session never pushes
-            pass
-        elif plat.WINDOWS:
-            threading.Thread(target=unquiet_when_up, args=(f'c{n}', ''), daemon=True).start()
-        else:
-            try:
-                sp.Popen([*runner_cmd(), 'control', str(n), '--unquiet'], cwd=str(ROOT), stdin=sp.DEVNULL,
-                         stdout=sp.DEVNULL, stderr=sp.DEVNULL, start_new_session=True)
-            except OSError:
-                quiet_file(f'c{n}', on=False)
-                env.pop(PRESENCE_ENV)
     if not plat.WINDOWS:  # exec: the pid in the file is the session's own
         pidf.write_text(f'{os.getpid()} {sid}', encoding='utf-8')
         os.execvpe(argv[0], argv, env)

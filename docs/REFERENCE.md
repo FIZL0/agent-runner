@@ -179,7 +179,7 @@ task to fix X" (it files it with `plan add`), "do X now" (it uses `take`, never 
   it (asked once a run): an older Claude Code starts without it, so its app sessions get no control brief,
   and `run.log` says to update. The run's end ends it. The slots stay local unless `[run]
   remote_slots = true`, which starts each as "<task title> · <repo> s2 · B646". That is off by default and not
-  recommended: every slot start pushes to the phone (see Quiet launch below). Watch hidden slots through
+  recommended: every slot start pushes to the phone (see Phone pushes below). Watch hidden slots through
   status and control sessions instead.
 - **`remote = "auto"`, the default**, is on when Remote Control can work: Claude Code on a claude.ai login.
   It is off, with one `run.log` line saying why (`remote control off: …`), when the backend is pi,
@@ -187,17 +187,16 @@ task to fix X" (it files it with `plan add`), "do X now" (it uses `take`, never 
   `_FOUNDRY` is set, `ANTHROPIC_BASE_URL` names a host other than api.anthropic.com, or Claude Code's
   "Enable Remote Control?" has not been answered yes. `true` forces it on (never for pi), `false`
   keeps it off; any other value is refused.
-- **Quiet launch.** Every Remote Control session the run starts gets `CLAUDE_CLIENT_PRESENCE_FILE` (while that
-  file exists Claude Code sends no mobile push; 2.1.181+). A control session's `.runner/quiet-c<N>` is made
-  as it starts and removed once its claude.ai/code link shows in its pane (`control N --unquiet`, a small
-  detached helper, watches; without tmux, after 30 s); the control server's `.runner/quiet-server` once a link
-  shows in its log. Slots with `remote_slots` keep `.runner/quiet-slots` for good and get
-  `agentPushNotifEnabled: false` in their `--settings` (no PushNotification tool). Known limit: Remote
-  Control's "session ready" push goes out as a session registers, before the presence file can count, so
-  each Remote Control slot start, and most likely each control session start, still pushes. No setting or
-  environment variable stops it, short of turning off the Claude app's notifications on the phone.
-  `[run] silent` sets this: `"launch"` (the default) as above; `true` keeps every file for good, so no
-  session the run starts ever pushes; `false` sets none, and Claude Code pushes as it would anyway.
+- **Phone pushes.** Each Remote Control session the run starts (a control session, the control server, a slot
+  with `remote_slots`) pushes to the phone as it starts: Remote Control's "session ready" push goes out as the
+  session registers, and no setting or environment variable in Claude Code (checked up to 2.1.330) stops it,
+  short of turning off the Claude app's notifications on the phone. `[run] silent` (true/false, default
+  false) is about the pushes after that. `false`: Claude Code pushes as it would for any session. `true`:
+  each session gets `CLAUDE_CLIENT_PRESENCE_FILE` naming a file kept for good (`.runner/quiet-c<N>`,
+  `.runner/quiet-server`, `.runner/quiet-slots`; while it exists Claude Code sends no mobile push, 2.1.181+),
+  so nothing pushes after the start; slots also get `agentPushNotifEnabled: false` in their `--settings` (no
+  PushNotification tool). The old `silent = "launch"` (quiet only while a session started, which never
+  stopped the start push) reads as `false`, with one `run.log` line.
 
 ### status and since
 
@@ -1004,7 +1003,7 @@ lean = true               # sessions get Bash/Read/Edit/Write/Artifact only, no 
 remote = "auto"           # control sessions on Remote Control, and a control server to start more from claude.ai/code or the Claude apps; Enter in the runner's pane opens it. auto: on where it can work (see Control sessions); true/false force it
 remote_slots = false      # the slots on Remote Control too ("<task title> · <repo> s2 · B646"); not
                           # recommended: every slot start pushes to the phone
-silent = "launch"         # phone pushes from those sessions: launch = none while they start, true = none ever, false = Claude Code's usual
+silent = false            # phone pushes from those sessions after each one's start push (that one cannot be stopped): true = none, false = Claude Code's usual
 control = true            # a run opens control session c1 beside it; false: none (`agent-runner control` still works)
 control_idle = "3h"       # close idle control sessions 2, 3, … (never c1) once quiet this long, Claude spoke last, its last message is no open question, and nothing runs in it (a background task or Monitor; the needs-you watch does not count): process ended, controlN.pid removed, transcript kept (`claude --resume <sid>`); false: none closed idle
 control_idle_quick = "5m"   # a session opened for one ask (a feed reply, `control --new --ask`) where the person sent only that message, a task got queued (`plan add` printed "added <ID>") and the last message is no open question: closed after this instead (looked at every 5 min, so 5-10 min); false: control_idle

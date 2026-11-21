@@ -617,16 +617,16 @@ def slot_env(n: int | None) -> list[str]:
 PRESENCE_ENV = 'CLAUDE_CLIENT_PRESENCE_FILE'
 
 
-def silent() -> bool | str:
-    """`[run] silent`: 'launch' (a Remote Control session is quiet only while it starts), True (quiet for good),
-    False (no presence file: Claude Code pushes as it would for any session)."""
+def silent() -> bool:
+    """`[run] silent`: True (a presence file for good: no push after each session's start push), False (no
+    presence file: Claude Code pushes as it would for any session)."""
     return C.run['silent']
 
 
 def quiet_file(who: str, on: bool = True) -> Path:
     """`<notes>/quiet-<who>`, the file a Remote Control session's CLAUDE_CLIENT_PRESENCE_FILE names: made (`on`) or
-    removed. "slots" is kept for good (a slot's later pushes stay quiet; not its start push, see PRESENCE_ENV);
-    a control session's and the control server's are there only while it starts, so its later pushes arrive."""
+    removed. Kept for good while it is named, so the session's later pushes stay quiet; never its start push
+    (see PRESENCE_ENV)."""
     f = C.notes(f'quiet-{who}')
     try:
         f.touch() if on else f.unlink(missing_ok=True)

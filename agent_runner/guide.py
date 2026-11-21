@@ -56,7 +56,8 @@ recommend the one change in one line, `[table] key = value`: what it does, and a
   - "too many control sessions", "close them faster": `[run] control_idle = "1h"` (idle ones close sooner;
     `[run] control_idle = false` keeps them open)
   - "too many agents", "fewer sessions": `[run] slots = 2` (or `{cmd} slots 2` for the run that is up)
-  - "stop pushing to my phone": `[run] silent = true`; "not on my phone at all": `[run] remote = false`
+  - "stop pushing to my phone": `[run] silent = true` (each session's start push still comes; nothing stops
+    it); "not on my phone at all": `[run] remote = false`
   - "stop before my usage runs out": `[run] weekly_max = 70` / `[run] session_max = 70`
   - "skip the review on small fixes": `[run] review_min_lines = 150`; none at all: `[run] review = false`
 On yes, make it: this person's or machine's taste (slots, usage caps, phone, control sessions) in

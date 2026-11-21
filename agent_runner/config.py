@@ -116,8 +116,8 @@ DEFAULTS: dict = {
                                 # the run, watched and steered from claude.ai/code and the Claude apps; auto = on
                                 # when it can work (Claude Code on a claude.ai login), true/false force it
         'remote_slots': False,  # the slots on Remote Control too, each "<task title> · <repo> s2 · B646"
-        'silent': 'launch',     # phone pushes from the run's Remote Control sessions: launch = none while they
-                                # start (later ones arrive), true = none ever, false = Claude Code's usual
+        'silent': False,        # phone pushes from the run's Remote Control sessions: true = none after each
+                                # one's start push (that one cannot be stopped), false = Claude Code's usual
         'control': True,        # a run opens control session c1 beside it (`agent-runner control`); false: none
         'control_idle': '3h',   # the run closes control sessions 2, 3, … (never c1) quiet this long with Claude
                                 # last and nothing running in them; transcripts kept. false: none closed idle
@@ -534,8 +534,12 @@ class Config:
             raise SystemExit('agent-runner: [run] include_task_id_in_commit must be a boolean')
         if not (isinstance(self.run['remote'], bool) or self.run['remote'] == 'auto'):
             raise SystemExit(f"agent-runner: [run] remote must be 'auto', true or false, not {self.run['remote']!r}")
-        if not (isinstance(self.run['silent'], bool) or self.run['silent'] == 'launch'):
-            raise SystemExit(f"agent-runner: [run] silent must be 'launch', true or false, not {self.run['silent']!r}")
+        if self.run['silent'] == 'launch':  # C20: the quiet launch is gone (it never stopped the start push)
+            self.run['silent'] = False
+            self.warnings.append("[run] silent = 'launch' is gone (no setting stops a Remote Control session's start "
+                                 'push), so it reads as false; set silent = true or false')
+        if not isinstance(self.run['silent'], bool):
+            raise SystemExit(f"agent-runner: [run] silent must be true or false, not {self.run['silent']!r}")
         if self.run['comment_policy'] not in ('normal', 'minimal'):
             raise SystemExit("agent-runner: [run] comment_policy must be 'normal' or 'minimal'")
         self.run['backend'] = backend  # settled here, not a setting: `slots.backend()` reads it

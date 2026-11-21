@@ -16,6 +16,13 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
   `{ idle = true }` queues one when the run goes idle with landed work, once per idle spell; both may be set.
   Never while a release task is open, nor with nothing landed since the last release. The run log and
   `status`'s lately say `queued V<n> (auto_release: 10 landed)` or `(auto_release: idle)` (F63).
+- The quiet launch is gone. Each Remote Control session the run starts pushes to the phone as it starts, and
+  nothing can stop that: Remote Control sends its "session ready" push as the session registers, before a
+  presence file can count, and no setting or environment variable in Claude Code (up to 2.1.330) turns it
+  off. `[run] silent` is now true or false, default false: `true` keeps a presence file for good, so no push
+  comes after the start one (as before); `false` is Claude Code's usual. A config that still says
+  `silent = "launch"` reads as false, with one `run.log` line. `control N --unquiet` is gone. Slots with
+  `remote_slots` now keep their presence file only under `silent = true` (C20).
 
 ## 0.58.3 (2026-11-21)
 

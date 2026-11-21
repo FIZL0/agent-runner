@@ -961,7 +961,7 @@ def test_background(repo: Path):
 
 def test_remote_auto(tmp: Path):
     """[run] remote = 'auto' (the default): on for a Claude Code session on a claude.ai login, off with a reason
-    otherwise; true/false force it; the config takes nothing else. And the quiet launch's presence files."""
+    otherwise; true/false force it; the config takes nothing else. And [run] silent's presence files."""
     from agent_runner import config
     d = tmp / 'remote-auto'
     d.mkdir()
@@ -1022,8 +1022,8 @@ def test_remote_auto(tmp: Path):
             check(not R.remote_on(), 'false keeps it off')
             eq(R.remote_line(), '', 'and logs nothing')
 
-    # the quiet launch: slots keep their presence file, so they never push; notifications off in their settings
-    with mock.patch.dict(R.C.run, {'remote_slots': True}):
+    # silent = true: slots keep their presence file, so they push only as they start; notifications off in settings
+    with mock.patch.dict(R.C.run, {'remote_slots': True, 'silent': True}):
         env = R.env_vars(R.slot_env(2))
         flags = R.agent_flags('sid-q', 'opus', 30)
     with mock.patch.dict(os.environ, {'CLAUDE_CODE_TMPDIR': ''}):
@@ -1040,19 +1040,24 @@ def test_remote_auto(tmp: Path):
     with mock.patch.dict(R.C.run, {'remote_slots': True, 'silent': False}):
         check(R.PRESENCE_ENV not in R.env_vars(R.slot_env(2)), 'silent = false: a remote slot has no presence file')
         check('agentPushNotifEnabled' not in R.agent_flags('sid-q', 'opus', 30)[-1], 'nor the push settings')
-    # a control session's (and the server's) file goes once its link shows
-    log_f = R.C.notes('quiet-test.log')
-    log_f.write_text('old https://claude.ai/code line\n', encoding='utf-8')
-    q = R.quiet_file('test')
-    t = threading.Thread(target=R.unquiet_when_up, args=('test',),
-                         kwargs={'log_file': log_f, 'since': log_f.stat().st_size, 'wait': 20})
-    t.start()
-    time.sleep(1.5)
-    check(q.exists(), 'quiet while the session starts (an old link in the log does not count)')
-    with open(log_f, 'a', encoding='utf-8') as fh:
-        fh.write(f'up: {R.REMOTE_URL}/session_abc\n')
-    t.join(10)
-    check(not q.exists() and not t.is_alive(), 'and loud again once its link shows')
+    # C20: [run] silent is true or false, default false; the quiet launch's 'launch' reads as false, said once
+    for v, want in (('true', True), ('false', False)):
+        (repo / 'runner.toml').write_text(f'[run]\nsilent = {v}\n', encoding='utf-8')
+        eq(config.Config(repo).run['silent'], want, f'[run] silent = {v} is taken')
+    (repo / 'runner.toml').write_text('[run]\n', encoding='utf-8')
+    eq(config.Config(repo).run['silent'], False, 'silent defaults to false')
+    (repo / 'runner.toml').write_text('[run]\nsilent = "launch"\n', encoding='utf-8')
+    cfg = config.Config(repo)
+    eq(cfg.run['silent'], False, "silent = 'launch' is not refused: it reads as false")
+    eq(len([w for w in cfg.warnings if 'silent' in w and 'launch' in w]), 1, 'with one run.log line')
+    (repo / 'runner.toml').write_text('[run]\nsilent = "yes"\n', encoding='utf-8')
+    try:
+        config.Config(repo)
+        check(False, 'silent = "yes" is refused')
+    except SystemExit as e:
+        check('silent' in str(e), 'silent = "yes" is refused', str(e))
+    with mock.patch.dict(R.C.run, {'remote_slots': True, 'silent': False}):
+        check(R.PRESENCE_ENV not in R.env_vars(R.slot_env(2)), 'silent = false (the default): no presence file')
 
 
 def test_control_server_old_agent(repo: Path, tmp: Path):
@@ -7108,18 +7113,6 @@ def test_claude_drift_b45(repo: Path, tmp: Path):
         R.CLAUDE_VERSION[:] = ['2.1.401']
         new()
         eq(len(drifts('remote-answer')), 2, 'the next Claude Code version that still lacks it is told again')
-        R.CLAUDE_VERSION[:] = ['2.1.402']  # c1 and the other sessions: unquiet_when_up reads their pane too
-        with mock.patch.object(R, 'tmux', fake_tmux), mock.patch.object(R.time, 'sleep', lambda s: None), \
-                mock.patch.dict(R.C.run, {'remote': True}):
-            R.unquiet_when_up('c1', '%45', wait=0.05)
-            eq(len(drifts('remote-answer')), 3, 'c1 up on Remote Control without remoteDialogSeen: told')
-            pane.update(out='starting…\n')
-            R.unquiet_when_up('c1', '%45', wait=0.05)
-            eq(len(drifts('link')), 2, 'c1 showing no link in its wait: told')
-            pane.update(rc=1)
-            R.CLAUDE_VERSION[:] = ['2.1.403']
-            R.unquiet_when_up('c1', '%45', wait=0.05)
-            eq(len(drifts('link')), 2, 'a closed pane: nothing')
     finally:
         R.CLAUDE_VERSION[:] = saved_version
         if saved_cj is None:

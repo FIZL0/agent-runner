@@ -25,7 +25,6 @@ from agent_runner.state import (C, commit_plan, git, HIDDEN, init, log, MERGE, n
 from agent_runner.brief import has_sheet
 from agent_runner.slots import (attach_target, backend, background_env, background_session, entries, marker_pid, MUX,
     pi, PRESENCE_ENV, quiet_file, remote_on, REMOTE_URL, send_to_pane, silent, tmux, TmuxMux, transcript, window)
-from agent_runner.slots import link_drift, remote_answer_drift
 from agent_runner.merge import gate_alive
 
 
@@ -592,43 +591,6 @@ def hand_hook_exclude(root: Path) -> None:
         pass
 
 
-QUIET_WAIT = 30  # s a starting session stays quiet where its pane cannot be read (no tmux)
-
-
-def unquiet_when_up(who: str, pane: str = '', log_file: Path | None = None, wait: float | None = None,
-                    since: int = 0) -> None:
-    """Remove `quiet_file(who)` once its session is up: its claude.ai/code link shows in tmux pane `pane`, or in
-    `log_file` past byte `since` (the control server's); or `wait` s (CONTROL_LINK_WAIT) have passed; with
-    neither to read, after QUIET_WAIT s."""
-    wait = CONTROL_LINK_WAIT if wait is None else wait
-    deadline = time.monotonic() + (wait if pane or log_file else QUIET_WAIT)
-    linked = None  # B45: did the pane, still open, show its link?
-    while time.monotonic() < deadline:
-        if pane:
-            shown = tmux('capture-pane', '-p', '-J', '-t', pane, '-S', '-200')
-            if shown.returncode:
-                linked = None
-                break
-            linked = bool(SESSION_LINK.search(shown.stdout or ''))
-            if linked:
-                break
-        elif log_file:
-            try:
-                with open(log_file, 'rb') as fh:
-                    fh.seek(since)
-                    if REMOTE_URL.encode() in fh.read():
-                        break
-            except OSError:
-                pass
-        time.sleep(1)
-    quiet_file(who, on=False)
-    if pane and linked is not None and remote_on():  # B45 spots 2 and 3, for c1 and the other sessions
-        if linked:
-            remote_answer_drift(who)
-        else:
-            link_drift(who, wait)
-
-
 def control_default_command(root: Path) -> str:
     """tmux's default-command for the run's background session: every pane or window a person opens there
     becomes a control session in the main checkout; a shell stays if one cannot start."""
@@ -658,7 +620,7 @@ def start_control() -> None:
     """The run opens control session c1 beside it, unless `[run] control = false` or c1 already runs (it outlives
     a stopped run). With `[run] remote` it opens blank (no opening summary, so no tokens until the person types)
     and local (`--local`: no Remote Control, so no second app entry beside the control server's "<repo> ·
-    control" and no start push; no quiet-c1 presence file either). tmux: under the runner's pane, or in the background session's own window, whose
+    control" and no start push). tmux: under the runner's pane, or in the background session's own window, whose
     default-command makes every new pane a control session. Windows: a console of its own (hidden in the
     background run). Linux and macOS with no tmux pane to open it in (a hidden run): a pseudo-terminal with no
     window (`hidden_control`, F59)."""
@@ -1249,10 +1211,9 @@ def keep_control_server() -> None:
     while True:
         proc = None
         if not (pid := control_server_live()):
-            since = out.stat().st_size if out.exists() else 0
             err_since = err.stat().st_size if err.exists() else 0
             env = control_env()
-            if silent() is not False:  # silent while it starts (silent = true: for good)
+            if silent():  # no push after its start push (that one cannot be stopped)
                 env[PRESENCE_ENV] = str(quiet_file('server'))
             with open(out, 'ab') as fh, open(err, 'ab') as eh:
                 try:
@@ -1262,9 +1223,6 @@ def keep_control_server() -> None:
                     quiet_file('server', on=False)
                     log(f'control: the control server did not start: {e}')
                     return
-            if silent() == 'launch':
-                threading.Thread(target=unquiet_when_up, args=('server',), kwargs={'log_file': out, 'since': since},
-                                 daemon=True).start()
             pid = proc.pid
             pidf.write_text(str(pid), encoding='utf-8')
             rc_record('server', f'{ROOT.name} · control', pid, os.getpid())  # B12
