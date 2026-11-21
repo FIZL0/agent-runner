@@ -1209,6 +1209,10 @@ def test_pane_id_not_a_path(repo: Path, tmp: Path):
     print('B52: a git that answers with a tmux pane id gives no directory: nothing is made from it')
     from agent_runner import config as CF
     real = subprocess.run
+    # T12: the git-ignored %9 folders that runs before B52 left in a checkout are not this test's: count only
+    # the ones that appear while it runs (the merge gate's worktree had one, so a check for any %9 failed there)
+    where = (tmp, repo, Path.cwd())
+    before = {p for d in where for p in d.glob('%*')}
     pane = lambda argv, *a, **k: subprocess.CompletedProcess(argv, 0, '%9\n', '')  # noqa: E731
     with mock.patch.object(subprocess, 'run', pane):
         try:
@@ -1226,7 +1230,8 @@ def test_pane_id_not_a_path(repo: Path, tmp: Path):
         return real(argv, *a, **k)
     with mock.patch.object(subprocess, 'run', common_pane):
         eq(CF.main_checkout(repo), repo.resolve(), 'main_checkout: a bad --git-common-dir answer falls back to the checkout')
-    check(not (tmp / '%9').exists() and not Path('%9').exists(), 'and no %9 folder anywhere')
+    new = {p for d in where for p in d.glob('%*')} - before
+    check(not new, 'and no %9 folder anywhere', sorted(map(str, new)))
 
 
 def tmux_run(calls: list, out: str = '%9\n'):
