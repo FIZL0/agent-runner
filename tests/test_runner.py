@@ -1295,7 +1295,11 @@ def test_control(repo: Path):
     f = R.control_settings()
     eq(f, repo / '.runner' / 'control-settings.json', 'the file is <notes>/control-settings.json')
     eq(json.loads(f.read_text(encoding='utf-8')), data, 'and holds that')
-    brief = R.control_brief() + control_pages(R.C.command)  # B98: the long rules are in its guide pages
+    # B105: these checks read the full command forms; under a long runner path (Windows CI: python.exe plus the
+    # run path) the brief passes BRIEF_MAX and says them bare (B104, tested in test_control), so lift the cap here
+    from agent_runner import control as RC
+    with mock.patch.object(RC, 'BRIEF_MAX', 10 ** 6):
+        brief = R.control_brief() + control_pages(R.C.command)  # B98: the long rules are in its guide pages
     for want in ('control session', f'{R.C.command} status', f'{R.C.command} plan add', f'{R.C.command} take',
                  'Never edit code', f'{R.C.command} since', f'{R.C.command} since --follow', 'Open the session',
                  '/run · /since · /follow · /control · /pause · /stop · /slots', 'Start it only when asked',
