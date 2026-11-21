@@ -172,8 +172,10 @@ def feed_argv() -> list[str]:
     cmd = RUNNER  # B71: the runner itself: [run] command may wrap only part of it (openmx's ./kit has no since)
     cf = P.needs_cfg()  # B27: a reply to an item under Needs you is mapped to its id and answered here
     answer = FEED_ANSWER.format(cmd=cmd, needs=cf['heading'])
+    from agent_runner import voice  # F21: the person's wording, in the prompt: the feed has no file tools
+    system = voice.feed(RUNNER_BRIEF.format(cmd=cmd, repo=ROOT.name, answer=answer), C)
     return [plat.exe(C.run['agent']), RUNNER_START.format(cmd=cmd, repo=ROOT.name),
-            '--model', FEED_MODEL, '--system-prompt', RUNNER_BRIEF.format(cmd=cmd, repo=ROOT.name, answer=answer),
+            '--model', FEED_MODEL, '--system-prompt', system,
             '--tools', 'Bash,Monitor,PushNotification', '--permission-mode', 'dontAsk',
             '--allowedTools', f'Bash({cmd} *)', 'Monitor', 'PushNotification', '--strict-mcp-config',
             '--setting-sources', '', '--settings', json.dumps({'autoMemoryEnabled': False}),  # ~6k tokens a turn

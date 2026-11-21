@@ -193,6 +193,7 @@ COMMANDS = {
     'needs': ('runner', 'cmd_needs'),  # F44
     'upgrade': ('runner', 'cmd_upgrade'),  # B49
     'glossary': ('glossary', 'main'),  # F22
+    'voice': ('voice', 'main'),  # F21
 }
 
 

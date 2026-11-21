@@ -248,6 +248,13 @@ where the remaining tokens go, by kind of tool call.
   passing. Agents name new things with its terms. `agent-runner glossary [TERM]` shows it, `glossary add`,
   `forget`, `seed` and `scan` keep it (each commits itself); `[plan] glossary = false` turns it off (after
   [mattpocock/skills](https://github.com/mattpocock/skills) domain-modeling, MIT).
+- **Your wording sticks.** Tell a control session "say agent, not slot", "shorter" or "no ids" and it adds
+  one line to your voice file, `~/.config/agent-runner/voice.md` (all projects; `.runner/voice.md` for one
+  project, whose lines win), says which file, and words things that way from then on. When you ask "what?"
+  or say back what it said in your words, it says it again plainly and offers one line to add, added only on
+  yes. Every control session and the runner feed read the file. "show my wording" prints it, "forget X" drops
+  a line (`agent-runner voice show|add|forget`); `[run] voice` moves the file, `[run] voice_learn = "off"`
+  stops the offers.
 - **Start small.** `once`, then 2 or 3 slots. More only helps when the plan has that many tasks on
   different files, and usage limits are per account: five slots spend them five times as fast.
 

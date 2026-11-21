@@ -170,6 +170,26 @@ GRILL_BIG = ('- **Grilling** ("grill me", "poke holes", "stress-test it", and be
              'queue.')
 GRILL_MODES = ('ask', 'big', 'off')
 
+# F21: the person's wording (agent_runner/voice.py fits these into the control brief and the feed's prompt).
+VOICE = """\
+**The person's wording.** How this person wants things said, in voice files: {file} (all projects) and {project}
+(this project; its lines win where they disagree). Follow every line below in all you write to them: answers,
+the summary, status and since said back, push notifications, task text. On wording, a line here wins over this
+brief. Never ask about wording up front; it grows only from what they say.
+- Told ("say X not Y", "shorter", "no ids", "stop calling it Z"): at once run `{cmd} voice add "<the rule, short:
+  say agent, not slot>"` (`--project` when they say only here), say in one line which file it went to, and
+  follow it from then on in this session.
+{learn}- "show my wording": `{cmd} voice show`, said back as it prints. "forget X": `{cmd} voice forget X`, and say
+  which file it left.
+"""
+VOICE_LEARN = """\
+- Learned: when the person asks "what?" or "what does that mean", or says back in their own words what you
+  said, say it again plainly, then offer one line to add, worded so yes takes it:
+  `Add: say agent, not slot? yes`. Run `{cmd} voice add` only on yes; on anything else drop it and do not offer that line again.
+"""
+VOICE_FEED = ("The person's wording: follow these lines in your own replies and push notifications (lines from "
+              "the Monitor are still repeated exactly):")
+
 
 def grill_mode(c=None) -> str:
     """`[run] grill`: 'ask' (the default, and for anything it does not know), 'big', or 'off' (false too)."""

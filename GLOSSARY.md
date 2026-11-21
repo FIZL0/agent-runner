@@ -91,3 +91,10 @@ _Avoid_: inbox, waiting list, blocked
 **Shelve**:
 Setting a Needs you item aside: the task stays blocked but leaves the list until unshelved.
 _Avoid_: park, snooze, defer, drop
+
+**Voice file**:
+The person's own rules for how sessions word things, one per line, grown from what they say; global, with per-project lines that win.
+_Said_: my wording, voice
+_On screen_: The person's wording
+_In code_: voice.py, agent-runner voice, [run] voice
+_Avoid_: style guide, preferences

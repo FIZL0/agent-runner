@@ -141,6 +141,11 @@ DEFAULTS: dict = {
                                 # page with `agent-runner sheet <ID>`); Needs you shows one line and its link
         'grill': 'ask',         # F20: control sessions ask rounds of numbered questions before queueing:
                                 # ask = when the person says grill me / poke holes; big = also big vague asks; off
+        'voice': '',            # F21: the person's wording file (`agent-runner voice`), read by control sessions
+                                # and the runner feed; '' = ~/.config/agent-runner/voice.md; .runner/voice.md
+                                # adds this project's lines, which win where they disagree
+        'voice_learn': 'ask',   # ask = a session that had to say something again offers one wording line to add;
+                                # off = lines are added only when the person says so
         'review': True,         # F28: before done, a fresh subagent reads the diff against the task's brief (spec
                                 # only: missing, unasked, wrong); the commit ends 'review: …'; false: no review
         'review_min_lines': 50, # a diff smaller than this (changed lines) skips the review, unless the task has a

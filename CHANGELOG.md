@@ -4,6 +4,14 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Your wording sticks: a voice file you shape by talking. "say X not Y", "shorter", "no ids" or "stop calling
+  it Z" makes a control session add one line (`agent-runner voice add`, naming the file it went to); when you
+  ask "what?" or rephrase what it said, it says it again plainly and offers one line to add, added only on
+  yes (`[run] voice_learn = "off"` stops the offers). The global file is `~/.config/agent-runner/voice.md`
+  (`[run] voice` moves it); `.runner/voice.md` adds one project's lines, which win where they disagree.
+  Every control session's brief and the runner feed's system prompt carry it. "show my wording" is `voice
+  show`, "forget X" is `voice forget X` (F21).
+
 ## 0.57.0 (2026-11-20)
 
 - A release kind, `V`. `plan add V` files a release at the end of Next that waits for everything ahead of it
