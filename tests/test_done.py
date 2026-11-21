@@ -80,7 +80,7 @@ def test_docs_only_skips_gate():
         (root / 'docs/BAD.md').write_text('[x](#gone)\n', encoding='utf-8')
         r = run(root, 'done', 'B3', 'B3: anchors', env=env)
         check(r.returncode == 1, 'a docs-only diff whose docs check fails does not finish', r.stdout + r.stderr)
-        has(r.stderr, r'nothing ticked', 'and ticks nothing')
+        has(r.stderr, r'The docs check \(`python3 check_docs.py`\) failed: nothing ticked', 'and ticks nothing')
         eq(count(ran), 1, 'still without the gate')
         check('- [ ] **B3**' in (root / 'plan/TODO.md').read_text(), 'B3 stays open')
 

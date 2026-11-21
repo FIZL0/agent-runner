@@ -118,7 +118,8 @@ def main(argv: list[str] | None = None) -> int:
                 last = f'That is {n} failed gates on {a.id}: {PROG} refuses a fourth. Commit what is solid and'
             else:
                 last = f'Failed gate {n} of {MAX_FAILS}. Fix it, or commit what is solid and'
-            print(f'\nThe test gate failed: nothing ticked, nothing committed. {last}\n'
+            what = f'The docs check (`{c.run["docs_check"]}`)' if docs else 'The test gate'
+            print(f'\n{what} failed: nothing ticked, nothing committed. {last}\n'
                   f'    {PROG} {a.id} "<msg>" --blocked "<why + what unblocks it>"', file=sys.stderr)
             return 1
         if c.run['test'] and not docs:
