@@ -325,7 +325,7 @@ person explicitly asks for it; reading one is fine, and when a change there woul
 Answer in a few short lines: the person may be on a phone. """ + GLOSSARY + """
 
 **Guide pages.** `{cmd}` is the runner: a bare runner command below (`plan …`, `status`, `guide …`) means
-`{cmd} plan …`. The longer
+`{cmd} <that command>`. The longer
 rules are behind `{cmd} guide <topic>`: when an ask fits one, read its page first (once per session) and
 follow it: `summary`, `output` (/since, long output), `queue` (correct, order, split, park, drop, release;
 tell a running task), `watch`, `take`, `concepts`, `needs`, `grill`, `settings`, `voice`.

@@ -124,8 +124,10 @@ def test_brief_fits_session_start():
         brief = K.control_brief()
         check(len(brief) < K.BRIEF_MAX, f'a Windows-long [run] command still fits: {len(brief)} chars')
         check(all(r in brief for r in rules), 'and the wording is still carried inline')
-        check(f'`{win}` is the runner' in brief and f'`{win} plan …`' in brief,
+        check(f'`{win}` is the runner' in brief and f'`{win} <that command>`' in brief,
               'the Guide pages line still names the full command')
+        check(K.bare_commands(f'`{win}` is the runner: means `{win} <that command>`. `{win} status`', win)
+              .endswith('. `status`'), 'C21: bare_commands finds the end of the Guide pages line by its wording')
         check('`guide take`' in brief and '`plan add <KIND>' in brief, 'the commands after it are bare')
     check(voice.brief_fit('x', cmd, R.C) != '', 'brief_fit returns text')
 

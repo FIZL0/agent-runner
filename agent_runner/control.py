@@ -72,9 +72,10 @@ def control_brief() -> str:
 
 def bare_commands(core: str, cmd: str) -> str:
     """B104: the control brief with every runner command after its Guide pages line (`{cmd}` is the runner: a
-    bare runner command below means `{cmd} plan …`) in that bare form (`plan add …`, `guide take`), so a long
-    `[run] command` repeated in every line does not push the brief past BRIEF_MAX and the wording out of it."""
-    mark = f'`{cmd} plan …`'
+    bare runner command below means `{cmd} <that command>`) in that bare form (`plan add …`, `guide take`), so a
+    long `[run] command` repeated in every line does not push the brief past BRIEF_MAX and the wording out of it.
+    C21: the mark is that line's end, so it changes with the line's wording."""
+    mark = f'`{cmd} <that command>`'
     at = core.find(mark)
     if at < 0:
         return core
