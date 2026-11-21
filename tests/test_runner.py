@@ -1439,8 +1439,8 @@ def test_control(repo: Path):
         (repo / '.runner/control1.pid').write_text(f'{q.pid} {sid}')
         (repo / '.runner/control2.pid').write_text(f'{p.pid} new-sid')
         eq(R.control_live(2), p.pid, 'a control session that did /new stays live')
-        if not R.plat.WINDOWS:  # Windows: plat.cmdline cannot read another process's argv, so a live pid counts
-            eq(R.control_live(1), 0, 'a pid now held by another process is not a session')
+        eq((R.plat.cmdline(q.pid) or [])[-2:], ['--session-id', 'other'], "B87: plat.cmdline reads another process's argv (Windows too)")
+        eq(R.control_live(1), 0, 'a pid now held by another process is not a session')
         (repo / '.runner/control1.pid').write_text(f'{os.getpid()} {sid}')
         eq(R.control_number(), 1, 'c1 free: the first is c1')
         p2 = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)', 'control'])

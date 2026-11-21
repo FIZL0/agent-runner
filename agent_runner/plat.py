@@ -125,12 +125,65 @@ def children(pid: int) -> list[int]:
 
 
 def cmdline(pid: int) -> list[str] | None:
-    """The argv of `pid` (POSIX, from /proc), or None. Windows has no stdlib way to read another process's
-    command line; the Windows terminals keep each session's argv in their job file instead."""
+    """The argv of `pid` (POSIX from /proc, Windows from the process itself), or None when it cannot be read."""
+    if WINDOWS:
+        try:
+            return _windows_cmdline(int(pid))
+        except (OSError, AttributeError, ValueError):
+            return None
     try:
         return Path(f'/proc/{pid}/cmdline').read_text().split('\0')
     except OSError:
         return None
+
+
+def _windows_cmdline(pid: int) -> list[str] | None:
+    """The argv of `pid` (Windows 8.1+): NtQueryInformationProcess(ProcessCommandLineInformation) gives the
+    command line, split the way the C runtime does by CommandLineToArgvW. None when the process cannot be opened
+    (gone, or another user's)."""
+    import ctypes
+    from ctypes import wintypes
+
+    class UNICODE_STRING(ctypes.Structure):
+        _fields_ = [('Length', wintypes.USHORT), ('MaximumLength', wintypes.USHORT), ('Buffer', ctypes.c_void_p)]
+
+    k = ctypes.WinDLL('kernel32', use_last_error=True)
+    nt = ctypes.WinDLL('ntdll')
+    sh = ctypes.WinDLL('shell32', use_last_error=True)
+    k.OpenProcess.restype = wintypes.HANDLE
+    k.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+    k.CloseHandle.argtypes = [wintypes.HANDLE]
+    k.LocalFree.argtypes = [ctypes.c_void_p]
+    nt.NtQueryInformationProcess.restype = ctypes.c_long
+    nt.NtQueryInformationProcess.argtypes = [wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p, wintypes.ULONG,
+                                             ctypes.POINTER(wintypes.ULONG)]
+    sh.CommandLineToArgvW.restype = ctypes.POINTER(wintypes.LPWSTR)
+    sh.CommandLineToArgvW.argtypes = [wintypes.LPCWSTR, ctypes.POINTER(ctypes.c_int)]
+    h = k.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
+    if not h:
+        return None
+    try:
+        size = wintypes.ULONG(0)
+        nt.NtQueryInformationProcess(h, 60, None, 0, ctypes.byref(size))  # ProcessCommandLineInformation
+        if not size.value:
+            return None
+        buf = ctypes.create_string_buffer(size.value)
+        if nt.NtQueryInformationProcess(h, 60, buf, size, ctypes.byref(size)) != 0:
+            return None
+        us = UNICODE_STRING.from_buffer(buf)
+        line = ctypes.wstring_at(us.Buffer, us.Length // 2) if us.Buffer and us.Length else ''
+    finally:
+        k.CloseHandle(h)
+    if not line:
+        return []
+    argc = ctypes.c_int(0)
+    argv = sh.CommandLineToArgvW(line, ctypes.byref(argc))
+    if not argv:
+        return [line]
+    try:
+        return [argv[i] for i in range(argc.value)]
+    finally:
+        k.LocalFree(argv)
 
 
 CLOSE_GRACE = 10.0  # seconds a windowed process in the tree gets to close itself before the force kill
