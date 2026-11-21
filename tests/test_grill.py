@@ -72,7 +72,6 @@ text = (ROOT / 'GLOSSARY.md').read_text(encoding='utf-8')
 entries = dict(re.findall(r'^\*\*(.+?)\*\*:\n(.+?)(?=\n\n|\Z)', text, re.M | re.S))
 check('same goal on the same files' in entries.get('Same work', ''), "'same work' = same goal on the same files")
 check('one task per set of pages' in entries.get('Sweep', ''), "'sweep' = one task per set of pages")
-check('Grilling' in entries, 'grilling has an entry')
 
 print('the real brief: control --brief follows runner.toml')
 b = run(repo(), 'control', '--brief').stdout

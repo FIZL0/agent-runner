@@ -33,16 +33,12 @@ The mark a run or a take puts on a task it has started, so that no other run sta
 _Avoid_: lock, lease, reservation
 
 **Same work**:
-Two tasks with the same goal on the same files; the second is a duplicate, so word tasks apart by goal or files.
+Two tasks with the same goal on the same files.
 _Avoid_: similar task, overlap, related
 
 **Sweep**:
-Work over many pages or files, queued as one task per set of pages so each can land and be checked alone.
+Work over many pages, queued as one task per set of pages.
 _Avoid_: pass, batch, bulk task
-
-**Grilling**:
-Rounds of numbered questions, each with a recommended answer, a control session asks before queueing a big or vague ask, until nothing is left open.
-_Avoid_: interview, questionnaire, Q&A
 
 ### The run
 

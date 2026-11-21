@@ -12,7 +12,7 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
   ask that becomes several tasks is shown as a numbered breakdown of vertical slices (prefactor first, ordered
   with `--after`) and queued on one yes. `agent-runner guide grill` holds the how. New `[run] grill`: `ask` (the
   default, only when asked), `big` (also before queueing a big or vague feature ask) or `off`. GLOSSARY.md gains
-  same work, sweep and grilling (F20).
+  same work and sweep (F20).
 - Every repo the runner works keeps a GLOSSARY.md: each entry names one thing as the person says it, as the app
   shows it and as the code calls it, with a plain definition and the words to avoid. New command `agent-runner
   glossary [TERM]` (`show`, `add`, `forget`, `seed FILE`, `scan [WORD]`) writes it and commits itself in the
