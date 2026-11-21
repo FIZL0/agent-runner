@@ -603,7 +603,7 @@ def upgrade_argv(here: str | Path = __file__) -> list[str]:
     system python3 with uv's site-packages on sys.path, so sys.prefix is /usr and a pull ran in site-packages."""
     path = Path(here).resolve()
     parts = path.parts
-    if any('pipx' in p for p in parts):
+    if 'pipx' in parts:
         return ['pipx', 'upgrade', 'agent-runner']
     if 'uv' in parts:
         return ['uv', 'tool', 'upgrade', 'agent-runner']
