@@ -49,7 +49,7 @@ def control_brief() -> str:
     answer = CONTROL_ANSWER.format(cmd=RUNNER)
     from agent_runner import glossary  # F22: the glossary paragraph (and the seed ask), or none when it is off
     return glossary.fit(CONTROL.format(repo=ROOT.name, cmd=RUNNER, log=logf, watch=watch, needs=cf['heading'],
-                                       answer=answer), 'control', RUNNER)
+                                       answer=answer), 'control', RUNNER, C)
 
 
 def control_settings_data() -> dict:
