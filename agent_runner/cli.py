@@ -27,6 +27,7 @@ What you type
     agent-runner plan add B "Fix the menu flicker"
                                       new task B647 (B: the kind of work, see `plan kinds`)
     agent-runner plan B646            one task's full text
+    agent-runner glossary [TERM]      the project's words: person, screen, code (add|forget|seed|scan)
     agent-runner wip                  your main-checkout edits a merge moved aside (show|restore|drop NAME)
     agent-runner upgrade              update agent-runner; a run that is up restarts on it
 
@@ -191,6 +192,7 @@ COMMANDS = {
     'since': ('runner', 'cmd_since'),
     'needs': ('runner', 'cmd_needs'),  # F44
     'upgrade': ('runner', 'cmd_upgrade'),  # B49
+    'glossary': ('glossary', 'main'),  # F22
 }
 
 

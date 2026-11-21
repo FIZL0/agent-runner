@@ -4,6 +4,15 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Every repo the runner works keeps a GLOSSARY.md: each entry names one thing as the person says it, as the app
+  shows it and as the code calls it, with a plain definition and the words to avoid. New command `agent-runner
+  glossary [TERM]` (`show`, `add`, `forget`, `seed FILE`, `scan [WORD]`) writes it and commits itself in the
+  main checkout, as plan commands do; a repo with none gets one on the first add. The first control session in a
+  repo without one seeds 10-20 terms from the app's UI strings and code names straight away; control sessions
+  add a term the person uses without asking and mention it in passing, offer a rename when the person, screen
+  and code use three words for one thing, re-say things in glossary terms on "what?", and offer an ADR only for
+  a hard-to-reverse, surprising trade-off. Slot prompts say to name new things with its terms and add new ones.
+  `[plan] glossary` names the file; `false` turns it off (F22).
 - GLOSSARY.md (after mattpocock/skills domain-modeling, MIT) names agent-runner's own words once each: run,
   slot, task, kind, control session, c1, runner feed, board, take, gate, fixer, merge worktree, concept, Needs
   you (CONFIRM, DECIDE, BLOCKED), shelve, claim, notes dir, remote; each with a plain definition and the words

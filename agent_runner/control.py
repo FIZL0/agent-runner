@@ -47,7 +47,9 @@ def control_brief() -> str:
     watch = (CONTROL_FEED_WATCH if feed_on() else CONTROL_WATCH).format(repo=ROOT.name, cmd=RUNNER)
     cf = P.needs_cfg()  # B27: the heading's words
     answer = CONTROL_ANSWER.format(cmd=RUNNER)
-    return CONTROL.format(repo=ROOT.name, cmd=RUNNER, log=logf, watch=watch, needs=cf['heading'], answer=answer)
+    from agent_runner import glossary  # F22: the glossary paragraph (and the seed ask), or none when it is off
+    return glossary.fit(CONTROL.format(repo=ROOT.name, cmd=RUNNER, log=logf, watch=watch, needs=cf['heading'],
+                                       answer=answer), 'control', RUNNER, C)
 
 
 def control_settings_data() -> dict:
