@@ -4,6 +4,26 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+## 0.58.2 (2026-11-21)
+
+- Control sessions in a wrapped repo name `[run] command` (e.g. openmx's `./kit`) in their brief, as the
+  runner feed does since B92 (B93).
+- New panes in the background tmux session (`ar-<repo>`) open the control session again: its default-command
+  and environment target `=sess:`, since tmux 3.8 rejects a bare `=sess` and new panes opened a plain shell
+  (B94).
+- An inline concept page is updated, not queued, when a reply praises it but asks a question or a change; only
+  a plain go ("build it", "queue it", "go with B") queues the build (B95).
+- A handed-on ask (`control --new --ask`, from the runner feed) that gets number 1 starts a fresh session
+  under its given name instead of resuming c1's kept session (B96).
+- `upgrade` picks how to update by agent-runner's own install, not `sys.prefix`: a clone pulls, pipx upgrades
+  with pipx, any other install with `uv tool`. A wrapper running system python3 with uv's packages no longer
+  runs `git pull` in site-packages (B97).
+- The control brief stays under 9,500 characters (Claude Code showed only a 2KB preview of the 21.8KB brief):
+  the core rules are inline and the long ones behind `guide <topic>` (summary, output, queue, watch, settings,
+  glossary, voice); a long voice file is pointed at (B98).
+- `plan add V` skips the duplicate check, so a release whose text names the work it waits for adds without
+  `--force` (B99).
+
 ## 0.58.1 (2026-11-21)
 
 - The runner feed in a wrapped repo names `[run] command` (e.g. openmx's `./kit`) in its prompt and hints, and
