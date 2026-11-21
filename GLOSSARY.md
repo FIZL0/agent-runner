@@ -1,86 +1,85 @@
 # agent-runner
 
-agent-runner works a repo's plan unattended: it gives each task an agent of its own, tests the result and merges
-it, while a person steers from a control session. These are the words the person, the briefs and the code use
-for it; when two words exist for one thing, the first is the one to use and the others are under _Avoid_.
-(Format after mattpocock/skills domain-modeling, MIT.)
+agent-runner works a repo's plan unattended: each task gets an agent of its own, and the result is tested and
+merged while a person steers. These are the words the person, the briefs and the code use for it; where two
+words exist for one thing, use the term and avoid the rest. (Format after mattpocock/skills domain-modeling, MIT.)
 
 ## Language
 
 ### Work
 
 **Task**:
-One line of the plan (plan/TODO.md) with an id: a kind letter and a number, like `F48`.
-_Avoid_: ticket, issue, todo, job, item (an item is a line under Needs you)
+One piece of queued work in the plan, named by an id: its kind letter and a number, like `F48`.
+_Avoid_: ticket, issue, todo, job, item
 
 **Kind**:
-The letter that starts a task's id and says what sort of work it is: B bug, F feature, T tests and tooling, D docs, R research, C cleanup, K concept.
+The sort of work a task is, given by the letter its id starts with (bug, feature, tests, docs, research, cleanup, concept).
 _Avoid_: type, category, label
 
 **Concept**:
-A task of kind K, or a request to see options before anything is built: its outcome is a page of two or three options and a recommendation, and the build waits for the person's pick.
+Work whose outcome is a page of two or three options and a recommendation, built only once the person picks one.
 _Avoid_: mock-up task, design task, proposal
 
 **Gate**:
-The project's test command, which must pass before a task is ticked and again on the merge before it lands.
-_Avoid_: CI, checks, test suite (when the gate is meant)
+The project's test command that a task must pass before it is ticked, and its merge before it lands.
+_Avoid_: CI, checks, test suite
 
 **Take**:
-Doing a task now, outside the queue, in a worktree and branch of its own that the run then leaves alone.
-_Avoid_: grab, do it locally, work in the main checkout
+Doing a task now, outside the queue, in a worktree and branch of one's own that the run leaves alone.
+_Avoid_: grab, do it locally
 
 **Claim**:
-A run's or a take's hold on a task, visible to every other run on the repo, so nobody else starts it.
-_Avoid_: lock (a lock is the run's own one-at-a-time guard), lease, reservation
+The mark a run or a take puts on a task it has started, so that no other run starts it too.
+_Avoid_: lock, lease, reservation
 
 ### The run
 
 **Run**:
-One working of the plan by agent-runner, from start to stop: its slots, its merges and c1 beside it.
-_Avoid_: session (a session is one agent conversation), job, daemon
+One working of the plan by agent-runner, from start to stop.
+_Avoid_: session, job, daemon
 
 **Slot**:
-One of the run's places for a task: a worktree (`s1`, `s2`, …) and the agent session working a task in it.
-_Avoid_: worker, lane, agent (when the place is meant)
+One of the run's places to work a task in parallel: a worktree and the agent session in it.
+_Avoid_: worker, lane, agent
 
 **Merge worktree**:
-The run's own checkout where a finished task is merged and gated before the main branch moves, so the main checkout only ever gets tested work.
+The run's own checkout where finished work is merged and gated before the main branch moves.
 _Avoid_: merge checkout, staging, merge slot
 
 **Fixer**:
-A short agent session the run starts at merge time: a fix session when a merge conflicts, a repair session when the gate fails on the merge.
+A short agent session that rescues a merge: a fix session for a conflict, a repair session for a failed gate.
 _Avoid_: master, merge agent, resolver
 
 **Notes dir**:
-The folder in the main checkout (`[run] notes`, `.runner/` by default) where the run keeps its logs, ledger, wizards and pick sheets.
-_Avoid_: log dir, state dir, `.runner` (when the setting is meant)
+The folder in the main checkout where the run keeps its logs and the files it hands the person.
+_Avoid_: log dir, state dir
 
 ### Talking to the person
 
 **Control session**:
-A Claude Code session in the main checkout through which the person runs the run: they ask for status, steer it and shape the queue; the run's own agents do the tasks.
+An agent session in the main checkout through which the person reports on, steers and queues work for the run.
 _Avoid_: control window, coordinator, chat
 
 **c1**:
-The control session the run opens beside it when it starts, kept across runs and never closed for being idle.
-_Avoid_: control 1, the main session, the first control session
+The control session the run opens beside it when it starts, and keeps.
+_Avoid_: control 1, main session, first control session
 
 **Runner feed**:
-The lean session shown in the Claude apps as "<repo> · runner" that reposts what lands and what needs the person, and hands any other ask to a new control session.
-_Avoid_: feed session, Haiku session, the bot
+The lean session in the Claude apps that reposts what lands and what needs the person, and hands any other ask to a control session.
+_Avoid_: feed session, bot
 
 **Board**:
-The terminal pane that shows the same lines as the runner feed (what lands, what needs the person) without an agent behind it.
+The terminal pane that shows the runner feed's lines, with no agent behind it.
 _Avoid_: dashboard, status window
 
 **Remote**:
-Running the run's sessions on Remote Control (`[run] remote`), so the person steers from claude.ai/code or the Claude apps instead of the terminal.
-_Avoid_: cloud, online, headless. The git remote that merges are pushed to is the **push remote** (`[git] push`), never just "remote".
+Running the run's sessions on Remote Control, so the person steers from claude.ai/code or the Claude apps; the git remote that merges go to is the **push remote**.
+_Avoid_: cloud, online, headless, remote (for the push remote)
 
 **Needs you**:
-The list of what waits on the person, oldest first: concepts waiting for a pick, and tasks blocked on a person, each one a CONFIRM (check something by hand), a DECIDE (answer a question or a choice) or a BLOCKED (access, a login or a fix only a person can make). The person sees each in plain words, never the label.
-_Avoid_: inbox, waiting list, blocked (alone), the queue
+The list of what waits on the person: concepts waiting for a pick, and tasks blocked on a CONFIRM (a check by hand), a DECIDE (a question or a choice) or a BLOCKED (access or a fix only a person can make).
+_Avoid_: inbox, waiting list, blocked
 
 **Shelve**:
-Putting a Needs you item aside: the task stays blocked but leaves the list until it is unshelved.
-_Avoid_: park (a parked attempt is a `wip/` branch), snooze, defer, drop (drop removes the task)
+Setting a Needs you item aside: the task stays blocked but leaves the list until unshelved.
+_Avoid_: park, snooze, defer, drop
