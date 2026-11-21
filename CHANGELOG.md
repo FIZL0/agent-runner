@@ -8,6 +8,10 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
   "WARNING no test gate ([run] test is empty): merges go to main untested", and its merges stay local unless
   the config sets `[git] push_merge` itself; each merge logs the `git push` to publish it. Before, it merged
   and pushed untested work without a word (B36).
+- A hand plan edit in the main checkout no longer pushes the shared branch when merges stay local (no test
+  gate and `[git] push_merge` not set, or `push_merge = false`): it warns "merges stay local, and this edit
+  with them" and names the `git push` to publish them. Before, it published the untested merges a run had
+  kept local (B86).
 - `agent-runner cost --files` names what to split or stop re-reading: each file read (a Read, or what `cat`,
   `sed`, `grep`, … printed) by its results' tokens times the turns they stayed in context, with its
   re-reads, then the tokens exact-repeat commands added after their first run. In 20 slot sessions,

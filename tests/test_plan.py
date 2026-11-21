@@ -473,6 +473,7 @@ def test_hand_edits_push():
         git(root, 'commit', '-q', '--allow-empty', '-m', 'start')
         git(root, 'remote', 'add', 'origin', str(tmp / 'origin.git'))
         git(root, 'push', '-q', '-u', 'origin', 'main')
+        (root / 'runner.toml').write_text('[run]\ntest = "true"\n', encoding='utf-8')  # a gate: merges push
         origin = lambda: git(tmp / 'origin.git', 'log', '-1', '--format=%s', 'main')  # noqa: E731
         def add(what):
             r = run(root, 'plan', 'add', 'R', what, '--files', 'x.py')
@@ -514,6 +515,21 @@ def test_hand_edits_push():
         r = add('the loader')
         eq(r.warn, '', '[git] push = false: no warning')
         eq(git(tmp / 'origin.git', 'rev-parse', 'main'), before, 'and nothing is pushed')
+        # B86: with no test gate, a run keeps its untested merges local; a hand edit must not publish them
+        (root / 'runner.toml').write_text('', encoding='utf-8')
+        r = add('the archiver')
+        has(r.warn, r'^! plan edit committed here but not pushed: no test gate .*merges stay local.*'
+                    r'git push origin main', 'no gate: it says the merges stay local (B86)')
+        check('next merge' not in r.warn, 'and never that a merge publishes main')
+        eq(git(tmp / 'origin.git', 'rev-parse', 'main'), before, 'and nothing is pushed')
+        (root / 'runner.toml').write_text('[run]\ntest = "true"\n[git]\npush_merge = false\n', encoding='utf-8')
+        r = add('the bundler')
+        has(r.warn, r'push_merge is off: merges stay local', 'push_merge off: the same')
+        eq(git(tmp / 'origin.git', 'rev-parse', 'main'), before, 'and nothing is pushed')
+        (root / 'runner.toml').write_text('[git]\npush_merge = true\n', encoding='utf-8')
+        r = add('the stripper')
+        eq(r.warn, '', 'no gate but push_merge set: pushed without a word')
+        has(origin(), r'^plan: add R the stripper', 'and reaches origin')
 
 
 def test_similar():

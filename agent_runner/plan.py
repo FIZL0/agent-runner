@@ -2366,6 +2366,16 @@ def _run_up(c) -> bool:
     return True
 
 
+def _keeps_merges_local(c) -> str:
+    """Why a merge does not push the shared branch here (land.pushes_main's rule, B36), or '' when it does:
+    a hand edit's push then would publish those merges too (B86)."""
+    if not c.raw['git']['push_merge']:
+        return '[git] push_merge is off'
+    if not c.run['test'] and 'push_merge' not in c.given.get('git', ()):
+        return 'no test gate ([run] test is empty) and [git] push_merge is not set'
+    return ''
+
+
 def _push(root: Path) -> str:
     """B73: publish a hand edit's commit on the shared branch to `[git] push`, fast-forward only. Rejected:
     one rebase onto the remote (not while a run is up here: its merges land in this checkout, and its next
@@ -2378,6 +2388,8 @@ def _push(root: Path) -> str:
     branch = g('branch', '--show-current').stdout.strip()
     if not branch or branch != gitops.shared_name(root, remote):
         return ''  # a branch of your own: yours to push
+    if why := _keeps_merges_local(c):  # B86: pushing would publish the merges a run kept local
+        return f'{why}: merges stay local, and this edit with them; to publish them: git push {remote} {branch}'
     net = gitops._net(root)
     if not (r := net('push', '-q', remote, branch)).returncode:
         return ''
