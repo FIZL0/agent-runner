@@ -618,6 +618,15 @@ def control_pane_argv(target: str, background: bool, sess: str, root: Path, cmd:
     return ['tmux', *where, '-c', str(root), *envs, '-P', '-F', '#{pane_id}', cmd]
 
 
+def background_session_options(sess: str, root: Path, env: list[str]) -> list[list[str]]:
+    """The tmux commands (without `tmux`) that make every new pane in the background session `sess` a control
+    session: its default-command and environment. B94: the target is '=sess:' (exact session, its current
+    window), as tmux 3.8's set-option rejects a bare '=sess' ("no such session")."""
+    t = f'={sess}:'
+    return [['set-option', '-t', t, 'default-command', control_default_command(root)],
+            *[['set-environment', '-t', t, *e.split('=', 1)] for e in env]]
+
+
 def start_control() -> None:
     """The run opens control session c1 beside it, unless `[run] control = false` or c1 already runs (it outlives
     a stopped run). With `[run] remote` it opens blank (no opening summary, so no tokens until the person types)
@@ -637,9 +646,8 @@ def start_control() -> None:
         background = sess == background_session()
         env = [e for e in background_env() if not e.startswith(('AGENT_RUNNER=', 'AGENT_RUNNER_SLOT=', 'AGENT_RUNNER_KEEP='))]
         if background:
-            tmux('set-option', '-t', f'={sess}', 'default-command', control_default_command(ROOT))
-            for e in env:
-                tmux('set-environment', '-t', f'={sess}', *e.split('=', 1))
+            for args in background_session_options(sess, ROOT, env):
+                tmux(*args)
     if pid := control_live(1):
         log(f'control: c1 already runs (pid {pid})')
         return
