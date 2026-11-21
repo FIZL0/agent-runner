@@ -849,10 +849,6 @@ the running tasks merge. A run left up keeps picking up whatever you commit to T
    what a session pays for. A command that tops it is worth an outline (`[plan] outline`), a quieter
    flag, or a line in the prompt. It reads the last 7 days of this repo's slot and merge sessions, Claude
    and Pi (`--days N`, or name transcripts).
-7. A slot session whose context peaked past `[run] context_warn` (150k) ends with
-   `B32 peaked 168k (over 150k): runner.py 61k, test_runner.py 22k` in its exit line and in `since`: the
-   files (or kinds of call) whose results put the most in its context. Models get worse as context grows;
-   the fix is a smaller task or a split file. Nothing is stopped.
 
 ## Commands
 
