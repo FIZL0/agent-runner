@@ -1,0 +1,85 @@
+# agent-runner
+
+agent-runner works a repo's plan unattended: each task gets an agent of its own, and the result is tested and
+merged while a person steers. These are the words the person, the briefs and the code use for it; where two
+words exist for one thing, use the term and avoid the rest. (Format after mattpocock/skills domain-modeling, MIT.)
+
+## Language
+
+### Work
+
+**Task**:
+One piece of queued work in the plan, named by an id: its kind letter and a number, like `F48`.
+_Avoid_: ticket, issue, todo, job, item
+
+**Kind**:
+The sort of work a task is, given by the letter its id starts with (bug, feature, tests, docs, research, cleanup, concept).
+_Avoid_: type, category, label
+
+**Concept**:
+Work whose outcome is a page of two or three options and a recommendation, built only once the person picks one.
+_Avoid_: mock-up task, design task, proposal
+
+**Gate**:
+The project's test command that a task must pass before it is ticked, and its merge before it lands.
+_Avoid_: CI, checks, test suite
+
+**Take**:
+Doing a task now, outside the queue, in a worktree and branch of one's own that the run leaves alone.
+_Avoid_: grab, do it locally
+
+**Claim**:
+The mark a run or a take puts on a task it has started, so that no other run starts it too.
+_Avoid_: lock, lease, reservation
+
+### The run
+
+**Run**:
+One working of the plan by agent-runner, from start to stop.
+_Avoid_: session, job, daemon
+
+**Slot**:
+One of the run's places to work a task in parallel: a worktree and the agent session in it.
+_Avoid_: worker, lane, agent
+
+**Merge worktree**:
+The run's own checkout where finished work is merged and gated before the main branch moves.
+_Avoid_: merge checkout, staging, merge slot
+
+**Fixer**:
+A short agent session that rescues a merge: a fix session for a conflict, a repair session for a failed gate.
+_Avoid_: master, merge agent, resolver
+
+**Notes dir**:
+The folder in the main checkout where the run keeps its logs and the files it hands the person.
+_Avoid_: log dir, state dir
+
+### Talking to the person
+
+**Control session**:
+An agent session in the main checkout through which the person reports on, steers and queues work for the run.
+_Avoid_: control window, coordinator, chat
+
+**c1**:
+The control session the run opens beside it when it starts, and keeps.
+_Avoid_: control 1, main session, first control session
+
+**Runner feed**:
+The lean session in the Claude apps that reposts what lands and what needs the person, and hands any other ask to a control session.
+_Avoid_: feed session, bot
+
+**Board**:
+The terminal pane that shows the runner feed's lines, with no agent behind it.
+_Avoid_: dashboard, status window
+
+**Remote**:
+Running the run's sessions on Remote Control, so the person steers from claude.ai/code or the Claude apps; the git remote that merges go to is the **push remote**.
+_Avoid_: cloud, online, headless, remote (for the push remote)
+
+**Needs you**:
+The list of what waits on the person: concepts waiting for a pick, and tasks blocked on a CONFIRM (a check by hand), a DECIDE (a question or a choice) or a BLOCKED (access or a fix only a person can make).
+_Avoid_: inbox, waiting list, blocked
+
+**Shelve**:
+Setting a Needs you item aside: the task stays blocked but leaves the list until unshelved.
+_Avoid_: park, snooze, defer, drop

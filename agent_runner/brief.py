@@ -8,7 +8,7 @@ from pathlib import Path
 
 from agent_runner import plan as P
 from agent_runner.gitops import missing_remote
-from agent_runner.guide import SAFE_SHELL, VERIFY
+from agent_runner.guide import GLOSSARY, SAFE_SHELL, VERIFY
 from agent_runner.state import C, default_branch, git, ROOT
 
 
@@ -17,7 +17,7 @@ PROMPT = """Unattended run: nobody will answer questions, so never ask one — d
 Do task {tid} and nothing else. You are in a git worktree on branch task/{tid}: commit this repo's work here only. Never \
 touch the main checkout, and never merge, rebase or push the main branch. {publish}
 {others}{earlier}
-Rules: {rules}. {test}
+Rules: {rules}. {test} """ + GLOSSARY + """
 {journal}
 Finish with `{runner} done {tid} "<commit message>"`. It runs the test gate, ticks the task, commits and \
 pushes, and it refuses to tick when the gate fails. Run it, and any whole test suite, as a background command \
