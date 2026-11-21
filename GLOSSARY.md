@@ -147,3 +147,10 @@ _Said_: dedupe follow-ups
 _On screen_: folded Y2 into Y1
 _In code_: fold_doubles, join.renumber_doubles
 _Avoid_: dedupe, collapse, squash
+
+**Since digest**:
+What since prints by default: one line per task with its last state under Started, Landed and Stuck, capped, with the full log one --all away
+_Said_: since summary
+_On screen_: since yesterday 00:00: 2 started, 159 landed, 2 stuck
+_In code_: since_digest, since --all
+_Avoid_: event dump, raw log
