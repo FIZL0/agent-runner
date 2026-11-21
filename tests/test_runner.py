@@ -1472,7 +1472,7 @@ def test_control(repo: Path):
             mock.patch.object(R.sp, 'run', tmux_run(calls)), \
             mock.patch.object(R, 'remote_on', lambda: False):
         R.start_control()
-        check(any(c[:4] == ('set-option', '-t', '=ar-proj', 'default-command') for c in calls),
+        check(any(c[:4] == ('set-option', '-t', '=ar-proj:', 'default-command') for c in calls),
               "the background session's default-command is set", calls)
         check(any(c[:2] == ['tmux', 'new-window'] for c in calls if isinstance(c, list)), 'c1 opened in its window')
         check(('set-option', '-p', '-t', '%9', R.TAG, 'c1') in calls, 'tagged c1 (attach c1)')
