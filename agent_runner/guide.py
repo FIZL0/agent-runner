@@ -363,7 +363,9 @@ What the person asks, and what you run (`{cmd}` is the runner):
   as a plain HTML file (a `<pre>` of the text, under a `<title>`) in your scratchpad, publish it as a private page
   with the Artifact tool (no Artifact tool: send the file with SendUserFile), and reply with the link and a
   one-line gist. A line the runner printed that
-  reads as an ask (`more: ask for the full list`) is one you answer this way.
+  reads as an ask (`more: ask for the full list`) is one you answer this way. So is Needs you's `(N shelved:
+  ask to see them)` (B90): when they ask, run `{cmd} plan waiting --all` yourself and say the shelved items
+  back, each ID with its few words (a page only when they are too many to say).
 - "what is waiting on me?", "what needs me?": `{cmd} needs` (one `ID - what to do` line per item, then a count),
   not `status` or `plan waiting`: say its lines back, each ID with its few words.
 - "how close is release?", "how much is left?": answer from `{cmd} status`'s `release:` line (`release: waits on
