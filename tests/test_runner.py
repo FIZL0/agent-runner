@@ -1551,8 +1551,10 @@ def test_control(repo: Path):
           'no link to wait for without [run] remote', out.getvalue())
     with mock.patch.object(R, 'tmux', lambda *a, **k: subprocess.CompletedProcess(a, 1, '', '')), \
             mock.patch.dict(os.environ, {'TMUX_PANE': ''}), mock.patch.object(R.shutil, 'which', lambda x: '/usr/bin/tmux'), \
-            contextlib.redirect_stderr(io.StringIO()):
-        eq(R.control_new(), 1, 'no tmux session to open it in: an error, nothing opened')
+            mock.patch.object(R.feed, 'hidden_control', lambda n, c, wait=None: (0, 'test: not started')), \
+            contextlib.redirect_stderr(io.StringIO()) as err:
+        eq(R.control_new(), 1, 'no tmux session to open it in: started hidden (F59), here refused, so an error')
+    has(err.getvalue(), r'could not start hidden: test: not started', 'it said why')
 
     lines = ['=== 2026-11-19T21:02:45 F2: merged, ticked', '=== 2026-11-19T21:03:00 B9: not merged, parked as wip/B9 — x',
              '=== 2026-11-19T21:04:00 slot 1: F3 (Next; a.py)', '=== 2026-11-19T21:05:00 run idle: no task']
@@ -6503,14 +6505,17 @@ def test_hidden_run_lands(tmp: Path):
     here = os.getcwd()
     os.chdir(repo)
     watchdog = threading.Timer(300, lambda: R.ask_stop('test watchdog', force=True))  # never a hung suite
+    c1 = []  # F59: the hidden run starts c1 hidden; never a real control session from the suite
     try:
         watchdog.start()
-        with mock.patch.dict(os.environ, env, clear=True), mock.patch.object(R.shutil, 'which', no_tmux), \
+        with mock.patch.object(R.control, 'hidden_control', lambda n, c, wait=None: c1.append(n) or (0, 'test')), \
+                mock.patch.dict(os.environ, env, clear=True), mock.patch.object(R.shutil, 'which', no_tmux), \
                 mock.patch.object(R, 'nap', lambda s: saved_sleep(min(s, 0.5))):
             R.init(repo)
             R.C.run['agent'] = str(agent)
             eq(R.run(['once'], 'run'), 0, 'the run ends after its one task')
             eq(type(R.MUX).__name__, 'HiddenMux', 'no tmux: the slots ran hidden, not an error and not sequential')
+            eq(c1, [1], 'and the run tried to open c1 hidden (F59)')
     finally:
         watchdog.cancel()
         os.chdir(here)

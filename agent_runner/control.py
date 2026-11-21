@@ -579,12 +579,14 @@ def start_control() -> None:
     elif plat.WINDOWS:
         plat.spawn_console(cmd, ROOT, control_env(), hidden=HIDDEN[0])
         where, more = 'a console of its own' + (' (hidden)' if HIDDEN[0] else ''), ''
-    else:  # F59: a hidden run, or one outside a tmux session: c1 in a pseudo-terminal with no window
+    elif type(MUX).__name__ == 'HiddenMux':  # F59: a hidden run (no tmux, or outside a tmux session): no window
         pid, why = hidden_control(1, cmd)
         if not pid:
             log(f'control: c1 could not start hidden: {why}')
             return
         where, more = f'a hidden terminal (its output in {hidden_control_log(1)})', ''
+    else:
+        return
     log(f'control: c1 is up in {where} ({shown_cmd()} control opens another{more})')
 
 
