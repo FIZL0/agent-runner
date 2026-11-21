@@ -133,3 +133,10 @@ _Said_: fresh control session
 _On screen_: c1 starts a fresh session
 _In code_: control_sid(new_run=), CONTROL_FRESH, run_restart, control_bloated, --new-run
 _Avoid_: reset c1, new c1
+
+**Exact-repeat command**:
+the same shell line run again, word for word, in one session; its later results stay in context beside the first
+_Said_: repeated command
+_On screen_: exact-repeat commands
+_In code_: files_report, rep_kept
+_Avoid_: duplicate command

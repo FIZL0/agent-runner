@@ -8,6 +8,7 @@ subcommand or script: `git log`, `python3 tools/x.py`), the other tools by name.
     agent-runner cost                 the last 7 days of this repo's worker sessions (slots, merge fixes)
     agent-runner cost --days 1
     agent-runner cost FILE.jsonl …    any transcripts, Claude's or Pi's
+    agent-runner cost --files         by file read (Read, cat/sed/grep targets) and exact-repeat commands
 
 Tokens are estimated as characters / 4; context compaction is ignored, so long sessions read high.
 """
@@ -70,10 +71,13 @@ def call_kind(name: str, args: dict, by_file: bool = False) -> str:
     return kind(name, args)
 
 
-def session(path, by_file: bool = False) -> tuple[list[tuple[str, int, int]], int, int]:
+def session(path, by_file: bool = False, key=None) -> tuple[list[tuple[str, int, int]], int, int]:
     """(kind, chars, turn it arrived), the session's assistant turns, input tokens billed (cache reads too).
-    With `by_file`, a Read (Edit, Write) counts under its file's name, not 'read'.
+    With `by_file`, a Read (Edit, Write) counts under its file's name, not 'read'; with `key` (a function of
+    the tool's name and arguments), whatever it returns instead of the kind (F26: `(name, args)`).
     Claude writes one line per content block of a turn (one message id); Pi one per message."""
+    if key is None:
+        key = lambda n, a: call_kind(n, a, by_file)  # noqa: E731
     calls: dict[str, str] = {}
     out, turns, billed, last = [], 0, 0, None
     with open(path, encoding='utf-8', errors='replace') as f:
@@ -95,7 +99,8 @@ def session(path, by_file: bool = False) -> tuple[list[tuple[str, int, int]], in
                                                              'cache_creation_input_tokens', 'input', 'cacheRead',
                                                              'cacheWrite'))
             if role == 'toolResult':  # Pi: the result is a message of its own
-                out.append((calls.get(m.get('toolCallId'), (m.get('toolName') or 'unknown').lower()),
+                tid = m.get('toolCallId')
+                out.append((calls[tid] if tid in calls else key((m.get('toolName') or 'unknown').lower(), {}),
                             _text(m.get('content')), turns))
                 continue
             content = m.get('content')
@@ -103,10 +108,11 @@ def session(path, by_file: bool = False) -> tuple[list[tuple[str, int, int]], in
                 if not isinstance(b, dict):
                     continue
                 if b.get('type') in ('tool_use', 'toolCall'):
-                    calls[b.get('id')] = call_kind(b.get('name', ''), b.get('input') or b.get('arguments') or {},
-                                                   by_file)
+                    calls[b.get('id')] = key(b.get('name', ''), b.get('input') or b.get('arguments') or {})
                 elif b.get('type') == 'tool_result':
-                    out.append((calls.get(b.get('tool_use_id'), 'unknown'), _text(b.get('content')), turns))
+                    tid = b.get('tool_use_id')
+                    out.append((calls[tid] if tid in calls else key('unknown', {}), _text(b.get('content')),
+                                turns))
     return out, turns, billed
 
 
@@ -147,6 +153,106 @@ def filled(path, top: int = 3) -> list[tuple[str, int]]:
     return [(k, c // 4000) for k, c in sums.most_common(top) if c >= 4000]
 
 
+READERS = {'cat', 'head', 'tail', 'sed', 'grep', 'rg', 'nl', 'less', 'more', 'awk'}  # programs that print files
+PATTERN_FIRST = {'sed', 'grep', 'rg', 'awk'}  # their first operand is a script or pattern, not a file
+OPT_VALUE = {'head': {'-n', '-c'}, 'tail': {'-n', '-c'}, 'sed': {'-e', '-f'}, 'awk': {'-f', '-v', '-F'},
+             'grep': {'-e', '-f', '-m', '-A', '-B', '-C'},
+             'rg': {'-e', '-f', '-m', '-A', '-B', '-C', '-g', '--glob', '-t', '-T'}}  # options that take a value
+
+
+def _bash_reads(command: str) -> list[str]:
+    """The files a Bash line prints with cat, head, tail, sed, grep, rg, … (their operands, not patterns)."""
+    import shlex
+    out = []
+    for part in re.split(r'\s*(?:\|\|?|&&|;|\n)\s*', command.replace('\\\n', ' ').strip()):
+        try:
+            words = shlex.split(WRAP.sub('', part))
+        except ValueError:
+            words = WRAP.sub('', part).split()
+        if not words or os.path.basename(words[0]) not in READERS:
+            continue
+        prog = os.path.basename(words[0])
+        ops, skip, script = [], False, False
+        for w in words[1:]:
+            if skip:
+                skip = False
+                continue
+            if w in ('>', '>>', '<', '2>', '&>') or w[:1] in '<>' or w[:2] in ('2>', '&>'):
+                break  # a redirect: what follows is not read
+            if w.startswith('-') and w != '-':
+                script = script or (prog in PATTERN_FIRST and w in ('-e', '-f'))  # the pattern came as an option
+                skip = w in OPT_VALUE.get(prog, ())
+                continue
+            ops.append(w)
+        if prog in PATTERN_FIRST and not script:
+            ops = ops[1:]
+        out += [w for w in ops if w not in ('-', '.', '..') and not re.fullmatch(r'[\d,+\-]+[pd]?', w)]
+    return out
+
+
+def reads(name: str, args: dict) -> list[str]:
+    """F26: the files a call read, by name (`runner.py`): a Read's file, or a Bash line's cat/sed/grep/… targets."""
+    if not isinstance(args, dict):
+        return []
+    n = name.lower()
+    if n == 'read':
+        paths = [args.get('file_path') or args.get('path')]
+    elif n in ('bash', 'powershell'):
+        paths = _bash_reads(str(args.get('command', '')))
+    else:
+        return []
+    return [os.path.basename(str(p).rstrip('/\\')) or str(p) for p in paths if p]
+
+
+def files_report(paths, top: int = 20) -> list[str]:
+    """F26 `cost --files`: tokens in context (result size × turns kept) per file read, and what exact-repeat
+    commands (the same Bash line run again in one session) added, so the report names what to split or stop
+    re-reading. A Bash line that read several files shares its result among them evenly."""
+    calls, rereads, chars, kept = Counter(), Counter(), Counter(), Counter()
+    runs, rep_chars, rep_kept = Counter(), Counter(), Counter()
+    n = turns = 0
+    all_kept = 0
+    for p in paths:
+        try:
+            got, t, _ = session(p, key=lambda nm, a: (nm, a))
+        except OSError:
+            continue
+        n, turns = n + 1, turns + t
+        seen_files, seen_cmds = set(), set()
+        for (nm, a), c, at in got:
+            k = c * max(t - at, 1)
+            all_kept += k
+            fs = reads(nm, a)
+            for f in fs:
+                calls[f] += 1
+                rereads[f] += f in seen_files
+                seen_files.add(f)
+                chars[f] += c / len(fs)
+                kept[f] += k / len(fs)
+            if nm.lower() in ('bash', 'powershell') and isinstance(a, dict) and (cmd := str(a.get('command', '')).strip()):
+                runs[cmd] += 1
+                if cmd in seen_cmds:
+                    rep_chars[cmd] += c
+                    rep_kept[cmd] += k
+                seen_cmds.add(cmd)
+    if not n:
+        return ['no transcripts']
+    total, every = sum(kept.values()), all_kept or 1
+    out = [f'{n} sessions, {turns} turns; file reads ~{int(total) // 4:,} tokens in context, '
+           f'{100 * total / every:.0f}% of all tool results',
+           f'  {"file":32} {"reads":>6} {"re-reads":>8} {"result tok":>11} {"in context":>13}  share',
+           *(f'  {f[:32]:32} {calls[f]:6} {rereads[f]:8} {int(chars[f]) // 4:11,} {int(v) // 4:13,}  '
+             f'{100 * v / (total or 1):4.1f}%' for f, v in kept.most_common(top))]
+    rep = sum(rep_kept.values())
+    out += ['', f'exact-repeat commands: ~{rep // 4:,} tokens in context from runs after the first, '
+                f'{100 * rep / every:.0f}% of all tool results']
+    if rep_kept:
+        out.append(f'  {"command":48} {"runs":>5} {"repeat tok":>11} {"in context":>13}')
+        out += [f'  {" ".join(c.split())[:48]:48} {runs[c]:5} {rep_chars[c] // 4:11,} {v // 4:13,}'
+                for c, v in rep_kept.most_common(top)]
+    return out
+
+
 def worker_transcripts(days: float) -> list[Path]:
     """This repo's worker sessions: Claude's for each slot and merge worktree, and the run's Pi sessions."""
     from agent_runner import runner as R
@@ -163,6 +269,9 @@ def main(argv: list[str] | None = None) -> int:
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('files', nargs='*', help='transcripts (.jsonl); default: this repo\'s worker sessions')
     ap.add_argument('--days', type=float, default=7, help='how far back the default looks (default 7)')
+    ap.add_argument('--files', dest='by_file', action='store_true',
+                    help='by file read (Read, cat/sed/grep targets) and exact-repeat commands instead')
     a = ap.parse_args(argv)
-    print('\n'.join(report(a.files or worker_transcripts(a.days))))
+    paths = a.files or worker_transcripts(a.days)
+    print('\n'.join(files_report(paths) if a.by_file else report(paths)))
     return 0

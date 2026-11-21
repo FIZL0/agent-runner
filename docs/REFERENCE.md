@@ -855,7 +855,11 @@ the running tasks merge. A run left up keeps picking up whatever you commit to T
    `python3 tools/x.py`, `read`), by its results' size times the turns they stayed in context, since that is
    what a session pays for. A command that tops it is worth an outline (`[plan] outline`), a quieter
    flag, or a line in the prompt. It reads the last 7 days of this repo's slot and merge sessions, Claude
-   and Pi (`--days N`, or name transcripts).
+   and Pi (`--days N`, or name transcripts). `agent-runner cost --files` counts the same way per file read
+   (a Read, or the files a `cat`, `head`, `tail`, `sed`, `grep` or `rg` printed), with how many of those
+   reads were re-reads in the same session, so the top rows name a file worth splitting or an outline worth
+   adding; below it, what exact-repeat commands (the same Bash line run again in one session) added after
+   their first run.
 
 ## Commands
 
@@ -889,7 +893,8 @@ agent-runner take "TEXT" --kind K [--files A,B] [--here]
                                        queue it (as `plan add`) and take it in one step; --here (also with
                                        an ID) moves the main checkout's uncommitted edits into the worktree
 agent-runner resume ID...              continue each task's last session in its slot, once that slot is free
-agent-runner cost [--days N]           where the workers' tokens went, by kind of tool call
+agent-runner cost [--days N] [--files] where the workers' tokens went, by kind of tool call (--files: by
+                                       file read, and exact-repeat commands)
 agent-runner home [slots|plan]         where this project's worktrees and plan clone live
 agent-runner context [--check]         what every session loads, by file and section; --check fails over budget
 agent-runner help order                how to make one task wait for another

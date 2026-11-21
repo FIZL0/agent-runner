@@ -4,6 +4,10 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- `agent-runner cost --files` names what to split or stop re-reading: each file read (a Read, or what `cat`,
+  `sed`, `grep`, … printed) by its results' tokens times the turns they stayed in context, with its
+  re-reads, then the tokens exact-repeat commands added after their first run. In 20 slot sessions,
+  `runner.py` held 25% of file-read tokens and 95 of its 110 reads were re-reads (F26).
 - c1 no longer grows until it compacts: when a person starts a new run and c1's kept session last stood over
   `[run] context_warn` (150k by default), c1 starts a fresh session and its opening summary says so in one
   line; 4 of 32 control sessions had passed 150k. A restart keeps the session whatever its size: the

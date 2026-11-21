@@ -95,8 +95,46 @@ def test_filled():
         eq(cost.filled(Path(t) / 'none.jsonl'), [], 'no transcript: nothing')
 
 
+def test_reads():
+    print('cost: the files a call read (F26)')
+    b = lambda c: cost.reads('Bash', {'command': c})
+    eq(cost.reads('Read', {'file_path': '/w/s1/agent_runner/runner.py'}), ['runner.py'], 'a Read by file name')
+    eq(b('sed -n 1,80p agent_runner/runner.py'), ['runner.py'], "sed's script is not a file")
+    eq(b('grep -n "def main" a.py b.py | head -5'), ['a.py', 'b.py'], "grep's pattern is not a file, nor head's 5")
+    eq(b('cd /w && tail -n 40 .runner/run.log'), ['run.log'], "tail's -n takes a value")
+    eq(b('cat a.py > b.py'), ['a.py'], 'a redirect target is not read')
+    eq(b('git diff'), [], 'other programs read no file')
+    eq(b('grep -n x \\\n  a.py'), ['a.py'], 'a continued line')
+    eq(cost.reads('Edit', {'file_path': 'a.py'}), [], 'an Edit is not a read')
+
+
+def test_files_report():
+    print('cost --files: tokens per file read, and from exact-repeat commands (F26)')
+    with tempfile.TemporaryDirectory() as t:
+        f = write(Path(t) / 'c.jsonl', [
+            *claude_turn('m1', {'type': 'tool_use', 'id': 'a', 'name': 'Read', 'input': {'file_path': '/w/runner.py'}}),
+            result('a', 'x' * 4000),  # 1000 tokens, kept 4 turns
+            *claude_turn('m2', {'type': 'tool_use', 'id': 'b', 'name': 'Bash',
+                                'input': {'command': 'git log -3'}}),
+            result('b', 'x' * 400),  # 100 tokens, kept 3 turns
+            *claude_turn('m3', {'type': 'tool_use', 'id': 'c', 'name': 'Bash',
+                                'input': {'command': 'sed -n 1,80p agent_runner/runner.py'}}),
+            result('c', 'x' * 800),  # 200 tokens, kept 2 turns
+            *claude_turn('m4', {'type': 'tool_use', 'id': 'd', 'name': 'Bash',
+                                'input': {'command': 'git log -3'}}),
+            result('d', 'x' * 400),  # 100 tokens, kept 1 turn
+            *claude_turn('m5', {'type': 'text', 'text': 'done'}),
+        ])
+        out = '\n'.join(cost.files_report([f]))
+        has(out, r'^1 sessions, 5 turns; file reads ~4,400 tokens in context, 92% of all tool results', 'the header')
+        has(out, r'^  runner\.py +2 +1 +1,200 +4,400  100\.0%', 'two reads of one file: 1000×4 + 200×2, one a re-read')
+        has(out, r'exact-repeat commands: ~100 tokens in context from runs after the first, 2% ', 'repeats')
+        has(out, r'^  git log -3 +2 +100 +100$', 'the repeated command, by its second run only')
+        eq(cost.files_report([Path(t) / 'none.jsonl']), ['no transcripts'], 'no transcript: nothing')
+
+
 def main() -> int:
-    return report([test_kinds, test_sessions, test_filled])
+    return report([test_kinds, test_sessions, test_filled, test_reads, test_files_report])
 
 
 if __name__ == '__main__':
