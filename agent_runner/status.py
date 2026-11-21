@@ -17,6 +17,7 @@ from agent_runner.state import EV_DRIFT
 from agent_runner.state import EV_CONTEXT
 from agent_runner.brief import has_sheet, wizard_cmd, wizard_file
 from agent_runner.land import wip_lines
+from agent_runner.land import no_gate_line
 
 
 def tasks_left(ls: list[str]) -> tuple[int, int]:
@@ -508,6 +509,8 @@ def status_text(up: bool, st: dict, log_lines: list[str], titles: dict[str, str]
     merging, the last few merged / blocked / parked, and usage."""
     out = waiting_text(waiting, now=dt.datetime.fromtimestamp(now) if now else None, wips=wips)
     out.append(f'run up: {st.get("state", "starting")}' if up else 'no run is up')
+    if up and (nogate := no_gate_line()):
+        out.append(nogate)
     out += progress.splitlines()
     for n, tid in sorted(st.get('running', {}).items(), key=lambda kv: (not kv[0].isdigit(), kv[0].zfill(4))):
         title = titles.get(tid, '')

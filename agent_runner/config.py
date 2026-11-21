@@ -454,6 +454,8 @@ class Config:
             raw = {**raw, **{k: ({**raw.get(k, {}), **v} if isinstance(v, dict) and isinstance(raw.get(k), dict)
                                  else v) for k, v in mine.items()}}
             keep_local_ignored(self.local.parent)
+        # the keys the config files set, before defaults fill in the rest (B36: push_merge given explicitly)
+        self.given = {k: set(v) for k, v in raw.items() if isinstance(v, dict)}
         supplied = dict(raw.get('run', {}))
         infer = lambda run: run.get('backend') or (
             'pi' if Path(run.get('agent', 'claude').replace('\\', '/')).stem.lower() == 'pi' else 'claude')

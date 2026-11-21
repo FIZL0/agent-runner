@@ -6572,6 +6572,63 @@ def test_hidden_run_lands(tmp: Path):
     check('sequential' not in log, 'and no sequential run')
 
 
+def test_no_gate_b36(tmp: Path):
+    print('B36: a run with no test gate says so loudly at its start, in --dry-run and status, and lands without '
+          'pushing main unless [git] push_merge is set')
+    if R.plat.WINDOWS:
+        return
+    import contextlib
+    import io
+    (tmp / 'b36').mkdir()
+    repo = make_repo(tmp / 'b36')
+    toml = (repo / 'runner.toml').read_text(encoding='utf-8')
+    (repo / 'runner.toml').write_text(toml.replace('test = "python3 check.py"\n', ''), encoding='utf-8')
+    git(repo, 'commit', '-qam', 'no gate')
+    git(repo, 'push', '-q', 'origin', 'main')
+    pushed = git(tmp / 'b36' / 'origin.git', 'rev-parse', 'main')
+    agent, out = tmp / 'b36-agent', tmp / 'b36' / 'agent.out'
+    agent.write_text(LANDING_AGENT, encoding='utf-8')
+    agent.chmod(0o755)
+    which = R.shutil.which
+    no_tmux = lambda c, *a, **k: None if c == 'tmux' else which(c, *a, **k)
+    env = {k: v for k, v in os.environ.items()
+           if k not in ('TMUX', 'TMUX_PANE') and not (k.startswith('AGENT_RUNNER') and k != 'AGENT_RUNNER_NO_NOTIFY')}
+    env |= {'F40_RUN': str(RUN), 'F40_OUT': str(out), 'AGENT_RUNNER_HOME': str(tmp / 'b36' / 'home')}
+    saved_sleep, saved_mux = R.time.sleep, R.MUX
+    here = os.getcwd()
+    os.chdir(repo)
+    watchdog = threading.Timer(300, lambda: R.ask_stop('test watchdog', force=True))
+    try:
+        watchdog.start()
+        with mock.patch.object(R.control, 'hidden_control', lambda n, c, wait=None: (0, 'test')), \
+                mock.patch.dict(os.environ, env, clear=True), mock.patch.object(R.shutil, 'which', no_tmux), \
+                mock.patch.object(R, 'nap', lambda s: saved_sleep(min(s, 0.5))):
+            R.init(repo)
+            eq(R.C.run['test'], '', 'this repo has no gate')
+            with contextlib.redirect_stdout(io.StringIO()) as dry:
+                eq(R.run(['--dry-run'], 'run'), 0, 'dry run')
+            has(dry.getvalue(), r'WARNING no test gate .*merges go to main untested', '--dry-run warns first')
+            R.C.run['agent'] = str(agent)
+            eq(R.run(['once'], 'run'), 0, 'the run ends after its one task')
+    finally:
+        watchdog.cancel()
+        os.chdir(here)
+        R.MUX, R.MASTER_PANE, R.HIDDEN[0] = saved_mux, False, False
+        R.C.run['agent'] = 'claude'
+    log = (repo / '.runner/run.log').read_text(encoding='utf-8')
+    has(log, r'WARNING no test gate \(\[run\] test is empty\): merges go to main untested and stay local', 'the start warns')
+    has(git(repo, 'log', '--format=%s', 'main'), r'T1 from a hidden slot', 'the task landed on main')
+    eq(git(tmp / 'b36' / 'origin.git', 'rev-parse', 'main'), pushed, 'but main was not pushed, untested')
+    has(log, r'T1: merged, not pushed: no test gate .*git push origin main', 'and the log says how to push it')
+    has(R.status_text(True, {'state': '1 slot'}, [], {}, 0.0), r'^WARNING no test gate', 'status warns too')
+    R.C.given.setdefault('git', set()).add('push_merge')
+    try:
+        check(R.pushes_main(), '[git] push_merge set in the config: an untested merge is pushed')
+        has(R.no_gate_line(), r'and are pushed: \[git\] push_merge is set', 'and the warning says so')
+    finally:
+        R.C.given['git'].discard('push_merge')
+
+
 HIDDEN_CONTROL = r'''#!/usr/bin/env python3
 # F59: a stand-in control session in a hidden terminal: its link, whether it has a terminal, a line typed in.
 import os, sys
@@ -6951,7 +7008,7 @@ def main() -> int:
                        test_split_modules_c3, lambda: test_plan_last(repo), lambda: test_after_all(repo), lambda: test_release_kind(repo),lambda: test_release_push(repo),
                        lambda: test_help_order_and_bare_wizard(tmp), lambda: test_setup(tmp),
                        lambda: test_stop_countdown(repo), lambda: test_real_claude_json_guard(tmp),
-                       lambda: test_hidden_slots(repo, tmp), lambda: test_hidden_run_lands(tmp),
+                       lambda: test_hidden_slots(repo, tmp), lambda: test_hidden_run_lands(tmp), lambda: test_no_gate_b36(tmp),
                        lambda: test_claude_drift_b45(repo, tmp), lambda: test_merged_count_b78(repo),
                        lambda: test_hidden_control_f59(repo, tmp), lambda: test_context_warn_f25(repo),
                        lambda: test_control_fresh_f27(repo)])

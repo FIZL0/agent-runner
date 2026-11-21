@@ -4,6 +4,10 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- A run with no test gate (`[run] test` empty) says so: the run's start, `run --dry-run` and `status` show
+  "WARNING no test gate ([run] test is empty): merges go to main untested", and its merges stay local unless
+  the config sets `[git] push_merge` itself; each merge logs the `git push` to publish it. Before, it merged
+  and pushed untested work without a word (B36).
 - `agent-runner cost --files` names what to split or stop re-reading: each file read (a Read, or what `cat`,
   `sed`, `grep`, … printed) by its results' tokens times the turns they stayed in context, with its
   re-reads, then the tokens exact-repeat commands added after their first run. In 20 slot sessions,

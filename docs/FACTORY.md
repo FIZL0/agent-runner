@@ -62,7 +62,7 @@ landing); a person re-enters through Needs you, the ledger and `wip/` branches i
 | brake | holds? | evidence |
 |---|---|---|
 | gate on every `done` | yes, when `[run] test` is set | `done.py` returns 1 on a red gate, nothing ticked or committed. `--no-test` exists; the merge then gates it |
-| gate on every merge | yes, when `[run] test` is set | `merge_gate`; skipped only when the merge is the very tree `done` passed on, differing in `[run] untested` files. With `test` empty there is no gate anywhere and no warning (**B36**) |
+| gate on every merge | yes, when `[run] test` is set | `merge_gate`; skipped only when the merge is the very tree `done` passed on, differing in `[run] untested` files. With `test` empty there is no gate anywhere: the run's start, `--dry-run` and `status` warn, and main is not pushed unless the config sets `[git] push_merge` itself (B36) |
 | fix sessions capped | yes | 3 merge tries (`merge_tries`), `fix_timeout` 30 min, `fix_ahead_max` 2 at once, then park |
 | repair capped | yes | one repair per merge, then park; a batch is halved, never repaired twice |
 | resumes capped | yes | 3 per session (`resumes`) |
@@ -81,7 +81,6 @@ Each has a filed task; the evidence is in its line (`agent-runner plan <ID>`).
 | task | gap |
 |---|---|
 | **B35** | a block with no caps label and no task to wait on never reaches Needs you |
-| **B36** | an empty `[run] test` merges and pushes with no gate and no warning |
 | **B37** | the sequential run pushed the shared branch after any commit, gated or not (gone with the sequential run, F40) |
 | **B38** | nothing caps a session's failed `done` gates |
 | **B40** | a task text quoting the block marker loses its `files:` (found while filing the above: B31 and B39 were dropped for it) |

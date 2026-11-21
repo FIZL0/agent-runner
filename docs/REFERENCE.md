@@ -956,6 +956,7 @@ master_branch = ""        # optional local shared branch; must exist and be chec
 # empty uses remote HEAD, then main/master/trunk, then the current branch
 push = "origin"           # where finished work goes; false turns every push off
 push_merge = true         # push the shared branch after each tested merge
+# with `[run] test` empty (no gate) only when set here: the default never pushes untested merges
 
 [run]
 test = ""                 # the gate, run by `done` and on every merge, e.g. "make test"

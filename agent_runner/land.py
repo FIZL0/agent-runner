@@ -279,9 +279,29 @@ def published(tid: str, branch: str) -> None:
         push_landed(tid, branch)
 
 
+def no_gate_line() -> str:
+    """The warning for a run with no test gate (`[run] test` empty), or '' when it has one: logged at the
+    run's start, printed by --dry-run and status, so untested merges never reach main without a word."""
+    if C.run['test']:
+        return ''
+    push = ('and are pushed: [git] push_merge is set' if pushes_main() else
+            'and stay local: set [git] push_merge = true to push them anyway' if C.push_merge else
+            'and stay local')
+    return f'WARNING no test gate ([run] test is empty): merges go to main untested {push}'
+
+
+def pushes_main() -> bool:
+    """Whether a merge pushes the shared branch: `[git] push_merge`, and with no test gate only when the
+    config sets push_merge itself, so the default never publishes untested work unattended."""
+    return C.push_merge and bool(C.run['test'] or 'push_merge' in C.given.get('git', ()))
+
+
 def push_landed(tid: str, branch: str) -> None:
     """`published`'s push, for `tid` and the tasks of its batch whose push was left to it."""
-    if C.push_merge:
+    if C.push_merge and not pushes_main():
+        log(f'{tid}: merged, not pushed: no test gate ([run] test is empty) and [git] push_merge is not set; '
+            f'to publish it untested: git push {C.push_remote} {branch}')
+    elif C.push_merge:
         if out := push(ROOT, branch, shared=True):
             log(f'{tid}: {out}' + (f' (with {", ".join(UNPUSHED[:-1])})' if len(UNPUSHED) > 1 else ''))
     elif C.push_remote:

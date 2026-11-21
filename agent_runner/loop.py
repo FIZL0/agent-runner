@@ -42,6 +42,7 @@ from agent_runner.watch import (_account, agent_failed, api_down, AUTO_UPGRADE, 
     stop_hook, stop_waiter, sweep_tmp, update_watch, upgrade, usage_pct, weekly)
 from agent_runner.join import EDITED, EDITS_POLL, ELSEWHERE, REMIND_EVERY, TASK_SID, WAITING
 from agent_runner.land import drop_wips, idle_line, prune_wips, reopen_landed, REOPENED, retry_reopened, wip_main
+from agent_runner.land import no_gate_line
 from agent_runner.merge import (AHEAD_BUSY, AHEADS, before_start_fails, FIX_DIRS, FIX_DIRS_LOCK, FIXED, gate_runs,
     HELD, last_words, left_merging, MASTER_PANE, merge)
 from agent_runner.control import (close_controls, control_ok, end_closed_controls, hand_hook, rc_sweep_start,
@@ -762,6 +763,8 @@ def shut_down(idle_at: float) -> bool:
 
 def dry_run(slots: int, branch: str) -> int:
     """What `slots` free slots would start right now, in order, and why the rest of the open tasks wait."""
+    if nogate := no_gate_line():
+        print(nogate)
     running: dict = {}
     for n in range(1, slots + 1):
         if not (t := pick(running, set(), branch)):
@@ -1038,6 +1041,8 @@ class Run:
         log(f'run: {slots} slots in {MUX.name}, merging into {branch}' +
             (f', session usage {usage_pct("five_hour")}%, weekly usage {weekly()}%' if not a.force and r['agent'] == 'claude' else ''),
             EV_RUN_UP, slots=slots)
+        if nogate := no_gate_line():
+            log(nogate)
         if rline := remote_line():
             log(rline)
         if gone := missing_remote(ROOT):
