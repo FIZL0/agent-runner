@@ -98,10 +98,9 @@ def take_keys() -> None:
     pass, which a key wakes."""
     global POWER, SLOTS
     with KEYS_LOCK:
-        if (f := C.notes('POWER')).exists():
-            POWER = f.read_text(encoding='utf-8').strip()
+        if power := P.take(C, 'POWER'):  # `stop --suspend|--shutdown`: the last one asked
+            POWER = power[-1]
             share(POWER=POWER)
-            f.unlink(missing_ok=True)
         KEYS.extend(cli_keys())
         while KEYS:
             k, _, want = KEYS.pop(0).partition(' ')
@@ -170,16 +169,7 @@ def take_keys() -> None:
 def cli_keys() -> list[str]:
     """The keys `agent-runner pause|force|slots|key` left in `<notes>/KEYS`, one a line, taken once. Moved
     aside before it is read, so a key written meanwhile goes in a new file for the next pass."""
-    f = C.notes('KEYS')
-    taken = f.with_name(f'KEYS.{os.getpid()}')
-    try:
-        f.replace(taken)
-    except OSError:
-        return []
-    try:
-        return [k for l in taken.read_text(encoding='utf-8').splitlines() if (k := l.strip().lower())]
-    finally:
-        taken.unlink(missing_ok=True)
+    return [k.lower() for k in P.take(C, 'KEYS')]
 
 
 def open_remote() -> None:
@@ -194,8 +184,7 @@ def open_remote() -> None:
 
 def send_key(*keys: str) -> None:
     """What a typed key does, from any terminal or a remote session: the run takes it on its next pass."""
-    with open(C.notes('KEYS'), 'a', encoding='utf-8') as f:
-        f.write(''.join(f'{k}\n' for k in keys))
+    P.post(C, 'KEYS', *keys)
 
 
 RUNNING_SINCE: dict[tuple[str, str], float] = {}  # (slot, task) -> when write_state first saw it running
@@ -252,24 +241,12 @@ DISCARDED: dict[str, str] = {}  # B19: task -> what `_finish` did with a branch 
 
 def halt_requests() -> dict[str, str]:
     """{task: 'drop' | 'change'}: what `plan drop` / `plan change` asked of this run (see plan.halt)."""
-    out = {}
-    for f in P.halt_dir(C).glob('*.json'):
-        try:
-            how = json.loads(f.read_text(encoding='utf-8'))['how']
-        except (OSError, ValueError, KeyError, TypeError):
-            continue
-        if how in ('drop', 'change'):
-            out[f.stem] = how
-    return out
+    return {tid: r['how'] for tid, r in P.requests(C, 'halt').items() if r.get('how') in ('drop', 'change')}
 
 
 def halt_answer(tid: str, msg: str) -> None:
     """Tell the waiting `plan drop`/`change` what happened, log it, and take its request away."""
-    d = P.halt_dir(C)
-    tmp = d / f'{tid}.done.tmp'
-    tmp.write_text(msg + '\n', encoding='utf-8')
-    os.replace(tmp, d / f'{tid}.done')
-    (d / f'{tid}.json').unlink(missing_ok=True)
+    P.respond(C, 'halt', tid, msg + '\n')
     log(msg)
     note(msg)
 
@@ -352,23 +329,12 @@ def halts(procs: dict, running: dict, free_at: dict, tried: set, branch: str, mo
 
 def tell_requests() -> dict[str, dict]:
     """{task: request}: what `plan tell` / `plan change` asked this run to pass on (see plan.tell)."""
-    out = {}
-    for f in P.tell_dir(C).glob('*.json'):
-        try:
-            req = json.loads(f.read_text(encoding='utf-8'))
-        except (OSError, ValueError):
-            continue
-        if isinstance(req, dict) and req.get('how') in ('tell', 'change') and isinstance(req.get('text'), str):
-            out[f.stem] = req
-    return out
+    return {tid: r for tid, r in P.requests(C, 'tell').items()
+            if r.get('how') in ('tell', 'change') and isinstance(r.get('text'), str)}
 
 
 def tell_answer(tid: str, told: bool, msg: str) -> None:
-    d = P.tell_dir(C)
-    tmp = d / f'{tid}.done.tmp'
-    tmp.write_text(json.dumps({'told': told, 'msg': msg}), encoding='utf-8')
-    os.replace(tmp, d / f'{tid}.done')
-    (d / f'{tid}.json').unlink(missing_ok=True)
+    P.respond(C, 'tell', tid, json.dumps({'told': told, 'msg': msg}))
     log(msg)
     if told:
         note(msg)

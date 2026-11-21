@@ -1466,6 +1466,87 @@ def needs_lines(items: list, sheet=lambda tid: False) -> list[str]:
     return out + ['Nothing needs you' if not n else '1 thing needs you' if n == 1 else f'{n} things need you']
 
 
+# --- C11: the file channels a command uses to ask the run that is up for something ---------------------------
+#
+# A request: the command writes <notes>/<kind>/<ID>.json and waits for the run's <ID>.done (`request`); the
+# run lists what is asked of it each pass (`requests`) and answers each (`respond`), which takes the request
+# away. halt and tell go this way. A post: lines appended to <notes>/<name> (KEYS, POWER), which the run
+# takes once on its next pass (`take`) and answers nowhere. STOP and STOP.force stay plain files.
+
+def channel(c, kind: str) -> Path:
+    """<notes>/<kind>, the folder of `kind`'s requests (notes() makes it)."""
+    return c.notes(kind, 'x').parent
+
+
+def request(c, kind: str, tid: str, payload: dict, wait: float) -> str | None:
+    """Ask the run for `payload` about `tid` and return its answer (the .done file's text), or None when it has
+    not answered within `wait` s. The request stays for the run to find later."""
+    import json
+    import time
+    d = channel(c, kind)
+    done = d / f'{tid}.done'
+    done.unlink(missing_ok=True)
+    tmp = d / f'{tid}.json.tmp'
+    tmp.write_text(json.dumps({**payload, 'at': time.time()}), encoding='utf-8')
+    os.replace(tmp, d / f'{tid}.json')
+    end = time.time() + wait
+    while True:
+        try:
+            said = done.read_text(encoding='utf-8')
+            done.unlink(missing_ok=True)
+            return said
+        except OSError:
+            pass
+        if time.time() >= end:
+            return None
+        time.sleep(0.25)
+
+
+def requests(c, kind: str) -> dict[str, dict]:
+    """{ID: payload}: the `kind` requests waiting for the run; an unreadable one or one not a JSON object is
+    skipped."""
+    import json
+    out = {}
+    for f in channel(c, kind).glob('*.json'):
+        try:
+            req = json.loads(f.read_text(encoding='utf-8'))
+        except (OSError, ValueError):
+            continue
+        if isinstance(req, dict):
+            out[f.stem] = req
+    return out
+
+
+def respond(c, kind: str, tid: str, text: str) -> None:
+    """The run's answer to `tid`'s `kind` request, for the command waiting on it; the request is taken away."""
+    d = channel(c, kind)
+    tmp = d / f'{tid}.done.tmp'
+    tmp.write_text(text, encoding='utf-8')
+    os.replace(tmp, d / f'{tid}.done')
+    (d / f'{tid}.json').unlink(missing_ok=True)
+
+
+def post(c, name: str, *lines: str) -> None:
+    """Append `lines` to <notes>/<name>, for the run to `take` on its next pass."""
+    with open(c.notes(name), 'a', encoding='utf-8') as f:
+        f.write(''.join(f'{x}\n' for x in lines))
+
+
+def take(c, name: str) -> list[str]:
+    """The non-blank lines posted to <notes>/<name>, stripped, taken once. Moved aside before it is read, so a
+    line posted meanwhile goes in a new file for the next pass."""
+    f = c.notes(name)
+    taken = f.with_name(f'{name}.{os.getpid()}')
+    try:
+        f.replace(taken)
+    except OSError:
+        return []
+    try:
+        return [x for l in taken.read_text(encoding='utf-8').splitlines() if (x := l.strip())]
+    finally:
+        taken.unlink(missing_ok=True)
+
+
 # --- B19: drop or change a task a run's slot is on: the run stops that slot too ------------------------------
 #
 # `drop` and `change` edit the plan, which a running session never rereads, so on their own the slot's agent
@@ -1480,7 +1561,7 @@ HALT_WAIT = 30.0  # s `drop`/`change` wait for the run to say what it did
 
 
 def halt_dir(c) -> Path:
-    return c.notes('halt', 'x').parent  # notes() makes the folder
+    return channel(c, 'halt')
 
 
 def run_on(c, tid: str) -> str:
@@ -1506,27 +1587,11 @@ def run_on(c, tid: str) -> str:
 def halt(c, tid: str, how: str, wait: float | None = None) -> str:
     """Ask the run to stop what it does with `tid` (`how`: 'drop' or 'change') and return what it did, or
     what it will do when it has not answered within `wait` s; '' when no run is on the task."""
-    import json
-    import time
     where = run_on(c, tid)
     if not where:
         return ''
-    d = halt_dir(c)
-    (d / f'{tid}.done').unlink(missing_ok=True)
-    tmp = d / f'{tid}.json.tmp'
-    tmp.write_text(json.dumps({'how': how, 'at': time.time()}), encoding='utf-8')
-    os.replace(tmp, d / f'{tid}.json')
-    end = time.time() + (HALT_WAIT if wait is None else wait)
-    while True:
-        try:
-            said = (d / f'{tid}.done').read_text(encoding='utf-8').strip()
-            (d / f'{tid}.done').unlink(missing_ok=True)
-            return said
-        except OSError:
-            pass
-        if time.time() >= end:
-            break
-        time.sleep(0.25)
+    if (said := request(c, 'halt', tid, {'how': how}, HALT_WAIT if wait is None else wait)) is not None:
+        return said.strip()
     if where == 'merging':
         return f'asked the run not to land {tid}: unless its merge is already landing, task/{tid} is deleted unmerged'
     return (f'asked the run to stop {where}: within seconds it ends that session, deletes task/{tid} and its work'
@@ -1547,7 +1612,7 @@ TELL_WAIT = 30.0  # s `tell`/`change` wait for the run to pass the message on
 
 
 def tell_dir(c) -> Path:
-    return c.notes('tell', 'x').parent  # notes() makes the folder
+    return channel(c, 'tell')
 
 
 def tell_text(how: str, text: str) -> str:
@@ -1560,26 +1625,16 @@ def tell(c, tid: str, text: str, how: str = 'tell', wait: float | None = None) -
     did; (False, why) when it could not (no live pane, or no slot of a run runs it: then why is ''); (None,
     what was asked) when the run did not answer within `wait` s."""
     import json
-    import time
     where = run_on(c, tid)
     if not where or where == 'merging':
         return False, ''
-    d = tell_dir(c)
-    (d / f'{tid}.done').unlink(missing_ok=True)
-    tmp = d / f'{tid}.json.tmp'
-    tmp.write_text(json.dumps({'how': how, 'text': text, 'at': time.time()}), encoding='utf-8')
-    os.replace(tmp, d / f'{tid}.json')
-    end = time.time() + (TELL_WAIT if wait is None else wait)
-    while True:
-        try:
-            got = json.loads((d / f'{tid}.done').read_text(encoding='utf-8'))
-            (d / f'{tid}.done').unlink(missing_ok=True)
-            return bool(got.get('told')), str(got.get('msg', ''))
-        except (OSError, ValueError):
-            pass
-        if time.time() >= end:
-            break
-        time.sleep(0.25)
+    said = request(c, 'tell', tid, {'how': how, 'text': text}, TELL_WAIT if wait is None else wait)
+    try:
+        got = json.loads(said) if said is not None else None
+    except ValueError:
+        got = None
+    if isinstance(got, dict):
+        return bool(got.get('told')), str(got.get('msg', ''))
     return None, f'asked the run to pass it on to {where} ({tid}); it has not answered yet (`{c.command} since` shows it)'
 
 
