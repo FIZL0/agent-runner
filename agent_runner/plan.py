@@ -1416,7 +1416,18 @@ def _ask(tid: str, todo) -> tuple[str, str, str, str, str, str, bool]:
     for a in asks(todo, all=True):
         if tid in (a[1], a[2]):
             return a
-    raise SystemExit(f'{PROG}: {tid!r} waits on no answer from you: `{PROG} waiting --all` lists what does')
+    raise SystemExit(f'{PROG}: nothing needs you here about {tid!r}{project_in()}: `{PROG} waiting --all` lists what '
+                     f'does; another project\'s item is answered in its own control session')
+
+
+def project_in() -> str:
+    """F33: ' in <project>' (the main checkout's name) for a message about this project only; '' outside a repo.
+    confirm, change and shelve read only this project's plan, never another's (a person's call)."""
+    try:
+        from agent_runner.config import main_checkout
+        return f' in {main_checkout().name}'
+    except (OSError, SystemExit, subprocess.SubprocessError):
+        return ''
 
 
 def confirm(tid: str, said: str = '', todo=None, done=None) -> str:

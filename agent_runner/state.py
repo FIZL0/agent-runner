@@ -148,6 +148,12 @@ def banner(title: str, detail: str, bg: str = '41', kind: str | None = None, fie
         print('\n'.join([bar(), *map(bar, body), bar()]), flush=True)
 
 
+def project() -> str:
+    """F33: this project's name (its main checkout's folder), so a line about it read beside other projects'
+    ('iFizBox needs you: …') says which control session to answer in; '' before `init`."""
+    return ROOT.name
+
+
 def alarm(title: str, detail: str) -> None:
     """A stoppage only a person can clear (their uncommitted edits hold a tested merge, a usage cap): a red banner in the
     runner's pane, the bell, a tmux message and a desktop notification, so it is seen from across the room,
@@ -158,10 +164,10 @@ def alarm(title: str, detail: str) -> None:
         if not NOTIFY:
             return
         if os.environ.get('TMUX'):
-            sp.run(['tmux', 'display-message', '-d', '15000', f'agent-runner STOPPED: {title}'],
+            sp.run(['tmux', 'display-message', '-d', '15000', f'agent-runner STOPPED: {project()} needs you: {title}'],
                    capture_output=True, timeout=5)
         if shutil.which('notify-send'):
-            sp.run(['notify-send', '-u', 'critical', '-a', 'agent-runner', f'agent-runner stopped: {title}', detail],
+            sp.run(['notify-send', '-u', 'critical', '-a', 'agent-runner', f'{project()} needs you: run stopped: {title}', detail],
                    capture_output=True, timeout=5)
     except (OSError, sp.TimeoutExpired):
         pass

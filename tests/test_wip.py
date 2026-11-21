@@ -104,11 +104,11 @@ def test_main_checkout(repo: Path, tmp: Path):
     eq([(n, k) for n, _, k in info], [(MAIN_WIP, 2)], 'wip_main_info: the branch and its 2 files')
     now = dt.datetime(2026, 11, 4, 9, 0)
     text = R.status_text(False, {}, [], {}, now.timestamp(), wips=info)
-    eq(text.splitlines()[:2], ['Needs you:', f'   3d  Main-checkout edits moved aside (2 files) - '
+    eq(text.splitlines()[:2], [f'{R.ROOT.name} needs you:', f'   3d  Main-checkout edits moved aside (2 files) - '
                                              f'{R.C.command} wip show|restore|drop {MAIN_WIP[4:]} [{MAIN_WIP}]'],
        'status: under Needs you, with its age and file count')
     text = R.since_text([], now, {}, now, wips=info)[0]
-    check(text.startswith('Needs you:\n   3d  Main-checkout edits moved aside (2 files)'), 'since: the same', text)
+    check(text.startswith(f'{R.ROOT.name} needs you:\n   3d  Main-checkout edits moved aside (2 files)'), 'since: the same', text)
     eq(R.status_text(False, {}, [], {}, 0.0), 'no run is up', 'nothing extra without them')
 
     r = run(repo, 'wip')

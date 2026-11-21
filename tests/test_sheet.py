@@ -137,7 +137,7 @@ def test_needs_you():
         eq(lines[i + 1:i + 2], [f'    {URL}'], 'and the sheet\'s link under it')
         line = '=== 2026-11-20T14:35:00 F2: merged, blocked'
         nl = R.needs_you_line(line, {}, dt.datetime(2026, 11, 20, 15, 0), R.waiting_ok())
-        eq(nl, f'14:35  needs you: 2 config cleanups ready, 1 optional. Pick on the sheet or reply go [F2]  {URL}',
+        eq(nl, f'14:35  {R.ROOT.name} needs you: 2 config cleanups ready, 1 optional. Pick on the sheet or reply go [F2]  {URL}',
            'the feed line links the sheet')
         here = os.getcwd()
         os.chdir(root)
