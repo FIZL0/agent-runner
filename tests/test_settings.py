@@ -50,7 +50,8 @@ eq(r.returncode, 0, 'exits 0')
 check('slots = 3' in r.stdout and '[git]' in r.stdout, 'every table')
 
 print('the guide and the control brief recommend settings, by real keys only')
-for name, text in (('GUIDE', guide.GUIDE), ('CONTROL', guide.CONTROL)):
+check('guide settings' in guide.CONTROL, 'CONTROL points at `guide settings` (B98)')
+for name, text in (('GUIDE', guide.GUIDE), ('guide settings', guide.CONTROL_TOPICS['settings'])):
     check('settings` prints every key' in text, f'{name} points at `settings`')
     check('recommend the one change in one line' in text, f'{name} says to recommend a setting in one line')
     check('apply on the next run' in text, f'{name} says when it applies')

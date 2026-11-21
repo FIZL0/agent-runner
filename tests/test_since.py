@@ -75,6 +75,8 @@ def test_full_list_as_page() -> None:
     """B89: the brief and /since run `since --all` themselves and hand it over as a page, never as a command."""
     from agent_runner import guide as G
     brief = G.CONTROL.format(repo='r', cmd='RUN', log='l', watch='w', needs='n', answer='a')
+    check('/since' in brief and 'guide output' in brief, 'B98: the brief points /since at `guide output`')
+    brief = G.control_topic('output', 'RUN', 'n')  # B98: which holds the rules
     skill = G.control_skills('RUN')['since']
     for name, text in (('brief', brief), ('/since', skill)):
         check(all(w in text for w in ('since --all', 'Artifact', 'SendUserFile', 'link')),

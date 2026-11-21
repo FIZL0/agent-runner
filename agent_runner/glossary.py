@@ -354,6 +354,47 @@ def fit(text: str, who: str, cmd: str, c=None) -> str:
     return f'{text.rstrip()}\n\n{extra}'
 
 
+# B98: the control brief carries a pointer; the paragraph above is `guide glossary`'s page
+POINTER = ("**The glossary ({file}).** Keep it with `{cmd} glossary`, unasked: when the person uses a word for a "
+           "thing that is not in it, or says \"forget X\", read `guide glossary` first.")
+SEED_POINTER = ("{file} does not exist yet: before anything else (in c1, right after the summary), read `guide "
+                "glossary` and start it.")
+
+
+def brief_fit(text: str, cmd: str, c=None) -> str:
+    """B98: the control brief fitted as `fit(text, 'control', …)` does, with the glossary's paragraph (and seed
+    ask) behind `guide glossary`: a two-line pointer in its place, so the brief stays short."""
+    try:
+        p = path(c)
+    except (Exception, SystemExit):  # no config to read: leave the brief as it is, as fit does
+        return text
+    if p is None:
+        return fit(text, 'control', cmd, c)  # the glossary line taken out, nothing added
+    full = fit(text, 'slot', cmd, c)  # the glossary line fitted to the file's name, SLOT appended
+    name = setting(c)
+    slot = SLOT.format(file=name, cmd=cmd)
+    base = (full[:full.rindex(slot)] if slot in full else full).rstrip()  # never break the SessionStart hook
+    extra = POINTER.format(file=name, cmd=cmd)
+    if not p.exists():
+        extra += ' ' + SEED_POINTER.format(file=name, cmd=cmd)
+    return f'{base}\n\n{extra}\n'
+
+
+def topic(cmd: str, c=None) -> str:
+    """B98: `guide glossary`: the control brief's glossary paragraph, with the seed ask when there is no file."""
+    try:
+        p = path(c)
+    except (Exception, SystemExit):
+        p = None
+    if p is None:
+        return '# The glossary\n\nThis project keeps no glossary (`[plan] glossary = false`).\n'
+    name = setting(c)
+    out = '# The glossary\n\n' + CONTROL.format(file=name, cmd=cmd)
+    if not p.exists():
+        out += '\n' + SEED.format(file=name, cmd=cmd)
+    return out
+
+
 # --- the command ---------------------------------------------------------------------------------------------
 
 def main(argv: list[str] | None = None) -> int:

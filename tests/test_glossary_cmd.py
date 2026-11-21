@@ -130,13 +130,19 @@ check(run(d, 'settings').stdout.count("glossary = \"GLOSSARY.md\"") == 1, '`sett
 
 print('the real briefs: control --brief seeds in a repo with none, and the slot prompt is fitted')
 d4 = repo()
-b = run(d4, 'control', '--brief').stdout
-check('glossary seed' in b and 'Do not ask first' in b, 'control --brief in a repo with no glossary: seed it', b[-400:])
+b = run(d4, 'control', '--brief').stdout  # B98: the brief points at `guide glossary`, which holds the paragraph
+check('does not exist yet' in b and 'guide glossary` and start it' in b,
+      'control --brief in a repo with no glossary: start it, through guide glossary', b[-400:])
+g = run(d4, 'guide', 'glossary').stdout
+check('glossary seed' in g and 'Do not ask first' in g, 'and `guide glossary` says to seed it, unasked', g[-400:])
 run(d4, 'glossary', 'add', 'Board', '--means', 'The screen.')
 b = run(d4, 'control', '--brief').stdout
-check('glossary add' in b and 'glossary seed' not in b, 'with one: add terms, no seed ask')
+g = run(d4, 'guide', 'glossary').stdout
+check('guide glossary' in b and 'does not exist yet' not in b, 'with one: the brief points at the page, no seed ask')
+check('glossary add' in g and 'glossary seed' not in g, 'and the page says to add terms, no seed ask')
 b = run(d3, 'control', '--brief').stdout
-check(b and 'glossary add' not in b and guide.GLOSSARY not in b, 'glossary = false: control --brief skips it')
+check(b and 'glossary add' not in b and 'guide glossary' not in b and guide.GLOSSARY not in b,
+      'glossary = false: control --brief skips it')
 import inspect  # noqa: E402
 check("glossary.fit(prompt, 'slot'" in inspect.getsource(brief.prompt_for), 'prompt_for fits the slot prompt')
 

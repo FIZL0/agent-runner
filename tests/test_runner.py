@@ -1290,7 +1290,7 @@ def test_control(repo: Path):
     f = R.control_settings()
     eq(f, repo / '.runner' / 'control-settings.json', 'the file is <notes>/control-settings.json')
     eq(json.loads(f.read_text(encoding='utf-8')), data, 'and holds that')
-    brief = R.control_brief()
+    brief = R.control_brief() + control_pages(R.C.command)  # B98: the long rules are in its guide pages
     for want in ('control session', f'{R.C.command} status', f'{R.C.command} plan add', f'{R.C.command} take',
                  'Never edit code', f'{R.C.command} since', f'{R.C.command} since --follow', 'Open the session',
                  '/run · /since · /follow · /control · /pause · /stop · /slots', 'Start it only when asked',
@@ -1310,7 +1310,8 @@ def test_control(repo: Path):
           'C5: a reply naming no item is mapped to its id by the session, which asks when it cannot tell')
     with mock.patch.object(P, 'needs_cfg', lambda: {'heading': 'For you', 'ages': True, 'order': 'oldest'}):
         b2 = R.control_brief()
-    check('**For you**' in b2, 'B27: [needs] heading names the group', b2[:200])
+    check('"For you"' in b2 and '**For you**' in control_pages(R.C.command, 'For you'),
+          'B27: [needs] heading names the group', b2[:200])
     check('status · since · follow' not in brief, 'the hints line is slash commands, not bare words')
     check('--after T181' in brief and f'{R.C.command} plan block ID --after' in brief,
           '"do X after T181" queues X with --after (block --after for a queued task)')
@@ -1326,7 +1327,8 @@ def test_control(repo: Path):
     # C2: the concept rules are in `guide concepts`; the brief names its triggers and points there
     concepts = topic('concepts', R.C.command)
     check('"concept X", "sketch some options for X"' in brief and f'`{R.C.command} guide concepts`' in brief
-          and 'queue a K task only when they\n  say queue it' in brief, 'C2: the brief points concept asks at guide concepts')
+          and 'queue a K task only when they say queue it' in ' '.join(brief.split()),
+          'C2: the brief points concept asks at guide concepts')
     check('show it in this session, now' in concepts and 'queue no K task' in concepts
           and "call\nits `open` action so it shows inline" in concepts,
           '"concept X" builds the options page in the control session and opens it inline, no K task')
@@ -1349,7 +1351,7 @@ def test_control(repo: Path):
           'B95: praise plus a question or change updates the inline concept page; only a plain go queues the build')
     check('tail -n 0 -F' not in brief, 'no run-log watch at the start: following is asked for')
     r = run(repo, 'control', '--brief')
-    eq((r.returncode, r.stdout), (0, brief), '`control --brief` (the hook) prints it')
+    eq((r.returncode, r.stdout), (0, R.control_brief()), '`control --brief` (the hook) prints it')
 
     c1 = R.control_argv(1, 'sid-1', resume=False)
     eq(c1[0], R.plat.exe(R.C.run['agent']), 'the agent')
@@ -1395,7 +1397,7 @@ def test_control(repo: Path):
     eq(argv[0], R.plat.exe(R.C.run['agent']), 'the agent')
     eq(argv[1], '--session-id', 'a --new session has no first message: blank until the person types')
     check('blank' in brief and 'not `since`' in brief, 'the brief: later sessions start blank, the opening runs no since')
-    check('never touch another\nrepository' in brief and 'explicitly asks' in brief,
+    check('never touch another repository' in ' '.join(brief.split()) and 'explicitly asks' in brief,
           'B50: the brief: no change to another repository unless the person explicitly asks')
     mark = R.since_mark_file()
     before = mark.read_text() if mark.exists() else None
@@ -5976,17 +5978,29 @@ def test_progress_and_release(repo: Path):
     eq(R.progress_line('yesterday', now).split(' · ')[0].split(' ', 2)[2], 'since yesterday', 'yesterday counts from its midnight')
     text = R.status_text(False, {}, [], {}, 0.0, progress=line + '\nrelease: waits on 2 of 4 tasks (T5)')
     eq(text.splitlines(), ['no run is up', line, 'release: waits on 2 of 4 tasks (T5)'], 'status: right under the run line')
-    from agent_runner.guide import CONTROL
-    check('release:' in CONTROL and 'tasks left' in CONTROL and 'how close is release' in CONTROL,
+    text = control_text()  # B98: the brief and its guide pages
+    check('release:' in text and 'tasks left' in text and 'how close is release' in text,
           'the control brief puts both in the headline and answers "how close is release" from them')
+
+
+def control_pages(cmd: str = './run', needs: str = 'Needs you') -> str:
+    """B98: the control brief's guide pages (`guide summary`, `guide queue`, …), which hold its longer rules."""
+    from agent_runner.guide import CONTROL_TOPICS
+    return ''.join('\n' + CONTROL_TOPICS[t].format(cmd=cmd, needs=needs) for t in CONTROL_TOPICS)
+
+
+def control_text(cmd: str = './run') -> str:
+    """The control brief as rendered with the needs-you watch, followed by its guide pages (B98)."""
+    from agent_runner.guide import CONTROL, CONTROL_WATCH
+    return CONTROL.format(repo='r', cmd=cmd, log='l', watch=CONTROL_WATCH.format(repo='r', cmd=cmd),
+                          needs='Needs you', answer='') + control_pages(cmd)
 
 
 def test_control_status_rules(repo: Path):
     """F39: every status a control session writes names IDs with titles and minutes, leads with needs-you, and
     leaves usage out below 80% (or 10 points short of a cap)."""
     from agent_runner.guide import CONTROL, CONTROL_START, CONTROL_WATCH, RUNNER_BRIEF
-    text = CONTROL.format(repo='r', cmd='./run', log='l', watch=CONTROL_WATCH.format(repo='r', cmd='./run'),
-                          needs='Needs you', answer='')
+    text = control_text()
     check('Never a bare task ID' in text and 'short title' in text and 'its minutes' in text,
           'the control brief: each task ID with its short title and a running one with its minutes', text)
     check('first line' in text and 'Nothing needs you.' in text, 'the first line says what needs the person', text)
@@ -6000,8 +6014,7 @@ def test_control_status_rules(repo: Path):
 def test_control_do_it_here(repo: Path):
     """F50: after queueing, the control brief offers to run the task in this session, and maps that ask to take ID."""
     from agent_runner.guide import CONTROL, CONTROL_WATCH
-    text = CONTROL.format(repo='r', cmd='./run', log='l', watch=CONTROL_WATCH.format(repo='r', cmd='./run'),
-                          needs='Needs you', answer='')
+    text = control_text()
     check('Say "do F48 here" to start it in this session' in text and 'instead of waiting for a slot' in text,
           'the add-a-task bullet ends with the do-it-here hint', text)
     from agent_runner.guide import topic
@@ -6015,13 +6028,12 @@ def test_control_do_it_here(repo: Path):
 def test_control_retitle_on_topic(repo: Path):
     """F55: the control brief retitles the session when the topic changes, not for drift, never over the person's name."""
     from agent_runner.guide import CONTROL, CONTROL_WATCH
-    text = ' '.join(CONTROL.format(repo='r', cmd='./run', log='l', watch=CONTROL_WATCH.format(repo='r', cmd='./run'),
-                                   needs='Needs you', answer='').split())
+    text = ' '.join(control_text().split())
     check('`./run control --title "' in text, 'the brief names control --title', text)
-    check('Run it again whenever the conversation moves on to a different task or topic' in text,
+    check('again when the talk moves to another task or topic' in text,  # B98: worded shorter
           'it retitles when the conversation moves on to another task', text)
-    check('not for drift within one topic' in text, 'not for drift within one topic', text)
-    check('A name the person gave the session is never overwritten' in text, 'B41: never over the person\'s name', text)
+    check('not for a follow-up on the same one' in text, 'not for drift within one topic', text)
+    check('A name the person gave is never overwritten' in text, 'B41: never over the person\'s name', text)
     check('first message, run `./run control --title' in text and '" once (e.g.' not in text,
           'no longer "once": the name may follow the topic', text)
 
@@ -6074,8 +6086,7 @@ def test_needs_cmd_f44():
     rb = ' '.join(RUNNER_BRIEF.format(cmd='run', repo='r', answer='').split())
     check('`run needs`' in rb and 'first item line' in rb and 're-arming the Monitor' in rb and 'Nothing needs you' in rb,
           'F44: the feed ends an idle reply with `needs`\' first item', rb)
-    text = ' '.join(CONTROL.format(repo='r', cmd='./run', log='l', watch=CONTROL_WATCH.format(repo='r', cmd='./run'),
-                                   needs='Needs you', answer='').split())
+    text = ' '.join(control_text().split())
     check('"what is waiting on me?"' in text and '`./run needs`' in text.split('"what is waiting on me?"', 1)[1][:200],
           'F44: the control brief answers "what is waiting on me" with `needs`', text)
 
@@ -6084,16 +6095,15 @@ def test_control_push_when_asked():
     """B81: the control brief pushes what the person asked to hear (its own subagent/take finishing included),
     and finished/stuck/needs-you events while they are away; it never promises a push it cannot send."""
     from agent_runner.guide import CONTROL, CONTROL_WATCH
-    text = ' '.join(CONTROL.format(repo='r', cmd='./run', log='l', watch=CONTROL_WATCH.format(repo='r', cmd='./run'),
-                                   needs='Needs you', answer='').split())
+    text = ' '.join(control_text().split())
     part = text.split('Push what the person asked to hear', 1)[-1].split(' - ', 1)[0]
     check('Push what the person asked to hear' in text and 'PushNotification' in part
           and 'ToolSearch `select:PushNotification`' in part, 'the brief says to push, loading the tool via ToolSearch', part)
-    check('subagent' in part and '`take`' in part and 'no Monitor sees it' in part,
+    check('subagent' in part and 'take' in part and 'no Monitor sees those' in part,  # B98: worded shorter
           'a "notify me" ask on its own background work (subagent, take) is pushed when it reports', part)
-    check('finished or got stuck' in part and 'needs the person' in part and 'not written here' in part,
+    check('finished or got stuck' in part and 'needs them' in part and 'not written for a few minutes' in part,
           'finished-take, stuck and needs-you events are pushed unasked while the person is away', part)
-    check('Never promise a notification you cannot send' in part and 'say so' in part,
+    check('Never promise a push you cannot send' in part and 'say so' in part,
           'it never promises a push it cannot send', part)
 
 
@@ -6208,8 +6218,7 @@ def test_upgrade_cmd(repo: Path):
     with mock.patch.object(cli, 'skill', lambda: None), mock.patch.object(R, 'upgrade', lambda: False), \
             contextlib.redirect_stderr(io.StringIO()):
         eq(cli.main(['upgrade']), 1, 'a failed upgrade exits 1')
-    text = CONTROL.format(repo='r', cmd='./run', log='l', watch=CONTROL_WATCH.format(repo='r', cmd='./run'),
-                          needs='Needs you', answer='')
+    text = control_text()
     check('Update agent-runner: `./run upgrade`' in text, 'the rendered control brief names `upgrade`', text)
     check('agent-runner upgrade' in cli.USAGE, 'the command list names `upgrade`', cli.USAGE)
 
@@ -6218,9 +6227,8 @@ def test_control_no_upgrade_watcher():
     """D2: the control brief says runner updates come from [run] auto_upgrade and the release task, so a
     control session never sets up a background watcher to upgrade agent-runner."""
     from agent_runner.guide import CONTROL, CONTROL_WATCH
-    text = ' '.join(CONTROL.format(repo='r', cmd='./run', log='l', watch=CONTROL_WATCH.format(repo='r', cmd='./run'),
-                                   needs='Needs you', answer='').split())
-    check('Runner updates otherwise come from `[run] auto_upgrade` and the release task' in text
+    text = ' '.join(control_text().split())
+    check('(else `[run] auto_upgrade` and the release task)' in text
           and 'never set up a background watcher, Monitor or loop to upgrade agent-runner' in text,
           'the control brief rules out an upgrade watcher', text)
 
@@ -6310,8 +6318,7 @@ def test_release_push(repo: Path):
     rb = ' '.join(RUNNER_BRIEF.format(cmd='run', repo='r', answer='').split())
     check('released' in rb and 'PushNotification' in rb.split('Releases:', 1)[-1].split('- Commands', 1)[0],
           'the feed brief says to push each release line', rb)
-    text = ' '.join(CONTROL.format(repo='r', cmd='./run', log='l', watch=CONTROL_WATCH.format(repo='r', cmd='./run'),
-                                   needs='Needs you', answer='').split())
+    text = ' '.join(control_text().split())
     part = text.split('"notify me when X"', 1)[-1].split(' - ', 1)[0]
     check('"notify me when X"' in text and 'since --follow' in part and 'PushNotification' in part
           and 'stop that Monitor' in part and 'say back in one line what you will watch for' in part,
