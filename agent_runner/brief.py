@@ -144,6 +144,8 @@ def prompt_for(tid: str, n: int, slots: int, cwd: Path, branch: str) -> str:
     vals['extra'] = vals['extra'].format_map(_Keep(vals))  # `prompt_extra` may say {n}, {tid}, {runner}
     template = (ROOT / r['prompt']).read_text(encoding='utf-8') if r['prompt'] else PROMPT
     prompt = template.format_map(_Keep(vals))
+    from agent_runner import glossary  # F22: name things with its terms, add new ones; nothing when it is off
+    prompt = glossary.fit(prompt, 'slot', C.command)
     policies = []
     if r['include_task_id_in_commit']:
         policies.append(f'Include task ID `{tid}` at the start of the commit subject.')

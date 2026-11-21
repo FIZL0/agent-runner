@@ -240,6 +240,12 @@ where the remaining tokens go, by kind of tool call.
   them when you tell it "sent" (where the page cannot store them, Send gives a line to paste instead), or
   reply go for the recommended set; the task reopens with your answers noted (`agent-runner sheet <ID>`). `[run] questionnaires = false`
   turns it off.
+- **One word per thing.** The first control session in a repo writes a starter GLOSSARY.md from the app's
+  screens and code (10-20 terms), and later sessions add a term as you use it, each with your word, the
+  screen's wording, the code names, a plain definition and the words to avoid; they only mention it in
+  passing. Agents name new things with its terms. `agent-runner glossary [TERM]` shows it, `glossary add`,
+  `forget`, `seed` and `scan` keep it (each commits itself); `[plan] glossary = false` turns it off (after
+  [mattpocock/skills](https://github.com/mattpocock/skills) domain-modeling, MIT).
 - **Start small.** `once`, then 2 or 3 slots. More only helps when the plan has that many tasks on
   different files, and usage limits are per account: five slots spend them five times as fast.
 

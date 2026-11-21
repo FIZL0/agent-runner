@@ -96,6 +96,8 @@ DEFAULTS: dict = {
                                 # HUMAN, DONE and [run] rules), e.g. ["PLAN.md", "plan/*.md"]; globs allowed
         'context_kb': 12,       # budget for what every session loads (rules, CLAUDE.md, AGENTS.md, @-imports):
                                 # `agent-runner context` reports it, `run` warns past it; 0 = no warning
+        'glossary': 'GLOSSARY.md',  # the project's glossary (`agent-runner glossary`), seeded by the first control
+                                # session and named in every brief; false = off: no file written, briefs skip it
     },
     'run': {
         'test': '',             # the gate: `done` and every merge run it; empty means no gate
