@@ -763,11 +763,13 @@ def person_turn(d: dict) -> bool:
 # Every CONTROL_CLOSE_EVERY s the run reads the transcript of each live control session N (not c1, the kept
 # one) and closes it (ends its process, removes controlN.pid; the transcript stays, resumable) when Claude
 # spoke last, nothing runs in it, and it has been quiet `[run] control_idle`; or, when its last message is an
-# open question or offer (`[run] control_open`), quiet `[run] control_ask_idle`: then the question is filed
-# under Needs you as a DECIDE item first (`[run] control_file_asks`). `[run] control_close = false` turns it off.
+# open question or offer (`[run] control_open`), quiet `[run] control_ask`: then the question is filed under
+# Needs you as a DECIDE item (an F task) first. `control_idle = false` closes none for idleness, `control_ask =
+# false` keeps one waiting on its question open; both false turn it off.
 
 CONTROL_CLOSE_EVERY = 300  # s between looks
 CONTROL_CLOSE_AT = [0.0]
+CONTROL_ASK_KIND = 'F'  # C14: the id prefix an open question's task gets (was [run] control_ask_kind)
 CONTROL_WATCH_CMD = 'since --follow --needs-you'  # a control session's standing watch: not work in progress
 TASK_STARTED = re.compile(r'Monitor started \(task (\w+)|running in background with ID: (\w+)')
 TASK_ENDED = re.compile(r'<task-id>(\w+)</task-id>|\(task (\w+)\)')
@@ -895,18 +897,17 @@ def control_state(rows) -> dict:
 
 
 def control_cfg() -> dict:
-    """`[run] control_close`, `control_idle`, `control_idle_quick` (quick), `control_idle_talked` (talked),
-    `control_ask_idle` (seconds; 0 off), `control_open` (lowercase), `control_file_asks`, `control_ask_kind`."""
+    """`[run] control_idle` (idle), `control_idle_quick` (quick), `control_idle_talked` (talked), `control_ask`
+    (ask_idle), in seconds, 0 off (control_idle off turns the quick and talked tiers off too), and
+    `control_open` (open, lowercase)."""
     r = C.run
     opens = r.get('control_open', ['?', 'want me to', 'should i'])
-    return {'close': r.get('control_close', True) is not False,
-            'idle': duration(r.get('control_idle', '3h'), 10800.0),
-            'quick': duration(r.get('control_idle_quick', '5m'), 300.0),
-            'talked': duration(r.get('control_idle_talked', '12h'), 43200.0),
-            'ask_idle': duration(r.get('control_ask_idle', '2h'), 7200.0),
-            'open': [str(p).lower() for p in ([opens] if isinstance(opens, str) else opens or [])],
-            'file_asks': r.get('control_file_asks', True) is not False,
-            'kind': str(r.get('control_ask_kind', 'F') or 'F')}
+    idle = duration(r.get('control_idle', '3h'), 10800.0)
+    return {'idle': idle,
+            'quick': duration(r.get('control_idle_quick', '5m'), 300.0) if idle else 0.0,
+            'talked': duration(r.get('control_idle_talked', '12h'), 43200.0) if idle else 0.0,
+            'ask_idle': duration(r.get('control_ask', '2h'), 7200.0),
+            'open': [str(p).lower() for p in ([opens] if isinstance(opens, str) else opens or [])]}
 
 
 def open_question(text: str, phrases: list[str]) -> str:
@@ -955,7 +956,7 @@ def control_verdict(st: dict, cf: dict, now: float, n: int = 0, one_ask: bool = 
     if q := open_question(st['text'], cf['open']):
         if cf['ask_idle'] and quiet >= cf['ask_idle']:
             return 'ask', q
-        return 'keep', 'its open question is not old enough'
+        return 'keep', 'its open question is not old enough' if cf['ask_idle'] else 'an open question (control_ask = false)'
     if talked:
         idle, tier = cf['talked'], ' (talked)'
     elif one_ask and st.get('said', 0) == 1 and st.get('queued') and cf.get('quick'):
@@ -996,7 +997,7 @@ def file_control_ask(n: int, sid: str, q: str, link: str, branch: str = '') -> s
                                     git('branch', '--show-current').stdout.strip() != branch):
             return ''  # somebody mid-edit, or the main checkout on another branch: the next look files it
         where = link or f'resume it with `{plat.exe(C.run["agent"])} --resume {sid}`'
-        tid = P.add(control_cfg()['kind'], f'Control session {n} asked the person: "{q}" Carry on from their '
+        tid = P.add(CONTROL_ASK_KIND, f'Control session {n} asked the person: "{q}" Carry on from their '
                     f'answer (the session, closed while it waited: {where})', todo=ROOT / rel, pri='normal')
         P.block(tid, f'DECIDE: {q} {link}'.strip(), todo=ROOT / rel, after=[])
         if not commit_plan(f'Plan: {tid}, control {n} asked the person', rel):
@@ -1013,7 +1014,7 @@ def close_controls(branch: str = '', force: bool = False, now: float | None = No
     """B26: close the idle control sessions (see above), every CONTROL_CLOSE_EVERY s from the run loop.
     [(n, 'closed' | 'asked', why or the task id filed)] for those closed."""
     cf = control_cfg()
-    if not cf['close'] or not control_ok() or (not force and time.time() - CONTROL_CLOSE_AT[0] < CONTROL_CLOSE_EVERY):
+    if not (cf['idle'] or cf['ask_idle']) or not control_ok() or (not force and time.time() - CONTROL_CLOSE_AT[0] < CONTROL_CLOSE_EVERY):
         return []
     CONTROL_CLOSE_AT[0] = time.time()
     now = time.time() if now is None else now
@@ -1032,7 +1033,7 @@ def close_controls(branch: str = '', force: bool = False, now: float | None = No
         if verdict == 'keep':
             continue
         link = control_link(st['bridge'])
-        if verdict == 'ask' and cf['file_asks']:
+        if verdict == 'ask':
             if not (tid := file_control_ask(n, sid, why, link, branch)):
                 continue  # TODO.md busy: the next look files it
             log(f'{tid}: filed, control {n} asked "{why}" (DECIDE, under {P.needs_cfg()["heading"]})')
@@ -1040,8 +1041,7 @@ def close_controls(branch: str = '', force: bool = False, now: float | None = No
             why = tid
         plat.terminate(pid)
         pidf.unlink(missing_ok=True)
-        log(f'control {n}: closed, ' + (f'its question filed as {why}' if verdict == 'ask' and cf['file_asks']
-                                        else why) + f' (transcript kept: {plat.exe(C.run["agent"])} --resume {sid})')
+        log(f'control {n}: closed, ' + (f'its question filed as {why}' if verdict == 'ask' else why) + f' (transcript kept: {plat.exe(C.run["agent"])} --resume {sid})')
         out.append((n, 'asked' if verdict == 'ask' else 'closed', why))
     return out
 

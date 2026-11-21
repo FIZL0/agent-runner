@@ -51,7 +51,7 @@ def custom_join(f: str, sides: list[str], text: str, tid: str, cwd: Path) -> str
     vals = dict(ours=sides[0], base=sides[1], theirs=sides[2], union=str(u), out=str(out), file=f)
     rc, said = hook(f'{tid}: the [run.join] command for {f} (join refused)',
                     cmd.format_map({k: plat.quote(v) for k, v in vals.items()}), cwd)
-    if rc is None:  # ran past [run] timeout: `hook` logged it
+    if rc is None:  # ran past [run] command_timeout: `hook` logged it
         return None
     if rc:
         log(f'{tid}: the [run.join] command for {f} refused the join (exit {rc}): '

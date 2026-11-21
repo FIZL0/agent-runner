@@ -106,10 +106,10 @@ DEFAULTS: dict = {
         'full_every_hours': 24, # with test_since: the whole `test` again once none has passed for this long; 0 = never
         'slots': 3,             # tasks (agent sessions) at once; `agent-runner slots N` changes a running run
         'mux': '',              # where slots run: tmux, hidden; '' = tmux inside a tmux session, else hidden (Windows: hidden)
-        'agent': 'claude',      # the CLI that runs a session: claude, or a pi executable
+        'agent': 'claude',      # the CLI that runs a session: claude, or a pi executable (an executable named
+                                # pi runs on the Pi backend; AGENT_RUNNER_BACKEND=claude|pi overrides it)
         'include_task_id_in_commit': True,  # agents start each commit subject with the task id
         'comment_policy': 'normal',  # 'minimal': agents add code comments only for non-obvious intent
-        'backend': '',          # '' = Claude Code (or pi when `agent` is a pi executable); pi = other providers
         'model': 'opus',        # the model the task sessions run on
         'lean': True,           # agents get Bash/Read/Edit/Write/Artifact only, no MCP, no user settings
         'remote': 'auto',       # control sessions on Remote Control, and a control server there to start more:
@@ -119,34 +119,33 @@ DEFAULTS: dict = {
         'silent': 'launch',     # phone pushes from the run's Remote Control sessions: launch = none while they
                                 # start (later ones arrive), true = none ever, false = Claude Code's usual
         'control': True,        # a run opens control session c1 beside it (`agent-runner control`); false: none
-        'control_close': True,  # B26: the run closes idle control sessions 2, 3, … (never c1); transcripts kept
-        'control_idle': '3h',   # quiet this long with Claude last and nothing running in it: closed
-        'control_idle_quick': '5m',  # F56: a session opened for one ask (a feed reply) that queued a task, the
+        'control_idle': '3h',   # the run closes control sessions 2, 3, … (never c1) quiet this long with Claude
+                                # last and nothing running in them; transcripts kept. false: none closed idle
+        'control_idle_quick': '5m',  # a session opened for one ask (a feed reply) that queued a task, the
                                 # person's only message that ask and no open question: closed this soon (false: control_idle)
-        'control_idle_talked': '12h',  # F56: a session the person sent a second message in: kept this long
+        'control_idle_talked': '12h',  # a session the person sent a second message in: kept this long
                                 # (false: control_idle)
-        'control_ask_idle': '2h',  # quiet this long on an open question: filed under Needs you, then closed
+        'control_ask': '2h',    # quiet this long on an open question: filed under Needs you as a DECIDE item,
+                                # then closed. false: a session waiting on its question stays open
         'control_open': ['?', 'want me to', 'should i', 'shall i', 'would you like', 'do you want'],
                                 # what makes Claude's last message an open question or offer (case ignored;
                                 # one of punctuation only must end it, any other may stand anywhere in its last paragraph)
-        'control_file_asks': True,  # an open question is filed as a DECIDE item before its session closes
-        'control_ask_kind': 'F',  # the id prefix that item's task gets
         'auto_upgrade': True,   # upgrade agent-runner by itself when a newer release is out, once no merge runs,
                                 # and restart the run on it (as `u` does, without the key); false: only `u` does
         'install_skill': True,  # keep the `agent-runner guide` skill in ~/.claude/skills, for sessions a person starts
         'rules_pointer': True,  # a run adds one line to the rules file (`rules`, AGENTS.md, CLAUDE.md) pointing at it
-        'wizards': True,        # F17: an agent blocking with BLOCKED: (a login, cert, secret) writes a bash wizard
+        'wizards': True,        # an agent blocking with BLOCKED: (a login, cert, secret) writes a bash wizard
                                 # to <notes>/wizards/<ID>.sh; Needs you shows `agent-runner wizard <ID>` to run it
-        'questionnaires': True, # F18: a DECIDE with options is asked as a pick sheet (<notes>/sheets/<ID>.json, a
+        'questionnaires': True, # a DECIDE with options is asked as a pick sheet (<notes>/sheets/<ID>.json, a
                                 # page with `agent-runner sheet <ID>`); Needs you shows one line and its link
-        'grill': 'ask',         # F20: control sessions ask rounds of numbered questions before queueing:
+        'grill': 'ask',         # control sessions ask rounds of numbered questions before queueing:
                                 # ask = when the person says grill me / poke holes; big = also big vague asks; off
-        'voice': '',            # F21: the person's wording file (`agent-runner voice`), read by control sessions
+        'voice': '',            # the person's wording file (`agent-runner voice`), read by control sessions
                                 # the runner feed and task agents; '' = ~/.config/agent-runner/voice.md; a
                                 # .runner/voice.md with lines overrides it for this project
         'voice_learn': 'ask',   # ask = a session that had to say something again offers one wording line to add;
                                 # off = lines are added only when the person says so
-        'review': True,         # F28: before done, a fresh subagent reads the diff against the task's brief (spec
+        'review': True,         # before done, a fresh subagent reads the diff against the task's brief (spec
                                 # only: missing, unasked, wrong); the commit ends 'review: …'; false: no review
         'review_min_lines': 50, # a diff smaller than this (changed lines) skips the review, unless the task has a
                                 # long form (plan/tasks/<ID>.md)
@@ -160,7 +159,8 @@ DEFAULTS: dict = {
         'notes': '.runner',     # logs and the ledger; keep it git-ignored
         'links': [],            # git-ignored paths symlinked into every worktree (data, big files)
         'copies': [],           # git-ignored files copied into a new worktree once (a local config)
-        'slot_env': ['AGENT_SLOT={n}'],  # extra environment per slot; {n} is the slot, {slots} how many
+        'slot_env': [],         # extra environment per slot, beside AGENT_SLOT=<n> every slot gets; {n} is the
+                                # slot, {slots} how many
         'pass_env': [],         # names of the runner's own environment variables handed on to every slot
         'on_exit': '',          # a command run in the slot's worktree when its session ends
         'rules': '',            # the repo's rules file the prompt points at (AGENTS.md, CLAUDE.md, …)
@@ -176,22 +176,20 @@ DEFAULTS: dict = {
         'docs_files': ['*.md', 'docs/**'],  # globs (`!glob` takes one back): a diff whose files all match is docs
                                 # only; `done` and the merge skip the gate for it ('docs only, gate skipped')
         'docs_check': '',       # a quick check run instead of the gate on a docs-only diff (links, anchors)
-        'findings': ['docs/research/**', 'research/**'],  # F36: globs (`!glob` takes one back) a research task
+        'findings': ['docs/research/**', 'research/**'],  # globs (`!glob` takes one back) a research task
                                 # (a kind meaning "research: …") may change, beside the plan directory and the
                                 # journal; a research diff touching any other file is not merged
         'failures': '',         # a regex whose group 1 names a failing test in the gate's output
         'retest': '',           # the gate for just some tests; {names} is those `failures` found. A failure
                                 # that passes alone was load; one the branch's base fails too is merged anyway
         'flaky': '',            # a regex whose group 1 names tests (comma/space separated) a passing gate says
-                                # passed only on a rerun; each, like a `retest` pass, gets a critical follow-up
-        'flaky_kind': 'T',      # the id prefix those follow-ups get (see [plan] kinds)
+                                # passed only on a rerun; each, like a `retest` pass, gets a critical T task
         'ci_watch': 'auto',     # GitHub Actions workflow files (pages.yml) whose newest finished run on the
-                                # shared branch is read while a run is up: a red one files one critical task.
+                                # shared branch is read while a run is up: a red one files one critical B task.
                                 # "auto": every workflow that runs on a push to it (push runs only); false: off
-        'ci_kind': 'B',         # the id prefix that task gets
-        'batch': True,          # finished branches waiting for the merge go in together under one gate run
         'merge_ahead': True,    # tasks finishing during a batch's gate are merged on it and tested beside it
-        'batch_max': 16,        # at most this many tasks in one batch (the rest take the next one); 0 = no cap
+        'batch_max': 16,        # finished branches waiting for the merge go in together under one gate run, at
+                                # most this many (the rest take the next one); 0 = no cap, 1 = no batching
         'max_unmerged': 32,     # past this many finished tasks waiting for the merge, each half batch more holds one
                                 # slot free (6 slots, batch_max 16: 33 waiting runs 5, 73 runs none); 0 = off
         'before_start': '',     # a command that must succeed before a session starts; the slot waits on it
@@ -218,8 +216,10 @@ DEFAULTS: dict = {
         'min_free_mem_gb': 4,   # less memory available than this: the run's biggest process is ended; 0 = never
         'slot_clean': '',       # a project's own clean, run instead of the trim and of the low-disk
                                 # `git clean -ffdXq` (every git-ignored file; `links` come back on their own)
-        'timeout': 3600,        # seconds the gate, a retest or a hook command (join, before_start, on_exit) may
-                                # run before it is stopped and counts as failed
+        'command_timeout': 3600,  # seconds the gate, a retest or a hook command (join, before_start, on_exit,
+                                # `done`'s gate) may run before it is stopped and counts as failed
+        'needs_order': 'oldest',  # what waits on a person (Needs you): oldest first; "newest" first; "plan":
+                                # the order TODO.md has them in
     },
     'git': {
         'master_branch': '',    # explicit local branch for tasks and tested merges; empty discovers it as before
@@ -227,11 +227,6 @@ DEFAULTS: dict = {
         'push_merge': True,     # push the shared branch after each merge that passed the gate
         'land_edited': 'wait',  # a tested merge blocked by uncommitted edits in the main checkout: "wait" for them,
                                 # or "wip": after LAND_WAIT_WIP move them to a wip/main-checkout-<time> branch and land
-    },
-    'needs': {                  # B27: what waits on a person (concept pages, CONFIRM/DECIDE/BLOCKED asks)
-        'heading': 'Needs you', # its heading in status, since and the control sessions' opening
-        'ages': True,           # each item shows how long it has waited ("2h")
-        'order': 'oldest',      # oldest first; "newest" first; "plan": the order TODO.md has them in
     },
 }
 
@@ -288,8 +283,8 @@ def default_docs() -> dict[str, dict[str, str]]:
 
 
 def settings_reference(cmd: str | None = None) -> str:
-    """The text `agent-runner settings` prints: where and how to change a key, then every [plan], [run],
-    [git] and [needs] key as `key = default  # what it does`."""
+    """The text `agent-runner settings` prints: where and how to change a key, then every [plan], [run]
+    and [git] key as `key = default  # what it does`."""
     docs = default_docs()
     out = [SETTINGS_HEAD.format(cmd=cmd or RUNNER)]
     for table, keys in DEFAULTS.items():
@@ -409,19 +404,65 @@ REMOVED: dict[tuple[str, str], str] = {
     ('run', 'batch_min'): 'removed in 0.32.0; delete it',
     ('plan', 'brief'): 'use `brief_extra` and `outline` (0.32.0)',
     ('needs', 'map_replies'): 'sessions map a reply to its item themselves; `plan answer` is gone (0.52.0); delete it',
+    # C14, the config trim
+    ('run', 'control_file_asks'): 'an open question is always filed before its session closes; '
+                                  '`control_ask = false` keeps such a session open instead; delete it',
+    ('run', 'control_ask_kind'): "a control session's open question is always filed as an F task; delete it",
+    ('run', 'flaky_kind'): 'a flaky test is always filed as a T task; delete it',
+    ('run', 'ci_kind'): 'a red CI run is always filed as a B task; delete it',
+    ('needs', 'heading'): 'the heading is always "Needs you"; delete it',
+    ('needs', 'ages'): 'each item always shows its age; delete it',
+}
+
+# C14: a key a release renamed or folded into another: (table, key) -> (table, its new key, the old value as the
+# new key's, or None to drop it, and what to write instead). The old key still works (the new one, when a
+# file sets both, wins) and the run log says to change it.
+MOVED: dict[tuple[str, str], tuple[str, str, object, str]] = {
+    ('run', 'timeout'): ('run', 'command_timeout', lambda v: v, 'rename it `command_timeout`'),
+    ('needs', 'order'): ('run', 'needs_order', lambda v: v, 'move it to `[run] needs_order`'),
+    ('run', 'control_ask_idle'): ('run', 'control_ask', lambda v: v or False,
+                                  'rename it `control_ask` ("2h", or false to keep such a session open)'),
+    ('run', 'control_close'): ('run', 'control_idle', lambda v: False if v is False else None,
+                               'write `control_idle = false` for false, else delete it'),
+    ('run', 'batch'): ('run', 'batch_max', lambda v: 1 if v is False else None,
+                       'write `batch_max = 1` for false, else delete it'),
+    ('run', 'backend'): ('run', 'agent', lambda v: 'pi' if v == 'pi' else None,
+                         'the backend follows `agent` (an executable named pi runs on Pi) and AGENT_RUNNER_BACKEND; '
+                         'write `agent = "pi"` for pi, else delete it'),
 }
 
 
+def move_keys(raw: dict) -> None:
+    """Rewrite the MOVED keys of one config file's tables `raw` in place to their new keys (a new key the file
+    sets itself is kept), and drop the REMOVED ones, so no code reads them."""
+    for t, k in REMOVED:
+        if isinstance(raw.get(t), dict):
+            raw[t].pop(k, None)
+    for (t, k), (nt, nk, conv, _) in MOVED.items():
+        old = raw.get(t)
+        if not isinstance(old, dict) or k not in old:
+            continue
+        v = conv(old.pop(k))
+        if not old and t not in DEFAULTS:
+            raw.pop(t)
+        new = raw.setdefault(nt, {})
+        if v is not None and isinstance(new, dict) and nk not in new:
+            new[nk] = v
+
+
 def migrate(raw: dict, where: str) -> list[str]:
-    """What the run log should say about removed or unknown keys in the tables the runner reads (another
-    table in a wrapper's file is its own business)."""
+    """What the run log should say about removed, moved or unknown keys in the tables the runner reads
+    (another table in a wrapper's file is its own business). Call it before `move_keys`."""
     import difflib
     said = []
-    for t, keys in DEFAULTS.items():
+    tables = {**DEFAULTS, **{t: {} for t, _ in (*REMOVED, *MOVED) if t not in DEFAULTS}}
+    for t, keys in tables.items():
         for k in raw.get(t, {}) if isinstance(raw.get(t), dict) else ():
             if k in keys:
                 continue
-            if hint := REMOVED.get((t, k)):
+            if moved := MOVED.get((t, k)):
+                said.append(f'{where}: [{t}] {k} is gone, folded into [{moved[0]}] {moved[1]}: {moved[3]}')
+            elif hint := REMOVED.get((t, k)):
                 said.append(f'{where}: [{t}] {k} is ignored: {hint}')
             else:
                 near = difflib.get_close_matches(k, keys, 1)
@@ -440,29 +481,39 @@ class Config:
         self.root = root
         raw: dict = {}
         self.warnings: list[str] = []  # old, removed or unknown keys; the run logs them at its start
+        old_backend = ''  # C14: a removed `[run] backend = "pi"` beside an agent not named pi (a wrapper) still holds
+
+        def read(f: Path, mine: dict) -> dict:
+            nonlocal old_backend
+            self.warnings.extend(migrate(mine, f.name))
+            if isinstance(mine.get('run'), dict) and mine['run'].get('backend') == 'pi':
+                old_backend = 'pi'
+            move_keys(mine)
+            return mine
         self.file = config_file(root)
         if self.file:
-            raw = _load(self.file)
-            self.warnings += migrate(raw, self.file.name)
+            raw = read(self.file, _load(self.file))
         self.local = local_file(root)
         if self.local:
             try:
-                mine = _load(self.local)
+                mine = read(self.local, _load(self.local))
             except tomllib.TOMLDecodeError as e:
                 raise SystemExit(f'agent-runner: {self.local}: {e}')
-            self.warnings += migrate(mine, self.local.name)
             raw = {**raw, **{k: ({**raw.get(k, {}), **v} if isinstance(v, dict) and isinstance(raw.get(k), dict)
                                  else v) for k, v in mine.items()}}
             keep_local_ignored(self.local.parent)
         # the keys the config files set, before defaults fill in the rest (B36: push_merge given explicitly)
         self.given = {k: set(v) for k, v in raw.items() if isinstance(v, dict)}
         supplied = dict(raw.get('run', {}))
-        infer = lambda run: run.get('backend') or (
-            'pi' if Path(run.get('agent', 'claude').replace('\\', '/')).stem.lower() == 'pi' else 'claude')
-        if (env := os.environ.get('AGENT_RUNNER_BACKEND')) and env != infer(supplied):
+        stem = lambda run: 'pi' if Path(str(run.get('agent', 'claude')).replace('\\', '/')).stem.lower() == 'pi' \
+            else 'claude'
+        backend = old_backend or stem(supplied)
+        if (env := os.environ.get('AGENT_RUNNER_BACKEND')) and env != backend:
             # one run on another agent with the repo's config: its agent and models are the other backend's
+            if env not in ('claude', 'pi'):
+                raise SystemExit(f'agent-runner: unknown AGENT_RUNNER_BACKEND {env!r}; choose claude or pi')
             supplied = {k: v for k, v in supplied.items() if k not in ('agent', 'model', 'fix_model')}
-            supplied['backend'] = env
+            backend = env
         raw = {**raw, 'run': supplied}
         self.raw = {k: {**v, **raw.get(k, {})} for k, v in DEFAULTS.items()}
         if self.raw['plan']['repo'] and 'dir' not in raw.get('plan', {}):
@@ -470,7 +521,7 @@ class Config:
         self.run = self.raw['run']
         if Path(str(self.run['agent']).replace('\\', '/')).stem.lower() == 'copilot':
             raise SystemExit('agent-runner: [run] agent = "copilot" is gone (GitHub Copilot CLI support was '
-                             'removed); use Pi with its github-copilot provider: backend = "pi", '
+                             'removed); use Pi with its github-copilot provider: agent = "pi", '
                              'model = "github-copilot/<model>"')
         if not isinstance(self.run['include_task_id_in_commit'], bool):
             raise SystemExit('agent-runner: [run] include_task_id_in_commit must be a boolean')
@@ -480,10 +531,7 @@ class Config:
             raise SystemExit(f"agent-runner: [run] silent must be 'launch', true or false, not {self.run['silent']!r}")
         if self.run['comment_policy'] not in ('normal', 'minimal'):
             raise SystemExit("agent-runner: [run] comment_policy must be 'normal' or 'minimal'")
-        backend = infer(self.run)
-        if backend not in ('claude', 'pi'):
-            raise SystemExit(f'agent-runner: unknown [run] backend {backend!r}; choose claude or pi')
-        self.run['backend'] = backend
+        self.run['backend'] = backend  # settled here, not a setting: `slots.backend()` reads it
         if 'agent' not in supplied:
             self.run['agent'] = backend
         if backend == 'pi':

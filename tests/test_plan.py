@@ -832,17 +832,19 @@ def test_needs_own_project():
 
 
 def test_needs_config():
-    print('config: B27 [needs] heading, ages, order are settings, with defaults (C5: map_replies is gone)')
+    print('config: C14 Needs you\'s order is [run] needs_order; [needs] heading/ages are gone (C5: map_replies too)')
     from agent_runner.config import Config
     with tempfile.TemporaryDirectory() as tmp:
         r = Path(tmp)
         git(r, 'init', '-q')
-        eq(Config(r).raw['needs'], {'heading': 'Needs you', 'ages': True, 'order': 'oldest'}, 'the defaults')
-        (r / 'runner.toml').write_text('[needs]\nheading = "For you"\nages = false\n', encoding='utf-8')
+        eq(Config(r).run['needs_order'], 'oldest', 'the default')
+        check('needs' not in Config(r).raw, 'no [needs] table')
+        (r / 'runner.toml').write_text('[needs]\nheading = "For you"\nages = false\norder = "plan"\n', encoding='utf-8')
         c = Config(r)
-        eq((c.raw['needs']['heading'], c.raw['needs']['ages'], c.raw['needs']['order']), ('For you', False, 'oldest'),
-           'runner.toml sets them')
-        eq(c.warnings, [], 'and they are known settings')
+        eq(c.run['needs_order'], 'plan', 'an old [needs] order still maps to [run] needs_order')
+        eq(len(c.warnings), 3, f'each old key warns: {c.warnings}')
+        check(any('[needs] order is gone, folded into [run] needs_order' in w for w in c.warnings), 'order: where', c.warnings)
+        check(any('[needs] heading is ignored' in w for w in c.warnings), 'heading: ignored, said why', c.warnings)
         (r / 'runner.toml').write_text('[needs]\nmap_replies = true\n', encoding='utf-8')
         c = Config(r)
         check(any('map_replies is ignored' in w for w in c.warnings), 'C5: an old map_replies is ignored, said why',
@@ -1204,23 +1206,23 @@ def test_iter_tasks_and_titles():
 
 
 def test_hook():
-    print('state.hook: runs a project command with [run] timeout, logs one that runs past')
+    print('state.hook: runs a project command with [run] command_timeout, logs one that runs past')
     import types
     from agent_runner import state
     saved = state.C
     with tempfile.TemporaryDirectory() as tmp:
-        state.C = types.SimpleNamespace(run={'timeout': 5}, notes=lambda name: Path(tmp) / name)
+        state.C = types.SimpleNamespace(run={'command_timeout': 5}, notes=lambda name: Path(tmp) / name)
         try:
             rc, out = state.hook('t', f'"{sys.executable}" -c "import sys; print(1); sys.exit(3)"', tmp)
             eq((rc, out.strip()), (3, '1'), 'its exit code and output')
             rc, out = state.hook('t', f'"{sys.executable}" -c "import os; print(os.environ[\'HOOK_X\'])"', tmp,
                                  {**os.environ, 'HOOK_X': 'yes'})
             eq((rc, out.strip()), (0, 'yes'), 'the env it is given')
-            state.C.run['timeout'] = 0.5
+            state.C.run['command_timeout'] = 0.5
             rc, out = state.hook('T9: the retest', f'"{sys.executable}" -c "import time; time.sleep(5)"', tmp)
-            eq((rc, out), (None, ''), 'one that runs past [run] timeout reads as (None, "")')
+            eq((rc, out), (None, ''), 'one that runs past [run] command_timeout reads as (None, "")')
             has((Path(tmp) / 'run.log').read_text(encoding='utf-8'), 'T9: the retest: `', 'and is logged under its name')
-            has((Path(tmp) / 'run.log').read_text(encoding='utf-8'), re.escape('ran past [run] timeout (0.5s)'), 'with the limit')
+            has((Path(tmp) / 'run.log').read_text(encoding='utf-8'), re.escape('ran past [run] command_timeout (0.5s)'), 'with the limit')
         finally:
             state.C = saved
 
@@ -1294,19 +1296,19 @@ def test_refusals():
 
 
 def test_done_gate():
-    print('done.gate: runs [run] test through gitops.shell, a run past [run] timeout counted as failing (124)')
+    print('done.gate: runs [run] test through gitops.shell, a run past [run] command_timeout counted as failing (124)')
     from agent_runner import done
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
         git(root, 'init', '-q')
         py = sys.executable.replace('\\', '/')
         (root / 'runner.toml').write_text(
-            f'[run]\ntimeout = 0.5\ntest = \'"{py}" -c "print(1); print(2); raise SystemExit(4)"\'\n'
+            f'[run]\ncommand_timeout = 0.5\ntest = \'"{py}" -c "print(1); print(2); raise SystemExit(4)"\'\n'
             f'slow = \'"{py}" -c "import time; time.sleep(5)"\'\n', encoding='utf-8')
         eq(done.gate(root), (4, '1\n2'), 'its exit code and output, stripped')
         rc, out = done.gate(root, 'slow')
         eq(rc, 124, 'one that runs past fails')
-        has(out, re.escape('ran past [run] timeout (0.5s): counted as failing'), 'and says so')
+        has(out, re.escape('ran past [run] command_timeout (0.5s): counted as failing'), 'and says so')
 
 
 def test_channel():

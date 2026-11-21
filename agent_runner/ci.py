@@ -32,6 +32,7 @@ RED = {'failure', 'timed_out', 'startup_failure'}
 QUIET = {'cancelled', 'skipped', 'neutral', 'stale', ''}  # finished without saying anything about the code
 TAIL = 40            # log lines a task's long form keeps, ending at the last error
 GH_TIMEOUT = 60
+CI_KIND = 'B'        # C14: the id prefix a red run's task gets (was [run] ci_kind)
 
 Gh = Callable[..., subprocess.CompletedProcess]
 

@@ -364,6 +364,7 @@ def retry_reopened(tried: set[str], closed: set[str], branch: str) -> None:
             log(f'{t}: its line changed since it was tried; back in the pool')
 
 
+FLAKY_KIND = 'T'  # C14: the id prefix a flaky, broken or runaway test's task gets (was [run] flaky_kind)
 FLAKY: dict[str, str] = {}  # a test that failed under load and passed alone -> the task whose gate saw it
 # a test that failed on the merge and on its base too -> (the task, the base, whether the daily whole test found it)
 BROKEN: dict[str, tuple[str, str, bool]] = {}
@@ -384,7 +385,7 @@ def file_flaky(rel: str) -> list[str]:
         return []
     ls = P.lines(ROOT / rel)
     open_text = '\n'.join(l for l in ls if (m := P.ITEM.match(l)) and m.group(2) != 'x')
-    kind, out = C.run['flaky_kind'], []
+    kind, out = FLAKY_KIND, []
     for name, (gb, where) in list(HOGS.items()):
         del HOGS[name]
         if name in open_text:

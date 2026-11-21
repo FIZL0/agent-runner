@@ -30,12 +30,23 @@ def test_config(repo: Path):
     c = configure(repo)
     eq((c.run['backend'], c.run['model'], c.run['fix_model']), ('pi', '', ''),
        'agent=pi selects Pi, not Claude models')
+    c = configure(repo, 'agent = "/opt/bin/pi"\nmodel = "github-copilot/example"\n')
+    eq((c.run['backend'], c.run['fix_model']), ('pi', 'github-copilot/example'),
+       'an agent named pi selects Pi and the fixer model defaults to its model')
     c = configure(repo, 'backend = "pi"\nmodel = "github-copilot/example"\n')
-    eq((c.run['agent'], c.run['fix_model']), ('pi', 'github-copilot/example'),
-       'an explicit backend sets the executable and fixer model defaults')
+    eq((c.run['agent'], c.run['backend'], c.run['fix_model']), ('pi', 'pi', 'github-copilot/example'),
+       'C14: an old [run] backend = "pi" still maps to agent = "pi"')
+    check(any('[run] backend is gone' in w and 'agent = "pi"' in w for w in c.warnings),
+          'and warns, saying what to write instead', c.warnings)
     c = configure(repo, 'agent = "my-wrapper"\nbackend = "pi"\nfix_model = "other/model"\n')
     eq((c.run['backend'], c.run['fix_model']), ('pi', 'other/model'),
-       'wrappers and distinct fixer models are supported')
+       'an old backend = "pi" beside a wrapper still runs it on Pi, with its own fixer model')
+    os.environ['AGENT_RUNNER_BACKEND'] = 'pi'
+    try:
+        c = configure(repo, 'agent = "my-wrapper"\nfix_model = "other/model"\n')
+        eq(c.run['backend'], 'pi', 'a wrapper not named pi runs on Pi with AGENT_RUNNER_BACKEND=pi')
+    finally:
+        del os.environ['AGENT_RUNNER_BACKEND']
     c = configure(repo, 'agent = "pi.cmd"\n')
     eq(c.run['backend'], 'pi', 'Windows npm executable names are inferred')
     c = configure(repo, '')
@@ -51,26 +62,29 @@ def test_config(repo: Path):
         c = configure(repo, 'model = "sonnet"\nfix_model = "opus"\n')
         eq((c.run['agent'], c.run['backend'], c.run['model'], c.run['fix_model']), ('pi', 'pi', '', ''),
            "AGENT_RUNNER_BACKEND=pi runs a Claude repo on Pi, without Claude's models")
-        c = configure(repo, 'backend = "pi"\nmodel = "x/y"\n')
+        c = configure(repo, 'agent = "pi"\nmodel = "x/y"\n')
         eq(c.run['model'], 'x/y', 'an override naming the configured backend keeps its model')
         os.environ['AGENT_RUNNER_BACKEND'] = 'claude'
         c = configure(repo, 'model = "sonnet"\n')
         eq(c.run['model'], 'sonnet', 'an override naming the inferred backend keeps its model')
     finally:
         del os.environ['AGENT_RUNNER_BACKEND']
-    (repo / 'runner.toml').write_text('[run]\nbackend = "invalid"\n', encoding='utf-8')
+    (repo / 'runner.toml').write_text('[run]\n', encoding='utf-8')
+    os.environ['AGENT_RUNNER_BACKEND'] = 'invalid'
     try:
         Config(repo)
     except SystemExit as e:
-        has(str(e), 'unknown.*backend', 'unknown backends fail explicitly')
+        has(str(e), 'unknown AGENT_RUNNER_BACKEND', 'unknown backends fail explicitly')
     else:
         check(False, 'unknown backends must fail')
+    finally:
+        del os.environ['AGENT_RUNNER_BACKEND']
     for agent in ('copilot', 'C:\\\\tools\\\\copilot.exe'):
         (repo / 'runner.toml').write_text(f'[run]\nagent = "{agent}"\n', encoding='utf-8')
         try:
             Config(repo)
         except SystemExit as e:
-            has(str(e), 'copilot.*is gone.*backend = "pi".*github-copilot/',
+            has(str(e), 'copilot.*is gone.*agent = "pi".*github-copilot/',
                 f'agent = {agent!r} (the removed Copilot CLI backend) fails, pointing to Pi + github-copilot')
         else:
             check(False, f'agent = {agent!r} must fail')
@@ -190,8 +204,8 @@ def test_sessions(repo: Path):
 
 
 def test_fixer(repo: Path):
-    configure(repo, 'backend = "pi"\nmodel = "github-copilot/example"\n'
-              'slot_env = ["AGENT_SLOT={n}", "NODE_USE_SYSTEM_CA=1"]\n')
+    configure(repo, 'agent = "pi"\nmodel = "github-copilot/example"\n'
+              'slot_env = ["NODE_USE_SYSTEM_CA=1"]\n')
     original = subprocess.run
     calls = []
 
@@ -218,7 +232,7 @@ def test_fixer(repo: Path):
 
 def test_backend_end_to_end(repo: Path):
     print('pi: command lines, the extensions, the session files, stats and resuming a failed call')
-    configure(repo, 'backend = "pi"\nmodel = "github-copilot/m1"\nfix_model = "github-copilot/m2"\n')
+    configure(repo, 'agent = "pi"\nmodel = "github-copilot/m1"\nfix_model = "github-copilot/m2"\n')
     sessions = R.C.notes('pi-sessions')
     argv = R.agent_argv('do T1', 'sid-p', 'github-copilot/m1', 45, 'slotP')
     eq(argv[-2:], ['--', f'@{R.C.notes("slotP.prompt")}'], 'Pi reads its options, the prompt from a file')
@@ -264,7 +278,7 @@ def test_backend_end_to_end(repo: Path):
 
 def test_no_push(repo: Path):
     print('with [git] push = false, no agent session can push')
-    configure(repo, 'backend = "pi"\n\n[git]\npush = false\n')
+    configure(repo, 'agent = "pi"\n\n[git]\npush = false\n')
     p = R.prompt_for('SA1', 1, 1, repo, 'main')
     check('Pushing is off' in p and 'pushes task/' not in p, 'the prompt says pushing is off, not that done pushes')
     env = dict(e.split('=', 1) for e in R.slot_env(1))

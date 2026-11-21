@@ -1607,7 +1607,7 @@ def change(tid: str, instead: str, todo=None, done=None) -> str:
 
 # --- B27: "Needs you": each ask in everyday words, with its age --------------------------------------------
 #
-# What waits on a person shows under `[needs] heading` ("Needs you") as one plain line each: what is asked and
+# What waits on a person shows under "Needs you" as one plain line each: what is asked and
 # what to reply ("Check the push reached your phone - reply yes/no"), its link on a line of its own, oldest
 # first with its age. The caps labels stay in TODO.md and in `asks`, for the tools; the person never reads
 # them. A block on a person is stamped `(asked YYYY-MM-DD HH:MM)` when it is filed, which is where the age
@@ -1621,11 +1621,12 @@ REPLY_HINT = {'CONCEPT': 'reply A/B/C', 'CONFIRM': 'reply yes/no', 'DECIDE': 're
 
 
 def needs_cfg() -> dict:
-    """`[needs]`: heading, ages, order (config.DEFAULTS has them all)."""
+    """Needs you's heading and ages (C14: constants) and its order (`[run] needs_order`)."""
     try:
-        return {'heading': 'Needs you', 'ages': True, 'order': 'oldest', **(cfg().raw.get('needs') or {})}
-    except SystemExit:  # outside a repository: the defaults
-        return {'heading': 'Needs you', 'ages': True, 'order': 'oldest'}
+        order = cfg().run.get('needs_order') or 'oldest'
+    except SystemExit:  # outside a repository: the default
+        order = 'oldest'
+    return {'heading': 'Needs you', 'ages': True, 'order': order}
 
 
 def stamp_ask(why: str, now=None) -> str:
@@ -1685,7 +1686,7 @@ def age(stamp: str, now) -> str:
 
 
 def in_order(items: list, stamps: dict[str, str], order: str = 'oldest') -> list:
-    """`items` (asks tuples, id second) in `[needs] order`: 'oldest' first (unstamped ones are older still),
+    """`items` (asks tuples, id second) in `[run] needs_order`: 'oldest' first (unstamped ones are older still),
     'newest' first, or 'plan' (as given: TODO.md's order). The sort is stable, so equal ages keep plan order."""
     if order == 'plan':
         return list(items)

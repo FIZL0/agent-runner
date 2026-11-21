@@ -403,7 +403,7 @@ BACKENDS = {'claude': Claude(), 'pi': Pi()}
 
 
 def backend() -> Claude:
-    """The configured backend: `[run] backend`, settled by `Config`."""
+    """The backend `Config` settled from `[run] agent` and AGENT_RUNNER_BACKEND."""
     return BACKENDS[C.run['backend']]
 
 
@@ -594,12 +594,13 @@ def merge_env() -> dict:
 
 
 def slot_env(n: int | None) -> list[str]:
-    """A slot's environment, as NAME=value: `AGENT_RUNNER=1`; the config file when it came from
+    """A slot's environment, as NAME=value: `AGENT_RUNNER=1`, `AGENT_SLOT=<n>`; the config file when it came from
     AGENT_RUNNER_CONFIG and every variable `[run] pass_env` names that is set (a tmux pane does not inherit
     the runner's environment, so a wrapper's own variables must be passed on by name); then `[run]
     slot_env` with {n} (the slot) and {slots} filled in. `n=None` is the master window's: `shared_env` in
     place of `[run] slot_env`, so it builds in the merge worktree the way the gate there does."""
-    env = ['AGENT_RUNNER=1'] + ([] if n is None else [f'AGENT_RUNNER_SLOT={n}'])  # `finished_mark`
+    # `finished_mark`; C14: AGENT_SLOT whatever `slot_env` says, which only adds to it
+    env = ['AGENT_RUNNER=1'] + ([] if n is None else [f'AGENT_RUNNER_SLOT={n}', f'AGENT_SLOT={n}'])
     env.append(f'CLAUDE_CODE_TMPDIR={session_tmp()}')
     if os.environ.get('AGENT_RUNNER_CONFIG') and C.file:
         env.append(f'AGENT_RUNNER_CONFIG={C.file}')

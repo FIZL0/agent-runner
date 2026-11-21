@@ -417,10 +417,10 @@ def run_up() -> bool:
 
 def hook(name: str, cmd: str, cwd, env: dict | None = None) -> tuple[int | None, str]:
     """Run a project's command (`[run] slot_clean`, `join`, `retest`, `on_exit`, `before_start`) in a shell at
-    `cwd`, for at most `[run] timeout`: (its exit code, stdout and stderr). One that runs past is stopped,
-    logged as "<name>: `cmd` ran past [run] timeout (Ns); stopped" and read as (None, ''): not 0, so a caller
-    that counts a non-zero exit as failing counts it too."""
-    rc, out = gitops.shell(cmd, cwd, env, C.run['timeout'])
+    `cwd`, for at most `[run] command_timeout`: (its exit code, stdout and stderr). One that runs past is stopped,
+    logged as "<name>: `cmd` ran past [run] command_timeout (Ns); stopped" and read as (None, ''): not 0, so a
+    caller that counts a non-zero exit as failing counts it too."""
+    rc, out = gitops.shell(cmd, cwd, env, C.run['command_timeout'])
     if rc is None:
-        log(f'{name}: `{cmd}` ran past [run] timeout ({C.run["timeout"]}s); stopped')
+        log(f'{name}: `{cmd}` ran past [run] command_timeout ({C.run["command_timeout"]}s); stopped')
     return rc, out

@@ -9,7 +9,7 @@ from pathlib import Path
 
 from _check import FAILED, check, eq, git, has, run
 
-from agent_runner import guide
+from agent_runner import config, guide
 from agent_runner.config import DEFAULTS, default_docs, settings_reference
 
 ref = settings_reference('agent-runner')
@@ -23,7 +23,7 @@ for s in lines:
         cur = sections.setdefault(s[1:-1], [])
     elif cur is not None and s:
         cur.append(s)
-for table in ('run', 'plan', 'git', 'needs'):
+for table in ('run', 'plan', 'git'):
     check(table in sections, f'[{table}] has a heading')
     for k, v in DEFAULTS[table].items():
         line = next((s for s in sections.get(table, []) if s.startswith(f'{k} = ')), '')
@@ -34,18 +34,20 @@ for table in ('run', 'plan', 'git', 'needs'):
 docs = default_docs()
 check(all(docs['run'][k] for k in DEFAULTS['run']), 'every [run] key has a comment to show')
 check(all(docs['plan'][k] for k in DEFAULTS['plan']), 'every [plan] key too')
-has(ref, r'control_idle = "3h"  # quiet this long', 'a key reads as `key = default  # what it does`')
+has(ref, r'control_ask = "2h"  # quiet this long', 'a key reads as `key = default  # what it does`')
 has(ref, r'apply on the next run', 'it says when a change applies')
 has(ref, r'runner\.local\.toml \(this machine only', 'and runner.toml vs runner.local.toml')
 has(ref, r'take "set \[TABLE\] KEY = VALUE','and that a runner.toml change goes through take, not the main checkout')
-check('control_close = true  # the run closes' in ref, 'a ticket tag (B26:) is dropped from a comment')
+check(not re.search(r'  # [A-Z]\d+: ', ref), 'no comment starts with a task id (C14)')
+check(not re.search(r"#\s*[A-Z]\d+: ", Path(config.__file__).read_text(encoding='utf-8').split('DEFAULTS: dict', 1)[1]
+                    .split('\n}\n', 1)[0]), 'C14: nor does any comment in DEFAULTS itself')
 
 print('`agent-runner settings` prints it')
 tmp = Path(tempfile.mkdtemp(prefix='agent-runner-settings-'))
 git(tmp, 'init', '-q')
 r = run(tmp, 'settings')
 eq(r.returncode, 0, 'exits 0')
-check('slots = 3' in r.stdout and '[needs]' in r.stdout, 'every table')
+check('slots = 3' in r.stdout and '[git]' in r.stdout, 'every table')
 
 print('the guide and the control brief recommend settings, by real keys only')
 for name, text in (('GUIDE', guide.GUIDE), ('CONTROL', guide.CONTROL)):

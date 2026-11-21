@@ -3199,6 +3199,8 @@ def test_hooks(repo: Path, tmp: Path):
         env_ = R.slot_env(2)
         check({'KIT_PCSX2=2', 'KIT_CHECK_SLOTS=3', 'KIT_FLAG=x'} <= set(env_) and not any('UNSET' in e for e in env_),
               'slot_env fills {n} and {slots}; pass_env hands on what is set', env_)
+        check('AGENT_SLOT=2' in env_, 'C14: a custom slot_env keeps AGENT_SLOT, it only adds to it', env_)
+        check(not any(e.startswith('AGENT_SLOT=') for e in R.slot_env(None)), 'the master window has no slot number')
         del os.environ['KIT_FLAG']
         R.SLOTS = 1
     finally:
@@ -5630,8 +5632,7 @@ def test_close_idle_controls(repo: Path):
              _call('Monitor', {'command': f'{R.C.command} since --follow --needs-you', 'timeout_ms': 1800000},
                    'u3', 10 * 60), _result('u3', 'Monitor started (task mw2, expires in 30m)', 10 * 60)]
     cf, now = R.control_cfg(), time.time()
-    eq((cf['close'], cf['idle'], cf['ask_idle'], cf['file_asks']), (True, 10800.0, 7200.0, True),
-       'defaults: on, control_idle 3h, control_ask_idle 2h, questions filed')
+    eq((cf['idle'], cf['ask_idle']), (10800.0, 7200.0), 'defaults: control_idle 3h, control_ask 2h')
     for name, rows, want in (('done', done, 'close'), ('question', ask, 'ask'), ('young question', ask_young, 'keep'),
                              ('person last', person, 'keep'), ('recent', recent, 'keep'),
                              ('background task running', bg, 'keep'), ('background task finished', bg_done, 'close'),
@@ -5671,14 +5672,20 @@ def test_close_idle_controls(repo: Path):
               and all((notes / f'control{n}.pid').exists() for n in (1, 4, 5, 6)),
               'their pid files removed; c1, person last, recent and busy ones kept')
         ended.clear()
-        with mock.patch.dict(R.C.run, {'control_close': False}):
-            eq(R.close_controls(force=True), [], '[run] control_close = false closes nothing')
-        with mock.patch.dict(R.C.run, {'control_file_asks': False}):
+        with mock.patch.dict(R.C.run, {'control_idle': False, 'control_ask': False}):
+            eq(R.close_controls(force=True), [], 'C14: control_idle and control_ask false close nothing')
+        (notes / 'control2.pid').write_text('9002 s2', encoding='utf-8')
+        (notes / 'control3.pid').write_text('9003 s3', encoding='utf-8')
+        with mock.patch.dict(R.C.run, {'control_idle': False}):
+            filed.clear()
+            eq(R.close_controls(force=True), [(3, 'asked', 'F99')],
+               'C14: control_idle = false closes no idle session; an open question is still filed and closed')
+        with mock.patch.dict(R.C.run, {'control_ask': False}):
             (notes / 'control3.pid').write_text('9003 s3', encoding='utf-8')
             filed.clear()
-            got = R.close_controls(force=True)
-            check((3, 'asked', 'Want me to pause T8 too?') in got and not filed,
-                  '[run] control_file_asks = false: closed without filing', (got, filed))
+            eq((R.close_controls(force=True), filed), ([(2, 'closed', 'idle 209 min')], []),
+               'C14: control_ask = false keeps a session waiting on its question open, filing nothing')
+        (notes / 'control2.pid').unlink(missing_ok=True)
     for n in range(1, 7):
         (notes / f'control{n}.pid').unlink(missing_ok=True)
 
@@ -5688,13 +5695,13 @@ def test_close_idle_controls(repo: Path):
         git(root, 'init', '-q')
         (root / 'runner.toml').write_text('[run]\ncontrol_ask_kind = "R"\n', encoding='utf-8')
         (root / 'plan').mkdir()
-        (root / 'plan' / 'TODO.md').write_text('# TODO\n\n### Next\n\n- [ ] **R1** other | files: a.py\n',
+        (root / 'plan' / 'TODO.md').write_text('# TODO\n\n### Next\n\n- [ ] **F1** other | files: a.py\n',
                                                encoding='utf-8')
         git(root, 'add', '-A'); git(root, 'commit', '-qm', 'start')
         try:
             R.init(root)
             tid = R.file_control_ask(3, 'sid-3', 'Want me to pause T8 too?', 'https://claude.ai/code/session_01AbC')
-            eq(tid, 'R2', 'filed with [run] control_ask_kind')
+            eq(tid, 'F2', 'filed as an F task (C14: an old control_ask_kind is ignored)')
             a = [x for x in P.asks(root / 'plan' / 'TODO.md') if x[1] == tid]
             eq([(x[0], x[3], x[4]) for x in a], [('DECIDE', 'Want me to pause T8 too?',
                                                  'https://claude.ai/code/session_01AbC')],
@@ -6972,6 +6979,92 @@ def test_merged_count_b78(repo: Path):
     R.init(repo)
 
 
+def test_config_trim_c14(tmp: Path):
+    print('C14: each key the config trim dropped or renamed warns with what to write instead; a renamed one still '
+          'applies, under its new name')
+    from agent_runner.config import Config, DEFAULTS
+    root = tmp / 'c14'
+    root.mkdir()
+    git(root, 'init', '-q')
+
+    def load(text: str, local: str = '') -> Config:
+        (root / 'runner.toml').write_text(text, encoding='utf-8')
+        (root / 'runner.local.toml').unlink(missing_ok=True)
+        if local:
+            (root / 'runner.local.toml').write_text(local, encoding='utf-8')
+        return Config(root)
+
+    def said(c: Config, what: str) -> bool:
+        return any(what in w for w in c.warnings)
+
+    gone = ('backend', 'batch', 'control_close', 'control_ask_idle', 'control_file_asks', 'control_ask_kind',
+            'flaky_kind', 'ci_kind', 'timeout')
+    check(not set(gone) & set(DEFAULTS['run']) and 'needs' not in DEFAULTS, 'none of them is a setting any more')
+    check({'command_timeout', 'control_ask', 'control_idle', 'needs_order', 'batch_max'} <= set(DEFAULTS['run']),
+          'their new keys are')
+    c = load('')
+    eq((c.run['command_timeout'], c.run['control_idle'], c.run['control_ask'], c.run['needs_order'],
+        c.run['batch_max'], c.run['slot_env'], c.warnings), (3600, '3h', '2h', 'oldest', 16, [], []),
+       'defaults, and no warning')
+    # renamed: the old name warns and its value goes to the new key
+    c = load('[run]\ntimeout = 99\n')
+    eq(c.run['command_timeout'], 99, '(14) [run] timeout maps to command_timeout')
+    check(said(c, 'runner.toml: [run] timeout is gone, folded into [run] command_timeout: rename it'), 'and warns', c.warnings)
+    check('timeout' not in c.run, 'the old key is not left behind')
+    c = load('[run]\ntimeout = 99\ncommand_timeout = 7\n')
+    eq(c.run['command_timeout'], 7, 'a file setting both: the new name wins')
+    c = load('[run]\ncontrol_ask_idle = "30m"\n')
+    eq(c.run['control_ask'], '30m', '(7) control_ask_idle maps to control_ask')
+    check(said(c, '[run] control_ask_idle is gone, folded into [run] control_ask'), 'and warns', c.warnings)
+    eq(load('[run]\ncontrol_ask_idle = 0\n').run['control_ask'], False, 'control_ask_idle = 0 (off) is control_ask = false')
+    c = load('[needs]\norder = "newest"\n')
+    eq(c.run['needs_order'], 'newest', '(8) [needs] order maps to [run] needs_order')
+    check(said(c, '[needs] order is gone, folded into [run] needs_order'), 'and warns', c.warnings)
+    c = load('[run]\nslots = 2\n', local='[needs]\norder = "plan"\n[run]\ntimeout = 5\n')
+    eq((c.run['needs_order'], c.run['command_timeout'], c.run['slots']), ('plan', 5, 2),
+       'old names in runner.local.toml map too, laid over runner.toml')
+    check(said(c, 'runner.local.toml: [run] timeout is gone'), 'warned under its own file name', c.warnings)
+    # folded into another key: false maps, the default value is just dropped
+    c = load('[run]\ncontrol_close = false\n')
+    eq(c.run['control_idle'], False, '(6) control_close = false is control_idle = false')
+    check(said(c, '[run] control_close is gone, folded into [run] control_idle'), 'and warns', c.warnings)
+    eq(load('[run]\ncontrol_close = true\ncontrol_idle = "1h"\n').run['control_idle'], '1h',
+       'control_close = true changes nothing')
+    c = load('[run]\nbatch = false\n')
+    eq(c.run['batch_max'], 1, '(3) batch = false is batch_max = 1 (no batching)')
+    check(said(c, '[run] batch is gone, folded into [run] batch_max'), 'and warns', c.warnings)
+    eq(load('[run]\nbatch = true\n').run['batch_max'], 16, 'batch = true keeps batch_max')
+    eq(load('[run]\nbatch = false\nbatch_max = 4\n').run['batch_max'], 4, 'an explicit batch_max wins')
+    c = load('[run]\nbackend = "pi"\n')
+    eq((c.run['agent'], c.run['backend']), ('pi', 'pi'), '(1) backend = "pi" is agent = "pi"')
+    check(said(c, '[run] backend is gone') and said(c, 'AGENT_RUNNER_BACKEND'), 'and warns, naming the override', c.warnings)
+    c = load('[run]\nbackend = "claude"\n')
+    eq((c.run['agent'], c.run['backend']), ('claude', 'claude'), 'backend = "claude" changes nothing')
+    check(said(c, '[run] backend is gone'), 'but warns too', c.warnings)
+    eq(load('[run]\nagent = "/usr/local/bin/pi"\n').run['backend'], 'pi', 'the backend follows an agent named pi')
+    # removed outright (now constants): ignored, said why
+    for key, words in (('control_file_asks = false', 'control_file_asks is ignored'),
+                       ('control_ask_kind = "R"', 'control_ask_kind is ignored'),
+                       ('flaky_kind = "X"', 'flaky_kind is ignored'), ('ci_kind = "X"', 'ci_kind is ignored')):
+        c = load(f'[run]\n{key}\n')
+        check(said(c, words) and said(c, 'delete it'), f'(10) {key}: warns, with what to do', c.warnings)
+        check(key.split(' ')[0] not in c.run, 'and is not read')
+    c = load('[needs]\nheading = "For you"\nages = false\n')
+    check(said(c, '[needs] heading is ignored') and said(c, '[needs] ages is ignored'), '(8) [needs] heading and ages warn',
+          c.warnings)
+    check(R.FLAKY_KIND == 'T' and R.CONTROL_ASK_KIND == 'F' and R.ci.CI_KIND == 'B', 'the kinds are constants now')
+    # (5) AGENT_SLOT whatever slot_env says
+    was = R.C
+    try:
+        R.C = load('[run]\nslot_env = ["PORT=80{n}"]\n')
+        env = R.env_vars(R.slot_env(3))
+        eq((env.get('AGENT_SLOT'), env.get('PORT')), ('3', '803'), '(5) a custom slot_env keeps AGENT_SLOT')
+        R.C = load('')
+        eq(R.env_vars(R.slot_env(2)).get('AGENT_SLOT'), '2', 'and the empty default exports it too')
+    finally:
+        R.C = was
+
+
 def main() -> int:
     with tempfile.TemporaryDirectory() as t:
         tmp = Path(t)
@@ -7012,7 +7105,7 @@ def main() -> int:
                        lambda: test_hidden_slots(repo, tmp), lambda: test_hidden_run_lands(tmp), lambda: test_no_gate_b36(tmp),
                        lambda: test_claude_drift_b45(repo, tmp), lambda: test_merged_count_b78(repo),
                        lambda: test_hidden_control_f59(repo, tmp), lambda: test_context_warn_f25(repo),
-                       lambda: test_control_fresh_f27(repo)])
+                       lambda: test_control_fresh_f27(repo), lambda: test_config_trim_c14(tmp)])
 
 
 if __name__ == '__main__':
