@@ -292,6 +292,8 @@ def test_row_ground_and_fill() -> None:
     check(c.pairs[(win.colour[row][2] & 0xff00) >> 8][0] == 203, 'its id keeps its colour (red c1)')
     title = win.lines()[row].index('control')
     eq(c.pairs[(win.colour[row][title] & 0xff00) >> 8], (254, 235), 'its text: #e5e5e5 on #262626')
+    state = win.lines()[row].index(' live') + 1
+    eq(c.pairs[(win.colour[row][state] & 0xff00) >> 8], (254, 235), 'its dim state word too')
     p.key('2')
     p.draw(win)
     row = next(y for y, l in enumerate(win.lines()) if ' c1 control session' in l[:36])

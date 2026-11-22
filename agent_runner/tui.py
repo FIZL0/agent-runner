@@ -44,7 +44,7 @@ CUR_BG = (235, 0)  # #262626: the selected row of a panel that isn't focused
 BLACK = (16, 0)
 # B112: a selected row draws every segment on its row background: each theme colour gets a pair on SEL_BG
 # ('sel:red') and on CUR_BG ('cur:cyan'); ids keep their colour, dim text turns readable on the lighter ground
-ROW_DIM = {'sel': (254, 7), 'cur': (250, 7)}
+ROW_DIM = {'sel': (254, 7), 'cur': (254, 7)}
 
 
 def session_rows(snap: dict) -> list:
@@ -175,7 +175,7 @@ class RunPage:
             if it.get('name') == 'c1':
                 return [('c1 ', 'red'), (it.get('title', ''), 'fg'), (f' {it.get("state", "")}', 'dim')]
             if not it.get('task'):
-                return [(f'{it["name"]} ', 'dim'), (it.get('state') or 'idle', 'dim')]
+                return [(f'{it["name"]} ', 'yellow'), (it.get('state') or 'idle', 'dim')]
             mins = f' {it["minutes"]}m' if it.get('minutes') is not None else ''
             return [(f'{it["name"]} ', 'magenta' if it.get('state') == 'merging' else 'yellow'),
                     (f'{it.get("task", "")} ', 'cyan'), (it.get('title', ''), 'fg'),
