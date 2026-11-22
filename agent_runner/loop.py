@@ -29,6 +29,7 @@ from agent_runner.state import (alarm, ask_stop, C, clean, clear_stop, commit_pl
 from agent_runner.state import (EV_DEFERRED, EV_DROPPED, EV_IDLE, EV_LEFT, EV_NO_COMMITS, EV_PARKED, EV_RUN_UP,
     EV_STALLED, EV_STOP_ASKED, EV_STOP_BACK, EV_STOPPED)
 from agent_runner.state import EV_CONTEXT
+from agent_runner.state import REPO_TAG
 from agent_runner.autorelease import auto_release, auto_release_of, AUTO_RELEASE_SEEN, landed_since_release
 from agent_runner.watch import context_over
 from agent_runner.brief import no_remote_line
@@ -1072,6 +1073,7 @@ def run(argv: list[str], prog: str) -> int:
         return 2
     if choice == 'tmux' and os.environ.get('TMUX_PANE'):  # `attach` finds the runner's pane by this
         tmux('set-option', '-p', '-t', os.environ['TMUX_PANE'], RUN_TAG, str(ROOT))
+        tmux('set-option', '-p', '-t', os.environ['TMUX_PANE'], REPO_TAG, str(ROOT))  # C23: not an older run's
     rc_sweep_start()  # B12: end the feed or control server an earlier run left on Remote Control
     start_control()  # c1 beside the run ([run] control) unless [run] remote, where the control server stands in
     start_control_server()

@@ -6,7 +6,9 @@ copy, and the actions they share.
     status    the status lines: run up or not, its state, progress, release, no-gate warning, usage
     slots     the run's slot count (0 when no run is up; while it starts, [run] slots)
     sessions  c1 and every other control session window (cN, its title), then each slot s1..s<slots> and any past the count still on a task: task, title, minutes,
-              state (running, merging, idle: no task), files, session link, terminal URL
+              state (running, merging, idle: no task), files, session link, terminal URL; none when an older
+              agent-runner started the run (its panes carry no tags: `older_run`)
+    sessions_note  '' or, with no sessions for that reason, the one line Sessions shows instead (`OLDER_RUN`)
     queue     every open task in TODO.md: id, kind, title, files, after, pri, section, blocked
     needs     what waits on the person (not the shelved ones): label, id, ask in plain words, link, age
     concepts  concept pages waiting for an OK: build id, concept id, title, page link
@@ -153,47 +155,61 @@ def idle_row(name: str) -> dict:
 
 
 def tmux_panes() -> list[str]:
-    """B113: every tmux pane, one 'session<TAB>window name<TAB>@runner<TAB>@runner-repo' line each; [] without
-    tmux or a server."""
+    """B113: every tmux pane, one 'session<TAB>window name<TAB>@runner<TAB>@runner-repo<TAB>@runner-run' line
+    each; [] without tmux or a server."""
     import shutil
     if not shutil.which('tmux'):
         return []
     try:
         r = sp.run(['tmux', 'list-panes', '-a', '-F',
-                    f'#{{session_name}}\t#{{window_name}}\t#{{{S.TAG}}}\t#{{{S.REPO_TAG}}}'],
+                    f'#{{session_name}}\t#{{window_name}}\t#{{{S.TAG}}}\t#{{{S.REPO_TAG}}}\t#{{{S.RUN_TAG}}}'],
                    capture_output=True, text=True, timeout=5)
     except (OSError, sp.SubprocessError):
         return []
     return r.stdout.splitlines() if not r.returncode else []
 
 
+OLDER_RUN = 'This run was started by an older agent-runner: restart it to see its sessions.'  # C23
+
+
+def _ours(owner: str) -> bool:
+    """C23: a pane's @runner-repo names this main checkout."""
+    try:
+        return bool(owner) and Path(owner).resolve() == Path(S.ROOT).resolve()
+    except OSError:
+        return False
+
+
 def control_windows(panes: list[str]) -> dict[int, str]:
-    """B113: {N: title} of this repository's control session windows in `panes` (`tmux_panes` lines), read by
-    window name whatever agent-runner version opened them: "<repo> · N · <title>", "<repo> · control N" and
-    "<repo> · N" (title 'control session'), or a pane tagged cN whose window has another name ("<repo> · R43 ·
-    site deploy": the title after "<repo> · "). A pane counts when its @runner-repo is this main checkout, or,
-    with no repo tag (a run of an older version), when it is in the run's tmux session "ar-<repo>". A window
-    with no number in its name nor a cN tag (a bare "<repo>") cannot be told apart, and is left out."""
+    """B113/C23: {N: title} of this repository's control session windows in `panes` (`tmux_panes` lines), read
+    only by the tags this version sets: a pane tagged @runner cN whose @runner-repo is this main checkout. The
+    title is its window's name after "<repo> · " and, when it is N, "N · " ("<repo> · 6 · Pairing broken" is
+    'Pairing broken', "<repo> · R43 · site deploy" 'R43 · site deploy'); 'control session' when nothing is left
+    ("<repo> · 3", "<repo> · control 3"). A pane with no tags is never guessed at (see `older_run`)."""
     repo = S.ROOT.name
-    sess = f"ar-{re.sub(r'[^A-Za-z0-9_-]', '-', repo)}"
-    named = re.compile(rf'{re.escape(repo)} · (?:control )?(\d+)(?: · (.*))?')
     out: dict[int, str] = {}
     for line in panes:
-        where, wname, tag, owner = (line.split('\t') + [''] * 4)[:4]
-        try:
-            ours = Path(owner).resolve() == Path(S.ROOT).resolve() if owner else where == sess
-        except OSError:
-            ours = False
-        m, tagged = named.fullmatch(wname), re.fullmatch(r'c(\d+)', tag)
-        if not ours or not (m or tagged):
+        _, wname, tag, owner = (line.split('\t') + [''] * 4)[:4]
+        if not (tagged := re.fullmatch(r'c(\d+)', tag)) or not _ours(owner):
             continue
-        n = int(tagged[1]) if tagged else int(m[1])
-        if m:
-            title = (m[2] or '').strip()
-        else:
-            title = wname[len(repo) + 3:].strip() if wname.startswith(f'{repo} · ') else ''
+        n = int(tagged[1])
+        title = wname[len(repo) + 3:].strip() if wname.startswith(f'{repo} · ') else ''
+        if title in (str(n), f'control {n}'):
+            title = ''
+        elif title.startswith(f'{n} · '):
+            title = title[len(f'{n} · '):].strip()
         out.setdefault(n, title or 'control session')
     return out
+
+
+def older_run(up: bool, panes: list[str]) -> bool:
+    """C23: an older agent-runner started the project's run: it is up, its runner pane (@runner-run this main
+    checkout) is in `panes`, and that pane has no @runner-repo tag (this version sets both on it). False for a
+    hidden run (no runner pane) and with no tmux panes to read: then nothing can be told."""
+    if not up:
+        return False
+    runner = [cols for cols in ((line.split('\t') + [''] * 5)[:5] for line in panes) if _ours(cols[4])]
+    return bool(runner) and not any(_ours(cols[3]) for cols in runner)
 
 
 def control_rows(windows: dict[int, str], links=None) -> list[dict]:
@@ -275,7 +291,8 @@ def log_tail(n: int = LOG_TAIL) -> list[str]:
 def snapshot(up: bool | None = None, now: float | None = None, log_n: int = LOG_TAIL, links=None,
              terminal_base: str = '', windows: dict[int, str] | None = None) -> dict:
     """The run, as one JSON-ready dict (see the module doc). `up` and `now` default to the real ones; `links`,
-    `terminal_base` and `windows` as `session_rows`. Call after `state.init`."""
+    `terminal_base` and `windows` as `session_rows` (`windows` given: tmux is not read, nor `older_run` asked).
+    Call after `state.init`."""
     from agent_runner.status import progress_line, release_line, waiting_ok
     up = S.run_up() if up is None else up
     now = time.time() if now is None else now
@@ -288,9 +305,14 @@ def snapshot(up: bool | None = None, now: float | None = None, log_n: int = LOG_
         progress = ''
     needs, concepts = needs_rows(waiting_ok(), dt.datetime.fromtimestamp(now))
     slots = slot_count(up, st)
+    panes = tmux_panes() if windows is None else None
+    older = panes is not None and older_run(up, panes)
+    if panes is not None:
+        windows = control_windows(panes)
+    sessions = [] if older else session_rows(st, ls, titles, now, links, terminal_base, slots, windows)
     return {'project': S.project(), 'at': dt.datetime.fromtimestamp(now).isoformat(timespec='seconds'),
             'up': up, 'status': status_rows(up, st, '\n'.join(x for x in (progress, release) if x)),
-            'slots': slots, 'sessions': session_rows(st, ls, titles, now, links, terminal_base, slots, windows),
+            'slots': slots, 'sessions': sessions, 'sessions_note': OLDER_RUN if older else '',
             'queue': queue_rows(ls),
             'needs': needs, 'concepts': concepts, 'log': log_tail(log_n), 'release': release}
 

@@ -4,6 +4,11 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Breaking: the run page (`agent-runner ui` and the web page) reads a run's sessions only by the tmux tags
+  this version sets (`@runner` cN / sN and `@runner-repo`). It no longer reads control session windows by
+  name (`<repo> · N · title`, `<repo> · control N`, `<repo> · N`) nor guesses the tmux session `ar-<repo>`. The
+  runner's own pane now carries `@runner-repo` too; a run started by an older agent-runner (its runner pane
+  without that tag) shows one line in Sessions instead of rows: "This run was started by an older agent-runner: restart it to see its sessions." (C23).
 - The board window is gone: `agent-runner ui` and the run page show what lands and what needs you. A tmux run
   opens a window only for the runner feed (`[run] remote`), now named `runner-<repo>` (`attach board` still
   finds it). Control sessions give the `run page:` link `status` prints to watch the slots, the queue or the

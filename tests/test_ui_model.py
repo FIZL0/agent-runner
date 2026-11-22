@@ -51,6 +51,7 @@ def fake_run(tmp: Path) -> Path:
     git(repo, 'add', '-A')
     git(repo, 'commit', '-qm', 'start')
     S.init(repo)
+    U.tmux_panes = lambda: []  # C23: never this machine's tmux (its panes carry no tag of this fake repo)
     S.C.notes('STATE').write_text(json.dumps({
         'state': '3 slots', 'running': {'1': 'F1', '2': 'B2'}, 'since': {'1': NOW - 14 * 60, '2': NOW - 60},
         'merging': ['B2'], 'usage': {'five_hour': 42.0, 'seven_day': 85.0}}), encoding='utf-8')
@@ -194,36 +195,60 @@ def test_to_c1_by_tag(tmp: Path) -> None:
 
 
 def ifizbox_panes(root: Path, name: str) -> list[str]:
-    """B113: `tmux list-panes -a` lines (session, window name, @runner, @runner-repo) like iFizBox's idle run."""
-    s = f'ar-{name}'
-    return [f'{s}\trunner-{name}\t\t', f'{s}\tboard-{name}\tboard\t{root}', f'{s}\t{name}\t\t',
-            f'{s}\t{name} · 9 · iOS 26 native glass +\tc9\t{root}', f'{s}\t{name}\t\t',
+    """B113/C23: `tmux list-panes -a` lines (session, window name, @runner, @runner-repo, @runner-run) like
+    iFizBox's run, every pane tagged as this version tags it."""
+    s = 'agents'
+    return [f'{s}\t{name}\t\t{root}\t{root}', f'{s}\trunner-{name}\tboard\t{root}',
+            f'{s}\tagents-{name}\ts2\t{root}',
+            f'{s}\t{name} · 9 · iOS 26 native glass +\tc9\t{root}',
             f'{s}\t{name} · 1 · Install IPAs row + wider\tc1\t{root}',
             f'{s}\t{name} · 6 · Pairing broken: Tailscale logout\tc6\t{root}',
-            f'{s}\t{name} · 4 · started by an older version\t\t',     # no tags: found by its window name
             f'{s}\t{name} · R43 · site deploy\tc7\t{root}',           # a task-named control session
+            f'{s}\t{name} · 3\tc3\t{root}', f'{s}\t{name} · control 4\tc4\t{root}',  # untitled
+            f'{s}\t{name} · 8 · no tags\t\t',                          # untagged: never read by its name
             f'other\t{name} · 5 · another checkout\tc5\t/elsewhere/{name}']
 
 
 def test_control_windows(tmp: Path) -> None:
-    """B113: an idle 5-slot run of an older version (STATE with no `slots`, no slot windows) lists c1, every
-    other control session window as cN with its title, and s1..s5 idle."""
+    """C23: control session windows are read only by their tags (@runner cN, @runner-repo this checkout): c1,
+    every other cN with its title, then s1..s3 from STATE; a window name alone never makes one."""
     repo = fake_run(tmp)
-    S.C.notes('STATE').write_text(json.dumps({'state': '5 slots, usage caps off (f)', 'running': {}, 'since': {},
-                                              'merging': [], 'idle': True}), encoding='utf-8')
+    S.C.notes('STATE').write_text(json.dumps({'state': '3 slots', 'running': {'2': 'F1'}, 'since': {},
+                                              'merging': []}), encoding='utf-8')
     wins = U.control_windows(ifizbox_panes(repo, repo.name))
-    eq(wins, {1: 'Install IPAs row + wider', 4: 'started by an older version', 6: 'Pairing broken: Tailscale logout',
-              7: 'R43 · site deploy', 9: 'iOS 26 native glass +'},
-       "control windows by name and tag; another checkout's and the bare ones left out")
+    eq(wins, {1: 'Install IPAs row + wider', 3: 'control session', 4: 'control session',
+              6: 'Pairing broken: Tailscale logout', 7: 'R43 · site deploy', 9: 'iOS 26 native glass +'},
+       "control windows by tag; another checkout's and the untagged one left out")
+    eq(U.control_windows([f'ar-{repo.name}\t{repo.name} · control 3\t\t',
+                          f'ar-{repo.name}\t{repo.name} · 2 · old\t\t']), {},
+       "no tags: no window, whatever its name ('<repo> · control N', '<repo> · N · title')")
     from unittest import mock
     with mock.patch.object(U, 'tmux_panes', return_value=ifizbox_panes(repo, repo.name)):
         snap = U.snapshot(up=True, now=NOW, links={})
     eq([(s['name'], s['state']) for s in snap['sessions']],
-       [('c1', 'live'), ('c4', 'live'), ('c6', 'live'), ('c7', 'live'), ('c9', 'live')] +
-       [(f's{n}', 'idle') for n in range(1, 6)], 'c1, c4, c6, c7, c9, then s1-s5 idle')
+       [('c1', 'live'), ('c3', 'live'), ('c4', 'live'), ('c6', 'live'), ('c7', 'live'), ('c9', 'live'),
+        ('s1', 'idle'), ('s2', 'running'), ('s3', 'idle')], 'c1, each cN, then s1-s3')
     eq(snap['sessions'][0]['title'], 'Install IPAs row + wider', "c1 titled by its window")
-    eq(U.control_windows([f'ar-{repo.name}\t{repo.name} · control 3\t\t']), {3: 'control session'},
-       'an untitled control window: control session')
+    eq(snap['sessions_note'], '', 'a tagged run: no note')
+
+
+def test_older_run(tmp: Path) -> None:
+    """C23: a run whose runner pane (@runner-run this checkout) has no @runner-repo tag (an older agent-runner
+    started it): Sessions has no rows, only the one restart line."""
+    repo = fake_run(tmp)
+    old = [f'ar-{repo.name}\t{repo.name}\t\t\t{repo}', f'ar-{repo.name}\t{repo.name} · 1 · c1\t\t',
+           f'ar-{repo.name}\t{repo.name} · control 2\t\t', f'other\tagents-x\ts1\t/elsewhere/x']
+    from unittest import mock
+    with mock.patch.object(U, 'tmux_panes', return_value=old):
+        snap = U.snapshot(up=True, now=NOW, links={})
+        down = U.snapshot(up=False, now=NOW, links={})
+    eq((snap['sessions'], snap['sessions_note']), ([], U.OLDER_RUN), 'no rows, the one restart line')
+    eq(U.OLDER_RUN, 'This run was started by an older agent-runner: restart it to see its sessions.', 'its words')
+    eq(([s['name'] for s in down['sessions']], down['sessions_note']), (['c1'], ''), 'no run up: no note')
+    eq(U.older_run(True, []), False, 'no tmux panes to read: nothing told')
+    eq(U.older_run(True, old[1:]), False, "a hidden run (no runner pane of this checkout), other panes untagged: "
+       "not older")
+    eq(U.older_run(True, ifizbox_panes(repo, repo.name)), False, 'tagged panes: not older')
 
 
 def in_tmp(f):
@@ -237,4 +262,4 @@ def in_tmp(f):
 
 if __name__ == '__main__':
     raise SystemExit(report([in_tmp(test_snapshot), in_tmp(test_idle_slots), in_tmp(test_actions), in_tmp(test_real_command),
-                         in_tmp(test_to_c1_by_tag), in_tmp(test_control_windows)]))
+                         in_tmp(test_to_c1_by_tag), in_tmp(test_control_windows), in_tmp(test_older_run)]))
