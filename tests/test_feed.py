@@ -60,5 +60,94 @@ def test_feed_sid_keeps_command():
     eq(R.feed_sid_parts(), ('', ''), 'a real stop forgets both')
 
 
+def test_photo_alone_forwarded():
+    print('BUG1: a photo with no words in the feed transcript is handed on with its file, never as a lost message')
+    import contextlib
+    import io
+    import json
+    import subprocess
+    from unittest import mock
+    sid = '12345678-1234-1234-1234-123456789abc'
+    tdir = tempfile.mkdtemp(prefix='agent-runner-feed-photo-')
+    tr = Path(tdir, 'feed.jsonl')
+    photo = lambda uid: {'type': 'user', 'uuid': uid, 'origin': {'kind': 'human'},
+                         'message': {'content': [{'type': 'image', 'source': {'type': 'base64', 'data': ''}}]}}
+    hum = lambda text, uid: {'type': 'user', 'uuid': uid, 'origin': {'kind': 'human'},
+                             'message': {'content': [{'type': 'text', 'text': text}]}}
+    pics = lambda *p: {'type': 'attachment', 'attachment': {'type': 'inlined_image_paths', 'paths': list(p)}}
+    meta = lambda p: {'type': 'user', 'isMeta': True, 'message': {'content': [
+        {'type': 'text', 'text': f'[Image: source: {p}]'}]}}
+    call = lambda cmd: {'type': 'assistant', 'message': {'content': [
+        {'type': 'tool_use', 'name': 'Bash', 'input': {'command': cmd}}]}}
+    write = lambda *es: tr.write_text(''.join(json.dumps(e) + '\n' for e in es))
+    opened = []
+
+    def tm(*a, **k):
+        opened.append(a)
+        return subprocess.CompletedProcess(a, 0, '%9\n' if a[0] == 'new-window' else '', '')
+
+    def new_window_argv():
+        return R.shlex.split(next(c for c in opened if c[0] == 'new-window')[-1])
+
+    with mock.patch.object(R.C, 'notes', lambda *a: Path(tdir, *a)), \
+            mock.patch.object(R, 'transcript', lambda s: str(tr) if s == sid else None), \
+            mock.patch.dict(os.environ, {'CLAUDE_CODE_SESSION_ID': sid}), \
+            mock.patch.object(R, 'tmux', tm), mock.patch.object(R, 'control_live', lambda n: None), \
+            mock.patch.object(R, 'control_new_session', lambda: 'ar-proj'), \
+            mock.patch.object(R.shutil, 'which', lambda x: '/usr/bin/tmux'), \
+            mock.patch.object(R.plat, 'WINDOWS', False), mock.patch.object(R, 'remote_on', lambda: False), \
+            mock.patch.object(R, 'FEED_WAIT', 0.3):
+        write(hum('status', 'u1'), call('run status'), photo('u2'), pics('/u/shot.png'),
+              call('run control --new --forward'))
+        with contextlib.redirect_stdout(io.StringIO()):
+            rc = R.control_new(9, forward=True)
+        argv = new_window_argv()
+        check(rc == 0 and '/u/shot.png' in argv and '--feed-sid' not in argv and '--forward' not in argv,
+              'the photo is handed on as a file, with nothing left to wait for', argv)
+        check('--ask-file' not in argv and '--ask' not in argv, 'and no lost-message note or other ask', argv)
+        check(not any(R.feed_lost_note() in a for a in argv), 'never feed_lost_note', argv)
+        eq(R.feed_pending(sid)[2], False, 'the photo is marked handed on')
+
+        # Claude Code 2.1.329's form (an isMeta '[Image: source: …]' entry), and the feed ran a command of its
+        # own about the photo first: still handed on, not left as a message that never showed
+        opened.clear()
+        write(photo('u3'), meta('/tmp/claude/images/1.png'), call('ls /tmp/claude/images'),
+              call('run control --new --forward'))
+        with contextlib.redirect_stdout(io.StringIO()):
+            R.control_new(9, forward=True)
+        argv = new_window_argv()
+        check('/tmp/claude/images/1.png' in argv and '--ask-file' not in argv,
+              'a photo the feed looked at first is handed on with its file', argv)
+
+        # the late path (control N --forward --feed-sid): the photo shows only after control --new gave up
+        write(photo('u4'), pics('/u/late.png'), call('run control --new --forward'))
+        with contextlib.redirect_stdout(io.StringIO()):
+            got = R.forward_late_files(9, sid, wait=1)
+        eq(got, ('', ['/u/late.png'], True), 'control N takes a late photo with its file and no note')
+
+        # a photo whose saved path never shows: said so, not lost
+        write(photo('u5'), call('run control --new --forward'))
+        with contextlib.redirect_stdout(io.StringIO()):
+            got = R.forward_late_files(9, sid, wait=0.3)
+        check(got[0] != R.feed_lost_note() and 'image' in got[0] and not got[1],
+              'an image with no saved path gets the drift note, not feed_lost_note', got)
+
+        # no message at all: the lost note still
+        write(hum('status', 'u1'), call('run status'))
+        R.C.notes(R.REMOTE_DIR, R.FEED_FORWARDED).unlink(missing_ok=True)
+        with contextlib.redirect_stdout(io.StringIO()):
+            got = R.forward_late_files(9, sid, wait=0.3)
+        eq(got, (R.feed_lost_note(), [], True), 'neither words nor files: feed_lost_note')
+
+
+def test_brief_names_photos():
+    print('BUG1: the feed brief hands every photo or file on, never asks about it')
+    from agent_runner.guide import RUNNER_BRIEF
+    rb = RUNNER_BRIEF.format(cmd='run', repo='r', answer='')
+    line = next((ln for ln in rb.split('\n- ') if 'photo' in ln), '')
+    check('always hand it on' in line and 'control --new --forward' in line and 'never ask' in line,
+          'photos are always handed on with control --new --forward', line)
+
+
 if __name__ == '__main__':
-    raise SystemExit(report([test_feed_sid_keeps_command]))
+    raise SystemExit(report([test_feed_sid_keeps_command, test_photo_alone_forwarded, test_brief_names_photos]))

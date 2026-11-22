@@ -557,6 +557,50 @@ def feed_take(sid: str, wait: float) -> str | None:
         time.sleep(0.2)
 
 
+def feed_photo(sid: str, wait: float) -> tuple[list[str], int, str]:
+    """BUG1: the files of the feed's latest person message when it has no words (a photo or file sent alone):
+    (their saved paths, images shown with no path, Claude Code version), waited for up to `wait` s until every
+    image's path is recorded. `feed_wait` cannot find such a message: it matches the words, and there are none."""
+    deadline = time.monotonic() + wait
+    while True:
+        got, lost, version, said = feed_latest(sid)
+        alone = said is not None and not said.strip()
+        if (alone and got and not lost) or time.monotonic() >= deadline:
+            return (got, lost, version) if alone else ([], 0, version)
+        time.sleep(0.2)
+
+
+def feed_photo_unsent(sid: str) -> str | None:
+    """BUG1: the id of the feed's latest person message when it is a photo with no words that was not handed on
+    yet, though `feed_pending` does not call it ready (the feed ran a command of its own about it first); else None."""
+    got = feed_pending(sid)
+    if not got or got[0].strip() or not got[1]:
+        return None
+    try:
+        last = C.notes(REMOTE_DIR, FEED_FORWARDED).read_text(encoding='utf-8').split()
+    except OSError:
+        last = []
+    return None if last == [sid, got[1]] else got[1]
+
+
+def feed_take_files(sid: str, wait: float) -> tuple[str, list[str], bool] | None:
+    """BUG1: `feed_take`, and for a message with no words its files: (text, files, alone). A message with words
+    gives its text, no files (`feed_wait` finds those by its words) and False; a photo alone gives '', its saved
+    paths (`feed_photo`) and True, and when no path shows, the note that says so (`image_drift_note`, else
+    `feed_lost_note`) as its text. A photo is taken even when the feed ran a command about it first
+    (`feed_photo_unsent`). None when no message shows at all."""
+    text = feed_take(sid, wait)
+    if text is None and (mid := feed_photo_unsent(sid)):
+        feed_forwarded(sid, mid)
+        text = ''
+    if text is None or text.strip():
+        return None if text is None else (text, [], False)
+    got, lost, version = feed_photo(sid, FEED_WAIT)
+    if got:
+        return '', got, True
+    return image_drift_note(lost, version) or feed_lost_note(), [], True
+
+
 def feed_lost_note() -> str:
     """The first message of a session `--forward` opened when the feed's message could not be read at all."""
     return ('The runner feed handed a message on to this session, but agent-runner could not read it from the '
@@ -575,13 +619,19 @@ def forward_late(n: int, sid: str, wait: float | None = None) -> str:
     """`control N --forward --feed-sid SID` (B72): the feed's message was not in its transcript when `control
     --new --forward` ran, so wait here (FEED_LATE_WAIT) before claude starts, holding number N. The message, or,
     when no message shows at all, a first message saying it could not be read."""
+    return forward_late_files(n, sid, wait)[0]
+
+
+def forward_late_files(n: int, sid: str, wait: float | None = None) -> tuple[str, list[str], bool]:
+    """`forward_late` with the files of a photo sent alone (BUG1): (the message or a note, its files, done: no
+    files left to wait for, as for a photo alone or a message that never showed)."""
     print('waiting for the runner feed to record the message…', flush=True)
     try:
         C.notes(f'control{n}.pid').write_text(f'{os.getpid()}', encoding='utf-8')
     except OSError:
         pass
-    text = feed_take(sid, FEED_LATE_WAIT if wait is None else wait)
-    return feed_lost_note() if text is None else text
+    got = feed_take_files(sid, FEED_LATE_WAIT if wait is None else wait)
+    return (feed_lost_note(), [], True) if got is None else got
 
 
 def read_ask_file(path: str) -> str:
@@ -630,14 +680,19 @@ def control_new(n: int | None = None, wait: float = CONTROL_LINK_WAIT, ask: str 
     images = [str(Path(i).resolve()) for i in images]
     late = ''
     fwd: list[str] = []
+    alone = False  # BUG1: a photo sent alone, its files (or a note that they could not be read) already taken
     if forward:
         sid = feed_sid()
-        text = feed_take(sid, FEED_WAIT) if sid else None
+        took = feed_take_files(sid, FEED_WAIT) if sid else None
+        text = None if took is None else took[0]
+        if took:
+            images += [i for i in took[1] if i not in images]
+            alone = took[2]
         if text is None and sid and transcript(sid):
             fwd, ask = [FORWARD_FLAG, '--feed-sid', sid], ''
         else:
             ask = feed_lost_note() if text is None else text
-    if ask and ask != feed_lost_note() and not handed:  # B54 handed: another project's feed read it already
+    if ask and ask != feed_lost_note() and not handed and not alone:  # B54 handed: another feed read it already
         # Claude Code writes the feed's transcript lazily: the message being handed on, and the saved paths of
         # its pictures, can land a while after this command starts (B46, B57: more than FEED_WAIT), so wait
         # briefly for them here, and when they are still missing let the new session's own process wait longer
@@ -778,14 +833,17 @@ def control_new_runner(n: int | None = None, images: list[str] | tuple = ()) -> 
             print("agent-runner's own checkout was not found on this machine, so this opens here")
         return control_new(n, images=images, forward=True)
     sid = feed_sid()
-    text = feed_take(sid, FEED_LATE_WAIT) if sid else None
-    if text is None:  # still agent-runner's: its session asks the person to send it again
+    took = feed_take_files(sid, FEED_LATE_WAIT) if sid else None
+    if took is None:  # still agent-runner's: its session asks the person to send it again
         text, found, got, lost, version = feed_lost_note(), False, [], 0, ''
+    elif took[2]:  # BUG1: a photo sent alone: its files, or the note that they could not be read
+        text, found, got, lost, version = took[0], False, list(took[1]), 0, ''
     else:
+        text = took[0]
         found, got, lost, version = feed_wait(text, FEED_WAIT, sid, 'control --new --runner')
     images = [str(Path(i).resolve()) for i in images]
     images += [i for i in got if i not in images]
-    ask = runner_label(text, ROOT.name)
+    ask = runner_label(text, ROOT.name).strip()
     if found and (note := image_drift_note(lost, version)):
         ask = f'{ask}\n\n{note}'
     env = {k: v for k, v in os.environ.items() if k not in ('AGENT_RUNNER_REPO', 'AGENT_RUNNER_CONFIG', CONTROL_N_ENV)}

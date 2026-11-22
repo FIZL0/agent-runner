@@ -596,6 +596,8 @@ run `{cmd} control --new --forward --runner`, exactly that (it opens a control s
 checkout, labelled as from {repo}), and answer only: "Sent to agent-runner control N: <the link>" (no link: \
 "Sent to agent-runner control N."). An ask that both updates this run and asks about agent-runner ("update \
 runner, when is release?") takes both: the upgrade, then this.
+- A photo, screenshot or file (BUG1), with or without words: always hand it on with `{cmd} control --new \
+--forward`, exactly that, as below (with `--runner` when its words are about agent-runner itself); never ask whether to send it, describe it or answer it yourself.
 {answer}- Anything else (a task, a question, a fix, an idea, a plan change) goes to a control session, which does \
 the work: run `{cmd} control --new --forward`, exactly that, with nothing added (it reads their message and \
 attachments from this conversation itself), and answer only: "Sent to control N: <the link>", N and the link \
