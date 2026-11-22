@@ -16,6 +16,7 @@ What you type
     agent-runner status               is a run up, each slot's task, merges lately, usage (-n 20: log too)
     agent-runner since [2h|yesterday] what landed, started or got stuck since you last looked (--follow: live)
     agent-runner needs                only what waits on you, one 'ID - what to do' line each
+    agent-runner ui                   the Run page in this terminal: sessions, queue, needs you; keys act on it
     agent-runner pause                start no new tasks, stay up (--off: go on)
     agent-runner stop                 let running tasks finish, start no new ones (--force: now)
     agent-runner slots +1             one slot more (-1 fewer, 4: exactly four)
@@ -194,6 +195,7 @@ COMMANDS = {
     'upgrade': ('runner', 'cmd_upgrade'),  # B49
     'glossary': ('glossary', 'main'),  # F22
     'voice': ('voice', 'main'),  # F21
+    'ui': ('tui', 'main'),  # F67: the Run page in the terminal
 }
 
 
