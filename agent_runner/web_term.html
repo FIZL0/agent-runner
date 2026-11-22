@@ -266,6 +266,44 @@ function footer(c,shown){
 }
 if(typeof module!=='undefined')module.exports={tabsFor,route,footer,answerOpts,quickKey};
 </script>
+<script id="moves">
+'use strict';
+/* B117: Shift+J / Shift+K in [3] Queue, optimistic. Each press swaps the task in o.S.snap.queue and moves the
+   selection at once, then sends the plan move in the background, chained so fast presses go in order. While
+   moves are pending a snapshot keeps the local queue order; once they drain (or one fails, which is toasted and
+   drops the moves after it) the server's snapshot is fetched and taken, the selection following the task.
+   o: {S, send(tid, where, other) -> Promise<{ok,out}>, fetch() -> Promise<snapshot>, toast(m, bad), render()}
+   (no page in here, so tests/test_web.py drives it in node). */
+function queueMoves(o){
+  let chain=Promise.resolve(),pending=0,failed=false,last='';
+  function settle(){
+    if(--pending)return;
+    failed=false;
+    o.fetch().then(s=>{if(pending||!s||!s.queue)return;o.S.snap=s;follow();o.render()}).catch(()=>{});
+  }
+  function follow(){const i=o.S.snap.queue.findIndex(t=>t.id===last);if(i>=0)o.S.cur[3]=i}
+  function press(step){
+    const q=o.S.snap.queue,i=o.S.cur[3],it=q[i];if(!it)return false;
+    if(i+step<0||i+step>=q.length){o.toast(`${it.id} is already ${step>0?'last':'first'}`);return false}
+    const other=q[i+step],nq=q.slice();nq[i]=other;nq[i+step]=it;
+    o.S.snap={...o.S.snap,queue:nq};o.S.cur[3]=i+step;last=it.id;pending++;o.render();
+    const where=step>0?'after':'before';
+    chain=chain.then(()=>failed?null:o.send(it.id,where,other.id).catch(e=>({ok:false,out:String(e)})))
+      .then(r=>{if(r&&!r.ok){failed=true;o.toast(`could not move ${it.id} ${where} ${other.id}`+(r.out?'\n'+String(r.out).slice(0,400):''),true)}settle()});
+    return true;
+  }
+  /* a snapshot from the server: while moves are pending it keeps the local queue order */
+  function snap(s){
+    if(!pending||!s||!s.queue)return s;
+    /* the server's tasks, the ones the page also has laid out in the local order; new ones keep their place */
+    const local=o.S.snap.queue.map(t=>t.id),has=new Set(s.queue.map(t=>t.id)),byId=new Map(s.queue.map(t=>[t.id,t]));
+    const known=local.filter(id=>has.has(id)).map(id=>byId.get(id));let k=0;
+    return{...s,queue:s.queue.map(t=>local.includes(t.id)?known[k++]:t)};
+  }
+  return{press,snap,pending:()=>pending,idle:()=>chain};
+}
+if(typeof module!=='undefined')module.exports={queueMoves};
+</script>
 <script>
 'use strict';
 const $=s=>document.querySelector(s);
@@ -516,7 +554,7 @@ function connect(){
   es.onmessage=e=>{
     const snap=JSON.parse(e.data);
     if(snap.error){toast('snapshot: '+snap.error,true);return}
-    S.snap=snap;S.last=Date.now();$('#live').classList.add('on');follow();
+    S.snap=MOVES.snap(snap);S.last=Date.now();$('#live').classList.add('on');follow();
     renderLeft();renderMain();renderFoot();
   };
   es.onerror=()=>{$('#live').classList.remove('on');$('#live').textContent='reconnecting…'};
@@ -552,13 +590,10 @@ function submit(kind){
   if(kind==='keys'){act('keys',{session:it.name,text:v,key:'Enter'},'typed into '+it.name);box.focus()}
 }
 /* F72: Shift+J / Shift+K in [3] Queue: the selected task one place down / up (plan move ID after|before
-   <neighbour>); the selection follows it once the snapshot shows the move */
-function reorder(step){
-  const q=S.snap.queue,i=S.cur[3],it=q[i];if(!it)return;
-  if(i+step<0||i+step>=q.length){toast(`${it.id} is already ${step>0?'last':'first'}`);return}
-  act('move',{tid:it.id,where:step>0?'after':'before',other:q[i+step].id},`moved ${it.id} ${step>0?'down':'up'}`)
-    .then(r=>{if(r.ok){S.follow=it.id;S.cur[3]=i+step;render()}});
-}
+   <neighbour>); B117: optimistic, through queueMoves (the moves script above) */
+const MOVES=queueMoves({S,send:(tid,where,other)=>api('act',{name:'move',args:{tid,where,other}}),
+  fetch:()=>api('snapshot'),toast,render});
+function reorder(step){MOVES.press(step)}
 function follow(){
   if(!S.follow)return;const i=S.snap.queue.findIndex(t=>t.id===S.follow);
   if(i>=0){S.cur[3]=i;S.follow=''}
@@ -714,7 +749,7 @@ document.addEventListener('submit',e=>{
 });
 $('#helpbtn').onclick=help;$('#themebtn').onclick=themePicker;
 if(!T){$('#live').textContent='no token: open the address `status` prints'}
-else{api('snapshot').then(s=>{if(s&&s.status){S.snap=s;S.last=Date.now()}render()});connect()}
+else{api('snapshot').then(s=>{if(s&&s.status){S.snap=MOVES.snap(s);S.last=Date.now()}render()});connect()}
 render();
 </script>
 </body></html>
