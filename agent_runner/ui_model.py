@@ -155,14 +155,14 @@ def idle_row(name: str) -> dict:
 
 
 def tmux_panes() -> list[str]:
-    """B113: every tmux pane, one 'session<TAB>window name<TAB>@runner<TAB>@runner-repo' line each; [] without
-    tmux or a server."""
+    """B113: every tmux pane, one 'session<TAB>window name<TAB>@runner<TAB>@runner-repo<TAB>@runner-run' line
+    each; [] without tmux or a server."""
     import shutil
     if not shutil.which('tmux'):
         return []
     try:
         r = sp.run(['tmux', 'list-panes', '-a', '-F',
-                    f'#{{session_name}}\t#{{window_name}}\t#{{{S.TAG}}}\t#{{{S.REPO_TAG}}}'],
+                    f'#{{session_name}}\t#{{window_name}}\t#{{{S.TAG}}}\t#{{{S.REPO_TAG}}}\t#{{{S.RUN_TAG}}}'],
                    capture_output=True, text=True, timeout=5)
     except (OSError, sp.SubprocessError):
         return []
@@ -203,12 +203,13 @@ def control_windows(panes: list[str]) -> dict[int, str]:
 
 
 def older_run(up: bool, panes: list[str]) -> bool:
-    """C23: the project's run is up but no tmux pane carries this main checkout's @runner-repo tag, so an older
-    agent-runner started it (this version tags the runner feed, every slot and every control session pane).
-    False with no tmux panes to read: then nothing can be told."""
-    if not up or not panes:
+    """C23: an older agent-runner started the project's run: it is up, its runner pane (@runner-run this main
+    checkout) is in `panes`, and that pane has no @runner-repo tag (this version sets both on it). False for a
+    hidden run (no runner pane) and with no tmux panes to read: then nothing can be told."""
+    if not up:
         return False
-    return not any(_ours((line.split('\t') + [''] * 4)[3]) for line in panes)
+    runner = [cols for cols in ((line.split('\t') + [''] * 5)[:5] for line in panes) if _ours(cols[4])]
+    return bool(runner) and not any(_ours(cols[3]) for cols in runner)
 
 
 def control_rows(windows: dict[int, str], links=None) -> list[dict]:

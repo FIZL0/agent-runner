@@ -195,10 +195,10 @@ def test_to_c1_by_tag(tmp: Path) -> None:
 
 
 def ifizbox_panes(root: Path, name: str) -> list[str]:
-    """B113/C23: `tmux list-panes -a` lines (session, window name, @runner, @runner-repo) like iFizBox's run,
-    every pane tagged as this version tags it."""
+    """B113/C23: `tmux list-panes -a` lines (session, window name, @runner, @runner-repo, @runner-run) like
+    iFizBox's run, every pane tagged as this version tags it."""
     s = 'agents'
-    return [f'{s}\trunner-{name}\t\t{root}', f'{s}\tboard-{name}\tboard\t{root}',
+    return [f'{s}\t{name}\t\t{root}\t{root}', f'{s}\trunner-{name}\tboard\t{root}',
             f'{s}\tagents-{name}\ts2\t{root}',
             f'{s}\t{name} · 9 · iOS 26 native glass +\tc9\t{root}',
             f'{s}\t{name} · 1 · Install IPAs row + wider\tc1\t{root}',
@@ -233,10 +233,10 @@ def test_control_windows(tmp: Path) -> None:
 
 
 def test_older_run(tmp: Path) -> None:
-    """C23: a run that is up with no pane tagged for this checkout (an older agent-runner started it): Sessions
-    has no rows, only the one restart line."""
+    """C23: a run whose runner pane (@runner-run this checkout) has no @runner-repo tag (an older agent-runner
+    started it): Sessions has no rows, only the one restart line."""
     repo = fake_run(tmp)
-    old = [f'ar-{repo.name}\trunner-{repo.name}\t\t', f'ar-{repo.name}\t{repo.name} · 1 · c1\t\t',
+    old = [f'ar-{repo.name}\t{repo.name}\t\t\t{repo}', f'ar-{repo.name}\t{repo.name} · 1 · c1\t\t',
            f'ar-{repo.name}\t{repo.name} · control 2\t\t', f'other\tagents-x\ts1\t/elsewhere/x']
     from unittest import mock
     with mock.patch.object(U, 'tmux_panes', return_value=old):
@@ -246,6 +246,8 @@ def test_older_run(tmp: Path) -> None:
     eq(U.OLDER_RUN, 'This run was started by an older agent-runner: restart it to see its sessions.', 'its words')
     eq(([s['name'] for s in down['sessions']], down['sessions_note']), (['c1'], ''), 'no run up: no note')
     eq(U.older_run(True, []), False, 'no tmux panes to read: nothing told')
+    eq(U.older_run(True, old[1:]), False, "a hidden run (no runner pane of this checkout), other panes untagged: "
+       "not older")
     eq(U.older_run(True, ifizbox_panes(repo, repo.name)), False, 'tagged panes: not older')
 
 
