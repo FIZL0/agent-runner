@@ -323,6 +323,74 @@ def test_row_ground_and_fill() -> None:
        'no run up: no idle slots are made up')
 
 
+def test_reorder() -> None:
+    """F70: Shift+J on the second queue row runs plan move ID after <third>, and the cursor moves with it;
+    Shift+K moves it back up; the first and last task go no further."""
+    ran, snap = [], dict(SNAP)
+    real_run = U.RUN[0]
+
+    def run(argv):
+        ran.append(argv)
+        q = [t for t in snap['queue'] if t['id'] != argv[2]]
+        moved = next(t for t in snap['queue'] if t['id'] == argv[2])
+        at = [t['id'] for t in q].index(argv[4]) + (1 if argv[3] == 'after' else 0)
+        snap['queue'] = q[:at] + [moved] + q[at:]
+        return 0, f'moved {argv[2]} {argv[3]} {argv[4]}'
+    U.RUN[0] = run
+    try:
+        p = T.RunPage(snap, get_snap=lambda: dict(snap), attrs=ATTRS)
+        p.key('3')
+        p.key('j')
+        p.key('J')
+        eq(ran, [['plan', 'move', 'Q2', 'after', 'Q3']], 'J on the second row: plan move Q2 after Q3')
+        eq((p.cur[3], p.sel()['id']), (2, 'Q2'), 'the cursor moves with it')
+        p.key('K')
+        eq(ran[-1], ['plan', 'move', 'Q2', 'before', 'Q3'], 'K: plan move Q2 before Q3')
+        eq((p.cur[3], p.sel()['id']), (1, 'Q2'), 'and the cursor follows it up')
+        p.key('k')
+        p.key('K')
+        eq((len(ran), p.cur[3]), (2, 0), 'K on the first task runs nothing')
+        p.key('j')
+        p.draw(Win(30, 100))
+        p.msg = ''
+        check('J/K reorder' in ''.join(t for t, _ in p.footer()), 'the hint line shows J/K reorder on the queue')
+        U.RUN[0] = lambda argv: (3, 'no such task')
+        p.key('J')
+        eq((p.cur[3], p.msg_ok), (1, False), 'a refused move leaves the cursor where it was, the reason in red')
+    finally:
+        U.RUN[0] = real_run
+
+
+def test_hint_line() -> None:
+    """F70: the hint line shows the focused panel's keys and '? all keys', fits 80 columns for every panel and
+    the main pane, keys bold bright white, labels in the text colour, only the separators dim."""
+    for n in range(1, 6):
+        for main in (False, True):
+            p = page()
+            p.key(str(n))
+            if main:
+                p.key('ENTER')
+            win = Win(30, 80)
+            p.draw(win)
+            last = win.lines()[-1].rstrip()
+            check(last.endswith('? all keys'), f'panel {n}{" main pane" if main else ""}: ends in ? all keys', last)
+            shown = ''.join(t for t, _ in p.footer())
+            check(all(f'{k} {v}' in last for k, v in p.hint_keys()), f'panel {n}: every key of it fits in 80', last)
+            eq(len(shown) <= 80, True, f'panel {n}: the hint fits 80 columns')
+    segs = page().footer()
+    eq({c for t, c in segs if t == ' · '}, {'dim'}, 'only the separators are dim')
+    eq({c for t, c in segs if t != ' · ' and not t.startswith(' ')}, {'key'}, 'keys in the key colour')
+    eq({c for t, c in segs if t.startswith(' ') and t != ' · '}, {'fg'}, 'labels in the normal text colour')
+    c = FakeCurses()
+    attrs = T.curses_attrs(c)
+    eq(c.pairs[(attrs['key'] & 0xff00) >> 8], (231, 16), 'a key: bright white on black')
+    check(attrs['key'] & c.A_BOLD, 'and bold')
+    narrow = page()
+    narrow.key('3')
+    check(narrow.footer(30)[-2:] == [('?', 'key'), (' all keys', 'fg')], 'too narrow: the panel keys go, ? stays')
+    check(sum(len(t) for t, _ in narrow.footer(30)) <= 30, 'and it fits')
+
+
 def test_cli() -> None:
     from agent_runner import cli
     eq(cli.COMMANDS.get('ui'), ('tui', 'main'), '`agent-runner ui` runs the terminal Run page')
@@ -332,4 +400,4 @@ def test_cli() -> None:
 
 if __name__ == '__main__':
     raise SystemExit(report([test_layout, test_keys, test_actions, test_colours, test_row_ground_and_fill,
-                               test_cli]))
+                               test_reorder, test_hint_line, test_cli]))
