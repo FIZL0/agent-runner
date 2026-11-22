@@ -188,7 +188,7 @@ def control_windows(panes: list[str]) -> dict[int, str]:
         if not ours or not (m or tagged):
             continue
         n = int(tagged[1]) if tagged else int(m[1])
-        if m and int(m[1]) == n:
+        if m:
             title = (m[2] or '').strip()
         else:
             title = wname[len(repo) + 3:].strip() if wname.startswith(f'{repo} · ') else ''

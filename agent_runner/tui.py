@@ -525,7 +525,7 @@ class RunPage:
             rows = self.items(2)
             slots = [i for i, s in enumerate(rows) if not is_control(s)]
             if not slots:
-                self.msg, self.msg_ok = 'no slot is running a task', False
+                self.msg, self.msg_ok = 'the run has no slots', False
                 return
             self.panel, self.cur[2] = 2, next((i for i in slots if rows[i].get('task')), slots[0])
         it = self.sel()
