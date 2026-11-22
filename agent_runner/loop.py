@@ -1069,6 +1069,8 @@ def run(argv: list[str], prog: str) -> int:
     start_control()  # c1 beside the run ([run] control) unless [run] remote, where the control server stands in
     start_control_server()
     start_board()  # the background run's board window: what lands and needs you, no tokens; reopened if closed
+    from agent_runner.web import start_web
+    start_web()  # F66: the run page on this machine ([run] web), its address in the run log
 
     AUTO_UPGRADE[0] = bool(r['auto_upgrade'])
     threading.Thread(target=update_watch, daemon=True).start()

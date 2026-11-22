@@ -1005,6 +1005,9 @@ lean = true               # sessions get Bash/Read/Edit/Write/Artifact only, no 
 remote = "auto"           # control sessions on Remote Control, and a control server to start more from claude.ai/code or the Claude apps; Enter in the runner's pane opens it. auto: on where it can work (see Control sessions); true/false force it
 remote_slots = false      # the slots on Remote Control too ("<task title> · <repo> s2 · B646"); not
                           # recommended: every slot start pushes to the phone
+web = true                # the run page on the web (F66), served by the run on web_port for the LAN/Tailscale; its
+                          # address, with the token it needs, is in `status` and the run log; false: off
+web_port = 8770           # where the run page is served; its terminal tab's ttyd processes take the next ports
 silent = false            # phone pushes from those sessions after each one's start push (that one cannot be stopped): true = none, false = Claude Code's usual
 control = true            # a run opens control session c1 beside it; false: none (`agent-runner control` still works)
 control_idle = "3h"       # close idle control sessions 2, 3, … (never c1) once quiet this long, Claude spoke last, its last message is no open question, and nothing runs in it (a background task or Monitor; the needs-you watch does not count): process ended, controlN.pid removed, transcript kept (`claude --resume <sid>`); false: none closed idle

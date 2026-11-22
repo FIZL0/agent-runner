@@ -30,6 +30,7 @@ os.environ.pop('AGENT_RUNNER', None)
 os.environ.pop('TMUX', None)
 os.environ.pop('TMUX_PANE', None)
 os.environ['AGENT_RUNNER_NO_NOTIFY'] = '1'  # an alarm in a test rings no tmux message or desktop notification
+os.environ['AGENT_RUNNER_NO_WEB'] = '1'  # a run under test serves no run page (it would take the real port 8770)
 
 # B68: every temp folder of this suite, its subprocesses' too, goes under one root of its own, so a trust entry
 # the suite leaks into the person's real ~/.claude.json is told apart from other sessions' (see claude_json_leaks)
