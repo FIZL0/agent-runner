@@ -302,7 +302,7 @@ def test_page(tmp: Path) -> None:
     finally:
         srv.stop()
     for part in ('New chat', "['home','Home'],['agents','Agents'],['activity','Activity'],['plan','Plan']",
-                 '<div class="shead">Chats</div>', '<div class="shead">Agents working</div>', 'class="livedot"',
+                 '<div class="shead row"><span>Chats</span>', '<div class="shead">Agents working</div>', 'class="livedot"',
                  'S.snap.machine', 'usage ${esc(use)}',  # the sidebar
                  'side.open', 'class="scrim"', 'data-menu',  # a drawer on a phone
                  'greeting()', 'How can I help with the run?', 'data-quick="since">', 'Since my last look',
@@ -502,6 +502,30 @@ def test_views(tmp: Path) -> None:
     eq(got[2], [], 'T while typing is a letter')
 
 
+def test_new_chat(tmp: Path) -> None:
+    """F84: a + on the Chats heading row starts a new chat (new_control through /act, which runs control --new),
+    and the top bar's New chat has its own inline new-chat icon."""
+    fake_repo(tmp)
+    page = W.page_html().decode()
+    check('<div class="shead row"><span>Chats</span><button class="shadd" data-new' in page,
+          'the + sits at the end of the Chats heading row')
+    check('data-new aria-label="New chat" title="New chat">${I.newchat}' in page and 'newchat:`<svg' in page,
+          'the top bar keeps New chat, with the new-chat icon')
+    check("act('new_control',{})" in page, 'data-new calls new_control')
+    token = W.web_token()
+    srv = W.serve(token, 0, '127.0.0.1', snap=lambda: {})
+    calls = []
+    try:
+        link = 'https://claude.ai/code/session_abc'
+        with mock.patch.object(U, 'RUN', [lambda argv: (calls.append(argv), (0, f'started c7: {link}'))[1]]):
+            code, out = post(f'http://127.0.0.1:{srv.server_address[1]}/act?t={token}',
+                             {'name': 'new_control', 'args': {}})
+        eq((code, out.get('ok'), out.get('link')), (200, True, link), 'new_control answers with the new link')
+        eq(calls, [['control', '--new']], 'its endpoint runs control --new')
+    finally:
+        srv.stop()
+
+
 def in_tmp(f):
     def go():
         with tempfile.TemporaryDirectory() as d:
@@ -513,4 +537,5 @@ def in_tmp(f):
 if __name__ == '__main__':
     raise SystemExit(report([in_tmp(test_server), in_tmp(test_real_action), in_tmp(test_start), in_tmp(test_upload),
                            in_tmp(test_control_rows), in_tmp(test_feed_pane_concept), in_tmp(test_page),
-                           in_tmp(test_logic), in_tmp(test_extras), in_tmp(test_diff), in_tmp(test_views)]))
+                           in_tmp(test_logic), in_tmp(test_extras), in_tmp(test_diff), in_tmp(test_views),
+                           in_tmp(test_new_chat)]))
