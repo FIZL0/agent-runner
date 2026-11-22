@@ -11,6 +11,7 @@
     GET  /feed/NAME?t=TOKEN      F74: session NAME's transcript as say/you/tool/out entries (`ui_model.feed`)
     GET  /pane/NAME?t=TOKEN      F74: the built-in terminal view: NAME's pane as text now (`ui_model.capture`)
     GET  /concept/ID?t=TOKEN     F74: concept ID's local page copy (<notes>/concepts/ID.html), sandboxed
+    GET  /diff/NAME?t=TOKEN      F75: slot NAME's diff so far (`slot_diff`), for its diff tab
 
 Every request carries the token (`?t=`, or an `X-Token` header): the page can type into panes, so one without
 it is refused. The token is made once per project (<notes>/web.token) and printed by `status` and in the run
@@ -153,6 +154,40 @@ def terminal_fallback(name: str) -> dict:
             'capture': f'pane/{name}', 'every': U.CAPTURE_EVERY, 'feed': f'feed/{name}'}
 
 
+DIFF_BYTES = 200_000  # the most of a slot's diff the diff tab shows
+
+
+def slot_diff(name: str) -> dict:
+    """F75: the diff tab: slot `name`'s (s2) work so far, its worktree (committed or not) against where it
+    branched off the shared branch: {'ok', 'name', 'text'} or {'ok': False, 'out': why}."""
+    if not (name[:1] == 's' and name[1:].isdigit()):
+        return {'ok': False, 'name': name, 'out': f'{name} is not a slot: only a slot has a diff'}
+    d = Path(S.SLOTS_DIR) / name
+    if not d.is_dir():
+        return {'ok': False, 'name': name, 'out': f'{name} has no worktree yet'}
+    try:
+        base = S.default_branch()
+    except SystemExit as e:
+        return {'ok': False, 'name': name, 'out': str(e)}
+
+    def git(*a: str) -> sp.CompletedProcess:
+        return sp.run(['git', '-C', str(d), *a], capture_output=True, text=True, encoding='utf-8',
+                      errors='replace', timeout=20)
+    try:
+        mb = git('merge-base', base, 'HEAD')
+        if mb.returncode:
+            return {'ok': False, 'name': name, 'out': f'git merge-base {base} HEAD: {mb.stderr.strip()}'}
+        r = git('diff', mb.stdout.strip())
+    except (OSError, sp.SubprocessError) as e:
+        return {'ok': False, 'name': name, 'out': f'git diff: {e}'}
+    if r.returncode:
+        return {'ok': False, 'name': name, 'out': f'git diff: {r.stderr.strip()}'}
+    text = r.stdout
+    if len(text) > DIFF_BYTES:
+        text = text[:DIFF_BYTES] + '\n… (the rest left out)'
+    return {'ok': True, 'name': name, 'text': text}
+
+
 class Terminals:
     """One ttyd per pane, started the first time its tab opens, on web_port+1, +2, …; each serves only under
     /t/TOKEN/NAME/, so the address is as secret as the page's. It attaches a grouped tmux session of its own
@@ -282,6 +317,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(200, json.dumps(U.feed(path.split('/')[2]), ensure_ascii=False))
         if path.startswith('/pane/'):
             return self.send(200, json.dumps(U.capture(path.split('/')[2]), ensure_ascii=False))
+        if path.startswith('/diff/'):
+            return self.send(200, json.dumps(slot_diff(path.split('/')[2]), ensure_ascii=False))
         if path.startswith('/concept/'):
             return self.concept(path.split('/')[2])
         self.send(404, json.dumps({'ok': False, 'out': f'no such page: {path}'}))
