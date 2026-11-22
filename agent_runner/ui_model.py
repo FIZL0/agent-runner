@@ -162,10 +162,9 @@ def status_rows(up: bool, st: dict, progress: str) -> list[str]:
         pass
     out += [l for l in progress.splitlines() if l]
     use = st.get('usage') or {}
-    if any(v is not None for v in use.values()):
-        out.append('usage: ' + ', '.join(f'{w} {use[k]:.0f}%' for k, w in (('five_hour', 'session'),
-                                                                          ('seven_day', 'week'))
-                                         if use.get(k) is not None))
+    if parts := [f'{w} {use[k]:.0f}%' for k, w in (('five_hour', 'session'), ('seven_day', 'week'))
+                 if use.get(k) is not None]:
+        out.append('usage: ' + ', '.join(parts))
     return out
 
 
