@@ -112,14 +112,14 @@ def slot_just_started(tid: str, n: int, branch: str) -> bool:
 
 def take_back(tid: str, n: int, branch: str) -> str | None:
     """B109: `take tid` on a task slot n started only moments ago: the person asked for it here, so the run
-    stops that slot's agent, throws its attempt away and frees the slot (the B19 halt `plan drop` uses, which
-    leaves the task in the plan), and take goes on in a worktree of its own. The take worktree is made first,
+    stops that slot's agent, throws its attempt away and frees the slot (the B19 halt, as kind 'take' (B110):
+    no drop, the task stays in the plan), and take goes on in a worktree of its own. The take worktree is made first,
     detached, so the run passes over the task as taken and never starts it again in the freed slot.
     Returns what the run said; None when no run is up to stop the slot, or it did not answer (nothing taken)."""
     if not P.run_on(C, tid):
         return None
     d = worktree(f'take-{tid}', branch)
-    said = P.request(C, 'halt', tid, {'how': 'drop'}, P.HALT_WAIT)
+    said = P.request(C, 'halt', tid, {'how': 'take'}, P.HALT_WAIT)  # B110: no drop, no EV_DROPPED
     end = time.monotonic() + 10
     while said is not None and time.monotonic() < end and \
             not git('rev-parse', '--verify', '-q', f'refs/heads/task/{tid}').returncode:
@@ -209,7 +209,7 @@ def cmd_take(argv: list[str], prog: str = f'{RUNNER} take') -> int:
     if why == 'running in a slot':
         n = running_slot(tid)
         fresh = bool(n) and slot_just_started(tid, n, branch)
-        if fresh and take_back(tid, n, branch) is not None:  # the run's answer says "dropped": not to the person
+        if fresh and take_back(tid, n, branch) is not None:  # the run's own answer is for its log
             print(f'{tid}: took it back from s{n}, which had only just started it (no commits): the run stopped '
                   f'that agent and gave the slot back; the task stays in the plan', file=sys.stderr)
             why = ''

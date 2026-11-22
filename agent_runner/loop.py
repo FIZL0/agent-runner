@@ -245,8 +245,10 @@ DISCARDED: dict[str, str] = {}  # B19: task -> what `_finish` did with a branch 
 
 
 def halt_requests() -> dict[str, str]:
-    """{task: 'drop' | 'change'}: what `plan drop` / `plan change` asked of this run (see plan.halt)."""
-    return {tid: r['how'] for tid, r in P.requests(C, 'halt').items() if r.get('how') in ('drop', 'change')}
+    """{task: 'drop' | 'change' | 'take'}: what `plan drop` / `plan change` / a take back (B110) asked of this
+    run (see plan.halt, cmds.take_back)."""
+    return {tid: r['how'] for tid, r in P.requests(C, 'halt').items()
+            if r.get('how') in ('drop', 'change', 'take')}
 
 
 def halt_answer(tid: str, msg: str, kind: str | None = None) -> None:
@@ -283,9 +285,11 @@ def halts(procs: dict, running: dict, free_at: dict, tried: set, branch: str, mo
           slots: int) -> None:
     """B19: act on `plan drop` / `plan change` of a task this run is on. Its session is ended, its work thrown
     away (`discard_task`) and its slot freed at once; a change starts it again in that slot from the new
-    text. A finished branch waiting to merge is deleted unmerged (by `_finish`, which checks first)."""
+    text. A finished branch waiting to merge is deleted unmerged (by `_finish`, which checks first). B110: a
+    take back ('take') stops, discards and frees the same way but is no drop: the task stays in the plan, taken,
+    so its wip branches stay and no EV_DROPPED event is recorded."""
     for tid, how in halt_requests().items():
-        verb = 'dropped' if how == 'drop' else 'changed'
+        verb = {'drop': 'dropped', 'take': 'took'}.get(how, 'changed')
         n = next((m for m, t in running.items() if t[0] == tid), None)
         q = next((m for m, x in queued().items() if x[0] == tid), None)
         sid = ''
@@ -314,8 +318,11 @@ def halts(procs: dict, running: dict, free_at: dict, tried: set, branch: str, mo
         if n is not None:
             end_orphans()
             free_at[n] = dt.datetime.now()
-        msg = f'{verb} {tid}; {stopped}' + (f', removed its work ({", ".join(did)})' if did else '')
-        if how == 'drop':
+        msg = (f'{verb} {tid}' + (' back to a take' if how == 'take' else '') + f'; {stopped}'
+               + (f', removed its work ({", ".join(did)})' if did else ''))
+        if how == 'take':
+            plansync.release(C, tid)  # the take worktree holds it now: the run passes over it as taken
+        elif how == 'drop':
             plansync.release(C, tid)
             if wd := drop_wips(tid):  # F23: dropped, so its parked attempts are read by nobody
                 msg += f'; {", ".join(wd)}'

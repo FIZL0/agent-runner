@@ -164,11 +164,13 @@ def test_take_back_from_a_slot_just_started():
         L.halts(procs, running, free_at, set(), 'main', 'm', 0, 5)
 
     take = io.StringIO()
+    logged = []  # (msg, event kind) the run logs
     import os
     here = os.getcwd()
     os.chdir(d)  # take reads the repository around the current directory, as from a control session
     with mock.patch.object(P, 'run_on', lambda c, tid: 's5' if tid == 'T1' and 5 in running else ''), \
-            mock.patch.object(L, 'end_orphans', lambda: None), mock.patch.object(L, 'log', lambda *a, **k: None), \
+            mock.patch.object(L, 'end_orphans', lambda: None), \
+            mock.patch.object(L, 'log', lambda msg, kind=None, *a, **k: logged.append((msg, kind))), \
             mock.patch.object(L, 'note', lambda *a, **k: None):
         t = threading.Thread(target=the_run, daemon=True)
         t.start()
@@ -186,6 +188,10 @@ def test_take_back_from_a_slot_just_started():
     check(git(slot, 'rev-parse', '--abbrev-ref', 'HEAD') == 'HEAD', 'the slot worktree is off task/T1')
     eq(git(M.SLOTS_DIR / 'take-T1', 'rev-parse', '--abbrev-ref', 'HEAD'), 'task/T1', 'the take worktree has task/T1')
     eq(M.running_slot('T1'), 0, 'no slot runs T1 now')
+    from agent_runner.state import EV_DROPPED
+    check(not any(k == EV_DROPPED for _, k in logged), 'B110: a take back records no EV_DROPPED event', logged)
+    check(any(m.startswith('took T1 back to a take') for m, _ in logged), "B110: the run logs 'took T1 back to a "
+          "take', not 'dropped'", logged)
 
     git(slot, 'checkout', '-q', '-B', 'task/T2', 'main')
     (slot / 'b.py').write_text('# b\n')
