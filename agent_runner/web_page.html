@@ -151,7 +151,7 @@ const stateCol={running:'y',merging:'m',live:'g',off:'d'};
 function rowHTML(p,it){
   if(p===1){const col=it.k==='log'?'d':it.k==='rel'?'m':/^run up/.test(it.t)?'g':/^no run/.test(it.t)?'r':/^usage/.test(it.t)?'y':'c';return `<span class="${col}">●</span><span>${esc(it.t)}</span>`}
   if(p===2){if(it.name==='c1')return `<span class="r">c1</span><span>${esc(it.title)} <span class="d">${esc(it.state)}</span></span>`;
-    return `<span class="${stateCol[it.state]||'d'}">${esc(it.name)}</span><span><span class="c">${esc(it.task)}</span> ${esc(it.title)} <span class="d">${it.minutes??'?'}m ${esc(it.state)}</span></span>`}
+    return `<span class="${stateCol[it.state]||'d'}">${esc(it.name)}</span><span><span class="c">${esc(it.task)}</span> ${esc(it.title)} <span class="d">${it.state==='idle'?'':`${it.minutes??'?'}m `}${esc(it.state)}</span></span>`}
   if(p===3)return it.newtask?`<span class="g">+</span><span class="d">new task (n)</span>`:
     `<span class="${it.blocked?'y':'c'}">${esc(it.id)}</span><span>${esc(it.title)}${it.after&&it.after.length?` <span class="d">after ${esc(list(it.after))}</span>`:''}${it.pri!=='normal'?` <span class="r">${esc(it.pri)}</span>`:''}</span>`;
   if(p===4)return `<span class="y">${esc(it.id)}</span><span>${esc(it.ask||it.title)} <span class="d">${esc(it.age)}</span></span>`;

@@ -47,11 +47,15 @@ COLOURS = ('fg', 'dim', 'line', 'accent', 'red', 'green', 'yellow', 'blue', 'mag
 
 def session_rows(snap: dict) -> list:
     """B112: the Sessions panel's rows: c1, then every slot of the run, an idle one (no task) included, as the
-    design lists them. The slot count is the run's status line ('run up: 3 slots, ...')."""
+    design lists them. The slot count is the snapshot's `slots` (F71; the snapshot lists idle slots itself),
+    else, from a snapshot without it, the run's status line ('run up: 3 slots, ...')."""
     rows = list(snap.get('sessions') or [])
-    m = re.match(r'run up: (\d+) slots?\b', ((snap.get('status') or ['']) + [''])[0]) if snap.get('up') else None
+    count = snap.get('slots')
+    if not isinstance(count, int) or isinstance(count, bool):
+        m = re.match(r'run up: (\d+) slots?\b', ((snap.get('status') or ['']) + [''])[0]) if snap.get('up') else None
+        count = int(m.group(1)) if m else 0
     have = {r.get('name') for r in rows if isinstance(r, dict)}
-    for n in range(1, int(m.group(1)) + 1 if m else 1):
+    for n in range(1, count + 1):
         if f's{n}' not in have:
             rows.append({'name': f's{n}', 'task': '', 'title': '', 'minutes': None, 'state': 'idle', 'files': [],
                          'link': '', 'terminal': ''})

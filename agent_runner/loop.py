@@ -210,7 +210,7 @@ def write_state(running: dict) -> None:
     tmp = C.notes('STATE.tmp')
     try:
         tmp.write_text(json.dumps({'at': dt.datetime.now().isoformat(timespec='seconds'), 'state': state_line(),
-                                   'running': work, 'since': since, 'merging': merging, 'usage': use,
+                                   'slots': SLOTS, 'running': work, 'since': since, 'merging': merging, 'usage': use,
                                    'idle': IDLE[0], 'paused': PAUSED[0], 'stopping': stopping()}),
                        encoding='utf-8')
         os.replace(tmp, C.notes('STATE'))

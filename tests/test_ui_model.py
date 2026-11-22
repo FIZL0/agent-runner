@@ -71,8 +71,11 @@ def test_snapshot(tmp: Path) -> None:
           snap['status'])
     eq(snap['status'][-1], 'usage: session 42%, week 85%', 'status ends with usage')
 
+    eq(snap['slots'], 3, "the run's slot count")
     names = [s['name'] for s in snap['sessions']]
-    eq(names, ['c1', 's1', 's2'], 'c1, then each slot in order')
+    eq(names, ['c1', 's1', 's2', 's3'], 'c1, then every slot of the 3-slot run in order, the idle s3 too')
+    eq(snap['sessions'][3], {'name': 's3', 'task': '', 'title': '', 'minutes': None, 'state': 'idle',
+                             'files': [], 'link': '', 'terminal': ''}, 'an idle slot: no task, state idle')
     eq(snap['sessions'][0]['state'], 'off', 'no c1 runs in a fake run')
     s1, s2 = snap['sessions'][1], snap['sessions'][2]
     eq((s1['task'], s1['title'], s1['minutes'], s1['state'], s1['files']),
@@ -102,6 +105,29 @@ def test_snapshot(tmp: Path) -> None:
     down = U.snapshot(up=False, now=NOW, links={})
     eq(down['status'][0], 'no run is up', 'no run: said so')
     eq([s['name'] for s in down['sessions']], ['c1'], 'no run: only c1')
+    eq(down['slots'], 0, 'no run: no slots')
+
+
+def test_idle_slots(tmp: Path) -> None:
+    """F71: a 3-slot run on one task lists s1..s3, the idle ones with state idle; the count comes from
+    STATE's `slots`, else its state line, else `[run] slots` while the run starts."""
+    fake_run(tmp)
+    S.C.notes('STATE').write_text(json.dumps({'state': '3 slots, paused', 'slots': 3, 'running': {'2': 'F1'},
+                                              'since': {'2': NOW - 60}}), encoding='utf-8')
+    snap = U.snapshot(up=True, now=NOW, links={})
+    eq(snap['slots'], 3, 'slots from STATE')
+    eq([(s['name'], s['task'], s['state']) for s in snap['sessions']],
+       [('c1', '', 'off'), ('s1', '', 'idle'), ('s2', 'F1', 'running'), ('s3', '', 'idle')],
+       'every slot listed, the idle ones with state idle')
+    S.C.notes('STATE').write_text(json.dumps({'slots': 1, 'running': {'1': 'F1', '3': 'B2'}}), encoding='utf-8')
+    eq([s['name'] for s in U.snapshot(up=True, now=NOW, links={})['sessions']], ['c1', 's1', 's3'],
+       'a slot past the count still on its task stays listed; no idle s2 past the count')
+    S.C.notes('STATE').write_text(json.dumps({'state': '2 slots', 'running': {}}), encoding='utf-8')
+    eq(U.snapshot(up=True, now=NOW, links={})['slots'], 2, 'a STATE without slots: the count from its state line')
+    S.C.notes('STATE').unlink()
+    snap = U.snapshot(up=True, now=NOW, links={})
+    eq((snap['slots'], [s['state'] for s in snap['sessions']]), (3, ['off', 'idle', 'idle', 'idle']),
+       'the run starting, no STATE yet: [run] slots, all idle')
 
 
 def test_actions(tmp: Path) -> None:
@@ -177,5 +203,5 @@ def in_tmp(f):
 
 
 if __name__ == '__main__':
-    raise SystemExit(report([in_tmp(test_snapshot), in_tmp(test_actions), in_tmp(test_real_command),
+    raise SystemExit(report([in_tmp(test_snapshot), in_tmp(test_idle_slots), in_tmp(test_actions), in_tmp(test_real_command),
                          in_tmp(test_to_c1_by_tag)]))

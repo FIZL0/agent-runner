@@ -4,7 +4,9 @@ copy, and the actions they share.
 `snapshot()` reads what `status` reads (STATE, the plan, the run log, Needs you) and returns one plain dict:
 
     status    the status lines: run up or not, its state, progress, release, no-gate warning, usage
-    sessions  c1, then each slot: task, title, minutes, state, files, session link, terminal URL
+    slots     the run's slot count (0 when no run is up; while it starts, [run] slots)
+    sessions  c1, then each slot s1..s<slots> and any past the count still on a task: task, title, minutes,
+              state (running, merging, idle: no task), files, session link, terminal URL
     queue     every open task in TODO.md: id, kind, title, files, after, pri, section, blocked
     needs     what waits on the person (not the shelved ones): label, id, ask in plain words, link, age
     concepts  concept pages waiting for an OK: build id, concept id, title, page link
@@ -128,17 +130,45 @@ def slot_link(name: str) -> str:
         return ''
 
 
+def slot_count(up: bool, st: dict) -> int:
+    """F71: the run's slot count: STATE's `slots`; from a STATE written before F71 its state line ('3 slots,
+    paused'); while the run starts and has written no STATE yet, `[run] slots`; 0 when no run is up."""
+    if not up:
+        return 0
+    if isinstance(st.get('slots'), int) and not isinstance(st.get('slots'), bool):
+        return max(st['slots'], 0)
+    if m := re.match(r'(\d+) slots?\b', str(st.get('state') or '')):
+        return int(m.group(1))
+    try:
+        return int(S.C.raw.get('run', {}).get('slots') or 0)
+    except (AttributeError, TypeError, ValueError):
+        return 0
+
+
+def idle_row(name: str) -> dict:
+    """F71: a slot of the run with no task."""
+    return {'name': name, 'task': '', 'title': '', 'minutes': None, 'state': 'idle', 'files': [], 'link': '',
+            'terminal': ''}
+
+
 def session_rows(st: dict, ls: list[str], titles: dict[str, str], now: float, links=None,
-                 terminal_base: str = '') -> list[dict]:
-    """c1, then each slot of STATE `st` in slot order. `links` ({'s2': url}) replaces the lookup by pane;
+                 terminal_base: str = '', slots: int = 0) -> list[dict]:
+    """c1, then each slot of STATE `st` in slot order: s1..s<slots> (F71: an idle one, no task, as `idle_row`)
+    and any slot past the count still on its task. `links` ({'s2': url}) replaces the lookup by pane;
     `terminal_base` is where the run page serves terminals ('' none yet: each row's `terminal` stays '')."""
     files = {tid: P.fields(ls[i]).get('files', []) for _, _, tid, _, i in P.iter_tasks(ls)}
     out = [c1_row()]
     if links and 'c1' in links:
         out[0]['link'] = links['c1']
     merging = set(st.get('merging') or [])
-    for n, tid in sorted((st.get('running') or {}).items(), key=lambda kv: (not kv[0].isdigit(), kv[0].zfill(4))):
+    running = dict(st.get('running') or {})
+    for n in range(1, slots + 1):
+        running.setdefault(str(n), '')
+    for n, tid in sorted(running.items(), key=lambda kv: (not kv[0].isdigit(), kv[0].zfill(4))):
         name = f's{n}' if n.isdigit() else n
+        if not tid:
+            out.append(idle_row(name))
+            continue
         since = (st.get('since') or {}).get(n)
         out.append({'name': name, 'task': tid, 'title': titles.get(tid, ''),
                     'minutes': int((now - since) // 60) if since else None,
@@ -190,9 +220,11 @@ def snapshot(up: bool | None = None, now: float | None = None, log_n: int = LOG_
     except Exception:  # noqa: BLE001 - a git hiccup costs the progress line, not the snapshot
         progress = ''
     needs, concepts = needs_rows(waiting_ok(), dt.datetime.fromtimestamp(now))
+    slots = slot_count(up, st)
     return {'project': S.project(), 'at': dt.datetime.fromtimestamp(now).isoformat(timespec='seconds'),
             'up': up, 'status': status_rows(up, st, '\n'.join(x for x in (progress, release) if x)),
-            'sessions': session_rows(st, ls, titles, now, links, terminal_base), 'queue': queue_rows(ls),
+            'slots': slots, 'sessions': session_rows(st, ls, titles, now, links, terminal_base, slots),
+            'queue': queue_rows(ls),
             'needs': needs, 'concepts': concepts, 'log': log_tail(log_n), 'release': release}
 
 
