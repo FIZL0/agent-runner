@@ -214,7 +214,7 @@ def cmd_take(argv: list[str], prog: str = f'{RUNNER} take') -> int:
                   f'that agent and gave the slot back; the task stays in the plan', file=sys.stderr)
             why = ''
         else:
-            why = slot_running(tid, 'the run did not stop it' if fresh else
+            why = slot_running(tid, 'no run is up to stop it, or it did not answer' if fresh else
                                'further along: it has commits or earlier work' if n else '')
     if why:
         return fail(f'{tid}: {why}')
