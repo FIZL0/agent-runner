@@ -6346,7 +6346,7 @@ def test_take_running_slot(repo: Path):
         r = run(repo, 'take', tid)
         eq(r.returncode, 1, 'take refuses a task a slot runs')
         has(r.stderr, rf'{tid}: running in slot s5', f'and names the slot: {r.stderr}')
-        has(r.stderr, r'attach s5', 'with the attach line')
+        check('attach s' not in r.stderr, 'B109: no attach line (the person may be on the app)', r.stderr)
         has(r.stderr, rf'plan tell {tid} ', 'and how to steer it')
         check('claude.ai/code' not in r.stderr, 'no link while remote_slots is off', r.stderr)
         check(not (R.SLOTS_DIR / f'take-{tid}').exists(), 'and starts nothing')
@@ -6367,9 +6367,9 @@ def test_take_running_slot(repo: Path):
         git(repo, 'branch', '-D', f'task/{tid}')
     from agent_runner.guide import topic
     text = topic('take', './run')
-    check('When take says the task is running in a slot, start nothing' in text and '`./run attach sN`' in text
+    check('When take says the task is running in a slot, start nothing' in text and 'attach s' not in text
           and '`./run plan tell ID "..."`' in text and 'claude.ai/code link' in text,
-          'the take guide: a running slot means give the link or attach line, start nothing', text)
+          'the take guide: a running slot means give the link or plan tell, start nothing', text)
     check('`./run guide take`' in CONTROL.format(repo='r', cmd='./run', log='l', watch=CONTROL_WATCH.format(
         repo='r', cmd='./run'), needs='Needs you', answer=''), 'C2: and the control brief points there')
 

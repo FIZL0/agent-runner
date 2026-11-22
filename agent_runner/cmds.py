@@ -85,16 +85,50 @@ def slot_link(n: int, tid: str = '') -> str:
     return control_link(bridge)
 
 
-def slot_running(tid: str) -> str:
-    """F52: why `take tid` refuses a task a slot runs, with where to watch and steer it instead."""
+def slot_running(tid: str, because: str = '') -> str:
+    """F52: why `take tid` refuses a task a slot runs, with where to watch and steer it instead. B109: never an
+    `attach sN` line (the person may be on the app, with no terminal): the slot's claude.ai/code link when there
+    is one, and `plan tell` to steer it. `because`: why take did not take it back from the slot."""
     n = running_slot(tid)
     if not n:
         return 'running in a slot'
     link = slot_link(n, tid)
-    return (f'running in slot s{n}; nothing taken. Watch or steer it there instead:\n'
-            + (f'  {link}\n' if link else '')
-            + f'  {C.command} attach s{n}\n'
+    return (f'running in slot s{n}' + (f' ({because})' if because else '') + '; nothing taken. '
+            + (f'Watch or steer it there instead:\n  {link}\n' if link else 'Steer it from here instead:\n')
             + f'  {C.command} plan tell {tid} "what to do differently"')
+
+
+def slot_just_started(tid: str, n: int, branch: str) -> bool:
+    """B109: slot n started `tid` only moments ago: its worktree is on task/<tid> (not a cut-off session waiting
+    to resume), the branch has no commits past `branch`, and no earlier attempt of it is parked (wip/<tid>)."""
+    d = SLOTS_DIR / f's{n}'
+    if not d.is_dir() or git('symbolic-ref', '-q', '--short', 'HEAD', cwd=d).stdout.strip() != f'task/{tid}':
+        return False
+    if git('rev-list', '--count', f'{branch}..task/{tid}').stdout.strip() != '0':
+        return False
+    return not git('for-each-ref', '--format=%(refname)', f'refs/heads/wip/{tid}',
+                   f'refs/heads/wip/{tid}-*').stdout.strip()
+
+
+def take_back(tid: str, n: int, branch: str) -> str | None:
+    """B109: `take tid` on a task slot n started only moments ago: the person asked for it here, so the run
+    stops that slot's agent, throws its attempt away and frees the slot (the B19 halt `plan drop` uses, which
+    leaves the task in the plan), and take goes on in a worktree of its own. The take worktree is made first,
+    detached, so the run passes over the task as taken and never starts it again in the freed slot.
+    Returns what the run said; None when no run is up to stop the slot, or it did not answer (nothing taken)."""
+    if not P.run_on(C, tid):
+        return None
+    d = worktree(f'take-{tid}', branch)
+    said = P.request(C, 'halt', tid, {'how': 'drop'}, P.HALT_WAIT)
+    end = time.monotonic() + 10
+    while said is not None and time.monotonic() < end and \
+            not git('rev-parse', '--verify', '-q', f'refs/heads/task/{tid}').returncode:
+        time.sleep(0.2)  # the run answers after it deleted task/<tid>; a slow disk gets a moment
+    if said is None or not git('rev-parse', '--verify', '-q', f'refs/heads/task/{tid}').returncode:
+        (P.channel(C, 'halt') / f'{tid}.json').unlink(missing_ok=True)  # unanswered: the slot keeps it
+        git('worktree', 'remove', '--force', str(d))
+        return None
+    return said.strip()
 
 
 def cmd_take(argv: list[str], prog: str = f'{RUNNER} take') -> int:
@@ -173,7 +207,15 @@ def cmd_take(argv: list[str], prog: str = f'{RUNNER} take') -> int:
            'finished, waiting to merge' if tid in ahead(branch) else
            f'claimed by {plansync.claims(C)[tid].who}' if tid in plansync.taken(C) else '')
     if why == 'running in a slot':
-        why = slot_running(tid)
+        n = running_slot(tid)
+        fresh = bool(n) and slot_just_started(tid, n, branch)
+        if fresh and take_back(tid, n, branch) is not None:  # the run's answer says "dropped": not to the person
+            print(f'{tid}: took it back from s{n}, which had only just started it (no commits): the run stopped '
+                  f'that agent and gave the slot back; the task stays in the plan', file=sys.stderr)
+            why = ''
+        else:
+            why = slot_running(tid, 'no run is up to stop it, or it did not answer' if fresh else
+                               'further along: it has commits or earlier work' if n else '')
     if why:
         return fail(f'{tid}: {why}')
     worktree(f'take-{tid}', branch)

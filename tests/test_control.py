@@ -132,6 +132,84 @@ def test_brief_fits_session_start():
     check(voice.brief_fit('x', cmd, R.C) != '', 'brief_fit returns text')
 
 
+def test_take_back_from_a_slot_just_started():
+    print('B109: take on a task a slot started moments ago (no commits) takes it back and frees the slot; one '
+          'with commits refuses, with no attach line')
+    import io
+    import sys
+    import threading
+    import time
+    from contextlib import redirect_stderr, redirect_stdout
+    from agent_runner import cmds as M, loop as L, plan as P, runner as R
+    d = Path(tempfile.mkdtemp(prefix='agent-runner-b109-'))
+    git(d, 'init', '-q', '-b', 'main')
+    (d / 'plan').mkdir()
+    (d / 'plan/TODO.md').write_text('# TODO\n\n### Later\n\n- [ ] **T1** fresh one | files: a.py\n'
+                                    '- [ ] **T2** further along | files: b.py\n', encoding='utf-8')
+    (d / 'plan/DONE.md').write_text('# DONE\n', encoding='utf-8')
+    (d / 'runner.toml').write_text('[run]\ntest = "true"\nremote = false\nmin_free_gb = 0\n', encoding='utf-8')
+    (d / '.gitignore').write_text('.runner/\n')
+    git(d, 'add', '-A')
+    git(d, 'commit', '-qm', 'start')
+    R.init(d)
+    slot = R.worktree(5, 'main')
+    git(slot, 'checkout', '-q', '-B', 'task/T1', 'main')  # the run's slot 5 has just claimed T1
+    agent = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'])
+    procs, running, free_at = {5: (agent.pid, '', None)}, {5: ('T1', 'fresh one', ['a.py'])}, {}
+
+    def the_run():  # the run's loop, as far as halts go: it answers the take's request
+        end = time.monotonic() + 30
+        while time.monotonic() < end and 'T1' not in L.halt_requests():
+            time.sleep(0.05)
+        L.halts(procs, running, free_at, set(), 'main', 'm', 0, 5)
+
+    take = io.StringIO()
+    import os
+    here = os.getcwd()
+    os.chdir(d)  # take reads the repository around the current directory, as from a control session
+    with mock.patch.object(P, 'run_on', lambda c, tid: 's5' if tid == 'T1' and 5 in running else ''), \
+            mock.patch.object(L, 'end_orphans', lambda: None), mock.patch.object(L, 'log', lambda *a, **k: None), \
+            mock.patch.object(L, 'note', lambda *a, **k: None):
+        t = threading.Thread(target=the_run, daemon=True)
+        t.start()
+        with redirect_stderr(take), redirect_stdout(io.StringIO()):
+            rc = M.cmd_take(['T1'])
+        t.join(30)
+    try:
+        agent.wait(15)
+    except subprocess.TimeoutExpired:
+        agent.kill()
+    eq(rc, 0, f'take succeeds: {take.getvalue()}')
+    check('took it back from s5' in take.getvalue(), 'and says it took it back from s5', take.getvalue())
+    check(agent.poll() is not None, "the slot's agent was stopped")
+    check(5 not in procs and 5 not in running and 5 in free_at, 'the slot is given back')
+    check(git(slot, 'rev-parse', '--abbrev-ref', 'HEAD') == 'HEAD', 'the slot worktree is off task/T1')
+    eq(git(M.SLOTS_DIR / 'take-T1', 'rev-parse', '--abbrev-ref', 'HEAD'), 'task/T1', 'the take worktree has task/T1')
+    eq(M.running_slot('T1'), 0, 'no slot runs T1 now')
+
+    git(slot, 'checkout', '-q', '-B', 'task/T2', 'main')
+    (slot / 'b.py').write_text('# b\n')
+    git(slot, 'add', '-A')
+    git(slot, 'commit', '-qm', 'T2 work')
+    asked = []
+    err = io.StringIO()
+    with mock.patch.object(P, 'run_on', lambda c, tid: 's5'), \
+            mock.patch.object(P, 'request', lambda *a, **k: asked.append(a) or 'stopped'):
+        with redirect_stderr(err), redirect_stdout(io.StringIO()):
+            rc = M.cmd_take(['T2'])
+    eq(rc, 1, 'take refuses a task whose slot has commits')
+    check(not asked, 'and never asks the run to stop that slot', asked)
+    check('running in slot s5' in err.getvalue() and 'plan tell T2' in err.getvalue(), 'names the slot and plan tell',
+          err.getvalue())
+    check('attach s' not in err.getvalue(), 'the refusal has no attach line', err.getvalue())
+    eq(git(slot, 'rev-parse', '--abbrev-ref', 'HEAD'), 'task/T2', 'the slot keeps T2')
+    check(not (M.SLOTS_DIR / 'take-T2').exists(), 'and nothing is taken')
+    os.chdir(here)
+    from agent_runner.guide import topic
+    check('attach s' not in topic('take', './run'), 'the take guide hands out no attach line either')
+
+
 if __name__ == '__main__':
     raise SystemExit(report([test_background_session_options_target, test_real_tmux_takes_the_option,
-                             test_handed_ask_as_c1_starts_fresh, test_brief_fits_session_start]))
+                             test_handed_ask_as_c1_starts_fresh, test_brief_fits_session_start,
+                             test_take_back_from_a_slot_just_started]))
