@@ -258,11 +258,12 @@ def release(now: bool = False, text: str = '') -> dict:
 
 def to_c1(text: str) -> dict:
     """Hand `text` to c1 the way the runner feed hands on a message: typed into c1's pane when it is live,
-    else a new control session that gets it as its first message (`control --new --ask`)."""
+    else a new control session that gets it as its first message (`control --new --ask`). c1's pane is found
+    by its c1 tag (`control_window`), never $TMUX_PANE: the caller (the run, a terminal page) is not c1 (B111)."""
     try:
-        from agent_runner.control import control_live, control_pane
+        from agent_runner.control import control_live, control_window
         from agent_runner.slots import send_to_pane
-        if control_live(1) and (pane := control_pane(1)) and send_to_pane(pane, text):
+        if (pid := control_live(1)) and (pane := control_window(1, pid)) and send_to_pane(pane, text):
             return {'ok': True, 'code': 0, 'out': 'sent to c1', 'argv': []}
     except Exception:  # noqa: BLE001 - no tmux, no c1: a new control session takes it
         pass

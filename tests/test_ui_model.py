@@ -148,6 +148,25 @@ def test_real_command(tmp: Path) -> None:
        'a shelved item leaves Needs you')
 
 
+def test_to_c1_by_tag(tmp: Path) -> None:
+    """B111: called from inside tmux ($TMUX_PANE is the caller's own pane), to_c1 types into the c1-tagged pane."""
+    import os
+    import subprocess as sp
+    from unittest import mock
+    from agent_runner import control as K, slots
+    rows = (f'run\t%7\tc1\t{S.ROOT}\t\t4242\n'      # c1 of this repository
+            f'run\t%3\t\t\t{S.ROOT}\t4100\n')       # the runner's own pane
+    typed = []
+    with mock.patch.dict(os.environ, {'TMUX_PANE': '%3'}), \
+            mock.patch.object(K, 'control_live', return_value=4242), \
+            mock.patch.object(K.shutil, 'which', return_value='/usr/bin/tmux'), \
+            mock.patch.object(K, 'tmux', return_value=sp.CompletedProcess([], 0, rows, '')), \
+            mock.patch.object(slots, 'send_to_pane', side_effect=lambda p, t: (typed.append((p, t)), True)[1]):
+        r = U.to_c1('how is it going?')
+    eq(r['out'], 'sent to c1', 'c1 got it')
+    eq(typed, [('%7', 'how is it going?')], "typed into c1's tagged pane, not $TMUX_PANE")
+
+
 def in_tmp(f):
     def go():
         print(f.__name__)
@@ -158,4 +177,5 @@ def in_tmp(f):
 
 
 if __name__ == '__main__':
-    raise SystemExit(report([in_tmp(test_snapshot), in_tmp(test_actions), in_tmp(test_real_command)]))
+    raise SystemExit(report([in_tmp(test_snapshot), in_tmp(test_actions), in_tmp(test_real_command),
+                         in_tmp(test_to_c1_by_tag)]))

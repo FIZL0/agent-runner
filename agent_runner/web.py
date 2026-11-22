@@ -110,18 +110,6 @@ def c1_pane() -> str:
         return ''
 
 
-def send_c1(text: str) -> dict:
-    """`ui_model.to_c1` as the run itself calls it: typed into c1's pane when it is live, else a new control
-    session gets it as its first message."""
-    try:
-        from agent_runner.slots import send_to_pane
-        if (pane := c1_pane()) and send_to_pane(pane, text):
-            return {'ok': True, 'code': 0, 'out': 'sent to c1', 'argv': []}
-    except Exception:  # noqa: BLE001
-        pass
-    return U.call(['control', '--new', '--ask', text])
-
-
 def pane_of(name: str) -> str:
     """The tmux pane id of slot `name` (s2) or of c1; '' when it has none (a hidden slot, no tmux)."""
     if name == 'c1':
@@ -318,7 +306,6 @@ def start_web() -> WebServer | None:
     r = S.C.run
     if not r.get('web', True) or os.environ.get('AGENT_RUNNER_NO_WEB'):
         return None
-    U.SEND[0] = send_c1
     port = int(r.get('web_port', 8770))
     try:
         srv = serve(web_token(), port)
