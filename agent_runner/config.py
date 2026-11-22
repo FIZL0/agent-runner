@@ -116,6 +116,9 @@ DEFAULTS: dict = {
                                 # the run, watched and steered from claude.ai/code and the Claude apps; auto = on
                                 # when it can work (Claude Code on a claude.ai login), true/false force it
         'remote_slots': False,  # the slots on Remote Control too, each "<task title> · <repo> s2 · B646"
+        'web': True,            # the run page on the web, served by the run from this machine on web_port for the
+                                # LAN/Tailscale (its address, with the token it needs, in `status` and the run log)
+        'web_port': 8770,       # where the run page is served; its terminal tab's ttyd processes take the next ports
         'silent': False,        # phone pushes from the run's Remote Control sessions: true = none after each
                                 # one's start push (that one cannot be stopped), false = Claude Code's usual
         'control': True,        # a run opens control session c1 beside it (`agent-runner control`); false: none
@@ -540,6 +543,11 @@ class Config:
                                  'push), so it reads as false; set silent = true or false')
         if not isinstance(self.run['silent'], bool):
             raise SystemExit(f"agent-runner: [run] silent must be true or false, not {self.run['silent']!r}")
+        if not isinstance(self.run['web'], bool):
+            raise SystemExit(f"agent-runner: [run] web must be true or false, not {self.run['web']!r}")
+        if not isinstance(self.run['web_port'], int) or isinstance(self.run['web_port'], bool) \
+                or not 0 < self.run['web_port'] < 65536:
+            raise SystemExit(f"agent-runner: [run] web_port must be a port number, not {self.run['web_port']!r}")
         if self.run['comment_policy'] not in ('normal', 'minimal'):
             raise SystemExit("agent-runner: [run] comment_policy must be 'normal' or 'minimal'")
         self.run['backend'] = backend  # settled here, not a setting: `slots.backend()` reads it

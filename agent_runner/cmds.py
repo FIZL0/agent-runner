@@ -288,6 +288,9 @@ def cmd_status(argv: list[str], prog: str = f'{RUNNER} status') -> int:
         lines = []
     print(status_text(up, st, read_events(), P.titles(C.done, C.todo),time.time(), waiting=waiting_ok(), wips=wip_main_info(),
                       progress='\n'.join(x for x in (progress_line(a.window), release_line(P.lines(C.todo))) if x)))
+    from agent_runner.web import page_line
+    if said := page_line():  # F66: the run page's address, with its token
+        print(said)
     if lines and a.n:
         print('\nrun.log:\n' + '\n'.join(f'  {l}' for l in lines[-a.n:]))
     return 0
