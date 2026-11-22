@@ -238,6 +238,12 @@ DEFAULTS: dict = {
         'land_edited': 'wait',  # a tested merge blocked by uncommitted edits in the main checkout: "wait" for them,
                                 # or "wip": after LAND_WAIT_WIP move them to a wip/main-checkout-<time> branch and land
     },
+    'ui': {
+        'theme': 'ryha',        # the Run page's colours, in the terminal (`ui`) and on the web: ryha (black, red
+                                # accent), omarchy (the current Omarchy theme's colors.toml, else ryha), terminal
+                                # (the terminal's own 16 colours and background), light; the web page's T picks
+                                # another for that browser
+    },
 }
 
 
@@ -548,6 +554,9 @@ class Config:
         if not isinstance(self.run['web_port'], int) or isinstance(self.run['web_port'], bool) \
                 or not 0 < self.run['web_port'] < 65536:
             raise SystemExit(f"agent-runner: [run] web_port must be a port number, not {self.run['web_port']!r}")
+        if self.raw['ui']['theme'] not in ('ryha', 'omarchy', 'terminal', 'light'):  # F69: theme.NAMES
+            raise SystemExit("agent-runner: [ui] theme must be 'ryha', 'omarchy', 'terminal' or 'light', not "
+                             f"{self.raw['ui']['theme']!r}")
         if self.run['comment_policy'] not in ('normal', 'minimal'):
             raise SystemExit("agent-runner: [run] comment_policy must be 'normal' or 'minimal'")
         self.run['backend'] = backend  # settled here, not a setting: `slots.backend()` reads it

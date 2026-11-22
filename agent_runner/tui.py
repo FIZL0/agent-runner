@@ -6,8 +6,9 @@ lazygit layout: numbered boxed panels on the left ([1] Status, [2] Sessions, [3]
 The focused panel takes the spare height; every other panel shows 3 rows. Narrower than `TWO_COLUMNS`, the
 panels and the main pane take the whole width in turn (Enter in, Esc out), as the page does on a phone.
 
-Colours: the ryha theme (black ground, red #ef4444 accent, tailwind-ish ANSI), mapped to the nearest of the
-terminal's 256 colours (8 on an older terminal). The font is the terminal's own (JetBrains Mono in ryha's).
+Colours: F69's `[ui] theme` (theme.py, shared with the web page): ryha by default (black ground, red #ef4444
+accent, tailwind-ish ANSI), omarchy, terminal (the terminal's own 16 colours and background) or light, each
+mapped to the nearest of the terminal's 256 colours (8 on an older terminal). The font is the terminal's own.
 
 What it shows is `ui_model.snapshot()`, read again every `REFRESH` seconds; what it does is `ui_model`'s
 actions (plan add, plan edit, drop, shelve, release; chat, answers and take through c1), so the terminal
@@ -26,6 +27,7 @@ import subprocess as sp
 import sys
 import time
 
+from agent_runner import theme as TH
 from agent_runner import ui_model as U
 
 REFRESH = 3.0  # seconds between snapshots
@@ -36,16 +38,11 @@ PANELS = [(1, 'Status', 'status'), (2, 'Sessions', 'sessions'), (3, 'Queue', 'qu
           (4, 'Needs you', 'needs'), (5, 'Concepts', 'concepts')]
 NEW_TASK = {'id': '+', 'new': True}  # the queue's last row: a new task
 
-# ryha theme: name -> (256-colour index, 8-colour fallback); see the design page's CSS tokens
-THEME = {'fg': (254, 7), 'dim': (243, 7), 'line': (237, 7), 'red': (203, 1), 'green': (41, 2),
-         'yellow': (214, 3), 'blue': (69, 4), 'magenta': (135, 5), 'cyan': (38, 6),
-         'key': (231, 7)}  # F70: a key on the hint line, bold bright white
-SEL_BG = (88, 1)  # #7f1d1d: the focused row
-CUR_BG = (235, 0)  # #262626: the selected row of a panel that isn't focused
-BLACK = (16, 0)
-# B112: a selected row draws every segment on its row background: each theme colour gets a pair on SEL_BG
-# ('sel:red') and on CUR_BG ('cur:cyan'); ids keep their colour, dim text turns readable on the lighter ground
-ROW_DIM = {'sel': (254, 7), 'cur': (254, 7)}
+# F69: the colours a segment can name, each a token of the theme (theme.py); 'accent' is the theme's accent
+# (red in ryha), 'key' a key on the hint line (F70: bold, the brightest white). B112: a selected row draws every
+# segment on its row background: each colour gets a pair on the focused row's ('sel:red') and on the unfocused
+# selected row's ('cur:cyan'); ids keep their colour, dim text turns readable on the lighter ground
+COLOURS = ('fg', 'dim', 'line', 'accent', 'red', 'green', 'yellow', 'blue', 'magenta', 'cyan', 'key')
 
 
 def session_rows(snap: dict) -> list:
@@ -265,7 +262,7 @@ class RunPage:
     def box(self, win, y: int, x: int, h: int, w: int, title, on: bool, count: str = '') -> None:
         if h < 2 or w < 4:
             return
-        edge = self.a('red') if on else self.a('line')
+        edge = self.a('accent') if on else self.a('line')
         self.put(win, y, x, [('┌' + '─' * (w - 2) + '┐', '')], w, edge)
         for r in range(y + 1, y + h - 1):
             self.put(win, r, x, [('│', '')], 1, edge)
@@ -287,7 +284,7 @@ class RunPage:
         cur = min(self.cur[n], max(len(rows) - 1, 0))
         count = f'{cur + 1 if rows else 0} of {len(rows)}' + (f' · {n} to expand' if not focused and
                                                               len(rows) > SHORT else '')
-        self.box(win, y, x, h, w, [(f' [{n}] {name} ', 'red' if on else 'dim')], on, count)
+        self.box(win, y, x, h, w, [(f' [{n}] {name} ', 'accent' if on else 'dim')], on, count)
         inner = h - 2
         top = max(0, cur - inner + 1)
         if not rows:
@@ -303,7 +300,7 @@ class RunPage:
         tab, ts = self.tab()
         title = [(' ', '')]
         for i, t in enumerate(ts):
-            title += ([(' - ', 'dim')] if i else []) + [(t, ('red' if self.main else 'fg') if t == tab else 'dim')]
+            title += ([(' - ', 'dim')] if i else []) + [(t, ('accent' if self.main else 'fg') if t == tab else 'dim')]
         self.box(win, y, x, h, w, title + [(' ', '')], self.main)
         lines, inner = [l for segs in self.pane() for l in wrap(segs, w - 4)], h - 2
         if tab == 'log':
@@ -363,7 +360,7 @@ class RunPage:
             self.put(win, 0, 0, [('too small', 'red')], w)
             return
         ago = int(time.time() - self.got)
-        top = [('agent-runner', 'red'), (f' · {self.snap.get("project", "")}  ', 'fg'),
+        top = [('agent-runner', 'accent'), (f' · {self.snap.get("project", "")}  ', 'fg'),
                ('● ', 'green' if self.snap.get('up') else 'dim'),
                (('live' if self.snap.get('up') else 'no run is up') + f' · updated {"just now" if ago < 5 else f"{ago}s ago"}', 'dim')]
         self.put(win, 0, 0, top, w)
@@ -395,9 +392,9 @@ class RunPage:
             by, bx = (h - bh) // 2, (w - bw) // 2
             for r in range(bh):
                 self.put(win, by + r, bx, [(' ' * bw, '')], bw)
-            self.box(win, by, bx, bh, bw, [(' Keybindings ', 'red')], True)
+            self.box(win, by, bx, bh, bw, [(' Keybindings ', 'accent')], True)
             for i, l in enumerate(lines[:bh - 2]):
-                self.put(win, by + 1 + i, bx + 2, [(l, 'red' if l and not l.startswith(' ') else 'fg')], bw - 4)
+                self.put(win, by + 1 + i, bx + 2, [(l, 'accent' if l and not l.startswith(' ') else 'fg')], bw - 4)
 
     # --- keys and actions ------------------------------------------------------------------------------
 
@@ -584,33 +581,43 @@ class RunPage:
 
 # --- curses ----------------------------------------------------------------------------------------------
 
-def curses_attrs(curses) -> dict[str, int]:
-    """The ryha theme's colour pairs on this terminal: 256 colours when it has them, else the 8 basic ones."""
+def curses_attrs(curses, theme: str | dict | None = None) -> dict[str, int]:
+    """The theme's colour pairs on this terminal (F69: `[ui] theme` when none is given): 256 colours when it
+    has them, else the 8 basic ones; the terminal theme draws in the terminal's own colours and background."""
     if not curses.has_colors():
-        return {'red': curses.A_BOLD, 'sel': curses.A_REVERSE, 'cur': curses.A_BOLD, 'mode': curses.A_REVERSE,
-                'key': curses.A_BOLD}
+        return {'red': curses.A_BOLD, 'accent': curses.A_BOLD, 'sel': curses.A_REVERSE, 'cur': curses.A_BOLD,
+                'mode': curses.A_REVERSE, 'key': curses.A_BOLD}
+    th = theme if isinstance(theme, dict) else TH.get(theme or TH.configured())
     curses.start_color()
-    deep = curses.COLORS >= 256
-    pick = (lambda c: c[0] if deep else c[1])
-    bg = pick(BLACK)
+    if -1 in (th['bg'], th['fg']):
+        try:
+            curses.use_default_colors()  # -1: the terminal's own foreground and background
+        except Exception:  # noqa: BLE001 - a terminal without them: white on black
+            th = {**th, 'bg': 0 if th['bg'] == -1 else th['bg'], 'fg': 7 if th['fg'] == -1 else th['fg']}
+    col = lambda token: TH.curses_colour(th, token, curses.COLORS)  # noqa: E731
+    bg = col('bg')
     out = {}
-    for i, (name, c) in enumerate(THEME.items(), start=1):
-        curses.init_pair(i, pick(c), bg)
+    for i, name in enumerate(COLOURS, start=1):
+        curses.init_pair(i, col(name), bg)
         out[name] = curses.color_pair(i)
-    n = len(THEME) + 1
-    curses.init_pair(n, pick(THEME['fg']), pick(SEL_BG))
-    curses.init_pair(n + 1, bg, pick(THEME['red']))
-    curses.init_pair(n + 2, pick(THEME['fg']), pick(CUR_BG))
+    n = len(COLOURS) + 1
+    curses.init_pair(n, col('fg'), col('sel'))
+    curses.init_pair(n + 1, bg if bg != -1 else col('selfg'), col('accent'))
+    curses.init_pair(n + 2, col('fg'), col('cur'))
     out.update(sel=curses.color_pair(n), mode=curses.color_pair(n + 1) | curses.A_BOLD,
                cur=curses.color_pair(n + 2))
     n += 3
-    for ground, row_bg in (('sel', SEL_BG), ('cur', CUR_BG)):  # B112: every colour on each row background
-        for name, c in THEME.items():
-            curses.init_pair(n, pick(ROW_DIM[ground] if name == 'dim' else c), pick(row_bg))
-            out[f'{ground}:{name}'] = curses.color_pair(n) | (curses.A_BOLD if name == 'red' else 0)
+    for ground in ('sel', 'cur'):  # B112: every colour on each row background
+        row_bg = col(ground)
+        for name in COLOURS:
+            fg = col('fg' if name == 'dim' else name)
+            if fg == row_bg:  # the row's own colour (red on the terminal theme's red row) would vanish
+                fg = col('selfg')
+            curses.init_pair(n, fg, row_bg)
+            out[f'{ground}:{name}'] = curses.color_pair(n) | (curses.A_BOLD if name in ('red', 'accent') else 0)
             n += 1
-    out['red'] |= curses.A_BOLD
-    out['key'] |= curses.A_BOLD
+    for name in ('red', 'accent', 'key'):
+        out[name] |= curses.A_BOLD
     return out
 
 

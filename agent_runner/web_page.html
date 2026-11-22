@@ -7,9 +7,11 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap">
 <style>
 /* F66 run page: lazygit layout (numbered boxed panels left, one main pane with tabs right, key hints below),
-   ryha theme (black, red accent), one dark look by choice. Data: the run page model's snapshot over /events. */
+   ryha theme (black, red accent) below; F69: the server writes [ui] theme's tokens into style#theme and T picks
+   another per browser (theme.py, the terminal page's table). Data: the run page model's snapshot over /events. */
 :root{
-  --bg:#000;--fg:#e5e5e5;--dim:#737373;--line:#3a3a3a;--sel:#7f1d1d;--selfg:#f5f5f5;--raise:#0d0d0d;
+  --bg:#000;--fg:#e5e5e5;--dim:#737373;--line:#3a3a3a;--sel:#7f1d1d;--selfg:#f5f5f5;--raise:#0d0d0d;--cur:#262626;
+  --accent:#ef4444;--key:#fff;
   --red:#ef4444;--green:#22c55e;--yellow:#f59e0b;--blue:#3b82f6;--bblue:#60a5fa;--magenta:#a855f7;--cyan:#06b6d4;
   --mono:"JetBrains Mono","JetBrainsMono Nerd Font Mono",ui-monospace,Menlo,Consolas,monospace;
   color-scheme:dark;
@@ -22,19 +24,19 @@ body{background:var(--bg);color:var(--fg);font:13px/1.45 var(--mono);
   padding-top:calc(8px + env(safe-area-inset-top,0px));padding-bottom:calc(8px + env(safe-area-inset-bottom,0px))}
 .app{height:100%;display:grid;grid-template-rows:auto minmax(0,1fr) auto auto;gap:6px}
 .top{display:flex;gap:12px;align-items:center;flex-wrap:wrap;color:var(--dim)}
-.top b{color:var(--red)}
+.top b{color:var(--accent)}
 .live::before{content:"●";color:var(--dim);margin-right:5px}
 .live.on::before{color:var(--green)}
 .top .spacer{flex:1}
 button{font:inherit}
 .top button{background:none;border:1px solid var(--line);color:var(--fg);padding:1px 8px;cursor:pointer}
-.top button:hover{border-color:var(--red)}
+.top button:hover{border-color:var(--accent)}
 .cols{display:grid;grid-template-columns:minmax(260px,36%) minmax(0,1fr);gap:8px;min-height:0}
 .left{display:grid;grid-template-columns:minmax(0,1fr);gap:10px;min-height:0;min-width:0;padding-top:8px}
 .box{position:relative;border:1px solid var(--line);padding:10px 2px 6px;min-height:0;min-width:0;display:flex;flex-direction:column}
-.box.on{border-color:var(--red)}
+.box.on{border-color:var(--accent)}
 .box>.ttl{position:absolute;top:-9px;left:8px;background:var(--bg);padding:0 4px;color:var(--dim);white-space:nowrap;cursor:pointer}
-.box.on>.ttl{color:var(--red);font-weight:700}
+.box.on>.ttl{color:var(--accent);font-weight:700}
 .box>.cnt{position:absolute;bottom:-9px;right:8px;background:var(--bg);padding:0 4px;color:var(--dim);font-size:12px}
 .list{overflow:auto;min-height:0}
 .box.short .list{max-height:calc(3 * 1.45em)}
@@ -47,33 +49,33 @@ button{font:inherit}
 .mtabs{position:absolute;top:-9px;left:8px;background:var(--bg);padding:0 4px;white-space:nowrap}
 .mtabs span{color:var(--dim);cursor:pointer}
 .mtabs span[data-tab]+span[data-tab]::before{content:" - ";color:var(--dim)}
-.mtabs span.on{color:var(--red);font-weight:700}
+.mtabs span.on{color:var(--accent);font-weight:700}
 .box.main:not(.on) .mtabs span.on{color:var(--fg)}
 .pane{flex:1;overflow:auto;padding:4px 10px;white-space:pre-wrap;word-break:break-word;min-height:0}
 .pane iframe{width:100%;height:100%;min-height:360px;border:0;background:#000}
 .pane.term{padding:0;white-space:normal}
 .inrow{display:flex;gap:6px;padding:6px 8px 2px;border-top:1px solid var(--line)}
 input,textarea,select{font:inherit;background:var(--raise);color:var(--fg);border:1px solid var(--line);padding:4px 6px;min-width:0}
-input:focus,textarea:focus,select:focus{outline:none;border-color:var(--red)}
+input:focus,textarea:focus,select:focus{outline:none;border-color:var(--accent)}
 .inrow input{flex:1}
 .form{display:grid;gap:8px;max-width:640px;white-space:normal}
 .form label{display:grid;gap:3px;color:var(--dim)}
 .form .two{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .kb{border:1px solid var(--line);padding:0 6px;color:var(--fg);cursor:pointer;background:none}
-.kb:hover{border-color:var(--red)}
-.kb.p{border-color:var(--red);color:var(--red)}
+.kb:hover{border-color:var(--accent)}
+.kb.p{border-color:var(--accent);color:var(--accent)}
 .btnrow{display:flex;gap:8px;flex-wrap:wrap;white-space:normal}
 .foot{color:var(--fg);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.foot .k{color:var(--selfg);font-weight:700}
+.foot .k{color:var(--key);font-weight:700}
 .foot .sep{color:var(--dim)}
-.foot .mode{color:var(--bg);background:var(--red);padding:0 6px;margin-right:6px;font-weight:700}
+.foot .mode{color:var(--bg);background:var(--accent);padding:0 6px;margin-right:6px;font-weight:700}
 .pop{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.6);z-index:10;padding:16px}
-.pop .box{background:var(--bg);width:min(600px,100%);max-height:80vh;border-color:var(--red)}
-.pop .box>.ttl{color:var(--red);font-weight:700}
+.pop .box{background:var(--bg);width:min(600px,100%);max-height:80vh;border-color:var(--accent)}
+.pop .box>.ttl{color:var(--accent);font-weight:700}
 .toast{position:fixed;right:max(12px,env(safe-area-inset-right,0px));bottom:calc(40px + env(safe-area-inset-bottom,0px));border:1px solid var(--green);background:var(--bg);padding:6px 10px;z-index:20;max-width:min(90vw,520px);white-space:pre-wrap}
 .toast.bad{border-color:var(--red)}
 a{color:var(--bblue)}
-:focus-visible{outline:1px solid var(--red)}
+:focus-visible{outline:1px solid var(--accent)}
 .mnav{display:none}
 .back{display:none}
 /* phone width: one panel at a time, a bottom tab bar, a tap opens the item in the main pane */
@@ -89,10 +91,14 @@ a{color:var(--bblue)}
   .mnav{display:grid;grid-template-columns:repeat(5,1fr);border-top:1px solid var(--line);padding-top:6px}
   .mnav button{font-size:11px;background:none;border:0;color:var(--dim);display:grid;gap:1px;justify-items:center;cursor:pointer;padding:2px 0}
   .mnav button b{font-size:15px;color:var(--fg)}
-  .mnav button.on,.mnav button.on b{color:var(--red)}
-  .back{display:inline;color:var(--red);cursor:pointer;margin-right:8px}
+  .mnav button.on,.mnav button.on b{color:var(--accent)}
+  .back{display:inline;color:var(--accent);cursor:pointer;margin-right:8px}
 }
+.themes{display:grid;gap:6px;white-space:normal}
+.themes .kb{text-align:left;padding:4px 8px}
+.themes .sw{display:inline-block;width:.9em;height:.9em;margin-right:2px;vertical-align:-1px;border:1px solid var(--line)}
 </style>
+<style id="theme">/*THEME_CSS*/</style>
 </head><body>
 <div class="app">
   <div class="top">
@@ -100,6 +106,7 @@ a{color:var(--bblue)}
     <span class="live" id="live">connecting…</span>
     <span class="spacer"></span>
     <button id="relbtn" title="release (R)">R release</button>
+    <button id="themebtn" title="theme (T)">T theme</button>
     <button id="helpbtn" title="keys (?)">? keys</button>
   </div>
   <div class="cols" id="cols">
@@ -288,6 +295,7 @@ function help(){openPop('Keybindings',`<span class="r">Global</span>
   <span class="b">t</span>      terminal of the slot <span class="b">c</span>      chat with c1
   <span class="b">i</span>      type in the pane     <span class="b">R</span>      release
   <span class="b">Esc</span>    back out             <span class="b">?</span>      this list
+  <span class="b">T</span>      theme (this browser)
 
 <span class="r">Queue [3]</span>
   <span class="b">n</span>      new task             <span class="b">e</span>      direct edit
@@ -298,6 +306,26 @@ function help(){openPop('Keybindings',`<span class="r">Global</span>
   <span class="b">i</span>      answer               <span class="b">L</span>      later
 
 <span class="d">Esc closes this.</span>`)}
+/* F69: themes. The server writes [ui] theme into style#theme and every theme's tokens into THEMES; T picks one
+   for this browser (localStorage), 'as the run is set' goes back to [ui] theme. */
+const THEMES=/*THEMES*/{"default":"ryha","themes":{}};
+const THEME_KEY='agent-runner.theme';
+const THEME_LABEL={ryha:'ryha: black, red accent',omarchy:'omarchy: the current Omarchy theme',terminal:"terminal: the terminal's 16 colours",light:'light'};
+function savedTheme(){try{return localStorage.getItem(THEME_KEY)||''}catch(e){return ''}}
+function applyTheme(name){
+  const t=THEMES.themes[name]||THEMES.themes[THEMES.default];if(!t)return;
+  $('#theme').textContent=':root{'+Object.entries(t).filter(([k])=>k!=='mode').map(([k,v])=>`--${k}:${v}`).join(';')+
+    `;color-scheme:${t.mode==='light'?'light':'dark'}}`;
+}
+function setTheme(name){try{name?localStorage.setItem(THEME_KEY,name):localStorage.removeItem(THEME_KEY)}catch(e){}applyTheme(name||THEMES.default);closePop();toast('theme: '+(name||THEMES.default+' (as the run is set)'))}
+function themePicker(){
+  const cur=savedTheme();
+  const sw=t=>['bg','fg','accent','green','yellow','blue'].map(k=>`<span class="sw" style="background:${esc(t[k])}"></span>`).join('');
+  openPop('Theme',`<div class="themes">${Object.entries(THEMES.themes).map(([n,t])=>`<button class="kb ${n===cur?'p':''}" data-theme="${esc(n)}">${sw(t)} ${esc(THEME_LABEL[n]||n)}</button>`).join('')}
+<button class="kb ${cur?'':'p'}" data-theme="">as the run is set ([ui] theme = ${esc(THEMES.default)})</button></div>
+<span class="d">Remembered in this browser. Esc closes this.</span>`,'.themes .kb.p');
+}
+if(savedTheme())applyTheme(savedTheme());
 function setTab(name){const [,ts,key]=curTab();if(ts.includes(name)){S.tab[key]=name;S.focusMain=true;render();return true}return false}
 function focusInput(){const i=$('#extra input, #pane textarea, #pane input');if(i&&!i.disabled){S.focusMain=true;renderLeft();i.focus();renderFoot()}}
 
@@ -314,6 +342,7 @@ document.addEventListener('keydown',e=>{
   else if(k==='t'){if(S.panel!==2){S.panel=2;S.cur[2]=Math.min(1,S.snap.sessions.length-1)}setTab('terminal');return e.preventDefault()}
   else if(k==='c'){S.panel=2;S.cur[2]=Math.max(0,S.snap.sessions.findIndex(s=>s.name==='c1'));S.tab['2:c1']='chat';S.focusMain=true;render();setTimeout(focusInput,0);return e.preventDefault()}
   else if(k==='R'){release();return e.preventDefault()}
+  else if(k==='T'){themePicker();return e.preventDefault()}
   else if(k==='?'){help()}
   else if(k==='i'){if(S.panel===4)setTab('answer');else render();setTimeout(focusInput,0);return e.preventDefault()}
   else if(S.panel===3&&k==='n'){S.cur[3]=S.snap.queue.length;S.tab['3:+']='direct edit';S.focusMain=true;render();setTimeout(()=>$('#f-title')?.focus(),0);return e.preventDefault()}
@@ -330,6 +359,7 @@ document.addEventListener('focusout',()=>setTimeout(renderFoot,0));
 document.addEventListener('click',e=>{
   if(e.target.closest('[data-close]')){closePop();return}
   if(e.target.id==='pop'){closePop();return}
+  const th=e.target.closest('[data-theme]');if(th){setTheme(th.dataset.theme);return}
   const r=e.target.closest('[data-p]');if(r){S.panel=+r.dataset.p;S.cur[S.panel]=+r.dataset.i;S.focusMain=matchMedia('(max-width:760px)').matches||S.focusMain;render();return}
   const b=e.target.closest('[data-panel]');if(b){S.panel=+b.dataset.panel;S.focusMain=false;render();return}
   const t=e.target.closest('[data-tab]');if(t){setTab(t.dataset.tab);return}
@@ -343,7 +373,7 @@ document.addEventListener('submit',e=>{
     closePop();act('drop',{tid:it.id,why},'dropped '+it.id).then(r=>{if(r.ok)back()});return}
   submit(e.target.dataset.form);
 });
-$('#relbtn').onclick=release;$('#helpbtn').onclick=help;
+$('#relbtn').onclick=release;$('#helpbtn').onclick=help;$('#themebtn').onclick=themePicker;
 if(!T){$('#live').textContent='no token: open the address `status` prints'}
 else{api('snapshot').then(s=>{if(s&&s.status){S.snap=s;S.last=Date.now()}render()});connect()}
 render();

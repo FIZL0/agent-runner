@@ -158,6 +158,37 @@ def test_start(tmp: Path) -> None:
         srv.stop()
 
 
+def test_theme(tmp: Path) -> None:
+    """F69: the page is served in [ui] theme's colours, with every theme for its picker (T)."""
+    fake_repo(tmp)
+    eq(CF.DEFAULTS['ui']['theme'], 'ryha', '[ui] theme is ryha by default')
+    token = W.web_token()
+    srv = W.serve(token, 0, '127.0.0.1', snap=lambda: {})
+    base = f'http://127.0.0.1:{srv.server_address[1]}'
+    style = lambda page: page.split(b'<style id="theme">')[1].split(b'</style>')[0]  # noqa: E731
+    try:
+        page = get(f'{base}/?t={token}')[1]
+        check(b'--bg:#000000' in style(page) and b'--accent:#ef4444' in style(page), 'ryha by default',
+              style(page))
+        with mock.patch.dict(S.C.raw, {'ui': {'theme': 'light'}}):
+            page = get(f'{base}/?t={token}')[1]
+        check(b'--bg:#ffffff' in style(page) and b'color-scheme:light' in style(page),
+              '[ui] theme = "light" serves the light colours', style(page))
+        check(b'"default": "light"' in page, 'and the picker starts from it')
+        for name in (b'ryha', b'omarchy', b'terminal', b'light'):
+            check(b'"%s": {' % name in page, f'the picker has {name.decode()}')
+        check(b"k==='T'" in page and b'localStorage' in page, 'T picks a theme, remembered per browser')
+        colors = tmp / 'colors.toml'
+        colors.write_text('background = "#1e1e2e"\nforeground = "#cdd6f4"\naccent = "#89b4fa"\n', encoding='utf-8')
+        with mock.patch.dict(S.C.raw, {'ui': {'theme': 'omarchy'}}), \
+                mock.patch.dict(W.os.environ, {'OMARCHY_COLORS': str(colors)}):
+            page = get(f'{base}/?t={token}')[1]
+        check(b'--bg:#1e1e2e' in style(page) and b'--accent:#89b4fa' in style(page),
+              '[ui] theme = "omarchy" serves the Omarchy colours', style(page))
+    finally:
+        srv.stop()
+
+
 def in_tmp(f):
     def go():
         with tempfile.TemporaryDirectory() as d:
@@ -167,4 +198,4 @@ def in_tmp(f):
 
 
 if __name__ == '__main__':
-    raise SystemExit(report([in_tmp(test_server), in_tmp(test_real_action), in_tmp(test_start)]))
+    raise SystemExit(report([in_tmp(test_server), in_tmp(test_real_action), in_tmp(test_start), in_tmp(test_theme)]))
