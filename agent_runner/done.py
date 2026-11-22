@@ -20,7 +20,9 @@ landing, `--after ID[,ID]` (or just naming the open ids in WHY) lets a run reope
 
 `--artifact URL` is the page a concept task (kind K) published: required for one, which builds nothing.
 It notes the link on the task (and in its journal), and files the build task blocked until a person
-approves an option (`plan approve`).
+approves an option (`plan approve`). F74: it also keeps a local copy of the page at <notes>/concepts/<ID>.html
+for the run page to show inline: `--page FILE` (the HTML it was published from), else the newest .html file
+the worktree changed.
 
     ./run done K7 "K7: three layouts for the settings page" --artifact https://claude.ai/code/artifact/…
 """
@@ -92,6 +94,9 @@ def main(argv: list[str] | None = None) -> int:
                     help='with --blocked: the tasks it waits on, comma-separated (default: read off WHY)')
     ap.add_argument('--artifact', metavar='URL',
                     help="the page a concept task (K) published; required for one: its build waits for a person's OK")
+    ap.add_argument('--page', metavar='FILE',
+                    help='with --artifact: the local HTML file the page was published from; a copy is kept '
+                         '(<notes>/concepts/<ID>.html) for the run page to show inline')
     ap.add_argument('--no-test', action='store_true', help='skip the gate (say why in the message)')
     a = ap.parse_args(argv)
     c = cfg()
@@ -142,6 +147,8 @@ def record(a, c) -> int:
     later = c.plan_external and not a.blocked and finished_mark() is not None
     if a.artifact and not a.blocked:
         journal_link(c, a.id, a.artifact)
+        if kept_copy := keep_page(c, a.id, getattr(a, 'page', None)):
+            print(f'kept a copy of the page: {kept_copy}')
         if plan.concept(a.id):
             bid = plan.concept_done(a.id, a.artifact)
             print(f'{bid} filed to build it, blocked until a person approves an option '
@@ -251,6 +258,28 @@ def journal_link(c, tid: str, url: str) -> Path | None:
     except OSError:
         return None
     return f
+
+
+def keep_page(c, tid: str, page: str | None = None) -> Path | None:
+    """F74: keep a local copy of the page a concept task published, at <notes>/concepts/<ID>.html, so the run
+    page shows it inline: `page` (`--page FILE`), else the newest .html file this worktree changed. The copy,
+    or None when there is no such file."""
+    src = Path(page) if page else None
+    if src is None:
+        found = [p for p in (c.root / f for f in changed(c.root) if f.lower().endswith(('.html', '.htm')))
+                 if p.is_file()]
+        src = max(found, key=lambda p: p.stat().st_mtime) if found else None
+    if src is None or not src.is_file():
+        if page:
+            print(f'{PROG}: --page {page} is not a file: no local copy kept', file=sys.stderr)
+        return None
+    try:
+        dest = c.notes('concepts', f'{tid}.html')
+        dest.write_bytes(src.read_bytes())
+    except OSError as e:
+        print(f'{PROG}: could not keep a copy of the page ({e})', file=sys.stderr)
+        return None
+    return dest
 
 
 def finished(c=None, a=None) -> int:

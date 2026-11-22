@@ -118,11 +118,18 @@ def test_server(tmp: Path) -> None:
         code, out = post(f'{base}/act?t={token}', {'name': 'drop', 'args': ['F1']})
         eq(code, 400, 'args that are not an object are a bad request')
 
-        with mock.patch.object(W.shutil, 'which', return_value=None):
+        with mock.patch.object(W.shutil, 'which', side_effect=lambda n: '/usr/bin/tmux' if n == 'tmux' else None), \
+                mock.patch('agent_runner.plat.WINDOWS', False):
             code, body = get(f'{base}/terminal/s1?t={token}')
         r = json.loads(body)
         check(not r['ok'] and 'install' in r['out'] and 'ttyd' in r['out'],
               'without ttyd the terminal tab says how to install it', r)
+        eq((r['mode'], r['capture'], r['every']), ('builtin', 'pane/s1', 0.5),
+           'and gives the built-in view: the pane captured every 0.5 s')
+        with mock.patch.object(W.shutil, 'which', return_value=None):
+            r = json.loads(get(f'{base}/terminal/s1?t={token}')[1])
+        check(r['mode'] == 'feed' and 'no tmux' in r['out'] and r['feed'] == 'feed/s1',
+              'no tmux: the feed only', r)
         with mock.patch.object(W.shutil, 'which', return_value='/usr/bin/ttyd'), \
                 mock.patch.object(W, 'pane_of', return_value=''):
             r = json.loads(get(f'{base}/terminal/s1?t={token}')[1])
@@ -201,6 +208,41 @@ def test_theme(tmp: Path) -> None:
         srv.stop()
 
 
+def test_feed_pane_concept(tmp: Path) -> None:
+    """F74: /feed/NAME gives the session's feed, /pane/NAME its pane's text, /concept/ID a concept's local page
+    copy (sandboxed), and /act runs the new actions (interrupt, quick_ask)."""
+    fake_repo(tmp)
+    token = W.web_token()
+    srv = W.serve(token, 0, '127.0.0.1', snap=lambda: {'queue': []})
+    base = f'http://127.0.0.1:{srv.server_address[1]}'
+    entries = [{'kind': 'say', 'text': 'hi'}]
+    try:
+        with mock.patch.object(U, 'feed', side_effect=lambda n: {'ok': True, 'name': n, 'entries': entries}):
+            r = json.loads(get(f'{base}/feed/c6?t={token}')[1])
+        eq((r['name'], r['entries']), ('c6', entries), "/feed/c6 is c6's feed")
+        with mock.patch.object(U, 'session_pane', return_value='%6'), \
+                mock.patch.object(U, 'TMUX', [lambda argv: (0, 'screen\n')]):
+            r = json.loads(get(f'{base}/pane/c6?t={token}')[1])
+        eq((r['ok'], r['text']), (True, 'screen\n'), "/pane/c6 is its pane's text")
+        eq(get(f'{base}/concept/K5?t={token}')[0], 404, 'no copy: 404')
+        S.C.notes('concepts', 'K5.html').write_text('<h1>Option A</h1>', encoding='utf-8')
+        with urllib.request.urlopen(f'{base}/concept/K5?t={token}', timeout=10) as resp:
+            body, csp = resp.read(), resp.headers.get('Content-Security-Policy', '')
+        eq((body, csp), (b'<h1>Option A</h1>', 'sandbox allow-scripts'), 'the copy, sandboxed')
+        eq(get(f'{base}/concept/K5')[0], 403, 'and only with the token')
+        sent = []
+        with mock.patch.object(U, 'SEND', [lambda t: (sent.append(t), {'ok': True, 'out': 'sent to c1'})[1]]):
+            code, out = post(f'{base}/act?t={token}', {'name': 'quick_ask', 'args': {'key': 'needs'}})
+        eq(sent, ['what needs me?'], 'a quick ask through /act reaches c1')
+        typed = []
+        with mock.patch.object(U, 'session_pane', return_value='%6'), \
+                mock.patch.object(U, 'TMUX', [lambda argv: (typed.append(argv), (0, ''))[1]]):
+            code, out = post(f'{base}/act?t={token}', {'name': 'interrupt', 'args': {'session': 'c6'}})
+        eq((out['ok'], typed), (True, [['send-keys', '-t', '%6', 'Escape']]), 'interrupt c6 through /act')
+    finally:
+        srv.stop()
+
+
 def test_control_rows(tmp: Path) -> None:
     """F73: a snapshot holding control session c6 and an idle s2: the page gives cN rows c1-like tabs (terminal,
     session) with no open button, an idle slot's terminal tab says it is idle, /terminal/c6 finds c6's pane by its
@@ -254,4 +296,4 @@ def in_tmp(f):
 
 if __name__ == '__main__':
     raise SystemExit(report([in_tmp(test_server), in_tmp(test_real_action), in_tmp(test_start), in_tmp(test_theme),
-                           in_tmp(test_control_rows)]))
+                           in_tmp(test_control_rows), in_tmp(test_feed_pane_concept)]))

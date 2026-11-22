@@ -203,3 +203,24 @@ _Said_: open it
 _On screen_: open sN in the Claude apps
 _In code_: slot_open, open_session
 _Avoid_: attach, share
+
+**Session feed**:
+A session's own transcript on the Run page: the agent's words, the person's, and each tool step with its output, newest last
+_Said_: feed
+_On screen_: feed
+_In code_: ui_model.feed, feed_entries, /feed/NAME
+_Avoid_: log, terminal
+
+**Quick ask**:
+One of the Status chat's ready-made questions to c1, sent with one key or tap
+_Said_: quick asks, presets
+_On screen_: since last look, since yesterday, what needs me, usage
+_In code_: QUICK_ASKS, quick_ask
+_Avoid_: preset, shortcut
+
+**Terminal view**:
+A session's live tmux pane on the Run page: through ttyd when installed, else the built-in view of the pane's text; on Windows or with no tmux, the session feed only
+_Said_: terminal, pane
+_On screen_: terminal
+_In code_: terminal_mode, capture, keys
+_Avoid_: console

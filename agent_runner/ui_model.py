@@ -9,11 +9,20 @@ copy, and the actions they share.
               state (running, merging, idle: no task), files, session link, terminal URL; none when an older
               agent-runner started the run (its panes carry no tags: `older_run`)
     sessions_note  '' or, with no sessions for that reason, the one line Sessions shows instead (`OLDER_RUN`)
-    queue     every open task in TODO.md: id, kind, title, files, after, pri, section, blocked
+    queue     every open task in TODO.md: id, kind, title, files, after, pri, section, blocked, after_title
+              (what it waits on in words: 'F66 Run page: …', 'B109 (landed)', 'all: everything above it') and
+              state ('running s2 6m', 'critical', 'after', 'ready')
     needs     what waits on the person (not the shelved ones): label, id, ask in plain words, link, age
-    concepts  concept pages waiting for an OK: build id, concept id, title, page link
+    concepts  concept pages waiting for an OK: build id, concept id, title, page link, copy (the local copy
+              of the page `done --artifact` kept, <notes>/concepts/<ID>.html; '' for none)
     log       the run log's last lines
     release   the release line ('' when no release is queued)
+    quick_asks  the Status chat's quick asks sent to c1: key, label, text
+    terminal_mode  how a session's terminal shows: 'ttyd', 'builtin' (capture-pane and send-keys), 'feed'
+
+F74 adds, outside the snapshot (read on demand, per session): `feed(name)` (its transcript as say/you/tool/out
+entries) and `capture(name)` (its pane's text, for the built-in terminal view); and the actions `chat_to`
+(any control session), `interrupt`, `new_control`, `quick_ask` and `keys`.
 
 Each action calls what the CLI already does, as a subprocess of the runner (`runner_cmd()`), so a page and a
 terminal change the run exactly as a person typing the command would; `chat`, `answer` and `take` hand a
@@ -68,17 +77,61 @@ def task_pri(rest: str, section: str) -> str:
     return 'later' if section.startswith(P.PARKED) else 'normal'
 
 
-def queue_rows(ls: list[str]) -> list[dict]:
-    """Every open task ([ ] or [~]) of TODO.md's lines `ls`, in plan order."""
+def queue_rows(ls: list[str], st: dict | None = None, now: float | None = None) -> list[dict]:
+    """Every open task ([ ] or [~]) of TODO.md's lines `ls`, in plan order. F74: each row also carries
+    `after_title` (what it waits on, in words: `after_words`) and `state` (`queue_state`; STATE `st` says
+    which slot runs it and since when)."""
     names, out = _kind_names(), []
-    for section, box, tid, rest, i in P.iter_tasks(ls):
+    tasks = list(P.iter_tasks(ls))
+    titles = {tid: P.short_title(rest, 200) for _, _, tid, rest, _ in tasks}
+    live = {tid for _, box, tid, _, _ in tasks if box in ' ~'}
+    where = slot_of(st or {}, time.time() if now is None else now)
+    for section, box, tid, rest, i in tasks:
         if box not in ' ~':
             continue
         f = P.fields(ls[i])
-        out.append({'id': tid, 'kind': task_kind(tid, names), 'title': P.short_title(rest, 200),
-                    'files': f.get('files', []), 'after': P.waits_on(ls, i), 'pri': task_pri(rest, section),
-                    'section': section, 'blocked': box == '~'})
+        after, pri = P.waits_on(ls, i), task_pri(rest, section)
+        everything = P.ALL in f.get('after', [])
+        out.append({'id': tid, 'kind': task_kind(tid, names), 'title': titles[tid],
+                    'files': f.get('files', []), 'after': after, 'pri': pri,
+                    'section': section, 'blocked': box == '~',
+                    'after_title': after_words(after, titles, live, everything),
+                    'state': queue_state(tid, pri, after, live, where)})
     return out
+
+
+QUEUE_STATES = ('running', 'critical', 'after', 'ready')  # F74: a queue row's state, first word
+
+
+def slot_of(st: dict, now: float) -> dict[str, str]:
+    """F74: {task id: 'running sN Nm'} for every task a slot of STATE `st` runs ('running sN' with no start)."""
+    out = {}
+    for n, tid in (st.get('running') or {}).items():
+        if not tid:
+            continue
+        name = f's{n}' if str(n).isdigit() else str(n)
+        since = (st.get('since') or {}).get(n)
+        out[tid] = f'running {name} {int((now - since) // 60)}m' if since else f'running {name}'
+    return out
+
+
+def after_words(after: list[str], titles: dict[str, str], live: set[str], everything: bool = False) -> str:
+    """F74: what a queued task waits on, as the queue row says it: 'all: everything above it' for `after: all`;
+    else each id with its title while it is open ('F66 Run page: …'), or '(landed)' once it is not
+    ('B109 (landed)'), joined by ', '; '' for nothing."""
+    if everything:
+        return 'all: everything above it'
+    return ', '.join(f'{t} {titles[t]}'.rstrip() if t in live else f'{t} (landed)' for t in after)
+
+
+def queue_state(tid: str, pri: str, after: list[str], live: set[str], where: dict[str, str]) -> str:
+    """F74: a queue row's state: 'running sN Nm' while a slot runs it, else 'critical', else 'after' while a
+    task it waits on is still open, else 'ready'."""
+    if tid in where:
+        return where[tid]
+    if pri == 'critical':
+        return 'critical'
+    return 'after' if any(t in live for t in after) else 'ready'
 
 
 def needs_rows(waiting, now: dt.datetime) -> tuple[list[dict], list[dict]]:
@@ -89,7 +142,7 @@ def needs_rows(waiting, now: dt.datetime) -> tuple[list[dict], list[dict]]:
         if shelved:
             continue
         if label == 'CONCEPT':
-            concepts.append({'id': tid, 'concept': k, 'title': title, 'url': url})
+            concepts.append({'id': tid, 'concept': k, 'title': title, 'url': url, 'copy': concept_copy(k)})
         needs.append({'label': label, 'id': tid, 'concept': k, 'title': title, 'what': what, 'url': url,
                       'ask': P.plain_ask(label, what, title), 'age': P.age(stamps.get(tid, ''), now)})
     return needs, concepts
@@ -313,8 +366,9 @@ def snapshot(up: bool | None = None, now: float | None = None, log_n: int = LOG_
     return {'project': S.project(), 'at': dt.datetime.fromtimestamp(now).isoformat(timespec='seconds'),
             'up': up, 'status': status_rows(up, st, '\n'.join(x for x in (progress, release) if x)),
             'slots': slots, 'sessions': sessions, 'sessions_note': OLDER_RUN if older else '',
-            'queue': queue_rows(ls),
-            'needs': needs, 'concepts': concepts, 'log': log_tail(log_n), 'release': release}
+            'queue': queue_rows(ls, st, now),
+            'needs': needs, 'concepts': concepts, 'log': log_tail(log_n), 'release': release,
+            'quick_asks': quick_asks(), 'terminal_mode': terminal_mode()}
 
 
 def snapshot_json(**kw) -> str:
@@ -438,3 +492,290 @@ def act(name: str, **args) -> dict:
         return ACTIONS[name](**args)
     except TypeError as e:
         return {'ok': False, 'code': 2, 'out': f'{name}: {e}', 'argv': []}
+
+
+# --- F74: the feed, chat with any control session, quick asks, concept copies, the terminal view ---------------
+#
+# The feed is a session's transcript (Claude Code's JSONL; Pi's, in Claude's shape by `slots.backend().entry`)
+# as entries {'kind': say|you|tool|out, 'text'}, newest last: the agent's words, the person's, each tool step
+# and its output, so a page shows the words with the steps folded. The terminal view is the session's live
+# tmux pane: through ttyd when it is installed ('ttyd'), else a built-in one ('builtin': the pane's text by
+# `capture` every CAPTURE_EVERY s, typed text by `keys`); on Windows or with no tmux, the feed only ('feed').
+
+FEED_BYTES = 400_000  # the tail of a transcript a feed reads: a long session's whole file is not read each poll
+FEED_MAX = 200  # entries a feed returns
+OUT_LINES, OUT_CHARS, TOOL_CHARS = 3, 300, 120  # how much of a tool's output, and of its call, a feed keeps
+CAPTURE_EVERY = 0.5  # s between the built-in terminal view's captures of a pane
+INTERRUPTED = '[Request interrupted'  # how Claude Code records an Escape in the transcript
+QUICK_ASKS = (  # F74: the Status chat's quick asks, sent to c1: (key, label, text)
+    ('since', 'since last look', 'what happened since my last look?'),
+    ('yesterday', 'since yesterday', 'what happened since yesterday?'),
+    ('needs', 'what needs me', 'what needs me?'),
+    ('usage', 'usage', 'where are the tokens going?'),
+)
+KEYS = ('Enter', 'Escape', 'Tab', 'BSpace', 'Up', 'Down', 'Left', 'Right', 'C-c')  # named keys `keys` may send
+LINK = re.compile(r'https://claude\.ai/code\S*')
+CONCEPT_ID = re.compile(r'[A-Za-z]+\d+\w*')
+
+
+def _clip(text: str, lines: int, chars: int) -> str:
+    ls = text.strip().splitlines()
+    out = '\n'.join(ls[:lines]) + ('\n…' if len(ls) > lines else '')
+    return out if len(out) <= chars else out[:chars - 1] + '…'
+
+
+def _blocks_text(c) -> str:
+    """A content's text: a string as is, else its text blocks joined by newlines."""
+    if isinstance(c, str):
+        return c
+    if isinstance(c, list):
+        return '\n'.join(x.get('text', '') for x in c if isinstance(x, dict) and x.get('type') == 'text'
+                         and isinstance(x.get('text'), str))
+    return ''
+
+
+def tool_words(name: str, args) -> str:
+    """A tool call as a feed line: 'Bash(./run status)', 'Read(agent_runner/cmds.py)', 'Edit(a.py)'."""
+    arg = ''
+    if isinstance(args, dict):
+        for k in ('command', 'file_path', 'path', 'pattern', 'url', 'query', 'description', 'prompt'):
+            if isinstance(args.get(k), str) and args[k].strip():
+                arg = args[k]
+                break
+        else:
+            arg = next((v for v in args.values() if isinstance(v, str) and v.strip()), '')
+    arg = ' '.join(arg.split())
+    return f'{name}({arg[:TOOL_CHARS - 1] + "…" if len(arg) > TOOL_CHARS else arg})' if arg else str(name)
+
+
+def feed_entries(rows) -> list[dict]:
+    """F74: transcript entries (Claude's shape) as feed entries, in order: 'you' (what the person typed, not
+    the runner's or a hook's text), 'say' (the agent's words), 'tool' (a tool call, `tool_words`) and 'out' (its
+    result, cut to OUT_LINES lines). Thinking, meta, compact summaries and subagents' entries are left out."""
+    from agent_runner.control import RUNNER_TURN
+    out: list[dict] = []
+    for d in rows:
+        if not isinstance(d, dict) or d.get('type') not in ('user', 'assistant') or d.get('isSidechain') \
+                or d.get('isMeta') or d.get('isCompactSummary'):
+            continue
+        m = d.get('message') or {}
+        c = m.get('content')
+        if d['type'] == 'assistant':
+            for b in (c if isinstance(c, list) else [{'type': 'text', 'text': c}] if isinstance(c, str) else []):
+                if not isinstance(b, dict):
+                    continue
+                if b.get('type') == 'text' and str(b.get('text') or '').strip():
+                    out.append({'kind': 'say', 'text': b['text'].strip()})
+                elif b.get('type') in ('tool_use', 'toolCall'):  # Claude's, Pi's
+                    out.append({'kind': 'tool', 'text': tool_words(b.get('name', 'tool'),
+                                                                   b.get('input', b.get('arguments')))})
+            continue
+        if m.get('role') == 'toolResult':  # Pi: a tool's result is a message of its own
+            out.append({'kind': 'out', 'text': _clip(_blocks_text(c), OUT_LINES, OUT_CHARS)})
+            continue
+        for b in ([{'type': 'text', 'text': c}] if isinstance(c, str) else c if isinstance(c, list) else []):
+            if not isinstance(b, dict):
+                continue
+            if b.get('type') == 'tool_result':
+                out.append({'kind': 'out', 'text': _clip(_blocks_text(b.get('content')), OUT_LINES, OUT_CHARS)})
+            elif b.get('type') == 'text' and (t := str(b.get('text') or '').strip()):
+                if t.startswith(INTERRUPTED):
+                    out.append({'kind': 'out', 'text': 'interrupted'})
+                elif not t.startswith(RUNNER_TURN) and not t.startswith('<task-notification>'):
+                    out.append({'kind': 'you', 'text': t})
+    return out
+
+
+def session_sid(name: str) -> str:
+    """The agent session id of `name`: cN's from its pid file ("pid sid", kept while it is closed: its
+    transcript stays), a slot's (s2) from its pane's process; '' for none."""
+    if re.fullmatch(r'c\d+', name):
+        try:
+            return S.C.notes(f'control{name[1:]}.pid').read_text(encoding='utf-8').strip().partition(' ')[2]
+        except OSError:
+            return ''
+    try:
+        from agent_runner import slots
+        pid = slots.MUX.panes().get(name, ('', 0))[1]
+        return (slots.MUX.session_id(pid) or '') if pid else ''
+    except Exception:  # noqa: BLE001 - no tmux, no such slot
+        return ''
+
+
+def transcript_of(name: str) -> str:
+    """The transcript file of session `name` (c1, c6, s2); '' for none."""
+    if not (sid := session_sid(name)):
+        return ''
+    try:
+        from agent_runner.slots import transcript
+        return transcript(sid) or ''
+    except Exception:  # noqa: BLE001
+        return ''
+
+
+def tail_rows(path: str, nbytes: int = FEED_BYTES):
+    """The transcript entries in the last `nbytes` of `path` (a line cut at the start, or not JSON, skipped),
+    each in Claude's shape."""
+    try:
+        from agent_runner.slots import backend
+        shape = backend().entry
+    except Exception:  # noqa: BLE001
+        shape = lambda d: d  # noqa: E731
+    try:
+        with open(path, 'rb') as f:
+            f.seek(0, 2)
+            size = f.tell()
+            f.seek(max(size - nbytes, 0))
+            data = f.read()
+    except OSError:
+        return
+    lines = data.decode('utf-8', errors='replace').splitlines()
+    for l in lines[1:] if size > nbytes else lines:
+        try:
+            d = json.loads(l)
+        except ValueError:
+            continue
+        if isinstance(d, dict) and (d := shape(d)) is not None:
+            yield d
+
+
+def feed(name: str, limit: int = FEED_MAX) -> dict:
+    """F74: session `name`'s feed (`feed_entries` of its transcript's tail), newest last: {'ok', 'name',
+    'entries', 'more' (older entries left out), 'link' (its claude.ai/code session, '' for none)}."""
+    path = transcript_of(name)
+    rows = feed_entries(tail_rows(path)) if path else []
+    sid = session_sid(name)
+    return {'ok': bool(path), 'name': name, 'entries': rows[-limit:] if limit else rows,
+            'more': len(rows) > limit > 0, 'link': _bridge_link(sid) if sid else '',
+            **({} if path else {'out': f'{name} has no transcript to read yet.'})}
+
+
+def quick_asks() -> list[dict]:
+    """F74: the Status chat's quick asks, for a page's buttons: key, label, the text sent to c1."""
+    return [{'key': k, 'label': l, 'text': t} for k, l, t in QUICK_ASKS]
+
+
+def concept_copy(cid: str) -> str:
+    """F74: the local copy of concept `cid`'s page (<notes>/concepts/<ID>.html, written by `done --artifact`),
+    as a path; '' when there is none."""
+    if not cid or not CONCEPT_ID.fullmatch(cid):
+        return ''
+    try:
+        p = S.C.notes('concepts', f'{cid}.html')
+        return str(p) if p.is_file() else ''
+    except Exception:  # noqa: BLE001 - no notes dir yet
+        return ''
+
+
+def terminal_mode() -> str:
+    """F74: how a page shows a session's terminal: 'ttyd' (installed, with tmux), 'builtin' (tmux, no ttyd:
+    `capture` and `keys`), or 'feed' (Windows, or no tmux: the feed and the session link only)."""
+    import shutil
+    from agent_runner import plat
+    if plat.WINDOWS or not shutil.which('tmux'):
+        return 'feed'
+    return 'ttyd' if shutil.which('ttyd') else 'builtin'
+
+
+def session_pane(name: str) -> str:
+    """The tmux pane of `name`: c1 or another control session cN by its tag (`control.control_window`), a slot
+    (s2) by the run's panes; '' when it has none (a hidden run, no tmux, not up)."""
+    if re.fullmatch(r'c\d+', name):
+        try:
+            from agent_runner.control import control_live, control_window
+            return control_window(int(name[1:]), control_live(int(name[1:])))
+        except Exception:  # noqa: BLE001
+            return ''
+    try:
+        from agent_runner import slots
+        if getattr(slots.MUX, 'name', '') != 'tmux':
+            return ''
+        return slots.MUX.panes().get(name, ('', 0))[0]
+    except Exception:  # noqa: BLE001
+        return ''
+
+
+def _tmux(argv: list[str]) -> tuple[int, str]:
+    try:
+        r = sp.run(['tmux', *argv], capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=5)
+    except (OSError, sp.SubprocessError) as e:
+        return 1, str(e)
+    return r.returncode, r.stdout if not r.returncode else r.stderr.strip()
+
+
+TMUX = [_tmux]  # how the terminal view reaches tmux; a test swaps it
+
+
+def _no_pane(name: str) -> dict:
+    return {'ok': False, 'code': 1, 'out': f'{name} has no tmux pane (the run is hidden, {name} is not up, or '
+                                           f'there is no tmux): its feed and session link still work.', 'argv': []}
+
+
+def capture(name: str) -> dict:
+    """F74: the built-in terminal view: session `name`'s pane as text now (`tmux capture-pane`), and how often
+    to ask again: {'ok', 'name', 'text', 'every'}."""
+    if not (pane := session_pane(name)):
+        return {**_no_pane(name), 'name': name, 'text': '', 'every': CAPTURE_EVERY}
+    code, text = TMUX[0](['capture-pane', '-p', '-J', '-t', pane])
+    return {'ok': code == 0, 'name': name, 'text': text if code == 0 else '', 'every': CAPTURE_EVERY,
+            **({} if code == 0 else {'out': f'tmux capture-pane: {text}'})}
+
+
+def keys(session: str, text: str = '', key: str = '') -> dict:
+    """F74: the built-in terminal view's typing: `text` typed into `session`'s pane (c6, s2) as is
+    (`send-keys -l`), then the named `key` (one of KEYS: Enter, Escape, …) if given."""
+    if key and key not in KEYS:
+        return {'ok': False, 'code': 2, 'out': f'keys: key is one of {", ".join(KEYS)}, not {key!r}', 'argv': []}
+    if not (pane := session_pane(session)):
+        return _no_pane(session)
+    for argv in ([['send-keys', '-t', pane, '-l', text]] if text else []) + \
+            ([['send-keys', '-t', pane, key]] if key else []):
+        code, out = TMUX[0](argv)
+        if code:
+            return {'ok': False, 'code': code, 'out': f'tmux send-keys: {out}', 'argv': argv}
+    return {'ok': True, 'code': 0, 'out': f'typed into {session}', 'argv': []}
+
+
+def interrupt(session: str = 'c1') -> dict:
+    """F74: interrupt `session` (Escape into its pane), as a person pressing Esc in it would."""
+    r = keys(session, key='Escape')
+    return {**r, 'out': f'interrupted {session}'} if r['ok'] else r
+
+
+def send(name: str, text: str) -> dict:
+    """F74: the person's words to session `name` as they typed them: c1 as `chat` hands them on (`SEND`), any
+    other control session or slot typed into its pane (`slots.send_to_pane`)."""
+    if name == 'c1':
+        return SEND[0](text)
+    if not (pane := session_pane(name)):
+        return _no_pane(name)
+    from agent_runner import slots
+    ok = slots.send_to_pane(pane, text)
+    return {'ok': ok, 'code': 0 if ok else 1, 'out': f'sent to {name}' if ok else f'could not type into {name}',
+            'argv': []}
+
+
+def chat_to(text: str, to: str = 'c1') -> dict:
+    """F74: the chat box of any control session: `to` (c1, c6) gets `text`."""
+    return send(to, text)
+
+
+def new_control(ask: str = '') -> dict:
+    """F74: start a new control session (`control --new`, `ask` its first message): the result's 'link' is its
+    claude.ai/code link ('' when it printed none)."""
+    r = call(['control', '--new', *(['--ask', ask] if ask else [])])
+    m = LINK.search(r['out'] or '')
+    return {**r, 'link': m.group(0).rstrip('.,)') if m else ''}
+
+
+def quick_ask(key: str) -> dict:
+    """F74: one of the Status chat's quick asks (QUICK_ASKS: since, yesterday, needs, usage), sent to c1."""
+    text = next((t for k, _, t in QUICK_ASKS if k == key), '')
+    if not text:
+        return {'ok': False, 'code': 2, 'out': f'quick_ask: key is one of {", ".join(k for k, _, _ in QUICK_ASKS)}, '
+                                               f'not {key!r}', 'argv': []}
+    return SEND[0](text)
+
+
+ACTIONS.update({'chat_to': chat_to, 'interrupt': interrupt, 'new_control': new_control, 'quick_ask': quick_ask,
+                'keys': keys})
