@@ -583,21 +583,34 @@ def feed_photo_unsent(sid: str) -> str | None:
     return None if last == [sid, got[1]] else got[1]
 
 
-def feed_take_files(sid: str, wait: float) -> tuple[str, list[str], bool] | None:
+def feed_take_files(sid: str, wait: float, photo_wait: float | None = None,
+                    final: bool = True) -> tuple[str, list[str], bool] | None:
     """BUG1: `feed_take`, and for a message with no words its files: (text, files, alone). A message with words
     gives its text, no files (`feed_wait` finds those by its words) and False; a photo alone gives '', its saved
     paths (`feed_photo`) and True, and when no path shows, the note that says so (`image_drift_note`, else
     `feed_lost_note`) as its text. A photo is taken even when the feed ran a command about it first
-    (`feed_photo_unsent`). None when no message shows at all."""
+    (`feed_photo_unsent`). None when no message shows at all, and, not `final`, also for a photo whose paths did
+    not show in `photo_wait` s (default FEED_WAIT): it is left not handed on, for a later, longer wait."""
+    f = C.notes(REMOTE_DIR, FEED_FORWARDED)
+    try:
+        before = f.read_text(encoding='utf-8')
+    except OSError:
+        before = None
     text = feed_take(sid, wait)
     if text is None and (mid := feed_photo_unsent(sid)):
         feed_forwarded(sid, mid)
         text = ''
     if text is None or text.strip():
         return None if text is None else (text, [], False)
-    got, lost, version = feed_photo(sid, FEED_WAIT)
+    got, lost, version = feed_photo(sid, FEED_WAIT if photo_wait is None else photo_wait)
     if got:
         return '', got, True
+    if not final:
+        try:  # not handed on after all: the later wait takes it
+            f.write_text(before, encoding='utf-8') if before is not None else f.unlink(missing_ok=True)
+        except OSError:
+            pass
+        return None
     return image_drift_note(lost, version) or feed_lost_note(), [], True
 
 
@@ -630,7 +643,8 @@ def forward_late_files(n: int, sid: str, wait: float | None = None) -> tuple[str
         C.notes(f'control{n}.pid').write_text(f'{os.getpid()}', encoding='utf-8')
     except OSError:
         pass
-    got = feed_take_files(sid, FEED_LATE_WAIT if wait is None else wait)
+    late = FEED_LATE_WAIT if wait is None else wait
+    got = feed_take_files(sid, late, photo_wait=late)
     return (feed_lost_note(), [], True) if got is None else got
 
 
@@ -683,7 +697,7 @@ def control_new(n: int | None = None, wait: float = CONTROL_LINK_WAIT, ask: str 
     alone = False  # BUG1: a photo sent alone, its files (or a note that they could not be read) already taken
     if forward:
         sid = feed_sid()
-        took = feed_take_files(sid, FEED_WAIT) if sid else None
+        took = feed_take_files(sid, FEED_WAIT, final=not transcript(sid)) if sid else None
         text = None if took is None else took[0]
         if took:
             images += [i for i in took[1] if i not in images]

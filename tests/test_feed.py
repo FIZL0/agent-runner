@@ -119,7 +119,16 @@ def test_photo_alone_forwarded():
         check('/tmp/claude/images/1.png' in argv and '--ask-file' not in argv,
               'a photo the feed looked at first is handed on with its file', argv)
 
-        # the late path (control N --forward --feed-sid): the photo shows only after control --new gave up
+        # the late path (control N --forward --feed-sid): the photo's saved path shows only after control --new
+        # gave up, so control N waits for it instead of a drift note after FEED_WAIT
+        opened.clear()
+        write(photo('u4'), call('run control --new --forward'))
+        with contextlib.redirect_stdout(io.StringIO()):
+            R.control_new(9, forward=True)
+        argv = new_window_argv()
+        check('--forward' in argv and argv[argv.index('--feed-sid') + 1] == sid and '--ask-file' not in argv,
+              'a photo with no saved path yet is left for control N to wait for', argv)
+        eq(R.feed_pending(sid)[2], True, 'and is not marked handed on yet')
         write(photo('u4'), pics('/u/late.png'), call('run control --new --forward'))
         with contextlib.redirect_stdout(io.StringIO()):
             got = R.forward_late_files(9, sid, wait=1)
