@@ -591,9 +591,9 @@ def feed_take_files(sid: str, wait: float, photo_wait: float | None = None,
     `feed_lost_note`) as its text. A photo is taken even when the feed ran a command about it first
     (`feed_photo_unsent`). None when no message shows at all, and, not `final`, also for a photo whose paths did
     not show in `photo_wait` s (default FEED_WAIT): it is left not handed on, for a later, longer wait."""
-    f = C.notes(REMOTE_DIR, FEED_FORWARDED)
+    f = None if final else C.notes(REMOTE_DIR, FEED_FORWARDED)
     try:
-        before = f.read_text(encoding='utf-8')
+        before = f.read_text(encoding='utf-8') if f else None
     except OSError:
         before = None
     text = feed_take(sid, wait)
