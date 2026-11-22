@@ -184,9 +184,8 @@ task to fix X" (it files it with `plan add`), "do X now" (it uses `take`, never 
 - **One entry per project (`[run] sessions`).** `"one"`, the default, keeps the apps' list to one entry for the
   project, c1, its chat: no slot starts on Remote Control, even with `remote_slots`. `agent-runner ui`'s
   Sessions panel opens one (its session tab, "open sN in the Claude apps"; the run app has no such button):
-  the run types `/remote-control <name>` into
-  that slot's session, which is listed from then on until it ends, and its claude.ai/code link shows in the
-  page. For when this machine is not reachable, c1 keeps a claude.ai copy of the run page: on a run event (a
+  the run types `/remote-control <name>` into that slot's session, which is listed from then on until it ends,
+  and its claude.ai/code link shows in the page. For when this machine is not reachable, c1 keeps a claude.ai copy of the run page: on a run event (a
   task starts, lands or blocks, a needs-you item, a concept, the release; at most every 5 minutes) the run
   writes `.runner/run-page-copy.html` and asks c1 to publish it with its Artifact tool, to the URL kept in
   `.runner/run-page-copy.url`. The copy is read-only, with the terminal and the chat as session links.
@@ -213,7 +212,7 @@ task to fix X" (it files it with `plan add`), "do X now" (it uses `take`, never 
 With `[run] web` (on by default) a run serves the run app from this machine on `[run] web_port` (8770), bound
 to every interface so a phone on the LAN or Tailscale reaches it. Its address, with the token every request
 needs (made once per project in `.runner/web.token`), is in `status` and the run log. It is a chat app over
-the run page: the same snapshot and actions as `agent-runner ui`, laid out for a phone (the sidebar becomes a
+the run page: the same snapshot as `agent-runner ui` and most of its actions (not opening a slot), laid out for a phone (the sidebar becomes a
 drawer) and a desktop. It follows the browser's light or dark setting; `[ui] theme` is the terminal UI's only.
 
 - **Sidebar.** New chat, Home (with the Needs you count), Agents, Activity and Plan. Chats are the control

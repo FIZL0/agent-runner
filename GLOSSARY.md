@@ -249,6 +249,6 @@ _Avoid_: session list, ls
 **Run app**:
 The chat app a run serves on the web for a phone or a desktop: Home, a thread per session, and the Plan, over the same Run page
 _Said_: run app
-_On screen_: ar
+_On screen_: run page link (in `status` and the run log)
 _In code_: web_page.html, web.py, [run] web
 _Avoid_: web page, dashboard, web UI
