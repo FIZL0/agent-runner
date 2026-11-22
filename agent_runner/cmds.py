@@ -794,7 +794,7 @@ DEVICE_FORMAT = (f'#{{session_name}}\t#{{pane_id}}\t#{{{TAG}}}\t#{{{REPO_TAG}}}\
                  '\t#{window_name}')  # one `tmux list-panes -a` row per pane, read by its tags
 
 
-def control_title(repo: str, wname: str, n: int) -> str:
+def window_control_title(repo: str, wname: str, n: int) -> str:
     """A control session's title from its window name, as the Run page's Sessions shows it: "<repo> · 6 ·
     Pairing broken" is 'Pairing broken'; 'control session' when the name holds nothing more."""
     title = wname[len(repo) + 3:].strip() if wname.startswith(f'{repo} · ') else ''
@@ -848,7 +848,7 @@ def device_projects(rows: list[str], info=run_info, now: float | None = None,
             p['panes'].setdefault('feed', (sess, pane_id))
         elif m := re.fullmatch(r'c(\d+)', tag):
             p['panes'].setdefault(tag, (sess, pane_id))
-            p['controls'].setdefault(int(m[1]), control_title(Path(repo).name, wname, int(m[1])))
+            p['controls'].setdefault(int(m[1]), window_control_title(Path(repo).name, wname, int(m[1])))
         elif re.fullmatch(r's\d+', tag):
             p['panes'].setdefault(tag, (sess, pane_id))
     for root, slots in (hidden or {}).items():
