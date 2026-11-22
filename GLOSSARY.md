@@ -219,9 +219,16 @@ _In code_: QUICK_ASKS, quick_ask
 _Avoid_: preset, shortcut
 
 **Terminal view**:
-The Run page on the web drawn like the terminal UI (numbered panels, keys), beside the run app; App view goes back to the run app
+A session's live tmux pane on the Run page: through ttyd when installed, else the built-in view of the pane's text; on Windows or with no tmux, the session feed only
+_Said_: terminal, pane
+_On screen_: terminal
+_In code_: terminal_mode, capture, keys
+_Avoid_: console
+
+**Terminal-style page**:
+The Run page on the web drawn like the terminal UI (numbered panels, keys), beside the run app; the run app's 'Terminal view' switch opens it and its 'App view' goes back
 _Said_: terminal-style web page
-_On screen_: Terminal view
+_On screen_: Terminal view (the switch), App view (back)
 _In code_: web_term.html, /term, term_html, [ui] web = "terminal"
 _Avoid_: old page, classic view
 

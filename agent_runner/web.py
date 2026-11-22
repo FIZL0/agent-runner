@@ -4,7 +4,7 @@
     GET  /?t=TOKEN               F79: the page (web_page.html), the run app: a chat app over F74's model, light
                                  and dark by the browser's setting, laid out for a phone and a desktop; F81: it
                                  opens /term instead when this browser last chose it, or `[ui] web` = "terminal"
-    GET  /term?t=TOKEN           F81: the terminal view (web_term.html, F75's page) over the same model, in
+    GET  /term?t=TOKEN           F81: the terminal-style page (web_term.html, F75's page) over the same model, in
                                  `[ui] theme`; its App view (T) and the run app's Terminal view switch between them
     GET  /snapshot?t=TOKEN       the run page model's snapshot, as JSON, with the machine's name and each
                                  concept's options (`run_snapshot`)
@@ -45,7 +45,7 @@ from agent_runner import state as S
 from agent_runner import ui_model as U
 
 PAGE = Path(__file__).with_name('web_page.html')
-TERM = Path(__file__).with_name('web_term.html')  # F81: the terminal view
+TERM = Path(__file__).with_name('web_term.html')  # F81: the terminal-style page
 TICK = 2.0  # s between snapshots the events stream compares
 PING = 15.0  # s of no change before the stream sends a keep-alive comment
 TTYD_INSTALL = ('ttyd is not installed, so the terminal tab cannot show the pane. Install it on this machine '
@@ -273,7 +273,8 @@ def web_view() -> str:
         v = S.C.raw.get('ui', {}).get('web', 'app')
     except Exception:  # noqa: BLE001 - no project initialised: the default
         return 'app'
-    return v if v in ('app', 'terminal') else 'app'
+    from agent_runner.config import WEB_VIEWS
+    return v if v in WEB_VIEWS else 'app'
 
 
 def page_html(view: str | None = None) -> bytes:
@@ -284,7 +285,7 @@ def page_html(view: str | None = None) -> bytes:
 
 
 def term_html(name: str | None = None) -> bytes:
-    """F81: the terminal view (web_term.html, F75's page), in theme `name` (default `[ui] theme`): its tokens in
+    """F81: the terminal-style page (web_term.html, F75's page), in theme `name` (default `[ui] theme`): its tokens in
     style#theme, and every theme's in THEMES for the page's picker (t), one table with the terminal UI."""
     from agent_runner import theme as TH
     name = TH.checked(name or TH.configured())

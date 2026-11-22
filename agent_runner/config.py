@@ -246,8 +246,8 @@ DEFAULTS: dict = {
     'ui': {
         'theme': 'ryha',        # the Run page's colours, in the terminal (`ui`) and on the web: ryha (black, red
                                 # accent), omarchy (the current Omarchy theme's colors.toml, else ryha), terminal
-                                # (the terminal's own 16 colours and background), light; the web page's T picks
-                                # another for that browser
+                                # (the terminal's own 16 colours and background), light; on the web the
+                                # terminal-style page's t picks another for that browser
         'web': 'app',           # the view the run page's link opens: "app" (the run app) or "terminal" (the
                                 # terminal-style page, /term); a browser that switched views opens its last one
     },
