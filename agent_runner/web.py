@@ -1,8 +1,10 @@
 """F66: the run page on the web. A run serves it from this machine (`[run] web`, on by default) on
 `[run] web_port` (8770), bound to every interface so a phone on the LAN or Tailscale reaches it.
 
-    GET  /?t=TOKEN               the page (web_page.html): lazygit panels over F65's snapshot, in `[ui] theme`
-    GET  /snapshot?t=TOKEN       the run page model's snapshot, as JSON
+    GET  /?t=TOKEN               F79: the page (web_page.html), the run app: a chat app over F74's model, light
+                                 and dark by the browser's setting, laid out for a phone and a desktop
+    GET  /snapshot?t=TOKEN       the run page model's snapshot, as JSON, with the machine's name and each
+                                 concept's options (`run_snapshot`)
     GET  /events?t=TOKEN         the same snapshot over server-sent events, sent again whenever it changes
     POST /act?t=TOKEN            {"name": ACTION, "args": {...}}: one of `ui_model.ACTIONS` (plan add, plan edit,
                                  drop, shelve, release, chat, answer, take, move), its result as JSON
@@ -12,6 +14,8 @@
     GET  /pane/NAME?t=TOKEN      F74: the built-in terminal view: NAME's pane as text now (`ui_model.capture`)
     GET  /concept/ID?t=TOKEN     F74: concept ID's local page copy (<notes>/concepts/ID.html), sandboxed
     GET  /diff/NAME?t=TOKEN      F75: slot NAME's diff so far (`slot_diff`), for its diff tab
+    POST /upload?t=TOKEN&name=N  F79: an attachment (the body, as is) kept under <notes>/uploads; its path on this
+                                 machine comes back, for the message that hands it to a session
 
 Every request carries the token (`?t=`, or an `X-Token` header): the page can type into panes, so one without
 it is refused. The token is made once per project (<notes>/web.token) and printed by `status` and in the run
@@ -23,6 +27,7 @@ from __future__ import annotations
 import hmac
 import json
 import os
+import re
 import secrets
 import shutil
 import socket
@@ -34,7 +39,6 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
 from agent_runner import state as S
-from agent_runner import theme as TH
 from agent_runner import ui_model as U
 
 PAGE = Path(__file__).with_name('web_page.html')
@@ -259,20 +263,74 @@ class Snapshots:
             return self.last
 
 
-def page_html(name: str | None = None) -> bytes:
-    """F69: the page in theme `name` (default `[ui] theme`): its tokens in style#theme, and every theme's in THEMES
-    for the page's picker (T), one table with the terminal page (theme.py)."""
-    name = TH.checked(name or TH.configured())
-    themes = TH.all_resolved()
-    css = ':root{' + ';'.join(f'--{k}:{v}' for k, v in themes[name].items() if k != 'mode') + \
-        f';color-scheme:{"light" if themes[name]["mode"] == "light" else "dark"}}}'
-    data = json.dumps({'default': name, 'themes': themes}).replace('</', '<\\/')
-    page = PAGE.read_text(encoding='utf-8').replace('/*THEME_CSS*/', css, 1)
-    return page.replace('/*THEMES*/{"default":"ryha","themes":{}}', data, 1).encode('utf-8')
+def page_html() -> bytes:
+    """F79: the run app. Its light and dark looks follow the browser's setting (`[ui] theme` is the terminal
+    UI's), so the file is served as it is."""
+    return PAGE.read_bytes()
+
+
+_OPTIONS: dict[str, tuple[float, list]] = {}  # a concept copy's path: (its mtime, its options)
+
+
+def concept_options(path: str) -> list[dict]:
+    """F79: a concept's options for the Plan's buttons, from its local page copy as the terminal UI reads it
+    (`tui.concept_page`: the headings one level below the title): [{'name', 'rec'}]; [] for no copy."""
+    if not path:
+        return []
+    try:
+        mt = os.path.getmtime(path)
+        if (hit := _OPTIONS.get(path)) and hit[0] == mt:
+            return hit[1]
+        from agent_runner.tui import concept_page
+        opts = [{'name': o['name'], 'rec': o['rec']}
+                for o in concept_page(Path(path).read_text(encoding='utf-8', errors='replace'))['options']]
+    except OSError:
+        return []
+    _OPTIONS[path] = (mt, opts)
+    return opts
+
+
+def with_extras(snap: dict) -> dict:
+    """F79: what the run app shows beyond the snapshot: this machine's name, and each concept's options."""
+    snap['machine'] = socket.gethostname()
+    for c in snap.get('concepts') or []:
+        c['options'] = concept_options(c.get('copy', ''))
+    return snap
 
 
 def run_snapshot() -> dict:
-    return U.snapshot(terminal_base='.')
+    return with_extras(U.snapshot(terminal_base='.'))
+
+
+UPLOAD_BYTES = 50 * 1024 * 1024  # the largest attachment the page may upload
+
+
+def upload_dir() -> Path:
+    """F79: where attachments are kept: <notes>/uploads (.runner/uploads by default), git-ignored with it."""
+    d = S.C.notes('uploads', 'x').parent
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def safe_name(name: str) -> str:
+    """An uploaded file's name made safe to keep: its last path part, only letters, digits and . _ - (others
+    become _), no leading dot, at most 100 characters; 'file' when nothing is left."""
+    base = re.split(r'[\\/]', name or '')[-1]
+    base = re.sub(r'[^A-Za-z0-9._-]+', '_', base).lstrip('.')[-100:]
+    return base or 'file'
+
+
+def save_upload(name: str, data: bytes) -> dict:
+    """F79: keep an attachment under `upload_dir()` as <time>-<safe name> (never over another file): {'ok', 'path'
+    (absolute, for the session it is handed to), 'name'}."""
+    d = upload_dir()
+    stem = time.strftime('%Y%m%d-%H%M%S') + '-' + safe_name(name)
+    p, n = d / stem, 1
+    while p.exists():
+        n += 1
+        p = d / f'{n}-{stem}'
+    p.write_bytes(data)
+    return {'ok': True, 'path': str(p.resolve()), 'name': p.name}
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -326,8 +384,10 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:
         if not self.allowed():
             return self.refuse()
+        if urlsplit(self.path).path == '/upload':
+            return self.upload()
         if urlsplit(self.path).path != '/act':
-            return self.send(404, json.dumps({'ok': False, 'out': 'POST goes to /act'}))
+            return self.send(404, json.dumps({'ok': False, 'out': 'POST goes to /act or /upload'}))
         try:
             body = json.loads(self.rfile.read(int(self.headers.get('Content-Length') or 0)) or b'{}')
             name, args = str(body.get('name', '')), body.get('args') or {}
@@ -337,6 +397,23 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(400, json.dumps({'ok': False, 'out': f'bad request: {e}'}))
         r = U.act(name, **args)
         self.server.snaps.at = 0.0  # the next snapshot shows what the action changed
+        self.send(200, json.dumps(r, ensure_ascii=False))
+
+    def upload(self) -> None:
+        """F79: an attachment from the message box: the body as is, `name` in the query (`save_upload`)."""
+        try:
+            size = int(self.headers.get('Content-Length') or 0)
+        except ValueError:
+            size = -1
+        if size <= 0 or size > UPLOAD_BYTES:
+            self.close_connection = True
+            return self.send(413 if size > 0 else 400, json.dumps({'ok': False, 'out': (
+                f'an attachment is at most {UPLOAD_BYTES // 1024 // 1024} MB' if size > 0 else 'an empty upload')}))
+        name = (parse_qs(urlsplit(self.path).query).get('name') or [''])[0]
+        try:
+            r = save_upload(name, self.rfile.read(size))
+        except OSError as e:
+            return self.send(500, json.dumps({'ok': False, 'out': f'could not keep the upload: {e}'}))
         self.send(200, json.dumps(r, ensure_ascii=False))
 
     def concept(self, cid: str) -> None:
