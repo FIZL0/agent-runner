@@ -767,8 +767,8 @@ def cmd_attach(argv: list[str], prog: str = f'{RUNNER} attach') -> int:
             return 1
         print(f'{which}: its console window is up (minimize it to hide it again; closing it ends the session)')
         return 0
-    rows = tmux('list-panes', '-a', '-F', f'#{{session_name}}\t#{{pane_id}}\t#{{{TAG}}}\t#{{{REPO_TAG}}}\t#{{{RUN_TAG}}}') \
-        if shutil.which('tmux') else None
+    rows = tmux('list-panes', '-a', '-F', f'#{{session_name}}\t#{{pane_id}}\t#{{{TAG}}}\t#{{{REPO_TAG}}}\t#{{{RUN_TAG}}}'
+                '\t#{window_name}') if shutil.which('tmux') else None  # B114: an untagged cN by its window name
     hit = attach_target(rows.stdout.splitlines(), ROOT, which) if rows and not rows.returncode else None
     if not hit and (said := hidden_attach(which)):
         print(said)
