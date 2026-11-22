@@ -1,0 +1,345 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="referrer" content="no-referrer">
+<title>Run page</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap">
+<style>
+/* F66 run page: lazygit layout (numbered boxed panels left, one main pane with tabs right, key hints below),
+   ryha theme (black, red accent), one dark look by choice. Data: the run page model's snapshot over /events. */
+:root{
+  --bg:#000;--fg:#e5e5e5;--dim:#737373;--line:#3a3a3a;--sel:#7f1d1d;--selfg:#f5f5f5;--raise:#0d0d0d;
+  --red:#ef4444;--green:#22c55e;--yellow:#f59e0b;--blue:#3b82f6;--bblue:#60a5fa;--magenta:#a855f7;--cyan:#06b6d4;
+  --mono:"JetBrains Mono","JetBrainsMono Nerd Font Mono",ui-monospace,Menlo,Consolas,monospace;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--fg);font:13px/1.45 var(--mono);
+  padding-left:max(8px,env(safe-area-inset-left,0px));padding-right:max(8px,env(safe-area-inset-right,0px));
+  padding-top:calc(8px + env(safe-area-inset-top,0px));padding-bottom:calc(8px + env(safe-area-inset-bottom,0px))}
+.app{height:100%;display:grid;grid-template-rows:auto minmax(0,1fr) auto auto;gap:6px}
+.top{display:flex;gap:12px;align-items:center;flex-wrap:wrap;color:var(--dim)}
+.top b{color:var(--red)}
+.live::before{content:"●";color:var(--dim);margin-right:5px}
+.live.on::before{color:var(--green)}
+.top .spacer{flex:1}
+button{font:inherit}
+.top button{background:none;border:1px solid var(--line);color:var(--fg);padding:1px 8px;cursor:pointer}
+.top button:hover{border-color:var(--red)}
+.cols{display:grid;grid-template-columns:minmax(260px,36%) minmax(0,1fr);gap:8px;min-height:0}
+.left{display:grid;grid-template-columns:minmax(0,1fr);gap:10px;min-height:0;min-width:0;padding-top:8px}
+.box{position:relative;border:1px solid var(--line);padding:10px 2px 6px;min-height:0;min-width:0;display:flex;flex-direction:column}
+.box.on{border-color:var(--red)}
+.box>.ttl{position:absolute;top:-9px;left:8px;background:var(--bg);padding:0 4px;color:var(--dim);white-space:nowrap;cursor:pointer}
+.box.on>.ttl{color:var(--red);font-weight:700}
+.box>.cnt{position:absolute;bottom:-9px;right:8px;background:var(--bg);padding:0 4px;color:var(--dim);font-size:12px}
+.list{overflow:auto;min-height:0}
+.box.short .list{max-height:calc(3 * 1.45em)}
+.row{display:flex;gap:8px;padding:0 8px;cursor:pointer;white-space:nowrap;overflow:hidden}
+.row>span:last-child{overflow:hidden;text-overflow:ellipsis;min-width:0}
+.row.cur{background:var(--raise)}
+.box.on .row.cur{background:var(--sel);color:var(--selfg)}
+.g{color:var(--green)}.y{color:var(--yellow)}.r{color:var(--red)}.b{color:var(--bblue)}.m{color:var(--magenta)}.c{color:var(--cyan)}.d{color:var(--dim)}
+.main{margin-top:8px;min-width:0}
+.mtabs{position:absolute;top:-9px;left:8px;background:var(--bg);padding:0 4px;white-space:nowrap}
+.mtabs span{color:var(--dim);cursor:pointer}
+.mtabs span[data-tab]+span[data-tab]::before{content:" - ";color:var(--dim)}
+.mtabs span.on{color:var(--red);font-weight:700}
+.box.main:not(.on) .mtabs span.on{color:var(--fg)}
+.pane{flex:1;overflow:auto;padding:4px 10px;white-space:pre-wrap;word-break:break-word;min-height:0}
+.pane iframe{width:100%;height:100%;min-height:360px;border:0;background:#000}
+.pane.term{padding:0;white-space:normal}
+.inrow{display:flex;gap:6px;padding:6px 8px 2px;border-top:1px solid var(--line)}
+input,textarea,select{font:inherit;background:var(--raise);color:var(--fg);border:1px solid var(--line);padding:4px 6px;min-width:0}
+input:focus,textarea:focus,select:focus{outline:none;border-color:var(--red)}
+.inrow input{flex:1}
+.form{display:grid;gap:8px;max-width:640px;white-space:normal}
+.form label{display:grid;gap:3px;color:var(--dim)}
+.form .two{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.kb{border:1px solid var(--line);padding:0 6px;color:var(--fg);cursor:pointer;background:none}
+.kb:hover{border-color:var(--red)}
+.kb.p{border-color:var(--red);color:var(--red)}
+.btnrow{display:flex;gap:8px;flex-wrap:wrap;white-space:normal}
+.foot{color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.foot .k{color:var(--blue)}
+.foot .mode{color:var(--bg);background:var(--red);padding:0 6px;margin-right:6px;font-weight:700}
+.pop{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.6);z-index:10;padding:16px}
+.pop .box{background:var(--bg);width:min(600px,100%);max-height:80vh;border-color:var(--red)}
+.pop .box>.ttl{color:var(--red);font-weight:700}
+.toast{position:fixed;right:max(12px,env(safe-area-inset-right,0px));bottom:calc(40px + env(safe-area-inset-bottom,0px));border:1px solid var(--green);background:var(--bg);padding:6px 10px;z-index:20;max-width:min(90vw,520px);white-space:pre-wrap}
+.toast.bad{border-color:var(--red)}
+a{color:var(--bblue)}
+:focus-visible{outline:1px solid var(--red)}
+.mnav{display:none}
+.back{display:none}
+/* phone width: one panel at a time, a bottom tab bar, a tap opens the item in the main pane */
+@media (max-width:760px){
+  body{font-size:14px}
+  .top .wide,.foot,#helpbtn{display:none}
+  .cols{grid-template-columns:minmax(0,1fr)}
+  .left{grid-template-rows:minmax(0,1fr)!important}
+  .left .box:not(.cur-panel){display:none}
+  .left .box .list{max-height:none}
+  .row{padding:6px 8px;white-space:normal}
+  .cols.inmain .left,.cols:not(.inmain) .main{display:none}
+  .mnav{display:grid;grid-template-columns:repeat(5,1fr);border-top:1px solid var(--line);padding-top:6px}
+  .mnav button{font-size:11px;background:none;border:0;color:var(--dim);display:grid;gap:1px;justify-items:center;cursor:pointer;padding:2px 0}
+  .mnav button b{font-size:15px;color:var(--fg)}
+  .mnav button.on,.mnav button.on b{color:var(--red)}
+  .back{display:inline;color:var(--red);cursor:pointer;margin-right:8px}
+}
+</style>
+</head><body>
+<div class="app">
+  <div class="top">
+    <span><b>agent-runner</b> · <span id="proj"></span></span>
+    <span class="live" id="live">connecting…</span>
+    <span class="spacer"></span>
+    <button id="relbtn" title="release (R)">R release</button>
+    <button id="helpbtn" title="keys (?)">? keys</button>
+  </div>
+  <div class="cols" id="cols">
+    <div class="left" id="left"></div>
+    <div class="box main" id="main">
+      <div class="mtabs" id="mtabs"></div>
+      <div class="pane" id="pane"></div>
+      <div id="extra"></div>
+    </div>
+  </div>
+  <div class="foot" id="foot"></div>
+  <div class="mnav" id="mnav"></div>
+</div>
+<div class="pop" id="pop" hidden><div class="box"><span class="ttl" id="poptitle"></span><div class="pane" id="popbody"></div></div></div>
+<div class="toast" id="toast" hidden></div>
+<script>
+'use strict';
+const $=s=>document.querySelector(s);
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const list=v=>Array.isArray(v)?v.join(', '):(v||'');
+const T=new URLSearchParams(location.search).get('t')||'';
+const S={snap:{status:[],sessions:[],queue:[],needs:[],concepts:[],log:[],release:''},panel:1,cur:{1:0,2:0,3:0,4:0,5:0},
+  tab:{},focusMain:false,last:0,chat:[],terms:{}};
+
+function api(path,body){
+  return fetch(path+(path.includes('?')?'&':'?')+'t='+encodeURIComponent(T),body?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:{})
+    .then(r=>r.json()).catch(e=>({ok:false,out:String(e)}));
+}
+function act(name,args,said){
+  toast('…');
+  return api('act',{name,args}).then(r=>{toast((r.ok?(said||'done'):'failed')+(r.out?'\n'+r.out.slice(0,400):''),!r.ok);return r});
+}
+
+const PANELS=[
+  {n:1,name:'Status',items:()=>[...S.snap.status.map(t=>({k:'st',t})),{k:'log',t:'run log'},{k:'rel',t:'release (R)'}]},
+  {n:2,name:'Sessions',items:()=>S.snap.sessions},
+  {n:3,name:'Queue',items:()=>[...S.snap.queue,{id:'+',newtask:true}]},
+  {n:4,name:'Needs you',items:()=>S.snap.needs},
+  {n:5,name:'Concepts',items:()=>S.snap.concepts},
+];
+const stateCol={running:'y',merging:'m',live:'g',off:'d'};
+function rowHTML(p,it){
+  if(p===1){const col=it.k==='log'?'d':it.k==='rel'?'m':/^run up/.test(it.t)?'g':/^no run/.test(it.t)?'r':/^usage/.test(it.t)?'y':'c';return `<span class="${col}">●</span><span>${esc(it.t)}</span>`}
+  if(p===2){if(it.name==='c1')return `<span class="r">c1</span><span>${esc(it.title)} <span class="d">${esc(it.state)}</span></span>`;
+    return `<span class="${stateCol[it.state]||'d'}">${esc(it.name)}</span><span><span class="c">${esc(it.task)}</span> ${esc(it.title)} <span class="d">${it.minutes??'?'}m ${esc(it.state)}</span></span>`}
+  if(p===3)return it.newtask?`<span class="g">+</span><span class="d">new task (n)</span>`:
+    `<span class="${it.blocked?'y':'c'}">${esc(it.id)}</span><span>${esc(it.title)}${it.after&&it.after.length?` <span class="d">after ${esc(list(it.after))}</span>`:''}${it.pri!=='normal'?` <span class="r">${esc(it.pri)}</span>`:''}</span>`;
+  if(p===4)return `<span class="y">${esc(it.id)}</span><span>${esc(it.ask||it.title)} <span class="d">${esc(it.age)}</span></span>`;
+  return `<span class="m">◆</span><span>${esc(it.title)} <span class="d">${esc(it.id)}</span></span>`;
+}
+function items(){return PANELS[S.panel-1].items()}
+function sel(){const its=items();S.cur[S.panel]=Math.max(0,Math.min(S.cur[S.panel],its.length-1));return its[S.cur[S.panel]]}
+function keyOf(it){return S.panel+':'+(it?(it.id||it.name||it.k):'')}
+function tabsFor(p,it){
+  if(!it)return['info'];
+  if(p===1)return it.k==='rel'?['release','log']:['log','release'];
+  if(p===2)return it.name==='c1'?['chat','terminal','session']:['terminal','info','session'];
+  if(p===3)return it.newtask?['direct edit','chat edit']:['direct edit','chat edit','info'];
+  if(p===4)return['answer','info'];
+  return['preview','pick'];
+}
+function curTab(){const it=sel(),ts=tabsFor(S.panel,it),key=keyOf(it);if(!ts.includes(S.tab[key]))S.tab[key]=ts[0];return[S.tab[key],ts,key]}
+function typing(){const a=document.activeElement;return a&&/INPUT|TEXTAREA|SELECT/.test(a.tagName)}
+
+function renderLeft(){
+  $('#left').innerHTML=PANELS.map(p=>{
+    const its=p.items(),cur=S.panel===p.n,c=Math.min(S.cur[p.n],its.length-1);
+    return `<div class="box ${cur&&!S.focusMain?'on':''} ${cur?'cur-panel':'short'}" data-panel="${p.n}"><span class="ttl">[${p.n}] ${p.name}</span>
+      <div class="list">${its.length?its.map((it,i)=>`<div class="row ${i===c?'cur':''}" data-p="${p.n}" data-i="${i}">${rowHTML(p.n,it)}</div>`).join(''):'<div class="row d">nothing</div>'}</div>
+      <span class="cnt">${its.length?c+1:0} of ${its.length}</span></div>`}).join('');
+  $('#left').style.gridTemplateRows=PANELS.map(p=>p.n===S.panel?'minmax(0,1fr)':'auto').join(' ');
+  $('#cols').classList.toggle('inmain',S.focusMain);
+  $('#mnav').innerHTML=PANELS.map(p=>`<button class="${S.panel===p.n?'on':''}" data-mnav="${p.n}"><b>${p.n===1?'●':p.items().length-(p.n===3?1:0)}</b>${p.name.replace(' you','')}</button>`).join('');
+  $('#proj').textContent=S.snap.project||'';
+}
+function termHTML(it){
+  const t=S.terms[it.name];
+  if(!t)return '<span class="d">opening the terminal…</span>';
+  if(!t.ok)return `<div style="padding:4px 10px;white-space:pre-wrap">${esc(t.out)}</div>`;
+  return `<iframe src="${esc(location.protocol+'//'+location.hostname+':'+t.port+t.path)}" title="${esc(it.name)} terminal"></iframe>`;
+}
+function openTerm(it){
+  if(S.terms[it.name]&&S.terms[it.name].ok!==undefined)return;
+  S.terms[it.name]={};
+  api('terminal/'+encodeURIComponent(it.name)).then(r=>{S.terms[it.name]=r;renderMain()});
+}
+function renderMain(){
+  const it=sel(),[tab,ts]=curTab();
+  $('#main').classList.toggle('on',S.focusMain);
+  $('#mtabs').innerHTML=`<span class="back" data-back>‹ ${PANELS[S.panel-1].name}</span>`+ts.map(t=>`<span class="${t===tab?'on':''}" data-tab="${t}">${t}</span>`).join('');
+  let h='',x='';const pane=$('#pane');pane.className='pane';
+  if(!it){h='<span class="d">nothing here</span>'}
+  else if(tab==='log'){h=S.snap.log.map(l=>esc(l)).join('\n')||'<span class="d">the run log is empty</span>'}
+  else if(tab==='release'){h=`${S.snap.release?esc(S.snap.release):'<span class="d">no release is queued</span>'}
+
+A release waits for everything ahead of it, then runs alone, so it releases exactly what landed.
+
+<span class="btnrow"><button class="kb p" data-act="release">⏎ queue a release</button> <button class="kb" data-act="release-now">f release now, without waiting</button></span>`}
+  else if(tab==='terminal'){pane.className='pane term';openTerm(it);h=termHTML(it)}
+  else if(tab==='info'&&S.panel===2){h=`<span class="c">${esc(it.task)}</span> ${esc(it.title)}\n\n${esc(it.name)} · ${esc(it.state)} · ${it.minutes??'?'} min\nfiles ${esc(list(it.files))||'—'}`}
+  else if(tab==='session'){h=it.link?`${esc(it.name)} is a Claude Code session you can also open on its own:\n\n<a href="${esc(it.link)}" target="_blank" rel="noopener">${esc(it.link)}</a>`:`<span class="d">${esc(it.name)} has no claude.ai/code link (it is not on Remote Control).</span>`}
+  else if(tab==='chat'){h=S.chat.length?S.chat.map(([w,m])=>w==='me'?`<span class="b">you</span>  ${esc(m)}`:`<span class="r">c1</span>   <span class="d">${esc(m)}</span>`).join('\n\n'):
+    `<span class="d">Talk to c1, the run's control session. What you send is typed into c1; its answer shows in c1's terminal tab${it.link?' and its session':''}.</span>`;
+    x=`<form class="inrow" data-form="chat"><input id="cin" placeholder="talk to c1 (i to focus, Esc to leave)" autocomplete="off"><button class="kb">⏎</button></form>`}
+  else if(tab==='direct edit'){const q=it.newtask?{id:'',title:'',files:[],after:[],pri:'normal'}:it;
+    const kind=(q.id.match(/^[A-Za-z]+/)||['F'])[0];
+    h=`<form class="form" data-form="edit">
+<div class="d">${it.newtask?'New task, written straight to the plan (plan add).':'Changes go straight to the plan (plan edit '+esc(q.id)+').'}</div>
+<label>what, why, how to check<textarea id="f-title" rows="3">${esc(q.title)}</textarea></label>
+<div class="two"><label>kind${it.newtask?`<select id="f-kind">${['F','B','T','D','R','C','K'].map(k=>`<option ${k===kind?'selected':''}>${k}</option>`).join('')}</select>`:`<input value="${esc(kind)}" disabled>`}</label>
+<label>priority<select id="f-pri">${['normal','critical','low','later'].map(k=>`<option ${k===q.pri?'selected':''}>${k}</option>`).join('')}</select></label></div>
+<label>files<input id="f-files" value="${esc(list(q.files))}" placeholder="a.py, tests/test_a.py"></label>
+<label>after<input id="f-after" value="${esc(list(q.after))}" placeholder="F12, B3"></label>
+<div class="btnrow"><button class="kb p">⏎ save</button>${it.newtask?'':` <button type="button" class="kb" data-act="drop">D drop</button> <button type="button" class="kb" data-act="take">h do it here</button>`}</div></form>`}
+  else if(tab==='chat edit'){h=`<span class="d">${it.newtask?'Describe the task in your own words; c1 writes it, picks the files and queues it.':'Say what to change about '+esc(it.id)+'; c1 rewrites the task.'}</span>${it.newtask?'':`\n\n<span class="c">${esc(it.id)}</span> ${esc(it.title)}`}`;
+    x=`<form class="inrow" data-form="chatedit"><input id="ein" placeholder="${it.newtask?'e.g. the board should show usage too':'e.g. also cover the phone layout'}" autocomplete="off"><button class="kb">⏎</button></form>`}
+  else if(tab==='info'&&S.panel===3){h=`<span class="c">${esc(it.id)}</span> ${esc(it.title)}\n\nkind ${esc(it.kind)} · ${esc(it.pri)}${it.blocked?' · blocked':''}\nsection ${esc(it.section)}\nfiles ${esc(list(it.files))||'—'}\nafter ${esc(list(it.after))||'—'}`}
+  else if(tab==='answer'||tab==='info'){h=`<span class="y">${esc(it.id)}</span> ${esc(it.title)}\n\n${esc(tab==='info'?it.what:it.ask)}${it.url?`\n\n<a href="${esc(it.url)}" target="_blank" rel="noopener">open the page ↗</a>`:''}\n\n<span class="d">waiting ${esc(it.age)}${tab==='answer'?' · your reply goes to c1, which settles the item':''}</span>`;
+    if(tab==='answer')x=`<form class="inrow" data-form="answer"><input id="ain" placeholder="your reply" autocomplete="off"><button class="kb">⏎</button> <button type="button" class="kb" data-act="later">L later</button></form>`}
+  else if(tab==='preview'){h=`<span class="m">◆</span> ${esc(it.title)}\n\nbuild ${esc(it.id)} waits for your OK on concept ${esc(it.concept)}.${it.url?`\n\n<a href="${esc(it.url)}" target="_blank" rel="noopener">open the options page ↗</a>`:''}`}
+  else if(tab==='pick'){h='Pick an option, or say what to change; c1 settles it.';x=`<form class="inrow" data-form="pick"><input id="pin" placeholder="e.g. go with A" autocomplete="off"><button class="kb">⏎</button></form>`}
+  pane.innerHTML=h;$('#extra').innerHTML=x;
+  if(tab==='log'||tab==='chat')pane.scrollTop=1e9;
+}
+function renderFoot(){
+  const [tab]=curTab();
+  const keys=typing()?[['Esc','leave'],['⏎','send']]:
+    [['1-5','panel'],['j/k','move'],['⏎','open'],['[ ]','tab'],['t','terminal'],['c','chat'],
+     ...(S.panel===3?[['e','edit'],['E','chat edit'],['n','new'],['D','drop'],['h','do it here']]:[]),['i','type'],['R','release'],['?','keys']];
+  $('#foot').innerHTML=`<span class="mode">${typing()?'INSERT':S.focusMain?esc(tab.toUpperCase()):PANELS[S.panel-1].name.toUpperCase()}</span>`+keys.map(([k,v])=>`<span class="k">${k}</span> ${v}`).join(' · ');
+}
+function render(){renderLeft();renderMain();renderFoot()}
+function toast(m,bad){const t=$('#toast');t.textContent=m;t.className='toast'+(bad?' bad':'');t.hidden=false;clearTimeout(t._h);t._h=setTimeout(()=>t.hidden=true,bad?8000:4000)}
+
+/* live updates: the snapshot over server-sent events */
+function connect(){
+  const es=new EventSource('events?t='+encodeURIComponent(T));
+  es.onmessage=e=>{
+    const snap=JSON.parse(e.data);
+    if(snap.error){toast('snapshot: '+snap.error,true);return}
+    S.snap=snap;S.last=Date.now();$('#live').classList.add('on');
+    renderLeft();if(!typing()&&curTab()[0]!=='terminal')renderMain();renderFoot();
+  };
+  es.onerror=()=>{$('#live').classList.remove('on');$('#live').textContent='reconnecting…'};
+}
+setInterval(()=>{if(!S.last)return;const s=Math.round((Date.now()-S.last)/1000);$('#live').textContent='live · '+(s<5?'just now':s+'s ago')},1000);
+
+/* actions */
+function chatSay(text,send){S.chat.push(['me',text]);renderMain();return send().then(r=>{S.chat.push(['c1',r.ok?(r.out||'sent'):'not sent: '+r.out]);renderMain()})}
+function back(){S.focusMain=false;render()}
+function submit(kind){
+  const it=sel();
+  if(kind==='chat'){const v=$('#cin').value.trim();if(!v)return;chatSay(v,()=>act('chat',{text:v},'sent to c1')).then(()=>$('#cin')?.focus())}
+  if(kind==='edit'){
+    const text=$('#f-title').value.trim();if(!text){toast('Write what the task is first.',true);return}
+    const a={text,files:$('#f-files').value.trim(),after:$('#f-after').value.trim(),pri:$('#f-pri').value};
+    if(it.newtask)act('plan_add',{kind:$('#f-kind').value,...a},'queued').then(r=>{if(r.ok)back()});
+    else{if(text===it.title)delete a.text;if(a.pri===it.pri)a.pri='';if(a.files===list(it.files))a.files='';if(a.after===list(it.after))a.after='';
+      act('plan_change',{tid:it.id,...a},'saved '+it.id).then(r=>{if(r.ok)back()})}
+  }
+  if(kind==='chatedit'){const v=$('#ein').value.trim();if(!v)return;
+    const text=it.newtask?'new task: '+v:`change ${it.id} (${it.title}): ${v}`;
+    chatSay(text,()=>act('chat',{text},'sent to c1'));back()}
+  if(kind==='answer'){const v=$('#ain').value.trim();if(!v)return;chatSay(`${it.id}: ${v}`,()=>act('answer',{tid:it.id,text:v},it.id+' answered'));back()}
+  if(kind==='pick'){const v=$('#pin').value.trim();if(!v)return;const text=`concept ${it.concept} (${it.title}), build ${it.id}: ${v}`;chatSay(text,()=>act('chat',{text},'sent to c1'));back()}
+}
+function doAct(a){
+  const it=sel();
+  if(a==='release')act('release',{},'release queued');
+  if(a==='release-now')act('release',{now:true},'release queued, now');
+  if(a==='later'&&it)act('shelve',{tid:it.id},it.id+' shelved').then(r=>{if(r.ok)back()});
+  if(a==='drop'&&it&&!it.newtask)openPop('Drop '+it.id,`${esc(it.title)}\n\n<form class="form" data-form="drop"><label>why<input id="dwhy" autocomplete="off"></label><div class="btnrow"><button class="kb p">⏎ drop ${esc(it.id)}</button> <button type="button" class="kb" data-close>Esc keep it</button></div></form>`,'#dwhy');
+  if(a==='take'&&it&&!it.newtask)chatSay(`do ${it.id} here`,()=>act('take',{tid:it.id},'c1 takes '+it.id));
+}
+function openPop(title,html,focus){$('#poptitle').textContent=title;$('#popbody').innerHTML=html;$('#pop').hidden=false;if(focus)setTimeout(()=>$(focus)?.focus(),0)}
+function closePop(){$('#pop').hidden=true}
+function release(){S.panel=1;S.cur[1]=items().length-1;S.focusMain=true;S.tab[keyOf(sel())]='release';render()}
+function help(){openPop('Keybindings',`<span class="r">Global</span>
+  <span class="b">1-5</span>    focus a panel        <span class="b">j/k</span>    move down / up
+  <span class="b">⏎</span>      into the main pane   <span class="b">[ ]</span>    previous / next tab
+  <span class="b">t</span>      terminal of the slot <span class="b">c</span>      chat with c1
+  <span class="b">i</span>      type in the pane     <span class="b">R</span>      release
+  <span class="b">Esc</span>    back out             <span class="b">?</span>      this list
+
+<span class="r">Queue [3]</span>
+  <span class="b">n</span>      new task             <span class="b">e</span>      direct edit
+  <span class="b">E</span>      chat edit            <span class="b">D</span>      drop
+  <span class="b">h</span>      do it here
+
+<span class="r">Needs you [4]</span>
+  <span class="b">i</span>      answer               <span class="b">L</span>      later
+
+<span class="d">Esc closes this.</span>`)}
+function setTab(name){const [,ts,key]=curTab();if(ts.includes(name)){S.tab[key]=name;S.focusMain=true;render();return true}return false}
+function focusInput(){const i=$('#extra input, #pane textarea, #pane input');if(i&&!i.disabled){S.focusMain=true;renderLeft();i.focus();renderFoot()}}
+
+document.addEventListener('keydown',e=>{
+  const inField=/INPUT|TEXTAREA|SELECT/.test(e.target.tagName);
+  if(e.key==='Escape'){if(!$('#pop').hidden){closePop();return}if(inField){e.target.blur();renderFoot();return}if(S.focusMain)back();return}
+  if(inField||!$('#pop').hidden||e.metaKey||e.ctrlKey||e.altKey)return;
+  const k=e.key,its=items();let done=true;
+  if(/^[1-5]$/.test(k)){S.panel=+k;S.focusMain=false}
+  else if(k==='j'||k==='ArrowDown'){S.cur[S.panel]=Math.min(S.cur[S.panel]+1,its.length-1);S.focusMain=false}
+  else if(k==='k'||k==='ArrowUp'){S.cur[S.panel]=Math.max(S.cur[S.panel]-1,0);S.focusMain=false}
+  else if(k==='Enter'){S.focusMain=true}
+  else if(k===']'||k==='['){const [t,ts,key]=curTab();S.tab[key]=ts[(ts.indexOf(t)+(k===']'?1:ts.length-1))%ts.length];S.focusMain=true}
+  else if(k==='t'){if(S.panel!==2){S.panel=2;S.cur[2]=Math.min(1,S.snap.sessions.length-1)}setTab('terminal');return e.preventDefault()}
+  else if(k==='c'){S.panel=2;S.cur[2]=Math.max(0,S.snap.sessions.findIndex(s=>s.name==='c1'));S.tab['2:c1']='chat';S.focusMain=true;render();setTimeout(focusInput,0);return e.preventDefault()}
+  else if(k==='R'){release();return e.preventDefault()}
+  else if(k==='?'){help()}
+  else if(k==='i'){if(S.panel===4)setTab('answer');else render();setTimeout(focusInput,0);return e.preventDefault()}
+  else if(S.panel===3&&k==='n'){S.cur[3]=S.snap.queue.length;S.tab['3:+']='direct edit';S.focusMain=true;render();setTimeout(()=>$('#f-title')?.focus(),0);return e.preventDefault()}
+  else if(S.panel===3&&k==='e'&&!sel()?.newtask){setTab('direct edit');setTimeout(()=>$('#f-title')?.focus(),0);return e.preventDefault()}
+  else if(S.panel===3&&k==='E'){setTab('chat edit');setTimeout(focusInput,0);return e.preventDefault()}
+  else if(S.panel===3&&k==='D'){doAct('drop');return e.preventDefault()}
+  else if(S.panel===3&&k==='h'){doAct('take')}
+  else if(S.panel===4&&k==='L'){doAct('later')}
+  else done=false;
+  if(done){e.preventDefault();render()}
+});
+document.addEventListener('focusin',renderFoot);
+document.addEventListener('focusout',()=>setTimeout(renderFoot,0));
+document.addEventListener('click',e=>{
+  if(e.target.closest('[data-close]')){closePop();return}
+  if(e.target.id==='pop'){closePop();return}
+  const r=e.target.closest('[data-p]');if(r){S.panel=+r.dataset.p;S.cur[S.panel]=+r.dataset.i;S.focusMain=matchMedia('(max-width:760px)').matches||S.focusMain;render();return}
+  const b=e.target.closest('[data-panel]');if(b){S.panel=+b.dataset.panel;S.focusMain=false;render();return}
+  const t=e.target.closest('[data-tab]');if(t){setTab(t.dataset.tab);return}
+  const a=e.target.closest('[data-act]');if(a){e.preventDefault();doAct(a.dataset.act);return}
+  const m=e.target.closest('[data-mnav]');if(m){S.panel=+m.dataset.mnav;S.focusMain=false;render();return}
+  if(e.target.closest('[data-back]')){back();return}
+});
+document.addEventListener('submit',e=>{
+  e.preventDefault();
+  if(e.target.dataset.form==='drop'){const it=sel(),why=$('#dwhy').value.trim();if(!why){toast('Say why, for the plan.',true);return}
+    closePop();act('drop',{tid:it.id,why},'dropped '+it.id).then(r=>{if(r.ok)back()});return}
+  submit(e.target.dataset.form);
+});
+$('#relbtn').onclick=release;$('#helpbtn').onclick=help;
+if(!T){$('#live').textContent='no token: open the address `status` prints'}
+else{api('snapshot').then(s=>{if(s&&s.status){S.snap=s;S.last=Date.now()}render()});connect()}
+render();
+</script>
+</body></html>
