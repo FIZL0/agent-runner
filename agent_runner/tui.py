@@ -38,7 +38,8 @@ NEW_TASK = {'id': '+', 'new': True}  # the queue's last row: a new task
 
 # ryha theme: name -> (256-colour index, 8-colour fallback); see the design page's CSS tokens
 THEME = {'fg': (254, 7), 'dim': (243, 7), 'line': (237, 7), 'red': (203, 1), 'green': (41, 2),
-         'yellow': (214, 3), 'blue': (69, 4), 'magenta': (135, 5), 'cyan': (38, 6)}
+         'yellow': (214, 3), 'blue': (69, 4), 'magenta': (135, 5), 'cyan': (38, 6),
+         'key': (231, 7)}  # F70: a key on the hint line, bold bright white
 SEL_BG = (88, 1)  # #7f1d1d: the focused row
 CUR_BG = (235, 0)  # #262626: the selected row of a panel that isn't focused
 BLACK = (16, 0)
@@ -73,7 +74,7 @@ HELP = """Global
 Queue [3]
   n        new task               e        direct edit
   E        chat edit              D        drop
-  h        do it here
+  h        do it here             J/K      move the task down / up
 
 Needs you [4]
   a        answer                 L        later
@@ -310,17 +311,37 @@ class RunPage:
         for i, segs in enumerate(lines[:inner]):
             self.put(win, y + 1 + i, x + 2, segs, w - 4)
 
-    def footer(self) -> list[tuple[str, str]]:
+    def hint_keys(self) -> list[tuple[str, str]]:
+        """F70: the keys of the focused panel (or of the main pane), lazygit style; '? all keys' lists the rest."""
+        it = self.sel()
+        new = isinstance(it, dict) and it.get('new')
+        if self.main:
+            keys = [('Esc', 'back'), ('[ ]', 'tab')]
+            keys += {2: [('⏎', 'terminal') if self.tab()[0] == 'terminal' else ('t', 'terminal'), ('i', 'type')],
+                     3: [('n', 'new'), ('E', 'chat')] if new else
+                        [('e', 'edit'), ('E', 'chat'), ('D', 'drop'), ('h', 'here')],
+                     4: [('⏎', 'answer'), ('L', 'later')], 5: [('p', 'pick')]}.get(self.panel, [('R', 'release')])
+            return keys
+        return {1: [('j/k', 'move'), ('⏎', 'open'), ('R', 'release'), ('c', 'chat'), ('q', 'quit')],
+                2: [('j/k', 'move'), ('⏎', 'open'), ('t', 'terminal'), ('o', 'link'), ('c', 'chat')],
+                3: [('j/k', 'move'), ('n', 'new'), ('E', 'chat')] if new else
+                   [('J/K', 'reorder'), ('n', 'new'), ('e', 'edit'), ('E', 'chat'), ('D', 'drop'), ('h', 'here')],
+                4: [('j/k', 'move'), ('a', 'answer'), ('L', 'later'), ('⏎', 'open')],
+                5: [('j/k', 'move'), ('p', 'pick'), ('⏎', 'open')]}[self.panel]
+
+    def footer(self, width: int = 0) -> list[tuple[str, str]]:
+        """The key hint line: keys bold bright white, labels in the normal text colour, only the separators dim;
+        always ending in '? all keys', with the panel's last keys left out should `width` be too narrow."""
         if self.msg:
             return [(self.msg, 'green' if self.msg_ok else 'red')]
-        keys = [('1-5', 'panel'), ('j/k', 'move'), ('⏎', 'open'), ('[ ]', 'tab'), ('t', 'terminal'), ('c', 'chat')]
-        keys += {3: [('n', 'new'), ('e', 'edit'), ('E', 'chat edit'), ('D', 'drop'), ('h', 'do it here')],
-                 4: [('a', 'answer'), ('L', 'later')], 5: [('p', 'pick')]}.get(self.panel, [])
-        keys += [('i', 'type'), ('R', 'release'), ('?', 'keys'), ('q', 'quit')]
-        out = []
-        for i, (k, v) in enumerate(keys):
-            out += ([(' · ', 'dim')] if i else []) + [(k, 'blue'), (f' {v}', 'dim')]
-        return out
+        keys = self.hint_keys()
+        while True:
+            out = []
+            for i, (k, v) in enumerate(keys + [('?', 'all keys')]):
+                out += ([(' · ', 'dim')] if i else []) + [(k, 'key'), (f' {v}', 'fg')]
+            if not width or not keys or sum(len(t) for t, _ in out) <= width:
+                return out
+            keys = keys[:-1]
 
     def fill(self, win, h: int, w: int) -> None:
         """B112: every cell on the theme background, so nothing of the terminal's earlier screen shows through a
@@ -367,7 +388,7 @@ class RunPage:
         tab = self.tab()[0]
         mode = (tab if self.main else PANELS[self.panel - 1][1]).upper()
         x = self.put(win, h - 1, 0, [(f' {mode} ', '')], w, self.a('mode'))
-        self.put(win, h - 1, x + 1, self.footer(), w - x - 2)
+        self.put(win, h - 1, x + 1, self.footer(w - x - 2), w - x - 2)
         if self.help:
             lines = HELP.splitlines()
             bw, bh = min(w - 2, max(len(l) for l in lines) + 4), min(h - 2, len(lines) + 2)
@@ -458,6 +479,8 @@ class RunPage:
                 self.done(U.drop(tid, why or 'dropped from the run page'))
         elif self.panel == 3 and k == 'h' and tid:
             self.done(U.take(tid))
+        elif self.panel == 3 and k in ('J', 'K') and tid:
+            self.reorder(1 if k == 'J' else -1)
         elif self.panel == 4 and k == 'a' and it:
             self.answer(it)
         elif self.panel == 4 and k == 'L' and it:
@@ -465,6 +488,20 @@ class RunPage:
         elif self.panel == 5 and k == 'p' and it:
             self.pick(it)
         return False
+
+    def reorder(self, step: int) -> None:
+        """F70: Shift+J / Shift+K: the selected queued task one place down / up (`plan move ID after|before
+        <neighbour>`); the selection follows it."""
+        tasks = [t for t in self.items(3) if not t.get('new')]
+        i = self.cur[3]
+        if not 0 <= i + step < len(tasks):
+            self.msg, self.msg_ok = f'{tasks[i]["id"]} is already {"last" if step > 0 else "first"}', True
+            return
+        r = U.call(['plan', 'move', tasks[i]['id'], 'after' if step > 0 else 'before', tasks[i + step]['id']])
+        self.done(r)
+        if r.get('ok'):  # the task's row in the queue read again, else the row it moved to
+            ids = [t.get('id') for t in self.items(3)]
+            self.cur[3] = ids.index(tasks[i]['id']) if tasks[i]['id'] in ids else i + step
 
     def terminal(self) -> None:
         """Switch to the selected slot's tmux pane; on another panel, the first slot's."""
@@ -550,7 +587,8 @@ class RunPage:
 def curses_attrs(curses) -> dict[str, int]:
     """The ryha theme's colour pairs on this terminal: 256 colours when it has them, else the 8 basic ones."""
     if not curses.has_colors():
-        return {'red': curses.A_BOLD, 'sel': curses.A_REVERSE, 'cur': curses.A_BOLD, 'mode': curses.A_REVERSE}
+        return {'red': curses.A_BOLD, 'sel': curses.A_REVERSE, 'cur': curses.A_BOLD, 'mode': curses.A_REVERSE,
+                'key': curses.A_BOLD}
     curses.start_color()
     deep = curses.COLORS >= 256
     pick = (lambda c: c[0] if deep else c[1])
@@ -572,6 +610,7 @@ def curses_attrs(curses) -> dict[str, int]:
             out[f'{ground}:{name}'] = curses.color_pair(n) | (curses.A_BOLD if name == 'red' else 0)
             n += 1
     out['red'] |= curses.A_BOLD
+    out['key'] |= curses.A_BOLD
     return out
 
 

@@ -63,8 +63,9 @@ input:focus,textarea:focus,select:focus{outline:none;border-color:var(--red)}
 .kb:hover{border-color:var(--red)}
 .kb.p{border-color:var(--red);color:var(--red)}
 .btnrow{display:flex;gap:8px;flex-wrap:wrap;white-space:normal}
-.foot{color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.foot .k{color:var(--blue)}
+.foot{color:var(--fg);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.foot .k{color:var(--selfg);font-weight:700}
+.foot .sep{color:var(--dim)}
 .foot .mode{color:var(--bg);background:var(--red);padding:0 6px;margin-right:6px;font-weight:700}
 .pop{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.6);z-index:10;padding:16px}
 .pop .box{background:var(--bg);width:min(600px,100%);max-height:80vh;border-color:var(--red)}
@@ -225,10 +226,15 @@ A release waits for everything ahead of it, then runs alone, so it releases exac
 }
 function renderFoot(){
   const [tab]=curTab();
-  const keys=typing()?[['Esc','leave'],['⏎','send']]:
-    [['1-5','panel'],['j/k','move'],['⏎','open'],['[ ]','tab'],['t','terminal'],['c','chat'],
-     ...(S.panel===3?[['e','edit'],['E','chat edit'],['n','new'],['D','drop'],['h','do it here']]:[]),['i','type'],['R','release'],['?','keys']];
-  $('#foot').innerHTML=`<span class="mode">${typing()?'INSERT':S.focusMain?esc(tab.toUpperCase()):PANELS[S.panel-1].name.toUpperCase()}</span>`+keys.map(([k,v])=>`<span class="k">${k}</span> ${v}`).join(' · ');
+  /* F70: only the focused panel's keys (or the main pane's), then '? all keys', lazygit style */
+  const nt=sel()?.newtask;
+  const keys=typing()?[['Esc','leave'],['⏎','send']]:[...(S.focusMain?[['Esc','back'],['[ ]','tab']]:[]),
+    ...({1:[['j/k','move'],['⏎','open'],['R','release'],['c','chat']],
+         2:[['j/k','move'],['⏎','open'],['t','terminal'],['c','chat']],
+         3:nt?[['j/k','move'],['n','new'],['E','chat']]:[['j/k','move'],['n','new'],['e','edit'],['E','chat'],['D','drop'],['h','here']],
+         4:[['j/k','move'],['i','answer'],['L','later']],
+         5:[['j/k','move'],['⏎','open']]}[S.panel]).filter(([k])=>!(S.focusMain&&(k==='j/k'||k==='⏎'))),['?','all keys']];
+  $('#foot').innerHTML=`<span class="mode">${typing()?'INSERT':S.focusMain?esc(tab.toUpperCase()):PANELS[S.panel-1].name.toUpperCase()}</span>`+keys.map(([k,v])=>`<span class="k">${k}</span> ${v}`).join('<span class="sep"> · </span>');
 }
 function render(){renderLeft();renderMain();renderFoot()}
 function toast(m,bad){const t=$('#toast');t.textContent=m;t.className='toast'+(bad?' bad':'');t.hidden=false;clearTimeout(t._h);t._h=setTimeout(()=>t.hidden=true,bad?8000:4000)}
