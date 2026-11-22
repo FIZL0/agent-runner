@@ -330,8 +330,15 @@ def open_session(slot: str) -> dict:
     return {'ok': bool(link), 'code': 0 if link else 1, 'out': link or why, 'argv': []}
 
 
+def move(tid: str, where: str, other: str) -> dict:
+    """F72: `plan move ID after|before OTHER`: the queue's J/K, one place down / up past its neighbour."""
+    if where not in ('after', 'before'):
+        return {'ok': False, 'code': 2, 'out': f'move: where is after or before, not {where!r}', 'argv': []}
+    return call(['plan', 'move', tid, where, other])
+
+
 ACTIONS = {'plan_add': plan_add, 'plan_change': plan_change, 'chat': chat, 'answer': answer, 'drop': drop,
-           'take': take, 'shelve': shelve, 'release': release, 'open_session': open_session}
+           'take': take, 'shelve': shelve, 'release': release, 'open_session': open_session, 'move': move}
 
 
 def act(name: str, **args) -> dict:

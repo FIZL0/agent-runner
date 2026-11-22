@@ -5,7 +5,7 @@
     GET  /snapshot?t=TOKEN       the run page model's snapshot, as JSON
     GET  /events?t=TOKEN         the same snapshot over server-sent events, sent again whenever it changes
     POST /act?t=TOKEN            {"name": ACTION, "args": {...}}: one of `ui_model.ACTIONS` (plan add, plan edit,
-                                 drop, shelve, release, chat, answer, take), its result as JSON
+                                 drop, shelve, release, chat, answer, take, move), its result as JSON
     GET  /terminal/NAME?t=TOKEN  where slot NAME's (or c1's) tmux pane is served by ttyd, started on demand
 
 Every request carries the token (`?t=`, or an `X-Token` header): the page can type into panes, so one without

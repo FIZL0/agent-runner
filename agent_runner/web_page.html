@@ -238,7 +238,7 @@ function renderFoot(){
   const keys=typing()?[['Esc','leave'],['⏎','send']]:[...(S.focusMain?[['Esc','back'],['[ ]','tab']]:[]),
     ...({1:[['j/k','move'],['⏎','open'],['R','release'],['c','chat']],
          2:[['j/k','move'],['⏎','open'],['t','terminal'],['c','chat']],
-         3:nt?[['j/k','move'],['n','new'],['E','chat']]:[['j/k','move'],['n','new'],['e','edit'],['E','chat'],['D','drop'],['h','here']],
+         3:nt?[['j/k','move'],['n','new'],['E','chat']]:[['j/k','move'],['J/K','reorder'],['n','new'],['e','edit'],['E','chat'],['D','drop'],['h','here']],
          4:[['j/k','move'],['i','answer'],['L','later']],
          5:[['j/k','move'],['⏎','open']]}[S.panel]).filter(([k])=>!(S.focusMain&&(k==='j/k'||k==='⏎'))),['?','all keys']];
   $('#foot').innerHTML=`<span class="mode">${typing()?'INSERT':S.focusMain?esc(tab.toUpperCase()):PANELS[S.panel-1].name.toUpperCase()}</span>`+keys.map(([k,v])=>`<span class="k">${k}</span> ${v}`).join('<span class="sep"> · </span>');
@@ -252,7 +252,7 @@ function connect(){
   es.onmessage=e=>{
     const snap=JSON.parse(e.data);
     if(snap.error){toast('snapshot: '+snap.error,true);return}
-    S.snap=snap;S.last=Date.now();$('#live').classList.add('on');
+    S.snap=snap;S.last=Date.now();$('#live').classList.add('on');follow();
     renderLeft();if(!typing()&&curTab()[0]!=='terminal')renderMain();renderFoot();
   };
   es.onerror=()=>{$('#live').classList.remove('on');$('#live').textContent='reconnecting…'};
@@ -278,6 +278,18 @@ function submit(kind){
   if(kind==='answer'){const v=$('#ain').value.trim();if(!v)return;chatSay(`${it.id}: ${v}`,()=>act('answer',{tid:it.id,text:v},it.id+' answered'));back()}
   if(kind==='pick'){const v=$('#pin').value.trim();if(!v)return;const text=`concept ${it.concept} (${it.title}), build ${it.id}: ${v}`;chatSay(text,()=>act('chat',{text},'sent to c1'));back()}
 }
+/* F72: Shift+J / Shift+K in [3] Queue: the selected task one place down / up (plan move ID after|before
+   <neighbour>), as agent-runner ui does since F70; the selection follows it once the snapshot shows the move */
+function reorder(step){
+  const q=S.snap.queue,i=S.cur[3],it=q[i];if(!it)return;
+  if(i+step<0||i+step>=q.length){toast(`${it.id} is already ${step>0?'last':'first'}`);return}
+  act('move',{tid:it.id,where:step>0?'after':'before',other:q[i+step].id},`moved ${it.id} ${step>0?'down':'up'}`)
+    .then(r=>{if(r.ok){S.follow=it.id;S.cur[3]=i+step;render()}});
+}
+function follow(){
+  if(!S.follow)return;const i=S.snap.queue.findIndex(t=>t.id===S.follow);
+  if(i>=0){S.cur[3]=i;S.follow=''}
+}
 function doAct(a){
   const it=sel();
   if(a==='release')act('release',{},'release queued');
@@ -301,7 +313,7 @@ function help(){openPop('Keybindings',`<span class="r">Global</span>
 <span class="r">Queue [3]</span>
   <span class="b">n</span>      new task             <span class="b">e</span>      direct edit
   <span class="b">E</span>      chat edit            <span class="b">D</span>      drop
-  <span class="b">h</span>      do it here
+  <span class="b">h</span>      do it here           <span class="b">J/K</span>    move the task down / up
 
 <span class="r">Needs you [4]</span>
   <span class="b">i</span>      answer               <span class="b">L</span>      later
@@ -351,6 +363,7 @@ document.addEventListener('keydown',e=>{
   else if(S.panel===3&&k==='E'){setTab('chat edit');setTimeout(focusInput,0);return e.preventDefault()}
   else if(S.panel===3&&k==='D'){doAct('drop');return e.preventDefault()}
   else if(S.panel===3&&k==='h'){doAct('take')}
+  else if(S.panel===3&&(k==='J'||k==='K')&&!sel()?.newtask){reorder(k==='J'?1:-1);return e.preventDefault()}
   else if(S.panel===4&&k==='L'){doAct('later')}
   else done=false;
   if(done){e.preventDefault();render()}

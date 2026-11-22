@@ -101,6 +101,18 @@ def test_server(tmp: Path) -> None:
            'the action runs its plan command')
         check(out['ok'] and out['out'] == 'added F3', 'and its result comes back', out)
 
+        calls = []  # F72: J/K in the queue moves the task one place past its neighbour
+        with mock.patch.object(U, 'RUN', [lambda argv: (calls.append(argv), (0, 'moved F1'))[1]]):
+            code, out = post(f'{base}/act?t={token}', {'name': 'move', 'args': {
+                'tid': 'F1', 'where': 'after', 'other': 'B2'}})
+            eq(calls, [['plan', 'move', 'F1', 'after', 'B2']], 'the move action runs plan move ID after <neighbour>')
+            check(out['ok'], 'and says it moved', out)
+            code, out = post(f'{base}/act?t={token}', {'name': 'move', 'args': {
+                'tid': 'F1', 'where': 'top', 'other': 'B2'}})
+            check(not out['ok'] and len(calls) == 1, 'a move other than after or before runs nothing', out)
+        for part in (b"['J/K','reorder']", b"k==='J'||k==='K'", b"act('move'", b'S.follow=it.id'):
+            check(part in page, f'the queue reorders with J/K on the page: {part.decode()}')
+
         code, out = post(f'{base}/act?t={token}', {'name': 'nope', 'args': {}})
         check(not out['ok'] and 'no such action' in out['out'], 'an unknown action is an error result', out)
         code, out = post(f'{base}/act?t={token}', {'name': 'drop', 'args': ['F1']})
