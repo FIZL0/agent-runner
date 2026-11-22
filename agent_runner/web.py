@@ -1,7 +1,7 @@
 """F66: the run page on the web. A run serves it from this machine (`[run] web`, on by default) on
 `[run] web_port` (8770), bound to every interface so a phone on the LAN or Tailscale reaches it.
 
-    GET  /?t=TOKEN               the page (web_page.html): lazygit panels over F65's snapshot
+    GET  /?t=TOKEN               the page (web_page.html): lazygit panels over F65's snapshot, in `[ui] theme`
     GET  /snapshot?t=TOKEN       the run page model's snapshot, as JSON
     GET  /events?t=TOKEN         the same snapshot over server-sent events, sent again whenever it changes
     POST /act?t=TOKEN            {"name": ACTION, "args": {...}}: one of `ui_model.ACTIONS` (plan add, plan edit,
@@ -29,6 +29,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
 from agent_runner import state as S
+from agent_runner import theme as TH
 from agent_runner import ui_model as U
 
 PAGE = Path(__file__).with_name('web_page.html')
@@ -193,6 +194,18 @@ class Snapshots:
             return self.last
 
 
+def page_html(name: str | None = None) -> bytes:
+    """F69: the page in theme `name` (default `[ui] theme`): its tokens in style#theme, and every theme's in THEMES
+    for the page's picker (T), one table with the terminal page (theme.py)."""
+    name = TH.checked(name or TH.configured())
+    themes = TH.all_resolved()
+    css = ':root{' + ';'.join(f'--{k}:{v}' for k, v in themes[name].items() if k != 'mode') + \
+        f';color-scheme:{"light" if themes[name]["mode"] == "light" else "dark"}}}'
+    data = json.dumps({'default': name, 'themes': themes}).replace('</', '<\\/')
+    page = PAGE.read_text(encoding='utf-8').replace('/*THEME_CSS*/', css, 1)
+    return page.replace('/*THEMES*/{"default":"ryha","themes":{}}', data, 1).encode('utf-8')
+
+
 def run_snapshot() -> dict:
     return U.snapshot(terminal_base='.')
 
@@ -228,7 +241,7 @@ class Handler(BaseHTTPRequestHandler):
         if not self.allowed():
             return self.refuse()
         if path in ('/', '/index.html'):
-            return self.send(200, PAGE.read_bytes(), 'text/html; charset=utf-8')
+            return self.send(200, page_html(), 'text/html; charset=utf-8')
         if path == '/snapshot':
             return self.send(200, self.server.snaps.get())
         if path == '/events':

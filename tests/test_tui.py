@@ -256,6 +256,9 @@ class FakeCurses:
     def init_pair(self, n, fg, bg):
         self.pairs[n] = (fg, bg)
 
+    def use_default_colors(self):
+        self.defaults = True
+
     def color_pair(self, n):
         return n << 8
 
@@ -391,6 +394,64 @@ def test_hint_line() -> None:
     check(sum(len(t) for t, _ in narrow.footer(30)) <= 30, 'and it fits')
 
 
+OMARCHY_SAMPLE = '''mode = "dark"
+accent = "#89b4fa"
+selection = "#45475a"
+background = "#1e1e2e"
+foreground = "#cdd6f4"
+red = "#f38ba8"
+green = "#a6e3a1"
+bright_blue = "#74c7ec"
+color4 = "#89b4fa"
+'''
+
+
+def test_themes() -> None:
+    """F69: the page draws in each [ui] theme; omarchy reads a colors.toml, ryha when it is missing; terminal
+    draws in the terminal's own colours and background."""
+    import tempfile
+    from pathlib import Path
+    from unittest import mock
+    from agent_runner import theme as TH
+    pair = lambda c, a: c.pairs[(a & 0xff00) >> 8]  # noqa: E731
+    for name in TH.NAMES:
+        c = FakeCurses()
+        attrs = T.curses_attrs(c, name)
+        p, win = T.RunPage(SNAP, get_snap=lambda: SNAP, attrs=attrs), Win(30, 100)
+        p.draw(win)
+        check('[3] Queue' in win.text() and '? all keys' in win.text(), f'{name}: the page draws')
+        check(all(f'{g}:{n}' in attrs for g in ('sel', 'cur') for n in T.COLOURS), f'{name}: every row pair')
+        eq([n for n in T.COLOURS for g in ('sel', 'cur') if pair(c, attrs[f'{g}:{n}'])[0] == pair(c, attrs[g])[1]],
+           [], f'{name}: no colour vanishes on a selected row')
+    c = FakeCurses()
+    attrs = T.curses_attrs(c, 'light')
+    eq(pair(c, attrs['fg']), (TH.xterm256('#171717'), 231), 'light: dark text on white')
+    c = FakeCurses()
+    attrs = T.curses_attrs(c, 'terminal')
+    check(getattr(c, 'defaults', False), "terminal: the terminal's own colours are turned on")
+    eq(pair(c, attrs['fg']), (-1, -1), "terminal: its own foreground on its own background")
+    eq(pair(c, attrs['red'])[0], 1, 'terminal: red is ANSI 1, whatever the terminal makes of it')
+    eq(pair(c, attrs['sel:red']), (15, 1), 'terminal: red on the red focused row turns bright white')
+    c.COLORS = 8
+    eq(pair(c, T.curses_attrs(c, 'terminal')['key'])[0], 7, 'terminal on 8 colours: bright white is white')
+
+    with tempfile.TemporaryDirectory() as d:
+        f = Path(d) / 'colors.toml'
+        f.write_text(OMARCHY_SAMPLE, encoding='utf-8')
+        th = TH.get('omarchy', f)
+        eq((th['bg'], th['fg'], th['accent'], th['red'], th['sel'], th['bblue']),
+           ('#1e1e2e', '#cdd6f4', '#89b4fa', '#f38ba8', '#45475a', '#74c7ec'), 'omarchy reads colors.toml')
+        eq(th['yellow'], TH.THEMES['ryha']['yellow'], 'and takes from ryha what it lacks')
+        eq(TH.resolve('terminal', f)['bg'], '#1e1e2e', "the web's terminal theme: the Omarchy terminal colours")
+        with mock.patch.dict(T.TH.os.environ, {'OMARCHY_COLORS': str(f)}):
+            c = FakeCurses()
+            attrs = T.curses_attrs(c, 'omarchy')
+            eq(pair(c, attrs['accent']), (TH.xterm256('#89b4fa'), TH.xterm256('#1e1e2e')),
+               'the terminal page draws the Omarchy accent on its background')
+        eq(TH.get('omarchy', Path(d) / 'missing.toml'), TH.THEMES['ryha'], 'no colors.toml: ryha')
+    eq(TH.checked('nope'), 'ryha', 'an unknown theme reads as ryha')
+
+
 def test_cli() -> None:
     from agent_runner import cli
     eq(cli.COMMANDS.get('ui'), ('tui', 'main'), '`agent-runner ui` runs the terminal Run page')
@@ -400,4 +461,4 @@ def test_cli() -> None:
 
 if __name__ == '__main__':
     raise SystemExit(report([test_layout, test_keys, test_actions, test_colours, test_row_ground_and_fill,
-                               test_reorder, test_hint_line, test_cli]))
+                               test_reorder, test_hint_line, test_themes, test_cli]))
