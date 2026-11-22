@@ -85,5 +85,14 @@ def test_docs_only_skips_gate():
         check('- [ ] **B3**' in (root / 'plan/TODO.md').read_text(), 'B3 stays open')
 
 
+def test_concept_brief_page():
+    print('F77: the concept brief tells a K task to pass --page <its HTML> to done --artifact')
+    from agent_runner import brief as B
+    text = B.CONCEPT_PROMPT.format(runner='./run', tid='K7')
+    has(text, r'done K7 "<msg>" --artifact <the page\'s URL> --page <the HTML file you published>',
+        'done is given the page\'s URL and the file it was published from')
+    has(text, r'\.runner/concepts/K7\.html', 'and says where the copy goes')
+
+
 if __name__ == '__main__':
-    raise SystemExit(report([test_docs_only_skips_gate]))
+    raise SystemExit(report([test_docs_only_skips_gate, test_concept_brief_page]))

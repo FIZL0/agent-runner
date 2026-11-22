@@ -177,8 +177,10 @@ here) and publish one page with the Artifact tool that lays out the options, usu
 what it looks like or does (a sketch, a mock-up or an example where that says it best), the files it touches, \
 and its trade-off; then your recommendation and why. A person picks one from that page, often on a phone, so \
 make it short, concrete and readable at a glance. Change no product code; commit only notes you wrote (the \
-journal). Finish with `{runner} done {tid} "<msg>" --artifact <the page's URL>`: it is refused without one, and \
-it files the build task, blocked until the person approves an option."""
+journal). Finish with `{runner} done {tid} "<msg>" --artifact <the page's URL> --page <the HTML file you published>`: \
+it is refused without the URL, and it files the build task, blocked until the person approves an option. `--page` \
+keeps a copy of the page at .runner/concepts/{tid}.html for the run page to show inline; without it `done` only \
+finds an .html file this worktree changed, and a page written in the scratchpad is not one."""
 
 
 RESEARCH_PROMPT = """\
