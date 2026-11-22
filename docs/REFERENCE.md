@@ -990,6 +990,12 @@ push_merge = true         # push the shared branch after each tested merge
 land_edited = "wait"      # a tested merge held by uncommitted edits in the main checkout: "wait" for them, or
                           # "wip": move them to a wip/main-checkout-<time> branch and land (see Stopping a run)
 
+[ui]
+theme = "ryha"            # the Run page's colours, terminal (`ui`) and web: ryha (black, red accent), omarchy
+                          # (~/.config/omarchy/current/theme/colors.toml, else ryha), terminal (the terminal's own
+                          # 16 colours and background; the web page draws Omarchy's, else ryha's), light. The web
+                          # page's T picks another for that browser
+
 [run]
 test = ""                 # the gate, run by `done` and on every merge, e.g. "make test"
 test_since = ""           # a merge's gate on what changed since {base}, e.g. "make test-since REV={base}"
