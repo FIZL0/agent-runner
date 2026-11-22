@@ -5,7 +5,7 @@ copy, and the actions they share.
 
     status    the status lines: run up or not, its state, progress, release, no-gate warning, usage
     slots     the run's slot count (0 when no run is up; while it starts, [run] slots)
-    sessions  c1, then each slot s1..s<slots> and any past the count still on a task: task, title, minutes,
+    sessions  c1 and every other control session window (cN, its title), then each slot s1..s<slots> and any past the count still on a task: task, title, minutes,
               state (running, merging, idle: no task), files, session link, terminal URL
     queue     every open task in TODO.md: id, kind, title, files, after, pri, section, blocked
     needs     what waits on the person (not the shelved ones): label, id, ask in plain words, link, age
@@ -26,6 +26,7 @@ import json
 import re
 import subprocess as sp
 import time
+from pathlib import Path
 
 from agent_runner import plan as P
 from agent_runner import state as S
@@ -151,15 +152,81 @@ def idle_row(name: str) -> dict:
             'terminal': ''}
 
 
+def tmux_panes() -> list[str]:
+    """B113: every tmux pane, one 'session<TAB>window name<TAB>@runner<TAB>@runner-repo' line each; [] without
+    tmux or a server."""
+    import shutil
+    if not shutil.which('tmux'):
+        return []
+    try:
+        r = sp.run(['tmux', 'list-panes', '-a', '-F',
+                    f'#{{session_name}}\t#{{window_name}}\t#{{{S.TAG}}}\t#{{{S.REPO_TAG}}}'],
+                   capture_output=True, text=True, timeout=5)
+    except (OSError, sp.SubprocessError):
+        return []
+    return r.stdout.splitlines() if not r.returncode else []
+
+
+def control_windows(panes: list[str]) -> dict[int, str]:
+    """B113: {N: title} of this repository's control session windows in `panes` (`tmux_panes` lines), read by
+    window name whatever agent-runner version opened them: "<repo> · N · <title>", "<repo> · control N" and
+    "<repo> · N" (title 'control session'), or a pane tagged cN whose window has another name ("<repo> · R43 ·
+    site deploy": the title after "<repo> · "). A pane counts when its @runner-repo is this main checkout, or,
+    with no repo tag (a run of an older version), when it is in the run's tmux session "ar-<repo>". A window
+    with no number in its name nor a cN tag (a bare "<repo>") cannot be told apart, and is left out."""
+    repo = S.ROOT.name
+    sess = f"ar-{re.sub(r'[^A-Za-z0-9_-]', '-', repo)}"
+    named = re.compile(rf'{re.escape(repo)} · (?:control )?(\d+)(?: · (.*))?')
+    out: dict[int, str] = {}
+    for line in panes:
+        where, wname, tag, owner = (line.split('\t') + [''] * 4)[:4]
+        try:
+            ours = Path(owner).resolve() == Path(S.ROOT).resolve() if owner else where == sess
+        except OSError:
+            ours = False
+        m, tagged = named.fullmatch(wname), re.fullmatch(r'c(\d+)', tag)
+        if not ours or not (m or tagged):
+            continue
+        n = int(tagged[1]) if tagged else int(m[1])
+        if m and int(m[1]) == n:
+            title = (m[2] or '').strip()
+        else:
+            title = wname[len(repo) + 3:].strip() if wname.startswith(f'{repo} · ') else ''
+        out.setdefault(n, title or 'control session')
+    return out
+
+
+def control_rows(windows: dict[int, str], links=None) -> list[dict]:
+    """B113: c1 (`c1_row`, titled by its window when it has one), then each other control session window as
+    cN with its title; `links` as `session_rows` (None: each link from its pid file's transcript)."""
+    c1 = c1_row()
+    if windows.get(1):
+        c1['title'], c1['state'] = windows[1], 'live'
+    if links and 'c1' in links:
+        c1['link'] = links['c1']
+    out = [c1]
+    for n in sorted(k for k in windows if k > 1):
+        if links is not None:
+            link = links.get(f'c{n}', '')
+        else:
+            try:
+                link = _bridge_link(S.C.notes(f'control{n}.pid').read_text(encoding='utf-8').strip()
+                                    .partition(' ')[2])
+            except OSError:
+                link = ''
+        out.append({'name': f'c{n}', 'task': '', 'title': windows[n], 'minutes': None, 'state': 'live',
+                    'files': [], 'link': link, 'terminal': ''})
+    return out
+
+
 def session_rows(st: dict, ls: list[str], titles: dict[str, str], now: float, links=None,
-                 terminal_base: str = '', slots: int = 0) -> list[dict]:
-    """c1, then each slot of STATE `st` in slot order: s1..s<slots> (F71: an idle one, no task, as `idle_row`)
+                 terminal_base: str = '', slots: int = 0, windows: dict[int, str] | None = None) -> list[dict]:
+    """c1 and the other control sessions (B113: `control_rows`; `windows` as `control_windows`, None: read from
+    tmux), then each slot of STATE `st` in slot order: s1..s<slots> (F71: an idle one, no task, as `idle_row`)
     and any slot past the count still on its task. `links` ({'s2': url}) replaces the lookup by pane;
     `terminal_base` is where the run page serves terminals ('' none yet: each row's `terminal` stays '')."""
     files = {tid: P.fields(ls[i]).get('files', []) for _, _, tid, _, i in P.iter_tasks(ls)}
-    out = [c1_row()]
-    if links and 'c1' in links:
-        out[0]['link'] = links['c1']
+    out = control_rows(control_windows(tmux_panes()) if windows is None else windows, links)
     merging = set(st.get('merging') or [])
     running = dict(st.get('running') or {})
     for n in range(1, slots + 1):
@@ -206,9 +273,9 @@ def log_tail(n: int = LOG_TAIL) -> list[str]:
 
 
 def snapshot(up: bool | None = None, now: float | None = None, log_n: int = LOG_TAIL, links=None,
-             terminal_base: str = '') -> dict:
-    """The run, as one JSON-ready dict (see the module doc). `up` and `now` default to the real ones; `links`
-    and `terminal_base` as `session_rows`. Call after `state.init`."""
+             terminal_base: str = '', windows: dict[int, str] | None = None) -> dict:
+    """The run, as one JSON-ready dict (see the module doc). `up` and `now` default to the real ones; `links`,
+    `terminal_base` and `windows` as `session_rows`. Call after `state.init`."""
     from agent_runner.status import progress_line, release_line, waiting_ok
     up = S.run_up() if up is None else up
     now = time.time() if now is None else now
@@ -223,7 +290,7 @@ def snapshot(up: bool | None = None, now: float | None = None, log_n: int = LOG_
     slots = slot_count(up, st)
     return {'project': S.project(), 'at': dt.datetime.fromtimestamp(now).isoformat(timespec='seconds'),
             'up': up, 'status': status_rows(up, st, '\n'.join(x for x in (progress, release) if x)),
-            'slots': slots, 'sessions': session_rows(st, ls, titles, now, links, terminal_base, slots),
+            'slots': slots, 'sessions': session_rows(st, ls, titles, now, links, terminal_base, slots, windows),
             'queue': queue_rows(ls),
             'needs': needs, 'concepts': concepts, 'log': log_tail(log_n), 'release': release}
 

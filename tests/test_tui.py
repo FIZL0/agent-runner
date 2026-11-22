@@ -452,6 +452,46 @@ def test_themes() -> None:
     eq(TH.checked('nope'), 'ryha', 'an unknown theme reads as ryha')
 
 
+def test_idle_run_of_another_project() -> None:
+    """B113: an idle 5-slot run (iFizBox's: no slot windows, control session windows named by title) lists c1,
+    c6 and c9 with their titles and s1-s5 idle; an idle slot's terminal says so instead of attaching."""
+    repo = Path(tempfile.mkdtemp()) / 'iFizBox'
+    repo.mkdir(parents=True)
+    git(repo, 'init', '-q')
+    S.init(repo)
+    s = 'ar-iFizBox'
+    listing = [f'{s}\trunner-iFizBox\t\t', f'{s}\tboard-iFizBox\tboard\t{repo}', f'{s}\tiFizBox\t\t',
+               f'{s}\tiFizBox · 9 · iOS 26 native glass +\tc9\t{repo}', f'{s}\tiFizBox\t\t',
+               f'{s}\tiFizBox · 1 · Install IPAs row + wider\tc1\t{repo}',
+               f'{s}\tiFizBox · 6 · Pairing broken: Tailscale logout\tc6\t{repo}']
+    S.C.notes('STATE').write_text('{"state": "5 slots, usage caps off (f)", "running": {}, "idle": true}',
+                                  encoding='utf-8')
+    from unittest import mock
+    with mock.patch.object(U, 'tmux_panes', return_value=listing):
+        snap = U.snapshot(up=True, links={})
+    attached = []
+    p = T.RunPage(snap, get_snap=lambda: snap, attrs=ATTRS,
+                  attach=lambda name: (attached.append(name), {'ok': False, 'out': 'no pane'})[1])
+    eq([r['name'] for r in p.items(2)], ['c1', 'c6', 'c9', 's1', 's2', 's3', 's4', 's5'],
+       'c1, c6, c9, then every slot, idle')
+    win = Win(30, 120)
+    p.key('2')
+    p.draw(win)
+    left = [l[:44] for l in win.lines()]
+    for want in ('c6 Pairing broken', 'c9 iOS 26 native', 's2 idle'):
+        check(any(want in l for l in left), f'Sessions shows "{want}"', win.text())
+    p.cur[2] = 4  # s2
+    p.key(']')
+    eq(p.tab()[0], 'terminal', "s2's terminal tab")
+    p.draw(win)
+    check('s2 is idle: nothing running' in win.text(), 'it says s2 is idle', win.text())
+    p.key('t')
+    eq((attached, p.msg), ([], 's2 is idle: nothing running'), 't on an idle slot: the idle line, no attach')
+    p.cur[2] = 1  # c6
+    p.key('t')
+    eq(attached, ['c6'], 't on a control session attaches it')
+
+
 def test_cli() -> None:
     from agent_runner import cli
     eq(cli.COMMANDS.get('ui'), ('tui', 'main'), '`agent-runner ui` runs the terminal Run page')
@@ -461,4 +501,5 @@ def test_cli() -> None:
 
 if __name__ == '__main__':
     raise SystemExit(report([test_layout, test_keys, test_actions, test_colours, test_row_ground_and_fill,
-                               test_reorder, test_hint_line, test_themes, test_cli]))
+                               test_reorder, test_hint_line, test_themes, test_idle_run_of_another_project,
+                               test_cli]))

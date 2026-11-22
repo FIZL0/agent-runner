@@ -193,6 +193,39 @@ def test_to_c1_by_tag(tmp: Path) -> None:
     eq(typed, [('%7', 'how is it going?')], "typed into c1's tagged pane, not $TMUX_PANE")
 
 
+def ifizbox_panes(root: Path, name: str) -> list[str]:
+    """B113: `tmux list-panes -a` lines (session, window name, @runner, @runner-repo) like iFizBox's idle run."""
+    s = f'ar-{name}'
+    return [f'{s}\trunner-{name}\t\t', f'{s}\tboard-{name}\tboard\t{root}', f'{s}\t{name}\t\t',
+            f'{s}\t{name} · 9 · iOS 26 native glass +\tc9\t{root}', f'{s}\t{name}\t\t',
+            f'{s}\t{name} · 1 · Install IPAs row + wider\tc1\t{root}',
+            f'{s}\t{name} · 6 · Pairing broken: Tailscale logout\tc6\t{root}',
+            f'{s}\t{name} · 4 · started by an older version\t\t',     # no tags: found by its window name
+            f'{s}\t{name} · R43 · site deploy\tc7\t{root}',           # a task-named control session
+            f'other\t{name} · 5 · another checkout\tc5\t/elsewhere/{name}']
+
+
+def test_control_windows(tmp: Path) -> None:
+    """B113: an idle 5-slot run of an older version (STATE with no `slots`, no slot windows) lists c1, every
+    other control session window as cN with its title, and s1..s5 idle."""
+    repo = fake_run(tmp)
+    S.C.notes('STATE').write_text(json.dumps({'state': '5 slots, usage caps off (f)', 'running': {}, 'since': {},
+                                              'merging': [], 'idle': True}), encoding='utf-8')
+    wins = U.control_windows(ifizbox_panes(repo, repo.name))
+    eq(wins, {1: 'Install IPAs row + wider', 4: 'started by an older version', 6: 'Pairing broken: Tailscale logout',
+              7: 'R43 · site deploy', 9: 'iOS 26 native glass +'},
+       "control windows by name and tag; another checkout's and the bare ones left out")
+    from unittest import mock
+    with mock.patch.object(U, 'tmux_panes', return_value=ifizbox_panes(repo, repo.name)):
+        snap = U.snapshot(up=True, now=NOW, links={})
+    eq([(s['name'], s['state']) for s in snap['sessions']],
+       [('c1', 'live'), ('c4', 'live'), ('c6', 'live'), ('c7', 'live'), ('c9', 'live')] +
+       [(f's{n}', 'idle') for n in range(1, 6)], 'c1, c4, c6, c7, c9, then s1-s5 idle')
+    eq(snap['sessions'][0]['title'], 'Install IPAs row + wider', "c1 titled by its window")
+    eq(U.control_windows([f'ar-{repo.name}\t{repo.name} · control 3\t\t']), {3: 'control session'},
+       'an untitled control window: control session')
+
+
 def in_tmp(f):
     def go():
         print(f.__name__)
@@ -204,4 +237,4 @@ def in_tmp(f):
 
 if __name__ == '__main__':
     raise SystemExit(report([in_tmp(test_snapshot), in_tmp(test_idle_slots), in_tmp(test_actions), in_tmp(test_real_command),
-                         in_tmp(test_to_c1_by_tag)]))
+                         in_tmp(test_to_c1_by_tag), in_tmp(test_control_windows)]))

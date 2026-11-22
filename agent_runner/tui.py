@@ -59,9 +59,19 @@ def session_rows(snap: dict) -> list:
         if f's{n}' not in have:
             rows.append({'name': f's{n}', 'task': '', 'title': '', 'minutes': None, 'state': 'idle', 'files': [],
                          'link': '', 'terminal': ''})
-    slot = lambda r: (r.get('name') != 'c1', not str(r.get('name', ''))[1:].isdigit(),  # noqa: E731
+    slot = lambda r: (not is_control(r), not str(r.get('name', ''))[1:].isdigit(),  # noqa: E731
                       str(r.get('name', ''))[1:].zfill(4))
     return sorted(rows, key=slot)
+
+
+def is_control(row) -> bool:
+    """B113: a control session's row (c1, c6), not a slot's."""
+    return isinstance(row, dict) and bool(re.fullmatch(r'c\d+', str(row.get('name', ''))))
+
+
+def idle_line(row: dict) -> str:
+    """B113: what an idle slot's terminal says instead of an error: no window is open while it has no task."""
+    return f'{row.get("name", "")} is idle: nothing running'
 
 HELP = """Global
   1-5      focus a panel          h/l Tab  previous / next panel (h on the queue: do it here)
@@ -176,6 +186,8 @@ class RunPage:
         if n == 2:
             if it.get('name') == 'c1':
                 return [('c1 ', 'red'), (it.get('title', ''), 'fg'), (f' {it.get("state", "")}', 'dim')]
+            if is_control(it):
+                return [(f'{it["name"]} ', 'red'), (it.get('title', ''), 'fg'), (f' {it.get("state", "")}', 'dim')]
             if not it.get('task'):
                 return [(f'{it["name"]} ', 'yellow'), (it.get('state') or 'idle', 'dim')]
             mins = f' {it["minutes"]}m' if it.get('minutes') is not None else ''
@@ -217,6 +229,8 @@ class RunPage:
             if it.get('link'):
                 out += [L(), L(('session ', 'dim'), (it['link'], 'blue'))]
             return out + [L(), L(('t: its terminal (tmux pane)', 'dim'))]
+        if tab == 'terminal' and not it.get('task') and not is_control(it):
+            return [L((idle_line(it), 'dim'))]
         if tab == 'terminal':
             return [L((f'{it["name"]} runs in a tmux pane of the run.', 'fg')), L(),
                     L(('Enter or t switches to it (attach). ', 'dim')),
@@ -505,16 +519,21 @@ class RunPage:
             self.cur[3] = ids.index(tasks[i]['id']) if tasks[i]['id'] in ids else i + step
 
     def terminal(self) -> None:
-        """Switch to the selected slot's tmux pane; on another panel, the first slot's."""
+        """Switch to the selected slot's (or control session's) tmux pane; on another panel, the first slot on a
+        task, else the first slot. An idle slot has no pane: the footer says so (B113), with no attach."""
         if self.panel != 2 or not isinstance(self.sel(), dict) or self.sel().get('name') == 'c1':
-            slots = [i for i, s in enumerate(self.items(2)) if s.get('name') != 'c1']
+            rows = self.items(2)
+            slots = [i for i, s in enumerate(rows) if not is_control(s)]
             if not slots:
                 self.msg, self.msg_ok = 'no slot is running a task', False
                 return
-            self.panel, self.cur[2] = 2, slots[0]
+            self.panel, self.cur[2] = 2, next((i for i in slots if rows[i].get('task')), slots[0])
         it = self.sel()
         self.tabs[self._tab_key(it)] = 'terminal'
         self.main = True
+        if not it.get('task') and not is_control(it):  # B113: an idle slot has no window to attach
+            self.msg, self.msg_ok = idle_line(it), True
+            return
         self.done(self.attach(it['name']))
 
     def type_in(self, it) -> None:
