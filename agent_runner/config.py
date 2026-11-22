@@ -554,8 +554,9 @@ class Config:
         if not isinstance(self.run['web_port'], int) or isinstance(self.run['web_port'], bool) \
                 or not 0 < self.run['web_port'] < 65536:
             raise SystemExit(f"agent-runner: [run] web_port must be a port number, not {self.run['web_port']!r}")
-        if self.raw['ui']['theme'] not in ('ryha', 'omarchy', 'terminal', 'light'):  # F69: theme.NAMES
-            raise SystemExit("agent-runner: [ui] theme must be 'ryha', 'omarchy', 'terminal' or 'light', not "
+        from agent_runner.theme import NAMES as THEMES  # F69: the one theme table
+        if self.raw['ui']['theme'] not in THEMES:
+            raise SystemExit(f"agent-runner: [ui] theme must be one of {', '.join(THEMES)}, not "
                              f"{self.raw['ui']['theme']!r}")
         if self.run['comment_policy'] not in ('normal', 'minimal'):
             raise SystemExit("agent-runner: [run] comment_policy must be 'normal' or 'minimal'")
