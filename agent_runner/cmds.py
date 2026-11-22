@@ -20,6 +20,7 @@ from agent_runner import plan as P, plansync, plat
 from agent_runner.config import RUNNER, runner_cmd, shown_cmd
 from agent_runner.state import (ask_stop, C, clear_stop, default_branch, edited, git, init, queued, REPO_TAG, ROOT,
     RUN_TAG, run_up, SLOTS_DIR, TAG)
+from agent_runner.state import BOARD_TAG
 from agent_runner.brief import has_sheet, prompt_for, wizard_cmd, wizard_file
 from agent_runner.sched import ahead, open_tasks
 from agent_runner.slots import (attach_target, backend, background_env, background_session, claude_json, entries,
@@ -746,13 +747,17 @@ def hidden_attach(which: str) -> str:
 
 
 def cmd_attach(argv: list[str], prog: str = f'{RUNNER} attach') -> int:
-    """`agent-runner attach [sN]`: the runner's pane, or a slot's; on Windows a slot's console window."""
-    ap = argparse.ArgumentParser(prog=prog, description="Show the run's pane, or a slot's (s2, or 2).")
-    ap.add_argument('slot', nargs='?', default='', help='s2 (or 2) for slot 2; master for a fix session; board for the board '
-                    'window; none: the runner')
+    """`agent-runner attach [sN|cN|feed]`: the runner's pane, or a session's; on Windows a slot's console window.
+    F80: `attach N` (a number from `agent-runner list`) or `attach <project> cN|sN|feed|run`, from any folder."""
+    if argv[:1] and argv[0].isdigit() or len(argv) == 2:
+        return attach_listed(argv)
+    ap = argparse.ArgumentParser(prog=prog, description="Show the run's pane, or a session's (s2, c3, feed); "
+                                 f"attach N: number N of {shown_cmd()} list; attach <project> s2: from any folder.")
+    ap.add_argument('slot', nargs='?', default='', help='s2 for slot 2; c3 for control session 3; feed for the runner '
+                    'feed; master for a fix session; none: the runner')
     a = ap.parse_args(argv)
     init()
-    which = f's{a.slot}' if a.slot.isdigit() else (a.slot or 'runner')
+    which = {'feed': 'board', 'run': 'runner'}.get(a.slot, a.slot or 'runner')
     if plat.WINDOWS:
         if which == 'runner':
             print(f'on Windows the run has no window of its own: {shown_cmd()} status shows it, and its log is '
@@ -778,6 +783,213 @@ def cmd_attach(argv: list[str], prog: str = f'{RUNNER} attach') -> int:
                'no run in tmux for this repository') + f': {shown_cmd()} status; {shown_cmd()} starts the run', file=sys.stderr)
         return 1
     *select, go = attach_argv(*hit, inside=bool(os.environ.get('TMUX')))
+    for c in select:
+        sp.run(c, capture_output=True)
+    return sp.call(go)
+
+
+# --- F80: every agent-runner session on this device: `list`, and `attach N` / `attach <project> X` -----------
+
+DEVICE_FORMAT = (f'#{{session_name}}\t#{{pane_id}}\t#{{{TAG}}}\t#{{{REPO_TAG}}}\t#{{{RUN_TAG}}}\t#{{{BOARD_TAG}}}'
+                 '\t#{window_name}')  # one `tmux list-panes -a` row per pane, read by its tags
+
+
+def control_title(repo: str, wname: str, n: int) -> str:
+    """A control session's title from its window name, as the Run page's Sessions shows it: "<repo> · 6 ·
+    Pairing broken" is 'Pairing broken'; 'control session' when the name holds nothing more."""
+    title = wname[len(repo) + 3:].strip() if wname.startswith(f'{repo} · ') else ''
+    if title.startswith(f'{n} · '):
+        title = title[len(f'{n} · '):].strip()
+    return 'control session' if title in ('', str(n), f'control {n}') else title
+
+
+def run_info(root: Path) -> dict:
+    """What `list` says of the run of the project at `root`: up (its run lock is held) and its STATE (state,
+    slots, running, since); {} when that project's settings or notes cannot be read."""
+    try:
+        from agent_runner.config import Config
+        c = Config(root)
+        f = plat.lock(c.notes('run.lock'))
+        if f:
+            f.close()
+            return {'up': False}
+        try:
+            st = json.loads(c.notes('STATE').read_text(encoding='utf-8'))
+        except (OSError, ValueError):
+            st = {}
+        return {'up': True, **(st if isinstance(st, dict) else {})}
+    except (OSError, SystemExit, ValueError, KeyError, TypeError):
+        return {}
+
+
+def device_projects(rows: list[str], info=run_info, now: float | None = None,
+                    hidden: dict[Path, dict[str, int]] | None = None) -> list[dict]:
+    """F80: each project with a run or sessions on this device, from `tmux list-panes -a` rows in
+    DEVICE_FORMAT, found by the tags agent-runner sets (@runner, @runner-repo, @runner-run), never by window
+    names: {'root', 'name', 'run' (`info(root)`), 'rows'}. Rows in order: the run's pane ('run'), the runner
+    feed ('feed'), control sessions cN, then slots sN with their task and minutes from the run's STATE; each
+    has 'name', 'what', 'sess', 'pane', 'pid' and 'n', numbered 1..N over all projects. `hidden` ({root:
+    {'s2': pid}}, Windows' hidden consoles) adds slots with a console and no pane."""
+    now = time.time() if now is None else now
+    found: dict[Path, dict] = {}
+
+    def project(path: str) -> dict:
+        root = Path(path)
+        return found.setdefault(root, {'root': root, 'name': root.name, 'panes': {}, 'controls': {}})
+
+    for line in rows:
+        sess, pane_id, tag, repo, run_for, board, wname = (line.split('\t') + [''] * 7)[:7]
+        if run_for:
+            project(run_for)['panes'].setdefault('run', (sess, pane_id))
+        if not (tag and repo):
+            continue
+        p = project(repo)
+        if tag == 'board' and board.startswith('feed'):
+            p['panes'].setdefault('feed', (sess, pane_id))
+        elif m := re.fullmatch(r'c(\d+)', tag):
+            p['panes'].setdefault(tag, (sess, pane_id))
+            p['controls'].setdefault(int(m[1]), control_title(Path(repo).name, wname, int(m[1])))
+        elif re.fullmatch(r's\d+', tag):
+            p['panes'].setdefault(tag, (sess, pane_id))
+    for root, slots in (hidden or {}).items():
+        project(str(root)).setdefault('hidden', {}).update(slots)
+    out, n = [], 0
+    for root in sorted(found, key=lambda r: (r.name, str(r))):
+        p = found[root]
+        run = info(root) or {}
+        panes, pids = p['panes'], p.get('hidden', {})
+        running = {f's{k}': v for k, v in (run.get('running') or {}).items() if str(k).isdigit()} if run.get('up') else {}
+        since = run.get('since') or {}
+        listed = []
+        if 'run' in panes:
+            listed.append(('run', 'the run'))
+        if 'feed' in panes:
+            listed.append(('feed', 'runner feed'))
+        listed += [(f'c{k}', p['controls'][k]) for k in sorted(p['controls'])]
+        for s in sorted(set(running) | {k for k in panes if k[0] == 's'} | set(pids), key=lambda k: int(k[1:])):
+            tid, t0 = running.get(s, ''), since.get(s[1:])
+            mins = f' · {int((now - t0) // 60)}m' if tid and isinstance(t0, (int, float)) else ''
+            listed.append((s, f'{tid}{mins}' if tid else 'idle'))
+        rows_out = []
+        for name, what in listed:
+            sess, pane_id = panes.get(name, ('', ''))
+            pid = pids.get(name, 0)
+            num = 0
+            if pane_id or pid:
+                n += 1
+                num = n
+            rows_out.append({'name': name, 'what': what, 'sess': sess, 'pane': pane_id, 'pid': pid, 'n': num})
+        out.append({'root': root, 'name': p['name'], 'run': run, 'rows': rows_out})
+    return out
+
+
+def run_words(run: dict) -> str:
+    """'run up: running · 3 slots', 'run up: idle', or 'no run up'."""
+    if not run.get('up'):
+        return 'no run up'
+    slots, state = run.get('slots'), run.get('state') or 'starting'
+    return (f'run up: {state}' + (f' · {slots} slot{"" if slots == 1 else "s"}'
+                                  if isinstance(slots, int) and 'slot' not in state else ''))
+
+
+def list_text(projects: list[dict]) -> str:
+    """`agent-runner list`: each project, then its numbered sessions (a number is what `attach N` takes)."""
+    if not projects:
+        return 'no agent-runner sessions on this device\n'
+    out = []
+    for p in projects:
+        out.append(f'{p["name"]}  {run_words(p["run"])}  ({p["root"]})')
+        for r in p['rows']:
+            out.append(f'  {str(r["n"]) if r["n"] else "-":>3}  {r["name"]:<5} {r["what"]}')
+    return '\n'.join(out) + '\n'
+
+
+def hidden_consoles() -> dict[Path, dict[str, int]]:
+    """Windows: {main checkout: {'s2': pid}} of each slot console alive on this device, found through the
+    slot worktrees under the runs folder (`[run] home`'s default ~/runs/<project>, or AGENT_RUNNER_HOME) and
+    the current repository's own notes."""
+    from agent_runner.config import Config
+    roots: set[Path] = set()
+    try:
+        roots.add(main_checkout_of(Path.cwd()))
+    except (SystemExit, OSError):
+        pass
+    home = os.environ.get('AGENT_RUNNER_HOME') or '~/runs/{repo}'
+    base = Path(os.path.expanduser(home.split('{repo}')[0] if '{repo}' in home else str(Path(home).parent)))
+    for wt in sorted(base.glob('*/s*')) if base.is_dir() else []:
+        if re.fullmatch(r's\d+', wt.name) and (wt / '.git').exists():
+            try:
+                roots.add(main_checkout_of(wt))
+            except (SystemExit, OSError):
+                continue
+    out: dict[Path, dict[str, int]] = {}
+    for root in roots:
+        try:
+            c = Config(root)
+            for m in sorted(c.notes().glob('slot*.live')):
+                k = m.stem[4:]
+                if k.isdigit() and (pid := marker_pid(m)) and plat.alive(pid):
+                    out.setdefault(root, {})[f's{k}'] = pid
+        except (SystemExit, OSError, ValueError, KeyError):
+            continue
+    return out
+
+
+def main_checkout_of(path: Path) -> Path:
+    from agent_runner.config import main_checkout
+    return main_checkout(path)
+
+
+def device_sessions() -> list[dict]:
+    """`device_projects` for this device: its tmux panes (POSIX) or its hidden slot consoles (Windows)."""
+    if plat.WINDOWS:
+        return device_projects([], hidden=hidden_consoles())
+    rows = tmux('list-panes', '-a', '-F', DEVICE_FORMAT) if shutil.which('tmux') else None
+    return device_projects(rows.stdout.splitlines() if rows and not rows.returncode else [])
+
+
+def cmd_list(argv: list[str], prog: str = f'{RUNNER} list') -> int:
+    """`agent-runner list`, from any folder: every agent-runner session on this device, numbered for `attach N`."""
+    ap = argparse.ArgumentParser(prog=prog, description='Every agent-runner run and session on this device, like '
+                                 f'tmux ls: {shown_cmd()} attach N shows number N.')
+    ap.parse_args(argv)
+    print(list_text(device_sessions()), end='')
+    return 0
+
+
+def pick_listed(projects: list[dict], argv: list[str]) -> tuple[dict | None, str]:
+    """The row `attach N` or `attach <project> <name>` names, or (None, why not)."""
+    rows = [(p, r) for p in projects for r in p['rows']]
+    if len(argv) == 1:
+        hit = [r for _, r in rows if r['n'] == int(argv[0])]
+        return (hit[0], '') if hit else (None, f'no session {argv[0]}: {shown_cmd()} list numbers them')
+    proj, name = argv
+    name = {'board': 'feed', 'runner': 'run'}.get(name, name)
+    name = f's{name}' if name.isdigit() else name
+    mine = [p for p in projects if proj in (p['name'], str(p['root']))]
+    if not mine:
+        return None, f'no project {proj} with sessions on this device: {shown_cmd()} list'
+    hit = [r for p in mine for r in p['rows'] if r['name'] == name and (r['pane'] or r['pid'])]
+    return (hit[0], '') if hit else (None, f'{proj} has no session {name} to attach: {shown_cmd()} list')
+
+
+def attach_listed(argv: list[str]) -> int:
+    """`attach N` / `attach <project> cN|sN|feed|run`: that pane (tmux attach, or switch-client inside tmux);
+    on Windows a slot's hidden console, shown."""
+    if len(argv) > 2:
+        print(f'{shown_cmd()} attach N, or attach <project> cN|sN|feed', file=sys.stderr)
+        return 2
+    row, why = pick_listed(device_sessions(), argv)
+    if not row:
+        print(why, file=sys.stderr)
+        return 1
+    if row['pid'] and not row['pane']:
+        if not plat.show_console(row['pid']):
+            print(f'{row["name"]} runs as pid {row["pid"]}, but its console window could not be shown', file=sys.stderr)
+            return 1
+        print(f'{row["name"]}: its console window is up (minimize it to hide it again; closing it ends the session)')
+        return 0
+    *select, go = attach_argv(row['sess'], row['pane'], inside=bool(os.environ.get('TMUX')))
     for c in select:
         sp.run(c, capture_output=True)
     return sp.call(go)

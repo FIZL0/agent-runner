@@ -238,3 +238,10 @@ _Said_: chat edit
 _On screen_: chat edit
 _In code_: data-form=chatedit
 _Avoid_: AI edit, prompt edit
+
+**Device list**:
+Every project's run and sessions on this device, numbered so one can be attached by its number
+_Said_: agent-runner list, like tmux ls
+_On screen_: agent-runner list
+_In code_: cmd_list, device_projects, device_sessions, list_text
+_Avoid_: session list, ls

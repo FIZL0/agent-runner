@@ -10,7 +10,9 @@ What you type
     agent-runner setup                make this repo ready: back up uncommitted work, runner.toml, a first plan
     agent-runner                      start the run in the background and get the prompt back
     agent-runner --attach             the same, then watch its pane here (Ctrl-b d: back to the background)
-    agent-runner attach [s2]          see the run's pane, or slot 2's
+    agent-runner attach [s2]          see the run's pane, or slot 2's (c3: control session 3, feed: the runner feed)
+    agent-runner list                 every run and session on this device, numbered, from any folder (like tmux ls)
+    agent-runner attach 3             see number 3 of that list (attach <project> s2: from any folder)
     agent-runner control              a control session here: ask it "status?", to pause, add slots, file a task
     agent-runner control --new        another one beside the run; prints its claude.ai/code link
     agent-runner status               is a run up, each slot's task, merges lately, usage (-n 20: log too)
@@ -180,6 +182,7 @@ COMMANDS = {
     'run': ('runner', 'cmd_run'),
     '--attach': ('runner', 'cmd_background_attach'),  # bare, then attach: the run's pane in this terminal
     'attach': ('runner', 'cmd_attach'),
+    'list': ('runner', 'cmd_list'),  # F80: every session on this device
     'control': ('runner', 'cmd_control'),
     'context': ('context', 'main'),
     'cost': ('cost', 'main'),
