@@ -26,6 +26,7 @@ os.environ.pop('AGENT_RUNNER_REPO', None)
 # as a slot's agent (no skill install, a different plan path) and the suites fail only inside a run
 os.environ.pop('AGENT_RUNNER_SLOT', None)
 os.environ.pop('AGENT_RUNNER', None)
+os.environ.pop('AGENT_RUNNER_WORKTREE', None)  # B103: else `done` in a test project refuses it as another project
 # nor the slot's tmux: code under test would set options on the real pane (tests that need tmux mock these)
 os.environ.pop('TMUX', None)
 os.environ.pop('TMUX_PANE', None)
