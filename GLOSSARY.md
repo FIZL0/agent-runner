@@ -224,3 +224,17 @@ _Said_: terminal, pane
 _On screen_: terminal
 _In code_: terminal_mode, capture, keys
 _Avoid_: console
+
+**Direct edit**:
+Changing a queued task's fields (what, kind, priority, files, after) on the Run page, each field with its own key, written straight to the plan
+_Said_: direct edit
+_On screen_: direct edit
+_In code_: editHTML, plan_change, plan_add
+_Avoid_: form, inline edit
+
+**Chat edit**:
+Saying in your own words what to change about a task, or what a new task is, for c1 to write into the plan
+_Said_: chat edit
+_On screen_: chat edit
+_In code_: data-form=chatedit
+_Avoid_: AI edit, prompt edit
