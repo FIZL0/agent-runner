@@ -109,29 +109,52 @@ def idle_line(row: dict) -> str:
     return f'{row.get("name", "")} is idle: nothing running'
 
 
+# each indented line: key, label, key, label …, two spaces or more apart (`help_line` colours them)
 HELP = """Everywhere (not while typing in a box)
-  1-5      focus a panel          Tab      next panel (in a direct edit: next field)
+  1-5      focus a panel          Tab      next panel (direct edit: next field)
   j/k      move down / up         l Enter  into the main pane, next tab
-  h        previous tab, out      Esc      back out (in a chat: interrupt while it works)
+  h        previous tab, out      Esc      back out (a chat: interrupt while it works)
   ^h ^l    left / right side      c        chat with c1
   i        type in the box        ?        this list
   q        quit
-
-Status [1]         R release      s y w u  quick asks (chat tab)
-Sessions [2]       t feed         v        tool steps on / off
-                   N new chat     o        open the session link
-                   Enter on the pane tab: attach (back: Ctrl-b d, or Ctrl-b L in tmux)
-Queue [3]          e direct edit  E        chat edit
-                   n new task     J/K      move down / up
-                   p priority     H        do it here
-                   D drop         ^S       save the direct edit
-                   in a direct edit: t what, k kind (K back), p priority, f files, a after
-Needs you [4]      a answer       L        later      y n a b c  the answer on its button
-Concepts [5]       j/k option     Enter    go with it
-                   i what to change          O        open in the browser
-
-Typing: Enter sends, Shift+Enter (Ctrl-J) new line, Esc leaves the box.
+Status [1]
+  R        release                s y w u  quick asks (chat tab)
+Sessions [2]
+  t        feed                   v        tool steps on / off
+  N        new chat               o        open the session link
+  Enter    on the pane tab: attach (back: Ctrl-b d, or Ctrl-b L in tmux)
+Queue [3]
+  e        direct edit            E        chat edit
+  n        new task               J/K      move down / up
+  p        priority               H        do it here
+  D        drop                   ^S       save the direct edit
+  t k K    what, kind (cycles, back)        p f a    priority, files, after
+Needs you [4]
+  a        answer                 L        later
+  y n      yes, no                a b c    a pick's options (answer tab)
+Concepts [5]
+  j/k      option                 Enter    go with it
+  i        what to change         O        open in the browser
+Typing
+  Enter    send                   Shift+Enter  new line (or Ctrl-J)
+  Esc      leave the box
 Esc closes this."""
+
+
+def help_line(line: str) -> list[tuple[str, str]]:
+    """A line of the keys list: a heading in the accent; an indented line's keys yellow, its labels in the text
+    colour."""
+    if not line.startswith(' '):
+        return [(line, 'accent')]
+    out, parts = [], re.split(r'(\s{2,})', line)
+    words = 0
+    for part in parts:
+        if not part.strip():
+            out.append((part, ''))
+            continue
+        out.append((part, 'hkey' if words % 2 == 0 else 'fg'))
+        words += 1
+    return out
 
 # raw characters as RunPage's key names; curses' own keys come named by `key_name`
 KEYS = {'\r': 'ENTER', '\n': 'S-ENTER', '\t': 'TAB', '\x1b': 'ESC', '\x13': '^S',
@@ -707,7 +730,9 @@ class RunPage:
         tid = it.get('id', '+')
         if tid not in self.forms:
             new = bool(it.get('new'))
-            was = {'text': '' if new else it.get('title', ''),
+            # the text starts empty (empty keeps it): the snapshot's title is cut at 200 characters, and sending
+            # it back would cut the task; the title shows under the field instead
+            was = {'text': '',
                    'kind': 'F' if new else tid[:1],
                    'pri': 'normal' if new or it.get('pri') != 'critical' else 'critical',
                    'files': '' if new else ','.join(it.get('files') or []),
@@ -729,6 +754,8 @@ class RunPage:
             lines = text_lines(text, 'fg', width - 2, '  ❯ ', '    ')
             if self.typing == box:
                 lines[-1] = lines[-1] + [('█', 'accent')]
+            if k == 't' and not f['new'] and not text:  # the task's text now; empty keeps it
+                lines += [[('    ', '')] + l for l in wrap([('now: ' + it.get('title', ''), 'dim')], width - 4)]
             return lines
         out = [L(('New task: written straight to the plan (plan add).' if f['new'] else
                   f'Changes go straight to the plan (plan edit {tid}).', 'dim')), L()]
@@ -995,7 +1022,7 @@ class RunPage:
                 self.put(win, by + r, bx, [(' ' * bw, '')], bw)
             self.edge(win, by, bx, bh, bw, [(' Keybindings ', 'accent')], True)
             for i, l in enumerate(lines[:bh - 2]):
-                self.put(win, by + 1 + i, bx + 2, [(l, 'accent' if l and not l.startswith(' ') else 'fg')], bw - 4)
+                self.put(win, by + 1 + i, bx + 2, help_line(l), bw - 4)
         x = self.put(win, h - 1, 0, [(f' {self.mode()} ', '')], w, self.a('mode'))
         self.put(win, h - 1, x + 1, self.footer(w - x - 2), w - x - 2)
 
@@ -1249,6 +1276,10 @@ class RunPage:
                 return
             changed = {k: f[k].strip() for k in ('text', 'files', 'after', 'pri') if f[k].strip() != was[k].strip()
                        and f[k].strip()}
+            emptied = [k for k in ('files', 'after') if was[k].strip() and not f[k].strip()]
+            if emptied:  # plan edit sets a field, never clears one
+                self.msg, self.msg_ok = f'{" and ".join(emptied)} cannot be emptied here: give the new value', False
+                return
             if not changed:
                 self.msg, self.msg_ok = 'nothing changed', True
                 return
@@ -1504,20 +1535,23 @@ def key_name(curses, ch) -> str:
     return ch
 
 
-def escape_tail(name: str, more) -> str:
-    """After a lone Esc: 'S-ENTER' when what follows is a Shift+Enter (or Alt+Enter) sequence, 'ESC' when
-    nothing follows, '' for any other sequence (a key this page has no use for). `more()` gives the next
-    character at once, or '' when there is none."""
+def escape_tail(name: str, more) -> list[str]:
+    """The keys a key read from curses stands for: after Esc, ['S-ENTER'] when what follows is a Shift+Enter
+    (or Alt+Enter) sequence, ['ESC'] when nothing follows, ['ESC', c] for Esc and then a fast plain key, [] for
+    any other escape sequence (a key this page has no use for). `more()` gives the next character at once, or
+    '' when there is none."""
     if name != '\x1b':
-        return name
+        return [name] if name else []
     seq = ''
     while len(seq) < 12 and (c := more()):
         seq += c
         if seq in SHIFT_ENTER:
-            return 'S-ENTER'
-        if not (c.isdigit() or c in '[;O') or len(seq) == 1 and c not in '[O':
+            return ['S-ENTER']
+        if len(seq) == 1 and c not in '[O':
+            return ['ESC', c]
+        if not (c.isdigit() or c in '[;O'):
             break
-    return 'ESC' if not seq else ''
+    return ['ESC'] if not seq else []
 
 
 def attach_slot(curses, win, name: str) -> dict:
@@ -1574,9 +1608,9 @@ def run_curses(win) -> int:
         if isinstance(ch, int) and ch == curses.KEY_RESIZE:
             win.clear()  # B112: the next refresh repaints every cell, not only what curses thinks changed
             continue
-        name = escape_tail(key_name(curses, ch), more)
-        if name and page.key(name):
-            return 0
+        for name in escape_tail(key_name(curses, ch), more):
+            if page.key(name):
+                return 0
 
 
 def main(argv: list[str]) -> int:

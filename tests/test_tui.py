@@ -170,7 +170,10 @@ def test_layout() -> None:
     p.key('ESC')
     eq(p.main, False, 'Esc backs out of the main pane')
     p.key('?')
-    check('Keybindings' in drawn(p).text(), '? shows the keys')
+    win = drawn(p)
+    check('Keybindings' in win.text(), '? shows the keys')
+    eq((colour_at(win, 'J/K'), colour_at(win, 'move down / up')), ('hkey', 'fg'),
+       'the keys list: keys yellow, labels in the text colour')
     p.key('ESC')
     eq(p.help, False, 'Esc closes the keys')
     check('too small' in drawn(p, 5, 20).text(), 'a tiny terminal is told so')
@@ -328,13 +331,23 @@ def test_direct_edit() -> None:
         p.key('ENTER')
         eq(p.form(p.sel())['text'].endswith(' now'), True, 'the edit is kept while away')
         p.key('^S')
-        eq(ran, [['plan', 'edit', 'B2', 'Queued task number 21 now', '--after', 'Q4', '--pri', 'normal']],
+        eq(ran, [['plan', 'edit', 'B2', '1 now', '--after', 'Q4', '--pri', 'normal']],
            '^S: plan edit with only the changed fields (the files left out)')
         eq((p.main, p.typing, 'B2' in p.forms), (False, '', False), 'saved: back to the panels, the edit done')
         p.key('ENTER')
+        win = drawn(p)
+        check('now: Queued task number 2' in win.text() and '❯ Queued' not in win.text(),
+              "the text field starts empty (the snapshot's title is cut), the text now under it", win.text())
         p.key('k')
         p.key('^S')
         eq((len(ran), p.msg_ok), (1, False), 'a queued task keeps its kind: a new kind is refused, nothing run')
+        p.key('K')
+        p.key('f')
+        for _ in 'q2.py':
+            p.key('BS')
+        p.key('^S')
+        eq((len(ran), p.msg_ok, p.msg.startswith('files cannot be emptied')), (1, False, True),
+           'an emptied field is refused, said so (plan edit sets, never clears)')
     p2 = page()
     ran2: list = []
     with mock.patch.object(U, 'RUN', [lambda argv: (ran2.append(argv), (0, 'added B10'))[1]]):
@@ -650,12 +663,13 @@ def test_escape_tail() -> None:
     def more_of(s):
         it = iter(s)
         return lambda: next(it, '')
-    eq(T.escape_tail('\x1b', more_of('')), 'ESC', 'a lone Esc')
-    eq(T.escape_tail('\x1b', more_of('[13;2u')), 'S-ENTER', "kitty's Shift+Enter")
-    eq(T.escape_tail('\x1b', more_of('[27;2;13~')), 'S-ENTER', "xterm's Shift+Enter")
-    eq(T.escape_tail('\x1b', more_of('\r')), 'S-ENTER', 'Alt+Enter')
-    eq(T.escape_tail('\x1b', more_of('x')), '', 'another sequence: nothing')
-    eq(T.escape_tail('j', more_of('')), 'j', 'any other key as it is')
+    eq(T.escape_tail('\x1b', more_of('')), ['ESC'], 'a lone Esc')
+    eq(T.escape_tail('\x1b', more_of('[13;2u')), ['S-ENTER'], "kitty's Shift+Enter")
+    eq(T.escape_tail('\x1b', more_of('[27;2;13~')), ['S-ENTER'], "xterm's Shift+Enter")
+    eq(T.escape_tail('\x1b', more_of('\r')), ['S-ENTER'], 'Alt+Enter')
+    eq(T.escape_tail('\x1b', more_of('2')), ['ESC', '2'], 'Esc, then a fast key: both, none lost')
+    eq(T.escape_tail('\x1b', more_of('[1;5P')), [], 'another sequence: nothing')
+    eq(T.escape_tail('j', more_of('')), ['j'], 'any other key as it is')
 
 
 class FakeCurses:
