@@ -327,6 +327,26 @@ def feed_record_sid() -> str:
     return ''
 
 
+def queued_message(d: dict) -> dict | None:
+    """B106: a message the person sent while the feed was busy (handling a Monitor event, a command), as Claude
+    Code records it: no type=user entry but an attachment {type: queued_command, prompt: <text or content
+    blocks, images too>, commandMode: prompt}. Given back in a type=user entry's shape, so the feed's readers
+    take it like any other person message, in transcript order; None for any other entry, and for a queued
+    task notification (commandMode task-notification) or one not from the person."""
+    att = d.get('attachment') if isinstance(d, dict) else None
+    if not isinstance(att, dict) or att.get('type') != 'queued_command':
+        return None
+    if att.get('commandMode', 'prompt') != 'prompt':
+        return None
+    prompt = att.get('prompt')
+    if not isinstance(prompt, (str, list)):
+        return None
+    out = {'type': 'user', 'uuid': d.get('uuid') or att.get('source_uuid'),
+           'timestamp': d.get('timestamp') or att.get('timestamp'), 'version': d.get('version'),
+           'origin': att.get('origin') or d.get('origin') or {'kind': 'human'}, 'message': {'content': prompt}}
+    return out if person_message(out) else None
+
+
 def feed_latest(sid: str | None = None) -> tuple[list[str], int, str, str | None]:
     """`feed_scan`, plus the text of that latest person message (None: no feed transcript to read), so
     `control_new` can tell whether Claude Code has written the message being handed on yet (B46). `sid`: the
@@ -352,6 +372,9 @@ def feed_latest(sid: str | None = None) -> tuple[list[str], int, str, str | None
                     d = json.loads(line)
                 except ValueError:
                     continue
+                if not isinstance(d, dict):
+                    continue
+                d = queued_message(d) or d  # B106: a message sent while the feed was busy
                 att = d.get('attachment') or {}
                 if att.get('type') == 'inlined_image_paths':
                     got = [p for p in att.get('paths', []) if isinstance(p, str)]
@@ -509,6 +532,7 @@ def feed_pending(sid: str) -> tuple[str, str, bool] | None:
                     continue
                 if not isinstance(d, dict):
                     continue
+                d = queued_message(d) or d  # B106: a message sent while the feed was busy
                 if d.get('type') == 'user' and not d.get('isMeta') and not d.get('isCompactSummary') \
                         and person_message(d):
                     text, mid, other = message_text(d), str(d.get('uuid') or d.get('timestamp') or ''), False
@@ -546,15 +570,47 @@ def feed_forwarded(sid: str, mid: str) -> None:
 def feed_take(sid: str, wait: float) -> str | None:
     """Wait up to `wait` s for the feed's message being handed on (`feed_pending` ready) and take it: its text,
     marked handed on. None when it did not show: never a guess at an older message."""
-    deadline = time.monotonic() + wait
+    t0 = time.monotonic()
+    deadline = t0 + wait
+    FEED_TAKE.clear()
+    FEED_TAKE.update(looks=0, latest=None)
     while True:
         got = feed_pending(sid)
+        FEED_TAKE['looks'] += 1
+        FEED_TAKE.update(latest=got, took=time.monotonic() - t0)
         if got and got[2]:
             feed_forwarded(sid, got[1])
             return got[0]
         if time.monotonic() >= deadline:
             return None
         time.sleep(0.2)
+
+
+FEED_TAKE: dict = {}  # what the last `feed_take` saw: looks, took (s), latest (`feed_pending`), for its log line
+
+
+def feed_take_log(where: str, sid: str, out: tuple[str, list[str], bool] | None) -> None:
+    """B106: one line in <notes>/remote/handoff.log for a `--forward` take (`feed_take_files`), as `feed_log`
+    writes for `feed_wait`: the feed session, its transcript, the latest person message there (its words, id,
+    and whether it was ready to hand on), and what was taken, so a message that went missing can be traced.
+    Never fails the hand-off."""
+    head = lambda s: json.dumps(re.sub(r'\s+', ' ', s)[:60], ensure_ascii=False)
+    latest = FEED_TAKE.get('latest')
+    seen = (f'{head(latest[0])} ({latest[1] or "no id"}, {"ready" if latest[2] else "not ready"})'
+            if latest else 'none')
+    took = ('NOT found' if out is None else
+            f'found {head(out[0])}, {len(out[1])} file(s){" " + " ".join(out[1]) if out[1] else ""}'
+            f'{", alone" if out[2] else ""}')
+    line = (f'{dt.datetime.now().isoformat(timespec="seconds")} {where}: sid {sid or "-"}, transcript '
+            f'{(transcript(sid) if SID_RE.fullmatch(sid or "") else None) or "none"}; latest {seen}; '
+            f'{FEED_TAKE.get("looks", 0)} look(s) in {FEED_TAKE.get("took", 0.0):.1f} s -> {took}')
+    try:
+        log_file = C.notes(REMOTE_DIR, FEED_LOG)
+        log_file.parent.mkdir(parents=True, exist_ok=True)
+        with open(log_file, 'a', encoding='utf-8') as f:
+            f.write(line + '\n')
+    except OSError:
+        pass
 
 
 def feed_photo(sid: str, wait: float) -> tuple[list[str], int, str]:
@@ -583,8 +639,16 @@ def feed_photo_unsent(sid: str) -> str | None:
     return None if last == [sid, got[1]] else got[1]
 
 
-def feed_take_files(sid: str, wait: float, photo_wait: float | None = None,
-                    final: bool = True) -> tuple[str, list[str], bool] | None:
+def feed_take_files(sid: str, wait: float, photo_wait: float | None = None, final: bool = True,
+                    where: str = 'control --new --forward') -> tuple[str, list[str], bool] | None:
+    """`feed_take_files_now`, its outcome logged to handoff.log (`feed_take_log`, B106), `where` naming the step."""
+    out = feed_take_files_now(sid, wait, photo_wait, final)
+    feed_take_log(where, sid, out)
+    return out
+
+
+def feed_take_files_now(sid: str, wait: float, photo_wait: float | None = None,
+                        final: bool = True) -> tuple[str, list[str], bool] | None:
     """BUG1: `feed_take`, and for a message with no words its files: (text, files, alone). A message with words
     gives its text, no files (`feed_wait` finds those by its words) and False; a photo alone gives '', its saved
     paths (`feed_photo`) and True, and when no path shows, the note that says so (`image_drift_note`, else
@@ -644,7 +708,7 @@ def forward_late_files(n: int, sid: str, wait: float | None = None) -> tuple[str
     except OSError:
         pass
     late = FEED_LATE_WAIT if wait is None else wait
-    got = feed_take_files(sid, late, photo_wait=late)
+    got = feed_take_files(sid, late, photo_wait=late, where='control N --forward --feed-sid')
     return (feed_lost_note(), [], True) if got is None else got
 
 

@@ -149,6 +149,81 @@ def test_photo_alone_forwarded():
         eq(got, (R.feed_lost_note(), [], True), 'neither words nor files: feed_lost_note')
 
 
+def test_queued_message_forwarded():
+    print('B106: a message sent while the feed was busy (a queued_command attachment) is handed on word for word')
+    import contextlib
+    import io
+    import json
+    import subprocess
+    from unittest import mock
+    sid = '12345678-1234-1234-1234-123456789abd'
+    tdir = tempfile.mkdtemp(prefix='agent-runner-feed-queued-')
+    tr = Path(tdir, 'feed.jsonl')
+    hum = lambda text, uid: {'type': 'user', 'uuid': uid, 'origin': {'kind': 'human'},
+                             'message': {'content': [{'type': 'text', 'text': text}]}}
+    queued = lambda prompt, uid, mode='prompt': {
+        'type': 'attachment', 'uuid': uid, 'version': '2.1.303',
+        'attachment': {'type': 'queued_command', 'prompt': prompt, 'commandMode': mode,
+                       'origin': {'kind': 'human'}, 'source_uuid': 'src-' + uid}}
+    monitor = {'type': 'attachment', 'uuid': 'm1', 'attachment': {
+        'type': 'queued_command', 'commandMode': 'task-notification',
+        'prompt': '<task-notification>\n<status>completed</status>\n</task-notification>'}}
+    call = lambda cmd: {'type': 'assistant', 'message': {'content': [
+        {'type': 'tool_use', 'name': 'Bash', 'input': {'command': cmd}}]}}
+    result = {'type': 'user', 'message': {'content': [{'type': 'tool_result', 'tool_use_id': 't', 'content': 'ok'}]}}
+    write = lambda *es: tr.write_text(''.join(json.dumps(e) + '\n' for e in es))
+    opened = []
+    said = 'can you connect and make one\nwith "quotes" and $(no shell)'
+
+    def tm(*a, **k):
+        opened.append(a)
+        return subprocess.CompletedProcess(a, 0, '%9\n' if a[0] == 'new-window' else '', '')
+
+    with mock.patch.object(R.C, 'notes', lambda *a: Path(tdir, *a)), \
+            mock.patch.object(R, 'transcript', lambda s: str(tr) if s == sid else None), \
+            mock.patch.dict(os.environ, {'CLAUDE_CODE_SESSION_ID': sid}), \
+            mock.patch.object(R, 'tmux', tm), mock.patch.object(R, 'control_live', lambda n: None), \
+            mock.patch.object(R, 'control_new_session', lambda: 'ar-proj'), \
+            mock.patch.object(R.shutil, 'which', lambda x: '/usr/bin/tmux'), \
+            mock.patch.object(R.plat, 'WINDOWS', False), mock.patch.object(R, 'remote_on', lambda: False), \
+            mock.patch.object(R, 'FEED_WAIT', 0.3):
+        eq(R.queued_message(monitor), None, 'a queued task notification is not a person message')
+        # the feed was handling a Monitor event (its own tool calls) when the person wrote
+        write(hum('status', 'u1'), call('run status'), monitor, call('run since --wait'), result,
+              queued(said, 'q1'), call('run control --new --forward'))
+        eq(R.feed_pending(sid), (said, 'q1', True), 'feed_pending takes the queued message, ready to hand on')
+        eq(R.feed_latest(sid)[3], said, 'and feed_latest reads its words too')
+        with contextlib.redirect_stdout(io.StringIO()):
+            rc = R.control_new(9, forward=True)
+        argv = R.shlex.split(next(c for c in opened if c[0] == 'new-window')[-1])
+        check(rc == 0 and '--ask-file' in argv, 'control --new --forward hands it on in a file', argv)
+        ask = Path(argv[argv.index('--ask-file') + 1])
+        eq(ask.read_text(encoding='utf-8'), said, 'word for word')
+        check('--feed-sid' not in argv and '--forward' not in argv, 'with nothing left to wait for', argv)
+        check(not any(R.feed_lost_note() in a for a in argv), 'never feed_lost_note', argv)
+        eq(R.feed_pending(sid)[2], False, 'and it is marked handed on')
+        log = Path(tdir, R.REMOTE_DIR, R.FEED_LOG).read_text(encoding='utf-8')
+        check('control --new --forward: sid ' + sid in log and '"can you connect and make one' in log
+              and 'found' in log, 'the take is logged to handoff.log', log)
+
+        # in transcript order: a later type=user message wins over an earlier queued one, and the other way round
+        write(queued('older queued words here', 'q2'), hum('newer typed words here please', 'u3'))
+        eq(R.feed_pending(sid)[:2], ('newer typed words here please', 'u3'), 'a later typed message is the latest')
+        write(hum('older typed words here', 'u4'), queued([{'type': 'text', 'text': 'look [Image #1]'},
+                                                         {'type': 'image', 'source': {'type': 'base64'}}], 'q3'))
+        eq(R.feed_pending(sid)[:2], ('look [Image #1]', 'q3'), 'a later queued message with an image is the latest')
+        eq(R.feed_latest(sid)[1], 1, 'and its image counts as shown')
+
+        # control N's late wait logs its take too, found or not
+        write(hum('status', 'u1'), call('run status'))
+        R.C.notes(R.REMOTE_DIR, R.FEED_FORWARDED).unlink(missing_ok=True)
+        with contextlib.redirect_stdout(io.StringIO()):
+            R.forward_late_files(9, sid, wait=0.3)
+        log = Path(tdir, R.REMOTE_DIR, R.FEED_LOG).read_text(encoding='utf-8')
+        check('control N --forward --feed-sid: sid ' + sid in log and 'NOT found' in log,
+              'a message that never showed is logged as NOT found', log)
+
+
 def test_brief_names_photos():
     print('BUG1: the feed brief hands every photo or file on, never asks about it')
     from agent_runner.guide import RUNNER_BRIEF
@@ -159,4 +234,5 @@ def test_brief_names_photos():
 
 
 if __name__ == '__main__':
-    raise SystemExit(report([test_feed_sid_keeps_command, test_photo_alone_forwarded, test_brief_names_photos]))
+    raise SystemExit(report([test_feed_sid_keeps_command, test_photo_alone_forwarded, test_queued_message_forwarded,
+                                test_brief_names_photos]))
