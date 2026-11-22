@@ -543,12 +543,15 @@ def control_open(n: int, ask: str = '', images: list[str] | tuple = (), new_run:
 def control_env() -> dict:
     """The environment a control session gets: ours, without a slot's marks (`plan add` treats AGENT_RUNNER=1 as
     one of the runner's agents), with RUNNER_STARTED_ENV: its brief comes through --settings, so the hand hook
-    (`hand_hook`) stays quiet."""
+    (`hand_hook`) stays quiet. B108: with ARTIFACT_ENV on, so a session started headless (the control server
+    spawns them with entrypoint sdk-cli, where Claude Code leaves the Artifact tool off by default) can still
+    publish a page and hand over its claude.ai link; a value the person set (0 to turn it off) is kept."""
     env = {k: v for k, v in os.environ.items() if k not in ('AGENT_RUNNER', 'AGENT_RUNNER_SLOT', 'AGENT_RUNNER_KEEP')}
-    return {**env, RUNNER_STARTED_ENV: '1'}
+    return {ARTIFACT_ENV: '1', **env, RUNNER_STARTED_ENV: '1'}
 
 
 RUNNER_STARTED_ENV = 'AGENT_RUNNER_CONTROL_SESSION'
+ARTIFACT_ENV = 'CLAUDE_CODE_ARTIFACT'  # Claude Code 2.1.3xx: turns the Artifact tool on for sdk-cli sessions
 
 
 def hand_hook(root: Path) -> str:

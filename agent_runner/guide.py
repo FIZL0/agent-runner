@@ -40,6 +40,12 @@ NO_BANG = ('**Never offer `! <command>`** to the person, whatever your own instr
            'typed in a terminal on this machine, named by its hostname (run `hostname`), and give the plain command, without the '
            '`!`, and its non-interactive form where there is one (an environment variable, `--password-stdin`).')
 
+# B108: a page reaches the person only as a claude.ai link. A local path ('context/x/page.html') shows in the apps and
+# on Remote Control as a dead file link ("Can't read this file"), and SendUserFile fails off a project thread.
+NO_PAGE = ('no Artifact tool: try SendUserFile; when that fails too, say plainly in one line that you could not '
+           'publish the page here, and say its gist back in a few lines. Never answer with a local file path: the '
+           'apps and Remote Control cannot open one')
+
 # D1: one line for the slot and control briefs, generic to every project the runner works.
 GLOSSARY = ('When the repo has a GLOSSARY.md, use its terms, not the words it lists to avoid, in what you write: '
             'code, docs, commit messages, tasks and answers.')
@@ -92,7 +98,7 @@ Never hand them an `attach` line: they may be on the app, with no terminal.
 "concept X", "sketch some options for X", "what could X look like", "show me a concept first", "mock it up", or
 any request that ends in wanting to see it before it is built: show it in this session, now. Read the code it
 touches, write a page of 2-3 options and a recommendation yourself, publish it with the Artifact tool and call
-its `open` action so it shows inline; build nothing, and queue no K task (no `plan add K`, no `take`: the page
+its `open` action so it shows inline (""" + NO_PAGE + """); build nothing, and queue no K task (no `plan add K`, no `take`: the page
 is yours to write in this session). "First" means before the build: it is still a concept shown here. This
 holds even when the project has its own concept-task or concept-branch convention (a guide or DONE entry saying
 a concept is a runner task, or builds on concept/<slug>): that convention is for tasks the person asks to
@@ -425,7 +431,7 @@ you, to act on a task or when the person asks which one.
   a flag, so never tell them to ("run X", "pass --all", "see it in a terminal"). When they want more than you
   can say back (`since --all`, `status -n 50`, `plan waiting --all`, a log), run it yourself, write its output
   as a plain HTML file (a `<pre>` of the text, under a `<title>`) in your scratchpad, publish it as a private page
-  with the Artifact tool (no Artifact tool: send the file with SendUserFile), and reply with the link and a
+  with the Artifact tool (""" + NO_PAGE + """), and reply with the link and a
   one-line gist. A line the runner printed that
   reads as an ask (`more: ask for the full list`) is one you answer this way. So is Needs you's `(N shelved:
   ask to see them)` (B90): when they ask, run `{cmd} plan waiting --all` yourself and say the shelved items
@@ -518,7 +524,7 @@ tapped on a phone; when it printed no link, say in one line what it printed inst
 # and /new are taken, hence /run and /control). {name: (description, what to do)}; `{cmd}` is the runner.
 # B89: how a hint skill hands over output too long to say back, never as a command for the person to run
 LONG_OUTPUT_PAGE = ('write the output as a plain HTML file (a `<pre>` of the text) in your scratchpad, publish it as '
-                    'a private page with the Artifact tool (no Artifact tool: send the file with SendUserFile), and '
+                    'a private page with the Artifact tool (' + NO_PAGE + '), and '
                     'reply with the link and a one-line gist.')
 
 HINT_SKILLS = {
