@@ -4,6 +4,8 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+## 0.59.0 (2026-11-22)
+
 - Breaking: the run page (`agent-runner ui` and the web page) reads a run's sessions only by the tmux tags
   this version sets (`@runner` cN / sN and `@runner-repo`). It no longer reads control session windows by
   name (`<repo> · N · title`, `<repo> · control N`, `<repo> · N`) nor guesses the tmux session `ar-<repo>`. The
