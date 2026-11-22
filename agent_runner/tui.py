@@ -1452,19 +1452,11 @@ def read_file(path: str) -> str:
 
 
 def slot_diff(name: str) -> str:
-    """Slot `name`'s (s2) work: its worktree against where it left the main branch, uncommitted changes too."""
-    from agent_runner import state as S
-    wt = S.SLOTS_DIR / name
-    if not wt.is_dir():
-        return f'{name} has no worktree'
-    try:
-        base = sp.run(['git', '-C', str(wt), 'merge-base', S.default_branch(), 'HEAD'], capture_output=True,
-                      text=True, timeout=10).stdout.strip() or 'HEAD'
-        r = sp.run(['git', '-C', str(wt), 'diff', base], capture_output=True, text=True, encoding='utf-8',
-                   errors='replace', timeout=20)
-    except (OSError, sp.SubprocessError, SystemExit) as e:
-        return f'(could not read the diff: {e})'
-    return r.stdout if not r.returncode else f'(git diff: {r.stderr.strip()})'
+    """Slot `name`'s (s2) work: its worktree against where it left the main branch, uncommitted changes too
+    (the web page's diff tab, `web.slot_diff`); why not, in brackets, when there is none."""
+    from agent_runner import web
+    r = web.slot_diff(name)
+    return r['text'] if r.get('ok') else f'({r.get("out", "no diff")})'
 
 
 def open_url(url: str) -> dict:
