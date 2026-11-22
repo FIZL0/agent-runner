@@ -368,6 +368,7 @@ def test_logic(tmp: Path) -> None:
         ['compose', {'kind': 'new'}, 'dark mode toggle', []],
         ['compose', {'kind': 'plan', 'id': 'F76', 'title': 'Terminal app'}, 'make it first', ['/r/.runner/uploads/a.png']],
         ['compose', None, '', ['/r/.runner/uploads/a.png', '/r/.runner/uploads/b.txt']],
+        ['compose', {'kind': 'need', 'id': 'R6', 'title': 'Windows status'}, 'what do I check?', []],
         ['usageOf', ['run up: 3 slots', 'usage: session 40%, week 12%']],
         ['chatName', {'name': 'c1', 'title': 'control session'}], ['chatName', {'name': 'c6', 'title': 'Site deploy'}],
         ['chatName', {'name': 'c7', 'title': 'control session'}],
@@ -388,8 +389,10 @@ def test_logic(tmp: Path) -> None:
     eq(got[14], 'About F76 (Terminal app): make it first\n\nAttached: /r/.runner/uploads/a.png',
        'the About line names the task; an attachment goes as its path')
     eq(got[15], 'Attached: /r/.runner/uploads/a.png, /r/.runner/uploads/b.txt', 'attachments alone')
-    eq(got[16], 'session 40%, week 12%', 'the usage line for the sidebar')
-    eq(got[17:20], ['Project chat', 'Site deploy', 'Chat 7'], 'chats by their titles, c1 the project chat')
+    eq(got[16], 'About R6 (Windows status), which needs me: what do I check?',
+       "a Needs you item's Chat talks about it with c1, not as its answer")
+    eq(got[17], 'session 40%, week 12%', 'the usage line for the sidebar')
+    eq(got[18:21], ['Project chat', 'Site deploy', 'Chat 7'], 'chats by their titles, c1 the project chat')
 
 
 def test_extras(tmp: Path) -> None:

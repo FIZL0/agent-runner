@@ -231,6 +231,7 @@ function compose(ctx,text,paths){
   if(ctx&&ctx.kind==='new')msg=`Add a task: ${text}`;
   else if(ctx&&ctx.kind==='plan')msg=`About ${ctx.id}${ctx.title?` (${ctx.title})`:''}: ${text}`;
   else if(ctx&&ctx.kind==='concept')msg=`About concept ${ctx.id}${ctx.title?` (${ctx.title})`:''}: ${text}`;
+  else if(ctx&&ctx.kind==='need')msg=`About ${ctx.id}${ctx.title?` (${ctx.title})`:''}, which needs me: ${text}`;
   if(paths&&paths.length)msg+=(msg?'\n\n':'')+'Attached: '+paths.join(', ');
   return msg;
 }
@@ -463,20 +464,19 @@ async function send(){
   const paths=S.atts.filter(a=>a.path).map(a=>a.path);
   if(!text&&!paths.length)return;
   const ctx=S.ctx, to=S.thread||'c1', key=boxKey();
-  let r;
-  if(ctx&&ctx.kind==='need')r=await act('answer',{tid:ctx.id,text:compose(null,text,paths)});
-  else r=await act('chat_to',{text:compose(ctx,text,paths),to});
+  const msg=compose(ctx,text,paths);
+  const r=await act('chat_to',{text:msg,to});
   if(!r.ok)return;
   store.set(DRAFT_KEY(key),'');if(ta)ta.value='';
   S.atts=[];S.ctx=null;
   const len=feedOf(to).length;
-  S.sent[to]={at:Date.now(),len,pending:[...((S.sent[to]&&S.sent[to].pending)||[]),compose(ctx&&ctx.kind!=='need'?ctx:null,text,paths)]};
+  S.sent[to]={at:Date.now(),len,pending:[...((S.sent[to]&&S.sent[to].pending)||[]),msg]};
   if(S.thread!==to)open(to);else render(true);
 }
 function about(a){
   const [k,v]=[a.split(':')[0],a.slice(a.indexOf(':')+1)];
   if(a==='new')S.ctx={kind:'new',label:'A new task'};
-  else if(k==='need'){const n=S.snap.needs[+v];if(!n)return;S.ctx={kind:'need',id:n.id,label:`${n.id}: ${n.ask||n.title}`}}
+  else if(k==='need'){const n=S.snap.needs[+v];if(!n)return;S.ctx={kind:'need',id:n.id,title:n.title,label:`${n.id}: ${n.ask||n.title}`}}
   else if(k==='concept'){const c=S.snap.concepts[+v];if(!c)return;S.ctx={kind:'concept',id:c.concept||c.id,title:c.title,label:c.title||c.concept}}
   else if(k==='plan'){const q=S.snap.queue.find(x=>x.id===v);if(!q)return;S.ctx={kind:'plan',id:q.id,title:q.title,label:`${q.id} ${q.title}`}}
   open('c1');
