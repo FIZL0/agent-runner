@@ -749,15 +749,15 @@ def hidden_attach(which: str) -> str:
 def cmd_attach(argv: list[str], prog: str = f'{RUNNER} attach') -> int:
     """`agent-runner attach [sN|cN|feed]`: the runner's pane, or a session's; on Windows a slot's console window.
     F80: `attach N` (a number from `agent-runner list`) or `attach <project> cN|sN|feed|run`, from any folder."""
-    if argv[:1] and argv[0].isdigit() or len(argv) == 2:
+    if not any(a.startswith('-') for a in argv) and (argv[:1] and argv[0].isdigit() or len(argv) == 2):
         return attach_listed(argv)
-    ap = argparse.ArgumentParser(prog=prog, description="Show the run's pane, or a session's (s2, c3, feed); "
-                                 f"attach N: number N of {shown_cmd()} list; attach <project> s2: from any folder.")
-    ap.add_argument('slot', nargs='?', default='', help='s2 for slot 2; c3 for control session 3; feed for the runner '
-                    'feed; master for a fix session; none: the runner')
+    ap = argparse.ArgumentParser(prog=prog, description="Show the run's pane, or a session's (s2, c3); attach N: "
+                                 f"number N of {shown_cmd()} list; attach <project> s2|c3|feed: from any folder.")
+    ap.add_argument('slot', nargs='?', default='', help='s2 for slot 2; c3 for control session 3; master for a fix '
+                    'session; board for the board window; a number: that one of the list; none: the runner')
     a = ap.parse_args(argv)
     init()
-    which = {'feed': 'board', 'run': 'runner'}.get(a.slot, a.slot or 'runner')
+    which = a.slot or 'runner'
     if plat.WINDOWS:
         if which == 'runner':
             print(f'on Windows the run has no window of its own: {shown_cmd()} status shows it, and its log is '
@@ -905,18 +905,26 @@ def list_text(projects: list[dict]) -> str:
 
 
 def hidden_consoles() -> dict[Path, dict[str, int]]:
-    """Windows: {main checkout: {'s2': pid}} of each slot console alive on this device, found through the
-    slot worktrees under the runs folder (`[run] home`'s default ~/runs/<project>, or AGENT_RUNNER_HOME) and
-    the current repository's own notes."""
+    """Windows: {main checkout: {'s2': pid}} of each slot console alive on this device (the hidden consoles;
+    a control session there runs in a terminal the person opened). Found through the slot worktrees in the
+    runs folder (AGENT_RUNNER_HOME, else `[run] home`'s default ~/runs/<project>), the current repository's
+    own `[run] home`, and the current repository's notes."""
     from agent_runner.config import Config
     roots: set[Path] = set()
+    worktrees: list[Path] = []
     try:
-        roots.add(main_checkout_of(Path.cwd()))
-    except (SystemExit, OSError):
+        here = main_checkout_of(Path.cwd())
+        roots.add(here)
+        worktrees += Config(here).home.glob('s*')
+    except (SystemExit, OSError, KeyError, TypeError):
         pass
     home = os.environ.get('AGENT_RUNNER_HOME') or '~/runs/{repo}'
-    base = Path(os.path.expanduser(home.split('{repo}')[0] if '{repo}' in home else str(Path(home).parent)))
-    for wt in sorted(base.glob('*/s*')) if base.is_dir() else []:
+    if '{repo}' in home:  # one folder per project: <base>/<project>/sN
+        base = Path(os.path.expanduser(home.split('{repo}')[0]))
+        worktrees += base.glob('*/s*') if base.is_absolute() and base.is_dir() else []
+    elif Path(os.path.expanduser(home)).is_absolute():  # one project's folder: <home>/sN
+        worktrees += Path(os.path.expanduser(home)).glob('s*')
+    for wt in sorted(set(worktrees)):
         if re.fullmatch(r's\d+', wt.name) and (wt / '.git').exists():
             try:
                 roots.add(main_checkout_of(wt))
