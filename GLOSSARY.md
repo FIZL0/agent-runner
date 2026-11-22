@@ -245,3 +245,10 @@ _Said_: agent-runner list, like tmux ls
 _On screen_: agent-runner list
 _In code_: cmd_list, device_projects, device_sessions, list_text
 _Avoid_: session list, ls
+
+**Run app**:
+The chat app a run serves on the web for a phone or a desktop: Home, a thread per session, and the Plan, over the same Run page
+_Said_: run app
+_On screen_: ar
+_In code_: web_page.html, web.py, [run] web
+_Avoid_: web page, dashboard, web UI

@@ -182,8 +182,9 @@ task to fix X" (it files it with `plan add`), "do X now" (it uses `take`, never 
   recommended: every slot start pushes to the phone (see Phone pushes below). Watch hidden slots through
   status and control sessions instead.
 - **One entry per project (`[run] sessions`).** `"one"`, the default, keeps the apps' list to one entry for the
-  project, c1, its chat: no slot starts on Remote Control, even with `remote_slots`. The run page's Sessions
-  panel opens one (its session tab, "open sN in the Claude apps"): the run types `/remote-control <name>` into
+  project, c1, its chat: no slot starts on Remote Control, even with `remote_slots`. `agent-runner ui`'s
+  Sessions panel opens one (its session tab, "open sN in the Claude apps"; the run app has no such button):
+  the run types `/remote-control <name>` into
   that slot's session, which is listed from then on until it ends, and its claude.ai/code link shows in the
   page. For when this machine is not reachable, c1 keeps a claude.ai copy of the run page: on a run event (a
   task starts, lands or blocks, a needs-you item, a concept, the release; at most every 5 minutes) the run
@@ -206,6 +207,33 @@ task to fix X" (it files it with `plan add`), "do X now" (it uses `take`, never 
   so nothing pushes after the start; slots also get `agentPushNotifEnabled: false` in their `--settings` (no
   PushNotification tool). The old `silent = "launch"` (quiet only while a session started, which never
   stopped the start push) reads as `false`, with one `run.log` line.
+
+### The run app
+
+With `[run] web` (on by default) a run serves the run app from this machine on `[run] web_port` (8770), bound
+to every interface so a phone on the LAN or Tailscale reaches it. Its address, with the token every request
+needs (made once per project in `.runner/web.token`), is in `status` and the run log. It is a chat app over
+the run page: the same snapshot and actions as `agent-runner ui`, laid out for a phone (the sidebar becomes a
+drawer) and a desktop. It follows the browser's light or dark setting; `[ui] theme` is the terminal UI's only.
+
+- **Sidebar.** New chat, Home (with the Needs you count), Agents, Activity and Plan. Chats are the control
+  sessions; Agents are the slots working on a task, each with a live dot. The machine, the slots and usage sit
+  at the bottom.
+- **Home.** A greeting, a message box, quick asks (since my last look, what needs me, add a task), then
+  Needs you (each item's answer buttons, Later to shelve it, Chat to talk it over with c1), Working now (opens
+  that agent's thread), Up next (opens c1 with an About line naming the task) and Release (when the next one
+  lands, or now).
+- **Threads.** A session's feed as a conversation: its replies in serif with no bubble, yours in bubbles,
+  tool steps folded as "Ran N steps", and a mark while it works. Esc or stop interrupts it. A control
+  session's thread talks to that session; an agent's thread messages that agent.
+- **Message box.** Enter sends, Shift+Enter starts a new line, and each thread keeps its own draft. An About
+  line says what the message is about. Attachments are uploaded to the run (`POST /upload`), kept under
+  `.runner/uploads` (`<notes>/uploads`, git-ignored with the rest of the notes folder), and handed to the
+  session as paths on this machine.
+- **Plan.** The queue in plain words, Add a task, and each concept with a button per option (taken from its
+  page's headings), plus Chat and View. Tasks are not edited here directly: ask in a chat.
+
+The app does not open slots in the Claude apps; `agent-runner ui` still does (see `[run] sessions` above).
 
 ### status and since
 
@@ -1000,10 +1028,10 @@ land_edited = "wait"      # a tested merge held by uncommitted edits in the main
                           # "wip": move them to a wip/main-checkout-<time> branch and land (see Stopping a run)
 
 [ui]
-theme = "ryha"            # the Run page's colours, terminal (`ui`) and web: ryha (black, red accent), omarchy
+theme = "ryha"            # the terminal UI's (`ui`) colours: ryha (black, red accent), omarchy
                           # (~/.config/omarchy/current/theme/colors.toml, else ryha), terminal (the terminal's own
-                          # 16 colours and background; the web page draws Omarchy's, else ryha's), light. The web
-                          # page's T picks another for that browser
+                          # 16 colours and background), light. The run app ignores it: it follows the browser's
+                          # light or dark setting
 
 [run]
 test = ""                 # the gate, run by `done` and on every merge, e.g. "make test"
@@ -1021,11 +1049,11 @@ remote = "auto"           # control sessions on Remote Control, and a control se
 remote_slots = false      # the slots on Remote Control too ("<task title> · <repo> s2 · B646"); not
                           # recommended: every slot start pushes to the phone
 sessions = "one"          # what the Claude apps list for this project. one: c1, the project's chat; a slot goes
-                          # on Remote Control only when opened from the run page (Sessions, session tab), and c1
-                          # keeps a claude.ai copy of the run page. each: every slot its own entry (remote_slots)
-web = true                # the run page on the web (F66), served by the run on web_port for the LAN/Tailscale; its
+                          # on Remote Control only when opened from `agent-runner ui` (Sessions, session tab), and
+                          # c1 keeps a claude.ai copy of the run page. each: every slot its own entry (remote_slots)
+web = true                # the run app (see The run app), served by the run on web_port for the LAN/Tailscale; its
                           # address, with the token it needs, is in `status` and the run log; false: off
-web_port = 8770           # where the run page is served; its terminal tab's ttyd processes take the next ports
+web_port = 8770           # where the run app is served
 silent = false            # phone pushes from those sessions after each one's start push (that one cannot be stopped): true = none, false = Claude Code's usual
 control = true            # a run opens control session c1 beside it; false: none (`agent-runner control` still works)
 control_idle = "3h"       # close idle control sessions 2, 3, … (never c1) once quiet this long, Claude spoke last, its last message is no open question, and nothing runs in it (a background task or Monitor; the needs-you watch does not count): process ended, controlN.pid removed, transcript kept (`claude --resume <sid>`); false: none closed idle
