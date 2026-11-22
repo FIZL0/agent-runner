@@ -609,7 +609,7 @@ def feed_take_log(where: str, sid: str, out: tuple[str, list[str], bool] | None)
         log_file.parent.mkdir(parents=True, exist_ok=True)
         with open(log_file, 'a', encoding='utf-8') as f:
             f.write(line + '\n')
-    except OSError:
+    except (Exception, SystemExit):  # no notes folder to find (C.notes ends on a git that names none): no line
         pass
 
 
@@ -642,6 +642,7 @@ def feed_photo_unsent(sid: str) -> str | None:
 def feed_take_files(sid: str, wait: float, photo_wait: float | None = None, final: bool = True,
                     where: str = 'control --new --forward') -> tuple[str, list[str], bool] | None:
     """`feed_take_files_now`, its outcome logged to handoff.log (`feed_take_log`, B106), `where` naming the step."""
+    FEED_TAKE.clear()
     out = feed_take_files_now(sid, wait, photo_wait, final)
     feed_take_log(where, sid, out)
     return out
@@ -911,7 +912,7 @@ def control_new_runner(n: int | None = None, images: list[str] | tuple = ()) -> 
             print("agent-runner's own checkout was not found on this machine, so this opens here")
         return control_new(n, images=images, forward=True)
     sid = feed_sid()
-    took = feed_take_files(sid, FEED_LATE_WAIT) if sid else None
+    took = feed_take_files(sid, FEED_LATE_WAIT, where='control --new --forward --runner') if sid else None
     if took is None:  # still agent-runner's: its session asks the person to send it again
         text, found, got, lost, version = feed_lost_note(), False, [], 0, ''
     elif took[2]:  # BUG1: a photo sent alone: its files, or the note that they could not be read

@@ -6404,6 +6404,7 @@ def test_runner_route_b54(repo: Path):
             mock.patch.object(R, 'feed_wait', lambda *a, **k: (True, ['/tmp/p.png'], 0, '')), \
             mock.patch.object(R.sp, 'run', done), contextlib.redirect_stdout(out):
         rc = R.control_new_runner()
+    runs[:] = [r for r in runs if '--new' in r[0][0]]  # B106: not the hand-off log's git call for the notes path
     cmd, kw = runs[0][0][0], runs[0][1]
     ask = next(x for x in cmd if x.startswith('--ask='))
     eq(rc, 0, 'B54: control --new --runner exits as the session it opened')
@@ -6418,6 +6419,7 @@ def test_runner_route_b54(repo: Path):
             mock.patch.object(R, 'feed_take', lambda sid, w: None), mock.patch.object(R.sp, 'run', done), \
             contextlib.redirect_stdout(io.StringIO()):
         R.control_new_runner()
+    runs[:] = [r for r in runs if '--new' in r[0][0]]
     check(runs and runs[0][1]['cwd'] == str(other) and any(R.feed_lost_note() in x for x in runs[0][0][0]),
           'B54: an unreadable message still goes to agent-runner, which asks for it again', runs)
     opened = []
