@@ -81,8 +81,10 @@ subagent with the worktree as its working directory. It finishes with `{cmd} don
 take F48 --merge` (the runner tests and merges it, or the run that is up does). `take ID --drop` gives it back
 untouched. Already editing in the main checkout? Add `--here`: the uncommitted edits move into the new worktree
 and the main checkout is left clean. Several takes on tasks with different files can go at once.
-When take says the task is running in a slot, start nothing: give the person the slot's claude.ai/code link it
-prints (when there is one), or the `{cmd} attach sN` line, and `{cmd} plan tell ID "..."` to steer it.
+A task a slot started only moments ago (no commits yet) take takes back: the run stops that slot and the task
+is yours here. When take says the task is running in a slot, start nothing: give the person the slot's
+claude.ai/code link it prints (when there is one), else offer to steer it with `{cmd} plan tell ID "..."`.
+Never hand them an `attach` line: they may be on the app, with no terminal.
 """,
     'concepts': """\
 # Concepts
