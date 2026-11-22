@@ -175,7 +175,7 @@ function renderLeft(){
   $('#left').innerHTML=PANELS.map(p=>{
     const its=p.items(),cur=S.panel===p.n,c=Math.min(S.cur[p.n],its.length-1);
     return `<div class="box ${cur&&!S.focusMain?'on':''} ${cur?'cur-panel':'short'}" data-panel="${p.n}"><span class="ttl">[${p.n}] ${p.name}</span>
-      <div class="list">${its.length?its.map((it,i)=>`<div class="row ${i===c?'cur':''}" data-p="${p.n}" data-i="${i}">${rowHTML(p.n,it)}</div>`).join(''):'<div class="row d">nothing</div>'}</div>
+      <div class="list">${its.length?its.map((it,i)=>`<div class="row ${i===c?'cur':''}" data-p="${p.n}" data-i="${i}">${rowHTML(p.n,it)}</div>`).join(''):`<div class="row d">${esc(p.n===2&&S.snap.sessions_note||'nothing')}</div>`}</div>
       <span class="cnt">${its.length?c+1:0} of ${its.length}</span></div>`}).join('');
   $('#left').style.gridTemplateRows=PANELS.map(p=>p.n===S.panel?'minmax(0,1fr)':'auto').join(' ');
   $('#cols').classList.toggle('inmain',S.focusMain);

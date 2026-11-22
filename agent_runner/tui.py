@@ -49,6 +49,8 @@ def session_rows(snap: dict) -> list:
     """B112: the Sessions panel's rows: c1, then every slot of the run, an idle one (no task) included, as the
     design lists them. The slot count is the snapshot's `slots` (F71; the snapshot lists idle slots itself),
     else, from a snapshot without it, the run's status line ('run up: 3 slots, ...')."""
+    if snap.get('sessions_note'):  # C23: an older agent-runner's run: no rows, the one line instead
+        return []
     rows = list(snap.get('sessions') or [])
     count = snap.get('slots')
     if not isinstance(count, int) or isinstance(count, bool):
@@ -144,6 +146,10 @@ class RunPage:
         rows = session_rows(self.snap) if key == 'sessions' else list(self.snap.get(key) or [])
         return rows + [NEW_TASK] if key == 'queue' else rows
 
+    def empty_line(self, n: int) -> str:
+        """What panel `n` says with no rows: 'none', or in Sessions the snapshot's `sessions_note` (C23)."""
+        return (self.snap.get('sessions_note') if n == 2 else '') or 'none'
+
     def sel(self):
         rows = self.items(self.panel)
         if not rows:
@@ -215,7 +221,7 @@ class RunPage:
             return [L((l, 'dim' if l.startswith('===') else 'fg')) for l in self.snap.get('log') or []] or \
                 [L(('the run log is empty', 'dim'))]
         if it is None:
-            return [L(('none', 'dim'))]
+            return [L((self.empty_line(self.panel), 'dim'))]
         if tab == 'chat':
             out = [L(('c1 ', 'red'), ('the run\'s control session · ', 'fg'), (it.get('state', ''), 'dim'))]
             if it.get('link'):
@@ -306,7 +312,7 @@ class RunPage:
         inner = h - 2
         top = max(0, cur - inner + 1)
         if not rows:
-            self.put(win, y + 1, x + 2, [('none', 'dim')], w - 4)
+            self.put(win, y + 1, x + 2, [(self.empty_line(n), 'dim')], w - 4)
         for i, it in enumerate(rows[top:top + inner]):
             mark = top + i == cur
             ground = ('sel' if on else 'cur') if mark else ''
@@ -525,7 +531,7 @@ class RunPage:
             rows = self.items(2)
             slots = [i for i, s in enumerate(rows) if not is_control(s)]
             if not slots:
-                self.msg, self.msg_ok = 'the run has no slots', False
+                self.msg, self.msg_ok = self.snap.get('sessions_note') or 'the run has no slots', False
                 return
             self.panel, self.cur[2] = 2, next((i for i in slots if rows[i].get('task')), slots[0])
         it = self.sel()

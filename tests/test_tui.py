@@ -492,6 +492,18 @@ def test_idle_run_of_another_project() -> None:
     eq(attached, ['c6'], 't on a control session attaches it')
 
 
+def test_older_run() -> None:
+    """C23: a run an older agent-runner started (no tagged panes): Sessions has no rows, the one restart line."""
+    snap = {'up': True, 'status': ['run up: 3 slots'], 'slots': 3, 'sessions': [],
+            'sessions_note': U.OLDER_RUN, 'queue': [], 'needs': [], 'concepts': [], 'log': []}
+    p = T.RunPage(snap, get_snap=lambda: snap, attrs=ATTRS, attach=lambda name: {'ok': False, 'out': ''})
+    eq(p.items(2), [], 'no rows, not even the idle slots')
+    win = Win(30, 140)
+    p.key('2')
+    p.draw(win)
+    check('started by an older agent-runner' in win.text(), 'Sessions shows the restart line', win.text())
+
+
 def test_cli() -> None:
     from agent_runner import cli
     eq(cli.COMMANDS.get('ui'), ('tui', 'main'), '`agent-runner ui` runs the terminal Run page')
@@ -502,4 +514,4 @@ def test_cli() -> None:
 if __name__ == '__main__':
     raise SystemExit(report([test_layout, test_keys, test_actions, test_colours, test_row_ground_and_fill,
                                test_reorder, test_hint_line, test_themes, test_idle_run_of_another_project,
-                               test_cli]))
+                               test_older_run, test_cli]))
