@@ -3213,7 +3213,7 @@ def test_prompt_and_hooks(repo: Path):
                 flags = R.remote_flags('slot2', None)
         eq(opened, [R.REMOTE_URL], 'with [run] remote, Enter opens the sessions page')
         eq(flags, [], '[run] remote alone leaves the slots local (only control sessions go on Remote Control)')
-        with mock.patch.dict(R.C.run, {'remote_slots': True}):
+        with mock.patch.dict(R.C.run, {'remote_slots': True, 'sessions': 'each'}):  # F68: 'one' starts none there
             eq(R.remote_flags('slot2', None), ['--remote-control', f'{R.ROOT.name} s2'],
                'with [run] remote_slots a slot starts on Remote Control, named')
             with mock.patch.object(R, 'git', return_value=mock.Mock(stdout='task/F10\n')), \

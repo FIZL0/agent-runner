@@ -189,3 +189,17 @@ _Said_: theme
 _On screen_: T theme
 _In code_: theme.py, [ui] theme, THEMES
 _Avoid_: skin, colour scheme, palette
+
+**Run page copy**:
+The run page published on claude.ai by c1, read-only, for when the machine running the run cannot be reached
+_Said_: claude.ai copy
+_On screen_: run page copy
+_In code_: page_copy_html, page_copy_tick, run-page-copy.html
+_Avoid_: mirror, snapshot page
+
+**Open a slot**:
+Put one slot's session on Remote Control from the run page, so it is listed in claude.ai/code and the Claude apps until it ends
+_Said_: open it
+_On screen_: open sN in the Claude apps
+_In code_: slot_open, open_session
+_Avoid_: attach, share

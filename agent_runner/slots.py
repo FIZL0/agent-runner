@@ -554,11 +554,53 @@ def remote_flags(name: str, cwd: Path | None) -> list[str]:
     B646" (the title leads, the id stays for referring to it), where a person can watch it and type to it. Claude
     Code only, and only an interactive session (not Pi).
     (`[run] remote` alone puts only the control sessions there: `control_argv`.)"""
-    if not remote_slots_on():
+    if not remote_slots_on() or one_session():  # F68: under sessions = 'one' only once opened (slot_open)
         return []
+    return ['--remote-control', slot_session_name(name, cwd)]
+
+
+def slot_session_name(name: str, cwd: Path | None) -> str:
+    """A slot's name in claude.ai/code and the apps: "<task title> · <repo> s2 · B646"."""
     tid = git('branch', '--show-current', cwd=cwd).stdout.strip().removeprefix('task/') if cwd else ''
     title = P.titles(C.done, C.todo, width=50).get(tid, '') if tid else ''
-    return ['--remote-control', ' · '.join(x for x in (title, f"{ROOT.name} {name.replace('slot', 's')}", tid) if x)]
+    return ' · '.join(x for x in (title, f"{ROOT.name} {name.replace('slot', 's')}", tid) if x)
+
+
+def one_session() -> bool:
+    """F68 `[run] sessions = 'one'` (the default): the Claude apps list one entry per project, c1, the project's
+    chat. A slot starts off Remote Control and goes on it only when a person opens it from the run page
+    (`slot_open`); c1 keeps a claude.ai copy of the run page (control.page_copy_tick). 'each': as before."""
+    return C.run.get('sessions', 'one') != 'each'
+
+
+OPEN_WAIT = 20.0  # s slot_open waits for an opened slot's claude.ai/code link
+
+
+def slot_open(name: str, wait: float = OPEN_WAIT) -> tuple[str, str]:
+    """F68: open slot `name` (s2) in claude.ai/code and the apps: under `[run] sessions = 'one'` its session is
+    told `/remote-control <its name>`, which puts it on Remote Control from then on (until it ends), so it is
+    listed only once a person asked for it. (link, '') once its link shows within `wait` s; ('', why) when it
+    cannot: no session runs there, Remote Control cannot work here, or the link did not come up. A slot
+    already on Remote Control (opened before, or under 'each' with remote_slots) gives its link at once."""
+    from agent_runner.ui_model import _bridge_link
+    hit = MUX.panes().get(name)
+    if not hit or not plat.alive(hit[1]) or not (sid := MUX.session_id(hit[1])):
+        return '', f'no session runs in {name}'
+    if link := _bridge_link(sid):
+        return link, ''
+    if why := remote_off_why():
+        return '', f'Remote Control is off: {why}'
+    wt = SLOTS_DIR / name
+    if not getattr(MUX, 'typed', True) or \
+            not MUX.send(hit, f'/remote-control {slot_session_name(name, wt if wt.is_dir() else None)}'):
+        return '', f'could not type into {name}'
+    log(f'{name}: opened on Remote Control (asked from the run page)')
+    end = time.monotonic() + wait
+    while time.monotonic() < end:
+        if link := _bridge_link(sid):
+            return link, ''
+        time.sleep(0.5)
+    return '', f'{name} showed no claude.ai/code link within {wait:g} s'
 
 
 def agent_cmd(prompt: str, sid: str, model: str, idle: int, name: str, resume: bool = False,
