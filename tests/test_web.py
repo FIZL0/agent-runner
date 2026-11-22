@@ -153,10 +153,9 @@ def test_start(tmp: Path) -> None:
         check(any(url in str(c) for c in lg.call_args_list), 'the run log has the address', lg.call_args_list)
         with mock.patch.object(S, 'run_up', return_value=True):
             eq(W.page_line(), f'run page: {url} (or {by_ip})', 'status prints it while the run is up')
-        eq(U.SEND[0], W.send_c1, "the run's chat reaches c1 by its tag, not the runner's own pane")
+        eq(U.SEND[0], U.to_c1, "the run's chat goes through ui_model.to_c1, which finds c1 by its tag")
     finally:
         srv.stop()
-        U.SEND[0] = U.to_c1
 
 
 def in_tmp(f):
