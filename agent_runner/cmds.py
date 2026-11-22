@@ -35,7 +35,7 @@ from agent_runner.status import (follow, move_since_mark, progress_line, release
 from agent_runner.status import as_event, events_file, read_events
 from agent_runner.state import EV_RUN_UP
 from agent_runner.feed import (board, board_feed, board_held, control_late_files, control_new, control_new_runner,
-    feed_lost_note, FORWARD_FLAG, forward_late, read_ask_file, SID_RE)
+    FORWARD_FLAG, forward_late_files, read_ask_file, SID_RE)
 from agent_runner.loop import drop_session_env, finish, send_key, session_env_masks
 
 
@@ -791,8 +791,9 @@ def cmd_control(argv: list[str], prog: str = f'{RUNNER} control') -> int:
     if a.ask_file:
         a.ask = read_ask_file(a.ask_file) or a.ask
     if a.forward and a.feed_sid and SID_RE.fullmatch(a.feed_sid):
-        a.ask = forward_late(a.n or free_control_number(), a.feed_sid)
-        a.feed_sid = '' if a.ask == feed_lost_note() else a.feed_sid
+        a.ask, got, done = forward_late_files(a.n or free_control_number(), a.feed_sid)
+        a.file = [*a.file, *(i for i in got if i not in a.file)]  # BUG1: a photo sent alone
+        a.feed_sid = '' if done else a.feed_sid
     n = a.n or free_control_number()
     if pid := control_live(n):
         print(f'control {n} already runs (pid {pid}): {shown_cmd()} control starts another', file=sys.stderr)
