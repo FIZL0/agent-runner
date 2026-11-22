@@ -17,4 +17,8 @@ has(text, r'terminal on this machine, named by its hostname', 'names the machine
 has(text, r'plain\s+command, without the `!`', 'gives the plain command')
 has(text, r'--password-stdin', 'offers the non-interactive form')
 
+print('C22: the person gets the run page link to watch the run, never an attach line')
+has(text, r'`run page:` link status prints,\s+never an `attach` line', 'the brief gives the run page link')
+check('attach s' not in text, 'the brief names no attach sN line')
+
 raise SystemExit(1 if FAILED else print('\nall checks passed'))

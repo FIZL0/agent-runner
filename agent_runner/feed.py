@@ -161,8 +161,8 @@ def feed_forget_session() -> None:
 
 
 def board_argv(sess: str, root: Path, cmd: str) -> list[str]:
-    """Open the board window in the background session `sess`, without taking focus."""
-    return ['tmux', 'new-window', '-d', '-t', f'={sess}:', '-n', window('board'), '-c', str(root),
+    """Open the runner feed's window in the background session `sess`, without taking focus."""
+    return ['tmux', 'new-window', '-d', '-t', f'={sess}:', '-n', window('runner'), '-c', str(root),
             '-P', '-F', '#{pane_id}', cmd]
 
 
@@ -235,17 +235,18 @@ def keep_board(sess: str) -> None:
                 tmux('set-option', '-p', '-t', pane, BOARD_TAG, kind)
             if not said or r.returncode:
                 what = f'the runner feed, "{feed_name()}" in the apps too' if kind.startswith('feed') else 'the text feed'
-                log(f'board: window {window("board")} is up with {what} ({shown_cmd()} attach board)' if not r.returncode
+                log(f'board: window {window("runner")} is up with {what} ({shown_cmd()} attach board)' if not r.returncode
                     else f'board: tmux could not open it: {r.stderr.strip()}')
             said = True
         time.sleep(BOARD_EVERY)
 
 
 def start_board() -> None:
-    """The board window, in the tmux session the run is in (the background one, or yours): with `[run] remote`
-    it is the runner feed, which must be there however the run was started."""
+    """The runner feed's window, in the tmux session the run is in (the background one, or yours), with
+    `[run] remote`: the feed must be there however the run was started. C22: no window without the feed (the
+    text board is gone: `agent-runner ui` and the run page show what lands)."""
     here = os.environ.get('TMUX_PANE', '')
-    if not (isinstance(MUX, TmuxMux) and here):
+    if not (isinstance(MUX, TmuxMux) and here and feed_on()):
         return
     if sess := tmux('display-message', '-p', '-t', here, '#{session_name}').stdout.strip():
         threading.Thread(target=keep_board, args=(sess,), name='board', daemon=True).start()

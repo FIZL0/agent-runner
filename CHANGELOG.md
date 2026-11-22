@@ -4,6 +4,10 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- The board window is gone: `agent-runner ui` and the run page show what lands and what needs you. A tmux run
+  opens a window only for the runner feed (`[run] remote`), now named `runner-<repo>` (`attach board` still
+  finds it). Control sessions give the `run page:` link `status` prints to watch the slots, the queue or the
+  log, never an `attach` line, and hand over no page of their own for what the run page shows (C22).
 - `[run] issues_watch` (off by default): a run reads the repository's open GitHub issues (`gh issue list`, on
   the `ci_watch` cadence) and files one task per new issue, its number, title and URL on the line and its body
   in the long form; a list of labels (`["bug", "runner"]`) takes only issues with one of them. Each issue is

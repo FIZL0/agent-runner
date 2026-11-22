@@ -1075,7 +1075,7 @@ def run(argv: list[str], prog: str) -> int:
     rc_sweep_start()  # B12: end the feed or control server an earlier run left on Remote Control
     start_control()  # c1 beside the run ([run] control) unless [run] remote, where the control server stands in
     start_control_server()
-    start_board()  # the background run's board window: what lands and needs you, no tokens; reopened if closed
+    start_board()  # the runner feed's window ([run] remote); reopened if closed
     from agent_runner.web import start_web
     start_web()  # F66: the run page on this machine ([run] web), its address in the run log
 

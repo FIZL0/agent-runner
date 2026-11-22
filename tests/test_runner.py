@@ -2102,8 +2102,9 @@ def test_short_titles_and_since(repo: Path):
         check(f'{R.RUNNER} control' in R.board_header() or 'claude.ai/code' in R.board_header(),
               'its header says where to steer from', R.board_header())
         argv = R.board_argv('ar-demo', repo, 'agent-runner since --board')
-        check(argv[:5] == ['tmux', 'new-window', '-d', '-t', '=ar-demo:'] and R.window('board') in argv,
-              'the board opens in the background session without taking focus', argv)
+        check(argv[:5] == ['tmux', 'new-window', '-d', '-t', '=ar-demo:'] and R.window('runner') in argv
+              and R.window('board') not in argv,
+              'C22: the runner feed opens in the background session without taking focus, no board window', argv)
 
         # the runner feed: with [run] remote the board is a lean Haiku session in the apps too. The feed lives in
         # the board's tmux window, so a tmux machine is stood in for (Windows has no board, and no feed)
@@ -2193,8 +2194,12 @@ def test_short_titles_and_since(repo: Path):
         with mock.patch.object(R, 'MUX', R.TmuxMux()), mock.patch.dict(os.environ, {'TMUX_PANE': '%1'}), \
                 mock.patch.object(R, 'tmux', lambda *a, **k: subprocess.CompletedProcess(a, 0, 'mine\n', '')), \
                 mock.patch.object(R.threading, 'Thread', board_thread):
-            R.start_board()
-        eq(started, [('mine',)], 'the board opens in a run in your own tmux session too')
+            with mock.patch.object(R, 'feed_on', lambda: False):
+                R.start_board()
+            eq(started, [], 'C22: no board window without the runner feed (agent-runner ui replaces it)')
+            with mock.patch.object(R, 'feed_on', lambda: True):
+                R.start_board()
+        eq(started, [('mine',)], 'the runner feed opens in a run in your own tmux session too')
         ca = R.control_argv(3, 'sid', False, ask='fix the login flicker')
         check(ca[1].startswith('fix the login flicker'), 'control --ask: the handed-on request is its first message')
         ca = R.control_argv(3, 'sid', False, ask='why is this red?', images=['/t/a.png', '/t/b b.png'])
