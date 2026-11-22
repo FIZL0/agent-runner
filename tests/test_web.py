@@ -536,7 +536,7 @@ async function run(order,fail){
     send:(tid,where,other)=>{out.sent.push(`${tid} ${where} ${other}`);return new Promise(r=>waits.push(r))},
     fetch:()=>Promise.resolve({status:[],queue:Q(fail?order:'BCDA')})});
   for(let n=0;n<3;n++){m.press(1);out.seen.push([ids(S.snap.queue),S.cur[3],out.sent.length])}
-  S.snap=m.snap({status:['new'],queue:Q(order)});  // a stale snapshot while moves are pending
+  S.snap=m.snap({status:['new'],queue:Q(order+'E')});  // a stale snapshot, with a new task, while moves pend
   out.during=[ids(S.snap.queue),S.snap.status[0]];
   for(let n=0;n<3;n++){await tick();if(waits[n])waits[n](fail&&n===0?{ok:false,out:'no such task'}:{ok:true})}
   await m.idle();await tick();await tick();
@@ -566,7 +566,8 @@ def test_term_moves(tmp: Path) -> None:
     ok, bad = json.loads(r.stdout or '[{}, {}]')
     eq(ok.get('seen'), [['BACD', 1, 0], ['BCAD', 2, 0], ['BCDA', 3, 0]],
        'three fast J presses: order and selection change before any move is sent or answered')
-    eq(ok.get('during'), ['BCDA', 'new'], 'a snapshot while moves are pending keeps the local order, the rest new')
+    eq(ok.get('during'), ['BCDAE', 'new'],
+       'a snapshot while moves are pending keeps the local order; its new task and the rest are taken')
     eq(ok.get('sent'), ['A after B', 'A after C', 'A after D'], 'the three moves are sent in order')
     eq(ok.get('toasts'), [], 'no toast per press')
     eq(ok.get('after'), ['BCDA', 3, 0], 'once drained the server order is taken, the selection on the task')

@@ -279,12 +279,12 @@ function queueMoves(o){
   function settle(){
     if(--pending)return;
     failed=false;
-    o.fetch().then(s=>{if(pending||!s||!s.queue)return;o.S.snap=s;follow();o.render()});
+    o.fetch().then(s=>{if(pending||!s||!s.queue)return;o.S.snap=s;follow();o.render()}).catch(()=>{});
   }
   function follow(){const i=o.S.snap.queue.findIndex(t=>t.id===last);if(i>=0)o.S.cur[3]=i}
   function press(step){
-    const q=o.S.snap.queue,i=o.S.cur[3],it=q[i];if(!it||it.newtask)return false;
-    if(i+step<0||i+step>=q.length||q[i+step].newtask){o.toast(`${it.id} is already ${step>0?'last':'first'}`);return false}
+    const q=o.S.snap.queue,i=o.S.cur[3],it=q[i];if(!it)return false;
+    if(i+step<0||i+step>=q.length){o.toast(`${it.id} is already ${step>0?'last':'first'}`);return false}
     const other=q[i+step],nq=q.slice();nq[i]=other;nq[i+step]=it;
     o.S.snap={...o.S.snap,queue:nq};o.S.cur[3]=i+step;last=it.id;pending++;o.render();
     const where=step>0?'after':'before';
@@ -293,7 +293,13 @@ function queueMoves(o){
     return true;
   }
   /* a snapshot from the server: while moves are pending it keeps the local queue order */
-  function snap(s){return pending&&s&&s.queue?{...s,queue:o.S.snap.queue}:s}
+  function snap(s){
+    if(!pending||!s||!s.queue)return s;
+    /* the server's tasks, the ones the page also has laid out in the local order; new ones keep their place */
+    const local=o.S.snap.queue.map(t=>t.id),has=new Set(s.queue.map(t=>t.id)),byId=new Map(s.queue.map(t=>[t.id,t]));
+    const known=local.filter(id=>has.has(id)).map(id=>byId.get(id));let k=0;
+    return{...s,queue:s.queue.map(t=>local.includes(t.id)?known[k++]:t)};
+  }
   return{press,snap,pending:()=>pending,idle:()=>chain};
 }
 if(typeof module!=='undefined')module.exports={queueMoves};
