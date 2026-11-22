@@ -89,6 +89,15 @@ def page_copy_html(snap: dict) -> str:
             rows.append(f'<div class="row"><span class="r">c1</span><span>the project\'s chat</span>'
                         f'{_a(chat, "chat") or "<span class=d>" + _h(s.get("state")) + "</span>"}</div>')
             continue
+        if re.fullmatch(r'c\d+', str(s.get('name') or '')):  # F73: another control session, not a slot
+            rows.append(f'<div class="row"><span class="r">{_h(s.get("name"))}</span><span>{_h(s.get("title"))}'
+                        f'</span>{_a(s.get("link", ""), "session") or "<span class=d>" + _h(s.get("state")) + "</span>"}'
+                        '</div>')
+            continue
+        if s.get('state') == 'idle':
+            rows.append(f'<div class="row"><span class="d">{_h(s.get("name"))}</span>'
+                        f'<span class="d">{_h(s.get("name"))} is idle: nothing running</span></div>')
+            continue
         mins = f'{s["minutes"]}m ' if s.get('minutes') is not None else ''
         term = _a(s.get('link', ''), 'terminal') or '<span class="d">open it from the run page to watch here</span>'
         rows.append(f'<div class="row"><span class="y">{_h(s.get("name"))}</span><span class="id">{_h(s.get("task"))}'
