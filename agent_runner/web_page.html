@@ -306,7 +306,7 @@ document.addEventListener('keydown',e=>{
   else if(k==='Enter'){S.focusMain=true}
   else if(k===']'||k==='['){const [t,ts,key]=curTab();S.tab[key]=ts[(ts.indexOf(t)+(k===']'?1:ts.length-1))%ts.length];S.focusMain=true}
   else if(k==='t'){if(S.panel!==2){S.panel=2;S.cur[2]=Math.min(1,S.snap.sessions.length-1)}setTab('terminal');return e.preventDefault()}
-  else if(k==='c'){S.panel=2;S.cur[2]=0;S.tab['2:c1']='chat';S.focusMain=true;render();setTimeout(focusInput,0);return e.preventDefault()}
+  else if(k==='c'){S.panel=2;S.cur[2]=Math.max(0,S.snap.sessions.findIndex(s=>s.name==='c1'));S.tab['2:c1']='chat';S.focusMain=true;render();setTimeout(focusInput,0);return e.preventDefault()}
   else if(k==='R'){release();return e.preventDefault()}
   else if(k==='?'){help()}
   else if(k==='i'){if(S.panel===4)setTab('answer');else render();setTimeout(focusInput,0);return e.preventDefault()}

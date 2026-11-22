@@ -80,9 +80,6 @@ def test_server(tmp: Path) -> None:
         eq([q['id'] for q in snap['queue']], ['F1', 'B2'], 'the snapshot carries the queue')
         eq(snap['status'][0], 'no run is up', 'and the status lines')
 
-        code, body = get(f'{base}/snapshot', {'X-Token': token})
-        eq(code, 200, 'the token may come as an X-Token header')
-
         with urllib.request.urlopen(f'{base}/events?t={token}', timeout=10) as r:
             eq(r.headers.get('Content-Type'), 'text/event-stream', 'events are server-sent events')
             first = r.readline().decode()
@@ -144,16 +141,18 @@ def test_start(tmp: Path) -> None:
     with mock.patch.dict(W.os.environ, {'AGENT_RUNNER_NO_WEB': ''}), mock.patch.dict(S.C.run, {'web': False}):
         eq(W.start_web(), None, '[run] web = false serves nothing')
     eq(W.page_line(), '', 'and status prints no address')
-    with mock.patch.dict(W.os.environ, {'AGENT_RUNNER_NO_WEB': ''}), \
+    with mock.patch.dict(W.os.environ, {'AGENT_RUNNER_NO_WEB': ''}), mock.patch.object(W, 'lan_ip', lambda: '10.0.0.5'), \
             mock.patch.dict(S.C.run, {'web': True, 'web_port': 0}), mock.patch.object(S, 'log') as lg:
         srv = W.start_web()
     try:
         check(srv is not None, 'web = true serves the page')
-        url = W.url_file().read_text(encoding='utf-8').strip()
-        check(url.endswith(f':{srv.server_address[1]}/?t={W.web_token()}'), 'its address carries the token', url)
+        url, by_ip = W.url_file().read_text(encoding='utf-8').split()
+        tail = f':{srv.server_address[1]}/?t={W.web_token()}'
+        check(url.endswith(tail), 'its address carries the token', url)
+        eq(by_ip, f'http://10.0.0.5{tail}', 'and its LAN address, for a phone that cannot resolve the hostname')
         check(any(url in str(c) for c in lg.call_args_list), 'the run log has the address', lg.call_args_list)
         with mock.patch.object(S, 'run_up', return_value=True):
-            eq(W.page_line(), f'run page: {url}', 'status prints it while the run is up')
+            eq(W.page_line(), f'run page: {url} (or {by_ip})', 'status prints it while the run is up')
         eq(U.SEND[0], W.send_c1, "the run's chat reaches c1 by its tag, not the runner's own pane")
     finally:
         srv.stop()

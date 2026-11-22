@@ -67,6 +67,23 @@ def page_url(port: int, token: str, host: str = '') -> str:
     return f'http://{host or socket.gethostname()}:{port}/?t={token}'
 
 
+def lan_ip() -> str:
+    """This machine's address on the network it routes out of ('' if none): a phone that cannot resolve the
+    bare hostname still reaches this. No packet is sent (a UDP connect only picks the route)."""
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.connect(('192.0.2.1', 9))
+            ip = s.getsockname()[0]
+        return '' if ip.startswith('127.') else ip
+    except OSError:
+        return ''
+
+
+def page_urls(port: int, token: str) -> list[str]:
+    """The page's addresses: by hostname, then by LAN address when there is one."""
+    return [page_url(port, token)] + ([page_url(port, token, ip)] if (ip := lan_ip()) else [])
+
+
 def url_file() -> Path:
     return S.C.notes('web.url')
 
@@ -74,8 +91,8 @@ def url_file() -> Path:
 def page_line() -> str:
     """`run page: URL` while a run serves the page (what `status` prints), else ''."""
     try:
-        if S.run_up() and (u := url_file().read_text(encoding='utf-8').strip()):
-            return f'run page: {u}'
+        if S.run_up() and (us := url_file().read_text(encoding='utf-8').split()):
+            return f'run page: {us[0]}' + (f' (or {us[1]})' if len(us) > 1 else '')
     except OSError:
         pass
     return ''
@@ -150,10 +167,16 @@ class Terminals:
             else:
                 if p and p[0].poll() is None:
                     p[0].terminate()
-                used = {v[1] for v in self.procs.values()}
+                self.procs.pop(name, None)
+                used = {v[1] for v in self.procs.values() if v[0].poll() is None}
                 port = next(x for x in range(self.port + 1, self.port + 200) if x not in used)
                 proc = sp.Popen(self.argv(name, pane, port), stdin=sp.DEVNULL, stdout=sp.DEVNULL,
-                                stderr=sp.DEVNULL, start_new_session=True)
+                                stderr=sp.PIPE, start_new_session=True)
+                try:  # one that cannot start (its port taken) ends at once: say so, not a dead frame
+                    err = proc.communicate(timeout=0.8)[1].decode(errors='replace').strip()
+                    return {'ok': False, 'out': f'ttyd for {name} ended at once (port {port}): {err[-300:]}'}
+                except sp.TimeoutExpired:
+                    pass
                 self.procs[name] = (proc, port, pane)
         return {'ok': True, 'port': port, 'path': f'/t/{self.token}/{name}/'}
 
@@ -195,7 +218,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def allowed(self) -> bool:
         q = parse_qs(urlsplit(self.path).query)
-        got = self.headers.get('X-Token') or (q.get('t') or [''])[0]
+        got = (q.get('t') or [''])[0]
         return bool(got) and hmac.compare_digest(got.encode(), self.server.token.encode())
 
     def send(self, code: int, body: bytes | str, ctype: str = 'application/json; charset=utf-8') -> None:
@@ -302,7 +325,7 @@ def start_web() -> WebServer | None:
     except OSError as e:
         S.log(f'run page: cannot serve on port {port} ({e}); set [run] web_port, or web = false')
         return None
-    url = page_url(srv.server_address[1], srv.token)
-    url_file().write_text(url + '\n', encoding='utf-8')
-    S.log(f'run page: {url}' + ('' if shutil.which('ttyd') else ' (no terminal tab: ttyd is not installed)'))
+    urls = page_urls(srv.server_address[1], srv.token)
+    url_file().write_text('\n'.join(urls) + '\n', encoding='utf-8')
+    S.log(f'run page: {" or ".join(urls)}' + ('' if shutil.which('ttyd') else ' (no terminal tab: ttyd is not installed)'))
     return srv
