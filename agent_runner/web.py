@@ -2,7 +2,10 @@
 `[run] web_port` (8770), bound to every interface so a phone on the LAN or Tailscale reaches it.
 
     GET  /?t=TOKEN               F79: the page (web_page.html), the run app: a chat app over F74's model, light
-                                 and dark by the browser's setting, laid out for a phone and a desktop
+                                 and dark by the browser's setting, laid out for a phone and a desktop; F81: it
+                                 opens /term instead when this browser last chose it, or `[ui] web` = "terminal"
+    GET  /term?t=TOKEN           F81: the terminal view (web_term.html, F75's page) over the same model, in
+                                 `[ui] theme`; its App view (T) and the run app's Terminal view switch between them
     GET  /snapshot?t=TOKEN       the run page model's snapshot, as JSON, with the machine's name and each
                                  concept's options (`run_snapshot`)
     GET  /events?t=TOKEN         the same snapshot over server-sent events, sent again whenever it changes
@@ -42,6 +45,7 @@ from agent_runner import state as S
 from agent_runner import ui_model as U
 
 PAGE = Path(__file__).with_name('web_page.html')
+TERM = Path(__file__).with_name('web_term.html')  # F81: the terminal view
 TICK = 2.0  # s between snapshots the events stream compares
 PING = 15.0  # s of no change before the stream sends a keep-alive comment
 TTYD_INSTALL = ('ttyd is not installed, so the terminal tab cannot show the pane. Install it on this machine '
@@ -263,10 +267,33 @@ class Snapshots:
             return self.last
 
 
-def page_html() -> bytes:
+def web_view() -> str:
+    """F81: `[ui] web`, the view the run page's link opens: 'app' or 'terminal' ('app' with no project)."""
+    try:
+        v = S.C.raw.get('ui', {}).get('web', 'app')
+    except Exception:  # noqa: BLE001 - no project initialised: the default
+        return 'app'
+    return v if v in ('app', 'terminal') else 'app'
+
+
+def page_html(view: str | None = None) -> bytes:
     """F79: the run app. Its light and dark looks follow the browser's setting (`[ui] theme` is the terminal
-    UI's), so the file is served as it is."""
-    return PAGE.read_bytes()
+    UI's). F81: `[ui] web` (or `view`) goes into WEB_VIEW, for a browser that never chose a view."""
+    return PAGE.read_text(encoding='utf-8').replace(
+        "/*WEB_VIEW*/'app'", json.dumps(view or web_view()), 1).encode('utf-8')
+
+
+def term_html(name: str | None = None) -> bytes:
+    """F81: the terminal view (web_term.html, F75's page), in theme `name` (default `[ui] theme`): its tokens in
+    style#theme, and every theme's in THEMES for the page's picker (t), one table with the terminal UI."""
+    from agent_runner import theme as TH
+    name = TH.checked(name or TH.configured())
+    themes = TH.all_resolved()
+    css = ':root{' + ';'.join(f'--{k}:{v}' for k, v in themes[name].items() if k != 'mode') + \
+        f';color-scheme:{"light" if themes[name]["mode"] == "light" else "dark"}}}'
+    data = json.dumps({'default': name, 'themes': themes}).replace('</', '<\\/')
+    page = TERM.read_text(encoding='utf-8').replace('/*THEME_CSS*/', css, 1)
+    return page.replace('/*THEMES*/{"default":"ryha","themes":{}}', data, 1).encode('utf-8')
 
 
 _OPTIONS: dict[str, tuple[float, list]] = {}  # a concept copy's path: (its mtime, its options)
@@ -365,6 +392,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.refuse()
         if path in ('/', '/index.html'):
             return self.send(200, page_html(), 'text/html; charset=utf-8')
+        if path == '/term':  # not /term/: the page's calls are relative to /
+            return self.send(200, term_html(), 'text/html; charset=utf-8')
         if path == '/snapshot':
             return self.send(200, self.server.snaps.get())
         if path == '/events':

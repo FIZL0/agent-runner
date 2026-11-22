@@ -438,6 +438,70 @@ def test_diff(tmp: Path) -> None:
         srv.stop()
 
 
+TERM_DRIVER = """const m=require(process.argv[2]);
+const cases=JSON.parse(require('fs').readFileSync(0,'utf8'));
+process.stdout.write(JSON.stringify(cases.map(([fn,...a])=>m[fn](...a))));
+"""
+
+
+def test_views(tmp: Path) -> None:
+    """F81: /term serves the terminal view (F75's page, in [ui] theme) on the same server; the run app has a
+    Terminal view switch in its sidebar (the drawer on a phone), the terminal view an App view link and the key T;
+    the browser remembers the choice, and [ui] web picks the view for a browser that never chose."""
+    repo = fake_repo(tmp)
+    token = W.web_token()
+    srv = W.serve(token, 0, '127.0.0.1', snap=lambda: {})
+    base = f'http://127.0.0.1:{srv.server_address[1]}'
+    try:
+        code, body = get(f'{base}/term?t={token}')
+        term = body.decode()
+        eq(code, 200, '/term is served')
+        eq(get(f'{base}/term')[0], 403, 'and only with the token')
+        app = get(f'{base}/?t={token}')[1].decode()
+        with mock.patch.dict(S.C.raw['ui'], {'web': 'terminal'}):
+            eq(W.web_view(), 'terminal', '[ui] web = "terminal" is read')
+            app_t = get(f'{base}/?t={token}')[1].decode()
+    finally:
+        srv.stop()
+    for part in ('<div class="top">', 'id="appview"', 'data-viewsw="app"', '<b class="pk">T</b> App view',
+                 "if(k==='T')return[['appview']]", '<span class="b">T</span>      App view',
+                 "VIEW_KEY='agent-runner.view'", "localStorage.setItem(VIEW_KEY,v)", 'Keybindings'):
+        check(part in term, f'the terminal view has {part}')
+    check('/*THEME_CSS*/' not in term and '"themes": {' in term, 'the terminal view carries [ui] theme and every theme')
+    for part in ('data-viewsw="terminal"', '${I.term}Terminal view', 'href="term${esc(location.search)}"',
+                 "VIEW_KEY='agent-runner.view'", "localStorage.setItem(VIEW_KEY,x.dataset.viewsw)",
+                 "(v||WEB_VIEW)==='terminal')location.replace('term'+location.search)"):
+        check(part in app, f'the run app has {part}')
+    check('const WEB_VIEW="app"' in app, 'by default the link opens the run app')
+    check('const WEB_VIEW="terminal"' in app_t, '[ui] web = "terminal": a browser that never chose opens /term')
+    # the sidebar's switch sits in side(), which draws the drawer too
+    side = app.split('function side(){', 1)[1].split('\nfunction ', 1)[0]
+    check('data-viewsw="terminal"' in side, 'the switch is in the sidebar (and so the drawer)')
+    (repo / 'runner.toml').write_text('[ui]\nweb = "tabs"\n', encoding='utf-8')
+    try:
+        CF.Config(repo)
+        check(False, '[ui] web = "tabs" is refused')
+    except SystemExit as e:
+        check('[ui] web must be one of app, terminal' in str(e), '[ui] web is checked', str(e))
+    if not shutil.which('node'):
+        print('  (no node here: the terminal view key test is skipped)')
+        return
+    js = W.TERM.read_text(encoding='utf-8').split('<script id="keys">', 1)[1].split('</script>', 1)[0]
+    with tempfile.TemporaryDirectory() as d:
+        (Path(d) / 'keys.js').write_text(js, encoding='utf-8')
+        (Path(d) / 'driver.js').write_text(TERM_DRIVER, encoding='utf-8')
+        ctx = {'panel': 3, 'focusMain': False, 'tab': '', 'tabs': [], 'it': {}, 'typing': False}
+        ev = lambda k: {'key': k, 'ctrl': False, 'meta': False, 'shift': False, 'alt': False}  # noqa: E731
+        cases = [['route', ctx, ev('T')], ['route', ctx, ev('t')], ['route', dict(ctx, typing=True), ev('T')]]
+        r = subprocess.run(['node', str(Path(d) / 'driver.js'), str(Path(d) / 'keys.js')], input=json.dumps(cases),
+                           capture_output=True, text=True, timeout=60)
+    check(r.returncode == 0, 'node runs the terminal view script', r.stderr[-800:])
+    got = json.loads(r.stdout or '[]') or [None] * 3
+    eq(got[0], [['appview']], 'T: App view')
+    eq(got[1], [['theme']], 't: the theme picker')
+    eq(got[2], [], 'T while typing is a letter')
+
+
 def in_tmp(f):
     def go():
         with tempfile.TemporaryDirectory() as d:
@@ -449,4 +513,4 @@ def in_tmp(f):
 if __name__ == '__main__':
     raise SystemExit(report([in_tmp(test_server), in_tmp(test_real_action), in_tmp(test_start), in_tmp(test_upload),
                            in_tmp(test_control_rows), in_tmp(test_feed_pane_concept), in_tmp(test_page),
-                           in_tmp(test_logic), in_tmp(test_extras), in_tmp(test_diff)]))
+                           in_tmp(test_logic), in_tmp(test_extras), in_tmp(test_diff), in_tmp(test_views)]))
