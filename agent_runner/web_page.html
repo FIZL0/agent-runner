@@ -4,6 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>agent-runner</title>
+<script>
+/* F81: the view this browser last chose (localStorage), else [ui] web (the server writes it into WEB_VIEW): on
+   'terminal' the link opens the terminal-style page (/term) instead. */
+const WEB_VIEW=/*WEB_VIEW*/'app', VIEW_KEY='agent-runner.view';
+(()=>{let v='';try{v=localStorage.getItem(VIEW_KEY)||''}catch(e){}
+  if((v||WEB_VIEW)==='terminal')location.replace('term'+location.search)})();
+</script>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Source+Serif+4:opsz,wght@8..60,400;8..60,500;8..60,600&display=swap">
 <style>
 /* F79: the run app, a calm chat app over F74's model (the snapshot, the feeds, the actions). Warm off-white
@@ -64,6 +71,8 @@ a{color:var(--accent)}
 .me{margin-top:auto;display:flex;align-items:center;gap:10px;padding:10px 8px 4px;border-top:1px solid var(--line);font-size:13px;color:var(--muted)}
 .me .av{width:28px;height:28px;border-radius:50%;background:var(--fg);color:var(--bg);display:grid;place-items:center;font:600 12px var(--sans);flex:none}
 .me .sub{font-size:11px}
+.viewsw{display:flex;align-items:center;gap:8px;padding:6px 8px 2px;font-size:12px;color:var(--muted);text-decoration:none}
+.viewsw:hover{color:var(--fg)} .viewsw svg{width:15px;height:15px}
 
 /* the main column */
 .main{display:flex;flex-direction:column;min-height:0;min-width:0}
@@ -277,6 +286,7 @@ const I={
  dot:ic('<circle cx="12" cy="12" r="2"/>'),
  file:ic('<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/>'),
  ask:ic('<circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6v.6M12 17v.5"/>'),
+ term:ic('<rect x="3" y="4.5" width="18" height="15" rx="2"/><path d="M7 9.5l3 2.5-3 2.5M12.5 15H17"/>'),
  ext:ic('<path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/>')};
 const LOGLINE_ICON={ok:'check',bad:'alert',go:'play','':'dot'};
 
@@ -337,7 +347,8 @@ function side(){
    <div class="nav">${nav.map(([k,l])=>`<button class="ni ${!S.thread&&S.view===k?'on':''}" data-view="${k}">${I[k]}${l}${k==='home'&&needs?`<span class="n">${needs}</span>`:''}</button>`).join('')}</div>
    <div class="shead">Chats</div>${cs.length?cs.map(s=>`<button class="thread ${S.thread===s.name?'on':''}" data-thread="${esc(s.name)}">${s.state==='live'?'':'<span class="off" title="not running"></span>'}<span class="t">${esc(chatName(s))}</span></button>`).join(''):'<div class="none">No chats yet</div>'}
    <div class="shead">Agents working</div>${ws.length?ws.map(s=>`<button class="thread ${S.thread===s.name?'on':''}" data-thread="${esc(s.name)}"><span class="livedot"></span><span class="t">${esc(s.title||s.task)}</span></button>`).join(''):'<div class="none">None right now</div>'}
-   <div class="me"><div class="av">${esc((S.snap.machine||'?').charAt(0).toUpperCase())}</div><div class="grow"><span class="ell">${esc(S.snap.machine||'this machine')}</span><div class="sub">${S.snap.up===false?'no run is up':`${S.snap.slots||0} slot${S.snap.slots===1?'':'s'}`}${use?` · usage ${esc(use)}`:''}</div></div></div>`;
+   <div class="me"><div class="av">${esc((S.snap.machine||'?').charAt(0).toUpperCase())}</div><div class="grow"><span class="ell">${esc(S.snap.machine||'this machine')}</span><div class="sub">${S.snap.up===false?'no run is up':`${S.snap.slots||0} slot${S.snap.slots===1?'':'s'}`}${use?` · usage ${esc(use)}`:''}</div></div></div>
+   <a class="viewsw" href="term${esc(location.search)}" data-viewsw="terminal" title="The terminal-style page; this browser remembers the choice">${I.term}Terminal view</a>`;
   $('side').classList.toggle('open',S.drawer);$('scrim').classList.toggle('on',S.drawer);
 }
 const card=(h,cls='',attr='')=>`<div class="card ${cls}" ${attr}>${h}</div>`;
@@ -493,6 +504,7 @@ async function upload(file){
 
 document.addEventListener('click',async e=>{
   const q=s=>e.target.closest(s);let x;
+  if(x=q('[data-viewsw]')){try{localStorage.setItem(VIEW_KEY,x.dataset.viewsw)}catch(err){}return}  // F81: the link goes on
   if(q('[data-menu]')){S.drawer=true;render();return}
   if(q('#scrim')){S.drawer=false;render();return}
   if(x=q('[data-view]'))return goView(x.dataset.view);

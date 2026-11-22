@@ -225,6 +225,13 @@ _On screen_: terminal
 _In code_: terminal_mode, capture, keys
 _Avoid_: console
 
+**Terminal-style page**:
+The Run page on the web drawn like the terminal UI (numbered panels, keys), beside the run app; the run app's 'Terminal view' switch opens it and its 'App view' goes back
+_Said_: terminal-style web page
+_On screen_: Terminal view (the switch), App view (back)
+_In code_: web_term.html, /term, term_html, [ui] web = "terminal"
+_Avoid_: old page, classic view
+
 **Direct edit**:
 Changing a queued task's fields (what, kind, priority, files, after) on the Run page, each field with its own key, written straight to the plan
 _Said_: direct edit

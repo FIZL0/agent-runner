@@ -44,6 +44,7 @@ from agent_runner import plat
 
 HERE = Path(__file__).resolve().parent
 CLONE_ENTRY = HERE.parent / 'run'  # `./run` in a clone; an installed package has no such file
+WEB_VIEWS = ('app', 'terminal')  # [ui] web: the run app, or the terminal-style page
 
 
 def runner_cmd() -> list[str]:
@@ -245,8 +246,10 @@ DEFAULTS: dict = {
     'ui': {
         'theme': 'ryha',        # the Run page's colours, in the terminal (`ui`) and on the web: ryha (black, red
                                 # accent), omarchy (the current Omarchy theme's colors.toml, else ryha), terminal
-                                # (the terminal's own 16 colours and background), light; the web page's T picks
-                                # another for that browser
+                                # (the terminal's own 16 colours and background), light; on the web the
+                                # terminal-style page's t picks another for that browser
+        'web': 'app',           # the view the run page's link opens: "app" (the run app) or "terminal" (the
+                                # terminal-style page, /term); a browser that switched views opens its last one
     },
 }
 
@@ -564,6 +567,9 @@ class Config:
         if self.raw['ui']['theme'] not in THEMES:
             raise SystemExit(f"agent-runner: [ui] theme must be one of {', '.join(THEMES)}, not "
                              f"{self.raw['ui']['theme']!r}")
+        if self.raw['ui']['web'] not in WEB_VIEWS:
+            raise SystemExit(f"agent-runner: [ui] web must be one of {', '.join(WEB_VIEWS)}, not "
+                             f"{self.raw['ui']['web']!r}")
         if self.run['comment_policy'] not in ('normal', 'minimal'):
             raise SystemExit("agent-runner: [run] comment_policy must be 'normal' or 'minimal'")
         self.run['backend'] = backend  # settled here, not a setting: `slots.backend()` reads it

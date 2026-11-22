@@ -234,6 +234,12 @@ drawer) and a desktop. It follows the browser's light or dark setting; `[ui] the
 
 The app does not open slots in the Claude apps; `agent-runner ui` still does (see `[run] sessions` above).
 
+- **Terminal-style page.** The same server also serves the terminal-style page at `/term?t=TOKEN`: the run page
+  drawn like `agent-runner ui` (numbered panels, a key for everything), in `[ui] theme` (its `t` picks another
+  for that browser). The run app's sidebar (the drawer on a phone) has a Terminal view switch; the page has
+  App view in its top bar and the key T. The browser remembers the last view, so the link opens it again;
+  `[ui] web` sets the view for a browser that never chose.
+
 ### status and since
 
 `agent-runner status` and `agent-runner since` name each task by a short title, the first sentence of its line
@@ -1031,6 +1037,8 @@ theme = "ryha"            # the terminal UI's (`ui`) colours: ryha (black, red a
                           # (~/.config/omarchy/current/theme/colors.toml, else ryha), terminal (the terminal's own
                           # 16 colours and background), light. The run app ignores it: it follows the browser's
                           # light or dark setting
+web = "app"               # the view the run app's link opens: "app" (the run app) or "terminal" (the terminal-style
+                          # page, /term); a browser that switched views opens its last one (see The run app)
 
 [run]
 test = ""                 # the gate, run by `done` and on every merge, e.g. "make test"
