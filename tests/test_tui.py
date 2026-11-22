@@ -151,7 +151,9 @@ def test_keys() -> None:
     p.key('DOWN')
     eq(p.cur[2], 2, 'j and Down move the cursor')
     p.key('j')
-    eq(p.cur[2], 2, 'the cursor stops at the last row')
+    p.key('j')
+    eq(p.cur[2], 3, 'the cursor stops at the last row (s3, idle)')
+    p.key('k')
     p.key('k')
     eq(p.cur[2], 1, 'k moves it up')
     p.key('ENTER')
@@ -274,6 +276,51 @@ def test_colours() -> None:
     eq((T.key_name(c, c.KEY_UP), T.key_name(c, 'j')), ('UP', 'j'), 'curses keys get their names')
 
 
+def test_row_ground_and_fill() -> None:
+    """B112: an unfocused panel's selected row carries the row background in every cell, a full redraw writes
+    every cell, and Sessions lists an idle slot."""
+    c = FakeCurses()
+    attrs = T.curses_attrs(c)
+    bg = lambda a: c.pairs[(a & 0xff00) >> 8][1]  # noqa: E731 - the background of a cell's colour pair
+    p, win = T.RunPage(SNAP, get_snap=lambda: SNAP, attrs=attrs), Win(30, 100)
+    p.key('3')  # Sessions is unfocused; its selected row is c1
+    p.draw(win)
+    row = next(y for y, l in enumerate(win.lines()) if ' c1 control session' in l[:36])
+    cells = range(1, 35)  # inside the box's edges, 36 wide
+    eq([x for x in cells if bg(win.colour[row][x]) != 235], [], 'every cell of the unfocused selected row is '
+       'on #262626 (235)')
+    check(c.pairs[(win.colour[row][2] & 0xff00) >> 8][0] == 203, 'its id keeps its colour (red c1)')
+    title = win.lines()[row].index('control')
+    eq(c.pairs[(win.colour[row][title] & 0xff00) >> 8], (254, 235), 'its text: #e5e5e5 on #262626')
+    p.key('2')
+    p.draw(win)
+    row = next(y for y, l in enumerate(win.lines()) if ' c1 control session' in l[:36])
+    eq([x for x in cells if bg(win.colour[row][x]) != 88], [], 'focused, every cell is on the focused row\'s red')
+
+    class OldScreen(Win):  # erase that leaves the earlier screen: only what draw writes covers it
+        def erase(self):
+            if not hasattr(self, 'grid'):
+                self.grid = [['\0'] * self.w for _ in range(self.h)]
+                self.colour = [[0] * self.w for _ in range(self.h)]
+    old = OldScreen(30, 100)
+    p.draw(old)
+    eq(sum(r.count('\0') for r in old.lines()), 0, 'a full redraw writes every cell')
+    eq([(y, x) for y in range(30) for x in range(100) if not old.colour[y][x]], [],
+       'and every cell gets a theme colour (the black ground)')
+
+    names = [r['name'] for r in p.items(2)]
+    eq(names, ['c1', 's1', 's2', 's3'], 'Sessions lists every slot of the run (3 slots), the idle s3 too')
+    p.key('2')
+    p.key('j')
+    p.key('j')
+    p.key('j')
+    wide = Win(30, 100)
+    p.draw(wide)
+    check(any('│ s3 idle' in l[:36] for l in wide.lines()), 'the idle slot row says idle', wide.text())
+    eq([r['name'] for r in T.session_rows(dict(SNAP, up=False))], ['c1', 's1', 's2'],
+       'no run up: no idle slots are made up')
+
+
 def test_cli() -> None:
     from agent_runner import cli
     eq(cli.COMMANDS.get('ui'), ('tui', 'main'), '`agent-runner ui` runs the terminal Run page')
@@ -282,4 +329,5 @@ def test_cli() -> None:
 
 
 if __name__ == '__main__':
-    raise SystemExit(report([test_layout, test_keys, test_actions, test_colours, test_cli]))
+    raise SystemExit(report([test_layout, test_keys, test_actions, test_colours, test_row_ground_and_fill,
+                               test_cli]))
