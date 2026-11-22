@@ -148,9 +148,10 @@ const PANELS=[
   {n:5,name:'Concepts',items:()=>S.snap.concepts},
 ];
 const stateCol={running:'y',merging:'m',live:'g',off:'d'};
+const isCtl=it=>!!it&&/^c\d+$/.test(it.name||'');  /* F73: a control session's row (c1, c6), not a slot's */
 function rowHTML(p,it){
   if(p===1){const col=it.k==='log'?'d':it.k==='rel'?'m':/^run up/.test(it.t)?'g':/^no run/.test(it.t)?'r':/^usage/.test(it.t)?'y':'c';return `<span class="${col}">●</span><span>${esc(it.t)}</span>`}
-  if(p===2){if(it.name==='c1')return `<span class="r">c1</span><span>${esc(it.title)} <span class="d">${esc(it.state)}</span></span>`;
+  if(p===2){if(isCtl(it))return `<span class="r">${esc(it.name)}</span><span>${esc(it.title)} <span class="d">${esc(it.state)}</span></span>`;
     return `<span class="${stateCol[it.state]||'d'}">${esc(it.name)}</span><span><span class="c">${esc(it.task)}</span> ${esc(it.title)} <span class="d">${it.state==='idle'?'':`${it.minutes??'?'}m `}${esc(it.state)}</span></span>`}
   if(p===3)return it.newtask?`<span class="g">+</span><span class="d">new task (n)</span>`:
     `<span class="${it.blocked?'y':'c'}">${esc(it.id)}</span><span>${esc(it.title)}${it.after&&it.after.length?` <span class="d">after ${esc(list(it.after))}</span>`:''}${it.pri!=='normal'?` <span class="r">${esc(it.pri)}</span>`:''}</span>`;
@@ -163,7 +164,7 @@ function keyOf(it){return S.panel+':'+(it?(it.id||it.name||it.k):'')}
 function tabsFor(p,it){
   if(!it)return['info'];
   if(p===1)return it.k==='rel'?['release','log']:['log','release'];
-  if(p===2)return it.name==='c1'?['chat','terminal','session']:['terminal','info','session'];
+  if(p===2)return it.name==='c1'?['chat','terminal','session']:isCtl(it)?['terminal','session']:['terminal','info','session'];
   if(p===3)return it.newtask?['direct edit','chat edit']:['direct edit','chat edit','info'];
   if(p===4)return['answer','info'];
   return['preview','pick'];
@@ -205,9 +206,10 @@ function renderMain(){
 A release waits for everything ahead of it, then runs alone, so it releases exactly what landed.
 
 <span class="btnrow"><button class="kb p" data-act="release">⏎ queue a release</button> <button class="kb" data-act="release-now">f release now, without waiting</button></span>`}
+  else if(tab==='terminal'&&it.state==='idle'&&!isCtl(it)){h=`<span class="d">${esc(it.name)} is idle: nothing running</span>`}
   else if(tab==='terminal'){pane.className='pane term';openTerm(it);h=termHTML(it)}
   else if(tab==='info'&&S.panel===2){h=`<span class="c">${esc(it.task)}</span> ${esc(it.title)}\n\n${esc(it.name)} · ${esc(it.state)} · ${it.minutes??'?'} min\nfiles ${esc(list(it.files))||'—'}`}
-  else if(tab==='session'){h=it.link?`${esc(it.name)} is a Claude Code session you can also open on its own:\n\n<a href="${esc(it.link)}" target="_blank" rel="noopener">${esc(it.link)}</a>`:it.name==='c1'?`<span class="d">c1 has no claude.ai/code link (it is not on Remote Control).</span>`:`<span class="d">${esc(it.name)} is not on Remote Control: the Claude apps list one entry per project, c1. Open it to watch and steer it there too.</span>\n\n<button class="kb p" data-act="open">⏎ open ${esc(it.name)} in the Claude apps</button>`}
+  else if(tab==='session'){h=it.link?`${esc(it.name)} is a Claude Code session you can also open on its own:\n\n<a href="${esc(it.link)}" target="_blank" rel="noopener">${esc(it.link)}</a>`:isCtl(it)?`<span class="d">${esc(it.name)} has no claude.ai/code link (it is not on Remote Control).</span>`:`<span class="d">${esc(it.name)} is not on Remote Control: the Claude apps list one entry per project, c1. Open it to watch and steer it there too.</span>\n\n<button class="kb p" data-act="open">⏎ open ${esc(it.name)} in the Claude apps</button>`}
   else if(tab==='chat'){h=S.chat.length?S.chat.map(([w,m])=>w==='me'?`<span class="b">you</span>  ${esc(m)}`:`<span class="r">c1</span>   <span class="d">${esc(m)}</span>`).join('\n\n'):
     `<span class="d">Talk to c1, the run's control session. What you send is typed into c1; its answer shows in c1's terminal tab${it.link?' and its session':''}.</span>`;
     x=`<form class="inrow" data-form="chat"><input id="cin" placeholder="talk to c1 (i to focus, Esc to leave)" autocomplete="off"><button class="kb">⏎</button></form>`}
@@ -296,7 +298,7 @@ function doAct(a){
   if(a==='release-now')act('release',{now:true},'release queued, now');
   if(a==='later'&&it)act('shelve',{tid:it.id},it.id+' shelved').then(r=>{if(r.ok)back()});
   if(a==='drop'&&it&&!it.newtask)openPop('Drop '+it.id,`${esc(it.title)}\n\n<form class="form" data-form="drop"><label>why<input id="dwhy" autocomplete="off"></label><div class="btnrow"><button class="kb p">⏎ drop ${esc(it.id)}</button> <button type="button" class="kb" data-close>Esc keep it</button></div></form>`,'#dwhy');
-  if(a==='open'&&it&&it.name)act('open_session',{slot:it.name},'opened '+it.name);
+  if(a==='open'&&it&&it.name&&!isCtl(it))act('open_session',{slot:it.name},'opened '+it.name);
   if(a==='take'&&it&&!it.newtask)chatSay(`do ${it.id} here`,()=>act('take',{tid:it.id},'c1 takes '+it.id));
 }
 function openPop(title,html,focus){$('#poptitle').textContent=title;$('#popbody').innerHTML=html;$('#pop').hidden=false;if(focus)setTimeout(()=>$(focus)?.focus(),0)}
@@ -352,7 +354,7 @@ document.addEventListener('keydown',e=>{
   else if(k==='k'||k==='ArrowUp'){S.cur[S.panel]=Math.max(S.cur[S.panel]-1,0);S.focusMain=false}
   else if(k==='Enter'){S.focusMain=true}
   else if(k===']'||k==='['){const [t,ts,key]=curTab();S.tab[key]=ts[(ts.indexOf(t)+(k===']'?1:ts.length-1))%ts.length];S.focusMain=true}
-  else if(k==='t'){if(S.panel!==2){S.panel=2;S.cur[2]=Math.min(1,S.snap.sessions.length-1)}setTab('terminal');return e.preventDefault()}
+  else if(k==='t'){if(S.panel!==2){S.panel=2;const f=S.snap.sessions.findIndex(s=>!isCtl(s));S.cur[2]=f<0?0:f}setTab('terminal');return e.preventDefault()}
   else if(k==='c'){S.panel=2;S.cur[2]=Math.max(0,S.snap.sessions.findIndex(s=>s.name==='c1'));S.tab['2:c1']='chat';S.focusMain=true;render();setTimeout(focusInput,0);return e.preventDefault()}
   else if(k==='R'){release();return e.preventDefault()}
   else if(k==='T'){themePicker();return e.preventDefault()}

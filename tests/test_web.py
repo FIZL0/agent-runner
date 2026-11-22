@@ -201,6 +201,49 @@ def test_theme(tmp: Path) -> None:
         srv.stop()
 
 
+def test_control_rows(tmp: Path) -> None:
+    """F73: a snapshot holding control session c6 and an idle s2: the page gives cN rows c1-like tabs (terminal,
+    session) with no open button, an idle slot's terminal tab says it is idle, /terminal/c6 finds c6's pane by its
+    tag, and the claude.ai copy lists c6 as a control session, not a slot."""
+    from agent_runner import page_copy as PC
+    fake_repo(tmp)
+    snap = {'project': 'proj', 'at': 'now', 'status': ['run up'], 'queue': [], 'needs': [], 'concepts': [], 'log': [],
+            'sessions': [
+                {'name': 'c1', 'task': '', 'title': 'control session', 'minutes': None, 'state': 'live', 'files': [],
+                 'link': 'https://claude.ai/code/c1', 'terminal': ''},
+                {'name': 'c6', 'task': '', 'title': 'R43 site deploy', 'minutes': None, 'state': 'live', 'files': [],
+                 'link': 'https://claude.ai/code/c6x', 'terminal': ''},
+                U.idle_row('s2')]}
+    token = W.web_token()
+    srv = W.serve(token, 0, '127.0.0.1', snap=lambda: snap)
+    base = f'http://127.0.0.1:{srv.server_address[1]}'
+    try:
+        page = get(f'{base}/?t={token}')[1]
+        eq([s['name'] for s in json.loads(get(f'{base}/snapshot?t={token}')[1])['sessions']], ['c1', 'c6', 's2'],
+           'the snapshot carries c6 and the idle s2')
+        for part in (b"const isCtl=it=>!!it&&/^c\\d+$/.test(it.name||'')",
+                     b"isCtl(it)?['terminal','session']:['terminal','info','session']",
+                     b"if(isCtl(it))return `<span class=\"r\">${esc(it.name)}</span>",
+                     b"if(a==='open'&&it&&it.name&&!isCtl(it))act(",
+                     b"tab==='terminal'&&it.state==='idle'&&!isCtl(it)",
+                     b'is idle: nothing running'):
+            check(part in page, f'the page treats a cN row as a control session: {part.decode()}')
+        check(b"it.name==='c1'?['chat','terminal','session']" in page, 'c1 keeps its chat tab')
+        with mock.patch.object(W.shutil, 'which', return_value='/usr/bin/ttyd'), \
+                mock.patch('agent_runner.control.control_live', return_value=0), \
+                mock.patch('agent_runner.control.control_window', return_value='') as cw:
+            r = json.loads(get(f'{base}/terminal/c6?t={token}')[1])
+        eq(cw.call_args.args, (6, 0), "c6's terminal looks up control session 6's window")
+        check(not r['ok'] and 'c6 has no tmux pane' in r['out'], 'and says when it has none', r)
+    finally:
+        srv.stop()
+    copy = PC.page_copy_html(snap)
+    check('<span class="r">c6</span><span>R43 site deploy</span><a' in copy and 'https://claude.ai/code/c6x' in copy,
+          'the copy lists c6 with its title and session link', copy)
+    check('s2 is idle: nothing running' in copy, 'and the idle s2 as idle', copy)
+    check('open it from the run page' not in copy, 'with no open-it hint on c6 or s2', copy)
+
+
 def in_tmp(f):
     def go():
         with tempfile.TemporaryDirectory() as d:
@@ -210,4 +253,5 @@ def in_tmp(f):
 
 
 if __name__ == '__main__':
-    raise SystemExit(report([in_tmp(test_server), in_tmp(test_real_action), in_tmp(test_start), in_tmp(test_theme)]))
+    raise SystemExit(report([in_tmp(test_server), in_tmp(test_real_action), in_tmp(test_start), in_tmp(test_theme),
+                           in_tmp(test_control_rows)]))

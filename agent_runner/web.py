@@ -6,7 +6,7 @@
     GET  /events?t=TOKEN         the same snapshot over server-sent events, sent again whenever it changes
     POST /act?t=TOKEN            {"name": ACTION, "args": {...}}: one of `ui_model.ACTIONS` (plan add, plan edit,
                                  drop, shelve, release, chat, answer, take, move), its result as JSON
-    GET  /terminal/NAME?t=TOKEN  where slot NAME's (or c1's) tmux pane is served by ttyd, started on demand
+    GET  /terminal/NAME?t=TOKEN  where slot NAME's (or c1's, or cN's) tmux pane is served by ttyd, started on demand
 
 Every request carries the token (`?t=`, or an `X-Token` header): the page can type into panes, so one without
 it is refused. The token is made once per project (<notes>/web.token) and printed by `status` and in the run
@@ -111,10 +111,22 @@ def c1_pane() -> str:
         return ''
 
 
+def control_pane(n: int) -> str:
+    """F73: control session cN's tmux pane, by its cN tag (or its pid, when its pid file names a live one)."""
+    try:
+        from agent_runner.control import control_live, control_window
+        return control_window(n, control_live(n))
+    except Exception:  # noqa: BLE001 - no tmux, no such window
+        return ''
+
+
 def pane_of(name: str) -> str:
-    """The tmux pane id of slot `name` (s2) or of c1; '' when it has none (a hidden slot, no tmux)."""
+    """The tmux pane id of slot `name` (s2), of c1 or of another control session (c6); '' when it has none (a
+    hidden slot, no tmux)."""
     if name == 'c1':
         return c1_pane()
+    if name[:1] == 'c' and name[1:].isdigit():
+        return control_pane(int(name[1:]))
     try:
         from agent_runner import slots
         if getattr(slots.MUX, 'name', '') != 'tmux':
