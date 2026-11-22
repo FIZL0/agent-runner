@@ -140,8 +140,8 @@ a{color:var(--bblue)}
     <span><b>agent-runner</b> · <span id="proj"></span></span>
     <span class="live" id="live">connecting…</span>
     <span class="spacer"></span>
-    <button id="themebtn" title="theme (T)">T theme</button>
-    <button id="helpbtn" title="keys (?)">? keys</button>
+    <button id="themebtn" title="theme (T)"><b class="pk">T</b> theme</button>
+    <button id="helpbtn" title="keys (?)"><b class="pk">?</b> keys</button>
   </div>
   <div class="cols" id="cols">
     <div class="left" id="left"></div>
@@ -176,9 +176,7 @@ const quickKey=key=>Object.keys(QUICK).find(k=>QUICK[k]===key)||'';
 function answerOpts(it){
   if(!it)return[];
   let opts=Array.isArray(it.options)&&it.options.length?it.options.map(String):
-    it.label==='CONFIRM'||/\byes ?(\/|or) ?no\b/i.test(it.ask||'')?['yes','no']:
-    it.label==='DECIDE'&&/\breply go\b/i.test(it.ask||'')?['go']:
-    it.label==='BLOCKED'?['done']:[];
+    it.label==='CONFIRM'||/\byes ?(\/|or) ?no\b/i.test(it.ask||'')?['yes','no']:[];
   const used=new Set(),letters='abcdefg'.split(''),out=[];
   for(const o of opts){const w=o.toLowerCase();let key=w==='yes'?'y':w==='no'?'n':'';
     if(!key||used.has(key))key=letters.find(l=>!used.has(l))||'';
@@ -456,7 +454,7 @@ function paneHTML(it,tab){
 A release waits for everything ahead of it, then runs alone, so it releases exactly what landed.
 
 <span class="btnrow"><button class="kb p" data-act="release">${K('⏎','queue a release')}</button> <button class="kb" data-act="release-now">${K('f','release now, without waiting')}</button></span>`}
-  else if(tab==='chat'||tab==='feed'){const name=sessionOf(it);if(!S.feeds[name])loadFeed(name);h=feedHTML(name,tab==='chat'||S.showTools);
+  else if(tab==='chat'||tab==='feed'){const name=sessionOf(it);if(!S.feeds[name])loadFeed(name);h=feedHTML(name,tab==='chat'?!S.showTools:S.showTools);  /* a chat shows its steps as a Claude session does, v hides them; a feed folds them, v shows them */
     const qa=S.panel===1?`<div class="presets">${(S.snap.quick_asks||[]).map(q=>`<button type="button" class="kb" data-quick="${esc(q.key)}"><b class="pk">${esc(quickKey(q.key))}</b> ${esc(q.label)}</button>`).join('')}</div>`:'';
     const idle=!isCtl(it)&&S.panel===2&&!it.task;
     x=qa+chatBox('send',idle?`${name} is idle`:tab==='chat'?`message ${name}`:`message ${name} (it reads it between steps)`,!idle)}
