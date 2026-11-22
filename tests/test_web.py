@@ -526,6 +526,56 @@ def test_new_chat(tmp: Path) -> None:
         srv.stop()
 
 
+MOVES_DRIVER = r"""const {queueMoves}=require(process.argv[2]);
+const ids=q=>q.map(t=>t.id).join('');
+const Q=s=>[...s].map(id=>({id,title:id}));
+const tick=()=>new Promise(r=>setTimeout(r,0));
+async function run(order,fail){
+  const S={snap:{status:[],queue:Q(order)},cur:{3:0}},out={seen:[],sent:[],toasts:[]},waits=[];
+  const m=queueMoves({S,toast:(t,bad)=>out.toasts.push([t,!!bad]),render:()=>{},
+    send:(tid,where,other)=>{out.sent.push(`${tid} ${where} ${other}`);return new Promise(r=>waits.push(r))},
+    fetch:()=>Promise.resolve({status:[],queue:Q(fail?order:'BCDA')})});
+  for(let n=0;n<3;n++){m.press(1);out.seen.push([ids(S.snap.queue),S.cur[3],out.sent.length])}
+  S.snap=m.snap({status:['new'],queue:Q(order)});  // a stale snapshot while moves are pending
+  out.during=[ids(S.snap.queue),S.snap.status[0]];
+  for(let n=0;n<3;n++){await tick();if(waits[n])waits[n](fail&&n===0?{ok:false,out:'no such task'}:{ok:true})}
+  await m.idle();await tick();await tick();
+  out.after=[ids(S.snap.queue),S.cur[3],m.pending()];
+  return out;
+}
+(async()=>{process.stdout.write(JSON.stringify([await run('ABCD',false),await run('ABCD',true)]))})();
+"""
+
+
+def test_term_moves(tmp: Path) -> None:
+    """B117: Shift+J / Shift+K in the terminal view's [3] Queue are optimistic: the order and the selection change
+    at once, the plan moves go in the background in order, a snapshot meanwhile keeps the local order, and a
+    failed move is toasted and the server order taken."""
+    page = W.TERM.read_text(encoding='utf-8')
+    check('function reorder(step){MOVES.press(step)}' in page and 'S.snap=MOVES.snap(snap)' in page,
+          'reorder and live snapshots go through queueMoves')
+    if not shutil.which('node'):
+        print('  (no node here: the queue move test is skipped)')
+        return
+    js = page.split('<script id="moves">', 1)[1].split('</script>', 1)[0]
+    (tmp / 'moves.js').write_text(js, encoding='utf-8')
+    (tmp / 'driver.js').write_text(MOVES_DRIVER, encoding='utf-8')
+    r = subprocess.run(['node', str(tmp / 'driver.js'), str(tmp / 'moves.js')], capture_output=True, text=True,
+                       timeout=60)
+    check(r.returncode == 0, 'node runs the queue move script', r.stderr[-800:])
+    ok, bad = json.loads(r.stdout or '[{}, {}]')
+    eq(ok.get('seen'), [['BACD', 1, 0], ['BCAD', 2, 0], ['BCDA', 3, 0]],
+       'three fast J presses: order and selection change before any move is sent or answered')
+    eq(ok.get('during'), ['BCDA', 'new'], 'a snapshot while moves are pending keeps the local order, the rest new')
+    eq(ok.get('sent'), ['A after B', 'A after C', 'A after D'], 'the three moves are sent in order')
+    eq(ok.get('toasts'), [], 'no toast per press')
+    eq(ok.get('after'), ['BCDA', 3, 0], 'once drained the server order is taken, the selection on the task')
+    eq(bad.get('sent'), ['A after B'], 'after a failed move the rest are not sent')
+    check(len(bad.get('toasts', [])) == 1 and bad['toasts'][0][1] and 'no such task' in bad['toasts'][0][0],
+          'a failed move is toasted', bad.get('toasts'))
+    eq(bad.get('after'), ['ABCD', 0, 0], 'a failed move takes the server order back, the selection on the task')
+
+
 def in_tmp(f):
     def go():
         with tempfile.TemporaryDirectory() as d:
@@ -538,4 +588,4 @@ if __name__ == '__main__':
     raise SystemExit(report([in_tmp(test_server), in_tmp(test_real_action), in_tmp(test_start), in_tmp(test_upload),
                            in_tmp(test_control_rows), in_tmp(test_feed_pane_concept), in_tmp(test_page),
                            in_tmp(test_logic), in_tmp(test_extras), in_tmp(test_diff), in_tmp(test_views),
-                           in_tmp(test_new_chat)]))
+                           in_tmp(test_new_chat), in_tmp(test_term_moves)]))
