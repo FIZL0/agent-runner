@@ -182,3 +182,10 @@ _Said_: run page
 _On screen_: Run page
 _In code_: ui_model.snapshot, ui_model.act
 _Avoid_: dashboard, status page
+
+**Theme**:
+The Run page's set of colours, in the terminal and on the web: ryha, omarchy, terminal or light.
+_Said_: theme
+_On screen_: T theme
+_In code_: theme.py, [ui] theme, THEMES
+_Avoid_: skin, colour scheme, palette
