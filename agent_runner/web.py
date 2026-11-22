@@ -6,7 +6,11 @@
     GET  /events?t=TOKEN         the same snapshot over server-sent events, sent again whenever it changes
     POST /act?t=TOKEN            {"name": ACTION, "args": {...}}: one of `ui_model.ACTIONS` (plan add, plan edit,
                                  drop, shelve, release, chat, answer, take, move), its result as JSON
-    GET  /terminal/NAME?t=TOKEN  where slot NAME's (or c1's, or cN's) tmux pane is served by ttyd, started on demand
+    GET  /terminal/NAME?t=TOKEN  where slot NAME's (or c1's, or cN's) tmux pane is served by ttyd, started on demand;
+                                 without ttyd, the built-in view to use instead (or, with no tmux, the feed only)
+    GET  /feed/NAME?t=TOKEN      F74: session NAME's transcript as say/you/tool/out entries (`ui_model.feed`)
+    GET  /pane/NAME?t=TOKEN      F74: the built-in terminal view: NAME's pane as text now (`ui_model.capture`)
+    GET  /concept/ID?t=TOKEN     F74: concept ID's local page copy (<notes>/concepts/ID.html), sandboxed
 
 Every request carries the token (`?t=`, or an `X-Token` header): the page can type into panes, so one without
 it is refused. The token is made once per project (<notes>/web.token) and printed by `status` and in the run
@@ -136,6 +140,19 @@ def pane_of(name: str) -> str:
         return ''
 
 
+FEED_ONLY = ('There is no tmux here (Windows, or it is not installed), so {name} has no terminal to show: its feed '
+             'and its session link show it.')
+
+
+def terminal_fallback(name: str) -> dict:
+    """F74: the terminal tab without ttyd: with tmux, the built-in view (`mode` 'builtin': GET `capture` every
+    `every` s, POST the `keys` action to type), and how to install ttyd for the live one; else the feed only."""
+    if U.terminal_mode() == 'feed':
+        return {'ok': False, 'mode': 'feed', 'out': FEED_ONLY.format(name=name), 'feed': f'feed/{name}'}
+    return {'ok': False, 'mode': 'builtin', 'out': TTYD_INSTALL + ' Until then the built-in view shows the pane.',
+            'capture': f'pane/{name}', 'every': U.CAPTURE_EVERY, 'feed': f'feed/{name}'}
+
+
 class Terminals:
     """One ttyd per pane, started the first time its tab opens, on web_port+1, +2, …; each serves only under
     /t/TOKEN/NAME/, so the address is as secret as the page's. It attaches a grouped tmux session of its own
@@ -156,11 +173,12 @@ class Terminals:
 
     def open(self, name: str) -> dict:
         if not shutil.which('ttyd'):
-            return {'ok': False, 'out': TTYD_INSTALL}
+            return terminal_fallback(name)
         pane = pane_of(name)
         if not pane:
-            return {'ok': False, 'out': f'{name} has no tmux pane (the run is hidden, or {name} is not up), so '
-                                        f'there is nothing for ttyd to show.'}
+            return {'ok': False, 'mode': 'feed', 'feed': f'feed/{name}',
+                    'out': f'{name} has no tmux pane (the run is hidden, or {name} is not up), so '
+                           f'there is nothing for ttyd to show.'}
         with self.lock:
             p = self.procs.get(name)
             if p and p[0].poll() is None and p[2] == pane:
@@ -260,6 +278,12 @@ class Handler(BaseHTTPRequestHandler):
             return self.events()
         if path.startswith('/terminal/'):
             return self.send(200, json.dumps(self.server.terms.open(path.split('/')[2])))
+        if path.startswith('/feed/'):
+            return self.send(200, json.dumps(U.feed(path.split('/')[2]), ensure_ascii=False))
+        if path.startswith('/pane/'):
+            return self.send(200, json.dumps(U.capture(path.split('/')[2]), ensure_ascii=False))
+        if path.startswith('/concept/'):
+            return self.concept(path.split('/')[2])
         self.send(404, json.dumps({'ok': False, 'out': f'no such page: {path}'}))
 
     def do_POST(self) -> None:
@@ -277,6 +301,22 @@ class Handler(BaseHTTPRequestHandler):
         r = U.act(name, **args)
         self.server.snaps.at = 0.0  # the next snapshot shows what the action changed
         self.send(200, json.dumps(r, ensure_ascii=False))
+
+    def concept(self, cid: str) -> None:
+        """F74: a concept's local page copy (`ui_model.concept_copy`), for the page to show inline. Sandboxed:
+        it runs as a page of its own origin, so its scripts never reach the run page or its token."""
+        f = U.concept_copy(cid)
+        if not f:
+            return self.send(404, json.dumps({'ok': False, 'out': f'no local copy of concept {cid}\'s page'}))
+        data = Path(f).read_bytes()
+        self.send_response(200)
+        self.send_header('Content-Type', 'text/html; charset=utf-8')
+        self.send_header('Content-Length', str(len(data)))
+        self.send_header('Cache-Control', 'no-store')
+        self.send_header('Referrer-Policy', 'no-referrer')
+        self.send_header('Content-Security-Policy', 'sandbox allow-scripts')
+        self.end_headers()
+        self.wfile.write(data)
 
     def events(self) -> None:
         self.send_response(200)

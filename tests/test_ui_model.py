@@ -99,7 +99,7 @@ def test_snapshot(tmp: Path) -> None:
     eq((needs['D3']['label'], needs['D3']['url']), ('DECIDE', 'https://claude.ai/artifact/abc'), 'decide with link')
     check(needs['D3']['ask'], 'an ask in plain words', needs['D3'])
     eq(snap['concepts'], [{'id': 'F4', 'concept': 'K5', 'title': 'lazy layout',
-                           'url': 'https://claude.ai/artifact/k5'}], 'concept with its page link')
+                           'url': 'https://claude.ai/artifact/k5', 'copy': ''}], 'concept with its page link')
     eq(snap['log'], [f'=== 2026-11-21T10:{i:02d}:00 line {i}' for i in range(25, 30)], 'run log tail')
     check(snap['release'].startswith('release: waits on 2 of 2 tasks (V6)'), 'release line', snap['release'])
 
@@ -251,6 +251,191 @@ def test_older_run(tmp: Path) -> None:
     eq(U.older_run(True, ifizbox_panes(repo, repo.name)), False, 'tagged panes: not older')
 
 
+QUEUE_TODO = """# TODO
+
+## Now
+
+### Next
+- [ ] **F1** Board page for the run | files: a.py
+- [ ] **F66** Run page: lazygit layout on web | files: w.py
+- [ ] **B2** Fix the merge retry | files: b.py | after: B109
+- [ ] **F67** Terminal pane per slot | files: t.py | after: F66
+- [ ] **B3** (follow-up, critical) The gate hangs | files: g.py
+- [ ] **B4** Typo in after | files: h.py | after: Z99
+- [~] **D5** Write the guide | files: d.md BLOCKED: DECIDE: which layout
+- [ ] **V6** Release the next version | after: all
+"""
+
+
+def test_queue_rows(tmp: Path) -> None:
+    """F74: each queue row carries after's title (the open task's title, '(landed)' for a done one, 'all:
+    everything above it') and a state: running sN Nm, critical, after, ready."""
+    repo = fake_run(tmp)
+    (repo / 'plan' / 'TODO.md').write_text(QUEUE_TODO, encoding='utf-8')
+    (repo / 'plan' / 'DONE.md').write_text('# DONE\n\n- [x] **B109** Take back a task\n', encoding='utf-8')
+    S.C.notes('STATE').write_text(json.dumps({'state': '2 slots', 'running': {'2': 'F1'},
+                                              'since': {'2': NOW - 6 * 60}}), encoding='utf-8')
+    q = {t['id']: t for t in U.snapshot(up=True, now=NOW, links={})['queue']}
+    eq({t: q[t]['after_title'] for t in q},
+       {'F1': '', 'F66': '', 'B2': 'B109 (landed)', 'F67': 'F66 Run page: lazygit layout on web', 'B3': '',
+        'B4': 'Z99 (not in the plan)', 'D5': '', 'V6': 'all: everything above it'},
+       "after's title: open, landed (in DONE.md), not in the plan, all")
+    eq({t: q[t]['state'] for t in q},
+       {'F1': 'running s2 6m', 'F66': 'ready', 'B2': 'ready', 'F67': 'after', 'B3': 'critical', 'B4': 'ready',
+        'D5': 'blocked', 'V6': 'after'},
+       'state: running sN Nm, ready, after (an open task ahead), critical, blocked ([~])')
+    check(all(q[t]['state'].split()[0] in U.QUEUE_STATES for t in q), 'every state is one of QUEUE_STATES')
+
+
+def fake_transcript(path: Path) -> Path:
+    """A Claude Code JSONL transcript: a person's message, the agent's words, a tool call and its result, a
+    runner turn, thinking, a subagent's entry and a torn last line."""
+    rows = [
+        {'type': 'user', 'message': {'role': 'user', 'content': 'status?'}},
+        {'type': 'assistant', 'message': {'content': [{'type': 'thinking', 'thinking': 'hm'},
+                                                      {'type': 'text', 'text': 'Checking the run.'},
+                                                      {'type': 'tool_use', 'name': 'Bash',
+                                                       'input': {'command': './run status -n 20'}}]}},
+        {'type': 'user', 'message': {'content': [{'type': 'tool_result', 'content': 'run up: 3 slots\nl2\nl3\nl4'}]}},
+        {'type': 'user', 'isMeta': True, 'message': {'content': 'meta'}},
+        {'type': 'user', 'message': {'content': '<command-name>/rename</command-name>'}},
+        {'type': 'assistant', 'isSidechain': True, 'message': {'content': [{'type': 'text', 'text': 'sub'}]}},
+        {'type': 'system', 'content': 'x'},
+        {'type': 'assistant', 'message': {'content': [{'type': 'text', 'text': 'Nothing needs you.'}]}},
+        {'type': 'user', 'message': {'content': [{'type': 'text', 'text': '[Request interrupted by user]'}]}},
+    ]
+    path.write_text(''.join(json.dumps(r) + '\n' for r in rows) + '{"type": "assi', encoding='utf-8')
+    return path
+
+
+def test_feed(tmp: Path) -> None:
+    """F74: a session's feed is its transcript as say/you/tool/out entries, newest last; Pi's toolCall and
+    toolResult read the same; a session with no transcript says so."""
+    from unittest import mock
+    fake_run(tmp)
+    t = fake_transcript(tmp / 'c2.jsonl')
+    with mock.patch.object(U, 'transcript_of', side_effect=lambda n: str(t) if n == 'c2' else ''), \
+            mock.patch.object(U, 'session_sid', return_value=''):
+        f = U.feed('c2')
+        none = U.feed('s3')
+        eq(U.feed('c2', limit=2)['entries'], f['entries'][-2:], 'a limit keeps the newest')
+        check(U.feed('c2', limit=2)['more'], 'and says older ones were left out')
+    eq(f['entries'], [{'kind': 'you', 'text': 'status?'}, {'kind': 'say', 'text': 'Checking the run.'},
+                      {'kind': 'tool', 'text': 'Bash(./run status -n 20)'},
+                      {'kind': 'out', 'text': 'run up: 3 slots\nl2\nl3\n…'},
+                      {'kind': 'say', 'text': 'Nothing needs you.'}, {'kind': 'out', 'text': 'interrupted'}],
+       'the feed: you, say, tool, out; meta, runner turns, thinking and subagents left out')
+    eq((f['ok'], f['more']), (True, False), 'a whole feed')
+    check(not none['ok'] and none['entries'] == [] and 'no transcript' in none['out'], 'no transcript: said', none)
+    pi = [{'type': 'assistant', 'message': {'role': 'assistant', 'content': [
+              {'type': 'text', 'text': 'Reading it.'},
+              {'type': 'toolCall', 'name': 'read', 'arguments': {'path': 'a.py'}}]}},
+          {'type': 'user', 'message': {'role': 'toolResult', 'content': [{'type': 'text', 'text': 'def a(): ...'}]}}]
+    eq(U.feed_entries(pi), [{'kind': 'say', 'text': 'Reading it.'}, {'kind': 'tool', 'text': 'read(a.py)'},
+                            {'kind': 'out', 'text': 'def a(): ...'}], "Pi's entries read the same")
+    big = tmp / 'big.jsonl'
+    last = json.dumps({'type': 'assistant', 'message': {'content': [{'type': 'text', 'text': 'tail'}]}}) + '\n'
+    big.write_text(json.dumps({'type': 'user', 'message': {'content': 'x' * 100}}) + '\n' + last, encoding='utf-8')
+    eq([d['type'] for d in U.tail_rows(str(big), nbytes=len(last) + 10)], ['assistant'],
+       'a tail read skips the line it cut')
+
+
+class FakeTmux:
+    """tmux, faked: records each argv; capture-pane answers with a screen."""
+
+    def __init__(self):
+        self.calls = []
+
+    def __call__(self, argv):
+        self.calls.append(argv)
+        return (0, '❯ status?\n● run up\n') if argv[0] == 'capture-pane' else (0, '')
+
+
+def test_chat_and_terminal(tmp: Path) -> None:
+    """F74: chat to any control session (c1 through SEND, cN typed into its pane), interrupt (Escape into its
+    pane), a new control session's link, the quick asks to c1, and the terminal view: ttyd, built-in
+    (capture-pane, send-keys) or the feed only."""
+    from unittest import mock
+    from agent_runner import plat, slots
+    fake_run(tmp)
+    sent, typed, ran = [], [], []
+    tm = FakeTmux()
+    real = U.SEND[0], U.TMUX[0], U.RUN[0]
+    U.SEND[0] = lambda text: (sent.append(text), {'ok': True, 'code': 0, 'out': 'sent to c1', 'argv': []})[1]
+    U.TMUX[0] = tm
+    U.RUN[0] = lambda argv: (ran.append(argv), (0, 'c3 is open: https://claude.ai/code/session_c3x\n'))[1]
+    panes = {'c1': '%1', 'c6': '%6', 's2': '%12'}
+    try:
+        with mock.patch.object(U, 'session_pane', side_effect=lambda n: panes.get(n, '')), \
+                mock.patch.object(slots, 'send_to_pane', side_effect=lambda p, t: (typed.append((p, t)), True)[1]):
+            eq(U.act('chat_to', text='hi c1')['out'], 'sent to c1', 'c1 gets it the way chat does')
+            eq(U.act('chat_to', text='how is R43?', to='c6')['out'], 'sent to c6', 'c6 too')
+            r = U.act('chat_to', text='hello', to='c9')
+            eq(U.act('interrupt', session='c6')['out'], 'interrupted c6', 'interrupt c6')
+            eq(U.act('keys', session='s2', text='yes', key='Enter')['ok'], True, 'keys typed into s2')
+            eq(U.act('keys', session='s2', key='F13')['ok'], False, 'an unknown key is refused')
+            cap = U.capture('s2')
+            nocap = U.capture('s9')
+        eq(sent, ['hi c1'], 'c1 through SEND')
+        eq(typed, [('%6', 'how is R43?')], "c6 typed into its own pane")
+        check(not r['ok'] and 'no tmux pane' in r['out'], 'a session with no pane says so', r)
+        eq(tm.calls[:3], [['send-keys', '-t', '%6', 'Escape'], ['send-keys', '-t', '%12', '-l', 'yes'],
+                          ['send-keys', '-t', '%12', 'Enter']], 'Escape into c6; text then Enter into s2')
+        eq((cap['ok'], cap['text'], cap['every']), (True, '❯ status?\n● run up\n', 0.5),
+           'the built-in view captures the pane every 0.5 s')
+        eq(tm.calls[-1], ['capture-pane', '-p', '-J', '-t', '%12'], 'by tmux capture-pane')
+        check(not nocap['ok'], 'no pane: nothing to capture', nocap)
+
+        n = U.act('new_control', ask='')
+        eq((n['ok'], n['link'], ran[-1]), (True, 'https://claude.ai/code/session_c3x', ['control', '--new']),
+           'a new control session (control --new) and its claude.ai/code link')
+        U.act('new_control', ask='theme ideas')
+        eq(ran[-1], ['control', '--new', '--ask', 'theme ideas'], 'with a first message')
+
+        sent.clear()
+        for k in ('since', 'yesterday', 'needs', 'usage'):
+            U.act('quick_ask', key=k)
+        eq(sent, ['what happened since my last look?', 'what happened since yesterday?', 'what needs me?',
+                  'where are the tokens going?'], 'the quick asks go to c1')
+        eq(U.act('quick_ask', key='nope')['ok'], False, 'an unknown quick ask is refused')
+        eq([a['key'] for a in U.snapshot(up=False, now=NOW, links={})['quick_asks']],
+           ['since', 'yesterday', 'needs', 'usage'], 'the snapshot lists them')
+    finally:
+        U.SEND[0], U.TMUX[0], U.RUN[0] = real
+
+    which = lambda have: (lambda name: f'/usr/bin/{name}' if name in have else None)  # noqa: E731
+    with mock.patch.object(plat, 'WINDOWS', False):
+        with mock.patch('shutil.which', side_effect=which({'tmux', 'ttyd'})):
+            eq(U.terminal_mode(), 'ttyd', 'tmux and ttyd: ttyd')
+        with mock.patch('shutil.which', side_effect=which({'tmux'})):
+            eq(U.terminal_mode(), 'builtin', 'tmux, no ttyd: the built-in view')
+        with mock.patch('shutil.which', side_effect=which(set())):
+            eq(U.terminal_mode(), 'feed', 'no tmux: the feed only')
+    with mock.patch.object(plat, 'WINDOWS', True), mock.patch('shutil.which', side_effect=which({'tmux', 'ttyd'})):
+        eq(U.terminal_mode(), 'feed', 'Windows: the feed only')
+
+
+def test_concept_copy(tmp: Path) -> None:
+    """F74: `done --artifact` keeps a copy of a K task's page (--page FILE, else the .html the worktree changed)
+    at <notes>/concepts/<ID>.html, and the snapshot's concept row gives its path."""
+    from types import SimpleNamespace
+    from agent_runner import done as D
+    repo = fake_run(tmp)
+    page = tmp / 'page.html'
+    page.write_text('<title>K5 options</title><h1>Option A</h1>', encoding='utf-8')
+    c = SimpleNamespace(root=repo, notes=S.C.notes)
+    kept = D.keep_page(c, 'K5', str(page))
+    eq(kept, S.C.notes('concepts', 'K5.html'), 'kept at <notes>/concepts/K5.html')
+    eq(kept.read_text(encoding='utf-8'), page.read_text(encoding='utf-8'), 'a copy of the page')
+    snap = U.snapshot(up=False, now=NOW, links={})
+    eq(snap['concepts'][0]['copy'], str(kept), "the concept row gives the copy's path")
+    eq(U.concept_copy('../K5'), '', 'an id that is not one finds nothing')
+    (repo / 'journal').mkdir()
+    (repo / 'journal' / 'k7.html').write_text('<h1>K7</h1>', encoding='utf-8')
+    eq(D.keep_page(c, 'K7').read_text(encoding='utf-8'), '<h1>K7</h1>', 'no --page: the .html the worktree changed')
+    eq(D.keep_page(c, 'K8', str(tmp / 'missing.html')), None, 'a --page that is not a file: no copy')
+
+
 def in_tmp(f):
     def go():
         print(f.__name__)
@@ -262,4 +447,6 @@ def in_tmp(f):
 
 if __name__ == '__main__':
     raise SystemExit(report([in_tmp(test_snapshot), in_tmp(test_idle_slots), in_tmp(test_actions), in_tmp(test_real_command),
-                         in_tmp(test_to_c1_by_tag), in_tmp(test_control_windows), in_tmp(test_older_run)]))
+                         in_tmp(test_to_c1_by_tag), in_tmp(test_control_windows), in_tmp(test_older_run),
+                         in_tmp(test_queue_rows), in_tmp(test_feed), in_tmp(test_chat_and_terminal),
+                         in_tmp(test_concept_copy)]))
