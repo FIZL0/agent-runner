@@ -1282,7 +1282,7 @@ def attach_target(rows: list[str], root: Path, which: str) -> tuple[str, str] | 
     """(session, pane id) of the runner's pane (`which` "runner") or a tagged pane (s2, master) of the run for
     `root`, from `tmux list-panes -a` rows of session, pane id, @runner, @runner-repo, @runner-run and, when a
     row has it, its window name: B114, a control session cN with no pane tag (opened by an older agent-runner)
-    is then found by its window name, as `control_window_pane` reads it."""
+    is then found by its window name (`control_window_pane`), as ui_model.control_windows lists it."""
     for l in rows:
         sess, pane_id, name, repo, run_for = (l.split('\t') + [''] * 5)[:5]
         mine = run_for if which == 'runner' else repo if name == which else ''
@@ -1305,6 +1305,10 @@ def control_window_pane(rows: list[str], root: Path, which: str) -> tuple[str, s
         sess, pane_id, name, repo, _run_for, wname = (l.split('\t') + [''] * 6)[:6]
         if name or not named.fullmatch(wname):
             continue
-        if (Path(repo) == root) if repo else sess == run_sess:
+        try:  # resolved, as ui_model.control_windows compares them: a checkout reached through a symlink
+            ours = Path(repo).resolve() == Path(root).resolve() if repo else sess == run_sess
+        except OSError:
+            ours = False
+        if ours:
             return sess, pane_id
     return None
