@@ -8,7 +8,9 @@
 <style>
 /* F66 run page: lazygit layout (numbered boxed panels left, one main pane with tabs right, key hints below),
    ryha theme (black, red accent) below; F69: the server writes [ui] theme's tokens into style#theme and T picks
-   another per browser (theme.py, the terminal page's table). Data: the run page model's snapshot over /events. */
+   another per browser (theme.py, the terminal page's table). Data: the run page model's snapshot over /events.
+   F75: the final design (claude.ai/artifact/4GBeFqJ6Gn3PubWxRgrk6s) over F74's model: feeds, chats like a
+   Claude session, quick asks, direct edit with a key per field, answer buttons, concepts inline. */
 :root{
   --bg:#000;--fg:#e5e5e5;--dim:#737373;--line:#3a3a3a;--sel:#7f1d1d;--selfg:#f5f5f5;--raise:#0d0d0d;--cur:#262626;
   --accent:#ef4444;--key:#fff;
@@ -17,6 +19,9 @@
   color-scheme:dark;
 }
 *{box-sizing:border-box}
+/* no visible scrollbars anywhere: every box still scrolls by wheel, touch and keys */
+*{scrollbar-width:none}
+*::-webkit-scrollbar{display:none}
 [hidden]{display:none!important}
 html,body{height:100%;margin:0}
 body{background:var(--bg);color:var(--fg);font:13px/1.45 var(--mono);
@@ -35,42 +40,72 @@ button{font:inherit}
 .left{display:grid;grid-template-columns:minmax(0,1fr);gap:10px;min-height:0;min-width:0;padding-top:8px}
 .box{position:relative;border:1px solid var(--line);padding:10px 2px 6px;min-height:0;min-width:0;display:flex;flex-direction:column}
 .box.on{border-color:var(--accent)}
-.box>.ttl{position:absolute;top:-9px;left:8px;background:var(--bg);padding:0 4px;color:var(--dim);white-space:nowrap;cursor:pointer}
+.box>.ttl{position:absolute;top:-9px;left:8px;background:var(--bg);padding:0 4px;color:var(--dim);white-space:nowrap;cursor:pointer;z-index:1}
 .box.on>.ttl{color:var(--accent);font-weight:700}
 .box>.cnt{position:absolute;bottom:-9px;right:8px;background:var(--bg);padding:0 4px;color:var(--dim);font-size:12px}
 .list{overflow:auto;min-height:0}
 .box.short .list{max-height:calc(3 * 1.45em)}
-.row{display:flex;gap:8px;padding:0 8px;cursor:pointer;white-space:nowrap;overflow:hidden}
+.row{display:flex;gap:8px;padding:0 10px 0 8px;cursor:pointer;white-space:nowrap;overflow:hidden;min-width:0}
 .row>span:last-child{overflow:hidden;text-overflow:ellipsis;min-width:0}
 .row.cur{background:var(--raise)}
 .box.on .row.cur{background:var(--sel);color:var(--selfg)}
+.row .qid{flex:none;width:4.2ch;font-weight:700}
+.row .qt{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis}
+.row .chip{flex:none;font-style:normal;color:var(--dim);font-size:12px;max-width:42%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.row .chip.run{color:var(--yellow)}.row .chip.crit{color:var(--red);font-weight:700}.row .chip.next{color:var(--green)}.row .chip.blk{color:var(--yellow)}
+/* the selected row of the focused panel wraps: its full title, and its after line under it */
+.box.on .row.cur{white-space:normal;flex-wrap:wrap;padding-block:2px}
+.box.on .row.cur .qt,.box.on .row.cur>span:last-child{white-space:normal}
+.box.on .row.cur .chip{color:var(--selfg)}
+.box.on .row.cur .chip.after{max-width:none;flex-basis:100%;padding-left:calc(4.2ch + 8px);white-space:normal}
 .g{color:var(--green)}.y{color:var(--yellow)}.r{color:var(--red)}.b{color:var(--bblue)}.m{color:var(--magenta)}.c{color:var(--cyan)}.d{color:var(--dim)}
+/* a key is always a different colour from its label: yellow on the page, blue for the global keys below */
+.pk{color:var(--yellow);font-weight:700;font-style:normal}
 .main{margin-top:8px;min-width:0}
-.mtabs{position:absolute;top:-9px;left:8px;background:var(--bg);padding:0 4px;white-space:nowrap}
+.mtabs{position:absolute;top:-9px;left:8px;background:var(--bg);padding:0 4px;white-space:nowrap;z-index:1}
 .mtabs span{color:var(--dim);cursor:pointer}
 .mtabs span[data-tab]+span[data-tab]::before{content:" - ";color:var(--dim)}
 .mtabs span.on{color:var(--accent);font-weight:700}
 .box.main:not(.on) .mtabs span.on{color:var(--fg)}
 .pane{flex:1;overflow:auto;padding:4px 10px;white-space:pre-wrap;word-break:break-word;min-height:0}
-.pane iframe{width:100%;height:100%;min-height:360px;border:0;background:#000}
+.pane iframe{width:100%;height:100%;min-height:360px;border:0;background:var(--bg)}
 .pane.term{padding:0;white-space:normal}
-.inrow{display:flex;gap:6px;padding:6px 8px 2px;border-top:1px solid var(--line)}
+.pane .hunk{color:var(--cyan)}.pane .add{color:var(--green)}.pane .del{color:var(--red)}
+.feedv{display:grid;gap:10px;white-space:pre-wrap}
+.feedv .say::before{content:"● ";color:var(--fg)}
+.feedv .you{color:var(--bblue)}.feedv .you::before{content:"❯ ";color:var(--dim)}
+.feedv .tool{color:var(--dim)}.feedv .tool::before{content:"● ";color:var(--green)}
+.feedv .out{color:var(--dim);padding-left:2ch;margin-top:-8px}.feedv .out::before{content:"⎿ "}
+.feedv .fold{color:var(--dim);font-size:12px}
+.feedv .intr{color:var(--red)}
+.inrow{display:flex;gap:6px;padding:6px 8px 2px;border-top:1px solid var(--line);align-items:flex-start}
+.presets{display:flex;gap:6px;flex-wrap:wrap;align-items:center;padding:6px 8px 0;border-top:1px solid var(--line)}
 input,textarea,select{font:inherit;background:var(--raise);color:var(--fg);border:1px solid var(--line);padding:4px 6px;min-width:0}
 input:focus,textarea:focus,select:focus{outline:none;border-color:var(--accent)}
-.inrow input{flex:1}
+.inrow input,.inrow textarea{flex:1}
+textarea.cin{resize:none;min-height:2.2em;max-height:8em}
 .form{display:grid;gap:8px;max-width:640px;white-space:normal}
 .form label{display:grid;gap:3px;color:var(--dim)}
 .form .two{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.ahint{color:var(--dim);font-size:12px}
 .kb{border:1px solid var(--line);padding:0 6px;color:var(--fg);cursor:pointer;background:none}
 .kb:hover{border-color:var(--accent)}
-.kb.p{border-color:var(--accent);color:var(--accent)}
+.kb.p{border-color:var(--accent)}
+.kb.p .pk{color:var(--accent)}
 .btnrow{display:flex;gap:8px;flex-wrap:wrap;white-space:normal}
+.opts{display:grid;gap:14px;white-space:normal;padding-top:8px}
+.opt{position:relative;border:1px solid var(--line);padding:12px 12px 8px;cursor:pointer}
+.opt>.t{position:absolute;top:-9px;left:8px;background:var(--bg);padding:0 4px;color:var(--dim)}
+.opt.rec{border-color:var(--accent)}.opt.rec>.t{color:var(--accent);font-weight:700}
+.opt.sel{border-color:var(--yellow);background:var(--raise)}.opt.sel>.t{color:var(--yellow);font-weight:700}
+.opt p{margin:0 0 6px}
 .foot{color:var(--fg);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.foot .k{color:var(--key);font-weight:700}
-.foot .sep{color:var(--dim)}
+.foot .k{color:var(--yellow);font-weight:700}
+.foot .gsep{color:var(--line);margin:0 10px}
+.foot .glob{color:var(--dim)}.foot .glob .k{color:var(--bblue);font-weight:700}
 .foot .mode{color:var(--bg);background:var(--accent);padding:0 6px;margin-right:6px;font-weight:700}
 .pop{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.6);z-index:10;padding:16px}
-.pop .box{background:var(--bg);width:min(600px,100%);max-height:80vh;border-color:var(--accent)}
+.pop .box{background:var(--bg);width:min(620px,100%);max-height:80vh;border-color:var(--accent)}
 .pop .box>.ttl{color:var(--accent);font-weight:700}
 .toast{position:fixed;right:max(12px,env(safe-area-inset-right,0px));bottom:calc(40px + env(safe-area-inset-bottom,0px));border:1px solid var(--green);background:var(--bg);padding:6px 10px;z-index:20;max-width:min(90vw,520px);white-space:pre-wrap}
 .toast.bad{border-color:var(--red)}
@@ -105,9 +140,8 @@ a{color:var(--bblue)}
     <span><b>agent-runner</b> · <span id="proj"></span></span>
     <span class="live" id="live">connecting…</span>
     <span class="spacer"></span>
-    <button id="relbtn" title="release (R)">R release</button>
-    <button id="themebtn" title="theme (T)">T theme</button>
-    <button id="helpbtn" title="keys (?)">? keys</button>
+    <button id="themebtn" title="theme (T)"><b class="pk">T</b> theme</button>
+    <button id="helpbtn" title="keys (?)"><b class="pk">?</b> keys</button>
   </div>
   <div class="cols" id="cols">
     <div class="left" id="left"></div>
@@ -122,14 +156,122 @@ a{color:var(--bblue)}
 </div>
 <div class="pop" id="pop" hidden><div class="box"><span class="ttl" id="poptitle"></span><div class="pane" id="popbody"></div></div></div>
 <div class="toast" id="toast" hidden></div>
+<script id="keys">
+'use strict';
+/* F75: the page's keys and its bottom line, as plain functions of where the person is (no page in here, so
+   tests/test_web.py drives them in node). route(c, e) gives the commands a key runs ([] leaves the key to the
+   browser); footer(c, shown) the bottom line. c: {panel, panelName, focusMain, tab, tabs, typing, chatBox,
+   popup, busy, it: {newtask, newchat, ctl, task, k}, answerKeys}; e: {key, ctrl, meta, shift, alt}. */
+function tabsFor(p,it){
+  if(!it)return['info'];
+  if(p===1)return it.k==='rel'?['release','chat','log']:['chat','log'];
+  if(p===2)return it.newchat?['info']:it.ctl?['chat','pane','session']:it.task?['feed','pane','diff','session']:['feed','pane'];
+  if(p===3)return it.newtask?['chat edit','direct edit']:['direct edit','chat edit'];
+  if(p===4)return['answer','info'];
+  return['preview'];
+}
+const QUICK={s:'since',y:'yesterday',w:'needs',u:'usage'};  /* a quick ask's key on its button */
+const quickKey=key=>Object.keys(QUICK).find(k=>QUICK[k]===key)||'';
+/* a Needs you item's possible answers, each with its key: yes / no (y, n), else the options' a, b, c… */
+function answerOpts(it){
+  if(!it)return[];
+  let opts=Array.isArray(it.options)&&it.options.length?it.options.map(String):
+    it.label==='CONFIRM'||/\byes ?(\/|or) ?no\b/i.test(it.ask||'')?['yes','no']:[];
+  const used=new Set(),letters='abcdefg'.split(''),out=[];
+  for(const o of opts){const w=o.toLowerCase();let key=w==='yes'?'y':w==='no'?'n':'';
+    if(!key||used.has(key))key=letters.find(l=>!used.has(l))||'';
+    if(key){used.add(key);out.push({key,label:o})}}
+  return out;
+}
+const NOFOOT=/^(j|k|j\/k|\^h|\^l|\^h\/\^l)$/;
+function route(c,e){
+  const k=e.key,ctrl=e.ctrl||e.meta,it=c.it||{},p=c.panel,t=c.tab;
+  if(c.popup)return k==='Escape'?[['closepop']]:[];
+  if(ctrl&&!e.alt&&k.toLowerCase()==='s'&&c.focusMain&&t==='direct edit')return[['save']];
+  if(e.ctrl&&!e.meta&&!e.alt&&(k==='h'||k==='l'))return[['side',k==='h'?'left':'right']];
+  if(c.typing){
+    if(k==='Escape')return c.busy&&c.chatBox?[['interrupt']]:[['blur']];
+    if(k==='Enter'&&!e.shift&&c.chatBox)return[['send']];
+    if(k==='Tab'&&c.focusMain&&t==='direct edit')return[['field',e.shift?-1:1]];
+    return[];
+  }
+  if(ctrl||e.alt)return[];
+  if(/^[1-5]$/.test(k))return[['panel',+k]];
+  if(c.focusMain){
+    if(k==='Escape')return[c.busy?['interrupt']:['back']];
+    if(k==='h'||k==='ArrowLeft')return[c.tabs.indexOf(t)<=0?['back']:['tab',-1]];
+    if(k==='l'||k==='ArrowRight')return[['tab',1]];
+    if(t==='direct edit'){
+      const m={t:['focus','f-title'],f:['focus','f-files'],a:['focus','f-after'],k:['cycle','f-kind',1],K:['cycle','f-kind',-1],p:['cycle','f-pri',1]};
+      if(m[k])return[m[k]];
+      if(k==='Tab')return[['field',e.shift?-1:1]];
+      if(!it.newtask&&k==='D')return[['act','drop']];
+      if(!it.newtask&&k==='H')return[['act','take']];
+    }
+    if(t==='answer'){const i=(c.answerKeys||[]).indexOf(k);if(i>=0)return[['answer',i]];if(k==='L')return[['act','later']]}
+    if(t==='preview'){if(k==='j'||k==='ArrowDown')return[['opt',1]];if(k==='k'||k==='ArrowUp')return[['opt',-1]];
+      if(k==='Enter')return[['go']];if(k==='O')return[['open']]}
+    if(t==='chat'&&p===1&&QUICK[k])return[['quick',QUICK[k]]];
+    if((t==='chat'||t==='feed')&&k==='v')return[['steps']];
+    if(t==='release'){if(k==='Enter')return[['act','release']];if(k==='f')return[['act','release-now']]}
+    if(t==='session'&&(k==='Enter'||k==='o'))return[['open']];
+    if(t==='info'&&it.newchat&&(k==='Enter'||k==='N'))return[['newchat']];
+    if(k==='i'||k==='Enter')return[['typebox']];
+    if(k==='Tab')return[['panel',e.shift?(p+3)%5+1:p%5+1]];
+  }else{
+    if(k==='j'||k==='ArrowDown')return[['move',1]];
+    if(k==='k'||k==='ArrowUp')return[['move',-1]];
+    if(k==='l'||k==='Enter'||k==='ArrowRight')return[['into']];
+    if(k==='Tab')return[['panel',e.shift?(p+3)%5+1:p%5+1]];
+  }
+  if(k==='?')return[['help']];
+  if(k==='T')return[['theme']];
+  if(k==='c')return[['chat']];
+  if(p===1&&k==='R')return[['release']];
+  if(p===2){if(k==='N')return[['newchat']];if(k==='o'&&(it.ctl||it.task))return[['open']];if(k==='v')return[['steps']]}
+  if(p===3){
+    if(k==='n')return[['newtask']];
+    if(k==='E')return[['tabto','chat edit']];
+    if(!it.newtask){if(k==='e')return[['tabto','direct edit']];if(k==='J'||k==='K')return[['reorder',k==='J'?1:-1]];
+      if(k==='p')return[['pri']];if(k==='H')return[['act','take']];if(k==='D')return[['act','drop']]}
+  }
+  if(p===4){if(k==='L')return[['act','later']];if(k==='a'||k==='i')return[['tabto','answer']]}
+  if(p===5&&k==='O')return[['open']];
+  return[];
+}
+/* the bottom line: the mode, this place's keys (yellow), then only 1-5, c and ? (blue). A key the window
+   already shows (on a button, a label, a row: `shown`) is left out, and so are j/k and ^h/^l. */
+function footer(c,shown){
+  const it=c.it||{},t=c.tab;let here;
+  if(c.typing)here=[['Esc',c.busy&&c.chatBox?'interrupt':'leave'],...(c.chatBox?[['⇧⏎','new line']]:[]),...(c.focusMain&&t==='direct edit'?[['Tab','next field']]:[])];
+  else if(c.focusMain){here=[['h/l','tab']];
+    if(t==='direct edit')here.push(['Tab','next field'],['^S','save']);
+    if(t==='chat'||t==='feed')here.push(['i','type'],['v','steps']);
+    if(t==='chat edit'||t==='answer')here.push(['i','type']);
+    if(t==='preview')here.push(['⏎','go with it'],['i','what to change'],['O','open on claude.ai']);
+    if(t==='session')here.push(['o','open']);
+    here.push(['Esc',c.busy?'interrupt':'back'])}
+  else here=({1:[['⏎','open'],['R','release']],
+    2:[['⏎','open'],['v','steps'],['N','new chat'],...(it.ctl||it.task?[['o','open session']]:[])],
+    3:it.newtask?[['⏎','new task'],['E','describe it']]:[['e','edit'],['E','chat edit'],['n','new'],['J/K','reorder'],['p','priority'],['H','do it here'],['D','drop']],
+    4:[['a','answer'],['L','later']],
+    5:[['⏎','view'],['O','open on claude.ai']]})[c.panel]||[];
+  here=here.filter(([k])=>!(shown||[]).includes(k)&&!NOFOOT.test(k));
+  return{mode:c.typing?'INSERT':c.focusMain?String(t).toUpperCase():String(c.panelName||'').toUpperCase(),here,
+    glob:c.typing?[]:[['1-5','panel'],['c','chat'],['?','keys']]};
+}
+if(typeof module!=='undefined')module.exports={tabsFor,route,footer,answerOpts,quickKey};
+</script>
 <script>
 'use strict';
 const $=s=>document.querySelector(s);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const list=v=>Array.isArray(v)?v.join(', '):(v||'');
+const K=(k,l)=>`<b class="pk">${esc(k)}</b> ${l}`;
 const T=new URLSearchParams(location.search).get('t')||'';
-const S={snap:{status:[],sessions:[],queue:[],needs:[],concepts:[],log:[],release:''},panel:1,cur:{1:0,2:0,3:0,4:0,5:0},
-  tab:{},focusMain:false,last:0,chat:[],terms:{}};
+const S={snap:{status:[],sessions:[],queue:[],needs:[],concepts:[],log:[],release:'',quick_asks:[],terminal_mode:'feed'},
+  panel:1,cur:{1:0,2:0,3:0,4:0,5:0},tab:{},focusMain:false,last:0,terms:{},feeds:{},busy:{},showTools:false,
+  diffs:{},concepts:{},copt:{},caps:{},sig:'',extraSig:''};
 
 function api(path,body){
   return fetch(path+(path.includes('?')?'&':'?')+'t='+encodeURIComponent(T),body?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:{})
@@ -140,37 +282,59 @@ function act(name,args,said){
   return api('act',{name,args}).then(r=>{toast((r.ok?(said||'done'):'failed')+(r.out?'\n'+r.out.slice(0,400):''),!r.ok);return r});
 }
 
+/* drafts: every box keeps what was typed in it, per item and tab, across Esc, re-renders and page reloads */
+const DRAFT_KEY='agent-runner.drafts';
+S.draft=(()=>{try{return JSON.parse(localStorage.getItem(DRAFT_KEY)||'{}')||{}}catch(e){return {}}})();
+function saveDrafts(){try{localStorage.setItem(DRAFT_KEY,JSON.stringify(S.draft))}catch(e){}}
+function dropDraft(el){if(el&&el.dataset.dk){delete S.draft[el.dataset.dk];saveDrafts()}}
+
 const PANELS=[
-  {n:1,name:'Status',items:()=>[...S.snap.status.map(t=>({k:'st',t})),{k:'log',t:'run log'},{k:'rel',t:'release (R)'}]},
-  {n:2,name:'Sessions',items:()=>S.snap.sessions},
+  {n:1,name:'Status',items:()=>[...S.snap.status.map(t=>({k:'st',t})),{k:'log',t:'run log'},{k:'rel',t:S.snap.release||'release'}]},
+  {n:2,name:'Sessions',items:()=>[...S.snap.sessions,{name:'+',newchat:true}]},
   {n:3,name:'Queue',items:()=>[...S.snap.queue,{id:'+',newtask:true}]},
   {n:4,name:'Needs you',items:()=>S.snap.needs},
   {n:5,name:'Concepts',items:()=>S.snap.concepts},
 ];
-const stateCol={running:'y',merging:'m',live:'g',off:'d'};
+const stateCol={running:'y',merging:'m',live:'g',off:'d',idle:'d'};
+const kindCol={B:'r',F:'g',C:'b',R:'m',V:'y',K:'c',T:'c',D:'b'};
 const isCtl=it=>!!it&&/^c\d+$/.test(it.name||'');  /* F73: a control session's row (c1, c6), not a slot's */
+function chipHTML(it){
+  const st=it.state||'';
+  if(/^running /.test(st))return `<i class="chip run">${esc(st.slice(8))}</i>`;
+  if(st==='critical')return '<i class="chip crit">critical</i>';
+  if(st==='after')return `<i class="chip after">⧗ after ${esc(it.after_title||list(it.after))}</i>`;
+  if(st==='blocked')return '<i class="chip blk">blocked</i>';
+  return '<i class="chip next">ready</i>';
+}
 function rowHTML(p,it){
-  if(p===1){const col=it.k==='log'?'d':it.k==='rel'?'m':/^run up/.test(it.t)?'g':/^no run/.test(it.t)?'r':/^usage/.test(it.t)?'y':'c';return `<span class="${col}">●</span><span>${esc(it.t)}</span>`}
-  if(p===2){if(isCtl(it))return `<span class="r">${esc(it.name)}</span><span>${esc(it.title)} <span class="d">${esc(it.state)}</span></span>`;
-    return `<span class="${stateCol[it.state]||'d'}">${esc(it.name)}</span><span><span class="c">${esc(it.task)}</span> ${esc(it.title)} <span class="d">${it.state==='idle'?'':`${it.minutes??'?'}m `}${esc(it.state)}</span></span>`}
-  if(p===3)return it.newtask?`<span class="g">+</span><span class="d">new task (n)</span>`:
-    `<span class="${it.blocked?'y':'c'}">${esc(it.id)}</span><span>${esc(it.title)}${it.after&&it.after.length?` <span class="d">after ${esc(list(it.after))}</span>`:''}${it.pri!=='normal'?` <span class="r">${esc(it.pri)}</span>`:''}</span>`;
-  if(p===4)return `<span class="y">${esc(it.id)}</span><span>${esc(it.ask||it.title)} <span class="d">${esc(it.age)}</span></span>`;
+  if(p===1){const col=it.k==='log'?'d':it.k==='rel'?'m':/^run up/.test(it.t)?'g':/^no run/.test(it.t)?'r':/^usage/.test(it.t)?'y':'c';
+    return `<span class="${col}">●</span><span>${esc(it.t)}${it.k==='rel'?` <span class="d">(<b class="pk">R</b>)</span>`:''}</span>`}
+  if(p===2){if(it.newchat)return `<span class="g">+</span><span class="d">new chat (<b class="pk">N</b>): a new control session, on your phone too</span>`;
+    if(isCtl(it))return `<span class="r">${esc(it.name)}</span><span>${esc(it.title)} <span class="d">chat${it.state==='off'?' · off':''}</span></span>`;
+    if(!it.task)return `<span class="d">${esc(it.name)}</span><span class="d">idle</span>`;
+    return `<span class="${stateCol[it.state]||'d'}">${esc(it.name)}</span><span><span class="c">${esc(it.task)}</span> ${esc(it.title)} <span class="d">${it.minutes??'?'}m ${esc(it.state)}</span></span>`}
+  if(p===3){if(it.newtask)return `<span class="g">+</span><span class="d">new task (<b class="pk">n</b>)</span>`;
+    return `<span class="${kindCol[(it.id||'')[0]]||'c'} qid">${esc(it.id)}</span><span class="qt">${esc(it.title)}</span>${chipHTML(it)}`}
+  if(p===4)return `<span class="y qid">${esc(it.id)}</span><span class="qt">${esc(it.title||it.ask)}</span><i class="chip">${esc(it.age)}</i>`;
   return `<span class="m">◆</span><span>${esc(it.title)} <span class="d">${esc(it.id)}</span></span>`;
 }
 function items(){return PANELS[S.panel-1].items()}
 function sel(){const its=items();S.cur[S.panel]=Math.max(0,Math.min(S.cur[S.panel],its.length-1));return its[S.cur[S.panel]]}
 function keyOf(it){return S.panel+':'+(it?(it.id||it.name||it.k):'')}
-function tabsFor(p,it){
-  if(!it)return['info'];
-  if(p===1)return it.k==='rel'?['release','log']:['log','release'];
-  if(p===2)return it.name==='c1'?['chat','terminal','session']:isCtl(it)?['terminal','session']:['terminal','info','session'];
-  if(p===3)return it.newtask?['direct edit','chat edit']:['direct edit','chat edit','info'];
-  if(p===4)return['answer','info'];
-  return['preview','pick'];
+function flags(it){return it?{newtask:!!it.newtask,newchat:!!it.newchat,ctl:isCtl(it),task:!!it.task,k:it.k||''}:null}
+function curTab(){const it=sel(),ts=tabsFor(S.panel,flags(it)),key=keyOf(it);if(!ts.includes(S.tab[key]))S.tab[key]=ts[0];return[S.tab[key],ts,key]}
+function typing(){const a=document.activeElement;return !!a&&/INPUT|TEXTAREA|SELECT/.test(a.tagName)}
+function sessionOf(it){return S.panel===1?'c1':it&&it.name}
+function isBusy(name){const b=S.busy[name];if(!b)return false;
+  const es=(S.feeds[name]||{}).entries||[],last=es[es.length-1];
+  if(Date.now()-b.at>600000||(last&&last.kind==='say'&&JSON.stringify(last)!==b.last)){delete S.busy[name];return false}
+  return true}
+function ctx(){
+  const it=sel(),[tab,tabs]=curTab(),a=document.activeElement;
+  return{panel:S.panel,panelName:PANELS[S.panel-1].name,focusMain:S.focusMain,tab,tabs,typing:typing(),
+    chatBox:!!(a&&a.classList&&a.classList.contains('cin')),popup:!$('#pop').hidden,
+    busy:(tab==='chat'||tab==='feed')&&isBusy(sessionOf(it)),it:flags(it),answerKeys:tab==='answer'?answerOpts(it).map(o=>o.key):[]};
 }
-function curTab(){const it=sel(),ts=tabsFor(S.panel,it),key=keyOf(it);if(!ts.includes(S.tab[key]))S.tab[key]=ts[0];return[S.tab[key],ts,key]}
-function typing(){const a=document.activeElement;return a&&/INPUT|TEXTAREA|SELECT/.test(a.tagName)}
 
 function renderLeft(){
   $('#left').innerHTML=PANELS.map(p=>{
@@ -180,108 +344,211 @@ function renderLeft(){
       <span class="cnt">${its.length?c+1:0} of ${its.length}</span></div>`}).join('');
   $('#left').style.gridTemplateRows=PANELS.map(p=>p.n===S.panel?'minmax(0,1fr)':'auto').join(' ');
   $('#cols').classList.toggle('inmain',S.focusMain);
-  $('#mnav').innerHTML=PANELS.map(p=>`<button class="${S.panel===p.n?'on':''}" data-mnav="${p.n}"><b>${p.n===1?'●':p.items().length-(p.n===3?1:0)}</b>${p.name.replace(' you','')}</button>`).join('');
+  $('#mnav').innerHTML=PANELS.map(p=>`<button class="${S.panel===p.n?'on':''}" data-mnav="${p.n}"><b>${p.n===1?'●':p.items().length-(p.n===2||p.n===3?1:0)}</b>${p.name.replace(' you','')}</button>`).join('');
   $('#proj').textContent=S.snap.project||'';
+}
+
+/* the session feed: the agent's words, the person's, tool steps folded as '· N steps' (v shows them) */
+function feedHTML(name,showTools){
+  const f=S.feeds[name];
+  if(!f||!f.entries)return '<span class="d">reading the feed…</span>';
+  const out=[];let fold=0;
+  const flush=()=>{if(fold){out.push(`<div class="fold">· ${fold} step${fold>1?'s':''}</div>`);fold=0}};
+  for(const e of f.entries||[]){
+    if(!showTools&&(e.kind==='tool'||e.kind==='out')){if(e.kind==='tool')fold++;continue}
+    flush();out.push(`<div class="${e.kind==='out'&&e.text==='interrupted'?'intr':esc(e.kind)}">${esc(e.text)}</div>`)}
+  flush();
+  if(!out.length)out.push(`<div class="fold">${esc(f.out||'nothing said yet')}</div>`);
+  if(isBusy(name))out.push('<div class="fold">✳ working…</div>');
+  return `<div class="feedv">${f.more?'<div class="fold">· older entries left out</div>':''}${out.join('')}</div>`;
+}
+function loadFeed(name){
+  if(!name||S.feeds[name]?.loading)return;
+  (S.feeds[name]=S.feeds[name]||{}).loading=true;
+  api('feed/'+encodeURIComponent(name)).then(r=>{const was=JSON.stringify(S.feeds[name]?.entries||null);
+    S.feeds[name]={...r,loading:false};if(JSON.stringify(r.entries||null)!==was)paneOnly()});
 }
 function termHTML(it){
   const t=S.terms[it.name];
-  if(!t)return '<span class="d">opening the terminal…</span>';
-  if(!t.ok)return `<div style="padding:4px 10px;white-space:pre-wrap">${esc(t.out)}</div>`;
-  return `<iframe src="${esc(location.protocol+'//'+location.hostname+':'+t.port+t.path)}" title="${esc(it.name)} terminal"></iframe>`;
+  if(!t||t.ok===undefined&&!t.mode)return '<span class="d">opening the pane…</span>';
+  if(t.ok)return `<iframe src="${esc(location.protocol+'//'+location.hostname+':'+t.port+t.path)}" title="${esc(it.name)} pane"></iframe>`;
+  if(t.mode==='builtin')return `<div class="d" style="padding:4px 10px">${esc(t.out)}</div><div style="padding:4px 10px;white-space:pre">${esc(S.caps[it.name]??'…')}</div>`;
+  return `<div style="padding:4px 10px;white-space:pre-wrap">${esc(t.out)}</div>`;
 }
 function openTerm(it){
-  if(S.terms[it.name]&&S.terms[it.name].ok!==undefined)return;
+  if(S.terms[it.name])return;
   S.terms[it.name]={};
-  api('terminal/'+encodeURIComponent(it.name)).then(r=>{S.terms[it.name]=r;renderMain()});
+  api('terminal/'+encodeURIComponent(it.name)).then(r=>{S.terms[it.name]=r;S.sig='';renderMain()});
 }
-function renderMain(){
-  const it=sel(),[tab,ts]=curTab();
-  $('#main').classList.toggle('on',S.focusMain);
-  $('#mtabs').innerHTML=`<span class="back" data-back>‹ ${PANELS[S.panel-1].name}</span>`+ts.map(t=>`<span class="${t===tab?'on':''}" data-tab="${t}">${t}</span>`).join('');
-  let h='',x='';const pane=$('#pane');pane.className='pane';
+function diffHTML(name){
+  const d=S.diffs[name];
+  if(!d){api('diff/'+encodeURIComponent(name)).then(r=>{S.diffs[name]=r;paneOnly()});S.diffs[name]=null;return '<span class="d">reading the diff…</span>'}
+  if(!d.ok)return `<span class="d">${esc(d.out)}</span>`;
+  return (d.text||'').split('\n').map(l=>`<span class="${/^(\+\+\+|---)/.test(l)?'b':l[0]==='+'?'add':l[0]==='-'?'del':/^@@/.test(l)?'hunk':/^diff /.test(l)?'b':''}">${esc(l)}</span>`).join('\n')||'<span class="d">no changes yet</span>';
+}
+
+/* a concept's local copy, shown in the run page's own style: its title, then each option as a box (j/k moves,
+   Enter goes with the selected one). The copy is read as text, never run; with no options found, the copy
+   itself shows, sandboxed. */
+function conceptParse(html,title){
+  const d=new DOMParser().parseFromString(html,'text/html');
+  const clean=s=>String(s||'').replace(/\s+/g,' ').trim();
+  const isHead=el=>/^(option\b|[A-D][\s.:)·-]|.*recommend)/i.test(clean(el.textContent))&&clean(el.textContent).length<90;
+  const heads=[...d.body.querySelectorAll('h2,h3,h4,.t,legend,summary')].filter(isHead);
+  const opts=[];
+  for(const h of heads){
+    let box=h;while(box.parentElement&&box.parentElement!==d.body&&[...box.parentElement.querySelectorAll('h2,h3,h4,.t,legend,summary')].filter(isHead).length===1)box=box.parentElement;
+    if(box===h){const parts=[];let n=h.nextElementSibling;while(n&&!(n.matches('h1,h2,h3,h4')))parts.push(clean(n.textContent)),n=n.nextElementSibling;opts.push({name:clean(h.textContent),text:parts.filter(Boolean),cls:''})}
+    else{const parts=[...box.children].filter(x=>x!==h&&!x.contains(h)).map(x=>clean(x.textContent)).filter(Boolean);
+      if(!parts.length)parts.push(clean(box.textContent.replace(h.textContent,'')));opts.push({name:clean(h.textContent),text:parts,cls:String(box.className||'')})}
+  }
+  return{title:clean(d.querySelector('h1')?.textContent)||title,intro:clean(d.querySelector('h1+p')?.textContent),
+    opts:opts.map(o=>({...o,rec:/recommend/i.test(o.name)||/\b(r|rec|recommended)\b/.test(o.cls)}))};
+}
+function conceptHTML(it){
+  const id=it.concept||it.id,c=S.concepts[id];
+  if(!it.copy)return `<span class="d">No local copy of concept ${esc(id)}'s page here.</span>${it.url?`\n\n<a href="${esc(it.url)}" target="_blank" rel="noopener">${K('O','open on claude.ai ↗')}</a>`:''}`;
+  if(!c){S.concepts[id]={loading:true};fetch('concept/'+encodeURIComponent(id)+'?t='+encodeURIComponent(T)).then(r=>r.ok?r.text():'')
+    .then(h=>{S.concepts[id]=h?conceptParse(h,it.title):{none:true};const os=S.concepts[id].opts||[];const r=os.findIndex(o=>o.rec);
+      if(S.copt[id]===undefined)S.copt[id]=r<0?0:r;S.sig='';renderMain()}).catch(()=>{S.concepts[id]={none:true};S.sig='';renderMain()});
+    return '<span class="d">reading the page…</span>'}
+  if(c.loading)return '<span class="d">reading the page…</span>';
+  const link=it.url?`<a href="${esc(it.url)}" target="_blank" rel="noopener" data-open>${K('O','open on claude.ai ↗')}</a>`:'';
+  if(!c.opts||!c.opts.length)return `<iframe src="concept/${esc(encodeURIComponent(id))}?t=${esc(encodeURIComponent(T))}" sandbox="allow-scripts" title="${esc(it.title)}"></iframe>${link}`;
+  const s=S.copt[id]??0;
+  return `<span class="r"><b>${esc(c.title)}</b></span>${c.intro?`\n<span class="d">${esc(c.intro)}</span>`:''}
+<div class="opts">${c.opts.map((o,i)=>`<div class="opt ${o.rec?'rec':''} ${i===s?'sel':''}" data-opt="${i}"><span class="t">${esc(o.name)}</span>${o.text.map(x=>`<p>${esc(x)}</p>`).join('')}</div>`).join('')}</div>
+<span class="d">build ${esc(it.id)} waits for your OK · </span>${link}`;
+}
+function optMove(step){const it=sel(),id=it&&(it.concept||it.id),c=S.concepts[id];if(!c||!c.opts||!c.opts.length)return;
+  S.copt[id]=Math.max(0,Math.min((S.copt[id]??0)+step,c.opts.length-1));S.sig='';renderMain();$('.opt.sel')?.scrollIntoView({block:'nearest'})}
+function optName(){const it=sel(),id=it&&(it.concept||it.id),c=S.concepts[id];return c&&c.opts&&c.opts[S.copt[id]??0]?.name||''}
+
+function afterHint(v){
+  const ids=String(v||'').split(/[\s,]+/).filter(Boolean);
+  if(!ids.length)return 'nothing: it can start when a slot is free';
+  return ids.map(id=>{if(id.toLowerCase()==='all')return 'all: everything above it';const q=S.snap.queue.find(x=>x.id===id);return q?`${id} ${q.title}`:`${id} (not queued: landed or unknown)`}).join(' · ');
+}
+const KINDS=['F','B','T','D','R','C','K','V'];
+function editHTML(it){
+  const q=it.newtask?{id:'',title:'',files:[],after:[],pri:'normal'}:it;
+  const kind=(q.id.match(/^[A-Za-z]+/)||['F'])[0];
+  const pris=['normal','critical',...(q.pri&&!['normal','critical'].includes(q.pri)?[q.pri]:[])];
+  return `<form class="form" data-form="edit">
+<div class="d">${it.newtask?'New task, written straight to the plan (plan add).':'Changes go straight to the plan (plan edit '+esc(q.id)+').'}</div>
+<label><span>${K('t','what, why, how to check')}</span><textarea id="f-title" rows="3">${esc(q.title)}</textarea></label>
+<div class="two"><label><span>${K('k','kind')} <span class="d">(cycles, <b class="pk">K</b> back)</span></span><select id="f-kind" ${it.newtask?'':'disabled'}>${(it.newtask?KINDS:[kind]).map(k=>`<option ${k===kind?'selected':''}>${k}</option>`).join('')}</select></label>
+<label><span>${K('p','priority')} <span class="d">(on / off)</span></span><select id="f-pri">${pris.map(k=>`<option ${k===q.pri?'selected':''}>${k}</option>`).join('')}</select></label></div>
+<label><span>${K('f','files')}</span><input id="f-files" value="${esc(list(q.files))}" autocomplete="off"></label>
+<label><span>${K('a','after')}</span><input id="f-after" value="${esc(list(q.after))}" autocomplete="off"><span class="ahint" id="f-ahint">${esc(afterHint(list(q.after)))}</span></label>
+<div class="btnrow"><button class="kb p">${K('^S','save')}</button>${it.newtask?'':` <button type="button" class="kb" data-act="drop">${K('D','drop')}</button> <button type="button" class="kb" data-act="take">${K('H','do it here')}</button>`}</div></form>`;
+}
+function chatBox(form,ph,enabled=true){return `<form class="inrow" data-form="${form}"><textarea class="cin" rows="1" placeholder="${esc(ph)}" ${enabled?'':'disabled'}></textarea><button class="kb">${K('⏎','send')}</button></form>`}
+
+function paneHTML(it,tab){
+  let h='',x='',cls='pane';
   if(!it){h='<span class="d">nothing here</span>'}
   else if(tab==='log'){h=S.snap.log.map(l=>esc(l)).join('\n')||'<span class="d">the run log is empty</span>'}
   else if(tab==='release'){h=`${S.snap.release?esc(S.snap.release):'<span class="d">no release is queued</span>'}
 
 A release waits for everything ahead of it, then runs alone, so it releases exactly what landed.
 
-<span class="btnrow"><button class="kb p" data-act="release">⏎ queue a release</button> <button class="kb" data-act="release-now">f release now, without waiting</button></span>`}
-  else if(tab==='terminal'&&it.state==='idle'&&!isCtl(it)){h=`<span class="d">${esc(it.name)} is idle: nothing running</span>`}
-  else if(tab==='terminal'){pane.className='pane term';openTerm(it);h=termHTML(it)}
-  else if(tab==='info'&&S.panel===2){h=`<span class="c">${esc(it.task)}</span> ${esc(it.title)}\n\n${esc(it.name)} · ${esc(it.state)} · ${it.minutes??'?'} min\nfiles ${esc(list(it.files))||'—'}`}
-  else if(tab==='session'){h=it.link?`${esc(it.name)} is a Claude Code session you can also open on its own:\n\n<a href="${esc(it.link)}" target="_blank" rel="noopener">${esc(it.link)}</a>`:isCtl(it)?`<span class="d">${esc(it.name)} has no claude.ai/code link (it is not on Remote Control).</span>`:`<span class="d">${esc(it.name)} is not on Remote Control: the Claude apps list one entry per project, c1. Open it to watch and steer it there too.</span>\n\n<button class="kb p" data-act="open">⏎ open ${esc(it.name)} in the Claude apps</button>`}
-  else if(tab==='chat'){h=S.chat.length?S.chat.map(([w,m])=>w==='me'?`<span class="b">you</span>  ${esc(m)}`:`<span class="r">c1</span>   <span class="d">${esc(m)}</span>`).join('\n\n'):
-    `<span class="d">Talk to c1, the run's control session. What you send is typed into c1; its answer shows in c1's terminal tab${it.link?' and its session':''}.</span>`;
-    x=`<form class="inrow" data-form="chat"><input id="cin" placeholder="talk to c1 (i to focus, Esc to leave)" autocomplete="off"><button class="kb">⏎</button></form>`}
-  else if(tab==='direct edit'){const q=it.newtask?{id:'',title:'',files:[],after:[],pri:'normal'}:it;
-    const kind=(q.id.match(/^[A-Za-z]+/)||['F'])[0];
-    h=`<form class="form" data-form="edit">
-<div class="d">${it.newtask?'New task, written straight to the plan (plan add).':'Changes go straight to the plan (plan edit '+esc(q.id)+').'}</div>
-<label>what, why, how to check<textarea id="f-title" rows="3">${esc(q.title)}</textarea></label>
-<div class="two"><label>kind${it.newtask?`<select id="f-kind">${['F','B','T','D','R','C','K'].map(k=>`<option ${k===kind?'selected':''}>${k}</option>`).join('')}</select>`:`<input value="${esc(kind)}" disabled>`}</label>
-<label>priority<select id="f-pri">${['normal','critical','low','later'].map(k=>`<option ${k===q.pri?'selected':''}>${k}</option>`).join('')}</select></label></div>
-<label>files<input id="f-files" value="${esc(list(q.files))}" placeholder="a.py, tests/test_a.py"></label>
-<label>after<input id="f-after" value="${esc(list(q.after))}" placeholder="F12, B3"></label>
-<div class="btnrow"><button class="kb p">⏎ save</button>${it.newtask?'':` <button type="button" class="kb" data-act="drop">D drop</button> <button type="button" class="kb" data-act="take">h do it here</button>`}</div></form>`}
+<span class="btnrow"><button class="kb p" data-act="release">${K('⏎','queue a release')}</button> <button class="kb" data-act="release-now">${K('f','release now, without waiting')}</button></span>`}
+  else if(tab==='chat'||tab==='feed'){const name=sessionOf(it);if(!S.feeds[name])loadFeed(name);h=feedHTML(name,tab==='chat'?!S.showTools:S.showTools);  /* a chat shows its steps as a Claude session does, v hides them; a feed folds them, v shows them */
+    const qa=S.panel===1?`<div class="presets">${(S.snap.quick_asks||[]).map(q=>`<button type="button" class="kb" data-quick="${esc(q.key)}"><b class="pk">${esc(quickKey(q.key))}</b> ${esc(q.label)}</button>`).join('')}</div>`:'';
+    const idle=!isCtl(it)&&S.panel===2&&!it.task;
+    x=qa+chatBox('send',idle?`${name} is idle`:tab==='chat'?`message ${name}`:`message ${name} (it reads it between steps)`,!idle)}
+  else if(tab==='pane'){if(S.snap.terminal_mode==='feed'){h=`There is no tmux here, so ${esc(it.name)} has no pane to show: its feed and its session link show it.`}
+    else{cls='pane term';openTerm(it);h=termHTML(it);const t=S.terms[it.name];
+      if(t&&t.mode==='builtin')x=`<form class="inrow" data-form="keys"><input id="kin" placeholder="type into ${esc(it.name)}" autocomplete="off"><button class="kb">${K('⏎','send')}</button></form>`}}
+  else if(tab==='diff'){h=diffHTML(it.name)}
+  else if(tab==='session'){h=it.link?`${esc(it.name)} is a Claude Code session you can also open on its own, in the app or on your phone:\n\n<a href="${esc(it.link)}" target="_blank" rel="noopener" data-open>${K('o','open')} ${esc(it.link)}</a>`:
+    isCtl(it)?`<span class="d">${esc(it.name)} has no claude.ai/code link (it is not on Remote Control).</span>`:
+    `<span class="d">${esc(it.name)} is not on Remote Control: the Claude apps list one entry per project, c1. Open it to watch and steer it there too.</span>\n\n<button class="kb p" data-act="open">${K('o','open '+esc(it.name)+' in the Claude apps')}</button>`}
+  else if(tab==='info'&&it.newchat){h=`Starts another control session (control --new) with its claude.ai/code link,\nso you can talk to it from the Claude app on your phone too.\n\n<button class="kb p" data-act="newchat">${K('N','start one')}</button>`}
+  else if(tab==='direct edit'){h=editHTML(it)}
   else if(tab==='chat edit'){h=`<span class="d">${it.newtask?'Describe the task in your own words; c1 writes it, picks the files and queues it.':'Say what to change about '+esc(it.id)+'; c1 rewrites the task.'}</span>${it.newtask?'':`\n\n<span class="c">${esc(it.id)}</span> ${esc(it.title)}`}`;
-    x=`<form class="inrow" data-form="chatedit"><input id="ein" placeholder="${it.newtask?'e.g. the board should show usage too':'e.g. also cover the phone layout'}" autocomplete="off"><button class="kb">⏎</button></form>`}
-  else if(tab==='info'&&S.panel===3){h=`<span class="c">${esc(it.id)}</span> ${esc(it.title)}\n\nkind ${esc(it.kind)} · ${esc(it.pri)}${it.blocked?' · blocked':''}\nsection ${esc(it.section)}\nfiles ${esc(list(it.files))||'—'}\nafter ${esc(list(it.after))||'—'}`}
-  else if(tab==='answer'||tab==='info'){h=`<span class="y">${esc(it.id)}</span> ${esc(it.title)}\n\n${esc(tab==='info'?it.what:it.ask)}${it.url?`\n\n<a href="${esc(it.url)}" target="_blank" rel="noopener">open the page ↗</a>`:''}\n\n<span class="d">waiting ${esc(it.age)}${tab==='answer'?' · your reply goes to c1, which settles the item':''}</span>`;
-    if(tab==='answer')x=`<form class="inrow" data-form="answer"><input id="ain" placeholder="your reply" autocomplete="off"><button class="kb">⏎</button> <button type="button" class="kb" data-act="later">L later</button></form>`}
-  else if(tab==='preview'){h=`<span class="m">◆</span> ${esc(it.title)}\n\nbuild ${esc(it.id)} waits for your OK on concept ${esc(it.concept)}.${it.url?`\n\n<a href="${esc(it.url)}" target="_blank" rel="noopener">open the options page ↗</a>`:''}`}
-  else if(tab==='pick'){h='Pick an option, or say what to change; c1 settles it.';x=`<form class="inrow" data-form="pick"><input id="pin" placeholder="e.g. go with A" autocomplete="off"><button class="kb">⏎</button></form>`}
-  pane.innerHTML=h;$('#extra').innerHTML=x;
-  if(tab==='log'||tab==='chat')pane.scrollTop=1e9;
+    x=chatBox('chatedit',it.newtask?'e.g. the board should show usage too':'e.g. also cover the phone layout')}
+  else if(tab==='answer'){h=`<span class="y">${esc(it.id)}</span> ${esc(it.title)}\n\n${esc(it.ask)}${it.url?`\n\n<a href="${esc(it.url)}" target="_blank" rel="noopener">open the page ↗</a>`:''}\n\n<span class="d">waiting ${esc(it.age)} · your answer goes to c1, which settles the item</span>`;
+    const os=answerOpts(it);
+    x=`<div class="presets">${os.map((o,i)=>`<button type="button" class="kb" data-answer="${i}"><b class="pk">${esc(o.key)}</b> ${esc(o.label)}</button>`).join('')}<button type="button" class="kb" data-act="later">${K('L','later')}</button></div>`+chatBox('answer','or your own reply')}
+  else if(tab==='info'){h=`<span class="y">${esc(it.id)}</span> ${esc(it.title)}\n\n${esc(it.label)}: ${esc(it.what)}${it.url?`\n\n<a href="${esc(it.url)}" target="_blank" rel="noopener">${esc(it.url)}</a>`:''}\n\n<span class="d">waiting ${esc(it.age)}</span>`}
+  else if(tab==='preview'){h=conceptHTML(it);x=chatBox('pick','say what to change')}
+  return[h,x,cls];
 }
+const STICKY=new Set(['direct edit','pane','preview']);  /* tabs a snapshot does not redraw: an edit, a live pane */
+function renderMain(){
+  const it=sel(),[tab,ts,key]=curTab();
+  $('#main').classList.toggle('on',S.focusMain);
+  $('#mtabs').innerHTML=`<span class="back" data-back>‹ ${PANELS[S.panel-1].name}</span>`+ts.map(t=>`<span class="${t===tab?'on':''}" data-tab="${t}">${t}</span>`).join('');
+  const sig=key+'|'+tab,pane=$('#pane');
+  if(sig===S.sig&&STICKY.has(tab))return;
+  const [h,x,cls]=paneHTML(it,tab);
+  const keep=pane.scrollHeight-pane.scrollTop-pane.clientHeight<40;
+  pane.className=cls;pane.innerHTML=h;
+  if(sig!==S.extraSig||!$('#extra').contains(document.activeElement)){
+    $('#extra').innerHTML=x;S.extraSig=sig;
+    for(const el of document.querySelectorAll('#extra textarea,#extra input,#pane textarea,#pane input,#pane select')){
+      const dk=sig+':'+(el.id||el.closest('form')?.dataset.form||'');el.dataset.dk=dk;if(S.draft[dk]!==undefined)el.value=S.draft[dk]}
+    if($('#f-after'))$('#f-ahint').textContent=afterHint($('#f-after').value);
+  }
+  if(/log|chat|feed/.test(tab)&&(keep||sig!==S.sig))pane.scrollTop=1e9;
+  S.sig=sig;
+}
+function paneOnly(){const [tab]=curTab();if(['chat','feed','diff'].includes(tab)){S.sig+='~';renderMain();renderFoot()}}
+/* the keys the place in focus already shows: the main pane's buttons and labels, or the panel's row hints */
+function shownKeys(){return[...document.querySelectorAll(S.focusMain?'#main .pk':'#left .box.cur-panel .row .pk')].map(x=>x.textContent)}
 function renderFoot(){
-  const [tab]=curTab();
-  /* F70: only the focused panel's keys (or the main pane's), then '? all keys', lazygit style */
-  const nt=sel()?.newtask;
-  const keys=typing()?[['Esc','leave'],['⏎','send']]:[...(S.focusMain?[['Esc','back'],['[ ]','tab']]:[]),
-    ...({1:[['j/k','move'],['⏎','open'],['R','release'],['c','chat']],
-         2:[['j/k','move'],['⏎','open'],['t','terminal'],['c','chat']],
-         3:nt?[['j/k','move'],['n','new'],['E','chat']]:[['j/k','move'],['J/K','reorder'],['n','new'],['e','edit'],['E','chat'],['D','drop'],['h','here']],
-         4:[['j/k','move'],['i','answer'],['L','later']],
-         5:[['j/k','move'],['⏎','open']]}[S.panel]).filter(([k])=>!(S.focusMain&&(k==='j/k'||k==='⏎'))),['?','all keys']];
-  $('#foot').innerHTML=`<span class="mode">${typing()?'INSERT':S.focusMain?esc(tab.toUpperCase()):PANELS[S.panel-1].name.toUpperCase()}</span>`+keys.map(([k,v])=>`<span class="k">${k}</span> ${v}`).join('<span class="sep"> · </span>');
+  const f=footer(ctx(),shownKeys());
+  const fmt=a=>a.map(([k,v])=>`<span class="k">${esc(k)}</span> ${esc(v)}`).join(' · ');
+  $('#foot').innerHTML=`<span class="mode">${esc(f.mode)}</span>`+fmt(f.here)+(f.glob.length?`<span class="gsep">│</span><span class="glob">${fmt(f.glob)}</span>`:'');
 }
 function render(){renderLeft();renderMain();renderFoot()}
 function toast(m,bad){const t=$('#toast');t.textContent=m;t.className='toast'+(bad?' bad':'');t.hidden=false;clearTimeout(t._h);t._h=setTimeout(()=>t.hidden=true,bad?8000:4000)}
 
-/* live updates: the snapshot over server-sent events */
+/* live updates: the snapshot over server-sent events; the open feed every 2 s, the built-in pane every 0.5 s */
 function connect(){
   const es=new EventSource('events?t='+encodeURIComponent(T));
   es.onmessage=e=>{
     const snap=JSON.parse(e.data);
     if(snap.error){toast('snapshot: '+snap.error,true);return}
     S.snap=snap;S.last=Date.now();$('#live').classList.add('on');follow();
-    renderLeft();if(!typing()&&curTab()[0]!=='terminal')renderMain();renderFoot();
+    renderLeft();renderMain();renderFoot();
   };
   es.onerror=()=>{$('#live').classList.remove('on');$('#live').textContent='reconnecting…'};
 }
 setInterval(()=>{if(!S.last)return;const s=Math.round((Date.now()-S.last)/1000);$('#live').textContent='live · '+(s<5?'just now':s+'s ago')},1000);
+setInterval(()=>{if(!T)return;const it=sel(),[tab]=curTab();if((tab==='chat'||tab==='feed')&&it){const n=sessionOf(it);if(S.feeds[n])S.feeds[n].loading=false;loadFeed(n)}},2000);
+setInterval(()=>{const it=sel(),[tab]=curTab();const t=it&&S.terms[it.name];if(tab!=='pane'||!t||t.mode!=='builtin'||S.capBusy)return;
+  S.capBusy=true;api('pane/'+encodeURIComponent(it.name)).then(r=>{S.capBusy=false;S.caps[it.name]=r.ok?r.text:(r.out||'');S.sig='';renderMain()})},500);
 
 /* actions */
-function chatSay(text,send){S.chat.push(['me',text]);renderMain();return send().then(r=>{S.chat.push(['c1',r.ok?(r.out||'sent'):'not sent: '+r.out]);renderMain()})}
-function back(){S.focusMain=false;render()}
+function back(){S.focusMain=false;if(typing())document.activeElement.blur();render()}
+function boxOf(form){return document.querySelector(`#extra form[data-form="${form}"] textarea, #extra form[data-form="${form}"] input`)}
 function submit(kind){
-  const it=sel();
-  if(kind==='chat'){const v=$('#cin').value.trim();if(!v)return;chatSay(v,()=>act('chat',{text:v},'sent to c1')).then(()=>$('#cin')?.focus())}
+  const it=sel(),box=boxOf(kind),v=box?box.value.trim():'';
+  if(kind==='send'){if(!v)return;const name=sessionOf(it),es=(S.feeds[name]||{}).entries||[];
+    S.busy[name]={at:Date.now(),last:JSON.stringify(es[es.length-1]||null)};
+    (S.feeds[name]=S.feeds[name]||{entries:[]}).entries=[...es,{kind:'you',text:v}];
+    box.value='';dropDraft(box);paneOnly();box.focus();
+    act('chat_to',{to:name,text:v},'sent to '+name).then(r=>{if(!r.ok)delete S.busy[name];renderFoot()});return}
   if(kind==='edit'){
     const text=$('#f-title').value.trim();if(!text){toast('Write what the task is first.',true);return}
     const a={text,files:$('#f-files').value.trim(),after:$('#f-after').value.trim(),pri:$('#f-pri').value};
-    if(it.newtask)act('plan_add',{kind:$('#f-kind').value,...a},'queued').then(r=>{if(r.ok)back()});
+    const done=r=>{if(r.ok){for(const el of document.querySelectorAll('#pane [data-dk]'))delete S.draft[el.dataset.dk];saveDrafts();S.sig='';back()}};
+    if(it.newtask)act('plan_add',{kind:$('#f-kind').value,...a},'queued').then(done);
     else{if(text===it.title)delete a.text;if(a.pri===it.pri)a.pri='';if(a.files===list(it.files))a.files='';if(a.after===list(it.after))a.after='';
-      act('plan_change',{tid:it.id,...a},'saved '+it.id).then(r=>{if(r.ok)back()})}
-  }
-  if(kind==='chatedit'){const v=$('#ein').value.trim();if(!v)return;
-    const text=it.newtask?'new task: '+v:`change ${it.id} (${it.title}): ${v}`;
-    chatSay(text,()=>act('chat',{text},'sent to c1'));back()}
-  if(kind==='answer'){const v=$('#ain').value.trim();if(!v)return;chatSay(`${it.id}: ${v}`,()=>act('answer',{tid:it.id,text:v},it.id+' answered'));back()}
-  if(kind==='pick'){const v=$('#pin').value.trim();if(!v)return;const text=`concept ${it.concept} (${it.title}), build ${it.id}: ${v}`;chatSay(text,()=>act('chat',{text},'sent to c1'));back()}
+      act('plan_change',{tid:it.id,...a},'saved '+it.id).then(done)}
+    return}
+  if(!v)return;
+  box.value='';dropDraft(box);
+  if(kind==='chatedit'){const text=it.newtask?'new task: '+v:`change ${it.id} (${it.title}): ${v}`;act('chat',{text},'sent to c1');back()}
+  if(kind==='answer'){act('answer',{tid:it.id,text:v},it.id+' answered').then(r=>{if(r.ok)back()})}
+  if(kind==='pick'){act('answer',{tid:it.id,text:v},'sent to c1')}
+  if(kind==='keys'){act('keys',{session:it.name,text:v,key:'Enter'},'typed into '+it.name);box.focus()}
 }
 /* F72: Shift+J / Shift+K in [3] Queue: the selected task one place down / up (plan move ID after|before
-   <neighbour>), as agent-runner ui does since F70; the selection follows it once the snapshot shows the move */
+   <neighbour>); the selection follows it once the snapshot shows the move */
 function reorder(step){
   const q=S.snap.queue,i=S.cur[3],it=q[i];if(!it)return;
   if(i+step<0||i+step>=q.length){toast(`${it.id} is already ${step>0?'last':'first'}`);return}
@@ -292,33 +559,48 @@ function follow(){
   if(!S.follow)return;const i=S.snap.queue.findIndex(t=>t.id===S.follow);
   if(i>=0){S.cur[3]=i;S.follow=''}
 }
+function openLink(url){const a=document.createElement('a');a.href=url;a.target='_blank';a.rel='noopener';document.body.appendChild(a);a.click();a.remove()}
 function doAct(a){
   const it=sel();
   if(a==='release')act('release',{},'release queued');
   if(a==='release-now')act('release',{now:true},'release queued, now');
-  if(a==='later'&&it)act('shelve',{tid:it.id},it.id+' shelved').then(r=>{if(r.ok)back()});
-  if(a==='drop'&&it&&!it.newtask)openPop('Drop '+it.id,`${esc(it.title)}\n\n<form class="form" data-form="drop"><label>why<input id="dwhy" autocomplete="off"></label><div class="btnrow"><button class="kb p">⏎ drop ${esc(it.id)}</button> <button type="button" class="kb" data-close>Esc keep it</button></div></form>`,'#dwhy');
-  if(a==='open'&&it&&it.name&&!isCtl(it))act('open_session',{slot:it.name},'opened '+it.name);
-  if(a==='take'&&it&&!it.newtask)chatSay(`do ${it.id} here`,()=>act('take',{tid:it.id},'c1 takes '+it.id));
+  if(a==='later'&&it&&S.panel===4)act('shelve',{tid:it.id},it.id+' shelved').then(r=>{if(r.ok)back()});
+  if(a==='drop'&&it&&S.panel===3&&!it.newtask)openPop('Drop '+it.id,`${esc(it.title)}\n\n<form class="form" data-form="drop"><label>why<input id="dwhy" autocomplete="off"></label><div class="btnrow"><button class="kb p">${K('⏎','drop '+esc(it.id))}</button> <button type="button" class="kb" data-close>${K('Esc','keep it')}</button></div></form>`,'#dwhy');
+  if(a==='open')openIt();
+  if(a==='take'&&it&&S.panel===3&&!it.newtask)act('take',{tid:it.id},'c1 takes '+it.id);
+  if(a==='newchat')act('new_control',{},'started a new control session').then(r=>{if(r.ok&&r.link)toast('new control session:\n'+r.link)});
+}
+function openIt(){
+  const it=sel();if(!it)return;
+  if(S.panel===5){if(it.url)openLink(it.url);else toast('no claude.ai page for '+it.id,true);return}
+  if(S.panel!==2)return;
+  if(it.link){openLink(it.link);return}
+  if(isCtl(it)){toast(`${it.name} has no claude.ai/code link`,true);return}
+  if(it.task)act('open_session',{slot:it.name},'opened '+it.name).then(r=>{if(r.ok&&/^https:/.test(r.out||''))openLink(r.out)});
 }
 function openPop(title,html,focus){$('#poptitle').textContent=title;$('#popbody').innerHTML=html;$('#pop').hidden=false;if(focus)setTimeout(()=>$(focus)?.focus(),0)}
-function closePop(){$('#pop').hidden=true}
+function closePop(){$('#pop').hidden=true;renderFoot()}
 function release(){S.panel=1;S.cur[1]=items().length-1;S.focusMain=true;S.tab[keyOf(sel())]='release';render()}
-function help(){openPop('Keybindings',`<span class="r">Global</span>
-  <span class="b">1-5</span>    focus a panel        <span class="b">j/k</span>    move down / up
-  <span class="b">⏎</span>      into the main pane   <span class="b">[ ]</span>    previous / next tab
-  <span class="b">t</span>      terminal of the slot <span class="b">c</span>      chat with c1
-  <span class="b">i</span>      type in the pane     <span class="b">R</span>      release
-  <span class="b">Esc</span>    back out             <span class="b">?</span>      this list
+function help(){openPop('Keybindings',`<span class="r">Everywhere</span>
+  <span class="b">1-5</span>    a panel              <span class="b">Tab</span>    next panel
+  <span class="b">j/k</span>    move down / up       <span class="b">l ⏎</span>    into the main pane
+  <span class="b">h/l</span>    previous / next tab  <span class="b">Esc</span>    back to the panels
+  <span class="b">^h ^l</span>  left / right side    <span class="b">c</span>      chat with c1
+  <span class="b">i</span>      type in the box      <span class="b">?</span>      this list
   <span class="b">T</span>      theme (this browser)
 
+<span class="r">Status [1]</span>      <span class="b">R</span> release   <span class="b">s y w u</span> quick asks in its chat
+<span class="r">Sessions [2]</span>    <span class="b">N</span> new chat  <span class="b">o</span> open the session  <span class="b">v</span> show tool steps
+  a chat: <span class="b">⏎</span> sends, <span class="b">⇧⏎</span> new line, <span class="b">Esc</span> interrupts while it works
 <span class="r">Queue [3]</span>
-  <span class="b">n</span>      new task             <span class="b">e</span>      direct edit
-  <span class="b">E</span>      chat edit            <span class="b">D</span>      drop
-  <span class="b">h</span>      do it here           <span class="b">J/K</span>    move the task down / up
-
-<span class="r">Needs you [4]</span>
-  <span class="b">i</span>      answer               <span class="b">L</span>      later
+  <span class="b">e</span>      direct edit          <span class="b">E</span>      chat edit
+  <span class="b">n</span>      new task             <span class="b">J/K</span>    move the task down / up
+  <span class="b">p</span>      priority on / off    <span class="b">H</span>      do it here
+  <span class="b">D</span>      drop
+  in a direct edit: <span class="b">t k p f a</span> what, kind (<span class="b">K</span> back), priority, files, after
+                    <span class="b">Tab</span> next field, <span class="b">^S</span> save
+<span class="r">Needs you [4]</span>   <span class="b">a</span> answer  <span class="b">y n a b c</span> an answer's key  <span class="b">L</span> later
+<span class="r">Concepts [5]</span>    <span class="b">j/k</span> option  <span class="b">⏎</span> go with it  <span class="b">i</span> what to change  <span class="b">O</span> open on claude.ai
 
 <span class="d">Esc closes this.</span>`)}
 /* F69: themes. The server writes [ui] theme into style#theme and every theme's tokens into THEMES; T picks one
@@ -341,37 +623,63 @@ function themePicker(){
 <span class="d">Remembered in this browser. Esc closes this.</span>`,'.themes .kb.p');
 }
 if(savedTheme())applyTheme(savedTheme());
-function setTab(name){const [,ts,key]=curTab();if(ts.includes(name)){S.tab[key]=name;S.focusMain=true;render();return true}return false}
-function focusInput(){const i=$('#extra input, #pane textarea, #pane input');if(i&&!i.disabled){S.focusMain=true;renderLeft();i.focus();renderFoot()}}
+function setTab(name,focus){const [,ts,key]=curTab();if(!ts.includes(name))return false;S.tab[key]=name;S.focusMain=true;render();if(focus)setTimeout(focusBox,0);return true}
+function focusBox(){const i=[...document.querySelectorAll('#extra textarea,#extra input,#pane textarea,#pane input')].find(x=>!x.disabled);if(i){S.focusMain=true;renderLeft();$('#main').classList.add('on');i.focus();renderFoot()}}
+const FIELDS=['f-title','f-kind','f-pri','f-files','f-after'];
 
+/* run one command route() gave */
+function run(cmd){
+  const [c,a,b]=cmd,its=items();
+  switch(c){
+    case 'closepop':closePop();return;
+    case 'save':submit('edit');return;
+    case 'side':if(typing())document.activeElement.blur();S.focusMain=a==='right';render();return;
+    case 'blur':document.activeElement.blur();renderFoot();return;
+    case 'interrupt':{const n=sessionOf(sel());delete S.busy[n];act('interrupt',{session:n},'interrupted '+n).then(()=>{if(S.feeds[n])S.feeds[n].loading=false;loadFeed(n);renderFoot()});return}
+    case 'send':submit(document.activeElement.closest('form')?.dataset.form||'send');return;
+    case 'field':{const els=FIELDS.map(id=>document.getElementById(id)).filter(x=>x&&!x.disabled);const i=els.indexOf(document.activeElement);
+      const n=i<0?(a>0?0:els.length-1):(i+a+els.length)%els.length;els[n]?.focus();renderFoot();return}
+    case 'panel':S.panel=a;S.focusMain=false;if(typing())document.activeElement.blur();render();return;
+    case 'back':back();return;
+    case 'tab':{const [t,ts,key]=curTab();S.tab[key]=ts[Math.max(0,Math.min(ts.indexOf(t)+a,ts.length-1))];S.focusMain=true;render();return}
+    case 'focus':document.getElementById(a)?.focus();renderFoot();return;
+    case 'cycle':{const el=document.getElementById(a);if(!el)return;
+      if(el.disabled){toast(a==='f-kind'?"the kind is the id's letter: it stays":'');return}
+      if(a==='f-pri')el.value=el.value==='critical'?'normal':'critical';
+      else el.selectedIndex=(el.selectedIndex+b+el.options.length)%el.options.length;
+      el.dispatchEvent(new Event('input',{bubbles:true}));renderFoot();return}
+    case 'move':S.cur[S.panel]=Math.max(0,Math.min(S.cur[S.panel]+a,its.length-1));render();return;
+    case 'into':S.focusMain=true;render();return;
+    case 'act':doAct(a);return;
+    case 'answer':{const it=sel(),o=answerOpts(it)[a];if(o)act('answer',{tid:it.id,text:o.label},`${it.id}: ${o.label}`).then(r=>{if(r.ok)back()});return}
+    case 'opt':optMove(a);return;
+    case 'go':{const it=sel(),o=optName();if(!o){focusBox();return}act('answer',{tid:it.id,text:'go with '+o},'sent to c1: go with '+o);return}
+    case 'open':openIt();return;
+    case 'quick':act('quick_ask',{key:a},'asked c1');S.busy.c1={at:Date.now(),last:JSON.stringify(((S.feeds.c1||{}).entries||[]).slice(-1)[0]||null)};return;
+    case 'steps':S.showTools=!S.showTools;S.sig='';render();return;
+    case 'typebox':focusBox();return;
+    case 'help':help();return;
+    case 'theme':themePicker();return;
+    case 'chat':{S.panel=2;S.cur[2]=Math.max(0,S.snap.sessions.findIndex(s=>s.name==='c1'));S.tab['2:c1']='chat';S.focusMain=true;render();setTimeout(focusBox,0);return}
+    case 'release':release();return;
+    case 'newchat':doAct('newchat');return;
+    case 'newtask':S.cur[3]=S.snap.queue.length;S.tab['3:+']='chat edit';S.focusMain=true;render();setTimeout(focusBox,0);return;
+    case 'tabto':setTab(a,true);return;
+    case 'reorder':reorder(a);return;
+    case 'pri':{const q=sel();act('plan_change',{tid:q.id,pri:q.pri==='critical'?'normal':'critical'},`${q.id} is ${q.pri==='critical'?'normal':'critical'} now`);return}
+  }
+}
 document.addEventListener('keydown',e=>{
-  const inField=/INPUT|TEXTAREA|SELECT/.test(e.target.tagName);
-  if(e.key==='Escape'){if(!$('#pop').hidden){closePop();return}if(inField){e.target.blur();renderFoot();return}if(S.focusMain)back();return}
-  if(inField||!$('#pop').hidden||e.metaKey||e.ctrlKey||e.altKey)return;
-  const k=e.key,its=items();let done=true;
-  if(/^[1-5]$/.test(k)){S.panel=+k;S.focusMain=false}
-  else if(k==='j'||k==='ArrowDown'){S.cur[S.panel]=Math.min(S.cur[S.panel]+1,its.length-1);S.focusMain=false}
-  else if(k==='k'||k==='ArrowUp'){S.cur[S.panel]=Math.max(S.cur[S.panel]-1,0);S.focusMain=false}
-  else if(k==='Enter'){S.focusMain=true}
-  else if(k===']'||k==='['){const [t,ts,key]=curTab();S.tab[key]=ts[(ts.indexOf(t)+(k===']'?1:ts.length-1))%ts.length];S.focusMain=true}
-  else if(k==='t'){if(S.panel!==2){S.panel=2;const f=S.snap.sessions.findIndex(s=>!isCtl(s));S.cur[2]=f<0?0:f}setTab('terminal');return e.preventDefault()}
-  else if(k==='c'){S.panel=2;S.cur[2]=Math.max(0,S.snap.sessions.findIndex(s=>s.name==='c1'));S.tab['2:c1']='chat';S.focusMain=true;render();setTimeout(focusInput,0);return e.preventDefault()}
-  else if(k==='R'){release();return e.preventDefault()}
-  else if(k==='T'){themePicker();return e.preventDefault()}
-  else if(k==='?'){help()}
-  else if(k==='i'){if(S.panel===4)setTab('answer');else render();setTimeout(focusInput,0);return e.preventDefault()}
-  else if(S.panel===3&&k==='n'){S.cur[3]=S.snap.queue.length;S.tab['3:+']='direct edit';S.focusMain=true;render();setTimeout(()=>$('#f-title')?.focus(),0);return e.preventDefault()}
-  else if(S.panel===3&&k==='e'&&!sel()?.newtask){setTab('direct edit');setTimeout(()=>$('#f-title')?.focus(),0);return e.preventDefault()}
-  else if(S.panel===3&&k==='E'){setTab('chat edit');setTimeout(focusInput,0);return e.preventDefault()}
-  else if(S.panel===3&&k==='D'){doAct('drop');return e.preventDefault()}
-  else if(S.panel===3&&k==='h'){doAct('take')}
-  else if(S.panel===3&&(k==='J'||k==='K')&&!sel()?.newtask){reorder(k==='J'?1:-1);return e.preventDefault()}
-  else if(S.panel===4&&k==='L'){doAct('later')}
-  else done=false;
-  if(done){e.preventDefault();render()}
+  const cmds=route(ctx(),{key:e.key,ctrl:e.ctrlKey,meta:e.metaKey,shift:e.shiftKey,alt:e.altKey});
+  if(!cmds.length)return;
+  e.preventDefault();cmds.forEach(run);
 });
 document.addEventListener('focusin',renderFoot);
 document.addEventListener('focusout',()=>setTimeout(renderFoot,0));
+document.addEventListener('input',e=>{
+  const el=e.target;if(el.dataset&&el.dataset.dk){S.draft[el.dataset.dk]=el.value;saveDrafts()}
+  if(el.id==='f-after')$('#f-ahint').textContent=afterHint(el.value);
+});
 document.addEventListener('click',e=>{
   if(e.target.closest('[data-close]')){closePop();return}
   if(e.target.id==='pop'){closePop();return}
@@ -379,6 +687,9 @@ document.addEventListener('click',e=>{
   const r=e.target.closest('[data-p]');if(r){S.panel=+r.dataset.p;S.cur[S.panel]=+r.dataset.i;S.focusMain=matchMedia('(max-width:760px)').matches||S.focusMain;render();return}
   const b=e.target.closest('[data-panel]');if(b){S.panel=+b.dataset.panel;S.focusMain=false;render();return}
   const t=e.target.closest('[data-tab]');if(t){setTab(t.dataset.tab);return}
+  const q=e.target.closest('[data-quick]');if(q){run(['quick',q.dataset.quick]);return}
+  const an=e.target.closest('[data-answer]');if(an){run(['answer',+an.dataset.answer]);return}
+  const o=e.target.closest('[data-opt]');if(o){const it=sel();S.copt[it.concept||it.id]=+o.dataset.opt;S.sig='';renderMain();return}
   const a=e.target.closest('[data-act]');if(a){e.preventDefault();doAct(a.dataset.act);return}
   const m=e.target.closest('[data-mnav]');if(m){S.panel=+m.dataset.mnav;S.focusMain=false;render();return}
   if(e.target.closest('[data-back]')){back();return}
@@ -389,7 +700,7 @@ document.addEventListener('submit',e=>{
     closePop();act('drop',{tid:it.id,why},'dropped '+it.id).then(r=>{if(r.ok)back()});return}
   submit(e.target.dataset.form);
 });
-$('#relbtn').onclick=release;$('#helpbtn').onclick=help;$('#themebtn').onclick=themePicker;
+$('#helpbtn').onclick=help;$('#themebtn').onclick=themePicker;
 if(!T){$('#live').textContent='no token: open the address `status` prints'}
 else{api('snapshot').then(s=>{if(s&&s.status){S.snap=s;S.last=Date.now()}render()});connect()}
 render();
