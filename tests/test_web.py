@@ -372,6 +372,7 @@ def test_logic(tmp: Path) -> None:
         ['usageOf', ['run up: 3 slots', 'usage: session 40%, week 12%']],
         ['chatName', {'name': 'c1', 'title': 'control session'}], ['chatName', {'name': 'c6', 'title': 'Site deploy'}],
         ['chatName', {'name': 'c7', 'title': 'control session'}],
+        ['planWords', {'id': 'F8', 'state': 'after', 'after_title': 'V5 Release'}, sessions],
     ])
     msgs = got[0]
     eq([m['w'] for m in msgs], ['u', 'a', 'u', 'a'], 'your words, its reply, yours, its steps so far')
@@ -393,6 +394,7 @@ def test_logic(tmp: Path) -> None:
        "a Needs you item's Chat talks about it with c1, not as its answer")
     eq(got[17], 'session 40%, week 12%', 'the usage line for the sidebar')
     eq(got[18:21], ['Project chat', 'Site deploy', 'Chat 7'], 'chats by their titles, c1 the project chat')
+    eq(got[21], 'Waits for V5 Release', "B115: an after shows the id and its short title (the model's after_title)")
 
 
 def test_extras(tmp: Path) -> None:

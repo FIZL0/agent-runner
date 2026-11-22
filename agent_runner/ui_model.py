@@ -84,11 +84,12 @@ def queue_rows(ls: list[str], st: dict | None = None, now: float | None = None) 
     names, out = _kind_names(), []
     tasks = list(P.iter_tasks(ls))
     titles = {tid: P.short_title(rest, 200) for _, _, tid, rest, _ in tasks}
+    names_of = {tid: after_name(rest) for _, _, tid, rest, _ in tasks}
     live = {tid for _, box, tid, _, _ in tasks if box in ' ~'}
     landed = {tid for _, box, tid, _, _ in tasks if box not in ' ~'} | done_ids()
     where = slot_of(st or {}, time.time() if now is None else now)
     for section, box, tid, rest, i in tasks:
-        if box not in ' ~':
+        if box not in ' ~' or P._shelved(ls, i):  # B115: a shelved task is set aside, not queued
             continue
         f = P.fields(ls[i])
         after, pri = P.waits_on(ls, i), task_pri(rest, section)
@@ -96,7 +97,7 @@ def queue_rows(ls: list[str], st: dict | None = None, now: float | None = None) 
         out.append({'id': tid, 'kind': task_kind(tid, names), 'title': titles[tid],
                     'files': f.get('files', []), 'after': after, 'pri': pri,
                     'section': section, 'blocked': box == '~',
-                    'after_title': after_words(after, titles, live, everything, landed),
+                    'after_title': after_words(after, names_of, live, everything, landed),
                     'state': queue_state(tid, pri, after, live, where, box == '~')})
     return out
 
@@ -126,10 +127,18 @@ def slot_of(st: dict, now: float) -> dict[str, str]:
     return out
 
 
+def after_name(rest: str, width: int = 40) -> str:
+    """B115: a task as an `after` names it: its short title up to its first ': ' ('Release: bump the version…'
+    -> 'Release'), cut at a word to about `width`."""
+    t = P.short_title(rest, 200)
+    head = t.split(': ', 1)[0].strip()
+    return P.short_title(head or t, width)
+
+
 def after_words(after: list[str], titles: dict[str, str], live: set[str], everything: bool = False,
                 landed: set[str] | None = None) -> str:
     """F74: what a queued task waits on, as the queue row says it: 'all: everything above it' for `after: all`;
-    else each id with its title while it is open ('F66 Run page: …'), '(landed)' once it is done ('B109
+    else each id with its name while it is open ('F66 Run page', `after_name`), '(landed)' once it is done ('B109
     (landed)'), '(not in the plan)' for an id neither open nor in `landed` (None: every id not open is landed);
     joined by ', '; '' for nothing."""
     if everything:
