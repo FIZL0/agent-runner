@@ -147,7 +147,7 @@ def record(a, c) -> int:
     later = c.plan_external and not a.blocked and finished_mark() is not None
     if a.artifact and not a.blocked:
         journal_link(c, a.id, a.artifact)
-        if kept_copy := keep_page(c, a.id, getattr(a, 'page', None)):
+        if plan.concept(a.id) and (kept_copy := keep_page(c, a.id, getattr(a, 'page', None))):
             print(f'kept a copy of the page: {kept_copy}')
         if plan.concept(a.id):
             bid = plan.concept_done(a.id, a.artifact)

@@ -176,8 +176,9 @@ class Terminals:
             return terminal_fallback(name)
         pane = pane_of(name)
         if not pane:
-            return {'ok': False, 'out': f'{name} has no tmux pane (the run is hidden, or {name} is not up), so '
-                                        f'there is nothing for ttyd to show.'}
+            return {'ok': False, 'mode': 'feed', 'feed': f'feed/{name}',
+                    'out': f'{name} has no tmux pane (the run is hidden, or {name} is not up), so '
+                           f'there is nothing for ttyd to show.'}
         with self.lock:
             p = self.procs.get(name)
             if p and p[0].poll() is None and p[2] == pane:

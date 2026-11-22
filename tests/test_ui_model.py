@@ -261,6 +261,8 @@ QUEUE_TODO = """# TODO
 - [ ] **B2** Fix the merge retry | files: b.py | after: B109
 - [ ] **F67** Terminal pane per slot | files: t.py | after: F66
 - [ ] **B3** (follow-up, critical) The gate hangs | files: g.py
+- [ ] **B4** Typo in after | files: h.py | after: Z99
+- [~] **D5** Write the guide | files: d.md BLOCKED: DECIDE: which layout
 - [ ] **V6** Release the next version | after: all
 """
 
@@ -270,15 +272,18 @@ def test_queue_rows(tmp: Path) -> None:
     everything above it') and a state: running sN Nm, critical, after, ready."""
     repo = fake_run(tmp)
     (repo / 'plan' / 'TODO.md').write_text(QUEUE_TODO, encoding='utf-8')
+    (repo / 'plan' / 'DONE.md').write_text('# DONE\n\n- [x] **B109** Take back a task\n', encoding='utf-8')
     S.C.notes('STATE').write_text(json.dumps({'state': '2 slots', 'running': {'2': 'F1'},
                                               'since': {'2': NOW - 6 * 60}}), encoding='utf-8')
     q = {t['id']: t for t in U.snapshot(up=True, now=NOW, links={})['queue']}
     eq({t: q[t]['after_title'] for t in q},
        {'F1': '', 'F66': '', 'B2': 'B109 (landed)', 'F67': 'F66 Run page: lazygit layout on web', 'B3': '',
-        'V6': 'all: everything above it'}, "after's title: open, landed, all")
+        'B4': 'Z99 (not in the plan)', 'D5': '', 'V6': 'all: everything above it'},
+       "after's title: open, landed (in DONE.md), not in the plan, all")
     eq({t: q[t]['state'] for t in q},
-       {'F1': 'running s2 6m', 'F66': 'ready', 'B2': 'ready', 'F67': 'after', 'B3': 'critical', 'V6': 'after'},
-       'state: running sN Nm, ready, after (an open task ahead), critical')
+       {'F1': 'running s2 6m', 'F66': 'ready', 'B2': 'ready', 'F67': 'after', 'B3': 'critical', 'B4': 'ready',
+        'D5': 'blocked', 'V6': 'after'},
+       'state: running sN Nm, ready, after (an open task ahead), critical, blocked ([~])')
     check(all(q[t]['state'].split()[0] in U.QUEUE_STATES for t in q), 'every state is one of QUEUE_STATES')
 
 

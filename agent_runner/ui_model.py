@@ -85,6 +85,7 @@ def queue_rows(ls: list[str], st: dict | None = None, now: float | None = None) 
     tasks = list(P.iter_tasks(ls))
     titles = {tid: P.short_title(rest, 200) for _, _, tid, rest, _ in tasks}
     live = {tid for _, box, tid, _, _ in tasks if box in ' ~'}
+    landed = {tid for _, box, tid, _, _ in tasks if box not in ' ~'} | done_ids()
     where = slot_of(st or {}, time.time() if now is None else now)
     for section, box, tid, rest, i in tasks:
         if box not in ' ~':
@@ -95,12 +96,22 @@ def queue_rows(ls: list[str], st: dict | None = None, now: float | None = None) 
         out.append({'id': tid, 'kind': task_kind(tid, names), 'title': titles[tid],
                     'files': f.get('files', []), 'after': after, 'pri': pri,
                     'section': section, 'blocked': box == '~',
-                    'after_title': after_words(after, titles, live, everything),
-                    'state': queue_state(tid, pri, after, live, where)})
+                    'after_title': after_words(after, titles, live, everything, landed),
+                    'state': queue_state(tid, pri, after, live, where, box == '~')})
     return out
 
 
-QUEUE_STATES = ('running', 'critical', 'after', 'ready')  # F74: a queue row's state, first word
+# F74: a queue row's state, first word. 'blocked' (beyond the design's four): a [~] task waits on a person or
+# a fix, and 'ready' would say it can start.
+QUEUE_STATES = ('running', 'blocked', 'critical', 'after', 'ready')
+
+
+def done_ids() -> set[str]:
+    """The ids DONE.md holds (landed tasks the plan moved there)."""
+    try:
+        return {tid for _, _, tid, _, _ in P.iter_tasks(P.lines(S.C.done))}
+    except Exception:  # noqa: BLE001 - no DONE.md
+        return set()
 
 
 def slot_of(st: dict, now: float) -> dict[str, str]:
@@ -115,20 +126,30 @@ def slot_of(st: dict, now: float) -> dict[str, str]:
     return out
 
 
-def after_words(after: list[str], titles: dict[str, str], live: set[str], everything: bool = False) -> str:
+def after_words(after: list[str], titles: dict[str, str], live: set[str], everything: bool = False,
+                landed: set[str] | None = None) -> str:
     """F74: what a queued task waits on, as the queue row says it: 'all: everything above it' for `after: all`;
-    else each id with its title while it is open ('F66 Run page: …'), or '(landed)' once it is not
-    ('B109 (landed)'), joined by ', '; '' for nothing."""
+    else each id with its title while it is open ('F66 Run page: …'), '(landed)' once it is done ('B109
+    (landed)'), '(not in the plan)' for an id neither open nor in `landed` (None: every id not open is landed);
+    joined by ', '; '' for nothing."""
     if everything:
         return 'all: everything above it'
-    return ', '.join(f'{t} {titles[t]}'.rstrip() if t in live else f'{t} (landed)' for t in after)
+
+    def one(t: str) -> str:
+        if t in live:
+            return f'{t} {titles.get(t, "")}'.rstrip()
+        return f'{t} (landed)' if landed is None or t in landed else f'{t} (not in the plan)'
+    return ', '.join(one(t) for t in after)
 
 
-def queue_state(tid: str, pri: str, after: list[str], live: set[str], where: dict[str, str]) -> str:
-    """F74: a queue row's state: 'running sN Nm' while a slot runs it, else 'critical', else 'after' while a
-    task it waits on is still open, else 'ready'."""
+def queue_state(tid: str, pri: str, after: list[str], live: set[str], where: dict[str, str],
+                blocked: bool = False) -> str:
+    """F74: a queue row's state: 'running sN Nm' while a slot runs it, else 'blocked' ([~]: waits on a person
+    or a fix), else 'critical', else 'after' while a task it waits on is still open, else 'ready'."""
     if tid in where:
         return where[tid]
+    if blocked:
+        return 'blocked'
     if pri == 'critical':
         return 'critical'
     return 'after' if any(t in live for t in after) else 'ready'
