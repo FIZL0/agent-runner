@@ -90,11 +90,50 @@ def test_parked(repo: Path):
         restore()
 
 
+def test_release_taken(tmp: Path):
+    print('B107: a release passes over a task taken by hand; one running in a slot still holds it')
+    repo = tmp / 'rel'
+    repo.mkdir()
+    git(repo, 'init', '-q', '-b', 'main')
+    (repo / 'plan').mkdir()
+    (repo / 'plan/TODO.md').write_text('# TODO\n\n### Next\n\n'
+                                       '- [ ] **T3** three | files: c.py\n'
+                                       '- [ ] **V1** Release | after: all\n'
+                                       '- [ ] **T1** one | files: a.py\n', encoding='utf-8')
+    (repo / 'plan/DONE.md').write_text('# DONE\n', encoding='utf-8')
+    (repo / 'runner.toml').write_text('[run]\ntest = "true"\nmin_free_gb = 0\nremote = false\n'
+                                      'merge_ahead = false\n', encoding='utf-8')
+    (repo / '.gitignore').write_text('.runner/\n', encoding='utf-8')
+    git(repo, 'add', '-A')
+    git(repo, 'commit', '-qm', 'start')
+    R.init(repo)
+    ls = (repo / 'plan/TODO.md').read_text(encoding='utf-8').splitlines()
+    eq('V1' in S.explain({}, set(), 'main'), False, 'untaken, T3 holds the after: all release')
+    eq(R.release_line(ls), 'release: V1 waits for everything before it (1 open)', 'status says it waits')
+    S.SLOTS_DIR.mkdir(parents=True, exist_ok=True)
+    git(repo, 'worktree', 'add', '-q', '-b', 'task/T3', str(S.SLOTS_DIR / 'take-T3'))  # `take T3`, no changes
+    eq(set(S.taken()), {'T3'}, 'T3 is taken by hand')
+    why = S.explain({}, set(), 'main')
+    eq(why.get('T3'), ('running', 'taken by hand (`take`)'), 'the taken task')
+    eq(why.get('V1'), ('free', 'not waiting on T3 (taken by hand)'), 'the release is free to start, and says why')
+    eq(S.choose(S.held({}, 'main'), set(), 'main')[0], 'V1', 'choose starts it')
+    eq(R.release_line(ls), 'release: ready, nothing left to wait on (V1); not waiting on: T3 (taken by hand)',
+       "status's release line says so")
+    running = {1: ('T1', 'Next', {'a.py'}, set())}
+    eq(S.explain(running, set(), 'main').get('V1'),
+       ('a release runs alone', 'T1 is running or waiting to merge in this run'), 'a task in a slot still holds it')
+    eq(S.choose(S.held(running, 'main'), set(), 'main'), None, 'and nothing starts')
+    h = S.held({}, 'main')
+    h = h._replace(away=h.away | {'X9'}, busy=h.busy + [('X9', 'Next', {'z.py'}, set(), {'z.py'})])
+    eq(S.holds(next(t for t in h.todo if t[0] == 'V1'), set(), h), None, 'a task claimed by another runner does not hold it either')
+
+
 def main() -> int:
     with tempfile.TemporaryDirectory() as tmp:
         os.environ['CLAUDE_CONFIG_DIR'] = tmp
         repo = make_repo(Path(tmp))
-        return report([lambda: test_explain(repo), lambda: test_parked(repo)])
+        return report([lambda: test_explain(repo), lambda: test_parked(repo),
+                       lambda: test_release_taken(Path(tmp))])
 
 
 if __name__ == '__main__':

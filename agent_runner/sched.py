@@ -32,6 +32,7 @@ def tasks(branch: str) -> list[tuple[str, str, set[str], set[str]]]:
     ls = plan_text(branch)
     # open and blocked: neither is done, so a split parent or an `after:` still waits on a blocked X
     open_ids = {tid for _, box, tid, _, _ in P.iter_tasks(ls) if box != 'x'}
+    away = set(taken())  # B107: an `after: all` release passes over a task taken by hand, as over a needs-you one
     out = []
     for section, box, tid, _, i in P.iter_tasks(ls):
         if box != ' ' or section.startswith(P.SKIPPED):
@@ -40,6 +41,9 @@ def tasks(branch: str) -> list[tuple[str, str, set[str], set[str]]]:
         f = P.fields(l)
         if {P.LAST, P.ALL} & set(f.get('after', [])):  # `all above` (F43), `all` (F35): afresh on every pick
             f['after'] = P.waits_on(ls, i)
+            named = set(P.fields(l).get('after', []))
+            if P.release(tid) and P.ALL in named:  # B107: taken by hand, its work lands in the next release
+                f['after'] = [a for a in f['after'] if a not in away or a in named]
         # a split parent: its subtasks run first, blocked ones included, then it runs (or `archive` ticks it).
         # Read by id and by its `(split into …)` list, never by the words alone, so prose that happens to say
         # "split into" is not taken for a split
@@ -120,7 +124,8 @@ def clash(t: tuple, b: tuple, shared: set[str]) -> bool:
     """Task `t` may not run beside `b` (running here, waiting to merge, or claimed by another runner): siblings,
     a shared ordered section, or overlapping files (`shared_files` aside; see `file_overlap`). A release (kind V,
     F38) clashes with everything, either way round: it starts only when nothing else runs or waits to merge, and
-    nothing starts beside it, so it releases exactly what landed."""
+    nothing starts beside it, so it releases exactly what landed. `holds` lets a release pass over a task taken
+    by hand or claimed by another runner (`passes`, B107): only this run's tasks hold it."""
     tid, section, files, _ = t
     if family(tid) == family(b[0]) or P.release(tid) or P.release(b[0]):  # F38: a release runs alone
         return True
@@ -132,7 +137,7 @@ def clash_why(t: tuple, b: tuple, shared: set) -> tuple[str, str]:
     if family(t[0]) == family(b[0]):
         return 'waiting for a sibling', b[0]
     if P.release(t[0]):
-        return 'a release runs alone', f'{b[0]} is running or waiting to merge'
+        return 'a release runs alone', f'{b[0]} is running or waiting to merge in this run'
     if P.release(b[0]):
         return 'a release runs alone', f'{b[0]} is releasing'
     if ordered(t[1]) and t[1] == b[1]:
@@ -176,7 +181,8 @@ def pick(running: dict, tried: set, branch: str, claim: bool = False, why: dict 
 class Held(NamedTuple):
     """What holds the open tasks back, read once per pick: `todo` (tasks()), `busy` (running, merge-waiting,
     claimed and taken tasks, as clash() tuples), `busy_ids`, `mine` (finished here, waiting to merge),
-    `finished` (mine and another runner's), `parked` ({tid: its parked branches}) and `shared` (shared_files)."""
+    `finished` (mine and another runner's), `parked` ({tid: its parked branches}), `shared` (shared_files) and
+    `away` (taken by hand or claimed by another runner: not this run's, so no release waits for them, B107)."""
     todo: list
     busy: list
     busy_ids: set
@@ -184,6 +190,7 @@ class Held(NamedTuple):
     finished: set
     parked: dict
     shared: set
+    away: frozenset = frozenset()  # B107: busy ids that hold no release: taken by hand, claimed by another runner
 
 
 def held(running: dict, branch: str) -> Held:
@@ -191,6 +198,7 @@ def held(running: dict, branch: str) -> Held:
     shared = set(C.run['shared_files'])
     todo = tasks(branch)
     busy = claimed_elsewhere(plansync.claims(C), todo)  # [] with no remote to claim through
+    away = frozenset(b[0] for b in busy) | frozenset(taken())
     lines_ = {t[0]: t for t in todo}
     for tid, d in taken().items():  # `take`: a person's session or subagent has it, in its own worktree
         t = lines_.get(tid, (tid, '', set(), set()))
@@ -211,7 +219,7 @@ def held(running: dict, branch: str) -> Held:
         busy.append((tid, t[1], files if done_ else set(t[2]) | files, t[3], set() if done_ else set(t[2])))
     busy_ids |= {b[0] for b in busy if b[0] not in mine}
     parked = parked_attempts() if todo else {}
-    return Held(todo, busy, busy_ids, mine, finished, parked, shared)
+    return Held(todo, busy, busy_ids, mine, finished, parked, shared, away)
 
 
 def holds(t: tuple, tried: set, h: Held) -> tuple[str, tuple | None] | None:
@@ -226,9 +234,21 @@ def holds(t: tuple, tried: set, h: Held) -> tuple[str, tuple | None] | None:
         return 'busy', None
     if len(h.parked.get(tid, [])) >= PARK_LIMIT:  # B32: failed its merge that often; a person decides
         return 'parked', None
-    if b := next((b for b in h.busy if clash(t, b, h.shared)), None):
+    if b := next((b for b in h.busy if clash(t, b, h.shared) and not passes(t, b, h)), None):
         return 'clash', b  # a running or merge-waiting task's sibling, ordered-section mate or file neighbour
     return None
+
+
+def passes(t: tuple, b: tuple, h: Held) -> bool:
+    """Release `t` passes over busy task `b`, taken by hand or claimed by another runner (B107): a release waits only
+    for this run's running and merge-waiting tasks, and `b`'s work lands after, in the next release. A busy
+    release still holds everything (it runs alone)."""
+    return P.release(t[0]) and not P.release(b[0]) and b[0] in h.away
+
+
+def passed_over(t: tuple, h: Held) -> list[str]:
+    """The busy tasks release `t` does not wait for (`passes`), in order: what explain says of a free release."""
+    return list(dict.fromkeys(b[0] for b in h.busy if b[0] != t[0] and passes(t, b, h)))
 
 
 def parked_now(tried: set, h: Held) -> list[str]:
@@ -257,9 +277,17 @@ def explain(running: dict, tried: set, branch: str) -> dict[str, tuple[str, str]
             why[tid] = (f'parked {len(h.parked[tid])} times, needs a person', ', '.join(sorted(h.parked[tid])))
         elif kind == 'clash':
             why[tid] = clash_why(t, b, h.shared)
+        elif P.release(tid) and (over := passed_over(t, h)):
+            why[tid] = ('free', away_note(over, set(claimed)))
         else:
             why[tid] = ('free', '')
     return why
+
+
+def away_note(ids, claimed: set) -> str:
+    """'not waiting on R67 (taken by hand), F9 (claimed by another runner)': what a release passes over (B107)."""
+    return 'not waiting on ' + ', '.join(
+        f'{t} ({"claimed by another runner" if t in claimed else "taken by hand"})' for t in ids)
 
 
 def choose(h: Held, tried: set, branch: str, claim: bool = False):
@@ -296,7 +324,8 @@ def claim_task(t: tuple, h: Held, branch: str):
     mine = now.get(t[0])
     for b in claimed_elsewhere(now, h.todo):
         cl = now[b[0]]
-        if mine and (cl.since, cl.owner) < (mine.since, mine.owner) and clash(t, b, h.shared):
+        if mine and (cl.since, cl.owner) < (mine.since, mine.owner) and clash(t, b, h.shared) \
+                and not P.release(t[0]):  # B107: a release does not wait for another runner's task
             plansync.release(C, t[0])
             log(f'{t[0]}: {cl.who} claimed {b[0]} first and it clashes; given way')
             return None

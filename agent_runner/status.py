@@ -86,7 +86,7 @@ def release_line(ls: list[str]) -> str:
     title starts "Release" or "Cut the next version"): of the tasks it waits on (its last block's `(after …)`,
     else its `after:` field), how many are still open. '' when none is queued. A task whose `after:` says
     `all above` (`plan add --last`, F43) gets a line too, 'last:' unless it is a release, naming what holds it."""
-    live, out = P.open_ids(ls), []
+    live, out, away = P.open_ids(ls), [], None
     for section, box, tid, rest, i in P.iter_tasks(ls):
         last = P.LAST in P.fields(ls[i]).get('after', []) or (box in ' ~' and P._waits_all(ls, i))
         if box not in ' ~' or section.startswith(P.SKIPPED) or not (RELEASE_TASK.match(rest) or last):
@@ -95,8 +95,16 @@ def release_line(ls: list[str]) -> str:
         if P._waits_all(ls, i):  # `after: all` (F35): a count of what is still before it, not an id list
             held = [t for t in P.before_all(ls, i) if t in live and t != tid]
             person = [t for t in P.on_person_before(ls, i) if t != tid]  # B101: said, not waited on
-            out.append(f'{kind}: {P.all_line(tid, len(held), person)}' if held
-                       else f'{kind}: ready, nothing left to wait on ({tid}){P.not_waiting(person)}')
+            hand = []
+            if P.release(tid) and P.ALL in P.fields(ls[i]).get('after', []):  # B107: a taken task lands after
+                if away is None:
+                    from agent_runner.sched import taken
+                    away = set(taken())
+                hand = [t for t in held if t in away]
+                held = [t for t in held if t not in away]
+            said = P.not_waiting(person) + taken_note(hand)
+            out.append(f'{kind}: {P.all_line(tid, len(held), person)}{taken_note(hand)}' if held
+                       else f'{kind}: ready, nothing left to wait on ({tid}){said}')
             continue
         w = P.WAITS.findall(' '.join(P._item_block(ls, i))) if box == '~' else []
         ids = [t.strip() for t in w[-1].split(',') if t.strip()] if w else P.waits_on(ls, i)
@@ -106,6 +114,12 @@ def release_line(ls: list[str]) -> str:
         out.append(f'{kind}: waits on {len(held)} of {len(ids)} task{"" if len(ids) == 1 else "s"} ({tid}){named}'
                    if held else f'{kind}: ready, nothing left to wait on ({tid})')
     return '\n'.join(out)
+
+
+def taken_note(ids) -> str:
+    """'; not waiting on: R67 (taken by hand)' for the tasks taken by hand an `after: all` release passes over
+    (B107): their work lands in the next release. '' for none."""
+    return f'; not waiting on: {", ".join(ids)} (taken by hand)' if ids else ''
 
 
 # --- run events (F41): <notes>/events.jsonl, and run.log lines from before it ----------------------------
