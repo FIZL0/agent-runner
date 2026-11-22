@@ -322,8 +322,16 @@ def take(tid: str) -> dict:
     return SEND[0](f'do {tid} here')
 
 
+def open_session(slot: str) -> dict:
+    """F68: open slot `slot` (s2) in claude.ai/code and the apps (`slots.slot_open`): under `[run] sessions =
+    'one'` a slot is listed there only once opened. Its link as 'out', or why not."""
+    from agent_runner.slots import slot_open
+    link, why = slot_open(slot)
+    return {'ok': bool(link), 'code': 0 if link else 1, 'out': link or why, 'argv': []}
+
+
 ACTIONS = {'plan_add': plan_add, 'plan_change': plan_change, 'chat': chat, 'answer': answer, 'drop': drop,
-           'take': take, 'shelve': shelve, 'release': release}
+           'take': take, 'shelve': shelve, 'release': release, 'open_session': open_session}
 
 
 def act(name: str, **args) -> dict:

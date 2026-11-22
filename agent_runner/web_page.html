@@ -207,7 +207,7 @@ A release waits for everything ahead of it, then runs alone, so it releases exac
 <span class="btnrow"><button class="kb p" data-act="release">⏎ queue a release</button> <button class="kb" data-act="release-now">f release now, without waiting</button></span>`}
   else if(tab==='terminal'){pane.className='pane term';openTerm(it);h=termHTML(it)}
   else if(tab==='info'&&S.panel===2){h=`<span class="c">${esc(it.task)}</span> ${esc(it.title)}\n\n${esc(it.name)} · ${esc(it.state)} · ${it.minutes??'?'} min\nfiles ${esc(list(it.files))||'—'}`}
-  else if(tab==='session'){h=it.link?`${esc(it.name)} is a Claude Code session you can also open on its own:\n\n<a href="${esc(it.link)}" target="_blank" rel="noopener">${esc(it.link)}</a>`:`<span class="d">${esc(it.name)} has no claude.ai/code link (it is not on Remote Control).</span>`}
+  else if(tab==='session'){h=it.link?`${esc(it.name)} is a Claude Code session you can also open on its own:\n\n<a href="${esc(it.link)}" target="_blank" rel="noopener">${esc(it.link)}</a>`:it.name==='c1'?`<span class="d">c1 has no claude.ai/code link (it is not on Remote Control).</span>`:`<span class="d">${esc(it.name)} is not on Remote Control: the Claude apps list one entry per project, c1. Open it to watch and steer it there too.</span>\n\n<button class="kb p" data-act="open">⏎ open ${esc(it.name)} in the Claude apps</button>`}
   else if(tab==='chat'){h=S.chat.length?S.chat.map(([w,m])=>w==='me'?`<span class="b">you</span>  ${esc(m)}`:`<span class="r">c1</span>   <span class="d">${esc(m)}</span>`).join('\n\n'):
     `<span class="d">Talk to c1, the run's control session. What you send is typed into c1; its answer shows in c1's terminal tab${it.link?' and its session':''}.</span>`;
     x=`<form class="inrow" data-form="chat"><input id="cin" placeholder="talk to c1 (i to focus, Esc to leave)" autocomplete="off"><button class="kb">⏎</button></form>`}
@@ -284,6 +284,7 @@ function doAct(a){
   if(a==='release-now')act('release',{now:true},'release queued, now');
   if(a==='later'&&it)act('shelve',{tid:it.id},it.id+' shelved').then(r=>{if(r.ok)back()});
   if(a==='drop'&&it&&!it.newtask)openPop('Drop '+it.id,`${esc(it.title)}\n\n<form class="form" data-form="drop"><label>why<input id="dwhy" autocomplete="off"></label><div class="btnrow"><button class="kb p">⏎ drop ${esc(it.id)}</button> <button type="button" class="kb" data-close>Esc keep it</button></div></form>`,'#dwhy');
+  if(a==='open'&&it&&it.name)act('open_session',{slot:it.name},'opened '+it.name);
   if(a==='take'&&it&&!it.newtask)chatSay(`do ${it.id} here`,()=>act('take',{tid:it.id},'c1 takes '+it.id));
 }
 function openPop(title,html,focus){$('#poptitle').textContent=title;$('#popbody').innerHTML=html;$('#pop').hidden=false;if(focus)setTimeout(()=>$(focus)?.focus(),0)}

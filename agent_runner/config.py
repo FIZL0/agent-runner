@@ -116,6 +116,10 @@ DEFAULTS: dict = {
                                 # the run, watched and steered from claude.ai/code and the Claude apps; auto = on
                                 # when it can work (Claude Code on a claude.ai login), true/false force it
         'remote_slots': False,  # the slots on Remote Control too, each "<task title> · <repo> s2 · B646"
+        'sessions': 'one',      # what the Claude apps list for a project. one = c1 is the project's chat;
+                                # a slot goes on Remote Control only when opened from the run page, and c1
+                                # keeps a claude.ai copy of the run page. each = every slot its own entry
+                                # (with remote_slots), as before
         'web': True,            # the run page on the web, served by the run from this machine on web_port for the
                                 # LAN/Tailscale (its address, with the token it needs, in `status` and the run log)
         'web_port': 8770,       # where the run page is served; its terminal tab's ttyd processes take the next ports
@@ -543,6 +547,8 @@ class Config:
             raise SystemExit('agent-runner: [run] include_task_id_in_commit must be a boolean')
         if not (isinstance(self.run['remote'], bool) or self.run['remote'] == 'auto'):
             raise SystemExit(f"agent-runner: [run] remote must be 'auto', true or false, not {self.run['remote']!r}")
+        if self.run['sessions'] not in ('one', 'each'):
+            raise SystemExit(f"agent-runner: [run] sessions must be 'one' or 'each', not {self.run['sessions']!r}")
         if self.run['silent'] == 'launch':  # C20: the quiet launch is gone (it never stopped the start push)
             self.run['silent'] = False
             self.warnings.append("[run] silent = 'launch' is gone (no setting stops a Remote Control session's start "

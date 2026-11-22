@@ -215,7 +215,102 @@ def test_take_back_from_a_slot_just_started():
     check('attach s' not in topic('take', './run'), 'the take guide hands out no attach line either')
 
 
+def test_sessions_one_and_each():
+    print('F68: [run] sessions = one keeps a slot off Remote Control until opened, its link then in the snapshot, '
+          'and c1 republishes the claude.ai copy; each puts every slot there as before')
+    import os
+    from agent_runner import page_copy as PC, runner as R, slots as S, ui_model as U
+    d = Path(tempfile.mkdtemp(prefix='agent-runner-f68-'))
+    git(d, 'init', '-q', '-b', 'main')
+    (d / 'plan').mkdir()
+    (d / 'plan/TODO.md').write_text('# TODO\n\n### Later\n\n- [ ] **T1** fix the <b>widget</b> | files: a.py\n',
+                                    encoding='utf-8')
+    (d / 'plan/DONE.md').write_text('# DONE\n', encoding='utf-8')
+    (d / 'runner.toml').write_text('[run]\ntest = "true"\nremote_slots = true\n', encoding='utf-8')
+    (d / '.gitignore').write_text('.runner/\n')
+    git(d, 'add', '-A')
+    git(d, 'commit', '-qm', 'start')
+    R.init(d)
+    eq(R.C.run['sessions'], 'one', 'sessions defaults to one')
+    check(S.one_session(), 'one_session() under the default')
+    eq(S.remote_flags('slot2', None), [], 'one: a slot starts with no --remote-control (not listed in the apps)')
+    argv = S.agent_argv('brief', str(uuid.uuid4()), 'opus', 60, 'slot2')
+    check('--remote-control' not in argv, 'one: the slot argv has no --remote-control', argv)
+
+    sid, typed, bridged = str(uuid.uuid4()), [], []
+
+    class FakeMux:
+        typed = True
+
+        def panes(self):
+            return {'s2': ('%9', os.getpid())}
+
+        def session_id(self, pid):
+            return sid
+
+        def send(self, hit, text):
+            typed.append((hit, text))
+            if text.startswith('/remote-control '):
+                bridged.append({'type': 'bridge-session', 'bridgeSessionId': 'cse_f68abc'})
+            return True
+
+    link = f'{S.REMOTE_URL}/session_f68abc'
+    st = {'running': {'2': 'T1'}, 'since': {}}
+    with mock.patch.object(S, 'MUX', FakeMux()), mock.patch.object(S, 'remote_off_why', lambda dialog=True: ''), \
+            mock.patch.object(S, 'entries', lambda s, skip_bad=False: list(bridged) if s == sid else []):
+        rows = U.session_rows(st, P_lines(d), {'T1': 'fix the widget'}, 0)
+        eq(rows[1]['link'], '', 'one: before it is opened the slot has no claude.ai link')
+        got, why = S.slot_open('s2', wait=2)
+        eq((got, why), (link, ''), 'slot_open types /remote-control and returns the link')
+        check(typed and typed[0][1].startswith('/remote-control ') and 's2' in typed[0][1], 'typed into s2', typed)
+        rows = U.session_rows(st, P_lines(d), {'T1': 'fix the widget'}, 0)
+        eq(rows[1]['link'], link, "one: once opened, the slot's link is in F65's snapshot")
+        eq(U.act('open_session', slot='s2'), {'ok': True, 'code': 0, 'out': link, 'argv': []},
+           'the run page action open_session gives the link, typing nothing more')
+        eq(len(typed), 1, 'an open slot is not told again')
+    eq(S.slot_open('s7')[0], '', 'a slot with no session gives no link')
+
+    snap = {'project': 'demo', 'at': '2026-11-22T10:00:00', 'up': True, 'status': ['run up: 1 busy'],
+            'sessions': [{'name': 'c1', 'state': 'live', 'link': f'{S.REMOTE_URL}/session_c1'},
+                         {'name': 's2', 'task': 'T1', 'title': 'fix the <b>widget</b>', 'minutes': 4,
+                          'state': 'running', 'link': link}],
+            'queue': [{'id': 'T1', 'title': 'fix the <b>widget</b>', 'after': [], 'pri': 'normal'}],
+            'needs': [], 'concepts': [], 'log': ['started T1 in s2'], 'release': ''}
+    asks = []
+    send = lambda text: asks.append(text) or True  # noqa: E731
+    PC.PAGE_COPY_AT[0] = 0.0
+    with mock.patch.object(PC, 'remote_on', lambda: True), mock.patch.object(PC, 'control_ok', lambda: True):
+        check(PC.page_copy_tick(now=1000.0, snap=snap, send=send), 'one: c1 is asked to publish the copy')
+        page = PC.page_copy_file().read_text(encoding='utf-8')
+        check(link in page and f'{S.REMOTE_URL}/session_c1' in page, 'the copy links the terminal and the chat')
+        check('<b>widget' not in page and '&lt;b&gt;widget' in page, 'task text is escaped')
+        check('?t=' not in page and '<title>' in page, 'no run page token; a title')
+        check(str(PC.page_copy_file()) in asks[0] and 'Artifact' in asks[0] and str(PC.page_copy_url_file()) in asks[0],
+              'the ask names the file, the Artifact tool and where the URL goes', asks)
+        check(not PC.page_copy_tick(now=1000.0 + PC.PAGE_COPY_EVERY + 1, snap=snap, send=send),
+              'nothing changed: c1 is not asked again, even before it wrote the URL')
+        PC.page_copy_url_file().write_text('https://claude.ai/artifact/abc\n', encoding='utf-8')
+        later = {**snap, 'sessions': snap['sessions'][:1], 'log': ['landed T1']}
+        check(not PC.page_copy_tick(now=1010.0, snap=later, send=send), 'not within PAGE_COPY_EVERY of the last ask')
+        check(PC.page_copy_tick(now=1000.0 + 2 * PC.PAGE_COPY_EVERY, snap=later, send=send),
+              'a run event after that asks again')
+        check('to https://claude.ai/artifact/abc' in asks[-1], 'to the same URL', asks[-1])
+
+        with mock.patch.dict(R.C.run, {'sessions': 'each'}):
+            check(not S.one_session(), 'each: one_session() is off')
+            flags = S.remote_flags('slot2', None)
+            eq(flags[:1], ['--remote-control'], 'each: a slot starts on Remote Control, as before')
+            check('s2' in flags[1], 'named with its slot', flags)
+            argv = S.agent_argv('brief', str(uuid.uuid4()), 'opus', 60, 'slot2')
+            check('--remote-control' in argv, 'each: the slot argv has --remote-control (listed), as before', argv)
+            check(not PC.page_copy_tick(now=1e9, snap={**snap, 'up': False}, send=send), 'each: no copy kept')
+
+
+def P_lines(d: Path) -> list[str]:
+    return (d / 'plan/TODO.md').read_text(encoding='utf-8').splitlines()
+
+
 if __name__ == '__main__':
     raise SystemExit(report([test_background_session_options_target, test_real_tmux_takes_the_option,
                              test_handed_ask_as_c1_starts_fresh, test_brief_fits_session_start,
-                             test_take_back_from_a_slot_just_started]))
+                             test_take_back_from_a_slot_just_started, test_sessions_one_and_each]))
