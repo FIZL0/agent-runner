@@ -175,3 +175,10 @@ _Said_: auto release
 _On screen_: queued V<n> (auto_release: 10 landed / idle)
 _In code_: [run] auto_release, autorelease.auto_release, autorelease.landed_since_release, plan.add_release, EV_AUTO_RELEASE
 _Avoid_: auto publish, auto version
+
+**Run page**:
+One view of the whole run (sessions, queue, what needs the person, concepts, the run log, the release) that the web page, the terminal UI and the claude.ai copy all show, with the same actions on it
+_Said_: run page
+_On screen_: Run page
+_In code_: ui_model.snapshot, ui_model.act
+_Avoid_: dashboard, status page
