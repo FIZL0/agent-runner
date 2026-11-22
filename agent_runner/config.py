@@ -116,7 +116,7 @@ DEFAULTS: dict = {
                                 # the run, watched and steered from claude.ai/code and the Claude apps; auto = on
                                 # when it can work (Claude Code on a claude.ai login), true/false force it
         'remote_slots': False,  # the slots on Remote Control too, each "<task title> · <repo> s2 · B646"
-        'sessions': 'one',      # F68: what the Claude apps list for a project. one = c1 is the project's chat;
+        'sessions': 'one',      # what the Claude apps list for a project. one = c1 is the project's chat;
                                 # a slot goes on Remote Control only when opened from the run page, and c1
                                 # keeps a claude.ai copy of the run page. each = every slot its own entry
                                 # (with remote_slots), as before
