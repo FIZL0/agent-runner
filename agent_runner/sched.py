@@ -32,7 +32,10 @@ def tasks(branch: str) -> list[tuple[str, str, set[str], set[str]]]:
     ls = plan_text(branch)
     # open and blocked: neither is done, so a split parent or an `after:` still waits on a blocked X
     open_ids = {tid for _, box, tid, _, _ in P.iter_tasks(ls) if box != 'x'}
-    away = set(taken())  # B107: an `after: all` release passes over a task taken by hand, as over a needs-you one
+    # B107: an `after: all` release passes over a task taken by hand or claimed by another runner (live claims),
+    # as over a needs-you one: its work lands in the next release
+    me = plansync.owner(C)
+    away = set(taken()) | {t for t, cl in plansync.claims(C).items() if cl.owner != me and not plansync.stale(cl)}
     out = []
     for section, box, tid, _, i in P.iter_tasks(ls):
         if box != ' ' or section.startswith(P.SKIPPED):
