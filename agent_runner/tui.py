@@ -21,6 +21,7 @@ and asks for typed text through `RunPage.ask`, so a test drives it with a stub w
 from __future__ import annotations
 
 import os
+import re
 import subprocess as sp
 import sys
 import time
@@ -39,7 +40,26 @@ NEW_TASK = {'id': '+', 'new': True}  # the queue's last row: a new task
 THEME = {'fg': (254, 7), 'dim': (243, 7), 'line': (237, 7), 'red': (203, 1), 'green': (41, 2),
          'yellow': (214, 3), 'blue': (69, 4), 'magenta': (135, 5), 'cyan': (38, 6)}
 SEL_BG = (88, 1)  # #7f1d1d: the focused row
+CUR_BG = (235, 0)  # #262626: the selected row of a panel that isn't focused
 BLACK = (16, 0)
+# B112: a selected row draws every segment on its row background: each theme colour gets a pair on SEL_BG
+# ('sel:red') and on CUR_BG ('cur:cyan'); ids keep their colour, dim text turns readable on the lighter ground
+ROW_DIM = {'sel': (254, 7), 'cur': (254, 7)}
+
+
+def session_rows(snap: dict) -> list:
+    """B112: the Sessions panel's rows: c1, then every slot of the run, an idle one (no task) included, as the
+    design lists them. The slot count is the run's status line ('run up: 3 slots, ...')."""
+    rows = list(snap.get('sessions') or [])
+    m = re.match(r'run up: (\d+) slots?\b', ((snap.get('status') or ['']) + [''])[0]) if snap.get('up') else None
+    have = {r.get('name') for r in rows if isinstance(r, dict)}
+    for n in range(1, int(m.group(1)) + 1 if m else 1):
+        if f's{n}' not in have:
+            rows.append({'name': f's{n}', 'task': '', 'title': '', 'minutes': None, 'state': 'idle', 'files': [],
+                         'link': '', 'terminal': ''})
+    slot = lambda r: (r.get('name') != 'c1', not str(r.get('name', ''))[1:].isdigit(),  # noqa: E731
+                      str(r.get('name', ''))[1:].zfill(4))
+    return sorted(rows, key=slot)
 
 HELP = """Global
   1-5      focus a panel          h/l Tab  previous / next panel (h on the queue: do it here)
@@ -109,7 +129,7 @@ class RunPage:
 
     def items(self, n: int) -> list:
         key = PANELS[n - 1][2]
-        rows = list(self.snap.get(key) or [])
+        rows = session_rows(self.snap) if key == 'sessions' else list(self.snap.get(key) or [])
         return rows + [NEW_TASK] if key == 'queue' else rows
 
     def sel(self):
@@ -154,6 +174,8 @@ class RunPage:
         if n == 2:
             if it.get('name') == 'c1':
                 return [('c1 ', 'red'), (it.get('title', ''), 'fg'), (f' {it.get("state", "")}', 'dim')]
+            if not it.get('task'):
+                return [(f'{it["name"]} ', 'yellow'), (it.get('state') or 'idle', 'dim')]
             mins = f' {it["minutes"]}m' if it.get('minutes') is not None else ''
             return [(f'{it["name"]} ', 'magenta' if it.get('state') == 'merging' else 'yellow'),
                     (f'{it.get("task", "")} ', 'cyan'), (it.get('title', ''), 'fg'),
@@ -223,14 +245,17 @@ class RunPage:
 
     # --- drawing -------------------------------------------------------------------------------------------
 
-    def put(self, win, y: int, x: int, segs, width: int, base: int = 0) -> int:
-        """Write `segs` at y, x within `width` columns; `base` is added to every colour (the selected row)."""
+    def put(self, win, y: int, x: int, segs, width: int, base: int = 0, ground: str = '') -> int:
+        """Write `segs` at y, x within `width` columns; `base` is added to every colour (a box's edge). `ground`
+        ('sel', 'cur': the selected row) draws each colour as its pair on that row's background instead."""
         for text, colour in segs:
             if width <= 0:
                 break
             text = text.replace('\n', ' ')[:width]
+            attr = self.attrs.get(f'{ground}:{colour or "fg"}', self.a(ground)) if ground else \
+                self.a(colour) | base if colour or base else self.a('fg')  # B112: no colour is the ground's
             try:
-                win.addnstr(y, x, text, width, self.a(colour) | base)
+                win.addnstr(y, x, text, width, attr)
             except Exception:  # noqa: BLE001 - curses refuses the bottom-right cell; the rest is drawn
                 pass
             x, width = x + len(text), width - len(text)
@@ -268,10 +293,10 @@ class RunPage:
             self.put(win, y + 1, x + 2, [('none', 'dim')], w - 4)
         for i, it in enumerate(rows[top:top + inner]):
             mark = top + i == cur
-            base = self.a('sel') if mark and on else self.a('cur') if mark else 0
-            if base:
-                self.put(win, y + 1 + i, x + 1, [(' ' * (w - 2), '')], w - 2, base)
-            self.put(win, y + 1 + i, x + 2, self.row(n, it), w - 4, base)
+            ground = ('sel' if on else 'cur') if mark else ''
+            if ground:
+                self.put(win, y + 1 + i, x + 1, [(' ' * (w - 2), '')], w - 2, ground=ground)
+            self.put(win, y + 1 + i, x + 2, self.row(n, it), w - 4, ground=ground)
 
     def draw_main(self, win, y: int, x: int, h: int, w: int) -> None:
         tab, ts = self.tab()
@@ -297,9 +322,22 @@ class RunPage:
             out += ([(' · ', 'dim')] if i else []) + [(k, 'blue'), (f' {v}', 'dim')]
         return out
 
+    def fill(self, win, h: int, w: int) -> None:
+        """B112: every cell on the theme background, so nothing of the terminal's earlier screen shows through a
+        blank cell: the window's background, erase, then a space in every cell (curses refuses the last cell,
+        which the background and erase cover)."""
+        if hasattr(win, 'bkgd'):
+            try:
+                win.bkgd(' ', self.a('fg'))
+            except Exception:  # noqa: BLE001
+                pass
+        win.erase()
+        for r in range(h):
+            self.put(win, r, 0, [(' ' * w, 'fg')], w)
+
     def draw(self, win) -> None:
         h, w = win.getmaxyx()
-        win.erase()
+        self.fill(win, h, w)
         if h < 8 or w < 24:
             self.put(win, 0, 0, [('too small', 'red')], w)
             return
@@ -524,9 +562,15 @@ def curses_attrs(curses) -> dict[str, int]:
     n = len(THEME) + 1
     curses.init_pair(n, pick(THEME['fg']), pick(SEL_BG))
     curses.init_pair(n + 1, bg, pick(THEME['red']))
-    curses.init_pair(n + 2, pick(THEME['fg']), pick((235, 0)))
+    curses.init_pair(n + 2, pick(THEME['fg']), pick(CUR_BG))
     out.update(sel=curses.color_pair(n), mode=curses.color_pair(n + 1) | curses.A_BOLD,
                cur=curses.color_pair(n + 2))
+    n += 3
+    for ground, row_bg in (('sel', SEL_BG), ('cur', CUR_BG)):  # B112: every colour on each row background
+        for name, c in THEME.items():
+            curses.init_pair(n, pick(ROW_DIM[ground] if name == 'dim' else c), pick(row_bg))
+            out[f'{ground}:{name}'] = curses.color_pair(n) | (curses.A_BOLD if name == 'red' else 0)
+            n += 1
     out['red'] |= curses.A_BOLD
     return out
 
@@ -600,6 +644,7 @@ def run_curses(win) -> int:
         pass
     attrs = curses_attrs(curses)
     win.bkgd(' ', attrs.get('fg', 0))
+    win.clear()  # B112: the first refresh repaints every cell, so the terminal's earlier screen is gone
     win.keypad(True)
     win.timeout(1000)
     page = RunPage(U.snapshot(), attrs=attrs,
@@ -617,6 +662,7 @@ def run_curses(win) -> int:
         except KeyboardInterrupt:
             return 0
         if isinstance(ch, int) and ch == curses.KEY_RESIZE:
+            win.clear()  # B112: the next refresh repaints every cell, not only what curses thinks changed
             continue
         if page.key(key_name(curses, ch)):
             return 0
