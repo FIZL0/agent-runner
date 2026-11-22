@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """F66: the run page on the web serves the page and the snapshot, runs an action's plan command, and refuses a
-request without its token.
+request without its token. F79: the page is the run app, and keeps uploaded attachments.
 
     python3 tests/test_web.py        (a temp repo, a server on a free local port, no agent; a few seconds)
 """
@@ -72,9 +72,9 @@ def test_server(tmp: Path) -> None:
     try:
         code, page = get(f'{base}/?t={token}')
         eq(code, 200, 'the page is served with the token')
-        for part in (b'Status', b'Sessions', b'Queue', b'Needs you', b'Concepts', b'EventSource', b'#ef4444',
-                     b'JetBrains Mono', b'max-width:760px'):
+        for part in (b'<title>agent-runner</title>', b'EventSource', b'Needs you', b'Working now', b'Up next'):
             check(part in page, f'the page has {part.decode()}')
+        check(b'JetBrains Mono' not in page and b'lazygit' not in page, 'the terminal-style page is gone')
 
         code, body = get(f'{base}/snapshot?t={token}')
         snap = json.loads(body)
@@ -112,8 +112,6 @@ def test_server(tmp: Path) -> None:
             code, out = post(f'{base}/act?t={token}', {'name': 'move', 'args': {
                 'tid': 'F1', 'where': 'top', 'other': 'B2'}})
             check(not out['ok'] and len(calls) == 1, 'a move other than after or before runs nothing', out)
-        for part in (b"['J/K','reorder']", b"k==='J'||k==='K'", b"act('move'", b'S.follow=it.id'):
-            check(part in page, f'the queue reorders with J/K on the page: {part.decode()}')
 
         code, out = post(f'{base}/act?t={token}', {'name': 'nope', 'args': {}})
         check(not out['ok'] and 'no such action' in out['out'], 'an unknown action is an error result', out)
@@ -179,35 +177,44 @@ def test_start(tmp: Path) -> None:
         srv.stop()
 
 
-def test_theme(tmp: Path) -> None:
-    """F69: the page is served in [ui] theme's colours, with every theme for its picker (T)."""
-    fake_repo(tmp)
-    eq(CF.DEFAULTS['ui']['theme'], 'ryha', '[ui] theme is ryha by default')
+def post_raw(url: str, data: bytes, ctype: str = 'image/png') -> tuple[int, dict]:
+    req = urllib.request.Request(url, data=data, method='POST', headers={'Content-Type': ctype})
+    try:
+        with urllib.request.urlopen(req, timeout=10) as r:
+            return r.status, json.loads(r.read())
+    except urllib.error.HTTPError as e:
+        return e.code, json.loads(e.read() or b'{}')
+
+
+def test_upload(tmp: Path) -> None:
+    """F79: an attachment from the message box is kept under .runner/uploads and its path comes back, for the
+    message that hands it to the session; a name with a path in it cannot leave that folder."""
+    repo = fake_repo(tmp)
     token = W.web_token()
     srv = W.serve(token, 0, '127.0.0.1', snap=lambda: {})
     base = f'http://127.0.0.1:{srv.server_address[1]}'
-    style = lambda page: page.split(b'<style id="theme">')[1].split(b'</style>')[0]  # noqa: E731
+    png = b'\x89PNG\r\n\x1a\nfake picture'
     try:
-        page = get(f'{base}/?t={token}')[1]
-        check(b'--bg:#000000' in style(page) and b'--accent:#ef4444' in style(page), 'ryha by default',
-              style(page))
-        with mock.patch.dict(S.C.raw, {'ui': {'theme': 'light'}}):
-            page = get(f'{base}/?t={token}')[1]
-        check(b'--bg:#ffffff' in style(page) and b'color-scheme:light' in style(page),
-              '[ui] theme = "light" serves the light colours', style(page))
-        check(b'"default": "light"' in page, 'and the picker starts from it')
-        for name in (b'ryha', b'omarchy', b'terminal', b'light'):
-            check(b'"%s": {' % name in page, f'the picker has {name.decode()}')
-        check(b"k==='T'" in page and b'localStorage' in page, 'T picks a theme, remembered per browser')
-        colors = tmp / 'colors.toml'
-        colors.write_text('background = "#1e1e2e"\nforeground = "#cdd6f4"\naccent = "#89b4fa"\n', encoding='utf-8')
-        with mock.patch.dict(S.C.raw, {'ui': {'theme': 'omarchy'}}), \
-                mock.patch.dict(W.os.environ, {'OMARCHY_COLORS': str(colors)}):
-            page = get(f'{base}/?t={token}')[1]
-        check(b'--bg:#1e1e2e' in style(page) and b'--accent:#89b4fa' in style(page),
-              '[ui] theme = "omarchy" serves the Omarchy colours', style(page))
+        code, r = post_raw(f'{base}/upload?t={token}&name=screen%20shot.png', png)
+        eq(code, 200, 'an upload is answered')
+        p = Path(r['path'])
+        check(r['ok'] and p.is_file() and p.read_bytes() == png, 'the file is kept as sent', r)
+        eq(p.parent, (repo / '.runner' / 'uploads').resolve(), 'under .runner/uploads')
+        check(p.name.endswith('-screen_shot.png'), 'named by its time and its own name, made safe', p.name)
+        code, r2 = post_raw(f'{base}/upload?t={token}&name=screen%20shot.png', b'second')
+        check(r2['ok'] and r2['path'] != r['path'] and p.read_bytes() == png, 'a second one never overwrites it', r2)
+        code, r3 = post_raw(f'{base}/upload?t={token}&name=..%2F..%2Fetc%2Fpasswd', b'x', 'text/plain')
+        eq(Path(r3['path']).parent, p.parent, 'a name with a path in it stays in the uploads folder')
+        check(Path(r3['path']).name.endswith('-passwd'), 'keeping only its last part', r3)
+        code, r4 = post_raw(f'{base}/upload?t={token}&name=x', b'')
+        check(code == 400 and not r4['ok'], 'an empty upload is refused', r4)
+        code, _ = post_raw(f'{base}/upload?name=x.png', png)
+        eq(code, 403, 'and an upload without the token')
     finally:
         srv.stop()
+    eq(W.safe_name('.hidden'), 'hidden', 'no leading dot')
+    eq(W.safe_name('C:\\Users\\me\\a b.txt'), 'a_b.txt', 'a Windows path keeps its last part')
+    eq(W.safe_name(''), 'file', 'no name: file')
 
 
 def test_feed_pane_concept(tmp: Path) -> None:
@@ -265,12 +272,9 @@ def test_control_rows(tmp: Path) -> None:
         page = get(f'{base}/?t={token}')[1]
         eq([s['name'] for s in json.loads(get(f'{base}/snapshot?t={token}')[1])['sessions']], ['c1', 'c6', 's2'],
            'the snapshot carries c6 and the idle s2')
-        for part in (b"const isCtl=it=>!!it&&/^c\\d+$/.test(it.name||'')",
-                     b"it.ctl?['chat','pane','session']:it.task?['feed','pane','diff','session']:['feed','pane']",
-                     b"if(isCtl(it))return `<span class=\"r\">${esc(it.name)}</span>",
-                     b"if(isCtl(it)){toast(`${it.name} has no claude.ai/code link`",
-                     b"<span class=\"d\">idle</span>"):
-            check(part in page, f'the page treats a cN row as a control session: {part.decode()}')
+        for part in (b"const chats=()=>S.snap.sessions.filter(s=>/^c\\d+$/.test(s.name))",
+                     b"const working_=()=>slots().filter(s=>s.task)", b'<b>Idle</b>'):
+            check(part in page, f'the app lists cN as a chat, a slot on a task as working: {part.decode()}')
         with mock.patch.object(W.shutil, 'which', return_value='/usr/bin/ttyd'), \
                 mock.patch('agent_runner.control.control_live', return_value=0), \
                 mock.patch('agent_runner.control.control_window', return_value='') as cw:
@@ -286,9 +290,10 @@ def test_control_rows(tmp: Path) -> None:
     check('open it from the run page' not in copy, 'with no open-it hint on c6 or s2', copy)
 
 
-def test_tabs(tmp: Path) -> None:
-    """F75: the page as the final design has it: each panel's tabs and their markup, keys on the buttons and
-    labels, no [ ] keys."""
+def test_page(tmp: Path) -> None:
+    """F79: the run app as its design has it: the sidebar (New chat, Home, Agents, Activity, Plan, Chats, Agents
+    working, the machine and usage), Home's parts, threads, the message box, the Plan, light and dark, no
+    scrollbars, the container layout, its own 'ar' mark, and no direct edit of tasks."""
     fake_repo(tmp)
     token = W.web_token()
     srv = W.serve(token, 0, '127.0.0.1', snap=lambda: {})
@@ -296,154 +301,112 @@ def test_tabs(tmp: Path) -> None:
         page = get(f'http://127.0.0.1:{srv.server_address[1]}/?t={token}')[1].decode()
     finally:
         srv.stop()
-    for part in ("it.k==='rel'?['release','chat','log']:['chat','log']",  # Status
-                 "it.ctl?['chat','pane','session']:it.task?['feed','pane','diff','session']",  # Sessions
-                 "it.newchat?['info']", 'new chat (<b class="pk">N</b>)',
-                 "it.newtask?['chat edit','direct edit']:['direct edit','chat edit']",  # Queue: no info tab
-                 'new task (<b class="pk">n</b>)', "return['answer','info']", "return['preview']",
-                 'data-quick=', "quickKey(q.key)", 'data-answer=', "K('L','later')", 'data-opt=', "K('O','open on claude.ai",
-                 "K('t','what, why, how to check')", "K('k','kind')", '<b class="pk">K</b> back', "K('p','priority')",
-                 "K('f','files')", "K('a','after')", 'id="f-ahint"', "K('^S','save')", "K('D','drop')",
-                 "K('H','do it here')", 'class="chip after">⧗ after', 'chip run', 'chip crit', 'chip next',
-                 "'diff/'", "'feed/'", "'concept/'", "act('chat_to'", "act('interrupt'", "act('new_control'",
-                 "act('quick_ask'", 'DRAFT_KEY', 'localStorage.setItem(DRAFT_KEY', '<div class="fold">· ${fold} step',
-                 '.box.on .row.cur .chip.after{max-width:none;flex-basis:100%',
-                 '*{scrollbar-width:none}', '*::-webkit-scrollbar{display:none}',  # no visible scrollbars
-                 '.pk{color:var(--yellow)', '.foot .k{color:var(--yellow)', '.foot .glob .k{color:var(--bblue)'):
+    for part in ('New chat', "['home','Home'],['agents','Agents'],['activity','Activity'],['plan','Plan']",
+                 '<div class="shead">Chats</div>', '<div class="shead">Agents working</div>', 'class="livedot"',
+                 'S.snap.machine', 'usage ${esc(use)}',  # the sidebar
+                 'side.open', 'class="scrim"', 'data-menu',  # a drawer on a phone
+                 'greeting()', 'How can I help with the run?', 'data-quick="since">', 'Since my last look',
+                 'data-quick="needs">', 'What needs me', 'data-about="new">', 'Add a task',  # Home
+                 '>Needs you<', 'data-ans=', 'data-later=', 'data-about="need:', '>Working now<', '>Up next<',
+                 'data-about="plan:', 'Release when they land', 'Release now',
+                 "act('answer'", "act('shelve'", "act('release'", "act('quick_ask'", "act('chat_to'",
+                 "act('new_control'", "act('interrupt'",
+                 '.a{display:grid;gap:8px;font:400 16.5px/1.6 var(--serif)', '.u{justify-self:end',  # threads
+                 'Ran ${m.steps.length} step', 'Working on it…', "tq('feed/'",
+                 'Goes straight to this agent', "tq('upload?name='", 'type="file" multiple', 'About: <b>',  # the box
+                 "e.key==='Enter'&&!e.shiftKey", 'DRAFT_KEY', 'store.set(DRAFT_KEY(boxKey())',
+                 'data-pick=', 'data-about="concept:', 'View ${I.ext}', "tq('concept/'",  # the Plan
+                 '@media (prefers-color-scheme:dark){:root:not([data-theme="light"])', ':root[data-theme="dark"]',
+                 '*{box-sizing:border-box;scrollbar-width:none}', '*::-webkit-scrollbar{display:none}',
+                 'container-type:inline-size', '@container (min-width:760px)', '<div class="logo">ar</div>'):
         check(part in page, f'the page has {part}')
-    check("k===']'" not in page and "k==='['" not in page, 'no [ ] keys')
-    check('cancel' not in page.split('function editHTML')[1].split('function chatBox')[0], 'the direct edit has no cancel')
-    check('id="relbtn"' not in page, 'R release only in Status, not in the top bar')
+    for gone in ('Anthropic', 'Claude', 'plan_change', 'direct edit', 'JetBrains Mono', '/*THEMES*/'):
+        check(gone not in page, f'the page has no {gone}')
 
 
-KEYS_DRIVER = """const m=require(process.argv[2]);
+LOGIC_DRIVER = """const m=require(process.argv[2]);
 const cases=JSON.parse(require('fs').readFileSync(0,'utf8'));
 process.stdout.write(JSON.stringify(cases.map(([fn,...a])=>m[fn](...a))));
 """
 
 
-def keys_js(cases: list) -> list:
-    """Run the page's key script (<script id="keys">) in node on `cases` ([function name, *args] each)."""
+def logic_js(cases: list) -> list:
+    """Run the page's pure script (<script id="logic">) in node on `cases` ([function name, *args] each)."""
     page = W.PAGE.read_text(encoding='utf-8')
-    js = page.split('<script id="keys">', 1)[1].split('</script>', 1)[0]
+    js = page.split('<script id="logic">', 1)[1].split('</script>', 1)[0]
     with tempfile.TemporaryDirectory() as d:
-        (Path(d) / 'keys.js').write_text(js, encoding='utf-8')
-        (Path(d) / 'driver.js').write_text(KEYS_DRIVER, encoding='utf-8')
-        r = subprocess.run(['node', str(Path(d) / 'driver.js'), str(Path(d) / 'keys.js')], input=json.dumps(cases),
+        (Path(d) / 'logic.js').write_text(js, encoding='utf-8')
+        (Path(d) / 'driver.js').write_text(LOGIC_DRIVER, encoding='utf-8')
+        r = subprocess.run(['node', str(Path(d) / 'driver.js'), str(Path(d) / 'logic.js')], input=json.dumps(cases),
                            capture_output=True, text=True, timeout=60)
-    check(r.returncode == 0, 'node runs the key script', r.stderr[-800:])
+    check(r.returncode == 0, 'node runs the page script', r.stderr[-800:])
     return json.loads(r.stdout or '[]') or [None] * len(cases)
 
 
-def test_keys(tmp: Path) -> None:
-    """F75: the key handler and the bottom line, driven in node: h/l, ^h/^l, n, the direct edit's field keys,
-    1-5 everywhere, Enter / Esc in a chat, the answer keys, and the footer's rules."""
+def test_logic(tmp: Path) -> None:
+    """F79: the page's pure parts, driven in node: a feed as a conversation (tool steps folded into the reply
+    after them), the working mark, the answer buttons, the queue in plain words, and what the box sends."""
     if not shutil.which('node'):
-        print('  (no node here: the key handler test is skipped)')
+        print('  (no node here: the page script test is skipped)')
         return
-    tabs = {1: ['chat', 'log'], 2: ['chat', 'pane', 'session'], 3: ['direct edit', 'chat edit'], 4: ['answer', 'info'],
-            5: ['preview']}
+    feed = [{'kind': 'you', 'text': 'fix it'}, {'kind': 'tool', 'text': 'Read(a.py)'},
+            {'kind': 'out', 'text': '12 lines'}, {'kind': 'tool', 'text': 'Edit(a.py)'},
+            {'kind': 'say', 'text': 'Fixed.'}, {'kind': 'you', 'text': 'thanks'}, {'kind': 'tool', 'text': 'Bash(ls)'}]
+    sessions = [{'name': 's2', 'task': 'F1', 'minutes': 12}]
+    got = logic_js([
+        ['threadMsgs', feed],
+        ['working', feed], ['working', feed[:5]], ['working', feed + [{'kind': 'out', 'text': 'interrupted'}]],
+        ['working', []],
+        ['answerOpts', {'label': 'CONFIRM', 'ask': 'Works?'}],
+        ['answerOpts', {'label': 'DECIDE', 'options': ['ship it', 'wait']}],
+        ['answerOpts', {'label': 'BLOCKED', 'ask': 'Log in'}],
+        ['planWords', {'id': 'F1', 'state': 'running'}, sessions],
+        ['planWords', {'id': 'B2', 'state': 'after', 'after_title': 'F1 Board page'}, sessions],
+        ['planWords', {'id': 'B3', 'state': 'blocked'}, sessions],
+        ['planWords', {'id': 'B4', 'state': 'ready'}, sessions],
+        ['compose', None, 'hello', []],
+        ['compose', {'kind': 'new'}, 'dark mode toggle', []],
+        ['compose', {'kind': 'plan', 'id': 'F76', 'title': 'Terminal app'}, 'make it first', ['/r/.runner/uploads/a.png']],
+        ['compose', None, '', ['/r/.runner/uploads/a.png', '/r/.runner/uploads/b.txt']],
+        ['compose', {'kind': 'need', 'id': 'R6', 'title': 'Windows status'}, 'what do I check?', []],
+        ['usageOf', ['run up: 3 slots', 'usage: session 40%, week 12%']],
+        ['chatName', {'name': 'c1', 'title': 'control session'}], ['chatName', {'name': 'c6', 'title': 'Site deploy'}],
+        ['chatName', {'name': 'c7', 'title': 'control session'}],
+    ])
+    msgs = got[0]
+    eq([m['w'] for m in msgs], ['u', 'a', 'u', 'a'], 'your words, its reply, yours, its steps so far')
+    eq((msgs[1]['text'], [s['tool'] for s in msgs[1]['steps']], msgs[1]['steps'][0]['out']),
+       ('Fixed.', ['Read(a.py)', 'Edit(a.py)'], '12 lines'), 'the steps before a reply fold into it, with their output')
+    eq((msgs[3]['text'], len(msgs[3]['steps'])), ('', 1), 'steps with no reply yet stand alone')
+    eq(got[1:5], [True, False, False, False], 'working while its last entry is a step, not after a reply or an interrupt')
+    eq(got[5], ['Yes', 'No'], 'a CONFIRM answers Yes or No')
+    eq(got[6], ['Ship it', 'Wait'], "a DECIDE's options are its buttons")
+    eq(got[7], [], 'a BLOCKED has no answer buttons (Chat and Later only)')
+    eq(got[8:12], ['s2 is on it · 12 min', 'Waits for F1 Board page', 'Waits for you',
+                   'Ready to start when a slot is free'], 'the queue in plain words')
+    eq(got[12], 'hello', 'plain words go as typed')
+    eq(got[13], 'Add a task: dark mode toggle', 'Add a task says so')
+    eq(got[14], 'About F76 (Terminal app): make it first\n\nAttached: /r/.runner/uploads/a.png',
+       'the About line names the task; an attachment goes as its path')
+    eq(got[15], 'Attached: /r/.runner/uploads/a.png, /r/.runner/uploads/b.txt', 'attachments alone')
+    eq(got[16], 'About R6 (Windows status), which needs me: what do I check?',
+       "a Needs you item's Chat talks about it with c1, not as its answer")
+    eq(got[17], 'session 40%, week 12%', 'the usage line for the sidebar')
+    eq(got[18:21], ['Project chat', 'Site deploy', 'Chat 7'], 'chats by their titles, c1 the project chat')
 
-    def c(panel=3, main=False, tab=None, typing=False, chat_box=False, busy=False, it=None, answer_keys=()):
-        return {'panel': panel, 'panelName': ['', 'Status', 'Sessions', 'Queue', 'Needs you', 'Concepts'][panel],
-                'focusMain': main, 'tab': tab or tabs[panel][0], 'tabs': tabs[panel], 'typing': typing,
-                'chatBox': chat_box, 'popup': False, 'busy': busy, 'it': it or {}, 'answerKeys': list(answer_keys)}
 
-    def ev(key, **kw):
-        return {'key': key, 'ctrl': False, 'meta': False, 'shift': False, 'alt': False, **kw}
-    edit = c(3, True, 'direct edit')
-    cases = [  # (what, context, event, the commands it should give)
-        ('l in a panel goes into the main pane', c(3), ev('l'), [['into']]),
-        ('Enter too', c(3), ev('Enter'), [['into']]),
-        ('h in a panel does nothing', c(3), ev('h'), []),
-        ('h on the first tab goes back to the panels', c(3, True, 'direct edit'), ev('h'), [['back']]),
-        ('h on a later tab: the previous tab', c(3, True, 'chat edit'), ev('h'), [['tab', -1]]),
-        ('l in the main pane: the next tab', c(2, True, 'chat'), ev('l'), [['tab', 1]]),
-        ('Esc goes back to the panels', c(2, True, 'pane'), ev('Escape'), [['back']]),
-        ('^h: the left side', c(2, True, 'pane'), ev('h', ctrl=True), [['side', 'left']]),
-        ('^l: the right side', c(2), ev('l', ctrl=True), [['side', 'right']]),
-        ('^h while typing too', c(2, True, 'chat', typing=True, chat_box=True), ev('h', ctrl=True), [['side', 'left']]),
-        ('n in Queue: a new task (chat edit)', c(3), ev('n'), [['newtask']]),
-        ('n in Queue\'s main pane too', c(3, True, 'chat edit'), ev('n'), [['newtask']]),
-        ('n elsewhere: nothing', c(2), ev('n'), []),
-        ('e: the direct edit', c(3), ev('e'), [['tabto', 'direct edit']]),
-        ('E: the chat edit', c(3), ev('E'), [['tabto', 'chat edit']]),
-        ('J: move down', c(3), ev('J'), [['reorder', 1]]),
-        ('K: move up', c(3), ev('K'), [['reorder', -1]]),
-        ('p: priority on/off', c(3), ev('p'), [['pri']]),
-        ('H: do it here', c(3), ev('H'), [['act', 'take']]),
-        ('D: drop', c(3), ev('D'), [['act', 'drop']]),
-        ('t: the what field', edit, ev('t'), [['focus', 'f-title']]),
-        ('k: the next kind', edit, ev('k'), [['cycle', 'f-kind', 1]]),
-        ('K: the kind back', edit, ev('K'), [['cycle', 'f-kind', -1]]),
-        ('p: priority toggles', edit, ev('p'), [['cycle', 'f-pri', 1]]),
-        ('f: files', edit, ev('f'), [['focus', 'f-files']]),
-        ('a: after', edit, ev('a'), [['focus', 'f-after']]),
-        ('Tab: the next field', edit, ev('Tab'), [['field', 1]]),
-        ('Shift+Tab: the previous field', edit, ev('Tab', shift=True), [['field', -1]]),
-        ('Tab while typing in a field', c(3, True, 'direct edit', typing=True), ev('Tab'), [['field', 1]]),
-        ('^S saves', c(3, True, 'direct edit', typing=True), ev('s', ctrl=True), [['save']]),
-        ('D in the edit drops', edit, ev('D'), [['act', 'drop']]),
-        ('H in the edit: do it here', edit, ev('H'), [['act', 'take']]),
-        ('a new task has no drop', c(3, True, 'direct edit', it={'newtask': True}), ev('D'), []),
-        ('1-5 work in a direct edit', edit, ev('4'), [['panel', 4]]),
-        ('and in every other tab', c(5, True, 'preview'), ev('2'), [['panel', 2]]),
-        ('but not while typing', c(3, True, 'direct edit', typing=True), ev('2'), []),
-        ('no [ key', c(3, True, 'chat edit'), ev('['), []),
-        ('no ] key', c(3), ev(']'), []),
-        ('Tab: the next panel', c(3), ev('Tab'), [['panel', 4]]),
-        ('Shift+Tab: the previous panel', c(1), ev('Tab', shift=True), [['panel', 5]]),
-        ('R in Status: release', c(1), ev('R'), [['release']]),
-        ('R elsewhere: nothing', c(3), ev('R'), []),
-        ('c: chat with c1', c(4), ev('c'), [['chat']]),
-        ('Enter in a chat box sends', c(2, True, 'chat', typing=True, chat_box=True), ev('Enter'), [['send']]),
-        ('Shift+Enter is a new line', c(2, True, 'chat', typing=True, chat_box=True), ev('Enter', shift=True), []),
-        ('Esc while it works interrupts', c(2, True, 'chat', typing=True, chat_box=True, busy=True), ev('Escape'),
-         [['interrupt']]),
-        ('Esc otherwise leaves the box', c(2, True, 'chat', typing=True, chat_box=True), ev('Escape'), [['blur']]),
-        ('s in Status chat: a quick ask', c(1, True, 'chat'), ev('s'), [['quick', 'since']]),
-        ('u: usage', c(1, True, 'chat'), ev('u'), [['quick', 'usage']]),
-        ('v shows the steps', c(2, True, 'chat'), ev('v'), [['steps']]),
-        ('N: a new chat', c(2), ev('N'), [['newchat']]),
-        ('o opens the session', c(2, it={'ctl': True}), ev('o'), [['open']]),
-        ('j in a concept: the next option', c(5, True), ev('j'), [['opt', 1]]),
-        ('k: the previous option', c(5, True), ev('k'), [['opt', -1]]),
-        ('Enter goes with it', c(5, True), ev('Enter'), [['go']]),
-        ('i: say what to change', c(5, True), ev('i'), [['typebox']]),
-        ('O opens it on claude.ai', c(5, True), ev('O'), [['open']]),
-        ('n answers no', c(4, True, 'answer', answer_keys=['y', 'n']), ev('n'), [['answer', 1]]),
-        ('L: later', c(4, True, 'answer'), ev('L'), [['act', 'later']]),
-        ('a in Needs you: answer', c(4), ev('a'), [['tabto', 'answer']]),
-    ]
-    feet = [  # (what, context, keys the window shows)
-        ('queue', c(3), ['n']),
-        ('direct edit', edit, ['t', 'k', 'K', 'p', 'f', 'a', '^S', 'D', 'H']),
-        ('typing', c(2, True, 'chat', typing=True, chat_box=True), ['⏎']),
-        ('concept', c(5, True), ['O']),
-        ('sessions', c(2, it={'ctl': True}), ['N']),
-    ]
-    got = keys_js([['route', ctx, e] for _, ctx, e, _ in cases] + [['footer', ctx, shown] for _, ctx, shown in feet]
-                  + [['answerOpts', {'label': 'CONFIRM', 'ask': 'Works?'}],
-                     ['answerOpts', {'label': 'DECIDE', 'options': ['ship it', 'wait', 'drop it']}],
-                     ['tabsFor', 3, {'newtask': False}], ['tabsFor', 2, {'task': True}]])
-    for (what, _, _, want), out in zip(cases, got):
-        eq(out, want, what)
-    foot = dict(zip([w for w, _, _ in feet], got[len(cases):len(cases) + len(feet)]))
-    keys = lambda f: [k for k, _ in f['here']]  # noqa: E731
-    glob = [['1-5', 'panel'], ['c', 'chat'], ['?', 'keys']]
-    eq(keys(foot['queue']), ['e', 'E', 'J/K', 'p', 'H', 'D'], "Queue's keys, without n (its row shows it)")
-    eq((foot['queue']['mode'], foot['queue']['glob']), ('QUEUE', glob), 'the mode badge, then only 1-5, c and ?')
-    eq(keys(foot['direct edit']), ['h/l', 'Tab', 'Esc'], 'a direct edit: no key its labels and buttons show')
-    eq((foot['typing']['mode'], foot['typing']['glob'], keys(foot['typing'])), ('INSERT', [], ['Esc', '⇧⏎']),
-       'typing: Esc and Shift+Enter, no global keys')
-    eq(keys(foot['concept']), ['h/l', '⏎', 'i', 'Esc'], 'a concept: no j/k, nor the O its link shows')
-    check(all(k not in ('j/k', '^h/^l', 'j', 'k') for f in foot.values() for k in keys(f)), 'never j/k or ^h/^l')
-    eq(keys(foot['sessions']), ['⏎', 'v', 'o'], 'Sessions: without N (its row shows it)')
-    opts = got[len(cases) + len(feet):]
-    eq(opts[0], [{'key': 'y', 'label': 'yes'}, {'key': 'n', 'label': 'no'}], 'a CONFIRM answers y yes, n no')
-    eq([o['key'] for o in opts[1]], ['a', 'b', 'c'], "a pick's options answer a, b, c")
-    eq(opts[2], ['direct edit', 'chat edit'], 'Queue has no info tab')
-    eq(opts[3], ['feed', 'pane', 'diff', 'session'], 'a slot on a task: feed, pane, diff, session')
+def test_extras(tmp: Path) -> None:
+    """F79: the app's snapshot carries this machine's name and each concept's options, read from its copy."""
+    fake_repo(tmp)
+    copy = S.C.notes('concepts', 'K5.html')
+    copy.write_text('<h1>Phone run page</h1><p>Three ways.</p><h2>A: tabs</h2><p>x</p><h2>B: drawer (recommended)'
+                    '</h2><p>y</p><h2>C: cards</h2>', encoding='utf-8')
+    snap = W.with_extras({'concepts': [{'id': 'K5', 'concept': 'K5', 'copy': str(copy)},
+                                       {'id': 'K6', 'concept': 'K6', 'copy': ''}]})
+    eq(snap['machine'], W.socket.gethostname(), "the machine's name")
+    eq(snap['concepts'][0]['options'], [{'name': 'A: tabs', 'rec': False}, {'name': 'B: drawer (recommended)', 'rec': True},
+                                        {'name': 'C: cards', 'rec': False}], 'a button per option, the recommended marked')
+    eq(snap['concepts'][1]['options'], [], 'no copy: no option buttons (Chat and View still)')
 
 
 def test_diff(tmp: Path) -> None:
@@ -482,6 +445,6 @@ def in_tmp(f):
 
 
 if __name__ == '__main__':
-    raise SystemExit(report([in_tmp(test_server), in_tmp(test_real_action), in_tmp(test_start), in_tmp(test_theme),
-                           in_tmp(test_control_rows), in_tmp(test_feed_pane_concept), in_tmp(test_tabs),
-                           in_tmp(test_keys), in_tmp(test_diff)]))
+    raise SystemExit(report([in_tmp(test_server), in_tmp(test_real_action), in_tmp(test_start), in_tmp(test_upload),
+                           in_tmp(test_control_rows), in_tmp(test_feed_pane_concept), in_tmp(test_page),
+                           in_tmp(test_logic), in_tmp(test_extras), in_tmp(test_diff)]))
