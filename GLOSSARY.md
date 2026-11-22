@@ -77,7 +77,7 @@ The lean session in the Claude apps that reposts what lands and what needs the p
 _Avoid_: feed session, bot
 
 **Board**:
-The terminal pane that shows the runner feed's lines, with no agent behind it.
+The tmux window that holds the runner feed (`attach board`); with no runner feed there is none, and the run page shows what lands.
 _Avoid_: dashboard, status window
 
 **Remote**:

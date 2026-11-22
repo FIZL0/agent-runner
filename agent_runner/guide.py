@@ -84,7 +84,8 @@ and the main checkout is left clean. Several takes on tasks with different files
 A task a slot started only moments ago (no commits yet) take takes back: the run stops that slot and the task
 is yours here. When take says the task is running in a slot, start nothing: give the person the slot's
 claude.ai/code link it prints (when there is one), else offer to steer it with `{cmd} plan tell ID "..."`.
-Never hand them an `attach` line: they may be on the app, with no terminal.
+Never hand them an `attach` line: they may be on the app, with no terminal. To watch the slots, give the
+`run page:` link `{cmd} status` prints.
 """,
     'concepts': """\
 # Concepts
@@ -159,7 +160,7 @@ command is the whole answer (`plan confirm` is for items without a sheet).
 (After mattpocock/skills grilling, domain-modeling and to-tickets, MIT.) Before you queue, ask in rounds:
 - A round is every question you can ask now, numbered, each with your recommended answer and worded so "yes"
   accepts it: `1. One per repo, not per machine? (yes)`; with options, letters: `2. Shown where? a) status
-  b) the board (a)`. Short lines: the person may be on a phone.
+  b) the run page (a)`. Short lines: the person may be on a phone.
 - Look facts up yourself (the code, the plan, `{cmd} status`, the docs, the glossary) and never ask them; ask
   only what needs the person: intent, taste, trade-offs, scope.
 - One reply answers a round, as on a pick sheet: "yes" (or "go") takes every recommendation; "1b 2a" or "2 no,
@@ -349,8 +350,9 @@ or within 10 points of a configured cap (`weekly_max`, `session_max`).
 {watch}
 
 What the person asks, and what you run:
-- "status?", "/run": `status` (`-n 20`). "/since", "what happened?", or more than you can say back: run it
-  yourself and hand it over as a page (`guide output`); never tell the person to run a command or pass a flag.
+- "status?", "/run": `status` (`-n 20`). To watch slots, queue or log: the `run page:` link status prints,
+  never an `attach` line. "/since", "what happened?", or more than you can say back: run it yourself and hand
+  it over as a page (`guide output`); never tell the person to run a command or pass a flag.
 - "what needs me?": `needs`, its lines said back. "/follow", "notify me when …": `guide watch`.
 - **Push what the person asked to hear, and what they would want while away**, with the PushNotification tool
   (deferred: load it with ToolSearch `select:PushNotification`), one push before you post it here: what they
@@ -422,8 +424,10 @@ you, to act on a task or when the person asks which one.
   they ask for more, and reply with the link and a one-line gist from it in everyday words (`Since yesterday:
   41 landed, 2 stuck, run idle. <link>`), without ids. Never answer /since with "too long, run it yourself".
 - Long output (B89): the person may be in the Claude app or on a phone, where they cannot run a command or pass
-  a flag, so never tell them to ("run X", "pass --all", "see it in a terminal"). When they want more than you
-  can say back (`since --all`, `status -n 50`, `plan waiting --all`, a log), run it yourself, write its output
+  a flag, so never tell them to ("run X", "pass --all", "see it in a terminal"). The run page already shows
+  the slots, the queue, Needs you and the run log's last lines: for those (`status -n 50`, `plan waiting`),
+  give the `run page:` link `{cmd} status` prints, with no page of your own. For more than you can say back
+  past that (`since --all`, a longer log), or with no run page up, run it yourself, write its output
   as a plain HTML file (a `<pre>` of the text, under a `<title>`) in your scratchpad, publish it as a private page
   with the Artifact tool (no Artifact tool: send the file with SendUserFile), and reply with the link and a
   one-line gist. A line the runner printed that
@@ -525,7 +529,8 @@ HINT_SKILLS = {
     'run': ("The agent-runner run's status (the person typed /run).",
             'Run `{cmd} status $ARGUMENTS` (e.g. `-n 20` adds the run log\'s last lines) and say it back as a few '
             'short bullets in everyday words, grouped as the control brief says, without task ids. When they want '
-            'more than you can say back (`-n 50`, the whole log), run it yourself and hand it over as a page: '
+            'more than you can say back (`-n 50`, the slots, the queue), give the `run page:` link status prints '
+            '(the run page shows them); with none, or the whole log, run it yourself and hand it over as a page: '
             + LONG_OUTPUT_PAGE),
     'since': ('What the agent-runner run did since the last look (the person typed /since).',
               'Always give the full list as a page (B89): run `{cmd} since --all $ARGUMENTS` (e.g. `2h`, '

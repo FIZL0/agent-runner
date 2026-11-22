@@ -43,9 +43,9 @@ agent-runner                       # the run in the background; the prompt comes
 agent-runner --attach              # the same (or the run already up), then its pane here; Ctrl-b d: background again
 agent-runner status                # is it up, merged / left counts, each slot's task, what merged lately
 agent-runner attach                # watch it (attach s2: slot 2; c1: the control session); Ctrl-b d to detach again
-agent-runner attach board          # the background run's board: what lands and needs you; reopens if closed
-                                   # (remote on: "<repo> · runner" in the apps, a lean Haiku feed that
-                                   # hands any work you type to a new control session)
+agent-runner ui                    # the run page here: sessions, queue, what needs you; keys act on it
+agent-runner attach board          # remote on: the runner feed's window ("<repo> · runner" in the apps, a lean
+                                   # Haiku feed that hands any work you type to a new control session)
 agent-runner control               # a control session here: "status?", "pause", "add a task to fix X"
 agent-runner stop                  # finish the running tasks, then end it
 ```
