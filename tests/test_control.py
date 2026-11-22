@@ -219,7 +219,7 @@ def test_sessions_one_and_each():
     print('F68: [run] sessions = one keeps a slot off Remote Control until opened, its link then in the snapshot, '
           'and c1 republishes the claude.ai copy; each puts every slot there as before')
     import os
-    from agent_runner import runner as R, slots as S, ui_model as U
+    from agent_runner import page_copy as PC, runner as R, slots as S, ui_model as U
     d = Path(tempfile.mkdtemp(prefix='agent-runner-f68-'))
     git(d, 'init', '-q', '-b', 'main')
     (d / 'plan').mkdir()
@@ -278,21 +278,21 @@ def test_sessions_one_and_each():
             'needs': [], 'concepts': [], 'log': ['started T1 in s2'], 'release': ''}
     asks = []
     send = lambda text: asks.append(text) or True  # noqa: E731
-    K.PAGE_COPY_AT[0] = 0.0
-    with mock.patch.object(K, 'remote_on', lambda: True), mock.patch.object(K, 'control_ok', lambda: True):
-        check(K.page_copy_tick(now=1000.0, snap=snap, send=send), 'one: c1 is asked to publish the copy')
-        page = K.page_copy_file().read_text(encoding='utf-8')
+    PC.PAGE_COPY_AT[0] = 0.0
+    with mock.patch.object(PC, 'remote_on', lambda: True), mock.patch.object(PC, 'control_ok', lambda: True):
+        check(PC.page_copy_tick(now=1000.0, snap=snap, send=send), 'one: c1 is asked to publish the copy')
+        page = PC.page_copy_file().read_text(encoding='utf-8')
         check(link in page and f'{S.REMOTE_URL}/session_c1' in page, 'the copy links the terminal and the chat')
         check('<b>widget' not in page and '&lt;b&gt;widget' in page, 'task text is escaped')
         check('?t=' not in page and '<title>' in page, 'no run page token; a title')
-        check(str(K.page_copy_file()) in asks[0] and 'Artifact' in asks[0] and str(K.page_copy_url_file()) in asks[0],
+        check(str(PC.page_copy_file()) in asks[0] and 'Artifact' in asks[0] and str(PC.page_copy_url_file()) in asks[0],
               'the ask names the file, the Artifact tool and where the URL goes', asks)
-        K.page_copy_url_file().write_text('https://claude.ai/artifact/abc\n', encoding='utf-8')
-        check(not K.page_copy_tick(now=1000.0 + K.PAGE_COPY_EVERY + 1, snap=snap, send=send),
-              'nothing changed: c1 is not asked again')
+        check(not PC.page_copy_tick(now=1000.0 + PC.PAGE_COPY_EVERY + 1, snap=snap, send=send),
+              'nothing changed: c1 is not asked again, even before it wrote the URL')
+        PC.page_copy_url_file().write_text('https://claude.ai/artifact/abc\n', encoding='utf-8')
         later = {**snap, 'sessions': snap['sessions'][:1], 'log': ['landed T1']}
-        check(not K.page_copy_tick(now=1010.0, snap=later, send=send), 'not within PAGE_COPY_EVERY of the last ask')
-        check(K.page_copy_tick(now=1000.0 + 2 * K.PAGE_COPY_EVERY, snap=later, send=send),
+        check(not PC.page_copy_tick(now=1010.0, snap=later, send=send), 'not within PAGE_COPY_EVERY of the last ask')
+        check(PC.page_copy_tick(now=1000.0 + 2 * PC.PAGE_COPY_EVERY, snap=later, send=send),
               'a run event after that asks again')
         check('to https://claude.ai/artifact/abc' in asks[-1], 'to the same URL', asks[-1])
 
@@ -301,7 +301,9 @@ def test_sessions_one_and_each():
             flags = S.remote_flags('slot2', None)
             eq(flags[:1], ['--remote-control'], 'each: a slot starts on Remote Control, as before')
             check('s2' in flags[1], 'named with its slot', flags)
-            check(not K.page_copy_tick(now=1e9, snap={**snap, 'up': False}, send=send), 'each: no copy kept')
+            argv = S.agent_argv('brief', str(uuid.uuid4()), 'opus', 60, 'slot2')
+            check('--remote-control' in argv, 'each: the slot argv has --remote-control (listed), as before', argv)
+            check(not PC.page_copy_tick(now=1e9, snap={**snap, 'up': False}, send=send), 'each: no copy kept')
 
 
 def P_lines(d: Path) -> list[str]:
