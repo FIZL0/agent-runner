@@ -1280,10 +1280,35 @@ def claude_json() -> Path:
 
 def attach_target(rows: list[str], root: Path, which: str) -> tuple[str, str] | None:
     """(session, pane id) of the runner's pane (`which` "runner") or a tagged pane (s2, master) of the run for
-    `root`, from `tmux list-panes -a` rows of session, pane id, @runner, @runner-repo, @runner-run."""
+    `root`, from `tmux list-panes -a` rows of session, pane id, @runner, @runner-repo, @runner-run and, when a
+    row has it, its window name: B114, a control session cN with no pane tag (opened by an older agent-runner)
+    is then found by its window name (`control_window_pane`), as ui_model.control_windows lists it."""
     for l in rows:
         sess, pane_id, name, repo, run_for = (l.split('\t') + [''] * 5)[:5]
         mine = run_for if which == 'runner' else repo if name == which else ''
         if mine and Path(mine) == root:
+            return sess, pane_id
+    return control_window_pane(rows, root, which)
+
+
+def control_window_pane(rows: list[str], root: Path, which: str) -> tuple[str, str] | None:
+    """B114: (session, pane id) of control session `which` (cN) by its window name, "<repo> · N", "<repo> ·
+    control N" or "<repo> · N · <title>", for a pane with no tag (an older agent-runner opened it): its
+    @runner-repo is `root`, or, with none, it is in the run's tmux session "ar-<repo>". Rows as
+    `attach_target`, with the window name sixth; None when no row has one or none matches."""
+    if not (m := re.fullmatch(r'c(\d+)', which)):
+        return None
+    repo_name = root.name
+    run_sess = f"ar-{re.sub(r'[^A-Za-z0-9_-]', '-', repo_name)}"
+    named = re.compile(rf'{re.escape(repo_name)} · (?:control )?{int(m[1])}(?: · .*)?')
+    for l in rows:
+        sess, pane_id, name, repo, _run_for, wname = (l.split('\t') + [''] * 6)[:6]
+        if name or not named.fullmatch(wname):
+            continue
+        try:  # resolved, as ui_model.control_windows compares them: a checkout reached through a symlink
+            ours = Path(repo).resolve() == Path(root).resolve() if repo else sess == run_sess
+        except OSError:
+            ours = False
+        if ours:
             return sess, pane_id
     return None
