@@ -190,7 +190,7 @@ def test_actions() -> None:
         p.key('E')
         answers[:] = ['B', 'Fix the flicker', 'menu.py,tests/test_menu.py', 'Q1', 'normal']
         p.key('n')
-        answers[:] = ['Queued task number 2', 'q2.py', '', 'normal']  # every field as it was
+        answers[:] = ['', 'q2.py', '', 'normal']  # every field as it was (no text: the text kept)
         p.key('e')
         eq(p.msg, 'nothing changed', 'an edit that changes nothing runs nothing')
         answers[:] = [None]
@@ -238,6 +238,42 @@ def test_actions() -> None:
         U.RUN[0], U.SEND[0] = real_run, real_send
 
 
+class FakeCurses:
+    """A stub curses module: enough for the colours and the key names."""
+    A_BOLD, A_REVERSE, COLORS, KEY_UP = 1 << 16, 1 << 17, 256, 259
+
+    def __init__(self):
+        self.pairs = {}
+
+    def has_colors(self):
+        return True
+
+    def start_color(self):
+        pass
+
+    def init_pair(self, n, fg, bg):
+        self.pairs[n] = (fg, bg)
+
+    def color_pair(self, n):
+        return n << 8
+
+    def keyname(self, ch):
+        return b'KEY_UP' if ch == self.KEY_UP else b'x'
+
+
+def test_colours() -> None:
+    c = FakeCurses()
+    attrs = T.curses_attrs(c)
+    pair = lambda name: c.pairs[(attrs[name] & 0xff00) >> 8]  # noqa: E731
+    eq(pair('red'), (203, 16), 'the accent: the 256-colour red nearest #ef4444, on black')
+    eq(pair('fg')[1], 16, 'text sits on the black ground')
+    eq(pair('mode'), (16, 203), 'the mode tag: black on red')
+    check(attrs['red'] & c.A_BOLD, 'the accent is bold')
+    c.COLORS = 8
+    eq(c.pairs[(T.curses_attrs(c)['red'] & 0xff00) >> 8], (1, 0), '8 colours: plain red on black')
+    eq((T.key_name(c, c.KEY_UP), T.key_name(c, 'j')), ('UP', 'j'), 'curses keys get their names')
+
+
 def test_cli() -> None:
     from agent_runner import cli
     eq(cli.COMMANDS.get('ui'), ('tui', 'main'), '`agent-runner ui` runs the terminal Run page')
@@ -246,4 +282,4 @@ def test_cli() -> None:
 
 
 if __name__ == '__main__':
-    raise SystemExit(report([test_layout, test_keys, test_actions, test_cli]))
+    raise SystemExit(report([test_layout, test_keys, test_actions, test_colours, test_cli]))

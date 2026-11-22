@@ -42,7 +42,7 @@ SEL_BG = (88, 1)  # #7f1d1d: the focused row
 BLACK = (16, 0)
 
 HELP = """Global
-  1-5      focus a panel          h/l Tab  previous / next panel
+  1-5      focus a panel          h/l Tab  previous / next panel (h on the queue: do it here)
   j/k      move down / up         Enter 0  into the main pane
   [ ]      previous / next tab    Esc      back out
   t        terminal of the slot   c        chat with c1
@@ -484,10 +484,12 @@ class RunPage:
 
     def edit(self, it) -> None:
         """Direct edit: each field asked with its value filled in; only the ones changed are sent."""
-        was = {'text': it.get('title', ''), 'files': ','.join(it.get('files') or []),
+        # the text is not filled in: the snapshot's title is cut at 200 characters, and sending it back would
+        # cut the task; empty keeps the text as it is. An emptied field keeps its value too (plan edit sets, never clears)
+        was = {'text': '', 'files': ','.join(it.get('files') or []),
                'after': ','.join(it.get('after') or []), 'pri': it.get('pri', 'normal')}
         now = {}
-        for k, prompt in (('text', 'text: '), ('files', 'files: '), ('after', 'after: '), ('pri', 'priority: ')):
+        for k, prompt in (('text', 'new text (Enter keeps it): '),('files', 'files: '), ('after', 'after: '), ('pri', 'priority: ')):
             got = self._ask(f'{it["id"]} {prompt}', was[k])
             if got is None:
                 return
