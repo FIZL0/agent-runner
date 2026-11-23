@@ -1168,12 +1168,8 @@ def end_closed_controls(force: bool = False) -> list[int]:
         except Exception as e:  # one unreadable session never stops the run loop or a new session
             log(f'control {n}: could not tell whether it was closed online: {e}')
             continue
-        plat.terminate(pid)  # its hidden shim ends with it
-        pidf.unlink(missing_ok=True)
-        C.notes(f'control{n}.title').unlink(missing_ok=True)
-        log(f'control {n}: ended, its Remote Control session was closed online '
-            f'(transcript kept: {plat.exe(C.run["agent"])} --resume {sid})')
-        out.append(n)
+        if end_control(n, 'its Remote Control session was closed online'):  # F118: the one close path
+            out.append(n)
     return out
 
 
