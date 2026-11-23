@@ -219,10 +219,10 @@ _In code_: QUICK_ASKS, quick_ask
 _Avoid_: preset, shortcut
 
 **Terminal view**:
-A session's live tmux pane on the Run page: through ttyd when installed, else the built-in view of the pane's text; on Windows or with no tmux, the session feed only
+A session's live tmux pane on the Run page, through ttyd; with tmux and no ttyd, how to install it; on Windows or with no tmux, the session feed only
 _Said_: terminal, pane
 _On screen_: terminal
-_In code_: terminal_mode, capture, keys
+_In code_: terminal_mode, terminal_fallback
 _Avoid_: console
 
 **Terminal-style page**:

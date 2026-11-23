@@ -52,7 +52,7 @@ SNAP = {
     'concepts': [{'id': 'F4', 'concept': 'K5', 'title': 'Lazy layout', 'url': 'https://claude.ai/artifact/k5',
                   'copy': '/notes/concepts/K5.html'}],
     'log': [f'=== 10:{i:02d} line {i}' for i in range(20)], 'release': 'release: waits on 2 of 2',
-    'quick_asks': U.quick_asks(), 'terminal_mode': 'builtin',
+    'quick_asks': U.quick_asks(), 'terminal_mode': 'install',
 }
 SNAP['queue'][0].update(state='running s1 6m', title='Queued task number 1, which has a long title that runs on '
                         'well past the width of the panel it is listed in')
