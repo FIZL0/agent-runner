@@ -94,6 +94,33 @@ def lan_ip() -> str:
         return ''
 
 
+def serve_https_urls(status: dict, port: int, token: str) -> list[str]:
+    """B130: the https addresses `tailscale serve status --json` (parsed as `status`) proxies to this machine's
+    `port`, with the token: `https://HOST:PORT/?t=TOKEN` for each Web entry whose handler proxies there."""
+    out = []
+    for hostport, web in ((status or {}).get('Web') or {}).items():
+        for h in ((web or {}).get('Handlers') or {}).values():
+            m = re.fullmatch(r'https?://(?:127\.0\.0\.1|localhost|\[::1\]|0\.0\.0\.0):(\d+)/?', str((h or {}).get('Proxy', '')))
+            if m and int(m.group(1)) == port:
+                host, _, p = hostport.rpartition(':')
+                if host and ((status.get('TCP') or {}).get(p) or {}).get('HTTPS') is True:
+                    out.append(f'https://{host}' + ('' if p == '443' else f':{p}') + f'/?t={token}')
+                break
+    return out
+
+
+def tailscale_https_urls(port: int, token: str, run=sp.run) -> list[str]:
+    """B130: the https addresses Tailscale Serve gives the page on `port` ([] without tailscale or a serve for
+    it). Safari's mic needs a secure context, so these come first where the page's address is printed."""
+    if run is sp.run and not shutil.which('tailscale'):
+        return []
+    try:
+        r = run(['tailscale', 'serve', 'status', '--json'], capture_output=True, text=True, timeout=5)
+        return serve_https_urls(json.loads(r.stdout or '{}'), port, token) if r.returncode == 0 else []
+    except (OSError, ValueError, sp.SubprocessError):
+        return []
+
+
 def page_urls(port: int, token: str) -> list[str]:
     """The page's addresses: by hostname, then by LAN address when there is one."""
     return [page_url(port, token)] + ([page_url(port, token, ip)] if (ip := lan_ip()) else [])
@@ -104,11 +131,16 @@ def url_file() -> Path:
 
 
 def page_line() -> str:
-    """`run page: URL` while a run serves the page (what `status` prints), else ''."""
+    """`run page: URL` while a run serves the page (what `status` prints), else ''. B130: a Tailscale Serve https
+    address for its port comes first (Safari's mic needs https); <notes>/web.url keeps the http ones, which Home
+    reads its port from."""
     try:
         if S.run_up() and (us := url_file().read_text(encoding='utf-8').split()):
+            u = urlsplit(us[0])
+            if u.port and (t := (parse_qs(u.query).get('t') or [''])[0]):
+                us = [x for x in tailscale_https_urls(u.port, t) if x not in us] + us
             return f'run page: {us[0]}' + (f' (or {us[1]})' if len(us) > 1 else '')
-    except OSError:
+    except (OSError, ValueError):
         pass
     return ''
 
