@@ -1667,8 +1667,23 @@ def test_short_ask_b152() -> None:
     check('D7 ' in lines[at[0] + 1], 'the next item is on the very next line', lines[at[0]:at[0] + 2])
 
 
+def test_quick_ask_names_session_c32() -> None:
+    """C32: a quick ask (and H) says the new session's name and selects its row, not 'c1 answers'."""
+    c7 = {'name': 'c7', 'task': '', 'title': 'control session', 'minutes': None, 'state': 'live', 'files': [],
+          'link': '', 'terminal': ''}
+    more = dict(SNAP, sessions=SNAP['sessions'][:2] + [c7] + SNAP['sessions'][2:])
+    p = page(SNAP)
+    p.get_snap = lambda: more
+    res = {'ok': True, 'code': 0, 'out': 'started c7', 'argv': [], 'name': 'c7', 'link': ''}
+    with mock.patch.object(U, 'quick_ask', lambda key: res):
+        p.key('1')
+        p.key('s')
+    check('c7 answers in its session' in p.msg and 'c1' not in p.msg, 'the message names c7', p.msg)
+    eq((p.panel, p.sel().get('name')), (2, 'c7'), 'c7 is selected in Sessions')
+
+
 if __name__ == '__main__':
-    raise SystemExit(report([test_concept_answer_b149, test_short_ask_b152,test_d_drops_f116, test_answer_direct_b138, test_answer_tab_b138, test_close_control_quiet_b136,test_layout, test_status_tabs, test_session_tabs, test_queue, test_form_pane_v_task,
+    raise SystemExit(report([test_quick_ask_names_session_c32,test_concept_answer_b149, test_short_ask_b152,test_d_drops_f116, test_answer_direct_b138, test_answer_tab_b138, test_close_control_quiet_b136,test_layout, test_status_tabs, test_session_tabs, test_queue, test_form_pane_v_task,
                                test_direct_edit,
                                test_navigation, test_no_message_box_f112, test_new_chat_f112, test_side_pane_f112,
                                test_diff_key_f127, test_full_screen_f112, test_side_keys_in_box_f113, test_actions, test_session_tab_b125, test_footer,
