@@ -77,7 +77,7 @@ The lean session in the Claude apps that reposts what lands and what needs the p
 _Avoid_: feed session, bot
 
 **Board**:
-The tmux window that holds the runner feed (`attach board`); with no runner feed there is none, and the run page shows what lands.
+The hidden session that holds the runner feed; with no runner feed there is none, and the run page shows what lands (`attach board` opens agent-runner ui).
 _Avoid_: dashboard, status window
 
 **Remote**:
@@ -114,8 +114,8 @@ _In code_: plan.restyle, plan.hold, plan.release_held, loop.restyles, plan resty
 _Avoid_: redesign, retheme
 
 **Hidden control session**:
-A control session with no window, started by a run with no tmux pane to open it in; what it prints goes to its log
-_Said_: control session without tmux
+A control session with no window, as every run starts them (attach cN shows it); what it prints goes to its log
+_Said_: control session in the background
 _On screen_: c1 is up in a hidden terminal
 _In code_: hidden_control, control_new_hidden, controlN.log
 _Avoid_: headless control, background control
@@ -219,8 +219,8 @@ _In code_: QUICK_ASKS, quick_ask
 _Avoid_: preset, shortcut
 
 **Terminal view**:
-A session's live tmux pane on the Run page, through ttyd; with tmux and no ttyd, how to install it; on Windows or with no tmux, the session feed only
-_Said_: terminal, pane
+A session's own terminal on the Run page, through ttyd (attach NAME); with no ttyd, how to install it; on Windows, the session feed only
+_Said_: terminal
 _On screen_: terminal
 _In code_: terminal_mode, terminal_fallback
 _Avoid_: console
@@ -248,7 +248,7 @@ _Avoid_: AI edit, prompt edit
 
 **Device list**:
 Every project's run and sessions on this device, numbered so one can be attached by its number
-_Said_: agent-runner list, like tmux ls
+_Said_: agent-runner list
 _On screen_: agent-runner list
 _In code_: cmd_list, device_projects, device_sessions, list_text
 _Avoid_: session list, ls
@@ -315,3 +315,10 @@ _Said_: release runs alone
 _On screen_: a release runs alone
 _In code_: [plan] release_alone, plan.release_alone, sched.release_alone
 _Avoid_: exclusive release
+
+**Run view**:
+The run's log followed live in any terminal, taking the runner keys typed there; Ctrl-C leaves it and the run keeps going
+_Said_: attach, the runner's pane
+_On screen_: runner keys: type one here and press Enter
+_In code_: run_view.py, run_view, view_key, keys_help(view=True), attach run
+_Avoid_: runner pane, runner window, console

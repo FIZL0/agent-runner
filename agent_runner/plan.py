@@ -1905,11 +1905,11 @@ def halt(c, tid: str, how: str, wait: float | None = None) -> str:
 
 # --- F16: tell a running agent something, without stopping it ---------------------------------------------
 #
-# A slot runs an interactive session in a tmux pane, where text typed while it works queues for its next turn.
-# `plan tell ID TEXT` (and `plan change ID TEXT` on a running task, unless --restart) leaves a request in
+# A slot runs an interactive session in a hidden terminal, where text typed while it works queues for its next
+# turn. `plan tell ID TEXT` (and `plan change ID TEXT` on a running task, unless --restart) leaves a request in
 # <notes>/tell/<ID>.json ({"how": "tell" | "change", "text": …}); the run (`runner.tells`, every pass of its
-# loop) finds the slot's pane, pastes the message into it and presses Enter, and answers in
-# <notes>/tell/<ID>.done ({"told": true|false, "msg": …}). With no live pane (not tmux, a cut-off session
+# loop) finds the slot's session, pastes the message into it and presses Enter, and answers in
+# <notes>/tell/<ID>.done ({"told": true|false, "msg": …}). With no live session (Windows, a cut-off session
 # waiting to resume, the task merging) it answers told false and `change` falls back to the B19 halt.
 
 TELL_WAIT = 30.0  # s `tell`/`change` wait for the run to pass the message on

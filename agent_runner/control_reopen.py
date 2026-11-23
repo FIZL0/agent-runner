@@ -13,13 +13,12 @@ modules at call time."""
 
 from __future__ import annotations
 
-import os
 import re
 import subprocess as sp
 import sys
 import time
 
-from agent_runner import control as K, plat, slots, state
+from agent_runner import control as K, plat, state
 from agent_runner.config import runner_cmd
 
 
@@ -120,22 +119,9 @@ def reopen_name(n: int, sid: str) -> str:
 
 
 def reopen_control(n: int, sid: str) -> str:
-    """Start `control N --reopen` the way the run starts c1: a window in the run's tmux session, a hidden console
-    on Windows, a hidden terminal in a hidden run. Where it went, or '' when it could not start."""
+    """Start `control N --reopen` the way the run starts c1: a hidden console on Windows, else a hidden
+    terminal. Where it went, or '' when it could not start."""
     cmd = [*runner_cmd(), 'control', str(n), '--reopen']
-    name = reopen_name(n, sid)
-    here = os.environ.get('TMUX_PANE', '')
-    if isinstance(slots.MUX, slots.TmuxMux) and here:
-        sess = K.tmux('display-message', '-p', '-t', here, '#{session_name}').stdout.strip()
-        env = [e for e in K.background_env() if not e.startswith(('AGENT_RUNNER=', 'AGENT_RUNNER_SLOT=', 'AGENT_RUNNER_KEEP='))]
-        r = K.tmux('new-window', '-d', '-t', f'={sess}:', '-n', name, '-c', str(state.ROOT),
-                   *[x for e in env for x in ('-e', e)], '-P', '-F', '#{pane_id}', plat.command_text(cmd))
-        if r.returncode or not (pane := r.stdout.strip()):
-            state.log(f'control {n}: tmux could not reopen it: {r.stderr.strip()}')
-            return ''
-        K.tmux('set-option', '-p', '-t', pane, state.TAG, f'c{n}')
-        K.tmux('set-option', '-p', '-t', pane, state.REPO_TAG, str(state.ROOT))
-        return f'window {name} of tmux session {sess}'
     if plat.WINDOWS:
         plat.spawn_console(cmd, state.ROOT, K.control_env(), hidden=True)
         return 'a hidden console'

@@ -11,6 +11,8 @@ drafts, Esc), and each action, with the runner call and F74's session actions sw
 """
 from __future__ import annotations
 
+import contextlib
+import io
 import json
 import os
 import sys
@@ -229,7 +231,8 @@ def test_session_tabs() -> None:
     p.key('v')
     p.key('l')
     win = drawn(p)
-    check('s1 runs in a tmux pane' in win.text() and '[⏎ attach s1]' in win.text(), 'the pane tab', win.text())
+    check('s1 is not up, so it has no terminal to attach' in win.text() and '[⏎ attach s1]' not in win.text(),
+          'the pane tab of a session with no terminal says so', win.text())
     with mock.patch.object(T, 'hidden_terminal', lambda name: name == 's1'):
         win = drawn(p)
     check('s1 runs hidden, in a terminal of its own' in win.text() and '[⏎ attach s1]' in win.text()
@@ -992,21 +995,16 @@ def test_themes() -> None:
 
 
 def test_idle_run_of_another_project() -> None:
-    """B113: an idle 5-slot run (iFizBox's: no slot windows, control session windows named by title) lists c1,
-    c6 and c9 with their titles and s1-s5 idle; an idle slot's pane says so instead of attaching."""
+    """B113: an idle 5-slot run (iFizBox's: no slot sessions, control sessions titled in state) lists c1, c6 and
+    c9 with their titles and s1-s5 idle; an idle slot's pane says so instead of attaching."""
     repo = Path(tempfile.mkdtemp()) / 'iFizBox'
     repo.mkdir(parents=True)
     git(repo, 'init', '-q')
     S.init(repo)
-    s = 'ar-iFizBox'
-    listing = [f'{s}\trunner-iFizBox\t\t', f'{s}\tboard-iFizBox\tboard\t{repo}', f'{s}\tiFizBox\t\t',
-               f'{s}\tiFizBox · 9 · iOS 26 native glass +\tc9\t{repo}', f'{s}\tiFizBox\t\t',
-               f'{s}\tiFizBox · 1 · Install IPAs row + wider\tc1\t{repo}',
-               f'{s}\tiFizBox · 6 · Pairing broken: Tailscale logout\tc6\t{repo}']
+    titles = {9: 'iOS 26 native glass +', 1: 'Install IPAs row + wider', 6: 'Pairing broken: Tailscale logout'}
     S.C.notes('STATE').write_text('{"state": "5 slots, usage caps off (f)", "running": {}, "idle": true}',
                                   encoding='utf-8')
-    with mock.patch.object(U, 'tmux_panes', return_value=listing):
-        snap = U.snapshot(up=True, links={})
+    snap = U.snapshot(up=True, links={}, windows=titles)
     attached = []
     p = page(snap, attach=lambda name: (attached.append(name), {'ok': False, 'out': 'no pane'})[1])
     eq([r['name'] for r in p.items(2)], ['c1', 'c6', 'c9', 's1', 's2', 's3', 's4', 's5', '+'],
@@ -1032,16 +1030,37 @@ def test_idle_run_of_another_project() -> None:
     eq(attached, ['c6'], 'Enter on a control session\'s pane tab attaches it')
 
 
-def test_older_run() -> None:
-    """C23: a run an older agent-runner started (no tagged panes): Sessions has no rows, the one restart line."""
-    snap = {'up': True, 'status': ['run up: 3 slots'], 'slots': 3, 'sessions': [],
-            'sessions_note': U.OLDER_RUN, 'queue': [], 'needs': [], 'concepts': [], 'log': []}
-    p = page(snap, attach=lambda name: {'ok': False, 'out': ''})
-    eq(p.items(2), [], 'no rows, not even the idle slots or the new chat row')
-    win = Win(30, 140)
-    p.key('2')
-    p.draw(win)
-    check('started by an older agent-runner' in win.text(), 'Sessions shows the restart line', win.text())
+def test_run_key_binds() -> None:
+    """C26: V, Z and B in Status [1] post the run's u, z and x keys (upgrade, suspend and shut down once
+    stopped) to KEYS, through ui_model's run controls (`key u|z|x`), as the run view posts typed ones."""
+    from agent_runner import cmds as M, loop as LP, plan as PL
+    d = Path(tempfile.mkdtemp(prefix='c26-keys-'))
+
+    class Notes:
+        command = 'agent-runner'
+
+        @staticmethod
+        def notes(*parts):
+            return d.joinpath(*parts)
+
+    def run_in_process(argv):  # what the subprocess would do: `agent-runner key u` in a repo with a run up
+        out = io.StringIO()
+        with mock.patch.object(M, 'init'), mock.patch.object(M, 'run_up', lambda: True), \
+                mock.patch.object(M, 'C', Notes), contextlib.redirect_stdout(out):
+            return M.cmd_key(argv[1:], prog='agent-runner key'), out.getvalue()
+
+    with mock.patch.object(U, 'RUN', [run_in_process]), mock.patch.object(LP, 'C', Notes):
+        for k in ('V', 'Z', 'B'):
+            p = page()
+            p.key(k)
+        posted = PL.take(Notes, 'KEYS')
+    eq(posted, ['u', 'z', 'x'], 'V, Z and B post u, z and x to KEYS')
+    check(all(b in HELP_TEXT() for b in ('V        upgrade agent-runner', 'Z B      suspend, shut down once stopped')),
+          'HELP lists them', HELP_TEXT())
+
+
+def HELP_TEXT() -> str:
+    return T.HELP
 
 
 def test_run_controls() -> None:
@@ -1049,7 +1068,8 @@ def test_run_controls() -> None:
     through ui_model's one list; stop now (X) runs only on X again."""
     ran, sent = [], []
     want = {'+': ['slots', '+1'], '-': ['slots', '-1'], 'P': ['pause'], 'G': ['pause', '--off'], 'F': ['force'],
-            'C': ['force', '--off'], 'S': ['stop'], 'U': ['stop', '--undo']}
+            'C': ['force', '--off'], 'S': ['stop'], 'U': ['stop', '--undo'],
+            'V': ['key', 'u'], 'Z': ['key', 'z'], 'B': ['key', 'x']}  # C26: upgrade, suspend, shut down
     with mock.patch.object(U, 'RUN', [lambda argv: (ran.append(argv), (0, 'sent to the run'))[1]]), \
             mock.patch.object(U, 'SEND', [lambda text: (sent.append(text), {'ok': True, 'code': 0, 'out': 'sent',
                                                                              'argv': []})[1]]):
@@ -1068,7 +1088,8 @@ def test_run_controls() -> None:
         eq(p.tab()[0], 'controls', 'Status has a controls tab')
         win = drawn(p, w=140)
         for b in ('[+ slot +1]', '[- slot -1]', '[= set slots]', '[P pause]', '[G go on]', '[F force past the caps]',
-                  '[C caps back on]', '[S stop (running tasks finish)]', '[X stop now]', '[U take the stop back]'):
+                  '[C caps back on]', '[S stop (running tasks finish)]', '[X stop now]', '[U take the stop back]',
+                  '[V upgrade agent-runner]', '[Z suspend once stopped]', '[B shut down once stopped]'):
             check(b in win.text(), f'the controls tab shows {b}', win.text())
         p.key('ESC')
         ran.clear()
@@ -1171,5 +1192,5 @@ if __name__ == '__main__':
                                test_concept_chat, test_new_concept,
                                test_escape_tail, test_colours, test_row_ground_and_fill, test_reorder, test_parked,
                                test_themes,
-                               test_idle_run_of_another_project, test_older_run, test_run_controls,
+                               test_idle_run_of_another_project, test_run_key_binds, test_run_controls,
                                test_follow_upgrade_f90, test_cli]))

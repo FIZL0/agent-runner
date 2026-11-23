@@ -18,14 +18,12 @@ from pathlib import Path
 
 from agent_runner import plan as P, plansync, plat
 from agent_runner.config import RUNNER, runner_cmd, shown_cmd
-from agent_runner.state import (ask_stop, C, clear_stop, default_branch, edited, git, init, queued, REPO_TAG, ROOT,
-    RUN_TAG, run_up, SLOTS_DIR, TAG)
-from agent_runner.state import BOARD_TAG
+from agent_runner.state import (ask_stop, C, clear_stop, default_branch, edited, git, init, queued, ROOT, run_up,
+    SLOTS_DIR)
 from agent_runner.brief import has_sheet, prompt_for, wizard_cmd, wizard_file
 from agent_runner.sched import ahead, open_tasks
-from agent_runner.slots import (attach_target, backend, background_env, background_session, claude_json, entries,
-    marker_pid, MUX, PRESENCE_ENV, quiet_file, remote_off_why, remote_on, remote_slots_on, REMOTE_URL, silent, tmux,
-    transcript, window, worktree)
+from agent_runner.slots import (backend, claude_json, entries, marker_pid, MUX, PRESENCE_ENV, quiet_file,
+    remote_off_why, remote_on, remote_slots_on, REMOTE_URL, silent, transcript, worktree)
 from agent_runner.attach import attach_session, session_socket
 from agent_runner.watch import breaking, installed_version, last_session, queue_resume, upgrade, upgrade_argv
 from agent_runner.land import wip_main_info
@@ -38,7 +36,7 @@ from agent_runner.status import as_event, events_file, read_events
 from agent_runner.state import EV_RUN_UP
 from agent_runner.feed import (board, board_feed, board_held, control_late_files, control_new, control_new_runner,
     FORWARD_FLAG, forward_late_files, read_ask_file, SID_RE)
-from agent_runner.loop import drop_session_env, finish, send_key, session_env_masks
+from agent_runner.loop import drop_session_env, finish, send_key
 
 
 TAKEN = """
@@ -67,12 +65,12 @@ def running_slot(tid: str) -> int:
 
 
 def slot_link(n: int, tid: str = '') -> str:
-    """F52: slot `n`'s claude.ai/code link: its pane's pid -> session id -> the transcript's bridge-session
+    """F52: slot `n`'s claude.ai/code link: its session's pid -> session id -> the transcript's bridge-session
     entry; '' when `[run] remote_slots` is off or any step is missing."""
     if not remote_slots_on():
         return ''
     try:
-        # a resume queued for this task names its session; the pane then may run another task's
+        # a resume queued for this task names its session; the slot then may run another task's
         sid = next((q[1] for m, q in queued().items() if m == n and (not tid or q[0] == tid)), None)
         if not sid and (pane := MUX.panes().get(f's{n}')) and plat.alive(pane[1]):
             sid = MUX.session_id(pane[1])
@@ -268,14 +266,14 @@ def cmd_resume(argv: list[str], prog: str = f'{RUNNER} resume') -> int:
 
 
 def cmd_key(argv: list[str], prog: str = f'{RUNNER} key') -> int:
-    """`pause`, `force`, `slots` and `key`: the runner pane's keys from any terminal, or from a remote session.
+    """`pause`, `force`, `slots` and `key`: the runner keys from any terminal, or from a remote session.
     Unlike a typed key, `pause` and `force` say which way (on, or off with --off), so saying it twice is safe."""
     cmd = prog.split()[-1]
     ap = argparse.ArgumentParser(prog=prog, description={
         'pause': 'Start no new tasks; the run stays up (--off: start them again).',
         'force': 'Start tasks past the session and weekly usage caps (--off: the caps hold again).',
         'slots': 'Change the running slot count: N, +N or -N (a slot past the count finishes its task first).',
-        'key': 'Send keys to the run as if typed in its pane (? lists them).'}[cmd])
+        'key': 'Send keys to the run as if typed in the run view (? lists them).'}[cmd])
     if cmd == 'slots':
         ap.add_argument('count', help='N, +N or -N')
     elif cmd == 'key':
@@ -295,7 +293,7 @@ def cmd_key(argv: list[str], prog: str = f'{RUNNER} key') -> int:
 
 
 def cmd_upgrade(argv: list[str], prog: str = f'{RUNNER} upgrade') -> int:
-    """B49 `agent-runner upgrade`: what `u` in the runner's pane does, from any terminal or a control session.
+    """B49 `agent-runner upgrade`: what `u` in the run view does, from any terminal or a control session.
     It runs `upgrade` (pipx, uv tool, or a pull, per `upgrade_argv`) here; a run that is up sees the new version
     on disk and restarts on it by itself (`restart_if_upgraded`), as after `u`."""
     ap = argparse.ArgumentParser(prog=prog, description='Upgrade agent-runner (pipx, uv tool, or a git pull in '
@@ -520,7 +518,7 @@ def cmd_stop(argv: list[str], prog: str = f'{RUNNER} stop') -> int:
     """`./run stop`: the running sessions finish and merge, nothing new starts, and the run exits."""
     ap = argparse.ArgumentParser(prog=prog, description='Finish the running tasks, start nothing new, then exit.')
     ap.add_argument('--force', action='store_true',
-                    help='end the agent sessions now (each resumes in the next run), as s! in the pane')
+                    help='end the agent sessions now (each resumes in the next run), as s! in the run view')
     power = ap.add_mutually_exclusive_group()
     power.add_argument('--suspend', action='store_true', help='then suspend the computer')
     power.add_argument('--shutdown', action='store_true', help='then shut the computer down')
@@ -546,26 +544,14 @@ def cmd_stop(argv: list[str], prog: str = f'{RUNNER} stop') -> int:
 # --- the run in the background: bare `agent-runner`, and `attach` ----------------------------------------
 
 
-def tmux_launch_argv(session: str, win: str, root: Path, cmd: str, env: list[str], exists: bool) -> list[str]:
-    """The tmux command that starts `cmd` (`agent-runner run`) detached, in the window `win` of `session`: a new
-    session, or a new window when the session is already there (the slots' window of a run that ended is
-    still in it, and the new run adopts its panes). The window stays after its run exits until the launch
-    has seen the run come up (remain-on-exit), so a run that fails at once leaves its message to show."""
-    envs = [a for e in env for a in ('-e', e)]
-    start = (['new-window', '-d', '-t', f'={session}:'] if exists else ['new-session', '-d', '-s', session])
-    return ['tmux', *start, '-n', win, '-c', str(root), *envs, cmd,
-            ';', 'set-option', '-w', '-t', f'={session}:{win}', 'remain-on-exit', 'on']
-
-
 def background_argv() -> list[str]:
-    """What bare `agent-runner` starts without tmux (Windows, or tmux not installed), as a detached process:
-    the run, its slots hidden."""
-    return [*runner_cmd(), 'run', '--hidden']
+    """What bare `agent-runner` starts as a detached process: the run, its slots hidden (as every run's are)."""
+    return [*runner_cmd(), 'run']
 
 
 def remote_ready(tty: bool | None = None, ask=input) -> bool:
     """With `[run] remote`: will Claude Code start a slot without its one-time "Enable Remote Control? (y/n)"?
-    In a hidden pane that question would hold every slot, so it is asked here, in this terminal, and the
+    In a hidden session that question would hold every slot, so it is asked here, in this terminal, and the
     answer kept where Claude Code keeps it (`remoteDialogSeen` in ~/.claude.json). False: start nothing.
     Under `[run] remote = 'auto'` (and no remote_slots) it never stops a run: with no terminal to ask on, or
     answered no, the run starts with Remote Control off, and its log says why."""
@@ -627,10 +613,9 @@ def wait_started(since: int, gone, timeout: float = 30.0) -> int | None:
     return None
 
 
-def started_note(slots: int, where: str, hidden: bool = False) -> str:
+def started_note(slots: int, where: str) -> str:
     attach = ("slot 2's console window: attach s2 (closing that window ends the session)" if plat.WINDOWS else
-              "where each slot's log is (the slots run hidden)" if hidden else
-              "its pane (attach s2: slot 2's); detach again with Ctrl-b d")
+              "the run's log and keys (attach s2: slot 2's terminal; Ctrl-b d leaves it)")
     lines = [f'the run is up in the background: {slots} slot{"s" if slots != 1 else ""}, {where}',
              f'    {shown_cmd()} status     what it is doing',
              f'    {shown_cmd()} attach     {attach}',
@@ -647,85 +632,42 @@ def started_note(slots: int, where: str, hidden: bool = False) -> str:
 
 
 def cmd_background(argv: list[str]) -> int:
-    """Bare `agent-runner`: start the run where no terminal shows it, and give the prompt back. With tmux: a
-    detached tmux session "ar-<repo>" running `agent-runner run`, its slots' window in the same session.
-    Windows, or no tmux (F40): the run as a detached process, its slots hidden."""
+    """Bare `agent-runner`: start the run as a detached process (`plat.spawn_detached`), its slots hidden, and
+    give the prompt back once it is up. `attach` then shows its log and takes its keys."""
     drop_session_env()
     init()
-    sess = background_session()
     if run_up():
-        print(f'a run is already up in this repository: {shown_cmd()} status, {shown_cmd()} attach '
-              f'(tmux attach -t {sess} when it was started in the background), {shown_cmd()} stop')
+        print(f'a run is already up in this repository: {shown_cmd()} status, {shown_cmd()} attach, '
+              f'{shown_cmd()} stop')
         return 0
     if not remote_ready():
         return 1
     log_file = C.notes('run.log')
     since = events_file().stat().st_size if events_file().exists() else 0
-    if plat.WINDOWS or not shutil.which('tmux'):
-        out = C.notes('background.out')
-        proc = plat.spawn_detached(background_argv(), out=out)
-        slots = wait_started(since, lambda: proc.poll() is not None)
-        if slots is None:
-            try:
-                said = out.read_text(encoding='utf-8', errors='replace').strip()[-2000:]
-            except OSError:
-                said = ''
-            print(f'the run did not come up' + (f':\n{said}' if said else f'; see {log_file}'), file=sys.stderr)
-            return 1
-        print(started_note(slots, 'its slots hidden' + ('' if plat.WINDOWS else ' (tmux is not installed)'), hidden=True))
-        return 0
-    win = window('runner')
-    exists = not tmux('has-session', '-t', f'={sess}').returncode
-    for c in session_env_masks(sess) if exists else ():  # an earlier launch from a Claude session left them
-        tmux(*c)
-    if exists:  # a dead runner window left from a failed start would take the name
-        tmux('kill-window', '-t', f'={sess}:{win}')
-    cmd = plat.command_text([*runner_cmd(), 'run'])
-    r = sp.run(tmux_launch_argv(sess, win, ROOT, cmd, background_env(), exists), capture_output=True, text=True)
-    if r.returncode:
-        print(f'tmux could not start the run: {r.stderr.strip()}', file=sys.stderr)
-        return 1
-    for c in session_env_masks(sess) if not exists else ():  # a new session takes the server's global env
-        tmux(*c)
-    target = f'={sess}:{win}'
-
-    def gone() -> bool:
-        p = tmux('list-panes', '-t', target, '-F', '#{pane_dead}')
-        return p.returncode != 0 or p.stdout.strip() == '1'
-
-    slots = wait_started(since, gone)
-    settle = time.monotonic() + 3  # a run that fails setting up its first slots does so right after its start line
-    while slots is not None and time.monotonic() < settle:
-        slots = None if gone() else slots
-        time.sleep(0.3)
+    out = C.notes('background.out')
+    proc = plat.spawn_detached(background_argv(), out=out)
+    slots = wait_started(since, lambda: proc.poll() is not None)
     if slots is None:
-        said = '\n'.join([l for l in tmux('capture-pane', '-p', '-J', '-t', target).stdout.splitlines() if l.strip()][-25:])
-        tmux('kill-window', '-t', target)
+        try:
+            said = out.read_text(encoding='utf-8', errors='replace').strip()[-2000:]
+        except OSError:
+            said = ''
         print(f'the run did not come up' + (f':\n{said}' if said else f'; see {log_file}'), file=sys.stderr)
         return 1
-    tmux('set-option', '-w', '-t', target, 'remain-on-exit', 'off')  # up: when it ends, its window goes with it
-    print(started_note(slots, f'in tmux session {sess}'))
+    print(started_note(slots, 'its slots hidden'))
     return 0
 
 
-def attach_argv(sess: str, pane_id: str, inside: bool) -> list[list[str]]:
-    """The tmux commands that bring up `pane_id`: select its window and pane, then switch this client to its
-    session (inside tmux) or attach this terminal to it."""
-    return [['tmux', 'select-window', '-t', pane_id], ['tmux', 'select-pane', '-t', pane_id],
-            ['tmux', 'switch-client' if inside else 'attach-session', '-t', sess]]
-
-
 def cmd_background_attach(argv: list[str]) -> int:
-    """`agent-runner --attach`: the background run (started now, or the one already up in this repo), then its
-    pane in this terminal, as `attach` shows it; Ctrl-b d sends it back. Inside tmux it switches the client.
-    Windows, or no tmux: the run has no pane to attach, so it is bare `agent-runner`, and says so."""
+    """`agent-runner --attach`: the background run (started now, or the one already up in this repo), then the
+    run view in this terminal, as `attach` shows it; Ctrl-C leaves it and the run keeps going. Windows: the run
+    has no view of its own there, so it is bare `agent-runner`, and says so."""
     if argv:
         print(f'{shown_cmd()} --attach takes nothing more (got {" ".join(argv)})', file=sys.stderr)
         return 2
     init()
-    if plat.WINDOWS or not shutil.which('tmux'):
-        print(f'{"on Windows" if plat.WINDOWS else "without tmux"} the run has no window to attach: '
-              f'--attach starts it as {shown_cmd()} does')
+    if plat.WINDOWS:
+        print(f'on Windows the run has no window to attach: --attach starts it as {shown_cmd()} does')
         return cmd_background([])
     if not run_up():
         if r := cmd_background([]):
@@ -734,32 +676,32 @@ def cmd_background_attach(argv: list[str]) -> int:
 
 
 def hidden_attach(which: str) -> str:
-    """F40, POSIX: what `attach` says of a run or slot that has no tmux pane because it runs hidden: where its
-    output is and how to watch it; '' when there is no such run or slot (the caller says so)."""
-    if which == 'runner':
-        return (f'the run has no pane (it runs without tmux): {shown_cmd()} status shows it, and its log is '
-                f'{C.notes("run.log")}' if run_up() else '')
+    """F40, POSIX: what `attach` says of a slot that runs hidden but has no socket to attach through (it could
+    not be made): where its output is and how to steer it; '' when there is no such slot (the caller says so)."""
     pid = marker_pid(C.notes(f'slot{which[1:]}.live')) if re.fullmatch(r's\d+', which) else 0
     if not (pid and plat.alive(pid)):
         return ''
     remote = f'; on Remote Control ({REMOTE_URL})' if remote_slots_on() else ''
-    return (f'{which} runs hidden (pid {pid}), with no pane to attach: its output goes to '
+    return (f'{which} runs hidden (pid {pid}), with no terminal to attach: its output goes to '
             f'{C.notes(f"slot{which[1:]}.log")}{remote}; {shown_cmd()} plan tell <ID> "<text>" types into it')
 
 
 def cmd_attach(argv: list[str], prog: str = f'{RUNNER} attach') -> int:
-    """`agent-runner attach [sN|cN|feed]`: the runner's pane, or a session's; on Windows a slot's console window.
-    F88: a hidden session (no tmux) is attached through its shim's socket (`attach_session`); Ctrl-b d leaves.
-    F80: `attach N` (a number from `agent-runner list`) or `attach <project> cN|sN|feed|run`, from any folder."""
+    """`agent-runner attach [sN|cN|run|feed]`: the run view, or a session's own terminal; on Windows a slot's
+    console window. No name (or `run`): the run view (`run_view`: its log, live, and its keys; Ctrl-C leaves).
+    F88: a session is attached through its shim's socket (`attach_session`); Ctrl-b d leaves. `feed` and
+    `board`: the TUI. F80: `attach N` (a number from `agent-runner list`) or `attach <project> cN|sN|feed|run`,
+    from any folder."""
     if not any(a.startswith('-') for a in argv) and (argv[:1] and argv[0].isdigit() or len(argv) == 2):
         return attach_listed(argv)
-    ap = argparse.ArgumentParser(prog=prog, description="Show the run's pane, or a session's (s2, c3); attach N: "
-                                 f"number N of {shown_cmd()} list; attach <project> s2|c3|feed: from any folder.")
-    ap.add_argument('slot', nargs='?', default='', help='s2 for slot 2; c3 for control session 3; master for a fix '
-                    'session; board for the board window; a number: that one of the list; none: the runner')
+    ap = argparse.ArgumentParser(prog=prog, description="Show the run view (its log and keys), or a session's own "
+                                 f"terminal (s2, c3); attach N: number N of {shown_cmd()} list; attach <project> "
+                                 "s2|c3|run|feed: from any folder.")
+    ap.add_argument('slot', nargs='?', default='', help='s2 for slot 2; c3 for control session 3; feed or board for '
+                    'the TUI; a number: that one of the list; none or run: the run view')
     a = ap.parse_args(argv)
     init()
-    which = a.slot or 'runner'
+    which = {'run': 'runner', '': 'runner'}.get(a.slot, a.slot)
     if plat.WINDOWS:
         if which == 'runner':
             print(f'on Windows the run has no window of its own: {shown_cmd()} status shows it, and its log is '
@@ -774,33 +716,29 @@ def cmd_attach(argv: list[str], prog: str = f'{RUNNER} attach') -> int:
             return 1
         print(f'{which}: its console window is up (minimize it to hide it again; closing it ends the session)')
         return 0
+    if which == 'runner':
+        from agent_runner.run_view import run_view
+        return run_view()
+    if which in ('feed', 'board'):  # C26: the runner feed has no terminal to show; the TUI shows what lands
+        from agent_runner.tui import main as tui_main
+        return tui_main([])
     if sock := session_socket(which):  # F88: a hidden session's own terminal, through its shim's socket
         return attach_session(sock, which)
-    rows = tmux('list-panes', '-a', '-F', f'#{{session_name}}\t#{{pane_id}}\t#{{{TAG}}}\t#{{{REPO_TAG}}}\t#{{{RUN_TAG}}}'
-                '\t#{window_name}') if shutil.which('tmux') else None  # B114: an untagged cN by its window name
-    hit = attach_target(rows.stdout.splitlines(), ROOT, which) if rows and not rows.returncode else None
-    if not hit and (said := hidden_attach(which)):
+    if said := hidden_attach(which):
         print(said)
         return 0
-    if not hit:
-        print((f'no pane {which} in tmux for this repository' if which != 'runner' else
-               'no run in tmux for this repository') + f': {shown_cmd()} status; {shown_cmd()} starts the run', file=sys.stderr)
-        return 1
-    *select, go = attach_argv(*hit, inside=bool(os.environ.get('TMUX')))
-    for c in select:
-        sp.run(c, capture_output=True)
-    return sp.call(go)
+    print(f'{which} is not running in this repository: {shown_cmd()} status lists the slots, {shown_cmd()} list '
+          f'every session on this device', file=sys.stderr)
+    return 1
 
 
 # --- F80: every agent-runner session on this device: `list`, and `attach N` / `attach <project> X` -----------
 
-DEVICE_FORMAT = (f'#{{session_name}}\t#{{pane_id}}\t#{{{TAG}}}\t#{{{REPO_TAG}}}\t#{{{RUN_TAG}}}\t#{{{BOARD_TAG}}}'
-                 '\t#{window_name}')  # one `tmux list-panes -a` row per pane, read by its tags
-
 
 def window_control_title(repo: str, wname: str, n: int) -> str:
-    """A control session's title from its window name, as the Run page's Sessions shows it: "<repo> · 6 ·
-    Pairing broken" is 'Pairing broken'; 'control session' when the name holds nothing more."""
+    """A control session's title from the name the runner gave it (`control_given`), as the Run page's Sessions
+    shows it: "<repo> · 6 · Pairing broken" is 'Pairing broken'; 'control session' when the name holds nothing
+    more."""
     title = wname[len(repo) + 3:].strip() if wname.startswith(f'{repo} · ') else ''
     if title.startswith(f'{n} · '):
         title = title[len(f'{n} · '):].strip()
@@ -826,64 +764,44 @@ def run_info(root: Path) -> dict:
         return {}
 
 
-def device_projects(rows: list[str], info=run_info, now: float | None = None,
-                    hidden: dict[Path, dict[str, int]] | None = None) -> list[dict]:
-    """F80: each project with a run or sessions on this device, from `tmux list-panes -a` rows in
-    DEVICE_FORMAT, found by the tags agent-runner sets (@runner, @runner-repo, @runner-run), never by window
-    names: {'root', 'name', 'run' (`info(root)`), 'rows'}. Rows in order: the run's pane ('run'), the runner
-    feed ('feed'), control sessions cN, then slots sN with their task and minutes from the run's STATE; each
-    has 'name', 'what', 'sess', 'pane', 'pid' and 'n', numbered 1..N over all projects. `hidden` ({root:
-    {'s2': pid}}, Windows' hidden consoles) adds slots with a console and no pane."""
+def device_projects(hidden: dict[Path, dict[str, int]], info=run_info, now: float | None = None,
+                    titles: dict[Path, dict[int, str]] | None = None) -> list[dict]:
+    """F80: each project with a run or sessions on this device: {'root', 'name', 'run' (`info(root)`), 'rows'}.
+    C26: found from the hidden sessions' markers, `hidden` ({root: {'s2': pid, 'c1': pid, 'feed': pid}}, a
+    root with {} when only its run may be up), never from window names. Rows in order: the run ('run', while
+    it is up), the runner feed ('feed'), control sessions cN (titled from `titles`, {root: {N: the name the
+    runner gave it}}), then slots sN with their task and minutes from the run's STATE; each has 'name',
+    'what', 'pid', 'root' and 'n', numbered 1..N over all projects."""
     now = time.time() if now is None else now
-    found: dict[Path, dict] = {}
-
-    def project(path: str) -> dict:
-        root = Path(path)
-        return found.setdefault(root, {'root': root, 'name': root.name, 'panes': {}, 'controls': {}})
-
-    for line in rows:
-        sess, pane_id, tag, repo, run_for, board, wname = (line.split('\t') + [''] * 7)[:7]
-        if run_for:
-            project(run_for)['panes'].setdefault('run', (sess, pane_id))
-        if not (tag and repo):
-            continue
-        p = project(repo)
-        if tag == 'board' and board.startswith('feed'):
-            p['panes'].setdefault('feed', (sess, pane_id))
-        elif m := re.fullmatch(r'c(\d+)', tag):
-            p['panes'].setdefault(tag, (sess, pane_id))
-            p['controls'].setdefault(int(m[1]), window_control_title(Path(repo).name, wname, int(m[1])))
-        elif re.fullmatch(r's\d+', tag):
-            p['panes'].setdefault(tag, (sess, pane_id))
-    for root, slots in (hidden or {}).items():
-        project(str(root)).setdefault('hidden', {}).update(slots)
     out, n = [], 0
-    for root in sorted(found, key=lambda r: (r.name, str(r))):
-        p = found[root]
+    for root in sorted(hidden, key=lambda r: (r.name, str(r))):
+        pids = hidden[root]
         run = info(root) or {}
-        panes, pids = p['panes'], p.get('hidden', {})
+        if not pids and not run.get('up'):
+            continue
         running = {f's{k}': v for k, v in (run.get('running') or {}).items() if str(k).isdigit()} if run.get('up') else {}
         since = run.get('since') or {}
+        named = (titles or {}).get(root, {})
         listed = []
-        if 'run' in panes:
+        if run.get('up'):
             listed.append(('run', 'the run'))
-        if 'feed' in panes:
+        if 'feed' in pids:
             listed.append(('feed', 'runner feed'))
-        listed += [(f'c{k}', p['controls'][k]) for k in sorted(p['controls'])]
-        for s in sorted(set(running) | {k for k in panes if k[0] == 's'} | set(pids), key=lambda k: int(k[1:])):
+        listed += [(f'c{k}', window_control_title(root.name, named.get(k, ''), k))
+                   for k in sorted(int(c[1:]) for c in pids if re.fullmatch(r'c\d+', c))]
+        for s in sorted(set(running) | {k for k in pids if re.fullmatch(r's\d+', k)}, key=lambda k: int(k[1:])):
             tid, t0 = running.get(s, ''), since.get(s[1:])
             mins = f' · {int((now - t0) // 60)}m' if tid and isinstance(t0, (int, float)) else ''
             listed.append((s, f'{tid}{mins}' if tid else 'idle'))
         rows_out = []
         for name, what in listed:
-            sess, pane_id = panes.get(name, ('', ''))
             pid = pids.get(name, 0)
             num = 0
-            if pane_id or pid:
+            if pid or name == 'run':
                 n += 1
                 num = n
-            rows_out.append({'name': name, 'what': what, 'sess': sess, 'pane': pane_id, 'pid': pid, 'n': num})
-        out.append({'root': root, 'name': p['name'], 'run': run, 'rows': rows_out})
+            rows_out.append({'name': name, 'what': what, 'pid': pid, 'root': root, 'n': num})
+        out.append({'root': root, 'name': root.name, 'run': run, 'rows': rows_out})
     return out
 
 
@@ -908,11 +826,13 @@ def list_text(projects: list[dict]) -> str:
     return '\n'.join(out) + '\n'
 
 
-def hidden_consoles() -> dict[Path, dict[str, int]]:
-    """Windows: {main checkout: {'s2': pid}} of each slot console alive on this device (the hidden consoles;
-    a control session there runs in a terminal the person opened). Found through the slot worktrees in the
-    runs folder (AGENT_RUNNER_HOME, else `[run] home`'s default ~/runs/<project>), the current repository's
-    own `[run] home`, and the current repository's notes."""
+def hidden_consoles() -> tuple[dict[Path, dict[str, int]], dict[Path, dict[int, str]]]:
+    """({main checkout: {'s2': pid, 'c1': pid, 'feed': pid}}, {main checkout: {N: control N's given name}}) of
+    each hidden session alive on this device (`<notes>/slotN.live`, `controlN.live`, `board.live`; Windows:
+    the slot consoles, as a control session there runs in a terminal the person opened). Every project found
+    is a key, so `device_projects` can list a run that is up with no session. Found through the slot
+    worktrees in the runs folder (AGENT_RUNNER_HOME, else `[run] home`'s default ~/runs/<project>), the
+    current repository's own `[run] home`, and the current repository's notes."""
     from agent_runner.config import Config
     roots: set[Path] = set()
     worktrees: list[Path] = []
@@ -935,16 +855,28 @@ def hidden_consoles() -> dict[Path, dict[str, int]]:
             except (SystemExit, OSError):
                 continue
     out: dict[Path, dict[str, int]] = {}
+    titles: dict[Path, dict[int, str]] = {}
     for root in roots:
         try:
             c = Config(root)
-            for m in sorted(c.notes().glob('slot*.live')):
-                k = m.stem[4:]
-                if k.isdigit() and (pid := marker_pid(m)) and plat.alive(pid):
-                    out.setdefault(root, {})[f's{k}'] = pid
+            out.setdefault(root, {})
+            for m in sorted(c.notes().glob('*.live')):
+                hit = re.fullmatch(r'(slot|control)(\d+)|board', m.stem)
+                if not hit or (hit[1] == 'control' and plat.WINDOWS):
+                    continue
+                if not ((pid := marker_pid(m)) and plat.alive(pid)):
+                    continue
+                name = 'feed' if not hit[1] else f'{hit[1][0]}{hit[2]}'
+                out[root][name] = pid
+                if hit[1] == 'control':
+                    try:
+                        titles.setdefault(root, {})[int(hit[2])] = c.notes(f'control{hit[2]}.title').read_text(
+                            encoding='utf-8').strip()
+                    except OSError:
+                        pass
         except (SystemExit, OSError, ValueError, KeyError):
             continue
-    return out
+    return out, titles
 
 
 def main_checkout_of(path: Path) -> Path:
@@ -953,17 +885,15 @@ def main_checkout_of(path: Path) -> Path:
 
 
 def device_sessions() -> list[dict]:
-    """`device_projects` for this device: its tmux panes (POSIX) or its hidden slot consoles (Windows)."""
-    if plat.WINDOWS:
-        return device_projects([], hidden=hidden_consoles())
-    rows = tmux('list-panes', '-a', '-F', DEVICE_FORMAT) if shutil.which('tmux') else None
-    return device_projects(rows.stdout.splitlines() if rows and not rows.returncode else [])
+    """`device_projects` for this device: its hidden sessions (`hidden_consoles`)."""
+    hidden, titles = hidden_consoles()
+    return device_projects(hidden, titles=titles)
 
 
 def cmd_list(argv: list[str], prog: str = f'{RUNNER} list') -> int:
     """`agent-runner list`, from any folder: every agent-runner session on this device, numbered for `attach N`."""
-    ap = argparse.ArgumentParser(prog=prog, description='Every agent-runner run and session on this device, like '
-                                 f'tmux ls: {shown_cmd()} attach N shows number N.')
+    ap = argparse.ArgumentParser(prog=prog, description='Every agent-runner run and session on this device: '
+                                 f'{shown_cmd()} attach N shows number N.')
     ap.parse_args(argv)
     print(list_text(device_sessions()), end='')
     return 0
@@ -981,30 +911,28 @@ def pick_listed(projects: list[dict], argv: list[str]) -> tuple[dict | None, str
     mine = [p for p in projects if proj in (p['name'], str(p['root']))]
     if not mine:
         return None, f'no project {proj} with sessions on this device: {shown_cmd()} list'
-    hit = [r for p in mine for r in p['rows'] if r['name'] == name and (r['pane'] or r['pid'])]
+    hit = [r for p in mine for r in p['rows'] if r['name'] == name and r['n']]
     return (hit[0], '') if hit else (None, f'{proj} has no session {name} to attach: {shown_cmd()} list')
 
 
 def attach_listed(argv: list[str]) -> int:
-    """`attach N` / `attach <project> cN|sN|feed|run`: that pane (tmux attach, or switch-client inside tmux);
-    on Windows a slot's hidden console, shown."""
+    """`attach N` / `attach <project> cN|sN|feed|run`: that project's `attach <name>`, run from its main
+    checkout (the run view, a session's own terminal, the TUI); on Windows a slot's hidden console, shown."""
     if len(argv) > 2:
-        print(f'{shown_cmd()} attach N, or attach <project> cN|sN|feed', file=sys.stderr)
+        print(f'{shown_cmd()} attach N, or attach <project> cN|sN|feed|run', file=sys.stderr)
         return 2
     row, why = pick_listed(device_sessions(), argv)
     if not row:
         print(why, file=sys.stderr)
         return 1
-    if row['pid'] and not row['pane']:
+    if plat.WINDOWS and row['pid']:
         if not plat.show_console(row['pid']):
             print(f'{row["name"]} runs as pid {row["pid"]}, but its console window could not be shown', file=sys.stderr)
             return 1
         print(f'{row["name"]}: its console window is up (minimize it to hide it again; closing it ends the session)')
         return 0
-    *select, go = attach_argv(row['sess'], row['pane'], inside=bool(os.environ.get('TMUX')))
-    for c in select:
-        sp.run(c, capture_output=True)
-    return sp.call(go)
+    os.chdir(row['root'])  # its own repository: `attach` (and the TUI) read the project they are run in
+    return cmd_attach([row['name']])
 
 
 def cmd_control(argv: list[str], prog: str = f'{RUNNER} control') -> int:
@@ -1014,8 +942,8 @@ def cmd_control(argv: list[str], prog: str = f'{RUNNER} control') -> int:
     ap = argparse.ArgumentParser(prog=prog, description='A control session here: ask it for status, pause, '
                                  'slots, stop; it files asks with plan add and does do-it-now work with take.')
     ap.add_argument('n', nargs='?', type=int, help='its number (1 resumes the kept session); default the first free')
-    ap.add_argument('--new', action='store_true', help='open another one without taking focus (a window in the '
-                    "run's tmux session; Windows: a hidden console) and print its claude.ai/code link")
+    ap.add_argument('--new', action='store_true', help='open another one without taking focus (a hidden terminal: '
+                    'attach cN shows it; Windows: a hidden console) and print its claude.ai/code link')
     ap.add_argument('--brief', action='store_true', help=argparse.SUPPRESS)  # the SessionStart hook
     ap.add_argument('--hand', action='store_true', help=argparse.SUPPRESS)  # F53: the hook in settings.local.json
     ap.add_argument('--blank', action='store_true', help=argparse.SUPPRESS)  # c1 under [run] remote: no opening turn

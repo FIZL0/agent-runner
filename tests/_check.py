@@ -27,10 +27,7 @@ os.environ.pop('AGENT_RUNNER_REPO', None)
 os.environ.pop('AGENT_RUNNER_SLOT', None)
 os.environ.pop('AGENT_RUNNER', None)
 os.environ.pop('AGENT_RUNNER_WORKTREE', None)  # B103: else `done` in a test project refuses it as another project
-# nor the slot's tmux: code under test would set options on the real pane (tests that need tmux mock these)
-os.environ.pop('TMUX', None)
-os.environ.pop('TMUX_PANE', None)
-os.environ['AGENT_RUNNER_NO_NOTIFY'] = '1'  # an alarm in a test rings no tmux message or desktop notification
+os.environ['AGENT_RUNNER_NO_NOTIFY'] = '1'  # an alarm in a test rings no desktop notification
 os.environ['AGENT_RUNNER_NO_WEB'] = '1'  # a run under test serves no run page (it would take the real port 8770)
 
 # B68: every temp folder of this suite, its subprocesses' too, goes under one root of its own, so a trust entry
@@ -57,6 +54,18 @@ _REAL_BEFORE = {f: _projects(f) for f in REAL_CLAUDE_JSON}
 os.environ['CLAUDE_CONFIG_DIR'] = tempfile.mkdtemp(prefix='agent-runner-test-claude-')  # never the real ~/.claude
 # worktrees and plan clones go under a temp folder, never the real ~/runs
 os.environ['AGENT_RUNNER_HOME'] = str(Path(tempfile.mkdtemp(prefix='agent-runner-test-runs-')) / '{repo}')
+
+# C26: agent-runner runs no terminal multiplexer. A stand-in `tmux` goes first on PATH for the suite and its
+# subprocesses: it fails, and notes each call in a file `report()` checks, so a call left anywhere fails the
+# suite whether or not the machine has the real one.
+NO_MUX_BIN = Path(tempfile.mkdtemp(prefix='agent-runner-test-nomux-'))
+NO_MUX_LOG = NO_MUX_BIN / 'calls'
+if os.name != 'nt':
+    (NO_MUX_BIN / 'tmux').write_text(f'#!/bin/sh\necho "$*" >> "{NO_MUX_LOG}"\nexit 127\n', encoding='utf-8')
+    (NO_MUX_BIN / 'tmux').chmod(0o755)
+    os.environ['PATH'] = f'{NO_MUX_BIN}{os.pathsep}{os.environ.get("PATH", "")}'
+os.environ.pop('TMUX', None)
+os.environ.pop('TMUX_PANE', None)
 
 
 def check(ok, what, extra=''):
@@ -121,6 +130,8 @@ def report(tests) -> int:
     for t in tests:
         t()
     check_real_claude_json()
+    calls = NO_MUX_LOG.read_text(encoding='utf-8').splitlines() if NO_MUX_LOG.exists() else []
+    check(not calls, 'C26: nothing called tmux', f'{len(calls)} calls: {calls[:5]}')
     print()
     if FAILED:
         print(f'{len(FAILED)} FAILED:')

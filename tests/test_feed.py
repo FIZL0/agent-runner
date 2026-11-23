@@ -82,19 +82,14 @@ def test_photo_alone_forwarded():
     write = lambda *es: tr.write_text(''.join(json.dumps(e) + '\n' for e in es))
     opened = []
 
-    def tm(*a, **k):
-        opened.append(a)
-        return subprocess.CompletedProcess(a, 0, '%9\n' if a[0] == 'new-window' else '', '')
-
     def new_window_argv():
-        return R.shlex.split(next(c for c in opened if c[0] == 'new-window')[-1])
+        return opened[-1]
 
     with mock.patch.object(R.C, 'notes', lambda *a: Path(tdir, *a)), \
             mock.patch.object(R, 'transcript', lambda s: str(tr) if s == sid else None), \
             mock.patch.dict(os.environ, {'CLAUDE_CODE_SESSION_ID': sid}), \
-            mock.patch.object(R, 'tmux', tm), mock.patch.object(R, 'control_live', lambda n: None), \
-            mock.patch.object(R, 'control_new_session', lambda: 'ar-proj'), \
-            mock.patch.object(R.shutil, 'which', lambda x: '/usr/bin/tmux'), \
+            mock.patch.object(R, 'control_live', lambda n: None), \
+            mock.patch.object(R, 'control_new_hidden', lambda n, cmd, name, wait=0: opened.append(cmd) or 0), \
             mock.patch.object(R.plat, 'WINDOWS', False), mock.patch.object(R, 'remote_on', lambda: False), \
             mock.patch.object(R, 'FEED_WAIT', 0.3):
         write(hum('status', 'u1'), call('run status'), photo('u2'), pics('/u/shot.png'),
@@ -175,16 +170,11 @@ def test_queued_message_forwarded():
     opened = []
     said = 'can you connect and make one\nwith "quotes" and $(no shell)'
 
-    def tm(*a, **k):
-        opened.append(a)
-        return subprocess.CompletedProcess(a, 0, '%9\n' if a[0] == 'new-window' else '', '')
-
     with mock.patch.object(R.C, 'notes', lambda *a: Path(tdir, *a)), \
             mock.patch.object(R, 'transcript', lambda s: str(tr) if s == sid else None), \
             mock.patch.dict(os.environ, {'CLAUDE_CODE_SESSION_ID': sid}), \
-            mock.patch.object(R, 'tmux', tm), mock.patch.object(R, 'control_live', lambda n: None), \
-            mock.patch.object(R, 'control_new_session', lambda: 'ar-proj'), \
-            mock.patch.object(R.shutil, 'which', lambda x: '/usr/bin/tmux'), \
+            mock.patch.object(R, 'control_live', lambda n: None), \
+            mock.patch.object(R, 'control_new_hidden', lambda n, cmd, name, wait=0: opened.append(cmd) or 0), \
             mock.patch.object(R.plat, 'WINDOWS', False), mock.patch.object(R, 'remote_on', lambda: False), \
             mock.patch.object(R, 'FEED_WAIT', 0.3):
         eq(R.queued_message(monitor), None, 'a queued task notification is not a person message')
@@ -195,7 +185,7 @@ def test_queued_message_forwarded():
         eq(R.feed_latest(sid)[3], said, 'and feed_latest reads its words too')
         with contextlib.redirect_stdout(io.StringIO()):
             rc = R.control_new(9, forward=True)
-        argv = R.shlex.split(next(c for c in opened if c[0] == 'new-window')[-1])
+        argv = opened[-1]
         check(rc == 0 and '--ask-file' in argv, 'control --new --forward hands it on in a file', argv)
         ask = Path(argv[argv.index('--ask-file') + 1])
         eq(ask.read_text(encoding='utf-8'), said, 'word for word')

@@ -28,8 +28,7 @@ The feed is the agent's words with its tool steps folded as '· N steps' (v show
 as a Claude session does. A box takes typing after i (or Enter): Enter sends, Shift+Enter (or Ctrl-J, Alt+Enter)
 is a new line, Esc leaves it (never interrupts), and in a chat Ctrl+C interrupts while the session works (B116;
 elsewhere Ctrl+C quits). Each box keeps its draft
-across Esc and refreshes. The pane tab attaches to the session's tmux pane (Enter; back with Ctrl-b d outside
-tmux, Ctrl-b L inside it), or a hidden session's own terminal (F88; back with Ctrl-b d). Navigation: h/l previous / next tab (h on the first tab and Esc go back to the
+across Esc and refreshes. The pane tab attaches to the session's own terminal (Enter, F88; back with Ctrl-b d). Navigation: h/l previous / next tab (h on the first tab and Esc go back to the
 panels), Ctrl-h / Ctrl-l the left / right side, 1-5 a panel (anywhere but in a box), Tab the next panel; in the
 main pane j/k scroll it (the terminal has no scrollbar), and move through a concept's options.
 
@@ -156,12 +155,13 @@ Status [1]
   + - =    slot +1, -1, set N     P G      pause, go on
   F C      force, caps back on    S        stop (running tasks finish)
   X X      stop now (X again)     U        take the stop back
+  V        upgrade agent-runner   Z B      suspend, shut down once stopped (again: undo)
 Sessions [2]
   t        feed                   v        tool steps on / off
   N        new chat               o        open the session link
   y        copy the session link (the terminal's clipboard, so over ssh too)
   H        take its task back     D        drop its task from the slot
-  Enter    on the pane tab: attach (back: Ctrl-b d, or Ctrl-b L in tmux)
+  Enter    on the pane tab: attach (back: Ctrl-b d)
 Queue [3]
   e        direct edit            E        chat edit
   n        new task               J/K      move down / up
@@ -761,7 +761,7 @@ class RunPage:
         if where == 'task':
             return [buttons(*[button(c['tui'], c['label'].lower()) for c in cs])]
         groups = (('slot_add', 'slot_remove', 'slots_set'), ('pause', 'go_on'), ('force', 'caps_on'),
-                  ('stop', 'stop_now', 'stop_undo'))
+                  ('stop', 'stop_now', 'stop_undo'), ('upgrade', 'suspend', 'shutdown'))
         return [buttons(*[button(c['tui'], c['label'].lower()) for c in cs if c['key'] in g]) for g in groups]
 
     def controls_pane(self, width: int) -> list:
@@ -825,12 +825,11 @@ class RunPage:
                 return [L((f'{name} runs hidden, in a terminal of its own.', 'fg')), L(),
                         buttons(button('⏎', f'attach {name}', True)), L(),
                         L((f'Back: {DETACH_KEY}.', 'dim'))], [], 0
-            if self.snap.get('terminal_mode') == 'feed':
-                return [L((f'{name} has no tmux pane here (Windows, or no tmux): its feed and session link work.',
-                           'dim'))], [], 0
-            return [L((f'{name} runs in a tmux pane of the run.', 'fg')), L(),
-                    buttons(button('⏎', f'attach {name}', True)), L(),
-                    L(('Back: Ctrl-b d outside tmux, Ctrl-b L inside it.', 'dim'))], [], 0
+            if self.snap.get('terminal_mode') == 'feed':  # Windows: a hidden console
+                return [L((f'{name} runs in a hidden console (Windows): ⏎ shows it; its feed and session link '
+                           f'work too.', 'dim')), L(), buttons(button('⏎', f'attach {name}', True))], [], 0
+            return [L((f'{name} is not up, so it has no terminal to attach: its feed and session link work.',
+                       'dim'))], [], 0
         if tab == 'diff':
             out = []
             for l in self.diff(name).splitlines()[:DIFF_LINES] or ['no changes yet']:
@@ -1619,8 +1618,7 @@ class RunPage:
             self.cur[3] = ids.index(tasks[i]['id']) if tasks[i]['id'] in ids else i + step
 
     def pane_attach(self) -> None:
-        """Enter on the pane tab: switch to the session's tmux pane, or its hidden terminal (F88), with `attach
-        NAME`; an idle slot has none."""
+        """Enter on the pane tab: the session's own terminal (F88), with `attach NAME`; an idle slot has none."""
         it = self.sel()
         if not isinstance(it, dict) or it.get('new'):
             return
@@ -1715,7 +1713,8 @@ def over_ssh() -> bool:
 
 def osc52(text: str) -> str:
     """B125: the terminal's own clipboard set to `text` (OSC 52): over ssh it lands on the person's machine in
-    iTerm2, Ghostty, kitty. Inside tmux it goes out through tmux's passthrough too."""
+    iTerm2, Ghostty, kitty. Inside the person's own tmux (C26: agent-runner runs none of its own) it goes out
+    through that one's passthrough too."""
     import base64
     seq = f'\x1b]52;c;{base64.b64encode(text.encode("utf-8")).decode("ascii")}\x07'
     if os.environ.get('TMUX'):
@@ -1855,9 +1854,7 @@ def hidden_terminal(name: str) -> bool:
 
 
 def attach_slot(curses, win, name: str) -> dict:
-    """Leave curses, show the session's tmux pane or, F88, its hidden terminal (`attach NAME`), and come back
-    when it returns."""
-    hidden = hidden_terminal(name)
+    """Leave curses, show the session's own terminal (F88, `attach NAME`), and come back when it returns."""
     curses.def_prog_mode()
     curses.endwin()
     try:
@@ -1865,10 +1862,9 @@ def attach_slot(curses, win, name: str) -> dict:
     finally:
         curses.reset_prog_mode()
         win.refresh()
-    inside = bool(os.environ.get('TMUX'))
     if r.returncode:
         return {'ok': False, 'out': (r.stderr or '').strip() or f'attach {name} failed'}
-    return {'ok': True, 'out': f'{name}: back with Ctrl-b L' if inside and not hidden else f'back from {name}'}
+    return {'ok': True, 'out': f'back from {name}'}
 
 
 def link_sgr(curses, theme: str | dict | None = None) -> str:

@@ -120,7 +120,7 @@ def test_run_parks(repo: Path, tmp: Path):
     sent = []
 
     class Mux:
-        typed, name = True, 'tmux'
+        typed, name = True, 'hidden'
 
         def panes(self):
             return {'s1': ('%1', os.getpid())}

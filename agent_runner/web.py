@@ -11,15 +11,15 @@
     GET  /events?t=TOKEN         the same snapshot over server-sent events, sent again whenever it changes
     POST /act?t=TOKEN            {"name": ACTION, "args": {...}}: one of `ui_model.ACTIONS` (plan add, plan edit,
                                  drop, shelve, release, chat, answer, take, move, unpark), its result as JSON
-    GET  /terminal/NAME?t=TOKEN  where slot NAME's (or c1's, or cN's) tmux pane is served by ttyd, started on demand;
-                                 without ttyd, how to install it (or, with no tmux, the feed only)
+    GET  /terminal/NAME?t=TOKEN  where slot NAME's (or c1's, or cN's) own terminal is served by ttyd (`attach NAME`),
+                                 started on demand; without ttyd, how to install it (on Windows, the feed only)
     GET  /feed/NAME?t=TOKEN      F74: session NAME's transcript as say/you/tool/out entries (`ui_model.feed`)
     GET  /concept/ID?t=TOKEN     F74: concept ID's local page copy (<notes>/concepts/ID.html), sandboxed
     GET  /diff/NAME?t=TOKEN      F75: slot NAME's diff so far (`slot_diff`), for its diff tab
     POST /upload?t=TOKEN&name=N  F79: an attachment (the body, as is) kept under <notes>/uploads; its path on this
                                  machine comes back, for the message that hands it to a session
 
-Every request carries the token (`?t=`, or an `X-Token` header): the page can type into panes, so one without
+Every request carries the token (`?t=`, or an `X-Token` header): the page can type into sessions, so one without
 it is refused. The token is made once per project (<notes>/web.token) and printed by `status` and in the run
 log with the page's address. Standard library only; ttyd is optional (the terminal tab says how to install it).
 """
@@ -47,7 +47,7 @@ PAGE = Path(__file__).with_name('web_page.html')
 TERM = Path(__file__).with_name('web_term.html')  # F81: the terminal-style page
 TICK = 2.0  # s between snapshots the events stream compares
 PING = 15.0  # s of no change before the stream sends a keep-alive comment
-TTYD_INSTALL = ('ttyd is not installed, so the terminal tab cannot show the pane. Install it on this machine '
+TTYD_INSTALL = ('ttyd is not installed, so the terminal tab cannot show a session\'s terminal. Install it on this machine '
                 '(Arch: pacman -S ttyd; Debian/Ubuntu: apt install ttyd; macOS: brew install ttyd) and open '
                 'the tab again.')
 
@@ -113,48 +113,23 @@ def page_line() -> str:
 
 # --- c1 and the terminals ---------------------------------------------------------------------------------------
 
-def c1_pane() -> str:
-    """c1's tmux pane, found by its tag (never $TMUX_PANE: in the run that is the runner's own pane)."""
+def socket_of(name: str) -> str:
+    """C26: the attach socket of session `name` (s2, c1, c6) as a path, '' when it has none (not up, Windows)."""
     try:
-        from agent_runner.control import control_live, control_window
-        pid = control_live(1)
-        return control_window(1, pid) if pid else ''
-    except Exception:  # noqa: BLE001 - no tmux, no c1
+        from agent_runner.attach import session_socket
+        sock = session_socket(name)
+        return str(sock) if sock else ''
+    except Exception:  # noqa: BLE001 - no notes dir
         return ''
 
 
-def control_pane(n: int) -> str:
-    """F73: control session cN's tmux pane, by its cN tag (or its pid, when its pid file names a live one)."""
-    try:
-        from agent_runner.control import control_live, control_window
-        return control_window(n, control_live(n))
-    except Exception:  # noqa: BLE001 - no tmux, no such window
-        return ''
-
-
-def pane_of(name: str) -> str:
-    """The tmux pane id of slot `name` (s2), of c1 or of another control session (c6); '' when it has none (a
-    hidden slot, no tmux)."""
-    if name == 'c1':
-        return c1_pane()
-    if name[:1] == 'c' and name[1:].isdigit():
-        return control_pane(int(name[1:]))
-    try:
-        from agent_runner import slots
-        if getattr(slots.MUX, 'name', '') != 'tmux':
-            return ''
-        return slots.MUX.panes().get(name, ('', 0))[0]
-    except Exception:  # noqa: BLE001
-        return ''
-
-
-FEED_ONLY = ('There is no tmux here (Windows, or it is not installed), so {name} has no terminal to show: its feed '
-             'and its session link show it.')
+FEED_ONLY = ('On Windows {name} runs in a hidden console, so it has no terminal to show here: its feed and its '
+             'session link show it.')
 
 
 def terminal_fallback(name: str) -> dict:
-    """F74: the terminal tab without ttyd: with tmux, how to install ttyd (`mode` 'install'; C24: ttyd is the only
-    Terminal view, and the chat works meanwhile); else the feed only."""
+    """F74: the terminal tab without ttyd: how to install ttyd (`mode` 'install'; C24: ttyd is the only Terminal
+    view, and the chat works meanwhile); on Windows the feed only."""
     if U.terminal_mode() == 'feed':
         return {'ok': False, 'mode': 'feed', 'out': FEED_ONLY.format(name=name), 'feed': f'feed/{name}'}
     return {'ok': False, 'mode': 'install', 'feed': f'feed/{name}',
@@ -199,34 +174,30 @@ def slot_diff(name: str) -> dict:
 
 
 class Terminals:
-    """One ttyd per pane, started the first time its tab opens, on web_port+1, +2, …; each serves only under
-    /t/TOKEN/NAME/, so the address is as secret as the page's. It attaches a grouped tmux session of its own
-    (destroyed when the browser leaves), so watching a pane moves no other client's window."""
+    """One ttyd per session, started the first time its tab opens, on web_port+1, +2, …; each serves only under
+    /t/TOKEN/NAME/, so the address is as secret as the page's. C26: it runs `attach NAME` for each browser,
+    a client of the session's own socket (F88) like any other, so watching it moves no other client."""
 
     def __init__(self, token: str, port: int, bind: str):
         self.token, self.port, self.bind = token, port, bind
         self.procs: dict[str, tuple[sp.Popen, int, str]] = {}
         self.lock = threading.Lock()
 
-    def argv(self, name: str, pane: str, port: int) -> list[str]:
-        sess = sp.run(['tmux', 'display-message', '-p', '-t', pane, '#{session_name}'], capture_output=True,
-                      text=True).stdout.strip()
+    def argv(self, name: str, sock: str, port: int) -> list[str]:
+        from agent_runner.config import runner_cmd
         return ['ttyd', '-W', '-p', str(port), *(['-i', self.bind] if self.bind not in ('', '0.0.0.0') else []),
-                '-b', f'/t/{self.token}/{name}',
-                'tmux', 'new-session', '-t', sess, ';', 'set-option', 'destroy-unattached', 'on', ';',
-                'select-window', '-t', pane, ';', 'select-pane', '-t', pane]
+                '-b', f'/t/{self.token}/{name}', *runner_cmd(), 'attach', name]
 
     def open(self, name: str) -> dict:
-        if not shutil.which('ttyd'):
+        if U.terminal_mode() == 'feed' or not shutil.which('ttyd'):
             return terminal_fallback(name)
-        pane = pane_of(name)
-        if not pane:
+        sock = socket_of(name)
+        if not sock:
             return {'ok': False, 'mode': 'feed', 'feed': f'feed/{name}',
-                    'out': f'{name} has no tmux pane (the run is hidden, or {name} is not up), so '
-                           f'there is nothing for ttyd to show.'}
+                    'out': f'{name} is not up, so there is nothing for ttyd to show.'}
         with self.lock:
             p = self.procs.get(name)
-            if p and p[0].poll() is None and p[2] == pane:
+            if p and p[0].poll() is None and p[2] == sock:
                 port = p[1]
             else:
                 if p and p[0].poll() is None:
@@ -234,14 +205,14 @@ class Terminals:
                 self.procs.pop(name, None)
                 used = {v[1] for v in self.procs.values() if v[0].poll() is None}
                 port = next(x for x in range(self.port + 1, self.port + 200) if x not in used)
-                proc = sp.Popen(self.argv(name, pane, port), stdin=sp.DEVNULL, stdout=sp.DEVNULL,
+                proc = sp.Popen(self.argv(name, sock, port), cwd=str(S.ROOT), stdin=sp.DEVNULL, stdout=sp.DEVNULL,
                                 stderr=sp.PIPE, start_new_session=True)
                 try:  # one that cannot start (its port taken) ends at once: say so, not a dead frame
                     err = proc.communicate(timeout=0.8)[1].decode(errors='replace').strip()
                     return {'ok': False, 'out': f'ttyd for {name} ended at once (port {port}): {err[-300:]}'}
                 except sp.TimeoutExpired:
                     pass
-                self.procs[name] = (proc, port, pane)
+                self.procs[name] = (proc, port, sock)
         return {'ok': True, 'port': port, 'path': f'/t/{self.token}/{name}/'}
 
     def close(self) -> None:

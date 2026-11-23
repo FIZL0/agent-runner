@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The runner, end to end in a throwaway repo with a bare repo as its remote — no tmux, no real agent.
+"""The runner, end to end in a throwaway repo with a bare repo as its remote — no real agent.
 
     python3 tests/test_runner.py        (no network; a few seconds, mostly git)
 
@@ -761,7 +761,7 @@ def test_take(repo: Path):
 
 
 def test_attach_flag(repo: Path):
-    print('agent-runner --attach: the background run, started or found, then its pane in this terminal')
+    print('agent-runner --attach: the background run, started or found, then the run view in this terminal')
     import contextlib
     import io
     from agent_runner import cli
@@ -769,18 +769,9 @@ def test_attach_flag(repo: Path):
     calls: list[str] = []
     bg = lambda argv: calls.append('start') or 0
     at = lambda argv: calls.append('attach') or 0
-    which = R.shutil.which
-    tmux_here = lambda c, *a, **k: '/usr/bin/tmux' if c == 'tmux' else which(c, *a, **k)
-    no_tmux = lambda c, *a, **k: None if c == 'tmux' else which(c, *a, **k)
     with mock.patch.object(R, 'init'), mock.patch.object(R.plat, 'WINDOWS', False), \
             mock.patch.object(R, 'cmd_background', bg), mock.patch.object(R, 'cmd_attach', at), \
-            mock.patch.object(cli, 'skill'), mock.patch.object(R.shutil, 'which', tmux_here):
-        out = io.StringIO()
-        with mock.patch.object(R.shutil, 'which', no_tmux), contextlib.redirect_stdout(out):
-            eq(cli.main(['--attach']), 0, 'F40: --attach without tmux')
-        eq(calls, ['start'], 'without tmux: it starts the run hidden, as bare does, no attach')
-        has(out.getvalue(), r'without tmux', 'and says so')
-        calls.clear()
+            mock.patch.object(cli, 'skill'):
         with mock.patch.object(R, 'run_up', lambda: False):
             eq(cli.main(['--attach']), 0, '--attach with no run up')
         eq(calls, ['start', 'attach'], 'no run up: it starts the run, then attaches')
@@ -849,7 +840,7 @@ def test_short_name_hints():
             mock.patch.object(R, 'remote_on', lambda: False), mock.patch.object(R, 'remote_slots_on', lambda: False), \
             mock.patch.dict(R.C.run, {'control': True}):
         with mock.patch.object(config.shutil, 'which', lambda c, *a, **k: exe if c == 'agent-runner' else None):
-            note = R.started_note(2, 'its slots hidden', hidden=True)
+            note = R.started_note(2, 'its slots hidden')
             check('    agent-runner status' in note and '    agent-runner control' in note and exe not in note,
                   'on PATH: the start hints say agent-runner', note)
             check(f'{exe} status' in R.control_brief(), "a control session's brief keeps the full path")
@@ -888,27 +879,15 @@ def test_utf8_streams():
 
 
 def test_background(repo: Path):
-    print('bare agent-runner: the run in a detached tmux session, or hidden consoles on Windows; attach')
+    print('bare agent-runner: the run as a detached process, its slots hidden, on every OS')
     R.init(repo)
-    eq(R.background_session(), 'ar-proj', 'the session is named for the repo')
-    argv = R.tmux_launch_argv('ar-proj', 'runner-proj', repo, 'py -m agent_runner run', ['PATH=/bin'], exists=False)
-    eq(argv[:4], ['tmux', 'new-session', '-d', '-s'], 'a new detached session (it never takes this terminal)')
-    eq(argv[4:12], ['ar-proj', '-n', 'runner-proj', '-c', str(repo), '-e', 'PATH=/bin', 'py -m agent_runner run'],
-       'named, in the main checkout, with this shell\'s PATH, running `run`')
-    eq(argv[12:], [';', 'set-option', '-w', '-t', '=ar-proj:runner-proj', 'remain-on-exit', 'on'],
-       'its window outlives a run that fails at once, to show why')
-    argv = R.tmux_launch_argv('ar-proj', 'runner-proj', repo, 'x', [], exists=True)
-    eq(argv[1:5], ['new-window', '-d', '-t', '=ar-proj:'], 'a session already there gets a new window instead')
-    eq(R.background_argv()[-2:], ['run', '--hidden'], 'Windows or no tmux: the run, its slots hidden')
-    has('\n'.join(R.background_env()), r'^PATH=', 'the tmux session gets this PATH')
+    eq(R.background_argv()[-1], 'run', 'C26: the run, its slots hidden, as every run is')
     with mock.patch.dict(os.environ, {'CLAUDE_CODE_CHILD_SESSION': '1', 'CLAUDE_CODE_SESSION_ID': 's1',
                                       'CLAUDE_CODE_MESSAGING_TOKEN': 't', 'CLAUDE_CONFIG_DIR': '/c'}):
-        os.environ.pop('TMUX', None)
         R.drop_session_env()
-        spawn = '\n'.join(R.background_env())
-        check('CLAUDE_CODE_CHILD_SESSION' not in spawn and 'CLAUDE_CODE_SESSION_ID' not in spawn
-              and 'CLAUDE_CODE_MESSAGING' not in spawn and 'CLAUDE_CONFIG_DIR=/c' in spawn,
-              "the run's tmux session gets no Claude session markers from a parent that had them, keeps config")
+        check('CLAUDE_CODE_CHILD_SESSION' not in os.environ and 'CLAUDE_CODE_SESSION_ID' not in os.environ
+              and 'CLAUDE_CODE_MESSAGING_TOKEN' not in os.environ and os.environ.get('CLAUDE_CONFIG_DIR') == '/c',
+              'the run hands on no Claude session markers from a parent that had them, keeps config')
 
     from agent_runner import plat
     si = plat.hidden_startupinfo()
@@ -926,23 +905,13 @@ def test_background(repo: Path):
         check(f & plat.CREATE_NO_WINDOW and not f & 0x8, 'Windows: a detached process gets a windowless console, '
               "not DETACHED_PROCESS (uv's python launcher would then open a visible one)")
 
-    rows = ['other\t%1\ts1\t/elsewhere\t', 'ar-proj\t%2\t\t\t' + str(repo), 'ar-proj\t%3\ts1\t' + str(repo) + '\t',
-            'ar-proj\t%4\ts2\t' + str(repo) + '\t']
-    eq(R.attach_target(rows, repo, 'runner'), ('ar-proj', '%2'), "attach: the runner's own pane")
-    eq(R.attach_target(rows, repo, 's1'), ('ar-proj', '%3'), "attach s1: this repo's s1, not another repo's")
-    eq(R.attach_target(rows, repo, 's9'), None, 'no such slot')
-    eq(R.attach_argv('ar-proj', '%3', inside=False)[-1], ['tmux', 'attach-session', '-t', 'ar-proj'],
-       'outside tmux it attaches this terminal')
-    eq(R.attach_argv('ar-proj', '%3', inside=True)[-1], ['tmux', 'switch-client', '-t', 'ar-proj'],
-       'inside tmux it switches the client')
-
     for line, want in (('up with three slots, worded any way', 3), ('up one session at a time', 0)):
         log = R.events_file()
         since = log.stat().st_size if log.exists() else 0
         R.log(line, R.EV_RUN_UP, slots=want)
         eq(R.wait_started(since, lambda: False, timeout=2), want, f'the launch sees the run come up ({want} slots)')
     since = R.events_file().stat().st_size
-    R.log('run: 3 slots in tmux, merging into main')  # F41: the prose alone, with no event, is not the start
+    R.log('run: 3 slots in hidden, merging into main')  # F41: the prose alone, with no event, is not the start
     eq(R.wait_started(since, lambda: True, timeout=2), None, 'or that it ended first')
 
     R.C.run['remote'] = True
@@ -1219,7 +1188,7 @@ def test_user_hook(tmp: Path):
 
 
 def test_pane_id_not_a_path(repo: Path, tmp: Path):
-    print('B52: a git that answers with a tmux pane id gives no directory: nothing is made from it')
+    print('B52: a git that answers with a pane id gives no directory: nothing is made from it')
     from agent_runner import config as CF
     real = subprocess.run
     # T12: the git-ignored %9 folders that runs before B52 left in a checkout are not this test's: count only
@@ -1247,31 +1216,10 @@ def test_pane_id_not_a_path(repo: Path, tmp: Path):
     check(not new, 'and no %9 folder anywhere', sorted(map(str, new)))
 
 
-def tmux_run(calls: list, out: str = '%9\n'):
-    """A stand-in for subprocess.run that answers the tmux commands with `out` (a pane id) and leaves every
-    other command (git, finding the repo for run.log) to the real one. B52: answering git with "%9" too made
-    log() write a %9/.runner/run.log folder in the current directory."""
-    real = subprocess.run
-
-    def fake(argv, *a, **k):
-        if argv[:1] != ['tmux']:
-            return real(argv, *a, **k)
-        calls.append(argv)
-        return subprocess.CompletedProcess(argv, 0, out, '')
-    return fake
-
-
 def test_control(repo: Path):
-    with mock.patch.dict(os.environ, {'CLAUDE_CODE_CHILD_SESSION': '1', 'CLAUDECODE': '1', 'CLAUDE_CONFIG_DIR': '/c',
-                                      'TMUX': '/tmp/t,1,0'}):
-        # tmux is stood in for, so which() says it is there (Windows has none, and the masks are skipped there)
-        with mock.patch.object(R, 'run', return_value=0), mock.patch.object(R, 'tmux') as tm, \
-                mock.patch.object(R.shutil, 'which', lambda x, *a, **k: '/usr/bin/tmux' if x == 'tmux' else None):
+    with mock.patch.dict(os.environ, {'CLAUDE_CODE_CHILD_SESSION': '1', 'CLAUDECODE': '1', 'CLAUDE_CONFIG_DIR': '/c'}):
+        with mock.patch.object(R, 'run', return_value=0):
             R.cmd_run([])
-        check(mock.call('set-environment', '-r', 'CLAUDE_CODE_CHILD_SESSION') in tm.call_args_list,
-              'and out of its tmux session, whose new windows (the slots) would inherit them')
-        check(['set-environment', '-t', '=ar-x', '-r', 'CLAUDE_CODE_SESSION_ID'] in R.session_env_masks('ar-x'),
-              "masked with -r, which hides a value the tmux server's global env still holds; -u would not")
         check('CLAUDE_CODE_CHILD_SESSION' not in os.environ and 'CLAUDECODE' not in os.environ
               and os.environ.get('CLAUDE_CONFIG_DIR') == '/c',
               "a run started from a Claude session drops its markers (no slot transcripts otherwise), keeps config")
@@ -1284,7 +1232,7 @@ def test_control(repo: Path):
             pass
     check(said and said[0].startswith('run crashed:') and 'RuntimeError: boom' in said[0],
           'a crashed run writes its traceback to run.log (its window closes with it)', said)
-    print('control sessions: the settings file and its brief, the argv, c1 kept, tmux default-command, status')
+    print('control sessions: the settings file and its brief, the argv, c1 kept, c1 started hidden, status')
     R.init(repo)
     data = R.control_settings_data()
     hook = data['hooks']['SessionStart'][0]['hooks'][0]
@@ -1474,28 +1422,14 @@ def test_control(repo: Path):
     (repo / '.runner/control1.pid').unlink(missing_ok=True)
     (repo / '.runner/control2.pid').unlink(missing_ok=True)
 
-    dc = R.control_default_command(repo)
-    check(dc.startswith(f'cd {R.shlex.quote(str(repo))} && ') and ' control ' in dc + ' ' and dc.endswith('|| exec "${SHELL:-/bin/sh}"'),
-          'tmux default-command: a new pane is a control session in the main checkout', dc)
-    a = R.control_pane_argv('%5', False, 'mine', repo, 'ar control 1', ['PATH=/bin'])
-    eq(a[:8], ['tmux', 'split-window', '-v', '-d', '-l', '40%', '-t', '%5'], 'a foreground run: split under its pane')
-    eq(a[-4:], ['-P', '-F', '#{pane_id}', 'ar control 1'], 'running control 1')
-    a = R.control_pane_argv('%5', True, 'ar-proj', repo, 'x', [])
-    eq(a[1:7], ['new-window', '-d', '-t', '=ar-proj:', '-n', 'control-proj'], 'the background run: a window of its own')
     calls = []
-    panes_before = {p for d in (Path.cwd(), repo, Path(__file__).parent) for p in d.glob('%*')}
-    with mock.patch.object(R, 'MUX', R.TmuxMux()), mock.patch.dict(os.environ, {'TMUX_PANE': '%1'}), \
-            mock.patch.object(R, 'tmux', lambda *a, **k: calls.append(a) or subprocess.CompletedProcess(a, 0, 'ar-proj\n', '')), \
-            mock.patch.object(R.sp, 'run', tmux_run(calls)), \
-            mock.patch.object(R, 'remote_on', lambda: False):
+    with mock.patch.object(R.plat, 'WINDOWS', False), mock.patch.object(R, 'remote_on', lambda: False), \
+            mock.patch.object(R, 'hidden_control', lambda n, cmd, wait=None: calls.append((n, cmd)) or (4242, '')):
         R.start_control()
-        check(any(c[:4] == ('set-option', '-t', '=ar-proj:', 'default-command') for c in calls),
-              "the background session's default-command is set", calls)
-        check(any(c[:2] == ['tmux', 'new-window'] for c in calls if isinstance(c, list)), 'c1 opened in its window')
-        check(('set-option', '-p', '-t', '%9', R.TAG, 'c1') in calls, 'tagged c1 (attach c1)')
-        new = {p for d in (Path.cwd(), repo, Path(__file__).parent) for p in d.glob('%*')} - panes_before
-        check('c1 is up in window' in R.C.notes('run.log').read_text() and not new,
-              "B52: c1's log line lands in the repo's own run.log, and no %N folder appears", new)
+        check(len(calls) == 1 and calls[0][0] == 1 and calls[0][1][calls[0][1].index('control') + 1] == '1',
+              'C26: c1 starts hidden (control 1 in a shim), on every run', calls)
+        check('c1 is up in a hidden terminal' in R.C.notes('run.log').read_text()
+              and 'attach c1' in R.C.notes('run.log').read_text(), "c1's log line says attach c1 shows it")
         calls.clear()
         with mock.patch.dict(R.C.run, {'control': False}):
             R.start_control()
@@ -1520,16 +1454,13 @@ def test_control(repo: Path):
             return real_thread(*a, name=name, **k)
         return StandIn(name)
     calls = []
-    with mock.patch.object(R, 'MUX', R.TmuxMux()), mock.patch.dict(os.environ, {'TMUX_PANE': '%1'}), \
-            mock.patch.object(R, 'tmux', lambda *a, **k: calls.append(a) or subprocess.CompletedProcess(a, 0, 'ar-proj\n', '')), \
-            mock.patch.object(R.sp, 'run', tmux_run(calls)), \
+    with mock.patch.object(R.plat, 'WINDOWS', False), \
+            mock.patch.object(R, 'hidden_control', lambda n, cmd, wait=None: calls.append((n, cmd)) or (4242, '')), \
             mock.patch.object(R, 'remote_on', lambda: True), mock.patch.object(R.threading, 'Thread', FakeThread):
         R.start_control()
         R.start_control_server()
-        opened = [c for c in calls if isinstance(c, list) and c[:2] in (['tmux', 'new-window'], ['tmux', 'split-window'])]
-        check(len(opened) == 1 and opened[0][-1].endswith('control 1 --blank --local'),
-              'remote on: c1 opens in tmux too, blank (free till you type) and local (not in the apps)', calls)
-        check(('set-option', '-p', '-t', '%9', R.TAG, 'c1') in calls, 'and tagged c1', calls)
+        check(len(calls) == 1 and calls[0][1][-2:] == ['--blank', '--local'],
+              'remote on: c1 starts hidden too, blank (free till you type) and local (not in the apps)', calls)
         eq(started, ['control-server'], 'remote on: the control server thread starts')
         note = R.started_note(2, 'here')
         check('attach c1' in note and 'terminal only' in note and 'control server' in note and R.REMOTE_URL in note,
@@ -1558,41 +1489,33 @@ def test_control(repo: Path):
     import contextlib
     import io
     link = 'https://claude.ai/code/session_01AbCdEf'
-    shown = iter(['starting…\n', f'Remote Control active · {link}\n'])
     calls = []
 
-    def fake_tmux(*a, **k):
-        calls.append(a)
-        out = {'display-message': 'ar-proj\n', 'new-window': '%12\n'}.get(a[0], '')
-        if a[0] == 'capture-pane':
-            out = next(shown)
-        return subprocess.CompletedProcess(a, 0, out, '')
+    def fake_hidden(n, cmd, wait=None):  # the shim: control N starts, and its log shows its link
+        calls.append((n, cmd))
+        with open(R.hidden_control_log(n), 'a', encoding='utf-8') as fh:
+            fh.write(f'starting…\nRemote Control active · {link}\n')
+        return os.getpid(), ''
     out = io.StringIO()
-    with mock.patch.object(R, 'tmux', fake_tmux), mock.patch.dict(os.environ, {'TMUX_PANE': '%1'}), \
-            mock.patch.object(R.shutil, 'which', lambda x: '/usr/bin/tmux'), mock.patch.object(R.time, 'sleep', lambda s: None), \
+    with mock.patch.object(R.feed, 'hidden_control', fake_hidden), mock.patch.object(R.time, 'sleep', lambda s: None), \
             mock.patch.object(R.plat, 'WINDOWS', False), \
             mock.patch.dict(R.C.run, {'remote': True}), contextlib.redirect_stdout(out):
         eq(R.control_new(2), 0, 'control --new opens one')
-    nw = next(c for c in calls if c[0] == 'new-window')
-    eq(nw[1:6], ('-d', '-t', '=ar-proj:', '-n', R.window('control2')),
-       'a window of its own in this tmux session, without taking focus')
-    check(nw[-1].endswith('control 2'), 'running control 2', nw)
-    check(('set-option', '-p', '-t', '%12', R.TAG, 'c2') in calls, 'tagged c2 (attach c2)')
-    check(link in out.getvalue(), 'and prints the link its pane shows', out.getvalue())
+    eq(calls[0][0], 2, 'C26: a hidden terminal of its own, without taking focus')
+    check(calls[0][1][-2:] == ['control', '2'], 'running control 2', calls)
+    check(link in out.getvalue() and 'attach c2' in out.getvalue(), 'and prints the link its log shows, and attach c2',
+          out.getvalue())
     calls.clear()
     out = io.StringIO()
-    with mock.patch.object(R, 'tmux', fake_tmux), mock.patch.dict(os.environ, {'TMUX_PANE': '%1'}), \
-            mock.patch.object(R.shutil, 'which', lambda x: '/usr/bin/tmux'), mock.patch.object(R.plat, 'WINDOWS', False), \
+    with mock.patch.object(R.feed, 'hidden_control', fake_hidden), mock.patch.object(R.plat, 'WINDOWS', False), \
             contextlib.redirect_stdout(out):
         eq(R.control_new(2), 0, 'local (no [run] remote)')
-    check(not any(c[0] == 'capture-pane' for c in calls) and 'local' in out.getvalue(),
+    check(link not in out.getvalue() and 'local' in out.getvalue(),
           'no link to wait for without [run] remote', out.getvalue())
-    with mock.patch.object(R, 'tmux', lambda *a, **k: subprocess.CompletedProcess(a, 1, '', '')), \
-            mock.patch.dict(os.environ, {'TMUX_PANE': ''}), mock.patch.object(R.shutil, 'which', lambda x: '/usr/bin/tmux'), \
-            mock.patch.object(R.plat, 'WINDOWS', False), \
+    with mock.patch.object(R.plat, 'WINDOWS', False), \
             mock.patch.object(R.feed, 'hidden_control', lambda n, c, wait=None: (0, 'test: not started')), \
             contextlib.redirect_stderr(io.StringIO()) as err:
-        eq(R.control_new(), 1, 'no tmux session to open it in: started hidden (F59), here refused, so an error')
+        eq(R.control_new(), 1, 'a session that cannot start hidden (F59): an error')
     has(err.getvalue(), r'could not start hidden: test: not started', 'it said why')
 
     lines = ['=== 2026-11-19T21:02:45 F2: merged, ticked', '=== 2026-11-19T21:03:00 B9: not merged, parked as wip/B9 — x',
@@ -1874,17 +1797,17 @@ def test_tell_running(repo: Path):
     lock = R.plat.lock(R.C.notes('run.lock'))  # this test stands in for the run that is up
     sess = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(120)'])
     calls: list[tuple] = []
-    real = (R.tmux, R.MUX)
+    real = R.MUX
 
-    def fake_tmux(*a, **kw):
-        calls.append((a, kw.get('input')))
-        return subprocess.CompletedProcess(['tmux', *a], 0, '', '')
-
-    class Mux(R.TmuxMux):
-        live = True
+    class Mux(R.HiddenMux):
+        live, typed = True, True
 
         def panes(self):
-            return {'s1': ('%9', sess.pid)} if self.live else {}
+            return {'s1': ('/n/slot1.live', sess.pid)} if self.live else {}
+
+        def send(self, hit, text):  # what the shim's FIFO would get: a bracketed paste, then Enter
+            calls.append((hit[0], text))
+            return True
 
     def plan_cmd(*a: str) -> subprocess.Popen:
         return subprocess.Popen([sys.executable, str(RUN), 'plan', *a], cwd=str(repo), env={**os.environ},
@@ -1898,7 +1821,7 @@ def test_tell_running(repo: Path):
 
     tells, halts = R.P.tell_dir(R.C), R.P.halt_dir(R.C)
     try:
-        R.tmux, R.MUX = fake_tmux, Mux()
+        R.MUX = Mux()
         procs, running = {1: (sess.pid, 'sid-g1', 0)}, {1: ('G1', 'Later', {'tl1.py'}, set())}
         R.write_state(running)
 
@@ -1911,9 +1834,8 @@ def test_tell_running(repo: Path):
         check(p.returncode == 0, 'plan change goes through', err)
         has(out, r'^G1 has your change noted$', 'the plan line is edited as before')
         has(out, r'^told s1 \(G1\)$', 'and it says the agent has the message')
-        eq([c[0][0] for c in calls], ['load-buffer', 'paste-buffer', 'send-keys'], 'paste, then Enter')
-        eq(calls[0][1], 'Your task changed: publish anyway, B171 is fine', 'the agent reads the change')
-        check('%9' in calls[1][0] and calls[2][0][-2:] == ('%9', 'Enter'), 'into s1\'s pane', calls)
+        eq(calls, [('/n/slot1.live', 'Your task changed: publish anyway, B171 is fine')],
+           "the agent reads the change, typed into s1's session")
         eq(running.get(1, ('',))[0], 'G1', 'the slot still runs it')
         check(sess.poll() is None, 'its session is not ended')
         check(not (halts / 'G1.json').exists(), 'nothing asked the run to halt it')
@@ -1958,7 +1880,7 @@ def test_tell_running(repo: Path):
             'it says why it falls back')
         has(out, r'^changed G1; stopped s1$', 'and what the run did')
     finally:
-        R.tmux, R.MUX = real
+        R.MUX = real
         sess.kill()
         sess.wait()
         lock.close()
@@ -2101,17 +2023,14 @@ def test_short_titles_and_since(repo: Path):
         eq(R.since_mark_file().read_text(encoding='utf-8').strip(), later2, 'and leaves the mark')
         check(f'{R.RUNNER} control' in R.board_header() or 'claude.ai/code' in R.board_header(),
               'its header says where to steer from', R.board_header())
-        argv = R.board_argv('ar-demo', repo, 'agent-runner since --board')
-        check(argv[:5] == ['tmux', 'new-window', '-d', '-t', '=ar-demo:'] and R.window('runner') in argv
-              and R.window('board') not in argv,
-              'C22: the runner feed opens in the background session without taking focus, no board window', argv)
+        argv = R.board_argv()
+        check('since' in argv and '--board' in argv and argv[-2] == '--run-pid',
+              'C26: the board runs since --board in a hidden session, ended with this run', argv)
 
-        # the runner feed: with [run] remote the board is a lean Haiku session in the apps too. The feed lives in
-        # the board's tmux window, so a tmux machine is stood in for (Windows has no board, and no feed)
-        which = R.shutil.which
+        # the runner feed: with [run] remote the board is a lean Haiku session in the apps too (C26: a hidden
+        # session on Linux and macOS; Windows has no board, and no feed)
         with mock.patch.object(R, 'remote_on', lambda: True), mock.patch.dict(R.C.run, {'agent': 'claude'}), \
-                mock.patch.object(R.plat, 'WINDOWS', False), \
-                mock.patch.object(R.shutil, 'which', lambda c, *a, **k: '/usr/bin/tmux' if c == 'tmux' else which(c, *a, **k)):
+                mock.patch.object(R.plat, 'WINDOWS', False):
             fa = R.feed_argv()
             opt = lambda k: fa[fa.index(k) + 1]
             eq((opt('--model'), opt('--tools'), opt('--permission-mode'), opt('--remote-control')),
@@ -2191,15 +2110,24 @@ def test_short_titles_and_since(repo: Path):
             if isinstance(getattr(target, '__self__', None), subprocess.Popen):  # Windows reads output in threads
                 return real_thread(target=target, args=args, **k)
             return mock.Mock(start=lambda: started.append(args))
-        with mock.patch.object(R, 'MUX', R.TmuxMux()), mock.patch.dict(os.environ, {'TMUX_PANE': '%1'}), \
-                mock.patch.object(R, 'tmux', lambda *a, **k: subprocess.CompletedProcess(a, 0, 'mine\n', '')), \
-                mock.patch.object(R.threading, 'Thread', board_thread):
+        with mock.patch.object(R.threading, 'Thread', board_thread):
             with mock.patch.object(R, 'feed_on', lambda: False):
                 R.start_board()
-            eq(started, [], 'C22: no board window without the runner feed (agent-runner ui replaces it)')
+            eq(started, [], 'C22: no board without the runner feed (agent-runner ui replaces it)')
             with mock.patch.object(R, 'feed_on', lambda: True):
                 R.start_board()
-        eq(started, [('mine',)], 'the runner feed opens in a run in your own tmux session too')
+        eq(started, [()], 'C26: the runner feed starts in every run (a hidden session), however it was started')
+        shimmed = []
+        with mock.patch.object(R, 'hidden_shim', lambda stem, cmd, wait=None: shimmed.append((stem, cmd)) or (4242, '')), \
+                mock.patch.object(R, 'marker_pid', lambda m: 0), mock.patch.object(R, 'feed_on', lambda: True), \
+                mock.patch.object(R.feed, 'RC_ENDING', [False]), \
+                mock.patch.object(R.time, 'sleep', side_effect=StopIteration):
+            try:
+                R.keep_board()
+            except StopIteration:
+                pass
+        check(len(shimmed) == 1 and shimmed[0][0] == 'board' and '--feed' in shimmed[0][1],
+              'keep_board starts the board hidden, its feed in it', shimmed)
         ca = R.control_argv(3, 'sid', False, ask='fix the login flicker')
         check(ca[1].startswith('fix the login flicker'), 'control --ask: the handed-on request is its first message')
         ca = R.control_argv(3, 'sid', False, ask='why is this red?', images=['/t/a.png', '/t/b b.png'])
@@ -2287,16 +2215,15 @@ def test_short_titles_and_since(repo: Path):
                 import io
                 opened = []
 
-                def new_window(*a, **k):
-                    opened.append(a)
-                    return subprocess.CompletedProcess(a, 0, '%9\n' if a[0] == 'new-window' else '', '')
+                def new_hidden(n, cmd, name, wait=0):  # control --new's hidden session, its command line kept
+                    opened.append(R.plat.command_text(cmd))
+                    return 0
                 late = lambda: (R.time.sleep(0.6), tr.write_text(tr.read_text() + ''.join(json.dumps(e) + '\n' for e in (
                     hum({'type': 'image'}, {'type': 'text', 'text': 'how many have "merged"?'}),
                     meta(f'[Image: source: {src}]')))))
                 quiet = contextlib.redirect_stdout(io.StringIO())
-                with mock.patch.object(R, 'tmux', new_window), mock.patch.object(R, 'control_live', lambda n: None), \
-                        mock.patch.object(R, 'control_new_session', lambda: 'ar-proj'), \
-                        mock.patch.object(R.shutil, 'which', lambda x: '/usr/bin/tmux'), mock.patch.object(R.plat, 'WINDOWS', False), \
+                with mock.patch.object(R, 'control_new_hidden', new_hidden), \
+                        mock.patch.object(R, 'control_live', lambda n: None), mock.patch.object(R.plat, 'WINDOWS', False), \
                         mock.patch.object(R, 'remote_on', lambda: False):
                     write(hum({'type': 'text', 'text': 'older, text only'}), res)
                     th = R.threading.Thread(target=late)
@@ -2304,7 +2231,7 @@ def test_short_titles_and_since(repo: Path):
                     with quiet:
                         rc = R.control_new(9, ask='how many have merged?')
                     th.join()
-                    cmd = next(c for c in opened if c[0] == 'new-window')[-1]
+                    cmd = opened[-1]
                     check(rc == 0 and src in cmd and 'could not be passed on' not in cmd,
                           'B46: a photo whose message reaches the feed transcript just after control --new starts '
                           'is still passed on', cmd)
@@ -2313,7 +2240,7 @@ def test_short_titles_and_since(repo: Path):
                     with contextlib.redirect_stdout(io.StringIO()):
                         rc = R.control_new(9, ask='how many have merged?')
                     took = time.monotonic() - t0
-                    cmd = next(c for c in opened if c[0] == 'new-window')[-1]
+                    cmd = opened[-1]
                     check(rc == 0 and took < 1 and src in cmd, 'B46: no wait once the transcript holds the message',
                           took)
                     # B57: the message (3 images) lands well after FEED_WAIT (8 s in the field, scaled down here)
@@ -2328,7 +2255,7 @@ def test_short_titles_and_since(repo: Path):
                     th.start()
                     with quiet, mock.patch.object(R, 'FEED_WAIT', 0.3):
                         rc = R.control_new(9, ask='fix these three')
-                    cmd = next(c for c in opened if c[0] == 'new-window')[-1]
+                    cmd = opened[-1]
                     check(rc == 0 and f'--feed-sid {sid}' in cmd and '/u/old.png' not in cmd
                           and not any(s in cmd for s in shots),
                           'B57: a message not in the transcript after FEED_WAIT: the new session waits for it '
@@ -2389,15 +2316,14 @@ def test_feed_forward():
         add = lambda *es: tr.write_text(tr.read_text() + ''.join(json.dumps(e) + '\n' for e in es))
         opened = []
 
-        def tm(*a, **k):
-            opened.append(a)
-            return subprocess.CompletedProcess(a, 0, '%9\n' if a[0] == 'new-window' else '', '')
+        def tm(n, cmd, name, wait=0):  # control --new's hidden session, its command line kept
+            opened.append(R.plat.command_text(cmd))
+            return 0
         with mock.patch.object(R.C, 'notes', lambda *a: Path(tdir, *a)), \
                 mock.patch.object(R, 'transcript', lambda s: str(tr) if s == sid else None), \
                 mock.patch.dict(os.environ, {'CLAUDE_CODE_SESSION_ID': sid}), \
-                mock.patch.object(R, 'tmux', tm), mock.patch.object(R, 'control_live', lambda n: None), \
-                mock.patch.object(R, 'control_new_session', lambda: 'ar-proj'), \
-                mock.patch.object(R.shutil, 'which', lambda x: '/usr/bin/tmux'), mock.patch.object(R.plat, 'WINDOWS', False), \
+                mock.patch.object(R, 'control_new_hidden', tm), mock.patch.object(R, 'control_live', lambda n: None), \
+                mock.patch.object(R.plat, 'WINDOWS', False), \
                 mock.patch.object(R, 'remote_on', lambda: False):
             mon = {'type': 'assistant', 'message': {'content': [
                 {'type': 'tool_use', 'name': 'Monitor', 'input': {'command': 'run since --follow --keep-mark'}},
@@ -2407,7 +2333,7 @@ def test_feed_forward():
                   call('run control --new --forward'))
             with contextlib.redirect_stdout(io.StringIO()):
                 rc = R.control_new(9, forward=True)
-            cmd = next(c for c in opened if c[0] == 'new-window')[-1]
+            cmd = opened[-1]
             argv = R.shlex.split(cmd)
             check(rc == 0 and '--ask-file' in argv and '--ask' not in argv and 'rm -rf' not in cmd
                   and 'head -c' not in cmd and '/u/shot.png' in argv, 'B72: the command holds no word of the '
@@ -2424,7 +2350,7 @@ def test_feed_forward():
             opened.clear()
             with contextlib.redirect_stdout(io.StringIO()), mock.patch.object(R, 'FEED_WAIT', 0.3):
                 R.control_new(9, forward=True)
-            argv = R.shlex.split(next(c for c in opened if c[0] == 'new-window')[-1])
+            argv = R.shlex.split(opened[-1])
             check('--forward' in argv and argv[argv.index('--feed-sid') + 1] == sid and '--ask-file' not in argv
                   and 'status' not in argv, 'B72: a message not in the transcript yet is not guessed at: control N '
                   'waits for it itself', argv)
@@ -2530,21 +2456,20 @@ def test_feed_handoff_b74():
         later = lambda s, *es: threading.Thread(target=lambda: (time.sleep(s), add(*es)))
         opened = []
 
-        def tm(*a, **k):
-            opened.append(a)
-            return subprocess.CompletedProcess(a, 0, '%9\n' if a[0] == 'new-window' else '', '')
+        def tm(n, cmd, name, wait=0):  # control --new's hidden session, its argv kept
+            opened.append(cmd)
+            return 0
 
         def new(**kw):
             opened.clear()
             with contextlib.redirect_stdout(io.StringIO()):
                 rc = R.control_new(9, **kw)
-            return rc, R.shlex.split(next(c for c in opened if c[0] == 'new-window')[-1])
+            return rc, opened[-1]
         with mock.patch.object(R.C, 'notes', lambda *a: Path(tdir, *a)), \
                 mock.patch.object(R, 'transcript', lambda s: str(tr) if s == sid and tr.exists() else None), \
                 mock.patch.dict(os.environ, {'CLAUDE_CODE_SESSION_ID': sid}), \
-                mock.patch.object(R, 'tmux', tm), mock.patch.object(R, 'control_live', lambda n: None), \
-                mock.patch.object(R, 'control_new_session', lambda: 'ar-proj'), \
-                mock.patch.object(R.shutil, 'which', lambda x: '/usr/bin/tmux'), mock.patch.object(R.plat, 'WINDOWS', False), \
+                mock.patch.object(R, 'control_new_hidden', tm), mock.patch.object(R, 'control_live', lambda n: None), \
+                mock.patch.object(R.plat, 'WINDOWS', False), \
                 mock.patch.object(R, 'remote_on', lambda: False):
             Path(tdir, 'remote').mkdir()  # C.notes makes it; the stand-in does not
             base = (old, call('run control --new --ask "agent runner task failed?"'), res, notif)
@@ -3112,10 +3037,10 @@ def test_prompt_and_hooks(repo: Path):
     check('Other agents' not in p, 'and says nothing about other agents in a one-slot run')
     cmd = R.agent_cmd('hi', 'sid', 'opus', 90, 'slot1')
     has(cmd, r'--stop-hook --idle 90', 'the agent command carries the idle Stop hook')
-    big = 'x' * 40000  # past tmux's ~16 KB command limit
+    big = 'x' * 40000  # a long brief
     cmd = R.agent_cmd(big, 'sid', 'opus', 90, 'slot1')
     check(len(cmd) < 4000 and R.C.notes('slot1.prompt').read_text() == big,
-          'the prompt goes through a file, so a long brief stays under tmux\'s command limit')
+          'the prompt goes through a file, so a long brief keeps the command line short')
     huge = 'x' * 140000  # past Linux's 128 KiB for one argument: the agent would exit at once
     cmd = R.agent_cmd(huge, 'sid', 'opus', 90, 'slot1')
     sid = '00000000-0000-0000-0000-000000000001'
@@ -3368,17 +3293,11 @@ def test_platform(repo: Path, tmp: Path):
     print('platform: the terminal per slot, quoting, locks, links, processes, the Windows slot shim')
     from agent_runner import plat
     windows_was = plat.WINDOWS
-    choice = plat.mux_choice
-    eq(choice('', True, True, windows=False), 'tmux', 'F40: POSIX inside tmux: panes')
-    eq(choice('', True, False, windows=False), 'hidden', 'tmux installed but the run not in it: hidden, no error')
-    eq(choice('', False, False, windows=False), 'hidden', 'POSIX without tmux: hidden, not the sequential run')
-    eq(choice('tmux', True, False, windows=False), 'tmux', 'tmux asked for: tmux (the run then says to start it in tmux)')
-    eq(choice('tmux', False, True, windows=False), 'hidden', 'tmux asked for but not installed: hidden')
-    eq(choice('hidden', True, True, windows=False), 'hidden', '--mux hidden inside tmux')
-    eq(choice('', True, True, windows=True), 'hidden', 'Windows: hidden only')
-    eq(choice('tmux', True, True, windows=True), 'hidden', 'Windows: hidden even when tmux is asked for')
-    for gone in ('none', 'wt', 'console'):
-        eq(choice(gone, True, True, windows=False), 'hidden', f'the old [run] mux = {gone!r} reads as hidden')
+    check(not hasattr(plat, 'mux_choice'), 'C26: no terminal choice: every OS runs its slots hidden')
+    from agent_runner import config as CF
+    eq([w for w in CF.migrate({'run': {'mux': 'tmux'}}, 'runner.toml') if 'mux' in w],
+       ['runner.toml: [run] mux is ignored: ' + CF.REMOVED[('run', 'mux')]],
+       'C26: a leftover [run] mux gets one warning line, and is ignored')
 
     plat.WINDOWS = False
     try:
@@ -4706,55 +4625,6 @@ def test_merge_order_and_backlog(repo: Path):
         r['max_unmerged'] = saved
 
 
-def test_no_pane(repo: Path, tmp: Path):
-    print('run: tmux refusing a pane fails that one start or fix session, not the run')
-    R.init(repo)
-    tmux, R.tmux = R.tmux, lambda *a, **k: subprocess.CompletedProcess(a, 1, '', 'no server running')
-    agent = tmp / 'fake-agent'
-    agent.write_text(FAKE_AGENT, encoding='utf-8')
-    agent.chmod(0o755)
-    R.C.run['agent'], R.MASTER_PANE = (sys.executable if R.plat.WINDOWS else str(agent)), True
-    try:
-        eq(R.TmuxMux().open(1, repo, 'hi', 'sid', 'opus', 90, [], R.C.notes('slot1.log')), None,
-           'a slot whose pane tmux will not open does not start')
-        with open(tmp / 'fixer.log', 'w') as fh:
-            eq(R.fix_session('fix it', repo, fh), 1, 'a fix session tmux will not open is a failed one')
-        has((tmp / 'fixer.log').read_text(), r'no server running', 'and its log says why')
-    finally:
-        R.tmux, R.MASTER_PANE, R.C.run['agent'] = tmux, False, 'claude'
-
-
-def test_other_repos_panes(repo: Path, tmp: Path):
-    print('tmux: a second repo\'s runner in the same session finds only its own panes')
-    R.init(repo)
-    other = tmp / 'other'
-    rows = [('%1', '101', 's1', str(other)),    # the other repo's
-            ('%2', '102', 's2', ''),            # a slot tag with no repo: no runner's
-            ('%3', '103', 's3', str(R.ROOT)),   # ours
-            ('%5', '105', '', '')]              # not a runner's pane
-    calls = []
-
-    def fake(*a, **k):
-        calls.append(a)
-        if a[0] == 'list-panes':
-            return subprocess.CompletedProcess(a, 0, ''.join('\t'.join(r) + '\n' for r in rows), '')
-        if a[0] == 'list-windows':
-            return subprocess.CompletedProcess(a, 0, '@1\tagents\n@2\tagents-other\n', '')
-        if a[0] in ('new-window', 'split-window'):
-            return subprocess.CompletedProcess(a, 0, '%9 109 @7\n', '')
-        return subprocess.CompletedProcess(a, 0, '', '')
-    tmux, R.tmux = R.tmux, fake
-    try:
-        eq(R.panes(), {'s3': ('%3', 103)}, 'only the slots tagged with this repo')
-        eq(R.window('agents'), f'agents-{repo.name}', 'each repo lays out its own window')
-        eq(R.pane('s1', repo, 'true'), 109, 'a pane opens')
-        check(any(a[0] == 'new-window' and f'agents-{repo.name}' in a for a in calls),
-              'in a new window of its own, not the other repo\'s "agents" or "agents-other"')
-        check(('set-option', '-p', '-t', '%9', R.REPO_TAG, str(R.ROOT)) in calls, 'tagged with its repo')
-    finally:
-        R.tmux = tmux
-
-
 def test_limit_resumes(repo: Path, tmp: Path):
     print('run: a slot whose session ends on a usage limit goes through the cut-off path and resumes there')
     R.init(repo)
@@ -4788,22 +4658,22 @@ def test_limit_resumes(repo: Path, tmp: Path):
         def where(self, n):
             return f'slot {n}'
 
-    saved = R.TmuxMux, R.MUX, R.plat.mux_choice, R.time.sleep, os.environ.get('TMUX'), R.transcript
+    saved = R.HiddenMux, R.MUX, R.time.sleep, R.transcript
     sleep = R.time.sleep
-    R.TmuxMux, R.plat.mux_choice, R.time.sleep = Mux, lambda *a, **k: 'tmux', lambda s: sleep(min(s, 0.05))
+    R.HiddenMux, R.time.sleep = Mux, lambda s: sleep(min(s, 0.05))
     R.transcript = lambda sid: ts.get(sid)
-    os.environ['TMUX'] = 'test'
     R.C.run['agent'] = 'fake'
     here = os.getcwd()
     os.chdir(repo)
     try:
-        eq(R.run(['1'], 'run'), 0, 'the run ends on its stop')
+        # never a real c1 or runner feed from the suite: the run starts both hidden
+        with mock.patch.object(R.control, 'hidden_control', lambda n, c, wait=None: (0, 'test')), \
+                mock.patch.object(R, 'start_board', lambda: None):
+            eq(R.run(['1'], 'run'), 0, 'the run ends on its stop')
     finally:
         os.chdir(here)
-        R.TmuxMux, R.MUX, R.plat.mux_choice, R.time.sleep = saved[:4]
-        os.environ.pop('TMUX') if saved[4] is None else os.environ.update(TMUX=saved[4])
-        R.transcript = saved[5]
-        R.C.run['agent'], R.MASTER_PANE = 'claude', False
+        R.HiddenMux, R.MUX, R.time.sleep, R.transcript = saved
+        R.C.run['agent'] = 'claude'
     text = (repo / '.runner/run.log').read_text()
     m = re.search(r'slot 1: (\S+) was cut off \(You\'ve hit your limit', text)
     check(m, 'the session that hit the usage limit was taken for a cut-off', text[-1500:])
@@ -5745,23 +5615,17 @@ def test_closed_online_controls(repo: Path):
     for n in range(1, 6):
         (notes / f'control{n}.pid').write_text(f'{9100 + n} s{n}', encoding='utf-8')
         (notes / f'control{n}.title').write_text(f'agent-runner · {n}\n', encoding='utf-8')
-    ended, tm = [], []
+    ended = []
     live = lambda n: 9100 + n if (notes / f'control{n}.pid').exists() else 0
-    panes = {2: '%52', 4: ''}
-
-    def tmux(*a, **kw):
-        tm.append(a)
-        return subprocess.CompletedProcess(a, 0, '', '')
     try:
         with mock.patch.object(R, 'control_live', live), mock.patch.object(R, 'transcript', lambda s: f'/t/{s}'), \
                 mock.patch.object(R, 'entries', lambda s, skip_bad=False: iter(rows[s])), \
                 mock.patch.object(R.plat, 'terminate', ended.append), mock.patch.object(R, 'control_ok', lambda: True), \
-                mock.patch.object(R, 'control_window', lambda n, pid: panes.get(n, '')), \
-                mock.patch.object(R, 'tmux', tmux), mock.patch.object(R, 'log'):
+                mock.patch.object(R, 'log'):
             eq(R.control_number(), 6, 'before: every number up to 5 is held')
             eq(R.end_closed_controls(force=True), [2, 4], 'the archived and the deleted one are ended')
-            eq(sorted(ended), [9102, 9104], 'their processes ended; c1, the open one and the one in use left running')
-            check(('kill-pane', '-t', '%52') in tm, 'its tmux pane closed', tm)
+            eq(sorted(ended), [9102, 9104], 'their processes ended (their hidden shims with them); c1, the open one '
+               'and the one in use left running')
             check(all(not (notes / f'control{n}.{x}').exists() for n in (2, 4) for x in ('pid', 'title')),
                   'their controlN.pid and controlN.title removed')
             check(all((notes / f'control{n}.pid').exists() for n in (1, 3, 5)), 'the others keep theirs')
@@ -5774,13 +5638,6 @@ def test_closed_online_controls(repo: Path):
             rows['s3'] = None  # unreadable: logged and skipped, never raised into the run loop
             (notes / 'control2.pid').write_text('9102 s2', encoding='utf-8')
             eq(R.end_closed_controls(force=True), [2], 'one session that cannot be read does not stop the others')
-        listing = (f'run\t%60\tc2\t{R.ROOT}\t\t111\nrun\t%61\tc3\t/elsewhere\t\t222\n'
-                   f'run\t%62\t\t\t\t333\n')
-        with mock.patch.object(R.shutil, 'which', lambda x: '/usr/bin/tmux'), \
-                mock.patch.object(R, 'tmux', lambda *a, **kw: subprocess.CompletedProcess(a, 0, listing, '')):
-            eq(R.control_window(2, 999), '%60', 'its pane by its c2 tag for this repository')
-            eq(R.control_window(3, 333), '%62', 'another repo\'s c3 is not it: found by its pane pid instead')
-            eq(R.control_window(4, 444), '', 'no pane: nothing to close')
     finally:
         for n in range(1, 6):
             (notes / f'control{n}.pid').unlink(missing_ok=True)
@@ -5814,20 +5671,19 @@ def test_control_summary_title(repo: Path):
     ask = 'deploy with tags instead of pushing to the site branch, and say what breaks if we do'
     cut = R.control_name(11, ask)
     eq(cut, f'{rn} · 11 · deploy with tags instead of', 'the opening name is the ask cut mid-thought')
-    sent, renamed, here = [], [], os.getcwd()
+    sent, here = [], os.getcwd()
     os.chdir(repo)  # cmd_control's init() reads the repository from here
     try:
-        with mock.patch.dict(os.environ, {R.CONTROL_N_ENV: '11', 'TMUX_PANE': '%42'}), \
-                mock.patch.object(R, 'send_to_pane', lambda p, t: sent.append((p, t)) or True), \
-                mock.patch.object(R, 'tmux', lambda *a, **k: renamed.append(a) or subprocess.CompletedProcess(a, 0, '', '')):
+        with mock.patch.dict(os.environ, {R.CONTROL_N_ENV: '11'}), \
+                mock.patch.object(R, 'control_type', lambda n, t: sent.append((n, t)) or True):
             eq(R.cmd_control(['--title', 'R43 site deploy via tags']), 0, 'control --title from session 11 works')
-        with mock.patch.dict(os.environ, {R.CONTROL_N_ENV: '', 'TMUX_PANE': ''}):
+        with mock.patch.dict(os.environ, {R.CONTROL_N_ENV: ''}):
             eq(R.cmd_control(['--title', 'x y']), 2, 'outside a control session, with no N: refused')
     finally:
         os.chdir(here)
     want = f'{rn} · R43 · site deploy via tags'  # F32: about one task, the task id in place of N
-    eq(sent, [('%42', f'/rename {want}')], 'it types /rename with the summary name into its own pane')
-    check(('rename-window', '-t', '%42', want) in renamed, 'its tmux window takes the name too', renamed)
+    eq(sent, [(11, f'/rename {want}')], 'it types /rename with the summary name into its own session')
+    eq(R.control_given(11), want, 'C26: and the name is kept in state, where the TUI and the run page read it')
     eq(R.control_summary_name(11, '  "R43 site\ndeploy"  '), f'{rn} · R43 · site deploy', 'one line, no quotes')
     eq(R.control_summary_name(11, ''), '', 'no summary, no name')
     title = lambda t: {'type': 'custom-title', 'customTitle': t, 'sessionId': 'x'}
@@ -5857,19 +5713,18 @@ def test_control_task_name(repo: Path):
     pidf, titlef = R.C.notes('control11.pid'), R.C.notes('control11.title')
     pidf.write_text('999 old-sid', encoding='utf-8')
     titlef.unlink(missing_ok=True)
-    sent, tm, here = [], [], os.getcwd()
+    sent, here = [], os.getcwd()
     talk = {'old-sid': [title(R.control_name(11, 'deploy with tags instead of'))], 'new-sid': []}
     task = f'{rn} · R43 · site deploy via tags'
     os.chdir(repo)
     try:
-        with mock.patch.dict(os.environ, {R.CONTROL_N_ENV: '11', 'TMUX_PANE': '%42'}), \
-                mock.patch.object(R, 'send_to_pane', lambda p, t: sent.append((p, t)) or True), \
+        with mock.patch.dict(os.environ, {R.CONTROL_N_ENV: '11'}), \
+                mock.patch.object(R, 'control_type', lambda n, t: sent.append((n, t)) or True), \
                 mock.patch.object(R, 'transcript', lambda sid: f'/x/{sid}.jsonl' if sid in talk else None), \
-                mock.patch.object(R, 'entries', lambda sid, skip_bad=False: list(talk.get(sid, []))), \
-                mock.patch.object(R, 'tmux', lambda *a, **k: tm.append(a) or subprocess.CompletedProcess(a, 0, '', '')):
+                mock.patch.object(R, 'entries', lambda sid, skip_bad=False: list(talk.get(sid, []))):
             R.control_give(11, R.control_name(11, 'deploy with tags instead of'))
             eq(R.cmd_control(['--title', 'R43 site deploy via tags']), 0, '--title about R43 works')
-            eq(sent[-1], ('%42', f'/rename {task}'), 'an ask about R43 names it "<repo> · R43 · …"')
+            eq(sent[-1], (11, f'/rename {task}'), 'an ask about R43 names it "<repo> · R43 · …"')
             eq(R.control_given(11), task, 'the runner keeps the name it gave session 11')
             talk['old-sid'].append(title(task))
             check(not R.control_renamed(R.control_state(talk['old-sid']), 11), 'its own task name is not a rename')
@@ -5882,8 +5737,7 @@ def test_control_task_name(repo: Path):
                     redirect_stdout(out):
                 eq(R.cmd_control(['--brief']), 0, 'the SessionStart hook runs')
             check('control session' in out.getvalue(), 'it still prints the brief')
-            eq(sent[n:], [('%42', f'/rename {rn} · 11')], 'after /new or /clear the name goes back to "<repo> · 11"')
-            check(('rename-window', '-t', '%42', f'{rn} · 11') in tm, 'its tmux window too')
+            eq(sent[n:], [(11, f'/rename {rn} · 11')], 'after /new or /clear the name goes back to "<repo> · 11"')
             eq(R.control_given(11), f'{rn} · 11', 'the base name is the one given now')
             eq(pidf.read_text(encoding='utf-8'), '999 new-sid', 'the pid file follows the new conversation')
             talk['new-sid'].append(title(f'{rn} · 11'))
@@ -5891,7 +5745,7 @@ def test_control_task_name(repo: Path):
             n = len(sent)
             eq(R.control_session_start(11, {'source': 'clear', 'session_id': 'new-sid'}), '', 'already the base: kept')
             eq(R.cmd_control(['--title', 'deploy docs']), 0, 'the new conversation names itself')
-            eq(sent[n:], [('%42', f'/rename {rn} · 11 · deploy docs')], 'its own ask, no single task: "<repo> · 11 · …"')
+            eq(sent[n:], [(11, f'/rename {rn} · 11 · deploy docs')], 'its own ask, no single task: "<repo> · 11 · …"')
             # the person types a name: never overwritten, by --title or by /clear
             talk['new-sid'].append(title('MY DOCS'))
             n = len(sent)
@@ -5902,8 +5756,6 @@ def test_control_task_name(repo: Path):
         os.chdir(here)
         pidf.unlink(missing_ok=True)
         titlef.unlink(missing_ok=True)
-    rows = [f'run\t%42\tc11\t{R.ROOT}\t', f'run\t%43\tc12\t{R.ROOT}\t']
-    eq(R.attach_target(rows, R.ROOT, 'c11'), ('run', '%42'), 'attach c11 finds it by its pane tag, whatever its name')
 
 
 def test_close_idle_controls(repo: Path):
@@ -6851,7 +6703,7 @@ def test_hidden_slots(repo: Path, tmp: Path):
 
 
 def test_hidden_run_lands(tmp: Path):
-    print('F40: a run with no tmux on PATH runs its slot hidden and lands the task (worktree, done, gate, merge)')
+    print('F40/C26: a run runs its slot hidden and lands the task (worktree, done, gate, merge)')
     if R.plat.WINDOWS:
         return
     (tmp / 'f40').mkdir()
@@ -6859,8 +6711,6 @@ def test_hidden_run_lands(tmp: Path):
     agent, out = tmp / 'landing-agent', tmp / 'f40' / 'agent.out'
     agent.write_text(LANDING_AGENT, encoding='utf-8')
     agent.chmod(0o755)
-    which = R.shutil.which
-    no_tmux = lambda c, *a, **k: None if c == 'tmux' else which(c, *a, **k)
     env = {k: v for k, v in os.environ.items()
            if k not in ('TMUX', 'TMUX_PANE') and not (k.startswith('AGENT_RUNNER') and k != 'AGENT_RUNNER_NO_NOTIFY')}
     # its own home: the suite's other repo is called proj too, and would share its worktrees and task branches
@@ -6873,17 +6723,17 @@ def test_hidden_run_lands(tmp: Path):
     try:
         watchdog.start()
         with mock.patch.object(R.control, 'hidden_control', lambda n, c, wait=None: c1.append(n) or (0, 'test')), \
-                mock.patch.dict(os.environ, env, clear=True), mock.patch.object(R.shutil, 'which', no_tmux), \
+                mock.patch.dict(os.environ, env, clear=True), \
                 mock.patch.object(R, 'nap', lambda s: saved_sleep(min(s, 0.5))):
             R.init(repo)
             R.C.run['agent'] = str(agent)
             eq(R.run(['once'], 'run'), 0, 'the run ends after its one task')
-            eq(type(R.MUX).__name__, 'HiddenMux', 'no tmux: the slots ran hidden, not an error and not sequential')
+            eq(type(R.MUX).__name__, 'HiddenMux', 'the slots ran hidden')
             eq(c1, [1], 'and the run tried to open c1 hidden (F59)')
     finally:
         watchdog.cancel()
         os.chdir(here)
-        R.MUX, R.MASTER_PANE, R.HIDDEN[0] = saved_mux, False, False
+        R.MUX, R.HIDDEN[0] = saved_mux, False
         R.C.run['agent'] = 'claude'
     said = out.read_text(encoding='utf-8') if out.exists() else ''
     check('T1 tty=True done=0' in said, 'the agent had a terminal and its done passed', said[-1500:])
@@ -6911,8 +6761,6 @@ def test_no_gate_b36(tmp: Path):
     agent, out = tmp / 'b36-agent', tmp / 'b36' / 'agent.out'
     agent.write_text(LANDING_AGENT, encoding='utf-8')
     agent.chmod(0o755)
-    which = R.shutil.which
-    no_tmux = lambda c, *a, **k: None if c == 'tmux' else which(c, *a, **k)
     env = {k: v for k, v in os.environ.items()
            if k not in ('TMUX', 'TMUX_PANE') and not (k.startswith('AGENT_RUNNER') and k != 'AGENT_RUNNER_NO_NOTIFY')}
     env |= {'F40_RUN': str(RUN), 'F40_OUT': str(out), 'AGENT_RUNNER_HOME': str(tmp / 'b36' / 'home')}
@@ -6923,7 +6771,7 @@ def test_no_gate_b36(tmp: Path):
     try:
         watchdog.start()
         with mock.patch.object(R.control, 'hidden_control', lambda n, c, wait=None: (0, 'test')), \
-                mock.patch.dict(os.environ, env, clear=True), mock.patch.object(R.shutil, 'which', no_tmux), \
+                mock.patch.dict(os.environ, env, clear=True), \
                 mock.patch.object(R, 'nap', lambda s: saved_sleep(min(s, 0.5))):
             R.init(repo)
             eq(R.C.run['test'], '', 'this repo has no gate')
@@ -6935,7 +6783,7 @@ def test_no_gate_b36(tmp: Path):
     finally:
         watchdog.cancel()
         os.chdir(here)
-        R.MUX, R.MASTER_PANE, R.HIDDEN[0] = saved_mux, False, False
+        R.MUX, R.HIDDEN[0] = saved_mux, False
         R.C.run['agent'] = 'claude'
     log = (repo / '.runner/run.log').read_text(encoding='utf-8')
     has(log, r'WARNING no test gate \(\[run\] test is empty\): merges go to main untested and stay local', 'the start warns')
@@ -7052,7 +6900,7 @@ def test_attach_f88(tmp: Path):
 
 
 def test_hidden_control_f59(repo: Path, tmp: Path):
-    print('F59: a hidden run opens c1 and control --new in a pty with no window, and keeps no runner feed')
+    print('F59/C26: a run opens c1 and control --new in a pty with no window, and keeps the runner feed hidden')
     if R.plat.WINDOWS:
         return
     import contextlib
@@ -7062,31 +6910,26 @@ def test_hidden_control_f59(repo: Path, tmp: Path):
     agent = tmp / 'f59-control'
     agent.write_text(HIDDEN_CONTROL, encoding='utf-8')
     cmd = [sys.executable, str(agent)]
-    which = R.shutil.which
-    saved_mux = Ctl.MUX
     pids = []
     try:
-        # feed_on: the board window, which only a tmux run inside a tmux session has, holds the runner feed
-        with mock.patch.object(Ctl, 'remote_on', lambda: True), mock.patch.object(Ctl, 'control_ok', lambda: True), \
-                mock.patch.object(Ctl.shutil, 'which', lambda c, *a, **k: '/usr/bin/tmux' if c == 'tmux' else which(c, *a, **k)):
-            Ctl.MUX = R.TmuxMux()
-            with mock.patch.dict(os.environ, {'TMUX_PANE': '%1'}):
-                Ctl.mark_board()
-            check(Ctl.feed_on(), 'a tmux run inside tmux has its board window: the feed is on')
-            Ctl.MUX = R.HiddenMux()
+        # feed_on: C26, every run on Linux and macOS keeps the runner feed (a hidden session); Windows none
+        with mock.patch.object(Ctl, 'remote_on', lambda: True), mock.patch.object(Ctl, 'control_ok', lambda: True):
             Ctl.mark_board()
-            check(not Ctl.feed_on(), 'a hidden run with tmux installed has no board window: no feed, '
-                                     'so control sessions keep their own needs-you watch')
+            check(Ctl.feed_on(), 'a run keeps the runner feed: the feed is on')
+            with mock.patch.object(Ctl.plat, 'WINDOWS', True):
+                Ctl.mark_board()
+                check(not Ctl.feed_on(), 'Windows: no runner feed, so control sessions keep their own needs-you watch')
+            Ctl.mark_board()
         # c1 in a hidden run: through the pty shim, not skipped
         got = []
         with mock.patch.object(Ctl, 'hidden_control', lambda n, c, wait=None: got.append((n, c)) or (4242, '')), \
                 mock.patch.object(Ctl, 'control_live', lambda n: 0), mock.patch.dict(R.C.run, {'control': True}), \
-                mock.patch.object(Ctl, 'control_ok', lambda: True), mock.patch.dict(os.environ, {'TMUX_PANE': ''}):
+                mock.patch.object(Ctl, 'control_ok', lambda: True):
             Ctl.start_control()
-        eq(got and got[0][0], 1, 'a hidden run starts c1 hidden')
-        check(got and got[0][1][-1] in ('1', '--local'), 'with the control command line', got)
-        has(R.C.notes('run.log').read_text(encoding='utf-8'), r'c1 is up in a hidden terminal \(its output in .*control1\.log',
-            'and says where its output goes')
+        eq(got and got[0][0], 1, 'a run starts c1 hidden')
+        check(got and got[0][1][-1] in ('1', '--local', '--new-run'), 'with the control command line', got)
+        has(R.C.notes('run.log').read_text(encoding='utf-8'), r'c1 is up in a hidden terminal \(.*attach c1 shows it; '
+            r'its output in .*control1\.log', 'and says how to attach it and where its output goes')
         # the real shim: a terminal, the control environment, its log, a typed line, its marker gone at the end
         with mock.patch.dict(os.environ, {'AGENT_RUNNER_SLOT': '3'}):
             pid, why = Ctl.hidden_control(7, cmd)
@@ -7102,7 +6945,7 @@ def test_hidden_control_f59(repo: Path, tmp: Path):
         has(text, r'tty True slot -', 'it ran in a terminal, with no slot marks, its output in control7.log')
         has(text, r"told '.*hello c7", 'and read the typed line')
         check(not R.C.notes('control7.live').exists(), 'its marker goes when it ends')
-        # control --new with no tmux session: hidden, and its link read from its log
+        # control --new: hidden, and its link read from its log
         out = io.StringIO()
         with mock.patch.object(Fd, 'remote_on', lambda: True), mock.patch.object(Fd, 'remote_answer_drift', lambda w: None), \
                 contextlib.redirect_stdout(out):
@@ -7111,15 +6954,13 @@ def test_hidden_control_f59(repo: Path, tmp: Path):
         eq(rc, 0, 'control --new starts a hidden session')
         has(out.getvalue(), r'control 8 is up: https://claude\.ai/code/session_f59hidden', 'and prints its link')
         out = io.StringIO()
-        with mock.patch.object(Fd.shutil, 'which', lambda c, *a, **k: None if c == 'tmux' else which(c, *a, **k)), \
-                mock.patch.object(Fd, 'runner_cmd', lambda: cmd), mock.patch.object(Fd, 'remote_on', lambda: False), \
+        with mock.patch.object(Fd, 'runner_cmd', lambda: cmd), mock.patch.object(Fd, 'remote_on', lambda: False), \
                 contextlib.redirect_stdout(out):
             rc = Fd.control_new(9)
         pids.append(R.marker_pid(R.C.notes('control9.live')))
-        eq(rc, 0, 'control --new with no tmux is no longer an error')
+        eq(rc, 0, 'control --new starts hidden')
         has(out.getvalue(), r'control 9 is up in a hidden terminal', 'it says it is hidden')
     finally:
-        Ctl.MUX = saved_mux
         R.C.notes(Ctl.NO_BOARD).unlink(missing_ok=True)
         for p in pids:
             if p and R.plat.alive(p):
@@ -7171,20 +7012,20 @@ def test_claude_drift_b45(repo: Path, tmp: Path):
         for sid in ('b45-odd', 'b45-odd2', 'b45-fine'):
             R.TRANSCRIPTS.pop(sid, None)
 
-    # spots 2 and 3: control --new on Remote Control, its pane read for the link
+    # spots 2 and 3: control --new on Remote Control, its log read for the link
     link = 'https://claude.ai/code/session_01B45xyz'
     pane = {'out': '', 'rc': 0}
+    gone = subprocess.Popen([sys.executable, '-c', 'pass'])
+    gone.wait()  # a pid that has ended: the session closed
 
-    def fake_tmux(*a, **k):
-        out = {'display-message': 'ar-proj\n', 'new-window': '%45\n'}.get(a[0], '')
-        if a[0] == 'capture-pane':
-            return subprocess.CompletedProcess(a, pane['rc'], pane['out'], '')
-        return subprocess.CompletedProcess(a, 0, out, '')
+    def fake_hidden(n, cmd, wait=None):  # the session's shim: what it shows goes to its log
+        with open(R.hidden_control_log(n), 'a', encoding='utf-8') as fh:
+            fh.write(pane['out'])
+        return (os.getpid() if pane['rc'] == 0 else gone.pid), ''
 
     def new() -> str:
         out = io.StringIO()
-        with mock.patch.object(R, 'tmux', fake_tmux), mock.patch.dict(os.environ, {'TMUX_PANE': '%1'}), \
-                mock.patch.object(R.shutil, 'which', lambda x: '/usr/bin/tmux'), mock.patch.object(R.plat, 'WINDOWS', False), \
+        with mock.patch.object(R.feed, 'hidden_control', fake_hidden), mock.patch.object(R.plat, 'WINDOWS', False), \
                 mock.patch.object(R.time, 'sleep', lambda s: None), mock.patch.dict(R.C.run, {'remote': True}), \
                 contextlib.redirect_stdout(out):
             eq(R.control_new(45, wait=0), 0, 'control --new opens it')
@@ -7521,7 +7362,6 @@ def main() -> int:
                        lambda: test_edited_elsewhere(repo, tmp),
                        lambda: test_resume(repo, tmp),
                        lambda: test_session_tmp(repo, tmp), lambda: test_end_orphans(repo), lambda: test_memory_watch(repo), lambda: test_tested_ref(repo, tmp), lambda: test_docs_only_gate(repo), lambda: test_research_findings_only(repo),
-                       lambda: test_no_pane(repo, tmp), lambda: test_other_repos_panes(repo, tmp),
                        lambda: test_limit_resumes(repo, tmp),
                        lambda: test_shared_push(repo, tmp), lambda: test_note_on_a_ticked_task(repo), lambda: test_adopt_merge(repo), lambda: test_followups(repo), lambda: test_person_check_after(repo), lambda: test_ci_watch(repo), lambda: test_issues_watch(repo), lambda: test_auto_release(repo), test_update_notice, test_restart_if_upgraded, test_auto_upgrade, lambda: test_flake_repair(tmp), lambda: test_repair_per_failure(repo),
                        lambda: test_stalled(tmp), lambda: test_take(repo), lambda: test_take_text_and_here(repo), lambda: test_background(repo), test_short_name_hints, test_utf8_streams, lambda: test_attach_flag(repo), lambda: test_bare_outside_git(tmp), lambda: test_hand_hook(tmp), lambda: test_user_hook(tmp), lambda: test_remote_auto(tmp), lambda: test_control(repo), lambda: test_pane_id_not_a_path(repo, tmp),

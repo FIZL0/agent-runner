@@ -513,7 +513,7 @@ A release starts like any other task; with [plan] release_alone it waits for eve
     const qa=S.panel===1?`<div class="presets">${(S.snap.quick_asks||[]).map(q=>`<button type="button" class="kb" data-quick="${esc(q.key)}"><b class="pk">${esc(quickKey(q.key))}</b> ${esc(q.label)}</button>`).join('')}</div>`:'';
     const idle=!isCtl(it)&&S.panel===2&&!it.task;
     x=qa+chatBox('send',idle?`${name} is idle`:tab==='chat'?`message ${name}`:`message ${name} (it reads it between steps)`,!idle)}
-  else if(tab==='pane'){if(S.snap.terminal_mode==='feed'){h=`There is no tmux here, so ${esc(it.name)} has no pane to show: its feed and its session link show it.`}
+  else if(tab==='pane'){if(S.snap.terminal_mode==='feed'){h=`On Windows ${esc(it.name)} runs in a hidden console, so it has no terminal to show here: its feed and its session link show it.`}
     else{cls='pane term';openTerm(it);h=termHTML(it)}}
   else if(tab==='diff'){h=diffHTML(it.name)}
   else if(tab==='session'){h=it.link?`${esc(it.name)} is a Claude Code session you can also open on its own, in the app or on your phone:\n\n<a href="${esc(it.link)}" target="_blank" rel="noopener" data-open>${K('o','open')} ${esc(it.link)}</a>`:

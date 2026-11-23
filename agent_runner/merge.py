@@ -10,7 +10,6 @@ import json
 import os
 import re
 import shlex
-import shutil
 import signal
 import subprocess as sp
 import threading
@@ -26,8 +25,7 @@ from agent_runner.done import DOCS_SKIP, TESTED, docs_only, gate
 from agent_runner.gitops import _net
 from agent_runner.state import C, clean, git, hook, LANDING, log, MERGE, note, plan_rel, plan_text, ROOT, SLOTS_DIR
 from agent_runner.state import commit_plan, EV_LANDED, EV_LEFT, EV_PART
-from agent_runner.slots import (agent_cmd, backend, entries, env_vars, MASTER_IDLE, merge_env, MUX, pane, slot_env,
-    trim, window, worktree)
+from agent_runner.slots import (backend, entries, env_vars, merge_env, MUX, slot_env, trim, worktree)
 from agent_runner.join import joined, LANDED, merge_into, renumber_doubles, task_env, TASK_SID, WAITING
 from agent_runner.land import (announce_release, BROKEN, flaky, land, land_tick, published, push_landed,
     reopen_landed, UNPUSHED)
@@ -126,9 +124,6 @@ def repair_prompt(batch: bool, **vals) -> str:
     return text.format(**vals)
 
 
-MASTER_PANE = False  # `run` sets it under tmux: fix and repair sessions get a window of their own
-
-
 def last_words(sid: str) -> str:
     """The last thing session `sid` said, for fixer.log: why it committed what it did, or nothing."""
     said = ''
@@ -143,48 +138,16 @@ def fix_session(prompt: str, cwd: Path, fh, keep: dict | None = None, fork: str 
     """Run one fix or repair session in `cwd` to its end; its exit code. Raises what `sp.run` raises for a
     missing agent or a timeout.
 
-    Under tmux it is an ordinary session in the window "master-<repo>", so a human can watch it work, or
-    take it over by typing; the Stop hook (Pi: `pi_idle.ts`) ends it once it has been idle `MASTER_IDLE`
-    seconds, and its last words go to `fh`. Without tmux it is `-p` (Pi: `--print`), its output in `fh`.
-    A pane session outlives the runner: `keep` (what it was started on) goes to `<notes>/master.json` with
-    its pid, so the next run adopts it (`adopt_merge`) instead of starting the merge over under it.
-    With `fork` (a session id), it starts as a copy of that session (`fork_flags`), knowing what it did.
+    It is `-p` (Pi: `--print`), its output in `fh` (C26: no longer a session in a window of its own; `keep`
+    is what it was started on, kept for the callers, and `adopt_merge` still reads a master.json an older
+    run left). With `fork` (a session id), it starts as a copy of that session (`fork_flags`), knowing what
+    it did.
     """
     timeout = C.run['fix_timeout']
     more = backend().fork_flags(fork) if fork else []
-    if not MASTER_PANE:
-        env = {**os.environ, **env_vars(slot_env(None))}  # as the master pane gets it
-        return sp.run(fix_cmd(prompt) + more, cwd=str(cwd), stdout=fh, stderr=sp.STDOUT, stdin=sp.DEVNULL,
-                      env=env, timeout=timeout).returncode
-    if not shutil.which(C.run['agent']):
-        raise FileNotFoundError(C.run['agent'])
-    sid = str(uuid.uuid4())
-    fh.write(f'in tmux window "{window("master")}", session {sid}\n')
-    fh.flush()
-    cmd = agent_cmd(prompt, sid, C.run['fix_model'], MASTER_IDLE, 'master') + (' ' + shlex.join(more) if more else '')
-    try:
-        pid = pane('master', cwd, cmd, slot_env(None))
-    except RuntimeError as e:  # no session ran: the caller reads the merge as one it did not finish
-        log(f'the fix session did not start: {e}')
-        fh.write(f'{e}\n')
-        return 1
-    until = time.time() + timeout
-    if keep:
-        C.notes('master.json').write_text(json.dumps({**keep, 'pid': pid, 'sid': sid, 'until': until}), encoding='utf-8')
-    try:
-        if not wait_session(pid, until):
-            fh.write(last_words(sid) + '\n')
-            raise sp.TimeoutExpired(cmd, timeout)
-    finally:
-        if keep:  # only this session's record: a fix-ahead session (no keep) beside a locked repair leaves its own
-            m = C.notes('master.json')
-            try:
-                if json.loads(m.read_text(encoding='utf-8')).get('sid') == sid:
-                    m.unlink()
-            except (OSError, ValueError):
-                pass
-    fh.write(last_words(sid) + '\n')
-    return 0
+    env = {**os.environ, **env_vars(slot_env(None))}
+    return sp.run(fix_cmd(prompt) + more, cwd=str(cwd), stdout=fh, stderr=sp.STDOUT, stdin=sp.DEVNULL,
+                  env=env, timeout=timeout).returncode
 
 
 def wait_session(pid: int, until: float) -> bool:
@@ -538,7 +501,7 @@ def fix_merge(tid: str, branch: str, files: list[str], cwd: Path, start: str = '
     One session per merge, run to completion while the caller waits: ahead of the merge lock (`fix_ahead`),
     in a fix worktree of its own (fix1…), or under it in the merge worktree on a last try. Each one starts with an empty context and the
     ledger's tail, so the twentieth costs what the first did. (This replaced a long-lived
-    "master" session. Under tmux it still runs in a window named "master": see `fix_session`.)
+    "master" session: see `fix_session`.)
 
     Never fatal. A fixer that fails, times out, aborts or is not installed leaves the merge for the caller
     to abort, and the task is left for a human.
