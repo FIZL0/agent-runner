@@ -267,13 +267,11 @@ def holds(t: tuple, tried: set, h: Held) -> tuple[str, tuple | None] | None:
 def passes(t: tuple, b: tuple, h: Held) -> bool:
     """Release `t` passes over busy task `b`, taken by hand or claimed by another runner (B107): a release waits only
     for this run's running and merge-waiting tasks, and `b`'s work lands after, in the next release. A task
-    tagged `(alone)` (F130) passes over such a `b` too, unless they clash anyway (siblings, an ordered section,
-    files). A busy `b` tagged `(alone)` still holds everything (it runs alone)."""
+    tagged `(alone)` (F130) passes over such a `b` too, as a release did under the old release_alone. A busy `b`
+    tagged `(alone)` still holds everything (it runs alone)."""
     if b[0] not in h.away or b[0] in h.alone:
         return False
-    if P.release(t[0]) and not P.release(b[0]):
-        return True
-    return t[0] in h.alone and not clash(t, b, h.shared)
+    return P.release(t[0]) and not P.release(b[0]) or t[0] in h.alone
 
 
 def passed_over(t: tuple, h: Held) -> list[str]:

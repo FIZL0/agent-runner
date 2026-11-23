@@ -210,8 +210,9 @@ def test_alone(tmp: Path):
     h = S.held({}, 'main')
     h = h._replace(away=h.away | {'X9'}, busy=h.busy + [('X9', 'Next', {'z.py'}, set(), {'z.py'})])
     eq(S.holds(todo['C1'], set(), h), None, 'a task claimed by another runner does not hold it (B107)')
-    h = h._replace(busy=h.busy + [('X8', 'Next', {'native/**'}, set(), {'native/**'})], away=h.away | {'X8'})
-    eq((S.holds(todo['C1'], set(), h) or ('',))[0], 'clash', 'unless they clash anyway (two rewrites of native/)')
+    h = h._replace(busy=h.busy + [('X8', 'Next', set(), set(), set())], away=h.away | {'X8'})
+    h = h._replace(alone=h.alone | {'X8'})
+    eq((S.holds(todo['C1'], set(), h) or ('',))[0], 'clash', 'but one tagged (alone) itself still holds it')
 
 
 def test_critical_first(tmp: Path):

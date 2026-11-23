@@ -434,7 +434,7 @@ words in a note on the task (after ` — `, not in its title), its next merge la
   fields keeps it). Any kind of task can carry it, e.g. a major rewrite whose `files: native/**` would not hold the
   other tasks under that directory: a tagged task runs alone, so the run starts it only when nothing else runs or
   waits to merge in this run, and starts nothing beside it. Tasks taken by hand (`take`) or claimed by another runner
-  do not hold it (B107), unless their files, section or family would clash anyway. The dry run and the TUI say
+  do not hold it (B107), unless they are tagged `(alone)` too. The dry run and the TUI say
   `T1 runs alone`. A release (kind V) without the tag runs beside other tasks as above. A runner.toml that still sets
   the old `[plan]` key for this (removed in F130) gets one warning in the run log and is ignored.
 - **Auto release** (F63, off by default): `[run] auto_release` has the run queue a release by itself, as

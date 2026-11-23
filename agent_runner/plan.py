@@ -117,7 +117,7 @@ the top, no `after: all`. A release is never refused as a duplicate of another.
 **A task that runs alone** (F130, any kind: a release, a major rewrite) is tagged `(alone)` first in its text:
 `add … --alone`, or `edit ID --alone` (`--no-alone` clears it). The run starts it only when nothing else runs or
 waits to merge in this run, and starts nothing beside it; tasks taken by hand or claimed by another runner do
-not hold it (B107), unless their files, section or family would. The dry run says 'runs alone'.
+not hold it (B107), unless they are tagged `(alone)` too. The dry run says 'runs alone'.
 
 **A block that only waits on another task says which**, as `BLOCKED: (after X, Y) why`, and `reopen` (which a
 `./run run` calls after every merge) puts it back to `[ ]` the moment X and Y are done. Without that a task
