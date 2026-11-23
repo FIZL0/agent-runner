@@ -298,10 +298,11 @@ def test_resume(env: Env):
 
 
 def test_tell(env: Env):
-    p, sid, calls = env.session([{'text': 'one'}, {'text': 'two'}],
-                                stdin='\x1b[200~please also\nupdate the docs\x1b[201~\r')
-    told = [m['text'] for c in calls for m in c['messages'] if m['role'] == 'user']
-    check('please also\nupdate the docs' in told, 'a tell typed into its terminal goes in as a user message, whole', told)
+    for end in ('\n',) if os.name == 'nt' else ('\n', '\r\n'):  # B150: Windows' text pipe turns \n into \r\n itself
+        p, sid, calls = env.session([{'text': 'one'}, {'text': 'two'}],
+                                    stdin=f'\x1b[200~please also{end}update the docs\x1b[201~\r')
+        told = [m['text'] for c in calls for m in c['messages'] if m['role'] == 'user']
+        check('please also\nupdate the docs' in told, 'a tell typed into its terminal goes in as a user message, whole', told)
 
 
 def test_brief(env: Env):

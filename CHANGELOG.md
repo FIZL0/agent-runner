@@ -124,6 +124,10 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
   is gone: the alert comes when the temp folders left exceed 5% of the disk, names the size and the largest folder, and
   mentions Clean only when it has a temp folder to free; min_free_gb's alert is unchanged. Home's service now keeps
   `CLAUDE_CONFIG_DIR` from the installing shell: re-run `agent-runner home install` if you set it (F144).
+- Fixes found by `ci.yml` on Linux and Windows: `agent-runner needs` no longer cuts an ask in the
+  middle of a backticked command; a multi-line tell whose line ends are CRLF (as Windows pipes them) no longer doubles
+  its newlines in a harness loop session; copying the run page link on Windows works when the clipboard tool is a
+  .bat or .cmd (B150).
 
 ## 0.61.0 (2026-11-23)
 

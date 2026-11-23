@@ -1767,7 +1767,6 @@ def test_project_name_b153() -> None:
     t = T.window_title('proj · runner')
     check(t.startswith('\x1b[22;0t') and '\x1b]2;proj · runner\x07' in t, 'the title kept, then the name', t)
     eq(T.window_title('a\x07b\x1b'), '\x1b[22;0t\x1b]0;ab\x07\x1b]2;ab\x07', 'control characters dropped')
-    import curses
     wrote, picked = [], []
 
     def wrapper(fn, box, bar):
@@ -1775,7 +1774,8 @@ def test_project_name_b153() -> None:
         return 0
     tty = mock.Mock(isatty=lambda: True)
     from agent_runner import cmds
-    with mock.patch.object(curses, 'wrapper', wrapper), mock.patch.object(T, 'term_write', wrote.append), \
+    curses = mock.Mock(wrapper=wrapper)  # Windows' Python has none
+    with mock.patch.dict(sys.modules, {'curses': curses}), mock.patch.object(T, 'term_write', wrote.append), \
             mock.patch.object(sys, 'stdin', tty), mock.patch.object(sys, 'stdout', tty), \
             mock.patch('agent_runner.state.init', lambda *a: None), mock.patch.object(S, 'ROOT', Path('/x/proj')), \
             mock.patch('locale.setlocale', lambda *a: None), \
