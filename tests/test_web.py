@@ -2616,6 +2616,109 @@ def test_mic_aborted_b162(tmp: Path) -> None:
     eq(got.get('sheet'), ['out', 'Mic report', True], 'no clipboard: shown to copy by hand')
 
 
+# B178: a reply's sound over a bad route and a bad connection: audio elements, fetches and timers the test drives
+SOUND_DRIVER = r"""
+const page = require('fs').readFileSync(process.argv[2], 'utf8').replace(/\r\n/g, '\n');
+const grab = s => { const i = page.indexOf(s); if (i < 0) throw new Error(s); return page.slice(i, page.indexOf('\n}\n', i) + 2) + '\n' };
+const line = s => { const i = page.indexOf(s); if (i < 0) throw new Error(s); return page.slice(i, page.indexOf('\n', i)) + '\n' };
+const logic = page.split('<script id="logic">')[1].split('</script>')[0];
+const said = [], notes = [], types = [], keys = {}, esc = String, tq = p => p, HOME_PAGE = false;
+let asked = [], plays = [], answers = [], refuse = null, timers = [];
+const window = {speechSynthesis: {cancel() {}, speak(u) { if (u.text) said.push(u.text) }}}, speechSynthesis = window.speechSynthesis;
+class SpeechSynthesisUtterance { constructor(t) { this.text = t } }
+class Audio { constructor(src) { this.src = src; this.paused = true; this.ended = false }
+  play() { if (!this.loop) plays.push(this.src); if (refuse && !this.loop) return Promise.reject(Object.assign(new Error('no'), {name: refuse}));
+    this.paused = false; this.ended = false; return Promise.resolve() }
+  pause() { this.paused = true; if (this.onpause) this.onpause() }
+  finish() { this.paused = true; this.ended = true; this.onended() } }
+let urls = 0; URL.createObjectURL = () => 'clip' + (++urls); URL.revokeObjectURL = () => {};
+const VOICES = {voices: [{id: 'kokoro:a', name: 'a', engine: 'Kokoro'}], default: 'kokoro:a'};
+// answers: one per clip asked for, 'net' (no answer), a status with no JSON, or a reason; then clips
+const fetch = async (p, o) => { if (!o) return {ok: true, json: async () => VOICES};
+  asked.push(JSON.parse(o.body).text); const a = answers.shift();
+  if (a === 'net') throw new TypeError('Load failed');
+  return {ok: !a, status: a === 502 ? 502 : 503, blob: async () => new Blob(['x']), json: async () => { if (a === 502) throw new SyntaxError('x'); return {out: a} }} };
+const audioSession = {state: 'active', get type() { return types[types.length - 1] || 'auto' }, set type(t) { types.push(t) }};
+const navigator = {language: 'en-US', userAgent: 'iPhone', audioSession, mediaSession: {setActionHandler: (k, f) => { keys[k] = f }}};
+const toast = t => notes.push(t), render = () => {}, voices = () => [];
+const realTimeout = setTimeout, settle = () => new Promise(r => realTimeout(r, 5));
+globalThis.setTimeout = (f, ms) => { const t = {f, ms}; timers.push(t); return t }; globalThis.clearTimeout = t => { if (t) t.f = null };
+const tick = async ms => { for (const t of timers.splice(0)) if (t.f && t.ms === ms) t.f(); else if (t.f) timers.push(t); await settle() };
+const S = {view: 'talk', thread: null, sheet: ''}, MIC = {rec: null, next: null};
+const TK = {state: '', playing: '', note: '', held: '', ear: null, unlocked: true, trail: null, report: ''};
+let TS;
+const listen = () => {}, micWhy = () => '', store = {get: () => ''}, TM_KEY = 'tm';
+eval(logic + `TS = talkSetParse('');` + page.slice(page.indexOf('/* F158: run speech:'), page.indexOf('const talkTyping='))
+ + line('const talkTyping=') + grab('function speak(') + line('function hush(') + `
+(async () => {
+  const out = {}; await settle(); AU.ok = true;  // a tap let it play
+  // one fetch with no answer: asked again, and the reply goes on in the run's voice
+  answers = ['net']; speak('One secret here. Two.'); await settle(); out.wait = [asked.length, plays.length, TK.state];
+  await tick(500); out.again = [asked.slice(0, 2), plays.length, notes.length, said.length]; out.kinds = [types.slice(), AU.holding, AU.hold.loop, AU.hold.paused];
+  AU.el.finish(); await settle(); AU.el.finish(); await settle(); out.done = [TK.state, AU.holding, AU.hold.paused, keys.pause];
+  // a pause nobody asked for: played again once; a second one ends the reply
+  plays = []; speak('Long one here.'); await settle(); AU.el.pause(); out.paused = [TK.state, plays.length];
+  await tick(600); out.resumed = [TK.state, plays.length, AU.el.paused]; AU.el.pause(); out.second = [TK.state, AU.hold.paused]; await tick(600); out.after = plays.length;
+  // the person's own pause: the lock screen or the earbuds; and a stop by hand before the sound comes back
+  plays = []; speak('Long one here.'); await settle(); keys.pause(); await tick(600); out.person = [TK.state, plays.length];
+  plays = []; speak('Long one here.'); await settle(); AU.el.pause(); hush(); await tick(600); out.byHand = [TK.state, plays.length];
+  // refused when it is played again: held for a tap
+  speak('Long one here.'); await settle(); AU.el.pause(); refuse = 'NotAllowedError'; await tick(600); out.refused = [TK.state, TK.held, AU.holding]; refuse = null;
+  // a drop in the middle: what was fetched plays to its end, then the phone's voice reads the rest
+  AU.ok = true; notes.length = said.length = 0; asked = []; plays = []; answers = [null, 'net', 502, 'net']; speak('First one is here. Second.'); await settle(); await tick(500); await tick(2000);
+  out.kept = [plays.length, said.length, notes.length, TK.state, asked.length]; AU.el.finish(); await settle(); out.drop = [said.slice(), notes.slice(), AU.holding]; hush();
+  // the engine's own reason is said at once, with no new try
+  notes.length = 0; asked = []; answers = ['it broke']; speak('Other.'); await settle(); out.engine = [asked.length, notes.slice()]; hush();
+  // a mic that is still ending: no playback session and no clip before its end
+  types.length = 0; types.push('play-and-record'); plays = []; MIC.rec = {}; speak('After the mic.'); await settle(); out.mic = [types.slice(-1)[0], plays.length];
+  MIC.rec = null; await tick(100); out.micOver = [types.slice(-1)[0], plays.length]; hush();
+  MIC.rec = {}; types.push('play-and-record'); soundAs('playback'); out.live = types.slice(-1)[0]; MIC.rec = null;
+  out.report = [TK.report === TK.trail, TK.trail.ev.join(' | ')];
+  out.plain = [new TypeError('Load failed'), Object.assign(new Error('x'), {name: 'AbortError'}), new SyntaxError('x'), new Error('full')].map(plainErr);
+  out.sizes = speechClips('First one is here. ' + 'Word. '.repeat(200)).map(x => x.length);
+  console.log(JSON.stringify(out));
+})();`);
+"""
+
+
+def test_sound_b178(tmp: Path) -> None:
+    """B178: run speech over Bluetooth and a bad connection: a fetch with no answer is asked again and said in plain
+    words, an unasked pause is undone once, the audio session follows the mic, and silence holds the route open."""
+    page = W.page_html().decode()
+    check('${e}`' not in page, "no toast shows an error's own words")
+    for f in ('function hear(', 'function dictate('):
+        part = page.split(f, 1)[1].split('\n}\n', 1)[0]
+        check("soundAs('play-and-record')" in part and part.index("soundAs('play-and-record')") < part.index('rec.start()'), f'{f}: the session is for the mic before it starts')
+        check("soundAs('playback')" in part, f'{f}: and for playing once it ended')
+    check("soundAs('playback')" in page.split('function earEnd(', 1)[1].split('\n}\n', 1)[0], 'the end of a listen too')
+    check('data-micreport' in page.split('  talk(){', 1)[1].split('\n  },', 1)[0], 'Talk settings has the report')
+    if not shutil.which('node'):
+        print('  (no node here: the sound script test is skipped)')
+        return
+    (tmp / 'driver.js').write_text(SOUND_DRIVER, encoding='utf-8')
+    r = subprocess.run(['node', str(tmp / 'driver.js'), str(W.PAGE)], capture_output=True, text=True, timeout=60)
+    check(r.returncode == 0, 'node runs the sound', r.stderr[-900:])
+    got = json.loads(r.stdout or '{}')
+    eq(got.get('wait'), [1, 0, 'speaking'], 'no answer: it waits')
+    eq(got.get('again'), [['One secret here.'] * 2, 1, 0, 0], 'and asks again, with nothing said about it')
+    eq(got.get('kinds'), [['playback'], True, True, False], 'the session is for playing, and silence holds the route')
+    eq(got.get('done'), ['', False, True, None], 'until the reply ends')
+    eq((got.get('paused'), got.get('resumed')), (['speaking', 1], ['speaking', 2, False]), 'an unasked pause is undone')
+    eq((got.get('second'), got.get('after')), (['', True], 2), 'once')
+    eq((got.get('person'), got.get('byHand')), (['', 1], ['', 1]), "the person's own stop stands")
+    eq(got.get('refused'), ['', 'Long one here.', False], 'refused then: held for a tap')
+    eq(got.get('kept'), [1, 0, 0, 'speaking', 4], 'a drop in the middle: the clip that came plays on, the next is tried three times')
+    eq(got.get('drop'), [['Second.'], ["No connection to the run; reading with the phone's voice"], False], "then the phone's voice reads the rest")
+    eq(got.get('engine'), [1, ['The run could not read this aloud (it broke), so this browser does.']], "the engine's reason: no new try")
+    eq((got.get('mic'), got.get('micOver')), (['play-and-record', 0], ['playback', 1]), 'a mic still ending is waited for')
+    eq(got.get('live'), 'play-and-record', 'never playback while a mic is on')
+    rep = got.get('report') or [False, '']
+    check(rep[0] and 'no connection' in rep[1] and 'not by the page' in rep[1] and 'secret' not in rep[1] and 'Second' not in rep[1], 'the report has the events and no words', str(rep))
+    eq(got.get('plain'), ['no connection', 'no connection', 'its answer made no sense', 'full'], 'errors in plain words')
+    n = got.get('sizes') or [0]
+    check(n[0] < 30 and 150 < n[1] < 201 and max(n) > 350 and max(n) < 401, 'few clips, longer as it goes', str(n))
+
+
 def test_talk_settings_f124(tmp: Path) -> None:
     """F124 (F123): Talk's settings and their defaults; hold to talk starts on pointerdown and sends on pointerup; auto
     listen listens again once a reply was read; a play button reads a reply and stops it; mic and speaker are 64px."""
@@ -3169,6 +3272,6 @@ if __name__ == '__main__':
                            in_tmp(test_interrupt_c1_b141), in_tmp(test_answer_button_b138), in_tmp(test_pick_f138),
                            in_tmp(test_outbox_f137), in_tmp(test_sent_b154), in_tmp(test_card_chat_b139), in_tmp(test_short_ask_b152),
                            in_tmp(test_chat_box_f115), in_tmp(test_home_switcher_f134),
-                           in_tmp(test_scroll_f83), in_tmp(test_keyboard_b160), in_tmp(test_talk_settings_f124), in_tmp(test_mic_aborted_b162), in_tmp(test_status_view_f124),
+                           in_tmp(test_scroll_f83), in_tmp(test_keyboard_b160), in_tmp(test_talk_settings_f124), in_tmp(test_mic_aborted_b162), in_tmp(test_sound_b178), in_tmp(test_status_view_f124),
                            in_tmp(test_chats_f128), in_tmp(test_needs_drop_chat_f110), in_tmp(test_task_text_f85),
                            in_tmp(test_settings_f97), in_tmp(test_older_run_b164), in_tmp(test_style_f83)]))

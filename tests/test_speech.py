@@ -139,17 +139,17 @@ const said = [], notes = [], asked = [], plays = [], esc = String, tq = p => p, 
 let allow = false, status = 200, els = 0, listens = 0, tells = null;
 const window = {speechSynthesis: {cancel() {}, speak(u) { if (u.text) said.push(u.text) }}}, speechSynthesis = window.speechSynthesis;
 class SpeechSynthesisUtterance { constructor(t) { this.text = t } }
-class Audio { constructor() { els++; this.paused = true; this.ended = false }
-  play() { plays.push(this.src); if (!allow) return Promise.reject(Object.assign(new Error('no'), {name: 'NotAllowedError'}));
+class Audio { constructor(src) { if (src) this.src = src; else els++; this.paused = true; this.ended = false }  // one with a source: the silence (B178)
+  play() { if (this.loop) { this.paused = false; return Promise.resolve() } plays.push(this.src); if (!allow) return Promise.reject(Object.assign(new Error('no'), {name: 'NotAllowedError'}));
     this.paused = false; this.ended = false; return Promise.resolve() }
   pause() { this.paused = true; const f = this.onpause; if (f) f() }
   finish() { this.paused = true; this.ended = true; if (this.onpause) this.onpause(); if (this.onended) this.onended() } }
-let urls = 0; URL.createObjectURL = b => b.size === 844 ? 'silence' : 'clip' + (++urls); URL.revokeObjectURL = () => {};
+let urls = 0; URL.createObjectURL = b => b.size === 844 ? 'silence' : b.size === 40044 ? 'hold' : 'clip' + (++urls); URL.revokeObjectURL = () => {};
 const VOICES = {voices: [{id: 'kokoro:af_heart', name: 'af_heart', lang: 'American English', engine: 'Kokoro'}, {id: 'piper:p', name: 'p', lang: '', engine: 'Piper'}], default: 'kokoro:af_heart'};
 const fetch = async (p, o) => { if (!o) return {ok: true, json: async () => VOICES};
   asked.push(JSON.parse(o.body)); return {ok: status === 200, status, blob: async () => new Blob(['x']), json: async () => ({out: 'it broke'})} };
 const navigator = {language: 'en-US'}, toast = t => notes.push(t), render = () => {}, voices = () => [];
-const S = {view: 'talk', thread: null, sheet: ''}, TK = {state: '', playing: '', note: '', held: '', ear: null, unlocked: true};
+const MIC = {rec: null, next: null}, S = {view: 'talk', thread: null, sheet: ''}, TK = {state: '', playing: '', note: '', held: '', ear: null, unlocked: true};
 let TS;
 const listen = () => { listens++ }, talkSet = (k, v) => { TS[k] = v }, micWhy = () => '', store = {get: () => ''}, TM_KEY = 'tm';
 const tick = () => new Promise(r => setTimeout(r, 5));
@@ -174,7 +174,7 @@ eval(logic + `TS = talkSetParse('');` + page.slice(page.indexOf('/* F158: run sp
   allow = false; speak('Again.'); await tick(); allow = true; plays.length = 0; spk(); out.again = plays.slice(); await tick(); AU.el.finish(); await tick();
   // stopped by hand, and by the phone
   speak('Stop me.'); await tick(); hush(); out.hush = [TK.state, AU.el.paused];
-  speak('A call.'); await tick(); AU.el.pause(); out.call = TK.state;
+  speak('A call.'); await tick(); AU.el.pause(); out.call = [TK.state]; await new Promise(r => setTimeout(r, 700)); AU.el.pause(); out.call.push(TK.state);
   speak('Old one.'); speak('New one.'); await tick(); out.newer = [TK.state, plays.length]; AU.el.finish(); await tick(); out.newerDone = TK.state;
   // a play button
   speak('Button.', 'k1'); await tick(); out.key = [TK.playing, TK.state]; AU.el.finish(); await tick(); out.keyDone = TK.playing;
@@ -205,7 +205,7 @@ else:
     eq((o['second'], o['done']), (['speaking', 3], ['', 1, 0]), 'one audio element plays them all')
     eq(o['auto'], ['', 1], 'a later reply plays by itself, then auto listen')
     eq(o['again'], ['silence'], 'refused later: the tap unlocks again')
-    eq((o['hush'], o['call']), (['', True], ''), 'stopped by a tap, or by the phone')
+    eq((o['hush'], o['call']), (['', True], ['speaking', '']), 'stopped by a tap, or by a second pause of the phone')
     eq((o['newer'][0], o['newerDone']), ('speaking', ''), 'a newer reply takes the place of one')
     eq((o['key'], o['keyDone']), (['k1', ''], ''), 'a play button')
     eq((o['off'], o['on']), ([False, 0], [True, ['silence'], True]), 'the speaker toggles, and its tap unlocks')
