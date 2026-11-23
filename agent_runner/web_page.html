@@ -8,7 +8,9 @@
 /* F81: the view this browser last chose (localStorage), else [ui] web (the server writes it into WEB_VIEW): on
    'terminal' the link opens the terminal-style page (/term) instead. */
 const WEB_VIEW=/*WEB_VIEW*/'app', VIEW_KEY='agent-runner.view';
-(()=>{let v='';try{v=localStorage.getItem(VIEW_KEY)||''}catch(e){}
+/* F134: true on Runner Home's own page (home.home_page): the All projects view, no run behind it, no terminal view */
+const HOME_PAGE=/*HOME_PAGE*/false;
+(()=>{let v='';try{v=localStorage.getItem(VIEW_KEY)||''}catch(e){}if(HOME_PAGE)return;
   if((v||WEB_VIEW)==='terminal')location.replace('term'+location.search)})();
 </script>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Source+Serif+4:opsz,wght@8..60,400;8..60,500;8..60,600&display=swap">
@@ -95,6 +97,21 @@ a{color:var(--accent)}
 .me .sub{font-size:11px}
 .viewsw{display:flex;align-items:center;gap:8px;padding:6px 8px 2px;font-size:12px;color:var(--muted);text-decoration:none}
 .viewsw:hover{color:var(--fg)} .viewsw svg{width:15px;height:15px}
+/* F134: the project switcher at the top of the sidebar (through Runner Home), and its list of Home's projects */
+.psw{display:flex;align-items:center;gap:10px;width:100%;border:0;background:none;border-radius:10px;padding:6px 8px;margin-bottom:8px;cursor:pointer;text-align:left;color:var(--fg)}
+.psw:hover{background:var(--bubble)} .psw b{font:500 17px var(--serif);flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.psw .cv{transition:transform .15s;color:var(--muted)} .psw.open .cv{transform:rotate(90deg)}
+.plist{display:grid;gap:1px;margin:-4px 0 8px;padding-bottom:8px;border-bottom:1px solid var(--line)}
+.prow{display:flex;align-items:center;gap:8px;border-radius:10px;padding:7px 10px;text-decoration:none;color:var(--fg);font-size:14px}
+.prow:hover{background:var(--bubble)} .prow.on{background:var(--bubble);font-weight:500}
+.prow .t{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis} .prow .st{font-size:12px;color:var(--muted)}
+.prow .n{font-size:12px;background:var(--accent);color:var(--onaccent);border-radius:99px;padding:0 7px}
+.pdot{width:8px;height:8px;border-radius:50%;flex:none;background:var(--line2)} .pdot.running{background:var(--ok)} .pdot.idle{background:var(--warn)}
+.padd{display:flex;gap:8px;flex-wrap:wrap} .padd input{flex:1;min-width:0;border:1px solid var(--line);border-radius:10px;padding:7px 10px;font:inherit;background:var(--bg);color:var(--fg)}
+.meter{display:grid;grid-template-columns:52px minmax(0,1fr) auto;gap:8px;align-items:center;font-size:13px}
+.meter .bar{height:6px;background:var(--line);border-radius:3px;overflow:hidden} .meter .bar i{display:block;height:100%;background:var(--ok)}
+.meter .bar i.w{background:var(--warn)} .meter .bar i.b{background:var(--bad)} .meter .r{color:var(--muted)}
+.v-ok{color:var(--ok)} .v-warn{color:var(--warn)} .v-bad{color:var(--bad)}
 
 /* the main column */
 .main{display:flex;flex-direction:column;min-height:0;min-width:0}
@@ -552,12 +569,49 @@ function obHidden(box,key){return(box||[]).filter(x=>x.state==='sending'&&x[key]
 /* the pill's words */
 function obPill(c,offline){const p=[];if(c.sending)p.push(`${c.sending} ${offline?'waiting for the connection':'sending'}`);
   if(c.failed)p.push(`${c.failed} failed · tap to see`);return p}
-if(typeof module!=='undefined')module.exports={chatMove,BOX_KEYS,keysLine,histPush,histEdge,histStep,slashMatches,slashPick,slashMove,SLASH_FALLBACK,chatPick,answerOpts,needAsk,threadMsgs,working,planWords,compose,sendReq,usageOf,logKind,plain,chatName,controlReq,controlClick,taskControlsOn,queueGroups,conceptButtons,NO_CONCEPT,newConceptReq,queuedId,NAV,talkSession,micProblem,dictProblem,dictButton,dictInsert,termTokens,talkShown,talkReply,goneMark,needsShown,answerSaid,GONE_MS,obParse,obNext,obName,obSettle,obRetry,obDrop,obCounts,obHidden,obPill};
+/* --- F134: Runner Home in the run app ---------------------------------------------------------------------
+   HOME_BASE: where Runner Home serves, from the page's own path ('' when the page is not reached through Home):
+   its own page (homePage) at /, a run's app at /p/KEY/. The switcher lists Home's /projects and moves to /p/KEY/
+   on the same Home address, with Home's token (the page's own: Home swaps it for the run's on every call). */
+function homeBase(path,homePage){
+  if(homePage)return String(path||'/').replace(/[^/]*$/,'')||'/';
+  const m=String(path||'').match(/^(.*?\/)p\/[^/]+\//);return m?m[1]:'';
+}
+function homeKey(path){const m=String(path||'').match(/^.*?\/p\/([^/]+)\//);try{return m?decodeURIComponent(m[1]):''}catch(e){return m[1]}}
+const projectLink=(base,key,t)=>base+'p/'+encodeURIComponent(key)+'/?t='+encodeURIComponent(t||'');
+const homeLink=(base,t)=>base+'?t='+encodeURIComponent(t||'');
+/* a project's state as the switcher says it: off, idle, running, or paused */
+const projectState=p=>p.state!=='off'&&p.paused?'paused':p.state||'off';
+/* the switcher's rows: one per Home project, with its link, its state and how many things need you */
+function switcherRows(projects,key,base,t){
+  return(projects||[]).map(p=>({key:p.key,name:p.name||p.key,state:p.state||'off',said:projectState(p),needs:p.needs||0,
+    href:projectLink(base,p.key,t),on:p.key===key}));
+}
+/* the words under a project in All projects */
+function projectWords(p){const w=[];
+  if(p.state==='off')w.push('off');else{w.push(p.paused?'paused':p.state);if(p.slots!=null)w.push(p.slots+' slot'+(p.slots==1?'':'s'));
+    if((p.running||[]).length)w.push(p.running.join(', '));if(p.stopping)w.push('stopping')}
+  if(p.left!=null)w.push(p.left?p.left+' queued':'nothing queued');return w.join(' · ')}
+/* a project's buttons in All projects: Start run while off; else Open (its run app), Pause or Go on, -1 / +1 slot,
+   Stop; Unlist always. a: Home's /act name, arg its arg, open: the run app's link */
+function projectButtons(p){
+  const b=[];
+  if(p.state==='off')b.push({label:'Start run',a:'start',go:true});
+  else{if(p.page)b.push({label:'Open',open:true,go:true});
+    b.push(p.paused?{label:'Go on',a:'resume'}:{label:'Pause',a:'pause'});
+    b.push({label:'−1 slot',a:'slots',arg:'-1'},{label:'+1 slot',a:'slots',arg:'+1'},{label:'Stop',a:'stop'})}
+  b.push({label:'Unlist',unlist:true});
+  return b;
+}
+if(typeof module!=='undefined')module.exports={homeBase,homeKey,projectLink,homeLink,projectState,switcherRows,projectWords,projectButtons,chatMove,BOX_KEYS,keysLine,histPush,histEdge,histStep,slashMatches,slashPick,slashMove,SLASH_FALLBACK,chatPick,answerOpts,needAsk,threadMsgs,working,planWords,compose,sendReq,usageOf,logKind,plain,chatName,controlReq,controlClick,taskControlsOn,queueGroups,conceptButtons,NO_CONCEPT,newConceptReq,queuedId,NAV,talkSession,micProblem,dictProblem,dictButton,dictInsert,termTokens,talkShown,talkReply,goneMark,needsShown,answerSaid,GONE_MS,obParse,obNext,obName,obSettle,obRetry,obDrop,obCounts,obHidden,obPill};
 </script>
 
 <script>
 const T=new URLSearchParams(location.search).get('t')||'';
 const tq=p=>p+(p.includes('?')?'&':'?')+'t='+encodeURIComponent(T);
+/* F134: Runner Home around this page ('' when the page is the run's own, not reached through Home) */
+const HB=homeBase(location.pathname,HOME_PAGE), HKEY=homeKey(location.pathname);
+const H={projects:null,machine:'',devices:null,alerts:[],open:false,add:'',err:''};
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const ic=d=>`<svg viewBox="0 0 24 24" aria-hidden="true">${d}</svg>`;
 const I={
@@ -570,6 +624,7 @@ const I={
  agents:ic('<circle cx="12" cy="8" r="3.5"/><path d="M5 20c.8-3.6 3.6-5.5 7-5.5s6.2 1.9 7 5.5"/>'),
  activity:ic('<path d="M3 12h4l3-7 4 14 3-7h4"/>'),
  plan:ic('<path d="M8 6h12M8 12h12M8 18h12"/><circle cx="4" cy="6" r=".6"/><circle cx="4" cy="12" r=".6"/><circle cx="4" cy="18" r=".6"/>'),
+ projects:ic('<rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/>'),  // F134
  concepts:ic('<path d="M9 18h6M10 21h4"/><path d="M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2.1h5c0-.9.4-1.6 1-2.1A6 6 0 0 0 12 3z"/>'),  // F87: a bulb
  plus:ic('<path d="M12 5v14M5 12h14"/>'),
  pin:ic('<path d="M9 4h6l-1 6 3 3v1H7v-1l3-3z"/><path d="M12 14v6"/>'),  // F133
@@ -758,14 +813,71 @@ function side(){
   const count={home:needs,concepts:cn};
   const cs=chats(), ws=working_();
   S.sel=S.sel.filter(n=>cs.some(c=>c.name===n));  // F118: a picked chat that ended elsewhere leaves the pick
-  $('side').innerHTML=`<div class="brand"><div class="logo">ar</div><b>agent-runner</b></div>
+  if(HOME_PAGE){  // F134: Home's own page: the switcher, All projects and this machine
+    $('side').innerHTML=`${switcher()}<div class="nav"><button class="ni on" data-view="projects">${I.home}All projects${homeNeeds()?`<span class="n">${homeNeeds()}</span>`:''}</button></div>
+     <div class="me"><div class="av">${esc((H.machine||'?').charAt(0).toUpperCase())}</div><div class="grow"><span class="ell">${esc(H.machine||'this machine')}</span><div class="sub">Runner Home</div></div></div>`;
+    $('side').classList.toggle('open',S.drawer);$('scrim').classList.toggle('on',S.drawer);return;
+  }
+  $('side').innerHTML=`${HB?switcher():'<div class="brand"><div class="logo">ar</div><b>agent-runner</b></div>'}
    <button class="newchat" data-new><span class="plus">${I.plus}</span>New chat</button>
-   <div class="nav">${nav.map(([k,l])=>`<button class="ni ${!S.thread&&S.view===k?'on':''}" data-view="${k}">${I[k]}${l}${count[k]?`<span class="n">${count[k]}</span>`:''}</button>`).join('')}</div>
+   <div class="nav">${(HB?nav.concat([['projects','All projects']]):nav).map(([k,l])=>`<button class="ni ${!S.thread&&S.view===k?'on':''}" data-view="${k}">${I[k]}${l}${count[k]?`<span class="n">${count[k]}</span>`:''}</button>`).join('')}</div>
    <div class="shead row"><span>Chats</span><button class="shadd" data-new aria-label="New chat" title="New chat">${I.plus}</button></div>${chatBar()}${cs.length?cs.map(chatRow).join(''):'<div class="none">No chats yet</div>'}${obChatRows()}
    <div class="shead">Agents working</div>${ws.length?ws.map(s=>`<button class="thread ${S.thread===s.name?'on':''}" data-thread="${esc(s.name)}"><span class="livedot"></span><span class="t">${esc(s.title||s.task)}</span></button>`).join(''):'<div class="none">None right now</div>'}
    <div class="me"><div class="av">${esc((S.snap.machine||'?').charAt(0).toUpperCase())}</div><div class="grow"><span class="ell">${esc(S.snap.machine||'this machine')}</span><div class="sub">${S.snap.up===false?'no run is up':`${S.snap.slots||0} slot${S.snap.slots===1?'':'s'}`}${use?` · usage ${esc(use)}`:''}</div></div></div>
    <a class="viewsw" href="term${esc(location.search)}" data-viewsw="terminal" title="The terminal-style page; this browser remembers the choice">${I.term}Terminal view</a>`;
   $('side').classList.toggle('open',S.drawer);$('scrim').classList.toggle('on',S.drawer);
+}
+/* --- F134: Runner Home in the app: the switcher, All projects, Devices ------------------------------------ */
+const homeNeeds=()=>(H.projects||[]).reduce((n,p)=>n+(p.needs||0),0);
+function switcher(){
+  const rows=switcherRows(H.projects,HKEY,HB,T), cur=rows.find(r=>r.on);
+  const name=HOME_PAGE?'All projects':cur?cur.name:HKEY||'agent-runner';
+  const list=!H.open?'':`<div class="plist">${H.projects===null?'<div class="none">Loading…</div>':rows.length?rows.map(r=>
+    `<a class="prow ${r.on?'on':''}" href="${esc(r.href)}"><span class="pdot ${esc(r.state)}"></span><span class="t">${esc(r.name)}</span><span class="st">${esc(r.said)}</span>${r.needs?`<span class="n" title="needs you">${r.needs}</span>`:''}</a>`).join(''):'<div class="none">No projects</div>'}
+    <a class="prow ${HOME_PAGE?'on':''}" href="${esc(homeLink(HB,T))}">${I.projects}<span class="t">All projects</span></a></div>`;
+  return `<button class="psw ${H.open?'open':''}" data-psw aria-expanded="${H.open}" title="Switch project"><div class="logo">${esc(name.charAt(0).toLowerCase()||'a')}</div><b>${esc(name)}</b><span class="cv">${I.chev}</span></button>${list}`;
+}
+function meterHTML(m){const pct=Math.max(0,Math.min(100,+m.pct||0)), c=pct>=90?'b':pct>=75?'w':'';
+  return `<div class="meter"><span>${esc(m.name)}</span><div class="bar"><i class="${c}" style="width:${pct}%"></i></div><span class="r">${esc(m.said)}</span></div>`}
+function projectCard(p){
+  const bs=projectButtons(p).map(b=>b.open?`<a class="btn acc" href="${esc(projectLink(HB,p.key,T))}">${esc(b.label)}</a>`:
+    b.unlist?`<button class="btn" data-punlist="${esc(p.key)}" title="Unlist it from Home">${esc(b.label)}</button>`:
+    `<button class="btn ${b.go?'acc':''}" data-pact="${esc(b.a)}" data-parg="${esc(b.arg||'')}" data-pkey="${esc(p.key)}">${esc(b.label)}</button>`).join('');
+  const need=p.needs?`<div><b class="v-bad">${p.needs} need${p.needs==1?'s':''} you</b>${(p.asks||[]).map(a=>`<div class="small">${esc(a)}</div>`).join('')}</div>`:'';
+  return card(`<div class="row"><span class="pdot ${esc(p.state)}"></span><div class="grow"><b>${esc(p.name)}</b><div class="small">${esc(projectWords(p))}</div></div></div>${need}<div class="btns">${bs}</div>`,
+    `${p.page?'tap':''} ${p.needs?'need':''}`,p.page?`data-pgo="${esc(projectLink(HB,p.key,T))}"`:'');
+}
+function deviceCard(d){const v=d.verdict||{};
+  return card(`<div class="row"><div class="grow"><b>${esc(d.host)}</b>${d.here?' <span class="small">· this one</span>':''}<div class="v-${esc(v.level)}" style="font-weight:500">${esc(v.said)}</div></div></div>${(d.meters||[]).map(meterHTML).join('')}`,
+    'tap',`data-pgo="${esc(tq(HB+'device?id='+encodeURIComponent(d.id)))}"`);
+}
+function projectsHTML(){
+  const ps=H.projects, ds=H.devices;
+  return `<div class="col">${H.err?`<div class="small v-bad">${esc(H.err)}</div>`:''}
+    ${H.alerts.length?`<div class="sec">Needs you<span class="ln"></span></div>`+H.alerts.map(a=>card(`<div class="row"><div class="who">${I.alert}</div><div class="grow">${esc(a.what)}</div>${a.clean?`<a class="btn acc" href="${esc(tq(HB+'device?id='+encodeURIComponent(a.device)))}">Clean</a>`:''}</div>`,'need')).join(''):''}
+    <div class="sec">Projects<span class="ln"></span></div>${ps===null?card('<div class="small">Loading…</div>'):ps.length?ps.map(projectCard).join(''):card('<div class="small">No projects yet: none under the scanned folders. Add one below.</div>')}
+    <form class="padd" data-padd><input data-paddin placeholder="Add a project: its folder on this machine" aria-label="Add a project"><button class="btn">Add</button></form>
+    <div class="sec">Devices<span class="ln"></span></div>${ds===null?card('<div class="small">Loading…</div>'):ds.length?ds.map(deviceCard).join(''):card('<div class="small">No devices</div>')}</div>`;
+}
+async function loadProjects(){
+  if(!HB||H.busy)return;
+  try{const d=await (await fetch(tq(HB+'projects'))).json();
+    if(d.ok){H.projects=d.projects||[];H.machine=d.machine||'';H.err='';
+      if(HOME_PAGE)document.title=(H.machine?H.machine+' · ':'')+'Runner Home'}else H.err=d.out||''}
+  catch(e){}
+  render();
+}
+async function loadDevices(){
+  if(!HB)return;
+  try{const d=await (await fetch(tq(HB+'devices'))).json();if(d.ok){H.devices=d.devices||[];H.alerts=d.needs||[]}}catch(e){}
+  render();
+}
+async function homePost(path,body){
+  H.busy=true;toast('…');
+  try{const d=await (await fetch(tq(HB+path),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})).json();
+    toast(d.out||(d.ok?'Done':'That did not work'),!d.ok)}
+  catch(e){toast(`Could not reach Runner Home: ${e}`,true)}
+  H.busy=false;loadProjects();
 }
 /* F118: a chat row: its delete button (none for c1), dimmed with Undo in that spot once deleted; the Delete N bar */
 function chatRow(s){
@@ -901,13 +1013,21 @@ function render(force){
   obHide();obDraw();  // F137
   side();
   const n=S.thread;
-  $('top').innerHTML=`<button class="icon menu" data-menu aria-label="Menu">${I.menu}</button>${n?`<button class="icon" data-home aria-label="Back">${I.back}</button>`:''}<div class="title">${n?esc(threadTitle(n)):{talk:'Talk',home:'',agents:'Agents',activity:'Activity',plan:'Plan',concepts:'Concepts'}[S.view]}</div>${n&&sessionOf(n)&&sessionOf(n).link?`<a class="icon" href="${esc(sessionOf(n).link)}" target="_blank" rel="noopener" aria-label="Open its session" title="Open its session">${I.ext}</a>`:''}<button class="icon" data-new aria-label="New chat" title="New chat">${I.newchat}</button>`;
+  if(HOME_PAGE){S.view='projects';S.thread=null;  // F134: Home's own page has only All projects
+    $('top').innerHTML=`<button class="icon menu" data-menu aria-label="Menu">${I.menu}</button><div class="title">All projects</div><span class="icon"></span>`;
+    const h=projectsHTML();if(h===lastBody&&!force)return;lastBody=h;
+    const pin=document.querySelector('[data-paddin]'), pf=pin&&document.activeElement===pin;
+    $('body').innerHTML=h;$('dock').innerHTML='';$('dock').hidden=true;
+    const np=document.querySelector('[data-paddin]');if(np){np.value=H.add;if(pf)np.focus()}
+    return;
+  }
+  $('top').innerHTML=`<button class="icon menu" data-menu aria-label="Menu">${I.menu}</button>${n?`<button class="icon" data-home aria-label="Back">${I.back}</button>`:''}<div class="title">${n?esc(threadTitle(n)):{talk:'Talk',home:'',agents:'Agents',activity:'Activity',plan:'Plan',concepts:'Concepts',projects:'All projects'}[S.view]}</div>${n&&sessionOf(n)&&sessionOf(n).link?`<a class="icon" href="${esc(sessionOf(n).link)}" target="_blank" rel="noopener" aria-label="Open its session" title="Open its session">${I.ext}</a>`:''}<button class="icon" data-new aria-label="New chat" title="New chat">${I.newchat}</button>`;
   let h='',dock='';
   if(n){const agent=isAgent(n);h=`<div class="col">${convo(n)}</div>`;
     dock=box(agent?`Message ${threadTitle(n)}`:S.ctx&&S.ctx.kind==='new'?'Describe the task in your own words':`Reply to ${threadTitle(n)}`,
       (agent?'Goes straight to this agent, between its steps. ':'')+keysLine())}  // B120: the keys, from BOX_KEYS
   else if(S.view==='talk'){h=talkHTML();dock=talkDock()}
-  else h={home:homeHTML,agents:agentsHTML,activity:activityHTML,plan:planHTML,concepts:conceptsHTML}[S.view]();
+  else h={home:homeHTML,agents:agentsHTML,activity:activityHTML,plan:planHTML,concepts:conceptsHTML,projects:projectsHTML}[S.view]();
   const ta=document.querySelector('[data-in]'), focused=ta&&document.activeElement===ta, sel=ta?[ta.selectionStart,ta.selectionEnd]:null;
   const kta=document.querySelector('[data-kin]'), kfocused=kta&&document.activeElement===kta;
   const key=h+'|'+dock;
@@ -919,6 +1039,7 @@ function render(force){
   body.innerHTML=h;$('dock').innerHTML=dock;$('dock').hidden=!dock;
   const nta=document.querySelector('[data-in]');
   if(nta){nta.value=HI.i!==null&&HI.key===boxKey()?histGet(HI.key)[HI.i]||'':store.get(DRAFT_KEY(boxKey()));grow(nta);if(focused){nta.focus();if(sel)nta.setSelectionRange(sel[0],sel[1]);slashShow(nta)}}  // B119: the menu stays open; B120: so does a recalled message
+  const np=document.querySelector('[data-paddin]');if(np){np.value=H.add;if(H.addFocus)np.focus()}  // F134
   const nk=document.querySelector('[data-kin]');if(nk){nk.value=S.kText||'';if(kfocused||S.kFocus)nk.focus();S.kFocus=false}  // F87: the new concept box keeps its words
   if(n&&(atEnd||force))body.scrollTop=1e9;
 }
@@ -1154,6 +1275,11 @@ document.addEventListener('click',async e=>{
     if(S.waitNew&&S.waitNew.ph&&!S.ob.some(y=>'@'+y.cid===S.waitNew.ph))S.waitNew=null;
     render(true);return}
   if(x=q('[data-obedit]')){obEditBack(x.dataset.obedit);return}
+  // F134: the switcher, and All projects' buttons (Runner Home's /act and /remove)
+  if(q('[data-psw]')){H.open=!H.open;if(H.open)loadProjects();render(true);return}
+  if(x=q('[data-pact]')){homePost('act',{project:x.dataset.pkey,name:x.dataset.pact,arg:x.dataset.parg||''});return}
+  if(x=q('[data-punlist]')){homePost('remove',{project:x.dataset.punlist});return}
+  if((x=q('[data-pgo]'))&&!q('a,button,input,form')){location.href=x.dataset.pgo;return}
   if(slashOpen()&&!q('[data-in]'))slashClose();
   if(q('[data-undo]')){S.undo=null;render(true);return}
   if(x=q('[data-pin]')){const n=x.dataset.pin,names=chats().map(c=>c.name),p=chatPins().filter(m=>names.includes(m));  // F133
@@ -1211,7 +1337,11 @@ document.addEventListener('click',async e=>{
   if(q('[data-dict]'))return dictate();  // F115
   if(x=q('[data-stop]')){const n=x.dataset.stop||shownSession();if(n)act('interrupt',{session:n});return}
 });
-document.addEventListener('submit',e=>{e.preventDefault();if(e.target.matches('[data-kform]'))newConcept();else send()});
+document.addEventListener('submit',e=>{e.preventDefault();
+  if(e.target.matches('[data-padd]')){const v=H.add.trim();if(v){H.add='';homePost('add',{path:v})}return}  // F134
+  if(e.target.matches('[data-kform]'))newConcept();else send()});
+document.addEventListener('focusin',e=>{if(e.target.matches&&e.target.matches('[data-paddin]'))H.addFocus=true});
+document.addEventListener('focusout',e=>{if(e.target.matches&&e.target.matches('[data-paddin]'))H.addFocus=false});
 function selectedText(t){
   if(t&&typeof t.selectionStart==='number'&&t.selectionEnd>t.selectionStart)return true;
   return !!String(window.getSelection&&window.getSelection()||'');
@@ -1243,7 +1373,7 @@ document.addEventListener('keydown',e=>{
   if(e.key==='Escape'&&S.thread&&!(e.target.matches&&e.target.matches('input,textarea,select'))){S.thread=null;S.ctx=null;render(true);return}  /* out of the box, Esc goes back */
   const c=e.target.closest&&e.target.closest('.card.tap');if(c&&c===e.target&&(e.key==='Enter'||e.key===' ')){e.preventDefault();c.click()}
 });
-document.addEventListener('input',e=>{if(e.target.matches('[data-slots-n]'))S.slotsN=e.target.value;if(e.target.matches('[data-kin]'))S.kText=e.target.value;if(e.target.matches('[data-in]')){grow(e.target);store.set(DRAFT_KEY(boxKey()),e.target.value);HI.i=null;slashShow(e.target)}});
+document.addEventListener('input',e=>{if(e.target.matches('[data-paddin]'))H.add=e.target.value;if(e.target.matches('[data-slots-n]'))S.slotsN=e.target.value;if(e.target.matches('[data-kin]'))S.kText=e.target.value;if(e.target.matches('[data-in]')){grow(e.target);store.set(DRAFT_KEY(boxKey()),e.target.value);HI.i=null;slashShow(e.target)}});
 document.addEventListener('paste',e=>{if(!e.target.matches||!e.target.matches('[data-in]'))return;
   const fs=[...(e.clipboardData?.files||[])];if(fs.length){e.preventDefault();fs.forEach(upload)}});
 $('file').addEventListener('change',e=>{[...e.target.files].forEach(upload);e.target.value=''});
@@ -1288,9 +1418,15 @@ document.addEventListener('click',e=>{if(noClick){noClick=false;e.preventDefault
 addEventListener('pagehide',finalDelete);  // F118: leaving the page makes a pending delete final
 
 render(true);
+if(HOME_PAGE){  // F134: Home's own page: no run behind it, only Home's projects and devices
+  loadProjects();loadDevices();setInterval(loadProjects,5000);setInterval(loadDevices,30000);
+}else{
 connect();
 loadFeed('c1');
 drain();  // F137: what a reload left in the outbox goes now (the run page runs each cid once)
+if(HB){loadProjects();setInterval(()=>{if(H.open||S.view==='projects')loadProjects()},5000);  // F134: the switcher
+  setInterval(()=>{if(S.view==='projects')loadDevices()},30000);loadDevices()}
+}
 </script>
 </body>
 </html>

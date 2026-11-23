@@ -514,11 +514,15 @@ def web_view() -> str:
     return v if v in WEB_VIEWS else 'app'
 
 
-def page_html(view: str | None = None) -> bytes:
+def page_html(view: str | None = None, home: bool = False) -> bytes:
     """F79: the run app. Its light and dark looks follow the browser's setting (`[ui] theme` is the terminal
-    UI's). F81: `[ui] web` (or `view`) goes into WEB_VIEW, for a browser that never chose a view."""
-    return PAGE.read_text(encoding='utf-8').replace(
-        "/*WEB_VIEW*/'app'", json.dumps(view or web_view()), 1).encode('utf-8')
+    UI's). F81: `[ui] web` (or `view`) goes into WEB_VIEW, for a browser that never chose a view. F134: `home`
+    is Runner Home's own page (HOME_PAGE): the All projects view and the project switcher, no run behind it."""
+    page = PAGE.read_text(encoding='utf-8').replace("/*WEB_VIEW*/'app'", json.dumps(view or web_view()), 1)
+    if home:
+        page = page.replace('/*HOME_PAGE*/false', 'true', 1).replace(
+            '<title>agent-runner</title>', '<title>Runner Home</title>', 1)
+    return page.encode('utf-8')
 
 
 def term_html(name: str | None = None) -> bytes:

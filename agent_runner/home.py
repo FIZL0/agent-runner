@@ -42,6 +42,7 @@ import json
 import os
 import re
 import secrets
+import shutil
 import socket
 import subprocess as sp
 import sys
@@ -333,90 +334,13 @@ def run_action(root: Path, name: str, arg: str = '', call=runner) -> dict:
 
 # --- the page ---------------------------------------------------------------------------------------------------
 
-PAGE = r"""<!doctype html>
-<html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>Runner Home</title>
-<style>
-:root{--bg:#f7f6f3;--fg:#1f1e1c;--dim:#6b6860;--card:#fff;--line:#e3e0d8;--accent:#c2410c;--ok:#15803d;--warn:#b45309;color-scheme:light}
-@media (prefers-color-scheme:dark){:root{--bg:#1a1917;--fg:#ecebe8;--dim:#a19e96;--card:#24231f;--line:#3a3833;--accent:#fb923c;--ok:#4ade80;--warn:#fbbf24;color-scheme:dark}}
-*{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.45 system-ui,sans-serif;
- padding:max(16px,env(safe-area-inset-top)) max(16px,env(safe-area-inset-right)) 24px max(16px,env(safe-area-inset-left))}
-main{max-width:720px;margin:0 auto}
-h1{font-size:1.3rem;margin:0 0 12px}
-.p{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:10px}
-.p b{font-size:1.05rem}.s{color:var(--dim);font-size:.9rem}
-.dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px;background:var(--line)}
-.running .dot{background:var(--ok)}.idle .dot{background:var(--warn)}
-.need{color:var(--accent);font-weight:600}.tap{cursor:pointer}
-button,a.btn{font:inherit;font-size:.9rem;border:1px solid var(--line);background:var(--bg);color:var(--fg);
- border-radius:8px;padding:5px 11px;margin:8px 6px 0 0;cursor:pointer;text-decoration:none;display:inline-block}
-.go{background:var(--accent)!important;color:var(--card)!important;border-color:var(--accent)!important}
-#msg{white-space:pre-wrap;font-size:.85rem;color:var(--dim);margin:8px 0}
-h2{font-size:.8rem;text-transform:uppercase;letter-spacing:.05em;color:var(--dim);margin:16px 0 8px}
-.v-ok{color:var(--ok)}.v-warn{color:var(--warn)}.v-bad{color:var(--accent)}
-.alert{border-left:3px solid var(--accent);background:var(--card);border-radius:8px;padding:8px 10px;margin-bottom:8px}
-.m{display:grid;grid-template-columns:44px 1fr 96px;gap:8px;align-items:center;margin:4px 0;font-size:.85rem}
-.bar{height:6px;background:var(--line);border-radius:3px;overflow:hidden}.bar i{display:block;height:100%;background:var(--ok)}
-.bar i.w{background:var(--warn)}.bar i.b{background:var(--accent)}.r{text-align:right;color:var(--dim)}
-form{display:flex;gap:6px;flex-wrap:wrap;margin-top:14px}input{flex:1;min-width:0;font:inherit;padding:5px 8px;
- border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--fg)}
-</style></head><body><main>
-<h1 id="h">Runner Home</h1>
-<div id="needs"></div>
-<h2>Devices</h2><div id="devs"><div class="s">Loading…</div></div>
-<h2>Projects</h2>
-<div id="list"><div class="s">Loading…</div></div>
-<div id="msg"></div>
-<form id="add"><input id="path" placeholder="Add a project: its folder on this machine"><button>Add</button></form>
-</main><script>
-const T=new URLSearchParams(location.search).get('t')||'';
-const q=p=>p+(p.includes('?')?'&':'?')+'t='+encodeURIComponent(T);
-const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-let busy=false;
-function words(p){const w=[];
- if(p.state==='off')w.push('off');else{w.push(p.paused?'paused':p.state);if(p.slots!=null)w.push(p.slots+' slot'+(p.slots==1?'':'s'));
-  if(p.running.length)w.push(p.running.join(', '));if(p.stopping)w.push('stopping')}
- if(p.left!=null)w.push(p.left?p.left+' queued':'nothing queued');return w.join(' · ')}
-function card(p){const b=[];
- if(p.state==='off')b.push(`<button class="go" data-a="start">Start run</button>`);
- else{if(p.page)b.push(`<a class="btn go" href="${esc(q(p.page))}">Open</a>`);
-  b.push(p.paused?`<button data-a="resume">Go on</button>`:`<button data-a="pause">Pause</button>`);
-  b.push(`<button data-a="slots" data-arg="-1">−1 slot</button><button data-a="slots" data-arg="+1">+1 slot</button>`);
-  b.push(`<button data-a="stop">Stop</button>`)}
- const need=p.needs?`<div class="need">${p.needs} need${p.needs==1?'s':''} you</div>`+
-  (p.asks||[]).map(a=>`<div class="s">${esc(a)}</div>`).join(''):'';
- return `<div class="p ${esc(p.state)}${p.page?' tap':''}" data-k="${esc(p.key)}"${p.page?` data-page="${esc(q(p.page))}"`:''}><span class="dot"></span><b>${esc(p.name)}</b>
-  <div class="s">${esc(words(p))}</div>${need}<div>${b.join('')}<button data-a="remove" title="Unlist it from Home">Unlist</button></div></div>`}
-async function load(){if(busy)return;try{const r=await fetch(q('projects'));const d=await r.json();
- if(!d.ok){document.getElementById('list').innerHTML=`<div class="s">${esc(d.out)}</div>`;return}
- document.getElementById('h').textContent=d.machine+' · Home';document.title=d.machine+' · Runner Home';
- document.getElementById('list').innerHTML=d.projects.length?d.projects.map(card).join(''):
-  '<div class="s">No projects yet: none under the scanned folders. Add one below.</div>'}catch(e){}}
-async function post(path,body){busy=true;const m=document.getElementById('msg');m.textContent='…';
- try{const r=await fetch(q(path),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-  const d=await r.json();m.textContent=d.out||''}catch(e){m.textContent=String(e)}busy=false;load()}
-document.getElementById('list').addEventListener('click',e=>{const b=e.target.closest('button');
- if(!b){const c=e.target.closest('[data-page]');if(c&&!e.target.closest('a'))location.href=c.dataset.page;return}
- const k=b.closest('[data-k]').dataset.k;if(b.dataset.a==='remove')return post('remove',{project:k});
- post('act',{project:k,name:b.dataset.a,arg:b.dataset.arg||''})});
-document.getElementById('add').addEventListener('submit',e=>{e.preventDefault();const v=document.getElementById('path').value.trim();
- if(v)post('add',{path:v}).then(()=>document.getElementById('path').value='')});
-load();setInterval(load,5000);
-function meter(m){const c=m.pct>=90?'b':m.pct>=75?'w':'';
- return `<div class="m"><span>${esc(m.name)}</span><div class="bar"><i class="${c}" style="width:${Math.max(0,Math.min(100,m.pct))}%"></i></div><span class="r">${esc(m.said)}</span></div>`}
-function dev(d){const v=d.verdict||{},href=q('device?id='+encodeURIComponent(d.id));
- return `<div class="p tap" data-page="${esc(href)}"><b>${esc(d.host)}</b>${d.here?' <span class="s">· this one</span>':''}
-  <div class="v-${esc(v.level)}" style="font-weight:600">${esc(v.said)}</div>${(d.meters||[]).map(meter).join('')}</div>`}
-async function loadDevs(){try{const r=await fetch(q('devices'));const d=await r.json();if(!d.ok)return;
- document.getElementById('devs').innerHTML=d.devices.map(dev).join('');
- document.getElementById('needs').innerHTML=d.needs.length?'<h2>Needs you</h2>'+d.needs.map(a=>
-  `<div class="alert">${esc(a.what)}${a.clean?` <a class="btn go" href="${esc(q('device?id='+encodeURIComponent(a.device)))}">Clean</a>`:''}</div>`).join(''):''}catch(e){}}
-document.getElementById('devs').addEventListener('click',e=>{const c=e.target.closest('[data-page]');if(c)location.href=c.dataset.page});
-loadDevs();setInterval(loadDevs,30000);
-</script></body></html>
-"""
+def home_page() -> bytes:
+    """F134: Home's own page is the run app (web_page.html, its look and tokens) in Home mode: the project
+    switcher and the All projects view (every project's row and buttons, add project, Devices) with no run
+    behind it. Opening a project moves to /p/KEY/, the same app with that project's run."""
+    from agent_runner.web import page_html
+    return page_html('app', home=True)
+
 
 
 # --- the server -------------------------------------------------------------------------------------------------
@@ -469,7 +393,7 @@ class HomeHandler(BaseHTTPRequestHandler):
         if path == '/p' or path.startswith('/p/'):
             return self.proxy(method)
         if method == 'GET' and path in ('/', '/index.html'):
-            return self.send(200, PAGE, 'text/html; charset=utf-8')
+            return self.send(200, home_page(), 'text/html; charset=utf-8')
         if path in ('/device', '/devices') or path.startswith(('/dev/', '/vitals/')):  # F95: Device Vitals
             code, out, ctype = self.server.vitals.handle(method, path, parse_qs(urlsplit(self.path).query),
                                                          self.body() if method == 'POST' else b'')
@@ -674,9 +598,46 @@ def serve_home(token: str, port: int, bind: str = '0.0.0.0', **kw) -> HomeServer
     return srv
 
 
-def home_urls(port: int | None = None) -> list[str]:
-    from agent_runner.web import page_urls
-    return page_urls(load_registry()['port'] if port is None else port, home_token())
+def home_urls(port: int | None = None, https=None) -> list[str]:
+    """Home's links, with its token: F134: the Tailscale Serve https addresses for its port first (Talk's mic
+    needs https; `https(port, token)`, web.tailscale_https_urls), then by hostname and by LAN address."""
+    from agent_runner.web import page_urls, tailscale_https_urls
+    port = load_registry()['port'] if port is None else port
+    token = home_token()
+    plain = page_urls(port, token)
+    return [u for u in (https or tailscale_https_urls)(port, token) if u not in plain] + plain
+
+
+def serve_https_argv(port: int) -> list[str]:
+    """F134: the Tailscale Serve command that gives Home on `port` an https address (on port+1, 8771)."""
+    return ['tailscale', 'serve', '--bg', f'--https={port + 1}', f'http://127.0.0.1:{port}']
+
+
+def offer_https(port: int, urls: list[str], call=None, out=print, ask=None, which=shutil.which) -> list[str]:
+    """F134: with no https link for Home (`urls` all http), offer to set up Tailscale Serve for it: `ask(question)`
+    (default: a y/n prompt when stdin is a terminal) says yes, the command runs and the links are read again;
+    otherwise say the command. Without tailscale, one line on what https needs. Returns the links to print."""
+    if any(u.startswith('https://') for u in urls):
+        return urls
+    cmd = serve_https_argv(port)
+    line = ' '.join(cmd)
+    if not which('tailscale'):
+        out(f"No https link: Talk's mic needs one. With Tailscale installed, `{line}` gives Home one.")
+        return urls
+    if ask is None and sys.stdin.isatty():
+        def ask(q: str) -> bool:
+            try:
+                return input(q + ' [Y/n] ').strip().lower() in ('', 'y', 'yes')
+            except EOFError:
+                return False
+    if ask and ask(f"Home has no https link (Talk's mic needs one). Run `{line}`?"):
+        code, said = (call or sh)(cmd)
+        if code == 0:
+            return home_urls(port)
+        out(f'{line} failed: {said}')
+        return urls
+    out(f"For an https link (Talk's mic needs one), run: {line}")
+    return urls
 
 
 # --- the service ------------------------------------------------------------------------------------------------
@@ -848,7 +809,7 @@ def wait_serving(port: int, timeout: float = 8.0) -> bool:
     return False
 
 
-def install(kind: str | None = None, call=sh, out=print, check=wait_serving) -> int:
+def install(kind: str | None = None, call=sh, out=print, check=wait_serving, https=None, ask=None) -> int:
     """Set the service up for `kind` (default this OS): its file, the service manager's commands, then wait
     for the page to answer and print the link and a QR code. The service gets the PATH and runs-folder
     settings of this shell (a scheduled task runs with the user's own logon environment)."""
@@ -873,15 +834,17 @@ def install(kind: str | None = None, call=sh, out=print, check=wait_serving) -> 
                 continue
             out(f'agent-runner home install: {" ".join(cmd)} failed: {said}')
             return 1
-    urls = home_urls(reg['port'])
-    where = {'linux': f'systemd user service {SERVICE} ({unit})', 'macos': f'launchd agent {LABEL} ({unit})',
+    urls = home_urls(reg['port'], https)
+    where ={'linux': f'systemd user service {SERVICE} ({unit})', 'macos': f'launchd agent {LABEL} ({unit})',
              'windows': f'scheduled task {SERVICE} (at logon)'}[kind]
     out(f'Runner Home is installed: {where}, on port {reg["port"]}.')
     if not check(reg['port']):
         out(f'It does not answer on port {reg["port"]} yet: a run may hold that port (it moves to a free one '
             f'when it next starts; Home keeps trying meanwhile), or see {log}.')
+    urls = offer_https(reg['port'], urls, call=call, out=out, ask=ask) if https is None else urls
     out('Open it on your phone (same network or Tailscale):\n  ' + '\n  '.join(urls))
-    if q := qr_text(urls[-1]):
+    # F134: the QR code holds the https link when there is one (the mic needs it), else the LAN address
+    if q := qr_text(urls[0] if urls[0].startswith('https://') else urls[-1]):
         out(q)
     return 0
 
@@ -908,15 +871,18 @@ def uninstall(kind: str | None = None, call=sh, out=print) -> int:
     return 1 if bad and kind == 'windows' else 0
 
 
-def status(kind: str | None = None, out=print) -> int:
+def status(kind: str | None = None, out=print, https=None, on=None, up=None) -> int:
     kind = kind or os_kind()
     reg = load_registry()
-    on = installed(kind)
-    up = serving(reg['port'])
+    on = installed(kind) if on is None else on
+    up = serving(reg['port']) if up is None else up
     out(f'Runner Home: {"installed" if on else "not installed (agent-runner home install)"}, '
         f'{"serving" if up else "not serving"} on port {reg["port"]}')
     if on or up:
-        out('  ' + '\n  '.join(home_urls(reg['port'])))
+        urls = home_urls(reg['port'], https)  # F134: the https link first
+        out('  ' + '\n  '.join(urls))
+        if not any(u.startswith('https://') for u in urls):
+            out(f'  (no https link, which Talk\'s mic needs: {" ".join(serve_https_argv(reg["port"]))} gives one)')
     ps = projects(reg)
     out(f'{len(ps)} project{"" if len(ps) == 1 else "s"}: ' + (', '.join(p.name for p in ps) or 'none'))
     return 0

@@ -224,6 +224,12 @@ def test_routing(tmp: Path) -> None:
         code, body, _ = get(f'{base}/?t=HOMETOKEN')
         eq(code, 200, 'the Home page with its token')
         has(body.decode(), 'Runner Home', 'is the Home page')
+        page = body.decode()
+        check('const HOME_PAGE=true;' in page and 'data-psw' in page and 'function switcher()' in page
+              and 'class="app"' in page, "F134: Home's page is the run app's markup, with the project switcher",
+              page[:400])
+        src = Path(H.__file__).read_text(encoding='utf-8')
+        check('<style' not in src and 'PAGE = r"""' not in src, 'F134: no Home-only page or CSS left in home.py')
         code, body, _ = get(f'{base}/projects?t=HOMETOKEN')
         d = json.loads(body)
         eq((d['ok'], d['projects'], d['machine']), (True, [{'key': 'alpha', 'state': 'running'}], socket.gethostname()),
@@ -425,7 +431,9 @@ def test_units(tmp: Path) -> None:
 
     print('install and uninstall: the file, then the commands, then the link and a QR code')
     env = {'HOME': str(tmp / 'home'), 'XDG_CONFIG_HOME': str(tmp / 'home' / '.config'), 'USER': 'me'}
-    with mock.patch.dict(os.environ, env), mock.patch.object(Path, 'home', lambda: tmp / 'home'):
+    with mock.patch.dict(os.environ, env), mock.patch.object(Path, 'home', lambda: tmp / 'home'), \
+            mock.patch.object(W, 'tailscale_https_urls', lambda port, token: []), \
+            mock.patch.object(H, 'offer_https', lambda port, urls, **kw: urls):  # F134: test_https_links has these
         for kind, want in (('linux', [['systemctl', '--user', 'daemon-reload'],
                                       ['systemctl', '--user', 'enable', '--now', 'agent-runner-home.service'],
                                       ['loginctl', 'enable-linger', 'me']]),
@@ -483,6 +491,66 @@ def test_units(tmp: Path) -> None:
         tr = H.task_command(long)
         check(len(tr) <= H.TR_MAX and tr.endswith('home-serve.cmd"'), 'a long one: the launcher\'s path', tr)
         has((tmp / 'cfg' / 'home-serve.cmd').read_text(encoding='utf-8'), 'x{300}', 'which holds the command')
+
+
+SERVE_STATUS = {'TCP': {'8771': {'HTTPS': True}},
+                'Web': {'box.tail1.ts.net:8771': {'Handlers': {'/': {'Proxy': 'http://127.0.0.1:8770'}}}}}
+
+
+def fake_tailscale(status: dict):
+    """`tailscale serve status --json` answering `status`, as web.tailscale_https_urls runs it."""
+    def run(argv, **kw):
+        eq(argv[:3], ['tailscale', 'serve', 'status'], 'asks tailscale serve status')
+        return subprocess.CompletedProcess(argv, 0, json.dumps(status), '')
+    return lambda port, token: W.tailscale_https_urls(port, token, run=run)
+
+
+def test_https_links(tmp: Path) -> None:
+    print("F134: Home's links put Tailscale Serve's https address first (Talk's mic needs https)")
+    token = H.home_token()
+    with mock.patch.object(W, 'lan_ip', lambda: '192.168.1.5'):
+        said = []
+        eq(H.status('linux', out=said.append, https=fake_tailscale(SERVE_STATUS), on=True, up=True), 0, 'status')
+        lines = [s.strip() for s in '\n'.join(said).splitlines()]
+        urls = [s for s in lines if s.startswith('http')]
+        eq(urls[0], f'https://box.tail1.ts.net:8771/?t={token}', 'home status lists the https URL first')
+        check(any(u.startswith('http://192.168.1.5:8770/') for u in urls[1:]), 'then the http ones', urls)
+        said = []
+        H.status('linux', out=said.append, https=fake_tailscale({}), on=True, up=True)
+        has('\n'.join(said), r'tailscale serve --bg --https=8771 http://127\.0\.0\.1:8770',
+            'no serve for Home: status says the command that gives one')
+
+        print('install: the https link first, and the QR code holds it')
+        env = {'HOME': str(tmp / 'home'), 'XDG_CONFIG_HOME': str(tmp / 'home' / '.config'), 'USER': 'me'}
+        with mock.patch.dict(os.environ, env), mock.patch.object(Path, 'home', lambda: tmp / 'home'), \
+                mock.patch.object(H, 'qr_text', lambda text: f'QR[{text}]'):
+            said = []
+            eq(H.install('linux', call=lambda c: (0, ''), out=said.append, check=lambda p: True,
+                         https=fake_tailscale(SERVE_STATUS)), 0, 'install')
+            text = '\n'.join(said)
+            check(text.index('https://box.tail1.ts.net:8771/') < text.index('http://192.168.1.5:8770/'),
+                  'install prints the https link first', text)
+            has(text, rf'QR\[https://box\.tail1\.ts\.net:8771/\?t={token}\]', 'and the QR code is of it')
+
+    print('install with no serve: offers to set one up, or says the command')
+    plain = ['http://box:8770/?t=x']
+    ran, said = [], []
+    with mock.patch.object(H, 'home_urls', lambda port, https=None: ['https://box.ts.net:8771/?t=x'] + plain):
+        got = H.offer_https(8770, plain, call=lambda c: ran.append(c) or (0, ''), out=said.append,
+                            ask=lambda q: True, which=lambda t: '/usr/bin/tailscale')
+    eq(ran, [['tailscale', 'serve', '--bg', '--https=8771', 'http://127.0.0.1:8770']], 'a yes runs tailscale serve')
+    eq(got[0], 'https://box.ts.net:8771/?t=x', 'and the links are read again, https first')
+    ran, said = [], []
+    got = H.offer_https(8770, plain, call=lambda c: ran.append(c) or (0, ''), out=said.append,
+                        ask=lambda q: False, which=lambda t: '/usr/bin/tailscale')
+    eq((ran, got), ([], plain), 'a no runs nothing')
+    has(said[-1], r'run: tailscale serve --bg --https=8771 http://127\.0\.0\.1:8770', 'and says the command')
+    said = []
+    H.offer_https(8770, plain, out=said.append, ask=lambda q: True, which=lambda t: None)
+    has(said[-1], 'With Tailscale installed', 'no tailscale: says what https needs')
+    said = []
+    eq(H.offer_https(8770, ['https://a/?t=x'] + plain, out=said.append, ask=lambda q: 1 / 0), ['https://a/?t=x'] + plain,
+       'an https link already: nothing offered')
 
 
 def test_qr(tmp: Path) -> None:
@@ -624,5 +692,5 @@ def test_device_site_link(tmp: Path) -> None:
 
 if __name__ == '__main__':
     raise SystemExit(report([in_tmp(test_registry), in_tmp(test_rows), in_tmp(test_actions), in_tmp(test_routing),
-                           in_tmp(test_terminal_tab), in_tmp(test_run_link), in_tmp(test_units), in_tmp(test_qr),
+                           in_tmp(test_terminal_tab), in_tmp(test_run_link), in_tmp(test_units), in_tmp(test_https_links), in_tmp(test_qr),
                            in_tmp(test_run_moves_off_the_port), in_tmp(test_device_site_link)]))
