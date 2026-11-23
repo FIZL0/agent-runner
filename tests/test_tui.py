@@ -697,7 +697,7 @@ def test_footer() -> None:
                 p.key(str(n))
                 p.cur[n] = row
                 if main:
-                    p.key('ENTER')
+                    p.key('l')  # F111: Enter on a new concept row types; l only focuses the main pane
                 for t in range(len(p.tab()[1]) if main else 1):
                     places.append((n, main, row, t, p))
                     win = drawn(p)
@@ -808,6 +808,22 @@ def test_new_concept() -> None:
     eq(ran, [['plan', 'add', 'K', 'dark mode']], 'Enter: plan add K with the words typed')
     eq((p.msg, p.msg_ok, p.typing), ('added K9 dark mode', True, ''), 'it says it is queued; the box closes')
     check('n        new concept' in T.HELP, 'the keys list names n under Concepts')
+
+
+def test_enter_on_concept() -> None:
+    """F111: Enter from the panels on the '+ new concept' row lands in its box at once (typing 'concept:+');
+    Enter on a concept (its 'preview' tab) only focuses the main pane, where Enter is 'go with it'."""
+    p = page()
+    p.key('5')
+    eq(p.tab()[0], 'preview', 'the first concept opens on its preview tab')
+    p.key('ENTER')
+    eq((p.main, p.typing), (True, ''), 'Enter on a preview item: the main pane, not typing')
+    p.key('ESC')
+    p.key('DOWN')
+    eq((p.sel().get('new'), p.tab()[0], p.main), (True, 'new concept', False), "the '+ new concept' row")
+    check(('⏎', 'type') in p.hint_keys(), 'the footer says Enter types', p.hint_keys())
+    p.key('ENTER')
+    eq((p.main, p.typing), (True, 'concept:+'), 'Enter on a new concept item: typing in its box')
 
 
 def test_escape_tail() -> None:
@@ -1243,7 +1259,7 @@ if __name__ == '__main__':
                                test_direct_edit,
                                test_navigation, test_chat_box, test_side_keys_in_box_f113, test_actions, test_session_tab_b125, test_footer,
                                test_concept_page,
-                               test_concept_chat, test_new_concept,
+                               test_concept_chat, test_new_concept, test_enter_on_concept,
                                test_escape_tail, test_colours, test_row_ground_and_fill, test_reorder, test_parked,
                                test_themes,
                                test_idle_run_of_another_project, test_run_key_binds, test_run_controls,

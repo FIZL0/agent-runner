@@ -1089,7 +1089,7 @@ class RunPage:
         if self.panel == 4:
             return [('⏎', 'open'), ('a', 'answer'), ('L', 'later')]
         if isinstance(it, dict) and it.get('new'):
-            return [('⏎', 'open')]
+            return [('⏎', 'type')]
         return [('⏎', 'view'), ('O', 'open in the browser'), ('N', 'chat about it'), ('n', 'new concept')]
 
     GLOBAL = [('1-5', 'panel'), ('c', 'chat'), ('?', 'keys')]
@@ -1520,6 +1520,9 @@ class RunPage:
             self.panel, self.main = self.panel % 5 + 1, False
         elif k == 'BTAB':
             self.panel, self.main = (self.panel + 3) % 5 + 1, False
+        elif k == 'ENTER' and self.tab()[0] == 'new concept' and self.box():
+            self.main = True  # F111: one Enter lands in a new concept's box ('preview' keeps Enter = go with it)
+            self.type_in()
         elif k in ('ENTER', 'l', 'RIGHT'):
             self.main = True
         elif k == 'c':
