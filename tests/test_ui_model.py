@@ -562,7 +562,7 @@ def test_hidden_send(tmp: Path) -> None:
     if plat.WINDOWS:
         return
     fake_run(tmp)
-    readers = []
+    readers, typed = [], []
 
     def hidden(stem: str, reader: bool = True) -> None:
         S.C.notes(f'{stem}.live').write_text(str(os.getpid()), encoding='utf-8')
@@ -594,9 +594,14 @@ def test_hidden_send(tmp: Path) -> None:
             check(not U.interrupt('s4')['ok'], 'nor an interrupt')
             r = U.send('s9', 'hi')
             check(not r['ok'] and 'is not up' in r['out'], 'no marker: not up', r)
+        S.C.notes('slot5.live').write_text(str(os.getpid()), encoding='utf-8')  # no slot5.in: a hidden console
         with mock.patch.object(plat, 'WINDOWS', True):
-            r = U.send('s2', 'hi')
-            check(not r['ok'] and 'cannot be typed into' in r['out'], 'Windows: cannot type into it', r)
+            for r in (U.send('s5', 'hi'), U.interrupt('s5')):
+                check(not r['ok'] and 'cannot be typed into' in r['out'], 'Windows hidden console: no typing', r)
+            with mock.patch('agent_runner.slots.pipe_send', lambda i, c, p=0: typed.append((i.name, c)) or True):
+                check(U.send('s2', 'hi')['ok'] and U.interrupt('c3')['ok'], 'F145: Windows ConPTY takes typed text')
+            eq(typed, [('slot2.in', [b'\x1b[200~hi\x1b[201~', b'\r']), ('control3.in', [b'\x1b'])],
+               'a bracketed paste then CR, and a raw ESC, through the pipe')
     finally:
         for fd in readers:
             os.close(fd)

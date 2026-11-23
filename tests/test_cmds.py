@@ -119,11 +119,12 @@ def test_windows_hidden_consoles():
     ps = M.device_projects({A: {'s1': 4242}}, info={A: {'up': False}}.get, now=1000.0 + 60)
     eq([(r['n'], r['name'], r['what'], r['pid']) for p in ps for r in p['rows']], [(1, 's1', 'idle', 4242)],
        'the console is listed')
-    shown = []
+    went, ran, real = [], [], M.cmd_attach
     with mock.patch.object(M, 'device_sessions', lambda: ps), mock.patch.object(M.plat, 'WINDOWS', True), \
-            mock.patch.object(M.plat, 'show_console', lambda pid: shown.append(pid) or True):
-        eq(M.cmd_attach(['1']), 0, 'attach 1 succeeds')
-    eq(shown, [4242], 'it shows that console')
+            mock.patch.object(M.os, 'chdir', went.append), \
+            mock.patch.object(M, 'cmd_attach', lambda a: ran.append(a) or 0):
+        eq(real(['1']), 0, 'attach 1 succeeds')
+    eq((went, ran), ([A], [['s1']]), "it is that project's attach s1, which shows the console or names the log")
 
 
 C = Path('/tmp/f80/gamma')

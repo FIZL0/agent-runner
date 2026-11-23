@@ -771,7 +771,7 @@ def control_new(n: int | None = None, wait: float = CONTROL_LINK_WAIT, ask: str 
     cmd = [*runner_cmd(), 'control', str(n), *given, *fwd,
            *[x for i in images for x in ('--file', i)], *(['--feed-sid', late] if late else [])]
     name = control_name(n, ask, images)
-    if plat.WINDOWS:
+    if plat.WINDOWS and not plat.has_conpty():
         plat.spawn_console(cmd, ROOT, control_env(), hidden=True)
         print(f'control {n} is up in a hidden console' +
               (f': "{name}" at {REMOTE_URL}' if remote_on() else f' ({shown_cmd()} attach c{n} shows it)'))
@@ -780,7 +780,7 @@ def control_new(n: int | None = None, wait: float = CONTROL_LINK_WAIT, ask: str 
 
 
 def control_new_hidden(n: int, cmd: list[str], name: str, wait: float = CONTROL_LINK_WAIT) -> int:
-    """F59: `control --new` on Linux and macOS: control session `n` in a pseudo-terminal with no window
+    """F59: `control --new`: control session `n` in a pseudo-terminal with no window
     (`hidden_control`; `attach cN` shows it). With `[run] remote` it prints its claude.ai/code link once its
     log shows it."""
     out = hidden_control_log(n)

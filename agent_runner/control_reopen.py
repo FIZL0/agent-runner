@@ -119,10 +119,10 @@ def reopen_name(n: int, sid: str) -> str:
 
 
 def reopen_control(n: int, sid: str) -> str:
-    """Start `control N --reopen` the way the run starts c1: a hidden console on Windows, else a hidden
-    terminal. Where it went, or '' when it could not start."""
+    """Start `control N --reopen` the way the run starts c1: a hidden terminal, or a hidden console on Windows
+    with no ConPTY. Where it went, or '' when it could not start."""
     cmd = [*runner_cmd(), 'control', str(n), '--reopen']
-    if plat.WINDOWS:
+    if plat.WINDOWS and not plat.has_conpty():
         plat.spawn_console(cmd, state.ROOT, K.control_env(), hidden=True)
         return 'a hidden console'
     pid, why = K.hidden_control(n, cmd)

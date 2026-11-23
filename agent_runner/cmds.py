@@ -23,7 +23,7 @@ from agent_runner.state import (ask_stop, C, clear_stop, default_branch, edited,
     SLOTS_DIR)
 from agent_runner.brief import has_sheet, prompt_for, wizard_cmd, wizard_file
 from agent_runner.sched import ahead, open_tasks
-from agent_runner.slots import (backend, claude_json, entries, marker_pid, MUX, PRESENCE_ENV, quiet_file,
+from agent_runner.slots import (backend, claude_json, entries, logged, marker_pid, MUX, PRESENCE_ENV, quiet_file,
     remote_off_why, remote_on, remote_slots_on, REMOTE_URL, silent, transcript, worktree)
 from agent_runner.attach import attach_session, session_socket
 from agent_runner.watch import breaking, installed_version, last_session, queue_resume, upgrade, upgrade_argv
@@ -635,7 +635,8 @@ def wait_started(since: int, gone, timeout: float = 30.0) -> int | None:
 
 
 def started_note(slots: int, where: str) -> str:
-    attach = ("slot 2's console window: attach s2 (closing that window ends the session)" if plat.WINDOWS else
+    attach = ("where slot 2's log is: attach s2" if plat.has_conpty() else
+              "slot 2's console window: attach s2 (closing that window ends the session)" if plat.WINDOWS else
               "the run's log and keys (attach s2: slot 2's terminal; Ctrl-b d leaves it)")
     lines = [f'the run is up in the background: {slots} slot{"s" if slots != 1 else ""}, {where}',
              f'    {shown_cmd()} status     what it is doing',
@@ -744,14 +745,21 @@ def cmd_background_attach(argv: list[str]) -> int:
 
 
 def hidden_attach(which: str) -> str:
-    """F40, POSIX: what `attach` says of a slot that runs hidden but has no socket to attach through (it could
-    not be made): where its output is and how to steer it; '' when there is no such slot (the caller says so)."""
-    pid = marker_pid(C.notes(f'slot{which[1:]}.live')) if re.fullmatch(r's\d+', which) else 0
+    """F40: what `attach` says of a slot (Windows: or a control session) that runs hidden but has no socket to
+    attach through (it could not be made; Windows has none): where its output is and how to steer it; '' when there
+    is no such session (the caller says so)."""
+    c = plat.WINDOWS and re.fullmatch(r'c\d+', which)
+    stem = f'{"control" if c else "slot"}{which[1:]}'
+    pid = marker_pid(C.notes(f'{stem}.live')) if c or re.fullmatch(r's\d+', which) else 0
     if not (pid and plat.alive(pid)):
         return ''
+    if c:
+        return f'{which} runs hidden (pid {pid}), with no terminal to attach: its output goes to {C.notes(f"{stem}.log")}'
     remote = f'; on Remote Control ({REMOTE_URL})' if remote_slots_on() else ''
     return (f'{which} runs hidden (pid {pid}), with no terminal to attach: its output goes to '
-            f'{C.notes(f"slot{which[1:]}.log")}{remote}; {shown_cmd()} plan tell <ID> "<text>" types into it')
+            f'{C.notes(f"{stem}.log")}{remote}' +
+            ('' if plat.WINDOWS and not C.notes(f'{stem}.in').exists() else
+             f'; {shown_cmd()} plan tell <ID> "<text>" types into it'))
 
 
 def cmd_attach(argv: list[str], prog: str = f'{RUNNER} attach') -> int:
@@ -773,12 +781,18 @@ def cmd_attach(argv: list[str], prog: str = f'{RUNNER} attach') -> int:
     if plat.WINDOWS:
         if which == 'runner':
             print(f'on Windows the run has no window of its own: {shown_cmd()} status shows it, and its log is '
-                  f'{C.notes("run.log")}. {shown_cmd()} attach s1 shows slot 1.')
+                  f'{C.notes("run.log")}. {shown_cmd()} attach s1 '
+                  f'{"says where slot 1" + chr(39) + "s log is" if plat.has_conpty() else "shows slot 1"}.')
             return 0
-        pid = marker_pid(C.notes(f'slot{which[1:]}.live')) if re.fullmatch(r's\d+', which) else 0
+        c = re.fullmatch(r'c\d+', which)
+        marker = C.notes(f'{"control" if c else "slot"}{which[1:]}.live')
+        pid = marker_pid(marker) if c or re.fullmatch(r's\d+', which) else 0
         if not (pid and plat.alive(pid)):
             print(f'{which} is not running: {shown_cmd()} status lists the slots', file=sys.stderr)
             return 1
+        if logged(marker):  # F145: no console window to show
+            print(hidden_attach(which))
+            return 0
         if not plat.show_console(pid):
             print(f'{which} runs as pid {pid}, but its console window could not be shown', file=sys.stderr)
             return 1
@@ -896,8 +910,7 @@ def list_text(projects: list[dict]) -> str:
 
 def hidden_consoles() -> tuple[dict[Path, dict[str, int]], dict[Path, dict[int, str]]]:
     """({main checkout: {'s2': pid, 'c1': pid, 'feed': pid}}, {main checkout: {N: control N's given name}}) of
-    each hidden session alive on this device (`<notes>/slotN.live`, `controlN.live`, `board.live`; Windows:
-    the slot consoles, as a control session there runs in a terminal the person opened). Every project found
+    each hidden session alive on this device (`<notes>/slotN.live`, `controlN.live`, `board.live`). Every project found
     is a key, so `device_projects` can list a run that is up with no session. Found through the slot
     worktrees in the runs folder (AGENT_RUNNER_HOME, else `[run] home`'s default ~/runs/<project>), the
     current repository's own `[run] home`, and the current repository's notes."""
@@ -930,7 +943,7 @@ def hidden_consoles() -> tuple[dict[Path, dict[str, int]], dict[Path, dict[int, 
             out.setdefault(root, {})
             for m in sorted(c.notes().glob('*.live')):
                 hit = re.fullmatch(r'(slot|control)(\d+)|board', m.stem)
-                if not hit or (hit[1] == 'control' and plat.WINDOWS):
+                if not hit:
                     continue
                 if not ((pid := marker_pid(m)) and plat.alive(pid)):
                     continue
@@ -985,7 +998,7 @@ def pick_listed(projects: list[dict], argv: list[str]) -> tuple[dict | None, str
 
 def attach_listed(argv: list[str]) -> int:
     """`attach N` / `attach <project> cN|sN|feed|run`: that project's `attach <name>`, run from its main
-    checkout (the run view, a session's own terminal, the TUI); on Windows a slot's hidden console, shown."""
+    checkout (the run view, a session's own terminal, the TUI; on Windows as `attach sN` there)."""
     if len(argv) > 2:
         print(f'{shown_cmd()} attach N, or attach <project> cN|sN|feed|run', file=sys.stderr)
         return 2
@@ -993,12 +1006,6 @@ def attach_listed(argv: list[str]) -> int:
     if not row:
         print(why, file=sys.stderr)
         return 1
-    if plat.WINDOWS and row['pid']:
-        if not plat.show_console(row['pid']):
-            print(f'{row["name"]} runs as pid {row["pid"]}, but its console window could not be shown', file=sys.stderr)
-            return 1
-        print(f'{row["name"]}: its console window is up (minimize it to hide it again; closing it ends the session)')
-        return 0
     os.chdir(row['root'])  # its own repository: `attach` (and the TUI) read the project they are run in
     return cmd_attach([row['name']])
 
