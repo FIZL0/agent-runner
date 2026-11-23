@@ -569,5 +569,7 @@ def start_web() -> WebServer | None:
             return None
     urls = page_urls(srv.server_address[1], srv.token)
     url_file().write_text('\n'.join(urls) + '\n', encoding='utf-8')
-    S.log(f'run page: {" or ".join(urls)}' + ('' if shutil.which('ttyd') else ' (no terminal tab: ttyd is not installed)'))
+    # B129: the run log names a Tailscale Serve https address first too (the mic needs https); web.url stays http
+    shown = [x for x in tailscale_https_urls(srv.server_address[1], srv.token) if x not in urls] + urls
+    S.log(f'run page: {" or ".join(shown)}' + ('' if shutil.which('ttyd') else ' (no terminal tab: ttyd is not installed)'))
     return srv

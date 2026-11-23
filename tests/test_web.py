@@ -1066,6 +1066,23 @@ def test_https_link_b130(tmp: Path) -> None:
             mock.patch.object(W, 'tailscale_https_urls', lambda port, t: W.serve_https_urls(serve, port, t)):
         eq(W.page_line(), 'run page: https://box.tail.ts.net:8771/?t=TK (or http://box:8770/?t=TK)',
            'status prints the https link first')
+    # B129: the run log's address line at the start names the https link first too; web.url keeps the http ones
+    with mock.patch.dict(W.os.environ, {'AGENT_RUNNER_NO_WEB': ''}), mock.patch.object(W, 'lan_ip', lambda: ''), \
+            mock.patch.dict(S.C.run, {'web': True, 'web_port': 0}), mock.patch.object(S, 'log') as lg, \
+            mock.patch.object(W, 'tailscale_https_urls', lambda port, t: [f'https://box.tail.ts.net:8771/?t={t}']):
+        srv = W.start_web()
+    try:
+        line = next(str(c.args[0]) for c in lg.call_args_list if 'run page:' in str(c.args[0]))
+        check(line.startswith(f'run page: https://box.tail.ts.net:8771/?t={W.web_token()} or http://'),
+              'B129: the run log prints the https link first', line)
+        check(all(u.startswith('http://') for u in W.url_file().read_text(encoding='utf-8').split()),
+              'web.url keeps the http addresses (Home reads its port from them)')
+    finally:
+        srv.stop()
+    # B129: an insecure context (plain http) gets the needs-https message, even where recognition exists
+    if shutil.which('node'):
+        got = logic_js([['micProblem', False, True]])
+        check('needs https' in got[0], 'B129: insecure context: the mic says it needs https', got[0])
 
 
 LISTEN_DRIVER = r"""
