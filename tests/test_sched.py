@@ -254,13 +254,65 @@ def test_critical_first(tmp: Path):
     eq(S.choose(S.held({1: b1}, 'main'), set(), 'main')[0], 'N1', 'and N1 the one after (N2 waits for B1)')
 
 
+def test_split_parent_first(tmp: Path):
+    print('B185: a task that filed its parts and was then parked goes before them')
+    repo = tmp / 'split'
+    repo.mkdir()
+    git(repo, 'init', '-q', '-b', 'main')
+    (repo / 'plan').mkdir()
+    todo = ('# TODO\n\n### Next\n\n'
+            '- [ ] **F2** first part | files: a.py\n'
+            '- [ ] **F2a** second part | files: b.py\n'
+            '- [ ] **F2a1** third part | files: c.py\n'
+            '- [ ] **F20** unrelated | files: d.py\n')
+    (repo / 'plan/DONE.md').write_text('# DONE\n', encoding='utf-8')
+    (repo / 'runner.toml').write_text('[run]\ntest = "true"\nmin_free_gb = 0\nremote = false\n', encoding='utf-8')
+    (repo / '.gitignore').write_text('.runner/\n', encoding='utf-8')
+
+    def ids(text: str) -> list[str]:
+        (repo / 'plan/TODO.md').write_text(text, encoding='utf-8')
+        git(repo, 'add', '-A')
+        git(repo, 'commit', '-qm', 'plan', '--allow-empty')
+        return [t[0] for t in S.tasks('main')]
+    (repo / 'plan/TODO.md').write_text(todo, encoding='utf-8')
+    git(repo, 'add', '-A')
+    git(repo, 'commit', '-qm', 'start')
+    R.init(repo)
+    eq(ids(todo), ['F2a1', 'F20'], 'never started: its parts run first, as before')
+    git(repo, 'branch', 'wip/F20')
+    eq(ids(todo), ['F2a1', 'F20'], "another task's wip branch does not count")
+    git(repo, 'branch', 'wip/F2')
+    eq(ids(todo), ['F2', 'F20'], 'started and parked: it goes first, all its parts wait')
+    eq(S.choose(S.held({}, 'main'), set(), 'main')[0], 'F2', 'choose starts it')
+    eq(S.choose(S.held({}, 'main'), {'F2'}, 'main')[0], 'F20', 'tried this run, its parts still wait for it')
+    eq(ids(todo.replace('[ ] **F2**', '[~] **F2**')), ['F20'], 'blocked too')
+    eq(ids(todo.replace('[ ] **F2**', '[~] **F2**').replace('a.py\n', 'a.py\n  - BLOCKED: (after F2a) its data\n', 1)),
+       ['F2a1', 'F20'], 'but not blocked after its part')
+    eq(ids(todo.replace('files: a.py', 'files: a.py | after: F20').replace('files: d.py', 'files: d.py | after: F2a')),
+       ['F2a1'], 'nor waiting on a part through another task')
+    eq(ids(todo.replace('first part', 'title (split into F2a)')), ['F2a1', 'F20'], 'a (split into …) parent: parts first')
+    eq(ids(todo.replace('### Next', '### Parked').replace('- [ ] **F2a**', '### Next\n\n- [ ] **F2a**')),
+       ['F2a1', 'F20'], 'nor one no run starts')
+    eq(ids(todo.replace('[ ] **F2**', '[x] **F2**')), ['F2a1', 'F20'], 'landed: the parts run')
+    git(repo, 'branch', '-m', 'wip/F2', 'wip/F2-2')
+    eq(ids(todo), ['F2', 'F20'], 'a later attempt counts as well')
+    git(repo, 'branch', 'wip/F3')
+    eq(ids('# TODO\n\n### Next\n\n- [ ] **F2** x | files: a.py | after: F3a\n- [ ] **F2a** x | files: b.py\n'
+           '- [ ] **F3** x | files: c.py | after: F2a\n- [ ] **F3a** x | files: d.py\n'), ['F3a'],
+       "two parked parents, each after the other's part: not all held for ever")
+    git(repo, 'update-ref', 'refs/remotes/origin/wip/F2', 'wip/F2-2')
+    git(repo, 'branch', '-D', 'wip/F2-2')
+    eq(ids(todo), ['F2', 'F20'], "another machine's parked attempt counts")
+
+
 def main() -> int:
     with tempfile.TemporaryDirectory() as tmp:
         os.environ['CLAUDE_CONFIG_DIR'] = tmp
         repo = make_repo(Path(tmp))
         return report([lambda: test_explain(repo), lambda: test_parked(repo),
                        lambda: test_release_taken(Path(tmp)), lambda: test_release_beside(Path(tmp)),
-                       lambda: test_alone(Path(tmp)), lambda: test_critical_first(Path(tmp))])
+                       lambda: test_alone(Path(tmp)), lambda: test_critical_first(Path(tmp)),
+                       lambda: test_split_parent_first(Path(tmp))])
 
 
 if __name__ == '__main__':

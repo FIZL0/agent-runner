@@ -36,9 +36,11 @@ def tasks(branch: str) -> list[tuple[str, str, set[str], set[str]]]:
     # as over a needs-you one: its work lands in the next release
     me = plansync.owner(C)
     away = set(taken()) | {t for t, cl in plansync.claims(C).items() if cl.owner != me and not plansync.stale(cl)}
+    first = parents_first(ls, open_ids)
+    later = {k for kids in first.values() for k in kids}
     out = []
     for section, box, tid, _, i in P.iter_tasks(ls):
-        if box != ' ' or section.startswith(P.SKIPPED):
+        if box != ' ' or section.startswith(P.SKIPPED) or tid in later:
             continue
         l = ls[i]
         f = P.fields(l)
@@ -50,13 +52,52 @@ def tasks(branch: str) -> list[tuple[str, str, set[str], set[str]]]:
         # a split parent: its subtasks run first, blocked ones included, then it runs (or `archive` ticks it).
         # Read by id and by its `(split into …)` list, never by the words alone, so prose that happens to say
         # "split into" is not taken for a split
-        if P.subtasks(tid, l, open_ids):
+        if tid not in first and P.subtasks(tid, l, open_ids):
             continue
         after = set(f.get('after', [])) - {tid}
         if after & open_ids:
             continue
         out.append((tid, section, set(f.get('files', [])), after))
     return by_waiters(ls, out)
+
+
+def parents_first(ls: list[str], open_ids: set[str]) -> dict[str, set[str]]:
+    """B185: {task: its open subtasks} for each task not done that goes before them: its session filed them, then
+    failed (it has a wip/<ID>) with its first part, which they build on, not landed. Not one that says `(split
+    into …)`: its subtasks are all its work. Nor one no run starts (Stretch, Parked), nor one that waits on a
+    subtask itself, so neither waits for the other for ever. Blocked, it still holds them."""
+    kids = {tid: k for section, box, tid, _, i in P.iter_tasks(ls)
+            if box != 'x' and not section.startswith(P.SKIPPED) and not P.SPLIT.search(ls[i])
+            and (k := P.subtasks(tid, ls[i], open_ids))}
+    if not kids:
+        return {}
+    waits = {}
+    for _, box, tid, _, i in P.iter_tasks(ls):
+        if box != 'x':
+            waits[tid] = set(P.waits_on(ls, i))
+            if box == '~':  # and a block's `(after X)`
+                waits[tid] |= {t for a in P.WAITS.findall('\n'.join(P._item_block(ls, i))) for t in P.TASK_ID.findall(a)}
+    out = {}
+    for tid, k in kids.items():
+        if not wip_of(tid):
+            continue
+        seen, todo = set(), [tid]
+        while todo:  # everything it waits on, down the whole chain
+            new = waits.get(todo.pop(), set()) - seen
+            seen |= new
+            todo += new
+        if not k & seen:
+            out[tid] = k
+            for t in k:  # held from here on: a later parent waiting on one of these waits on `tid` too
+                waits.setdefault(t, set()).add(tid)
+    return out
+
+
+def wip_of(tid: str) -> bool:
+    """An earlier attempt at `tid` is on wip/<ID> (or wip/<ID>-N), counted to PARK_LIMIT or not, here or pushed by
+    another machine's run."""
+    return bool(git('for-each-ref', '--format=%(refname)', *(f'{at}/wip/{tid}{n}' for at in (
+        'refs/heads', 'refs/remotes/*') for n in ('', '-*'))).stdout.strip())
 
 
 def by_waiters(ls: list[str], out: list[tuple]) -> list[tuple]:

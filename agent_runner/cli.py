@@ -98,7 +98,8 @@ Choose what goes first:
            after the queued sections, in ### Follow-ups; later is parked in ### Parked.
     agent-runner plan kinds                   what each id letter means ([plan] kinds)
 
-Never started: blocked [~] tasks, ### Stretch and ### Parked, a task with open subtasks, a task that already failed this run,
+Never started: blocked [~] tasks, ### Stretch and ### Parked, a task with open subtasks (one that
+filed them and was parked as wip/<ID> goes before them instead), a task that already failed this run,
 and a finished task waiting to merge. Nor a task that names a file a running task names.
 
     agent-runner run --dry-run 3      what 3 free agents would start now, and why the rest wait
