@@ -41,6 +41,7 @@ from agent_runner.slots import (adopt, backend, DISK_AT, DISK_SAID, du, env_vars
     free_gb, GB, hidden_line, HiddenMux, MUX, remote_any, remote_line, REMOTE_URL, resume, save_leftovers,
     single_run, slot_env, slot_shim, SLOTS, start, transcript, trim, unmerged)
 from agent_runner.slots import budget_mark, budgets, SPENT
+from agent_runner.teardown import end_own, PAGE, RUN_LOCK, wait_last_run
 from agent_runner.watch import (_account, agent_failed, api_down, AUTO_UPGRADE, auto_upgrade, cut_off,
     drop_session_tmp, end_orphans, memory_watch, queue_cut_off, queue_resume, restart_if_upgraded,
     RESUME_AFTER, resume_failed, RESUME_MAX, resumes, RESUMES_MAX, stalled, START_TRIES, state_line, stats,
@@ -1068,7 +1069,7 @@ def run(argv: list[str], prog: str) -> int:
     if a.dry_run:
         return dry_run(slots, branch)
 
-    lock = single_run()  # noqa: F841 — held until the process ends
+    RUN_LOCK.append(wait_last_run())  # B144: held until run() returns; a start after a stop waits for it
     ensure_local(ROOT)  # this machine's runner.local.toml: made once (all comments), never rewritten, git-ignored
     drop_earlier_stop(keep)
     C.notes('POWER').unlink(missing_ok=True)
@@ -1082,7 +1083,8 @@ def run(argv: list[str], prog: str) -> int:
     start_control_server()
     start_board()  # the runner feed's window ([run] remote); reopened if closed
     from agent_runner.web import start_web
-    start_web()  # F66: the run page on this machine ([run] web), its address in the run log
+    if srv := start_web():  # F66: the run page on this machine ([run] web), its address in the run log
+        PAGE.append(srv)  # B144: the stop closes it before it says `run stopped`
 
     AUTO_UPGRADE[0] = bool(r['auto_upgrade'])
     threading.Thread(target=update_watch, daemon=True).start()
@@ -1101,7 +1103,11 @@ def run(argv: list[str], prog: str) -> int:
         READING[0] = True
         threading.Thread(target=read_keys, daemon=True).start()
         print(keys_help(), flush=True)
-    return Run(a, slots, once, branch, model, idle, stall, pause).go()
+    try:
+        return Run(a, slots, once, branch, model, idle, stall, pause).go()
+    finally:
+        while RUN_LOCK:  # the run is over (its stop has ended its own processes): the next one may start
+            RUN_LOCK.pop().close()
 
 
 class Run:
@@ -1434,9 +1440,9 @@ class Run:
         # a slot asleep until a usage reset does not hold the stop; a session waiting to resume does
         if stopping() and not procs and (not waiting or forced()) and not merging:
             how = stopped_by()
+            end_own(rc_sweep_stop, log)  # B144: its feed, control server, board and page are gone before it says it stopped
             clear_stop()
             log(f'run stopped ({how}); tried this run: {", ".join(sorted(tried)) or "none"}', EV_STOPPED)
-            rc_sweep_stop()  # B12: its feed and control server archive their entries before it exits
             if POWER:
                 power_now()
             return 0
