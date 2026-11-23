@@ -63,6 +63,24 @@ control sessions are on Remote Control, so you run the run from claude.ai/code o
 3 hours of quiet once Claude has answered, so the apps' list stays short; one left on an open question goes under
 Needs you first (`[run] control_idle`, `control_ask`).
 
+### Runner Home: every project from your phone
+
+```sh
+agent-runner home install          # an always-on service; prints its link and a QR code to scan
+agent-runner home status           # installed? serving? the link again (uninstall: take it away)
+agent-runner home add ~/work/proj  # list a project that is not under ~/repos (remove PATH: unlist one)
+```
+
+Each run serves its own page only while it is up. Runner Home is one page that is always there: every folder
+in `~/repos` with a `runner.toml`, plus the ones you add, each shown as running, idle or off with what needs
+you, and Start run, Pause, ±1 slot and Stop buttons that run the runner's own commands in that project. Open
+takes you to that project's run app through Home, so one link (one bookmark) reaches them all. It runs as a
+per-user service that starts at boot: systemd `--user` with linger on Linux, a launchd agent on macOS, a
+scheduled task at logon on Windows. It is off until you install it. Like the run page it is token-gated and
+listens on port 8770 on every interface, for a phone on your network or Tailscale; never expose it to the
+internet. With Home on that port, a run serves its own page on a free one, which Home opens; with Home off,
+nothing changes. Its projects and token are in `~/.config/agent-runner` (`%APPDATA%\agent-runner`).
+
 > [!TIP]
 > No repo handy? `examples/demo.sh` builds a tiny one with a plan in a temp dir and shows `plan`,
 > `plan brief` and `run --dry-run` without starting an agent. `examples/demo.sh --run` also does one real task.

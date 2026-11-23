@@ -322,3 +322,10 @@ _Said_: attach, the runner's pane
 _On screen_: runner keys: type one here and press Enter
 _In code_: run_view.py, run_view, view_key, keys_help(view=True), attach run
 _Avoid_: runner pane, runner window, console
+
+**Runner Home**:
+One always-on page for every project on the machine: each one's run state and what needs the person, buttons to start, pause, resize and stop its run, and a way into its run app
+_Said_: Home, runner home
+_On screen_: Runner Home
+_In code_: home.py, HomeServer, project_rows, run_action, install
+_Avoid_: dashboard, hub

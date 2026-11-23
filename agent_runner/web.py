@@ -1,5 +1,6 @@
 """F66: the run page on the web. A run serves it from this machine (`[run] web`, on by default) on
-`[run] web_port` (8770), bound to every interface so a phone on the LAN or Tailscale reaches it.
+`[run] web_port` (8770), bound to every interface so a phone on the LAN or Tailscale reaches it. F94: when that
+port is taken (Runner Home holds it, or another run), on a free port instead, which Runner Home routes to.
 
     GET  /?t=TOKEN               F79: the page (web_page.html), the run app: a chat app over F74's model, light
                                  and dark by the browser's setting, laid out for a phone and a desktop; F81: it
@@ -481,6 +482,15 @@ def serve(token: str, port: int, bind: str = '0.0.0.0', snap=run_snapshot) -> We
     return srv
 
 
+def home_installed() -> bool:
+    """F94: is Runner Home set up on this machine (its registry file is there)?"""
+    try:
+        from agent_runner.home import registry_file
+        return registry_file().exists()
+    except Exception:  # noqa: BLE001 - a run's page never fails over Home
+        return False
+
+
 def start_web() -> WebServer | None:
     """The run's start: serve the page when `[run] web` is on (the run log gets its address), else nothing.
     A port in use costs the page, not the run. AGENT_RUNNER_NO_WEB=1 (the test suites) turns it off too."""
@@ -492,8 +502,13 @@ def start_web() -> WebServer | None:
     try:
         srv = serve(web_token(), port)
     except OSError as e:
-        S.log(f'run page: cannot serve on port {port} ({e}); set [run] web_port, or web = false')
-        return None
+        try:  # F94: Runner Home (or another run) holds the port: a free one, which Home routes to
+            srv = serve(web_token(), 0)
+            S.log(f'run page: port {port} is taken ({e}), so it is on port {srv.server_address[1]}'
+                  + (' (Runner Home opens it)' if home_installed() else ''))
+        except OSError as e2:
+            S.log(f'run page: cannot serve on port {port} ({e2}); set [run] web_port, or web = false')
+            return None
     urls = page_urls(srv.server_address[1], srv.token)
     url_file().write_text('\n'.join(urls) + '\n', encoding='utf-8')
     S.log(f'run page: {" or ".join(urls)}' + ('' if shutil.which('ttyd') else ' (no terminal tab: ttyd is not installed)'))

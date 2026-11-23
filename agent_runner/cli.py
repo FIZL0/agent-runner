@@ -47,6 +47,8 @@ Mostly for agents (you can run these too)
     agent-runner plan help            every plan command
     agent-runner key z                any key the run view takes (? lists them)
     agent-runner home [slots|plan]    where this project's runner files are: for scripts
+    agent-runner home install         Runner Home: one always-on page for every project's run, from your phone
+                                      (uninstall|status|list; add|remove PATH: list a project by hand)
     agent-runner context              what every session loads (rules, CLAUDE.md, AGENTS.md) and what to move out
     agent-runner cost                 where the workers' tokens go, by kind of tool call (last 7 days)
     agent-runner run once             one task in this terminal, then stop (run 3: three agents)
@@ -252,6 +254,10 @@ def main(argv: list[str] | None = None) -> int:
             return cmds.cmd_pick(main_checkout())
         from agent_runner import runner
         return runner.cmd_background(rest)
+    if cmd == 'home' and rest[:1] and rest[0] in ('install', 'uninstall', 'status', 'list', 'serve', 'add',
+                                                  'remove'):  # F94: Runner Home, every project on one page
+        from agent_runner import home
+        return home.main(rest)
     if cmd == 'home':  # one answer for every script: never rebuild these paths by hand
         from agent_runner.config import cfg
         c = cfg()
