@@ -1084,8 +1084,119 @@ def slots_words(run: dict) -> str:
 DIM, BOLD, RESET, CLEAR = '\x1b[2m', '\x1b[1m', '\x1b[0m', '\x1b[H\x1b[J'
 
 
-def picker_text(rows: list[dict], sel: int) -> str:
-    """Screen 1, the run picker: one numbered row per run, the selected one marked."""
+class PickerPaint:
+    """F109: the run picker and the launcher in the run page's colours (`[ui] theme`, theme.py): the accent
+    title, this screen's keys yellow, keys that work everywhere bright blue, the focused row on the run page's
+    dark-red bar across the width. Text in no colour keeps the terminal's own foreground and background."""
+
+    def __init__(self, theme: dict, colours: int = 256, width: int | None = None):
+        self.theme, self.colours, self.fixed = theme, colours, width
+
+    @property
+    def width(self) -> int:
+        """The bar's width: the one given, else the terminal's at each draw, so the bar follows a resize."""
+        return self.fixed or shutil.get_terminal_size((100, 24)).columns
+
+    def code(self, token: str, ground: bool = False) -> str:
+        from agent_runner import theme as TH
+        return TH.sgr(self.theme, token, self.colours, ground)
+
+    def c(self, token: str, text: str, bold: bool = False) -> str:
+        return f'\x1b[{"1;" if bold else ""}{self.code(token)}m{text}{RESET}'
+
+    def key(self, k: str) -> str:
+        return self.c('yellow', k, True)
+
+    def hints(self, keys: list[tuple[str, str]], everywhere: tuple[str, str]) -> str:
+        """The run page's hint line: this screen's keys yellow, labels in text colour, a │, then the key that
+        works everywhere in bright blue with its label dim."""
+        sep = self.c('dim', ' · ')
+        return (sep.join(f'{self.key(k)} {label}' for k, label in keys) + ' ' + self.c('line', '│') + ' '
+                + self.c('bblue', everywhere[0], True) + self.c('dim', f' {everywhere[1]}'))
+
+    def bar(self, parts: list[tuple[str, str | None]]) -> str:
+        """One row on the focused-row bar: bold in the selection's colours, a part with a token in that colour
+        (fg only, so the bar runs on), padded and erased to the line's end in the bar's colour."""
+        on = f'\x1b[1;{self.code("sel", True)};{self.code("selfg")}m'
+        text, n = on, 0
+        for s, token in parts:
+            text += f'\x1b[{self.code(token)}m{s}\x1b[{self.code("selfg")}m' if token else s
+            n += len(s)
+        return text + ' ' * max(0, self.width - 1 - n) + '\x1b[K' + RESET
+
+
+def picker_paint(here: Path | None, env=None) -> PickerPaint | None:
+    """F109: the colours for the run picker on this terminal, None (bold and dim only) when NO_COLOR is set
+    or the output is not a terminal. The theme is `[ui] theme` of the project around the current folder,
+    else the default."""
+    from agent_runner import theme as TH
+    env = os.environ if env is None else env
+    try:
+        tty = sys.stdout.isatty()
+    except (AttributeError, ValueError):
+        tty = False
+    if env.get('NO_COLOR') or not tty or env.get('TERM') == 'dumb':
+        return None
+    name = TH.DEFAULT
+    if here is not None:
+        try:
+            from agent_runner.config import Config
+            name = TH.checked(Config(here).raw.get('ui', {}).get('theme', TH.DEFAULT))
+        except (OSError, SystemExit, ValueError, KeyError, TypeError):
+            pass
+    return PickerPaint(TH.get(name), TH.terminal_colours(env))
+
+
+def picker_text_painted(rows: list[dict], sel: int, p: PickerPaint) -> str:
+    """Screen 1 in colour (F109, concept K2 option A)."""
+    out = [p.c('accent', 'agent-runner', True) + f'{BOLD} · pick a run{RESET}', '']
+    if not rows:
+        out.append(p.c('dim', '  no run is up on this device; start one from inside a project: agent-runner'))
+    for i, r in enumerate(rows):
+        up = (r['run'] or {}).get('up')
+        slots, left = slots_words(r['run']) if up else '(not running)', left_words(r)
+        what = ' · '.join(x for x in (slots, left) if x)
+        gap = ' ' * max(1, 29 - len(what))
+        name = f'{r["name"]:<16} '
+        slot_tok = 'green' if up else 'dim'
+        left_tok = 'yellow' if r.get('stopping') else 'dim'
+        if i == sel:
+            parts = [(f'  {i + 1}  {name}', None), (slots, slot_tok if up else None)]
+            if left:
+                parts += [(' · ' if slots else '', None), (left, 'yellow' if r.get('stopping') else None)]
+            parts += [(gap + str(r['root']) + ('  here' if r['here'] else '') + ' ', None)]
+            out.append(p.bar(parts))
+            continue
+        bits = [p.c(slot_tok, slots)] + ([p.c(left_tok, left)] if left else [])
+        line = f'  {p.key(str(i + 1))}  {name}' + ' · '.join(bits) + gap + p.c('dim', str(r['root']))
+        out.append(line + ('  ' + p.c('accent', 'here') if r['here'] else ''))
+    out += ['', p.hints([('j/k', 'move'), ('1-9', 'pick'), ('⏎', 'pick')], ('q', 'quit'))]
+    return '\n'.join(out) + '\n'
+
+
+def launcher_text_painted(row: dict, said: str, p: PickerPaint) -> str:
+    """Screen 2 in colour (F109): the run page's keys as buttons, the link in blue."""
+    left = left_words(row)
+    status = ' · '.join([p.c('green', '● run up')] + ([p.c('green', slots_words(row['run']))]
+                                                     if slots_words(row['run']) else [])
+                        + ([p.c('yellow' if row.get('stopping') else 'dim', left)] if left else []))
+    link = f'\x1b[4;{p.code("bblue")}m{row["link"]}{RESET}' if row['link'] else \
+        p.c('dim', 'no run page (the run serves none)')
+    button = lambda k, label: p.c('dim', '[') + p.key(k) + f' {label}' + p.c('dim', ']')  # noqa: E731
+    out = [p.c('accent', row['name'], True) + '  ' + p.c('dim', str(row['root'])), status, link, '',
+           '  '.join((button('w', 'open the run page'), button('t', 'terminal UI'), button('c', 'copy the link'))),
+           '']
+    if said:
+        out += [said, '']
+    out += [p.hints([('⏎', 'done')], ('q', 'back')), p.c('dim', 'status · attach · stop · control: agent-runner --help')]
+    return '\n'.join(out) + '\n'
+
+
+def picker_text(rows: list[dict], sel: int, paint: PickerPaint | None = None) -> str:
+    """Screen 1, the run picker: one numbered row per run, the selected one marked (F109: in colour with
+    `paint`, else bold and dim)."""
+    if paint is not None:
+        return picker_text_painted(rows, sel, paint)
     out = [f'{BOLD}agent-runner · pick a run{RESET}', '']
     if not rows:
         out.append('  no run is up on this device; start one from inside a project: agent-runner')
@@ -1099,8 +1210,10 @@ def picker_text(rows: list[dict], sel: int) -> str:
     return '\n'.join(out) + '\n'
 
 
-def launcher_text(row: dict, said: str = '') -> str:
+def launcher_text(row: dict, said: str = '', paint: PickerPaint | None = None) -> str:
     """Screen 2, the launcher for the picked run: its status, its run page link, the keys, the dim footer."""
+    if paint is not None:
+        return launcher_text_painted(row, said, paint)
     status = ' · '.join(x for x in ('● run up', slots_words(row['run']), left_words(row)) if x)
     out = [f'{BOLD}{row["name"]}{RESET}  {row["root"]}', status,
            row['link'] or f'{DIM}no run page (the run serves none){RESET}', '',
@@ -1144,13 +1257,13 @@ def read_key() -> str:
     return ch
 
 
-def pick_run(rows: list[dict], key=read_key, show=None) -> int | None:
+def pick_run(rows: list[dict], key=read_key, show=None, paint: PickerPaint | None = None) -> int | None:
     """Screen 1: the index of the run picked (a digit, or Enter on the selection), None when q or Esc quit.
     Starts on row 1 (the current folder's project when there is one)."""
     show = show or (lambda s: (sys.stdout.write(CLEAR + s), sys.stdout.flush()))
     sel = 0
     while True:
-        show(picker_text(rows, sel))
+        show(picker_text(rows, sel, paint))
         k = key()
         if k in ('q', 'esc'):
             return None
@@ -1192,13 +1305,13 @@ def open_ui(root: Path) -> str:
 LAUNCHER_ACTIONS = {'w': open_link, 'c': copy_link, 't': open_ui}
 
 
-def launch(row: dict, key=read_key, show=None, actions=None) -> str:
+def launch(row: dict, key=read_key, show=None, actions=None, paint: PickerPaint | None = None) -> str:
     """Screen 2 for the picked run: w, t and c act and stay; 'back' for q or Esc, 'done' for Enter."""
     show = show or (lambda s: (sys.stdout.write(CLEAR + s), sys.stdout.flush()))
     acts = {**LAUNCHER_ACTIONS, **(actions or {})}
     said = ''
     while True:
-        show(launcher_text(row, said))
+        show(launcher_text(row, said, paint))
         k = key()
         if k in ('q', 'esc'):
             return 'back'
@@ -1210,17 +1323,20 @@ def launch(row: dict, key=read_key, show=None, actions=None) -> str:
             said = acts[k](row['link']) if row['link'] else 'no run page link to use'
 
 
-def cmd_pick(here: Path | None, key=read_key, show=None, actions=None, sessions=None) -> int:
+def cmd_pick(here: Path | None, key=read_key, show=None, actions=None, sessions=None, paint=None) -> int:
     """F91: bare `agent-runner` at a terminal. Screen 1 picks a run (the current folder's project first, its
     run started when it is not up); screen 2, the launcher, opens its run page, its terminal UI or copies the
-    link. q on screen 2 goes back to screen 1."""
+    link. q on screen 2 goes back to screen 1. F109: drawn to the terminal (no `show`), both screens take the
+    run page's colours (`picker_paint`)."""
     rows = picker_rows((sessions or device_sessions)(), here)
+    if paint is None and show is None:
+        paint = picker_paint(here)
     while True:
-        i = pick_run(rows, key, show)
+        i = pick_run(rows, key, show, paint)
         if i is None:
             return 0
         row = rows[i]
         if not (row['run'] or {}).get('up'):
             return cmd_background([])
-        if launch(row, key, show, actions) == 'done':
+        if launch(row, key, show, actions, paint) == 'done':
             return 0
