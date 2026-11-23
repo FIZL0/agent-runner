@@ -372,16 +372,32 @@ def parse_model(value: str, providers: dict[str, dict] | None = None, local: boo
     return head, rest
 
 
+# F106c: the roles that run as Claude Code itself (its subagents, Remote Control's control sessions, the feed's
+# one-shot), so only on claude; a task's session (code, [models.kinds], plan add --model, run --model) and a fix
+# session run on any provider, another than claude through the harness loop (agent_runner/harness.mjs)
+CLAUDE_ONLY_ROLES = ('review', 'docs', 'control', 'feed')
+
+
 def claude_model(value: str, providers: dict[str, dict] | None = None, local: bool = False,
-                 where: str = '[models]', backend: str = 'claude') -> str:
-    """`parse_model`, then the bare claude model name; until the loop engine (F106c) lands, only claude runs a
-    session, so another provider is refused (SystemExit) where it is given: a [models] role, a task's own
-    model (plan add/edit --model), run --model."""
+                 where: str = '[models]', backend: str = 'claude', claude_only: bool = False) -> str:
+    """`parse_model`, then the model as a session runs it: claude's as the bare name ('opus'), another
+    provider's as '<provider>:<model>', which the harness loop runs (F106c). With `claude_only` (a role in
+    CLAUDE_ONLY_ROLES) another provider is refused (SystemExit), saying why."""
     provider, model = parse_model(value, providers, local, where, backend)
-    if provider != 'claude':
-        raise SystemExit(f'agent-runner: {where} = {value!r}: the {provider} provider is not supported '
-                         'yet; only claude models run until the loop engine lands (F106c)')
-    return model
+    if provider == 'claude':
+        return model
+    if claude_only:
+        raise SystemExit(f'agent-runner: {where} = {value!r}: this role runs as Claude Code itself (a subagent, a '
+                         'control session or the feed), so only a claude model; the harness loop runs the '
+                         f'{provider} provider for task and fix sessions ([models] code, fix, [models.kinds])')
+    return f'{provider}:{model}'
+
+
+def harness_model(value: str, providers: dict | None = None) -> bool:
+    """F106c: `value` is a settled model (`claude_model`'s) the harness loop runs: '<provider>:<model>' with a
+    provider other than claude, built in or one of `providers`. A Pi model ('github-copilot/x') is not."""
+    head, sep, _ = (value or '').partition(':')
+    return bool(sep) and head != 'claude' and (head in PROVIDERS or head in (providers or {}))
 
 
 def _toml_value(v) -> str:
@@ -727,23 +743,24 @@ class Config:
                                                   for k, v in kinds.items()):
             raise SystemExit(f'agent-runner: [models.kinds] maps a kind to a model name (D = "sonnet"), not {kinds!r}')
         m['kinds'] = {**({} if r['backend'] == 'pi' else DEFAULTS['models']['kinds']), **kinds}
-        # F106a: each role as '<provider>:<model>'; claude's are kept as the bare name the agent takes
+        # F106a: each role as '<provider>:<model>'; claude's are kept as the bare name the agent takes, another
+        # provider's as '<provider>:<model>' for the harness loop (F106c), but not in a Claude-only role
         refs = {f'[models] {role}': role for role in m if role != 'kinds' and isinstance(m[role], str)}
         refs.update({f'[models.kinds] {k}': k for k in m['kinds']})
         for where, key in refs.items():
             table = m['kinds'] if where.startswith('[models.kinds]') else m
-            table[key] = claude_model(table[key], self.providers, self.models_local, where, r['backend'])
+            table[key] = claude_model(table[key], self.providers, self.models_local, where, r['backend'],
+                                      claude_only=table is m and key in CLAUDE_ONLY_ROLES)
         r['model'], r['fix_model'] = m['code'], m['fix']
         return m
 
     def task_model(self, tid: str, own: str = '') -> str:
         """F105: the model a task's own session runs on: its own (`plan add --model`, `own`), else its kind's in
         `[models.kinds]` (the id's letters: 'P17a' is P), else `[models] code`."""
-        if own:  # F106a: 'claude:<model>' runs as the bare name; another provider waits for F106c: the kind's
+        if own:  # F106a: 'claude:<model>' runs as the bare name; F106c: another provider's as '<provider>:<model>'
             provider, model = parse_model(own, self.providers, True, 'model', self.run['backend']) \
                 if own.partition(':')[0] in (*PROVIDERS, *self.providers) else ('claude', own)
-            if provider == 'claude':
-                return model
+            return model if provider == 'claude' else f'{provider}:{model}'
         kind = tid[:len(tid) - len(tid.lstrip('ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'))]
         return (self.models.get('kinds') or {}).get(kind) or self.models['code']
 
