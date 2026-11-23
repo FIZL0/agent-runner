@@ -244,6 +244,15 @@ def kept_keys() -> dict:
         return {}
 
 
+def drop_earlier_stop(keep: dict) -> None:
+    """B137: a stop belongs to the run it was asked of. `Run.end` clears it as that run exits; one still on disk
+    when a run starts was left by a run that ended another way (killed, crashed), and is dropped. Only an upgrade
+    restart keeps it (`keep['stop']`): that is the same run, carrying on."""
+    if stopping() and not keep.get('stop'):
+        clear_stop()
+        log('cleared a stop request left by an earlier run')
+
+
 def end_sessions(procs: dict, running: dict) -> None:
     """`s!`: end every agent session now, each queued to resume in its slot when a run next starts. Its
     worktree stays as the session left it; nothing it did is merged."""
@@ -1060,9 +1069,7 @@ def run(argv: list[str], prog: str) -> int:
 
     lock = single_run()  # noqa: F841 — held until the process ends
     ensure_local(ROOT)  # this machine's runner.local.toml: made once (all comments), never rewritten, git-ignored
-    if stopping() and not keep.get('stop'):  # left by a run killed before it saw it; a stop is for the run that is up
-        clear_stop()
-        log('cleared a stop request left by an earlier run')
+    drop_earlier_stop(keep)
     C.notes('POWER').unlink(missing_ok=True)
     global MUX
     MUX = HiddenMux()  # C26: every OS runs its slots hidden

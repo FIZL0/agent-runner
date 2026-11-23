@@ -7772,6 +7772,45 @@ def test_cap_stop_hint_b102():
     check(cmd in d and d.index(cmd) < d.index('f + Enter'), 'the remote way comes before the pane', d)
 
 
+def test_stop_stays_with_its_run_b137(repo: Path):
+    """B137: a stop belongs to the run it was asked of. Run A takes a stop and exits; run B starts after it and
+    does not stop. One a run left on disk (killed before it exited) is dropped when the next run starts; an
+    upgrade restart, the same run carrying on, keeps it."""
+    print('B137: run A stops and exits; run B starts and does not stop')
+    from agent_runner import loop
+    R.init(repo)
+    R.clear_stop()
+    said: list[str] = []
+
+    def a_run() -> 'loop.Run':
+        return loop.Run(mock.Mock(), 1, False, 'main', '', 30, 20, 5)
+
+    with mock.patch.object(loop, 'log', lambda m, *a, **k: said.append(m)), \
+            mock.patch.object(loop, 'rc_sweep_stop', lambda: None), mock.patch.object(loop, 'POWER', ''):
+        R.ask_stop(f'{R.C.command} stop')
+        run_a = a_run()
+        eq(run_a.end(), 0, 'run A: nothing running and a stop asked: it exits')
+        check(any(m.startswith('run stopped') for m in said), 'run A says it stopped', said)
+        check(not R.stopping(), 'run A takes its stop away as it exits')
+        said.clear()
+        loop.drop_earlier_stop({})  # run B starts
+        check(not R.stopping(), 'run B starts with no stop asked')
+        with mock.patch.object(loop, 'pick', lambda *a: None), mock.patch.object(loop, 'auto_release', lambda *a, **k: False):
+            run_b = a_run()
+            eq(run_b.end(), None, 'run B does not stop')
+        check(not any(m.startswith('run stopped') for m in said), 'run B never says it stopped', said)
+
+        R.ask_stop(f'{R.C.command} stop')  # run A was killed before it exited: its stop is still on disk
+        said.clear()
+        loop.drop_earlier_stop({})
+        check(not R.stopping() and said == ['cleared a stop request left by an earlier run'],
+              "a stop an earlier run left is dropped, and said", said)
+        R.ask_stop(f'{R.C.command} stop')
+        loop.drop_earlier_stop({'stop': True})
+        check(R.stopping(), 'an upgrade restart keeps the stop: the same run carries on')
+    R.clear_stop()
+
+
 def test_reference_keys_d3():
     print("D3: docs/REFERENCE.md's runner.toml block names every DEFAULTS key and no removed or renamed one, and "
           'says what each old name became')
@@ -7840,7 +7879,7 @@ def main() -> int:
                        lambda: test_hidden_slots(repo, tmp), lambda: test_hidden_run_lands(tmp), lambda: test_no_gate_b36(tmp),
                        lambda: test_claude_drift_b45(repo, tmp), lambda: test_merged_count_b78(repo),
                        lambda: test_hidden_control_f59(repo, tmp), lambda: test_attach_f88(tmp), lambda: test_context_warn_f25(repo),
-                       lambda: test_control_fresh_f27(repo), lambda: test_config_trim_c14(tmp), lambda: test_models_f101(repo, tmp), lambda: test_models_kinds_f105(repo, tmp), lambda: test_task_budget_f103(repo, tmp), test_reference_keys_d3, test_cap_stop_hint_b102])
+                       lambda: test_control_fresh_f27(repo), lambda: test_config_trim_c14(tmp), lambda: test_models_f101(repo, tmp), lambda: test_models_kinds_f105(repo, tmp), lambda: test_task_budget_f103(repo, tmp), test_reference_keys_d3, test_cap_stop_hint_b102, lambda: test_stop_stays_with_its_run_b137(repo)])
 
 
 if __name__ == '__main__':
