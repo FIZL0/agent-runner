@@ -615,7 +615,7 @@ def serve_https_argv(port: int) -> list[str]:
     return ['tailscale', 'serve', '--bg', f'--https={port + 1}', f'http://127.0.0.1:{port}']
 
 
-def offer_https(port: int, urls: list[str], call=None, out=print, ask=None, which=shutil.which) -> list[str]:
+def offer_https(port: int, urls: list[str], call=None, out=print, ask=None, which=None) -> list[str]:
     """F134: with no https link for Home (`urls` all http), offer to set up Tailscale Serve for it: `ask(question)`
     (default: a y/n prompt when stdin is a terminal) says yes, the command runs and the links are read again;
     otherwise say the command. Without tailscale, one line on what https needs. Returns the links to print."""
@@ -623,7 +623,7 @@ def offer_https(port: int, urls: list[str], call=None, out=print, ask=None, whic
         return urls
     cmd = serve_https_argv(port)
     line = ' '.join(cmd)
-    if not which('tailscale'):
+    if not (which or shutil.which)('tailscale'):
         out(f"No https link: Talk's mic needs one. With Tailscale installed, `{line}` gives Home one.")
         return urls
     if ask is None and sys.stdin.isatty():
