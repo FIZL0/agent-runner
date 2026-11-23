@@ -126,6 +126,7 @@ a{color:var(--accent)}
 .btn.pri{background:var(--fg);color:var(--bg);border-color:var(--fg)}
 .btn.acc{background:var(--accent);color:var(--onaccent);border-color:var(--accent)}
 .btn:disabled{opacity:.5;cursor:default}
+.btn.busy{opacity:.7;cursor:progress}
 .btn.bad{background:var(--bad);color:var(--bg);border-color:var(--bad)}
 .sure{display:grid;gap:8px;border-top:1px solid var(--line);padding-top:10px}
 .slotsn{display:inline-flex;gap:6px;align-items:center}
@@ -248,6 +249,13 @@ function answerOpts(it){
     it.label==='CONFIRM'||/\byes ?(\/|or) ?no\b/i.test(it.ask||'')?['Yes','No']:[];
   return opts.map(o=>o.charAt(0).toUpperCase()+o.slice(1));
 }
+/* B138: an answered item stays off Needs you for a while (GONE_MS), so a snapshot taken before the answer landed
+   does not bring a stale card back; gone maps an id to when it was answered */
+const GONE_MS=30000;
+function goneMark(gone,r,now){const g={...(gone||{})};if(r&&r.ok&&r.gone)g[r.gone]=now;return g}
+function needsShown(needs,gone,now){return(needs||[]).filter(n=>!(gone&&gone[n.id]!=null&&now-gone[n.id]<GONE_MS))}
+/* what the toast says once an answer button's command ran: the run's own words ('R13 ticked'), else the reply */
+function answerSaid(r,id,v){return(r&&r.said)||(r&&r.gone?`${id}: ${v}`:`Sent to the project chat: ${id} ${v}`)}
 /* a session's feed entries (say / you / tool / out) as a conversation: your words as {w:'u'}, the agent's as
    {w:'a', text, steps}; tool steps (and their output) fold into the reply that follows them */
 function threadMsgs(entries){
@@ -419,7 +427,7 @@ function histStep(n,i,key){
   if(typeof i!=='number'||i<0||i>n)i=n;
   return key==='ArrowUp'?Math.max(0,i-1):Math.min(n,i+1);
 }
-if(typeof module!=='undefined')module.exports={chatMove,BOX_KEYS,keysLine,histPush,histEdge,histStep,slashMatches,slashPick,slashMove,SLASH_FALLBACK,chatPick,answerOpts,threadMsgs,working,planWords,compose,usageOf,logKind,plain,chatName,controlReq,controlClick,taskControlsOn,queueGroups,conceptButtons,NO_CONCEPT,newConceptReq,queuedId,NAV,talkSession,micProblem,talkShown,talkReply};
+if(typeof module!=='undefined')module.exports={chatMove,BOX_KEYS,keysLine,histPush,histEdge,histStep,slashMatches,slashPick,slashMove,SLASH_FALLBACK,chatPick,answerOpts,threadMsgs,working,planWords,compose,usageOf,logKind,plain,chatName,controlReq,controlClick,taskControlsOn,queueGroups,conceptButtons,NO_CONCEPT,newConceptReq,queuedId,NAV,talkSession,micProblem,talkShown,talkReply,goneMark,needsShown,answerSaid,GONE_MS};
 </script>
 
 <script>
@@ -817,6 +825,7 @@ function takeSnap(s){
   if(!s||s.error){if(s&&s.error)toast(s.error,true);return}
   if(followVersion(s.version))return;
   S.snap={...S.snap,...s};
+  S.snap.needs=needsShown(S.snap.needs,S.gone,Date.now());  // B138: a snapshot taken before an answer keeps it off
   if(S.waitNew){const fresh=chats().map(c=>c.name).filter(x=>!S.waitNew.known.includes(x));
     if(fresh.length){S.waitNew=null;open(fresh[fresh.length-1]);return}
     if(Date.now()-S.waitNew.at>60000)S.waitNew=null}
@@ -920,8 +929,13 @@ document.addEventListener('click',async e=>{
     S.waitNew={known:chats().map(c=>c.name),at:Date.now()};
     const r=await act('concept_chat',{cid:c.concept||c.id,title:c.title||'',url:c.url||'',copy:c.copy||''});
     if(r.ok)toast(`Starting a new chat about ${c.concept||c.id}: it opens here once it is up`);else{S.waitNew=null;x.disabled=false}return}
-  if(x=q('[data-ans]')){const n=S.snap.needs[+x.dataset.ans];if(!n)return;x.disabled=true;
-    const r=await act('answer',{tid:n.id,text:x.dataset.v});if(r.ok)toast(`Sent: ${n.id} ${x.dataset.v}`);return}
+  if(x=q('[data-ans]')){const n=S.snap.needs[+x.dataset.ans];if(!n)return;  // B138: the plan command, no AI session
+    const was=x.textContent;x.disabled=true;x.classList.add('busy');x.textContent=`${was}…`;
+    const r=await act('answer',{tid:n.id,text:x.dataset.v,button:true});
+    if(r.ok){toast(answerSaid(r,n.id,x.dataset.v));S.gone=goneMark(S.gone,r,Date.now());S.snap.needs=needsShown(S.snap.needs,S.gone,Date.now());render(true);
+      fetch(tq('snapshot')).then(s=>s.json()).then(takeSnap).catch(()=>{})}  // and the run's own list, at once
+    else{x.disabled=false;x.classList.remove('busy');x.textContent=was}
+    return}
   if(x=q('[data-later]')){const n=S.snap.needs[+x.dataset.later];if(!n)return;x.disabled=true;
     const r=await act('shelve',{tid:n.id});if(r.ok)toast(`${n.id} is set aside until you bring it back`);return}
   if(x=q('[data-unpark]')){const id=x.dataset.unpark;x.disabled=true;  // B118
