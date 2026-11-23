@@ -58,6 +58,12 @@ def test_still_running():
         ends('subprocess.Popen([sys.executable, "-c", "import time; time.sleep(5)"], cwd=d, stdin=subprocess.DEVNULL,'
              ' stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)\nsys.exit(report([]))', 0,
              'a process in the folder')
+    writer = ('import os, sys, time\\nend = time.time() + 2\\nwhile time.time() < end:\\n'
+              '    try:\\n        os.makedirs(sys.argv[1], exist_ok=True)\\n'
+              '        open(sys.argv[1] + "/w", "w").close()\\n    except OSError:\\n        pass\\n')
+    r, _ = suite(f"subprocess.Popen([sys.executable, '-c', '{writer}', str(d / 'sub')], stdin=subprocess.DEVNULL,"
+                 ' stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)\nsys.exit(report([]))')
+    eq((r.returncode, 'Traceback' in r.stderr), (0, False), 'a process still writing there: exit code 0')
     r, _ = suite('import shutil\nshutil.rmtree = lambda *a, **k: None\nsys.exit(report([]))')
     eq((r.returncode, r.stderr), (0, ''), 'a folder that cannot be removed: exit code 0, no error said')
 

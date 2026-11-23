@@ -57,7 +57,10 @@ def _remove_temp() -> None:
         shutil.rmtree(TMP_ROOT, ignore_errors=True)
         if not TMP_ROOT.exists():
             break
-        for d, dirs, files in os.walk(TMP_ROOT):  # a read-only folder, and on Windows a read-only file, stops rmtree
+        root = os.path.realpath(TMP_ROOT)
+        for d, dirs, files in os.walk(root):  # a read-only folder, and on Windows a read-only file, stops rmtree
+            # before Python 3.12 a Windows junction is no link to islink: never follow one out of the root
+            dirs[:] = [n for n in dirs if os.path.realpath(os.path.join(d, n)).startswith(root + os.sep)]
             for p in [d, *(os.path.join(d, n) for n in dirs + (files if os.name == 'nt' else []))]:
                 try:
                     if not os.path.islink(p):
