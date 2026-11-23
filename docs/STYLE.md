@@ -109,7 +109,8 @@ Motion shows where a thing came from, where it went, or that it changed. Nothing
 
 - **Only `transform` and `opacity`**, with `visibility` to take a closed thing out of reach, and a switch's
   `background-color`. Never height, width, top or margin.
-- **What animates:** the drawer and the sheet slide; their scrim fades; the Talk dock's mic and box cross-fade; a card
+- **What animates:** the drawer and the sheet slide; their scrim fades; the Talk dock's mic and box cross-fade;
+  Talk's top bar slides off when you scroll up (`.away`, transform only); a card
   or message that is new fades in and rises 6px; a view fades in when you go to it; a state word that changed fades in; a chevron turns; the message box, Talk's words and the sheet glide (transform
   only) to their place when the keyboard opens or closes (`kbGlide()`).
 - **What never animates:** a refresh of what is already there, a list reordering under the reader, text being
@@ -133,7 +134,24 @@ Motion shows where a thing came from, where it went, or that it changed. Nothing
 - A refresh also keeps focus, the caret (`keepFields()`), a text selection, what is folded open, and a code block's
   sideways scroll.
 - A notice (`.notice`) floats over the top of the view and never pushes it down, except in a chat: there it has its own
-  row under the header, so it covers no text, and `noticeRoom()` keeps the text in place. Elsewhere it floats as before.
+  row under the header, so it covers no text, and `noticeRoom()` keeps the text in place. Elsewhere it floats as
+  before. In Talk the top bar may be away while scrolled up, and the notice's row moves up with it (See-through Talk).
+
+### See-through Talk
+
+- **The chat fills the view.** In Talk (`.see` on `.main`, at every width) the chat runs behind the top bar (`.top`),
+  the round buttons and the message box (`.dockwrap`). The bar and notices are frosted glass on `--bg`; the side
+  buttons, status line and box are frosted on `--surface`; the mic is solid with a `--shadow`. Nothing is drawn behind
+  the buttons, so a touch between them reaches the chat.
+- **Clear at rest.** `seeRoom()` measures the top bar, a notice's row and the dock, and pads the chat by that much, so
+  the newest words sit clear of them.
+- **The bar goes away.** Scrolling up 8px slides only the top bar off (`.away`, `barAway()`), and a notice's row moves
+  up with it. It comes back on scrolling down 8px, at the end, or when a key puts focus in it. A refresh, new words,
+  the keyboard and iOS's bounce never move it.
+- **Fixed parts stay.** The speaker, the mic (full size), the keyboard button and the status line never change on
+  scroll.
+- **Reduced transparency.** Under `prefers-reduced-transparency`, where the browser reports it, the bars, buttons and
+  box go solid. A chat with the real session keeps its solid header and message box.
 
 ## The session
 
@@ -186,6 +204,7 @@ A chat or slot shows the real Claude Code session through ttyd, in place of a th
   viewport's height and offset and the class `.kb`; on close both go back to the stylesheet's.
 - While open: no bottom safe-area inset on `.app`, less bottom padding on `.dock` and the sheet, and the header stays
   on screen. Talk stays at its newest words while pinned; one scrolled up stays put.
+  In Talk the top bar may be away while scrolled up; the keyboard never brings it back (See-through Talk).
 - The document never scrolls (`html` and `body` are locked). Only `.body`, `.side`, `.sheet` and small lists scroll.
   Anything with a text box lives inside `.app` and is sized in % or `cqh`, not vh, while the keyboard is open.
 - Never `scrollIntoView` to show a field being typed in: `kbReveal()` scrolls its own scroller. Pinch zoom is left

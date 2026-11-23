@@ -2273,7 +2273,8 @@ class Box {
 const els = {body: new Box(100), dock: new Box(10), top: new Box(10), jump: new Box(10)};
 const $ = k => els[k] = els[k] || new Box(10);
 const ta = {value: 'hello', dataset: {}};
-const document = {activeElement: null, hidden: false, querySelector: s => s === '[data-in]' ? ta : s === '.main' ? {classList: {toggle() {}}, style: {}} : null};
+const document = {activeElement: null, hidden: false, querySelector: s => s === '[data-in]' ? ta : s === '.main' ? main : s === '.notices' ? {offsetHeight: 0} : null};
+const on = {}, main = {classList: {toggle: (c, v) => on[c] = v}, style: {setProperty() {}}};
 const window = {};
 let HOME_PAGE = false, VIEW = 'a:60 b:60 c:60', CHAT = 'm1:80 m2:80';
 const S = {snap: {sessions: []}, view: 'home', thread: null, f: {}, atts: [], ob: [], feeds: {}, live: true, sheet: ''};
@@ -2287,7 +2288,7 @@ const talkMic = () => 'mic', talkFoot = () => '', talkDraw = () => {}, keepPlace
 const outbox = (n, a) => { outboxed.push([n, a.text]); CHAT += ' mine' + outboxed.length + ':40'; render(true) };
 eval(logic + line('function setHTML(') + grab('function keepScroll(') + grab('function keysIn(').split('\nfunction enter')[0]
   + grab('function enter(') + grab('function keepFields(') + line('function viewIn(') + line('const PD=') + 'const selecting=()=>false;'
-  + line('let lastPlace=') + line('S.at={};') + line('const chatShown=') + line('function toEnd(')
+  + line('let lastPlace=') + line('S.at={};') + line('const chatShown=') + line('function toEnd(') + line('let SEE=') + grab('function seeRoom(') + grab('function seeBar(')
   + grab('function render(') + line("$('body').addEventListener('scroll'") + grab('async function send(') + `
 (async () => {
   const b = $('body'), out = {}, scroll = y => { b.scrollTop = y; b.on.scroll() };
@@ -2311,6 +2312,18 @@ eval(logic + line('function setHTML(') + grab('function keepScroll(') + grab('fu
   CHAT += ' m3:90'; render(); out.follows = left();
   scroll(5); CHAT += ' m4:90'; render(); out.up = b.scrollTop;
   scroll(10); PD.down = true; CHAT += ' m5:50'; render(); out.held = b.innerHTML.includes('m5'); PD.down = false; render(); out.after = [b.innerHTML.includes('m5'), b.scrollTop];
+  // F171: Talk's top bar: away on a scroll up, back on a scroll down, never by a refresh or a change of size
+  out.see = on.see; toEnd(); const end = b.scrollTop, bar = [on.away];
+  scroll(end - 100); bar.push(on.away);                        // up: away
+  CHAT += ' m6:90'; render(); bar.push(on.away);               // new words: still away
+  b.h = 60; b.on.scroll(); bar.push(on.away); b.h = 100; b.on.scroll();  // the keyboard: still away
+  scroll(end - 96); bar.push(on.away);                         // 4px down: not yet
+  scroll(end - 90); bar.push(on.away);                         // 10px: back
+  scroll(end - 150); bar.push(on.away); b._top = -40; b.on.scroll(); b._top = 0; b.on.scroll(); bar.push(on.away);  // iOS's bounce at the top
+  toEnd(); bar.push(on.away);                                  // at the end: back
+  b._top += 40; b.on.scroll(); b._top -= 40; b.on.scroll(); bar.push(on.away);  // the bounce at the end
+  scroll(0); CHAT = 'm1:40'; render(); bar.push(on.away);      // nothing left to scroll: back
+  S.view = 'home'; render(true); out.bar = bar; out.leaves = [on.see, on.away];
   console.log(JSON.stringify(out));
 })();`);
 """
@@ -2335,6 +2348,13 @@ def test_scroll_f83(tmp: Path) -> None:
     eq(got.get('open'), 0, 'Talk opens at its newest words')
     eq(got.get('follows'), 0, 'and follows what comes in')
     eq(got.get('up'), 5, 'scrolled up: it stays put')
+    eq(got.get('see'), True, "F171: Talk's chat runs behind its bar and buttons")
+    eq(got.get('bar'), [False, True, True, True, True, False, True, True, False, False, False],
+       "F171: Talk's top bar goes on a scroll up, comes back on a scroll down or at the end; a refresh, the keyboard or a bounce moves nothing")
+    eq(got.get('leaves'), [False, False], 'F171: no other view is see-through')
+    css = W.PAGE.read_text(encoding='utf-8').split('<style>', 1)[1].split('</style>', 1)[0]
+    eq(set(re.findall(r'\.main\.see\.away \.(\w+)', css)), {'top'}, 'F171: only the top bar (and the notices under it) goes: the buttons stay')
+    check('prefers-reduced-transparency:reduce' in css, 'F171: Reduce Transparency: solid')
     eq((got.get('held'), got.get('after')), (False, [True, 10]), 'a press holds the refresh back until it ends')
 
 
@@ -2401,6 +2421,7 @@ els.body.style = {}; els.body.animate = anim('text');
 const dockEl = {style: {}, animate: anim('dock'), getBoundingClientRect: () => ({top: (parseInt(els.app.style.top) || 0) + (parseInt(els.app.style.height) || 800) - 100})};
 const document = {activeElement: null, documentElement: {clientHeight: 800}, addEventListener: (t, f) => docOn[t] = f, querySelector: s => s === '.dockwrap' ? dockEl : null};
 const S = {view: 'talk', thread: null, pin: true, sheet: ''};
+const seeRoom = () => {}, seeBar = () => {};
 eval(line('const atEnd=') + line('const chatShown=') + line('function toEnd(') + page.slice(page.indexOf('const VV='), page.indexOf('function grow(')) + `
 const b = $('body'), out = {}, left = () => b.scrollHeight - b.scrollTop - b.clientHeight;
 const app = () => [$('app').style.height || '', $('app').style.top || '', $('app').classList.contains('kb')];
