@@ -676,7 +676,7 @@ already made in the main checkout there. Never use a slot's worktree, which the 
 refuses to push `main`.
 
 **Usage caps.** Past `[run] session_max`% of the 5-hour session usage, or `[run] weekly_max`% of
-the 7-day usage, no new task starts unless `--force` is given (or `f` typed in the run view); hitting one raises the STOPPED alarm with that hint.
+the 7-day usage, no new task starts unless `--force` is given (or `f` typed in the run view); hitting one raises the STOPPED alarm with that hint. With `[models] fallback` set, a new task whose model is claude's starts on the chain's first free provider instead, until the reset (see Fallback chain); a task with no free provider waits.
 
 **A cut-off session resumes.** A session whose turn ended on an API error (the network dropped, the
 API was down, the account hit its usage limit) is not finished, though the idle stop ends it. Its worktree is left as it is, and once the
@@ -1182,8 +1182,8 @@ context_warn = 150        # k tokens: a slot session whose context peaked past t
 task_tokens = 0           # tokens one task's session (and its subagents) may use: input, cache writes, output (cache reads are left out: they grow with turns times the context, and task_usd counts them). Past it the runner tells the task to stop at a clean point (commit, write its journal, end its turn) and parks it as wip/<ID>; one whose done already passed lands; one that goes on to 1.25 times the cap is ended. `status` shows each running task's spend ("1.2M tok $3.40"); 0 = no cap (F103)
 task_usd = 0              # the same cap in dollars, at the API's list prices (a plan bills none; Opus prices for a model it does not know); 0 = no cap
 pause = 60                # s between one session ending and the next starting in that slot
-weekly_max = 90           # % of 7-day usage past which nothing new starts
-session_max = 90          # % of 5-hour session usage past which nothing new starts
+weekly_max = 90           # % of 7-day usage past which new tasks wait, or start on [models] fallback
+session_max = 90          # % of 5-hour session usage past which new tasks wait, or start on [models] fallback
 notes = ".runner"         # logs + ledger (git-ignore it)
 links = []                # git-ignored paths symlinked into every worktree (data, big files)
 copies = []               # git-ignored files copied into a new worktree once (a local config file)
@@ -1328,6 +1328,15 @@ far, noting it in the transcript. When none is left it ends on the error, and th
 Capped providers are kept in `<notes>/capped.json` (provider -> until): till the reset time the error names (Claude
 Code's `usage limit reached|<epoch>`, or "resets 3pm"), else one hour. While a provider is capped, a new task whose model is on it
 starts on the chain's first free model; once the cap has reset, new tasks go back to their own model.
+
+Past a `[run] session_max` or `weekly_max` cap (not forced), a new task whose model is claude's starts on the chain's
+first free provider the same way, instead of waiting for the reset; the run log says once "session usage 92% >= 90%:
+new tasks start on the first free provider in [models] fallback until the reset". A task whose own model is on an
+uncapped provider starts on its own model. A task with no free provider waits, and STOPPED is raised only when such a
+task is all that could start. Nothing is written to `capped.json` for these caps, and running tasks are untouched;
+`--force` starts tasks on their own model. A task resumed with the person's answer (`run ask`) whose session's agent
+(Claude Code or the harness loop) differs from what the chain gives now gets a new session on the kept work instead
+of a resume.
 
 With no fallback set (the default), nothing changes: a task waits for the reset as before (a cut-off session
 resumes).
