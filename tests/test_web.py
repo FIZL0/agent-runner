@@ -1201,6 +1201,87 @@ def test_talk_reply_heard_b133(tmp: Path) -> None:
        'the Talk view shows c13, its feed ending with the reply')
 
 
+SLASH_DRIVER = r"""
+const page = require('fs').readFileSync(process.argv[2], 'utf8'), CMDS = JSON.parse(process.argv[3]);
+const slice = (a, b) => { const i = page.indexOf(a); return page.slice(i, page.indexOf(b, i) + b.length); };
+const logic = page.split('<script id="logic">')[1].split('</script>')[0];
+const handlers = {}, store = {v: {}, get(k) { return this.v[k] || '' }, set(k, v) { this.v[k] = v }};
+const DRAFT_KEY = k => k, boxKey = () => 'c1', grow = () => {}, esc = s => String(s), tq = p => p;
+const S = {thread: 'c1', sel: [], drawer: false};
+const busy = () => false, act = () => {}, selectedText = () => false, render = () => {}, newConcept = () => {};
+let sent = 0; const send = () => { sent++ };
+const menu = {hidden: true, innerHTML: '', querySelector() { return null }};
+const ta = {value: '', blurred: 0, matches(s) { return s === '[data-in]' }, focus() {}, blur() { this.blurred++ },
+            setSelectionRange() {}, closest() { return null }};
+const document = {activeElement: ta, addEventListener(t, f) { handlers[t] = f },
+                  querySelector(s) { return s === '[data-slash]' ? menu : s === '[data-in]' ? ta : null }};
+const fetch = () => Promise.resolve({json: () => Promise.resolve(CMDS)});
+eval(logic + slice('const SL={', 'ta.value.length);\n}\n') + slice("document.addEventListener('keydown',", '\n});\n') + `
+(async () => {
+  await new Promise(r => setTimeout(r, 0));
+  const out = {}, type = v => { ta.value = v; slashShow(ta) };
+  const rows = () => [...menu.innerHTML.matchAll(/<b>\\/([^<]*)<\\/b>/g)].map(m => m[1]);
+  const key = k => handlers.keydown({key: k, target: ta, preventDefault() {}});
+  type('/'); out.slash = {hidden: menu.hidden, rows: rows()};
+  type('/s'); out.s = rows();
+  key('ArrowDown'); out.on = (menu.innerHTML.match(/class="on"[^>]*><b>\\/([^<]*)/) || [])[1];
+  key('Enter'); out.picked = {value: ta.value, hidden: menu.hidden, sent};
+  type('/co'); key('Escape'); out.esc = {hidden: menu.hidden, blurred: ta.blurred, value: ta.value, thread: S.thread};
+  type('hello /run'); out.mid = menu.hidden;
+  type('/clear'); key('Enter'); out.full = {sent, hidden: menu.hidden};
+  console.log(JSON.stringify(out));
+})();`);
+"""
+
+
+def test_slash_menu_b119(tmp: Path) -> None:
+    """B119: typing / in the message box shows the session's slash commands (/commands: the control session's own
+    skills, the agent CLI's built-ins, the project's skills) as a menu that filters as you type; arrows and Enter
+    pick, Esc closes the menu and stays in the chat, and a command typed in full is sent."""
+    repo = fake_repo(tmp)
+    (repo / '.claude' / 'skills' / 'deploy').mkdir(parents=True)
+    (repo / '.claude' / 'skills' / 'deploy' / 'SKILL.md').write_text(
+        '---\nname: deploy\ndescription: Ship the site\n---\nDo it.\n', encoding='utf-8')
+    token = W.web_token()
+    srv = W.serve(token, 0, '127.0.0.1', snap=lambda: {})
+    try:
+        code, body = get(f'http://127.0.0.1:{srv.server_address[1]}/commands?t={token}')
+    finally:
+        srv.stop()
+    eq(code, 200, '/commands answers')
+    cmds = json.loads(body)
+    names = [c['name'] for c in cmds]
+    eq(names[:7], ['run', 'since', 'follow', 'control', 'pause', 'stop', 'slots'], "the control session's own first")
+    check({'clear', 'compact', 'deploy'} <= set(names), 'the built-ins and the project skill are listed', names)
+    eq(len(names), len(set(names)), 'each name once')
+    eq(next(c['desc'] for c in cmds if c['name'] == 'run'), "The agent-runner run's status",
+       'a description without its (the person typed …)')
+    eq(next(c['desc'] for c in cmds if c['name'] == 'deploy'), 'Ship the site', "a skill's description")
+    if not shutil.which('node'):
+        print('  (no node here: the slash menu script test is skipped)')
+        return
+    got = logic_js([['slashMatches', cmds, '/sl'], ['slashMatches', [], '/pa'], ['slashMatches', cmds, 'hi'],
+                    ['slashMatches', cmds, '/run now'], ['slashMove', 0, 3, 'ArrowUp'], ['slashMove', 2, 3, 'ArrowDown']])
+    eq([c['name'] for c in got[0]], ['slots'], '/sl filters to /slots')
+    eq([c['name'] for c in got[1]], ['pause', 'compact'], 'no list from the run page: the fixed list stands in')
+    eq(got[2:4], [[], []], 'no menu without a leading / or once a space follows the command')
+    eq(got[4:], [2, 0], 'the arrows wrap round')
+    few = [{'name': n, 'desc': ''} for n in ('run', 'since', 'slots', 'control', 'clear', 'compact', 'cost')]
+    (tmp / 'driver.js').write_text(SLASH_DRIVER, encoding='utf-8')
+    r = subprocess.run(['node', str(tmp / 'driver.js'), str(W.PAGE), json.dumps(few)], capture_output=True,
+                       text=True, timeout=60)
+    check(r.returncode == 0, 'node runs the slash menu', r.stderr[-800:])
+    got = json.loads(r.stdout or '{}')
+    eq(got.get('slash'), {'hidden': False, 'rows': [c['name'] for c in few]}, "'/' shows the menu with every command")
+    eq(got.get('s'), ['since', 'slots', 'cost'], "'/s' filters: names that start with s, then those that hold it")
+    eq(got.get('on'), 'slots', 'ArrowDown moves the highlight')
+    eq(got.get('picked'), {'value': '/slots ', 'hidden': True, 'sent': 0}, 'Enter picks it into the box, not sent')
+    eq(got.get('esc'), {'hidden': True, 'blurred': 0, 'value': '/co', 'thread': 'c1'},
+       'Esc closes the menu and stays in the box and the chat')
+    eq(got.get('mid'), True, 'a / later in the words shows no menu')
+    eq(got.get('full'), {'sent': 1, 'hidden': True}, 'Enter on a command typed in full sends it')
+
+
 if __name__ == '__main__':
     raise SystemExit(report([in_tmp(test_delete_chats_f118), in_tmp(test_server), in_tmp(test_real_action), in_tmp(test_run_controls),
                            in_tmp(test_start), in_tmp(test_upload),
@@ -1209,4 +1290,5 @@ if __name__ == '__main__':
                            in_tmp(test_new_chat), in_tmp(test_term_moves), in_tmp(test_page_copy_publish), in_tmp(test_parked),
                            in_tmp(test_esc_ctrl_c), in_tmp(test_concepts_view), in_tmp(test_follow_version_f90),
                            in_tmp(test_talk_f93), in_tmp(test_https_link_b130),
-                           in_tmp(test_listen_heard_nothing_b132), in_tmp(test_talk_reply_heard_b133)]))
+                           in_tmp(test_listen_heard_nothing_b132), in_tmp(test_talk_reply_heard_b133),
+                           in_tmp(test_slash_menu_b119)]))
