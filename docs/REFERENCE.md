@@ -1074,9 +1074,8 @@ fix = "opus"              # merge-conflict fix and repair sessions; unset, [run]
 docs = "haiku"            # the `docs` subagent: CHANGELOG, docs, README, journal and plan-text edits; false: none
 control = "opus"          # control sessions (c1, c2, …)
 feed = "haiku"            # the runner feed, and the one-shot that publishes the run page's claude.ai copy
-
-[models.kinds]           # the model a task's own session runs on, per kind (the id's letters: F105 is F); see Models per kind
-F = "opus"               # defaults: F B T V K "opus", D C R "sonnet"; a kind not listed runs on [models] code
+kinds = { F = "opus", B = "opus", T = "opus", V = "opus", K = "opus", D = "sonnet", C = "sonnet", R = "sonnet" }
+                          # a task's own session by its kind (the id's letters: F105 is F); see Models per kind
 
 [run]
 test = ""                 # the gate, run by `done` and on every merge, e.g. "make test"
