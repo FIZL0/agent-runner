@@ -58,10 +58,10 @@ a{color:var(--accent)}
 /* the sidebar: a drawer on a phone */
 .side{position:absolute;inset:0 auto 0 0;width:280px;max-width:85%;background:var(--side);border-right:1px solid var(--line);z-index:6;
   transform:translateX(-102%);transition:transform var(--dur-slow) var(--ease),visibility var(--dur-slow);display:flex;flex-direction:column;padding:12px 10px;
-  padding-left:max(10px,env(safe-area-inset-left,0px));overflow:auto}
+  padding-left:max(10px,env(safe-area-inset-left,0px));overflow:auto;touch-action:pan-y pinch-zoom}
 .side.open{transform:none;box-shadow:8px 0 30px var(--shadow)}
 .side:not(.open):not(.drag){visibility:hidden}
-.scrim{position:absolute;inset:0;background:var(--scrim);z-index:5;opacity:0;visibility:hidden;transition:opacity var(--dur-slow) var(--ease),visibility var(--dur-slow)}
+.scrim{position:absolute;inset:0;background:var(--scrim);z-index:5;opacity:0;visibility:hidden;touch-action:pan-y pinch-zoom;transition:opacity var(--dur-slow) var(--ease),visibility var(--dur-slow)}
 .scrim.on{opacity:1;visibility:visible}
 .side.drag,.sheet.drag,.scrim.drag{transition:none}
 .brand{display:flex;align-items:center;gap:10px;padding:6px 8px 14px;color:inherit;text-decoration:none}
@@ -595,8 +595,8 @@ function feedAfter(entries,mark,said){
 const atEnd=b=>b.scrollHeight-b.scrollTop-b.clientHeight<60;
 /* F124: a finger moving (dx, dy) over the app: does the drawer follow it (open: it is open), '' not, 'wait' too early */
 function swipeTakes(dx,dy,open){
-  if(Math.abs(dx)<10&&Math.abs(dy)<10)return 'wait';
-  return Math.abs(dx)>Math.abs(dy)*1.4&&(open?dx<0:dx>0)?'drag':'';
+  if(Math.hypot(dx,dy)<8)return 'wait';  // B167: under the 10px at which iOS begins a scroll, which nothing can cancel then
+  return Math.abs(dx)>Math.abs(dy)*1.7&&(open?dx<0:dx>0)?'drag':'';
 }
 /* where the drawer settles when the finger lets go: dx moved, v its speed (px/ms), w the drawer's width */
 const swipeOpens=(dx,v,w,open)=>Math.abs(v)>.35?v>0:(open?w+dx:dx)>w/2;
@@ -2124,18 +2124,23 @@ document.addEventListener('pointercancel',e=>{if(e.pointerId===TK.holdId&&e.poin
 document.addEventListener('touchend',e=>{if(onMic(e))letGo()},{passive:true});
 document.addEventListener('touchcancel',e=>{if(onMic(e))TK.hold=false},{passive:true});
 document.addEventListener('contextmenu',e=>{if(e.target.closest&&e.target.closest('[data-mic]'))e.preventDefault()});
-/* F124: a swipe right anywhere opens the sidebar drawer and a swipe left closes it, following the finger (passive
-   listeners only); a swipe down closes the sheet. Not from a text box, a sideways scroller, a held mic, a row being dragged or
+/* F124: a swipe right anywhere opens the sidebar drawer and a swipe left closes it, following the finger;
+   a swipe down closes the sheet. B167: a touch is one thing until the finger lifts: one that scrolled never becomes a
+   swipe, and a drawer swipe keeps the page from scrolling (so touchmove is not passive). Not from a text box, a sideways scroller, a held mic, a row being dragged or
    a mostly vertical move; Safari keeps its own back swipe at the very edge. */
 let SW=null;
 const sideways=el=>{for(;el&&el!==document.body;el=el.parentElement)if(el.scrollWidth>el.clientWidth+1&&/(auto|scroll)/.test(getComputedStyle(el).overflowX))return true;return false};
+/* B167: what a touch could scroll, and did it: a change of height is the page's own scroll (a chat's new message) */
+const scrollers=el=>{const a=[];for(;el&&el!==document.body;el=el.parentElement)if(el.scrollHeight>el.clientHeight+1)a.push([el,el.scrollTop,el.scrollHeight]);return a};
+const scrolled=a=>a.some(([el,top,h])=>el.scrollTop!==top&&el.scrollHeight===h);
 const drawerOn=()=>{const m=document.querySelector('.top .menu');return !!(m&&m.offsetParent)};
 document.addEventListener('touchstart',e=>{
+  if(SW&&SW.on){if(e.touches.length>1)return;swipeEnd(false)}  // B167: a second finger does not end the lock
   SW=null;const t=e.touches[0], el=e.target;
   if(e.touches.length!==1||!el.closest||el.closest('input,textarea,select,[contenteditable],iframe,.obpop,.mic.hold')||DR&&DR.on)return;
   if(S.sheet){if(el.closest('#sheet')&&$('sheet').scrollTop<=0)SW={sheet:true,x:t.clientX,y:t.clientY,at:e.timeStamp,d:0,on:false};return}
   if(!drawerOn()||el.closest('#body,#dock')&&sideways(el))return;
-  SW={x:t.clientX,y:t.clientY,at:e.timeStamp,d:0,on:false,open:S.drawer,w:$('side').offsetWidth||280,lx:t.clientX,lt:e.timeStamp,v:0};
+  SW={x:t.clientX,y:t.clientY,at:e.timeStamp,d:0,on:false,open:S.drawer,w:$('side').offsetWidth||280,lx:t.clientX,lt:e.timeStamp,v:0,scr:scrollers(el)};
 },{passive:true});
 document.addEventListener('touchmove',e=>{
   if(!SW)return;
@@ -2145,12 +2150,14 @@ document.addEventListener('touchmove',e=>{
     if(!SW.on){if(Math.abs(dy)<10&&Math.abs(dx)<10)return;if(dy<Math.abs(dx)||$('sheet').scrollTop>0){SW=null;return}SW.on=true;$('sheet').classList.add('drag')}
     SW.d=Math.max(0,dy);$('sheet').style.transform=`translateY(${SW.d}px)`;return;
   }
-  if(!SW.on){const s=swipeTakes(dx,dy,SW.open);if(s==='wait')return;if(!s){SW=null;return}
+  if(!SW.on){if(!e.cancelable||scrolled(SW.scr)){SW=null;return}  // B167: it is a scroll
+    const s=swipeTakes(dx,dy,SW.open);if(s==='wait')return;if(!s){SW=null;return}
     SW.on=true;if(DR)dragEnd();$('side').classList.add('drag');$('scrim').classList.add('drag','on')}
+  if(e.cancelable)e.preventDefault();  // B167: no scroll until the finger lifts
   SW.d=dx;if(e.timeStamp>SW.lt){SW.v=(t.clientX-SW.lx)/(e.timeStamp-SW.lt);SW.lx=t.clientX;SW.lt=e.timeStamp}
   const at=Math.max(-SW.w,Math.min(0,SW.open?dx:dx-SW.w));
   $('side').style.transform=`translateX(${at}px)`;$('scrim').style.opacity=String(1+at/SW.w);
-},{passive:true});
+},{passive:false});
 function swipeEnd(done){
   const w=SW;SW=null;if(!w||!w.on)return;
   if(w.sheet){const el=$('sheet');el.classList.remove('drag');el.style.transform='';if(done&&w.d>80)closeSheet();return}

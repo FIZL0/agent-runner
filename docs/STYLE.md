@@ -136,8 +136,11 @@ Motion shows where a thing came from, where it went, or that it changed. Nothing
 
 - A finger's target is at least `--tap`. Hover only adds: whatever it reveals, touch shows or puts in a row's sheet.
 - Text boxes are 16px or more, so a phone does not zoom.
-- Touch listeners that watch a gesture are passive. A swipe leaves text boxes, sideways scrollers, a row being
-  dragged and mostly vertical moves alone.
+- Touch listeners that watch a gesture are passive, except a `touchmove` that must keep the page still: the drawer
+  swipe and a row drag. Those call `preventDefault()` only once the gesture has started, so a scroll stays smooth.
+- A touch is one thing until the finger lifts. One that scrolled never becomes a swipe, and a drawer swipe never scrolls.
+  Decide under 10px: iOS cannot cancel a scroll that has begun.
+- A swipe leaves text boxes, sideways scrollers, a row being dragged and mostly vertical moves alone.
 - Every control is a `button`, `a` or form field, reachable by Tab, with a visible `:focus-visible` ring. Esc closes the topmost thing only.
 - Live words (the talk line, the toast) have `role="status"`.
 
