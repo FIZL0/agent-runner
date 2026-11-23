@@ -345,7 +345,7 @@ a{color:var(--accent)}
 .lrow{display:flex;gap:12px;justify-content:space-between;align-items:baseline;min-width:0} .lrow span:first-child{min-width:0;overflow-wrap:anywhere} .lrow .small{white-space:nowrap}
 /* F124: the sheet */
 .sheetscrim{z-index:11}
-.sheet{position:absolute;left:0;right:0;bottom:0;margin:0 auto;max-width:520px;max-height:85%;overflow:auto;overscroll-behavior:contain;z-index:12;background:var(--surface);border:1px solid var(--line2);border-bottom:0;border-radius:var(--r-l) var(--r-l) 0 0;padding:8px 16px 20px;padding-bottom:max(20px,env(safe-area-inset-bottom,0px));display:grid;gap:var(--s1);align-content:start;box-shadow:0 -8px 24px var(--shadow);transform:translateY(103%);visibility:hidden;transition:transform var(--dur-slow) var(--ease),visibility var(--dur-slow);outline:0}
+.sheet{position:absolute;left:0;right:0;bottom:0;margin:0 auto;max-width:520px;max-height:85%;overflow:auto;overscroll-behavior:contain;z-index:12;background:var(--surface);border:1px solid var(--line2);border-bottom:0;border-radius:var(--r-l) var(--r-l) 0 0;padding:8px 16px 20px;padding-bottom:max(20px,env(safe-area-inset-bottom,0px));display:grid;grid-template-columns:minmax(0,1fr);gap:var(--s1);align-content:start;box-shadow:0 -8px 24px var(--shadow);transform:translateY(103%);visibility:hidden;transition:transform var(--dur-slow) var(--ease),visibility var(--dur-slow);outline:0}
 .sheet.open{transform:none;visibility:visible}
 .grab{width:36px;height:4px;border-radius:var(--r-xs);background:var(--line2);justify-self:center;margin-bottom:var(--s1)}
 .sheet h2{font:500 17px/1.3 var(--serif);margin:0 0 var(--s1)}
@@ -572,13 +572,36 @@ function chatGroups(rows,o){
 /* F143: a Needs you card's Chat, as its first message shows while the run starts it (need_chat_text then replaces it) */
 function needChatAsk(n){const os=answerOpts(n);
   return `This chat is about ${n.id}${n.title?` '${n.title}'`:''}, which needs me. What was put to me:\n\n${n.ask||n.what||''}${os.length?`\n\nPossible answers:\n${os.map(o=>'- '+o).join('\n')}`:''}`}
-/* F124: Talk's settings, kept per browser: read (read replies aloud), voice ('' the system's own), mic 'tap' or 'hold',
+/* F124: Talk's settings, kept per browser: read (read replies aloud), voice ('' the run's default, else the system's own; F158: an id of a run voice, 'system', or a
+   device voice's name), mic 'tap' or 'hold',
    auto (listen again once a reply was read) */
 const TALK_SET={read:true,voice:'',mic:'tap',auto:false};
 function talkSetParse(text){let o;try{o=JSON.parse(text||'{}')}catch(e){o={}}
   if(!o||typeof o!=='object')o={};
   return{read:o.read!==false,voice:typeof o.voice==='string'?o.voice:'',mic:o.mic==='hold'?'hold':'tap',auto:o.auto===true}}
 const pickVoice=(voices,name)=>name?(voices||[]).find(v=>v.name===name)||null:null;
+/* F158: the run voice (speech made on the run's machine) that reads, '' for the browser's own: `got` is the run's
+   /speech answer, `name` the voice set in Talk settings. A run voice that is gone gives the run's default */
+function runVoice(got,name){
+  const vs=(got&&got.voices)||[];if(!vs.length||name==='system')return '';
+  if(!name||/^(kokoro|piper):/.test(name))return vs.some(v=>v.id===name)?name:got.default||'';
+  return '';  // a voice of this device
+}
+/* F158: a reply as the clips it is read in: its first sentence alone, so sound starts soon, then about 200 letters each */
+function speechClips(text){
+  const out=[];
+  for(const s of String(text||'').match(/\S[\s\S]*?(?:[.!?]+(?=\s|$)|$)/g)||[])
+    for(let i=0;i<s.length;i+=1000){const p=s.slice(i,i+1000).trim(), l=out.length-1;if(!p)continue;
+      if(out.length&&(l>0||out[0].length<15)&&out[l].length+p.length<200)out[l]+=' '+p;else out.push(p)}
+  return out;
+}
+/* F158: 0.1 s of silence as a WAV file's bytes: played in a tap, it lets the page's audio element play later without one */
+function silentWav(){
+  const n=800, b=new Uint8Array(44+n).fill(128), v=new DataView(b.buffer), s=(i,t)=>[...t].forEach((c,j)=>b[i+j]=c.charCodeAt(0));
+  s(0,'RIFF');v.setUint32(4,36+n,true);s(8,'WAVEfmt ');v.setUint32(16,16,true);v.setUint16(20,1,true);v.setUint16(22,1,true);
+  v.setUint32(24,8000,true);v.setUint32(28,8000,true);v.setUint16(32,1,true);v.setUint16(34,8,true);s(36,'data');v.setUint32(40,n,true);
+  return b;
+}
 /* B134: where a feed ends at a send, so what comes after it is found in a later feed even once the feed is capped and
    its indexes move: the last entry's own id, else (a transcript without ids) all its entries */
 function feedMark(entries){const es=entries||[], l=es[es.length-1];
@@ -876,7 +899,7 @@ function projectButtons(p){
   b.push({label:'Unlist',unlist:true});
   return b;
 }
-if(typeof module!=='undefined')module.exports={viewOf,runPill,cardControls,controlGroups,needsReply,chatGroups,needChatAsk,TALK_SET,talkSetParse,pickVoice,feedMark,feedAfter,atEnd,swipeTakes,swipeOpens,settingText,settingShown,settingValue,homeBase,homeKey,projectLink,homeLink,homeHref,pageTitle,projectState,switcherRows,projectWords,projectButtons,chatMove,BOX_KEYS,keysLine,histPush,histEdge,histStep,slashMatches,slashPick,slashMove,SLASH_FALLBACK,chatPick,answerOpts,needAsk,threadMsgs,working,planWords,compose,sendReq,usageOf,logKind,plain,chatName,controlReq,controlClick,taskControlsOn,queueGroups,conceptButtons,planQueue,NO_CONCEPT,newConceptReq,queuedId,NAV,talkSession,micProblem,dictProblem,dictButton,dictInsert,termTokens,talkShown,talkReply,goneMark,needsShown,answerSaid,GONE_MS,obParse,obNext,obName,obSettle,obRetry,obDrop,obCounts,obHidden,obPill,OLD_RUN,OLD_WAIT,oldRun,plainOut,obRefused,obOld,obDue,obBootCid,sentLeft,sentStep,sentParse};
+if(typeof module!=='undefined')module.exports={viewOf,runPill,cardControls,controlGroups,needsReply,chatGroups,needChatAsk,TALK_SET,talkSetParse,pickVoice,runVoice,speechClips,silentWav,feedMark,feedAfter,atEnd,swipeTakes,swipeOpens,settingText,settingShown,settingValue,homeBase,homeKey,projectLink,homeLink,homeHref,pageTitle,projectState,switcherRows,projectWords,projectButtons,chatMove,BOX_KEYS,keysLine,histPush,histEdge,histStep,slashMatches,slashPick,slashMove,SLASH_FALLBACK,chatPick,answerOpts,needAsk,threadMsgs,working,planWords,compose,sendReq,usageOf,logKind,plain,chatName,controlReq,controlClick,taskControlsOn,queueGroups,conceptButtons,planQueue,NO_CONCEPT,newConceptReq,queuedId,NAV,talkSession,micProblem,dictProblem,dictButton,dictInsert,termTokens,talkShown,talkReply,goneMark,needsShown,answerSaid,GONE_MS,obParse,obNext,obName,obSettle,obRetry,obDrop,obCounts,obHidden,obPill,OLD_RUN,OLD_WAIT,oldRun,plainOut,obRefused,obOld,obDue,obBootCid,sentLeft,sentStep,sentParse};
 </script>
 
 <script>
@@ -1455,14 +1478,15 @@ const SHEETS={
     const vs=voices(), t=TS;
     return `<h2>Talk settings</h2>
       <label class="it setrow"><span class="grow">Read replies aloud</span><input type="checkbox" role="switch" class="sw" data-ts="read" ${t.read?'checked':''}></label>
-      <label class="it setrow"><span class="grow">Voice</span><select class="fld" data-ts="voice"><option value="">System voice</option>${vs.map(v=>`<option value="${esc(v.name)}" ${t.voice===v.name?'selected':''}>${esc(v.name)}${v.lang?` (${esc(v.lang)})`:''}</option>`).join('')}</select></label>
+      <label class="it setrow"><span class="grow">Voice</span><select class="fld" data-ts="voice">${voiceOpts()}${vs.map(v=>`<option value="${esc(v.name)}" ${t.voice===v.name?'selected':''}>${esc(v.name)}${v.lang?` (${esc(v.lang)})`:''}</option>`).join('')}${runVoices().length?'</optgroup>':''}</select></label>
+      ${AU.got&&!runVoices().length?'<div class="small">The run\'s machine has no voice installed, so this browser reads. Ask a chat to install one.</div>':''}
       <label class="it setrow"><span class="grow">Mic</span><select class="fld" data-ts="mic"><option value="tap" ${t.mic==='tap'?'selected':''}>Tap to start and stop</option><option value="hold" ${t.mic==='hold'?'selected':''}>Hold to talk</option></select></label>
       <label class="it setrow"><span class="grow">Auto listen<span class="small" style="display:block">Listens again once a reply was read; stops after one silent turn.</span></span><input type="checkbox" role="switch" class="sw" data-ts="auto" ${t.auto?'checked':''}></label>
       <div class="btns"><button class="btn" data-closesheet>Done</button></div>`;
   },
 };
 let sheetBack=null;
-function openSheet(name,arg){S.sheet=name;S.sheetArg=arg||'';S.sure=null;S.fixOpen='';S.drawer=false;sheetBack=document.activeElement;render(true);$('sheet').scrollTop=0;$('sheet').focus({preventScroll:true})}
+function openSheet(name,arg){if(name==='talk')loadVoices();S.sheet=name;S.sheetArg=arg||'';S.sure=null;S.fixOpen='';S.drawer=false;sheetBack=document.activeElement;render(true);$('sheet').scrollTop=0;$('sheet').focus({preventScroll:true})}
 function closeSheet(){if(!S.sheet)return;S.sheet='';S.sure=null;render(true);if(sheetBack&&sheetBack.isConnected&&sheetBack.focus)sheetBack.focus({preventScroll:true});sheetBack=null}
 function sheetDraw(){
   const el=$('sheet');
@@ -1734,10 +1758,10 @@ function slashTake(j){
 }
 
 /* --- F93: Talk: the mic hears the person (Web Speech API), the words go to the Talk session (the `talk` action),
-   and its reply is read aloud (speechSynthesis); the chat box under the mic works without either ------------- */
+   and its reply is read aloud (F158: run speech, else speechSynthesis); the chat box under the mic works without either ------------- */
 const TALK_KEY='ar-talk', TALK_OLD='ar-talkold', TALK_START='ar-talkstart';  /* the Talk session this browser opened ('new': none yet, the next message opens one), and the Talk chats New Talk chat left (F157) */
 const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
-const TK={rec:null,heard:'',trail:null,report:'',upAt:0,state:'',wait:null,said:'',unlocked:false,note:'',playing:'',hold:false,holdId:null,again:false,ear:null,gen:0,starting:[]};  /* gen: counts New Talk chat presses; starting: the sends that open a chat whose name is not known yet (F157); state: '', listening, thinking, speaking; ear: the listen under way (listen()); trail: what happened on the mic (micLog), report: the one to copy, upAt: when a hold ended; playing: the reply a play button reads */
+const TK={rec:null,heard:'',trail:null,report:'',upAt:0,state:'',wait:null,said:'',unlocked:false,note:'',held:'',playing:'',hold:false,holdId:null,again:false,ear:null,gen:0,starting:[]};  /* gen: counts New Talk chat presses; starting: the sends that open a chat whose name is not known yet (F157); state: '', listening, thinking, speaking; ear: the listen under way (listen()); trail: what happened on the mic (micLog), report: the one to copy, upAt: when a hold ended; playing: the reply a play button reads; held: the reply the browser wants a tap for (F158) */
 /* F124: Talk's settings (TALK_SET), and whether its dock shows the mic or the box, as this browser last had them */
 const TS_KEY='ar-talkset', TM_KEY='ar-talkmode';
 let TS=talkSetParse(store.get(TS_KEY));
@@ -1745,6 +1769,52 @@ TK.starting=talkStartsRead();  // F157
 function talkSet(k,v){TS=talkSetParse(JSON.stringify({...TS,[k]:v}));store.set(TS_KEY,JSON.stringify(TS));render(true)}
 const voices=()=>{try{return window.speechSynthesis?speechSynthesis.getVoices():[]}catch(e){return[]}};
 if(window.speechSynthesis&&speechSynthesis.addEventListener)speechSynthesis.addEventListener('voiceschanged',()=>{if(S.sheet==='talk')render(true)});
+/* F158: run speech: clips made on the run's machine, played one after another in one audio element (`AU.el`), which a
+   tap on the speaker unlocks for good. AU.got: the run's voices, null until it answered; AU.ok: it has played */
+const AU={el:null,got:null,ok:false,url:''};
+const runVoices=()=>(AU.got&&AU.got.voices)||[];
+function loadVoices(){if(HOME_PAGE)return;fetch(tq('speech')).then(r=>r.ok?r.json():null).then(j=>{if(j&&Array.isArray(j.voices)){AU.got=j;if(S.sheet==='talk')render(true)}}).catch(()=>{})}
+loadVoices();
+/* the Voice setting's first options: with run voices, the default one, theirs by engine, then this device's (a group left open) */
+function voiceOpts(){
+  const vs=runVoices(), o=(v,t)=>`<option value="${esc(v)}" ${TS.voice===v?'selected':''}>${esc(t)}</option>`;
+  if(!vs.length)return '<option value="">System voice</option>';
+  const d=vs.find(v=>v.id===AU.got.default);
+  return o('',`Default${d?` (${d.name})`:''}`)+[...new Set(vs.map(v=>v.engine))].map(e=>`<optgroup label="${esc(e==='Piper'?'Piper, light':e)}">${vs.filter(v=>v.engine===e).map(v=>o(v.id,v.name+(v.lang?` (${v.lang})`:''))).join('')}</optgroup>`).join('')+'<optgroup label="This device">'+o('system','System voice');
+}
+function audioEl(){return AU.el||(AU.el=new Audio())}
+function audioSrc(blob){const a=audioEl();a.onended=a.onerror=a.onpause=null;if(AU.url)URL.revokeObjectURL(AU.url);a.src=AU.url=URL.createObjectURL(blob);return a}
+/* inside a tap that starts no mic: the silent clip, so a later reply plays by itself. Not while a clip plays */
+function unlockAudio(){
+  if(AU.ok||TK.ear||TK.state==='speaking'||TK.playing||!runVoice(AU.got,TS.voice))return;
+  try{const p=audioSrc(new Blob([silentWav()],{type:'audio/wav'})).play();if(p)p.then(()=>{AU.ok=true}).catch(()=>{})}catch(e){}
+}
+/* what reads now stops, whichever of the two it is */
+function shush(){
+  if(window.speechSynthesis)speechSynthesis.cancel();
+  const a=AU.el;if(a){a.onended=a.onerror=a.onpause=null;if(!a.paused)a.pause()}
+}
+/* clip number i of `clips`, and then the rest; `turn` is TK.turn while nothing stopped it. end(): read to its end;
+   fall(rest, why): the run made no sound for the rest; held(): the browser wants a tap first */
+async function playClips(clips,voice,turn,end,fall,held){
+  const get=p=>{const c=new AbortController(), t=setTimeout(()=>c.abort(),50000);
+    return fetch(tq('speech'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:p,voice}),signal:c.signal})
+      .then(async r=>{if(r.ok)return r.blob();const j=await r.json().catch(()=>({}));throw new Error(j.out||`error ${r.status}`)}).finally(()=>clearTimeout(t))};
+  const ask=i=>{if(i>=clips.length)return null;const p=get(clips[i]);p.catch(()=>{});return p};
+  let next=ask(0);
+  for(let i=0;i<clips.length;i++){
+    try{
+      const b=await next;if(TK.turn!==turn)return;
+      next=ask(i+1);  // made while this one plays, so there is no gap
+      await new Promise((done,no)=>{const a=audioSrc(b);
+        a.onended=done;a.onerror=()=>no(new Error('the clip did not play'));
+        a.onpause=()=>{if(!a.ended&&TK.turn===turn)hush()};  // a call, or the lock screen's pause
+        const p=a.play();if(p)p.then(()=>{AU.ok=true}).catch(no)});
+    }catch(e){if(TK.turn!==turn)return;if(e&&e.name==='NotAllowedError')return held();return fall(clips.slice(i).join(' '),e&&e.message||String(e))}
+    if(TK.turn!==turn)return;
+  }
+  end();
+}
 const talkTyping=()=>!!micWhy()||store.get(TM_KEY)==='type';
 function talkMode(m){store.set(TM_KEY,m==='type'?'type':'');S.pin=true;render(true);const t=m==='type'&&document.querySelector('[data-in]');if(t)kbFocus(t)}
 /* F157: the Talk chats left by New Talk chat, kept over a reload */
@@ -1776,7 +1846,8 @@ function newTalk(){
   TK.ear=TK.rec=null;TK.hold=TK.again=false;TK.wait=null;
   TK.state=TK.heard=TK.said=TK.note=TK.report=TK.playing='';TK.turn=(TK.turn||0)+1;
   if(rec)rec.stop();
-  if(spoke&&window.speechSynthesis)speechSynthesis.cancel();
+  TK.held='';
+  if(spoke)shush();
   S.drawer=false;S.pin=true;render(true);
 }
 function talkName(){
@@ -1860,13 +1931,13 @@ function talkDraw(){
   const label=why||(st==='listening'?'Stop listening':st==='speaking'?'Stop speaking':hold?'Hold to talk':'Talk');
   mic.className='mic'+(hold?' hold':'')+(st==='listening'?' on':st==='speaking'?' speaking':'');mic.disabled=!!why;
   mic.setAttribute('aria-label',label);mic.title=label;setHTML(mic,st==='speaking'?I.stop:I.talk);
-  const sl=st==='speaking'||TK.playing?'Stop reading':TS.read?'Read replies aloud: on':'Read replies aloud: off';
+  const sl=st==='speaking'||TK.playing?'Stop reading':TK.held?'Read the reply aloud':TS.read?'Read replies aloud: on':'Read replies aloud: off';
   spk.className='spk'+(TS.read?'':' off');spk.setAttribute('aria-label',sl);spk.setAttribute('aria-pressed',String(TS.read));spk.title=sl;setHTML(spk,TS.read?I.speak:I.mute);
 }
 /* the person's words to the Talk session; true once sent */
 async function talkSend(msg){
   const to=talkName(), len=to?feedOf(to).length:0, mark=to&&S.feeds[to]?feedMark(feedOf(to)):null;  // B134
-  TK.state='thinking';TK.said=msg;TK.note='';S.pin=true;unlockSpeech();render(true);
+  TK.state='thinking';TK.said=msg;TK.note=TK.held='';S.pin=true;unlockSpeech();render(true);
   /* B133: the wait starts before the action, which can take up to 90 s while a new chat comes up: a reply that
      lands meanwhile is heard from the polls and snapshots (talkWaitName finds the new chat by its title) */
   const w={n:to,since:to?mark:0,at:Date.now(),last:'',said:msg,out:true,gen:TK.gen};TK.wait=w;
@@ -1893,26 +1964,37 @@ function talkHear(n){
   if(TS.read)speak(said);else{TK.state='';render(true)}  // F124: read replies aloud is off
 }
 function unlockSpeech(){  /* Safari speaks later only after a first utterance inside a tap */
+  unlockAudio();  // F158
   try{if(window.speechSynthesis&&!TK.unlocked){speechSynthesis.speak(new SpeechSynthesisUtterance(''));TK.unlocked=true}}catch(e){}
 }
 /* F124: read text aloud; key, the reply a play button reads (a Talk reply read by itself has none). Auto listen:
    once a Talk reply was read to its end, the mic listens again */
 function speak(text,key){
-  const ss=window.speechSynthesis;
-  if(!ss||!text){TK.state='';render(true);return}
+  const ss=window.speechSynthesis, rv=runVoice(AU.got,TS.voice);
+  if(!(ss||rv)||!text){TK.state='';render(true);return}
   if(key&&TK.ear){micLog('stop by a play button');const r=TK.rec;TK.ear=TK.rec=null;TK.heard='';if(r)r.stop()}  // a play button stops the mic, so it does not hear the reply; nothing is sent
-  if(!key||TK.state!=='thinking')TK.state='';TK.playing='';ss.cancel();
+  if(TK.held)TK.note='';
+  if(!key||TK.state!=='thinking')TK.state='';TK.playing=TK.held='';shush();
   const parts=text.match(/[^.!?]+[.!?]*\s*/g)||[text];  /* sentence by sentence: Chrome cuts one long utterance short */
   const voice=pickVoice(voices(),TS.voice), turn=TK.turn=(TK.turn||0)+1;
-  parts.forEach((p,i)=>{const u=new SpeechSynthesisUtterance(p.trim());u.lang=(voice&&voice.lang)||navigator.language||'en-US';if(voice)u.voice=voice;
-    if(i===parts.length-1)u.onend=u.onerror=e=>{if(TK.turn!==turn||!(key?TK.playing===key:TK.state==='speaking'))return;
-      TK.state=TK.state==='speaking'?'':TK.state;TK.playing='';render(true);
-      if(!key&&TS.auto&&(!e||e.type!=='error')&&S.view==='talk'&&!S.thread&&!talkTyping()){TK.again=true;listen()}};
+  const ended=e=>{if(TK.turn!==turn||!(key?TK.playing===key:TK.state==='speaking'))return;
+    TK.state=TK.state==='speaking'?'':TK.state;TK.playing='';render(true);
+    if(!key&&TS.auto&&(!e||e.type!=='error')&&S.view==='talk'&&!S.thread&&!talkTyping()){TK.again=true;listen()}};
+  const own=ps=>ps.forEach((p,i)=>{const u=new SpeechSynthesisUtterance(p.trim());u.lang=(voice&&voice.lang)||navigator.language||'en-US';if(voice)u.voice=voice;
+    if(i===ps.length-1)u.onend=u.onerror=ended;
     ss.speak(u)});
+  if(!rv)own(parts);
+  else{
+    unlockAudio();  // a play button's tap
+    playClips(speechClips(text),rv,turn,ended,(rest,why)=>{
+      toast(ss?`The run could not read this aloud (${why}), so this browser does.`:`The run could not read this aloud: ${why}`,true);
+      if(ss)own(rest.match(/[^.!?]+[.!?]*\s*/g)||[rest]);else ended({type:'error'});
+    },()=>{TK.playing='';if(TK.state==='speaking')TK.state='';TK.turn++;TK.held=text;TK.note='The browser wants a tap first. Tap the speaker to hear the reply';render(true)});
+  }
   if(key)TK.playing=key;else TK.state='speaking';
   render(true);
 }
-function hush(){TK.playing='';if(TK.state==='speaking')TK.state='';TK.turn=(TK.turn||0)+1;if(window.speechSynthesis)speechSynthesis.cancel();render(true)}
+function hush(){TK.playing='';if(TK.state==='speaking')TK.state='';TK.turn=(TK.turn||0)+1;shush();render(true)}
 /* a Talk reply's play button: reads that reply, or stops it */
 function playReply(k){
   if(TK.playing===k)return hush();
@@ -1924,8 +2006,8 @@ function listen(){
   if(TK.state==='listening')return micStop('a tap');
   /* B132: no speechSynthesis call before rec.start() on a plain tap: on iOS it puts the audio session in playback
      and recognition hears nothing (talkSend unlocks speech). A tap during a reply only stops it; the next one listens. */
-  if(TK.state==='speaking'||TK.playing){if(TK.state==='speaking')TK.state='';TK.playing='';TK.note='';TK.turn=(TK.turn||0)+1;if(window.speechSynthesis)speechSynthesis.cancel();render(true);return}
-  TK.note=TK.report='';const again=TK.again;TK.again=false;  /* auto listen: one silent turn and it stops */
+  if(TK.state==='speaking'||TK.playing){if(TK.state==='speaking')TK.state='';TK.playing='';TK.note='';TK.turn=(TK.turn||0)+1;shush();render(true);return}
+  TK.note=TK.report=TK.held='';const again=TK.again;TK.again=false;  /* auto listen: one silent turn and it stops */
   /* B162: the listen: its tries, the words so far, and whether the person ended it (stopped) or held the mic again */
   const t=TK.ear={mode:again?'auto':TS.mic,tries:0,words:'',err:'',ms:null,stopped:false,more:false,on:false,msg:''};
   if(!TK.trail||TK.trail.used)micLog('listen',true);  // a press began it already
@@ -2125,7 +2207,7 @@ document.addEventListener('click',async e=>{
   if(x=q('[data-viewsw]')){try{localStorage.setItem(VIEW_KEY,x.dataset.viewsw)}catch(err){}return}  // F81: the link goes on
   if(q('[data-micreport]'))return micCopy();
   if(q('[data-mic]')){micLog(`click, detail ${e.detail}`);if(TS.mic==='hold'&&TK.state!=='speaking'&&!TK.playing&&(e.detail>0||Date.now()-TK.upAt<1000))return;return listen()}  // F93; F124: held (pointerdown), a key still toggles
-  if(q('[data-spk]')){if(TK.state==='speaking'||TK.playing)return hush();talkSet('read',!TS.read);return}
+  if(q('[data-spk]')){if(TK.state==='speaking'||TK.playing)return hush();if(TK.held&&!TK.ear&&TK.state!=='thinking')return speak(TK.held);unlockAudio();talkSet('read',!TS.read);return}
   if(x=q('[data-talkmode]'))return talkMode(x.dataset.talkmode);
   if(x=q('[data-speak]'))return playReply(x.dataset.speak);
   if(q('[data-menu]')){S.drawer=true;render();return}

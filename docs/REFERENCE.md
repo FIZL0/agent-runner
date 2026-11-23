@@ -264,13 +264,23 @@ the run page: the same snapshot as `agent-runner ui` and most of its actions (no
 drawer) and a desktop. It follows the browser's light or dark setting; `[ui] theme` is the terminal UI's only.
 
 - **Talk.** The first view in the sidebar, for running the run hands-free: tap the mic, speak, and the
-  reply is read aloud (the browser's own speech recognition and speech, no install). The speaker button left of the
+  reply is read aloud (the browser's own speech recognition; the reading is run speech when an engine is installed, else the browser's own). The speaker button left of the
   mic turns reading aloud on and off (while a reply is read, it stops it); the keyboard button swaps the mic for the
   message box and the browser remembers which. Each reply has a play button. The gear opens Talk settings, kept per
-  browser: read replies aloud, the voice (the system's own by default), tap or hold to talk, and auto listen (listen
+  browser: read replies aloud, the voice (Kokoro af_heart by default; every Kokoro voice, Piper or the device's own), tap or hold to talk, and auto listen (listen
   again once a reply was read, until one silent turn). Talk has its own control session, titled Talk and reused while it is live, told to answer in short
   spoken sentences with no task IDs, paths, commands, links or markdown. New Talk chat (top bar) stays in Talk, stops listening, reading aloud or waiting for a reply, clears the shown conversation, and the next message opens a fresh Talk session; this also holds after a reload in that browser. The mic needs Chrome, Edge or Safari
   on https or localhost (a plain http LAN address gets no mic); without one it says so and the box still works. An abort before any words is retried once by itself; if it fails again, Talk's status line says what to try. While the mic starts, its line says "Starting the mic…" until sound is really captured, then "Listening…". A listen that heard no words shows "Copy mic report", the events from press to end with their times, to copy and send (shown on screen to copy by hand where the clipboard is refused).
+- **Run speech.** Talk's replies are made into sound on the run's own machine by an engine installed there, and the run
+  app plays the clips; nothing leaves the machine. Install one with `agent-runner speech install [kokoro|piper]` (a
+  person can also ask a chat to install it). Kokoro, the default and the natural voice, is 354 MB of files plus about
+  200 MB of Python packages. Piper (en_US-lessac-medium) is the light one, 63 MB. Both need uv, or Python 3.10 to 3.13
+  to make their own Python. Piper's package is GPL-3.0; it is installed separately and not shipped. The folder is one
+  per machine: $AGENT_RUNNER_SPEECH, else $XDG_DATA_HOME/agent-runner/speech or ~/.local/share/agent-runner/speech (on
+  Windows %LOCALAPPDATA%\agent-runner\speech). It holds the engines' packages (venv) and their voice files. The worker
+  that makes the clips ends after 10 idle minutes and starts again on the next one. Sound plays after a tap on the
+  speaker (or a play button, or Send) has let the browser play it; if the browser blocks it, the talk line says to tap
+  the speaker. With no engine installed, or when one fails, the browser's own speech reads.
 - **Sidebar.** New chat, Talk, Home (with the Needs you count), Status, Plan, Concepts and Settings. Chats are the
   control sessions: a dot marks one that needs your reply (an open question, or it spoke after you last opened it),
   and one that needs none with nothing said for `[ui] chat_quiet` is gray at the bottom under Quiet (never c1, a
@@ -1154,6 +1164,8 @@ agent-runner resume ID...              continue each task's last session in its 
 agent-runner cost [--days N] [--files] where the workers' tokens went, by kind of tool call (--files: by
                                        file read, and exact-repeat commands)
 agent-runner home [slots|plan]         where this project's worktrees and plan clone live
+agent-runner speech [install [kokoro|piper]]
+                                       run speech's voices (Talk reads with them), or installs one
 agent-runner context [--check]         what every session loads, by file and section; --check fails over budget
 agent-runner help order                how to make one task wait for another
 agent-runner --version

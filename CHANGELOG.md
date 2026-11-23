@@ -16,6 +16,11 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
   pane and v are gone; a session with no socket says so with its link (F141).
 - Changed: in `agent-runner ui`'s Sessions, n starts a new chat (a control session, without waiting for its link);
   N no longer does. Concepts' N, chat about it, is unchanged (F153).
+- Added: run speech (F158). Talk reads replies with speech made on the run's own machine, played in one audio element
+  that a tap on the speaker (or a play button, or a typed Send) unlocks, so later replies play by themselves. The default
+  voice is Kokoro af_heart; Talk settings list every Kokoro voice, Piper en_US-lessac-medium (light) and the device's own.
+  Install with `agent-runner speech install [kokoro|piper]`. With no engine installed, or when one fails, the browser's
+  own speech reads as before. Text never leaves the machine.
 - Added: approve to push (F98). With `[run] approve = true`, merges land but nothing is pushed until a person approves a
   pitch on Needs you (Approve, or Not this to undo).
 - Added: New Talk chat (F157). In Talk the top bar's New chat button is now New Talk chat: it stays in Talk, stops

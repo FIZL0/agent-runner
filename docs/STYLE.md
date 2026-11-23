@@ -169,6 +169,11 @@ Motion shows where a thing came from, where it went, or that it changed. Nothing
   order, and follows Safari's pan so the header stays on screen.
 - The viewport meta has `interactive-widget=resizes-content` for browsers that have it.
 
+## Sound
+
+- Run speech plays only in the one audio element (`AU.el`), only after the person's tap has allowed it, never while the mic listens,
+  and one tap stops it. When the browser blocks it, the talk line says what to tap.
+
 ## Before you finish
 
 1. Phone (390px) and desktop (1280px), light and dark, looked at.

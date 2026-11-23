@@ -539,3 +539,10 @@ _Said_: messages dropped because of the weekly limit
 _On screen_: asks wait for the usage limit
 _In code_: control_held, <notes>/held/
 _Avoid_: lost message, queued message
+
+**Run speech**:
+Talk's replies made into sound on the run's own machine and played by the run app; without it the browser's own speech reads them.
+_Said_: the voice, natural voice
+_On screen_: Voice, Default (af_heart)
+_In code_: speech.py, speech_worker.py, /speech, runVoice, playClips
+_Avoid_: TTS, voice file

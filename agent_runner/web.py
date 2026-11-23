@@ -21,6 +21,8 @@ port instead, which Runner Home routes to; the link shown is then Home's /p/KEY/
     GET  /settings?t=TOKEN       F97: every setting, its value, source and default (`ui_model.settings`)
     GET  /task/ID?t=TOKEN        F85: task ID's whole text (`plan ID`), for its row folded open
     GET  /concept/ID?t=TOKEN     F74: concept ID's local page copy (<notes>/concepts/ID.html), sandboxed
+    GET  /speech?t=TOKEN         F158: the voices this machine can read Talk's replies with (`speech.voices`)
+    POST /speech?t=TOKEN         F158: {"text", "voice"}: that text as a WAV clip (`speech.Speaker`)
     GET  /diff/NAME?t=TOKEN      F75: slot NAME's diff so far (`slot_diff`), for its diff tab
     POST /upload?t=TOKEN&name=N  F79: an attachment (the body, as is) kept under <notes>/uploads; its path on this
                                  machine comes back, for the message that hands it to a session
@@ -47,6 +49,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
+from agent_runner import speech
 from agent_runner import state as S
 from agent_runner import ui_model as U
 
@@ -808,6 +811,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(200, json.dumps(U.feed(path.split('/')[2]), ensure_ascii=False))
         if path == '/settings':  # F97
             return self.send(200, json.dumps(U.settings(), ensure_ascii=False, default=str))
+        if path == '/speech':  # F158
+            return self.send(200, json.dumps(speech.voices()))
         if path.startswith('/task/'):  # F85
             return self.send(200, json.dumps(U.task_text(path.split('/')[2]), ensure_ascii=False))
         if path.startswith('/diff/'):
@@ -821,8 +826,10 @@ class Handler(BaseHTTPRequestHandler):
             return self.refuse()
         if urlsplit(self.path).path == '/upload':
             return self.upload()
+        if urlsplit(self.path).path == '/speech':
+            return self.speech()
         if urlsplit(self.path).path != '/act':
-            return self.send(404, json.dumps({'ok': False, 'out': 'POST goes to /act or /upload'}))
+            return self.send(404, json.dumps({'ok': False, 'out': 'POST goes to /act, /upload or /speech'}))
         try:
             body = json.loads(self.rfile.read(int(self.headers.get('Content-Length') or 0)) or b'{}')
             name, args = str(body.get('name', '')), body.get('args') or {}
@@ -862,6 +869,22 @@ class Handler(BaseHTTPRequestHandler):
         except OSError as e:
             return self.send(500, json.dumps({'ok': False, 'out': f'could not keep the upload: {e}'}))
         self.send(200, json.dumps(r, ensure_ascii=False))
+
+    def speech(self) -> None:
+        """F158: a clip of Talk's reply, made on this machine; the page reads with the browser's own voice when
+        none comes."""
+        try:
+            size = int(self.headers.get('Content-Length') or 0)
+            if not 0 < size <= speech.TEXT_MAX * 8:
+                self.close_connection = True  # the body stays unread
+                raise ValueError('the text is missing or too long')
+            body = json.loads(self.rfile.read(size))
+            data = self.server.speaker.make(str(body['text']), str(body.get('voice') or ''))
+        except (ValueError, KeyError, TypeError, AttributeError) as e:
+            return self.send(400, json.dumps({'ok': False, 'out': f'bad request: {e}'}))
+        except speech.SpeechError as e:
+            return self.send(503, json.dumps({'ok': False, 'out': str(e)}))
+        self.send(200, data, 'audio/wav')
 
     def concept(self, cid: str) -> None:
         """F74: a concept's local page copy (`ui_model.concept_copy`), for the page to show inline. Sandboxed:
@@ -909,6 +932,7 @@ class WebServer(ThreadingHTTPServer):
     def __init__(self, token: str, port: int, bind: str = '0.0.0.0', snap=run_snapshot):
         self.token, self.snaps, self.stopped = token, Snapshots(snap), threading.Event()
         self.once = ActsOnce()  # F137
+        self.speaker = speech.Speaker()  # F158
         super().__init__((bind, port), Handler)
         self.terms = Terminals(token, self.server_address[1], bind)
 
@@ -917,6 +941,7 @@ class WebServer(ThreadingHTTPServer):
         self.shutdown()
         self.server_close()
         self.terms.close()
+        self.speaker.close()
 
 
 def serve(token: str, port: int, bind: str = '0.0.0.0', snap=run_snapshot) -> WebServer:
