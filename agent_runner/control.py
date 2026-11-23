@@ -839,8 +839,8 @@ def person_turn(d: dict) -> bool:
 #
 # Every CONTROL_CLOSE_EVERY s the run reads the transcript of each live control session N (not c1, the kept
 # one) and closes it (ends its process, removes controlN.pid; the transcript stays, resumable) when Claude
-# spoke last, nothing runs in it, and it has been quiet `[run] control_idle`; or, when its last message is an
-# open question or offer (`[run] control_open`), quiet `[run] control_ask`: then the question is filed under
+# spoke last, nothing runs in it, and it has been quiet `[run] control_idle`; or, when its last line is
+# `DECIDE: <question>` (F135; an offer is not filed), quiet `[run] control_ask`: then the question is filed under
 # Needs you as a DECIDE item (an F task) first. `control_idle = false` closes none for idleness, `control_ask =
 # false` keeps one waiting on its question open; both false turn it off.
 
@@ -1007,6 +1007,16 @@ def open_question(text: str, phrases: list[str]) -> str:
     return q if len(q) <= 240 else q[:239].rsplit(' ', 1)[0] + '…'
 
 
+DECIDE_LINE = re.compile(r'^[\s>*_`]*DECIDE:[\s*_`]*(.+?)[\s*_`]*$')  # F135: a line `DECIDE: <the question>`
+
+
+def decide_question(text: str) -> str:
+    """F135: the question work waits on in Claude's last message `text`, '' for none: its last non-empty line
+    `DECIDE: <the question>` (only the last, so a status quoting another item's DECIDE line is none)."""
+    q = ' '.join(m[1].split()) if text.strip() and (m := DECIDE_LINE.match(text.strip().splitlines()[-1])) else ''
+    return q if len(q) <= 240 else q[:239].rsplit(' ', 1)[0] + '…'
+
+
 def control_renamed(st: dict, n: int = 0) -> bool:
     """B41: whether the person renamed control session `n` (state `st`): its custom title is set and is not a
     name the runner gives it: `control_name(n)`, "<repo> · N", or the name it last gave session N (F32:
@@ -1022,7 +1032,8 @@ def control_verdict(st: dict, cf: dict, now: float, n: int = 0, one_ask: bool = 
     person sent more than one message in, `control_idle_talked`; one opened for one ask (`one_ask`: the runner gave it its first message) that the person
     sent nothing more to and that queued a task, with no open question, `control_idle_quick`; else (or with that
     tier off) `control_idle`. F57: an open question is filed after `control_ask`, or in a talked session after the
-    longer of that and `control_idle_talked`."""
+    longer of that and `control_idle_talked`. F135: only a `decide_question` is; an offer (`open_question`) closes
+    when idle (never quick), its why naming it."""
     if control_renamed(st, n):
         return 'keep', 'renamed by the person'
     if st['last'] != 'claude':
@@ -1031,20 +1042,21 @@ def control_verdict(st: dict, cf: dict, now: float, n: int = 0, one_ask: bool = 
         return 'keep', f'{len(st["running"])} background task(s) still running'
     quiet = now - st['at'] if st['at'] else 0
     talked = st.get('said', 0) > 1 and cf.get('talked')
-    if q := open_question(st['text'], cf['open']):
+    if q := decide_question(st['text']):
         # F57: a talked session's question waits control_idle_talked too, so it stays open as long as any talk
         ask = max(cf['ask_idle'], cf['talked']) if talked and cf['ask_idle'] else cf['ask_idle']
         if ask and quiet >= ask:
             return 'ask', q
-        return 'keep', 'its open question is not old enough' if cf['ask_idle'] else 'an open question (control_ask = false)'
+        return 'keep', 'its DECIDE question is not old enough' if cf['ask_idle'] else 'a DECIDE question (control_ask = false)'
+    offer = open_question(st['text'], cf['open'])  # F135: not filed, only named in the close's run.log line
     if talked:
         idle, tier = cf['talked'], ' (talked)'
-    elif one_ask and st.get('said', 0) == 1 and st.get('queued') and cf.get('quick'):
+    elif one_ask and st.get('said', 0) == 1 and st.get('queued') and cf.get('quick') and not offer:
         idle, tier = cf['quick'], ' (one ask, queued)'
     else:
         idle, tier = cf['idle'], ''
     if idle and quiet >= idle:
-        return 'close', f'idle {int(quiet // 60)} min{tier}'
+        return 'close', f'idle {int(quiet // 60)} min{tier}' + (f', "{offer}" not filed (no DECIDE line)' * bool(offer))
     return 'keep', 'active lately'
 
 
