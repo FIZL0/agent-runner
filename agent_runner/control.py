@@ -22,7 +22,6 @@ from agent_runner.control_settled import LEAD  # F160: how the runner's own type
 from agent_runner.config import RUNNER, runner_cmd, shown_cmd
 from agent_runner.state import C, commit_plan, git, HIDDEN, init, log, MERGE, note, plan_rel, ROOT
 from agent_runner.brief import has_sheet
-from agent_runner.session_frame import session_look
 from agent_runner.slots import (backend, entries, marker_pid, PRESENCE_ENV, quiet_file, remote_on,
     REMOTE_URL, silent, transcript)
 from agent_runner.merge import gate_alive
@@ -91,8 +90,7 @@ def control_settings_data() -> dict:
     hook: a control session is never ended on idle."""
     hook = plat.command_text([*runner_cmd(), 'control', '--brief'])
     return {'hooks': {'SessionStart': [{'hooks': [{'type': 'command', 'command': hook}]}]},
-            **session_theme.settings(session_look()),  # F170: the run page's own look
-            'skipDangerousModePermissionPrompt': True,
+            'skipDangerousModePermissionPrompt': True, **session_theme.settings(),  # F170: the run page's look
             'permissions': {'additionalDirectories': [str(control_skills_dir())]}}
 
 

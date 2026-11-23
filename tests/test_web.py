@@ -1324,7 +1324,7 @@ def test_slash_menu_b119(tmp: Path) -> None:
         return
     got = logic_js([['slashMatches', cmds, '/sl'], ['slashMatches', [], '/pa'], ['slashMatches', cmds, 'hi'],
                     ['slashMatches', cmds, '/run now'], ['slashMove', 0, 3, 'ArrowUp'], ['slashMove', 2, 3, 'ArrowDown']])
-    eq([c['name'] for c in got[0]], ['slots'], '/sl filters to /slots')
+    eq(got[0][0]['name'], 'slots', '/sl filters to /slots first')
     eq([c['name'] for c in got[1]], ['pause', 'compact'], 'no list from the run page: the fixed list stands in')
     eq(got[2:4], [[], []], 'no menu without a leading / or once a space follows the command')
     eq(got[4:], [2, 0], 'the arrows wrap round')
@@ -1737,7 +1737,7 @@ def test_outbox_f137(tmp: Path) -> None:
     page = W.PAGE.read_text(encoding='utf-8')
     for part in ("JSON.stringify({name:it.name,args:it.args,cid:it.cid})", "addEventListener('online',()=>drain())",
                  'id="obbar"', 'id="obpop"', 'obChatRows()', 'obBubbles(n)', 'obCards(x=>x.concept||x.kq)',
-                 "if(OB.offline)drain()", "outbox('chat_to',{text:msg,to}"):
+                 "if(OB.offline)drain()", "outbox('chat_to',{text:msg,to,..."):
         check(part in page, f'the page has {part}')
     send = page.split('async function send(){', 1)[1].split('\n}', 1)[0]
     check("act('chat_to'" not in send, 'a message no longer waits for chat_to before leaving the box', send)
@@ -2080,7 +2080,7 @@ def test_chat_box_f115(tmp: Path) -> None:
     check(".main.term .u::before{content:'>'" in page, "a '>' prompt on your messages in Talk")
     check("main.classList.toggle('term',chatOn)" in page and "fetch('term'" not in page,
           "a chat takes the terminal look with the run app's own colours")
-    check('@media (pointer:coarse){.tool{height:40px;min-width:40px}.send{width:40px;height:40px}}' in page,
+    check('@media (pointer:coarse){.tool{height:40px;min-width:40px}.send{width:40px;height:40px}.box .act{height:40px}}' in page,
           'the box buttons stay touch-sized on a phone')
     if not shutil.which('node'):
         print('  (no node here: the dictation script test is skipped)')
@@ -3551,6 +3551,7 @@ const S = {snap: {sessions: [{name: 'c6', link: 'L'}], fixups: {resume: [{id: 'F
 const isAgent = n => !/^(c\d+|@.+)$/.test(n), sessionOf = n => S.snap.sessions.find(s => s.name === n), threadTitle = n => n;
 const starting = n => n === 'c8', sentBubbles = () => '', obBubbles = () => 'WAITS', controlOf = () => ({}), ctlBusy = () => false;
 const setHTML = (e, h) => { e.innerHTML = h }, render = () => feedDraw(S.thread);
+const feedGone = () => {}, feedUp = () => {}, feedShown = () => {}, feedAt = (x, y) => [x, y];
 let answers = {};
 const fetch = async p => ({json: async () => answers[p.split('/')[1]]});
 eval(logic + part + `
@@ -3593,7 +3594,7 @@ def test_session_feed_f114(tmp: Path) -> None:
     page = W.PAGE.read_text(encoding='utf-8')
     order = [page.index(x) for x in ('<div class="body" id="body">', '<div class="feed" id="feed" hidden>', '<div class="dock" id="dock">')]
     eq(order, sorted(order), 'the session stands between the header and the message box')
-    check("dock=(isNew(n)?'':keysRow())+box(" in page and 'convo(n)' not in page.split('function render(', 1)[1].split('\n}\n', 1)[0],
+    check("dock=(isNew(n)?'':sessRow(n)+keysRow())+box(" in page and 'convo(n)' not in page.split('function render(', 1)[1].split('\n}\n', 1)[0],
           'a chat draws its box, and no thread')
     check('touch-action:pinch-zoom' in page and '@media (pointer:coarse){.feedtouch{display:block} .keyb{display:inline-flex}' in page,
           'a touch device has the touch layer and the key row')
@@ -3705,6 +3706,81 @@ def test_session_proxy_f114(tmp: Path) -> None:
         ttyd.server_close()
 
 
+F170_IDLE = ['● done', '', '✻ Worked for 1s', '                Update available · run mise upgrade claude', '─' * 60, '❯ ', '─' * 60,
+             '  [PONYTAIL]', '  ⏵⏵ bypass permissions on (shift+tab to cycle) · 1 shell · ← 2 agents']
+
+
+def test_session_controls_f170(tmp: Path) -> None:
+    """F170: the lines at the bottom of Claude's window are read off its screen and become chips; a menu or a question
+    hides nothing; the frame's place never depends on the bars; the look is the run's own theme."""
+    if not shutil.which('node'):
+        print('  (no node here: the session controls script test is skipped)')
+        return
+    typed = [*F170_IDLE[:5], '❯ some words', *F170_IDLE[6:]]
+    bash = [*F170_IDLE[:5], '! ', '─' * 60, '  ! for shell mode']
+    work = ['● Simmering… (3s · esc)', '─' * 40 + ' my chat ──', '❯ ', '─' * 60, '  ⏸ plan mode on · esc to interrupt']
+    menu = ['▔' * 60, '  Select model', '  ❯ 1. Opus', '    2. Haiku', '  Enter to save · Esc to cancel']
+    ask = ['─' * 60, 'Do you want to proceed?', '❯ 1. Yes', '  2. No', '', 'Esc to cancel']
+    listed = ['  Background', '  2 background tasks', '    Shells', '  ❯ ● python3 run_tests.py     running', '',
+              '    Background agents', '    ● Tester: run…   running · Haiku', '  x to stop · Esc to close']
+    spot = {'main': 800, 'bar': 60, 'dock': 180, 'strip': 28, 'high': 900, 'pad': 12, 'cell': 20, 'foot': {'top': 38}, 'short': 0, 'off': 0}
+    live = {'tasks': [{'kind': 'shell', 'running': True}, {'kind': 'shell', 'running': False}], 'mode': 'plan'}
+    got = logic_js([['feedFoot', F170_IDLE, None], ['feedFoot', typed, None], ['feedFoot', bash, None], ['feedFoot', work, None],
+                    ['feedFoot', menu, None], ['feedFoot', ask, None], ['feedFoot', ['hi'], None], ['taskLines', listed],
+                    ['feedSpot', spot], ['feedSpot', {**spot, 'off': 9999}], ['feedSpot', {**spot, 'dock': 260}],
+                    ['feedSpot', {**spot, 'short': 5}], ['feedSpot', {**spot, 'foot': None}], ['feedSpot', {**spot, 'whole': True}],
+                    ['sessionChips', {'foot': None, 'live': live, 'working': True}],
+                    ['sessionChips', {'foot': {'mode': 'bypassPermissions', 'update': 'x', 'agents': 2}, 'live': {}}],
+                    ['sessionChips', {}], ['forWords', 72], ['forWords', 3720]])
+    f = got[0]
+    eq([f[k] for k in ('top', 'end', 'text', 'mode', 'shells', 'agents', 'update', 'status', 'work')],
+       [3, 6, '', 'bypassPermissions', 1, 2, 'mise upgrade claude', ['[PONYTAIL]'], False], 'every line is read')
+    eq((got[1]['text'], got[2]['bash']), ('some words', True), 'unsent words, and shell mode, are seen')
+    eq((got[3]['work'], got[3]['mode'], got[3]['top']), (True, 'plan', 1), 'working; a session name on the rule')
+    eq(got[4:7], [None, None, None], 'a menu, a question, no prompt: nothing is hidden')
+    eq([(x['name'], x['on'], x['running']) for x in got[7]],
+       [('python3 run_tests.py', True, True), ('Tester: run', False, True)], "Claude Code's own task list")
+    eq(got[8], {'t': -152, 'far': 152, 'cut': 128}, 'at rest the words end on the box')
+    eq(got[9]['t'], 0, 'pulled down, they end on the strip')
+    eq(got[10], {'t': -232, 'far': 232, 'cut': 128}, 'a box that grows moves the frame: its size stays')
+    eq((got[11]['t'], got[11]['far']), (60, 0), 'a short chat starts under the bar, with nothing to pull')
+    eq((got[12], got[13]), ({'t': -280, 'far': 0, 'cut': 0}, {'t': 0, 'far': 0, 'cut': 0}), 'nothing is cut while all shows')
+    eq([c['label'] for c in got[14]], ['Working', 'Plan', '1 shell'], 'only what runs')
+    eq([c['label'] for c in got[15]], ['Bypass', '2 agents', 'Update'], 'what the screen says')
+    eq(([c['label'] for c in got[16]], got[17], got[18]), (['Session'], '1m 12s', '1h 2m'), 'nothing known; a clock')
+    page = W.PAGE.read_text(encoding='utf-8')
+    check('Force send' in page and 'data-halt' in page and "{force:true}" in page, 'Force send and Stop while it works')
+    check('lineHeight=1.3' in W.session_frame.ttyd_options('dark') and 'minimumContrastRatio=4.5' in W.session_frame.ttyd_options('dark'),
+          'room between the lines, text that reads')
+    head = W.session_frame.with_head(b'<head>', 'c6', 'page').decode()
+    check('"light":{' in head and '"dark":{' in head and 'look="page"' in head and 'ar-box' in head, 'a themed session: both looks', head[:200])
+    check('LOOKS={}, look="light"' in W.session_frame.with_head(b'<head>', 'c6', 'light').decode(), 'one from before: its one ground')
+
+
+def test_session_run_side_f170(tmp: Path) -> None:
+    """F170: /live, /commands?s=, and which colours a session's frame gets."""
+    fake_repo(tmp)
+    job = S.C.notes('control6.job')
+    S.C.notes('control6.live').write_text('1', encoding='utf-8')
+    for spec, look in (({'argv': ['x'], 'look': 'custom:agent-runner'}, 'page'), ({'argv': ['x', '{"theme": "custom:agent-runner"}']}, 'page'),
+                       ({'argv': ['x']}, W.session_frame.session_look())):
+        job.write_text(json.dumps(spec), encoding='utf-8')
+        eq(W.frame_look('c6'), look, f'the look of {spec}')
+    token = W.web_token()
+    srv = W.serve(token, 0, '127.0.0.1', snap=lambda: {})
+    base = f'http://127.0.0.1:{srv.server_address[1]}'
+    try:
+        with mock.patch.object(W.session_now, 'session_skills', lambda n: {'ponytail:x': 'Lazy', 'run': 'no'} if n == 'c6' else {}):
+            names = [c['name'] for c in json.loads(get(f'{base}/commands?s=c6&t={token}')[1])]
+            plain = [c['name'] for c in json.loads(get(f'{base}/commands?t={token}')[1])]
+        check('ponytail:x' in names and names.count('run') == 1 and 'ponytail:x' not in plain, "a chat's own skills", names[-5:])
+        check({'mcp', 'tasks', 'usage', 'rewind'} <= set(plain), "Claude Code's own commands", plain)
+        eq(json.loads(get(f'{base}/live/c9?t={token}')[1])['ok'], False, 'no such session')
+        eq(get(f'{base}/live/c9')[0], 403, 'only with the token')
+    finally:
+        srv.stop()
+
+
 if __name__ == '__main__':
     raise SystemExit(report([in_tmp(test_release_row_f131),in_tmp(test_project_name_b153),in_tmp(test_home_screen_b179),in_tmp(test_chat_order_f133), in_tmp(test_delete_chats_f118), in_tmp(test_server), in_tmp(test_real_action), in_tmp(test_run_controls), in_tmp(test_row_actions),
                            in_tmp(test_start), in_tmp(test_upload),
@@ -3720,4 +3796,4 @@ if __name__ == '__main__':
                            in_tmp(test_chat_box_f115), in_tmp(test_home_switcher_f134),
                            in_tmp(test_scroll_f83), in_tmp(test_keyboard_b160), in_tmp(test_talk_settings_f124), in_tmp(test_mic_aborted_b162), in_tmp(test_sound_b178), in_tmp(test_status_view_f124),
                            in_tmp(test_chats_f128), in_tmp(test_needs_drop_chat_f110), in_tmp(test_task_text_f85),
-                           in_tmp(test_settings_f97), in_tmp(test_older_run_b164), in_tmp(test_reload_b177), in_tmp(test_home_talk_f164), in_tmp(test_style_f83), in_tmp(test_session_feed_f114), in_tmp(test_session_proxy_f114)]))
+                           in_tmp(test_settings_f97), in_tmp(test_older_run_b164), in_tmp(test_reload_b177), in_tmp(test_home_talk_f164), in_tmp(test_style_f83), in_tmp(test_session_feed_f114), in_tmp(test_session_proxy_f114), in_tmp(test_session_controls_f170), in_tmp(test_session_run_side_f170)]))

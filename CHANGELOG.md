@@ -17,6 +17,13 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 - Changed: In Talk the chat fills the whole view and runs behind the top bar, the round buttons and the message
   box, which are see-through (solid under reduced transparency). The top bar slides off while the person scrolls
   up and returns on scrolling down or at the end, and the newest words stay clear of it at rest (F171).
+- Changed: a chat or slot's real session shows its controls on the page (F170). The lines under Claude's prompt (the
+  update notice, the status line, the mode, background shells and agents) lie past the frame's edge, and a chip row above
+  the message box holds their controls: Working (Stop), the mode, shells, agents and Update (a sheet with the command,
+  run on the run's machine). While Claude works the box has Force send, which interrupts and sends once Claude is at
+  rest, beside Stop. `/` lists every command: the run's, Claude Code's, the project's, the person's and the chat's skills.
+  Scrolling up hides the chips, box and top bar, with a thin strip that says Working. The session takes the run's own
+  Claude Code theme, filled from the page's light or dark.
 
 ## 0.62.0 (2026-11-23)
 

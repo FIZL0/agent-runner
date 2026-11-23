@@ -93,9 +93,12 @@ def theme_file() -> Path:
     return Path(os.environ.get('CLAUDE_CONFIG_DIR') or Path.home() / '.claude') / 'themes' / f'{NAME}.json'
 
 
-def settings(look: str) -> dict:
+def settings(look: str = '') -> dict:
     """The settings a session the run starts gets for its look, the theme file written first; without it, only the
     calm ones."""
+    if not look:  # imported here: session_frame takes the looks from this module
+        from agent_runner.session_frame import session_look
+        look = session_look()
     f, text = theme_file(), json.dumps(theme(look), indent=2) + '\n'
     try:
         if not f.is_file() or f.read_text(encoding='utf-8') != text:

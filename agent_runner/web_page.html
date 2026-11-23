@@ -209,7 +209,7 @@ a{color:var(--accent)}
 #feedframe{position:absolute;inset:0} #feedframe.glide{transition:transform var(--dur-slow) var(--ease)}
 .main.sess .feed{position:absolute;inset:0;overflow:hidden}
 .main.sess .top,.main.sess .notices,.main.sess .dockwrap{position:absolute;left:0;right:0}
-.main.sess .top{top:0;transition:background-color var(--dur-fast) var(--ease)} .main.sess .notices{top:var(--seebar,0px)} .main.sess .dockwrap{bottom:0;z-index:2}
+.main.sess .top{top:0} .main.sess .notices{top:var(--seebar,0px)} .main.sess .dockwrap{bottom:0;z-index:2}
 .main.sess .dockwrap .dock{background:var(--bg);transition:transform var(--dur-slow) var(--ease),opacity var(--dur-fast) var(--ease)}
 .main.sess .top>*{transition:opacity var(--dur-fast) var(--ease)}
 .main.sess.slim .top{background-color:transparent;pointer-events:none} .main.sess.slim .top>:not(.menu,[data-new]){opacity:0;visibility:hidden}
@@ -473,8 +473,8 @@ function feedBytes(k,app){const c=app?'\x1bO':'\x1b[';
   return{esc:'\x1b',tab:'\t',enter:'\r',ctrlc:'\x03',up:c+'A',down:c+'B',right:c+'C',left:c+'D'}[k]||''}
 /* what a terminal shows, as plain text: no trailing spaces, no empty lines at its end */
 function feedWords(lines){return lines.map(l=>l.replace(/\s+$/,'')).join('\n').replace(/\n+$/,'')}
-/* F170: the lines at the bottom of Claude's window, from the screen's lines (top to bottom, no trailing spaces); dim(y,x):
-   is that cell dim (a hint, not typed)? null when the prompt is not there as Claude draws it (a menu, a question, a new
+/* F170: the lines at the bottom of the agent's window, from the screen's lines (top to bottom, no trailing spaces); dim(y,x):
+   is that cell dim (a hint, not typed)? null when the prompt is not there as the agent CLI draws it (a menu, a question, a new
    look): then nothing is hidden. {top, end: rows, the first hidden and the last of the box; text: unsent words in the
    prompt; bash; mode: FEED_MODES' key; shells, agents: how many; update: its command, '…' when cut off; status: the status
    line; work: does it work; jump: is it scrolled up} */
@@ -529,7 +529,7 @@ function sessionChips(o){
   return out;
 }
 const forWords=s=>s<60?`${Math.max(0,Math.floor(s))}s`:s<3600?`${Math.floor(s/60)}m ${Math.floor(s%60)}s`:`${Math.floor(s/3600)}h ${Math.floor(s%3600/60)}m`;
-/* Claude Code's own list of background work, off its screen: [{y, name, on, running}], in order */
+/* the agent CLI's own list of background work, off its screen: [{y, name, on, running}], in order */
 function taskLines(lines){
   const from=lines.map(l=>/^\s*Background\s*$/.test(l)).lastIndexOf(true);if(from<0)return[];
   return lines.slice(from+1).map((l,i)=>({l,y:from+1+i})).map(({l,y})=>{const m=/^\s+(❯\s)?\s*[●◯○◉✓✗]\s(.+?)\s{2,}(.*)$/.exec(l);return m?{y,name:m[2].replace(/…$/,''),on:!!m[1],running:/running/.test(m[3])}:null}).filter(Boolean);
@@ -1730,7 +1730,7 @@ layer.addEventListener('touchend',e=>{const g=G;if(!g)return;clearTimeout(g.hold
 layer.addEventListener('touchcancel',()=>{if(G)clearTimeout(G.hold);G=null;feedSettle()},{passive:true});
 layer.addEventListener('wheel',e=>{const f=feedScreen();if(!f||feedTake(e.deltaY))return;const r=layer.getBoundingClientRect();feedWheel(Math.sign(e.deltaY),e.clientX-r.left,e.clientY-r.top)},{passive:true});
 layer.addEventListener('click',e=>{if(e.detail&&e.pointerType==='mouse'){const r=layer.getBoundingClientRect();feedClick(e.clientX-r.left,e.clientY-r.top)}})}
-/* --- F170: the lines at the bottom of Claude's window as the page's own controls (approved on K10's page, option A) --
+/* --- F170: the lines at the bottom of the agent's window as the page's own controls (approved on K10's page, option A) --
    The frame is taller than its room by FOOT_ROWS, so those lines lie past the edge; feedSpot says where it goes, by a
    transform, never by a resize: the bars come and go, the box grows, and the session's size stays. Whole (a menu, a
    question, unsent words, a look feedFoot does not know): it fits its room exactly, all of it shown. */
@@ -1741,7 +1741,7 @@ function feedLook(){return pageDark()?'dark':'light'}
 function lookAgain(){try{if(FD.frame&&FD.info&&FD.info.look==='page')FD.frame.contentWindow.arLook(feedLook())}catch(e){}}
 matchMedia('(prefers-color-scheme:dark)').addEventListener('change',lookAgain);
 if(window.MutationObserver)new MutationObserver(lookAgain).observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});
-/* does the session of a chat or slot work? Claude Code's own status; until it is read, or with none, the feed's */
+/* does the session of a chat or slot work? The agent CLI's own status; until it is read, or with none, the feed's */
 const sessWorks=n=>{const l=FD.n===n&&FD.live;return l&&l.status?l.status==='busy':FD.n===n&&FD.foot?FD.foot.work:busy(n)};
 function feedGone(){clearTimeout(FD.wait);clearTimeout(FD.settle);Object.assign(FD,{foot:undefined,whole:false,wait:0,off:0,far:0,slim:false,jump:false,live:null,liveAt:0,settle:0});feedClass()}
 function feedClass(){const m=document.querySelector('.main'), strip=$('strip');if(!m||!strip)return;
@@ -1834,8 +1834,8 @@ const workFor=()=>FD.live&&FD.live.status==='busy'&&FD.live.since?'Working '+for
 function stripDraw(){const on=FD.n&&sessWorks(FD.n);setHTML($('strip'),`<i></i>${on?'<span data-workfor></span>':''}`);workDraw()}
 function workDraw(){for(const e of document.querySelectorAll('[data-workfor]')){const w=workFor();if(e.textContent!==w)e.textContent=w}}
 setInterval(()=>{if(!FD.shown||document.hidden)return;workDraw();if(Date.now()-FD.liveAt>=LIVE_EVERY)liveLoad()},1000);
-document.addEventListener('input',e=>{if(e.target.matches&&e.target.matches('[data-in]')){FD.typed=Date.now();if(FD.slim)feedSlim(false)}});
-document.addEventListener('keydown',e=>{if(FD.slim&&e.target.matches&&e.target.matches('[data-in]')&&e.key!=='Escape')feedSlim(false)});
+addEventListener('input',e=>{if(e.target.matches&&e.target.matches('[data-in]')){FD.typed=Date.now();if(FD.slim)feedSlim(false)}});
+addEventListener('keydown',e=>{if(FD.slim&&e.target.matches&&e.target.matches('[data-in]')&&e.key!=='Escape')feedSlim(false)});
 /* the row above the box: what there is to say, each a sheet; a menu or a question has the key row in its place */
 function sessRow(n){
   if(feedNow(n)!=='session')return '';
@@ -1865,7 +1865,7 @@ async function setMode(key){
     toast(`Mode: ${label}`);
   }finally{FD.task=''}
 }
-/* Stop on a shell, Open on an agent: through Claude Code's own list (/tasks). The message box is never used */
+/* Stop on a shell, Open on an agent: through the agent CLI's own list (/tasks). The message box is never used */
 async function sessTask(t,what){
   const n=FD.n, no=why=>toast(`${what==='stop'?'Not stopped':'Not opened'}: ${why}`,true);
   if(FD.task)return;
@@ -1963,11 +1963,11 @@ Object.assign(SHEETS,{
   sessmode(){const f=FD.foot||{}, now=f.mode||(FD.live||{}).mode;
     return `<h2>Mode</h2>${FEED_MODES.map(([k,l])=>`<button class="it" data-mode="${k}" aria-pressed="${k===now}"><span>${esc(l)}</span>${k===now?I.check:''}</button>`).join('')}${f.status&&f.status.length?`<div class="sec">Status line<span class="ln"></span></div><pre class="out">${esc(f.status.join('\n'))}</pre>`:''}`},
   sessshells(){const ts=sessTasks('shell');
-    return `<h2>Shells</h2>${ts.map(t=>`<div class="it setrow"><span class="grow"><span class="ell">${esc(t.name)}</span><span class="small">${esc(taskWhen(t))}</span></span>${t.running?`<button class="btn" data-sesstask="${esc(t.id)}" data-do="stop">Stop</button>`:''}</div>${t.tail?`<pre class="out">${esc(t.tail)}</pre>`:''}`).join('')||'<div class="small">No shells are in its transcript. Claude Code lists them with /tasks.</div>'}`},
+    return `<h2>Shells</h2>${ts.map(t=>`<div class="it setrow"><span class="grow"><span class="ell">${esc(t.name)}</span><span class="small">${esc(taskWhen(t))}</span></span>${t.running?`<button class="btn" data-sesstask="${esc(t.id)}" data-do="stop">Stop</button>`:''}</div>${t.tail?`<pre class="out">${esc(t.tail)}</pre>`:''}`).join('')||'<div class="small">No shells are in its transcript. The agent CLI lists them with /tasks.</div>'}`},
   sessagents(){const ts=sessTasks('agent'), f=FD.foot||{};
-    return `<h2>Agents</h2>${ts.map(t=>`<div class="it setrow"><span class="grow"><span class="ell">${esc(t.name)}</span><span class="small">${esc(taskWhen(t))}</span></span>${t.running?`<button class="btn" data-sesstask="${esc(t.id)}" data-do="open">Open</button>`:''}</div>`).join('')||'<div class="small">This session has started none lately.</div>'}${f.agents?`<div class="small">Claude Code counts ${f.agents} in its own agent view, which is outside this session.</div>`:''}`},
+    return `<h2>Agents</h2>${ts.map(t=>`<div class="it setrow"><span class="grow"><span class="ell">${esc(t.name)}</span><span class="small">${esc(taskWhen(t))}</span></span>${t.running?`<button class="btn" data-sesstask="${esc(t.id)}" data-do="open">Open</button>`:''}</div>`).join('')||'<div class="small">This session has started none lately.</div>'}${f.agents?`<div class="small">The agent CLI counts ${f.agents} in its own agent view, which is outside this session.</div>`:''}`},
   sessupdate(){const cmd=(FD.foot||{}).update||'', busyUp=S.ob.some(x=>x.upd&&x.state==='sending'), own=/^c\d+$/.test(FD.n)&&FD.n!=='c1';
-    return `<h2>Update Claude Code</h2>${cmd&&cmd!=='…'?`<div class="small">This runs on ${esc(S.snap.machine||'the machine of the run')}:</div><pre class="out">${esc(cmd)}</pre><div class="btns"><button class="btn pri${busyUp?' busy':''}" data-update="${esc(cmd)}">Update</button></div>`:'<div class="small">Its command does not fit the window: turn the phone, or use a wider one.</div>'}<div class="small">Open chats keep their version until they restart.</div>${own?`<div class="btns"><button class="btn" data-restart="${esc(FD.n)}"${sessIdle()?'':' disabled'}>Restart chat</button></div>${sessIdle()?'':'<div class="small">It can restart once it has nothing running.</div>'}`:''}`},
+    return `<h2>Update the agent CLI</h2>${cmd&&cmd!=='…'?`<div class="small">This runs on ${esc(S.snap.machine||'the machine of the run')}:</div><pre class="out">${esc(cmd)}</pre><div class="btns"><button class="btn pri${busyUp?' busy':''}" data-update="${esc(cmd)}">Update</button></div>`:'<div class="small">Its command does not fit the window: turn the phone, or use a wider one.</div>'}<div class="small">Open chats keep their version until they restart.</div>${own?`<div class="btns"><button class="btn" data-restart="${esc(FD.n)}"${sessIdle()?'':' disabled'}>Restart chat</button></div>${sessIdle()?'':'<div class="small">It can restart once it has nothing running.</div>'}`:''}`},
 });
 function openSheet(name,arg){if(name==='talk')loadVoices();S.sheet=name;S.sheetArg=arg||'';S.sure=null;S.fixOpen='';S.drawer=false;sheetBack=document.activeElement;render(true);$('sheet').scrollTop=0;$('sheet').focus({preventScroll:true})}
 function closeSheet(){if(!S.sheet)return;S.sheet='';S.sure=null;render(true);if(sheetBack&&sheetBack.isConnected&&sheetBack.focus)sheetBack.focus({preventScroll:true});sheetBack=null}
@@ -2860,7 +2860,7 @@ document.addEventListener('click',async e=>{
   if(q('[data-slashopen]')){const t=document.querySelector('[data-in]');if(t){if(!t.value.trim()){t.value='/';store.set(DRAFT_KEY(boxKey()),'/');grow(t)}kbFocus(t);t.setSelectionRange(t.value.length,t.value.length);slashShow(t)}return}
   if(x=q('[data-mode]')){closeSheet();setMode(x.dataset.mode);return}
   if(x=q('[data-sesstask]')){const t=((FD.live||{}).tasks||[]).find(y=>y.id===x.dataset.sesstask);closeSheet();if(t)sessTask(t,x.dataset.do);return}
-  if(x=q('[data-update]')){outbox('claude_update',{cmd:x.dataset.update},{upd:1,say:'Update Claude Code',done:'Claude Code is updated'});return}
+  if(x=q('[data-update]')){outbox('claude_update',{cmd:x.dataset.update},{upd:1,say:'Update the agent CLI',done:'The agent CLI is updated'});return}
   if(x=q('[data-restart]')){const n=x.dataset.restart;closeSheet();outbox('restart_chat',{chat:n},{res:n,say:`Restart ${threadTitle(n)}`});return}
   if(x=q('[data-sheet]')){openSheet(x.dataset.sheet);return}
   if(x=q('[data-rowmenu]')){openSheet('chat',x.dataset.rowmenu);return}

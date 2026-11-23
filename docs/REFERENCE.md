@@ -349,14 +349,25 @@ drawer) and a desktop. It follows the browser's light or dark setting; `[ui] the
   copy; a horizontal swipe still opens the drawer. The message box's keyboard button folds out the key row (Esc, Tab, ↑,
   Enter, Ctrl-C, Text, ←, ↓, →) for the session's menus; touch only. The session's text is 12px on touch and 13px
   otherwise, drawn by ttyd's DOM renderer (its canvas is wrong at 2x). Its ground is dark unless the person's agent
-  `theme` (in `~/.claude/settings.json` or `~/.claude.json`) starts with light.
+  `theme` (in `~/.claude/settings.json` or `~/.claude.json`) starts with light. A session the run starts (control sessions and
+  slots) takes the run's own theme, `agent-runner`, whose colours each browser fills from the page's light or dark.
   The states are cards: starting (says so, with the waiting message); loading; ended (the claude.ai/code link, and
   Resume where there is one: `resume_chat`, `control N --reopen`; not c1); a slot with no session (Resume when its task
   was cut off); no terminal (a headless stream slot, a slot with no socket, or Windows before 1809); no ttyd (TTYD_INSTALL
   says how to install it). The state is checked every 3 s.
   The frame goes when the chat is left, or the page has been hidden for 15 s, so the session gets its other viewers'
-  size back. A refresh never moves the page, and never redraws the frame. Ctrl+C or Stop interrupts the session; Esc only
+  size back. A refresh never moves the page, and never redraws the frame. Stop sends one Ctrl+C while Claude works (`stop_session`) and Force send interrupts and sends (`chat_to` with `force`); Esc only
   leaves the box, then goes back (B116).
+  Its bottom lines (the update notice, status line, mode, background shells and agents) are past the frame's edge, so the
+  message box has their controls: a chip row above it (Working, mode, N shells, N agents, Update; a chip shows only when
+  there is something to say). Its sheets: Working (Stop), mode (Shift+Tab, one press at a time), shells (what runs, its
+  output tail, Stop through `/tasks`), agents (Open through `/tasks`), Update (the command, run on the run's machine: only
+  known update commands; Restart chat, `restart_chat`, for an idle c2 and up). The status comes from `/live/NAME` (Claude
+  Code's status, mode and background work). The `/` button's commands come from `/commands?s=NAME`: the runner's, Claude
+  Code's own, the project's and the person's, and the skills named in that chat's transcript. While Claude works, Force
+  send interrupts with Escape, waits until Claude Code's status is at rest, then sends once. Scrolling up hides the chips,
+  box and top bar and leaves a thin strip that says Working; scrolling down, at the end, a tap on the strip or typing
+  brings them back.
 - **Message box.** Enter sends, Shift+Enter starts a new line, and each chat keeps its own draft. Messages that never landed are listed in the Outbox popup as not delivered, with Retry and Discard. Attachments are uploaded to the run (`POST /upload`), kept under
   `.runner/uploads` (`<notes>/uploads`, git-ignored with the rest of the notes folder), and handed to the
   session as paths on this machine. On a computer, a file dropped on the session is attached the same way.
