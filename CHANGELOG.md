@@ -72,6 +72,11 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
   a reload); one that does not arrive shows Not delivered with Retry and Discard. A long turn no longer loses the
   person's latest prompt from the chat, and the chat says when older messages are cut off; a message sent mid-turn
   (queued) shows as the person's (B154).
+- Fixes: Device Vitals' headroom said "No room for another agent: a usage cap is reached" past `[run] session_max` or
+  `weekly_max`, though new tasks start down `[models] fallback` (F142). While a project whose run is up (with none up,
+  any project) has a free provider in its chain (not claude, not capped, logged in), the usage cap now sets no limit and
+  the line reads e.g. "Room for 6 more agents, on [models] fallback: a usage cap is reached". Memory, CPU and disk limits
+  still hold; without a free provider it is as before (B157).
 
 ## 0.61.0 (2026-11-23)
 
