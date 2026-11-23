@@ -1152,7 +1152,7 @@ def test_listen_heard_nothing_b132(tmp: Path) -> None:
     got = json.loads(r.stdout or '{}')
     eq(got.get('before'), 0, 'listen does not touch speechSynthesis before rec.start()')
     eq(got.get('line'), 'Heard nothing (error: no-speech, tap, after 2.0 s)', 'no words and error no-speech: the talk line says so')
-    eq(got.get('cleared'), 'Listening…', 'the next listen clears it')
+    eq(got.get('cleared'), 'Starting the mic…', 'the next listen clears it')
     eq(got.get('sent'), ['hello'], 'words heard are still sent')
     eq(got.get('stopped'), {'state': '', 'cancelled': 1, 'listened': False},
        'a tap during a reply only stops it: no listen right after a speech call')
@@ -2235,7 +2235,7 @@ const fire = (t, e) => (handlers[t] || []).forEach(f => f(e));
 const TK = {rec: null, heard: '', state: '', wait: null, said: '', unlocked: false, note: '', playing: '', hold: false, again: false};
 const S = {view: 'talk', thread: null, feeds: {c5: {entries: [{kind: 'you', text: 'hi', id: 'a'}, {kind: 'say', text: 'One **thing**.', id: 'b'}]}}};
 const feedOf = n => S.feeds[n].entries, talkName = () => 'c5', micWhy = () => '', toast = () => {}, render = () => {};
-const talkSend = t => sent.push(t), talkTyping = () => false, voices = () => speechSynthesis.getVoices();
+const talkDraw = () => {}, talkSend = t => sent.push(t), talkTyping = () => false, voices = () => speechSynthesis.getVoices();
 eval(logic + `
 let TS = talkSetParse('');
 ` + grab('function speak(') + line('function hush(') + grab('function playReply(') + line('const MIC=') + grab('function micWhenFree(') + grab('function micFree(') + grab('function listen(') + grab('function hear(') + grab('function earEnd(') + grab('function micStop(')
@@ -2333,7 +2333,7 @@ class SR {
   stop() { this.stopped = true }
   abort() { this.aborted = true }
   end() { live--; if (this.onend) this.onend() }
-  fail(err) { this.onerror({error: err}); this.end() }
+  fail(err, message) { this.onerror({error: err, message}); this.end() }
   say(t) { this.onresult({resultIndex: 0, results: [Object.assign([{transcript: t}], {isFinal: true})]}) }
 }
 const last = () => recs[recs.length - 1];
@@ -2351,13 +2351,14 @@ const micWhy = () => '', dictWhy = () => '', toast = () => {}, voices = () => []
 const boxKey = () => 'c3', DRAFT_KEY = k => k, store = {set() {}}, grow = () => {};
 const talkSend = t => { sent.push(t); TK.state = '' };
 const els = {}, el = () => ({classList: {toggle() {}}, setAttribute() {}});
+let copied = '', sheet = '', RUN_VERSION = '9.9'; const openSheet = n => { sheet = n };
 const $ = k => els[k] = els[k] || el();
 let micEl = null;  // a redraw of the mic's markup makes a new element
 eval(logic + `
 function render() { if (setHTML($('talkmic'), talkMic())) els.mic = micEl = {...el(), setPointerCapture(id) { this.cap = id }}; talkDraw() }
 let TS = talkSetParse('');
-` + line('const MIC=') + line('function setHTML(') + line('const talkMic=') + ['talkDraw', 'micWhenFree', 'micFree', 'dictShow', 'dictate', 'speak', 'listen', 'hear', 'earEnd', 'micStop'].map(f => grab('function ' + f + '(')).join('')
-  + page.slice(page.indexOf('/* F124: hold to talk'), page.indexOf('/* F124: a swipe right anywhere')) + `
+` + line('const MIC=') + line('function setHTML(') + line('const talkMic=') + ['talkDraw', 'micWhenFree', 'micFree', 'dictShow', 'dictate', 'speak', 'listen', 'hear', 'earEnd', 'micStop', 'async function micCopy'].map(f => grab((f.startsWith('async') ? f : 'function ' + f) + '(')).join('')
+  + page.slice(page.indexOf('/* B162: the mic report\'s pointer'), page.indexOf('/* F124: a swipe right anywhere')) + `
 const out = {}; render();
 // two aborts: one retry by itself, then the words
 listen(); now += 300; last().fail('aborted'); out.retryWaits = [starts, TK.state];
@@ -2401,7 +2402,24 @@ fire('pointerdown', at); fire('pointercancel', {...at, pointerType: 'pen'}); out
 starts = 0; fire('pointerdown', at); last().fail('aborted'); tick(250); out.holdRetry = starts; now += 100; last().fail('aborted'); out.holdNote = TK.note; fire('pointerup', at);
 starts = 0; fire('pointerdown', at); last().fail('aborted'); fire('pointerup', at); tick(250); out.letGo = [starts, TK.state];
 out.mostAll = most;
-console.log(JSON.stringify(out));`);
+// the mic report: the trail from press to end, who stopped it, and the words on the line
+const when = {...at, pointerType: 'touch'}, says = () => els.talkline.textContent;
+fire('pointerdown', when); out.starting = says(); last().onstart(); out.begun = says(); now += 700; last().onaudiostart(); out.live = says();
+now += 900; fire('pointerup', when); fire('touchend', when); last().fail('aborted', 'No speech detected'); out.reason = TK.note;
+fire('lostpointercapture', when); out.button = els.micrep.hidden;
+out.trail = TK.report.ev;
+TK.hold = false; fire('pointerdown', when); out.cleared = els.micrep.hidden; last().onstart(); fire('pointerup', when); last().end(); out.early = TK.note;
+// two fingers on the mic: one lifting is not the hold's end
+fire('pointerdown', when); fire('touchend', {...at, targetTouches: [1]}); out.two = !!last().stopped; last().end();
+// a stop whose end never comes still ends the listen
+TS.mic = 'tap'; TK.hold = false; listen(); last().onaudiostart(); const z = last(); listen(); tick(5000); tick(1500); tick(1500); out.noEnd = [TK.state, !!z.aborted, TK.report && TK.report.ev.some(x => / no end came/.test(x))]; live--;
+// words heard: counted, never in the trail
+listen(); last().say('secret'); out.noWords = [TK.trail.ev.join(' '), TK.trail === TK.report]; last().end(); out.afterWords = [TK.report, els.micrep.hidden];
+TK.trail = null; for (let i = 0; i < 130; i++) micLog('x'); out.cap = micReport(TK.trail, ['h']).split('\n').slice(-1)[0];
+// the copy, and what shows where it is refused
+TK.report = TK.trail; TK.note = 'the note'; navigator.userAgent = 'UA'; navigator.clipboard = {writeText: async t => { copied = t }};
+micCopy().then(() => { out.copied = copied.split('\n').slice(0, 5); navigator.clipboard = {writeText: async () => { throw new Error('no') }}; return micCopy() })
+  .then(() => { out.sheet = [sheet, S.out.title, S.out.text === copied]; console.log(JSON.stringify(out)) });`.replaceAll("split('\n')", "split('\\n')"));
 """
 
 
@@ -2422,7 +2440,7 @@ def test_mic_aborted_b162(tmp: Path) -> None:
     eq(got.get('twice'), [2, '', words + 'tap, after 0.4 s, 2 tries)'], 'aborted twice: what to try, with mode and time')
     eq(got.get('sent'), ['hello'], 'the retry hears')
     eq(got.get('kept'), [1, ['kept']], 'words before the abort are sent, with no retry')
-    eq(got.get('byHand'), [1, 'The mic was stopped before it heard any words. Try again, and speak before you stop it. (aborted, tap, after 0.0 s)'],
+    eq(got.get('byHand'), [1, 'The mic was stopped before it was on. Allow it if the browser asks, wait until this line says Listening…, then speak. (aborted, tap, after 0.0 s)'],
        'stopped by hand: no retry')
     eq(got.get('away'), 1, 'no retry once Talk is left')
     eq(got.get('stopInWait'), [1, ''], 'a tap before the retry ends the listen')
@@ -2442,6 +2460,21 @@ def test_mic_aborted_b162(tmp: Path) -> None:
     eq((got.get('taken'), got.get('takenSent')), ([False, False], ['done']), 'a touch the system took: it goes on until a silence')
     eq((got.get('holdRetry'), got.get('holdNote')), (2, words + 'hold, after 0.1 s, 2 tries)'), 'an abort while held is retried')
     eq(got.get('letGo'), [1, ''], 'let go before the retry: none')
+    eq((got.get('starting'), got.get('begun'), got.get('live')), ('Starting the mic…', 'Starting the mic…', 'Listening…'), 'Listening only once the mic takes sound')
+    eq(got.get('reason'), 'The mic was on, but no words reached it before it was stopped. Stop any other app that uses sound or the mic, then try again. '
+       '(aborted: No speech detected, hold, after 1.6 s)', "the note has the error's own message")
+    eq(got.get('trail'), ['0 ms pointerdown touch id 7', '0 ms listen hold', '0 ms try 1', '0 ms start', '700 ms audiostart', '1600 ms pointerup touch id 7',
+                          '1600 ms stop by pointerup', '1600 ms touchend touch id 7', '1600 ms error aborted: No speech detected', '1600 ms end',
+                          '1600 ms lostpointercapture touch id 7'], 'the mic report: each event with its ms, and who stopped it')
+    eq((got.get('button'), got.get('cleared')), (False, True), 'the copy button shows with the note, and goes with the next listen')
+    eq(got.get('early'), 'The mic was stopped before it was on. Allow it if the browser asks, wait until this line says Listening…, then speak. (hold, after 0.0 s)', 'let go before any sound')
+    eq(got.get('two'), False, 'one of two fingers lifting is not the end')
+    eq(got.get('noEnd'), ['', True, True], 'a stop with no end still ends the listen, and the report says so')
+    check('result, 6 letters, final' in got['noWords'][0] and 'secret' not in got['noWords'][0], 'words are counted, not kept', str(got['noWords']))
+    eq(got.get('afterWords'), ['', True], 'words heard: no report button')
+    eq(got.get('cap'), 'and 10 more', 'the report has an end')
+    eq(got.get('copied')[:2] + got.get('copied')[3:4], ['Mic report', 'the note', 'UA'], 'the copy names the note and the browser')
+    eq(got.get('sheet'), ['out', 'Mic report', True], 'no clipboard: shown to copy by hand')
 
 
 def test_talk_settings_f124(tmp: Path) -> None:
