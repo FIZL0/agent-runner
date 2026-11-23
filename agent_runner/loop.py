@@ -34,6 +34,8 @@ from agent_runner.watch import context_over
 from agent_runner.brief import no_remote_line
 from agent_runner.sched import blocked_by_edits, keep_claims, PARK_LIMIT, parked_attempts, pick, tasks
 from agent_runner.sched import forgive_park, note_committed
+from agent_runner.tools import take_end
+from agent_runner.asks import block_asks, EV_FINISHED, park_asked, unblocked_asks
 from agent_runner.slots import (adopt, backend, DISK_AT, DISK_SAID, du, env_vars, free_branch,
     free_gb, GB, hidden_line, HiddenMux, MUX, remote_any, remote_line, REMOTE_URL, resume, save_leftovers,
     single_run, slot_env, slot_shim, SLOTS, start, transcript, trim, unmerged)
@@ -1168,6 +1170,8 @@ class Run:
             with MERGE:
                 reopen_landed(branch, 'a merge before this run')
         prune_wips(branch, force=True)  # F23: wip/<ID> of tasks ticked or dropped while no run was up
+        block_asks(branch)  # F102: an ask an earlier run parked but could not block yet
+        self.tried |= unblocked_asks()  # still not blocked: no slot starts it before its block lands
 
     def tick(self) -> int | None:
         """One pass of the loop: None to go on after a nap, else the run's exit code."""
@@ -1250,6 +1254,15 @@ class Run:
                 sp.Popen(r['on_exit'], shell=True, cwd=str(SLOTS_DIR / f's{n}'),
                          env={**os.environ, **env_vars(slot_env(n))},
                          stdout=sp.DEVNULL, stderr=sp.DEVNULL)
+            end = take_end(n, C)  # F102: the agent's `run finish` or `run ask`
+            if end.get('how') == 'finish':
+                log(f'slot {n}: {task[0]} finished: {end.get("text", "")[:300]}', EV_FINISHED, task[0],
+                    summary=end.get('text', ''))
+            if end.get('how') == 'ask' and end.get('tid') == task[0] and \
+                    park_asked(n, task[0], sid, end.get('text', ''), branch):
+                self.tried.add(task[0])
+                self.free_at[n] = dt.datetime.now() + dt.timedelta(seconds=self.pause)
+                return False
             if (why := cut_off(sid)) and n <= self.slots:
                 if resumes(n, sid) < RESUMES_MAX:
                     # its worktree stays as the session left it, on task/<ID>: the resume goes on there
@@ -1394,6 +1407,7 @@ class Run:
         if not stopping():
             sweep_unmerged(branch, self.merging)
         keep_claims(self.running, branch)
+        block_asks(branch)  # F102: an ask whose block could not be committed when it was parked
         take_keys()
         # an exit may have queued one
         self.waiting = {n: q for n, q in queued().items() if n in self.free_at and n <= self.slots}

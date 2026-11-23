@@ -3814,6 +3814,209 @@ def test_stop_hook_grace(tmp: Path):
             m.unlink()
 
 
+def test_finish_ends_session(tmp: Path):
+    print('F102: `run finish` records the summary and the Stop hook ends the session at once')
+    import io
+    from agent_runner import tools
+    t = tmp / 'finish-transcript.jsonl'
+    t.write_text('{"type":"user"}\n', encoding='utf-8')
+    w = tmp / 'finish-wt'
+    w.mkdir()
+    git(w, 'init', '-q', '-b', 'task/T9')
+    (w / 'x.py').write_text('# x\n', encoding='utf-8')
+    seen, spawn, stdin, cwd = [], R.plat.spawn_detached, sys.stdin, os.getcwd()
+    keep = {k: os.environ.get(k) for k in ('AGENT_RUNNER', 'AGENT_RUNNER_SLOT')}
+    slot = f'8{os.getpid()}'  # its own marks: parallel gates share the notes dir
+    os.environ.update(AGENT_RUNNER='1', AGENT_RUNNER_SLOT=slot)
+    R.plat.spawn_detached = lambda argv: seen.append(argv[-1])
+    try:
+        os.chdir(w)
+        eq(tools.cmd_finish(['did it']), 1, 'refused while `done` has not run and edits are uncommitted')
+        check(not tools.ended(), 'and no end mark')
+        R.finished_mark().touch()
+        eq(tools.cmd_finish(['the parser reads nested lists']), 0, 'after done it is taken')
+        check(tools.ended(), 'the slot has its end mark')
+        sys.stdin = io.StringIO(json.dumps({'transcript_path': str(t), 'background_tasks': [{'id': 'b1'}]}))
+        R.stop_hook(90)
+        eq(seen, ['0'], 'the Stop hook hands the waiter no idle time, background tasks or not')
+        p = subprocess.Popen([sys.executable, '-c', 'import subprocess,sys,time; subprocess.Popen([sys.executable, '
+                              '"-c", "import time; time.sleep(30)"]); time.sleep(30)'])
+        time.sleep(0.3)
+        t0 = time.time()
+        R.stop_waiter(p.pid, str(t), 1, 0)
+        check(p.wait(5) is not None and time.time() - t0 < 3, 'and the waiter ends the session now, its leftover '
+              'command too', time.time() - t0)
+        end = tools.take_end(int(slot))
+        eq((end.get('how'), end.get('tid'), end.get('text')), ('finish', 'T9', 'the parser reads nested lists'),
+           'the run reads the summary off the mark once the session has ended')
+        check(not tools.ended(), 'and the mark is gone with it')
+    finally:
+        os.chdir(cwd)
+        R.plat.spawn_detached, sys.stdin = spawn, stdin
+        R.finished_mark().unlink(missing_ok=True)
+        if (m := tools.end_mark()) and m.exists():
+            m.unlink()
+        for k, v in keep.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+
+
+def test_ask_parks_and_resumes(repo: Path, tmp: Path):
+    print('F102: `run ask` parks the task under Needs you; the answer resumes the same session with it')
+    from agent_runner import loop, slots, tools
+    R.init(repo)
+    git(repo, 'checkout', '-q', 'main')
+    head0 = git(repo, 'rev-parse', 'HEAD')
+    d = task_branch(repo, 1, 'T2')
+    (d / 'b.py').write_text('# b, committed half\n', encoding='utf-8')
+    git(d, 'commit', '-qam', 'T2: half the printer')
+    (d / 'new.py').write_text('# new, not committed\n', encoding='utf-8')
+    keep = os.environ.get('AGENT_RUNNER_SLOT')
+    os.environ['AGENT_RUNNER_SLOT'] = '1'
+    cwd = os.getcwd()
+    try:
+        os.chdir(d)
+        eq(tools.cmd_ask(['Plain  or coloured output?  I recommend plain.']), 0, '`run ask` takes the question')
+    finally:
+        os.chdir(cwd)
+        if keep is None:
+            os.environ.pop('AGENT_RUNNER_SLOT', None)
+        else:
+            os.environ['AGENT_RUNNER_SLOT'] = keep
+    check(tools.ended(1, R.C), 'and leaves the end mark the Stop hook ends the session on')
+    end = tools.take_end(1, R.C)
+    eq((end['how'], end['tid'], end['text']), ('ask', 'T2', 'Plain or coloured output? I recommend plain.'),
+       'the mark has the task and the question')
+    projects = tmp / 'ask-projects'
+    old = projects / '-old-slot' / 'sid-ask.jsonl'
+    try:
+        check(loop.park_asked(1, 'T2', 'sid-ask', end['text'], 'main'), 'the run parks the asking session')
+        eq(git(repo, 'branch', '--list', 'task/T2'), '', 'task/T2 is gone, so no merge takes the half-done work')
+        check(git(repo, 'log', '-1', '--format=%s', 'asked/T2') == 'T2 wip: uncommitted, asked',
+              'its uncommitted edits are kept on asked/T2, over its own commit')
+        todo = (repo / 'plan/TODO.md').read_text(encoding='utf-8')
+        has(todo, r'- \[~\] \*\*T2\*\* .*BLOCKED: DECIDE: Plain or coloured output\? I recommend plain\.',
+            'T2 is blocked on the person with the question')
+        eq(git(repo, 'status', '--porcelain', '--', 'plan/TODO.md'), '', 'and that block is committed')
+        eq([(a[0], a[1]) for a in P.asks(str(repo / 'plan/TODO.md')) if a[1] == 'T2'], [('DECIDE', 'T2')],
+           'it lists under Needs you')
+        check('T2' not in [t[0] for t in R.tasks('main')], 'no slot starts it while it waits')
+        ask = json.loads(R.C.notes('T2.ask').read_text())
+        eq((ask['sid'], ask['slot'], ask['dirty'], ask['blocked']), ('sid-ask', 1, True, True), 'its session is noted')
+
+        P.confirm('T2', 'plain, please', todo=str(repo / 'plan/TODO.md'))
+        git(repo, 'commit', '-qam', 'plan: answer T2')
+        eq(P.last_answer('T2', todo=str(repo / 'plan/TODO.md')).endswith('plain, please'), True,
+           'the answer is the last note on the task')
+        eq(P.last_answer('T2', todo=str(repo / 'plan/TODO.md'), about='Some later question?'), '',
+           'but not as the answer to another question')
+        old.parent.mkdir(parents=True)
+        old.write_text('{"type":"user"}\n', encoding='utf-8')
+        opened = []
+
+        class Mux:
+            name = 'fake'
+
+            def open(self, *a, **kw):
+                opened.append((a, kw))
+                return 4343
+
+            def where(self, n):
+                return f'slot {n}'
+
+        mux, R.MUX = R.MUX, Mux()
+        find = slots.Claude.find_transcript
+        slots.Claude.find_transcript = lambda self, sid: str(old) if sid == 'sid-ask' and old.exists() else None
+        try:
+            got = R.start(2, ('T2', 'the printer', {'b.py'}, set()), 'main', 'opus', 90, 2)
+        finally:
+            R.MUX, slots.Claude.find_transcript = mux, find
+        d2 = R.SLOTS_DIR / 's2'
+        eq(got[:2], (4343, 'sid-ask'), 'the answer resumes the same session, in whichever slot is free')
+        check(opened and opened[0][1].get('resume') is True, 'with --resume', opened)
+        has(opened[0][0][2], r'(?s)Plain or coloured output\?.*plain, please.*another worktree',
+            'its next message is the question, the answer and where its worktree is now')
+        check((projects / slots.claude_project_dir(d2) / 'sid-ask.jsonl').exists() and not old.exists(),
+              'its transcript moved under the new worktree, where --resume looks')
+        eq(git(d2, 'branch', '--show-current'), 'task/T2', 'the slot is on task/T2')
+        eq((git(d2, 'log', '-1', '--format=%s'), (d2 / 'b.py').read_text(), (d2 / 'new.py').read_text()),
+           ('T2: half the printer', '# b, committed half\n', '# new, not committed\n'),
+           'with its commit, and its edits uncommitted again, as the session left them')
+        check(git(repo, 'branch', '--list', 'asked/T2') == '' and not R.C.notes('T2.ask').exists(),
+              'asked/T2 and the note are gone')
+    finally:
+        for n in (1, 2):
+            git(R.SLOTS_DIR / f's{n}', 'checkout', '-q', '-f', '--detach', 'main')
+            git(R.SLOTS_DIR / f's{n}', 'clean', '-fdq')
+        for b in ('task/T2', 'asked/T2'):
+            if git(repo, 'branch', '--list', b):
+                git(repo, 'branch', '-D', b)
+        R.C.notes('T2.ask').unlink(missing_ok=True)
+        git(repo, 'reset', '-q', '--hard', head0)
+
+
+def test_git_fence(repo: Path, tmp: Path):
+    print('F102: the git fence denies push, reset --hard, clean, checkout -- . and edits outside the worktree')
+    from agent_runner import tools
+    R.init(repo)
+    root, slots, notes = repo, tmp / 'fence-slots', R.C.notes()
+    own, other = slots / 's1', slots / 's2'
+
+    def f(tool: str, push: bool = True, cwd=None, **inp) -> str | None:
+        return tools.fence(tool, inp, cwd or own, own, root, slots, notes, push)
+
+    sh = lambda c, **kw: f('Bash', command=c, **kw)
+    check(sh('git push origin task/T1'), '`git push` is denied')
+    check(sh('git -C . push'), 'with options before it too')
+    check(sh(f'cd {root} && git push'), 'and in the main checkout')
+    eq(sh('git add -A && git commit -qm "T1: never git push here"'), None, 'a normal commit runs, quoted words '
+       'and all')
+    eq(sh('git status; git log -1 --format=%s | cat'), None, 'and so do git reads')
+    eq(sh(f'cd {tmp / "sibling"} && git push'), None, 'a push in a sibling repository runs while [git] push is on')
+    check(sh(f'cd {tmp / "sibling"} && git push', push=False), 'but not while it is off')
+    check(sh('git reset --hard HEAD~1'), '`git reset --hard` is denied')
+    eq(sh('git reset -q HEAD~1'), None, 'a soft reset is not')
+    check(sh('git clean -fdq'), '`git clean` is denied')
+    eq(sh('git clean -n'), None, 'its dry run is not')
+    check(sh('git checkout -- .'), '`git checkout -- .` is denied')
+    check(sh('git checkout -f .'), 'with other flags too')
+    eq(sh('git checkout -q -B task/T1 main'), None, 'a branch checkout is not')
+    eq(f('Write', file_path=str(own / 'a.py')), None, 'a write in the worktree runs')
+    eq(f('Edit', file_path='a.py'), None, 'a relative one too')
+    check(f('Write', file_path=str(root / 'a.py')), 'a write in the main checkout is denied')
+    check(f('Edit', file_path=str(other / 'a.py')), 'and one in another slot')
+    eq(f('Write', file_path=str(notes / 'wizards' / 'T1.sh')), None, 'the notes folder takes wizards and sheets')
+    eq(f('Write', file_path=str(tmp / 'scratch' / 'x.html')), None, 'a scratch file outside the project runs')
+    eq(f('Read', file_path=str(root / 'a.py')), None, 'reading is never fenced')
+
+    flags = R.Claude().flags('sid-f', 'opus', 30, False, False)
+    hooks = json.loads(flags[flags.index('--settings') + 1])['hooks']['PreToolUse']
+    cmd = hooks[0]['hooks'][0]['command']
+    check('Bash' in hooks[0]['matcher'] and 'Write' in hooks[0]['matcher'] and ' fence ' in cmd,
+          'every slot gets the fence as a PreToolUse hook on Bash and the edit tools', hooks)
+    import shlex
+    argv = shlex.split(cmd)
+    env = {**os.environ, 'AGENT_RUNNER': '1', 'AGENT_RUNNER_WORKTREE': str(own)}
+    ev = lambda tool, **inp: json.dumps({'tool_name': tool, 'tool_input': inp, 'cwd': str(own)})
+    out = subprocess.run(argv, input=ev('Bash', command='git push'), capture_output=True, text=True, env=env)
+    has(out.stdout + out.stderr, r'"permissionDecision": "deny"', 'the hook itself denies a push')
+    out = subprocess.run(argv, input=ev('Write', file_path=str(root / 'x.py')), capture_output=True, text=True,
+                         env=env)
+    has(out.stdout + out.stderr, r'"permissionDecision": "deny".*outside your worktree',
+        'and a write outside the worktree')
+    out = subprocess.run(argv, input=ev('Bash', command='git commit -qm "T1: x"'), capture_output=True, text=True,
+                         env=env)
+    eq((out.returncode, out.stdout.strip()), (0, ''), 'and lets a normal commit run')
+    with mock.patch.object(R.slots, 'no_push_env', lambda: {'GIT_CONFIG_COUNT': '1'}):
+        with mock.patch.object(R.slots, 'pi', lambda: False):
+            check(not any(e.startswith('GIT_CONFIG') for e in R.slot_env(1)),
+                  'Claude Code slots lose the no-push git config: the fence does that now')
+        with mock.patch.object(R.slots, 'pi', lambda: True):
+            check('GIT_CONFIG_COUNT=1' in R.slot_env(1), 'Pi keeps it until the harness')
+
+
 def test_land_waits_aloud(repo: Path):
     print('run: a tested merge that waits on edits in the main checkout says so, then lands')
     import threading
@@ -7516,7 +7719,7 @@ def main() -> int:
                        lambda: test_red_base_and_batch_caps(repo, tmp), lambda: test_merge_order_and_backlog(repo), lambda: test_reserved_ids(repo),
                        lambda: test_platform(repo, tmp), lambda: test_shutdown(repo), lambda: test_merge_into(tmp),
                        lambda: test_leftovers(repo), lambda: test_renumber(repo), lambda: test_fold_doubles_b33(repo),
-                       lambda: test_stop_waiter(tmp), lambda: test_stop_hook_grace(tmp), lambda: test_land_waits_aloud(repo), lambda: test_merge_ahead(repo), lambda: test_adopted_gate_merge(repo), lambda: test_adopted_gate_results(repo), lambda: test_gate_since(repo), lambda: test_gate_catch_up(repo), lambda: test_owed_merge_goes_first(repo), lambda: test_copies(repo), lambda: test_land_gives_merge_back(repo),
+                       lambda: test_stop_waiter(tmp), lambda: test_stop_hook_grace(tmp), lambda: test_finish_ends_session(tmp), lambda: test_ask_parks_and_resumes(repo, tmp), lambda: test_git_fence(repo, tmp), lambda: test_land_waits_aloud(repo), lambda: test_merge_ahead(repo), lambda: test_adopted_gate_merge(repo), lambda: test_adopted_gate_results(repo), lambda: test_gate_since(repo), lambda: test_gate_catch_up(repo), lambda: test_owed_merge_goes_first(repo), lambda: test_copies(repo), lambda: test_land_gives_merge_back(repo),
                        lambda: test_edited_elsewhere(repo, tmp),
                        lambda: test_resume(repo, tmp),
                        lambda: test_session_tmp(repo, tmp), lambda: test_end_orphans(repo), lambda: test_memory_watch(repo), lambda: test_tested_ref(repo, tmp), lambda: test_docs_only_gate(repo), lambda: test_research_findings_only(repo),
