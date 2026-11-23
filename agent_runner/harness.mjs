@@ -524,7 +524,21 @@ class Session {
     return [r.out.trim() || `${cmd} failed (exit code ${r.code})`, Boolean(r.code)];
   }
 
-  async tool_finish(a) { return this.runner('finish', a.summary); }
+  // B155: a slot's task, and neither `done` nor `done --blocked` has succeeded (config.finished_mark)
+  undone() {
+    const slot = process.env.AGENT_RUNNER_SLOT;
+    return Boolean(slot && this.tid && !fs.existsSync(path.join(this.a.notes, `slot${slot}.finished`)));
+  }
+
+  async tool_finish(a) {
+    if (this.undone()) {
+      const done = `${(this.a.runner || ['run']).join(' ')} done ${this.tid} "<commit message>"`;
+      return [`finish refused: \`done\` has not run for ${this.tid}, so the session goes on. Run \`${done}\` with bash ` +
+        `first (add --blocked "<why + what would unblock it>" when you are stuck), then finish. When only a person ` +
+        `can answer what you need, call the ask tool instead.`, true];
+    }
+    return this.runner('finish', a.summary);
+  }
 
   async tool_ask(a) { return this.runner('ask', a.question); }
 

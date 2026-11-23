@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 import os
+import shlex
 import shutil
 import subprocess
 import sys
@@ -17,7 +18,7 @@ from unittest import mock
 from _check import check, eq, git, has, report
 
 from agent_runner import runner as R
-from agent_runner.config import Config
+from agent_runner.config import Config, runner_cmd
 from agent_runner.tools import take_end
 
 # The fake provider: each call answers with step N of $FAKE_SCRIPT, N being the assistant messages already in the
@@ -49,6 +50,7 @@ export default function ({ provider, model }) {
 """
 
 MODEL = 'codex:gpt-test'
+DONE = shlex.join([*runner_cmd(), 'done', 'F1', 'F1 a'])  # a real `done`, run in the session's worktree
 
 
 class Env:
@@ -58,6 +60,8 @@ class Env:
         git(self.repo, 'init', '-q', '-b', 'main')
         (self.repo / '.gitignore').write_text('.runner/\nrunner.toml\n', encoding='utf-8')  # rewritten per test
         (self.repo / 'README.md').write_text('test\n', encoding='utf-8')
+        (self.repo / 'plan').mkdir()
+        (self.repo / 'plan' / 'TODO.md').write_text('# TODO\n\n- [ ] **F1** write a.txt | files: a.txt\n', encoding='utf-8')
         git(self.repo, 'add', '.')
         git(self.repo, 'commit', '-qm', 'start')
         self.fake = tmp / 'fake.mjs'
@@ -89,6 +93,11 @@ class Env:
 
     def entries(self, sid: str) -> list[dict]:
         return list(R.entries(sid))
+
+
+def done_mark() -> Path:
+    """Slot 1's `finished_mark`, in the test's repository (`finished_mark` itself reads the working directory's)."""
+    return R.C.notes('slot1.finished')
 
 
 def results(entries: list[dict]) -> list[dict]:
@@ -128,11 +137,13 @@ def test_finish(env: Env):
     p, sid, calls = env.session([
         {'text': 'working', 'calls': [['write', {'path': 'a.txt', 'content': 'hello\n'}],
                                       ['bash', {'command': 'git add a.txt && git commit -qm "F1 a" && cat a.txt'}]]},
+        {'calls': [['bash', {'command': DONE}]]},
         {'calls': [['finish', {'summary': 'wrote a.txt'}]]},
         {'text': 'should never be asked'},
     ], idle=30)
+    done_mark().unlink()
     eq(p.returncode, 0, 'a session that calls finish exits 0')
-    check(len(calls) == 2, 'finish ends it: no model call after it, though idle is 30 s', calls[-1]['messages'][-1])
+    check(len(calls) == 3, 'finish ends it: no model call after it, though idle is 30 s', calls[-1]['messages'][-1])
     eq((env.wt / 'a.txt').read_text(encoding='utf-8'), 'hello\n', 'write wrote the file in the worktree')
     eq(calls[0]['tools'], ['bash', 'read', 'edit', 'write', 'finish', 'ask', 'publish_page'], 'the session\'s tools')
     eq(calls[0]['provider'], 'codex', 'the provider is the role\'s')
@@ -145,9 +156,29 @@ def test_finish(env: Env):
           and es[1]['message']['stop_reason'] == 'tool_use' and es[0]['sessionId'] == sid,
           'its entries are in Claude\'s shape', es[:2])
     has(results(es)[1]['content'], r'hello', 'a tool result is a tool_result block with the output')
-    eq(R.task_spend(sid), (240, 0.002), 'spend reads its usage as a Claude session\'s (2 calls of 120 tokens)')
-    has(R.stats(sid), r'2 calls', 'and so does the exit line\'s stats')
+    eq(R.task_spend(sid), (360, 0.003), 'spend reads its usage as a Claude session\'s (3 calls of 120 tokens)')
+    has(R.stats(sid), r'3 calls', 'and so does the exit line\'s stats')
     eq(R.last_words(sid), 'working', 'and its last words')
+
+
+def test_finish_refused(env: Env):
+    """B155: the finish tool refuses until `done` (or `done --blocked`) has run for the task."""
+    finish = ['finish', {'summary': 'cannot be completed without the code word'}]
+    git(env.wt, 'checkout', '-q', '-B', 'task/F1', 'main')  # F1 open again: test_finish's `done` ticked it
+    for done, what in ((DONE, '`done`'), (DONE + ' --blocked "needs the code word"', '`done --blocked`')):
+        p, sid, calls = env.session([{'calls': [finish]}, {'calls': [['bash', {'command': done}]]},
+                                     {'calls': [finish]}, {'text': 'should never be asked'}], idle=30)
+        rs = results(env.entries(sid))
+        check(rs[0]['is_error'] and 'done F1' in rs[0]['content'] and '--blocked' in rs[0]['content']
+              and 'ask tool' in rs[0]['content'], 'finish with no done is refused, naming done and ask', rs[0])
+        has(calls[1]['messages'][-1]['text'], r'finish refused', 'and the loop goes on, the model told why')
+        check(done_mark().exists() and not rs[1]['is_error'], f'then {what} runs', rs[1])
+        eq((p.returncode, len(calls), take_end(1, R.C).get('how')), (0, 3, 'finish'), f'and finish after {what} ends it')
+        done_mark().unlink()
+        git(env.wt, 'checkout', '-q', '-B', 'task/F1', 'main')
+    p, sid, calls = env.session([{'calls': [finish]}, {'calls': [['ask', {'question': 'What is the code word?'}]]},
+                                 {'text': 'should never be asked'}], idle=30)
+    eq((p.returncode, len(calls), take_end(1, R.C).get('how')), (0, 2, 'ask'), 'ask still ends it with no done')
 
 
 def test_ask(env: Env):
@@ -174,12 +205,14 @@ def test_fallback(env: Env):
         chain = json.loads(argv[argv.index('--fallback') + 1]) if '--fallback' in argv else []
         eq([c['model'] for c in chain], [], 'a claude entry first in the chain: nothing to switch to in-session')
         env.configure('', models='fallback = ["gemini:pro-test", "sonnet"]\n')
+        done_mark().touch()  # as a `done` leaves it
         p, sid, calls = env.session([
             {'text': 'working', 'calls': [['bash', {'command': 'echo one'}]]},
             {'cap': 'codex', 'calls': [['finish', {'summary': 'done on gemini'}]]},
         ])
         eq(p.returncode, 0, 'a session whose provider hits its cap goes on and finishes')
         take_end(1, R.C)  # its finish mark, read as the run reads it
+        done_mark().unlink()
         eq([(c['provider'], c['n']) for c in calls], [('codex', 0), ('codex', 1), ('gemini', 1)],
            'the cap on codex switches the same session to gemini, which gets the whole conversation so far')
         has(calls[-1]['messages'][-1]['text'], r'one', 'with the tool results the codex turns made')
@@ -346,7 +379,8 @@ def main() -> int:
         try:
             if not node:  # F132: the brief check runs no session, so needs no node
                 return report([lambda: test_brief(env), lambda: test_no_pi(env)])
-            return report([lambda: test_routing(env), lambda: test_finish(env), lambda: test_ask(env),
+            return report([lambda: test_routing(env), lambda: test_finish(env),
+                           lambda: test_finish_refused(env), lambda: test_ask(env),
                            lambda: test_fence(env), lambda: test_fallback(env), lambda: test_budget(env), lambda: test_resume(env),
                            lambda: test_tell(env), lambda: test_brief(env), lambda: test_no_pi(env)])
         finally:
