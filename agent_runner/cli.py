@@ -26,6 +26,7 @@ What you type
     agent-runner slots +1             one slot more (-1 fewer, 4: exactly four)
     agent-runner wizard               walk through the hand steps a blocked task waits on, then confirm it
     agent-runner guide                how an agent you start in this repo should work with the runner (take|concepts|needs: one case)
+    agent-runner login [copilot]      each provider [models] names and its login; with one: add its login
     agent-runner settings             every runner.toml key, its default and what it does; how to change one
     agent-runner sheet ID --go        answer a pick sheet with its recommended picks (--picks "<Send's line>")
     agent-runner plan                 every task id, one line each
@@ -207,6 +208,7 @@ COMMANDS = {
     'ui': ('tui', 'main'),  # F67: the Run page in the terminal
     'finish': ('tools', 'cmd_finish'),  # F102: a slot's agent ends its session now
     'ask': ('tools', 'cmd_ask'),  # F102: a slot's agent asks the person; the answer resumes it
+    'login': ('login', 'main'),  # F106e: the provider logins the harness loop runs on
 }
 
 
