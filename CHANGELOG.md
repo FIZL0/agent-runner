@@ -6,6 +6,10 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 - Added: approve to push (F98). With `[run] approve = true`, merges land but nothing is pushed until a person approves a
   pitch on Needs you (Approve, or Not this to undo).
+- Added: New Talk chat (F157). In Talk the top bar's New chat button is now New Talk chat: it stays in Talk, stops
+  listening, reading aloud or waiting for a reply, clears the shown conversation, and the next message opens a fresh
+  Talk session; the old chat stays in Chats, open. Before, the button left Talk for an ordinary chat and Talk always
+  went on in the live session. Elsewhere (sidebar, other views) New chat is unchanged.
 - Changed: the run app reworked in one go, to written rules, `docs/STYLE.md` (F83, with F124, F143, F128, F129, F110,
   F97, B142, B134 and F85). Before and after:
   - Style: sizes, corners, colours and durations were one-offs; now tokens and shared helpers, checked by a test.

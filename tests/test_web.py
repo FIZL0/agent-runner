@@ -1162,13 +1162,13 @@ TALK_HEAR_DRIVER = r"""
 const page = require('fs').readFileSync(process.argv[2], 'utf8').replace(/\r\n/g, '\n');  // a Windows checkout is CRLF
 const grab = (start) => { const i = page.indexOf(start); return page.slice(i, page.indexOf('\n}\n', i) + 2); };
 const logic = page.split('<script id="logic">')[1].split('</script>')[0];
-const said = [];
-const window = {speechSynthesis: {cancel() {}, speak(u) { if (u.text) said.push(u.text) }}};
+const said = []; let cancels = 0;
+const window = {speechSynthesis: {cancel() { cancels++ }, speak(u) { if (u.text) said.push(u.text) }}};
 const speechSynthesis = window.speechSynthesis;
 class SpeechSynthesisUtterance { constructor(t) { this.text = t } }
 const navigator = {language: 'en-US'};
 const kept = {}, store = {get: k => kept[k] || '', set(k, v) { kept[k] = v }};
-const toast = () => {}, render = () => {}, tq = p => p, followVersion = () => false, TALK_KEY = 'ar-talk';
+const toast = () => {}, render = () => {}, tq = p => p, followVersion = () => false, TALK_KEY = 'ar-talk', TALK_OLD = 'ar-talkold', TALK_START = 'ar-talkstart';
 const keepSent = () => {}, sessionOf = () => null, newCid = () => 'k';  // B154
 const OB = {offline: false}, drain = () => {};  // F137: takeSnap wakes the outbox
 let TS = {read: true, voice: '', mic: 'tap', auto: false}; const voices = () => [], talkTyping = () => false;  // F124
@@ -1176,16 +1176,17 @@ const HOME_PAGE = false, document = {};  // B153: takeSnap sets the window title
 const S = {snap: {sessions: [], queue: []}, feeds: {}, sent: {}, waitNew: null};
 const chats = () => S.snap.sessions.filter(s => /^c\d+$/.test(s.name)), working_ = () => [];
 const feedOf = n => (S.feeds[n] || {}).entries || [];
-const TK = {rec: null, heard: '', state: '', wait: null, said: '', unlocked: false, note: ''};
+const TK = {rec: null, heard: '', state: '', wait: null, said: '', unlocked: false, note: '', gen: 0, starting: []};
 let feeds = {}, actDone = null, actResult = null;
 const fetch = async p => ({json: async () => ({ok: true, entries: feeds[decodeURIComponent(p.split('/')[1])] || []})});
-const act = () => new Promise(res => { actDone = () => res(actResult) });
+const acts = [], act = (name, args) => { acts.push(args); return new Promise(res => { actDone = x => res(x || actResult) }) };
 const tick = () => new Promise(r => setTimeout(r, 0));
 const c13 = [{name: 'c13', title: 'Talk', state: 'live'}];
 const reply = [{kind: 'you', text: 'Talk mode: …\n\nThey said: Hello'}, {kind: 'say', text: "Hi there. I'm listening."}];
-const reset = () => { said.length = 0; TK.state = ''; TK.wait = null; S.snap.sessions = []; S.feeds = {}; feeds = {};
+const reset = () => { said.length = 0; TK.state = ''; TK.wait = null; TK.starting = []; acts.length = 0; S.snap.sessions = []; S.feeds = {}; feeds = {};
   for (const k in kept) delete kept[k] };
-eval(logic + grab('function talkName(') + grab('function talkWaitName(') + grab('async function talkSend(')
+eval(logic + grab('function talkOld(') + grab('function newTalk(')  // talkOld's reaches to talkFind's end
+  + grab('function talkName(') + grab('function talkWaitName(') + grab('async function talkSend(')
   + grab('function talkHear(') + grab('function unlockSpeech(') + grab('function speak(') + grab('function takeSnap(')
   + grab('async function loadFeed(') + grab('function addSent(') + `
 (async () => {
@@ -1233,9 +1234,88 @@ eval(logic + grab('function talkName(') + grab('function talkWaitName(') + grab(
   S.feeds.c13 = {entries: old}; const mute = talkSend('Hello'); actDone(); await mute;
   feeds.c13 = old.concat(more); for (let i = 0; i < 2; i++) { await loadFeed('c13') }
   out.mute = {state: TK.state, said: said.join(' ')};
+  // F157: New Talk chat, with the old chat c13 (titled Talk) live throughout
+  TS.read = true;
+  const c14 = {name: 'c14', title: 'Talk', state: 'live'}, both = c13.concat([c14]);
+  const reload = () => { TK.wait = null; TK.gen = 0; TK.state = ''; TK.starting = talkStartsRead() };  // what a reload forgets
+  const start = () => { reset(); kept['ar-talk'] = 'c13'; S.snap.sessions = c13; S.feeds.c13 = {entries: old} };
+  const stops = [];
+  start(); TK.state = 'listening'; TK.heard = 'half a'; TK.hold = true; TK.ear = {}; TK.rec = {stop() { stops.push('mic') }};
+  newTalk();
+  out.newListening = [TK.state, TK.heard, TK.hold, TK.ear, TK.rec, stops.length, acts.length];
+  start(); TK.state = 'speaking'; cancels = 0; newTalk(); out.newSpeaking = [TK.state, cancels];
+  start(); TK.state = 'thinking'; TK.wait = {n: 'c13', at: Date.now()}; cancels = 0; newTalk();
+  out.newThinking = [TK.state, TK.wait, talkName(), talkWaitName(), cancels];
+  reload(); out.newReload = talkName();
+  const go = talkSend('Fresh');
+  out.newSend = [acts[0], talkName(), talkWaitName()];
+  takeSnap({sessions: c13}); out.newWaiting = talkWaitName();  // the old one is not taken while the new one starts
+  actDone({ok: true, session: 'c14'}); await go;
+  out.newNamed = [talkName(), kept['ar-talk']];
+  takeSnap({sessions: both}); reload(); out.newKept = talkName();
+  S.snap.sessions = c13; out.newEnded = talkName();  // the new one ended: not back to the old one
+  // the action named no session: the new chat is found by its title, never the old one; also over a reload
+  start(); newTalk(); let un2 = talkSend('Fresh'); actDone({ok: true, session: ''}); await un2;
+  takeSnap({sessions: c13}); const none = talkWaitName(); takeSnap({sessions: both});
+  out.newUnnamed = [none, talkWaitName(), kept['ar-talk']];
+  start(); newTalk(); talkSend('Fresh'); reload(); out.newMidReload = [talkName(), (S.snap.sessions = both, talkName())];
+  // it failed: the next message still opens a new one
+  start(); newTalk(); un2 = talkSend('Fresh'); actDone({ok: false}); await un2;
+  out.newFailed = [kept['ar-talk'], talkName()];
+  // pressed while a message is on its way: its answer does not bring the old chat back
+  start(); un2 = talkSend('Old words'); newTalk(); actDone({ok: true, session: 'c13'}); await un2;
+  out.newInFlight = [talkName(), TK.state, S.sent.c13.pending.slice(-1)[0].text];
+  // pressed while a chat is still starting: that one is old as soon as it shows, the next is the new one
+  reset(); un2 = talkSend('One'); const one = actDone; newTalk();
+  const two = talkSend('Two'), twoDone = actDone;
+  takeSnap({sessions: c13}); out.newStarting = [talkName(), talkWaitName()];
+  one({ok: true, session: 'c13'}); await un2; const during = TK.state; twoDone({ok: true, session: 'c14'}); await two;
+  takeSnap({sessions: both}); out.newStarted = [during, acts.map(a => a.to), talkName()];
+  // the same over a reload before any of it shows
+  reset(); talkSend('One'); newTalk(); reload(); talkSend('Two');
+  takeSnap({sessions: c13}); out.newStartReload = [talkName(), (takeSnap({sessions: both}), talkName())];
+  // pressed before the first snapshot, and one more press keeps what was left
+  reset(); kept['ar-talk'] = 'c13'; newTalk(); newTalk(); takeSnap({sessions: c13}); talkSend('Fresh'); reload();
+  out.newEarly = [talkName(), JSON.parse(kept['ar-talkold'])];
   console.log(JSON.stringify(out));
 })();`);
 """
+
+
+def test_talk_new_chat_f157(tmp: Path) -> None:
+    """F157: New Talk chat stays in Talk: it stops the mic, the speech and the wait, the next message goes out with no
+    'to', and the new session is the one Talk keeps, also over a reload, while an old chat titled Talk is live."""
+    page = W.page_html().decode()
+    top = page.split('function topHTML(){', 1)[1].split('\n}', 1)[0]
+    check("!n&&S.view==='talk'?`<button class=\"icon\" data-newtalk aria-label=\"New Talk chat\"" in top
+          and "if(q('[data-newtalk]'))return newTalk()" in page, "in Talk the top bar's button is New Talk chat")
+    if not shutil.which('node'):
+        print('  (no node here: the New Talk chat script test is skipped)')
+        return
+    live = [{'name': 'c4', 'title': 'Talk', 'state': 'live'}, {'name': 'c5', 'title': 'Talk', 'state': 'live'}]
+    eq(logic_js([['talkSession', live, 'new'], ['talkSession', live, '', ['c4']], ['talkSession', live, 'c9', ['c4', 'c5']]]),
+       ['', 'c5', ''], 'no chat once a new one is asked for, and never one that was left')
+    (tmp / 'driver.js').write_text(TALK_HEAR_DRIVER, encoding='utf-8')
+    r = subprocess.run(['node', str(tmp / 'driver.js'), str(W.PAGE)], capture_output=True, text=True, timeout=60)
+    check(r.returncode == 0, 'node runs newTalk', r.stderr[-800:])
+    got = json.loads(r.stdout or '{}')
+    eq(got.get('newListening'), ['', '', False, None, None, 1, 0], 'the mic stops and nothing is sent')
+    eq(got.get('newSpeaking'), ['', 1], 'the speech stops')
+    eq(got.get('newThinking'), ['', None, '', '', 0], 'the wait for a reply ends, and Talk shows no chat')
+    eq(got.get('newReload'), '', 'nor after a reload')
+    eq(got.get('newSend'), [{'text': 'Fresh', 'to': ''}, '', ''], "the next message goes out with no 'to'")
+    eq(got.get('newWaiting'), '', 'the wait does not take the old chat')
+    eq(got.get('newNamed'), ['c14', 'c14'], 'the new session is remembered')
+    eq(got.get('newKept'), 'c14', 'and kept after a reload')
+    eq(got.get('newEnded'), '', 'the new one ended: Talk does not go back to the old one')
+    eq(got.get('newUnnamed'), ['', 'c14', 'c14'], 'no name came back: the new chat is found by its title')
+    eq(got.get('newMidReload'), ['', 'c14'], 'a reload while it starts: found once it shows')
+    eq(got.get('newFailed'), ['new', ''], 'it failed: the next message still opens a new one')
+    eq(got.get('newInFlight'), ['', '', 'Old words'], "an old message's answer changes nothing, its chat has it")
+    eq(got.get('newStarting'), ['', ''], 'a chat still starting when it was pressed is not taken')
+    eq(got.get('newStartReload'), ['', 'c14'], 'also when the page was reloaded meanwhile')
+    eq(got.get('newEarly'), ['', ['c13']], 'pressed before the first snapshot: the old chat is still left')
+    eq(got.get('newStarted'), ['thinking', ['', ''], 'c14'], 'the one opened after it is')
 
 
 def test_talk_reply_heard_b133(tmp: Path) -> None:
@@ -2900,7 +2980,7 @@ if __name__ == '__main__':
                            in_tmp(test_new_chat), in_tmp(test_term_moves), in_tmp(test_page_copy_publish), in_tmp(test_parked),
                            in_tmp(test_esc_ctrl_c), in_tmp(test_concepts_view), in_tmp(test_follow_version_f90),
                            in_tmp(test_talk_f93), in_tmp(test_https_link_b130),
-                           in_tmp(test_listen_heard_nothing_b132), in_tmp(test_talk_reply_heard_b133),
+                           in_tmp(test_listen_heard_nothing_b132), in_tmp(test_talk_reply_heard_b133), in_tmp(test_talk_new_chat_f157),
                            in_tmp(test_slash_menu_b119), in_tmp(test_composer_keys_b120),
                            in_tmp(test_interrupt_c1_b141), in_tmp(test_answer_button_b138), in_tmp(test_pick_f138),
                            in_tmp(test_outbox_f137), in_tmp(test_sent_b154), in_tmp(test_card_chat_b139), in_tmp(test_short_ask_b152),
