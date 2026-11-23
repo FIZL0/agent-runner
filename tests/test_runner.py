@@ -5239,7 +5239,7 @@ def test_auto_release(repo: Path):
         check(tid.startswith('V'), 'the third landing queues one', tid)
         line = next(l for l in releases() if f'**{tid}**' in l)
         has(line, re.escape(P.RELEASE_BRIEF), 'with the default release brief, as plan add V')
-        eq(P.fields(line).get('after'), [P.ALL], 'after everything ahead of it')
+        eq(P.fields(line).get('after'), None, 'waiting on nothing: [plan] release_alone is off (F100)')
         has(git(repo, 'log', '-1', '--format=%s'), rf'^Plan: {tid}, auto release \(3 landed\)', 'committed')
         eq(git(repo, 'status', '--porcelain', '--', 'plan'), '', 'clean')
         eq(said[-1][0], f'queued {tid} (auto_release: 3 landed)', 'the run log says why')
