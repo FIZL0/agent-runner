@@ -179,16 +179,20 @@ def test_run_controls(tmp: Path) -> None:
             'pause': ['pause'], 'go_on': ['pause', '--off'], 'force': ['force'], 'caps_on': ['force', '--off'],
             'stop': ['stop'], 'stop_now': ['stop', '--force'], 'stop_undo': ['stop', '--undo'],
             'task_drop': ['plan', 'drop', 'F1', U.TASK_DROP_WHY],
-            'upgrade': ['key', 'u'], 'suspend': ['key', 'z'], 'shutdown': ['key', 'x']}  # C26
+            'upgrade': ['key', 'u'], 'suspend': ['key', 'z'], 'shutdown': ['key', 'x'],  # C26
+            'restart': ['key', 'restart'], 'start': [], 'resume': ['resume', 'F1'],  # F124
+            'unclaim': ['plan', 'unclaim', 'F1'], 'wip_show': ['wip', 'show', 'main-checkout-1'],
+            'wip_restore': ['wip', 'restore', 'main-checkout-1'], 'wip_drop': ['wip', 'drop', 'main-checkout-1']}
+    tid = lambda c: 'main-checkout-1' if c['fix'] == 'wip' else 'F1'  # noqa: E731
     cs = U.controls()
     if shutil.which('node'):
-        reqs = logic_js([['controlReq', c, {'n': ' 4', 'tid': 'F1', 'sure': True}] for c in cs] +
+        reqs = logic_js([['controlReq', c, {'n': ' 4', 'tid': tid(c), 'sure': True}] for c in cs] +
                         [['controlReq', U.run_control_of('stop_now') | {'needs': '', 'confirm': U.STOP_NOW_ASK},
                           {'tid': 'F1'}]])
     else:
         print('  (no node here: the page requests are built in Python instead)')
         reqs = [{'name': 'run_control', 'args': {'key': c['key'], **({'n': '4'} if c['needs'] == 'n' else {}),
-                                                  **({'tid': 'F1'} if c['needs'] == 'id' else {}),
+                                                  **({'tid': tid(c)} if c['needs'] in ('id', 'pick') else {}),
                                                   **({'confirm': True} if c['confirm'] else {})}} for c in cs] + \
             [{'name': 'run_control', 'args': {'key': 'stop_now'}}]
     if shutil.which('node'):
@@ -371,7 +375,7 @@ def test_control_rows(tmp: Path) -> None:
 
 
 def test_page(tmp: Path) -> None:
-    """F79: the run app as its design has it: the sidebar (New chat, Home, Agents, Activity, Plan, Chats, Agents
+    """F79: the run app as its design has it: the sidebar (New chat, Home, Status, Plan, Chats, Agents
     working, the machine and usage), Home's parts, threads, the message box, the Plan, light and dark, no
     scrollbars, the container layout, its own 'ar' mark, and no direct edit of tasks."""
     fake_repo(tmp)
@@ -381,13 +385,14 @@ def test_page(tmp: Path) -> None:
         page = get(f'http://127.0.0.1:{srv.server_address[1]}/?t={token}')[1].decode()
     finally:
         srv.stop()
-    for part in ('New chat', "['home','Home'],['agents','Agents'],['activity','Activity'],['plan','Plan'],['concepts','Concepts']",
+    for part in ('New chat', "['home','Home'],['status','Status'],['plan','Plan'],['concepts','Concepts'],['settings','Settings']",
+                 'Style rules: docs/STYLE.md',
                  '<div class="shead row"><span>Chats</span>', '<div class="shead">Agents working</div>', 'class="livedot"',
                  'S.snap.machine', 'usage ${esc(use)}',  # the sidebar
                  'side.open', 'class="scrim"', 'data-menu',  # a drawer on a phone
                  'greeting()', 'How can I help with the run?', 'data-quick="since">', 'Since my last look',
                  'data-quick="needs">', 'What needs me', 'data-about="new">', 'Add a task',  # Home
-                 '>Needs you<', 'data-ans=', 'data-later=', 'data-about="need:', '>Working now<', '>Up next<',
+                 '>Needs you<', 'data-ans=', 'data-later=', 'data-needchat=', 'data-needdrop=', '>Working now<', '>Up next<',
                  'data-about="plan:', 'Release when they land', 'Release now',
                  "outbox('answer'", "outbox('shelve'", "outbox('release'", "newChat('quick_ask'", "outbox('chat_to'",
                  "newChat('new_control'", "act('interrupt'",  # F137: through the outbox
@@ -854,7 +859,7 @@ def test_esc_ctrl_c(tmp: Path) -> None:
         if ln.strip() in out_of_box:
             check('interrupt' not in ln, 'an Esc branch out of the box sends no interrupt', ln)
     esc_int = [ln for ln in esc_lines if 'interrupt' in ln]
-    check(len(esc_int) == 1 and 'busy(S.thread)' in esc_int[0] and 'S.thread=null' not in esc_int[0],
+    check(len(esc_int) == 1 and 'shownSession()' in esc_int[0] and 'busy(n)' in esc_int[0] and 'S.thread=null' not in esc_int[0],
           'Esc in the box interrupts only a working chat, and does not go back', esc_int)
     check(any("e.key==='Escape'" in ln and 'blur()' in ln for ln in lines), 'Esc in the box leaves it')
     check(any("e.key==='Escape'&&S.thread&&" in ln and 'S.thread=null' in ln for ln in lines), 'Esc out of the box goes back')
@@ -1113,14 +1118,17 @@ class SR { constructor() { rec = this } start() { this.started = spoke } stop() 
 const navigator = {language: 'en-US'};
 const TK = {rec: null, heard: '', state: '', wait: null, said: '', unlocked: false, note: ''};
 const micWhy = () => '', toast = () => {}, render = () => {}, talkSend = t => { sent.push(t) };
-const esc = s => s, I = {stop: '', talk: ''}, box = () => '';
-eval(logic + grab('function unlockSpeech(') + grab('function talkDock(') + grab('function listen(') + `
+const I = {stop: '', talk: '', speak: '', mute: ''};
+const el = {}, $ = k => el[k] = el[k] || {classList: {toggle() {}}, setAttribute() {}, textContent: '', className: ''};
+const setHTML = () => true, talkTyping = () => false, talkDock = () => (talkDraw(), $('talkline').textContent);
+let TS = {read: true, voice: '', mic: 'tap', auto: false};
+eval(logic.replace('const TALK_SET', 'var TALK_SET') + grab('function unlockSpeech(') + grab('function talkDraw(') + grab('function listen(') + `
   listen();
   const before = rec.started;
   rec.onerror({error: 'no-speech'}); rec.onend();
-  const line = talkDock().match(/class="talkline"[^>]*>([^<]*)</)[1];
+  const line = talkDock();
   listen();
-  const cleared = talkDock().match(/class="talkline"[^>]*>([^<]*)</)[1];
+  const cleared = talkDock();
   rec.onresult({resultIndex: 0, results: [Object.assign([{transcript: 'hello'}], {isFinal: true})]}); rec.onend();
   TK.state = 'speaking'; rec = null; spoke = 0;
   listen();
@@ -1160,6 +1168,7 @@ const kept = {}, store = {get: k => kept[k] || '', set(k, v) { kept[k] = v }};
 const toast = () => {}, render = () => {}, tq = p => p, followVersion = () => false, TALK_KEY = 'ar-talk';
 const keepSent = () => {}, sessionOf = () => null, newCid = () => 'k';  // B154
 const OB = {offline: false}, drain = () => {};  // F137: takeSnap wakes the outbox
+let TS = {read: true, voice: '', mic: 'tap', auto: false}; const voices = () => [], talkTyping = () => false;  // F124
 const HOME_PAGE = false, document = {};  // B153: takeSnap sets the window title
 const S = {snap: {sessions: [], queue: []}, feeds: {}, sent: {}, waitNew: null};
 const chats = () => S.snap.sessions.filter(s => /^c\d+$/.test(s.name)), working_ = () => [];
@@ -1194,6 +1203,33 @@ eval(logic + grab('function talkName(') + grab('function talkWaitName(') + grab(
   out.slow = {state: TK.state, said: said.join(' ')};
   actDone(); await slow; await tick();
   out.slowAfter = {state: TK.state, wait: TK.wait};
+  // B134: a feed at its cap (its length stands still, its indexes move): what came after the send is still heard,
+  // and a reply that says again what was said before is not cut short
+  const old = [];
+  for (let i = 0; i < 200; i++) old.push({kind: i % 2 ? 'say' : 'you', text: i % 2 ? 'Okay.' : 'ping', id: 'e' + i});
+  const more = [{kind: 'you', text: '(Talk: answer as speech.) Hello', id: 'n0'}, {kind: 'say', text: 'Okay.', id: 'n1'},
+                {kind: 'say', text: 'Two agents are running.', id: 'n2'}];
+  for (const ids of [true, false]) {
+    reset(); actResult = {ok: true, session: 'c13'}; kept['ar-talk'] = 'c13'; S.snap.sessions = c13;
+    const strip = es => ids ? es : es.map(({kind, text}) => ({kind, text}));
+    const base = ids ? old : old.map((e, i) => ({...e, text: e.text + i}));
+    S.feeds.c13 = {entries: strip(base)};
+    const cap = talkSend('Hello'); actDone(); await cap;
+    feeds.c13 = strip(base.concat(more).slice(-200));
+    for (let i = 0; i < 2; i++) { await loadFeed('c13') }
+    out['capped' + (ids ? '' : 'NoIds')] = {state: TK.state, said: said.join(' '), len: feedOf('c13').length};
+  }
+  // the feed was not read yet at the send: only what follows the person's own words is read aloud
+  reset(); actResult = {ok: true, session: 'c13'}; kept['ar-talk'] = 'c13'; S.snap.sessions = c13;
+  const un = talkSend('Hello'); actDone(); await un;
+  feeds.c13 = old.concat(more);
+  for (let i = 0; i < 2; i++) { await loadFeed('c13') }
+  out.unread = said.join(' ');
+  // F124: read replies aloud off: the reply shows, nothing is said
+  reset(); actResult = {ok: true, session: 'c13'}; TS.read = false; kept['ar-talk'] = 'c13'; S.snap.sessions = c13;
+  S.feeds.c13 = {entries: old}; const mute = talkSend('Hello'); actDone(); await mute;
+  feeds.c13 = old.concat(more); for (let i = 0; i < 2; i++) { await loadFeed('c13') }
+  out.mute = {state: TK.state, said: said.join(' ')};
   console.log(JSON.stringify(out));
 })();`);
 """
@@ -1215,6 +1251,12 @@ def test_talk_reply_heard_b133(tmp: Path) -> None:
     eq(got.get('slow'), {'state': 'speaking', 'said': "Hi there. I'm listening."},
        'a reply that lands while the talk action still runs is spoken')
     eq(got.get('slowAfter'), {'state': 'speaking', 'wait': None}, 'the action ending later does not wait again')
+    eq(got.get('capped'), {'state': 'speaking', 'said': 'Okay. Two agents are running.', 'len': 200},
+       'B134: a Talk chat past the feed cap: the whole reply is read, what it says again too')
+    eq(got.get('cappedNoIds'), {'state': 'speaking', 'said': 'Okay. Two agents are running.', 'len': 200},
+       'B134: and from a transcript without ids')
+    eq(got.get('unread'), 'Okay. Two agents are running.', 'B134: a feed not read at the send: only the reply')
+    eq(got.get('mute'), {'state': '', 'said': ''}, 'F124: read replies aloud off: nothing is said')
     eq(got.get('shown'), {'name': 'c13', 'last': "Hi there. I'm listening."},
        'the Talk view shows c13, its feed ending with the reply')
 
@@ -1358,6 +1400,13 @@ eval(logic + slice('const HIST_KEY=', 'return true;\n}\n') + slice('const SL={',
   out.escIdle = [key('Escape'), acts.length, ta.blurred, S.thread];
   store.v['ar-hist:c4'] = 'not json'; S.thread = 'c4'; at('');
   out.bad = [key('ArrowUp'), ta.value];
+  // B142: Esc in the box interrupts the shown session too: c1 on Home, the Talk session in the Talk view
+  S.thread = null; S.view = 'home'; BUSY = true; acts.length = 0; at('x');
+  out.homeEsc = [key('Escape'), acts.slice()];
+  acts.length = 0; S.view = 'talk'; TALK = 'c7';
+  out.talkEsc = [key('Escape'), acts.slice()];
+  acts.length = 0; S.view = 'home'; BUSY = false; const blurs = ta.blurred;
+  out.homeEscIdle = [key('Escape'), acts.length, ta.blurred - blurs];
   // B141: on Home (no chat open) Ctrl+C and Stop interrupt c1 while it works; in the Talk view the Talk session
   S.thread = null; S.view = 'home'; BUSY = true; acts.length = 0;
   const ctrlC = () => key('c', {ctrlKey: true});
@@ -1424,6 +1473,9 @@ def test_composer_keys_b120(tmp: Path) -> None:
     eq(got.get('escBusy'), [True, [['interrupt', 'c1']], 0, 'c1'], 'Esc interrupts the working chat and stays in it')
     eq(got.get('escIdle'), [True, 1, 1, 'c1'], 'Esc in an idle chat leaves the box, sends nothing, does not go back')
     eq(got.get('bad'), [False, ''], 'a broken stored history is read as none')
+    eq(got.get('homeEsc'), [True, [['interrupt', 'c1']]], 'B142: Esc on Home interrupts a working c1')
+    eq(got.get('talkEsc'), [True, [['interrupt', 'c7']]], 'B142: in the Talk view, the Talk session')
+    eq(got.get('homeEscIdle'), [True, 0, 1], 'B142: with c1 idle, Esc on Home leaves the box')
     # B141: with no chat open the page shows c1, and Ctrl+C and Stop interrupt it while it works
     eq(got.get('homeCtrlC'), [True, [['interrupt', 'c1']]], 'Ctrl+C with no chat open interrupts a working c1')
     eq(got.get('homeStop'), [['interrupt', 'c1']], 'Stop with no chat open interrupts c1')
@@ -1683,7 +1735,7 @@ def test_outbox_f137(tmp: Path) -> None:
     eq(once.run('', lambda: {'ok': True}), {'ok': True}, 'no cid: it just runs')
     page = W.PAGE.read_text(encoding='utf-8')
     for part in ("JSON.stringify({name:it.name,args:it.args,cid:it.cid})", "addEventListener('online',()=>drain())",
-                 'id="obbar"', 'id="obpop"', '${obChatRows()}', 'h+=obBubbles(n)', 'obCards(x=>x.concept||x.kq)',
+                 'id="obbar"', 'id="obpop"', 'obChatRows()', 'h+=obBubbles(n)', 'obCards(x=>x.concept||x.kq)',
                  "if(OB.offline)drain()", "outbox('chat_to',{text:msg,to}"):
         check(part in page, f'the page has {part}')
     send = page.split('async function send(){', 1)[1].split('\n}', 1)[0]
@@ -1738,7 +1790,7 @@ const logic = page.split('<script id="logic">')[1].split('</script>')[0];
 const kept = {}, store = {get: k => kept[k] || '', set(k, v) { kept[k] = v }};
 const said = [], toast = t => said.push(t), render = () => {}, tq = p => p, obDraw = () => {}, talkHear = () => {};
 const esc = t => String(t), LOGO = () => '', threadTitle = n => n, PN = () => 'p', md = t => t, I = {chev: ''};
-const isAgent = () => false, chats = () => [], takeSnap = () => {};
+const isAgent = () => false, chats = () => [], takeSnap = () => {}, TK = {playing: ''}, sureHTML = () => '';
 const opened = [], open = n => { S.thread = n; opened.push(n) };
 let feeds = {}, answers = [], posts = [];
 const fetch = async (p, o) => {
@@ -1862,7 +1914,7 @@ def test_card_chat_b139(tmp: Path) -> None:
     check('sendReq(ctx,to,msg)' in send and "newChat(rq.name,rq.args," in send,
           'send() starts a new chat when a card set the context', send)
     check("newChat('quick_ask'" in page and "outbox('quick_ask'" not in page, 'a quick ask starts a new chat', '')
-    check("if(r.name){carrySent(r.name,r);return open(r.name)}" in page, "Take back opens the new chat it started", '')
+    check("if(c.key==='task_take'){newChat(" in page, "Take back opens the new chat it started", '')
     if not shutil.which('node'):
         print('  (no node here: the send script test is skipped)')
         return
@@ -2064,6 +2116,473 @@ def test_release_row_f131(tmp: Path) -> None:
     eq(got, [[task, ph], [task, v], [task], 'building'], 'the release last (Parked is its own group)')
 
 
+SCROLL_DRIVER = r"""
+const page = require('fs').readFileSync(process.argv[2], 'utf8').replace(/\r\n/g, '\n');
+const grab = (start) => { const i = page.indexOf(start); return page.slice(i, page.indexOf('\n}\n', i) + 2); };
+const line = s => { const i = page.indexOf(s); return page.slice(i, page.indexOf('\n', i)) + '\n' };
+const logic = page.split('<script id="logic">')[1].split('</script>')[0];
+// a scrolling box as the page has it: keyed rows of a height each, drawn from its markup ('key:height key:height')
+class Box {
+  constructor(h) { this.h = h; this._top = 0; this.rows = []; this.on = {}; this.cls = new Set();
+    this.classList = {add: c => this.cls.add(c), remove: c => this.cls.delete(c), toggle: (c, v) => v ? this.cls.add(c) : this.cls.delete(c), contains: c => this.cls.has(c)} }
+  set innerHTML(v) { this.v = v; let y = 0;
+    this.rows = v.replace(/<[^>]*>/g, ' ').split(' ').filter(x => x.includes(':')).map(r => { const [k, n] = r.split(':'); const e = {dataset: {k}, y, n: +n, cls: new Set()};
+      e.classList = {add: c => e.cls.add(c)}; e.getBoundingClientRect = () => ({top: e.y - this._top, bottom: e.y + e.n - this._top}); y += +n; return e });
+    this.scrollTop = this._top }
+  get innerHTML() { return this.v || '' }
+  get scrollHeight() { return this.rows.reduce((a, r) => a + r.n, 0) }
+  get clientHeight() { return this.h }
+  get offsetWidth() { return 1 }
+  get scrollTop() { return this._top }
+  set scrollTop(v) { this._top = Math.max(0, Math.min(v, Math.max(0, this.scrollHeight - this.h))) }
+  getBoundingClientRect() { return {top: 0, bottom: this.h} }
+  querySelectorAll(s) { return s === '[data-k]' ? this.rows : [] }
+  contains() { return false }
+  addEventListener(t, f) { this.on[t] = f }
+}
+const els = {body: new Box(100), dock: new Box(10), top: new Box(10), jump: new Box(10)};
+const $ = k => els[k] = els[k] || new Box(10);
+const ta = {value: 'hello', dataset: {}};
+const document = {activeElement: null, hidden: false, querySelector: s => s === '[data-in]' ? ta : s === '.main' ? {classList: {toggle() {}}, style: {}} : null};
+const window = {};
+let HOME_PAGE = false, VIEW = 'a:60 b:60 c:60', CHAT = 'm1:80 m2:80';
+const S = {snap: {sessions: []}, view: 'home', thread: null, f: {}, atts: [], ob: [], feeds: {}, live: true, sheet: ''};
+const HI = {i: null}, TERM = {mode: ''}, I = {down: ''}, keysLine = () => '', esc = s => s, tq = p => p;
+const markSeen = () => {}, obHide = () => {}, obDraw = () => {}, side = () => {}, sheetDraw = () => {}, topHTML = () => 'x:1';
+const isAgent = () => false, threadTitle = n => n, convo = () => CHAT, box = () => 'box', store = {get: () => '', set() {}};
+const boxKey = () => S.thread || 'home', grow = () => {}, slashShow = () => {}, talkHTML = () => CHAT, histAdd = () => {};
+const homeHTML = () => VIEW, statusHTML = () => VIEW, planHTML = () => VIEW, conceptsHTML = () => VIEW, settingsHTML = () => VIEW, projectsHTML = () => VIEW;
+const DRAFT_KEY = k => k, toast = () => {}, open = n => { S.thread = n; render(true) }, outboxed = [];
+const talkMic = () => 'mic', talkFoot = () => '', talkDraw = () => {};
+const outbox = (n, a) => { outboxed.push([n, a.text]); CHAT += ' mine' + outboxed.length + ':40'; render(true) };
+eval(logic + line('function setHTML(') + grab('function keepScroll(') + grab('function keysIn(').split('\nfunction enter')[0]
+  + grab('function enter(') + grab('function keepFields(') + line('function viewIn(') + line('const PD=') + 'const selecting=()=>false;'
+  + line('let lastPlace=') + line('S.at={};') + line('const chatShown=') + line('function toEnd(') + line('function jumpDraw(')
+  + grab('function render(') + line("$('body').addEventListener('scroll'") + grab('async function send(') + `
+(async () => {
+  const b = $('body'), out = {}, scroll = y => { b.scrollTop = y; b.on.scroll() };
+  // every view: a refresh keeps the reading position, whatever came in above it
+  out.views = {};
+  for (const v of ['home', 'status', 'plan', 'concepts', 'settings']) {
+    S.view = v; VIEW = 'a:60 b:60 c:60 d:60'; render(true);
+    b.scrollTop = 70; VIEW = 'a:60 b:60 c:60 d:60 e:60'; render();
+    const same = b.scrollTop;
+    VIEW = 'new:35 a:60 b:60 c:60 d:60 e:60'; render();
+    out.views[v] = [same, b.scrollTop];
+  }
+  b.scrollTop = 0; VIEW = 'top:20 ' + VIEW; render(); out.atTop = b.scrollTop;
+  out.entered = b.rows.filter(r => r.cls.has('enter')).map(r => r.dataset.k);
+  VIEW = VIEW + ' '; b._h = ''; render(); out.still = b.rows.filter(r => r.cls.has('enter')).length;
+  b.scrollTop = 50; S.view = 'plan'; render(true); S.view = 'settings'; render(true); out.back = b.scrollTop;
+  // a chat: opens at its end, follows what comes in, stays put once scrolled up, shows the jump button, goes to the end on send
+  S.thread = 'c2'; render(true);
+  const left = () => b.scrollHeight - b.scrollTop - b.clientHeight;
+  out.open = left();
+  CHAT += ' m3:90'; render(); out.follows = left();
+  scroll(5); CHAT += ' m4:90'; render();
+  out.up = [b.scrollTop, $('jump').cls.has('on'), $('jump').innerHTML];
+  ta.value = 'hello'; await send(); out.sent = [outboxed[0], left(), $('jump').cls.has('on')];
+  scroll(0); toEnd(); out.jump = [left(), $('jump').cls.has('on')];
+  scroll(10); PD.down = true; CHAT += ' m5:50'; render(); out.held = b.innerHTML.includes('m5'); PD.down = false; render(); out.after = [b.innerHTML.includes('m5'), b.scrollTop];
+  console.log(JSON.stringify(out));
+})();`);
+"""
+
+
+def test_scroll_f83(tmp: Path) -> None:
+    """F83: a refresh keeps the reading position in every view (what came in above moves nothing); a chat opens at its
+    newest message, follows it unless the person scrolled up (then a jump button), and goes to its end on a send."""
+    if not shutil.which('node'):
+        print('  (no node here: the scroll script test is skipped)')
+        return
+    (tmp / 'driver.js').write_text(SCROLL_DRIVER, encoding='utf-8')
+    r = subprocess.run(['node', str(tmp / 'driver.js'), str(W.PAGE)], capture_output=True, text=True, timeout=60)
+    check(r.returncode == 0, 'node runs render()', r.stderr[-900:])
+    got = json.loads(r.stdout or '{}')
+    for v, (same, above) in (got.get('views') or {}).items():
+        eq((same, above), (70, 105), f'{v}: a refresh keeps scrollTop, and a card above it moves nothing on screen')
+    eq(len(got.get('views') or {}), 5, 'every view was looked at')
+    eq(got.get('atTop'), 0, 'at the very top, the new thing shows')
+    eq((got.get('entered'), got.get('still')), (['top'], 0), 'only what is new comes in moving; a redraw moves nothing')
+    eq(got.get('back'), 50, 'coming back to a view returns to where it was')
+    eq(got.get('open'), 0, 'a chat opens at its newest message')
+    eq(got.get('follows'), 0, 'and follows what comes in')
+    eq(got.get('up'), [5, True, 'New message'], 'scrolled up: it stays put, and the jump button says so')
+    eq(got.get('sent'), [['chat_to', 'hello'], 0, False], 'a send goes to the end')
+    eq(got.get('jump'), [0, False], 'the jump button goes to the latest')
+    eq((got.get('held'), got.get('after')), (False, [True, 10]), 'a press holds the refresh back until it ends')
+
+
+HOLD_DRIVER = r"""
+const page = require('fs').readFileSync(process.argv[2], 'utf8').replace(/\r\n/g, '\n');
+const grab = (start) => { const i = page.indexOf(start); return page.slice(i, page.indexOf('\n}\n', i) + 2); };
+const line = s => { const i = page.indexOf(s); if (i < 0) throw new Error(s); return page.slice(i, page.indexOf('\n', i)) + '\n' };
+const logic = page.split('<script id="logic">')[1].split('</script>')[0];
+const spoken = [];
+const window = {speechSynthesis: {cancel() {}, getVoices: () => [{name: 'Ava', lang: 'en-GB'}], speak(u) { if (u.text) spoken.push(u) }}};
+const speechSynthesis = window.speechSynthesis;
+class SpeechSynthesisUtterance { constructor(t) { this.text = t } }
+let rec = null, starts = 0, sent = [];
+class SR { constructor() { rec = this } start() { starts++ } stop() { this.stopped = true; this.onend() } }
+const navigator = {language: 'en-US'}, handlers = {};
+const document = {addEventListener(t, f) { (handlers[t] = handlers[t] || []).push(f) }};
+const fire = (t, e) => (handlers[t] || []).forEach(f => f(e));
+const TK = {rec: null, heard: '', state: '', wait: null, said: '', unlocked: false, note: '', playing: '', hold: false, again: false};
+const S = {view: 'talk', thread: null, feeds: {c5: {entries: [{kind: 'you', text: 'hi', id: 'a'}, {kind: 'say', text: 'One **thing**.', id: 'b'}]}}};
+const feedOf = n => S.feeds[n].entries, talkName = () => 'c5', micWhy = () => '', toast = () => {}, render = () => {};
+const talkSend = t => sent.push(t), talkTyping = () => false, voices = () => speechSynthesis.getVoices();
+eval(logic + `
+let TS = talkSetParse('');
+` + grab('function speak(') + line('function hush(') + grab('function playReply(') + grab('function listen(')
+  + page.slice(page.indexOf('/* F124: hold to talk'), page.indexOf('/* F124: a swipe right anywhere')) + `
+const out = {defaults: TS, parsed: talkSetParse('{"read":false,"voice":"Ava","mic":"hold","auto":true}'), junk: talkSetParse('nope')};
+const mic = {target: {closest: s => s === '[data-mic]' ? {} : null}, button: 0};
+fire('pointerdown', mic); out.tapStarts = starts;
+TS = {...TS, mic: 'hold'};
+fire('pointerdown', mic); out.holdStarts = [starts, TK.state];
+rec.onresult({resultIndex: 0, results: [Object.assign([{transcript: 'what is running'}], {isFinal: true})]});
+out.before = sent.slice(); fire('pointerup', mic); out.holdSent = [sent.slice(), rec.stopped];
+// a reply read to its end: auto listen listens again, and one silent turn ends it
+TS = {...TS, mic: 'tap', auto: true, voice: 'Ava'}; starts = 0;
+speak('Two agents are running.'); out.voice = [spoken[0].voice.name, spoken[0].lang];
+spoken[spoken.length - 1].onend(); out.auto = [starts, TK.state];
+rec.onend(); out.silent = [starts, TK.state, TK.note];
+speak('Stopped early.'); const u = spoken[spoken.length - 1]; hush(); u.onend(); out.stopped = [starts, TK.state];
+TS = {...TS, auto: false, read: false}; speak('No more.'); spoken[spoken.length - 1].onend(); out.off = starts;
+playReply('b'); out.play = [TK.playing, spoken[spoken.length - 1].text, TK.state];
+playReply('b'); out.playStop = TK.playing;
+TS = {...TS, mic: 'tap'}; listen(); rec.onresult({resultIndex: 0, results: [Object.assign([{transcript: 'x'}], {isFinal: true})]});
+const n0 = sent.length; playReply('b'); out.playOver = [sent.length - n0, TK.rec, TK.playing];
+starts = 0; listen(); out.micStops = [starts, TK.playing];
+TS = {...TS, mic: 'hold'}; listen(); fire('pointerdown', mic); rec.onresult({resultIndex: 0, results: [Object.assign([{transcript: 'auto'}], {isFinal: true})]}); fire('pointerup', mic); out.autoHeld = sent[sent.length - 1];
+console.log(JSON.stringify(out));`);
+"""
+
+
+def test_talk_settings_f124(tmp: Path) -> None:
+    """F124 (F123): Talk's settings and their defaults; hold to talk starts on pointerdown and sends on pointerup; auto
+    listen listens again once a reply was read; a play button reads a reply and stops it; mic and speaker are 64px."""
+    page = W.page_html().decode()
+    for part in ('.mic,.spk{width:64px;height:64px', 'data-spk', 'data-talkmode="type"', 'data-talkmode="mic"', 'data-speak=',
+                 'data-sheet="talk"', "'ar-talkset'", "'ar-talkmode'", 'data-ts="read"', 'data-ts="voice"', 'data-ts="mic"',
+                 'data-ts="auto"', 'System voice', '.dock.typing .talkbox{opacity:1'):
+        check(part in page, f'the Talk view has {part}')
+    check('Spoken Content' not in page, 'no how-to for voices (dropped)')
+    if not shutil.which('node'):
+        print('  (no node here: the Talk settings script test is skipped)')
+        return
+    (tmp / 'driver.js').write_text(HOLD_DRIVER, encoding='utf-8')
+    r = subprocess.run(['node', str(tmp / 'driver.js'), str(W.PAGE)], capture_output=True, text=True, timeout=60)
+    check(r.returncode == 0, "node runs Talk's settings", r.stderr[-900:])
+    got = json.loads(r.stdout or '{}')
+    eq(got.get('defaults'), {'read': True, 'voice': '', 'mic': 'tap', 'auto': False},
+       'defaults: replies read aloud, the system voice, tap, no auto listen')
+    eq(got.get('parsed'), {'read': False, 'voice': 'Ava', 'mic': 'hold', 'auto': True}, 'kept per browser')
+    eq(got.get('junk'), got.get('defaults'), 'a broken store is the defaults')
+    eq(got.get('tapStarts'), 0, 'tap mode: pointerdown starts nothing')
+    eq(got.get('holdStarts'), [1, 'listening'], 'hold mode: pointerdown starts listening')
+    eq((got.get('before'), got.get('holdSent')), ([], [['what is running'], True]), 'and pointerup stops and sends')
+    eq(got.get('voice'), ['Ava', 'en-GB'], 'the picked voice speaks')
+    eq(got.get('auto'), [1, 'listening'], 'auto listen: listen() once the reply was read')
+    eq(got.get('silent'), [1, '', 'Tap to talk'], 'one silent turn and it stops')
+    eq(got.get('stopped'), [1, ''], 'a reply stopped by hand does not listen again')
+    eq(got.get('off'), 1, 'off: no auto listen')
+    eq(got.get('play'), ['b', 'One thing.', ''], "a reply's play button reads it, with read aloud off too")
+    eq(got.get('playStop'), '', 'a second tap stops it')
+    eq(got.get('playOver'), [0, None, 'b'], 'playing a reply stops the mic, and sends nothing')
+    eq(got.get('micStops'), [0, ''], 'the mic then stops the reply first')
+    eq(got.get('autoHeld'), 'auto', 'holding the mic while it already listens: letting go sends')
+
+
+def test_status_view_f124(tmp: Path) -> None:
+    """F124 (F120-F122): Status in place of Activity and Agents, its sections in the TUI's order, the state pill, the
+    Run card and the More… sheet from the one list of controls, and the swipe that follows the finger."""
+    page = W.page_html().decode()
+    body = page.split('function statusHTML(){', 1)[1].split('\n}\n', 1)[0]
+    at = [body.find(x) for x in ('needsSec()', '>Run<', '>Usage<', '>Landed lately<', '>Release<', '>Run log<')]
+    check(all(i >= 0 for i in at) and at == sorted(at), 'Needs you, Run, Usage, Landed lately, Release, Run log', at)
+    check('data-quick="since"' in body and 'data-quick="yesterday"' in body, 'the Since chips stay')
+    for gone in ('agentsHTML', 'activityHTML', "['agents','Agents']", "['activity','Activity']"):
+        check(gone not in page, f'no {gone}: one Status view')
+    for part in ('data-sheet="run"', 'id="sheet"', 'role="dialog"', 'data-k="pill"', 'cardControls(S.snap)',
+                 'controlGroups(S.snap)', "outbox(rq.name,rq.args,{ctl:"):
+        check(part in page, f'the page has {part}')
+    for ev in ('touchstart', 'touchmove', 'touchend', 'touchcancel'):
+        check(f"document.addEventListener('{ev}'" in page, f'{ev} is handled')
+    swipe = page.split('/* F124: a swipe right anywhere', 1)[1].split("addEventListener('pagehide'", 1)[0]
+    check('preventDefault' not in swipe and swipe.count('{passive:true}') == 4, 'with passive listeners only')
+    for part in ('input,textarea,select', 'sideways(el)', 'translateX(', 'swipeOpens('):
+        check(part in swipe, f'the swipe has {part}')
+    if not shutil.which('node'):
+        print('  (no node here: the Status script test is skipped)')
+        return
+    cs = U.controls()
+    up = {'up': True, 'controls': cs, 'run': {}, 'fixups': {'resume': [], 'unclaim': [{'id': 'F1', 'label': 'x'}] * 2, 'wip': []}}
+    got = logic_js([['viewOf', 'agents'], ['viewOf', 'activity'], ['viewOf', 'plan'],
+                    ['runPill', {'up': True, 'run': {'state': 'Caps forced'}}], ['runPill', {'up': False}],
+                    ['cardControls', up], ['cardControls', {**up, 'run': {'paused': True, 'stopping': True}}],
+                    ['cardControls', {'up': False}], ['controlGroups', up], ['controlGroups', {**up, 'fixups': {}}],
+                    ['controlGroups', {**up, 'run': {'forced': True, 'stopping': True}}],
+                    ['swipeTakes', 4, 3, False], ['swipeTakes', 40, 5, False], ['swipeTakes', -40, 5, False],
+                    ['swipeTakes', -40, 5, True], ['swipeTakes', 40, 60, False],
+                    ['swipeOpens', 100, 0, 280, False], ['swipeOpens', 180, 0, 280, False],
+                    ['swipeOpens', 60, 0.8, 280, False], ['swipeOpens', -60, -0.8, 280, True],
+                    ['swipeOpens', -60, 0, 280, True], ['atEnd', {'scrollHeight': 500, 'scrollTop': 400, 'clientHeight': 100}],
+                    ['atEnd', {'scrollHeight': 500, 'scrollTop': 300, 'clientHeight': 100}]])
+    eq(got[:3], ['status', 'status', 'plan'], 'the old views land on Status')
+    eq(got[3:5], [{'text': 'Caps forced', 'cls': 'warn'}, {'text': 'Not up', 'cls': ''}], "the pill's words")
+    eq(got[5], ['slot_remove', 'slot_add', 'pause', 'stop'], "the card's everyday buttons")
+    eq(got[6], ['slot_remove', 'slot_add', 'go_on', 'stop_undo'], 'paused and stopping: what undoes it')
+    eq(got[7], ['start'], 'no run: Start the run')
+    keys = [(g['group'], [i['c']['key'] for i in g['items']]) for g in got[8]]
+    eq(keys, [('Stop', ['stop', 'stop_now', 'suspend', 'shutdown']), ('Run', ['slots_set', 'force', 'upgrade', 'restart']),
+              ('Fix up', ['unclaim'])], 'the sheet: Stop, Run and Fix up, what there is to fix only')
+    eq(got[8][2]['items'][0]['label'], 'Release stale claims (2)', 'with its count')
+    eq([g['group'] for g in got[9]], ['Stop', 'Run'], 'nothing to fix: no Fix up')
+    eq([i['c']['key'] for i in got[10][0]['items']], ['stop_now', 'suspend', 'shutdown'], 'stopping already: no Stop')
+    check('caps_on' in [i['c']['key'] for i in got[10][1]['items']], 'caps forced: Caps back on')
+    eq(got[11:16], ['wait', 'drag', '', 'drag', ''], 'right opens, left closes, a mostly vertical move does neither')
+    eq(got[16:21], [False, True, True, False, True], 'it settles by how far and how fast')
+    eq(got[21:], [True, False], 'at the end, or not')
+
+
+def test_chats_f128(tmp: Path) -> None:
+    """F128, F129: the menu button's dot, a badge on a chat that needs a reply, quiet chats last and gray, and Rename."""
+    fake_repo(tmp)
+    page = W.page_html().decode()
+    for part in ("count={home:needs,concepts:cn}", 'due=needs||cn;S.menuDot=!!due', "${S.menuDot?'<span class=\"bdot\"></span>':''}",
+                 'title="needs your reply"', "quiet?' quiet':''", '<div class="qline">Quiet</div>', 'data-renform',
+                 "outbox('rename_chat',{chat:n,title}", "SEEN_KEY='ar-seen'", 'data-rowmenu=', '.crow.quiet .thread{color:'):
+        check(part in page, f'the page has {part}')
+    ran, token = [], W.web_token()
+    srv = W.serve(token, 0, '127.0.0.1', snap=lambda: {})
+    try:
+        with mock.patch.object(U, 'RUN', [lambda argv: (ran.append(argv), (0, 'renamed'))[1]]):
+            code, out = post(f'http://127.0.0.1:{srv.server_address[1]}/act?t={token}',
+                             {'name': 'rename_chat', 'args': {'chat': 'c4', 'title': 'Login woes'}})
+    finally:
+        srv.stop()
+    eq((code, out.get('ok'), ran), (200, True, [['control', '--rename', '4', 'Login woes']]), 'the rename action')
+    eq(W.run_snapshot().get('chat_quiet'), 21600, "the snapshot says when a chat is quiet")
+    if not shutil.which('node'):
+        print('  (no node here: the Chats script test is skipped)')
+        return
+    now = 1_000_000
+    row = lambda n, **k: {'name': n, 'title': n, 'last': 'claude', 'at': now - 50000, 'needs_reply': False, **k}  # noqa: E731
+    rows = [row('c1'), row('c2'), row('c3', needs_reply=True), row('c4', renamed=True), row('c5', at=now - 60), row('c6'), row('c7'),
+            row('c8', at=0), row('c9')]
+    o = {'pins': ['c6'], 'quiet': 21600, 'now': now, 'seen': {f'c{i}': now for i in range(1, 9)}, 'open': None}
+    got = logic_js([['chatGroups', rows, o], ['chatGroups', rows, {**o, 'quiet': 0}], ['chatGroups', rows, {**o, 'open': 'c2'}],
+                    ['needsReply', row('c2'), now], ['needsReply', row('c2'), now - 60000], ['needsReply', row('c2', last='tool'), 0],
+                    ['needsReply', row('c2', needs_reply=True), now],
+                    ['chatName', {'name': 'c1', 'title': 'Base', 'renamed': True}], ['chatName', {'name': 'c1', 'title': 'Base'}]])
+    names = lambda g: ([x['name'] for x in g['top']], [x['name'] for x in g['quiet']])  # noqa: E731
+    eq(names(got[0]), (['c1', 'c3', 'c4', 'c5', 'c6', 'c8', 'c9'], ['c2', 'c7']),
+       'quiet last: not c1, one that needs a reply (c3, c9 unread), a renamed, a fresh, a pinned or a new one')
+    eq(names(got[1])[1], [], 'chat_quiet off: none')
+    check('c2' in names(got[2])[0], 'the open chat stays up')
+    eq(got[3:7], [False, True, False, True], 'a badge: unread since it spoke, or an open question; not while it works')
+    eq(got[7:], ['Base', 'Project chat'], 'c1 shows the name the person gave it')
+
+
+def test_needs_drop_chat_f110(tmp: Path) -> None:
+    """F110, F143: a Needs you card's Drop asks in the page, then need_drop; its Chat sends need_chat and opens a new chat."""
+    fake_repo(tmp)
+    page, term = W.page_html().decode(), W.TERM.read_text(encoding='utf-8')
+    for part in ("outbox('need_drop',{tid:n.id,confirm:true},{need:n.id", "S.sure='need:'+n.id", 'data-needdrop="${i}">Drop</button>',
+                 "newChat('need_chat',{tid:n.id}", 'data-needchat="${i}"'):
+        check(part in page, f'the run app has {part}')
+    for part in ("data-form=\"needdrop\"", "act('need_drop',{tid:it.id,confirm:true}", "K('D','drop')"):
+        check(part in term, f'the terminal-style page has {part}')
+    repo = S.ROOT
+    (repo / 'plan' / 'TODO.md').write_text(TODO + '- [~] **D3** Write the guide | files: d.md BLOCKED: DECIDE: which layout\n',
+                                           encoding='utf-8')
+    ran, token = [], W.web_token()
+    srv = W.serve(token, 0, '127.0.0.1', snap=lambda: {})
+    url = f'http://127.0.0.1:{srv.server_address[1]}/act?t={token}'
+    try:
+        with mock.patch.object(U, 'RUN', [lambda argv: (ran.append(argv), (0, 'control 7 is starting'))[1]]):
+            code, out = post(url, {'name': 'need_chat', 'args': {'tid': 'D3', 'wait': False}})
+            check(out.get('ok') and out.get('name') == 'c7' and 'D3' in out.get('ask', ''), 'need_chat opens c7', out)
+            check(ran and ran[0][:2] == ['control', '--new'] and 'hich layout' in ran[0][-2], 'its first message holds the ask', ran)
+            ran.clear()
+            eq(post(url, {'name': 'need_drop', 'args': {'tid': 'D3'}})[1].get('ok'), False, 'need_drop asks first')
+            eq(post(url, {'name': 'need_drop', 'args': {'tid': 'D3', 'confirm': True}})[1].get('gone'), 'D3', 'then it is gone')
+            eq(ran, [['plan', 'drop', 'D3', 'dropped from Needs you']], 'plan drop ID, from Needs you')
+    finally:
+        srv.stop()
+    if not shutil.which('node'):
+        return
+    js = term.split('<script id="keys">', 1)[1].split('</script>', 1)[0]
+    (tmp / 'keys.js').write_text(js, encoding='utf-8')
+    (tmp / 'driver.js').write_text(TERM_DRIVER, encoding='utf-8')
+    ev = {'key': 'D', 'ctrl': False, 'meta': False, 'shift': True, 'alt': False}
+    ctx = {'panel': 4, 'focusMain': False, 'tab': '', 'tabs': [], 'typing': False, 'it': {}}
+    r = subprocess.run(['node', str(tmp / 'driver.js'), str(tmp / 'keys.js')], capture_output=True, text=True, timeout=60,
+                       input=json.dumps([['route', ctx, ev], ['footer', ctx, []],
+                                         ['route', {**ctx, 'focusMain': True, 'tab': 'answer', 'tabs': ['answer']}, ev]]))
+    got = json.loads(r.stdout or '[]')
+    eq((got[0], got[2]), ([['act', 'drop']], [['act', 'drop']]), 'D on a Needs you item drops it, in the terminal-style page too')
+    check(['D', 'drop'] in got[1]['here'], 'and its hint shows', got[1])
+    ask = logic_js([['needChatAsk', {'id': 'R1', 'title': 'Phone', 'label': 'CONFIRM', 'ask': 'Does it work?'}]])[0]
+    check('R1' in ask and 'Does it work?' in ask and '- Yes' in ask and '- No' in ask, 'the question and its answers show at once', ask)
+
+
+def test_task_text_f85(tmp: Path) -> None:
+    """F85: a queue row folds open to the task's whole text (plan ID)."""
+    fake_repo(tmp)
+    page = W.page_html().decode()
+    for part in ('data-task="${esc(q.id)}" aria-expanded="${open}"', "fetch(tq('task/'", '<pre class="tasktext"', "planCard(q)"):
+        check(part in page, f'the page has {part}')
+    token = W.web_token()
+    srv = W.serve(token, 0, '127.0.0.1', snap=lambda: {})
+    base = f'http://127.0.0.1:{srv.server_address[1]}'
+    try:
+        code, body = get(f'{base}/task/B2?t={token}')
+        got = json.loads(body)
+        check(code == 200 and got['ok'] and 'Fix the merge retry' in got['text'] and 'after: F1' in got['text'], 'its whole text', got)
+        eq(json.loads(get(f'{base}/task/--x?t={token}')[1])['ok'], False, 'a task id only')
+        eq(get(f'{base}/task/B2')[0], 403, 'and only with the token')
+    finally:
+        srv.stop()
+
+
+def test_settings_f97(tmp: Path) -> None:
+    """F97: the Settings view: every key with its value, source and default; a device value saved and reset in place in
+    runner.local.toml, its comments kept; a project value queued as a C task; bad values refused."""
+    repo = fake_repo(tmp)
+    toml, local = repo / 'runner.toml', repo / 'runner.local.toml'
+    toml.write_text('[run]\nslots = 4\nslotz = 1\n\n[rnu]\nslots = 9\n\n[git]\npush = false\n', encoding='utf-8')
+    mine = '# my laptop\n[run]\nslots = 2   # it is small\nlinks = [\n  "data",  # one\n]  # big\n\n# the end\n[ui]\ntheme = "light"\n'
+    local.write_text(mine, encoding='utf-8')
+    token = W.web_token()
+    srv = W.serve(token, 0, '127.0.0.1', snap=lambda: {})
+    base = f'http://127.0.0.1:{srv.server_address[1]}'
+    ran = []
+
+    def key(table, k):
+        d = json.loads(get(f'{base}/settings?t={token}')[1])
+        return next(x for t in d['tables'] if t['table'] == table for x in t['keys'] if x['key'] == k), d
+
+    def act_(name, **args):
+        return post(f'{base}/act?t={token}', {'name': name, 'args': args})[1]
+    try:
+        slots, d = key('run', 'slots')
+        eq((slots['value'], slots['source'], slots['project'], slots['device'], slots['default'], slots['applies'], slots['type']),
+           (2, 'device', 4, 2, 3, 'now', 'number'), 'slots: the device value is in force, over the project and the default')
+        push, _ = key('git', 'push')
+        eq((push['value'], push['source'], push['off']), (False, 'project', True), 'push = false, from the project')
+        quiet, _ = key('ui', 'chat_quiet')
+        eq((quiet['value'], quiet['source'], quiet['applies']), ('6h', 'default', 'next run'), 'chat_quiet: the default, 6h')
+        check('grayed' in quiet['help'], 'with its help text', quiet)
+        eq([(u['table'], u['key'], u['file']) for u in d['unknown']], [('run', 'slotz', 'runner.toml'), ('rnu', '', 'runner.toml')],
+           'an unknown key is flagged, and an unknown table')
+        check('did you mean' in d['unknown'][0]['why'], 'and says why', d['unknown'])
+        every = {(t, k) for t, keys in CF.DEFAULTS.items() for k in keys}
+        eq({(t['table'], k['key']) for t in d['tables'] for k in t['keys']}, every, 'every key `settings` lists')
+        eq([f'[{t}] {k}' for t, k in sorted(every) if CF.setting_problem(t, k, CF.DEFAULTS[t][k])], [], 'every default is valid')
+        with mock.patch.object(U, 'RUN', [lambda argv: (ran.append(argv), (0, 'added C9 it'))[1]]), \
+                mock.patch.object(S, 'run_up', lambda: True):
+            eq(act_('setting_device', table='run', key='slots', value=5)['ok'], True, 'a device save')
+            eq(local.read_text(encoding='utf-8'), mine.replace('slots = 2 ', 'slots = 5 '), 'edits that value only, comments kept')
+            eq(ran, [['slots', '5']], 'slots applies now, through the slots action')
+            eq(act_('setting_device', table='run', key='links', value=['a b'])['ok'], True, 'a list over several lines')
+            check('# one\nlinks = ["a b"]  # big' in local.read_text(encoding='utf-8'), 'becomes one line, its comments kept')
+            eq(act_('setting_device', table='git', key='land_edited', value='wip')['ok'], True, 'a table not there yet')
+            eq(CF.tomllib.loads(local.read_text(encoding='utf-8'))['git'], {'land_edited': 'wip'}, 'is added')
+            eq(key('run', 'slots')[0]['value'], 5, 'the page reads the new value')
+            for t, k in (('run', 'slots'), ('run', 'links'), ('git', 'land_edited')):
+                eq(act_('setting_reset', table=t, key=k)['ok'], True, f'reset [{t}] {k}')
+            left = local.read_text(encoding='utf-8')
+            check(all(x not in left for x in ('slots', 'links', 'land_edited')) and '# my laptop' in left and '# the end' in left
+                  and 'theme = "light"' in left, 'a reset takes the key out, nothing else', left)
+            eq((key('run', 'slots')[0]['source'], ran[-1]), ('project', ['slots', '4']), 'and the project value is in force again')
+            ran.clear()
+            before = toml.read_text(encoding='utf-8')
+            r = act_('setting_project', table='run', key='weekly_max', value=80)
+            eq(r['ok'], True, 'a project save')
+            check(ran[0][:3] == ['plan', 'add', 'C'] and 'set [run] weekly_max = 80' in ran[0][3]
+                  and ran[0][4:] == ['--files', 'runner.toml'], 'queues a C task on runner.toml', ran)
+            eq(toml.read_text(encoding='utf-8'), before, 'and never edits the main checkout')
+            check('chat' in act_('setting_project', table='run', key='test', value='a | files: b')['out'], "the plan's marks are refused")
+            ran.clear()
+            now = local.read_text(encoding='utf-8')
+            for t, k, v in (('run', 'slots', 'four'), ('run', 'slots', 0), ('run', 'slots', True), ('run', 'web', 'yes'),
+                            ('run', 'web_port', 99999), ('ui', 'theme', 'pink'), ('run', 'links', 'x'), ('run', 'remote', 1),
+                            ('ui', 'chat_quiet', 'soon'), ('ui', 'chat_quiet', True), ('models', 'code', 'nope:x:y'),
+                            ('run', 'nokey', 1), ('nope', 'x', 1), ('run', 'weekly_max', -1)):
+                for name in ('setting_device', 'setting_project'):
+                    r = act_(name, table=t, key=k, value=v)
+                    check(not r['ok'] and r['out'], f'{name} refuses [{t}] {k} = {v!r}', r)
+            eq((local.read_text(encoding='utf-8'), ran), (now, []), 'a refused value changes nothing')
+            local.write_text('run = { slots = 2 }\n', encoding='utf-8')
+            check('by hand' in act_('setting_device', table='run', key='slots', value=3)['out'], 'an inline table: by hand')
+            eq(local.read_text(encoding='utf-8'), 'run = { slots = 2 }\n', 'and it is left alone')
+    finally:
+        srv.stop()
+    for text, v in (('[run]\nslots = 1\n[run.join]\na = "b"\n', 9), ('', 3), ('# only comments\n', 3),
+                    ('[agent-runner.run]\nslots = 1\n', 2), ('[run]\nprompt_extra = """\n[run]\nslots = 7\n"""\nslots = 1\n', 2)):
+        raw = CF.tomllib.loads(CF.toml_edit(text, 'run', 'slots', v))
+        eq((raw.get('agent-runner') or raw)['run']['slots'], v, f'set in {text!r}')
+    eq(CF.setting_problem('ui', 'chat_quiet', False), '', 'chat_quiet = false is off')
+    check(CF.setting_problem('ui', 'chat_quiet', 5), 'a bare number is refused')
+    page = W.page_html().decode()
+    for part in ('settingsHTML', 'data-setsave="${side}"', 'data-setreset=', 'Project</b>', 'This device</b>', 'Restart the run',
+                 'unknown</span>', "'setting_device':'setting_project'"):
+        check(part in page, f'the Settings view has {part}')
+    if not shutil.which('node'):
+        return
+    k = lambda **o: {'key': 'k', 'type': 'text', 'default': '', 'also': [], 'off': False, **o}  # noqa: E731
+    got = logic_js([['settingValue', k(type='number', default=3), '4'], ['settingValue', k(type='number', default=3), 'x'],
+                    ['settingValue', k(type='list', default=[]), 'a\n b \n'], ['settingValue', k(type='switch', default=True), 'false'],
+                    ['settingValue', k(off=True, default='6h'), 'false'], ['settingValue', k(default='6h'), 'false'],
+                    ['settingValue', k(type='choice', default='auto'), 'true'], ['settingValue', k(type='choice', default='auto'), 'auto'],
+                    ['settingValue', k(type='table', default=False, also=['table']), '{ every = 10 }'],
+                    ['settingValue', k(type='table', default=False), 'nope'],
+                    ['settingValue', k(type='text', default='auto', also=['number']), '8'],
+                    ['settingValue', k(default=False, also=['list']), 'bug, ui'], ['settingValue', k(default=False, also=['list']), 'true']])
+    eq([g.get('v', 'err') for g in got], [4, 'err', ['a', 'b'], False, False, 'false', True, 'auto', {'every': 10}, 'err', 8,
+                                          ['bug', 'ui'], True], "a field's words as a value of its type")
+
+
+def test_style_f83(tmp: Path) -> None:
+    """F83: the run app keeps to docs/STYLE.md where a machine can tell: colours, sizes, corners and durations are
+    tokens, motion is transform and opacity only, and one rule turns it off under prefers-reduced-motion."""
+    root = Path(__file__).resolve().parent.parent
+    doc = (root / 'docs' / 'STYLE.md').read_text(encoding='utf-8')
+    page = W.PAGE.read_text(encoding='utf-8')
+    css = page.split('<style>', 1)[1].split('</style>', 1)[0]
+    check('docs/STYLE.md' in css[:200], 'the top of the stylesheet names docs/STYLE.md')
+    check('docs/STYLE.md' in (root / 'runner.toml').read_text(encoding='utf-8'), "and so does every session's prompt")
+    bare = re.sub(r'/\*.*?\*/', '', css, flags=re.S)
+    rules = re.sub(r'(?::root[^{]*)\{[^}]*\}', '', bare)
+    for what, pat in (('raw colour', r'#[0-9a-fA-F]{3,8}\b|rgba?\('), ('font-size in px', r'font-size:\s*[\d.]'),
+                      ('border-radius in px', r'border-radius:[^;}]*\d+px'),
+                      ('raw duration', r'(?:transition|animation)[^;}]*[\s:]\.?\d+(?:\.\d+)?m?s\b')):
+        eq(re.findall(pat, rules), [], f'no {what} outside the tokens')
+    for kind in re.findall(r'transition:([^;}]+)', rules):
+        for part in re.split(r',(?![^(]*\))', kind):
+            check(part.split()[0] in ('transform', 'opacity', 'visibility', 'background-color', 'none', 'none!important'),
+                  f'a transition on {part.split()[0]}', kind)
+    for name, frames in re.findall(r'@keyframes (\w+)\{((?:[^{}]*\{[^}]*\})+)\}', bare):
+        props = set(re.findall(r'[{;]\s*([a-z-]+):', frames))
+        check(props <= {'opacity', 'transform'}, f'@keyframes {name} moves opacity and transform only', props)
+    check(re.search(r'prefers-reduced-motion:reduce\)\{\*,\*::before,\*::after\{animation:none!important;transition:none!important', css)
+          and css.count('prefers-reduced-motion') == 1, 'one rule turns every motion off')
+    tokens = set(re.findall(r'(--[a-z0-9-]+):', re.search(r':root\{(.*?)\n\}', css, re.S)[1]))
+    for t in re.findall(r'`(--[a-z0-9- ]+)`', doc):
+        for one in t.split():
+            check(one in tokens, f'docs/STYLE.md names {one}, a token', sorted(tokens))
+    for name in re.findall(r'`(\w+)\(\)`', doc):
+        check(re.search(rf'function {name}\(|const {name}=|\b{name}\(', page), f'docs/STYLE.md names {name}(), a helper in the page')
+    for cls in re.findall(r'`\.([a-z]\w*)`', doc):
+        check(f'.{cls}' in css, f'docs/STYLE.md names .{cls}, a class in the page')
+    for dark in re.findall(r'\[data-theme="dark"\]\{(.*?)\}', css, re.S):
+        light = set(re.findall(r'(--(?:bg|side|surface|bubble|fg|muted|faint|line2?|accent2?|onaccent|ok|warn|bad|onbad|scrim|shadow|lift)):', css.split('}', 1)[0]))
+        eq(light - set(re.findall(r'(--[a-z0-9]+):', dark)), set(), 'every colour has its dark value')
+    check('confirm(' not in page and 'alert(' not in page, 'no browser dialogs')
+
+
 if __name__ == '__main__':
     raise SystemExit(report([in_tmp(test_release_row_f131),in_tmp(test_project_name_b153),in_tmp(test_chat_order_f133), in_tmp(test_delete_chats_f118), in_tmp(test_server), in_tmp(test_real_action), in_tmp(test_run_controls),
                            in_tmp(test_start), in_tmp(test_upload),
@@ -2076,4 +2595,7 @@ if __name__ == '__main__':
                            in_tmp(test_slash_menu_b119), in_tmp(test_composer_keys_b120),
                            in_tmp(test_interrupt_c1_b141), in_tmp(test_answer_button_b138), in_tmp(test_pick_f138),
                            in_tmp(test_outbox_f137), in_tmp(test_sent_b154), in_tmp(test_card_chat_b139), in_tmp(test_short_ask_b152),
-                           in_tmp(test_chat_box_f115), in_tmp(test_home_switcher_f134)]))
+                           in_tmp(test_chat_box_f115), in_tmp(test_home_switcher_f134),
+                           in_tmp(test_scroll_f83), in_tmp(test_talk_settings_f124), in_tmp(test_status_view_f124),
+                           in_tmp(test_chats_f128), in_tmp(test_needs_drop_chat_f110), in_tmp(test_task_text_f85),
+                           in_tmp(test_settings_f97), in_tmp(test_style_f83)]))

@@ -314,7 +314,8 @@ def control_set_title(n: int, summary: str) -> int:
         sid = C.notes(f'control{n}.pid').read_text(encoding='utf-8').strip().partition(' ')[2]
     except OSError:
         sid = ''
-    if sid and transcript(sid) and control_renamed(control_state(entries(sid, skip_bad=True)), n):
+    st = control_state(entries(sid, skip_bad=True)) if sid and transcript(sid) else {}
+    if control_renamed(st, n):
         print(f'control {n} keeps the name the person gave it')
         return 0
     control_give(n, name)
@@ -611,6 +612,7 @@ def control_open(n: int, ask: str = '', images: list[str] | tuple = (), new_run:
         from agent_runner.control_reopen import reopen_name
         argv[argv.index('--remote-control') + 1] = reopen_name(n, sid)
     if not resume:
+        C.notes(f'control{n}.name').unlink(missing_ok=True)  # F129: the name was an earlier session N's
         control_give(n, control_name(n, ask, images))
         control_mark_ask(n, sid if ask else '')
     return sid, resume, argv
@@ -1009,6 +1011,9 @@ def control_renamed(st: dict, n: int = 0) -> bool:
     `control_given`, its ask's or `control --title`'s), not any "<repo> · N ·" name; with `n` 0 any custom
     title counts."""
     t = st.get('title') or ''
+    from agent_runner.control_names import person_name
+    if n and person_name(n, t):  # F129: renamed on the run page or in the TUI
+        return True
     return bool(t) and not (n and t in (control_name(n), control_base_name(n), control_given(n)))
 
 
@@ -1259,6 +1264,7 @@ def end_control(n: int, why: str) -> bool:
             pass
     pidf.unlink(missing_ok=True)
     C.notes(f'control{n}.title').unlink(missing_ok=True)
+    C.notes(f'control{n}.name').unlink(missing_ok=True)  # F129
     log(f'control {n}: ended, {why}' + (f' (transcript kept: {plat.exe(C.run["agent"])} --resume {sid})' if sid else ''))
     return True
 

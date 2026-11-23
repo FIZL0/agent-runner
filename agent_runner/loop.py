@@ -44,7 +44,7 @@ from agent_runner.slots import budget_mark, budgets, SPENT
 from agent_runner import fallback as FB
 from agent_runner.teardown import end_own, PAGE, RUN_LOCK, wait_last_run
 from agent_runner.watch import (_account, api_down, AUTO_UPGRADE, auto_upgrade, cut_off,
-    drop_session_tmp, end_orphans, memory_watch, queue_cut_off, queue_resume, restart_if_upgraded,
+    drop_session_tmp, end_orphans, memory_watch, queue_cut_off, queue_resume, ask_restart, restart_if_upgraded,
     resumes, RESUMES_MAX, stalled, START_TRIES, state_line, stats,
     stop_hook, stop_waiter, sweep_tmp, update_watch, upgrade, usage_pct, weekly)
 from agent_runner.join import EDITED, EDITS_POLL, ELSEWHERE, REMIND_EVERY, TASK_SID, WAITING
@@ -92,7 +92,7 @@ runner keys: type one here and press Enter
     s!       stop now: end the agent sessions (each resumes where it was in the next run),
              finish the merges under way, then exit
     p        pause: no new tasks, and the run stays up
-    u        upgrade agent-runner now; the run restarts on the new version by itself
+    u        upgrade agent-runner now (the run restarts on it); restart: only restart, to read the settings again
     f        force: start tasks past the session and weekly usage caps (as --force)
     +        one slot more
     -        one slot fewer (a running task in it finishes first)
@@ -163,8 +163,8 @@ def take_keys() -> None:
                 FORCED[0] = not FORCED[0]
                 log('forced: starting tasks past the usage caps (f again: undo)' if FORCED[0] else
                     'force taken back: the usage caps hold new tasks again')
-            elif k == 'u':
-                threading.Thread(target=upgrade, daemon=True).start()  # the loop restarts on what it installs
+            elif k in ('u', 'restart'):  # the loop restarts on what it installs; F97: or to read its settings again
+                (ask_restart if k == 'restart' else threading.Thread(target=upgrade, daemon=True).start)()
             elif k in ('+', '-'):
                 if k == '-' and SLOTS == 1:
                     log('one slot is the fewest; s stops the run')
@@ -232,7 +232,7 @@ def write_state(running: dict) -> None:
                                    'slots': SLOTS, 'running': work, 'since': since, 'merging': merging, 'usage': use,
                                    'spend': {n: SPENT[n] for n in work if n in SPENT},  # F103
                                    'idle': IDLE[0], 'paused': PAUSED[0], 'stopping': stopping(),
-                                   'version': run_version()}),
+                                   'forced': FORCED[0], 'power': POWER, 'version': run_version()}),
                        encoding='utf-8')
         os.replace(tmp, C.notes('STATE'))
     except OSError:  # Windows: `status` has STATE open this instant; the next pass writes it

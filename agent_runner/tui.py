@@ -169,7 +169,10 @@ Status [1]
   + - =    slot +1, -1, set N     P G      pause, go on
   F C      force, caps back on    S        stop (running tasks finish)
   X X      stop now (X again)     U        take the stop back
-  V        upgrade agent-runner   Z B      suspend, shut down once stopped (again: undo)
+  V V      upgrade agent-runner   Z Z  B B  suspend, shut down once stopped (again: undo)
+  Y Y      restart the run        T        start the run (none is up)
+  r        resume a cut-off task  L        release stale claims
+  W E      moved-aside edits: show, restore                O O      drop them
 Sessions [2]
   t        a slot on a task       v        tool steps on / off
   g        a slot's diff in place of its session (again: the session; in tmux: its pane goes, then back)
@@ -177,6 +180,7 @@ Sessions [2]
   y        copy the session link (the terminal's clipboard, so over ssh too)
   H        take its task back     d D      drop its task from the slot
   d        close a control session cN (not c1: the run's kept session; its transcript stays)
+  r        rename a control session cN (c1 too): the name is yours, so it is never closed when idle
   l ^l     in tmux: into the session's pane (back: ^h, or tmux's prefix and an arrow)
   Enter    outside tmux: attach full-screen (back: Ctrl-b d)
 Queue [3]
@@ -188,7 +192,7 @@ Queue [3]
   t k K    what, kind (cycles, back)        p f a    priority, files, after
 Needs you [4]
   a        answer                 L        later
-  d        drop
+  D D      drop (D or d, then D again)
   y n      yes, no                a b c    a pick's options (answer tab)
 Concepts [5]
   j/k      option                 Enter    go with it
@@ -403,6 +407,9 @@ class RunPage:
         self.got = time.time()
         self.window_keys: set[str] = set()  # the keys the last frame showed above the bottom line
         self.confirm = ''  # F82: the run control waiting for its key again (stop now), '' none
+        self.confirm_id = ''  # F124: what that control works on (a moved-aside branch), '' none
+        self.output: list[str] = []  # F124: what the last W showed
+        self.dropping = ''  # F110: the Needs you item waiting for D again, '' none
         self.restart = False  # F90: the run is on a newer version: start this TUI again on it (`follow_upgrade`)
         self.pick = False  # B153: quit for the pick-a-run screen (0, the project name's key)
         self.followed = ''  # F90: the version the last restart was for (never restart twice for one version)
@@ -720,7 +727,8 @@ class RunPage:
         if tab == 'release':
             return self.release_pane(width), [], 0
         if tab == 'controls':
-            foot = self.input_lines('slots:n', width, 'how many slots') if self.typing == 'slots:n' else []
+            foot = self.input_lines('slots:n', width, 'how many slots') if self.typing == 'slots:n' else \
+                self.input_lines(self.typing, width, 'which one') if self.typing.startswith('ctl:') else []
             return self.controls_pane(width), foot, 0
         if it is None:
             return [L((self.empty_line(self.panel), 'dim'))], [], 0
@@ -781,9 +789,17 @@ class RunPage:
         cs = [c for c in self.snap.get('controls') or U.controls() if c['where'] == where]
         if where == 'task':
             return [buttons(*[button(c['tui'], c['label'].lower()) for c in cs])]
-        groups = (('slot_add', 'slot_remove', 'slots_set'), ('pause', 'go_on'), ('force', 'caps_on'),
-                  ('stop', 'stop_now', 'stop_undo'), ('upgrade', 'suspend', 'shutdown'))
-        return [buttons(*[button(c['tui'], c['label'].lower()) for c in cs if c['key'] in g]) for g in groups]
+        groups = (('start',), ('slot_add', 'slot_remove', 'slots_set'), ('pause', 'go_on'), ('force', 'caps_on'),
+                  ('stop', 'stop_now', 'stop_undo'), ('suspend', 'shutdown'), ('upgrade', 'restart'),
+                  ('resume', 'unclaim'), ('wip_show', 'wip_restore', 'wip_drop'))
+        fix = self.snap.get('fixups') or {}
+        up = bool(self.snap.get('up'))
+
+        def shown(c):  # F124: Start the run while none is up; a Fix up control while there is something to fix
+            return (c.get('up', True) or not up) and (not c.get('fix') or bool(fix.get(c['fix'])))
+        rows = [[button(c['tui'], c['label'].lower() + (f' ({len(fix[c["fix"]])})' if c.get('fix') else ''))
+                 for c in cs if c['key'] in g and shown(c)] for g in groups]
+        return [buttons(*r) for r in rows if r]
 
     def controls_pane(self, width: int) -> list:
         L = lambda *segs: list(segs)  # noqa: E731
@@ -794,6 +810,8 @@ class RunPage:
         for row in self.control_buttons('run'):
             out += [row, L()]
         out.append(L(('A slot on a task: H takes it back, D drops it (Sessions [2]).', 'dim')))
+        if self.output:
+            out += [L()] + [L((l, 'fg')) for l in self.output]
         if self.confirm:
             c = next((c for c in self.snap.get('controls') or U.controls() if c['key'] == self.confirm), {})
             out += [L()] + text_lines(f'{c.get("confirm", "")} {c.get("tui", "")} again: yes; any other key: no',
@@ -814,13 +832,37 @@ class RunPage:
         c = next((c for c in self.snap.get('controls') or U.controls() if c['key'] == key), None)
         if c is None:
             return
+        if not c.get('up', True) and self.snap.get('up'):
+            self.msg, self.msg_ok = 'a run is up already', True
+            return
+        if c.get('fix') and not c.get('each') and not args.get('tid'):  # F124: which one of those to fix
+            ids = [x['id'] for x in (self.snap.get('fixups') or {}).get(c['fix']) or []]
+            if not ids:
+                self.msg, self.msg_ok = f'{c["label"].lower()}: there is nothing to do', True
+                return
+            if len(ids) > 1:
+                self.panel, self.main = 1, True
+                self.set_tab('controls')
+                self.typing = f'ctl:{key}'
+                self.set_text(self.typing, ids[0])
+                self.msg, self.msg_ok = f'{c["label"].lower()}: which one? {", ".join(ids)}', True
+                return
+            args['tid'] = ids[0]
         if c.get('confirm') and not args.get('confirm'):
-            self.confirm = key
+            self.confirm, self.confirm_id = key, args.get('tid', '')
             self.panel, self.main = 1, True
             self.set_tab('controls')
             self.msg, self.msg_ok = f'{c["confirm"]} {c["tui"]} again: yes', False
             return
-        self.done(U.run_control(key, **args))
+        self.control_done(key, U.run_control(key, **args))
+
+    def control_done(self, key: str, r: dict) -> None:
+        """A run control's result; what W shows (the files a moved-aside branch holds) stays in the controls pane."""
+        self.output = (r.get('out') or '').strip().splitlines() if key == 'wip_show' and r.get('ok') else []
+        if self.output:
+            self.panel, self.main = 1, True
+            self.set_tab('controls')
+        self.done(r)
 
     def session_pane(self, it, tab: str, width: int) -> tuple[list, list, object]:
         L = lambda *segs: list(segs)  # noqa: E731
@@ -1075,6 +1117,8 @@ class RunPage:
             if isinstance(it, dict) and (it.get('task') or is_control(it)):
                 keys += [('o', 'open session'), ('y', 'copy link'),
                          ('^F', 'normal size' if self.full or self.side.full else 'full-screen')]
+            if is_control(it):
+                keys.append(('r', 'rename'))  # F129
             if isinstance(it, dict) and 'diff' in self.tab_list(2, it):
                 keys.append(('g', 'session' if self.tab()[0] == 'diff' else 'diff'))
             if self.task_controls_on(it):
@@ -1092,7 +1136,7 @@ class RunPage:
             return [('e', 'edit'), ('E', 'chat edit'), ('J/K', 'reorder'), ('p', 'priority'), ('H', 'do it here'),
                     ('d', 'drop')]
         if self.panel == 4:
-            return [('⏎', 'open'), ('a', 'answer'), ('L', 'later')] + ([('d', 'drop')] if it is not None else [])
+            return [('⏎', 'open'), ('a', 'answer'), ('L', 'later')] + ([('D', 'drop')] if it is not None else [])
         if isinstance(it, dict) and it.get('new'):
             return [('⏎', 'type')]
         return [('⏎', 'view'), ('O', 'open in the browser'), ('N', 'chat about it'), ('n', 'new concept'),
@@ -1104,6 +1148,9 @@ class RunPage:
         """The bottom line after the mode badge: this place's keys (yellow), a separator, then 1-5 panel, c c1,
         ? keys (blue; none while typing, when they do not work); this place's last keys left out should `width`
         be too narrow. A message (an action's result) takes the line instead."""
+        if self.typing.startswith('rename:'):  # F129: typed on this line, so a tmux pane beside hides nothing
+            return [(f'name for {self.typing[7:]}: ', 'hkey'), (self.text_of(self.typing), 'fg'), ('█', 'accent'),
+                    ('  ⏎ rename · Esc leave', 'dim')]
         if self.msg:
             return [(self.msg, 'green' if self.msg_ok else 'red')] + \
                 ([(' ', ''), self.link(self.msg_link)] if self.msg_link else [])
@@ -1396,11 +1443,20 @@ class RunPage:
         if k == '^F':  # F112: the session full-screen between the bars, and back
             self.toggle_full()
             return False
+        if self.dropping:  # F110: Drop on a Needs you item runs only on D (or d) again
+            tid, self.dropping = self.dropping, ''
+            if k in ('D', 'd'):
+                self.done(U.need_drop(tid, confirm=True))
+                self.main = False
+            else:
+                self.msg, self.msg_ok = f'{tid}: not dropped', True
+            return False
         if self.confirm:  # F82: stop now runs only on its key again
             key, self.confirm = self.confirm, ''
+            tid, self.confirm_id = self.confirm_id, ''
             c = next((c for c in self.snap.get('controls') or U.controls() if c['key'] == key), {})
             if k == c.get('tui'):
-                self.done(U.run_control(key, confirm=True))
+                self.control_done(key, U.run_control(key, confirm=True, **({'tid': tid} if tid else {})))
             else:
                 self.msg, self.msg_ok = f'{c.get("label", key)}: not done', True
             return False
@@ -1490,6 +1546,13 @@ class RunPage:
             r = U.answer(rest, text)
         elif box == 'slots:n':
             r = U.run_control('slots_set', n=text)
+        elif kind == 'ctl':  # F124: the one a Fix up control works on
+            self.typing = ''
+            self.set_text(box, '')
+            self.run_control(rest, tid=text)
+            return
+        elif kind == 'rename':  # F129
+            r = U.rename_chat(rest, text)
         elif box == 'concept:+':  # F87: a new concept, queued as a K task
             r = U.plan_add('K', text)
         elif kind == 'concept':
@@ -1680,6 +1743,9 @@ class RunPage:
             self.run_control('task_drop', tid=it['task'])  # F116: d drops a slot's task, as D does
         elif self.panel == 2 and k == 'd' and not self.main and is_control(it):
             self.close_control(it)
+        elif self.panel == 2 and k == 'r' and is_control(it):  # F129
+            self.typing = f'rename:{it["name"]}'
+            self.set_text(self.typing, it.get('title', '') if it.get('renamed') else '')
         elif self.panel == 2 and k == 't':
             self.feed_tab()
         elif self.panel == 2 and k == 'g':
@@ -1724,8 +1790,10 @@ class RunPage:
         elif self.panel == 4 and k == 'L' and it is not None:
             self.done(U.shelve(it['id']))
             self.main = False
-        elif self.panel == 4 and k == 'd' and not self.main and it is not None:  # F116: a pick's d stays its option
-            self.done(U.drop(it['id'], 'dropped from agent-runner ui'))
+        elif self.panel == 4 and (k == 'D' or (k == 'd' and not self.main)) and it is not None:
+            # F110, F116: a pick's d stays its option; D works there too
+            self.dropping = it['id']
+            self.msg, self.msg_ok = f'{U.need_drop(it["id"]).get("confirm", "Drop it?")} D again: yes', False
         elif self.panel == 5 and k == 'd' and not self.main and it is not None and not it.get('new'):
             self.done(U.drop(it.get('concept') or it['id'], 'dropped from agent-runner ui'))
         elif self.panel == 5 and k == 'n':  # F87: a new concept, in its row's box

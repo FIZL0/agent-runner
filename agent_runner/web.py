@@ -12,11 +12,14 @@ port instead, which Runner Home routes to; the link shown is then Home's /p/KEY/
                                  concept's options (`run_snapshot`)
     GET  /events?t=TOKEN         the same snapshot over server-sent events, sent again whenever it changes
     POST /act?t=TOKEN            {"name": ACTION, "args": {...}}: one of `ui_model.ACTIONS` (plan add, plan edit,
-                                 drop, shelve, release, chat, answer, take, move, unpark; F93 `talk`, the Talk
-                                 view's words to its own control session), its result as JSON
+                                 drop, shelve, release, chat, answer, take, move, unpark, rename_chat, need_chat,
+                                 setting_device …; F93 `talk`, the Talk view's words to its own control
+                                 session), its result as JSON
     GET  /terminal/NAME?t=TOKEN  where slot NAME's (or c1's, or cN's) own terminal is served by ttyd (`attach NAME`),
                                  started on demand; without ttyd, how to install it (on Windows, the feed only)
     GET  /feed/NAME?t=TOKEN      F74: session NAME's transcript as say/you/tool/out entries (`ui_model.feed`)
+    GET  /settings?t=TOKEN       F97: every setting, its value, source and default (`ui_model.settings`)
+    GET  /task/ID?t=TOKEN        F85: task ID's whole text (`plan ID`), for its row folded open
     GET  /concept/ID?t=TOKEN     F74: concept ID's local page copy (<notes>/concepts/ID.html), sandboxed
     GET  /diff/NAME?t=TOKEN      F75: slot NAME's diff so far (`slot_diff`), for its diff tab
     POST /upload?t=TOKEN&name=N  F79: an attachment (the body, as is) kept under <notes>/uploads; its path on this
@@ -799,6 +802,10 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(200, json.dumps(self.server.terms.open(path.split('/')[2])))
         if path.startswith('/feed/'):
             return self.send(200, json.dumps(U.feed(path.split('/')[2]), ensure_ascii=False))
+        if path == '/settings':  # F97
+            return self.send(200, json.dumps(U.settings(), ensure_ascii=False, default=str))
+        if path.startswith('/task/'):  # F85
+            return self.send(200, json.dumps(U.task_text(path.split('/')[2]), ensure_ascii=False))
         if path.startswith('/diff/'):
             return self.send(200, json.dumps(slot_diff(path.split('/')[2]), ensure_ascii=False))
         if path.startswith('/concept/'):

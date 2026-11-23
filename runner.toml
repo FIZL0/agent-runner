@@ -6,3 +6,6 @@ auto_upgrade = true  # upgrade agent-runner by itself when a newer release is ou
 test = "for t in tests/test_*.py; do echo \"== $t\"; python3 \"$t\" || exit 1; done"
 # Every task appends to the changelog and the merge repair joins those appends, so it holds no task back.
 shared_files = ["CHANGELOG.md"]
+prompt_extra = """
+A task that changes how the run app looks, moves or speaks (agent_runner/web_page.html, Runner Home's page): read
+docs/STYLE.md first and follow it; a change that needs a new rule writes the rule there in the same commit."""

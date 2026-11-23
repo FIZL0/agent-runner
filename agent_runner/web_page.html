@@ -15,27 +15,33 @@ const HOME_PAGE=/*HOME_PAGE*/false;
 </script>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Source+Serif+4:opsz,wght@8..60,400;8..60,500;8..60,600&display=swap">
 <style>
+/* Style rules: docs/STYLE.md. Read it before you change how this page looks, moves or speaks, and follow it;
+   tests/test_web.py (test_style_f83) checks the parts a machine can. */
 /* F79: the run app, a calm chat app over F74's model (the snapshot, the feeds, the actions). Warm off-white
    (dark: warm grey), serif for headings and replies, a rust accent, thin line icons, one big rounded message
    box. It switches layout by its own width (container query): a sidebar on a desktop, a drawer on a phone. */
 :root{
   --bg:#faf9f5; --side:#f5f4ee; --surface:#ffffff; --bubble:#f0eee6; --fg:#141413; --muted:#73726c; --faint:#a3a199;
   --line:#e8e6dc; --line2:#dcd9cd; --accent:#c96442; --accent2:#b5573a; --onaccent:#ffffff; --ok:#4f7a43;
-  --warn:#a8711a; --bad:#b0412e; --scrim:rgba(0,0,0,.25); --shadow:rgba(0,0,0,.15);
+  --warn:#a8711a; --bad:#b0412e; --onbad:#ffffff; --scrim:rgba(0,0,0,.25); --shadow:rgba(0,0,0,.15); --lift:rgba(0,0,0,.04);
   --sans:"Inter",system-ui,-apple-system,"Segoe UI",sans-serif; --serif:"Source Serif 4",Georgia,"Times New Roman",serif;
   --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --fs-xs:11px; --fs-s:12px; --fs-m:13px; --fs-n:14px; --fs-b:15px; --fs-l:17px; --fs-xl:30px;
+  --r-xs:4px; --r-s:8px; --r-m:10px; --r-l:16px; --r-xl:20px; --r-full:99px;
+  --s1:4px; --s2:8px; --s3:12px; --s4:16px; --s5:24px; --s6:32px; --tap:44px;
+  --dur-fast:150ms; --dur:200ms; --dur-slow:250ms; --ease:cubic-bezier(.2,.8,.2,1); --pulse:1.6s;
 }
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
   --bg:#262624; --side:#1f1e1d; --surface:#30302e; --bubble:#3a3936; --fg:#f3f1ea; --muted:#a3a199; --faint:#7d7b74;
   --line:#3b3a37; --line2:#4a4945; --accent:#d97757; --accent2:#e08868; --onaccent:#ffffff; --ok:#8fb07c;
-  --warn:#d9a54a; --bad:#e07a66; --scrim:rgba(0,0,0,.45); --shadow:rgba(0,0,0,.4); color-scheme:dark}}
+  --warn:#d9a54a; --bad:#e07a66; --onbad:#262624; --scrim:rgba(0,0,0,.45); --shadow:rgba(0,0,0,.4); --lift:rgba(0,0,0,.12); color-scheme:dark}}
 :root[data-theme="dark"]{
   --bg:#262624; --side:#1f1e1d; --surface:#30302e; --bubble:#3a3936; --fg:#f3f1ea; --muted:#a3a199; --faint:#7d7b74;
   --line:#3b3a37; --line2:#4a4945; --accent:#d97757; --accent2:#e08868; --onaccent:#ffffff; --ok:#8fb07c;
-  --warn:#d9a54a; --bad:#e07a66; --scrim:rgba(0,0,0,.45); --shadow:rgba(0,0,0,.4); color-scheme:dark}
+  --warn:#d9a54a; --bad:#e07a66; --onbad:#262624; --scrim:rgba(0,0,0,.45); --shadow:rgba(0,0,0,.4); --lift:rgba(0,0,0,.12); color-scheme:dark}
 *{box-sizing:border-box;scrollbar-width:none} *::-webkit-scrollbar{display:none}
 [hidden]{display:none!important}
-html,body{height:100%}
+html,body{height:100%;overscroll-behavior:none}
 body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 var(--sans);overflow:hidden}
 svg{width:18px;height:18px;flex:none;stroke:currentColor;fill:none;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
 button{font:inherit;color:inherit}
@@ -47,113 +53,115 @@ a{color:var(--accent)}
 
 /* the sidebar: a drawer on a phone */
 .side{position:absolute;inset:0 auto 0 0;width:280px;max-width:85%;background:var(--side);border-right:1px solid var(--line);z-index:6;
-  transform:translateX(-102%);transition:transform .22s ease;display:flex;flex-direction:column;padding:12px 10px;
+  transform:translateX(-102%);transition:transform var(--dur-slow) var(--ease),visibility var(--dur-slow);display:flex;flex-direction:column;padding:12px 10px;
   padding-left:max(10px,env(safe-area-inset-left,0px));overflow:auto}
 .side.open{transform:none;box-shadow:8px 0 30px var(--shadow)}
-.scrim{position:absolute;inset:0;background:var(--scrim);z-index:5;display:none}
-.scrim.on{display:block}
+.side:not(.open):not(.drag){visibility:hidden}
+.scrim{position:absolute;inset:0;background:var(--scrim);z-index:5;opacity:0;visibility:hidden;transition:opacity var(--dur-slow) var(--ease),visibility var(--dur-slow)}
+.scrim.on{opacity:1;visibility:visible}
+.side.drag,.sheet.drag,.scrim.drag{transition:none}
 .brand{display:flex;align-items:center;gap:10px;padding:6px 8px 14px;color:inherit;text-decoration:none}
-.logo{width:28px;height:28px;border-radius:8px;background:var(--accent);color:var(--onaccent);display:grid;place-items:center;font:600 13px var(--serif);flex:none}
+.logo{width:28px;height:28px;border-radius:var(--r-s);background:var(--accent);color:var(--onaccent);display:grid;place-items:center;font:600 13px var(--serif);flex:none}
 .brand b{font:500 17px var(--serif)}
-.newchat{display:flex;align-items:center;gap:10px;width:100%;border:0;background:none;border-radius:10px;padding:8px 10px;cursor:pointer;font-weight:500;color:var(--accent)}
+.newchat{display:flex;align-items:center;gap:10px;width:100%;border:0;background:none;border-radius:var(--r-m);padding:8px 10px;cursor:pointer;font-weight:500;color:var(--accent)}
 .newchat .plus{width:24px;height:24px;border-radius:50%;background:var(--accent);color:var(--onaccent);display:grid;place-items:center}
 .newchat .plus svg{width:14px;height:14px;stroke-width:2.2}
 .nav{display:grid;gap:1px;margin-top:6px}
-.ni{display:flex;align-items:center;gap:10px;border:0;background:none;border-radius:10px;padding:8px 10px;cursor:pointer;text-align:left;color:var(--fg)}
+.ni{display:flex;align-items:center;gap:10px;border:0;background:none;border-radius:var(--r-m);padding:8px 10px;cursor:pointer;text-align:left;color:var(--fg)}
 .ni:hover{background:var(--bubble)} .ni.on{background:var(--bubble);font-weight:500}
-.ni .n{margin-left:auto;font-size:12px;background:var(--accent);color:var(--onaccent);border-radius:99px;padding:0 7px}
-.shead{font-size:12px;color:var(--muted);padding:14px 10px 4px}
+.ni .n{margin-left:auto;font-size:var(--fs-s);background:var(--accent);color:var(--onaccent);border-radius:var(--r-full);padding:0 7px}
+.shead{font-size:var(--fs-s);color:var(--muted);padding:14px 10px 4px}
 .shead.row{display:flex;align-items:center;justify-content:space-between;padding-block:8px 0}
-.shadd{width:26px;height:26px;border:0;border-radius:8px;background:none;color:var(--muted);display:grid;place-items:center;cursor:pointer;flex:none}
+.shadd{width:26px;height:26px;border:0;border-radius:var(--r-s);background:none;color:var(--muted);display:grid;place-items:center;cursor:pointer;flex:none}
 .shadd:hover{background:var(--bubble);color:var(--fg)} .shadd svg{width:16px;height:16px;stroke-width:2}
-.thread{display:flex;align-items:center;gap:8px;border:0;background:none;border-radius:10px;padding:7px 10px;cursor:pointer;text-align:left;width:100%;color:var(--fg);font-size:14px}
+.thread{display:flex;align-items:center;gap:8px;border:0;background:none;border-radius:var(--r-m);padding:7px 10px;cursor:pointer;text-align:left;width:100%;color:var(--fg);font-size:var(--fs-n)}
 .thread:hover{background:var(--bubble)} .thread.on{background:var(--bubble)}
 .thread .t{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .thread .off{width:7px;height:7px;border-radius:50%;border:1px solid var(--faint);flex:none}
 /* F118: a chat row's delete button (on hover; always on touch), its Undo, the selection and its Delete N bar */
 .crow{position:relative} .crow .thread{padding-right:38px}
-.crow .del{position:absolute;right:4px;top:50%;transform:translateY(-50%);height:28px;min-width:28px;border:0;border-radius:8px;background:none;color:var(--muted);display:grid;place-items:center;cursor:pointer;opacity:0;font-size:12px;font-weight:500}
+.crow .del{position:absolute;right:4px;top:50%;transform:translateY(-50%);height:28px;min-width:28px;border:0;border-radius:var(--r-s);background:none;color:var(--muted);display:grid;place-items:center;cursor:pointer;opacity:0;font-size:var(--fs-s);font-weight:500}
 .crow:hover .del,.crow:focus-within .del,.crow .del.undo{opacity:1} .crow .del:hover{background:var(--line2);color:var(--fg)}
 .crow .del svg{width:15px;height:15px} .crow .del.undo{padding:0 8px;color:var(--accent)}
 @media (hover:none){.crow .del{opacity:1}}
 /* F133: the pin button beside delete (always shown on a pinned chat), and a row being dragged */
 .crow[data-crow] .thread{padding-right:68px} .crow[data-crow="c1"] .thread{padding-right:38px}
-.crow .pin{position:absolute;right:34px;top:50%;transform:translateY(-50%);height:28px;width:28px;border:0;border-radius:8px;background:none;color:var(--muted);display:grid;place-items:center;cursor:pointer;opacity:0}
+.crow .pin{position:absolute;right:34px;top:50%;transform:translateY(-50%);height:28px;width:28px;border:0;border-radius:var(--r-s);background:none;color:var(--muted);display:grid;place-items:center;cursor:pointer;opacity:0}
 .crow[data-crow="c1"] .pin{right:4px}
 .crow:hover .pin,.crow:focus-within .pin,.crow .pin.on{opacity:1} .crow .pin.on{color:var(--accent)} .crow .pin:hover{background:var(--line2);color:var(--fg)}
 .crow .pin svg{width:15px;height:15px}
 @media (hover:none){.crow .pin{opacity:1}}
 .crow[data-crow]{-webkit-touch-callout:none;-webkit-user-select:none;user-select:none}
-.crow.lift,.crow.drag{background:var(--line2);border-radius:10px} .crow.drag{position:relative;z-index:5;box-shadow:0 4px 14px rgba(0,0,0,.18);opacity:.95}
+.crow.lift,.crow.drag{background:var(--line2);border-radius:var(--r-m)} .crow.drag{position:relative;z-index:5;box-shadow:0 4px 14px var(--shadow);opacity:.95}
 .thread.sel{background:color-mix(in srgb,var(--accent) 18%,transparent)}
 .thread.gone{opacity:.5;cursor:default} .thread.gone .t{text-decoration:line-through}
-.selbar{display:flex;align-items:center;gap:8px;padding:4px 10px;font-size:13px;color:var(--muted)} .selbar span{flex:1}
-.selbar .btn{padding:4px 10px;font-size:13px}
-.none{font-size:13px;color:var(--faint);padding:4px 10px}
-.livedot{width:7px;height:7px;border-radius:50%;background:var(--accent);flex:none;animation:pulse 1.6s infinite}
+.selbar{display:flex;align-items:center;gap:8px;padding:4px 10px;font-size:var(--fs-m);color:var(--muted)} .selbar span{flex:1}
+.selbar .btn{padding:4px 10px;font-size:var(--fs-m)}
+.none{font-size:var(--fs-m);color:var(--faint);padding:4px 10px}
+.livedot{width:7px;height:7px;border-radius:50%;background:var(--accent);flex:none;animation:pulse var(--pulse) infinite}
 @keyframes pulse{50%{opacity:.35}}
-.me{margin-top:auto;display:flex;align-items:center;gap:10px;padding:10px 8px 4px;border-top:1px solid var(--line);font-size:13px;color:var(--muted)}
+.me{margin-top:auto;display:flex;align-items:center;gap:10px;padding:10px 8px 4px;border-top:1px solid var(--line);font-size:var(--fs-m);color:var(--muted)}
 .me .av{width:28px;height:28px;border-radius:50%;background:var(--fg);color:var(--bg);display:grid;place-items:center;font:600 12px var(--sans);flex:none}
-.me .sub{font-size:11px}
-.viewsw{display:flex;align-items:center;gap:8px;padding:6px 8px 2px;font-size:12px;color:var(--muted);text-decoration:none}
+.me .sub{font-size:var(--fs-xs)}
+.viewsw{display:flex;align-items:center;gap:8px;padding:6px 8px 2px;font-size:var(--fs-s);color:var(--muted);text-decoration:none}
 .viewsw:hover{color:var(--fg)} .viewsw svg{width:15px;height:15px}
 /* F134: the project switcher at the top of the sidebar (through Runner Home), and its list of Home's projects */
-.psw{display:flex;align-items:center;gap:10px;width:100%;border:0;background:none;border-radius:10px;padding:6px 8px;margin-bottom:8px;cursor:pointer;text-align:left;color:var(--fg)}
+.psw{display:flex;align-items:center;gap:10px;width:100%;border:0;background:none;border-radius:var(--r-m);padding:6px 8px;margin-bottom:8px;cursor:pointer;text-align:left;color:var(--fg)}
 .psw:hover{background:var(--bubble)} .psw b{font:500 17px var(--serif);flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.psw .cv{transition:transform .15s;color:var(--muted)} .psw.open .cv{transform:rotate(90deg)}
+.psw .cv{transition:transform var(--dur-fast) var(--ease);color:var(--muted)} .psw.open .cv{transform:rotate(90deg)}
 .plist{display:grid;gap:1px;margin:-4px 0 8px;padding-bottom:8px;border-bottom:1px solid var(--line)}
-.prow{display:flex;align-items:center;gap:8px;border-radius:10px;padding:7px 10px;text-decoration:none;color:var(--fg);font-size:14px}
+.prow{display:flex;align-items:center;gap:8px;border-radius:var(--r-m);padding:7px 10px;text-decoration:none;color:var(--fg);font-size:var(--fs-n)}
 .prow:hover{background:var(--bubble)} .prow.on{background:var(--bubble);font-weight:500}
-.prow .t{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis} .prow .st{font-size:12px;color:var(--muted)}
-.prow .n{font-size:12px;background:var(--accent);color:var(--onaccent);border-radius:99px;padding:0 7px}
+.prow .t{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis} .prow .st{font-size:var(--fs-s);color:var(--muted)}
+.prow .n{font-size:var(--fs-s);background:var(--accent);color:var(--onaccent);border-radius:var(--r-full);padding:0 7px}
 .pdot{width:8px;height:8px;border-radius:50%;flex:none;background:var(--line2)} .pdot.running{background:var(--ok)} .pdot.idle{background:var(--warn)}
-.padd{display:flex;gap:8px;flex-wrap:wrap} .padd input{flex:1;min-width:0;border:1px solid var(--line);border-radius:10px;padding:7px 10px;font:inherit;background:var(--bg);color:var(--fg)}
-.meter{display:grid;grid-template-columns:52px minmax(0,1fr) auto;gap:8px;align-items:center;font-size:13px}
-.meter .bar{height:6px;background:var(--line);border-radius:3px;overflow:hidden} .meter .bar i{display:block;height:100%;background:var(--ok)}
+.padd{display:flex;gap:8px;flex-wrap:wrap} .padd input{flex:1;min-width:0;border:1px solid var(--line);border-radius:var(--r-m);padding:7px 10px;font:16px/1.35 var(--sans);background:var(--bg);color:var(--fg)}
+.meter{display:grid;grid-template-columns:52px minmax(0,1fr) auto;gap:8px;align-items:center;font-size:var(--fs-m)}
+.meter .bar{height:6px;background:var(--line);border-radius:var(--r-xs);overflow:hidden} .meter .bar i{display:block;height:100%;background:var(--ok)}
 .meter .bar i.w{background:var(--warn)} .meter .bar i.b{background:var(--bad)} .meter .r{color:var(--muted)}
 .v-ok{color:var(--ok)} .v-warn{color:var(--warn)} .v-bad{color:var(--bad)}
 
 /* the main column */
-.main{display:flex;flex-direction:column;min-height:0;min-width:0}
+.main{position:relative;display:flex;flex-direction:column;min-height:0;min-width:0;touch-action:pan-y pinch-zoom}
 .top{display:flex;align-items:center;gap:6px;padding:10px 10px 6px;padding-right:max(10px,env(safe-area-inset-right,0px))}
-.icon{width:36px;height:36px;border-radius:10px;border:0;background:none;display:grid;place-items:center;cursor:pointer;color:var(--fg);flex:none}
+.icon{width:36px;height:36px;border-radius:var(--r-m);border:0;background:none;display:grid;place-items:center;cursor:pointer;color:var(--fg);flex:none}
 .icon:hover{background:var(--bubble)}
-.top .title{flex:1;min-width:0;text-align:center;font-weight:500;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.body{flex:1;overflow:auto;min-height:0}
+.top .title{flex:1;min-width:0;text-align:center;font-weight:500;font-size:var(--fs-b);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.body{flex:1;overflow:auto;min-height:0;overflow-anchor:none;overscroll-behavior:contain}
 .col{max-width:720px;margin:0 auto;padding:6px 16px 24px;display:grid;gap:12px}
 .greet{font:400 30px/1.2 var(--serif);text-align:center;margin:18px 0 6px;display:flex;align-items:center;justify-content:center;gap:10px}
-.greet .logo{width:30px;height:30px;font-size:15px}
-.sec{font-size:13px;color:var(--muted);margin-top:10px;display:flex;align-items:center;gap:8px}
+.greet .logo{width:30px;height:30px;font-size:var(--fs-b)}
+.sec{font-size:var(--fs-m);color:var(--muted);margin-top:10px;display:flex;align-items:center;gap:8px}
 .sec .ln{flex:1;height:1px;background:var(--line)}
-.kform{display:grid;gap:8px} .kform textarea{width:100%;border:1px solid var(--line);border-radius:10px;padding:8px 10px;font:inherit;background:var(--bg);color:var(--fg);resize:vertical}
-.card{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:14px 16px;display:grid;gap:10px;min-width:0}
+.kform{display:grid;gap:8px} .kform textarea{width:100%;border:1px solid var(--line);border-radius:var(--r-m);padding:8px 10px;font:16px/1.35 var(--sans);background:var(--bg);color:var(--fg);resize:vertical}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-l);padding:14px 16px;display:grid;gap:10px;min-width:0}
 .card.tap{cursor:pointer} .card.tap:hover{border-color:var(--line2)}
 .card.need{border-color:color-mix(in srgb,var(--warn) 45%,var(--line))}
 .q{font:500 17px/1.35 var(--serif);overflow-wrap:anywhere}
 .q.clamp{display:-webkit-box;-webkit-line-clamp:2;line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .more{border:0;background:none;padding:0;font:500 13px var(--sans);color:var(--accent);cursor:pointer;justify-self:start}
-.small{font-size:13px;color:var(--muted)}
+.small{font-size:var(--fs-m);color:var(--muted)}
 .row{display:flex;align-items:center;gap:12px;min-width:0}
 .grow{flex:1;min-width:0}
 .ell{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.who{width:34px;height:34px;border-radius:10px;background:var(--bubble);display:grid;place-items:center;font:600 12px var(--sans);color:var(--muted);flex:none}
-.status{font-size:12px;color:var(--accent);display:inline-flex;align-items:center;gap:6px}
+.who{width:34px;height:34px;border-radius:var(--r-m);background:var(--bubble);display:grid;place-items:center;font:600 12px var(--sans);color:var(--muted);flex:none}
+.status{font-size:var(--fs-s);color:var(--accent);display:inline-flex;align-items:center;gap:6px}
 .quote{font:400 15px/1.45 var(--serif);color:var(--fg);border-left:2px solid var(--line2);padding-left:10px;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
 .btns{display:flex;gap:8px;flex-wrap:wrap}
-.btn{border:1px solid var(--line2);background:var(--surface);border-radius:10px;padding:7px 14px;font-weight:500;font-size:14px;cursor:pointer;text-decoration:none;color:var(--fg);display:inline-flex;align-items:center;gap:6px}
+.btn{border:1px solid var(--line2);background:var(--surface);border-radius:var(--r-m);padding:7px 14px;font-weight:500;font-size:var(--fs-n);cursor:pointer;text-decoration:none;color:var(--fg);display:inline-flex;align-items:center;gap:6px}
 .btn:hover{background:var(--bubble)}
 .btn.pri{background:var(--fg);color:var(--bg);border-color:var(--fg)}
 .btn.acc{background:var(--accent);color:var(--onaccent);border-color:var(--accent)}
 .btn:disabled{opacity:.5;cursor:default}
 .card.relph{opacity:.6}
 .btn.busy{opacity:.7;cursor:progress}
-.btn.bad{background:var(--bad);color:var(--bg);border-color:var(--bad)}
+.btn.bad{background:var(--bad);color:var(--onbad);border-color:var(--bad)}
 .sure{display:grid;gap:8px;border-top:1px solid var(--line);padding-top:10px}
 .slotsn{display:inline-flex;gap:6px;align-items:center}
-.slotsn input{width:64px;border:1px solid var(--line2);background:var(--surface);color:var(--fg);border-radius:10px;padding:7px 8px;font:inherit}
+.slotsn input{width:64px;border:1px solid var(--line2);background:var(--surface);color:var(--fg);border-radius:var(--r-m);padding:7px 8px;font:16px/1.35 var(--sans)}
 .chev{color:var(--faint);display:grid}
 .chips{display:flex;gap:8px;flex-wrap:wrap;justify-content:center}
-.chip{border:1px solid var(--line);background:var(--surface);border-radius:10px;padding:7px 12px;font-size:13px;cursor:pointer;display:inline-flex;align-items:center;gap:7px;color:var(--fg)}
+.chip{border:1px solid var(--line);background:var(--surface);border-radius:var(--r-m);padding:7px 12px;font-size:var(--fs-m);cursor:pointer;display:inline-flex;align-items:center;gap:7px;color:var(--fg)}
 .chip svg{width:15px;height:15px;color:var(--muted)}
 .chip:hover{background:var(--bubble)}
 .ev{display:flex;gap:12px;align-items:flex-start;padding:4px 2px;min-width:0}
@@ -163,64 +171,67 @@ a{color:var(--accent)}
 .ev .txt{min-width:0;overflow-wrap:anywhere}
 
 /* the message box */
-.box{background:var(--surface);border:1px solid var(--line2);border-radius:20px;padding:12px 12px 10px 16px;display:grid;gap:8px;box-shadow:0 2px 10px rgba(0,0,0,.04);margin:0}
+.box{background:var(--surface);border:1px solid var(--line2);border-radius:var(--r-xl);padding:12px 12px 10px 16px;display:grid;gap:8px;box-shadow:0 2px 10px var(--lift);margin:0}
 .box:focus-within{border-color:var(--faint)}
 .box textarea{border:0;outline:0;resize:none;background:none;font:16px/1.45 var(--sans);color:var(--fg);min-height:26px;max-height:160px;padding:2px 0;width:100%}
 .box textarea::placeholder{color:var(--faint)}
 .boxrow{display:flex;align-items:center;gap:6px}
-.tool{height:32px;min-width:32px;border-radius:9px;border:1px solid var(--line2);background:none;display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:0 8px;cursor:pointer;color:var(--muted);font-size:13px}
+.tool{height:32px;min-width:32px;border-radius:var(--r-s);border:1px solid var(--line2);background:none;display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:0 8px;cursor:pointer;color:var(--muted);font-size:var(--fs-m)}
 .tool:hover{background:var(--bubble);color:var(--fg)}
-.to{font-size:13px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
-.send{margin-left:auto;width:32px;height:32px;border-radius:9px;border:0;background:var(--accent);color:var(--onaccent);display:grid;place-items:center;cursor:pointer;flex:none}
+.to{font-size:var(--fs-m);color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.send{margin-left:auto;width:32px;height:32px;border-radius:var(--r-s);border:0;background:var(--accent);color:var(--onaccent);display:grid;place-items:center;cursor:pointer;flex:none}
 .send.stop{background:var(--fg);color:var(--bg)} .send.stop+.send{margin-left:0}
 .send:disabled{opacity:.4;cursor:default}
 .send svg{stroke-width:2.2}
-.ctx{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted);min-width:0}
+.ctx{display:flex;align-items:center;gap:8px;font-size:var(--fs-m);color:var(--muted);min-width:0}
 .ctx b{color:var(--fg);font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
 .x{border:0;background:none;cursor:pointer;color:var(--faint);padding:0 4px}
 .atts{display:flex;gap:8px;flex-wrap:wrap}
-.att{position:relative;display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:10px;padding:6px 10px 6px 6px;font-size:12px;background:var(--bg);max-width:220px}
+.att{position:relative;display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:var(--r-m);padding:6px 10px 6px 6px;font-size:var(--fs-s);background:var(--bg);max-width:220px}
 .att span.nm{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
-.att img,.att .fi{width:34px;height:34px;border-radius:7px;object-fit:cover;background:var(--bubble);display:grid;place-items:center;flex:none}
+.att img,.att .fi{width:34px;height:34px;border-radius:var(--r-s);object-fit:cover;background:var(--bubble);display:grid;place-items:center;flex:none}
 .att.up{opacity:.55} .att.err{border-color:var(--bad)}
-.att .x{position:absolute;top:-7px;right:-7px;width:18px;height:18px;border-radius:50%;background:var(--fg);color:var(--bg);font-size:11px;line-height:1;padding:0}
+.att .x{position:absolute;top:-7px;right:-7px;width:18px;height:18px;border-radius:50%;background:var(--fg);color:var(--bg);font-size:var(--fs-xs);line-height:1;padding:0}
 .dock{padding:8px 12px 14px;padding-left:max(12px,env(safe-area-inset-left,0px));padding-right:max(12px,env(safe-area-inset-right,0px));background:linear-gradient(transparent,var(--bg) 30%)}
 .dock .box{max-width:720px;margin:0 auto}
-.foot{font-size:11px;color:var(--faint);text-align:center;margin-top:6px}
+.foot{font-size:var(--fs-xs);color:var(--faint);text-align:center;margin-top:6px}
 
 /* a conversation */
 .msgs{display:grid;gap:18px;padding:8px 0 10px}
-.u{justify-self:end;max-width:80%;background:var(--bubble);border-radius:18px;padding:9px 14px;display:grid;gap:8px;white-space:pre-wrap;overflow-wrap:anywhere}
+.u{justify-self:end;max-width:80%;background:var(--bubble);border-radius:var(--r-xl);padding:9px 14px;display:grid;gap:8px;white-space:pre-wrap;overflow-wrap:anywhere}
 .u.pending{opacity:.7}
-.u img{max-width:200px;border-radius:10px}
-.u .file{font-size:12px;color:var(--muted);display:inline-flex;gap:6px;align-items:center}
+.u img{max-width:200px;border-radius:var(--r-m)}
+.u .file{font-size:var(--fs-s);color:var(--muted);display:inline-flex;gap:6px;align-items:center}
 .a{display:grid;gap:8px;font:400 16.5px/1.6 var(--serif);max-width:100%;min-width:0;overflow-wrap:anywhere}
 .a .lead{display:flex;align-items:center;gap:8px;font:500 13px var(--sans);color:var(--muted)}
-.a .lead .logo{width:22px;height:22px;font-size:11px;border-radius:6px}
+.a .lead .logo{width:22px;height:22px;font-size:var(--fs-xs);border-radius:var(--r-s)}
 .a p{margin:0} .a ul,.a ol{margin:0;padding-left:1.3em}
-.a code{font:13.5px var(--mono);background:var(--bubble);border-radius:5px;padding:1px 5px}
-.a pre{font:12.5px/1.55 var(--mono);background:var(--side);border:1px solid var(--line);border-radius:10px;padding:8px 10px;overflow:auto;margin:0;white-space:pre}
+.a code{font:13.5px var(--mono);background:var(--bubble);border-radius:var(--r-s);padding:1px 5px}
+.a pre{font:12.5px/1.55 var(--mono);background:var(--side);border:1px solid var(--line);border-radius:var(--r-m);padding:8px 10px;overflow:auto;margin:0;white-space:pre}
 .a pre code{background:none;padding:0}
 .a h1,.a h2,.a h3,.a h4{font:600 16.5px/1.4 var(--serif);margin:0}
 .steps{display:inline-flex;align-items:center;gap:6px;font:400 13px var(--sans);color:var(--muted);border:0;background:none;padding:0;cursor:pointer;justify-self:start}
-.steps svg{width:14px;height:14px;transition:transform .15s}
+.steps svg{width:14px;height:14px;transition:transform var(--dur-fast) var(--ease)}
 .steps.open svg{transform:rotate(90deg)}
-.stepbox{font:12.5px/1.6 var(--mono);color:var(--muted);background:var(--side);border:1px solid var(--line);border-radius:10px;padding:8px 10px;white-space:pre-wrap;overflow-wrap:anywhere}
+.stepbox{font:12.5px/1.6 var(--mono);color:var(--muted);background:var(--side);border:1px solid var(--line);border-radius:var(--r-m);padding:8px 10px;white-space:pre-wrap;overflow-wrap:anywhere}
 .stepbox .o{color:var(--faint)}
 .think{display:flex;align-items:center;gap:8px;font:13px var(--sans);color:var(--muted)}
-.think .logo{width:20px;height:20px;font-size:10px;border-radius:6px;animation:pulse 1.2s infinite}
-.think .btn.mini{padding:2px 10px;font-size:12px;margin-left:4px}
-.more{font-size:12px;color:var(--faint);text-align:center}
+.think .logo{width:20px;height:20px;font-size:var(--fs-xs);border-radius:var(--r-s);animation:pulse var(--pulse) infinite}
+.think .btn.mini{padding:2px 10px;font-size:var(--fs-s);margin-left:4px}
+.older{font-size:var(--fs-s);color:var(--muted);text-align:center}
 
-.toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--fg);color:var(--bg);border-radius:12px;padding:9px 14px;font-size:13px;z-index:20;max-width:min(560px,90vw);box-shadow:0 6px 24px var(--shadow)}
-.toast.bad{background:var(--bad);color:#fff}
-.offline{font-size:12px;color:var(--warn);text-align:center;padding:2px}
+.toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--fg);color:var(--bg);border-radius:var(--r-m);padding:9px 14px;font-size:var(--fs-m);z-index:20;max-width:min(560px,90vw);box-shadow:0 6px 24px var(--shadow)}
+.toast.bad{background:var(--bad);color:var(--onbad)}
+/* notices float over the view: they never push it down */
+.notices{position:relative;height:0;z-index:4;display:grid;justify-items:center}
+.notices>*{position:relative}
+.offline{font-size:var(--fs-s);color:var(--warn);background:var(--surface);border:1px solid var(--line2);border-radius:var(--r-full);padding:2px 12px;box-shadow:0 2px 10px var(--lift)}
 /* F137: the outbox's pill, its popup and the stand-ins */
-.obbar{display:flex;justify-content:center;padding:4px 12px 0}
-.obpill{display:inline-flex;align-items:center;gap:8px;border:1px dashed var(--line2);background:var(--surface);color:var(--muted);border-radius:99px;padding:4px 12px;font:inherit;font-size:12.5px;cursor:pointer;max-width:100%}
+.obbar{display:flex;justify-content:center;padding:4px 12px 0;max-width:100%}
+.obpill{display:inline-flex;align-items:center;gap:8px;border:1px dashed var(--line2);background:var(--surface);color:var(--muted);border-radius:var(--r-full);padding:4px 12px;font:inherit;font-size:var(--fs-s);cursor:pointer;max-width:100%}
 .obpill.bad{border:1px solid var(--bad);color:var(--bad)}
 .obpop{position:fixed;inset:0;background:var(--scrim);z-index:30;display:grid;place-items:center;padding:16px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
-.obcard{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:14px 16px;display:grid;gap:10px;width:min(520px,100%);max-height:80vh;overflow:auto;box-shadow:0 6px 24px var(--shadow)}
+.obcard{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-l);padding:14px 16px;display:grid;gap:10px;width:min(520px,100%);max-height:80vh;overflow:auto;box-shadow:0 6px 24px var(--shadow)}
 .obrow{display:flex;gap:10px;align-items:center;flex-wrap:wrap;border-top:1px solid var(--line);padding-top:10px}
 .obrow .grow,.obstand .grow{min-width:0}
 .ell2{overflow-wrap:anywhere}
@@ -232,37 +243,46 @@ a{color:var(--accent)}
 
 @container (min-width:760px){
   .shell{grid-template-columns:260px minmax(0,1fr)}
-  .side{position:static;transform:none;box-shadow:none;width:auto;max-width:none}
-  .scrim,.top .menu{display:none!important}
+  .side,.side:not(.open):not(.drag){position:static;transform:none;box-shadow:none;width:auto;max-width:none;visibility:visible}
+  .scrim:not(.sheetscrim),.top .menu{display:none!important}
   .top{padding:12px 18px 6px}
   .top .title{text-align:left}
   .grid2{grid-template-columns:1fr 1fr}
 }
 .grid2{display:grid;gap:12px}
-/* F93: Talk: a big mic button over the chat box */
-.talk{display:grid;justify-items:center;gap:8px;max-width:720px;margin:0 auto 10px}
-.mic{width:min(38vw,132px);height:min(38vw,132px);border-radius:50%;border:0;background:var(--accent);color:var(--onaccent);display:grid;place-items:center;cursor:pointer;box-shadow:0 6px 24px var(--shadow);touch-action:manipulation}
-.mic svg{width:44%;height:44%;stroke-width:1.8}
-.mic.on{background:var(--bad);animation:pulse 1.2s infinite}
+/* F124: Talk: the speaker and the mic (64px each) with the keyboard beside them; the box cross-fades in its place */
+.talkdock{display:grid;max-width:720px;margin:0 auto;align-items:end}
+.talkdock>*{grid-area:1/1;min-width:0;transition:opacity var(--dur) var(--ease),visibility var(--dur)}
+.dock .talkbox,.dock.typing .talkmic{opacity:0;visibility:hidden}
+.dock.typing .talkbox{opacity:1;visibility:visible}
+.talkmic{display:grid;gap:6px;justify-items:center;padding-bottom:4px}
+.talkrow{display:grid;grid-template-columns:1fr auto 1fr;gap:14px;align-items:center;width:100%}
+.mic,.spk{width:64px;height:64px;border-radius:50%;border:0;display:grid;place-items:center;cursor:pointer;touch-action:manipulation;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+.mic{background:var(--accent);color:var(--onaccent);transition:transform var(--dur-fast) var(--ease)}
+.mic:active{transform:scale(.95)} .mic svg{width:28px;height:28px;stroke-width:1.8}
+.spk{justify-self:end;background:var(--surface);border:1px solid var(--line2);color:var(--fg)} .spk svg{width:26px;height:26px}
+.spk.off{color:var(--muted)}
+.kbd{justify-self:start;width:var(--tap);height:var(--tap);border-radius:50%;border:1px solid var(--line2);background:var(--surface);color:var(--muted);display:grid;place-items:center;cursor:pointer}
+.mic.on{background:var(--bad);color:var(--onbad);animation:pulse var(--pulse) infinite}
 .mic.speaking{background:var(--accent2)}
-.mic:disabled{background:var(--line2);color:var(--muted);cursor:default;box-shadow:none}
-.talkline{font:15px/1.45 var(--sans);color:var(--muted);text-align:center;min-height:1.45em;max-width:34em;overflow-wrap:anywhere}
-@media (prefers-reduced-motion:reduce){.mic.on{animation:none}}
+.mic:disabled{background:var(--line2);color:var(--muted);cursor:default}
+.talkline{font-size:var(--fs-m);line-height:1.45;color:var(--muted);text-align:center;min-height:1.45em;max-width:34em;overflow-wrap:anywhere}
+.speakb{justify-self:start;display:inline-grid;place-items:center;width:32px;height:32px;border:0;background:none;border-radius:var(--r-s);color:var(--muted);cursor:pointer;margin-left:-6px}
+.speakb:hover{background:var(--bubble);color:var(--fg)} .speakb.on{color:var(--accent)}
 /* B119: the slash command menu, above the message box */
 .box{position:relative}
-.slash{position:absolute;left:0;right:0;bottom:calc(100% + 6px);max-height:min(320px,50vh);overflow-y:auto;background:var(--surface);border:1px solid var(--line2);border-radius:14px;padding:4px;box-shadow:0 6px 24px var(--shadow);z-index:5}
-.slash button{display:flex;gap:10px;align-items:baseline;width:100%;border:0;background:none;color:var(--fg);text-align:left;padding:7px 10px;border-radius:9px;cursor:pointer;font:14px/1.35 var(--sans);min-width:0}
+.slash{position:absolute;left:0;right:0;bottom:calc(100% + 6px);max-height:min(320px,50vh);overflow-y:auto;background:var(--surface);border:1px solid var(--line2);border-radius:var(--r-l);padding:4px;box-shadow:0 6px 24px var(--shadow);z-index:5}
+.slash button{display:flex;gap:10px;align-items:baseline;width:100%;border:0;background:none;color:var(--fg);text-align:left;padding:7px 10px;border-radius:var(--r-s);cursor:pointer;font:14px/1.35 var(--sans);min-width:0}
 .slash button.on{background:var(--bubble)}
 .slash b{font-weight:500;white-space:nowrap}
-.slash span{color:var(--muted);font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.slash span{color:var(--muted);font-size:var(--fs-m);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
 /* F115: the message box's dictation mic (beside attach), listening; one that cannot listen stays tappable and says why */
-.tool.dict.on{background:var(--bad);border-color:var(--bad);color:var(--onaccent);animation:pulse 1.2s infinite}
+.tool.dict.on{background:var(--bad);border-color:var(--bad);color:var(--onaccent);animation:pulse var(--pulse) infinite}
 .tool.dict.off{opacity:.55}
 .inrow{display:flex;align-items:flex-start;gap:8px;min-width:0}
 .inrow textarea{flex:1;min-width:0}
 .pr{display:none}
 @media (pointer:coarse){.tool{height:40px;min-width:40px}.send{width:40px;height:40px}}
-@media (prefers-reduced-motion:reduce){.tool.dict.on{animation:none}}
 /* F115: a chat (and Talk) looks like the terminal: monospace, the [ui] theme's terminal colours (--t-*: the app's own
    until the theme comes from the terminal-style page, see termTokens), a '>' prompt, tool lines as the agent's terminal draws them */
 :root{--t-bg:var(--bg);--t-fg:var(--fg);--t-dim:var(--muted);--t-line:var(--line2);--t-raise:var(--side);--t-cur:var(--bubble);
@@ -271,7 +291,7 @@ a{color:var(--accent)}
   --surface:var(--t-raise);--side:var(--t-raise);--bubble:var(--t-cur);--accent:var(--t-accent);--accent2:var(--t-accent);
   --ok:var(--t-green);--bad:var(--t-red);--warn:var(--t-yellow);background:var(--bg);color:var(--fg)}
 .main.term .msgs{font:14px/1.55 var(--mono);gap:14px}
-.main.term .u{justify-self:stretch;max-width:100%;background:var(--bubble);border-radius:6px;padding:6px 10px 6px 2em;position:relative;font:inherit}
+.main.term .u{justify-self:stretch;max-width:100%;background:var(--bubble);border-radius:var(--r-s);padding:6px 10px 6px 2em;position:relative;font:inherit}
 .main.term .u::before{content:'>';position:absolute;left:.75em;top:6px;color:var(--muted)}
 .main.term .a,.main.term .a h1,.main.term .a h2,.main.term .a h3,.main.term .a h4{font:inherit}
 .main.term .a h1,.main.term .a h2,.main.term .a h3,.main.term .a h4{font-weight:700}
@@ -284,11 +304,68 @@ a{color:var(--accent)}
 .main.term .stepbox{font:13px/1.55 var(--mono);background:none;border:0;border-left:1px solid var(--line);border-radius:0;padding:2px 0 2px 10px}
 .stepbox .tl::before{content:'● ';color:var(--ok)}
 .main.term .think{font:13px var(--mono)}
-.main.term .box{border-radius:10px;padding:10px 10px 8px 12px}
+.main.term .box{border-radius:var(--r-m);padding:10px 10px 8px 12px}
 .main.term .box textarea{font:16px/1.45 var(--mono)}  /* 16px: a phone does not zoom into it */
 .main.term .pr{display:block;font:16px/1.45 var(--mono);color:var(--muted);padding:2px 0}
 .main.term .dock{background:linear-gradient(transparent,var(--bg) 30%)}
-@media (prefers-reduced-motion:reduce){.side,.steps svg{transition:none}.livedot,.think .logo{animation:none}}
+/* F83: the state pill, badges and dots */
+.pill{font-size:var(--fs-s);font-weight:600;border:1px solid currentColor;border-radius:var(--r-full);padding:2px 9px;white-space:nowrap;flex:none;background:none;cursor:pointer;color:var(--muted)}
+.pill.ok{color:var(--ok)} .pill.warn{color:var(--warn)} .pill.bad{color:var(--bad)}
+.btns.tight{gap:6px} .btns.tight .btn{padding-inline:9px;font-size:var(--fs-m)}
+.bdot{width:8px;height:8px;border-radius:50%;background:var(--accent);flex:none}
+.icon.menu{position:relative} .icon.menu .bdot{position:absolute;top:calc(50% - 15px);right:calc(50% - 15px);width:9px;height:9px;border:2px solid var(--bg);box-sizing:content-box}
+.tag{font-size:var(--fs-s);border-radius:var(--r-full);padding:1px 8px;background:var(--bubble);color:var(--muted);white-space:nowrap} .tag.warn{color:var(--warn)} .tag.acc{color:var(--accent)}
+/* F128: quiet chats; F129: a chat's name being edited, a touch row's menu */
+.qline{display:flex;align-items:center;gap:8px;font-size:var(--fs-xs);color:var(--muted);padding:10px 10px 4px} .qline::after{content:'';flex:1;height:1px;background:var(--line2)}
+.crow.quiet .thread{color:var(--muted)} .crow.quiet .t{opacity:.75}
+.renform{margin:0;padding:2px 4px} .renform input{width:100%;border:1px solid var(--accent);border-radius:var(--r-s);background:var(--bg);color:var(--fg);padding:6px 8px;font:16px/1.3 var(--sans)}
+.rowmenu{display:none}
+@media (hover:none){
+  .crow .del:not(.undo),.crow .pin:not(.on){display:none}
+  .crow .rowmenu{position:absolute;right:0;top:50%;transform:translateY(-50%);width:40px;height:40px;border:0;border-radius:var(--r-s);background:none;color:var(--muted);display:grid;place-items:center}
+  .crow .pin.on{right:38px} .crow[data-crow] .thread,.crow[data-crow="c1"] .thread{padding-right:44px} .crow.pinned .thread{padding-right:74px!important} .crow[data-crow="c1"] .pin.on{right:38px}
+  .thread,.ni,.newchat,.prow{min-height:var(--tap)}
+}
+/* a row that folds open in place (a slot, a task, a setting) */
+.srow{display:grid;gap:var(--s2);border-top:1px solid var(--line);padding-top:var(--s3)} .srow:first-child{border-top:0;padding-top:0}
+.tap{cursor:pointer} .fold{display:flex;align-items:center;gap:12px;width:100%;border:0;background:none;padding:0;text-align:left;color:inherit;cursor:pointer;min-width:0;min-height:32px}
+.fold .chev svg{transition:transform var(--dur-fast) var(--ease)} .fold[aria-expanded="true"] .chev svg{transform:rotate(90deg)}
+.tasktext{font:13px/1.55 var(--mono);white-space:pre-wrap;overflow-wrap:anywhere;background:var(--bg);border:1px solid var(--line);border-radius:var(--r-m);padding:10px 12px;margin:0}
+.lrow{display:flex;gap:12px;justify-content:space-between;align-items:baseline;min-width:0} .lrow span:first-child{min-width:0;overflow-wrap:anywhere} .lrow .small{white-space:nowrap}
+/* F124: the sheet */
+.sheetscrim{z-index:11}
+.sheet{position:absolute;left:0;right:0;bottom:0;margin:0 auto;max-width:520px;max-height:85%;overflow:auto;overscroll-behavior:contain;z-index:12;background:var(--surface);border:1px solid var(--line2);border-bottom:0;border-radius:var(--r-l) var(--r-l) 0 0;padding:8px 16px 20px;padding-bottom:max(20px,env(safe-area-inset-bottom,0px));display:grid;gap:var(--s1);align-content:start;box-shadow:0 -8px 24px var(--shadow);transform:translateY(103%);visibility:hidden;transition:transform var(--dur-slow) var(--ease),visibility var(--dur-slow);outline:0}
+.sheet.open{transform:none;visibility:visible}
+.grab{width:36px;height:4px;border-radius:var(--r-xs);background:var(--line2);justify-self:center;margin-bottom:var(--s1)}
+.sheet h2{font:500 17px/1.3 var(--serif);margin:0 0 var(--s1)}
+.sheet .sec{margin-top:var(--s2)}
+.it{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;min-height:var(--tap);border:0;border-bottom:1px solid var(--line);background:none;padding:6px 2px;text-align:left;cursor:pointer;color:var(--fg);text-decoration:none}
+.it:hover{background:var(--bubble)} .it.bad{color:var(--bad)} .it .k{font:12px var(--mono);color:var(--muted);flex:none} .it:last-child{border-bottom:0}
+.it.setrow{cursor:default} .it.setrow:hover{background:none}
+.sheet pre.out{font:12.5px/1.55 var(--mono);white-space:pre-wrap;overflow-wrap:anywhere;margin:0}
+/* form controls: a switch, a select, a text field */
+.sw{appearance:none;-webkit-appearance:none;width:44px;height:26px;border-radius:var(--r-full);border:1px solid var(--line2);background:var(--bubble);position:relative;cursor:pointer;flex:none;margin:0;transition:background-color var(--dur-fast) var(--ease)}
+.sw::after{content:'';position:absolute;left:2px;top:2px;width:20px;height:20px;border-radius:50%;background:var(--surface);box-shadow:0 1px 3px var(--shadow);transition:transform var(--dur-fast) var(--ease)}
+.sw:checked{background:var(--accent);border-color:var(--accent)} .sw:checked::after{transform:translateX(18px)}
+.sw:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.fld{width:100%;min-width:0;border:1px solid var(--line2);border-radius:var(--r-m);background:var(--bg);color:var(--fg);padding:8px 10px;font:16px/1.35 var(--sans)} textarea.fld{font-family:var(--mono);resize:vertical}
+.it .fld{width:auto;max-width:60%}
+/* F97: Settings */
+.setcols{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px} .setcol{display:grid;gap:8px;align-content:start;min-width:0;justify-items:start}
+.setkey{font:13px var(--mono);overflow-wrap:anywhere} .setval{font:12px var(--mono);color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:46%}
+/* the jump to the latest message */
+.jump{position:absolute;left:50%;bottom:100%;margin-bottom:6px;transform:translate(-50%,6px);opacity:0;visibility:hidden;height:36px;border-radius:var(--r-full);border:1px solid var(--line2);background:var(--surface);color:var(--fg);box-shadow:0 2px 10px var(--shadow);padding:0 14px;display:inline-flex;align-items:center;gap:6px;font-size:var(--fs-m);cursor:pointer;z-index:4;transition:opacity var(--dur-fast) var(--ease),transform var(--dur-fast) var(--ease),visibility var(--dur-fast)}
+.jump.on{opacity:1;visibility:visible;transform:translate(-50%,0)} .jump svg{width:16px;height:16px}
+.dockwrap{position:relative}
+/* the composer: the send button fills once there is something to send */
+.send{transition:opacity var(--dur-fast) var(--ease)} .box:not(.has) .send:not(.stop){opacity:.45}
+@media (pointer:coarse){.keysl{display:none} .btn,.chip,.icon{min-height:var(--tap)} .icon{min-width:var(--tap)}}
+/* motion (docs/STYLE.md, Motion): enter() sets these on what is new or changed, never the markup */
+@keyframes enter{from{opacity:0;transform:translateY(6px)}}
+@keyframes fadein{from{opacity:0}}
+.enter{animation:enter var(--dur) var(--ease)} .changed,.viewin{animation:fadein var(--dur) var(--ease)}
+.obpop:not([hidden]),.toast:not([hidden]){animation:fadein var(--dur-fast) var(--ease)}
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
 </style>
 </head>
 <body>
@@ -298,15 +375,18 @@ a{color:var(--accent)}
     <aside class="side" id="side" aria-label="Sidebar"></aside>
     <section class="main">
       <div class="top" id="top"></div>
-      <div class="offline" id="offline" hidden>Lost the run page's connection: trying again…</div>
-      <div class="obbar" id="obbar" hidden></div>
+      <div class="notices"><div class="offline" id="offline" role="status" hidden>Lost the run page's connection: trying again…</div>
+      <div class="obbar" id="obbar" hidden></div></div>
       <div class="body" id="body"></div>
-      <div class="dock" id="dock"></div>
+      <div class="dockwrap"><button type="button" class="jump" id="jump" data-jump aria-label="Jump to the latest" title="Jump to the latest"></button>
+      <div class="dock" id="dock"></div></div>
     </section>
+    <div class="scrim sheetscrim" id="sheetscrim"></div>
+    <div class="sheet" id="sheet" role="dialog" aria-modal="true" tabindex="-1"></div>
   </div>
   <input type="file" multiple hidden id="file">
 </div>
-<div class="toast" id="toast" hidden></div>
+<div class="toast" id="toast" role="status" hidden></div>
 <div class="obpop" id="obpop" hidden></div>
 
 <script id="logic">
@@ -338,14 +418,15 @@ function answerSaid(r,id,v){return(r&&r.said)||(r&&r.gone?`${id}: ${v}`:`Sent to
 /* a session's feed entries (say / you / tool / out) as a conversation: your words as {w:'u'}, the agent's as
    {w:'a', text, steps}; tool steps (and their output) fold into the reply that follows them */
 function threadMsgs(entries){
-  const out=[];let steps=[];
+  const out=[];let steps=[],k='';  // B134/F83: k, a message's own key (its first entry's id), '' when the feed has none
+  const put=(m,e)=>{const id=k||(e&&e.id)||'';out.push(id?{...m,k:id}:m);k=''};
   for(const e of entries||[]){
-    if(e.kind==='tool')steps.push({tool:e.text,out:''});
-    else if(e.kind==='out'){if(steps.length&&!steps[steps.length-1].out)steps[steps.length-1].out=e.text;else steps.push({tool:'',out:e.text})}
-    else if(e.kind==='say'){out.push({w:'a',text:e.text,steps});steps=[]}
-    else if(e.kind==='you'){if(steps.length)out.push({w:'a',text:'',steps}),steps=[];out.push({w:'u',text:e.text})}
+    if(e.kind==='tool'){if(!steps.length)k=e.id||'';steps.push({tool:e.text,out:''})}
+    else if(e.kind==='out'){if(!steps.length)k=e.id||'';if(steps.length&&!steps[steps.length-1].out)steps[steps.length-1].out=e.text;else steps.push({tool:'',out:e.text})}
+    else if(e.kind==='say'){put({w:'a',text:e.text,steps},e);steps=[]}
+    else if(e.kind==='you'){if(steps.length)put({w:'a',text:'',steps}),steps=[];put({w:'u',text:e.text},e)}
   }
-  if(steps.length)out.push({w:'a',text:'',steps});
+  if(steps.length)put({w:'a',text:'',steps});
   return out;
 }
 /* is the session working: its last entry is a tool step, its output, or your words not yet answered */
@@ -382,7 +463,7 @@ function compose(ctx,text,paths){
 function sendReq(ctx,to,msg){return ctx?{name:'new_control',args:{ask:msg}}:{name:'chat_to',args:{text:msg,to:to||'c1'}}}
 /* the usage line of the status lines ('usage: session 40%, week 12%'), '' for none */
 const usageOf=status=>((status||[]).find(l=>/^usage: /.test(l))||'').replace(/^usage: /,'');
-/* a run log line's kind, for its icon on Activity */
+/* a run log line's kind, for its icon on Status */
 function logKind(line){
   const l=String(line||'').toLowerCase();
   if(/\b(landed|merged|released|done)\b/.test(l))return 'ok';
@@ -393,14 +474,14 @@ function logKind(line){
 /* a reply as one plain line, for a card's quote: no markdown marks */
 const plain=s=>String(s||'').replace(/```[\s\S]*?(```|$)/g,' ').replace(/\*\*([^*]+)\*\*/g,'$1').replace(/`([^`]+)`/g,'$1')
   .replace(/\[([^\]]+)\]\([^)]*\)/g,'$1').replace(/^\s*(?:[-*]|\d+[.)]|#+)\s+/gm,'').replace(/\s+/g,' ').trim();
-const chatName=s=>s.name==='c1'?'Project chat':(s.title&&s.title!=='control session'?s.title:`Chat ${s.name.slice(1)}`);
+const chatName=s=>s.renamed&&s.title?s.title:s.name==='c1'?'Project chat':(s.title&&s.title!=='control session'?s.title:`Chat ${s.name.slice(1)}`);
 /* F82: a run control's request to /act (run_control, from the snapshot's one list of controls): o.n the slot
    count typed, o.tid the slot's task, o.sure only from the page's own confirm step (a control with a confirm
    question is refused without it) */
 function controlReq(c,o){
   o=o||{};const args={key:c.key};
   if(c.needs==='n')args.n=String(o.n==null?'':o.n).trim();
-  if(c.needs==='id')args.tid=o.tid||'';
+  if(c.needs==='id'||(c.needs==='pick'&&o.tid))args.tid=o.tid||'';
   if(c.confirm&&o.sure===true)args.confirm=true;
   return {name:'run_control',args};
 }
@@ -431,7 +512,106 @@ function newConceptReq(text){const t=String(text||'').trim();return t?{name:'pla
 const queuedId=out=>((String(out||'').match(/\bK\d+[a-z]?\b/)||[''])[0]);
 /* F93: Talk. The sidebar's views, Talk first; its control session: the one this browser remembers while it is
    live, else a live chat titled Talk, else '' (the next send opens one) */
-const NAV=[['talk','Talk'],['home','Home'],['agents','Agents'],['activity','Activity'],['plan','Plan'],['concepts','Concepts']];
+const NAV=[['talk','Talk'],['home','Home'],['status','Status'],['plan','Plan'],['concepts','Concepts'],['settings','Settings']];
+/* F124: Agents and Activity are one view now, Status */
+const viewOf=v=>v==='agents'||v==='activity'?'status':v;
+/* F124: the state pill: the run's state (ui_model.run_state) and its colour */
+function runPill(snap){
+  const t=(snap&&snap.run&&snap.run.state)||(snap&&snap.up===false?'Not up':snap&&snap.run&&snap.run.stopping?'Stopping':snap&&snap.run&&snap.run.paused?'Paused':snap&&snap.up?'Running':'');
+  return{text:t,cls:{Running:'ok',Paused:'warn','Caps forced':'warn',Stopping:'bad','Not up':''}[t]||''};
+}
+/* F124: the Run card's everyday buttons (control keys): Start the run while none is up */
+function cardControls(snap){
+  if(snap&&snap.up===false)return['start'];
+  const run=(snap&&snap.run)||{};
+  return['slot_remove','slot_add',run.paused?'go_on':'pause',run.stopping?'stop_undo':'stop'];
+}
+/* F124: the More… sheet: [{group, items: [{c, label, choices}]}] from the snapshot's controls, in the list's order of
+   groups; a Fix up control only while there is something to fix, with a count */
+function controlGroups(snap){
+  const run=(snap&&snap.run)||{}, up=!(snap&&snap.up===false), out=[];
+  for(const g of ['Stop','Run','Fix up']){
+    const items=[];
+    for(const c of (snap&&snap.controls)||[]){
+      if(c.where!=='run'||c.group!==g||(g!=='Fix up'&&!up))continue;
+      if((c.key==='force'&&run.forced)||(c.key==='caps_on'&&!run.forced))continue;
+      const choices=c.fix?((snap.fixups||{})[c.fix]||[]):[];
+      if(c.fix&&!choices.length)continue;
+      items.push({c,label:c.fix?`${c.label} (${choices.length})`:c.key==='suspend'&&run.power==='suspend'?'Take the suspend back':c.key==='shutdown'&&run.power==='shutdown'?'Take the shutdown back':c.label,choices});
+    }
+    if(g==='Stop'&&up&&!run.stopping){const c=((snap&&snap.controls)||[]).find(x=>x.key==='stop');if(c)items.unshift({c,label:c.label,choices:[]})}
+    if(items.length)out.push({group:g,items});
+  }
+  return out;
+}
+/* F128: does a chat wait for the person's reply: an open question, or the session spoke after they last opened it
+   (seen: epoch s) */
+const needsReply=(s,seen)=>!!s.needs_reply||(s.last==='claude'&&(s.at||0)>(seen||0));
+/* F128: the Chats list in two: the chats, then the quiet ones (no reply needed, nothing said for `quiet` s). c1, a
+   pinned chat and one the person named stay up. */
+function chatGroups(rows,o){
+  const top=[],quiet=[];
+  for(const s of rows||[]){
+    const q=o.quiet>0&&s.name!=='c1'&&!(o.pins||[]).includes(s.name)&&!s.renamed&&s.name!==o.open&&s.at>0
+      &&o.now-s.at>o.quiet&&!needsReply(s,(o.seen||{})[s.name]);
+    (q?quiet:top).push(s);
+  }
+  return{top,quiet};
+}
+/* F143: a Needs you card's Chat, as its first message shows while the run starts it (need_chat_text then replaces it) */
+function needChatAsk(n){const os=answerOpts(n);
+  return `This chat is about ${n.id}${n.title?` '${n.title}'`:''}, which needs me. What was put to me:\n\n${n.ask||n.what||''}${os.length?`\n\nPossible answers:\n${os.map(o=>'- '+o).join('\n')}`:''}`}
+/* F124: Talk's settings, kept per browser: read (read replies aloud), voice ('' the system's own), mic 'tap' or 'hold',
+   auto (listen again once a reply was read) */
+const TALK_SET={read:true,voice:'',mic:'tap',auto:false};
+function talkSetParse(text){let o;try{o=JSON.parse(text||'{}')}catch(e){o={}}
+  if(!o||typeof o!=='object')o={};
+  return{read:o.read!==false,voice:typeof o.voice==='string'?o.voice:'',mic:o.mic==='hold'?'hold':'tap',auto:o.auto===true}}
+const pickVoice=(voices,name)=>name?(voices||[]).find(v=>v.name===name)||null:null;
+/* B134: where a feed ends at a send, so what comes after it is found in a later feed even once the feed is capped and
+   its indexes move: the last entry's own id, else (a transcript without ids) all its entries */
+function feedMark(entries){const es=entries||[], l=es[es.length-1];
+  return l&&l.id?{id:l.id}:{tail:es.map(e=>e.kind+'\n'+e.text)}}
+/* the entries after the mark. No mark (the feed was not read yet at the send): those after the person's own words
+   `said`, none until they show */
+function feedAfter(entries,mark,said){
+  const es=entries||[];
+  if(typeof mark==='number')return es.slice(mark);
+  if(!mark){let i=-1;es.forEach((e,j)=>{if(e.kind==='you'&&(!said||talkShown(e.text)===talkShown(said)))i=j});return i<0?[]:es.slice(i+1)}
+  if(mark.id){const i=es.findIndex(e=>e.id===mark.id);return i<0?es:es.slice(i+1)}  // gone past the cap: all of it is new
+  const t=mark.tail, k=es.map(e=>e.kind+'\n'+e.text);
+  if(!t.length)return es;
+  for(let at=0;at<Math.max(1,Math.min(2,k.length));at++)  // B154: the feed may start with the prompt it kept
+    for(let d=0;d<t.length;d++){const n=t.length-d;
+      if(n<=k.length-at&&t.slice(d).every((x,i)=>k[at+i]===x))return es.slice(at+n)}
+  return es;
+}
+/* the page keeps a chat at its newest message: is it there now */
+const atEnd=b=>b.scrollHeight-b.scrollTop-b.clientHeight<60;
+/* F124: a finger moving (dx, dy) over the app: does the drawer follow it (open: it is open), '' not, 'wait' too early */
+function swipeTakes(dx,dy,open){
+  if(Math.abs(dx)<10&&Math.abs(dy)<10)return 'wait';
+  return Math.abs(dx)>Math.abs(dy)*1.4&&(open?dx<0:dx>0)?'drag':'';
+}
+/* where the drawer settles when the finger lets go: dx moved, v its speed (px/ms), w the drawer's width */
+const swipeOpens=(dx,v,w,open)=>Math.abs(v)>.35?v>0:(open?w+dx:dx)>w/2;
+/* F97: a setting's value as a field shows it, and the words typed in one as a value ({v} or {err}) */
+const settingText=v=>v==null?'':typeof v==='string'?v:Array.isArray(v)?v.join('\n'):typeof v==='object'?JSON.stringify(v):String(v);
+const settingShown=v=>v===''?'(empty)':Array.isArray(v)?(v.length?v.join(', '):'(none)'):typeof v==='object'&&v?(Object.keys(v).length?JSON.stringify(v):'(none)'):String(v);
+function settingValue(k,text){
+  const t=String(text==null?'':text).trim(), also=k.also||[];
+  if(k.type==='choice'||k.type==='switch'||typeof k.default==='boolean'||k.off){if(t==='true'&&k.type!=='text'||t==='true'&&typeof k.default==='boolean')return{v:true};if(t==='false')return{v:false}}
+  if(k.type==='choice')return{v:t};
+  if(k.type==='number'||(also.includes('number')&&/^\d/.test(t)))return /^-?\d+(\.\d+)?$/.test(t)?{v:Number(t)}:{err:`${k.key} takes a number`};
+  const list=()=>t.split(/\n/).map(x=>x.trim()).filter(Boolean);
+  if(k.type==='list')return{v:list()};
+  if(k.type==='table'||/^\{/.test(t)){
+    if(!t)return{v:{}};
+    try{const v=JSON.parse(t.replace(/([{,]\s*)"?([\w-]+)"?\s*=\s*/g,'$1"$2": '));if(v&&typeof v==='object'&&!Array.isArray(v))return{v}}catch(e){}
+    return{err:`${k.key} takes a table, like { every = 10 }`}}
+  if(also.includes('list')&&(/\n|,/.test(t)||typeof k.default==='boolean'))return{v:t.split(/[\n,]/).map(x=>x.trim()).filter(Boolean)};
+  return{v:String(text==null?'':text)};
+}
 function talkSession(sessions,remembered){
   const live=(sessions||[]).filter(s=>/^c\d+$/.test(s.name)&&s.state==='live');
   const r=live.find(s=>s.name===remembered);if(r)return r.name;
@@ -472,10 +652,11 @@ const heardNothing=err=>err?`Heard nothing (error: ${err})`:'Heard nothing';
 /* a Talk message as the person said it: without the first message's brief or a later one's reminder */
 const talkShown=t=>{t=String(t||'');const i=t.indexOf('\n\nThey said: ');
   return (/^Talk mode:/.test(t)&&i>=0?t.slice(i+13):t.replace(/^\(Talk: [^)]*\) /,'')).trim()};
-/* the reply to read aloud: the session's words after feed entry `since`, once its last entry is its words
-   ('' while it still works or has said nothing new) */
-function talkReply(entries,since){
-  const es=(entries||[]).slice(since||0);
+/* the reply to read aloud: the session's words after `mark` (feedMark at the send; a number is an index), once its
+   last entry is its words ('' while it still works or has said nothing new). said: the person's words, for a send
+   with no mark */
+function talkReply(entries,mark,said){
+  const es=feedAfter(entries,mark===undefined?0:mark,said);
   if(!es.length||es[es.length-1].kind!=='say')return '';
   return es.filter(e=>e.kind==='say').map(e=>plain(e.text)).join(' ').trim();
 }
@@ -519,7 +700,7 @@ const slashMove=(i,n,key)=>n?(key==='ArrowUp'?(i-1+n)%n:(i+1)%n):0;
 /* B120: the message box's keys, as in the agent CLI's own input, listed here once (the box's foot shows them) */
 const BOX_KEYS=[['Enter','sends'],['Shift+Enter','new line'],['↑ ↓','earlier messages'],['/','commands'],
   ['Esc','closes the menu, then interrupts'],['Ctrl+C','interrupts'],['Paste','attaches pictures or files']];
-const keysLine=()=>BOX_KEYS.map(([k,d])=>`${k} ${d}`).join(' · ');
+const keysLine=()=>'<span class="keysl">'+BOX_KEYS.map(([k,d])=>`${k} ${d}`).join(' · ')+'</span>';
 /* B120: the chat's message history (kept per chat): HIST_MAX the most it keeps; histPush the list once `text` is
    sent (not twice in a row); histEdge whether ArrowUp / ArrowDown leaves the box's text for history (the caret on
    its first / last line, nothing selected); histStep the place after the key, n meaning the unsent draft */
@@ -651,7 +832,7 @@ function projectButtons(p){
   b.push({label:'Unlist',unlist:true});
   return b;
 }
-if(typeof module!=='undefined')module.exports={homeBase,homeKey,projectLink,homeLink,homeHref,pageTitle,projectState,switcherRows,projectWords,projectButtons,chatMove,BOX_KEYS,keysLine,histPush,histEdge,histStep,slashMatches,slashPick,slashMove,SLASH_FALLBACK,chatPick,answerOpts,needAsk,threadMsgs,working,planWords,compose,sendReq,usageOf,logKind,plain,chatName,controlReq,controlClick,taskControlsOn,queueGroups,conceptButtons,planQueue,NO_CONCEPT,newConceptReq,queuedId,NAV,talkSession,micProblem,dictProblem,dictButton,dictInsert,termTokens,talkShown,talkReply,goneMark,needsShown,answerSaid,GONE_MS,obParse,obNext,obName,obSettle,obRetry,obDrop,obCounts,obHidden,obPill,sentLeft,sentStep,sentParse};
+if(typeof module!=='undefined')module.exports={viewOf,runPill,cardControls,controlGroups,needsReply,chatGroups,needChatAsk,TALK_SET,talkSetParse,pickVoice,feedMark,feedAfter,atEnd,swipeTakes,swipeOpens,settingText,settingShown,settingValue,homeBase,homeKey,projectLink,homeLink,homeHref,pageTitle,projectState,switcherRows,projectWords,projectButtons,chatMove,BOX_KEYS,keysLine,histPush,histEdge,histStep,slashMatches,slashPick,slashMove,SLASH_FALLBACK,chatPick,answerOpts,needAsk,threadMsgs,working,planWords,compose,sendReq,usageOf,logKind,plain,chatName,controlReq,controlClick,taskControlsOn,queueGroups,conceptButtons,planQueue,NO_CONCEPT,newConceptReq,queuedId,NAV,talkSession,micProblem,dictProblem,dictButton,dictInsert,termTokens,talkShown,talkReply,goneMark,needsShown,answerSaid,GONE_MS,obParse,obNext,obName,obSettle,obRetry,obDrop,obCounts,obHidden,obPill,sentLeft,sentStep,sentParse};
 </script>
 
 <script>
@@ -669,8 +850,14 @@ const I={
  newchat:`<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 12a8 8 0 0 1-11.6 7.1L4 20l.9-4.4A8 8 0 1 1 20 12z"/><path d="M12 8.5v7M8.5 12h7"/></svg>`,
  talk:ic('<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21M8.5 21h7"/>'),  // F93: a mic
  home:ic('<path d="M4 10.5 12 4l8 6.5V20H4z"/><path d="M10 20v-5h4v5"/>'),
- agents:ic('<circle cx="12" cy="8" r="3.5"/><path d="M5 20c.8-3.6 3.6-5.5 7-5.5s6.2 1.9 7 5.5"/>'),
- activity:ic('<path d="M3 12h4l3-7 4 14 3-7h4"/>'),
+ status:ic('<path d="M3 12h4l3-7 4 14 3-7h4"/>'),
+ settings:ic('<path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/>'),  // F97
+ gear:ic('<circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.2 2.2M16.2 16.2l2.2 2.2M18.4 5.6l-2.2 2.2M7.8 16.2l-2.2 2.2"/>'),
+ speak:ic('<path d="M4 9.5v5h3.5L12 19V5L7.5 9.5z"/><path d="M15.5 9a4 4 0 0 1 0 6M18 6.5a8 8 0 0 1 0 11"/>'),
+ mute:ic('<path d="M4 9.5v5h3.5L12 19V5L7.5 9.5z"/><path d="M16 10l5 5M21 10l-5 5"/>'),
+ keys:ic('<rect x="2.5" y="6" width="19" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M8 14h8"/>'),
+ down:ic('<path d="M12 5v14M6 13l6 6 6-6"/>'),
+ dots:ic('<path d="M5 12h.01M12 12h.01M19 12h.01" stroke-width="2.6"/>'),
  plan:ic('<path d="M8 6h12M8 12h12M8 18h12"/><circle cx="4" cy="6" r=".6"/><circle cx="4" cy="12" r=".6"/><circle cx="4" cy="18" r=".6"/>'),
  projects:ic('<rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/>'),  // F134
  concepts:ic('<path d="M9 18h6M10 21h4"/><path d="M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2.1h5c0-.9.4-1.6 1-2.1A6 6 0 0 0 12 3z"/>'),  // F87: a bulb
@@ -695,6 +882,7 @@ const LOGLINE_ICON={ok:'check',bad:'alert',go:'play','':'dot'};
 
 const S={snap:{status:[],sessions:[],queue:[],needs:[],concepts:[],log:[],release:'',machine:'',slots:0},
   view:'home',thread:null,ctx:null,atts:[],drawer:false,openSteps:{},feeds:{},sent:{},waitNew:null,online:true,
+  sheet:'',ren:null,f:{},taskOpen:{},tasks:{},set:null,setOpen:{},
   sel:[],selLast:'',undo:null};  // F118: chats picked for delete, the last one clicked, a delete Undo can still take back
 const $=id=>document.getElementById(id);
 /* B153: the project's name (the top-left, the chat's lead label) and its first letter (the logo) */
@@ -722,6 +910,44 @@ function histKey(e,ta){
   grow(ta);ta.setSelectionRange(ta.value.length,ta.value.length);
   return true;
 }
+
+/* F83: a refresh draws a part again only when its markup changed */
+function setHTML(el,h){if(!el||el._h===h)return false;el._h=h;el.innerHTML=h;return true}
+/* F83: the reading position over a redraw of box: call before, then call what it returns after. The first keyed thing
+   on screen stays where it was (at the very top, new things show); a code block keeps its sideways scroll. */
+function keepScroll(box){
+  const was=box.scrollTop, edge=box.getBoundingClientRect().top;let key='',y=0;
+  if(was>2)for(const el of box.querySelectorAll('[data-k]')){const b=el.getBoundingClientRect();if(b.bottom>edge+1){key=el.dataset.k;y=b.top;break}}
+  const pre=[...box.querySelectorAll('pre')].map(p=>p.scrollLeft);
+  return()=>{
+    [...box.querySelectorAll('pre')].forEach((p,i)=>{if(pre[i])p.scrollLeft=pre[i]});
+    box.scrollTop=was;
+    const el=key&&[...box.querySelectorAll('[data-k]')].find(e=>e.dataset.k===key);
+    if(el)box.scrollTop+=el.getBoundingClientRect().top-y;
+  };
+}
+/* F83: what came in since the last draw rises in, what changed state fades in; nothing else moves. keysIn: the keys
+   (and the words of your own messages, which move from sending to sent) on screen now */
+function keysIn(box){const m=new Map();for(const el of box.querySelectorAll('[data-k]')){m.set(el.dataset.k,el.dataset.v||'');if(el.dataset.t)m.set('t:'+el.dataset.t,'')}return m}
+function enter(box,had){
+  if(!S.live||!had.size)return;  // the first load, and what it was waiting for, do not move
+  for(const el of box.querySelectorAll('[data-k]')){
+    if(!had.has(el.dataset.k)){if(!(el.dataset.t&&had.has('t:'+el.dataset.t)))el.classList.add('enter')}
+    else if(el.dataset.v&&had.get(el.dataset.k)!==el.dataset.v)el.classList.add('changed');
+  }
+}
+function viewIn(el){el.classList.remove('viewin');void el.offsetWidth;el.classList.add('viewin')}
+/* a field with data-f keeps its words (S.f), focus and caret over a redraw */
+function keepFields(root){
+  const a=document.activeElement, on=a&&root.contains(a)&&a.dataset&&a.dataset.f;let sel=null;
+  if(on){try{sel=[a.selectionStart,a.selectionEnd]}catch(e){}}
+  return()=>{for(const el of root.querySelectorAll('[data-f]'))if(el.dataset.f in S.f&&el.type!=='checkbox'&&el.value!==S.f[el.dataset.f])el.value=S.f[el.dataset.f];
+    if(on){const el=[...root.querySelectorAll('[data-f]')].find(e=>e.dataset.f===on);if(el&&el!==document.activeElement){el.focus({preventScroll:true});try{if(sel&&sel[0]!=null)el.setSelectionRange(sel[0],sel[1])}catch(e){}}}};
+}
+/* a press under way, or a text selection in the view: a refresh waits for it (the next draw has it all) */
+const PD={down:false,late:false,since:0}, HOLD_MS=15000;
+const selecting=()=>{const g=window.getSelection&&window.getSelection();return !!(g&&!g.isCollapsed&&g.anchorNode&&$('body').contains(g.anchorNode))};
+const emptyCard=t=>card(`<div class="small">${t}</div>`);
 
 function toast(msg,bad){const t=$('toast');t.textContent=msg;t.className='toast'+(bad?' bad':'');t.hidden=false;
   clearTimeout(toast.h);toast.h=setTimeout(()=>t.hidden=true,bad?6000:3000)}
@@ -751,10 +977,12 @@ function carrySent(n,j,ask){const text=(j&&j.ask)||ask;if(n&&text)addSent(n,text
 const starting=n=>!!(S.sent[n]&&S.sent[n].start)&&!S.sent[n].pending.some(p=>p.state==='failed')&&!feedOf(n).some(e=>e.kind==='say'||e.kind==='tool');
 const startLine=n=>starting(n)?`<div class="think">${LOGO()}Starting the chat…</div>`:'';
 function sentDrop(n,id){const s=S.sent[n], p=s&&s.pending.find(x=>x.id===id);if(p){s.pending=s.pending.filter(x=>x!==p);if(p.first)s.start=false;keepSent()}return p}
+/* a message's words as a key: the same bubble while it is sending, sent and in the feed, so it comes in once */
+const tkey=t=>String(t||'').replace(/\s+/g,' ').trim().slice(0,120);
 function sentBubbles(n,shown){
   let h='';
   for(const p of (S.sent[n]&&S.sent[n].pending)||[]){const b=p.state==='failed', d=`data-n="${esc(n)}"`;
-    h+=`<div class="u pending${b?' failed':''}">${esc(shown(p.text))}${b?`<div class="small">Not delivered: it is not in ${esc(n)}'s chat</div><div class="btns"><button class="btn pri" data-sentretry="${esc(p.id)}" ${d}>Retry</button><button class="btn" data-sentdrop="${esc(p.id)}" ${d}>Discard</button></div>`:''}</div>`}
+    h+=`<div class="u pending${b?' failed':''}" data-k="s:${esc(p.id)}" data-t="${esc(tkey(shown(p.text)))}">${esc(shown(p.text))}${b?`<div class="small">Not delivered: it is not in ${esc(n)}'s chat</div><div class="btns"><button class="btn pri" data-sentretry="${esc(p.id)}" ${d}>Retry</button><button class="btn" data-sentdrop="${esc(p.id)}" ${d}>Discard</button></div>`:''}</div>`}
   return h;
 }
 /* take an action: drawn at once by the caller, kept in the outbox, sent behind */
@@ -782,16 +1010,22 @@ async function drain(){
 /* what the page does once the run answered an item */
 function obDone(it,j){
   const now=Date.now(), snapNow=()=>fetch(tq('snapshot')).then(s=>s.json()).then(takeSnap).catch(()=>{});
+  if(it.set&&!(j&&j.ok))delete S.f[`set:${it.name==='setting_project'?'project':'device'}:${it.set.id}`];  // the field shows what is kept again
   if(!j||!j.ok){toast(`Not sent: ${it.say}`,true);S.obOpen=true;if(it.need||it.concept)snapNow();return}
   if(it.newchat&&!j.name&&S.waitNew)S.waitNew.sent={j,ask:it.ask};  // B154: takeSnap finds its name
   if(it.newchat&&j.name){carrySent(j.name,j,it.ask);if(S.waitNew&&S.waitNew.ph==='@'+it.cid)S.waitNew=null;if(S.thread==='@'+it.cid)open(j.name)}
   else if(it.name==='chat_to'){const to=j.name||it.args.to;  // B154: c1 was not up: the new chat that took it
     addSent(to,it.args.text,j.at,j.name?{first:true}:{});if(to!==it.args.to&&S.thread===it.args.to)open(to)}
-  else if(it.need&&it.name==='answer'){toast(answerSaid(j,it.need,it.args.text));S.gone=goneMark(S.gone,j,now);snapNow()}
+  else if(it.need&&(it.name==='answer'||it.name==='need_drop')){toast(answerSaid(j,it.need,it.args.text));S.gone=goneMark(S.gone,j,now);snapNow()}
   else if(it.concept){S.gone={...(S.gone||{}),[it.concept]:now}}  // a picked concept stays off while the run catches up
   else if(it.name==='plan_add'&&it.args.kind==='K'){S.kSaid=`Queued ${queuedId(j.out)||'a new concept'}: a run writes its options page, and it shows here.`;toast(S.kSaid)}
+  else if(it.ren){const x=sessionOf(it.ren);if(x){x.title=it.args.title;x.renamed=true}}  // F129
+  else if(it.set){if(it.set.applies!=='now')S.setWait=true;delete S.f[`set:${it.name==='setting_project'?'project':'device'}:${it.set.id}`];loadSettings();toast(it.name==='setting_project'?`${queuedTask(j.out)} queued: the setting lands through the gate`:String(j.out||'Saved').split('\n')[0])}  // F97
+  else if(it.ctl){if(it.name==='run_control'&&it.args.key==='wip_show'){S.out={title:it.args.tid,text:String(j.out||'')};openSheet('out')}
+    else toast(String(j.out||'').split('\n')[0]||`${it.say}: done`)}  // F124: a run control
   if(it.done)toast(it.done);
 }
+const queuedTask=out=>((String(out||'').match(/\b[A-Z]+\d+[a-z]?\b/)||['A task'])[0]);
 /* the cards an item still sending stands in for stay off the lists */
 function obHide(){
   const ns=obHidden(S.ob,'need'), cs=obHidden(S.ob,'concept'), now=Date.now();
@@ -803,20 +1037,20 @@ const obState=x=>x.state==='failed'?`Not sent: ${x.err||'it did not work'}`:OB.o
 function obDraw(){
   const c=obCounts(S.ob), parts=obPill(c,OB.offline), bar=$('obbar'), pop=$('obpop');
   bar.hidden=!parts.length;
-  bar.innerHTML=parts.length?`<button class="obpill${c.failed?' bad':''}" data-obopen>${c.sending?'<span class="livedot"></span>':''}${parts.map(esc).join(' · ')}</button>`:'';
+  setHTML(bar,parts.length?`<button class="obpill${c.failed?' bad':''}" data-obopen>${c.sending?'<span class="livedot"></span>':''}${parts.map(esc).join(' · ')}</button>`:'');
   if(!S.ob.length)S.obOpen=false;
   pop.hidden=!S.obOpen;
-  pop.innerHTML=S.obOpen?`<div class="obcard" role="dialog" aria-label="Outbox"><div class="row"><b class="grow">Outbox</b><button class="btn" data-obclose>Close</button></div>
-    ${S.ob.map(x=>`<div class="obrow ${x.state}"><div class="grow"><div class="ell2">${esc(x.say)}</div><div class="small">${esc(obState(x))}</div></div><div class="btns">${obBtns(x)}</div></div>`).join('')}</div>`:'';
+  setHTML(pop,S.obOpen?`<div class="obcard" role="dialog" aria-label="Outbox"><div class="row"><b class="grow">Outbox</b><button class="btn" data-obclose>Close</button></div>
+    ${S.ob.map(x=>`<div class="obrow ${x.state}"><div class="grow"><div class="ell2">${esc(x.say)}</div><div class="small">${esc(obState(x))}</div></div><div class="btns">${obBtns(x)}</div></div>`).join('')}</div>`:'');
 }
 /* the stand-ins: a starting chat in the sidebar, a sent answer in Needs you, a queued concept, a message */
 function obChatRows(){return S.ob.filter(x=>x.newchat).map(x=>`<div class="crow"><button class="thread ${S.thread==='@'+x.cid?'on':''} ob ${x.state}" data-thread="@${esc(x.cid)}">${x.state==='failed'?'':'<span class="livedot"></span>'}<span class="t">${esc(x.say)} · ${x.state==='failed'?'did not start':'starting…'}</span></button></div>`).join('')}
-function obCards(key){return S.ob.filter(key).map(x=>card(`<div class="row obstand ${x.state}"><div class="grow"><div>${esc(x.say)}</div><div class="small">${esc(obState(x))}</div></div>${x.state==='failed'?`<div class="btns">${obBtns(x)}</div>`:''}</div>`)).join('')}
+function obCards(key){return S.ob.filter(key).map(x=>card(`<div class="row obstand ${x.state}">${x.state==='failed'?'':'<span class="livedot"></span>'}<div class="grow"><div>${esc(x.say)}</div><div class="small">${esc(obState(x))}</div></div>${x.state==='failed'?`<div class="btns">${obBtns(x)}</div>`:''}</div>`,'',`data-k="ob:${esc(x.cid)}" data-v="${x.state}"`)).join('')}
 function obBubbles(n){
   let h='';
   const up=n&&n[0]==='@'&&S.ob.find(x=>'@'+x.cid===n);
-  if(up&&up.ask)h+=`<div class="u pending ${up.state}">${esc(up.ask)}</div>`;  // B139: its first message
-  for(const x of S.ob)if(x.name==='chat_to'&&obTo(x)===n)h+=`<div class="u pending ${x.state}">${esc(x.args.text)}${x.state==='failed'?`<div class="small">${esc(obState(x))}</div><div class="btns">${obBtns(x)}</div>`:''}</div>`;
+  if(up&&up.ask)h+=`<div class="u pending ${up.state}" data-k="ob:${esc(up.cid)}" data-t="${esc(tkey(up.ask))}">${esc(up.ask)}</div>`;  // B139: its first message
+  for(const x of S.ob)if(x.name==='chat_to'&&obTo(x)===n)h+=`<div class="u pending ${x.state}" data-k="ob:${esc(x.cid)}" data-t="${esc(tkey(x.args.text))}">${esc(x.args.text)}${x.state==='failed'?`<div class="small">${esc(obState(x))}</div><div class="btns">${obBtns(x)}</div>`:''}</div>`;
   if(up)h+=`<div class="think">${LOGO()}${up.state==='failed'?esc(`The chat did not start: ${up.err}`):'Starting the chat… what you write goes once it is up'}</div>`;
   return h;
 }
@@ -841,6 +1075,7 @@ addEventListener('storage',e=>{if(e.key===OB_KEY){S.ob=obParse(e.newValue);rende
 const chatPins=()=>S.snap.chat_pins||[];
 const chats=()=>{const o=S.snap.chat_order||[], at=s=>{const i=o.indexOf(s.name);return i<0?chatPins().length-.5:i};
   return S.snap.sessions.filter(s=>/^c\d+$/.test(s.name)).map((s,k)=>[s,k]).sort((a,b)=>at(a[0])-at(b[0])||a[1]-b[1]).map(x=>x[0])};
+const chatNames=()=>{const g=shownChats();return g.top.concat(g.quiet).map(c=>c.name)};
 /* F133: keep a new chat order and pins: shown at once, then sent to the run so every page shows the same list */
 function saveChatOrder(order,pins){
   S.snap.chat_order=order;S.snap.chat_pins=pins;render(true);
@@ -850,7 +1085,22 @@ const slots=()=>S.snap.sessions.filter(s=>/^s\d+$/.test(s.name)||(!/^c\d+$/.test
 const working_=()=>slots().filter(s=>s.task);
 const sessionOf=n=>S.snap.sessions.find(s=>s.name===n);
 const isAgent=n=>!/^(c\d+|@.+)$/.test(n||'');  // F137: '@cid', a chat still starting, is a chat
-const threadTitle=n=>{if(String(n||'')[0]==='@'){const x=S.ob.find(y=>'@'+y.cid===n);return x?x.say:'New chat'}const s=sessionOf(n);if(!s)return n==='c1'?'Project chat':n;return isAgent(n)?(s.title||s.task||n):chatName(s)};
+/* F129: a chat's name, with a rename still on its way */
+const chatTitle=s=>{const x=S.ob.filter(y=>y.ren===s.name&&y.state==='sending').pop();return x?x.args.title:chatName(s)};
+/* F128: when the person last opened each chat (its last activity then, per browser); the first visit takes all as read */
+const SEEN_KEY='ar-seen';
+S.seen=(()=>{try{const o=JSON.parse(store.get(SEEN_KEY)||'null');return o&&typeof o==='object'?o:null}catch(e){return null}})();
+function markSeen(){
+  const rows=(S.snap.sessions||[]).filter(x=>/^c\d+$/.test(x.name)), first=!S.seen;
+  if(!rows.length||document.hidden)return;
+  const open=S.thread||(S.view==='talk'?talkName():'');let moved=first;
+  if(first)S.seen={};
+  for(const x of rows)if((first||x.name===open)&&x.at&&S.seen[x.name]!==x.at){S.seen[x.name]=x.at;moved=true}
+  if(moved)store.set(SEEN_KEY,JSON.stringify(S.seen));
+}
+const replyDue=s=>needsReply(s,(S.seen||{})[s.name])&&!(S.thread===s.name&&!s.needs_reply);
+const shownChats=()=>chatGroups(chats(),{pins:chatPins(),quiet:+S.snap.chat_quiet||0,now:Date.now()/1000,seen:S.seen||{},open:S.thread});
+const threadTitle=n=>{if(String(n||'')[0]==='@'){const x=S.ob.find(y=>'@'+y.cid===n);return x?x.say:'New chat'}const s=sessionOf(n);if(!s)return n==='c1'?'Project chat':n;return isAgent(n)?(s.title||s.task||n):chatTitle(s)};
 const upNext=()=>S.snap.queue.filter(q=>q.state!=='running'&&q.state!=='parked');
 const feedOf=n=>(S.feeds[n]||{}).entries||[];
 function lastWords(n){const e=feedOf(n).filter(x=>x.kind==='say');return e.length?plain(e[e.length-1].text):''}
@@ -878,26 +1128,29 @@ function md(src){
 /* --- drawing ----------------------------------------------------------------------------------------------- */
 let DR=null;  // F133: a chat row being dragged (its pointer, where it started, whether the drag is on)
 function side(){
-  if(DR&&DR.on)return;  // F133: a redraw would drop the row from under the finger
+  if(DR&&(DR.on||DR.ready&&DR.hold))return;  // F133: a redraw would drop the row from under the finger
   const nav=NAV;  // F93: Talk first
   const needs=S.snap.needs.length, use=usageOf(S.snap.status), cn=(S.snap.concepts||[]).length;
   const count={home:needs,concepts:cn};
   const cs=chats(), ws=working_();
   S.sel=S.sel.filter(n=>cs.some(c=>c.name===n));  // F118: a picked chat that ended elsewhere leaves the pick
   if(HOME_PAGE){  // F134: Home's own page: the switcher, All projects and this machine
-    $('side').innerHTML=`${switcher()}<div class="nav"><button class="ni on" data-view="projects">${I.home}All projects${homeNeeds()?`<span class="n">${homeNeeds()}</span>`:''}</button></div>
-     <div class="me"><div class="av">${esc((H.machine||'?').charAt(0).toUpperCase())}</div><div class="grow"><span class="ell">${esc(H.machine||'this machine')}</span><div class="sub">Runner Home</div></div></div>`;
+    sideHTML(`${switcher()}<div class="nav"><button class="ni on" data-view="projects">${I.home}All projects${homeNeeds()?`<span class="n">${homeNeeds()}</span>`:''}</button></div>
+     <div class="me"><div class="av">${esc((H.machine||'?').charAt(0).toUpperCase())}</div><div class="grow"><span class="ell">${esc(H.machine||'this machine')}</span><div class="sub">Runner Home</div></div></div>`);
     $('side').classList.toggle('open',S.drawer);$('scrim').classList.toggle('on',S.drawer);return;
   }
-  $('side').innerHTML=`${HB?switcher():brand()}
+  const g=shownChats(), due=needs||cn;S.menuDot=!!due;  // F128: the phone's menu button gets a dot
+  sideHTML(`${HB?switcher():brand()}
    <button class="newchat" data-new><span class="plus">${I.plus}</span>New chat</button>
    <div class="nav">${(HB?nav.concat([['projects','All projects']]):nav).map(([k,l])=>`<button class="ni ${!S.thread&&S.view===k?'on':''}" data-view="${k}">${I[k]}${l}${count[k]?`<span class="n">${count[k]}</span>`:''}</button>`).join('')}</div>
-   <div class="shead row"><span>Chats</span><button class="shadd" data-new aria-label="New chat" title="New chat">${I.plus}</button></div>${chatBar()}${cs.length?cs.map(chatRow).join(''):'<div class="none">No chats yet</div>'}${obChatRows()}
+   <div class="shead row"><span>Chats</span><button class="shadd" data-new aria-label="New chat" title="New chat">${I.plus}</button></div>${chatBar()}${cs.length?g.top.map(x=>chatRow(x)).join('')+obChatRows()+(g.quiet.length?'<div class="qline">Quiet</div>'+g.quiet.map(x=>chatRow(x,true)).join(''):''):'<div class="none">No chats yet</div>'+obChatRows()}
    <div class="shead">Agents working</div>${ws.length?ws.map(s=>`<button class="thread ${S.thread===s.name?'on':''}" data-thread="${esc(s.name)}"><span class="livedot"></span><span class="t">${esc(s.title||s.task)}</span></button>`).join(''):'<div class="none">None right now</div>'}
    <div class="me"><div class="av">${esc((S.snap.machine||'?').charAt(0).toUpperCase())}</div><div class="grow"><span class="ell">${esc(S.snap.machine||'this machine')}</span><div class="sub">${S.snap.up===false?'no run is up':`${S.snap.slots||0} slot${S.snap.slots===1?'':'s'}`}${use?` · usage ${esc(use)}`:''}</div></div></div>
-   <a class="viewsw" href="term${esc(location.search)}" data-viewsw="terminal" title="The terminal-style page; this browser remembers the choice">${I.term}Terminal view</a>`;
+   <a class="viewsw" href="term${esc(location.search)}" data-viewsw="terminal" title="The terminal-style page; this browser remembers the choice">${I.term}Terminal view</a>`);
   $('side').classList.toggle('open',S.drawer);$('scrim').classList.toggle('on',S.drawer);
 }
+/* the sidebar drawn again only when it changed, its scroll and a name being typed kept */
+function sideHTML(h){const el=$('side'), put=keepScroll(el), f=keepFields(el);if(setHTML(el,h)){f();put();const t=el.querySelector('[data-f="ren"]');if(t&&S.renFocus){S.renFocus=false;t.focus();t.select()}}}
 /* --- F134: Runner Home in the app: the switcher, All projects, Devices ------------------------------------ */
 const homeNeeds=()=>(H.projects||[]).reduce((n,p)=>n+(p.needs||0),0);
 /* B153: the run's own page top-left: the project's name, a link to Runner Home when it is installed */
@@ -954,13 +1207,23 @@ async function homePost(path,body){
   H.busy=false;loadProjects();
 }
 /* F118: a chat row: its delete button (none for c1), dimmed with Undo in that spot once deleted; the Delete N bar */
-function chatRow(s){
+function chatRow(s,quiet){
   const n=s.name,u=S.undo,gone=!!(u&&u.names.includes(n)),cls=[S.thread===n&&!gone?'on':'',S.sel.includes(n)?'sel':'',gone?'gone':''].join(' ');
-  const row=`<button class="thread ${cls}" ${gone?'':`data-thread="${esc(n)}"`}>${s.state==='live'?'':'<span class="off" title="not running"></span>'}<span class="t">${esc(chatName(s))}</span></button>`;
+  if(S.ren&&S.ren===n)return `<form class="renform" data-renform><input data-f="ren" aria-label="The chat's name" maxlength="80" autocomplete="off"></form>`;  // F129
+  const due=!gone&&replyDue(s);  // F128
+  const row=`<button class="thread ${cls}" ${gone?'':`data-thread="${esc(n)}" title="Double-click to rename"`}>${s.state==='live'?'':'<span class="off" title="not running"></span>'}<span class="t">${esc(chatTitle(s))}</span>${due?'<span class="bdot" role="img" aria-label="needs your reply" title="needs your reply"></span>':''}</button>`;
   const btn=gone?(u.bar?'':`<button class="del undo" data-undo>Undo</button>`):
     n==='c1'?'':`<button class="del" data-del="${esc(n)}" aria-label="Delete this chat" title="Delete this chat">${I.trash}</button>`;
   const pinned=chatPins().includes(n), pin=gone?'':`<button class="pin${pinned?' on':''}" data-pin="${esc(n)}" aria-pressed="${pinned}" aria-label="${pinned?'Unpin':'Pin'} this chat" title="${pinned?'Unpin':'Pin'} this chat">${I.pin}</button>`;
-  return `<div class="crow" ${gone?'':`data-crow="${esc(n)}"`}>${row}${pin}${btn}</div>`;
+  const menu=gone?'':`<button class="rowmenu" data-rowmenu="${esc(n)}" aria-label="More for this chat">${I.dots}</button>`;
+  return `<div class="crow${quiet?' quiet':''}${pinned?' pinned':''}" ${gone?'':`data-crow="${esc(n)}"`}>${row}${pin}${btn}${menu}</div>`;
+}
+/* F129: Rename, in the row itself: Enter keeps it, Esc does not */
+function startRename(n){const x=sessionOf(n);if(!x)return;S.ren=n;S.f.ren=chatTitle(x);if(drawerOn())S.drawer=true;S.renFocus=true;render(true)}
+function saveRename(){
+  const n=S.ren, title=String(S.f.ren||'').replace(/\s+/g,' ').trim(), x=sessionOf(n);S.ren=null;
+  if(x&&title&&title!==chatTitle(x))outbox('rename_chat',{chat:n,title},{ren:n,say:`Rename ${chatTitle(x)} to “${title}”`});
+  else render(true);
 }
 function chatBar(){
   if(S.undo&&S.undo.bar)return `<div class="selbar"><span>Deleted ${S.undo.names.length} chats</span><button class="btn" data-undo>Undo</button></div>`;
@@ -976,40 +1239,64 @@ function finalDelete(){
   render(true);
 }
 const card=(h,cls='',attr='')=>`<div class="card ${cls}" ${attr}>${h}</div>`;
-function agentCard(s,withControls){
+function agentCard(s){
   if(!s.task)return card(`<div class="row"><div class="who">${esc(s.name)}</div><div class="grow"><b>Idle</b><div class="small">Nothing it can start right now</div></div></div>`);
   const w=lastWords(s.name);
-  const tc=withControls&&taskControlsOn(s)?controlsOf('task'):[];
-  return card(`<div class="row"><div class="who">${esc(s.name)}</div><div class="grow"><b class="ell">${esc(s.title||s.task)}</b><span class="status"><span class="livedot"></span>${s.state==='merging'?'Landing':'Working'}${s.minutes!=null?` · ${s.minutes} min`:''}</span></div><span class="chev">${I.chev}</span></div>${w?`<div class="quote">${esc(w)}</div>`:''}${tc.length?`<div class="btns">${tc.map(c=>`<button class="btn" data-ctl="${esc(c.key)}" data-tid="${esc(s.task)}">${esc(c.label)}</button>`).join('')}</div>`:''}`,'tap',`tabindex="0" data-thread="${esc(s.name)}"`);
+  return card(`<div class="row"><div class="who">${esc(s.name)}</div><div class="grow"><b class="ell">${esc(s.title||s.task)}</b><span class="status"><span class="livedot"></span>${s.state==='merging'?'Landing':'Working'}${s.minutes!=null?` · ${s.minutes} min`:''}</span></div><span class="chev">${I.chev}</span></div>${w?`<div class="quote">${esc(w)}</div>`:''}`,'tap',`tabindex="0" data-thread="${esc(s.name)}" data-k="slot:${esc(s.name)}:${esc(s.task)}" data-v="${esc(s.state)}"`);
 }
-/* F82: the run controls, from the snapshot's one list (ui_model.RUN_CONTROLS); stop now asks here first */
+/* F82: the run controls, from the snapshot's one list (ui_model.RUN_CONTROLS); F124: the everyday ones on the Run card,
+   the rest in the More… sheet; one with a confirm question asks in place first */
 const controlsOf=w=>(S.snap.controls||[]).filter(c=>c.where===w);
 const controlOf=k=>(S.snap.controls||[]).find(c=>c.key===k);
+const ctlBusy=(k,tid)=>S.ob.some(x=>x.ctl===k+':'+(tid||'')&&x.state==='sending');
+/* a confirm, asked where the control stands (docs/STYLE.md): attr, the Yes button's own data- attributes */
+const sureHTML=(q,yes,attr)=>`<div class="sure" data-k="sure" role="group"><div class="small">${esc(q)}</div><div class="btns"><button class="btn bad" ${attr} data-sure>Yes, ${esc(yes)}</button><button class="btn" data-unsure>No</button></div></div>`;
+/* what a control would cut off: each slot's task and how long it has run (stop now, suspend, shut down) */
+function cutsOff(c){
+  if(!['stop_now','suspend','shutdown'].includes(c.key)||c.key===(S.snap.run||{}).power)return '';
+  const ws=working_();return ws.length?`Cuts off ${ws.map(w=>`${w.task} in ${w.name}${w.minutes!=null?` (${w.minutes} min in)`:''}`).join(', ')}. `:'';
+}
+const ctlSure=(c,tid)=>sureHTML(cutsOff(c)+c.confirm,c.label.charAt(0).toLowerCase()+c.label.slice(1),`data-ctl="${esc(c.key)}" data-tid="${esc(tid||'')}"`);
+function slotRow(s){
+  if(!s.task)return `<div class="srow" data-k="slot:${esc(s.name)}:"><div class="row"><div class="who">${esc(s.name)}</div><div class="grow small">Idle: nothing it can start right now</div></div></div>`;
+  const w=lastWords(s.name), tc=taskControlsOn(s)?controlsOf('task'):[];
+  return `<div class="srow" data-k="slot:${esc(s.name)}:${esc(s.task)}"><button class="fold" data-thread="${esc(s.name)}"><span class="who">${esc(s.name)}</span><span class="grow"><b class="ell">${esc(s.title||s.task)}</b><span class="status" data-k="st:${esc(s.name)}" data-v="${esc(s.state)}"><span class="livedot"></span>${s.state==='merging'?'Landing':'Working'}${s.minutes!=null?` · ${s.minutes} min`:''}</span></span><span class="chev">${I.chev}</span></button>${w?`<div class="quote">${esc(w)}</div>`:''}${tc.length?`<div class="btns">${tc.map(c=>`<button class="btn${ctlBusy(c.key,s.task)?' busy':''}" data-ctl="${esc(c.key)}" data-tid="${esc(s.task)}">${esc(c.label)}</button>`).join('')}</div>`:''}</div>`;
+}
+/* Run controls: the Run card */
 function controlsCard(){
-  if(!controlsOf('run').length)return '';
-  const run=S.snap.run||{}, b=(k,cls='')=>{const c=controlOf(k);return c?`<button class="btn ${cls}" data-ctl="${esc(k)}">${esc(c.label)}</button>`:''};
-  const said=S.snap.up===false?'No run is up.':[run.paused?'Paused':'',run.stopping?'Stopping: the running tasks finish, nothing new starts':''].filter(Boolean).join(' · ')||`Running · ${S.snap.slots||0} slot${S.snap.slots===1?'':'s'}`;
-  const sure=S.sure&&controlOf(S.sure);
-  return card(`<div class="row"><div class="grow"><b>Run controls</b><div class="small">${esc(said)}</div></div></div>
-    <div class="btns">${b('slot_remove')}${b('slot_add')}<span class="slotsn"><input type="number" min="0" max="99" inputmode="numeric" data-slots-n aria-label="Slots" placeholder="N" value="${esc(S.slotsN||'')}">${b('slots_set')}</span></div>
-    <div class="btns">${run.paused?b('go_on','acc'):b('pause')}${b('force')}${b('caps_on')}</div>
-    <div class="btns">${run.stopping?b('stop_undo','acc'):b('stop')}${b('stop_now')}</div>
-    ${sure?`<div class="sure"><div class="small">${esc(sure.confirm)}</div><div class="btns"><button class="btn bad" data-ctl="${esc(sure.key)}" data-sure>Yes, ${esc(sure.label.toLowerCase())}</button><button class="btn" data-unsure>No</button></div></div>`:''}`);
+  const run=S.snap.run||{}, up=S.snap.up!==false, ss=slots();
+  const said=!up?'No run is up.':[run.paused?'Paused: no new tasks start':'',run.stopping?'Stopping: the running tasks finish, nothing new starts':'',run.forced?'Usage caps off':'',run.power?`${run.power==='suspend'?'Suspends':'Shuts down'} once it stops`:''].filter(Boolean).join(' · ')||'Running';
+  const b=cardControls(S.snap).map(k=>{const c=controlOf(k);return c?`<button class="btn ${k==='start'||k==='go_on'||k==='stop_undo'?'acc':''}${ctlBusy(k)?' busy':''}" data-ctl="${esc(k)}">${esc(k==='stop'?'Stop':c.label)}</button>`:''}).join('');
+  return card(`<div class="row"><div class="grow"><b>Run</b><div class="small" data-k="runsaid" data-v="${esc(said)}">${esc(said)}</div></div><span class="small">${up?`${working_().length} of ${S.snap.slots||0} slot${S.snap.slots===1?'':'s'}`:''}</span></div>
+    ${ss.map(slotRow).join('')}
+    ${obCards(x=>x.ctl)}${controlsOf('run').length?`<div class="btns tight" role="group" aria-label="Run controls">${b}<button class="btn" data-sheet="run">More…</button></div>`:''}`,'','data-k="run"');
 }
 function needCard(n,i){
   const os=answerOpts(n);
   return card(`${needAsk(n,i,!!(S.askOpen||{})[n.id])}<div class="small ell">${esc(n.id)}${n.title?` · ${esc(n.title)}`:''}${n.age?` · ${esc(n.age)}`:''}</div>
-    <div class="btns">${os.map((o,j)=>`<button class="btn ${j===0?'pri':''}" data-ans="${i}" data-v="${esc(o)}">${esc(o)}</button>`).join('')}<button class="btn" data-later="${i}">Later</button><button class="btn" data-about="need:${i}">Chat</button>${n.url?`<a class="btn" href="${esc(n.url)}" target="_blank" rel="noopener">Open ${I.ext}</a>`:''}</div>`,'need');
+    <div class="btns">${os.map((o,j)=>`<button class="btn ${j===0?'pri':''}" data-ans="${i}" data-v="${esc(o)}">${esc(o)}</button>`).join('')}<button class="btn" data-later="${i}">Later</button><button class="btn" data-needchat="${i}" title="A new chat that shows the question">Chat</button>${n.url?`<a class="btn" href="${esc(n.url)}" target="_blank" rel="noopener">Open ${I.ext}</a>`:''}<button class="btn" data-needdrop="${i}">Drop</button></div>${S.sure==='need:'+n.id?sureHTML(`Drop ${n.id}? It leaves the plan, and its work is not done.`,'drop it',`data-needdrop="${i}"`):''}`,'need',`data-k="need:${esc(n.id)}"`);
+}
+/* F85: a task's row: one line; a tap folds its whole text (plan ID) open in place */
+function taskRow(q,title){
+  const open=!!S.taskOpen[q.id], t=S.tasks[q.id];
+  return `<button class="fold" data-task="${esc(q.id)}" aria-expanded="${open}"><span class="grow"><b class="ell">${esc(title)}</b><span class="small" data-k="state:${esc(q.id)}" data-v="${esc(q.state||'')}">${esc(q.id)} · ${esc(planWords(q,S.snap.sessions))}</span></span><span class="chev">${I.chev}</span></button>${open?(t&&t.text?`<pre class="tasktext" data-k="text:${esc(q.id)}">${esc(t.text)}</pre>`:t&&t.err?`<div class="small v-bad">${esc(t.err)}</div>`:'<div class="small">Loading…</div>'):''}`;
+}
+async function openTask(id){
+  S.taskOpen[id]=!S.taskOpen[id];render(true);
+  if(!S.taskOpen[id])return;
+  try{const j=await (await fetch(tq('task/'+encodeURIComponent(id)))).json();S.tasks[id]=j.ok?{text:j.text}:{err:j.out||'It could not be read'}}
+  catch(e){if(!S.tasks[id])S.tasks[id]={err:'Could not reach the run page: fold it and open it again'}}
+  render(true);
 }
 function planCard(q){
-  return card(`<div class="row"><div class="grow"><b class="ell">${esc((q.release&&q.release.title)||q.title||q.id)}</b><span class="small">${esc(q.id)} · ${esc(planWords(q,S.snap.sessions))}</span></div><span class="chev">${I.chev}</span></div>`,'tap',`tabindex="0" data-about="plan:${esc(q.id)}"`);
+  return card(`${taskRow(q,(q.release&&q.release.title)||q.title||q.id)}${S.taskOpen[q.id]?`<div class="btns"><button class="btn" data-about="plan:${esc(q.id)}">Chat</button></div>`:''}`,'',`data-k="task:${esc(q.id)}"`);
 }
 function nextReleaseCard(r){  // F131: no release queued yet: the auto release's count, dimmed, not a task
   return card(`<div class="row"><div class="grow"><b class="ell">${esc(r.title||'Next release')}</b><span class="small">${esc(r.words||'')}</span></div></div>`,'relph');
 }
 function parkedCard(q){  // B118: a parked task: Unpark (plan edit ID --pri normal) and the usual chat about it
-  return card(`<div class="row"><div class="grow"><b class="ell">${esc(q.title||q.id)}</b><span class="small">${esc(q.id)} · ${esc(planWords(q,S.snap.sessions))}</span></div></div>
-    <div class="btns"><button class="btn" data-unpark="${esc(q.id)}">Unpark</button><button class="btn" data-about="plan:${esc(q.id)}">Chat</button></div>`);
+  return card(`${taskRow(q,q.title||q.id)}
+    <div class="btns"><button class="btn" data-unpark="${esc(q.id)}">Unpark</button><button class="btn" data-about="plan:${esc(q.id)}">Chat</button></div>`,'',`data-k="task:${esc(q.id)}"`);
 }
 function conceptCard(c,i){
   const os=c.options||[], view=c.copy?tq('concept/'+encodeURIComponent(c.concept||c.id)):c.url;
@@ -1018,7 +1305,7 @@ function conceptCard(c,i){
     :x.cchat?`<button class="btn" data-cchat="${i}" title="A new chat about this concept">New chat</button>`
     :`<a class="btn" href="${esc(view)}" target="_blank" rel="noopener">View ${I.ext}</a>`;
   return card(`<div class="q">${esc(c.title||c.concept)}</div><span class="small">${esc(c.concept||c.id)}${os.length?` · ${os.length} options${os.some(o=>o.rec)?` · recommends ${esc(optionName(os.find(o=>o.rec)))}`:''}`:''}</span>
-    <div class="btns">${conceptButtons(c).map(b).join('')}</div>`);
+    <div class="btns">${conceptButtons(c).map(b).join('')}</div>`,'',`data-k="concept:${esc(c.id)}"`);
 }
 function box(ph,foot){
   const a=S.atts, shownNow=shownSession(), busyNow=!!shownNow&&busy(shownNow);
@@ -1026,21 +1313,24 @@ function box(ph,foot){
     ${a.length?`<div class="atts">${a.map((f,i)=>`<span class="att ${f.path?'':f.err?'err':'up'}" title="${esc(f.err||f.path||'uploading…')}">${f.thumb?`<img src="${f.thumb}" alt="">`:`<span class="fi">${I.file}</span>`}<span class="nm">${esc(f.name)}</span><button type="button" class="x" data-unatt="${i}" aria-label="Remove">✕</button></span>`).join('')}</div>`:''}
     <div class="slash" data-slash role="listbox" aria-label="Commands" hidden></div>
     <div class="inrow"><span class="pr" aria-hidden="true">&gt;</span><textarea rows="1" data-in placeholder="${esc(ph)}" aria-label="Message"></textarea></div>
-    <div class="boxrow"><button type="button" class="tool" data-clip aria-label="Attach pictures or files">${I.clip}</button>${S.view==='talk'&&!S.thread?'':dictButton(dictWhy(),!!DK.rec,I.talk)}<span class="to">${esc(S.ctx?'to a new chat':S.thread?S.thread:S.view==='talk'?'to Talk':'to c1')}</span>${busyNow?`<button type="button" class="send stop" data-stop="${esc(shownNow)}" aria-label="Interrupt">${I.stop}</button>`:''}<button class="send" aria-label="Send">${I.up}</button></div></form>${foot?`<div class="foot">${foot}</div>`:''}`;
+    <div class="boxrow"><button type="button" class="tool" data-clip aria-label="Attach pictures or files" title="Attach pictures or files">${I.clip}</button>${S.view==='talk'&&!S.thread?(micWhy()?'':`<button type="button" class="tool" data-talkmode="mic" aria-label="Talk instead" title="Talk instead">${I.talk}</button>`):dictButton(dictWhy(),!!DK.rec,I.talk)}<span class="to">${esc(S.ctx?'to a new chat':S.thread?S.thread:S.view==='talk'?'to Talk':'to c1')}</span>${busyNow?`<button type="button" class="send stop" data-stop="${esc(shownNow)}" aria-label="Interrupt">${I.stop}</button>`:''}<button class="send" aria-label="Send">${I.up}</button></div></form>${foot?`<div class="foot">${foot}</div>`:''}`;
 }
 function convo(n,shown){  // F93: shown, how a message of yours shows (Talk: without its brief or reminder)
-  shown=shown||(t=>t);
+  const talk=!!shown;shown=shown||(t=>t);
   const f=S.feeds[n], agent=isAgent(n), title=threadTitle(n);
   if(!f)return `<div class="msgs">${String(n||'')[0]==='@'?'':'<div class="think">'+LOGO()+'Loading…</div>'}${sentBubbles(n,shown)}${startLine(n)}${obBubbles(n)}</div>`;  // F137
   const ms=threadMsgs(f.entries);
-  let h=f.more?'<div class="more">Older messages are on its session page.</div>':'';
+  let h=f.more?'<div class="older">Older messages are on its session page.</div>':'';
   if(!ms.length)h+=`<div class="small" style="text-align:center">${esc(f.out||'Nothing said here yet.')}</div>`;
   ms.forEach((m,i)=>{
-    if(m.w==='u'){h+=`<div class="u">${esc(shown(m.text))}</div>`;return}
+    const mk=esc(m.k||n+':'+i);
+    if(m.w==='u'){h+=`<div class="u" data-k="${mk}" data-t="${esc(tkey(shown(m.text)))}">${esc(shown(m.text))}</div>`;return}
     const lead=i===0||ms[i-1].w!=='a'?`<div class="lead">${agent?`<span class="logo">${esc(n)}</span>`:LOGO()}${esc(agent?title:PN())}</div>`:'';
-    const k=n+':'+i, open=S.openSteps[k];
-    const st=m.steps.length?`<button class="steps ${open?'open':''}" data-steps="${esc(k)}">${I.chev}Ran ${m.steps.length} step${m.steps.length>1?'s':''}</button>${open?`<div class="stepbox">${m.steps.map(s=>(s.tool?`<span class="tl">${esc(s.tool)}</span>`:'')+(s.out?`\n<span class="o">  ⎿ ${esc(s.out).replace(/\n/g,'\n    ')}</span>`:'')).join('\n')}</div>`:''}`:'';  // F115: tool lines as in the terminal
-    h+=`<div class="a">${lead}${st}${m.text?`<div class="say">${md(m.text)}</div>`:''}</div>`;
+    const k=m.k||n+':'+i, open=S.openSteps[k];
+    const st=m.steps.length?`<button class="steps ${open?'open':''}" data-steps="${esc(k)}" aria-expanded="${!!open}">${I.chev}Ran ${m.steps.length} step${m.steps.length>1?'s':''}</button>${open?`<div class="stepbox">${m.steps.map(s=>(s.tool?`<span class="tl">${esc(s.tool)}</span>`:'')+(s.out?`\n<span class="o">  ⎿ ${esc(s.out).replace(/\n/g,'\n    ')}</span>`:'')).join('\n')}</div>`:''}`:'';  // F115: tool lines as in the terminal
+    const on=TK.playing===k;  // F124: a Talk reply's play button
+    const play=talk&&m.text?`<button type="button" class="speakb${on?' on':''}" data-speak="${esc(k)}" aria-pressed="${on}" aria-label="${on?'Stop reading':'Read this reply aloud'}" title="${on?'Stop reading':'Read this reply aloud'}">${on?I.stop:I.speak}</button>`:'';
+    h+=`<div class="a" data-k="${mk}">${lead}${st}${m.text?`<div class="say" data-k="say:${mk}">${md(m.text)}</div>`:''}${play}</div>`;
   });
   h+=sentBubbles(n,shown);  // B154
   h+=obBubbles(n);  // F137: messages still in the outbox
@@ -1050,26 +1340,120 @@ function convo(n,shown){  // F93: shown, how a message of yours shows (Talk: wit
 }
 const greeting=()=>{const h=new Date().getHours();return h<12?'Good morning':h<18?'Good afternoon':'Good evening'};
 function homeHTML(){
-  const ws=working_(), nx=upNext().slice(0,3), rel=S.snap.release||'';
+  const ws=working_(), nx=upNext().slice(0,3);
   return `<div class="col"><div class="greet">${LOGO()}${greeting()}</div>${box('How can I help with the run?',keysLine())}${ttydLine()}
     <div class="chips"><button class="chip" data-quick="since">${I.clock}Since my last look</button><button class="chip" data-quick="needs">${I.ask}What needs me</button><button class="chip" data-about="new">${I.plus}Add a task</button></div>
-    <div class="sec">Needs you<span class="ln"></span></div>${obCards(x=>x.need)}${S.snap.needs.length?S.snap.needs.map(needCard).join(''):card(`<div class="row"><div class="who">${I.check}</div><div><b>Nothing needs you</b><div class="small">It shows here when something does.</div></div></div>`)}
-    <div class="sec">Working now<span class="ln"></span></div>${ws.length?`<div class="grid2">${ws.map(agentCard).join('')}</div>`:card(`<div class="small">${S.snap.up===false?'No run is up.':'No agent is working right now.'}</div>`)}
-    <div class="sec">Up next<span class="ln"></span></div>${nx.length?nx.map(planCard).join(''):card('<div class="small">The queue is empty.</div>')}
-    ${obCards(x=>x.name==='release')}${card(`<div class="row"><div class="grow"><b>Release</b><div class="small">${esc(rel||(ws.length?`Waits for the ${ws.length} task${ws.length>1?'s':''} still working.`:'Releases what has landed.'))}</div></div></div><div class="btns">${ws.length?`<button class="btn acc" data-rel="wait">Release when they land</button>`:''}<button class="btn ${ws.length?'':'acc'}" data-rel="now">Release now</button></div>`)}</div>`;
+    ${needsSec()}
+    <div class="sec">Working now<span class="ln"></span></div>${ws.length?`<div class="grid2">${ws.map(agentCard).join('')}</div>`:emptyCard(S.snap.up===false?'No run is up.':'No agent is working right now.')}
+    <div class="sec">Up next<span class="ln"></span></div>${nx.length?nx.map(planCard).join(''):emptyCard('The queue is empty.')}
+    ${relCard()}</div>`;
 }
 /* B120: without ttyd, one line says the terminal tab (the real session) needs it, with this machine's install command */
 const ttydLine=()=>S.snap.terminal_mode==='install'?`<div class="small ttyd" data-ttyd>The terminal tab (the real session) needs ttyd: ${S.snap.ttyd_install?`install it with <code>${esc(S.snap.ttyd_install)}</code>`:'install your platform\'s ttyd package'}.</div>`:'';
-function agentsHTML(){const ss=slots();return `<div class="col">${ttydLine()}${controlsCard()}${ss.length?ss.map(s=>agentCard(s,true)).join(''):card(`<div class="small">${S.snap.up===false?'No run is up, so no agent is working.':'No slots yet.'}</div>`)}</div>`}
-function activityHTML(){
-  const log=(S.snap.log||[]).slice().reverse();
-  return `<div class="col"><div class="chips" style="justify-content:flex-start"><button class="chip" data-quick="since">${I.clock}Since my last look</button><button class="chip" data-quick="yesterday">${I.clock}Since yesterday</button></div>
-    ${log.length?log.map(l=>{const k=logKind(l);return `<div class="ev"><span class="ic ${k}">${I[LOGLINE_ICON[k]]}</span><div class="txt">${esc(l)}</div></div>`}).join(''):card('<div class="small">Nothing in the run log yet.</div>')}</div>`;
+const needsSec=()=>`<div class="sec">Needs you<span class="ln"></span></div>${obCards(x=>x.need)}${S.snap.needs.length?S.snap.needs.map(needCard).join(''):card(`<div class="row"><div class="who">${I.check}</div><div><b>Nothing needs you</b><div class="small">It shows here when something does.</div></div></div>`,'','data-k="noneed"')}`;
+function relCard(){const ws=working_(), rel=S.snap.release||'';
+  return obCards(x=>x.name==='release')+card(`<div class="row"><div class="grow"><b>Release</b><div class="small">${esc(rel||(ws.length?`Waits for the ${ws.length} task${ws.length>1?'s':''} still working.`:'Releases what has landed.'))}</div></div></div><div class="btns">${ws.length?`<button class="btn acc" data-rel="wait">Release when they land</button>`:''}<button class="btn ${ws.length?'':'acc'}" data-rel="now">Release now</button></div>`,'','data-k="release"')}
+/* F124: the Status view: one scroll in the TUI's order: needs you, the run (its slots and controls), usage, landed
+   lately, the release, then the run log */
+const agoWords=at=>{const m=Math.max(0,Math.round((Date.now()-new Date(at).getTime())/60000));return isNaN(m)?'':m<1?'now':m<60?`${m} min`:m<48*60?`${Math.floor(m/60)} h`:`${Math.floor(m/1440)} d`};
+function statusHTML(){
+  const log=(S.snap.log||[]).slice().reverse(), use=S.snap.usage||[], late=S.snap.lately||[];
+  return `<div class="col">${ttydLine()}${needsSec()}
+    <div class="sec">Run<span class="ln"></span></div>${controlsCard()}
+    <div class="sec">Usage<span class="ln"></span></div>${use.length?card(use.map(u=>meterHTML({name:u.name,pct:u.pct,said:u.pct+'%'})).join(''),'','data-k="usage"'):emptyCard('No usage read yet.')}
+    <div class="sec">Landed lately<span class="ln"></span></div>${late.length?card(late.map(l=>`<div class="lrow" data-k="late:${esc(l.at+l.text)}"><span>${esc(l.text)}</span><span class="small">${esc(agoWords(l.at))}</span></div>`).join(''),'','data-k="late"'):emptyCard('Nothing has landed yet.')}
+    <div class="sec">Release<span class="ln"></span></div>${relCard()}
+    <div class="sec">Run log<span class="ln"></span></div><div class="chips" style="justify-content:flex-start"><button class="chip" data-quick="since">${I.clock}Since my last look</button><button class="chip" data-quick="yesterday">${I.clock}Since yesterday</button></div>
+    ${log.length?log.map(l=>{const k=logKind(l);return `<div class="ev" data-k="log:${esc(l)}"><span class="ic ${k}">${I[LOGLINE_ICON[k]]}</span><div class="txt">${esc(l)}</div></div>`}).join(''):emptyCard('Nothing in the run log yet.')}</div>`;
+}
+/* --- F124: the sheet: one panel of more choices over the view (docs/STYLE.md) -------------------------------- */
+const SHEETS={
+  run(){  // More…: Stop, Run, Fix up, each with its key in agent-runner ui
+    const gs=controlGroups(S.snap);
+    return `<h2>Run</h2>${obCards(x=>x.ctl)}${gs.map(g=>`<div class="sec">${g.group}<span class="ln"></span></div>${g.items.map(({c,label,choices})=>{
+      const bad=c.key==='stop_now'||c.key==='wip_drop', busy=ctlBusy(c.key)?' busy':'';
+      if(c.needs==='n')return `<div class="it setrow"><span class="slotsn"><input type="number" min="1" max="99" inputmode="numeric" data-slots-n data-f="slotsn" aria-label="Slots" placeholder="N"><button class="btn${busy}" data-ctl="${esc(c.key)}">${esc(label)}</button></span><span class="k">${esc(c.tui)}</span></div>`;
+      if(c.fix&&!c.each){const on=S.fixOpen===c.key;
+        return `<button class="it${bad?' bad':''}" data-fix="${esc(c.key)}" aria-expanded="${on}"><span>${esc(label)}${on?'':'…'}</span><span class="k">${esc(c.tui)}</span></button>${on?choices.map(x=>S.sure===c.key+':'+x.id?ctlSure(c,x.id):`<div class="it setrow"><span class="grow"><span class="ell">${esc(x.label)}</span><span class="small">${esc(x.id)}</span></span><button class="btn${ctlBusy(c.key,x.id)?' busy':''}" data-ctl="${esc(c.key)}" data-tid="${esc(x.id)}">${esc({resume:'Resume',wip_show:'Show',wip_restore:'Restore',wip_drop:'Drop'}[c.key]||c.label)}</button></div>`).join(''):''}`}
+      return S.sure===c.key?ctlSure(c):`<button class="it${bad?' bad':''}${busy}" data-ctl="${esc(c.key)}"><span>${esc(label)}</span><span class="k">${esc(c.tui)}</span></button>`;
+    }).join('')}`).join('')||'<div class="small">Nothing to do here right now.</div>'}`;
+  },
+  out(){return `<h2>${esc((S.out||{}).title||'')}</h2><pre class="out">${esc((S.out||{}).text||'')}</pre><div class="btns"><button class="btn" data-closesheet>Close</button></div>`},
+  chat(){  // a chat row's menu, on touch
+    const x=sessionOf(S.sheetArg), n=S.sheetArg;if(!x)return '<div class="small">That chat has ended.</div>';
+    const pinned=chatPins().includes(n);
+    return `<h2>${esc(chatTitle(x))}</h2><button class="it" data-ren="${esc(n)}"><span>Rename</span>${I.edit}</button><button class="it" data-pin="${esc(n)}"><span>${pinned?'Unpin':'Pin'}</span>${I.pin}</button>${n==='c1'?'':`<button class="it bad" data-del="${esc(n)}"><span>Delete</span>${I.trash}</button>`}`;
+  },
+  talk(){  // Talk's settings
+    const vs=voices(), t=TS;
+    return `<h2>Talk settings</h2>
+      <label class="it setrow"><span class="grow">Read replies aloud</span><input type="checkbox" role="switch" class="sw" data-ts="read" ${t.read?'checked':''}></label>
+      <label class="it setrow"><span class="grow">Voice</span><select class="fld" data-ts="voice"><option value="">System voice</option>${vs.map(v=>`<option value="${esc(v.name)}" ${t.voice===v.name?'selected':''}>${esc(v.name)}${v.lang?` (${esc(v.lang)})`:''}</option>`).join('')}</select></label>
+      <label class="it setrow"><span class="grow">Mic</span><select class="fld" data-ts="mic"><option value="tap" ${t.mic==='tap'?'selected':''}>Tap to start and stop</option><option value="hold" ${t.mic==='hold'?'selected':''}>Hold to talk</option></select></label>
+      <label class="it setrow"><span class="grow">Auto listen<span class="small" style="display:block">Listens again once a reply was read; stops after one silent turn.</span></span><input type="checkbox" role="switch" class="sw" data-ts="auto" ${t.auto?'checked':''}></label>
+      <div class="btns"><button class="btn" data-closesheet>Done</button></div>`;
+  },
+};
+let sheetBack=null;
+function openSheet(name,arg){S.sheet=name;S.sheetArg=arg||'';S.sure=null;S.fixOpen='';S.drawer=false;sheetBack=document.activeElement;render(true);$('sheet').scrollTop=0;$('sheet').focus({preventScroll:true})}
+function closeSheet(){if(!S.sheet)return;S.sheet='';S.sure=null;render(true);if(sheetBack&&sheetBack.isConnected&&sheetBack.focus)sheetBack.focus({preventScroll:true});sheetBack=null}
+function sheetDraw(){
+  const el=$('sheet');
+  if(S.sheet&&SHEETS[S.sheet]){const put=keepScroll(el), f=keepFields(el);if(setHTML(el,'<div class="grab"></div>'+SHEETS[S.sheet]())){f();put()}}  // closing, it keeps its words while it slides
+  el.classList.toggle('open',!!S.sheet);$('sheetscrim').classList.toggle('on',!!S.sheet);
+}
+/* --- F97: Settings ------------------------------------------------------------------------------------------- */
+async function loadSettings(){
+  try{const j=await (await fetch(tq('settings'))).json();S.set=j;S.setErr=j.out||''}
+  catch(e){S.setErr='Could not reach the run page to read the settings.'}
+  render(true);
+}
+const settingId=(t,k)=>`${t}.${k}`;
+function settingField(t,k,side){
+  const id=`set:${side}:${settingId(t,k.key)}`, own=k['has_'+side], v=own?k[side]:undefined, d=`data-f="${esc(id)}" aria-label="${side==='device'?'This device':'Project'}: ${esc(k.key)}"`;
+  const now=id in S.f?S.f[id]:settingText(v);
+  if(k.type==='switch')return `<input type="checkbox" role="switch" class="sw" ${d} data-sw ${(id in S.f?S.f[id]==='true':own?v:k.value)?'checked':''}>`;
+  if(k.type==='choice')return `<select class="fld" ${d}>${own?'':'<option value="">not set</option>'}${k.choices.map(c=>`<option value="${esc(String(c))}" ${now===String(c)?'selected':''}>${esc(String(c))}</option>`).join('')}</select>`;
+  if(k.type==='list'||k.type==='table'||settingText(v).length>40)return `<textarea class="fld" rows="3" ${d} placeholder="${k.type==='list'?'one per line':k.type==='table'?'{ key = value }':'not set'}">${esc(now)}</textarea>`;
+  return `<input class="fld" ${k.type==='number'?'inputmode="decimal"':''} ${d} value="${esc(now)}" placeholder="not set" autocomplete="off" autocapitalize="off" spellcheck="false">`;
+}
+const SOURCE={device:'This device',project:'Project',default:'Default'};
+function settingRow(t,k){
+  const id=settingId(t,k.key), open=!!S.setOpen[id], busy=S.ob.filter(x=>x.set&&x.set.id===id);
+  const btn=(side,l)=>`<button class="btn" data-setsave="${side}" data-id="${esc(id)}">${l}</button>`;
+  return `<div class="srow" data-k="set:${esc(id)}"><button class="fold" data-setopen="${esc(id)}" aria-expanded="${open}"><span class="grow setkey">${esc(k.key)}</span><span class="setval">${esc(settingShown(k.value))}</span>${k.source==='default'?'':`<span class="tag${k.source==='device'?' acc':''}">${SOURCE[k.source]}</span>`}<span class="chev">${I.chev}</span></button>
+    ${busy.map(x=>`<div class="small">${esc(x.say)}: ${esc(obState(x))}</div>`).join('')}
+    ${open?`<div class="small">${esc(k.help||'No help text.')}</div><div class="small">In force: <b>${esc(settingShown(k.value))}</b>, from ${k.source==='default'?'the default':k.source==='device'?esc(S.set.device):esc(S.set.project)}. Default: ${esc(settingShown(k.default))}. A change applies ${k.applies==='now'?'now':'the next run (or a restart)'}.</div>
+      <div class="setcols"><div class="setcol"><b class="small">Project</b>${settingField(t,k,'project')}${btn('project','Queue change')}</div>
+      <div class="setcol"><b class="small">This device</b>${settingField(t,k,'device')}<div class="btns">${btn('device','Save')}${k.has_device?`<button class="btn" data-setreset="${esc(id)}">Reset</button>`:''}</div></div></div>`:''}</div>`;
+}
+function settingsHTML(){
+  const d=S.set, q=String(S.f.setq||'').trim().toLowerCase();
+  if(!d)return `<div class="col">${S.setErr?`<div class="small v-bad">${esc(S.setErr)}</div><div class="btns"><button class="btn" data-setload>Try again</button></div>`:emptyCard('Loading…')}</div>`;
+  const hit=(t,k)=>!q||`${t}.${k.key} ${k.help}`.toLowerCase().includes(q);
+  const ts=d.tables.map(t=>({t:t.table,ks:t.keys.filter(k=>hit(t.table,k))})).filter(x=>x.ks.length);
+  const rc=controlOf('restart');
+  return `<div class="col"><div class="small">Project settings are in ${esc(d.project)}, shared with everyone: a change is queued as a task and lands through the gate. This device's are in ${esc(d.device)}, only on this machine: they are saved at once, and win.</div>
+    ${S.setErr?`<div class="small v-bad">${esc(S.setErr)}</div>`:''}
+    ${S.setWait&&S.snap.up!==false&&rc?card(`<div class="small">Saved. It applies when the run restarts.</div>${S.sure==='restart'?ctlSure(rc):`<div class="btns"><button class="btn acc" data-ctl="restart">Restart the run</button></div>`}`,'','data-k="setwait"'):''}
+    ${obCards(x=>x.ctl==='restart:')}
+    <input class="fld" type="search" data-f="setq" placeholder="Find a setting" aria-label="Find a setting">
+    ${ts.length?ts.map(x=>`<div class="sec">[${esc(x.t)}]<span class="ln"></span></div>${card(x.ks.map(k=>settingRow(x.t,k)).join(''),'',`data-k="sett:${esc(x.t)}"`)}`).join(''):emptyCard('No setting matches.')}
+    ${d.unknown.length?`<div class="sec">Not settings<span class="ln"></span></div>${card(d.unknown.map(u=>`<div class="srow" data-k="unk:${esc(u.side+u.table+u.key)}"><div class="row"><span class="grow setkey">${u.table?`[${esc(u.table)}] `:''}${u.key?`${esc(u.key)} = `:''}${esc(u.value)}</span><span class="tag warn">unknown</span></div><div class="small">${esc(u.file)}: ${esc(u.why)}</div></div>`).join(''))}`:''}</div>`;
+}
+const settingOf=id=>{const [t,...k]=id.split('.');const x=S.set&&S.set.tables.find(y=>y.table===t);return x&&{t,k:x.keys.find(y=>y.key===k.join('.'))}};
+function saveSetting(id,side){
+  const x=settingOf(id);if(!x||!x.k)return;
+  const f=`set:${side}:${id}`, el=[...document.querySelectorAll('[data-f]')].find(e=>e.dataset.f===f);
+  const text=el&&el.type==='checkbox'?String(el.checked):el?el.value:S.f[f];
+  if(x.k.type==='choice'&&!text)return toast('Pick a value first',true);
+  const r=settingValue(x.k,text);if(r.err)return toast(r.err,true);
+  outbox(side==='device'?'setting_device':'setting_project',{table:x.t,key:x.k.key,value:r.v},{set:{id,applies:side==='project'?'now':x.k.applies},say:`${side==='device'?'Save':'Queue'} [${x.t}] ${x.k.key} = ${settingShown(r.v)}`});
 }
 function planHTML(){
   const pk=queueGroups(S.snap.queue)[1], qs=planQueue(S.snap);
   return `<div class="col"><div><button class="btn acc" data-about="new">${I.plus}Add a task</button></div>
-    <div class="sec">Queue<span class="ln"></span></div>${qs.length?qs.map(q=>q.placeholder?nextReleaseCard(q):planCard(q)).join(''):card('<div class="small">The queue is empty.</div>')}
+    <div class="sec">Queue<span class="ln"></span></div>${qs.length?qs.map(q=>q.placeholder?nextReleaseCard(q):planCard(q)).join(''):emptyCard('The queue is empty.')}
     ${obCards(x=>x.name==='unpark')}${pk.length?`<div class="sec">Parked<span class="ln"></span></div>${pk.map(parkedCard).join('')}`:''}</div>`;
 }
 /* F87: the Concepts view: every concept waiting for a pick, as agent-runner ui's Concepts panel lists them */
@@ -1079,49 +1463,84 @@ function conceptsHTML(){
     <textarea rows="3" data-kin aria-label="What the concept is about" placeholder="e.g. a dark mode for the run app"></textarea>
     <div class="btns"><button class="btn acc">Queue it</button><button type="button" class="btn" data-kcancel>Cancel</button></div></form>`):'';
   return `<div class="col"><div class="sec">Concepts<span class="ln"></span><button class="shadd" data-kadd aria-label="New concept" title="New concept">${I.plus}</button></div>
-    ${form}${obCards(x=>x.concept||x.kq)}${S.kSaid?`<div class="small">${esc(S.kSaid)}</div>`:''}${cs.length?cs.map(conceptCard).join(''):card(`<div class="small">${NO_CONCEPT}</div>`)}</div>`;
+    ${form}${obCards(x=>x.concept||x.kq)}${S.kSaid?`<div class="small">${esc(S.kSaid)}</div>`:''}${cs.length?cs.map(conceptCard).join(''):emptyCard(`${NO_CONCEPT}`)}</div>`;
 }
 function newConcept(){  // F137: shown as queuing at once; obDone says its id once plan add answers
   const req=newConceptReq(S.kText);if(!req)return;
   S.kOpen=false;S.kText='';S.kSaid='';
   outbox(req.name,req.args,{kq:true,say:`New concept: “${req.args.text}”`});
 }
-let lastBody='';
+/* F83: where each view was scrolled to (S.at), whether the open chat follows its newest message (S.pin) */
+let lastPlace=null;
+S.at={};S.pin=true;
+const chatShown=()=>!!S.thread||S.view==='talk';
+function toEnd(){const b=$('body');b.scrollTop=b.scrollHeight;S.pin=true;S.fresh=false;jumpDraw()}
+function jumpDraw(){const j=$('jump'), on=chatShown()&&!S.pin&&!HOME_PAGE;setHTML(j,I.down+(S.fresh?'New message':'Latest'));j.classList.toggle('on',on)}
+/* the top bar: the menu (with its dot, F128), back, the title, Talk's settings, the state pill, the session, New chat */
+function topHTML(){
+  const n=S.thread, p=runPill(S.snap), x=n&&sessionOf(n);
+  return `<button class="icon menu" data-menu aria-label="Menu${S.menuDot?': something needs you':''}">${I.menu}${S.menuDot?'<span class="bdot"></span>':''}</button>${n?`<button class="icon" data-home aria-label="Back">${I.back}</button>`:''}<div class="title">${n?esc(threadTitle(n)):{talk:'Talk',home:'',status:'Status',plan:'Plan',concepts:'Concepts',settings:'Settings',projects:'All projects'}[S.view]}</div>${p.text?`<button class="pill ${p.cls}" data-view="status" data-k="pill" data-v="${esc(p.text)}" title="The run: open Status">${esc(p.text)}</button>`:''}${!n&&S.view==='talk'?`<button class="icon" data-sheet="talk" aria-label="Talk settings" title="Talk settings">${I.gear}</button>`:''}${x&&x.link?`<a class="icon" href="${esc(x.link)}" target="_blank" rel="noopener" aria-label="Open its session" title="Open its session">${I.ext}</a>`:''}<button class="icon" data-new aria-label="New chat" title="New chat">${I.newchat}</button>`;
+}
 function render(force){
-  obHide();obDraw();  // F137
-  side();
-  const n=S.thread;
-  if(HOME_PAGE){S.view='projects';S.thread=null;  // F134: Home's own page has only All projects
-    $('top').innerHTML=`<button class="icon menu" data-menu aria-label="Menu">${I.menu}</button><div class="title">All projects</div><span class="icon"></span>`;
-    const h=projectsHTML();if(h===lastBody&&!force)return;lastBody=h;
+  if(!force&&(PD.down||selecting())){const now=Date.now();PD.since=PD.late?PD.since:now;PD.late=true;if(now-PD.since<HOLD_MS)return}  // but never for long
+  PD.late=false;
+  markSeen();  // F128
+  obHide();
+  const n=S.thread, body=$('body'), dockEl=$('dock');
+  const place=HOME_PAGE?'home page':n?'t:'+n:'v:'+S.view, moved=place!==lastPlace, chatOn=!!n||S.view==='talk';
+  const put=keepScroll(body), had=keysIn(body), hadTop=keysIn($('top')), keep=keepFields(body);
+  if(moved&&lastPlace)S.at[lastPlace]=body.scrollTop;
+  obDraw();  // F137
+  side();sheetDraw();
+  if(HOME_PAGE){  // F134: Home's own page has only All projects
+    S.view='projects';S.thread=null;
+    setHTML($('top'),`<button class="icon menu" data-menu aria-label="Menu">${I.menu}</button><div class="title">All projects</div><span class="icon"></span>`);
     const pin=document.querySelector('[data-paddin]'), pf=pin&&document.activeElement===pin;
-    $('body').innerHTML=h;$('dock').innerHTML='';$('dock').hidden=true;
-    const np=document.querySelector('[data-paddin]');if(np){np.value=H.add;if(pf)np.focus()}
-    return;
+    if(setHTML(body,projectsHTML())){const np=document.querySelector('[data-paddin]');if(np){np.value=H.add;if(pf)np.focus()}
+      put();enter(body,had)}
+    lastPlace=place;dockEl.hidden=true;return;
   }
-  $('top').innerHTML=`<button class="icon menu" data-menu aria-label="Menu">${I.menu}</button>${n?`<button class="icon" data-home aria-label="Back">${I.back}</button>`:''}<div class="title">${n?esc(threadTitle(n)):{talk:'Talk',home:'',agents:'Agents',activity:'Activity',plan:'Plan',concepts:'Concepts',projects:'All projects'}[S.view]}</div>${n&&sessionOf(n)&&sessionOf(n).link?`<a class="icon" href="${esc(sessionOf(n).link)}" target="_blank" rel="noopener" aria-label="Open its session" title="Open its session">${I.ext}</a>`:''}<button class="icon" data-new aria-label="New chat" title="New chat">${I.newchat}</button>`;
+  if(setHTML($('top'),topHTML()))enter($('top'),hadTop);
   let h='',dock='';
   if(n){const agent=isAgent(n);h=`<div class="col">${convo(n)}</div>`;
     dock=box(agent?`Message ${threadTitle(n)}`:S.ctx&&S.ctx.kind==='new'?'Describe the task in your own words':`Reply to ${threadTitle(n)}`,
       (agent?'Goes straight to this agent, between its steps. ':'')+keysLine())}  // B120: the keys, from BOX_KEYS
-  else if(S.view==='talk'){h=talkHTML();dock=talkDock()}
-  else h={home:homeHTML,agents:agentsHTML,activity:activityHTML,plan:planHTML,concepts:conceptsHTML,projects:projectsHTML}[S.view]();
+  else if(S.view==='talk')h=talkHTML();
+  else h={home:homeHTML,status:statusHTML,plan:planHTML,concepts:conceptsHTML,settings:settingsHTML,projects:projectsHTML}[S.view]();
   const ta=document.querySelector('[data-in]'), focused=ta&&document.activeElement===ta, sel=ta?[ta.selectionStart,ta.selectionEnd]:null;
   const kta=document.querySelector('[data-kin]'), kfocused=kta&&document.activeElement===kta;
-  const key=h+'|'+dock;
-  if(key===lastBody&&!force)return;
-  lastBody=key;
-  const main=document.querySelector('.main'), chatOn=!!n||S.view==='talk';  // F115: a chat looks like the terminal
+  const main=document.querySelector('.main');  // F115: a chat looks like the terminal
   main.classList.toggle('term',chatOn);main.style.colorScheme=chatOn&&TERM.mode?TERM.mode:'';
-  const body=$('body'), atEnd=body.scrollHeight-body.scrollTop-body.clientHeight<80;
-  body.innerHTML=h;$('dock').innerHTML=dock;$('dock').hidden=!dock;
+  if(moved){body._h=null;dockEl._h=null}
+  const drew=setHTML(body,h);
+  let drewDock=false;
+  if(!n&&S.view==='talk'){  // F124: the mic and the box cross-fade: both stay in the dock
+    drewDock=setHTML(dockEl,'<div class="talkdock"><div class="talkmic" id="talkmic"></div><div class="talkbox" id="talkbox"></div></div>');
+    setHTML($('talkmic'),talkMic());drewDock=setHTML($('talkbox'),box('Type to Talk',talkFoot()))||drewDock;
+    talkDraw();
+  }else{drewDock=setHTML(dockEl,dock);dockEl.classList.remove('typing')}
+  dockEl.hidden=!n&&S.view!=='talk';
+  if(!force&&!drew&&!drewDock){lastPlace=place;return}
   const nta=document.querySelector('[data-in]');
-  if(nta){nta.value=HI.i!==null&&HI.key===boxKey()?histGet(HI.key)[HI.i]||'':store.get(DRAFT_KEY(boxKey()));grow(nta);if(focused){nta.focus();if(sel)nta.setSelectionRange(sel[0],sel[1]);slashShow(nta)}}  // B119: the menu stays open; B120: so does a recalled message
+  if(nta){const v=HI.i!==null&&HI.key===boxKey()?histGet(HI.key)[HI.i]||'':store.get(DRAFT_KEY(boxKey()));if(nta.value!==v)nta.value=v;grow(nta);if(focused&&nta!==ta){nta.focus({preventScroll:true});if(sel)nta.setSelectionRange(sel[0],sel[1])}if(focused)slashShow(nta)}  // B119: the menu stays open; B120: so does a recalled message
   const np=document.querySelector('[data-paddin]');if(np){np.value=H.add;if(H.addFocus)np.focus()}  // F134
   const nk=document.querySelector('[data-kin]');if(nk){nk.value=S.kText||'';if(kfocused||S.kFocus)nk.focus();S.kFocus=false}  // F87: the new concept box keeps its words
-  if(n&&(atEnd||force))body.scrollTop=1e9;
+  if(drew)keep();
+  if(moved){
+    const follow=lastPlace&&lastPlace.startsWith('t:@')&&n;  // a starting chat got its name: the same chat
+    if(chatOn)toEnd();else{body.scrollTop=S.at[place]||0}
+    if(S.live&&!follow)viewIn(body);
+  }else if(drew){
+    if(chatOn&&S.pin)toEnd();
+    else{put();if(chatOn&&[...keysIn(body).keys()].some(k=>!had.has(k)))S.fresh=true}
+    enter(body,had);
+  }
+  lastPlace=place;jumpDraw();
 }
-function grow(ta){ta.style.height='auto';ta.style.height=Math.min(ta.scrollHeight,160)+'px'}
+/* F83: the chat follows its newest message until the person scrolls up; it follows a box that grows or a keyboard too */
+$('body').addEventListener('scroll',()=>{if(!chatShown())return;S.pin=atEnd($('body'));if(S.pin)S.fresh=false;jumpDraw()},{passive:true});
+if(window.ResizeObserver)new ResizeObserver(()=>{if(chatShown()&&S.pin)toEnd()}).observe($('body'));
+function grow(ta){ta.closest('.box')?.classList.toggle('has',!!ta.value.trim());ta.style.height='auto';ta.style.height=Math.min(ta.scrollHeight,160)+'px'}
 /* B119: the slash command menu. SL.cmds the session's commands from /commands (null until they come, then
    SLASH_FALLBACK's list stands in), SL.items the rows shown, SL.i the highlighted one */
 const SL={cmds:null,items:[],i:0};
@@ -1144,7 +1563,15 @@ function slashTake(j){
    and its reply is read aloud (speechSynthesis); the chat box under the mic works without either ------------- */
 const TALK_KEY='ar-talk';  /* the Talk session this browser opened */
 const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
-const TK={rec:null,heard:'',state:'',wait:null,said:'',unlocked:false,note:''};  /* state: '', listening, thinking, speaking */
+const TK={rec:null,heard:'',state:'',wait:null,said:'',unlocked:false,note:'',playing:'',hold:false,again:false};  /* state: '', listening, thinking, speaking; playing: the reply a play button reads */
+/* F124: Talk's settings (TALK_SET), and whether its dock shows the mic or the box, as this browser last had them */
+const TS_KEY='ar-talkset', TM_KEY='ar-talkmode';
+let TS=talkSetParse(store.get(TS_KEY));
+function talkSet(k,v){TS=talkSetParse(JSON.stringify({...TS,[k]:v}));store.set(TS_KEY,JSON.stringify(TS));render(true)}
+const voices=()=>{try{return window.speechSynthesis?speechSynthesis.getVoices():[]}catch(e){return[]}};
+if(window.speechSynthesis&&speechSynthesis.addEventListener)speechSynthesis.addEventListener('voiceschanged',()=>{if(S.sheet==='talk')render(true)});
+const talkTyping=()=>!!micWhy()||store.get(TM_KEY)==='type';
+function talkMode(m){store.set(TM_KEY,m==='type'?'type':'');S.pin=true;render(true);if(m==='type')document.querySelector('[data-in]')?.focus()}
 function talkName(){
   const n=talkSession(S.snap.sessions,store.get(TALK_KEY));if(n)return n;
   const w=TK.wait;return w&&Date.now()-w.at<90000?w.n:'';  /* just opened: not in the snapshot yet */
@@ -1187,27 +1614,37 @@ function dictate(){
 const TERM={mode:''};
 fetch('term'+location.search).then(r=>r.ok?r.text():'').then(p=>{const t=termTokens(p);if(!Object.keys(t.tokens).length)return;
   for(const [k,v] of Object.entries(t.tokens))document.documentElement.style.setProperty('--t-'+k,v);TERM.mode=t.mode;render(true)}).catch(()=>{});
+/* the words on their way to the Talk session show at once, until it has them */
+const talkGoing=()=>TK.wait&&TK.wait.out?`<div class="msgs"><div class="u pending" data-k="talkout" data-t="${esc(tkey(talkShown(TK.wait.said)))}">${esc(talkShown(TK.wait.said))}</div></div>`:'';
 function talkHTML(){
-  const n=talkName();
-  if(!n)return `<div class="col"><div class="greet">${LOGO()}Talk to the run</div><div class="small" style="text-align:center">Tap the mic and ask, say, what is going on: the reply is read aloud. Talk opens a chat of its own the first time.</div></div>`;
+  const n=talkName(), going=talkGoing();
+  if(!n)return going?`<div class="col">${going}<div class="think">${LOGO()}Starting the chat…</div></div>`: `<div class="col"><div class="greet">${LOGO()}Talk to the run</div><div class="small" style="text-align:center">Tap the mic and ask, say, what is going on: the reply is read aloud. Talk opens a chat of its own the first time.</div></div>`;
   if(!S.feeds[n]&&!TK.loading){TK.loading=true;loadFeed(n).finally(()=>{TK.loading=false})}  /* its first look */
-  return `<div class="col">${convo(n,talkShown)}</div>`;
+  return `<div class="col">${convo(n,talkShown)}${going}</div>`;
 }
-function talkDock(){
-  const why=micWhy(), st=TK.state;
-  const line=why||(st==='listening'?(TK.heard||'Listening…'):st==='thinking'?'Thinking…':st==='speaking'?'Speaking. Tap to stop.':(TK.note||'Tap to talk'));
-  const label=why||(st==='listening'?'Stop listening':st==='speaking'?'Stop speaking':'Talk');
-  return `<div class="talk"><button type="button" class="mic ${st==='listening'?'on':st==='speaking'?'speaking':''}" data-mic aria-label="${esc(label)}" title="${esc(label)}" ${why?'disabled':''}>${st==='speaking'?I.stop:I.talk}</button><div class="talkline" role="status">${esc(line)}</div></div>`
-    +box('Or type to Talk','Replies are read aloud.');
+/* F124: the dock's mic: the speaker and the mic (64px), the keyboard beside them. Its markup never changes while it
+   listens or speaks (talkDraw sets that), so a finger holding the mic keeps it */
+const talkMic=()=>`<div class="talkline" id="talkline" role="status"></div><div class="talkrow"><button type="button" class="spk" id="spk" data-spk></button><button type="button" class="mic" id="mic" data-mic></button><button type="button" class="kbd" data-talkmode="type" aria-label="Type instead" title="Type instead">${I.keys}</button></div>`;
+const talkFoot=()=>{const why=micWhy();return why?esc(why):keysLine()};
+function talkDraw(){
+  const why=micWhy(), st=TK.state, hold=TS.mic==='hold', mic=$('mic'), spk=$('spk'), line=$('talkline');
+  $('dock').classList.toggle('typing',talkTyping());
+  if(!mic)return;
+  line.textContent=why||(st==='listening'?(TK.heard||'Listening…'):st==='thinking'?'Thinking…':st==='speaking'?'Speaking. Tap to stop.':(TK.note||(hold?'Hold to talk':'Tap to talk')));
+  const label=why||(st==='listening'?'Stop listening':st==='speaking'?'Stop speaking':hold?'Hold to talk':'Talk');
+  mic.className='mic'+(st==='listening'?' on':st==='speaking'?' speaking':'');mic.disabled=!!why;
+  mic.setAttribute('aria-label',label);mic.title=label;setHTML(mic,st==='speaking'?I.stop:I.talk);
+  const sl=st==='speaking'||TK.playing?'Stop reading':TS.read?'Read replies aloud: on':'Read replies aloud: off';
+  spk.className='spk'+(TS.read?'':' off');spk.setAttribute('aria-label',sl);spk.setAttribute('aria-pressed',String(TS.read));spk.title=sl;setHTML(spk,TS.read?I.speak:I.mute);
 }
 /* the person's words to the Talk session; true once sent */
 async function talkSend(msg){
-  const to=talkName(), len=to?feedOf(to).length:0;
-  TK.state='thinking';TK.said=msg;TK.note='';unlockSpeech();render(true);
+  const to=talkName(), len=to?feedOf(to).length:0, mark=to&&S.feeds[to]?feedMark(feedOf(to)):null;  // B134
+  TK.state='thinking';TK.said=msg;TK.note='';S.pin=true;unlockSpeech();render(true);
   /* B133: the wait starts before the action, which can take up to 90 s while a new chat comes up: a reply that
      lands meanwhile is heard from the polls and snapshots (talkWaitName finds the new chat by its title) */
-  const w={n:to,since:len,at:Date.now(),last:''};TK.wait=w;
-  const r=await act('talk',{text:msg,to});
+  const w={n:to,since:to?mark:0,at:Date.now(),last:'',said:msg,out:true};TK.wait=w;render(true);
+  const r=await act('talk',{text:msg,to});w.out=false;
   if(!r.ok){if(TK.wait===w)TK.wait=null;TK.state='';render(true);return false}
   const n=r.session||to, fresh=n!==to;
   if(TK.wait===w){if(fresh){w.n=n;w.since=0;w.last=''}w.at=Date.now()}  /* not yet heard; n '': found by its title */
@@ -1219,30 +1656,45 @@ async function talkSend(msg){
 function talkHear(n){
   const w=TK.wait;if(!w||talkWaitName()!==n)return;
   if(Date.now()-w.at>300000){TK.wait=null;if(TK.state==='thinking'){TK.state='';toast('No spoken reply came in five minutes: its chat shows where it is.',true);render(true)}return}
-  const said=talkReply(feedOf(n),w.since);
+  const said=talkReply(feedOf(n),w.since,w.said);
   if(!said||said!==w.last){w.last=said;return}
-  TK.wait=null;speak(said);
+  TK.wait=null;
+  if(TS.read)speak(said);else{TK.state='';render(true)}  // F124: read replies aloud is off
 }
 function unlockSpeech(){  /* Safari speaks later only after a first utterance inside a tap */
   try{if(window.speechSynthesis&&!TK.unlocked){speechSynthesis.speak(new SpeechSynthesisUtterance(''));TK.unlocked=true}}catch(e){}
 }
-function speak(text){
+/* F124: read text aloud; key, the reply a play button reads (a Talk reply read by itself has none). Auto listen:
+   once a Talk reply was read to its end, the mic listens again */
+function speak(text,key){
   const ss=window.speechSynthesis;
   if(!ss||!text){TK.state='';render(true);return}
-  ss.cancel();
+  if(key&&TK.rec){TK.drop=true;TK.rec.stop()}  // a play button stops the mic, so it does not hear the reply; nothing is sent
+  if(!key||TK.state!=='thinking')TK.state='';TK.playing='';ss.cancel();
   const parts=text.match(/[^.!?]+[.!?]*\s*/g)||[text];  /* sentence by sentence: Chrome cuts one long utterance short */
-  parts.forEach((p,i)=>{const u=new SpeechSynthesisUtterance(p.trim());u.lang=navigator.language||'en-US';
-    if(i===parts.length-1)u.onend=u.onerror=()=>{if(TK.state==='speaking'){TK.state='';render(true)}};
+  const voice=pickVoice(voices(),TS.voice), turn=TK.turn=(TK.turn||0)+1;
+  parts.forEach((p,i)=>{const u=new SpeechSynthesisUtterance(p.trim());u.lang=(voice&&voice.lang)||navigator.language||'en-US';if(voice)u.voice=voice;
+    if(i===parts.length-1)u.onend=u.onerror=e=>{if(TK.turn!==turn||!(key?TK.playing===key:TK.state==='speaking'))return;
+      TK.state=TK.state==='speaking'?'':TK.state;TK.playing='';render(true);
+      if(!key&&TS.auto&&(!e||e.type!=='error')&&S.view==='talk'&&!S.thread&&!talkTyping()){TK.again=true;listen()}};
     ss.speak(u)});
-  TK.state='speaking';render(true);
+  if(key)TK.playing=key;else TK.state='speaking';
+  render(true);
+}
+function hush(){TK.playing='';if(TK.state==='speaking')TK.state='';TK.turn=(TK.turn||0)+1;if(window.speechSynthesis)speechSynthesis.cancel();render(true)}
+/* a Talk reply's play button: reads that reply, or stops it */
+function playReply(k){
+  if(TK.playing===k)return hush();
+  const n=talkName(), ms=threadMsgs(feedOf(n)), i=ms.findIndex((m,j)=>(m.k||n+':'+j)===k);
+  if(i>=0)speak(plain(ms[i].text),k);
 }
 function listen(){
   const why=micWhy();if(why)return toast(why,true);
   if(TK.state==='listening'){if(TK.rec)TK.rec.stop();return}
   /* B132: no speechSynthesis call before rec.start() on a plain tap: on iOS it puts the audio session in playback
      and recognition hears nothing (talkSend unlocks speech). A tap during a reply only stops it; the next one listens. */
-  if(TK.state==='speaking'){if(window.speechSynthesis)speechSynthesis.cancel();TK.state='';TK.note='';render(true);return}
-  TK.note='';
+  if(TK.state==='speaking'||TK.playing){if(TK.state==='speaking')TK.state='';TK.playing='';TK.note='';TK.turn=(TK.turn||0)+1;if(window.speechSynthesis)speechSynthesis.cancel();render(true);return}
+  TK.note='';const again=TK.again;TK.again=false;  /* auto listen: one silent turn and it stops */
   let rec;try{rec=new SR()}catch(e){return toast(`The mic could not start: ${e.message||e}`,true)}
   TK.rec=rec;rec.lang=navigator.language||'en-US';rec.interimResults=true;rec.continuous=false;
   let final='', err='';
@@ -1250,8 +1702,8 @@ function listen(){
     TK.heard=(final+interim).trim();render(true)};
   rec.onerror=e=>{err=e.error||'';if(e.error==='not-allowed'||e.error==='service-not-allowed')toast('The browser did not let the page use the mic: allow it in the site settings, or type below.',true);
     else if(e.error!=='no-speech'&&e.error!=='aborted')toast(`The mic stopped: ${e.error}`,true)};
-  rec.onend=()=>{TK.rec=null;const t=(final||TK.heard).trim();TK.heard='';if(TK.state==='listening')TK.state='';
-    if(t)talkSend(t);else{TK.note=heardNothing(err);render(true)}};
+  rec.onend=()=>{TK.rec=null;const t=TK.drop?'':(final||TK.heard).trim();TK.drop=false;TK.heard='';if(TK.state==='listening')TK.state='';
+    if(t)talkSend(t);else{TK.note=again?(TS.mic==='hold'?'Hold to talk':'Tap to talk'):heardNothing(err);render(true)}};
   TK.state='listening';TK.heard='';render(true);
   try{rec.start()}catch(e){TK.state='';TK.rec=null;toast(`The mic could not start: ${e.message||e}`,true);render(true)}
 }
@@ -1277,7 +1729,7 @@ function takeSnap(s){
     if(Date.now()-S.waitNew.at>60000)S.waitNew=null}
   for(const w of working_())if(!S.feeds[w.name]||Date.now()-(S.feeds[w.name].at||0)>15000)loadFeed(w.name);
   const tw=talkWaitName();if(tw&&TK.wait.sent){addSent(tw,TK.wait.sent.text,TK.wait.sent.at,{talk:true,first:true},0);TK.wait.sent=null}if(tw)loadFeed(tw);  // B133: each snapshot also looks for the awaited Talk reply
-  render();
+  render();S.live=true;
 }
 function connect(){
   let es;try{es=new EventSource(tq('events'))}catch(e){return poll()}
@@ -1304,15 +1756,18 @@ setInterval(()=>{const w=talkWaitName(), n=talkName();  // F93; B133: an awaited
   if(w)loadFeed(w);else if(n&&!S.thread&&S.view==='talk')loadFeed(n)},2000);
 
 /* --- doing things ------------------------------------------------------------------------------------------ */
-function open(n){S.thread=n;S.drawer=false;loadFeed(n);render(true);setTimeout(()=>document.querySelector('[data-in]')?.focus(),50)}
-function goView(v){S.view=v;S.thread=null;S.ctx=null;S.drawer=false;S.kSaid='';render(true)}
+function open(n){S.thread=n;S.drawer=false;S.sheet='';S.sure=null;loadFeed(n);render(true);setTimeout(()=>document.querySelector('[data-in]')?.focus(),50)}
+function goView(v){S.view=viewOf(v);S.thread=null;S.ctx=null;S.drawer=false;S.sheet='';S.sure=null;S.kSaid='';render(true);if(S.view==='settings')loadSettings()}
 async function send(){
   const ta=document.querySelector('[data-in]');const text=(ta?.value||'').trim();
   if(S.atts.some(a=>!a.path&&!a.err))return toast('Wait for the attachments to finish uploading');
   const paths=S.atts.filter(a=>a.path).map(a=>a.path);
   if(!text&&!paths.length)return;
-  if(!S.thread&&S.view==='talk'){if(await talkSend(compose(null,text,paths))){histAdd(boxKey(),text);HI.i=null;store.set(DRAFT_KEY(boxKey()),'');if(ta)ta.value='';S.atts=[];render(true)}return}  // F93
+  if(!S.thread&&S.view==='talk'){const key=boxKey(), atts=S.atts;  // F93; F83: out of the box at once, back in it if it did not go
+    histAdd(key,text);HI.i=null;store.set(DRAFT_KEY(key),'');if(ta)ta.value='';S.atts=[];
+    if(!await talkSend(compose(null,text,paths))){if(!store.get(DRAFT_KEY(key)))store.set(DRAFT_KEY(key),text);S.atts=atts;render(true)}return}
   const ctx=S.ctx, to=S.thread||'c1', key=boxKey();
+  S.pin=true;  // F83: your own message scrolls the chat to its end
   const msg=compose(ctx,text,paths);
   histAdd(key,text);HI.i=null;  // B120: Up brings it back
   store.set(DRAFT_KEY(key),'');if(ta)ta.value='';
@@ -1321,7 +1776,7 @@ async function send(){
   if(rq.name==='new_control'){newChat(rq.name,rq.args,ctx.kind==='new'?'Add a task':`About ${ctx.id||ctx.label}`,msg);return}  // B139
   // F137: out of the box at once, a pending message until chat_to answers (obDone), red with Retry if it fails
   outbox('chat_to',{text:msg,to},{text,key,say:`To ${threadTitle(to)}: ${text||paths.length+' attachment(s)'}`});
-  if(S.thread!==to)open(to);
+  if(S.thread!==to)open(to);else toEnd();
 }
 /* F137: a new chat opens at once as a stand-in ('@cid') that takes messages; new_control starts it without
    waiting, and its messages go once it has a name. B139: ask, its first message, shows in the stand-in. */
@@ -1330,7 +1785,6 @@ function newChat(name,args,say,ask){const known=chats().map(c=>c.name), it=outbo
 function about(a){
   const [k,v]=[a.split(':')[0],a.slice(a.indexOf(':')+1)];
   if(a==='new')S.ctx={kind:'new',label:'A new task'};
-  else if(k==='need'){const n=S.snap.needs[+v];if(!n)return;S.ctx={kind:'need',id:n.id,title:n.title,label:`${n.id}: ${n.ask||n.title}`}}
   else if(k==='concept'){const c=S.snap.concepts[+v];if(!c)return;S.ctx={kind:'concept',id:c.concept||c.id,title:c.title,label:c.title||c.concept}}
   else if(k==='plan'){const q=S.snap.queue.find(x=>x.id===v);if(!q)return;S.ctx={kind:'plan',id:q.id,title:q.title,label:`${q.id} ${q.title}`}}
   open('c1');
@@ -1345,9 +1799,17 @@ async function upload(file){
   render(true);
 }
 
+let tapped={n:'',at:0};
 document.addEventListener('click',async e=>{
   const q=s=>e.target.closest(s);let x;
   if(S.undo&&!q('[data-undo]'))finalDelete();  // F118: any other click makes the delete final
+  if(q('[data-jump]')){toEnd();return}  // F83
+  if(q('#sheetscrim')||q('[data-closesheet]')){closeSheet();return}
+  if(q('#sheet [data-pin]')||q('#sheet [data-del]')||q('#sheet [data-ren]'))S.sheet='';  // its own handler goes on
+  if(x=q('[data-sheet]')){openSheet(x.dataset.sheet);return}
+  if(x=q('[data-rowmenu]')){openSheet('chat',x.dataset.rowmenu);return}
+  if(x=q('[data-ren]')){startRename(x.dataset.ren);return}
+  if(x=q('[data-fix]')){S.fixOpen=S.fixOpen===x.dataset.fix?'':x.dataset.fix;S.sure=null;render(true);return}
   if(x=q('[data-slashpick]')){slashTake(+x.dataset.slashpick);return}  // B119
   if(q('[data-obopen]')){S.obOpen=true;obDraw();return}  // F137: the outbox's pill opens its popup
   if(q('[data-obclose]')||e.target.id==='obpop'){S.obOpen=false;obDraw();return}
@@ -1367,32 +1829,48 @@ document.addEventListener('click',async e=>{
   if((x=q('[data-pgo]'))&&!q('a,button,input,form')){location.href=x.dataset.pgo;return}
   if(slashOpen()&&!q('[data-in]'))slashClose();
   if(q('[data-undo]')){S.undo=null;render(true);return}
-  if(x=q('[data-pin]')){const n=x.dataset.pin,names=chats().map(c=>c.name),p=chatPins().filter(m=>names.includes(m));  // F133
+  if(x=q('[data-pin]')){const n=x.dataset.pin,names=chatNames(),p=chatPins().filter(m=>names.includes(m));  // F133
     const pins=p.includes(n)?p.filter(m=>m!==n):p.concat([n]);saveChatOrder(chatMove(names,pins,n,names.indexOf(n)),pins);return}
   if(x=q('[data-del]')){S.undo={names:[x.dataset.del],bar:false};S.sel=[];render(true);return}
   if(q('[data-delsel]')){if(S.sel.length){S.undo={names:S.sel,bar:true};S.sel=[]}render(true);return}
   if((x=q('[data-thread]'))&&/^c\d+$/.test(x.dataset.thread)){  // F118: Ctrl/Cmd+click picks, Shift+click a range
     const how=e.shiftKey?'range':e.ctrlKey||e.metaKey?'toggle':'';
-    const p=chatPick(chats().map(c=>c.name),S.sel,S.selLast,x.dataset.thread,how);S.sel=p.sel;S.selLast=p.last;
+    const p=chatPick(chatNames(),S.sel,S.selLast,x.dataset.thread,how);S.sel=p.sel;S.selLast=p.last;
     if(how){e.preventDefault();render(true);return}
+    const now=Date.now(), twice=tapped.n===x.dataset.thread&&now-tapped.at<400;tapped={n:x.dataset.thread,at:now};  // F129: a double-click renames
+    if(twice&&!S.drawer){startRename(x.dataset.thread);return}
   }
   if(x=q('[data-viewsw]')){try{localStorage.setItem(VIEW_KEY,x.dataset.viewsw)}catch(err){}return}  // F81: the link goes on
-  if(q('[data-mic]'))return listen();  // F93
+  if(q('[data-mic]')){if(TS.mic==='hold'&&TK.state!=='speaking'&&!TK.playing&&e.detail>0)return;return listen()}  // F93; F124: held (pointerdown), a key still toggles
+  if(q('[data-spk]')){if(TK.state==='speaking'||TK.playing)return hush();talkSet('read',!TS.read);return}
+  if(x=q('[data-talkmode]'))return talkMode(x.dataset.talkmode);
+  if(x=q('[data-speak]'))return playReply(x.dataset.speak);
   if(q('[data-menu]')){S.drawer=true;render();return}
   if(q('#scrim')){S.drawer=false;render();return}
   if(x=q('[data-view]'))return goView(x.dataset.view);
   if(q('[data-home]')){S.thread=null;S.ctx=null;render(true);return}
-  if(q('[data-slots-n]'))return;
+  if(q('[data-slots-n]')||q('.fld')||q('.sw'))return;
   if(q('[data-unsure]')){S.sure=null;render(true);return}
   if(x=q('[data-ctl]')){const c=controlOf(x.dataset.ctl);if(!c)return;
-    const n=c.needs==='n'?(document.querySelector('[data-slots-n]')||{}).value||'':'';
-    const rq=controlClick(c,{n,tid:x.dataset.tid,sure:x.hasAttribute('data-sure')});
-    if(rq.ask){S.sure=c.key;render(true);return}  // F82: asked in the page, no browser dialog
-    if(c.needs==='n'&&!/^\d+$/.test(n.trim()))return toast('Type how many slots first',true);
-    S.sure=null;x.disabled=true;
-    const r=await act(rq.name,{...rq.args,wait:false});if(r.ok){S.slotsN='';toast(String(r.out||'').split('\n')[0]||`${c.label}: done`);
-      if(r.name){carrySent(r.name,r);return open(r.name)}}  // B139: a control with an ask (Take back) started a new chat: open it
-    render(true);return}
+    const n=c.needs==='n'?String(S.f.slotsn||'').trim():'', tid=x.dataset.tid||'';
+    const rq=controlClick(c,{n,tid,sure:x.hasAttribute('data-sure')});
+    if(rq.ask){S.sure=c.key+(tid?':'+tid:'');render(true);return}  // F82: asked in the page, no browser dialog
+    if(c.needs==='n'&&!/^\d+$/.test(n))return toast('Type how many slots first',true);
+    S.sure=null;S.f.slotsn='';
+    if(c.key==='task_take'){newChat(rq.name,rq.args,`Take back ${tid}`,`do ${tid} here`);return}  // B139: it asks a new chat
+    if(S.sheet)closeSheet();
+    outbox(rq.name,rq.args,{ctl:c.key+':'+tid,say:c.label+(tid?` ${tid}`:'')});return}  // F124: through the outbox
+  if(x=q('[data-needdrop]')){const n=S.snap.needs[+x.dataset.needdrop];if(!n)return;  // F110
+    if(!x.hasAttribute('data-sure')){S.sure='need:'+n.id;render(true);return}
+    S.sure=null;outbox('need_drop',{tid:n.id,confirm:true},{need:n.id,say:`${n.id} · Drop`});return}
+  if(x=q('[data-needchat]')){const n=S.snap.needs[+x.dataset.needchat];if(!n)return;  // F143
+    newChat('need_chat',{tid:n.id},`About ${n.id}`,needChatAsk(n));return}
+  if(x=q('[data-task]')){openTask(x.dataset.task);return}  // F85
+  if(x=q('[data-setopen]')){const id=x.dataset.setopen;S.setOpen[id]=!S.setOpen[id];render(true);return}  // F97
+  if(q('[data-setload]')){loadSettings();return}
+  if(x=q('[data-setsave]')){saveSetting(x.dataset.id,x.dataset.setsave);return}
+  if(x=q('[data-setreset]')){const id=x.dataset.setreset, y=settingOf(id);if(!y||!y.k)return;
+    outbox('setting_reset',{table:y.t,key:y.k.key},{set:{id,applies:y.k.applies},say:`Reset [${y.t}] ${y.k.key}`});return}
   if(x=q('[data-thread]')){S.ctx=null;return open(x.dataset.thread)}
   if(q('[data-new]')){S.drawer=false;newChat('new_control',{},'New chat');return}
   if(x=q('[data-cchat]')){const c=S.snap.concepts[+x.dataset.cchat];if(!c)return;  // F86
@@ -1424,7 +1902,16 @@ document.addEventListener('click',async e=>{
 });
 document.addEventListener('submit',e=>{e.preventDefault();
   if(e.target.matches('[data-padd]')){const v=H.add.trim();if(v){H.add='';homePost('add',{path:v})}return}  // F134
+  if(e.target.matches('[data-renform]'))return saveRename();  // F129
   if(e.target.matches('[data-kform]'))newConcept();else send()});
+/* F124, F97: a switch or a select acts at once; a device's own switch or select saves at once too */
+document.addEventListener('change',e=>{
+  const t=e.target, ts=t.dataset&&t.dataset.ts, f=(t.dataset&&t.dataset.f)||'';
+  if(ts){talkSet(ts,t.type==='checkbox'?t.checked:t.value);return}
+  if(!f.startsWith('set:'))return;
+  S.f[f]=t.type==='checkbox'?String(t.checked):t.value;
+  if(f.startsWith('set:device:')&&(t.type==='checkbox'||t.tagName==='SELECT')&&S.f[f])saveSetting(f.slice(11),'device');
+});
 document.addEventListener('focusin',e=>{if(e.target.matches&&e.target.matches('[data-paddin]'))H.addFocus=true});
 document.addEventListener('focusout',e=>{if(e.target.matches&&e.target.matches('[data-paddin]'))H.addFocus=false});
 function selectedText(t){
@@ -1436,6 +1923,12 @@ document.addEventListener('keydown',e=>{
      B120: in the message box Esc closes the menu, then interrupts a working chat (never goes back), else leaves
      the box; out of the box Esc never interrupts, it goes back */
   if(e.ctrlKey&&!e.metaKey&&!e.altKey&&(e.key==='c'||e.key==='C')&&!selectedText(e.target)){const n=shownSession();if(n&&busy(n)){e.preventDefault();act('interrupt',{session:n});return}}  // B141: c1 too
+  if(e.target.matches&&e.target.matches('[data-f="ren"]')){  // F129: Enter keeps the name (its form), Esc does not
+    if(e.key==='Escape'){e.preventDefault();S.ren=null;render(true)}
+    return}
+  if(e.key==='Escape'&&S.sheet){e.preventDefault();closeSheet();return}  // the topmost thing only
+  if(e.target.matches&&e.target.matches('[data-f]')&&e.key==='Enter'&&e.target.tagName==='INPUT'&&e.target.dataset.f.startsWith('set:')){
+    e.preventDefault();const [,side,...id]=e.target.dataset.f.split(':');S.f[e.target.dataset.f]=e.target.value;saveSetting(id.join(':'),side);return}
   if(e.target.matches&&e.target.matches('[data-kin]')){  // F87: Enter queues the concept, Esc closes the box
     if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();newConcept();return}
     if(e.key==='Escape'){e.preventDefault();S.kOpen=false;render(true);return}
@@ -1450,7 +1943,7 @@ document.addEventListener('keydown',e=>{
     }
     if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();send();return}
     if((e.key==='ArrowUp'||e.key==='ArrowDown')&&histKey(e,e.target)){e.preventDefault();return}  // B120: earlier messages
-    if(e.key==='Escape'&&S.thread&&busy(S.thread)){e.preventDefault();act('interrupt',{session:S.thread});return}  // B120
+    if(e.key==='Escape'){const n=shownSession();if(n&&busy(n)){e.preventDefault();act('interrupt',{session:n});return}}  // B120; B142: the shown session
     if(e.key==='Escape'){e.preventDefault();e.target.blur();return}
     return}
   if(e.key==='Escape'&&S.sel.length){S.sel=[];render(true);return}  // F118
@@ -1458,7 +1951,7 @@ document.addEventListener('keydown',e=>{
   if(e.key==='Escape'&&S.thread&&!(e.target.matches&&e.target.matches('input,textarea,select'))){S.thread=null;S.ctx=null;render(true);return}  /* out of the box, Esc goes back */
   const c=e.target.closest&&e.target.closest('.card.tap');if(c&&c===e.target&&(e.key==='Enter'||e.key===' ')){e.preventDefault();c.click()}
 });
-document.addEventListener('input',e=>{if(e.target.matches('[data-paddin]'))H.add=e.target.value;if(e.target.matches('[data-slots-n]'))S.slotsN=e.target.value;if(e.target.matches('[data-kin]'))S.kText=e.target.value;if(e.target.matches('[data-in]')){grow(e.target);store.set(DRAFT_KEY(boxKey()),e.target.value);HI.i=null;slashShow(e.target)}});
+document.addEventListener('input',e=>{if(e.target.matches('[data-paddin]'))H.add=e.target.value;if(e.target.matches('[data-f]')&&e.target.type!=='checkbox'){S.f[e.target.dataset.f]=e.target.value;if(e.target.dataset.f==='setq')render(true)}if(e.target.matches('[data-kin]'))S.kText=e.target.value;if(e.target.matches('[data-in]')){grow(e.target);store.set(DRAFT_KEY(boxKey()),e.target.value);HI.i=null;slashShow(e.target)}});
 document.addEventListener('paste',e=>{if(!e.target.matches||!e.target.matches('[data-in]'))return;
   const fs=[...(e.clipboardData?.files||[])];if(fs.length){e.preventDefault();fs.forEach(upload)}});
 $('file').addEventListener('change',e=>{[...e.target.files].forEach(upload);e.target.value=''});
@@ -1470,7 +1963,7 @@ document.addEventListener('visibilitychange',()=>{if(!document.hidden&&S.thread)
 const dragEnd=()=>{if(!DR)return;clearTimeout(DR.hold);DR.row.classList.remove('lift','drag');DR.row.style.transform='';const on=DR.on;DR=null;if(on)render(true)};
 document.addEventListener('pointerdown',e=>{
   const row=e.target.closest&&e.target.closest('.crow[data-crow]');
-  if(!row||e.button>0||e.target.closest('.pin,.del')||S.undo||e.shiftKey||e.ctrlKey||e.metaKey)return;
+  if(!row||e.button>0||e.target.closest('.pin,.del,.rowmenu')||S.undo||e.shiftKey||e.ctrlKey||e.metaKey)return;
   dragEnd();
   DR={row,name:row.dataset.crow,id:e.pointerId,y0:e.clientY,on:false,ready:e.pointerType==='mouse'};
   if(!DR.ready)DR.hold=setTimeout(()=>{if(DR&&DR.row===row){DR.ready=true;row.classList.add('lift')}},350);
@@ -1493,13 +1986,61 @@ document.addEventListener('pointerup',e=>{
   const to=others.filter(r=>{const b=r.getBoundingClientRect();return b.top+b.height/2<e.clientY}).length;
   dragEnd();
   noClick=true;setTimeout(()=>noClick=false,0);  // the click that ends a drag opens nothing
-  const names=chats().map(c=>c.name),pins=chatPins().filter(m=>names.includes(m)),order=chatMove(names,pins,name,to);
+  const names=chatNames(),pins=chatPins().filter(m=>names.includes(m)),order=chatMove(names,pins,name,to);
   if(order.join()!==names.join())saveChatOrder(order,pins);
 });
 document.addEventListener('pointercancel',e=>{if(DR&&e.pointerId===DR.id)dragEnd()});
 document.addEventListener('contextmenu',e=>{if(DR&&DR.ready&&e.target.closest&&e.target.closest('.crow'))e.preventDefault()});
 let noClick=false;
 document.addEventListener('click',e=>{if(noClick){noClick=false;e.preventDefault();e.stopPropagation()}},true);
+/* F83: a press under way holds the refreshes back, so what it lands on is still there when it ends */
+document.addEventListener('pointerdown',e=>{PD.down=!(e.button>0)},true);
+for(const t of ['contextmenu','blur','visibilitychange'])addEventListener(t,()=>{PD.down=false},true);
+for(const t of ['pointerup','pointercancel'])document.addEventListener(t,()=>{PD.down=false;if(PD.late)setTimeout(()=>{if(!PD.down)render()},60)},true);
+document.addEventListener('selectionchange',()=>{if(PD.late&&!PD.down&&!selecting())render()});
+/* F124: hold to talk: the mic listens while it is held, and sends when it is let go */
+document.addEventListener('pointerdown',e=>{
+  if(!(e.target.closest&&e.target.closest('[data-mic]'))||TS.mic!=='hold'||TK.state==='speaking'||TK.playing||e.button>0)return;
+  TK.hold=true;if(TK.state!=='listening')listen();  // auto listen is on already: letting go sends it
+});
+for(const t of ['pointerup','pointercancel'])document.addEventListener(t,()=>{if(!TK.hold)return;TK.hold=false;if(TK.rec)TK.rec.stop()});
+document.addEventListener('contextmenu',e=>{if(e.target.closest&&e.target.closest('[data-mic]'))e.preventDefault()});
+/* F124: a swipe right anywhere opens the sidebar drawer and a swipe left closes it, following the finger (passive
+   listeners only); a swipe down closes the sheet. Not from a text box, a sideways scroller, a row being dragged or
+   a mostly vertical move; Safari keeps its own back swipe at the very edge. */
+let SW=null;
+const sideways=el=>{for(;el&&el!==document.body;el=el.parentElement)if(el.scrollWidth>el.clientWidth+1&&/(auto|scroll)/.test(getComputedStyle(el).overflowX))return true;return false};
+const drawerOn=()=>{const m=document.querySelector('.top .menu');return !!(m&&m.offsetParent)};
+document.addEventListener('touchstart',e=>{
+  SW=null;const t=e.touches[0], el=e.target;
+  if(e.touches.length!==1||!el.closest||el.closest('input,textarea,select,[contenteditable],iframe,.obpop')||DR&&DR.on)return;
+  if(S.sheet){if(el.closest('#sheet')&&$('sheet').scrollTop<=0)SW={sheet:true,x:t.clientX,y:t.clientY,at:e.timeStamp,d:0,on:false};return}
+  if(!drawerOn()||el.closest('#body,#dock')&&sideways(el))return;
+  SW={x:t.clientX,y:t.clientY,at:e.timeStamp,d:0,on:false,open:S.drawer,w:$('side').offsetWidth||280,lx:t.clientX,lt:e.timeStamp,v:0};
+},{passive:true});
+document.addEventListener('touchmove',e=>{
+  if(!SW)return;
+  const t=e.touches[0], dx=t.clientX-SW.x, dy=t.clientY-SW.y;
+  if(DR&&DR.ready&&DR.hold){if(SW.on)swipeEnd(false);SW=null;return}  // the row is held: it is being dragged
+  if(SW.sheet){
+    if(!SW.on){if(Math.abs(dy)<10&&Math.abs(dx)<10)return;if(dy<Math.abs(dx)||$('sheet').scrollTop>0){SW=null;return}SW.on=true;$('sheet').classList.add('drag')}
+    SW.d=Math.max(0,dy);$('sheet').style.transform=`translateY(${SW.d}px)`;return;
+  }
+  if(!SW.on){const s=swipeTakes(dx,dy,SW.open);if(s==='wait')return;if(!s){SW=null;return}
+    SW.on=true;if(DR)dragEnd();$('side').classList.add('drag');$('scrim').classList.add('drag','on')}
+  SW.d=dx;if(e.timeStamp>SW.lt){SW.v=(t.clientX-SW.lx)/(e.timeStamp-SW.lt);SW.lx=t.clientX;SW.lt=e.timeStamp}
+  const at=Math.max(-SW.w,Math.min(0,SW.open?dx:dx-SW.w));
+  $('side').style.transform=`translateX(${at}px)`;$('scrim').style.opacity=String(1+at/SW.w);
+},{passive:true});
+function swipeEnd(done){
+  const w=SW;SW=null;if(!w||!w.on)return;
+  if(w.sheet){const el=$('sheet');el.classList.remove('drag');el.style.transform='';if(done&&w.d>80)closeSheet();return}
+  $('side').classList.remove('drag');$('scrim').classList.remove('drag');$('side').style.transform='';$('scrim').style.opacity='';
+  S.drawer=done?swipeOpens(w.d,w.v,w.w,w.open):w.open;
+  noClick=true;setTimeout(()=>noClick=false,50);PD.down=false;render(true);
+}
+document.addEventListener('touchend',()=>swipeEnd(true),{passive:true});
+document.addEventListener('touchcancel',()=>swipeEnd(false),{passive:true});
 addEventListener('pagehide',finalDelete);  // F118: leaving the page makes a pending delete final
 
 render(true);

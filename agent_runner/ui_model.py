@@ -21,6 +21,11 @@ copy, and the actions they share.
               in `queue`, with `release`: this row), or a placeholder while `[run] auto_release` counts; None
     quick_asks  the Status chat's quick asks sent to c1: key, label, text
     terminal_mode  how a session's terminal shows: 'ttyd', 'install' (no ttyd yet), 'feed' (Windows)
+    run       paused, stopping, forced, power, and `state`: the state pill's words (F124: `run_state`)
+    usage     F124: the account's usage, [{'name': 'session'|'week', 'pct'}]
+    lately    F124: what landed lately, newest first, [{'at', 'text'}], the words `status` lists under "lately"
+    fixups    F124: what the Fix up controls would work on (`fixups`): {'resume', 'unclaim', 'wip': [{'id', 'label'}]}
+    chat_quiet  F128: `[ui] chat_quiet` in seconds (0 off)
     version   the run's agent-runner version, from STATE ('' when no run is up or an older run wrote none);
               F90: the TUI restarts and the run page reloads when it changes
 
@@ -40,6 +45,7 @@ import datetime as dt
 import json
 import re
 import subprocess as sp
+import threading
 import time
 from pathlib import Path
 
@@ -282,6 +288,45 @@ def ask_short(ask: str, limit: int = ASK_SHORT) -> str:
     return s if len(s) <= limit else s[:limit - 1].rstrip(' ,;:-') + '…'
 
 
+_CHAT_STATE: dict[str, tuple[tuple, dict]] = {}  # transcript -> (its size and time, `control_state` of it)
+
+
+def chat_state(n: int, sid: str) -> dict:
+    """F128: control session `n`'s state for its row: {'link', 'last' (who spoke last), 'at' (its last activity, epoch
+    s, 0 unknown), 'needs_reply' (Claude spoke last and its message has an open question), 'renamed', 'title' (the
+    person's own name for it)}. Read again only when its transcript changed."""
+    out = {'link': '', 'last': '', 'at': 0, 'needs_reply': False, 'renamed': False, 'title': ''}
+    try:
+        from agent_runner import control as K
+        from agent_runner.control_names import person_name
+        from agent_runner.slots import entries, transcript
+        path = str(sid and transcript(sid) or '')
+        st: dict = {}
+        if path:
+            f = Path(path).stat()
+            mark = (f.st_size, f.st_mtime_ns)
+            if _CHAT_STATE.get(path, (None,))[0] != mark:
+                _CHAT_STATE[path] = (mark, K.control_state(entries(sid, skip_bad=True)))
+            st = _CHAT_STATE[path][1]
+        name, renamed = person_name(n, st.get('title') or ''), K.control_renamed(st, n)
+        out.update(link=K.control_link(st.get('bridge') or ''), last=st.get('last') or '', at=int(st.get('at') or 0),
+                   renamed=renamed, title=name or (st.get('title') or '' if renamed else ''))
+        if st.get('last') == 'claude':
+            out['needs_reply'] = bool(K.decide_question(st['text']) or K.open_question(st['text'], K.control_cfg()['open']))
+    except Exception:  # noqa: BLE001 - a nicety of the row: a missing transcript or backend leaves it plain
+        pass
+    return out
+
+
+def chat_quiet() -> float:
+    """F128: `[ui] chat_quiet` in seconds: how long after its last activity a chat that needs no reply is grayed."""
+    from agent_runner.control import duration
+    try:
+        return duration(S.C.raw['ui'].get('chat_quiet', '6h'), 21600.0)
+    except (AttributeError, KeyError, TypeError):
+        return 21600.0
+
+
 def _bridge_link(sid: str) -> str:
     """The claude.ai/code link of the session `sid`, from its transcript's Remote Control entry; '' for none."""
     if not sid:
@@ -306,7 +351,16 @@ def c1_row() -> dict:
     except OSError:
         sid = ''
     return {'name': 'c1', 'task': '', 'title': 'control session', 'minutes': None,
-            'state': 'live' if pid else 'off', 'files': [], 'link': _bridge_link(sid), 'terminal': ''}
+            'state': 'live' if pid else 'off', 'files': [], 'terminal': '', **chat_row(1, sid)}
+
+
+def chat_row(n: int, sid: str) -> dict:
+    """F128: what a control session's row adds from its transcript (`chat_state`); its title only when the person
+    gave it one (F129)."""
+    st = chat_state(n, sid)
+    if not st['title']:
+        st.pop('title')
+    return st
 
 
 def slot_link(name: str) -> str:
@@ -371,21 +425,20 @@ def control_rows(windows: dict[int, str], links=None) -> list[dict]:
     transcript)."""
     c1 = c1_row()
     if windows.get(1):
-        c1['title'], c1['state'] = windows[1], 'live'
+        c1['title'], c1['state'] = c1['title'] if c1.get('renamed') else windows[1], 'live'
     if links and 'c1' in links:
         c1['link'] = links['c1']
     out = [c1]
     for n in sorted(k for k in windows if k > 1):
+        try:
+            sid = S.C.notes(f'control{n}.pid').read_text(encoding='utf-8').strip().partition(' ')[2]
+        except Exception:  # noqa: BLE001 - no pid file (or no notes dir): a plain row
+            sid = ''
+        row = {'name': f'c{n}', 'task': '', 'title': windows[n], 'minutes': None, 'state': 'live', 'files': [],
+               'terminal': '', **chat_row(n, sid)}
         if links is not None:
-            link = links.get(f'c{n}', '')
-        else:
-            try:
-                link = _bridge_link(S.C.notes(f'control{n}.pid').read_text(encoding='utf-8').strip()
-                                    .partition(' ')[2])
-            except OSError:
-                link = ''
-        out.append({'name': f'c{n}', 'task': '', 'title': windows[n], 'minutes': None, 'state': 'live',
-                    'files': [], 'link': link, 'terminal': ''})
+            row['link'] = links.get(f'c{n}', '')
+        out.append(row)
     return out
 
 
@@ -435,6 +488,74 @@ def status_rows(up: bool, st: dict, progress: str) -> list[str]:
     return out
 
 
+def run_state(up: bool, st: dict) -> str:
+    """F124: the run's state in a word or two, the state pill's on every page of the run app."""
+    return ('Not up' if not up else 'Stopping' if st.get('stopping') else 'Paused' if st.get('paused') else
+            'Caps forced' if st.get('forced') else 'Running')
+
+
+def usage_rows(st: dict) -> list[dict]:
+    use = st.get('usage') or {}
+    return [{'name': w, 'pct': round(use[k])} for k, w in (('five_hour', 'session'), ('seven_day', 'week'))
+            if isinstance(use.get(k), (int, float))]
+
+
+_LATELY: list = [None, []]  # the event log's path, size and time, and what lately() read from it
+
+
+def lately(titles: dict[str, str], n: int = 6) -> list[dict]:
+    """F124: what landed lately, newest first: `status`'s "lately" lines, from the event log."""
+    from agent_runner.status import events_file, lately_events, read_events
+    try:
+        f = events_file().stat()
+        mark = (str(events_file()), f.st_size, f.st_mtime_ns)
+    except (OSError, AttributeError):
+        mark = None
+    if mark is None or _LATELY[0] != mark:
+        try:
+            _LATELY[:] = [mark, [{'at': m[0], 'text': m[2]}
+                                 for m in lately_events(read_events()[-2000:], titles)[-n:]][::-1]]
+        except Exception:  # noqa: BLE001 - no event log yet
+            return []
+    return _LATELY[1]
+
+
+FIXUPS: list = [0.0, '', {}]  # when `fixups` last looked (monotonic), at which root, and what it found
+FIXUPS_FOR = 20.0  # s: it runs git and reads the slot logs, and a page reads a snapshot every few seconds
+
+
+def fixups(st: dict, ls: list[str]) -> dict:
+    """F124: what the Fix up controls would work on, each [{'id', 'label'}]: `resume`, open tasks whose session was
+    cut off with its work kept (a wip/<ID> branch and a session to resume) that nothing runs; `unclaim`, other runs'
+    stale claims; `wip`, main-checkout edits a merge moved aside."""
+    if FIXUPS[1] == str(S.ROOT) and time.monotonic() - FIXUPS[0] < FIXUPS_FOR:
+        return FIXUPS[2]
+    out: dict[str, list] = {'resume': [], 'unclaim': [], 'wip': []}
+    titles = {tid: P.short_title(rest, 60) for _, box, tid, rest, _ in P.iter_tasks(ls) if box == ' '}
+    try:
+        from agent_runner import plansync
+        from agent_runner.land import WIP, wip_main_info
+        from agent_runner.slots import transcript
+        from agent_runner.watch import last_session
+        for name, _, files in wip_main_info():
+            out['wip'].append({'id': name.removeprefix('wip/'),
+                               'label': f'{name.removeprefix("wip/main-checkout-")} · {files} file{"s" * (files != 1)}'})
+        busy = set((st.get('running') or {}).values()) | set(st.get('merging') or []) | \
+            {q[0] for q in S.queued().values()}
+        refs = S.git('for-each-ref', '--format=%(refname:short)', 'refs/heads/wip/').stdout.split()
+        for tid in dict.fromkeys(m[1] for x in refs if (m := WIP.fullmatch(x))):
+            if tid in titles and tid not in busy and (last := last_session(tid)) and transcript(last[1]):
+                out['resume'].append({'id': tid, 'label': titles[tid]})
+        me = plansync.owner(S.C)
+        for tid, cl in sorted(plansync.claims(S.C).items()):
+            if cl.owner != me and plansync.stale(cl):
+                out['unclaim'].append({'id': tid, 'label': plansync.label(cl)})
+    except Exception:  # noqa: BLE001 - a git or plan hiccup costs the Fix up items, not the snapshot
+        pass
+    FIXUPS[:] = [time.monotonic(), str(S.ROOT), out]
+    return out
+
+
 def log_tail(n: int = LOG_TAIL) -> list[str]:
     try:
         return S.C.notes('run.log').read_text(encoding='utf-8', errors='replace').splitlines()[-n:] if n else []
@@ -467,7 +588,10 @@ def snapshot(up: bool | None = None, now: float | None = None, log_n: int = LOG_
             'queue': pin_release(queue_rows(ls, st, now), row), 'release_row': row,
             'needs': needs, 'concepts': concepts, 'log': log_tail(log_n), 'release': release,
             'quick_asks': quick_asks(), 'terminal_mode': terminal_mode(), 'controls': controls(),
-            'run': {'paused': bool(up and st.get('paused')), 'stopping': bool(up and st.get('stopping'))},
+            'run': {'paused': bool(up and st.get('paused')), 'stopping': bool(up and st.get('stopping')),
+                    'forced': bool(up and st.get('forced')), 'power': str(st.get('power') or '') if up else '',
+                    'state': run_state(up, st)},  # F124
+            'usage': usage_rows(st), 'lately': lately(titles), 'fixups': fixups(st, ls), 'chat_quiet': chat_quiet(),
             'version': str(st.get('version') or '')}  # F90: the run's version ('' from an older run)
 
 
@@ -642,25 +766,52 @@ def unpark(tid: str) -> dict:
 # where it shows ('run': the run's own; 'task': a slot's task), and what it asks before it runs ('' nothing).
 # Take back is the one that is no runner command of its own: c1 is asked "do ID here", as `take` does.
 
+# F124: `group` is the More… sheet's group ('' on the Run card itself), 'fix' where a Fix up control's choices come
+# from (the snapshot's `fixups`; it shows only while there are some, and '{id}' is the one picked). A control with
+# `up` False starts a run, so it shows only while none is up.
 STOP_NOW_ASK = ('Stop now ends every agent session at once (each resumes in the next run); '
                 'the merges under way finish. Stop now?')
+SUSPEND_ASK = ('This computer suspends once the run stops or goes idle, and its sessions stop with it. Asked again, it '
+               'is taken back. Suspend?')
+SHUTDOWN_ASK = ('This computer shuts down once the run stops or goes idle, and every session on it ends. Asked again, it '
+                'is taken back. Shut down?')
+UPGRADE_ASK = 'The run restarts on the new version between merges. Running tasks keep going. Upgrade?'
+RESTART_ASK = 'The run restarts between merges and reads its settings again. Running tasks keep going. Restart?'
+WIP_DROP_ASK = 'These edits are deleted here and on the remote, and cannot be brought back. Drop them?'
 RUN_CONTROLS = (
     {'key': 'slot_add', 'label': 'Slot +1', 'argv': ('slots', '+1'), 'tui': '+', 'where': 'run'},
     {'key': 'slot_remove', 'label': 'Slot -1', 'argv': ('slots', '-1'), 'tui': '-', 'where': 'run'},
-    {'key': 'slots_set', 'label': 'Set slots', 'argv': ('slots', '{n}'), 'tui': '=', 'where': 'run'},
+    {'key': 'slots_set', 'label': 'Set slots', 'argv': ('slots', '{n}'), 'tui': '=', 'where': 'run', 'group': 'Run'},
     {'key': 'pause', 'label': 'Pause', 'argv': ('pause',), 'tui': 'P', 'where': 'run'},
     {'key': 'go_on', 'label': 'Go on', 'argv': ('pause', '--off'), 'tui': 'G', 'where': 'run'},
-    {'key': 'force', 'label': 'Force past the caps', 'argv': ('force',), 'tui': 'F', 'where': 'run'},
-    {'key': 'caps_on', 'label': 'Caps back on', 'argv': ('force', '--off'), 'tui': 'C', 'where': 'run'},
+    {'key': 'force', 'label': 'Force past the caps', 'argv': ('force',), 'tui': 'F', 'where': 'run', 'group': 'Run'},
+    {'key': 'caps_on', 'label': 'Caps back on', 'argv': ('force', '--off'), 'tui': 'C', 'where': 'run',
+     'group': 'Run'},
     {'key': 'stop', 'label': 'Stop (running tasks finish)', 'argv': ('stop',), 'tui': 'S', 'where': 'run'},
     {'key': 'stop_now', 'label': 'Stop now', 'argv': ('stop', '--force'), 'tui': 'X', 'where': 'run',
-     'confirm': STOP_NOW_ASK},
+     'group': 'Stop', 'confirm': STOP_NOW_ASK},
     {'key': 'stop_undo', 'label': 'Take the stop back', 'argv': ('stop', '--undo'), 'tui': 'U', 'where': 'run'},
     # C26: the run's u, z and x keys, posted as the run view posts them (`key`: they take themselves back when
     # sent again, as typed ones do)
-    {'key': 'upgrade', 'label': 'Upgrade agent-runner', 'argv': ('key', 'u'), 'tui': 'V', 'where': 'run'},
-    {'key': 'suspend', 'label': 'Suspend once stopped', 'argv': ('key', 'z'), 'tui': 'Z', 'where': 'run'},
-    {'key': 'shutdown', 'label': 'Shut down once stopped', 'argv': ('key', 'x'), 'tui': 'B', 'where': 'run'},
+    {'key': 'suspend', 'label': 'Suspend once stopped', 'argv': ('key', 'z'), 'tui': 'Z', 'where': 'run',
+     'group': 'Stop', 'confirm': SUSPEND_ASK},
+    {'key': 'shutdown', 'label': 'Shut down once stopped', 'argv': ('key', 'x'), 'tui': 'B', 'where': 'run',
+     'group': 'Stop', 'confirm': SHUTDOWN_ASK},
+    {'key': 'upgrade', 'label': 'Upgrade agent-runner', 'argv': ('key', 'u'), 'tui': 'V', 'where': 'run',
+     'group': 'Run', 'confirm': UPGRADE_ASK},
+    {'key': 'restart', 'label': 'Restart the run', 'argv': ('key', 'restart'), 'tui': 'Y', 'where': 'run',
+     'group': 'Run', 'confirm': RESTART_ASK},
+    {'key': 'start', 'label': 'Start the run', 'argv': (), 'tui': 'T', 'where': 'run', 'up': False},
+    {'key': 'resume', 'label': 'Resume a cut-off task', 'argv': ('resume', '{id}'), 'tui': 'r', 'where': 'run',
+     'group': 'Fix up', 'fix': 'resume'},
+    {'key': 'unclaim', 'label': 'Release stale claims', 'argv': ('plan', 'unclaim', '{id}'), 'tui': 'L',
+     'where': 'run', 'group': 'Fix up', 'fix': 'unclaim', 'each': True},
+    {'key': 'wip_show', 'label': 'Show moved-aside edits', 'argv': ('wip', 'show', '{id}'), 'tui': 'W',
+     'where': 'run', 'group': 'Fix up', 'fix': 'wip'},
+    {'key': 'wip_restore', 'label': 'Restore moved-aside edits', 'argv': ('wip', 'restore', '{id}'), 'tui': 'E',
+     'where': 'run', 'group': 'Fix up', 'fix': 'wip'},
+    {'key': 'wip_drop', 'label': 'Drop moved-aside edits', 'argv': ('wip', 'drop', '{id}'), 'tui': 'O',
+     'where': 'run', 'group': 'Fix up', 'fix': 'wip', 'confirm': WIP_DROP_ASK},
     {'key': 'task_take', 'label': 'Take back', 'ask': 'do {id} here', 'tui': 'H', 'where': 'task'},
     {'key': 'task_drop', 'label': 'Drop', 'argv': ('plan', 'drop', '{id}', '{why}'), 'tui': 'D', 'where': 'task'},
 )
@@ -676,11 +827,17 @@ def run_control_of(key: str) -> dict | None:
 def controls() -> list[dict]:
     """The run controls as a page shows them: key, label, TUI key, where, what it needs typed ('n': a slot
     count, 'id': a task) and its confirm question ('' none)."""
+    from agent_runner import plat
+
     def needs(c):
-        words = c.get('argv') or (c.get('ask'),)
+        if c.get('fix'):
+            return 'pick'
+        words = c.get('argv') or (c.get('ask') or '',)
         return 'n' if any('{n}' in w for w in words) else 'id' if any('{id}' in w for w in words) else ''
     return [{'key': c['key'], 'label': c['label'], 'tui': c['tui'], 'where': c['where'], 'needs': needs(c),
-             'confirm': c.get('confirm', '')} for c in RUN_CONTROLS]
+             'confirm': c.get('confirm', ''), 'group': c.get('group', ''), 'fix': c.get('fix', ''),
+             'each': bool(c.get('each')), 'up': c.get('up', True)} for c in RUN_CONTROLS
+            if not (plat.WINDOWS and c['key'] == 'restart')]  # no re-exec there
 
 
 def control_argv(key: str, n='', tid: str = '', why: str = '') -> list[str]:
@@ -692,7 +849,10 @@ def control_argv(key: str, n='', tid: str = '', why: str = '') -> list[str]:
     n = str(n).strip()
     if any('{n}' in w for w in words) and not (SLOT_COUNT.fullmatch(n) and (key != 'slots_set' or n.isdigit())):
         raise ValueError(f'{key}: the slot count is a number, not {n!r}')
-    if any('{id}' in w for w in words + [c.get('ask') or '']) and not TASK_ID.fullmatch(tid or ''):
+    if c.get('fix') == 'wip':
+        if not re.fullmatch(r'main-checkout-[\w.-]+', tid or ''):
+            raise ValueError(f'{key}: which moved-aside edits? not {tid!r}')
+    elif any('{id}' in w for w in words + [c.get('ask') or '']) and not TASK_ID.fullmatch(tid or ''):
         raise ValueError(f'{key}: a task id (F82), not {tid!r}')
     return [w.replace('{n}', n).replace('{id}', tid).replace('{why}', why or TASK_DROP_WHY) for w in words]
 
@@ -701,16 +861,25 @@ def run_control(key: str, n='', tid: str = '', why: str = '', confirm: bool = Fa
     """F82: run one run control (RUN_CONTROLS) for the web page or agent-runner ui. One with a confirm question
     runs only with `confirm` true; without it the result is not ok and carries the question as 'confirm'. B139:
     one with an 'ask' starts a new control session with it (`new_control`, `wait` as there), not c1."""
+    c = run_control_of(key)
+    if c and c.get('each') and not tid:  # every one there is: 'Release stale claims (2)'
+        ids = [x['id'] for x in fixups(_state(S.run_up()), P.lines(S.C.todo)).get(c['fix']) or []]
+        if not ids:
+            return {'ok': False, 'code': 1, 'out': f'{c["label"]}: there is nothing to do', 'argv': []}
+        rs = [run_control(key, tid=i) for i in ids]
+        bad = next((r for r in rs if not r['ok']), None)
+        return bad or {**rs[-1], 'out': ', '.join(r['out'] for r in rs)}
     try:
         argv = control_argv(key, n, tid, why)
     except ValueError as e:
         return {'ok': False, 'code': 2, 'out': str(e), 'argv': []}
-    c = run_control_of(key)
     if c.get('confirm') and confirm is not True:
         return {'ok': False, 'code': 3, 'out': c['confirm'], 'confirm': c['confirm'], 'argv': argv}
     if c.get('ask'):
         return new_control(c['ask'].replace('{id}', tid), wait)
-    return call(argv)
+    r = call(argv)
+    FIXUPS[0] = float('-inf')  # what there is to fix is looked up anew
+    return r
 
 
 ACTIONS = {'plan_add': plan_add, 'plan_change': plan_change, 'chat': chat, 'answer': answer, 'drop': drop,
@@ -785,11 +954,16 @@ def feed_entries(rows) -> list[dict]:
     """F74: transcript entries (Claude's shape) as feed entries, in order: 'you' (what the person typed, not
     the runner's or a hook's text), 'say' (the agent's words), 'tool' (a tool call, `tool_words`) and 'out' (its
     result, cut to OUT_LINES lines). Thinking, meta, compact summaries and subagents' entries are left out.
+    B134: an entry has 'id' (its transcript entry's uuid and block), when the transcript gives one: it stays the same
+    in every later feed, where an index moves once the feed is capped.
     B154: a message queued while the session worked (`feed.queued_message`) is a 'you' too, and a 'you' has 'at',
     when the transcript got it (epoch s), if the entry says."""
     from agent_runner.control import RUNNER_TURN, _stamp
     from agent_runner.feed import queued_message
     out: list[dict] = []
+
+    def eid(d: dict, j: int) -> dict:
+        return {'id': f'{d["uuid"]}:{j}'} if isinstance(d.get('uuid'), str) and d['uuid'] else {}
     for d in rows:
         d = queued_message(d) or d
         if not isinstance(d, dict) or d.get('type') not in ('user', 'assistant') or d.get('isSidechain') \
@@ -798,25 +972,27 @@ def feed_entries(rows) -> list[dict]:
         m = d.get('message') or {}
         c = m.get('content')
         if d['type'] == 'assistant':
-            for b in (c if isinstance(c, list) else [{'type': 'text', 'text': c}] if isinstance(c, str) else []):
+            for j, b in enumerate(c if isinstance(c, list) else
+                                  [{'type': 'text', 'text': c}] if isinstance(c, str) else []):
                 if not isinstance(b, dict):
                     continue
                 if b.get('type') == 'text' and str(b.get('text') or '').strip():
-                    out.append({'kind': 'say', 'text': b['text'].strip()})
+                    out.append({'kind': 'say', 'text': b['text'].strip(), **eid(d, j)})
                 elif b.get('type') == 'tool_use':
-                    out.append({'kind': 'tool', 'text': tool_words(b.get('name', 'tool'), b.get('input'))})
+                    out.append({'kind': 'tool', 'text': tool_words(b.get('name', 'tool'), b.get('input')), **eid(d, j)})
             continue
-        for b in ([{'type': 'text', 'text': c}] if isinstance(c, str) else c if isinstance(c, list) else []):
+        for j, b in enumerate([{'type': 'text', 'text': c}] if isinstance(c, str) else c if isinstance(c, list) else []):
             if not isinstance(b, dict):
                 continue
             if b.get('type') == 'tool_result':
-                out.append({'kind': 'out', 'text': _clip(_blocks_text(b.get('content')), OUT_LINES, OUT_CHARS)})
+                out.append({'kind': 'out', 'text': _clip(_blocks_text(b.get('content')), OUT_LINES, OUT_CHARS),
+                            **eid(d, j)})
             elif b.get('type') == 'text' and (t := str(b.get('text') or '').strip()):
                 if t.startswith(INTERRUPTED):
-                    out.append({'kind': 'out', 'text': 'interrupted'})
+                    out.append({'kind': 'out', 'text': 'interrupted', **eid(d, j)})
                 elif not t.startswith(RUNNER_TURN) and not t.startswith('<task-notification>'):
                     at = _stamp(d)
-                    out.append({'kind': 'you', 'text': t, **({'at': at} if at else {})})
+                    out.append({'kind': 'you', 'text': t, **({'at': at} if at else {}), **eid(d, j)})
     return out
 
 
@@ -1101,3 +1277,164 @@ def delete_chats(names: list | None = None) -> dict:
 
 
 ACTIONS['delete_chats'] = delete_chats
+
+
+# --- F83: the combined run app rework: Needs you Drop and Chat, Rename, Settings, a task's whole text ----------
+
+NEED_DROP_WHY = 'dropped from Needs you'  # F110
+
+
+def need_drop(tid: str, confirm: bool = False) -> dict:
+    """F110: Drop on a Needs you item: `plan drop ID`, after a confirm (without `confirm` the result is not ok and
+    carries the question, as a run control's); an ok result carries 'gone', so the item leaves the list at once."""
+    if not TASK_ID.fullmatch(tid or ''):
+        return {'ok': False, 'code': 2, 'out': f'need_drop: a task id (F83), not {tid!r}', 'argv': []}
+    ask = f'Drop {tid}? It leaves the plan, and its work is not done.'
+    if confirm is not True:
+        return {'ok': False, 'code': 3, 'out': ask, 'confirm': ask, 'argv': []}
+    r = drop(tid, NEED_DROP_WHY)
+    return {**r, 'said': f'{tid} dropped', 'gone': tid} if r['ok'] else r
+
+
+def need_options(row: dict) -> list[str]:
+    """F143: the possible answers to a Needs you row, as the pages offer them: Yes / No, a concept's options, a pick
+    sheet's questions with theirs; [] when only a reply fits."""
+    label, said = row.get('label', ''), f'{row.get("ask", "")} {row.get("what", "")}'
+    if row.get('options'):
+        return [str(o) for o in row['options']]
+    if label == 'CONFIRM' or re.search(r'\byes ?(/|or) ?no\b', said, re.I):
+        return ['Yes', 'No']
+    if label == 'CONCEPT':
+        from agent_runner.web import concept_options
+        return [o['name'] for o in concept_options(concept_copy(row.get('concept') or ''))]
+    if label == 'DECIDE':
+        try:
+            from agent_runner import sheet
+            from agent_runner.brief import has_sheet
+            if has_sheet(row.get('id', '')):
+                spec = sheet.load(S.C.notes('sheets', f'{row["id"]}.json'))
+                return [f'{q.get("q") or q.get("id", "")}: ' + ' / '.join(
+                            str(o) + (' (recommended)' if j == q.get('recommended') else '')
+                            for j, o in enumerate(q.get('answers') or []))
+                        for q in sheet.questions(spec)]
+        except Exception:  # noqa: BLE001 - a sheet that does not read: the ask says where it is
+            pass
+    return []
+
+
+def agent_last_words(tid: str) -> str:
+    """F143: the last message of the agent that worked on task `tid` (its latest session's transcript), else the
+    task's own lines in TODO.md, uncut (what it blocked with); '' for neither."""
+    try:
+        from agent_runner.slots import transcript
+        from agent_runner.watch import last_session
+        if (last := last_session(tid)) and (path := transcript(last[1])):
+            if says := [e['text'] for e in feed_entries(tail_rows(path)) if e['kind'] == 'say']:
+                return says[-1]
+    except Exception:  # noqa: BLE001 - no slot logs, or a transcript that does not read
+        pass
+    ls = P.lines(S.C.todo)
+    return next(('\n'.join(P._item_block(ls, i)).strip() for _, _, t, _, i in P.iter_tasks(ls) if t == tid), '')
+
+
+def need_chat_text(row: dict) -> str:
+    """F143: the first message of a new control session about one Needs you row: its id and title, the agent's full
+    last message (what it put to the person) and the possible answers."""
+    ask, what, opts = row.get('ask') or '', row.get('what') or '', need_options(row)
+    out = [f"This chat is about {row.get('id', '')} '{row.get('title') or ''}', which needs me. What was put to me:",
+           ask]
+    if what and what.strip(' .') not in ask:
+        out.append(what)
+    if (last := agent_last_words(row.get('id', ''))) and last not in out:
+        out.append(f"The agent's last message:\n{last}")
+    if opts:
+        out.append('Possible answers:\n' + '\n'.join(f'- {o}' for o in opts))
+    if row.get('url'):
+        out.append(f'Its page: {row["url"]}')
+    out.append('Say the question and its possible answers in a few plain words, then wait for my reply. Settle it as '
+               'guide needs says once I answer; do nothing before that.')
+    return '\n\n'.join(x for x in out if x)
+
+
+def need_chat(tid: str, wait: bool = True) -> dict:
+    """F143: Chat on a Needs you item: a new control session (`control --new --ask`) whose first message is
+    `need_chat_text` of it. An id that is none, or no longer needs the person, is refused."""
+    if not TASK_ID.fullmatch(tid or ''):
+        return {'ok': False, 'code': 2, 'out': f'need_chat: a task id (F83), not {tid!r}', 'argv': []}
+    from agent_runner.status import waiting_ok
+    rows, _ = needs_rows(waiting_ok(), dt.datetime.now())
+    row = next((r for r in rows if r['id'] == tid), None)
+    if row is None:
+        return {'ok': False, 'code': 1, 'out': f'{tid} no longer needs you (answered already?)', 'argv': []}
+    return new_control(need_chat_text(row), wait)
+
+
+def rename_chat(chat: str, title: str) -> dict:
+    """F129: the person's own name for control session `chat` (c1, c6): `control --rename N NAME`."""
+    title = ' '.join(str(title or '').split())
+    if not re.fullmatch(r'c\d+', chat or ''):
+        return {'ok': False, 'code': 2, 'out': f'rename_chat: not a chat: {chat!r}', 'argv': []}
+    if not title:
+        return {'ok': False, 'code': 2, 'out': 'rename_chat: a name, please', 'argv': []}
+    return call(['control', '--rename', chat[1:], title])
+
+
+def task_text(tid: str) -> dict:
+    """F85: a task's whole text, as `plan ID` prints it: {'ok', 'id', 'text'}."""
+    if not TASK_ID.fullmatch(tid or ''):
+        return {'ok': False, 'id': tid, 'out': f'a task id (F83), not {tid!r}'}
+    r = call(['plan', tid])
+    return {'ok': r['ok'], 'id': tid, 'text': r['out'] if r['ok'] else '', 'out': '' if r['ok'] else r['out']}
+
+
+def settings() -> dict:
+    """F97: every setting, its value, source and default (`config.settings_snapshot`), read from the files now."""
+    from agent_runner import config as CF
+    return CF.settings_snapshot(S.ROOT)
+
+
+_SETTING_LOCK = threading.Lock()  # two pages saving at once: one read and write of the file at a time
+
+
+def _setting_done(table: str, key: str, value=None, unset: bool = False) -> dict:
+    from agent_runner import config as CF
+    try:
+        with _SETTING_LOCK:
+            f = CF.save_local_setting(S.ROOT, table, key, value, unset)
+    except (ValueError, OSError) as e:
+        return {'ok': False, 'code': 2, 'out': str(e), 'argv': []}
+    if (table, key) in CF.SETTING_NOW and S.run_up():  # it applies now: the run that is up is told
+        r = call(['slots', str(next(k['value'] for t in settings()['tables'] if t['table'] == table
+                                    for k in t['keys'] if k['key'] == key))])
+        if not r['ok']:
+            return {**r, 'out': f'saved in {f.name}, but the run did not take it: {r["out"]}'}
+    said = f'[{table}] {key} is reset' if unset else f'[{table}] {key} = {CF.toml_value(value)}'
+    return {'ok': True, 'code': 0, 'out': f'{said} in {f.name}', 'argv': []}
+
+
+def setting_device(table: str, key: str, value=None) -> dict:
+    """F97: save a This device value: one key of runner.local.toml, in place, at once."""
+    return _setting_done(table, key, value)
+
+
+def setting_reset(table: str, key: str) -> dict:
+    """F97: clear a device override: the key leaves runner.local.toml."""
+    return _setting_done(table, key, unset=True)
+
+
+def setting_project(table: str, key: str, value=None) -> dict:
+    """F97: save a Project value: never an edit of the main checkout, but a queued C task on runner.toml, which lands
+    through the gate."""
+    from agent_runner import config as CF
+    if problem := CF.setting_check(S.ROOT, table, key, value):
+        return {'ok': False, 'code': 2, 'out': problem, 'argv': []}
+    f = CF.config_file(S.ROOT)
+    if re.search(r'\s\|\s*\w+:|—|BLOCKED:|\\n', CF.toml_value(value)):  # the plan's own marks: the line would not read back
+        return {'ok': False, 'code': 2, 'out': f'[{table}] {key}: that value cannot go on a task line; ask for it in a '
+                                               f'chat', 'argv': []}
+    return plan_add('C', f'set [{table}] {key} = {CF.toml_value(value)} in {f.name if f else "runner.toml"} '
+                         f'(from the run app\'s Settings)', files=['runner.toml' if not f else f.name])
+
+
+ACTIONS.update({'need_drop': need_drop, 'need_chat': need_chat, 'rename_chat': rename_chat,
+                'setting_device': setting_device, 'setting_reset': setting_reset, 'setting_project': setting_project})

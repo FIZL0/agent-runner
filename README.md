@@ -341,5 +341,6 @@ never deleted by the run: they show under Needs you in `status` and `since`, and
 | | |
 |---|---|
 | [docs/SETUP.md](docs/SETUP.md) | installing, Windows, other providers and logins, adding it to a repo, wrapping it from your own CLI |
+| [docs/STYLE.md](docs/STYLE.md) | how the run app looks, moves and speaks: read it before changing the page |
 | [docs/REFERENCE.md](docs/REFERENCE.md) | picking, merging, fix and repair sessions, disk and memory limits, CI, the prompt, every command and config key |
 | [CHANGELOG.md](CHANGELOG.md) | what changed in each version |

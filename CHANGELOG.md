@@ -4,6 +4,35 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Changed: the run app reworked in one go, to written rules, `docs/STYLE.md` (F83, with F124, F143, F128, F129, F110,
+  F97, B142, B134 and F85). Before and after:
+  - Style: sizes, corners, colours and durations were one-offs; now tokens and shared helpers, checked by a test.
+  - Motion: the drawer slid and little else moved; now the drawer, the sheet, new cards and messages, the mic and box,
+    and state words move, 150 to 250 ms, transform and opacity only, none under reduced motion.
+  - Scroll: a click or a refresh in a chat could jump to its end, and new cards pushed the page; now a refresh keeps the
+    reading position in every view, a chat follows its newest message unless you scrolled up (a jump button), and a
+    send goes to the end. A refresh also waits for a press or a text selection to end.
+  - Views: Agents and Activity are one Status view in `agent-runner ui`'s order (needs you, run, usage, landed lately,
+    release, log); the run's state shows as a pill on every page (F124).
+  - Run controls: the card had slots, pause, force and stop; the rest was missing. Now the everyday ones are on the Run
+    card and a More… sheet has every one, with its key: upgrade, restart, suspend, shut down, start, resume a cut-off
+    task, release stale claims, moved-aside edits (W show, E restore, O O drop in the TUI). Upgrade, suspend and shut
+    down ask first (in the TUI the key twice) (F124).
+  - Drawer: the menu button only; now a swipe right from anywhere, following the finger, and left to close (F124).
+  - Talk: a 132px mic over a chat box; now 64px mic and speaker with a keyboard button that swaps in the box, a play
+    button on each reply, and Talk settings (read aloud, voice, tap or hold, auto listen) (F124).
+  - Talk replies: a chat past 200 feed entries stayed on Thinking…; its reply is found by the entry's id (B134).
+  - Needs you: Chat set a context on the Project chat; now it opens a new chat that shows the question and its answers
+    (F143). No Drop on the page, and no confirm in the TUI; now Drop everywhere, confirmed first (D D in the TUI, D on
+    the terminal-style page) (F110).
+  - Chats: no sign of one that waits for you; now a dot on it, a dot on the phone's menu button while Home or Concepts
+    has a count, and quiet chats gray at the bottom after `[ui] chat_quiet` (6h; false off) (F128).
+  - Chat names: only the runner named a chat; now double-click (phone: ⋯, TUI: r) renames it, c1 too, through
+    `agent-runner control --rename N NAME` (F129).
+  - Settings: a text dump in the terminal; now a Settings view with this device's values and the project's (F97).
+  - Queue: a title cut off; now a row folds open to the whole task (F85).
+  - Esc in the message box interrupted only an open chat; now the session the page shows: c1 on Home, Talk's in Talk
+    (B142).
 - **Breaking: `[plan] release_alone` is gone (F130).** Tag the release `(alone)` instead (`plan add V --alone`, or
   `plan edit V7 --alone`; `--no-alone` clears it). Any task can now run alone the same way, so a major rewrite can stop
   other tasks starting beside it. A runner.toml still setting the key gets one warning in the run log and is otherwise

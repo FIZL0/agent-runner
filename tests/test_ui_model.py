@@ -185,7 +185,10 @@ RUN_CONTROL_ARGV = {  # F82: each run control and the runner command it must run
     'pause': ['pause'], 'go_on': ['pause', '--off'], 'force': ['force'], 'caps_on': ['force', '--off'],
     'stop': ['stop'], 'stop_now': ['stop', '--force'], 'stop_undo': ['stop', '--undo'],
     'task_drop': ['plan', 'drop', 'F1', U.TASK_DROP_WHY],
-    'upgrade': ['key', 'u'], 'suspend': ['key', 'z'], 'shutdown': ['key', 'x']}  # C26: the run's u, z, x keys
+    'upgrade': ['key', 'u'], 'suspend': ['key', 'z'], 'shutdown': ['key', 'x'],  # C26: the run's u, z, x keys
+    'restart': ['key', 'restart'], 'start': [], 'resume': ['resume', 'F1'], 'unclaim': ['plan', 'unclaim', 'F1'],  # F124
+    'wip_show': ['wip', 'show', 'main-checkout-1'], 'wip_restore': ['wip', 'restore', 'main-checkout-1'],
+    'wip_drop': ['wip', 'drop', 'main-checkout-1']}
 
 
 def test_run_controls(tmp: Path) -> None:
@@ -199,7 +202,7 @@ def test_run_controls(tmp: Path) -> None:
            'the list holds every control the task names')
         for key, argv in RUN_CONTROL_ARGV.items():
             ran.clear()
-            r = U.act('run_control', key=key, n='4', tid='F1', confirm=True)
+            r = U.act('run_control', key=key, n='4', tid='main-checkout-1' if 'wip' in key else 'F1', confirm=True)
             eq((r['ok'], ran), (True, [argv]), f'{key} runs {" ".join(argv)}')
         ran.clear()
         r = U.act('run_control', key='stop_now')
@@ -211,7 +214,8 @@ def test_run_controls(tmp: Path) -> None:
            'B139: take back asks a new control session "do F1 here", as take does, not c1')
         ran.clear()
         for bad in ({'key': 'slots_set', 'n': '-2'}, {'key': 'slots_set', 'n': '4; rm'}, {'key': 'slots_set'},
-                    {'key': 'task_drop', 'tid': '--force'}, {'key': 'nope'}):
+                    {'key': 'task_drop', 'tid': '--force'}, {'key': 'nope'}, {'key': 'resume'},
+                    {'key': 'wip_drop', 'tid': 'task/F1', 'confirm': True}):
             r = U.act('run_control', **bad)
             eq((r['ok'], r['code']), (False, 2), f'refused: {bad}')
         eq(ran, [], 'a refused control runs nothing')
@@ -648,6 +652,147 @@ def test_chat_list_f133(tmp: Path) -> None:
     eq(W.chat_list(names, {'order': 'junk', 'pins': [3, 'c3']}), ['c3', 'c1', 'c4', 'c6'], 'junk in the file is skipped')
 
 
+def ran_by(out: list, text: str = 'ok'):
+    return mock.patch.object(U, 'RUN', [lambda argv: (out.append(argv), (0, text))[1]])
+
+
+def test_status_f124(tmp: Path) -> None:
+    """F124: the snapshot holds what the Status view shows: the state pill's words, usage, what landed lately, and
+    what the Fix up controls would work on."""
+    fake_run(tmp)
+    for st, want in (({}, 'Running'), ({'paused': True}, 'Paused'), ({'forced': True}, 'Caps forced'),
+                     ({'stopping': True, 'paused': True}, 'Stopping')):
+        eq(U.run_state(True, st), want, f'{st}: {want}')
+    eq(U.run_state(False, {'paused': True}), 'Not up', 'no run: Not up')
+    S.C.notes('events.jsonl').write_text(json.dumps({'time': '2026-11-21T10:00:00', 'kind': 'landed', 'id': 'F1'}) + '\n',
+                                         encoding='utf-8')
+    snap = U.snapshot(up=True, now=NOW, links={})
+    json.dumps(snap)
+    eq((snap['run']['state'], snap['run']['forced']), ('Running', False), 'the run state in the snapshot')
+    eq(snap['usage'], [{'name': 'session', 'pct': 42}, {'name': 'week', 'pct': 85}], 'usage, each with its percent')
+    check(any('F1' in x['text'] and x['at'].startswith('2026-11-21T10:00') for x in snap['lately']), 'what landed lately',
+          snap['lately'])
+    eq(snap['fixups'], {'resume': [], 'unclaim': [], 'wip': []}, 'nothing to fix')
+    git(S.ROOT, 'branch', 'wip/main-checkout-2026-11-20-101010')
+    git(S.ROOT, 'branch', 'wip/T7')
+    U.FIXUPS[0] = float('-inf')
+    from agent_runner import slots, watch
+    with mock.patch.object(watch, 'last_session', lambda tid: (1, 'sid')), \
+            mock.patch.object(slots, 'transcript', lambda sid: '/x.jsonl'):
+        fix = U.snapshot(up=True, now=NOW, links={})['fixups']
+    eq([x['id'] for x in fix['wip']], ['main-checkout-2026-11-20-101010'], 'the edits a merge moved aside')
+    eq([x['id'] for x in fix['resume']], ['T7'], 'a cut-off task with its work kept, running nowhere')
+    ran = []
+    two = {'resume': [], 'unclaim': [{'id': 'F1', 'label': ''}, {'id': 'B2', 'label': ''}], 'wip': []}
+    with ran_by(ran), mock.patch.object(U, 'fixups', lambda st, ls: two):
+        eq(U.run_control('unclaim')['ok'], True, 'release stale claims')
+    eq(ran, [['plan', 'unclaim', 'F1'], ['plan', 'unclaim', 'B2']], 'every stale claim is released')
+    by = {c['key']: c for c in U.controls()}
+    for key in ('stop_now', 'suspend', 'shutdown', 'upgrade'):
+        check(by[key]['confirm'] and by[key]['group'], f'{key} asks first, from the sheet', by[key])
+    eq([by[k]['group'] for k in ('slot_add', 'pause', 'stop', 'force', 'upgrade', 'resume', 'wip_drop')],
+       ['', '', '', 'Run', 'Run', 'Fix up', 'Fix up'], "the sheet's groups; the everyday ones are on the card")
+
+
+def chat(n: int, sid: str, rows: list) -> str:
+    S.C.notes(f'control{n}.pid').write_text(f'1 {sid}', encoding='utf-8')
+    f = S.C.notes(f'{sid}.jsonl')
+    f.write_text(''.join(json.dumps(r) + '\n' for r in rows), encoding='utf-8')
+    return str(f)
+
+
+def said(who: str, text: str, at: str) -> dict:
+    return {'type': who, 'timestamp': at, 'message': {'content': [{'type': 'text', 'text': text}] if who == 'assistant'
+                                                      else text}}
+
+
+def test_chat_rows_f128(tmp: Path) -> None:
+    """F128, F129: each chat's row says who spoke last and when, whether an open question waits for the person, and the
+    name the person gave it."""
+    fake_run(tmp)
+    from agent_runner import control as K, slots
+    at = '2026-11-21T10:00:00.000Z'
+    paths = {'s2': chat(2, 's2', [said('user', 'hi', at), said('assistant', 'Which one do you want?', at)]),
+             's3': chat(3, 's3', [said('user', 'hi', at), said('assistant', 'Done.', '2026-11-21T10:05:00.000Z')]),
+             's4': chat(4, 's4', [said('assistant', 'Hm?', at), said('user', 'go', at)]),
+             's5': chat(5, 's5', [said('assistant', 'Done.', at), {'type': 'custom-title', 'customTitle': 'Mine'}])}
+    ents = lambda sid, skip_bad=False: [json.loads(l) for l in open(paths[sid], encoding='utf-8')]  # noqa: E731
+    with mock.patch.object(slots, 'transcript', lambda sid: paths.get(sid)), mock.patch.object(slots, 'entries', ents), \
+            mock.patch.object(K, 'control_live', lambda n: n in (2, 3, 4, 5)):
+        rows = {r['name']: r for r in U.control_rows({2: 'two', 3: 'three', 4: 'four', 5: 'five'})}
+        eq([(rows[n]['last'], rows[n]['needs_reply']) for n in ('c2', 'c3', 'c4')],
+           [('claude', True), ('claude', False), ('person', False)], 'who spoke last; an open question needs a reply')
+        eq(rows['c3']['at'] - rows['c2']['at'], 300, 'the last activity, in seconds')
+        eq((rows['c5']['title'], rows['c5']['renamed'], rows['c3']['title']), ('Mine', True, 'three'),
+           "a chat the person renamed shows their name; another keeps the runner's")
+        S.C.notes('control3.name').write_text(json.dumps({'name': 'Login', 'was': ''}), encoding='utf-8')
+        r3 = {r['name']: r for r in U.control_rows({3: 'three'})}['c3']
+        eq((r3['title'], r3['renamed']), ('Login', True), 'a rename shows before its turn has typed it')
+    eq(U.chat_quiet(), 6 * 3600, 'chat_quiet: 6 hours')
+    with mock.patch.dict(S.C.raw['ui'], {'chat_quiet': False}):
+        eq(U.chat_quiet(), 0, 'false turns it off')
+    ran = []
+    with ran_by(ran):
+        eq(U.act('rename_chat', chat='c3', title='  Login  woes ')['ok'], True, 'rename_chat')
+        eq(U.act('rename_chat', chat='s1', title='x')['ok'], False, 'a slot is not a chat')
+        eq(U.act('rename_chat', chat='c3', title='  ')['ok'], False, 'a name, please')
+    eq(ran, [['control', '--rename', '3', 'Login woes']], 'control --rename N NAME')
+
+
+def test_need_chat_f143(tmp: Path) -> None:
+    """F143: a Needs you item's Chat starts a control session whose first message holds the ask and the options; a bad
+    id, or one that no longer needs the person, is refused."""
+    fake_run(tmp)
+    ran = []
+    ask = {'title': 'Layout', 'summary': 'Pick a layout', 'groups': [{'heading': 'h', 'questions': [
+        {'id': 'lay', 'q': 'Which layout?', 'answers': ['Tabs', 'Drawer'], 'recommended': 1}]}]}
+    with ran_by(ran, 'control 7 is starting'):
+        r = U.act('need_chat', tid='D3', wait=False)
+        eq((r['ok'], r['name']), (True, 'c7'), 'a new chat')
+        eq(ran[-1][:4], ['control', '--new', '--no-wait', '--ask'], 'control --new --ask, not waiting')
+        text = ran[-1][4]
+        check(text == r['ask'] and 'D3' in text and "'Write the guide'" in text and 'hich layout' in text
+              and 'wait for my reply' in text, 'its first message: the id, the title and what was asked', text)
+        S.C.notes('sheets', 'D3.json').write_text(json.dumps(ask), encoding='utf-8')
+        U.act('need_chat', tid='D3')
+        check('Possible answers:' in ran[-1][3] and 'Which layout?: Tabs / Drawer (recommended)' in ran[-1][3],
+              "a pick sheet's questions and answers are in it", ran[-1])
+        eq(U.need_options({'label': 'CONFIRM'}), ['Yes', 'No'], 'a CONFIRM: Yes, No')
+        eq(U.need_options({'label': 'DECIDE', 'options': ['a', 'b']}), ['a', 'b'], "an item's own options")
+        path = chat(9, 'sx', [said('assistant', 'I looked at both. Tabs cost a day, the drawer two.', '2026-11-21T10:00:00Z')])
+        from agent_runner import slots, watch
+        with mock.patch.object(watch, 'last_session', lambda tid: (1, 'sx')), mock.patch.object(slots, 'transcript', lambda sid: path):
+            U.act('need_chat', tid='D3')
+        check('Tabs cost a day, the drawer two.' in ran[-1][3], "the agent's full last message is in it", ran[-1])
+        n = len(ran)
+        for bad in ('', 'D3; rm', '--force', 'F1'):
+            eq(U.act('need_chat', tid=bad)['ok'], False, f'refused: {bad!r}')
+        eq(len(ran), n, 'a refused one starts nothing')
+
+
+def test_need_drop_f110(tmp: Path) -> None:
+    """F110: Drop on a Needs you item asks first, then runs plan drop ID 'dropped from Needs you', and is gone."""
+    fake_run(tmp)
+    ran = []
+    with ran_by(ran):
+        r = U.act('need_drop', tid='D3')
+        check(not r['ok'] and r['confirm'].startswith('Drop D3?') and not ran, 'it asks first', r)
+        r = U.act('need_drop', tid='D3', confirm=True)
+        eq((r['ok'], r['gone'], ran), (True, 'D3', [['plan', 'drop', 'D3', 'dropped from Needs you']]), 'then drops it')
+        eq(U.act('need_drop', tid='--x', confirm=True)['ok'], False, 'a task id only')
+
+
+def test_feed_ids_b134(tmp: Path) -> None:
+    """B134: a feed entry carries its transcript entry's id, the same in every later feed."""
+    rows = [{'type': 'user', 'uuid': 'u1', 'message': {'content': 'hi'}},
+            {'type': 'assistant', 'uuid': 'u2', 'message': {'content': [
+                {'type': 'text', 'text': 'a'}, {'type': 'tool_use', 'name': 'Bash', 'input': {'command': 'ls'}}]}},
+            {'type': 'assistant', 'message': {'content': [{'type': 'text', 'text': 'no id'}]}}]
+    es = U.feed_entries(rows)
+    eq([e.get('id', '') for e in es], ['u1:0', 'u2:0', 'u2:1', ''], 'the uuid and the block')
+    eq([e.get('id', '') for e in U.feed_entries(rows[1:])][0], 'u2:0', 'the same from a later, shorter tail')
+
+
 def in_tmp(f):
     def go():
         print(f.__name__)
@@ -665,4 +810,6 @@ if __name__ == '__main__':
                          in_tmp(test_queue_rows), in_tmp(test_feed), in_tmp(test_feed_prompt_b154), in_tmp(test_chat_at_b154),
                          in_tmp(test_chat_and_terminal),
                          in_tmp(test_concept_copy), in_tmp(test_concept_chat), in_tmp(test_hidden_send),
-                         in_tmp(test_delete_chats), in_tmp(test_chat_list_f133)]))
+                         in_tmp(test_delete_chats), in_tmp(test_chat_list_f133),
+                         in_tmp(test_status_f124), in_tmp(test_chat_rows_f128), in_tmp(test_need_chat_f143),
+                         in_tmp(test_need_drop_f110), in_tmp(test_feed_ids_b134)]))

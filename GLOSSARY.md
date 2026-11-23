@@ -253,6 +253,48 @@ _On screen_: agent-runner list
 _In code_: cmd_list, device_projects, device_sessions, list_text
 _Avoid_: session list, ls
 
+**Style rules**:
+How the run app looks, moves and speaks: its tokens, parts, states, words, motion and scrolling, which every change to it follows
+_Said_: the style rules, STYLE.md
+_On screen_: docs/STYLE.md
+_In code_: docs/STYLE.md, test_style_f83, the tokens in web_page.html's :root
+_Avoid_: style guide (that is the voice file), design system, theme
+
+**Status view**:
+The run app's one page on the run itself: what needs the person, the run with its slots and controls, usage, what landed lately, the release, then the run log
+_Said_: Status
+_On screen_: Status
+_In code_: statusHTML, NAV
+_Avoid_: Activity, Agents page, dashboard
+
+**State pill**:
+The run's state in a word or two at the top of every page of the run app: Running, Paused, Stopping, Caps forced or Not up
+_Said_: the pill
+_On screen_: Running, Paused, Stopping, Caps forced, Not up
+_In code_: ui_model.run_state, pill()
+_Avoid_: badge, tag, label
+
+**Sheet**:
+A panel that slides up over the run app with more choices about what is on screen
+_Said_: More… sheet
+_On screen_: More…, Talk settings
+_In code_: SHEETS, openSheet
+_Avoid_: modal, popup, dialog (a pick sheet is another thing: a DECIDE's page of options)
+
+**Quiet chat**:
+A chat that needs no reply and has had nothing said in it for `[ui] chat_quiet`: grayed, at the bottom of Chats, until something is said
+_Said_: quiet chats
+_On screen_: Quiet
+_In code_: chat_quiet, chatGroups
+_Avoid_: archived chat, old chat, stale chat
+
+**Device override**:
+A setting this machine's runner.local.toml sets over the project's runner.toml
+_Said_: This device
+_On screen_: This device, Reset
+_In code_: save_local_setting, setting_device, setting_reset
+_Avoid_: local config, user setting
+
 **Run app**:
 The chat app a run serves on the web for a phone or a desktop: Home, a thread per session, and the Plan, over the same Run page
 _Said_: run app

@@ -531,8 +531,43 @@ def P_lines(d: Path) -> list[str]:
     return (d / 'plan/TODO.md').read_text(encoding='utf-8').splitlines()
 
 
+def test_rename_f129():
+    """F129: control --rename N NAME types /rename, and the session then counts as renamed by the person: kept when idle,
+    and control --title leaves it alone."""
+    from agent_runner import cmds as M, runner as R
+    from agent_runner.control_names import person_name
+    d = Path(tempfile.mkdtemp(prefix='agent-runner-rename-'))
+    git(d, 'init', '-q')
+    (d / '.gitignore').write_text('.runner/\n')
+    git(d, 'add', '-A')
+    git(d, 'commit', '-qm', 'start')
+    R.init(d)
+    typed = []
+    with mock.patch.object(K, 'control_live', lambda n: n in (1, 4)), mock.patch.object(M, 'init'), \
+            mock.patch.object(K, 'control_type', lambda n, text: (typed.append((n, text)), True)[1]):
+        eq(M.cmd_control(['--rename', '4', '  Login   woes ']), 0, 'control --rename 4 NAME')
+        eq(typed, [(4, '/rename Login woes')], 'types /rename NAME into it')
+        st = {'last': 'claude', 'text': 'Done.', 'at': 1.0, 'running': set(), 'title': '', 'said': 1, 'queued': False}
+        cf = {'idle': 60, 'quick': 60, 'talked': 60, 'ask_idle': 60, 'open': ['?']}
+        eq(K.control_verdict(st, cf, 1e9, 4), ('keep', 'renamed by the person'), 'kept, before the title shows too')
+        eq(K.control_verdict({**st, 'title': 'Login woes'}, cf, 1e9, 4), ('keep', 'renamed by the person'), 'and after')
+        eq(K.control_verdict(st, cf, 1e9, 5)[0], 'close', 'another session still closes')
+        eq(person_name(4, 'Renamed in the app'), '', 'a later rename in the apps is the newer name')
+        eq(M.cmd_control(['--rename', '1', 'Home base']), 0, 'c1 can be renamed')
+        eq(M.cmd_control(['--rename', '9', 'x']), 1, 'one that is not up is refused')
+        eq(M.cmd_control(['--rename', '4', '  ']), 2, 'and so is an empty name')
+        typed.clear()
+        K.control_set_title(4, 'what it is for')
+        eq(typed, [], 'control --title leaves the name')
+    with mock.patch.object(K, 'control_live', lambda n: False):
+        K.C.notes('control4.pid').write_text('1 sid', encoding='utf-8')
+        with mock.patch.object(K, 'log', lambda *a: None):
+            K.end_control(4, 'test')
+    eq(person_name(4, ''), '', 'an ended session takes its name with it')
+
+
 if __name__ == '__main__':
     raise SystemExit(report([test_handed_ask_as_c1_starts_fresh, test_brief_fits_session_start,
                              test_take_back_from_a_slot_just_started, test_sessions_one_and_each,
                              test_reopen_after_shutdown, test_second_shim_keeps_live_session,
-                             test_first_message_typed_after_remote_control]))
+                             test_first_message_typed_after_remote_control, test_rename_f129]))

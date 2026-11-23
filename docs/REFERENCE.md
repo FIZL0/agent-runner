@@ -129,6 +129,8 @@ task to fix X" (it files it with `plan add`), "do X now" (it uses `take`, never 
   opens the next free control session without taking focus: hidden through the slot shim, its output in
   `.runner/control<N>.log` (Windows: a hidden console); `attach cN` shows it. A name it takes (`control
   --title`) is kept in `.runner/control<N>.title`, where `list`, `agent-runner ui` and the run page read it.
+  `control --rename N NAME` (the run app's Rename, r in `agent-runner ui`) is the person's own name for it: typed in as
+  `/rename NAME`, so the session is never closed when idle and `control --title` leaves it.
   With `[run] remote` it watches that log for up to 90 s and prints its `claude.ai/code/session_…` link,
   so the control session that ran it answers with a link to tap. Tell a control session "new", "new
   session", "/new" or type `/control`: its brief maps those to `control --new`. `/control` is a skill only
@@ -228,29 +230,55 @@ needs (made once per project in `.runner/web.token`), is in `status` and the run
 the run page: the same snapshot as `agent-runner ui` and most of its actions (not opening a slot), laid out for a phone (the sidebar becomes a
 drawer) and a desktop. It follows the browser's light or dark setting; `[ui] theme` is the terminal UI's only.
 
-- **Talk.** The first view in the sidebar, for running the run hands-free: tap the big mic, speak, and the
-  reply is read aloud (the browser's own speech recognition and speech, no install); a chat box under it takes
-  typing. Talk has its own control session, titled Talk and reused while it is live, told to answer in short
+- **Talk.** The first view in the sidebar, for running the run hands-free: tap the mic, speak, and the
+  reply is read aloud (the browser's own speech recognition and speech, no install). The speaker button left of the
+  mic turns reading aloud on and off (while a reply is read, it stops it); the keyboard button swaps the mic for the
+  message box and the browser remembers which. Each reply has a play button. The gear opens Talk settings, kept per
+  browser: read replies aloud, the voice (the system's own by default), tap or hold to talk, and auto listen (listen
+  again once a reply was read, until one silent turn). Talk has its own control session, titled Talk and reused while it is live, told to answer in short
   spoken sentences with no task IDs, paths, commands, links or markdown. The mic needs Chrome, Edge or Safari
   on https or localhost (a plain http LAN address gets no mic); without one it says so and the box still works.
-- **Sidebar.** New chat, Talk, Home (with the Needs you count), Agents, Activity and Plan. Chats are the control
-  sessions; Agents are the slots working on a task, each with a live dot. The machine, the slots and usage sit
-  at the bottom.
+- **Sidebar.** New chat, Talk, Home (with the Needs you count), Status, Plan, Concepts and Settings. Chats are the
+  control sessions: a dot marks one that needs your reply (an open question, or it spoke after you last opened it),
+  and one that needs none with nothing said for `[ui] chat_quiet` is gray at the bottom under Quiet (never c1, a
+  pinned or a renamed one). Double-click a chat's name (on a phone: its ⋯) to rename it; the name is yours, so the
+  run neither closes that chat when idle nor renames it. Agents working are the slots on a task. On a phone the
+  sidebar is a drawer: swipe right anywhere to open it, left to close it, and its button has a dot while Home or
+  Concepts has a count.
+- **State.** Every page's top bar has the run's state: Running, Paused, Stopping, Caps forced or Not up. A tap on it
+  opens Status.
+- **Status.** One scroll in `agent-runner ui`'s order: Needs you, the run with its slots and controls, usage, what
+  landed lately, the release, and the run log with the Since asks. The Run card has the everyday controls (slots,
+  pause, stop); More… opens the rest in a sheet, each with its key in `agent-runner ui`: Stop (stop now, suspend, shut
+  down), Run (set slots, force, upgrade, restart) and, while there is something to fix, Fix up (resume a cut-off task,
+  release stale claims, the main-checkout edits a merge moved aside). Stop now, suspend, shut down, upgrade, restart
+  and dropping edits ask first, in place; in `agent-runner ui` the key is pressed twice. Restart (`key restart`)
+  re-execs the run between merges so that it reads its settings again; its tasks keep going.
+- **Settings.** Every key `agent-runner settings` lists, with its value, where that comes from, its default and its
+  help. This device saves to `runner.local.toml` at once, one key in place, comments kept; Reset takes the key out.
+  Project queues a C task on `runner.toml`, which lands through the gate. Each says when it applies (slots: now;
+  the rest: the next run, or Restart the run). Keys that are no setting show read-only, flagged.
 - **Home.** A greeting, a message box, quick asks (since my last look, what needs me, add a task), then
-  Needs you (each item's answer buttons, Later to shelve it, Chat to talk it over with c1), Working now (opens
-  that agent's thread), Up next (opens c1 with an About line naming the task) and Release (when the next one
+  Needs you (each item's answer buttons, Later to shelve it, Chat to open a new chat that shows the question and its answers, Drop to
+  drop the task after a confirm), Working now (opens
+  that agent's thread), Up next (a row folds open to the task's whole text) and Release (when the next one
   lands, or now). An answer button runs the plan command itself, with no AI session: Yes on a CONFIRM or a picked
   answer runs `plan confirm ID "<reply>"`, No on a CONFIRM runs `plan change ID "No: the check failed"` (which reopens it), and a pick sheet's go runs `sheet ID --go`. The button shows it is working, a toast says what was done (e.g. "R13 ticked") and the item leaves Needs you at once; on a failure the toast says why and the item stays. Words typed in a reply still go to c1. `agent-runner ui`'s answer tab does the same.
 - **Threads.** A session's feed as a conversation: its replies in serif with no bubble, yours in bubbles,
   tool steps folded as "Ran N steps", and a mark while it works, with a Stop button. Ctrl+C or Stop interrupts it; Esc only leaves the box, then
   goes back (B116). A control
   session's thread talks to that session; an agent's thread messages that agent.
+  A chat opens at its newest message and follows it, unless you scrolled up; then a button jumps to the latest. A
+  refresh never moves the page, in any view.
 - **Message box.** Enter sends, Shift+Enter starts a new line, and each thread keeps its own draft. An About
   line says what the message is about. Attachments are uploaded to the run (`POST /upload`), kept under
   `.runner/uploads` (`<notes>/uploads`, git-ignored with the rest of the notes folder), and handed to the
   session as paths on this machine.
-- **Plan.** The queue in plain words, Add a task, and each concept with a button per option (taken from its
-  page's headings), plus Chat and View. Tasks are not edited here directly: ask in a chat.
+- **Plan.** The queue in plain words (a row folds open to `plan ID`'s text, with Chat), and Add a task. Tasks are not
+  edited here directly: ask in a chat.
+- **Concepts.** Each concept with a button per option (taken from its page's headings), plus Chat, New chat and View.
+
+How the app looks, moves and speaks is in [STYLE.md](STYLE.md); a change to it follows those rules.
 
 The app does not open slots in the Claude apps; `agent-runner ui` still does (see `[run] sessions` above).
 
@@ -1082,7 +1110,8 @@ project keep them in its own config file (see [docs/SETUP.md](SETUP.md#wrapping-
 **`runner.local.toml` is one machine's settings.** Laid over the shared file key by key, table by table, it
 changes what one person needs without editing what everyone shares: a lower `weekly_max` for a smaller
 plan, fewer `slots` on a laptop, another `model`. `run` creates it in the main checkout when it is missing,
-all comments so it changes nothing, and never rewrites it after that; it keeps it out of git through the
+all comments so it changes nothing, and changes it only when a person saves a This device value in the run app's
+Settings (one key on its own line; its comments stay); it keeps it out of git through the
 clone's `.git/info/exclude`, so neither a `git add` nor another person sees it. Worktrees read the main
 checkout's.
 
@@ -1125,6 +1154,8 @@ theme = "ryha"            # the terminal UI's (`ui`) colours: ryha (black, red a
                           # light or dark setting
 web = "app"               # the view the run app's link opens: "app" (the run app) or "terminal" (the terminal-style
                           # page, /term); a browser that switched views opens its last one (see The run app)
+chat_quiet = "6h"         # a chat that needs no reply, with nothing said in it for this long, is grayed at the bottom
+                          # of the run app's Chats (never c1, a pinned or a renamed one); false: off
 
 [models]                  # the model each type of work runs on (see Models per role below)
 code = "opus"             # a task's own session; unset, [run] model sets it
