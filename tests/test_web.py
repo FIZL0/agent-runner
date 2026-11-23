@@ -2232,7 +2232,7 @@ const document = {activeElement: null, hidden: false, querySelector: s => s === 
 const window = {};
 let HOME_PAGE = false, VIEW = 'a:60 b:60 c:60', CHAT = 'm1:80 m2:80';
 const S = {snap: {sessions: []}, view: 'home', thread: null, f: {}, atts: [], ob: [], feeds: {}, live: true, sheet: ''};
-const HI = {i: null}, TERM = {mode: ''}, I = {down: ''}, keysLine = () => '', esc = s => s, tq = p => p;
+const pageColor = () => {}; const HI = {i: null}, TERM = {mode: ''}, I = {down: ''}, keysLine = () => '', esc = s => s, tq = p => p;
 const markSeen = () => {}, obHide = () => {}, obDraw = () => {}, side = () => {}, sheetDraw = () => {}, topHTML = () => 'x:1';
 const isAgent = () => false, threadTitle = n => n, convo = () => CHAT, box = () => 'box', store = {get: () => '', set() {}};
 const boxKey = () => S.thread || 'home', grow = () => {}, slashShow = () => {}, talkHTML = () => CHAT, histAdd = () => {};
@@ -2347,12 +2347,19 @@ console.log(JSON.stringify(out));`);
 # B160: the keyboard: a stubbed visualViewport, over the same scrolling box
 KB_DRIVER = SCROLL_DRIVER.split("const els = ")[0] + r"""
 const on = {}, VVS = {height: 800, offsetTop: 0, scale: 1, addEventListener: (t, f) => on[t] = f};
-const window = {visualViewport: VVS, scrollY: 0, scrollTo(x, y) { this.scrollY = y }};
+const CSS = {supports: p => p === '-webkit-touch-callout'}, window = {CSS, visualViewport: VVS, scrollY: 0, scrollTo(x, y) { this.scrollY = y }};
 const cls = () => { const c = new Set(); return {toggle: (k, v) => v ? c.add(k) : c.delete(k), contains: k => c.has(k)} };
 const els = {app: {style: {}, classList: cls()}, body: new Box(600)};
 const $ = k => els[k], box = {matches: () => true, closest: () => null}, docOn = {};
-const document = {activeElement: null, documentElement: {clientHeight: 800}, addEventListener: (t, f) => docOn[t] = f};
-const S = {view: 'talk', thread: null, pin: true}, jumpDraw = () => {};
+let clock = 5000, frames = [], reduced = false, glides = [];
+Date.now = () => clock;
+const requestAnimationFrame = f => frames.push(f), frame = (ms = 16) => { clock += ms; const l = frames; frames = []; l.forEach(f => f()) };
+const matchMedia = () => ({matches: reduced}), getComputedStyle = () => ({getPropertyValue: k => k === '--ease' ? ' ease-out' : '250ms'});
+const anim = who => (kf, o) => { const a = {who, from: kf[0].transform, ms: o.duration, cancel() {}}; glides.push(a); return a };
+els.body.style = {}; els.body.animate = anim('text');
+const dockEl = {animate: anim('dock'), getBoundingClientRect: () => ({top: (parseInt(els.app.style.top) || 0) + (parseInt(els.app.style.height) || 800) - 100})};
+const document = {activeElement: null, documentElement: {clientHeight: 800}, addEventListener: (t, f) => docOn[t] = f, querySelector: s => s === '.dockwrap' ? dockEl : null};
+const S = {view: 'talk', thread: null, pin: true, sheet: ''}, jumpDraw = () => {};
 eval(line('const atEnd=') + line('const chatShown=') + line('function toEnd(') + page.slice(page.indexOf('const VV='), page.indexOf('function grow(')) + `
 const b = $('body'), out = {}, left = () => b.scrollHeight - b.scrollTop - b.clientHeight;
 const app = () => [$('app').style.height || '', $('app').style.top || '', $('app').classList.contains('kb')];
@@ -2373,7 +2380,33 @@ const field = {matches: () => true, closest: () => b, getBoundingClientRect: () 
 document.activeElement = field; vv(420, 260); out.field = [app(), b.scrollTop];
 field.getBoundingClientRect = () => ({top: 500 - b.scrollTop, bottom: 540 - b.scrollTop});
 docOn.focusin({target: field}); out.next = b.scrollTop;
-console.log(JSON.stringify(out));`);
+// the order the recording shows: focus, the pan, the resize late; then blur before the resize
+document.activeElement = null; frame(2000); frame(2000); vv(800, 0);
+S.view = 'talk'; S.pin = true; toEnd(); window.scrollY = 0; glides.forEach(g => g.onfinish && g.onfinish());
+document.activeElement = box; docOn.focusin({target: box});
+VVS.offsetTop = 260; window.scrollY = 90; frame(); out.panFirst = [app(), window.scrollY];
+VVS.height = 420; b.h = 220; glides = []; frame(); out.thenShort = [app(), left(), glides.map(g => [g.who, g.from, g.ms]), b.style.marginTop];
+glides[0].onfinish(); out.glided = [b.style.marginTop, left()];
+on.resize(); on.scroll(); out.lateEvents = app();
+VVS.offsetTop = 0; frame(); out.settled = app();
+frame(2000); frame(2000); out.idle = frames.length;
+VVS.offsetTop = 40;
+docOn.focusout({target: box, relatedTarget: box}); Promise.resolve().then(() => { out.nextField = app();
+  docOn.focusout({target: box, relatedTarget: null}); document.activeElement = box; return Promise.resolve() }).then(() => { out.redrawn = app();
+  document.activeElement = null; b.h = 600; glides = []; docOn.focusout({target: box, relatedTarget: null}); return Promise.resolve() }).then(() => {
+  out.blurFirst = [app(), left(), glides.map(g => g.who)];
+  VVS.offsetTop = 0; frame(); out.unpanned = app();
+  VVS.height = 800; on.resize(); out.lateClose = app(); frame(2000);
+  VVS.offsetTop = 24; on.scroll(); out.after = app(); VVS.offsetTop = 0;
+  reduced = true; glides = []; document.activeElement = box; vv(420, 0); out.reduced = [app(), glides.length]; document.activeElement = null; vv(800, 0);
+  // a tap on a box: its focus is made here, with no scroll; a scroll, a long press and a box in focus are left alone
+  const log = [], tb = {style: {}, value: 'draft', isConnected: true, closest: () => tb, setSelectionRange: (x, y) => log.push([x, y]), focus: o => log.push([o.preventScroll, tb.style.opacity]), click: () => log.push('click')};
+  const tap = (dx, ms, off) => { log.length = 0; let stopped = false; docOn.touchstart({touches: [{clientX: 50, clientY: 700}], target: tb}); clock += ms;
+    docOn.touchend({cancelable: true, defaultPrevented: !!off, changedTouches: [{clientX: 50, clientY: 700 + dx}], preventDefault() { stopped = true }}); return [stopped, log.slice()] };
+  out.tap = tap(2, 80); frame(); out.hidden = tb.style.opacity; frame(); out.shown = tb.style.opacity;
+  out.notTap = [tap(30, 80), tap(0, 700), tap(0, 80, true)]; document.activeElement = tb; out.again = tap(0, 80);
+  console.log(JSON.stringify(out));
+});`);
 """
 
 
@@ -2384,7 +2417,10 @@ def test_keyboard_b160(tmp: Path) -> None:
     check(re.search(r'\.app\.kb\{[^}]*position:fixed[^}]*padding-bottom:0\}', css), 'keyboard open: .app is placed, with no bottom inset')
     check(re.search(r'\.app\{[^}]*padding-bottom:env\(safe-area-inset-bottom', css), 'closed: .app keeps its bottom inset')
     check(re.search(r'\.app\.kb \.dock\{padding-bottom:8px\}', css), 'and the dock its 14px only when closed')
-    check('html,body{height:100%;overscroll-behavior:none;overflow:hidden}' in css and 'body{position:fixed;inset:0' in css, 'the document is locked')
+    check(':root.term{--page:var(--t-bg)}' in css and re.search(r'html,body\{[^}]*background:var\(--page\)', css), "outside .app is the view's own colour")
+    check('.main.term .notices{height:auto' in css, "a chat's notices have a row of their own")
+    check('interactive-widget=resizes-content' in W.PAGE.read_text(encoding='utf-8'), 'a browser that can resizes the page itself')
+    check('html,body{height:100%;overscroll-behavior:none;overflow:hidden;' in css and 'body{position:fixed;inset:0' in css, 'the document is locked')
     if not shutil.which('node'):
         print('  (no node here: the keyboard script test is skipped)')
         return
@@ -2402,6 +2438,19 @@ def test_keyboard_b160(tmp: Path) -> None:
     eq((got.get('zoom'), got.get('noField')), (off, off), 'neither a pinch zoom nor a short window with no field in focus is a keyboard')
     eq(got.get('field'), [['420px', '260px', True], 228], 'a field in a view is scrolled above the keyboard')
     eq(got.get('next'), 328, 'and so is the next field, with the keyboard still open')
+    eq(got.get('panFirst'), [['', '260px', False], 0], 'a pan before the resize: full height, the header follows it, the document is scrolled back')
+    eq(got.get('thenShort'), [['420px', '260px', True], 0, [['text', 'translateY(380px)', 250], ['dock', 'translateY(380px)', 250]], '-380px'],
+       'the viewport changed: seen on the next frame with no event, and the box and the words glide there')
+    eq(got.get('glided'), ['', 0], 'after the glide nothing of it is left')
+    eq((got.get('lateEvents'), got.get('settled')), (['420px', '260px', True], ['420px', '0px', True]), 'late events change nothing; the pan that ends is followed')
+    eq(got.get('idle'), 0, 'and no frame is asked for once it is settled')
+    eq((got.get('nextField'), got.get('redrawn')), (['420px', '0px', True],) * 2, 'going to another field, or a redrawn box, closes nothing')
+    eq(got.get('blurFirst'), [['', '40px', False], 0, ['text', 'dock']], 'a blur before the resize: full height at once, pinned, the header still on screen')
+    eq((got.get('unpanned'), got.get('lateClose'), got.get('after')), (off, off, off), 'then all of it back to normal')
+    eq(got.get('reduced'), [['420px', '0px', True], 0], 'reduced motion: no glide')
+    eq(got.get('tap'), [True, [[5, 5], [True, '0'], 'click']], "a tap's focus does not scroll, and the box is see-through for it")
+    eq((got.get('hidden'), got.get('shown')), ('0', ''), 'for two frames')
+    eq((got.get('notTap'), got.get('again')), ([[False, []]] * 3, [False, []]), 'a scroll, a long press, a swipe and a box in focus are left to the browser')
 
 
 # B162: the mic's recognizers, as iOS ends them: a stop ends one only when the test says so (end), timers run on tick()

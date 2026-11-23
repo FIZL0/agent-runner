@@ -110,7 +110,8 @@ Motion shows where a thing came from, where it went, or that it changed. Nothing
 - **Only `transform` and `opacity`**, with `visibility` to take a closed thing out of reach, and a switch's
   `background-color`. Never height, width, top or margin.
 - **What animates:** the drawer and the sheet slide; their scrim fades; the Talk dock's mic and box cross-fade; a card
-  or message that is new fades in and rises 6px; a view fades in when you go to it; a state word that changed fades in; a chevron turns.
+  or message that is new fades in and rises 6px; a view fades in when you go to it; a state word that changed fades in; a chevron turns; the message box, the chat's words and the sheet glide (transform
+  only) to their place when the keyboard opens or closes (`kbGlide()`).
 - **What never animates:** a refresh of what is already there, a list reordering under the reader, text being
   typed, the scroll position (a jump to the latest is instant), anything on first load.
 - **New means new:** give a thing that can come and go `data-k="its key"` (and `data-v="its state"` if it has one).
@@ -119,7 +120,8 @@ Motion shows where a thing came from, where it went, or that it changed. Nothing
   the markup: the markup is drawn again on every refresh.
 - **A finger leads.** While it drags, the drawer follows it with no transition; on release it settles.
 - **Reduced motion:** under `prefers-reduced-motion:reduce` there is none. One rule at the end of the stylesheet
-  zeroes every duration, so nothing needs its own.
+  zeroes every duration, so nothing needs its own. A script's `el.animate()` is not in that rule: it checks
+  `matchMedia` itself.
 
 ## Scroll
 
@@ -130,14 +132,16 @@ Motion shows where a thing came from, where it went, or that it changed. Nothing
 - Going to a view starts at its top; coming back to one you left returns to where you were.
 - A refresh also keeps focus, the caret (`keepFields()`), a text selection, what is folded open, and a code block's
   sideways scroll.
-- A notice (`.notice`) floats over the top of the view. It never pushes it down.
+- A notice (`.notice`) floats over the top of the view and never pushes it down, except in a chat: there it has its own
+  row under the header, so it covers no text, and `noticeRoom()` keeps the text in place. Elsewhere it floats as before.
 
 ## Touch, keys and access
 
 - A finger's target is at least `--tap`. Hover only adds: whatever it reveals, touch shows or puts in a row's sheet.
 - Text boxes are 16px or more, so a phone does not zoom.
 - Touch listeners that watch a gesture are passive, except a `touchmove` that must keep the page still: the drawer
-  swipe and a row drag. Those call `preventDefault()` only once the gesture has started, so a scroll stays smooth.
+  swipe and a row drag, and the `touchend` that makes a tap's focus on a text box (`kbTapEnd()`, iOS only). Those call
+  `preventDefault()` only once the gesture has started, so a scroll stays smooth; the `touchend` calls it only for such a tap.
 - A touch is one thing until the finger lifts. One that scrolled never becomes a swipe, and a drawer swipe never scrolls.
   Decide under 10px: iOS cannot cancel a scroll that has begun.
 - A swipe leaves text boxes, sideways scrollers, a row being dragged and mostly vertical moves alone.
@@ -154,6 +158,14 @@ Motion shows where a thing came from, where it went, or that it changed. Nothing
   Anything with a text box lives inside `.app` and is sized in % or `cqh`, not vh, while the keyboard is open.
 - Never `scrollIntoView` to show a field being typed in: `kbReveal()` scrolls its own scroller. Pinch zoom is left
   alone. Safari's own address pill and arrows bar cannot be removed in a tab.
+- Outside `.app` (behind Safari's bar, around the keyboard) shows `html` and `body`'s `--page`, the view's own colour
+  (a chat's `--t-bg`); `theme-color` follows it (`pageColor()`).
+- A tap's focus on a text box in iOS is made by `kbFocus()`: `preventScroll`, and the box see-through for two frames, so
+  Safari does not pan. Every scripted `focus()` of a box passes `preventScroll:true`, with `kbReveal()` where it must come into view.
+- `.app` keeps full height until the visual viewport changes, and gets it back at once on blur.
+- For 900ms (`KB_MS`) after a field is entered or left, `kbFit()` runs each frame on iOS, as events come late and in any
+  order, and follows Safari's pan so the header stays on screen.
+- The viewport meta has `interactive-widget=resizes-content` for browsers that have it.
 
 ## Before you finish
 
