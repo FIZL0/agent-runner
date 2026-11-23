@@ -128,10 +128,14 @@ NO_PUSH = ('When your session ends, the runner merges your branch and tests the 
            '(releases, uploads, stores). A human reviews and pushes.')
 
 
+def plan_at(cwd: Path) -> Path:
+    """The plan directory a session in worktree `cwd` reads and changes."""
+    return C.plan_dir if C.plan_external else cwd / os.path.relpath(C.plan_dir, C.root)
+
+
 def brief_for(tid: str, cwd: Path) -> str:
     try:
-        plan_dir = C.plan_dir if C.plan_external else cwd / os.path.relpath(C.plan_dir, C.root)
-        return '\n'.join(P.brief(tid, root=cwd, plan_dir=plan_dir))
+        return '\n'.join(P.brief(tid, root=cwd, plan_dir=plan_at(cwd)))
     except SystemExit as e:
         return f'({C.command} plan brief {tid} produced nothing: {e})'
 
@@ -220,6 +224,8 @@ def prompt_for(tid: str, n: int, slots: int, cwd: Path, branch: str, model: str 
         prompt = f'{prompt.rstrip()}\n\n' + review_prompt(tid, cwd, harness=loop)
     if 'docs' in subagents() and not loop:  # F101; F132: the harness loop has no subagents
         prompt = f'{prompt.rstrip()}\n\n' + DOCS_PROMPT.format(runner=C.command, tid=tid)
+    if big := P.too_big(tid, C, plan_at(cwd) / 'TODO.md'):  # F177
+        prompt = f'{prompt.rstrip()}\n\n' + SPLIT_PROMPT.format(runner=C.command, tid=tid, why=big)
     if tools := shared_tools.brief(C.command, tid):  # F168
         prompt = f'{prompt.rstrip()}\n\n{tools}'
     prompt = f'{prompt.rstrip()}\n\nProject policies:\n' + '\n'.join(f'- {policy}' for policy in policies)
@@ -232,6 +238,23 @@ BUDGET_STOP = ('Stop at a clean point: {tid} has used its budget ({why}). If you
                'running its test gate, let it finish and do nothing else. Otherwise do not run `done`: commit what '
                'is solid on task/{tid}, write in your journal what is done and what is left, then end your turn. '
                'The run parks your branch as wip/{tid}, and the task\'s next attempt starts from there.')
+
+
+SPLIT_PROMPT = """\
+Split {tid} first: it is too big for one session ({why}). Before any other work, choose its first part (one outcome \
+that passes the gate and can be checked alone) and file each other part with `{runner} plan add {tid} "<what, why, \
+how to check>" --files …` (they become {tid}a, {tid}b, … and start once {tid} has landed; `--after` another part it \
+needs, never {tid}). Nothing the task asks for may be lost between them. Then `{runner} plan edit {tid} "<the first \
+part's whole text>" --files <its files>`, and do only that part. Skip what an earlier attempt already did or filed."""
+
+
+# F177: said once to a session past `[run] context_warn`, at a turn's end (`watch.full_message`, harness.mjs)
+CONTEXT_FULL = ('From the runner, not a person: this session\'s context is {peak}k tokens, past [run] context_warn '
+                '({warn}k). If your `{runner} done` is already running its test gate, let it finish and do nothing '
+                'else. Otherwise: commit what is solid on task/{tid}, file the rest as a part with `{runner} plan add '
+                '{tid} "<what is left, why, how to check>" --files …`, make {tid} say what you did with `{runner} '
+                'plan edit {tid} "<text>" --files …`, then `{runner} done` and `{runner} finish`. This is said once, '
+                'and nothing stops you if you go on.')
 
 
 CONCEPT_PROMPT = """\

@@ -41,7 +41,7 @@ const PROVIDER_IDS = { copilot: 'github-copilot', codex: 'openai-codex', gemini:
 // --- arguments ----------------------------------------------------------------------------------------------
 
 function parseArgs(argv) {
-  const a = { idle: 300, once: false, resume: false, taskTokens: 0, taskUsd: 0, fence: null, runner: null,
+  const a = { idle: 300, once: false, resume: false, taskTokens: 0, taskUsd: 0, contextWarn: 0, contextText: '', fence: null, runner: null,
     provider: null, systemFile: '', promptFile: '', notes: '', sid: '', model: '', fallback: [] };
   for (let i = 0; i < argv.length; i++) {
     const k = argv[i], v = () => argv[++i];
@@ -55,6 +55,8 @@ function parseArgs(argv) {
     else if (k === '--once') a.once = true;
     else if (k === '--task-tokens') a.taskTokens = Number(v()) || 0;
     else if (k === '--task-usd') a.taskUsd = Number(v()) || 0;
+    else if (k === '--context-warn') a.contextWarn = Number(v()) || 0;
+    else if (k === '--context-text') a.contextText = v();
     else if (k === '--fence-cmd') a.fence = JSON.parse(v());
     else if (k === '--runner-cmd') a.runner = JSON.parse(v());
     else if (k === '--provider') a.provider = JSON.parse(v());
@@ -70,6 +72,11 @@ function parseArgs(argv) {
 function textOf(content) {
   if (typeof content === 'string') return content;
   return (content || []).filter((b) => b && b.type === 'text').map((b) => b.text || '').join('\n');
+}
+
+// the context a call was made with, as watch.usage counts it
+function contextOf(u) {
+  return (u?.input_tokens || 0) + (u?.cache_read_input_tokens || 0) + (u?.cache_creation_input_tokens || 0);
 }
 
 function claudeUsage(u) {
@@ -159,6 +166,18 @@ class Transcript {
       i = j - 1;
     }
     return { messages: out, tokens, usd };
+  }
+
+  // the biggest context, in tokens, the session has had so far (F177)
+  peak() {
+    let peak = 0;
+    if (!fs.existsSync(this.file)) return peak;
+    for (const line of fs.readFileSync(this.file, 'utf8').split('\n')) {
+      let e;
+      try { e = JSON.parse(line); } catch { continue; }
+      if (e.type === 'assistant') peak = Math.max(peak, contextOf(e.message?.usage));
+    }
+    return peak;
   }
 
   write(type, message, harness, extra = {}) {
@@ -594,7 +613,7 @@ async function main() {
   let provider = await loadProvider(a.model, a.provider);
   console.log(`harness: ${a.resume ? 'resumed' : 'started'} session ${a.sid} on ${a.model} in ${cwd}`);
   const pending = prompt.trim() ? [prompt] : [];
-  let failures = 0;
+  let failures = 0, peak = t.peak();
   for (;;) {
     for (const text of [...pending.splice(0), ...tells.take()]) {
       messages.push(t.user(text));
@@ -650,6 +669,7 @@ async function main() {
     t.assistant(m);
     const [dt, du] = turnSpend(claudeUsage(m.usage), m.model);
     tokens += dt; usd += du;
+    peak = Math.max(peak, contextOf(claudeUsage(m.usage)));
     if (m.stopReason === 'error' || m.stopReason === 'aborted') {
       console.log(`harness: the model call failed: ${m.errorMessage || m.stopReason}`);
       return 1;
@@ -670,6 +690,12 @@ async function main() {
     }
     if (calls.length) continue;
     if (a.once) return 0;
+    const full = path.join(a.notes, `${a.sid}.full`); // F177: said once, at a turn's end (watch.full_message)
+    if (a.contextWarn && Math.floor(peak / 1000) > a.contextWarn && s.undone() && !fs.existsSync(full)) {
+      fs.writeFileSync(full, `${Math.floor(peak / 1000)}\n`);
+      pending.push(a.contextText.replaceAll('{tid}', s.tid).replaceAll('{peak}', String(Math.floor(peak / 1000))));
+      continue;
+    }
     if (!(await tells.wait(a.idle))) {
       console.log(`harness: ${a.idle} s at the prompt with nothing told: the session ends`);
       return 0;

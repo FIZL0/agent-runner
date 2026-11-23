@@ -204,6 +204,7 @@ def drop_session_tmp(sid: str) -> None:
     if not re.fullmatch(r'[0-9a-f-]{36}', sid or ''):
         return
     C.notes(f'{sid}.brief').unlink(missing_ok=True)
+    full_mark(sid, C).unlink(missing_ok=True)
     for root in tmp_roots():
         for d in root.glob(f'claude-*/*/{sid}'):
             shutil.rmtree(d, ignore_errors=True)
@@ -723,6 +724,11 @@ def stop_hook(idle: int) -> int:
     t = ev.get('transcript_path') or ev.get('transcriptPath')
     if not t or not os.path.exists(t):
         return 0
+    if ev.get('hook_event_name', 'Stop') == 'Stop' and (said := full_message(t)):  # F177: the turn goes on with it
+        print(json.dumps({'decision': 'block', 'reason': said}))
+        return 0
+    if idle < 0:  # a stream session: `run_stream` ends it
+        return 0
     if ended():  # F102: the agent ran `finish` or `ask`: end it now
         idle = 0
     elif finished():  # `done` succeeded: nothing left to wait for, and its leftovers get no grace
@@ -739,6 +745,52 @@ def stop_hook(idle: int) -> int:
     except Exception:
         pass
     return 0
+
+
+def context_peak(t: str) -> int:
+    """The biggest context, in tokens, of transcript file `t`'s own calls (as `usage` counts it); 0 unread. For
+    the Stop hook, which runs with no run's config loaded."""
+    peak = 0
+    try:
+        with open(t, encoding='utf-8', errors='replace') as f:
+            for l in f:
+                if '"usage"' not in l:
+                    continue
+                try:
+                    d = json.loads(l)
+                    u = d['message']['usage'] if d['type'] == 'assistant' and not d.get('isSidechain') else {}
+                    peak = max(peak, sum(u.get(k) or 0 for k in ('input_tokens', 'cache_read_input_tokens',
+                                                                  'cache_creation_input_tokens')))
+                except (ValueError, KeyError, TypeError, AttributeError):
+                    continue
+    except OSError:
+        pass
+    return peak
+
+
+def full_mark(sid: str, c) -> Path:
+    """Left when session `sid` was told its context is full (F177): it is told once, resumed or not."""
+    return c.notes(f'{sid}.full')
+
+
+def full_message(t: str) -> str:
+    """F177: what a slot's task session is told once, as a turn of its ends with its context past `[run]
+    context_warn`; '' otherwise: not past it, told before, `done` or `finish` ran, no task, or any trouble."""
+    if not os.environ.get('AGENT_RUNNER_SLOT') or finished():
+        return ''
+    try:
+        from agent_runner.brief import CONTEXT_FULL
+        from agent_runner.config import cfg
+        from agent_runner.tools import task_here
+        c = cfg()
+        warn = int(c.run.get('context_warn') or 0)
+        mark = full_mark(Path(t).stem, c)
+        if warn <= 0 or mark.exists() or (peak := context_peak(t) // 1000) <= warn or not (tid := task_here()):
+            return ''
+        mark.write_text(f'{peak}\n', encoding='utf-8')  # before it is said: a mark that cannot be left says nothing
+        return CONTEXT_FULL.format(tid=tid, peak=peak, warn=warn, runner=c.command)
+    except (Exception, SystemExit):  # noqa: BLE001 - a warning never breaks the hook that ends sessions
+        return ''
 
 
 # a user message or a tool result

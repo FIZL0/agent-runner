@@ -170,10 +170,11 @@ class Claude:
 
     def flags(self, sid: str, model: str, idle: int, resume: bool, once: bool) -> list[str]:
         stop = [{'hooks': [{'type': 'command', 'command': plat.command_text(
-            [*runner_cmd(), 'run', '--stop-hook', '--idle', str(idle)])}]}]
+            [*runner_cmd(), 'run', '--stop-hook', '--idle', str(-1 if stream_engine() else idle)])}]}]
         brief = C.notes(f'{sid}.brief')
-        # F106b: a stream session ends at its result event (`run_stream`), so it gets no idle Stop hook
-        ends = {} if stream_engine() else {'Stop': stop, 'StopFailure': stop}
+        # F106b: a stream session ends at its result event (`run_stream`), so its Stop hook ends nothing (idle -1):
+        # it only says once that the context is full (F177)
+        ends = {'Stop': stop} if stream_engine() else {'Stop': stop, 'StopFailure': stop}
         return [*(STREAM_FLAGS if stream_engine() else []),
                 '--resume' if resume else '--session-id', sid, '--permission-mode', 'bypassPermissions',
                 '--disallowedTools', 'AskUserQuestion', '--model', model, *lean(),
@@ -289,6 +290,10 @@ class Harness(Claude):
         flags += ['--once'] if once else ['--idle', str(idle)]
         if not once:  # a task's session; a fix session is held by fix_timeout
             flags += ['--task-tokens', str(C.run.get('task_tokens') or 0), '--task-usd', str(C.run.get('task_usd') or 0)]
+            if warn := int(C.run.get('context_warn') or 0):  # F177
+                from agent_runner.brief import CONTEXT_FULL
+                flags += ['--context-warn', str(warn), '--context-text',
+                          CONTEXT_FULL.replace('{runner}', C.command).replace('{warn}', str(warn))]
         if provider in C.providers:
             flags += ['--provider', json.dumps(C.providers[provider])]
         if not once and C.fallback:  # F106g: the providers it switches to within the session at a cap

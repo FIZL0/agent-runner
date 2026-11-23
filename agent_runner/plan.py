@@ -2095,6 +2095,64 @@ def files_on_line(text: str) -> list[str]:
     return fields(text).get('files', [])
 
 
+# --- F177: a task too big for one session -----------------------------------------------------------------------
+
+OUTCOME = re.compile(r'\((\d{1,2})\)|(?<!\S)(\d{1,2})[.)](?=\s)')  # (1), 1. or 1)
+SIZE_CHARS = 400  # characters of text that weigh as much as one code file; a numbered outcome weighs as two
+
+
+def outcomes(text: str) -> int:
+    """How many numbered outcomes `text` lists: (1) (2) (3), 1. 2. or 1) 2), each list counted from its 1; a lone
+    number is no list."""
+    n = run = 0
+    for a, b in OUTCOME.findall(text):
+        k = int(a or b)
+        if k == run + 1:
+            run = k
+        elif k == 1:
+            n, run = n + (run if run > 1 else 0), 1
+    return n + (run if run > 1 else 0)
+
+
+def size(blk: list[str], docs: list[str] = ()) -> tuple[int, int, int, int]:
+    """(size, code files, numbered outcomes, characters of text) of a task's lines: each file on it that `docs`
+    (`[run] docs_files`) does not match is 1, a numbered outcome 2, SIZE_CHARS of text 1. Its long form is not
+    read: reference text there makes no task bigger."""
+    from agent_runner.done import docs_only
+    files = [f for f in files_on_line('\n'.join(blk)) if not docs_only([f], docs)]
+    text = '\n'.join([prose(blk[0]), *blk[1:]]) if blk else ''
+    n = outcomes(text)
+    return len(files) + 2 * n + len(text) // SIZE_CHARS, len(files), n, len(text)
+
+
+def too_big(tid: str, c, todo) -> str:
+    """Why open task `tid` is over `[run] task_size` (0 is off): 'size 37, over 10: 19 code files, …'; else ''.
+    Never a concept or a release (they build nothing), nor a task already `(split into …)` parts."""
+    try:
+        most = int(c.run.get('task_size') or 0)
+    except (TypeError, ValueError):
+        return ''
+    if most <= 0 or concept(tid) or release(tid):
+        return ''
+    ls = lines(todo)
+    i = next((i for i, l in enumerate(ls) if (m := ITEM.match(l)) and m.group(3).rstrip('.') == tid), None)
+    if i is None or ITEM.match(ls[i]).group(2) == 'x' or SPLIT.search(ls[i]):
+        return ''
+    n, files, parts, chars = size(_item_block(ls, i), c.run.get('docs_files') or [])
+    if n <= most:
+        return ''
+    return (f'size {n}, over [run] task_size {most}: {files} code file{"s" * (files != 1)}, {parts} numbered '
+            f'outcomes, {chars:,} characters of text')
+
+
+def big_note(tid: str, x) -> str:
+    """What `plan add`, `edit`, `note` and an approval add to their message about a task over the size."""
+    why = too_big(tid, x.c, x.todo)
+    return why and (f'\n{tid} is too big for one session ({why}). Split it now: `{PROG} add {tid} "<part>" --files …` '
+                    f'for each part ({tid}a, {tid}b, …; `--after` a part it needs, never {tid}), then `{PROG} edit '
+                    f'{tid} "<title> (split into {tid}a, {tid}b)"`; {tid} ticks itself once its parts land')
+
+
 def overlap(a: set[str], b: set[str]) -> set[str]:
     """Paths and patterns (`dir/**`, `dir/*.rs`) of `a` that meet `b`'s: equal, one a tail of the other
     (`src/menu.rs` is `app/src/menu.rs`), or one matching the other as a pattern."""
@@ -2735,7 +2793,7 @@ def _p_move(a, x):
 
 def _p_approve(a, x):
     bid = approve(a.id, _text(a))
-    return x.say(f'approved: {bid} is open now, and a run starts it' + freed_line())
+    return x.say(f'approved: {bid} is open now, and a run starts it' + freed_line() + big_note(bid, x))
 
 
 def _p_concept(a, x):
@@ -2836,7 +2894,8 @@ def _p_waiting(a, x):
 
 
 def _p_confirm(a, x):
-    return x.say(confirm(a.id, _text(a)))
+    t = _ask(a.id, x.todo)[1]  # a concept's build: approving it says when it is too big (F177)
+    return x.say(confirm(a.id, _text(a)) + big_note(t, x))
 
 
 def _p_change(a, x):
@@ -2934,12 +2993,12 @@ def _p_add(a, x):
               file=sys.stderr)
     if pri == 'critical' and os.environ.get('AGENT_RUNNER') == '1':
         msg += '\ncritical goes ahead of the queued work: its text must say what it breaks or blocks'
-    return x.say(msg)
+    return x.say(msg + big_note(tid, x))
 
 
 def _p_note(a, x):
     note(a.id, _text(a))
-    return x.say(f'noted {a.id}')
+    return x.say(f'noted {a.id}' + big_note(a.id, x))
 
 
 def _p_edit(a, x):
@@ -2961,7 +3020,7 @@ def _p_edit(a, x):
         print(f'{PROG}: not edited: {why}', file=sys.stderr)
         return 2
     edit(a.id, text, keyed, pri or None, alone_=solo)
-    return x.say(f'edited {a.id}')
+    return x.say(f'edited {a.id}' + big_note(a.id, x))
 
 
 def _p_goal(a, x):

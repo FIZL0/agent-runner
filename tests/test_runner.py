@@ -7413,7 +7413,8 @@ def test_stream_engine_f106b(repo: Path, tmp: Path):
         check('do Z8' not in argv and '--remote-control' not in argv, 'the brief is not on its command line, and it '
               'has no Remote Control', argv)
         hooks = json.loads(argv[argv.index('--settings') + 1])['hooks']
-        check('Stop' not in hooks and 'PreToolUse' in hooks, 'no idle Stop hook; the git fence stays', hooks)
+        check('--idle -1' in json.dumps(hooks['Stop']) and 'StopFailure' not in hooks and 'PreToolUse' in hooks,
+              'no idle Stop hook (F177: it only says once that the context is full); the git fence stays', hooks)
         hit = R.MUX.panes().get('s7')
         end = time.monotonic() + 10
         while not R.C.notes('slot7.in').exists() and time.monotonic() < end:
