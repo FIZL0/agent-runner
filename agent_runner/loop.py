@@ -45,12 +45,10 @@ from agent_runner.watch import (_account, api_down, AUTO_UPGRADE, auto_upgrade, 
     resumes, RESUMES_MAX, stalled, START_TRIES, state_line, stats,
     stop_hook, stop_waiter, sweep_tmp, update_watch, upgrade, usage_pct, weekly)
 from agent_runner.join import EDITED, EDITS_POLL, ELSEWHERE, REMIND_EVERY, TASK_SID, WAITING
-from agent_runner.land import drop_wips, idle_line, prune_wips, reopen_landed, REOPENED, retry_reopened, wip_main
-from agent_runner.land import no_gate_line
+from agent_runner.land import drop_wips, idle_line, prune_wips, reopen_landed, REOPENED, retry_reopened, wip_main, no_gate_line
 from agent_runner.merge import (AHEAD_BUSY, AHEADS, before_start_fails, FIX_DIRS, FIX_DIRS_LOCK, FIXED, gate_runs,
     HELD, last_words, left_merging, merge)
-from agent_runner.control import (hand_hook, rc_sweep_start,
-    start_control, start_control_server)
+from agent_runner.control import hand_hook, rc_sweep_start, start_control, start_control_server
 from agent_runner.feed import rc_sweep_stop, start_board
 
 

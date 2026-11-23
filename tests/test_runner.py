@@ -7676,6 +7676,12 @@ def test_attach_f88(tmp: Path):
 def test_done_test_f178(tmp: Path):
     print('F178: [run] done_test is what done runs, on a docs-only diff too; the merge still runs the gate')
     (tmp / 'f178').mkdir()
+    # its own runner home: every repo here is named proj, so the suite's other one has the default's worktrees
+    with mock.patch.dict(os.environ, {'AGENT_RUNNER_HOME': str(tmp / 'f178' / 'home')}):
+        done_test_f178(tmp)
+
+
+def done_test_f178(tmp: Path):
     repo = make_repo(tmp / 'f178')
     toml = (repo / 'runner.toml').read_text(encoding='utf-8')
     ran = tmp / 'f178-ran'

@@ -524,7 +524,9 @@ def no_settings(c=None, st: dict | None = None) -> str:
         return NO_SETTINGS if st['no_settings'] else ''
     c = c or S.C
     # runner.local.toml alone can set a gate or the push: then the words would not be true
-    return '' if not c or c.file or c.run['test'] or 'push_merge' in c.given.get('git', ()) else NO_SETTINGS
+    if not c or c.file or c.run['test'] or (c.push_merge and 'push_merge' in c.given.get('git', ())):
+        return ''
+    return NO_SETTINGS
 
 
 def status_rows(up: bool, st: dict, progress: str) -> list[str]:

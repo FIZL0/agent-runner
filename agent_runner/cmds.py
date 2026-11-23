@@ -20,7 +20,7 @@ from agent_runner import control_held, plan as P, plansync, plat, shared_tools
 from agent_runner.plat import bash_exe
 from agent_runner.config import RUNNER, runner_cmd, shown_cmd
 from agent_runner.state import (ask_stop, C, clear_stop, default_branch, edited, git, init, queued, ROOT, run_up,
-    SLOTS_DIR)
+    SLOTS_DIR, EV_RUN_UP)
 from agent_runner.brief import has_sheet, prompt_for, wizard_cmd, wizard_file
 from agent_runner.sched import ahead, open_tasks
 from agent_runner.slots import (backend, claude_json, entries, logged, marker_pid, MUX, PRESENCE_ENV, quiet_file,
@@ -33,9 +33,7 @@ from agent_runner.control import (control_argv, control_brief, control_env, cont
     control_set_title, control_sid, free_control_number, RUNNER_STARTED_ENV)
 from agent_runner.control_first import CONTROL_FIRST, type_first_later  # B147
 from agent_runner.status import (follow, move_since_mark, progress_line, release_line, since_mark_file, since_start,
-    since_text, status_text, waiting_ok)
-from agent_runner.status import as_event, events_file, read_events
-from agent_runner.state import EV_RUN_UP
+    since_text, status_text, waiting_ok, as_event, events_file, read_events)
 from agent_runner.feed import (board, board_feed, board_held, control_late_files, control_new, control_new_runner,
     FORWARD_FLAG, forward_late_files, read_ask_file, SID_RE)
 from agent_runner.loop import drop_session_env, finish, send_key
@@ -1262,6 +1260,7 @@ def picker_text_painted(rows: list[dict], sel: int, p: PickerPaint) -> str:
         what = ' · '.join(x for x in (slots, left) if x)
         gap = ' ' * max(1, 29 - len(what))
         name = f'{r["name"]:<16} '
+        warn = '\n' + p.c('yellow', f'     {r["no_settings"]}') if r.get('no_settings') else ''
         slot_tok = 'green' if up else 'dim'
         left_tok = 'yellow' if r.get('stopping') else 'dim'
         if i == sel:
@@ -1269,13 +1268,11 @@ def picker_text_painted(rows: list[dict], sel: int, p: PickerPaint) -> str:
             if left:
                 parts += [(' · ' if slots else '', None), (left, 'yellow' if r.get('stopping') else None)]
             parts += [(gap + str(r['root']) + ('  here' if r['here'] else '') + ' ', None)]
-            out.append(p.bar(parts))
-            out += [p.c('yellow', f'     {r["no_settings"]}')] if r.get('no_settings') else []
+            out.append(p.bar(parts) + warn)
             continue
         bits = [p.c(slot_tok, slots)] + ([p.c(left_tok, left)] if left else [])
         line = f'  {p.key(str(i + 1))}  {name}' + ' · '.join(bits) + gap + p.c('dim', str(r['root']))
-        out.append(line + ('  ' + p.c('accent', 'here') if r['here'] else ''))
-        out += [p.c('yellow', f'     {r["no_settings"]}')] if r.get('no_settings') else []
+        out.append(line + ('  ' + p.c('accent', 'here') if r['here'] else '') + warn)
     out += ['', p.hints([('j/k', 'move'), ('1-9', 'pick'), ('⏎', 'pick')], ('q', 'quit'))]
     return '\n'.join(out) + '\n'
 
@@ -1312,8 +1309,7 @@ def picker_text(rows: list[dict], sel: int, paint: PickerPaint | None = None) ->
         what = ' · '.join(x for x in (slots_words(r['run']) if up else '(not running)', left_words(r)) if x)
         mark = '>' if i == sel else ' '
         line = f'{mark} {i + 1}  {r["name"]:<16} {what:<28} {r["root"]}' + ('  here' if r['here'] else '')
-        out.append(f'{BOLD}{line}{RESET}' if i == sel else line)
-        out += [f'     {r["no_settings"]}'] if r.get('no_settings') else []
+        out += [f'{BOLD}{line}{RESET}' if i == sel else line, *([f'     {r["no_settings"]}'] if r.get('no_settings') else [])]
     out += ['', f'{DIM}j/k or arrows move · 1-9 picks · Enter picks · q quits{RESET}']
     return '\n'.join(out) + '\n'
 
@@ -1323,13 +1319,11 @@ def launcher_text(row: dict, said: str = '', paint: PickerPaint | None = None) -
     if paint is not None:
         return launcher_text_painted(row, said, paint)
     status = ' · '.join(x for x in ('● run up', slots_words(row['run']), left_words(row)) if x)
-    out = [f'{BOLD}{row["name"]}{RESET} [0 all runs]  {row["root"]}', status,
-           *([row['no_settings']] if row.get('no_settings') else []),
+    out = [f'{BOLD}{row["name"]}{RESET} [0 all runs]  {row["root"]}', status, *([row['no_settings']] if row.get('no_settings') else []),
            row['link'] or f'{DIM}no run page link (`status` says why){RESET}', '',
            '  w  open the run page in the browser', '  t  open the terminal UI (agent-runner ui)',
            '  c  copy the link', '  q  back · ⏎ terminal UI', '']
-    if said:
-        out += [said, '']
+    out += [said, ''] if said else []
     out.append(f'{DIM}status · attach · stop · control: agent-runner --help{RESET}')
     return '\n'.join(out) + '\n'
 
