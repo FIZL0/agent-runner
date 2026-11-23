@@ -4,6 +4,14 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Changed: one address for every project (F165). With Runner Home installed, a run's page and its ttyd terminals
+  listen on 127.0.0.1 only, on a free port that only Home opens; no link, log line or status names that port. A
+  `[run] web_port` the person sets stays open on every interface, unless it is Home's own port. Without Home, the
+  first run up keeps port 8770 and a second run listens on 127.0.0.1 only, its status and run log offering
+  `agent-runner home install`. Installing Home while runs are up moves each run off the public port within seconds, with no
+  restart; after `home uninstall`, a run serves its own page again from its next start. When Home is down while a
+  run is up, `status` and the run log say so with the command to start it. On Windows a second run
+  can no longer bind the same port as another run.
 - Added: Home has a Talk button (F164), first in the row under the message box. One press opens Talk in the page,
   without a reload, and the mic does not start by itself. It shows always, as Talk does in the sidebar (where the mic
   cannot listen, Talk is typed).

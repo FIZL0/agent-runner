@@ -83,8 +83,9 @@ takes you to that project's run app through Home, so one link (one bookmark) rea
 per-user service that starts at boot: systemd `--user` with linger on Linux, a launchd agent on macOS, a
 scheduled task at logon on Windows. It is on once you install it (`home install` in the Quick start). Like the run page it is token-gated and
 listens on port 8770 on every interface, for a phone on your network or Tailscale; never expose it to the
-internet. With Home on that port, a run serves its own page on a free one, which Home opens; with Home off,
-nothing changes. Its projects and token are in `~/.config/agent-runner` (`%APPDATA%\agent-runner`).
+internet. With Home on that port, a run serves its own page on 127.0.0.1 only, on a free one that only Home
+opens; with Home off, the first run up keeps port 8770 and a second run listens on 127.0.0.1 only, its status
+and run log offering `agent-runner home install`. Its projects and token are in `~/.config/agent-runner` (`%APPDATA%\agent-runner`).
 
 > [!TIP]
 > No repo handy? `examples/demo.sh` builds a tiny one with a plan in a temp dir and shows `plan`,

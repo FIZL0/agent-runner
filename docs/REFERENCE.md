@@ -247,8 +247,8 @@ task to fix X" (it files it with `plan add`), "do X now" (it uses `take`, never 
 `agent-runner home install` is the recommended setup, part of the default one (README Quick start, right after
 `setup`), not an optional extra. It installs one always-on page for every project on this device and prints its
 link and a QR code. With several projects on one device it is what keeps every run's page reachable: one link,
-each run at `/p/<project>/`. Without it, each run serves its own page on port 8770 only while it is up, and
-the second run's page moves to another port. `home status` shows whether it is installed and serving;
+each run at `/p/<project>/`. Without it, the first run up serves its own page on port 8770 while it is up; a
+second run listens on 127.0.0.1 only, and its status and run log offer `agent-runner home install`. `home status` shows whether it is installed and serving;
 `home add PATH` lists a project outside `~/repos`. See the README's Runner Home section.
 
 Home's links put the https address first. `home status`, `home install` (and its QR code, which holds the https
@@ -275,7 +275,11 @@ also restarts across a breaking version.
 ### The run app
 
 With `[run] web` (on by default) a run serves the run app from this machine on `[run] web_port` (8770), bound
-to every interface so a phone on the LAN or Tailscale reaches it. Its address, with the token every request
+to every interface so a phone on the LAN or Tailscale reaches it. With Runner Home installed, the run listens on
+127.0.0.1 only, on a free port that only Home opens (its ttyd terminals too, through Home's tunnel), and no link,
+log line or status names that port: one address for every project. A `web_port` the person sets (not the
+default) stays open on every interface, unless it is Home's own port, which is kept for Home. Without Home, a
+second run (its port taken) listens on 127.0.0.1 only. The address, with the token every request
 needs (made once per project in `.runner/web.token`), is in `status` and the run log. It is a chat app over
 the run page: the same snapshot as `agent-runner ui` and most of its actions (not opening a slot), laid out for a phone (the sidebar becomes a
 drawer) and a desktop. It follows the browser's light or dark setting; `[ui] theme` is the terminal UI's only.
@@ -1293,9 +1297,11 @@ remote_slots = false      # the slots on Remote Control too ("<task title> · <r
 sessions = "one"          # what the Claude apps list for this project. one: c1, the project's chat; a slot goes
                           # on Remote Control only when opened from `agent-runner ui` (Sessions, session tab), and
                           # the run keeps a claude.ai copy of the run page. each: every slot its own entry (remote_slots)
-web = true                # the run app (see The run app), served by the run on web_port for the LAN/Tailscale; its
-                          # address, with the token it needs, is in `status` and the run log; false: off
-web_port = 8770           # where the run app is served
+web = true                # the run app (see The run app), served by the run on web_port for the LAN/Tailscale, or on
+                          # 127.0.0.1 only behind Home; its address, with the token it needs, is in `status` and the run
+                          # log; false: off
+web_port = 8770           # where the run app is served; a port set here stays open on every interface (unless it is
+                          # Home's own port)
 silent = false            # phone pushes from those sessions after each one's start push (that one cannot be stopped): true = none, false = Claude Code's usual
 control = true            # a run opens control session c1 beside it; false: none (`agent-runner control` still works)
 control_idle = "3h"       # close idle control sessions 2, 3, … (never c1) once quiet this long, Claude spoke last, its last message does not end on a `DECIDE:` line (that one waits for `control_ask`), and nothing runs in it (a background task or Monitor; the needs-you watch does not count): process ended, controlN.pid removed, transcript kept (`claude --resume <sid>`); false: none closed idle
