@@ -186,6 +186,34 @@ def basic8(token: str, h: str, mode: str) -> int:
     return min(range(8), key=lambda i: sum((x - y) ** 2 for x, y in zip(BASIC8[i], c)))
 
 
+def terminal_colours(env=None) -> int:
+    """F109: how many colours the terminal draws, for SGR codes outside curses: 2**24 when COLORTERM says
+    truecolor or 24bit, 256 when TERM names 256color (or Windows Terminal), else 8."""
+    env = os.environ if env is None else env
+    if env.get('COLORTERM', '').lower() in ('truecolor', '24bit'):
+        return 1 << 24
+    if '256color' in env.get('TERM', '') or env.get('WT_SESSION'):
+        return 256
+    return 8
+
+
+def sgr(theme: dict, token: str, colours: int, ground: bool = False) -> str:
+    """F109: `token` of `theme` as the parameters of an SGR code (no ESC [ or m), the foreground, or with
+    `ground` the background: ANSI indices (the terminal theme) as the terminal's own colours, hex as 24-bit,
+    the nearest of 256, or the nearest basic colour, whatever the terminal draws."""
+    v = theme[token]
+    if isinstance(v, int):
+        if v < 0:
+            return '49' if ground else '39'
+        base = (40 if ground else 30) if v < 8 or colours < 16 else (100 if ground else 90)
+        return str(base + v % 8)
+    if colours >= 1 << 24:
+        return f'{48 if ground else 38};2;' + ';'.join(str(x) for x in rgb(v))
+    if colours >= 256:
+        return f'{48 if ground else 38};5;{xterm256(v)}'
+    return str((40 if ground else 30) + basic8(token, v, theme.get('mode', 'dark')))
+
+
 def curses_colour(theme: dict, token: str, colours: int) -> int:
     """`token` of `theme` as a curses colour number on a terminal with `colours` colours. ANSI indices (the
     terminal theme) are the terminal's own; 8 colours take index 8-15 down to 0-7."""

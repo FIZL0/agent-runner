@@ -199,6 +199,49 @@ def test_launcher_actions():
     eq(started, [[]], 'with cmd_background')
 
 
+def test_picker_colours():
+    print('F109: the run picker and the launcher in the run page\'s colours; none with NO_COLOR or no terminal')
+    from agent_runner import theme as TH
+    eq(TH.sgr(TH.get('terminal'), 'yellow', 8), '33', 'terminal theme: the terminal\'s own yellow')
+    eq(TH.sgr(TH.get('terminal'), 'bblue', 256), '94', 'bright blue as a bright ANSI colour')
+    eq(TH.sgr(TH.get('terminal'), 'sel', 256, True), '41', 'the bar on the terminal\'s red')
+    eq(TH.sgr(TH.get('terminal'), 'fg', 256), '39', 'its own foreground')
+    eq(TH.sgr(TH.get('ryha'), 'sel', 1 << 24, True), '48;2;127;29;29', 'ryha\'s dark red bar in 24-bit')
+    eq(TH.sgr(TH.get('ryha'), 'accent', 256), f'38;5;{TH.xterm256("#ef4444")}', 'the nearest of 256')
+    eq(TH.sgr(TH.get('ryha'), 'green', 8), '32', 'the basic green on 8 colours')
+    eq((TH.terminal_colours({'COLORTERM': 'truecolor'}), TH.terminal_colours({'TERM': 'xterm-256color'}),
+        TH.terminal_colours({'TERM': 'xterm'})), (1 << 24, 256, 8), 'colours from COLORTERM and TERM')
+    p = M.PickerPaint(TH.get('terminal'), 256, 120)
+    rs = rows(C)
+    text = M.picker_text(rs, 0, p)
+    lines = text.splitlines()
+    eq(lines[0].startswith('\x1b[1;31magent-runner'), True, 'the title in the accent')
+    eq('\x1b[1;41;97m' in lines[2] and lines[2].endswith('\x1b[K\x1b[0m'), True,
+       'the focused row on the bar, erased to the end of the line')
+    eq('\x1b[33m' in lines[2] and 'stopping' in lines[2], True, 'stopping in yellow on the bar')
+    eq('\x1b[1;33m2\x1b[0m' in lines[3], True, 'the other rows\' numbers are keys: yellow')
+    eq('\x1b[32m2 slots' in lines[3] and '\x1b[90m' + str(A) in lines[3], True, 'slots green, the path dim')
+    eq('\x1b[1;33mj/k\x1b[0m move' in lines[-1] and '\x1b[1;94mq' in lines[-1], True,
+       'the hint line: keys yellow, q bright blue')
+    plain = M.re.sub(r'\x1b\[[0-9;]*[mK]', '', lines[2])
+    eq(len(plain), 119, 'the bar runs across the width')
+    seen = []
+    with mock.patch.object(M, 'run_facts', lambda r, run: FACTS.get(r, {})):
+        eq(M.cmd_pick(None, keys('1', 'c', 'enter'), seen.append, {'c': lambda u: 'link copied'},
+                      sessions=lambda: RUNS, paint=p), 0, 'pick, copy, done')
+    launcher = seen[1]
+    eq(launcher.startswith('\x1b[1;31malpha'), True, 'the launcher\'s name in the accent')
+    eq('\x1b[4;94m' + FACTS[A]['link'] in launcher, True, 'the link underlined in blue')
+    eq('\x1b[90m[\x1b[0m\x1b[1;33mw\x1b[0m open the run page' in launcher, True, 'keys as the run page\'s buttons')
+    eq('link copied' in seen[2] and '\x1b[1;94mq\x1b[0m\x1b[90m back' in seen[2], True, 'what c said; q back in blue')
+    with mock.patch.object(M.sys.stdout, 'isatty', lambda: True, create=True):
+        eq(M.picker_paint(None, {'NO_COLOR': '1', 'TERM': 'xterm-256color'}), None, 'NO_COLOR: bold and dim only')
+        got = M.picker_paint(None, {'TERM': 'xterm-256color'})
+        eq((got.colours, got.theme['accent']), (256, TH.get(TH.DEFAULT)['accent']), 'else the default theme')
+    with mock.patch.object(M.sys.stdout, 'isatty', lambda: False, create=True):
+        eq(M.picker_paint(None, {'TERM': 'xterm-256color'}), None, 'not a terminal: no colour')
+
+
 def test_bare_not_a_tty():
     print('F91: bare agent-runner with no terminal (or in a slot) starts the run as before, no picker')
     from agent_runner import cli, runner
@@ -222,4 +265,4 @@ def test_bare_not_a_tty():
 if __name__ == '__main__':
     raise SystemExit(report([test_attach_routes, test_run_view_posts_keys, test_list_two_projects,
                              test_attach_number, test_windows_hidden_consoles, test_picker_rows, test_picker_keys,
-                             test_launcher_actions, test_bare_not_a_tty]))
+                             test_launcher_actions, test_picker_colours, test_bare_not_a_tty]))
