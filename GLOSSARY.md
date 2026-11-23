@@ -511,3 +511,17 @@ _Said_: next release
 _On screen_: Next release · auto at 10 landed: 6/10 / V5 Release · waits for 24 open ahead / building
 _In code_: ui_model.release_row, ui_model.pin_release, status.release_line, planQueue
 _Avoid_: release banner
+
+**Pitch**:
+A set of landed changes grouped for one person to approve before they are pushed, or undone with Not this.
+_Said_: pitch
+_On screen_: Approve / Not this
+_In code_: pitch.py, pitch1, pitches.json
+_Avoid_: pull request, review, release note
+
+**Approve to push**:
+A run mode where merged work is held on the local branch until a person approves it, and only then pushed to the remote.
+_Said_: approve mode
+_On screen_: N changes wait to be pushed
+_In code_: [run] approve, pitch.on
+_Avoid_: PR mode, gated push
