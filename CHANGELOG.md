@@ -9,8 +9,8 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
   listing every project (folders in `~/repos` with a `runner.toml`, plus `home add PATH`): running, idle or
   off, what needs you, and Start run, Pause, ±1 slot and Stop. Open routes to the project's run app through
   Home, so one link reaches every run. Install prints the link and a QR code; `home status`, `home list`,
-  `home remove PATH` and `home uninstall` go with it. Off until installed. A run whose page port is taken (by
-  Home, or another run) now serves its page on a free port instead of none (F94).
+  `home remove PATH` and `home uninstall` go with it. Off until installed. With Home installed, a run that finds
+  its page port taken serves its page on a free port, which Home opens; without Home nothing changes (F94).
 - **Major: release this as 1.0.0.** A run on 0.x cannot adopt across it (its sessions are in tmux panes this
   version no longer reads), so stop the old run (`agent-runner stop`) before upgrading; it does not restart
   itself across the major version.

@@ -66,7 +66,8 @@ def registry_file() -> Path:
 
 
 def load_registry() -> dict:
-    """{'projects': [added paths], 'hidden': [scanned paths removed], 'scan': [folders], 'port': int}."""
+    """{'projects': [added paths], 'hidden': [scanned paths removed], 'scan': [folders], 'port': int,
+    'installed': bool (`home install` turned Home on)}."""
     try:
         data = json.loads(registry_file().read_text(encoding='utf-8'))
     except (OSError, ValueError):
@@ -77,7 +78,8 @@ def load_registry() -> dict:
     return {'projects': [str(p) for p in data.get('projects') or [] if isinstance(p, str)],
             'hidden': [str(p) for p in data.get('hidden') or [] if isinstance(p, str)],
             'scan': [str(p) for p in data.get('scan') or SCAN if isinstance(p, str)],
-            'port': port if isinstance(port, int) and not isinstance(port, bool) and 0 <= port < 65536 else PORT}
+            'port': port if isinstance(port, int) and not isinstance(port, bool) and 0 <= port < 65536 else PORT,
+            'installed': data.get('installed') is True}
 
 
 def save_registry(reg: dict) -> None:
@@ -190,26 +192,34 @@ def runner(root: Path, argv: list[str], timeout: float = 90.0) -> sp.CompletedPr
                   encoding='utf-8', errors='replace', timeout=timeout, env=child_env())
 
 
-_NEEDS: dict[str, tuple[float, int | None]] = {}
+_NEEDS: dict[str, tuple[float, int | None, list[str]]] = {}
 
 
-def needs_count(root: Path, call=runner) -> int | None:
-    """How many things in the project wait on the person (`needs`' summary line), None when it cannot say;
-    kept NEEDS_TTL seconds, since a phone polls."""
+def needs_said(root: Path, call=runner) -> tuple[int | None, list[str]]:
+    """What in the project waits on the person, from `needs`: (how many, None when it cannot say; its 'ID -
+    what to do' lines). Kept NEEDS_TTL seconds, since a phone polls."""
     hit = _NEEDS.get(str(root))
     if hit and time.monotonic() - hit[0] < NEEDS_TTL:
-        return hit[1]
+        return hit[1], hit[2]
     n: int | None = None
+    items: list[str] = []
     try:
         r = call(root, ['needs'], 30.0)
-        last = (r.stdout.strip().splitlines() or [''])[-1]
+        ls = [l for l in r.stdout.strip().splitlines() if l.strip()]
+        last = ls[-1] if ls else ''
         if not r.returncode:
             m = re.match(r'(\d+|One|one) things? needs? you', last)
             n = 0 if last.startswith('Nothing') else (int(m[1]) if m and m[1].isdigit() else 1 if m else None)
+            items = ls[:-1] if n else []
     except (OSError, sp.SubprocessError):
         pass
-    _NEEDS[str(root)] = (time.monotonic(), n)
-    return n
+    _NEEDS[str(root)] = (time.monotonic(), n, items)
+    return n, items
+
+
+def needs_count(root: Path, call=runner) -> int | None:
+    """How many things in the project wait on the person (`needs_said`)."""
+    return needs_said(root, call)[0]
 
 
 def run_link(root: Path) -> tuple[int, str] | None:
@@ -227,9 +237,11 @@ def run_link(root: Path) -> tuple[int, str] | None:
         return None
 
 
-def project_row(key: str, root: Path, info=None, facts=None, needs=needs_count) -> dict:
+def project_row(key: str, root: Path, info=None, facts=None, needs=needs_said) -> dict:
     """What Home shows of one project: {'key', 'name', 'root', 'state' (running|idle|off), 'paused',
-    'stopping', 'slots', 'running' (task ids), 'left', 'needs', 'page' (its run app through Home, or '')}."""
+    'stopping', 'slots', 'running' (task ids), 'left', 'needs' (how many), 'asks' (their 'ID - what to do'
+    lines), 'page' (its run app through Home, or '')}."""
+    n, asks = needs(root)
     from agent_runner import cmds
     run = (info or cmds.run_info)(root) or {}
     f = (facts or cmds.run_facts)(root, run)
@@ -240,7 +252,7 @@ def project_row(key: str, root: Path, info=None, facts=None, needs=needs_count) 
             'state': 'off' if not up else 'running' if running else 'idle',
             'paused': up and 'paused' in words, 'stopping': bool(f.get('stopping')),
             'slots': run.get('slots') if up and isinstance(run.get('slots'), int) else None,
-            'running': running, 'left': f.get('left'), 'needs': needs(root),
+            'running': running, 'left': f.get('left'), 'needs': n, 'asks': asks[:5],
             'page': f'p/{key}/' if up and f.get('link') else ''}
 
 
@@ -298,7 +310,7 @@ h1{font-size:1.3rem;margin:0 0 12px}
 .p b{font-size:1.05rem}.s{color:var(--dim);font-size:.9rem}
 .dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px;background:var(--line)}
 .running .dot{background:var(--ok)}.idle .dot{background:var(--warn)}
-.need{color:var(--accent);font-weight:600}
+.need{color:var(--accent);font-weight:600}.tap{cursor:pointer}
 button,a.btn{font:inherit;font-size:.9rem;border:1px solid var(--line);background:var(--bg);color:var(--fg);
  border-radius:8px;padding:5px 11px;margin:8px 6px 0 0;cursor:pointer;text-decoration:none;display:inline-block}
 .go{background:var(--accent)!important;color:var(--card)!important;border-color:var(--accent)!important}
@@ -325,8 +337,9 @@ function card(p){const b=[];
   b.push(p.paused?`<button data-a="resume">Go on</button>`:`<button data-a="pause">Pause</button>`);
   b.push(`<button data-a="slots" data-arg="-1">−1 slot</button><button data-a="slots" data-arg="+1">+1 slot</button>`);
   b.push(`<button data-a="stop">Stop</button>`)}
- const need=p.needs?`<div class="need">${p.needs} need${p.needs==1?'s':''} you</div>`:'';
- return `<div class="p ${esc(p.state)}" data-k="${esc(p.key)}"><span class="dot"></span><b>${esc(p.name)}</b>
+ const need=p.needs?`<div class="need">${p.needs} need${p.needs==1?'s':''} you</div>`+
+  (p.asks||[]).map(a=>`<div class="s">${esc(a)}</div>`).join(''):'';
+ return `<div class="p ${esc(p.state)}${p.page?' tap':''}" data-k="${esc(p.key)}"${p.page?` data-page="${esc(q(p.page))}"`:''}><span class="dot"></span><b>${esc(p.name)}</b>
   <div class="s">${esc(words(p))}</div>${need}<div>${b.join('')}<button data-a="remove" title="Unlist it from Home">Unlist</button></div></div>`}
 async function load(){if(busy)return;try{const r=await fetch(q('projects'));const d=await r.json();
  if(!d.ok){document.getElementById('list').innerHTML=`<div class="s">${esc(d.out)}</div>`;return}
@@ -336,7 +349,8 @@ async function load(){if(busy)return;try{const r=await fetch(q('projects'));cons
 async function post(path,body){busy=true;const m=document.getElementById('msg');m.textContent='…';
  try{const r=await fetch(q(path),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
   const d=await r.json();m.textContent=d.out||''}catch(e){m.textContent=String(e)}busy=false;load()}
-document.getElementById('list').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;
+document.getElementById('list').addEventListener('click',e=>{const b=e.target.closest('button');
+ if(!b){const c=e.target.closest('[data-page]');if(c&&!e.target.closest('a'))location.href=c.dataset.page;return}
  const k=b.closest('[data-k]').dataset.k;if(b.dataset.a==='remove')return post('remove',{project:k});
  post('act',{project:k,name:b.dataset.a,arg:b.dataset.arg||''})});
 document.getElementById('add').addEventListener('submit',e=>{e.preventDefault();const v=document.getElementById('path').value.trim();
@@ -625,18 +639,62 @@ def serving(port: int, host: str = '127.0.0.1') -> bool:
         conn.close()
 
 
-def installed(kind: str | None = None) -> bool:
+def installed(kind: str | None = None, call=sh) -> bool:
+    """Is the service set up, as the service manager itself says (not only its file being there)?"""
     kind = kind or os_kind()
     if kind == 'windows':
-        return sh(['schtasks', '/Query', '/TN', SERVICE])[0] == 0
+        return call(['schtasks', '/Query', '/TN', SERVICE])[0] == 0
     u = unit_path(kind)
-    return bool(u and u.exists())
+    if not (u and u.exists()):
+        return False
+    if kind == 'linux':
+        return call(['systemctl', '--user', 'is-enabled', '--quiet', f'{SERVICE}.service'])[0] == 0
+    return call(['launchctl', 'list', LABEL])[0] == 0
 
 
-def install(kind: str | None = None, call=sh, out=print) -> int:
+def home_on() -> bool:
+    """F94: has `home install` turned Home on (and no `uninstall` off since)? Runs read it from the registry,
+    with no call to the service manager: only then does a run move off a taken port."""
+    try:
+        return bool(json.loads(registry_file().read_text(encoding='utf-8')).get('installed'))
+    except (OSError, ValueError, AttributeError):
+        return False
+
+
+def mark_installed(on: bool) -> None:
+    save_registry({**load_registry(), 'installed': on})
+
+
+TR_MAX = 261  # the longest command line schtasks /TR takes
+
+
+def task_command(text: str) -> str:
+    """The scheduled task's /TR: the command line itself, or, past schtasks' limit, a launcher file in
+    <config> that runs it."""
+    if len(text) <= TR_MAX:
+        return text
+    f = config_dir() / 'home-serve.cmd'
+    f.parent.mkdir(parents=True, exist_ok=True)
+    f.write_text(f'@echo off\r\n{text}\r\n', encoding='utf-8')
+    return f'"{f}"'
+
+
+def wait_serving(port: int, timeout: float = 8.0) -> bool:
+    end = time.monotonic() + timeout
+    while time.monotonic() < end:
+        if serving(port):
+            return True
+        time.sleep(0.5)
+    return False
+
+
+def install(kind: str | None = None, call=sh, out=print, check=wait_serving) -> int:
+    """Set the service up for `kind` (default this OS): its file, the service manager's commands, then wait
+    for the page to answer and print the link and a QR code. The service gets the PATH and runs-folder
+    settings of this shell (a scheduled task runs with the user's own logon environment)."""
     kind = kind or os_kind()
+    mark_installed(True)  # Home is on from now on: a run that finds its port taken moves to a free one
     reg = load_registry()
-    save_registry(reg)  # the registry file exists from now on: Home is on
     home_token()  # made now, so the link below holds it
     log = config_dir() / 'home.log'
     argv = serve_argv(kind)
@@ -645,6 +703,8 @@ def install(kind: str | None = None, call=sh, out=print) -> int:
     if unit:
         unit.parent.mkdir(parents=True, exist_ok=True)
         unit.write_text(text, encoding='utf-8')
+    else:
+        text = task_command(text)
     for cmd in install_commands(kind, unit, text):
         code, said = call(cmd)
         if code and tuple(cmd[:2]) not in ALLOWED_TO_FAIL:
@@ -656,8 +716,11 @@ def install(kind: str | None = None, call=sh, out=print) -> int:
     urls = home_urls(reg['port'])
     where = {'linux': f'systemd user service {SERVICE} ({unit})', 'macos': f'launchd agent {LABEL} ({unit})',
              'windows': f'scheduled task {SERVICE} (at logon)'}[kind]
-    out(f'Runner Home is installed: {where}, on port {reg["port"]}.\nOpen it on your phone (same network or '
-        f'Tailscale):\n  ' + '\n  '.join(urls))
+    out(f'Runner Home is installed: {where}, on port {reg["port"]}.')
+    if not check(reg['port']):
+        out(f'It does not answer on port {reg["port"]} yet: a run may hold that port (it moves to a free one '
+            f'when it next starts; Home keeps trying meanwhile), or see {log}.')
+    out('Open it on your phone (same network or Tailscale):\n  ' + '\n  '.join(urls))
     if q := qr_text(urls[-1]):
         out(q)
     return 0
@@ -678,6 +741,8 @@ def uninstall(kind: str | None = None, call=sh, out=print) -> int:
         unit.unlink(missing_ok=True)
         if kind == 'linux':
             call(['systemctl', '--user', 'daemon-reload'])
+    (config_dir() / 'home-serve.cmd').unlink(missing_ok=True)
+    mark_installed(False)
     out('Runner Home is uninstalled' + (f' (but: {"; ".join(bad)})' if bad else '') +
         f'. Its projects and token stay in {config_dir()}; runs serve their own pages as before.')
     return 1 if bad and kind == 'windows' else 0

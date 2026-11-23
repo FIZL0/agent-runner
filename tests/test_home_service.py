@@ -106,7 +106,8 @@ def test_rows(tmp: Path) -> None:
     rows = {k: H.project_row('p', root, info=lambda r, v=v: v,
                              facts=lambda r, run: {'left': 4, 'stopping': False,
                                                    'link': 'http://h:9/?t=x' if run.get('up') else ''},
-                             needs=lambda r: 1) for k, v in infos.items()}
+                             needs=lambda r: (1, ['B2 - pick one - reply A/B'])) for k, v in infos.items()}
+    eq(rows['off']['asks'], ['B2 - pick one - reply A/B'], 'and what each one is')
     eq((rows['off']['state'], rows['off']['page'], rows['off']['slots']), ('off', '', None),
        'no run up: off, nothing to open')
     eq((rows['idle']['state'], rows['idle']['paused'], rows['idle']['slots']), ('idle', False, 2),
@@ -120,6 +121,7 @@ def test_rows(tmp: Path) -> None:
         H._NEEDS.clear()
         return H.needs_count(root, call=lambda r, a, t: SimpleNamespace(returncode=code, stdout=text, stderr=''))
     eq(needs_said('B2 - pick one - reply A/B\nF3 - check it\n2 things need you\n'), 2, '`needs` says 2: 2')
+    eq(H.needs_said(root)[1], ['B2 - pick one - reply A/B', 'F3 - check it'], "with its 'ID - what to do' lines")
     eq(needs_said('Nothing needs you\n'), 0, 'Nothing needs you: 0')
     eq(needs_said('1 thing needs you\n'), 1, 'one thing: 1')
     eq(needs_said('boom', 1), None, 'a failing `needs`: unknown, not 0')
@@ -314,7 +316,7 @@ def test_units(tmp: Path) -> None:
                                         ['schtasks', '/Run', '/TN', 'agent-runner-home']])):
             calls, said = [], []
             code = H.install(kind, call=lambda c: calls.append(c) or (1 if c[:2] == ['launchctl', 'unload'] else 0, ''),
-                             out=said.append)
+                             out=said.append, check=lambda p: True)
             eq(code, 0, f'{kind}: install succeeds')
             eq([c[:len(w)] for c, w in zip(calls, want)], want, f'{kind}: and runs, in order: {want}')
             unit = H.unit_path(kind)
@@ -323,21 +325,46 @@ def test_units(tmp: Path) -> None:
             text = '\n'.join(said)
             has(text, rf':8770/\?t={H.home_token()}', f'{kind}: it prints the link with its token')
             has(text, '▀|▄|█', f'{kind}: and a QR code of it')
-            check(H.registry_file().exists(), 'and Home is on: its registry is there (runs see it)')
+            check(H.home_on(), f'{kind}: and Home is on in the registry (runs read it)')
+            H.add_project(str(project(tmp / f'added-{kind}')))
+            check(H.home_on(), f'{kind}: adding a project keeps it on')
             calls = []
             eq(H.uninstall(kind, call=lambda c: calls.append(c) or (0, ''), out=said.append), 0, f'{kind}: uninstall')
             check(calls and calls[0][0] in ('systemctl', 'launchctl', 'schtasks'), f'{kind}: it stops the service', calls)
+            check(not H.home_on(), f'{kind}: Home is off again')
             if unit:
                 check(not unit.exists(), f'{kind}: and removes its file')
         said = []
         code = H.install('linux', call=lambda c: (1, 'linger needs a login') if c[0] == 'loginctl' else (0, ''),
-                         out=said.append)
+                         out=said.append, check=lambda p: True)
         eq(code, 0, 'linger refused: still installed')
         has(said[0], 'when you log in, not at boot', 'and says what that costs')
         said = []
-        eq(H.install('linux', call=lambda c: (1, 'no user bus') if c[2:3] == ['enable'] else (0, ''), out=said.append), 1,
-           'the service refused: install fails')
+        H.install('linux', call=lambda c: (0, ''), out=said.append, check=lambda p: False)
+        has('\n'.join(said), 'does not answer on port 8770 yet: a run may hold that port',
+            'installed but not answering: install says so, and why it may be')
+        said = []
+        eq(H.install('linux', call=lambda c: (1, 'no user bus') if c[2:3] == ['enable'] else (0, ''), out=said.append,
+                     check=lambda p: True), 1, 'the service refused: install fails')
         has(said[-1], 'no user bus', 'with what systemctl said')
+
+        print('status asks the service manager, not only whether the file is there')
+        unit = H.unit_path('linux')
+        unit.parent.mkdir(parents=True, exist_ok=True)
+        unit.write_text('x', encoding='utf-8')
+        asked = []
+        check(not H.installed('linux', call=lambda c: asked.append(c) or (1, 'disabled')), 'a unit not enabled: not installed')
+        eq(asked[-1][:3], ['systemctl', '--user', 'is-enabled'], 'systemctl is-enabled says')
+        check(H.installed('linux', call=lambda c: (0, '')), 'enabled: installed')
+        check(H.installed('macos', call=lambda c: (0, '')) is False, 'no plist: not installed, nothing asked')
+
+        print('a Windows command line past schtasks\' limit goes through a launcher file')
+        short = 'C:\\py\\pythonw.exe run home serve'
+        eq(H.task_command(short), short, 'a short one as it is')
+        long = 'C:\\' + 'x' * 300 + '\\pythonw.exe run home serve'
+        tr = H.task_command(long)
+        check(len(tr) <= H.TR_MAX and tr.endswith('home-serve.cmd"'), 'a long one: the launcher\'s path', tr)
+        has((tmp / 'cfg' / 'home-serve.cmd').read_text(encoding='utf-8'), 'x{300}', 'which holds the command')
 
 
 def test_qr(tmp: Path) -> None:
@@ -379,7 +406,12 @@ def test_run_moves_off_the_port(tmp: Path) -> None:
         held.bind(('0.0.0.0', 0))
         held.listen()
         port = held.getsockname()[1]
-        H.save_registry(H.load_registry())
+        H.save_registry(H.load_registry())  # a registry, but Home not installed
+        with mock.patch.dict(W.os.environ, {'AGENT_RUNNER_NO_WEB': ''}), \
+                mock.patch.dict(S.C.run, {'web': True, 'web_port': port}), mock.patch.object(S, 'log') as lg:
+            eq(W.start_web(), None, 'Home off: a taken port costs the page, as before')
+        has(' '.join(str(c) for c in lg.call_args_list), 'cannot serve on port', 'and the run log says so')
+        H.mark_installed(True)
         with mock.patch.dict(W.os.environ, {'AGENT_RUNNER_NO_WEB': ''}), \
                 mock.patch.dict(S.C.run, {'web': True, 'web_port': port}), mock.patch.object(S, 'log') as lg:
             srv = W.start_web()
