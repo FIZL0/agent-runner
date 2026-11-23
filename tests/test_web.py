@@ -2009,8 +2009,10 @@ def test_new_chat_view_f172(tmp: Path) -> None:
     eq(o['draft'], 'make it fir', 'pressed again: the draft is there')
     eq(o['reload'], ['plan', '+plan:F1', True, 0], 'a reload keeps it open, without focus')
     ask = 'About F1 (Board page): make it first'
-    eq(o['sent'], [[['new_control', {'ask': ask, 'wait': False}]] + o['sent'][0][1:], '@k1', None, 'plan', '@k1', []],
-       'the first send calls new_control once, with the About text; its draft is gone, and Back is still Plan')
+    eq(o['sent'][1:], ['@k1', None, 'plan', '@k1', []], 'the first send: its draft is gone, and Back is still Plan')
+    # log.acts is one list, printed at the end: every action of the whole test
+    eq([a for a in o['sent'][0] if a[0] == 'new_control'], [['new_control', {'ask': ask, 'wait': False}]],
+       'the first send calls new_control once, with the About text')
     eq(o['then'], ['chat_to', {'text': 'and more', 'to': '@k1'}], 'the next message goes to that chat')
     eq(o['left'], ['c1', None], 'another chat opened over it is that chat')
     eq(o['c1'], ['chat_to', {'text': 'hello', 'to': 'c1'}], 'and a message there goes there')
