@@ -144,29 +144,29 @@ def page_copy_html(snap: dict) -> str:
             + box(5, 'Concepts', concepts, 'none') + box(6, 'Log', [log_], '') + '</div>\n')
 
 
-def page_copy_ask(path: Path, url: str) -> str:
+def page_copy_ask(path: Path, url: str, icon: str = 'dashboard') -> str:
     """The one-shot publisher's prompt: publish `path`, to `url` when there is one, and answer with the URL alone
     (it has no other tool, so the run writes the URL file from that answer)."""
     where = (f'to the existing artifact {url}: read it first with action "read" (a publish to it is refused until '
              'then), then publish the file to that url; the file replaces the page whole' if url else
-             'as a new artifact with icon "dashboard"')
+             f'as a new artifact with icon "{icon}"')
     return (f'Publish the HTML file {path} with the Artifact tool {where}. Do nothing else, and answer with the '
             "artifact's claude.ai URL alone.")
 
 
-def page_copy_argv(path: Path, url: str) -> list[str]:
+def page_copy_argv(path: Path, url: str, icon: str = 'dashboard') -> list[str]:
     """B122: the one-shot headless session that publishes the copy: `claude -p`, Haiku, the Artifact tool only
     (dontAsk refuses the rest), no settings sources or MCP servers, a few turns. Never a control session."""
-    return [plat.exe(C.run['agent']), '-p', page_copy_ask(path, url), '--model', feed_model(),
+    return [plat.exe(C.run['agent']), '-p', page_copy_ask(path, url, icon), '--model', feed_model(),
             '--tools', 'Artifact', '--allowedTools', 'Artifact', '--permission-mode', 'dontAsk',
             '--strict-mcp-config', '--setting-sources', '', '--settings', json.dumps({'autoMemoryEnabled': False}),
             '--max-turns', '6']
 
 
-def page_copy_publish(path: Path, url: str) -> str:
+def page_copy_publish(path: Path, url: str, icon: str = 'dashboard') -> str:
     """Run the one-shot (`page_copy_argv`) and return the URL it published to, '' when it did not. Raises
     OSError when the agent cannot be started at all."""
-    r = sp.run(page_copy_argv(path, url), cwd=str(path.parent), env=control_env(), stdin=sp.DEVNULL,
+    r = sp.run(page_copy_argv(path, url, icon), cwd=str(path.parent), env=control_env(), stdin=sp.DEVNULL,
                capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=PAGE_COPY_TIMEOUT)
     got = ARTIFACT_URL.findall(r.stdout or '')
     if r.returncode != 0 or not got:
@@ -251,3 +251,73 @@ def page_copy_tick(now: float | None = None, snap: dict | None = None, publish=N
         log(f'run page copy: {e}')
         PAGE_COPY_AT[0] = now
         return False
+
+
+# --- F106f: publish_page on every engine ---------------------------------------------------------------------
+
+def concept_url_file(tid: str, c=None) -> Path:
+    """Where `run publish-page` records the claude.ai URL of task `tid`'s page: beside its local copy. `c` is a
+    config (default the run's)."""
+    return (c or C).notes('concepts', f'{tid}.url')
+
+
+def concept_url(tid: str, c=None) -> str:
+    """The claude.ai URL `run publish-page` recorded for task `tid`'s page, '' for none."""
+    try:
+        u = concept_url_file(tid, c).read_text(encoding='utf-8').strip()
+    except OSError:
+        return ''
+    return u if ARTIFACT_URL.fullmatch(u) else ''
+
+
+def publish_page(tid: str, src: Path, publish=None) -> tuple[Path, str]:
+    """F106f: copy the page `src` to <notes>/concepts/<tid>.html (the run page shows it at /concept/<tid>), then
+    publish that copy to claude.ai with the one-shot (`publish`, default `page_copy_publish`): to the URL recorded
+    for `tid` when there is one, so a second publish updates the same page. The URL is recorded (`concept_url`),
+    and `done` takes it as a concept's --artifact. (the copy, the URL or '' when the one-shot did not publish)."""
+    dest = C.notes('concepts', f'{tid}.html')
+    dest.write_bytes(src.read_bytes())
+    old = concept_url(tid)
+    try:
+        got = (publish or (lambda f, u: page_copy_publish(f, u, icon='options')))(dest, old)
+    except (OSError, sp.SubprocessError) as e:
+        log(f'publish-page {tid}: {e}')
+        got = ''
+    if got:
+        concept_url_file(tid).write_text(got + '\n', encoding='utf-8')
+    return dest, got
+
+
+def cmd_publish_page(argv: list[str]) -> int:
+    """`run publish-page FILE`: show the person a page, on any engine (Claude Code sessions, the harness loop)."""
+    import argparse
+    import sys
+    from agent_runner.state import init
+    from agent_runner.tools import task_here
+    ap = argparse.ArgumentParser(prog='run publish-page', description="Show the person a page (a concept's options, "
+                                 'a report): the run page shows it at /concept/<ID>, and a one-shot publishes it to '
+                                 'claude.ai; its URL is printed and recorded for `done`.')
+    ap.add_argument('file', help='the HTML file')
+    ap.add_argument('--id', help='the task it belongs to (default: this worktree\'s task/<ID> branch)')
+    a = ap.parse_args(argv)
+    src = Path(a.file)
+    if not src.is_file():
+        print(f'run publish-page: {a.file} is not a file', file=sys.stderr)
+        return 2
+    tid = a.id or task_here()
+    if not re.fullmatch(r'[A-Za-z]+\d+[a-z0-9]*', tid or ''):
+        print('run publish-page: no task: this worktree is not on a task/<ID> branch (give --id ID)', file=sys.stderr)
+        return 2
+    global C
+    C = init()  # this module is not one `state.share` sets
+    from agent_runner import plan as P
+    dest, url = publish_page(tid, src.resolve())
+    print(f'the run page shows it at /concept/{tid} (copy: {dest})')
+    if not url:
+        print(f'run publish-page: the one-shot could not publish it to claude.ai (the run log says why). Run this '
+              f'again, or finish with `done {tid} "<msg>" --blocked "<why>"`.', file=sys.stderr)
+        return 1
+    print(f'published: {url}')
+    if P.concept(tid):
+        print(f'Recorded for {tid}: `done {tid} "<msg>"` takes it as --artifact, and Needs you links it.')
+    return 0

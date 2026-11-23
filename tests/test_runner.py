@@ -1562,6 +1562,85 @@ def test_concepts_waiting(repo: Path):
     check('concept task' not in R.prompt_for('T2', 1, 1, repo, 'main'), 'other tasks\' prompts do not')
 
 
+PUBLISH_AGENT = r'''#!/usr/bin/env python3
+import json, os, sys
+with open(os.environ['FAKE_ONESHOT_LOG'], 'a', encoding='utf-8') as f:
+    f.write(json.dumps({'argv': sys.argv[1:], 'cwd': os.getcwd()}) + '\n')
+print('https://claude.ai/code/artifact/k1-page')
+'''
+
+
+def test_publish_page_f106f(repo: Path, tmp: Path):
+    print('F106f: run publish-page puts the page at /concept/ID, starts the one-shot with it, records the url, and '
+          'done takes it as the concept\'s page')
+    if R.plat.WINDOWS:
+        print('  (skipped on Windows: the fake one-shot is a POSIX script)')
+        return
+    import urllib.request
+    from agent_runner import page_copy as PC, web as W
+    root = tmp / 'f106f'
+    root.mkdir()
+    git(root, 'init', '-q', '-b', 'main')
+    agent = tmp / 'f106f-claude'
+    agent.write_text(PUBLISH_AGENT, encoding='utf-8')
+    agent.chmod(0o755)
+    (root / 'runner.toml').write_text(f'[run]\nagent = "{agent}"\n', encoding='utf-8')
+    (root / '.gitignore').write_text('.runner/\n', encoding='utf-8')
+    git(root, 'add', '-A')
+    git(root, 'commit', '-qm', 'start')
+    log = tmp / 'f106f-oneshot.jsonl'
+    env = {**os.environ, 'AGENT_RUNNER_REPO': str(root), 'FAKE_ONESHOT_LOG': str(log)}
+    for k in ('AGENT_RUNNER', 'AGENT_RUNNER_SLOT', 'AGENT_RUNNER_WORKTREE'):
+        env.pop(k, None)
+    check(run(root, 'plan', 'add', 'K', 'settings page layout', env=env).returncode == 0, 'K1 filed')
+    page = tmp / 'options.html'
+    page.write_text('<title>K1 options</title><h2>A</h2><h2>B</h2>', encoding='utf-8')
+
+    r = run(root, 'publish-page', str(page), '--id', 'K1', env=env)
+    check(r.returncode == 0, 'publish-page goes through', r.stdout + r.stderr)
+    copy = root / '.runner' / 'concepts' / 'K1.html'
+    eq(copy.read_text(encoding='utf-8'), page.read_text(encoding='utf-8'), 'the page is copied to <notes>/concepts/K1.html')
+    calls = [json.loads(l) for l in log.read_text(encoding='utf-8').splitlines()]
+    eq(len(calls), 1, 'one one-shot is started')
+    argv = calls[0]['argv']
+    eq(argv[0], '-p', 'a headless one-shot')
+    check(str(copy) in argv[1] and 'icon "options"' in argv[1], 'it is asked to publish the copy, as a new page', argv[1])
+    eq(argv[argv.index('--tools') + 1], 'Artifact', 'with only the Artifact tool')
+    has(r.stdout, r'published: https://claude\.ai/code/artifact/k1-page', 'the url is printed')
+    has(r.stdout, r'/concept/K1', 'and where the run page shows it')
+    eq((root / '.runner' / 'concepts' / 'K1.url').read_text(encoding='utf-8').strip(),
+       'https://claude.ai/code/artifact/k1-page', 'the url is recorded')
+
+    r = run(root, 'publish-page', str(page), '--id', 'K1', env=env)
+    check(r.returncode == 0, 'a second publish goes through', r.stderr)
+    argv = json.loads(log.read_text(encoding='utf-8').splitlines()[-1])['argv']
+    check('k1-page' in argv[1], 'a second publish updates the same page', argv[1])
+
+    R.init(root)
+    try:
+        token = W.web_token()
+        srv = W.serve(token, 0, '127.0.0.1', snap=lambda: {'queue': []})
+        try:
+            with urllib.request.urlopen(f'http://127.0.0.1:{srv.server_address[1]}/concept/K1?t={token}',
+                                        timeout=10) as resp:
+                eq(resp.read().decode('utf-8'), page.read_text(encoding='utf-8'),
+                   'the run page shows it at /concept/K1')
+        finally:
+            srv.stop()
+        eq(PC.concept_url('K1', R.C), 'https://claude.ai/code/artifact/k1-page', 'concept_url reads the recorded url')
+    finally:
+        R.init(repo)  # the tests after this one run on the suite's repo
+
+    r = run(root, 'done', 'K1', 'K1: two layouts', '--no-test', env=env)
+    check(r.returncode == 0, 'done needs no --artifact once publish-page recorded the url', r.stdout + r.stderr)
+    todo = (root / 'plan' / 'TODO.md').read_text(encoding='utf-8')
+    has(todo, r'BLOCKED: waiting for your OK on https://claude\.ai/code/artifact/k1-page',
+        'the url is where a K task\'s link goes: Needs you links it')
+    eq(copy.read_text(encoding='utf-8'), page.read_text(encoding='utf-8'), 'and the kept copy is the published page')
+    r = run(root, 'publish-page', str(tmp / 'missing.html'), '--id', 'K1', env=env)
+    eq(r.returncode, 2, 'a file that is not there is refused')
+
+
 def test_person_waiting(repo: Path):
     print('waiting for your OK: tasks blocked on a person list with a caps label; confirm, change and shelve move them')
     with tempfile.TemporaryDirectory() as tmp:
@@ -8004,7 +8083,7 @@ def main() -> int:
                        lambda: test_short_titles_and_since(repo), lambda: test_structured_events(repo),
                        lambda: test_board_follows_run(repo, tmp),
                        lambda: test_remote_sweep(repo, tmp), lambda: test_feed_resume(repo, tmp),
-                       lambda: test_concepts_waiting(repo),
+                       lambda: test_concepts_waiting(repo), lambda: test_publish_page_f106f(repo, tmp),
                        lambda: test_person_waiting(repo), lambda: test_control_server_old_agent(repo, tmp),
                        lambda: test_drop_or_change_running(repo), lambda: test_tell_running(repo),
                        lambda: test_close_idle_controls(repo), lambda: test_close_control_tiers(repo),

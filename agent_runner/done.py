@@ -101,6 +101,11 @@ def main(argv: list[str] | None = None) -> int:
     a = ap.parse_args(argv)
     c = cfg()
     cwd = c.root
+    if not a.artifact and not a.blocked and plan.concept(a.id):  # F106f: the page `run publish-page` published
+        from agent_runner.page_copy import concept_url
+        a.artifact = concept_url(a.id, c) or None
+        if a.artifact:
+            a.page = a.page or (str(p) if (p := c.notes('concepts', f'{a.id}.html')).is_file() else None)
     if why := artifact_refusal(a):
         print(why, file=sys.stderr)
         return 2
