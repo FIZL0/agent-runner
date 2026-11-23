@@ -159,7 +159,7 @@ Motion shows where a thing came from, where it went, or that it changed. Nothing
 - Never `scrollIntoView` to show a field being typed in: `kbReveal()` scrolls its own scroller. Pinch zoom is left
   alone. Safari's own address pill and arrows bar cannot be removed in a tab.
 - Outside `.app` (behind Safari's bar, around the keyboard) shows `html` and `body`'s `--page`, the view's own colour
-  (a chat's `--t-bg`); `theme-color` follows it (`pageColor()`).
+  (a chat's is the terminal theme's background); `theme-color` follows it (`pageColor()`).
 - A tap's focus on a text box in iOS is made by `kbFocus()`: `preventScroll`, and the box see-through for two frames, so
   Safari does not pan. Every scripted `focus()` of a box passes `preventScroll:true`, with `kbReveal()` where it must come into view.
 - `.app` keeps full height until the visual viewport changes, and gets it back at once on blur.
