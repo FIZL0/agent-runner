@@ -1410,6 +1410,12 @@ function cutsOff(c){
   const ws=working_();return ws.length?`Cuts off ${ws.map(w=>`${w.task} in ${w.name}${w.minutes!=null?` (${w.minutes} min in)`:''}`).join(', ')}. `:'';
 }
 const ctlSure=(c,tid)=>sureHTML(cutsOff(c)+c.confirm,c.label.charAt(0).toLowerCase()+c.label.slice(1),`data-ctl="${esc(c.key)}" data-tid="${esc(tid||'')}"`);
+/* C34: a panel's row actions ('queue', 'release': ui_model.RUN_CONTROLS' `where`): the buttons for a row's `acts` (the
+   keys ui_model allowed on it), each through the one data-ctl handler, and the confirm one asks in place */
+const obActs=(x,where)=>!!x.ctl&&(controlOf(x.ctl.split(':')[0])||{}).where===where;
+const obRun=x=>!!x.ctl&&!['queue','release'].includes((controlOf(x.ctl.split(':')[0])||{}).where);
+const actBtns=(acts,tid)=>(acts||[]).map(controlOf).filter(Boolean).map(c=>`<button class="btn${ctlBusy(c.key,tid)?' busy':''}" data-ctl="${esc(c.key)}" data-tid="${esc(tid)}">${esc(c.label)}</button>`).join('');
+const actSure=(acts,tid)=>(acts||[]).map(controlOf).filter(c=>c&&S.sure===c.key+':'+tid).map(c=>ctlSure(c,tid)).join('');
 function slotRow(s){
   if(!s.task)return `<div class="srow" data-k="slot:${esc(s.name)}:"><div class="row"><div class="who">${esc(s.name)}</div><div class="grow small">Idle: nothing it can start right now</div></div></div>`;
   const w=lastWords(s.name), tc=taskControlsOn(s)?controlsOf('task'):[];
@@ -1423,7 +1429,7 @@ function controlsCard(){
   return card(`<div class="row"><div class="grow"><b>Run</b><div class="small" data-k="runsaid" data-v="${esc(said)}">${esc(said)}</div></div><span class="small">${up?`${working_().length} of ${S.snap.slots||0} slot${S.snap.slots===1?'':'s'}`:''}</span></div>
     ${S.snap.unpushed?`<div class="small" data-k="unpushed" data-v="${esc(S.snap.unpushed)}">${esc(S.snap.unpushed)}</div>`:''}
     ${ss.map(slotRow).join('')}
-    ${obCards(x=>x.ctl)}${controlsOf('run').length?`<div class="btns tight" role="group" aria-label="Run controls">${b}<button class="btn" data-sheet="run">More…</button></div>`:''}`,'','data-k="run"');
+    ${obCards(obRun)}${controlsOf('run').length?`<div class="btns tight" role="group" aria-label="Run controls">${b}<button class="btn" data-sheet="run">More…</button></div>`:''}`,'','data-k="run"');
 }
 /* F98: a pitch's Not this, folded open in place: all of it or one change, its task reopened or dropped */
 function pitchNo(n,i){
@@ -1456,14 +1462,14 @@ async function openTask(id){
   render(true);
 }
 function planCard(q){
-  return card(`${taskRow(q,(q.release&&q.release.title)||q.title||q.id)}${S.taskOpen[q.id]?`<div class="btns"><button class="btn" data-about="plan:${esc(q.id)}">Chat</button></div>`:''}`,'',`data-k="task:${esc(q.id)}"`);
+  return card(`${taskRow(q,(q.release&&q.release.title)||q.title||q.id)}${S.taskOpen[q.id]?`<div class="btns"><button class="btn" data-about="plan:${esc(q.id)}">Chat</button>${actBtns(q.acts,q.id)}</div>${actSure(q.acts,q.id)}`:''}`,'',`data-k="task:${esc(q.id)}"`);
 }
 function nextReleaseCard(r){  // F131: no release queued yet: the auto release's count, dimmed, not a task
   return card(`<div class="row"><div class="grow"><b class="ell">${esc(r.title||'Next release')}</b><span class="small">${esc(r.words||'')}</span></div></div>`,'relph');
 }
 function parkedCard(q){  // B118: a parked task: Unpark (plan edit ID --pri normal) and the usual chat about it
   return card(`${taskRow(q,q.title||q.id)}
-    <div class="btns"><button class="btn" data-unpark="${esc(q.id)}">Unpark</button><button class="btn" data-about="plan:${esc(q.id)}">Chat</button></div>`,'',`data-k="task:${esc(q.id)}"`);
+    <div class="btns">${actBtns(q.acts,q.id)}<button class="btn" data-about="plan:${esc(q.id)}">Chat</button></div>${actSure(q.acts,q.id)}`,'',`data-k="task:${esc(q.id)}"`);
 }
 function conceptCard(c,i){
   const os=c.options||[], view=c.copy?tq('concept/'+encodeURIComponent(c.concept||c.id)):c.url;
@@ -1625,7 +1631,8 @@ function homeHTML(){
 const ttydLine=()=>S.snap.terminal_mode==='install'?`<div class="small ttyd" data-ttyd>A chat shows the real session with ttyd, which this machine lacks: ${S.snap.ttyd_install?`install it with <code>${esc(S.snap.ttyd_install)}</code>`:'install your platform\'s ttyd package'}.</div>`:'';
 const needsSec=()=>`<div class="sec">Needs you<span class="ln"></span></div>${obCards(x=>x.need)}${S.snap.needs.length?S.snap.needs.map(needCard).join(''):card(`<div class="row"><div class="who">${I.check}</div><div><b>Nothing needs you</b><div class="small">It shows here when something does.</div></div></div>`,'','data-k="noneed"')}`;
 function relCard(){const ws=working_(), rel=S.snap.release||'';
-  return obCards(x=>x.name==='release')+card(`<div class="row"><div class="grow"><b>Release</b><div class="small">${esc(rel||(ws.length?`Waits for the ${ws.length} task${ws.length>1?'s':''} still working.`:'Releases what has landed.'))}</div></div></div><div class="btns">${ws.length?`<button class="btn acc" data-rel="wait">Release when they land</button>`:''}<button class="btn ${ws.length?'':'acc'}" data-rel="now">Release now</button></div>`,'','data-k="release"')}
+  const acts=(S.snap.release_acts||[]).filter(k=>ws.length||k!=='release_wait');
+  return obCards(x=>obActs(x,'release'))+card(`<div class="row"><div class="grow"><b>Release</b><div class="small">${esc(rel||(ws.length?`Waits for the ${ws.length} task${ws.length>1?'s':''} still working.`:'Releases what has landed.'))}</div></div></div><div class="btns">${acts.map(controlOf).filter(Boolean).map((c,i)=>`<button class="btn ${i===0?'acc':''}" data-ctl="${esc(c.key)}">${esc(c.label)}</button>`).join('')}</div>`,'','data-k="release"')}
 /* F124: the Status view: one scroll in the TUI's order: needs you, the run (its slots and controls), usage, landed
    lately, the release, then the run log */
 const agoWords=at=>{const m=Math.max(0,Math.round((Date.now()-new Date(at).getTime())/60000));return isNaN(m)?'':m<1?'now':m<60?`${m} min`:m<48*60?`${Math.floor(m/60)} h`:`${Math.floor(m/1440)} d`};
@@ -1644,7 +1651,7 @@ const SHEETS={
   text(){return `<h2>The session's text</h2><div class="btns"><button class="btn pri" data-feedcopy>Copy all</button></div><pre class="out" id="feedtext" style="-webkit-user-select:text;user-select:text">${esc(S.feedText||'')}</pre>`},
   run(){  // More…: Stop, Run, Fix up, each with its key in agent-runner ui
     const gs=controlGroups(S.snap);
-    return `<h2>Run</h2>${obCards(x=>x.ctl)}${gs.map(g=>`<div class="sec">${g.group}<span class="ln"></span></div>${g.items.map(({c,label,choices})=>{
+    return `<h2>Run</h2>${obCards(obRun)}${gs.map(g=>`<div class="sec">${g.group}<span class="ln"></span></div>${g.items.map(({c,label,choices})=>{
       const bad=c.key==='stop_now'||c.key==='wip_drop', busy=ctlBusy(c.key)?' busy':'';
       if(c.needs==='n')return `<div class="it setrow"><span class="slotsn"><input type="number" min="1" max="99" inputmode="numeric" data-slots-n data-f="slotsn" aria-label="Slots" placeholder="N"><button class="btn${busy}" data-ctl="${esc(c.key)}">${esc(label)}</button></span><span class="k">${esc(c.tui)}</span></div>`;
       if(c.fix&&!c.each){const on=S.fixOpen===c.key;
@@ -1817,7 +1824,7 @@ function planHTML(){
   const pk=queueGroups(S.snap.queue)[1], qs=planQueue(S.snap);
   return `<div class="col"><div><button class="btn acc" data-about="new">${I.plus}Add a task</button></div>
     <div class="sec">Queue<span class="ln"></span></div>${qs.length?qs.map(q=>q.placeholder?nextReleaseCard(q):planCard(q)).join(''):emptyCard('The queue is empty.')}
-    ${obCards(x=>x.name==='unpark')}${pk.length?`<div class="sec">Parked<span class="ln"></span></div>${pk.map(parkedCard).join('')}`:''}</div>`;
+    ${obCards(x=>obActs(x,'queue'))}${pk.length?`<div class="sec">Parked<span class="ln"></span></div>${pk.map(parkedCard).join('')}`:''}</div>`;
 }
 /* F87: the Concepts view: every concept waiting for a pick, as agent-runner ui's Concepts panel lists them */
 function conceptsHTML(){
@@ -2588,7 +2595,7 @@ document.addEventListener('click',async e=>{
     if(rq.ask){S.sure=c.key+(tid?':'+tid:'');render(true);return}  // F82: asked in the page, no browser dialog
     if(c.needs==='n'&&!/^\d+$/.test(n))return toast('Type how many slots first',true);
     S.sure=null;S.f.slotsn='';
-    if(c.key==='task_take'){newChat(rq.name,rq.args,`Take back ${tid}`,`do ${tid} here`);return}  // B139: it asks a new chat
+    if(c.key==='task_take'||c.key==='queue_take'){newChat(rq.name,rq.args,`${c.label} ${tid}`,`do ${tid} here`);return}  // B139: it asks a new chat
     if(S.sheet)closeSheet();
     outbox(rq.name,rq.args,{ctl:c.key+':'+tid,say:c.label+(tid?` ${tid}`:'')});return}  // F124: through the outbox
   if(x=q('[data-needdrop]')){const n=S.snap.needs[+x.dataset.needdrop];if(!n)return;  // F110
@@ -2622,8 +2629,6 @@ document.addEventListener('click',async e=>{
     S.askOpen={...(S.askOpen||{}),[n.id]:!(S.askOpen||{})[n.id]};render(true);return}
   if(x=q('[data-later]')){const n=S.snap.needs[+x.dataset.later];if(!n)return;
     outbox('shelve',{tid:n.id},{need:n.id,say:`${n.id} · Later`,done:`${n.id} is set aside until you bring it back`});return}
-  if(x=q('[data-unpark]')){const id=x.dataset.unpark;  // B118; F137: through the outbox
-    outbox('unpark',{tid:id},{say:`Unpark ${id}`,done:`${id} is unparked: it joins Follow-ups`});return}
   if(q('[data-kadd]')){S.kOpen=!S.kOpen;S.kFocus=S.kOpen;S.kSaid='';render(true);return}  // F87: the Concepts view's +
   if(q('[data-kcancel]')){S.kOpen=false;render(true);return}
   if(x=q('[data-about]'))return about(x.dataset.about);
@@ -2631,8 +2636,6 @@ document.addEventListener('click',async e=>{
     newChat('quick_ask',{key:x.dataset.quick},t,t);return}
   if(x=q('[data-pick]')){const c=S.snap.concepts[+x.dataset.pick],o=c&&(c.options||[])[+x.dataset.o];if(!o)return;
     outbox('answer',{tid:c.id,text:`go with ${o.name}`},{concept:c.id,say:`${c.concept||c.id} · go with ${o.name}`,done:`Going with ${o.name}`});open('c1');return}
-  if(x=q('[data-rel]')){const now=x.dataset.rel==='now';  // F137: through the outbox
-    outbox('release',{now},{say:now?'Release now':'Release when they land',done:now?'Releasing what has landed now':'The release waits for the running tasks to land'});return}
   if(q('[data-unctx]')){S.ctx=null;render(true);return}
   if(x=q('[data-unatt]')){S.atts.splice(+x.dataset.unatt,1);render(true);return}
   if(q('[data-clip]')){$('file').click();return}

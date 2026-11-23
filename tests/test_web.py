@@ -185,7 +185,7 @@ def test_run_controls(tmp: Path) -> None:
             'unclaim': ['plan', 'unclaim', 'F1'], 'wip_show': ['wip', 'show', 'main-checkout-1'],
             'wip_restore': ['wip', 'restore', 'main-checkout-1'], 'wip_drop': ['wip', 'drop', 'main-checkout-1']}
     tid = lambda c: 'main-checkout-1' if c['fix'] == 'wip' else 'F1'  # noqa: E731
-    cs = U.controls()
+    cs = [c for c in U.controls() if c['where'] in ('run', 'task')]  # C34: the row actions: test_row_actions
     if shutil.which('node'):
         reqs = logic_js([['controlReq', c, {'n': ' 4', 'tid': tid(c), 'sure': True}] for c in cs] +
                         [['controlReq', U.run_control_of('stop_now') | {'needs': '', 'confirm': U.STOP_NOW_ASK},
@@ -230,6 +230,41 @@ def test_run_controls(tmp: Path) -> None:
             code, out = post(url, reqs[-1])
             eq((out.get('ok'), ran, out.get('confirm')), (False, [], U.STOP_NOW_ASK),
                "stop now without the page's confirm runs nothing and returns the question")
+    finally:
+        srv.stop()
+
+
+def test_row_actions(tmp: Path) -> None:
+    """C34: the page draws a Queue row's actions and the release tab's from the snapshot's `acts` and sends each
+    as one run_control request through the one data-ctl handler; the server runs it (replaces the per-button
+    Unpark and Release tests)."""
+    fake_repo(tmp)
+    page = W.PAGE.read_text(encoding='utf-8')
+    for part in ('actBtns(q.acts,q.id)', 'actSure(q.acts,q.id)', 'S.snap.release_acts', "c.key==='queue_take'"):
+        check(part in page, f'the page has {part}')
+    for gone in ('data-unpark', "outbox('unpark'", 'data-rel=', "outbox('release'"):
+        check(gone not in page, f'the page has no {gone}: one handler')
+    cs = [c for c in U.controls() if c['where'] in ('queue', 'release')]
+    eq(len(cs), 6, 'the row actions the page draws')
+    if shutil.which('node'):
+        reqs = logic_js([['controlReq', c, {'tid': 'F83', 'sure': True}] for c in cs])
+    else:
+        print('  (no node here: the page requests are built in Python instead)')
+        reqs = [{'name': 'run_control', 'args': {'key': c['key'], **({'tid': 'F83'} if c['needs'] == 'id' else {}),
+                                                  **({'confirm': True} if c['confirm'] else {})}} for c in cs]
+    ran = []
+    token = W.web_token()
+    srv = W.serve(token, 0, '127.0.0.1', snap=lambda: {})
+    url = f'http://127.0.0.1:{srv.server_address[1]}/act?t={token}'
+    try:
+        with mock.patch.object(U, 'RUN', [lambda argv: (ran.append(argv), (0, 'ok'))[1]]), \
+                mock.patch.object(U, 'queue_row', lambda tid: {'id': tid, 'pri': 'normal', 'state': 'parked'}):
+            for c, rq in zip(cs, reqs):
+                ran.clear()
+                code, out = post(url, rq)
+                fits = c['key'] not in ('queue_priority',)  # the stand-in row is parked: priority does not fit
+                eq((code, out.get('ok')), (200, fits), f'{c["label"]} sent from the page: {"runs" if fits else "refused"}')
+                eq(bool(ran), fits, f'{c["label"]}: its command ran or not, as the row allows')
     finally:
         srv.stop()
 
@@ -409,8 +444,8 @@ def test_page(tmp: Path) -> None:
                  'greeting()', 'How can I help with the run?', 'data-quick="since">', 'Since my last look',
                  'data-quick="needs">', 'What needs me', 'data-about="new">', 'Add a task',  # Home
                  '>Needs you<', 'data-ans=', 'data-later=', 'data-needchat=', 'data-needdrop=', '>Working now<', '>Up next<',
-                 'data-about="plan:', 'Release when they land', 'Release now',
-                 "outbox('answer'", "outbox('shelve'", "outbox('release'", "newChat('quick_ask'", "outbox('chat_to'",
+                 'data-about="plan:', 'S.snap.release_acts',
+                 "outbox('answer'", "outbox('shelve'","newChat('quick_ask'", "outbox('chat_to'",
                  "newChat('new_control'", "act('interrupt'",  # F137: through the outbox
                  '.a{display:grid;gap:8px;font:400 16.5px/1.6 var(--serif)', '.u{justify-self:end',  # Talk's words
                  'id="feed"', 'feedHTML(n)', "tq('feed/'",
@@ -667,14 +702,14 @@ def test_parked(tmp: Path) -> None:
     eq(q['F83']['state'], 'parked', 'the model gives a task under Parked state parked')
     app = W.page_html().decode()
     for part in ('<div class="sec">Parked<span class="ln"></span></div>', "Parked: a run won't start it",
-                 'data-unpark="${esc(q.id)}">Unpark</button>', 'data-about="plan:${esc(q.id)}">Chat</button>',
-                 "outbox('unpark',{tid:id}", "q.state!=='running'&&q.state!=='parked'"):
+                 '${actBtns(q.acts,q.id)}<button class="btn" data-about="plan:${esc(q.id)}">Chat</button>',
+                 "q.state!=='running'&&q.state!=='parked'"):
         check(part in app, f'the run app has {part}')
     token = W.web_token()
     srv = W.serve(token, 0, '127.0.0.1', snap=lambda: {})
     try:
         code, out = post(f'http://127.0.0.1:{srv.server_address[1]}/act?t={token}',
-                         {'name': 'unpark', 'args': {'tid': 'F83'}})
+                         {'name': 'run_control', 'args': {'key': 'queue_unpark', 'tid': 'F83'}})
     finally:
         srv.stop()
     check(code == 200 and out.get('ok'), 'the unpark act ran plan edit', out)
@@ -684,7 +719,7 @@ def test_parked(tmp: Path) -> None:
     check('F83' in after and 'F83' not in parked, 'F83 is out of Parked', after)
     q = {t['id']: t for t in U.queue_rows(after.splitlines())}
     eq((q['F83']['state'], q['F83']['pri']), ('ready', 'normal'), 'and is ready, at level normal')
-    eq(U.act('unpark', tid='not an id')['ok'], False, 'unpark takes a task id only')
+    eq(U.run_control('queue_unpark', tid='not an id')['ok'], False, 'unpark takes a queued task only')
     if not shutil.which('node'):
         print('  (no node here: the Parked group script test is skipped)')
         return
@@ -1860,7 +1895,7 @@ def test_card_chat_b139(tmp: Path) -> None:
     check('sendReq(ctx,to,msg)' in send and "newChat(rq.name,rq.args," in send,
           'send() starts a new chat when a card set the context', send)
     check("newChat('quick_ask'" in page and "outbox('quick_ask'" not in page, 'a quick ask starts a new chat', '')
-    check("if(c.key==='task_take'){newChat(" in page, "Take back opens the new chat it started", '')
+    check("if(c.key==='task_take'||c.key==='queue_take'){newChat(" in page, "Take back opens the new chat it started", '')
     if not shutil.which('node'):
         print('  (no node here: the send script test is skipped)')
         return
@@ -3542,7 +3577,7 @@ def test_session_proxy_f114(tmp: Path) -> None:
 
 
 if __name__ == '__main__':
-    raise SystemExit(report([in_tmp(test_release_row_f131),in_tmp(test_project_name_b153),in_tmp(test_home_screen_b179),in_tmp(test_chat_order_f133), in_tmp(test_delete_chats_f118), in_tmp(test_server), in_tmp(test_real_action), in_tmp(test_run_controls),
+    raise SystemExit(report([in_tmp(test_release_row_f131),in_tmp(test_project_name_b153),in_tmp(test_home_screen_b179),in_tmp(test_chat_order_f133), in_tmp(test_delete_chats_f118), in_tmp(test_server), in_tmp(test_real_action), in_tmp(test_run_controls), in_tmp(test_row_actions),
                            in_tmp(test_start), in_tmp(test_upload),
                            in_tmp(test_control_rows), in_tmp(test_feed_pane_concept), in_tmp(test_page),
                            in_tmp(test_logic), in_tmp(test_extras), in_tmp(test_diff), in_tmp(test_views),

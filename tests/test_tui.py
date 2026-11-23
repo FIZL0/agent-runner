@@ -65,6 +65,8 @@ SNAP['queue'][0].update(state='running s1 6m', title='Queued task number 1, whic
 SNAP['queue'][1].update(id='B2', state='critical', pri='critical')
 SNAP['queue'][2].update(id='C3', state='after', after=['Q4'], after_title='Q4 Queued task number 4')
 
+U.queue_row = lambda tid: next((q for q in SNAP['queue'] if q['id'] == tid), None)  # C34: no TODO.md here
+
 DIFF = 'diff --git a/a.py b/a.py\n--- a/a.py\n+++ b/a.py\n@@ -1,2 +1,2 @@\n-old line\n+new line\n context'
 
 
@@ -1230,7 +1232,8 @@ def test_parked() -> None:
     ran, snap = [], dict(SNAP)
     snap['queue'] = list(SNAP['queue']) + [{'id': 'F83', 'title': 'Parked big work', 'state': 'parked',
                                             'pri': 'later'}]
-    with mock.patch.object(U, 'RUN', [lambda argv: (ran.append(argv), (0, 'ok'))[1]]):
+    with mock.patch.object(U, 'RUN', [lambda argv: (ran.append(argv), (0, 'ok'))[1]]), \
+            mock.patch.object(U, 'queue_row', lambda tid: next((q for q in snap['queue'] if q['id'] == tid), None)):
         p = T.RunPage(snap, get_snap=lambda: dict(snap), attrs=ATTRS)
         p.key('3')
         p.cur[3] = len(snap['queue']) - 1

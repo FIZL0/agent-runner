@@ -607,12 +607,16 @@ def snapshot(up: bool | None = None, now: float | None = None, log_n: int = LOG_
     run = {'paused': bool(up and st.get('paused')), 'stopping': bool(up and st.get('stopping')),
            'forced': bool(up and st.get('forced')), 'power': str(st.get('power') or '') if up else '',
            'state': run_state(up, st)}  # F124
+    queue = pin_release(queue_rows(ls, st, now), row)
+    for q in queue:
+        q['acts'] = row_acts('queue', q)  # C34
     fix = fixups(st, ls)
     return {**controls_shown(bool(up), run, fix), 'run': run, 'fixups': fix,
             'project': S.project(), 'at': dt.datetime.fromtimestamp(now).isoformat(timespec='seconds'),
             'up': up, 'status': status_rows(up, st, '\n'.join(x for x in (progress, release) if x)),
             'slots': slots, 'sessions': sessions, 'sessions_note': '',
-            'queue': pin_release(queue_rows(ls, st, now), row), 'release_row': row,
+            'queue': queue, 'release_row': row, 'release_acts': [c['key'] for c in RUN_CONTROLS
+                                                                 if c['where'] == 'release'],
             'needs': needs, 'concepts': concepts, 'log': log_tail(log_n), 'release': release,
             'quick_asks': quick_asks(), 'terminal_mode': terminal_mode(), 'controls': controls(),
             'unpushed': unpushed_line(),  # F98
@@ -677,11 +681,6 @@ def drop(tid: str, why: str) -> dict:
 def shelve(tid: str) -> dict:
     """`plan shelve ID`: later; stays blocked, off Needs you."""
     return call(['plan', 'shelve', tid])
-
-
-def release(now: bool = False, text: str = '') -> dict:
-    """Queue a release: `plan add V [TEXT]`, which waits for the running tasks to land; `now`: `--now`."""
-    return call(['plan', 'add', 'V', *([text] if text else []), *(['--now'] if now else [])])
 
 
 def to_c1(text: str) -> dict:
@@ -793,14 +792,6 @@ def move(tid: str, where: str, other: str) -> dict:
     return call(['plan', 'move', tid, where, other])
 
 
-def unpark(tid: str) -> dict:
-    """B118: Unpark a parked task (level later, a run never starts it): `plan edit ID --pri normal`, which moves
-    it into Follow-ups, where a run starts it."""
-    if not TASK_ID.fullmatch(tid or ''):
-        return {'ok': False, 'code': 2, 'out': f'unpark: a task id (F83), not {tid!r}', 'argv': []}
-    return call(['plan', 'edit', tid, '--pri', 'normal'])
-
-
 # --- F82: the run controls ---------------------------------------------------------------------------------
 #
 # One list for the web page and agent-runner ui alike, so the two cannot drift apart: each control's key, its
@@ -855,7 +846,23 @@ RUN_CONTROLS = (
     {'key': 'wip_drop', 'label': 'Drop moved-aside edits', 'argv': ('wip', 'drop', '{id}'), 'tui': 'O',
      'where': 'run', 'group': 'Fix up', 'fix': 'wip', 'confirm': WIP_DROP_ASK},
     {'key': 'task_take', 'label': 'Take back', 'ask': 'do {id} here', 'tui': 'H', 'where': 'task'},
-    {'key': 'task_drop', 'label': 'Drop', 'argv': ('plan', 'drop', '{id}', '{why}'), 'tui': 'D', 'where': 'task'},
+    {'key': 'task_drop', 'label': 'Drop', 'argv': ('plan', 'drop', '{id}', '{why}'), 'tui': 'D', 'tui_also': 'd',
+     'where': 'task'},
+    # C34: a Queue row's actions ('where' 'queue', '{id}' the row's task; `fits` says which rows it is allowed on, and
+    # each snapshot row carries those keys as `acts`; '{pri}' the other level of critical / normal), and the release
+    # tab's ('where' 'release'). 'tui_sure' False: the terminal UI runs it without asking (the page asks).
+    {'key': 'queue_priority', 'label': 'Priority', 'argv': ('plan', 'edit', '{id}', '--pri', '{pri}'), 'tui': 'p',
+     'where': 'queue', 'fits': lambda r: r.get('state') != 'parked'},
+    {'key': 'queue_unpark', 'label': 'Unpark', 'argv': ('plan', 'edit', '{id}', '--pri', 'normal'), 'tui': 'U',
+     'where': 'queue', 'help': 'unpark (a parked task: no J/K or p)', 'fits': lambda r: r.get('state') == 'parked'},
+    {'key': 'queue_take', 'label': 'Do it here', 'ask': 'do {id} here', 'tui': 'H', 'where': 'queue'},
+    {'key': 'queue_drop', 'label': 'Drop', 'argv': ('plan', 'drop', '{id}', '{why}'), 'tui': 'D', 'tui_also': 'd',
+     'where': 'queue', 'why': 'dropped from the run app', 'tui_sure': False,
+     'confirm': 'It leaves the plan, and a slot running it is stopped. Drop it?'},
+    {'key': 'release_wait', 'label': 'Release when the running tasks land', 'argv': ('plan', 'add', 'V'), 'tui': '⏎',
+     'where': 'release'},
+    {'key': 'release_now', 'label': 'Release now, without them', 'argv': ('plan', 'add', 'V', '--now'), 'tui': 'f',
+     'where': 'release'},
 )
 TASK_DROP_WHY = 'dropped from its slot from the run controls'
 SLOT_COUNT = re.compile(r'[+-]?\d{1,3}')
@@ -897,6 +904,16 @@ def _plat():
     return plat
 
 
+def row_acts(where: str, row: dict) -> list[str]:
+    """C34: the keys of the actions of panel `where` ('queue') allowed on `row` now, in the list's order."""
+    return [c['key'] for c in RUN_CONTROLS if c['where'] == where and c.get('fits', lambda r: True)(row)]
+
+
+def queue_row(tid: str) -> dict | None:
+    """C34: the queue's row of task `tid` as TODO.md has it now (None: not queued)."""
+    return next((q for q in queue_rows(P.lines(S.C.todo), _state(S.run_up())) if q['id'] == tid), None)
+
+
 def run_control_of(key: str) -> dict | None:
     return next((c for c in RUN_CONTROLS if c['key'] == key), None)
 
@@ -913,11 +930,12 @@ def controls() -> list[dict]:
         return 'n' if any('{n}' in w for w in words) else 'id' if any('{id}' in w for w in words) else ''
     return [{'key': c['key'], 'label': c['label'], 'tui': c['tui'], 'where': c['where'], 'needs': needs(c),
              'confirm': c.get('confirm', ''), 'group': c.get('group', ''), 'fix': c.get('fix', ''),
-             'each': bool(c.get('each')), 'up': c.get('up', True)} for c in RUN_CONTROLS
+             'each': bool(c.get('each')), 'up': c.get('up', True), 'tui_also': c.get('tui_also', ''),
+             'tui_sure': c.get('tui_sure', True)} for c in RUN_CONTROLS
             if not (plat.WINDOWS and c['key'] == 'restart')]  # no re-exec there
 
 
-def control_argv(key: str, n='', tid: str = '', why: str = '') -> list[str]:
+def control_argv(key: str, n='', tid: str = '', why: str = '', pri: str = '') -> list[str]:
     """The runner command control `key` runs, filled in; ValueError says what is missing or wrong."""
     c = run_control_of(key)
     if c is None:
@@ -931,7 +949,8 @@ def control_argv(key: str, n='', tid: str = '', why: str = '') -> list[str]:
             raise ValueError(f'{key}: which moved-aside edits? not {tid!r}')
     elif any('{id}' in w for w in words + [c.get('ask') or '']) and not TASK_ID.fullmatch(tid or ''):
         raise ValueError(f'{key}: a task id (F82), not {tid!r}')
-    return [w.replace('{n}', n).replace('{id}', tid).replace('{why}', why or TASK_DROP_WHY) for w in words]
+    return [w.replace('{n}', n).replace('{id}', tid).replace('{why}', why or c.get('why') or TASK_DROP_WHY)
+            .replace('{pri}', pri) for w in words]
 
 
 def run_control(key: str, n='', tid: str = '', why: str = '', confirm: bool = False, wait: bool = True) -> dict:
@@ -946,8 +965,15 @@ def run_control(key: str, n='', tid: str = '', why: str = '', confirm: bool = Fa
         rs = [run_control(key, tid=i) for i in ids]
         bad = next((r for r in rs if not r['ok']), None)
         return bad or {**rs[-1], 'out': ', '.join(r['out'] for r in rs)}
+    pri = ''
+    if c and c['where'] == 'queue':  # C34: allowed on this row now (the snapshot's `acts`, checked again)
+        row = queue_row(tid)
+        if row is None or key not in row_acts('queue', row):
+            return {'ok': False, 'code': 1, 'out': f'{c["label"]}: {tid or "no task"} is not a queued task it fits',
+                    'argv': []}
+        pri = 'normal' if row['pri'] == 'critical' else 'critical'
     try:
-        argv = control_argv(key, n, tid, why)
+        argv = control_argv(key, n, tid, why, pri)
     except ValueError as e:
         return {'ok': False, 'code': 2, 'out': str(e), 'argv': []}
     if c.get('confirm') and confirm is not True:
@@ -960,8 +986,8 @@ def run_control(key: str, n='', tid: str = '', why: str = '', confirm: bool = Fa
 
 
 ACTIONS = {'plan_add': plan_add, 'plan_change': plan_change, 'chat': chat, 'answer': answer, 'drop': drop,
-           'take': take, 'shelve': shelve, 'release': release, 'open_session': open_session, 'move': move,
-           'run_control': run_control, 'unpark': unpark}
+           'take': take, 'shelve': shelve, 'open_session': open_session, 'move': move,
+           'run_control': run_control}
 
 
 def act(name: str, **args) -> dict:
