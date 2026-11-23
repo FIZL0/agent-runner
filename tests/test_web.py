@@ -7,6 +7,7 @@ request without its token. F79: the page is the run app, and keeps uploaded atta
 from __future__ import annotations
 
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -846,16 +847,16 @@ def test_esc_ctrl_c(tmp: Path) -> None:
         if ln.strip() in out_of_box:
             check('interrupt' not in ln, 'an Esc branch out of the box sends no interrupt', ln)
     esc_int = [ln for ln in esc_lines if 'interrupt' in ln]
-    check(len(esc_int) == 1 and 'busy(S.thread)' in esc_int[0] and 'S.thread=null' not in esc_int[0],
+    check(len(esc_int) == 1 and 'busy(shownSession())' in esc_int[0] and 'S.thread=null' not in esc_int[0],
           'Esc in the box interrupts only a working chat, and does not go back', esc_int)
     check(any("e.key==='Escape'" in ln and 'blur()' in ln for ln in lines), 'Esc in the box leaves it')
     check(any("e.key==='Escape'&&S.thread&&" in ln and 'S.thread=null' in ln for ln in lines), 'Esc out of the box goes back')
     ctrl = [ln for ln in lines if 'e.ctrlKey' in ln]
-    check(len(ctrl) == 1 and "act('interrupt',{session:S.thread})" in ctrl[0] and 'busy(S.thread)' in ctrl[0]
+    check(len(ctrl) == 1 and "act('interrupt',{session:n})" in ctrl[0] and 'busy(n)' in ctrl[0]
           and '!selectedText(' in ctrl[0], 'Ctrl+C interrupts the working chat, not over selected text', ctrl)
     check('Working on it… · Ctrl+C interrupts<button type="button" class="btn mini" data-stop="${esc(n)}">Stop</button>'
           in page, 'the working mark says Ctrl+C interrupts and has a Stop button')
-    check("if(x=q('[data-stop]')){const n=x.dataset.stop||S.thread;if(n)act('interrupt',{session:n});return}" in page,
+    check("if(x=q('[data-stop]')){const n=x.dataset.stop||shownSession();if(n)act('interrupt',{session:n});return}" in page,
           'Stop interrupts the session it stands by')
     # B124: the terminal-style page, the same way: route()'s Esc branches never interrupt, Ctrl+C does
     term = W.TERM.read_text(encoding='utf-8')
@@ -1302,7 +1303,8 @@ const store = {v: {}, get(k) { return this.v[k] || '' }, set(k, v) { if (v) this
 const DRAFT_KEY = k => 'ar-draft:' + k, grow = () => {}, esc = s => String(s), tq = p => p;
 const S = {thread: 'c1', sel: [], drawer: false, view: 'home'};
 const boxKey = () => S.thread || 'home';
-let BUSY = false, sent = 0, prevented = 0;
+let BUSY = false, sent = 0, prevented = 0, TALK = '';
+const talkName = () => TALK;
 const busy = () => BUSY, act = (n, a) => { acts.push([n, a.session]) }, selectedText = () => false,
       render = () => {}, newConcept = () => {}, send = () => { sent++ };
 const menu = {hidden: true, innerHTML: '', querySelector() { return null }};
@@ -1313,6 +1315,7 @@ const document = {activeElement: ta, addEventListener(t, f) { handlers[t] = f },
                   querySelector(s) { return s === '[data-slash]' ? menu : s === '[data-in]' ? ta : null }};
 const fetch = () => Promise.resolve({json: () => Promise.resolve([])});
 eval(logic + slice('const HIST_KEY=', 'return true;\n}\n') + slice('const SL={', 'ta.value.length);\n}\n')
+     + slice('const shownSession=', ";\n") + slice("document.addEventListener('click',", '\n});\n')
      + slice("document.addEventListener('keydown',", '\n});\n') + `
 (async () => {
   await new Promise(r => setTimeout(r, 0));
@@ -1345,6 +1348,21 @@ eval(logic + slice('const HIST_KEY=', 'return true;\n}\n') + slice('const SL={',
   out.escIdle = [key('Escape'), acts.length, ta.blurred, S.thread];
   store.v['ar-hist:c4'] = 'not json'; S.thread = 'c4'; at('');
   out.bad = [key('ArrowUp'), ta.value];
+  // B141: on Home (no chat open) Ctrl+C, Esc and Stop interrupt c1 while it works; in the Talk view the Talk session
+  S.thread = null; S.view = 'home'; BUSY = true; acts.length = 0;
+  const ctrlC = () => key('c', {ctrlKey: true});
+  out.homeCtrlC = [ctrlC(), acts.slice()];
+  acts.length = 0; at('x');
+  out.homeEsc = [key('Escape'), acts.slice()];
+  acts.length = 0;
+  handlers.click({target: {closest: s => s === '[data-stop]' ? {dataset: {stop: ''}} : null}});
+  out.homeStop = acts.slice();
+  acts.length = 0; S.view = 'talk'; TALK = 'c7';
+  out.talkCtrlC = [ctrlC(), acts.slice()];
+  acts.length = 0; TALK = '';
+  out.talkNone = [ctrlC(), acts.slice()];
+  acts.length = 0; S.view = 'home'; BUSY = false;
+  out.homeIdle = [ctrlC(), acts.slice()];
   console.log(JSON.stringify(out));
 })();`);
 """
@@ -1398,6 +1416,30 @@ def test_composer_keys_b120(tmp: Path) -> None:
     eq(got.get('escBusy'), [True, [['interrupt', 'c1']], 0, 'c1'], 'Esc interrupts the working chat and stays in it')
     eq(got.get('escIdle'), [True, 1, 1, 'c1'], 'Esc in an idle chat leaves the box, sends nothing, does not go back')
     eq(got.get('bad'), [False, ''], 'a broken stored history is read as none')
+    # B141: with no chat open the page shows c1, and Ctrl+C, Esc and Stop interrupt it while it works
+    eq(got.get('homeCtrlC'), [True, [['interrupt', 'c1']]], 'Ctrl+C with no chat open interrupts a working c1')
+    eq(got.get('homeEsc'), [True, [['interrupt', 'c1']]], 'Esc in the Home box interrupts a working c1')
+    eq(got.get('homeStop'), [['interrupt', 'c1']], 'Stop with no chat open interrupts c1')
+    eq(got.get('talkCtrlC'), [True, [['interrupt', 'c7']]], 'in the Talk view Ctrl+C interrupts the Talk session')
+    eq(got.get('talkNone'), [False, []], 'a Talk view with no Talk session yet interrupts nothing')
+    eq(got.get('homeIdle'), [False, []], 'an idle c1 leaves Ctrl+C to the browser')
+    check('data-stop="${esc(shownNow)}"' in page, "the box's Stop names the shown session")
+
+
+def test_interrupt_c1_b141(tmp: Path) -> None:
+    """B141: interrupt c1 types Escape into its hidden session's FIFO, <notes>/control1.in, and the feed shows
+    the transcript's interrupt as 'interrupted'."""
+    from agent_runner import slots as SLT
+    fake_repo(tmp)
+    S.C.notes('control1.live').write_text(str(os.getpid()), encoding='utf-8')
+    typed = []
+    with mock.patch('agent_runner.plat.WINDOWS', False), \
+            mock.patch.object(SLT, 'send_fifo_raw', lambda p, b: typed.append((p.name, b)) or True):
+        r = U.interrupt('c1')
+    eq((r['ok'], typed, r['out']), (True, [('control1.in', b'\x1b')], 'interrupted c1'),
+       'interrupt c1 sends Escape to control1.in')
+    row = {'type': 'user', 'message': {'content': [{'type': 'text', 'text': '[Request interrupted by user]'}]}}
+    eq(U.feed_entries([row]), [{'kind': 'out', 'text': 'interrupted'}], "the page's feed then shows 'interrupted'")
 
 
 if __name__ == '__main__':
@@ -1409,4 +1451,5 @@ if __name__ == '__main__':
                            in_tmp(test_esc_ctrl_c), in_tmp(test_concepts_view), in_tmp(test_follow_version_f90),
                            in_tmp(test_talk_f93), in_tmp(test_https_link_b130),
                            in_tmp(test_listen_heard_nothing_b132), in_tmp(test_talk_reply_heard_b133),
-                           in_tmp(test_slash_menu_b119), in_tmp(test_composer_keys_b120)]))
+                           in_tmp(test_slash_menu_b119), in_tmp(test_composer_keys_b120),
+                           in_tmp(test_interrupt_c1_b141)]))
