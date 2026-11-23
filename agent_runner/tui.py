@@ -12,7 +12,7 @@ Panels and their tabs (F76):
     Sessions   a control session cN: chat, pane, session; a slot: feed, pane, diff, session (an idle slot: feed,
                pane); the '+ new chat' row and N start one (`new_control`); o opens the session link
     Queue      a task: direct edit, chat edit; the '+ new task' row: chat edit, direct edit; e edit, E chat edit,
-               n new, J/K reorder, p priority on/off, H do it here, D drop
+               n new, J/K reorder, p priority on/off, H do it here, D drop; a parked task: U unpark (no J/K, p)
     Needs you  answer (a button per possible answer: y yes, n no, or a b c … for options; L later; a reply box),
                info
     Concepts   preview: the K copy inline, its options (the copy's headings) moved through with j/k, Enter goes
@@ -135,6 +135,7 @@ Queue [3]
   n        new task               J/K      move down / up
   p        priority               H        do it here
   D        drop                   ^S       save the direct edit
+  U        unpark (a parked task: no J/K or p)
   t k K    what, kind (cycles, back)        p f a    priority, files, after
 Needs you [4]
   a        answer                 L        later
@@ -542,8 +543,11 @@ class RunPage:
 
     def queue_tag(self, it) -> tuple[str, str]:
         """A queue row's right tag: 'sN Nm' (yellow) while a slot runs it, 'critical' (red), 'blocked' (red),
-        '⧗ after <id title>' (dim) while it waits, 'ready' (green)."""
+        '⧗ after <id title>' (dim) while it waits, 'parked' (dim) at level later (B123: a run never starts it),
+        'ready' (green)."""
         state = str(it.get('state') or '')
+        if state == 'parked':
+            return 'parked', 'dim'
         if state.startswith('running'):
             return state[len('running'):].strip() or 'running', 'yellow'
         if state == 'blocked' or (not state and it.get('blocked')):
@@ -1000,6 +1004,8 @@ class RunPage:
         if self.panel == 3:
             if isinstance(it, dict) and it.get('new'):
                 return [('⏎', 'open'), ('E', 'chat edit')]
+            if isinstance(it, dict) and it.get('state') == 'parked':
+                return [('e', 'edit'), ('E', 'chat edit'), ('U', 'unpark'), ('H', 'do it here'), ('D', 'drop')]
             return [('e', 'edit'), ('E', 'chat edit'), ('J/K', 'reorder'), ('p', 'priority'), ('H', 'do it here'),
                     ('D', 'drop')]
         if self.panel == 4:
@@ -1418,9 +1424,11 @@ class RunPage:
             self.main = False
         elif self.panel == 3 and k == 'H' and tid:
             self.done(U.take(tid))
-        elif self.panel == 3 and k == 'p' and tid:
+        elif self.panel == 3 and k == 'U' and tid and it.get('state') == 'parked':
+            self.done(U.unpark(tid))
+        elif self.panel == 3 and k == 'p' and tid and it.get('state') != 'parked':
             self.done(U.plan_change(tid, pri='normal' if it.get('pri') == 'critical' else 'critical'))
-        elif self.panel == 3 and k in ('J', 'K') and tid:
+        elif self.panel == 3 and k in ('J', 'K') and tid and it.get('state') != 'parked':
             self.reorder(1 if k == 'J' else -1)
         elif self.panel == 4 and k == 'a' and it is not None:
             self.set_tab('answer')
