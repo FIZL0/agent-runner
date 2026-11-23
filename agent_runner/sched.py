@@ -205,6 +205,8 @@ class Held(NamedTuple):
     parked: dict
     shared: set
     away: frozenset = frozenset()  # B107: busy ids that hold no release: taken by hand, claimed by another runner
+    live: frozenset = frozenset()  # B126: the tasks in this run's slots (a running one may be in `mine` too)
+    critical: frozenset = frozenset()  # B126: open tasks tagged `(follow-up, critical)` or in a Critical section
 
 
 def held(running: dict, branch: str) -> Held:
@@ -233,13 +235,39 @@ def held(running: dict, branch: str) -> Held:
         busy.append((tid, t[1], files if done_ else set(t[2]) | files, t[3], set() if done_ else set(t[2])))
     busy_ids |= {b[0] for b in busy if b[0] not in mine}
     parked = parked_attempts() if todo else {}
-    return Held(todo, busy, busy_ids, mine, finished, parked, shared, away)
+    return Held(todo, busy, busy_ids, mine, finished, parked, shared, away, frozenset(live),
+                critical_tasks(branch) if todo else frozenset())
+
+
+def critical_tasks(branch: str) -> frozenset:
+    """Ids of the open tasks of level critical in `branch`'s TODO.md: tagged `(follow-up, critical)`, or under a
+    heading that says critical (a plan's own Critical section)."""
+    return frozenset(tid for section, box, tid, rest, _ in P.iter_tasks(plan_text(branch))
+                     if box == ' ' and ('critical' in section.lower() or
+                                        (m := P.PRI_TAG.search(rest)) and m.group(1) == 'critical'))
+
+
+def merging(b: tuple, h: Held) -> bool:
+    """Busy task `b` has exited and only its merge is left: finished here, not in a slot, not resuming."""
+    return b[0] in h.mine and b[0] not in h.live and b[0] not in h.busy_ids
+
+
+def critical_waiting(tried: set, h: Held) -> str | None:
+    """B126: the first critical task held only by a task that has exited and waits to merge (its files, family or
+    ordered section), or None. A free slot is kept for it rather than given to lower-priority work: once that
+    merge lands, it starts in the next free slot, ahead of the normal tasks."""
+    for t in h.todo:
+        if t[0] in h.critical and (r := holds(t, tried, h)) and r[0] == 'clash' and merging(r[1], h) and \
+                all(merging(b, h) for b in h.busy if clash(t, b, h.shared) and not passes(t, b, h)):
+            return t[0]
+    return None
 
 
 def holds(t: tuple, tried: set, h: Held) -> tuple[str, tuple | None] | None:
     """Why open task `t` may not start now, first reason only: ('finished', None), ('tried', None),
-    ('busy', None), ('parked', None), ('merging', None) (a release, while a merge holds the turn: F99) or
-    ('clash', the busy task it clashes with); None when it is free."""
+    ('busy', None), ('parked', None), ('merging', None) (a release, while a merge holds the turn: F99),
+    ('clash', the busy task it clashes with) or ('yields', (the critical task's id,)) (B126: a critical task
+    waits only for a merge, so the slot is kept for it); None when it is free."""
     tid = t[0]
     if tid not in h.busy_ids and tid in h.finished:
         return 'finished', None  # its branch is waiting to be merged: restarting it would reset the branch
@@ -253,6 +281,8 @@ def holds(t: tuple, tried: set, h: Held) -> tuple[str, tuple | None] | None:
         return 'merging', None
     if b := next((b for b in h.busy if clash(t, b, h.shared) and not passes(t, b, h)), None):
         return 'clash', b  # a running or merge-waiting task's sibling, ordered-section mate or file neighbour
+    if tid not in h.critical and (c := critical_waiting(tried, h)):
+        return 'yields', (c,)  # B126: the slot is kept for a critical task whose blocker only has to merge
     return None
 
 
@@ -296,6 +326,8 @@ def explain(running: dict, tried: set, branch: str) -> dict[str, tuple[str, str]
             why[tid] = ('waiting for a merge to land', 'a release starts from what has landed')
         elif kind == 'clash':
             why[tid] = clash_why(t, b, h.shared)
+        elif kind == 'yields':
+            why[tid] = ('a critical task goes first', f'{b[0]} starts once the merge it waits for lands')
         elif P.release(tid) and (over := passed_over(t, h)):
             why[tid] = ('free', away_note(over, set(claimed)))
         else:
