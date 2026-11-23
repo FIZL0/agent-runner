@@ -527,8 +527,13 @@ def test_run_moves_off_the_port(tmp: Path) -> None:
         H.save_registry(H.load_registry())  # a registry, but Home not installed
         with mock.patch.dict(W.os.environ, {'AGENT_RUNNER_NO_WEB': ''}), \
                 mock.patch.dict(S.C.run, {'web': True, 'web_port': port}), mock.patch.object(S, 'log') as lg:
-            eq(W.start_web(), None, 'Home off: a taken port costs the page, as before')
-        has(' '.join(str(c) for c in lg.call_args_list), 'cannot serve on port', 'and the run log says so')
+            srv = W.start_web()
+        try:  # B146: another run holds the port: a free one, with Home off too
+            check(srv is not None and srv.server_address[1] != port, 'B146: Home off: still served, on another port', srv)
+            has(' '.join(str(c) for c in lg.call_args_list), f'port {port} is taken', 'and the run log says why')
+        finally:
+            if srv:
+                srv.stop()
         H.mark_installed(True)
         with mock.patch.dict(W.os.environ, {'AGENT_RUNNER_NO_WEB': ''}), \
                 mock.patch.dict(S.C.run, {'web': True, 'web_port': port}), mock.patch.object(S, 'log') as lg:
@@ -548,7 +553,76 @@ def test_run_moves_off_the_port(tmp: Path) -> None:
         os.chdir(old)
 
 
+def test_device_site_link(tmp: Path) -> None:
+    print("B146: with the port held, the run page's link goes through the device site (Home's /p/KEY/), else the bare port")
+    from agent_runner import cmds as M
+    root = project(tmp / 'proj')
+    (root / '.gitignore').write_text('.runner/\n', encoding='utf-8')
+    git(root, 'add', '-A')
+    git(root, 'commit', '-qm', 'start')
+    old = Path.cwd()
+    os.chdir(root)
+    held = socket.socket()
+    held.bind(('0.0.0.0', 0))
+    held.listen()
+    port = held.getsockname()[1]
+    srv = home = None
+    nots = lambda p, t: []  # noqa: E731 - no Tailscale Serve here
+    try:
+        S.init(root)
+        S.C.todo.parent.mkdir(parents=True, exist_ok=True)
+        S.C.todo.write_text('- [ ] **B1** one\n', encoding='utf-8')  # run_facts counts the tasks left first
+        H.save_registry({**H.load_registry(), 'scan': [str(tmp / 'none')]})
+        H.add_project(str(root))
+        with mock.patch.dict(W.os.environ, {'AGENT_RUNNER_NO_WEB': ''}), mock.patch.object(W, 'lan_ip', lambda: ''), \
+                mock.patch.object(W, 'tailscale_https_urls', nots), \
+                mock.patch.dict(S.C.run, {'web': True, 'web_port': port}), mock.patch.object(S, 'log'):
+            srv = W.start_web()
+        check(srv is not None and srv.server_address[1] != port, 'another run holds the port: served on a free one', srv)
+        mine = srv.server_address[1]
+        eq(srv.terms.port, mine, "the terminal tab's ttyd ports follow the port it got")
+        bare = f'http://{socket.gethostname()}:{mine}/?t={W.web_token()}'
+        eq(W.url_file().read_text(encoding='utf-8').split(), [bare], 'web.url keeps its own port (Home routes to it)')
+        with mock.patch.object(S, 'run_up', return_value=True), mock.patch.object(W, 'tailscale_https_urls', nots), \
+                mock.patch.object(W, 'lan_ip', lambda: ''):
+            eq(W.page_line(), f'run page: {bare}', 'no device site: status gives the bare port link')
+            eq(M.run_facts(root, {'up': True}, nots)['link'], bare, 'and so does run_facts (the picker)')
+            home = H.serve_home(H.home_token(), 0, '127.0.0.1', roots=lambda: [root], rows=lambda: [])
+            hp = home.server_address[1]
+            H.save_registry({**H.load_registry(), 'port': hp})
+            site = f'http://{socket.gethostname()}:{hp}/p/proj/?t={H.home_token()}'
+            eq(H.site_links(root), [site], 'Home serves and lists the project: its /p/KEY/ link')
+            eq(W.page_line(), f'run page: {site}', 'status gives the device site link')
+            eq(M.run_facts(root, {'up': True}, nots)['link'], site, 'and so does run_facts (the picker)')
+            ts = lambda p, t: [f'https://box.tail.ts.net/?t={t}'] if p == hp else []  # noqa: E731
+            eq(M.run_facts(root, {'up': True}, ts)['link'], f'https://box.tail.ts.net/p/proj/?t={H.home_token()}',
+               "a Tailscale Serve https address for Home's port keeps the /p/KEY/ path")
+            H.remove_project(str(root))
+            eq(H.site_links(root), [], 'Home does not list the project: no device site link')
+            H.add_project(str(root))
+            home.stop()
+            home = None
+            eq(W.page_line(), f'run page: {bare}', 'Home down: the bare port link again')
+        srv.stop()
+        # Home installed on a port nobody holds: the run still keeps off it, so Home can start later
+        held.close()
+        H.save_registry({**H.load_registry(), 'port': port})
+        H.mark_installed(True)
+        with mock.patch.dict(W.os.environ, {'AGENT_RUNNER_NO_WEB': ''}), mock.patch.object(W, 'lan_ip', lambda: ''), \
+                mock.patch.object(W, 'tailscale_https_urls', nots), \
+                mock.patch.dict(S.C.run, {'web': True, 'web_port': port}), mock.patch.object(S, 'log') as lg:
+            srv = W.start_web()
+        check(srv is not None and srv.server_address[1] != port, "Home installed: a run never binds Home's port", srv)
+        has(' '.join(str(c) for c in lg.call_args_list), 'kept for it', 'and the run log says why')
+    finally:
+        for s in (srv, home):
+            if s:
+                s.stop()
+        held.close()
+        os.chdir(old)
+
+
 if __name__ == '__main__':
     raise SystemExit(report([in_tmp(test_registry), in_tmp(test_rows), in_tmp(test_actions), in_tmp(test_routing),
                            in_tmp(test_terminal_tab), in_tmp(test_run_link), in_tmp(test_units), in_tmp(test_qr),
-                           in_tmp(test_run_moves_off_the_port)]))
+                           in_tmp(test_run_moves_off_the_port), in_tmp(test_device_site_link)]))

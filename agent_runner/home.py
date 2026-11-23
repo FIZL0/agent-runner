@@ -12,8 +12,9 @@
 
 Off until installed: nothing runs and nothing listens until `home install`. The server is the same kind as a
 run's page (web.py): standard library only, token-gated, bound to every interface so a phone on the LAN or on
-Tailscale reaches it, on port 8770 (`port` in the registry). A run that finds the port taken serves its own
-page on a free port instead (web.start_web), and Home routes to it:
+Tailscale reaches it, on port 8770 (`port` in the registry). A run that finds the port taken, or Home installed
+on it, serves its own page on a free port instead (web.start_web), and Home routes to it; while Home serves, the
+run's link is Home's /p/KEY/ (B146, site_links), so one device address switches between runners:
 
     GET  /?t=TOKEN               the Home page: every project, running, idle or off, what needs you, buttons
     GET  /projects?t=TOKEN       the same as JSON (`project_rows`)
@@ -248,6 +249,30 @@ def run_link(root: Path) -> tuple[int, str] | None:
         return None
 
 
+def site_links(root: Path, serves=None) -> list[str]:
+    """B146: the run app of the project at `root` through the device site, Runner Home serving on this device:
+    http://HOST:PORT/p/KEY/?t=HOME_TOKEN, by hostname then by LAN address, so one device address switches between
+    runners. [] when nothing on the device routes /p/KEY: no Home token yet, Home does not answer on its port
+    (a run's page may hold it), or Home does not list the project. Makes no file (the token is only read)."""
+    try:
+        token = (config_dir() / 'home.token').read_text(encoding='utf-8').strip()
+        if not token:
+            return []
+        from agent_runner.config import main_checkout
+        try:
+            me = main_checkout(Path(root)).resolve()
+        except (OSError, SystemExit):
+            me = Path(root).resolve()
+        reg = load_registry()
+        key = next((k for k, r in keys(projects(reg)).items() if r == me), None)
+        if key is None or not (serves or serving)(reg['port']):
+            return []
+        from agent_runner.web import page_urls
+        return [u.replace('/?t=', f'/p/{key}/?t=', 1) for u in page_urls(reg['port'], token)]
+    except (OSError, ValueError, SystemExit):
+        return []
+
+
 def project_row(key: str, root: Path, info=None, facts=None, needs=needs_said) -> dict:
     """What Home shows of one project: {'key', 'name', 'root', 'state' (running|idle|off), 'paused',
     'stopping', 'slots', 'running' (task ids), 'left', 'needs' (how many), 'asks' (their 'ID - what to do'
@@ -256,7 +281,9 @@ def project_row(key: str, root: Path, info=None, facts=None, needs=needs_said) -
     from agent_runner import cmds
     run = (info or cmds.run_info)(root) or {}
     # B135: Home only asks whether there is a link, so no Tailscale lookup per project on each refresh
-    f = facts(root, run) if facts else cmds.run_facts(root, run, https=lambda port, token: [])
+    # B146: nor the device site lookup (Home is the device site; it would ask itself)
+    f = facts(root, run) if facts else cmds.run_facts(root, run, https=lambda port, token: [],
+                                                       site=lambda r: [])
     up = bool(run.get('up'))
     running = sorted(str(v) for v in (run.get('running') or {}).values() if v) if up else []
     words = str(run.get('state') or '')

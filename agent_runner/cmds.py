@@ -1126,23 +1126,18 @@ def page_link(urls: list[str], https=None) -> str:
     its port first, as `run status` (web.page_line) and the run log print it, since Talk's mic needs https."""
     if not urls:
         return ''
-    from urllib.parse import parse_qs, urlsplit
     try:
-        u = urlsplit(urls[0])
-        if u.port and (t := (parse_qs(u.query).get('t') or [''])[0]):
-            if https is None:
-                from agent_runner.web import tailscale_https_urls as https
-            if got := [x for x in https(u.port, t) if x not in urls]:
-                return got[0]
+        from agent_runner.web import https_first  # B146: keeps the path (/p/KEY/ through the device site)
+        return https_first(urls, https)[0]
     except (OSError, ValueError):
         pass
     return urls[0]
 
 
-def run_facts(root: Path, run: dict, https=None) -> dict:
+def run_facts(root: Path, run: dict, https=None, site=None) -> dict:
     """What the run picker and the launcher say of the project at `root` beside `run` (`run_info`): tasks left,
     stopping (a stop was asked for), and the run page link ('' while no run serves one; its https address first,
-    B135)."""
+    B135; B146: the device site's /p/KEY/ address when one routes the project, `site(root)`, home.site_links)."""
     out = {'left': None, 'stopping': False, 'link': ''}
     try:
         from agent_runner.config import Config
@@ -1152,6 +1147,10 @@ def run_facts(root: Path, run: dict, https=None) -> dict:
         out['stopping'] = bool(run.get('up')) and c.notes('STOP').exists()
         if run.get('up'):
             us = c.notes('web.url').read_text(encoding='utf-8').split()
+            if us:
+                if site is None:
+                    from agent_runner.home import site_links as site
+                us = site(root) or us
             out['link'] = page_link(us, https)
     except (OSError, SystemExit, ValueError, KeyError, TypeError):
         pass

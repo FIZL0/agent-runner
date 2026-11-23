@@ -1,6 +1,7 @@
 """F66: the run page on the web. A run serves it from this machine (`[run] web`, on by default) on
-`[run] web_port` (8770), bound to every interface so a phone on the LAN or Tailscale reaches it. F94: with Runner
-Home installed and that port taken, on a free port instead, which Runner Home routes to.
+`[run] web_port` (8770), bound to every interface so a phone on the LAN or Tailscale reaches it. F94/B146: with
+that port taken (another run's page, Runner Home), or kept for Runner Home (installed, on that port), on a free
+port instead, which Runner Home routes to; the link shown is then Home's /p/KEY/ while Home serves.
 
     GET  /?t=TOKEN               F79: the page (web_page.html), the run app: a chat app over F74's model, light
                                  and dark by the browser's setting, laid out for a phone and a desktop; F81: it
@@ -130,15 +131,39 @@ def url_file() -> Path:
     return S.C.notes('web.url')
 
 
-def page_line() -> str:
-    """`run page: URL` while a run serves the page (what `status` prints), else ''. B130: a Tailscale Serve https
-    address for its port comes first (Safari's mic needs https); <notes>/web.url keeps the http ones, which Home
-    reads its port from."""
+def site_urls(root: Path | None = None) -> list[str]:
+    """B146: the run app's addresses through the device site (home.site_links: Runner Home's /p/KEY/ on its port)
+    for the project at `root` (this run's), [] while nothing on the device routes it. Worked out each time it is
+    shown, never kept in <notes>/web.url: that keeps the run's own port, which Home routes to, and the device
+    site can come up or go after the run starts."""
+    try:
+        from agent_runner.home import site_links
+        return site_links(root or S.C.root)
+    except Exception:  # noqa: BLE001 - the run's own link still works without Home
+        return []
+
+
+def https_first(urls: list[str], https=None) -> list[str]:
+    """`urls` with the Tailscale Serve https addresses for the first one's port ahead of them, at its path
+    (/p/KEY/ through the device site, B146) and with its token (B130: Safari's mic needs https)."""
+    if not urls:
+        return []
+    u = urlsplit(urls[0])
+    if u.port and (t := (parse_qs(u.query).get('t') or [''])[0]):
+        path = u.path or '/'
+        got = [x.replace('/?t=', f'{path}?t=', 1) for x in (https or tailscale_https_urls)(u.port, t)]
+        return [x for x in got if x not in urls] + urls
+    return list(urls)
+
+
+def page_line(site=None) -> str:
+    """`run page: URL` while a run serves the page (what `status` prints), else ''. B146: the device site's
+    /p/KEY/ address when one routes this project (site_urls), else the run's own; B130: a Tailscale Serve https
+    address for that port comes first (Safari's mic needs https); <notes>/web.url keeps the run's own http ones,
+    which Home reads its port from."""
     try:
         if S.run_up() and (us := url_file().read_text(encoding='utf-8').split()):
-            u = urlsplit(us[0])
-            if u.port and (t := (parse_qs(u.query).get('t') or [''])[0]):
-                us = [x for x in tailscale_https_urls(u.port, t) if x not in us] + us
+            us = https_first((site or site_urls)() or us)
             return f'run page: {us[0]}' + (f' (or {us[1]})' if len(us) > 1 else '')
     except (OSError, ValueError):
         pass
@@ -872,7 +897,18 @@ def home_installed() -> bool:
         return False
 
 
-def start_web() -> WebServer | None:
+def home_port() -> int:
+    """B146: the port Runner Home serves on (`port` in its registry, 8770), 0 while it is not installed."""
+    try:
+        if home_installed():
+            from agent_runner.home import load_registry
+            return int(load_registry()['port'])
+    except Exception:  # noqa: BLE001 - a run's page never fails over Home
+        pass
+    return 0
+
+
+def start_web()-> WebServer | None:
     """The run's start: serve the page when `[run] web` is on (the run log gets its address), else nothing.
     A port in use costs the page, not the run. AGENT_RUNNER_NO_WEB=1 (the test suites) turns it off too."""
     url_file().unlink(missing_ok=True)
@@ -880,22 +916,26 @@ def start_web() -> WebServer | None:
     if not r.get('web', True) or os.environ.get('AGENT_RUNNER_NO_WEB'):
         return None
     port = int(r.get('web_port', 8770))
-    try:
-        srv = serve(web_token(), port)
-    except OSError as e:
-        if not home_installed():
-            S.log(f'run page: cannot serve on port {port} ({e}); set [run] web_port, or web = false')
-            return None
-        try:  # F94: Runner Home holds the port: a free one, which Home routes to
+    srv = None
+    if port and port == home_port():  # B146: Home's port is Home's, even while Home is not up yet
+        why = 'Runner Home is installed, so its port is kept for it'
+    else:
+        try:
+            srv = serve(web_token(), port)
+        except OSError as e:
+            why = f'port {port} is taken ({e})'
+    if srv is None:
+        try:  # F94/B146: another run or Runner Home holds the port: a free one, which Home routes to
             srv = serve(web_token(), 0)
-            S.log(f'run page: port {port} is taken ({e}), so it is on port {srv.server_address[1]} '
-                  f'(Runner Home opens it)')
+            S.log(f'run page: {why}, so it is on port {srv.server_address[1]} (Runner Home opens it)')
         except OSError as e2:
             S.log(f'run page: cannot serve on port {port} ({e2}); set [run] web_port, or web = false')
             return None
     urls = page_urls(srv.server_address[1], srv.token)
     url_file().write_text('\n'.join(urls) + '\n', encoding='utf-8')
-    # B129: the run log names a Tailscale Serve https address first too (the mic needs https); web.url stays http
-    shown = [x for x in tailscale_https_urls(srv.server_address[1], srv.token) if x not in urls] + urls
+    # B129: the run log names a Tailscale Serve https address first too (the mic needs https); web.url stays http.
+    # B146: the device site's /p/KEY/ address first when one routes this project
+    shown = https_first(site_urls() or urls)
+    shown += [x for x in urls if x not in shown]
     S.log(f'run page: {" or ".join(shown)}' + ('' if shutil.which('ttyd') else ' (no terminal tab: ttyd is not installed)'))
     return srv
