@@ -802,13 +802,13 @@ class RunPage:
     def session_pane(self, it, tab: str, width: int) -> tuple[list, list, object]:
         L = lambda *segs: list(segs)  # noqa: E731
         name = it.get('name', '')
+        if it.get('starting'):  # F112: N started it; its row fills in from the run's state
+            return [L((f'{it.get("label") or "a new control session"} is starting...', 'fg')), L(),
+                    L(('Its row and link fill in once it is up.', 'dim'))], [], 0
         if it.get('new'):
             return [L(('Starts another control session (control --new) with its claude.ai/code link, so you can',
                        'fg')), L(('talk to it from the Claude app on your phone too.', 'fg')), L(),
                     buttons(button('N', 'start one', True))], [], 0
-        if it.get('starting'):  # F112: N started it; its row fills in from the run's state
-            return [L((f'{it.get("label") or "a new control session"} is starting...', 'fg')), L(),
-                    L(('Its row and link fill in once it is up.', 'dim'))], [], 0
         if tab == 'diff':
             out = []
             for l in self.diff(name).splitlines()[:DIFF_LINES] or ['no changes yet']:
@@ -2083,18 +2083,26 @@ class SidePane:
             if key in self.bound:
                 continue
             code, out = self.tmux('list-keys', '-T', 'root', key)
+            if not code and self.WIN_TUI in out:  # another TUI's, the same window-gated binding: shared
+                self.bound.append(key)
+                continue
             if not code and out.strip():  # the person's own binding: kept (prefix arrows still move)
                 continue
             if not self.tmux('bind-key', '-n', key, 'if-shell', '-F', cond, then, f'send-keys {key}')[0]:
                 self.bound.append(key)
 
     def unbind(self) -> None:
-        for key in self.bound:
-            self.tmux('unbind-key', '-n', key)
-        self.bound = []
+        """This window's options unset; the bindings undone unless another TUI's window still uses them."""
         me = self.me()
         for opt in (self.WIN_TUI, self.WIN_SIDE):
             self.tmux('set-option', '-w', '-u', '-t', me, opt)
+        code, out = self.tmux('list-windows', '-a', '-F', f'#{{{self.WIN_TUI}}}')
+        if not code and out.strip():  # another TUI shows a session: its window still needs them
+            self.bound = []
+            return
+        for key in self.bound:
+            self.tmux('unbind-key', '-n', key)
+        self.bound = []
 
     def close(self) -> None:
         """The session pane (and the top bar pane) killed, the bindings undone: the TUI's pane alone again."""

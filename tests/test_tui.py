@@ -504,6 +504,8 @@ def test_new_chat_f112() -> None:
         it = p.sel()
         eq((p.panel, bool(it.get('starting'))), (2, True), "the new 'starting...' row is selected at once")
         check('starting...' in drawn(p).text(), "its row says 'starting...'", drawn(p).text())
+        check('Its row and link fill in once it is up.' in drawn(p).text() and '[N start one]' not in drawn(p).text(),
+              'the main pane says it is starting (not the new chat row\'s text)', drawn(p).text())
         p.key('N')
         eq(p.msg, 'a new chat is starting already', 'N again while one starts: said, not another')
         go.set()
@@ -591,6 +593,15 @@ def test_side_pane_f112() -> None:
         eq(tm.did('kill-pane')[-1], ['kill-pane', '-t', '%12'], 'a task row kills that pane')
         eq(p.side.pane, '', 'none beside now')
         check(['unbind-key', '-n', 'C-f'] in tm.calls, 'the bindings go with it')
+    shared = Tmux()  # another TUI bound the same window-gated keys: shared, kept while its window uses them
+    shared_keys = lambda argv: (0, 'bind-key -T root C-f if-shell -F #{@agent_runner_tui} ...') \
+        if argv[0] == 'list-keys' else (0, '%5') if argv[0] == 'list-windows' else shared(argv)  # noqa: E731
+    s = T.SidePane(shared_keys)
+    with mock.patch.dict(os.environ, {'TMUX_PANE': '%3'}), mock.patch.object(U, 'runner_cmd', lambda: ['/x/run']):
+        s.show('c1')
+        s.close()
+    check(not shared.did('bind-key') and not shared.did('unbind-key'), 'two TUIs: the second neither binds again '
+          'nor unbinds while the other window still uses the keys', shared.calls)
     p2 = page(tmux=tm, socket=lambda name: True)
     with mock.patch.dict(os.environ, {'TMUX_PANE': '%3'}):
         os.environ.pop('TMUX', None)
