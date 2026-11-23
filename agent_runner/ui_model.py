@@ -839,12 +839,14 @@ def chat_to(text: str, to: str = 'c1') -> dict:
     return send(to, text)
 
 
-def new_control(ask: str = '') -> dict:
+def new_control(ask: str = '', wait: bool = True) -> dict:
     """F74: start a new control session (`control --new`, `ask` its first message): the result's 'link' is its
-    claude.ai/code link ('' when it printed none)."""
-    r = call(['control', '--new', *(['--ask', ask] if ask else [])])
+    claude.ai/code link ('' when it printed none), 'name' its cN ('' when it said none). F112: `wait` False
+    (`--no-wait`) returns once it starts, before its link is known."""
+    r = call(['control', '--new', *([] if wait else ['--no-wait']), *(['--ask', ask] if ask else [])])
     m = LINK.search(r['out'] or '')
-    return {**r, 'link': m.group(0).rstrip('.,)') if m else ''}
+    n = re.search(r'\bcontrol (\d+) ', r['out'] or '')
+    return {**r, 'link': m.group(0).rstrip('.,)') if m else '', 'name': f'c{n.group(1)}' if n else ''}
 
 
 def concept_chat_text(row: dict) -> str:
