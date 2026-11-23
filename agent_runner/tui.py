@@ -7,34 +7,42 @@ bottom line. The focused panel takes the spare height; every other panel shows 3
 `TWO_COLUMNS`, the panels and the main pane take the whole width in turn (Enter in, Esc out).
 
 Panels and their tabs (F76):
-    Status     a status line: chat (c1, with the quick asks s y w u on its buttons), log; the release line:
-               release first; R (only here) opens the release tab
-    Sessions   a control session cN: chat, pane, session; a slot: feed, pane, diff, session (an idle slot: feed,
-               pane); the '+ new chat' row and N start one (`new_control`) and land on its chat tab, typing;
-               a control session's session tab has the chat's message box too (B125); o opens the session
-               link, y copies it (OSC 52, the terminal's own clipboard, plus wl-copy/xclip/pbcopy when local);
-               over ssh o opens nothing here: it copies the link and shows it as a hyperlink (OSC 8) to
-               Cmd-click
+    Status     a status line: log (the quick asks s y w u on its buttons: c1 answers in its session), release,
+               controls; the release line: release first; R (only here) opens the release tab
+    Sessions   a control session cN, an idle slot: session; a slot on a task: session, diff. F112: the session
+               tab is the real Claude Code session, not a chat view of ours: inside tmux (TMUX set) with its
+               socket (F88), a tmux pane beside the TUI's pane runs `attach NAME` (`SidePane`: split off when
+               a session row is selected, respawned for another, killed for any other row and when the TUI
+               quits; the TUI then draws only the panels, full width); l / Enter / Ctrl-l move focus into it,
+               Ctrl-h (or tmux's prefix and an arrow) back. Outside tmux, or with no socket (Windows), the
+               session tab shows its feed read-only with its link (Enter there attaches full-screen when it
+               can). Ctrl-f: the session full-screen between the top and bottom bars (in tmux: the session pane
+               between a one-row `ui --bar` pane and the TUI's pane cut to its bottom bar); again: side by side.
+               The '+ new chat' row and N start one (`new_control` without waiting for its link, on a thread):
+               a 'starting...' row is selected at once and its cN row takes its place once the run lists it.
+               o opens the session link, y copies it (OSC 52, the terminal's own clipboard, plus
+               wl-copy/xclip/pbcopy when local); over ssh o opens nothing here: it copies the link and shows it
+               as a hyperlink (OSC 8) to Cmd-click
     Queue      a task: direct edit, chat edit; the '+ new task' row: chat edit, direct edit; e edit, E chat edit,
                n new, J/K reorder, p priority on/off, H do it here, d (or D) drop; a parked task: U unpark (no J/K, p)
     Needs you  answer (a button per possible answer: y yes, n no, or a b c … for options; L later; a reply box),
                info
     Concepts   preview: the K copy inline, its options (the copy's headings) moved through with j/k, Enter goes
                with the selected one, i says what to change, O opens the page in the browser, N starts a new
-               control session about it (`concept_chat`; c stays c1's chat); the '+ new concept' row and n
+               control session about it (`concept_chat`; c selects c1); the '+ new concept' row and n
                queue a new concept (plan add K)
 
-The feed is the agent's words with its tool steps folded as '· N steps' (v shows them); a chat shows the steps,
-as a Claude session does. A box takes typing after i (or Enter): Enter sends, Shift+Enter (or Alt+Enter)
-is a new line, Esc leaves it (never interrupts), and in a chat Ctrl+C interrupts while the session works (B116;
-elsewhere Ctrl+C quits). Each box keeps its draft
-across Esc and refreshes; Ctrl-h / Ctrl-l and Ctrl-j / Ctrl-k still work in a box (F113: they leave it, its
-draft kept). The pane tab attaches to the session's own terminal (Enter, F88; back with Ctrl-b d). Navigation: h/l previous / next tab (h on the first tab and Esc go back to the
-panels), Ctrl-h / Ctrl-l the left / right side, Ctrl-j / Ctrl-k down / up the left side's list (in a box too, F113),
-1-5 a panel (anywhere but in a box), Tab the next panel; in the
-main pane j/k scroll it (the terminal has no scrollbar), and move through a concept's options.
+The read-only feed is the agent's words with a slot's tool steps folded as '· N steps' (v shows them); a
+control session's shows the steps, as a Claude session does. No session has a message box here (F112: the
+session takes its own typing); a box (a chat edit, an answer, a concept) takes typing after i (or Enter): Enter
+sends, Shift+Enter (or Alt+Enter) is a new line, Esc leaves it. Each box keeps its draft across Esc and
+refreshes; Ctrl-h / Ctrl-l and Ctrl-j / Ctrl-k still work in a box (F113: they leave it, its draft kept); Ctrl+C
+quits. Navigation: h/l previous / next tab (h on the first tab and Esc go back to the panels), Ctrl-h / Ctrl-l
+the left / right side, Ctrl-j / Ctrl-k down / up the left side's list (in a box too, F113), 1-5 a panel
+(anywhere but in a box), Tab the next panel; in the main pane j/k scroll it (the terminal has no scrollbar), and
+move through a concept's options.
 
-The bottom line: the mode badge, this place's keys (yellow), a separator, then 1-5 panel, c chat, ? keys
+The bottom line: the mode badge, this place's keys (yellow), a separator, then 1-5 panel, c c1, ? keys
 (blue); never a key the window already shows (on a button, a label, a row), never j/k or Ctrl-h/Ctrl-l.
 
 Colours: F69's `[ui] theme` (theme.py, shared with the web page), mapped to the nearest of the terminal's 256
@@ -64,6 +72,7 @@ TWO_COLUMNS = 70  # narrower than this: one column, the panels or the main pane
 SHORT = 3  # rows an unfocused panel shows
 BOX_LINES = 6  # most lines a typing box grows to
 DIFF_LINES = 3000  # most lines of a slot's diff shown
+STARTING_WAIT = 60  # s F112: a new chat that started but is not listed by then: its 'starting...' row goes
 
 PANELS = [(1, 'Status', 'status'), (2, 'Sessions', 'sessions'), (3, 'Queue', 'queue'),
           (4, 'Needs you', 'needs'), (5, 'Concepts', 'concepts')]
@@ -100,7 +109,8 @@ QUICK_KEYS = {'since': 's', 'yesterday': 'y', 'needs': 'w', 'usage': 'u'}  # F74
 FIELDS = ('t', 'k', 'p', 'f', 'a')  # the direct edit's fields, in Tab order
 TEXT_FIELDS = {'t': 'text', 'f': 'files', 'a': 'after'}  # the ones typed into
 OPTION_KEYS = 'abcdefg'  # a Needs you item's answers beyond yes / no
-TAIL_TABS = ('chat', 'feed', 'log')  # tabs that show their newest lines, at the bottom
+TAIL_TABS = ('session', 'log')  # tabs that show their newest lines, at the bottom
+SIDE_SHARE = '64%'  # F112: the width the session's tmux pane takes beside the TUI (the main pane's share)
 
 # F69: the colours a segment can name, each a token of the theme (theme.py); 'accent' is the theme's accent
 # (red in ryha). F76: 'hkey' a key of this place (yellow: on a button, a label, the bottom line), 'gkey' a key
@@ -148,24 +158,25 @@ HELP = """Everywhere (not while typing in a box)
   1-5      focus a panel          Tab      next panel (direct edit: next field)
   j/k      move down / up         l Enter  into the main pane, next tab
   h        previous tab, out      Esc      back out
-  ^C       a working chat: interrupt (elsewhere: quit)
-  ^h ^l    left / right side      c        chat with c1
+  ^h ^l    left / right side      c        c1 (its session)
   ^j ^k    down / up the left list (these four work in a box too)
+  ^f       a session full-screen between the bars (again: side by side)
   i        type in the box        ?        this list
-  q        quit
+  q ^C     quit
 Status [1]
-  R        release                s y w u  quick asks (chat tab)
+  R        release                s y w u  quick asks (c1 answers in its session)
   + - =    slot +1, -1, set N     P G      pause, go on
   F C      force, caps back on    S        stop (running tasks finish)
   X X      stop now (X again)     U        take the stop back
   V        upgrade agent-runner   Z B      suspend, shut down once stopped (again: undo)
 Sessions [2]
-  t        feed                   v        tool steps on / off
+  t        a slot on a task       v        tool steps on / off
   N        new chat               o        open the session link
   y        copy the session link (the terminal's clipboard, so over ssh too)
   H        take its task back     d D      drop its task from the slot
   d        close a control session cN (not c1: the run's kept session; its transcript stays)
-  Enter    on the pane tab: attach (back: Ctrl-b d)
+  l ^l     in tmux: into the session's pane (back: ^h, or tmux's prefix and an arrow)
+  Enter    outside tmux: attach full-screen (back: Ctrl-b d)
 Queue [3]
   e        direct edit            E        chat edit
   n        new task               J/K      move down / up
@@ -183,7 +194,7 @@ Concepts [5]
   d        drop the concept
   N        chat about it (a new session)
   n        new concept (queued as a K task)
-Typing
+Typing (a task, an answer, a concept: a session takes its own typing)
   Enter    send                   Shift+Enter  new line (or Alt+Enter)
   Esc      leave the box
 Esc closes this."""
@@ -206,7 +217,7 @@ def help_line(line: str) -> list[tuple[str, str]]:
 
 # raw characters as RunPage's key names; curses' own keys come named by `key_name`
 KEYS = {'\r': 'ENTER', '\n': '^J', '\t': 'TAB', '\x1b': 'ESC', '\x13': '^S', '\x0b': '^K',
-        '\x08': '^H', '\x0c': '^L', '\x7f': 'BS', '\x03': '^C', '\x15': '^U'}
+        '\x08': '^H', '\x0c': '^L', '\x7f': 'BS', '\x03': '^C', '\x15': '^U', '\x06': '^F'}
 SIDE_KEYS = ('^H', '^L', '^J', '^K')  # F113: focus left / right, the left list down / up; in a box too
 MOVES = {'DOWN', 'UP', 'j', 'k', 'ENTER', 'LEFT', 'RIGHT', 'h', 'l'}
 VI = {'j': 'DOWN', 'k': 'UP'}  # j / k move as Down / Up do, except where a tab gives them a use of its own  # main pane keys never handed on to the panel
@@ -346,8 +357,13 @@ class RunPage:
     """The terminal Run page's state and drawing; `key()` takes one key, `draw()` paints one frame."""
 
     def __init__(self, snap: dict, get_snap=None, attach=None, attrs=None, feed=None, diff=None, opener=None,
-                 read=None, out=None):
+                 read=None, out=None, tmux=None, socket=None):
         self.snap = snap
+        self.socket = socket or hidden_terminal  # F88: the session has a socket to attach to
+        self.side = SidePane(tmux)  # F112: inside tmux, the selected session in a tmux pane beside this one
+        self.full = False  # F112 Ctrl-f outside tmux: the main pane between the bars, no panels
+        self.bar_only = False  # F112 `ui --bar`: only the top bar (the top pane of tmux's full-screen layout)
+        self.starting: dict | None = None  # F112: the new control session N started, until its row is up
         self.get_snap = get_snap or (lambda: U.snapshot())
         self.attach = attach or (lambda name: {'ok': False, 'out': 'no terminal to attach'})
         self.feed_of = feed or U.feed
@@ -364,7 +380,7 @@ class RunPage:
         self.tabs: dict[str, str] = {}
         self.main = False  # the main pane has focus
         self.help = False
-        self.typing = ''  # the box taking typed keys ('' none): 'c1:chat', 'edit:Q2', 'form:Q2:t', …
+        self.typing = ''  # the box taking typed keys ('' none): 'edit:Q2', 'form:Q2:t', …
         self.drafts: dict[str, str] = {}  # each box's text, kept across Esc and refreshes
         self.forms: dict[str, dict] = {}  # each direct edit's fields, by task id ('+' a new task)
         self.steps = False  # the feed shows its tool steps
@@ -383,7 +399,8 @@ class RunPage:
     def items(self, n: int) -> list:
         key = PANELS[n - 1][2]
         if key == 'sessions':
-            return session_rows(self.snap) + ([NEW_CHAT] if not self.snap.get('sessions_note') else [])
+            return session_rows(self.snap) + ([self.starting] if self.starting else []) + \
+                ([NEW_CHAT] if not self.snap.get('sessions_note') else [])
         rows = list(self.snap.get(key) or [])
         if key == 'concepts':
             return rows + [NEW_CONCEPT]
@@ -403,16 +420,14 @@ class RunPage:
 
     def tab_list(self, n: int, it) -> list[str]:
         if it is None:
-            return ['chat', 'log', 'release', 'controls'] if n == 1 else ['info']
-        if n == 1:
-            return ['release', 'chat', 'log', 'controls'] if str(it).startswith('release') else \
-                ['chat', 'log', 'release', 'controls']
+            return ['log', 'release', 'controls'] if n == 1 else ['info']
+        if n == 1:  # F112: no chat tab: c1 is a session row, shown as itself
+            return ['release', 'log', 'controls'] if str(it).startswith('release') else \
+                ['log', 'release', 'controls']
         if n == 2:
             if it.get('new'):
                 return ['info']
-            if is_control(it):
-                return ['chat', 'pane', 'session']
-            return ['feed', 'pane', 'diff', 'session'] if it.get('task') else ['feed', 'pane']
+            return ['session', 'diff'] if it.get('task') and not is_control(it) else ['session']
         if n == 3:
             return ['chat edit', 'direct edit'] if it.get('new') else ['direct edit', 'chat edit']
         if n == 5 and it.get('new'):
@@ -454,17 +469,11 @@ class RunPage:
     # --- the boxes typed into -----------------------------------------------------------------------------
 
     def box(self) -> str:
-        """The box of the main pane's tab ('' none): 'status:chat', 'c6:chat', 's2:feed', 'edit:Q2', 'answer:D3',
-        'concept:F4'."""
+        """The box of the main pane's tab ('' none): 'edit:Q2', 'answer:D3', 'concept:F4'. F112: a session has
+        none: it is shown as itself (a tmux pane beside the TUI), or read-only."""
         it, tab = self.sel(), self.tab()[0]
         if it is None:
             return ''
-        if tab == 'chat':
-            return 'status:chat' if self.panel == 1 else f'{it["name"]}:chat'
-        if tab == 'session' and is_control(it):  # B125: the session tab types into the same session as chat
-            return f'{it["name"]}:chat'
-        if tab == 'feed' and it.get('task'):
-            return f'{it["name"]}:feed'
         if tab == 'chat edit':
             return f'edit:{it["id"]}'
         if tab == 'answer':
@@ -472,13 +481,6 @@ class RunPage:
         if tab in ('preview', 'new concept'):
             return f'concept:{it["id"]}'
         return ''
-
-    def chat_name(self) -> str:
-        """The control session the main pane chats with ('' none): c1 on Status, the selected cN in Sessions."""
-        box = self.box()
-        if box == 'status:chat':
-            return 'c1'
-        return box.split(':')[0] if box.endswith(':chat') else ''
 
     def text_of(self, box: str) -> str:
         if box.startswith('form:'):
@@ -522,12 +524,6 @@ class RunPage:
 
     def feed(self, name: str) -> dict:
         return self.cached(f'feed:{name}', lambda: self.feed_of(name)) or {}
-
-    def working(self, name: str) -> bool:
-        """The control session `name` is mid-turn: its feed's newest entry is the person's words, a tool step or
-        its output (not an interruption), so Ctrl+C interrupts it."""
-        ents = self.feed(name).get('entries') or []
-        return bool(ents) and ents[-1].get('kind') in ('you', 'tool', 'out') and ents[-1].get('text') != 'interrupted'
 
     def feed_lines(self, name: str, width: int, steps: bool) -> list:
         """A session's feed as pane lines: the agent's words (●), the person's (❯, blue), and its tool steps (a
@@ -578,6 +574,8 @@ class RunPage:
                 'yellow' if it.startswith('usage') else 'magenta' if it.startswith('release') else 'dim'
             return [('● ', colour), (it, 'fg')]
         if n == 2:
+            if it.get('starting'):  # F112: a new control session on its way up
+                return [(f'{it.get("label") or "c…"} ', 'red'), ('starting...', 'dim')]
             if it.get('new'):
                 return [('+ ', 'green'), ('new chat ', 'dim'), ('N', 'hkey')]
             if is_control(it):
@@ -691,19 +689,16 @@ class RunPage:
         newest lines, else the line to keep in view)."""
         it, (tab, _) = self.sel(), self.tab()
         L = lambda *segs: list(segs)  # noqa: E731 - one line of segments
-        if tab == 'log':
+        if tab == 'log':  # F112: the quick asks (to c1, which answers in its session) at its foot
+            asks = self.snap.get('quick_asks') or U.quick_asks()
+            row = buttons(*[button(QUICK_KEYS.get(q['key'], '?'), q['label']) for q in asks])
             return [L((l, 'dim' if l.startswith('===') else 'fg')) for l in self.snap.get('log') or []] or \
-                [L(('the run log is empty', 'dim'))], [], 'end'
+                [L(('the run log is empty', 'dim'))], [row], 'end'
         if tab == 'release':
             return self.release_pane(width), [], 0
         if tab == 'controls':
             foot = self.input_lines('slots:n', width, 'how many slots') if self.typing == 'slots:n' else []
             return self.controls_pane(width), foot, 0
-        if tab == 'chat' and self.panel == 1:
-            asks = self.snap.get('quick_asks') or U.quick_asks()
-            row = buttons(*[button(QUICK_KEYS.get(q['key'], '?'), q['label']) for q in asks])
-            foot = [row] + self.input_lines('status:chat', width, 'message c1')
-            return self.chat_head('c1') + self.feed_lines('c1', width, True), foot, 'end'
         if it is None:
             return [L((self.empty_line(self.panel), 'dim'))], [], 0
         if self.panel == 2:
@@ -744,10 +739,6 @@ class RunPage:
             lines, anchor = self.preview_pane(it, width)
             return lines, self.input_lines(f'concept:{it["id"]}', width, 'say what to change'), anchor
         return [L(('nothing to show', 'dim'))], [], 0
-
-    def chat_head(self, name: str) -> list:
-        return [[(f'{name} ', 'red'), ('a control session: what you send is typed into it, as in the app', 'dim')],
-                []]
 
     def release_pane(self, width: int) -> list:
         L = lambda *segs: list(segs)  # noqa: E731
@@ -811,32 +802,13 @@ class RunPage:
     def session_pane(self, it, tab: str, width: int) -> tuple[list, list, object]:
         L = lambda *segs: list(segs)  # noqa: E731
         name = it.get('name', '')
+        if it.get('starting'):  # F112: N started it; its row fills in from the run's state
+            return [L((f'{it.get("label") or "a new control session"} is starting...', 'fg')), L(),
+                    L(('Its row and link fill in once it is up.', 'dim'))], [], 0
         if it.get('new'):
             return [L(('Starts another control session (control --new) with its claude.ai/code link, so you can',
                        'fg')), L(('talk to it from the Claude app on your phone too.', 'fg')), L(),
                     buttons(button('N', 'start one', True))], [], 0
-        if tab == 'chat':
-            return self.chat_head(name) + self.feed_lines(name, width, True), \
-                self.input_lines(f'{name}:chat', width, f'message {name}'), 'end'
-        if tab == 'feed':
-            if not it.get('task'):
-                return [L((idle_line(it), 'dim'))], [], 0
-            head = [L((f'{name} ', 'yellow'), (f'{it["task"]} ', 'cyan'), (it.get('title', ''), 'fg')),
-                    *(self.control_buttons('task') if self.task_controls_on(it) else []), L()]
-            return head + self.feed_lines(name, width, self.steps), \
-                self.input_lines(f'{name}:feed', width, f'message {name} (it reads it between steps)'), 'end'
-        if tab == 'pane':
-            if not it.get('task') and not is_control(it):
-                return [L((idle_line(it), 'dim'))], [], 0
-            if hidden_terminal(name):  # F88: its own terminal, through its shim's socket
-                return [L((f'{name} runs hidden, in a terminal of its own.', 'fg')), L(),
-                        buttons(button('⏎', f'attach {name}', True)), L(),
-                        L((f'Back: {DETACH_KEY}.', 'dim'))], [], 0
-            if self.snap.get('terminal_mode') == 'feed':  # Windows: a hidden console
-                return [L((f'{name} runs in a hidden console (Windows): ⏎ shows it; its feed and session link '
-                           f'work too.', 'dim')), L(), buttons(button('⏎', f'attach {name}', True))], [], 0
-            return [L((f'{name} is not up, so it has no terminal to attach: its feed and session link work.',
-                       'dim'))], [], 0
         if tab == 'diff':
             out = []
             for l in self.diff(name).splitlines()[:DIFF_LINES] or ['no changes yet']:
@@ -844,16 +816,20 @@ class RunPage:
                     else 'red' if l.startswith('-') else 'cyan' if l.startswith('@@') else 'fg'
                 out.append(L((l, colour)))
             return out, [], 0
-        what = it.get('task') or it.get('title', '')
-        out = [L((f'{name} is a Claude Code session you can open on its own, in the app or on your phone.', 'fg')),
-               L()]
-        out.append(L(self.link(it['link'])) if it.get('link') else
-                   L(('no link yet: o asks for one (Remote Control)' if not is_control(it) else 'no link yet', 'dim')))
-        out += [L(), L((f'{name} · {what}', 'dim')), L(), buttons(button('o', 'open it', True),
-                                                                   button('y', 'copy link'))]
-        if is_control(it):  # B125: the same message box as the chat tab
-            return out, self.input_lines(f'{name}:chat', width, f'message {name}'), 0
-        return out, [], 0
+        if not it.get('task') and not is_control(it):
+            return [L((idle_line(it), 'dim'))], [], 0
+        # F112: the session read-only (outside tmux, or with no socket to attach): its feed, with its link and
+        # buttons at the foot; inside tmux with a socket the session itself is beside the TUI instead
+        head = [L((f'{name} ', 'red' if is_control(it) else 'yellow'),
+                  *([(f'{it["task"]} ', 'cyan')] if it.get('task') else []), (it.get('title', ''), 'fg'))]
+        if self.task_controls_on(it):
+            head += self.control_buttons('task')
+        bs = [button('o', 'open it', True), button('y', 'copy link')]
+        if self.socket(name) or self.snap.get('terminal_mode') == 'feed':  # F88; Windows: its hidden console
+            bs.append(button('⏎', f'attach {name} (back: {DETACH_KEY})'))
+        foot = [buttons(*bs), L(self.link(it['link'])) if it.get('link') else
+                L(('no link yet: o asks for one (Remote Control)' if not is_control(it) else 'no link yet', 'dim'))]
+        return head + [L()] + self.feed_lines(name, width, self.steps or is_control(it)), foot, 'end'
 
     def link(self, url: str) -> tuple[str, str]:
         """B125: `url` as a segment drawn as a terminal hyperlink (OSC 8, after curses' refresh)."""
@@ -1049,8 +1025,6 @@ class RunPage:
         it, (tab, _) = self.sel(), self.tab()
         if self.typing:
             keys = [('Esc', 'leave')]
-            if self.chat_working():
-                keys.insert(0, ('Ctrl+C', 'interrupts'))
             if self.typing.startswith('form:'):
                 keys.append(('Tab/⇧Tab', 'field'))
             if not self.typing.startswith(('form:', 'answer:', 'edit:', 'concept:')) or \
@@ -1065,20 +1039,19 @@ class RunPage:
             keys = [('h/l', 'tab')]
             if self.box():
                 keys.append(('i', 'type'))
-            if tab == 'feed' and isinstance(it, dict) and it.get('task'):
+            if tab == 'session' and isinstance(it, dict) and it.get('task'):
                 keys.append(('v', 'steps'))
-            if tab == 'session':
-                keys += [('o', 'open'), ('y', 'copy link')]
-            if tab in ('chat', 'session') and self.chat_working():
-                keys.append(('Ctrl+C', 'interrupts'))
+            if tab == 'session' and isinstance(it, dict) and not it.get('new'):
+                keys.append(('^F', 'normal size' if self.full else 'full-screen'))
             keys.append(('Esc', 'back'))
             return keys
         if self.panel == 1:
             return [('⏎', 'open'), ('R', 'release'), ('+/-', 'slots'), ('P/G', 'pause, go on'), ('S', 'stop')]
         if self.panel == 2:
-            keys = [('⏎', 'open'), ('t', 'feed'), ('v', 'steps')]
+            keys = [('⏎', 'open'), ('t', 'busy slot'), ('v', 'steps')]
             if isinstance(it, dict) and (it.get('task') or is_control(it)):
-                keys += [('o', 'open session'), ('y', 'copy link')]
+                keys += [('o', 'open session'), ('y', 'copy link'),
+                         ('^F', 'normal size' if self.full or self.side.full else 'full-screen')]
             if self.task_controls_on(it):
                 keys += [('H', 'take back'), ('d', 'drop')]
             elif is_control(it) and it.get('name') != 'c1':
@@ -1098,10 +1071,10 @@ class RunPage:
         return [('⏎', 'view'), ('O', 'open in the browser'), ('N', 'chat about it'), ('n', 'new concept'),
                 ('d', 'drop')]
 
-    GLOBAL = [('1-5', 'panel'), ('c', 'chat'), ('?', 'keys')]
+    GLOBAL = [('1-5', 'panel'), ('c', 'c1'), ('?', 'keys')]
 
     def footer(self, width: int = 0) -> list[tuple[str, str]]:
-        """The bottom line after the mode badge: this place's keys (yellow), a separator, then 1-5 panel, c chat,
+        """The bottom line after the mode badge: this place's keys (yellow), a separator, then 1-5 panel, c c1,
         ? keys (blue; none while typing, when they do not work); this place's last keys left out should `width`
         be too narrow. A message (an action's result) takes the line instead."""
         if self.msg:
@@ -1146,16 +1119,24 @@ class RunPage:
         self.window_keys = set()
         self.links, self._urls = [], []
         self.fill(win, h, w)
-        if h < 8 or w < 24:
-            self.put(win, 0, 0, [('too small', 'red')], w)
-            return
         ago = int(time.time() - self.got)
         top = [('agent-runner', 'accent'), (f' · {self.snap.get("project", "")}  ', 'fg'),
                ('● ', 'green' if self.snap.get('up') else 'dim'),
                (('live' if self.snap.get('up') else 'no run is up') + f' · updated {"just now" if ago < 5 else f"{ago}s ago"}', 'dim')]
+        if self.bar_only:  # F112 `ui --bar`: the top pane of tmux's full-screen layout
+            self.put(win, 0, 0, top, w)
+            return
+        if self.side.full or h <= 2:  # F112: tmux's full-screen layout: this pane is the bottom bar only
+            self.draw_bar(win, h, w)
+            return
+        if h < 8 or w < 24:
+            self.put(win, 0, 0, [('too small', 'red')], w)
+            return
         self.put(win, 0, 0, top, w)
         body = h - 2
-        if w >= TWO_COLUMNS:
+        if self.side.pane or self.full:  # F112: the session is in tmux's pane beside this one; Ctrl-f: no panels
+            left, mx, mw = (0, 0, w) if self.full else (w, 0, 0)
+        elif w >= TWO_COLUMNS:
             left = max(30, w * 36 // 100)
             mx, mw = left, w - left
         else:
@@ -1179,6 +1160,10 @@ class RunPage:
             self.edge(win, by, bx, bh, bw, [(' Keybindings ', 'accent')], True)
             for i, l in enumerate(lines[:bh - 2]):
                 self.put(win, by + 1 + i, bx + 2, help_line(l), bw - 4)
+        self.draw_bar(win, h, w)
+
+    def draw_bar(self, win, h: int, w: int) -> None:
+        """The bottom bar: the mode badge, then the footer (this place's keys, or a message)."""
         x = self.put(win, h - 1, 0, [(f' {self.mode()} ', '')], w, self.a('mode'))
         self.put(win, h - 1, x + 1, self.footer(w - x - 2), w - x - 2)
 
@@ -1195,6 +1180,113 @@ class RunPage:
         v = str(self.snap.get('version') or '')
         if newer_version(v, __version__) and v != self.followed and os.name != 'nt':  # F90; Windows: no real exec
             self.restart = True
+        if self.side.pane and not self.side.alive():  # F112: detached or ended: its pane closed itself
+            self.side.gone()
+
+    # --- F112: the session beside the TUI, a new chat on its way up -------------------------------------------
+
+    def want_side(self) -> str:
+        """The session to show in tmux's pane beside the TUI ('' none): inside tmux, the selected Sessions row on
+        its session tab, when it has a socket to attach to (F88)."""
+        if self.bar_only or not in_tmux() or self.panel != 2:
+            return ''
+        it = self.sel()
+        if not isinstance(it, dict) or it.get('new') or not (is_control(it) or it.get('task')):
+            return ''
+        if self.tab()[0] != 'session':
+            return ''
+        return it['name'] if self.socket(it['name']) else ''
+
+    def sync(self) -> None:
+        """The tmux pane beside follows the selection: `attach NAME` split off beside the TUI's pane (respawned on
+        another session), killed on any other row; focus on the right side (l, Enter, Ctrl-l) moves into it. A
+        pane that closed itself (Ctrl-b d, the session ended) stays closed until another row is selected."""
+        if not self.main:
+            self.full = False
+        name = self.want_side()
+        if name != self.side.closed:
+            self.side.closed = ''
+        if not name or self.side.closed:
+            if self.side.pane:
+                self.side.close()
+            return
+        r = self.side.show(name)
+        if not r.get('ok'):
+            self.msg, self.msg_ok = r.get('out', f'could not show {name}'), False
+            return
+        if self.main:
+            self.side.focus()
+            self.main = False
+
+    def toggle_full(self) -> None:
+        """Ctrl-f: the session full-screen between the top and bottom bars, the panels gone; again: side by side.
+        Inside tmux the panes are laid out again (`SidePane.toggle_full`); outside, the main pane takes the width."""
+        if self.side.pane:
+            r = self.side.toggle_full()
+            if not r.get('ok'):
+                self.msg, self.msg_ok = r.get('out', 'could not lay the panes out again'), False
+            return
+        if self.full:
+            self.full = False
+            return
+        if self.panel == 2 and isinstance(self.sel(), dict) and not self.sel().get('new'):
+            self.full = self.main = True
+        else:
+            self.msg, self.msg_ok = 'Ctrl-f full-screens a session: select one in Sessions [2]', True
+
+    def new_chat(self) -> None:
+        """N: a new control session (`new_control`, not waiting for its link), started on a thread so the page
+        never waits: a 'starting...' row is selected at once, and `poll_new_chat` puts the session's own row in
+        its place once the run's state lists it."""
+        if self.starting:
+            self.msg, self.msg_ok = 'a new chat is starting already', True
+            return
+        st: dict = {'name': '', 'label': '', 'title': 'starting...', 'new': True, 'starting': True, 'on': True,
+                    'before': {r.get('name') for r in session_rows(self.snap)}, 't': time.time()}
+        self.starting = st
+
+        def start() -> None:
+            try:
+                st['r'] = U.new_control(wait=False)
+            except Exception as e:  # noqa: BLE001 - said on the bottom line
+                st['r'] = {'ok': False, 'out': f'could not start a new chat: {e}'}
+        import threading
+        threading.Thread(target=start, daemon=True).start()
+        self.panel, self.main = 2, False
+        self.cur[2] = next(i for i, r in enumerate(self.items(2)) if r is st)
+        self.msg, self.msg_ok = 'starting a new chat...', True
+
+    def poll_new_chat(self) -> None:
+        """The new chat's progress: a start that failed says why and its row goes; once its cN is in the run's
+        state, that row takes the 'starting...' row's place (selected, when that one was)."""
+        st = self.starting
+        if not st:
+            return
+        r = st.get('r')
+        if r is not None and not r.get('ok'):
+            self.starting = None
+            self.cur[2] = min(self.cur[2], max(len(self.items(2)) - 1, 0))
+            out = (r.get('out') or '').strip().splitlines()
+            self.msg, self.msg_ok = out[0] if out else 'the new chat could not start', False
+            return
+        if r is not None and r.get('name') and not st['label']:
+            st['label'] = r['name']
+            self.refresh()
+        fresh = [s for s in session_rows(self.snap) if is_control(s) and s.get('name') not in st['before']
+                 and (not st['label'] or s.get('name') == st['label'])]
+        if fresh:
+            self.starting = None
+            row = fresh[-1]
+            if st['on']:
+                rows = self.items(2)
+                self.panel, self.cur[2] = 2, next(i for i, s in enumerate(rows) if s.get('name') == row['name'])
+            link = row.get('link') or (r or {}).get('link', '')
+            self.msg, self.msg_ok = f'new control session {row["name"]}' + (f': {link}' if link else ''), True
+        elif r is not None and time.time() - st['t'] > STARTING_WAIT:
+            self.starting = None
+            self.msg, self.msg_ok = f'{st["label"] or "the new chat"} started but is not listed: see its row later', False
+        elif st['on']:  # the selection stays on it while rows above come and go
+            self.cur[2] = next(i for i, s in enumerate(self.items(2)) if s is st)
 
     def saved_place(self) -> dict:
         """F90: the focused panel, the selection, tabs and focus, for `restore_place` after a restart; F92: and
@@ -1240,17 +1332,25 @@ class RunPage:
 
     def key(self, k: str) -> bool:
         """Handle one key (a character, or a name: UP DOWN LEFT RIGHT ENTER S-ENTER ESC TAB BTAB BS ^S ^H ^L
-        ^J ^K ^C ^U); True means quit."""
+        ^J ^K ^C ^U ^F); True means quit. F112: then the tmux pane beside follows the selection (`sync`)."""
+        quit_ = self.take_key(k)
+        if self.starting:
+            self.starting['on'] = self.panel == 2 and self.sel() is self.starting
+        self.poll_new_chat()
+        self.sync()
+        return quit_
+
+    def take_key(self, k: str) -> bool:
         k = KEYS.get(k, k)
         self.msg, self.msg_link = '', ''
         if self.help:
             self.help = k not in ('ESC', '?', 'q', 'ENTER')
             return False
-        if k == '^C':  # B116: Ctrl+C interrupts a working chat (Esc never does); elsewhere it quits
-            if self.main and self.chat_working():
-                self.interrupt(self.chat_name())
-                return False
+        if k == '^C':  # F112: no chat to interrupt here any more (the session itself takes its Ctrl+C)
             return True
+        if k == '^F':  # F112: the session full-screen between the bars, and back
+            self.toggle_full()
+            return False
         if self.confirm:  # F82: stop now runs only on its key again
             key, self.confirm = self.confirm, ''
             c = next((c for c in self.snap.get('controls') or U.controls() if c['key'] == key), {})
@@ -1336,13 +1436,7 @@ class RunPage:
         if not text:
             return
         kind, _, rest = box.partition(':')
-        if box == 'status:chat':
-            r = U.chat_to(text, 'c1')
-        elif rest == 'chat':
-            r = U.chat_to(text, kind)
-        elif rest == 'feed':
-            r = U.send(kind, text)
-        elif kind == 'edit':
+        if kind == 'edit':
             r = U.chat(f'new task: {text}' if rest == '+' else f'change {rest}: {text}')
         elif kind == 'answer':
             r = U.answer(rest, text)
@@ -1357,19 +1451,10 @@ class RunPage:
             return
         if r.get('ok'):
             self.set_text(box, '')
-            if not box.endswith((':chat', ':feed')):  # a chat keeps the box, as a Claude session does
-                self.typing = ''
-                if kind in ('edit', 'answer'):
-                    self.main = False
+            self.typing = ''
+            if kind in ('edit', 'answer'):
+                self.main = False
         self.done(r)
-
-    def chat_working(self) -> bool:
-        """The main pane's chat is with a control session that is mid-turn, so Ctrl+C interrupts it (B116)."""
-        name = self.chat_name()
-        return bool(name) and self.working(name)
-
-    def interrupt(self, name: str) -> None:
-        self.done(U.interrupt(name))
 
     def main_key(self, k: str):
         """A key in the main pane; a true result when it was this tab's (or 'quit')."""
@@ -1440,19 +1525,14 @@ class RunPage:
                 self.type_in()
                 return True
             return False
-        if tab == 'chat' and self.panel == 1:
-            key = next((q for q, c in QUICK_KEYS.items() if c == k), '')
-            if key:
-                self.done(U.quick_ask(key))
-                return True
         if tab == 'release' and k in ('ENTER', 'f'):
             self.done(U.release(now=k == 'f'))
             return True
-        if tab == 'pane' and k == 'ENTER':
-            self.pane_attach()
-            return True
-        if tab == 'session' and k == 'ENTER' and not self.box():  # a control session's: Enter types (B125)
-            self.open_session(it)
+        if tab == 'session' and k == 'ENTER':  # F88: its own terminal full-screen, when it has one; else its link
+            if isinstance(it, dict) and (self.socket(it.get('name', '')) or self.snap.get('terminal_mode') == 'feed'):
+                self.pane_attach()
+            else:
+                self.open_session(it)
             return True
         if tab == 'info' and self.panel == 2 and k == 'ENTER':
             self.new_chat()
@@ -1538,6 +1618,11 @@ class RunPage:
             self.type_in()
         elif self.panel == 1 and k == 'R':
             self.release_tab()
+        elif self.panel == 1 and (q := next((q for q, c in QUICK_KEYS.items() if c == k), '')):
+            r = U.quick_ask(q)  # F112: c1 answers in its own session (c shows it)
+            self.done(r)
+            if r.get('ok'):
+                self.msg = f'{self.msg}: c1 answers in its session (c shows it)'
         elif self.panel == 1 and k == '=':
             self.set_tab('controls')
             self.typing = 'slots:n'
@@ -1621,16 +1706,14 @@ class RunPage:
             self.msg = f'new control session about {it.get("concept") or it.get("id")}: {r["link"]}'
 
     def chat_c1(self) -> None:
-        """c: c1's chat, typing: in Sessions when c1 is listed there, else Status's chat with it."""
+        """c: c1 itself, selected in Sessions with focus on it (F112: inside tmux, in its pane beside the TUI)."""
         rows = self.items(2)
         at = next((i for i, r in enumerate(rows) if r.get('name') == 'c1'), None)
         if at is None:
-            self.panel = 1
-            self.set_tab('chat')
-        else:
-            self.panel, self.cur[2] = 2, at
-            self.set_tab('chat')
-        self.type_in()
+            self.msg, self.msg_ok = self.snap.get('sessions_note') or 'c1 is not listed', False
+            return
+        self.panel, self.cur[2] = 2, at
+        self.set_tab('session')
 
     def release_tab(self) -> None:
         rows = self.items(1)
@@ -1638,7 +1721,7 @@ class RunPage:
         self.set_tab('release')
 
     def feed_tab(self) -> None:
-        """t: the selected slot's feed; from a control session or the new chat row, the first slot on a task."""
+        """t: the selected slot's session; from a control session or the new chat row, the first slot on a task."""
         it = self.sel()
         if not (isinstance(it, dict) and it.get('task')):
             rows = self.items(2)
@@ -1647,7 +1730,8 @@ class RunPage:
                 self.msg, self.msg_ok = self.snap.get('sessions_note') or 'no slot is on a task', True
                 return
             self.cur[2] = busy[0]
-        self.set_tab('feed')
+        self.panel = 2
+        self.set_tab('session')
 
     def reorder(self, step: int) -> None:
         """F70: Shift+J / Shift+K: the selected queued task one place down / up (`plan move ID after|before
@@ -1710,19 +1794,6 @@ class RunPage:
             r = copy_text(url, self.out)
             self.msg, self.msg_ok = r['out'], bool(r.get('ok'))
 
-    def new_chat(self) -> None:
-        """N: a new control session (`new_control`); it is selected, on its chat tab, typing (B125)."""
-        before = {r.get('name') for r in self.items(2)}
-        r = U.new_control()
-        self.done(r)
-        if r.get('ok') and r.get('link'):
-            self.msg = f'new control session: {r["link"]}'
-        rows = self.items(2)
-        fresh = [i for i, s in enumerate(rows) if is_control(s) and s.get('name') not in before]
-        if fresh:
-            self.panel, self.cur[2] = 2, fresh[-1]
-            self.set_tab('chat')
-            self.type_in()
 
 
 # --- what the page reads and opens --------------------------------------------------------------------------
@@ -1899,6 +1970,160 @@ def hidden_terminal(name: str) -> bool:
         return False
 
 
+def in_tmux() -> bool:
+    """F112: this TUI runs inside tmux (TMUX set), so a session can be shown in a tmux pane beside it."""
+    return bool(os.environ.get('TMUX'))
+
+
+def tmux_run(argv: list[str]) -> tuple[int, str]:
+    """One tmux command (the TUI's own tmux server, from TMUX): (exit code, its output)."""
+    try:
+        r = sp.run(['tmux', *argv], capture_output=True, text=True, timeout=10)
+    except (OSError, sp.TimeoutExpired) as e:
+        return 1, str(e)
+    return r.returncode, (r.stdout or r.stderr or '').strip()
+
+
+def runner_line(*args: str) -> str:
+    """`agent-runner ARGS` as one shell command line (what a tmux pane runs)."""
+    import shlex
+    return shlex.join([*U.runner_cmd(), *args])
+
+
+class SidePane:
+    """F112: inside tmux, the selected session in a tmux pane of its own beside the TUI's pane, running
+    `agent-runner attach NAME` (F88's socket), so tmux keeps mouse selection and copy inside it. Ctrl-f lays the
+    panes out again: the session between a one-row top bar pane (`ui --bar`) and the TUI's pane cut down to its
+    bottom bar. In the TUI's window, Ctrl-h in the session pane goes back to the TUI and Ctrl-f reaches the TUI
+    from either pane (root-table bindings that act only where the window options this sets say so, made only
+    when the person has no binding of their own on those keys). `run` runs one tmux command: (code, output)."""
+
+    WIN_TUI = '@agent_runner_tui'  # window option: the TUI's pane id
+    WIN_SIDE = '@agent_runner_side'  # window option: the session pane's id
+
+    def __init__(self, run=None):
+        self.run = run or tmux_run
+        self.pane = ''  # the session pane's id ('' none)
+        self.name = ''  # the session it attaches
+        self.bar = ''  # full-screen: the top bar pane's id
+        self.full = False
+        self.closed = ''  # a session whose pane closed itself: not opened again until another row
+        self.bound: list[str] = []  # the root-table keys this bound (and unbinds on close)
+
+    @staticmethod
+    def me() -> str:
+        return os.environ.get('TMUX_PANE', '')
+
+    def tmux(self, *argv: str) -> tuple[int, str]:
+        try:
+            return self.run(list(argv))
+        except Exception as e:  # noqa: BLE001 - a broken tmux says why on the bottom line
+            return 1, str(e)
+
+    def show(self, name: str) -> dict:
+        """`attach NAME` in the session pane: split off beside the TUI's pane, or respawned in it."""
+        if self.pane and name == self.name:
+            return {'ok': True}
+        cmd, root = runner_line('attach', name), str(U.S.ROOT)
+        if self.pane:
+            code, out = self.tmux('respawn-pane', '-k', '-t', self.pane, '-c', root, cmd)
+        else:
+            code, out = self.tmux('split-window', '-d', '-h', '-l', SIDE_SHARE, '-t', self.me(), '-c', root,
+                                  '-P', '-F', '#{pane_id}', cmd)
+            if not code:
+                self.pane = out.strip().splitlines()[-1] if out.strip() else ''
+        if code or not self.pane:  # a respawn that failed: the pane is gone; the next show splits a new one
+            self.pane = self.name = ''
+            return {'ok': False, 'out': f'could not show {name} beside: {out or "tmux said nothing"}'}
+        self.name = name
+        self.bind()
+        return {'ok': True}
+
+    def focus(self) -> None:
+        if self.pane:
+            self.tmux('select-pane', '-t', self.pane)
+
+    def alive(self) -> bool:
+        return bool(self.pane) and self.tmux('display-message', '-p', '-t', self.pane, '#{pane_id}')[0] == 0
+
+    def toggle_full(self) -> dict:
+        """Full-screen: the session pane joined above the TUI's pane, a top bar pane split above it, the TUI's pane
+        cut to one row (its bottom bar), focus in the session. Again: the bar killed, the session pane joined back
+        beside the TUI's pane, focus in the TUI."""
+        if not self.pane:
+            return {'ok': False, 'out': 'no session is shown beside'}
+        me = self.me()
+        if self.full:
+            if self.bar:
+                self.tmux('kill-pane', '-t', self.bar)
+            self.bar, self.full = '', False
+            code, out = self.tmux('join-pane', '-d', '-h', '-l', SIDE_SHARE, '-s', self.pane, '-t', me)
+            self.tmux('select-pane', '-t', me)
+            return {'ok': not code, 'out': out}
+        code, out = self.tmux('join-pane', '-d', '-v', '-b', '-s', self.pane, '-t', me)
+        if code:
+            return {'ok': False, 'out': f'could not lay the panes out again: {out}'}
+        code, out = self.tmux('split-window', '-d', '-v', '-b', '-l', '1', '-t', self.pane, '-c', str(U.S.ROOT),
+                              '-P', '-F', '#{pane_id}', runner_line('ui', '--bar'))
+        self.bar = out.strip().splitlines()[-1] if not code and out.strip() else ''
+        self.tmux('resize-pane', '-t', me, '-y', '1')
+        self.tmux('select-pane', '-t', self.pane)
+        self.full = True
+        return {'ok': True}
+
+    def bind(self) -> None:
+        """The window options naming both panes, and once: Ctrl-f (both panes: to the TUI) and Ctrl-h (the session
+        pane: back to the TUI), each only in a window with those options and left alone when already bound."""
+        me = self.me()
+        self.tmux('set-option', '-w', '-t', me, self.WIN_TUI, me)
+        self.tmux('set-option', '-w', '-t', me, self.WIN_SIDE, self.pane)
+        keys = {'C-f': (f'#{{{self.WIN_TUI}}}', f'run-shell -C "send-keys -t #{{{self.WIN_TUI}}} C-f"'),
+                'C-h': (f'#{{==:#{{pane_id}},#{{{self.WIN_SIDE}}}}}', f'run-shell -C "select-pane -t #{{{self.WIN_TUI}}}"')}
+        for key, (cond, then) in keys.items():
+            if key in self.bound:
+                continue
+            code, out = self.tmux('list-keys', '-T', 'root', key)
+            if not code and self.WIN_TUI in out:  # another TUI's, the same window-gated binding: shared
+                self.bound.append(key)
+                continue
+            if not code and out.strip():  # the person's own binding: kept (prefix arrows still move)
+                continue
+            if not self.tmux('bind-key', '-n', key, 'if-shell', '-F', cond, then, f'send-keys {key}')[0]:
+                self.bound.append(key)
+
+    def unbind(self) -> None:
+        """This window's options unset; the bindings undone unless another TUI's window still uses them."""
+        me = self.me()
+        for opt in (self.WIN_TUI, self.WIN_SIDE):
+            self.tmux('set-option', '-w', '-u', '-t', me, opt)
+        code, out = self.tmux('list-windows', '-a', '-F', f'#{{{self.WIN_TUI}}}')
+        if not code and out.strip():  # another TUI shows a session: its window still needs them
+            self.bound = []
+            return
+        for key in self.bound:
+            self.tmux('unbind-key', '-n', key)
+        self.bound = []
+
+    def close(self) -> None:
+        """The session pane (and the top bar pane) killed, the bindings undone: the TUI's pane alone again."""
+        for p in (self.bar, self.pane):
+            if p:
+                self.tmux('kill-pane', '-t', p)
+        self.bar = ''
+        self.gone(itself=False)
+
+    def gone(self, itself: bool = True) -> None:
+        """The session pane is no more: killed by `close`, or closed `itself` (Ctrl-b d, the session ended), when
+        it is not opened again until another row is selected (`closed`)."""
+        if self.bar:
+            self.tmux('kill-pane', '-t', self.bar)
+        if itself and self.pane:
+            self.closed = self.name
+        self.pane = self.name = self.bar = ''
+        self.full = False
+        self.unbind()
+
+
 def attach_slot(curses, win, name: str) -> dict:
     """Leave curses, show the session's own terminal (F88, `attach NAME`), and come back when it returns."""
     curses.def_prog_mode()
@@ -1935,9 +2160,10 @@ def links_over(links: list, sgr: str = '') -> str:
     return out + '\x1b8'
 
 
-def run_curses(win, box: dict | None = None) -> int:
+def run_curses(win, box: dict | None = None, bar: bool = False) -> int:
     """The Run page's loop; F90: on a newer run it returns with the page in `box['restart']` (curses.wrapper
-    then restores the terminal, and `main` starts the TUI again)."""
+    then restores the terminal, and `main` starts the TUI again). F112: the session pane beside is closed when
+    it ends; `bar` (`ui --bar`) draws only the top bar and takes no keys."""
     import curses
     try:
         curses.curs_set(0)
@@ -1951,7 +2177,17 @@ def run_curses(win, box: dict | None = None) -> int:
     win.keypad(True)
     win.timeout(1000)
     page = RunPage(U.snapshot(), attrs=attrs, attach=lambda name: attach_slot(curses, win, name))
-    page.restore_place(taken_place())
+    page.bar_only = bar
+    if not bar:
+        page.restore_place(taken_place())
+    try:
+        return page_loop(curses, win, page, box)
+    finally:
+        if page.side.pane:  # F112: the session pane goes with the TUI (its session keeps running)
+            page.side.close()
+
+
+def page_loop(curses, win, page: RunPage, box: dict | None) -> int:
     sgr = link_sgr(curses)
 
     def more() -> str:
@@ -1967,7 +2203,12 @@ def run_curses(win, box: dict | None = None) -> int:
     while True:
         if time.time() - page.got >= REFRESH:
             page.refresh()
-        if page.restart and box is not None:
+            if not page.bar_only:
+                page.sync()  # F112: the selected row may have gone, or its pane closed itself
+        if page.starting:
+            page.poll_new_chat()
+            page.sync()
+        if page.restart and box is not None and not page.bar_only:
             box['restart'] = page
             return 0
         page.draw(win)
@@ -1982,6 +2223,8 @@ def run_curses(win, box: dict | None = None) -> int:
         if isinstance(ch, int) and ch == curses.KEY_RESIZE:
             win.clear()  # B112: the next refresh repaints every cell, not only what curses thinks changed
             continue
+        if page.bar_only:
+            continue
         for name in escape_tail(key_name(curses, ch), more):
             if page.key(name):
                 return 0
@@ -1993,7 +2236,8 @@ def main(argv: list[str]) -> int:
         print('agent-runner ui: the Run page in this terminal (the same panels, keys and actions as the web '
               'page). ? lists the keys, q quits.')
         return 0
-    if argv:
+    bar = argv == ['--bar']  # F112: the top bar alone (tmux's full-screen layout runs it in a one-row pane)
+    if argv and not bar:
         print(f'agent-runner ui takes nothing more (got {" ".join(argv)})', file=sys.stderr)
         return 2
     try:
@@ -2011,7 +2255,7 @@ def main(argv: list[str]) -> int:
     locale.setlocale(locale.LC_ALL, '')
     os.environ.setdefault('ESCDELAY', '25')  # Esc backs out at once, not after curses' default second
     box: dict = {}
-    rc = curses.wrapper(run_curses, box)
+    rc = curses.wrapper(run_curses, box, bar)
     if box.get('restart'):  # F90: the terminal is restored; this process becomes the new version's TUI
         follow_upgrade(box['restart'])
     return rc

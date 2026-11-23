@@ -792,6 +792,9 @@ def control_new_hidden(n: int, cmd: list[str], name: str, wait: float = CONTROL_
         since = 0
         print(f'control {n} {why} (pid {pid}): this ask did not start another')
     where = f'a hidden terminal ({shown_cmd()} attach c{n} shows it), its output in {out}'
+    if wait < 0:  # F112 `control --new --no-wait` (-1): back at once; the link is read from state once it is up
+        print(f'control {n} is starting in {where}')
+        return 0
     if not remote_on():
         why = remote_off_why() if C.run['remote'] == 'auto' else ''
         print(f'control {n} is up in {where}; it is local' +
