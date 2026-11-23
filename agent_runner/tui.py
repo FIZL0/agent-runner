@@ -63,7 +63,6 @@ import re
 import subprocess as sp
 import sys
 import time
-from html.parser import HTMLParser
 
 from agent_runner import plat
 from agent_runner import theme as TH
@@ -273,81 +272,6 @@ def buttons(*bs) -> list[tuple[str, str]]:
     for i, b in enumerate(bs):
         out += ([(' ', '')] if i else []) + b
     return out
-
-
-class _Copy(HTMLParser):
-    """A K copy's page as blocks: (level, text), level 1-4 for a heading (an element of class t, ttl or title
-    counts as a level 3 one), 0 for a paragraph; scripts and styles left out."""
-    HEADS = {'h1': 1, 'h2': 2, 'h3': 3, 'h4': 4}
-    BLOCKS = {'p', 'li', 'div', 'section', 'pre', 'td', 'th', 'blockquote', 'tr', 'br', 'ul', 'ol', 'table',
-              'article', 'header', 'footer', 'main'}
-
-    def __init__(self):
-        super().__init__(convert_charrefs=True)
-        self.blocks: list[tuple[int, str]] = []
-        self.buf: list[str] = []
-        self.stack: list[tuple[str, int]] = []  # open elements that make a heading
-        self.skip = 0
-
-    def flush(self):
-        text = ' '.join(''.join(self.buf).split())
-        self.buf = []
-        if text:
-            self.blocks.append((self.stack[-1][1] if self.stack else 0, text))
-
-    def handle_starttag(self, tag, attrs):
-        if tag in ('script', 'style', 'title', 'head'):
-            self.skip += 1
-            return
-        cls = set((dict(attrs).get('class') or '').split())
-        level = self.HEADS.get(tag) or (3 if cls & {'t', 'ttl', 'title'} else 0)
-        if level or tag in self.BLOCKS:
-            self.flush()
-        if level:
-            self.stack.append((tag, level))
-
-    def handle_endtag(self, tag):
-        if tag in ('script', 'style', 'title', 'head'):
-            self.skip = max(0, self.skip - 1)
-            return
-        if tag in self.HEADS or tag in self.BLOCKS:
-            self.flush()
-        if self.stack and self.stack[-1][0] == tag:
-            self.stack.pop()
-
-    def handle_data(self, data):
-        if not self.skip:
-            self.buf.append(data)
-
-
-def concept_page(html: str) -> dict:
-    """F76: a concept's K copy as {'title', 'intro': [paragraphs], 'options': [{'name', 'body': [...], 'rec'}]}:
-    the options are its headings one level below the title's (the first heading), each with what follows it;
-    'rec' marks the one whose heading says it is recommended."""
-    p = _Copy()
-    try:
-        p.feed(html or '')
-        p.close()
-    except Exception:  # noqa: BLE001 - a broken page shows what parsed
-        pass
-    p.flush()
-    blocks = p.blocks
-    heads = [i for i, (lv, _) in enumerate(blocks) if lv]
-    title, start = '', 0
-    if heads and blocks[heads[0]][0] == min(blocks[i][0] for i in heads):
-        title, start = blocks[heads[0]][1], heads[0] + 1
-    rest = blocks[start:]
-    levels = sorted({lv for lv, _ in rest if lv})
-    opt_level = levels[0] if levels else 0
-    intro, options = [], []
-    for lv, text in rest:
-        if opt_level and lv == opt_level:
-            options.append({'name': text, 'body': [], 'rec': 'recommend' in text.lower()})
-        elif options:
-            options[-1]['body'].append(text)
-        else:
-            intro.append(text)
-    return {'title': title, 'intro': intro, 'options': options}
 
 
 def release_tail(snap: dict) -> list:
@@ -623,27 +547,19 @@ class RunPage:
         return [head + [(t.ljust(tw), 'fg'), (' ', ''), (tag, colour)]]
 
     def answers(self, it) -> list[tuple[str, str]]:
-        """F76: a Needs you item's possible answers as (key, answer): y yes / n no for a yes-or-no ask, the
-        concept's options (a, b, c …) for a pick, 'done' for a block; [] when only a reply fits."""
-        label = it.get('label', '')
-        said = f'{it.get("ask", "")} {it.get("what", "")}'.lower()
-        if label == 'CONFIRM' or re.search(r'\byes\s*(/|or)\s*no\b', said):
-            return [('y', 'yes'), ('n', 'no')]
-        if label == 'CONCEPT':
-            names = [o['name'] for o in self.concept(it)['options']] or ['A', 'B', 'C']
-            return list(zip(OPTION_KEYS, names))
-        if label == 'PITCH':  # F98
-            return list(zip(OPTION_KEYS, it.get('options') or []))
-        if label == 'BLOCKED':
-            return [('a', 'done')]
-        return []
+        """F76: a Needs you item's answers (C33: the row's own, `ui_model.need_answers`) with their key letters:
+        y / n for Yes / No, a, b, c … for the rest."""
+        xs = it.get('answers') if 'answers' in it else U.need_answers(it)
+        if [x['label'] for x in xs] == ['Yes', 'No']:
+            return [('y', 'Yes'), ('n', 'No')]
+        return [(k, x['value']) for k, x in zip(OPTION_KEYS, xs)]
 
     def concept(self, it) -> dict:
         """The concept page of a Concepts row (or a Needs you CONCEPT item), parsed from its K copy."""
         copy = it.get('copy') or next((c.get('copy') for c in self.snap.get('concepts') or []
                                        if c.get('id') == it.get('id')), '')
         html = self.cached(f'copy:{copy}', lambda: self.read(copy)) if copy else ''
-        return concept_page(html) if html else {'title': '', 'intro': [], 'options': []}
+        return U.concept_page(html) if html else {'title': '', 'intro': [], 'options': []}
 
     def option(self, it) -> int:
         opts = self.concept(it)['options']
@@ -749,16 +665,10 @@ class RunPage:
         cs = [c for c in self.snap.get('controls') or U.controls() if c['where'] == where]
         if where == 'task':
             return [buttons(*[button(c['tui'], c['label'].lower()) for c in cs])]
-        groups = (('start',), ('slot_add', 'slot_remove', 'slots_set'), ('pause', 'go_on'), ('force', 'caps_on'),
-                  ('stop', 'stop_now', 'stop_undo'), ('suspend', 'shutdown'), ('upgrade', 'restart'),
-                  ('resume', 'unclaim'), ('wip_show', 'wip_restore', 'wip_drop'))
         fix = self.snap.get('fixups') or {}
-        up = bool(self.snap.get('up'))
-
-        def shown(c):  # F124: Start the run while none is up; a Fix up control while there is something to fix
-            return (c.get('up', True) or not up) and (not c.get('fix') or bool(fix.get(c['fix'])))
+        shown = U.controls_shown(bool(self.snap.get('up')), self.snap.get('run') or {}, fix)['shown']  # C33
         rows = [[button(c['tui'], c['label'].lower() + (f' ({len(fix[c["fix"]])})' if c.get('fix') else ''))
-                 for c in cs if c['key'] in g and shown(c)] for g in groups]
+                 for c in cs if c['key'] in g and c['key'] in shown] for g in U.CONTROL_ROWS]
         return [buttons(*r) for r in rows if r]
 
     def controls_pane(self, width: int) -> list:
@@ -781,7 +691,7 @@ class RunPage:
     @staticmethod
     def task_controls_on(it) -> bool:
         """A slot's task controls work while it works on a task, not while the task lands (merging)."""
-        return isinstance(it, dict) and bool(it.get('task')) and not is_control(it) and it.get('state') != 'merging'
+        return U.task_controls_on(it)
 
     def control_by_tui(self, k: str, where: str) -> dict | None:
         return next((c for c in self.snap.get('controls') or U.controls() if c['tui'] == k and c['where'] == where

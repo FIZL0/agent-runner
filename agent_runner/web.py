@@ -650,25 +650,7 @@ def page_html(home: bool = False) -> bytes:
     return page.encode('utf-8')
 
 
-_OPTIONS: dict[str, tuple[float, list]] = {}  # a concept copy's path: (its mtime, its options)
-
-
-def concept_options(path: str) -> list[dict]:
-    """F79: a concept's options for the Plan's buttons, from its local page copy as the terminal UI reads it
-    (`tui.concept_page`: the headings one level below the title): [{'name', 'rec'}]; [] for no copy."""
-    if not path:
-        return []
-    try:
-        mt = os.path.getmtime(path)
-        if (hit := _OPTIONS.get(path)) and hit[0] == mt:
-            return hit[1]
-        from agent_runner.tui import concept_page
-        opts = [{'name': o['name'], 'rec': o['rec']}
-                for o in concept_page(Path(path).read_text(encoding='utf-8', errors='replace'))['options']]
-    except OSError:
-        return []
-    _OPTIONS[path] = (mt, opts)
-    return opts
+concept_options = U.concept_options  # C33: one option list, in ui_model
 
 
 TTYD_PACKAGES = (('pacman', 'sudo pacman -S ttyd'), ('apt', 'sudo apt install ttyd'), ('dnf', 'sudo dnf install ttyd'),

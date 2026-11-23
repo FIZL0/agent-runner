@@ -6,6 +6,7 @@ request without its token. F79: the page is the run app, and keeps uploaded atta
 """
 from __future__ import annotations
 
+import datetime as dt
 import json
 import os
 import re
@@ -200,9 +201,9 @@ def test_run_controls(tmp: Path) -> None:
         got = logic_js([['controlClick', stop_now, {}], ['controlClick', stop_now, {'sure': 'yes'}],
                         ['controlClick', stop_now, {'sure': True}],
                         ['controlClick', next(c for c in cs if c['key'] == 'stop'), {}],
-                        ['taskControlsOn', {'name': 's1', 'task': 'F1', 'state': 'running'}],
-                        ['taskControlsOn', {'name': 's2', 'task': 'B2', 'state': 'merging'}],
-                        ['taskControlsOn', {'name': 's3', 'task': ''}]])
+                        *[['taskControlsOn', {**r, 'task_controls': U.task_controls_on(r)}] for r in (
+                            {'name': 's1', 'task': 'F1', 'state': 'running'},
+                            {'name': 's2', 'task': 'B2', 'state': 'merging'}, {'name': 's3', 'task': ''})]])
         eq(got[:4], [{'ask': True}, {'ask': True},
                      {'name': 'run_control', 'args': {'key': 'stop_now', 'confirm': True}},
                      {'name': 'run_control', 'args': {'key': 'stop'}}],
@@ -456,9 +457,9 @@ def test_logic(tmp: Path) -> None:
         ['talkMsgs', feed],
         ['working', feed], ['working', feed[:5]], ['working', feed + [{'kind': 'out', 'text': 'interrupted'}]],
         ['working', []],
-        ['answerOpts', {'label': 'CONFIRM', 'ask': 'Works?'}],
-        ['answerOpts', {'label': 'DECIDE', 'options': ['ship it', 'wait']}],
-        ['answerOpts', {'label': 'BLOCKED', 'ask': 'Log in'}],
+        ['answerOpts', U.needs_rows([('CONFIRM', 'F1', '', 'Works?', '', 'T', False)], dt.datetime.now())[0][0]],
+        ['answerOpts', {'label': 'DECIDE', 'answers': U.need_answers({'label': 'DECIDE', 'options': ['ship it', 'wait']})}],
+        ['answerOpts', U.needs_rows([('BLOCKED', 'F2', '', 'Log in', '', 'T', False)], dt.datetime.now())[0][0]],
         ['planWords', {'id': 'F1', 'state': 'running'}, sessions],
         ['planWords', {'id': 'B2', 'state': 'after', 'after_title': 'F1 Board page'}, sessions],
         ['planWords', {'id': 'B3', 'state': 'blocked'}, sessions],
@@ -478,7 +479,7 @@ def test_logic(tmp: Path) -> None:
     eq(got[1:5], [True, False, False, False], 'working while its last entry is a step, not after a reply or an interrupt')
     eq(got[5], ['Yes', 'No'], 'a CONFIRM answers Yes or No')
     eq(got[6], ['Ship it', 'Wait'], "a DECIDE's options are its buttons")
-    eq(got[7], [], 'a BLOCKED has no answer buttons (Chat and Later only)')
+    eq(got[7], ['Done'], 'C33: a BLOCKED answers Done, as the terminal UI does')
     eq(got[8:12], ['s2 is on it · 12 min', 'Waits for F1 Board page', 'Waits for you',
                    'Ready to start when a slot is free'], 'the queue in plain words')
     eq(got[12], 'hello', 'plain words go as typed')
@@ -2684,19 +2685,27 @@ def test_status_view_f124(tmp: Path) -> None:
         cs = U.controls()
     with mock.patch('agent_runner.plat.WINDOWS', True):  # B163: no re-exec there, so no restart
         win = U.controls()
-    up = {'up': True, 'controls': cs, 'run': {}, 'fixups': {'resume': [], 'unclaim': [{'id': 'F1', 'label': 'x'}] * 2, 'wip': []}}
+    fix2 = {'resume': [], 'unclaim': [{'id': 'F1', 'label': 'x'}] * 2, 'wip': []}
+    snap = lambda up_, run, fix: {'up': up_, 'controls': cs, 'run': run, 'fixups': fix,  # noqa: E731
+                                  **U.controls_shown(up_, run, fix)}
+    with mock.patch('agent_runner.plat.WINDOWS', False):
+        up = snap(True, {}, fix2)
+        paused, none_up, nofix, forced = (snap(True, {'paused': True, 'stopping': True}, fix2), snap(False, {}, fix2),
+                                          snap(True, {}, {}), snap(True, {'forced': True, 'stopping': True}, fix2))
+    with mock.patch('agent_runner.plat.WINDOWS', True):
+        winup = {**snap(True, {}, fix2), 'controls': win}
     got = logic_js([['viewOf', 'agents'], ['viewOf', 'activity'], ['viewOf', 'plan'],
                     ['runPill', {'up': True, 'run': {'state': 'Caps forced'}}], ['runPill', {'up': False}],
-                    ['cardControls', up], ['cardControls', {**up, 'run': {'paused': True, 'stopping': True}}],
-                    ['cardControls', {'up': False}], ['controlGroups', up], ['controlGroups', {**up, 'fixups': {}}],
-                    ['controlGroups', {**up, 'run': {'forced': True, 'stopping': True}}],
+                    ['cardControls', up], ['cardControls', paused],
+                    ['cardControls', none_up], ['controlGroups', up], ['controlGroups', nofix],
+                    ['controlGroups', forced],
                     ['swipeTakes', 4, 3, False], ['swipeTakes', 40, 5, False], ['swipeTakes', -40, 5, False],
                     ['swipeTakes', -40, 5, True], ['swipeTakes', 40, 60, False],
                     ['swipeOpens', 100, 0, 280, False], ['swipeOpens', 180, 0, 280, False],
                     ['swipeOpens', 60, 0.8, 280, False], ['swipeOpens', -60, -0.8, 280, True],
                     ['swipeOpens', -60, 0, 280, True], ['atEnd', {'scrollHeight': 500, 'scrollTop': 400, 'clientHeight': 100}],
                     ['atEnd', {'scrollHeight': 500, 'scrollTop': 300, 'clientHeight': 100}],
-                    ['controlGroups', {**up, 'controls': win}]])
+                    ['controlGroups', winup]])
     eq(got[:3], ['status', 'status', 'plan'], 'the old views land on Status')
     eq(got[3:5], [{'text': 'Caps forced', 'cls': 'warn'}, {'text': 'Not up', 'cls': ''}], "the pill's words")
     eq(got[5], ['slot_remove', 'slot_add', 'pause', 'stop'], "the card's everyday buttons")
@@ -2861,7 +2870,8 @@ def test_needs_drop_chat_f110(tmp: Path) -> None:
             eq(ran, [['plan', 'drop', 'D3', 'dropped from Needs you']], 'plan drop ID, from Needs you')
     finally:
         srv.stop()
-    ask = logic_js([['needChatAsk', {'id': 'R1', 'title': 'Phone', 'label': 'CONFIRM', 'ask': 'Does it work?'}]])[0]
+    ask = logic_js([['needChatAsk', {'id': 'R1', 'title': 'Phone', 'label': 'CONFIRM', 'ask': 'Does it work?',
+                                     'answers': U.need_answers({'label': 'CONFIRM'})}]])[0]
     check('R1' in ask and 'Does it work?' in ask and '- Yes' in ask and '- No' in ask, 'the question and its answers show at once', ask)
 
 

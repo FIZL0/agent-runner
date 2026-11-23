@@ -10,6 +10,7 @@ command it stands for, and chat, answers and take reach c1.
 """
 from __future__ import annotations
 
+import datetime as dt
 import json
 import tempfile
 import time
@@ -76,7 +77,7 @@ def test_snapshot(tmp: Path) -> None:
     names = [s['name'] for s in snap['sessions']]
     eq(names, ['c1', 's1', 's2', 's3'], 'c1, then every slot of the 3-slot run in order, the idle s3 too')
     eq(snap['sessions'][3], {'name': 's3', 'task': '', 'title': '', 'minutes': None, 'state': 'idle',
-                             'files': [], 'link': '', 'terminal': ''}, 'an idle slot: no task, state idle')
+                             'files': [], 'link': '', 'terminal': '', 'task_controls': False}, 'an idle slot: no task, state idle')
     eq(snap['sessions'][0]['state'], 'off', 'no c1 runs in a fake run')
     s1, s2 = snap['sessions'][1], snap['sessions'][2]
     eq((s1['task'], s1['title'], s1['minutes'], s1['state'], s1['files']),
@@ -769,7 +770,7 @@ def test_need_chat_f143(tmp: Path) -> None:
         check('Possible answers:' in ran[-1][3] and 'Which layout?: Tabs / Drawer (recommended)' in ran[-1][3],
               "a pick sheet's questions and answers are in it", ran[-1])
         eq(U.need_options({'label': 'CONFIRM'}), ['Yes', 'No'], 'a CONFIRM: Yes, No')
-        eq(U.need_options({'label': 'DECIDE', 'options': ['a', 'b']}), ['a', 'b'], "an item's own options")
+        eq(U.need_options({'label': 'DECIDE', 'options': ['a', 'b']}), ['A', 'B'], "an item's own options")
         path = chat(9, 'sx', [said('assistant', 'I looked at both. Tabs cost a day, the drawer two.', '2026-11-21T10:00:00Z')])
         from agent_runner import slots, watch
         with mock.patch.object(watch, 'last_session', lambda tid: (1, 'sx')), mock.patch.object(slots, 'transcript', lambda sid: path):
@@ -813,6 +814,31 @@ def in_tmp(f):
     return go
 
 
+def test_need_answers_c33(tmp: Path) -> None:
+    """C33: every needs row carries its answers; one rule for both pages and the chat text."""
+    copy = tmp / 'K1.html'
+    copy.write_text('<h1>Menu</h1><h2>Tabs</h2><p>a</p><h2>Drawer · recommended</h2><p>b</p>', encoding='utf-8')
+    names = lambda row: [a['label'] for a in U.need_answers(row)]  # noqa: E731
+    eq(names({'label': 'CONFIRM'}), ['Yes', 'No'], 'CONFIRM: Yes, No')
+    eq(names({'label': 'DECIDE', 'ask': 'Ship it? yes or no'}), ['Yes', 'No'], 'a yes/no ask: Yes, No')
+    eq(names({'label': 'DECIDE', 'ask': 'Which port?'}), [], 'DECIDE with no pick: reply only')
+    eq(names({'label': 'BLOCKED'}), ['Done'], 'BLOCKED: Done, on both pages')
+    eq(names({'label': 'CONCEPT', 'copy': str(copy)}), ['Tabs', 'Drawer · recommended'], "CONCEPT: the copy's options")
+    eq(names({'label': 'CONCEPT'}), ['A', 'B', 'C'], 'CONCEPT without a copy: A, B, C')
+    eq(names({'label': 'PITCH', 'options': ['Approve', 'Not this: drop']}), ['Approve', 'Not this: drop'], 'PITCH')
+    rows, _ = U.needs_rows([('CONFIRM', 'F1', '', 'ok?', '', 'T', False), ('BLOCKED', 'F2', '', 'log in', '', 'T', False)],
+                           dt.datetime.now())
+    eq([[a['value'] for a in r['answers']] for r in rows], [['Yes', 'No'], ['Done']], 'the snapshot rows carry them')
+    eq(U.need_options(rows[1]), ['Done'], 'the chat text uses the same')
+    run, fix = {'forced': False}, {'unclaim': [{'id': 'F1'}]}
+    on = U.controls_shown(True, run, fix)
+    check('force' in on['shown'] and 'caps_on' not in on['shown'] and 'unclaim' in on['shown'], 'shown now', on)
+    eq(U.controls_shown(False, run, fix)['card'], ['start'], 'no run: Start the run')
+    check('pause' not in U.controls_shown(False, run, fix)['shown'], 'no run: no Pause')
+    check(U.task_controls_on({'name': 's1', 'task': 'F1'}) and not U.task_controls_on({'name': 's1', 'task': 'F1',
+          'state': 'merging'}) and not U.task_controls_on({'name': 'c1', 'task': 'F1'}), 'task controls')
+
+
 if __name__ == '__main__':
     raise SystemExit(report([in_tmp(test_snapshot), in_tmp(test_idle_slots), in_tmp(test_version_f90),
                          in_tmp(test_actions), in_tmp(test_run_controls),
@@ -823,4 +849,4 @@ if __name__ == '__main__':
                          in_tmp(test_concept_copy), in_tmp(test_concept_chat), in_tmp(test_hidden_send),
                          in_tmp(test_delete_chats), in_tmp(test_chat_list_f133),
                          in_tmp(test_status_f124), in_tmp(test_chat_rows_f128), in_tmp(test_need_chat_f143),
-                         in_tmp(test_need_drop_f110), in_tmp(test_feed_ids_b134)]))
+                         in_tmp(test_need_drop_f110), in_tmp(test_feed_ids_b134), in_tmp(test_need_answers_c33)]))

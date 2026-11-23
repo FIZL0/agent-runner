@@ -48,6 +48,7 @@ import re
 import subprocess as sp
 import threading
 import time
+from html.parser import HTMLParser
 from pathlib import Path
 
 from agent_runner import plan as P
@@ -275,6 +276,7 @@ def needs_rows(waiting, now: dt.datetime) -> tuple[list[dict], list[dict]]:
             needs[-1].update(copy=concept_copy(tid), changes=xs, options=['Approve'] + [
                 f'Not {w}: {how}' for w in ['this'] + ([x['id'] for x in xs] if len(xs) > 1 else [])
                 for how in ('reopen', 'drop')])
+        needs[-1]['answers'] = need_answers(needs[-1])  # C33: both pages draw these
     return needs, concepts
 
 
@@ -600,17 +602,20 @@ def snapshot(up: bool | None = None, now: float | None = None, log_n: int = LOG_
     needs, concepts = needs_rows(waiting_ok(), dt.datetime.fromtimestamp(now))
     slots = slot_count(up, st)
     sessions = session_rows(st, ls, titles, now, links, terminal_base, slots, windows)
-    return {'project': S.project(), 'at': dt.datetime.fromtimestamp(now).isoformat(timespec='seconds'),
+    for r in sessions:
+        r['task_controls'] = task_controls_on(r)  # C33
+    run = {'paused': bool(up and st.get('paused')), 'stopping': bool(up and st.get('stopping')),
+           'forced': bool(up and st.get('forced')), 'power': str(st.get('power') or '') if up else '',
+           'state': run_state(up, st)}  # F124
+    fix = fixups(st, ls)
+    return {**controls_shown(bool(up), run, fix), 'run': run, 'fixups': fix,'project': S.project(), 'at': dt.datetime.fromtimestamp(now).isoformat(timespec='seconds'),
             'up': up, 'status': status_rows(up, st, '\n'.join(x for x in (progress, release) if x)),
             'slots': slots, 'sessions': sessions, 'sessions_note': '',
             'queue': pin_release(queue_rows(ls, st, now), row), 'release_row': row,
             'needs': needs, 'concepts': concepts, 'log': log_tail(log_n), 'release': release,
             'quick_asks': quick_asks(), 'terminal_mode': terminal_mode(), 'controls': controls(),
-            'run': {'paused': bool(up and st.get('paused')), 'stopping': bool(up and st.get('stopping')),
-                    'forced': bool(up and st.get('forced')), 'power': str(st.get('power') or '') if up else '',
-                    'state': run_state(up, st)},  # F124
             'unpushed': unpushed_line(),  # F98
-            'usage': usage_rows(st), 'lately': lately(titles), 'fixups': fixups(st, ls), 'chat_quiet': chat_quiet(),
+            'usage': usage_rows(st), 'lately': lately(titles), 'chat_quiet': chat_quiet(),
             'version': str(st.get('version') or '')}  # F90: the run's version ('' from an older run)
 
 
@@ -854,6 +859,41 @@ RUN_CONTROLS = (
 TASK_DROP_WHY = 'dropped from its slot from the run controls'
 SLOT_COUNT = re.compile(r'[+-]?\d{1,3}')
 TASK_ID = re.compile(r'[A-Z]+\d+[a-z]?')
+
+
+CONTROL_ROWS = (('start',), ('slot_add', 'slot_remove', 'slots_set'), ('pause', 'go_on'), ('force', 'caps_on'),
+                ('stop', 'stop_now', 'stop_undo'), ('suspend', 'shutdown'), ('upgrade', 'restart'),
+                ('resume', 'unclaim'), ('wip_show', 'wip_restore', 'wip_drop'))  # C33: the terminal UI's key rows
+
+
+def task_controls_on(row) -> bool:
+    """C33: a slot's task controls (Take back, Drop) work while it works on a task, not while the task lands
+    (merging); a control session has none."""
+    return isinstance(row, dict) and bool(row.get('task')) and not re.fullmatch(r'c\d+', str(row.get('name', ''))) \
+        and row.get('state') != 'merging'
+
+
+def controls_shown(up: bool, run: dict, fixups: dict) -> dict:
+    """C33: which run controls show now, for both pages: 'shown' the keys (all but Start the run while none is up,
+    only a Fix up one then; Force or Caps back on by the run's state; a Fix up one while there is something to fix)
+    and 'card' the everyday ones on the page's Run card."""
+    shown = []
+    for c in RUN_CONTROLS:
+        if c['where'] != 'run' or (c['key'] == 'restart' and _plat().WINDOWS):
+            continue
+        if (c.get('fix') and not (fixups or {}).get(c['fix'])) or (c['key'] == 'force' and run.get('forced')) or \
+                (c['key'] == 'caps_on' and not run.get('forced')):
+            continue
+        if c.get('up', True) == up or (not up and c.get('fix')):
+            shown.append(c['key'])
+    card = ['start'] if not up else ['slot_remove', 'slot_add', 'go_on' if run.get('paused') else 'pause',
+                                      'stop_undo' if run.get('stopping') else 'stop']
+    return {'shown': shown, 'card': card}
+
+
+def _plat():
+    from agent_runner import plat
+    return plat
 
 
 def run_control_of(key: str) -> dict | None:
@@ -1349,17 +1389,127 @@ def pitch_no(pid: str, how: str = 'reopen', tid: str = '', confirm: bool = False
     return r
 
 
-def need_options(row: dict) -> list[str]:
-    """F143: the possible answers to a Needs you row, as the pages offer them: Yes / No, a concept's options, a pick
-    sheet's questions with theirs; [] when only a reply fits."""
+class _Copy(HTMLParser):
+    """A K copy's page as blocks: (level, text), level 1-4 for a heading (an element of class t, ttl or title
+    counts as a level 3 one), 0 for a paragraph; scripts and styles left out."""
+    HEADS = {'h1': 1, 'h2': 2, 'h3': 3, 'h4': 4}
+    BLOCKS = {'p', 'li', 'div', 'section', 'pre', 'td', 'th', 'blockquote', 'tr', 'br', 'ul', 'ol', 'table',
+              'article', 'header', 'footer', 'main'}
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.blocks: list[tuple[int, str]] = []
+        self.buf: list[str] = []
+        self.stack: list[tuple[str, int]] = []  # open elements that make a heading
+        self.skip = 0
+
+    def flush(self):
+        text = ' '.join(''.join(self.buf).split())
+        self.buf = []
+        if text:
+            self.blocks.append((self.stack[-1][1] if self.stack else 0, text))
+
+    def handle_starttag(self, tag, attrs):
+        if tag in ('script', 'style', 'title', 'head'):
+            self.skip += 1
+            return
+        cls = set((dict(attrs).get('class') or '').split())
+        level = self.HEADS.get(tag) or (3 if cls & {'t', 'ttl', 'title'} else 0)
+        if level or tag in self.BLOCKS:
+            self.flush()
+        if level:
+            self.stack.append((tag, level))
+
+    def handle_endtag(self, tag):
+        if tag in ('script', 'style', 'title', 'head'):
+            self.skip = max(0, self.skip - 1)
+            return
+        if tag in self.HEADS or tag in self.BLOCKS:
+            self.flush()
+        if self.stack and self.stack[-1][0] == tag:
+            self.stack.pop()
+
+    def handle_data(self, data):
+        if not self.skip:
+            self.buf.append(data)
+
+
+def concept_page(html: str) -> dict:
+    """F76 (C33: here, the one place the terminal UI and the run page both read): a concept's K copy as {'title',
+    'intro': [paragraphs], 'options': [{'name', 'body': [...], 'rec'}]}: the options are its headings one level
+    below the title's (the first heading), each with what follows it; 'rec' marks the one whose heading says it
+    is recommended."""
+    p = _Copy()
+    try:
+        p.feed(html or '')
+        p.close()
+    except Exception:  # noqa: BLE001 - a broken page shows what parsed
+        pass
+    p.flush()
+    blocks = p.blocks
+    heads = [i for i, (lv, _) in enumerate(blocks) if lv]
+    title, start = '', 0
+    if heads and blocks[heads[0]][0] == min(blocks[i][0] for i in heads):
+        title, start = blocks[heads[0]][1], heads[0] + 1
+    rest = blocks[start:]
+    levels = sorted({lv for lv, _ in rest if lv})
+    opt_level = levels[0] if levels else 0
+    intro, options = [], []
+    for lv, text in rest:
+        if opt_level and lv == opt_level:
+            options.append({'name': text, 'body': [], 'rec': 'recommend' in text.lower()})
+        elif options:
+            options[-1]['body'].append(text)
+        else:
+            intro.append(text)
+    return {'title': title, 'intro': intro, 'options': options}
+
+
+_OPTIONS: dict[str, tuple[float, list]] = {}  # a concept copy's path: (its mtime, its options)
+
+
+def concept_options(path: str) -> list[dict]:
+    """F79: a concept's options, from its local page copy (`concept_page`): [{'name', 'rec'}]; [] for no copy."""
+    if not path:
+        return []
+    try:
+        mt = os.path.getmtime(path)
+        if (hit := _OPTIONS.get(path)) and hit[0] == mt:
+            return hit[1]
+        opts = [{'name': o['name'], 'rec': o['rec']}
+                for o in concept_page(Path(path).read_text(encoding='utf-8', errors='replace'))['options']]
+    except OSError:
+        return []
+    _OPTIONS[path] = (mt, opts)
+    return opts
+
+
+def need_answers(row: dict) -> list[dict]:
+    """C33: the answers that fit a Needs you row, the one rule for the run page, the terminal UI and the chat
+    text: [{'label', 'value'}], the first one the main button. Yes / No for a CONFIRM or a yes-or-no ask, a
+    concept's options (A, B, C when its copy has none), a pitch's, Done for a blocked item; [] when only a reply
+    fits."""
     label, said = row.get('label', ''), f'{row.get("ask", "")} {row.get("what", "")}'
     if row.get('options'):
-        return [str(o) for o in row['options']]
-    if label == 'CONFIRM' or re.search(r'\byes ?(/|or) ?no\b', said, re.I):
-        return ['Yes', 'No']
-    if label == 'CONCEPT':
-        from agent_runner.web import concept_options
-        return [o['name'] for o in concept_options(concept_copy(row.get('concept') or ''))]
+        names = [str(o) for o in row['options']]
+    elif label == 'CONFIRM' or re.search(r'\byes\s*(/|or)\s*no\b', said, re.I):
+        names = ['Yes', 'No']
+    elif label == 'CONCEPT':
+        names = [o['name'] for o in concept_options(row.get('copy') or concept_copy(row.get('concept') or ''))] \
+            or ['A', 'B', 'C']
+    elif label == 'BLOCKED':
+        names = ['Done']
+    else:
+        names = []
+    return [{'label': n[:1].upper() + n[1:], 'value': n[:1].upper() + n[1:]} for n in names]
+
+
+def need_options(row: dict) -> list[str]:
+    """F143: the possible answers to a Needs you row for a chat's first message: its answers, else a pick sheet's
+    questions with theirs; [] when only a reply fits."""
+    if answers := row.get('answers') or need_answers(row):
+        return [a['label'] for a in answers]
+    label = row.get('label', '')
     if label == 'DECIDE':
         try:
             from agent_runner import sheet

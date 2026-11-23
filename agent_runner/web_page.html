@@ -404,12 +404,7 @@ a{color:var(--accent)}
 <script id="logic">
 /* The page's pure parts, run in node by tests/test_web.py: no DOM here. */
 /* a Needs you item's possible answers (F74): yes / no for a CONFIRM or a yes-or-no ask, else its options */
-function answerOpts(it){
-  if(!it)return[];
-  const opts=Array.isArray(it.options)&&it.options.length?it.options.map(String):
-    it.label==='CONFIRM'||/\byes ?(\/|or) ?no\b/i.test(it.ask||'')?['Yes','No']:[];
-  return opts.map(o=>o.charAt(0).toUpperCase()+o.slice(1));
-}
+function answerOpts(it){return((it&&it.answers)||[]).map(a=>a.value)}  // C33: the row's own, from ui_model.need_answers
 /* B152: a Needs you card's ask: short (ask_short: first sentence, no paths or asides) clamped to 2 lines with a More
    that opens the whole ask in place, Less to fold it again; the title under it on one line with an ellipsis */
 const ASK_LONG=80;
@@ -509,7 +504,7 @@ function controlReq(c,o){
    button carries o.sure), else its request */
 function controlClick(c,o){return c.confirm&&!(o&&o.sure===true)?{ask:true}:controlReq(c,o)}
 /* a slot's task controls show while it works, not while it lands (merging) */
-const taskControlsOn=s=>!!(s&&s.task&&s.state!=='merging');
+const taskControlsOn=s=>!!(s&&s.task_controls);  // C33: ui_model.task_controls_on, on the row
 /* B118: the Queue's two groups: [the queue a run works through, the Parked tasks it never starts] */
 const queueGroups=q=>[(q||[]).filter(x=>x.state!=='parked'),(q||[]).filter(x=>x.state==='parked')];
 /* F131: the Queue as shown: the queued tasks (the release task, which the snapshot moved last, among them), then
@@ -554,22 +549,16 @@ function runPill(snap){
   return{text:t,cls:{Running:'ok',Paused:'warn','Caps forced':'warn',Stopping:'bad','Not up':''}[t]||''};
 }
 /* F124: the Run card's everyday buttons (control keys): Start the run while none is up */
-function cardControls(snap){
-  if(snap&&snap.up===false)return['start'];
-  const run=(snap&&snap.run)||{};
-  return['slot_remove','slot_add',run.paused?'go_on':'pause',run.stopping?'stop_undo':'stop'];
-}
+function cardControls(snap){return(snap&&snap.card)||[]}  // C33: ui_model.controls_shown decides
 /* F124: the More… sheet: [{group, items: [{c, label, choices}]}] from the snapshot's controls, in the list's order of
    groups; a Fix up control only while there is something to fix, with a count */
 function controlGroups(snap){
-  const run=(snap&&snap.run)||{}, up=!(snap&&snap.up===false), out=[];
+  const run=(snap&&snap.run)||{}, up=!(snap&&snap.up===false), out=[], shown=(snap&&snap.shown)||[];
   for(const g of ['Stop','Run','Fix up']){
     const items=[];
     for(const c of (snap&&snap.controls)||[]){
-      if(c.where!=='run'||c.group!==g||(g!=='Fix up'&&!up))continue;
-      if((c.key==='force'&&run.forced)||(c.key==='caps_on'&&!run.forced))continue;
+      if(c.where!=='run'||c.group!==g||!shown.includes(c.key))continue;
       const choices=c.fix?((snap.fixups||{})[c.fix]||[]):[];
-      if(c.fix&&!choices.length)continue;
       items.push({c,label:c.fix?`${c.label} (${choices.length})`:c.key==='suspend'&&run.power==='suspend'?'Take the suspend back':c.key==='shutdown'&&run.power==='shutdown'?'Take the shutdown back':c.label,choices});
     }
     if(g==='Stop'&&up&&!run.stopping){const c=((snap&&snap.controls)||[]).find(x=>x.key==='stop');if(c)items.unshift({c,label:c.label,choices:[]})}

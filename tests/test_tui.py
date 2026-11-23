@@ -51,7 +51,8 @@ SNAP = {
     'needs': [{'label': 'CONFIRM', 'id': 'D3', 'concept': '', 'title': 'Write the guide', 'what': 'is it right',
                'url': 'https://claude.ai/artifact/abc', 'ask': 'Is the guide right? - reply yes/no', 'age': '2h'},
               {'label': 'CONCEPT', 'id': 'F4', 'concept': 'K5', 'title': 'Lazy layout', 'what': '',
-               'url': 'https://claude.ai/artifact/k5', 'ask': 'Pick an option for lazy layout', 'age': '1d'},
+               'url': 'https://claude.ai/artifact/k5', 'ask': 'Pick an option for lazy layout', 'age': '1d',
+               'answers': [{'label': n, 'value': n} for n in ('Option A', 'Option B', 'A + B · recommended')]},
               {'label': 'DECIDE', 'id': 'D7', 'concept': '', 'title': 'Pick a port', 'what': 'which port',
                'url': '', 'ask': 'Which port? - reply with your answer', 'age': '5m'}],
     'concepts': [{'id': 'F4', 'concept': 'K5', 'title': 'Lazy layout', 'url': 'https://claude.ai/artifact/k5',
@@ -562,7 +563,7 @@ def test_new_chat_key_f153() -> None:
         with mock.patch.object(U, 'answer', lambda *a, **k: (said.append(a[1]), {'ok': True, 'out': ''})[1]):
             p.key('ENTER')
             p.key('n')
-        eq((said, started), (['no'], []), 'n in Needs you answers no and starts no chat')
+        eq((said, started), (['No'], []), 'n in Needs you answers no and starts no chat')
     sessions = T.HELP.split('Sessions [2]')[1].split('Queue [3]')[0]
     check('  n        new chat' in sessions, 'the keys list names n under Sessions', sessions)
     check('  N ' not in sessions, 'and not N', sessions)
@@ -825,7 +826,7 @@ def test_actions() -> None:
         p.key('4')
         p.key('ENTER')
         win = drawn(p)
-        check('[y yes] [n no] [L later]' in win.text(), 'a yes/no ask: y yes, n no, L later buttons', win.text())
+        check('[y Yes] [n No] [L later]' in win.text(), 'a yes/no ask: y yes, n no, L later buttons', win.text())
         check('❯ or your own reply' in win.text(), 'and the free reply box', win.text())
         p.key('y')
         eq(p.main, False, 'an answer sent: back to the panels')
@@ -893,7 +894,7 @@ def test_actions() -> None:
     eq(ran, [['plan', 'edit', 'B2', '--pri', 'normal'],
              ['plan', 'drop', 'B2', 'dropped from agent-runner ui'],
              ['plan', 'move', 'Q1', 'after', 'B2'],
-             ['plan', 'confirm', 'D3', 'yes'],
+             ['plan', 'confirm', 'D3', 'Yes'],
              ['plan', 'approve', 'F4', 'A + B · recommended'],
              ['plan', 'shelve', 'D7'],
              ['plan', 'add', 'V'],
@@ -1016,16 +1017,16 @@ def test_footer() -> None:
 
 
 def test_concept_page() -> None:
-    page_ = T.concept_page(COPY)
+    page_ = U.concept_page(COPY)
     eq((page_['title'], page_['intro']), ('Lazy layout', ['Three ways to lay out the run page.']), 'title, intro')
     eq([(o['name'], o['rec']) for o in page_['options']],
        [('Option A', False), ('Option B', False), ('A + B · recommended', True)], 'the options: its headings')
     eq(page_['options'][0]['body'], ['One page the runner republishes.'], 'each with what follows it')
     styled = '<style>.t{}</style><h1>Live run page</h1><p>Four options.</p><div class="o"><div class="t">Option A' \
              '</div>The runner republishes.</div><div class="o r"><div class="t">A + C · recommended</div>Hub.</div>'
-    eq([o['name'] for o in T.concept_page(styled)['options']], ['Option A', 'A + C · recommended'],
+    eq([o['name'] for o in U.concept_page(styled)['options']], ['Option A', 'A + C · recommended'],
        "the run page's own style: an option's title in a .t element")
-    eq(T.concept_page('')['options'], [], 'no page: no options')
+    eq(U.concept_page('')['options'], [], 'no page: no options')
     p = page()
     p.key('5')
     p.key('ENTER')
@@ -1439,7 +1440,7 @@ def test_run_controls() -> None:
         eq(p.tab()[0], 'controls', 'Status has a controls tab')
         win = drawn(p, w=140)
         for b in ('[+ slot +1]', '[- slot -1]', '[= set slots]', '[P pause]', '[G go on]', '[F force past the caps]',
-                  '[C caps back on]', '[S stop (running tasks finish)]', '[X stop now]', '[U take the stop back]',
+                  '[S stop (running tasks finish)]', '[X stop now]', '[U take the stop back]',
                   '[V upgrade agent-runner]', '[Z suspend once stopped]', '[B shut down once stopped]'):
             check(b in win.text(), f'the controls tab shows {b}', win.text())
         p.key('ESC')
@@ -1761,7 +1762,7 @@ def test_answer_tab_b138() -> None:
         p.key('4')
         p.key('ENTER')
         p.key('y')
-    eq(ran, [['plan', 'confirm', 'F1', 'yes']], 'y runs plan confirm')
+    eq(ran, [['plan', 'confirm', 'F1', 'Yes']], 'y runs plan confirm')
     eq((p.msg, p.msg_ok), ('F1 ticked', True), 'the bottom line says what was done')
     eq([n['id'] for n in p.snap['needs']], ['D7'], 'F1 is off Needs you at once')
     p = page(dict(SNAP, needs=[need]))
@@ -1783,7 +1784,8 @@ def test_concept_answer_b149() -> None:
     bid = P.concept_done('K1', 'https://x.invalid/k1', todo=S.C.todo)
     eq(U.need_label(bid), 'CONCEPT', 'the build task waits on the concept')
     need = {'label': 'CONCEPT', 'id': bid, 'concept': 'K1', 'title': 'menu layout', 'what': '',
-            'url': 'https://x.invalid/k1', 'ask': 'Pick an option on the concept page', 'age': '1m'}
+            'url': 'https://x.invalid/k1', 'ask': 'Pick an option on the concept page', 'age': '1m',
+            'answers': [{'label': n, 'value': n} for n in ('Option A', 'Option B')]}
     p = page(dict(SNAP, needs=[need] + SNAP['needs'][2:]))
     ran = []
     with mock.patch.object(U, 'RUN', [lambda argv: (ran.append(argv), (0, 'approved'))[1]]), \
