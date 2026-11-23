@@ -64,8 +64,9 @@ class Env:
         self.wt = R.worktree(1, 'main')
         git(self.wt, 'checkout', '-q', '-B', 'task/F1', 'main')
 
-    def configure(self, run: str):
-        (self.repo / 'runner.toml').write_text(f'[run]\n{run}\n', encoding='utf-8')
+    def configure(self, run: str, models: str = ''):
+        (self.repo / 'runner.toml').write_text(f'[run]\n{run}\n' + (f'\n[models]\n{models}' if models else ''),
+                                               encoding='utf-8')
         R.init(self.repo)
         R.C = Config(self.repo)
 
@@ -99,6 +100,20 @@ def test_routing(env: Env):
           'a model on another provider than claude starts the harness loop, with no Remote Control', argv)
     eq(R.sids(argv), ['sid-x'], 'and its session id reads off its argv as a Claude session\'s does')
     check(R.agent_argv('p', 'sid-y', 'opus', 90, 'slot1', cwd=env.wt)[0] != argv[0], 'a claude model still runs Claude Code')
+    env.configure('', models='local = true\n\n[models.providers.acme]\nkind = "openai"\n'
+                      'url = "https://api.acme.example/v1"\nkey_env = "ACME_KEY"\n')
+    try:
+        local = R.agent_argv('p', 'sid-l', 'ollama:llama3:8b', 90, 'slot1', cwd=env.wt)
+        check(local[1].endswith('harness.mjs') and 'ollama:llama3:8b' in local and '--provider' not in local,
+              'ollama (with [models] local = true) runs in the harness loop, its model whole', local)
+        own = R.agent_argv('p', 'sid-a', 'acme:gpt-x', 90, 'slot1', cwd=env.wt)
+        given = json.loads(own[own.index('--provider') + 1]) if '--provider' in own else {}
+        check(own[1].endswith('harness.mjs') and given.get('url') == 'https://api.acme.example/v1'
+              and given.get('key_env') == 'ACME_KEY' and given.get('kind') == 'openai',
+              'a [models.providers] provider runs there too, handed its kind, url and key_env (never a key)', own)
+    finally:
+        env.configure('')
+    check(not R.on_harness('acme:gpt-x'), 'with no such provider in the config, acme:gpt-x is no harness model')
     with mock.patch.dict(R.C.run, fix_model='gemini:pro'):
         fix = R.backend().fix_cmd('fix it')
         check(fix[1].endswith('harness.mjs') and '--once' in fix and 'gemini:pro' in fix,
@@ -168,6 +183,12 @@ def test_fence(env: Env):
           'and an edit there', rs[2])
     check(not rs[3]['is_error'] and 'test' in rs[3]['content'], 'reading there is allowed', rs[3])
     has(calls[1]['messages'][-4]['text'], r'git fence', 'the model is told why')
+    from agent_runner import slots
+    with mock.patch.object(slots, 'fence_argv', lambda: [sys.executable, '-c', 'raise SystemExit(3)']):
+        p, sid, _ = env.session([{'calls': [['write', {'path': 'b.txt', 'content': 'no\n'}]]}, {'text': 'ok'}])
+    rs = results(env.entries(sid))
+    check(rs[0]['is_error'] and 'could not run' in rs[0]['content'] and not (env.wt / 'b.txt').exists(),
+          'a fence that cannot run denies the call: it never fails open', rs[0])
 
 
 def test_budget(env: Env):

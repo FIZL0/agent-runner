@@ -441,6 +441,8 @@ class Session {
     if (!this.a.fence || !FENCED[name]) return '';
     const [tool, input] = FENCED[name](args);
     const r = await run(this.a.fence, this.cwd, JSON.stringify({ tool_name: tool, tool_input: input, cwd: this.cwd }), 60);
+    // the hook always exits 0 (tools.fence_hook); any other exit is a fence that could not run: denied, not let by
+    if (r.code !== 0) return `the git fence could not run (exit code ${r.code}), so this call is denied: ${r.out.trim().slice(-300)}`;
     try {
       const out = JSON.parse(r.out.trim().split('\n').pop() || '{}').hookSpecificOutput;
       return out?.permissionDecision === 'deny' ? out.permissionDecisionReason || 'the git fence denies it' : '';
