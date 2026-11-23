@@ -1254,6 +1254,16 @@ def test_edit():
             'F105: `plan add --model haiku` stores the model on the task, and `plan ID` shows it')
         run(root, 'plan', 'edit', 'R1', '--model', 'sonnet')
         has(run(root, 'plan', 'R1').stdout, r'\| test: test_p \| model: sonnet$', 'and `plan edit --model` sets it')
+        r = run(root, 'plan', 'add', 'D', 'Copilot docs', '--files', 'q.md', '--model', 'copilot:gpt-5')
+        check(r.returncode == 2 and 'not added: --model = ' in r.stderr
+              and 'copilot provider is not supported yet' in r.stderr and 'Copilot docs' not in (root / 'plan/TODO.md').read_text(),
+              'F125: `plan add --model copilot:gpt-5` is refused with [models]\' message, nothing added', r.stderr)
+        r = run(root, 'plan', 'edit', 'R1', '--model', 'nope:m')
+        check(r.returncode == 2 and "unknown provider 'nope'" in r.stderr
+              and 'model: sonnet' in run(root, 'plan', 'R1').stdout,
+              'and `plan edit --model nope:m` too, the task unchanged', r.stderr)
+        run(root, 'plan', 'edit', 'R1', '--model', 'claude:opus')
+        has(run(root, 'plan', 'R1').stdout, r'\| model: claude:opus$', 'claude:<model> is taken')
     with tempfile.TemporaryDirectory() as tmp:
         todo = Path(tmp) / 'TODO.md'
         todo.write_text('\n'.join(['# TODO', '', '### Next', '',

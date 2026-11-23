@@ -154,7 +154,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from agent_runner import plansync
-from agent_runner.config import cfg
+from agent_runner.config import cfg, claude_model
 from agent_runner.gitops import git
 
 PROG = './run plan'  # the name in messages; a wrapper sets its own ('./kit plan')
@@ -870,6 +870,12 @@ def add_args(rest: list[str]) -> tuple[str, str, str, bool, bool]:
         no('@ needs a place (top, bottom, before ID, after ID, in SECTION)')
     if (m := vals.get('--model')) is not None and (not m.strip() or len(m.split()) > 1 or ',' in m):
         no(f'--model takes one model name (haiku, sonnet, opus), not {m!r}')
+    if m is not None and ':' in m:  # F125: another provider is refused here, not swapped for the kind's model later
+        c = cfg()
+        try:
+            claude_model(m.strip(), c.providers, c.models_local, '--model', c.run['backend'])
+        except SystemExit as e:
+            no(str(e).removeprefix('agent-runner: '))
     if last:
         vals['--after'] = ', '.join(x for x in (vals.get('--after', '').strip(', '), LAST) if x)
     keyed = ''
