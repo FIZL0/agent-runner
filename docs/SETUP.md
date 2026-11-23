@@ -267,6 +267,7 @@ The names in each module's `__all__` are the stable API (see [Versions](#version
 | `[run] flaky` | a regex naming tests a *passing* gate passed only on its own rerun; each (and each `retest` pass) gets a critical T follow-up to make it robust |
 | `[plan] kinds` | id prefix -> kind of work; listed in the prompt, and `plan add` refuses any other prefix |
 | `[plan] glossary` | the project's glossary file (`GLOSSARY.md`): the first control session seeds it, sessions add terms with `agent-runner glossary add`, every brief names it; `false` = off (no file written, briefs skip it) |
+| `[plan] release_alone` | `true`: a release (kind V) waits for everything ahead of it and runs alone, nothing beside it; `false` (the default, F100): it starts like any other task |
 | `[plan] need_files` | `plan add` refuses a line with no `files:` and no `test:` field (without it, a warning), so the run can keep it apart from the running tasks |
 | `[run] before_start` | a check that must pass before any session starts |
 | `[run] command_timeout` | seconds the gate, a retest, a `[run.join]` command, or `before_start` may run before it is stopped and counts as failed (3600) |

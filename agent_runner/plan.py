@@ -102,10 +102,11 @@ starts do not hold it, or it would never run: Parked (`--pri later`) and Stretch
 tasks blocked for the person (a `CONFIRM:`/`DECIDE:`/`BLOCKED:` ask, a concept's OK) until they reopen. `status`, `plan ID`,
 `reopen` and `waiting` say 'T5 waits for everything before it (12 open); not waiting on: R6 (needs you)'.
 
-**A release is kind V** (F38): `add V` files it at the end of Next with `after: all`, no `--after` or `--files`
-needed, and with no text it gets the default release brief (RELEASE_BRIEF). It runs alone: the run starts it
-only when nothing else runs or waits to merge, and nothing beside it. `add V --now` (or `--pri critical`) is an
-interim release: critical, at the top, no `after: all`. A release is never refused as a duplicate of another.
+**A release is kind V** (F38): `add V` files it at the end of Next, no `--after` or `--files` needed, and with
+no text it gets the default release brief (RELEASE_BRIEF). It starts like any other task (F100); with
+`[plan] release_alone` it gets `after: all` and runs alone: the run starts it only when nothing else runs or
+waits to merge, and nothing beside it. `add V --now` (or `--pri critical`) is an interim release: critical, at
+the top, no `after: all`. A release is never refused as a duplicate of another.
 
 **A block that only waits on another task says which**, as `BLOCKED: (after X, Y) why`, and `reopen` (which a
 `./run run` calls after every merge) puts it back to `[ ]` the moment X and Y are done. Without that a task
@@ -761,11 +762,12 @@ KINDS = {'B': 'bug: something that worked, or should, is broken', 'F': 'feature:
          'R': 'research: find out, measure or check; no product change', 'C': 'cleanup: refactor, remove, tidy',
          'K': 'concept: nothing is built yet; research the repo and publish an Artifact page of 2-3 options and a '
               'recommendation; the build waits for a person\'s OK',
-         'V': 'release: waits for everything ahead of it (--now: not) and runs alone, so it releases exactly '
-              'what landed; with no text it gets the default release brief'}
-# The release kind (F38): `add V` files `after: all` at the end of the leading section unless `--now` (or `--pri
-# critical`) says release now, gets RELEASE_BRIEF when given no text, and is never refused as a duplicate of
-# another release; a run starts no other task beside one (`sched.clash`)
+         'V': 'release: starts like any other task (with [plan] release_alone: waits for everything ahead of '
+              'it and runs alone); with no text it gets the default release brief'}
+# The release kind (F38): `add V` files it at the end of the leading section (with `[plan] release_alone`,
+# F100, `after: all` unless `--now` or `--pri critical` says release now), gets RELEASE_BRIEF when given no
+# text, and is never refused as a duplicate of another release; with release_alone a run starts no other task
+# beside one (`sched.clash`)
 RELEASE = 'V'
 RELEASE_BRIEF = ('Release: bump the version where the project keeps it, per its versioning rules (agent-runner\'s: '
                  'docs/SETUP.md#versions), move CHANGELOG.md\'s Unreleased entries under the new version heading, '
@@ -774,9 +776,19 @@ RELEASE_BRIEF = ('Release: bump the version where the project keeps it, per its 
 
 
 def release(tid: str) -> bool:
-    """Is `tid` a release task (kind V, F38): it waits for what is ahead of it and runs alone."""
+    """Is `tid` a release task (kind V, F38): with `[plan] release_alone` it waits for what is ahead of it and
+    runs alone."""
     m = re.match(r'[A-Za-z]+', tid or '')
     return bool(m) and m.group() == RELEASE
+
+
+def release_alone() -> bool:
+    """`[plan] release_alone` (F100): a release waits for everything ahead of it and runs alone; off by
+    default, so a release starts like any other task (release scripts cope with main moving)."""
+    try:
+        return bool(cfg().raw['plan'].get('release_alone'))
+    except (SystemExit, OSError, KeyError):
+        return False
 
 
 def open_release(ls: list[str]) -> str:
@@ -785,9 +797,9 @@ def open_release(ls: list[str]) -> str:
 
 
 def add_release(todo=None) -> str:
-    """File a release as `plan add V` with no text does (F63, `[run] auto_release`): the default brief, after
-    everything ahead of it, at the end of the leading section. Its id."""
-    return add(RELEASE, f'{RELEASE_BRIEF} | after: {ALL}', 'bottom', todo=todo)
+    """File a release as `plan add V` with no text does (F63, `[run] auto_release`): the default brief (after
+    everything ahead of it with `[plan] release_alone`, F100), at the end of the leading section. Its id."""
+    return add(RELEASE, RELEASE_BRIEF + (f' | after: {ALL}' if release_alone() else ''), 'bottom', todo=todo)
 
 
 def kinds() -> tuple[dict[str, str], bool]:
@@ -2749,7 +2761,7 @@ def _p_add(a, x):
         return 2
     if rel:
         text = text or RELEASE_BRIEF
-        if pri != 'critical' and 'after' not in fields(text + keyed):
+        if pri != 'critical' and 'after' not in fields(text + keyed) and release_alone():  # F100
             keyed += f' | after: {ALL}'  # it waits for everything ahead of it
         if not where and not given:
             where = 'bottom'  # the end of the leading section: behind the work queued there

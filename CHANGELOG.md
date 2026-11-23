@@ -4,6 +4,11 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Changed: a release (kind V) no longer runs alone. It starts like any other task: `plan add V` no longer
+  writes `after: all`, and tasks start beside a running release. `[plan] release_alone = true` keeps the old
+  behaviour (wait for everything ahead, nothing beside it). Without it, the `after: all` on a release queued
+  before this version no longer holds it either (F100).
+
 ## 0.59.0 (2026-11-22)
 
 - Breaking: the run page (`agent-runner ui` and the web page) reads a run's sessions only by the tmux tags

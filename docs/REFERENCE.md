@@ -407,13 +407,15 @@ words in a note on the task (after ` — `, not in its title), its next merge la
   docs, research, cleanup, concept, release) are suggested but not enforced. `K` is the concept flow (above).
 - `V` is a **release** (F38): the run treats every `V…` id so, so a repo with its own `[plan] kinds` lists `V`
   to file releases (and keeps the letter for nothing else). `plan add V` files it at the end of
-  Next with `after: all`, so it waits for everything ahead of it (no `--after` needed), and with no text it
-  gets the default brief: bump the version per the project's versioning rules (docs/SETUP.md#versions here),
-  move CHANGELOG Unreleased under it, commit to main, check the release workflow and `gh release view`. It
-  **runs alone**: the run starts it only when no other task is running or waiting to merge, and starts
-  nothing beside it, so it releases exactly what landed. `plan add V --now` (or `--pri critical`) is an
-  interim release: filed at the top, critical, with no `after: all`, still run alone. A release is never
-  refused as a duplicate of another release, and needs no `--files`.
+  Next, and with no text it gets the default brief: bump the version per the project's versioning rules
+  (docs/SETUP.md#versions here), move CHANGELOG Unreleased under it, commit to main, check the release
+  workflow and `gh release view`. By default (F100) it then starts like any other task, beside the running
+  ones: release scripts cope with main moving, and an `after: all` on it (one queued before F100) holds it
+  no more. With `[plan] release_alone = true`, `plan add V` adds
+  `after: all`, so it waits for everything ahead of it, and it **runs alone**: the run starts it only when
+  no other task is running or waiting to merge, and starts nothing beside it, so it releases exactly what
+  landed. `plan add V --now` (or `--pri critical`) is an interim release: filed at the top, critical, with
+  no `after: all`. A release is never refused as a duplicate of another release, and needs no `--files`.
 - **Auto release** (F63, off by default): `[run] auto_release` has the run queue a release by itself, as
   `plan add V` with no text does. `auto_release = { every = 10 }` queues one once 10 tasks have landed since
   the last release (the later of a release task's landing and the newest version tag); `{ idle = true }`
@@ -1028,6 +1030,7 @@ kinds = {}                # id prefix -> kind of work, e.g. { B = "bug", N = "ne
 need_files = false        # `plan add` refuses a line with no files: and no test: field (else it warns)
 lookup = []               # more files `plan <name>` searches for a heading, e.g. ["PLAN.md", "plan/guide/*.md"]
 context_kb = 12           # budget for what every session loads (`context`); `run` warns past it, 0 = never
+release_alone = false     # true: a release waits for everything ahead of it (`after: all`) and runs alone
 glossary = "GLOSSARY.md"  # the project's glossary (`agent-runner glossary`): seeded by the first control session,
                           # named in every brief; false = off (no file written, briefs skip it)
 

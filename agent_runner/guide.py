@@ -472,7 +472,8 @@ you, to act on a task or when the person asks which one.
   everything", "last": `--after all` (any kind): it waits for every open task above it in TODO.md,
   worked out live, tasks queued above it later included (Parked and shelved ones never hold it), so there is
   no wait list to keep up; `plan block ID --after all "…"` for one already queued. A release: `{cmd} plan add
-  V` (no text: the default release brief; `after: all` by itself, and it runs alone, nothing beside it); "release
+  V` (no text: the default release brief; it starts like any other task, or with `[plan] release_alone`
+  gets `after: all` and runs alone, nothing beside it); "release
   now", an interim one: `{cmd} plan add V --now`.
   After you queue, end with one hint line naming the new id: 'Say "do F48 here" to start it in this session
   now instead of waiting for a slot.' (with several, name them and ask which).

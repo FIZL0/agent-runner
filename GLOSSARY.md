@@ -308,3 +308,10 @@ _Said_: follow an upgrade of the run
 _On screen_: (no wording: the TUI starts again, the run page reloads)
 _In code_: follow_upgrade, followVersion, newer_version, PLACE_ENV, snapshot 'version'
 _Avoid_: hot reload, auto-refresh
+
+**Release alone**:
+A release task that waits for every task ahead of it and runs with nothing beside it; off by default, when a release starts like any other task
+_Said_: release runs alone
+_On screen_: a release runs alone
+_In code_: [plan] release_alone, plan.release_alone, sched.release_alone
+_Avoid_: exclusive release

@@ -506,7 +506,7 @@ function paneHTML(it,tab){
   else if(tab==='log'){h=S.snap.log.map(l=>esc(l)).join('\n')||'<span class="d">the run log is empty</span>'}
   else if(tab==='release'){h=`${S.snap.release?esc(S.snap.release):'<span class="d">no release is queued</span>'}
 
-A release waits for everything ahead of it, then runs alone, so it releases exactly what landed.
+A release starts like any other task; with [plan] release_alone it waits for everything ahead of it, then runs alone.
 
 <span class="btnrow"><button class="kb p" data-act="release">${K('⏎','queue a release')}</button> <button class="kb" data-act="release-now">${K('f','release now, without waiting')}</button></span>`}
   else if(tab==='chat'||tab==='feed'){const name=sessionOf(it);if(!S.feeds[name])loadFeed(name);h=feedHTML(name,tab==='chat'?!S.showTools:S.showTools);  /* a chat shows its steps as a Claude session does, v hides them; a feed folds them, v shows them */

@@ -101,7 +101,8 @@ def test_release_taken(tmp: Path):
                                        '- [ ] **V1** Release | after: all\n'
                                        '- [ ] **T1** one | files: a.py\n', encoding='utf-8')
     (repo / 'plan/DONE.md').write_text('# DONE\n', encoding='utf-8')
-    (repo / 'runner.toml').write_text('[run]\ntest = "true"\nmin_free_gb = 0\nremote = false\n'
+    (repo / 'runner.toml').write_text('[plan]\nrelease_alone = true\n\n'  # F100: the old way, on purpose
+                                      '[run]\ntest = "true"\nmin_free_gb = 0\nremote = false\n'
                                       'merge_ahead = false\n', encoding='utf-8')
     (repo / '.gitignore').write_text('.runner/\n', encoding='utf-8')
     git(repo, 'add', '-A')
@@ -128,12 +129,53 @@ def test_release_taken(tmp: Path):
     eq(S.holds(next(t for t in h.todo if t[0] == 'V1'), set(), h), None, 'a task claimed by another runner does not hold it either')
 
 
+def test_release_beside(tmp: Path):
+    print('F100: by default a release starts while other slots run, and tasks start beside it')
+    repo = tmp / 'beside'
+    repo.mkdir()
+    git(repo, 'init', '-q', '-b', 'main')
+    (repo / 'plan').mkdir()
+    (repo / 'plan/TODO.md').write_text('# TODO\n\n### Next\n\n'
+                                       '- [ ] **T1** one | files: a.py\n'
+                                       '- [ ] **T2** two | files: b.py\n'
+                                       '- [ ] **V1** Release\n'
+                                       '- [ ] **T3** three | files: c.py\n'
+                                       '- [ ] **V2** Release, queued before F100 | after: all\n', encoding='utf-8')
+    (repo / 'plan/DONE.md').write_text('# DONE\n', encoding='utf-8')
+    (repo / 'runner.toml').write_text('[run]\ntest = "true"\nmin_free_gb = 0\nremote = false\n'
+                                      'merge_ahead = false\n', encoding='utf-8')
+    (repo / '.gitignore').write_text('.runner/\n', encoding='utf-8')
+    git(repo, 'add', '-A')
+    git(repo, 'commit', '-qm', 'start')
+    R.init(repo)
+    eq(S.C.raw['plan']['release_alone'], False, '[plan] release_alone is off by default')
+    running = {1: ('T1', 'Next', {'a.py'}, set()), 2: ('T2', 'Next', {'b.py'}, set())}
+    eq(S.explain(running, set(), 'main').get('V1'), ('free', ''), 'the release is free while T1 and T2 run')
+    eq(S.explain(running, set(), 'main').get('V2'), ('free', ''), 'one queued with `after: all` too')
+    ls = (repo / 'plan/TODO.md').read_text(encoding='utf-8').splitlines()
+    eq(R.release_line(ls).splitlines()[-1], 'release: ready, nothing left to wait on (V2)', 'and status says so')
+    eq(S.choose(S.held(running, 'main'), set(), 'main')[0], 'V1', 'and a free slot starts it')
+    v = next(t for t in S.held({}, 'main').todo if t[0] == 'V1')
+    beside = {**running, 3: v}
+    eq(S.explain(beside, set(), 'main').get('T3'), ('free', ''), 'a task below it is free beside the release')
+    eq(S.choose(S.held(beside, 'main'), set(), 'main')[0], 'T3', 'and starts beside it')
+    S.C.raw['plan']['release_alone'] = True
+    try:
+        eq(S.explain(running, set(), 'main').get('V1'),
+           ('a release runs alone', 'T1 is running or waiting to merge in this run'), 'release_alone: it waits')
+        eq(S.explain(beside, set(), 'main').get('T3'), ('a release runs alone', 'V1 is releasing'),
+           'and nothing starts beside it')
+        eq('V2' in S.explain({}, set(), 'main'), False, 'and `after: all` holds a release again')
+    finally:
+        S.C.raw['plan']['release_alone'] = False
+
+
 def main() -> int:
     with tempfile.TemporaryDirectory() as tmp:
         os.environ['CLAUDE_CONFIG_DIR'] = tmp
         repo = make_repo(Path(tmp))
         return report([lambda: test_explain(repo), lambda: test_parked(repo),
-                       lambda: test_release_taken(Path(tmp))])
+                       lambda: test_release_taken(Path(tmp)), lambda: test_release_beside(Path(tmp))])
 
 
 if __name__ == '__main__':
