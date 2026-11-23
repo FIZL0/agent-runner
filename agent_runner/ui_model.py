@@ -541,7 +541,7 @@ def to_c1(text: str) -> dict:
             return {'ok': True, 'code': 0, 'out': 'sent to c1', 'argv': []}
     except Exception:  # noqa: BLE001 - no c1 to type into: a new control session takes it
         pass
-    return call(['control', '--new', '--ask', text])
+    return call(['control', '--new', '--ask', text, '--no-feed'])
 
 
 SEND = [to_c1]  # how chat and answers reach c1; a test swaps it
@@ -1017,28 +1017,9 @@ def send(name: str, text: str) -> dict:
             'argv': []}
 
 
-START_WAIT = 90.0  # s a message waits for a starting chat to take input
-
-
-def _starting(name: str, wait: bool) -> dict | None:
-    """B154: None once control session `name` takes input (`control.control_takes_input`), waiting up to START_WAIT
-    s for it; else the answer: not sent, with 'hold' when not told to `wait` (nothing typed, so try again)."""
-    from agent_runner import control as K
-    end = time.monotonic() + (START_WAIT if wait else 0)
-    while re.fullmatch(r'c\d+', name) and hidden_inbox(name) and not K.control_takes_input(int(name[1:])):
-        if time.monotonic() >= end:
-            return {'ok': False, 'code': 1, 'out': f'{name} is still starting, so it could not take the message',
-                    'argv': [], **({} if wait else {'hold': True})}
-        time.sleep(0.2)
-    return None
-
-
-def chat_to(text: str, to: str = 'c1', wait: bool = True) -> dict:
-    """F74: the chat box of any control session: `to` (c1, c6) gets `text`. B154: a chat still starting gets it once
-    it takes input; with `wait` False (the run page) the answer is 'hold' meanwhile. 'at' is when it was typed, and
+def chat_to(text: str, to: str = 'c1') -> dict:
+    """F74: the chat box of any control session: `to` (c1, c6) gets `text`. B154: 'at' is when it was typed, and
     'name' the new control session that took it when c1 was not up."""
-    if held := _starting(to, wait):
-        return held
     at = time.time()
     r = {**send(to, text), 'at': at}
     n = re.search(r'\bcontrol (\d+) ', r.get('out') or '') if to == 'c1' and r['ok'] else None
@@ -1051,7 +1032,7 @@ def new_control(ask: str = '', wait: bool = True) -> dict:
     (`--no-wait`) returns once it starts, before its link is known. B154: 'ask' and 'at' (when it was called) let the
     page keep the ask shown until the feed has it."""
     at = time.time()
-    r = call(['control', '--new', *([] if wait else ['--no-wait']), *(['--ask', ask] if ask else [])])
+    r = call(['control', '--new', *([] if wait else ['--no-wait']), *(['--ask', ask, '--no-feed'] if ask else [])])
     m = LINK.search(r['out'] or '')
     n = re.search(r'\bcontrol (\d+) ', r['out'] or '')
     return {**r, 'link': m.group(0).rstrip('.,)') if m else '', 'name': f'c{n.group(1)}' if n else '',

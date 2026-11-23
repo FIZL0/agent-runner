@@ -171,7 +171,7 @@ def test_actions(tmp: Path) -> None:
         U.act('answer', tid='D3', text='the lazy one')
         U.act('take', tid='F1')
         eq(sent, ['how is it going?', 'D3 (Write the guide): the lazy one'], 'chat and answers go to c1')
-        eq(ran[-1], ['control', '--new', '--ask', 'do F1 here'], 'B139: take starts a new control session, not c1')
+        eq(ran[-1], ['control', '--new', '--ask', 'do F1 here', '--no-feed'], 'B139: take starts a new control session, not c1')
         eq(U.act('nope')['ok'], False, 'an unknown action is an error result')
         eq(U.act('drop', tid='B2')['code'], 2, 'a missing argument is an error result')
         U.RUN[0] = lambda argv: (3, 'looks like F1')
@@ -207,7 +207,7 @@ def test_run_controls(tmp: Path) -> None:
            'stop now without its confirm runs nothing and asks')
         eq(U.run_control('stop_now', confirm='yes')['ok'], False, 'only confirm=true confirms')
         r = U.act('run_control', key='task_take', tid='F1', wait=False)
-        eq((r['ok'], sent, ran), (True, [], [['control', '--new', '--no-wait', '--ask', 'do F1 here']]),
+        eq((r['ok'], sent, ran), (True, [], [['control', '--new', '--no-wait', '--ask', 'do F1 here', '--no-feed']]),
            'B139: take back asks a new control session "do F1 here", as take does, not c1')
         ran.clear()
         for bad in ({'key': 'slots_set', 'n': '-2'}, {'key': 'slots_set', 'n': '4; rm'}, {'key': 'slots_set'},
@@ -248,7 +248,7 @@ def test_to_c1_hidden(tmp: Path) -> None:
     with mock.patch.object(K, 'control_live', return_value=0), \
             mock.patch.object(U, 'RUN', [lambda argv: (ran.append(argv), (0, 'ok'))[1]]):
         U.to_c1('hello')
-    eq(ran, [['control', '--new', '--ask', 'hello']], 'no c1: a new control session takes it')
+    eq(ran, [['control', '--new', '--ask', 'hello', '--no-feed']], 'no c1: a new control session takes it')
 
 
 def test_control_titles(tmp: Path) -> None:
@@ -415,36 +415,21 @@ def test_feed_prompt_b154(tmp: Path) -> None:
         check(not f['more'], 'a whole feed has no more')
 
 
-def test_chat_hold_b154(tmp: Path) -> None:
-    """B154: a message to a chat that cannot take input yet is not typed: the run page is told to hold it
-    (wait False), any other caller waits; new_control and chat_to say when they ran and what was asked."""
+def test_chat_at_b154(tmp: Path) -> None:
+    """B154: new_control and chat_to say when they ran and what was asked, so a page can tell its message's own entry."""
     from unittest import mock
-    from agent_runner import control as K, plat, slots
     fake_run(tmp)
-    typed, ready, real = [], [False], U.RUN[0]
-    U.RUN[0] = lambda argv: (0, 'control 3 is starting in a hidden terminal\n')
+    before, ran, real = time.time(), [], U.RUN[0]
+    U.RUN[0] = lambda argv: (ran.append(argv), (0, 'control 3 is starting in a hidden terminal\n'))[1]
     try:
-        with mock.patch.object(U, 'hidden_inbox', return_value=Path('/x/control3.in')), \
-                mock.patch.object(plat, 'WINDOWS', False), \
-                mock.patch.object(K, 'control_takes_input', side_effect=lambda n: ready[0] or None), \
-                mock.patch.object(slots, 'send_fifo', side_effect=lambda p, x: (typed.append(x), True)[1]):
-            r = U.act('chat_to', text='hi', to='c3', wait=False)
-            eq((r['ok'], r.get('hold'), typed), (False, True, []), 'held, not typed, while the chat starts')
-            with mock.patch.object(U, 'START_WAIT', 0.2):
-                r = U.act('chat_to', text='hi', to='c3')
-            eq((r['ok'], r.get('hold'), typed), (False, None, []), 'a caller that waits: not delivered, and not held')
-            check('starting' in r['out'], 'and says why', r)
-            ready[0] = True
-            before = time.time()
-            r = U.act('chat_to', text='hi', to='c3', wait=False)
-            eq((r['ok'], typed), (True, ['hi']), 'typed once the chat takes input')
-            check(before <= r['at'] <= time.time(), 'with when it was typed', r)
-            n = U.act('new_control', ask='theme ideas', wait=False)
-            eq((n['name'], n['ask']), ('c3', 'theme ideas'), 'a new chat says what it was asked')
-            check(n['at'] >= before, 'and when', n)
-        with mock.patch.object(U, 'SEND', [lambda t: {'ok': True, 'code': 0, 'argv': [],
-                                                      'out': 'control 4 is up: https://claude.ai/code/session_x'}]):
-            eq(U.act('chat_to', text='hi', to='c1').get('name'), 'c4', 'c1 off: the new chat that took the message')
+        n = U.act('new_control', ask='theme ideas', wait=False)
+        eq((n['name'], n['ask']), ('c3', 'theme ideas'), 'a new chat says what it was asked')
+        check(before <= n['at'] <= time.time(), 'and when', n)
+        U.act('quick_ask', key='needs'), U.act('concept_chat', cid='K5')
+        with mock.patch('agent_runner.control.control_live', return_value=0):
+            r = U.act('chat_to', text='hi', to='c1')
+        eq((r['name'], before <= r['at']), ('c3', True), 'c1 off: the new chat that took the message')
+        eq([a[-1] for a in ran], ['--no-feed'] * 4, 'every ask from a page or the TUI skips the feed lookup')
     finally:
         U.RUN[0] = real
 
@@ -484,13 +469,13 @@ def test_chat_and_terminal(tmp: Path) -> None:
         eq((n['ok'], n['link'], ran[-1]), (True, 'https://claude.ai/code/session_c3x', ['control', '--new']),
            'a new control session (control --new) and its claude.ai/code link')
         U.act('new_control', ask='theme ideas')
-        eq(ran[-1], ['control', '--new', '--ask', 'theme ideas'], 'with a first message')
+        eq(ran[-1], ['control', '--new', '--ask', 'theme ideas', '--no-feed'], 'with a first message')
 
         sent.clear()
         ran.clear()
         for k in ('since', 'yesterday', 'needs', 'usage'):
             U.act('quick_ask', key=k)
-        eq((sent, [r[-1] for r in ran]), ([], ['what happened since my last look?', 'what happened since yesterday?',
+        eq((sent, [r[-2] for r in ran]), ([], ['what happened since my last look?', 'what happened since yesterday?',
                                              'what needs me?', 'where are the tokens going?']),
            'B139: each quick ask starts a new control session with it (control --new --ask), not c1')
         eq(U.act('quick_ask', key='nope')['ok'], False, 'an unknown quick ask is refused')
@@ -677,7 +662,7 @@ if __name__ == '__main__':
                          in_tmp(test_actions), in_tmp(test_run_controls),
                          in_tmp(test_real_command),
                          in_tmp(test_to_c1_hidden), in_tmp(test_control_titles),
-                         in_tmp(test_queue_rows), in_tmp(test_feed), in_tmp(test_feed_prompt_b154), in_tmp(test_chat_hold_b154),
+                         in_tmp(test_queue_rows), in_tmp(test_feed), in_tmp(test_feed_prompt_b154), in_tmp(test_chat_at_b154),
                          in_tmp(test_chat_and_terminal),
                          in_tmp(test_concept_copy), in_tmp(test_concept_chat), in_tmp(test_hidden_send),
                          in_tmp(test_delete_chats), in_tmp(test_chat_list_f133)]))
