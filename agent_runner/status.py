@@ -83,17 +83,27 @@ RELEASE_TASK = re.compile(r'\W*(?:\(alone\)\s*)?(?:release\b|cut (?:a|the next) 
                           re.I)  # F130: after its `(alone)` tag
 
 
-def release_line(ls: list[str]) -> str:
-    """'release: waits on 7 of 25 tasks (T5)' for each queued release task in TODO.md's lines `ls` (one whose
-    title starts "Release" or "Cut the next version"): of the tasks it waits on (its last block's `(after …)`,
-    else its `after:` field), how many are still open. '' when none is queued. A task whose `after:` says
-    `all above` (`plan add --last`, F43) gets a line too, 'last:' unless it is a release, naming what holds it."""
-    live, out, away = P.open_ids(ls), [], None
+def release_line(ls: list[str], st: dict | None = None, row=None) -> str:
+    """F131: first 'release: ' and the release row's words (`ui_model.release_row`, built from STATE `st`, read
+    when None; `row` given: that row), as the run page and the TUI say it: 'release: V5 Release · waits for 24
+    open ahead', 'release: Next release · auto at 10 landed: 6/10'. Then 'release: waits on 7 of 25 tasks (T5)'
+    for each other queued release task in TODO.md's lines `ls` (not kind V; one whose title starts "Release"
+    or "Cut the next version"): of the tasks it waits on (its last block's `(after …)`, else its `after:`
+    field), how many are still open. '' when none is queued. A task whose `after:` says `all above` (`plan add
+    --last`, F43) gets a line too, 'last:' unless it is a release, naming what holds it."""
+    from agent_runner import ui_model as U
+    if st is None:
+        st = U._state(U.S.run_up()) if U.S.C else {}  # before `state.init`: the plan's lines alone
+    if row is None:
+        row = U.release_row(ls, st)
+    live, out, away = P.open_ids(ls), [f'release: {row["text"]}{row.get("note", "")}'] if row else [], None
     for section, box, tid, rest, i in P.iter_tasks(ls):
         last = P.LAST in P.fields(ls[i]).get('after', []) or (box in ' ~' and P._waits_all(ls, i))
+        if row and tid == row['id']:  # F131: said by the row
+            continue
         if box not in ' ~' or section.startswith(P.SKIPPED) or not (RELEASE_TASK.match(rest) or last):
             continue
-        kind = 'release' if RELEASE_TASK.match(rest) else 'last'
+        kind = 'release' if RELEASE_TASK.match(rest) or P.release(tid) else 'last'
         if P._waits_all(ls, i):  # `after: all` (F35): a count of what is still before it, not an id list
             held = [t for t in P.before_all(ls, i) if t in live and t != tid]
             person = [t for t in P.on_person_before(ls, i) if t != tid]  # B101: said, not waited on
@@ -625,6 +635,30 @@ def spend_shown(st: dict, n: str) -> str:
     return spend_text(int(got[0]), float(got[1]))
 
 
+def lately_events(log_lines: list, titles: dict[str, str]) -> list[tuple[str, str, str]]:
+    """`status`'s lately: the LATELY events of `log_lines` as `since_event` says them. F131: a release task's
+    landing names the version the merge released (the next 'released' event): 'landed: Release 1.2.0 [V5]'."""
+    evs = [e for l in log_lines if (e := as_event(l))]
+    out = []
+    for j, e in enumerate(evs):
+        if e['kind'] not in LATELY or not (m := since_event(e, titles)):
+            continue
+        tid = e.get('id') or ''
+        if e['kind'] == EV_LANDED and P.release(tid):
+            rel = []
+            for x in evs[j + 1:]:
+                if x['kind'] in (EV_LANDED, EV_PART):
+                    break  # the next landing: a release is logged right after its own (`announce_release`)
+                if x['kind'] == EV_RELEASED:
+                    rel = str(x.get('text', '')).split()
+                    break
+            if len(rel) > 1:
+                name = (titles.get(tid) or 'Release').replace('(alone) ', '').split(': ', 1)[0].strip()
+                m = (m[0], m[1], f'{SAID[EV_LANDED]}: {name} {rel[1]} [{tid}]')
+        out.append(m)
+    return out
+
+
 def status_text(up: bool, st: dict, log_lines: list[str], titles: dict[str, str], now: float, width: int = 60,
                 waiting=None, progress: str = '', wips=None) -> str:
     """`agent-runner status`, short enough for a phone: concepts waiting for the person's OK first, then the
@@ -645,7 +679,7 @@ def status_text(up: bool, st: dict, log_lines: list[str], titles: dict[str, str]
         out.append('  no task running')
     if st.get('merging'):
         out.append('merging: ' + ', '.join(f'{titles[t]} [{t}]' if titles.get(t) else t for t in st['merging']))
-    events = [m for l in log_lines[-2000:] if (e := as_event(l)) and e['kind'] in LATELY and (m := since_event(e, titles))]
+    events = lately_events(log_lines[-2000:], titles)
     if events:
         out.append('lately:')
         out += [f'  {m[0][11:16]} {m[2]}' for m in events[-5:]]
