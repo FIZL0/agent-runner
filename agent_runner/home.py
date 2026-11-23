@@ -581,6 +581,15 @@ def package_stamp() -> tuple | None:
         return None
 
 
+def end_stream(sock: socket.socket) -> None:
+    """End an event stream another thread waits on. On Windows a shutdown does not wake that thread; closing the
+    handle itself does (F152)."""
+    if os_kind() == 'windows':
+        socket.close(sock.detach())
+    else:
+        sock.shutdown(socket.SHUT_RDWR)
+
+
 class HomeServer(ThreadingHTTPServer):
     daemon_threads = True
     allow_reuse_address = True
@@ -646,7 +655,7 @@ class HomeServer(ThreadingHTTPServer):
             ended = list(self.streams.values()) if 0 < self.open <= len(self.streams) else []
         for sock in ended:
             try:
-                sock.shutdown(socket.SHUT_RDWR)
+                end_stream(sock)
             except OSError:
                 pass
         if self.restart:
@@ -812,10 +821,12 @@ def uninstall_commands(kind: str, unit: Path | None) -> list[list[str]]:
                 ['systemctl', '--user', 'daemon-reload']]
     if kind == 'macos':
         return [['launchctl', 'unload', '-w', str(unit)]]
-    return [['schtasks', '/End', '/TN', SERVICE], ['schtasks', '/Delete', '/TN', SERVICE, '/F']]
+    # F152: disabled first, so a restart under way (restart_task) cannot start the task again after /End
+    return [['schtasks', '/Change', '/TN', SERVICE, '/DISABLE'], ['schtasks', '/End', '/TN', SERVICE],
+            ['schtasks', '/Delete', '/TN', SERVICE, '/F']]
 
 
-ALLOWED_TO_FAIL = {('launchctl', 'unload'), ('schtasks', '/End')}  # nothing loaded or running yet
+ALLOWED_TO_FAIL = {('launchctl', 'unload'), ('schtasks', '/End'), ('schtasks', '/Change')}  # nothing loaded or running yet
 
 
 def sh(argv: list[str]) -> tuple[int, str]:
@@ -964,11 +975,21 @@ def status(kind: str | None = None, out=print, https=None, on=None, up=None) -> 
     return 0
 
 
+def log_without_console() -> None:
+    """Under pythonw.exe (Windows' scheduled task) there is no stdout or stderr, and code that asks them fails
+    (F152): they are Home's log then."""
+    if sys.stdout is None or sys.stderr is None:
+        config_dir().mkdir(parents=True, exist_ok=True)
+        f = open(config_dir() / 'home.log', 'a', encoding='utf-8', errors='replace', buffering=1)
+        sys.stdout, sys.stderr = sys.stdout or f, sys.stderr or f
+
+
 def serve(port: int | None = None) -> int:
+    log_without_console()
     reg = load_registry()
     port = reg['port'] if port is None else port
     try:
-        srv = HomeServer(home_token(), port, stamp=None if os.name == 'nt' else package_stamp)  # Windows: no real exec
+        srv = HomeServer(home_token(), port, stamp=package_stamp if can_restart() else None)
     except OSError as e:
         print(f'agent-runner home: cannot serve on port {port} ({e}): a run may hold it; it moves to a free '
               f'port when it next starts', file=sys.stderr)
@@ -981,7 +1002,51 @@ def serve(port: int | None = None) -> int:
         pass
     finally:
         srv.server_close()
-    return restart_home() if srv.restart else 0
+    if not srv.restart:
+        return 0
+    return restart_home_task(port) if os_kind() == 'windows' else restart_home()
+
+
+def can_restart(kind: str | None = None, exe: str | None = None) -> bool:
+    """Can this Home restart itself? On Windows, which has no real exec, only as the scheduled task, which runs
+    it with pythonw.exe (serve_argv); a `home serve` typed in a terminal runs python.exe and keeps serving."""
+    if os_kind(kind) != 'windows':
+        return True
+    return re.split(r'[\\/]', exe or sys.executable)[-1].lower() == 'pythonw.exe' and home_on()
+
+
+def restart_home_task(port: int, spawn=None) -> int:
+    """F152: Windows: a detached helper, on the package's new files, starts the scheduled task again once this
+    process is gone (restart_task). The task stays what runs Home, so `home uninstall` still ends it."""
+    from agent_runner import plat
+    code = (f'import sys; sys.path.insert(0, {str(Path(__file__).resolve().parents[1])!r}); '
+            f'from agent_runner import home; sys.exit(home.restart_task({os.getpid()}, {port}))')
+    print('Runner Home: agent-runner changed on disk; restarting its scheduled task', flush=True)
+    try:
+        # python.exe, hidden: under pythonw.exe, which has no console, each schtasks would open a window
+        py = Path(sys.executable).with_name('python.exe')
+        (spawn or plat.spawn_detached)([str(py) if py.exists() else sys.executable, '-c', code])
+    except OSError as e:
+        print(f'agent-runner home: the restart failed: {e}', file=sys.stderr)
+        return 1
+    return 0
+
+
+def restart_task(pid: int, port: int, call=sh, gone=None, check=wait_serving, tries: int = 3) -> int:
+    """F152, the helper's part: wait for the old Home (`pid`) to exit, so /End does not end this helper with it,
+    then end and run the task until Home answers: a /Run while the task still counts as running is ignored.
+    Uninstalled meanwhile: the task is disabled or deleted, /Run fails, and it stops there."""
+    from agent_runner import plat
+    end = time.monotonic() + 15
+    while not (gone or (lambda p: not plat.alive(p)))(pid) and time.monotonic() < end:
+        time.sleep(0.2)
+    for _ in range(tries):
+        call(['schtasks', '/End', '/TN', SERVICE])  # may fail: it has ended by itself
+        if call(['schtasks', '/Run', '/TN', SERVICE])[0]:
+            return 1
+        if check(port):
+            return 0
+    return 1
 
 
 def restart_home(exec_=None) -> int:

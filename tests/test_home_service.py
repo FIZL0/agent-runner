@@ -414,6 +414,10 @@ def test_restart_on_upgrade(tmp: Path) -> None:
         def shutdown(self, how):
             self.shut += 1
 
+        def detach(self):  # Windows
+            self.shut += 1
+            return -1
+
     try:
         with mock.patch.object(H, 'LOOK_EVERY', 0.0):
             eq(tick(3), 0, 'the files it started on: no restart')
@@ -460,6 +464,57 @@ def test_restart_on_upgrade(tmp: Path) -> None:
         check(H.package_stamp() != was, 'a changed page, the version the same: another stamp')
     with mock.patch.object(H, '__file__', str(tmp / 'gone' / 'home.py')):
         eq(H.package_stamp(), None, 'no package there: None')
+
+
+def test_restart_on_windows(tmp: Path) -> None:
+    print('F152: Windows: a detached helper runs the scheduled task again, and uninstall still stops Home')
+    pyw, py = 'C:\\venv\\Scripts\\pythonw.exe', 'C:\\venv\\Scripts\\python.exe'
+    check(H.can_restart('linux', '/usr/bin/python3'), 'Linux: always')
+    check(not H.can_restart('win32', pyw), 'Windows, Home not installed: no task to run')
+    H.mark_installed(True)
+    check(H.can_restart('win32', pyw), 'run by its task')
+    check(not H.can_restart('win32', py), 'typed in a terminal: it keeps serving')
+
+    spawned = []
+    eq(H.restart_home_task(8770, spawned.append), 0, 'the old Home ends well')
+    eq(spawned[0][:2], [H.sys.executable, '-c'], 'and leaves a helper')
+    has(spawned[0][2], rf'restart_task\({os.getpid()}, 8770\)', 'told its pid and port')
+    compile(spawned[0][2], 'helper', 'exec')
+
+    def no_spawn(argv):
+        raise OSError('no')
+    eq(H.restart_home_task(8770, no_spawn), 1, 'no helper started: it says so')
+
+    calls, live = [], [True, True, False]
+    call = lambda c: calls.append(c[1]) or (1 if c[1] == '/End' else 0, '')  # noqa: E731
+    eq(H.restart_task(7, 8770, call, lambda p: calls.append(p) or not live.pop(0), lambda p: True), 0, 'the helper')
+    eq(calls, [7, 7, 7, '/End', '/Run'], 'waits for the old Home to exit, then /End (which may fail) and /Run')
+    calls, up = [], [False, True]
+    eq(H.restart_task(7, 8770, call, lambda p: True, lambda p: up.pop(0)), 0, 'a /Run that came too early')
+    eq(calls, ['/End', '/Run'] * 2, 'is run again')
+    calls = []
+    eq(H.restart_task(7, 8770, call, lambda p: True, lambda p: False), 1, 'a Home that never answers')
+    eq(calls, ['/End', '/Run'] * 3, 'three times, no more')
+    calls = []
+    eq(H.restart_task(7, 8770, lambda c: calls.append(c[1]) or (1, ''), lambda p: True, lambda p: True), 1,
+       'uninstalled meanwhile: /Run fails')
+    eq(calls, ['/End', '/Run'], 'and it stops there')
+    eq([c[1] for c in H.uninstall_commands('windows', None)], ['/Change', '/End', '/Delete'],
+       'uninstall disables the task first, so no /Run lands after its /End')
+
+    with mock.patch.object(H.sys, 'stdout', None), mock.patch.object(H.sys, 'stderr', None):
+        H.log_without_console()
+        f = H.sys.stdout
+        print('no console')
+        check(f is not None and H.sys.stderr is f, 'pythonw.exe has no stdout or stderr: both are a file')
+        f.close()
+    has((tmp / 'cfg' / 'home.log').read_text(encoding='utf-8'), 'no console', "Home's log")
+    with mock.patch.object(H, 'os_kind', lambda *a: 'windows'):
+        a, b = socket.socketpair()
+        b.settimeout(10)
+        H.end_stream(a)
+        eq((a.fileno(), b.recv(1)), (-1, b''), "Windows: an event stream's handle is closed, which wakes its reader")
+        b.close()
 
 
 def test_restart_waits(tmp: Path) -> None:
@@ -839,5 +894,6 @@ def test_device_site_link(tmp: Path) -> None:
 if __name__ == '__main__':
     raise SystemExit(report([in_tmp(test_registry), in_tmp(test_rows), in_tmp(test_actions), in_tmp(test_routing),
                            in_tmp(test_terminal_tab), in_tmp(test_restart_on_upgrade), in_tmp(test_restart_waits),
+                           in_tmp(test_restart_on_windows),
                            in_tmp(test_run_link), in_tmp(test_units), in_tmp(test_https_links), in_tmp(test_qr),
                            in_tmp(test_run_moves_off_the_port), in_tmp(test_device_site_link)]))
