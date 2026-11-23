@@ -520,6 +520,8 @@ class HomeServer(ThreadingHTTPServer):
                  link=run_link, roots=projects, vitals=None):
         self.token, self._rows, self._act, self._link, self._roots = token, rows, act, link, roots
         self.vitals = vitals or home_vitals(self)
+        if self.vitals.act is None:
+            self.vitals.act = self.act_key  # the vitals page's + slot runs this Home's buttons
         super().__init__((bind, port), HomeHandler)
 
     def act_key(self, key: str, name: str, arg: str) -> dict:

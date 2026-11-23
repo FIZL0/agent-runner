@@ -264,12 +264,15 @@ def clean_fixture():
     for d in (ended, live, resumed):
         for f in (d / 'scratch.bin', d):
             os.utime(f, (old, old))
+    control = tmp / 'claude-1000' / V.slug(root) / 'f0000000-0000-0000-0000-000000000000'
+    write(control / 'notes.txt', 'c' * 1024)
+    os.utime(control, (old, old))
     other = tmp / 'claude-1000' / '-home-someone-else' / 'e0000000-0000-0000-0000-000000000000'
     write(other / 'f', 'not ours')
     os.utime(other, (old, old))
     p = V.Project(root, home, notes, 'main', up=False, busy=set(), resume={resumed.name})
     return SimpleNamespace(t=t, root=root, home=home, p=p, tmp=tmp, ended=ended, live=live, recent=recent,
-                           resumed=resumed, other=other)
+                           resumed=resumed, other=other, control=control)
 
 
 def test_clean():
@@ -278,7 +281,8 @@ def test_clean():
     with mock.patch.dict(os.environ, {'CLAUDE_CODE_TMPDIR': str(f.tmp)}):
         foot = V.footprint([f.p], live={f.live.name}, cwds=[])
     eq(foot['logs'], 1500, 'logs: the notes\' .log files and events')
-    eq(foot['tmp'], 4 * 2048, 'temp folders: only the runner worktrees\' sessions')
+    eq(foot['tmp'], 4 * 2048 + 1024, 'temp folders: the runner worktrees\' sessions and the main checkout\'s, '
+       'not another project\'s')
     eq([w['branch'] for w in foot['wip']], ['wip/B1'], 'the wip/ branches')
     check(foot['worktrees'] > 0 and foot['total'] == foot['worktrees'] + foot['tmp'] + foot['logs'], 'sized and summed')
     check(any(x['path'].endswith('plan') for x in foot['largest']), 'largest folders cover the whole run home')
@@ -292,6 +296,7 @@ def test_clean():
     check(str(f.recent) not in paths, 'not one written to in the last hour')
     check(str(f.resumed) not in paths, 'not one a resume waits for')
     check(str(f.other) not in paths, 'not another project\'s')
+    check(str(f.control) not in paths, 'not a main checkout session\'s (a quiet one looks ended): sized only')
     check(str(f.home / 's1') in paths, 'a worktree merged into main with nothing uncommitted is on it')
     check(str(f.home / 'merge') in paths, 'the merge worktree too, while the run is off')
     check(str(f.home / 's2') not in paths, 'not one with unmerged commits')
@@ -383,14 +388,21 @@ def test_push():
     pushed = []
     s = SimpleNamespace(proc=t / 'none', sample=lambda now: snap(t=int(now), cpu={'temp': 99.0}), disk=t,
                         procs={}, proc_cpu={})
+    tried = []
+    v0 = V.Vitals(lambda: [], None, tailscale=False, sampler=s, usage=lambda: {},
+                  push=lambda roots, what, host: tried.append(what) and 0)
+    v0.foot, v0.foot_at = {}, time.time()
+    v0.tick(walk=True)
+    v0.tick(walk=True)
+    eq(len(tried), 2, 'no run up took it: tried again on the next sample, so a run started later hears it')
     v = V.Vitals(lambda: [], t / 'store', tailscale=False, sampler=s, usage=lambda: {},
-                 push=lambda roots, what, host: pushed.append(what))
+                 push=lambda roots, what, host: pushed.append(what) or 1)
     v.foot, v.foot_at = {}, time.time()
     v.tick(walk=True)
     v.tick(walk=True)
     eq(pushed, ['box: CPU at 99°C (over 90°C)'], 'pushed once over two samples')
     v2 = V.Vitals(lambda: [], t / 'store', tailscale=False, sampler=s, usage=lambda: {},
-                  push=lambda roots, what, host: pushed.append(what))
+                  push=lambda roots, what, host: pushed.append(what) or 1)
     v2.foot, v2.foot_at = {}, time.time()
     v2.tick(walk=True)
     eq(len(pushed), 1, 'and not again after Home restarts')
@@ -424,7 +436,8 @@ def test_home_calls():
         acted = []
         peer_v = V.Vitals(lambda: [], None, tailscale=False, sampler=fixed_sampler('rycs', t), usage=lambda: {},
                           sessions=lambda: [], push=lambda *a: 0)
-        peer = H.serve_home('PEERTOKEN', 0, '127.0.0.1', roots=lambda: [], rows=lambda: [], vitals=peer_v,
+        (t / 'proj').mkdir()
+        peer = H.serve_home('PEERTOKEN', 0, '127.0.0.1', roots=lambda: [t / 'proj'], rows=lambda: [], vitals=peer_v,
                             act=lambda root, name, arg: acted.append((root, name, arg)) or {'ok': True, 'out': 'ok'})
         link = f'http://127.0.0.1:{peer.server_address[1]}/?t=PEERTOKEN'
         links = [link, 'http://127.0.0.1:1/?t=NOBODY']
@@ -452,7 +465,12 @@ def test_home_calls():
             code, dev = get(u + '/dev/local/vitals/device?t=HT')
             eq((code, dev['host']), (200, 'desk'), 'and this machine\'s')
             code, res = get(u + f'/dev/{pid}/act?t=HT', {'project': 'x', 'name': 'slots', 'arg': '+1'})
-            eq(code, 404, '+ slot goes to the peer, which knows no project x')
+            eq(code, 404, 'a project the peer does not list: refused there')
+            code, res = get(u + f'/dev/{pid}/act?t=HT', {'project': 'proj', 'name': 'slots', 'arg': '+1'})
+            eq((code, acted), (200, [(t / 'proj', 'slots', '+1')]), '+ slot on a peer runs `slots +1` in its project')
+            code, res = get(u + '/dev/local/act?t=HT', {'project': 'proj', 'name': 'slots', 'arg': '+1'})
+            eq(code, 200, 'and on this machine through its own buttons')
+            eq(res['ok'], False, 'which says when it lists no such project')
             code, res = get(u + f'/dev/{pid}/vitals/clean?t=HT', {'items': ['tmp:/home']})
             eq((code, res['removed']), (200, []), 'Clean on a peer: an id not on its list removes nothing')
             eq(get(u + '/dev/nope/vitals/device?t=HT')[0], 404, 'an unknown device')

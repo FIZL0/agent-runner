@@ -530,6 +530,8 @@ def point(snap: dict) -> dict:
     g = (snap.get('gpus') or [{}])[0]
     if 'pct' in g:
         p['gpu'] = g['pct']
+    if 'temp' in g:
+        p['gtemp'] = g['temp']
     if (m := snap.get('mem')) and m['total']:
         p['mem'] = round(100 * (m['total'] - m['avail']) / m['total'], 1)
     if d := snap.get('disk'):
@@ -707,9 +709,13 @@ def tmp_roots(projects: list[Project]) -> list[Path]:
     return out
 
 
-def session_folders(projects: list[Project], roots: list[Path]) -> list[tuple[Project, Path]]:
-    """Each session temp folder of a runner worktree (s1…, merge, fix…) of these projects."""
-    mine = {slug(p.home / d.name): p for p in projects for d in _dirs(p.home) if WORKTREE.fullmatch(d.name)}
+def session_folders(projects: list[Project], roots: list[Path], main: bool = False) -> list[tuple[Project, Path]]:
+    """Each session temp folder of a runner worktree (s1…, merge, fix…) of these projects; `main`: those of
+    the main checkouts instead (control sessions, and the person's own sessions there)."""
+    if main:
+        mine = {slug(p.root): p for p in projects}
+    else:
+        mine = {slug(p.home / d.name): p for p in projects for d in _dirs(p.home) if WORKTREE.fullmatch(d.name)}
     out = []
     for root in roots:
         for proj in root.glob('claude-*/*'):
@@ -754,6 +760,13 @@ def footprint(projects: list[Project], live: set[str] | None, now: float | None 
         out['tmp'] += n
         sized.append({'path': str(d), 'size': n})
         temps.append((p, d, n))
+    for p, d in session_folders(projects, tmp_roots(projects), main=True):
+        # control sessions' temp folders count in the size and the 5 GB alert, but Clean never lists them: a
+        # person's own session in the main checkout names no session id on its command line, so a quiet one
+        # cannot be told from an ended one
+        n = size(d)
+        out['tmp'] += n
+        sized.append({'path': str(d), 'size': n})
     out['largest'] = sorted(sized, key=lambda x: -x['size'])[:8]
     out['total'] = out['worktrees'] + out['tmp'] + out['logs']
     out['clean'] = clean_plan(trees, temps, out['wip'], live, now, written, cwds)
@@ -856,7 +869,7 @@ def session_rows(projects: list[dict], procs: dict, cpu: dict[int, float]) -> li
     out = []
     for p in projects:
         for r in p.get('rows') or []:
-            if not r.get('pid') or not (re.fullmatch(r'[sc]\d+', r.get('name', '')) or r.get('name') == 'feed'):
+            if not r.get('pid') or not re.fullmatch(r'[sc]\d+', r.get('name', '')):
                 continue
             if (u := tree_usage(int(r['pid']), procs, cpu)) is None:
                 continue
@@ -1046,8 +1059,13 @@ class Vitals:
         so the first page load does not wait for it)."""
         now = time.time() if now is None else now
         projs = self.projects()
-        if projs:
-            self.sampler.disk = projs[0].home if projs[0].home.exists() else self.sampler.disk
+        if homes := [p.home for p in projs if p.home.exists()]:  # the run home on the fullest disk
+            def free(h: Path) -> float:
+                try:
+                    return shutil.disk_usage(h).free
+                except OSError:
+                    return float('inf')
+            self.sampler.disk = min(homes, key=free)
         snap = self.sampler.sample(now)
         self.history.add(point(snap))
         self.snap = snap
@@ -1084,9 +1102,11 @@ class Vitals:
         fresh, self.said = new_alerts(found, self.said)
         for a in fresh:
             try:
-                self.push([p.root for p in projs], a['what'], self.snap.get('host', ''))
+                got = self.push([p.root for p in projs], a['what'], self.snap.get('host', ''))
             except Exception:  # noqa: BLE001 - a push that fails must not stop the sampling
-                pass
+                got = 0
+            if not got:  # no run up to feed it: try again on the next sample, so a run started later hears it
+                self.said.discard(a['id'])
         if self.said_file and fresh:
             try:
                 self.said_file.write_text(json.dumps(sorted(self.said)), encoding='utf-8')
@@ -1122,7 +1142,7 @@ class Vitals:
             return out
         snap = self.snap
         out['machine'] = {k: snap[k] for k in ('cpu', 'mem', 'disk', 'gpus', 'sensors', 'top') if k in snap}
-        out['spark'] = {k: self.history.series(k) for k in ('cpu', 'gpu', 'mem', 'disk', 'temp')}
+        out['spark'] = {k: self.history.series(k) for k in ('cpu', 'gpu', 'mem', 'disk', 'temp', 'gtemp')}
         out['spark'] = {k: v for k, v in out['spark'].items() if any(x is not None for x in v)}
         foot = self.foot or {}
         out['footprint'] = {k: foot.get(k) for k in ('worktrees', 'tmp', 'logs', 'wip', 'total', 'largest')}
@@ -1317,7 +1337,8 @@ function render(d){document.getElementById('h').textContent=d.host+(d.here?' · 
  const m=d.machine||{},sp=d.spark||{},mm=[];
  if(m.cpu){const c=m.cpu;mm.push(`<div class="m"><span>CPU</span>${c.pct!=null?bar(c.pct):'<span></span>'}<span class="r">${c.pct!=null?c.pct.toFixed(0)+'%':''} ${c.threads?c.threads+' thr':''} ${c.load!=null?'load '+c.load:''}</span></div>${spark(sp.cpu)}`);
   if(c.temp!=null)mm.push(`<div class="m"><span>Temp</span>${bar(c.temp)}<span class="r">${c.temp.toFixed(0)}°C</span></div>${spark(sp.temp)}`)}
- (m.gpus||[]).forEach((g,i)=>{mm.push(`<div class="m"><span>GPU</span>${g.pct!=null?bar(g.pct):'<span></span>'}<span class="r">${g.pct!=null?g.pct.toFixed(0)+'%':''} ${g.temp!=null?g.temp.toFixed(0)+'°':''} ${g.vram_total?sz(g.vram_used)+'/'+sz(g.vram_total):''}</span></div><div class="s">${esc(g.name)}</div>${i==0?spark(sp.gpu):''}`)});
+ (m.gpus||[]).forEach((g,i)=>{mm.push(`<div class="m"><span>GPU</span>${g.pct!=null?bar(g.pct):'<span></span>'}<span class="r">${g.pct!=null?g.pct.toFixed(0)+'%':''} ${g.temp!=null?g.temp.toFixed(0)+'°':''} ${g.vram_total?sz(g.vram_used)+'/'+sz(g.vram_total):''}</span></div><div class="s">${esc(g.name)}</div>${i==0?spark(sp.gpu):''}`);
+  if(i==0&&g.temp!=null)mm.push(`<div class="m"><span>GPU temp</span>${bar(g.temp)}<span class="r">${g.temp.toFixed(0)}°C</span></div>${spark(sp.gtemp)}`)});
  if(m.mem){const u=m.mem.total-m.mem.avail;mm.push(`<div class="m"><span>Memory</span>${bar(100*u/m.mem.total)}<span class="r">${sz(u)} / ${sz(m.mem.total)}</span></div>${spark(sp.mem)}`)}
  if(m.disk){mm.push(`<div class="m"><span>Disk</span>${bar(100*(1-m.disk.free/m.disk.total))}<span class="r">${sz(m.disk.free)} free</span></div><div class="s">${esc(m.disk.path)} · free GB, last 24 h</div>${spark(sp.disk)}`)}
  let more='';if(m.cpu&&m.cpu.cores)more+='<div class="s" style="margin-top:8px">Per core</div>'+m.cpu.cores.map((c,i)=>`<div class="m"><span>${i}</span>${bar(c)}<span class="r">${c.toFixed(0)}%</span></div>`).join('');
