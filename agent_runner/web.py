@@ -14,7 +14,9 @@ listens on 127.0.0.1 only, on a free port that only Home opens (`start_web`); th
                                  setting_device …; F93 `talk`, the Talk view's words to its own control
                                  session), its result as JSON
     GET  /terminal/NAME?t=TOKEN  where slot NAME's (or c1's, or cN's) own terminal is served by ttyd (`attach NAME`),
-                                 started on demand; without ttyd, how to install it (on Windows, the feed only)
+                                 started on demand; without one, why (no ttyd, not up), its session link and whether
+                                 it can be resumed
+    GET  /t/TOKEN/NAME/...       F114: that terminal, ttyd's page and WebSocket, on this address (session_frame.py)
     GET  /feed/NAME?t=TOKEN      F74: session NAME's transcript as say/you/tool/out entries (`ui_model.feed`)
     GET  /settings?t=TOKEN       F97: every setting, its value, source and default (`ui_model.settings`)
     GET  /task/ID?t=TOKEN        F85: task ID's whole text (`plan ID`), for its row folded open
@@ -27,7 +29,7 @@ listens on 127.0.0.1 only, on a free port that only Home opens (`start_web`); th
 
 Every request carries the token (`?t=`, or an `X-Token` header): the page can type into sessions, so one without
 it is refused. The token is made once per project (<notes>/web.token) and printed by `status` and in the run
-log with the page's address. Standard library only; ttyd is optional (the terminal tab says how to install it).
+log with the page's address. Standard library only; ttyd is optional (a chat says how to install it).
 """
 
 from __future__ import annotations
@@ -41,13 +43,14 @@ import secrets
 import shutil
 import socket
 import subprocess as sp
+import tempfile
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
-from agent_runner import home_screen, speech
+from agent_runner import home_screen, plat, session_frame, speech
 from agent_runner import state as S
 from agent_runner import ui_model as U
 
@@ -58,9 +61,9 @@ PAGE_TEXT = PAGE.read_text(encoding='utf-8')
 BOOT = secrets.token_hex(4)  # B164: this process, so the page knows when the run restarted
 TICK = 2.0  # s between snapshots the events stream compares
 PING = 15.0  # s of no change before the stream sends a keep-alive comment
-TTYD_INSTALL = ('ttyd is not installed, so the terminal tab cannot show a session\'s terminal. Install it on this machine '
-                '(Arch: pacman -S ttyd; Debian/Ubuntu: apt install ttyd; macOS: brew install ttyd) and open '
-                'the tab again.')
+TTYD_INSTALL = ('ttyd is not installed, so a chat cannot show the session. Install it on the machine the run is on '
+                '(Arch: pacman -S ttyd; Debian/Ubuntu: apt install ttyd; macOS: brew install ttyd; Windows: winget '
+                'install tsl0922.ttyd) and open the chat again.')
 
 
 # --- the token and the address ----------------------------------------------------------------------------------
@@ -351,7 +354,7 @@ padding:32px max(16px,env(safe-area-inset-left,0px))}}h1{{font-size:1.3rem;margi
 # --- c1 and the terminals ---------------------------------------------------------------------------------------
 
 def socket_of(name: str) -> str:
-    """C26: the attach socket of session `name` (s2, c1, c6) as a path, '' when it has none (not up, Windows)."""
+    """C26: the attach socket of session `name` (s2, c1, c6) as a path, '' when it has none (not up)."""
     try:
         from agent_runner.attach import session_socket
         sock = session_socket(name)
@@ -360,17 +363,76 @@ def socket_of(name: str) -> str:
         return ''
 
 
-FEED_ONLY = ('On Windows {name} runs in a hidden console, so it has no terminal to show here: its feed and its '
-             'session link show it.')
-
-
 def terminal_fallback(name: str) -> dict:
-    """F74: the terminal tab without ttyd: how to install ttyd (`mode` 'install'; C24: ttyd is the only Terminal
-    view, and the chat works meanwhile); on Windows the feed only."""
-    if U.terminal_mode() == 'feed':
-        return {'ok': False, 'mode': 'feed', 'out': FEED_ONLY.format(name=name), 'feed': f'feed/{name}'}
-    return {'ok': False, 'mode': 'install', 'feed': f'feed/{name}',
-            'out': TTYD_INSTALL + f' Until then, the chat shows {name} and takes your messages.'}
+    """F74: a chat without ttyd: how to install it (`mode` 'install'); the message box works meanwhile."""
+    return {'ok': False, 'mode': 'install', 'out': TTYD_INSTALL + f' Until then, messages still reach {name}.'}
+
+
+def session_live(name: str) -> bool:
+    """F114: does session `name` run (its marker names a live process)?"""
+    from agent_runner.slots import marker_pid
+    try:
+        pid = marker_pid(S.C.notes(f'{"control" if name[0] == "c" else "slot"}{name[1:]}.live'))
+        return bool(pid and plat.alive(pid))
+    except Exception:  # noqa: BLE001 - no notes dir
+        return False
+
+
+def headless(name: str) -> bool:
+    """F114: a slot of the stream engine: it has no terminal, only a stream of events."""
+    try:
+        return bool(json.loads(S.C.notes(f'slot{name[1:]}.job').read_text(encoding='utf-8')).get('stream'))
+    except Exception:  # noqa: BLE001 - no job, not JSON
+        return False
+
+
+def resumable(name: str) -> str:
+    """F114: the conversation an ended chat (cN, not c1) can be resumed with, as a session id; '' for none."""
+    if not re.fullmatch(r'c\d+', name) or name == 'c1':
+        return ''
+    try:
+        from agent_runner.control import control_kept_sid
+        from agent_runner.slots import transcript
+        sid = control_kept_sid(int(name[1:]))
+        return sid if sid and transcript(sid) else ''
+    except Exception:  # noqa: BLE001 - no notes dir
+        return ''
+
+
+def no_session(name: str) -> dict:
+    """F114: why session `name` has no terminal to show (`mode` 'none'): `live` (it runs), its claude.ai/code `link`
+    and whether it can be resumed."""
+    if not re.fullmatch(r'[cs]\d+', name):
+        return {'ok': False, 'mode': 'none', 'live': False, 'out': f'{name} is not a session.', 'link': '', 'resume': False}
+    live, sid = session_live(name), '' if name == 'c1' else resumable(name)
+    if live and name[0] == 's' and headless(name):
+        out = f'{name} runs headless ([run] engine = "stream"), so it has no terminal to show. Messages still reach it.'
+    elif live and plat.WINDOWS and not plat.has_conpty():
+        out = f'{name} runs in a hidden console: showing it here takes Windows 10 1809 or later.'
+    elif live:
+        out = f'{name} is up, but there is no terminal to attach to. If it just started, it comes in a moment.'
+    else:
+        out = f'{name} is not up, so there is no session to show.'
+    link = U._bridge_link(sid or U.session_sid(name))
+    return {'ok': False, 'mode': 'none', 'live': live, 'out': out, 'link': link, 'resume': bool(sid) and not live}
+
+
+def resume_chat(chat: str) -> dict:
+    """F114: Resume on an ended chat: its conversation comes up again under its number (`control N --reopen`)."""
+    bad = {'ok': False, 'code': 2, 'argv': []}
+    if not re.fullmatch(r'c\d+', str(chat)) or chat == 'c1':
+        return {**bad, 'out': f'resume_chat: a chat (c2 and up), not {chat!r}'}
+    if session_live(chat):
+        return {'ok': True, 'code': 0, 'out': f'{chat} is up already', 'argv': [], 'name': chat}
+    if not (sid := resumable(chat)):
+        return {**bad, 'out': f'{chat} has no conversation left to resume'}
+    from agent_runner.control_reopen import reopen_control
+    where = reopen_control(int(chat[1:]), sid)
+    return {'ok': bool(where), 'code': 0 if where else 1, 'argv': [], 'name': chat,
+            'out': f'{chat} is resuming' if where else f'{chat} could not be resumed (the run log says why)'}
+
+
+U.ACTIONS['resume_chat'] = resume_chat
 
 
 WEB_REFUSED = {'keys'}  # C24: actions the web does not take (typing into a pane went with the built-in view)
@@ -474,52 +536,75 @@ def slot_diff(name: str) -> dict:
 
 
 class Terminals:
-    """One ttyd per session, started the first time its tab opens, on the page's port+1, +2, …, on the page's own
-    interface (F165: 127.0.0.1 when only Home opens the page, which tunnels to it); each serves only under
-    /t/TOKEN/NAME/, so the address is as secret as the page's. C26: it runs `attach NAME` for each browser,
-    a client of the session's own socket (F88) like any other, so watching it moves no other client."""
+    """One ttyd per session, started the first time it is opened, on 127.0.0.1 and a free port of its own; F114: the
+    run page serves it under /t/TOKEN/NAME/ on its own address (`Handler.session`), so https and Runner Home reach
+    it, and the address is as secret as the page's. C26: it runs `attach NAME` for each browser, a client of the
+    session's own socket (F88) like any other; the session has the smallest of its clients' sizes (`attach.Viewers`)."""
 
     def __init__(self, token: str, port: int, bind: str):
-        self.token, self.port, self.bind = token, port, bind
+        self.token, self.port, self.bind = token, port, LOCAL
         self.procs: dict[str, tuple[sp.Popen, int, str]] = {}
         self.lock = threading.Lock()
 
     def argv(self, name: str, sock: str, port: int) -> list[str]:
         from agent_runner.config import runner_cmd
-        return ['ttyd', '-W', '-p', str(port), *(['-i', self.bind] if self.bind not in ('', '0.0.0.0') else []),
-                '-b', f'/t/{self.token}/{name}', *runner_cmd(), 'attach', name]
+        return ['ttyd', '-W', '-p', str(port), '-i', LOCAL, '-b', f'/t/{self.token}/{name}',
+                *session_frame.ttyd_options(session_frame.session_look()), *runner_cmd(), 'attach', name]
 
     def ended(self, name: str, port: int, err: str) -> str:
-        if self.bind == LOCAL:  # F165: a port only Home opens is never named; ttyd's own error has it
-            return f'ttyd for {name} ended at once: ' + re.sub(rf'( to)?( port:?)? *\b{port}\b', '', err)
-        return f'ttyd for {name} ended at once (port {port}): {err}'
+        # F165: a port nobody opens is never named; ttyd's own error has it
+        return f'ttyd for {name} ended at once: ' + re.sub(rf'( to)?( port:?)? *\b{port}\b', '', err)
 
     def open(self, name: str) -> dict:
-        if U.terminal_mode() == 'feed' or not shutil.which('ttyd'):
+        """Where the page finds session `name`: {'ok', 'port' (the page's own), 'path'}, or why not."""
+        if U.terminal_mode() == 'install':
             return terminal_fallback(name)
         sock = socket_of(name)
-        if not sock:
-            return {'ok': False, 'mode': 'feed', 'feed': f'feed/{name}',
-                    'out': f'{name} is not up, so there is nothing for ttyd to show.'}
+        from agent_runner.attach import reachable
+        if not sock or name[0] == 's' and headless(name) or not reachable(Path(sock)):
+            return no_session(name)
+        got = self.ttyd(name, sock)
+        return got if not got['ok'] else {'ok': True, 'port': self.port, 'path': f'/t/{self.token}/{name}/'}
+
+    def ttyd(self, name: str, sock: str = '') -> dict:
+        """The port session `name`'s ttyd listens on, started when it is not up: {'ok', 'port'} or {'ok', 'out'}."""
+        sock = sock or socket_of(name)
         with self.lock:
             p = self.procs.get(name)
-            if p and p[0].poll() is None and p[2] == sock:
-                port = p[1]
-            else:
-                if p and p[0].poll() is None:
-                    p[0].terminate()
-                self.procs.pop(name, None)
-                used = {v[1] for v in self.procs.values() if v[0].poll() is None}
-                port = next(x for x in range(self.port + 1, self.port + 200) if x not in used)
+            if p and p[0].poll() is None and (p[2] == sock or not sock):
+                return {'ok': True, 'port': p[1]}
+            if not sock or U.terminal_mode() == 'install':
+                return no_session(name) if not sock else terminal_fallback(name)
+            if p and p[0].poll() is None:
+                p[0].terminate()
+            self.procs.pop(name, None)
+            with socket.create_server((LOCAL, 0)) as s:
+                port = s.getsockname()[1]
+            err = tempfile.TemporaryFile()  # not a pipe: nobody reads it while ttyd runs
+            kw = {'creationflags': plat.CREATE_NO_WINDOW} if plat.WINDOWS else {'start_new_session': True}
+            try:
                 proc = sp.Popen(self.argv(name, sock, port), cwd=str(S.ROOT), stdin=sp.DEVNULL, stdout=sp.DEVNULL,
-                                stderr=sp.PIPE, start_new_session=True)
-                try:  # one that cannot start (its port taken) ends at once: say so, not a dead frame
-                    err = proc.communicate(timeout=0.8)[1].decode(errors='replace').strip()
-                    return {'ok': False, 'out': self.ended(name, port, err[-300:])}
-                except sp.TimeoutExpired:
-                    pass
-                self.procs[name] = (proc, port, sock)
-        return {'ok': True, 'port': port, 'path': f'/t/{self.token}/{name}/'}
+                                stderr=err, env={**os.environ, 'AGENT_RUNNER_WEB': '1'}, **kw)
+            except OSError as e:
+                err.close()
+                return {'ok': False, 'mode': 'none', 'live': True, 'out': f'ttyd for {name} did not start: {e}'}
+            end = time.monotonic() + 5
+            while True:  # one that cannot start ends at once: say so, not a dead frame
+                if proc.poll() is not None:
+                    err.seek(0)
+                    said = err.read().decode(errors='replace').strip()
+                    err.close()
+                    return {'ok': False, 'mode': 'none', 'live': True, 'out': self.ended(name, port, said[-300:])}
+                try:
+                    socket.create_connection((LOCAL, port), timeout=0.5).close()
+                    break
+                except OSError:
+                    if time.monotonic() > end:
+                        break
+                    time.sleep(0.05)
+            err.close()  # ttyd has its own copy
+            self.procs[name] = (proc, port, sock)
+            return {'ok': True, 'port': port}
 
     def close(self) -> None:
         for proc, _, _ in self.procs.values():
@@ -586,7 +671,8 @@ def concept_options(path: str) -> list[dict]:
 
 
 TTYD_PACKAGES = (('pacman', 'sudo pacman -S ttyd'), ('apt', 'sudo apt install ttyd'), ('dnf', 'sudo dnf install ttyd'),
-                 ('zypper', 'sudo zypper install ttyd'), ('brew', 'brew install ttyd'))
+                 ('zypper', 'sudo zypper install ttyd'), ('brew', 'brew install ttyd'),
+                 ('winget', 'winget install tsl0922.ttyd'), ('scoop', 'scoop install ttyd'))
 
 
 def ttyd_install_cmd(which=shutil.which) -> str:
@@ -597,8 +683,9 @@ def ttyd_install_cmd(which=shutil.which) -> str:
 def with_extras(snap: dict) -> dict:
     """F79: what the run app shows beyond the snapshot: this machine's name, and each concept's options."""
     snap['machine'], snap['boot'] = socket.gethostname(), BOOT
+    snap['session_look'] = session_frame.session_look()  # F114: the ground of a session's colours
     if snap.get('terminal_mode') == 'install':
-        snap['ttyd_install'] = ttyd_install_cmd()  # B120: the page's one line on how to get the terminal tab
+        snap['ttyd_install'] = ttyd_install_cmd()  # B120: the page's one line on how to get it
     for c in snap.get('concepts') or []:
         c['options'] = concept_options(c.get('copy', ''))
     snap['home'] = home_address()  # B153: the project name top-left links to Runner Home
@@ -801,6 +888,8 @@ class Handler(BaseHTTPRequestHandler):
             q = parse_qs(urlsplit(self.path).query)
             code, said = pick(*((q.get(k) or [''])[0] for k in ('id', 'o', 'k')))
             return self.send(code, pick_page(code, said), 'text/html; charset=utf-8')
+        if path.startswith('/t/'):
+            return self.session(path)
         if not self.allowed():
             return self.refuse()
         if path in ('/', '/index.html'):
@@ -867,6 +956,21 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(503, json.dumps({'ok': False, 'out': 'that action is still running'}))
         self.server.snaps.at = 0.0  # the next snapshot shows what the action changed
         self.send(200, json.dumps(r, ensure_ascii=False))
+
+    def session(self, path: str) -> None:
+        """F114: /t/TOKEN/NAME/REST, session NAME's own terminal (ttyd's page and calls under its path, its WebSocket).
+        The token rides in the path, since ttyd's page drops the query."""
+        bits = path.split('/', 4)  # ['', 't', TOKEN, NAME, REST]
+        if len(bits) < 5 or not hmac.compare_digest(bits[2].encode(), self.server.token.encode()):
+            return self.refuse()
+        name = bits[3]
+        if not re.fullmatch(r'[cs]\d+', name):
+            return self.send(404, json.dumps({'ok': False, 'out': f'no such session: {name}'}))
+        got = self.server.terms.ttyd(name)
+        if not got['ok']:
+            return self.send(502, f'<pre>{html.escape(got["out"])}</pre>', 'text/html; charset=utf-8')
+        query = urlsplit(self.path).query
+        session_frame.frame(self, got['port'], path + (f'?{query}' if query else ''), name, session_frame.session_look())
 
     def upload(self) -> None:
         """F79: an attachment from the message box: the body as is, `name` in the query (`save_upload`)."""
@@ -1101,6 +1205,6 @@ def start_web() -> WebServer | None:
     shown += [x for x in urls if x not in shown]
     closed = '' if shown else closed_line()
     S.log(f'run page: {" or ".join(shown) or closed}' +
-          ('' if shutil.which('ttyd') else ' (no terminal tab: ttyd is not installed)'))
+          ('' if shutil.which('ttyd') else ' (ttyd is not installed, so a chat cannot show its session)'))
     threading.Thread(target=HomeWatch(srv, closed).loop, name='run-page-home', daemon=True).start()
     return srv

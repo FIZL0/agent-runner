@@ -31,6 +31,7 @@ def _kernel32():
             ('ReadFile', w.BOOL, [H, P, D, P, P]),
             ('WriteFile', w.BOOL, [H, P, D, P, P]),
             ('CreatePseudoConsole', ctypes.c_long, [w._COORD, H, H, D, P]),
+            ('ResizePseudoConsole', ctypes.c_long, [H, w._COORD]),
             ('ClosePseudoConsole', None, [H]),
             ('InitializeProcThreadAttributeList', w.BOOL, [P, D, D, P]),
             ('UpdateProcThreadAttribute', w.BOOL, [P, D, ctypes.c_size_t, P, ctypes.c_size_t, P, P]),
@@ -166,6 +167,12 @@ class ConPty:
         """Type `data` into the session; returns at once."""
         if data:
             self.typed.put(data)
+
+    def resize(self, rows: int, cols: int) -> None:
+        """F114: the console's size (an attached terminal's)."""
+        from ctypes import wintypes
+        if hr := self.k.ResizePseudoConsole(self.pc, wintypes._COORD(cols, rows)):
+            raise OSError(f'ResizePseudoConsole failed (0x{hr & 0xffffffff:08x})')
 
     def wait(self, seconds: float) -> int | None:
         """The exit code once the process has ended, None when it has not within `seconds`."""

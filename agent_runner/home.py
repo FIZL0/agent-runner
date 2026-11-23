@@ -54,6 +54,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlencode, urlsplit
 
 from agent_runner import home_screen
+from agent_runner.session_frame import tunnel
 
 PORT = 8770
 SERVICE = 'agent-runner-home'  # the systemd unit's and the scheduled task's name
@@ -505,8 +506,8 @@ class HomeHandler(BaseHTTPRequestHandler):
         self.forward(method, root, port, target)
 
     def terminal(self, root: Path, port: int, token: str, rest: str, query: str) -> None:
-        """F107: /p/KEY/t/TOKEN/NAME/REST is session NAME's terminal tab: the run's ttyd for it (started on demand
-        by the run's /terminal/NAME, on the run's port+N), at its own path, its WebSocket included."""
+        """F107: /p/KEY/t/TOKEN/NAME/REST is session NAME's own terminal: where the run serves it (its /terminal/NAME
+        says, and starts its ttyd), its WebSocket included. F114: that is the run page's own address."""
         bits = rest.split('/', 3)  # ['t', TOKEN, NAME, REST]
         if len(bits) < 4:
             return self.send(404, {'ok': False, 'out': 'a terminal address ends in a slash: t/TOKEN/NAME/'})
@@ -530,47 +531,8 @@ class HomeHandler(BaseHTTPRequestHandler):
         self.forward(self.command, root, int(got['port']), target)
 
     def tunnel(self, root: Path, port: int, target: str) -> None:
-        """A WebSocket upgrade: the request goes on as it came (its path swapped), then bytes flow both ways
-        until either side ends."""
-        try:
-            up = socket.create_connection(('127.0.0.1', port), timeout=10)
-        except OSError as e:
-            return self.send(502, {'ok': False, 'out': f'{root.name}\'s terminal did not answer: {e}'})
-        head = [f'{self.command} {target} HTTP/1.1', f'Host: 127.0.0.1:{port}',
-                *(f'{k}: {v}' for k, v in self.headers.items() if k.lower() not in ('host', 'x-token'))]
-        self.close_connection = True
-        try:
-            up.sendall(('\r\n'.join(head) + '\r\n\r\n').encode('latin-1'))
-            up.settimeout(None)
-        except OSError:
-            up.close()
-            return
-
-        def browser_to_run() -> None:
-            try:
-                while data := self.rfile.read1(65536):
-                    up.sendall(data)
-            except (OSError, ValueError):
-                pass
-            try:
-                up.shutdown(socket.SHUT_WR)
-            except OSError:
-                pass
-
-        pump = threading.Thread(target=browser_to_run, name='home-ws', daemon=True)
-        pump.start()
-        try:
-            while data := up.recv(65536):
-                self.wfile.write(data)
-        except OSError:
-            pass
-        finally:
-            up.close()
-            try:
-                self.connection.shutdown(socket.SHUT_RDWR)
-            except OSError:
-                pass
-            pump.join(timeout=5)
+        """A WebSocket upgrade, carried to the run (`session_frame.tunnel`)."""
+        tunnel(self, port, target, root.name)
 
     def forward(self, method: str, root: Path, port: int, target: str) -> None:
         """The request goes on to 127.0.0.1:PORT at TARGET; the answer streams back as it comes."""

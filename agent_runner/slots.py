@@ -12,13 +12,14 @@ import shlex
 import shutil
 import subprocess as sp
 import tempfile
+import threading
 import time
 import urllib.parse
 import uuid
 from pathlib import Path
 
 from agent_runner import plan as P, plat
-from agent_runner.attach import attach_listen, attach_take
+from agent_runner.attach import Viewers, pty_resize, pty_write
 from agent_runner.conpty import ConPty, InPipe, pipe_send
 from agent_runner.config import finished_mark, runner_cmd, shown_cmd
 from agent_runner.gitops import push
@@ -996,8 +997,8 @@ class HiddenMux:
     slot log and types into it what arrives on the FIFO `<notes>/slotN.in` (`send`); `attach sN` puts a
     terminal on it through the socket `<notes>/slotN.sock` (F88, Ctrl-b d leaves). Windows (F145):
     the agent runs in a ConPTY pseudo-console (`run_conpty`), its output in the slot log too, and
-    `<notes>/slotN.in` names the pipe, open to this user alone, that typed text comes in by; there is no
-    attach to it yet (`attach sN` says where its log is). Before Windows 10 1809, which has no ConPTY, a console of
+    `<notes>/slotN.in` names the pipe, open to this user alone, that typed text comes in by, and
+    `<notes>/slotN.sock` the port on 127.0.0.1 and the token `attach sN` reaches it with (F114). Before Windows 10 1809, which has no ConPTY, a console of
     its own whose window starts hidden (`attach sN` shows it): nothing captures its output, so the slot log
     has only the header lines, and nothing can be typed into it.
     """
@@ -1189,14 +1190,13 @@ def run_pty(argv: list[str], cwd: str, env: dict, marker: Path, logfile: Path | 
     except OSError:
         inq = -1
     out = open(logfile, 'ab') if logfile else None
-    sockpath = marker.with_suffix('.sock')
-    listener = attach_listen(sockpath)
-    clients: dict = {}  # F88: socket -> the bytes of a frame not yet whole
+    viewers = Viewers(marker.with_suffix('.sock'), pty_write(fd), pty_resize(fd), PTY_SIZE)  # F88: attached
     code = None
     try:
         while True:
-            watch = [fd] + ([inq] if inq >= 0 else []) + ([listener] if listener else []) + list(clients)
-            r, _, _ = select.select(watch, [], [], 1.0)
+            watch = [fd] + ([inq] if inq >= 0 else []) + viewers.watched()
+            r, _, _ = select.select(watch, [], [], viewers.wait(1.0))
+            viewers.tick()
             if fd in r:
                 try:
                     data = os.read(fd, 65536)
@@ -1207,29 +1207,8 @@ def run_pty(argv: list[str], cwd: str, env: dict, marker: Path, logfile: Path | 
                 if out:
                     out.write(data)
                     out.flush()
-                for c in list(clients):
-                    try:
-                        c.sendall(data)
-                    except OSError:  # gone, or too slow to take it: that client is dropped, not the session
-                        clients.pop(c)
-                        c.close()
-            if listener and listener in r:
-                try:
-                    c, _ = listener.accept()
-                    c.settimeout(0.5)  # a client that takes no output for this long is dropped, once
-                    clients[c] = b''
-                except OSError:
-                    pass
-            for c in [c for c in r if c in clients]:
-                try:
-                    got = c.recv(65536)
-                except OSError:
-                    got = b''
-                if not got:
-                    clients.pop(c)
-                    c.close()
-                    continue
-                clients[c] = attach_take(clients[c] + got, fd)
+                viewers.out(data)
+            viewers.take(r)
             if inq in r:
                 try:
                     os.write(fd, os.read(inq, 65536))
@@ -1245,14 +1224,10 @@ def run_pty(argv: list[str], cwd: str, env: dict, marker: Path, logfile: Path | 
             code = os.waitstatus_to_exitcode(os.waitpid(pid, 0)[1])
         if out:
             out.close()
+        viewers.close()
         os.close(fd)
         if inq >= 0:
             os.close(inq)
-        for c in clients:
-            c.close()
-        if listener:
-            listener.close()
-            sockpath.unlink(missing_ok=True)
         inbox.unlink(missing_ok=True)
         marker.unlink(missing_ok=True)
     return code, pid
@@ -1261,7 +1236,7 @@ def run_pty(argv: list[str], cwd: str, env: dict, marker: Path, logfile: Path | 
 def run_conpty(argv: list[str], cwd: str, env: dict, marker: Path, logfile: Path | None) -> tuple[int, int]:
     """F145, Windows: `run_pty` in a ConPTY pseudo-console: one agent session with no window, its pid in `marker`
     while it runs; what it prints goes to `logfile`, and what arrives on the pipe that slotN.in beside the marker
-    names (`conpty.InPipe`) is typed into it. No attach. Returns its exit code and pid once it has ended; what it
+    names (`conpty.InPipe`) is typed into it; `attach` reaches it as on POSIX (F114). Returns its exit code and pid once it has ended; what it
     started and left in its console ends with it. OSError when the agent cannot be started."""
     exe = shutil.which(argv[0], path=env.get('PATH') or os.environ.get('PATH'))
     if not exe:
@@ -1269,10 +1244,18 @@ def run_conpty(argv: list[str], cwd: str, env: dict, marker: Path, logfile: Path
     out = open(logfile, 'ab', buffering=0) if logfile else None
     inbox = marker.with_suffix('.in')
     inbox.unlink(missing_ok=True)
-    pty = typed = code = None
+    pty = typed = viewers = code = None
+
+    def printed(data: bytes) -> None:
+        if out:
+            out.write(data)
+        if viewers:
+            viewers.out(data)
     try:
         pty = ConPty([exe, *argv[1:]], cwd, {**os.environ, **env, 'AGENT_RUNNER_MARKER': str(marker)}, PTY_SIZE,
-                     out.write if out else lambda data: None)
+                     printed)
+        viewers = Viewers(marker.with_suffix('.sock'), pty.write, pty.resize, PTY_SIZE)
+        threading.Thread(target=viewers.serve, daemon=True).start()
         try:
             typed = InPipe(inbox, pty.write)
         except OSError as e:
@@ -1283,6 +1266,8 @@ def run_conpty(argv: list[str], cwd: str, env: dict, marker: Path, logfile: Path
     finally:
         if typed:
             typed.close()
+        if viewers:
+            viewers.close()  # before the console it resizes
         if pty:
             pty.close()
         if out:

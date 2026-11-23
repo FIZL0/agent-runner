@@ -20,7 +20,7 @@ copy, and the actions they share.
     release_row  F131: the release as one row at the queue's end (`release_row`): the V task (also moved last
               in `queue`, with `release`: this row), or a placeholder while `[run] auto_release` counts; None
     quick_asks  the Status chat's quick asks sent to c1: key, label, text
-    terminal_mode  how a session's terminal shows: 'ttyd', 'install' (no ttyd yet), 'feed' (Windows)
+    terminal_mode  how a session's terminal shows: 'ttyd', or 'install' (no ttyd yet)
     run       paused, stopping, forced, power, and `state`: the state pill's words (F124: `run_state`)
     usage     F124: the account's usage, [{'name': 'session'|'week', 'pct'}]
     lately    F124: what landed lately, newest first, [{'at', 'text'}], the words `status` lists under "lately"
@@ -937,9 +937,9 @@ def act(name: str, **args) -> dict:
 #
 # The feed is a session's transcript (Claude Code's JSONL, which the harness loop writes too)
 # as entries {'kind': say|you|tool|out, 'text'}, newest last: the agent's words, the person's, each tool step
-# and its output, so a page shows the words with the steps folded. The terminal view is the session's own
+# and its output, which Talk reads and the page tells a working session by. A chat or slot shows the session's own
 # terminal (`attach NAME` through its shim's socket), through ttyd when it is installed ('ttyd'; C25: without
-# ttyd, 'install': the page says how to install it); on Windows the feed only ('feed').
+# ttyd, 'install': the page says how to install it), on every OS (F114).
 
 FEED_BYTES = 400_000  # the tail of a transcript a feed reads: a long session's whole file is not read each poll
 FEED_MAX = 200  # entries a feed returns
@@ -1148,12 +1148,9 @@ def concept_copy(cid: str) -> str:
 
 
 def terminal_mode() -> str:
-    """F74: how a page shows a session's terminal: 'ttyd' (installed: it serves `attach NAME`), 'install' (no
-    ttyd: the page says how to install it; C25), or 'feed' (Windows: the feed and the session link only)."""
+    """F74: how a page shows a session's terminal: 'ttyd' (installed: it serves `attach NAME`) or 'install' (no
+    ttyd: the page says how to install it; C25). F114: on Windows too."""
     import shutil
-    from agent_runner import plat
-    if plat.WINDOWS:
-        return 'feed'
     return 'ttyd' if shutil.which('ttyd') else 'install'
 
 
