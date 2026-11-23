@@ -32,7 +32,7 @@ Bash calls in its Git Bash). Each slot runs hidden: in a ConPTY pseudo-console w
 later), or before that in a console whose window starts hidden (`agent-runner attach s2` shows that one). Run
 `agent-runner run 3` from any terminal.
 
-**Linux and macOS** need nothing more either (agent-runner 0.60.0 dropped tmux). The slots run hidden, in a
+**Linux and macOS** need nothing more for the run (it uses no tmux). The slots run hidden, in a
 pseudo-terminal with no window, their output in `.runner/slotN.log`. `agent-runner attach` is the run view
 (its log, live, and its keys), `agent-runner attach s2` puts this terminal on slot 2's own terminal (Ctrl-b d
 leaves it running), and `status`, `ui`, control sessions and `plan tell` watch and steer them.
