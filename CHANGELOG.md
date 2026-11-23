@@ -4,7 +4,7 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
-## 1.0.0 (2026-11-23)
+## 0.60.0 (2026-11-23)
 
 - Added: runner tools on Claude Code. `agent-runner finish "summary"` ends a slot's session at once after
   `done`, its summary in the run log. `agent-runner ask "question"` parks the task under Needs you (`DECIDE:`),
@@ -32,9 +32,11 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
   Home, so one link reaches every run. Install prints the link and a QR code; `home status`, `home list`,
   `home remove PATH` and `home uninstall` go with it. Off until installed. With Home installed, a run that finds
   its page port taken serves its page on a free port, which Home opens; without Home nothing changes (F94).
-- **Major: release this as 1.0.0.** A run on 0.x cannot adopt across it (its sessions are in tmux panes this
-  version no longer reads), so stop the old run (`agent-runner stop`) before upgrading; it does not restart
-  itself across the major version.
+- **Breaking: a run on 0.59 or older cannot adopt across 0.60.0** (its sessions are in tmux panes this version
+  no longer reads), so stop the old run (`agent-runner stop`) before upgrading; it neither auto-upgrades nor
+  restarts itself onto 0.60+ (C28).
+- 0.60.0 replaces the 1.0.0 tag published earlier the same day. A run already installed at 1.0.0 must be
+  reinstalled (`uv tool install --force` or re-pull) to get 0.60.0 and later, since it sees them as older.
 - Changed: a release (kind V) no longer runs alone. It still waits for what is ahead of it (`after: all`, or
   its own `--after`) to land, then starts even with other tasks running, and tasks start beside it. While it
   is busy the merge holds every other merge and push, so it releases exactly what was on main when it

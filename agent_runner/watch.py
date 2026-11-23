@@ -592,10 +592,19 @@ def update_notice() -> None:
         banner(f'agent-runner {latest} is out', f'this run is {__version__}. To upgrade: {how}; {then}.', '42')
 
 
+BREAKING_MINORS = ((0, 60),)  # C28: 0.x minors a run cannot restart across (0.60.0 dropped tmux: no adopting)
+
+
 def breaking(old: str, new: str) -> bool:
-    """`new` is another major version. ponytail: a 0.x minor may break too (docs/SETUP.md#versions), but most
-    are features and the rare breaking one ignores old keys; gate on its CHANGELOG entry if that bites."""
-    return old.split('.')[0] != new.split('.')[0]
+    """`new` is another major version, or crosses one of BREAKING_MINORS (a 0.x minor may break too,
+    docs/SETUP.md#versions; most are features and the rare breaking one is listed there)."""
+    if old.split('.')[0] != new.split('.')[0]:
+        return True
+    try:
+        o, n = vtuple(old)[:2], vtuple(new)[:2]
+    except ValueError:
+        return False
+    return any(min(o, n) < b <= max(o, n) for b in BREAKING_MINORS)
 
 
 def upgrade_argv(here: str | Path = __file__) -> list[str]:
