@@ -7597,6 +7597,39 @@ def test_task_budget_f103(repo: Path, tmp: Path):
         subprocess.run(['git', 'push', '-q', 'origin', '--delete', 'wip/F903'], cwd=repo, capture_output=True)
 
 
+def test_stream_spend_keeps_terminal_turns_b151(repo: Path, tmp: Path):
+    print('B151: a task resumed on the stream engine still counts its terminal-engine turns, none twice')
+    from agent_runner import slots as S
+    R.init(repo)
+    usage = {'input_tokens': 1000, 'output_tokens': 200}  # 1,200 a turn
+    t, ev = tmp / 'b151-sid.jsonl', R.C.notes('streams') / 'b151-sid.jsonl'
+    ev.parent.mkdir(parents=True, exist_ok=True)
+
+    def turns(f, *mids):
+        with open(f, 'a', encoding='utf-8') as fh:
+            for mid in mids:
+                fh.write(json.dumps({'type': 'assistant', 'message': {
+                    'id': mid, 'role': 'assistant', 'model': 'claude-opus-5-5', 'usage': usage,
+                    'content': [{'type': 'text', 'text': 'x'}]}}) + '\n')
+
+    S.TRANSCRIPTS['b151-sid'] = str(t)
+    try:
+        turns(t, 'm1', 'm2')
+        eq(S.task_spend('b151-sid')[0], 2400, 'on the terminal engine: its transcript')
+        turns(t, 'm3')
+        turns(ev, 'm3')  # claude -p writes both the transcript and the stream
+        eq(S.task_spend('b151-sid')[0], 3600, 'resumed on the stream engine: earlier turns still count, m3 once')
+        turns(ev, 'm4')
+        eq(S.task_spend('b151-sid')[0], 4800, 'a turn in the stream before the transcript has it counts')
+        turns(t, 'm4')
+        eq(S.task_spend('b151-sid')[0], 4800, 'and not again once the transcript has it')
+    finally:
+        S.TRANSCRIPTS.pop('b151-sid', None)
+        S.SPEND.pop('b151-sid', None)
+        S.SPEND.pop('b151-sid:stream', None)
+        ev.unlink(missing_ok=True)
+
+
 def test_context_warn_f25(repo: Path):
     print('F25: a slot session whose context peaks past [run] context_warn says so, and what filled it')
     R.init(repo)
@@ -8096,7 +8129,7 @@ def main() -> int:
                        lambda: test_hidden_slots(repo, tmp), lambda: test_stream_engine_f106b(repo, tmp), lambda: test_hidden_run_lands(tmp), lambda: test_no_gate_b36(tmp),
                        lambda: test_claude_drift_b45(repo, tmp), lambda: test_merged_count_b78(repo),
                        lambda: test_hidden_control_f59(repo, tmp), lambda: test_attach_f88(tmp), lambda: test_context_warn_f25(repo),
-                       lambda: test_control_fresh_f27(repo), lambda: test_config_trim_c14(tmp), lambda: test_models_f101(repo, tmp), lambda: test_models_kinds_f105(repo, tmp), lambda: test_task_budget_f103(repo, tmp), test_reference_keys_d3, test_cap_stop_hint_b102, lambda: test_stop_stays_with_its_run_b137(repo)])
+                       lambda: test_control_fresh_f27(repo), lambda: test_config_trim_c14(tmp), lambda: test_models_f101(repo, tmp), lambda: test_models_kinds_f105(repo, tmp), lambda: test_task_budget_f103(repo, tmp), lambda: test_stream_spend_keeps_terminal_turns_b151(repo, tmp),test_reference_keys_d3, test_cap_stop_hint_b102, lambda: test_stop_stays_with_its_run_b137(repo)])
 
 
 if __name__ == '__main__':

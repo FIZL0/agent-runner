@@ -1353,14 +1353,23 @@ def task_spend(sid: str) -> tuple[int, float]:
     """(tokens, dollars) session `sid` and its subagents have used so far; (0, 0.0) without a transcript."""
     from agent_runner.cost import Spend, session_files
     s = SPEND.setdefault(sid, Spend())
-    if (ev := C.notes('streams') / f'{sid}.jsonl').exists():  # F106b: a headless session's event stream, which
-        s.add(ev)  # carries its subagents' turns too
-        return s.total()
-    if not (t := transcript(sid)):
-        return 0, 0.0
-    for p in session_files(t):
+    t = transcript(sid)
+    for p in session_files(t) if t else []:
         s.add(p)
-    return s.total()
+    if not (ev := C.notes('streams') / f'{sid}.jsonl').exists():
+        return s.total() if t else (0, 0.0)
+    # F106b: a headless session's event stream, which carries its subagents' turns too. B151: a task begun on
+    # the terminal engine and resumed on the stream engine also counts its transcript's earlier turns; claude -p
+    # writes the transcript as well, so a turn whose message id is in the stream counts only there (a transcript
+    # turn with no id cannot be matched, so it is left out rather than risk counting it twice).
+    st = SPEND.setdefault(f'{sid}:stream', Spend())
+    st.add(ev)
+    seen = {k.rsplit(':', 1)[-1] for k in st.turns}
+    tokens, usd = st.total()
+    for k, (tk, d) in s.turns.items():
+        if (mid := k.rsplit(':', 1)[-1]) not in seen and not mid.startswith('#'):
+            tokens, usd = tokens + tk, usd + d
+    return tokens, usd
 
 
 def budgets(procs: dict, running: dict, type_into) -> None:
