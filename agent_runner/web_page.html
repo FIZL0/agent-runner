@@ -518,7 +518,7 @@ function render(force){
   body.innerHTML=h;$('dock').innerHTML=dock;$('dock').hidden=!dock;
   const nta=document.querySelector('[data-in]');
   if(nta){nta.value=store.get(DRAFT_KEY(boxKey()));grow(nta);if(focused){nta.focus();if(sel)nta.setSelectionRange(sel[0],sel[1])}}
-  const nk=document.querySelector('[data-kin]');if(nk){nk.value=S.kText||'';if(kfocused||force)nk.focus()}  // F87: the new concept box keeps its words
+  const nk=document.querySelector('[data-kin]');if(nk){nk.value=S.kText||'';if(kfocused||S.kFocus)nk.focus();S.kFocus=false}  // F87: the new concept box keeps its words
   if(n&&(atEnd||force))body.scrollTop=1e9;
 }
 function grow(ta){ta.style.height='auto';ta.style.height=Math.min(ta.scrollHeight,160)+'px'}
@@ -552,7 +552,7 @@ setInterval(()=>{if(S.thread&&!document.hidden)loadFeed(S.thread)},2000);
 
 /* --- doing things ------------------------------------------------------------------------------------------ */
 function open(n){S.thread=n;S.drawer=false;loadFeed(n);render(true);setTimeout(()=>document.querySelector('[data-in]')?.focus(),50)}
-function goView(v){S.view=v;S.thread=null;S.ctx=null;S.drawer=false;render(true)}
+function goView(v){S.view=v;S.thread=null;S.ctx=null;S.drawer=false;S.kSaid='';render(true)}
 async function send(){
   const ta=document.querySelector('[data-in]');const text=(ta?.value||'').trim();
   if(S.atts.some(a=>!a.path&&!a.err))return toast('Wait for the attachments to finish uploading');
@@ -616,7 +616,7 @@ document.addEventListener('click',async e=>{
     const r=await act('shelve',{tid:n.id});if(r.ok)toast(`${n.id} is set aside until you bring it back`);return}
   if(x=q('[data-unpark]')){const id=x.dataset.unpark;x.disabled=true;  // B118
     const r=await act('unpark',{tid:id});if(r.ok)toast(`${id} is unparked: it joins Follow-ups`);else x.disabled=false;return}
-  if(q('[data-kadd]')){S.kOpen=!S.kOpen;S.kSaid='';render(true);return}  // F87: the Concepts view's +
+  if(q('[data-kadd]')){S.kOpen=!S.kOpen;S.kFocus=S.kOpen;S.kSaid='';render(true);return}  // F87: the Concepts view's +
   if(q('[data-kcancel]')){S.kOpen=false;render(true);return}
   if(x=q('[data-about]'))return about(x.dataset.about);
   if(x=q('[data-quick]')){const r=await act('quick_ask',{key:x.dataset.quick});if(r.ok){S.ctx=null;S.sent.c1={at:Date.now(),len:feedOf('c1').length,pending:[]};open('c1')}return}
