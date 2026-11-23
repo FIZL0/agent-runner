@@ -359,6 +359,59 @@ def run_snapshot() -> dict:
     return with_extras(U.snapshot(terminal_base='.'))
 
 
+# B119: the agent CLI's own slash commands the run app's composer menu offers after the session's skills
+BUILTIN_COMMANDS = (
+    ('clear', 'Start the conversation over'),
+    ('compact', 'Summarise the conversation so far to free context'),
+    ('context', 'Show how full the context is'),
+    ('cost', 'Show what this session has used'),
+    ('model', 'Pick the model'),
+    ('memory', 'Edit the memory files'),
+    ('help', 'List the commands'),
+)
+
+
+def skill_description(text: str) -> str:
+    """The `description:` line of a SKILL.md or command file's front matter, '' for none."""
+    m = re.match(r'---\s*\n(.*?)\n---', text, re.S)
+    d = re.search(r'^description:\s*(.+)$', m.group(1), re.M) if m else None
+    return d.group(1).strip().strip('"\'') if d else ''
+
+
+def skill_files(base: Path) -> list[tuple[str, Path]]:
+    """[(slash command name, its file)] under a `.claude` folder: skills/<name>/SKILL.md and commands/<name>.md."""
+    out = [(f.parent.name, f) for f in sorted(base.glob('skills/*/SKILL.md'))]
+    return out + [(f.stem, f) for f in sorted(base.glob('commands/*.md'))]
+
+
+def slash_commands() -> list[dict]:
+    """B119: the slash commands a session takes, for the run app's composer menu: [{'name', 'desc'}]. The control
+    session's own skills first (/run /since /follow /control /pause /stop /slots, as guide.control_skills writes
+    them), then the agent CLI's built-ins (/clear /compact …), then the project's and the person's own skills and
+    commands (`.claude/skills`, `.claude/commands`), each name once."""
+    from agent_runner.control import CONTROL_SKILL, control_cmd
+    from agent_runner.guide import control_skills
+    seen: dict[str, str] = {}
+    try:
+        cmd = control_cmd()
+    except Exception:  # noqa: BLE001 - the runner's path only fills the skills' bodies, not their names or lines
+        cmd = 'agent-runner'
+    own = control_skills(cmd, CONTROL_SKILL)
+    order = ['run', 'since', 'follow', CONTROL_SKILL, 'pause', 'stop', 'slots']
+    for name in sorted(own, key=lambda n: (order.index(n) if n in order else len(order), n)):
+        seen[name] = re.sub(r'\s*\(the person typed /\S+?(, or [^)]*)?\)\.?$', '', skill_description(own[name]))
+    for name, desc in BUILTIN_COMMANDS:
+        seen.setdefault(name, desc)
+    for base in (Path(S.ROOT) / '.claude', Path.home() / '.claude'):
+        for name, f in skill_files(base):
+            if name not in seen:
+                try:
+                    seen[name] = skill_description(f.read_text(encoding='utf-8', errors='replace'))[:120]
+                except OSError:
+                    continue
+    return [{'name': n, 'desc': d} for n, d in seen.items()]
+
+
 UPLOAD_BYTES = 50 * 1024 * 1024  # the largest attachment the page may upload
 
 
@@ -428,6 +481,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(200, self.server.snaps.get())
         if path == '/events':
             return self.events()
+        if path == '/commands':
+            return self.send(200, json.dumps(slash_commands(), ensure_ascii=False))
         if path.startswith('/terminal/'):
             return self.send(200, json.dumps(self.server.terms.open(path.split('/')[2])))
         if path.startswith('/feed/'):
