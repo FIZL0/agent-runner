@@ -662,7 +662,7 @@ def hand_hook(root: Path) -> str:
 def user_brief(root: Path) -> str:
     """B79: the control brief for a session opened by hand in `root`, a runner repo's main checkout, by the
     user-level SessionStart hook (`config.install_user_hook`): a repo where no run has started yet has no hook
-    of its own (`hand_hook`). '' where control sessions are not Claude Code's (`[run] agent` is pi)."""
+    of its own (`hand_hook`). '' where `control_ok` says no."""
     import contextlib
     with contextlib.redirect_stderr(io.StringIO()):  # init's git calls and merge driver: nothing on the screen
         init(root)
