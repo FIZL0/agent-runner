@@ -1243,16 +1243,20 @@ def test_slash_menu_b119(tmp: Path) -> None:
     (repo / '.claude' / 'skills' / 'deploy' / 'SKILL.md').write_text(
         '---\nname: deploy\ndescription: Ship the site\n---\nDo it.\n', encoding='utf-8')
     token = W.web_token()
+    (tmp / 'home' / '.claude' / 'commands').mkdir(parents=True)  # the person's own, apart from this machine's
+    (tmp / 'home' / '.claude' / 'commands' / 'notes.md').write_text('---\ndescription: Take notes\n---\nGo.\n')
     srv = W.serve(token, 0, '127.0.0.1', snap=lambda: {})
     try:
-        code, body = get(f'http://127.0.0.1:{srv.server_address[1]}/commands?t={token}')
+        with mock.patch.object(Path, 'home', return_value=tmp / 'home'):
+            code, body = get(f'http://127.0.0.1:{srv.server_address[1]}/commands?t={token}')
     finally:
         srv.stop()
     eq(code, 200, '/commands answers')
     cmds = json.loads(body)
     names = [c['name'] for c in cmds]
     eq(names[:7], ['run', 'since', 'follow', 'control', 'pause', 'stop', 'slots'], "the control session's own first")
-    check({'clear', 'compact', 'deploy'} <= set(names), 'the built-ins and the project skill are listed', names)
+    check({'clear', 'compact', 'deploy', 'notes'} <= set(names), "the built-ins, the project's skill and the "
+          "person's command are listed", names)
     eq(len(names), len(set(names)), 'each name once')
     eq(next(c['desc'] for c in cmds if c['name'] == 'run'), "The agent-runner run's status",
        'a description without its (the person typed …)')

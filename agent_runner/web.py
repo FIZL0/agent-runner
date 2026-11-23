@@ -393,9 +393,10 @@ def slash_commands() -> list[dict]:
     from agent_runner.guide import control_skills
     seen: dict[str, str] = {}
     try:
-        own = control_skills(control_cmd(), CONTROL_SKILL)
-    except Exception:  # noqa: BLE001 - the menu still has the built-ins and the files
-        own = {}
+        cmd = control_cmd()
+    except Exception:  # noqa: BLE001 - the runner's path only fills the skills' bodies, not their names or lines
+        cmd = 'agent-runner'
+    own = control_skills(cmd, CONTROL_SKILL)
     order = ['run', 'since', 'follow', CONTROL_SKILL, 'pause', 'stop', 'slots']
     for name in sorted(own, key=lambda n: (order.index(n) if n in order else len(order), n)):
         seen[name] = re.sub(r'\s*\(the person typed /\S+?(, or [^)]*)?\)\.?$', '', skill_description(own[name]))
