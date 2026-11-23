@@ -183,8 +183,8 @@ def test_release_beside(tmp: Path):
         S.C.raw['plan']['release_alone'] = False
 
 
-def test_critical_waits_merge(tmp: Path):
-    print('B126: a critical task held only by a merge-waiting task keeps the slot from normal work')
+def test_critical_first(tmp: Path):
+    print('B140: a critical task waiting on a merge holds nothing back, and goes first once free')
     repo = tmp / 'crit'
     repo.mkdir()
     git(repo, 'init', '-q', '-b', 'main')
@@ -211,24 +211,16 @@ def test_critical_waits_merge(tmp: Path):
     git(repo, 'checkout', '-q', 'main')
     eq(S.choose(S.held({1: x1}, 'main'), set(), 'main')[0], 'N1', 'in its slot with commits, X1 is still running')
     h = S.held({}, 'main')
-    eq(S.critical_waiting(set(), h), 'B1', 'B1 waits only for X1 to merge')
-    eq(S.choose(h, set(), 'main'), None, 'so the normal task N1 does not take the slot')
+    eq(S.choose(h, set(), 'main')[0], 'N1', 'B1 waits on X1\'s merge; N1 takes the free slot meanwhile')
     why = S.explain({}, set(), 'main')
     eq(why.get('B1'), ('waiting for files', 'a.py held by X1'), 'the dry run: B1 waits for X1')
-    eq(why.get('N1'), ('a critical task goes first', 'B1 starts once the merge it waits for lands'),
-       'and N1 says why it does not start')
-    eq(S.choose(h, {'B1'}, 'main')[0], 'N1', 'a critical task tried this run keeps nothing')
-    keep, S.HOLD_FOR_MERGE = S.HOLD_FOR_MERGE, 0
-    try:
-        eq(S.choose(S.held({}, 'main'), set(), 'main')[0], 'N1', 'a merge stuck past HOLD_FOR_MERGE keeps nothing')
-    finally:
-        S.HOLD_FOR_MERGE = keep
+    eq(why.get('N1'), ('free', ''), 'and N1 is free: a critical task holds nothing back')
     # X1's merge lands: a.py and the ticked line on main, its branch deleted
     git(repo, 'merge', '-q', '--no-ff', '-m', 'Merge X1', 'task/X1')
     (repo / 'plan/TODO.md').write_text(todo.replace('[ ] **X1**', '[x] **X1**'), encoding='utf-8')
     git(repo, 'commit', '-qam', 'X1 done')
     git(repo, 'branch', '-D', 'task/X1')
-    eq(S.choose(S.held({}, 'main'), set(), 'main')[0], 'B1', 'once the merge lands, B1 takes the next free slot')
+    eq(S.choose(S.held({}, 'main'), set(), 'main')[0], 'B1', 'once the merge lands, B1 starts ahead of N1')
     b1 = next(t for t in S.held({}, 'main').todo if t[0] == 'B1')
     eq(S.choose(S.held({1: b1}, 'main'), set(), 'main')[0], 'N1', 'and N1 the one after (N2 waits for B1)')
 
@@ -239,7 +231,7 @@ def main() -> int:
         repo = make_repo(Path(tmp))
         return report([lambda: test_explain(repo), lambda: test_parked(repo),
                        lambda: test_release_taken(Path(tmp)), lambda: test_release_beside(Path(tmp)),
-                       lambda: test_critical_waits_merge(Path(tmp))])
+                       lambda: test_critical_first(Path(tmp))])
 
 
 if __name__ == '__main__':
