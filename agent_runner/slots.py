@@ -18,7 +18,7 @@ import urllib.parse
 import uuid
 from pathlib import Path
 
-from agent_runner import plan as P, plat, shared_tools
+from agent_runner import plan as P, plat, session_theme, shared_tools
 from agent_runner.attach import Viewers, pty_resize, pty_write
 from agent_runner.conpty import ConPty, InPipe, pipe_send
 from agent_runner.config import finished_mark, runner_cmd, shown_cmd
@@ -28,6 +28,7 @@ from agent_runner.state import EV_STARTED
 from agent_runner.state import EV_DRIFT
 from agent_runner.brief import prompt_for, review_on, subagents
 from agent_runner.sched import ahead, blocked_tasks, open_tasks, tasks
+from agent_runner.session_frame import session_look
 from agent_runner.stream import run_stream, stream_message, StreamInput  # noqa: F401 (StreamInput: runner.X)
 from agent_runner.tools import end_mark, FENCE_TOOLS
 
@@ -182,6 +183,7 @@ class Claude:
                 *(['--append-system-prompt-file', str(brief)] if brief.exists() else []),
                 # lean() drops user settings, where the bypass dialog's opt-out lives; nobody is there to answer it
                 '--settings', json.dumps({'skipDangerousModePermissionPrompt': True,
+                                          **session_theme.settings(session_look()),  # F170: the run page's own look
                                           'hooks': {**ends,
                                                     'PreToolUse': fence_hooks()},  # F102: the git fence
                                           # on Remote Control a slot's own PushNotification tool stays off (R2:
