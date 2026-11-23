@@ -6946,7 +6946,7 @@ STREAM_AGENT = r'''#!/usr/bin/env python3
 # F106b: a stand-in for headless `claude -p --input-format stream-json`: logs each user message it reads, answers
 # with a turn (usage) and a result; the first turn waits for FAKE_GO, so a tell can arrive while it runs; a message
 # that says finish runs `run finish`; stdin's end ends it.
-import json, os, subprocess, sys, time
+import json, os, subprocess, sys, threading, time
 log = open(os.environ['FAKE_STREAM_LOG'], 'a')
 log.write(json.dumps({'argv': sys.argv[1:], 'key': os.environ.get('ANTHROPIC_API_KEY')}) + '\n')
 log.flush()
@@ -6964,6 +6964,9 @@ for line in sys.stdin:
         time.sleep(0.05)
     if 'finish' in text:
         subprocess.run([sys.executable, os.environ['FAKE_RUN'], 'finish', 'did it'], capture_output=True)
+    if 'background' in text:  # a background command (a `done` on the gate) that outlives the turn
+        bg = subprocess.Popen(['sleep', '3'])
+        threading.Thread(target=bg.wait, daemon=True).start()
     print(json.dumps({'type': 'result', 'subtype': 'success', 'total_cost_usd': 0.01}), flush=True)
 log.write(json.dumps({'eof': True}) + '\n')
 '''
@@ -7043,6 +7046,20 @@ def test_stream_engine_f106b(repo: Path, tmp: Path):
         again = R.agent_argv('carry on', 'sid-st', 'opus', 90, 'slot7', resume=True)
         check(again[1:7] == S.STREAM_FLAGS and again[again.index('--resume') + 1] == 'sid-st' and 'carry on' not in again,
               'a resume runs the same headless command with --resume, its message on stdin', again)
+        # a turn that ends while a background command still runs (a `done` on the gate) does not end the session
+        R.C.notes('slot7.end').unlink(missing_ok=True)
+        seen.unlink()
+        logfile, _ = R.slot_header(7, 'Z8 session sid-bg')
+        pid = R.MUX.open(7, d, 'run it in the background', 'sid-bg', 'opus', 90, env, logfile)
+        end = time.monotonic() + 10
+        while 'result' not in logfile.read_text(encoding='utf-8') and time.monotonic() < end:
+            time.sleep(0.05)
+        time.sleep(1)
+        check(R.plat.alive(pid), 'its turn ended, but its background command runs: the session is held')
+        check(R.MUX.send(R.MUX.panes().get('s7'), 'after it'), 'and still takes a tell')
+        check(wait_dead(pid), 'it ends once the background command has')
+        eq([json.loads(l).get('user') for l in seen.read_text(encoding='utf-8').splitlines()][1:3],
+           ['run it in the background', 'after it'], 'the tell reached it')
     finally:
         if pid and R.plat.alive(pid):
             R.plat.terminate(pid)

@@ -1317,10 +1317,13 @@ on its stdin, so a brief of any length goes in whole.
 
 No idle Stop hook: the session ends at its result event. Its stdin closes at once when nothing was sent during
 that turn, otherwise when no next turn starts within 5 s. So `run finish` (then stopping), or a turn that ends
-with nothing more to do, ends it.
+with nothing more to do, ends it. While the agent still runs a background command (a `done` waiting on the gate),
+its stdin stays open, as the Stop hook's waiter does, until that command ends, `done` or `run finish` has run, or
+`AGENT_RUNNER_IDLE_MAX` (10800 s) has passed.
 
 `plan tell`, budget stops and typing from the Run page go in as its next user message, through the slot's FIFO:
-typed text becomes a message at its Enter, and keys such as Escape are dropped.
+typed text becomes a message at its Enter, and keys such as Escape are dropped. On Windows there is no FIFO, so
+a stream session there takes no tells, as a hidden console takes no typed text.
 
 Its event stream goes to the slot log, to `<notes>/streams/<session id>.jsonl` (the spend for `[run] task_tokens`
 and `task_usd` is read from there), and to `attach sN` and the Run page's Terminal views.

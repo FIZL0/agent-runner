@@ -1321,7 +1321,7 @@ def run_stream(argv: list[str], cwd: str, env: dict, marker: Path, logfile: Path
     (slotN.in) or from a terminal attached on its socket (slotN.sock) is its next (`StreamInput`). Its event
     stream goes to `logfile` (the slot log), to `events` (its spend is read there) and to attached terminals.
     The session ends at a result event: its stdin is closed, at once when nothing was sent during that turn,
-    else when no next turn starts within STREAM_GRACE s. No ANTHROPIC_API_KEY reaches it, so it runs on the
+    else when no next turn starts within STREAM_GRACE s; held while a background command runs (`due`). No ANTHROPIC_API_KEY reaches it, so it runs on the
     claude.ai login: plan usage. Returns its exit code and pid. OSError when it cannot be started."""
     exe = shutil.which(argv[0], path=env.get('PATH') or os.environ.get('PATH'))
     if not exe:
@@ -1335,7 +1335,7 @@ def run_stream(argv: list[str], cwd: str, env: dict, marker: Path, logfile: Path
     marker.write_text(str(proc.pid), encoding='utf-8')
     inbox, sockpath = marker.with_suffix('.in'), marker.with_suffix('.sock')
     inq, listener, clients = -1, None, {}  # clients: socket -> (bytes of a frame not yet whole, its StreamInput)
-    st = {'open': True, 'sent': False, 'grace': 0.0, 'line': b''}
+    st = {'open': True, 'sent': False, 'grace': 0.0, 'hold': 0.0, 'line': b''}
 
     def close_input() -> None:
         nonlocal inq
@@ -1382,22 +1382,48 @@ def run_stream(argv: list[str], cwd: str, env: dict, marker: Path, logfile: Path
                 continue
             if not isinstance(e, dict):
                 continue
-            if e.get('type') == 'result':
-                if st['sent']:  # a message came during this turn: give its turn the time to start
-                    st['sent'], st['grace'] = False, time.monotonic() + STREAM_GRACE
-                else:
-                    close_input()
+            if e.get('type') == 'result':  # a message came during this turn: give its turn the time to start
+                now = time.monotonic()
+                st['grace'] = now + (STREAM_GRACE if st['sent'] else 0.0)
+                st['sent'], st['hold'] = False, now + int(os.environ.get('AGENT_RUNNER_IDLE_MAX', 10800))
             elif st['grace']:
                 st['grace'] = 0.0  # the next turn started
+
+    def due() -> None:
+        """Close stdin once the grace after a result is over, unless the agent still runs a background command
+        (a `done` waiting on the gate), whose end starts its next turn: as the Stop hook's waiter does, it is
+        held until then, up to AGENT_RUNNER_IDLE_MAX s, and no longer once `run finish` / `ask` or `done` ran."""
+        if not st['grace'] or time.monotonic() <= st['grace']:
+            return
+        marks = (marker.with_suffix('.end'), marker.with_suffix('.finished'))
+        if not any(m.exists() for m in marks) and plat.children(proc.pid) and time.monotonic() < st['hold']:
+            st['grace'] = time.monotonic() + 2.0
+            return
+        close_input()
 
     write_in([stream_message(brief)])
     st['sent'] = False  # the brief is this turn's own message
     try:
         if plat.WINDOWS:  # no FIFO or socket there: the brief, then the stream until the result
-            while data := proc.stdout.read(65536):
-                took(data)
-                if st['grace'] and time.monotonic() > st['grace']:
-                    close_input()
+            import queue
+            import threading
+            got: queue.Queue = queue.Queue()
+
+            def pump() -> None:
+                while data := proc.stdout.read(65536):
+                    got.put(data)
+                got.put(b'')
+            threading.Thread(target=pump, daemon=True).start()
+            while True:
+                try:
+                    data = got.get(timeout=0.5)
+                except queue.Empty:
+                    data = None
+                if data == b'':
+                    break
+                if data:
+                    took(data)
+                due()
         else:
             import select
             inbox.unlink(missing_ok=True)
@@ -1445,8 +1471,7 @@ def run_stream(argv: list[str], cwd: str, env: dict, marker: Path, logfile: Path
                         write_in(fifo_in.feed(os.read(inq, 65536)))
                     except OSError:
                         pass
-                if st['grace'] and time.monotonic() > st['grace']:
-                    close_input()
+                due()
     finally:
         close_input()
         code = proc.wait()
