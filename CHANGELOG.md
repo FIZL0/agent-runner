@@ -56,6 +56,10 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
   the row reads `Next release · auto at 10 landed: 6/10` (dimmed); a queued V shows `V5 Release · waits for 24 open ahead`,
   then `ready`, `blocked` or `building`. Once it lands, `lately` says `landed: Release 1.2.0 [V5]` and the count restarts
   at 0. J and K move no task past the release, and Enter on the dimmed row opens the release tab (F131).
+- Fixes: `run finish`, run from a slot's agent on a `task/<ID>` branch, is refused until `done` or `done --blocked`
+  has succeeded, even when the worktree has no uncommitted changes. The refusal says to run `done` or `run ask`. Before,
+  B155 guarded only the harness loop's finish tool, so `run finish` typed through bash or in a Claude Code session could
+  end the session with its task still open and nothing under Needs you (B156).
 
 ## 0.61.0 (2026-11-23)
 

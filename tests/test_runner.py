@@ -3893,6 +3893,7 @@ def test_stop_hook_grace(tmp: Path):
 
 def test_finish_ends_session(tmp: Path):
     print('F102: `run finish` records the summary and the Stop hook ends the session at once')
+    import contextlib
     import io
     from agent_runner import tools
     t = tmp / 'finish-transcript.jsonl'
@@ -3909,6 +3910,13 @@ def test_finish_ends_session(tmp: Path):
     try:
         os.chdir(w)
         eq(tools.cmd_finish(['did it']), 1, 'refused while `done` has not run and edits are uncommitted')
+        check(not tools.ended(), 'and no end mark')
+        git(w, 'add', '.')
+        git(w, 'commit', '-qm', 'x')
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            eq(tools.cmd_finish(['did it']), 1, 'B156: refused with no uncommitted changes too, while `done` has not run')
+        has(err.getvalue(), r'(?s)done T9 .*--blocked.* ask ', 'saying to run done or ask')
         check(not tools.ended(), 'and no end mark')
         R.finished_mark().touch()
         eq(tools.cmd_finish(['the parser reads nested lists']), 0, 'after done it is taken')
@@ -7225,7 +7233,8 @@ def test_stream_engine_f106b(repo: Path, tmp: Path):
             time.sleep(0.05)
         check(hit and R.MUX.streamed(hit), 'the slot is known as headless', hit)
         check(R.slot_open('s7')[1].startswith('s7 runs headless'), 'and cannot be opened on Remote Control')
-        check(R.MUX.send(hit, 'now finish'), 'a tell goes in as a stream-json message through its FIFO')
+        R.C.notes('slot7.finished').touch()  # as a `done` leaves it: B156 `run finish` refuses without
+        check(R.MUX.send(hit, 'now finish'),'a tell goes in as a stream-json message through its FIFO')
         go.touch()
         check(wait_dead(pid), 'the session ends at the result after finish')
         lines = [json.loads(l) for l in seen.read_text(encoding='utf-8').splitlines()]
@@ -7246,6 +7255,7 @@ def test_stream_engine_f106b(repo: Path, tmp: Path):
               'a resume runs the same headless command with --resume, its message on stdin', again)
         # a turn that ends while a background command still runs (a `done` on the gate) does not end the session
         R.C.notes('slot7.end').unlink(missing_ok=True)
+        R.C.notes('slot7.finished').unlink(missing_ok=True)
         seen.unlink()
         logfile, _ = R.slot_header(7, 'Z8 session sid-bg')
         pid = R.MUX.open(7, d, 'run it in the background', 'sid-bg', 'opus', 90, env, logfile)
@@ -7265,6 +7275,7 @@ def test_stream_engine_f106b(repo: Path, tmp: Path):
         R.C.run.clear()
         R.C.run.update(old)
         R.C.notes('slot7.end').unlink(missing_ok=True)
+        R.C.notes('slot7.finished').unlink(missing_ok=True)
         git(d, 'checkout', '-q', '--detach')
         git(repo, 'branch', '-D', 'task/Z8')
         git(repo, 'worktree', 'remove', '--force', str(d))
