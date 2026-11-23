@@ -2259,6 +2259,66 @@ console.log(JSON.stringify(out));`);
 """
 
 
+# B160: the keyboard: a stubbed visualViewport, over the same scrolling box
+KB_DRIVER = SCROLL_DRIVER.split("const els = ")[0] + r"""
+const on = {}, VVS = {height: 800, offsetTop: 0, scale: 1, addEventListener: (t, f) => on[t] = f};
+const window = {visualViewport: VVS, scrollY: 0, scrollTo(x, y) { this.scrollY = y }};
+const cls = () => { const c = new Set(); return {toggle: (k, v) => v ? c.add(k) : c.delete(k), contains: k => c.has(k)} };
+const els = {app: {style: {}, classList: cls()}, body: new Box(600)};
+const $ = k => els[k], box = {matches: () => true, closest: () => null}, docOn = {};
+const document = {activeElement: null, documentElement: {clientHeight: 800}, addEventListener: (t, f) => docOn[t] = f};
+const S = {view: 'talk', thread: null, pin: true}, jumpDraw = () => {};
+eval(line('const atEnd=') + line('const chatShown=') + line('function toEnd(') + page.slice(page.indexOf('const VV='), page.indexOf('function grow(')) + `
+const b = $('body'), out = {}, left = () => b.scrollHeight - b.scrollTop - b.clientHeight;
+const app = () => [$('app').style.height || '', $('app').style.top || '', $('app').classList.contains('kb')];
+// what the layout does: the chat loses what .app loses
+const vv = (h, top, t = 'resize') => { VVS.height = h; VVS.offsetTop = top; b.h = h - 200; on[t]() };
+b.innerHTML = 'a:900 b:900'; toEnd();
+vv(700, 0); out.bar = app();
+document.activeElement = box;
+window.scrollY = 90; vv(420, 260); out.open = [app(), left(), window.scrollY];
+vv(420, 0, 'scroll'); out.panned = [app(), left()];
+vv(380, 10); out.taller = [app(), left()];
+vv(800, 24); out.closed = [app(), left()];
+S.pin = false; b.scrollTop = 300; vv(420, 260); out.up = b.scrollTop; vv(800, 0);
+VVS.scale = 2; vv(400, 50); out.zoom = app(); VVS.scale = 1; vv(800, 0);
+document.activeElement = null; vv(420, 0); out.noField = app(); vv(800, 0);
+S.view = 'home'; b.scrollTop = 0;
+const field = {matches: () => true, closest: () => b, getBoundingClientRect: () => ({top: 400 - b.scrollTop, bottom: 440 - b.scrollTop})};
+document.activeElement = field; vv(420, 260); out.field = [app(), b.scrollTop];
+field.getBoundingClientRect = () => ({top: 500 - b.scrollTop, bottom: 540 - b.scrollTop});
+docOn.focusin({target: field}); out.next = b.scrollTop;
+console.log(JSON.stringify(out));`);
+"""
+
+
+def test_keyboard_b160(tmp: Path) -> None:
+    """B160: while a phone's keyboard is open .app takes the visual viewport's height and place with no bottom inset, a
+    pinned chat stays at its end, a field in a scroller is shown, and closing puts all of it back."""
+    css = W.PAGE.read_text(encoding='utf-8').split('<style>', 1)[1].split('</style>', 1)[0]
+    check(re.search(r'\.app\.kb\{[^}]*position:fixed[^}]*padding-bottom:0\}', css), 'keyboard open: .app is placed, with no bottom inset')
+    check(re.search(r'\.app\{[^}]*padding-bottom:env\(safe-area-inset-bottom', css), 'closed: .app keeps its bottom inset')
+    check(re.search(r'\.app\.kb \.dock\{padding-bottom:8px\}', css), 'and the dock its 14px only when closed')
+    check('html,body{height:100%;overscroll-behavior:none;overflow:hidden}' in css and 'body{position:fixed;inset:0' in css, 'the document is locked')
+    if not shutil.which('node'):
+        print('  (no node here: the keyboard script test is skipped)')
+        return
+    (tmp / 'driver.js').write_text(KB_DRIVER, encoding='utf-8')
+    r = subprocess.run(['node', str(tmp / 'driver.js'), str(W.PAGE)], capture_output=True, text=True, timeout=60)
+    check(r.returncode == 0, 'node runs kbFit()', r.stderr[-900:])
+    got = json.loads(r.stdout or '{}')
+    off = ['', '', False]
+    eq(got.get('bar'), off, "Safari's own bar is no keyboard")
+    eq(got.get('open'), [['420px', '260px', True], 0, 0], 'open: .app has the height and place, the chat stays at its end, the document is scrolled back')
+    eq(got.get('panned'), [['420px', '0px', True], 0], 'a pan moves .app with it')
+    eq(got.get('taller'), [['380px', '10px', True], 0], 'a taller keyboard too')
+    eq(got.get('closed'), [off, 0], 'closed: back to normal, still at the end, whatever offsetTop Safari left')
+    eq(got.get('up'), 300, 'a chat scrolled up stays where it was')
+    eq((got.get('zoom'), got.get('noField')), (off, off), 'neither a pinch zoom nor a short window with no field in focus is a keyboard')
+    eq(got.get('field'), [['420px', '260px', True], 228], 'a field in a view is scrolled above the keyboard')
+    eq(got.get('next'), 328, 'and so is the next field, with the keyboard still open')
+
+
 def test_talk_settings_f124(tmp: Path) -> None:
     """F124 (F123): Talk's settings and their defaults; hold to talk starts on pointerdown and sends on pointerup; auto
     listen listens again once a reply was read; a play button reads a reply and stops it; mic and speaker are 64px."""
@@ -2596,6 +2656,6 @@ if __name__ == '__main__':
                            in_tmp(test_interrupt_c1_b141), in_tmp(test_answer_button_b138), in_tmp(test_pick_f138),
                            in_tmp(test_outbox_f137), in_tmp(test_sent_b154), in_tmp(test_card_chat_b139), in_tmp(test_short_ask_b152),
                            in_tmp(test_chat_box_f115), in_tmp(test_home_switcher_f134),
-                           in_tmp(test_scroll_f83), in_tmp(test_talk_settings_f124), in_tmp(test_status_view_f124),
+                           in_tmp(test_scroll_f83), in_tmp(test_keyboard_b160), in_tmp(test_talk_settings_f124), in_tmp(test_status_view_f124),
                            in_tmp(test_chats_f128), in_tmp(test_needs_drop_chat_f110), in_tmp(test_task_text_f85),
                            in_tmp(test_settings_f97), in_tmp(test_style_f83)]))

@@ -106,6 +106,8 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
   any project) has a free provider in its chain (not claude, not capped, logged in), the usage cap now sets no limit and
   the line reads e.g. "Room for 6 more agents, on [models] fallback: a usage cap is reached". Memory, CPU and disk limits
   still hold; without a free provider it is as before (B157).
+- Fixes: on an iPhone with the keyboard open, the run app's header went off the top and an empty band sat under the
+  message box; now the app fits the space above the keyboard, in Talk, Home, Settings and the sheet too (B160).
 - Added: the gate workflow (ci.yml) runs on request for a task branch before its merge (`gh workflow run ci.yml --ref task/<ID> -f
   system=windows`), so Windows-only code can be checked from a Linux slot; see docs/REFERENCE.md (T13).
 - Added: `tools/windows_vm.sh` runs test files (default `tests/test_windows.py`) of a worktree, uncommitted changes

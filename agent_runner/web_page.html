@@ -41,14 +41,18 @@ const HOME_PAGE=/*HOME_PAGE*/false;
   --warn:#d9a54a; --bad:#e07a66; --onbad:#262624; --scrim:rgba(0,0,0,.45); --shadow:rgba(0,0,0,.4); --lift:rgba(0,0,0,.12); color-scheme:dark}
 *{box-sizing:border-box;scrollbar-width:none} *::-webkit-scrollbar{display:none}
 [hidden]{display:none!important}
-html,body{height:100%;overscroll-behavior:none}
-body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 var(--sans);overflow:hidden}
+html,body{height:100%;overscroll-behavior:none;overflow:hidden}
+body{position:fixed;inset:0;margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 var(--sans)}
 svg{width:18px;height:18px;flex:none;stroke:currentColor;fill:none;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
 button{font:inherit;color:inherit}
 button:focus-visible,[tabindex]:focus-visible,a:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 a{color:var(--accent)}
 
 .app{container-type:inline-size;height:100vh;height:100dvh;display:flex;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+/* B160: the keyboard is open: kbFit() sets .app's top and height from visualViewport, and nothing pans the page */
+.app.kb{position:fixed;left:0;right:0;container-type:size;padding-bottom:0}
+.app.kb .dock{padding-bottom:8px} .app.kb .sheet{padding-bottom:12px} .app.kb .slash{max-height:min(320px,50cqh)}
+.app.kb .top,.app.kb .dock,.app.kb .scrim{touch-action:pinch-zoom}
 .shell{flex:1;min-height:0;min-width:0;position:relative;display:grid;grid-template-columns:minmax(0,1fr)}
 
 /* the sidebar: a drawer on a phone */
@@ -1540,6 +1544,34 @@ function render(force){
 /* F83: the chat follows its newest message until the person scrolls up; it follows a box that grows or a keyboard too */
 $('body').addEventListener('scroll',()=>{if(!chatShown())return;S.pin=atEnd($('body'));if(S.pin)S.fresh=false;jumpDraw()},{passive:true});
 if(window.ResizeObserver)new ResizeObserver(()=>{if(chatShown()&&S.pin)toEnd()}).observe($('body'));
+/* B160: a phone's keyboard shrinks only the visual viewport (iOS does not shrink dvh) and pans the page, so while it is
+   open .app takes the visual viewport's height and place. Not while pinch-zoomed: then the person pans. */
+const VV=window.visualViewport;
+let kbH=0;  // .app's height while the keyboard is open, 0 when it is closed
+function kbHeight(vv,full,typing){return vv&&typing&&Math.abs(vv.scale-1)<.02&&full-vv.height>100?Math.round(vv.height):0}
+const typingIn=el=>!!(el&&el.matches&&el.matches('textarea,input,select,[contenteditable]'));
+function kbFit(){
+  const app=$('app'), el=document.activeElement, h=kbHeight(VV,document.documentElement.clientHeight,typingIn(el));
+  const pin=chatShown()&&S.pin, changed=h!==kbH;  // before the new height can move the chat
+  if(changed)kbH=h;
+  if(h||changed){
+    app.classList.toggle('kb',!!h);
+    app.style.height=h?h+'px':'';app.style.top=h?Math.max(0,Math.round(VV.offsetTop))+'px':'';
+    if(window.scrollY)window.scrollTo(0,0);  // Safari scrolls even a locked document to show the box
+  }
+  if(!changed)return;
+  if(pin)toEnd();
+  if(h)kbReveal(el);
+}
+/* the field being typed in, inside its own scroller (never scrollIntoView: that pans the page too) */
+function kbReveal(el){
+  const b=el&&el.closest&&el.closest('.sheet,.side,.body');if(!b)return;
+  const r=el.getBoundingClientRect(), v=b.getBoundingClientRect();
+  if(r.bottom>v.bottom-8)b.scrollTop+=Math.min(r.bottom-v.bottom+8,r.top-v.top-8);
+  else if(r.top<v.top+8)b.scrollTop-=v.top+8-r.top;
+}
+if(VV){for(const t of ['resize','scroll'])VV.addEventListener(t,kbFit);
+  document.addEventListener('focusin',e=>{kbFit();if(kbH)kbReveal(e.target)})}
 function grow(ta){ta.closest('.box')?.classList.toggle('has',!!ta.value.trim());ta.style.height='auto';ta.style.height=Math.min(ta.scrollHeight,160)+'px'}
 /* B119: the slash command menu. SL.cmds the session's commands from /commands (null until they come, then
    SLASH_FALLBACK's list stands in), SL.items the rows shown, SL.i the highlighted one */
