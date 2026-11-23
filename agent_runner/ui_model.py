@@ -207,7 +207,7 @@ def release_row(ls: list[str], st: dict | None = None, landed: int | None = None
         return {'id': tid, 'title': title, 'words': words, 'placeholder': False,
                 'text': f'{tid} {title} · {words}', 'note': note}
     from agent_runner.autorelease import auto_release_of
-    every, idle = auto_release_of(S.C.run.get('auto_release', False))
+    every, idle = auto_release_of(S.C.run.get('auto_release', False) if S.C else False)
     if not (every or idle) or P.open_release(ls):  # a shelved or Parked release: none is queued by itself
         return None
     if every and landed is None:

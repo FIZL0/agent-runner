@@ -52,7 +52,7 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
   `release: …` instead of `last: V5 waits for everything before it`. With `[run] auto_release` on and no release queued,
   the row reads `Next release · auto at 10 landed: 6/10` (dimmed); a queued V shows `V5 Release · waits for 24 open ahead`,
   then `ready`, `blocked` or `building`. Once it lands, `lately` says `landed: Release 1.2.0 [V5]` and the count restarts
-  at 0. J and K move no task past the release, and Enter on its row opens the release tab (F131).
+  at 0. J and K move no task past the release, and Enter on the dimmed row opens the release tab (F131).
 
 ## 0.61.0 (2026-11-23)
 

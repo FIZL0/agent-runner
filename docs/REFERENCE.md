@@ -464,7 +464,7 @@ words in a note on the task (after ` — `, not in its title), its next merge la
   `Next release · auto at 10 landed: 6/10` (` · when the run goes idle` added for `idle = true`, both when both
   are set). A queued V reads `V5 Release · waits for 24 open ahead`, then `ready` when nothing is left before it,
   `blocked` when it waits on a person, and `building` once a slot has it or it is merging. With `auto_release` off
-  and no V, there is no row. Enter on the row opens the release tab. `agent-runner status` says the same thing as
+  and no V, there is no row. Enter on the dimmed row opens the release tab. `agent-runner status` says the same thing as
   `release: <that row>` in place of `last: V5 waits for everything before it`, keeping its `not waiting on` notes;
   once the release lands, `lately` reads `landed: Release 1.2.0 [V5]` and the count starts again at 0/N.
 - `plan add` also refuses (exit 3, nothing written) text that looks like an open task's work, naming it:

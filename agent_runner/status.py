@@ -93,8 +93,7 @@ def release_line(ls: list[str], st: dict | None = None, row=None) -> str:
     --last`, F43) gets a line too, 'last:' unless it is a release, naming what holds it."""
     from agent_runner import ui_model as U
     if st is None:
-        from agent_runner.state import run_up
-        st = U._state(run_up())
+        st = U._state(U.S.run_up()) if U.S.C else {}  # before `state.init`: the plan's lines alone
     if row is None:
         row = U.release_row(ls, st)
     live, out, away = P.open_ids(ls), [f'release: {row["text"]}{row.get("note", "")}'] if row else [], None
