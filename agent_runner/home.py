@@ -57,6 +57,7 @@ PORT = 8770
 SERVICE = 'agent-runner-home'  # the systemd unit's and the scheduled task's name
 LABEL = 'dev.agent-runner.home'  # launchd's label
 SCAN = ['~/repos']
+LOOK_EVERY = 5.0  # s between two looks at the package's files (`HomeServer.restart_due`)
 NEEDS_TTL = 20.0  # s a project's needs count is kept before `needs` runs again
 
 
@@ -422,10 +423,22 @@ class HomeHandler(BaseHTTPRequestHandler):
         self.send(404, {'ok': False, 'out': f'no such page: {path}'})
 
     def do_GET(self) -> None:
-        self.route('GET')
+        self.counted('GET')
 
     def do_POST(self) -> None:
-        self.route('POST')
+        self.counted('POST')
+
+    def counted(self, method: str) -> None:
+        """B165: the request counts as open until it is answered (a terminal tunnel: until it ends). One that
+        comes as Home restarts is dropped unanswered, as by a restart: the browser asks again (an error answer
+        would end its event stream for good)."""
+        if not self.server.enter():
+            self.close_connection = True
+            return
+        try:
+            self.route(method)
+        finally:
+            self.server.leave()
 
     def proxy(self, method: str) -> None:
         """/p/KEY/REST: the project's run app. The request goes on to the run's own page (127.0.0.1, its port)
@@ -528,6 +541,7 @@ class HomeHandler(BaseHTTPRequestHandler):
         conn = http.client.HTTPConnection('127.0.0.1', port, timeout=60)
         try:
             conn.request(method, target, body=data if method == 'POST' else None, headers=headers)
+            sock = conn.sock
             r = conn.getresponse()
         except OSError as e:
             conn.close()
@@ -542,13 +556,26 @@ class HomeHandler(BaseHTTPRequestHandler):
                 self.send_header('Connection', 'close')
                 self.close_connection = True
             self.end_headers()
+            if (r.getheader('Content-Type') or '').startswith('text/event-stream'):
+                self.server.streams[self] = sock  # B165: Home may end it to restart; the page connects again
             while chunk := r.read1(65536):
                 self.wfile.write(chunk)
                 self.wfile.flush()
         except OSError:  # the browser or the run went away
             self.close_connection = True
         finally:
+            self.server.streams.pop(self, None)
             conn.close()
+
+
+def package_stamp() -> tuple | None:
+    """B165: the package's files on disk (name, mtime, size), which an upgrade changes; None when they cannot
+    be read (mid-install)."""
+    try:
+        return tuple(sorted((f.name, f.stat().st_mtime_ns, f.stat().st_size)
+                            for f in Path(__file__).parent.iterdir() if f.is_file())) or None
+    except OSError:
+        return None
 
 
 class HomeServer(ThreadingHTTPServer):
@@ -556,7 +583,12 @@ class HomeServer(ThreadingHTTPServer):
     allow_reuse_address = True
 
     def __init__(self, token: str, port: int, bind: str = '0.0.0.0', rows=project_rows, act=run_action,
-                 link=run_link, roots=projects, vitals=None):
+                 link=run_link, roots=projects, vitals=None, stamp=None):
+        self.stamp = stamp  # B165: package_stamp, or None: never restarts by itself
+        self.started_on = self.seen = stamp() if stamp else None
+        self.looked, self.due, self.restart = time.monotonic(), False, False
+        self.open_lock, self.open = threading.Lock(), 0  # requests being answered, terminal tunnels included
+        self.streams: dict = {}  # of those, the runs' event streams: {handler: its socket to the run}
         self.token, self._rows, self._act, self._link, self._roots = token, rows, act, link, roots
         self.vitals = vitals or home_vitals(self)
         if self.vitals.act is None:
@@ -579,6 +611,43 @@ class HomeServer(ThreadingHTTPServer):
 
     def link(self, root: Path) -> tuple[int, str] | None:
         return self._link(root)
+
+    def enter(self) -> bool:
+        with self.open_lock:
+            self.open += not self.restart
+            return not self.restart
+
+    def leave(self) -> None:
+        with self.open_lock:
+            self.open -= 1
+
+    def restart_due(self) -> bool:
+        """B165: the package's files are not the ones this server started on, and were the same on two looks, so a
+        restart never lands mid-install."""
+        if self.stamp and time.monotonic() - self.looked >= LOOK_EVERY:
+            self.looked = time.monotonic()
+            new = self.stamp()
+            self.due = new is not None and new != self.started_on and new == self.seen
+            self.seen = new
+        return self.due
+
+    def service_actions(self) -> None:
+        """B165: between requests (serve_forever calls it, at least twice a second): when the package changed, ask
+        for a restart, once, and only with no request or terminal tunnel open. Pages keep an event stream open all
+        day, so with only those left they are ended first; each page connects again by itself."""
+        super().service_actions()
+        if self.restart or not self.restart_due():
+            return
+        with self.open_lock:
+            self.restart = self.open == 0
+            ended = list(self.streams.values()) if 0 < self.open <= len(self.streams) else []
+        for sock in ended:
+            try:
+                sock.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
+        if self.restart:
+            threading.Thread(target=self.shutdown, name='home-restart', daemon=True).start()
 
     def stop(self) -> None:
         self.shutdown()
@@ -896,7 +965,7 @@ def serve(port: int | None = None) -> int:
     reg = load_registry()
     port = reg['port'] if port is None else port
     try:
-        srv = HomeServer(home_token(), port)
+        srv = HomeServer(home_token(), port, stamp=None if os.name == 'nt' else package_stamp)  # Windows: no real exec
     except OSError as e:
         print(f'agent-runner home: cannot serve on port {port} ({e}): a run may hold it; it moves to a free '
               f'port when it next starts', file=sys.stderr)
@@ -909,7 +978,18 @@ def serve(port: int | None = None) -> int:
         pass
     finally:
         srv.server_close()
-    return 0
+    return restart_home() if srv.restart else 0
+
+
+def restart_home(exec_=None) -> int:
+    """B165: start Home again as it was started, on the package's new files: the same process, so the service
+    manager sees no stop. Returns only when that failed (the service manager then starts it again)."""
+    print('Runner Home: agent-runner changed on disk; restarting on it', flush=True)
+    try:
+        (exec_ or os.execv)(sys.executable, sys.orig_argv)
+    except OSError as e:
+        print(f'agent-runner home: the restart failed: {e}', file=sys.stderr)
+    return 1
 
 
 USAGE = ('agent-runner home [slots|plan] | home install|uninstall|status|list|serve|peers | home add|remove PATH | '

@@ -393,6 +393,141 @@ def test_terminal_tab(tmp: Path) -> None:
         ttyd.server_close()
 
 
+def test_restart_on_upgrade(tmp: Path) -> None:
+    print('B165: the package changed on disk: Home asks for a restart once, never with a request or tunnel open')
+    disk = ['v1']
+    srv = H.HomeServer('HOMETOKEN', 0, '127.0.0.1', roots=lambda: [], rows=lambda: [], stamp=lambda: disk[0])
+    asked = []
+    srv.shutdown = lambda: asked.append(1)
+
+    def tick(n: int = 1) -> int:
+        for _ in range(n):
+            srv.service_actions()
+        for t in threading.enumerate():
+            if t.name == 'home-restart':
+                t.join(10)
+        return len(asked)
+
+    class Stream:
+        shut = 0
+
+        def shutdown(self, how):
+            self.shut += 1
+
+    try:
+        with mock.patch.object(H, 'LOOK_EVERY', 0.0):
+            eq(tick(3), 0, 'the files it started on: no restart')
+            disk[0] = None
+            eq(tick(3), 0, 'files that cannot be read (mid-install): no restart')
+            disk[0] = 'v2'
+            eq(tick(), 0, 'a change seen once (an install under way): not yet')
+            check(srv.enter(), 'a request comes in')
+            eq(tick(3), 0, 'never while a request is open')
+            stream = Stream()
+            srv.streams['page'] = stream
+            check(srv.enter(), "a page's event stream opens too")
+            eq((tick(3), stream.shut), (0, 0), 'with a request open the stream is left alone')
+            srv.leave()
+            eq((tick(), stream.shut), (0, 1), 'only event streams left: they are ended, and still no restart')
+            del srv.streams['page']
+            srv.leave()
+            eq(tick(), 1, 'nothing open: a restart is asked for')
+            disk[0] = 'v3'
+            eq(tick(5), 1, 'once, whatever changes next')
+            check(not srv.enter(), 'a request that comes then is not answered')
+    finally:
+        srv.server_close()
+    calls = []
+    eq(H.restart_home(lambda exe, argv: calls.append((exe, argv))), 1, 'the restart itself')
+    eq(calls, [(H.sys.executable, H.sys.orig_argv)], 'runs the same command again in place')
+
+    def gone(exe, argv):
+        raise FileNotFoundError(exe)
+    eq(H.restart_home(gone), 1, 'a failed one exits 1, so the service manager starts Home again')
+    pkg = tmp / 'pkg'
+    pkg.mkdir()
+    (pkg / 'web_page.html').write_text('old', encoding='utf-8')
+    with mock.patch.object(H, '__file__', str(pkg / 'home.py')):
+        was = H.package_stamp()
+        eq(H.package_stamp(), was, 'unchanged files: the same stamp')
+        (pkg / 'web_page.html').write_text('newer', encoding='utf-8')
+        check(H.package_stamp() != was, 'a changed page, the version the same: another stamp')
+    with mock.patch.object(H, '__file__', str(tmp / 'gone' / 'home.py')):
+        eq(H.package_stamp(), None, 'no package there: None')
+
+
+def test_restart_waits(tmp: Path) -> None:
+    print('B165: over real sockets: a tunnel holds the restart; a run page event stream is ended for it')
+    disk, beat = ['v1'], threading.Event()
+
+    class Run(FakeRun):
+        def do_GET(self):
+            if self.path.startswith('/terminal/'):
+                data = json.dumps({'ok': True, 'port': run_srv.server_address[1], 'path': '/t/RUNTOKEN/s1/'}).encode()
+                self.send_response(200)
+                self.send_header('Content-Length', str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+                return
+            if self.headers.get('Upgrade'):
+                return FakeTtyd.do_GET(self)
+            self.send_response(200)
+            self.send_header('Content-Type', 'text/event-stream')
+            self.send_header('Connection', 'close')
+            self.end_headers()
+            self.wfile.write(b'data: 1\n\n')
+            self.wfile.flush()
+            beat.wait(60)  # a quiet stream
+            self.close_connection = True
+
+    run_srv = ThreadingHTTPServer(('127.0.0.1', 0), Run)
+    run_srv.daemon_threads = True
+    threading.Thread(target=run_srv.serve_forever, daemon=True).start()
+
+    def opened(hp: int, head: bytes, until: bytes) -> socket.socket:
+        c = socket.create_connection(('127.0.0.1', hp), timeout=10)
+        c.sendall(head + b'\r\n\r\n')
+        got = b''
+        while until not in got:
+            chunk = c.recv(4096)
+            if not chunk:
+                break
+            got += chunk
+        has(got.decode(), until.decode(), 'open')
+        return c
+
+    socks = []
+    with mock.patch.object(H, 'LOOK_EVERY', 0.0):
+        srv = H.HomeServer('HOMETOKEN', 0, '127.0.0.1', roots=lambda: [tmp / 'alpha'], rows=lambda: [],
+                           link=lambda r: (run_srv.server_address[1], 'RUNTOKEN'), stamp=lambda: disk[0])
+        loop = threading.Thread(target=srv.serve_forever, kwargs={'poll_interval': 0.05}, daemon=True)
+        loop.start()
+        hp = srv.server_address[1]
+        try:
+            ws = opened(hp, b'GET /p/alpha/t/HOMETOKEN/s1/ws HTTP/1.1\r\nHost: h\r\nUpgrade: websocket\r\n'
+                        b'Connection: Upgrade', b'\r\n\r\n')
+            es = opened(hp, b'GET /p/alpha/events?t=HOMETOKEN HTTP/1.1\r\nHost: h', b'data: 1\n\n')
+            socks += [ws, es]
+            disk[0] = 'v2'
+            loop.join(0.6)
+            check(loop.is_alive() and srv.due and not srv.restart, 'a tunnel open: due, and it keeps serving')
+            ws.sendall(b'keys')
+            eq(ws.recv(4096), b'echo:keys', 'and the terminal works on')
+            ws.close()
+            eq(es.recv(4096), b'', 'the tunnel gone: the quiet event stream is ended')
+            loop.join(10)
+            check(not loop.is_alive() and srv.restart, 'and the server stops serving, to restart')
+        finally:
+            beat.set()
+            for c in socks:
+                c.close()
+            if loop.is_alive():
+                srv.shutdown()
+            srv.server_close()
+            run_srv.shutdown()
+            run_srv.server_close()
+
+
 def test_run_link(tmp: Path) -> None:
     print("the run's own page: its port and token from its notes, only while the run is up")
     root = project(tmp / 'proj')
@@ -697,5 +832,6 @@ def test_device_site_link(tmp: Path) -> None:
 
 if __name__ == '__main__':
     raise SystemExit(report([in_tmp(test_registry), in_tmp(test_rows), in_tmp(test_actions), in_tmp(test_routing),
-                           in_tmp(test_terminal_tab), in_tmp(test_run_link), in_tmp(test_units), in_tmp(test_https_links), in_tmp(test_qr),
+                           in_tmp(test_terminal_tab), in_tmp(test_restart_on_upgrade), in_tmp(test_restart_waits),
+                           in_tmp(test_run_link), in_tmp(test_units), in_tmp(test_https_links), in_tmp(test_qr),
                            in_tmp(test_run_moves_off_the_port), in_tmp(test_device_site_link)]))

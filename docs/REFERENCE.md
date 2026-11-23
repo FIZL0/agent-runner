@@ -222,6 +222,12 @@ run's app (`/p/<project>/`) has a project switcher at the top of the sidebar (th
 list every Home project as running, idle, paused or off, with its needs-you count; each moves to `/p/<project>/` on
 the same Home address) and an "All projects" item in the sidebar.
 
+Runner Home restarts itself when agent-runner's package files change on disk (an upgrade or a clone's pull, same
+version or not), once the change holds over two 5 s looks. It re-execs in place, never while a request or terminal
+tunnel is open; runs' event streams end when only those are left, and pages reconnect by themselves. On Windows,
+sign out and in to restart Home. A Home started before this needs one restart by hand; unlike a run, it also
+restarts across a breaking version.
+
 ### The run app
 
 With `[run] web` (on by default) a run serves the run app from this machine on `[run] web_port` (8770), bound
