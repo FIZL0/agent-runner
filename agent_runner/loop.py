@@ -41,7 +41,7 @@ from agent_runner.slots import (adopt, backend, DISK_AT, DISK_SAID, du, env_vars
     free_gb, GB, hidden_line, HiddenMux, MUX, remote_any, remote_line, REMOTE_URL, resume, save_leftovers,
     single_run, slot_env, slot_shim, SLOTS, start, transcript, trim, unmerged)
 from agent_runner.slots import budget_mark, budgets, SPENT
-from agent_runner.slots import marker_pid
+from agent_runner.teardown import end_own, PAGE, RUN_LOCK, wait_last_run
 from agent_runner.watch import (_account, agent_failed, api_down, AUTO_UPGRADE, auto_upgrade, cut_off,
     drop_session_tmp, end_orphans, memory_watch, queue_cut_off, queue_resume, restart_if_upgraded,
     RESUME_AFTER, resume_failed, RESUME_MAX, resumes, RESUMES_MAX, stalled, START_TRIES, state_line, stats,
@@ -253,71 +253,6 @@ def drop_earlier_stop(keep: dict) -> None:
     if stopping() and not keep.get('stop'):
         clear_stop()
         log('cleared a stop request left by an earlier run')
-
-
-RUN_LOCK: list = []  # B144: run.lock's open file, held until the process itself ends (not until run() returns)
-PAGE: list = []  # B144: the run page server `start_web` returned, closed by the stop before it says so
-LAST_RUN_WAIT = 30  # s a start waits for a run that is stopping to be gone
-OWN_WAIT = 10  # s the stop gives its board and control server to end after SIGTERM
-
-
-def last_event_stopped() -> bool:
-    """Is the run log's last event `run stopped`? (the run holding run.lock is on its way out)"""
-    try:
-        with open(C.notes('events.jsonl'), 'rb') as fh:
-            fh.seek(0, os.SEEK_END)
-            fh.seek(max(0, fh.tell() - 4096))
-            tail = fh.read().decode('utf-8', errors='replace').splitlines()
-    except OSError:
-        return False
-    for line in reversed(tail):
-        try:
-            d = json.loads(line)
-        except ValueError:
-            continue
-        if isinstance(d, dict) and d.get('kind'):
-            return d['kind'] == EV_STOPPED
-    return False
-
-
-def wait_last_run(limit: float = LAST_RUN_WAIT) -> object:
-    """B144: take run.lock. A start right after a stop waits up to `limit` s for that run to be gone (it holds
-    the lock until its process has ended, and says `run stopped` only once its board, control server and page
-    are gone), so it never adopts the old run's leftovers or meets its port. A run that is up and not stopping
-    is refused at once, as before (`single_run`)."""
-    f, said = C.notes('run.lock'), False
-    end = time.monotonic() + limit
-    while time.monotonic() < end:
-        if got := plat.lock(f):
-            return got
-        if not (stopping() or last_event_stopped()):
-            break
-        if not said:
-            print('waiting for the run that is stopping to end…', file=sys.stderr, flush=True)
-            said = True
-        time.sleep(0.5)
-    return single_run()
-
-
-def end_own() -> None:
-    """B144: the stop's teardown, before it says `run stopped`: the feed and control server end and archive
-    their entries (`rc_sweep_stop`), the board ends, and the run page stops serving, so a run started right
-    after finds none of them. Control sessions are the person's and stay up (c1 outlives a stopped run)."""
-    rc_sweep_stop()  # B12: its feed and control server archive their entries before it exits
-    from agent_runner.control import control_server_live
-    ending = [p for p in (marker_pid(C.notes('board.live')), control_server_live()) if p and plat.alive(p)]
-    for p in ending:
-        plat.terminate(p)
-    end = time.monotonic() + OWN_WAIT
-    while (ending := [p for p in ending if plat.alive(p)]) and time.monotonic() < end:
-        time.sleep(0.25)
-    for p in ending:
-        log(f'stop: pid {p} did not end within {OWN_WAIT} s of SIGTERM; left running')
-    while PAGE:
-        try:
-            PAGE.pop().stop()
-        except Exception as e:  # noqa: BLE001 - the stop goes on
-            log(f'run page: could not stop serving: {e}')
 
 
 def end_sessions(procs: dict, running: dict) -> None:
@@ -1134,7 +1069,7 @@ def run(argv: list[str], prog: str) -> int:
     if a.dry_run:
         return dry_run(slots, branch)
 
-    RUN_LOCK.append(wait_last_run())  # B144: held until the process ends; a start after a stop waits for it
+    RUN_LOCK.append(wait_last_run())  # B144: held until run() returns; a start after a stop waits for it
     ensure_local(ROOT)  # this machine's runner.local.toml: made once (all comments), never rewritten, git-ignored
     drop_earlier_stop(keep)
     C.notes('POWER').unlink(missing_ok=True)
@@ -1168,7 +1103,11 @@ def run(argv: list[str], prog: str) -> int:
         READING[0] = True
         threading.Thread(target=read_keys, daemon=True).start()
         print(keys_help(), flush=True)
-    return Run(a, slots, once, branch, model, idle, stall, pause).go()
+    try:
+        return Run(a, slots, once, branch, model, idle, stall, pause).go()
+    finally:
+        while RUN_LOCK:  # the run is over (its stop has ended its own processes): the next one may start
+            RUN_LOCK.pop().close()
 
 
 class Run:
@@ -1501,7 +1440,7 @@ class Run:
         # a slot asleep until a usage reset does not hold the stop; a session waiting to resume does
         if stopping() and not procs and (not waiting or forced()) and not merging:
             how = stopped_by()
-            end_own()  # B144: its feed, control server, board and page are gone before it says it stopped
+            end_own(rc_sweep_stop, log)  # B144: its feed, control server, board and page are gone before it says it stopped
             clear_stop()
             log(f'run stopped ({how}); tried this run: {", ".join(sorted(tried)) or "none"}', EV_STOPPED)
             if POWER:

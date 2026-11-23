@@ -17,6 +17,7 @@ from unittest import mock
 from _check import check, eq, git, report
 
 from agent_runner import loop  # noqa: E402
+from agent_runner import teardown  # noqa: E402
 from agent_runner import runner as R  # noqa: E402
 
 
@@ -203,15 +204,15 @@ def test_stop_ends_own_b144():
         ticks[0] += 1
         if ticks[0] == 3:
             held.close()
-    with mock.patch.object(loop, 'stopping', lambda: True), mock.patch.object(loop.time, 'sleep', sleep):
-        got = loop.wait_last_run(5)
+    with mock.patch.object(teardown, 'stopping', lambda: True), mock.patch.object(teardown.time, 'sleep', sleep):
+        got = teardown.wait_last_run(5)
     check(got is not None and ticks[0] == 3, 'it waited for the old run, then took the lock', ticks)
     got.close()
     held = R.plat.lock(R.C.notes('run.lock'))
-    with mock.patch.object(loop, 'stopping', lambda: False), mock.patch.object(loop, 'last_event_stopped', lambda: False), \
-            mock.patch.object(loop.time, 'sleep', lambda s: (_ for _ in ()).throw(AssertionError('waited'))):
+    with mock.patch.object(teardown, 'stopping', lambda: False), mock.patch.object(teardown, 'last_event_stopped', lambda: False), \
+            mock.patch.object(teardown.time, 'sleep', lambda s: (_ for _ in ()).throw(AssertionError('waited'))):
         try:
-            loop.wait_last_run(5)
+            teardown.wait_last_run(5)
             check(False, 'a run that is up and not stopping is refused')
         except SystemExit as e:
             check('another run is going' in str(e), 'refused at once, as before', e)
