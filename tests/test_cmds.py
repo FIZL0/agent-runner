@@ -71,6 +71,8 @@ def test_run_view_posts_keys():
     eq("unknown key 'what'" in text, True, 'an unknown line says so')
     eq(RV.view_key('slots 4'), 'slots 4', 'slots N is a key')
     eq(RV.view_key('  +  '), '+', 'spaces around a key are dropped')
+    eq((RV.view_key('p on'), RV.view_key('s off'), RV.view_key('u on')), ('p on', 's off', None),
+       'a key with on/off goes as the run reads it; u takes none')
 
 
 A = Path('/tmp/f80/alpha')

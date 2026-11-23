@@ -27,8 +27,8 @@ def view_key(line: str) -> str | None:
         return REMOTE_KEY
     if k in TOGGLES or k in ('?', 'h', 'help'):
         return '?' if k in ('h', 'help') else k
-    if re.fullmatch(r'slots [+-]?\d+', k):
-        return k
+    if re.fullmatch(r'slots [+-]?\d+', k) or re.fullmatch(r'[spfzx] (?:on|off)', k):
+        return k  # `p on`, `s off`: one way only, as `take_keys` reads them
     return None
 
 
