@@ -16,7 +16,8 @@ Tailscale reaches it, on port 8770 (`port` in the registry). A run that finds th
 on it, serves its own page on a free port instead (web.start_web), and Home routes to it; while Home serves, the
 run's link is Home's /p/KEY/ (B146, site_links), so one device address switches between runners:
 
-    GET  /?t=TOKEN               the Home page: every project, running, idle or off, what needs you, buttons
+    GET  /?t=TOKEN               the Home page: F134: the run app (web_page.html) in Home mode, its All projects
+                                 view: every project, running, idle or off, what needs you, buttons, Devices
     GET  /projects?t=TOKEN       the same as JSON (`project_rows`)
     POST /act?t=TOKEN            {"project": KEY, "name": start|stop|pause|resume|slots, "arg": "+1"}: the
                                  runner's own command in that project (`run_action`)
@@ -250,7 +251,7 @@ def run_link(root: Path) -> tuple[int, str] | None:
         return None
 
 
-def site_links(root: Path, serves=None) -> list[str]:
+def site_links(root: Path, serves=None, https=None) -> list[str]:
     """B146: the run app of the project at `root` through the device site, Runner Home serving on this device:
     http://HOST:PORT/p/KEY/?t=HOME_TOKEN, by hostname then by LAN address, so one device address switches between
     runners. [] when nothing on the device routes /p/KEY: no Home token yet, Home does not answer on its port
@@ -268,8 +269,9 @@ def site_links(root: Path, serves=None) -> list[str]:
         key = next((k for k, r in keys(projects(reg)).items() if r == me), None)
         if key is None or not (serves or serving)(reg['port']):
             return []
-        from agent_runner.web import page_urls
-        return [u.replace('/?t=', f'/p/{key}/?t=', 1) for u in page_urls(reg['port'], token)]
+        from agent_runner.web import https_first, page_urls
+        # F134: Home's Tailscale Serve https address first, at /p/KEY/ (Talk's mic needs https)
+        return https_first([u.replace('/?t=', f'/p/{key}/?t=', 1) for u in page_urls(reg['port'], token)], https)
     except (OSError, ValueError, SystemExit):
         return []
 
@@ -633,7 +635,11 @@ def offer_https(port: int, urls: list[str], call=None, out=print, ask=None, whic
     if ask and ask(f"Home has no https link (Talk's mic needs one). Run `{line}`?"):
         code, said = (call or sh)(cmd)
         if code == 0:
-            return home_urls(port)
+            got = home_urls(port)
+            if not any(u.startswith('https://') for u in got):
+                out(f'{line} ran, but tailscale serve status shows no https address for port {port} yet: '
+                    f'`agent-runner home status` lists it once it does')
+            return got
         out(f'{line} failed: {said}')
         return urls
     out(f"For an https link (Talk's mic needs one), run: {line}")
@@ -835,13 +841,13 @@ def install(kind: str | None = None, call=sh, out=print, check=wait_serving, htt
             out(f'agent-runner home install: {" ".join(cmd)} failed: {said}')
             return 1
     urls = home_urls(reg['port'], https)
-    where ={'linux': f'systemd user service {SERVICE} ({unit})', 'macos': f'launchd agent {LABEL} ({unit})',
+    where = {'linux': f'systemd user service {SERVICE} ({unit})', 'macos': f'launchd agent {LABEL} ({unit})',
              'windows': f'scheduled task {SERVICE} (at logon)'}[kind]
     out(f'Runner Home is installed: {where}, on port {reg["port"]}.')
     if not check(reg['port']):
         out(f'It does not answer on port {reg["port"]} yet: a run may hold that port (it moves to a free one '
             f'when it next starts; Home keeps trying meanwhile), or see {log}.')
-    urls = offer_https(reg['port'], urls, call=call, out=out, ask=ask) if https is None else urls
+    urls = offer_https(reg['port'], urls, call=call, out=out, ask=ask)
     out('Open it on your phone (same network or Tailscale):\n  ' + '\n  '.join(urls))
     # F134: the QR code holds the https link when there is one (the mic needs it), else the LAN address
     if q := qr_text(urls[0] if urls[0].startswith('https://') else urls[-1]):
@@ -879,10 +885,7 @@ def status(kind: str | None = None, out=print, https=None, on=None, up=None) -> 
     out(f'Runner Home: {"installed" if on else "not installed (agent-runner home install)"}, '
         f'{"serving" if up else "not serving"} on port {reg["port"]}')
     if on or up:
-        urls = home_urls(reg['port'], https)  # F134: the https link first
-        out('  ' + '\n  '.join(urls))
-        if not any(u.startswith('https://') for u in urls):
-            out(f'  (no https link, which Talk\'s mic needs: {" ".join(serve_https_argv(reg["port"]))} gives one)')
+        out('  ' + '\n  '.join(home_urls(reg['port'], https)))  # F134: the https link first
     ps = projects(reg)
     out(f'{len(ps)} project{"" if len(ps) == 1 else "s"}: ' + (', '.join(p.name for p in ps) or 'none'))
     return 0

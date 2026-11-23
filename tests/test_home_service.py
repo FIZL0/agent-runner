@@ -515,10 +515,6 @@ def test_https_links(tmp: Path) -> None:
         urls = [s for s in lines if s.startswith('http')]
         eq(urls[0], f'https://box.tail1.ts.net:8771/?t={token}', 'home status lists the https URL first')
         check(any(u.startswith('http://192.168.1.5:8770/') for u in urls[1:]), 'then the http ones', urls)
-        said = []
-        H.status('linux', out=said.append, https=fake_tailscale({}), on=True, up=True)
-        has('\n'.join(said), r'tailscale serve --bg --https=8771 http://127\.0\.0\.1:8770',
-            'no serve for Home: status says the command that gives one')
 
         print('install: the https link first, and the QR code holds it')
         env = {'HOME': str(tmp / 'home'), 'XDG_CONFIG_HOME': str(tmp / 'home' / '.config'), 'USER': 'me'}
@@ -531,6 +527,13 @@ def test_https_links(tmp: Path) -> None:
             check(text.index('https://box.tail1.ts.net:8771/') < text.index('http://192.168.1.5:8770/'),
                   'install prints the https link first', text)
             has(text, rf'QR\[https://box\.tail1\.ts\.net:8771/\?t={token}\]', 'and the QR code is of it')
+            said, asked = [], []
+            with mock.patch.object(H.shutil, 'which', lambda t: '/usr/bin/' + t):
+                H.install('linux', call=lambda c: (0, ''), out=said.append, check=lambda p: True,
+                          https=fake_tailscale({}), ask=lambda q: asked.append(q) or False)
+            check(asked and 'tailscale serve --bg --https=8771' in asked[0], 'no serve: install offers to set one up', asked)
+            has('\n'.join(said), r'run: tailscale serve --bg --https=8771 http://127\.0\.0\.1:8770',
+                'a no: install says the command')
 
     print('install with no serve: offers to set one up, or says the command')
     plain = ['http://box:8770/?t=x']
@@ -665,6 +668,8 @@ def test_device_site_link(tmp: Path) -> None:
             ts = lambda p, t: [f'https://box.tail.ts.net/?t={t}'] if p == hp else []  # noqa: E731
             eq(M.run_facts(root, {'up': True}, ts)['link'], f'https://box.tail.ts.net/p/proj/?t={H.home_token()}',
                "a Tailscale Serve https address for Home's port keeps the /p/KEY/ path")
+            eq(H.site_links(root, https=ts), [f'https://box.tail.ts.net/p/proj/?t={H.home_token()}', site],
+               'F134: the /p/KEY/ links themselves put the https one first')
             H.remove_project(str(root))
             eq(H.site_links(root), [], 'Home does not list the project: no device site link')
             H.add_project(str(root))

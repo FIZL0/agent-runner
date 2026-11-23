@@ -1424,7 +1424,8 @@ if(HOME_PAGE){  // F134: Home's own page: no run behind it, only Home's projects
 connect();
 loadFeed('c1');
 drain();  // F137: what a reload left in the outbox goes now (the run page runs each cid once)
-if(HB){loadProjects();setInterval(()=>{if(H.open||S.view==='projects')loadProjects()},5000);  // F134: the switcher
+if(HB){loadProjects();let tick=0;  // F134: the switcher: every 5 s while it or All projects shows, else every 30 s
+  setInterval(()=>{if(H.open||S.view==='projects'||++tick%6===0)loadProjects()},5000);
   setInterval(()=>{if(S.view==='projects')loadDevices()},30000);loadDevices()}
 }
 </script>
