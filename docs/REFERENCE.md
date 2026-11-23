@@ -88,12 +88,12 @@ window (before 1809, a console that starts hidden, `STARTUPINFO.wShowWindow = SW
 then each new line as the run logs it, and the runner keys typed there (`s`, `s!`, `p`, `f`, `+`, `-`, `slots N`, `z`,
 `x`, `u`, `?`, and an empty line for Remote Control), each posted to the run through `.runner/KEYS` as `agent-runner
 key` does. `?` lists them (they print once as the view opens too). Ctrl-C leaves the view; the run keeps going. `attach
-feed` and `attach board` open `agent-runner ui`. On Windows there is no attach to a ConPTY session yet: `attach s2` (or
-`c1`, `cN`) prints the place of its log and shows no console, as it does for a headless stream slot. Only a session with
+feed` and `attach board` open `agent-runner ui` (which needs tmux; on Windows it prints the run page's link instead).
+On Windows there is no attach to a ConPTY session yet: `attach s2` (or `c1`, `cN`) prints the place of its log and shows no console, as it does for a headless stream slot. Only a session with
 a hidden console from before 1809 is shown: `attach s2` shows and raises its console window. Minimize it to hide it
 again; closing it ends that session, which resumes in the next run. `agent-runner status` and `.runner/run.log` show the
-sessions either way. On Linux and macOS a hidden session (`attach s2`, `attach c3`, or Enter on the session tab of
-`agent-runner ui` outside tmux; inside tmux `agent-runner ui` shows it beside its panels) is attached to its own
+sessions either way. On Linux and macOS a hidden session (`attach s2`, `attach c3`, or the session tab of
+`agent-runner ui`, which shows it beside its panels) is attached to its own
 terminal, the way dtach does it: the shim listens on a Unix socket beside its marker (`.runner/slotN.sock`,
 `controlN.sock`, mode 0600, gone when the session ends), sends what the session prints to every attached terminal, types
 in what you type, and takes your terminal's size (on attach, and when you resize it). Detach with Ctrl-b d (Ctrl-b
@@ -310,12 +310,14 @@ How the app looks, moves and speaks is in [STYLE.md](STYLE.md); a change to it f
 The app does not open slots in the Claude apps; `agent-runner ui` still does (see `[run] sessions` above).
 
 `agent-runner ui` (the terminal UI) has no chat of its own: nothing is typed into a session from it, and Ctrl+C
-always quits. Selecting a session row (cN or sN) shows the real Claude Code session. Inside tmux, a pane split
+always quits. Selecting a session row (cN or sN) shows the real Claude Code session. A pane split
 off beside the UI runs `agent-runner attach cN` (respawned when another session row is selected, killed when
-another row or the UI quits); l, Enter or Ctrl-l moves focus into it, and Ctrl-h comes back. Outside tmux, or
-where a session has no socket (Windows), its tab shows the feed read-only with its link (o open, y copy); Enter
-attaches full-screen. Ctrl-f makes the session full-screen between the UI's top and bottom bars, and again for
-side by side. In Sessions, n starts a new control session without waiting for its link, and `c` selects c1.
+another row or the UI quits); l, Enter or Ctrl-l moves focus into it, and Ctrl-h comes back. A session with no
+terminal socket says so with its link (o open, y copy; Enter opens the link). One whose session pane closed itself
+(Ctrl-b d there) says so, and Enter (⏎ show it beside) shows it again. `agent-runner ui` always runs inside tmux: started
+outside it, it re-execs itself in the project's tmux session (named for the folder, or a new window in it); without
+tmux, or on Windows, it refuses with exit 2 (the install line, or the run page's link). Ctrl-f makes the session
+full-screen between the UI's top and bottom bars, and again for side by side. In Sessions, n starts a new control session without waiting for its link, and `c` selects c1.
 
 - **Terminal-style page.** The same server also serves the terminal-style page at `/term?t=TOKEN`: the run page
   drawn like `agent-runner ui` (numbered panels, a key for everything), in `[ui] theme` (its `t` picks another

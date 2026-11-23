@@ -64,14 +64,6 @@ SNAP['queue'][0].update(state='running s1 6m', title='Queued task number 1, whic
 SNAP['queue'][1].update(id='B2', state='critical', pri='critical')
 SNAP['queue'][2].update(id='C3', state='after', after=['Q4'], after_title='Q4 Queued task number 4')
 
-FEEDS = {
-    'c1': [{'kind': 'you', 'text': 'status?'}, {'kind': 'tool', 'text': 'Bash(./run status -n 20)'},
-           {'kind': 'out', 'text': 'run up: 3 slots'}, {'kind': 'say', 'text': 'Nothing needs you beyond D3.'}],
-    'c6': [{'kind': 'you', 'text': 'ideas for themes?'}, {'kind': 'tool', 'text': 'Read(theme.py)'}],
-    's1': [{'kind': 'say', 'text': 'I will start with the board.'}, {'kind': 'tool', 'text': 'Read(a.py)'},
-           {'kind': 'out', 'text': '120 lines'}, {'kind': 'tool', 'text': 'Edit(a.py)'},
-           {'kind': 'say', 'text': 'Edited; running the tests.'}],
-}
 DIFF = 'diff --git a/a.py b/a.py\n--- a/a.py\n+++ b/a.py\n@@ -1,2 +1,2 @@\n-old line\n+new line\n context'
 
 
@@ -120,8 +112,6 @@ def colour_at(win: Win, s: str, offset: int = 0) -> str:
 
 def page(snap=None, **kw) -> T.RunPage:
     snap = snap or SNAP
-    kw.setdefault('feed', lambda name: {'ok': name in FEEDS, 'name': name, 'entries': list(FEEDS.get(name, [])),
-                                        'more': False, 'link': ''})
     kw.setdefault('diff', lambda name: DIFF)
     kw.setdefault('read', lambda path: COPY if path.endswith('K5.html') else '')
     kw.setdefault('opener', lambda url: {'ok': True, 'out': f'opened {url}'})
@@ -223,23 +213,15 @@ def test_session_tabs() -> None:
     eq(p.tab()[1], ['session', 'diff'], 'a slot on a task: session, diff')
     p.key('ENTER')
     win = drawn(p)
-    check('● I will start with the board.' in win.text(), 'outside tmux: the feed read-only, the agent\'s words',
-          win.text())
-    check('· 2 steps' in win.text() and 'Read(a.py)' not in win.text(), "tool steps folded as '· N steps'",
-          win.text())
+    check('s1 has no terminal to show here' in win.text(), 'F141: no socket: it says so, no feed', win.text())
     check('❯ message' not in win.text(), 'F112: no box to message the slot', win.text())
     check('https://claude.ai/code/session_1' in win.text() and '[o open it] [y copy link]' in win.text(),
           'the session tab: its link, o open it, y copy link', win.text())
-    check('[⏎ attach s1' not in win.text(), 'no socket: no attach button', win.text())
+    check('[⏎ show it beside]' not in win.text(), 'no socket: nothing to show beside', win.text())
     eq([u for *_, u in p.links], ['https://claude.ai/code/session_1'], 'B125: its link is kept for OSC 8')
-    p.key('v')
-    win = drawn(p)
-    check('Read(a.py)' in win.text() and '⎿ 120 lines' in win.text(), 'v shows the steps', win.text())
-    p.key('v')
     p.socket = lambda name: name == 's1'
     win = drawn(p)
-    check('[⏎ attach s1 (back: Ctrl-b d)]' in win.text(), 'F88: with a socket, outside tmux, Enter attaches it '
-          'full-screen', win.text())
+    check('[⏎ show it beside]' in win.text(), 'F88: with a socket and no pane, Enter shows it beside', win.text())
     p.socket = lambda name: False
     p.key('l')
     win = drawn(p)
@@ -255,8 +237,7 @@ def test_session_tabs() -> None:
     check('[n start one]' in drawn(p).text(), 'it says n starts one')
     p.cur[2] = 1
     win = drawn(p)
-    check('❯ ideas for themes?' in win.text() and 'Read(theme.py)' in win.text(),
-          "c6's feed read-only: the person's words and its steps", win.text())
+    check('c6 has no terminal to show here' in win.text(), 'F141: a cN row draws no feed', win.text())
     check('❯ message c6' not in win.text(), 'F112: no message box for a control session', win.text())
 
 
@@ -448,7 +429,7 @@ def test_navigation() -> None:
     eq((p.sel()['name'], p.tab()[0], p.main), ('s2', 'session', True), 't: the slot\'s session')
     p.key('j')
     p.key('j')
-    eq(p.off.get(p.place()), None or 0, 'j/k scroll the pane (none to scroll here)')
+    eq((p.sel()['name'], p.main), ('s2', True), 'j/k scroll the pane: the selection stays')
     eq(p.key('q'), True, 'q quits')
 
 
@@ -495,8 +476,7 @@ def test_new_chat_f112() -> None:
         snaps[0] = more
         return {'ok': True, 'code': 0, 'out': 'control 7 is starting in a hidden terminal', 'argv': [],
                 'link': '', 'name': 'c7'}
-    p = T.RunPage(SNAP, get_snap=lambda: snaps[0], attrs=ATTRS, feed=lambda name: {'entries': []},
-                  socket=lambda name: False, tmux=lambda argv: (1, ''))
+    p = T.RunPage(SNAP, get_snap=lambda: snaps[0], attrs=ATTRS, socket=lambda name: False, tmux=lambda argv: (1, ''))
     p.key('2')
     with mock.patch.object(U, 'new_control', slow):
         t0 = T.time.time()
@@ -622,7 +602,7 @@ def test_side_pane_f112() -> None:
         p.key('j')
         eq(p.sel()['name'], 's2', 's2 (no socket)')
         eq(tm.did('kill-pane'), [['kill-pane', '-t', '%11']], 'a session with no socket: the pane is killed')
-        check('· ' in drawn(p).text() or 's2' in drawn(p).text(), 'its feed read-only instead')
+        check('s2 has no terminal to show here' in drawn(p).text(), 'F141: it says so instead, no feed')
         p.key('k')
         eq(len(tm.did('split-window')), 2, 's1 (a socket): a pane again')
         p.key('3')
@@ -639,11 +619,85 @@ def test_side_pane_f112() -> None:
     check(not shared.did('bind-key') and not shared.did('unbind-key'), 'two TUIs: the second neither binds again '
           'nor unbinds while the other window still uses the keys', shared.calls)
     p2 = page(tmux=tm, socket=lambda name: True)
-    with mock.patch.dict(os.environ, {'TMUX_PANE': '%3'}):
-        os.environ.pop('TMUX', None)
-        n = len(tm.calls)
+    with mock.patch.dict(os.environ, {'TMUX': '/tmp/tmux-1/default,1,0', 'TMUX_PANE': '%3'}), \
+            mock.patch.object(U, 'runner_cmd', lambda: ['/x/run']):
         p2.key('2')
-        eq(tm.calls[n:], [], 'outside tmux: no pane, the feed read-only')
+        check(p2.side.pane, 'c1 beside')
+        p2.side.gone()  # Ctrl-b d in it: its pane closed itself
+        p2.sync()
+        eq(p2.side.pane, '', 'a pane that closed itself stays closed')
+        check('c1 is not shown beside: its pane closed.' in drawn(p2).text(), 'F141: it says so', drawn(p2).text())
+        p2.key('l')
+        n = len(tm.did('split-window'))
+        p2.key('ENTER')
+        eq((len(tm.did('split-window')), p2.side.name), (n + 1, 'c1'), 'F141: Enter shows it beside again')
+
+
+def test_always_tmux_f141() -> None:
+    """F141: outside tmux the TUI re-execs in the project's tmux session (a new window when that is up); no tmux:
+    it refuses with the install line; Windows: it refuses with the run page link. Nothing draws a feed."""
+    class Exec(Exception):
+        pass
+    tty = mock.Mock(isatty=lambda: True)
+    execs, asked = [], []
+
+    def exec_(file, argv, env):
+        execs.append((file, argv, env))
+        raise Exec
+
+    def start(up: bool) -> None:
+        def run(argv):
+            asked.append(argv)
+            return (0 if up else 1), ''
+        with mock.patch.dict(os.environ, {T.PICKER_ENV: '1', T.PLACE_ENV: '{}'}), \
+                mock.patch.dict(sys.modules, {'curses': mock.Mock()}), \
+                mock.patch.object(T.plat, 'WINDOWS', False), mock.patch('shutil.which', lambda n: f'/usr/bin/{n}'), \
+                mock.patch.object(sys, 'stdin', tty), mock.patch.object(sys, 'stdout', tty), \
+                mock.patch('agent_runner.state.init', lambda *a: None), \
+                mock.patch.object(S, 'ROOT', Path('/x/my.proj')), mock.patch.object(T, 'tmux_run', run), \
+                mock.patch.object(U, 'runner_cmd', lambda: ['/x/run']), mock.patch.object(os, 'execvpe', exec_):
+            os.environ.pop('TMUX', None)
+            for k in [k for k in os.environ if k.startswith('AGENT_RUNNER_') and k not in (T.PICKER_ENV, T.PLACE_ENV)]:
+                os.environ.pop(k)
+            try:
+                T.main([])
+                check(False, 'main went on without its exec')
+            except Exec:
+                pass
+    start(False)
+    file, argv, env = execs[-1]
+    cmd = ['env', f'{T.PLACE_ENV}={{}}', '/x/run', 'ui']
+    root = str(Path('/x/my.proj'))
+    eq((file, argv), ('tmux', ['tmux', 'new-session', '-A', '-s', 'my_proj', '-c', root, *cmd]),
+       "no session yet: new-session -A with the project's name")
+    check(T.PICKER_ENV not in env and T.PLACE_ENV not in env, 'the tmux server keeps neither for later windows')
+    start(True)
+    eq(execs[-1][1], ['tmux', 'new-window', '-t', '=my_proj:', '-c', root, *cmd, ';', 'attach-session', '-t',
+                      '=my_proj'], 'the session is up: a new window in it, then attached')
+    eq(asked, [['has-session', '-t', '=my_proj']] * 2, 'the exact session is looked for')
+
+    def refused(**patches):
+        err = io.StringIO()
+        with mock.patch.object(T.plat, 'WINDOWS', patches['windows']), mock.patch('shutil.which', lambda n: None), \
+                mock.patch('agent_runner.state.init', lambda *a: None), \
+                mock.patch('agent_runner.web.page_line', lambda: patches.get('line', '')), \
+                mock.patch.object(os, 'execvpe', exec_), contextlib.redirect_stderr(err):
+            return T.main([]), err.getvalue()
+    n = len(execs)
+    rc, said = refused(windows=False)
+    check(rc and 'sudo pacman -S tmux' in said and 'brew install tmux' in said, 'no tmux: the install line', said)
+    rc, said = refused(windows=True, line='run page: http://127.0.0.1:8770/?t=x')
+    check(rc and 'http://127.0.0.1:8770/?t=x' in said and 'Windows' in said, 'Windows: the run page link', said)
+    rc, said = refused(windows=True)
+    check(rc and 'start the run first' in said, 'Windows with no run up: it says to start one', said)
+    eq(len(execs), n, 'a refusal execs nothing')
+    with mock.patch.object(U, 'feed', lambda *a: check(False, 'a feed was read')):
+        p = page(socket=lambda name: name == 'c1')
+        p.key('2')
+        for p.cur[2] in (0, 1):
+            txt = drawn(p).text()
+            check('❯' not in txt and '⎿' not in txt, f'{p.sel()["name"]}: no feed in the right pane', txt)
+    check('steps' not in T.HELP and 'outside tmux' not in T.HELP, 'HELP lost the feed and the fallback', T.HELP)
 
 
 def test_diff_key_f127() -> None:
@@ -679,8 +733,8 @@ def test_diff_key_f127() -> None:
 
 def test_full_screen_f112() -> None:
     """F112 Ctrl-f: in tmux the panes are laid out again (the session pane above the TUI's pane cut to its bottom
-    bar, a `ui --bar` pane for the top bar above it), and back; outside tmux the main pane takes the width
-    between both bars."""
+    bar, a `ui --bar` pane for the top bar above it), and back; with no session pane beside the main pane takes the
+    width between both bars."""
     tm = Tmux()
     p = page(tmux=tm, socket=lambda name: True)
     with mock.patch.dict(os.environ, {'TMUX': '/tmp/tmux-1/default,1,0', 'TMUX_PANE': '%3'}), \
@@ -720,10 +774,10 @@ def test_full_screen_f112() -> None:
     q.key('j')
     q.key('\x06')
     win = drawn(q)
-    eq((q.full, q.main), (True, True), 'outside tmux, Ctrl-f: the session full-screen')
+    eq((q.full, q.main), (True, True), 'no pane beside, Ctrl-f: the session tab full-screen')
     check(win.lines()[0].startswith('proj 0 all runs') and win.lines()[-1].startswith(' SESSION ') and
-          '[2] Sessions' not in win.text() and '❯ ideas for themes?' in win.text(),
-          'both bars drawn, the feed between them, no panels', win.text())
+          '[2] Sessions' not in win.text() and 'c6 has no terminal' in win.text(),
+          'both bars drawn, the session tab between them, no panels', win.text())
     q.key('\x06')
     check(not q.full and '[2] Sessions' in drawn(q).text(), 'Ctrl-f again: side by side')
     q.key('3')
@@ -739,10 +793,9 @@ def test_actions() -> None:
     git(repo, 'add', '-A')
     git(repo, 'commit', '-qm', 'start')
     S.init(repo)
-    ran, sent, attached, opened, calls = [], [], [], [], []
+    ran, sent, opened, calls = [], [], [], []
     ok = lambda out: {'ok': True, 'code': 0, 'out': out, 'argv': []}  # noqa: E731
-    p = page(attach=lambda name: (attached.append(name), {'ok': True, 'out': f'back from {name}'})[1],
-             opener=lambda url: (opened.append(url), {'ok': True, 'out': f'opened {url}'})[1])
+    p = page(opener=lambda url: (opened.append(url), {'ok': True, 'out': f'opened {url}'})[1])
     with mock.patch.object(U, 'RUN', [lambda argv: (ran.append(argv), (0, 'ok: ' + ' '.join(argv)))[1]]), \
             mock.patch.object(U, 'SEND', [lambda text: (sent.append(text), ok('sent to c1'))[1]]), \
             mock.patch.object(U, 'need_label', lambda tid: {n['id']: n['label'] for n in SNAP['needs']}.get(tid, '')), \
@@ -817,9 +870,6 @@ def test_actions() -> None:
         p.cur[2] = 2
         p.key('o')
         p.key('ENTER')
-        p.socket = lambda name: name == 's1'
-        p.key('ENTER')
-        p.socket = lambda name: False
         p.key('i')
         eq(p.typing, '', 'F112: nothing to type into on the session tab')
         p.key('ESC')
@@ -857,7 +907,6 @@ def test_actions() -> None:
        'H starts a new control session (B139); o, the quick asks and n run F74\'s actions (n without waiting)')
     eq(opened, ['https://claude.ai/artifact/k5', 'https://claude.ai/code/s1', 'https://claude.ai/code/session_c1'],
        'O and o open the browser')
-    eq(attached, ['s1'], 'Enter on the session tab, with a socket outside tmux, attaches it')
 
 
 def test_session_tab_b125() -> None:
@@ -1111,7 +1160,7 @@ def test_row_ground_and_fill() -> None:
     c = FakeCurses()
     attrs = T.curses_attrs(c)
     bg = lambda a: c.pairs[(a & 0xff00) >> 8][1]  # noqa: E731 - the background of a cell's colour pair
-    p, win = T.RunPage(SNAP, get_snap=lambda: SNAP, attrs=attrs, feed=lambda n: {'entries': []}), Win(30, 100)
+    p, win = T.RunPage(SNAP, get_snap=lambda: SNAP, attrs=attrs), Win(30, 100)
     p.key('3')  # Sessions is unfocused; its selected row is c1
     p.draw(win)
     row = next(y for y, l in enumerate(win.lines()) if ' c1 control session' in l[:36])
@@ -1226,7 +1275,7 @@ def test_themes() -> None:
     for name in TH.NAMES:
         c = FakeCurses()
         attrs = T.curses_attrs(c, name)
-        p, win = T.RunPage(SNAP, get_snap=lambda: SNAP, attrs=attrs, feed=lambda n: {'entries': []}), Win(30, 100)
+        p, win = T.RunPage(SNAP, get_snap=lambda: SNAP, attrs=attrs), Win(30, 100)
         p.draw(win)
         check('[3] Queue' in win.text() and '? keys' in win.text(), f'{name}: the page draws')
         check(all(f'{g}:{n}' in attrs for g in ('sel', 'cur') for n in T.COLOURS), f'{name}: every row pair')
@@ -1267,8 +1316,8 @@ def test_idle_run_of_another_project() -> None:
     S.C.notes('STATE').write_text('{"state": "5 slots, usage caps off (f)", "running": {}, "idle": true}',
                                   encoding='utf-8')
     snap = U.snapshot(up=True, links={}, windows=titles)
-    attached = []
-    p = page(snap, attach=lambda name: (attached.append(name), {'ok': False, 'out': 'no pane'})[1])
+    tm = Tmux()
+    p = page(snap, tmux=tm)
     eq([r['name'] for r in p.items(2)], ['c1', 'c6', 'c9', 's1', 's2', 's3', 's4', 's5', '+'],
        'c1, c6, c9, then every slot, idle, then the new chat row')
     win = Win(30, 120)
@@ -1282,13 +1331,7 @@ def test_idle_run_of_another_project() -> None:
     eq(p.tab()[0], 'session', "s2's session tab")
     check('s2 is idle: nothing running' in drawn(p).text(), 'it says s2 is idle')
     p.key('ENTER')
-    eq((attached, p.msg), ([], 's2 is idle: nothing running'), 'Enter on an idle slot: the idle line, no attach')
-    p.key('ESC')
-    p.cur[2] = 1  # c6
-    p.socket = lambda name: name == 'c6'
-    p.key('ENTER')
-    p.key('ENTER')
-    eq(attached, ['c6'], 'Enter on a control session\'s session tab, outside tmux with a socket, attaches it')
+    eq((tm.calls, p.msg), ([], 's2 is idle: nothing running'), 'Enter on an idle slot: the idle line, no pane')
 
 
 def test_run_key_binds() -> None:
@@ -1819,8 +1862,10 @@ def test_project_name_b153() -> None:
         return 0
     tty = mock.Mock(isatty=lambda: True)
     from agent_runner import cmds
-    curses = mock.Mock(wrapper=wrapper)  # Windows' Python has none
-    with mock.patch.dict(sys.modules, {'curses': curses}), mock.patch.object(T, 'term_write', wrote.append), \
+    os_ = mock.patch.dict(os.environ, {'TMUX': '/tmp/tmux-1/default,1,0'})  # F141: it runs inside tmux
+    curses =mock.Mock(wrapper=wrapper)  # Windows' Python has none
+    with os_, mock.patch.object(T, 'refusal', lambda: ''), \
+            mock.patch.dict(sys.modules, {'curses': curses}), mock.patch.object(T, 'term_write', wrote.append), \
             mock.patch.object(sys, 'stdin', tty), mock.patch.object(sys, 'stdout', tty), \
             mock.patch('agent_runner.state.init', lambda *a: None), mock.patch.object(S, 'ROOT', Path('/x/proj')), \
             mock.patch('locale.setlocale', lambda *a: None), \
@@ -1864,7 +1909,7 @@ def test_release_row_f131() -> None:
 
 
 if __name__ == '__main__':
-    raise SystemExit(report([test_rename_f129, test_release_row_f131,test_project_name_b153, test_quick_ask_names_session_c32,test_concept_answer_b149, test_short_ask_b152,test_d_drops_f116, test_answer_direct_b138, test_answer_tab_b138, test_close_control_quiet_b136,test_layout, test_status_tabs, test_session_tabs, test_queue, test_form_pane_v_task,
+    raise SystemExit(report([test_always_tmux_f141, test_rename_f129, test_release_row_f131,test_project_name_b153, test_quick_ask_names_session_c32,test_concept_answer_b149, test_short_ask_b152,test_d_drops_f116, test_answer_direct_b138, test_answer_tab_b138, test_close_control_quiet_b136,test_layout, test_status_tabs, test_session_tabs, test_queue, test_form_pane_v_task,
                                test_direct_edit,
                                test_navigation, test_no_message_box_f112, test_new_chat_f112, test_new_chat_key_f153, test_side_pane_f112,
                                test_diff_key_f127, test_full_screen_f112, test_side_keys_in_box_f113, test_actions, test_session_tab_b125, test_footer,

@@ -336,12 +336,16 @@ def test_launcher_back_b153():
           'the name first, with its key', shown[0])
     eq(M.launch(row, keys('t'), shown.append, {'t': lambda root: M.PICK}), 'back', '0 in the TUI goes back')
     calls = []
-    with mock.patch.object(M.sp, 'call', lambda argv, **k: calls.append(k['env']) or 3):
-        eq(M.open_ui(A), M.PICK, 'the TUI exits with PICK_RC: PICK')
     from agent_runner import tui
+    with mock.patch.object(tui, 'refusal', lambda: ''), \
+            mock.patch.object(M.sp, 'call', lambda argv, **k: calls.append(k['env']) or 3):
+        eq(M.open_ui(A), M.PICK, 'the TUI exits with PICK_RC: PICK')
     eq(calls[0].get(tui.PICKER_ENV), '1', 'the TUI is told the launcher started it')
-    with mock.patch.object(M.sp, 'call', lambda argv, **k: 0):
+    with mock.patch.object(tui, 'refusal', lambda: ''), mock.patch.object(M.sp, 'call', lambda argv, **k: 0):
         eq(M.open_ui(A), '', 'q in the TUI: back in the launcher')
+    with mock.patch.object(tui, 'refusal', lambda: 'no tmux'), \
+            mock.patch.object(M.sp, 'call', lambda argv, **k: check(False, 'the TUI was started')):
+        eq(M.open_ui(A), 'no tmux', 'F141: no TUI on this machine: the launcher says why')
 
 
 def test_bare_not_a_tty():

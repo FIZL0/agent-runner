@@ -4,6 +4,11 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Changed: `agent-runner ui` always runs inside tmux. Before, it ran in any terminal and outside tmux its session
+  tab showed the feed read-only (v for tool steps, Enter attached full-screen); now started outside tmux it re-execs
+  itself in the project's tmux session (a new session named for the folder, or a window in it), and without tmux it
+  refuses with exit 2 and the install line. On Windows it refuses (exit 2) and prints the run page's link. The feed
+  pane and v are gone; a session with no socket says so with its link (F141).
 - Changed: in `agent-runner ui`'s Sessions, n starts a new chat (a control session, without waiting for its link);
   N no longer does. Concepts' N, chat about it, is unchanged (F153).
 - Added: approve to push (F98). With `[run] approve = true`, merges land but nothing is pushed until a person approves a
