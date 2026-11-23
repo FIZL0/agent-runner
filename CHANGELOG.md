@@ -77,6 +77,10 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
   any project) has a free provider in its chain (not claude, not capped, logged in), the usage cap now sets no limit and
   the line reads e.g. "Room for 6 more agents, on [models] fallback: a usage cap is reached". Memory, CPU and disk limits
   still hold; without a free provider it is as before (B157).
+- Fixes found by `ci.yml` on Linux and Windows: `agent-runner needs` no longer cuts an ask in the
+  middle of a backticked command; a multi-line tell whose line ends are CRLF (as Windows pipes them) no longer doubles
+  its newlines in a harness loop session; copying the run page link on Windows works when the clipboard tool is a
+  .bat or .cmd (B150).
 
 ## 0.61.0 (2026-11-23)
 
