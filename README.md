@@ -12,7 +12,7 @@
 agent-runner runs several coding agents at once, unattended, against a git repository and a plain markdown
 task list. Each agent gets one task, in its own git worktree and terminal. When it finishes, the runner
 tests its branch, merges it, pushes, and starts the next task. Sessions run on Claude Code by default, or on
-[Pi](#other-providers) for other providers (GitHub Copilot among them).
+other providers (GitHub Copilot among them) through a `<provider>:<model>` model name, see [Other providers](#other-providers).
 
 - **Parallel without chaos.** Tasks that touch different files run side by side; tasks that share files,
   or wait on each other, never do.
@@ -212,14 +212,14 @@ laptop, a lower usage cap). Every key is in the [reference](docs/REFERENCE.md#ru
 
 ### Other providers
 
-For models Claude Code doesn't serve (GitHub Copilot, Codex, other provider logins), set `agent = "pi"`
-to run sessions on [Pi](https://www.npmjs.com/package/@earendil-works/pi-coding-agent), or try it once with
-`AGENT_RUNNER_BACKEND=pi agent-runner run once`. Pi sessions still run the repo's Claude Code PreToolUse
-hooks. See [Pi and enterprise Copilot](docs/SETUP.md#pi-and-enterprise-copilot).
+For models Claude Code doesn't serve (GitHub Copilot, Codex, other provider logins), name the model in
+`[models]` as `<provider>:<model>`, e.g. `code = "copilot:<model>"`, and log in once with
+`agent-runner login copilot`. Those sessions run on the harness loop, which replaces the old Pi backend: delete any
+`agent = "pi"`, `backend = "pi"` or `AGENT_RUNNER_BACKEND=pi`, or the run refuses to start. See
+[Other providers](docs/SETUP.md#other-providers).
 
 > [!NOTE]
-> Pi on an Anthropic model bills that account's extra usage, not the plan, so keep Claude models on
-> Claude Code.
+> Keep Claude models on Claude Code: a `claude:` or bare model name runs there, not on the harness loop.
 
 ## Results
 
@@ -340,6 +340,6 @@ never deleted by the run: they show under Needs you in `status` and `since`, and
 
 | | |
 |---|---|
-| [docs/SETUP.md](docs/SETUP.md) | installing, Windows, Pi, adding it to a repo, wrapping it from your own CLI |
+| [docs/SETUP.md](docs/SETUP.md) | installing, Windows, other providers and logins, adding it to a repo, wrapping it from your own CLI |
 | [docs/REFERENCE.md](docs/REFERENCE.md) | picking, merging, fix and repair sessions, disk and memory limits, CI, the prompt, every command and config key |
 | [CHANGELOG.md](CHANGELOG.md) | what changed in each version |

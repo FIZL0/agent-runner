@@ -1,4 +1,4 @@
-"""Slots and sessions: worktrees, the agent backends (Claude Code, Pi), Remote Control, a slot's
+"""Slots and sessions: worktrees, the agent backends (Claude Code, the harness loop), Remote Control, a slot's
 environment, starting and resuming a session, disk trimming and the hidden terminals (`HiddenMux`)."""
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ from agent_runner.gitops import push
 from agent_runner.state import C, clean, git, hook, log, note, ROOT, SLOTS_DIR
 from agent_runner.state import EV_STARTED
 from agent_runner.state import EV_DRIFT
-from agent_runner.brief import NO_PUSH_URLS, prompt_for, review_on, subagents
+from agent_runner.brief import prompt_for, review_on, subagents
 from agent_runner.sched import ahead, blocked_tasks, open_tasks, tasks
 from agent_runner.tools import end_mark, FENCE_TOOLS
 
@@ -119,18 +119,11 @@ def single_run() -> object:
 
 # --- starting a session --------------------------------------------------------
 
-def pi() -> bool:
-    """`[run] agent` is the Pi coding agent (pi.dev)."""
-    return Path(C.run['agent']).stem.lower() == 'pi'
-
-
 def lean() -> list[str]:
     """Bash/Read/Edit/Write/Artifact and the repo's own settings only: an unattended agent needs no MCP servers, and a
     user-level setting (a status line, a hook that asks) is something nobody is there to answer."""
     if not C.run['lean']:
         return []
-    if pi():
-        return ['--no-mcp']
     # Artifact: a task can publish a page or screenshots to claude.ai and link it, seen from any device
     # Agent (F28, F101): the spec review before done, and the docs subagent, run as subagents
     tools = 'Bash,Read,Edit,Write,Artifact' + (',Agent' if review_on() or subagents() else '')
@@ -139,7 +132,7 @@ def lean() -> list[str]:
 
 def fence_hooks() -> list[dict]:
     """F102: the git fence as a PreToolUse hook (`tools.fence`): no push, no reset --hard, clean or checkout -- .,
-    no edit in the main checkout or another slot. It takes over from `no_push_env`, which only Pi keeps."""
+    no edit in the main checkout or another slot."""
     cmd = [*runner_cmd(), 'fence', str(ROOT), str(SLOTS_DIR), str(C.notes()), '1' if C.push_remote else '0']
     return [{'matcher': FENCE_TOOLS, 'hooks': [{'type': 'command', 'command': plat.command_text(cmd)}]}]
 
@@ -252,92 +245,6 @@ class Claude:
         return d
 
 
-def pi_argv0() -> list[str]:
-    """Pi itself. On Windows its npm `.cmd` shim is skipped: cmd.exe would cut a multi-line prompt short and
-    ask "Terminate batch job?" on Ctrl-C, so node runs the CLI the shim names."""
-    exe = plat.exe(C.run['agent'])
-    if plat.WINDOWS and exe.lower().endswith('.cmd'):
-        cli = Path(exe).parent / 'node_modules' / '@earendil-works' / 'pi-coding-agent' / 'dist' / 'bundle' / 'cli.js'
-        node = Path(exe).parent / 'node.exe'
-        if cli.exists():
-            return [str(node) if node.exists() else (shutil.which('node') or 'node'), str(cli)]
-    return [exe]
-
-
-class Pi(Claude):
-    """Pi: interactive too, ended by the bundled `pi_idle.ts` extension after `idle` s settled at the prompt
-    with nothing in the editor; `once` is print mode (exits after its turn), for a fix session with no pane.
-    `pi_hooks.ts` runs the repo's Claude PreToolUse hooks. Pi reads the prompt file itself (`@file`), at any size. Sessions live in `<notes>/pi-sessions`, their
-    entries turned into Claude's shape (`entry`)."""
-    report_exit = True
-
-    @staticmethod
-    def trust(d):
-        pass  # Pi asks no folder question
-
-    def flags(self, sid, model, idle, resume, once):
-        if resume and not transcript(sid):
-            raise FileNotFoundError(f'Pi session {sid} is missing')
-        ext = lambda name: ['-e', str(Path(__file__).with_name(name))]
-        flags = ext('pi_hooks.ts')  # the repo's Claude PreToolUse guards, in print mode too
-        flags += ['--print'] if once else [*ext('pi_idle.ts'), '--runner-idle', str(idle)]
-        flags += ['--session-id', sid, '--session-dir', str(C.notes('pi-sessions')), '--approve']
-        if model:
-            flags += ['--model', model]
-        if C.run['lean']:
-            shell = 'powershell' if plat.WINDOWS else 'bash'
-            flags += ['--tools', f'read,{shell},edit,write', '--no-extensions', '--no-mcp',
-                      '--no-skills', '--no-prompt-templates', '--no-themes']
-        return flags
-
-    def cmd(self, prompt, pf, sid, flags):
-        return shlex.join([*pi_argv0(), *flags, '--', f'@{pf}'])
-
-    def argv(self, prompt, pf, sid, flags):
-        return [*pi_argv0(), *flags, '--', f'@{pf}']
-
-    def fix_cmd(self, prompt):
-        return agent_argv(prompt, str(uuid.uuid4()), C.run['fix_model'], MASTER_IDLE, 'master', once=True)
-
-    def find_transcript(self, sid):
-        return next((str(p) for p in C.notes('pi-sessions').glob(f'*_{sid}.jsonl')), None)
-
-    def fork_flags(self, sid):
-        return []  # ponytail: Pi sessions could be copied under a new id; a repair starts fresh there
-
-    def entry(self, entry):
-        """A Pi session record as a Claude one: role -> type, Pi's stop reasons and usage keys, and errors
-        marked as API errors (transient ones resumable). None for a message that is neither user nor
-        assistant. Pi retries rate limits itself, so one that reaches here is not resumed."""
-        if entry.get('type') != 'message':
-            return entry
-        message = entry.get('message', {})
-        role = message.get('role')
-        if role not in ('user', 'assistant', 'toolResult'):
-            return None
-        entry['type'] = 'assistant' if role == 'assistant' else 'user'
-        message['stop_reason'] = {'stop': 'end_turn', 'toolUse': 'tool_use',
-                                  'length': 'max_tokens'}.get(message.get('stopReason'))
-        if usage := message.get('usage'):
-            message['usage'] = {
-                'input_tokens': usage.get('input', 0),
-                'cache_read_input_tokens': usage.get('cacheRead', 0),
-                'cache_creation_input_tokens': usage.get('cacheWrite', 0),
-            }
-        if message.get('stopReason') == 'error':
-            text = message.get('errorMessage') or 'Pi model request failed'
-            entry['isApiErrorMessage'] = True
-            permanent = re.search(
-                r'\b(?:400|401|403|404|413|422|429)\b|authentication|unauthorized|'
-                r'forbidden|billing|rate.?limit|invalid.?request', text, re.I)
-            transient = re.search(
-                r'network|fetch failed|ECONN|EAI_AGAIN|ETIMEDOUT|timeout|timed? out|'
-                r'connection|\b5\d\d\b|overloaded|unavailable', text, re.I)
-            entry['error'] = 'server_error' if transient and not permanent else 'invalid_request'
-            message['content'] = [{'type': 'text', 'text': text}]
-        return entry
-
-
 HARNESS_JS = Path(__file__).with_name('harness.mjs')
 
 
@@ -392,11 +299,12 @@ class Harness(Claude):
 
 
 HARNESS = Harness()
-BACKENDS = {'claude': Claude(), 'pi': Pi()}
+BACKENDS = {'claude': Claude()}
 
 
 def backend() -> Claude:
-    """The backend `Config` settled from `[run] agent` and AGENT_RUNNER_BACKEND."""
+    """Claude Code, the one backend `Config` settles since the Pi backend went (F106d); `backend_for` picks the
+    harness loop for another provider's model."""
     return BACKENDS[C.run['backend']]
 
 
@@ -422,11 +330,9 @@ REMOTE_ENV_FLAGS = ('CLAUDE_CODE_USE_BEDROCK', 'CLAUDE_CODE_USE_VERTEX', 'CLAUDE
 
 def remote_off_why(dialog: bool = True) -> str:
     """Why `[run] remote = 'auto'` leaves Remote Control off, or '' when it can work: Remote Control is Claude
-    Code on a claude.ai login, so not pi, not an API key or token, not Bedrock, Vertex or Foundry,
+    Code on a claude.ai login, so not an API key or token, not Bedrock, Vertex or Foundry,
     not another ANTHROPIC_BASE_URL. `dialog`: also off while Claude Code's one-time "Enable Remote Control?" has
     not been answered yes (`remote_ready` asks it at a terminal), which would hold a session in a hidden pane."""
-    if pi():
-        return 'backend pi (Remote Control is Claude Code\'s)'
     for k in ('ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN'):
         if os.environ.get(k):
             return f'{k} is set (Remote Control needs a claude.ai login)'
@@ -454,16 +360,15 @@ CLAUDE_VERSION: list[str] = []  # `claude --version`, asked once per process (`c
 
 
 def claude_code_version() -> str:
-    """The installed Claude Code's version ('2.1.330'); '' when it cannot be told (Pi, no claude found)."""
+    """The installed Claude Code's version ('2.1.330'); '' when it cannot be told (no claude found)."""
     if not CLAUDE_VERSION:
         v = ''
-        if not pi():
-            try:
-                r = sp.run([plat.exe(C.run['agent']), '--version'], capture_output=True, text=True, timeout=15)
-                m = re.search(r'\d+(?:\.\d+)+', r.stdout or '')
-                v = m.group(0) if m else ''
-            except (OSError, sp.TimeoutExpired):
-                pass
+        try:
+            r = sp.run([plat.exe(C.run['agent']), '--version'], capture_output=True, text=True, timeout=15)
+            m = re.search(r'\d+(?:\.\d+)+', r.stdout or '')
+            v = m.group(0) if m else ''
+        except (OSError, sp.TimeoutExpired):
+            pass
         CLAUDE_VERSION.append(v)
     return CLAUDE_VERSION[0]
 
@@ -526,16 +431,16 @@ def remote_dialog_seen() -> bool:
 
 def remote_on() -> bool:
     """`[run] remote`, resolved: control sessions and the control server on Remote Control. 'auto' is on when
-    `remote_off_why` finds nothing; true forces it (still never for pi); false keeps it off."""
+    `remote_off_why` finds nothing; true forces it; false keeps it off."""
     v = C.run['remote']
     if v == 'auto':
         return not remote_off_why()
-    return bool(v) and not pi()
+    return bool(v)
 
 
 def remote_slots_on() -> bool:
-    """`[run] remote_slots`: the slots on Remote Control too (never under 'auto' alone, and never pi)."""
-    return C.run['remote_slots'] is True and not pi()
+    """`[run] remote_slots`: the slots on Remote Control too (never under 'auto' alone)."""
+    return C.run['remote_slots'] is True
 
 
 def remote_any() -> bool:
@@ -556,7 +461,7 @@ def remote_line() -> str:
 def remote_flags(name: str, cwd: Path | None) -> list[str]:
     """`[run] remote_slots`: the session shows in claude.ai/code and the Claude apps as "<task title> · <repo> s2 ·
     B646" (the title leads, the id stays for referring to it), where a person can watch it and type to it. Claude
-    Code only, and only an interactive session (not Pi).
+    Code only, and only an interactive session.
     (`[run] remote` alone puts only the control sessions there: `control_argv`.)"""
     if not remote_slots_on() or one_session():  # F68: under sessions = 'one' only once opened (slot_open)
         return []
@@ -610,7 +515,7 @@ def slot_open(name: str, wait: float = OPEN_WAIT) -> tuple[str, str]:
 def agent_cmd(prompt: str, sid: str, model: str, idle: int, name: str, resume: bool = False,
               cwd: Path | None = None) -> str:
     """The agent command line for one task, for sh. The prompt is
-    written to `<notes>/<name>.prompt` and goes in from there (`Claude.cmd`, `Pi.cmd`)."""
+    written to `<notes>/<name>.prompt` and goes in from there (`Claude.cmd`, `Harness.cmd`)."""
     pf = C.notes(f'{name}.prompt')
     pf.write_text(prompt, encoding='utf-8')
     b = backend_for(model)  # F106c: the harness loop has no Remote Control
@@ -655,7 +560,6 @@ def slot_env(n: int | None) -> list[str]:
         env.append(f'AGENT_RUNNER_CONFIG={C.file}')
     env += [f'{k}={os.environ[k]}' for k in C.run['pass_env'] if k in os.environ]
     return env + (shared_env() if n is None else [e.format(n=n, slots=SLOTS) for e in C.run['slot_env']]) + \
-        [f'{k}={v}' for k, v in (no_push_env() if pi() else {}).items()] + \
         ([f'{PRESENCE_ENV}={quiet_file("slots")}'] if n is not None and remote_slots_on() and silent() is not False
          else [])
 
@@ -687,21 +591,6 @@ def quiet_file(who: str, on: bool = True) -> Path:
 def env_vars(env) -> dict[str, str]:
     """NAME=value entries as a dict."""
     return dict(e.split('=', 1) for e in env)
-
-
-def no_push_env() -> dict[str, str]:
-    """With `[git] push = false`: git config, as environment, that makes every push from an agent session fail.
-    Pi's sessions only (F102): Claude Code's have the git fence (`fence_hooks`)."""
-    if C.push_remote:
-        return {}
-    count = int(os.environ.get('GIT_CONFIG_COUNT', '0'))
-    env = {f'GIT_CONFIG_{part}_{i}': os.environ[f'GIT_CONFIG_{part}_{i}']
-           for i in range(count) for part in ('KEY', 'VALUE')}
-    env['GIT_CONFIG_COUNT'] = str(count + len(NO_PUSH_URLS))
-    for i, url in enumerate(NO_PUSH_URLS, start=count):
-        env[f'GIT_CONFIG_KEY_{i}'] = 'url.agent-runner-no-push:.pushInsteadOf'
-        env[f'GIT_CONFIG_VALUE_{i}'] = url
-    return env
 
 
 def save_leftovers(d: Path, tid: str, branch: str) -> str | None:
@@ -976,8 +865,6 @@ def move_transcript(sid: str, d: Path) -> bool:
         return True  # F106c: the harness loop's sessions live in one folder for every slot
     if not (t := backend().find_transcript(sid)):
         return False
-    if pi():
-        return True  # Pi's sessions live in one folder for every slot
     dest = Path(t).parent.parent / claude_project_dir(d) / f'{sid}.jsonl'
     if Path(t) != dest:
         try:

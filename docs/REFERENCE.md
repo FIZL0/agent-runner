@@ -184,10 +184,10 @@ task to fix X" (it files it with `plan add`), "do X now" (it uses `take`, never 
   the copy stops for that run. The copy is read-only, with the terminal and the chat as session links.
   `"each"` is the earlier behaviour: every slot its own entry with `remote_slots`, and no copy.
 - **`remote = "auto"`, the default**, is on when Remote Control can work: Claude Code on a claude.ai login.
-  It is off, with one `run.log` line saying why (`remote control off: …`), when the backend is pi,
+  It is off, with one `run.log` line saying why (`remote control off: …`), when
   `ANTHROPIC_API_KEY` or `ANTHROPIC_AUTH_TOKEN` is set, `CLAUDE_CODE_USE_BEDROCK`, `_VERTEX` or
   `_FOUNDRY` is set, `ANTHROPIC_BASE_URL` names a host other than api.anthropic.com, or Claude Code's
-  "Enable Remote Control?" has not been answered yes. `true` forces it on (never for pi), `false`
+  "Enable Remote Control?" has not been answered yes. `true` forces it on, `false`
   keeps it off; any other value is refused.
 - **Phone pushes.** Each Remote Control session the run starts (a control session, the control server, a slot
   with `remote_slots`) pushes to the phone as it starts: Remote Control's "session ready" push goes out as the
@@ -667,7 +667,7 @@ AskUserQuestion tool stays off.
 that denies `git push` in this project (anywhere while `[git] push = false`), `git reset --hard`, `git clean`
 (not `-n`) and `git checkout -- .`, and an Edit or Write in the main checkout (but its notes folder) or
 another slot; an edit outside the project, in a sibling repository the task needs, is let through. It
-replaces the no-push git config, which only Pi's sessions still get.
+holds every session, and replaces the no-push git config that `[git] push = false` used to set.
 
 **Idle stop.** The Stop hook starts a detached timer; a session quiet for `[run] idle` seconds is ended.
 The timer does not fire on a session a human has typed into, or one waiting out a usage limit. Nor on
@@ -1106,8 +1106,7 @@ full_every_hours = 24     # with test_since: the whole `test` once none has pass
 slots = 3
 include_task_id_in_commit = true
 comment_policy = "normal"
-agent = "claude"          # the CLI a session runs: claude, or a pi executable (one named pi runs on the Pi
-                          # backend; AGENT_RUNNER_BACKEND=claude|pi overrides that, e.g. for a wrapper)
+agent = "claude"          # the Claude Code executable a session runs: claude, or a wrapper around it
 model = "opus"
 lean = true               # sessions get Bash/Read/Edit/Write/Artifact only, no MCP servers or user settings
 remote = "auto"           # control sessions on Remote Control, and a control server to start more from claude.ai/code or the Claude apps; Enter in the run view opens it. auto: on where it can work (see Control sessions); true/false force it
@@ -1211,8 +1210,7 @@ one of them is on (`[run] review = false` drops `review`, `[models] docs = false
 
 `[run] model` and `[run] fix_model` stay as aliases: they set `code` and `fix` when `[models]` does not, so an
 older `model = "opus"` keeps working, and `run --model M` still picks the task model for one run. A role
-`[models]` sets wins over them. On the Pi backend there are no subagents, and every role `[models]` does not set
-falls back to `[run] model`.
+`[models]` sets wins over them.
 
 ### Models per kind
 
@@ -1223,8 +1221,7 @@ model with `model:` on its line (`plan add D "text" --files a.md --model haiku`,
 which wins over the kind. A task session's model is chosen in this order: the task's own `model:`; `run --model X`
 given on the command line (it sets every task without its own); the
 `[models.kinds]` entry for its kind; `[models] code`. A resumed session (cut off, failed, or answered after
-`run ask`) goes on on the same model. The Pi backend has no default kinds, since Claude model names mean nothing
-there: only the kinds the repo sets apply, else `[run] model`. A kind's value must be a model name (a string), or
+`run ask`) goes on on the same model. A kind's value must be a model name (a string), or
 the run refuses to start with a `[models.kinds]` error. A repo that sets `[models] code` or `[run] model` still gets
 the default kinds for F, B, T, V, K, D, C and R; to run every kind on one model, set those kinds in `[models.kinds]`.
 
@@ -1250,10 +1247,9 @@ Local providers (ollama, or a provider whose url is `localhost`, `*.local`, or a
 address) are refused unless `[models] local = true` (off by default). Host names are not resolved. `local` can go
 in runner.local.toml to allow it on one machine.
 
-An unknown provider prefix is refused at start, except on the Pi backend, where the value is kept whole as Pi's
-own model syntax.
+An unknown provider prefix is refused at start.
 
-`claude:<model>` runs as the bare model name on Claude Code (or Pi). A role naming another provider runs its sessions
+`claude:<model>` runs as the bare model name on Claude Code. A role naming another provider runs its sessions
 in the [harness loop](#the-harness-loop).
 
 Only task sessions (`[models] code`, `[models.kinds]`, a task's own `plan add --model`, `run --model`) and fix
@@ -1264,7 +1260,7 @@ at start, saying why.
 ### The harness loop
 
 The harness loop is `agent_runner/harness.mjs`, a Node program (Node 22 or later on PATH as `node`), with one
-session per process. The runner starts it instead of Claude Code or Pi for any session whose model is
+session per process. The runner starts it instead of Claude Code for any session whose model is
 `<provider>:<model>` with a provider other than claude: copilot, codex, gemini, ollama (needs `[models] local = true`;
 `OLLAMA_HOST` or http://localhost:11434) and custom `[models.providers.<name>]` (kind openai or anthropic, url, key
 from the env var `key_env` names). This holds whichever `[run] agent` is set.
@@ -1275,7 +1271,7 @@ session runs `npm install` of that pinned version into `~/.cache/agent-runner/ha
 gemini -> google.
 
 Logins are Pi's. The loop reads and refreshes `~/.pi/agent/auth.json` (or `$PI_CODING_AGENT_DIR/auth.json`), taking
-Pi's lock on it, so log in once with `pi` (/login). API keys from the providers' usual env vars also work (e.g.
+Pi's lock on it, so log in once with `agent-runner login <provider>` (see SETUP.md). API keys from the providers' usual env vars also work (e.g.
 GEMINI_API_KEY, COPILOT_GITHUB_TOKEN). A model id the provider does not list is refused with the ids it has.
 
 Tools: bash (each call starts in the worktree; timeout default 120 s, at most 3600 s; output over 30000 characters
@@ -1321,8 +1317,9 @@ Renamed or folded in 0.58.0 (the config trim):
 - `[run] control_ask_idle` is renamed `control_ask` (`"2h"`, or false to keep such a session open).
 - `[run] control_close` is folded into `control_idle`: `control_close = false` is read as `control_idle = false`.
 - `[run] batch` is folded into `batch_max`: `batch = false` is read as `batch_max = 1`.
-- `[run] backend` is gone: the backend follows `agent` (an executable named pi runs on Pi) and
-  `AGENT_RUNNER_BACKEND=claude|pi`; `backend = "pi"` is read as `agent = "pi"`.
+- `[run] backend` is ignored, with a warning to delete it, and the Pi backend it could name is gone (F106d, see the CHANGELOG):
+  `backend = "pi"`, `agent = "pi"` and `AGENT_RUNNER_BACKEND=pi` fail at start. Name the model in `[models]` as
+  `<provider>:<model>` instead.
 - `[run] slot_env` keeps its name but defaults to `[]`: every slot gets `AGENT_SLOT=<n>` whatever it says, so
   a `slot_env` no longer needs to repeat it.
 
@@ -1387,7 +1384,6 @@ python3 tests/test_runner.py    # picking, done, merge/join/land/push, fix sessi
                                 # retry after unblock, prompt, Stop hook, resume, adopt,
                                 # batches, flaky/inherited failures, the platform layer and the
                                 # Windows slot shim (temp repos, fake agent)
-python3 tests/test_pi.py        # Pi configuration, prompts, sessions, errors, and merge fixers (no network)
 ```
 
 ### Test entries in ~/.claude.json

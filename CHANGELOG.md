@@ -4,6 +4,15 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- **Breaking: the Pi backend is gone (F106d).** `[run] agent = "pi"` (any executable named pi, pi.cmd included),
+  `[run] backend = "pi"` and `AGENT_RUNNER_BACKEND=pi` now fail at start. Write the model as `<provider>:<model>` in
+  `[models]` instead, e.g. `code = "copilot:<model>"`: it runs on the harness loop, and `agent-runner login <provider>`
+  (`run login`) adds the provider's login, kept in Pi's `auth.json`. `[run] agent` is now only the Claude Code
+  executable (or a wrapper around it); `[run] backend = "claude"` is ignored with a warning, and any other
+  `AGENT_RUNNER_BACKEND` value is ignored. `[run] agent = "copilot"` still fails, now pointing to `[models] code =
+  "copilot:<model>"`. Also removed: the bundled `pi_hooks.ts` and `pi_idle.ts` extensions, the `.runner/pi-sessions`
+  folder, the no-push git config Pi sessions got with `[git] push = false` (the git fence now holds every session),
+  and Pi's resume after a failed model call.
 - Removed: the terminal UI's chat. `agent-runner ui` has no Status chat tab, no Sessions chat, feed or pane tabs and no
   session message box, so nothing is typed into a session from it, and Ctrl+C always quits. Status tabs are log,
   release and controls (the quick asks s y w u are buttons on the log tab and keys in Status); Sessions tabs are

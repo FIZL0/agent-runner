@@ -4,7 +4,7 @@ How to install agent-runner, add it to a repo, wrap it from a project's own CLI,
 own copy over to it, and what a version number promises.
 
 - [Installing](#installing)
-- [Pi and enterprise Copilot](#pi-and-enterprise-copilot)
+- [Other providers](#other-providers)
 - [Provider logins: run login](#provider-logins-run-login)
 - [A new repo from scratch](#a-new-repo-from-scratch)
 - [Wrapping it from your own CLI](#wrapping-it-from-your-own-cli)
@@ -60,73 +60,35 @@ version: read [CHANGELOG.md](../CHANGELOG.md) and restart it yourself, as a new 
 and call `~/agent-runner/run …`. A clone needs no install. `uv tool install --editable ~/agent-runner`
 makes the `agent-runner` command run the clone's code.
 
-## Pi and enterprise Copilot
+## Other providers
 
-Claude Code is the default backend and needs nothing here. Use Pi when sessions should run on another
-provider (GitHub Copilot, enterprise Copilot, Codex, other Pi logins): `agent = "pi"` in `[run]`, or
-`AGENT_RUNNER_BACKEND=pi` for one run (and for a wrapper not named pi). Pi on an Anthropic model bills the account's extra usage, not the plan.
-Pi 1.4.0 or newer is supported. Install it with Node.js 22.19+:
-
-```powershell
-npm install --global --ignore-scripts @earendil-works/pi-coding-agent
-pi
-```
-
-Inside Pi, run `/login`, choose **GitHub Copilot**, enter your full enterprise hostname, and complete
-the device authorization in your browser. Run `/model` to choose a model. Authentication remains in
-Pi's private user directory, never in `runner.toml`.
-
-Check authentication and the account's models without printing credentials:
-
-```powershell
-pi auth check --provider github-copilot --json
-pi --offline --list-models github-copilot
-```
-
-Configure the repository:
+Claude Code is the default and needs nothing here. To run a task's session on another provider (GitHub Copilot,
+enterprise Copilot, Codex, Gemini, Ollama, or your own `[models.providers.<name>]`), name its model in `[models]` as
+`<provider>:<model>`:
 
 ```toml
-[run]
-agent = "pi"              # an executable named pi runs on Pi; a wrapper named otherwise needs AGENT_RUNNER_BACKEND=pi
-model = "github-copilot/claude-sonnet-5.5"
-fix_model = "github-copilot/claude-sonnet-5.5"
-slots = 1
-slot_env = ["NODE_USE_SYSTEM_CA=1"]   # every slot gets AGENT_SLOT=<n> as well
+[models]
+code = "copilot:<model>"  # a model your account lists; a bare name or claude:<model> stays on Claude Code
 ```
 
-Choose an ID your account lists. Provider-qualified IDs prevent ambient AWS or other provider
-credentials from selecting the wrong service. If `model` is omitted, Pi uses its own model selection;
-an omitted `fix_model` follows `model`. Other Pi providers work through their own qualified IDs and login.
-`NODE_USE_SYSTEM_CA=1` uses the OS certificate trust store for corporate TLS interception; it requires a
-Node.js release supporting that setting (Node.js 22.19+). It does not disable certificate verification.
-If Pi itself reports an issuer-certificate error, set `$env:NODE_USE_SYSTEM_CA = "1"` before starting it.
+The session runs on the [harness loop](REFERENCE.md#the-harness-loop), a Node program that needs Node.js 22 or later
+on PATH. Log in once with `agent-runner login copilot` (for enterprise Copilot, `--enterprise company.ghe.com`; see
+[Provider logins](#provider-logins-run-login)). `agent-runner login` with no argument lists the providers the repo
+names and whether each has a login.
+
+`NODE_USE_SYSTEM_CA=1` uses the OS certificate trust store for corporate TLS interception; it requires Node.js
+22.19+ and does not disable certificate verification. Set it in the environment before starting the run if Node
+reports an issuer-certificate error.
 
 From a clone on Windows, use `python -m agent_runner run once`; an installed runner uses
 `agent-runner run once`. Normal terminal selection, parallel worktrees, `done`, test gates, and merging
 are unchanged.
 
-`pi auth check --provider <provider> --json` checks that Pi is installed and logged in.
-
-Pi sessions are interactive, like Claude's: each slot's terminal (`attach s2`) shows Pi's interface, and
-you can take a session over by typing. The bundled extension `pi_idle.ts`, loaded with `-e` even under
-`lean`, does what Claude's Stop hook does: once Pi has settled at its prompt for `idle` seconds with nothing
-in the editor, it exits. Fix sessions use print mode. Prompts are passed as files (`@file`), at any size, including on Windows. Sessions are retained under
-`.runner/pi-sessions` for `agent-runner resume ID`, restart adoption, usage statistics, and stall checks.
-Transient network/server errors can resume up to the existing resume limit in worktree mode. Pi's own
-provider retries apply, but Claude-specific weekly caps and usage-reset detection do not apply to Pi;
-authentication, billing, and other non-transient errors are reported for a human rather than retried.
-
-With `lean = true` (the default), Pi gets read/edit/write and a shell (`powershell` on Windows, `bash`
-elsewhere), with extensions, MCP, skills, prompt templates, and themes disabled. Repository context
-files remain available. Set `lean = false` to use Pi's normal resource configuration. Fix/repair sessions
-also use Pi print mode and the non-slot-specific environment from `slot_env`.
-
 ## Provider logins: run login
 
-The Pi section above is the Pi backend (`agent = "pi"`), logged in with `pi` and `/login`. `run login` serves
-the other case: a role in `[models]` that names a provider other than claude, such as `copilot:gpt-x`. Those
-sessions run on the [harness loop](REFERENCE.md#the-harness-loop). Its logins are kept in Pi's own
-`auth.json`, so the two share them. It needs Node on PATH.
+`run login` gives a provider its login. It serves a role in `[models]` that names a provider other than claude,
+such as `copilot:gpt-x`; those sessions run on the [harness loop](REFERENCE.md#the-harness-loop). Its logins are kept
+in Pi's own `auth.json`, the login package's store. It needs Node on PATH.
 
 From the repo's folder, `agent-runner login` (or `./run login`) with no argument lists each provider that
 `[models]` names (its roles, `[models.kinds]` and `[models.providers]`), with where its login is kept. It

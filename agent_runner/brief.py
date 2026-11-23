@@ -110,10 +110,6 @@ NO_PUSH = ('When your session ends, the runner merges your branch and tests the 
            'run: never run `git push`, here or in any other repository, and never publish anything else '
            '(releases, uploads, stores). A human reviews and pushes.')
 
-# With `[git] push = false`, every agent session gets these as git config: any push to a URL of these kinds
-# goes to a remote helper that does not exist, so it fails whatever command or repository it comes from.
-NO_PUSH_URLS = ('https://', 'http://', 'ssh://', 'git://', 'git@', 'file://')
-
 
 def brief_for(tid: str, cwd: Path) -> str:
     try:
@@ -334,10 +330,8 @@ SUBAGENTS = {
 
 def subagents() -> dict:
     """F101: the task session's Claude Code subagents (`--agents`), each on its `[models]` role: `review` when
-    the spec review is on, `docs` unless `[models] docs = false`. Empty on Pi, which has none."""
+    the spec review is on, `docs` unless `[models] docs = false`."""
     try:
-        if C.run['backend'] == 'pi':
-            return {}
         models = C.raw.get('models') or {}
     except (AttributeError, KeyError, TypeError):  # no config loaded
         return {}

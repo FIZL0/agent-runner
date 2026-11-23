@@ -250,6 +250,53 @@ def test_brief(env: Env):
         env.configure('')
 
 
+def test_no_pi(env: Env):
+    """F106d: the Pi backend is gone; a file that still names it is told the [models] provider form instead."""
+    for run in ('agent = "pi"', 'agent = "/opt/bin/pi"', 'agent = "pi.cmd"', 'backend = "pi"',
+                'agent = "my-wrapper"\nbackend = "pi"'):
+        try:
+            env.configure(run)
+        except SystemExit as e:
+            has(str(e), r'Pi backend is gone.*\[models\].*"<provider>:<model>".*copilot:<model>',
+                f'{run!r} is refused, naming the [models] provider form')
+        else:
+            check(False, f'{run!r} must be refused')
+    with mock.patch.dict(os.environ, AGENT_RUNNER_BACKEND='pi'):
+        try:
+            env.configure('')
+        except SystemExit as e:
+            has(str(e), r'AGENT_RUNNER_BACKEND=pi.*Pi backend is gone.*\[models\]', 'so is AGENT_RUNNER_BACKEND=pi')
+        else:
+            check(False, 'AGENT_RUNNER_BACKEND=pi must be refused')
+    for agent in ('copilot', 'C:\\\\tools\\\\copilot.exe'):
+        try:
+            env.configure(f'agent = "{agent}"')
+        except SystemExit as e:
+            has(str(e), r'copilot.*is gone.*\[models\] code = "copilot:<model>"',
+                f'agent = {agent!r} (the removed Copilot CLI backend) points to the copilot provider')
+        else:
+            check(False, f'agent = {agent!r} must be refused')
+    try:
+        env.configure('backend = "claude"')
+        check(any('[run] backend is ignored' in w for w in R.C.warnings),
+              'an old backend = "claude" is ignored, with a warning', R.C.warnings)
+        env.configure('')
+        eq((R.C.run['agent'], R.C.run['backend'], R.C.run['model'], R.C.run['fix_model']),
+           ('claude', 'claude', 'opus', 'opus'), 'an unconfigured repository runs Claude Code on its defaults')
+        flags = R.agent_flags('sid', 'opus', 90)
+        check(flags[:2] == ['--session-id', 'sid'] and '--settings' in flags and '--print' not in flags,
+              'Claude Code keeps its interactive session flags and Stop hooks')
+        eq(R.agent_flags('sid', 'opus', 90, resume=True)[:2], ['--resume', 'sid'], 'and its resume flags')
+        env.configure('\n[git]\npush = false')
+        p = R.prompt_for('F1', 1, 1, env.wt, 'main', MODEL)
+        check('Pushing is off' in p and 'pushes task/' not in p,
+              'with [git] push = false a harness session is told pushing is off, not that done pushes')
+        check(not any(e.startswith('GIT_CONFIG_') for e in R.slot_env(1)),
+              'and gets no no-push git config: the git fence holds every session')
+    finally:
+        env.configure('')
+
+
 def main() -> int:
     node = shutil.which('node')
     if not node:
@@ -258,10 +305,10 @@ def main() -> int:
         env = Env(Path(tmp))
         try:
             if not node:  # F132: the brief check runs no session, so needs no node
-                return report([lambda: test_brief(env)])
+                return report([lambda: test_brief(env), lambda: test_no_pi(env)])
             return report([lambda: test_routing(env), lambda: test_finish(env), lambda: test_ask(env),
                            lambda: test_fence(env), lambda: test_budget(env), lambda: test_resume(env),
-                           lambda: test_tell(env), lambda: test_brief(env)])
+                           lambda: test_tell(env), lambda: test_brief(env), lambda: test_no_pi(env)])
         finally:
             git(env.repo, 'worktree', 'remove', '--force', str(env.wt))
 

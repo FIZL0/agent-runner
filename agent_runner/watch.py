@@ -22,7 +22,7 @@ from agent_runner.tools import ended
 from agent_runner.state import (banner, C, FORCED, forced, git, log, PAUSED, POWER, queued, READING,
     SLOTS_DIR, stopped_by, stopping)
 from agent_runner.sched import open_tasks
-from agent_runner.slots import entries, GB, marker_pid, MUX, pi, sids, slot_env, SLOTS, tmp_roots, transcript
+from agent_runner.slots import entries, GB, marker_pid, MUX, sids, slot_env, SLOTS, tmp_roots, transcript
 from agent_runner.slots import claude_drift
 
 
@@ -120,7 +120,7 @@ def transcript_drift(sid: str) -> bool:
     knows (KNOWN_ENTRIES): Claude Code changed their shape, and stall detection, cut-off resumes and session
     stats would go quiet without a word. Says so once per Claude Code version (`claude_drift`); True when it
     did. Each session is settled once: a known entry, or the warning."""
-    if sid in _shape_seen or C is None or pi():
+    if sid in _shape_seen or C is None:
         return False
     n, version, seen = 0, '', set()
     for d in entries(sid, skip_bad=True):
@@ -483,31 +483,10 @@ RESUME_FAILED = ('The connection to the model failed and this session stopped mi
           'where you left off.')
 
 
-def pi_last_error(t: str) -> tuple[str, str]:
-    """(error message, timestamp) when a Pi transcript's last turn ended in a failed model call, else ('', '')."""
-    err, ts = '', ''
-    try:
-        for l in open(t, encoding='utf-8', errors='replace'):
-            if '"role":"assistant"' in l and '"stopReason":"error"' in l:
-                d = json.loads(l)
-                err = d.get('message', {}).get('errorMessage') or 'a failed model call'
-                ts = d.get('timestamp', '')
-            elif any(f'"role":"{r}"' in l for r in ('user', 'toolResult', 'assistant')):
-                err = ''
-    except (OSError, ValueError):
-        return '', ''
-    return err, ts
-
-
 def agent_failed(sid: str) -> tuple[str, float] | None:
-    """(message, age in s) when the session stopped on a failed model call and should be resumed."""
-    if not pi() or not (t := transcript(sid)):
-        return None
-    err, ts = pi_last_error(t)
-    if not err or not ts:
-        return None
-    at = dt.datetime.fromisoformat(ts.replace('Z', '+00:00'))
-    return err, (dt.datetime.now(dt.timezone.utc) - at).total_seconds()
+    """(message, age in s) when the session stopped on a failed model call and should be resumed. Only the Pi
+    backend's sessions did, and it is gone (F106d), so always None."""
+    return None
 
 
 def resume_failed(n: int, pid: int, sid: str, tid: str, model: str, idle: int) -> int | None:
@@ -748,8 +727,6 @@ def stop_hook(idle: int) -> int:
     t = ev.get('transcript_path') or ev.get('transcriptPath')
     if not t or not os.path.exists(t):
         return 0
-    if pi_last_error(t)[0]:
-        return 0  # Pi settles after a failed model call too: the run resumes that session instead
     if ended():  # F102: the agent ran `finish` or `ask`: end it now
         idle = 0
     elif finished():  # `done` succeeded: nothing left to wait for, and its leftovers get no grace
