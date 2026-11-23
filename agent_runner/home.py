@@ -8,6 +8,7 @@
     agent-runner home add PATH    list a project that is not under the scanned folders (remove PATH: unlist it)
     agent-runner home list        the projects Home lists, one per line
     agent-runner home serve       the server itself, in this terminal (what the service runs)
+    agent-runner home peer add LINK   show another machine's Home under Devices (remove LINK: stop); `peers` lists
 
 Off until installed: nothing runs and nothing listens until `home install`. The server is the same kind as a
 run's page (web.py): standard library only, token-gated, bound to every interface so a phone on the LAN or on
@@ -21,6 +22,9 @@ page on a free port instead (web.start_web), and Home routes to it:
     POST /add?t=TOKEN            {"path": PATH} lists a project; /remove unlists one
     ANY  /p/KEY/...?t=TOKEN      that project's run app, routed to its run's page with the run's own token, so
                                  Home's link is the only one a phone needs; a run works the same with Home off
+    GET  /devices?t=TOKEN        F95: Device Vitals, this machine and each peer Home's (vitals.py), and their
+                                 alerts (Needs you); /device?id=ID the vitals page; /vitals/device this
+                                 machine's; /vitals/clean Clean; /dev/ID/... the same on device ID
 
 The registry (<config>/home.json, <config> being ~/.config/agent-runner, %APPDATA%\\agent-runner on Windows, or
 AGENT_RUNNER_HOME_CONFIG) holds the projects added by hand, scanned ones hidden by `remove`, the folders scanned
@@ -67,7 +71,7 @@ def registry_file() -> Path:
 
 def load_registry() -> dict:
     """{'projects': [added paths], 'hidden': [scanned paths removed], 'scan': [folders], 'port': int,
-    'installed': bool (`home install` turned Home on)}."""
+    'installed': bool (`home install` turned Home on), 'peers': [other Homes' links], 'tailscale': bool}."""
     try:
         data = json.loads(registry_file().read_text(encoding='utf-8'))
     except (OSError, ValueError):
@@ -79,7 +83,9 @@ def load_registry() -> dict:
             'hidden': [str(p) for p in data.get('hidden') or [] if isinstance(p, str)],
             'scan': [str(p) for p in data.get('scan') or SCAN if isinstance(p, str)],
             'port': port if isinstance(port, int) and not isinstance(port, bool) and 0 <= port < 65536 else PORT,
-            'installed': data.get('installed') is True}
+            'installed': data.get('installed') is True,
+            'peers': [str(p) for p in data.get('peers') or [] if isinstance(p, str)],  # F95: other Homes' links
+            'tailscale': data.get('tailscale') is not False}  # F95: look for Homes on the tailnet too
 
 
 def save_registry(reg: dict) -> None:
@@ -315,10 +321,19 @@ button,a.btn{font:inherit;font-size:.9rem;border:1px solid var(--line);backgroun
  border-radius:8px;padding:5px 11px;margin:8px 6px 0 0;cursor:pointer;text-decoration:none;display:inline-block}
 .go{background:var(--accent)!important;color:var(--card)!important;border-color:var(--accent)!important}
 #msg{white-space:pre-wrap;font-size:.85rem;color:var(--dim);margin:8px 0}
+h2{font-size:.8rem;text-transform:uppercase;letter-spacing:.05em;color:var(--dim);margin:16px 0 8px}
+.v-ok{color:var(--ok)}.v-warn{color:var(--warn)}.v-bad{color:var(--accent)}
+.alert{border-left:3px solid var(--accent);background:var(--card);border-radius:8px;padding:8px 10px;margin-bottom:8px}
+.m{display:grid;grid-template-columns:44px 1fr 96px;gap:8px;align-items:center;margin:4px 0;font-size:.85rem}
+.bar{height:6px;background:var(--line);border-radius:3px;overflow:hidden}.bar i{display:block;height:100%;background:var(--ok)}
+.bar i.w{background:var(--warn)}.bar i.b{background:var(--accent)}.r{text-align:right;color:var(--dim)}
 form{display:flex;gap:6px;flex-wrap:wrap;margin-top:14px}input{flex:1;min-width:0;font:inherit;padding:5px 8px;
  border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--fg)}
 </style></head><body><main>
 <h1 id="h">Runner Home</h1>
+<div id="needs"></div>
+<h2>Devices</h2><div id="devs"><div class="s">Loading…</div></div>
+<h2>Projects</h2>
 <div id="list"><div class="s">Loading…</div></div>
 <div id="msg"></div>
 <form id="add"><input id="path" placeholder="Add a project: its folder on this machine"><button>Add</button></form>
@@ -356,6 +371,17 @@ document.getElementById('list').addEventListener('click',e=>{const b=e.target.cl
 document.getElementById('add').addEventListener('submit',e=>{e.preventDefault();const v=document.getElementById('path').value.trim();
  if(v)post('add',{path:v}).then(()=>document.getElementById('path').value='')});
 load();setInterval(load,5000);
+function meter(m){const c=m.pct>=90?'b':m.pct>=75?'w':'';
+ return `<div class="m"><span>${esc(m.name)}</span><div class="bar"><i class="${c}" style="width:${Math.max(0,Math.min(100,m.pct))}%"></i></div><span class="r">${esc(m.said)}</span></div>`}
+function dev(d){const v=d.verdict||{},href=q('device?id='+encodeURIComponent(d.id));
+ return `<div class="p tap" data-page="${esc(href)}"><b>${esc(d.host)}</b>${d.here?' <span class="s">· this one</span>':''}
+  <div class="v-${esc(v.level)}" style="font-weight:600">${esc(v.said)}</div>${(d.meters||[]).map(meter).join('')}</div>`}
+async function loadDevs(){try{const r=await fetch(q('devices'));const d=await r.json();if(!d.ok)return;
+ document.getElementById('devs').innerHTML=d.devices.map(dev).join('');
+ document.getElementById('needs').innerHTML=d.needs.length?'<h2>Needs you</h2>'+d.needs.map(a=>
+  `<div class="alert">${esc(a.what)}${a.clean?` <a class="btn go" href="${esc(q('device?id='+encodeURIComponent(a.device)))}">Clean</a>`:''}</div>`).join(''):''}catch(e){}}
+document.getElementById('devs').addEventListener('click',e=>{const c=e.target.closest('[data-page]');if(c)location.href=c.dataset.page});
+loadDevs();setInterval(loadDevs,30000);
 </script></body></html>
 """
 
@@ -405,6 +431,10 @@ class HomeHandler(BaseHTTPRequestHandler):
             return self.proxy(method)
         if method == 'GET' and path in ('/', '/index.html'):
             return self.send(200, PAGE, 'text/html; charset=utf-8')
+        if path in ('/device', '/devices') or path.startswith(('/dev/', '/vitals/')):  # F95: Device Vitals
+            code, out, ctype = self.server.vitals.handle(method, path, parse_qs(urlsplit(self.path).query),
+                                                         self.body() if method == 'POST' else b'')
+            return self.send(code, out, ctype)
         if method == 'GET' and path == '/projects':
             return self.send(200, {'ok': True, 'machine': socket.gethostname(), 'projects': self.server.rows()})
         if method == 'POST' and path in ('/act', '/add', '/remove'):
@@ -487,9 +517,17 @@ class HomeServer(ThreadingHTTPServer):
     allow_reuse_address = True
 
     def __init__(self, token: str, port: int, bind: str = '0.0.0.0', rows=project_rows, act=run_action,
-                 link=run_link, roots=projects):
+                 link=run_link, roots=projects, vitals=None):
         self.token, self._rows, self._act, self._link, self._roots = token, rows, act, link, roots
+        self.vitals = vitals or home_vitals(self)
+        if self.vitals.act is None:
+            self.vitals.act = self.act_key  # the vitals page's + slot runs this Home's buttons
         super().__init__((bind, port), HomeHandler)
+
+    def act_key(self, key: str, name: str, arg: str) -> dict:
+        """A Home button on a project named by its key (the vitals page's + slot)."""
+        root = self.project(key)
+        return {'ok': False, 'out': f'no such project: {key}'} if root is None else self.act(root, name, arg)
 
     def rows(self) -> list[dict]:
         return self._rows()
@@ -506,6 +544,14 @@ class HomeServer(ThreadingHTTPServer):
     def stop(self) -> None:
         self.shutdown()
         self.server_close()
+
+
+def home_vitals(srv: HomeServer):
+    """F95: the server's Device Vitals (vitals.Vitals): sampling starts with `serve` or the first vitals call;
+    its day of samples is kept in Home's config folder."""
+    from agent_runner.vitals import Vitals
+    return Vitals(srv._roots, config_dir(), peers=lambda: load_registry()['peers'], token=srv.token,
+                  tailscale=load_registry()['tailscale'], act=srv.act_key)
 
 
 def serve_home(token: str, port: int, bind: str = '0.0.0.0', **kw) -> HomeServer:
@@ -591,7 +637,8 @@ def unit_text(kind: str, argv: list[str], log: Path, env: dict | None = None) ->
 def service_env() -> dict:
     """What the service needs from this shell: PATH (git, claude), and the settings that move the runs folder
     and Home's config."""
-    return {k: os.environ[k] for k in ('PATH', 'AGENT_RUNNER_HOME', 'AGENT_RUNNER_HOME_CONFIG') if os.environ.get(k)}
+    return {k: os.environ[k] for k in ('PATH', 'AGENT_RUNNER_HOME', 'AGENT_RUNNER_HOME_CONFIG', 'CLAUDE_CODE_TMPDIR')
+            if os.environ.get(k)}  # F95: CLAUDE_CODE_TMPDIR, so the vitals find the session temp folders
 
 
 def install_commands(kind: str, unit: Path | None, task_cmd: str = '') -> list[list[str]]:
@@ -772,6 +819,7 @@ def serve(port: int | None = None) -> int:
               f'port when it next starts', file=sys.stderr)
         return 1
     print(f'Runner Home: {" or ".join(home_urls(srv.server_address[1]))}', flush=True)
+    srv.vitals.start()  # F95: the day of samples builds up while Home runs, page open or not
     try:
         srv.serve_forever()
     except KeyboardInterrupt:
@@ -781,7 +829,24 @@ def serve(port: int | None = None) -> int:
     return 0
 
 
-USAGE = 'agent-runner home [slots|plan] | home install|uninstall|status|list|serve | home add|remove PATH'
+USAGE = ('agent-runner home [slots|plan] | home install|uninstall|status|list|serve|peers | home add|remove PATH | '
+         'home peer add|remove LINK')
+
+
+def peer_change(op: str, link: str) -> tuple[bool, str]:
+    """F95: list (`add`) or unlist another machine's Home by its link (http://host:8770/?t=TOKEN), so this
+    Home's Devices list shows that machine too."""
+    from agent_runner.vitals import peer_base
+    link = link.strip()
+    if op == 'add' and not peer_base(link):
+        return False, f'not a Home link: {link} (want http://HOST:PORT/?t=TOKEN, as `home status` there prints it)'
+    reg = load_registry()
+    had = link in reg['peers']
+    reg['peers'] = [p for p in reg['peers'] if p != link] + ([link] if op == 'add' else [])
+    save_registry(reg)
+    if op == 'add':
+        return True, f'Home shows {urlsplit(link).hostname} under Devices'
+    return (True, f'Home no longer shows {urlsplit(link).hostname}') if had else (False, f'not listed: {link}')
 
 
 def main(argv: list[str]) -> int:
@@ -793,6 +858,13 @@ def main(argv: list[str]) -> int:
         return {'install': install, 'uninstall': uninstall, 'status': status}[cmd]()
     if cmd == 'serve' and len(rest) <= 1 and all(a.isdigit() for a in rest):
         return serve(int(rest[0]) if rest else None)
+    if cmd == 'peers' and not rest:
+        print('\n'.join(load_registry()['peers']) or 'No peers listed: `home peer add LINK` adds another Home')
+        return 0
+    if cmd == 'peer' and len(rest) == 2 and rest[0] in ('add', 'remove'):
+        ok, said = peer_change(rest[0], rest[1])
+        print(said, file=sys.stdout if ok else sys.stderr)
+        return 0 if ok else 1
     if cmd in ('add', 'remove') and len(rest) == 1:
         ok, said = (add_project if cmd == 'add' else remove_project)(rest[0])
         print(said, file=sys.stdout if ok else sys.stderr)
