@@ -106,9 +106,11 @@ tasks blocked for the person (a `CONFIRM:`/`DECIDE:`/`BLOCKED:` ask, a concept's
 `reopen` and `waiting` say 'T5 waits for everything before it (12 open); not waiting on: R6 (needs you)'.
 
 **A release is kind V** (F38): `add V` files it at the end of Next, no `--after` or `--files` needed, and with
-no text it gets the default release brief (RELEASE_BRIEF). It starts like any other task (F100); with
-`[plan] release_alone` it gets `after: all` and runs alone: the run starts it only when nothing else runs or
-waits to merge, and nothing beside it. `add V --now` (or `--pri critical`) is an interim release: critical, at
+no text it gets the default release brief (RELEASE_BRIEF) and `after: all`. It starts once what it waits for
+has landed, even with other tasks running (F99), and tasks start beside it; while it is busy the merge holds
+every other merge and push, so it releases exactly what was on the shared branch when it started. With
+`[plan] release_alone` it runs alone instead: the run starts it only when nothing else runs or waits to merge,
+and nothing beside it. `add V --now` (or `--pri critical`) is an interim release: critical, at
 the top, no `after: all`. A release is never refused as a duplicate of another.
 
 **A block that only waits on another task says which**, as `BLOCKED: (after X, Y) why`, and `reopen` (which a
@@ -765,12 +767,13 @@ KINDS = {'B': 'bug: something that worked, or should, is broken', 'F': 'feature:
          'R': 'research: find out, measure or check; no product change', 'C': 'cleanup: refactor, remove, tidy',
          'K': 'concept: nothing is built yet; research the repo and publish an Artifact page of 2-3 options and a '
               'recommendation; the build waits for a person\'s OK',
-         'V': 'release: starts like any other task (with [plan] release_alone: waits for everything ahead of '
-              'it and runs alone); with no text it gets the default release brief'}
-# The release kind (F38): `add V` files it at the end of the leading section (with `[plan] release_alone`,
-# F100, `after: all` unless `--now` or `--pri critical` says release now), gets RELEASE_BRIEF when given no
-# text, and is never refused as a duplicate of another release; with release_alone a run starts no other task
-# beside one (`sched.clash`)
+         'V': 'release: waits for everything ahead of it, then starts beside running tasks; other merges wait '
+              'until it lands (with [plan] release_alone it runs alone); with no text it gets the default '
+              'release brief'}
+# The release kind (F38): `add V` files it at the end of the leading section (`after: all` unless `--now` or
+# `--pri critical` says release now), gets RELEASE_BRIEF when given no text, and is never refused as a
+# duplicate of another release. Other tasks run beside it, but their merges wait while it is busy
+# (`merge.hold_for_release`, F99); with release_alone a run starts no other task beside one (`sched.clash`)
 RELEASE = 'V'
 RELEASE_BRIEF = ('Release: bump the version where the project keeps it, per its versioning rules (agent-runner\'s: '
                  'docs/SETUP.md#versions), move CHANGELOG.md\'s Unreleased entries under the new version heading, '
@@ -779,15 +782,15 @@ RELEASE_BRIEF = ('Release: bump the version where the project keeps it, per its 
 
 
 def release(tid: str) -> bool:
-    """Is `tid` a release task (kind V, F38): with `[plan] release_alone` it waits for what is ahead of it and
-    runs alone."""
+    """Is `tid` a release task (kind V, F38): it waits for what is ahead of it, and other merges wait for it
+    (F99); with `[plan] release_alone` it also runs alone."""
     m = re.match(r'[A-Za-z]+', tid or '')
     return bool(m) and m.group() == RELEASE
 
 
 def release_alone() -> bool:
-    """`[plan] release_alone` (F100): a release waits for everything ahead of it and runs alone; off by
-    default, so a release starts like any other task (release scripts cope with main moving)."""
+    """`[plan] release_alone` (F100): a release runs alone, nothing beside it; off by default, so tasks run
+    beside a release and only their merges wait for it (F99)."""
     try:
         return bool(cfg().raw['plan'].get('release_alone'))
     except (SystemExit, OSError, KeyError):
@@ -800,9 +803,9 @@ def open_release(ls: list[str]) -> str:
 
 
 def add_release(todo=None) -> str:
-    """File a release as `plan add V` with no text does (F63, `[run] auto_release`): the default brief (after
-    everything ahead of it with `[plan] release_alone`, F100), at the end of the leading section. Its id."""
-    return add(RELEASE, RELEASE_BRIEF + (f' | after: {ALL}' if release_alone() else ''), 'bottom', todo=todo)
+    """File a release as `plan add V` with no text does (F63, `[run] auto_release`): the default brief, after
+    everything ahead of it, at the end of the leading section. Its id."""
+    return add(RELEASE, RELEASE_BRIEF + f' | after: {ALL}', 'bottom', todo=todo)
 
 
 def kinds() -> tuple[dict[str, str], bool]:
@@ -2803,7 +2806,7 @@ def _p_add(a, x):
         return 2
     if rel:
         text = text or RELEASE_BRIEF
-        if pri != 'critical' and 'after' not in fields(text + keyed) and release_alone():  # F100
+        if pri != 'critical' and 'after' not in fields(text + keyed):  # F99
             keyed += f' | after: {ALL}'  # it waits for everything ahead of it
         if not where and not given:
             where = 'bottom'  # the end of the leading section: behind the work queued there
@@ -2819,7 +2822,7 @@ def _p_add(a, x):
               + f'\n`{PROG} note <ID> TEXT` it there; if it is different work, add it again with --force',
               file=sys.stderr)
         return 3
-    if not {'files', 'test'} & set(fields(text)) and not rel:  # a release runs alone, whatever its files
+    if not {'files', 'test'} & set(fields(text)) and not rel:  # a release holds the merges, whatever its files
         why = (f'the line has no `files:`: pass `--files path/a,dir/**` (the files the task will change) '
                f'or `--test name` (the test it adds); the run keeps running tasks apart by them, and a line '
                f'naming none runs beside anything')

@@ -42,8 +42,6 @@ def tasks(branch: str) -> list[tuple[str, str, set[str], set[str]]]:
             continue
         l = ls[i]
         f = P.fields(l)
-        if P.release(tid) and not release_alone():  # F100: a release queued with `after: all` starts like any
-            f['after'] = [a for a in f.get('after', []) if a != P.ALL]
         if {P.LAST, P.ALL} & set(f.get('after', [])):  # `all above` (F43), `all` (F35): afresh on every pick
             f['after'] = P.waits_on(ls, i)
             named = set(P.fields(l).get('after', []))
@@ -127,11 +125,13 @@ def file_overlap(files, b: tuple, shared: set) -> set[str]:
 
 def clash(t: tuple, b: tuple, shared: set[str]) -> bool:
     """Task `t` may not run beside `b` (running here, waiting to merge, or claimed by another runner): siblings,
-    a shared ordered section, or overlapping files (`shared_files` aside; see `file_overlap`). A release (kind V,
-    F38) clashes with everything, either way round: it starts only when nothing else runs or waits to merge, and
-    nothing starts beside it, so it releases exactly what landed. `holds` lets a release pass over a task taken
-    by hand or claimed by another runner (`passes`, B107): only this run's tasks hold it. That is only with
-    `[plan] release_alone` (F100); without it a release clashes like any other task."""
+    a shared ordered section, or overlapping files (`shared_files` aside; see `file_overlap`). A release (kind V)
+    clashes like any other task: it starts once what it waits for (`after:`) has landed, beside running tasks,
+    and tasks start beside it; while it is busy the merge holds every other merge (`merge.hold_for_release`,
+    F99), so it still releases exactly what was on the shared branch when it started. With `[plan]
+    release_alone` (F38, F100) it clashes with everything, either way round: it starts only when nothing else
+    runs or waits to merge, and nothing starts beside it; `holds` then lets it pass over a task taken by hand or
+    claimed by another runner (`passes`, B107): only this run's tasks hold it."""
     tid, section, files, _ = t
     if family(tid) == family(b[0]):
         return True
@@ -141,7 +141,8 @@ def clash(t: tuple, b: tuple, shared: set[str]) -> bool:
 
 
 def release_alone() -> bool:
-    """`[plan] release_alone` in the run's config (F100): a release clashes with every task, either way round."""
+    """`[plan] release_alone` in the run's config (F100): a release clashes with every task, either way round;
+    without it tasks run beside a release and only their merges wait for it (F99)."""
     return bool(C.raw['plan'].get('release_alone'))
 
 
@@ -255,7 +256,7 @@ def holds(t: tuple, tried: set, h: Held) -> tuple[str, tuple | None] | None:
 def passes(t: tuple, b: tuple, h: Held) -> bool:
     """Release `t` passes over busy task `b`, taken by hand or claimed by another runner (B107): a release waits only
     for this run's running and merge-waiting tasks, and `b`'s work lands after, in the next release. A busy
-    release still holds everything (it runs alone)."""
+    release with `[plan] release_alone` still holds everything (it runs alone)."""
     return P.release(t[0]) and not P.release(b[0]) and b[0] in h.away
 
 
@@ -280,7 +281,7 @@ def explain(running: dict, tried: set, branch: str) -> dict[str, tuple[str, str]
         kind, b = holds(t, tried, h) or ('free', None)
         if kind == 'finished':
             why[tid] = ('claimed by another runner', claimed.get(tid, '')) if tid not in h.mine else \
-                ('finished, waiting to merge', '')
+                ('finished, waiting to merge', releasing_note(tid, branch))
         elif kind == 'tried':
             why[tid] = ('tried this run', '')
         elif kind == 'busy':
@@ -295,6 +296,12 @@ def explain(running: dict, tried: set, branch: str) -> dict[str, tuple[str, str]
         else:
             why[tid] = ('free', '')
     return why
+
+
+def releasing_note(tid: str, branch: str) -> str:
+    """'V10 is releasing' when a busy release holds the merge of finished task `tid` (F99), else ''."""
+    from agent_runner.merge import releasing  # merge reads sched; imported here, not at the top
+    return f'{v} is releasing' if (v := releasing(tid, branch)) else ''
 
 
 def away_note(ids, claimed: set) -> str:

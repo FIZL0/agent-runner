@@ -395,12 +395,15 @@ words in a note on the task (after ` — `, not in its title), its next merge la
   to file releases (and keeps the letter for nothing else). `plan add V` files it at the end of
   Next, and with no text it gets the default brief: bump the version per the project's versioning rules
   (docs/SETUP.md#versions here), move CHANGELOG Unreleased under it, commit to main, check the release
-  workflow and `gh release view`. By default (F100) it then starts like any other task, beside the running
-  ones: release scripts cope with main moving, and an `after: all` on it (one queued before F100) holds it
-  no more. With `[plan] release_alone = true`, `plan add V` adds
-  `after: all`, so it waits for everything ahead of it, and it **runs alone**: the run starts it only when
-  no other task is running or waiting to merge, and starts nothing beside it, so it releases exactly what
-  landed. `plan add V --now` (or `--pri critical`) is an interim release: filed at the top, critical, with
+  workflow and `gh release view`. `plan add V` adds `after: all`, so it waits for everything ahead of it
+  (or `--after` ids of its own) to land; then it starts, even with other tasks running in slots, and other
+  tasks start beside it (F99). While it is busy (running in a slot, or finished and waiting to merge) the
+  merge step holds every other merge and push: the tasks keep working, and their finished work waits to
+  merge until the release has landed, so the release holds exactly what was on main when it started. The
+  run log and the dry run say why a merge waits (`T5: waits to merge: V10 is releasing`). A release lands
+  alone: no other task rides in its batch. A release taken by hand (`take`) holds no merges. With
+  `[plan] release_alone = true` it **runs alone** instead: the run starts it only when no other task is
+  running or waiting to merge, and starts nothing beside it. `plan add V --now` (or `--pri critical`) is an interim release: filed at the top, critical, with
   no `after: all`. A release is never refused as a duplicate of another release, and needs no `--files`.
 - **Auto release** (F63, off by default): `[run] auto_release` has the run queue a release by itself, as
   `plan add V` with no text does. `auto_release = { every = 10 }` queues one once 10 tasks have landed since
@@ -1022,7 +1025,7 @@ kinds = {}                # id prefix -> kind of work, e.g. { B = "bug", N = "ne
 need_files = false        # `plan add` refuses a line with no files: and no test: field (else it warns)
 lookup = []               # more files `plan <name>` searches for a heading, e.g. ["PLAN.md", "plan/guide/*.md"]
 context_kb = 12           # budget for what every session loads (`context`); `run` warns past it, 0 = never
-release_alone = false     # true: a release waits for everything ahead of it (`after: all`) and runs alone
+release_alone = false     # true: a release runs alone, nothing beside it; false: tasks run beside it and their merges wait
 glossary = "GLOSSARY.md"  # the project's glossary (`agent-runner glossary`): seeded by the first control session,
                           # named in every brief; false = off (no file written, briefs skip it)
 

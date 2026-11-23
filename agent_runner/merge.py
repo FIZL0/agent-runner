@@ -290,7 +290,7 @@ def build_ahead(branch: str, base: str, done: threading.Event, taken: set[str]) 
     while not done.wait(AHEAD_POLL):
         if ahead_gate_running():  # the gate `base` waits on is merge2's own: checking out there swaps its tree
             continue
-        if cands := sorted(WAITING - taken - set(LANDED) - ALONE - criticals(branch)):
+        if cands := sorted(WAITING - taken - set(LANDED) - ALONE - criticals(branch) - releases(WAITING)):
             break
     else:
         return
@@ -769,10 +769,14 @@ def merge_tries(tid: str, branch: str) -> str | None:
     while (tries := tries + 1) < 3:
         if tid not in LANDED and (why := fix_ahead(tid, branch)):
             return why
+        hold_for_release(tid, branch)
         WAITING.add(tid)
         crit = critical(tid, branch)
         with MERGE.turn(lambda: merge_rank(tid, crit)):
             WAITING.discard(tid)
+            if tid not in LANDED and releasing(tid, branch):  # F99: a release started while it waited
+                tries -= 1  # not a try: it waits for the release, then queues again
+                continue
             if tid not in LANDED and UNPUSHED:  # a batch whose last task has not taken the lock yet: its
                 push_landed(UNPUSHED[-1], branch)  # push goes out now, not after this one's gate
             if tid not in LANDED and (why := research_held(tid, branch)):  # F36: findings only
@@ -805,6 +809,45 @@ def merge_tries(tid: str, branch: str) -> str | None:
             announce_release(base, merged)
             return None
     return f'{tid}: no merge landed in three tries'
+
+
+RELEASE_POLL = 10  # s: how often a merge held for a release looks whether it has landed (F99)
+
+
+def releases(tids) -> set[str]:
+    """The releases (kind V) among `tids`: they never ride in another task's batch, nor take riders (F99)."""
+    return {t for t in tids if P.release(t)}
+
+
+def releasing(tid: str, branch: str) -> str:
+    """The release busy in this run that holds the merge of `tid` (F99), else '': a release (kind V) other than
+    `tid` whose task/<ID> branch is there (running in a slot, or finished and waiting to merge) and not done in
+    the plan. One taken by hand (`take`) holds nothing. A release's own merge is never held."""
+    if P.release(tid):
+        return ''
+    refs = git('for-each-ref', '--format=%(refname)', 'refs/heads/task/').stdout.split()
+    vs = sorted(r.removeprefix('refs/heads/task/') for r in refs if P.release(r.removeprefix('refs/heads/task/')))
+    if not vs:
+        return ''
+    from agent_runner.sched import taken  # sched never imports merge
+    live = {t for _, box, t, _, _ in P.iter_tasks(plan_text(branch)) if box != 'x'}
+    away = set(taken())
+    return next((v for v in vs if v in live and v not in away), '')
+
+
+def hold_for_release(tid: str, branch: str) -> None:
+    """While a release is busy (`releasing`), `tid`'s merge waits, and so does its push: the release then holds
+    exactly what was on the shared branch when it started (F99). The task's work is kept; it merges once the
+    release has landed (or was parked)."""
+    said = ''
+    while v := releasing(tid, branch):
+        if v != said:
+            said = v
+            note(f'{tid}: waits to merge: {v} is releasing')
+            log(f'{tid}: waits to merge: {v} is releasing; it merges once {v} has landed')
+        time.sleep(RELEASE_POLL)
+    if said:
+        log(f'{tid}: {said} is no longer releasing; merging task/{tid} now')
 
 
 def forget(tid: str) -> None:
@@ -1163,7 +1206,7 @@ def batch_build(t: BatchTurn):
             elif why := refix(tid, branch, ref, files, d, msg=msg):
                 return why
         t.riders = riders = []
-        for x in ([] if t.solo else sorted(WAITING - set(LANDED) - ALONE - t.crit)):
+        for x in ([] if t.solo else sorted(WAITING - set(LANDED) - ALONE - t.crit - releases(WAITING))):
             if C.run['batch_max'] and len(riders) + 1 >= C.run['batch_max']:
                 break  # the rest go in the next batch: a failure here costs fewer tasks a retest
             own = fixed(x)
@@ -1332,7 +1375,7 @@ def merge_batch(tid: str, branch: str, inline: bool = False, yields: bool = True
     if trim(d, 'merge worktree'):
         worktree('merge', branch)
     crit = criticals(branch)
-    solo = C.run['batch_max'] == 1 or tid in ALONE or tid in crit
+    solo = C.run['batch_max'] == 1 or tid in ALONE or tid in crit or P.release(tid)  # F99: a release lands alone
     batch_fixes = C.run['fix_merges'] and not C.run['fix_ahead_max']  # a rider's conflict: a fix session in the batch
     t = BatchTurn(tid, branch, d, solo, crit, ahead_fix, batch_fixes)
     try:

@@ -1093,7 +1093,7 @@ def test_release_kind():
 
 
 def test_release_beside():
-    print('plan: add V without [plan] release_alone writes no `after: all`: it starts like any other task (F100)')
+    print('plan: add V without [plan] release_alone writes `after: all` too: it waits for what is ahead (F99)')
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
         git(root, 'init', '-q')
@@ -1105,9 +1105,10 @@ def test_release_beside():
         r = run(root, 'plan', 'add', 'V', env=env)
         eq((r.returncode, r.stderr), (0, ''), 'plan add V')
         line = plan.section(todo, 'V1')[0]
-        check('after:' not in line and 'Release: bump the version' in line, 'the default brief, no `after: all`', line)
+        check(line.endswith('| after: all') and 'Release: bump the version' in line, 'the default brief, `after: all`',
+              line)
         eq(plan.index(todo)[2:4], ['[ ] F1', '[ ] V1'], 'still at the end of Next')
-        eq(plan.last_waits(todo), [], 'it waits on nothing')
+        eq(plan.last_waits(todo), [('V1', ['F1'])], 'it waits on the earlier open task')
         run(root, 'plan', 'add', 'V', '--after', 'F1', env=env)
         has(plan.section(todo, 'V2')[0], r'\| after: F1$', 'an --after of its own is kept')
 
