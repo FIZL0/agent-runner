@@ -560,12 +560,18 @@ function renderFoot(){
 function render(){renderLeft();renderMain();renderFoot()}
 function toast(m,bad){const t=$('#toast');t.textContent=m;t.className='toast'+(bad?' bad':'');t.hidden=false;clearTimeout(t._h);t._h=setTimeout(()=>t.hidden=true,bad?8000:4000)}
 
+/* F90: the run's version from the first snapshot that has one; a later, different one (the run restarted on an
+   upgrade) reloads the page for its new HTML and JS. None (an older run): nothing. */
+let RUN_VERSION='';
+function followVersion(v){if(!v)return false;if(!RUN_VERSION){RUN_VERSION=v;return false}
+  if(v!==RUN_VERSION){location.reload();return true}return false}
 /* live updates: the snapshot over server-sent events; the open feed every 2 s, the built-in pane every 0.5 s */
 function connect(){
   const es=new EventSource('events?t='+encodeURIComponent(T));
   es.onmessage=e=>{
     const snap=parkedLast(JSON.parse(e.data));  // B118: the Parked group last
     if(snap.error){toast('snapshot: '+snap.error,true);return}
+    if(followVersion(snap.version))return;
     S.snap=MOVES.snap(snap);S.last=Date.now();$('#live').classList.add('on');follow();
     renderLeft();renderMain();renderFoot();
   };
@@ -759,7 +765,7 @@ document.addEventListener('submit',e=>{
 });
 $('#helpbtn').onclick=help;$('#themebtn').onclick=themePicker;
 if(!T){$('#live').textContent='no token: open the address `status` prints'}
-else{api('snapshot').then(s=>{if(s&&s.status){S.snap=MOVES.snap(parkedLast(s));S.last=Date.now()}render()});connect()}
+else{api('snapshot').then(s=>{if(s&&s.status){if(followVersion(s.version))return;S.snap=MOVES.snap(parkedLast(s));S.last=Date.now()}render()});connect()}
 render();
 </script>
 </body></html>

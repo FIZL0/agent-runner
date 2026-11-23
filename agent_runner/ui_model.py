@@ -19,6 +19,8 @@ copy, and the actions they share.
     release   the release line ('' when no release is queued)
     quick_asks  the Status chat's quick asks sent to c1: key, label, text
     terminal_mode  how a session's terminal shows: 'ttyd', 'install' (tmux, no ttyd yet), 'feed'
+    version   the run's agent-runner version, from STATE ('' when no run is up or an older run wrote none);
+              F90: the TUI restarts and the run page reloads when it changes
 
 F74 adds, outside the snapshot (read on demand, per session): `feed(name)` (its transcript as say/you/tool/out
 entries); and the actions `chat_to` (any control session), `interrupt`, `new_control` and `quick_ask`; F86
@@ -403,7 +405,8 @@ def snapshot(up: bool | None = None, now: float | None = None, log_n: int = LOG_
             'queue': queue_rows(ls, st, now),
             'needs': needs, 'concepts': concepts, 'log': log_tail(log_n), 'release': release,
             'quick_asks': quick_asks(), 'terminal_mode': terminal_mode(), 'controls': controls(),
-            'run': {'paused': bool(up and st.get('paused')), 'stopping': bool(up and st.get('stopping'))}}
+            'run': {'paused': bool(up and st.get('paused')), 'stopping': bool(up and st.get('stopping'))},
+            'version': str(st.get('version') or '')}  # F90: the run's version ('' from an older run)
 
 
 def snapshot_json(**kw) -> str:

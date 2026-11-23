@@ -301,3 +301,10 @@ _Said_: launcher menu
 _On screen_: w open the run page · t terminal UI · c copy the link
 _In code_: cmds.launch, launcher_text
 _Avoid_: action menu
+
+**Follow an upgrade**:
+When the run restarts on a newer agent-runner, an open TUI starts again on it where it was and an open run page reloads
+_Said_: follow an upgrade of the run
+_On screen_: (no wording: the TUI starts again, the run page reloads)
+_In code_: follow_upgrade, followVersion, newer_version, PLACE_ENV, snapshot 'version'
+_Avoid_: hot reload, auto-refresh

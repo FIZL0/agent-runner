@@ -7,6 +7,7 @@ request without its token. F79: the page is the run app, and keeps uploaded atta
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import subprocess
 import tempfile
@@ -885,10 +886,52 @@ def in_tmp(f):
     return go
 
 
+VERSION_DRIVER = r"""
+const fs = require('fs');
+let reloads = 0;
+const location = {reload() { reloads++ }};
+const src = fs.readFileSync(process.argv[2], 'utf8');
+const out = [];
+for (const seq of JSON.parse(fs.readFileSync(0, 'utf8'))) {
+  reloads = 0;
+  const follow = new Function('location', src + '\nreturn followVersion;')(location);
+  const back = seq.map(v => follow(v));
+  out.push([back, reloads]);
+}
+console.log(JSON.stringify(out));
+"""
+
+
+def test_follow_version_f90(tmp: Path) -> None:
+    """F90: both run pages keep the run's version from the first snapshot and reload when a later one differs;
+    a snapshot without one (an older run) changes nothing."""
+    for path, call in ((W.PAGE, 'if(followVersion(s.version))return;'),
+                       (W.TERM, 'if(followVersion(snap.version))return;')):
+        page = path.read_text(encoding='utf-8')
+        check(call in page, f'{path.name}: each snapshot goes through followVersion before it is taken')
+        m = re.search(r"let RUN_VERSION='';\nfunction followVersion\(v\)\{.*?return true\}return false\}\n", page, re.S)
+        check(m, f'{path.name}: has followVersion')
+        if not m or not shutil.which('node'):
+            print('  (no node here: the version reload script test is skipped)') if m else None
+            continue
+        (tmp / 'follow.js').write_text(m.group(0), encoding='utf-8')
+        (tmp / 'driver.js').write_text(VERSION_DRIVER, encoding='utf-8')
+        cases = [['0.59.0', '0.59.0', '0.59.0'], ['0.59.0', '0.60.0'], ['', None, '0.59.0', '', '0.59.0'],
+                 ['', '', '']]
+        r = subprocess.run(['node', str(tmp / 'driver.js'), str(tmp / 'follow.js')], input=json.dumps(cases),
+                           capture_output=True, text=True, timeout=60)
+        check(r.returncode == 0, f'{path.name}: node runs followVersion', r.stderr[-800:])
+        same, changed, missing, never = json.loads(r.stdout or '[[[], 0], [[], 0], [[], 0], [[], 0]]')
+        eq(same, [[False, False, False], 0], f'{path.name}: the same version: no reload')
+        eq(changed, [[False, True], 1], f'{path.name}: a different version: reload')
+        eq(missing, [[False] * 5, 0], f'{path.name}: a missing version neither sets nor changes it')
+        eq(never, [[False] * 3, 0], f'{path.name}: an older run, never a version: nothing')
+
+
 if __name__ == '__main__':
     raise SystemExit(report([in_tmp(test_server), in_tmp(test_real_action), in_tmp(test_run_controls),
                            in_tmp(test_start), in_tmp(test_upload),
                            in_tmp(test_control_rows), in_tmp(test_feed_pane_concept), in_tmp(test_page),
                            in_tmp(test_logic), in_tmp(test_extras), in_tmp(test_diff), in_tmp(test_views),
                            in_tmp(test_new_chat), in_tmp(test_term_moves), in_tmp(test_page_copy_publish), in_tmp(test_parked),
-                           in_tmp(test_esc_ctrl_c), in_tmp(test_concepts_view)]))
+                           in_tmp(test_esc_ctrl_c), in_tmp(test_concepts_view), in_tmp(test_follow_version_f90)]))
