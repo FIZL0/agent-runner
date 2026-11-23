@@ -2452,6 +2452,8 @@ def test_talk_settings_f124(tmp: Path) -> None:
                  'data-sheet="talk"', "'ar-talkset'", "'ar-talkmode'", 'data-ts="read"', 'data-ts="voice"', 'data-ts="mic"',
                  'data-ts="auto"', 'System voice', '.dock.typing .talkbox{opacity:1'):
         check(part in page, f'the Talk view has {part}')
+    check('title="Talk settings">${I.settings}</button>' in page, 'Talk settings has the sliders icon')
+    check(not re.search(r'\bgear:|I\.gear\b', page), 'no gear icon is left')
     check('Spoken Content' not in page, 'no how-to for voices (dropped)')
     if not shutil.which('node'):
         print('  (no node here: the Talk settings script test is skipped)')
