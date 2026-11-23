@@ -157,8 +157,8 @@ def test_layout() -> None:
     check(win.lines()[-1].startswith(' SESSIONS '), 'the bottom line starts with the mode badge', win.lines()[-1])
     eq([r['name'] for r in p.items(2)], ['c1', 'c6', 's1', 's2', 's3', '+'],
        'Sessions: c1, the other control sessions, every slot (idle s3 too), then the new chat row')
-    check(any('+ new chat N' in l[:36] for l in win.lines()), "Sessions' last row: '+ new chat' with its key", txt)
-    eq(colour_at(win, 'new chat N', 9), 'hkey', 'the row shows N in the key colour')
+    check(any('+ new chat n' in l[:36] for l in win.lines()), "Sessions' last row: '+ new chat' with its key", txt)
+    eq(colour_at(win, 'new chat n', 9), 'hkey', 'the row shows n in the key colour')
     check('│ c6 theme ideas chat' in txt, 'a control session row: name, title, chat', txt)
     check('Board page for the run' in txt, 'a slot row shows its task', txt)
     hs = p.heights(28)
@@ -252,7 +252,7 @@ def test_session_tabs() -> None:
     check('s3 is idle: nothing running' in drawn(p).text(), "an idle slot's session says so")
     p.cur[2] = 5
     eq(p.tab()[1], ['info'], "the '+ new chat' row: info")
-    check('[N start one]' in drawn(p).text(), 'it says N starts one')
+    check('[n start one]' in drawn(p).text(), 'it says n starts one')
     p.cur[2] = 1
     win = drawn(p)
     check('❯ ideas for themes?' in win.text() and 'Read(theme.py)' in win.text(),
@@ -479,7 +479,7 @@ def test_no_message_box_f112() -> None:
 
 
 def test_new_chat_f112() -> None:
-    """F112 (1): N does not wait for the session's link: `new_control` runs on a thread without waiting (a
+    """F112 (1): n does not wait for the session's link: `new_control` runs on a thread without waiting (a
     stand-in that sleeps), a 'starting...' row is selected at once, and the cN row takes its place once the
     run's state lists it."""
     import threading
@@ -500,16 +500,16 @@ def test_new_chat_f112() -> None:
     p.key('2')
     with mock.patch.object(U, 'new_control', slow):
         t0 = T.time.time()
-        p.key('N')
+        p.key('n')
         took = T.time.time() - t0
-        check(took < 1, f'N returns at once ({took:.2f} s) while new_control still runs')
+        check(took < 1, f'n returns at once ({took:.2f} s) while new_control still runs')
         it = p.sel()
         eq((p.panel, bool(it.get('starting'))), (2, True), "the new 'starting...' row is selected at once")
         check('starting...' in drawn(p).text(), "its row says 'starting...'", drawn(p).text())
-        check('Its row and link fill in once it is up.' in drawn(p).text() and '[N start one]' not in drawn(p).text(),
+        check('Its row and link fill in once it is up.' in drawn(p).text() and '[n start one]' not in drawn(p).text(),
               'the main pane says it is starting (not the new chat row\'s text)', drawn(p).text())
-        p.key('N')
-        eq(p.msg, 'a new chat is starting already', 'N again while one starts: said, not another')
+        p.key('n')
+        eq(p.msg, 'a new chat is starting already', 'n again while one starts: said, not another')
         go.set()
         for _ in range(50):
             if 'r' in (p.starting or {}):
@@ -552,6 +552,40 @@ class Tmux:
 
     def did(self, verb: str) -> list[list[str]]:
         return [c for c in self.calls if c[0] == verb]
+
+
+def test_new_chat_key_f153() -> None:
+    """F153: n starts a new chat in Sessions, from any row and its main pane; N does not. An n that answers a
+    Needs you item or a confirm starts none."""
+    started = []
+    for row in range(len(page().items(2))):
+        for main in (False, True):
+            p = page()
+            with mock.patch.object(T.RunPage, 'new_chat', lambda self: started.append(row)):
+                p.key('2')
+                p.cur[2], p.main = row, main
+                p.key('N')
+                eq(started, [], f'N on row {row} (main {main}): no new chat')
+                p.key('n')
+                eq(started, [row], f'n on row {row} (main {main}): a new chat')
+            started.clear()
+    with mock.patch.object(T.RunPage, 'new_chat', lambda self: started.append('n')):
+        p = page()
+        p.panel, p.dropping = 2, 'D7'
+        p.key('n')
+        eq((started, p.dropping, p.msg), ([], '', 'D7: not dropped'), 'n at a drop question: only no')
+        p.panel, p.confirm = 2, 'stop_now'
+        p.key('n')
+        eq((started, p.confirm), ([], ''), 'n at a run control question: only no')
+        p.panel, p.main = 4, False
+        said = []
+        with mock.patch.object(U, 'answer', lambda *a, **k: (said.append(a[1]), {'ok': True, 'out': ''})[1]):
+            p.key('ENTER')
+            p.key('n')
+        eq((said, started), (['no'], []), 'n in Needs you answers no and starts no chat')
+    sessions = T.HELP.split('Sessions [2]')[1].split('Queue [3]')[0]
+    check('  n        new chat' in sessions, 'the keys list names n under Sessions', sessions)
+    check('  N ' not in sessions, 'and not N', sessions)
 
 
 def test_side_pane_f112() -> None:
@@ -795,16 +829,16 @@ def test_actions() -> None:
               'link': 'https://claude.ai/code/x', 'terminal': ''}
         p.get_snap = lambda: dict(SNAP, sessions=SNAP['sessions'][:2] + [c7] + SNAP['sessions'][2:]) \
             if ('new_control', False) in calls else SNAP
-        p.key('N')
+        p.key('n')
         for _ in range(100):
             if 'r' in (p.starting or {}):
                 break
             T.time.sleep(0.02)
         p.poll_new_chat()
-        eq(p.sel()['name'], 'c7', 'N selects the new control session')
+        eq(p.sel()['name'], 'c7', 'n selects the new control session')
         eq((p.msg, p.main, p.tab()[0], p.typing), ('new control session c7: https://claude.ai/code/x', False,
                                                    'session', ''),
-           'N: the new control session selected on its session tab, its link said; no typing')
+           'n: the new control session selected on its session tab, its link said; no typing')
         p.key('ESC')
     eq(ran, [['plan', 'edit', 'B2', '--pri', 'normal'],
              ['plan', 'drop', 'B2', 'dropped from agent-runner ui'],
@@ -820,7 +854,7 @@ def test_actions() -> None:
        'chat edits, answers (a button, a reply), the concept pick and its change go to c1')
     eq(calls, [('new_control', True), ('quick_ask', 'since'), ('quick_ask', 'usage'), ('open_session', 's1'),
                ('new_control', False)],
-       'H starts a new control session (B139); o, the quick asks and N run F74\'s actions (N without waiting)')
+       'H starts a new control session (B139); o, the quick asks and n run F74\'s actions (n without waiting)')
     eq(opened, ['https://claude.ai/artifact/k5', 'https://claude.ai/code/s1', 'https://claude.ai/code/session_c1'],
        'O and o open the browser')
     eq(attached, ['s1'], 'Enter on the session tab, with a socket outside tmux, attaches it')
@@ -1832,7 +1866,7 @@ def test_release_row_f131() -> None:
 if __name__ == '__main__':
     raise SystemExit(report([test_rename_f129, test_release_row_f131,test_project_name_b153, test_quick_ask_names_session_c32,test_concept_answer_b149, test_short_ask_b152,test_d_drops_f116, test_answer_direct_b138, test_answer_tab_b138, test_close_control_quiet_b136,test_layout, test_status_tabs, test_session_tabs, test_queue, test_form_pane_v_task,
                                test_direct_edit,
-                               test_navigation, test_no_message_box_f112, test_new_chat_f112, test_side_pane_f112,
+                               test_navigation, test_no_message_box_f112, test_new_chat_f112, test_new_chat_key_f153, test_side_pane_f112,
                                test_diff_key_f127, test_full_screen_f112, test_side_keys_in_box_f113, test_actions, test_session_tab_b125, test_footer,
                                test_concept_page,
                                test_concept_chat, test_new_concept, test_enter_on_concept,

@@ -18,7 +18,7 @@ Panels and their tabs (F76):
                session tab shows its feed read-only with its link (Enter there attaches full-screen when it
                can). Ctrl-f: the session full-screen between the top and bottom bars (in tmux: the session pane
                between a one-row `ui --bar` pane and the TUI's pane cut to its bottom bar); again: side by side.
-               The '+ new chat' row and N start one (`new_control` without waiting for its link, on a thread):
+               The '+ new chat' row and n start one (`new_control` without waiting for its link, on a thread):
                a 'starting...' row is selected at once and its cN row takes its place once the run lists it.
                o opens the session link, y copies it (OSC 52, the terminal's own clipboard, plus
                wl-copy/xclip/pbcopy when local); over ssh o opens nothing here: it copies the link and shows it
@@ -176,7 +176,7 @@ Status [1]
 Sessions [2]
   t        a slot on a task       v        tool steps on / off
   g        a slot's diff in place of its session (again: the session; in tmux: its pane goes, then back)
-  N        new chat               o        open the session link
+  n        new chat               o        open the session link
   y        copy the session link (the terminal's clipboard, so over ssh too)
   H        take its task back     d D      drop its task from the slot
   d        close a control session cN (not c1: the run's kept session; its transcript stays)
@@ -379,7 +379,7 @@ class RunPage:
         self.full = False  # F112 Ctrl-f outside tmux: the main pane between the bars, no panels
         self.bar_only = False  # F112 `ui --bar`: only the top bar (the top pane of tmux's full-screen layout)
         self.repaint = False  # B136: an in-process action may have written to the terminal; clear it next frame
-        self.starting: dict | None = None  # F112: the new control session N started, until its row is up
+        self.starting: dict | None = None  # F112: the new control session n started, until its row is up
         self.get_snap = get_snap or (lambda: U.snapshot())
         self.attach = attach or (lambda name: {'ok': False, 'out': 'no terminal to attach'})
         self.feed_of = feed or U.feed
@@ -599,7 +599,7 @@ class RunPage:
             if it.get('starting'):  # F112: a new control session on its way up
                 return [(f'{it.get("label") or "c…"} ', 'red'), ('starting...', 'dim')]
             if it.get('new'):
-                return [('+ ', 'green'), ('new chat ', 'dim'), ('N', 'hkey')]
+                return [('+ ', 'green'), ('new chat ', 'dim'), ('n', 'hkey')]
             if is_control(it):
                 return [(f'{it["name"]} ', 'red'), (it.get('title', ''), 'fg'), (' chat', 'dim')]
             if not it.get('task'):
@@ -869,13 +869,13 @@ class RunPage:
     def session_pane(self, it, tab: str, width: int) -> tuple[list, list, object]:
         L = lambda *segs: list(segs)  # noqa: E731
         name = it.get('name', '')
-        if it.get('starting'):  # F112: N started it; its row fills in from the run's state
+        if it.get('starting'):  # F112: n started it; its row fills in from the run's state
             return [L((f'{it.get("label") or "a new control session"} is starting...', 'fg')), L(),
                     L(('Its row and link fill in once it is up.', 'dim'))], [], 0
         if it.get('new'):
             return [L(('Starts another control session (control --new) with its claude.ai/code link, so you can',
                        'fg')), L(('talk to it from the Claude app on your phone too.', 'fg')), L(),
-                    buttons(button('N', 'start one', True))], [], 0
+                    buttons(button('n', 'start one', True))], [], 0
         if tab == 'diff':
             out = []
             for l in self.diff(name).splitlines()[:DIFF_LINES] or ['no changes yet']:
@@ -1311,7 +1311,7 @@ class RunPage:
             self.msg, self.msg_ok = 'Ctrl-f full-screens a session: select one in Sessions [2]', True
 
     def new_chat(self) -> None:
-        """N: a new control session (`new_control`, not waiting for its link), started on a thread so the page
+        """n: a new control session (`new_control`, not waiting for its link), started on a thread so the page
         never waits: a 'starting...' row is selected at once, and `poll_new_chat` puts the session's own row in
         its place once the run's state lists it."""
         if self.starting:
@@ -1334,7 +1334,7 @@ class RunPage:
 
     def say_new_session(self, r: dict) -> None:
         """C32: after a quick ask or H started a new control session: say its name (the result's 'name') and,
-        when the run's state lists it, select it in Sessions as N does."""
+        when the run's state lists it, select it in Sessions as n does."""
         name = r.get('name') if r.get('ok') else ''
         if not name:
             return
@@ -1755,7 +1755,7 @@ class RunPage:
         elif self.panel == 2 and k == 'v':
             self.steps = not self.steps
             self.msg, self.msg_ok = f'tool steps {"shown" if self.steps else "folded"}', True
-        elif self.panel == 2 and k == 'N':
+        elif self.panel == 2 and k == 'n':
             self.new_chat()
         elif self.panel == 2 and k == 'o' and isinstance(it, dict) and not it.get('new'):
             self.open_session(it)

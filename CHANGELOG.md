@@ -4,6 +4,8 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Changed: in `agent-runner ui`'s Sessions, n starts a new chat (a control session, without waiting for its link);
+  N no longer does. Concepts' N, chat about it, is unchanged (F153).
 - Added: approve to push (F98). With `[run] approve = true`, merges land but nothing is pushed until a person approves a
   pitch on Needs you (Approve, or Not this to undo).
 - Added: New Talk chat (F157). In Talk the top bar's New chat button is now New Talk chat: it stays in Talk, stops
