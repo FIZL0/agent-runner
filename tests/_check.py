@@ -52,6 +52,8 @@ def _projects(f: Path) -> set[str]:
 
 _REAL_BEFORE = {f: _projects(f) for f in REAL_CLAUDE_JSON}
 os.environ['CLAUDE_CONFIG_DIR'] = tempfile.mkdtemp(prefix='agent-runner-test-claude-')  # never the real ~/.claude
+# T15: nor the person's ~/.config/agent-runner (voice.md goes into every control brief and changes its length)
+os.environ['XDG_CONFIG_HOME'] = tempfile.mkdtemp(prefix='agent-runner-test-config-')
 # worktrees and plan clones go under a temp folder, never the real ~/runs
 os.environ['AGENT_RUNNER_HOME'] = str(Path(tempfile.mkdtemp(prefix='agent-runner-test-runs-')) / '{repo}')
 
