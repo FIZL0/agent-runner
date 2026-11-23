@@ -237,7 +237,7 @@ drawer) and a desktop. It follows the browser's light or dark setting; `[ui] the
   browser: read replies aloud, the voice (the system's own by default), tap or hold to talk, and auto listen (listen
   again once a reply was read, until one silent turn). Talk has its own control session, titled Talk and reused while it is live, told to answer in short
   spoken sentences with no task IDs, paths, commands, links or markdown. The mic needs Chrome, Edge or Safari
-  on https or localhost (a plain http LAN address gets no mic); without one it says so and the box still works.
+  on https or localhost (a plain http LAN address gets no mic); without one it says so and the box still works. An abort before any words is retried once by itself; if it fails again, Talk's status line says what to try.
 - **Sidebar.** New chat, Talk, Home (with the Needs you count), Status, Plan, Concepts and Settings. Chats are the
   control sessions: a dot marks one that needs your reply (an open question, or it spoke after you last opened it),
   and one that needs none with nothing said for `[ui] chat_quiet` is gray at the bottom under Quiet (never c1, a
