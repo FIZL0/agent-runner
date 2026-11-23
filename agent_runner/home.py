@@ -717,8 +717,9 @@ def unit_text(kind: str, argv: list[str], log: Path, env: dict | None = None) ->
 def service_env() -> dict:
     """What the service needs from this shell: PATH (git, claude), and the settings that move the runs folder
     and Home's config."""
-    return {k: os.environ[k] for k in ('PATH', 'AGENT_RUNNER_HOME', 'AGENT_RUNNER_HOME_CONFIG', 'CLAUDE_CODE_TMPDIR')
-            if os.environ.get(k)}  # F95: CLAUDE_CODE_TMPDIR, so the vitals find the session temp folders
+    return {k: os.environ[k] for k in ('PATH', 'AGENT_RUNNER_HOME', 'AGENT_RUNNER_HOME_CONFIG', 'CLAUDE_CODE_TMPDIR',
+                                       'CLAUDE_CONFIG_DIR')
+            if os.environ.get(k)}  # F95, F144: where the vitals find the session temp folders and the open sessions
 
 
 def install_commands(kind: str, unit: Path | None, task_cmd: str = '') -> list[list[str]]:

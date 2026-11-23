@@ -342,7 +342,8 @@ def test_clean():
     check(str(f.recent) not in paths, 'not one written to in the last hour')
     check(str(f.resumed) not in paths, 'not one a resume waits for')
     check(str(f.other) not in paths, 'not another project\'s')
-    check(str(f.control) not in paths, 'not a main checkout session\'s (a quiet one looks ended): sized only')
+    check(str(f.control) not in paths, 'not a main checkout session\'s with no registry read: sized only')
+    eq(foot['tmp_largest']['size'], 2048, 'the largest temp folder')
     check(str(f.home / 's1') in paths, 'a worktree merged into main with nothing uncommitted is on it')
     check(str(f.home / 'merge') in paths, 'the merge worktree too, while the run is off')
     check(str(f.home / 's2') not in paths, 'not one with unmerged commits')
@@ -383,21 +384,165 @@ def test_clean():
     check(not res['ok'] and (f.home / 's3').is_dir(), 'git itself keeps a worktree with changes, whatever the list says')
 
 
+def fake_proc(t: Path, starts: dict[int, str], cmdlines: dict[int, str] | None = None) -> Path:
+    proc = t / 'proc'
+    proc.mkdir(exist_ok=True)
+    for pid, start in starts.items():
+        write(proc / str(pid) / 'stat', f'{pid} (claude (x)) S ' + ' '.join(['0'] * 18) + f' {start} 0 0')
+        write(proc / str(pid) / 'cmdline', (cmdlines or {}).get(pid, 'claude'))
+    return proc
+
+
+def test_open_sessions():
+    print('Claude Code\'s registry: which sessions are open')
+    t = tmpdir()
+    a, b, c, e, g = (f'{n}0000000-0000-0000-0000-000000000000' for n in '12345')
+    proc = fake_proc(t, {10: '500', 11: '900', 12: '7'}, {12: f'claude\0--resume\0{e}'})
+    reg = t / 'sessions'
+    eq(V.open_sessions(proc, reg), (set(), False), 'no registry: not read in full')
+    for pid, sid, start in ((10, a, '500'), (11, b, '800'), (99, c, '1')):
+        write(reg / f'{pid}.json', json.dumps({'pid': pid, 'sessionId': sid, 'procStart': start}))
+    write(reg / '10.abc.key', 'secret')
+    eq(V.open_sessions(proc, reg), ({a}, True), 'open: its pid alive with that procStart; not a reused pid or a dead one')
+    write(reg / '98.json', '{broken')
+    eq(V.open_sessions(proc, reg)[1], True, 'a dead pid\'s unreadable entry does not matter')
+    eq(V.live_now(proc, reg), ({a, e}, True), 'live: the registry\'s and those a process names')
+    write(reg / '12.json', '{broken')
+    eq(V.live_now(proc, reg), ({a, e}, False), 'an unreadable entry of a live pid: not in full')
+    write(reg / '12.json', json.dumps({'pid': 12, 'procStart': '7'}))
+    eq(V.open_sessions(proc, reg)[1], False, 'nor one that names no session')
+    write(reg / '12.json', json.dumps({'pid': 12, 'sessionId': g}))
+    eq(V.open_sessions(proc, reg), ({a, g}, True), 'no procStart to tell by: open')
+    eq(V.live_now(t / 'none', reg), (None, False), 'no /proc: cannot tell')
+    with mock.patch.dict(os.environ, {'CLAUDE_CONFIG_DIR': str(t)}):
+        eq(V.open_sessions(proc), ({a, g}, True), 'found under CLAUDE_CONFIG_DIR')
+
+
+def test_auto_clean():
+    print('the regular footprint walk removes ended sessions\' temp folders itself')
+    f = clean_fixture()
+    now = time.time() + 30 * 24 * 3600  # the fixture's own files are all long quiet; each folder below is dated
+    main = f.tmp / 'claude-1000' / V.slug(f.root)
+    sids = {k: f'{i}1111111-1111-1111-1111-111111111111' for i, k in enumerate(
+        ('opened', 'reused', 'h23', 'h25', 'c1', 'c4', 'c5', 'feed', 'queued', 'asked'))}
+
+    def folder(sid: str, hours: float, under: Path = main) -> Path:
+        d = under / sid
+        write(d / 'x.bin', 'z' * 1000)
+        for q in (d / 'x.bin', d):
+            os.utime(q, (now - hours * 3600,) * 2)
+        return d
+    dirs = {k: folder(s, 23 if k == 'h23' else 25) for k, s in sids.items()}
+    cut = folder('a2222222-2222-2222-2222-222222222222', 25, f.tmp / 'claude-1000' / V.slug(f.home / 's2'))
+    fresh = folder('b2222222-2222-2222-2222-222222222222', 0.5, f.tmp / 'claude-1000' / V.slug(f.home / 's1'))
+    write(f.p.notes / 'slot2.log', f'=== 2026-01-01T00:00:00 X session {cut.name} m\n')
+    write(f.p.notes / 'control.sid', sids['c1'] + '\n')
+    write(f.p.notes / 'control4.pid', f'77 {sids["c4"]}')
+    write(f.p.notes / 'control5.sid', sids['c5'])  # closed on purpose: no pid file
+    write(f.p.notes / 'remote' / 'feed.sid', sids['feed'] + '\n./run\n')
+    write(f.p.notes / 'B7.resume', json.dumps({'slot': 1, 'sid': sids['queued'], 'why': 'x'}))
+    write(f.p.notes / 'B8.ask', json.dumps({'sid': sids['asked'], 'question': 'x'}))
+    # symlinks out of the temp root
+    out = f.t / 'elsewhere'
+    far = folder('c2222222-2222-2222-2222-222222222222', 99, out / V.slug(f.root))
+    if os.name != 'nt':  # symlinks need rights there
+        (f.tmp / 'claude-2000').symlink_to(out, target_is_directory=True)
+        (f.tmp / 'claude-3000').mkdir()
+        (f.tmp / 'claude-3000' / V.slug(f.root)).symlink_to(out / V.slug(f.root), target_is_directory=True)
+        (dirs['h25'] / 'link').symlink_to(out, target_is_directory=True)
+        os.utime(dirs['h25'] / 'link', (now - 25 * 3600,) * 2, follow_symlinks=False)
+    os.utime(dirs['h25'], (now - 25 * 3600,) * 2)
+
+    proc = fake_proc(f.t, {10: '500', 11: '900'}, {10: f'claude --resume {f.live.name}'})
+    reg = f.t / 'sessions'
+    write(reg / '10.json', json.dumps({'pid': 10, 'sessionId': sids['opened'], 'procStart': '500'}))
+    write(reg / '11.json', json.dumps({'pid': 11, 'sessionId': sids['reused'], 'procStart': '1'}))
+    said = []
+    s = SimpleNamespace(proc=proc, disk=f.t, procs={}, proc_cpu={}, sample=lambda now: snap())
+    v = V.Vitals(lambda: [], None, tailscale=False, sampler=s, usage=lambda: {}, registry=reg, log=said.append)
+
+    def there() -> set[str]:
+        return {k for k, d in dirs.items() if d.exists()}
+
+    with mock.patch.dict(os.environ, {'CLAUDE_CODE_TMPDIR': str(f.tmp)}), \
+            mock.patch('tempfile.gettempdir', lambda: str(f.tmp)):
+        before = set(dirs)
+        s.proc = f.t / 'none'
+        v.refresh_footprint([f.p], now)
+        check(there() == before and f.ended.exists(), 'no /proc: nothing is removed')
+        s.proc = proc
+        plan = v.refresh_footprint([f.p], now, auto=False)['clean']
+        check(there() == before and f.ended.exists(), 'nor by the walk for the person\'s Clean list')
+        listed = {i['path'] for i in plan if i['kind'] == 'tmp'}
+        check(str(dirs['h25']) in listed and str(dirs['opened']) not in listed, 'it lists a main checkout\'s ended one')
+        write(f.p.notes / 'B9.resume', '{"slot": 1')
+        v.refresh_footprint([f.p], now)
+        check(there() == before and f.ended.exists(), 'a resume that cannot be read may name any session: none goes')
+        (f.p.notes / 'B9.resume').unlink()
+        write(f.p.notes / 'control6.ask', 'a1111111-1111-1111-1111-111111111111\n')  # a one-ask mark: waits for nothing
+        write(reg / '11.json', '{broken')
+        v.refresh_footprint([f.p], now)
+        eq(there(), before, 'unreadable registry: no main checkout folder goes')
+        check(not f.ended.exists(), 'an ended worktree session\'s still does')
+        check(f.live.exists() and f.resumed.exists() and fresh.exists(), 'not a live, queued or recent one')
+        check(cut.exists(), 'nor a cut-off one its slot will resume')
+        check(len(said) == 1 and 'freed' in said[0], f'logged: {said}')
+        write(reg / '11.json', json.dumps({'pid': 11, 'sessionId': sids['reused'], 'procStart': '1'}))
+
+        foot = V.footprint([f.p], V.live_now(proc, reg)[0], now, registry=True)
+        rm = []
+        V.auto_clean(foot, [f.p], lambda: ({*sids.values(), f.control.name}, True), now, rm=rm.append)
+        eq(rm, [], 'each is looked at again just before: one opened since stays')
+        check(not [i for i in foot['clean'] if i['kind'] == 'tmp'], 'and leaves the list')
+
+        v.refresh_footprint([f.p], now)
+    eq(before - there(), {'reused', 'h25', 'c5'}, 'gone: quiet 25 h, a reused pid\'s, a closed control session\'s; '
+       'kept: open, quiet 23 h, c1, cN with a pid file, the feed, queued to resume, waiting for an answer')
+    check(far.exists() and (far / 'x.bin').exists(), 'nothing behind a symlink goes')
+    check(f.other.exists(), 'nor another project\'s')
+    check((f.home / 's1').is_dir() and 'wip/B1' in git(f.root, 'branch', '--list', 'wip/*'), 'worktrees and wip/ stay')
+    kinds = {i['kind'] for i in v.foot['clean']}
+    eq(kinds, {'worktree', 'wip'}, 'and wait for the person in Clean')
+    eq(v.foot['total'], v.foot['worktrees'] + v.foot['tmp'] + v.foot['logs'], 'the sums follow')
+    check(not any(x['path'] == str(dirs['h25']) for x in v.foot['largest']), 'the largest folders too')
+    eq(len(said), 2, 'logged again')
+
+    print('a folder that cannot be removed stays on the list')
+    d = folder('d2222222-2222-2222-2222-222222222222', 25)
+
+    def refuse(p):
+        raise OSError('busy')
+    with mock.patch.dict(os.environ, {'CLAUDE_CODE_TMPDIR': str(f.tmp)}):
+        foot = V.footprint([f.p], V.live_now(proc, reg)[0], now, registry=True)
+        tmp = foot['tmp']
+        eq(V.auto_clean(foot, [f.p], lambda: V.live_now(proc, reg), now, rm=refuse), (0, 0), 'freed nothing')
+    check(foot['tmp'] == tmp and str(d) in {i['path'] for i in foot['clean']}, 'still counted and listed')
+
+
 # --- alerts -----------------------------------------------------------------------------------------------------
 
 def test_alerts():
     print('thresholds become alerts')
     fine = snap(disk={'path': '/', 'total': 1000 * GB, 'free': 500 * GB}, mem={'total': 32 * GB, 'avail': 16 * GB},
                 cpu={'temp': 60.0}, gpus=[{'name': 'amdgpu', 'temp': 50.0}])
-    eq(V.alerts(fine, 10, 1 * GB), [], 'all fine: nothing')
+    eq(V.alerts(fine, 10, {'tmp': 49 * GB, 'clean': []}), [], 'all fine: nothing')
     bad = snap(disk={'path': '/', 'total': 1000 * GB, 'free': 8 * GB}, mem={'total': 32 * GB, 'avail': 2 * GB},
                cpu={'temp': 95.0}, gpus=[{'name': 'amdgpu', 'temp': 91.0}])
-    got = V.alerts(bad, 10, 6 * GB)
+    over = {'tmp': 51 * GB, 'tmp_largest': {'path': '/t/big', 'size': 40 * GB},
+            'clean': [{'kind': 'tmp', 'id': 'tmp:/t/big'}]}
+    got = V.alerts(bad, 10, over)
     eq([a['id'] for a in got], ['box:disk', 'box:hot:CPU', 'box:hot:GPU amdgpu', 'box:memory', 'box:tmp'],
-       'disk under min_free_gb, a hot CPU and GPU, memory nearly full, temp folders over 5 GB')
+       'disk under min_free_gb, a hot CPU and GPU, memory nearly full, temp folders over 5% of the disk')
     eq(got[0]['what'], 'box: 8.0 GB free on disk, under min_free_gb (10 GB): no new task starts', 'in plain words')
     eq([a['clean'] for a in got], [True, False, False, False, True], 'Clean is offered where it helps')
     eq(V.alerts(bad, 0, None)[0]['id'], 'box:hot:CPU', 'min_free_gb 0: no disk alert; no footprint yet: no temp alert')
+    eq(got[-1]['what'], 'box: session temp folders use 51 GB (over 5% of the 1000 GB disk); the largest is /t/big '
+       '(40 GB). Clean frees the ended sessions\'', 'the size, the largest folder and Clean')
+    stuck = V.alerts(fine, 10, {**over, 'clean': [{'kind': 'worktree', 'id': 'worktree:x'}]})[0]
+    check(not stuck['clean'] and 'Clean' not in stuck['what'] and '/t/big' in stuck['what'],
+          'nothing tmp to free: no Clean, no word of it')
+    eq(V.alerts(fine, 10, {**over, 'tmp': 50 * GB}), [], 'exactly 5%: not over')
+    eq(V.alerts(snap(), 10, over), [], 'no disk read: no temp alert')
     eq(V.verdict(V.headroom(bad, 10), got)['level'], 'bad', 'a card with an alert shows it, not its headroom')
     eq(V.verdict(V.headroom(fine, 10), [])['said'], 'Room for 6 more agents', 'else its headroom')
 
@@ -577,4 +722,4 @@ def test_sessions():
 
 if __name__ == '__main__':
     raise SystemExit(report([test_headroom, test_fallback_room, test_linux_collectors, test_other_collectors,
-                             test_history, test_clean, test_alerts, test_push, test_home_calls, test_tailscale, test_sessions]))
+                             test_history, test_clean, test_open_sessions, test_auto_clean, test_alerts, test_push, test_home_calls, test_tailscale, test_sessions]))
