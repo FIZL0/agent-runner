@@ -449,7 +449,7 @@ def test_page(tmp: Path) -> None:
                  "newChat('new_control'", "act('interrupt'",  # F137: through the outbox
                  '.a{display:grid;gap:8px;font:400 16.5px/1.6 var(--serif)', '.u{justify-self:end',  # Talk's words
                  'id="feed"', 'feedHTML(n)', "tq('feed/'",
-                 'Goes straight to this agent', "tq('upload?name='", 'type="file" multiple', 'About: <b>',  # the box
+                 'Goes straight to this agent', "tq('upload?name='", 'type="file" multiple',  # the box
                  "e.key==='Enter'&&!e.shiftKey", 'DRAFT_KEY', 'store.set(DRAFT_KEY(boxKey())',
                  'data-pick=', 'data-about="concept:', 'View ${I.ext}', "tq('concept/'",  # the Concepts view
                  '@media (prefers-color-scheme:dark){:root:not([data-theme="light"])', ':root[data-theme="dark"]',
@@ -1908,6 +1908,90 @@ def test_card_chat_b139(tmp: Path) -> None:
     eq(got[2:], [{'name': 'chat_to', 'args': {'text': 'hello', 'to': 'c1'}},
                  {'name': 'chat_to', 'args': {'text': 'hi c6', 'to': 'c6'}}],
        'with no card context the box still goes to its chat (c1 by default)')
+
+
+NEW_VIEW_DRIVER = r"""
+const page = require('fs').readFileSync(process.argv[2], 'utf8').replace(/\r\n/g, '\n');
+const grab = s => { const i = page.indexOf(s); return page.slice(i, page.indexOf('\n}\n', i) + 2) + '\n' };
+const line = s => { const i = page.indexOf(s); return page.slice(i, page.indexOf('\n', i)) + '\n' };
+const logic = page.split('<script id="logic">')[1].split('</script>')[0].replace(/if\(typeof module[^\n]*/, '');
+const log = {acts: [], fetched: [], focus: 0, draws: 0}, kept = {}, ta = {value: ''}, tab = {};
+const env = {S: {snap: {at: 'now', sessions: [], needs: [], queue: [{id: 'F1', title: 'Board page'}], concepts: [{id: 'K5', concept: 'K5', title: 'Lazy layout'}]},
+    view: 'home', thread: null, ctx: null, atts: [], ob: [], sel: [], feeds: {}, sent: {}},
+  HI: {i: null}, DK: {}, I: {}, HOME_PAGE: false, HB: '', location: {hash: ''}, PLACE_KEY: 'p', placeWas: '', FD: {}, TOUCH: () => false,
+  store: {get: k => kept[k] || '', set: (k, v) => { if (v) kept[k] = v; else delete kept[k] }},
+  tabStore: {get: k => tab[k] || '', set: (k, v) => { tab[k] = v }},
+  document: {querySelector: () => ta, addEventListener: (t, f) => { env.on = env.on || {}; (env.on[t] = env.on[t] || []).push(f) }},
+  settingOf: v => v === 'ui.x' ? {table: 'ui', key: 'x', name: 'A setting'} : null,
+  outbox: (name, args, o) => { log.acts.push([name, args]); const it = {cid: 'k' + log.acts.length, name, args, ...o}; env.S.ob.push(it); return it },
+  chats: () => [], kbFocus: () => { log.focus++ }, setTimeout: () => 0, fetch: p => { log.fetched.push(p); return Promise.reject(0) }, tq: p => p,
+  card: h => h, esc: t => String(t), starting: () => false, Date, Math,
+  render: () => { log.draws++; env.keepPlace(); ta.value = kept['ar-draft:' + env.boxKey()] || '' }};
+const known = new Proxy(env, {has: () => true, get: (t, k) => k === Symbol.unscopables ? undefined : k in t ? t[k] : k in globalThis ? globalThis[k] : () => ''});
+env.env = env;
+const names = ['about', 'send', 'open', 'goView', 'keepPlace', 'takePlace', 'boxKey', 'shownSession', 'threadTitle', 'feedHTML', 'box', 'keptCheck', 'feedLoad'];
+new Function('known', 'env', 'with (known) {' + logic + line('const DRAFT_KEY=') + line('const boxKey=') + line('const shownSession=') + line('const sessionOf=')
+  + line('const isAgent=') + line('const threadTitle=') + grab('function box(') + line('const feedNow=') + grab('async function feedLoad(') + grab('function feedHTML(')
+  + grab('async function loadFeed(') + line('function keepPlace(') + grab('function takePlace(') + grab('function keptCheck(')
+  + line('function open(') + line('function goView(') + grab('async function send(') + line('function newChat(') + line("  S.waitNew={known,at:Date.now(),ph:'@'+it.cid};open(")
+  + grab('function about(') + page.slice(page.indexOf("document.addEventListener('keydown',e=>{\n"), page.indexOf("document.addEventListener('input',")) + names.map(n => 'env.' + n + '=' + n + ';').join('') + '}')(known, env);
+const type = t => { ta.value = t; env.store.set('ar-draft:' + env.boxKey(), t) };
+const S = env.S, out = {press: []};
+(async () => {
+  for (const [view, a] of [['plan', 'plan:F1'], ['concepts', 'concept:0'], ['settings', 'setting:ui.x'], ['home', 'new']]) {
+    env.goView(view); log.focus = 0; env.about(a);
+    out.press.push([S.view, S.thread, env.threadTitle(S.thread), log.focus]);
+  }
+  out.bad = []; for (const a of ['plan:F9', 'concept:7', 'setting:no']) { env.goView('plan'); env.about(a); out.bad.push([S.thread, S.ctx]) }
+  // unsent: a draft, an empty Enter, Back by Esc, and press again
+  env.goView('plan'); env.about('plan:F1'); out.body = env.feedHTML(S.thread); out.box = env.box('x');
+  out.stop = env.shownSession(); await env.send(); await env.feedLoad(); type('make it fir');
+  env.on.keydown.forEach(f => f({key: 'Escape', preventDefault() {}, target: {closest: () => null, matches: () => false}}));
+  out.back = [S.view, S.thread, S.ctx, log.acts.length, log.fetched.length];
+  env.about('plan:F1'); out.draft = ta.value;
+  // a reload opens it again, with no focus
+  const was = S.ctx; S.ctx = null; S.thread = null; S.view = 'home'; log.focus = 0; env.takePlace(); env.keptCheck();
+  out.reload = [S.view, S.thread, JSON.stringify(S.ctx) === JSON.stringify(was), log.focus];
+  type('make it first'); await env.send(); out.sent = [log.acts, S.thread, S.ctx, S.view, env.boxKey(), Object.keys(kept).filter(k => k.startsWith('ar-draft:'))];
+  type('and more'); await env.send(); out.then = log.acts[1];
+  env.goView('concepts'); env.about('concept:0'); type('hm'); env.open('c1'); out.left = [S.thread, S.ctx];
+  type('hello'); await env.send(); out.c1 = log.acts[2];
+  console.log(JSON.stringify(out)); process.exit(0);
+})();
+"""
+
+
+def test_new_chat_view_f172(tmp: Path) -> None:
+    """F172: Chat on a task, a concept or a setting, and Add a task, open an empty new chat view at once with nothing
+    sent; the first message starts the session once, with its About text; Back returns, and a draft is kept."""
+    page = W.PAGE.read_text(encoding='utf-8')
+    check('data-unctx' not in page and 'class="ctx"' not in page, 'the box has no About line')
+    check("if(q('[data-home]')){S.thread=null;S.ctx=null;render(true);return}" in page, "Back leaves to the view under it")
+    if not shutil.which('node'):
+        print('  (no node here: the new chat view test is skipped)')
+        return
+    (tmp / 'driver.js').write_text(NEW_VIEW_DRIVER, encoding='utf-8')
+    r = subprocess.run(['node', str(tmp / 'driver.js'), str(W.PAGE)], capture_output=True, text=True, timeout=60)
+    check(r.returncode == 0, 'node presses Chat', r.stderr[-1500:])
+    if r.returncode:
+        return
+    o = json.loads(r.stdout)
+    eq(o['press'], [['plan', '+plan:F1', 'F1 Board page', 1], ['concepts', '+concept:K5', 'Lazy layout', 1],
+                    ['settings', '+setting:[ui] x', 'A setting', 1], ['home', '+new', 'Add a task', 1]],
+       'a press opens the view over the one it was pressed in, titled, its box focused in the tap')
+    eq(o['bad'], [[None, None]] * 3, 'a thing that is gone opens nothing')
+    check('F1 Board page' in o['body'] and 'starts with your first message' in o['body'], 'it is empty and says so', o['body'])
+    check('to a new chat' in o['box'] and 'data-feedkeys' not in o['box'], 'its box has no session keys', o['box'])
+    eq(o['stop'], '', 'there is no session to interrupt')
+    eq(o['back'], ['plan', None, None, 0, 0], 'left unsent: back on Plan, no action sent and no session asked for')
+    eq(o['draft'], 'make it fir', 'pressed again: the draft is there')
+    eq(o['reload'], ['plan', '+plan:F1', True, 0], 'a reload keeps it open, without focus')
+    ask = 'About F1 (Board page): make it first'
+    eq(o['sent'], [[['new_control', {'ask': ask, 'wait': False}]] + o['sent'][0][1:], '@k1', None, 'plan', '@k1', []],
+       'the first send calls new_control once, with the About text; its draft is gone, and Back is still Plan')
+    eq(o['then'], ['chat_to', {'text': 'and more', 'to': '@k1'}], 'the next message goes to that chat')
+    eq(o['left'], ['c1', None], 'another chat opened over it is that chat')
+    eq(o['c1'], ['chat_to', {'text': 'hello', 'to': 'c1'}], 'and a message there goes there')
 
 
 def test_short_ask_b152(tmp: Path) -> None:
@@ -3464,7 +3548,7 @@ def test_session_feed_f114(tmp: Path) -> None:
     page = W.PAGE.read_text(encoding='utf-8')
     order = [page.index(x) for x in ('<div class="body" id="body">', '<div class="feed" id="feed" hidden>', '<div class="dock" id="dock">')]
     eq(order, sorted(order), 'the session stands between the header and the message box')
-    check('dock=keysRow()+box(' in page and 'convo(n)' not in page.split('function render(', 1)[1].split('\n}\n', 1)[0],
+    check("dock=(isNew(n)?'':keysRow())+box(" in page and 'convo(n)' not in page.split('function render(', 1)[1].split('\n}\n', 1)[0],
           'a chat draws its box, and no thread')
     check('touch-action:pinch-zoom' in page and '@media (pointer:coarse){.feedtouch{display:block} .keyb{display:inline-flex}' in page,
           'a touch device has the touch layer and the key row')
@@ -3587,7 +3671,7 @@ if __name__ == '__main__':
                            in_tmp(test_listen_heard_nothing_b132), in_tmp(test_talk_reply_heard_b133), in_tmp(test_talk_new_chat_f157),
                            in_tmp(test_slash_menu_b119), in_tmp(test_composer_keys_b120),
                            in_tmp(test_interrupt_c1_b141), in_tmp(test_answer_button_b138), in_tmp(test_pick_f138),
-                           in_tmp(test_outbox_f137), in_tmp(test_sent_b154), in_tmp(test_card_chat_b139), in_tmp(test_short_ask_b152),
+                           in_tmp(test_outbox_f137), in_tmp(test_sent_b154), in_tmp(test_card_chat_b139), in_tmp(test_new_chat_view_f172), in_tmp(test_short_ask_b152),
                            in_tmp(test_chat_box_f115), in_tmp(test_home_switcher_f134),
                            in_tmp(test_scroll_f83), in_tmp(test_keyboard_b160), in_tmp(test_talk_settings_f124), in_tmp(test_mic_aborted_b162), in_tmp(test_sound_b178), in_tmp(test_status_view_f124),
                            in_tmp(test_chats_f128), in_tmp(test_needs_drop_chat_f110), in_tmp(test_task_text_f85),

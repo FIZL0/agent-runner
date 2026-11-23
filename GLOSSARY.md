@@ -567,3 +567,10 @@ _Said_: this device or everyone
 _On screen_: this device, everyone
 _In code_: setting_words.home, settingSide
 _Avoid_: scope, level
+
+**New chat view**:
+The empty chat a card's Chat or Add a task opens, titled with what it is about; its session starts with the first message
+_Said_: empty new chat
+_On screen_: The chat starts with your first message.
+_In code_: ctxKey, isNew, about, S.ctx
+_Avoid_: About line, draft chat

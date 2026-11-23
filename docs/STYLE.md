@@ -159,6 +159,8 @@ A chat or slot shows the real Claude Code session through ttyd, in place of a th
   where there is one), a slot with no session (Resume when its task was cut off), no terminal (a headless stream slot,
   a slot with no socket, or Windows before 1809) and no ttyd (how to install it). Each is a `.card` with a title, one
   line of second text and its `.btns`. The state is checked every 3 s.
+- **New chat opens at once.** A press that starts a chat about something (Chat on a plan task, concept or setting, Add a task) opens the
+  empty new chat view over the view pressed in, with its box focused. Nothing is sent or started until the first message.
 
 ## Touch, keys and access
 
