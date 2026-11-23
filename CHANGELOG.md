@@ -4,6 +4,23 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Removed: the terminal UI's chat. `agent-runner ui` has no Status chat tab, no Sessions chat, feed or pane tabs and no
+  session message box, so nothing is typed into a session from it, and Ctrl+C always quits. Status tabs are log,
+  release and controls (the quick asks s y w u are buttons on the log tab and keys in Status); Sessions tabs are
+  session for a control session or an idle slot, and session and diff for a slot on a task; `c` selects c1 (F112).
+- Added: `agent-runner ui` shows the real Claude Code session beside its panels. Selecting a session row (cN or sN)
+  inside tmux splits a pane running `agent-runner attach cN` (sessions with an attach socket, Linux and macOS), which
+  tmux keeps for mouse selection and copy; l, Enter or Ctrl-l focus it, Ctrl-h comes back. Outside tmux the session
+  tab shows its feed read-only with its link (o open, y copy), and Enter attaches full-screen (F112).
+- Added: Ctrl-f in `agent-runner ui` makes the session full-screen between the UI's top and bottom bars; Ctrl-f again
+  puts it side by side. Inside tmux the UI binds Ctrl-f and Ctrl-h in tmux's root table, acting only in its own window
+  and passing the key through elsewhere; a key the person already bound is left alone, and quit unbinds them (F112).
+- Changed: N ('+ new chat') in `agent-runner ui` no longer blocks up to 90 s for the Remote Control link. It runs
+  `agent-runner control --new --no-wait` on a thread, selects a 'c… starting...' row at once, and selects the cN row
+  once the run's state lists it (F112).
+- Added: `agent-runner control --new --no-wait` returns once the session starts, printing "control N is starting in a
+  hidden terminal", without waiting for its claude.ai/code link (F112).
+
 ## 0.61.0 (2026-11-23)
 
 - Added: the run page (web) deletes chats. Each row in the Chats list has a trash button, shown on hover (always
