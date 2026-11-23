@@ -167,7 +167,7 @@ task to fix X" (it files it with `plan add`), "do X now" (it uses `take`, never 
   `<notes>/settled/`, marked there before it is typed, so a restarted run does not type it twice. A session with a question
   dialog up, held messages or one just starting waits; a turn running queues the line in Claude Code. The line is not a
   person's message: it is never held and not counted for the idle close (Claude's reply to it is activity,
-  as any turn is). An ordinary landing says nothing. An item a live
+  as any turn is; a `DECIDE:` line that still stands is repeated in it, as the needs guide says). An ordinary landing says nothing. An item a live
   chat waits on under Needs you (`waits.json`) that leaves Needs you with no command is told about two minutes after, as are
   changes no command announces (a pulled plan, a hand edit). Limits: sessions open in a terminal with no hidden shim, and
   those started from the apps' control server, are not told; events older than a day are dropped; a run must be up. Not tried

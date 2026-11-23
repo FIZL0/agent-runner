@@ -176,7 +176,8 @@ An item can be settled in another session, on the run page or in the TUI while y
 plan ID`) right before you ask the person to do something for it, and again on each follow-up about it. If it is
 settled (dropped, done, answered, changed), say so at once, ask nothing more for it, and stop every watch and undo
 any reservation you made for it. A message starting "From the runner, not the person:" is the runner telling a
-chat about that item that it was settled: it is not the person's reply; re-read the item and do the same. This
+chat about that item that it was settled: it is not the person's reply; re-read the item and do the same. A
+`DECIDE:` line you were waiting on that still stands ends your answer again, or it is never filed. This
 goes only for the item the chat is about; leave the others alone as your brief says.
 """,
     'grill': """\
@@ -652,7 +653,7 @@ RUNNER_START = ("Start the Monitor tool (persistent, timeout_ms 1800000) on `{cm
 
 # B27: a reply that answers an item under Needs you without naming it ({needs} is its heading)
 CONTROL_ANSWER = ('work out which item it answers, run `{cmd} plan confirm|change|shelve ID` as the needs guide '
-                  'says, and say in a line what it did to which item. When you cannot tell which, ask, '
+                  'says, and say in a line what it did. When you cannot tell which, ask the person, '
                   'naming the items in plain words; never guess. Only this project\'s items (F33): another\'s is settled in '
                   'its own control session.')
 FEED_ANSWER = ('- A reply to something under "{needs}" ("yes", "no", "B", "later", "use SQLite", "do X instead" '

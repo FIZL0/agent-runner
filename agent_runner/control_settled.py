@@ -92,7 +92,7 @@ def record(c, ids, what: str, reason: str = '', who: dict | None = None, at: flo
 
 def noting(c, a, todo, run):
     """Run plan subcommand `a` (`run`: its exit code) and record what it settled."""
-    if a.cmd not in VERBS:
+    if a.cmd not in VERBS or a.cmd == 'edit' and a.rest[:1] == ['--pri'] and len(a.rest) == 2:  # only its place
         return run()
     from agent_runner import plan as P
     ids, needed = [a.id], False
@@ -109,7 +109,7 @@ def noting(c, a, todo, run):
 
 def done_by(c, tid: str) -> None:
     """`done` in a control session's own take: its landing is not told to that session."""
-    if (who := author(c))['n']:
+    if (who := author(c))['sid']:  # a session this project knows
         try:
             save(folder(c) / f'{tid}.by', who)
         except OSError:

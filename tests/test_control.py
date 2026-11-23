@@ -1142,7 +1142,7 @@ def test_settled_verbs_and_openers():
             w.look()
             check([n for n, _ in w.typed] == [4, 5] and what in w.typed[0][1], argv[0], w.typed)
             w.typed.clear()
-        for argv in (('note', 'R81', 'x'), ('drop', 'R82', 'x'), ('move', 'R81', 'top')):
+        for argv in (('note', 'R81', 'x'), ('drop', 'R82', 'x'), ('move', 'R81', 'top'), ('edit', 'R90', '--pri', 'normal')):
             w.plan(*argv)
         w.look()
         eq(w.typed, [], 'a note, a move or another item says nothing')
