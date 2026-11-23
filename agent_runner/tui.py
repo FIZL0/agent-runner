@@ -882,7 +882,8 @@ class RunPage:
             if self.typing == box:
                 lines[-1] = lines[-1] + [('█', 'accent')]
             if k == 't' and not f['new'] and not text:  # the task's text now; empty keeps it
-                lines += [[('    ', '')] + l for l in wrap([('now: ' + it.get('title', ''), 'dim')], width - 4)]
+                # B128: the text in the typed text's colour; only the 'now:' word dim
+                lines += [[('    ', '')] + l for l in wrap([('now: ', 'dim'), (it.get('title', ''), 'fg')], width - 4)]
             return lines
         out = [L(('New task: written straight to the plan (plan add).' if f['new'] else
                   f'Changes go straight to the plan (plan edit {tid}).', 'dim')), L()]
@@ -891,8 +892,11 @@ class RunPage:
             kind_name = U.task_kind(f['kind'] + '1', U._kind_names()) if f['kind'] else ''
         except Exception:  # noqa: BLE001 - no plan to name the kinds: the letter alone
             kind_name = ''
-        out += [L(*label('k', 'kind', '(cycles, K back)'), ('  ', ''), (f['kind'], KIND_COLOUR.get(f['kind'], 'cyan')),
-                  (f' {kind_name}' if kind_name and kind_name != f['kind'] else '', 'fg'))]
+        kind_name = kind_name.split(':', 1)[0].strip()  # B128: the short name, not V's whole release description
+        kind = L(*label('k', 'kind', '(cycles, K back)'), ('  ', ''), (f['kind'], KIND_COLOUR.get(f['kind'], 'cyan')),
+                 (f' {kind_name}' if kind_name and kind_name != f['kind'] else '', 'fg'))
+        k_lines = wrap(kind, width)  # a narrow pane: the run-on indented under the value, never at column 0
+        out += k_lines[:1] + [[('    ', '')] + l for k in k_lines[1:] for l in wrap(k, width - 4)]
         out += [L(*label('p', 'priority', '(on / off)'), ('  ', ''),
                   (f['pri'], 'red' if f['pri'] == 'critical' else 'fg'))]
         out += [label('f', 'files')] + value('f')
