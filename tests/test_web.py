@@ -122,10 +122,17 @@ def test_server(tmp: Path) -> None:
                 mock.patch('agent_runner.plat.WINDOWS', False):
             code, body = get(f'{base}/terminal/s1?t={token}')
         r = json.loads(body)
-        check(not r['ok'] and 'install' in r['out'] and 'ttyd' in r['out'],
-              'without ttyd the terminal tab says how to install it', r)
-        eq((r['mode'], r['capture'], r['every']), ('builtin', 'pane/s1', 0.5),
-           'and gives the built-in view: the pane captured every 0.5 s')
+        check(not r['ok'] and r['out'].startswith(W.TTYD_INSTALL) and 'chat' in r['out'],
+              'without ttyd the terminal tab says how to install it, and that the chat works meanwhile', r)
+        check(r['mode'] == 'install' and 'capture' not in r and 'every' not in r,
+              "C24: and no 'builtin' mode: the built-in view is gone", r)
+        eq(get(f'{base}/pane/s1?t={token}')[0], 404, 'C24: the capture route is gone')
+        with mock.patch.object(U, 'act', side_effect=AssertionError('keys reached ui_model')):
+            code, out = post(f'{base}/act?t={token}', {'name': 'keys', 'args': {'session': 's1', 'text': 'x'}})
+        check(code == 404 and not out['ok'], 'C24: the web no longer types keys into a pane', out)
+        page = W.term_html().decode()
+        check("'builtin'" not in page and "'pane/'" not in page and "act('keys'" not in page,
+              "C24: the terminal-style page has no built-in view code (capture polling, the keys box)")
         with mock.patch.object(W.shutil, 'which', return_value=None):
             r = json.loads(get(f'{base}/terminal/s1?t={token}')[1])
         check(r['mode'] == 'feed' and 'no tmux' in r['out'] and r['feed'] == 'feed/s1',
@@ -218,7 +225,7 @@ def test_upload(tmp: Path) -> None:
 
 
 def test_feed_pane_concept(tmp: Path) -> None:
-    """F74: /feed/NAME gives the session's feed, /pane/NAME its pane's text, /concept/ID a concept's local page
+    """F74: /feed/NAME gives the session's feed, /concept/ID a concept's local page
     copy (sandboxed), and /act runs the new actions (interrupt, quick_ask)."""
     fake_repo(tmp)
     token = W.web_token()
@@ -229,10 +236,6 @@ def test_feed_pane_concept(tmp: Path) -> None:
         with mock.patch.object(U, 'feed', side_effect=lambda n: {'ok': True, 'name': n, 'entries': entries}):
             r = json.loads(get(f'{base}/feed/c6?t={token}')[1])
         eq((r['name'], r['entries']), ('c6', entries), "/feed/c6 is c6's feed")
-        with mock.patch.object(U, 'session_pane', return_value='%6'), \
-                mock.patch.object(U, 'TMUX', [lambda argv: (0, 'screen\n')]):
-            r = json.loads(get(f'{base}/pane/c6?t={token}')[1])
-        eq((r['ok'], r['text']), (True, 'screen\n'), "/pane/c6 is its pane's text")
         eq(get(f'{base}/concept/K5?t={token}')[0], 404, 'no copy: 404')
         S.C.notes('concepts', 'K5.html').write_text('<h1>Option A</h1>', encoding='utf-8')
         with urllib.request.urlopen(f'{base}/concept/K5?t={token}', timeout=10) as resp:

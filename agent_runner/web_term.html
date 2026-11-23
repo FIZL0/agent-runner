@@ -313,7 +313,7 @@ const K=(k,l)=>`<b class="pk">${esc(k)}</b> ${l}`;
 const T=new URLSearchParams(location.search).get('t')||'';
 const S={snap:{status:[],sessions:[],queue:[],needs:[],concepts:[],log:[],release:'',quick_asks:[],terminal_mode:'feed'},
   panel:1,cur:{1:0,2:0,3:0,4:0,5:0},tab:{},focusMain:false,last:0,terms:{},feeds:{},busy:{},showTools:false,
-  diffs:{},concepts:{},copt:{},caps:{},sig:'',extraSig:''};
+  diffs:{},concepts:{},copt:{},sig:'',extraSig:''};
 
 function api(path,body){
   return fetch(path+(path.includes('?')?'&':'?')+'t='+encodeURIComponent(T),body?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:{})
@@ -414,7 +414,6 @@ function termHTML(it){
   const t=S.terms[it.name];
   if(!t||t.ok===undefined&&!t.mode)return '<span class="d">opening the pane…</span>';
   if(t.ok)return `<iframe src="${esc(location.protocol+'//'+location.hostname+':'+t.port+t.path)}" title="${esc(it.name)} pane"></iframe>`;
-  if(t.mode==='builtin')return `<div class="d" style="padding:4px 10px">${esc(t.out)}</div><div style="padding:4px 10px;white-space:pre">${esc(S.caps[it.name]??'…')}</div>`;
   return `<div style="padding:4px 10px;white-space:pre-wrap">${esc(t.out)}</div>`;
 }
 function openTerm(it){
@@ -501,8 +500,7 @@ A release waits for everything ahead of it, then runs alone, so it releases exac
     const idle=!isCtl(it)&&S.panel===2&&!it.task;
     x=qa+chatBox('send',idle?`${name} is idle`:tab==='chat'?`message ${name}`:`message ${name} (it reads it between steps)`,!idle)}
   else if(tab==='pane'){if(S.snap.terminal_mode==='feed'){h=`There is no tmux here, so ${esc(it.name)} has no pane to show: its feed and its session link show it.`}
-    else{cls='pane term';openTerm(it);h=termHTML(it);const t=S.terms[it.name];
-      if(t&&t.mode==='builtin')x=`<form class="inrow" data-form="keys"><input id="kin" placeholder="type into ${esc(it.name)}" autocomplete="off"><button class="kb">${K('⏎','send')}</button></form>`}}
+    else{cls='pane term';openTerm(it);h=termHTML(it)}}
   else if(tab==='diff'){h=diffHTML(it.name)}
   else if(tab==='session'){h=it.link?`${esc(it.name)} is a Claude Code session you can also open on its own, in the app or on your phone:\n\n<a href="${esc(it.link)}" target="_blank" rel="noopener" data-open>${K('o','open')} ${esc(it.link)}</a>`:
     isCtl(it)?`<span class="d">${esc(it.name)} has no claude.ai/code link (it is not on Remote Control).</span>`:
@@ -561,8 +559,6 @@ function connect(){
 }
 setInterval(()=>{if(!S.last)return;const s=Math.round((Date.now()-S.last)/1000);$('#live').textContent='live · '+(s<5?'just now':s+'s ago')},1000);
 setInterval(()=>{if(!T)return;const it=sel(),[tab]=curTab();if((tab==='chat'||tab==='feed')&&it){const n=sessionOf(it);if(S.feeds[n])S.feeds[n].loading=false;loadFeed(n)}},2000);
-setInterval(()=>{const it=sel(),[tab]=curTab();const t=it&&S.terms[it.name];if(tab!=='pane'||!t||t.mode!=='builtin'||S.capBusy)return;
-  S.capBusy=true;api('pane/'+encodeURIComponent(it.name)).then(r=>{S.capBusy=false;S.caps[it.name]=r.ok?r.text:(r.out||'');S.sig='';renderMain()})},500);
 
 /* actions */
 function back(){S.focusMain=false;if(typing())document.activeElement.blur();render()}
@@ -587,7 +583,6 @@ function submit(kind){
   if(kind==='chatedit'){const text=it.newtask?'new task: '+v:`change ${it.id} (${it.title}): ${v}`;act('chat',{text},'sent to c1');back()}
   if(kind==='answer'){act('answer',{tid:it.id,text:v},it.id+' answered').then(r=>{if(r.ok)back()})}
   if(kind==='pick'){act('answer',{tid:it.id,text:v},'sent to c1')}
-  if(kind==='keys'){act('keys',{session:it.name,text:v,key:'Enter'},'typed into '+it.name);box.focus()}
 }
 /* F72: Shift+J / Shift+K in [3] Queue: the selected task one place down / up (plan move ID after|before
    <neighbour>); B117: optimistic, through queueMoves (the moves script above) */
