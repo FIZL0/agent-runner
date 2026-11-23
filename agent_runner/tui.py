@@ -163,7 +163,7 @@ HELP = """Everywhere (not while typing in a box)
   ^j ^k    down / up the left list (these four work in a box too)
   ^f       a session full-screen between the bars (again: side by side)
   i        type in the box        ?        this list
-  q ^C     quit
+  q ^C     quit                   0        all runs (the pick-a-run screen)
 Status [1]
   R        release                s y w u  quick asks (a new session answers)
   + - =    slot +1, -1, set N     P G      pause, go on
@@ -395,6 +395,7 @@ class RunPage:
         self.window_keys: set[str] = set()  # the keys the last frame showed above the bottom line
         self.confirm = ''  # F82: the run control waiting for its key again (stop now), '' none
         self.restart = False  # F90: the run is on a newer version: start this TUI again on it (`follow_upgrade`)
+        self.pick = False  # B153: quit for the pick-a-run screen (0, the project name's key)
         self.followed = ''  # F90: the version the last restart was for (never restart twice for one version)
 
     # --- what is where --------------------------------------------------------------------------------
@@ -1127,7 +1128,7 @@ class RunPage:
         self.links, self._urls = [], []
         self.fill(win, h, w)
         ago = int(time.time() - self.got)
-        top = [('agent-runner', 'accent'), (f' · {self.snap.get("project", "")}  ', 'fg'),
+        top = [(self.snap.get('project') or 'agent-runner', 'accent'), (' 0', 'gkey'), (' all runs  ', 'dim'),
                ('● ', 'green' if self.snap.get('up') else 'dim'),
                (('live' if self.snap.get('up') else 'no run is up') + f' · updated {"just now" if ago < 5 else f"{ago}s ago"}', 'dim')]
         if self.bar_only:  # F112 `ui --bar`: the top pane of tmux's full-screen layout
@@ -1391,6 +1392,9 @@ class RunPage:
             self.typed(k)
             return False
         if k == 'q':
+            return True
+        if k == '0':  # B153: the project name's key: back to the pick-a-run screen
+            self.pick = True
             return True
         if k == 'ESC':  # B116: back out only, never an interrupt
             self.main = False
@@ -1870,6 +1874,18 @@ def term_write(seq: str) -> None:
         pass
 
 
+TITLE_BACK = '\x1b[23;0t'  # B153: the terminal's window title as it was (the title stack's top, popped)
+PICKER_ENV = 'AGENT_RUNNER_FROM_PICKER'  # B153: set by the launcher's t: 0 in the TUI goes back to its picker
+PICK_RC = 3  # B153: the TUI's exit code for 0 (back to the pick-a-run screen) when the launcher started it
+
+
+def window_title(name: str) -> str:
+    """B153: the escapes that keep the terminal's window title (pushed on its title stack, `TITLE_BACK` gives
+    it back) and show `name` in its place (OSC 0 and 2: the window and the tab)."""
+    clean = re.sub(r'[\x00-\x1f\x7f]', '', name)
+    return f'\x1b[22;0t\x1b]0;{clean}\x07\x1b]2;{clean}\x07'
+
+
 def over_ssh() -> bool:
     """B125: this page runs over ssh (SSH_CONNECTION or SSH_TTY set): a browser opened here is not on the
     person's screen."""
@@ -2278,6 +2294,8 @@ def page_loop(curses, win, page: RunPage, box: dict | None) -> int:
             continue
         for name in escape_tail(key_name(curses, ch), more):
             if page.key(name):
+                if page.pick and box is not None:
+                    box['pick'] = True
                 return 0
 
 
@@ -2306,7 +2324,18 @@ def main(argv: list[str]) -> int:
     locale.setlocale(locale.LC_ALL, '')
     os.environ.setdefault('ESCDELAY', '25')  # Esc backs out at once, not after curses' default second
     box: dict = {}
-    rc = curses.wrapper(run_curses, box, bar)
+    if not bar:  # B153: the project's name as the terminal's window title, the old one back on the way out
+        term_write(window_title(f'{U.S.project()} · runner'))
+    try:
+        rc = curses.wrapper(run_curses, box, bar)
+    finally:
+        if not bar:
+            term_write(TITLE_BACK)
     if box.get('restart'):  # F90: the terminal is restored; this process becomes the new version's TUI
         follow_upgrade(box['restart'])
+    if box.get('pick'):  # B153: 0 goes back to the pick-a-run screen: the launcher's, or a new one here
+        if os.environ.get(PICKER_ENV):
+            return PICK_RC
+        from agent_runner.cmds import cmd_pick
+        return cmd_pick(U.S.ROOT)
     return rc

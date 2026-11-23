@@ -150,7 +150,9 @@ def test_layout() -> None:
         check(title in txt, f'{title} is drawn', txt)
     eq(queue_ids_shown(win), ['Q1', 'B2', 'C3'], 'the unfocused queue shows 3 rows')
     check('1 of 10 · 3 to expand' in txt, 'the unfocused queue counts its rows and says how to expand', txt)
-    check('agent-runner · proj' in win.lines()[0], 'the top line names the project', win.lines()[0])
+    check(win.lines()[0].startswith('proj 0 all runs'), 'B153: the top line names the project first, its key 0',
+          win.lines()[0])
+    check('agent-runner' not in win.lines()[0], 'B153: not agent-runner', win.lines()[0])
     check('? keys' not in win.lines()[0], 'the top line shows no key (the bottom line has ? keys)', win.lines()[0])
     check(win.lines()[-1].startswith(' SESSIONS '), 'the bottom line starts with the mode badge', win.lines()[-1])
     eq([r['name'] for r in p.items(2)], ['c1', 'c6', 's1', 's2', 's3', '+'],
@@ -667,7 +669,7 @@ def test_full_screen_f112() -> None:
               'the bottom bar is still drawn, the panels are not', win.text())
         bar = page()
         bar.bar_only = True
-        check(drawn(bar, 1, 120).lines()[0].startswith('agent-runner · proj'), 'ui --bar draws the top bar')
+        check(drawn(bar, 1, 120).lines()[0].startswith('proj 0 all runs'), 'ui --bar draws the top bar')
         n = len(tm.calls)
         p.key('\x06')
         did = tm.calls[n:]
@@ -685,7 +687,7 @@ def test_full_screen_f112() -> None:
     q.key('\x06')
     win = drawn(q)
     eq((q.full, q.main), (True, True), 'outside tmux, Ctrl-f: the session full-screen')
-    check(win.lines()[0].startswith('agent-runner · proj') and win.lines()[-1].startswith(' SESSION ') and
+    check(win.lines()[0].startswith('proj 0 all runs') and win.lines()[-1].startswith(' SESSION ') and
           '[2] Sessions' not in win.text() and '❯ ideas for themes?' in win.text(),
           'both bars drawn, the feed between them, no panels', win.text())
     q.key('\x06')
@@ -1682,8 +1684,38 @@ def test_quick_ask_names_session_c32() -> None:
     eq((p.panel, p.sel().get('name')), (2, 'c7'), 'c7 is selected in Sessions')
 
 
+def test_project_name_b153() -> None:
+    """B153: 0 (the project name's key) quits for the pick-a-run screen: the launcher's (PICK_RC) when it started
+    the TUI, else a new picker; the terminal's window title is the project's name, and given back on the way out."""
+    p = page()
+    eq((p.key('0'), p.pick), (True, True), '0 quits for the pick-a-run screen')
+    check('0        all runs' in T.HELP, 'the keys list has 0')
+    t = T.window_title('proj · runner')
+    check(t.startswith('\x1b[22;0t') and '\x1b]2;proj · runner\x07' in t, 'the title kept, then the name', t)
+    eq(T.window_title('a\x07b\x1b'), '\x1b[22;0t\x1b]0;ab\x07\x1b]2;ab\x07', 'control characters dropped')
+    import curses
+    wrote, picked = [], []
+
+    def wrapper(fn, box, bar):
+        box['pick'] = True
+        return 0
+    tty = mock.Mock(isatty=lambda: True)
+    from agent_runner import cmds
+    with mock.patch.object(curses, 'wrapper', wrapper), mock.patch.object(T, 'term_write', wrote.append), \
+            mock.patch.object(sys, 'stdin', tty), mock.patch.object(sys, 'stdout', tty), \
+            mock.patch('agent_runner.state.init', lambda *a: None), mock.patch.object(S, 'ROOT', Path('/x/proj')), \
+            mock.patch('locale.setlocale', lambda *a: None), \
+            mock.patch.object(cmds, 'cmd_pick', lambda here: picked.append(here) or 5):
+        with mock.patch.dict(os.environ, {T.PICKER_ENV: '1'}):
+            eq(T.main([]), T.PICK_RC, 'started by the launcher: PICK_RC, its launcher goes back to the picker')
+        eq(wrote, [T.window_title('proj · runner'), T.TITLE_BACK], 'the window title set, then given back')
+        with mock.patch.dict(os.environ, {T.PICKER_ENV: ''}):
+            eq(T.main([]), 5, 'on its own: a pick-a-run screen here')
+        eq(picked, [Path('/x/proj')], 'for this project')
+
+
 if __name__ == '__main__':
-    raise SystemExit(report([test_quick_ask_names_session_c32,test_concept_answer_b149, test_short_ask_b152,test_d_drops_f116, test_answer_direct_b138, test_answer_tab_b138, test_close_control_quiet_b136,test_layout, test_status_tabs, test_session_tabs, test_queue, test_form_pane_v_task,
+    raise SystemExit(report([test_project_name_b153, test_quick_ask_names_session_c32,test_concept_answer_b149, test_short_ask_b152,test_d_drops_f116, test_answer_direct_b138, test_answer_tab_b138, test_close_control_quiet_b136,test_layout, test_status_tabs, test_session_tabs, test_queue, test_form_pane_v_task,
                                test_direct_edit,
                                test_navigation, test_no_message_box_f112, test_new_chat_f112, test_side_pane_f112,
                                test_diff_key_f127, test_full_screen_f112, test_side_keys_in_box_f113, test_actions, test_session_tab_b125, test_footer,

@@ -30,6 +30,7 @@ log with the page's address. Standard library only; ttyd is optional (the termin
 from __future__ import annotations
 
 import hmac
+import html
 import json
 import os
 import re
@@ -522,6 +523,13 @@ def page_html(view: str | None = None, home: bool = False) -> bytes:
     if home:
         page = page.replace('/*HOME_PAGE*/false', 'true', 1).replace(
             '<title>agent-runner</title>', '<title>Runner Home</title>', 1)
+    else:  # B153: the project's name as the window title ('ifizbox · runner'), before the script runs
+        try:
+            name = S.project()
+        except Exception:  # noqa: BLE001 - no project initialised: the default title
+            name = ''
+        if name:
+            page = page.replace('<title>agent-runner</title>', f'<title>{html.escape(name)} · runner</title>', 1)
     return page.encode('utf-8')
 
 
@@ -575,7 +583,22 @@ def with_extras(snap: dict) -> dict:
         snap['ttyd_install'] = ttyd_install_cmd()  # B120: the page's one line on how to get the terminal tab
     for c in snap.get('concepts') or []:
         c['options'] = concept_options(c.get('copy', ''))
+    snap['home'] = home_address()  # B153: the project name top-left links to Runner Home
     return snap
+
+
+def home_address() -> dict:
+    """B153: Runner Home's port and token, for the run page's link to it on the host the page came from
+    ({} while Home is not installed or has no token yet; the token file is only read, never made)."""
+    try:
+        port = home_port()
+        if not port:
+            return {}
+        from agent_runner.home import config_dir
+        token = (config_dir() / 'home.token').read_text(encoding='utf-8').strip()
+        return {'port': port, 't': token} if token else {}
+    except Exception:  # noqa: BLE001 - a run's page never fails over Home
+        return {}
 
 
 CHAT_ORDER_FILE = 'chat_order.json'  # F133: the sidebar's chat order and pins, in the notes dir

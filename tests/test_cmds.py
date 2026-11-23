@@ -190,8 +190,8 @@ def test_launcher_actions():
     code = M.cmd_pick(None, keys('2', 'q', 'enter', 'q', 'q'), seen.append, acts,
                       sessions=lambda: RUNS)
     eq(code, 0, 'q in the launcher goes back, Enter picks again, q back and q quits')
-    eq([s.splitlines()[0] for s in seen if 'pick a run' not in s][:2], ['\x1b[1mgamma\x1b[0m  ' + str(C),
-       '\x1b[1malpha\x1b[0m  ' + str(A)], 'row 2 (gamma) first, then back on row 1 (alpha)')
+    eq([s.splitlines()[0] for s in seen if 'pick a run' not in s][:2], ['\x1b[1mgamma\x1b[0m [0 all runs]  ' + str(C),
+       '\x1b[1malpha\x1b[0m [0 all runs]  ' + str(A)], 'row 2 (gamma) first, then back on row 1 (alpha)')
     started = []
     with mock.patch.object(M, 'run_info', lambda r: {'up': False}), \
             mock.patch.object(M, 'run_facts', lambda r, run: FACTS.get(r, {})), \
@@ -309,6 +309,37 @@ def test_copy_link_fallbacks():
         eq(M.copy_link(url, io.StringIO()).endswith(url), True, 'no terminal either: the link by hand')
 
 
+def test_copy_link_daemon_b153():
+    print('B153: copy_link returns at once when wl-copy forks a daemon that keeps its stdout open')
+    with tempfile.TemporaryDirectory() as d:
+        stub = Path(d, 'wl-copy')
+        stub.write_text('#!/bin/sh\ncat >/dev/null\n( sleep 3 ) &\nexit 0\n')
+        stub.chmod(0o755)
+        with mock.patch.dict(M.os.environ, {'PATH': d, 'WAYLAND_DISPLAY': 'wayland-0'}):
+            t0 = time.monotonic()
+            said = M.copy_link('https://example.test/run', FakeTerm())
+            took = time.monotonic() - t0
+    eq(said, 'link copied', 'the clipboard tool, not OSC 52')
+    check(took < 1, f'within 1 s (took {took:.2f} s)')
+
+
+def test_launcher_back_b153():
+    print('B153: 0 in the launcher, or 0 in the TUI its t opened, goes back to the pick-a-run screen')
+    row = rows(None)[0]
+    shown = []
+    eq(M.launch(row, keys('0'), shown.append, {}), 'back', '0 goes back')
+    check(shown[0].splitlines()[0].startswith(f'\x1b[1m{row["name"]}\x1b[0m [0 all runs]'),
+          'the name first, with its key', shown[0])
+    eq(M.launch(row, keys('t'), shown.append, {'t': lambda root: M.PICK}), 'back', '0 in the TUI goes back')
+    calls = []
+    with mock.patch.object(M.sp, 'call', lambda argv, **k: calls.append(k['env']) or 3):
+        eq(M.open_ui(A), M.PICK, 'the TUI exits with PICK_RC: PICK')
+    from agent_runner import tui
+    eq(calls[0].get(tui.PICKER_ENV), '1', 'the TUI is told the launcher started it')
+    with mock.patch.object(M.sp, 'call', lambda argv, **k: 0):
+        eq(M.open_ui(A), '', 'q in the TUI: back in the launcher')
+
+
 def test_bare_not_a_tty():
     print('F91: bare agent-runner with no terminal (or in a slot) starts the run as before, no picker')
     from agent_runner import cli, runner
@@ -367,4 +398,5 @@ if __name__ == '__main__':
     raise SystemExit(report([test_attach_routes, test_run_view_posts_keys, test_list_two_projects,
                              test_attach_number, test_windows_hidden_consoles, test_picker_rows, test_picker_keys,
                              test_launcher_actions, test_picker_colours, test_copy_link_fallbacks,
+                             test_copy_link_daemon_b153, test_launcher_back_b153,
                              test_run_facts_https_link, test_bare_not_a_tty, test_started_by_logged]))

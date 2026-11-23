@@ -1283,7 +1283,8 @@ def launcher_text_painted(row: dict, said: str, p: PickerPaint) -> str:
     link = f'\x1b[4;{p.code("bblue")}m{row["link"]}{RESET}' if row['link'] else \
         p.c('dim', 'no run page (the run serves none)')
     button = lambda k, label: p.c('dim', '[') + p.key(k) + f' {label}' + p.c('dim', ']')  # noqa: E731
-    out = [p.c('accent', row['name'], True) + '  ' + p.c('dim', str(row['root'])), status, link, '',
+    out = [p.c('accent', row['name'], True) + ' ' + button('0', 'all runs') + '  ' + p.c('dim', str(row['root'])),
+           status, link, '',
            '  '.join((button('w', 'open the run page'), button('t', 'terminal UI'), button('c', 'copy the link'))),
            '']
     if said:
@@ -1315,7 +1316,7 @@ def launcher_text(row: dict, said: str = '', paint: PickerPaint | None = None) -
     if paint is not None:
         return launcher_text_painted(row, said, paint)
     status = ' · '.join(x for x in ('● run up', slots_words(row['run']), left_words(row)) if x)
-    out = [f'{BOLD}{row["name"]}{RESET}  {row["root"]}', status,
+    out = [f'{BOLD}{row["name"]}{RESET} [0 all runs]  {row["root"]}', status,
            row['link'] or f'{DIM}no run page (the run serves none){RESET}', '',
            '  w  open the run page in the browser', '  t  open the terminal UI (agent-runner ui)',
            '  c  copy the link', '  q  back · ⏎ terminal UI', '']
@@ -1420,7 +1421,9 @@ def copy_link(url: str, out=None) -> str:
     for argv in (['wl-copy'], ['xclip', '-selection', 'clipboard'], ['pbcopy'], ['clip']):
         if shutil.which(argv[0]):
             try:
-                if not sp.run(argv, input=url.encode('utf-8'), capture_output=True, timeout=5,
+                # B153: no captured pipes; wl-copy forks a daemon that holds them open, and a capture waits
+                # for it until the timeout.
+                if not sp.run(argv, input=url.encode('utf-8'), stdout=sp.DEVNULL, stderr=sp.DEVNULL, timeout=5,
                               env=wayland_env() if argv[0] == 'wl-copy' else None).returncode:
                     return 'link copied'
             except (OSError, sp.SubprocessError):
@@ -1430,28 +1433,46 @@ def copy_link(url: str, out=None) -> str:
     return f'no clipboard tool here (wl-copy, xclip, pbcopy, clip): {url}'
 
 
+PICK = 'pick a run'  # B153: what the launcher's t says when 0 in the TUI went back to the pick-a-run screen
+
+
 def open_ui(root: Path) -> str:
-    sp.call([*runner_cmd(), 'ui'], cwd=str(root))
-    return ''
+    from agent_runner.tui import PICK_RC, PICKER_ENV
+    rc = sp.call([*runner_cmd(), 'ui'], cwd=str(root), env=dict(os.environ, **{PICKER_ENV: '1'}))
+    return PICK if rc == PICK_RC else ''
 
 
 LAUNCHER_ACTIONS = {'w': open_link, 'c': copy_link, 't': open_ui}
 
 
 def launch(row: dict, key=read_key, show=None, actions=None, paint: PickerPaint | None = None) -> str:
-    """Screen 2 for the picked run: w, t and c act and stay, Enter as t (F117); 'back' for q or Esc."""
+    """Screen 2 for the picked run: w, t and c act and stay, Enter as t (F117); 'back' for q or Esc, and B153
+    for 0 (the project name's key) or 0 in the TUI t opened. B153: drawn to the terminal, the project's name is
+    the window title until it goes back."""
+    title = show is None
     show = show or (lambda s: (sys.stdout.write(CLEAR + s), sys.stdout.flush()))
     acts = {**LAUNCHER_ACTIONS, **(actions or {})}
     said = ''
-    while True:
-        show(launcher_text(row, said, paint))
-        k = key()
-        if k in ('q', 'esc'):
-            return 'back'
-        if k in ('t', 'enter'):
-            said = acts['t'](Path(row['root'])) or ''
-        elif k in ('w', 'c'):
-            said = acts[k](row['link']) if row['link'] else 'no run page link to use'
+    if title:
+        from agent_runner.tui import window_title
+        sys.stdout.write(window_title(f'{row["name"]} · runner'))
+    try:
+        while True:
+            show(launcher_text(row, said, paint))
+            k = key()
+            if k in ('q', 'esc', '0'):
+                return 'back'
+            if k in ('t', 'enter'):
+                said = acts['t'](Path(row['root'])) or ''
+                if said == PICK:
+                    return 'back'
+            elif k in ('w', 'c'):
+                said = acts[k](row['link']) if row['link'] else 'no run page link to use'
+    finally:
+        if title:
+            from agent_runner.tui import TITLE_BACK
+            sys.stdout.write(TITLE_BACK)
+            sys.stdout.flush()
 
 
 def cmd_pick(here: Path | None, key=read_key, show=None, actions=None, sessions=None, paint=None) -> int:
