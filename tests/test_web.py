@@ -1169,6 +1169,7 @@ class SpeechSynthesisUtterance { constructor(t) { this.text = t } }
 const navigator = {language: 'en-US'};
 const kept = {}, store = {get: k => kept[k] || '', set(k, v) { kept[k] = v }};
 const toast = () => {}, render = () => {}, tq = p => p, followVersion = () => false, TALK_KEY = 'ar-talk', TALK_OLD = 'ar-talkold', TALK_START = 'ar-talkstart';
+const talkKept = () => store.get(TALK_KEY), talkKeep = v => store.set(TALK_KEY, v);  // B177
 const keepSent = () => {}, sessionOf = () => null, newCid = () => 'k';  // B154
 const loadVoices = () => {};  // F158
 const OB = {offline: false}, drain = () => {};  // F137: takeSnap wakes the outbox
@@ -1891,7 +1892,7 @@ let skew = 0;
 Date.now = () => realNow() + skew;
 const line = s => { const i = page.indexOf(s); return page.slice(i, page.indexOf('\n', i)) + '\n' };
 eval(logic.replace(/if\(typeof module[^\n]*/, '') + line('function obChange(') + grab('function outbox(') + grab('async function drain(')
-  + grab('function obDone(') + grab('function obBubbles(') + grab('function convo(') + grab('async function loadFeed(')
+  + grab('function obDone(') + grab('function obBubbles(') + line('const ended=') + grab('function convo(') + grab('async function loadFeed(')
   + grab('function addSent(') + grab('function carrySent(') + line('const keepSent=') + line('const busy=n') + line('const obState=') + line('const obBtns=') + `
 const tick = () => new Promise(r => setTimeout(r, 5));
 const settle = async () => { for (let i = 0; i < 6; i++) await tick() };
@@ -2240,7 +2241,7 @@ const isAgent = () => false, threadTitle = n => n, convo = () => CHAT, box = () 
 const boxKey = () => S.thread || 'home', grow = () => {}, slashShow = () => {}, talkHTML = () => CHAT, histAdd = () => {};
 const homeHTML = () => VIEW, statusHTML = () => VIEW, planHTML = () => VIEW, conceptsHTML = () => VIEW, settingsHTML = () => VIEW, projectsHTML = () => VIEW;
 const DRAFT_KEY = k => k, toast = () => {}, open = n => { S.thread = n; render(true) }, outboxed = [];
-const talkMic = () => 'mic', talkFoot = () => '', talkDraw = () => {};
+const talkMic = () => 'mic', talkFoot = () => '', talkDraw = () => {}, keepPlace = () => {};
 const outbox = (n, a) => { outboxed.push([n, a.text]); CHAT += ' mine' + outboxed.length + ':40'; render(true) };
 eval(logic + line('function setHTML(') + grab('function keepScroll(') + grab('function keysIn(').split('\nfunction enter')[0]
   + grab('function enter(') + grab('function keepFields(') + line('function viewIn(') + line('const PD=') + 'const selecting=()=>false;'
@@ -3208,6 +3209,135 @@ const settle = async () => { for (let i = 0; i < 6; i++) await new Promise(r => 
 """
 
 
+RELOAD_DRIVER = r"""
+const page = require('fs').readFileSync(process.argv[2], 'utf8').replace(/\r\n/g, '\n');
+const grab = (start) => { const i = page.indexOf(start); return page.slice(i, page.indexOf('\n}\n', i) + 2) + '\n' };
+const line = s => { const i = page.indexOf(s); return page.slice(i, page.indexOf('\n', i)) + '\n' };
+const slice = (a, b) => page.slice(page.indexOf(a), page.indexOf(b, page.indexOf(a)));
+const logic = page.split('<script id="logic">')[1].split('</script>')[0].replace(/if\(typeof module[^\n]*/, '');
+const map = () => { const m = {}; return {m, getItem: k => k in m ? m[k] : null, setItem: (k, v) => { m[k] = String(v) }, removeItem: k => { delete m[k] }} };
+const boom = {getItem() { throw new Error('blocked') }, setItem() { throw new Error('blocked') }, removeItem() { throw new Error('blocked') }};
+const settle = async () => { for (let i = 0; i < 6; i++) await new Promise(r => setTimeout(r, 2)) };
+/* one load of the page: the page's own place and Talk code, over the tab's and the browser's storage */
+function load(o) {
+  const body = `
+const log = {draws: [], settings: 0, spoke: [], heard: 0, on: {}};
+const HOME_PAGE = false, location = {pathname: o.path || '/p/a/', search: '?t=x', hash: o.hash || ''}, document = {title: o.title || 'a · runner', querySelector: () => null};
+const history = {replaceState(a, b, u) { log.url = u; location.hash = '' }}, addEventListener = (t, f) => { log.on[t] = f };
+const setTimeout = () => { log.focus = (log.focus || 0) + 1 }, tq = p => p, followVersion = () => false, toast = () => {}, esc = t => String(t), LOGO = () => '', md = t => t, I = {chev: ''};
+const fetch = async p => ({json: async () => (o.feeds || {})[decodeURIComponent(p.split('/')[1])] || {ok: false, name: decodeURIComponent(p.split('/')[1]), entries: [], out: 'none'}});
+const S = {snap: {sessions: [], needs: []}, view: 'home', thread: null, ctx: null, feeds: {}, sent: o.sent || {}, ob: o.ob || [], openSteps: {}, gone: {}, waitNew: null};
+const OB = {}, drain = () => {}, working_ = () => [], keepSent = () => {}, loadSettings = () => { log.settings++ };
+const TK = {state: '', wait: null, starting: [], gen: 0}, TS = {read: true, auto: true}, speak = t => log.spoke.push(t), listen = () => { log.heard++ };
+const render = () => { keepPlace(); log.draws.push([S.view, S.thread]) }, obBubbles = () => '', isAgent = n => n[0] === 's';
+const threadTitle = n => n, PN = () => 'p', sentBubbles = () => '', starting = () => false, startLine = () => '', busy = () => true, talkGoing = () => '', tkey = t => t;
+` + logic + line('const HB=') + slice('const store=', 'const DRAFT_KEY') + line('const TALK_FOR=') + line('const talkKept=')
+  + line('const sessionOf=') + 'const chats=()=>S.snap.sessions;' + line('const feedOf=')
+  + grab('function talkOld(') + grab('function talkName(') + grab('function talkWaitName(') + grab('function talkHear(') + grab('function talkHTML(')
+  + line('const ended=') + grab('function convo(') + grab('function takeSnap(') + grab('async function loadFeed(')
+  + slice('/* B177: the open view and chat', '/* --- doing things') + line('function open(') + line('function goView(')
+  + slice('\ntakePlace();', 'if(HOME_PAGE){  // F134') + line('placeLoad();  // B177')
+  + `;return {S, TK, log, location, open, goView, takeSnap, loadFeed, convo, talkHTML, talkName, talkKeep, talkKept, at: () => [S.view, S.thread]};`;
+  return new Function('o', 'sessionStorage', 'localStorage', body)(o, o.tab, o.browser || map());
+}
+const c = (n, title) => ({name: n, title: title || n, state: 'live'});
+const snap = (...l) => ({at: 'now', sessions: [c('c1'), ...l], needs: []});
+(async () => {
+  const out = {views: {}}, talk = {ok: true, name: 'c4', entries: [{kind: 'you', text: 'hi'}, {kind: 'say', text: 'An old reply.'}]};
+  let tab = map(), p;
+  for (const v of ['home', 'talk', 'status', 'plan', 'concepts', 'settings', 'projects']) {
+    load({tab}).goView(v); p = load({tab}); out.views[v] = [p.log.draws[0][0], p.log.draws.length];
+    p.takeSnap(snap()); out.views[v].push(p.at()[0]);
+    if (v === 'settings') out.settings = p.log.settings;
+  }
+  tab.m['ar-place:b · runner'] = '{"v":"projects"}';
+  p = load({tab, path: '/', title: 'b · runner'}); out.noHome = p.at();
+  // a chat and a slot, over the view they were opened from
+  const feeds = {c3: {ok: true, name: 'c3', entries: [{kind: 'say', text: 'Said.'}]}};
+  tab = map(); p = load({tab, feeds}); p.goView('plan'); p.open('c3');
+  p = load({tab, feeds}); out.chat = [p.log.draws[0]]; p.takeSnap(snap(c('c3'))); await settle(); out.chat.push(p.at(), p.convo('c3').includes('This chat has ended'));
+  p = load({tab, feeds}); p.takeSnap(snap()); await settle(); out.ended = [p.at(), p.convo('c3').includes('This chat has ended.'), p.convo('c3').includes('Working on it'), p.convo('c3').includes('Said.')];
+  p = load({tab}); out.gone = [p.log.draws[0]]; await settle(); out.gone.push(p.at()); p.takeSnap(snap()); out.gone.push(p.at()); out.gone.push(load({tab}).at());
+  tab = map(); p = load({tab}); p.open('s1');
+  p = load({tab}); p.takeSnap(snap(c('s1'))); await settle(); out.slot = p.at();
+  p = load({tab}); p.takeSnap(snap()); await settle(); out.goneSlot = p.at();
+  // the feed could not be read: not gone
+  load({tab}).open('c3'); p = load({tab, feeds: {c3: {ok: false, out: 'no such page'}}}); p.takeSnap(snap()); await settle(); out.unread = p.at();
+  // just started, its message not landed: not gone; a stand-in lives with its outbox item
+  p = load({tab, sent: {c3: {pending: [{id: 'k', text: 'x'}]}}}); p.takeSnap(snap()); await settle(); out.fresh = p.at();
+  p = load({tab}); p.goView('plan'); p.open('@k1'); p = load({tab, ob: [{cid: 'k1', newchat: true, args: {}}]}); out.standIn = [p.at()];
+  p.open('c8'); out.quiet = p.log.focus || 0; p.open('c3'); out.quiet = [out.quiet, p.log.focus]; p.open('@k1');
+  out.standIn.push(load({tab}).at());
+  // projects, by Home's key or by the run's own title; another tab
+  tab = map(); load({tab}).goView('plan'); out.other = [load({tab, path: '/p/b/'}).at(), load({tab}).at(), load({tab: map()}).at()];
+  tab = map(); load({tab, path: '/', title: 'x · runner'}).goView('status'); out.own = [load({tab, path: '/', title: 'y · runner'}).at(), load({tab, path: '/', title: 'x · runner'}).at()];
+  // what is kept is no place
+  out.junk = [];
+  for (const t of ['{', 'null', '7', '{"v":"nope","t":"../x"}', '{"v":"agents","t":4}']) { tab = map(); tab.m['ar-place:a'] = t; out.junk.push(load({tab}).at()) }
+  // storage that throws
+  p = load({tab: boom, browser: boom}); p.takeSnap(snap()); p.goView('talk'); p.talkHTML(); out.boom = p.at();
+  // a link wins, and leaves the address
+  tab = map(); load({tab}).open('c3');
+  p = load({tab, hash: '#plan'}); out.link = [p.at(), p.log.url]; p.goView('status'); out.link.push(load({tab}).at());
+  out.link.push(load({tab, hash: '#c5'}).at(), load({tab, hash: '#nothing'}).at());
+  p = load({tab}); p.location.hash = '#settings'; p.log.on.hashchange(); out.link.push([...p.at(), p.log.settings]);
+  // Talk: its own chat, quiet, per tab and per project
+  tab = map(); const browser = map(), two = snap(c('c2', 'Talk'), c('c4', 'Talk'));
+  p = load({tab, browser}); p.goView('talk'); p.talkKeep('c4');
+  const tab2 = map(); load({tab: tab2, browser}).talkKeep('c2');
+  p = load({tab, browser, feeds: {c4: talk}}); out.talkFirst = [p.talkHTML().includes('Loading'), p.talkHTML().includes('Talk to the run')];
+  p.takeSnap(two); p.talkHTML(); await settle(); await p.loadFeed('c4'); await p.loadFeed('c4');
+  out.talk = [p.at(), p.talkName(), p.talkHTML().includes('An old reply.'), p.log.spoke, p.log.heard, p.TK.state];
+  p = load({tab: map(), browser}); p.takeSnap(two); out.talkNewTab = p.talkName();
+  p = load({tab, browser, path: '/p/b/'}); p.takeSnap(snap(c('c4'), c('c2', 'Talk'))); out.talkOther = p.talkName();
+  p = load({tab, browser, path: '/p/c/', feeds: {c4: talk}}); p.talkKeep('c4'); p.goView('talk');
+  p = load({tab, browser, path: '/p/c/', feeds: {c4: talk}}); p.takeSnap(snap()); p.talkHTML(); await settle(); const h = p.talkHTML();
+  out.talkEnded = [h.includes('An old reply.'), h.includes('This chat has ended.'), h.includes('Your next message opens a new Talk chat.'), p.talkName(), p.log.spoke.length];
+  p = load({tab, browser, path: '/p/c/'}); p.takeSnap(snap()); p.talkHTML(); await settle(); out.talkGone = p.talkHTML().includes('Talk to the run');
+  p = load({tab: tab2, browser, path: '/p/c/'}); p.talkKeep(''); load({tab: map(), browser, path: '/p/c/'}).talkKeep('c9'); out.talkNone = p.talkKept();
+  const own = {tab: map(), browser, path: '/'}; load({...own, title: 'x · runner'}).talkKeep('c4');
+  p = load({...own, title: 'y · runner'}); out.talkOwn = [p.talkKept(), load({...own, title: 'x · runner'}).talkKept()];
+  console.log(JSON.stringify(out));
+})();
+"""
+
+
+def test_reload_b177(tmp: Path) -> None:
+    """B177: a reload opens what was open: the view, the chat or slot, and Talk's own chat, per project and per tab."""
+    if not shutil.which('node'):
+        print('  (no node here: the reload script test is skipped)')
+        return
+    (tmp / 'driver.js').write_text(RELOAD_DRIVER, encoding='utf-8')
+    r = subprocess.run(['node', str(tmp / 'driver.js'), str(W.PAGE)], capture_output=True, text=True, timeout=60)
+    check(r.returncode == 0, 'node runs the reloads', r.stderr[-1500:])
+    if r.returncode:
+        return
+    o, home = json.loads(r.stdout), ['home', None]
+    for v, got in o['views'].items():
+        eq(got, [v, 1, v], f'{v}: open in the first draw after a reload, and still after the first snapshot')
+    eq(len(o['views']), 7, 'every view')
+    eq(o['settings'], 1, 'Settings reads its settings')
+    eq(o['noHome'], home, 'All projects without Runner Home falls to Home')
+    eq(o['chat'], [['plan', 'c3'], ['plan', 'c3'], False], 'a chat is open in the first draw, over the view it was opened from')
+    eq(o['ended'], [['plan', 'c3'], True, False, True], 'an ended chat shows its words and that it ended, not that it works')
+    eq(o['gone'], [['plan', 'c3'], ['plan', 'c3'], home, home], 'a chat that no longer exists: Home, once the run says so')
+    eq((o['slot'], o['goneSlot']), (['home', 's1'], home), 'a slot too')
+    eq((o['unread'], o['fresh']), (['home', 'c3'], ['home', 'c3']), 'a feed that could not be read, or a chat just started, is not gone')
+    eq(o['standIn'], [['plan', '@k1'], home], 'a chat still starting, while the outbox has it')
+    eq(o['quiet'], [0, 1], 'and its box is not focused when it gets its name')
+    eq(o['talkEnded'], [True, True, True, '', 0], "Talk's chat that has ended: its words and that it ended; the next message opens a new one")
+    eq((o['talkGone'], o['talkNone'], o['talkOwn']), (True, '', ['', 'c4']), 'a gone one greets; another tab, or another project on the same address, does not set it')
+    eq(o['other'], [home, ['plan', None], home], 'two projects, or two tabs, do not share')
+    eq(o['own'], [home, ['status', None]], "nor two projects on a run's own address")
+    eq(o['junk'], [home] * 4 + [['status', None]], 'what is no place is Home; an old view name is its new one')
+    eq(o['boom'], ['talk', None], 'storage that throws: the page loads and works')
+    eq(o['link'], [['plan', None], '/p/a/?t=x', ['status', None], ['home', 'c5'], ['home', 'c5'], ['settings', None, 1]],
+       "a link's view or chat wins and leaves the address; one that names nothing does not; one followed in the open page")
+    eq(o['talkFirst'], [True, False], 'Talk waits for its chat without a greeting')
+    eq(o['talk'], [['talk', None], 'c4', True, [], 0, ''], "Talk's own chat, with no reply read aloud and no mic")
+    eq((o['talkNewTab'], o['talkOther']), ('c2', 'c2'), "a new tab takes the browser's last; another project does not")
+
+
 def test_older_run_b164(tmp: Path) -> None:
     """B164: a run serves the page it started with, whatever an update puts on disk; and a page newer than its run
     says so (Settings, a need_chat the run does not know) and sends what it kept once the run restarts."""
@@ -3281,4 +3411,4 @@ if __name__ == '__main__':
                            in_tmp(test_chat_box_f115), in_tmp(test_home_switcher_f134),
                            in_tmp(test_scroll_f83), in_tmp(test_keyboard_b160), in_tmp(test_talk_settings_f124), in_tmp(test_mic_aborted_b162), in_tmp(test_sound_b178), in_tmp(test_status_view_f124),
                            in_tmp(test_chats_f128), in_tmp(test_needs_drop_chat_f110), in_tmp(test_task_text_f85),
-                           in_tmp(test_settings_f97), in_tmp(test_older_run_b164), in_tmp(test_style_f83)]))
+                           in_tmp(test_settings_f97), in_tmp(test_older_run_b164), in_tmp(test_reload_b177), in_tmp(test_style_f83)]))
