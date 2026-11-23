@@ -251,12 +251,14 @@ def test_brief(env: Env):
 
 
 def main() -> int:
-    if not shutil.which('node'):
-        print('  skip: no node on PATH')
-        return 0
+    node = shutil.which('node')
+    if not node:
+        print('  skip: no node on PATH (all but the brief check)')
     with tempfile.TemporaryDirectory() as tmp:
         env = Env(Path(tmp))
         try:
+            if not node:  # F132: the brief check runs no session, so needs no node
+                return report([lambda: test_brief(env)])
             return report([lambda: test_routing(env), lambda: test_finish(env), lambda: test_ask(env),
                            lambda: test_fence(env), lambda: test_budget(env), lambda: test_resume(env),
                            lambda: test_tell(env), lambda: test_brief(env)])

@@ -309,14 +309,7 @@ Spec review, before `done` (after mattpocock/skills code-review, MIT; its Spec a
 to hand it to, so review your own work as a fresh reader would. Commit your work, then read only the output of \
 `git diff {base}...HEAD` and of `{runner} plan brief {tid}`, setting aside what you meant to do, and list, \
 each finding quoting the task's words: (a) what the task asked for that is missing or partial, (b) what the diff \
-does that was not asked, (c) what looks implemented but wrong. Fix (a) and (c) on this branch before `done`, \
-never file them: filing would land known-broken work. Revert (b) from this branch; if the extra is worth \
-keeping, file it as a follow-up (`{runner} plan add <KIND> "<what the review found>" --files … --pri normal`), \
-and file the same way anything broken outside this task's files or already broken before it. Skip the review \
-when the diff is under {min_lines} changed lines (`git diff --shortstat {base}...HEAD`, insertions plus \
-deletions) and the task has no long-form brief (plan/tasks/{tid}.md); {long}. The commit message passed to \
-`done` ends with exactly one line: `review: nothing`, `review: fixed <what>`, `review: filed <IDs>` (with what \
-was fixed too, if any: `review: fixed <what>; filed <IDs>`) or `review: skipped (small)`."""
+does that was not asked, (c) what looks implemented but wrong. """ + REVIEW_PROMPT[REVIEW_PROMPT.index('Fix (a)'):]
 
 
 DOCS_PROMPT = """\
