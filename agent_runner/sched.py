@@ -128,20 +128,28 @@ def clash(t: tuple, b: tuple, shared: set[str]) -> bool:
     a shared ordered section, or overlapping files (`shared_files` aside; see `file_overlap`). A release (kind V,
     F38) clashes with everything, either way round: it starts only when nothing else runs or waits to merge, and
     nothing starts beside it, so it releases exactly what landed. `holds` lets a release pass over a task taken
-    by hand or claimed by another runner (`passes`, B107): only this run's tasks hold it."""
+    by hand or claimed by another runner (`passes`, B107): only this run's tasks hold it. That is only with
+    `[plan] release_alone` (F100); without it a release clashes like any other task."""
     tid, section, files, _ = t
-    if family(tid) == family(b[0]) or P.release(tid) or P.release(b[0]):  # F38: a release runs alone
+    if family(tid) == family(b[0]):
+        return True
+    if (P.release(tid) or P.release(b[0])) and release_alone():  # F38: a release runs alone
         return True
     return (ordered(section) and section == b[1]) or bool(file_overlap(files, b, shared))
+
+
+def release_alone() -> bool:
+    """`[plan] release_alone` in the run's config (F100): a release clashes with every task, either way round."""
+    return bool(C.raw['plan'].get('release_alone'))
 
 
 def clash_why(t: tuple, b: tuple, shared: set) -> tuple[str, str]:
     """Why `clash(t, b)`: (the kind of wait, what holds it), for the dry run."""
     if family(t[0]) == family(b[0]):
         return 'waiting for a sibling', b[0]
-    if P.release(t[0]):
+    if P.release(t[0]) and release_alone():
         return 'a release runs alone', f'{b[0]} is running or waiting to merge in this run'
-    if P.release(b[0]):
+    if P.release(b[0]) and release_alone():
         return 'a release runs alone', f'{b[0]} is releasing'
     if ordered(t[1]) and t[1] == b[1]:
         return f'one at a time in "{t[1]}"', b[0]

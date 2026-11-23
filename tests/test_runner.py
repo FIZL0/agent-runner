@@ -6146,12 +6146,14 @@ def test_after_all(repo: Path):
 
 
 def test_release_kind(repo: Path):
-    print('run: F38 a release (kind V) waits on the earlier open tasks, and no other task starts beside it')
+    print('run: F38 a release (kind V) waits on the earlier open tasks, and no other task starts beside it '
+          '(with [plan] release_alone, F100)')
     R.init(repo)
     rel = '- [ ] **V1** Release: cut the next version | after: all'
     plan = {'ls': []}
     saved = R.plan_text
     R.plan_text = lambda branch: plan['ls']
+    R.C.raw['plan']['release_alone'] = True
     try:
         ids = lambda: [t[0] for t in R.tasks('main')]
         head = ['# TODO', '', '### Next', '']
@@ -6182,6 +6184,7 @@ def test_release_kind(repo: Path):
         eq(R.pick({1: v2}, set(), 'main'), None, 'and runs alone too')
     finally:
         R.plan_text = saved
+        R.C.raw['plan']['release_alone'] = False
 
 
 def test_progress_and_release(repo: Path):

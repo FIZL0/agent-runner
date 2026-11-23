@@ -1019,6 +1019,7 @@ def test_release_kind():
                                     '- [ ] **F2** another | files: b.py', '', '### Follow-ups', '',
                                     '- [ ] **B1** (follow-up, normal) a follow-up | files: c.py', '']), encoding='utf-8')
         env = {**os.environ, 'AGENT_RUNNER_REPO': str(root), 'AGENT_RUNNER': '1'}
+        (root / 'runner.toml').write_text('[plan]\nrelease_alone = true\n', encoding='utf-8')  # F100: the old way
         r = run(root, 'plan', 'add', 'V', env=env)
         eq((r.returncode, r.stderr), (0, ''), 'plan add V needs no text, no --after and no --files')
         line = plan.section(todo, 'V1')[0]
@@ -1042,6 +1043,26 @@ def test_release_kind():
         r = run(root, 'plan', 'add', 'V', 'a release after the minimap radar', '--after', 'F3', env=env)
         eq((r.returncode, r.stderr), (0, ''), 'a release naming the work it waits for is not its duplicate (B99)')
         eq(run(root, 'plan', 'add', 'F', 'x', '--now', '--force', env=env).returncode, 2, '--now is for a release only')
+
+
+def test_release_beside():
+    print('plan: add V without [plan] release_alone writes no `after: all`: it starts like any other task (F100)')
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        git(root, 'init', '-q')
+        (root / 'plan').mkdir()
+        todo = root / 'plan' / 'TODO.md'
+        todo.write_text('\n'.join(['# TODO', '', '### Next', '', '- [ ] **F1** a feature | files: a.py', '']),
+                        encoding='utf-8')
+        env = {**os.environ, 'AGENT_RUNNER_REPO': str(root), 'AGENT_RUNNER': '1'}
+        r = run(root, 'plan', 'add', 'V', env=env)
+        eq((r.returncode, r.stderr), (0, ''), 'plan add V')
+        line = plan.section(todo, 'V1')[0]
+        check('after:' not in line and 'Release: bump the version' in line, 'the default brief, no `after: all`', line)
+        eq(plan.index(todo)[2:4], ['[ ] F1', '[ ] V1'], 'still at the end of Next')
+        eq(plan.last_waits(todo), [], 'it waits on nothing')
+        run(root, 'plan', 'add', 'V', '--after', 'F1', env=env)
+        has(plan.section(todo, 'V2')[0], r'\| after: F1$', 'an --after of its own is kept')
 
 
 def test_restore():
@@ -1397,7 +1418,7 @@ def test_slot_writes_own_plan():
 
 
 if __name__ == '__main__':
-    sys.exit(report([test_refusals, test_iter_tasks_and_titles, test_hook, test_done_gate, test_channel,test_edit, test_unlabelled_block, test_restore, test_plan_last, test_after_all, test_release_kind,test_goal,test_plan_roundtrip, test_plan_reopen, test_plan_index_and_sections, test_brief, test_brief_outline,
+    sys.exit(report([test_refusals, test_iter_tasks_and_titles, test_hook, test_done_gate, test_channel,test_edit, test_unlabelled_block, test_restore, test_plan_last, test_after_all, test_release_kind, test_release_beside,test_goal,test_plan_roundtrip, test_plan_reopen, test_plan_index_and_sections, test_brief, test_brief_outline,
                      test_split_parents, test_add_bottom, test_add_pri, test_add_subtask, test_kinds, test_need_files, test_add_stray_args, test_hand_edits_commit, test_hand_edits_push, test_similar, test_add_refuses_a_duplicate, test_carry_notes,
                      test_merge3, test_concurrent_add, test_merge_driver, test_concepts, test_needs_you,
                      test_needs_own_project, test_needs_config, test_slot_writes_own_plan]))
