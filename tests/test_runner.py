@@ -6980,6 +6980,7 @@ def test_attach_f88(tmp: Path):
         return
     import socket
     import stat
+    from agent_runner import attach as A
     d = tmp / 'f88'
     d.mkdir(exist_ok=True)
     agent = d / 'echo.py'
@@ -7015,10 +7016,10 @@ def test_attach_f88(tmp: Path):
         conn = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         conn.connect(str(sock))
         seen: list = []
-        conn.sendall(R.attach_input_frames(b'hello\r'))
+        conn.sendall(A.attach_input_frames(b'hello\r'))
         check(until(conn, b'echo:hello', seen), 'text sent through the socket reaches the session, and its output '
                                                'comes back', b''.join(seen)[-300:])
-        conn.sendall(R.attach_size_frame(30, 100) + R.attach_input_frames(b'size\r'))
+        conn.sendall(A.attach_size_frame(30, 100) + A.attach_input_frames(b'size\r'))
         check(until(conn, b'size 30 100', seen), 'a resize frame sets the terminal\'s size', b''.join(seen)[-300:])
         # the client: input from a pipe (not a terminal, so no raw mode), Ctrl-b d leaves
         r, w = os.pipe()
@@ -7026,7 +7027,7 @@ def test_attach_f88(tmp: Path):
         out = d / 'client.out'
         fd = os.open(out, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
         try:
-            eq(R.attach_session(sock, 's9', stdin=r, stdout=fd), 0, 'the client detaches on Ctrl-b d')
+            eq(A.attach_session(sock, 's9', stdin=r, stdout=fd), 0, 'the client detaches on Ctrl-b d')
         finally:
             os.close(fd)
             os.close(r)
@@ -7036,7 +7037,7 @@ def test_attach_f88(tmp: Path):
         check(until(conn, b'echo:via client', seen), 'what the client typed before Ctrl-b d reached the session, '
                                                     'and every client gets the output', b''.join(seen)[-300:])
         check(R.plat.alive(R.marker_pid(marker)), 'the session runs on after the client detaches')
-        conn.sendall(R.attach_input_frames(b'quit\r'))
+        conn.sendall(A.attach_input_frames(b'quit\r'))
         shim.wait(timeout=20)
         check(not sock.exists() and not marker.exists(), 'the socket goes when the session ends')
     finally:

@@ -1775,13 +1775,13 @@ def escape_tail(name: str, more) -> list[str]:
     return ['ESC'] if not seq else []
 
 
-DETACH_KEY = 'Ctrl-b d'  # slots.DETACH_KEY: what leaves a hidden session's terminal
+DETACH_KEY = 'Ctrl-b d'  # attach.DETACH_KEY: what leaves a hidden session's terminal
 
 
 def hidden_terminal(name: str) -> bool:
     """F88: `name` (sN, cN) runs hidden with a terminal to attach to (its shim's socket is up; not Windows)."""
     try:
-        from agent_runner.slots import session_socket
+        from agent_runner.attach import session_socket
         return bool(session_socket(name))
     except Exception:  # noqa: BLE001 - no notes dir (no repo set up): nothing to attach
         return False

@@ -26,7 +26,7 @@ from agent_runner.sched import ahead, open_tasks
 from agent_runner.slots import (attach_target, backend, background_env, background_session, claude_json, entries,
     marker_pid, MUX, PRESENCE_ENV, quiet_file, remote_off_why, remote_on, remote_slots_on, REMOTE_URL, silent, tmux,
     transcript, window, worktree)
-from agent_runner.slots import attach_session, session_socket
+from agent_runner.attach import attach_session, session_socket
 from agent_runner.watch import breaking, installed_version, last_session, queue_resume, upgrade, upgrade_argv
 from agent_runner.land import wip_main_info
 from agent_runner.control import (control_argv, control_brief, control_env, control_give, control_hook_input,
