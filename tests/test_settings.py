@@ -131,6 +131,9 @@ has(refused(lambda: load('[models.kinds]\nR = "gemini:pro"\n')), r'\[models\.kin
 has(refused(lambda: load('[models]\ncode = "ollama:llama3"\n')), r'local = true', 'ollama refused, local off')
 has(refused(lambda: load('[models]\nlocal = true\ncode = "ollama:llama3"\n')), r'not supported yet',
     'with local = true it passes the local check (and waits for F106c)')
+c = load('')
+eq((c.task_model('D1', 'claude:opus'), c.task_model('D1', 'gemini:pro'), c.task_model('D1', 'haiku')),
+   ('opus', 'sonnet', 'haiku'), "a task's own claude:<model> runs bare; another provider falls back to its kind for now")
 has(refused(lambda: load('[models]\nlocal = "yes"\n')), r'local must be true or false', 'local is a boolean')
 
 raise SystemExit(1 if FAILED else print('\nall checks passed'))

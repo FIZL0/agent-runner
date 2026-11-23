@@ -309,7 +309,7 @@ def local_url(url: str) -> bool:
     import ipaddress
     from urllib.parse import urlsplit
     host = (urlsplit(url).hostname or '').lower()
-    if host in ('localhost', '') or host.endswith(('.localhost', '.local', '.internal', '.lan')):
+    if host in ('localhost', '') or host.endswith(('.localhost', '.local')):
         return True
     try:
         ip = ipaddress.ip_address(host)
@@ -731,8 +731,11 @@ class Config:
     def task_model(self, tid: str, own: str = '') -> str:
         """F105: the model a task's own session runs on: its own (`plan add --model`, `own`), else its kind's in
         `[models.kinds]` (the id's letters: 'P17a' is P), else `[models] code`."""
-        if own:
-            return own
+        if own:  # F106a: 'claude:<model>' runs as the bare name; another provider waits for F106c: the kind's
+            provider, model = parse_model(own, self.providers, True, 'model', self.run['backend']) \
+                if own.partition(':')[0] in (*PROVIDERS, *self.providers) else ('claude', own)
+            if provider == 'claude':
+                return model
         kind = tid[:len(tid) - len(tid.lstrip('ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'))]
         return (self.models.get('kinds') or {}).get(kind) or self.models['code']
 
