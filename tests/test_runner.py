@@ -831,14 +831,18 @@ def test_bare_outside_git(tmp: Path):
             os.chdir(cwd)
 
 
-def test_short_name_hints():
+def test_short_name_hints(repo: Path):
     print('C15: on Windows the hints a person reads say agent-runner when it is on PATH; prompts keep the full path')
     from agent_runner import config
+    from agent_runner import control as RC
+    R.init(repo)  # its own config, not whatever the test before left in R.C
     exe = 'C:/Users/me/AppData/Roaming/Python/Scripts/agent-runner.EXE'
+    # B169: with this long exe the brief is ~150 chars under BRIEF_MAX, so one line in the person's real voice file
+    # pushed it past and bare_commands shortened it (B104, tested in test_control): lift the cap, as B105 does
     with mock.patch.object(R.plat, 'WINDOWS', True), mock.patch.object(config, 'RUNNER', exe), \
-            mock.patch.object(R, 'RUNNER', exe), \
+            mock.patch.object(R, 'RUNNER', exe), mock.patch.object(RC, 'BRIEF_MAX', 10 ** 6), \
             mock.patch.object(R, 'remote_on', lambda: False), mock.patch.object(R, 'remote_slots_on', lambda: False), \
-            mock.patch.dict(R.C.run, {'control': True}):
+            mock.patch.dict(R.C.run, {'control': True, 'command': '', 'voice': ''}):
         with mock.patch.object(config.shutil, 'which', lambda c, *a, **k: exe if c == 'agent-runner' else None):
             note = R.started_note(2, 'its slots hidden')
             check('    agent-runner status' in note and '    agent-runner control' in note and exe not in note,
@@ -8338,7 +8342,7 @@ def main() -> int:
                        lambda: test_limit_resumes(repo, tmp),
                        lambda: test_limit_falls_back(repo, tmp), lambda: test_cap_told(repo, tmp), lambda: test_usage_cap_falls_back_f142(repo),
                        lambda: test_shared_push(repo, tmp), lambda: test_note_on_a_ticked_task(repo), lambda: test_adopt_merge(repo), lambda: test_followups(repo), lambda: test_person_check_after(repo), lambda: test_ci_watch(repo), lambda: test_issues_watch(repo), lambda: test_auto_release(repo), test_update_notice, test_restart_if_upgraded, test_auto_upgrade, lambda: test_flake_repair(tmp), lambda: test_repair_per_failure(repo),
-                       lambda: test_stalled(tmp), lambda: test_take(repo), lambda: test_take_text_and_here(repo), lambda: test_background(repo), test_short_name_hints, test_utf8_streams, lambda: test_attach_flag(repo), lambda: test_bare_outside_git(tmp), lambda: test_hand_hook(tmp), lambda: test_user_hook(tmp), lambda: test_remote_auto(tmp), lambda: test_control(repo), lambda: test_pane_id_not_a_path(repo, tmp),
+                       lambda: test_stalled(tmp), lambda: test_take(repo), lambda: test_take_text_and_here(repo), lambda: test_background(repo), lambda: test_short_name_hints(repo), test_utf8_streams, lambda: test_attach_flag(repo), lambda: test_bare_outside_git(tmp), lambda: test_hand_hook(tmp), lambda: test_user_hook(tmp), lambda: test_remote_auto(tmp), lambda: test_control(repo), lambda: test_pane_id_not_a_path(repo, tmp),
                        lambda: test_short_titles_and_since(repo), lambda: test_structured_events(repo),
                        lambda: test_board_follows_run(repo, tmp),
                        lambda: test_remote_sweep(repo, tmp), lambda: test_feed_resume(repo, tmp),
