@@ -1517,3 +1517,13 @@ before 0.41.0 (2026-11-18) other than `test_runner.py` had no such isolation and
 session itself ran in); `python3 tests/_check.py --clean` removes them, best with no Claude Code session open.
 The `policy-fixture` entries seen only on Windows did not reproduce on Linux (every trust call there goes to the
 temp config); if a suite still leaks on Windows, its check names the entries it added.
+
+### Windows code from a Linux slot
+
+A slot on Linux cannot run the Windows tests itself. For a quick check, run `tools/windows_vm.sh [--keep] [test
+file ...]` first: it runs the test files (default `tests/test_windows.py`) of this worktree, uncommitted changes
+included, on the Windows VM, starting the Docker container named by `WINDOWS_VM` (default `windows-vm`) if it is
+stopped and stopping it again if it started it (`--keep` leaves it up). The output and exit code come back, and two
+callers wait on a lock. Without the container or the ssh key it says so in one line and exits 2 without creating a
+VM; then go straight to the Windows CI job run on request for the task branch (T13, `gh workflow run ci.yml --ref
+task/<ID>`), which is the proof either way. The settings by environment are in the script's header.

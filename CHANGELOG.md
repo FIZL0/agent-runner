@@ -77,6 +77,9 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
   any project) has a free provider in its chain (not claude, not capped, logged in), the usage cap now sets no limit and
   the line reads e.g. "Room for 6 more agents, on [models] fallback: a usage cap is reached". Memory, CPU and disk limits
   still hold; without a free provider it is as before (B157).
+- Added: `tools/windows_vm.sh` runs test files (default `tests/test_windows.py`) of a worktree, uncommitted changes
+  included, on the Windows VM the machine already has, for contributors working on Windows code. It is a repo tool and
+  not part of the installed package (T14).
 
 ## 0.61.0 (2026-11-23)
 
