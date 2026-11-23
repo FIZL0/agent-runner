@@ -24,6 +24,7 @@ Home's /p/KEY/ (B146, site_links), so one device address switches between runner
     POST /add?t=TOKEN            {"path": PATH} lists a project; /remove unlists one
     ANY  /p/KEY/...?t=TOKEN      that project's run app, routed to its run's page with the run's own token, so
                                  Home's link is the only one a phone needs; a run works the same with Home off
+    GET  /p/KEY/pick?id=&o=&k=   F167: a pick link, routed to that run with no token: its one-use code is the check
     ANY  /p/KEY/t/TOKEN/NAME/... F107: session NAME's terminal tab, the run's ttyd for it (WebSocket included);
                                  the token is in the path, since ttyd's page drops the query
     GET  /devices?t=TOKEN        F95: Device Vitals, this machine and each peer Home's (vitals.py), and their
@@ -409,6 +410,8 @@ class HomeHandler(BaseHTTPRequestHandler):
 
     def route(self, method: str) -> None:
         path = urlsplit(self.path).path
+        if method == 'GET' and (m := re.fullmatch(r'/p/([^/]+)/pick', path)):
+            return self.pick(m[1])
         if not self.allowed():
             return self.send(403, {'ok': False, 'out': 'Runner Home needs its token: open the link '
                                    '`agent-runner home status` prints (…/?t=TOKEN)'})
@@ -505,6 +508,23 @@ class HomeHandler(BaseHTTPRequestHandler):
         target = '/' + parts[3] + '?' + urlencode([('t', token), *query])
         self.forward(method, root, port, target)
 
+    def pick(self, key: str) -> None:
+        """F167: /p/KEY/pick is a pick link (web.pick): a concept page holds it, so it carries no token of Home's or
+        the run's; the run checks its one-use code. Only the link's own words go on. With no token to tell who
+        asks, the answer is the same for a project with no run up as for one Home does not list."""
+        root = self.server.project(key)
+        link = self.server.link(root) if root else None
+        if link is None:
+            return self.no_pick()
+        q = parse_qs(urlsplit(self.path).query)
+        self.forward('GET', root, link[0], '/pick?' + urlencode([(k, q[k][0]) for k in ('id', 'o', 'k') if k in q]),
+                     self.no_pick)
+
+    def no_pick(self) -> None:
+        from agent_runner.web import pick_page
+        self.send(502, pick_page(502, 'No run is up to take this answer. Start the run in Runner Home, '
+                                 'then tap the button again.'), 'text/html; charset=utf-8')
+
     def terminal(self, root: Path, port: int, token: str, rest: str, query: str) -> None:
         """F107: /p/KEY/t/TOKEN/NAME/REST is session NAME's own terminal: where the run serves it (its /terminal/NAME
         says, and starts its ttyd), its WebSocket included. F114: that is the run page's own address."""
@@ -534,8 +554,9 @@ class HomeHandler(BaseHTTPRequestHandler):
         """A WebSocket upgrade, carried to the run (`session_frame.tunnel`)."""
         tunnel(self, port, target, root.name)
 
-    def forward(self, method: str, root: Path, port: int, target: str) -> None:
-        """The request goes on to 127.0.0.1:PORT at TARGET; the answer streams back as it comes."""
+    def forward(self, method: str, root: Path, port: int, target: str, gone=None) -> None:
+        """The request goes on to 127.0.0.1:PORT at TARGET; the answer streams back as it comes. `gone` answers when
+        the run does not."""
         data = self.body()
         headers = {k: v for k, v in self.headers.items() if k.lower() not in HOP | {'host', 'x-token'}}
         conn = http.client.HTTPConnection('127.0.0.1', port, timeout=60)
@@ -545,6 +566,8 @@ class HomeHandler(BaseHTTPRequestHandler):
             r = conn.getresponse()
         except OSError as e:
             conn.close()
+            if gone:
+                return gone()
             return self.send(502, {'ok': False, 'out': f'{root.name}\'s run page did not answer: {e}'})
         try:
             self.send_response(r.status)

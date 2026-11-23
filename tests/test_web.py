@@ -1588,6 +1588,8 @@ def test_pick_f138(tmp: Path) -> None:
     from agent_runner import cmds, plan as P
     fake_repo(tmp)
     token = W.web_token()
+    off = mock.patch.dict(os.environ, {'AGENT_RUNNER_HOME_CONFIG': str(tmp / 'no-home')})  # F167: not this machine's Home
+    off.start()
     https = lambda port, t: [f'https://box.tail.ts.net:8771/?t={t}']
     cid, build = P.concept_shown('tabs or a drawer', 'https://claude.ai/artifact/k1', ['a.py'],
                                  todo=S.C.todo, done=S.C.done)
@@ -1649,6 +1651,7 @@ def test_pick_f138(tmp: Path) -> None:
     check(W.pick_code('F1') != code1, 'once used, new links get a new code')
     eq(W.pick('../x', 'A', code1)[0], 403, 'a bad id is unknown')
     eq(W.pick('F1', '', '')[0], 403, 'no code: unknown')
+    off.stop()
 
 
 def test_outbox_f137(tmp: Path) -> None:
