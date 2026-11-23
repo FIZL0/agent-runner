@@ -5,6 +5,7 @@ own copy over to it, and what a version number promises.
 
 - [Installing](#installing)
 - [Pi and enterprise Copilot](#pi-and-enterprise-copilot)
+- [Provider logins: run login](#provider-logins-run-login)
 - [A new repo from scratch](#a-new-repo-from-scratch)
 - [Wrapping it from your own CLI](#wrapping-it-from-your-own-cli)
 - [Migrating a repo that carries its own copy](#migrating-a-repo-that-carries-its-own-copy)
@@ -119,6 +120,45 @@ With `lean = true` (the default), Pi gets read/edit/write and a shell (`powershe
 elsewhere), with extensions, MCP, skills, prompt templates, and themes disabled. Repository context
 files remain available. Set `lean = false` to use Pi's normal resource configuration. Fix/repair sessions
 also use Pi print mode and the non-slot-specific environment from `slot_env`.
+
+## Provider logins: run login
+
+The Pi section above is the Pi backend (`agent = "pi"`), logged in with `pi` and `/login`. `run login` serves
+the other case: a role in `[models]` that names a provider other than claude, such as `copilot:gpt-x`. Those
+sessions run on the [harness loop](REFERENCE.md#the-harness-loop). Its logins are kept in Pi's own
+`auth.json`, so the two share them. It needs Node on PATH.
+
+From the repo's folder, `agent-runner login` (or `./run login`) with no argument lists each provider that
+`[models]` names (its roles, `[models.kinds]` and `[models.providers]`), with where its login is kept. It
+never prints the secret:
+
+```
+copilot  ✓ OAuth in /home/you/.pi/agent/auth.json (github-copilot, GitHub Enterprise corp.ghe.com)
+claude   ✓ Claude Code's own login (claude /login)
+gemini   ✗ no login: agent-runner login gemini
+acme     ✓ env ACME_KEY
+lab      ✓ needs none (a local model)
+```
+
+`agent-runner login <provider>` adds one, through Pi's login package (`@earendil-works/pi-ai`, installed once
+by the harness loop into `~/.cache/agent-runner`):
+
+- **copilot** shows a GitHub device code: open the URL it prints and enter the code. It first asks
+  "GitHub Enterprise domain (blank for github.com)"; `--enterprise company.ghe.com` answers that, and
+  `--enterprise ""` means github.com.
+- **codex** signs in with ChatGPT, in a browser page.
+- **gemini** asks for a Gemini API key (hidden input). `GEMINI_API_KEY` in the environment counts as its login.
+- **a custom provider** from `[models.providers.<name>]` with `key_env` asks for its key and stores it under
+  the provider's name. The harness loop uses the stored key before the `key_env` variable; that variable set
+  in the environment also counts as a login.
+- **claude** runs on Claude Code's own login (`claude /login`). **ollama**, and a local custom provider
+  without `key_env`, need none.
+
+Every login lands in Pi's `auth.json` (`$PI_CODING_AGENT_DIR`, else `~/.pi/agent/auth.json`), mode 0600.
+
+When a task's session would run on a provider with no login, the run does not start it. It blocks the task
+with ``BLOCKED: `agent-runner login <provider>` `` so it lists under Needs you.
+Running that login on the run's machine reopens the tasks it held back: it unblocks them in the plan.
 
 ## A new repo from scratch
 

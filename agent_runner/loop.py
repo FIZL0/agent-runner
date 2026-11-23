@@ -35,6 +35,7 @@ from agent_runner.brief import no_remote_line
 from agent_runner.sched import blocked_by_edits, keep_claims, PARK_LIMIT, parked_attempts, pick, tasks
 from agent_runner.sched import forgive_park, note_committed
 from agent_runner.tools import take_end
+from agent_runner.login import unlogged
 from agent_runner.asks import block_asks, EV_FINISHED, park_asked, unblocked_asks
 from agent_runner.slots import (adopt, backend, DISK_AT, DISK_SAID, du, env_vars, free_branch,
     free_gb, GB, hidden_line, HiddenMux, MUX, remote_any, remote_line, REMOTE_URL, resume, save_leftovers,
@@ -1377,6 +1378,9 @@ class Run:
             return
         self.stall_said.discard('before_start')
         if task := pick(running, self.tried, self.branch, claim=True):
+            if unlogged(task[0], self.branch, self.model):  # F106e: its provider has no login: Needs you
+                plansync.release(C, task[0])
+                return
             if p := start(n, task, self.branch, self.model, self.idle, slots):
                 procs[n], running[n] = p, task
                 if self.once:  # one task: nothing new starts, and the run exits once it has merged
