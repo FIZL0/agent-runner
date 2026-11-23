@@ -541,7 +541,7 @@ def to_c1(text: str) -> dict:
             return {'ok': True, 'code': 0, 'out': 'sent to c1', 'argv': []}
     except Exception:  # noqa: BLE001 - no c1 to type into: a new control session takes it
         pass
-    return call(['control', '--new', '--ask', text])
+    return call(['control', '--new', '--ask', text, '--no-feed'])
 
 
 SEND = [to_c1]  # how chat and answers reach c1; a test swaps it
@@ -784,10 +784,14 @@ def tool_words(name: str, args) -> str:
 def feed_entries(rows) -> list[dict]:
     """F74: transcript entries (Claude's shape) as feed entries, in order: 'you' (what the person typed, not
     the runner's or a hook's text), 'say' (the agent's words), 'tool' (a tool call, `tool_words`) and 'out' (its
-    result, cut to OUT_LINES lines). Thinking, meta, compact summaries and subagents' entries are left out."""
-    from agent_runner.control import RUNNER_TURN
+    result, cut to OUT_LINES lines). Thinking, meta, compact summaries and subagents' entries are left out.
+    B154: a message queued while the session worked (`feed.queued_message`) is a 'you' too, and a 'you' has 'at',
+    when the transcript got it (epoch s), if the entry says."""
+    from agent_runner.control import RUNNER_TURN, _stamp
+    from agent_runner.feed import queued_message
     out: list[dict] = []
     for d in rows:
+        d = queued_message(d) or d
         if not isinstance(d, dict) or d.get('type') not in ('user', 'assistant') or d.get('isSidechain') \
                 or d.get('isMeta') or d.get('isCompactSummary'):
             continue
@@ -811,7 +815,8 @@ def feed_entries(rows) -> list[dict]:
                 if t.startswith(INTERRUPTED):
                     out.append({'kind': 'out', 'text': 'interrupted'})
                 elif not t.startswith(RUNNER_TURN) and not t.startswith('<task-notification>'):
-                    out.append({'kind': 'you', 'text': t})
+                    at = _stamp(d)
+                    out.append({'kind': 'you', 'text': t, **({'at': at} if at else {})})
     return out
 
 
@@ -868,14 +873,48 @@ def tail_rows(path: str, nbytes: int = FEED_BYTES):
             yield d
 
 
+_PROMPTS: dict[str, tuple[int, int, list]] = {}  # transcript -> (`prompt_before`'s start, how far it read, the prompt)
+
+
+def prompt_before(path: str, start: int) -> list[dict]:
+    """B154: the person's latest prompt in the part of transcript `path` that a tail read from byte `start` leaves
+    out, as feed entries ([] for none). Each poll reads only what the tail has left behind since the last one."""
+    was, at, last = _PROMPTS.get(path, (0, 0, []))
+    if was > start:  # a transcript written anew
+        at, last = 0, []
+    try:
+        with open(path, 'rb') as f:
+            f.seek(at)
+            while at <= start and (line := f.readline()).endswith(b'\n'):
+                at += len(line)
+                if b'"user"' in line or b'queued_command' in line:
+                    try:
+                        last = [e for e in feed_entries([json.loads(line)]) if e['kind'] == 'you'][-1:] or last
+                    except ValueError:
+                        pass
+    except OSError:
+        return []
+    _PROMPTS[path] = (start, at, last)
+    return last
+
+
 def feed(name: str, limit: int = FEED_MAX) -> dict:
     """F74: session `name`'s feed (`feed_entries` of its transcript's tail), newest last: {'ok', 'name',
-    'entries', 'more' (older entries left out), 'link' (its claude.ai/code session, '' for none)}."""
+    'entries', 'more' (older entries left out), 'link' (its claude.ai/code session, '' for none)}. B154: the
+    person's latest prompt is always in it, first when the turn since is longer than the feed."""
     path = transcript_of(name)
     rows = feed_entries(tail_rows(path)) if path else []
     sid = session_sid(name)
-    return {'ok': bool(path), 'name': name, 'entries': rows[-limit:] if limit else rows,
-            'more': len(rows) > limit > 0, 'link': _bridge_link(sid) if sid else '',
+    try:
+        start = max(Path(path).stat().st_size - FEED_BYTES, 0) if path else 0
+    except OSError:
+        start = 0
+    cut = start > 0
+    kept = rows[-limit:] if limit else rows
+    if not any(e['kind'] == 'you' for e in kept):
+        kept = ([e for e in rows if e['kind'] == 'you'][-1:] or (prompt_before(path, start) if cut else [])) + kept
+    return {'ok': bool(path), 'name': name, 'entries': kept,
+            'more': cut or len(rows) > limit > 0, 'link': _bridge_link(sid) if sid else '',
             **({} if path else {'out': f'{name} has no transcript to read yet.'})}
 
 
@@ -979,18 +1018,25 @@ def send(name: str, text: str) -> dict:
 
 
 def chat_to(text: str, to: str = 'c1') -> dict:
-    """F74: the chat box of any control session: `to` (c1, c6) gets `text`."""
-    return send(to, text)
+    """F74: the chat box of any control session: `to` (c1, c6) gets `text`. B154: 'at' is when it was typed, and
+    'name' the new control session that took it when c1 was not up."""
+    at = time.time()
+    r = {**send(to, text), 'at': at}
+    n = re.search(r'\bcontrol (\d+) ', r.get('out') or '') if to == 'c1' and r['ok'] else None
+    return {**r, 'name': f'c{n.group(1)}'} if n else r
 
 
 def new_control(ask: str = '', wait: bool = True) -> dict:
     """F74: start a new control session (`control --new`, `ask` its first message): the result's 'link' is its
     claude.ai/code link ('' when it printed none), 'name' its cN ('' when it said none). F112: `wait` False
-    (`--no-wait`) returns once it starts, before its link is known."""
-    r = call(['control', '--new', *([] if wait else ['--no-wait']), *(['--ask', ask] if ask else [])])
+    (`--no-wait`) returns once it starts, before its link is known. B154: 'ask' and 'at' (when it was called) let the
+    page keep the ask shown until the feed has it."""
+    at = time.time()
+    r = call(['control', '--new', *([] if wait else ['--no-wait']), *(['--ask', ask, '--no-feed'] if ask else [])])
     m = LINK.search(r['out'] or '')
     n = re.search(r'\bcontrol (\d+) ', r['out'] or '')
-    return {**r, 'link': m.group(0).rstrip('.,)') if m else '', 'name': f'c{n.group(1)}' if n else ''}
+    return {**r, 'link': m.group(0).rstrip('.,)') if m else '', 'name': f'c{n.group(1)}' if n else '',
+            'ask': ask, 'at': at}
 
 
 def concept_chat_text(row: dict) -> str:

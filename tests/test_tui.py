@@ -1348,7 +1348,7 @@ def test_run_controls() -> None:
         p.key('D')
         eq(ran, [['plan', 'drop', 'F1', U.TASK_DROP_WHY]], 'D on a slot drops its task from the slot')
         p.key('H')
-        eq((sent, ran[-1]), ([], ['control', '--new', '--ask', 'do F1 here']),
+        eq((sent, ran[-1]), ([], ['control', '--new', '--ask', 'do F1 here', '--no-feed']),
            'H on a slot takes its task back (B139: a new control session does it here)')
         ran.clear()
         p.cur[2] = 0  # c1: no task controls

@@ -214,6 +214,32 @@ def test_queued_message_forwarded():
               'a message that never showed is logged as NOT found', log)
 
 
+def test_page_ask_skips_feed_b154():
+    print('B154: an ask from the run page or the TUI (--no-feed) starts control N at once; a feed hand-off still waits')
+    import contextlib
+    import io
+    from unittest import mock
+    from agent_runner import cmds, feed as F
+    R.init(repo())
+    opened, looked = [], []
+
+    def run(*argv):
+        opened.clear(), looked.clear()
+        with mock.patch.object(F, 'control_new_hidden', lambda n, cmd, name, wait=0: opened.append((cmd, wait)) or 0), \
+                mock.patch.object(F.plat, 'WINDOWS', False), mock.patch.object(F, 'feed_sid', lambda: SID), \
+                mock.patch.object(F, 'feed_wait', lambda *a, **k: (looked.append(a), (False, [], 0, ''))[1]), \
+                contextlib.redirect_stdout(io.StringIO()):
+            cmds.cmd_control(['--new', *argv])
+        return opened[0][0]
+    cmd = run('--no-wait', '--ask', 'what needs me?', '--no-feed')
+    check(not looked and '--feed-sid' not in cmd, 'no look in the feed, and control N waits for nothing', cmd)
+    ask = open(cmd[cmd.index('--ask-file') + 1], encoding='utf-8').read() if '--ask-file' in cmd else cmd[cmd.index('--ask') + 1]
+    eq(ask.strip(), 'what needs me?', 'its first message is the ask, with no images note')
+    eq(opened[0][1], -1, '--no-wait still holds')
+    cmd = run('--ask', 'handed on by the feed')
+    check(looked and cmd[cmd.index('--feed-sid') + 1] == SID, 'a feed hand-off still looks, and control N waits', cmd)
+
+
 def test_brief_names_photos():
     print('BUG1: the feed brief hands every photo or file on, never asks about it')
     from agent_runner.guide import RUNNER_BRIEF
@@ -225,4 +251,5 @@ def test_brief_names_photos():
 
 if __name__ == '__main__':
     raise SystemExit(report([test_feed_sid_keeps_command, test_photo_alone_forwarded, test_queued_message_forwarded,
+                                test_page_ask_skips_feed_b154,
                                 test_brief_names_photos]))

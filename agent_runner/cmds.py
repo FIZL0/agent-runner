@@ -1040,6 +1040,7 @@ def cmd_control(argv: list[str], prog: str = f'{RUNNER} control') -> int:
                     'feed hands requests on this way)')
     ap.add_argument('--runner', action='store_true', help='with --forward: open it in agent-runner\'s own checkout '
                     'instead, labelled with this project (the feed hands asks about agent-runner itself on this way)')
+    ap.add_argument('--no-feed', action='store_true', help=argparse.SUPPRESS)  # B154: --ask is a page's or the TUI's
     ap.add_argument('--from-feed', default='', help=argparse.SUPPRESS)  # B54: the project a --runner ask came from
     ap.add_argument('--file', '--image', dest='file', action='append', default=[], metavar='PATH',
                     help='a file or image the person attached to the first message (repeatable): the first message '
@@ -1065,7 +1066,7 @@ def cmd_control(argv: list[str], prog: str = f'{RUNNER} control') -> int:
         return control_new_runner(a.n, images=a.file)
     if a.new or (a.forward and not a.feed_sid):
         return control_new(a.n, ask=a.ask, images=a.file, forward=a.forward and not a.from_feed,
-                           handed=bool(a.from_feed), **({'wait': -1} if a.no_wait else {}))
+                           handed=bool(a.from_feed) or a.no_feed, **({'wait': -1} if a.no_wait else {}))
     if a.ask_file:
         a.ask = read_ask_file(a.ask_file) or a.ask
     if a.forward and a.feed_sid and SID_RE.fullmatch(a.feed_sid):

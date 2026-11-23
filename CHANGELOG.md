@@ -65,6 +65,13 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
   provider still waits, and STOPPED is raised only when such a task is all that could start. Nothing is written to
   capped.json; without a chain tasks are held as before. A session is now resumed only by the kind of agent (Claude Code
   or the harness loop) that ran it; an answered one whose task now runs on the other gets a new session (F142).
+- Fixes: a new control session started from the run page or the terminal UI (Chat on a card, Add a task, quick asks,
+  Take, Talk, an answer handed on while c1 is off) starts at once. It used to wait about 65 s (5 + 60) looking for its
+  message in the runner feed's transcript, and then showed a false note about attached images. Its message stays on
+  screen with a starting line until the reply, and any sent message stays until its own text is in the chat (kept over
+  a reload); one that does not arrive shows Not delivered with Retry and Discard. A long turn no longer loses the
+  person's latest prompt from the chat, and the chat says when older messages are cut off; a message sent mid-turn
+  (queued) shows as the person's (B154).
 
 ## 0.61.0 (2026-11-23)
 

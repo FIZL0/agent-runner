@@ -216,7 +216,7 @@ def test_run_controls(tmp: Path) -> None:
                 ran.clear()
                 code, out = post(url, rq)
                 if c['key'] == 'task_take':
-                    eq((out.get('ok'), sent, ran), (True, [], [['control', '--new', '--ask', 'do F1 here']]),
+                    eq((out.get('ok'), sent, ran), (True, [], [['control', '--new', '--ask', 'do F1 here', '--no-feed']]),
                        'B139: Take back asks a new control session "do F1 here", not c1')
                 else:
                     eq((code, out.get('ok'), ran), (200, True, [want[c['key']]]),
@@ -318,7 +318,7 @@ def test_feed_pane_concept(tmp: Path) -> None:
         with mock.patch.object(U, 'SEND', [no_send]), \
                 mock.patch.object(U, 'RUN', [lambda argv: (ran.append(argv), (0, 'control 7 is starting'))[1]]):
             code, out = post(f'{base}/act?t={token}', {'name': 'quick_ask', 'args': {'key': 'needs', 'wait': False}})
-        eq((out['ok'], out['name'], ran), (True, 'c7', [['control', '--new', '--no-wait', '--ask', 'what needs me?']]),
+        eq((out['ok'], out['name'], ran), (True, 'c7', [['control', '--new', '--no-wait', '--ask', 'what needs me?', '--no-feed']]),
            'B139: a quick ask through /act starts a new control session with it, named for the page to open')
         typed = []
         from agent_runner import slots as SLT
@@ -974,7 +974,7 @@ def test_talk_f93(tmp: Path) -> None:
         with mock.patch.object(U, 'RUN', [lambda argv: (calls.append(argv), (0, 'control 7 is up in a hidden terminal'))[1]]):
             code, out = post(url, {'name': 'talk', 'args': {'text': ' what is going on? ', 'to': ''}})
             eq((code, out.get('ok'), out.get('session')), (200, True, 'c7'), 'the first Talk send opens c7')
-            eq(calls, [['control', '--new', '--ask', ask]], 'with the spoken-reply instruction as its first message')
+            eq(calls, [['control', '--new', '--ask', ask, '--no-feed']], 'with the spoken-reply instruction as its first message')
             with mock.patch.object(U, 'chat_to', lambda text, to: (typed.append((to, text)),
                                                                    {'ok': True, 'code': 0, 'out': '', 'argv': []})[1]):
                 code, out = post(url, {'name': 'talk', 'args': {'text': 'and the merge?', 'to': 'c7'}})
@@ -982,7 +982,7 @@ def test_talk_f93(tmp: Path) -> None:
             eq(typed, [('c7', CT.TALK_TAG + 'and the merge?')], 'with the spoken-reply reminder')
             with mock.patch.object(U, 'chat_to', lambda text, to: {'ok': False, 'code': 1, 'out': 'gone', 'argv': []}):
                 code, out = post(url, {'name': 'talk', 'args': {'text': 'hello', 'to': 'c7'}})
-            eq((out.get('ok'), calls[-1]), (True, ['control', '--new', '--ask', CT.talk_ask('hello')]),
+            eq((out.get('ok'), calls[-1]), (True, ['control', '--new', '--ask', CT.talk_ask('hello'), '--no-feed']),
                'a Talk session that is gone: a new one opens')
             code, out = post(url, {'name': 'talk', 'args': {'text': '  '}})
             eq(out.get('ok'), False, 'nothing said: nothing sent')
@@ -1158,6 +1158,7 @@ class SpeechSynthesisUtterance { constructor(t) { this.text = t } }
 const navigator = {language: 'en-US'};
 const kept = {}, store = {get: k => kept[k] || '', set(k, v) { kept[k] = v }};
 const toast = () => {}, render = () => {}, tq = p => p, followVersion = () => false, TALK_KEY = 'ar-talk';
+const keepSent = () => {}, sessionOf = () => null, newCid = () => 'k';  // B154
 const OB = {offline: false}, drain = () => {};  // F137: takeSnap wakes the outbox
 const HOME_PAGE = false, document = {};  // B153: takeSnap sets the window title
 const S = {snap: {sessions: [], queue: []}, feeds: {}, sent: {}, waitNew: null};
@@ -1174,7 +1175,7 @@ const reset = () => { said.length = 0; TK.state = ''; TK.wait = null; S.snap.ses
   for (const k in kept) delete kept[k] };
 eval(logic + grab('function talkName(') + grab('function talkWaitName(') + grab('async function talkSend(')
   + grab('function talkHear(') + grab('function unlockSpeech(') + grab('function speak(') + grab('function takeSnap(')
-  + grab('async function loadFeed(') + `
+  + grab('async function loadFeed(') + grab('function addSent(') + `
 (async () => {
   const out = {};
   // the session was just opened and the talk action named none: two snapshots list c13, titled Talk, with its reply
@@ -1730,6 +1731,117 @@ def test_outbox_f137(tmp: Path) -> None:
     eq(got[16], [], 'nothing in the outbox: no pill')
 
 
+SENT_DRIVER = r"""
+const page = require('fs').readFileSync(process.argv[2], 'utf8').replace(/\r\n/g, '\n');
+const grab = (start) => { const i = page.indexOf(start); return page.slice(i, page.indexOf('\n}\n', i) + 2); };
+const logic = page.split('<script id="logic">')[1].split('</script>')[0];
+const kept = {}, store = {get: k => kept[k] || '', set(k, v) { kept[k] = v }};
+const said = [], toast = t => said.push(t), render = () => {}, tq = p => p, obDraw = () => {}, talkHear = () => {};
+const esc = t => String(t), LOGO = () => '', threadTitle = n => n, PN = () => 'p', md = t => t, I = {chev: ''};
+const isAgent = () => false, chats = () => [], takeSnap = () => {};
+const opened = [], open = n => { S.thread = n; opened.push(n) };
+let feeds = {}, answers = [], posts = [];
+const fetch = async (p, o) => {
+  if (p === 'act') { posts.push(JSON.parse(o.body)); return {status: 200, json: async () => answers.shift() || {ok: true, at: 100}} }
+  return {json: async () => feeds[p.split('/')[1]] || {ok: false, entries: [], out: 'no transcript'}};
+};
+const S = {snap: {sessions: [{name: 'c3', state: 'live'}], needs: [], concepts: []}, feeds: {}, sent: {}, ob: [], openSteps: {}, thread: null, waitNew: null};
+const feedOf = n => (S.feeds[n] || {}).entries || [], sessionOf = n => S.snap.sessions.find(s => s.name === n);
+const OB = {busy: false, offline: false, timer: 0, wait: 2000}, OB_KEY = 'ob', SENT_KEY = 'sent';
+let cids = 0;
+const newCid = () => 'k' + (++cids), realNow = Date.now;
+let skew = 0;
+Date.now = () => realNow() + skew;
+const line = s => { const i = page.indexOf(s); return page.slice(i, page.indexOf('\n', i)) + '\n' };
+eval(logic.replace(/if\(typeof module[^\n]*/, '') + line('function obChange(') + grab('function outbox(') + grab('async function drain(')
+  + grab('function obDone(') + grab('function obBubbles(') + grab('function convo(') + grab('async function loadFeed(')
+  + grab('function addSent(') + grab('function carrySent(') + line('const keepSent=') + line('const busy=n') + line('const obState=') + line('const obBtns=') + `
+const tick = () => new Promise(r => setTimeout(r, 5));
+const settle = async () => { for (let i = 0; i < 6; i++) await tick() };
+const shows = (n, t) => convo(n).includes(t);
+(async () => {
+  const out = {};
+  // a new chat with an ask: shown as pending in its thread until the feed has it
+  const it = outbox('quick_ask', {key: 'since'}, {newchat: true, say: 'Since', ask: 'what happened?'});
+  answers.unshift({ok: true, name: 'c3', at: 100, ask: 'what happened?'});
+  S.thread = '@' + it.cid; await settle();
+  out.opened = opened.slice(); out.askBeforeFeed = shows('c3', 'what happened?');
+  await loadFeed('c3'); out.askNoTranscript = shows('c3', 'what happened?');
+  feeds.c3 = {ok: true, entries: [{kind: 'you', text: 'another'}]};
+  await loadFeed('c3'); out.askOtherEntry = shows('c3', 'what happened?');
+  feeds.c3.entries.push({kind: 'you', text: 'what happened?', at: 130});
+  out.starting = shows('c3', 'Starting the chat…');
+  await loadFeed('c3'); out.askLanded = [(S.sent.c3.pending || []).length, kept.sent, shows('c3', 'Starting the chat…')];
+  feeds.c3.entries.push({kind: 'say', text: 'Hello.'});
+  await loadFeed('c3'); out.replied = shows('c3', 'Starting the chat…');
+  // two messages: each leaves only when its own text is in the feed, and an older same text does not count
+  for (const t of ['yes', 'and more']) { answers.push({ok: true, at: 200}); outbox('chat_to', {text: t, to: 'c3'}, {text: t, say: t}); }
+  await settle();
+  out.kept = JSON.parse(kept.sent).c3.map(p => p.text);
+  feeds.c3.entries.push({kind: 'you', text: 'yes', at: 150}, {kind: 'say', text: 'ok'}, {kind: 'you', text: 'and more', at: 210});
+  await loadFeed('c3'); out.own = S.sent.c3.pending.map(p => p.text);
+  feeds.c3.entries.push({kind: 'say', text: 'Done.'});
+  await loadFeed('c3'); skew += 50000; await loadFeed('c3');
+  out.failed = S.sent.c3.pending.map(p => [p.text, p.state]);
+  out.failedShown = [shows('c3', 'Not delivered'), shows('c3', 'data-sentretry'), shows('c3', 'data-sentdrop')];
+  feeds.c3.entries.push({kind: 'you', text: 'yes', at: 260});
+  await loadFeed('c3'); out.late = S.sent.c3.pending.length;
+  console.log(JSON.stringify(out));
+  process.exit(0);
+})();`);
+"""
+
+
+def test_sent_b154(tmp: Path) -> None:
+    """B154: a sent message stays shown until its own text is in the feed as 'you': a new chat's ask is carried over,
+    and one that never lands is shown as not delivered, with Retry."""
+    if not shutil.which('node'):
+        print('  (no node here: the sent message script test is skipped)')
+        return
+    p = lambda text, at=100, **k: {'text': text, 'at': at, 'since': 0, 'state': 'sent', **k}  # noqa: E731
+    you = lambda text, at=110: {'kind': 'you', 'text': text, 'at': at}  # noqa: E731
+    left = lambda ps, es: ['sentLeft', ps, es]  # noqa: E731
+    got = logic_js([
+        left([p('hi')], [{'kind': 'say', 'text': 'hi'}]),
+        left([p('hi')], [you('hi', 90)]), left([p('hi')], [you('hi')]),
+        left([p('hi'), p('hi')], [you('hi')]),
+        left([p('a  b\n\nc')], [you('\n\n<pasted_content id="36f3">\na b\nc\n</pasted_content>')]),
+        left([p('one'), p('two')], [you('one\ntwo')]),
+        left([p('yes')], [you('yes please')]),
+        left([p('fix B1')], [you('fix B1\n\n<runner-waiting>\nF2: x\n</runner-waiting>')]),
+        left([p('look\n\nAttached: /r/a.png')], [you('look\n\n[Image #1]')]),
+        left([p('hello', talk=True)], [you('(Talk: answer as speech.) hello')]),
+        ['sentStep', [p('x', since=1000)], [{'kind': 'say', 'text': 'ok'}], 60000, True],
+        ['sentStep', [p('x', since=1000)], [{'kind': 'tool', 'text': 'Bash(ls)'}], 60000, True],
+        ['sentStep', [p('x', since=1000)], [{'kind': 'tool', 'text': 'Bash(ls)'}], 60000, False],
+        ['sentStep', [p('x', since=1000, first=True)], [], 60000, True],
+        ['sentStep', [p('/clear', since=1000)], [], 60000, True],
+        ['sentStep', [p('x', since=1000)], [you('later', 200)], 60000, True, True],
+        ['sentStep', [p('x', 300, since=1000)], [you('before', 200), {'kind': 'say', 'text': 'ok'}], 60000, True, True],
+        left([p('Attached: /r/a.png')], [you('[Image #1]')]),
+    ])
+    eq([len(x) for x in got[:3]], [1, 1, 0], "only your own words, and only since they were sent, make it land")
+    eq(len(got[3]), 1, 'one entry lands one of two same messages')
+    eq([len(x) for x in got[4:10]], [0, 0, 1, 0, 0, 0],
+       'a paste wrap, merged messages, a whole line only, the waiting block, an image, a Talk reminder')
+    eq([[(x['text'], x['state']) for x in r] for r in got[10:]],
+       [[('x', 'failed')], [('x', 'sent')], [('x', 'failed')], [('x', 'sent')], [], [], [('x', 'failed')], []],
+       'not delivered once idle a while; not mid-turn; a chat that ended; longer for a first message; a slash command goes; behind the cut; not before it; a picture alone')
+    (tmp / 'driver.js').write_text(SENT_DRIVER, encoding='utf-8')
+    r = subprocess.run(['node', str(tmp / 'driver.js'), str(W.PAGE)], capture_output=True, text=True, timeout=60)
+    check(r.returncode == 0, 'node runs the page', r.stderr[-1500:])
+    o = json.loads(r.stdout or '{}')
+    eq(o.get('opened'), ['c3'], 'the started chat opens')
+    eq([o.get(k) for k in ('askBeforeFeed', 'askNoTranscript', 'askOtherEntry')], [True] * 3,
+       "a new chat's ask stays shown before its feed, with no transcript, and past another entry")
+    eq(o.get('askLanded'), [0, '', True], 'and leaves once the feed has it')
+    eq((o.get('starting'), o.get('replied')), (True, False), 'the starting line stands until the reply')
+    eq(o.get('kept'), ['yes', 'and more'], 'kept over a reload')
+    eq(o.get('own'), ['yes'], 'only the message in the feed leaves')
+    eq((o.get('failed'), o.get('failedShown')), ([['yes', 'failed']], [True] * 3), 'never landed: Not delivered, Retry, Discard')
+    eq(o.get('late'), 0, 'one that lands after all leaves')
+
+
 def test_card_chat_b139(tmp: Path) -> None:
     """B139: a run page button that starts a chat (Add a task, a card's Chat, a quick ask, Take) starts a fresh
     control session (`control --new --ask`) instead of sending to c1 with its whole history; typing in the c1
@@ -1742,15 +1854,15 @@ def test_card_chat_b139(tmp: Path) -> None:
     with mock.patch.object(U, 'SEND', [no_send]), \
             mock.patch.object(U, 'RUN', [lambda argv: (ran.append(argv), (0, 'control 9 is starting'))[1]]):
         q, t = U.act('quick_ask', key='since', wait=False), U.act('take', tid='F1', wait=False)
-    eq(ran, [['control', '--new', '--no-wait', '--ask', 'what happened since my last look?'],
-             ['control', '--new', '--no-wait', '--ask', 'do F1 here']], 'quick_ask and take use new_control')
+    eq(ran, [['control', '--new', '--no-wait', '--ask', 'what happened since my last look?', '--no-feed'],
+             ['control', '--new', '--no-wait', '--ask', 'do F1 here', '--no-feed']], 'quick_ask and take use new_control')
     eq((q['name'], t['name']), ('c9', 'c9'), 'each names its new chat for the page to open')
     page = W.PAGE.read_text(encoding='utf-8')
     send = page.split('async function send(){', 1)[1].split('\n}', 1)[0]
     check('sendReq(ctx,to,msg)' in send and "newChat(rq.name,rq.args," in send,
           'send() starts a new chat when a card set the context', send)
     check("newChat('quick_ask'" in page and "outbox('quick_ask'" not in page, 'a quick ask starts a new chat', '')
-    check("if(r.name)return open(r.name)" in page, "Take back opens the new chat it started", '')
+    check("if(r.name){carrySent(r.name,r);return open(r.name)}" in page, "Take back opens the new chat it started", '')
     if not shutil.which('node'):
         print('  (no node here: the send script test is skipped)')
         return
@@ -1963,5 +2075,5 @@ if __name__ == '__main__':
                            in_tmp(test_listen_heard_nothing_b132), in_tmp(test_talk_reply_heard_b133),
                            in_tmp(test_slash_menu_b119), in_tmp(test_composer_keys_b120),
                            in_tmp(test_interrupt_c1_b141), in_tmp(test_answer_button_b138), in_tmp(test_pick_f138),
-                           in_tmp(test_outbox_f137), in_tmp(test_card_chat_b139), in_tmp(test_short_ask_b152),
+                           in_tmp(test_outbox_f137), in_tmp(test_sent_b154), in_tmp(test_card_chat_b139), in_tmp(test_short_ask_b152),
                            in_tmp(test_chat_box_f115), in_tmp(test_home_switcher_f134)]))

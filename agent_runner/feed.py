@@ -725,7 +725,8 @@ def control_new(n: int | None = None, wait: float = CONTROL_LINK_WAIT, ask: str 
     `forward` (`control --new --forward`, B72): its first message is the runner feed's latest person message,
     read word for word from the feed's transcript (`feed_take`) and handed to `control N` in a file, never on a
     command line; when it has not reached the transcript in FEED_WAIT s, `control N --forward --feed-sid` waits
-    for it itself."""
+    for it itself. `handed`: the ask is whole and not in this feed's transcript, so it is not looked for there: another
+    project's feed read it (`--from-feed`), or it came from the run page or the TUI (`--no-feed`, B154)."""
     if not n:  # B131: claimed until it is up, so an ask that arrives meanwhile gets the next number
         n = claim_control_number()
         try:
@@ -750,7 +751,7 @@ def control_new(n: int | None = None, wait: float = CONTROL_LINK_WAIT, ask: str 
             fwd, ask = [FORWARD_FLAG, '--feed-sid', sid], ''
         else:
             ask = feed_lost_note() if text is None else text
-    if ask and ask != feed_lost_note() and not handed and not alone:  # B54 handed: another feed read it already
+    if ask and ask != feed_lost_note() and not handed and not alone:  # B54, B154 handed: not in this feed
         # Claude Code writes the feed's transcript lazily: the message being handed on, and the saved paths of
         # its pictures, can land a while after this command starts (B46, B57: more than FEED_WAIT), so wait
         # briefly for them here, and when they are still missing let the new session's own process wait longer
