@@ -191,8 +191,6 @@ a{color:var(--accent)}
 .send.stop{background:var(--fg);color:var(--bg)} .send.stop+.send{margin-left:0}
 .send:disabled{opacity:.4;cursor:default}
 .send svg{stroke-width:2.2}
-.ctx{display:flex;align-items:center;gap:8px;font-size:var(--fs-m);color:var(--muted);min-width:0}
-.ctx b{color:var(--fg);font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
 .x{border:0;background:none;cursor:pointer;color:var(--faint);padding:0 4px}
 .atts{display:flex;gap:8px;flex-wrap:wrap}
 .att{position:relative;display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:var(--r-m);padding:6px 10px 6px 6px;font-size:var(--fs-s);background:var(--bg);max-width:220px}
@@ -477,6 +475,9 @@ function compose(ctx,text,paths){
 /* B139: where the message box sends msg: with a card's context (Add a task, a card's Chat) a new control
    session that gets it as its first message, so it carries none of c1's history; else chat_to the open chat */
 function sendReq(ctx,to,msg){return ctx?{name:'new_control',args:{ask:msg}}:{name:'chat_to',args:{text:msg,to:to||'c1'}}}
+/* F172: the new chat view of a card's Chat, before its first message: its name in S.thread ('+plan:F1'; no session has it) */
+const ctxKey=ctx=>'+'+(ctx.kind==='new'?'new':ctx.kind+':'+ctx.id);
+const isNew=n=>String(n||'')[0]==='+';
 /* the usage line of the status lines ('usage: session 40%, week 12%'), '' for none */
 const usageOf=status=>((status||[]).find(l=>/^usage: /.test(l))||'').replace(/^usage: /,'');
 /* a run log line's kind, for its icon on Status */
@@ -541,8 +542,9 @@ function placeOf(text,hash,projects,starting){
   let o;try{o=JSON.parse(text||'{}')}catch(e){}
   if(!o||typeof o!=='object')o={};
   const v=viewOf(o.v), t=typeof o.t==='string'?o.t:'';
-  const ok=!t||/^\w[\w.-]*$/.test(t)||(starting||[]).includes(t);  // a stand-in that went is a chat that is gone
-  return{v:ok&&known(v)?v:'home',t:ok?t:'',link:false};
+  const c=isNew(t)&&o.c&&typeof o.c==='object'&&typeof o.c.label==='string'&&ctxKey(o.c)===t?o.c:null;  // F172
+  const ok=!t||!!c||/^\w[\w.-]*$/.test(t)||(starting||[]).includes(t);  // a stand-in that went is a chat that is gone
+  return{v:ok&&known(v)?v:'home',t:ok?t:'',link:false,...(c?{c}:{})};
 }
 /* F124: the state pill: the run's state (ui_model.run_state) and its colour */
 function runPill(snap){
@@ -959,7 +961,7 @@ function projectButtons(p){
   b.push({label:'Unlist',unlist:true});
   return b;
 }
-if(typeof module!=='undefined')module.exports={talkMsgs,feedState,FEED_KEYS,feedBytes,feedWords,feedSteps,viewOf,placeOf,runPill,cardControls,controlGroups,needsReply,chatGroups,needChatAsk,TALK_SET,talkSetParse,pickVoice,runVoice,speechClips,silentWav,feedMark,feedAfter,atEnd,swipeTakes,swipeOpens,settingText,settingValue,pickValue,pickOptions,settingSays,settingSide,settingChanged,settingHit,settingShows,kindsModel,KINDS_ROWS,homeBase,homeKey,projectLink,homeLink,manifestLink,appLink,homeHref,pageTitle,projectState,switcherRows,projectWords,projectButtons,chatMove,BOX_KEYS,keysLine,histPush,histEdge,histStep,slashMatches,slashPick,slashMove,SLASH_FALLBACK,chatPick,answerOpts,needAsk,working,planWords,compose,sendReq,usageOf,logKind,plain,chatName,controlReq,controlClick,taskControlsOn,queueGroups,conceptButtons,planQueue,NO_CONCEPT,newConceptReq,queuedId,NAV,talkSession,micProblem,dictProblem,dictButton,dictInsert,talkShown,talkReply,goneMark,needsShown,answerSaid,GONE_MS,obParse,obNext,obName,obSettle,obRetry,obDrop,obCounts,obHidden,obPill,OLD_RUN,OLD_WAIT,oldRun,plainOut,obRefused,obOld,obDue,obBootCid,sentLeft,sentStep,sentParse};
+if(typeof module!=='undefined')module.exports={talkMsgs,feedState,FEED_KEYS,feedBytes,feedWords,feedSteps,viewOf,placeOf,runPill,cardControls,controlGroups,needsReply,chatGroups,needChatAsk,TALK_SET,talkSetParse,pickVoice,runVoice,speechClips,silentWav,feedMark,feedAfter,atEnd,swipeTakes,swipeOpens,settingText,settingValue,pickValue,pickOptions,settingSays,settingSide,settingChanged,settingHit,settingShows,kindsModel,KINDS_ROWS,homeBase,homeKey,projectLink,homeLink,manifestLink,appLink,homeHref,pageTitle,projectState,switcherRows,projectWords,projectButtons,chatMove,BOX_KEYS,keysLine,histPush,histEdge,histStep,slashMatches,slashPick,slashMove,SLASH_FALLBACK,chatPick,answerOpts,needAsk,working,planWords,compose,sendReq,ctxKey,isNew,usageOf,logKind,plain,chatName,controlReq,controlClick,taskControlsOn,queueGroups,conceptButtons,planQueue,NO_CONCEPT,newConceptReq,queuedId,NAV,talkSession,micProblem,dictProblem,dictButton,dictInsert,talkShown,talkReply,goneMark,needsShown,answerSaid,GONE_MS,obParse,obNext,obName,obSettle,obRetry,obDrop,obCounts,obHidden,obPill,OLD_RUN,OLD_WAIT,oldRun,plainOut,obRefused,obOld,obDue,obBootCid,sentLeft,sentStep,sentParse};
 </script>
 
 <script>
@@ -1032,7 +1034,7 @@ const DRAFT_KEY=k=>'ar-draft:'+k;  /* a box's draft, kept per thread (and Home) 
 const boxKey=()=>S.thread||(S.view==='talk'?'talk':'home');
 /* B141: the session the page shows, which Ctrl+C and Stop interrupt: the open chat, else the Talk session in
    the Talk view ('' before it has one), else c1 (Home and the other views talk to c1) */
-const shownSession=()=>S.thread||(S.view==='talk'?talkName():'c1');
+const shownSession=()=>isNew(S.thread)?'':S.thread||(S.view==='talk'?talkName():'c1');
 /* B120: each chat's sent messages (localStorage, so a reload keeps them; store's try/catch when it is blocked), and
    HI where Up / Down stands in them: the chat, the place (null: not looking back) and the draft it left */
 const HIST_KEY=k=>'ar-hist:'+k;
@@ -1239,7 +1241,7 @@ function saveChatOrder(order,pins){
 const slots=()=>S.snap.sessions.filter(s=>/^s\d+$/.test(s.name)||(!/^c\d+$/.test(s.name)&&s.task));
 const working_=()=>slots().filter(s=>s.task);
 const sessionOf=n=>S.snap.sessions.find(s=>s.name===n);
-const isAgent=n=>!/^(c\d+|@.+)$/.test(n||'');  // F137: '@cid', a chat still starting, is a chat
+const isAgent=n=>!/^(c\d+|[@+].+)$/.test(n||'');  // F137: '@cid', a chat still starting, is a chat
 /* F129: a chat's name, with a rename still on its way */
 const chatTitle=s=>{const x=S.ob.filter(y=>y.ren===s.name&&y.state==='sending').pop();return x?x.args.title:chatName(s)};
 /* F128: when the person last opened each chat (its last activity then, per browser); the first visit takes all as read */
@@ -1255,7 +1257,7 @@ function markSeen(){
 }
 const replyDue=s=>needsReply(s,(S.seen||{})[s.name])&&!(S.thread===s.name&&!s.needs_reply);
 const shownChats=()=>chatGroups(chats(),{pins:chatPins(),quiet:+S.snap.chat_quiet||0,now:Date.now()/1000,seen:S.seen||{},open:S.thread});
-const threadTitle=n=>{if(String(n||'')[0]==='@'){const x=S.ob.find(y=>'@'+y.cid===n);return x?x.say:'New chat'}const s=sessionOf(n);if(!s)return n==='c1'?'Project chat':n;return isAgent(n)?(s.title||s.task||n):chatTitle(s)};
+const threadTitle=n=>{if(isNew(n))return S.ctx?S.ctx.label:'New chat';if(String(n||'')[0]==='@'){const x=S.ob.find(y=>'@'+y.cid===n);return x?x.say:'New chat'}const s=sessionOf(n);if(!s)return n==='c1'?'Project chat':n;return isAgent(n)?(s.title||s.task||n):chatTitle(s)};
 const upNext=()=>S.snap.queue.filter(q=>q.state!=='running'&&q.state!=='parked');
 const feedOf=n=>(S.feeds[n]||{}).entries||[];
 function lastWords(n){const e=feedOf(n).filter(x=>x.kind==='say');return e.length?plain(e[e.length-1].text):''}
@@ -1487,11 +1489,11 @@ function conceptCard(c,i){
 }
 function box(ph,foot){
   const a=S.atts, shownNow=shownSession(), busyNow=!!shownNow&&busy(shownNow);
-  return `<form class="box" data-form>${S.ctx?`<div class="ctx">About: <b>${esc(S.ctx.label)}</b><button type="button" class="x" data-unctx aria-label="Remove">✕</button></div>`:''}
+  return `<form class="box" data-form>
     ${a.length?`<div class="atts">${a.map((f,i)=>`<span class="att ${f.path?'':f.err?'err':'up'}" title="${esc(f.err||f.path||'uploading…')}">${f.thumb?`<img src="${f.thumb}" alt="">`:`<span class="fi">${I.file}</span>`}<span class="nm">${esc(f.name)}</span><button type="button" class="x" data-unatt="${i}" aria-label="Remove">✕</button></span>`).join('')}</div>`:''}
     <div class="slash" data-slash role="listbox" aria-label="Commands" hidden></div>
     <div class="inrow"><span class="pr" aria-hidden="true">&gt;</span><textarea rows="1" data-in placeholder="${esc(ph)}" aria-label="Message"></textarea></div>
-    <div class="boxrow"><button type="button" class="tool" data-clip aria-label="Attach pictures or files" title="Attach pictures or files">${I.clip}</button>${S.view==='talk'&&!S.thread?(micWhy()?'':`<button type="button" class="tool" data-talkmode="mic" aria-label="Talk instead" title="Talk instead">${I.talk}</button>`):dictButton(dictWhy(),!!DK.rec,I.talk)}${S.thread?`<button type="button" class="tool keyb" data-feedkeys aria-expanded="${!!S.keys}" aria-label="Keys for the session" title="Keys for the session">${I.keys}</button>`:''}<span class="to">${esc(S.ctx?'to a new chat':S.thread?S.thread:S.view==='talk'?'to Talk':'to c1')}</span>${busyNow?`<button type="button" class="send stop" data-stop="${esc(shownNow)}" aria-label="Interrupt">${I.stop}</button>`:''}<button class="send" aria-label="Send">${I.up}</button></div></form>${foot?`<div class="foot">${foot}</div>`:''}`;
+    <div class="boxrow"><button type="button" class="tool" data-clip aria-label="Attach pictures or files" title="Attach pictures or files">${I.clip}</button>${S.view==='talk'&&!S.thread?(micWhy()?'':`<button type="button" class="tool" data-talkmode="mic" aria-label="Talk instead" title="Talk instead">${I.talk}</button>`):dictButton(dictWhy(),!!DK.rec,I.talk)}${S.thread&&!isNew(S.thread)?`<button type="button" class="tool keyb" data-feedkeys aria-expanded="${!!S.keys}" aria-label="Keys for the session" title="Keys for the session">${I.keys}</button>`:''}<span class="to">${esc(isNew(S.thread)?'to a new chat':S.thread?S.thread:S.view==='talk'?'to Talk':'to c1')}</span>${busyNow?`<button type="button" class="send stop" data-stop="${esc(shownNow)}" aria-label="Interrupt">${I.stop}</button>`:''}<button class="send" aria-label="Send">${I.up}</button></div></form>${foot?`<div class="foot">${foot}</div>`:''}`;
 }
 /* B177: a chat with a transcript that the run no longer lists (one just started is not listed yet: its message waits) */
 const ended=n=>!!(S.snap.at&&S.feeds[n]&&S.feeds[n].ok&&!sessionOf(n)&&!(S.sent[n]&&(S.sent[n].pending||[]).length));
@@ -1526,7 +1528,7 @@ const feedSrc=n=>`t/${encodeURIComponent(T)}/${encodeURIComponent(n)}/?fontSize=
 function feedLeave(){FD.turn++;clearTimeout(FD.timer);FD.timer=0;FD.up=false;if(FD.frame){FD.frame.remove();FD.frame=null}}
 async function feedLoad(){
   const n=FD.n, turn=++FD.turn;clearTimeout(FD.timer);FD.timer=0;
-  if(!n||n[0]==='@'||document.hidden)return;
+  if(!n||n[0]==='@'||isNew(n)||document.hidden)return;
   let i;try{i=await (await fetch(tq('terminal/'+encodeURIComponent(n)))).json()}catch(e){i=null}
   if(turn!==FD.turn)return;
   if(i)FD.info=i;
@@ -1561,6 +1563,7 @@ document.addEventListener('visibilitychange',()=>{
 });
 /* what a chat or slot with no session to show says */
 function feedHTML(n){
+  if(isNew(n))return `<div class="col feeds">${card(`<div class="q">${esc(threadTitle(n))}</div><div class="small">The chat starts with your first message.</div>`,'',`data-k="feed:${esc(n)}"`)}</div>`;  // F172
   const st=feedNow(n), i=(FD.n===n&&FD.info)||{}, last=S.last[n]||{}, link=i.link||(sessionOf(n)||{}).link||last.link||'';
   const open=link?`<a class="btn" href="${esc(link)}" target="_blank" rel="noopener">Open its session ${I.ext}</a>`:'';
   if(st==='starting')return `<div class="col feeds"><div class="msgs">${sentBubbles(n,t=>t)}${obBubbles(n)}${n[0]==='@'?'':`<div class="think">${LOGO()}Starting the chat…</div>`}</div></div>`;
@@ -1879,7 +1882,7 @@ function render(force){
   let h='',dock='';
   feedDraw(n);  // F114
   if(n){const agent=isAgent(n);h=$('body').hidden?'':feedHTML(n);
-    dock=keysRow()+box(agent?`Message ${threadTitle(n)}`:S.ctx&&S.ctx.kind==='new'?'Describe the task in your own words':`Reply to ${threadTitle(n)}`,
+    dock=(isNew(n)?'':keysRow())+box(agent?`Message ${threadTitle(n)}`:isNew(n)?S.ctx&&S.ctx.kind==='new'?'Describe the task in your own words':'Write your first message':`Reply to ${threadTitle(n)}`,
       (agent?'Goes straight to this agent, between its steps. ':'')+keysLine())}  // B120: the keys, from BOX_KEYS
   else if(S.view==='talk')h=talkHTML();
   else h={home:homeHTML,status:statusHTML,plan:planHTML,concepts:conceptsHTML,settings:settingsHTML,projects:projectsHTML}[S.view]();
@@ -1903,7 +1906,7 @@ function render(force){
   const nk=document.querySelector('[data-kin]');if(nk){nk.value=S.kText||'';if(S.kFocus){kbFocus(nk);kbReveal(nk)}else if(kfocused)nk.focus({preventScroll:true});S.kFocus=false}  // F87: the new concept box keeps its words
   if(drew)keep();
   if(moved){
-    const follow=lastPlace&&lastPlace.startsWith('t:@')&&n;  // a starting chat got its name: the same chat
+    const follow=lastPlace&&(lastPlace.startsWith('t:@')&&n||lastPlace.startsWith('t:+')&&n&&n[0]==='@');  // a starting chat got its name, a new one started: the same chat
     if(chatShown())toEnd();else{body.scrollTop=S.at[place]||0}
     if(S.live&&!follow)viewIn(body);
   }else if(drew){
@@ -2452,7 +2455,7 @@ function connect(){
 }
 async function poll(){try{takeSnap(await (await fetch(tq('snapshot'))).json())}catch(e){}setTimeout(poll,4000)}
 async function loadFeed(n){
-  if(String(n||'')[0]==='@')return;  // F137: a chat still starting has no feed yet
+  if(String(n||'')[0]==='@'||isNew(n))return;  // F137: a chat still starting has no feed yet; F172: nor one not started
   try{const f=await (await fetch(tq('feed/'+encodeURIComponent(n)))).json();
     const old=S.feeds[n];S.feeds[n]={...f,at:Date.now()};
     const sent=S.sent[n], had=JSON.stringify((sent&&sent.pending)||[]), se=sessionOf(n);
@@ -2471,30 +2474,30 @@ setInterval(()=>{const w=talkWaitName(), n=talkName();  // F93; B133: an awaited
 /* B177: the open view and chat, per project and per tab (the title names the project on the run's own address) */
 const PLACE_KEY='ar-place:'+(HKEY||document.title);
 let placeWas='';
-function keepPlace(){const p=JSON.stringify({v:S.view,t:S.thread||''});if(!HOME_PAGE&&p!==placeWas)tabStore.set(PLACE_KEY,placeWas=p)}
+function keepPlace(){const p=JSON.stringify({v:S.view,t:S.thread||'',...(isNew(S.thread)?{c:S.ctx}:{})});if(!HOME_PAGE&&p!==placeWas)tabStore.set(PLACE_KEY,placeWas=p)}
 /* before the first draw; the link's # goes from the address, so a later reload opens what was open then */
 function takePlace(){
   if(HOME_PAGE)return;
   const p=placeOf(tabStore.get(PLACE_KEY),location.hash,!!HB,S.ob.filter(x=>x.newchat).map(x=>'@'+x.cid));
-  S.view=p.v;S.thread=p.t||null;S.kept=p.t;S.quiet=p.t[0]==='@'?p.t:'';
+  S.view=p.v;S.thread=p.t||null;S.ctx=p.c||null;S.kept=p.t;S.quiet=p.t[0]==='@'?p.t:'';
   if(p.link)try{history.replaceState(null,'',location.pathname+location.search)}catch(e){}
 }
 /* the chat a reload opened: true when the run has no such chat, and Home is open instead */
 function keptCheck(){
   const n=S.kept, f=S.feeds[n];
-  if(S.thread!==n||n[0]==='@'||sessionOf(n)||f&&f.ok){S.kept='';return false}
+  if(S.thread!==n||n[0]==='@'||isNew(n)||sessionOf(n)||f&&f.ok){S.kept='';return false}
   if(!S.snap.at||!f||f.name!==n||S.sent[n]&&(S.sent[n].pending||[]).length)return false;
   S.kept='';S.thread=null;S.ctx=null;S.view='home';return true;
 }
 /* a link to this page, followed in the tab that has it open */
 addEventListener('hashchange',()=>{
   if(HOME_PAGE||!placeOf('',location.hash,!!HB).link)return;
-  takePlace();S.ctx=null;S.drawer=false;S.sheet='';S.sure=null;render(true);placeLoad();
+  takePlace();S.drawer=false;S.sheet='';S.sure=null;render(true);placeLoad();
 });
 function placeLoad(){if(S.thread)loadFeed(S.thread);if(S.view==='settings')loadSettings()}
 
 /* --- doing things ------------------------------------------------------------------------------------------ */
-function open(n){const quiet=!!S.quiet&&S.quiet===S.thread;S.quiet='';S.thread=n;S.drawer=false;S.sheet='';S.sure=null;loadFeed(n);render(true);if(!quiet)setTimeout(()=>document.querySelector('[data-in]')?.focus({preventScroll:true}),50)}  // B177: not for a stand-in a reload opened
+function open(n){const quiet=!!S.quiet&&S.quiet===S.thread;S.quiet='';S.thread=n;if(!isNew(n))S.ctx=null;S.drawer=false;S.sheet='';S.sure=null;loadFeed(n);render(true);if(!quiet)setTimeout(()=>document.querySelector('[data-in]')?.focus({preventScroll:true}),50)}  // B177: not for a stand-in a reload opened
 function goView(v){S.view=viewOf(v);S.thread=null;S.ctx=null;S.drawer=false;S.sheet='';S.sure=null;S.kSaid='';render(true);if(S.view==='settings')loadSettings()}
 async function send(){
   const ta=document.querySelector('[data-in]');const text=(ta?.value||'').trim();
@@ -2508,9 +2511,9 @@ async function send(){
   const msg=compose(ctx,text,paths);
   histAdd(key,text);HI.i=null;  // B120: Up brings it back
   store.set(DRAFT_KEY(key),'');if(ta)ta.value='';
-  S.atts=[];S.ctx=null;
+  S.atts=[];
   const rq=sendReq(ctx,to,msg);
-  if(rq.name==='new_control'){newChat(rq.name,rq.args,ctx.kind==='new'?'Add a task':`About ${ctx.id||ctx.label}`,msg);return}  // B139
+  if(rq.name==='new_control'){newChat(rq.name,rq.args,ctx.label,msg);return}  // B139
   // F137: out of the box at once, a pending message until chat_to answers (obDone), red with Retry if it fails
   outbox('chat_to',{text:msg,to},{text,key,say:`To ${threadTitle(to)}: ${text||paths.length+' attachment(s)'}`});
   if(S.thread!==to)open(to);
@@ -2519,13 +2522,15 @@ async function send(){
    waiting, and its messages go once it has a name. B139: ask, its first message, shows in the stand-in. */
 function newChat(name,args,say,ask){const known=chats().map(c=>c.name), it=outbox(name,{...args,wait:false},{newchat:true,say,...(ask?{ask}:{})});
   S.waitNew={known,at:Date.now(),ph:'@'+it.cid};open('@'+it.cid)}
+/* F172: a card's Chat opens its new chat view; the session starts with the first message (send) */
 function about(a){
   const [k,v]=[a.split(':')[0],a.slice(a.indexOf(':')+1)];
-  if(a==='new')S.ctx={kind:'new',label:'A new task'};
+  if(a==='new')S.ctx={kind:'new',label:'Add a task'};
   else if(k==='concept'){const c=S.snap.concepts[+v];if(!c)return;S.ctx={kind:'concept',id:c.concept||c.id,title:c.title,label:c.title||c.concept}}
   else if(k==='setting'){const x=settingOf(v);if(!x)return;S.ctx={kind:'setting',id:`[${x.table}] ${x.key}`,title:x.name,label:x.name}}
   else if(k==='plan'){const q=S.snap.queue.find(x=>x.id===v);if(!q)return;S.ctx={kind:'plan',id:q.id,title:q.title,label:`${q.id} ${q.title}`}}
-  open('c1');
+  else return;
+  open(ctxKey(S.ctx));const ta=document.querySelector('[data-in]');if(ta)kbFocus(ta);  // in the tap itself, so a phone's keyboard comes
 }
 async function upload(file){
   const it={name:file.name||'file'};S.atts.push(it);
@@ -2641,7 +2646,6 @@ document.addEventListener('click',async e=>{
     newChat('quick_ask',{key:x.dataset.quick},t,t);return}
   if(x=q('[data-pick]')){const c=S.snap.concepts[+x.dataset.pick],o=c&&(c.options||[])[+x.dataset.o];if(!o)return;
     outbox('answer',{tid:c.id,text:`go with ${o.name}`},{concept:c.id,say:`${c.concept||c.id} · go with ${o.name}`,done:`Going with ${o.name}`});open('c1');return}
-  if(q('[data-unctx]')){S.ctx=null;render(true);return}
   if(x=q('[data-unatt]')){S.atts.splice(+x.dataset.unatt,1);render(true);return}
   if(q('[data-clip]')){$('file').click();return}
   if(q('[data-dict]'))return dictate();  // F115
