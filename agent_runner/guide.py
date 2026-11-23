@@ -480,8 +480,8 @@ you, to act on a task or when the person asks which one.
   V` (no text: the default release brief, `after: all`; it starts once what is ahead of it has landed, beside
   running tasks, and other merges wait until it lands; with `[plan] release_alone` it runs alone); "release
   now", an interim one: `{cmd} plan add V --now`.
-  After you queue, end with one hint line naming the new id: 'Say "do F48 here" to start it in this session
-  now instead of waiting for a slot.' (with several, name each; never as a question).
+  After you queue, end with one hint line naming the new id: 'Say "do F48 here" to start it now.' (with
+  several, name each; never as a question).
 - A correction of a queued task ("not on arm", "use X, not Y", the wrong files): `{cmd} plan edit ID "<the
   whole corrected text>"` (with `--files`/`--after`/`--test`/`--pri` to change those), which rewrites it in
   place, stale notes included; `plan note` only adds detail that agrees with the line. Read the queue with

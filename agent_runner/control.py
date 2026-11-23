@@ -1039,7 +1039,7 @@ def control_verdict(st: dict, cf: dict, now: float, n: int = 0, one_ask: bool = 
         ask = max(cf['ask_idle'], cf['talked']) if talked and cf['ask_idle'] else cf['ask_idle']
         if ask and quiet >= ask:
             return 'ask', q
-        return 'keep', 'its open question is not old enough' if cf['ask_idle'] else 'an open question (control_ask = false)'
+        return 'keep', 'its DECIDE question is not old enough' if cf['ask_idle'] else 'a DECIDE question (control_ask = false)'
     offer = open_question(st['text'], cf['open'])  # F135: not filed, only named in the close's run.log line
     if talked:
         idle, tier = cf['talked'], ' (talked)'

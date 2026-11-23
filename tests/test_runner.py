@@ -6135,7 +6135,7 @@ def test_close_control_tiers(repo: Path):
     eq(R.control_state(talked(0))['said'], 2, 'two person messages')
     eq(v(talked(11 * H))[0], 'keep', 'talked: open at 11 h')
     eq(v(talked(12 * H)), ('close', 'idle 720 min (talked)'), 'talked: closed at 12 h')
-    eq(v(talked(2 * H, 'Done.\nDECIDE: Should I also drop T9?')), ('keep', 'its open question is not old enough'),
+    eq(v(talked(2 * H, 'Done.\nDECIDE: Should I also drop T9?')), ('keep', 'its DECIDE question is not old enough'),
        'F57: talked, open question: not filed at control_ask (2 h)')
     eq(v(talked(11 * H, 'Done.\nDECIDE: Should I also drop T9?'))[0], 'keep', 'F57: talked, open question: open at 11 h')
     eq(v(talked(12 * H, 'Done.\nDECIDE: Should I also drop T9?')), ('ask', 'Should I also drop T9?'),
@@ -6347,8 +6347,10 @@ def test_control_do_it_here(repo: Path):
     """F50: after queueing, the control brief offers to run the task in this session, and maps that ask to take ID."""
     from agent_runner.guide import CONTROL, CONTROL_WATCH
     text = control_text()
-    check('Say "do F48 here" to start it in this session' in text and 'instead of waiting for a slot' in text,
-          'the add-a-task bullet ends with the do-it-here hint', text)
+    check('Say "do F48 here" to start it now.' in text and 'instead of waiting for a slot' not in text,
+          'the add-a-task bullet ends with the do-it-here hint, F135: a statement, everywhere', text)
+    check('**Never end on an offer**' in text and 'end with a line `DECIDE: <question>`' in text,
+          'F135: the brief has the session mark a question work waits on with a DECIDE line', text)
     from agent_runner.guide import topic
     take = ' '.join(topic('take', './run').split())
     check('"do F48 here"' in text and '`./run guide take`' in text, 'C2: the brief points "do F48 here" at guide take', text)
