@@ -141,6 +141,17 @@ Motion shows where a thing came from, where it went, or that it changed. Nothing
 - Every control is a `button`, `a` or form field, reachable by Tab, with a visible `:focus-visible` ring. Esc closes the topmost thing only.
 - Live words (the talk line, the toast) have `role="status"`.
 
+### Keyboard
+
+- iOS shrinks only the visual viewport, not `dvh`. While a keyboard is open, `kbFit()` gives `.app` the visual
+  viewport's height and offset and the class `.kb`; on close both go back to the stylesheet's.
+- While open: no bottom safe-area inset on `.app`, less bottom padding on `.dock` and the sheet, and the header stays
+  on screen. A pinned chat stays at its newest message; one scrolled up stays put.
+- The document never scrolls (`html` and `body` are locked). Only `.body`, `.side`, `.sheet` and small lists scroll.
+  Anything with a text box lives inside `.app` and is sized in % or `cqh`, not vh.
+- Never `scrollIntoView` to show a field being typed in: `kbReveal()` scrolls its own scroller. Pinch zoom is left
+  alone. Safari's own address pill and arrows bar cannot be removed in a tab.
+
 ## Before you finish
 
 1. Phone (390px) and desktop (1280px), light and dark, looked at.
