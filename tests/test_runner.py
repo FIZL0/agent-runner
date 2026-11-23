@@ -6698,6 +6698,9 @@ def test_needs_cmd_f44():
             'that make this very long indeed', '', 't', False)
     got = P.needs_lines([long])[0]
     eq(got, 'B9 - log in to the dashboard and turn on builds', 'F44: a long ask keeps its first sentence only')
+    cmd = 'C:/hostedtoolcache/windows/Python/3.12.10/x64/python.exe D:/a/agent-runner/agent-runner/run login gemini'
+    got = P.needs_lines([('BLOCKED', 'D1', '', f'run `{cmd}` and then wait for the rest of it', '', 't', False)])[0]
+    eq(got, f'D1 - run `{cmd}`…', 'B150: the cut never lands inside a command')
     concept = ('CONCEPT', 'F9', 'K4', P.CONCEPT_ASK, 'https://x.example/k4', 'Sync options', False)
     eq(P.needs_lines([concept])[0], 'K4 - pick an option for sync options', 'F44: a concept by its K id')
     rb = ' '.join(RUNNER_BRIEF.format(cmd='run', repo='r', answer='').split())

@@ -218,6 +218,7 @@ class Tells {
     this.waiters = [];
     this.buf = '';
     this.paste = false;
+    this.cr = false; // the last character was '\r': a '\n' after it is the same line end (CRLF, as Windows pipes it)
     if (input.isTTY && input.setRawMode) { // raw: a tell is not cut at the terminal's line limit (4 KB)
       input.setRawMode(true);
       if (process.platform !== 'win32') spawnSync('stty', ['opost', 'onlcr'], { stdio: ['inherit', 'ignore', 'ignore'] });
@@ -230,9 +231,12 @@ class Tells {
 
   feed(data) {
     for (let i = 0; i < data.length; i++) {
-      if (data.startsWith('\x1b[200~', i)) { this.paste = true; i += 5; continue; }
-      if (data.startsWith('\x1b[201~', i)) { this.paste = false; i += 5; continue; }
+      if (data.startsWith('\x1b[200~', i)) { this.paste = true; this.cr = false; i += 5; continue; }
+      if (data.startsWith('\x1b[201~', i)) { this.paste = false; this.cr = false; i += 5; continue; }
       const c = data[i];
+      const crlf = this.cr && c === '\n';
+      this.cr = c === '\r';
+      if (crlf) continue;
       if ((c === '\r' || c === '\n') && !this.paste) { this.push(this.buf); this.buf = ''; continue; }
       if (c === '\x03') process.exit(130); // Ctrl-C in its terminal
       if (c === '\x1b' && !this.paste) continue; // a lone Escape (an interrupt to Claude Code): nothing here

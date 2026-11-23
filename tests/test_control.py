@@ -2,6 +2,8 @@
 shutdown. (C26 dropped B94's tests of the background tmux session, which is gone.)"""
 from __future__ import annotations
 
+import contextlib
+import os
 import re
 import subprocess
 import tempfile
@@ -70,10 +72,17 @@ def test_brief_fits_session_start():
         check(len(brief) < K.BRIEF_MAX == 9500, f'with a voice file and the needs-you watch: {len(brief)} chars')
         check(all(r in brief for r in rules), 'the wording itself is carried inline')
         for core in ('**Never edit code or plan files here**', '**Never commit, merge or push in this checkout**',
-                     f'{cmd} plan add <KIND>', f'{cmd} guide take', '**Open the session.**',
-                     f'{cmd} control --title', '**Push what the person asked to hear', 'never push the main branch',
-                     f'{cmd} since --follow --needs-you'):
+                     '**Open the session.**', '**Push what the person asked to hear', 'never push the main branch'):
             check(core in brief, f'core rule inline: {core}')
+        # B150: the voice file's path is in the brief, so a longer temp folder takes it past BRIEF_MAX and its
+        # commands go bare (B104): either form carries the rule, each is tested below whatever this machine's paths
+        for core in ('plan add <KIND>', 'guide take', 'control --title', 'since --follow --needs-you'):
+            check(f'{cmd} {core}' in brief or f'`{core}' in brief, f'core rule inline: {core}')
+            with mock.patch.object(K, 'BRIEF_MAX', 10 ** 6):
+                check(f'{cmd} {core}' in K.control_brief(), f'with room, its full command: {core}')
+            with mock.patch.object(voice, '_shown', lambda p: '/deep' * 30 + '/voice.md'):
+                deep = K.control_brief()
+            check(f'`{core}' in deep and len(deep) < K.BRIEF_MAX, f'under a deep path, bare: {core}')
         for t in G.CONTROL_TOPIC_NAMES:
             check(f'`{t}`' in brief or f'guide {t}`' in brief, f'the brief names `guide {t}`')
             page = G.control_topic(t, cmd, 'Needs you', R.C)
@@ -434,7 +443,6 @@ def test_second_shim_keeps_live_session():
 def test_first_message_typed_after_remote_control():
     print('B147: on Remote Control under the hidden shim the first message is not a positional prompt (it would '
           'run before the bridge connects); it is typed in through the FIFO once the claude.ai/code link shows')
-    import os
     import threading
     import time
     from agent_runner import control_first as KF, runner as R
@@ -498,9 +506,13 @@ def test_first_message_typed_after_remote_control():
     marker, log_file, inbox = d / 'control3.live', d / 'control3.log', d / 'control3.in'
     log_file.write_text('earlier run https://claude.ai/code/session_old\n', encoding='utf-8')
     since = log_file.stat().st_size
-    os.mkfifo(inbox, 0o600)
-    rd = os.open(inbox, os.O_RDONLY | os.O_NONBLOCK)
-    linked = []
+    linked, typed = [], []
+    if os.name != 'nt':
+        os.mkfifo(inbox, 0o600)
+        rd = os.open(inbox, os.O_RDONLY | os.O_NONBLOCK)
+        fifo = contextlib.nullcontext()
+    else:  # no FIFO on Windows: what send_fifo is asked to type, after the same wait for the link
+        fifo = mock.patch('agent_runner.slots.send_fifo', lambda i, text: typed.append((i, text)) or True)
 
     def bridge_up():
         time.sleep(0.8)
@@ -509,10 +521,14 @@ def test_first_message_typed_after_remote_control():
             fh.write('Remote Control active https://claude.ai/code/session_new\n')
     t = threading.Thread(target=bridge_up)
     t.start()
-    with mock.patch.object(KF, 'FIRST_SETTLE', 0.0):
+    with mock.patch.object(KF, 'FIRST_SETTLE', 0.0), fifo:
         ok = KF.type_first(marker, ask, since, wait=10)
     sent = time.monotonic()
     t.join()
+    check(ok and linked and sent >= linked[0], 'typed only after the link showed (not the earlier run\'s)', (ok, linked))
+    if os.name == 'nt':
+        eq(typed, [(inbox, ask)], 'the ask went to its FIFO')
+        return
     got = b''
     while True:
         try:
@@ -523,7 +539,6 @@ def test_first_message_typed_after_remote_control():
             break
         got += chunk
     os.close(rd)
-    check(ok and linked and sent >= linked[0], 'typed only after the link showed (not the earlier run\'s)', (ok, linked))
     eq(got, b'\x1b[200~hi\x1b[201~\r', 'the ask went through the FIFO as a paste and Enter')
 
 
