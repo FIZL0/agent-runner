@@ -67,7 +67,10 @@ def test_stop_and_force() -> None:
         check(not r['ok'] and ('sent', 'hi') not in s.got, 'one that never rests gets nothing', s.got)
     with Session() as s:
         N.force_send('c2', '!ls', s.send)
-        eq(s.got, ['Escape', ('sent', '!ls')], 'a shell line stays first')
+        eq(s.got, ['Escape', '\x13', ('sent', '!ls')], 'a command stands first: what was put back is set aside')
+    with Session('idle') as s:
+        N.force_send('c2', 'hi', s.send, unsent=True)
+        eq(s.got, ['\n', ('sent', 'hi')], 'idle with words left in its input: below them')
     with Session() as s, mock.patch.object(U, 'send', s.send):
         eq((U.act('chat_to', text='hi', to='c2', force=True)['ok'], s.got[-1]), (True, ('sent', 'hi')), 'chat_to force')
 

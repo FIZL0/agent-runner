@@ -195,17 +195,19 @@ def rest(session: str) -> str:
     return f'{session} did not stop, so the message was not sent'
 
 
-def force_send(session: str, text: str, send) -> dict:
+def force_send(session: str, text: str, send, unsent: bool = False) -> dict:
     """Force send: interrupt `session` while it works, wait until it rests, then `send(session, text)` once; idle, it
     just sends. Interrupted before it had answered at all, Claude Code puts that prompt back in its input: the new
-    message goes on a line of its own below it, so both reach it, once."""
-    if status(session) != BUSY:
+    message goes on a line of its own below it, so both reach it, once (a command goes first, and the prompt stays in the input)."""
+    busy = status(session) == BUSY
+    if not busy and not unsent:
         return send(session, text)
-    if why := rest(session):
+    if busy and (why := rest(session)):
         return _fail(why)
-    if not text.startswith('!'):
-        U.keys(session, text='\n')  # ctrl+j: a new line in Claude Code's input
-        time.sleep(0.1)
+    # ctrl+j: a new line in Claude Code's input. A command must stand first, so before one ctrl+s sets the prompt that
+    # was put back aside: it comes back once the command is sent
+    U.keys(session, text='\x13' if text[:1] in '!/' else '\n')
+    time.sleep(0.2)
     return send(session, text)
 
 

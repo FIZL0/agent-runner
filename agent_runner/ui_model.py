@@ -1332,14 +1332,14 @@ def send(name: str, text: str) -> dict:
             'argv': []}
 
 
-def chat_to(text: str, to: str = 'c1', force: bool = False) -> dict:
+def chat_to(text: str, to: str = 'c1', force: bool = False, unsent: bool = False) -> dict:
     """F74: the chat box of any control session: `to` (c1, c6) gets `text`. B154: 'at' is when it was typed, and
     'name' the new control session that took it when c1 was not up. F170: `force` interrupts it first while it works
-    (`session_now.force_send`)."""
+    (`session_now.force_send`); `unsent`: the page sees words in its input, so the text goes below them."""
     at = time.time()
-    if force:
+    if force or unsent:
         from agent_runner.session_now import force_send
-        r = {**force_send(to, text, send), 'at': at}
+        r = {**force_send(to, text, send, unsent), 'at': at}
     else:
         r = {**send(to, text), 'at': at}
     n = re.search(r'\bcontrol (\d+) ', r.get('out') or '') if to == 'c1' and r['ok'] else None

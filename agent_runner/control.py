@@ -766,7 +766,7 @@ def hidden_shim(stem: str, cmd: list[str], wait: float | None = None) -> tuple[i
     ended = marker.with_suffix('.exit')
     marker.unlink(missing_ok=True)
     ended.unlink(missing_ok=True)
-    job.write_text(json.dumps({'argv': cmd, 'cwd': str(ROOT), 'env': {}, 'marker': str(marker), 'look': session_theme.SETTING,
+    job.write_text(json.dumps({'argv': cmd, 'cwd': str(ROOT), 'env': {}, 'marker': str(marker), 'look': session_theme.settings().get('theme', ''),
                                'log': str(C.notes(f'{stem}.log'))}), encoding='utf-8')
     shim = [*runner_cmd(), 'run', '--slot-shim', str(job)]
     try:

@@ -789,6 +789,7 @@ BUILTIN_COMMANDS = (  # F170: Claude Code's own, as its 2.1.330 lists them (it k
     ('clear', 'Start the conversation over'),
     ('compact', 'Summarise the conversation so far to free context'),
     ('context', 'Show how full the context is'),
+    ('cost', 'Show what this session has used'),
     ('model', 'Pick the model'),
     ('memory', 'Edit the memory files'),
     ('help', 'List the commands'),
