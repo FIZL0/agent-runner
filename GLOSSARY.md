@@ -378,3 +378,10 @@ _Said_: other machine, other Home
 _On screen_: Devices
 _In code_: peers, peer add, peer_links
 _Avoid_: node, remote host
+
+**Talk**:
+The run app's spoken chat: the person taps a big mic and speaks, its own control session answers in short spoken sentences, and the reply is read aloud; a chat box under it takes typing.
+_Said_: talk mode, by voice, hands-free
+_On screen_: Talk
+_In code_: talk (web action), talk_ask, TALK_BRIEF, talkSend
+_Avoid_: voice mode, assistant, dictation

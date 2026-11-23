@@ -185,6 +185,15 @@ a{color:var(--accent)}
   .grid2{grid-template-columns:1fr 1fr}
 }
 .grid2{display:grid;gap:12px}
+/* F93: Talk: a big mic button over the chat box */
+.talk{display:grid;justify-items:center;gap:8px;max-width:720px;margin:0 auto 10px}
+.mic{width:min(38vw,132px);height:min(38vw,132px);border-radius:50%;border:0;background:var(--accent);color:var(--onaccent);display:grid;place-items:center;cursor:pointer;box-shadow:0 6px 24px var(--shadow);touch-action:manipulation}
+.mic svg{width:44%;height:44%;stroke-width:1.8}
+.mic.on{background:var(--bad);animation:pulse 1.2s infinite}
+.mic.speaking{background:var(--accent2)}
+.mic:disabled{background:var(--line2);color:var(--muted);cursor:default;box-shadow:none}
+.talkline{font:15px/1.45 var(--sans);color:var(--muted);text-align:center;min-height:1.45em;max-width:34em;overflow-wrap:anywhere}
+@media (prefers-reduced-motion:reduce){.mic.on{animation:none}}
 @media (prefers-reduced-motion:reduce){.side,.steps svg{transition:none}.livedot,.think .logo{animation:none}}
 </style>
 </head>
@@ -299,7 +308,31 @@ const NO_CONCEPT='No concept waits for a pick.';
 function newConceptReq(text){const t=String(text||'').trim();return t?{name:'plan_add',args:{kind:'K',text:t}}:null}
 /* the id plan add gave the new task, from its output ('' when it names none) */
 const queuedId=out=>((String(out||'').match(/\bK\d+[a-z]?\b/)||[''])[0]);
-if(typeof module!=='undefined')module.exports={answerOpts,threadMsgs,working,planWords,compose,usageOf,logKind,plain,chatName,controlReq,controlClick,taskControlsOn,queueGroups,conceptButtons,NO_CONCEPT,newConceptReq,queuedId};
+/* F93: Talk. The sidebar's views, Talk first; its control session: the one this browser remembers while it is
+   live, else a live chat titled Talk, else '' (the next send opens one) */
+const NAV=[['talk','Talk'],['home','Home'],['agents','Agents'],['activity','Activity'],['plan','Plan'],['concepts','Concepts']];
+function talkSession(sessions,remembered){
+  const live=(sessions||[]).filter(s=>/^c\d+$/.test(s.name)&&s.state==='live');
+  const r=live.find(s=>s.name===remembered);if(r)return r.name;
+  const t=live.find(s=>s.title==='Talk');return t?t.name:'';
+}
+/* why the mic cannot listen here ('' when it can): Chrome gives the mic only to https or localhost */
+function micProblem(secure,hasRecognition){
+  if(!secure)return 'The mic needs https or localhost, and this address is plain http. Type below instead.';
+  if(!hasRecognition)return 'This browser cannot turn speech into text (Chrome, Edge and Safari can). Type below instead.';
+  return '';
+}
+/* a Talk message as the person said it: without the first message's brief or a later one's reminder */
+const talkShown=t=>{t=String(t||'');const i=t.indexOf('\n\nThey said: ');
+  return (/^Talk mode:/.test(t)&&i>=0?t.slice(i+13):t.replace(/^\(Talk: [^)]*\) /,'')).trim()};
+/* the reply to read aloud: the session's words after feed entry `since`, once its last entry is its words
+   ('' while it still works or has said nothing new) */
+function talkReply(entries,since){
+  const es=(entries||[]).slice(since||0);
+  if(!es.length||es[es.length-1].kind!=='say')return '';
+  return es.filter(e=>e.kind==='say').map(e=>plain(e.text)).join(' ').trim();
+}
+if(typeof module!=='undefined')module.exports={answerOpts,threadMsgs,working,planWords,compose,usageOf,logKind,plain,chatName,controlReq,controlClick,taskControlsOn,queueGroups,conceptButtons,NO_CONCEPT,newConceptReq,queuedId,NAV,talkSession,micProblem,talkShown,talkReply};
 </script>
 
 <script>
@@ -312,6 +345,7 @@ const I={
  edit:ic('<path d="M12 20h8"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/>'),
  // F84: the top bar's New chat: a speech bubble with a +, stroked in currentColor so it reads in both themes
  newchat:`<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 12a8 8 0 0 1-11.6 7.1L4 20l.9-4.4A8 8 0 1 1 20 12z"/><path d="M12 8.5v7M8.5 12h7"/></svg>`,
+ talk:ic('<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21M8.5 21h7"/>'),  // F93: a mic
  home:ic('<path d="M4 10.5 12 4l8 6.5V20H4z"/><path d="M10 20v-5h4v5"/>'),
  agents:ic('<circle cx="12" cy="8" r="3.5"/><path d="M5 20c.8-3.6 3.6-5.5 7-5.5s6.2 1.9 7 5.5"/>'),
  activity:ic('<path d="M3 12h4l3-7 4 14 3-7h4"/>'),
@@ -340,7 +374,7 @@ const $=id=>document.getElementById(id);
 const store={get(k){try{return localStorage.getItem(k)||''}catch(e){return''}},
   set(k,v){try{v?localStorage.setItem(k,v):localStorage.removeItem(k)}catch(e){}}};
 const DRAFT_KEY=k=>'ar-draft:'+k;  /* a box's draft, kept per thread (and Home) across refreshes */
-const boxKey=()=>S.thread||'home';
+const boxKey=()=>S.thread||(S.view==='talk'?'talk':'home');
 
 function toast(msg,bad){const t=$('toast');t.textContent=msg;t.className='toast'+(bad?' bad':'');t.hidden=false;
   clearTimeout(toast.h);toast.h=setTimeout(()=>t.hidden=true,bad?6000:3000)}
@@ -383,7 +417,7 @@ function md(src){
 
 /* --- drawing ----------------------------------------------------------------------------------------------- */
 function side(){
-  const nav=[['home','Home'],['agents','Agents'],['activity','Activity'],['plan','Plan'],['concepts','Concepts']];
+  const nav=NAV;  // F93: Talk first
   const needs=S.snap.needs.length, use=usageOf(S.snap.status), cn=(S.snap.concepts||[]).length;
   const count={home:needs,concepts:cn};
   const cs=chats(), ws=working_();
@@ -443,22 +477,23 @@ function box(ph,foot){
   return `<form class="box" data-form>${S.ctx?`<div class="ctx">About: <b>${esc(S.ctx.label)}</b><button type="button" class="x" data-unctx aria-label="Remove">✕</button></div>`:''}
     ${a.length?`<div class="atts">${a.map((f,i)=>`<span class="att ${f.path?'':f.err?'err':'up'}" title="${esc(f.err||f.path||'uploading…')}">${f.thumb?`<img src="${f.thumb}" alt="">`:`<span class="fi">${I.file}</span>`}<span class="nm">${esc(f.name)}</span><button type="button" class="x" data-unatt="${i}" aria-label="Remove">✕</button></span>`).join('')}</div>`:''}
     <textarea rows="1" data-in placeholder="${esc(ph)}" aria-label="Message"></textarea>
-    <div class="boxrow"><button type="button" class="tool" data-clip aria-label="Attach pictures or files">${I.clip}</button><span class="to">${esc(S.thread?S.thread:'to c1')}</span>${busyNow?`<button type="button" class="send stop" data-stop aria-label="Interrupt">${I.stop}</button>`:''}<button class="send" aria-label="Send">${I.up}</button></div></form>${foot?`<div class="foot">${foot}</div>`:''}`;
+    <div class="boxrow"><button type="button" class="tool" data-clip aria-label="Attach pictures or files">${I.clip}</button><span class="to">${esc(S.thread?S.thread:S.view==='talk'?'to Talk':'to c1')}</span>${busyNow?`<button type="button" class="send stop" data-stop aria-label="Interrupt">${I.stop}</button>`:''}<button class="send" aria-label="Send">${I.up}</button></div></form>${foot?`<div class="foot">${foot}</div>`:''}`;
 }
-function convo(n){
+function convo(n,shown){  // F93: shown, how a message of yours shows (Talk: without its brief or reminder)
+  shown=shown||(t=>t);
   const f=S.feeds[n], agent=isAgent(n), title=threadTitle(n);
   if(!f)return '<div class="msgs"><div class="think"><span class="logo">ar</span>Loading…</div></div>';
   const ms=threadMsgs(f.entries);
   let h=f.more?'<div class="more">Older messages are on its session page.</div>':'';
   if(!ms.length)h+=`<div class="small" style="text-align:center">${esc(f.out||'Nothing said here yet.')}</div>`;
   ms.forEach((m,i)=>{
-    if(m.w==='u'){h+=`<div class="u">${esc(m.text)}</div>`;return}
+    if(m.w==='u'){h+=`<div class="u">${esc(shown(m.text))}</div>`;return}
     const lead=i===0||ms[i-1].w!=='a'?`<div class="lead"><span class="logo">${agent?esc(n):'ar'}</span>${esc(agent?title:'agent-runner')}</div>`:'';
     const k=n+':'+i, open=S.openSteps[k];
     const st=m.steps.length?`<button class="steps ${open?'open':''}" data-steps="${esc(k)}">${I.chev}Ran ${m.steps.length} step${m.steps.length>1?'s':''}</button>${open?`<div class="stepbox">${m.steps.map(s=>esc(s.tool)+(s.out?`\n<span class="o">  ${esc(s.out).replace(/\n/g,'\n  ')}</span>`:'')).join('\n')}</div>`:''}`:'';
     h+=`<div class="a">${lead}${st}${m.text?`<div>${md(m.text)}</div>`:''}</div>`;
   });
-  for(const p of (S.sent[n]&&S.sent[n].pending)||[])h+=`<div class="u pending">${esc(p)}</div>`;
+  for(const p of (S.sent[n]&&S.sent[n].pending)||[])h+=`<div class="u pending">${esc(shown(p))}</div>`;
   if(busy(n))h+=`<div class="think"><span class="logo">ar</span>Working on it… · Ctrl+C interrupts<button type="button" class="btn mini" data-stop="${esc(n)}">Stop</button></div>`;
   return `<div class="msgs">${h}</div>`;
 }
@@ -503,11 +538,12 @@ let lastBody='';
 function render(force){
   side();
   const n=S.thread;
-  $('top').innerHTML=`<button class="icon menu" data-menu aria-label="Menu">${I.menu}</button>${n?`<button class="icon" data-home aria-label="Back">${I.back}</button>`:''}<div class="title">${n?esc(threadTitle(n)):{home:'',agents:'Agents',activity:'Activity',plan:'Plan',concepts:'Concepts'}[S.view]}</div>${n&&sessionOf(n)&&sessionOf(n).link?`<a class="icon" href="${esc(sessionOf(n).link)}" target="_blank" rel="noopener" aria-label="Open its session" title="Open its session">${I.ext}</a>`:''}<button class="icon" data-new aria-label="New chat" title="New chat">${I.newchat}</button>`;
+  $('top').innerHTML=`<button class="icon menu" data-menu aria-label="Menu">${I.menu}</button>${n?`<button class="icon" data-home aria-label="Back">${I.back}</button>`:''}<div class="title">${n?esc(threadTitle(n)):{talk:'Talk',home:'',agents:'Agents',activity:'Activity',plan:'Plan',concepts:'Concepts'}[S.view]}</div>${n&&sessionOf(n)&&sessionOf(n).link?`<a class="icon" href="${esc(sessionOf(n).link)}" target="_blank" rel="noopener" aria-label="Open its session" title="Open its session">${I.ext}</a>`:''}<button class="icon" data-new aria-label="New chat" title="New chat">${I.newchat}</button>`;
   let h='',dock='';
   if(n){const agent=isAgent(n);h=`<div class="col">${convo(n)}</div>`;
     dock=box(agent?`Message ${threadTitle(n)}`:S.ctx&&S.ctx.kind==='new'?'Describe the task in your own words':`Reply to ${threadTitle(n)}`,
       agent?'Goes straight to this agent, between its steps.':'Enter sends, Shift+Enter starts a new line.')}
+  else if(S.view==='talk'){h=talkHTML();dock=talkDock()}
   else h={home:homeHTML,agents:agentsHTML,activity:activityHTML,plan:planHTML,concepts:conceptsHTML}[S.view]();
   const ta=document.querySelector('[data-in]'), focused=ta&&document.activeElement===ta, sel=ta?[ta.selectionStart,ta.selectionEnd]:null;
   const kta=document.querySelector('[data-kin]'), kfocused=kta&&document.activeElement===kta;
@@ -522,6 +558,80 @@ function render(force){
   if(n&&(atEnd||force))body.scrollTop=1e9;
 }
 function grow(ta){ta.style.height='auto';ta.style.height=Math.min(ta.scrollHeight,160)+'px'}
+
+/* --- F93: Talk: the mic hears the person (Web Speech API), the words go to the Talk session (the `talk` action),
+   and its reply is read aloud (speechSynthesis); the chat box under the mic works without either ------------- */
+const TALK_KEY='ar-talk';  /* the Talk session this browser opened */
+const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+const TK={rec:null,heard:'',state:'',wait:null,said:'',unlocked:false};  /* state: '', listening, thinking, speaking */
+function talkName(){
+  const n=talkSession(S.snap.sessions,store.get(TALK_KEY));if(n)return n;
+  const w=TK.wait;return w&&Date.now()-w.at<90000?w.n:'';  /* just opened: not in the snapshot yet */
+}
+const micWhy=()=>micProblem(window.isSecureContext!==false,!!SR);
+function talkHTML(){
+  const n=talkName();
+  if(!n)return `<div class="col"><div class="greet"><span class="logo">ar</span>Talk to the run</div><div class="small" style="text-align:center">Tap the mic and ask, say, what is going on: the reply is read aloud. Talk opens a chat of its own the first time.</div></div>`;
+  if(!S.feeds[n]&&!TK.loading){TK.loading=true;loadFeed(n).finally(()=>{TK.loading=false})}  /* its first look */
+  return `<div class="col">${convo(n,talkShown)}</div>`;
+}
+function talkDock(){
+  const why=micWhy(), st=TK.state;
+  const line=why||(st==='listening'?(TK.heard||'Listening…'):st==='thinking'?'Thinking…':st==='speaking'?'Speaking. Tap to stop and talk.':'Tap to talk');
+  const label=why||(st==='listening'?'Stop listening':st==='speaking'?'Stop speaking and talk':'Talk');
+  return `<div class="talk"><button type="button" class="mic ${st==='listening'?'on':st==='speaking'?'speaking':''}" data-mic aria-label="${esc(label)}" title="${esc(label)}" ${why?'disabled':''}>${st==='speaking'?I.stop:I.talk}</button><div class="talkline" role="status">${esc(line)}</div></div>`
+    +box('Or type to Talk','Replies are read aloud.');
+}
+/* the person's words to the Talk session; true once sent */
+async function talkSend(msg){
+  const to=talkName(), len=to?feedOf(to).length:0;
+  TK.state='thinking';TK.said=msg;unlockSpeech();render(true);
+  const r=await act('talk',{text:msg,to});
+  if(!r.ok){TK.state='';render(true);return false}
+  const n=r.session||to, fresh=n!==to;
+  if(n){store.set(TALK_KEY,n);TK.wait={n,since:fresh?0:len,at:Date.now(),last:''};
+    S.sent[n]={at:Date.now(),len:fresh?0:len,pending:[msg]};loadFeed(n)}
+  else{TK.state='';toast('Talk is opening its chat: it shows here once it is up')}
+  render(true);return true;
+}
+/* a new feed for session n: once the Talk reply has stood for one poll, read it aloud */
+function talkHear(n){
+  const w=TK.wait;if(!w||w.n!==n)return;
+  if(Date.now()-w.at>300000){TK.wait=null;if(TK.state==='thinking')TK.state='';return}
+  const said=talkReply(feedOf(n),w.since);
+  if(!said||said!==w.last){w.last=said;return}
+  TK.wait=null;speak(said);
+}
+function unlockSpeech(){  /* Safari speaks later only after a first utterance inside a tap */
+  try{if(window.speechSynthesis&&!TK.unlocked){speechSynthesis.speak(new SpeechSynthesisUtterance(''));TK.unlocked=true}}catch(e){}
+}
+function speak(text){
+  const ss=window.speechSynthesis;
+  if(!ss||!text){TK.state='';render(true);return}
+  ss.cancel();
+  const parts=text.match(/[^.!?]+[.!?]*\s*/g)||[text];  /* sentence by sentence: Chrome cuts one long utterance short */
+  parts.forEach((p,i)=>{const u=new SpeechSynthesisUtterance(p.trim());u.lang=navigator.language||'en-US';
+    if(i===parts.length-1)u.onend=u.onerror=()=>{if(TK.state==='speaking'){TK.state='';render(true)}};
+    ss.speak(u)});
+  TK.state='speaking';render(true);
+}
+function listen(){
+  const why=micWhy();if(why)return toast(why,true);
+  if(TK.state==='listening'){if(TK.rec)TK.rec.stop();return}
+  if(window.speechSynthesis)speechSynthesis.cancel();
+  unlockSpeech();
+  let rec;try{rec=new SR()}catch(e){return toast(`The mic could not start: ${e.message||e}`,true)}
+  TK.rec=rec;rec.lang=navigator.language||'en-US';rec.interimResults=true;rec.continuous=false;
+  let final='';
+  rec.onresult=e=>{let interim='';for(let i=e.resultIndex;i<e.results.length;i++){const x=e.results[i];if(x.isFinal)final+=x[0].transcript;else interim+=x[0].transcript}
+    TK.heard=(final+interim).trim();render(true)};
+  rec.onerror=e=>{if(e.error==='not-allowed'||e.error==='service-not-allowed')toast('The browser did not let the page use the mic: allow it in the site settings, or type below.',true);
+    else if(e.error!=='no-speech'&&e.error!=='aborted')toast(`The mic stopped: ${e.error}`,true)};
+  rec.onend=()=>{TK.rec=null;const t=(final||TK.heard).trim();TK.heard='';if(TK.state==='listening')TK.state='';
+    if(t)talkSend(t);else render(true)};
+  TK.state='listening';TK.heard='';render(true);
+  try{rec.start()}catch(e){TK.state='';TK.rec=null;toast(`The mic could not start: ${e.message||e}`,true);render(true)}
+}
 
 /* --- live data --------------------------------------------------------------------------------------------- */
 /* F90: the run's version from the first snapshot that has one; a later, different one (the run restarted on an
@@ -551,10 +661,12 @@ async function loadFeed(n){
   try{const f=await (await fetch(tq('feed/'+encodeURIComponent(n)))).json();
     const old=S.feeds[n];S.feeds[n]={...f,at:Date.now()};
     const sent=S.sent[n];if(sent&&(f.entries||[]).length>sent.len)sent.pending=[];
+    talkHear(n);  // F93
     if(!old||JSON.stringify(old.entries)!==JSON.stringify(f.entries)||old.out!==f.out)render()}
   catch(e){}
 }
 setInterval(()=>{if(S.thread&&!document.hidden)loadFeed(S.thread)},2000);
+setInterval(()=>{const n=talkName();if(n&&!S.thread&&S.view==='talk')loadFeed(n)},2000);  // F93
 
 /* --- doing things ------------------------------------------------------------------------------------------ */
 function open(n){S.thread=n;S.drawer=false;loadFeed(n);render(true);setTimeout(()=>document.querySelector('[data-in]')?.focus(),50)}
@@ -564,6 +676,7 @@ async function send(){
   if(S.atts.some(a=>!a.path&&!a.err))return toast('Wait for the attachments to finish uploading');
   const paths=S.atts.filter(a=>a.path).map(a=>a.path);
   if(!text&&!paths.length)return;
+  if(!S.thread&&S.view==='talk'){if(await talkSend(compose(null,text,paths))){store.set(DRAFT_KEY(boxKey()),'');if(ta)ta.value='';S.atts=[];render(true)}return}  // F93
   const ctx=S.ctx, to=S.thread||'c1', key=boxKey();
   const msg=compose(ctx,text,paths);
   const r=await act('chat_to',{text:msg,to});
@@ -595,6 +708,7 @@ async function upload(file){
 document.addEventListener('click',async e=>{
   const q=s=>e.target.closest(s);let x;
   if(x=q('[data-viewsw]')){try{localStorage.setItem(VIEW_KEY,x.dataset.viewsw)}catch(err){}return}  // F81: the link goes on
+  if(q('[data-mic]'))return listen();  // F93
   if(q('[data-menu]')){S.drawer=true;render();return}
   if(q('#scrim')){S.drawer=false;render();return}
   if(x=q('[data-view]'))return goView(x.dataset.view);
