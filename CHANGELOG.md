@@ -137,6 +137,9 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 - Fixes: on Windows, `wizard` works with a default Git for Windows install (its installer puts only Git\cmd on PATH, so
   no bash was found): after PATH it looks for bin\bash.exe beside git, and with none it says in one line that Git Bash
   is missing instead of a traceback. System32's WSL bash is no longer used as a fallback (B159).
+- Fixes: Runner Home restarts itself when agent-runner's package files change on disk (an upgrade, or a clone's pull,
+  same version or not), once the change holds over two 5 s looks, and never while a request or terminal tunnel is
+  open. Before, it kept the version it started with until the service restarted. Not on Windows (B165).
 
 ## 0.61.0 (2026-11-23)
 
