@@ -1135,7 +1135,8 @@ def settings_snapshot(root: Path) -> dict:
         rows = []
         for k, d in keys.items():
             row = {'key': k, 'type': setting_type(t, k), 'choices': list(setting_choices(t, k)), 'default': d,
-                   'off': 'off' in SETTING_ALSO.get((t, k), ()), 'help': docs.get(t, {}).get(k, ''),
+                   'off': 'off' in SETTING_ALSO.get((t, k), ()), 'also': list(SETTING_ALSO.get((t, k), ())),
+                   'help': docs.get(t, {}).get(k, ''),
                    'applies': 'now' if (t, k) in SETTING_NOW else 'next run', 'value': d, 'source': 'default'}
             for side in ('project', 'device'):
                 have = raws[side].get(t)

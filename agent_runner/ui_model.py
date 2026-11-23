@@ -1346,14 +1346,14 @@ def need_chat(tid: str, wait: bool = True) -> dict:
     return new_control(need_chat_text(row), wait)
 
 
-def rename_chat(name: str, title: str) -> dict:
-    """F129: the person's own name for control session `name` (c1, c6): `control --rename N NAME`."""
+def rename_chat(chat: str, title: str) -> dict:
+    """F129: the person's own name for control session `chat` (c1, c6): `control --rename N NAME`."""
     title = ' '.join(str(title or '').split())
-    if not re.fullmatch(r'c\d+', name or ''):
-        return {'ok': False, 'code': 2, 'out': f'rename_chat: not a chat: {name!r}', 'argv': []}
+    if not re.fullmatch(r'c\d+', chat or ''):
+        return {'ok': False, 'code': 2, 'out': f'rename_chat: not a chat: {chat!r}', 'argv': []}
     if not title:
         return {'ok': False, 'code': 2, 'out': 'rename_chat: a name, please', 'argv': []}
-    return call(['control', '--rename', name[1:], title])
+    return call(['control', '--rename', chat[1:], title])
 
 
 def task_text(tid: str) -> dict:
