@@ -385,3 +385,10 @@ _Said_: device alert
 _On screen_: needs you: box: CPU at 95°C (over 90°C)
 _In code_: EV_DEVICE, vitals.push_alert
 _Avoid_: drift
+
+**Talk**:
+The run app's spoken chat: the person taps a big mic and speaks, its own control session answers in short spoken sentences, and the reply is read aloud; a chat box under it takes typing.
+_Said_: talk mode, by voice, hands-free
+_On screen_: Talk
+_In code_: talk (web action), talk_ask, TALK_BRIEF, talkSend
+_Avoid_: voice mode, assistant, dictation

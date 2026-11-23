@@ -933,10 +933,80 @@ def test_follow_version_f90(tmp: Path) -> None:
         eq(never, [[False] * 3, 0], f'{path.name}: an older run, never a version: nothing')
 
 
+def test_talk_f93(tmp: Path) -> None:
+    """F93: Talk is the first view in the sidebar; a Talk send opens its own control session titled Talk whose
+    first message carries the spoken-reply instruction, and later sends to it carry the reminder; the page finds
+    that session, says why the mic cannot listen, shows the person's words alone and reads the reply aloud."""
+    from agent_runner import control as CT
+    fake_repo(tmp)
+    page = W.page_html().decode()
+    check('const nav=NAV;' in page.split('function side(){', 1)[1].split('\nfunction ', 1)[0],
+          'the sidebar draws its views from NAV')
+    check("act('talk',{text:msg,to})" in page and 'data-mic' in page and 'webkitSpeechRecognition' in page
+          and 'speechSynthesis.speak' in page, 'the Talk view: a mic, Web Speech, the talk action, read aloud')
+    ask = CT.talk_ask('what is going on?')
+    for words in ('short plain sentences', 'Never say task IDs, branch names, file paths, commands, links',
+                  'no markdown', 'lists, tables', 'round numbers', 'one thing at a time'):
+        check(words in ask, f'the Talk brief says: {words}')
+    eq(CT.control_title(ask), 'Talk', 'a Talk session is titled Talk')
+    eq(CT.control_title('Talk mode: what now'), 'Talk mode: what now', 'a typed "Talk mode:" ask is not Talk')
+    eq(U.given_title(CT.control_name(7, ask), 7), 'Talk', 'and the run page lists it as Talk')
+    token = W.web_token()
+    srv = W.serve(token, 0, '127.0.0.1', snap=lambda: {})
+    url = f'http://127.0.0.1:{srv.server_address[1]}/act?t={token}'
+    calls, typed = [], []
+    try:
+        with mock.patch.object(U, 'RUN', [lambda argv: (calls.append(argv), (0, 'control 7 is up in a hidden terminal'))[1]]):
+            code, out = post(url, {'name': 'talk', 'args': {'text': ' what is going on? ', 'to': ''}})
+            eq((code, out.get('ok'), out.get('session')), (200, True, 'c7'), 'the first Talk send opens c7')
+            eq(calls, [['control', '--new', '--ask', ask]], 'with the spoken-reply instruction as its first message')
+            with mock.patch.object(U, 'chat_to', lambda text, to: (typed.append((to, text)),
+                                                                   {'ok': True, 'code': 0, 'out': '', 'argv': []})[1]):
+                code, out = post(url, {'name': 'talk', 'args': {'text': 'and the merge?', 'to': 'c7'}})
+            eq((out.get('ok'), out.get('session')), (True, 'c7'), 'a later send goes to the live Talk session')
+            eq(typed, [('c7', CT.TALK_TAG + 'and the merge?')], 'with the spoken-reply reminder')
+            with mock.patch.object(U, 'chat_to', lambda text, to: {'ok': False, 'code': 1, 'out': 'gone', 'argv': []}):
+                code, out = post(url, {'name': 'talk', 'args': {'text': 'hello', 'to': 'c7'}})
+            eq((out.get('ok'), calls[-1]), (True, ['control', '--new', '--ask', CT.talk_ask('hello')]),
+               'a Talk session that is gone: a new one opens')
+            code, out = post(url, {'name': 'talk', 'args': {'text': '  '}})
+            eq(out.get('ok'), False, 'nothing said: nothing sent')
+    finally:
+        srv.stop()
+    if not shutil.which('node'):
+        print('  (no node here: the Talk script test is skipped)')
+        return
+    live = [{'name': 'c1', 'title': 'control session', 'state': 'live'}, {'name': 'c4', 'title': 'Talk', 'state': 'live'},
+            {'name': 'c6', 'title': 'Site deploy', 'state': 'live'}, {'name': 'c8', 'title': 'Talk', 'state': 'ended'}]
+    feed = [{'kind': 'you', 'text': 'old'}, {'kind': 'say', 'text': 'Old.'}, {'kind': 'you', 'text': 'now?'},
+            {'kind': 'tool', 'text': 'Bash(run status)'}, {'kind': 'say', 'text': 'Two agents are **working**.'},
+            {'kind': 'tool', 'text': 'Bash(x)'}, {'kind': 'say', 'text': 'Nothing needs you.'}]
+    got = logic_js([['talkSession', live, 'c6'], ['talkSession', live, 'c8'],
+                    ['talkSession', live[:1], ''], ['micProblem', False, True], ['micProblem', True, False],
+                    ['micProblem', True, True], ['talkShown', ask], ['talkShown', CT.talk_message('and you?')],
+                    ['talkShown', 'plain words'], ['talkReply', feed, 2], ['talkReply', feed[:6], 2],
+                    ['talkReply', feed, 7]])
+    eq(got[:3], ['c6', 'c4', ''], 'the remembered live session, else a live chat titled Talk, else none')
+    check('https or localhost' in got[3] and 'Type below' in got[3], 'plain http: the mic says it needs https', got[3])
+    check('cannot turn speech into text' in got[4], 'no speech recognition: the mic says so', got[4])
+    eq(got[5], '', 'https with recognition: the mic listens')
+    eq(got[6:9], ['what is going on?', 'and you?', 'plain words'], "the person's words show without the brief")
+    eq(got[9], 'Two agents are working. Nothing needs you.', 'the reply since the send, in plain words, read aloud')
+    eq(got[10:12], ['', ''], 'nothing is read while it still works, or before it says anything new')
+    js = W.PAGE.read_text(encoding='utf-8').split('<script id="logic">', 1)[1].split('</script>', 1)[0]
+    with tempfile.TemporaryDirectory() as d:
+        (Path(d) / 'logic.js').write_text(js, encoding='utf-8')
+        r = subprocess.run(['node', '-e', 'process.stdout.write(JSON.stringify(require(process.argv[1]).NAV))',
+                            str(Path(d) / 'logic.js')], capture_output=True, text=True, timeout=60)
+    nav = json.loads(r.stdout or '[]')
+    eq([k for k, _ in nav][:2], ['talk', 'home'], 'Talk is the top view in the sidebar, above Home')
+
+
 if __name__ == '__main__':
     raise SystemExit(report([in_tmp(test_server), in_tmp(test_real_action), in_tmp(test_run_controls),
                            in_tmp(test_start), in_tmp(test_upload),
                            in_tmp(test_control_rows), in_tmp(test_feed_pane_concept), in_tmp(test_page),
                            in_tmp(test_logic), in_tmp(test_extras), in_tmp(test_diff), in_tmp(test_views),
                            in_tmp(test_new_chat), in_tmp(test_term_moves), in_tmp(test_page_copy_publish), in_tmp(test_parked),
-                           in_tmp(test_esc_ctrl_c), in_tmp(test_concepts_view), in_tmp(test_follow_version_f90)]))
+                           in_tmp(test_esc_ctrl_c), in_tmp(test_concepts_view), in_tmp(test_follow_version_f90),
+                           in_tmp(test_talk_f93)]))
