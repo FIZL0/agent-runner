@@ -252,7 +252,8 @@ def project_row(key: str, root: Path, info=None, facts=None, needs=needs_said) -
     n, asks = needs(root)
     from agent_runner import cmds
     run = (info or cmds.run_info)(root) or {}
-    f = (facts or cmds.run_facts)(root, run)
+    # B135: Home only asks whether there is a link, so no Tailscale lookup per project on each refresh
+    f = facts(root, run) if facts else cmds.run_facts(root, run, https=lambda port, token: [])
     up = bool(run.get('up'))
     running = sorted(str(v) for v in (run.get('running') or {}).values() if v) if up else []
     words = str(run.get('state') or '')
