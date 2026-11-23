@@ -427,3 +427,10 @@ _Said_: login, run login
 _On screen_: run login
 _In code_: login.py, login.login_of, login.park_unlogged, harness.mjs --login
 _Avoid_: auth, credentials, token
+
+**Chat order**:
+The order of the run app's Chats list and which chats are pinned to its top, kept by the run so every page shows the same list
+_Said_: drag to reorder chats, pin chats
+_On screen_: Pin this chat / Unpin this chat
+_In code_: chat_order, chat_list, chatMove, chat_order.json
+_Avoid_: chat sort, favourites

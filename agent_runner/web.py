@@ -404,13 +404,15 @@ def save_chat_order(order=None, pins=None) -> dict:
     def names(v):
         return list(dict.fromkeys(n for n in v if isinstance(n, str) and re.fullmatch(r'c\d+', n))) \
             if isinstance(v, list) else None
-    order, pins = names(order), names(pins if pins is not None else [])
+    order, pins = names(order), names(pins if pins is not None else load_chat_order().get('pins') or [])
     if order is None or pins is None:
         return {'ok': False, 'code': 2, 'out': 'chat_order: order and pins are lists of chat names', 'argv': []}
     p = chat_order_path()
     if not p:
         return {'ok': False, 'code': 2, 'out': 'chat_order: no project here to keep it in', 'argv': []}
-    p.write_text(json.dumps({'order': order, 'pins': pins}), encoding='utf-8')
+    tmp = p.with_name(p.name + '.tmp')  # written whole, then moved in: a snapshot never reads half a file
+    tmp.write_text(json.dumps({'order': order, 'pins': pins}), encoding='utf-8')
+    os.replace(tmp, p)
     return {'ok': True, 'code': 0, 'out': 'chat order kept', 'argv': []}
 
 

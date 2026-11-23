@@ -1465,6 +1465,9 @@ def test_chat_order_f133(tmp: Path) -> None:
         eq(post(url, {'name': 'chat_order', 'args': {'nope': 1}})[1].get('ok'), False, 'an unknown arg is refused')
         s = snap_of(srv)
         eq((s['chat_order'], s['chat_pins']), (['c4', 'c1', 'c3'], ['c4']), 'a reload shows the kept order')
+        eq(post(url, {'name': 'chat_order', 'args': {'order': ['c4', 'c3', 'c1']}})[1].get('ok'), True, 'order alone')
+        s = snap_of(srv)
+        eq((s['chat_order'], s['chat_pins']), (['c4', 'c3', 'c1'], ['c4']), 'an order sent alone keeps the pins')
     finally:
         srv.stop()
     check(W.S.C.notes(W.CHAT_ORDER_FILE).exists(), 'kept in the notes dir')
@@ -1472,7 +1475,7 @@ def test_chat_order_f133(tmp: Path) -> None:
     srv = W.serve(token, 0, '127.0.0.1', snap=lambda: {'sessions': sessions})
     try:
         s = snap_of(srv)
-        eq((s['chat_order'], s['chat_pins']), (['c7', 'c1', 'c3'], []),
+        eq((s['chat_order'], s['chat_pins']), (['c7', 'c3', 'c1'], []),
            'a new server (another page, a phone): the deleted pinned chat drops out, the new one goes on top')
     finally:
         srv.stop()
