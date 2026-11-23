@@ -9,7 +9,7 @@ import time
 from contextlib import ExitStack
 from typing import NamedTuple
 
-from agent_runner import plan as P, plansync
+from agent_runner import plan as P, plansync, shared_tools
 from agent_runner.state import (alarm, C, commit_plan, edited, FETCHED, git, log, MERGE, note, plan_rel, plan_text,
     queued, ROOT, SLOTS_DIR)
 from agent_runner.state import EV_LEFT
@@ -202,6 +202,9 @@ class Held(NamedTuple):
     live: frozenset = frozenset()  # B126: the tasks in this run's slots (a running one may be in `mine` too)
     critical: frozenset = frozenset()  # B126: open tasks tagged `(follow-up, critical)` or in a Critical section
     alone: frozenset = frozenset()  # F130: tasks tagged `(alone)`, whatever their box: they run alone
+    needs: dict = {}  # F168: {task: the shared tools it needs}
+    users: dict = {}  # F168: {shared tool: the task running here that has it}
+    waits: dict = {}  # F168: {task that gave up its slot: (its tool, since when)}, longest first
 
 
 def held(running: dict, branch: str) -> Held:
@@ -232,7 +235,38 @@ def held(running: dict, branch: str) -> Held:
     parked = parked_attempts() if todo else {}
     return Held(todo, busy, busy_ids, mine, finished, parked, shared, away, frozenset(live),
                 critical_tasks(branch) if todo else frozenset(),
-                P.alone_ids(plan_text(branch)) if todo else frozenset())
+                P.alone_ids(plan_text(branch)) if todo else frozenset(), **tool_fields(todo, live, branch))
+
+
+def tool_fields(todo: list, live: set, branch: str) -> dict:
+    """F168: Held's `needs`, `users` and `waits`; nothing without shared tools."""
+    if not shared_tools.specs(C):
+        return {}
+    ls, open_ = plan_text(branch), {t[0] for t in todo}
+    waits = {t: (w['tool'], w.get('at', 0)) for t, w in shared_tools.parked().items()
+             if t in open_ and w['tool'] in shared_tools.specs(C)}
+    needs = {tid: n for _, _, tid, _, i in P.iter_tasks(ls) if (n := shared_tools.needs_of(ls[i], C))}
+    for t, (tool, _) in waits.items():
+        needs[t] = list(dict.fromkeys([tool, *needs.get(t, [])]))
+    users = {}
+    for t in live | {q[0] for q in queued().values()}:
+        for tool in [*needs.get(t, []), *([x] if (x := shared_tools.holding(t)) else [])]:
+            users[tool] = t
+    return {'needs': needs, 'users': users, 'waits': waits}
+
+
+def tool_hold(t: tuple, tried: set, h: Held) -> tuple[str, str] | None:
+    """F168: the shared tool task `t` waits for, as (tool, why): one a running task has, or that is busy or missing, or
+    that a task which gave up its slot for it earlier takes first."""
+    tid = t[0]
+    if not (need := h.needs.get(tid)):
+        return None
+    since = h.waits[tid][1] if tid in h.waits else float('inf')
+    first = {}
+    for w, (tool, at) in h.waits.items():
+        if w != tid and at < since and w not in tried and len(h.parked.get(w, [])) < PARK_LIMIT:
+            first.setdefault(tool, w)
+    return shared_tools.hold(tid, need, h.users, first)
 
 
 def critical_tasks(branch: str) -> frozenset:
@@ -247,7 +281,7 @@ def holds(t: tuple, tried: set, h: Held) -> tuple[str, tuple | None] | None:
     """Why open task `t` may not start now, first reason only: ('finished', None), ('tried', None),
     ('busy', None), ('parked', None), ('merging', None) (a release, while a merge holds the turn: F99),
     ('unpushed', None) (a release, while landed changes wait for a person's approval: F98),
-    or ('clash', the busy task it clashes with); None when it is free. A critical task never holds a slot
+    ('clash', the busy task it clashes with), or ('tool', (the shared tool it waits for, why)) (F168); None when it is free. A critical task never holds a slot
     for itself (B140): `choose` only tries it first."""
     tid = t[0]
     if tid not in h.busy_ids and tid in h.finished:
@@ -264,6 +298,8 @@ def holds(t: tuple, tried: set, h: Held) -> tuple[str, tuple | None] | None:
         return 'unpushed', None
     if b := next((b for b in h.busy if clash(t, b, h.shared, h.alone) and not passes(t, b, h)), None):
         return 'clash', b  # a running or merge-waiting task's sibling, ordered-section mate or file neighbour
+    if w := tool_hold(t, tried, h):
+        return 'tool', w
     return None
 
 
@@ -318,6 +354,8 @@ def explain(running: dict, tried: set, branch: str) -> dict[str, tuple[str, str]
             why[tid] = ('waiting for your approval', f'{unpushed()} of what landed is not pushed yet')
         elif kind == 'clash':
             why[tid] = clash_why(t, b, h.shared, h.alone)
+        elif kind == 'tool':
+            why[tid] = (f'waiting for {shared_tools.specs(C)[b[0]]["label"]}', b[1])
         elif (P.release(tid) or tid in h.alone) and (over := passed_over(t, h)):
             why[tid] = ('free', away_note(over, set(claimed)))
         else:
@@ -341,11 +379,15 @@ def choose(h: Held, tried: set, branch: str, claim: bool = False):
     """The first open task nothing holds back (`holds`), claimed first when `claim` (see `claim_task`), or None.
     Parked tasks are skipped, not blocked: that is `pick`'s part. Critical tasks are tried first, wherever their
     lines stand (B126): one whose blocker has just landed takes the next free slot ahead of the normal ones. One
-    still blocked holds nothing back (B140): the free slot goes to the next task that may start."""
-    for t in sorted(h.todo, key=lambda t: t[0] not in h.critical):
+    still blocked holds nothing back (B140): the free slot goes to the next task that may start. A task that gave up
+    its slot for a shared tool goes ahead of them all, the longest wait first (F168)."""
+    for t in sorted(h.todo, key=lambda t: (h.waits[t[0]][1] if t[0] in h.waits else float('inf'),
+                                           t[0] not in h.critical)):
         if holds(t, tried, h):
             continue
         tid = t[0]
+        if claim and tid in h.needs and not shared_tools.ready(tid, h.needs[tid]):
+            continue  # F168: checked once more, so no stale answer starts it
         if got := claim_task(t, h, branch) if claim else t:
             PASSED.discard(tid)
             return got
@@ -408,7 +450,7 @@ def keep_claims(running: dict, branch: str) -> None:
         return
     CLAIMS_AT[0] = time.time()
     slots = {t[0]: (SLOTS_DIR / f's{n}', t[2]) for n, t in running.items() if isinstance(n, int)}
-    keep = set(slots) | set(ahead(branch)) | {q[0] for q in queued().values()}  # queued: waiting to resume
+    keep = set(slots) | set(ahead(branch)) | {q[0] for q in queued().values()} | set(shared_tools.parked())  # queued: waiting to resume
     lines = {t[0]: t[2] for t in tasks(branch)}
     files = {t: set(slots.get(t, (None, lines.get(t, set())))[1]) | touched(t, branch, slots.get(t, (None,))[0])
              for t in keep}

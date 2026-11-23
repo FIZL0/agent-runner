@@ -19,7 +19,7 @@ import webbrowser
 from contextlib import ExitStack
 from pathlib import Path
 
-from agent_runner import ci, gitops, plan as P, plansync, plat, undo
+from agent_runner import ci, gitops, plan as P, plansync, plat, shared_tools, undo
 from agent_runner.config import claude_model, RUNNER, ensure_local, finished_mark, shown_cmd
 from agent_runner.done import TESTED
 from agent_runner.gitops import missing_remote, push
@@ -301,6 +301,7 @@ def discard_task(tid: str, n: int | None, sid: str = '') -> list[str]:
     if not git('rev-parse', '--verify', '-q', f'refs/heads/task/{tid}').returncode:
         git('branch', '-D', f'task/{tid}')
         did.append(f'deleted task/{tid}')
+    shared_tools.forget(tid)  # F168
     git('update-ref', '-d', TESTED + tid)
     if out := gitops.drop_remote(ROOT, f'task/{tid}'):
         did.append(out)
@@ -1106,6 +1107,7 @@ def run(argv: list[str], prog: str) -> int:
     try:
         return Run(a, slots, once, branch, model, idle, stall, pause).go()
     finally:
+        shared_tools.stop()
         while RUN_LOCK:  # the run is over (its stop has ended its own processes): the next one may start
             RUN_LOCK.pop().close()
 
@@ -1171,6 +1173,8 @@ class Run:
             procs[n], running[n] = proc, task
             free_at.setdefault(n, dt.datetime.min)
 
+        shared_tools.start()  # F168: nothing without [run.tools]
+        shared_tools.settle_ended([n for n in range(1, slots + 1) if n not in procs])
         foreign = self.foreign = queue_cut_off(branch, [n for n in range(1, slots + 1) if n not in procs])
         sweep_tmp(force=True)
         drop_extra_slots(slots, set(procs) | set(queued()) | set(foreign))
@@ -1267,6 +1271,10 @@ class Run:
                 self.tried.add(task[0])
                 self.free_at[n] = dt.datetime.now() + dt.timedelta(seconds=self.pause)
                 return False
+            if end.get('how') == 'wait' and end.get('tid') == task[0] and \
+                    shared_tools.park(n, task[0], sid, end.get('text', '')):  # F168: not tried: it goes on by itself
+                self.free_at[n] = dt.datetime.now() + dt.timedelta(seconds=self.pause)
+                return False
             if n <= self.slots and not ((m := finished_mark(n)) and m.exists()) and \
                     (fb := FB.fallback_due(task[0], sid)):  # F106g: it hit a cap; the chain names where it goes on
                 FB.queue_fallback(task[0], n, sid, fb[1], fb[0])
@@ -1281,6 +1289,7 @@ class Run:
                     return True
                 log(f'slot {n}: {task[0]} was cut off again ({why}) after {RESUMES_MAX} resumes; '
                     f'taken as ended')
+            shared_tools.forget(task[0])  # F168: it has no shared tool any more
             drop_session_tmp(sid)  # ended for good: a resume (above) keeps its scratchpad
             if save_leftovers(d := SLOTS_DIR / f's{n}', task[0], branch):
                 clean(d)  # saved: the next start finds the slot clean
@@ -1440,6 +1449,7 @@ class Run:
             sweep_unmerged(branch, self.merging)
         undo.tick(branch, self.merging)  # F98
         keep_claims(self.running, branch)
+        shared_tools.prune()  # F168: waits of tasks dropped meanwhile
         block_asks(branch)  # F102: an ask whose block could not be committed when it was parked
         take_keys()
         # an exit may have queued one
@@ -1464,7 +1474,8 @@ class Run:
         # watches run.log for `run idle`; the process itself ends only on Ctrl-C or `./run stop`.
         # one pick, and only when its answer is needed: to end `once`, to say idle, or to power off
         if quiet and not PAUSED[0] and (self.once and not stopping() or not self.idle_said
-                                        or power_due(self.idle_at)) and not pick(self.running, tried, self.branch):
+                                        or power_due(self.idle_at)) and not pick(self.running, tried, self.branch) \
+                and (self.once or not shared_tools.pending(tried)):  # F168: one waits for a busy tool
             if self.once and not stopping():
                 log('run done: nothing it may start (once)')
                 return 0

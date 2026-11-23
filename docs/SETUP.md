@@ -272,6 +272,7 @@ The names in each module's `__all__` are the stable API (see [Versions](#version
 | `[plan] need_files` | `plan add` refuses a line with no `files:` and no `test:` field (without it, a warning), so the run can keep it apart from the running tasks |
 | `[run] before_start` | a check that must pass before any session starts |
 | `[run] command_timeout` | seconds the gate, a retest, a `[run.join]` command, or `before_start` may run before it is stopped and counts as failed (3600) |
+| `[run.tools.<name>]` | a shared tool, one task at a time (a test phone, a device): `check` exits 0 free, 75 busy (first line: the holder), 69 missing; optional `label` and `connect`. See [Shared tools](REFERENCE.md#shared-tools) |
 | `[run] not_attempt` | a regex on the last commit subject (`{id}`): that session was a phase, not the run's one attempt |
 
 The brief already holds the task line, `plan/tasks/<ID>.md`, the newest journal entry, and the git log of the

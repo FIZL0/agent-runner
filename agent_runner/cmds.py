@@ -397,6 +397,10 @@ def cmd_needs(argv: list[str], prog: str = f'{RUNNER} needs') -> int:
     w = waiting_ok()
     stamps = {a[1]: a[7] for a in w if len(a) > 7 and a[7]}
     print('\n'.join(P.needs_lines(P.in_order(w, stamps, P.needs_cfg()['order']), has_sheet)))
+    if run_up():  # F168: they wait for a shared tool, not for the person
+        from agent_runner import shared_tools
+        for t, said in shared_tools.wait_words().items():
+            print(f'{t} {said}')
     return 0
 
 

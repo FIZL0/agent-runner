@@ -362,7 +362,7 @@ drawer) and a desktop. It follows the browser's light or dark setting; `[ui] the
   `.runner/uploads` (`<notes>/uploads`, git-ignored with the rest of the notes folder), and handed to the
   session as paths on this machine. On a computer, a file dropped on the session is attached the same way.
 - **Plan.** The queue in plain words (a row folds open to `plan ID`'s text, with Chat), and Add a task. Tasks are not
-  edited here directly: ask in a chat.
+  edited here directly: ask in a chat. A task that waits for a shared tool reads `waits for iPhone 15, held by F389, 12 min` on its row (### Shared tools).
 - **Concepts.** Each concept with a button per option (taken from its page's headings, by `ui_model.concept_options`; `ui_model.concept_page` builds the page), plus Chat, New chat and View.
 
 How the app looks, moves and speaks is in [STYLE.md](STYLE.md); a change to it follows those rules.
@@ -646,6 +646,8 @@ words in a note on the task (after ` — `, not in its title), its next merge la
   - `files:` the files the task will touch. The run keeps two running tasks off the same file, and the brief
     pastes them in. Files that don't exist yet count, and so do patterns: `dir/**` and `dir/*.rs`. A path
     meets its own tail (`src/menu.rs` meets `app/src/menu.rs`).
+  - `needs:` the shared tools the task uses (`### Shared tools`), e.g. `needs: iphone15`. The task waits while one is
+    busy or missing, and the run never runs two tasks with the same tool at once.
   - `after:` ids that must be done first. **Every id** listed counts. `after: all above` (what `plan add
     --last` writes, filing the task at the end of Next) is no list: the run resolves it on every pick to each
     task above it in its own section that is not done, ones added later included, so a release waits for the
@@ -661,7 +663,7 @@ words in a note on the task (after ` — `, not in its title), its next merge la
   - `model:` the model the task's own session runs on (`plan add/edit --model M`), which wins over its kind's
     `[models.kinds]` entry; `plan ID` shows it. See Models per kind.
   - `test:` the tests that prove it. `journal:` its journal folder.
-  - `plan add P "text" --files a,b --after X --test name` writes them; `--model M` writes `model:`.
+  - `plan add P "text" --files a,b --after X --test name` writes them; `--model M` writes `model:`; `--needs T` writes `needs:`.
 - `BLOCKED: (after X, Y) why` is what `plan block`/`done --blocked` write. The `(after …)` list is what
   lets the run reopen the task by itself.
 - `plan/tasks/<ID>.md`, if it exists, is the task's long form. The brief uses it instead of the one-line text.
@@ -880,6 +882,45 @@ the slot reset.
 **Stall watchdog.** A session quiet at a prompt with no tool running for 1200 seconds (20 min),
 or quiet for over 65 minutes with a tool running, is logged with the terminal to look at, and the bell
 rings.
+
+### Shared tools
+
+Some things only one task can use at a time: a test phone, a device. Each is named under `[run.tools.<name>]` in
+runner.toml, with a `check` command:
+
+```toml
+[run.tools.iphone15]
+check = "tools/ui-15.sh state"   # exit 0 free, 75 busy (first line: the holder), 69 missing (first line: why)
+label = "iPhone 15"              # what the screens say; default: the name
+connect = "Connect iPhone 15"    # the Needs you wording while it is missing; default: "Connect <label>"
+```
+
+- **The check** runs in the main checkout. Exit 0 is free, 75 busy, 69 missing; any other status, or a run past
+  10 s, is unknown. A busy check's first line names the holder and should carry the task's id (`F389`), so a task
+  that holds the tool itself is not held by it. A missing check's first line says why.
+- **When it runs.** One thread per tool checks it every 120 s, every 15 s while a task waits for it, and again right
+  before a tagged task starts. A change to or from missing or unknown counts after 2 readings in a row; free and
+  busy change at once.
+- **Unknown does not hold for ever.** It is logged once, and tagged tasks wait for it at most 5 min, then start
+  anyway: a broken check must not stop the work for ever. The agent still takes the lock itself.
+- **Never two at once.** The run never has two running tasks with the same tool.
+- **Tagging.** `plan add --needs iphone15` writes `| needs: iphone15` on the task's line, and `plan edit --needs`
+  sets it on an existing one. A name the project does not name is refused. The TUI's direct edit (`e`) has the field
+  too, in projects that name tools.
+- **Waiting.** An agent that finds its tool busy or missing runs `run wait-for iphone15`. Its session ends, its
+  commits and uncommitted edits are kept on `waiting/<ID>` (never merged, and no park count), and the session's
+  record is in `<notes>/<ID>.wait`. Once the tool is free, the same session goes on ahead of other tasks, longest
+  wait first, and this survives a run restart. `wait-for` is refused while the session itself holds a tool; when the
+  tool is free after all it says so, and the agent takes it and goes on.
+- **Idle.** A run waiting on a busy tool is not idle: it does not power off or auto release while it waits. A
+  missing tool does not keep it up.
+- **What shows.** A Tools line on `status`, the TUI Status panel and the Run card: `Tools: iPhone 15: held by F389,
+  12 min`. A task that waits reads `waits for iPhone 15, held by F389, 12 min` on its queue row, and in `plan`,
+  `needs` and `status`.
+- **Needs you.** A missing tool with tasks waiting for it is one Needs you item (label `TOOL`) after 3 min, and
+  clears by itself when the tool is back. A busy tool never is one.
+- **Without the setting** nothing changes. The run keeps its readings in `.runner/TOOLS.json`, so a restart goes on
+  with them (a file older than 10 min is not used); a stop removes it.
 
 ### Disk
 
@@ -1214,6 +1255,8 @@ agent-runner take "TEXT" --kind K [--files A,B] [--here]
                                        queue it (as `plan add`) and take it in one step; --here (also with
                                        an ID) moves the main checkout's uncommitted edits into the worktree
 agent-runner resume ID...              continue each task's last session in its slot, once that slot is free
+run wait-for TOOL                      a slot's agent, when a shared tool is busy or missing: its session ends and
+                                       its work is kept; the same session goes on once the tool is free (### Shared tools)
 agent-runner cost [--days N] [--files] where the workers' tokens went, by kind of tool call (--files: by
                                        file read, and exact-repeat commands)
 agent-runner home [slots|plan]         where this project's worktrees and plan clone live
@@ -1391,6 +1434,7 @@ proc_max_gb = "auto"      # a process of the run's resident past this is killed;
 min_free_mem_gb = 4       # under this much memory available: the run's biggest process is killed; 0 = never
 slot_clean = ""           # a project's own clean, run instead of the trim and the full git clean -ffdXq
 command_timeout = 3600    # s the gate, a retest, a hook (join, before_start, on_exit) or `done`'s gate may run: past it, failed
+# [run.tools.<name>]        # a shared tool, one task at a time: check, label, connect (### Shared tools)
 needs_order = "oldest"    # what waits on a person (Needs you): oldest first; "newest" first; "plan": TODO.md's order
 
 [run.join]                # glob = a command that joins a conflict in that file itself:

@@ -6,7 +6,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from agent_runner import pitch, plan as P
+from agent_runner import pitch, plan as P, shared_tools
 from agent_runner.gitops import missing_remote
 from agent_runner.guide import GLOSSARY, SAFE_SHELL, VERIFY
 from agent_runner.state import C, default_branch, git, ROOT
@@ -215,6 +215,8 @@ def prompt_for(tid: str, n: int, slots: int, cwd: Path, branch: str, model: str 
         prompt = f'{prompt.rstrip()}\n\n' + review_prompt(tid, cwd, harness=loop)
     if 'docs' in subagents() and not loop:  # F101; F132: the harness loop has no subagents
         prompt = f'{prompt.rstrip()}\n\n' + DOCS_PROMPT.format(runner=C.command, tid=tid)
+    if tools := shared_tools.brief(C.command, tid):  # F168
+        prompt = f'{prompt.rstrip()}\n\n{tools}'
     prompt = f'{prompt.rstrip()}\n\nProject policies:\n' + '\n'.join(f'- {policy}' for policy in policies)
     if not own:  # F103: the task's own text last
         prompt = f'{prompt}\n\n' + BRIEF_LAST.format_map(_Keep(vals))
