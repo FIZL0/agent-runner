@@ -908,7 +908,7 @@ def home_port() -> int:
     return 0
 
 
-def start_web()-> WebServer | None:
+def start_web() -> WebServer | None:
     """The run's start: serve the page when `[run] web` is on (the run log gets its address), else nothing.
     A port in use costs the page, not the run. AGENT_RUNNER_NO_WEB=1 (the test suites) turns it off too."""
     url_file().unlink(missing_ok=True)
