@@ -434,3 +434,10 @@ _Said_: drag to reorder chats, pin chats
 _On screen_: Pin this chat / Unpin this chat
 _In code_: chat_order, chat_list, chatMove, chat_order.json
 _Avoid_: chat sort, favourites
+
+**Stream engine**:
+A slot's Claude Code session run with no terminal, reading its brief and every tell as messages and ending when its turn ends with nothing more sent; it has no Remote Control. The terminal engine, an interactive session in a hidden terminal, is the other.
+_Said_: headless Claude Code, claude -p
+_On screen_: runs headless ([run] engine = "stream")
+_In code_: [run] engine, slots.stream_engine, slots.run_stream, slots.StreamInput, <notes>/streams/<sid>.jsonl
+_Avoid_: pipe mode, API mode, background session

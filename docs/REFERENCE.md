@@ -1108,6 +1108,7 @@ slots = 3
 include_task_id_in_commit = true
 comment_policy = "normal"
 agent = "claude"          # the Claude Code executable a session runs: claude, or a wrapper around it
+engine = "terminal"       # terminal = an interactive session in a hidden terminal (the default for now); stream = headless claude -p, stream-json in and out
 model = "opus"
 lean = true               # sessions get Bash/Read/Edit/Write/Artifact only, no MCP servers or user settings
 remote = "auto"           # control sessions on Remote Control, and a control server to start more from claude.ai/code or the Claude apps; Enter in the run view opens it. auto: on where it can work (see Control sessions); true/false force it
@@ -1304,6 +1305,31 @@ resumed session keeps its whole history.
 
 Not there yet: no Remote Control, no subagents (the review and docs subagents). A fix session starts fresh rather
 than as a copy of the task's session.
+
+### The stream engine
+
+`[run] engine = "stream"` runs each slot's Claude Code session headless: `claude -p --input-format stream-json
+--output-format stream-json --verbose`, on the same claude.ai login. ANTHROPIC_API_KEY is removed from its
+environment, so its usage stays plan usage.
+
+The brief (on a resume, the resume message, with `--resume <session id>`) is the first stream-json user message
+on its stdin, so a brief of any length goes in whole.
+
+No idle Stop hook: the session ends at its result event. Its stdin closes at once when nothing was sent during
+that turn, otherwise when no next turn starts within 5 s. So `run finish` (then stopping), or a turn that ends
+with nothing more to do, ends it.
+
+`plan tell`, budget stops and typing from the Run page go in as its next user message, through the slot's FIFO:
+typed text becomes a message at its Enter, and keys such as Escape are dropped.
+
+Its event stream goes to the slot log, to `<notes>/streams/<session id>.jsonl` (the spend for `[run] task_tokens`
+and `task_usd` is read from there), and to `attach sN` and the Run page's Terminal views.
+
+No Remote Control: `remote_slots` does not apply, and Open a slot on the Run page says the slot runs headless;
+the Run page shows it.
+
+Sessions on another provider's model still run in the Harness loop. The default stays `"terminal"` until task
+F106h flips it after the end-to-end check.
 
 ### Renamed and removed keys
 
