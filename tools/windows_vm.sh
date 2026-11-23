@@ -49,6 +49,7 @@ for c in docker flock ssh scp; do
   command -v "$c" >/dev/null || die "no $c on this machine, so no Windows VM to use"
 done
 [ -f "$key" ] || die "no ssh key at $key (WINDOWS_VM_KEY): no Windows VM to use"
+docker version >/dev/null 2>&1 || die 'Docker does not answer (docker version fails): no Windows VM to use'
 docker container inspect "$vm" >/dev/null 2>&1 || die "no Docker container $vm (WINDOWS_VM): no Windows VM to use"
 
 opts=(-i "$key" -o IdentitiesOnly=yes -o BatchMode=yes -o "UserKnownHostsFile=$known"
@@ -149,12 +150,16 @@ for f in (here / 'files.txt').read_text(encoding='utf-8').splitlines():
 sys.exit(code)
 PY
 
-dir=$(vm_ssh "$python -X utf8 -" <<'PY'
+out=$(vm_ssh "$python -X utf8 -" <<'PY'
 import pathlib, tempfile
 print(pathlib.Path(tempfile.mkdtemp(prefix='windows-vm-')).resolve().as_posix())
 PY
 ) || die "no working $python on $vm (WINDOWS_VM_PYTHON)"
-dir=${dir//$'\r'/}
+out=${out//$'\r'/}
+out=${out##*$'\n'}
+# cleanup deletes this folder, so only a name of our own is taken
+[[ $out =~ ^[^\']*/windows-vm-[A-Za-z0-9_]+$ ]] || die "unexpected temp folder on $vm: $out"
+dir=$out
 scp -q "${opts[@]}" -P "$port" "$tmp/repo.bundle" "$tmp/work.diff" "$tmp/files.txt" "$tmp/run.py" "$host:$dir/" 9>&- \
   || die "could not copy the worktree to $vm"
 # in the background: a signal to this script is then handled at once, not when the tests end

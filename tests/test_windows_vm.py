@@ -23,6 +23,7 @@ case "$*" in
   "container inspect -f"*) cat "$FAKE/running" ;;
   "container inspect $FAKE_VM") exit 0 ;;
   "container inspect"*) exit 1 ;;
+  version) [ ! -e "$FAKE/docker-down" ]; exit ;;
   start*) echo true > "$FAKE/running" ;;
   stop*) echo false > "$FAKE/running" ;;
 esac
@@ -91,6 +92,11 @@ def test_missing():
         eq(r.returncode, 2, f'{what}: exit 2')
         has(r.stderr, pat, f'{what}: says so')
         eq(len(r.stderr.splitlines()), 1, f'{what}: in one line')
+    (vm.d / 'docker-down').touch()
+    r = vm.run()
+    eq((r.returncode, len(r.stderr.splitlines())), (2, 1), 'Docker down: exit 2, one line')
+    has(r.stderr, 'Docker does not answer', 'and says it is Docker, not the container')
+    (vm.d / 'docker-down').unlink()
     r = vm.run('tests/nope.py')
     eq(r.returncode, 2, 'a test file that is not there: exit 2')
     check(not any(w in vm.calls() for w in ('docker start', 'docker run', 'docker create', 'ssh ')),
