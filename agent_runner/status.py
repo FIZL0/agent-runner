@@ -79,7 +79,8 @@ def progress_line(window: str = '24h', now: dt.datetime | None = None) -> str:
             + (f' ({blocked} blocked)' if blocked else ''))
 
 
-RELEASE_TASK = re.compile(r'\W*(?:release\b|cut (?:a|the next) (?:release|version)\b)', re.I)
+RELEASE_TASK = re.compile(r'\W*(?:\(alone\)\s*)?(?:release\b|cut (?:a|the next) (?:release|version)\b)',
+                          re.I)  # F130: after its `(alone)` tag
 
 
 def release_line(ls: list[str]) -> str:

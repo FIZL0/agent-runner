@@ -482,8 +482,10 @@ you, to act on a task or when the person asks which one.
   worked out live, tasks queued above it later included (Parked and shelved ones never hold it), so there is
   no wait list to keep up; `plan block ID --after all "…"` for one already queued. A release: `{cmd} plan add
   V` (no text: the default release brief, `after: all`; it starts once what is ahead of it has landed, beside
-  running tasks, and other merges wait until it lands; with `[plan] release_alone` it runs alone); "release
-  now", an interim one: `{cmd} plan add V --now`.
+  running tasks, and other merges wait until it lands; with `--alone` it runs alone); "release
+  now", an interim one: `{cmd} plan add V --now`. "Nothing beside it", a major rewrite: `--alone` on `plan add`
+  (or `{cmd} plan edit ID --alone`, `--no-alone` to undo) tags it `(alone)`: it starts only when nothing else runs
+  or waits to merge, and nothing starts beside it.
   After you queue, end with one hint line naming the new id: 'Say "do F48 here" to start it now.' (with
   several, name each; never as a question).
 - A correction of a queued task ("not on arm", "use X, not Y", the wrong files): `{cmd} plan edit ID "<the

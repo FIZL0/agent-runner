@@ -14,22 +14,23 @@ re-reads it on every turn pays again. So the backlog is a command instead:
     ./run plan block <ID> [--after X,Y] WHY   [~] with "BLOCKED: (after X, Y) WHY" appended; --after all (below)
     ./run plan unblock <ID> [NOTE]   reopen: [ ], drop "BLOCKED: …", append NOTE (what unblocked it)
     ./run plan move <ID> WHERE   WHERE = top | before ID | after ID | in SECTION (its end); sub-items follow
-    ./run plan add PREFIX TEXT [--files A,B] [--after X,Y] [--test T] [--journal D] [--model M] [--pri LEVEL] [--last] [--force] [@ WHERE]
+    ./run plan add PREFIX TEXT [--files A,B] [--after X,Y] [--test T] [--journal D] [--model M] [--pri LEVEL] [--alone] [--last] [--force] [@ WHERE]
                                  new "- [ ] **<next free id>** TEXT | files: A, B | after: X, Y …"; prints
                                  the id (warns without --files or --test). Refused (exit 3, nothing written) when an open task looks like the
                                  same work: `plan note` it there, or --force when it is different work.
                                  --last: at the end of Next, with `after: all above` (below)
-                                 add V [TEXT] [--now]: a release (below)
+                                 add V [TEXT] [--now]: a release (below); --alone: it runs alone (below)
     ./run plan drop <ID> WHY     not done but not wanted (a duplicate, overtaken): archived with "dropped: WHY";
                                  a slot running it is stopped, its branch deleted unmerged (B19)
     ./run plan restore <ID> [WHERE]   undo a mistaken tick or drop: back from DONE.md as open [ ], same id, text
                                  and fields kept, "dropped: WHY" removed; WHERE as `move` (default: top)
     ./run plan kinds             what each id letter means ([plan] kinds): an id's prefix says the kind of work
     ./run plan note <ID> TEXT    append " — TEXT" to the task (user details, priority reasons)
-    ./run plan edit <ID> [TEXT] [--files A,B] [--after X,Y] [--test T] [--journal D] [--model M] [--pri LEVEL]
+    ./run plan edit <ID> [TEXT] [--files A,B] [--after X,Y] [--test T] [--journal D] [--model M] [--pri LEVEL] [--alone | --no-alone]
                                  rewrite the task in place: TEXT replaces its whole description, notes included;
-                                 id, checkbox, BLOCKED, tag and fields kept, but each flag replaces its field and
-                                 --pri retags it and moves it as `add` files that level. A corrected instruction
+                                 id, checkbox, BLOCKED, tags and fields kept, but each flag replaces its field,
+                                 --pri retags it and moves it as `add` files that level, --alone/--no-alone sets
+                                 or clears its `(alone)` tag. A corrected instruction
                                  goes here, not in a note. A slot running it is told "Your task changed: …"
     ./run plan goal [TEXT]       print the `Goal:` paragraph above TODO.md's first heading; with TEXT replace it
                                  (title, fields-format line, other paragraphs, headings and tasks untouched)
@@ -109,10 +110,14 @@ tasks blocked for the person (a `CONFIRM:`/`DECIDE:`/`BLOCKED:` ask, a concept's
 **A release is kind V** (F38): `add V` files it at the end of Next, no `--after` or `--files` needed, and with
 no text it gets the default release brief (RELEASE_BRIEF) and `after: all`. It starts once what it waits for
 has landed, even with other tasks running (F99), and tasks start beside it; while it is busy the merge holds
-every other merge and push, so it releases exactly what was on the shared branch when it started. With
-`[plan] release_alone` it runs alone instead: the run starts it only when nothing else runs or waits to merge,
-and nothing beside it. `add V --now` (or `--pri critical`) is an interim release: critical, at
+every other merge and push, so it releases exactly what was on the shared branch when it started. Tagged
+`(alone)` (below) it runs alone instead. `add V --now` (or `--pri critical`) is an interim release: critical, at
 the top, no `after: all`. A release is never refused as a duplicate of another.
+
+**A task that runs alone** (F130, any kind: a release, a major rewrite) is tagged `(alone)` first in its text:
+`add … --alone`, or `edit ID --alone` (`--no-alone` clears it). The run starts it only when nothing else runs or
+waits to merge in this run, and starts nothing beside it; tasks taken by hand or claimed by another runner do
+not hold it (B107), unless their files, section or family would. The dry run says 'runs alone'.
 
 **A block that only waits on another task says which**, as `BLOCKED: (after X, Y) why`, and `reopen` (which a
 `./run run` calls after every merge) puts it back to `[ ]` the moment X and Y are done. Without that a task
@@ -769,12 +774,11 @@ KINDS = {'B': 'bug: something that worked, or should, is broken', 'F': 'feature:
          'K': 'concept: nothing is built yet; research the repo and publish an Artifact page of 2-3 options and a '
               'recommendation; the build waits for a person\'s OK',
          'V': 'release: waits for everything ahead of it, then starts beside running tasks; other merges wait '
-              'until it lands (with [plan] release_alone it runs alone); with no text it gets the default '
-              'release brief'}
+              'until it lands (tagged (alone) it runs alone); with no text it gets the default release brief'}
 # The release kind (F38): `add V` files it at the end of the leading section (`after: all` unless `--now` or
 # `--pri critical` says release now), gets RELEASE_BRIEF when given no text, and is never refused as a
 # duplicate of another release. Other tasks run beside it, but their merges wait while it is busy
-# (`merge.hold_for_release`, F99); with release_alone a run starts no other task beside one (`sched.clash`)
+# (`merge.hold_for_release`, F99); tagged `(alone)` a run starts no other task beside one (`sched.clash`)
 RELEASE = 'V'
 RELEASE_BRIEF = ('Release: bump the version where the project keeps it, per its versioning rules (agent-runner\'s: '
                  'docs/SETUP.md#versions), move CHANGELOG.md\'s Unreleased entries under the new version heading, '
@@ -784,18 +788,35 @@ RELEASE_BRIEF = ('Release: bump the version where the project keeps it, per its 
 
 def release(tid: str) -> bool:
     """Is `tid` a release task (kind V, F38): it waits for what is ahead of it, and other merges wait for it
-    (F99); with `[plan] release_alone` it also runs alone."""
+    (F99); tagged `(alone)` it also runs alone."""
     m = re.match(r'[A-Za-z]+', tid or '')
     return bool(m) and m.group() == RELEASE
 
 
-def release_alone() -> bool:
-    """`[plan] release_alone` (F100): a release runs alone, nothing beside it; off by default, so tasks run
-    beside a release and only their merges wait for it (F99)."""
-    try:
-        return bool(cfg().raw['plan'].get('release_alone'))
-    except (SystemExit, OSError, KeyError):
-        return False
+# F130: a task of any kind tagged `(alone)` runs alone: the run starts it only when nothing else runs or waits to
+# merge, and nothing beside it (`sched.clash`). The tag stands first in the description, after the level tag:
+# `- [ ] **F9** (follow-up, normal) (alone) the rewrite`, so prose that mentions "(alone)" is never read as one.
+ALONE = '(alone)'
+ALONE_AT = re.compile(r'^\s*- \[.\] \*\*[^*]+\*\*\s*(?:\(follow-up, \w+\)\s*)?\(alone\)')
+
+
+def alone(line: str) -> bool:
+    """Is the task line `line` tagged `(alone)` (F130)."""
+    return bool(ALONE_AT.match(line or ''))
+
+
+def alone_ids(ls: list[str]) -> frozenset:
+    """Ids of the top-level tasks of plan lines `ls` tagged `(alone)`, whatever their box (F130)."""
+    return frozenset(tid for _, _, tid, _, i in iter_tasks(ls) if alone(ls[i]))
+
+
+def alone_flag(rest: list[str]) -> tuple[list[str], bool | None]:
+    """`plan add`/`edit` arguments without `--alone`/`--no-alone`, and what they asked: True, False or None."""
+    flag = None
+    for a in rest:
+        if a in ('--alone', '--no-alone'):
+            flag = a == '--alone'
+    return [a for a in rest if a not in ('--alone', '--no-alone')], flag
 
 
 def open_release(ls: list[str]) -> str:
@@ -976,14 +997,17 @@ def family_end(prefix: str, todo=None) -> tuple[str, str | None] | None:
 
 
 def add(prefix: str, text: str, where: str | None = None, ref: str | None = None, todo=None, done=None,
-        pri: str | None = None) -> str:
-    """File a new task; with `pri` it is tagged `(follow-up, pri)` and, unless `where` says, filed by its level."""
+        pri: str | None = None, alone_: bool = False) -> str:
+    """File a new task; with `pri` it is tagged `(follow-up, pri)` and, unless `where` says, filed by its level;
+    with `alone_` it is tagged `(alone)` (F130)."""
     if pri is not None and pri not in PRI:
         raise SystemExit(f'{PROG}: --pri must be one of {" | ".join(PRI)}, not {pri!r}')
     todo, done = ensure(todo, done)
     tid = next_id(prefix, [todo, done, *_other_checkouts(todo, done)], reserved(todo))
     reserve(todo, tid)
     ls = list(lines(todo))
+    if alone_ and not text.startswith(ALONE):
+        text = f'{ALONE} {text}'
     if pri and not PRI_TAG.search(text):
         text = f'(follow-up, {pri}) {text}'
     j = _place_pri(ls, pri) if pri and not where else _place(ls, where or 'top', ref)
@@ -1076,12 +1100,14 @@ def note(tid: str, text: str, todo=None) -> None:
     _write(todo, ls)
 
 
-def edit(tid: str, text: str = '', keyed: str = '', pri: str | None = None, todo=None) -> str:
+def edit(tid: str, text: str = '', keyed: str = '', pri: str | None = None, todo=None,
+         alone_: bool | None = None) -> str:
     """F45: rewrite a task in place. `text` replaces its whole description, notes (` — …`) included, so a
     corrected instruction does not sit after the stale one; '' keeps them. The id, the checkbox, the
     `BLOCKED: …` tail, the `(follow-up, LEVEL)` tag and the keyed fields stay, except that fields given in
     `text` or in `keyed` (` | files: a | after: X`, as `add_args` builds it) replace those keys. With `pri` the
-    tag becomes that level and the line moves where `add` files that level. Returns the new first line."""
+    tag becomes that level and the line moves where `add` files that level. The `(alone)` tag (F130) stays too:
+    `alone_` True sets it, False clears it. Returns the new first line."""
     if pri is not None and pri not in PRI:
         raise SystemExit(f'{PROG}: --pri must be one of {" | ".join(PRI)}, not {pri!r}')
     todo, _ = ensure(todo)
@@ -1095,6 +1121,7 @@ def edit(tid: str, text: str = '', keyed: str = '', pri: str | None = None, todo
     old = dict(FIELD.findall(body))
     tag = PRI_TAG.search(body)
     tag = f'(follow-up, {pri})' if pri else (tag.group(0) if tag else '')
+    was_alone = alone(first)
     old_blk = _item_block(ls, i)
     rest_blk = old_blk[1:]
     if text.strip():
@@ -1108,9 +1135,12 @@ def edit(tid: str, text: str = '', keyed: str = '', pri: str | None = None, todo
         rest_blk = rest_blk[k:]
     else:
         desc, new = ' '.join(PRI_TAG.sub('', prose(body)).split()), {}
+    if desc.startswith(ALONE):  # F130: kept apart from the description, so --alone/--no-alone can set or clear it
+        desc, was_alone = desc[len(ALONE):].lstrip(), True
+    flag = ALONE if (was_alone if alone_ is None else alone_) else ''
     vals = {**old, **new, **dict(FIELD.findall(keyed))}
     fieldtext = ''.join(f' | {k}: {vals[k]}' for k in KEYS if k in vals)
-    line = ' '.join(x for x in (head, tag, desc) if x) + fieldtext + tail
+    line = ' '.join(x for x in (head, tag, flag, desc) if x) + fieldtext + tail
     blk = [line] + rest_blk
     del ls[i:i + len(old_blk)]
     j = _place_pri(ls, pri) if pri else i  # with --pri, moved like `add` files that level
@@ -1210,10 +1240,11 @@ def build_kind() -> str:
 
 
 def title_of(line: str) -> str:
-    """A task line's own words: after its `**ID**`, without the fields, the follow-up tag, notes or BLOCKED."""
+    """A task line's own words: after its `**ID**`, without the fields, the follow-up and `(alone)` tags, notes
+    or BLOCKED."""
     t = re.sub(r'^\s*- \[.\] \*\*[^*]+\*\*\s*', '', line.split('\n')[0])
     t = re.split(r' — | BLOCKED: ', t)[0]
-    return ' '.join(PRI_TAG.sub('', prose(t)).split())
+    return ' '.join(re.sub(r'^\s*\(alone\)', '', PRI_TAG.sub('', prose(t))).split())
 
 
 TASK_LINE = re.compile(r'^- \[(.)\] \*\*([^*\s]+)\*\*(.*)')  # a top-level task line: its box, its id, the rest
@@ -2816,8 +2847,9 @@ def _p_add(a, x):
     kind = a.kind
     rel = kind == RELEASE  # F38: a release (module doc)
     now = rel and '--now' in a.rest
+    rest, solo = alone_flag(a.rest)  # F130: --alone tags it `(alone)`
     try:
-        text, where, keyed, pri, force = add_args([r for r in a.rest if not (rel and r == '--now')])
+        text, where, keyed, pri, force = add_args([r for r in rest if not (rel and r == '--now')])
     except SystemExit as e:
         print(e, file=sys.stderr)
         return 2
@@ -2857,8 +2889,8 @@ def _p_add(a, x):
             return 2
         print(f'{PROG}: warning: {why}', file=sys.stderr)
 
-    tid = add(kind, text, w[0], (w[1:] or [None])[0], pri=pri)
-    msg = f'added {tid}' + (f' ({pri})' if pri else '')
+    tid = add(kind, text, w[0], (w[1:] or [None])[0], pri=pri, alone_=bool(solo))
+    msg = f'added {tid}' + (f' ({pri})' if pri else '') + (' (alone: nothing starts beside it)' if solo else '')
     if fam:  # a subtask queues behind its family: only right when it needs the parent's code, data or verdict
         print(f'{PROG}: note: {tid} never runs beside {kind}\'s family; if it could start now, add it '
               f'with a fresh letter instead (`{PROG} add {re.match(r"[A-Za-z]+", kind).group()} …`)',
@@ -2877,17 +2909,18 @@ def _p_edit(a, x):
     if refused := [w for w in a.rest if w in ('@', '--last', '--force')]:
         print(f'{PROG}: edit takes no {refused[0]} (`{PROG} move ID WHERE` moves a task)', file=sys.stderr)
         return 2
+    rest, solo = alone_flag(a.rest)  # F130: --alone sets the `(alone)` tag, --no-alone clears it
     try:
-        text, _, keyed, pri, _ = add_args(a.rest)
+        text, _, keyed, pri, _ = add_args(rest)
     except SystemExit as e:
         print(str(e).replace('not added', 'not edited'), file=sys.stderr)
         return 2
-    if not (text.strip() or keyed or pri):
+    if not (text.strip() or keyed or pri or solo is not None):
         print(f'{PROG} edit <ID> "new text" [--files A,B] [--after X,Y] [--test T] [--journal D] [--model M] '
-              '[--pri LEVEL]',
+              '[--pri LEVEL] [--alone | --no-alone]',
               file=sys.stderr)
         return 2
-    edit(a.id, text, keyed, pri or None)
+    edit(a.id, text, keyed, pri or None, alone_=solo)
     return x.say(f'edited {a.id}')
 
 
