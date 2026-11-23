@@ -2132,19 +2132,19 @@ let SW=null;
 const sideways=el=>{for(;el&&el!==document.body;el=el.parentElement)if(el.scrollWidth>el.clientWidth+1&&/(auto|scroll)/.test(getComputedStyle(el).overflowX))return true;return false};
 /* B167: what a touch could scroll, and did it: a change of height is the page's own scroll (a chat's new message) */
 const scrollers=el=>{const a=[];for(;el&&el!==document.body;el=el.parentElement)if(el.scrollHeight>el.clientHeight+1)a.push([el,el.scrollTop,el.scrollHeight]);return a};
-const scrolled=a=>a.some(([el,top,h])=>el.scrollTop!==top&&el.scrollHeight===h);
+const scrolled=a=>a.some(s=>{const [el,top,h]=s;if(el.scrollHeight===h)return el.scrollTop!==top;s[1]=el.scrollTop;s[2]=el.scrollHeight;return false});
 const drawerOn=()=>{const m=document.querySelector('.top .menu');return !!(m&&m.offsetParent)};
 document.addEventListener('touchstart',e=>{
-  if(SW&&SW.on){if(e.touches.length>1)return;swipeEnd(false)}  // B167: a second finger does not end the lock
+  if(SW&&SW.on&&!SW.sheet){if(e.touches.length>1)return;swipeEnd(false)}  // B167: a second finger does not end the lock
   SW=null;const t=e.touches[0], el=e.target;
   if(e.touches.length!==1||!el.closest||el.closest('input,textarea,select,[contenteditable],iframe,.obpop,.mic.hold')||DR&&DR.on)return;
   if(S.sheet){if(el.closest('#sheet')&&$('sheet').scrollTop<=0)SW={sheet:true,x:t.clientX,y:t.clientY,at:e.timeStamp,d:0,on:false};return}
   if(!drawerOn()||el.closest('#body,#dock')&&sideways(el))return;
-  SW={x:t.clientX,y:t.clientY,at:e.timeStamp,d:0,on:false,open:S.drawer,w:$('side').offsetWidth||280,lx:t.clientX,lt:e.timeStamp,v:0,scr:scrollers(el)};
+  SW={x:t.clientX,y:t.clientY,at:e.timeStamp,d:0,on:false,open:S.drawer,w:$('side').offsetWidth||280,lx:t.clientX,lt:e.timeStamp,v:0,id:t.identifier,scr:scrollers(el)};
 },{passive:true});
 document.addEventListener('touchmove',e=>{
   if(!SW)return;
-  const t=e.touches[0], dx=t.clientX-SW.x, dy=t.clientY-SW.y;
+  const t=SW.on&&[...e.touches].find(f=>f.identifier===SW.id)||e.touches[0], dx=t.clientX-SW.x, dy=t.clientY-SW.y;
   if(DR&&DR.ready&&DR.hold){if(SW.on)swipeEnd(false);SW=null;return}  // the row is held: it is being dragged
   if(SW.sheet){
     if(!SW.on){if(Math.abs(dy)<10&&Math.abs(dx)<10)return;if(dy<Math.abs(dx)||$('sheet').scrollTop>0){SW=null;return}SW.on=true;$('sheet').classList.add('drag')}
@@ -2165,7 +2165,7 @@ function swipeEnd(done){
   S.drawer=done?swipeOpens(w.d,w.v,w.w,w.open):w.open;
   noClick=true;setTimeout(()=>noClick=false,50);PD.down=false;render(true);
 }
-document.addEventListener('touchend',()=>swipeEnd(true),{passive:true});
+document.addEventListener('touchend',e=>{if(SW&&SW.on&&!SW.sheet&&[...e.touches].some(f=>f.identifier===SW.id))return;swipeEnd(true)},{passive:true});
 document.addEventListener('touchcancel',()=>swipeEnd(false),{passive:true});
 addEventListener('pagehide',finalDelete);  // F118: leaving the page makes a pending delete final
 

@@ -2554,7 +2554,7 @@ const box = {scrollTop: 500, scrollHeight: 3000, clientHeight: 600, scrollWidth:
 const el = {scrollHeight: 20, clientHeight: 20, parentElement: box, closest: s => skip && s.includes(skip) ? {} : null};
 let now = 0;
 const fire = (t, x, y, o = {}) => { let stopped = false;
-  on[t].forEach(f => f({target: el, touches: Array(o.n || (t === 'touchstart' || t === 'touchmove' ? 1 : 0)).fill({clientX: x, clientY: y}), timeStamp: now += 100,
+  on[t].forEach(f => f({target: el, touches: Array(o.n || (t === 'touchstart' || t === 'touchmove' ? 1 : 0)).fill().map((_, i) => ({identifier: i, clientX: x, clientY: y})), timeStamp: now += 100,
     cancelable: o.cancelable !== false, preventDefault() { if (o.cancelable !== false) stopped = true }}));
   return stopped };
 eval(logic + page.slice(page.indexOf('/* F124: a swipe right anywhere'), page.indexOf("addEventListener('pagehide'")) + `
@@ -2563,8 +2563,9 @@ function touch(open, moves, end = 'touchend') {
   S.drawer = open; S.sheet = ''; DR = null; skip = ''; box.scrollTop = 500; box.scrollHeight = 3000; fire('touchstart', 100, 300);
   const kept = moves.map(([dx, dy, o = {}]) => { if (o.top) box.scrollTop = o.top; if (o.h) box.scrollHeight = o.h;
     if (o.hold) DR = {ready: true, hold: 1}; if (o.start) { fire('touchstart', 9, 9, {n: 2}); return 'start' }
+    if (o.lift) { fire('touchend', 9, 9, {n: 1}); return 'lift' }
     return fire('touchmove', 100 + dx, 300 + dy, o) });
-  const at = $('side').style.transform; fire(end, 0, 0); return [kept.map(k => k === 'start' ? k : +k).join(), !!S.drawer, at, !!noClick && !(noClick = false)];
+  const at = $('side').style.transform; fire(end, 0, 0); return [kept.map(k => typeof k === 'string' ? k : +k).join(), !!S.drawer, at, !!noClick && !(noClick = false)];
 }
 const out = {
   scrollFirst: touch(false, [[2, -20], [60, -30], [220, -30]]),
@@ -2578,7 +2579,8 @@ const out = {
   closeScroll: touch(true, [[-2, -15], [-220, -20]]),
   wrongWay: touch(false, [[-20, 0], [220, 0]]),
   cancel: touch(false, [[20, 0], [220, 0]], 'touchcancel'),
-  second: touch(false, [[20, 0], [0, 0, {start: true}], [220, 40, {n: 2}]]),
+  second: touch(false, [[20, 0], [0, 0, {start: true}], [220, 40, {n: 2}], [0, 0, {lift: true}], [220, 90]]),
+  grewThenScrolled: touch(false, [[3, 0, {top: 900, h: 3400}], [4, -5, {top: 905}], [220, -6]]),
   held: touch(false, [[2, 0], [20, 0, {hold: true}], [220, 0]]),
   tap: touch(false, [[4, 3]]),
 };
@@ -2605,7 +2607,7 @@ def test_swipe_or_scroll_b167(tmp: Path) -> None:
     got = json.loads(p.stdout or '{}')
     for k, what in (('scrollFirst', 'a scroll that bends sideways'), ('slowScroll', 'the scroller moved first'),
                     ('begun', 'a scroll has begun: the move is not cancelable'), ('diagonal', 'a diagonal move'),
-                    ('wrongWay', 'a swipe left with the drawer closed'), ('held', 'a held row')):
+                    ('grewThenScrolled', 'a scroll after a new message'), ('wrongWay', 'a swipe left with the drawer closed'), ('held', 'a held row')):
         kept, opened, *_ = got.get(k)
         check('1' not in kept and not opened, f'{what}: no drawer, and the scroll is left alone', got.get(k))
     eq(got['grew'][:2], ['0,1,1', True], "a chat's new message is not the finger's scroll")
@@ -2614,7 +2616,7 @@ def test_swipe_or_scroll_b167(tmp: Path) -> None:
     eq(got['close'][:2], ['1,1,1', False], 'the same for the swipe that closes')
     eq(got['closeScroll'][:2], ['0,0', True], "a scroll of the drawer's list does not close it")
     eq(got['cancel'][:2], ['1,1', False], 'a cancelled swipe leaves the drawer as it was')
-    eq(got['second'][:2], ['1,start,1', True], 'a second finger does not end the lock')
+    eq(got['second'][:2], ['1,start,1,lift,1', True], 'a second finger, down or up, does not end the lock')
     eq(got['tap'][0::3], ['0', False], 'a tap stays a tap')
     eq([got['box'], got['mic'], got['sideways']], [False] * 3, 'text boxes, the held mic and sideways scrollers are left alone')
     eq(got['sheet'], [False, 'translateY(120px)', ''], "the sheet's swipe down")
