@@ -237,6 +237,39 @@ a{color:var(--accent)}
 .slash button.on{background:var(--bubble)}
 .slash b{font-weight:500;white-space:nowrap}
 .slash span{color:var(--muted);font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+/* F115: the message box's dictation mic (beside attach), listening; one that cannot listen stays tappable and says why */
+.tool.dict.on{background:var(--bad);border-color:var(--bad);color:var(--onaccent);animation:pulse 1.2s infinite}
+.tool.dict.off{opacity:.55}
+.inrow{display:flex;align-items:flex-start;gap:8px;min-width:0}
+.inrow textarea{flex:1;min-width:0}
+.pr{display:none}
+@media (pointer:coarse){.tool{height:40px;min-width:40px}.send{width:40px;height:40px}}
+@media (prefers-reduced-motion:reduce){.tool.dict.on{animation:none}}
+/* F115: a chat (and Talk) looks like the terminal: monospace, the [ui] theme's terminal colours (--t-*: the app's own
+   until the theme comes from the terminal-style page, see termTokens), a '>' prompt, tool lines as the agent's terminal draws them */
+:root{--t-bg:var(--bg);--t-fg:var(--fg);--t-dim:var(--muted);--t-line:var(--line2);--t-raise:var(--side);--t-cur:var(--bubble);
+  --t-accent:var(--accent);--t-red:var(--bad);--t-green:var(--ok);--t-yellow:var(--warn);--t-blue:var(--accent)}
+.main.term{--bg:var(--t-bg);--fg:var(--t-fg);--muted:var(--t-dim);--faint:var(--t-dim);--line:var(--t-line);--line2:var(--t-line);
+  --surface:var(--t-raise);--side:var(--t-raise);--bubble:var(--t-cur);--accent:var(--t-accent);--accent2:var(--t-accent);
+  --ok:var(--t-green);--bad:var(--t-red);--warn:var(--t-yellow);background:var(--bg);color:var(--fg)}
+.main.term .msgs{font:14px/1.55 var(--mono);gap:14px}
+.main.term .u{justify-self:stretch;max-width:100%;background:var(--bubble);border-radius:6px;padding:6px 10px 6px 2em;position:relative;font:inherit}
+.main.term .u::before{content:'>';position:absolute;left:.75em;top:6px;color:var(--muted)}
+.main.term .a,.main.term .a h1,.main.term .a h2,.main.term .a h3,.main.term .a h4{font:inherit}
+.main.term .a h1,.main.term .a h2,.main.term .a h3,.main.term .a h4{font-weight:700}
+.main.term .a .lead{font:500 12.5px var(--mono)}
+.main.term .a .say{position:relative;padding-left:1.6em;min-width:0}
+.main.term .a .say::before{content:'●';position:absolute;left:0;color:var(--fg)}
+.main.term .a code{font:inherit;color:var(--t-blue)}
+.main.term .a pre{font:13px/1.5 var(--mono)}
+.main.term .steps{font:13px var(--mono);padding:6px 0;min-height:32px}
+.main.term .stepbox{font:13px/1.55 var(--mono);background:none;border:0;border-left:1px solid var(--line);border-radius:0;padding:2px 0 2px 10px}
+.stepbox .tl::before{content:'● ';color:var(--ok)}
+.main.term .think{font:13px var(--mono)}
+.main.term .box{border-radius:10px;padding:10px 10px 8px 12px}
+.main.term .box textarea{font:16px/1.45 var(--mono)}  /* 16px: a phone does not zoom into it */
+.main.term .pr{display:block;font:16px/1.45 var(--mono);color:var(--muted);padding:2px 0}
+.main.term .dock{background:linear-gradient(transparent,var(--bg) 30%)}
 @media (prefers-reduced-motion:reduce){.side,.steps svg{transition:none}.livedot,.think .logo{animation:none}}
 </style>
 </head>
@@ -388,6 +421,29 @@ function micProblem(secure,hasRecognition){
   if(!hasRecognition)return 'This browser cannot turn speech into text (Chrome, Edge and Safari can). Type below instead.';
   return '';
 }
+/* F115: dictation in the message box: why its mic cannot listen ('' when it can), as micProblem says for Talk */
+const dictProblem=(secure,hasRecognition)=>micProblem(secure,hasRecognition).replace('Type below instead.','Type your message instead.');
+/* the mic button beside attach: `why` (dictProblem) keeps it tappable, to say why; `on` while it listens */
+function dictButton(why,on,icon){
+  const e=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const label=why||(on?'Stop dictating':'Dictate: your words go into the box to edit');
+  return `<button type="button" class="tool dict${on?' on':''}${why?' off':''}" data-dict aria-pressed="${!!on}" aria-label="${e(label)}" title="${e(label)}">${icon||''}</button>`;
+}
+/* the box's words while dictating: what it held when the mic started, then the words heard */
+function dictInsert(draft,words){
+  const d=String(draft||''), w=String(words||'').trim();
+  if(!w)return d;
+  return d.trim()?d.replace(/\s+$/,'')+' '+w:w;
+}
+/* F115: the [ui] theme's terminal colours from the terminal-style page's style#theme (hex only): {tokens, mode} */
+const TERM_TOKENS=['bg','fg','dim','line','raise','cur','accent','red','green','yellow','blue'];
+function termTokens(page){
+  const m=String(page||'').match(/<style id="theme">([^<]*)<\/style>/), tokens={};
+  if(!m)return {tokens,mode:''};
+  for(const [,k,v] of m[1].matchAll(/--([a-z]+):\s*([^;}]+)/g))if(TERM_TOKENS.includes(k)&&/^#[0-9a-f]{3,8}$/i.test(v.trim()))tokens[k]=v.trim();
+  const s=m[1].match(/color-scheme:\s*(light|dark)/);
+  return {tokens,mode:s?s[1]:''};
+}
 /* B132: the talk line after a listen that ended with no words, naming the last error the recognizer gave */
 const heardNothing=err=>err?`Heard nothing (error: ${err})`:'Heard nothing';
 /* a Talk message as the person said it: without the first message's brief or a later one's reminder */
@@ -496,7 +552,7 @@ function obHidden(box,key){return(box||[]).filter(x=>x.state==='sending'&&x[key]
 /* the pill's words */
 function obPill(c,offline){const p=[];if(c.sending)p.push(`${c.sending} ${offline?'waiting for the connection':'sending'}`);
   if(c.failed)p.push(`${c.failed} failed · tap to see`);return p}
-if(typeof module!=='undefined')module.exports={chatMove,BOX_KEYS,keysLine,histPush,histEdge,histStep,slashMatches,slashPick,slashMove,SLASH_FALLBACK,chatPick,answerOpts,needAsk,threadMsgs,working,planWords,compose,sendReq,usageOf,logKind,plain,chatName,controlReq,controlClick,taskControlsOn,queueGroups,conceptButtons,NO_CONCEPT,newConceptReq,queuedId,NAV,talkSession,micProblem,talkShown,talkReply,goneMark,needsShown,answerSaid,GONE_MS,obParse,obNext,obName,obSettle,obRetry,obDrop,obCounts,obHidden,obPill};
+if(typeof module!=='undefined')module.exports={chatMove,BOX_KEYS,keysLine,histPush,histEdge,histStep,slashMatches,slashPick,slashMove,SLASH_FALLBACK,chatPick,answerOpts,needAsk,threadMsgs,working,planWords,compose,sendReq,usageOf,logKind,plain,chatName,controlReq,controlClick,taskControlsOn,queueGroups,conceptButtons,NO_CONCEPT,newConceptReq,queuedId,NAV,talkSession,micProblem,dictProblem,dictButton,dictInsert,termTokens,talkShown,talkReply,goneMark,needsShown,answerSaid,GONE_MS,obParse,obNext,obName,obSettle,obRetry,obDrop,obCounts,obHidden,obPill};
 </script>
 
 <script>
@@ -780,8 +836,8 @@ function box(ph,foot){
   return `<form class="box" data-form>${S.ctx?`<div class="ctx">About: <b>${esc(S.ctx.label)}</b><button type="button" class="x" data-unctx aria-label="Remove">✕</button></div>`:''}
     ${a.length?`<div class="atts">${a.map((f,i)=>`<span class="att ${f.path?'':f.err?'err':'up'}" title="${esc(f.err||f.path||'uploading…')}">${f.thumb?`<img src="${f.thumb}" alt="">`:`<span class="fi">${I.file}</span>`}<span class="nm">${esc(f.name)}</span><button type="button" class="x" data-unatt="${i}" aria-label="Remove">✕</button></span>`).join('')}</div>`:''}
     <div class="slash" data-slash role="listbox" aria-label="Commands" hidden></div>
-    <textarea rows="1" data-in placeholder="${esc(ph)}" aria-label="Message"></textarea>
-    <div class="boxrow"><button type="button" class="tool" data-clip aria-label="Attach pictures or files">${I.clip}</button><span class="to">${esc(S.ctx?'to a new chat':S.thread?S.thread:S.view==='talk'?'to Talk':'to c1')}</span>${busyNow?`<button type="button" class="send stop" data-stop="${esc(shownNow)}" aria-label="Interrupt">${I.stop}</button>`:''}<button class="send" aria-label="Send">${I.up}</button></div></form>${foot?`<div class="foot">${foot}</div>`:''}`;
+    <div class="inrow"><span class="pr" aria-hidden="true">&gt;</span><textarea rows="1" data-in placeholder="${esc(ph)}" aria-label="Message"></textarea></div>
+    <div class="boxrow"><button type="button" class="tool" data-clip aria-label="Attach pictures or files">${I.clip}</button>${S.view==='talk'&&!S.thread?'':dictButton(dictWhy(),!!DK.rec,I.talk)}<span class="to">${esc(S.ctx?'to a new chat':S.thread?S.thread:S.view==='talk'?'to Talk':'to c1')}</span>${busyNow?`<button type="button" class="send stop" data-stop="${esc(shownNow)}" aria-label="Interrupt">${I.stop}</button>`:''}<button class="send" aria-label="Send">${I.up}</button></div></form>${foot?`<div class="foot">${foot}</div>`:''}`;
 }
 function convo(n,shown){  // F93: shown, how a message of yours shows (Talk: without its brief or reminder)
   shown=shown||(t=>t);
@@ -794,8 +850,8 @@ function convo(n,shown){  // F93: shown, how a message of yours shows (Talk: wit
     if(m.w==='u'){h+=`<div class="u">${esc(shown(m.text))}</div>`;return}
     const lead=i===0||ms[i-1].w!=='a'?`<div class="lead"><span class="logo">${agent?esc(n):'ar'}</span>${esc(agent?title:'agent-runner')}</div>`:'';
     const k=n+':'+i, open=S.openSteps[k];
-    const st=m.steps.length?`<button class="steps ${open?'open':''}" data-steps="${esc(k)}">${I.chev}Ran ${m.steps.length} step${m.steps.length>1?'s':''}</button>${open?`<div class="stepbox">${m.steps.map(s=>esc(s.tool)+(s.out?`\n<span class="o">  ${esc(s.out).replace(/\n/g,'\n  ')}</span>`:'')).join('\n')}</div>`:''}`:'';
-    h+=`<div class="a">${lead}${st}${m.text?`<div>${md(m.text)}</div>`:''}</div>`;
+    const st=m.steps.length?`<button class="steps ${open?'open':''}" data-steps="${esc(k)}">${I.chev}Ran ${m.steps.length} step${m.steps.length>1?'s':''}</button>${open?`<div class="stepbox">${m.steps.map(s=>(s.tool?`<span class="tl">${esc(s.tool)}</span>`:'')+(s.out?`\n<span class="o">  ⎿ ${esc(s.out).replace(/\n/g,'\n    ')}</span>`:'')).join('\n')}</div>`:''}`:'';  // F115: tool lines as in the terminal
+    h+=`<div class="a">${lead}${st}${m.text?`<div class="say">${md(m.text)}</div>`:''}</div>`;
   });
   for(const p of (S.sent[n]&&S.sent[n].pending)||[])h+=`<div class="u pending">${esc(shown(p))}</div>`;
   h+=obBubbles(n);  // F137: messages still in the outbox
@@ -857,6 +913,8 @@ function render(force){
   const key=h+'|'+dock;
   if(key===lastBody&&!force)return;
   lastBody=key;
+  const main=document.querySelector('.main'), chatOn=!!n||S.view==='talk';  // F115: a chat looks like the terminal
+  main.classList.toggle('term',chatOn);main.style.colorScheme=chatOn&&TERM.mode?TERM.mode:'';
   const body=$('body'), atEnd=body.scrollHeight-body.scrollTop-body.clientHeight<80;
   body.innerHTML=h;$('dock').innerHTML=dock;$('dock').hidden=!dock;
   const nta=document.querySelector('[data-in]');
@@ -900,6 +958,36 @@ function talkWaitName(){
   return w.n;
 }
 const micWhy=()=>micProblem(window.isSecureContext!==false,!!SR);
+/* F115: dictation into the message box: DK.rec the recognizer while it listens, DK.key the box it fills, DK.base
+   what that box held when it started. The words go into the box to edit; nothing is sent. */
+const DK={rec:null,key:'',base:''};
+const dictWhy=()=>dictProblem(window.isSecureContext!==false,!!SR);
+function dictShow(words){
+  const v=dictInsert(DK.base,words);store.set(DRAFT_KEY(DK.key),v);
+  const ta=document.querySelector('[data-in]');if(ta&&boxKey()===DK.key){ta.value=v;grow(ta)}
+}
+function dictate(){
+  const why=dictWhy();if(why)return toast(why,true);
+  if(DK.rec){DK.rec.stop();return}
+  if(TK.state==='listening')return;  /* Talk's mic has the recognizer */
+  const ta=document.querySelector('[data-in]');if(!ta)return;
+  let rec;try{rec=new SR()}catch(e){return toast(`The mic could not start: ${e.message||e}`,true)}
+  DK.rec=rec;DK.key=boxKey();DK.base=ta.value;
+  rec.lang=navigator.language||'en-US';rec.interimResults=true;rec.continuous=false;
+  let final='', heard='';
+  rec.onresult=e=>{let interim='';for(let i=e.resultIndex;i<e.results.length;i++){const x=e.results[i];if(x.isFinal)final+=x[0].transcript;else interim+=x[0].transcript}
+    heard=final+interim;dictShow(heard)};
+  rec.onerror=e=>{if(e.error==='not-allowed'||e.error==='service-not-allowed')toast('The browser did not let the page use the mic: allow it in the site settings, or type instead.',true);
+    else if(e.error!=='no-speech'&&e.error!=='aborted')toast(`The mic stopped: ${e.error}`,true)};
+  rec.onend=()=>{DK.rec=null;dictShow(final||heard);render(true);
+    const t=document.querySelector('[data-in]');if(t&&boxKey()===DK.key){t.focus();t.setSelectionRange(t.value.length,t.value.length)}};
+  render(true);
+  try{rec.start()}catch(e){DK.rec=null;toast(`The mic could not start: ${e.message||e}`,true);render(true)}
+}
+/* F115: the [ui] theme's terminal colours for a chat, from the terminal-style page (the run app's tokens until then) */
+const TERM={mode:''};
+fetch('term'+location.search).then(r=>r.ok?r.text():'').then(p=>{const t=termTokens(p);if(!Object.keys(t.tokens).length)return;
+  for(const [k,v] of Object.entries(t.tokens))document.documentElement.style.setProperty('--t-'+k,v);TERM.mode=t.mode;render(true)}).catch(()=>{});
 function talkHTML(){
   const n=talkName();
   if(!n)return `<div class="col"><div class="greet"><span class="logo">ar</span>Talk to the run</div><div class="small" style="text-align:center">Tap the mic and ask, say, what is going on: the reply is read aloud. Talk opens a chat of its own the first time.</div></div>`;
@@ -1120,6 +1208,7 @@ document.addEventListener('click',async e=>{
   if(q('[data-unctx]')){S.ctx=null;render(true);return}
   if(x=q('[data-unatt]')){S.atts.splice(+x.dataset.unatt,1);render(true);return}
   if(q('[data-clip]')){$('file').click();return}
+  if(q('[data-dict]'))return dictate();  // F115
   if(x=q('[data-stop]')){const n=x.dataset.stop||shownSession();if(n)act('interrupt',{session:n});return}
 });
 document.addEventListener('submit',e=>{e.preventDefault();if(e.target.matches('[data-kform]'))newConcept();else send()});

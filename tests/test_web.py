@@ -1787,6 +1787,79 @@ def test_short_ask_b152(tmp: Path) -> None:
     eq(small, '<div class="q clamp">Which port?</div>', 'a short ask has no More (and is clamped all the same)')
 
 
+DICT_DRIVER = r"""
+const page = require('fs').readFileSync(process.argv[2], 'utf8').replace(/\r\n/g, '\n');
+const grab = (start) => { const i = page.indexOf(start); return page.slice(i, page.indexOf('\n}\n', i) + 2); };
+const logic = page.split('<script id="logic">')[1].split('</script>')[0];
+let rec = null, sent = [], toasts = [];
+class SR { constructor() { rec = this } start() { this.started = true } stop() { this.onend() } }
+const navigator = {language: 'en-US'}, window = {isSecureContext: true};
+const ta = {value: 'fix the', focus() {}, setSelectionRange() {}};
+const document = {querySelector: s => s === '[data-in]' ? ta : null};
+const drafts = {}, store = {set: (k, v) => { drafts[k] = v }, get: k => drafts[k] || ''};
+const DRAFT_KEY = k => 'draft:' + k, boxKey = () => 'c3', grow = () => {}, render = () => {};
+const toast = t => toasts.push(t), send = () => sent.push(ta.value), TK = {state: ''};
+eval(logic + 'const DK={rec:null,key:\'\',base:\'\'};const dictWhy=()=>\'\';' + grab('function dictShow(') + grab('function dictate(') + `
+  dictate();
+  const listening = !!DK.rec;
+  rec.onresult({resultIndex: 0, results: [Object.assign([{transcript: 'merge'}], {isFinal: false})]});
+  const interim = ta.value;
+  rec.onresult({resultIndex: 0, results: [Object.assign([{transcript: 'merge conflict'}], {isFinal: true})]});
+  dictate();
+  console.log(JSON.stringify({listening, interim, after: ta.value, draft: drafts['draft:c3'], stopped: DK.rec === null, sent, toasts}));`);
+"""
+
+
+def test_chat_box_f115(tmp: Path) -> None:
+    """F115: the message box has a dictation mic beside attach whose words go into the box to edit (nothing is
+    sent), and says why it cannot listen on plain http or without speech recognition; a chat looks like the
+    terminal: monospace (the --mono token), the [ui] theme's terminal colours, a '>' prompt and tool lines."""
+    page = W.PAGE.read_text(encoding='utf-8')
+    box = page.split('function box(ph,foot){', 1)[1].split('\n}\n', 1)[0]
+    check('data-clip' in box and 'dictButton(dictWhy()' in box and box.index('data-clip') < box.index('dictButton('),
+          'the box draws the mic button, right after attach', box[-600:])
+    check("if(q('[data-dict]'))return dictate();" in page, 'a tap on it dictates')
+    check('.main.term .msgs{font:14px/1.55 var(--mono)' in page and '.main.term .box textarea{font:16px/1.45 var(--mono)}' in page,
+          'a chat and its box use the monospace font token (16px: a phone does not zoom)')
+    check(".main.term .u::before{content:'>'" in page and ".stepbox .tl::before{content:'● '" in page
+          and '⎿' in page, "a '>' prompt on your messages, Claude Code-like tool lines")
+    check("main.classList.toggle('term',chatOn)" in page and "fetch('term'+location.search)" in page,
+          "a chat takes the terminal look and the [ui] theme's colours from the terminal-style page")
+    check('@media (pointer:coarse){.tool{height:40px;min-width:40px}.send{width:40px;height:40px}}' in page,
+          'the box buttons stay touch-sized on a phone')
+    if not shutil.which('node'):
+        print('  (no node here: the dictation script test is skipped)')
+        return
+    got = logic_js([['dictProblem', False, True], ['dictProblem', True, False], ['dictProblem', True, True],
+                    ['dictButton', '', False, 'MIC'], ['dictButton', '', True, 'MIC'],
+                    ['dictButton', 'This browser cannot turn speech into text (Chrome, Edge and Safari can).', False, 'MIC'],
+                    ['dictInsert', 'fix the ', ' merge '], ['dictInsert', '', 'hello'], ['dictInsert', 'keep', ''],
+                    ['termTokens', '<style id="theme">:root{--bg:#000000;--fg:#e5e5e5;--dim:#737373;--sel:#7f1d1d;'
+                     '--line:url(x);color-scheme:dark}</style>'], ['termTokens', '<p>no theme</p>']])
+    check('https or localhost' in got[0] and 'Type your message instead.' in got[0],
+          'plain http: the dictation mic says it needs https', got[0])
+    check('cannot turn speech into text' in got[1], 'no speech recognition: the dictation mic says so', got[1])
+    eq(got[2], '', 'https with recognition: it dictates')
+    check('data-dict' in got[3] and 'class="tool dict"' in got[3] and 'go into the box to edit' in got[3] and 'MIC' in got[3],
+          'the mic button says its words go into the box', got[3])
+    check('tool dict on' in got[4] and 'Stop dictating' in got[4] and 'aria-pressed="true"' in got[4],
+          'while it listens it shows so and stops on a tap', got[4])
+    check('dict off' in got[5] and 'title="This browser cannot turn speech into text' in got[5] and 'disabled' not in got[5],
+          'one that cannot listen says why in its label and stays tappable (a tap says why)', got[5])
+    eq(got[6:9], ['fix the merge', 'hello', 'keep'], 'the words heard go after what the box held')
+    eq(got[9], {'tokens': {'bg': '#000000', 'fg': '#e5e5e5', 'dim': '#737373'}, 'mode': 'dark'},
+       "the theme's terminal colours, hex only, and its mode")
+    eq(got[10], {'tokens': {}, 'mode': ''}, 'no theme: the app keeps its own colours')
+    (tmp / 'driver.js').write_text(DICT_DRIVER, encoding='utf-8')
+    r = subprocess.run(['node', str(tmp / 'driver.js'), str(W.PAGE)], capture_output=True, text=True, timeout=60)
+    check(r.returncode == 0, 'node runs dictate()', r.stderr[-800:])
+    d = json.loads(r.stdout or '{}')
+    eq((d.get('listening'), d.get('interim'), d.get('after'), d.get('draft'), d.get('stopped')),
+       (True, 'fix the merge', 'fix the merge conflict', 'fix the merge conflict', True),
+       'dictation fills the box as it hears, keeps it as the draft, and a second tap stops it')
+    eq((d.get('sent'), d.get('toasts')), ([], []), 'nothing is sent: the words wait in the box to edit')
+
+
 if __name__ == '__main__':
     raise SystemExit(report([in_tmp(test_chat_order_f133), in_tmp(test_delete_chats_f118), in_tmp(test_server), in_tmp(test_real_action), in_tmp(test_run_controls),
                            in_tmp(test_start), in_tmp(test_upload),
@@ -1798,4 +1871,5 @@ if __name__ == '__main__':
                            in_tmp(test_listen_heard_nothing_b132), in_tmp(test_talk_reply_heard_b133),
                            in_tmp(test_slash_menu_b119), in_tmp(test_composer_keys_b120),
                            in_tmp(test_interrupt_c1_b141), in_tmp(test_answer_button_b138), in_tmp(test_pick_f138),
-                           in_tmp(test_outbox_f137), in_tmp(test_card_chat_b139), in_tmp(test_short_ask_b152)]))
+                           in_tmp(test_outbox_f137), in_tmp(test_card_chat_b139), in_tmp(test_short_ask_b152),
+                           in_tmp(test_chat_box_f115)]))
