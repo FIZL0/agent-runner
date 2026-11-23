@@ -165,7 +165,7 @@ a{color:var(--bblue)}
 /* F75: the page's keys and its bottom line, as plain functions of where the person is (no page in here, so
    tests/test_web.py drives them in node). route(c, e) gives the commands a key runs ([] leaves the key to the
    browser); footer(c, shown) the bottom line. c: {panel, panelName, focusMain, tab, tabs, typing, chatBox,
-   popup, busy, it: {newtask, newchat, ctl, task, k}, answerKeys}; e: {key, ctrl, meta, shift, alt}. */
+   popup, busy, selected, it: {newtask, newchat, ctl, task, k}, answerKeys}; e: {key, ctrl, meta, shift, alt}. */
 function tabsFor(p,it){
   if(!it)return['info'];
   if(p===1)return it.k==='rel'?['release','chat','log']:['chat','log'];
@@ -193,8 +193,10 @@ function route(c,e){
   if(c.popup)return k==='Escape'?[['closepop']]:[];
   if(ctrl&&!e.alt&&k.toLowerCase()==='s'&&c.focusMain&&t==='direct edit')return[['save']];
   if(e.ctrl&&!e.meta&&!e.alt&&(k==='h'||k==='l'))return[['side',k==='h'?'left':'right']];
+  // B124: Ctrl+C interrupts a working chat (not over selected text, so copying works); Esc never does
+  if(e.ctrl&&!e.meta&&!e.alt&&k.toLowerCase()==='c'&&c.busy&&(c.typing?c.chatBox:c.focusMain)&&!c.selected)return[['interrupt']];
   if(c.typing){
-    if(k==='Escape')return c.busy&&c.chatBox?[['interrupt']]:[['blur']];
+    if(k==='Escape')return[['blur']];
     if(k==='Enter'&&!e.shift&&c.chatBox)return[['send']];
     if(k==='Tab'&&c.focusMain&&t==='direct edit')return[['field',e.shift?-1:1]];
     return[];
@@ -202,7 +204,7 @@ function route(c,e){
   if(ctrl||e.alt)return[];
   if(/^[1-5]$/.test(k))return[['panel',+k]];
   if(c.focusMain){
-    if(k==='Escape')return[c.busy?['interrupt']:['back']];
+    if(k==='Escape')return[['back']];
     if(k==='h'||k==='ArrowLeft')return[c.tabs.indexOf(t)<=0?['back']:['tab',-1]];
     if(k==='l'||k==='ArrowRight')return[['tab',1]];
     if(t==='direct edit'){
@@ -249,14 +251,14 @@ function route(c,e){
    already shows (on a button, a label, a row: `shown`) is left out, and so are j/k and ^h/^l. */
 function footer(c,shown){
   const it=c.it||{},t=c.tab;let here;
-  if(c.typing)here=[['Esc',c.busy&&c.chatBox?'interrupt':'leave'],...(c.chatBox?[['⇧⏎','new line']]:[]),...(c.focusMain&&t==='direct edit'?[['Tab','next field']]:[])];
+  if(c.typing)here=[...(c.busy&&c.chatBox?[['Ctrl+C','interrupts']]:[]),['Esc','leave'],...(c.chatBox?[['⇧⏎','new line']]:[]),...(c.focusMain&&t==='direct edit'?[['Tab','next field']]:[])];
   else if(c.focusMain){here=[['h/l','tab']];
     if(t==='direct edit')here.push(['Tab','next field'],['^S','save']);
     if(t==='chat'||t==='feed')here.push(['i','type'],['v','steps']);
     if(t==='chat edit'||t==='answer')here.push(['i','type']);
     if(t==='preview')here.push(['⏎','go with it'],['i','what to change'],['O','open on claude.ai']);
     if(t==='session')here.push(['o','open']);
-    here.push(['Esc',c.busy?'interrupt':'back'])}
+    if(c.busy)here.push(['Ctrl+C','interrupts']);here.push(['Esc','back'])}
   else here=({1:[['⏎','open'],['R','release']],
     2:[['⏎','open'],['v','steps'],['N','new chat'],...(it.ctl||it.task?[['o','open session']]:[])],
     3:it.newtask?[['⏎','new task'],['E','describe it']]:it.parked?[['U','unpark'],['e','edit'],['E','chat edit'],['n','new'],['H','do it here'],['D','drop']]:[['e','edit'],['E','chat edit'],['n','new'],['J/K','reorder'],['p','priority'],['H','do it here'],['D','drop']],
@@ -387,7 +389,7 @@ function ctx(){
   const it=sel(),[tab,tabs]=curTab(),a=document.activeElement;
   return{panel:S.panel,panelName:PANELS[S.panel-1].name,focusMain:S.focusMain,tab,tabs,typing:typing(),
     chatBox:!!(a&&a.classList&&a.classList.contains('cin')),popup:!$('#pop').hidden,
-    busy:(tab==='chat'||tab==='feed')&&isBusy(sessionOf(it)),it:flags(it),answerKeys:tab==='answer'?answerOpts(it).map(o=>o.key):[]};
+    busy:(tab==='chat'||tab==='feed')&&isBusy(sessionOf(it)),selected:!!String(window.getSelection&&window.getSelection()||''),it:flags(it),answerKeys:tab==='answer'?answerOpts(it).map(o=>o.key):[]};
 }
 
 function renderLeft(){
@@ -413,7 +415,7 @@ function feedHTML(name,showTools){
     flush();out.push(`<div class="${e.kind==='out'&&e.text==='interrupted'?'intr':esc(e.kind)}">${esc(e.text)}</div>`)}
   flush();
   if(!out.length)out.push(`<div class="fold">${esc(f.out||'nothing said yet')}</div>`);
-  if(isBusy(name))out.push('<div class="fold">✳ working…</div>');
+  if(isBusy(name))out.push('<div class="fold">✳ working… · Ctrl+C interrupts</div>');
   return `<div class="feedv">${f.more?'<div class="fold">· older entries left out</div>':''}${out.join('')}</div>`;
 }
 function loadFeed(name){
@@ -638,7 +640,7 @@ function help(){openPop('Keybindings',`<span class="r">Everywhere</span>
 
 <span class="r">Status [1]</span>      <span class="b">R</span> release   <span class="b">s y w u</span> quick asks in its chat
 <span class="r">Sessions [2]</span>    <span class="b">N</span> new chat  <span class="b">o</span> open the session  <span class="b">v</span> show tool steps
-  a chat: <span class="b">⏎</span> sends, <span class="b">⇧⏎</span> new line, <span class="b">Esc</span> interrupts while it works
+  a chat: <span class="b">⏎</span> sends, <span class="b">⇧⏎</span> new line, <span class="b">Ctrl+C</span> interrupts while it works, <span class="b">Esc</span> leaves
 <span class="r">Queue [3]</span>
   <span class="b">e</span>      direct edit          <span class="b">E</span>      chat edit
   <span class="b">n</span>      new task             <span class="b">J/K</span>    move the task down / up

@@ -805,6 +805,37 @@ def test_esc_ctrl_c(tmp: Path) -> None:
           in page, 'the working mark says Ctrl+C interrupts and has a Stop button')
     check("if(x=q('[data-stop]')){const n=x.dataset.stop||S.thread;if(n)act('interrupt',{session:n});return}" in page,
           'Stop interrupts the session it stands by')
+    # B124: the terminal-style page, the same way: route()'s Esc branches never interrupt, Ctrl+C does
+    term = W.TERM.read_text(encoding='utf-8')
+    js = term.split('<script id="keys">', 1)[1].split('</script>', 1)[0]
+    route = js.split('function route(c,e){', 1)[1].split('\n}\n', 1)[0]
+    term_esc = [ln for ln in route.splitlines() if "'Escape'" in ln]
+    check(len(term_esc) >= 3, "the term page's route has its Esc branches", term_esc)
+    for ln in term_esc:
+        check('interrupt' not in ln, "a term page Esc branch sends no interrupt", ln)
+    check('<span class="b">Ctrl+C</span> interrupts while it works' in term, 'the term help line says Ctrl+C interrupts')
+    if not shutil.which('node'):
+        print('  (no node here: the terminal-style page Ctrl+C test is skipped)')
+        return
+    ev = lambda k, ctrl=False: {'key': k, 'ctrl': ctrl, 'meta': False, 'shift': False, 'alt': False}  # noqa: E731
+    box = {'panel': 2, 'focusMain': True, 'tab': 'chat', 'tabs': ['chat'], 'it': {}, 'typing': True,
+           'chatBox': True, 'busy': True, 'selected': False}
+    main = dict(box, typing=False, chatBox=False)
+    cases = [['route', box, ev('Escape')], ['route', main, ev('Escape')], ['route', box, ev('c', True)],
+             ['route', main, ev('c', True)], ['route', dict(box, selected=True), ev('c', True)],
+             ['route', dict(box, busy=False), ev('c', True)], ['footer', box, []], ['footer', main, []]]
+    (tmp / 'keys.js').write_text(js, encoding='utf-8')
+    (tmp / 'driver.js').write_text(TERM_DRIVER, encoding='utf-8')
+    r = subprocess.run(['node', str(tmp / 'driver.js'), str(tmp / 'keys.js')], input=json.dumps(cases),
+                       capture_output=True, text=True, timeout=60)
+    check(r.returncode == 0, 'node runs the terminal-style page script', r.stderr[-800:])
+    got = json.loads(r.stdout or '[]') or [None] * len(cases)
+    eq((got[0], got[1]), ([['blur']], [['back']]), 'Esc in a working chat leaves the box, then goes back')
+    eq((got[2], got[3]), ([['interrupt']], [['interrupt']]), 'Ctrl+C interrupts the working chat')
+    eq((got[4], got[5]), ([], []), 'Ctrl+C over selected text, or in an idle chat, is left to the browser')
+    for f in got[6:8]:
+        check(['Ctrl+C', 'interrupts'] in f['here'] and all(lb != 'interrupt' for _, lb in f['here']),
+              "the key hints say 'Ctrl+C interrupts', and Esc no longer interrupts", f)
 
 
 def in_tmp(f):
