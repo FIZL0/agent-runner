@@ -169,7 +169,7 @@ def queue_resume(tid: str, n: int, sid: str, why: str) -> None:
     C.notes(f'{tid}.resume').write_text(json.dumps({'slot': n, 'sid': sid, 'why': why}), encoding='utf-8')
 
 
-HEADER = re.compile(r'^=== (\S+) (\S+) (?:session|resume) (\S+)')
+HEADER = re.compile(r'^=== (\S+) (\S+) (?:session|resume|woken) (\S+)')
 
 
 def resumes(n: int, sid: str) -> int:

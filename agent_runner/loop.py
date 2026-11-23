@@ -19,7 +19,7 @@ import webbrowser
 from contextlib import ExitStack
 from pathlib import Path
 
-from agent_runner import ci, gitops, plan as P, plansync, plat, undo
+from agent_runner import ci, gitops, plan as P, plansync, plat, shared_tools, undo
 from agent_runner.config import claude_model, RUNNER, ensure_local, finished_mark, shown_cmd
 from agent_runner.done import TESTED
 from agent_runner.gitops import missing_remote, push
@@ -27,12 +27,10 @@ from agent_runner.state import (alarm, ask_stop, C, clean, clear_stop, commit_pl
     git, HIDDEN, IDLE, init, KEYS, KEYS_LOCK, LANDING, log, MERGE, note, PAUSED, plan_rel, plan_text, POWER, queued,
     READING, ROOT, share, SLOTS_DIR, stop_note, STOP_SAID, stopped_by, stopping, WAKE)
 from agent_runner.state import (EV_DEFERRED, EV_DROPPED, EV_IDLE, EV_LEFT, EV_NO_COMMITS, EV_PARKED, EV_RUN_UP,
-    EV_STALLED, EV_STOP_ASKED, EV_STOP_BACK, EV_STOPPED)
-from agent_runner.state import EV_CONTEXT
+    EV_STALLED, EV_STOP_ASKED, EV_STOP_BACK, EV_STOPPED, EV_CONTEXT)
 from agent_runner.autorelease import auto_release, auto_release_of, AUTO_RELEASE_SEEN, landed_since_release
 from agent_runner.brief import no_remote_line
-from agent_runner.sched import blocked_by_edits, keep_claims, PARK_LIMIT, parked_attempts, pick, tasks
-from agent_runner.sched import forgive_park, note_committed
+from agent_runner.sched import blocked_by_edits, forgive_park, keep_claims, note_committed, PARK_LIMIT, parked_attempts, pick, tasks
 from agent_runner.tools import take_end
 from agent_runner.login import retry_held, unlogged
 from agent_runner.asks import block_asks, EV_FINISHED, park_asked, unblocked_asks
@@ -1171,6 +1169,7 @@ class Run:
             procs[n], running[n] = proc, task
             free_at.setdefault(n, dt.datetime.min)
 
+        shared_tools.start([n for n in range(1, slots + 1) if n not in procs])  # F168: nothing without [run.tools]
         foreign = self.foreign = queue_cut_off(branch, [n for n in range(1, slots + 1) if n not in procs])
         sweep_tmp(force=True)
         drop_extra_slots(slots, set(procs) | set(queued()) | set(foreign))
@@ -1262,9 +1261,10 @@ class Run:
             if end.get('how') == 'finish':
                 log(f'slot {n}: {task[0]} finished: {end.get("text", "")[:300]}', EV_FINISHED, task[0],
                     summary=end.get('text', ''))
-            if end.get('how') == 'ask' and end.get('tid') == task[0] and \
+            waits = shared_tools.park_end(n, task[0], sid, end)  # F168: not tried: it goes on by itself
+            if waits or end.get('how') == 'ask' and end.get('tid') == task[0] and \
                     park_asked(n, task[0], sid, end.get('text', ''), branch):
-                self.tried.add(task[0])
+                self.tried |= set() if waits else {task[0]}
                 self.free_at[n] = dt.datetime.now() + dt.timedelta(seconds=self.pause)
                 return False
             if n <= self.slots and not ((m := finished_mark(n)) and m.exists()) and \
@@ -1463,7 +1463,7 @@ class Run:
         # behind. A script waiting on the run
         # watches run.log for `run idle`; the process itself ends only on Ctrl-C or `./run stop`.
         # one pick, and only when its answer is needed: to end `once`, to say idle, or to power off
-        if quiet and not PAUSED[0] and (self.once and not stopping() or not self.idle_said
+        if quiet and not PAUSED[0] and (self.once or not shared_tools.pending(tried)) and (self.once and not stopping() or not self.idle_said
                                         or power_due(self.idle_at)) and not pick(self.running, tried, self.branch):
             if self.once and not stopping():
                 log('run done: nothing it may start (once)')

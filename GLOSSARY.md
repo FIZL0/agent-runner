@@ -567,3 +567,13 @@ _Said_: this device or everyone
 _On screen_: this device, everyone
 _In code_: setting_words.home, settingSide
 _Avoid_: scope, level
+
+**Shared tool**:
+Something only one task can use at a time, such as a test phone or a device; named under [run.tools] and asked for by a task's needs: field
+_In code_: shared_tools.specs, [run.tools], needs:
+_Avoid_: resource, device lock, semaphore
+
+**Wait for a tool**:
+A task giving up its slot until a shared tool is free; its session then goes on, ahead of other tasks
+_In code_: cmd_wait_for, park, waiting/<ID>
+_Avoid_: park, poll

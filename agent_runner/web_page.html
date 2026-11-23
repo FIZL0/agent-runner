@@ -458,6 +458,7 @@ function planWords(q,sessions){
   if(q.state==='blocked')return 'Waits for you';
   if(q.state==='critical')return 'Goes first, as soon as a slot is free';
   if(q.state==='after')return q.after_title?`Waits for ${q.after_title}`:'Waits for another task';
+  if(q.state==='tool'&&q.tool_wait)return q.tool_wait.charAt(0).toUpperCase()+q.tool_wait.slice(1);  // F168
   if(q.state==='parked')return "Parked: a run won't start it";  // B118: never 'Ready'
   return 'Ready to start when a slot is free';
 }
@@ -1421,6 +1422,8 @@ function slotRow(s){
   const w=lastWords(s.name), tc=taskControlsOn(s)?controlsOf('task'):[];
   return `<div class="srow" data-k="slot:${esc(s.name)}:${esc(s.task)}"><button class="fold" data-thread="${esc(s.name)}"><span class="who">${esc(s.name)}</span><span class="grow"><b class="ell">${esc(s.title||s.task)}</b><span class="status" data-k="st:${esc(s.name)}" data-v="${esc(s.state)}"><span class="livedot"></span>${s.state==='merging'?'Landing':'Working'}${s.minutes!=null?` · ${s.minutes} min`:''}</span></span><span class="chev">${I.chev}</span></button>${w?`<div class="quote">${esc(w)}</div>`:''}${tc.length?`<div class="btns">${tc.map(c=>`<button class="btn${ctlBusy(c.key,s.task)?' busy':''}" data-ctl="${esc(c.key)}" data-tid="${esc(s.task)}">${esc(c.label)}</button>`).join('')}</div>`:''}</div>`;
 }
+/* F168: the shared tools in words, the same as status says */
+const toolsWords=ts=>'Tools: '+ts.map(t=>`${t.label}: ${t.words}`).join(' · ');
 /* Run controls: the Run card */
 function controlsCard(){
   const run=S.snap.run||{}, up=S.snap.up!==false, ss=slots();
@@ -1428,6 +1431,7 @@ function controlsCard(){
   const b=cardControls(S.snap).map(k=>{const c=controlOf(k);return c?`<button class="btn ${k==='start'||k==='go_on'||k==='stop_undo'?'acc':''}${ctlBusy(k)?' busy':''}" data-ctl="${esc(k)}">${esc(k==='stop'?'Stop':c.label)}</button>`:''}).join('');
   return card(`<div class="row"><div class="grow"><b>Run</b><div class="small" data-k="runsaid" data-v="${esc(said)}">${esc(said)}</div></div><span class="small">${up?`${working_().length} of ${S.snap.slots||0} slot${S.snap.slots===1?'':'s'}`:''}</span></div>
     ${S.snap.unpushed?`<div class="small" data-k="unpushed" data-v="${esc(S.snap.unpushed)}">${esc(S.snap.unpushed)}</div>`:''}
+    ${(S.snap.tools||[]).length?`<div class="small" data-k="tools" data-v="${esc(toolsWords(S.snap.tools))}">${esc(toolsWords(S.snap.tools))}</div>`:''}
     ${ss.map(slotRow).join('')}
     ${obCards(obRun)}${controlsOf('run').length?`<div class="btns tight" role="group" aria-label="Run controls">${b}<button class="btn" data-sheet="run">More…</button></div>`:''}`,'','data-k="run"');
 }
@@ -1445,6 +1449,7 @@ function pitchCard(n,i){
 }
 function needCard(n,i){
   if(n.label==='PITCH')return pitchCard(n,i);
+  if(n.label==='TOOL')return card(`${needAsk(n,i,!!(S.askOpen||{})[n.id])}<div class="small ell">${esc(n.title)}${n.age?` · ${esc(n.age)}`:''}</div>`,'need',`data-k="need:${esc(n.id)}"`);  // F168: nothing to answer, it clears once the tool is back
   const os=answerOpts(n);
   return card(`${needAsk(n,i,!!(S.askOpen||{})[n.id])}<div class="small ell">${esc(n.id)}${n.title?` · ${esc(n.title)}`:''}${n.age?` · ${esc(n.age)}`:''}</div>
     <div class="btns">${os.map((o,j)=>`<button class="btn ${j===0?'pri':''}" data-ans="${i}" data-v="${esc(o)}">${esc(o)}</button>`).join('')}<button class="btn" data-later="${i}">Later</button><button class="btn" data-needchat="${i}" title="A new chat that shows the question">Chat</button>${n.url?`<a class="btn" href="${esc(n.url)}" target="_blank" rel="noopener">Open ${I.ext}</a>`:''}<button class="btn" data-needdrop="${i}">Drop</button></div>${S.sure==='need:'+n.id?sureHTML(`Drop ${n.id}? It leaves the plan, and its work is not done.`,'drop it',`data-needdrop="${i}"`):''}`,'need',`data-k="need:${esc(n.id)}"`);

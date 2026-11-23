@@ -220,6 +220,9 @@ DEFAULTS: dict = {
         'min_free_mem_gb': 4,   # less memory available than this: the run's biggest process is ended; 0 = never
         'slot_clean': '',       # a project's own clean, run instead of the trim and of the low-disk
                                 # `git clean -ffdXq` (every git-ignored file; `links` come back on their own)
+        'tools': {},            # the shared tools, [run.tools.<name>]: things only one task can use at a time (a
+                                # test phone). check = a command that exits 0 free, 75 busy, 69 missing, its first
+                                # output line the holder or why; label; connect = what Needs you asks when missing
         'command_timeout': 3600,  # seconds the gate, a retest or a hook command (join, before_start, on_exit,
                                 # `done`'s gate) may run before it is stopped and counts as failed
         'needs_order': 'oldest',  # what waits on a person (Needs you): oldest first; "newest" first; "plan":
@@ -724,6 +727,8 @@ class Config:
                              f"{self.raw['ui']['theme']!r}")
         if problem := setting_problem('ui', 'chat_quiet', self.raw['ui']['chat_quiet']):  # F128
             raise SystemExit(f'agent-runner: {problem}')
+        if problem := tools_problem(self.run['tools']):  # F168
+            raise SystemExit(f'agent-runner: {problem}')
         self.run['backend'] = 'claude'  # not a setting: `slots.backend()` reads it; the only one since F106d
         self.models = self.resolve_models(given_models)
 
@@ -940,6 +945,8 @@ def setting_problem(table: str, key: str, v) -> str:
         kind = {'switch': 'true or false', 'number': 'a whole number', 'list': 'a list of words',
                 'table': 'a table'}.get(setting_type(table, key), 'text')
         return f'{where} must be {kind}{" or false" if "off" in also else ""}, not {v!r}'
+    if (table, key) == ('run', 'tools') and (problem := tools_problem(v)):  # F168
+        return problem
     if num and v < 0:
         return f'{where} cannot be below 0, not {v!r}'
     if (table, key) == ('run', 'slots') and v < 1:
@@ -950,6 +957,24 @@ def setting_problem(table: str, key: str, v) -> str:
         import re
         if not re.fullmatch(r'\s*\d+(?:\.\d+)?\s*[smhd]?\s*', v):
             return f'{where} must be a time like "6h" or "30m", or false, not {v!r}'
+    return ''
+
+
+def tools_problem(v) -> str:
+    """F168: why `v` cannot be `[run] tools` ('' when it can): {name: {check, label, connect}}, all text."""
+    import re
+    if not isinstance(v, dict):
+        return f'[run] tools is a table of shared tools ([run.tools.iphone15]), not {v!r}'
+    for name, t in v.items():
+        where = f'[run.tools.{name}]'
+        if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_-]*', str(name)):
+            return f'{where}: a name is letters, digits, - and _ (iphone15)'
+        if not isinstance(t, dict) or not isinstance(t.get('check'), str) or not t['check'].strip():
+            return f'{where} needs check, the command that says whether it is free'
+        if bad := [k for k in t if k not in ('check', 'label', 'connect')]:
+            return f'{where}: {bad[0]} is not one of check, label, connect'
+        if bad := [k for k, x in t.items() if not isinstance(x, str)]:
+            return f'{where}: {bad[0]} must be text'
     return ''
 
 

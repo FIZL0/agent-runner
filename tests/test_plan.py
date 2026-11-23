@@ -1390,7 +1390,7 @@ def test_refusals():
         (['edit', 'R1', '@'], (2, './run plan: edit takes no @ (`./run plan move ID WHERE` moves a task)\n')),
         (['edit', 'R1', '--files'], (2, './run plan: not edited: --files needs a value\n' + quote)),
         (['edit', 'R1', ''], (2, './run plan edit <ID> "new text" [--files A,B] [--after X,Y] [--test T] [--journal D] '
-                                 '[--model M] [--pri LEVEL] [--alone | --no-alone]\n')),
+                                 '[--model M] [--needs TOOL] [--pri LEVEL] [--alone | --no-alone]\n')),
         (['goal'], (1, './run plan: no `Goal:` paragraph above the first heading in TODO.md; '
                        '`./run plan goal "TEXT"` writes one\n')),
         (['unclaim', 'Z9'], (1, './run plan: no claim on Z9\n')),
