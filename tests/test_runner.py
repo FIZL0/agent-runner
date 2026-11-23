@@ -5122,7 +5122,7 @@ def test_auto_release(repo: Path):
         check(tid.startswith('V'), 'the third landing queues one', tid)
         line = next(l for l in releases() if f'**{tid}**' in l)
         has(line, re.escape(P.RELEASE_BRIEF), 'with the default release brief, as plan add V')
-        eq(P.fields(line).get('after'), None, 'waiting on nothing: [plan] release_alone is off (F100)')
+        eq(P.fields(line).get('after'), [P.ALL], 'waiting on what is ahead of it, as plan add V (F99)')
         has(git(repo, 'log', '-1', '--format=%s'), rf'^Plan: {tid}, auto release \(3 landed\)', 'committed')
         eq(git(repo, 'status', '--porcelain', '--', 'plan'), '', 'clean')
         eq(said[-1][0], f'queued {tid} (auto_release: 3 landed)', 'the run log says why')
@@ -6050,6 +6050,16 @@ def test_release_kind(repo: Path):
     finally:
         R.plan_text = saved
         R.C.raw['plan']['release_alone'] = False
+    print('run: F99 without release_alone a release starts beside a running task, and a task beside it')
+    R.plan_text = lambda branch: plan['ls']
+    try:
+        plan['ls'] = head + [rel, '- [ ] **F2** below it | files: b.py', '- [ ] **B3** another | files: c.py']
+        f2 = R.pick({}, {'V1'}, 'main')
+        eq(R.pick({1: f2}, set(), 'main')[0], 'V1', 'V1 starts beside the running F2')
+        v = next(t for t in R.tasks('main') if t[0] == 'V1')
+        eq(R.pick({1: v}, set(), 'main')[0], 'F2', 'and F2 starts beside the running V1')
+    finally:
+        R.plan_text = saved
 
 
 def test_progress_and_release(repo: Path):

@@ -161,6 +161,42 @@ def test_land(repo: Path):
         R.LANDED.pop('B2', None)
 
 
+def test_release_holds(repo: Path):
+    print('F99: while a release is busy every other merge waits, and goes through once it has landed')
+    import threading
+    R.init(repo)
+    todo = repo / 'plan/TODO.md'
+    text = todo.read_text(encoding='utf-8')
+    todo.write_text(text + '- [ ] **V1** Release | after: all\n', encoding='utf-8')
+    git(repo, 'commit', '-qam', 'plan: V1')
+    git(repo, 'branch', 'task/V1')  # V1 started in a slot
+    built, said = [], []
+    restore = patched(log=lambda msg, *a, **k: said.append(msg), note=lambda *a, **k: None,
+                      fix_ahead=lambda tid, branch: None, research_held=lambda tid, branch: None,
+                      merge_batch=lambda tid, branch, **k: (built.append(tid), 'stubbed')[1], RELEASE_POLL=0.05)
+    try:
+        eq(M.releasing('B1', 'main'), 'V1', 'V1 is releasing')
+        eq(M.releasing('V1', 'main'), '', "a release's own merge is never held")
+        eq(M.merge('V1', 'main'), 'stubbed', 'so V1 merges at once')
+        built.clear()
+        out = []
+        th = threading.Thread(target=lambda: out.append(M.merge('B1', 'main')), daemon=True)
+        th.start()
+        th.join(0.5)
+        check(th.is_alive() and built == [], 'B1 waits: no merge built while V1 is busy', built)
+        check(any('B1: waits to merge: V1 is releasing' in m for m in said), 'the log says why', said)
+        git(repo, 'branch', '-D', 'task/V1')  # V1 landed: its merge deletes the branch
+        th.join(10)
+        eq((th.is_alive(), built, out), (False, ['B1'], ['stubbed']), 'once V1 landed, B1 merges')
+        eq(M.releases({'B1', 'V1', 'V12'}), {'V1', 'V12'}, 'releases never ride in a batch, nor take riders')
+    finally:
+        restore()
+        if git(repo, 'branch', '--list', 'task/V1'):
+            git(repo, 'branch', '-D', 'task/V1')
+        todo.write_text(text, encoding='utf-8')
+        git(repo, 'commit', '-qam', 'plan: no V1')
+
+
 UNTESTABLE, BLAME = M.untestable, M.blame
 
 
@@ -168,7 +204,8 @@ def main() -> int:
     with tempfile.TemporaryDirectory() as tmp:
         os.environ['CLAUDE_CONFIG_DIR'] = tmp
         repo = make_repo(Path(tmp))
-        return report([lambda: test_build(repo), lambda: test_test(repo), lambda: test_land(repo)])
+        return report([lambda: test_build(repo), lambda: test_test(repo), lambda: test_land(repo),
+                       lambda: test_release_holds(repo)])
 
 
 if __name__ == '__main__':

@@ -27,10 +27,11 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 - **Major: release this as 1.0.0.** A run on 0.x cannot adopt across it (its sessions are in tmux panes this
   version no longer reads), so stop the old run (`agent-runner stop`) before upgrading; it does not restart
   itself across the major version.
-- Changed: a release (kind V) no longer runs alone. It starts like any other task: `plan add V` no longer
-  writes `after: all`, and tasks start beside a running release. `[plan] release_alone = true` keeps the old
-  behaviour (wait for everything ahead, nothing beside it). Without it, the `after: all` on a release queued
-  before this version no longer holds it either (F100).
+- Changed: a release (kind V) no longer runs alone. It still waits for what is ahead of it (`after: all`, or
+  its own `--after`) to land, then starts even with other tasks running, and tasks start beside it. While it
+  is busy the merge holds every other merge and push, so it releases exactly what was on main when it
+  started; the run log and the dry run say why (`T5: waits to merge: V10 is releasing`). `[plan]
+  release_alone = true` keeps the old behaviour (nothing beside it) (F99, F100).
 - Breaking: tmux is gone. Every OS runs the hidden way, as Windows already did: each slot, c1 and every other
   control session, and the runner feed run in a terminal with no window (a pty shim; Windows: a hidden
   console). Bare `agent-runner` starts the run as a detached process (no `ar-<repo>` tmux session, no
