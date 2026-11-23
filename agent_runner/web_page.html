@@ -544,7 +544,7 @@ function controlGroups(snap){
   }
   return out;
 }
-/* F128: does a chat wait for the person's reply: an open question, or Claude spoke after they last opened it
+/* F128: does a chat wait for the person's reply: an open question, or the session spoke after they last opened it
    (seen: epoch s) */
 const needsReply=(s,seen)=>!!s.needs_reply||(s.last==='claude'&&(s.at||0)>(seen||0));
 /* F128: the Chats list in two: the chats, then the quiet ones (no reply needed, nothing said for `quiet` s). c1, a

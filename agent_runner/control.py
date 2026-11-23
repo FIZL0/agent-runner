@@ -314,7 +314,8 @@ def control_set_title(n: int, summary: str) -> int:
         sid = C.notes(f'control{n}.pid').read_text(encoding='utf-8').strip().partition(' ')[2]
     except OSError:
         sid = ''
-    if sid and transcript(sid) and control_renamed(control_state(entries(sid, skip_bad=True)), n):
+    st = control_state(entries(sid, skip_bad=True)) if sid and transcript(sid) else {}
+    if control_renamed(st, n):
         print(f'control {n} keeps the name the person gave it')
         return 0
     control_give(n, name)
@@ -657,6 +658,7 @@ def control_open(n: int, ask: str = '', images: list[str] | tuple = (), new_run:
         from agent_runner.control_reopen import reopen_name
         argv[argv.index('--remote-control') + 1] = reopen_name(n, sid)
     if not resume:
+        person_name_file(n).unlink(missing_ok=True)  # F129: the name was an earlier session N's
         control_give(n, control_name(n, ask, images))
         control_mark_ask(n, sid if ask else '')
     return sid, resume, argv

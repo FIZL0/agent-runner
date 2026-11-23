@@ -214,7 +214,7 @@ function route(c,e){
       if(!it.newtask&&k==='D')return[['act','drop']];
       if(!it.newtask&&k==='H')return[['act','take']];
     }
-    if(t==='answer'){const i=(c.answerKeys||[]).indexOf(k);if(i>=0)return[['answer',i]];if(k==='L')return[['act','later']]}
+    if(t==='answer'){const i=(c.answerKeys||[]).indexOf(k);if(i>=0)return[['answer',i]];if(k==='L')return[['act','later']];if(k==='D')return[['act','drop']]}
     if(t==='preview'){if(k==='j'||k==='ArrowDown')return[['opt',1]];if(k==='k'||k==='ArrowUp')return[['opt',-1]];
       if(k==='Enter')return[['go']];if(k==='O')return[['open']]}
     if(t==='chat'&&p===1&&QUICK[k])return[['quick',QUICK[k]]];
@@ -243,7 +243,7 @@ function route(c,e){
       if(!it.parked&&(k==='J'||k==='K'))return[['reorder',k==='J'?1:-1]];
       if(!it.parked&&k==='p')return[['pri']];if(k==='H')return[['act','take']];if(k==='D')return[['act','drop']]}
   }
-  if(p===4){if(k==='L')return[['act','later']];if(k==='a'||k==='i')return[['tabto','answer']]}
+  if(p===4){if(k==='L')return[['act','later']];if(k==='D')return[['act','drop']];if(k==='a'||k==='i')return[['tabto','answer']]}
   if(p===5&&k==='O')return[['open']];
   return[];
 }
@@ -262,7 +262,7 @@ function footer(c,shown){
   else here=({1:[['⏎','open'],['R','release']],
     2:[['⏎','open'],['v','steps'],['N','new chat'],...(it.ctl||it.task?[['o','open session']]:[])],
     3:it.newtask?[['⏎','new task'],['E','describe it']]:it.parked?[['U','unpark'],['e','edit'],['E','chat edit'],['n','new'],['H','do it here'],['D','drop']]:[['e','edit'],['E','chat edit'],['n','new'],['J/K','reorder'],['p','priority'],['H','do it here'],['D','drop']],
-    4:[['a','answer'],['L','later']],
+    4:[['a','answer'],['L','later'],['D','drop']],
     5:[['⏎','view'],['O','open on claude.ai']]})[c.panel]||[];
   here=here.filter(([k])=>!(shown||[]).includes(k)&&!NOFOOT.test(k));
   return{mode:c.typing?'INSERT':c.focusMain?String(t).toUpperCase():String(c.panelName||'').toUpperCase(),here,
@@ -531,7 +531,7 @@ A release waits for everything ahead of it, then starts beside running tasks; th
     x=chatBox('chatedit',it.newtask?'e.g. the board should show usage too':'e.g. also cover the phone layout')}
   else if(tab==='answer'){h=`<span class="y">${esc(it.id)}</span> ${esc(it.title)}\n\n${esc(it.ask)}${it.url?`\n\n<a href="${esc(it.url)}" target="_blank" rel="noopener">open the page ↗</a>`:''}\n\n<span class="d">waiting ${esc(it.age)} · your answer goes to c1, which settles the item</span>`;
     const os=answerOpts(it);
-    x=`<div class="presets">${os.map((o,i)=>`<button type="button" class="kb" data-answer="${i}"><b class="pk">${esc(o.key)}</b> ${esc(o.label)}</button>`).join('')}<button type="button" class="kb" data-act="later">${K('L','later')}</button></div>`+chatBox('answer','or your own reply')}
+    x=`<div class="presets">${os.map((o,i)=>`<button type="button" class="kb" data-answer="${i}"><b class="pk">${esc(o.key)}</b> ${esc(o.label)}</button>`).join('')}<button type="button" class="kb" data-act="later">${K('L','later')}</button><button type="button" class="kb" data-act="drop">${K('D','drop')}</button></div>`+chatBox('answer','or your own reply')}
   else if(tab==='info'){h=`<span class="y">${esc(it.id)}</span> ${esc(it.title)}\n\n${esc(it.label)}: ${esc(it.what)}${it.url?`\n\n<a href="${esc(it.url)}" target="_blank" rel="noopener">${esc(it.url)}</a>`:''}\n\n<span class="d">waiting ${esc(it.age)}</span>`}
   else if(tab==='preview'){h=conceptHTML(it);x=chatBox('pick','say what to change')}
   return[h,x,cls];
@@ -626,6 +626,7 @@ function doAct(a){
   if(a==='release-now')act('release',{now:true},'release queued, now');
   if(a==='later'&&it&&S.panel===4)act('shelve',{tid:it.id},it.id+' shelved').then(r=>{if(r.ok)back()});
   if(a==='drop'&&it&&S.panel===3&&!it.newtask)openPop('Drop '+it.id,`${esc(it.title)}\n\n<form class="form" data-form="drop"><label>why<input id="dwhy" autocomplete="off"></label><div class="btnrow"><button class="kb p">${K('⏎','drop '+esc(it.id))}</button> <button type="button" class="kb" data-close>${K('Esc','keep it')}</button></div></form>`,'#dwhy');
+  if(a==='drop'&&it&&S.panel===4)openPop('Drop '+it.id,`${esc(it.title||it.ask||'')}\n\nIt leaves the plan, and its work is not done.\n\n<form class="form" data-form="needdrop"><div class="btnrow"><button class="kb p" id="ndrop">${K('⏎','drop '+esc(it.id))}</button> <button type="button" class="kb" data-close>${K('Esc','keep it')}</button></div></form>`,'#ndrop');  // F110
   if(a==='open')openIt();
   if(a==='unpark'&&it&&S.panel===3&&isParked(it))act('unpark',{tid:it.id},it.id+' unparked: it joins Follow-ups');  // B118
   if(a==='take'&&it&&S.panel===3&&!it.newtask)act('take',{tid:it.id},'c1 takes '+it.id);
@@ -660,7 +661,7 @@ function help(){openPop('Keybindings',`<span class="r">Everywhere</span>
   <span class="b">D</span>      drop                 <span class="b">U</span>      unpark (a Parked task)
   in a direct edit: <span class="b">t k p f a</span> what, kind (<span class="b">K</span> back), priority, files, after
                     <span class="b">Tab</span> next field, <span class="b">^S</span> save
-<span class="r">Needs you [4]</span>   <span class="b">a</span> answer  <span class="b">y n a b c</span> an answer's key  <span class="b">L</span> later
+<span class="r">Needs you [4]</span>   <span class="b">a</span> answer  <span class="b">y n a b c</span> an answer's key  <span class="b">L</span> later  <span class="b">D</span> drop
 <span class="r">Concepts [5]</span>    <span class="b">j/k</span> option  <span class="b">⏎</span> go with it  <span class="b">i</span> what to change  <span class="b">O</span> open on claude.ai
 
 <span class="d">Esc closes this.</span>`)}
@@ -767,6 +768,7 @@ document.addEventListener('submit',e=>{
   e.preventDefault();
   if(e.target.dataset.form==='drop'){const it=sel(),why=$('#dwhy').value.trim();if(!why){toast('Say why, for the plan.',true);return}
     closePop();act('drop',{tid:it.id,why},'dropped '+it.id).then(r=>{if(r.ok)back()});return}
+  if(e.target.dataset.form==='needdrop'){const it=sel();closePop();act('need_drop',{tid:it.id,confirm:true},'dropped '+it.id).then(r=>{if(r.ok)back()});return}  // F110
   submit(e.target.dataset.form);
 });
 $('#helpbtn').onclick=help;$('#themebtn').onclick=themePicker;

@@ -1276,13 +1276,17 @@ def test_run_key_binds() -> None:
                 mock.patch.object(M, 'C', Notes), contextlib.redirect_stdout(out):
             return M.cmd_key(argv[1:], prog='agent-runner key'), out.getvalue()
 
+    posted: list[str] = []
     with mock.patch.object(U, 'RUN', [run_in_process]), mock.patch.object(LP, 'C', Notes):
         for k in ('V', 'Z', 'B'):
             p = page()
             p.key(k)
-        posted = PL.take(Notes, 'KEYS')
+            check(p.confirm and not PL.take(Notes, 'KEYS'), f'F124: {k} asks first', p.msg)
+            p.key(k)
+            posted += PL.take(Notes, 'KEYS')
     eq(posted, ['u', 'z', 'x'], 'V, Z and B post u, z and x to KEYS')
-    check(all(b in HELP_TEXT() for b in ('V        upgrade agent-runner', 'Z B      suspend, shut down once stopped')),
+    check(all(b in HELP_TEXT() for b in ('V V      upgrade agent-runner', 'Z Z  B B  suspend, shut down once stopped', 'Y Y      restart the run',
+                                     'r        resume a cut-off task', 'W E      moved-aside edits')),
           'HELP lists them', HELP_TEXT())
 
 
@@ -1296,7 +1300,13 @@ def test_run_controls() -> None:
     ran, sent = [], []
     want = {'+': ['slots', '+1'], '-': ['slots', '-1'], 'P': ['pause'], 'G': ['pause', '--off'], 'F': ['force'],
             'C': ['force', '--off'], 'S': ['stop'], 'U': ['stop', '--undo'],
-            'V': ['key', 'u'], 'Z': ['key', 'z'], 'B': ['key', 'x']}  # C26: upgrade, suspend, shut down
+            'V': ['key', 'u'], 'Z': ['key', 'z'], 'B': ['key', 'x'],  # C26: upgrade, suspend, shut down
+            'Y': ['key', 'restart'], 'T': [], 'r': ['resume', 'F8'], 'L': ['plan', 'unclaim', 'F9'],  # F124
+            'W': ['wip', 'show', 'main-checkout-1'], 'E': ['wip', 'restore', 'main-checkout-1'],
+            'O': ['wip', 'drop', 'main-checkout-1']}
+    fix = {'resume': [{'id': 'F8', 'label': 'cut off'}], 'unclaim': [{'id': 'F9', 'label': 'bob'}],
+           'wip': [{'id': 'main-checkout-1', 'label': '3 files'}]}
+    double = {c['tui'] for c in U.controls() if c['confirm']}
     with mock.patch.object(U, 'RUN', [lambda argv: (ran.append(argv), (0, 'sent to the run'))[1]]), \
             mock.patch.object(U, 'SEND', [lambda text: (sent.append(text), {'ok': True, 'code': 0, 'out': 'sent',
                                                                              'argv': []})[1]]):
@@ -1304,9 +1314,34 @@ def test_run_controls() -> None:
            'every run control has its key here (= and X tested below)')
         for k, argv in want.items():
             p = page()
+            p.snap = {**p.snap, 'fixups': fix, **({'up': False} if k == 'T' else {})}
+            p.get_snap = lambda s=p.snap: s
             ran.clear()
-            p.key(k)
+            with mock.patch.object(U, 'fixups', lambda st, ls: fix):
+                p.key(k)
+                if k in double:
+                    eq(ran, [], f'F124: {k} asks first')
+                    p.key(k)
             eq(ran, [argv], f'{k} runs {" ".join(argv)}')
+        two = {**fix, 'wip': fix['wip'] + [{'id': 'main-checkout-2', 'label': '1 file'}]}
+        p = page()
+        p.snap = {**p.snap, 'fixups': two}
+        p.get_snap = lambda s=p.snap: s
+        ran.clear()
+        p.key('W')
+        check(ran == [] and p.typing == 'ctl:wip_show' and 'main-checkout-2' in p.msg, 'F124: two of them: which one?',
+              (ran, p.typing, p.msg))
+        p.key('^U')
+        for ch in 'main-checkout-2':
+            p.key(ch)
+        p.key('ENTER')
+        eq(ran, [['wip', 'show', 'main-checkout-2']], 'the one typed is shown')
+        p = page()
+        ran.clear()
+        p.key('r')
+        check(ran == [] and 'nothing to do' in p.msg, 'F124: nothing cut off: r says so', (ran, p.msg))
+        p.key('T')
+        check(ran == [] and 'up already' in p.msg, 'F124: T with a run up says so', (ran, p.msg))
         p = page()
         p.key('ENTER')
         p.key('l')
@@ -1482,9 +1517,16 @@ def test_d_drops_f116() -> None:
         ran.clear()
         p.key('4')
         p.cur[4] = 2  # D7
-        check(('d', 'drop') in p.hint_keys(), 'Needs you: d drop on the bottom line', p.hint_keys())
+        check(('D', 'drop') in p.hint_keys(), 'F110: Needs you: D drop on the bottom line', p.hint_keys())
         p.key('d')
-        eq(ran, [['plan', 'drop', 'D7', 'dropped from agent-runner ui']], 'd on a Needs you item drops it')
+        check(ran == [] and 'Drop D7?' in p.msg and 'D again' in p.msg, 'd on a Needs you item asks first', (ran, p.msg))
+        p.key('x')
+        check(ran == [] and 'not dropped' in p.msg, 'any other key keeps it', (ran, p.msg))
+        p.key('D')
+        p.key('D')
+        eq(ran, [['plan', 'drop', 'D7', 'dropped from Needs you']], 'D, then D again, drops it')
+        check('D7' not in [n['id'] for n in p.snap['needs']], 'and the item leaves the list', p.snap['needs'])
+        check('D D      drop' in T.HELP, 'HELP lists it')
         ran.clear()
         p.key('5')
         p.cur[5] = 0  # K5
@@ -1499,6 +1541,37 @@ def test_d_drops_f116() -> None:
         p.key('d')
         eq((ran, ended), ([], [6]), 'Status has nothing to drop')
     eq(K.close_from_tui(1)['ok'], False, 'close_from_tui never closes c1')
+
+
+def test_rename_f129() -> None:
+    """F129: r on a cN row (c1 too) takes the person's own name on the bottom line and runs control --rename N NAME."""
+    ran = []
+    with mock.patch.object(U, 'RUN', [lambda argv: (ran.append(argv), (0, 'control 6 is renamed'))[1]]):
+        for at, n in ((0, '1'), (1, '6')):
+            p = page()
+            p.key('2')
+            p.cur[2] = at
+            check(('r', 'rename') in p.hint_keys(), f'c{n}: r rename on the bottom line', p.hint_keys())
+            p.key('r')
+            check(p.typing == f'rename:c{n}', 'r types a name', p.typing)
+            for ch in 'Login':
+                p.key(ch)
+            check('Login' in ''.join(t for t, _ in p.footer()), 'the name shows on the bottom line', p.footer())
+            p.key('ENTER')
+            eq(ran[-1], ['control', '--rename', n, 'Login'], f'Enter renames c{n}')
+            eq(p.typing, '', 'and leaves the box')
+        p = page()
+        p.key('2')
+        p.cur[2] = 1
+        ran.clear()
+        p.key('r')
+        p.key('x')
+        p.key('ESC')
+        eq((ran, p.typing), ([], ''), 'Esc keeps the old name')
+        p.cur[2] = 2  # s1, a slot
+        p.key('r')
+        eq((ran, p.typing), ([], ''), 'r on a slot renames nothing')
+    check('r        rename a control session' in T.HELP, 'HELP lists it')
 
 
 def test_close_control_quiet_b136() -> None:
@@ -1745,7 +1818,7 @@ def test_release_row_f131() -> None:
 
 
 if __name__ == '__main__':
-    raise SystemExit(report([test_release_row_f131,test_project_name_b153, test_quick_ask_names_session_c32,test_concept_answer_b149, test_short_ask_b152,test_d_drops_f116, test_answer_direct_b138, test_answer_tab_b138, test_close_control_quiet_b136,test_layout, test_status_tabs, test_session_tabs, test_queue, test_form_pane_v_task,
+    raise SystemExit(report([test_rename_f129, test_release_row_f131,test_project_name_b153, test_quick_ask_names_session_c32,test_concept_answer_b149, test_short_ask_b152,test_d_drops_f116, test_answer_direct_b138, test_answer_tab_b138, test_close_control_quiet_b136,test_layout, test_status_tabs, test_session_tabs, test_queue, test_form_pane_v_task,
                                test_direct_edit,
                                test_navigation, test_no_message_box_f112, test_new_chat_f112, test_side_pane_f112,
                                test_diff_key_f127, test_full_screen_f112, test_side_keys_in_box_f113, test_actions, test_session_tab_b125, test_footer,
