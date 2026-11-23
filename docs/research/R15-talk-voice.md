@@ -118,7 +118,48 @@ Page with all clips and the phone-voice buttons: https://claude.ai/artifact/SPyk
 - The page published with them also has buttons that speak the same text with each voice **the phone's own Safari
   lists**, and shows how many: this is the measurement of section 1 that only a phone can give.
 
+## Round two (2026-11-23): the person chose Kokoro `af_heart` as default; are there better ones?
+
+Decision from the person: use our options, with Kokoro `af_heart` as the default. So the Recommendation section below
+(written before) is **superseded where it says Piper first**: default `kokoro af_heart`, with Piper `lessac` as the
+light option.
+
+Measured again on this machine (CPU only, one run each, a new 3-sentence text, 8.6 s of audio for `af_heart`; after one warm-up call):
+
+| Voice | Time for the whole reply | Audio length | Size | Licence |
+|---|---|---|---|---|
+| Kokoro af_heart | 1.0 s | 8.6 s | 354 MB (all 54 voices included) | Apache 2.0 |
+| Kokoro af_bella / af_sarah / af_sky / af_aoede / af_kore | 1.3-1.5 s | 8.2-9.4 s | same files | Apache 2.0 |
+| Kokoro af_nicole | 2.2 s | 13.8 s (speaks slower) | same files | Apache 2.0 |
+| Kokoro bf_emma / bf_isabella / am_fenrir / am_puck / bm_fable | 1.1-1.5 s | 8.0-8.9 s | same files | Apache 2.0 |
+| Kokoro blend (mean of af_heart and af_bella style vectors) | 1.0 s | 8.6 s | same files | Apache 2.0 |
+| Supertonic 3 `F1`/`F2`/`M1` (`supertonic` 1.3.1, ONNX) | 1.4-1.7 s | 9.7-10.3 s | 165 MB | OpenRAIL (model card `Supertone/supertonic-3`; use restrictions, check before shipping) |
+
+Playable clips: https://claude.ai/artifact/3zyUeY4M7MAbq1xvTaWnGP (same text for all; files `docs/research/R15-samples/r2_*.mp3`).
+
+What I could and could not establish:
+
+- **Within Kokoro, nothing in this table is a speed or size reason to leave `af_heart`.** Every Kokoro voice costs the
+  same; which one sounds best is purely by ear, so the page above lets the person pick. The Kokoro voice list ranks
+  voices by quality grade and puts `af_heart` first (https://huggingface.co/hexgrad/Kokoro-82M/blob/main/VOICES.md,
+  not re-checked in this run); `af_bella` and `af_nicole` are next. I did not rank by ear.
+- **Supertonic 3 is the one other engine I got running.** It is smaller than Kokoro (165 MB), as fast, and has its own
+  voices; whether it sounds better is the person's call (clips above). Its licence is OpenRAIL, not Apache.
+- **Kitten TTS** (tiny, ~15-80 MB models): `pip install kittentts` worked but it needs a system `espeak` library that
+  is not on this machine, so it was **not run**. It is tiny and likely below Kokoro in quality; not measured.
+- **Not measured, judged from size and not tried**: Orpheus (3B), Chatterbox, F5-TTS, XTTS-v2, Sesame CSM, Dia. They
+  are the "more expressive" open voices, but they are large (hundreds of millions to billions of parameters) and made
+  for a GPU; on this CPU-only machine they would very probably take longer than the audio they make, which breaks the
+  "first sound quickly" need. I did not install them, so this is an expectation, not a number.
+- Paid cloud voices (OpenAI, ElevenLabs, Google, Azure) are the only clearly better-than-Kokoro class I know of, and
+  they send each reply's text off the machine; not used, only with the person's OK.
+- **Answer**: yes, a few others exist, but none I could run here is clearly better than `af_heart` for its cost.
+  Build with `af_heart` as default and let Settings choose any other Kokoro voice (same files, no extra download),
+  with an optional per-reply speed. Revisit Supertonic only if the clips above beat `af_heart` for the person.
+
 ## Recommendation
+
+(Superseded by round two above where it names the default: the default is Kokoro `af_heart`.)
 
 Build a local voice: **Piper `en_US-lessac-medium` (or `en_GB-alba-medium`) as the default** (0.2 s to first sound,
 63 MB, no GPU), with **Kokoro `af_heart` as an option** for the person who wants the most natural one (about 1.5 s
