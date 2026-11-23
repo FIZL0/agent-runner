@@ -910,6 +910,10 @@ const slashMove=(i,n,key)=>n?(key==='ArrowUp'?(i-1+n)%n:(i+1)%n):0;
 /* B120: the message box's keys, as in the agent CLI's own input, listed here once (the box's foot shows them) */
 const BOX_KEYS=[['Enter','sends'],['Shift+Enter','new line'],['↑ ↓','earlier messages'],['/','commands'],
   ['Esc','closes the menu, then interrupts'],['Ctrl+C','interrupts'],['Paste','attaches pictures or files']];
+/* B181: what a key does in a message box: 'send', 'line' (Enter left to the box: a new line) or '' (not Enter, or an
+   input method still composing, which Safari ends with keyCode 229). On touch only Ctrl/Cmd+Enter sends */
+const composing=e=>!!e.isComposing||e.keyCode===229;
+const boxEnter=(e,touch)=>e.key!=='Enter'||composing(e)?'':(touch?e.ctrlKey||e.metaKey:!e.shiftKey)?'send':'line';
 const keysLine=()=>'<span class="keysl">'+BOX_KEYS.map(([k,d])=>`${k} ${d}`).join(' · ')+'</span>';
 /* B120: the chat's message history (kept per chat): HIST_MAX the most it keeps; histPush the list once `text` is
    sent (not twice in a row); histEdge whether ArrowUp / ArrowDown leaves the box's text for history (the caret on
@@ -1063,7 +1067,7 @@ function projectButtons(p){
   b.push({label:'Unlist',unlist:true});
   return b;
 }
-if(typeof module!=='undefined')module.exports={feedFoot,feedSpot,sessionChips,forWords,taskLines,FEED_MODES,talkMsgs,feedState,FEED_KEYS,feedBytes,feedWords,feedSteps,viewOf,placeOf,runPill,cardControls,controlGroups,needsReply,chatGroups,needChatAsk,TALK_SET,talkSetParse,pickVoice,runVoice,speechClips,silentWav,feedMark,feedAfter,atEnd,swipeTakes,swipeOpens,settingText,settingValue,pickValue,pickOptions,settingSays,settingSide,settingChanged,settingHit,settingShows,kindsModel,KINDS_ROWS,homeBase,homeKey,projectLink,homeLink,manifestLink,appLink,homeHref,pageTitle,projectState,switcherRows,projectWords,projectButtons,chatMove,BOX_KEYS,keysLine,histPush,histEdge,histStep,slashMatches,slashPick,slashMove,SLASH_FALLBACK,chatPick,answerOpts,needAsk,working,planWords,compose,sendReq,ctxKey,isNew,usageOf,logKind,plain,chatName,controlReq,controlClick,taskControlsOn,queueGroups,conceptButtons,planQueue,NO_CONCEPT,newConceptReq,queuedId,NAV,talkSession,micProblem,dictProblem,dictButton,dictInsert,talkShown,talkReply,goneMark,needsShown,answerSaid,GONE_MS,obParse,obNext,obName,obSettle,obRetry,obDrop,obCounts,obHidden,obPill,OLD_RUN,OLD_WAIT,oldRun,plainOut,obRefused,obOld,obDue,obBootCid,sentLeft,sentStep,sentParse};
+if(typeof module!=='undefined')module.exports={boxEnter,feedFoot,feedSpot,sessionChips,forWords,taskLines,FEED_MODES,talkMsgs,feedState,FEED_KEYS,feedBytes,feedWords,feedSteps,viewOf,placeOf,runPill,cardControls,controlGroups,needsReply,chatGroups,needChatAsk,TALK_SET,talkSetParse,pickVoice,runVoice,speechClips,silentWav,feedMark,feedAfter,atEnd,swipeTakes,swipeOpens,settingText,settingValue,pickValue,pickOptions,settingSays,settingSide,settingChanged,settingHit,settingShows,kindsModel,KINDS_ROWS,homeBase,homeKey,projectLink,homeLink,manifestLink,appLink,homeHref,pageTitle,projectState,switcherRows,projectWords,projectButtons,chatMove,BOX_KEYS,keysLine,histPush,histEdge,histStep,slashMatches,slashPick,slashMove,SLASH_FALLBACK,chatPick,answerOpts,needAsk,working,planWords,compose,sendReq,ctxKey,isNew,usageOf,logKind,plain,chatName,controlReq,controlClick,taskControlsOn,queueGroups,conceptButtons,planQueue,NO_CONCEPT,newConceptReq,queuedId,NAV,talkSession,micProblem,dictProblem,dictButton,dictInsert,talkShown,talkReply,goneMark,needsShown,answerSaid,GONE_MS,obParse,obNext,obName,obSettle,obRetry,obDrop,obCounts,obHidden,obPill,OLD_RUN,OLD_WAIT,oldRun,plainOut,obRefused,obOld,obDue,obBootCid,sentLeft,sentStep,sentParse};
 </script>
 
 <script>
@@ -1595,7 +1599,7 @@ function box(ph,foot){
   return `<form class="box" data-form>
     ${a.length?`<div class="atts">${a.map((f,i)=>`<span class="att ${f.path?'':f.err?'err':'up'}" title="${esc(f.err||f.path||'uploading…')}">${f.thumb?`<img src="${f.thumb}" alt="">`:`<span class="fi">${I.file}</span>`}<span class="nm">${esc(f.name)}</span><button type="button" class="x" data-unatt="${i}" aria-label="Remove">✕</button></span>`).join('')}</div>`:''}
     <div class="slash" data-slash role="listbox" aria-label="Commands" hidden></div>
-    <div class="inrow"><span class="pr" aria-hidden="true">&gt;</span><textarea rows="1" data-in placeholder="${esc(ph)}" aria-label="Message"></textarea></div>
+    <div class="inrow"><span class="pr" aria-hidden="true">&gt;</span><textarea rows="1" data-in${enterHint()} placeholder="${esc(ph)}" aria-label="Message"></textarea></div>
     <div class="boxrow"><button type="button" class="tool" data-clip aria-label="Attach pictures or files" title="Attach pictures or files">${I.clip}</button>${S.view==='talk'&&!S.thread?(micWhy()?'':`<button type="button" class="tool" data-talkmode="mic" aria-label="Talk instead" title="Talk instead">${I.talk}</button>`):dictButton(dictWhy(),!!DK.rec,I.talk)}${S.thread&&!isNew(S.thread)?`<button type="button" class="tool keyb" data-feedkeys aria-expanded="${!!S.keys}" aria-label="Keys for the session" title="Keys for the session">${I.keys}</button>`:''}${real?'<button type="button" class="tool" data-slashopen aria-label="Commands" title="Commands">/</button>':''}${real&&busyNow?'':`<span class="to">${esc(isNew(S.thread)?'to a new chat':S.thread?S.thread:S.view==='talk'?'to Talk':'to c1')}</span>`}${real&&busyNow?`<button type="button" class="act halt" data-halt="${esc(shownNow)}">${I.stop}Stop</button><button class="act force">Force send</button></div></form>`:`${busyNow?`<button type="button" class="send stop" data-stop="${esc(shownNow)}" aria-label="Interrupt">${I.stop}</button>`:''}<button class="send" aria-label="Send">${I.up}</button></div></form>`}${foot?`<div class="foot">${foot}</div>`:''}`;
 }
 /* B177: a chat with a transcript that the run no longer lists (one just started is not listed yet: its message waits) */
@@ -1626,6 +1630,7 @@ function talkConvo(n){
 const FD={n:'',turn:0,info:null,frame:null,up:false,timer:0,away:0,downs:0}, FEED_AWAY=15000, FEED_AGAIN=3000;
 const FEED_LINES=1;  // lines of a drag to one wheel step
 const TOUCH=()=>!!(window.matchMedia&&matchMedia('(pointer:coarse)').matches);
+const enterHint=()=>TOUCH()?' enterkeyhint="enter"':'';  // B181
 const feedNow=n=>feedState({stand:String(n||'')[0]==='@',starting:starting(n),info:FD.n===n?FD.info:null,chat:!isAgent(n)});
 const feedSrc=n=>`t/${encodeURIComponent(T)}/${encodeURIComponent(n)}/?fontSize=${TOUCH()?12:13}`;
 function feedLeave(){feedGone();FD.turn++;clearTimeout(FD.timer);FD.timer=0;FD.up=false;if(FD.frame){FD.frame.remove();FD.frame=null}}
@@ -2123,7 +2128,7 @@ function planHTML(){
 function conceptsHTML(){
   const cs=S.snap.concepts||[];
   const form=S.kOpen?card(`<form class="kform" data-kform><div class="small">What is the concept about? It is queued as a K task; its options page shows here once it is up.</div>
-    <textarea rows="3" data-kin aria-label="What the concept is about" placeholder="e.g. a dark mode for the run app"></textarea>
+    <textarea rows="3" data-kin${enterHint()} aria-label="What the concept is about" placeholder="e.g. a dark mode for the run app"></textarea>
     <div class="btns"><button class="btn acc">Queue it</button><button type="button" class="btn" data-kcancel>Cancel</button></div></form>`):'';
   return `<div class="col"><div class="sec">Concepts<span class="ln"></span><button class="shadd" data-kadd aria-label="New concept" title="New concept">${I.plus}</button></div>
     ${form}${obCards(x=>x.concept||x.kq)}${S.kSaid?`<div class="small">${esc(S.kSaid)}</div>`:''}${cs.length?cs.map(conceptCard).join(''):emptyCard(`${NO_CONCEPT}`)}</div>`;
@@ -2200,7 +2205,7 @@ function render(force){
   const nta=document.querySelector('[data-in]');
   if(nta){const v=HI.i!==null&&HI.key===boxKey()?histGet(HI.key)[HI.i]||'':store.get(DRAFT_KEY(boxKey()));if(nta.value!==v)nta.value=v;grow(nta);if(focused&&nta!==ta){nta.focus({preventScroll:true});if(sel)nta.setSelectionRange(sel[0],sel[1])}if(focused)slashShow(nta)}  // B119: the menu stays open; B120: so does a recalled message
   const np=document.querySelector('[data-paddin]');if(np){np.value=H.add;if(H.addFocus){np.focus({preventScroll:true});kbReveal(np)}}  // F134
-  const nk=document.querySelector('[data-kin]');if(nk){nk.value=S.kText||'';if(S.kFocus){kbFocus(nk);kbReveal(nk)}else if(kfocused)nk.focus({preventScroll:true});S.kFocus=false}  // F87: the new concept box keeps its words
+  const nk=document.querySelector('[data-kin]');if(nk){nk.value=S.kText||'';growKin(nk);if(S.kFocus){kbFocus(nk);kbReveal(nk)}else if(kfocused)nk.focus({preventScroll:true});S.kFocus=false}  // F87: the new concept box keeps its words
   if(drew)keep();
   if(moved){
     const follow=lastPlace&&(lastPlace.startsWith('t:@')&&n||lastPlace.startsWith('t:+')&&n&&n[0]==='@');  // a starting chat got its name, a new one started: the same chat
@@ -2321,6 +2326,8 @@ if(VV){for(const t of ['resize','scroll'])VV.addEventListener(t,kbFit);
   document.addEventListener('focusout',e=>{if(kbH&&!typingIn(e.relatedTarget))queueMicrotask(()=>{if(typingIn(document.activeElement))return;if(IOS)kbWatch();kbFit()})});
   if(IOS){document.addEventListener('touchstart',kbTapStart,{passive:true});document.addEventListener('touchcancel',()=>{KT=null},{passive:true});
     document.addEventListener('touchend',kbTapEnd,{passive:false})}}
+/* B181: the new concept box grows with its lines on touch; a computer's keeps its drag handle */
+function growKin(ta){if(TOUCH()){grow(ta);ta.style.height=Math.min(ta.scrollHeight+ta.offsetHeight-ta.clientHeight,160)+'px'}}
 function grow(ta){ta.closest('.box')?.classList.toggle('has',!!ta.value.trim());ta.style.height='auto';ta.style.height=Math.min(ta.scrollHeight,160)+'px'}
 /* B119: the slash command menu. SL.cmds the session's commands from /commands (null until they come, then
    SLASH_FALLBACK's list stands in), SL.items the rows shown, SL.i the highlighted one */
@@ -2990,19 +2997,19 @@ document.addEventListener('keydown',e=>{
   if(e.key==='Escape'&&S.sheet){e.preventDefault();closeSheet();return}  // the topmost thing only
   if(e.target.matches&&e.target.matches('[data-f]')&&e.key==='Enter'&&e.target.tagName==='INPUT'&&e.target.dataset.f.startsWith('set:')){
     e.preventDefault();const [,side,...id]=e.target.dataset.f.split(':');S.f[e.target.dataset.f]=e.target.value;saveSetting(id.join(':'),side);return}
-  if(e.target.matches&&e.target.matches('[data-kin]')){  // F87: Enter queues the concept, Esc closes the box
-    if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();newConcept();return}
+  if(e.target.matches&&e.target.matches('[data-kin]')){  // F87: Enter queues the concept (B181: a new line on touch), Esc closes the box
+    if(e.key==='Enter'&&boxEnter(e,TOUCH())==='send'){e.preventDefault();newConcept();return}
     if(e.key==='Escape'){e.preventDefault();S.kOpen=false;render(true);return}
     return}
   if(e.target.matches&&e.target.matches('[data-in]')){
-    if(slashOpen()&&!e.isComposing){  // B119: arrows move, Enter or Tab picks, Esc closes the menu and stays in the box
+    if(slashOpen()&&!composing(e)){  // B119: arrows move, Enter or Tab picks, Esc closes the menu and stays in the box
       if(e.key==='ArrowDown'||e.key==='ArrowUp'){e.preventDefault();SL.i=slashMove(SL.i,SL.items.length,e.key);slashShow(e.target);return}
       if(e.key==='Escape'){e.preventDefault();slashClose();return}
       const c=SL.items[SL.i];
       if(e.key==='Tab'||(e.key==='Enter'&&!e.shiftKey&&c&&e.target.value.trim()!=='/'+c.name)){e.preventDefault();slashTake(SL.i);return}
-      if(e.key==='Enter')slashClose();  // the command is typed in full: Enter sends it
+      if(e.key==='Enter')slashClose();  // the command is typed in full: Enter sends it (B181: a new line on touch)
     }
-    if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();send();return}
+    if(e.key==='Enter'&&boxEnter(e,TOUCH())==='send'){e.preventDefault();send();return}
     if((e.key==='ArrowUp'||e.key==='ArrowDown')&&histKey(e,e.target)){e.preventDefault();return}  // B120: earlier messages
     if(e.key==='Escape'){const n=shownSession();if(n&&busy(n)){e.preventDefault();act('interrupt',{session:n});return}}  // B120; B142: the shown session
     if(e.key==='Escape'){e.preventDefault();e.target.blur();return}
@@ -3012,7 +3019,7 @@ document.addEventListener('keydown',e=>{
   if(e.key==='Escape'&&S.thread&&!(e.target.matches&&e.target.matches('input,textarea,select'))){S.thread=null;S.ctx=null;render(true);return}  /* out of the box, Esc goes back */
   const c=e.target.closest&&e.target.closest('.card.tap');if(c&&c===e.target&&(e.key==='Enter'||e.key===' ')){e.preventDefault();c.click()}
 });
-document.addEventListener('input',e=>{if(e.target.matches('[data-paddin]'))H.add=e.target.value;if(e.target.matches('[data-f]')&&e.target.type!=='checkbox'){S.f[e.target.dataset.f]=e.target.value;if(e.target.dataset.f==='setq')render(true)}if(e.target.matches('[data-kin]'))S.kText=e.target.value;if(e.target.matches('[data-in]')){grow(e.target);store.set(DRAFT_KEY(boxKey()),e.target.value);HI.i=null;slashShow(e.target)}});
+document.addEventListener('input',e=>{if(e.target.matches('[data-paddin]'))H.add=e.target.value;if(e.target.matches('[data-f]')&&e.target.type!=='checkbox'){S.f[e.target.dataset.f]=e.target.value;if(e.target.dataset.f==='setq')render(true)}if(e.target.matches('[data-kin]')){S.kText=e.target.value;growKin(e.target)}if(e.target.matches('[data-in]')){grow(e.target);store.set(DRAFT_KEY(boxKey()),e.target.value);HI.i=null;slashShow(e.target)}});
 document.addEventListener('paste',e=>{if(!e.target.matches||!e.target.matches('[data-in]'))return;
   const fs=[...(e.clipboardData?.files||[])];if(fs.length){e.preventDefault();fs.forEach(upload)}});
 $('file').addEventListener('change',e=>{[...e.target.files].forEach(upload);e.target.value=''});
