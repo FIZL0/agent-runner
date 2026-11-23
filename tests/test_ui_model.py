@@ -571,6 +571,26 @@ def test_delete_chats(tmp: Path) -> None:
             p.wait()
 
 
+def test_chat_list_f133(tmp: Path) -> None:
+    """F133: the run app's Chats order (web.chat_list): pins first in their saved order, then chats the saved order
+    does not know (new ones, just under the pins), then the saved order; a deleted chat drops out; nothing saved
+    keeps the snapshot's order."""
+    from agent_runner import web as W
+    names = ['c1', 'c3', 'c4', 'c6']
+    eq(W.chat_list(names, {}), names, 'nothing saved: the snapshot order')
+    eq(W.chat_list(names, None), names, 'no file: the snapshot order')
+    eq(W.chat_list(names, {'order': ['c6', 'c3', 'c1', 'c4'], 'pins': []}), ['c6', 'c3', 'c1', 'c4'], 'the saved order')
+    eq(W.chat_list(names, {'order': ['c6', 'c3', 'c1', 'c4'], 'pins': ['c1', 'c4']}), ['c1', 'c4', 'c6', 'c3'],
+       'pins first, in the saved order')
+    eq(W.chat_list(names, {'order': ['c3', 'c1'], 'pins': ['c1']}), ['c1', 'c4', 'c6', 'c3'],
+       'new chats just under the pins')
+    eq(W.chat_list(['c1', 'c3'], {'order': ['c9', 'c3', 'c4', 'c1'], 'pins': ['c9', 'c1']}), ['c1', 'c3'],
+       'deleted chats (pinned or not) drop out')
+    eq(W.chat_list(names, {'order': ['c4'], 'pins': ['c6']}), ['c6', 'c1', 'c3', 'c4'],
+       'a pin missing from the order is still first')
+    eq(W.chat_list(names, {'order': 'junk', 'pins': [3, 'c3']}), ['c3', 'c1', 'c4', 'c6'], 'junk in the file is skipped')
+
+
 def in_tmp(f):
     def go():
         print(f.__name__)
@@ -587,4 +607,4 @@ if __name__ == '__main__':
                          in_tmp(test_to_c1_hidden), in_tmp(test_control_titles),
                          in_tmp(test_queue_rows), in_tmp(test_feed), in_tmp(test_chat_and_terminal),
                          in_tmp(test_concept_copy), in_tmp(test_concept_chat), in_tmp(test_hidden_send),
-                         in_tmp(test_delete_chats)]))
+                         in_tmp(test_delete_chats), in_tmp(test_chat_list_f133)]))

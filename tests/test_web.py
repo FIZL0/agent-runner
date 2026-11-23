@@ -345,7 +345,7 @@ def test_control_rows(tmp: Path) -> None:
         page = get(f'{base}/?t={token}')[1]
         eq([s['name'] for s in json.loads(get(f'{base}/snapshot?t={token}')[1])['sessions']], ['c1', 'c6', 's2'],
            'the snapshot carries c6 and the idle s2')
-        for part in (b"const chats=()=>S.snap.sessions.filter(s=>/^c\\d+$/.test(s.name))",
+        for part in (b"S.snap.sessions.filter(s=>/^c\\d+$/.test(s.name))",  # F133: then put in the kept order
                      b"const working_=()=>slots().filter(s=>s.task)", b'<b>Idle</b>'):
             check(part in page, f'the app lists cN as a chat, a slot on a task as working: {part.decode()}')
         asked = []
@@ -1439,8 +1439,60 @@ def test_interrupt_c1_b141(tmp: Path) -> None:
     eq(U.feed_entries([row]), [{'kind': 'out', 'text': 'interrupted'}], "the page's feed then shows 'interrupted'")
 
 
+def test_chat_order_f133(tmp: Path) -> None:
+    """F133: the Chats order and pins, set through /act chat_order, are kept by the run (a file in the notes dir):
+    the snapshot after a reload, and a new server's, list the chats in that order with the pins; a deleted chat
+    drops out, a new one goes just under the pins. Each chat row has a pin button and drags by pointer events,
+    and chatMove places a dropped row with the pins kept first."""
+    fake_repo(tmp)
+    page = W.page_html().decode()
+    check('data-pin=' in page and "act('chat_order'" in page and "'pointerdown'" in page and 'data-crow=' in page,
+          'the page: a pin button per chat, rows dragged by pointer events, the chat_order action')
+    sessions = [{'name': n} for n in ('c1', 'c3', 'c4', 's1')]
+    token = W.web_token()
+
+    def snap_of(srv) -> dict:
+        return json.loads(get(f'http://127.0.0.1:{srv.server_address[1]}/snapshot?t={token}')[1])
+
+    srv = W.serve(token, 0, '127.0.0.1', snap=lambda: {'sessions': sessions})
+    try:
+        eq((snap_of(srv)['chat_order'], snap_of(srv)['chat_pins']), (['c1', 'c3', 'c4'], []),
+           'nothing kept yet: the snapshot order')
+        url = f'http://127.0.0.1:{srv.server_address[1]}/act?t={token}'
+        code, out = post(url, {'name': 'chat_order', 'args': {'order': ['c4', 'c1', 'c3'], 'pins': ['c4']}})
+        eq((code, out.get('ok')), (200, True), 'chat_order is taken')
+        eq(post(url, {'name': 'chat_order', 'args': {'order': 'c4'}})[1].get('ok'), False, 'order must be a list')
+        eq(post(url, {'name': 'chat_order', 'args': {'nope': 1}})[1].get('ok'), False, 'an unknown arg is refused')
+        s = snap_of(srv)
+        eq((s['chat_order'], s['chat_pins']), (['c4', 'c1', 'c3'], ['c4']), 'a reload shows the kept order')
+        eq(post(url, {'name': 'chat_order', 'args': {'order': ['c4', 'c3', 'c1']}})[1].get('ok'), True, 'order alone')
+        s = snap_of(srv)
+        eq((s['chat_order'], s['chat_pins']), (['c4', 'c3', 'c1'], ['c4']), 'an order sent alone keeps the pins')
+    finally:
+        srv.stop()
+    check(W.S.C.notes(W.CHAT_ORDER_FILE).exists(), 'kept in the notes dir')
+    sessions = [{'name': n} for n in ('c1', 'c3', 'c7', 's1')]  # c4 deleted, c7 new
+    srv = W.serve(token, 0, '127.0.0.1', snap=lambda: {'sessions': sessions})
+    try:
+        s = snap_of(srv)
+        eq((s['chat_order'], s['chat_pins']), (['c7', 'c3', 'c1'], []),
+           'a new server (another page, a phone): the deleted pinned chat drops out, the new one goes on top')
+    finally:
+        srv.stop()
+    if not shutil.which('node'):
+        print('  (no node here: the chat move test is skipped)')
+        return
+    names = ['c4', 'c1', 'c3', 'c6']
+    got = logic_js([['chatMove', names, ['c4'], 'c6', 1], ['chatMove', names, ['c4'], 'c1', 3],
+                    ['chatMove', names, ['c4'], 'c4', 3], ['chatMove', names, ['c4', 'c3'], 'c3', 1]])
+    eq(got[0], ['c4', 'c6', 'c1', 'c3'], 'a row dropped at place 1 lands there')
+    eq(got[1], ['c4', 'c3', 'c6', 'c1'], 'and at the end')
+    eq(got[2], ['c4', 'c1', 'c3', 'c6'], 'a pinned chat dragged down stays above the unpinned')
+    eq(got[3], ['c4', 'c3', 'c1', 'c6'], 'a chat just pinned joins the pins')
+
+
 if __name__ == '__main__':
-    raise SystemExit(report([in_tmp(test_delete_chats_f118), in_tmp(test_server), in_tmp(test_real_action), in_tmp(test_run_controls),
+    raise SystemExit(report([in_tmp(test_chat_order_f133), in_tmp(test_delete_chats_f118), in_tmp(test_server), in_tmp(test_real_action), in_tmp(test_run_controls),
                            in_tmp(test_start), in_tmp(test_upload),
                            in_tmp(test_control_rows), in_tmp(test_feed_pane_concept), in_tmp(test_page),
                            in_tmp(test_logic), in_tmp(test_extras), in_tmp(test_diff), in_tmp(test_views),

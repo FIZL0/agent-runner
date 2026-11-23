@@ -74,6 +74,15 @@ a{color:var(--accent)}
 .crow:hover .del,.crow:focus-within .del,.crow .del.undo{opacity:1} .crow .del:hover{background:var(--line2);color:var(--fg)}
 .crow .del svg{width:15px;height:15px} .crow .del.undo{padding:0 8px;color:var(--accent)}
 @media (hover:none){.crow .del{opacity:1}}
+/* F133: the pin button beside delete (always shown on a pinned chat), and a row being dragged */
+.crow[data-crow] .thread{padding-right:68px} .crow[data-crow="c1"] .thread{padding-right:38px}
+.crow .pin{position:absolute;right:34px;top:50%;transform:translateY(-50%);height:28px;width:28px;border:0;border-radius:8px;background:none;color:var(--muted);display:grid;place-items:center;cursor:pointer;opacity:0}
+.crow[data-crow="c1"] .pin{right:4px}
+.crow:hover .pin,.crow:focus-within .pin,.crow .pin.on{opacity:1} .crow .pin.on{color:var(--accent)} .crow .pin:hover{background:var(--line2);color:var(--fg)}
+.crow .pin svg{width:15px;height:15px}
+@media (hover:none){.crow .pin{opacity:1}}
+.crow[data-crow]{-webkit-touch-callout:none;-webkit-user-select:none;user-select:none}
+.crow.lift,.crow.drag{background:var(--line2);border-radius:10px} .crow.drag{position:relative;z-index:5;box-shadow:0 4px 14px rgba(0,0,0,.18);opacity:.95}
 .thread.sel{background:color-mix(in srgb,var(--accent) 18%,transparent)}
 .thread.gone{opacity:.5;cursor:default} .thread.gone .t{text-decoration:line-through}
 .selbar{display:flex;align-items:center;gap:8px;padding:4px 10px;font-size:13px;color:var(--muted)} .selbar span{flex:1}
@@ -366,6 +375,12 @@ function chatPick(names,sel,last,name,how){
   if(how==='toggle'||how==='range'){if(ok(name)){s.has(name)?s.delete(name):s.add(name)}return{sel:order(s),last:name}}
   return{sel:[],last:name};
 }
+/* F133: the Chats list once `name` is dropped at place `to` (counted without it); pinned chats (`pins`) stay first */
+function chatMove(names,pins,name,to){
+  names=names||[];const rest=names.filter(n=>n!==name),p=new Set(pins||[]);
+  if(names.includes(name))rest.splice(Math.max(0,Math.min(+to||0,rest.length)),0,name);
+  return rest.filter(n=>p.has(n)).concat(rest.filter(n=>!p.has(n)));
+}
 /* B119: the message box's slash command menu. SLASH_FALLBACK, the commands it offers when the run page cannot
    give the session's own list (/commands) */
 const SLASH_FALLBACK=[['run',"The run's status"],['since','What the run did since the last look'],['follow','Follow the run live'],
@@ -404,7 +419,7 @@ function histStep(n,i,key){
   if(typeof i!=='number'||i<0||i>n)i=n;
   return key==='ArrowUp'?Math.max(0,i-1):Math.min(n,i+1);
 }
-if(typeof module!=='undefined')module.exports={BOX_KEYS,keysLine,histPush,histEdge,histStep,slashMatches,slashPick,slashMove,SLASH_FALLBACK,chatPick,answerOpts,threadMsgs,working,planWords,compose,usageOf,logKind,plain,chatName,controlReq,controlClick,taskControlsOn,queueGroups,conceptButtons,NO_CONCEPT,newConceptReq,queuedId,NAV,talkSession,micProblem,talkShown,talkReply};
+if(typeof module!=='undefined')module.exports={chatMove,BOX_KEYS,keysLine,histPush,histEdge,histStep,slashMatches,slashPick,slashMove,SLASH_FALLBACK,chatPick,answerOpts,threadMsgs,working,planWords,compose,usageOf,logKind,plain,chatName,controlReq,controlClick,taskControlsOn,queueGroups,conceptButtons,NO_CONCEPT,newConceptReq,queuedId,NAV,talkSession,micProblem,talkShown,talkReply};
 </script>
 
 <script>
@@ -424,6 +439,7 @@ const I={
  plan:ic('<path d="M8 6h12M8 12h12M8 18h12"/><circle cx="4" cy="6" r=".6"/><circle cx="4" cy="12" r=".6"/><circle cx="4" cy="18" r=".6"/>'),
  concepts:ic('<path d="M9 18h6M10 21h4"/><path d="M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2.1h5c0-.9.4-1.6 1-2.1A6 6 0 0 0 12 3z"/>'),  // F87: a bulb
  plus:ic('<path d="M12 5v14M5 12h14"/>'),
+ pin:ic('<path d="M9 4h6l-1 6 3 3v1H7v-1l3-3z"/><path d="M12 14v6"/>'),  // F133
  trash:ic('<path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/>'),  // F118
  clip:ic('<path d="M21 11.5 12.5 20a5 5 0 0 1-7-7L14 4.5a3.4 3.4 0 0 1 4.8 4.8L10.4 17.7a1.8 1.8 0 0 1-2.6-2.6L15.5 7.5"/>'),
  up:ic('<path d="M12 19V5M6 11l6-6 6 6"/>'),
@@ -478,7 +494,15 @@ async function act(name,args){
 }
 
 /* --- what the snapshot holds ------------------------------------------------------------------------------- */
-const chats=()=>S.snap.sessions.filter(s=>/^c\d+$/.test(s.name));
+/* F133: the chats in the order the run keeps (snap.chat_order); one it does not list yet goes just under the pins */
+const chatPins=()=>S.snap.chat_pins||[];
+const chats=()=>{const o=S.snap.chat_order||[], at=s=>{const i=o.indexOf(s.name);return i<0?chatPins().length-.5:i};
+  return S.snap.sessions.filter(s=>/^c\d+$/.test(s.name)).map((s,k)=>[s,k]).sort((a,b)=>at(a[0])-at(b[0])||a[1]-b[1]).map(x=>x[0])};
+/* F133: keep a new chat order and pins: shown at once, then sent to the run so every page shows the same list */
+function saveChatOrder(order,pins){
+  S.snap.chat_order=order;S.snap.chat_pins=pins;render(true);
+  act('chat_order',{order,pins});
+}
 const slots=()=>S.snap.sessions.filter(s=>/^s\d+$/.test(s.name)||(!/^c\d+$/.test(s.name)&&s.task));
 const working_=()=>slots().filter(s=>s.task);
 const sessionOf=n=>S.snap.sessions.find(s=>s.name===n);
@@ -509,7 +533,9 @@ function md(src){
 }
 
 /* --- drawing ----------------------------------------------------------------------------------------------- */
+let DR=null;  // F133: a chat row being dragged (its pointer, where it started, whether the drag is on)
 function side(){
+  if(DR&&DR.on)return;  // F133: a redraw would drop the row from under the finger
   const nav=NAV;  // F93: Talk first
   const needs=S.snap.needs.length, use=usageOf(S.snap.status), cn=(S.snap.concepts||[]).length;
   const count={home:needs,concepts:cn};
@@ -530,7 +556,8 @@ function chatRow(s){
   const row=`<button class="thread ${cls}" ${gone?'':`data-thread="${esc(n)}"`}>${s.state==='live'?'':'<span class="off" title="not running"></span>'}<span class="t">${esc(chatName(s))}</span></button>`;
   const btn=gone?(u.bar?'':`<button class="del undo" data-undo>Undo</button>`):
     n==='c1'?'':`<button class="del" data-del="${esc(n)}" aria-label="Delete this chat" title="Delete this chat">${I.trash}</button>`;
-  return `<div class="crow">${row}${btn}</div>`;
+  const pinned=chatPins().includes(n), pin=gone?'':`<button class="pin${pinned?' on':''}" data-pin="${esc(n)}" aria-pressed="${pinned}" aria-label="${pinned?'Unpin':'Pin'} this chat" title="${pinned?'Unpin':'Pin'} this chat">${I.pin}</button>`;
+  return `<div class="crow" ${gone?'':`data-crow="${esc(n)}"`}>${row}${pin}${btn}</div>`;
 }
 function chatBar(){
   if(S.undo&&S.undo.bar)return `<div class="selbar"><span>Deleted ${S.undo.names.length} chats</span><button class="btn" data-undo>Undo</button></div>`;
@@ -861,6 +888,8 @@ document.addEventListener('click',async e=>{
   if(x=q('[data-slashpick]')){slashTake(+x.dataset.slashpick);return}  // B119
   if(slashOpen()&&!q('[data-in]'))slashClose();
   if(q('[data-undo]')){S.undo=null;render(true);return}
+  if(x=q('[data-pin]')){const n=x.dataset.pin,names=chats().map(c=>c.name),p=chatPins().filter(m=>names.includes(m));  // F133
+    const pins=p.includes(n)?p.filter(m=>m!==n):p.concat([n]);saveChatOrder(chatMove(names,pins,n,names.indexOf(n)),pins);return}
   if(x=q('[data-del]')){S.undo={names:[x.dataset.del],bar:false};S.sel=[];render(true);return}
   if(q('[data-delsel]')){if(S.sel.length){S.undo={names:S.sel,bar:true};S.sel=[]}render(true);return}
   if((x=q('[data-thread]'))&&/^c\d+$/.test(x.dataset.thread)){  // F118: Ctrl/Cmd+click picks, Shift+click a range
@@ -950,6 +979,41 @@ $('file').addEventListener('change',e=>{[...e.target.files].forEach(upload);e.ta
 document.addEventListener('dragover',e=>{if(e.dataTransfer&&[...e.dataTransfer.types].includes('Files'))e.preventDefault()});
 document.addEventListener('drop',e=>{if(e.dataTransfer&&e.dataTransfer.files.length){e.preventDefault();[...e.dataTransfer.files].forEach(upload)}});
 document.addEventListener('visibilitychange',()=>{if(!document.hidden&&S.thread)loadFeed(S.thread)});
+/* F133: drag a chat row to set its place, by pointer events so a phone's touch works too: a mouse drags at once,
+   a touch after a short hold (a swipe before it still scrolls the list); the drop is kept by the run */
+const dragEnd=()=>{if(!DR)return;clearTimeout(DR.hold);DR.row.classList.remove('lift','drag');DR.row.style.transform='';const on=DR.on;DR=null;if(on)render(true)};
+document.addEventListener('pointerdown',e=>{
+  const row=e.target.closest&&e.target.closest('.crow[data-crow]');
+  if(!row||e.button>0||e.target.closest('.pin,.del')||S.undo||e.shiftKey||e.ctrlKey||e.metaKey)return;
+  dragEnd();
+  DR={row,name:row.dataset.crow,id:e.pointerId,y0:e.clientY,on:false,ready:e.pointerType==='mouse'};
+  if(!DR.ready)DR.hold=setTimeout(()=>{if(DR&&DR.row===row){DR.ready=true;row.classList.add('lift')}},350);
+});
+document.addEventListener('pointermove',e=>{
+  if(!DR||e.pointerId!==DR.id)return;
+  const dy=e.clientY-DR.y0;
+  if(!DR.on){
+    if(Math.abs(dy)<6)return;
+    if(!DR.ready){dragEnd();return}  // a touch that moves before the hold is a scroll
+    DR.on=true;DR.row.classList.add('drag');try{DR.row.setPointerCapture(e.pointerId)}catch(err){}
+  }
+  DR.row.style.transform=`translateY(${dy}px)`;e.preventDefault();
+});
+document.addEventListener('touchmove',e=>{if(DR&&DR.ready)e.preventDefault()},{passive:false});  // held: no scroll
+document.addEventListener('pointerup',e=>{
+  if(!DR||e.pointerId!==DR.id)return;
+  if(!DR.on)return dragEnd();
+  const name=DR.name, others=[...document.querySelectorAll('.crow[data-crow]')].filter(r=>r!==DR.row);
+  const to=others.filter(r=>{const b=r.getBoundingClientRect();return b.top+b.height/2<e.clientY}).length;
+  dragEnd();
+  noClick=true;setTimeout(()=>noClick=false,0);  // the click that ends a drag opens nothing
+  const names=chats().map(c=>c.name),pins=chatPins().filter(m=>names.includes(m)),order=chatMove(names,pins,name,to);
+  if(order.join()!==names.join())saveChatOrder(order,pins);
+});
+document.addEventListener('pointercancel',e=>{if(DR&&e.pointerId===DR.id)dragEnd()});
+document.addEventListener('contextmenu',e=>{if(DR&&DR.ready&&e.target.closest&&e.target.closest('.crow'))e.preventDefault()});
+let noClick=false;
+document.addEventListener('click',e=>{if(noClick){noClick=false;e.preventDefault();e.stopPropagation()}},true);
 addEventListener('pagehide',finalDelete);  // F118: leaving the page makes a pending delete final
 
 render(true);
