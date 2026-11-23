@@ -690,7 +690,7 @@ def start_control() -> None:
     window (`hidden_control`, F59). B121: first the control sessions c2+ a shutdown ended are reopened
     (`reopen_controls`)."""
     mark_board()
-    if control_ok():
+    if C.run['control'] and control_ok():
         try:
             from agent_runner.control_reopen import reopen_controls
             reopen_controls()

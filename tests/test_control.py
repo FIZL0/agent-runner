@@ -365,7 +365,8 @@ def test_reopen_after_shutdown():
         check(len(argv) > 1 and argv[1] != K.control_ask('fix the deploy page'), 'its ask is not sent again', argv)
         eq(K.control_given(2), title2, 'its title is left as it was')
         rows[sid2] = [{'type': 'custom-title', 'customTitle': 'deploy talk'}]
-        eq(K.control_open(2, reopen=True)[2][-1], 'deploy talk', 'a name the person gave it wins')
+        named = K.control_open(2, reopen=True)[2]
+        eq(named[named.index('--remote-control') + 1], 'deploy talk', 'a name the person gave it wins')
         fresh, again, _ = K.control_open(2)
         check(not again and fresh != sid2, 'a plain control 2 (control --new) starts fresh', (fresh, again))
         eq(K.control_sid(1), (sid1, True), 'c1 still resumes its kept session')
@@ -375,6 +376,17 @@ def test_reopen_after_shutdown():
                 mock.patch.object(K, 'hidden_control', lambda n, cmd: got.append(cmd) or (4242, '')):
             check(CR.reopen_control(2, sid2).startswith('a hidden terminal'), 'a hidden run reopens it hidden')
         eq(got[0][-3:], ['control', '2', '--reopen'], 'as control 2 --reopen')
+
+        calls = []  # the run restarted: start_control reopens them first, unless [run] control is off
+        with mock.patch.object(CR, 'reopen_controls', lambda: calls.append(1) or []), \
+                mock.patch.object(K, 'control_ok', lambda: True), mock.patch.object(K, 'MUX', object()), \
+                mock.patch.object(K.plat, 'WINDOWS', False), mock.patch.object(K, 'mark_board', lambda: None):
+            with mock.patch.dict(R.C.run, {'control': True}):
+                K.start_control()
+            eq(len(calls), 1, 'a run start reopens the control sessions')
+            with mock.patch.dict(R.C.run, {'control': False}):
+                K.start_control()
+            eq(len(calls), 1, 'not with [run] control = false')
 
         R.C.notes('control6.pid').write_text(f'{dead} {sid2}', encoding='utf-8')
         eq(CR.forget_ended_controls(), [6], 'the run loop forgets one that ended during this boot, not c2')

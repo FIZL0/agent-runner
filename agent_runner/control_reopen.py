@@ -17,13 +17,23 @@ import os
 import re
 import subprocess as sp
 import sys
+import time
 
 from agent_runner import control as K, plat, slots, state
 from agent_runner.config import runner_cmd
 
 
 def boot_time() -> float:
-    """When this machine last booted (epoch seconds): Linux /proc/stat, macOS kern.boottime; 0 where unknown."""
+    """When this machine last booted (epoch seconds): Linux /proc/stat, macOS kern.boottime, Windows
+    GetTickCount64; 0 where unknown."""
+    if plat.WINDOWS:
+        try:
+            import ctypes
+            tick = ctypes.windll.kernel32.GetTickCount64
+            tick.restype = ctypes.c_ulonglong
+            return time.time() - tick() / 1000
+        except (OSError, AttributeError):
+            return 0.0
     try:
         with open('/proc/stat', encoding='utf-8') as fh:
             for line in fh:
