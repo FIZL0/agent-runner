@@ -318,8 +318,8 @@ function talkSession(sessions,remembered){
 }
 /* why the mic cannot listen here ('' when it can): Chrome gives the mic only to https or localhost */
 function micProblem(secure,hasRecognition){
-  if(!secure)return 'The mic needs https or localhost, and this address is plain http. Type below instead.';
   if(!hasRecognition)return 'This browser cannot turn speech into text (Chrome, Edge and Safari can). Type below instead.';
+  if(!secure)return 'The mic needs https or localhost, and this address is plain http. Type below instead.';
   return '';
 }
 /* a Talk message as the person said it: without the first message's brief or a later one's reminder */
@@ -589,15 +589,17 @@ async function talkSend(msg){
   const r=await act('talk',{text:msg,to});
   if(!r.ok){TK.state='';render(true);return false}
   const n=r.session||to, fresh=n!==to;
-  if(n){store.set(TALK_KEY,n);TK.wait={n,since:fresh?0:len,at:Date.now(),last:''};
-    S.sent[n]={at:Date.now(),len:fresh?0:len,pending:[msg]};loadFeed(n)}
-  else{TK.state='';toast('Talk is opening its chat: it shows here once it is up')}
+  TK.wait={n,since:fresh?0:len,at:Date.now(),last:''};  /* n '': found by its title once it is up (talkHear) */
+  if(n){store.set(TALK_KEY,n);S.sent[n]={at:Date.now(),len:fresh?0:len,pending:[msg]};loadFeed(n)}
+  else toast('Talk is opening its chat: it shows here once it is up');
   render(true);return true;
 }
 /* a new feed for session n: once the Talk reply has stood for one poll, read it aloud */
 function talkHear(n){
-  const w=TK.wait;if(!w||w.n!==n)return;
-  if(Date.now()-w.at>300000){TK.wait=null;if(TK.state==='thinking')TK.state='';return}
+  const w=TK.wait;if(!w)return;
+  if(!w.n&&talkSession(S.snap.sessions,'')===n){w.n=n;store.set(TALK_KEY,n)}
+  if(w.n!==n)return;
+  if(Date.now()-w.at>300000){TK.wait=null;if(TK.state==='thinking'){TK.state='';toast('No spoken reply came in five minutes: its chat shows where it is.',true);render(true)}return}
   const said=talkReply(feedOf(n),w.since);
   if(!said||said!==w.last){w.last=said;return}
   TK.wait=null;speak(said);

@@ -161,7 +161,7 @@ def control_title(ask: str = '', images: list[str] | tuple = ()) -> str:
     """A short title for a control session opened with `--ask`: the ask's first words (up to 5, trimmed at a word
     to about 40 characters, trailing punctuation dropped); for a files-only ask "screenshot" when they are all
     images, else the first file's name (B30); "" without one. F93: a Talk ask (`talk_ask`) is titled Talk."""
-    if (ask or '').startswith(TALK_LEAD):
+    if (ask or '').startswith(TALK_BRIEF):  # the whole brief, so a typed "Talk mode: …" is not taken for Talk
         return TALK_TITLE
     words = (ask or '').split()[:5]
     while len(' '.join(words)) > 40 and len(words) > 1:

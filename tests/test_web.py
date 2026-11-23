@@ -949,6 +949,7 @@ def test_talk_f93(tmp: Path) -> None:
                   'no markdown', 'lists, tables', 'round numbers', 'one thing at a time'):
         check(words in ask, f'the Talk brief says: {words}')
     eq(CT.control_title(ask), 'Talk', 'a Talk session is titled Talk')
+    eq(CT.control_title('Talk mode: what now'), 'Talk mode: what now', 'a typed "Talk mode:" ask is not Talk')
     eq(U.given_title(CT.control_name(7, ask), 7), 'Talk', 'and the run page lists it as Talk')
     token = W.web_token()
     srv = W.serve(token, 0, '127.0.0.1', snap=lambda: {})
