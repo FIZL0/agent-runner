@@ -7,8 +7,20 @@ import json
 from contextlib import ExitStack
 
 from agent_runner import plan as P, plansync
-from agent_runner.state import C, commit_plan, git, log, MERGE, plan_rel, ROOT, SLOTS_DIR
+from agent_runner import state as S
+from agent_runner.state import commit_plan, git, log, MERGE, plan_rel
 from agent_runner.sched import open_tasks
+
+# C, ROOT and SLOTS_DIR are read off `state` each call: `init` sets them there, and `share` reaches only the
+# modules in state.FAMILY
+
+
+class _Now:
+    def __getattr__(self, name):
+        return getattr(S.C, name)
+
+
+C = _Now()
 
 EV_FINISHED = 'finished'  # task `id`'s agent ran `run finish` (summary)
 EV_ASKED = 'asked'        # task `id`'s agent ran `run ask`: parked until the person answers (question)
@@ -18,7 +30,7 @@ def park_asked(n: int, tid: str, sid: str, question: str, branch: str) -> bool:
     """Slot n's session ran `run ask`: keep its work, commits and uncommitted edits alike, on asked/<tid> (never
     merged), note its session in `<notes>/<tid>.ask` for the answer to resume (`slots.answer_ask`), and block the
     task under Needs you (`block_asks`). False when the work could not be kept: the task ends as any other."""
-    d = SLOTS_DIR / f's{n}'
+    d = S.SLOTS_DIR / f's{n}'
     dirty = bool(git('status', '--porcelain', cwd=d).stdout.strip())
     if dirty and (git('add', '-A', cwd=d).returncode or
                   git('commit', '-qm', f'{tid} wip: uncommitted, asked', '--no-verify', cwd=d).returncode):
@@ -57,7 +69,7 @@ def block_asks(branch: str) -> None:
                                             git('branch', '--show-current').stdout.strip() != branch):
                     continue
                 P.block(tid, f'DECIDE: {ask.get("question", "")} (asked with `run ask`: your answer resumes its '
-                        f'session)', todo=ROOT / rel, after=[])
+                        f'session)', todo=S.ROOT / rel, after=[])
                 if not commit_plan(f'Plan: block {tid}, asked the person', rel):
                     if not C.plan_external:
                         git('checkout', '-q', '--', rel)
