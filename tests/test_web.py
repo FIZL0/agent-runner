@@ -716,6 +716,75 @@ def test_page_copy_publish(tmp: Path) -> None:
     PC.PAGE_COPY_OFF[0] = ''
 
 
+PARKED_TODO = TODO + """
+### Parked
+- [ ] **F83** Big future work for a person to schedule | files: p.py
+"""
+
+
+def test_parked(tmp: Path) -> None:
+    """B118: a parked task (level later, TODO.md's Parked section) is in its own Parked group on the run app and
+    the terminal-style page, never says Ready, and Unpark (plan edit ID --pri normal) moves it out of Parked."""
+    repo = fake_repo(tmp)
+    todo = repo / 'plan' / 'TODO.md'
+    todo.write_text(PARKED_TODO, encoding='utf-8')
+    q = {t['id']: t for t in U.queue_rows(todo.read_text(encoding='utf-8').splitlines())}
+    eq(q['F83']['state'], 'parked', 'the model gives a task under Parked state parked')
+    app, term = W.page_html().decode(), W.TERM.read_text(encoding='utf-8')
+    for part in ('<div class="sec">Parked<span class="ln"></span></div>', "Parked: a run won't start it",
+                 'data-unpark="${esc(q.id)}">Unpark</button>', 'data-about="plan:${esc(q.id)}">Chat</button>',
+                 "act('unpark',{tid:id})", "q.state!=='running'&&q.state!=='parked'"):
+        check(part in app, f'the run app has {part}')
+    for part in ("Parked: a run won't start it", '<i class="chip park">parked</i>', "act('unpark',{tid:it.id}",
+                 'items:()=>queueItems(S.snap.queue)', 'unpark (a Parked task)'):
+        check(part in term, f'the terminal-style page has {part}')
+    token = W.web_token()
+    srv = W.serve(token, 0, '127.0.0.1', snap=lambda: {})
+    try:
+        code, out = post(f'http://127.0.0.1:{srv.server_address[1]}/act?t={token}',
+                         {'name': 'unpark', 'args': {'tid': 'F83'}})
+    finally:
+        srv.stop()
+    check(code == 200 and out.get('ok'), 'the unpark act ran plan edit', out)
+    eq(out.get('argv', [])[-4:], ['edit', 'F83', '--pri', 'normal'], 'unpark is plan edit ID --pri normal')
+    after = todo.read_text(encoding='utf-8')
+    parked = after.split('### Parked', 1)[1] if '### Parked' in after else ''
+    check('F83' in after and 'F83' not in parked, 'F83 is out of Parked', after)
+    q = {t['id']: t for t in U.queue_rows(after.splitlines())}
+    eq((q['F83']['state'], q['F83']['pri']), ('ready', 'normal'), 'and is ready, at level normal')
+    eq(U.act('unpark', tid='not an id')['ok'], False, 'unpark takes a task id only')
+    if not shutil.which('node'):
+        print('  (no node here: the Parked group script test is skipped)')
+        return
+    rows = [{'id': 'F83', 'state': 'parked'}, {'id': 'F1', 'state': 'ready'}, {'id': 'B2', 'state': 'after'}]
+    got = logic_js([['planWords', {'id': 'F83', 'state': 'parked'}, []], ['queueGroups', rows]])
+    eq(got[0], "Parked: a run won't start it", 'a parked row says so on the run app')
+    check('Ready' not in got[0], 'and never Ready')
+    eq([[r['id'] for r in g] for g in got[1]], [['F1', 'B2'], ['F83']], 'the Queue, then the Parked group')
+    js = term.split('<script id="keys">', 1)[1].split('</script>', 1)[0]
+    ev = lambda k: {'key': k, 'ctrl': False, 'meta': False, 'shift': False, 'alt': False}  # noqa: E731
+    ctx = {'panel': 3, 'focusMain': False, 'tab': '', 'tabs': [], 'typing': False,
+           'it': {'newtask': False, 'parked': True}}
+    ready = dict(ctx, it={'newtask': False, 'parked': False})
+    cases = [['parkedLast', {'queue': rows}], ['queueItems', rows],
+             ['route', ctx, ev('U')], ['route', ctx, ev('E')], ['route', ctx, ev('J')], ['route', ctx, ev('p')],
+             ['route', ready, ev('U')], ['footer', ctx, []]]
+    (tmp / 'keys.js').write_text(js, encoding='utf-8')
+    (tmp / 'driver.js').write_text(TERM_DRIVER, encoding='utf-8')
+    r = subprocess.run(['node', str(tmp / 'driver.js'), str(tmp / 'keys.js')], input=json.dumps(cases),
+                       capture_output=True, text=True, timeout=60)
+    check(r.returncode == 0, 'node runs the terminal-style page script', r.stderr[-800:])
+    got = json.loads(r.stdout or '[]') or [None] * len(cases)
+    eq([t['id'] for t in got[0]['queue']], ['F1', 'B2', 'F83'], 'parked tasks go after the rest')
+    eq([t['id'] for t in got[1]], ['F1', 'B2', '+', 'F83'], '[3]: the queue, new task, then the Parked group')
+    eq(got[2], [['act', 'unpark']], 'U on a parked row unparks it')
+    eq(got[3], [['tabto', 'chat edit']], 'E: chat edit, as for other rows')
+    eq((got[4], got[5]), ([], []), 'no J/K reorder or priority toggle on a parked row')
+    eq(got[6], [], 'U does nothing on a row that is not parked')
+    here = [k for k, _ in got[7]['here']]
+    check('U' in here and 'E' in here, 'the key hints show U unpark and E chat edit', got[7])
+
+
 def in_tmp(f):
     def go():
         with tempfile.TemporaryDirectory() as d:
@@ -729,4 +798,4 @@ if __name__ == '__main__':
                            in_tmp(test_start), in_tmp(test_upload),
                            in_tmp(test_control_rows), in_tmp(test_feed_pane_concept), in_tmp(test_page),
                            in_tmp(test_logic), in_tmp(test_extras), in_tmp(test_diff), in_tmp(test_views),
-                           in_tmp(test_new_chat), in_tmp(test_term_moves), in_tmp(test_page_copy_publish)]))
+                           in_tmp(test_new_chat), in_tmp(test_term_moves), in_tmp(test_page_copy_publish), in_tmp(test_parked)]))

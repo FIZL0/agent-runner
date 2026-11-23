@@ -306,6 +306,9 @@ QUEUE_TODO = """# TODO
 - [~] **R6** Check status on Windows | files: r.md BLOCKED: shelved: CONFIRM: run it on the laptop
 - [ ] **V5** Release: bump the version where the project keeps it, tag and publish | files: v.py
 - [ ] **F8** After the release | files: f.py | after: V5,R6
+
+### Parked
+- [ ] **F83** Big future work for a person to schedule | files: p.py
 """
 
 
@@ -321,13 +324,14 @@ def test_queue_rows(tmp: Path) -> None:
     eq({t: q[t]['after_title'] for t in q},
        {'F1': '', 'F66': '', 'B2': 'B109 (landed)', 'F67': 'F66 Run page', 'B3': '',
         'B4': 'Z99 (not in the plan)', 'D5': '', 'V6': 'all: everything above it', 'V5': '',
-        'F8': 'V5 Release, R6 Check status on Windows'},
+        'F8': 'V5 Release, R6 Check status on Windows', 'F83': ''},
        "after's title: open (id and short title only, B115), landed (in DONE.md), not in the plan, all")
     check('R6' not in q, 'B115: a shelved task is not in the queue the page gets')
     eq({t: q[t]['state'] for t in q},
        {'F1': 'running s2 6m', 'F66': 'ready', 'B2': 'ready', 'F67': 'after', 'B3': 'critical', 'B4': 'ready',
-        'D5': 'blocked', 'V6': 'after', 'V5': 'ready', 'F8': 'after'},
-       'state: running sN Nm, ready, after (an open task ahead), critical, blocked ([~])')
+        'D5': 'blocked', 'V6': 'after', 'V5': 'ready', 'F8': 'after', 'F83': 'parked'},
+       'state: running sN Nm, ready, after (an open task ahead), critical, blocked ([~]), parked (B118)')
+    eq(q['F83']['pri'], 'later', 'B118: a task under Parked is level later')
     check(all(q[t]['state'].split()[0] in U.QUEUE_STATES for t in q), 'every state is one of QUEUE_STATES')
 
 

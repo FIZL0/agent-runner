@@ -11,7 +11,7 @@ copy, and the actions they share.
     sessions_note  '' or, with no sessions for that reason, the one line Sessions shows instead (`OLDER_RUN`)
     queue     every open task in TODO.md: id, kind, title, files, after, pri, section, blocked, after_title
               (what it waits on in words: 'F66 Run page: …', 'B109 (landed)', 'all: everything above it') and
-              state ('running s2 6m', 'critical', 'after', 'ready')
+              state ('running s2 6m', 'critical', 'after', 'parked', 'ready')
     needs     what waits on the person (not the shelved ones): label, id, ask in plain words, link, age
     concepts  concept pages waiting for an OK: build id, concept id, title, page link, copy (the local copy
               of the page `done --artifact` kept, <notes>/concepts/<ID>.html; '' for none)
@@ -103,8 +103,9 @@ def queue_rows(ls: list[str], st: dict | None = None, now: float | None = None) 
 
 
 # F74: a queue row's state, first word. 'blocked' (beyond the design's four): a [~] task waits on a person or
-# a fix, and 'ready' would say it can start.
-QUEUE_STATES = ('running', 'blocked', 'critical', 'after', 'ready')
+# a fix, and 'ready' would say it can start. B118: 'parked' (level later, TODO.md's Parked section): a run never
+# starts it, so it must not say 'ready' either.
+QUEUE_STATES = ('running', 'blocked', 'critical', 'after', 'parked', 'ready')
 
 
 def done_ids() -> set[str]:
@@ -154,11 +155,14 @@ def after_words(after: list[str], titles: dict[str, str], live: set[str], everyt
 def queue_state(tid: str, pri: str, after: list[str], live: set[str], where: dict[str, str],
                 blocked: bool = False) -> str:
     """F74: a queue row's state: 'running sN Nm' while a slot runs it, else 'blocked' ([~]: waits on a person
-    or a fix), else 'critical', else 'after' while a task it waits on is still open, else 'ready'."""
+    or a fix), else 'parked' (B118: level 'later': a run never starts it), else 'critical', else 'after' while a
+    task it waits on is still open, else 'ready'."""
     if tid in where:
         return where[tid]
     if blocked:
         return 'blocked'
+    if pri == 'later':
+        return 'parked'
     if pri == 'critical':
         return 'critical'
     return 'after' if any(t in live for t in after) else 'ready'
@@ -511,6 +515,14 @@ def move(tid: str, where: str, other: str) -> dict:
     return call(['plan', 'move', tid, where, other])
 
 
+def unpark(tid: str) -> dict:
+    """B118: Unpark a parked task (level later, a run never starts it): `plan edit ID --pri normal`, which moves
+    it into Follow-ups, where a run starts it."""
+    if not TASK_ID.fullmatch(tid or ''):
+        return {'ok': False, 'code': 2, 'out': f'unpark: a task id (F83), not {tid!r}', 'argv': []}
+    return call(['plan', 'edit', tid, '--pri', 'normal'])
+
+
 # --- F82: the run controls ---------------------------------------------------------------------------------
 #
 # One list for the web page and agent-runner ui alike, so the two cannot drift apart: each control's key, its
@@ -585,7 +597,7 @@ def run_control(key: str, n='', tid: str = '', why: str = '', confirm: bool = Fa
 
 ACTIONS = {'plan_add': plan_add, 'plan_change': plan_change, 'chat': chat, 'answer': answer, 'drop': drop,
            'take': take, 'shelve': shelve, 'release': release, 'open_session': open_session, 'move': move,
-           'run_control': run_control}
+           'run_control': run_control, 'unpark': unpark}
 
 
 def act(name: str, **args) -> dict:

@@ -54,7 +54,8 @@ button{font:inherit}
 .row .qid{flex:none;width:4.2ch;font-weight:700}
 .row .qt{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis}
 .row .chip{flex:none;font-style:normal;color:var(--dim);font-size:12px;max-width:42%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.row .chip.run{color:var(--yellow)}.row .chip.crit{color:var(--red);font-weight:700}.row .chip.next{color:var(--green)}.row .chip.blk{color:var(--yellow)}
+.row .chip.run{color:var(--yellow)}.row .chip.crit{color:var(--red);font-weight:700}.row .chip.next{color:var(--green)}.row .chip.blk{color:var(--yellow)}.row .chip.park{color:var(--dim)}
+.grp{color:var(--dim);padding:4px 10px 0 8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 /* the selected row of the focused panel wraps: its full title, and its after line under it */
 .box.on .row.cur{white-space:normal;flex-wrap:wrap;padding-block:2px}
 .box.on .row.cur .qt,.box.on .row.cur>span:last-child{white-space:normal}
@@ -236,8 +237,9 @@ function route(c,e){
   if(p===3){
     if(k==='n')return[['newtask']];
     if(k==='E')return[['tabto','chat edit']];
-    if(!it.newtask){if(k==='e')return[['tabto','direct edit']];if(k==='J'||k==='K')return[['reorder',k==='J'?1:-1]];
-      if(k==='p')return[['pri']];if(k==='H')return[['act','take']];if(k==='D')return[['act','drop']]}
+    if(!it.newtask){if(k==='e')return[['tabto','direct edit']];if(it.parked&&k==='U')return[['act','unpark']];
+      if(!it.parked&&(k==='J'||k==='K'))return[['reorder',k==='J'?1:-1]];
+      if(!it.parked&&k==='p')return[['pri']];if(k==='H')return[['act','take']];if(k==='D')return[['act','drop']]}
   }
   if(p===4){if(k==='L')return[['act','later']];if(k==='a'||k==='i')return[['tabto','answer']]}
   if(p===5&&k==='O')return[['open']];
@@ -257,14 +259,23 @@ function footer(c,shown){
     here.push(['Esc',c.busy?'interrupt':'back'])}
   else here=({1:[['⏎','open'],['R','release']],
     2:[['⏎','open'],['v','steps'],['N','new chat'],...(it.ctl||it.task?[['o','open session']]:[])],
-    3:it.newtask?[['⏎','new task'],['E','describe it']]:[['e','edit'],['E','chat edit'],['n','new'],['J/K','reorder'],['p','priority'],['H','do it here'],['D','drop']],
+    3:it.newtask?[['⏎','new task'],['E','describe it']]:it.parked?[['U','unpark'],['e','edit'],['E','chat edit'],['n','new'],['H','do it here'],['D','drop']]:[['e','edit'],['E','chat edit'],['n','new'],['J/K','reorder'],['p','priority'],['H','do it here'],['D','drop']],
     4:[['a','answer'],['L','later']],
     5:[['⏎','view'],['O','open on claude.ai']]})[c.panel]||[];
   here=here.filter(([k])=>!(shown||[]).includes(k)&&!NOFOOT.test(k));
   return{mode:c.typing?'INSERT':c.focusMain?String(t).toUpperCase():String(c.panelName||'').toUpperCase(),here,
     glob:c.typing?[]:[['1-5','panel'],['c','chat'],['?','keys']]};
 }
-if(typeof module!=='undefined')module.exports={tabsFor,route,footer,answerOpts,quickKey};
+/* B118: [3] Queue's groups. parkedLast(snap): the snapshot with its parked tasks (level later: a run never starts
+   them) after the rest, so [3] lists [the queue, '+' new task, the Parked group] and a row's place in the queue
+   is still its place in snap.queue. */
+const isParked=q=>!!q&&q.state==='parked';
+function parkedLast(snap){
+  if(!snap||!Array.isArray(snap.queue))return snap;
+  return{...snap,queue:[...snap.queue.filter(q=>!isParked(q)),...snap.queue.filter(isParked)]};
+}
+function queueItems(queue){const q=queue||[];return[...q.filter(x=>!isParked(x)),{id:'+',newtask:true},...q.filter(isParked)]}
+if(typeof module!=='undefined')module.exports={tabsFor,route,footer,answerOpts,quickKey,parkedLast,queueItems};
 </script>
 <script id="moves">
 'use strict';
@@ -333,7 +344,7 @@ function dropDraft(el){if(el&&el.dataset.dk){delete S.draft[el.dataset.dk];saveD
 const PANELS=[
   {n:1,name:'Status',items:()=>[...S.snap.status.map(t=>({k:'st',t})),{k:'log',t:'run log'},{k:'rel',t:S.snap.release||'release'}]},
   {n:2,name:'Sessions',items:()=>[...S.snap.sessions,{name:'+',newchat:true}]},
-  {n:3,name:'Queue',items:()=>[...S.snap.queue,{id:'+',newtask:true}]},
+  {n:3,name:'Queue',items:()=>queueItems(S.snap.queue)},
   {n:4,name:'Needs you',items:()=>S.snap.needs},
   {n:5,name:'Concepts',items:()=>S.snap.concepts},
 ];
@@ -346,6 +357,7 @@ function chipHTML(it){
   if(st==='critical')return '<i class="chip crit">critical</i>';
   if(st==='after')return `<i class="chip after">⧗ after ${esc(it.after_title||list(it.after))}</i>`;
   if(st==='blocked')return '<i class="chip blk">blocked</i>';
+  if(st==='parked')return '<i class="chip park">parked</i>';  // B118: never 'ready'
   return '<i class="chip next">ready</i>';
 }
 function rowHTML(p,it){
@@ -363,7 +375,7 @@ function rowHTML(p,it){
 function items(){return PANELS[S.panel-1].items()}
 function sel(){const its=items();S.cur[S.panel]=Math.max(0,Math.min(S.cur[S.panel],its.length-1));return its[S.cur[S.panel]]}
 function keyOf(it){return S.panel+':'+(it?(it.id||it.name||it.k):'')}
-function flags(it){return it?{newtask:!!it.newtask,newchat:!!it.newchat,ctl:isCtl(it),task:!!it.task,k:it.k||''}:null}
+function flags(it){return it?{newtask:!!it.newtask,newchat:!!it.newchat,ctl:isCtl(it),task:!!it.task,k:it.k||'',parked:isParked(it)}:null}
 function curTab(){const it=sel(),ts=tabsFor(S.panel,flags(it)),key=keyOf(it);if(!ts.includes(S.tab[key]))S.tab[key]=ts[0];return[S.tab[key],ts,key]}
 function typing(){const a=document.activeElement;return !!a&&/INPUT|TEXTAREA|SELECT/.test(a.tagName)}
 function sessionOf(it){return S.panel===1?'c1':it&&it.name}
@@ -382,7 +394,7 @@ function renderLeft(){
   $('#left').innerHTML=PANELS.map(p=>{
     const its=p.items(),cur=S.panel===p.n,c=Math.min(S.cur[p.n],its.length-1);
     return `<div class="box ${cur&&!S.focusMain?'on':''} ${cur?'cur-panel':'short'}" data-panel="${p.n}"><span class="ttl">[${p.n}] ${p.name}</span>
-      <div class="list">${its.length?its.map((it,i)=>`<div class="row ${i===c?'cur':''}" data-p="${p.n}" data-i="${i}">${rowHTML(p.n,it)}</div>`).join(''):`<div class="row d">${esc(p.n===2&&S.snap.sessions_note||'nothing')}</div>`}</div>
+      <div class="list">${its.length?its.map((it,i)=>`${p.n===3&&isParked(it)&&!isParked(its[i-1])?`<div class="grp">Parked: a run won't start it (<b class="pk">U</b> unparks)</div>`:''}<div class="row ${i===c?'cur':''}" data-p="${p.n}" data-i="${i}">${rowHTML(p.n,it)}</div>`).join(''):`<div class="row d">${esc(p.n===2&&S.snap.sessions_note||'nothing')}</div>`}</div>
       <span class="cnt">${its.length?c+1:0} of ${its.length}</span></div>`}).join('');
   $('#left').style.gridTemplateRows=PANELS.map(p=>p.n===S.panel?'minmax(0,1fr)':'auto').join(' ');
   $('#cols').classList.toggle('inmain',S.focusMain);
@@ -550,7 +562,7 @@ function toast(m,bad){const t=$('#toast');t.textContent=m;t.className='toast'+(b
 function connect(){
   const es=new EventSource('events?t='+encodeURIComponent(T));
   es.onmessage=e=>{
-    const snap=JSON.parse(e.data);
+    const snap=parkedLast(JSON.parse(e.data));  // B118: the Parked group last
     if(snap.error){toast('snapshot: '+snap.error,true);return}
     S.snap=MOVES.snap(snap);S.last=Date.now();$('#live').classList.add('on');follow();
     renderLeft();renderMain();renderFoot();
@@ -587,7 +599,7 @@ function submit(kind){
 /* F72: Shift+J / Shift+K in [3] Queue: the selected task one place down / up (plan move ID after|before
    <neighbour>); B117: optimistic, through queueMoves (the moves script above) */
 const MOVES=queueMoves({S,send:(tid,where,other)=>api('act',{name:'move',args:{tid,where,other}}),
-  fetch:()=>api('snapshot'),toast,render});
+  fetch:()=>api('snapshot').then(parkedLast),toast,render});
 function reorder(step){MOVES.press(step)}
 function follow(){
   if(!S.follow)return;const i=S.snap.queue.findIndex(t=>t.id===S.follow);
@@ -601,6 +613,7 @@ function doAct(a){
   if(a==='later'&&it&&S.panel===4)act('shelve',{tid:it.id},it.id+' shelved').then(r=>{if(r.ok)back()});
   if(a==='drop'&&it&&S.panel===3&&!it.newtask)openPop('Drop '+it.id,`${esc(it.title)}\n\n<form class="form" data-form="drop"><label>why<input id="dwhy" autocomplete="off"></label><div class="btnrow"><button class="kb p">${K('⏎','drop '+esc(it.id))}</button> <button type="button" class="kb" data-close>${K('Esc','keep it')}</button></div></form>`,'#dwhy');
   if(a==='open')openIt();
+  if(a==='unpark'&&it&&S.panel===3&&isParked(it))act('unpark',{tid:it.id},it.id+' unparked: it joins Follow-ups');  // B118
   if(a==='take'&&it&&S.panel===3&&!it.newtask)act('take',{tid:it.id},'c1 takes '+it.id);
   if(a==='newchat')act('new_control',{},'started a new control session').then(r=>{if(r.ok&&r.link)toast('new control session:\n'+r.link)});
 }
@@ -630,7 +643,7 @@ function help(){openPop('Keybindings',`<span class="r">Everywhere</span>
   <span class="b">e</span>      direct edit          <span class="b">E</span>      chat edit
   <span class="b">n</span>      new task             <span class="b">J/K</span>    move the task down / up
   <span class="b">p</span>      priority on / off    <span class="b">H</span>      do it here
-  <span class="b">D</span>      drop
+  <span class="b">D</span>      drop                 <span class="b">U</span>      unpark (a Parked task)
   in a direct edit: <span class="b">t k p f a</span> what, kind (<span class="b">K</span> back), priority, files, after
                     <span class="b">Tab</span> next field, <span class="b">^S</span> save
 <span class="r">Needs you [4]</span>   <span class="b">a</span> answer  <span class="b">y n a b c</span> an answer's key  <span class="b">L</span> later
@@ -704,9 +717,9 @@ function run(cmd){
     case 'chat':{S.panel=2;S.cur[2]=Math.max(0,S.snap.sessions.findIndex(s=>s.name==='c1'));S.tab['2:c1']='chat';S.focusMain=true;render();setTimeout(focusBox,0);return}
     case 'release':release();return;
     case 'newchat':doAct('newchat');return;
-    case 'newtask':S.cur[3]=S.snap.queue.length;S.tab['3:+']='chat edit';S.focusMain=true;render();setTimeout(focusBox,0);return;
+    case 'newtask':S.cur[3]=queueItems(S.snap.queue).findIndex(x=>x.newtask);S.tab['3:+']='chat edit';S.focusMain=true;render();setTimeout(focusBox,0);return;
     case 'tabto':setTab(a,true);return;
-    case 'reorder':reorder(a);return;
+    case 'reorder':{const q=S.snap.queue,i=S.cur[3];if(isParked(q[i])||isParked(q[i+a]))return;reorder(a);return}  // B118: not into or out of Parked
     case 'pri':{const q=sel();act('plan_change',{tid:q.id,pri:q.pri==='critical'?'normal':'critical'},`${q.id} is ${q.pri==='critical'?'normal':'critical'} now`);return}
   }
 }
@@ -744,7 +757,7 @@ document.addEventListener('submit',e=>{
 });
 $('#helpbtn').onclick=help;$('#themebtn').onclick=themePicker;
 if(!T){$('#live').textContent='no token: open the address `status` prints'}
-else{api('snapshot').then(s=>{if(s&&s.status){S.snap=MOVES.snap(s);S.last=Date.now()}render()});connect()}
+else{api('snapshot').then(s=>{if(s&&s.status){S.snap=MOVES.snap(parkedLast(s));S.last=Date.now()}render()});connect()}
 render();
 </script>
 </body></html>

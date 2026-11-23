@@ -238,6 +238,7 @@ function planWords(q,sessions){
   if(q.state==='blocked')return 'Waits for you';
   if(q.state==='critical')return 'Goes first, as soon as a slot is free';
   if(q.state==='after')return q.after_title?`Waits for ${q.after_title}`:'Waits for another task';
+  if(q.state==='parked')return "Parked: a run won't start it";  // B118: never 'Ready'
   return 'Ready to start when a slot is free';
 }
 /* what the message box sends: the About line, your words, then the attachments' paths on this machine */
@@ -280,7 +281,9 @@ function controlReq(c,o){
 function controlClick(c,o){return c.confirm&&!(o&&o.sure===true)?{ask:true}:controlReq(c,o)}
 /* a slot's task controls show while it works, not while it lands (merging) */
 const taskControlsOn=s=>!!(s&&s.task&&s.state!=='merging');
-if(typeof module!=='undefined')module.exports={answerOpts,threadMsgs,working,planWords,compose,usageOf,logKind,plain,chatName,controlReq,controlClick,taskControlsOn};
+/* B118: the Queue's two groups: [the queue a run works through, the Parked tasks it never starts] */
+const queueGroups=q=>[(q||[]).filter(x=>x.state!=='parked'),(q||[]).filter(x=>x.state==='parked')];
+if(typeof module!=='undefined')module.exports={answerOpts,threadMsgs,working,planWords,compose,usageOf,logKind,plain,chatName,controlReq,controlClick,taskControlsOn,queueGroups};
 </script>
 
 <script>
@@ -337,7 +340,7 @@ const working_=()=>slots().filter(s=>s.task);
 const sessionOf=n=>S.snap.sessions.find(s=>s.name===n);
 const isAgent=n=>!/^c\d+$/.test(n||'');
 const threadTitle=n=>{const s=sessionOf(n);if(!s)return n==='c1'?'Project chat':n;return isAgent(n)?(s.title||s.task||n):chatName(s)};
-const upNext=()=>S.snap.queue.filter(q=>q.state!=='running');
+const upNext=()=>S.snap.queue.filter(q=>q.state!=='running'&&q.state!=='parked');
 const feedOf=n=>(S.feeds[n]||{}).entries||[];
 function lastWords(n){const e=feedOf(n).filter(x=>x.kind==='say');return e.length?plain(e[e.length-1].text):''}
 const busy=n=>working(feedOf(n))||!!(S.sent[n]&&Date.now()-S.sent[n].at<90000&&feedOf(n).length<=S.sent[n].len);
@@ -404,6 +407,10 @@ function needCard(n,i){
 function planCard(q){
   return card(`<div class="row"><div class="grow"><b class="ell">${esc(q.title||q.id)}</b><span class="small">${esc(q.id)} · ${esc(planWords(q,S.snap.sessions))}</span></div><span class="chev">${I.chev}</span></div>`,'tap',`tabindex="0" data-about="plan:${esc(q.id)}"`);
 }
+function parkedCard(q){  // B118: a parked task: Unpark (plan edit ID --pri normal) and the usual chat about it
+  return card(`<div class="row"><div class="grow"><b class="ell">${esc(q.title||q.id)}</b><span class="small">${esc(q.id)} · ${esc(planWords(q,S.snap.sessions))}</span></div></div>
+    <div class="btns"><button class="btn" data-unpark="${esc(q.id)}">Unpark</button><button class="btn" data-about="plan:${esc(q.id)}">Chat</button></div>`);
+}
 function conceptCard(c,i){
   const os=c.options||[], view=c.copy?tq('concept/'+encodeURIComponent(c.concept||c.id)):c.url;
   const nm=o=>o.name.replace(/\s*[(\[—–-]*\s*recommended\s*[)\]]?\s*$/i,'')||o.name;
@@ -451,9 +458,10 @@ function activityHTML(){
     ${log.length?log.map(l=>{const k=logKind(l);return `<div class="ev"><span class="ic ${k}">${I[LOGLINE_ICON[k]]}</span><div class="txt">${esc(l)}</div></div>`}).join(''):card('<div class="small">Nothing in the run log yet.</div>')}</div>`;
 }
 function planHTML(){
-  const cs=S.snap.concepts||[];
+  const cs=S.snap.concepts||[], [qs,pk]=queueGroups(S.snap.queue);
   return `<div class="col"><div><button class="btn acc" data-about="new">${I.plus}Add a task</button></div>
-    <div class="sec">Queue<span class="ln"></span></div>${S.snap.queue.length?S.snap.queue.map(planCard).join(''):card('<div class="small">The queue is empty.</div>')}
+    <div class="sec">Queue<span class="ln"></span></div>${qs.length?qs.map(planCard).join(''):card('<div class="small">The queue is empty.</div>')}
+    ${pk.length?`<div class="sec">Parked<span class="ln"></span></div>${pk.map(parkedCard).join('')}`:''}
     <div class="sec">Concepts<span class="ln"></span></div>${cs.length?cs.map(conceptCard).join(''):card('<div class="small">No concept waits for a pick.</div>')}</div>`;
 }
 let lastBody='';
@@ -569,6 +577,8 @@ document.addEventListener('click',async e=>{
     const r=await act('answer',{tid:n.id,text:x.dataset.v});if(r.ok)toast(`Sent: ${n.id} ${x.dataset.v}`);return}
   if(x=q('[data-later]')){const n=S.snap.needs[+x.dataset.later];if(!n)return;x.disabled=true;
     const r=await act('shelve',{tid:n.id});if(r.ok)toast(`${n.id} is set aside until you bring it back`);return}
+  if(x=q('[data-unpark]')){const id=x.dataset.unpark;x.disabled=true;  // B118
+    const r=await act('unpark',{tid:id});if(r.ok)toast(`${id} is unparked: it joins Follow-ups`);else x.disabled=false;return}
   if(x=q('[data-about]'))return about(x.dataset.about);
   if(x=q('[data-quick]')){const r=await act('quick_ask',{key:x.dataset.quick});if(r.ok){S.ctx=null;S.sent.c1={at:Date.now(),len:feedOf('c1').length,pending:[]};open('c1')}return}
   if(x=q('[data-pick]')){const c=S.snap.concepts[+x.dataset.pick],o=c&&(c.options||[])[+x.dataset.o];if(!o)return;
