@@ -276,7 +276,8 @@ def test_copy_link_fallbacks():
         with mock.patch.dict(M.os.environ, {'PATH': '/bin', 'TMUX': '/tmp/tmux-1/default,1,0'}, clear=True):
             term = FakeTerm()
             eq(M.copy_link(url, term), 'link copied (terminal)', 'in tmux: OSC 52 too')
-            eq(term.getvalue(), f'\x1bPtmux;\x1b\x1b]52;c;{b64}\x07\x1b\\', 'wrapped for tmux')
+            eq(term.getvalue(), f'\x1b]52;c;{b64}\x07\x1bPtmux;\x1b\x1b]52;c;{b64}\x07\x1b\\',
+               'plain for set-clipboard, then wrapped for tmux passthrough')
         eq(M.copy_link(url, io.StringIO()).endswith(url), True, 'no terminal either: the link by hand')
 
 

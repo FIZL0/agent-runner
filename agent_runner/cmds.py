@@ -1304,7 +1304,8 @@ def osc52_copy(url: str, out=None) -> bool:
             return False
         seq = f'\x1b]52;c;{base64.b64encode(url.encode("utf-8")).decode("ascii")}\x07'
         if os.environ.get('TMUX'):
-            seq = '\x1bPtmux;' + seq.replace('\x1b', '\x1b\x1b') + '\x1b\\'
+            # plain for tmux's set-clipboard, then wrapped for passthrough (tmux 3.3+ needs allow-passthrough)
+            seq += '\x1bPtmux;' + seq.replace('\x1b', '\x1b\x1b') + '\x1b\\'
         out.write(seq)
         out.flush()
         return True
