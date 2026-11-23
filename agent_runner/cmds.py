@@ -500,7 +500,7 @@ def cmd_sheet(argv: list[str], prog: str = f'{RUNNER} sheet') -> int:
         return 1
     if a.html:
         from agent_runner import web
-        link = (web.pick_links(a.id, ['x']) or [''])[0].removesuffix('&o=x')  # F138: Send's link to the run
+        link = web.pick_base(a.id)  # F138: Send's link to the run
         Path(a.html).write_text(sheet.render(spec, a.id, pick=link), encoding='utf-8')
         print(f'{a.html}: {len(sheet.questions(spec))} questions; publish it with the Artifact tool, with '
               f'capabilities {json.dumps(sheet.CAPABILITIES)} (F54: Send writes the picks to its db)')

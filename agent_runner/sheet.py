@@ -269,6 +269,7 @@ document.getElementById('send').onclick=async()=>{
     const a=document.getElementById('pick');a.href=S.pick+'&o='+encodeURIComponent(txt);a.hidden=false;
     said.textContent='Tap the button below: it answers {{tid}} with these picks now.';
     a.scrollIntoView({behavior:'smooth',block:'center'});
+    store(txt);  // F54's db copy too, for the control session should the link not reach the run
     return;
   }
   send.disabled=true;said.textContent='Sending…';

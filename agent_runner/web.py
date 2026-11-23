@@ -213,6 +213,11 @@ def pick_link(base: str, tid: str, code: str, option: str = '') -> str:
     return f'{base}/pick?id={quote(tid)}&k={quote(code)}' + (f'&o={quote(option)}' if option else '')
 
 
+def pick_base(tid: str, https=None) -> str:
+    """F138: item `tid`'s link with no option, for a pick sheet's Send to add its picks to ('' with no https)."""
+    return pick_link(base, tid, pick_code(tid)) if (base := https_base(https)) else ''
+
+
 def pick_links(tid: str, options: list[str], https=None) -> list[str]:
     """F138: one link per option of item `tid` ([] with no https address)."""
     if not (base := https_base(https)):
@@ -256,6 +261,8 @@ def pick(tid: str, option: str, code: str) -> tuple[int, str]:
             opts = concept_options(U.concept_copy(cid or tid))
             i = ord(option.upper()) - ord('A') if len(option) == 1 and option.isalpha() else -1
             name = opts[i]['name'] if 0 <= i < len(opts) else ''
+            name = re.sub(r'\s*\(recommended\)\s*$', '', re.sub(rf'^\s*{option}\s*[:.)-]\s*', '', name, flags=re.I),
+                          flags=re.I).strip()  # 'B: drawer (recommended)' is named 'drawer'
             argv = ['plan', 'confirm', tid, f'go with {option}' + (f': {name}' if name else '')]
             said = (f'Approved {option}' + (f' ({name})' if name else '') + f': the run starts {build}.'
                     if build else f'Answered {tid} with {option}: the run starts it again.')
