@@ -2326,12 +2326,12 @@ def test_keyboard_b160(tmp: Path) -> None:
 
 # B162: the mic's recognizers, as iOS ends them: a stop ends one only when the test says so (end), timers run on tick()
 MIC_DRIVER = HOLD_DRIVER.split('let rec = null')[0] + r"""
-let live = 0, most = 0, starts = 0, sent = [], recs = [], timers = [], drawn = 0, now = 1000;
+let live = 0, most = 0, starts = 0, sent = [], recs = [], timers = [], runs = [], now = 1000;
 class SR {
   constructor() { recs.push(this) }
   start() { starts++; live++; most = Math.max(most, live) }
   stop() { this.stopped = true }
-  abort() { this.aborted = true; if (this.onend) this.end(); else live-- }
+  abort() { this.aborted = true }
   end() { live--; if (this.onend) this.onend() }
   fail(err) { this.onerror({error: err}); this.end() }
   say(t) { this.onresult({resultIndex: 0, results: [Object.assign([{transcript: t}], {isFinal: true})]}) }
@@ -2379,19 +2379,24 @@ listen(); const b = last(); speak('A reply.', 'k'); listen(); listen(); listen()
 // dictation still ending
 starts = 0; dictate(); const d = last(); listen(); out.dict = [starts, d.stopped]; d.end(); out.dictEnd = [starts, DK.rec, TK.state]; last().end();
 // an end that never comes
-listen(); const c = last(); speak('A reply.', 'k'); listen(); listen(); starts = 0; tick(1500); out.stuck = [starts, c.aborted, TK.state]; last().end();
+listen(); const c = last(); speak('A reply.', 'k'); listen(); listen(); starts = 0; runs = timers.filter(t => t.f && t.ms === 1500); runs.forEach(t => { const f = t.f; t.f = null; f() });
+out.stuckWaits = [starts, c.aborted]; c.end(); out.stuck = [starts, c.aborted, TK.state]; last().end();
 out.most = most;
+// not even after the abort: taken for gone
+listen(); const g = last(); speak('A reply.', 'k'); listen(); listen(); starts = 0; tick(1500); tick(1500); out.gone = [starts, g.aborted, TK.state]; live--; last().end(); most = 0;
 // a hold: survives a redraw and a cancel; the finger lifting sends
 TS.mic = 'hold'; render(); const held = micEl, at = {target: {closest: s => s === '[data-mic]' ? held : null}, button: 0, pointerId: 7};
 starts = 0; fire('pointerdown', at); render(); const h = last();
-fire('pointercancel', {pointerId: 7}); out.held = [starts, TK.hold, !!h.stopped, micEl === held, held.cap, held.className];
-fire('pointerup', {pointerId: 8}); fire('touchend', {touches: [{target: at.target}]}); out.other = !!h.stopped;
-h.say('still here'); fire('touchend', {touches: []}); out.lifted = [TK.hold, h.stopped]; h.end(); out.heldSent = sent.splice(0);
+const away = {closest: () => null};
+fire('pointercancel', {pointerId: 7, pointerType: 'touch'}); fire('touchcancel', {target: away}); out.held = [starts, TK.hold, !!h.stopped, micEl === held, held.cap, held.className];
+fire('pointerup', {pointerId: 8}); fire('touchend', {target: away}); out.other = !!h.stopped;
+h.say('still here'); fire('touchend', at); out.lifted = [TK.hold, h.stopped]; h.end(); out.heldSent = sent.splice(0);
 // held again before the end: one listen, both parts
 fire('pointerdown', at); last().say('first'); const p1 = last(); fire('pointerup', at); fire('pointerdown', at);
 p1.end(); out.more = [TK.state, sent.length, last() !== p1]; last().say('second'); fire('pointerup', at); last().end(); out.joined = sent.splice(0);
 // a touch the system took: the mic goes on by itself
-fire('pointerdown', at); fire('pointercancel', at); fire('touchcancel', {}); out.taken = [TK.hold, !!last().stopped]; last().say('done'); last().end(); out.takenSent = sent.splice(0);
+fire('pointerdown', at); fire('pointercancel', {...at, pointerType: 'touch'}); fire('touchcancel', at); out.taken =[TK.hold, !!last().stopped]; last().say('done'); last().end(); out.takenSent = sent.splice(0);
+fire('pointerdown', at); fire('pointercancel', {...at, pointerType: 'pen'}); out.pen = [TK.hold, !!last().stopped]; last().end();
 // an abort while held is retried, one once let go is not
 starts = 0; fire('pointerdown', at); last().fail('aborted'); tick(250); out.holdRetry = starts; now += 100; last().fail('aborted'); out.holdNote = TK.note; fire('pointerup', at);
 starts = 0; fire('pointerdown', at); last().fail('aborted'); fire('pointerup', at); tick(250); out.letGo = [starts, TK.state];
@@ -2417,7 +2422,8 @@ def test_mic_aborted_b162(tmp: Path) -> None:
     eq(got.get('twice'), [2, '', words + 'tap, after 0.4 s, 2 tries)'], 'aborted twice: what to try, with mode and time')
     eq(got.get('sent'), ['hello'], 'the retry hears')
     eq(got.get('kept'), [1, ['kept']], 'words before the abort are sent, with no retry')
-    eq(got.get('byHand'), [1, 'Heard nothing (error: aborted, tap, after 0.0 s)'], 'stopped by hand: no retry')
+    eq(got.get('byHand'), [1, 'The mic was stopped before it heard any words. Try again, and speak before you stop it. (aborted, tap, after 0.0 s)'],
+       'stopped by hand: no retry')
     eq(got.get('away'), 1, 'no retry once Talk is left')
     eq(got.get('stopInWait'), [1, ''], 'a tap before the retry ends the listen')
     eq(got.get('dropped'), ['', True], "a play button stops the mic")
@@ -2425,7 +2431,9 @@ def test_mic_aborted_b162(tmp: Path) -> None:
     eq(got.get('afterEnd'), [2, 'listening', []], 'and starts at its onend; its dropped words are not sent')
     eq(got.get('waitOff'), [0, ''], 'a start called off while it waits never starts')
     eq((got.get('dict'), got.get('dictEnd')), ([1, True], [2, None, 'listening']), 'it waits for dictation too')
-    eq(got.get('stuck'), [1, True, 'listening'], 'one whose end never comes is aborted')
+    eq((got.get('stuckWaits'), got.get('stuck')), ([0, True], [1, True, 'listening']), 'one whose end is late is aborted, and that end still waited for')
+    eq(got.get('gone'), [1, True, 'listening'], 'with no end after the abort either, the next starts all the same')
+    eq(got.get('pen'), [False, False], 'a cancelled pen leaves no hold behind')
     eq((got.get('most'), got.get('mostAll')), (1, 1), 'never two recognizers')
     eq(got.get('held'), [1, True, False, True, 7, 'mic hold on'], 'a hold survives a redraw and a cancel, its button captured and kept')
     eq(got.get('other'), False, 'another finger does not end it')

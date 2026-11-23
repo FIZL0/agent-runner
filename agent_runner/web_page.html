@@ -659,6 +659,7 @@ function heardNothing(err,mode,ms,tries,stopped){
   if(!err)return 'Heard nothing';
   const d=[mode||'',ms==null?'':`after ${(ms/1000).toFixed(1)} s`,tries>1?`${tries} tries`:''].filter(Boolean).map(x=>', '+x).join('');
   if(err==='aborted'&&!stopped)return `The mic was cut off before it heard anything. Stop any other app that uses sound or the mic, then try again. (${err}${d})`;
+  if(err==='aborted')return `The mic was stopped before it heard any words. Try again, and speak before you stop it. (${err}${d})`;
   return `Heard nothing (error: ${err}${d})`;
 }
 /* a Talk message as the person said it: without the first message's brief or a later one's reminder */
@@ -1636,7 +1637,9 @@ function micWhenFree(start,cancel){
   MIC.next=null;clearTimeout(MIC.timer);
   const old=MIC.rec;if(!old)return start();
   MIC.next={start,cancel};
-  MIC.timer=setTimeout(()=>{if(MIC.rec!==old)return;const end=old.onend;old.onresult=old.onerror=old.onend=null;try{old.abort()}catch(e){}if(end)end()},MIC_WAIT);
+  /* the abort's own onend starts the next; with none after as long again, the old one is taken for gone */
+  const gone=()=>{if(MIC.rec!==old)return;const end=old.onend;old.onresult=old.onerror=old.onend=null;if(end)end()};
+  MIC.timer=setTimeout(()=>{if(MIC.rec!==old)return;MIC.timer=setTimeout(gone,MIC_WAIT);try{old.abort()}catch(e){}},MIC_WAIT);
   try{old.stop()}catch(e){}
 }
 function micFree(rec){
@@ -2097,8 +2100,10 @@ document.addEventListener('pointerdown',e=>{
    after a touchcancel the mic stops by itself at a silence, or at the next hold's end */
 const letGo=()=>{if(TK.hold){TK.hold=false;micStop()}};
 document.addEventListener('pointerup',e=>{if(e.pointerId===TK.holdId)letGo()});
-document.addEventListener('touchend',e=>{if(![...e.touches].some(x=>x.target.closest&&x.target.closest('[data-mic]')))letGo()},{passive:true});
-document.addEventListener('touchcancel',()=>{TK.hold=false},{passive:true});
+const onMic=e=>e.target.closest&&e.target.closest('[data-mic]');  // a touch event's target is where that finger went down
+document.addEventListener('pointercancel',e=>{if(e.pointerId===TK.holdId&&e.pointerType!=='touch')TK.hold=false});  // a pen or mouse has no touchend
+document.addEventListener('touchend',e=>{if(onMic(e))letGo()},{passive:true});
+document.addEventListener('touchcancel',e=>{if(onMic(e))TK.hold=false},{passive:true});
 document.addEventListener('contextmenu',e=>{if(e.target.closest&&e.target.closest('[data-mic]'))e.preventDefault()});
 /* F124: a swipe right anywhere opens the sidebar drawer and a swipe left closes it, following the finger (passive
    listeners only); a swipe down closes the sheet. Not from a text box, a sideways scroller, a held mic, a row being dragged or
