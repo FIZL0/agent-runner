@@ -106,6 +106,8 @@ def test_ci_workflow(tmp: Path):
         has(blocks[name], r"paths-ignore: \['plan/\*\*', '\*\*\.md'\]", f'{name} still skips the plan and Markdown')
     has(blocks['workflow_dispatch'], r'options: \[both, windows, linux\]\n +default: both', 'which system, by default both')
     has(text, r'\|\| \'\["ubuntu-latest", "windows-latest"\]\'\) \}\}', 'with no input (push, pull request) both run')
+    for system, image in (('windows', 'windows-latest'), ('linux', 'ubuntu-latest')):
+        check(f"inputs.system == '{system}' && '[\"{image}\"]'" in text, f'{system} runs on {image} alone')
     script = text.split('- name: Test gate', 1)[1].split('run: |\n', 1)[1]
     runs = [x for x in re.split(r'\n {6}- ', text) if 'run: |' in x]
     check(all('${{' not in x.split('run: |', 1)[1] for x in runs), 'no expression is written into a script')
