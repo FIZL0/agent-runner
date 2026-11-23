@@ -17,6 +17,7 @@ from contextlib import redirect_stdout
 from pathlib import Path
 
 from agent_runner import plan as P, plansync, plat
+from agent_runner.plat import bash_exe
 from agent_runner.config import RUNNER, runner_cmd, shown_cmd
 from agent_runner.state import (ask_stop, C, clear_stop, default_branch, edited, git, init, queued, ROOT, run_up,
     SLOTS_DIR)
@@ -406,20 +407,6 @@ def waiting_wizards() -> list[tuple[str, str]]:
         if label != 'CONCEPT' and not sh and wizard_file(tid) and tid not in [t for t, _ in out]:
             out.append((tid, title))
     return out
-
-
-def bash_exe() -> str:
-    """B75: the bash to run wizards with. A bare 'bash' on Windows makes CreateProcess search System32 before PATH
-    and get the WSL launcher (C:\\Windows\\System32\\bash.exe), not Git Bash; resolve it on PATH instead, and
-    there skip a System32 bash when another is on PATH."""
-    found = shutil.which('bash')
-    if os.name == 'nt':
-        sysdir = os.path.normcase(os.path.join(os.environ.get('SystemRoot', r'C:\Windows'), 'System32'))
-        for d in os.environ.get('PATH', '').split(os.pathsep):
-            exe = shutil.which('bash', path=d) if d else None
-            if exe and os.path.normcase(os.path.dirname(os.path.abspath(exe))) != sysdir:
-                return exe
-    return found or 'bash'
 
 
 def cmd_wizard(argv: list[str], prog: str = f'{RUNNER} wizard') -> int:
