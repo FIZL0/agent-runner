@@ -121,7 +121,8 @@ def reachable(sock: Path) -> bool:
 
 
 SIZE_MIN = (5, 20)  # a terminal smaller than this (a frame being folded away) sets no size
-REDRAW = 0.08  # s the session is a row short, so it draws its whole screen again
+REDRAW = 0.4 if plat.WINDOWS else 0.08  # s the session is a row short, so it draws its whole screen again (a
+# pseudo-console loses the second of two sizes that come close together)
 
 
 class Viewers:

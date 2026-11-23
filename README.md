@@ -96,7 +96,7 @@ version and adopts its sessions (not on Windows, nor across a major version). Or
 [release](https://github.com/FIZL0/agent-runner/releases/latest): `uv tool install
 git+https://github.com/FIZL0/agent-runner@v<version>`. On Windows each slot runs in a ConPTY pseudo-console with no
 window (Windows 10 1809 and later; before that, a console that starts hidden, which `agent-runner attach s2` shows). On
-Linux and macOS `agent-runner attach s2` (or `c1`) puts this terminal on a hidden session's own terminal; Ctrl-b d
+Linux, macOS and Windows 1809 and later `agent-runner attach s2` (or `c1`) puts this terminal on a hidden session's own terminal; Ctrl-b d
 detaches and leaves it running. Adding it to an existing repo and wrapping it from your own CLI are in
 [docs/SETUP.md](docs/SETUP.md).
 

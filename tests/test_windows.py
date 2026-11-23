@@ -328,12 +328,16 @@ def test_conpty_slot(repo: Path, tmp: Path):
     if not pid:
         return
     check(until(lambda: 'READY' in plain(log)), 'its output is in the slot log', plain(log))
-    shown, out = [], io.StringIO()
-    with mock.patch.object(plat, 'show_console', lambda p: shown.append(p) or True), \
-            mock.patch.object(cmds, 'init'), contextlib.redirect_stdout(out):
-        rc = cmds.cmd_attach(['s6'])
-    eq((rc, shown, len(out.getvalue().splitlines())), (0, [], 1), 'attach s6 shows no console, and says one line')
-    check(str(log) in out.getvalue(), 'which names the log', out.getvalue())
+    from agent_runner import attach as A
+    sock = A.session_socket('s6')
+    check(sock, 'F114: its shim listens for attach')
+    with mock.patch.object(cmds, 'init'), mock.patch.object(cmds, 'attach_session', lambda s, n: 41):
+        eq(cmds.cmd_attach(['s6']), 41, 'attach s6 attaches')
+    c = A.connect(sock)
+    c.sendall(A.attach_size_frame(30, 100))
+    c.settimeout(10)
+    check(bool(c.recv(100)), 'and a client that came gets the screen drawn again')
+    c.close()
     check(mux.send(mux.panes()['s6'], 'hello slot'), 'a tell is typed in')
     ended = R.C.notes('slot6.exit')
     check(until(ended.exists), 'it ends', plain(log))

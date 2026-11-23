@@ -1175,7 +1175,7 @@ function obBubbles(n){
   return h;
 }
 /* B154: messages a chat never got, for the outbox (a Talk one shows in Talk) */
-const notDelivered=()=>Object.entries(S.sent).flatMap(([n,s])=>(s.pending||[]).filter(p=>p.state==='failed'&&!p.talk).map(p=>({n,p})));
+const notDelivered=()=>Object.entries(S.sent||{}).flatMap(([n,s])=>(s.pending||[]).filter(p=>p.state==='failed'&&!p.talk).map(p=>({n,p})));
 /* B164: the run restarted: what the older one did not know is sent again */
 function obBoot(boot){for(const x of obDue(S.ob,boot))obRetryClick(x.cid,obBootCid(x,boot))}
 function obRetryClick(cid,as){  /* Retry: a new chat sent again gets a new cid, so its stand-in follows */
@@ -2313,7 +2313,7 @@ function takeSnap(s){
     if(Date.now()-S.waitNew.at>60000)S.waitNew=null}
   for(const w of working_())if(!S.feeds[w.name]||Date.now()-(S.feeds[w.name].at||0)>15000)loadFeed(w.name);
   if(S.kept)keptCheck();  // B177
-  for(const x of S.snap.sessions)if(x.task||x.link)S.last[x.name]={task:x.task,title:x.title,link:x.link};  // F114: what it was, once it has ended
+  for(const x of S.snap.sessions||[])if(x.task||x.link)S.last[x.name]={task:x.task,title:x.title,link:x.link};  // F114: what it was, once it has ended
   const tw=talkWaitName();if(tw&&TK.wait.sent){addSent(tw,TK.wait.sent.text,TK.wait.sent.at,{talk:true,first:true},0);TK.wait.sent=null}if(tw)loadFeed(tw);  // B133: each snapshot also looks for the awaited Talk reply
   render();S.live=true;
 }

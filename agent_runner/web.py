@@ -549,6 +549,7 @@ class Terminals:
     def argv(self, name: str, sock: str, port: int) -> list[str]:
         from agent_runner.config import runner_cmd
         return ['ttyd', '-W', '-p', str(port), '-i', LOCAL, '-b', f'/t/{self.token}/{name}',
+                *(['-w', str(S.ROOT)] if plat.WINDOWS else []),  # ttyd's Windows build starts nothing without it
                 *session_frame.ttyd_options(session_frame.session_look()), *runner_cmd(), 'attach', name]
 
     def ended(self, name: str, port: int, err: str) -> str:

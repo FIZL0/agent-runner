@@ -4,6 +4,7 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Changed: a chat or slot in the run app shows the real Claude Code session through ttyd, filling the space above the message box, in place of the page's own thread (bubbles, folded steps, Older messages, the jump button). The message box keeps its send, attachments, mic, slash menu, drafts, Stop and outbox; a phone gets a touch layer and a key row (F114). Attach works on Windows 10 1809 and later (ConPTY, through a local port), and the `feed` terminal mode is gone.
 - Changed: the terminal-style web page is removed (the /term route, `[ui] web`, the Terminal view / App view switch);
   the per-session terminal stays; an old `[ui] web` in runner.toml is ignored (C29).
 - Changed: one address for every project (F165). With Runner Home installed, a run's page and its ttyd terminals

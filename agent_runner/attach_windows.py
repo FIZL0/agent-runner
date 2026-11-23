@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import os
 import threading
-import time
 
 from agent_runner.attach import TERM_RESET, Typed, attach_input_frames, attach_size_frame
 
@@ -84,9 +83,7 @@ def attach_console(s, name: str) -> int:
             k.SetConsoleOutputCP(65001)
             k.SetConsoleMode(hout, OUT_VT)
         at = size()
-        if at:  # a row short, then right: the session draws the whole screen again
-            put(attach_size_frame(at[0] - 1, at[1]))
-            time.sleep(0.05)
+        if at:  # once: the shim itself draws the screen again for a client that just came (`Viewers.fit`)
             put(attach_size_frame(*at))
         for f in (keys, output):
             threading.Thread(target=f, daemon=True).start()

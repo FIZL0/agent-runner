@@ -12,6 +12,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+import threading
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -131,11 +132,12 @@ def test_server(tmp: Path) -> None:
         with mock.patch.object(U, 'act', side_effect=AssertionError('keys reached ui_model')):
             code, out = post(f'{base}/act?t={token}', {'name': 'keys', 'args': {'session': 's1', 'text': 'x'}})
         check(code == 404 and not out['ok'], 'C24: the web no longer types keys into a pane', out)
-        with mock.patch.object(W.shutil, 'which', return_value='/usr/bin/ttyd'), \
-                mock.patch('agent_runner.plat.WINDOWS', True):
+        with mock.patch.object(W.shutil, 'which', return_value='ttyd.exe'), mock.patch('agent_runner.plat.WINDOWS', True), \
+                mock.patch.object(W, 'socket_of', return_value='x'), mock.patch('agent_runner.attach.reachable', return_value=True), \
+                mock.patch.object(W.Terminals, 'ttyd', return_value={'ok': True, 'port': 1}):
             r = json.loads(get(f'{base}/terminal/s1?t={token}')[1])
-        check(r['mode'] == 'feed' and 'Windows' in r['out'] and r['feed'] == 'feed/s1',
-              'Windows: the feed only', r)
+        eq((r['ok'], r['port'], r['path']), (True, srv.server_address[1], f'/t/{token}/s1/'),
+           "F114: Windows serves the session too, on the page's own address")
         with mock.patch.object(W.shutil, 'which', return_value='/usr/bin/ttyd'), \
                 mock.patch('agent_runner.plat.WINDOWS', False), mock.patch.object(W, 'socket_of', return_value=''):
             r = json.loads(get(f'{base}/terminal/s1?t={token}')[1])
@@ -408,8 +410,8 @@ def test_page(tmp: Path) -> None:
                  'data-about="plan:', 'Release when they land', 'Release now',
                  "outbox('answer'", "outbox('shelve'", "outbox('release'", "newChat('quick_ask'", "outbox('chat_to'",
                  "newChat('new_control'", "act('interrupt'",  # F137: through the outbox
-                 '.a{display:grid;gap:8px;font:400 16.5px/1.6 var(--serif)', '.u{justify-self:end',  # threads
-                 'Ran ${m.steps.length} step', 'Working on it…', "tq('feed/'",
+                 '.a{display:grid;gap:8px;font:400 16.5px/1.6 var(--serif)', '.u{justify-self:end',  # Talk's words
+                 'id="feed"', 'feedHTML(n)', "tq('feed/'",
                  'Goes straight to this agent', "tq('upload?name='", 'type="file" multiple', 'About: <b>',  # the box
                  "e.key==='Enter'&&!e.shiftKey", 'DRAFT_KEY', 'store.set(DRAFT_KEY(boxKey())',
                  'data-pick=', 'data-about="concept:', 'View ${I.ext}', "tq('concept/'",  # the Concepts view
@@ -417,7 +419,7 @@ def test_page(tmp: Path) -> None:
                  '*{box-sizing:border-box;scrollbar-width:none}', '*::-webkit-scrollbar{display:none}',
                  'container-type:inline-size', '@container (min-width:760px)', '<div class="logo">${esc(PN().charAt(0)'):
         check(part in page, f'the page has {part}')
-    for gone in ('Anthropic', 'Claude', 'plan_change', 'direct edit', 'JetBrains Mono', '/*THEMES*/'):
+    for gone in ('Anthropic', 'Claude', 'plan_change', 'direct edit', 'JetBrains Mono', '/*THEMES*/', 'threadMsgs', 'data-steps', 'data-jump', 'stepbox', 'Older messages'):
         check(gone not in page, f'the page has no {gone}')
 
 
@@ -441,8 +443,7 @@ def logic_js(cases: list) -> list:
 
 
 def test_logic(tmp: Path) -> None:
-    """F79: the page's pure parts, driven in node: a feed as a conversation (tool steps folded into the reply
-    after them), the working mark, the answer buttons, the queue in plain words, and what the box sends."""
+    """F79: the page's pure parts, driven in node: a feed as Talk's words, the working mark, the answer buttons, the queue in plain words, and what the box sends."""
     if not shutil.which('node'):
         print('  (no node here: the page script test is skipped)')
         return
@@ -451,7 +452,7 @@ def test_logic(tmp: Path) -> None:
             {'kind': 'say', 'text': 'Fixed.'}, {'kind': 'you', 'text': 'thanks'}, {'kind': 'tool', 'text': 'Bash(ls)'}]
     sessions = [{'name': 's2', 'task': 'F1', 'minutes': 12}]
     got = logic_js([
-        ['threadMsgs', feed],
+        ['talkMsgs', feed],
         ['working', feed], ['working', feed[:5]], ['working', feed + [{'kind': 'out', 'text': 'interrupted'}]],
         ['working', []],
         ['answerOpts', {'label': 'CONFIRM', 'ask': 'Works?'}],
@@ -472,10 +473,7 @@ def test_logic(tmp: Path) -> None:
         ['planWords', {'id': 'F8', 'state': 'after', 'after_title': 'V5 Release'}, sessions],
     ])
     msgs = got[0]
-    eq([m['w'] for m in msgs], ['u', 'a', 'u', 'a'], 'your words, its reply, yours, its steps so far')
-    eq((msgs[1]['text'], [s['tool'] for s in msgs[1]['steps']], msgs[1]['steps'][0]['out']),
-       ('Fixed.', ['Read(a.py)', 'Edit(a.py)'], '12 lines'), 'the steps before a reply fold into it, with their output')
-    eq((msgs[3]['text'], len(msgs[3]['steps'])), ('', 1), 'steps with no reply yet stand alone')
+    eq([(m['w'], m['text']) for m in msgs], [('u', 'fix it'), ('a', 'Fixed.'), ('u', 'thanks')], "F114: Talk's words: yours and the replies, no tool steps")
     eq(got[1:5], [True, False, False, False], 'working while its last entry is a step, not after a reply or an interrupt')
     eq(got[5], ['Yes', 'No'], 'a CONFIRM answers Yes or No')
     eq(got[6], ['Ship it', 'Wait'], "a DECIDE's options are its buttons")
@@ -737,7 +735,7 @@ def test_concepts_view(tmp: Path) -> None:
 def test_esc_ctrl_c(tmp: Path) -> None:
     """B116: on the run app Esc never goes back while interrupting (B120: in the box it interrupts a working chat,
     out of it only goes back); Ctrl+C interrupts the open
-    chat while it works (not over selected text), and a small Stop button sits by the working mark."""
+    chat while it works (not over selected text), and the message box has a Stop button."""
     page = W.page_html().decode()
     start = page.index("document.addEventListener('keydown'")
     handler = page[start:page.index('\n});', start)]
@@ -757,8 +755,7 @@ def test_esc_ctrl_c(tmp: Path) -> None:
     ctrl = [ln for ln in lines if 'e.ctrlKey' in ln]
     check(len(ctrl) == 1 and "act('interrupt',{session:n})" in ctrl[0] and 'busy(n)' in ctrl[0]
           and '!selectedText(' in ctrl[0], 'Ctrl+C interrupts the working chat, not over selected text', ctrl)
-    check('Working on it… · Ctrl+C interrupts<button type="button" class="btn mini" data-stop="${esc(n)}">Stop</button>'
-          in page, 'the working mark says Ctrl+C interrupts and has a Stop button')
+    check('class="send stop" data-stop="${esc(shownNow)}"' in page, 'the box has a Stop button while the session works')
     check("if(x=q('[data-stop]')){const n=x.dataset.stop||shownSession();if(n)act('interrupt',{session:n});return}" in page,
           'Stop interrupts the session it stands by')
 
@@ -1378,8 +1375,8 @@ def test_composer_keys_b120(tmp: Path) -> None:
     check('const BOX_KEYS=[' in page and page.count('keysLine()') >= 2, 'the keys are listed once, in BOX_KEYS, and '
           'shown under the box')
     check("'ar-hist:'+k" in page and 'localStorage' in page, 'the history is kept per chat in localStorage')
-    check("S.snap.terminal_mode==='install'" in page and 'The terminal tab (the real session) needs ttyd' in page,
-          'without ttyd the page says the terminal tab needs it')
+    check("S.snap.terminal_mode==='install'" in page and 'A chat shows the real session with ttyd' in page,
+          'without ttyd the page says a chat needs it')
     eq(W.ttyd_install_cmd(lambda t: t == 'pacman'), 'sudo pacman -S ttyd', 'Arch: pacman')
     eq(W.ttyd_install_cmd(lambda t: t == 'brew'), 'brew install ttyd', 'macOS: brew')
     eq(W.ttyd_install_cmd(lambda t: False), '', 'no package manager known: no command')
@@ -1680,7 +1677,7 @@ def test_outbox_f137(tmp: Path) -> None:
     eq(once.run('', lambda: {'ok': True}), {'ok': True}, 'no cid: it just runs')
     page = W.PAGE.read_text(encoding='utf-8')
     for part in ("JSON.stringify({name:it.name,args:it.args,cid:it.cid})", "addEventListener('online',()=>drain())",
-                 'id="obbar"', 'id="obpop"', 'obChatRows()', 'h+=obBubbles(n)', 'obCards(x=>x.concept||x.kq)',
+                 'id="obbar"', 'id="obpop"', 'obChatRows()', 'obBubbles(n)', 'obCards(x=>x.concept||x.kq)',
                  "if(OB.offline)drain()", "outbox('chat_to',{text:msg,to}"):
         check(part in page, f'the page has {part}')
     send = page.split('async function send(){', 1)[1].split('\n}', 1)[0]
@@ -1751,11 +1748,11 @@ let skew = 0;
 Date.now = () => realNow() + skew;
 const line = s => { const i = page.indexOf(s); return page.slice(i, page.indexOf('\n', i)) + '\n' };
 eval(logic.replace(/if\(typeof module[^\n]*/, '') + line('function obChange(') + grab('function outbox(') + grab('async function drain(')
-  + grab('function obDone(') + grab('function obBubbles(') + line('const ended=') + grab('function convo(') + grab('async function loadFeed(')
+  + grab('function obDone(') + grab('function obBubbles(') + line('const ended=') + grab('function talkConvo(') + line('const notDelivered=') + grab('async function loadFeed(')
   + grab('function addSent(') + grab('function carrySent(') + line('const keepSent=') + line('const busy=n') + line('const obState=') + line('const obBtns=') + `
 const tick = () => new Promise(r => setTimeout(r, 5));
 const settle = async () => { for (let i = 0; i < 6; i++) await tick() };
-const shows = (n, t) => convo(n).includes(t);
+const shows = (n, t) => talkConvo(n).includes(t);
 (async () => {
   const out = {};
   // a new chat with an ask: shown as pending in its thread until the feed has it
@@ -1781,6 +1778,7 @@ const shows = (n, t) => convo(n).includes(t);
   await loadFeed('c3'); skew += 50000; await loadFeed('c3');
   out.failed = S.sent.c3.pending.map(p => [p.text, p.state]);
   out.failedShown = [shows('c3', 'Not delivered'), shows('c3', 'data-sentretry'), shows('c3', 'data-sentdrop')];
+  out.lost = notDelivered().map(x => [x.n, x.p.text]);
   feeds.c3.entries.push({kind: 'you', text: 'yes', at: 260});
   await loadFeed('c3'); out.late = S.sent.c3.pending.length;
   console.log(JSON.stringify(out));
@@ -1836,6 +1834,7 @@ def test_sent_b154(tmp: Path) -> None:
     eq(o.get('kept'), ['yes', 'and more'], 'kept over a reload')
     eq(o.get('own'), ['yes'], 'only the message in the feed leaves')
     eq((o.get('failed'), o.get('failedShown')), ([['yes', 'failed']], [True] * 3), 'never landed: Not delivered, Retry, Discard')
+    eq(o.get('lost'), [['c3', 'yes']], 'F114: and the outbox lists it')
     eq(o.get('late'), 0, 'one that lands after all leaves')
 
 
@@ -1925,7 +1924,7 @@ eval(logic + 'const DK={rec:null,key:\'\',base:\'\'};const dictWhy=()=>\'\';' + 
 def test_chat_box_f115(tmp: Path) -> None:
     """F115: the message box has a dictation mic beside attach whose words go into the box to edit (nothing is
     sent), and says why it cannot listen on plain http or without speech recognition; a chat looks like the
-    terminal: monospace (the --mono token), the [ui] theme's terminal colours, a '>' prompt and tool lines."""
+    terminal: monospace (the --mono token), the app's terminal colours and a '>' prompt."""
     page = W.PAGE.read_text(encoding='utf-8')
     box = page.split('function box(ph,foot){', 1)[1].split('\n}\n', 1)[0]
     check('data-clip' in box and 'dictButton(dictWhy()' in box and box.index('data-clip') < box.index('dictButton('),
@@ -1933,8 +1932,7 @@ def test_chat_box_f115(tmp: Path) -> None:
     check("if(q('[data-dict]'))return dictate();" in page, 'a tap on it dictates')
     check('.main.term .msgs{font:14px/1.55 var(--mono)' in page and '.main.term .box textarea{font:16px/1.45 var(--mono)}' in page,
           'a chat and its box use the monospace font token (16px: a phone does not zoom)')
-    check(".main.term .u::before{content:'>'" in page and ".stepbox .tl::before{content:'● '" in page
-          and '⎿' in page, "a '>' prompt on your messages, Claude Code-like tool lines")
+    check(".main.term .u::before{content:'>'" in page, "a '>' prompt on your messages in Talk")
     check("main.classList.toggle('term',chatOn)" in page and "fetch('term'" not in page,
           "a chat takes the terminal look with the run app's own colours")
     check('@media (pointer:coarse){.tool{height:40px;min-width:40px}.send{width:40px;height:40px}}' in page,
@@ -2136,7 +2134,7 @@ let HOME_PAGE = false, VIEW = 'a:60 b:60 c:60', CHAT = 'm1:80 m2:80';
 const S = {snap: {sessions: []}, view: 'home', thread: null, f: {}, atts: [], ob: [], feeds: {}, live: true, sheet: ''};
 const pageColor = () => {}; const HI = {i: null}, TERM = {mode: ''}, I = {down: ''}, keysLine = () => '', esc = s => s, tq = p => p;
 const markSeen = () => {}, obHide = () => {}, obDraw = () => {}, side = () => {}, sheetDraw = () => {}, topHTML = () => 'x:1';
-const isAgent = () => false, threadTitle = n => n, convo = () => CHAT, box = () => 'box', store = {get: () => '', set() {}};
+const isAgent = () => false, threadTitle = n => n, feedDraw = () => {}, box = () => 'box', store = {get: () => '', set() {}};
 const boxKey = () => S.thread || 'home', grow = () => {}, slashShow = () => {}, talkHTML = () => CHAT, histAdd = () => {};
 const homeHTML = () => VIEW, statusHTML = () => VIEW, planHTML = () => VIEW, conceptsHTML = () => VIEW, settingsHTML = () => VIEW, projectsHTML = () => VIEW;
 const DRAFT_KEY = k => k, toast = () => {}, open = n => { S.thread = n; render(true) }, outboxed = [];
@@ -2144,7 +2142,7 @@ const talkMic = () => 'mic', talkFoot = () => '', talkDraw = () => {}, keepPlace
 const outbox = (n, a) => { outboxed.push([n, a.text]); CHAT += ' mine' + outboxed.length + ':40'; render(true) };
 eval(logic + line('function setHTML(') + grab('function keepScroll(') + grab('function keysIn(').split('\nfunction enter')[0]
   + grab('function enter(') + grab('function keepFields(') + line('function viewIn(') + line('const PD=') + 'const selecting=()=>false;'
-  + line('let lastPlace=') + line('S.at={};') + line('const chatShown=') + line('function toEnd(') + line('function jumpDraw(')
+  + line('let lastPlace=') + line('S.at={};') + line('const chatShown=') + line('function toEnd(')
   + grab('function render(') + line("$('body').addEventListener('scroll'") + grab('async function send(') + `
 (async () => {
   const b = $('body'), out = {}, scroll = y => { b.scrollTop = y; b.on.scroll() };
@@ -2161,15 +2159,12 @@ eval(logic + line('function setHTML(') + grab('function keepScroll(') + grab('fu
   out.entered = b.rows.filter(r => r.cls.has('enter')).map(r => r.dataset.k);
   VIEW = VIEW + ' '; b._h = ''; render(); out.still = b.rows.filter(r => r.cls.has('enter')).length;
   b.scrollTop = 50; S.view = 'plan'; render(true); S.view = 'settings'; render(true); out.back = b.scrollTop;
-  // a chat: opens at its end, follows what comes in, stays put once scrolled up, shows the jump button, goes to the end on send
-  S.thread = 'c2'; render(true);
+  // Talk: opens at its end, follows what comes in, stays put once scrolled up
+  S.view = 'talk'; render(true);
   const left = () => b.scrollHeight - b.scrollTop - b.clientHeight;
   out.open = left();
   CHAT += ' m3:90'; render(); out.follows = left();
-  scroll(5); CHAT += ' m4:90'; render();
-  out.up = [b.scrollTop, $('jump').cls.has('on'), $('jump').innerHTML];
-  ta.value = 'hello'; await send(); out.sent = [outboxed[0], left(), $('jump').cls.has('on')];
-  scroll(0); toEnd(); out.jump = [left(), $('jump').cls.has('on')];
+  scroll(5); CHAT += ' m4:90'; render(); out.up = b.scrollTop;
   scroll(10); PD.down = true; CHAT += ' m5:50'; render(); out.held = b.innerHTML.includes('m5'); PD.down = false; render(); out.after = [b.innerHTML.includes('m5'), b.scrollTop];
   console.log(JSON.stringify(out));
 })();`);
@@ -2177,8 +2172,8 @@ eval(logic + line('function setHTML(') + grab('function keepScroll(') + grab('fu
 
 
 def test_scroll_f83(tmp: Path) -> None:
-    """F83: a refresh keeps the reading position in every view (what came in above moves nothing); a chat opens at its
-    newest message, follows it unless the person scrolled up (then a jump button), and goes to its end on a send."""
+    """F83: a refresh keeps the reading position in every view (what came in above moves nothing); Talk opens at its
+    newest words and follows them unless the person scrolled up."""
     if not shutil.which('node'):
         print('  (no node here: the scroll script test is skipped)')
         return
@@ -2192,11 +2187,9 @@ def test_scroll_f83(tmp: Path) -> None:
     eq(got.get('atTop'), 0, 'at the very top, the new thing shows')
     eq((got.get('entered'), got.get('still')), (['top'], 0), 'only what is new comes in moving; a redraw moves nothing')
     eq(got.get('back'), 50, 'coming back to a view returns to where it was')
-    eq(got.get('open'), 0, 'a chat opens at its newest message')
+    eq(got.get('open'), 0, 'Talk opens at its newest words')
     eq(got.get('follows'), 0, 'and follows what comes in')
-    eq(got.get('up'), [5, True, 'New message'], 'scrolled up: it stays put, and the jump button says so')
-    eq(got.get('sent'), [['chat_to', 'hello'], 0, False], 'a send goes to the end')
-    eq(got.get('jump'), [0, False], 'the jump button goes to the latest')
+    eq(got.get('up'), 5, 'scrolled up: it stays put')
     eq((got.get('held'), got.get('after')), (False, [True, 10]), 'a press holds the refresh back until it ends')
 
 
@@ -2262,7 +2255,7 @@ const anim = who => (kf, o) => { const a = {who, from: kf[0].transform, ms: o.du
 els.body.style = {}; els.body.animate = anim('text');
 const dockEl = {style: {}, animate: anim('dock'), getBoundingClientRect: () => ({top: (parseInt(els.app.style.top) || 0) + (parseInt(els.app.style.height) || 800) - 100})};
 const document = {activeElement: null, documentElement: {clientHeight: 800}, addEventListener: (t, f) => docOn[t] = f, querySelector: s => s === '.dockwrap' ? dockEl : null};
-const S = {view: 'talk', thread: null, pin: true, sheet: ''}, jumpDraw = () => {};
+const S = {view: 'talk', thread: null, pin: true, sheet: ''};
 eval(line('const atEnd=') + line('const chatShown=') + line('function toEnd(') + page.slice(page.indexOf('const VV='), page.indexOf('function grow(')) + `
 const b = $('body'), out = {}, left = () => b.scrollHeight - b.scrollTop - b.clientHeight;
 const app = () => [$('app').style.height || '', $('app').style.top || '', $('app').classList.contains('kb')];
@@ -3052,7 +3045,7 @@ let cids = 0;
 const newCid = () => 'k' + (++cids);
 eval(logic.replace(/if\(typeof module[^\n]*/, '') + line('function obChange(') + line('function actFailed(') + grab('async function act(') + grab('function outbox(') + grab('async function drain(')
   + grab('function obDone(') + line('const controlOf=') + line('const ctlSure=') + line('const ctlBusy=') + slice('function oldRunHTML(', 'const obBtns=')
-  + line('const obBtns=') + line('const obState=') + grab('function obDraw(') + line('function obBoot(') + grab('function obRetryClick(')
+  + line('const obBtns=') + line('const obState=') + line('const notDelivered=') + grab('function obDraw(') + line('function obBoot(') + grab('function obRetryClick(')
   + line('function obCards(') + line('const setErrHTML=') + grab('async function loadSettings(') + grab('function settingsHTML(') + grab('function takeSnap(') + `
 const settle = async () => { for (let i = 0; i < 6; i++) await new Promise(r => setTimeout(r, 5)) };
 (async () => {
@@ -3118,10 +3111,10 @@ const threadTitle = n => n, PN = () => 'p', sentBubbles = () => '', starting = (
 ` + logic + line('const HB=') + slice('const store=', 'const DRAFT_KEY') + line('const TALK_FOR=') + line('const talkKept=')
   + line('const sessionOf=') + 'const chats=()=>S.snap.sessions;' + line('const feedOf=')
   + grab('function talkOld(') + grab('function talkName(') + grab('function talkWaitName(') + grab('function talkHear(') + grab('function talkHTML(')
-  + line('const ended=') + grab('function convo(') + grab('function takeSnap(') + grab('async function loadFeed(')
+  + line('const ended=') + grab('function talkConvo(') + grab('function takeSnap(') + grab('async function loadFeed(')
   + slice('/* B177: the open view and chat', '/* --- doing things') + line('function open(') + line('function goView(')
   + slice('\ntakePlace();', 'if(HOME_PAGE){  // F134') + line('placeLoad();  // B177')
-  + `;return {S, TK, log, location, open, goView, takeSnap, loadFeed, convo, talkHTML, talkName, talkKeep, talkKept, at: () => [S.view, S.thread]};`;
+  + `;return {S, TK, log, location, open, goView, takeSnap, loadFeed, talkConvo, talkHTML, talkName, talkKeep, talkKept, at: () => [S.view, S.thread]};`;
   return new Function('o', 'sessionStorage', 'localStorage', body)(o, o.tab, o.browser || map());
 }
 const c = (n, title) => ({name: n, title: title || n, state: 'live'});
@@ -3139,8 +3132,8 @@ const snap = (...l) => ({at: 'now', sessions: [c('c1'), ...l], needs: []});
   // a chat and a slot, over the view they were opened from
   const feeds = {c3: {ok: true, name: 'c3', entries: [{kind: 'say', text: 'Said.'}]}};
   tab = map(); p = load({tab, feeds}); p.goView('plan'); p.open('c3');
-  p = load({tab, feeds}); out.chat = [p.log.draws[0]]; p.takeSnap(snap(c('c3'))); await settle(); out.chat.push(p.at(), p.convo('c3').includes('This chat has ended'));
-  p = load({tab, feeds}); p.takeSnap(snap()); await settle(); out.ended = [p.at(), p.convo('c3').includes('This chat has ended.'), p.convo('c3').includes('Working on it'), p.convo('c3').includes('Said.')];
+  p = load({tab, feeds}); out.chat = [p.log.draws[0]]; p.takeSnap(snap(c('c3'))); await settle(); out.chat.push(p.at(), p.talkConvo('c3').includes('This chat has ended'));
+  p = load({tab, feeds}); p.takeSnap(snap()); await settle(); out.ended = [p.at(), p.talkConvo('c3').includes('This chat has ended.'), p.talkConvo('c3').includes('Working on it'), p.talkConvo('c3').includes('Said.')];
   p = load({tab}); out.gone = [p.log.draws[0]]; await settle(); out.gone.push(p.at()); p.takeSnap(snap()); out.gone.push(p.at()); out.gone.push(load({tab}).at());
   tab = map(); p = load({tab}); p.open('s1');
   p = load({tab}); p.takeSnap(snap(c('s1'))); await settle(); out.slot = p.at();
@@ -3322,6 +3315,175 @@ def test_older_run_b164(tmp: Path) -> None:
     check('Stop the run and start it again' in o['noctl'], 'a run without the restart control: what to do instead', o['noctl'])
 
 
+FEED_DRIVER = r"""
+const page = require('fs').readFileSync(process.argv[2], 'utf8').replace(/\r\n/g, '\n');
+const logic = page.split('<script id="logic">')[1].split('</script>')[0].replace(/if\(typeof module[^\n]*/, '');
+const part = page.slice(page.indexOf('const FD={'), page.indexOf('/* the touch layer over the frame'));
+const el = () => ({hidden: false, kids: [], appendChild(x) { this.kids.push(x); x.box = this }, classList: {toggle() {}}});
+const els = {feed: el(), body: el(), feedframe: el(), feedsay: el()}, $ = k => els[k];
+const on = {}, docOn = {}, location = {origin: 'https://x'}, addEventListener = (t, f) => on[t] = f;
+const typed = [], term = {modes: {applicationCursorKeysMode: false}, input: t => typed.push(t), rows: 2,
+  buffer: {active: {viewportY: 1, getLine: y => ({translateToString: () => ['old', 'one  ', 'two'][y]})}}};
+const document = {hidden: false, documentElement: {classList: {toggle() {}}}, addEventListener: (t, f) => docOn[t] = f,
+  createElement: () => ({contentWindow: {term}, remove() { const k = this.box.kids; k.splice(k.indexOf(this), 1) }})};
+const window = {}, T = 'TOK', esc = t => String(t), LOGO = () => '', I = {ext: ''}, tq = p => p, card = h => h;
+const timers = [], setTimeout = (f, ms) => timers.push({f, ms}), clearTimeout = () => {};
+const said = [], toast = t => said.push(t), sheets = [], openSheet = n => sheets.push(n), upload = f => said.push(f);
+const S = {snap: {sessions: [{name: 'c6', link: 'L'}], fixups: {resume: [{id: 'F1'}]}}, sent: {}, ob: [], last: {s3: {task: 'F1', title: 'a'}}};
+const isAgent = n => !/^(c\d+|@.+)$/.test(n), sessionOf = n => S.snap.sessions.find(s => s.name === n), threadTitle = n => n;
+const starting = n => n === 'c8', sentBubbles = () => '', obBubbles = () => 'WAITS', controlOf = () => ({}), ctlBusy = () => false;
+const setHTML = (e, h) => { e.innerHTML = h }, render = () => feedDraw(S.thread);
+let answers = {};
+const fetch = async p => ({json: async () => answers[p.split('/')[1]]});
+eval(logic + part + `
+const settle = async () => { for (let i = 0; i < 8; i++) await Promise.resolve() };
+const at = () => [!$('feed').hidden, !$('body').hidden, $('feedframe').kids.map(k => k.src)];
+(async () => {
+  const out = {}, show = async n => { S.thread = n; render(); await settle(); return at() };
+  answers.c6 = {ok: true, path: '/t/TOK/c6/'};
+  out.c6 = await show('c6'); out.waits = [$('feedsay').hidden, $('feedsay').innerHTML.includes('Connecting')];
+  render(); out.once = $('feedframe').kids.length;
+  feedKey('up'); out.early = said.slice();
+  const f = FD.frame, word = (d, src = f.contentWindow, origin = location.origin) => on.message({data: {session: 'c6', ...d}, source: src, origin});
+  word({state: 'up'}, {}); word({state: 'up'}, f.contentWindow, 'https://evil'); out.foreign = FD.up;
+  word({state: 'up'}); out.up = [FD.up, $('feedsay').hidden];
+  for (const [k] of FEED_KEYS) feedKey(k);
+  out.keys = typed.splice(0); term.modes.applicationCursorKeysMode = true; feedKey('up'); out.app = typed.splice(0);
+  feedText(); out.text = [S.feedText, sheets];
+  word({files: ['pic']}); out.files = said.pop();
+  // its socket closes: the page asks again; the session has ended
+  word({state: 'down'}); answers.c6 = {ok: false, mode: 'none', live: false, link: 'https://claude.ai/code/x', resume: true, out: 'c6 is not up'};
+  timers.pop().f(); await settle(); out.ended = [at(), feedHTML('c6')];
+  answers.s3 = {ok: false, mode: 'none', live: false, out: 'x'}; await show('s3'); out.idle = feedHTML('s3');
+  answers.s4 = {ok: false, mode: 'none', live: true, out: 's4 runs headless'}; await show('s4'); out.none = [at(), feedHTML('s4')];
+  answers.c9 = {ok: false, mode: 'install', out: 'ttyd is not installed'}; await show('c9'); out.install = [at(), feedHTML('c9')];
+  answers.c8 = {ok: false, mode: 'none', live: false, out: 'x'}; await show('c8'); out.starting = feedHTML('c8');
+  answers.c8 = {ok: true}; timers.pop().f(); await settle(); out.started = at();
+  await show('@k'); out.stand = [at(), feedHTML('@k')];
+  // out of sight a while: the frame goes, so the session has its other viewers' size; back: it comes again
+  await show('c8'); document.hidden = true; docOn.visibilitychange(); timers.pop().f(); out.away = $('feedframe').kids.length;
+  document.hidden = false; docOn.visibilitychange(); await settle(); out.back = $('feedframe').kids.length;
+  await show(null); out.home = at();
+  console.log(JSON.stringify(out));
+})();`);
+"""
+
+
+def test_session_feed_f114(tmp: Path) -> None:
+    """F114: a chat or slot shows the real session (one ttyd frame for the open chat) with the message box under it and
+    no thread of the page's own; a starting, ended or terminal-less one says so; the key row types into it."""
+    page = W.PAGE.read_text(encoding='utf-8')
+    order = [page.index(x) for x in ('<div class="body" id="body">', '<div class="feed" id="feed" hidden>', '<div class="dock" id="dock">')]
+    eq(order, sorted(order), 'the session stands between the header and the message box')
+    check('dock=keysRow()+box(' in page and 'convo(n)' not in page.split('function render(', 1)[1].split('\n}\n', 1)[0],
+          'a chat draws its box, and no thread')
+    check('touch-action:pinch-zoom' in page and '@media (pointer:coarse){.feedtouch{display:block} .keyb{display:inline-flex}' in page,
+          'a touch device has the touch layer and the key row')
+    head = W.session_frame.with_head(b'<html><head><title>t</title>', 'c6', 'dark').decode()
+    check(head.startswith('<html><head><meta name="referrer"') and 'if(pressed&&!touch)focus.call' in head and 'session:"c6"' in head,
+          "ttyd's page takes the keyboard only from a mouse press in it", head[:300])
+    (tmp / '.claude').mkdir()
+    eq(W.session_frame.session_look(tmp), 'dark', 'no theme set: dark')
+    (tmp / '.claude' / 'settings.json').write_text('{"theme": "light-daltonized"}', encoding='utf-8')
+    eq(W.session_frame.session_look(tmp), 'light', "a light theme of the agent's: a light ground")
+    if not shutil.which('node'):
+        print('  (no node here: the session feed script test is skipped)')
+        return
+    (tmp / 'driver.js').write_text(FEED_DRIVER, encoding='utf-8')
+    r = subprocess.run(['node', str(tmp / 'driver.js'), str(W.PAGE)], capture_output=True, text=True, timeout=60)
+    check(r.returncode == 0, 'node runs the session feed', r.stderr[-1500:])
+    if r.returncode:
+        return
+    o = json.loads(r.stdout)
+    eq(o['c6'][:2], [True, False], 'a chat shows the session, not the body')
+    check(len(o['c6'][2]) == 1 and o['c6'][2][0].startswith('t/TOK/c6/'), "c6's own terminal, on the page's address", o['c6'])
+    eq((o['waits'], o['once'], o['up']), ([False, True], 1, [True, True]), 'it says it is connecting; a redraw keeps the one frame')
+    eq((len(o['early']), o['foreign']), (1, False), 'a key before it is connected says so; a word from elsewhere is nothing')
+    eq(o['keys'], ['\x1b', '\t', '\x1b[A', '\r', '\x03', '\x1b[D', '\x1b[B', '\x1b[C'], 'the key row types its keys')
+    eq(o['app'], ['\x1bOA'], 'as the terminal would, in application cursor mode')
+    eq(o['text'], ['one\ntwo', ['text']], "the screen's text in a sheet, to copy")
+    eq(o['files'], 'pic', 'files dropped on the session are attached')
+    eq(o['ended'][0], [False, True, []], 'ended: the frame goes')
+    for part in ('This chat has ended', 'https://claude.ai/code/x', 'data-resume="c6"'):
+        check(part in o['ended'][1], f'ended says {part}', o['ended'][1])
+    check('data-ctl="resume" data-tid="F1"' in o['idle'], 'a slot whose task was cut off: Resume', o['idle'])
+    check('s4 runs headless' in o['none'][1] and o['none'][0] == [False, True, []], 'no terminal: why', o['none'])
+    check('ttyd is not installed' in o['install'][1] and o['install'][0] == [False, True, []], 'no ttyd: how to install it', o['install'])
+    check('Starting the chat' in o['starting'], 'a starting chat says so', o['starting'])
+    check(o['started'][0] and 't/TOK/c8/' in o['started'][2][0], 'then shows its session', o['started'])
+    check('WAITS' in o['stand'][1] and o['stand'][0] == [False, True, []], "a stand-in shows what waits for it", o['stand'])
+    eq((o['away'], o['back']), (0, 1), 'out of sight the frame goes; back, it comes again')
+    eq(o['home'], [False, True, []], 'another view has no session')
+
+
+def test_session_proxy_f114(tmp: Path) -> None:
+    """F114: /t/TOKEN/NAME/ is ttyd's page and WebSocket on the page's own address, with the token only; /terminal/NAME
+    says why there is none, with the link and whether it can be resumed, and resume_chat reopens it."""
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    import socket
+    fake_repo(tmp)
+
+    class Ttyd(BaseHTTPRequestHandler):
+        protocol_version = 'HTTP/1.1'
+
+        def log_message(self, *a):
+            pass
+
+        def do_GET(self):
+            if self.headers.get('Upgrade'):
+                self.send_response(101)
+                self.end_headers()
+                self.close_connection = True
+                while data := self.rfile.read1(99):
+                    self.wfile.write(b'echo:' + data)
+                return
+            data = b'<html><head><title>x</title></head>' + self.path.encode()
+            self.send_response(200)
+            self.send_header('Content-Type', 'text/html')
+            self.send_header('Content-Length', str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+    ttyd = ThreadingHTTPServer(('127.0.0.1', 0), Ttyd)
+    ttyd.daemon_threads = True
+    threading.Thread(target=ttyd.serve_forever, daemon=True).start()
+    token = W.web_token()
+    srv = W.serve(token, 0, '127.0.0.1', snap=lambda: {})
+    port = srv.server_address[1]
+    base = f'http://127.0.0.1:{port}'
+    try:
+        with mock.patch.object(srv.terms, 'ttyd', lambda name, sock='': {'ok': True, 'port': ttyd.server_address[1]}):
+            code, body = get(f'{base}/t/{token}/c6/?fontSize=12')
+            check(code == 200 and b'session:"c6"' in body and f'/t/{token}/c6/?fontSize=12'.encode() in body, "ttyd's page", body[-200:])
+            eq(get(f'{base}/t/wrong/c6/')[0], 403, 'only with the token')
+            eq(get(f'{base}/t/{token}/x')[0], 403, 'no name: refused')
+            eq(get(f'{base}/t/{token}/..x/')[0], 404, 'not a session name')
+            with socket.create_connection(('127.0.0.1', port), timeout=10) as c:
+                c.sendall(f'GET /t/{token}/c6/ws HTTP/1.1\r\nHost: x\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n'.encode())
+                got = b''
+                while b'\r\n\r\n' not in got:
+                    got += c.recv(999)
+                check(got.startswith(b'HTTP/1.1 101') or b' 101 ' in got[:20], 'its WebSocket', got[:60])
+                c.sendall(b'hi')
+                back = b''
+                while len(back) < 7 and (d := c.recv(99)):
+                    back += d
+                eq(back, b'echo:hi', 'flows both ways')
+        with mock.patch.object(W, 'resumable', return_value='sid'), mock.patch.object(U, '_bridge_link', return_value='L'), \
+                mock.patch.object(W.shutil, 'which', return_value='ttyd'):
+            r = json.loads(get(f'{base}/terminal/c6?t={token}')[1])
+            eq((r['ok'], r['live'], r['link'], r['resume']), (False, False, 'L', True), 'an ended chat: its link and Resume')
+            with mock.patch('agent_runner.control_reopen.reopen_control', return_value='x') as ro:
+                out = post(f'{base}/act?t={token}', {'name': 'resume_chat', 'args': {'chat': 'c6'}})[1]
+            eq((out['ok'], ro.call_args[0]), (True, (6, 'sid')), 'resume_chat reopens its conversation')
+        check(not U.act('resume_chat', chat='c1')['ok'] and not U.act('resume_chat', chat='../x')['ok'], 'not c1, not a path')
+        with mock.patch.object(W, 'session_live', return_value=True), mock.patch.object(W, 'headless', return_value=True):
+            check('headless' in W.no_session('s2')['out'], 'a headless slot says so')
+    finally:
+        srv.stop()
+        ttyd.shutdown()
+        ttyd.server_close()
+
+
 if __name__ == '__main__':
     raise SystemExit(report([in_tmp(test_release_row_f131),in_tmp(test_project_name_b153),in_tmp(test_home_screen_b179),in_tmp(test_chat_order_f133), in_tmp(test_delete_chats_f118), in_tmp(test_server), in_tmp(test_real_action), in_tmp(test_run_controls),
                            in_tmp(test_start), in_tmp(test_upload),
@@ -3337,4 +3499,4 @@ if __name__ == '__main__':
                            in_tmp(test_chat_box_f115), in_tmp(test_home_switcher_f134),
                            in_tmp(test_scroll_f83), in_tmp(test_keyboard_b160), in_tmp(test_talk_settings_f124), in_tmp(test_mic_aborted_b162), in_tmp(test_sound_b178), in_tmp(test_status_view_f124),
                            in_tmp(test_chats_f128), in_tmp(test_needs_drop_chat_f110), in_tmp(test_task_text_f85),
-                           in_tmp(test_settings_f97), in_tmp(test_older_run_b164), in_tmp(test_reload_b177), in_tmp(test_home_talk_f164), in_tmp(test_style_f83)]))
+                           in_tmp(test_settings_f97), in_tmp(test_older_run_b164), in_tmp(test_reload_b177), in_tmp(test_home_talk_f164), in_tmp(test_style_f83), in_tmp(test_session_feed_f114), in_tmp(test_session_proxy_f114)]))
