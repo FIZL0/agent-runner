@@ -83,6 +83,12 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
   a restarted run page forgets them), so a resent New chat never starts two chats. If the run refuses an action it
   stays: a popup lists it with Retry and Discard (a failed message also has Edit, which puts the words back in its
   box), and a Needs you card comes back when its answer failed (F137).
+- Fixes: the run page broke while a run was older than the page on disk (after an update, not restarted): Settings never
+  loaded, and a Needs you card's Chat stayed in the Outbox as "Not sent: no such action: need_chat" (B164). Now a run
+  serves the run app and the terminal-style page it started with until it restarts; a page that still meets an older
+  run (unknown action or route) says "This run is older than this page. Restart it." with Restart the run (or
+  stop and start it, where there is no restart control). Its Outbox item is kept and sent once the run restarts (a
+  confirmed one, like a drop, waits for Retry), and a failed Settings read keeps the settings shown with Try again.
 - Fixes: in the harness loop, the finish tool refuses until `done` or `done --blocked` has succeeded for the slot's
   task. It says to run `done`, or `run ask` when only the person can answer, and the session goes on. Before, a
   session could end with its task still open and nothing under Needs you (B155).

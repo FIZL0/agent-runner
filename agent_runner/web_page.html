@@ -753,15 +753,17 @@ const OB_STATES=['sending','failed'];
 function obParse(text){let l;try{l=JSON.parse(text||'[]')}catch(e){return[]}
   return Array.isArray(l)?l.filter(x=>x&&typeof x==='object'&&typeof x.cid==='string'&&x.cid&&typeof x.name==='string'
     &&OB_STATES.includes(x.state)&&x.args&&typeof x.args==='object'&&!Array.isArray(x.args)):[]}
-/* B164: the run is older than this page: its answer names an action, route or argument it does not know */
+/* B164: the run is older than this page: its answer names an action or route it does not know */
 const OLD_RUN='This run is older than this page. Restart it.', OLD_WAIT='Waiting: this run is older than this page. It goes once the run restarts.';
-const oldSaid=t=>/^no such (action|page): |unexpected keyword argument/.test(String(t||''));
+const oldSaid=t=>/^no such (action|page): /.test(String(t||''));
 const oldRun=r=>!!r&&!r.ok&&oldSaid(r.out);
 const plainOut=(r,other)=>oldRun(r)?OLD_RUN:String((r&&r.out)||other);
 /* an item such a run refused: kept, and sent once the run restarts (snap.boot changes). x.boot: the run that refused
    it ('' for one that has none). The new cid is the same in every tab, so the run still runs it once */
-const obOld=x=>x.state==='failed'&&oldSaid(x.err);
-const obDue=(box,boot)=>boot?(box||[]).filter(x=>obOld(x)&&(x.boot||'')!==boot):[];
+const obRefused=x=>x.state==='failed'&&oldSaid(x.err);
+/* one confirmed for that moment (a run control, a drop) never goes by itself: Retry */
+const obOld=x=>obRefused(x)&&!x.ctl&&!(x.args&&x.args.confirm);
+const obDue=(box,boot)=>boot?(box||[]).filter(x=>obOld(x)&&!obTo(x).startsWith('@')&&(x.boot||'')!==boot):[];
 const obBootCid=(x,boot)=>x.cid.split('~')[0]+'~'+boot;
 const obTo=x=>String((x&&x.args&&x.args.to)||'');
 /* the next item to send: the first still sending, skipping messages to a chat that is not up yet */
@@ -774,7 +776,7 @@ function obSettle(box,cid,r,boot){
   const ok=!!(r&&r.ok), ph='@'+cid;
   if(ok){const rest=l.filter(x=>x.cid!==cid);return it.newchat&&r.name?obName(rest,ph,r.name):rest}
   const err=String((r&&r.out)||`${it.name} did not work`).trim().split('\n')[0];
-  return l.map(x=>x.cid===cid?{...x,state:'failed',err,...(oldSaid(err)?{boot:boot||''}:{})}:obTo(x)===ph?{...x,state:'failed',err:'the new chat did not start'}:x);
+  return l.map(x=>x.cid===cid?{...x,state:'failed',err,...(oldSaid(err)?{boot:boot||''}:{})}:obTo(x)===ph?{...x,state:'failed',err:oldSaid(err)?err:'the new chat did not start'}:x);
 }
 /* Retry: sent again under a new cid (the run's answer to the old one is kept); a message waiting on a chat
    that did not start retries that chat */
@@ -868,7 +870,7 @@ function projectButtons(p){
   b.push({label:'Unlist',unlist:true});
   return b;
 }
-if(typeof module!=='undefined')module.exports={viewOf,runPill,cardControls,controlGroups,needsReply,chatGroups,needChatAsk,TALK_SET,talkSetParse,pickVoice,feedMark,feedAfter,atEnd,swipeTakes,swipeOpens,settingText,settingShown,settingValue,homeBase,homeKey,projectLink,homeLink,homeHref,pageTitle,projectState,switcherRows,projectWords,projectButtons,chatMove,BOX_KEYS,keysLine,histPush,histEdge,histStep,slashMatches,slashPick,slashMove,SLASH_FALLBACK,chatPick,answerOpts,needAsk,threadMsgs,working,planWords,compose,sendReq,usageOf,logKind,plain,chatName,controlReq,controlClick,taskControlsOn,queueGroups,conceptButtons,planQueue,NO_CONCEPT,newConceptReq,queuedId,NAV,talkSession,micProblem,dictProblem,dictButton,dictInsert,termTokens,talkShown,talkReply,goneMark,needsShown,answerSaid,GONE_MS,obParse,obNext,obName,obSettle,obRetry,obDrop,obCounts,obHidden,obPill,OLD_RUN,OLD_WAIT,oldRun,plainOut,obOld,obDue,obBootCid,sentLeft,sentStep,sentParse};
+if(typeof module!=='undefined')module.exports={viewOf,runPill,cardControls,controlGroups,needsReply,chatGroups,needChatAsk,TALK_SET,talkSetParse,pickVoice,feedMark,feedAfter,atEnd,swipeTakes,swipeOpens,settingText,settingShown,settingValue,homeBase,homeKey,projectLink,homeLink,homeHref,pageTitle,projectState,switcherRows,projectWords,projectButtons,chatMove,BOX_KEYS,keysLine,histPush,histEdge,histStep,slashMatches,slashPick,slashMove,SLASH_FALLBACK,chatPick,answerOpts,needAsk,threadMsgs,working,planWords,compose,sendReq,usageOf,logKind,plain,chatName,controlReq,controlClick,taskControlsOn,queueGroups,conceptButtons,planQueue,NO_CONCEPT,newConceptReq,queuedId,NAV,talkSession,micProblem,dictProblem,dictButton,dictInsert,termTokens,talkShown,talkReply,goneMark,needsShown,answerSaid,GONE_MS,obParse,obNext,obName,obSettle,obRetry,obDrop,obCounts,obHidden,obPill,OLD_RUN,OLD_WAIT,oldRun,plainOut,obRefused,obOld,obDue,obBootCid,sentLeft,sentStep,sentParse};
 </script>
 
 <script>
@@ -986,9 +988,11 @@ const emptyCard=t=>card(`<div class="small">${t}</div>`);
 
 function toast(msg,bad){const t=$('toast');t.textContent=msg;t.className='toast'+(bad?' bad':'');t.hidden=false;
   clearTimeout(toast.h);toast.h=setTimeout(()=>t.hidden=true,bad?6000:3000)}
+/* B164: an action outside the outbox failed; an older run also gets the restart control, in the Outbox popup */
+function actFailed(j,other){toast(plainOut(j,other),true);if(oldRun(j)){S.oldRun=true;S.obOpen=true;obDraw()}}
 async function act(name,args){
   try{const r=await fetch(tq('act'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,args:args||{}})});
-    const j=await r.json();if(!j.ok){toast(plainOut(j,`${name} did not work`),true);if(oldRun(j)){S.oldRun=true;S.obOpen=true;obDraw()}}return j}
+    const j=await r.json();if(!j.ok)actFailed(j,`${name} did not work`);return j}
   catch(e){toast(`Could not reach the run page: ${e}`,true);return{ok:false}}
 }
 
@@ -1046,7 +1050,7 @@ async function drain(){
 function obDone(it,j){
   const now=Date.now(), snapNow=()=>fetch(tq('snapshot')).then(s=>s.json()).then(takeSnap).catch(()=>{});
   if(it.set&&!(j&&j.ok))delete S.f[`set:${it.name==='setting_project'?'project':'device'}:${it.set.id}`];  // the field shows what is kept again
-  if(!j||!j.ok){toast(oldRun(j)?OLD_WAIT:`Not sent: ${it.say}`,true);S.obOpen=true;if(it.need||it.concept)snapNow();return}
+  if(!j||!j.ok){toast(oldRun(j)?OLD_RUN:`Not sent: ${it.say}`,true);S.obOpen=true;if(it.need||it.concept)snapNow();return}
   if(it.newchat&&!j.name&&S.waitNew)S.waitNew.sent={j,ask:it.ask};  // B154: takeSnap finds its name
   if(it.newchat&&j.name){carrySent(j.name,j,it.ask);if(S.waitNew&&S.waitNew.ph==='@'+it.cid)S.waitNew=null;if(S.thread==='@'+it.cid)open(j.name)}
   else if(it.name==='chat_to'){const to=j.name||it.args.to;  // B154: c1 was not up: the new chat that took it
@@ -1071,16 +1075,17 @@ function obHide(){
 function oldRunHTML(msg){const rc=controlOf('restart');
   return `<div class="small v-bad">${esc(msg)}</div>${!rc||S.snap.up===false?'<div class="small">Stop the run and start it again.</div>':S.sure==='restart'?ctlSure(rc):`<div class="btns"><button class="btn acc${ctlBusy('restart')?' busy':''}" data-ctl="restart">Restart the run</button></div>`}`}
 const obBtns=x=>`${x.state==='failed'&&!obOld(x)?`<button class="btn pri" data-obretry="${esc(x.cid)}">Retry</button>`:''}${x.state==='failed'&&x.name==='chat_to'?`<button class="btn" data-obedit="${esc(x.cid)}">Edit</button>`:''}<button class="btn" data-obdrop="${esc(x.cid)}">Discard</button>`;
-const obState=x=>obOld(x)?OLD_WAIT:x.state==='failed'?`Not sent: ${x.err||'it did not work'}`:OB.offline?'waiting for the connection':'sending…';
+const obState=x=>obOld(x)?OLD_WAIT:x.state==='failed'?`Not sent: ${obRefused(x)?OLD_RUN:x.err||'it did not work'}`:OB.offline?'waiting for the connection':'sending…';
 function obDraw(){
-  const c=obCounts(S.ob), parts=obPill(c,OB.offline), bar=$('obbar'), pop=$('obpop');
+  const c=obCounts(S.ob), old=S.ob.filter(obOld).length;c.failed-=old;
+  const parts=[...obPill(c,OB.offline),...(old?[`${old} waiting for a restart`]:[])], bar=$('obbar'), pop=$('obpop');
   bar.hidden=!parts.length;
   setHTML(bar,parts.length?`<button class="obpill${c.failed?' bad':''}" data-obopen>${c.sending?'<span class="livedot"></span>':''}${parts.map(esc).join(' · ')}</button>`:'');
   if(!S.ob.length&&!S.oldRun)S.obOpen=false;
   if(!S.obOpen)S.oldRun=false;
   pop.hidden=!S.obOpen;
   setHTML(pop,S.obOpen?`<div class="obcard" role="dialog" aria-label="Outbox"><div class="row"><b class="grow">Outbox</b><button class="btn" data-obclose>Close</button></div>
-    ${S.oldRun||S.ob.some(obOld)?oldRunHTML(OLD_RUN):''}
+    ${S.oldRun||S.ob.some(obRefused)?oldRunHTML(OLD_RUN):''}
     ${S.ob.map(x=>`<div class="obrow ${x.state}"><div class="grow"><div class="ell2">${esc(x.say)}</div><div class="small">${esc(obState(x))}</div></div><div class="btns">${obBtns(x)}</div></div>`).join('')}</div>`:'');
 }
 /* the stand-ins: a starting chat in the sidebar, a sent answer in Needs you, a queued concept, a message */
@@ -1277,7 +1282,7 @@ function finalDelete(){
   if(u.names.includes(S.thread)){S.thread=null;S.ctx=null}
   S.snap.sessions=S.snap.sessions.filter(s=>!u.names.includes(s.name));
   fetch(tq('act'),{method:'POST',keepalive:true,headers:{'Content-Type':'application/json'},body:JSON.stringify({name:'delete_chats',args:{names:u.names}})})
-    .then(r=>r.json()).then(j=>{if(!j.ok)toast(j.out||'The delete did not work',true)}).catch(e=>toast(`Could not reach the run page: ${e}`,true));
+    .then(r=>r.json()).then(j=>{if(!j.ok)actFailed(j,'The delete did not work')}).catch(e=>toast(`Could not reach the run page: ${e}`,true));
   render(true);
 }
 const card=(h,cls='',attr='')=>`<div class="card ${cls}" ${attr}>${h}</div>`;
@@ -1335,12 +1340,12 @@ function needCard(n,i){
 /* F85: a task's row: one line; a tap folds its whole text (plan ID) open in place */
 function taskRow(q,title){
   const open=!!S.taskOpen[q.id], t=S.tasks[q.id];
-  return `<button class="fold" data-task="${esc(q.id)}" aria-expanded="${open}"><span class="grow"><b class="ell">${esc(title)}</b><span class="small" data-k="state:${esc(q.id)}" data-v="${esc(q.state||'')}">${esc(q.id)} · ${esc(planWords(q,S.snap.sessions))}</span></span><span class="chev">${I.chev}</span></button>${open?(t&&t.text?`<pre class="tasktext" data-k="text:${esc(q.id)}">${esc(t.text)}</pre>`:t&&t.err?`<div class="small v-bad">${esc(t.err)}</div>`:'<div class="small">Loading…</div>'):''}`;
+  return `<button class="fold" data-task="${esc(q.id)}" aria-expanded="${open}"><span class="grow"><b class="ell">${esc(title)}</b><span class="small" data-k="state:${esc(q.id)}" data-v="${esc(q.state||'')}">${esc(q.id)} · ${esc(planWords(q,S.snap.sessions))}</span></span><span class="chev">${I.chev}</span></button>${open?(t&&t.text?`<pre class="tasktext" data-k="text:${esc(q.id)}">${esc(t.text)}</pre>`:t&&t.err?(t.old?oldRunHTML(t.err):`<div class="small v-bad">${esc(t.err)}</div>`):'<div class="small">Loading…</div>'):''}`;
 }
 async function openTask(id){
   S.taskOpen[id]=!S.taskOpen[id];render(true);
   if(!S.taskOpen[id])return;
-  try{const j=await (await fetch(tq('task/'+encodeURIComponent(id)))).json();S.tasks[id]=j.ok?{text:j.text}:{err:plainOut(j,'It could not be read')}}
+  try{const j=await (await fetch(tq('task/'+encodeURIComponent(id)))).json();S.tasks[id]=j.ok?{text:j.text}:{err:plainOut(j,'It could not be read'),old:oldRun(j)}}
   catch(e){if(!S.tasks[id])S.tasks[id]={err:'Could not reach the run page: fold it and open it again'}}
   render(true);
 }
@@ -1464,7 +1469,7 @@ async function loadSettings(){
   try{const r=await fetch(tq('settings')), j=await r.json();S.setOld=false;
     if(r.ok&&j&&Array.isArray(j.tables)){S.set=j;S.setErr=j.out||''}
     else{S.setOld=oldRun(j);S.setErr=plainOut(j,'The settings could not be read.')}}
-  catch(e){S.setErr='Could not reach the run page to read the settings.'}
+  catch(e){S.setOld=false;S.setErr='Could not reach the run page to read the settings.'}
   render(true);
 }
 const settingId=(t,k)=>`${t}.${k}`;

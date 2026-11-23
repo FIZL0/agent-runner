@@ -2996,7 +2996,7 @@ const OB = {busy: false, offline: false, timer: 0, wait: 2000}, OB_KEY = 'ob';
 const threadTitle = n => n, cutsOff = () => '', sureHTML = q => q;
 let cids = 0;
 const newCid = () => 'k' + (++cids);
-eval(logic.replace(/if\(typeof module[^\n]*/, '') + line('function obChange(') + grab('async function act(') + grab('function outbox(') + grab('async function drain(')
+eval(logic.replace(/if\(typeof module[^\n]*/, '') + line('function obChange(') + line('function actFailed(') + grab('async function act(') + grab('function outbox(') + grab('async function drain(')
   + grab('function obDone(') + line('const controlOf=') + line('const ctlSure=') + line('const ctlBusy=') + slice('function oldRunHTML(', 'const obBtns=')
   + line('const obBtns=') + line('const obState=') + grab('function obDraw(') + line('function obBoot(') + grab('function obRetryClick(')
   + line('function obCards(') + line('const setErrHTML=') + grab('async function loadSettings(') + grab('function settingsHTML(') + grab('function takeSnap(') + `
@@ -3015,6 +3015,7 @@ const settle = async () => { for (let i = 0; i < 6; i++) await new Promise(r => 
   const it = outbox('need_chat', {tid: 'F1'}, {newchat: true, say: 'About F1'}); S.thread = '@' + it.cid;
   outbox('chat_to', {text: 'hi', to: '@' + it.cid}, {text: 'hi', say: 'hi'});
   await settle(); obDraw();
+  out.pill = els.obbar.h;
   out.refused = [S.ob.map(x => [x.name, x.state]), said[said.length - 1], els.obpop.h, JSON.parse(kept.ob).length];
   // another snapshot of the same run: nothing is sent again; the next run: both go, under a cid every tab shares
   posts = []; takeSnap({boot: 'b1'}); await settle(); out.same = posts.length;
@@ -3027,6 +3028,8 @@ const settle = async () => { for (let i = 0; i < 6; i++) await new Promise(r => 
   // still refused by a run that is older too: once per run, no loop
   reply = given.act; S.ob = [{cid: 'z', name: 'need_chat', args: {}, state: 'failed', err: 'no such action: need_chat', say: 'z'}];
   posts = []; takeSnap({boot: 'b4'}); await settle(); takeSnap({boot: 'b4'}); await settle(); out.once = posts.map(p => p.cid);
+  S.ob = [{cid: 'd', name: 'need_drop', args: {confirm: true}, state: 'failed', err: 'no such action: need_drop', say: 'd'}];
+  posts = []; takeSnap({boot: 'b5'}); await settle(); S.obOpen = true; obDraw(); out.ctl = [posts.length, els.obpop.h.includes('data-obretry')];
   // outside the Outbox (Talk): the same words and control
   S.ob = []; S.obOpen = false; await act('talk', {}); out.act = [said[said.length - 1], S.obOpen, els.obpop.h];
   S.snap.controls = []; obDraw(); out.noctl = els.obpop.h;
@@ -3081,8 +3084,11 @@ def test_older_run_b164(tmp: Path) -> None:
     check('Find a setting' in o['good'][0] and o['good'][1] and 'Try again' not in o['good'][0], 'Try again that works clears it', o['good'])
     check(o['keeps'][0] and old in o['keeps'][1] and 'Find a setting' in o['keeps'][1], 'settings already loaded stay', o['keeps'])
     eq(o['refused'][0], [['need_chat', 'failed'], ['chat_to', 'failed']], 'need_chat and its message stay in the Outbox')
-    check(wait in o['refused'][1] and wait in o['refused'][2] and btn in o['refused'][2], 'which says why, with the restart control', o['refused'])
+    check(o['refused'][1] == old and wait in o['refused'][2] and btn in o['refused'][2], 'which says why, with the restart control', o['refused'])
     check('no such action' not in o['refused'][2] and o['refused'][3] == 2, 'no raw error, and kept over a reload', o['refused'])
+    check('data-obretry' not in o['refused'][2], 'no Retry that can never work, on its message either', o['refused'])
+    check('2 waiting for a restart' in o['pill'] and 'failed' not in o['pill'].split('>', 1)[1], 'the pill says it waits', o['pill'])
+    eq(o['ctl'], [0, True], 'a confirmed action never goes by itself after a restart: Retry')
     eq(o['same'], 0, 'the same run: not sent again')
     eq(o['sent'], [[['need_chat', 'k1~b2', ''], ['chat_to', 'k2', 'c7']], 0, 'c7'], 'the run restarted: both go, once')
     eq(o['legacy'], [['z~b3'], ['y']], 'one an earlier page left there goes too; a plain failure waits for Retry')
