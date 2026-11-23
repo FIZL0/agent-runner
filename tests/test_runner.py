@@ -7537,21 +7537,23 @@ def test_models_f101(repo: Path, tmp: Path):
         return argv, (json.loads(argv[argv.index('--agents') + 1]) if '--agents' in argv else {})
 
     c = load('')
-    eq(c.models, {'code': 'opus', 'review': 'opus', 'fix': 'opus', 'docs': 'haiku', 'control': 'opus',
-                  'feed': 'haiku'}, 'the defaults every repo gets')
+    eq({k: v for k, v in c.models.items() if k != 'kinds'},
+       {'code': 'opus', 'review': 'opus', 'fix': 'opus', 'docs': 'haiku', 'control': 'opus',
+        'feed': 'haiku'}, 'the defaults every repo gets')
     eq((c.run['model'], c.run['fix_model'], c.warnings), ('opus', 'opus', []), '[run] model and fix_model match, no warning')
     c = load('[run]\nmodel = "sonnet"\nfix_model = "haiku"\n')
     eq((c.models['code'], c.models['fix'], c.models['review']), ('sonnet', 'haiku', 'opus'),
        'the old keys still win when [models] does not set the role')
     c = load('[run]\nmodel = "sonnet"\nfix_model = "haiku"\n\n[models]\ncode = "opus"\nfix = "sonnet"\nreview = "haiku"\n'
              'docs = "sonnet"\ncontrol = "sonnet"\nfeed = "sonnet"\n')
-    eq(c.models, {'code': 'opus', 'review': 'haiku', 'fix': 'sonnet', 'docs': 'sonnet', 'control': 'sonnet',
-                  'feed': 'sonnet'}, '[models] overrides each role')
+    eq({k: v for k, v in c.models.items() if k != 'kinds'},
+       {'code': 'opus', 'review': 'haiku', 'fix': 'sonnet', 'docs': 'sonnet', 'control': 'sonnet',
+        'feed': 'sonnet'}, '[models] overrides each role')
     eq((c.run['model'], c.run['fix_model']), ('opus', 'sonnet'), 'and [run] model and fix_model follow it')
     check(any('[models] coder is not a setting' in w for w in load('[models]\ncoder = "x"\n').warnings),
           'an unknown role warns')
     c = load('[run]\nagent = "pi"\nmodel = "github-copilot/m1"\n')
-    eq(set(c.models.values()), {'github-copilot/m1'}, 'Pi: every role falls back to [run] model')
+    eq({v for k, v in c.models.items() if k != 'kinds'}, {'github-copilot/m1'}, 'Pi: every role falls back to [run] model')
 
     argv, agents = agents_of('[run]\nremote = false\n')
     eq({k: v['model'] for k, v in agents.items()}, {'review': 'opus', 'docs': 'haiku'},
@@ -7575,6 +7577,94 @@ def test_models_f101(repo: Path, tmp: Path):
         a = R.control_argv(2, 'sid-2', resume=False)
         eq(a[a.index('--model') + 1], 'haiku', 'control sessions on [models] control')
     R.init(repo)
+
+
+def test_models_kinds_f105(repo: Path, tmp: Path):
+    print('F105: a task session runs on its kind\'s model ([models.kinds]), or on its own (`plan add --model`)')
+    from agent_runner import config
+    from agent_runner.config import Config
+    root = tmp / 'f105'
+    root.mkdir()
+    git(root, 'init', '-q')
+
+    def load(text: str) -> Config:
+        (root / 'runner.toml').write_text(text, encoding='utf-8')
+        return Config(root)
+
+    c = load('')
+    eq((c.task_model('D3'), c.task_model('F2'), c.task_model('C4'), c.task_model('R5'), c.task_model('K6')),
+       ('sonnet', 'opus', 'sonnet', 'sonnet', 'opus'), 'the defaults: F, B, T, V, K on opus; D, C, R on sonnet')
+    eq(c.task_model('P17a'), 'opus', 'a kind not listed runs on [models] code')
+    eq(c.task_model('D3', 'haiku'), 'haiku', 'a task\'s own model wins over its kind')
+    c = load('[models]\ncode = "haiku"\n\n[models.kinds]\nD = "opus"\nX = "sonnet"\n')
+    eq((c.task_model('D3'), c.task_model('X1'), c.task_model('C4'), c.task_model('Q1')),
+       ('opus', 'sonnet', 'sonnet', 'haiku'), 'a repo\'s [models.kinds] overrides the defaults, kind by kind')
+    check(not c.warnings, 'and is no unknown setting', c.warnings)
+    c = load('[run]\nagent = "pi"\nmodel = "github-copilot/m1"\n')
+    eq(c.task_model('D3'), 'github-copilot/m1', 'Pi: no default kinds, every task on [run] model')
+    try:
+        load('[models.kinds]\nD = 3\n')
+        check(False, 'a kind must name a model')
+    except SystemExit as e:
+        check('[models.kinds]' in str(e), 'a kind must name a model', e)
+
+    text, _, keyed, _, _ = P.add_args(['Tidy the docs', '--files', 'a.md', '--model', 'haiku'])
+    eq(keyed, ' | files: a.md | model: haiku', '`plan add --model haiku` stores it on the task line')
+    try:
+        P.add_args(['Tidy', '--model', 'a b'])
+        check(False, '--model takes one name')
+    except SystemExit as e:
+        check('--model takes one model name' in str(e), '--model takes one name', e)
+
+    config._cfg.cache_clear()
+    R.init(repo)
+    git(repo, 'checkout', '-q', 'main')
+    head0 = git(repo, 'rev-parse', 'HEAD')
+    todo = repo / 'plan/TODO.md'
+    todo.write_text(todo.read_text(encoding='utf-8') + '\n- [ ] **D91** docs | files: d.md\n'
+                    '- [ ] **F92** feature | files: f.py\n- [ ] **D93** small docs | files: e.md | model: haiku\n',
+                    encoding='utf-8')
+    git(repo, 'commit', '-qam', 'plan: F105 tasks')
+    eq(P.fields(P.section(str(todo), 'D93')[0]).get('model'), ['haiku'], '`plan D93` shows its model field')
+    eq((R.task_model('D91', 'opus', 'main'), R.task_model('F92', 'opus', 'main'), R.task_model('D93', 'opus', 'main')),
+       ('sonnet', 'opus', 'haiku'), 'each task\'s session model, read off the plan')
+    eq(R.task_model('D91', 'haiku', 'main'), 'sonnet', 'the model a run passes on is no --model flag')
+    R.C.run['model_flag'] = 'haiku'
+    try:
+        eq((R.task_model('D91', 'opus', 'main'), R.task_model('F92', 'opus', 'main'),
+            R.task_model('D93', 'opus', 'main')), ('haiku', 'haiku', 'haiku'),
+           '`run --model` sets every task without its own')
+        R.C.run['model_flag'] = 'sonnet'
+        eq(R.task_model('D93', 'opus', 'main'), 'haiku', 'but not one with its own')
+    finally:
+        R.C.run.pop('model_flag', None)
+    opened = []
+
+    class Mux:
+        name = 'fake'
+
+        def open(self, *a, **kw):
+            opened.append(a)
+            return 4545
+
+        def where(self, n):
+            return f'slot {n}'
+
+    mux, R.MUX = R.MUX, Mux()
+    try:
+        for tid in ('D91', 'F92', 'D93'):
+            R.start(1, (tid, 'x', set(), set()), 'main', R.C.run['model'], 90, 1)
+        eq([a[4] for a in opened], ['sonnet', 'opus', 'haiku'],
+           'a D task starts on sonnet, an F task on opus, a task with --model haiku on haiku')
+        argv = R.agent_cmd('hi', 'sid', opened[0][4], 90, 'slot1')
+        has(argv, r'--model sonnet', 'and the session command carries --model sonnet')
+    finally:
+        R.MUX = mux
+        git(R.SLOTS_DIR / 's1', 'checkout', '-q', '-f', '--detach', 'main')
+        for b in ('task/D91', 'task/F92', 'task/D93'):
+            if git(repo, 'branch', '--list', b):
+                git(repo, 'branch', '-D', b)
+        git(repo, 'reset', '-q', '--hard', head0)
 
 
 def test_config_trim_c14(tmp: Path):
@@ -7743,7 +7833,7 @@ def main() -> int:
                        lambda: test_hidden_slots(repo, tmp), lambda: test_hidden_run_lands(tmp), lambda: test_no_gate_b36(tmp),
                        lambda: test_claude_drift_b45(repo, tmp), lambda: test_merged_count_b78(repo),
                        lambda: test_hidden_control_f59(repo, tmp), lambda: test_attach_f88(tmp), lambda: test_context_warn_f25(repo),
-                       lambda: test_control_fresh_f27(repo), lambda: test_config_trim_c14(tmp), lambda: test_models_f101(repo, tmp), lambda: test_task_budget_f103(repo, tmp), test_reference_keys_d3, test_cap_stop_hint_b102])
+                       lambda: test_control_fresh_f27(repo), lambda: test_config_trim_c14(tmp), lambda: test_models_f101(repo, tmp), lambda: test_models_kinds_f105(repo, tmp), lambda: test_task_budget_f103(repo, tmp), test_reference_keys_d3, test_cap_stop_hint_b102])
 
 
 if __name__ == '__main__':

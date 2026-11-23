@@ -1047,6 +1047,7 @@ def run(argv: list[str], prog: str) -> int:
     share(POWER=POWER, SLOTS=SLOTS)
     idle, stall, pause = a.idle or r['idle'], a.stall or r['stall'], a.pause or r['pause']
     model = a.model or r['model']
+    C.run['model_flag'] = a.model or ''  # F105: `run --model M` sets every task without a model of its own
 
     branch = default_branch()
     if git('rev-parse', '--verify', '--quiet', branch).returncode:

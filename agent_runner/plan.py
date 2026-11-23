@@ -14,7 +14,7 @@ re-reads it on every turn pays again. So the backlog is a command instead:
     ./run plan block <ID> [--after X,Y] WHY   [~] with "BLOCKED: (after X, Y) WHY" appended; --after all (below)
     ./run plan unblock <ID> [NOTE]   reopen: [ ], drop "BLOCKED: …", append NOTE (what unblocked it)
     ./run plan move <ID> WHERE   WHERE = top | before ID | after ID | in SECTION (its end); sub-items follow
-    ./run plan add PREFIX TEXT [--files A,B] [--after X,Y] [--test T] [--journal D] [--pri LEVEL] [--last] [--force] [@ WHERE]
+    ./run plan add PREFIX TEXT [--files A,B] [--after X,Y] [--test T] [--journal D] [--model M] [--pri LEVEL] [--last] [--force] [@ WHERE]
                                  new "- [ ] **<next free id>** TEXT | files: A, B | after: X, Y …"; prints
                                  the id (warns without --files or --test). Refused (exit 3, nothing written) when an open task looks like the
                                  same work: `plan note` it there, or --force when it is different work.
@@ -26,7 +26,7 @@ re-reads it on every turn pays again. So the backlog is a command instead:
                                  and fields kept, "dropped: WHY" removed; WHERE as `move` (default: top)
     ./run plan kinds             what each id letter means ([plan] kinds): an id's prefix says the kind of work
     ./run plan note <ID> TEXT    append " — TEXT" to the task (user details, priority reasons)
-    ./run plan edit <ID> [TEXT] [--files A,B] [--after X,Y] [--test T] [--journal D] [--pri LEVEL]
+    ./run plan edit <ID> [TEXT] [--files A,B] [--after X,Y] [--test T] [--journal D] [--model M] [--pri LEVEL]
                                  rewrite the task in place: TEXT replaces its whole description, notes included;
                                  id, checkbox, BLOCKED, tag and fields kept, but each flag replaces its field and
                                  --pri retags it and moves it as `add` files that level. A corrected instruction
@@ -87,10 +87,11 @@ P17a after P17 and its earlier subtasks, under P17's own tag or none, with no le
 gives one: the rest of a person's task stays where the person queued it, not behind every follow-up. A parent
 tagged `later` that was moved out of Parked passes on no tag: a person scheduled it, so its split runs too.
 
-The line format is `- [ ] **ID** text | files: a, b | after: X, Y | test: name | journal: dir`, under `###`
+The line format is `- [ ] **ID** text | files: a, b | after: X, Y | test: name | journal: dir | model: M`, under `###`
 headings, and the checkbox is `[ ]` open, `[x]` done, `[~]` blocked. The keyed fields are the only thing read
 off a line: `files:` keeps running tasks apart, `after:` holds a task until those ids are done, `test:`
-names the test it adds, `journal:` a journal dir its brief lists. Prose is never parsed for files or ids.
+names the test it adds, `journal:` a journal dir its brief lists, `model:` the model its session runs on
+(`--model haiku`, over its kind's in [models.kinds]). Prose is never parsed for files or ids.
 
 **A task that goes last** (a release) is filed with `add … --last`: at the end of Next, with `after: all above`.
 That marker is no list to keep up: the run resolves it on every pick to each task above it in its own section
@@ -167,7 +168,7 @@ __all__ = ['PROG', 'HELP', 'lines', 'index', 'section', 'ensure', 'archive', 'ti
 
 ITEM = re.compile(r'^(\s*)- \[(.)\] \*\*([^\s*]+)')
 HEAD = re.compile(r'(#+) ')
-KEYS = ('files', 'after', 'test', 'journal')
+KEYS = ('files', 'after', 'test', 'journal', 'model')  # F105: model, the task's own session model
 # ` | key: value` on a task's first line; a value ends at the next field, a note (` — `) or a BLOCKED
 FIELD = re.compile(r' \| (' + '|'.join(KEYS) + r'): (.*?)(?= \| (?:' + '|'.join(KEYS) + r'): | — | BLOCKED: |$)')
 JOURNAL_MAX = 12000  # chars of the newest journal file pasted into a brief; the rest is a Read away
@@ -867,12 +868,14 @@ def add_args(rest: list[str]) -> tuple[str, str, str, bool, bool]:
         k += 1
     if in_where and not where:
         no('@ needs a place (top, bottom, before ID, after ID, in SECTION)')
+    if (m := vals.get('--model')) is not None and (not m.strip() or len(m.split()) > 1 or ',' in m):
+        no(f'--model takes one model name (haiku, sonnet, opus), not {m!r}')
     if last:
         vals['--after'] = ', '.join(x for x in (vals.get('--after', '').strip(', '), LAST) if x)
     keyed = ''
     for key in KEYS:  # `--files a,b` → ` | files: a, b`, in KEYS order
         if (v := vals.get(f'--{key}')) is not None:
-            keyed += f' | {key}: ' + (v if key == 'test' else ', '.join(
+            keyed += f' | {key}: ' + (v if key in ('test', 'model') else ', '.join(
                 LAST if x == LAST else ', '.join(re.split(r'[,\s]+', x)) for x in re.split(r',\s*', v.strip(', '))))
     t, _, w = ' '.join(text).partition(' @ ')
     return t, ' '.join(where) or w or ('bottom' if last else ''), keyed, pri, force
@@ -2874,7 +2877,8 @@ def _p_edit(a, x):
         print(str(e).replace('not added', 'not edited'), file=sys.stderr)
         return 2
     if not (text.strip() or keyed or pri):
-        print(f'{PROG} edit <ID> "new text" [--files A,B] [--after X,Y] [--test T] [--journal D] [--pri LEVEL]',
+        print(f'{PROG} edit <ID> "new text" [--files A,B] [--after X,Y] [--test T] [--journal D] [--model M] '
+              '[--pri LEVEL]',
               file=sys.stderr)
         return 2
     edit(a.id, text, keyed, pri or None)
