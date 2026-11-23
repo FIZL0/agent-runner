@@ -720,6 +720,11 @@ class RunPage:
                                       'red', width)
         return out
 
+    @staticmethod
+    def task_controls_on(it) -> bool:
+        """A slot's task controls work while it works on a task, not while the task lands (merging)."""
+        return isinstance(it, dict) and bool(it.get('task')) and not is_control(it) and it.get('state') != 'merging'
+
     def control_by_tui(self, k: str, where: str) -> dict | None:
         return next((c for c in self.snap.get('controls') or U.controls() if c['tui'] == k and c['where'] == where
                      and not c['needs'] == 'n'), None)
@@ -751,7 +756,7 @@ class RunPage:
             if not it.get('task'):
                 return [L((idle_line(it), 'dim'))], [], 0
             head = [L((f'{name} ', 'yellow'), (f'{it["task"]} ', 'cyan'), (it.get('title', ''), 'fg')),
-                    *self.control_buttons('task'), L()]
+                    *(self.control_buttons('task') if self.task_controls_on(it) else []), L()]
             return head + self.feed_lines(name, width, self.steps), \
                 self.input_lines(f'{name}:feed', width, f'message {name} (it reads it between steps)'), 'end'
         if tab == 'pane':
@@ -985,7 +990,7 @@ class RunPage:
             keys = [('⏎', 'open'), ('t', 'feed'), ('v', 'steps')]
             if isinstance(it, dict) and (it.get('task') or is_control(it)):
                 keys.append(('o', 'open session'))
-            if isinstance(it, dict) and it.get('task') and not is_control(it):
+            if self.task_controls_on(it):
                 keys += [('H', 'take back'), ('D', 'drop')]
             return keys
         if self.panel == 3:
@@ -1382,10 +1387,8 @@ class RunPage:
             self.typing = 'slots:n'
         elif self.panel == 1 and (c := self.control_by_tui(k, 'run')):
             self.run_control(c['key'])
-        elif self.panel == 2 and isinstance(it, dict) and it.get('task') and not is_control(it) and \
-                (c := self.control_by_tui(k, 'task')):
+        elif self.panel == 2 and self.task_controls_on(it) and (c := self.control_by_tui(k, 'task')):
             self.run_control(c['key'], tid=it['task'])
-            self.main = False
         elif self.panel == 2 and k == 't':
             self.feed_tab()
         elif self.panel == 2 and k == 'v':

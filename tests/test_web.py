@@ -186,6 +186,19 @@ def test_run_controls(tmp: Path) -> None:
                                                   **({'tid': 'F1'} if c['needs'] == 'id' else {}),
                                                   **({'confirm': True} if c['confirm'] else {})}} for c in cs] + \
             [{'name': 'run_control', 'args': {'key': 'stop_now'}}]
+    if shutil.which('node'):
+        stop_now = next(c for c in cs if c['key'] == 'stop_now')
+        got = logic_js([['controlClick', stop_now, {}], ['controlClick', stop_now, {'sure': 'yes'}],
+                        ['controlClick', stop_now, {'sure': True}],
+                        ['controlClick', next(c for c in cs if c['key'] == 'stop'), {}],
+                        ['taskControlsOn', {'name': 's1', 'task': 'F1', 'state': 'running'}],
+                        ['taskControlsOn', {'name': 's2', 'task': 'B2', 'state': 'merging'}],
+                        ['taskControlsOn', {'name': 's3', 'task': ''}]])
+        eq(got[:4], [{'ask': True}, {'ask': True},
+                     {'name': 'run_control', 'args': {'key': 'stop_now', 'confirm': True}},
+                     {'name': 'run_control', 'args': {'key': 'stop'}}],
+           "Stop now's button asks in the page first; only its Yes sends it, confirmed; Stop goes at once")
+        eq(got[4:], [True, False, False], "a slot's Take back and Drop show while it works, not while it lands")
     ran, sent = [], []
     token = W.web_token()
     srv = W.serve(token, 0, '127.0.0.1', snap=lambda: {})

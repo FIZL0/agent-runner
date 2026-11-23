@@ -944,6 +944,11 @@ def test_run_controls() -> None:
         p.cur[2] = 0  # c1: no task controls
         p.key('D')
         eq(ran, [], 'D on a control session does nothing')
+        p.cur[2] = 3  # s2 lands B2 (merging)
+        p.key('D')
+        eq(ran, [], 'D on a slot whose task is landing does nothing')
+        p.key('ENTER')
+        check('[D drop]' not in drawn(p).text(), "a landing slot's feed shows no task controls")
 
 
 def test_cli() -> None:
