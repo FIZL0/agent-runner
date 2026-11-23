@@ -1149,6 +1149,8 @@ eval(logic + grab('function talkName(') + grab('function talkWaitName(') + grab(
   feeds.c13 = reply;
   for (let i = 0; i < 2; i++) { takeSnap({sessions: c13}); await tick(); await tick() }
   out.unnamed = {state: TK.state, said: said.join(' '), remembered: kept['ar-talk'] || ''};
+  const shown = talkName();  // what talkHTML renders: convo of this chat's feed
+  out.shown = {name: shown, last: (feedOf(shown).slice(-1)[0] || {}).text || ''};
   // the talk action still waits for the new chat's link while its reply lands: the snapshots hear it meanwhile
   reset(); actResult = {ok: true, session: 'c13'};
   const slow = talkSend('Hello');
@@ -1165,7 +1167,7 @@ eval(logic + grab('function talkName(') + grab('function talkWaitName(') + grab(
 def test_talk_reply_heard_b133(tmp: Path) -> None:
     """B133: a Talk reply is always shown and read aloud: a talkSend to a just-opened chat (the talk action named no
     session) is heard from the snapshots that list it, so is a reply that lands while the action still waits for the
-    new chat's link, and a capped feed (its length no longer grows) still finds where the reply starts."""
+    new chat's link."""
     if not shutil.which('node'):
         print('  (no node here: the Talk reply script test is skipped)')
         return
@@ -1178,11 +1180,8 @@ def test_talk_reply_heard_b133(tmp: Path) -> None:
     eq(got.get('slow'), {'state': 'speaking', 'said': "Hi there. I'm listening."},
        'a reply that lands while the talk action still runs is spoken')
     eq(got.get('slowAfter'), {'state': 'speaking', 'wait': None}, 'the action ending later does not wait again')
-    old = [{'kind': 'you', 'text': 'a'}, {'kind': 'say', 'text': 'one'}]
-    capped = [{'kind': 'say', 'text': 'one'}, {'kind': 'you', 'text': 'b'}, {'kind': 'say', 'text': 'two'}]
-    got = logic_js([['talkSince', capped, old[-1], 2], ['talkSince', old, None, 0], ['talkSince', old, old[-1], 2],
-                    ['talkReply', capped, 1]])
-    eq(got, [1, 0, 2, 'two'], 'the reply starts after the entry that ended the feed at the send, though the cap moved it')
+    eq(got.get('shown'), {'name': 'c13', 'last': "Hi there. I'm listening."},
+       'the Talk view shows c13, its feed ending with the reply')
 
 
 if __name__ == '__main__':

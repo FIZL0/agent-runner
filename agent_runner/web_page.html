@@ -345,14 +345,6 @@ function talkReply(entries,since){
   if(!es.length||es[es.length-1].kind!=='say')return '';
   return es.filter(e=>e.kind==='say').map(e=>plain(e.text)).join(' ').trim();
 }
-/* B133: where the reply starts in a feed: after `tail`, the feed's last entry at the send, which was at `since`-1
-   then and can only have moved up since (a feed is capped at its newest entries, so its length stops growing);
-   `since` when the tail is not found (none: a new chat) */
-function talkSince(entries,tail,since){
-  const es=entries||[];since=since||0;
-  if(tail)for(let i=Math.min(since,es.length)-1;i>=0;i--)if(es[i].kind===tail.kind&&es[i].text===tail.text)return i+1;
-  return since;
-}
 /* F118: the chats picked for delete after a click on `name`: `names` the chats in list order, `sel` those picked,
    `last` the last one clicked, `how` 'toggle' (Ctrl/Cmd+click: in or out), 'range' (Shift+click: every chat from
    `last` to `name`), else a plain click (nothing picked, `name` the new last). c1, the Project chat, is never picked. */
@@ -367,7 +359,7 @@ function chatPick(names,sel,last,name,how){
   if(how==='toggle'||how==='range'){if(ok(name)){s.has(name)?s.delete(name):s.add(name)}return{sel:order(s),last:name}}
   return{sel:[],last:name};
 }
-if(typeof module!=='undefined')module.exports={chatPick,answerOpts,threadMsgs,working,planWords,compose,usageOf,logKind,plain,chatName,controlReq,controlClick,taskControlsOn,queueGroups,conceptButtons,NO_CONCEPT,newConceptReq,queuedId,NAV,talkSession,micProblem,talkShown,talkReply,talkSince};
+if(typeof module!=='undefined')module.exports={chatPick,answerOpts,threadMsgs,working,planWords,compose,usageOf,logKind,plain,chatName,controlReq,controlClick,taskControlsOn,queueGroups,conceptButtons,NO_CONCEPT,newConceptReq,queuedId,NAV,talkSession,micProblem,talkShown,talkReply};
 </script>
 
 <script>
@@ -654,11 +646,11 @@ async function talkSend(msg){
   TK.state='thinking';TK.said=msg;TK.note='';unlockSpeech();render(true);
   /* B133: the wait starts before the action, which can take up to 90 s while a new chat comes up: a reply that
      lands meanwhile is heard from the polls and snapshots (talkWaitName finds the new chat by its title) */
-  const w={n:to,since:len,tail:len?feedOf(to)[len-1]:null,at:Date.now(),last:''};TK.wait=w;
+  const w={n:to,since:len,at:Date.now(),last:''};TK.wait=w;
   const r=await act('talk',{text:msg,to});
   if(!r.ok){if(TK.wait===w)TK.wait=null;TK.state='';render(true);return false}
   const n=r.session||to, fresh=n!==to;
-  if(TK.wait===w){if(fresh){w.n=n;w.since=0;w.tail=null;w.last=''}w.at=Date.now()}  /* not yet heard; n '': found by its title */
+  if(TK.wait===w){if(fresh){w.n=n;w.since=0;w.last=''}w.at=Date.now()}  /* not yet heard; n '': found by its title */
   if(n){store.set(TALK_KEY,n);S.sent[n]={at:Date.now(),len:fresh?0:len,pending:[msg]};loadFeed(n)}
   else if(TK.wait===w&&!w.n)toast('Talk is opening its chat: it shows here once it is up');
   render(true);return true;
@@ -667,7 +659,7 @@ async function talkSend(msg){
 function talkHear(n){
   const w=TK.wait;if(!w||talkWaitName()!==n)return;
   if(Date.now()-w.at>300000){TK.wait=null;if(TK.state==='thinking'){TK.state='';toast('No spoken reply came in five minutes: its chat shows where it is.',true);render(true)}return}
-  const said=talkReply(feedOf(n),talkSince(feedOf(n),w.tail,w.since));
+  const said=talkReply(feedOf(n),w.since);
   if(!said||said!==w.last){w.last=said;return}
   TK.wait=null;speak(said);
 }
