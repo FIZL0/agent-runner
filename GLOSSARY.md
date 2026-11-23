@@ -546,3 +546,10 @@ _Said_: the chat was told nothing
 _On screen_: From the runner, not the person: R81 was dropped at 13:28 by c4
 _In code_: control_settled, <notes>/settled/
 _Avoid_: notification, alert
+
+**Run speech**:
+Talk's replies made into sound on the run's own machine and played by the run app; without it the browser's own speech reads them.
+_Said_: the voice, natural voice
+_On screen_: Voice, Default (af_heart)
+_In code_: speech.py, speech_worker.py, /speech, runVoice, playClips
+_Avoid_: TTS, voice file
