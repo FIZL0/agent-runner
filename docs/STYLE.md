@@ -187,6 +187,7 @@ A chat or slot shows the real Claude Code session through ttyd, in place of a th
   small button that must be 44px with any pointer gets its target from an `::after` over it (Home's Talk chip), so it
   still looks like the ones beside it.
 - Text boxes are 16px or more, so a phone does not zoom.
+- Every multi-line message box decides Enter with `boxEnter()` and puts `enterHint()` on its textarea, so a phone's Return makes a new line.
 - Touch listeners that watch a gesture are passive, except a `touchmove` that must keep the page still: the drawer
   swipe and a row drag, and the `touchend` that makes a tap's focus on a text box (`kbTapEnd()`, iOS only). Those call
   `preventDefault()` only once the gesture has started, so a scroll stays smooth; the `touchend` calls it only for such a tap.

@@ -481,7 +481,7 @@ def test_page(tmp: Path) -> None:
                  '.a{display:grid;gap:8px;font:400 16.5px/1.6 var(--serif)', '.u{justify-self:end',  # Talk's words
                  'id="feed"', 'feedHTML(n)', "tq('feed/'",
                  'Goes straight to this agent', "tq('upload?name='", 'type="file" multiple',  # the box
-                 "e.key==='Enter'&&!e.shiftKey", 'DRAFT_KEY', 'store.set(DRAFT_KEY(boxKey())',
+                 "boxEnter(e,TOUCH())==='send'", 'DRAFT_KEY', 'store.set(DRAFT_KEY(boxKey())',
                  'data-pick=', 'data-about="concept:', 'View ${I.ext}', "tq('concept/'",  # the Concepts view
                  '@media (prefers-color-scheme:dark){:root:not([data-theme="light"])', ':root[data-theme="dark"]',
                  '*{box-sizing:border-box;scrollbar-width:none}', '*::-webkit-scrollbar{display:none}',
@@ -1297,7 +1297,7 @@ const logic = page.split('<script id="logic">')[1].split('</script>')[0];
 const handlers = {}, store = {v: {}, get(k) { return this.v[k] || '' }, set(k, v) { this.v[k] = v }};
 const DRAFT_KEY = k => k, boxKey = () => 'c1', grow = () => {}, esc = s => String(s), tq = p => p;
 const S = {thread: 'c1', sel: [], drawer: false};
-const busy = () => false, act = () => {}, selectedText = () => false, render = () => {}, newConcept = () => {};
+const TOUCH = () => false, busy = () => false, act = () => {}, selectedText = () => false, render = () => {}, newConcept = () => {};
 let sent = 0; const send = () => { sent++ };
 const menu = {hidden: true, innerHTML: '', querySelector() { return null }};
 const ta = {value: '', blurred: 0, matches(s) { return s === '[data-in]' }, focus() {}, blur() { this.blurred++ },
@@ -1385,7 +1385,7 @@ const DRAFT_KEY = k => 'ar-draft:' + k, grow = () => {}, esc = s => String(s), t
 const S = {thread: 'c1', sel: [], drawer: false, view: 'home'};
 const boxKey = () => S.thread || 'home';
 let BUSY = false, sent = 0, prevented = 0, TALK = '';
-const talkName = () => TALK;
+const talkName = () => TALK, TOUCH = () => false;
 const busy = () => BUSY, act = (n, a) => { acts.push([n, a.session]) }, selectedText = () => false,
       render = () => {}, newConcept = () => {}, send = () => { sent++ };
 const menu = {hidden: true, innerHTML: '', querySelector() { return null }};
@@ -1512,6 +1512,83 @@ def test_composer_keys_b120(tmp: Path) -> None:
     eq(got.get('talkNone'), [False, []], 'a Talk view with no Talk session yet interrupts nothing')
     eq(got.get('homeIdle'), [False, []], 'an idle c1 leaves Ctrl+C to the browser')
     check('data-stop="${esc(shownNow)}"' in page, "the box's Stop names the shown session")
+
+
+ENTER_DRIVER = r"""
+const page = require('fs').readFileSync(process.argv[2], 'utf8').replace(/\r\n/g, '\n');
+const slice = (a, b) => { const i = page.indexOf(a); if (i < 0) throw Error(a); return page.slice(i, page.indexOf(b, i) + b.length); };
+const logic = page.split('<script id="logic">')[1].split('</script>')[0];
+const handlers = {}, window = globalThis;
+let COARSE = false, log = [];
+globalThis.matchMedia = q => ({matches: q === '(pointer:coarse)' && COARSE});
+const S = {thread: null, view: 'home', sel: [], atts: [], f: {}}, store = {v: {}, get(k) { return this.v[k] || '' }, set(k, v) { this.v[k] = v }};
+const DRAFT_KEY = k => k, boxKey = () => 'k', esc = s => String(s), tq = p => p, I = {}, HI = {i: null};
+const busy = () => false, act = () => {}, selectedText = () => false, render = () => {}, histKey = () => false;
+const send = () => log.push('send'), newConcept = () => log.push('concept');
+const shownSession = () => '', sessWorks = busy, dictWhy = () => '', micWhy = () => '', DK = {};
+const card = h => h, obCards = () => '', conceptCard = () => '', emptyCard = () => '', NO_CONCEPT = '';
+const menu = {hidden: true, innerHTML: '', querySelector() { return null }};
+const el = sel => ({value: '', style: {}, scrollHeight: 90, offsetHeight: 92, clientHeight: 90, matches(s) { return s === sel }, focus() {}, blur() {}, setSelectionRange() {}, closest() { return null }});
+const ta = el('[data-in]'), kin = el('[data-kin]');
+const document = {activeElement: ta, addEventListener(t, f) { handlers[t] = f },
+                  querySelector(s) { return s === '[data-slash]' ? menu : s === '[data-in]' ? ta : null }};
+const fetch = () => Promise.resolve({json: () => Promise.resolve([{name: 'clear', desc: ''}])});
+eval(logic + slice('const TOUCH=', ';\n') + slice('const enterHint=', ';') + slice('function box(ph,foot){', '\n}\n')
+     + slice('function conceptsHTML(){', '\n}\n') + slice('function growKin(', '\n') + slice('function grow(', '\n')
+     + slice('const SL={', 'ta.value.length);\n}\n') + slice("document.addEventListener('keydown',", '\n});\n')
+     + slice("document.addEventListener('input',", ')}});\n') + `
+(async () => {
+  await new Promise(r => setTimeout(r, 0));
+  const keys = {enter: {}, shift: {shiftKey: true}, ctrl: {ctrlKey: true}, cmd: {metaKey: true},
+                ime: {isComposing: true}, imeSafari: {keyCode: 229}, imeCtrl: {isComposing: true, ctrlKey: true}};
+  const press = (t, o) => { log = []; let p = false;
+    handlers.keydown(Object.assign({key: 'Enter', target: t, preventDefault() { p = true }}, o));
+    return log.length ? log.join() : p ? 'taken' : 'line' };
+  const all = t => Object.fromEntries(Object.entries(keys).map(([k, o]) => [k, press(t, o)]));
+  const out = {};
+  for (COARSE of [false, true]) {
+    const o = out[COARSE ? 'touch' : 'fine'] = {};
+    for (const [n, thread, view] of [['chat', 'c1', 'home'], ['new', '+new', 'home'], ['home', null, 'home'], ['talk', null, 'talk']]) {
+      S.thread = thread; S.view = view; ta.value = 'hi'; menu.hidden = true;
+      o[n] = {keys: all(ta), hint: box('', '').includes('data-in enterkeyhint="enter"')};
+    }
+    S.kOpen = true; S.snap = {}; kin.style = {};
+    handlers.input({target: kin});
+    o.concept = {keys: all(kin), hint: conceptsHTML().includes('data-kin enterkeyhint="enter"'), high: kin.style.height || ''};
+    handlers.input({target: ta}); o.grown = ta.style.height;
+    ta.value = '/cl'; slashShow(ta); o.pick = [press(ta, {}), ta.value];
+    ta.value = '/clear'; slashShow(ta); o.full = press(ta, {});
+    ta.value = '/cl'; slashShow(ta); o.pickIme = [press(ta, {keyCode: 229}), ta.value];
+  }
+  console.log(JSON.stringify(out));
+})();`);
+"""
+
+
+def test_enter_b181(tmp: Path) -> None:
+    """B181: with a coarse main pointer Enter is a new line in every message box, the box grows, and Ctrl/Cmd+Enter or
+    the Send button sends; with a fine one Enter sends and Shift+Enter is a new line. Enter picks in the slash menu
+    with both, and an input method that is composing never sends."""
+    if not shutil.which('node'):
+        print('  (no node here: the Enter test is skipped)')
+        return
+    (tmp / 'driver.js').write_text(ENTER_DRIVER, encoding='utf-8')
+    r = subprocess.run(['node', str(tmp / 'driver.js'), str(W.PAGE)], capture_output=True, text=True, timeout=60)
+    check(r.returncode == 0, 'node runs the Enter keys', r.stderr[-800:])
+    got = json.loads(r.stdout or '{}')
+    ime = {'ime': 'line', 'imeSafari': 'line', 'imeCtrl': 'line'}
+    for kind in ('fine', 'touch'):
+        o, touch = got.get(kind, {}), kind == 'touch'
+        for name in ('chat', 'new', 'home', 'talk', 'concept'):
+            sent = 'concept' if name == 'concept' else 'send'
+            want = {'enter': 'line' if touch else sent, 'shift': 'line', 'ctrl': sent, 'cmd': sent, **ime}
+            eq(o.get(name, {}).get('keys'), want, f'{kind}, {name}: what Enter does')
+            eq(o.get(name, {}).get('hint'), touch, f"{kind}, {name}: the keyboard's key says enter only on touch")
+        eq(o.get('concept', {}).get('high'), '92px' if touch else '', f'{kind}: the new concept box grows on touch')
+        eq(o.get('grown'), '90px', f'{kind}: the message box grows')
+        eq(o.get('pick'), ['taken', '/clear '], f'{kind}: Enter picks in the slash menu, not sent')
+        eq(o.get('full'), 'line' if touch else 'send', f'{kind}: Enter on a command typed in full')
+        eq(o.get('pickIme'), ['line', '/cl'], f'{kind}: composing, Enter picks nothing')
 
 
 def test_interrupt_c1_b141(tmp: Path) -> None:
@@ -3821,7 +3898,7 @@ if __name__ == '__main__':
                            in_tmp(test_esc_ctrl_c), in_tmp(test_concepts_view), in_tmp(test_follow_version_f90),
                            in_tmp(test_talk_f93), in_tmp(test_https_link_b130),
                            in_tmp(test_listen_heard_nothing_b132), in_tmp(test_talk_reply_heard_b133), in_tmp(test_talk_new_chat_f157),
-                           in_tmp(test_slash_menu_b119), in_tmp(test_composer_keys_b120),
+                           in_tmp(test_slash_menu_b119), in_tmp(test_composer_keys_b120), in_tmp(test_enter_b181),
                            in_tmp(test_interrupt_c1_b141), in_tmp(test_answer_button_b138), in_tmp(test_pick_f138),
                            in_tmp(test_outbox_f137), in_tmp(test_sent_b154), in_tmp(test_card_chat_b139), in_tmp(test_new_chat_view_f172), in_tmp(test_short_ask_b152),
                            in_tmp(test_chat_box_f115), in_tmp(test_home_switcher_f134),
