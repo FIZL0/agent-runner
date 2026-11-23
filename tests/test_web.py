@@ -3338,6 +3338,48 @@ def test_reload_b177(tmp: Path) -> None:
     eq((o['talkNewTab'], o['talkOther']), ('c2', 'c2'), "a new tab takes the browser's last; another project does not")
 
 
+HOME_TALK_DRIVER = r"""
+const page = require('fs').readFileSync(process.argv[2], 'utf8').replace(/\r\n/g, '\n');
+const grab = s => { const i = page.indexOf(s); return page.slice(i, page.indexOf('\n}\n', i) + 2) + '\n' };
+const line = s => { const i = page.indexOf(s); return page.slice(i, page.indexOf('\n', i)) + '\n' };
+const log = {heard: 0, draws: [], loads: 0, prevented: 0};
+/* names the code under test does not need are empty functions */
+const env = {S: {snap: {sessions: [], needs: []}, view: 'home', thread: null, sel: []}, TK: {state: ''}, TS: {mic: 'tap', auto: true},
+  I: {talk: '', clock: '', ask: '', plus: ''}, working_: () => [], upNext: () => [], tapped: {}, document: {addEventListener: (t, f) => { log.click = f }},
+  viewOf: v => v, listen: () => { log.heard++ }, dictate: () => { log.heard++ }, micWhenFree: () => { log.heard++ },
+  fetch: () => { log.loads++ }, location: {reload: () => { log.loads++ }, set href(v) { log.loads++ }},
+  render: () => { log.draws.push([env.S.view, env.S.thread]) }};
+env.env = env;
+const known = new Proxy(env, {has: () => true, get: (t, k) => k === Symbol.unscopables ? undefined : k in t ? t[k] : k in globalThis ? globalThis[k] : () => ''});
+new Function('known', 'env', 'with (known) {' + grab('function homeHTML(') + line('function goView(') + 'env.goView = goView; env.home = homeHTML;'
+  + page.slice(page.indexOf("document.addEventListener('click',async e=>{"), page.indexOf("  if(q('[data-home]'))")) + '})}')(known, env);
+const html = env.home();
+const b = (html.match(/<button[^>]*data-view="talk"[^>]*>[^<]*<\/button>/) || [''])[0], attrs = (b.match(/data-[a-z]+/g) || []).map(a => '[' + a + ']');
+const el = {dataset: {view: 'talk'}, closest: s => attrs.includes(s) ? el : null};
+log.click({target: el, preventDefault() { log.prevented++ }}).then(() => console.log(JSON.stringify(
+  {b, at: [env.S.view, env.S.thread], draws: log.draws, heard: log.heard, loads: log.loads})));
+"""
+
+
+def test_home_talk_f164(tmp: Path) -> None:
+    """F164: Home's Talk button opens Talk in the page: no reload, and the mic does not start by itself."""
+    if not shutil.which('node'):
+        print('  (no node here: the Home Talk button test is skipped)')
+        return
+    (tmp / 'driver.js').write_text(HOME_TALK_DRIVER, encoding='utf-8')
+    r = subprocess.run(['node', str(tmp / 'driver.js'), str(W.PAGE)], capture_output=True, text=True, timeout=60)
+    check(r.returncode == 0, 'node presses the button', r.stderr[-1500:])
+    if r.returncode:
+        return
+    o = json.loads(r.stdout)
+    check('>Talk</button>' in o['b'], 'Home has one button that says Talk', o['b'])
+    eq((o['at'], o['draws']), (['talk', None], [['talk', None]]), 'one press opens Talk, in one draw')
+    eq((o['heard'], o['loads']), (0, 0), 'the mic does not start and nothing is loaded again')
+    page = W.PAGE.read_text(encoding='utf-8')
+    check('.chip[data-view]::after' in page and 'height:var(--tap)' in page.split('.chip[data-view]::after', 1)[1].split('}', 1)[0],
+          'and it is 44px to press')
+
+
 def test_older_run_b164(tmp: Path) -> None:
     """B164: a run serves the page it started with, whatever an update puts on disk; and a page newer than its run
     says so (Settings, a need_chat the run does not know) and sends what it kept once the run restarts."""
@@ -3411,4 +3453,4 @@ if __name__ == '__main__':
                            in_tmp(test_chat_box_f115), in_tmp(test_home_switcher_f134),
                            in_tmp(test_scroll_f83), in_tmp(test_keyboard_b160), in_tmp(test_talk_settings_f124), in_tmp(test_mic_aborted_b162), in_tmp(test_sound_b178), in_tmp(test_status_view_f124),
                            in_tmp(test_chats_f128), in_tmp(test_needs_drop_chat_f110), in_tmp(test_task_text_f85),
-                           in_tmp(test_settings_f97), in_tmp(test_older_run_b164), in_tmp(test_reload_b177), in_tmp(test_style_f83)]))
+                           in_tmp(test_settings_f97), in_tmp(test_older_run_b164), in_tmp(test_reload_b177), in_tmp(test_home_talk_f164), in_tmp(test_style_f83)]))

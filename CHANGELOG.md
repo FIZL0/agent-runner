@@ -4,6 +4,9 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Added: Home has a Talk button (F164), first in the row under the message box. One press opens Talk in the page,
+  without a reload, and the mic does not start by itself. It shows always, as Talk does in the sidebar (where the mic
+  cannot listen, Talk is typed).
 - Changed: a reload of the run app opens what was open (B177): the view (Home, Talk, Status, Plan, Concepts, Settings
   or All projects) and the open chat or slot, kept per project and per browser tab, drawn in the first frame so Home
   does not flash. A reload never starts the mic or reads an old reply aloud. A link may name a view or a chat (`#plan`,
