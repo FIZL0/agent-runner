@@ -173,21 +173,23 @@ def test_picker_keys():
 
 
 def test_launcher_actions():
-    print('F91: in the launcher, w, t and c call their action; q goes back to the picker, Enter is done')
+    print('F91: in the launcher, w, t and c call their action; q goes back to the picker; F117: Enter is t')
     called = []
     acts = {'w': lambda u: called.append(('w', u)) or 'opened', 'c': lambda u: called.append(('c', u)) or 'copied',
             't': lambda root: called.append(('t', root)) or ''}
     shown = []
     row = rows(None)[0]
-    eq(M.launch(row, keys('w', 't', 'c', 'enter'), shown.append, acts), 'done', 'Enter ends')
-    eq(called, [('w', FACTS[A]['link']), ('t', A), ('c', FACTS[A]['link'])], 'w opens, t the ui, c copies')
+    eq(M.launch(row, keys('w', 't', 'c', 'enter', 'q'), shown.append, acts), 'back', 'Enter stays, q goes back')
+    eq(called, [('w', FACTS[A]['link']), ('t', A), ('c', FACTS[A]['link']), ('t', A)],
+       'w opens, t the ui, c copies, Enter the ui as t')
+    eq('⏎ terminal UI' in shown[0] and 'done' not in shown[0], True, 'the hint line says Enter opens the ui')
     eq('● run up · 2 slots · 4 tasks left' in shown[0] and FACTS[A]['link'] in shown[0], True,
        'the launcher shows the status and the link')
-    eq('copied' in shown[-1] and 'control: agent-runner --help' in shown[-1], True, 'what c said, and the footer')
+    eq('copied' in shown[3] and 'control: agent-runner --help' in shown[3], True, 'what c said, and the footer')
     seen = []
-    code = M.cmd_pick(None, keys('2', 'q', 'enter', 'enter'), seen.append, acts,
+    code = M.cmd_pick(None, keys('2', 'q', 'enter', 'q', 'q'), seen.append, acts,
                       sessions=lambda: RUNS)
-    eq(code, 0, 'q in the launcher goes back, Enter picks again, Enter is done')
+    eq(code, 0, 'q in the launcher goes back, Enter picks again, q back and q quits')
     eq([s.splitlines()[0] for s in seen if 'pick a run' not in s][:2], ['\x1b[1mgamma\x1b[0m  ' + str(C),
        '\x1b[1malpha\x1b[0m  ' + str(A)], 'row 2 (gamma) first, then back on row 1 (alpha)')
     started = []
@@ -227,19 +229,56 @@ def test_picker_colours():
     eq(len(plain), 119, 'the bar runs across the width')
     seen = []
     with mock.patch.object(M, 'run_facts', lambda r, run: FACTS.get(r, {})):
-        eq(M.cmd_pick(None, keys('1', 'c', 'enter'), seen.append, {'c': lambda u: 'link copied'},
-                      sessions=lambda: RUNS, paint=p), 0, 'pick, copy, done')
+        eq(M.cmd_pick(None, keys('1', 'c', 'q', 'q'), seen.append, {'c': lambda u: 'link copied'},
+                      sessions=lambda: RUNS, paint=p), 0, 'pick, copy, back, quit')
     launcher = seen[1]
     eq(launcher.startswith('\x1b[1;31malpha'), True, 'the launcher\'s name in the accent')
     eq('\x1b[4;94m' + FACTS[A]['link'] in launcher, True, 'the link underlined in blue')
     eq('\x1b[90m[\x1b[0m\x1b[1;33mw\x1b[0m open the run page' in launcher, True, 'keys as the run page\'s buttons')
     eq('link copied' in seen[2] and '\x1b[1;94mq\x1b[0m\x1b[90m back' in seen[2], True, 'what c said; q back in blue')
+    eq('\x1b[1;33m⏎\x1b[0m terminal UI' in launcher and 'done' not in launcher, True, 'F117: ⏎ terminal UI')
     with mock.patch.object(M.sys.stdout, 'isatty', lambda: True, create=True):
         eq(M.picker_paint(None, {'NO_COLOR': '1', 'TERM': 'xterm-256color'}), None, 'NO_COLOR: bold and dim only')
         got = M.picker_paint(None, {'TERM': 'xterm-256color'})
         eq((got.colours, got.theme['accent']), (256, TH.get(TH.DEFAULT)['accent']), 'else the default theme')
     with mock.patch.object(M.sys.stdout, 'isatty', lambda: False, create=True):
         eq(M.picker_paint(None, {'TERM': 'xterm-256color'}), None, 'not a terminal: no colour')
+
+
+class FakeTerm(io.StringIO):
+    def isatty(self):
+        return True
+
+
+def test_copy_link_fallbacks():
+    print('F117: copy_link gives wl-copy the Wayland socket, falls back to OSC 52, then to the link by hand')
+    url = 'https://example.test/run'
+    with tempfile.TemporaryDirectory() as d:
+        Path(d, 'wayland-1').touch()
+        Path(d, 'wayland-1.lock').touch()
+        env = {'XDG_RUNTIME_DIR': d, 'PATH': '/bin'}
+        with mock.patch.dict(M.os.environ, env, clear=True):
+            eq(M.wayland_env()['WAYLAND_DISPLAY'], 'wayland-1', 'WAYLAND_DISPLAY unset: the socket found')
+            ran = []
+            with mock.patch.object(M.shutil, 'which', lambda n: n == 'wl-copy'), \
+                    mock.patch.object(M.sp, 'run', lambda argv, **k: ran.append(k['env']) or mock.Mock(returncode=0)):
+                eq(M.copy_link(url, FakeTerm()), 'link copied', 'wl-copy works with the socket')
+            eq(ran[0]['WAYLAND_DISPLAY'], 'wayland-1', 'wl-copy given WAYLAND_DISPLAY')
+        with mock.patch.dict(M.os.environ, {**env, 'WAYLAND_DISPLAY': 'wayland-0'}, clear=True):
+            eq(M.wayland_env(), None, 'WAYLAND_DISPLAY set: the environment as it is')
+    b64 = 'aHR0cHM6Ly9leGFtcGxlLnRlc3QvcnVu'
+    with mock.patch.object(M.shutil, 'which', lambda n: True), \
+            mock.patch.object(M.sp, 'run', lambda argv, **k: mock.Mock(returncode=1)):
+        with mock.patch.dict(M.os.environ, {'PATH': '/bin'}, clear=True):
+            term = FakeTerm()
+            eq(M.copy_link(url, term), 'link copied (terminal)', 'no tool works: OSC 52')
+            eq(term.getvalue(), f'\x1b]52;c;{b64}\x07', 'the OSC 52 sequence')
+        with mock.patch.dict(M.os.environ, {'PATH': '/bin', 'TMUX': '/tmp/tmux-1/default,1,0'}, clear=True):
+            term = FakeTerm()
+            eq(M.copy_link(url, term), 'link copied (terminal)', 'in tmux: OSC 52 too')
+            eq(term.getvalue(), f'\x1b]52;c;{b64}\x07\x1bPtmux;\x1b\x1b]52;c;{b64}\x07\x1b\\',
+               'plain for set-clipboard, then wrapped for tmux passthrough')
+        eq(M.copy_link(url, io.StringIO()).endswith(url), True, 'no terminal either: the link by hand')
 
 
 def test_bare_not_a_tty():
@@ -265,4 +304,5 @@ def test_bare_not_a_tty():
 if __name__ == '__main__':
     raise SystemExit(report([test_attach_routes, test_run_view_posts_keys, test_list_two_projects,
                              test_attach_number, test_windows_hidden_consoles, test_picker_rows, test_picker_keys,
-                             test_launcher_actions, test_picker_colours, test_bare_not_a_tty]))
+                             test_launcher_actions, test_picker_colours, test_copy_link_fallbacks,
+                             test_bare_not_a_tty]))
