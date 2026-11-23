@@ -273,3 +273,10 @@ _Said_: chat about it
 _On screen_: N chat about it; New chat
 _In code_: concept_chat, concept_chat_text
 _Avoid_: concept session
+
+**Parked task**:
+A queued task at level later, in the plan's Parked section: a run never starts it until a person unparks it, which moves it to Follow-ups.
+_Said_: parked
+_On screen_: Parked: a run won't start it
+_In code_: state 'parked', unpark, parkedLast, queueGroups
+_Avoid_: later task, on hold

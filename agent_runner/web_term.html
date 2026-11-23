@@ -602,7 +602,7 @@ const MOVES=queueMoves({S,send:(tid,where,other)=>api('act',{name:'move',args:{t
   fetch:()=>api('snapshot').then(parkedLast),toast,render});
 function reorder(step){MOVES.press(step)}
 function follow(){
-  if(!S.follow)return;const i=S.snap.queue.findIndex(t=>t.id===S.follow);
+  if(!S.follow)return;const i=queueItems(S.snap.queue).findIndex(t=>t.id===S.follow);  // B118: [3]'s rows, Parked after '+'
   if(i>=0){S.cur[3]=i;S.follow=''}
 }
 function openLink(url){const a=document.createElement('a');a.href=url;a.target='_blank';a.rel='noopener';document.body.appendChild(a);a.click();a.remove()}
