@@ -430,10 +430,13 @@ class HomeHandler(BaseHTTPRequestHandler):
 
     def counted(self, method: str) -> None:
         """B165: the request counts as open until it is answered (a terminal tunnel: until it ends). One that
-        comes as Home restarts is dropped unanswered, as by a restart: the browser asks again (an error answer
-        would end its event stream for good)."""
+        comes as Home restarts is not run: a GET is dropped unanswered, so the browser asks again (an error answer
+        would end its event stream for good); a POST, which it would not send again, is told so."""
         if not self.server.enter():
             self.close_connection = True
+            if method == 'POST':
+                self.body()
+                self.send(503, {'ok': False, 'out': 'Runner Home is restarting on a new version; try again'})
             return
         try:
             self.route(method)

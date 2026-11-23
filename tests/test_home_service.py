@@ -434,7 +434,13 @@ def test_restart_on_upgrade(tmp: Path) -> None:
             eq(tick(), 1, 'nothing open: a restart is asked for')
             disk[0] = 'v3'
             eq(tick(5), 1, 'once, whatever changes next')
-            check(not srv.enter(), 'a request that comes then is not answered')
+            check(not srv.enter(), 'a request that comes then is not run')
+            said = []
+            h = SimpleNamespace(server=srv, body=lambda: b'', send=lambda *a: said.append(a[0]))
+            H.HomeHandler.counted(h, 'GET')
+            eq((said, h.close_connection), ([], True), 'a GET is dropped: the browser asks again')
+            H.HomeHandler.counted(h, 'POST')
+            eq(said, [503], 'a POST is told to try again')
     finally:
         srv.server_close()
     calls = []
