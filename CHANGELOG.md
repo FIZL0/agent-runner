@@ -4,6 +4,19 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Added: Device Vitals in Runner Home. Home lists Devices, one card per machine with a plain verdict ("Room for
+  3 more agents", or its top problem) and CPU, GPU, RAM and disk meters; a card opens that machine's vitals:
+  Headroom (the smallest of the memory, CPU-load, disk-above-`min_free_gb` and usage-cap limits, at most 6, with
+  a + slot button), Machine (CPU, GPU, memory, disk and temperatures, each with a 24 h sparkline from samples
+  Home takes every 30 s and keeps for a day, about 300 KB), Runner footprint (worktrees, session temp folders,
+  logs, `wip/` branches, each sized) with a Clean that lists what it removes first and only removes ended
+  sessions' temp folders, worktrees merged into the main branch (run off, nothing uncommitted) and the `wip/`
+  branches you tick, Sessions (CPU and memory per slot and control session), and More for per-core, every
+  sensor, top processes and the largest folders. Disk under `min_free_gb`, a CPU or GPU at 90 °C, memory nearly
+  full and session temp folders over 5 GB show under Needs you on Home and go to each running project's runner
+  feed, which pushes them. Homes find each other through `agent-runner home peer add LINK` (`peer remove`,
+  `peers`) or Tailscale (a tailnet machine whose Home takes this Home's token), so one Home shows every device.
+  Read with the standard library; what a machine cannot read is hidden, never shown as zero (F95).
 - Added: Runner Home. `agent-runner home install` sets up an always-on per-user service (systemd `--user` with
   linger on Linux, launchd on macOS, a scheduled task on Windows) that serves one token-gated page on port 8770
   listing every project (folders in `~/repos` with a `runner.toml`, plus `home add PATH`): running, idle or

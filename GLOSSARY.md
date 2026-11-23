@@ -336,3 +336,38 @@ _Said_: Home, runner home
 _On screen_: Runner Home
 _In code_: home.py, HomeServer, project_rows, run_action, install
 _Avoid_: dashboard, hub
+
+**Device Vitals**:
+Runner Home's view of each machine that runs agent-runner: how many more agents fit, its CPU, GPU, memory, disk and temperatures over the last day, what the runner keeps on its disk, and each session's share
+_Said_: vitals, device vitals
+_On screen_: Devices; Device Vitals
+_In code_: vitals.py, Vitals, /devices, /device
+_Avoid_: monitor, stats, health
+
+**Headroom**:
+How many more agents a machine can take now: the smallest of what its free memory, CPU load, disk above min_free_gb and the usage caps allow, at most six
+_Said_: room, how many more agents
+_On screen_: Headroom; Room for N more agents
+_In code_: headroom
+_Avoid_: capacity, spare slots
+
+**Runner footprint**:
+What agent-runner itself keeps on a machine's disk: worktrees under the run home, session temp folders, logs and wip/ branches
+_Said_: footprint, what the runner uses on disk
+_On screen_: Runner footprint
+_In code_: footprint
+_Avoid_: cache, junk
+
+**Clean**:
+Removing only what the runner made and no longer needs (ended sessions' temp folders, worktrees merged into the main branch, wip/ branches the person ticks), after listing it first
+_Said_: clean up, free space
+_On screen_: Clean; Remove ticked
+_In code_: clean, clean_plan, /vitals/clean
+_Avoid_: purge, wipe, prune
+
+**Peer**:
+Another machine's Runner Home that this Home shows under Devices, listed by its link or found on Tailscale
+_Said_: other machine, other Home
+_On screen_: Devices
+_In code_: peers, peer add, peer_links
+_Avoid_: node, remote host
