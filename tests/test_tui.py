@@ -1254,8 +1254,64 @@ def test_side_keys_in_box_f113() -> None:
     eq((p.cur[2], p.main), (row + 1, False), 'Ctrl-j on the panels moves down too')
 
 
+def test_d_drops_f116() -> None:
+    """F116: d drops the selected row in panels 2-5 (with the panels focused): a slot's task, a queued task, a
+    Needs you item, a concept; on cN (N > 1) it closes the control session (`control.close_from_tui`, logged as
+    'control N: closed from the TUI'); on c1 it does nothing but say so. The bottom line shows d where it works."""
+    from agent_runner import control as K
+    ran, ended, logged = [], [], []
+    with mock.patch.object(U, 'RUN', [lambda argv: (ran.append(argv), (0, 'ok'))[1]]), \
+            mock.patch.object(K, 'end_control', lambda n, why: (ended.append(n), True)[1]), \
+            mock.patch.object(K, 'log', logged.append):
+        p = page()
+        p.key('2')
+        p.cur[2] = 0  # c1
+        eq('d' in [s for s, c in p.footer() if c == 'hkey'], False, 'c1: no d on the bottom line')
+        p.key('d')
+        eq((ended, ran, p.msg_ok), ([], [], False), 'd on c1 keeps it')
+        check('kept session' in p.msg, 'd on c1 says it is the run\'s kept session', p.msg)
+        p.cur[2] = 1  # c6
+        check(('d', 'close') in p.hint_keys(), 'c6: d close on the bottom line', p.hint_keys())
+        p.key('d')
+        eq(ended, [6], 'd on c6 ends control 6')
+        eq(logged, ['control 6: closed from the TUI'], 'and logs it')
+        p.cur[2] = 2  # s1 on F1
+        check(('d', 'drop') in p.hint_keys(), 'a slot on a task: d drop on the bottom line', p.hint_keys())
+        p.key('d')
+        eq(ran, [['plan', 'drop', 'F1', U.TASK_DROP_WHY]], 'd on a slot drops its task from the slot')
+        ran.clear()
+        p.cur[2] = 3  # s2 lands B2
+        p.key('d')
+        eq(ran, [], 'd on a slot whose task is landing does nothing')
+        p.key('3')
+        p.cur[3] = 1  # B2
+        check(('d', 'drop') in p.hint_keys(), 'the queue: d drop on the bottom line', p.hint_keys())
+        p.key('d')
+        eq(ran, [['plan', 'drop', 'B2', 'dropped from agent-runner ui']], 'd on a queued task drops it')
+        ran.clear()
+        p.key('4')
+        p.cur[4] = 2  # D7
+        check(('d', 'drop') in p.hint_keys(), 'Needs you: d drop on the bottom line', p.hint_keys())
+        p.key('d')
+        eq(ran, [['plan', 'drop', 'D7', 'dropped from agent-runner ui']], 'd on a Needs you item drops it')
+        ran.clear()
+        p.key('5')
+        p.cur[5] = 0  # K5
+        check(('d', 'drop') in p.hint_keys(), 'Concepts: d drop on the bottom line', p.hint_keys())
+        p.key('d')
+        eq(ran, [['plan', 'drop', 'K5', 'dropped from agent-runner ui']], 'd on a concept drops it')
+        ran.clear()
+        p.cur[5] = 1  # + new concept
+        p.key('d')
+        eq(ran, [], 'd on the new concept row drops nothing')
+        p.key('1')
+        p.key('d')
+        eq((ran, ended), ([], [6]), 'Status has nothing to drop')
+    eq(K.close_from_tui(1)['ok'], False, 'close_from_tui never closes c1')
+
+
 if __name__ == '__main__':
-    raise SystemExit(report([test_layout, test_status_tabs, test_session_tabs, test_queue, test_form_pane_v_task,
+    raise SystemExit(report([test_d_drops_f116,test_layout, test_status_tabs, test_session_tabs, test_queue, test_form_pane_v_task,
                                test_direct_edit,
                                test_navigation, test_chat_box, test_side_keys_in_box_f113, test_actions, test_session_tab_b125, test_footer,
                                test_concept_page,

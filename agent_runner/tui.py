@@ -16,7 +16,7 @@ Panels and their tabs (F76):
                over ssh o opens nothing here: it copies the link and shows it as a hyperlink (OSC 8) to
                Cmd-click
     Queue      a task: direct edit, chat edit; the '+ new task' row: chat edit, direct edit; e edit, E chat edit,
-               n new, J/K reorder, p priority on/off, H do it here, D drop; a parked task: U unpark (no J/K, p)
+               n new, J/K reorder, p priority on/off, H do it here, d (or D) drop; a parked task: U unpark (no J/K, p)
     Needs you  answer (a button per possible answer: y yes, n no, or a b c … for options; L later; a reply box),
                info
     Concepts   preview: the K copy inline, its options (the copy's headings) moved through with j/k, Enter goes
@@ -163,21 +163,24 @@ Sessions [2]
   t        feed                   v        tool steps on / off
   N        new chat               o        open the session link
   y        copy the session link (the terminal's clipboard, so over ssh too)
-  H        take its task back     D        drop its task from the slot
+  H        take its task back     d D      drop its task from the slot
+  d        close a control session cN (not c1: the run's kept session; its transcript stays)
   Enter    on the pane tab: attach (back: Ctrl-b d)
 Queue [3]
   e        direct edit            E        chat edit
   n        new task               J/K      move down / up
   p        priority               H        do it here
-  D        drop                   ^S       save the direct edit
+  d D      drop                   ^S       save the direct edit
   U        unpark (a parked task: no J/K or p)
   t k K    what, kind (cycles, back)        p f a    priority, files, after
 Needs you [4]
   a        answer                 L        later
+  d        drop
   y n      yes, no                a b c    a pick's options (answer tab)
 Concepts [5]
   j/k      option                 Enter    go with it
   i        what to change         O        open in the browser
+  d        drop the concept
   N        chat about it (a new session)
   n        new concept (queued as a K task)
 Typing
@@ -1077,20 +1080,23 @@ class RunPage:
             if isinstance(it, dict) and (it.get('task') or is_control(it)):
                 keys += [('o', 'open session'), ('y', 'copy link')]
             if self.task_controls_on(it):
-                keys += [('H', 'take back'), ('D', 'drop')]
+                keys += [('H', 'take back'), ('d', 'drop')]
+            elif is_control(it) and it.get('name') != 'c1':
+                keys.append(('d', 'close'))  # F116
             return keys
         if self.panel == 3:
             if isinstance(it, dict) and it.get('new'):
                 return [('⏎', 'open'), ('E', 'chat edit')]
             if isinstance(it, dict) and it.get('state') == 'parked':
-                return [('e', 'edit'), ('E', 'chat edit'), ('U', 'unpark'), ('H', 'do it here'), ('D', 'drop')]
+                return [('e', 'edit'), ('E', 'chat edit'), ('U', 'unpark'), ('H', 'do it here'), ('d', 'drop')]
             return [('e', 'edit'), ('E', 'chat edit'), ('J/K', 'reorder'), ('p', 'priority'), ('H', 'do it here'),
-                    ('D', 'drop')]
+                    ('d', 'drop')]
         if self.panel == 4:
-            return [('⏎', 'open'), ('a', 'answer'), ('L', 'later')]
+            return [('⏎', 'open'), ('a', 'answer'), ('L', 'later')] + ([('d', 'drop')] if it is not None else [])
         if isinstance(it, dict) and it.get('new'):
             return [('⏎', 'type')]
-        return [('⏎', 'view'), ('O', 'open in the browser'), ('N', 'chat about it'), ('n', 'new concept')]
+        return [('⏎', 'view'), ('O', 'open in the browser'), ('N', 'chat about it'), ('n', 'new concept'),
+                ('d', 'drop')]
 
     GLOBAL = [('1-5', 'panel'), ('c', 'chat'), ('?', 'keys')]
 
@@ -1539,6 +1545,10 @@ class RunPage:
             self.run_control(c['key'])
         elif self.panel == 2 and self.task_controls_on(it) and (c := self.control_by_tui(k, 'task')):
             self.run_control(c['key'], tid=it['task'])
+        elif self.panel == 2 and k == 'd' and not self.main and self.task_controls_on(it):
+            self.run_control('task_drop', tid=it['task'])  # F116: d drops a slot's task, as D does
+        elif self.panel == 2 and k == 'd' and not self.main and is_control(it):
+            self.close_control(it)
         elif self.panel == 2 and k == 't':
             self.feed_tab()
         elif self.panel == 2 and k == 'v':
@@ -1560,7 +1570,7 @@ class RunPage:
         elif self.panel == 3 and k == 'E' and it is not None:
             self.set_tab('chat edit')
             self.type_in()
-        elif self.panel == 3 and k == 'D' and tid:
+        elif self.panel == 3 and (k == 'D' or (k == 'd' and not self.main)) and tid:
             self.done(U.drop(tid, 'dropped from agent-runner ui'))
             self.main = False
         elif self.panel == 3 and k == 'H' and tid:
@@ -1580,6 +1590,10 @@ class RunPage:
         elif self.panel == 4 and k == 'L' and it is not None:
             self.done(U.shelve(it['id']))
             self.main = False
+        elif self.panel == 4 and k == 'd' and not self.main and it is not None:  # F116: a pick's d stays its option
+            self.done(U.drop(it['id'], 'dropped from agent-runner ui'))
+        elif self.panel == 5 and k == 'd' and not self.main and it is not None and not it.get('new'):
+            self.done(U.drop(it.get('concept') or it['id'], 'dropped from agent-runner ui'))
         elif self.panel == 5 and k == 'n':  # F87: a new concept, in its row's box
             self.cur[5] = len(rows) - 1
             self.set_tab('new concept')
@@ -1588,6 +1602,15 @@ class RunPage:
             self.open_link(it.get('url', ''), it.get('title', 'the concept'))
         elif self.panel == 5 and k == 'N' and it is not None and not it.get('new'):
             self.concept_chat(it)
+
+    def close_control(self, it: dict) -> None:
+        """F116: d on control session cN (N > 1): close it (`control.close_from_tui`); on c1 only a message."""
+        n = int(str(it.get('name', 'c1'))[1:])
+        if n <= 1:
+            self.msg, self.msg_ok = "c1 is the run's kept session: d leaves it open", False
+            return
+        from agent_runner import control as K
+        self.done(K.close_from_tui(n))
 
     def concept_chat(self, it: dict) -> None:
         """F86: N on a concept: a new control session about it (`concept_chat`), its link in the message line."""

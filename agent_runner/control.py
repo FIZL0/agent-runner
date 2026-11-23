@@ -1257,6 +1257,18 @@ def end_control(n: int, why: str) -> bool:
     return True
 
 
+def close_from_tui(n: int) -> dict:
+    """F116: d on control session cN in agent-runner ui's Sessions: close it through `end_control` (its process,
+    controlN.pid and controlN.title go; the transcript stays) and log 'control N: closed from the TUI'. c1 is the
+    run's kept session: it is left alone. An action result: {'ok', 'code', 'out', 'argv'}."""
+    if n <= 1:
+        return {'ok': False, 'code': 2, 'out': "c1 is the run's kept session: it stays open", 'argv': []}
+    if not end_control(n, 'as agent-runner ui asked'):
+        return {'ok': False, 'code': 1, 'out': f'c{n} was already closed', 'argv': []}
+    log(f'control {n}: closed from the TUI')
+    return {'ok': True, 'code': 0, 'out': f'c{n} closed (its transcript is kept)', 'argv': []}
+
+
 def control_server_argv() -> list[str]:
     """With `[run] remote`: Claude Code's Remote Control server in the main checkout, so new control sessions can
     be started from claude.ai/code and the Claude apps, each with the control settings (its brief)."""
