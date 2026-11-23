@@ -224,7 +224,7 @@ def test_bare_not_a_tty():
             eq(M.picker_wanted(), False, f'no picker (tty {tty}, slot {slot or "unset"})')
             eq((cli.main([]), got), (0, ['background']), 'bare starts the run, as today')
     with mock.patch.object(M.sys.stdin, 'isatty', lambda: True, create=True), \
-            mock.patch.object(M.sys.stdout, 'isatty', lambda: True, create=True):
+            mock.patch.object(M.sys.stdout, 'isatty', lambda: True, create=True), mock.patch.dict(M.os.environ):
         M.os.environ.pop('AGENT_RUNNER_SLOT', None)
         eq(M.picker_wanted(), True, 'at a terminal, not a slot: the picker')
 
