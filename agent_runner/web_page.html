@@ -969,7 +969,7 @@ function dictShow(words){
 function dictate(){
   const why=dictWhy();if(why)return toast(why,true);
   if(DK.rec){DK.rec.stop();return}
-  if(TK.state==='listening')return;  /* Talk's mic has the recognizer */
+  if(TK.state==='listening')return toast("Talk's mic is listening: tap it to stop, then dictate.",true);  /* it has the recognizer */
   const ta=document.querySelector('[data-in]');if(!ta)return;
   let rec;try{rec=new SR()}catch(e){return toast(`The mic could not start: ${e.message||e}`,true)}
   DK.rec=rec;DK.key=boxKey();DK.base=ta.value;
