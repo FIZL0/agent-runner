@@ -7001,6 +7001,8 @@ def test_stream_engine_f106b(repo: Path, tmp: Path):
     agent.write_text(STREAM_AGENT, encoding='utf-8')
     agent.chmod(0o755)
     seen, go = tmp / 'f106b.log', tmp / 'f106b.go'
+    if (R.SLOTS_DIR / 's7').is_dir() and not (R.SLOTS_DIR / 's7' / '.git').exists():
+        shutil.rmtree(R.SLOTS_DIR / 's7')  # a folder an earlier test left there, not a worktree
     d = R.worktree(7, 'main')
     git(d, 'checkout', '-q', '-B', 'task/Z8', 'main')
     saved, old = R.MUX, dict(R.C.run)
