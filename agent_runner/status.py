@@ -8,7 +8,7 @@ import os
 import re
 import time
 
-from agent_runner import pitch, plan as P
+from agent_runner import pitch, plan as P, shared_tools
 from agent_runner.config import shown_cmd
 from agent_runner.state import C, default_branch, git, project
 from agent_runner.state import (EV_DEFERRED, EV_DROPPED, EV_HELD, EV_IDLE, EV_LANDED, EV_LEFT, EV_NO_COMMITS,
@@ -238,6 +238,8 @@ def since_event(item, titles: dict[str, str]) -> tuple[str, str, str] | None:
     if kind == EV_AUTO_RELEASE and tid:  # F63: 'queued V5 (auto_release: 10 landed)'
         return stamp, tid, f'queued {tid} (auto_release: {ev.get("why") or "?"})'
     if kind in (EV_DRIFT, EV_DEVICE):  # B45: 'needs you: Claude Code X changed Y; Z no longer works'; C27: 'needs you: box: CPU at 95°C'
+        return stamp, '', f'{SAID[EV_LEFT]}: {str(ev.get("text", "")).strip()}'
+    if kind == shared_tools.EV_TOOL:  # F168: 'needs you: Connect the iPhone 15 by USB: 2 tasks wait [tool-iphone15]'
         return stamp, '', f'{SAID[EV_LEFT]}: {str(ev.get("text", "")).strip()}'
     if kind == pitch.EV_PITCH:  # F98: 'needs you: Approve 2 changes to push: … [pitch1]'
         return stamp, '', f'{SAID[EV_LEFT]}: {str(ev.get("text", "")).strip()}'
@@ -573,7 +575,7 @@ def waiting_ok() -> list[tuple]:
         if not C.todo.exists():
             return []
         stamps = P.asked_at(C.todo)
-        return [(*a, stamps.get(a[1], '')) for a in P.asks(C.todo, all=True)] + pitch.rows(C)
+        return [(*a, stamps.get(a[1], '')) for a in P.asks(C.todo, all=True)] + pitch.rows(C) + shared_tools.asks(C)
     except (OSError, SystemExit):
         return []
 
@@ -626,6 +628,16 @@ def needs_heading(heading: str) -> str:
     if not (p := project()):
         return f'{heading}:'
     return f'{p} needs you:' if heading.lower() == 'needs you' else f'{heading} ({p}):'
+
+
+def tool_lines(st: dict) -> list[str]:
+    """F168: the Tools line and a line per task a shared tool keeps waiting; [] without the setting."""
+    try:
+        tools = shared_tools.rows(st=st)
+        return [x for x in (shared_tools.line(tools),) if x] + \
+            ([f'  {t} {said}' for t, said in shared_tools.wait_words(st=st).items()] if tools else [])
+    except (OSError, SystemExit, ValueError, KeyError, AttributeError):  # no plan, or no init: the lines, not status
+        return []
 
 
 def spend_shown(st: dict, n: str) -> str:
@@ -683,6 +695,8 @@ def status_text(up: bool, st: dict, log_lines: list[str], titles: dict[str, str]
                                                  mins, spend_shown(st, n)) if x))
     if up and not st.get('running'):
         out.append('  no task running')
+    if up:
+        out += tool_lines(st)  # F168
     if st.get('merging'):
         out.append('merging: ' + ', '.join(f'{titles[t]} [{t}]' if titles.get(t) else t for t in st['merging']))
     events = lately_events(log_lines[-2000:], titles)

@@ -14,7 +14,7 @@ re-reads it on every turn pays again. So the backlog is a command instead:
     ./run plan block <ID> [--after X,Y] WHY   [~] with "BLOCKED: (after X, Y) WHY" appended; --after all (below)
     ./run plan unblock <ID> [NOTE]   reopen: [ ], drop "BLOCKED: …", append NOTE (what unblocked it)
     ./run plan move <ID> WHERE   WHERE = top | before ID | after ID | in SECTION (its end); sub-items follow
-    ./run plan add PREFIX TEXT [--files A,B] [--after X,Y] [--test T] [--journal D] [--model M] [--pri LEVEL] [--alone] [--last] [--force] [@ WHERE]
+    ./run plan add PREFIX TEXT [--files A,B] [--after X,Y] [--test T] [--journal D] [--model M] [--needs TOOL] [--pri LEVEL] [--alone] [--last] [--force] [@ WHERE]
                                  new "- [ ] **<next free id>** TEXT | files: A, B | after: X, Y …"; prints
                                  the id (warns without --files or --test). Refused (exit 3, nothing written) when an open task looks like the
                                  same work: `plan note` it there, or --force when it is different work.
@@ -26,7 +26,7 @@ re-reads it on every turn pays again. So the backlog is a command instead:
                                  and fields kept, "dropped: WHY" removed; WHERE as `move` (default: top)
     ./run plan kinds             what each id letter means ([plan] kinds): an id's prefix says the kind of work
     ./run plan note <ID> TEXT    append " — TEXT" to the task (user details, priority reasons)
-    ./run plan edit <ID> [TEXT] [--files A,B] [--after X,Y] [--test T] [--journal D] [--model M] [--pri LEVEL] [--alone | --no-alone]
+    ./run plan edit <ID> [TEXT] [--files A,B] [--after X,Y] [--test T] [--journal D] [--model M] [--needs TOOL] [--pri LEVEL] [--alone | --no-alone]
                                  rewrite the task in place: TEXT replaces its whole description, notes included;
                                  id, checkbox, BLOCKED, tags and fields kept, but each flag replaces its field,
                                  --pri retags it and moves it as `add` files that level, --alone/--no-alone sets
@@ -88,11 +88,12 @@ P17a after P17 and its earlier subtasks, under P17's own tag or none, with no le
 gives one: the rest of a person's task stays where the person queued it, not behind every follow-up. A parent
 tagged `later` that was moved out of Parked passes on no tag: a person scheduled it, so its split runs too.
 
-The line format is `- [ ] **ID** text | files: a, b | after: X, Y | test: name | journal: dir | model: M`, under `###`
+The line format is `- [ ] **ID** text | files: a, b | after: X, Y | test: name | journal: dir | model: M | needs: tool`, under `###`
 headings, and the checkbox is `[ ]` open, `[x]` done, `[~]` blocked. The keyed fields are the only thing read
 off a line: `files:` keeps running tasks apart, `after:` holds a task until those ids are done, `test:`
 names the test it adds, `journal:` a journal dir its brief lists, `model:` the model its session runs on
-(`--model haiku`, over its kind's in [models.kinds]). Prose is never parsed for files or ids.
+(`--model haiku`, over its kind's in [models.kinds]), `needs:` the shared tools it needs (`--needs iphone15`, a
+name in [run.tools]), without which no run starts it. Prose is never parsed for files or ids.
 
 **A task that goes last** (a release) is filed with `add … --last`: at the end of Next, with `after: all above`.
 That marker is no list to keep up: the run resolves it on every pick to each task above it in its own section
@@ -159,7 +160,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from agent_runner import plansync
-from agent_runner.config import cfg, claude_model
+from agent_runner.config import cfg, claude_model, main_checkout
 from agent_runner.gitops import git
 
 PROG = './run plan'  # the name in messages; a wrapper sets its own ('./kit plan')
@@ -173,7 +174,7 @@ __all__ = ['PROG', 'HELP', 'lines', 'index', 'section', 'ensure', 'archive', 'ti
 
 ITEM = re.compile(r'^(\s*)- \[(.)\] \*\*([^\s*]+)')
 HEAD = re.compile(r'(#+) ')
-KEYS = ('files', 'after', 'test', 'journal', 'model')  # F105: model, the task's own session model
+KEYS = ('files', 'after', 'test', 'journal', 'model', 'needs')  # F105: model, the task's own session model; F168: needs, shared tools
 # ` | key: value` on a task's first line; a value ends at the next field, a note (` — `) or a BLOCKED
 FIELD = re.compile(r' \| (' + '|'.join(KEYS) + r'): (.*?)(?= \| (?:' + '|'.join(KEYS) + r'): | — | BLOCKED: |$)')
 JOURNAL_MAX = 12000  # chars of the newest journal file pasted into a brief; the rest is a Read away
@@ -1748,7 +1749,8 @@ def change(tid: str, instead: str, todo=None, done=None) -> str:
 
 ASKED = re.compile(r' ?\(asked (\d{4}-\d\d-\d\d \d\d:\d\d)\)')
 REPLY_HINT = {'CONCEPT': 'reply A/B/C', 'CONFIRM': 'reply yes/no', 'DECIDE': 'reply with your answer',
-              'BLOCKED': 'reply done once it is', 'PITCH': 'reply approve or not this', 'STUCK': 'reply with what to do'}
+              'BLOCKED': 'reply done once it is', 'PITCH': 'reply approve or not this',
+              'TOOL': 'this clears once it is back', 'STUCK': 'reply with what to do'}
 
 
 def needs_cfg() -> dict:
@@ -2666,6 +2668,8 @@ def _main(argv: list[str], c) -> int:
     elif not argv:
         out, cl = index(todo), plansync.claims(c)
         out = [f'{l}  [{plansync.label(cl[t])}]' if (t := l.rsplit(' ', 1)[-1]) in cl else l for l in out]
+        tw = _tool_waits(c, todo)
+        out = [f'{l}  [{tw[t]}]' if (t := l.rsplit(' ', 1)[-1]) in tw else l for l in out]
     else:
         # a heading named exactly that, in any file, before one that only contains it (`hst` before `hst-data`)
         out = next((o for ex in (True, False) for p in paths if (o := section(p, argv[0], ex))), [])
@@ -2677,6 +2681,8 @@ def _main(argv: list[str], c) -> int:
         for l in last_lines(todo):
             if l.startswith(f'{argv[0]} waits for everything'):
                 print(l)
+        if said := _tool_waits(c, todo).get(argv[0]):
+            print(f'{argv[0]} {said}')
     return 0
 
 
@@ -2851,6 +2857,26 @@ def _p_kinds(a, x):
                  + ('' if own else '\n(the defaults: set [plan] kinds in runner.toml to name your own)'))
 
 
+def _needs_wrong(text: str) -> str:
+    """F168: why the `needs:` in a task's text or keyed fields is refused (a shared tool the project does not name)."""
+    from agent_runner import shared_tools
+    return shared_tools.unknown_names(fields('- ' + text).get('needs', []), cfg(main_checkout())) \
+        if ' | needs: ' in text else ''
+
+
+def _tool_waits(c, st_todo) -> dict[str, str]:
+    """F168: {task: 'waits for iPhone 15, held by F389, 12 min'}; {} without shared tools, or when they cannot be read."""
+    if not c.run.get('tools'):
+        return {}
+    from agent_runner import shared_tools, state
+    try:
+        if state.C is None:
+            state.init()
+        return shared_tools.wait_words(lines(st_todo))
+    except (OSError, SystemExit, ValueError):
+        return {}
+
+
 def _p_add(a, x):
     kind = a.kind
     rel = kind == RELEASE  # F38: a release (module doc)
@@ -2877,6 +2903,9 @@ def _p_add(a, x):
         if not where and not given:
             where = 'bottom'  # the end of the leading section: behind the work queued there
     text += keyed
+    if why := _needs_wrong(text):  # F168
+        print(f'{PROG}: not added: {why}', file=sys.stderr)
+        return 2
     w = where.split(maxsplit=1) or [None]
     if not given and not where and (fam := family_end(kind)):
         w, pri = ['after', fam[0]], fam[1]  # a split stays with its parent (module doc)
@@ -2925,8 +2954,11 @@ def _p_edit(a, x):
         return 2
     if not (text.strip() or keyed or pri or solo is not None):
         print(f'{PROG} edit <ID> "new text" [--files A,B] [--after X,Y] [--test T] [--journal D] [--model M] '
-              '[--pri LEVEL] [--alone | --no-alone]',
+              '[--needs TOOL] [--pri LEVEL] [--alone | --no-alone]',
               file=sys.stderr)
+        return 2
+    if why := _needs_wrong(text + keyed):  # F168
+        print(f'{PROG}: not edited: {why}', file=sys.stderr)
         return 2
     edit(a.id, text, keyed, pri or None, alone_=solo)
     return x.say(f'edited {a.id}')

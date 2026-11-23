@@ -116,6 +116,15 @@ def test_reap_finish_and_ask():
         eq(m['park_asked'].call_args.args, (1, 'T1', 'sid1', 'plain or coloured?', 'main'), 'the task is parked')
         check(not run.merging and not m['queue_resume'].called, 'neither merged nor queued to resume')
         eq(run.tried, {'T1'}, 'and no other slot starts it this run')
+    run = new_run()
+    run.procs[1], run.running[1] = (111, 'sid1', 0), ('T1', '', set(), set())
+    with ExitStack() as st:  # F168
+        st.enter_context(mock.patch.object(loop.plat, 'alive', lambda pid: False))
+        m = stubs(st, said, take_end={'how': 'wait', 'tid': 'T1', 'text': 'phone'}, cut_off='usage limit')
+        park = st.enter_context(mock.patch.object(loop.shared_tools, 'park', mock.Mock(return_value=True)))
+        eq((run.reap(1), park.call_args.args), (False, (1, 'T1', 'sid1', 'phone')), 'waits for a tool: the slot is free')
+        check(not run.merging and not m['queue_resume'].called and not run.tried,
+              'neither merged, queued nor tried: it goes on by itself')
 
 
 def test_fill():

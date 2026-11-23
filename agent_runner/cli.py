@@ -214,6 +214,7 @@ COMMANDS = {
     'ui': ('tui', 'main'),  # F67: the Run page in the terminal
     'finish': ('tools', 'cmd_finish'),  # F102: a slot's agent ends its session now
     'ask': ('tools', 'cmd_ask'),  # F102: a slot's agent asks the person; the answer resumes it
+    'wait-for': ('shared_tools', 'cmd_wait_for'),  # F168: a slot's agent gives up its slot for a shared tool
     'publish-page': ('page_copy', 'cmd_publish_page'),  # F106f: a page for the person, on any engine
     'login': ('login', 'main'),  # F106e: the provider logins the harness loop runs on
 }

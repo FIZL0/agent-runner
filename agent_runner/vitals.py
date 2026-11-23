@@ -747,12 +747,12 @@ def live_now(proc: Path = Path('/proc'), registry: Path | None = None) -> tuple[
 
 def waiting_sids(p: 'Project') -> set[str]:
     """The sessions of `p` the runner will resume or wake, whose temp folders stay: those queued to resume
-    (<ID>.resume), those whose ask waits for the person's answer (<ID>.ask), the last session of a slot worktree
+    (<ID>.resume), those whose ask waits for the person's answer (<ID>.ask), those waiting for a shared tool (<ID>.wait), the last session of a slot worktree
     still on its task/ branch (the next run start resumes one that was cut off), the runner feed's, c1's kept one
     (control.sid), and cN's while its pid file is there (reopened after a shutdown). ANY_SID is among them when a
     resume or ask cannot be read: any session may be the one it names."""
     out = set(p.resume)
-    for f in [*p.notes.glob('*.resume'), *p.notes.glob('*.ask')]:
+    for f in [*p.notes.glob('*.resume'), *p.notes.glob('*.ask'), *p.notes.glob('*.wait')]:
         try:
             out.add(str(json.loads(f.read_text(encoding='utf-8'))['sid']))
         except FileNotFoundError:

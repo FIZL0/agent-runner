@@ -11,7 +11,9 @@ copy, and the actions they share.
     sessions_note  '' (kept for pages that read it: C26 has no older run to tell apart)
     queue     every open task in TODO.md: id, kind, title, files, after, pri, section, blocked, after_title
               (what it waits on in words: 'F66 Run page: …', 'B109 (landed)', 'all: everything above it') and
-              state ('running s2 6m', 'critical', 'after', 'parked', 'ready')
+              state ('running s2 6m', 'critical', 'after', 'tool', 'parked', 'ready'); with shared tools set, needs
+              and tool_wait ('waits for iPhone 15, held by F389, 12 min')
+    tools     the shared tools ([run.tools]; F168): name, label, state, words, waits; [] without them
     needs     what waits on the person (not the shelved ones): label, id, ask in plain words, link, age
     concepts  concept pages waiting for an OK: build id, concept id, title, page link, copy (the local copy
               of the page `done --artifact` kept, <notes>/concepts/<ID>.html; '' for none)
@@ -100,6 +102,7 @@ def queue_rows(ls: list[str], st: dict | None = None, now: float | None = None) 
     live = {tid for _, box, tid, _, _ in tasks if box in ' ~'}
     landed = {tid for _, box, tid, _, _ in tasks if box not in ' ~'} | done_ids()
     where = slot_of(st or {}, time.time() if now is None else now)
+    tool_waits = tool_wait_words(ls, st, now)
     for section, box, tid, rest, i in tasks:
         if box not in ' ~' or P._shelved(ls, i):  # B115: a shelved task is set aside, not queued
             continue
@@ -110,14 +113,16 @@ def queue_rows(ls: list[str], st: dict | None = None, now: float | None = None) 
                     'files': f.get('files', []), 'after': after, 'pri': pri,
                     'section': section, 'blocked': box == '~',
                     'after_title': after_words(after, names_of, live, everything, landed),
-                    'state': queue_state(tid, pri, after, live, where, box == '~')})
+                    'state': queue_state(tid, pri, after, live, where, box == '~', tid in tool_waits)})
+        if S.C and S.C.run.get('tools'):  # F168
+            out[-1].update(needs=f.get('needs', []), tool_wait=tool_waits.get(tid, ''))
     return out
 
 
 # F74: a queue row's state, first word. 'blocked' (beyond the design's four): a [~] task waits on a person or
 # a fix, and 'ready' would say it can start. B118: 'parked' (level later, TODO.md's Parked section): a run never
 # starts it, so it must not say 'ready' either.
-QUEUE_STATES = ('running', 'blocked', 'critical', 'after', 'parked', 'ready')
+QUEUE_STATES = ('running', 'blocked', 'critical', 'after', 'tool', 'parked', 'ready')
 
 
 def done_ids() -> set[str]:
@@ -165,19 +170,39 @@ def after_words(after: list[str], titles: dict[str, str], live: set[str], everyt
 
 
 def queue_state(tid: str, pri: str, after: list[str], live: set[str], where: dict[str, str],
-                blocked: bool = False) -> str:
+                blocked: bool = False, tool: bool = False) -> str:
     """F74: a queue row's state: 'running sN Nm' while a slot runs it, else 'blocked' ([~]: waits on a person
     or a fix), else 'parked' (B118: level 'later': a run never starts it), else 'critical', else 'after' while a
-    task it waits on is still open, else 'ready'."""
+    task it waits on is still open, else 'ready'. F168: 'tool' comes before 'critical': only a shared tool keeps it."""
     if tid in where:
         return where[tid]
     if blocked:
         return 'blocked'
     if pri == 'later':
         return 'parked'
+    if tool and not any(t in live for t in after):
+        return 'tool'
     if pri == 'critical':
         return 'critical'
     return 'after' if any(t in live for t in after) else 'ready'
+
+
+def tool_wait_words(ls: list[str], st: dict | None, now: float | None = None) -> dict[str, str]:
+    """F168: {task: 'waits for iPhone 15, held by F389, 12 min'}; {} without shared tools, or when they do not read."""
+    from agent_runner import shared_tools
+    try:
+        return shared_tools.wait_words(ls, st or {}, now)
+    except Exception:  # noqa: BLE001 - costs the words, not the snapshot
+        return {}
+
+
+def tool_rows(up: bool, ls: list[str], st: dict, now: float | None = None) -> list[dict]:
+    """F168: the project's shared tools (`shared_tools.rows`) while a run is up; [] without the setting."""
+    from agent_runner import shared_tools
+    try:
+        return shared_tools.rows(ls, st, now) if up else []
+    except Exception:  # noqa: BLE001 - costs the line, not the snapshot
+        return []
 
 
 def release_row(ls: list[str], st: dict | None = None, landed: int | None = None) -> dict | None:
@@ -608,12 +633,14 @@ def snapshot(up: bool | None = None, now: float | None = None, log_n: int = LOG_
            'forced': bool(up and st.get('forced')), 'power': str(st.get('power') or '') if up else '',
            'state': run_state(up, st)}  # F124
     queue = pin_release(queue_rows(ls, st, now), row)
+    tools = tool_rows(bool(up), ls, st, now)  # F168
     for q in queue:
         q['acts'] = row_acts('queue', q)  # C34
     fix = fixups(st, ls)
     return {**controls_shown(bool(up), run, fix), 'run': run, 'fixups': fix,
             'project': S.project(), 'at': dt.datetime.fromtimestamp(now).isoformat(timespec='seconds'),
-            'up': up, 'status': status_rows(up, st, '\n'.join(x for x in (progress, release) if x)),
+            'up': up, 'status': status_rows(up, st, '\n'.join(x for x in (progress, release, tools_line(tools)) if x)),
+            'tools': tools, 'tool_names': sorted((S.C.run.get('tools') or {}) if S.C else {}),
             'slots': slots, 'sessions': sessions, 'sessions_note': '',
             'queue': queue, 'release_row': row, 'release_acts': [c['key'] for c in RUN_CONTROLS
                                                                  if c['where'] == 'release'],
@@ -622,6 +649,11 @@ def snapshot(up: bool | None = None, now: float | None = None, log_n: int = LOG_
             'unpushed': unpushed_line(),  # F98
             'usage': usage_rows(st), 'lately': lately(titles), 'chat_quiet': chat_quiet(),
             'version': str(st.get('version') or '')}  # F90: the run's version ('' from an older run)
+
+
+def tools_line(tools: list[dict]) -> str:
+    from agent_runner import shared_tools
+    return shared_tools.line(tools)
 
 
 def snapshot_json(**kw) -> str:
@@ -649,7 +681,7 @@ def call(argv: list[str]) -> dict:
     return {'ok': code == 0, 'code': code, 'out': out, 'argv': argv}
 
 
-def _flags(files=None, after=None, pri: str = '', test: str = '') -> list[str]:
+def _flags(files=None, after=None, pri: str = '', test: str = '', needs=None) -> list[str]:
     out = []
     if files:
         out += ['--files', ','.join(files) if isinstance(files, (list, tuple)) else files]
@@ -657,20 +689,22 @@ def _flags(files=None, after=None, pri: str = '', test: str = '') -> list[str]:
         out += ['--after', ','.join(after) if isinstance(after, (list, tuple)) else after]
     if test:
         out += ['--test', test]
+    if needs:
+        out += ['--needs', ','.join(needs) if isinstance(needs, (list, tuple)) else needs]
     if pri:
         out += ['--pri', pri]
     return out
 
 
-def plan_add(kind: str, text: str, files=None, after=None, pri: str = '', test: str = '') -> dict:
+def plan_add(kind: str, text: str, files=None, after=None, pri: str = '', test: str = '', needs=None) -> dict:
     """Queue a task: `plan add KIND TEXT --files … --after … --pri …`."""
-    return call(['plan', 'add', kind, text, *_flags(files, after, pri, test)])
+    return call(['plan', 'add', kind, text, *_flags(files, after, pri, test, needs)])
 
 
-def plan_change(tid: str, text: str = '', files=None, after=None, pri: str = '', test: str = '') -> dict:
+def plan_change(tid: str, text: str = '', files=None, after=None, pri: str = '', test: str = '', needs=None) -> dict:
     """The page's direct edit of a queued task: `plan edit ID [TEXT] [--files …]`, rewritten in place (a slot
     running it is told)."""
-    return call(['plan', 'edit', tid, *([text] if text else []), *_flags(files, after, pri, test)])
+    return call(['plan', 'edit', tid, *([text] if text else []), *_flags(files, after, pri, test, needs)])
 
 
 def drop(tid: str, why: str) -> dict:

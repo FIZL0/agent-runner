@@ -108,8 +108,8 @@ def taken_place() -> dict:
 KIND_COLOUR = {'B': 'red', 'F': 'green', 'C': 'blue', 'R': 'magenta', 'V': 'yellow', 'K': 'cyan'}
 KINDS = ('B', 'F', 'T', 'D', 'R', 'C', 'K', 'V')  # the direct edit's kind field cycles through these
 QUICK_KEYS = {'since': 's', 'yesterday': 'y', 'needs': 'w', 'usage': 'u'}  # F74's quick asks, by key
-FIELDS = ('t', 'k', 'p', 'f', 'a')  # the direct edit's fields, in Tab order
-TEXT_FIELDS = {'t': 'text', 'f': 'files', 'a': 'after'}  # the ones typed into
+FIELDS = ('t', 'k', 'p', 'f', 'a', 'e')  # the direct edit's fields, in Tab order
+TEXT_FIELDS = {'t': 'text', 'f': 'files', 'a': 'after', 'e': 'needs'}  # the ones typed into
 OPTION_KEYS = 'abcdefg'  # a Needs you item's answers beyond yes / no
 TAIL_TABS = ('log',)  # tabs that show their newest lines, at the bottom
 SIDE_SHARE = '64%'  # F112: the width the session's tmux pane takes beside the TUI (the main pane's share)
@@ -514,7 +514,7 @@ class RunPage:
 
     def queue_tag(self, it) -> tuple[str, str]:
         """A queue row's right tag: 'sN Nm' (yellow) while a slot runs it, 'critical' (red), 'blocked' (red),
-        '⧗ after <id title>' (dim) while it waits, 'parked' (dim) at level later (B123: a run never starts it),
+        '⧗ after <id title>' (dim) while it waits, '⧗ waits for iPhone 15, …' (dim) while a shared tool keeps it, 'parked' (dim) at level later (B123: a run never starts it),
         'ready' (green)."""
         state = str(it.get('state') or '')
         if state == 'parked':
@@ -528,6 +528,8 @@ class RunPage:
         if state == 'after' or (not state and it.get('after')):
             words = it.get('after_title') or ', '.join(it.get('after') or [])
             return f'⧗ after {words}', 'dim'
+        if state == 'tool':  # F168
+            return f'⧗ {it.get("tool_wait") or "waits for a tool"}', 'dim'
         return 'ready', 'green'
 
     def row_lines(self, n: int, it, width: int, open_: bool) -> list:
@@ -821,7 +823,8 @@ class RunPage:
                    'kind': 'F' if new else tid[:1],
                    'pri': 'normal' if new or it.get('pri') != 'critical' else 'critical',
                    'files': '' if new else ','.join(it.get('files') or []),
-                   'after': '' if new else ','.join(it.get('after') or [])}
+                   'after': '' if new else ','.join(it.get('after') or []),
+                   'needs': '' if new else ','.join(it.get('needs') or [])}
             self.forms[tid] = {**was, 'was': was, 'new': new, 'field': ''}
         return self.forms[tid]
 
@@ -860,6 +863,8 @@ class RunPage:
         out += [label('f', 'files')] + value('f')
         out += [label('a', 'after')] + value('a')
         out += [L(('    ', ''), (after_hint(f['after'], self.snap.get('queue') or []), 'dim')), L()]
+        if names := self.snap.get('tool_names'):  # F168: only in a project with shared tools
+            out[-1:] = [label('e', 'needs', f'({", ".join(names)})')] + value('e') + [L()]
         bs = [button('^S', 'save', True)] + ([] if f['new'] else [button('D', 'drop'), button('H', 'do it here')])
         return out + [buttons(*bs)]
 
@@ -1504,7 +1509,7 @@ class RunPage:
             return True
         if tab == 'direct edit' and it is not None:
             f = self.form(it)
-            if k in ('t', 'f', 'a'):
+            if k in ('t', 'f', 'a') or k == 'e' and self.snap.get('tool_names'):
                 self.field(k)
             elif k == 'p':
                 f['pri'], f['field'] = ('normal' if f['pri'] == 'critical' else 'critical'), 'p'
@@ -1570,8 +1575,9 @@ class RunPage:
 
     def next_field(self, step: int) -> None:
         f = self.form(self.sel())
-        i = FIELDS.index(f['field']) if f['field'] in FIELDS else (-1 if step > 0 else 0)
-        self.field(FIELDS[(i + step) % len(FIELDS)])
+        fs = FIELDS if self.snap.get('tool_names') else FIELDS[:-1]
+        i = fs.index(f['field']) if f['field'] in fs else (-1 if step > 0 else 0)
+        self.field(fs[(i + step) % len(fs)])
 
     def save(self) -> None:
         """^S: the direct edit to the plan: a new task by `plan add`, a queued one by `plan edit` with only the
@@ -1586,15 +1592,16 @@ class RunPage:
                 self.msg, self.msg_ok = 'write what the task is first (t)', False
                 return
             r = U.plan_add(f['kind'], text, f['files'].strip() or None, f['after'].strip() or None,
-                           '' if f['pri'] == 'normal' else f['pri'])
+                           '' if f['pri'] == 'normal' else f['pri'],
+                           **({'needs': f['needs'].strip()} if f['needs'].strip() else {}))
         else:
             was = f['was']
             if f['kind'] != was['kind']:
                 self.msg, self.msg_ok = f'{it["id"]} keeps its kind: a new kind is a new task (n)', False
                 return
-            changed = {k: f[k].strip() for k in ('text', 'files', 'after', 'pri') if f[k].strip() != was[k].strip()
+            changed = {k: f[k].strip() for k in ('text', 'files', 'after', 'pri', 'needs') if f[k].strip() != was[k].strip()
                        and f[k].strip()}
-            emptied = [k for k in ('files', 'after') if was[k].strip() and not f[k].strip()]
+            emptied = [k for k in ('files', 'after', 'needs') if was[k].strip() and not f[k].strip()]
             if emptied:  # plan edit sets a field, never clears one
                 self.msg, self.msg_ok = f'{" and ".join(emptied)} cannot be emptied here: give the new value', False
                 return
@@ -1602,7 +1609,7 @@ class RunPage:
                 self.msg, self.msg_ok = 'nothing changed', True
                 return
             r = U.plan_change(it['id'], changed.get('text', ''), changed.get('files'), changed.get('after'),
-                              changed.get('pri', ''))
+                              changed.get('pri', ''), **({'needs': changed['needs']} if 'needs' in changed else {}))
         if r.get('ok'):
             self.forms.pop(it['id'], None)
             self.typing, self.main = '', False

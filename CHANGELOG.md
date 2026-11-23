@@ -4,6 +4,8 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Added: shared tools (F168). `[run.tools.<name>]` in runner.toml names something only one task can use at a time (a test phone, a device) with a `check` that says whether it is free, busy (and by whom) or missing. A task tags itself `needs:` (`plan add --needs`); the run never runs two tasks with the same tool, and holds a tagged task while it is busy or missing (at most 5 min when the check is unknown). An agent that finds its tool busy runs `run wait-for TOOL`: its session ends, its work is kept, and the same session resumes once the tool is free. Status, the TUI and the run page show the tool, and a missing one with tasks waiting is a Needs you item after 3 min. Without the setting nothing changes.
+
 ## 0.62.0 (2026-11-23)
 
 - Changed: the run app's Settings page is rebuilt (F166). About 24 everyday settings sit in Speed and limits, Landing work, Models and Chats, each with its control on its row; the rest are behind Advanced, and commands, paths, patterns and rules behind Project file, read only with "Ask a chat to change it". Each setting says where a change is saved: this device at once (`runner.local.toml`), or everyone as a queued C task on `runner.toml`, shown as Queued until it starts. A row's More… has the other home and Reset. Changed lists what differs from the default, and the lines the run ignores or moved. Search finds names, descriptions and code names, and a card with Restart the run says how many changes wait for a restart. `agent-runner settings` still prints the developer notes.
