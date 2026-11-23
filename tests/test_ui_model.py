@@ -477,6 +477,41 @@ def test_concept_copy(tmp: Path) -> None:
     eq(D.keep_page(c, 'K8', str(tmp / 'missing.html')), None, 'a --page that is not a file: no copy')
 
 
+def test_concept_chat(tmp: Path) -> None:
+    """F86: `concept_chat` starts a new control session (control --new --ask) whose first message names the
+    concept, its page link and local copy, and says to follow guide concepts; the run page's Concepts card has
+    its button."""
+    from types import SimpleNamespace
+    from agent_runner import done as D
+    repo = fake_run(tmp)
+    page = tmp / 'page.html'
+    page.write_text('<h1>Option A</h1>', encoding='utf-8')
+    kept = D.keep_page(SimpleNamespace(root=repo, notes=S.C.notes), 'K5', str(page))
+    ran = []
+    real = U.RUN[0]
+    U.RUN[0] = lambda argv: (ran.append(argv), (0, 'c3 is open: https://claude.ai/code/session_c3x\n'))[1]
+    try:
+        for cid in ('K5', 'F4'):
+            r = U.act('concept_chat', cid=cid)
+            eq((r['ok'], r['link']), (True, 'https://claude.ai/code/session_c3x'), f'{cid}: the new session link')
+            eq(ran[-1][:3], ['control', '--new', '--ask'], f'{cid}: control --new --ask')
+            ask = ran[-1][3]
+            for want in ("concept K5 'lazy layout'", 'https://claude.ai/artifact/k5', str(kept), 'guide concepts',
+                         'Artifact tool', 'open it inline', 'plain go'):
+                check(want in ask, f'{cid}: the first message says {want!r}', ask)
+        U.act('concept_chat', cid='K9', title='Dark theme', url='https://claude.ai/artifact/k9')
+        check("concept K9 'Dark theme'" in ran[-1][3] and 'https://claude.ai/artifact/k9' in ran[-1][3]
+              and 'no local copy' in ran[-1][3], 'a concept no longer listed: the given title and link', ran[-1])
+        n = len(ran)
+        eq(U.act('concept_chat', cid='../K5')['ok'], False, 'an id that is not one is refused')
+        eq(len(ran), n, 'and runs nothing')
+    finally:
+        U.RUN[0] = real
+    html = (Path(U.__file__).parent / 'web_page.html').read_text(encoding='utf-8')
+    check('data-cchat="${i}"' in html and "act('concept_chat',{cid:c.concept||c.id" in html,
+          "the Concepts card's New chat button sends concept_chat with the concept's id")
+
+
 def in_tmp(f):
     def go():
         print(f.__name__)
@@ -491,4 +526,4 @@ if __name__ == '__main__':
                          in_tmp(test_real_command),
                          in_tmp(test_to_c1_by_tag), in_tmp(test_control_windows), in_tmp(test_older_run),
                          in_tmp(test_queue_rows), in_tmp(test_feed), in_tmp(test_chat_and_terminal),
-                         in_tmp(test_concept_copy)]))
+                         in_tmp(test_concept_copy), in_tmp(test_concept_chat)]))

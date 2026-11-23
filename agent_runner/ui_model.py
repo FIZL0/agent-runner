@@ -21,7 +21,8 @@ copy, and the actions they share.
     terminal_mode  how a session's terminal shows: 'ttyd', 'install' (tmux, no ttyd yet), 'feed'
 
 F74 adds, outside the snapshot (read on demand, per session): `feed(name)` (its transcript as say/you/tool/out
-entries); and the actions `chat_to` (any control session), `interrupt`, `new_control` and `quick_ask`.
+entries); and the actions `chat_to` (any control session), `interrupt`, `new_control` and `quick_ask`; F86
+`concept_chat` (a new control session about one concept).
 
 Each action calls what the CLI already does, as a subprocess of the runner (`runner_cmd()`), so a page and a
 terminal change the run exactly as a person typing the command would; `chat`, `answer` and `take` hand a
@@ -860,6 +861,34 @@ def new_control(ask: str = '') -> dict:
     return {**r, 'link': m.group(0).rstrip('.,)') if m else ''}
 
 
+def concept_chat_text(row: dict) -> str:
+    """F86: the first message of a new control session about one concept (a Concepts row: concept, id, title,
+    url, copy): which concept, its page link and local copy, and to follow guide concepts."""
+    cid = row.get('concept') or row.get('id') or ''
+    title = row.get('title') or ''
+    where = [f'its page {row["url"]}' if row.get('url') else 'no page link',
+             f'its local copy {row["copy"]}' if row.get('copy') else 'no local copy']
+    return (f"This chat is about concept {cid} '{title}': {', '.join(where)}. Read guide concepts first and "
+            f"follow it: change that same page with the Artifact tool and open it inline, and build nothing "
+            f"until I say a plain go.")
+
+
+def concept_chat(cid: str, title: str = '', url: str = '', copy: str = '') -> dict:
+    """F86: a new control session about concept `cid` (its K id, or the id of its build task): `control --new
+    --ask` with `concept_chat_text`. The row comes from the waiting list; `title`, `url` and `copy` fill in for
+    a concept no longer listed."""
+    if not cid or not CONCEPT_ID.fullmatch(cid):
+        return {'ok': False, 'code': 2, 'out': f'concept_chat: no concept id: {cid!r}', 'argv': []}
+    try:
+        from agent_runner.status import waiting_ok
+        _, rows = needs_rows(waiting_ok(), dt.datetime.now())
+    except Exception:  # noqa: BLE001 - no plan to read: the given title and link
+        rows = []
+    row = next((r for r in rows if cid in (r.get('concept'), r.get('id'))), None) or \
+        {'concept': cid, 'title': title, 'url': url, 'copy': copy or concept_copy(cid)}
+    return new_control(concept_chat_text(row))
+
+
 def quick_ask(key: str) -> dict:
     """F74: one of the Status chat's quick asks (QUICK_ASKS: since, yesterday, needs, usage), sent to c1."""
     text = next((t for k, _, t in QUICK_ASKS if k == key), '')
@@ -870,3 +899,4 @@ def quick_ask(key: str) -> dict:
 
 
 ACTIONS.update({'chat_to': chat_to, 'interrupt': interrupt, 'new_control': new_control, 'quick_ask': quick_ask})
+ACTIONS['concept_chat'] = concept_chat  # F86

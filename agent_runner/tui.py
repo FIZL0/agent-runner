@@ -16,7 +16,8 @@ Panels and their tabs (F76):
     Needs you  answer (a button per possible answer: y yes, n no, or a b c … for options; L later; a reply box),
                info
     Concepts   preview: the K copy inline, its options (the copy's headings) moved through with j/k, Enter goes
-               with the selected one, i says what to change, O opens the page in the browser
+               with the selected one, i says what to change, O opens the page in the browser, N starts a new
+               control session about it (`concept_chat`; c stays c1's chat)
 
 The feed is the agent's words with its tool steps folded as '· N steps' (v shows them); a chat shows the steps,
 as a Claude session does. A box takes typing after i (or Enter): Enter sends, Shift+Enter (or Ctrl-J, Alt+Enter)
@@ -139,6 +140,7 @@ Needs you [4]
 Concepts [5]
   j/k      option                 Enter    go with it
   i        what to change         O        open in the browser
+  N        chat about it (a new session)
 Typing
   Enter    send                   Shift+Enter  new line (or Ctrl-J)
   Esc      leave the box
@@ -1000,7 +1002,7 @@ class RunPage:
                     ('D', 'drop')]
         if self.panel == 4:
             return [('⏎', 'open'), ('a', 'answer'), ('L', 'later')]
-        return [('⏎', 'view'), ('O', 'open in the browser')]
+        return [('⏎', 'view'), ('O', 'open in the browser'), ('N', 'chat about it')]
 
     GLOBAL = [('1-5', 'panel'), ('c', 'chat'), ('?', 'keys')]
 
@@ -1424,6 +1426,16 @@ class RunPage:
             self.main = False
         elif self.panel == 5 and k == 'O' and it is not None:
             self.open_link(it.get('url', ''), it.get('title', 'the concept'))
+        elif self.panel == 5 and k == 'N' and it is not None:
+            self.concept_chat(it)
+
+    def concept_chat(self, it: dict) -> None:
+        """F86: N on a concept: a new control session about it (`concept_chat`), its link in the message line."""
+        r = U.concept_chat(it.get('concept') or it.get('id', ''), it.get('title', ''), it.get('url', ''),
+                             it.get('copy', ''))
+        self.done(r)
+        if r.get('ok') and r.get('link'):
+            self.msg = f'new control session about {it.get("concept") or it.get("id")}: {r["link"]}'
 
     def chat_c1(self) -> None:
         """c: c1's chat, typing: in Sessions when c1 is listed there, else Status's chat with it."""

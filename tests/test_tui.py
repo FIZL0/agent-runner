@@ -659,6 +659,27 @@ def test_concept_page() -> None:
     eq(p.option(p.sel()), 0, 'k stops at the first')
 
 
+def test_concept_chat() -> None:
+    """F86: N on a concept starts a new control session (control --new --ask) whose first message names the
+    concept, its page link and local copy, and says to follow guide concepts; the keys list and footer name N."""
+    from unittest import mock
+    from agent_runner import status
+    ran = []
+    p = page()
+    with mock.patch.object(U, 'RUN', [lambda argv: (ran.append(argv), (0, 'c7 is open: https://claude.ai/code/x\n'))[1]]), \
+            mock.patch.object(status, 'waiting_ok', lambda: []):
+        p.key('5')
+        check(('N', 'chat about it') in p.hint_keys(), 'the Concepts footer names N', p.hint_keys())
+        p.key('N')
+    eq(ran[-1][:3], ['control', '--new', '--ask'], 'N: a new control session with a first message')
+    ask = ran[-1][3]
+    for want in ("concept K5 'Lazy layout'", 'https://claude.ai/artifact/k5', '/notes/concepts/K5.html',
+                 'guide concepts'):
+        check(want in ask, f'the first message says {want!r}', ask)
+    eq(p.msg, 'new control session about K5: https://claude.ai/code/x', 'its link in the message line')
+    check('N        chat about it' in T.HELP, 'the keys list names N under Concepts')
+
+
 def test_escape_tail() -> None:
     def more_of(s):
         it = iter(s)
@@ -961,5 +982,6 @@ def test_cli() -> None:
 if __name__ == '__main__':
     raise SystemExit(report([test_layout, test_status_tabs, test_session_tabs, test_queue, test_direct_edit,
                                test_navigation, test_chat_box, test_actions, test_footer, test_concept_page,
+                               test_concept_chat,
                                test_escape_tail, test_colours, test_row_ground_and_fill, test_reorder, test_themes,
                                test_idle_run_of_another_project, test_older_run, test_run_controls, test_cli]))
