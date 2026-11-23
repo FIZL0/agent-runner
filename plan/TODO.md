@@ -28,5 +28,3 @@
 - [~] **R11** (follow-up, low) Manual check of B81: in a control session on Remote Control, ask 'notify me when it's done' on a take run by a background subagent; when the subagent finishes, the phone/app gets a PushNotification (not only a line in the conversation). Needs a person to confirm the push arrived: block with CONFIRM. | files: agent_runner/guide.py | after: B81 BLOCKED: shelved: CONFIRM: in a control session on Remote Control, ask 'notify me when it's done' on a take run by a background subagent; when it finishes, check the phone/app got a PushNotification (not only a line in the chat). B81 is on main (3d8d1a6); brief at agent_runner/guide.py:181-192. (asked 2026-11-20 17:29)
 
 ### Parked
-
-- [ ] **F85** (follow-up, later) Run app (simple web page) queue: task titles are cut off and the full task can't be read. Let a row expand on tap or click to show the full text (plan ID), or open it in a side panel, keeping rows one line when collapsed. Check: test_web asserts a queue row can show its full task text. | files: agent_runner/web_page.html, agent_runner/web.py, tests/test_web.py
