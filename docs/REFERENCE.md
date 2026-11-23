@@ -449,8 +449,10 @@ words in a note on the task (after ` — `, not in its title), its next merge la
     never run. On a block it reads `BLOCKED: (after all) why`, and `plan reopen` frees it once nothing is left
     before it. `status`, `plan ID`, `plan reopen` and `plan waiting` show it as `T5 waits for everything before
     it (12 open)`, not an id list.
+  - `model:` the model the task's own session runs on (`plan add/edit --model M`), which wins over its kind's
+    `[models.kinds]` entry; `plan ID` shows it. See Models per kind.
   - `test:` the tests that prove it. `journal:` its journal folder.
-  - `plan add P "text" --files a,b --after X --test name` writes them.
+  - `plan add P "text" --files a,b --after X --test name` writes them; `--model M` writes `model:`.
 - `BLOCKED: (after X, Y) why` is what `plan block`/`done --blocked` write. The `(after …)` list is what
   lets the run reopen the task by itself.
 - `plan/tasks/<ID>.md`, if it exists, is the task's long form. The brief uses it instead of the one-line text.
@@ -1073,6 +1075,9 @@ docs = "haiku"            # the `docs` subagent: CHANGELOG, docs, README, journa
 control = "opus"          # control sessions (c1, c2, …)
 feed = "haiku"            # the runner feed, and the one-shot that publishes the run page's claude.ai copy
 
+[models.kinds]           # the model a task's own session runs on, per kind (the id's letters: F105 is F); see Models per kind
+F = "opus"               # defaults: F B T V K "opus", D C R "sonnet"; a kind not listed runs on [models] code
+
 [run]
 test = ""                 # the gate, run by `done` and on every merge, e.g. "make test"
 test_since = ""           # a merge's gate on what changed since {base}, e.g. "make test-since REV={base}"
@@ -1187,6 +1192,20 @@ one of them is on (`[run] review = false` drops `review`, `[models] docs = false
 older `model = "opus"` keeps working, and `run --model M` still picks the task model for one run. A role
 `[models]` sets wins over them. On the Pi backend there are no subagents, and every role `[models]` does not set
 falls back to `[run] model`.
+
+### Models per kind
+
+`[models.kinds]` picks the model for a task's own session by its kind, the letters of its id (`F105` is F, `P17a`
+is P). The defaults are `opus` for F, B, T, V and K, and `sonnet` for D, C and R; a repo's table is laid over them
+kind by kind, so `D = "haiku"` changes only D. A kind not listed runs on `[models] code`. A task names its own
+model with `model:` on its line (`plan add D "text" --files a.md --model haiku`, or `plan edit ID --model M`),
+which wins over the kind. A task session's model is chosen in this order: the task's own `model:`; `run --model X`
+given on the command line (when X differs from `[models] code`, it sets every task without its own); the
+`[models.kinds]` entry for its kind; `[models] code`. A resumed session (cut off, failed, or answered after
+`run ask`) goes on on the same model. The Pi backend has no default kinds, since Claude model names mean nothing
+there: only the kinds the repo sets apply, else `[run] model`. A kind's value must be a model name (a string), or
+the run refuses to start with a `[models.kinds]` error. A repo that sets `[models] code` or `[run] model` still gets
+the default kinds for F, B, T, V, K, D, C and R; to run every kind on one model, set those kinds in `[models.kinds]`.
 
 ### Renamed and removed keys
 
