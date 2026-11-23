@@ -37,7 +37,7 @@ import sys
 from functools import partial
 from pathlib import Path
 
-from agent_runner import plan, plansync
+from agent_runner import plan, plansync, shared_tools
 from agent_runner.config import cfg, finished_mark
 from agent_runner.gitops import git, missing_remote, push, shared_branch, shared_name, shell
 
@@ -130,6 +130,8 @@ def main(argv: list[str] | None = None) -> int:
     if docs:  # no tested ref either: the merge decides by its own diff
         print(DOCS_SKIP + (f' (docs check: {c.run["docs_check"]})' if c.run['docs_check'] else ''))
     if not a.no_test:
+        if not docs:
+            shared_tools.gate_wait(c)  # B184
         rc, tail = gate(cwd, 'docs_check' if docs else 'test')
         if rc:
             print(tail)

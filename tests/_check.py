@@ -30,6 +30,10 @@ os.environ.pop('AGENT_RUNNER_SLOT', None)
 os.environ.pop('AGENT_RUNNER', None)
 os.environ.pop('AGENT_RUNNER_WORKTREE', None)  # B103: else `done` in a test project refuses it as another project
 os.environ['AGENT_RUNNER_NO_NOTIFY'] = '1'  # an alarm in a test rings no desktop notification
+_mem = tempfile.mkdtemp(prefix='agent-runner-test-mem-')  # B184: no suite waits for the real machine's memory
+Path(_mem, 'meminfo').write_text('MemTotal: 33554432 kB\nMemAvailable: 16777216 kB\n')
+os.environ['AGENT_RUNNER_MEMINFO_DIR'] = _mem
+atexit.register(shutil.rmtree, _mem, ignore_errors=True)
 os.environ['AGENT_RUNNER_NO_WEB'] = '1'  # a run under test serves no run page (it would take the real port 8770)
 
 # B68: every temp folder of this suite, its subprocesses' too, goes under one root of its own, so a trust entry

@@ -26,6 +26,11 @@ pushes, and it refuses to tick when the gate fails. Run it, and any whole test s
 and wait for it to end: beside the other slots a gate can outlast your own command time limit, and one cut \
 off there commits nothing. Run one at a time: start another only once the first has ended.
 
+A command stopped for low memory ("the system is running low on memory ... start it again only when asked") is \
+never a reason to `ask` or to block, and never a decision for the person: this is their standing go-ahead to run it \
+again. Commit what is solid, run `{runner} wait-for memory`, and do what it says: either memory is free and you run \
+the command again, or you stop, your slot is given up, and this session goes on by itself once memory is free.
+
 If you are stuck (a tool hangs, the same fix fails twice, it needs a human, about 20 minutes with no \
 progress), commit what is solid and run `{runner} done <ID> "<msg>" --blocked "<why + what would unblock \
 it>"`, then stop. If all it waits on is another task landing (its code is not on the main branch yet), add \

@@ -116,6 +116,8 @@ def queue_rows(ls: list[str], st: dict | None = None, now: float | None = None) 
                     'state': queue_state(tid, pri, after, live, where, box == '~', tid in tool_waits)})
         if S.C and S.C.run.get('tools'):  # F168
             out[-1].update(needs=f.get('needs', []), tool_wait=tool_waits.get(tid, ''))
+        elif tid in tool_waits:  # B184: memory
+            out[-1]['tool_wait'] = tool_waits[tid]
     return out
 
 
@@ -188,7 +190,7 @@ def queue_state(tid: str, pri: str, after: list[str], live: set[str], where: dic
 
 
 def tool_wait_words(ls: list[str], st: dict | None, now: float | None = None) -> dict[str, str]:
-    """F168: {task: 'waits for iPhone 15, held by F389, 12 min'}; {} without shared tools, or when they do not read."""
+    """F168: {task: 'waits for iPhone 15, held by F389, 12 min'}; {} when nothing waits, or they do not read."""
     from agent_runner import shared_tools
     try:
         return shared_tools.wait_words(ls, st or {}, now)

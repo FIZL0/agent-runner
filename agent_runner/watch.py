@@ -16,7 +16,7 @@ import threading
 import time
 from pathlib import Path
 
-from agent_runner import cost, plat
+from agent_runner import cost, plat, shared_tools
 from agent_runner.config import finished_mark, runner_cmd
 from agent_runner.tools import ended
 from agent_runner.state import (banner, C, FORCED, forced, git, log, PAUSED, POWER, queued, READING,
@@ -348,6 +348,12 @@ def memory_watch() -> None:
     ended other work for it."""
     while True:
         time.sleep(MEM_EVERY)
+        try:
+            shared_tools.say_memory()  # B184: once, about a task that keeps waiting for memory
+        except Exception as e:  # noqa: BLE001 - the next look tries again
+            log(f'memory: {e}')
+        if not (C.run['proc_max_gb'] or C.run['min_free_mem_gb']):
+            continue
         try:
             info = {l.split(':')[0]: int(l.split()[1]) * 1024 for l in Path('/proc/meminfo').read_text().splitlines()}
             procs = runner_procs()

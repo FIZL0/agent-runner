@@ -241,6 +241,8 @@ def since_event(item, titles: dict[str, str]) -> tuple[str, str, str] | None:
         return stamp, '', f'{SAID[EV_LEFT]}: {str(ev.get("text", "")).strip()}'
     if kind == shared_tools.EV_TOOL:  # F168: 'needs you: Connect the iPhone 15 by USB: 2 tasks wait [tool-iphone15]'
         return stamp, '', f'{SAID[EV_LEFT]}: {str(ev.get("text", "")).strip()}'
+    if kind == shared_tools.EV_MEMORY:  # B184: no Needs you item: 'B392 stopped for low memory 3 times; it goes on …'
+        return stamp, tid, str(ev.get('text', '')).strip()
     if kind == pitch.EV_PITCH:  # F98: 'needs you: Approve 2 changes to push: … [pitch1]'
         return stamp, '', f'{SAID[EV_LEFT]}: {str(ev.get("text", "")).strip()}'
     if kind == EV_CONTEXT and tid:  # F25: 'B32 peaked 168k (over 150k): runner.py 61k, test_runner.py 22k'
@@ -631,11 +633,11 @@ def needs_heading(heading: str) -> str:
 
 
 def tool_lines(st: dict) -> list[str]:
-    """F168: the Tools line and a line per task a shared tool keeps waiting; [] without the setting."""
+    """F168: the Tools line and a line per task a shared tool, or memory (B184), keeps waiting."""
     try:
         tools = shared_tools.rows(st=st)
         return [x for x in (shared_tools.line(tools),) if x] + \
-            ([f'  {t} {said}' for t, said in shared_tools.wait_words(st=st).items()] if tools else [])
+            ([f'  {t} {said}' for t, said in shared_tools.wait_words(st=st).items()])
     except (OSError, SystemExit, ValueError, KeyError, AttributeError):  # no plan, or no init: the lines, not status
         return []
 

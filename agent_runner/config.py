@@ -969,6 +969,8 @@ def tools_problem(v) -> str:
         where = f'[run.tools.{name}]'
         if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_-]*', str(name)):
             return f'{where}: a name is letters, digits, - and _ (iphone15)'
+        if name == 'memory':
+            return f'{where}: memory is built in (`run wait-for memory`); name the tool otherwise'
         if not isinstance(t, dict) or not isinstance(t.get('check'), str) or not t['check'].strip():
             return f'{where} needs check, the command that says whether it is free'
         if bad := [k for k in t if k not in ('check', 'label', 'connect')]:

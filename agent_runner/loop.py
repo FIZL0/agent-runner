@@ -1095,7 +1095,7 @@ def run(argv: list[str], prog: str) -> int:
         log(said)
     if said := hand_hook(ROOT):
         log(said)
-    if Path('/proc/meminfo').exists() and (r['proc_max_gb'] or r['min_free_mem_gb']):
+    if Path('/proc/meminfo').exists():
         threading.Thread(target=memory_watch, daemon=True).start()
     if sys.stdin.isatty():
         READING[0] = True
@@ -1376,7 +1376,7 @@ class Run:
         if api_down(self.stall_said):
             return
         if low_disk([m for m in range(1, slots + 1) if m not in procs and m not in self.waiting
-                     and m not in self.foreign]):
+                     and m not in self.foreign]) or shared_tools.low_memory():
             return
         if r['before_start'] and before_start_fails():
             if 'before_start' not in self.stall_said:

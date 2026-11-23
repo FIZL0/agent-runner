@@ -10,6 +10,9 @@ task starts (`ready`). A slot's agent that finds its tool busy runs `run wait-fo
 ends, its work is kept on waiting/<ID> (`park`), and the same session goes on, ahead of other tasks, once the tool is
 free (`slots.start`). The pages read `rows` and `wait_words`; a tool missing while tasks wait for it is one Needs you
 item (`asks`).
+
+B184: `memory` is a built-in thing to wait for, no shared tool: a session whose command was stopped for low memory
+runs `run wait-for memory`, waits the same way, and goes on once memory is free. It is never under Needs you.
 """
 from __future__ import annotations
 
@@ -66,10 +69,115 @@ def unknown_names(names, c=None) -> str:
             (f'the project has: {", ".join(known)}' if known else 'this project names none ([run.tools] in runner.toml)'))
 
 
+def label(name: str, c=None) -> str:
+    """What the screens call tool `name`, or the built-in `memory`."""
+    return (specs(c).get(name) or {}).get('label', name)
+
+
 def needs_of(line: str, c=None) -> list[str]:
     """The shared tools a task line says it needs, those the project (still) names."""
     known = specs(c)
     return [n for n in P.fields(line).get('needs', []) if n in known]
+
+
+# --- memory (B184) --------------------------------------------------------------------------------------------
+# A task's stops for low memory are counted in `<notes>/<ID>.mem`, {stops, told}, from its start to its end.
+
+MEMORY = 'memory'
+MEMORY_OVER = 2          # GB over `[run] min_free_mem_gb` before a waiting session goes on
+MEMORY_PAUSE = 60.0      # s a wait lasts at least per stop, whatever is free: the reap may judge otherwise
+MEMORY_PAUSE_MAX = 600.0
+MEMORY_STOPS = 3         # stops of one task before the run says so, once
+MEMORY_LONG = 1800.0     # s a wait lasts before the run says so, once
+GATE_WAIT = 600.0        # s a gate waits for memory before it runs all the same
+GB = 2 ** 30
+EV_MEMORY = 'memory short'  # task `id` was stopped for low memory again and again, or waits long (text)
+LOW_SAID = [False]
+
+
+def memory() -> dict | None:
+    """{total, avail} in bytes (Linux), None elsewhere."""
+    from agent_runner.vitals import linux_mem
+    return linux_mem(Path(os.environ.get('AGENT_RUNNER_MEMINFO_DIR') or '/proc'))
+
+
+def memory_goal(total: int, c=None) -> float:
+    """The bytes available at which a waiting session goes on: comfortably over the floor, yet within reach on a
+    small machine."""
+    floor = (c or S.C).run['min_free_mem_gb'] * GB
+    return min(floor + MEMORY_OVER * GB, max(floor, total * 0.6))
+
+
+def memory_hold(tid: str) -> str:
+    """Why task `tid` still waits for memory, '' when its session may go on."""
+    m = memory()
+    if m and m['avail'] < (goal := memory_goal(m['total'])):
+        return f'{m["avail"] / GB:.1f} GB free, goes on at {goal / GB:.1f} GB'
+    w = _read(mark(tid))
+    if time.time() - w.get('at', 0) < min(MEMORY_PAUSE * max(1, _stops(tid)['stops']), MEMORY_PAUSE_MAX):
+        return 'a short pause first'
+    return ''
+
+
+def memory_short(c=None) -> str:
+    """Less memory available than `[run] min_free_mem_gb`: '1.2 GB free, under …', else ''."""
+    floor = (c or S.C).run['min_free_mem_gb']
+    m = memory() if floor else None
+    return f'{m["avail"] / GB:.1f} GB free, under [run] min_free_mem_gb ({floor} GB)' \
+        if m and m['avail'] < floor * GB else ''
+
+
+def low_memory() -> bool:
+    """Memory is under the floor: no new session starts until there is more. Said once per spell."""
+    why = memory_short()
+    if why and not LOW_SAID[0]:
+        log(f'memory: {why}: no new session starts until there is more')
+    LOW_SAID[0] = bool(why)
+    return bool(why)
+
+
+def gate_wait(c) -> None:
+    """A slot's gate does not start while memory is under the floor, for GATE_WAIT s at most."""
+    if not os.environ.get('AGENT_RUNNER_SLOT') or not (why := memory_short(c)):
+        return
+    print(f'memory: {why}: the gate starts once there is more, within {GATE_WAIT / 60:g} min', flush=True)
+    end = time.monotonic() + GATE_WAIT
+    while time.monotonic() < end and memory_short(c):
+        time.sleep(5)
+
+
+def _stops(tid: str) -> dict:
+    try:
+        d = json.loads(S.C.notes(f'{tid}.mem').read_text(encoding='utf-8'))
+        return {'stops': int(d['stops']), 'told': bool(d['told'])}
+    except (OSError, ValueError, KeyError, TypeError):
+        return {'stops': 0, 'told': False}
+
+
+def stopped_again(tid: str) -> int:
+    """Count a stop of task `tid` for low memory; how many so far."""
+    d = _stops(tid)
+    d['stops'] += 1
+    S.C.notes(f'{tid}.mem').write_text(json.dumps(d), encoding='utf-8')
+    return d['stops']
+
+
+def say_memory(t: float | None = None) -> None:
+    """Say once per task that it was stopped for low memory MEMORY_STOPS times, or waits for longer than
+    MEMORY_LONG. Never a Needs you item: it goes on by itself."""
+    t = time.time() if t is None else t
+    for tid, w in parked().items():
+        if w['tool'] != MEMORY or (d := _stops(tid))['told']:
+            continue
+        if d['stops'] >= MEMORY_STOPS:
+            said = f'stopped for low memory {d["stops"]} times'
+        elif t - w.get('at', t) >= MEMORY_LONG:
+            said = f'has waited {mins(w["at"], t)} for memory'
+        else:
+            continue
+        S.C.notes(f'{tid}.mem').write_text(json.dumps({**d, 'told': True}), encoding='utf-8')
+        text = f'{tid} {said}; it goes on by itself once memory is free'
+        log(text, EV_MEMORY, tid, text=text)
 
 
 # --- the check ------------------------------------------------------------------------------------------------
@@ -297,6 +405,10 @@ def hold(tid: str, needs: list[str], users: dict[str, str], before: dict[str, st
     """Why task `tid` waits for a shared tool it needs: (tool, what it waits on), or None. `users`: {tool: the running
     task that has it}; `before`: {tool: a task that gave up its slot for it and goes first}."""
     for name in needs:
+        if name == MEMORY:
+            if why := memory_hold(tid):
+                return name, why
+            continue
         if (u := users.get(name)) and u != tid:
             return name, held_by(u)
         r = now(name)
@@ -327,6 +439,8 @@ def ready(tid: str, needs: list[str]) -> bool:
 
 
 def _ready(tid: str, name: str) -> bool:
+    if name == MEMORY:
+        return not memory_hold(tid)
     if name not in THREADS:
         got = check(name)
         return not _blocks(*got, READINGS.get(name) or {'state': '', 'since': 0}, tid)
@@ -364,16 +478,14 @@ def _read(f: Path) -> dict:
 def parked() -> dict[str, dict]:
     """{task: its wait} for every task that gave up its slot, longest first. A wait: {tool, sid, slot, dirty, at,
     running}, `running` once its session goes on (kept until that ends: it has the tool)."""
-    if not specs():
-        return {}
     got = {f.stem: w for f in S.C.notes().glob('*.wait') if (w := _read(f))}
     return dict(sorted(((t, w) for t, w in got.items() if not w.get('running')), key=lambda x: x[1].get('at', 0)))
 
 
 def holding(tid: str) -> str:
-    """The tool task `tid`'s running session waited for, else ''."""
+    """The tool task `tid`'s running session waited for, else '' (memory is nobody's to have)."""
     w = _read(mark(tid))
-    return w['tool'] if w.get('running') else ''
+    return w['tool'] if w.get('running') and w['tool'] != MEMORY else ''
 
 
 def waited(tid: str) -> dict:
@@ -398,17 +510,19 @@ def park(n: int, tid: str, sid: str, tool: str) -> bool:
     git('checkout', '-q', '--detach', cwd=d)
     mark(tid).write_text(json.dumps(
         {'tool': tool, 'sid': sid, 'slot': n, 'dirty': dirty,
-         'at': old['at'] if old.get('tool') == tool and old.get('at') else time.time()}), encoding='utf-8')
+         'at': old['at'] if tool != MEMORY and old.get('tool') == tool and old.get('at') else time.time()}), encoding='utf-8')
     if git('branch', '-M', f'task/{tid}', f'waiting/{tid}').returncode:
         mark(tid).unlink(missing_ok=True)
         log(f'slot {n}: {tid} waits for {tool}, but task/{tid} could not become waiting/{tid}; it ends as any other '
             f'session')
         return False
     r = seen().get(tool)
-    log(f'slot {n}: {tid} waits for {specs().get(tool, {}).get("label", tool)}' +
+    log(f'slot {n}: {tid} waits for {label(tool)}' +
         (f', {words(r)}' if r and r['state'] != FREE else '') +
-        f'; its slot is free, its work is on waiting/{tid}, and its session goes on once the tool is free',
+        f'; its slot is free, its work is on waiting/{tid}, and its session goes on once {"memory" if tool == MEMORY else "the tool"} is free',
         EV_WAITS, tid, tool=tool)
+    if tool == MEMORY:
+        say_memory()
     if tool in WAKES:
         WAKES[tool].set()
     return True
@@ -429,6 +543,8 @@ def resumed(tid: str, w: dict) -> None:
 
 def forget(tid: str) -> None:
     """Task `tid` waits for no tool and has none: its session ended, or it is dropped."""
+    if S.C:
+        S.C.notes(f'{tid}.mem').unlink(missing_ok=True)
     if S.C and _read(mark(tid)):
         mark(tid).unlink(missing_ok=True)
         if not git('rev-parse', '--verify', '-q', f'refs/heads/waiting/{tid}').returncode:
@@ -438,8 +554,6 @@ def forget(tid: str) -> None:
 def settle_ended(slots: list[int]) -> None:
     """A run's start: park what a session that ran `run wait-for` left while no run was up, finish a park a crash
     cut short, and drop the waits of tasks done or dropped since."""
-    if not specs():
-        return
     from agent_runner.tools import end_mark, take_end
     from agent_runner.watch import last_session
     for n in slots:
@@ -489,10 +603,19 @@ take the tool's lock as this project says, then carry on with task {tid} as the 
 If another has it again, `run wait-for {tool}` again."""
 
 
+WOKEN_MEMORY = """Memory is free again. A command of yours was stopped for low memory, you gave up your slot with \
+`run wait-for memory`, and the runner resumed this session {where}. Run the command again now: this message and the \
+person's standing go-ahead in your first message are the asking it needs. Whatever you had running in the background \
+ended with the slot. Look at `git status`, then carry on with task {tid} as the first message of this session says. \
+If it is stopped for low memory again, `run wait-for memory` again; never ask the person about it."""
+
+
 def woken_prompt(tid: str, w: dict, where: str) -> str:
+    if w['tool'] == MEMORY:
+        return WOKEN_MEMORY.format(where=where, tid=tid)
     r = seen().get(w['tool']) or {}
     why = 'its check fails, so nobody knows whether it is free' if r.get('state') == UNKNOWN else 'it is free'
-    return WOKEN.format(label=specs().get(w['tool'], {}).get('label', w['tool']), why=why, where=where, tid=tid,
+    return WOKEN.format(label=label(w['tool']), why=why, where=where, tid=tid,
                         tool=w['tool'])
 
 
@@ -557,7 +680,7 @@ def _state() -> dict:
 def waiting(ls: list[str] | None = None, st: dict | None = None) -> dict[str, list[str]]:
     """{task: the tools it needs} for every open task that could start but for them: not running or merging, not set
     aside, and nothing its `after:` names still open. One that gave up its slot counts too."""
-    if not specs():
+    if not specs() and not parked():
         return {}
     ls = P.lines(S.C.todo) if ls is None else ls
     st = _state() if st is None else st
@@ -571,17 +694,19 @@ def waiting(ls: list[str] | None = None, st: dict | None = None) -> dict[str, li
             need = list(dict.fromkeys([ws[tid]['tool'], *need]))
         elif not need or section.startswith(P.SKIPPED) or {t for t in P.waits_on(ls, i) if t in open_}:
             continue
-        out[tid] = [n for n in need if n in specs()]
+        out[tid] = [n for n in need if n in specs() or n == MEMORY]
     return out
 
 
 def pending(tried=()) -> bool:
-    """A task waits for a tool that is busy, or whose failing check holds it a few minutes more: it goes on by itself,
+    """A task waits for memory, for a tool that is busy, or for one whose failing check holds it a few minutes more: it goes on by itself,
     so the run is not idle (a missing tool may stay so)."""
-    rs = seen()
+    rs, ws = seen(), waiting()
+    if any(MEMORY in ns for tid, ns in ws.items() if tid not in tried):
+        return True
     return bool(rs) and any((r := rs.get(n)) and (r['state'] == UNKNOWN and not expired(r) or
                                                   r['state'] == BUSY and not names_task(r['who'], tid))
-                            for tid, ns in waiting().items() if tid not in tried for n in ns)
+                            for tid, ns in ws.items() if tid not in tried for n in ns)
 
 
 def used(ls: list[str], st: dict) -> dict[str, tuple[str, float]]:
@@ -620,7 +745,7 @@ def line(tools: list[dict]) -> str:
 
 def wait_words(ls: list[str] | None = None, st: dict | None = None, t: float | None = None) -> dict[str, str]:
     """{task: 'waits for iPhone 15, held by F389, 12 min'} for the tasks a shared tool keeps waiting."""
-    if not specs():
+    if not specs() and not parked():
         return {}
     ls = P.lines(S.C.todo) if ls is None else ls
     st = _state() if st is None else st
@@ -629,6 +754,9 @@ def wait_words(ls: list[str] | None = None, st: dict | None = None, t: float | N
         first.setdefault(w['tool'], tid)
     for tid, names in waiting(ls, st).items():
         for name in names:
+            if name == MEMORY:
+                out[tid] = f'waits for memory, {memory_hold(tid) or "free: it goes on in the next free slot"}'
+                break
             r, u = rs.get(name), us.get(name)
             if r and r['state'] != FREE and not (r['state'] == UNKNOWN and expired(r)) and not (r['state'] == BUSY and names_task(r['who'], tid)):
                 said = words(r, t)
@@ -681,15 +809,15 @@ def say_missing(t: float | None = None) -> None:
 # --- the agent's command ---------------------------------------------------------------------------------------
 
 def cmd_wait_for(argv: list[str]) -> int:
-    ap = argparse.ArgumentParser(prog='run wait-for', description='A shared tool is busy or missing: give up this '
-                                 'slot and wait for it. The session ends, its work is kept, and it goes on once the '
-                                 'tool is free.')
-    ap.add_argument('tool', help='the shared tool, as [run.tools] names it')
+    ap = argparse.ArgumentParser(prog='run wait-for', description='A shared tool is busy or missing, or a command '
+                                 'was stopped for low memory (`memory`): give up this slot and wait. The session ends, '
+                                 'its work is kept, and it goes on once the tool, or memory, is free.')
+    ap.add_argument('tool', help='the shared tool, as [run.tools] names it, or `memory`')
     a = ap.parse_args(argv)
     from agent_runner.config import cfg, main_checkout
     from agent_runner.tools import _write_end, task_here
     c = cfg(main_checkout())
-    if why := unknown_names([a.tool], c):
+    if a.tool != MEMORY and (why := unknown_names([a.tool], c)):
         print(f'run wait-for: {why}', file=sys.stderr)
         return 2
     if not os.environ.get('AGENT_RUNNER_SLOT'):
@@ -705,6 +833,8 @@ def cmd_wait_for(argv: list[str]) -> int:
         print(f'run wait-for: refused: {tid} itself holds {", ".join(mine)}. Release it first, or go on and use it.',
               file=sys.stderr)
         return 1
+    if a.tool == MEMORY:
+        return _wait_memory(tid, c)
     ahead = [t for t, w in parked().items() if w['tool'] == a.tool and t != tid]
     label, (state, who) = specs(c)[a.tool]['label'], got[a.tool]
     if state == FREE and not ahead:
@@ -715,6 +845,20 @@ def cmd_wait_for(argv: list[str]) -> int:
     print(f'{label}: {f"{ahead[0]} goes first" if state == FREE else said}.\nStop now. The session ends and its slot is '
           f'given up; {tid}\'s work is kept as it is (uncommitted edits too), and this same session goes on, ahead of '
           f'other tasks, once {label} is free.')
+    return 0
+
+
+def _wait_memory(tid: str, c) -> int:
+    """`run wait-for memory`. A first stop with memory free by now keeps the slot; later ones wait at least a pause."""
+    from agent_runner.tools import _write_end
+    m, n = memory(), stopped_again(tid)
+    if n == 1 and m and m['avail'] >= memory_goal(m['total'], c):
+        print('Memory is free again: run the command again now. This session keeps its slot.')
+        return 0
+    _write_end('wait', tid, MEMORY)
+    free = f'{m["avail"] / GB:.1f} GB of memory free. ' if m else ''
+    print(f'{free}Stop now. The session ends and its slot is given up; {tid}\'s work is kept as it is (uncommitted edits too), and this same session goes on, ahead of other '
+          f'tasks, once memory is free. Do not ask the person.')
     return 0
 
 

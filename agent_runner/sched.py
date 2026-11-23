@@ -239,12 +239,12 @@ def held(running: dict, branch: str) -> Held:
 
 
 def tool_fields(todo: list, live: set, branch: str) -> dict:
-    """F168: Held's `needs`, `users` and `waits`; nothing without shared tools."""
-    if not shared_tools.specs(C):
+    """F168: Held's `needs`, `users` and `waits`; nothing without shared tools or a wait for memory (B184)."""
+    if not shared_tools.specs(C) and not shared_tools.parked():
         return {}
     ls, open_ = plan_text(branch), {t[0] for t in todo}
     waits = {t: (w['tool'], w.get('at', 0)) for t, w in shared_tools.parked().items()
-             if t in open_ and w['tool'] in shared_tools.specs(C)}
+             if t in open_ and (w['tool'] in shared_tools.specs(C) or w['tool'] == shared_tools.MEMORY)}
     needs = {tid: n for _, _, tid, _, i in P.iter_tasks(ls) if (n := shared_tools.needs_of(ls[i], C))}
     for t, (tool, _) in waits.items():
         needs[t] = list(dict.fromkeys([tool, *needs.get(t, [])]))
@@ -355,7 +355,7 @@ def explain(running: dict, tried: set, branch: str) -> dict[str, tuple[str, str]
         elif kind == 'clash':
             why[tid] = clash_why(t, b, h.shared, h.alone)
         elif kind == 'tool':
-            why[tid] = (f'waiting for {shared_tools.specs(C)[b[0]]["label"]}', b[1])
+            why[tid] = (f'waiting for {shared_tools.label(b[0], C)}', b[1])
         elif (P.release(tid) or tid in h.alone) and (over := passed_over(t, h)):
             why[tid] = ('free', away_note(over, set(claimed)))
         else:

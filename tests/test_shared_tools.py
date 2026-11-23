@@ -366,6 +366,112 @@ def test_without(tmp: Path):
     check('tool_wait' not in U.queue_rows(P.lines(R.C.todo), {})[0], 'queue rows as before')
 
 
+def meminfo(avail_gb: float) -> None:
+    Path(os.environ['AGENT_RUNNER_MEMINFO_DIR'], 'meminfo').write_text(
+        f'MemTotal: {32 * 2 ** 20} kB\nMemAvailable: {int(avail_gb * 2 ** 20)} kB\n', encoding='utf-8')
+
+
+def test_memory(tmp: Path):
+    print('B184 memory: a session stopped for low memory parks, never under Needs you, and goes on once there is some')
+    repo = tmp / 'low'
+    (repo / 'plan').mkdir(parents=True)
+    git(repo, 'init', '-q', '-b', 'main')
+    (repo / 'plan/TODO.md').write_text(TODO, encoding='utf-8')
+    (repo / 'plan/DONE.md').write_text('# DONE\n', encoding='utf-8')
+    (repo / 'runner.toml').write_text('[run]\ntest = "true"\nmin_free_gb = 0\nremote = false\n', encoding='utf-8')
+    (repo / '.gitignore').write_text('.runner/\n', encoding='utf-8')
+    for f in 'abc':
+        (repo / f'{f}.py').write_text(f'# {f}\n', encoding='utf-8')
+    git(repo, 'add', '-A')
+    git(repo, 'commit', '-qm', 'start')
+    fresh(repo)
+    check(CF.tools_problem({'memory': {'check': 'a'}}), 'no shared tool may take the name')
+    log = lambda: (repo / '.runner/run.log').read_text(encoding='utf-8')
+    told = lambda: log().count('T2 stopped for low memory') + log().count('for memory; it goes on by itself')
+    d = R.worktree(1, 'main')
+    git(d, 'checkout', '-q', '-B', 'task/T2', 'main')
+    (d / 'b.py').write_text('# half\n', encoding='utf-8')
+    opened = []
+
+    class Mux:
+        name = 'fake'
+
+        def open(self, *a, **kw):
+            opened.append((a, kw))
+            return 4343
+
+        def where(self, n):
+            return f'slot {n}'
+    mux, find, pause = R.MUX, slots.Claude.find_transcript, T.MEMORY_PAUSE
+    old = tmp / 'projects/-low/sid-m.jsonl'
+    old.parent.mkdir(parents=True)
+    old.write_text('{}\n', encoding='utf-8')
+    R.MUX = Mux()
+    slots.Claude.find_transcript = lambda self, sid: str(old) if sid == 'sid-m' else None
+    try:
+        meminfo(12)
+        eq((agent(d, 'memory')[0], tools.ended(1, R.C)), (0, False), 'free by now: the first stop keeps the slot')
+        meminfo(5)  # over the floor (4), not comfortably
+        eq((agent(d, 'memory')[0], tools.take_end(1, R.C)['text']), (0, 'memory'), 'short: it waits')
+        check(T.park_end(1, 'T2', 'sid-m', {'how': 'wait', 'tid': 'T2', 'text': 'memory'}), 'the run parks it')
+        eq((status.waiting_ok(), P.asks(R.C.todo)), ([], []), 'not a Needs you item')
+        eq(T.wait_words()['T2'], 'waits for memory, 5.0 GB free, goes on at 6.0 GB', 'the pages say what it waits on')
+        row = next(q for q in U.queue_rows(P.lines(R.C.todo), {}) if q['id'] == 'T2')
+        eq((row['state'], row['tool_wait'][:17]), ('tool', 'waits for memory,'), 'the queue row too')
+        check(any('T2 waits for memory' in x for x in status.tool_lines({})), 'and status')
+        eq((first(claim=True), T.pending()), ('T1', True), 'another task takes the slot; the run is not idle')
+        eq(sched.explain({}, set(), 'main')['T2'][0], 'waiting for memory', 'the dry run says why')
+        T.settle_ended([1])
+        eq(list(T.parked()), ['T2'], 'a restart keeps it waiting')
+
+        meminfo(12)
+        eq(first(claim=True), 'T1', 'free, but not before its pause')
+        T.MEMORY_PAUSE = 0
+        eq(first(claim=True), 'T2', 'then it goes first')
+        got = R.start(2, task('T2'), 'main', 'opus', 90, 2)
+        eq((got and got[1], opened[0][1].get('resume')), ('sid-m', True), 'the same session resumes')
+        check('Memory is free again' in opened[0][0][2] and 'Run the command again now' in opened[0][0][2], 'told so')
+        eq(((R.SLOTS_DIR / 's2/b.py').read_text(), T.parked(), T.holding('T2')), ('# half\n', {}, ''),
+           'its work is there; nobody has the memory')
+        eq(first({2: task('T2')}), 'T1', 'so others start beside it')
+        eq(told(), 0, 'nothing said about two stops')
+
+        meminfo(1)  # low throughout
+        eq(agent(R.SLOTS_DIR / 's2', 'memory')[0], 0, 'stopped a third time')
+        check(T.park(2, 'T2', 'sid-m', 'memory'), 'parked again')
+        for t in (0, 1, 5000, 9000):
+            T.say_memory(time.time() + t)
+        eq((list(T.parked()), told(), status.waiting_ok()), (['T2'], 1, []), 'still waiting, told once, not Needs you')
+        check('stopped for low memory 3 times' in log(), 'how often', log()[-400:])
+        T.S.C.notes('T2.mem').unlink()
+        for t in (60, 5000, 9000):
+            T.say_memory(time.time() + t)
+        eq(told(), 2, 'a first wait that lasts is said once too')
+
+        check(T.low_memory() and T.low_memory(), 'under the floor no session starts')
+        eq(log().count('no new session starts until there is more'), 1, 'said once')
+        os.environ['AGENT_RUNNER_SLOT'] = '1'
+        keep, T.GATE_WAIT = T.GATE_WAIT, 0.0
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            T.gate_wait(R.C)
+        check('the gate starts once there is more' in out.getvalue(), 'a gate waits, no longer than its deadline')
+        T.GATE_WAIT = keep
+        meminfo(12)
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            T.gate_wait(R.C)
+        eq((out.getvalue(), T.low_memory()), ('', False), 'with memory neither is held')
+        T.forget('T2')
+        check(not T.S.C.notes('T2.mem').exists(), 'a new attempt counts afresh')
+        from agent_runner import brief
+        check('wait-for memory' in brief.PROMPT and 'standing go-ahead' in brief.PROMPT, 'the brief has the go-ahead')
+    finally:
+        os.environ.pop('AGENT_RUNNER_SLOT', None)
+        R.MUX, slots.Claude.find_transcript, T.MEMORY_PAUSE = mux, find, pause
+        meminfo(16)
+
+
 def main() -> int:
     with tempfile.TemporaryDirectory() as tmp_:
         tmp = Path(tmp_)
@@ -373,7 +479,7 @@ def main() -> int:
         return report([lambda: test_config(repo), lambda: test_busy_and_together(repo), lambda: test_stale(repo),
                        lambda: test_missing(repo), lambda: test_unknown(repo), lambda: test_wait_for(repo, tmp),
                        lambda: test_order_and_drop(repo), lambda: test_background(repo), lambda: test_after_and_release(repo),
-                       lambda: test_without(tmp)])
+                       lambda: test_without(tmp), lambda: test_memory(tmp)])
 
 
 if __name__ == '__main__':
