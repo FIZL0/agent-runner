@@ -4,6 +4,8 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+## 1.0.0 (2026-11-23)
+
 - Added: runner tools on Claude Code. `agent-runner finish "summary"` ends a slot's session at once after
   `done`, its summary in the run log. `agent-runner ask "question"` parks the task under Needs you (`DECIDE:`),
   its work kept on `asked/<ID>`; the person's answer resumes that same session with the answer as its next
