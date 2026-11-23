@@ -392,23 +392,6 @@ def command_text(argv: list[str]) -> str:
                     for a in (x.replace('\\', '/') for x in argv))
 
 
-# --- terminals ---------------------------------------------------------------
-
-def mux_choice(want: str, tmux_ok: bool, inside: bool, windows: bool = WINDOWS) -> str:
-    """Where a run puts its slot sessions (F40): 'hidden' (a pseudo-terminal with no window, the slot's
-    output in its log; watched through Remote Control, status and control sessions) or 'tmux' (a pane each,
-    to attach to and type into; Linux and macOS only).
-
-    `want` is `--mux` or `[run] mux`: '' (auto) is tmux when it is installed and the run is inside a tmux
-    session (`inside`; the background run always is), else hidden. 'tmux' without tmux installed, and
-    anything on Windows, is hidden too: there is no run without a worktree and the gate any more. The old
-    values 'wt', 'console' and 'none' read as hidden.
-    """
-    if windows or not tmux_ok or want not in ('', 'tmux'):
-        return 'hidden'
-    return 'tmux' if want == 'tmux' or inside else 'hidden'
-
-
 def suspend() -> int:
     """Suspend (sleep) the computer now; the command's exit code (non-zero: refused). It returns at once, the
     sleep follows.

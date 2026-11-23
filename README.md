@@ -40,25 +40,24 @@ agent-runner plan                  # what the runner sees in plan/TODO.md
 agent-runner run --dry-run 3       # what three slots would start right now, and why the rest wait
 agent-runner run once              # one task, one session, then stop: try it like this first
 agent-runner                       # the run in the background; the prompt comes straight back
-agent-runner --attach              # the same (or the run already up), then its pane here; Ctrl-b d: background again
+agent-runner --attach              # the same (or the run already up), then the run view here
 agent-runner status                # is it up, merged / left counts, each slot's task, what merged lately
-agent-runner attach                # watch it (attach s2: slot 2; c1: the control session); Ctrl-b d to detach again
+agent-runner attach                # the run view: its log, live, and its keys (s, p, +, ?); Ctrl-C leaves it
+agent-runner attach s2             # slot 2's own terminal (c1: the control session); Ctrl-b d leaves it running
 agent-runner ui                    # the run page here: sessions, queue, what needs you; keys act on it
-agent-runner attach board          # remote on: the runner feed's window ("<repo> · runner" in the apps, a lean
-                                   # Haiku feed that hands any work you type to a new control session)
 agent-runner control               # a control session here: "status?", "pause", "add a task to fix X"
 agent-runner stop                  # finish the running tasks, then end it
 ```
 
-Bare `agent-runner` starts the run in a detached tmux session `ar-<repo>`, with the slots' window in it, so
-no terminal is taken and nothing pops up. `agent-runner run 3` is the same run in this terminal (inside tmux).
-tmux is optional: without it (and always on Windows) the run is a detached process and each slot runs
-hidden, in a terminal with no window, its output in `.runner/slotN.log`; you watch and steer it through
-`agent-runner status`, control sessions and `plan tell`.
-Either way the run opens a control session, c1, beside it: a Claude Code session in the main checkout that
-you ask for status, to pause, to add slots or stop, to queue a task, or to do one now. It opens with what is
-running and what happened since you last looked (`agent-runner since`), and when you say "follow" it posts each
-task as it lands. Any new pane in the `ar-<repo>` session is another one. With `[run] remote` the
+Bare `agent-runner` starts the run as a detached process, so no terminal is taken and nothing pops up.
+`agent-runner run 3` is the same run in the foreground of this terminal. Either way each slot runs hidden, in
+a terminal with no window, its output in `.runner/slotN.log`: `agent-runner attach s2` puts this terminal on
+it, and you watch and steer the run through `agent-runner attach` (the run view), `status`, `ui`, control
+sessions and `plan tell`. The same on Linux, macOS and Windows; there is no tmux to set up.
+The run opens a control session, c1, beside it (hidden too: `attach c1`): a Claude Code session in the main
+checkout that you ask for status, to pause, to add slots or stop, to queue a task, or to do one now. It opens
+with what is running and what happened since you last looked (`agent-runner since`), and when you say "follow"
+it posts each task as it lands. `agent-runner control --new` opens another one. With `[run] remote` the
 control sessions are on Remote Control, so you run the run from claude.ai/code or the Claude apps
 ([docs/REFERENCE.md](docs/REFERENCE.md#control-sessions)). The run closes the extra ones (never c1) after
 3 hours of quiet once Claude has answered, so the apps' list stays short; one left on an open question goes under
@@ -71,9 +70,8 @@ Needs you first (`[run] control_idle`, `control_ask`).
 Upgrade with `uv tool upgrade agent-runner` (or `pipx upgrade`) any time: a running run restarts itself on the
 new version and adopts its sessions (not on Windows, nor across a major version). Or pin a
 [release](https://github.com/FIZL0/agent-runner/releases/latest): `uv tool install git+https://github.com/FIZL0/agent-runner@v<version>`.
-On Windows the slots always run hidden, each in a console whose window starts hidden (`agent-runner attach s2`
-shows one), whether the run is bare `agent-runner` or `agent-runner run 3` in a terminal. On Linux and macOS
-`agent-runner attach s2` (or `c1`) puts this terminal on a hidden session's own terminal, with or without tmux;
+On Windows each slot runs in a console whose window starts hidden (`agent-runner attach s2` shows one). On
+Linux and macOS `agent-runner attach s2` (or `c1`) puts this terminal on a hidden session's own terminal;
 Ctrl-b d detaches and leaves it running.
 Adding it to an existing repo and wrapping it from your own CLI are in [docs/SETUP.md](docs/SETUP.md).
 
@@ -98,8 +96,8 @@ main moves and is pushed; the slot picks its next task
 1. **Pick.** A free slot reads `plan/TODO.md` from the top and takes the first task that may start. A task
    waits while it is blocked, while a task in its `after:` is not done, while it shares `files:` with a
    task that is running or not merged yet, or while another task of its family is running.
-2. **Work.** The slot gets a worktree on branch `task/<ID>` and a terminal (a tmux pane, or a hidden
-   pseudo-terminal with no window: without tmux, and on Windows). The agent starts from a short brief: the task's line, its long form, the files it
+2. **Work.** The slot gets a worktree on branch `task/<ID>` and a hidden terminal (a pseudo-terminal with no
+   window; on Windows a console that starts hidden). The agent starts from a short brief: the task's line, its long form, the files it
    names, and its newest journal entry.
 3. **Finish.** The agent runs `done`. It runs your test gate, ticks the task, commits and pushes the
    branch, and refuses while the tests fail. A stuck agent runs `done --blocked "why"` instead. Once the
@@ -125,7 +123,8 @@ your own session or a subagent, while a run goes on (the run keeps off it and it
 Work not queued yet: `agent-runner take "what, why, how to check" --kind B --files a.py` queues and takes it
 in one step. Edits already made in the main checkout: add `--here`, and they move into the new worktree.
 
-**Stopping.** Type `s` + Enter in the runner's pane, or run `agent-runner stop`. Nothing new starts; the
+**Stopping.** Type `s` + Enter in the run view (`agent-runner attach`, or the terminal `run 3` runs in), or
+run `agent-runner stop`. Nothing new starts; the
 running tasks finish and merge, then the run exits (`s` again takes it back). `s!` (`stop --force`) ends the
 sessions now instead, each to resume in the next run. `p` pauses, `u` upgrades agent-runner (the run restarts on it; `[run] auto_upgrade`, on by default, does it once a release is out), `f` starts tasks past the usage caps (as `--force`), `+`/`-` change the slot count, and `z` or
 `x` suspend or shut the computer down once the run stops (or goes idle); `?` lists the keys. To leave the

@@ -8,8 +8,6 @@ import io
 import json
 import os
 import re
-import shlex
-import shutil
 import subprocess as sp
 import sys
 import threading
@@ -20,11 +18,10 @@ from pathlib import Path
 
 from agent_runner import plan as P, plansync, plat
 from agent_runner.config import RUNNER, runner_cmd, shown_cmd
-from agent_runner.state import (C, commit_plan, git, HIDDEN, init, log, MERGE, note, plan_rel, REPO_TAG, ROOT,
-    RUN_TAG, TAG)
+from agent_runner.state import C, commit_plan, git, HIDDEN, init, log, MERGE, note, plan_rel, ROOT
 from agent_runner.brief import has_sheet
-from agent_runner.slots import (attach_target, backend, background_env, background_session, entries, marker_pid, MUX,
-    pi, PRESENCE_ENV, quiet_file, remote_on, REMOTE_URL, send_to_pane, silent, tmux, TmuxMux, transcript, window)
+from agent_runner.slots import (backend, entries, marker_pid, pi, PRESENCE_ENV, quiet_file, remote_on,
+    REMOTE_URL, silent, transcript)
 from agent_runner.merge import gate_alive
 
 
@@ -246,9 +243,8 @@ def control_session_start(n: int, hook: dict) -> str:
     base, given = control_base_name(n), control_given(n)
     if not given or given in (base, control_name(n)):
         return ''
-    if not (pane := control_pane(n)) or not send_to_pane(pane, f'/rename {base}'):
+    if not control_type(n, f'/rename {base}'):
         return ''
-    tmux('rename-window', '-t', pane, base)
     control_give(n, base)
     return base
 
@@ -269,22 +265,19 @@ def control_hook_input() -> dict:
     return d if isinstance(d, dict) else {}
 
 
-def control_pane(n: int) -> str:
-    """The tmux pane control session `n` runs in: $TMUX_PANE when the caller is that session's own tool (its
-    shells inherit the pane), else the pane tagged c<n> for this repository; '' for none."""
-    if pane := os.environ.get('TMUX_PANE', ''):
-        return pane
-    if not shutil.which('tmux'):
-        return ''
-    rows = tmux('list-panes', '-a', '-F', f'#{{session_name}}\t#{{pane_id}}\t#{{{TAG}}}\t#{{{REPO_TAG}}}\t#{{{RUN_TAG}}}')
-    hit = attach_target(rows.stdout.splitlines(), ROOT, f'c{n}') if not rows.returncode else None
-    return hit[1] if hit else ''
+def control_type(n: int, text: str) -> bool:
+    """Type `text` into control session `n` and press Enter, through its hidden shim's FIFO
+    (`<notes>/control<n>.in`); False when it has none (Windows, or a session opened in a terminal)."""
+    from agent_runner.slots import send_fifo
+    inbox = C.notes(f'control{n}.in')
+    return not plat.WINDOWS and inbox.exists() and send_fifo(inbox, text)
 
 
 def control_set_title(n: int, summary: str) -> int:
     """F29 `control --title SUMMARY`: control session `n` (its own $AGENT_RUNNER_CONTROL) names itself for what
-    it is for, once it has read its first message: types `/rename <repo> · N · SUMMARY` into its pane (queued
-    until its turn ends) and renames its tmux window. Not over a name the person gave it (B41)."""
+    it is for, once it has read its first message. C26: the name is kept in state (`control_give`), which the
+    TUI, the run page and `list` read; a hidden session also gets `/rename <repo> · N · SUMMARY` typed in
+    (queued until its turn ends), so the Claude apps show it. Not over a name the person gave it (B41)."""
     if not n:
         print(f'no control session number: run it from a control session, or give N ({RUNNER} control N --title …)',
               file=sys.stderr)
@@ -299,12 +292,12 @@ def control_set_title(n: int, summary: str) -> int:
     if sid and transcript(sid) and control_renamed(control_state(entries(sid, skip_bad=True)), n):
         print(f'control {n} keeps the name the person gave it')
         return 0
-    if not (pane := control_pane(n)) or not send_to_pane(pane, f'/rename {name}'):
-        print(f'control {n} has no tmux pane to rename it in; it stays as it is', file=sys.stderr)
-        return 1
-    tmux('rename-window', '-t', pane, name)
     control_give(n, name)
-    print(f'control {n} is renamed "{name}" when this turn ends')
+    if control_type(n, f'/rename {name}'):
+        print(f'control {n} is renamed "{name}" when this turn ends')
+    else:
+        print(f'control {n} is named "{name}" on the run page and in the TUI (it runs in a terminal of its own, '
+              f'so the Claude apps keep its name)')
     return 0
 
 
@@ -655,40 +648,13 @@ def hand_hook_exclude(root: Path) -> None:
         pass
 
 
-def control_default_command(root: Path) -> str:
-    """tmux's default-command for the run's background session: every pane or window a person opens there
-    becomes a control session in the main checkout; a shell stays if one cannot start."""
-    return (f'cd {shlex.quote(str(root))} && {plat.command_text([*runner_cmd(), "control"])} '
-            f'|| exec "${{SHELL:-/bin/sh}}"')
-
-
-def control_pane_argv(target: str, background: bool, sess: str, root: Path, cmd: str, env: list[str]) -> list[str]:
-    """The tmux command opening c1: a pane split under the runner's pane `target` (a run in a terminal), or a
-    window of its own, "control-<repo>", in the background session `sess`."""
-    envs = [a for e in env for a in ('-e', e)]
-    where = (['new-window', '-d', '-t', f'={sess}:', '-n', window('control')] if background else
-             ['split-window', '-v', '-d', '-l', '40%', '-t', target])
-    return ['tmux', *where, '-c', str(root), *envs, '-P', '-F', '#{pane_id}', cmd]
-
-
-def background_session_options(sess: str, root: Path, env: list[str]) -> list[list[str]]:
-    """The tmux commands (without `tmux`) that make every new pane in the background session `sess` a control
-    session: its default-command and environment. B94: the target is '=sess:' (exact session, its current
-    window), as tmux 3.8's set-option rejects a bare '=sess' ("no such session")."""
-    t = f'={sess}:'
-    return [['set-option', '-t', t, 'default-command', control_default_command(root)],
-            *[['set-environment', '-t', t, *e.split('=', 1)] for e in env]]
-
-
 def start_control() -> None:
     """The run opens control session c1 beside it, unless `[run] control = false` or c1 already runs (it outlives
     a stopped run). With `[run] remote` it opens blank (no opening summary, so no tokens until the person types)
     and local (`--local`: no Remote Control, so no second app entry beside the control server's "<repo> ·
-    control" and no start push). tmux: under the runner's pane, or in the background session's own window, whose
-    default-command makes every new pane a control session. Windows: a console of its own (hidden in the
-    background run). Linux and macOS with no tmux pane to open it in (a hidden run): a pseudo-terminal with no
-    window (`hidden_control`, F59). B121: first the control sessions c2+ a shutdown ended are reopened
-    (`reopen_controls`)."""
+    control" and no start push). Windows: a console of its own (hidden). Linux and macOS: a pseudo-terminal
+    with no window (`hidden_control`, F59; `attach c1` shows it). B121: first the control sessions c2+ a
+    shutdown ended are reopened (`reopen_controls`)."""
     mark_board()
     if C.run['control'] and control_ok():
         try:
@@ -700,52 +666,33 @@ def start_control() -> None:
         return
     cmd = [*runner_cmd(), 'control', '1', *([] if run_restart() else ['--new-run']),  # F27: a restart resumes c1
            *(['--blank', '--local'] if remote_on() else [])]  # remote: free till you type, terminal only
-    here = os.environ.get('TMUX_PANE', '')
-    if isinstance(MUX, TmuxMux) and here:
-        sess = tmux('display-message', '-p', '-t', here, '#{session_name}').stdout.strip()
-        background = sess == background_session()
-        env = [e for e in background_env() if not e.startswith(('AGENT_RUNNER=', 'AGENT_RUNNER_SLOT=', 'AGENT_RUNNER_KEEP='))]
-        if background:
-            for args in background_session_options(sess, ROOT, env):
-                tmux(*args)
     if pid := control_live(1):
         log(f'control: c1 already runs (pid {pid})')
         return
-    if isinstance(MUX, TmuxMux) and here:
-        r = sp.run(control_pane_argv(here, background, sess, ROOT, plat.command_text(cmd), env),
-                   capture_output=True, text=True)
-        if r.returncode or not (pane_id := r.stdout.strip()):
-            log(f'control: tmux could not open c1: {r.stderr.strip()}')
-            return
-        tmux('set-option', '-p', '-t', pane_id, TAG, 'c1')
-        tmux('set-option', '-p', '-t', pane_id, REPO_TAG, str(ROOT))
-        where = f'window {window("control")}' if background else 'the pane under this one'
-        more = '; a new pane in this tmux session is another' if background else ''
-    elif plat.WINDOWS:
+    if plat.WINDOWS:
         plat.spawn_console(cmd, ROOT, control_env(), hidden=HIDDEN[0])
-        where, more = 'a console of its own' + (' (hidden)' if HIDDEN[0] else ''), ''
-    elif type(MUX).__name__ == 'HiddenMux':  # F59: a hidden run (no tmux, or outside a tmux session): no window
+        where = 'a console of its own' + (' (hidden)' if HIDDEN[0] else '')
+    else:  # F59: a pseudo-terminal with no window
         pid, why = hidden_control(1, cmd)
         if not pid:
             log(f'control: c1 could not start hidden: {why}')
             return
-        where, more = f'a hidden terminal (its output in {hidden_control_log(1)})', ''
-    else:
-        return
-    log(f'control: c1 is up in {where} ({shown_cmd()} control opens another{more})')
+        where = f'a hidden terminal ({shown_cmd()} attach c1 shows it; its output in {hidden_control_log(1)})'
+    log(f'control: c1 is up in {where} ({shown_cmd()} control opens another)')
 
 
-NO_BOARD = 'no-board'  # F59: <notes>/no-board while the run that is up has no board window (a hidden run)
+NO_BOARD = 'no-board'  # F59: <notes>/no-board while the run that is up has no runner feed (Windows)
 
 
 def mark_board() -> None:
-    """F59: say whether this run has a board window, for `feed_on` in the control sessions' own processes: the
-    board opens only in a tmux run inside a tmux session (`start_board`). Called once as the run starts."""
+    """F59: say whether this run keeps the runner feed, for `feed_on` in the control sessions' own processes:
+    C26, every run on Linux and macOS does (a hidden session, `start_board`), none on Windows. Called once as
+    the run starts."""
     f = C.notes(NO_BOARD)
-    if isinstance(MUX, TmuxMux) and os.environ.get('TMUX_PANE'):
+    if not plat.WINDOWS:
         f.unlink(missing_ok=True)
     else:
-        f.write_text('this run has no board window, so no runner feed\n', encoding='utf-8')
+        f.write_text('this run has no runner feed\n', encoding='utf-8')
 
 
 def hidden_control_log(n: int) -> Path:
@@ -758,17 +705,23 @@ def hidden_control(n: int, cmd: list[str], wait: float | None = None) -> tuple[i
     through the F40 pty shim (`run --slot-shim`, `run_pty`) with a job of its own, `<notes>/control<n>.job`:
     its output goes to `hidden_control_log`, its pid to `<notes>/control<n>.live` while it runs, and text
     written to the FIFO beside it (`control<n>.in`) is typed into it. Started detached, so it outlives the run
-    the way c1 in a pane does. (pid, '') once it is up, else (0, why)."""
+    the run. (pid, '') once it is up, else (0, why)."""
+    return hidden_shim(f'control{n}', cmd, wait)
+
+
+def hidden_shim(stem: str, cmd: list[str], wait: float | None = None) -> tuple[int, str]:
+    """`hidden_control` for any hidden session named `stem` (control3, board): its job, marker, log, FIFO and
+    attach socket are `<notes>/<stem>.job|.live|.log|.in|.sock`. (pid, '') once it is up, else (0, why)."""
     from agent_runner.slots import SHIM_WAIT
-    job, marker = C.notes(f'control{n}.job'), C.notes(f'control{n}.live')
+    job, marker = C.notes(f'{stem}.job'), C.notes(f'{stem}.live')
     ended = marker.with_suffix('.exit')
     marker.unlink(missing_ok=True)
     ended.unlink(missing_ok=True)
     job.write_text(json.dumps({'argv': cmd, 'cwd': str(ROOT), 'env': {}, 'marker': str(marker),
-                               'log': str(hidden_control_log(n))}), encoding='utf-8')
+                               'log': str(C.notes(f'{stem}.log'))}), encoding='utf-8')
     shim = [*runner_cmd(), 'run', '--slot-shim', str(job)]
     try:
-        with open(C.notes(f'control{n}.shim'), 'ab') as out:  # the shim's own errors, should it fail
+        with open(C.notes(f'{stem}.shim'), 'ab') as out:  # the shim's own errors, should it fail
             sp.Popen(shim, cwd=str(ROOT), env=control_env(), stdin=sp.DEVNULL, stdout=out, stderr=out,
                      start_new_session=True)
     except OSError as e:
@@ -780,15 +733,14 @@ def hidden_control(n: int, cmd: list[str], wait: float | None = None) -> tuple[i
         if ended.exists():
             return 0, ended.read_text(encoding='utf-8').strip()[:300] or 'it ended at once'
         time.sleep(0.2)
-    return 0, f'it did not start in {SHIM_WAIT if wait is None else wait:g} s (see {C.notes(f"control{n}.shim")})'
+    return 0, f'it did not start in {SHIM_WAIT if wait is None else wait:g} s (see {C.notes(f"{stem}.shim")})'
 
 
 def feed_on() -> bool:
-    """Does a run here keep the runner feed (the board window, on Remote Control), the one watch that pushes what
+    """Does a run here keep the runner feed (a hidden session, on Remote Control), the one watch that pushes what
     needs the person? Control sessions then start no needs-you watch of their own. Not while the run that is up
-    has no board window (F59: a hidden run, with tmux installed or not)."""
-    return (remote_on() and control_ok() and not plat.WINDOWS and shutil.which('tmux') is not None
-            and not C.notes(NO_BOARD).exists())
+    has no runner feed (Windows)."""
+    return remote_on() and control_ok() and not plat.WINDOWS and not C.notes(NO_BOARD).exists()
 
 
 CONTROL_LINK_WAIT = 90  # s `control --new` watches the new pane for its claude.ai/code link
@@ -1134,7 +1086,7 @@ def close_controls(branch: str = '', force: bool = False, now: float | None = No
 # N out again. Every CONTROL_CLOSE_EVERY s (and before `control --new` picks a number) each live control
 # session N > 1 whose transcript's last word is that disconnect, with no message the person typed since (one
 # typed in its terminal after it means they still use it there) and no new Remote Control session since, is
-# ended: its process, its tmux pane, controlN.pid and controlN.title. The transcript stays, resumable. c1 is
+# ended: its process, controlN.pid and controlN.title. The transcript stays, resumable. c1 is
 # left alone: it is the run's kept session (resumed across runs, local-only under [run] remote), as in B26.
 
 RC_CLOSED = re.compile(r'Remote Control disconnected\b.*\(code 4090\)')
@@ -1161,25 +1113,6 @@ def closed_online(rows) -> bool:
     return closed
 
 
-def control_window(n: int, pid: int) -> str:
-    """The tmux pane control session `n` (process `pid`) runs in, found by its c<n> tag for this repository or
-    by its pane pid; '' for none. Never $TMUX_PANE: the caller is the run, not that session."""
-    if not shutil.which('tmux'):
-        return ''
-    rows = tmux('list-panes', '-a', '-F', f'#{{session_name}}\t#{{pane_id}}\t#{{{TAG}}}\t#{{{REPO_TAG}}}\t'
-                f'#{{{RUN_TAG}}}\t#{{pane_pid}}')
-    if rows.returncode:
-        return ''
-    lines = rows.stdout.splitlines()
-    if hit := attach_target([l.rsplit('\t', 1)[0] for l in lines], ROOT, f'c{n}'):
-        return hit[1]
-    for l in lines:
-        f = l.split('\t')
-        if len(f) >= 6 and f[5] == str(pid):
-            return f[1]
-    return ''
-
-
 def end_closed_controls(force: bool = False) -> list[int]:
     """B53: end the control sessions closed online (see above). The numbers ended."""
     if not control_ok() or (not force and time.time() - CONTROL_GONE_AT[0] < CONTROL_CLOSE_EVERY):
@@ -1198,13 +1131,10 @@ def end_closed_controls(force: bool = False) -> list[int]:
         try:
             if not sid or not transcript(sid) or not closed_online(entries(sid, skip_bad=True)):
                 continue
-            pane = control_window(n, pid)
         except Exception as e:  # one unreadable session never stops the run loop or a new session
             log(f'control {n}: could not tell whether it was closed online: {e}')
             continue
-        plat.terminate(pid)
-        if pane:  # its pane only (a window of its own closes with it); one whose command falls back to a shell too
-            tmux('kill-pane', '-t', pane)
+        plat.terminate(pid)  # its hidden shim ends with it
         pidf.unlink(missing_ok=True)
         C.notes(f'control{n}.title').unlink(missing_ok=True)
         log(f'control {n}: ended, its Remote Control session was closed online '

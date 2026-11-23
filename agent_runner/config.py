@@ -106,7 +106,6 @@ DEFAULTS: dict = {
                                 # '' = the whole `test` every time
         'full_every_hours': 24, # with test_since: the whole `test` again once none has passed for this long; 0 = never
         'slots': 3,             # tasks (agent sessions) at once; `agent-runner slots N` changes a running run
-        'mux': '',              # where slots run: tmux, hidden; '' = tmux inside a tmux session, else hidden (Windows: hidden)
         'agent': 'claude',      # the CLI that runs a session: claude, or a pi executable (an executable named
                                 # pi runs on the Pi backend; AGENT_RUNNER_BACKEND=claude|pi overrides it)
         'include_task_id_in_commit': True,  # agents start each commit subject with the task id
@@ -329,7 +328,7 @@ def toplevel(cwd: Path | str | None = None) -> Path:
     if r.returncode:
         raise SystemExit(f'agent-runner: not inside a git repository (or set AGENT_RUNNER_REPO): {r.stderr.strip()}')
     if not (top := git_path(r.stdout)):
-        # B52: git prints an absolute directory; anything else (a tmux pane id "%9" from a stubbed
+        # B52: git prints an absolute directory; anything else (a pane id "%9" from a stubbed
         # subprocess.run) would become a folder made in the current directory
         raise SystemExit(f'agent-runner: git rev-parse --show-toplevel printed no directory: {r.stdout.strip()!r}')
     return top.resolve()
@@ -435,6 +434,8 @@ REMOVED: dict[tuple[str, str], str] = {
     ('run', 'ci_kind'): 'a red CI run is always filed as a B task; delete it',
     ('needs', 'heading'): 'the heading is always "Needs you"; delete it',
     ('needs', 'ages'): 'each item always shows its age; delete it',
+    ('run', 'mux'): 'every run is hidden on every OS (1.0.0: no tmux; `attach` shows the run and its sessions); '
+                    'delete it',
 }
 
 # C14: a key a release renamed or folded into another: (table, key) -> (table, its new key, the old value as the

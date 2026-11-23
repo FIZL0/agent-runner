@@ -4,6 +4,28 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- **Major: release this as 1.0.0.** A run on 0.x cannot adopt across it (its sessions are in tmux panes this
+  version no longer reads), so stop the old run (`agent-runner stop`) before upgrading; it does not restart
+  itself across the major version.
+- Breaking: tmux is gone. Every OS runs the hidden way, as Windows already did: each slot, c1 and every other
+  control session, and the runner feed run in a terminal with no window (a pty shim; Windows: a hidden
+  console). Bare `agent-runner` starts the run as a detached process (no `ar-<repo>` tmux session, no
+  default-command panes), and `agent-runner run 3` runs in the foreground of its terminal. `[run] mux` and
+  `run --mux` are removed: a leftover `mux` key is ignored with one warning line (C26).
+- `agent-runner attach` (and `attach run`) is the run view: the run's log, followed live, and the runner keys
+  typed there (`s`, `s!`, `p`, `f`, `+`, `-`, `slots N`, `z`, `x`, `u`, `?`, and an empty line for Remote
+  Control), each posted to the run through `.runner/KEYS`, so it works from any terminal and over ssh. Ctrl-C
+  leaves it and the run keeps going. `attach sN|cN` puts this terminal on a session's own terminal (F88;
+  Ctrl-b d leaves); `attach feed` and `attach board` open `agent-runner ui`. `agent-runner list` and
+  `attach N` read the hidden sessions' markers (C26).
+- `agent-runner ui`: V upgrades agent-runner, Z and B suspend or shut down the computer once the run stops
+  (the run's `u`, `z` and `x` keys), listed under Status in `?` and on the controls tab; the run page's Run
+  controls get the same three (C26).
+- Control session titles live in state only (`.runner/controlN.title`), which `list`, `ui` and the run page
+  read; a hidden session also gets `/rename` typed in so the Claude apps show it. The run page's terminal tab
+  serves `attach NAME` through ttyd. Fix and repair sessions always run as `claude -p` (no `master-<repo>`
+  window) (C26).
+
 ## 0.59.0 (2026-11-22)
 
 - Breaking: the run page (`agent-runner ui` and the web page) reads a run's sessions only by the tmux tags

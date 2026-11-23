@@ -21,12 +21,7 @@ from agent_runner.gitops import _net, shared_name
 from agent_runner.plan import short_title  # noqa: F401  (C13: now in plan.py; `runner.short_title` reads as before)
 
 
-TAG = '@runner'  # the tmux pane option a slot's pane is found by
-RUN_TAG = '@runner-run'  # set on the runner's own pane to the main checkout it runs for: `attach` goes there
-HIDDEN = [False]  # `run --hidden` on Windows: slot consoles start hidden (the background run)
-REPO_TAG = '@runner-repo'  # the main checkout a pane's runner works for: two repos' runners share a tmux session
-BOARD_TAG = '@runner-board'  # on the board's pane: "feed/run" (the runner feed) or "text/run" (since --board);
-# "/run": it ends with the run (B13), so a board of an earlier version (plain "feed"/"text") is replaced
+HIDDEN = [False]  # Windows: slot and control consoles start hidden (C26: every run's do)
 
 ROOT = Path('.')       # the main checkout; set by `init`
 SLOTS_DIR = Path('.')  # `[run] home` (~/runs/<repo>/): s1, s2, …, and `merge`
@@ -65,7 +60,7 @@ def init(root=None) -> Config:
 
 # --- small helpers -------------------------------------------------------------
 
-# The runner's pane in colour (run.log stays plain): a terminal, not NO_COLOR, and on Windows only Windows Terminal
+# The run's terminal in colour (run.log stays plain): a terminal, not NO_COLOR, and on Windows only Windows Terminal
 COLOR = sys.stdout.isatty() and not os.environ.get('NO_COLOR') and (not plat.WINDOWS or bool(os.environ.get('WT_SESSION')))
 TONES = [  # first match wins: (regex on the message, SGR colour)
     (re.compile(r'LEFT FOR A HUMAN|STOPPED|fail|refused|error|parked|killed|ended pid|stall', re.I), '31'),  # red
@@ -113,7 +108,7 @@ KIND_TONES = {EV_STARTED: '34', EV_LANDED: '32', EV_PART: '33', EV_PARKED: '31',
 
 
 def log(msg: str, kind: str | None = None, tid: str = '', **fields) -> None:
-    """`msg` to the runner's pane and run.log; with an event `kind` (F41: the EV_ names), also a record
+    """`msg` to the run's terminal and run.log; with an event `kind` (F41: the EV_ names), also a record
     {time, kind, id, text, **fields} in <notes>/events.jsonl, which is what readers go by: a reworded `msg`
     changes nothing they print."""
     stamp = dt.datetime.now().isoformat(timespec="seconds")
@@ -133,11 +128,11 @@ def log(msg: str, kind: str | None = None, tid: str = '', **fields) -> None:
             pass
 
 
-NOTIFY = not os.environ.get('AGENT_RUNNER_NO_NOTIFY')  # alarm()'s tmux message and desktop notification
+NOTIFY = not os.environ.get('AGENT_RUNNER_NO_NOTIFY')  # alarm()'s desktop notification
 
 
 def banner(title: str, detail: str, bg: str = '41', kind: str | None = None, fields: dict | None = None) -> None:
-    """`title: detail` logged (as event `kind` with `fields`, F41), and in colour a block in the runner's pane
+    """`title: detail` logged (as event `kind` with `fields`, F41), and in colour a block in the run's terminal
     (red, or `bg`) that stands out."""
     import textwrap
     if kind:
@@ -159,16 +154,13 @@ def project() -> str:
 
 def alarm(title: str, detail: str) -> None:
     """A stoppage only a person can clear (their uncommitted edits hold a tested merge, a usage cap): a red banner in the
-    runner's pane, the bell, a tmux message and a desktop notification, so it is seen from across the room,
+    run's terminal, the bell and a desktop notification, so it is seen from across the room,
     not found in run.log hours later. The log line starts STOPPED."""
     banner(f'STOPPED: {title}', detail, kind=EV_HELD, fields={'why': title, 'detail': detail})
     print('\a', end='', flush=True)
     try:
         if not NOTIFY:
             return
-        if os.environ.get('TMUX'):
-            sp.run(['tmux', 'display-message', '-d', '15000', f'agent-runner STOPPED: {project()} needs you: {title}'],
-                   capture_output=True, timeout=5)
         if shutil.which('notify-send'):
             sp.run(['notify-send', '-u', 'critical', '-a', 'agent-runner', f'{project()} needs you: run stopped: {title}', detail],
                    capture_output=True, timeout=5)
@@ -256,7 +248,7 @@ def newest(branch: str) -> str:
 
 
 def stopping() -> bool:
-    """`./run stop` (or `s` in the runner's pane) was asked for: start nothing new."""
+    """`./run stop` (or `s` in the run view) was asked for: start nothing new."""
     return C.notes('STOP').exists()
 
 
@@ -299,7 +291,7 @@ def stop_note(asked: bool, left: int, by: str = '') -> str | None:
     return f'stop asked for: {what}{left} left before the run exits'
 
 
-KEYS: list[str] = []  # lines typed into the runner's pane
+KEYS: list[str] = []  # lines typed into the run's terminal
 KEYS_LOCK = threading.Lock()  # the reader thread and the loop both take keys
 WAKE = threading.Event()  # set by a key, so the loop acts on it now instead of after its 10 s nap
 READING = [False]  # the reader thread is up: the loop naps on WAKE
