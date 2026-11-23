@@ -10,6 +10,7 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
   one-use code is the check and the run checks it. With no run up, the link's page says to start the run. With no
   https address for Home's port, `pick-links` says so and gives the `tailscale serve` command. A run with its own
   https port still gets its Pick links as before where Home does not route it.
+- Fixed: `run publish-page` and the run page copy and pitch pages now reach claude.ai (B180). They did not: the one-shot exited 0 with no URL. It had only `--tools Artifact`; Claude Code 2.1.330 then denies Read, and Artifact will not publish a file it may not read. It now has Artifact and Read, and a failed publish logs the end of its errors and answer, so a sign-in warning no longer hides the reason.
 
 ## 0.62.0 (2026-11-23)
 

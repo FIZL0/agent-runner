@@ -7,7 +7,7 @@ item, a concept, the release), publishes it to the same URL each time (<notes>/r
 shows the run as the page does, read-only, with the terminal and the chat as session links: a slot's
 claude.ai/code link (once opened) and c1's.
 
-B122: the publish is a one-shot headless `claude -p` with only the Artifact tool (`page_copy_argv`), never a
+B122: the publish is a one-shot headless `claude -p` with only Artifact and Read (`page_copy_argv`), never a
 control session: typing the ask into c1 cost a turn (~8k tokens) in the person's chat on every run event. Not
 the runner feed either: it has no Artifact tool, and adding one would grow every one of its turns. At most one
 publish every PAGE_COPY_EVERY s, and only when the page changed apart from its clock (`page_copy_key`). When
@@ -146,7 +146,7 @@ def page_copy_html(snap: dict) -> str:
 
 def page_copy_ask(path: Path, url: str, icon: str = 'dashboard') -> str:
     """The one-shot publisher's prompt: publish `path`, to `url` when there is one, and answer with the URL alone
-    (it has no other tool, so the run writes the URL file from that answer)."""
+    (it cannot write files, so the run writes the URL file from that answer)."""
     where = (f'to the existing artifact {url}: read it first with action "read" (a publish to it is refused until '
              'then), then publish the file to that url; the file replaces the page whole' if url else
              f'as a new artifact with icon "{icon}"')
@@ -155,12 +155,21 @@ def page_copy_ask(path: Path, url: str, icon: str = 'dashboard') -> str:
 
 
 def page_copy_argv(path: Path, url: str, icon: str = 'dashboard') -> list[str]:
-    """B122: the one-shot headless session that publishes the copy: `claude -p`, Haiku, the Artifact tool only
-    (dontAsk refuses the rest), no settings sources or MCP servers, a few turns. Never a control session."""
+    """B122: the one-shot headless session that publishes the copy: `claude -p`, Haiku, the Artifact tool and
+    Read only (B180: `--tools` denies Read when it is left out, and Artifact then refuses to publish a file;
+    dontAsk refuses the rest and any read outside its folder), no settings sources or MCP servers, a few turns.
+    Never a control session."""
     return [plat.exe(C.run['agent']), '-p', page_copy_ask(path, url, icon), '--model', feed_model(),
-            '--tools', 'Artifact', '--allowedTools', 'Artifact', '--permission-mode', 'dontAsk',
+            '--tools', 'Artifact,Read', '--allowedTools', 'Artifact', '--permission-mode', 'dontAsk',
             '--strict-mcp-config', '--setting-sources', '', '--settings', json.dumps({'autoMemoryEnabled': False}),
             '--max-turns', '6']
+
+
+def page_copy_said(r) -> str:
+    """What a failed one-shot said, on one line: the end of its errors, then of its answer. Both, as a warning on
+    stderr (a sign-in that ends soon) is not why it failed; the answer is (B180)."""
+    ends = (' '.join((t or '').split())[-300:] for t in (r.stderr, r.stdout))
+    return ' | '.join(e for e in ends if e)
 
 
 def page_copy_publish(path: Path, url: str, icon: str = 'dashboard') -> str:
@@ -170,8 +179,7 @@ def page_copy_publish(path: Path, url: str, icon: str = 'dashboard') -> str:
                capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=PAGE_COPY_TIMEOUT)
     got = ARTIFACT_URL.findall(r.stdout or '')
     if r.returncode != 0 or not got:
-        log(f'run page copy: the one-shot publish failed (exit {r.returncode}): '
-            f'{((r.stderr or r.stdout or "").strip().splitlines() or [""])[-1][:200]}')
+        log(f'run page copy: the one-shot publish failed (exit {r.returncode}): {page_copy_said(r)}')
         return ''
     return url if url in got else got[-1]
 

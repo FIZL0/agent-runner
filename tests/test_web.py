@@ -615,7 +615,7 @@ def test_new_chat(tmp: Path) -> None:
 
 
 def test_page_copy_publish(tmp: Path) -> None:
-    """B122: a run change publishes the run page copy through a one-shot `claude -p` with only the Artifact tool,
+    """B122: a run change publishes the run page copy through a one-shot `claude -p` with only Artifact and Read,
     never by typing into a control session's pane; at most once every PAGE_COPY_EVERY s, only when the page
     changed apart from its clock and log; a one-shot that cannot publish stops the copy, with no c1 fallback."""
     from agent_runner import page_copy as PC, slots as SL
@@ -652,7 +652,7 @@ def test_page_copy_publish(tmp: Path) -> None:
         check(tick(1000.0, snap('10:00')), 'a run change publishes the copy')
         argv, kw = runs[0]
         eq(argv[1:2], ['-p'], 'a one-shot headless session')
-        eq(argv[argv.index('--tools') + 1], 'Artifact', 'with only the Artifact tool')
+        eq(argv[argv.index('--tools') + 1], 'Artifact,Read', 'with only Artifact, and the Read it needs')
         check('--remote-control' not in argv and '--resume' not in argv, 'never a control session', argv)
         eq(kw['env'].get('CLAUDE_CODE_ARTIFACT'), '1', 'the Artifact tool turned on headless')
         check(str(PC.page_copy_file()) in argv[2], 'the prompt names the file', argv[2])
@@ -684,6 +684,25 @@ def test_page_copy_publish(tmp: Path) -> None:
     for name in ('send_fifo', 'control_type', 'control_live', 'send_keys', 'MUX'):
         check(name not in src, f'page_copy.py never calls {name}')
     PC.PAGE_COPY_OFF[0] = ''
+    # B180: a sign-in warning before the answer, on stdout or stderr, and why a publish failed
+    warn = ('Warning: this sign-in ends between 2026-11-27 and 2026-11-30 (in 4 days at the earliest). Renewing it '
+            'does not move those dates. Run claude auth login before then, or use claude setup-token for unattended '
+            'jobs.\n')
+    url, why = 'https://claude.ai/artifact/b180', 'x' * 500 + ' the Read deny rule forbids reading files.\n'
+
+    def publish(out: str, err: str) -> tuple[str, list]:
+        said: list = []
+        with mock.patch.object(PC, 'C', S.C), mock.patch.object(PC, 'log', said.append), \
+                mock.patch.object(PC.sp, 'run', lambda argv, **kw: subprocess.CompletedProcess(argv, 0, out, err)):
+            return PC.page_copy_publish(tmp / 'p.html', ''), said
+
+    eq(publish(warn + url + '\n', '')[0], url, 'the warning first on stdout: still published')
+    eq(publish(url + '\n', warn)[0], url, 'the warning on stderr: still published')
+    for out, err in ((why, warn), (warn + why, '')):
+        got, said = publish(out, err)
+        eq(got, '', 'no URL in the answer: not published')
+        check(len(said) == 1 and said[0].endswith('the Read deny rule forbids reading files.'),
+              'the log has the end of the answer, not just the warning', said)
 
 
 PARKED_TODO = TODO + """
