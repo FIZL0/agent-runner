@@ -183,7 +183,7 @@ Sessions [2]
   H        take its task back     d D      drop its task from the slot
   d        close a control session cN (not c1: the run's kept session; its transcript stays)
   r        rename a control session cN (c1 too): the name is yours, so it is never closed when idle
-  l ^l     into the session's pane (back: ^h, or tmux's prefix and an arrow)
+  l ^l     into the session's tmux pane (back: ^h, or tmux's prefix and an arrow)
   Enter    the same; its pane closed: show it beside again
 Queue [3]
   e        direct edit            E        chat edit
@@ -850,9 +850,9 @@ class RunPage:
         if self.task_controls_on(it):
             head += self.control_buttons('task')
         bs = [button('o', 'open it', True), button('y', 'copy link')]
-        if self.socket(name):  # F88: it can be shown, so its pane closed itself
+        if self.socket(name):  # F88: it can be shown: its pane closed itself, or tmux could not split
             bs.append(button('⏎', 'show it beside'))
-            said = f'{name} is not shown beside: its pane closed.'
+            said = f'{name} is not shown beside.'
         else:
             said = f'{name} has no terminal to show here; o opens its session link.'
         foot = [buttons(*bs), L(self.link(it['link'])) if it.get('link') else

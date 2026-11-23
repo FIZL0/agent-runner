@@ -626,7 +626,7 @@ def test_side_pane_f112() -> None:
         p2.side.gone()  # Ctrl-b d in it: its pane closed itself
         p2.sync()
         eq(p2.side.pane, '', 'a pane that closed itself stays closed')
-        check('c1 is not shown beside: its pane closed.' in drawn(p2).text(), 'F141: it says so', drawn(p2).text())
+        check('c1 is not shown beside.' in drawn(p2).text(), 'F141: it says so', drawn(p2).text())
         p2.key('l')
         n = len(tm.did('split-window'))
         p2.key('ENTER')
@@ -1863,7 +1863,7 @@ def test_project_name_b153() -> None:
     tty = mock.Mock(isatty=lambda: True)
     from agent_runner import cmds
     os_ = mock.patch.dict(os.environ, {'TMUX': '/tmp/tmux-1/default,1,0'})  # F141: it runs inside tmux
-    curses =mock.Mock(wrapper=wrapper)  # Windows' Python has none
+    curses = mock.Mock(wrapper=wrapper)  # Windows' Python has none
     with os_, mock.patch.object(T, 'refusal', lambda: ''), \
             mock.patch.dict(sys.modules, {'curses': curses}), mock.patch.object(T, 'term_write', wrote.append), \
             mock.patch.object(sys, 'stdin', tty), mock.patch.object(sys, 'stdout', tty), \

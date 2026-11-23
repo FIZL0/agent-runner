@@ -343,7 +343,10 @@ def test_launcher_back_b153():
     eq(calls[0].get(tui.PICKER_ENV), '1', 'the TUI is told the launcher started it')
     with mock.patch.object(tui, 'refusal', lambda: ''), mock.patch.object(M.sp, 'call', lambda argv, **k: 0):
         eq(M.open_ui(A), '', 'q in the TUI: back in the launcher')
-    with mock.patch.object(tui, 'refusal', lambda: 'no tmux'), \
+    with mock.patch.object(M.plat, 'WINDOWS', True), \
+            mock.patch.object(M, 'run_facts', lambda root, run: {'link': 'http://x/?t=1'}):
+        check(M.open_ui(A).endswith('use the run page http://x/?t=1'), 'F141: Windows: the run page link')
+    with mock.patch.object(tui, 'refusal', lambda: 'no tmux'), mock.patch.object(M.plat, 'WINDOWS', False), \
             mock.patch.object(M.sp, 'call', lambda argv, **k: check(False, 'the TUI was started')):
         eq(M.open_ui(A), 'no tmux', 'F141: no TUI on this machine: the launcher says why')
 

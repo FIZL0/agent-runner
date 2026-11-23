@@ -88,7 +88,7 @@ window (before 1809, a console that starts hidden, `STARTUPINFO.wShowWindow = SW
 then each new line as the run logs it, and the runner keys typed there (`s`, `s!`, `p`, `f`, `+`, `-`, `slots N`, `z`,
 `x`, `u`, `?`, and an empty line for Remote Control), each posted to the run through `.runner/KEYS` as `agent-runner
 key` does. `?` lists them (they print once as the view opens too). Ctrl-C leaves the view; the run keeps going. `attach
-feed` and `attach board` open `agent-runner ui` (which needs tmux; on Windows it prints the run page's link instead).
+feed` and `attach board` open `agent-runner ui` (which needs tmux, so not on Windows).
 On Windows there is no attach to a ConPTY session yet: `attach s2` (or `c1`, `cN`) prints the place of its log and shows no console, as it does for a headless stream slot. Only a session with
 a hidden console from before 1809 is shown: `attach s2` shows and raises its console window. Minimize it to hide it
 again; closing it ends that session, which resumes in the next run. `agent-runner status` and `.runner/run.log` show the

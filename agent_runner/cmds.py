@@ -1443,7 +1443,8 @@ def open_ui(root: Path) -> str:
     """The launcher's t: the TUI, or F141 why this machine has none (the launcher would clear what `ui` prints)."""
     from agent_runner.tui import PICK_RC, PICKER_ENV, refusal
     if why := refusal():
-        return why
+        link = run_facts(root, {'up': True})['link'] if plat.WINDOWS else ''
+        return f'{why} {link}'.rstrip()
     rc = sp.call([*runner_cmd(), 'ui'], cwd=str(root), env=dict(os.environ, **{PICKER_ENV: '1'}))
     return PICK if rc == PICK_RC else ''
 
