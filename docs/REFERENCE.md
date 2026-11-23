@@ -262,6 +262,13 @@ run's app (`/p/<project>/`) has a project switcher at the top of the sidebar (th
 list every Home project as running, idle, paused or off, with its needs-you count; each moves to `/p/<project>/` on
 the same Home address) and an "All projects" item in the sidebar.
 
+On a phone's Home Screen: add the app from Home's link while in the App view, not the Terminal view (that page has no
+manifest). Home's root is the app's scope, so a move between projects stays in it. It opens on the project it was added
+from, or on All projects if it was added from Home. An icon added before this change: remove it and add it again once,
+since iOS may keep the old scope. The manifest and icon hold the token the link has, so whoever has the manifest has it
+already. A run's own address (no Home, or its own `web_port`) is an app of its own; its project name leads to Home's
+address, another origin, which iOS opens outside the app.
+
 Runner Home restarts itself when agent-runner's package files change on disk (an upgrade or a clone's pull, same
 version or not), once the change holds over two 5 s looks. It re-execs in place, never while a request or terminal
 tunnel is open; runs' event streams end when only those are left, and pages reconnect by themselves. On Windows, which

@@ -25,6 +25,11 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
   pause nobody asked for is undone once per reply. A clip with no answer is tried again twice, then the phone's voice
   reads the rest of that reply with a toast saying so. Toast errors are plain words, and the mic report also logs
   what happened to the sound.
+- Fixed: the run app added to a phone's Home Screen stays one app when you switch project (B179). The project
+  switcher, All projects, the project cards, Device Vitals and its Home link opened iOS's in-app browser, because
+  without a manifest the app's scope was the folder it was added from. The cause was read from the code and not
+  reproduced on an iPhone. Home and a run now serve a manifest and an icon behind the token, no-store; a concept's
+  View opens inside the app, and links to other sites still open outside.
 - Added: control sessions learn when an item they are about is settled elsewhere (F160). A chat about a task or a
   Needs you item (its title starts with the id, or it was opened from that item) gets one typed line from the run when
   someone else drops, changes, confirms, approves, shelves, restores or otherwise settles it. Sessions also re-read an

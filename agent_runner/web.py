@@ -6,6 +6,7 @@ listens on 127.0.0.1 only, on a free port that only Home opens (`start_web`); th
     GET  /?t=TOKEN               F79: the page (web_page.html), the run app: a chat app over F74's model, light
                                  and dark by the browser's setting, laid out for a phone and a desktop; F81: it
                                  opens /term instead when this browser last chose it, or `[ui] web` = "terminal"
+    GET  /manifest.webmanifest?t=TOKEN, /icon-N.png?t=TOKEN   B179: the app on a Home Screen (home_screen.py)
     GET  /term?t=TOKEN           F81: the terminal-style page (web_term.html, F75's page) over the same model, in
                                  `[ui] theme`; its App view (T) and the run app's Terminal view switch between them
     GET  /snapshot?t=TOKEN       the run page model's snapshot, as JSON, with the machine's name and each
@@ -49,7 +50,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
-from agent_runner import speech
+from agent_runner import home_screen, speech
 from agent_runner import state as S
 from agent_runner import ui_model as U
 
@@ -831,6 +832,15 @@ class Handler(BaseHTTPRequestHandler):
             return self.refuse()
         if path in ('/', '/index.html'):
             return self.send(200, page_html(), 'text/html; charset=utf-8')
+        if path == '/' + home_screen.MANIFEST:  # B179
+            try:
+                name = S.project()
+            except Exception:  # noqa: BLE001 - no project initialised: the default name
+                name = ''
+            return self.send(200, home_screen.manifest(name or 'agent-runner', self.server.token),
+                             home_screen.MANIFEST_TYPE)
+        if png := home_screen.icon_at(path):
+            return self.send(200, png, 'image/png')
         if path == '/term':  # not /term/: the page's calls are relative to /
             return self.send(200, term_html(), 'text/html; charset=utf-8')
         if path == '/snapshot':

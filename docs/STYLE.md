@@ -150,6 +150,9 @@ Motion shows where a thing came from, where it went, or that it changed. Nothing
 - A swipe leaves text boxes, sideways scrollers, a row being dragged and mostly vertical moves alone.
 - Every control is a `button`, `a` or form field, reachable by Tab, with a visible `:focus-visible` ring. Esc closes the topmost thing only.
 - Live words (the talk line, the toast) have `role="status"`.
+- A link to the app's own pages never opens a new tab on the Home Screen: `appLink()` decides. A concept opens over the
+  app (`.cview`, `conceptOpen()`) with Back; other sites keep `target=_blank`. The status bar is the default style,
+  coloured by `theme-color`, never `black-translucent`.
 
 ### Keyboard
 

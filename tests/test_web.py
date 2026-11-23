@@ -2166,6 +2166,49 @@ def test_home_switcher_f134(tmp: Path) -> None:
     eq(got[8], 'paused · 1 slot · 3 queued', 'the words under a project')
 
 
+def test_home_screen_b179(tmp: Path) -> None:
+    """B179: the run app on a phone's Home Screen: a manifest whose scope holds every project, behind the token, and
+    no link inside the app that opens a new tab there."""
+    fake_repo(tmp)
+    srv = W.serve('TOK', 0, '127.0.0.1')
+    base = f'http://127.0.0.1:{srv.server_address[1]}'
+    try:
+        for path in ('/manifest.webmanifest', '/icon-180.png'):
+            eq((get(f'{base}{path}')[0], get(f'{base}{path}?t=WRONG')[0]), (403, 403), f'{path} needs the token')
+        with urllib.request.urlopen(f'{base}/manifest.webmanifest?t=TOK', timeout=10) as r:
+            m = json.loads(r.read())
+            eq((r.headers['Content-Type'], r.headers['Cache-Control']),
+               ('application/manifest+json; charset=utf-8', 'no-store'), 'the manifest, never stored')
+        eq((m['name'], m['scope'], m['start_url'], m['display']), (S.project(), './', './?t=TOK', 'standalone'),
+           "a run's own address: its own root, back in with the token")
+        check('theme_color' not in m, 'no one colour for both themes')
+        code, png = get(f'{base}/icon-180.png?t=TOK')
+        eq((code, png[:8], int.from_bytes(png[16:20], 'big')), (200, b'\x89PNG\r\n\x1a\n', 180), 'the icon is a PNG')
+        eq(get(f'{base}/icon-999.png?t=TOK')[0], 404, 'only the sizes it has')
+    finally:
+        srv.stop()
+    for what, home in (('run page', False), ("Home's page", True)):
+        page = W.page_html('app', home=home).decode()
+        for tag in ('name="apple-mobile-web-app-capable" content="yes"',
+                    'name="apple-mobile-web-app-status-bar-style" content="default"', 'viewport-fit=cover'):
+            check(tag in page, f'the {what} has {tag}')
+        check("add('manifest',manifestLink(HB,HKEY,T))" in page and "add('apple-touch-icon'" in page,
+              f'the {what} links its manifest and icon')
+        for a in re.findall(r'<a class="(?:prow|btn acc|brand)[^>]*>', page):
+            check('_blank' not in a, f'{what}: a link between projects opens no tab', a)
+    if not shutil.which('node'):
+        print('  (no node here: the Home Screen script test is skipped)')
+        return
+    o = 'https://h.ts.net:8771'
+    eq(logic_js([['manifestLink', '/', 'beta two', 'T&1'], ['manifestLink', '/', '', 'T'], ['manifestLink', '', 'x', 'T'],
+                 ['appLink', o + '/p/a/?t=T', o, '/'], ['appLink', o + '/p/a/concept/K1?t=T', o, '/'],
+                 ['appLink', 'https://claude.ai/x?t=T', o, '/'], ['appLink', 'http://h.ts.net:8770/?t=T', o, '/'],
+                 ['appLink', o + '/other/?t=T', o, '/home/'], ['appLink', o + '/p/a/', o, '/'], ['appLink', '', o, '/']]),
+       ['/manifest.webmanifest?p=beta%20two&t=T%261', '/manifest.webmanifest?t=T', './manifest.webmanifest?t=T',
+        'go', 'concept', '', '', '', '', ''],
+       "the manifest at Home's root; the app's own pages stay in it, other sites open outside")
+
+
 def test_project_name_b153(tmp: Path) -> None:
     """B153: the run page shows the project's name, not agent-runner: the window title ('proj · runner'), the
     top-left (a link to Runner Home), the logo's letter and a chat's lead label."""
@@ -3454,7 +3497,7 @@ def test_older_run_b164(tmp: Path) -> None:
 
 
 if __name__ == '__main__':
-    raise SystemExit(report([in_tmp(test_release_row_f131),in_tmp(test_project_name_b153),in_tmp(test_chat_order_f133), in_tmp(test_delete_chats_f118), in_tmp(test_server), in_tmp(test_real_action), in_tmp(test_run_controls),
+    raise SystemExit(report([in_tmp(test_release_row_f131),in_tmp(test_project_name_b153),in_tmp(test_home_screen_b179),in_tmp(test_chat_order_f133), in_tmp(test_delete_chats_f118), in_tmp(test_server), in_tmp(test_real_action), in_tmp(test_run_controls),
                            in_tmp(test_start), in_tmp(test_upload),
                            in_tmp(test_control_rows), in_tmp(test_feed_pane_concept), in_tmp(test_page),
                            in_tmp(test_logic), in_tmp(test_extras), in_tmp(test_diff), in_tmp(test_views),

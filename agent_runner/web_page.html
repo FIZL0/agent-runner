@@ -4,6 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,interactive-widget=resizes-content">
 <meta name="theme-color" content="" id="themecolor">
+<!-- B179: a Home Screen app. Its status bar is the default one: the page starts under it, coloured by theme-color, in
+     both themes (black-translucent writes white on the light one). homeScreen() adds the manifest and the icon -->
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <title>agent-runner</title>
 <script>
 /* F81: the view this browser last chose (localStorage), else [ui] web (the server writes it into WEB_VIEW): on
@@ -242,6 +247,9 @@ a{color:var(--accent)}
 .obbar{display:flex;justify-content:center;padding:4px 12px 0;max-width:100%}
 .obpill{display:inline-flex;align-items:center;gap:8px;border:1px dashed var(--line2);background:var(--surface);color:var(--muted);border-radius:var(--r-full);padding:4px 12px;font:inherit;font-size:var(--fs-s);cursor:pointer;max-width:100%}
 .obpill.bad{border:1px solid var(--bad);color:var(--bad)}
+/* B179: a concept's page over the Home Screen app */
+.cview{position:fixed;inset:0;z-index:31;background:var(--bg);display:flex;flex-direction:column;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+.cview .top{padding-left:max(10px,env(safe-area-inset-left,0px))} .cview iframe{flex:1;min-height:0;width:100%;border:0}
 .obpop{position:fixed;inset:0;background:var(--scrim);z-index:30;display:grid;place-items:center;padding:16px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
 .obcard{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-l);padding:14px 16px;display:grid;gap:10px;width:min(520px,100%);max-height:80vh;overflow:auto;box-shadow:0 6px 24px var(--shadow)}
 .obrow{display:flex;gap:10px;align-items:center;flex-wrap:wrap;border-top:1px solid var(--line);padding-top:10px}
@@ -401,6 +409,7 @@ a{color:var(--accent)}
 </div>
 <div class="toast" id="toast" role="status" hidden></div>
 <div class="obpop" id="obpop" hidden></div>
+<div class="cview" id="cview" role="dialog" aria-label="Concept" hidden></div>
 
 <script id="logic">
 /* The page's pure parts, run in node by tests/test_web.py: no DOM here. */
@@ -889,6 +898,15 @@ function homeBase(path,homePage){
 function homeKey(path){const m=String(path||'').match(/^.*?\/p\/([^/]+)\//);try{return m?decodeURIComponent(m[1]):''}catch(e){return m[1]}}
 const projectLink=(base,key,t)=>base+'p/'+encodeURIComponent(key)+'/?t='+encodeURIComponent(t||'');
 const homeLink=(base,t)=>base+'?t='+encodeURIComponent(t||'');
+/* B179: the Home Screen app's manifest, at the root every project is under: Home's, or a run's own address ('') */
+const manifestLink=(base,key,t)=>(base||'./')+'manifest.webmanifest?'+(base&&key?'p='+encodeURIComponent(key)+'&':'')+'t='+encodeURIComponent(t||'');
+/* B179: what a Home Screen app does with a link that asks for a new tab: 'concept' (shown in the app), 'go' (another
+   page of this app, opened in place), '' (another site: outside) */
+function appLink(href,origin,root){
+  let u;try{u=new URL(href)}catch(e){return''}
+  if(u.origin!==origin||!u.pathname.startsWith(root)||!u.searchParams.get('t'))return'';
+  return /\/concept\/[^/]+$/.test(u.pathname)?'concept':'go';
+}
 /* B153: Runner Home's link for the project name top-left: through Home, its own base; on the run's own page,
    Home's port and token (the snapshot's home) on the host the page came from, over http (Home serves http on
    every interface; its https port depends on Tailscale Serve, which the page cannot see); '' while Home is not
@@ -923,7 +941,7 @@ function projectButtons(p){
   b.push({label:'Unlist',unlist:true});
   return b;
 }
-if(typeof module!=='undefined')module.exports={viewOf,placeOf,runPill,cardControls,controlGroups,needsReply,chatGroups,needChatAsk,TALK_SET,talkSetParse,pickVoice,runVoice,speechClips,silentWav,feedMark,feedAfter,atEnd,swipeTakes,swipeOpens,settingText,settingShown,settingValue,homeBase,homeKey,projectLink,homeLink,homeHref,pageTitle,projectState,switcherRows,projectWords,projectButtons,chatMove,BOX_KEYS,keysLine,histPush,histEdge,histStep,slashMatches,slashPick,slashMove,SLASH_FALLBACK,chatPick,answerOpts,needAsk,threadMsgs,working,planWords,compose,sendReq,usageOf,logKind,plain,chatName,controlReq,controlClick,taskControlsOn,queueGroups,conceptButtons,planQueue,NO_CONCEPT,newConceptReq,queuedId,NAV,talkSession,micProblem,dictProblem,dictButton,dictInsert,termTokens,talkShown,talkReply,goneMark,needsShown,answerSaid,GONE_MS,obParse,obNext,obName,obSettle,obRetry,obDrop,obCounts,obHidden,obPill,OLD_RUN,OLD_WAIT,oldRun,plainOut,obRefused,obOld,obDue,obBootCid,sentLeft,sentStep,sentParse};
+if(typeof module!=='undefined')module.exports={viewOf,placeOf,runPill,cardControls,controlGroups,needsReply,chatGroups,needChatAsk,TALK_SET,talkSetParse,pickVoice,runVoice,speechClips,silentWav,feedMark,feedAfter,atEnd,swipeTakes,swipeOpens,settingText,settingShown,settingValue,homeBase,homeKey,projectLink,homeLink,manifestLink,appLink,homeHref,pageTitle,projectState,switcherRows,projectWords,projectButtons,chatMove,BOX_KEYS,keysLine,histPush,histEdge,histStep,slashMatches,slashPick,slashMove,SLASH_FALLBACK,chatPick,answerOpts,needAsk,threadMsgs,working,planWords,compose,sendReq,usageOf,logKind,plain,chatName,controlReq,controlClick,taskControlsOn,queueGroups,conceptButtons,planQueue,NO_CONCEPT,newConceptReq,queuedId,NAV,talkSession,micProblem,dictProblem,dictButton,dictInsert,termTokens,talkShown,talkReply,goneMark,needsShown,answerSaid,GONE_MS,obParse,obNext,obName,obSettle,obRetry,obDrop,obCounts,obHidden,obPill,OLD_RUN,OLD_WAIT,oldRun,plainOut,obRefused,obOld,obDue,obBootCid,sentLeft,sentStep,sentParse};
 </script>
 
 <script>
@@ -931,6 +949,15 @@ const T=new URLSearchParams(location.search).get('t')||'';
 const tq=p=>p+(p.includes('?')?'&':'?')+'t='+encodeURIComponent(T);
 /* F134: Runner Home around this page ('' when the page is the run's own, not reached through Home) */
 const HB=homeBase(location.pathname,HOME_PAGE), HKEY=homeKey(location.pathname);
+/* B179: on the Home Screen the page is an app of its own: no tabs, no browser Back */
+const ON_HOME_SCREEN=navigator.standalone===true||!!(window.matchMedia&&matchMedia('(display-mode:standalone)').matches);
+const ROOT=HB||location.pathname.replace(/[^/]*$/,'');
+(function homeScreen(){
+  const add=(rel,href)=>{const l=document.createElement('link');l.rel=rel;l.href=href;document.head.appendChild(l)};
+  add('manifest',manifestLink(HB,HKEY,T));add('apple-touch-icon',(HB||'./')+'icon-180.png?t='+encodeURIComponent(T));
+  const m=document.createElement('meta');m.name='apple-mobile-web-app-title';
+  m.content=HOME_PAGE?'Runner Home':HKEY||document.title.replace(/ · runner$/,'');document.head.appendChild(m);
+})();
 const H={projects:null,machine:'',devices:null,alerts:[],open:false,add:'',err:''};
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const ic=d=>`<svg viewBox="0 0 24 24" aria-hidden="true">${d}</svg>`;
@@ -2532,7 +2559,7 @@ const drawerOn=()=>{const m=document.querySelector('.top .menu');return !!(m&&m.
 document.addEventListener('touchstart',e=>{
   if(SW&&SW.on&&!SW.sheet){if(e.touches.length>1)return;swipeEnd(false)}  // B167: a second finger does not end the lock
   SW=null;const t=e.touches[0], el=e.target;
-  if(e.touches.length!==1||!el.closest||el.closest('input,textarea,select,[contenteditable],iframe,.obpop,.mic.hold')||DR&&DR.on)return;
+  if(e.touches.length!==1||!el.closest||el.closest('input,textarea,select,[contenteditable],iframe,.obpop,.cview,.mic.hold')||DR&&DR.on)return;
   if(S.sheet){if(el.closest('#sheet')&&$('sheet').scrollTop<=0)SW={sheet:true,x:t.clientX,y:t.clientY,at:e.timeStamp,d:0,on:false};return}
   if(!drawerOn()||el.closest('#body,#dock')&&sideways(el))return;
   SW={x:t.clientX,y:t.clientY,at:e.timeStamp,d:0,on:false,open:S.drawer,w:$('side').offsetWidth||280,lx:t.clientX,lt:e.timeStamp,v:0,id:t.identifier,scr:scrollers(el)};
@@ -2577,6 +2604,23 @@ if(HB){loadProjects();let tick=0;  // F134: the switcher: every 5 s while it or 
   setInterval(()=>{if(H.open||S.view==='projects'||++tick%6===0)loadProjects()},5000);
   setInterval(()=>{if(S.view==='projects')loadDevices()},30000);loadDevices()}
 }
+/* B179: a concept's page in the Home Screen app, where a new tab would be iOS's browser over the app */
+function conceptOpen(src,title){
+  const el=$('cview');
+  el.innerHTML=`<div class="top"><button class="icon" data-cviewclose aria-label="Back" title="Back">${I.back}</button><b class="ell">${esc(title)}</b></div><iframe src="${esc(src)}" sandbox="allow-scripts" title="${esc(title)}"></iframe>`;
+  el.hidden=false;el.querySelector('button').focus({preventScroll:true});
+}
+function conceptClose(){const el=$('cview');el.hidden=true;el.innerHTML=''}
+document.addEventListener('click',e=>{
+  if(e.target.closest('[data-cviewclose]')){conceptClose();return}
+  const a=ON_HOME_SCREEN&&e.target.closest('a[target="_blank"]'), k=a?appLink(a.href,location.origin,ROOT):'';
+  if(!k)return;
+  e.preventDefault();
+  if(k==='concept'){const q=a.closest('.card')&&a.closest('.card').querySelector('.q');conceptOpen(a.href,q?q.textContent:'Concept')}
+  else location.href=a.href;
+});
+/* Esc closes the topmost thing only */
+window.addEventListener('keydown',e=>{if(e.key==='Escape'&&$('cview').hidden===false){e.preventDefault();e.stopImmediatePropagation();conceptClose()}},true);
 </script>
 </body>
 </html>

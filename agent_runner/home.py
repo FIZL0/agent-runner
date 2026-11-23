@@ -53,6 +53,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlencode, urlsplit
 
+from agent_runner import home_screen
+
 PORT = 8770
 SERVICE = 'agent-runner-home'  # the systemd unit's and the scheduled task's name
 LABEL = 'dev.agent-runner.home'  # launchd's label
@@ -409,8 +411,12 @@ class HomeHandler(BaseHTTPRequestHandler):
         if not self.allowed():
             return self.send(403, {'ok': False, 'out': 'Runner Home needs its token: open the link '
                                    '`agent-runner home status` prints (…/?t=TOKEN)'})
+        if method == 'GET' and path.endswith('/' + home_screen.MANIFEST):  # B179
+            return self.manifest(path)
         if path == '/p' or path.startswith('/p/'):
             return self.proxy(method)
+        if method == 'GET' and (png := home_screen.icon_at(path)):
+            return self.send(200, png, 'image/png')
         if method == 'GET' and path in ('/', '/index.html'):
             return self.send(200, home_page(), 'text/html; charset=utf-8')
         if path in ('/device', '/devices') or path.startswith(('/dev/', '/vitals/')):  # F95: Device Vitals
@@ -437,6 +443,17 @@ class HomeHandler(BaseHTTPRequestHandler):
                 return self.send(200, {'ok': ok, 'out': out})
             return self.send(200, self.server.act(root, str(req.get('name') or ''), str(req.get('arg') or '')))
         self.send(404, {'ok': False, 'out': f'no such page: {path}'})
+
+    def manifest(self, path: str) -> None:
+        """B179: Home's root is the app's scope; `p` names the project whose run app the icon opens on. Under /p/KEY/
+        the answer is Home's too, never the run's, which holds the run's own token."""
+        m = re.fullmatch(r'(/p/([^/]+))?/' + re.escape(home_screen.MANIFEST), path)
+        if not m:
+            return self.send(404, {'ok': False, 'out': f'no such page: {path}'})
+        key = m[2] or (parse_qs(urlsplit(self.path).query).get('p') or [''])[0]
+        key = key if key and self.server.project(key) else ''
+        self.send(200, home_screen.manifest(key or 'Runner Home', self.server.token, key, '../../' if m[2] else './'),
+                  home_screen.MANIFEST_TYPE)
 
     def do_GET(self) -> None:
         self.counted('GET')

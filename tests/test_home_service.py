@@ -254,6 +254,30 @@ def test_routing(tmp: Path) -> None:
         eq((json.loads(body)['ok'], acted), (True, [(alpha, 'slots', '+1')]), "a button's POST acts on that project")
         eq(get(f'{base}/act?t=HOMETOKEN', json.dumps({'project': 'nope', 'name': 'stop'}).encode())[0], 404,
            'one for an unknown project: 404')
+        # B179: the Home Screen app
+        for path in ('/manifest.webmanifest', '/icon-180.png', '/p/alpha/manifest.webmanifest'):
+            eq((get(f'{base}{path}')[0], get(f'{base}{path}?t=WRONG')[0]), (403, 403), f'{path} needs the token')
+        code, body, hd = get(f'{base}/manifest.webmanifest?t=HOMETOKEN')
+        m = json.loads(body)
+        eq((code, hd['Content-Type'], hd['Cache-Control']), (200, 'application/manifest+json; charset=utf-8', 'no-store'),
+           'the manifest, never stored')
+        eq((m['name'], m['scope'], m['start_url'], m['display']), ('Runner Home', './', './?t=HOMETOKEN', 'standalone'),
+           "Home's: its scope is Home's root, every project under it")
+        m = json.loads(get(f'{base}/manifest.webmanifest?p=alpha&t=HOMETOKEN')[1])
+        eq((m['name'], m['scope'], m['start_url']), ('alpha', './', './p/alpha/?t=HOMETOKEN'),
+           'added from a project: opens on it, in the same scope')
+        eq(json.loads(get(f'{base}/manifest.webmanifest?p=nope&t=HOMETOKEN')[1])['start_url'], './?t=HOMETOKEN',
+           'a project Home does not list: Home')
+        body = get(f'{base}/p/alpha/manifest.webmanifest?t=HOMETOKEN')[1]
+        m = json.loads(body)
+        eq((m['scope'], m['start_url'], b'RUNTOKEN' in body), ('../../', '../../p/alpha/?t=HOMETOKEN', False),
+           "under /p/KEY/ it is Home's too, with no run token")
+        eq(get(f'{base}/p/alpha//manifest.webmanifest?t=HOMETOKEN')[0], 404, 'no other path to one')
+        for icon in m['icons']:
+            code, body, hd = get(f'{base}/' + icon['src'].removeprefix('../../'))
+            w = int.from_bytes(body[16:20], 'big')
+            eq((code, hd['Content-Type'], body[:4], f'{w}x{w}'), (200, 'image/png', b'\x89PNG', icon['sizes']),
+               'the icon, at its size')
         eq(get(f'{base}/act?t=HOMETOKEN', b'[1]')[0], 400, 'a body that is not an object: 400')
     finally:
         srv.stop()
