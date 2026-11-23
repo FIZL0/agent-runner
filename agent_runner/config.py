@@ -266,8 +266,20 @@ DEFAULTS: dict = {
         'kinds': {'F': 'opus', 'B': 'opus', 'T': 'opus', 'V': 'opus', 'K': 'opus', 'D': 'sonnet', 'C': 'sonnet',
                   'R': 'sonnet'},  # a task's session by its kind (the id's letters): a kind set here replaces
                                 # only that kind; one not listed runs on `code`; `plan add --model` wins for a task
+        'local': False,         # allow a local provider (ollama, or a provider url on localhost or a private
+                                # address) in a role; off, a role naming one is refused
+        'providers': {},        # the repo's own providers, [models.providers.<name>]: kind = "openai" or
+                                # "anthropic" (a compatible API), url, key_env (the env var holding its key, never
+                                # the key itself); a role names one as "<name>:<model>"
     },
 }
+
+# the providers a [models] role may name as '<provider>:<model>' without defining them; a bare name is claude's
+PROVIDERS = ('claude', 'copilot', 'codex', 'gemini', 'ollama')
+LOCAL_PROVIDERS = ('ollama',)
+PROVIDER_KINDS = ('openai', 'anthropic')
+# the [models] keys that are not roles
+MODEL_SETTINGS = ('kinds', 'local', 'providers')
 
 # the [models] roles that run as Claude Code subagents of a task session (`--agents`), not sessions of their own
 SUBAGENT_ROLES = ('review', 'docs')
@@ -289,6 +301,75 @@ comments).
 When: a run reads both files when it starts, so most keys apply on the next run (a run that is up keeps what
 it read until it stops); `{cmd} slots N`, `pause` and `force` change the run that is up now.
 """
+
+
+def local_url(url: str) -> bool:
+    """True when a provider url points at this machine or a private network (localhost, *.local, a loopback,
+    private or link-local address); a public host name is taken as remote, never resolved."""
+    import ipaddress
+    from urllib.parse import urlsplit
+    host = (urlsplit(url).hostname or '').lower()
+    if host in ('localhost', '') or host.endswith(('.localhost', '.local')):
+        return True
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        return False
+    return ip.is_loopback or ip.is_private or ip.is_link_local or ip.is_unspecified
+
+
+def model_providers(given: object) -> dict[str, dict]:
+    """`[models.providers]`, each checked: {name: {kind, url, key_env, local}}. Refuses (SystemExit) a provider
+    without a known kind or an http(s) url, one that shadows a built-in name, one holding a key itself, and a
+    remote one without key_env."""
+    if not isinstance(given, dict):
+        raise SystemExit(f'agent-runner: [models.providers] is a table of providers, not {given!r}')
+    out = {}
+    for name, p in given.items():
+        where = f'agent-runner: [models.providers.{name}]'
+        if name in PROVIDERS:
+            raise SystemExit(f'{where}: {name} is a built-in provider; give yours another name')
+        if not isinstance(p, dict):
+            raise SystemExit(f'{where} must be a table (kind, url, key_env), not {p!r}')
+        if held := [k for k in p if k in ('key', 'api_key', 'token', 'secret')]:
+            raise SystemExit(f'{where}: {held[0]} holds a key in the config; keys never go in runner.toml: set '
+                             'key_env to the name of the env var that holds it')
+        if p.get('kind') not in PROVIDER_KINDS:
+            raise SystemExit(f'{where}: kind must be one of {", ".join(PROVIDER_KINDS)}, not {p.get("kind")!r}')
+        url = p.get('url')
+        if not (isinstance(url, str) and url.startswith(('http://', 'https://'))):
+            raise SystemExit(f'{where}: url must be an http(s) address, not {url!r}')
+        key_env = p.get('key_env', '')
+        if not isinstance(key_env, str) or (key_env and not key_env.replace('_', 'A').isalnum()):
+            raise SystemExit(f'{where}: key_env must be the name of an env var (MY_API_KEY), not {key_env!r}')
+        local = local_url(url)
+        if not key_env and not local:
+            raise SystemExit(f'{where}: key_env is missing: name the env var that holds its key')
+        out[name] = {'kind': p['kind'], 'url': url, 'key_env': key_env, 'local': local}
+    return out
+
+
+def parse_model(value: str, providers: dict[str, dict] | None = None, local: bool = False,
+                where: str = '[models]', backend: str = 'claude') -> tuple[str, str]:
+    """A [models] role's value as (provider, model): '<provider>:<model>' for a built-in or `providers` name, a
+    bare name ('opus') as ('claude', 'opus'). Refuses (SystemExit) an unknown provider, an empty model, and a
+    local provider (ollama, or a url on localhost or a private address) unless `local`. On the Pi backend a
+    prefix that is no provider is Pi's own model syntax, kept whole."""
+    providers = providers or {}
+    head, sep, rest = value.partition(':')
+    if not sep:
+        return 'claude', value
+    if head not in PROVIDERS and head not in providers:
+        if backend == 'pi':
+            return 'claude', value
+        raise SystemExit(f'agent-runner: {where} = {value!r}: unknown provider {head!r}; use one of '
+                         f'{", ".join([*PROVIDERS, *providers])}, or define it in [models.providers.{head}]')
+    if not rest:
+        raise SystemExit(f'agent-runner: {where} = {value!r}: no model after {head}:')
+    if not local and (head in LOCAL_PROVIDERS or providers.get(head, {}).get('local')):
+        raise SystemExit(f'agent-runner: {where} = {value!r}: {head} is a local provider, refused unless '
+                         '[models] local = true')
+    return head, rest
 
 
 def _toml_value(v) -> str:
@@ -611,8 +692,14 @@ class Config:
         too (Claude's model names mean nothing there). `[run] model` and `fix_model` are kept equal to `code`
         and `fix`, so code that reads them sees the role."""
         m, r = self.raw['models'], self.run
+        # F106a: [models] local and [models.providers] are settings, not roles: kept apart from self.models
+        self.models_local = m.pop('local', False)
+        if not isinstance(self.models_local, bool):
+            raise SystemExit(f'agent-runner: [models] local must be true or false, not {self.models_local!r}')
+        self.providers = model_providers(m.pop('providers', {}))
         for role, v in given.items():
-            if role in DEFAULTS['models'] and role != 'kinds' and not (isinstance(v, str) or (v is False and role == 'docs')):
+            if role in DEFAULTS['models'] and role not in MODEL_SETTINGS \
+                    and not (isinstance(v, str) or (v is False and role == 'docs')):
                 raise SystemExit(f'agent-runner: [models] {role} must be a model name'
                                  + (' or false' if role == 'docs' else '') + f', not {v!r}')
         code = given.get('code', r['model'])
@@ -620,7 +707,7 @@ class Config:
         r['model'], r['fix_model'] = code, fix
         m.update(code=code, fix=fix)
         for role in DEFAULTS['models']:
-            if role not in ('code', 'fix', 'kinds'):
+            if role not in ('code', 'fix', *MODEL_SETTINGS):
                 m[role] = given.get(role, code if r['backend'] == 'pi' else DEFAULTS['models'][role])
         # F105: [models.kinds] laid over the defaults kind by kind; on Pi only the kinds the files set
         kinds = given.get('kinds', {})
@@ -628,13 +715,27 @@ class Config:
                                                   for k, v in kinds.items()):
             raise SystemExit(f'agent-runner: [models.kinds] maps a kind to a model name (D = "sonnet"), not {kinds!r}')
         m['kinds'] = {**({} if r['backend'] == 'pi' else DEFAULTS['models']['kinds']), **kinds}
+        # F106a: each role as '<provider>:<model>'; claude's are kept as the bare name the agent takes
+        refs = {f'[models] {role}': role for role in m if role != 'kinds' and isinstance(m[role], str)}
+        refs.update({f'[models.kinds] {k}': k for k in m['kinds']})
+        for where, key in refs.items():
+            table = m['kinds'] if where.startswith('[models.kinds]') else m
+            provider, model = parse_model(table[key], self.providers, self.models_local, where, r['backend'])
+            if provider != 'claude':  # until the loop engine (F106c) lands, only claude runs a session
+                raise SystemExit(f'agent-runner: {where} = {table[key]!r}: the {provider} provider is not supported '
+                                 'yet; only claude models run until the loop engine lands (F106c)')
+            table[key] = model
+        r['model'], r['fix_model'] = m['code'], m['fix']
         return m
 
     def task_model(self, tid: str, own: str = '') -> str:
         """F105: the model a task's own session runs on: its own (`plan add --model`, `own`), else its kind's in
         `[models.kinds]` (the id's letters: 'P17a' is P), else `[models] code`."""
-        if own:
-            return own
+        if own:  # F106a: 'claude:<model>' runs as the bare name; another provider waits for F106c: the kind's
+            provider, model = parse_model(own, self.providers, True, 'model', self.run['backend']) \
+                if own.partition(':')[0] in (*PROVIDERS, *self.providers) else ('claude', own)
+            if provider == 'claude':
+                return model
         kind = tid[:len(tid) - len(tid.lstrip('ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'))]
         return (self.models.get('kinds') or {}).get(kind) or self.models['code']
 

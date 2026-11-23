@@ -1076,6 +1076,8 @@ control = "opus"          # control sessions (c1, c2, …)
 feed = "haiku"            # the runner feed, and the one-shot that publishes the run page's claude.ai copy
 kinds = { F = "opus", B = "opus", T = "opus", V = "opus", K = "opus", D = "sonnet", C = "sonnet", R = "sonnet" }
                           # a task's own session by its kind (the id's letters: F105 is F); see Models per kind
+local = false             # allow a local provider (ollama, or a provider url on localhost or a private address); see Model providers
+providers = {}            # the repo's own providers, [models.providers.<name>]; see Model providers
 
 [run]
 test = ""                 # the gate, run by `done` and on every merge, e.g. "make test"
@@ -1205,6 +1207,34 @@ given on the command line (it sets every task without its own); the
 there: only the kinds the repo sets apply, else `[run] model`. A kind's value must be a model name (a string), or
 the run refuses to start with a `[models.kinds]` error. A repo that sets `[models] code` or `[run] model` still gets
 the default kinds for F, B, T, V, K, D, C and R; to run every kind on one model, set those kinds in `[models.kinds]`.
+
+### Model providers
+
+Any `[models]` role value, and any `[models.kinds]` value, may be `<provider>:<model>`. A bare name like `opus`
+means `claude:opus`. Built-in providers: `claude`, `copilot`, `codex`, `gemini`, `ollama`. Only the first colon
+splits, so `ollama:llama3:8b` is provider `ollama`, model `llama3:8b`.
+
+A repo defines its own provider in `[models.providers.<name>]` with `kind = "openai"` or `"anthropic"` (any API
+compatible with that one), `url` (http or https), and `key_env` (the name of the env var holding its key). Keys
+never go in runner.toml: a `key`, `api_key`, `token` or `secret` field is refused. `key_env` may be left out only
+for a local url. A provider may not reuse a built-in name. Example:
+
+    [models.providers.acme]
+    kind = "openai"
+    url = "https://api.acme.example/v1"
+    key_env = "ACME_KEY"
+
+and then `review = "acme:gpt-x"`.
+
+Local providers (ollama, or a provider whose url is `localhost`, `*.local`, or a loopback, private or link-local
+address) are refused unless `[models] local = true` (off by default). Host names are not resolved. `local` can go
+in runner.local.toml to allow it on one machine.
+
+An unknown provider prefix is refused at start, except on the Pi backend, where the value is kept whole as Pi's
+own model syntax.
+
+For now this is config only: until the loop engine (F106c) lands, a role naming a provider other than `claude` is
+refused at start with a message saying so. `claude:<model>` runs as the bare model name.
 
 ### Renamed and removed keys
 
