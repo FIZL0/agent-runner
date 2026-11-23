@@ -172,6 +172,8 @@ a{color:var(--accent)}
 .chip{border:1px solid var(--line);background:var(--surface);border-radius:var(--r-m);padding:7px 12px;font-size:var(--fs-m);cursor:pointer;display:inline-flex;align-items:center;gap:7px;color:var(--fg)}
 .chip svg{width:15px;height:15px;color:var(--muted)}
 .chip:hover{background:var(--bubble)}
+.chip[data-view]{position:relative}  /* F164: Talk is 44px to press with any pointer, and looks like the chips beside it */
+.chip[data-view]::after{content:'';position:absolute;left:0;right:0;top:50%;height:var(--tap);transform:translateY(-50%)}
 .ev{display:flex;gap:12px;align-items:flex-start;padding:4px 2px;min-width:0}
 .ev .ic{width:26px;height:26px;border-radius:50%;display:grid;place-items:center;flex:none;background:var(--bubble);color:var(--muted)}
 .ev .ic svg{width:14px;height:14px}
@@ -1460,7 +1462,7 @@ const greeting=()=>{const h=new Date().getHours();return h<12?'Good morning':h<1
 function homeHTML(){
   const ws=working_(), nx=upNext().slice(0,3);
   return `<div class="col"><div class="greet">${LOGO()}${greeting()}</div>${box('How can I help with the run?',keysLine())}${ttydLine()}
-    <div class="chips"><button class="chip" data-quick="since">${I.clock}Since my last look</button><button class="chip" data-quick="needs">${I.ask}What needs me</button><button class="chip" data-about="new">${I.plus}Add a task</button></div>
+    <div class="chips"><button class="chip" data-view="talk">${I.talk}Talk</button><button class="chip" data-quick="since">${I.clock}Since my last look</button><button class="chip" data-quick="needs">${I.ask}What needs me</button><button class="chip" data-about="new">${I.plus}Add a task</button></div>
     ${needsSec()}
     <div class="sec">Working now<span class="ln"></span></div>${ws.length?`<div class="grid2">${ws.map(agentCard).join('')}</div>`:emptyCard(S.snap.up===false?'No run is up.':'No agent is working right now.')}
     <div class="sec">Up next<span class="ln"></span></div>${nx.length?nx.map(planCard).join(''):emptyCard('The queue is empty.')}

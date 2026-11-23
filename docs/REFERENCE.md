@@ -327,7 +327,7 @@ drawer) and a desktop. It follows the browser's light or dark setting; `[ui] the
   drop the task after a confirm), Working now (opens
   that agent's thread), Up next (a row folds open to the task's whole text) and Release (when the next one
   lands, or now). An answer button runs the plan command itself, with no AI session: Yes on a CONFIRM or a picked
-  answer runs `plan confirm ID "<reply>"`, No on a CONFIRM runs `plan change ID "No: the check failed"` (which reopens it), and a pick sheet's go runs `sheet ID --go`. The button shows it is working, a toast says what was done (e.g. "R13 ticked") and the item leaves Needs you at once; on a failure the toast says why and the item stays. Words typed in a reply still go to c1. `agent-runner ui`'s answer tab does the same.
+  answer runs `plan confirm ID "<reply>"`, No on a CONFIRM runs `plan change ID "No: the check failed"` (which reopens it), and a pick sheet's go runs `sheet ID --go`. The button shows it is working, a toast says what was done (e.g. "R13 ticked") and the item leaves Needs you at once; on a failure the toast says why and the item stays. Words typed in a reply still go to c1. `agent-runner ui`'s answer tab does the same. A Talk button first in the row under the message box opens Talk in the page without a reload, and never starts the mic.
 - **Threads.** A session's feed as a conversation: its replies in serif with no bubble, yours in bubbles,
   tool steps folded as "Ran N steps", and a mark while it works, with a Stop button. Ctrl+C or Stop interrupts it; Esc only leaves the box, then
   goes back (B116). A control

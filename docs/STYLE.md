@@ -138,7 +138,9 @@ Motion shows where a thing came from, where it went, or that it changed. Nothing
 
 ## Touch, keys and access
 
-- A finger's target is at least `--tap`. Hover only adds: whatever it reveals, touch shows or puts in a row's sheet.
+- A finger's target is at least `--tap`. Hover only adds: whatever it reveals, touch shows or puts in a row's sheet. A
+  small button that must be 44px with any pointer gets its target from an `::after` over it (Home's Talk chip), so it
+  still looks like the ones beside it.
 - Text boxes are 16px or more, so a phone does not zoom.
 - Touch listeners that watch a gesture are passive, except a `touchmove` that must keep the page still: the drawer
   swipe and a row drag, and the `touchend` that makes a tap's focus on a text box (`kbTapEnd()`, iOS only). Those call
