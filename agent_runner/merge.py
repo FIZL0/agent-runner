@@ -21,7 +21,7 @@ from contextlib import ExitStack
 
 from agent_runner import pitch, plan as P, plat, plansync
 from agent_runner.brief import findings_globs, research_task
-from agent_runner.done import DOCS_SKIP, TESTED, docs_only, gate
+from agent_runner.done import DOCS_SKIP, PARTIAL, TESTED, docs_only, gate, gate_passed_on
 from agent_runner.gitops import _net
 from agent_runner.state import C, clean, git, hook, LANDING, log, MERGE, note, plan_rel, plan_text, ROOT, SLOTS_DIR
 from agent_runner.state import commit_plan, EV_LANDED, EV_LEFT, EV_PART
@@ -599,7 +599,7 @@ def untestable(f: str) -> bool:
 
 def gated(tid: str) -> bool:
     """task/<tid> is what `done`'s gate passed on: the tree its tested ref records."""
-    tree = git('rev-parse', '-q', '--verify', f'{TESTED}{tid}^{{tree}}').stdout.strip()
+    tree = gate_passed_on(tid, ROOT)
     return bool(tree) and tree == git('rev-parse', '-q', '--verify', f'task/{tid}^{{tree}}').stdout.strip()
 
 
@@ -796,6 +796,7 @@ def merge_tries(tid: str, branch: str) -> str | None:
             forget(tid)
             git('branch', '-d', f'task/{tid}')
             git('update-ref', '-d', TESTED + tid)
+            git('update-ref', '-d', PARTIAL + tid)
             for h in git('for-each-ref', '--format=%(refname)', f'{HELD}{tid}/', f'{FIXED}{tid}/').stdout.split():
                 git('update-ref', '-d', h)
             land_tick(tid, merged)

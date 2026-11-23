@@ -12,6 +12,9 @@ commit, a commit without the tests, a branch never pushed. A failing gate commit
 nothing, so a "done" task is always one whose tests passed. Failed gates are counted per task in the
 worktree's git dir: after three, `done` refuses to run a fourth until the task is blocked (a pass resets it).
 
+`[run] done_test` (F178) is what `done` runs in place of the test gate, on a docs-only diff too; the merge still
+runs the gate, so a pass of it alone never lets a merge skip it.
+
 A diff that is docs only (every file the worktree changes since the shared branch matches `[run] docs_files`)
 skips the gate: `done` says 'docs only, gate skipped' and runs `[run] docs_check` instead, if one is set.
 
@@ -44,6 +47,7 @@ from agent_runner.gitops import git, missing_remote, push, shared_branch, shared
 
 PROG = 'run done'  # the name in messages; a wrapper sets its own ('kit done')
 TESTED = 'refs/agent-runner/tested/'  # + <ID>: the commit whose tree `done`'s gate passed on
+PARTIAL = 'refs/agent-runner/done-test/'  # + <ID>: the tested commit, when only `[run] done_test` passed on it
 MAX_FAILS = 3  # failed gates a task gets in one worktree; the next `done` refuses to run a fourth
 __all__ = ['gate', 'main', 'PROG']
 
@@ -127,12 +131,17 @@ def main(argv: list[str] | None = None) -> int:
               file=sys.stderr)
         return 1
     a.docs = docs = bool(not a.no_test and c.run['test'] and docs_only(changed(cwd), c.run['docs_files']))
-    if docs:  # no tested ref either: the merge decides by its own diff
+    own = c.run['done_test']  # F178: in place of `test`, whatever the diff is
+    if docs and not own:  # no tested ref either: the merge decides by its own diff
         print(DOCS_SKIP + (f' (docs check: {c.run["docs_check"]})' if c.run['docs_check'] else ''))
     if not a.no_test:
-        if not docs:
+        if own or not docs:
             shared_tools.gate_wait(c)  # B184
-        rc, tail = gate(cwd, 'docs_check' if docs else 'test')
+        key = 'done_test' if own else 'docs_check' if docs else 'test'
+        rc, tail = gate(cwd, key)
+        if own and docs and not rc and c.run['docs_check']:
+            key = 'docs_check'
+            rc, tail = gate(cwd, key)
         if rc:
             print(tail)
             if a.blocked:
@@ -141,11 +150,14 @@ def main(argv: list[str] | None = None) -> int:
                 last = f'That is {n} failed gates on {a.id}: {PROG} refuses a fourth. Commit what is solid and'
             else:
                 last = f'Failed gate {n} of {MAX_FAILS}. Fix it, or commit what is solid and'
-            what = f'The docs check (`{c.run["docs_check"]}`)' if docs else 'The test gate'
+            what = {'docs_check': f'The docs check (`{c.run["docs_check"]}`)',
+                    'done_test': f'[run] done_test (`{own}`)'}.get(key, 'The test gate')
             print(f'\n{what} failed: nothing ticked, nothing committed. {last}\n'
                   f'    {PROG} {a.id} "<msg>" --blocked "<why + what unblocks it>"', file=sys.stderr)
             return 1
-        if c.run['test'] and not docs:
+        if own:
+            print(f'done_test passed: {own}')
+        elif c.run['test'] and not docs:
             print(f'gate passed: {c.run["test"]}')
     if a.blocked or not a.no_test:  # a pass, or a block: the next session on it starts its count afresh
         fails(cwd, a.id, reset=True)
@@ -202,7 +214,7 @@ def record(a, c) -> int:
     if not g('diff', '--cached', '--quiet').returncode:
         print('nothing to commit (the tick was already committed?)')
         if not a.no_test and not getattr(a, 'docs', False):
-            g('update-ref', TESTED + a.id, 'HEAD')
+            mark_tested(a.id, c)
         push_task(c)
         return finished(c, a)
     message = a.message
@@ -214,10 +226,24 @@ def record(a, c) -> int:
         print(f'git commit failed: {r.stderr.strip()}', file=sys.stderr)
         return untick()
     if not a.no_test and not getattr(a, 'docs', False):  # what the gate passed on, so a merge that differs from it only in [run] untested skips it
-        g('update-ref', TESTED + a.id, 'HEAD')
+        mark_tested(a.id, c)
     print(g('log', '-1', '--oneline').stdout.strip())
     push_task(c)
     return finished(c, a)
+
+
+def mark_tested(tid: str, c) -> None:
+    """`done` passed on HEAD. With `[run] done_test` that was not the gate, so PARTIAL says so first and the merge
+    runs it (`gate_passed_on`)."""
+    git('update-ref', *([PARTIAL + tid, 'HEAD'] if c.run['done_test'] else ['-d', PARTIAL + tid]), cwd=c.root)
+    git('update-ref', TESTED + tid, 'HEAD', cwd=c.root)
+
+
+def gate_passed_on(tid: str, cwd: Path) -> str:
+    """The tree `done`'s whole gate passed on, '' when none, or only `[run] done_test` (F178) did."""
+    at = lambda ref, kind: git('rev-parse', '-q', '--verify', f'{ref}{tid}^{{{kind}}}', cwd=cwd).stdout.strip()  # noqa: E731
+    commit = at(TESTED, 'commit')
+    return '' if not commit or commit == at(PARTIAL, 'commit') else at(TESTED, 'tree')
 
 
 def push_task(c) -> None:

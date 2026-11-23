@@ -96,6 +96,7 @@ WORDS: dict[str, tuple[str, str, str]] = {
     'models.local': ('roles', 'Allow local models', 'Lets a role name a model that runs on your own network. Off: such a name is refused.'),
     # the project file, read only here
     'run.test': ('commands', 'Test command', 'Every task and merge must pass it. Empty: nothing is tested.'),
+    'run.done_test': ('commands', 'Test before a commit', 'What a task must pass before its commit, in place of the test command. A merge still runs that. Empty: the test command.'),
     'run.test_since': ('commands', 'Quick test', 'Tests only what changed, at a merge. Empty: the whole test every time.'),
     'run.retest': ('commands', 'Test again', 'Runs only the tests that failed, to tell a real failure from load. Empty: a failure is taken as real.'),
     'run.build': ('commands', 'Build check', 'A quick build a conflict fix must pass before it is committed. Empty: only the whole test checks it.'),

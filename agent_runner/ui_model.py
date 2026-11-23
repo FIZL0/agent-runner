@@ -3,7 +3,7 @@ copy, and the actions they share.
 
 `snapshot()` reads what `status` reads (STATE, the plan, the run log, Needs you) and returns one plain dict:
 
-    status    the status lines: run up or not, its state, progress, release, no-gate warning, usage
+    status    the status lines: run up or not, its state, progress, release, no-settings or no-gate warning, usage
     slots     the run's slot count (0 when no run is up; while it starts, [run] slots)
     sessions  c1 and every other live control session (cN, its title from state), then each slot s1..s<slots>
               and any past the count still on a task: task, title, minutes, state (running, merging, idle: no
@@ -27,6 +27,7 @@ copy, and the actions they share.
     usage     F124: the account's usage, [{'name': 'session'|'week', 'pct'}]
     lately    F124: what landed lately, newest first, [{'at', 'text'}], the words `status` lists under "lately"
     fixups    F124: what the Fix up controls would work on (`fixups`): {'resume', 'unclaim', 'wip': [{'id', 'label'}]}
+    no_settings  F178: the warning when no settings file was found (`no_settings`), else ''
     chat_quiet  F128: `[ui] chat_quiet` in seconds (0 off)
     version   the run's agent-runner version, from STATE ('' when no run is up or an older run wrote none);
               F90: the TUI restarts and the run page reloads when it changes
@@ -513,16 +514,29 @@ def unpushed_line() -> str:
         return ''
 
 
+NO_SETTINGS = 'no settings found, so no test gate and nothing is pushed'
+
+
+def no_settings(c=None, st: dict | None = None) -> str:
+    """F178: NO_SETTINGS when the project of config `c` (default: this one) has no settings file, else ''. `st`: an up
+    run's STATE, which says what that run itself found (it may have been started with AGENT_RUNNER_CONFIG)."""
+    if st and 'no_settings' in st:
+        return NO_SETTINGS if st['no_settings'] else ''
+    c = c or S.C
+    # runner.local.toml alone can set a gate or the push: then the words would not be true
+    return '' if not c or c.file or c.run['test'] or 'push_merge' in c.given.get('git', ()) else NO_SETTINGS
+
+
 def status_rows(up: bool, st: dict, progress: str) -> list[str]:
-    """The status lines: the run's state, progress, the no-gate warning, and usage."""
+    """The status lines: the run's state, progress, the no-settings or no-gate warning, and usage."""
     from agent_runner.land import no_gate_line
     out = [f'run up: {st.get("state", "starting")}' if up else 'no run is up']
     for k, said in (('paused', 'paused'), ('stopping', 'stopping: finishing the running tasks')):
         if up and st.get(k):
             out.append(said)
     try:
-        if nogate := no_gate_line():
-            out.append(nogate)
+        if line := no_settings(st=st if up else None) or no_gate_line():
+            out.append(line)
     except Exception:  # noqa: BLE001
         pass
     if unpushed := unpushed_line():
@@ -648,6 +662,7 @@ def snapshot(up: bool | None = None, now: float | None = None, log_n: int = LOG_
                                                                  if c['where'] == 'release'],
             'needs': needs, 'concepts': concepts, 'log': log_tail(log_n), 'release': release,
             'quick_asks': quick_asks(), 'terminal_mode': terminal_mode(), 'controls': controls(),
+            'no_settings': no_settings(st=st if up else None),  # F178
             'unpushed': unpushed_line(),  # F98
             'usage': usage_rows(st), 'lately': lately(titles), 'chat_quiet': chat_quiet(),
             'version': str(st.get('version') or '')}  # F90: the run's version ('' from an older run)

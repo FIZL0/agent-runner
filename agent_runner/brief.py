@@ -180,7 +180,9 @@ def prompt_for(tid: str, n: int, slots: int, cwd: Path, branch: str, model: str 
                  f'and the ledger line in {r["notes"]}/ledger.md says why). Read it before starting over.\n'
                  if wip else ''),
         rules=f'read {r["rules"]} first' if r['rules'] else 'the README, and AGENTS.md or CLAUDE.md if there is one',
-        test=(f'The test gate is `{r["test"]}`. `done` runs it, and it must pass.' if r['test'] else
+        test=(f'Before its commit, `done` runs `{r["done_test"]}`, and it must pass.' +
+              (f' The test gate, `{r["test"]}`, is for the merge.' if r['test'] else '')
+              if r['done_test'] else f'The test gate is `{r["test"]}`. `done` runs it, and it must pass.' if r['test'] else
               'There is no test gate, so say in the commit message how you checked the work.'),
         journal=journal_text(tid),
         extra=f'\n{r["prompt_extra"].strip()}\n' if r['prompt_extra'] else '',

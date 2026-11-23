@@ -1138,11 +1138,13 @@ def run_facts(root: Path, run: dict, https=None, site=None) -> dict:
     """What the run picker and the launcher say of the project at `root` beside `run` (`run_info`): tasks left,
     stopping (a stop was asked for), and the run page link ('' while no run serves one; its https address first,
     B135; B146: the device site's /p/KEY/ address when one routes the project, `site(root)`, home.site_links)."""
-    out = {'left': None, 'stopping': False, 'link': ''}
+    out = {'left': None, 'stopping': False, 'link': '', 'no_settings': ''}
     try:
         from agent_runner.config import Config
         from agent_runner.status import tasks_left
         c = Config(root)
+        from agent_runner.ui_model import no_settings
+        out['no_settings'] = no_settings(c, run if run.get('up') else None)  # F178
         out['left'] = tasks_left(c.todo.read_text(encoding='utf-8').splitlines())[0]
         out['stopping'] = bool(run.get('up')) and c.notes('STOP').exists()
         if run.get('up'):
@@ -1268,10 +1270,12 @@ def picker_text_painted(rows: list[dict], sel: int, p: PickerPaint) -> str:
                 parts += [(' · ' if slots else '', None), (left, 'yellow' if r.get('stopping') else None)]
             parts += [(gap + str(r['root']) + ('  here' if r['here'] else '') + ' ', None)]
             out.append(p.bar(parts))
+            out += [p.c('yellow', f'     {r["no_settings"]}')] if r.get('no_settings') else []
             continue
         bits = [p.c(slot_tok, slots)] + ([p.c(left_tok, left)] if left else [])
         line = f'  {p.key(str(i + 1))}  {name}' + ' · '.join(bits) + gap + p.c('dim', str(r['root']))
         out.append(line + ('  ' + p.c('accent', 'here') if r['here'] else ''))
+        out += [p.c('yellow', f'     {r["no_settings"]}')] if r.get('no_settings') else []
     out += ['', p.hints([('j/k', 'move'), ('1-9', 'pick'), ('⏎', 'pick')], ('q', 'quit'))]
     return '\n'.join(out) + '\n'
 
@@ -1286,7 +1290,7 @@ def launcher_text_painted(row: dict, said: str, p: PickerPaint) -> str:
         p.c('dim', 'no run page link (`status` says why)')
     button = lambda k, label: p.c('dim', '[') + p.key(k) + f' {label}' + p.c('dim', ']')  # noqa: E731
     out = [p.c('accent', row['name'], True) + ' ' + button('0', 'all runs') + '  ' + p.c('dim', str(row['root'])),
-           status, link, '',
+           status, *([p.c('yellow', row['no_settings'])] if row.get('no_settings') else []), link, '',
            '  '.join((button('w', 'open the run page'), button('t', 'terminal UI'), button('c', 'copy the link'))),
            '']
     if said:
@@ -1309,6 +1313,7 @@ def picker_text(rows: list[dict], sel: int, paint: PickerPaint | None = None) ->
         mark = '>' if i == sel else ' '
         line = f'{mark} {i + 1}  {r["name"]:<16} {what:<28} {r["root"]}' + ('  here' if r['here'] else '')
         out.append(f'{BOLD}{line}{RESET}' if i == sel else line)
+        out += [f'     {r["no_settings"]}'] if r.get('no_settings') else []
     out += ['', f'{DIM}j/k or arrows move · 1-9 picks · Enter picks · q quits{RESET}']
     return '\n'.join(out) + '\n'
 
@@ -1319,6 +1324,7 @@ def launcher_text(row: dict, said: str = '', paint: PickerPaint | None = None) -
         return launcher_text_painted(row, said, paint)
     status = ' · '.join(x for x in ('● run up', slots_words(row['run']), left_words(row)) if x)
     out = [f'{BOLD}{row["name"]}{RESET} [0 all runs]  {row["root"]}', status,
+           *([row['no_settings']] if row.get('no_settings') else []),
            row['link'] or f'{DIM}no run page link (`status` says why){RESET}', '',
            '  w  open the run page in the browser', '  t  open the terminal UI (agent-runner ui)',
            '  c  copy the link', '  q  back · ⏎ terminal UI', '']

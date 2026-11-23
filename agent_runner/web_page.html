@@ -1429,7 +1429,7 @@ function projectCard(p){
     b.unlist?`<button class="btn" data-punlist="${esc(p.key)}" title="Unlist it from Home">${esc(b.label)}</button>`:
     `<button class="btn ${b.go?'acc':''}" data-pact="${esc(b.a)}" data-parg="${esc(b.arg||'')}" data-pkey="${esc(p.key)}">${esc(b.label)}</button>`).join('');
   const need=p.needs?`<div><b class="v-bad">${p.needs} need${p.needs==1?'s':''} you</b>${(p.asks||[]).map(a=>`<div class="small">${esc(a)}</div>`).join('')}</div>`:'';
-  return card(`<div class="row"><span class="pdot ${esc(p.state)}"></span><div class="grow"><b>${esc(p.name)}</b><div class="small">${esc(projectWords(p))}</div></div></div>${need}<div class="btns">${bs}</div>`,
+  return card(`<div class="row"><span class="pdot ${esc(p.state)}"></span><div class="grow"><b>${esc(p.name)}</b><div class="small">${esc(projectWords(p))}</div>${p.no_settings?`<div class="small"><span class="v-warn">${esc(p.no_settings)}</span></div>`:''}</div></div>${need}<div class="btns">${bs}</div>`,
     `${p.page?'tap':''} ${p.needs?'need':''}`,p.page?`data-pgo="${esc(projectLink(HB,p.key,T))}"`:'');
 }
 function deviceCard(d){const v=d.verdict||{};
@@ -1534,6 +1534,7 @@ function controlsCard(){
   const said=!up?'No run is up.':[run.paused?'Paused: no new tasks start':'',run.stopping?'Stopping: the running tasks finish, nothing new starts':'',run.forced?'Usage caps off':'',run.power?`${run.power==='suspend'?'Suspends':'Shuts down'} once it stops`:''].filter(Boolean).join(' · ')||'Running';
   const b=cardControls(S.snap).map(k=>{const c=controlOf(k);return c?`<button class="btn ${k==='start'||k==='go_on'||k==='stop_undo'?'acc':''}${ctlBusy(k)?' busy':''}" data-ctl="${esc(k)}">${esc(k==='stop'?'Stop':c.label)}</button>`:''}).join('');
   return card(`<div class="row"><div class="grow"><b>Run</b><div class="small" data-k="runsaid" data-v="${esc(said)}">${esc(said)}</div></div><span class="small">${up?`${working_().length} of ${S.snap.slots||0} slot${S.snap.slots===1?'':'s'}`:''}</span></div>
+    ${S.snap.no_settings?`<div class="small" data-k="nosettings"><span class="v-warn">${esc(S.snap.no_settings)}</span></div>`:''}
     ${S.snap.unpushed?`<div class="small" data-k="unpushed" data-v="${esc(S.snap.unpushed)}">${esc(S.snap.unpushed)}</div>`:''}
     ${(S.snap.tools||[]).length?`<div class="small" data-k="tools" data-v="${esc(toolsWords(S.snap.tools))}">${esc(toolsWords(S.snap.tools))}</div>`:''}
     ${ss.map(slotRow).join('')}

@@ -300,7 +300,7 @@ def why_closed(root: Path) -> str:
 def project_row(key: str, root: Path, info=None, facts=None, needs=needs_said) -> dict:
     """What Home shows of one project: {'key', 'name', 'root', 'state' (running|idle|off), 'paused',
     'stopping', 'slots', 'running' (task ids), 'left', 'needs' (how many), 'asks' (their 'ID - what to do'
-    lines), 'page' (its run app through Home, or '')}."""
+    lines), 'no_settings' (F178: its warning or ''), 'page' (its run app through Home, or '')}."""
     n, asks = needs(root)
     from agent_runner import cmds
     run = (info or cmds.run_info)(root) or {}
@@ -316,6 +316,7 @@ def project_row(key: str, root: Path, info=None, facts=None, needs=needs_said) -
             'paused': up and 'paused' in words, 'stopping': bool(f.get('stopping')),
             'slots': run.get('slots') if up and isinstance(run.get('slots'), int) else None,
             'running': running, 'left': f.get('left'), 'needs': n, 'asks': asks[:5],
+            'no_settings': f.get('no_settings') or '',  # F178
             'page': f'p/{key}/' if up and f.get('link') else ''}
 
 
