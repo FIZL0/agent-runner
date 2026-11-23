@@ -675,7 +675,10 @@ def test_page_copy_publish(tmp: Path) -> None:
             mock.patch.object(PC.sp, 'run', fake_run), \
             mock.patch.object(SL, 'send_to_pane', lambda *a, **k: keys.append(a) or True), \
             mock.patch.object(SL, 'send_fifo', lambda *a, **k: keys.append(a) or True), \
-            mock.patch.object(SL, 'tmux', lambda *a, **k: keys.append(a)):
+            mock.patch.object(SL, 'tmux', lambda *a, **k: keys.append(a)), \
+            mock.patch('agent_runner.control.control_live', lambda *a, **k: keys.append(('live', a)) or 4242), \
+            mock.patch('agent_runner.control.control_window', lambda *a, **k: keys.append(('window', a)) or '%1'), \
+            mock.patch.object(SL.MUX, 'send', lambda *a, **k: keys.append(('mux', a)) or True, create=True):
         check(tick(1000.0, snap('10:00')), 'a run change publishes the copy')
         argv, kw = runs[0]
         eq(argv[1:2], ['-p'], 'a one-shot headless session')
@@ -691,6 +694,10 @@ def test_page_copy_publish(tmp: Path) -> None:
         check('0f3c-copy' in runs[-1][0][2], 'to the same URL', runs[-1][0][2])
         check(not tick(5000.0, snap('11:00', task='B2', minutes=40, log='another line')),
               'only the clock, minutes, usage and log changed: no publish')
+        paused = snap('11:01', task='B2')
+        paused['status'] = ['run paused · usage 3%']
+        check(tick(5000.0 + PC.PAGE_COPY_EVERY, paused), 'a run that pauses is a change: published')
+        runs.pop()
         rc[0] = 1
         for i, t in enumerate((7000.0, 8000.0, 9000.0)):
             check(tick(t, snap(f'{t}', task=f'T{i}')), f'publish {i + 1} is tried')
@@ -703,6 +710,9 @@ def test_page_copy_publish(tmp: Path) -> None:
         check('cannot be started' in PC.PAGE_COPY_OFF[0], 'no agent to start: the copy stops', PC.PAGE_COPY_OFF[0])
     eq(keys, [], 'no run change sends keys to any pane or FIFO')
     check(not hasattr(PC, 'c1_send'), 'the copy has no way to type into c1')
+    src = Path(PC.__file__).read_text(encoding='utf-8')
+    for name in ('send_to_pane', 'send_fifo', 'control_window', 'control_live', 'send_keys', 'MUX'):
+        check(name not in src, f'page_copy.py never calls {name}')
     PC.PAGE_COPY_OFF[0] = ''
 
 

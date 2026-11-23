@@ -58,10 +58,10 @@ def page_copy_url() -> str:
 
 def page_copy_key(snap: dict) -> str:
     """What makes a run event for the copy: the page as it would be published, apart from what moves with the
-    clock: its 'as of' time, the log lines, a slot's minutes and the status lines (usage). Those change every
-    minute, so with them in the key a busy run would publish every PAGE_COPY_EVERY s; a quiet run publishes
-    nothing."""
-    calm = {**snap, 'at': '', 'log': [], 'status': [],
+    clock: its 'as of' time, the log lines, a slot's minutes and the numbers in the status lines (usage). Those
+    change every minute, so with them in the key a busy run would publish every PAGE_COPY_EVERY s; a quiet run
+    publishes nothing. The status lines' words stay in it: a run that pauses or stops is a change."""
+    calm = {**snap, 'at': '', 'log': [], 'status': [re.sub(r'\d+', '#', str(l)) for l in snap.get('status') or []],
             'sessions': [{**s, 'minutes': None} for s in snap.get('sessions') or []]}
     return hashlib.sha256(page_copy_html(calm).encode('utf-8')).hexdigest()
 
@@ -182,8 +182,9 @@ def page_copy_stop(why: str) -> None:
 
 
 def page_copy_job(f: Path, url: str, keyf: Path, publish) -> None:
-    """One publish, its URL written on success; a failure forgets the key, so the next run event (or the next
-    tick past PAGE_COPY_EVERY) tries again, and PAGE_COPY_FAIL_MAX failures in a row stop the copy."""
+    """One publish, its URL written on success; a failure forgets the key, so the first tick past PAGE_COPY_EVERY
+    from this try publishes again, changed or not, and PAGE_COPY_FAIL_MAX failures in a row stop the copy (a
+    one-off failure, say a network blip, does not)."""
     try:
         try:
             got = publish(f, url)
