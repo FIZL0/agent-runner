@@ -88,13 +88,16 @@ def parents_first(ls: list[str], open_ids: set[str]) -> dict[str, set[str]]:
             todo += new
         if not k & seen:
             out[tid] = k
+            for t in k:  # held from here on: a later parent waiting on one of these waits on `tid` too
+                waits.setdefault(t, set()).add(tid)
     return out
 
 
 def wip_of(tid: str) -> bool:
-    """An earlier attempt at `tid` is on wip/<ID> (or wip/<ID>-N), counted to PARK_LIMIT or not."""
-    return bool(git('for-each-ref', '--format=%(refname)', f'refs/heads/wip/{tid}',
-                    f'refs/heads/wip/{tid}-*').stdout.strip())
+    """An earlier attempt at `tid` is on wip/<ID> (or wip/<ID>-N), counted to PARK_LIMIT or not, here or pushed by
+    another machine's run."""
+    return bool(git('for-each-ref', '--format=%(refname)', *(f'{at}/wip/{tid}{n}' for at in (
+        'refs/heads', 'refs/remotes/*') for n in ('', '-*'))).stdout.strip())
 
 
 def by_waiters(ls: list[str], out: list[tuple]) -> list[tuple]:

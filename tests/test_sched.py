@@ -296,6 +296,13 @@ def test_split_parent_first(tmp: Path):
     eq(ids(todo.replace('[ ] **F2**', '[x] **F2**')), ['F2a1', 'F20'], 'landed: the parts run')
     git(repo, 'branch', '-m', 'wip/F2', 'wip/F2-2')
     eq(ids(todo), ['F2', 'F20'], 'a later attempt counts as well')
+    git(repo, 'branch', 'wip/F3')
+    eq(ids('# TODO\n\n### Next\n\n- [ ] **F2** x | files: a.py | after: F3a\n- [ ] **F2a** x | files: b.py\n'
+           '- [ ] **F3** x | files: c.py | after: F2a\n- [ ] **F3a** x | files: d.py\n'), ['F3a'],
+       "two parked parents, each after the other's part: not all held for ever")
+    git(repo, 'update-ref', 'refs/remotes/origin/wip/F2', 'wip/F2-2')
+    git(repo, 'branch', '-D', 'wip/F2-2')
+    eq(ids(todo), ['F2', 'F20'], "another machine's parked attempt counts")
 
 
 def main() -> int:

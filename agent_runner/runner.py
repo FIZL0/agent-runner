@@ -19,7 +19,7 @@ next task.
 docs/REFERENCE.md describes each mechanism. In short:
 
 * **picking** (`tasks`, `pick`) goes down TODO.md in order and skips
-  - blocked tasks and split parents,
+  - blocked tasks and split parents (a parent parked as wip/<ID> goes first: its subtasks are skipped, B185),
   - tasks whose `| after: X, Y` names a task not done yet,
   - the Stretch and Parked sections, anything tried this run (until its line is edited), and branches waiting to be merged,
   - a task parked twice (wip/<ID>, wip/<ID>-2): the run blocks it on a person instead (`block_parked`).

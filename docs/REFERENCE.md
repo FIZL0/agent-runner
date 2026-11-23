@@ -803,6 +803,7 @@ push from outside the run has put that ahead (fetched at most once a minute).
 | skipped | why |
 |---|---|
 | `[~]` blocked, and split parents (a task with open subtasks) | the subtasks are the work |
+| the open subtasks of a task with a `wip/<ID>` branch (not `(split into ...)`, not in Stretch or Parked, and not waiting on one of them, directly or down the chain) | the parked attempt's first part is what they build on, so the task goes first (B185); they wait until it lands, also while it is tried this run or blocked |
 | an open id in `after:`, for **any** id listed | every listed dependency must be done |
 | a sibling of a running task (same family) | P13 and P13a edit the same thing |
 | a task in a section whose heading says *in this order* or *one at a time*, while another task from that section runs | an ordered section runs one task at a time |
