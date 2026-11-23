@@ -217,7 +217,7 @@ task to fix X" (it files it with `plan add`), "do X now" (it uses `take`, never 
 - **Slots in the Claude apps (`[run] remote_slots`).** `"open"`, the default, lists a slot in the apps only once it is opened: c1 is the project's chat, and no slot starts on Remote Control by itself. `agent-runner ui`'s Sessions panel opens one (its session tab, "open sN in the Claude apps"; the run app has no such button): the run types `/remote-control <name>` into that slot's session, which is listed from then on until it ends, and its claude.ai/code link shows in the page. For when this machine is not reachable, the run keeps a claude.ai copy of the run page: on a run event (a
   task starts, lands or blocks, a needs-you item, a concept, the release; at most every 10 minutes, and only
   when the page changed apart from its clock, log and minutes) the run writes `.runner/run-page-copy.html` and
-  publishes it with a one-shot headless `claude -p` that has only the Artifact tool, to the URL kept in
+  publishes it with a one-shot headless `claude -p` that has only the Artifact and Read tools (Artifact refuses to publish a file when Read is off, B180), to the URL kept in
   `.runner/run-page-copy.url`; never through c1 or another control session. After 3 failed publishes in a row
   the copy stops for that run. The copy is read-only, with the terminal and the chat as session links.
   `"always"` lists every slot as its own entry, "<task title> · <repo> s2 · B646", and keeps no copy. An old `remote_slots = true` with `sessions = "each"` reads as `"always"`, any other old `true` as `"open"`.
@@ -856,7 +856,7 @@ AskUserQuestion tool stays off.
 
 **Publish a page (F106f).** `agent-runner publish-page <file> [--id ID]` publishes a concept's options page. ID
 defaults to the worktree's `task/<ID>` branch. It copies the HTML to `<notes>/concepts/<ID>.html` (the run page
-shows it at `/concept/<ID>`), then starts a one-shot headless `claude -p` with only the Artifact tool to publish
+shows it at `/concept/<ID>`), then starts a one-shot headless `claude -p` with only the Artifact and Read tools to publish
 that copy to claude.ai: a new artifact with icon "options", or the URL already recorded for ID, so a second
 publish updates the same page. The URL is printed and kept in `<notes>/concepts/<ID>.url`. Exit 1 when the
 one-shot did not publish (the copy is still on the run page); exit 2 for a missing file or no task id.

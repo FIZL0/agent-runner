@@ -234,6 +234,7 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 - Fixes: a repair session's `FLAKE:` line was split on spaces as well as commas, so one quoted test name was filed as
   several flaky-test tasks (four critical tasks for one flake). It is now split on commas only, a quoted or backticked
   name stays whole, and the repair prompt states the names format (B176).
+- Fixed: `run publish-page`, the run page copy and pitch pages were not published to claude.ai (B180): the one-shot exited 0 with no URL. The one-shot had only `--tools Artifact`; Claude Code 2.1.330 then denies Read, and Artifact will not publish a file it may not read. The one-shot now has Artifact and Read, and a failed publish logs the end of its errors and answer, so a sign-in warning no longer hides the reason.
 
 ## 0.61.0 (2026-11-23)
 
