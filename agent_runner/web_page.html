@@ -617,6 +617,7 @@ function obChatRows(){return S.ob.filter(x=>x.newchat).map(x=>`<div class="crow"
 function obCards(key){return S.ob.filter(key).map(x=>card(`<div class="row obstand ${x.state}"><div class="grow"><div>${esc(x.say)}</div><div class="small">${esc(obState(x))}</div></div>${x.state==='failed'?`<div class="btns">${obBtns(x)}</div>`:''}</div>`)).join('')}
 function obBubbles(n){
   let h='';
+  if(n==='c1')for(const x of S.ob)if(x.name==='quick_ask')h+=`<div class="u pending ${x.state}">${esc(x.ask||x.say)}</div>`;
   for(const x of S.ob)if(x.name==='chat_to'&&obTo(x)===n)h+=`<div class="u pending ${x.state}">${esc(x.args.text)}${x.state==='failed'?`<div class="small">${esc(obState(x))}</div><div class="btns">${obBtns(x)}</div>`:''}</div>`;
   const up=n&&n[0]==='@'&&S.ob.find(x=>'@'+x.cid===n);
   if(up)h+=`<div class="think"><span class="logo">ar</span>${up.state==='failed'?esc(`The chat did not start: ${up.err}`):'Starting the chat… what you write goes once it is up'}</div>`;
@@ -794,7 +795,7 @@ function homeHTML(){
     <div class="sec">Needs you<span class="ln"></span></div>${obCards(x=>x.need)}${S.snap.needs.length?S.snap.needs.map(needCard).join(''):card(`<div class="row"><div class="who">${I.check}</div><div><b>Nothing needs you</b><div class="small">It shows here when something does.</div></div></div>`)}
     <div class="sec">Working now<span class="ln"></span></div>${ws.length?`<div class="grid2">${ws.map(agentCard).join('')}</div>`:card(`<div class="small">${S.snap.up===false?'No run is up.':'No agent is working right now.'}</div>`)}
     <div class="sec">Up next<span class="ln"></span></div>${nx.length?nx.map(planCard).join(''):card('<div class="small">The queue is empty.</div>')}
-    ${card(`<div class="row"><div class="grow"><b>Release</b><div class="small">${esc(rel||(ws.length?`Waits for the ${ws.length} task${ws.length>1?'s':''} still working.`:'Releases what has landed.'))}</div></div></div><div class="btns">${ws.length?`<button class="btn acc" data-rel="wait">Release when they land</button>`:''}<button class="btn ${ws.length?'':'acc'}" data-rel="now">Release now</button></div>`)}</div>`;
+    ${obCards(x=>x.name==='release')}${card(`<div class="row"><div class="grow"><b>Release</b><div class="small">${esc(rel||(ws.length?`Waits for the ${ws.length} task${ws.length>1?'s':''} still working.`:'Releases what has landed.'))}</div></div></div><div class="btns">${ws.length?`<button class="btn acc" data-rel="wait">Release when they land</button>`:''}<button class="btn ${ws.length?'':'acc'}" data-rel="now">Release now</button></div>`)}</div>`;
 }
 /* B120: without ttyd, one line says the terminal tab (the real session) needs it, with this machine's install command */
 const ttydLine=()=>S.snap.terminal_mode==='install'?`<div class="small ttyd" data-ttyd>The terminal tab (the real session) needs ttyd: ${S.snap.ttyd_install?`install it with <code>${esc(S.snap.ttyd_install)}</code>`:'install your platform\'s ttyd package'}.</div>`:'';
@@ -808,7 +809,7 @@ function planHTML(){
   const [qs,pk]=queueGroups(S.snap.queue);
   return `<div class="col"><div><button class="btn acc" data-about="new">${I.plus}Add a task</button></div>
     <div class="sec">Queue<span class="ln"></span></div>${qs.length?qs.map(planCard).join(''):card('<div class="small">The queue is empty.</div>')}
-    ${pk.length?`<div class="sec">Parked<span class="ln"></span></div>${pk.map(parkedCard).join('')}`:''}</div>`;
+    ${obCards(x=>x.name==='unpark')}${pk.length?`<div class="sec">Parked<span class="ln"></span></div>${pk.map(parkedCard).join('')}`:''}</div>`;
 }
 /* F87: the Concepts view: every concept waiting for a pick, as agent-runner ui's Concepts panel lists them */
 function conceptsHTML(){
@@ -965,7 +966,9 @@ function takeSnap(s){
   S.snap={...S.snap,...s};
   if(OB.offline)drain();  // F137: the run answers again: the outbox goes on at once
   S.snap.needs=needsShown(S.snap.needs,S.gone,Date.now());  // B138: a snapshot taken before an answer keeps it off
-  if(S.waitNew){const fresh=chats().map(c=>c.name).filter(x=>!S.waitNew.known.includes(x));
+  // F137: a chat the outbox still starts is named by new_control's answer (obSettle), not by this guess
+  if(S.waitNew&&S.waitNew.ph&&S.ob.some(y=>'@'+y.cid===S.waitNew.ph)){}
+  else if(S.waitNew){const fresh=chats().map(c=>c.name).filter(x=>!S.waitNew.known.includes(x));
     if(fresh.length){const nm=fresh[fresh.length-1], ph=S.waitNew.ph;S.waitNew=null;  // F137: its waiting messages go there
       if(ph){obChange(b=>obName(b,ph,nm));drain()}if(!ph||S.thread===ph)open(nm);else render();return}
     if(Date.now()-S.waitNew.at>60000)S.waitNew=null}
@@ -1082,17 +1085,17 @@ document.addEventListener('click',async e=>{
     outbox('answer',{tid:n.id,text:x.dataset.v,button:true},{need:n.id,say:`${n.id} · answered “${x.dataset.v}”`});return}
   if(x=q('[data-later]')){const n=S.snap.needs[+x.dataset.later];if(!n)return;
     outbox('shelve',{tid:n.id},{need:n.id,say:`${n.id} · Later`,done:`${n.id} is set aside until you bring it back`});return}
-  if(x=q('[data-unpark]')){const id=x.dataset.unpark;x.disabled=true;  // B118
-    const r=await act('unpark',{tid:id});if(r.ok)toast(`${id} is unparked: it joins Follow-ups`);else x.disabled=false;return}
+  if(x=q('[data-unpark]')){const id=x.dataset.unpark;  // B118; F137: through the outbox
+    outbox('unpark',{tid:id},{say:`Unpark ${id}`,done:`${id} is unparked: it joins Follow-ups`});return}
   if(q('[data-kadd]')){S.kOpen=!S.kOpen;S.kFocus=S.kOpen;S.kSaid='';render(true);return}  // F87: the Concepts view's +
   if(q('[data-kcancel]')){S.kOpen=false;render(true);return}
   if(x=q('[data-about]'))return about(x.dataset.about);
   if(x=q('[data-quick]')){S.ctx=null;S.sent.c1={at:Date.now(),len:feedOf('c1').length,pending:[]};  // F137: c1 shows it working at once
-    outbox('quick_ask',{key:x.dataset.quick},{say:`To the project chat: ${x.textContent.trim()}`});open('c1');return}
+    outbox('quick_ask',{key:x.dataset.quick},{say:`To the project chat: ${x.textContent.trim()}`,ask:x.textContent.trim()});open('c1');return}
   if(x=q('[data-pick]')){const c=S.snap.concepts[+x.dataset.pick],o=c&&(c.options||[])[+x.dataset.o];if(!o)return;
     outbox('answer',{tid:c.id,text:`go with ${o.name}`},{concept:c.id,say:`${c.concept||c.id} · go with ${o.name}`,done:`Going with ${o.name}`});open('c1');return}
-  if(x=q('[data-rel]')){const now=x.dataset.rel==='now';x.disabled=true;
-    const r=await act('release',{now});if(r.ok)toast(now?'Releasing what has landed now':'The release waits for the running tasks to land');return}
+  if(x=q('[data-rel]')){const now=x.dataset.rel==='now';  // F137: through the outbox
+    outbox('release',{now},{say:now?'Release now':'Release when they land',done:now?'Releasing what has landed now':'The release waits for the running tasks to land'});return}
   if(x=q('[data-steps]')){S.openSteps[x.dataset.steps]=!S.openSteps[x.dataset.steps];render(true);return}
   if(q('[data-unctx]')){S.ctx=null;render(true);return}
   if(x=q('[data-unatt]')){S.atts.splice(+x.dataset.unatt,1);render(true);return}

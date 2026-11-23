@@ -177,7 +177,8 @@ class ActsOnce:
     """F137: the page's outbox sends each action with a client id (`cid`) and sends it again after a drop or a
     reload, so an action whose id the server has run already answers with its first result instead of running
     twice (a `new_control` sent twice would start two chats). A copy that comes while the first still runs waits
-    for it. The last KEEP ids are kept, in memory: a restarted run page forgets them."""
+    for it (None, a 503, when it waited WAIT s in vain). The last KEEP finished ids are kept, in memory: a restarted
+    run page forgets them."""
     KEEP = 500
     WAIT = 300.0  # s a copy waits for the first to finish
 
@@ -185,7 +186,7 @@ class ActsOnce:
         self.lock = threading.Lock()
         self.seen: dict[str, list] = {}  # cid -> [done Event, result]
 
-    def run(self, cid: str, fn) -> dict:
+    def run(self, cid: str, fn) -> dict | None:
         if not cid:
             return fn()
         with self.lock:
@@ -193,12 +194,14 @@ class ActsOnce:
             first = got is None
             if first:
                 got = self.seen[cid] = [threading.Event(), None]
-                while len(self.seen) > self.KEEP:
-                    self.seen.pop(next(iter(self.seen)))
+                done = [k for k, v in self.seen.items() if v[0].is_set()]  # the oldest finished ones go
+                for k in done[:max(0, len(self.seen) - self.KEEP)]:
+                    self.seen.pop(k)
         if not first:
-            got[0].wait(self.WAIT)
-            if got[1] is None:
-                return {'ok': False, 'code': 1, 'out': 'that action is still running', 'argv': [], 'again': True}
+            if not got[0].wait(self.WAIT):
+                return None  # still running: the page sends this copy again later (503)
+            if got[1] is None:  # the first did not finish: this copy runs it
+                return self.run(cid, fn)
             return {**got[1], 'again': True}
         try:
             got[1] = fn()
@@ -626,7 +629,11 @@ class Handler(BaseHTTPRequestHandler):
                 return save_chat_order(**args) if name == 'chat_order' else U.act(name, **args)
             except TypeError as e:  # F133: chat_order is the web's own action, kept beside the chats it orders
                 return {'ok': False, 'code': 2, 'out': f'{name}: {e}', 'argv': []}
+            except Exception as e:  # noqa: BLE001 - F137: an answer, so the outbox shows it failed, not a drop
+                return {'ok': False, 'code': 1, 'out': f'{name} failed: {e}', 'argv': []}
         r = self.server.once.run(cid, run)
+        if r is None:  # F137: a copy of an action still running: the outbox sends it again later
+            return self.send(503, json.dumps({'ok': False, 'out': 'that action is still running'}))
         self.server.snaps.at = 0.0  # the next snapshot shows what the action changed
         self.send(200, json.dumps(r, ensure_ascii=False))
 

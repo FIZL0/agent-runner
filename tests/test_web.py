@@ -383,7 +383,7 @@ def test_page(tmp: Path) -> None:
                  'data-quick="needs">', 'What needs me', 'data-about="new">', 'Add a task',  # Home
                  '>Needs you<', 'data-ans=', 'data-later=', 'data-about="need:', '>Working now<', '>Up next<',
                  'data-about="plan:', 'Release when they land', 'Release now',
-                 "outbox('answer'", "outbox('shelve'", "act('release'", "outbox('quick_ask'", "outbox('chat_to'",
+                 "outbox('answer'", "outbox('shelve'", "outbox('release'", "outbox('quick_ask'", "outbox('chat_to'",
                  "newChat('new_control'", "act('interrupt'",  # F137: through the outbox
                  '.a{display:grid;gap:8px;font:400 16.5px/1.6 var(--serif)', '.u{justify-self:end',  # threads
                  'Ran ${m.steps.length} step', 'Working on it…', "tq('feed/'",
@@ -741,7 +741,7 @@ def test_parked(tmp: Path) -> None:
     app, term = W.page_html().decode(), W.TERM.read_text(encoding='utf-8')
     for part in ('<div class="sec">Parked<span class="ln"></span></div>', "Parked: a run won't start it",
                  'data-unpark="${esc(q.id)}">Unpark</button>', 'data-about="plan:${esc(q.id)}">Chat</button>',
-                 "act('unpark',{tid:id})", "q.state!=='running'&&q.state!=='parked'"):
+                 "outbox('unpark',{tid:id}", "q.state!=='running'&&q.state!=='parked'"):
         check(part in app, f'the run app has {part}')
     for part in ("Parked: a run won't start it", '<i class="chip park">parked</i>', "act('unpark',{tid:it.id}",
                  'items:()=>queueItems(S.snap.queue)', 'unpark (a Parked task)'):
@@ -1573,6 +1573,32 @@ def test_outbox_f137(tmp: Path) -> None:
         except RuntimeError:
             pass
     eq(len(n), 2, 'an action that did not finish runs again for the same cid')
+    srv = W.serve(token, 0, '127.0.0.1', snap=lambda: {})
+    url = f'http://127.0.0.1:{srv.server_address[1]}/act?t={token}'
+    try:
+        def crash(name, **a):
+            raise RuntimeError('disk full')
+        with mock.patch.object(U, 'act', crash):
+            code, e = post(url, {'name': 'chat_to', 'args': {'text': 'x'}, 'cid': 'k9'})
+        eq((code, e['ok'], e['out']), (200, False, 'chat_to failed: disk full'),
+           'an action that crashes answers as failed (Retry, Discard), so the outbox does not send it for ever')
+        gate, ran2 = __import__('threading').Event(), []
+
+        def slow(name, **a):
+            ran2.append(1)
+            gate.wait(10)
+            return {'ok': True}
+        with mock.patch.object(U, 'act', slow), mock.patch.object(W.ActsOnce, 'WAIT', 0.2):
+            t = __import__('threading').Thread(target=post, args=(url, {'name': 'chat_to', 'args': {}, 'cid': 'k10'}))
+            t.start()
+            while not ran2:
+                __import__('time').sleep(0.02)
+            code, w = post(url, {'name': 'chat_to', 'args': {}, 'cid': 'k10'})
+            gate.set()
+            t.join(10)
+        eq((code, len(ran2)), (503, 1), 'a copy of an action still running gets 503 (sent again later), not a failure')
+    finally:
+        srv.stop()
     eq(once.run('', lambda: {'ok': True}), {'ok': True}, 'no cid: it just runs')
     page = W.PAGE.read_text(encoding='utf-8')
     for part in ("JSON.stringify({name:it.name,args:it.args,cid:it.cid})", "addEventListener('online',()=>drain())",

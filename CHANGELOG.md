@@ -34,9 +34,9 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
   line only when work waits on the answer. Any other quiet control session closes after the usual idle time, and the run
   log names the offer it did not file (F135).
 - Changed: the run page (web) answers at once. New chat, a concept's New chat, the Concepts + form, Needs you buttons
-  (answers and Later), concept option picks, quick asks and chat messages show their result immediately and are sent
-  behind. New chat opens straight away as a "starting..." chat you can type into; it starts without waiting
-  (`control --new --no-wait`), and what you wrote is sent once the chat is up. Run controls, Release, Unpark and the
+  (answers and Later), concept option picks, quick asks, chat messages, Release and Unpark show their result
+  immediately and are sent behind. New chat opens straight away as a "starting..." chat you can type into; it starts
+  without waiting (`control --new --no-wait`), and what you wrote is sent once the chat is up. Run controls and the
   Talk view still send directly as before (F137).
 - Added: the run page's Outbox, kept in the browser (localStorage), holds each such action until the run answers. A
   small pill shows "N sending" or "N failed · tap to see"; after a dropped connection or a reload, actions are sent
