@@ -74,7 +74,7 @@ def test_server(tmp: Path) -> None:
     try:
         code, page = get(f'{base}/?t={token}')
         eq(code, 200, 'the page is served with the token')
-        for part in (b'<title>agent-runner</title>', b'EventSource', b'Needs you', b'Working now', b'Up next'):
+        for part in ('<title>proj · runner</title>'.encode(), b'EventSource', b'Needs you', b'Working now', b'Up next'):
             check(part in page, f'the page has {part.decode()}')
         check(b'JetBrains Mono' not in page and b'lazygit' not in page, 'the terminal-style page is gone')
 
@@ -398,7 +398,7 @@ def test_page(tmp: Path) -> None:
                  'data-pick=', 'data-about="concept:', 'View ${I.ext}', "tq('concept/'",  # the Concepts view
                  '@media (prefers-color-scheme:dark){:root:not([data-theme="light"])', ':root[data-theme="dark"]',
                  '*{box-sizing:border-box;scrollbar-width:none}', '*::-webkit-scrollbar{display:none}',
-                 'container-type:inline-size', '@container (min-width:760px)', '<div class="logo">ar</div>'):
+                 'container-type:inline-size', '@container (min-width:760px)', '<div class="logo">${esc(PN().charAt(0)'):
         check(part in page, f'the page has {part}')
     for gone in ('Anthropic', 'Claude', 'plan_change', 'direct edit', 'JetBrains Mono', '/*THEMES*/'):
         check(gone not in page, f'the page has no {gone}')
@@ -1159,6 +1159,7 @@ const navigator = {language: 'en-US'};
 const kept = {}, store = {get: k => kept[k] || '', set(k, v) { kept[k] = v }};
 const toast = () => {}, render = () => {}, tq = p => p, followVersion = () => false, TALK_KEY = 'ar-talk';
 const OB = {offline: false}, drain = () => {};  // F137: takeSnap wakes the outbox
+const HOME_PAGE = false, document = {};  // B153: takeSnap sets the window title
 const S = {snap: {sessions: [], queue: []}, feeds: {}, sent: {}, waitNew: null};
 const chats = () => S.snap.sessions.filter(s => /^c\d+$/.test(s.name)), working_ = () => [];
 const feedOf = n => (S.feeds[n] || {}).entries || [];
@@ -1898,8 +1899,43 @@ def test_home_switcher_f134(tmp: Path) -> None:
     eq(got[8], 'paused · 1 slot · 3 queued', 'the words under a project')
 
 
+def test_project_name_b153(tmp: Path) -> None:
+    """B153: the run page shows the project's name, not agent-runner: the window title ('proj · runner'), the
+    top-left (a link to Runner Home), the logo's letter and a chat's lead label."""
+    fake_repo(tmp)
+    run_page = W.page_html('app').decode()
+    check('<title>proj · runner</title>' in run_page, 'the served title is the project first', run_page[:400])
+    check("document.title=pageTitle(S.snap.project)" in run_page, 'and the snapshot keeps it')
+    check('${HB?switcher():brand()}' in run_page and '<b>agent-runner</b>' not in run_page,
+          'the top-left is the project name (brand), not agent-runner')
+    check('class="logo">ar<' not in run_page and "'agent-runner')}</div>" not in run_page,
+          'no ar logo, no agent-runner lead label')
+    with mock.patch.object(W, 'home_port', lambda: 0):
+        eq(W.home_address(), {}, 'Home not installed: no Home link')
+    cfg = tmp / 'cfg'
+    cfg.mkdir()
+    (cfg / 'home.token').write_text('HT\n')
+    from agent_runner import home as HM
+    with mock.patch.object(W, 'home_port', lambda: 8770), mock.patch.object(HM, 'config_dir', lambda: cfg):
+        eq(W.home_address(), {'port': 8770, 't': 'HT'}, "Home's port and token for the link")
+        eq(W.with_extras({})['home'], {'port': 8770, 't': 'HT'}, 'in the run page snapshot')
+    if not shutil.which('node'):
+        print('  (no node here: the Home link script test is skipped)')
+        return
+    home = {'port': 8770, 't': 'H&T'}
+    got = logic_js([['homeHref', '', 'RT', home, {'protocol': 'http:', 'hostname': 'box'}],
+                    ['homeHref', '', 'RT', home, {'protocol': 'https:', 'hostname': 'box.ts.net'}],
+                    ['homeHref', '/', 'RT', home, {'protocol': 'http:', 'hostname': 'box'}],
+                    ['homeHref', '', 'RT', {}, {'protocol': 'http:', 'hostname': 'box'}],
+                    ['pageTitle', 'ifizbox'], ['pageTitle', '']])
+    eq(got[:4], ['http://box:8770/?t=H%26T', 'http://box.ts.net:8770/?t=H%26T', '/?t=RT', ''],
+       "the top-left name links to Runner Home: its port and token on the page's host (over http, also from https); "
+       "through Home, Home's own base; none while Home is not installed")
+    eq(got[4:], ['ifizbox · runner', 'agent-runner'], 'the window title: the project first')
+
+
 if __name__ == '__main__':
-    raise SystemExit(report([in_tmp(test_chat_order_f133), in_tmp(test_delete_chats_f118), in_tmp(test_server), in_tmp(test_real_action), in_tmp(test_run_controls),
+    raise SystemExit(report([in_tmp(test_project_name_b153),in_tmp(test_chat_order_f133), in_tmp(test_delete_chats_f118), in_tmp(test_server), in_tmp(test_real_action), in_tmp(test_run_controls),
                            in_tmp(test_start), in_tmp(test_upload),
                            in_tmp(test_control_rows), in_tmp(test_feed_pane_concept), in_tmp(test_page),
                            in_tmp(test_logic), in_tmp(test_extras), in_tmp(test_diff), in_tmp(test_views),

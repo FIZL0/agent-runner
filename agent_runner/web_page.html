@@ -52,7 +52,7 @@ a{color:var(--accent)}
 .side.open{transform:none;box-shadow:8px 0 30px var(--shadow)}
 .scrim{position:absolute;inset:0;background:var(--scrim);z-index:5;display:none}
 .scrim.on{display:block}
-.brand{display:flex;align-items:center;gap:10px;padding:6px 8px 14px}
+.brand{display:flex;align-items:center;gap:10px;padding:6px 8px 14px;color:inherit;text-decoration:none}
 .logo{width:28px;height:28px;border-radius:8px;background:var(--accent);color:var(--onaccent);display:grid;place-items:center;font:600 13px var(--serif);flex:none}
 .brand b{font:500 17px var(--serif)}
 .newchat{display:flex;align-items:center;gap:10px;width:100%;border:0;background:none;border-radius:10px;padding:8px 10px;cursor:pointer;font-weight:500;color:var(--accent)}
@@ -580,6 +580,17 @@ function homeBase(path,homePage){
 function homeKey(path){const m=String(path||'').match(/^.*?\/p\/([^/]+)\//);try{return m?decodeURIComponent(m[1]):''}catch(e){return m[1]}}
 const projectLink=(base,key,t)=>base+'p/'+encodeURIComponent(key)+'/?t='+encodeURIComponent(t||'');
 const homeLink=(base,t)=>base+'?t='+encodeURIComponent(t||'');
+/* B153: Runner Home's link for the project name top-left: through Home, its own base; on the run's own page,
+   Home's port and token (the snapshot's home) on the host the page came from, over http (Home serves http on
+   every interface; its https port depends on Tailscale Serve, which the page cannot see); '' while Home is not
+   installed */
+function homeHref(base,t,home,loc){
+  if(base)return homeLink(base,t);
+  if(!home||!home.port||!home.t||!loc)return '';
+  return `http://${loc.hostname}:${home.port}/?t=${encodeURIComponent(home.t)}`;
+}
+/* B153: the window title: the project's name first */
+const pageTitle=project=>project?project+' · runner':'agent-runner';
 /* a project's state as the switcher says it: off, idle, running, or paused */
 const projectState=p=>p.state!=='off'&&p.paused?'paused':p.state||'off';
 /* the switcher's rows: one per Home project, with its link, its state and how many things need you */
@@ -603,7 +614,7 @@ function projectButtons(p){
   b.push({label:'Unlist',unlist:true});
   return b;
 }
-if(typeof module!=='undefined')module.exports={homeBase,homeKey,projectLink,homeLink,projectState,switcherRows,projectWords,projectButtons,chatMove,BOX_KEYS,keysLine,histPush,histEdge,histStep,slashMatches,slashPick,slashMove,SLASH_FALLBACK,chatPick,answerOpts,needAsk,threadMsgs,working,planWords,compose,sendReq,usageOf,logKind,plain,chatName,controlReq,controlClick,taskControlsOn,queueGroups,conceptButtons,NO_CONCEPT,newConceptReq,queuedId,NAV,talkSession,micProblem,dictProblem,dictButton,dictInsert,termTokens,talkShown,talkReply,goneMark,needsShown,answerSaid,GONE_MS,obParse,obNext,obName,obSettle,obRetry,obDrop,obCounts,obHidden,obPill};
+if(typeof module!=='undefined')module.exports={homeBase,homeKey,projectLink,homeLink,homeHref,pageTitle,projectState,switcherRows,projectWords,projectButtons,chatMove,BOX_KEYS,keysLine,histPush,histEdge,histStep,slashMatches,slashPick,slashMove,SLASH_FALLBACK,chatPick,answerOpts,needAsk,threadMsgs,working,planWords,compose,sendReq,usageOf,logKind,plain,chatName,controlReq,controlClick,taskControlsOn,queueGroups,conceptButtons,NO_CONCEPT,newConceptReq,queuedId,NAV,talkSession,micProblem,dictProblem,dictButton,dictInsert,termTokens,talkShown,talkReply,goneMark,needsShown,answerSaid,GONE_MS,obParse,obNext,obName,obSettle,obRetry,obDrop,obCounts,obHidden,obPill};
 </script>
 
 <script>
@@ -649,6 +660,8 @@ const S={snap:{status:[],sessions:[],queue:[],needs:[],concepts:[],log:[],releas
   view:'home',thread:null,ctx:null,atts:[],drawer:false,openSteps:{},feeds:{},sent:{},waitNew:null,online:true,
   sel:[],selLast:'',undo:null};  // F118: chats picked for delete, the last one clicked, a delete Undo can still take back
 const $=id=>document.getElementById(id);
+/* B153: the project's name (the top-left, the chat's lead label) and its first letter (the logo) */
+const PN=()=>S.snap.project||HKEY||'agent-runner', LOGO=()=>`<span class="logo">${esc(PN().charAt(0).toLowerCase())}</span>`;
 const store={get(k){try{return localStorage.getItem(k)||''}catch(e){return''}},
   set(k,v){try{v?localStorage.setItem(k,v):localStorage.removeItem(k)}catch(e){}}};
 const DRAFT_KEY=k=>'ar-draft:'+k;  /* a box's draft, kept per thread (and Home) across refreshes */
@@ -746,7 +759,7 @@ function obBubbles(n){
   const up=n&&n[0]==='@'&&S.ob.find(x=>'@'+x.cid===n);
   if(up&&up.ask)h+=`<div class="u pending ${up.state}">${esc(up.ask)}</div>`;  // B139: its first message
   for(const x of S.ob)if(x.name==='chat_to'&&obTo(x)===n)h+=`<div class="u pending ${x.state}">${esc(x.args.text)}${x.state==='failed'?`<div class="small">${esc(obState(x))}</div><div class="btns">${obBtns(x)}</div>`:''}</div>`;
-  if(up)h+=`<div class="think"><span class="logo">ar</span>${up.state==='failed'?esc(`The chat did not start: ${up.err}`):'Starting the chat… what you write goes once it is up'}</div>`;
+  if(up)h+=`<div class="think">${LOGO()}${up.state==='failed'?esc(`The chat did not start: ${up.err}`):'Starting the chat… what you write goes once it is up'}</div>`;
   return h;
 }
 function obRetryClick(cid){  /* Retry: a new chat sent again gets a new cid, so its stand-in follows */
@@ -818,7 +831,7 @@ function side(){
      <div class="me"><div class="av">${esc((H.machine||'?').charAt(0).toUpperCase())}</div><div class="grow"><span class="ell">${esc(H.machine||'this machine')}</span><div class="sub">Runner Home</div></div></div>`;
     $('side').classList.toggle('open',S.drawer);$('scrim').classList.toggle('on',S.drawer);return;
   }
-  $('side').innerHTML=`${HB?switcher():'<div class="brand"><div class="logo">ar</div><b>agent-runner</b></div>'}
+  $('side').innerHTML=`${HB?switcher():brand()}
    <button class="newchat" data-new><span class="plus">${I.plus}</span>New chat</button>
    <div class="nav">${(HB?nav.concat([['projects','All projects']]):nav).map(([k,l])=>`<button class="ni ${!S.thread&&S.view===k?'on':''}" data-view="${k}">${I[k]}${l}${count[k]?`<span class="n">${count[k]}</span>`:''}</button>`).join('')}</div>
    <div class="shead row"><span>Chats</span><button class="shadd" data-new aria-label="New chat" title="New chat">${I.plus}</button></div>${chatBar()}${cs.length?cs.map(chatRow).join(''):'<div class="none">No chats yet</div>'}${obChatRows()}
@@ -829,6 +842,9 @@ function side(){
 }
 /* --- F134: Runner Home in the app: the switcher, All projects, Devices ------------------------------------ */
 const homeNeeds=()=>(H.projects||[]).reduce((n,p)=>n+(p.needs||0),0);
+/* B153: the run's own page top-left: the project's name, a link to Runner Home when it is installed */
+function brand(){const href=homeHref(HB,T,S.snap.home,location), inner=`<div class="logo">${esc(PN().charAt(0).toLowerCase())}</div><b>${esc(PN())}</b>`;
+  return href?`<a class="brand" href="${esc(href)}" title="Runner Home: every project's run">${inner}</a>`:`<div class="brand">${inner}</div>`}
 function switcher(){
   const rows=switcherRows(H.projects,HKEY,HB,T), cur=rows.find(r=>r.on);
   const name=HOME_PAGE?'All projects':cur?cur.name:HKEY||'agent-runner';
@@ -954,26 +970,26 @@ function box(ph,foot){
 function convo(n,shown){  // F93: shown, how a message of yours shows (Talk: without its brief or reminder)
   shown=shown||(t=>t);
   const f=S.feeds[n], agent=isAgent(n), title=threadTitle(n);
-  if(!f)return `<div class="msgs">${String(n||'')[0]==='@'?'':'<div class="think"><span class="logo">ar</span>Loading…</div>'}${obBubbles(n)}</div>`;  // F137
+  if(!f)return `<div class="msgs">${String(n||'')[0]==='@'?'':'<div class="think">'+LOGO()+'Loading…</div>'}${obBubbles(n)}</div>`;  // F137
   const ms=threadMsgs(f.entries);
   let h=f.more?'<div class="more">Older messages are on its session page.</div>':'';
   if(!ms.length)h+=`<div class="small" style="text-align:center">${esc(f.out||'Nothing said here yet.')}</div>`;
   ms.forEach((m,i)=>{
     if(m.w==='u'){h+=`<div class="u">${esc(shown(m.text))}</div>`;return}
-    const lead=i===0||ms[i-1].w!=='a'?`<div class="lead"><span class="logo">${agent?esc(n):'ar'}</span>${esc(agent?title:'agent-runner')}</div>`:'';
+    const lead=i===0||ms[i-1].w!=='a'?`<div class="lead">${agent?`<span class="logo">${esc(n)}</span>`:LOGO()}${esc(agent?title:PN())}</div>`:'';
     const k=n+':'+i, open=S.openSteps[k];
     const st=m.steps.length?`<button class="steps ${open?'open':''}" data-steps="${esc(k)}">${I.chev}Ran ${m.steps.length} step${m.steps.length>1?'s':''}</button>${open?`<div class="stepbox">${m.steps.map(s=>(s.tool?`<span class="tl">${esc(s.tool)}</span>`:'')+(s.out?`\n<span class="o">  ⎿ ${esc(s.out).replace(/\n/g,'\n    ')}</span>`:'')).join('\n')}</div>`:''}`:'';  // F115: tool lines as in the terminal
     h+=`<div class="a">${lead}${st}${m.text?`<div class="say">${md(m.text)}</div>`:''}</div>`;
   });
   for(const p of (S.sent[n]&&S.sent[n].pending)||[])h+=`<div class="u pending">${esc(shown(p))}</div>`;
   h+=obBubbles(n);  // F137: messages still in the outbox
-  if(busy(n))h+=`<div class="think"><span class="logo">ar</span>Working on it… · Ctrl+C interrupts<button type="button" class="btn mini" data-stop="${esc(n)}">Stop</button></div>`;
+  if(busy(n))h+=`<div class="think">${LOGO()}Working on it… · Ctrl+C interrupts<button type="button" class="btn mini" data-stop="${esc(n)}">Stop</button></div>`;
   return `<div class="msgs">${h}</div>`;
 }
 const greeting=()=>{const h=new Date().getHours();return h<12?'Good morning':h<18?'Good afternoon':'Good evening'};
 function homeHTML(){
   const ws=working_(), nx=upNext().slice(0,3), rel=S.snap.release||'';
-  return `<div class="col"><div class="greet"><span class="logo">ar</span>${greeting()}</div>${box('How can I help with the run?',keysLine())}${ttydLine()}
+  return `<div class="col"><div class="greet">${LOGO()}${greeting()}</div>${box('How can I help with the run?',keysLine())}${ttydLine()}
     <div class="chips"><button class="chip" data-quick="since">${I.clock}Since my last look</button><button class="chip" data-quick="needs">${I.ask}What needs me</button><button class="chip" data-about="new">${I.plus}Add a task</button></div>
     <div class="sec">Needs you<span class="ln"></span></div>${obCards(x=>x.need)}${S.snap.needs.length?S.snap.needs.map(needCard).join(''):card(`<div class="row"><div class="who">${I.check}</div><div><b>Nothing needs you</b><div class="small">It shows here when something does.</div></div></div>`)}
     <div class="sec">Working now<span class="ln"></span></div>${ws.length?`<div class="grid2">${ws.map(agentCard).join('')}</div>`:card(`<div class="small">${S.snap.up===false?'No run is up.':'No agent is working right now.'}</div>`)}
@@ -1111,7 +1127,7 @@ fetch('term'+location.search).then(r=>r.ok?r.text():'').then(p=>{const t=termTok
   for(const [k,v] of Object.entries(t.tokens))document.documentElement.style.setProperty('--t-'+k,v);TERM.mode=t.mode;render(true)}).catch(()=>{});
 function talkHTML(){
   const n=talkName();
-  if(!n)return `<div class="col"><div class="greet"><span class="logo">ar</span>Talk to the run</div><div class="small" style="text-align:center">Tap the mic and ask, say, what is going on: the reply is read aloud. Talk opens a chat of its own the first time.</div></div>`;
+  if(!n)return `<div class="col"><div class="greet">${LOGO()}Talk to the run</div><div class="small" style="text-align:center">Tap the mic and ask, say, what is going on: the reply is read aloud. Talk opens a chat of its own the first time.</div></div>`;
   if(!S.feeds[n]&&!TK.loading){TK.loading=true;loadFeed(n).finally(()=>{TK.loading=false})}  /* its first look */
   return `<div class="col">${convo(n,talkShown)}</div>`;
 }
@@ -1188,6 +1204,7 @@ function takeSnap(s){
   if(!s||s.error){if(s&&s.error)toast(s.error,true);return}
   if(followVersion(s.version))return;
   S.snap={...S.snap,...s};
+  if(!HOME_PAGE)document.title=pageTitle(S.snap.project);  // B153
   if(OB.offline)drain();  // F137: the run answers again: the outbox goes on at once
   S.snap.needs=needsShown(S.snap.needs,S.gone,Date.now());  // B138: a snapshot taken before an answer keeps it off
   // F137: a chat the outbox still starts is named by new_control's answer (obSettle), not by this guess
