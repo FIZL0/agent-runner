@@ -8,6 +8,18 @@ on:
     paths-ignore: ['plan/**', '**.md']
   pull_request:
     paths-ignore: ['plan/**', '**.md']
+  # on request, for a branch before its merge: gh workflow run ci.yml --ref task/<ID> -f system=windows
+  workflow_dispatch:
+    inputs:
+      system:
+        description: Which system to test on
+        type: choice
+        options: [both, windows, linux]
+        default: both
+      tests:
+        description: Test files, separated by spaces (tests/test_windows.py ...); empty runs them all
+        type: string
+        default: ''
 permissions:
   contents: read
 jobs:
@@ -15,7 +27,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        # inputs is empty on push and pull_request, so those run both
+        os: ${{ fromJSON(inputs.system == 'windows' && '["windows-latest"]' || inputs.system == 'linux' && '["ubuntu-latest"]' || '["ubuntu-latest", "windows-latest"]') }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     steps:
@@ -37,9 +50,16 @@ jobs:
           TMP: ${{ runner.temp }}
           TEMP: ${{ runner.temp }}
           TMPDIR: ${{ runner.temp }}
+          # a dispatched input reaches the shell only as an environment variable, never as ${{ }} in the script
+          TESTS: ${{ inputs.tests }}
         run: |
           # setup-python gives `python` on every OS; Windows has no `python3`
           # runs every file, not stopping at the first failure, so one run shows all of them
+          set -f; files=($TESTS); set +f
+          for t in "${files[@]}"; do
+            if [[ ! "$t" =~ ^tests/test_[A-Za-z0-9_]+\.py$ || ! -f "$t" ]]; then echo "::error::not a test file: $t"; exit 1; fi
+          done
+          if [ ${#files[@]} -eq 0 ]; then files=(tests/test_*.py); fi
           failed=
-          for t in tests/test_*.py; do echo "== $t"; python "$t" || failed="$failed $t"; done
+          for t in "${files[@]}"; do echo "== $t"; python "$t" || failed="$failed $t"; done
           if [ -n "$failed" ]; then echo "::error::failed:$failed"; exit 1; fi

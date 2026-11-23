@@ -77,6 +77,8 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
   any project) has a free provider in its chain (not claude, not capped, logged in), the usage cap now sets no limit and
   the line reads e.g. "Room for 6 more agents, on [models] fallback: a usage cap is reached". Memory, CPU and disk limits
   still hold; without a free provider it is as before (B157).
+- Added: the gate workflow (ci.yml) runs on request for a task branch before its merge (`gh workflow run ci.yml --ref task/<ID> -f
+  system=windows`), so Windows-only code can be checked from a Linux slot; see docs/REFERENCE.md (T13).
 
 ## 0.61.0 (2026-11-23)
 
