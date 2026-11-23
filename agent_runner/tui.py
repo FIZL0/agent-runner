@@ -674,6 +674,8 @@ class RunPage:
         if label == 'CONCEPT':
             names = [o['name'] for o in self.concept(it)['options']] or ['A', 'B', 'C']
             return list(zip(OPTION_KEYS, names))
+        if label == 'PITCH':  # F98
+            return [('y', 'Approve'), ('n', 'Not this')]
         if label == 'BLOCKED':
             return [('a', 'done')]
         return []

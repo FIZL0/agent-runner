@@ -196,6 +196,10 @@ DEFAULTS: dict = {
                                 # that passes alone was load; one the branch's base fails too is merged anyway
         'flaky': '',            # a regex whose group 1 names tests (comma/space separated) a passing gate says
                                 # passed only on a rerun; each, like a `retest` pass, gets a critical T task
+        'approve': False,       # true: nothing reaches the push remote until a person approves it. Merges land here
+                                # and wait in pitches (pages under Needs you: Approve / Not this)
+        'approve_wait': 30,     # minutes without a new merge into a group of related changes before its pitch opens
+        'approve_batch': 5,     # a group this big opens its pitch at once
         'ci_watch': 'auto',     # GitHub Actions workflow files (pages.yml) whose newest finished run on the
                                 # shared branch is read while a run is up: a red one files one critical B task.
                                 # "auto": every workflow that runs on a push to it (push runs only); false: off
@@ -683,6 +687,9 @@ class Config:
             raise SystemExit(f'agent-runner: [run] agent = {self.run["agent"]!r}: {PI_GONE}')
         if not isinstance(self.run['include_task_id_in_commit'], bool):
             raise SystemExit('agent-runner: [run] include_task_id_in_commit must be a boolean')
+        for k in ('approve', 'approve_wait', 'approve_batch'):  # F98
+            if problem := setting_problem('run', k, self.run[k]):
+                raise SystemExit(f'agent-runner: {problem}')
         if not (isinstance(self.run['remote'], bool) or self.run['remote'] == 'auto'):
             raise SystemExit(f"agent-runner: [run] remote must be 'auto', true or false, not {self.run['remote']!r}")
         if self.run['sessions'] not in ('one', 'each'):
@@ -836,6 +843,11 @@ class Config:
     @property
     def push_merge(self) -> bool:
         return bool(self.raw['git']['push_merge']) and bool(self.push_remote)
+
+    @property
+    def approve(self) -> bool:
+        """F98: `[run] approve` with a push remote: only an approved pitch is pushed."""
+        return bool(self.run['approve']) and bool(self.push_remote)
 
     @property
     def land_edited(self) -> str:

@@ -34,6 +34,7 @@ What you type
                                       new task B647 (B: the kind of work, see `plan kinds`)
     agent-runner plan B646            one task's full text
     agent-runner glossary [TERM]      the project's words: person, screen, code (add|forget|seed|scan)
+    agent-runner pitch                landed work that waits for your yes to be pushed (approve|no PITCH)
     agent-runner wip                  your main-checkout edits a merge moved aside (show|restore|drop NAME)
     agent-runner upgrade              update agent-runner; a run that is up restarts on it
 
@@ -199,6 +200,7 @@ COMMANDS = {
     'wizard': ('runner', 'cmd_wizard'),  # F17
     'sheet': ('runner', 'cmd_sheet'),  # F18
     'pick-links': ('cmds', 'cmd_pick_links'),  # F138
+    'pitch': ('pitch', 'cmd_pitch'),  # F98
     'take': ('runner', 'cmd_take'),
     'wip': ('runner', 'cmd_wip'),  # F23
     'stop': ('runner', 'cmd_stop'),

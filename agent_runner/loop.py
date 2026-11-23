@@ -19,7 +19,7 @@ import webbrowser
 from contextlib import ExitStack
 from pathlib import Path
 
-from agent_runner import ci, gitops, plan as P, plansync, plat
+from agent_runner import ci, gitops, pitch, plan as P, plansync, plat
 from agent_runner.config import claude_model, RUNNER, ensure_local, finished_mark, shown_cmd
 from agent_runner.done import TESTED
 from agent_runner.gitops import missing_remote, push
@@ -50,6 +50,7 @@ from agent_runner.watch import (_account, api_down, AUTO_UPGRADE, auto_upgrade, 
 from agent_runner.join import EDITED, EDITS_POLL, ELSEWHERE, REMIND_EVERY, TASK_SID, WAITING
 from agent_runner.land import drop_wips, idle_line, prune_wips, reopen_landed, REOPENED, retry_reopened, wip_main
 from agent_runner.land import no_gate_line
+from agent_runner.merge import undo_changes
 from agent_runner.merge import (AHEAD_BUSY, AHEADS, before_start_fails, FIX_DIRS, FIX_DIRS_LOCK, FIXED, gate_runs,
     HELD, last_words, left_merging, merge)
 from agent_runner.control import (close_controls, end_closed_controls, hand_hook, rc_sweep_start,
@@ -1439,6 +1440,11 @@ class Run:
             page_copy_tick()  # F68: the claude.ai copy of the run page (B122: a one-shot, never c1)
         if not stopping():
             sweep_unmerged(branch, self.merging)
+        if pitch.on():  # F98
+            pitch.tick()
+            if pitch.undoing() and not stopping() and not any(t.name == 'undo' for t in self.merging):
+                self.merging.append(t := threading.Thread(target=undo_changes, args=(branch,), name='undo'))
+                t.start()
         keep_claims(self.running, branch)
         block_asks(branch)  # F102: an ask whose block could not be committed when it was parked
         take_keys()

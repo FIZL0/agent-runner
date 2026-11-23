@@ -246,6 +246,7 @@ def critical_tasks(branch: str) -> frozenset:
 def holds(t: tuple, tried: set, h: Held) -> tuple[str, tuple | None] | None:
     """Why open task `t` may not start now, first reason only: ('finished', None), ('tried', None),
     ('busy', None), ('parked', None), ('merging', None) (a release, while a merge holds the turn: F99),
+    ('unpushed', None) (a release, while landed changes wait for a person's approval: F98),
     or ('clash', the busy task it clashes with); None when it is free. A critical task never holds a slot
     for itself (B140): `choose` only tries it first."""
     tid = t[0]
@@ -259,9 +260,17 @@ def holds(t: tuple, tried: set, h: Held) -> tuple[str, tuple | None] | None:
         return 'parked', None
     if P.release(tid) and MERGE.locked():  # F99: a merge under way lands first, so the release starts from it
         return 'merging', None
+    if P.release(tid) and unpushed():  # F98: a release waits until everything before it is approved and pushed
+        return 'unpushed', None
     if b := next((b for b in h.busy if clash(t, b, h.shared, h.alone) and not passes(t, b, h)), None):
         return 'clash', b  # a running or merge-waiting task's sibling, ordered-section mate or file neighbour
     return None
+
+
+def unpushed() -> int:
+    """F98: how many landed changes `[run] approve` holds back from the push remote."""
+    from agent_runner import pitch
+    return len(pitch.unpushed()) if pitch.on() else 0
 
 
 def passes(t: tuple, b: tuple, h: Held) -> bool:
@@ -305,6 +314,8 @@ def explain(running: dict, tried: set, branch: str) -> dict[str, tuple[str, str]
             why[tid] = (f'parked {len(h.parked[tid])} times, needs a person', ', '.join(sorted(h.parked[tid])))
         elif kind == 'merging':
             why[tid] = ('waiting for a merge to land', 'a release starts from what has landed')
+        elif kind == 'unpushed':
+            why[tid] = ('waiting for your approval', f'{unpushed()} of what landed is not pushed yet')
         elif kind == 'clash':
             why[tid] = clash_why(t, b, h.shared, h.alone)
         elif (P.release(tid) or tid in h.alone) and (over := passed_over(t, h)):

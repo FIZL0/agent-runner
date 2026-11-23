@@ -8,7 +8,7 @@ import os
 import re
 import time
 
-from agent_runner import plan as P
+from agent_runner import pitch, plan as P
 from agent_runner.config import shown_cmd
 from agent_runner.state import C, default_branch, git, project
 from agent_runner.state import (EV_DEFERRED, EV_DROPPED, EV_HELD, EV_IDLE, EV_LANDED, EV_LEFT, EV_NO_COMMITS,
@@ -238,6 +238,8 @@ def since_event(item, titles: dict[str, str]) -> tuple[str, str, str] | None:
     if kind == EV_AUTO_RELEASE and tid:  # F63: 'queued V5 (auto_release: 10 landed)'
         return stamp, tid, f'queued {tid} (auto_release: {ev.get("why") or "?"})'
     if kind in (EV_DRIFT, EV_DEVICE):  # B45: 'needs you: Claude Code X changed Y; Z no longer works'; C27: 'needs you: box: CPU at 95°C'
+        return stamp, '', f'{SAID[EV_LEFT]}: {str(ev.get("text", "")).strip()}'
+    if kind == pitch.EV_PITCH:  # F98: 'needs you: Approve 2 changes to push: … [pitch1]'
         return stamp, '', f'{SAID[EV_LEFT]}: {str(ev.get("text", "")).strip()}'
     if kind == EV_CONTEXT and tid:  # F25: 'B32 peaked 168k (over 150k): runner.py 61k, test_runner.py 22k'
         top = str(ev.get('top') or '')
@@ -571,7 +573,7 @@ def waiting_ok() -> list[tuple]:
         if not C.todo.exists():
             return []
         stamps = P.asked_at(C.todo)
-        return [(*a, stamps.get(a[1], '')) for a in P.asks(C.todo, all=True)]
+        return [(*a, stamps.get(a[1], '')) for a in P.asks(C.todo, all=True)] + pitch.rows(C)
     except (OSError, SystemExit):
         return []
 
@@ -668,6 +670,8 @@ def status_text(up: bool, st: dict, log_lines: list[str], titles: dict[str, str]
     out.append(f'run up: {st.get("state", "starting")}' if up else 'no run is up')
     if nogate := no_gate_line():  # up or not: the next run merges untested too
         out.append(nogate)
+    if unpushed := pitch.waiting_line():  # F98
+        out.append(unpushed)
     out += progress.splitlines()
     for n, tid in sorted(st.get('running', {}).items(), key=lambda kv: (not kv[0].isdigit(), kv[0].zfill(4))):
         title = titles.get(tid, '')
