@@ -195,6 +195,20 @@ a{color:var(--accent)}
 .toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--fg);color:var(--bg);border-radius:12px;padding:9px 14px;font-size:13px;z-index:20;max-width:min(560px,90vw);box-shadow:0 6px 24px var(--shadow)}
 .toast.bad{background:var(--bad);color:#fff}
 .offline{font-size:12px;color:var(--warn);text-align:center;padding:2px}
+/* F137: the outbox's pill, its popup and the stand-ins */
+.obbar{display:flex;justify-content:center;padding:4px 12px 0}
+.obpill{display:inline-flex;align-items:center;gap:8px;border:1px dashed var(--line2);background:var(--surface);color:var(--muted);border-radius:99px;padding:4px 12px;font:inherit;font-size:12.5px;cursor:pointer;max-width:100%}
+.obpill.bad{border:1px solid var(--bad);color:var(--bad)}
+.obpop{position:fixed;inset:0;background:var(--scrim);z-index:30;display:grid;place-items:center;padding:16px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.obcard{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:14px 16px;display:grid;gap:10px;width:min(520px,100%);max-height:80vh;overflow:auto;box-shadow:0 6px 24px var(--shadow)}
+.obrow{display:flex;gap:10px;align-items:center;flex-wrap:wrap;border-top:1px solid var(--line);padding-top:10px}
+.obrow .grow,.obstand .grow{min-width:0}
+.ell2{overflow-wrap:anywhere}
+.obrow.failed .small,.obstand.failed .small,.u.failed .small{color:var(--bad)}
+.obstand.sending{opacity:.7}
+.u.pending.failed{opacity:1;border:1px solid var(--bad)}
+.thread.ob.sending{opacity:.75}
+.thread.ob.failed .t{color:var(--bad)}
 
 @container (min-width:760px){
   .shell{grid-template-columns:260px minmax(0,1fr)}
@@ -232,6 +246,7 @@ a{color:var(--accent)}
     <section class="main">
       <div class="top" id="top"></div>
       <div class="offline" id="offline" hidden>Lost the run page's connection: trying again…</div>
+      <div class="obbar" id="obbar" hidden></div>
       <div class="body" id="body"></div>
       <div class="dock" id="dock"></div>
     </section>
@@ -239,6 +254,7 @@ a{color:var(--accent)}
   <input type="file" multiple hidden id="file">
 </div>
 <div class="toast" id="toast" hidden></div>
+<div class="obpop" id="obpop" hidden></div>
 
 <script id="logic">
 /* The page's pure parts, run in node by tests/test_web.py: no DOM here. */
@@ -427,7 +443,45 @@ function histStep(n,i,key){
   if(typeof i!=='number'||i<0||i>n)i=n;
   return key==='ArrowUp'?Math.max(0,i-1):Math.min(n,i+1);
 }
-if(typeof module!=='undefined')module.exports={chatMove,BOX_KEYS,keysLine,histPush,histEdge,histStep,slashMatches,slashPick,slashMove,SLASH_FALLBACK,chatPick,answerOpts,threadMsgs,working,planWords,compose,usageOf,logKind,plain,chatName,controlReq,controlClick,taskControlsOn,queueGroups,conceptButtons,NO_CONCEPT,newConceptReq,queuedId,NAV,talkSession,micProblem,talkShown,talkReply,goneMark,needsShown,answerSaid,GONE_MS};
+/* F137: the outbox: every action the page takes is drawn at once and kept here (localStorage) until the run
+   answers, then sent in order; a dropped connection or a reload sends it again with the same client id (cid),
+   which the run page runs only once. An item: {cid, name, args, state 'sending'|'failed', err, say (its words in
+   the page), and what it stands in for: newchat, need (a Needs you id), concept (a concept's id), text and key (a
+   message's words and box)}. A message to a chat still starting has args.to '@' + that new chat's cid. */
+const OB_STATES=['sending','failed'];
+function obParse(text){let l;try{l=JSON.parse(text||'[]')}catch(e){return[]}
+  return Array.isArray(l)?l.filter(x=>x&&typeof x==='object'&&typeof x.cid==='string'&&x.cid&&typeof x.name==='string'
+    &&OB_STATES.includes(x.state)&&x.args&&typeof x.args==='object'&&!Array.isArray(x.args)):[]}
+const obTo=x=>String((x&&x.args&&x.args.to)||'');
+/* the next item to send: the first still sending, skipping messages to a chat that is not up yet */
+function obNext(box){return(box||[]).find(x=>x.state==='sending'&&!obTo(x).startsWith('@'))||null}
+/* a starting chat (placeholder '@cid') got its name: its messages go there */
+function obName(box,ph,name){return(box||[]).map(x=>obTo(x)===ph?{...x,args:{...x.args,to:name}}:x)}
+/* the run answered item cid with r: ok drops it (and names its new chat's messages), else it fails and stays */
+function obSettle(box,cid,r){
+  const l=box||[], it=l.find(x=>x.cid===cid);if(!it)return l;
+  const ok=!!(r&&r.ok), ph='@'+cid;
+  if(ok){const rest=l.filter(x=>x.cid!==cid);return it.newchat&&r.name?obName(rest,ph,r.name):rest}
+  const err=String((r&&r.out)||`${it.name} did not work`).trim().split('\n')[0];
+  return l.map(x=>x.cid===cid?{...x,state:'failed',err}:obTo(x)===ph?{...x,state:'failed',err:'the new chat did not start'}:x);
+}
+/* Retry: sent again under a new cid (the run's answer to the old one is kept); a message waiting on a chat
+   that did not start retries that chat */
+function obRetry(box,cid,fresh){
+  const l=box||[], it=l.find(x=>x.cid===cid);if(!it)return l;
+  const up=obTo(it).startsWith('@')&&l.find(x=>'@'+x.cid===obTo(it));
+  if(up)return obRetry(l,up.cid,fresh);
+  return l.map(x=>x.cid===cid?{...x,cid:fresh,state:'sending',err:''}:obTo(x)==='@'+cid?{...x,args:{...x.args,to:'@'+fresh},state:'sending',err:''}:x);
+}
+/* Discard: the item goes, and with a new chat the messages waiting for it */
+function obDrop(box,cid){return(box||[]).filter(x=>x.cid!==cid&&obTo(x)!=='@'+cid)}
+function obCounts(box){const l=box||[];return{sending:l.filter(x=>x.state==='sending').length,failed:l.filter(x=>x.state==='failed').length}}
+/* the ids an item still sending stands in for (key 'need' or 'concept'): the page hides their cards meanwhile */
+function obHidden(box,key){return(box||[]).filter(x=>x.state==='sending'&&x[key]).map(x=>x[key])}
+/* the pill's words */
+function obPill(c,offline){const p=[];if(c.sending)p.push(`${c.sending} ${offline?'waiting for the connection':'sending'}`);
+  if(c.failed)p.push(`${c.failed} failed · tap to see`);return p}
+if(typeof module!=='undefined')module.exports={chatMove,BOX_KEYS,keysLine,histPush,histEdge,histStep,slashMatches,slashPick,slashMove,SLASH_FALLBACK,chatPick,answerOpts,threadMsgs,working,planWords,compose,usageOf,logKind,plain,chatName,controlReq,controlClick,taskControlsOn,queueGroups,conceptButtons,NO_CONCEPT,newConceptReq,queuedId,NAV,talkSession,micProblem,talkShown,talkReply,goneMark,needsShown,answerSaid,GONE_MS,obParse,obNext,obName,obSettle,obRetry,obDrop,obCounts,obHidden,obPill};
 </script>
 
 <script>
@@ -501,6 +555,89 @@ async function act(name,args){
   catch(e){toast(`Could not reach the run page: ${e}`,true);return{ok:false}}
 }
 
+/* --- F137: the outbox (obParse and the rest in the logic script) ------------------------------------------ */
+const OB_KEY='ar-outbox';
+S.ob=obParse(store.get(OB_KEY));S.obOpen=false;
+const OB={busy:false,offline:false,timer:0,wait:2000};
+const newCid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,10);
+function obChange(fn){S.ob=fn(S.ob);store.set(OB_KEY,S.ob.length?JSON.stringify(S.ob):'')}
+/* take an action: drawn at once by the caller, kept in the outbox, sent behind */
+function outbox(name,args,more){
+  const it={cid:newCid(),name,args:args||{},state:'sending',err:'',at:Date.now(),say:name,...(more||{})};
+  obChange(b=>b.concat([it]));render(true);drain();return it;
+}
+async function drain(){
+  if(OB.busy)return;OB.busy=true;clearTimeout(OB.timer);
+  try{
+    for(let it;(it=obNext(S.ob));){
+      let j;
+      try{const r=await fetch(tq('act'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:it.name,args:it.args,cid:it.cid})});
+        if(r.status>=500)throw new Error(`HTTP ${r.status}`);
+        j=await r.json()}
+      catch(e){OB.offline=true;OB.timer=setTimeout(drain,OB.wait);OB.wait=Math.min(OB.wait*2,30000);obDraw();return}
+      OB.offline=false;OB.wait=2000;
+      if(!S.ob.some(x=>x.cid===it.cid))continue;  // discarded while it went
+      obChange(b=>obSettle(b,it.cid,j));
+      obDone(it,j);render(true);
+    }
+  }finally{OB.busy=false}
+  obDraw();
+}
+/* what the page does once the run answered an item */
+function obDone(it,j){
+  const now=Date.now(), snapNow=()=>fetch(tq('snapshot')).then(s=>s.json()).then(takeSnap).catch(()=>{});
+  if(!j||!j.ok){toast(`Not sent: ${it.say}`,true);S.obOpen=true;if(it.need||it.concept)snapNow();return}
+  if(it.newchat&&j.name){if(S.waitNew&&S.waitNew.ph==='@'+it.cid)S.waitNew=null;if(S.thread==='@'+it.cid)open(j.name)}
+  else if(it.name==='chat_to'){const to=it.args.to,p=(S.sent[to]&&S.sent[to].pending)||[];
+    S.sent[to]={at:now,len:feedOf(to).length,pending:[...p,it.args.text]}}
+  else if(it.need&&it.name==='answer'){toast(answerSaid(j,it.need,it.args.text));S.gone=goneMark(S.gone,j,now);snapNow()}
+  else if(it.concept){S.gone={...(S.gone||{}),[it.concept]:now}}  // a picked concept stays off while the run catches up
+  else if(it.name==='plan_add'&&it.args.kind==='K'){S.kSaid=`Queued ${queuedId(j.out)||'a new concept'}: a run writes its options page, and it shows here.`;toast(S.kSaid)}
+  if(it.done)toast(it.done);
+}
+/* the cards an item still sending stands in for stay off the lists */
+function obHide(){
+  const ns=obHidden(S.ob,'need'), cs=obHidden(S.ob,'concept'), now=Date.now();
+  S.snap.needs=(S.snap.needs||[]).filter(n=>!ns.includes(n.id));
+  S.snap.concepts=needsShown(S.snap.concepts,S.gone,now).filter(c=>!cs.includes(c.id));
+}
+const obBtns=x=>`${x.state==='failed'?`<button class="btn pri" data-obretry="${esc(x.cid)}">Retry</button>`:''}${x.state==='failed'&&x.name==='chat_to'?`<button class="btn" data-obedit="${esc(x.cid)}">Edit</button>`:''}<button class="btn" data-obdrop="${esc(x.cid)}">Discard</button>`;
+const obState=x=>x.state==='failed'?`Not sent: ${x.err||'it did not work'}`:OB.offline?'waiting for the connection':'sending…';
+function obDraw(){
+  const c=obCounts(S.ob), parts=obPill(c,OB.offline), bar=$('obbar'), pop=$('obpop');
+  bar.hidden=!parts.length;
+  bar.innerHTML=parts.length?`<button class="obpill${c.failed?' bad':''}" data-obopen>${c.sending?'<span class="livedot"></span>':''}${parts.map(esc).join(' · ')}</button>`:'';
+  if(!S.ob.length)S.obOpen=false;
+  pop.hidden=!S.obOpen;
+  pop.innerHTML=S.obOpen?`<div class="obcard" role="dialog" aria-label="Outbox"><div class="row"><b class="grow">Outbox</b><button class="btn" data-obclose>Close</button></div>
+    ${S.ob.map(x=>`<div class="obrow ${x.state}"><div class="grow"><div class="ell2">${esc(x.say)}</div><div class="small">${esc(obState(x))}</div></div><div class="btns">${obBtns(x)}</div></div>`).join('')}</div>`:'';
+}
+/* the stand-ins: a starting chat in the sidebar, a sent answer in Needs you, a queued concept, a message */
+function obChatRows(){return S.ob.filter(x=>x.newchat).map(x=>`<div class="crow"><button class="thread ${S.thread==='@'+x.cid?'on':''} ob ${x.state}" data-thread="@${esc(x.cid)}">${x.state==='failed'?'':'<span class="livedot"></span>'}<span class="t">${esc(x.say)} · ${x.state==='failed'?'did not start':'starting…'}</span></button></div>`).join('')}
+function obCards(key){return S.ob.filter(key).map(x=>card(`<div class="row obstand ${x.state}"><div class="grow"><div>${esc(x.say)}</div><div class="small">${esc(obState(x))}</div></div>${x.state==='failed'?`<div class="btns">${obBtns(x)}</div>`:''}</div>`)).join('')}
+function obBubbles(n){
+  let h='';
+  for(const x of S.ob)if(x.name==='chat_to'&&obTo(x)===n)h+=`<div class="u pending ${x.state}">${esc(x.args.text)}${x.state==='failed'?`<div class="small">${esc(obState(x))}</div><div class="btns">${obBtns(x)}</div>`:''}</div>`;
+  const up=n&&n[0]==='@'&&S.ob.find(x=>'@'+x.cid===n);
+  if(up)h+=`<div class="think"><span class="logo">ar</span>${up.state==='failed'?esc(`The chat did not start: ${up.err}`):'Starting the chat… what you write goes once it is up'}</div>`;
+  return h;
+}
+function obRetryClick(cid){  /* Retry: a new chat sent again gets a new cid, so its stand-in follows */
+  const before=S.ob, fresh=newCid();obChange(b=>obRetry(b,cid,fresh));
+  const was=before.find(y=>y.newchat&&!S.ob.some(z=>z.cid===y.cid));
+  if(was){const ph='@'+fresh;if(S.thread==='@'+was.cid)S.thread=ph;S.waitNew={known:chats().map(c=>c.name),at:Date.now(),ph}}
+  render(true);drain();
+}
+function obEditBack(cid){  /* a message that failed goes back in its box */
+  const x=S.ob.find(y=>y.cid===cid);if(!x)return;
+  obChange(b=>obDrop(b,cid));S.obOpen=false;
+  if(!x.key||x.key==='home'){store.set(DRAFT_KEY('home'),x.text||'');return goView('home')}
+  const to=obTo(x), t=to&&!to.startsWith('@')?to:x.key;  // a chat that came up since: its own box
+  store.set(DRAFT_KEY(t),x.text||'');open(t);
+}
+addEventListener('online',()=>drain());
+addEventListener('storage',e=>{if(e.key===OB_KEY){S.ob=obParse(e.newValue);render(true);drain()}});  // another tab
+
 /* --- what the snapshot holds ------------------------------------------------------------------------------- */
 /* F133: the chats in the order the run keeps (snap.chat_order); one it does not list yet goes just under the pins */
 const chatPins=()=>S.snap.chat_pins||[];
@@ -514,8 +651,8 @@ function saveChatOrder(order,pins){
 const slots=()=>S.snap.sessions.filter(s=>/^s\d+$/.test(s.name)||(!/^c\d+$/.test(s.name)&&s.task));
 const working_=()=>slots().filter(s=>s.task);
 const sessionOf=n=>S.snap.sessions.find(s=>s.name===n);
-const isAgent=n=>!/^c\d+$/.test(n||'');
-const threadTitle=n=>{const s=sessionOf(n);if(!s)return n==='c1'?'Project chat':n;return isAgent(n)?(s.title||s.task||n):chatName(s)};
+const isAgent=n=>!/^(c\d+|@.+)$/.test(n||'');  // F137: '@cid', a chat still starting, is a chat
+const threadTitle=n=>{if(String(n||'')[0]==='@'){const x=S.ob.find(y=>'@'+y.cid===n);return x?x.say:'New chat'}const s=sessionOf(n);if(!s)return n==='c1'?'Project chat':n;return isAgent(n)?(s.title||s.task||n):chatName(s)};
 const upNext=()=>S.snap.queue.filter(q=>q.state!=='running'&&q.state!=='parked');
 const feedOf=n=>(S.feeds[n]||{}).entries||[];
 function lastWords(n){const e=feedOf(n).filter(x=>x.kind==='say');return e.length?plain(e[e.length-1].text):''}
@@ -552,7 +689,7 @@ function side(){
   $('side').innerHTML=`<div class="brand"><div class="logo">ar</div><b>agent-runner</b></div>
    <button class="newchat" data-new><span class="plus">${I.plus}</span>New chat</button>
    <div class="nav">${nav.map(([k,l])=>`<button class="ni ${!S.thread&&S.view===k?'on':''}" data-view="${k}">${I[k]}${l}${count[k]?`<span class="n">${count[k]}</span>`:''}</button>`).join('')}</div>
-   <div class="shead row"><span>Chats</span><button class="shadd" data-new aria-label="New chat" title="New chat">${I.plus}</button></div>${chatBar()}${cs.length?cs.map(chatRow).join(''):'<div class="none">No chats yet</div>'}
+   <div class="shead row"><span>Chats</span><button class="shadd" data-new aria-label="New chat" title="New chat">${I.plus}</button></div>${chatBar()}${cs.length?cs.map(chatRow).join(''):'<div class="none">No chats yet</div>'}${obChatRows()}
    <div class="shead">Agents working</div>${ws.length?ws.map(s=>`<button class="thread ${S.thread===s.name?'on':''}" data-thread="${esc(s.name)}"><span class="livedot"></span><span class="t">${esc(s.title||s.task)}</span></button>`).join(''):'<div class="none">None right now</div>'}
    <div class="me"><div class="av">${esc((S.snap.machine||'?').charAt(0).toUpperCase())}</div><div class="grow"><span class="ell">${esc(S.snap.machine||'this machine')}</span><div class="sub">${S.snap.up===false?'no run is up':`${S.snap.slots||0} slot${S.snap.slots===1?'':'s'}`}${use?` · usage ${esc(use)}`:''}</div></div></div>
    <a class="viewsw" href="term${esc(location.search)}" data-viewsw="terminal" title="The terminal-style page; this browser remembers the choice">${I.term}Terminal view</a>`;
@@ -633,7 +770,7 @@ function box(ph,foot){
 function convo(n,shown){  // F93: shown, how a message of yours shows (Talk: without its brief or reminder)
   shown=shown||(t=>t);
   const f=S.feeds[n], agent=isAgent(n), title=threadTitle(n);
-  if(!f)return '<div class="msgs"><div class="think"><span class="logo">ar</span>Loading…</div></div>';
+  if(!f)return `<div class="msgs">${String(n||'')[0]==='@'?'':'<div class="think"><span class="logo">ar</span>Loading…</div>'}${obBubbles(n)}</div>`;  // F137
   const ms=threadMsgs(f.entries);
   let h=f.more?'<div class="more">Older messages are on its session page.</div>':'';
   if(!ms.length)h+=`<div class="small" style="text-align:center">${esc(f.out||'Nothing said here yet.')}</div>`;
@@ -645,6 +782,7 @@ function convo(n,shown){  // F93: shown, how a message of yours shows (Talk: wit
     h+=`<div class="a">${lead}${st}${m.text?`<div>${md(m.text)}</div>`:''}</div>`;
   });
   for(const p of (S.sent[n]&&S.sent[n].pending)||[])h+=`<div class="u pending">${esc(shown(p))}</div>`;
+  h+=obBubbles(n);  // F137: messages still in the outbox
   if(busy(n))h+=`<div class="think"><span class="logo">ar</span>Working on it… · Ctrl+C interrupts<button type="button" class="btn mini" data-stop="${esc(n)}">Stop</button></div>`;
   return `<div class="msgs">${h}</div>`;
 }
@@ -653,7 +791,7 @@ function homeHTML(){
   const ws=working_(), nx=upNext().slice(0,3), rel=S.snap.release||'';
   return `<div class="col"><div class="greet"><span class="logo">ar</span>${greeting()}</div>${box('How can I help with the run?',keysLine())}${ttydLine()}
     <div class="chips"><button class="chip" data-quick="since">${I.clock}Since my last look</button><button class="chip" data-quick="needs">${I.ask}What needs me</button><button class="chip" data-about="new">${I.plus}Add a task</button></div>
-    <div class="sec">Needs you<span class="ln"></span></div>${S.snap.needs.length?S.snap.needs.map(needCard).join(''):card(`<div class="row"><div class="who">${I.check}</div><div><b>Nothing needs you</b><div class="small">It shows here when something does.</div></div></div>`)}
+    <div class="sec">Needs you<span class="ln"></span></div>${obCards(x=>x.need)}${S.snap.needs.length?S.snap.needs.map(needCard).join(''):card(`<div class="row"><div class="who">${I.check}</div><div><b>Nothing needs you</b><div class="small">It shows here when something does.</div></div></div>`)}
     <div class="sec">Working now<span class="ln"></span></div>${ws.length?`<div class="grid2">${ws.map(agentCard).join('')}</div>`:card(`<div class="small">${S.snap.up===false?'No run is up.':'No agent is working right now.'}</div>`)}
     <div class="sec">Up next<span class="ln"></span></div>${nx.length?nx.map(planCard).join(''):card('<div class="small">The queue is empty.</div>')}
     ${card(`<div class="row"><div class="grow"><b>Release</b><div class="small">${esc(rel||(ws.length?`Waits for the ${ws.length} task${ws.length>1?'s':''} still working.`:'Releases what has landed.'))}</div></div></div><div class="btns">${ws.length?`<button class="btn acc" data-rel="wait">Release when they land</button>`:''}<button class="btn ${ws.length?'':'acc'}" data-rel="now">Release now</button></div>`)}</div>`;
@@ -679,16 +817,16 @@ function conceptsHTML(){
     <textarea rows="3" data-kin aria-label="What the concept is about" placeholder="e.g. a dark mode for the run app"></textarea>
     <div class="btns"><button class="btn acc">Queue it</button><button type="button" class="btn" data-kcancel>Cancel</button></div></form>`):'';
   return `<div class="col"><div class="sec">Concepts<span class="ln"></span><button class="shadd" data-kadd aria-label="New concept" title="New concept">${I.plus}</button></div>
-    ${form}${S.kSaid?`<div class="small">${esc(S.kSaid)}</div>`:''}${cs.length?cs.map(conceptCard).join(''):card(`<div class="small">${NO_CONCEPT}</div>`)}</div>`;
+    ${form}${obCards(x=>x.concept||x.kq)}${S.kSaid?`<div class="small">${esc(S.kSaid)}</div>`:''}${cs.length?cs.map(conceptCard).join(''):card(`<div class="small">${NO_CONCEPT}</div>`)}</div>`;
 }
-async function newConcept(){
+function newConcept(){  // F137: shown as queuing at once; obDone says its id once plan add answers
   const req=newConceptReq(S.kText);if(!req)return;
-  const r=await act(req.name,req.args);if(!r.ok)return;
-  const id=queuedId(r.out);S.kOpen=false;S.kText='';
-  S.kSaid=`Queued ${id||'a new concept'}: a run writes its options page, and it shows here.`;toast(S.kSaid);render(true);
+  S.kOpen=false;S.kText='';S.kSaid='';
+  outbox(req.name,req.args,{kq:true,say:`New concept: “${req.args.text}”`});
 }
 let lastBody='';
 function render(force){
+  obHide();obDraw();  // F137
   side();
   const n=S.thread;
   $('top').innerHTML=`<button class="icon menu" data-menu aria-label="Menu">${I.menu}</button>${n?`<button class="icon" data-home aria-label="Back">${I.back}</button>`:''}<div class="title">${n?esc(threadTitle(n)):{talk:'Talk',home:'',agents:'Agents',activity:'Activity',plan:'Plan',concepts:'Concepts'}[S.view]}</div>${n&&sessionOf(n)&&sessionOf(n).link?`<a class="icon" href="${esc(sessionOf(n).link)}" target="_blank" rel="noopener" aria-label="Open its session" title="Open its session">${I.ext}</a>`:''}<button class="icon" data-new aria-label="New chat" title="New chat">${I.newchat}</button>`;
@@ -825,9 +963,11 @@ function takeSnap(s){
   if(!s||s.error){if(s&&s.error)toast(s.error,true);return}
   if(followVersion(s.version))return;
   S.snap={...S.snap,...s};
+  if(OB.offline)drain();  // F137: the run answers again: the outbox goes on at once
   S.snap.needs=needsShown(S.snap.needs,S.gone,Date.now());  // B138: a snapshot taken before an answer keeps it off
   if(S.waitNew){const fresh=chats().map(c=>c.name).filter(x=>!S.waitNew.known.includes(x));
-    if(fresh.length){S.waitNew=null;open(fresh[fresh.length-1]);return}
+    if(fresh.length){const nm=fresh[fresh.length-1], ph=S.waitNew.ph;S.waitNew=null;  // F137: its waiting messages go there
+      if(ph){obChange(b=>obName(b,ph,nm));drain()}if(!ph||S.thread===ph)open(nm);else render();return}
     if(Date.now()-S.waitNew.at>60000)S.waitNew=null}
   for(const w of working_())if(!S.feeds[w.name]||Date.now()-(S.feeds[w.name].at||0)>15000)loadFeed(w.name);
   const tw=talkWaitName();if(tw)loadFeed(tw);  // B133: each snapshot also looks for the awaited Talk reply
@@ -842,6 +982,7 @@ function connect(){
 }
 async function poll(){try{takeSnap(await (await fetch(tq('snapshot'))).json())}catch(e){}setTimeout(poll,4000)}
 async function loadFeed(n){
+  if(String(n||'')[0]==='@')return;  // F137: a chat still starting has no feed yet
   try{const f=await (await fetch(tq('feed/'+encodeURIComponent(n)))).json();
     const old=S.feeds[n];S.feeds[n]={...f,at:Date.now()};
     const sent=S.sent[n];if(sent&&(f.entries||[]).length>sent.len)sent.pending=[];
@@ -864,14 +1005,12 @@ async function send(){
   if(!S.thread&&S.view==='talk'){if(await talkSend(compose(null,text,paths))){histAdd(boxKey(),text);HI.i=null;store.set(DRAFT_KEY(boxKey()),'');if(ta)ta.value='';S.atts=[];render(true)}return}  // F93
   const ctx=S.ctx, to=S.thread||'c1', key=boxKey();
   const msg=compose(ctx,text,paths);
-  const r=await act('chat_to',{text:msg,to});
-  if(!r.ok)return;
   histAdd(key,text);HI.i=null;  // B120: Up brings it back
   store.set(DRAFT_KEY(key),'');if(ta)ta.value='';
   S.atts=[];S.ctx=null;
-  const len=feedOf(to).length;
-  S.sent[to]={at:Date.now(),len,pending:[...((S.sent[to]&&S.sent[to].pending)||[]),msg]};
-  if(S.thread!==to)open(to);else render(true);
+  // F137: out of the box at once, a pending message until chat_to answers (obDone), red with Retry if it fails
+  outbox('chat_to',{text:msg,to},{text,key,say:`To ${threadTitle(to)}: ${text||paths.length+' attachment(s)'}`});
+  if(S.thread!==to)open(to);
 }
 function about(a){
   const [k,v]=[a.split(':')[0],a.slice(a.indexOf(':')+1)];
@@ -895,6 +1034,14 @@ document.addEventListener('click',async e=>{
   const q=s=>e.target.closest(s);let x;
   if(S.undo&&!q('[data-undo]'))finalDelete();  // F118: any other click makes the delete final
   if(x=q('[data-slashpick]')){slashTake(+x.dataset.slashpick);return}  // B119
+  if(q('[data-obopen]')){S.obOpen=true;obDraw();return}  // F137: the outbox's pill opens its popup
+  if(q('[data-obclose]')||e.target.id==='obpop'){S.obOpen=false;obDraw();return}
+  if(x=q('[data-obretry]')){obRetryClick(x.dataset.obretry);return}
+  if(x=q('[data-obdrop]')){obChange(b=>obDrop(b,x.dataset.obdrop));
+    if(String(S.thread||'')[0]==='@'&&!S.ob.some(y=>'@'+y.cid===S.thread))S.thread=null;  // its stand-in chat went
+    if(S.waitNew&&S.waitNew.ph&&!S.ob.some(y=>'@'+y.cid===S.waitNew.ph))S.waitNew=null;
+    render(true);return}
+  if(x=q('[data-obedit]')){obEditBack(x.dataset.obedit);return}
   if(slashOpen()&&!q('[data-in]'))slashClose();
   if(q('[data-undo]')){S.undo=null;render(true);return}
   if(x=q('[data-pin]')){const n=x.dataset.pin,names=chats().map(c=>c.name),p=chatPins().filter(m=>names.includes(m));  // F133
@@ -923,29 +1070,27 @@ document.addEventListener('click',async e=>{
     const r=await act(rq.name,rq.args);if(r.ok){S.slotsN='';toast(String(r.out||'').split('\n')[0]||`${c.label}: done`)}
     render(true);return}
   if(x=q('[data-thread]')){S.ctx=null;return open(x.dataset.thread)}
-  if(q('[data-new]')){S.drawer=false;S.waitNew={known:chats().map(c=>c.name),at:Date.now()};render();
-    const r=await act('new_control',{});if(r.ok)toast('Starting a new chat: it opens here once it is up');else S.waitNew=null;return}
-  if(x=q('[data-cchat]')){const c=S.snap.concepts[+x.dataset.cchat];if(!c)return;x.disabled=true;  // F86
-    S.waitNew={known:chats().map(c=>c.name),at:Date.now()};
-    const r=await act('concept_chat',{cid:c.concept||c.id,title:c.title||'',url:c.url||'',copy:c.copy||''});
-    if(r.ok)toast(`Starting a new chat about ${c.concept||c.id}: it opens here once it is up`);else{S.waitNew=null;x.disabled=false}return}
+  // F137: a new chat opens at once as a stand-in ('@cid') that takes messages; new_control starts it without
+  // waiting, and its messages go once it has a name
+  const newChat=(name,args,say)=>{const known=chats().map(c=>c.name), it=outbox(name,{...args,wait:false},{newchat:true,say});
+    S.waitNew={known,at:Date.now(),ph:'@'+it.cid};open('@'+it.cid)};
+  if(q('[data-new]')){S.drawer=false;newChat('new_control',{},'New chat');return}
+  if(x=q('[data-cchat]')){const c=S.snap.concepts[+x.dataset.cchat];if(!c)return;  // F86
+    newChat('concept_chat',{cid:c.concept||c.id,title:c.title||'',url:c.url||'',copy:c.copy||''},`Chat about ${c.concept||c.id}`);return}
   if(x=q('[data-ans]')){const n=S.snap.needs[+x.dataset.ans];if(!n)return;  // B138: the plan command, no AI session
-    const was=x.textContent;x.disabled=true;x.classList.add('busy');x.textContent=`${was}…`;
-    const r=await act('answer',{tid:n.id,text:x.dataset.v,button:true});
-    if(r.ok){toast(answerSaid(r,n.id,x.dataset.v));S.gone=goneMark(S.gone,r,Date.now());S.snap.needs=needsShown(S.snap.needs,S.gone,Date.now());render(true);
-      fetch(tq('snapshot')).then(s=>s.json()).then(takeSnap).catch(()=>{})}  // and the run's own list, at once
-    else{x.disabled=false;x.classList.remove('busy');x.textContent=was}
-    return}
-  if(x=q('[data-later]')){const n=S.snap.needs[+x.dataset.later];if(!n)return;x.disabled=true;
-    const r=await act('shelve',{tid:n.id});if(r.ok)toast(`${n.id} is set aside until you bring it back`);return}
+    // F137: the card folds away at once (obHide) and stands as 'sending' until answer returns (obDone)
+    outbox('answer',{tid:n.id,text:x.dataset.v,button:true},{need:n.id,say:`${n.id} · answered “${x.dataset.v}”`});return}
+  if(x=q('[data-later]')){const n=S.snap.needs[+x.dataset.later];if(!n)return;
+    outbox('shelve',{tid:n.id},{need:n.id,say:`${n.id} · Later`,done:`${n.id} is set aside until you bring it back`});return}
   if(x=q('[data-unpark]')){const id=x.dataset.unpark;x.disabled=true;  // B118
     const r=await act('unpark',{tid:id});if(r.ok)toast(`${id} is unparked: it joins Follow-ups`);else x.disabled=false;return}
   if(q('[data-kadd]')){S.kOpen=!S.kOpen;S.kFocus=S.kOpen;S.kSaid='';render(true);return}  // F87: the Concepts view's +
   if(q('[data-kcancel]')){S.kOpen=false;render(true);return}
   if(x=q('[data-about]'))return about(x.dataset.about);
-  if(x=q('[data-quick]')){const r=await act('quick_ask',{key:x.dataset.quick});if(r.ok){S.ctx=null;S.sent.c1={at:Date.now(),len:feedOf('c1').length,pending:[]};open('c1')}return}
+  if(x=q('[data-quick]')){S.ctx=null;S.sent.c1={at:Date.now(),len:feedOf('c1').length,pending:[]};  // F137: c1 shows it working at once
+    outbox('quick_ask',{key:x.dataset.quick},{say:`To the project chat: ${x.textContent.trim()}`});open('c1');return}
   if(x=q('[data-pick]')){const c=S.snap.concepts[+x.dataset.pick],o=c&&(c.options||[])[+x.dataset.o];if(!o)return;
-    const r=await act('answer',{tid:c.id,text:`go with ${o.name}`});if(r.ok){toast(`Going with ${o.name}`);open('c1')}return}
+    outbox('answer',{tid:c.id,text:`go with ${o.name}`},{concept:c.id,say:`${c.concept||c.id} · go with ${o.name}`,done:`Going with ${o.name}`});open('c1');return}
   if(x=q('[data-rel]')){const now=x.dataset.rel==='now';x.disabled=true;
     const r=await act('release',{now});if(r.ok)toast(now?'Releasing what has landed now':'The release waits for the running tasks to land');return}
   if(x=q('[data-steps]')){S.openSteps[x.dataset.steps]=!S.openSteps[x.dataset.steps];render(true);return}
@@ -1033,6 +1178,7 @@ addEventListener('pagehide',finalDelete);  // F118: leaving the page makes a pen
 render(true);
 connect();
 loadFeed('c1');
+drain();  // F137: what a reload left in the outbox goes now (the run page runs each cid once)
 </script>
 </body>
 </html>

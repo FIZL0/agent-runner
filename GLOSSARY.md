@@ -434,3 +434,10 @@ _Said_: drag to reorder chats, pin chats
 _On screen_: Pin this chat / Unpin this chat
 _In code_: chat_order, chat_list, chatMove, chat_order.json
 _Avoid_: chat sort, favourites
+
+**Outbox**:
+The run page's list of actions a person took that the run has not answered yet: each shows at once, is sent behind in order, is sent again after a dropped connection or a reload, and stays with Retry and Discard if the run refuses it.
+_Said_: do those things in the background
+_On screen_: N sending · N failed · tap to see
+_In code_: S.ob, outbox(), drain(), obSettle, ActsOnce
+_Avoid_: queue, pending list

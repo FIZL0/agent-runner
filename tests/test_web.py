@@ -383,8 +383,8 @@ def test_page(tmp: Path) -> None:
                  'data-quick="needs">', 'What needs me', 'data-about="new">', 'Add a task',  # Home
                  '>Needs you<', 'data-ans=', 'data-later=', 'data-about="need:', '>Working now<', '>Up next<',
                  'data-about="plan:', 'Release when they land', 'Release now',
-                 "act('answer'", "act('shelve'", "act('release'", "act('quick_ask'", "act('chat_to'",
-                 "act('new_control'", "act('interrupt'",
+                 "outbox('answer'", "outbox('shelve'", "act('release'", "outbox('quick_ask'", "outbox('chat_to'",
+                 "newChat('new_control'", "act('interrupt'",  # F137: through the outbox
                  '.a{display:grid;gap:8px;font:400 16.5px/1.6 var(--serif)', '.u{justify-self:end',  # threads
                  'Ran ${m.steps.length} step', 'Working on it…', "tq('feed/'",
                  'Goes straight to this agent', "tq('upload?name='", 'type="file" multiple', 'About: <b>',  # the box
@@ -585,7 +585,8 @@ def test_new_chat(tmp: Path) -> None:
           'the + sits at the end of the Chats heading row')
     check('data-new aria-label="New chat" title="New chat">${I.newchat}' in page and 'newchat:`<svg' in page,
           'the top bar keeps New chat, with the new-chat icon')
-    check("act('new_control',{})" in page, 'data-new calls new_control')
+    check("newChat('new_control',{},'New chat')" in page and "outbox(name,{...args,wait:false}" in page,
+          'data-new sends new_control through the outbox, without waiting (F137)')
     token = W.web_token()
     srv = W.serve(token, 0, '127.0.0.1', snap=lambda: {})
     calls = []
@@ -1151,6 +1152,7 @@ class SpeechSynthesisUtterance { constructor(t) { this.text = t } }
 const navigator = {language: 'en-US'};
 const kept = {}, store = {get: k => kept[k] || '', set(k, v) { kept[k] = v }};
 const toast = () => {}, render = () => {}, tq = p => p, followVersion = () => false, TALK_KEY = 'ar-talk';
+const OB = {offline: false}, drain = () => {};  // F137: takeSnap wakes the outbox
 const S = {snap: {sessions: [], queue: []}, feeds: {}, sent: {}, waitNew: null};
 const chats = () => S.snap.sessions.filter(s => /^c\d+$/.test(s.name)), working_ = () => [];
 const feedOf = n => (S.feeds[n] || {}).entries || [];
@@ -1517,8 +1519,8 @@ def test_answer_button_b138(tmp: Path) -> None:
     eq((yes['ok'], yes['said'], yes['gone']), (True, 'F1 ticked', 'F1'), 'the result says what was done')
     eq(no['said'], 'F1 reopened: the check failed', "No's words")
     page = W.PAGE.read_text(encoding='utf-8')
-    check("act('answer',{tid:n.id,text:x.dataset.v,button:true})" in page, 'the page sends a button answer', '')
-    check("x.classList.add('busy')" in page, 'the button shows it is working', '')
+    check("outbox('answer',{tid:n.id,text:x.dataset.v,button:true},{need:n.id" in page, 'the page sends a button answer', '')
+    check("obCards(x=>x.need)" in page, 'the answer stands in Needs you while it is sent (F137)', '')
     if not shutil.which('node'):
         print('  (no node here: the page script test is skipped)')
         return
@@ -1537,6 +1539,91 @@ def test_answer_button_b138(tmp: Path) -> None:
     eq(got[4], 'F1 ticked', 'the toast says what was done')
 
 
+def test_outbox_f137(tmp: Path) -> None:
+    """F137: the page draws an action at once and keeps it in an outbox (localStorage) until the run answers; it
+    is sent again after a drop or a reload with the same client id, which the run page runs only once. A failed
+    action stays, with Retry and Discard. New chats start without waiting, and messages to a chat still starting
+    go once it has its name."""
+    fake_repo(tmp)
+    token = W.web_token()
+    srv = W.serve(token, 0, '127.0.0.1', snap=lambda: {})
+    url = f'http://127.0.0.1:{srv.server_address[1]}/act?t={token}'
+    ran = []
+    try:
+        with mock.patch.object(U, 'RUN', [lambda argv: (ran.append(argv), (0, 'control 7 is starting in a hidden '
+                                                                            'terminal'))[1]]):
+            _, a = post(url, {'name': 'new_control', 'args': {'wait': False}, 'cid': 'k1'})
+            _, b = post(url, {'name': 'new_control', 'args': {'wait': False}, 'cid': 'k1'})
+            _, c = post(url, {'name': 'new_control', 'args': {'wait': False}, 'cid': 'k2'})
+            _, d = post(url, {'name': 'concept_chat', 'args': {'cid': 'K5', 'title': 'T', 'wait': False}, 'cid': 'k3'})
+    finally:
+        srv.stop()
+    eq([x[:3] for x in ran], [['control', '--new', '--no-wait']] * 3, 'k1 ran once; k2 and the concept chat ran')
+    eq((a['ok'], a['name'], b.get('again'), b['name'], c.get('again')), (True, 'c7', True, 'c7', None),
+       'a copy of k1 answers with its first result; a new cid runs again')
+    eq(d['name'], 'c7', 'a concept chat starts without waiting too')
+    once, n = W.ActsOnce(), []
+
+    def boom():
+        n.append(1)
+        raise RuntimeError('cut off')
+    for _ in range(2):
+        try:
+            once.run('x', boom)
+        except RuntimeError:
+            pass
+    eq(len(n), 2, 'an action that did not finish runs again for the same cid')
+    eq(once.run('', lambda: {'ok': True}), {'ok': True}, 'no cid: it just runs')
+    page = W.PAGE.read_text(encoding='utf-8')
+    for part in ("JSON.stringify({name:it.name,args:it.args,cid:it.cid})", "addEventListener('online',()=>drain())",
+                 'id="obbar"', 'id="obpop"', '${obChatRows()}', 'h+=obBubbles(n)', 'obCards(x=>x.concept||x.kq)',
+                 "if(OB.offline)drain()", "outbox('chat_to',{text:msg,to}"):
+        check(part in page, f'the page has {part}')
+    send = page.split('async function send(){', 1)[1].split('\n}', 1)[0]
+    check("act('chat_to'" not in send, 'a message no longer waits for chat_to before leaving the box', send)
+    if not shutil.which('node'):
+        print('  (no node here: the outbox script test is skipped)')
+        return
+    it = lambda cid, name='answer', **k: {'cid': cid, 'name': name, 'args': k.pop('args', {}), 'state': 'sending',  # noqa: E731
+                                          'say': cid, **k}
+    nc = it('n1', 'new_control', newchat=True)
+    msg = it('m1', 'chat_to', args={'to': '@n1', 'text': 'hi'})
+    box = [nc, msg, it('a1', need='F1'), it('p1', concept='F9')]
+    got = logic_js([
+        ['obParse', json.dumps(box + [{'cid': 'z'}, 'junk', {**nc, 'state': 'odd'}])], ['obParse', '{bad'],
+        ['obNext', box], ['obNext', [msg]],
+        ['obSettle', box, 'n1', {'ok': True, 'name': 'c7'}],
+        ['obSettle', box, 'n1', {'ok': False, 'out': 'no run is up\nmore'}],
+        ['obSettle', box, 'a1', {'ok': True}],
+        ['obRetry', [{**nc, 'state': 'failed', 'err': 'x'}, {**msg, 'state': 'failed'}], 'm1', 'n2'],
+        ['obDrop', box, 'n1'],
+        ['obName', box, '@n1', 'c8'],
+        ['obCounts', [nc, {**msg, 'state': 'failed'}]],
+        ['obHidden', box, 'need'], ['obHidden', [{**box[2], 'state': 'failed'}], 'need'], ['obHidden', box, 'concept'],
+        ['obPill', {'sending': 2, 'failed': 1}, False], ['obPill', {'sending': 1, 'failed': 0}, True],
+        ['obPill', {'sending': 0, 'failed': 0}, False],
+    ])
+    eq([x['cid'] for x in got[0]], ['n1', 'm1', 'a1', 'p1'], 'a stored outbox keeps only whole items')
+    eq(got[1], [], 'a broken store is an empty outbox')
+    eq(got[2]['cid'], 'n1', 'items go in order')
+    eq(got[3], None, 'a message to a chat still starting waits for it')
+    eq([(x['cid'], x['args'].get('to')) for x in got[4]], [('m1', 'c7'), ('a1', None), ('p1', None)],
+       'a new chat that answers leaves, and its messages go to its name')
+    eq([(x['cid'], x['state'], x.get('err')) for x in got[5][:2]],
+       [('n1', 'failed', 'no run is up'), ('m1', 'failed', 'the new chat did not start')],
+       'a failed new chat stays with its first line, and so do its messages')
+    eq([x['cid'] for x in got[6]], ['n1', 'm1', 'p1'], 'an answered item leaves the outbox')
+    eq([(x['cid'], x['state'], x['args'].get('to')) for x in got[7]], [('n2', 'sending', None), ('m1', 'sending', '@n2')],
+       "Retry on a message waiting for a chat that did not start retries the chat, under a new cid")
+    eq([x['cid'] for x in got[8]], ['a1', 'p1'], 'Discard on a new chat drops its messages too')
+    eq(got[9][1]['args']['to'], 'c8', 'a chat the snapshot names gets its messages')
+    eq(got[10], {'sending': 1, 'failed': 1}, 'the pill counts')
+    eq((got[11], got[12], got[13]), (['F1'], [], ['F9']), 'only items still sending hide their cards')
+    eq(got[14], ['2 sending', '1 failed · tap to see'], "the pill's words")
+    eq(got[15], ['1 waiting for the connection'], 'offline, it says it waits')
+    eq(got[16], [], 'nothing in the outbox: no pill')
+
+
 if __name__ == '__main__':
     raise SystemExit(report([in_tmp(test_chat_order_f133), in_tmp(test_delete_chats_f118), in_tmp(test_server), in_tmp(test_real_action), in_tmp(test_run_controls),
                            in_tmp(test_start), in_tmp(test_upload),
@@ -1547,4 +1634,5 @@ if __name__ == '__main__':
                            in_tmp(test_talk_f93), in_tmp(test_https_link_b130),
                            in_tmp(test_listen_heard_nothing_b132), in_tmp(test_talk_reply_heard_b133),
                            in_tmp(test_slash_menu_b119), in_tmp(test_composer_keys_b120),
-                           in_tmp(test_interrupt_c1_b141), in_tmp(test_answer_button_b138)]))
+                           in_tmp(test_interrupt_c1_b141), in_tmp(test_answer_button_b138),
+                           in_tmp(test_outbox_f137)]))

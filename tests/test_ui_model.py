@@ -489,7 +489,7 @@ def test_concept_chat(tmp: Path) -> None:
     finally:
         U.RUN[0] = real
     html = (Path(U.__file__).parent / 'web_page.html').read_text(encoding='utf-8')
-    check('data-cchat="${i}"' in html and "act('concept_chat',{cid:c.concept||c.id" in html,
+    check('data-cchat="${i}"' in html and "newChat('concept_chat',{cid:c.concept||c.id" in html,  # F137: through the outbox
           "the Concepts card's New chat button sends concept_chat with the concept's id")
 
 
