@@ -779,14 +779,13 @@ def cmd_attach(argv: list[str], prog: str = f'{RUNNER} attach') -> int:
     a = ap.parse_args(argv)
     init()
     which = {'run': 'runner', '': 'runner'}.get(a.slot, a.slot)
+    if sock := session_socket(which):  # F88: a hidden session's own terminal, through its shim's socket
+        return attach_session(sock, which)
     if plat.WINDOWS:
         if which == 'runner':
             print(f'on Windows the run has no window of its own: {shown_cmd()} status shows it, and its log is '
-                  f'{C.notes("run.log")}. {shown_cmd()} attach s1 '
-                  'shows slot 1.')
+                  f'{C.notes("run.log")}. {shown_cmd()} attach s1 shows slot 1.')
             return 0
-        if sock := session_socket(which):  # F114: its terminal, through its shim's port on 127.0.0.1
-            return attach_session(sock, which)
         c = re.fullmatch(r'c\d+', which)
         marker = C.notes(f'{"control" if c else "slot"}{which[1:]}.live')
         pid = marker_pid(marker) if c or re.fullmatch(r's\d+', which) else 0
@@ -807,8 +806,6 @@ def cmd_attach(argv: list[str], prog: str = f'{RUNNER} attach') -> int:
     if which in ('feed', 'board'):  # C26: the runner feed has no terminal to show; the TUI shows what lands
         from agent_runner.tui import main as tui_main
         return tui_main([])
-    if sock := session_socket(which):  # F88: a hidden session's own terminal, through its shim's socket
-        return attach_session(sock, which)
     if said := hidden_attach(which):
         print(said)
         return 0

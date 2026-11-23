@@ -190,7 +190,7 @@ A chat or slot shows the real Claude Code session through ttyd, in place of a th
 - Never `scrollIntoView` to show a field being typed in: `kbReveal()` scrolls its own scroller. Pinch zoom is left
   alone. Safari's own address pill and arrows bar cannot be removed in a tab.
 - Outside `.app` (behind Safari's bar, around the keyboard) shows `html` and `body`'s `--page`, the view's own colour
-  (the grey band in B160's recording was the app's `--bg` behind a black chat; Talk's and a chat's is `--t-bg`); `theme-color` follows it (`pageColor()`). Safari tints its bars from a fixed layer over the page's edge, so
+  (the grey band in B160's recording was the app's `--bg` behind a black chat; Talk's and a chat's is the terminal look's ground); `theme-color` follows it (`pageColor()`). Safari tints its bars from a fixed layer over the page's edge, so
   a change of view puts new `.edge` strips there (under the drawer and the sheet).
 - A tap's focus on a text box in iOS is made by `kbFocus()`: `preventScroll`, and the box see-through for two frames, so
   Safari does not pan; the caret goes to the end (a second tap places it). A box a script

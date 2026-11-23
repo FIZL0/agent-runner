@@ -82,7 +82,8 @@ def listen_tcp(path: Path):
         path.unlink(missing_ok=True)
         with open(os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), 'w', encoding='utf-8') as f:
             if os.name == 'nt':  # the mode means nothing there: this user alone, before the token is in it
-                who = f'{os.environ.get("USERDOMAIN", ".")}\\{os.environ.get("USERNAME", "")}'
+                from agent_runner.conpty import _kernel32, _user_sid
+                who = '*' + _user_sid(_kernel32())
                 sp.run(['icacls', str(path), '/inheritance:r', '/grant:r', f'{who}:F'], check=True, timeout=20,
                        stdout=sp.DEVNULL, stderr=sp.DEVNULL, creationflags=plat.CREATE_NO_WINDOW)
             json.dump({'port': port, 'token': token}, f)
