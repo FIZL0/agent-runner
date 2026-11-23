@@ -797,7 +797,7 @@ def test_esc_ctrl_c(tmp: Path) -> None:
     for ln in esc_lines:
         check('interrupt' not in ln, 'an Esc branch sends no interrupt', ln)
     check(any("e.key==='Escape'" in ln and 'blur()' in ln for ln in lines), 'Esc in the box leaves it')
-    check(any("e.key==='Escape'&&S.thread" in ln and 'S.thread=null' in ln for ln in lines), 'Esc out of the box goes back')
+    check(any("e.key==='Escape'&&S.thread&&" in ln and 'S.thread=null' in ln for ln in lines), 'Esc out of the box goes back')
     ctrl = [ln for ln in lines if 'e.ctrlKey' in ln]
     check(len(ctrl) == 1 and "act('interrupt',{session:S.thread})" in ctrl[0] and 'busy(S.thread)' in ctrl[0]
           and '!selectedText(' in ctrl[0], 'Ctrl+C interrupts the working chat, not over selected text', ctrl)
