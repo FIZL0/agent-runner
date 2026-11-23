@@ -2,7 +2,6 @@
 
 ### Next
 
-- [ ] **T16** (follow-up, critical) make the test `tests/test_vitals.py` robust: it failed under load in F158's merge gate and passed alone. Find what it races (wall-clock time, shared ports or files, other processes) and remove that, rather than widening a timeout (filed 2026-11-23) | test: tests/test_vitals.py
 - [ ] **T17** (follow-up, critical) make the test `"and` robust: it failed under load in F158's merge gate and passed alone. Find what it races (wall-clock time, shared ports or files, other processes) and remove that, rather than widening a timeout (filed 2026-11-23) | test: "and
 - [ ] **T18** (follow-up, critical) make the test `forgot` robust: it failed under load in F158's merge gate and passed alone. Find what it races (wall-clock time, shared ports or files, other processes) and remove that, rather than widening a timeout (filed 2026-11-23) | test: forgot
 - [ ] **T19** (follow-up, critical) make the test `worktree"` robust: it failed under load in F158's merge gate and passed alone. Find what it races (wall-clock time, shared ports or files, other processes) and remove that, rather than widening a timeout (filed 2026-11-23) | test: worktree"
