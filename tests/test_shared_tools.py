@@ -418,6 +418,11 @@ def test_memory(tmp: Path):
         eq(T.wait_words()['T2'], 'waits for memory, 5.0 GB free, goes on at 6.0 GB', 'the pages say what it waits on')
         row = next(q for q in U.queue_rows(P.lines(R.C.todo), {}) if q['id'] == 'T2')
         eq((row['state'], row['tool_wait'][:17]), ('tool', 'waits for memory,'), 'the queue row too')
+        check(P._tool_waits(R.C, R.C.todo)['T2'].startswith('waits for memory'), 'and plan')
+        check(T.low_memory(), 'no new session takes what it waits for')
+        keep, T.MEMORY_LONG = T.MEMORY_LONG, 0.0
+        eq(T.low_memory(), False, 'but not for ever')
+        T.MEMORY_LONG = keep
         check(any('T2 waits for memory' in x for x in status.tool_lines({})), 'and status')
         eq((first(claim=True), T.pending()), ('T1', True), 'another task takes the slot; the run is not idle')
         eq(sched.explain({}, set(), 'main')['T2'][0], 'waiting for memory', 'the dry run says why')
@@ -428,6 +433,10 @@ def test_memory(tmp: Path):
         eq(first(claim=True), 'T1', 'free, but not before its pause')
         T.MEMORY_PAUSE = 0
         eq(first(claim=True), 'T2', 'then it goes first')
+        T.MEMORY_PAUSE, T.MEMORY_WOKEN[0] = 60, time.time()
+        T.mark('T2').write_text(json.dumps({**T.parked()['T2'], 'at': time.time() - 999}), encoding='utf-8')
+        eq(T.memory_hold('T2'), 'another task just went on', 'one at a time')
+        T.MEMORY_PAUSE = 0
         got = R.start(2, task('T2'), 'main', 'opus', 90, 2)
         eq((got and got[1], opened[0][1].get('resume')), ('sid-m', True), 'the same session resumes')
         check('Memory is free again' in opened[0][0][2] and 'Run the command again now' in opened[0][0][2], 'told so')
@@ -449,7 +458,7 @@ def test_memory(tmp: Path):
         eq(told(), 2, 'a first wait that lasts is said once too')
 
         check(T.low_memory() and T.low_memory(), 'under the floor no session starts')
-        eq(log().count('no new session starts until there is more'), 1, 'said once')
+        eq(log().count('GB): no new session starts until there is more'), 1, 'said once')
         os.environ['AGENT_RUNNER_SLOT'] = '1'
         keep, T.GATE_WAIT = T.GATE_WAIT, 0.0
         out = io.StringIO()
@@ -462,8 +471,9 @@ def test_memory(tmp: Path):
         with contextlib.redirect_stdout(out):
             T.gate_wait(R.C)
         eq((out.getvalue(), T.low_memory()), ('', False), 'with memory neither is held')
-        T.forget('T2')
-        check(not T.S.C.notes('T2.mem').exists(), 'a new attempt counts afresh')
+        (repo / 'plan/DONE.md').write_text('# DONE\n\n- [x] **T2** done\n', encoding='utf-8')
+        T.prune()
+        check(not T.parked() and not T.S.C.notes('T2.mem').exists(), 'done: its wait and its count go')
         from agent_runner import brief
         check('wait-for memory' in brief.PROMPT and 'standing go-ahead' in brief.PROMPT, 'the brief has the go-ahead')
     finally:

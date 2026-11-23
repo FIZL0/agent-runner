@@ -349,6 +349,7 @@ def memory_watch() -> None:
     while True:
         time.sleep(MEM_EVERY)
         try:
+            shared_tools.prune()
             shared_tools.say_memory()  # B184: once, about a task that keeps waiting for memory
         except Exception as e:  # noqa: BLE001 - the next look tries again
             log(f'memory: {e}')

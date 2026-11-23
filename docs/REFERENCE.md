@@ -931,7 +931,7 @@ connect = "Connect iPhone 15"    # the Needs you wording while it is missing; de
 ### Waiting for memory
 
 Claude Code stops a background command when memory is low, and tells the agent not to start it again unless
-asked. The slot's brief says that stop is the person's standing go-ahead: the agent never asks, it commits what is
+asked. The slot's brief holds the person's standing go-ahead to run it again: the agent never asks, it commits what is
 solid and runs `run wait-for memory`. `memory` is built in, so it needs no `[run.tools]` entry (a tool may not be
 named `memory`).
 
@@ -944,7 +944,9 @@ named `memory`).
   needs list) and `status`. It is never a Needs you item. After 3 stops of one task, or a wait of 30 min, the run
   says so once in the log. The run is not idle meanwhile, and a restart keeps the wait. Stops are counted in
   `<notes>/<ID>.mem`.
-- **New sessions.** Under `min_free_mem_gb` no new session starts (logged once per spell), and a slot's `done` gate
+- **One at a time.** Two waiting sessions go on at least 1 min apart.
+- **New sessions.** Under `min_free_mem_gb`, or under what a waiting task goes on at (for its first 30 min), no new
+  session starts (logged once per spell), and a slot's `done` gate
   waits for memory, at most 10 min, then runs all the same.
 
 ### Disk

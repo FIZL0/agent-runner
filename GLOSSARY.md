@@ -590,4 +590,4 @@ A task giving up its slot after a command was stopped for low memory, until memo
 _Said_: stopped for low memory
 _On screen_: waits for memory, 5.0 GB free, goes on at 6.0 GB
 _In code_: MEMORY, _wait_memory, waiting/<ID>
-_Avoid_: memory tool, memory lock, ask
+_Avoid_: memory tool, memory lock

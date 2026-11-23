@@ -93,6 +93,7 @@ GATE_WAIT = 600.0        # s a gate waits for memory before it runs all the same
 GB = 2 ** 30
 EV_MEMORY = 'memory short'  # task `id` was stopped for low memory again and again, or waits long (text)
 LOW_SAID = [False]
+MEMORY_WOKEN = [0.0]  # when a task that waited for memory last went on: the next gives it MEMORY_PAUSE to take its share
 
 
 def memory() -> dict | None:
@@ -116,6 +117,8 @@ def memory_hold(tid: str) -> str:
     w = _read(mark(tid))
     if time.time() - w.get('at', 0) < min(MEMORY_PAUSE * max(1, _stops(tid)['stops']), MEMORY_PAUSE_MAX):
         return 'a short pause first'
+    if time.time() - MEMORY_WOKEN[0] < MEMORY_PAUSE:
+        return 'another task just went on'
     return ''
 
 
@@ -128,8 +131,13 @@ def memory_short(c=None) -> str:
 
 
 def low_memory() -> bool:
-    """Memory is under the floor: no new session starts until there is more. Said once per spell."""
+    """Memory is under the floor, or under what a task that waits for it goes on at (for MEMORY_LONG at most, so others
+    do not take it first, nor a lasting shortage stop the run): no new session starts until there is more. Said once
+    per spell."""
     why = memory_short()
+    if not why and (m := memory()) and m['avail'] < (goal := memory_goal(m['total'])):
+        why = next((f'{m["avail"] / GB:.1f} GB free, and {t} waits for {goal / GB:.1f} GB'
+                    for t, w in parked().items() if w['tool'] == MEMORY and time.time() - w['at'] < MEMORY_LONG), '')
     if why and not LOW_SAID[0]:
         log(f'memory: {why}: no new session starts until there is more')
     LOW_SAID[0] = bool(why)
@@ -587,12 +595,14 @@ def settle_ended(slots: list[int]) -> None:
 
 def prune() -> None:
     """Drop the waits of tasks ticked or dropped meanwhile (DONE.md holds them)."""
-    if not (ws := {f.stem: w for f in S.C.notes().glob('*.wait') if (w := _read(f))}):
+    ws = {f.stem: w for f in S.C.notes().glob('*.wait') if (w := _read(f))}
+    mems = [f.stem for f in S.C.notes().glob('*.mem')]
+    if not ws and not mems:
         return
     gone = {tid.rstrip('.') for _, box, tid, _, _ in P.iter_tasks(P.lines(S.C.done)) if box == 'x'}
-    for tid in ws:
+    for tid in {*ws, *mems}:
         if tid in gone:
-            if not ws[tid].get('running'):
+            if tid in ws and not ws[tid].get('running'):
                 log(f'{tid}: done or dropped while it waited for {ws[tid]["tool"]}; its kept work is deleted')
             forget(tid)
 
@@ -631,6 +641,8 @@ def wake(n: int, tid: str, d: Path, wait: dict, model: str, idle: int):
     if not (pid := L.MUX.open(n, d, prompt, sid, model, idle, L.slot_env(n), logfile, resume=True)):
         log(f'slot {n}: the session for {tid} did not resume in {L.MUX.where(n)}')
         return None
+    if wait['tool'] == MEMORY:
+        MEMORY_WOKEN[0] = time.time()
     log(f'slot {n}: {tid} goes on: {wait["tool"]} is free', S.EV_STARTED, tid)
     return pid, sid, since
 
