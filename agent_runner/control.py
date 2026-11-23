@@ -17,6 +17,7 @@ from contextlib import ExitStack
 from pathlib import Path
 
 from agent_runner import plan as P, plansync, plat
+from agent_runner.plan import decide_question  # F135: a control session's last line `DECIDE: …`
 from agent_runner.config import RUNNER, runner_cmd, shown_cmd
 from agent_runner.state import C, commit_plan, git, HIDDEN, init, log, MERGE, note, plan_rel, ROOT
 from agent_runner.brief import has_sheet
@@ -1004,16 +1005,6 @@ def open_question(text: str, phrases: list[str]) -> str:
         return ''
     sentences = [s for s in re.split(r'(?<=[.!?])\s+', last) if s.strip()]
     q = next((s for s in reversed(sentences) if hit(s)), last).strip(' *_')
-    return q if len(q) <= 240 else q[:239].rsplit(' ', 1)[0] + '…'
-
-
-DECIDE_LINE = re.compile(r'^[\s>*_`]*DECIDE:[\s*_`]*(.+?)[\s*_`]*$')  # F135: a line `DECIDE: <the question>`
-
-
-def decide_question(text: str) -> str:
-    """F135: the question work waits on in Claude's last message `text`, '' for none: its last non-empty line
-    `DECIDE: <the question>` (only the last, so a status quoting another item's DECIDE line is none)."""
-    q = ' '.join(m[1].split()) if text.strip() and (m := DECIDE_LINE.match(text.strip().splitlines()[-1])) else ''
     return q if len(q) <= 240 else q[:239].rsplit(' ', 1)[0] + '…'
 
 

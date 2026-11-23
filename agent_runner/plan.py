@@ -3013,5 +3013,15 @@ def _parse_command(argv: list[str]):
     return a
 
 
+DECIDE_LINE = re.compile(r'^[\s>*_`]*DECIDE:[\s*_`]*(.+?)[\s*_`]*$')  # F135: a line `DECIDE: <the question>`
+
+
+def decide_question(text: str) -> str:
+    """F135: the question work waits on in Claude's last message `text`, '' for none: its last non-empty line
+    `DECIDE: <the question>` (only the last, so a status quoting another item's DECIDE line is none)."""
+    q = ' '.join(m[1].split()) if text.strip() and (m := DECIDE_LINE.match(text.strip().splitlines()[-1])) else ''
+    return q if len(q) <= 240 else q[:239].rsplit(' ', 1)[0] + '…'
+
+
 if __name__ == '__main__':
     sys.exit(main())
