@@ -48,6 +48,9 @@ re-reads it on every turn pays again. So the backlog is a command instead:
     ./run plan shelve <ID>       later: stays blocked, off Needs you; `unshelve <ID>` brings it back
     ./run plan approve <ID> [CHOICE]   OK a concept (or its build task's id): the build opens, CHOICE noted on it
     ./run plan revise <ID> WHY   changes asked: the concept reopens with WHY noted, its waiting build is dropped
+    ./run plan concept "TITLE" --page URL [--files A,B]   a concept page a chat showed inline: filed as a K task
+                                 already done with its page, its build waiting for the OK (as a finished K
+                                 leaves it), so Needs you and the Concepts view list it; the pick is approve/revise
     ./run plan restyle STYLE --page URL [--from ID] [--ui GLOBS] [--tasks IDS] [--dry]   a style approved for the
                                  future too: files the restyle (its page shows each page or screen that changes,
                                  before and after) and holds every queued task that touches the interface on it;
@@ -158,7 +161,7 @@ __all__ = ['PROG', 'HELP', 'lines', 'index', 'section', 'ensure', 'archive', 'ti
            'write_atomic', 'child', 'subtasks', 'main', 'PRI', 'kinds', 'check_kind',
            'concept', 'concept_done', 'waiting', 'approve', 'revise', 'restyle', 'hold', 'held_on', 'release_held',
            'asking', 'asks', 'confirm', 'change', 'shelve', 'unshelve', 'edit', 'needs_lines',
-           'iter_tasks', 'titles', 'short_title']
+           'iter_tasks', 'titles', 'short_title', 'concept_shown']
 
 ITEM = re.compile(r'^(\s*)- \[(.)\] \*\*([^\s*]+)')
 HEAD = re.compile(r'(#+) ')
@@ -1324,6 +1327,25 @@ def revise(tid: str, why: str, todo=None, done=None) -> str:
     return k
 
 
+def concept_shown(title: str, page: str, files=None, todo=None, done=None) -> tuple[str, str]:
+    """F108: a concept page a chat (a control session) wrote and showed inline lands in the plan as a K task
+    already done: ticked with its page noted and its build waiting for the OK, as `concept_done` leaves a finished
+    K task, so Needs you, `waiting` and the run page's Concepts list it until the person picks (`approve`,
+    `revise` on its id). Where the kinds lack K only the waiting build is filed. Returns (concept id, build id);
+    the two are the same id without K."""
+    todo, done = ensure(todo, done)
+    text = ' '.join(title.split()) + (' | files: ' + ', '.join(files) if files else '')
+    if CONCEPT not in kinds()[0]:
+        bid = add(build_kind(), f'Build the option a person approves on the concept page: {text}', todo=todo,
+                  done=done)
+        block(bid, WAIT_OK + page, todo=todo, after=[])
+        return bid, bid
+    kid = add(CONCEPT, text, todo=todo, done=done)
+    bid = concept_done(kid, page, todo=todo, done=done)
+    tick(kid, todo=todo, done=done)
+    return kid, bid
+
+
 # --- F19: a style for the future too: a restyle page, and the interface work held until it is approved -------
 #
 # A person approves a concept's style and says it holds from now on ("the future too", "make everything look
@@ -2459,7 +2481,7 @@ def _push(root: Path) -> str:
 
 
 EDITS = ('tick', 'block', 'reopen', 'unblock', 'move', 'add', 'note', 'archive', 'drop', 'approve', 'revise',
-         'confirm', 'change', 'shelve', 'unshelve', 'restore', 'edit', 'restyle')
+         'confirm', 'change', 'shelve', 'unshelve', 'restore', 'edit', 'restyle', 'concept')
 
 
 WORKTREE_ENV = 'AGENT_RUNNER_WORKTREE'  # B103: a slot's own worktree, set in its pane (slots.slot_env)
@@ -2641,6 +2663,26 @@ def _p_move(a, x):
 def _p_approve(a, x):
     bid = approve(a.id, _text(a))
     return x.say(f'approved: {bid} is open now, and a run starts it' + freed_line())
+
+
+def _p_concept(a, x):
+    """`plan concept "TITLE" --page URL [--files A,B]` (F108): file a concept page shown inline, waiting for an OK."""
+    words, opts, it = [], {}, iter(a.rest)
+    for w in it:
+        if w in ('--page', '--files'):
+            opts[w[2:]] = next(it, '')
+        else:
+            words.append(w)
+    title, page = ' '.join(words).strip(), (opts.get('page') or '').strip()
+    if not title or not re.match(r'https?://\S+$', page):
+        print(f'{PROG} concept "<what the page shows options for>" --page <the page\'s URL> [--files A,B]',
+              file=sys.stderr)
+        return 2
+    files = [f for f in re.split(r'[,\s]+', opts.get('files') or '') if f] or None
+    kid, bid = concept_shown(title, page, files, todo=x.todo, done=x.done)
+    head = f'concept {kid} filed, done' if kid != bid else f'{bid} filed'
+    return x.say(f'{head}: its build {bid} waits for the OK on {page}; the pick goes through '
+                 f'`{PROG} approve {kid} "<option>"` or `{PROG} revise {kid} "<what to change>"`')
 
 
 def freed_line() -> str:
@@ -2869,6 +2911,7 @@ SUBCOMMANDS = {
     'move': (('id',), 1, _p_move),
     'approve': (('id',), 0, _p_approve),
     'revise': (('id',), 1, _p_revise),
+    'concept': ((), 1, _p_concept),
     'restyle': ((), 0, _p_restyle),
     'waiting': ((('all', {'nargs': '?', 'choices': ['--all']}),), None, _p_waiting),
     'confirm': (('id',), 0, _p_confirm),
