@@ -2,17 +2,17 @@
 
 Most of a long project is small, checkable steps that need no human in the loop: they need the backlog,
 the tests and a commit. This is the loop that does that. It picks the next task nobody is on, opens a git
-worktree and a terminal for it (a hidden pseudo-terminal, or a tmux pane on Linux and macOS), and
+worktree and a hidden terminal for it (a pseudo-terminal; on Windows a hidden console), and
 starts an agent session with the task's brief already pasted into the first turn. It waits for the session to finish, merges and tests the branch, pushes it, and starts the
 next task.
 
     ./run run once            one task, then stop (the way to try it the first time)
-    ./run run                 [run] slots agents (3): tmux panes inside tmux, else hidden
+    ./run run                 [run] slots agents (3), in the foreground of this terminal
     ./run run 5               5 agents
     ./run run 1               one agent, in a worktree like any count
     ./run run --dry-run 4     print what 4 free slots would start now, and start nothing
     ./run stop                finish what is running, start nothing new, then exit (or type s + Enter
-                              in the runner's pane; ? + Enter there lists every key)
+                              in the run view, `attach`; ? + Enter there lists every key)
     ./run stop --force        end the sessions now (each resumes in the next run), then exit
     (every form but `once` stays up when the work runs out: it logs `run idle` and waits for more)
 
@@ -32,7 +32,7 @@ docs/REFERENCE.md describes each mechanism. In short:
 * **an idle stop** (the Stop hook): a finished session is ended once its transcript is quiet;
 * **a cut-off session resumes**: one ended by an API error or a usage limit (or, at startup, mid-turn) is resumed
   in its slot;
-* **a stall watchdog**: belled and logged, with the pane to attach to;
+* **a stall watchdog**: belled and logged, with the session to attach to;
 * **merges in a merge worktree**: tested before the shared branch moves, so the main checkout never
   holds an untested merge and nobody's edits are stashed;
 * **a fix session per conflict** that a line join cannot do;
@@ -46,20 +46,20 @@ Internal modes (used by the sessions it starts, not by you):
     --stop-waiter P T N S  the detached timer itself
     --slot-shim JOB        run one hidden slot's session (a pty, or a hidden Windows console), its pid in a marker file
 
-What depends on the OS is in `plat.py`; the terminals are `TmuxMux` and `HiddenMux` in `slots.py`.
+What depends on the OS is in `plat.py`; the terminals are `HiddenMux` in `slots.py`.
 
 C3 split this file by responsibility; each module imports only the ones before it in this list:
     state    shared state and small helpers: init, log, git, the plan file, the stop request
     brief    what a session is told: PROMPT, OTHERS, prompt_for, review/wizard/sheet paragraphs
     sched    picking the next task: tasks, pick, clashes, claims, parked tasks
-    slots    worktrees, panes, backends, a slot's environment, start/resume, disk, TmuxMux/HiddenMux
+    slots    worktrees, backends, a slot's environment, start/resume, disk, HiddenMux
     watch    transcripts, stalls, cut-offs, temp folders, memory, API and usage, upgrades, the Stop hook
     join     joining a merge's conflicts by line, and merge state shared with landing
     land     landing a tested merge in the main checkout, wip branches, pushes, releases, flaky tests
     merge    the merge worktree: fix and repair sessions, the merge gate, merges ahead, merge_batch
     control  control sessions, closing idle ones, the control server, Remote Control processes
     status   status, since, follow, Needs you lines
-    feed     the runner feed and its tmux window, handing a feed message on
+    feed     the runner feed and its hidden session, handing a feed message on
     loop     the run: keys, halts and tells, CI, finish, the loop (cmd_run)
     cmds     the other commands: take, resume, key, upgrade, status, since, needs, wizard, sheet, stop,
              control, background and attach

@@ -1,4 +1,4 @@
-"""The run itself: the keys typed into its pane, halts and tells, CI, finishing a task and the loop
+"""The run itself: the keys typed into its terminal, halts and tells, CI, finishing a task and the loop
 (`cmd_run`)."""
 
 from __future__ import annotations
@@ -25,11 +25,10 @@ from agent_runner.done import TESTED
 from agent_runner.gitops import missing_remote, push
 from agent_runner.state import (alarm, ask_stop, C, clean, clear_stop, commit_plan, default_branch, FORCED, forced,
     git, HIDDEN, IDLE, init, KEYS, KEYS_LOCK, LANDING, log, MERGE, note, PAUSED, plan_rel, plan_text, POWER, queued,
-    READING, ROOT, RUN_TAG, share, SLOTS_DIR, stop_note, STOP_SAID, stopped_by, stopping, WAKE)
+    READING, ROOT, share, SLOTS_DIR, stop_note, STOP_SAID, stopped_by, stopping, WAKE)
 from agent_runner.state import (EV_DEFERRED, EV_DROPPED, EV_IDLE, EV_LEFT, EV_NO_COMMITS, EV_PARKED, EV_RUN_UP,
     EV_STALLED, EV_STOP_ASKED, EV_STOP_BACK, EV_STOPPED)
 from agent_runner.state import EV_CONTEXT
-from agent_runner.state import REPO_TAG
 from agent_runner.autorelease import auto_release, auto_release_of, AUTO_RELEASE_SEEN, landed_since_release
 from agent_runner.watch import context_over
 from agent_runner.brief import no_remote_line
@@ -37,7 +36,7 @@ from agent_runner.sched import blocked_by_edits, keep_claims, PARK_LIMIT, parked
 from agent_runner.sched import forgive_park, note_committed
 from agent_runner.slots import (adopt, backend, DISK_AT, DISK_SAID, du, env_vars, free_branch,
     free_gb, GB, hidden_line, HiddenMux, MUX, remote_any, remote_line, REMOTE_URL, resume, save_leftovers,
-    single_run, slot_env, slot_shim, SLOTS, start, tmux, TmuxMux, transcript, trim, unmerged)
+    single_run, slot_env, slot_shim, SLOTS, start, transcript, trim, unmerged)
 from agent_runner.watch import (_account, agent_failed, api_down, AUTO_UPGRADE, auto_upgrade, cut_off,
     drop_session_tmp, end_orphans, memory_watch, queue_cut_off, queue_resume, restart_if_upgraded,
     RESUME_AFTER, resume_failed, RESUME_MAX, resumes, RESUMES_MAX, stalled, START_TRIES, state_line, stats,
@@ -46,7 +45,7 @@ from agent_runner.join import EDITED, EDITS_POLL, ELSEWHERE, REMIND_EVERY, TASK_
 from agent_runner.land import drop_wips, idle_line, prune_wips, reopen_landed, REOPENED, retry_reopened, wip_main
 from agent_runner.land import no_gate_line
 from agent_runner.merge import (AHEAD_BUSY, AHEADS, before_start_fails, FIX_DIRS, FIX_DIRS_LOCK, FIXED, gate_runs,
-    HELD, last_words, left_merging, MASTER_PANE, merge)
+    HELD, last_words, left_merging, merge)
 from agent_runner.control import (close_controls, control_ok, end_closed_controls, hand_hook, rc_sweep_start,
     start_control, start_control_server)
 from agent_runner.feed import rc_sweep_stop, start_board
@@ -61,7 +60,7 @@ def nap(s: float) -> None:
 
 
 def read_keys() -> None:
-    """A daemon thread's loop: every line typed into the runner's pane is acted on at once (`take_keys`), and
+    """A daemon thread's loop: every line typed into the run's terminal (`run N` in the foreground) is acted on at once (`take_keys`), and
     the loop is woken for what only it can do (ending sessions, a new slot).
 
     A thread rather than select() on stdin, which only works on POSIX. Started only when stdin is a tty.
@@ -72,11 +71,16 @@ def read_keys() -> None:
         WAKE.set()
 
 
-def keys_help() -> str:
-    """The `?` block, shaped like `agent-runner help`, ruled off so it stands out from the log."""
+def keys_help(view: bool = False) -> str:
+    """The `?` block, shaped like `agent-runner help`, ruled off so it stands out from the log. `view`: as the
+    run view (`attach`, another process) prints it, where Ctrl-C leaves the view and this process's state
+    line would not be the run's."""
     rule = '-' * 78
+    ctrl_c = ('Ctrl-C leaves this view; the run keeps going.' if view else
+              'Ctrl-C ends the runner only: sessions keep running, and the next run adopts them.')
+    now = '' if view else f'now: {state_line()}\n'
     return f"""{rule}
-runner keys: type one in this pane and press Enter
+runner keys: type one here and press Enter
 
     s        stop gently: no new tasks, the running ones finish and merge, then the run exits
     s!       stop now: end the agent sessions (each resumes where it was in the next run),
@@ -86,20 +90,20 @@ runner keys: type one in this pane and press Enter
     f        force: start tasks past the session and weekly usage caps (as --force)
     +        one slot more
     -        one slot fewer (a running task in it finishes first)
+    slots N  N slots (+N, -N: that many more or fewer)
     z        suspend the computer once the run stops, or when it goes idle
     x        shut the computer down once the run stops, or when it goes idle
     Enter    open the control sessions at claude.ai/code (with [run] remote)
     ?        this help
 
     s, p, f, z and x take themselves back when typed again.
-    Ctrl-C ends the runner only: sessions keep running, and the next run adopts them.
+    {ctrl_c}
 
-now: {state_line()}
-{rule}"""
+{now}{rule}"""
 
 
 def take_keys() -> None:
-    """Act on the lines typed into the runner's pane (see `keys_help`), and on a power choice `./run stop
+    """Act on the lines typed into the run's terminal or the run view (see `keys_help`), and on a power choice `./run stop
     --suspend|--shutdown` left. Logged at once; ending sessions and adding a slot happen on the loop's next
     pass, which a key wakes."""
     global POWER, SLOTS
@@ -110,9 +114,11 @@ def take_keys() -> None:
         KEYS.extend(cli_keys())
         while KEYS:
             k, _, want = KEYS.pop(0).partition(' ')
-            if not k:
+            if not k or k == 'remote':  # Enter here, or in the run view (C26: it posts 'remote')
                 if remote_any():
                     open_remote()
+                elif k:
+                    log(f'Remote Control is off ([run] remote): nothing to open at {REMOTE_URL}')
                 continue
             on = {'s': stopping, 'p': lambda: PAUSED[0], 'f': lambda: FORCED[0],
                   'z': lambda: POWER == 'suspend', 'x': lambda: POWER == 'shutdown'}.get(k)
@@ -179,7 +185,7 @@ def cli_keys() -> list[str]:
 
 
 def open_remote() -> None:
-    """Enter in the runner's pane, with `[run] remote`: the sessions page, in the default browser (a claude.ai
+    """Enter in the run's terminal or the run view, with `[run] remote`: the sessions page, in the default browser (a claude.ai
     link the desktop app is set to take opens there). No browser here (ssh): the link, to open elsewhere."""
     try:
         ok = webbrowser.open(REMOTE_URL)
@@ -355,7 +361,7 @@ def tell_answer(tid: str, told: bool, msg: str) -> None:
 
 def tells(procs: dict, running: dict) -> None:
     """F16: pass each `plan tell` / `plan change` message on to the slot running its task, by typing it into
-    the slot's tmux pane, or (F40) through a hidden slot's FIFO. No live session (a Windows hidden console, the
+    the slot's session through its shim's FIFO (F40). No live session (a Windows hidden console, the
     session ended, a cut-off one waiting to resume): told false, and `plan change` falls back to the B19 halt."""
     reqs = tell_requests()
     if not reqs:
@@ -828,9 +834,10 @@ def capped(force: bool) -> str | None:
 
 def cap_stop_detail() -> str:
     """B102: the usage-cap alarm's detail, the remote-friendly way to go on first (the runner feed, a control
-    session, `[run] command` force), the runner pane's f + Enter last."""
+    session, `[run] command` force), the run view's f + Enter last."""
     return ('the running tasks finish and merge; new ones wait for the reset. To go on now: say force in the '
-            f'runner feed or a control session, or run `{C.command} force`, or type f + Enter in the runner pane.')
+            f'runner feed or a control session, or run `{C.command} force`, or type f + Enter in the run view '
+            f'({C.command} attach).')
 SHUTDOWN_GRACE = 120  # s the run must stay idle first; new work or a stop in that time cancels it
 SLEPT_AT = [-1.0]  # the idle stretch (its idle_at) the machine was suspended in: once per stretch, not on every wake
 
@@ -937,21 +944,10 @@ SESSION_ENV = ('CLAUDECODE', 'CLAUDE_CODE_CHILD_SESSION', 'CLAUDE_CODE_SESSION_I
                'CLAUDE_CODE_CHILD_NOTES_DIR', 'CLAUDE_CODE_MESSAGING_SOCKET', 'CLAUDE_CODE_MESSAGING_TOKEN')
 
 
-def session_env_masks(sess: str = '') -> list[list[str]]:
-    """The tmux commands that keep SESSION_ENV out of every process a session starts later. `-r`, not `-u`: a
-    tmux server first started from a Claude Code Bash tool holds the markers in its global environment, which
-    shows through a session where they are merely unset; `-r` removes them from each new window's env."""
-    return [['set-environment', *(['-t', f'={sess}'] if sess else []), '-r', k] for k in SESSION_ENV]
-
-
 def drop_session_env() -> None:
-    """Out of this process, and out of the tmux session it runs in: `new-session -e` stores a variable on the
-    session, and every window opened in it later (each slot's) inherits it."""
+    """Out of this process, so no session it starts inherits them."""
     for k in SESSION_ENV:
         os.environ.pop(k, None)
-    if os.environ.get('TMUX') and shutil.which('tmux'):
-        for c in session_env_masks():
-            tmux(*c)
 
 
 def cmd_run(argv: list[str], prog: str = f'{RUNNER} run') -> int:
@@ -965,10 +961,10 @@ def cmd_run(argv: list[str], prog: str = f'{RUNNER} run') -> int:
     except KeyboardInterrupt:
         # Exit now: a merge thread would otherwise keep the process up. Its merge worktree is thrown away; the
         # main checkout only ever moves to a tested commit, and a merge open there is waited for (up to a
-        # minute) so it is not left half-done. Sessions in their panes keep going and the next run adopts
+        # minute) so it is not left half-done. The hidden sessions keep going and the next run adopts
         # them and merges what finished.
         try:
-            log('run interrupted: sessions in their panes keep running; the next run adopts them')
+            log('run interrupted: the sessions keep running; the next run adopts them')
         except Exception:  # Ctrl-C before the config was read
             pass
         if LANDING.locked() and not git('rev-parse', '-q', '--verify', 'MERGE_HEAD').returncode:
@@ -1003,14 +999,11 @@ def run(argv: list[str], prog: str) -> int:
     ap.add_argument('--stall', type=int, default=None, help='seconds of quiet that count as stalled')
     ap.add_argument('--pause', type=int, default=None, help='seconds between a session ending and the next')
     ap.add_argument('--model', default=None, help='the agent model (default [run] model)')
-    ap.add_argument('--mux', choices=['tmux', 'hidden'], default=None,
-                    help='where the slots run (default [run] mux, else tmux inside a tmux session, else hidden: '
-                         'no window, watched through Remote Control, status and control sessions; Windows: hidden)')
     ap.add_argument('--dry-run', action='store_true', help='print what would start, and start nothing')
     ap.add_argument('--stop-hook', action='store_true', help=argparse.SUPPRESS)
     ap.add_argument('--stop-waiter', nargs=4, metavar=('PID', 'TRANSCRIPT', 'N', 'IDLE'), help=argparse.SUPPRESS)
     ap.add_argument('--slot-shim', metavar='JOB', help=argparse.SUPPRESS)
-    ap.add_argument('--hidden', action='store_true', help=argparse.SUPPRESS)  # the background run without tmux
+    ap.add_argument('--hidden', action='store_true', help=argparse.SUPPRESS)  # older launchers' flag; every run is
     a = ap.parse_args(argv)
 
     if a.stop_hook:  # these two run inside an agent session and need no repository
@@ -1052,28 +1045,11 @@ def run(argv: list[str], prog: str) -> int:
         clear_stop()
         log('cleared a stop request left by an earlier run')
     C.notes('POWER').unlink(missing_ok=True)
-    want = 'hidden' if a.hidden else (a.mux or r['mux'])  # --hidden: the background run without tmux
-    choice = plat.mux_choice(want, shutil.which('tmux') is not None, bool(os.environ.get('TMUX')))
     global MUX
-    MUX = TmuxMux() if choice == 'tmux' else HiddenMux()
-    global MASTER_PANE
-    MASTER_PANE = choice == 'tmux'
-    HIDDEN[0] = choice == 'hidden'  # Windows: c1's console starts hidden too
-    share(MUX=MUX, MASTER_PANE=MASTER_PANE)
-    if choice == 'hidden':
-        if want == 'tmux' and not plat.WINDOWS:
-            log('tmux is not installed: the slots run hidden instead')
-        elif want not in ('', 'tmux', 'hidden'):
-            log(f'[run] mux = {want!r} is gone (F40): the slots run hidden')
-        log(hidden_line())
-    if choice == 'tmux' and not os.environ.get('TMUX'):
-        print(f'Run me inside tmux, so the sessions get panes you can attach to:\n'
-              f'    tmux new -s runner {prog} {a.slots or slots}\n'
-              f'or start the run in the background: {shown_cmd()}', file=sys.stderr)
-        return 2
-    if choice == 'tmux' and os.environ.get('TMUX_PANE'):  # `attach` finds the runner's pane by this
-        tmux('set-option', '-p', '-t', os.environ['TMUX_PANE'], RUN_TAG, str(ROOT))
-        tmux('set-option', '-p', '-t', os.environ['TMUX_PANE'], REPO_TAG, str(ROOT))  # C23: not an older run's
+    MUX = HiddenMux()  # C26: every OS runs its slots hidden
+    HIDDEN[0] = True  # Windows: c1's console starts hidden too
+    share(MUX=MUX)
+    log(hidden_line())
     rc_sweep_start()  # B12: end the feed or control server an earlier run left on Remote Control
     start_control()  # c1 beside the run ([run] control) unless [run] remote, where the control server stands in
     start_control_server()
@@ -1202,7 +1178,7 @@ class Run:
                 self.free_at.setdefault(m, dt.datetime.min)
         if forced() and procs:
             end_sessions(procs, running)
-        tells(procs, running)  # F16: plan tell / change, typed into a running slot's pane
+        tells(procs, running)  # F16: plan tell / change, typed into a running slot's session
         restyles(procs, running, self.branch)  # F19: plan restyle parks a running interface task
         halts(procs, running, self.free_at, self.tried, self.branch, self.model, self.idle,
               self.slots)  # B19: plan drop / change of a running task
@@ -1305,11 +1281,11 @@ class Run:
         if n not in procs and self.tagged is None:
             self.tagged = MUX.panes()  # a session that ended this tick is in it with a dead pid, as before
         if n not in procs and (old := self.tagged.get(f's{n}')) and plat.alive(old[1]):
-            # a session no run tracks still sits in this slot (adopt found no session id, or a second
-            # tmux session): never reset the worktree under it; the slot waits until that pane ends
+            # a session no run tracks still sits in this slot (adopt found no session id): never reset the
+            # worktree under it; the slot waits until that session ends
             if f'pid{old[1]}' not in self.stall_said:
                 self.stall_said.add(f'pid{old[1]}')
-                log(f'slot {n}: an untracked session (pid {old[1]}, pane {old[0]}) still runs there; slot held')
+                log(f'slot {n}: an untracked session (pid {old[1]}, {old[0]}) still runs there; slot held')
             return True
         if n > self.slots:  # an adopted slot past this run's count: watched to the end, never refilled
             if n not in procs and n not in self.waiting and n not in foreign:

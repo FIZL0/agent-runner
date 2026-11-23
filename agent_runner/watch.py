@@ -18,7 +18,7 @@ from pathlib import Path
 
 from agent_runner import cost, plat
 from agent_runner.config import finished_mark, runner_cmd
-from agent_runner.state import (banner, C, FORCED, forced, git, log, PAUSED, POWER, queued, READING, REPO_TAG, ROOT,
+from agent_runner.state import (banner, C, FORCED, forced, git, log, PAUSED, POWER, queued, READING,
     SLOTS_DIR, stopped_by, stopping)
 from agent_runner.sched import open_tasks
 from agent_runner.slots import entries, GB, marker_pid, MUX, pi, sids, slot_env, SLOTS, tmp_roots, transcript
@@ -408,7 +408,7 @@ def test_names(exe: str, cut: set[str], cwd: str) -> list[str]:
 
 def live_session(sid: str) -> int | None:
     """The pid of a process still running session `sid` (its command line names it), or None: a session
-    in a pane no run tagged, or another tmux session, is not cut off however its transcript ends. POSIX
+    no run started (by hand, or by an older agent-runner) is not cut off however its transcript ends. POSIX
     only; the Windows terminals' job files name every session they started."""
     if plat.WINDOWS or not sid:
         return None
@@ -422,8 +422,8 @@ def live_session(sid: str) -> int | None:
 def queue_cut_off(branch: str, slots: list[int]) -> dict[int, int]:
     """Startup: a slot still on task/<ID> whose session was cut off while no run was up (a reboot, the runner
     killed, the network down at its exit) is queued to resume instead of being reset for a new task.
-    Returns {slot: pid} of the slots whose session still runs outside this run's panes (one opened before
-    panes carried @runner-repo, say): resuming it would put a second agent in the worktree, so the slot is
+    Returns {slot: pid} of the slots whose session still runs outside this run's slots (one an older
+    agent-runner started, say): resuming it would put a second agent in the worktree, so the slot is
     held until that process ends."""
     open_ids = open_tasks(branch)
     waiting = queued()
@@ -437,8 +437,8 @@ def queue_cut_off(branch: str, slots: list[int]) -> dict[int, int]:
         sid = last_session(tid)[1]
         if pid := live_session(sid):
             held[n] = pid
-            log(f'slot {n}: {tid}\'s session still runs (pid {pid}) in a pane this run does not know; slot held '
-                f'until it ends (to adopt it, `tmux set-option -p -t <pane> {REPO_TAG} {ROOT}` and restart)')
+            log(f'slot {n}: {tid}\'s session still runs (pid {pid}) outside this run\'s slots; slot held '
+                f'until it ends')
         elif (why := cut_off(sid, mid_turn=True)) and resumes(n, sid) < RESUMES_MAX:
             queue_resume(tid, n, sid, why)
             log(f'slot {n}: {tid} was cut off while no run was up ({why}); it resumes there')
@@ -584,7 +584,7 @@ def update_notice() -> None:
     if newer and latest != LATEST_SAID[0]:
         LATEST_SAID[0] = latest
         how = 'nothing, [run] auto_upgrade does it once no merge runs' if AUTO_UPGRADE[0] and \
-            not plat.WINDOWS and not breaking(__version__, latest) else 'type u + Enter in this pane' if READING[0] else \
+            not plat.WINDOWS and not breaking(__version__, latest) else 'type u + Enter in the run view' if READING[0] else \
             f'run `{" ".join(upgrade_argv()[:3]) if upgrade_argv()[0] != "git" else "git pull"}`'
         then = ('the run restarts on it by itself' if not plat.WINDOWS and not breaking(__version__, latest)
                 else 'then read CHANGELOG.md and restart the run')
@@ -620,7 +620,7 @@ def installed_version() -> str | None:
 
 
 def upgrade() -> bool:
-    """`u` in the runner's pane, `agent-runner upgrade` or [run] auto_upgrade: run `upgrade_argv`, logged. True when it worked."""
+    """`u` in the run view, `agent-runner upgrade` or [run] auto_upgrade: run `upgrade_argv`, logged. True when it worked."""
     argv = upgrade_argv()
     log(f'upgrading: {" ".join(argv)}')
     try:

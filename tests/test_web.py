@@ -118,8 +118,7 @@ def test_server(tmp: Path) -> None:
         code, out = post(f'{base}/act?t={token}', {'name': 'drop', 'args': ['F1']})
         eq(code, 400, 'args that are not an object are a bad request')
 
-        with mock.patch.object(W.shutil, 'which', side_effect=lambda n: '/usr/bin/tmux' if n == 'tmux' else None), \
-                mock.patch('agent_runner.plat.WINDOWS', False):
+        with mock.patch.object(W.shutil, 'which', return_value=None), mock.patch('agent_runner.plat.WINDOWS', False):
             code, body = get(f'{base}/terminal/s1?t={token}')
         r = json.loads(body)
         check(not r['ok'] and r['out'].startswith(W.TTYD_INSTALL) and 'chat' in r['out'],
@@ -133,14 +132,17 @@ def test_server(tmp: Path) -> None:
         page = W.term_html().decode()
         check("'builtin'" not in page and "'pane/'" not in page and "act('keys'" not in page,
               "C24: the terminal-style page has no built-in view code (capture polling, the keys box)")
-        with mock.patch.object(W.shutil, 'which', return_value=None):
-            r = json.loads(get(f'{base}/terminal/s1?t={token}')[1])
-        check(r['mode'] == 'feed' and 'no tmux' in r['out'] and r['feed'] == 'feed/s1',
-              'no tmux: the feed only', r)
         with mock.patch.object(W.shutil, 'which', return_value='/usr/bin/ttyd'), \
-                mock.patch.object(W, 'pane_of', return_value=''):
+                mock.patch('agent_runner.plat.WINDOWS', True):
             r = json.loads(get(f'{base}/terminal/s1?t={token}')[1])
-        check(not r['ok'] and 'no tmux pane' in r['out'], 'a slot with no pane says so', r)
+        check(r['mode'] == 'feed' and 'Windows' in r['out'] and r['feed'] == 'feed/s1',
+              'Windows: the feed only', r)
+        with mock.patch.object(W.shutil, 'which', return_value='/usr/bin/ttyd'), \
+                mock.patch('agent_runner.plat.WINDOWS', False), mock.patch.object(W, 'socket_of', return_value=''):
+            r = json.loads(get(f'{base}/terminal/s1?t={token}')[1])
+        check(not r['ok'] and 'is not up' in r['out'], 'a slot with no terminal says so', r)
+        argv = W.Terminals(token, 8770, '0.0.0.0').argv('s2', '/x/slot2.sock', 8771)
+        eq(argv[-2:], ['attach', 's2'], "C26: ttyd serves `attach s2`, the session's own socket")
     finally:
         srv.stop()
 
@@ -174,7 +176,8 @@ def test_run_controls(tmp: Path) -> None:
     want = {'slot_add': ['slots', '+1'], 'slot_remove': ['slots', '-1'], 'slots_set': ['slots', '4'],
             'pause': ['pause'], 'go_on': ['pause', '--off'], 'force': ['force'], 'caps_on': ['force', '--off'],
             'stop': ['stop'], 'stop_now': ['stop', '--force'], 'stop_undo': ['stop', '--undo'],
-            'task_drop': ['plan', 'drop', 'F1', U.TASK_DROP_WHY]}
+            'task_drop': ['plan', 'drop', 'F1', U.TASK_DROP_WHY],
+            'upgrade': ['key', 'u'], 'suspend': ['key', 'z'], 'shutdown': ['key', 'x']}  # C26
     cs = U.controls()
     if shutil.which('node'):
         reqs = logic_js([['controlReq', c, {'n': ' 4', 'tid': 'F1', 'sure': True}] for c in cs] +
@@ -310,10 +313,12 @@ def test_feed_pane_concept(tmp: Path) -> None:
             code, out = post(f'{base}/act?t={token}', {'name': 'quick_ask', 'args': {'key': 'needs'}})
         eq(sent, ['what needs me?'], 'a quick ask through /act reaches c1')
         typed = []
-        with mock.patch.object(U, 'session_pane', return_value='%6'), \
-                mock.patch.object(U, 'TMUX', [lambda argv: (typed.append(argv), (0, ''))[1]]):
+        from agent_runner import slots as SLT
+        with mock.patch.object(U, 'hidden_inbox', return_value=Path('/x/control6.in')), \
+                mock.patch('agent_runner.plat.WINDOWS', False), \
+                mock.patch.object(SLT, 'send_fifo_raw', lambda p, b: typed.append((p.name, b)) or True):
             code, out = post(f'{base}/act?t={token}', {'name': 'interrupt', 'args': {'session': 'c6'}})
-        eq((out['ok'], typed), (True, [['send-keys', '-t', '%6', 'Escape']]), 'interrupt c6 through /act')
+        eq((out['ok'], typed), (True, [('control6.in', b'\x1b')]), 'interrupt c6 through /act')
     finally:
         srv.stop()
 
@@ -341,12 +346,13 @@ def test_control_rows(tmp: Path) -> None:
         for part in (b"const chats=()=>S.snap.sessions.filter(s=>/^c\\d+$/.test(s.name))",
                      b"const working_=()=>slots().filter(s=>s.task)", b'<b>Idle</b>'):
             check(part in page, f'the app lists cN as a chat, a slot on a task as working: {part.decode()}')
+        asked = []
         with mock.patch.object(W.shutil, 'which', return_value='/usr/bin/ttyd'), \
-                mock.patch('agent_runner.control.control_live', return_value=0), \
-                mock.patch('agent_runner.control.control_window', return_value='') as cw:
+                mock.patch('agent_runner.plat.WINDOWS', False), \
+                mock.patch('agent_runner.attach.session_socket', lambda n: asked.append(n)):
             r = json.loads(get(f'{base}/terminal/c6?t={token}')[1])
-        eq(cw.call_args.args, (6, 0), "c6's terminal looks up control session 6's window")
-        check(not r['ok'] and 'c6 has no tmux pane' in r['out'], 'and says when it has none', r)
+        eq(asked, ['c6'], "c6's terminal looks up control session 6's socket")
+        check(not r['ok'] and 'c6 is not up' in r['out'], 'and says when it has none', r)
     finally:
         srv.stop()
     copy = PC.page_copy_html(snap)
@@ -673,11 +679,10 @@ def test_page_copy_publish(tmp: Path) -> None:
     with mock.patch.object(PC, 'remote_on', lambda: True), mock.patch.object(PC, 'control_ok', lambda: True), \
             mock.patch.object(PC, 'C', S.C), mock.patch.object(PC, 'ROOT', S.ROOT), \
             mock.patch.object(PC.sp, 'run', fake_run), \
-            mock.patch.object(SL, 'send_to_pane', lambda *a, **k: keys.append(a) or True), \
             mock.patch.object(SL, 'send_fifo', lambda *a, **k: keys.append(a) or True), \
-            mock.patch.object(SL, 'tmux', lambda *a, **k: keys.append(a)), \
+            mock.patch.object(SL, 'send_fifo_raw', lambda *a, **k: keys.append(a) or True), \
             mock.patch('agent_runner.control.control_live', lambda *a, **k: keys.append(('live', a)) or 4242), \
-            mock.patch('agent_runner.control.control_window', lambda *a, **k: keys.append(('window', a)) or '%1'), \
+            mock.patch('agent_runner.control.control_type', lambda *a, **k: keys.append(('type', a)) or True), \
             mock.patch.object(SL.MUX, 'send', lambda *a, **k: keys.append(('mux', a)) or True, create=True):
         check(tick(1000.0, snap('10:00')), 'a run change publishes the copy')
         argv, kw = runs[0]
@@ -711,7 +716,7 @@ def test_page_copy_publish(tmp: Path) -> None:
     eq(keys, [], 'no run change sends keys to any pane or FIFO')
     check(not hasattr(PC, 'c1_send'), 'the copy has no way to type into c1')
     src = Path(PC.__file__).read_text(encoding='utf-8')
-    for name in ('send_to_pane', 'send_fifo', 'control_window', 'control_live', 'send_keys', 'MUX'):
+    for name in ('send_fifo', 'control_type', 'control_live', 'send_keys', 'MUX'):
         check(name not in src, f'page_copy.py never calls {name}')
     PC.PAGE_COPY_OFF[0] = ''
 

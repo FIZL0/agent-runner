@@ -9,9 +9,10 @@ USAGE = """agent-runner: AI agents work through plan/TODO.md, one task each, in 
 What you type
     agent-runner setup                make this repo ready: back up uncommitted work, runner.toml, a first plan
     agent-runner                      start the run in the background and get the prompt back
-    agent-runner --attach             the same, then watch its pane here (Ctrl-b d: back to the background)
-    agent-runner attach [s2]          see the run's pane, or slot 2's (c3: control session 3)
-    agent-runner list                 every run and session on this device, numbered, from any folder (like tmux ls)
+    agent-runner --attach             the same, then the run view here (Ctrl-C leaves it; the run keeps going)
+    agent-runner attach [s2]          the run view (its log, live, and its keys), or slot 2's terminal (c3:
+                                      control session 3; Ctrl-b d leaves it)
+    agent-runner list                 every run and session on this device, numbered, from any folder
     agent-runner attach 3             see number 3 of that list (attach <project> s2: from any folder)
     agent-runner control              a control session here: ask it "status?", to pause, add slots, file a task
     agent-runner control --new        another one beside the run; prints its claude.ai/code link
@@ -43,7 +44,7 @@ Mostly for agents (you can run these too)
     agent-runner plan move B12 top    B12 to the top: the next free agent takes it
     agent-runner plan next            the task that starts next
     agent-runner plan help            every plan command
-    agent-runner key z                any key the runner's pane takes (? lists them)
+    agent-runner key z                any key the run view takes (? lists them)
     agent-runner home [slots|plan]    where this project's runner files are: for scripts
     agent-runner context              what every session loads (rules, CLAUDE.md, AGENTS.md) and what to move out
     agent-runner cost                 where the workers' tokens go, by kind of tool call (last 7 days)
@@ -180,7 +181,7 @@ COMMANDS = {
     'done': ('done', 'main'),
     'setup': ('setup', 'main'),  # F49
     'run': ('runner', 'cmd_run'),
-    '--attach': ('runner', 'cmd_background_attach'),  # bare, then attach: the run's pane in this terminal
+    '--attach': ('runner', 'cmd_background_attach'),  # bare, then attach: the run view in this terminal
     'attach': ('runner', 'cmd_attach'),
     'list': ('runner', 'cmd_list'),  # F80: every session on this device
     'control': ('runner', 'cmd_control'),

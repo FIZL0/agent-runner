@@ -306,8 +306,8 @@ AGENT_RUNNER_SLOT set you are one of the runner's agents: follow your brief, not
    then `plan note` what to do differently, or `plan unblock ID "what changed"`. An edited task goes back
    in the pool, even in the same run.
 5. **Is it running, and what next?** `tail -20 .runner/run.log` (the `[run] notes` dir), and
-   `agent-runner run --dry-run 3` for what would start and why the rest wait. The run is the person's, in
-   their tmux: start or stop it only when they ask (`agent-runner stop` lets running tasks finish first).
+   `agent-runner run --dry-run 3` for what would start and why the rest wait. The run is the person's: start
+   or stop it only when they ask (`agent-runner stop` lets running tasks finish first).
    To act once the run is done, wait in the background until run.log's last line is `run idle`:
    `timeout 4h bash -c 'until tail -n1 .runner/run.log | grep -q "run idle"; do sleep 60; done'`. That poll
    ends; `tail -f run.log | grep -m1 'run idle'` does not (tail dies only when it next writes, and an idle run
@@ -491,7 +491,7 @@ you, to act on a task or when the person asks which one.
   - tasks held by a run that crashed: `{cmd} plan claims`, then `{cmd} plan unclaim ID`
   - "where are the tokens going?": `{cmd} cost`
 - A task a slot is running now: "tell it…", "B171 is fine, publish anyway", a fact it needs: `{cmd} plan tell
-  ID "<what to say>"` (typed into its pane). A small correction ("use a table, not a list"): `{cmd} plan change
+  ID "<what to say>"` (typed into its session). A small correction ("use a table, not a list"): `{cmd} plan change
   ID "<what to do>"` (noted in the plan and typed in; it works on). Once the command prints `told s1 (ID)` the
   agent has it: say so, without watching or hedging. Only "start it over" takes `plan change ID --restart "…"` (its work is thrown
   away).
@@ -599,7 +599,7 @@ changelog line>"), first send that one line with the PushNotification tool, word
 then post it, once.
 - Commands the person may give you, run as said and answer with their output, shortened to what matters: \
 status (`{cmd} status`), pause (`{cmd} pause`), stop (`{cmd} stop`), force (`{cmd} force`), slots N \
-(`{cmd} slots N`), what happened (`{cmd} since`), and a new control session or window (`{cmd} control --new`: \
+(`{cmd} slots N`), what happened (`{cmd} since`), and a new control session (`{cmd} control --new`: \
 answer only "Opened control N: <the link>", N and the link from what it prints).
 - Updating this run ("update runner", "upgrade", "restart on the new version"): `{cmd} upgrade` (the run \
 restarts on the installed version by itself); answer with what it prints.

@@ -52,7 +52,6 @@ def fake_run(tmp: Path) -> Path:
     git(repo, 'add', '-A')
     git(repo, 'commit', '-qm', 'start')
     S.init(repo)
-    U.tmux_panes = lambda: []  # C23: never this machine's tmux (its panes carry no tag of this fake repo)
     S.C.notes('STATE').write_text(json.dumps({
         'state': '3 slots', 'running': {'1': 'F1', '2': 'B2'}, 'since': {'1': NOW - 14 * 60, '2': NOW - 60},
         'merging': ['B2'], 'usage': {'five_hour': 42.0, 'seven_day': 85.0}}), encoding='utf-8')
@@ -169,7 +168,8 @@ RUN_CONTROL_ARGV = {  # F82: each run control and the runner command it must run
     'slot_add': ['slots', '+1'], 'slot_remove': ['slots', '-1'], 'slots_set': ['slots', '4'],
     'pause': ['pause'], 'go_on': ['pause', '--off'], 'force': ['force'], 'caps_on': ['force', '--off'],
     'stop': ['stop'], 'stop_now': ['stop', '--force'], 'stop_undo': ['stop', '--undo'],
-    'task_drop': ['plan', 'drop', 'F1', U.TASK_DROP_WHY]}
+    'task_drop': ['plan', 'drop', 'F1', U.TASK_DROP_WHY],
+    'upgrade': ['key', 'u'], 'suspend': ['key', 'z'], 'shutdown': ['key', 'x']}  # C26: the run's u, z, x keys
 
 
 def test_run_controls(tmp: Path) -> None:
@@ -214,80 +214,55 @@ def test_real_command(tmp: Path) -> None:
        'a shelved item leaves Needs you')
 
 
-def test_to_c1_by_tag(tmp: Path) -> None:
-    """B111: called from inside tmux ($TMUX_PANE is the caller's own pane), to_c1 types into the c1-tagged pane."""
-    import os
-    import subprocess as sp
+def test_to_c1_hidden(tmp: Path) -> None:
+    """B111/C26: to_c1 types into a live c1 through its hidden shim (`control.control_type`); with none, a new
+    control session gets the message."""
     from unittest import mock
-    from agent_runner import control as K, slots
-    rows = (f'run\t%7\tc1\t{S.ROOT}\t\t4242\n'      # c1 of this repository
-            f'run\t%3\t\t\t{S.ROOT}\t4100\n')       # the runner's own pane
+    from agent_runner import control as K
+    fake_run(tmp)
     typed = []
-    with mock.patch.dict(os.environ, {'TMUX_PANE': '%3'}), \
-            mock.patch.object(K, 'control_live', return_value=4242), \
-            mock.patch.object(K.shutil, 'which', return_value='/usr/bin/tmux'), \
-            mock.patch.object(K, 'tmux', return_value=sp.CompletedProcess([], 0, rows, '')), \
-            mock.patch.object(slots, 'send_to_pane', side_effect=lambda p, t: (typed.append((p, t)), True)[1]):
+    with mock.patch.object(K, 'control_live', return_value=4242), \
+            mock.patch.object(K, 'control_type', side_effect=lambda n, t: (typed.append((n, t)), True)[1]):
         r = U.to_c1('how is it going?')
     eq(r['out'], 'sent to c1', 'c1 got it')
-    eq(typed, [('%7', 'how is it going?')], "typed into c1's tagged pane, not $TMUX_PANE")
+    eq(typed, [(1, 'how is it going?')], 'typed into c1')
+    ran = []
+    with mock.patch.object(K, 'control_live', return_value=0), \
+            mock.patch.object(U, 'RUN', [lambda argv: (ran.append(argv), (0, 'ok'))[1]]):
+        U.to_c1('hello')
+    eq(ran, [['control', '--new', '--ask', 'hello']], 'no c1: a new control session takes it')
 
 
-def ifizbox_panes(root: Path, name: str) -> list[str]:
-    """B113/C23: `tmux list-panes -a` lines (session, window name, @runner, @runner-repo, @runner-run) like
-    iFizBox's run, every pane tagged as this version tags it."""
-    s = 'agents'
-    return [f'{s}\t{name}\t\t{root}\t{root}', f'{s}\trunner-{name}\tboard\t{root}',
-            f'{s}\tagents-{name}\ts2\t{root}',
-            f'{s}\t{name} · 9 · iOS 26 native glass +\tc9\t{root}',
-            f'{s}\t{name} · 1 · Install IPAs row + wider\tc1\t{root}',
-            f'{s}\t{name} · 6 · Pairing broken: Tailscale logout\tc6\t{root}',
-            f'{s}\t{name} · R43 · site deploy\tc7\t{root}',           # a task-named control session
-            f'{s}\t{name} · 3\tc3\t{root}', f'{s}\t{name} · control 4\tc4\t{root}',  # untitled
-            f'{s}\t{name} · 8 · no tags\t\t',                          # untagged: never read by its name
-            f'other\t{name} · 5 · another checkout\tc5\t/elsewhere/{name}']
-
-
-def test_control_windows(tmp: Path) -> None:
-    """C23: control session windows are read only by their tags (@runner cN, @runner-repo this checkout): c1,
-    every other cN with its title, then s1..s3 from STATE; a window name alone never makes one."""
+def test_control_titles(tmp: Path) -> None:
+    """C26: the live control sessions, titled from the names kept in state (controlN.title), never from a
+    window: c1, every other live cN, then s1..s3 from STATE."""
+    import subprocess as sp
     repo = fake_run(tmp)
     S.C.notes('STATE').write_text(json.dumps({'state': '3 slots', 'running': {'2': 'F1'}, 'since': {},
                                               'merging': []}), encoding='utf-8')
-    wins = U.control_windows(ifizbox_panes(repo, repo.name))
-    eq(wins, {1: 'Install IPAs row + wider', 3: 'control session', 4: 'control session',
-              6: 'Pairing broken: Tailscale logout', 7: 'R43 · site deploy', 9: 'iOS 26 native glass +'},
-       "control windows by tag; another checkout's and the untagged one left out")
-    eq(U.control_windows([f'ar-{repo.name}\t{repo.name} · control 3\t\t',
-                          f'ar-{repo.name}\t{repo.name} · 2 · old\t\t']), {},
-       "no tags: no window, whatever its name ('<repo> · control N', '<repo> · N · title')")
-    from unittest import mock
-    with mock.patch.object(U, 'tmux_panes', return_value=ifizbox_panes(repo, repo.name)):
+    live = sp.Popen(['sleep', '60'])
+    try:
+        named = {1: f'{repo.name} · 1 · Install IPAs row + wider', 3: f'{repo.name} · 3',
+                 4: f'{repo.name} · control 4', 6: f'{repo.name} · 6 · Pairing broken: Tailscale logout',
+                 7: f'{repo.name} · R43 · site deploy', 9: ''}
+        for n, name in named.items():
+            S.C.notes(f'control{n}.pid').write_text(f'{live.pid}', encoding='utf-8')
+            if name:
+                S.C.notes(f'control{n}.title').write_text(name + '\n', encoding='utf-8')
+        S.C.notes('control5.pid').write_text('999999999', encoding='utf-8')  # ended: not listed
+        S.C.notes('control5.title').write_text(f'{repo.name} · 5 · gone\n', encoding='utf-8')
+        eq(U.control_titles(), {1: 'Install IPAs row + wider', 3: 'control session', 4: 'control session',
+                                6: 'Pairing broken: Tailscale logout', 7: 'R43 · site deploy', 9: 'control session'},
+           'each live one, titled from state; the ended one left out')
         snap = U.snapshot(up=True, now=NOW, links={})
+    finally:
+        live.kill()
+        live.wait()
     eq([(s['name'], s['state']) for s in snap['sessions']],
        [('c1', 'live'), ('c3', 'live'), ('c4', 'live'), ('c6', 'live'), ('c7', 'live'), ('c9', 'live'),
         ('s1', 'idle'), ('s2', 'running'), ('s3', 'idle')], 'c1, each cN, then s1-s3')
-    eq(snap['sessions'][0]['title'], 'Install IPAs row + wider', "c1 titled by its window")
-    eq(snap['sessions_note'], '', 'a tagged run: no note')
-
-
-def test_older_run(tmp: Path) -> None:
-    """C23: a run whose runner pane (@runner-run this checkout) has no @runner-repo tag (an older agent-runner
-    started it): Sessions has no rows, only the one restart line."""
-    repo = fake_run(tmp)
-    old = [f'ar-{repo.name}\t{repo.name}\t\t\t{repo}', f'ar-{repo.name}\t{repo.name} · 1 · c1\t\t',
-           f'ar-{repo.name}\t{repo.name} · control 2\t\t', f'other\tagents-x\ts1\t/elsewhere/x']
-    from unittest import mock
-    with mock.patch.object(U, 'tmux_panes', return_value=old):
-        snap = U.snapshot(up=True, now=NOW, links={})
-        down = U.snapshot(up=False, now=NOW, links={})
-    eq((snap['sessions'], snap['sessions_note']), ([], U.OLDER_RUN), 'no rows, the one restart line')
-    eq(U.OLDER_RUN, 'This run was started by an older agent-runner: restart it to see its sessions.', 'its words')
-    eq(([s['name'] for s in down['sessions']], down['sessions_note']), (['c1'], ''), 'no run up: no note')
-    eq(U.older_run(True, []), False, 'no tmux panes to read: nothing told')
-    eq(U.older_run(True, old[1:]), False, "a hidden run (no runner pane of this checkout), other panes untagged: "
-       "not older")
-    eq(U.older_run(True, ifizbox_panes(repo, repo.name)), False, 'tagged panes: not older')
+    eq(snap['sessions'][0]['title'], 'Install IPAs row + wider', 'c1 titled from state')
+    eq(snap['sessions_note'], '', 'no note')
 
 
 QUEUE_TODO = """# TODO
@@ -388,48 +363,36 @@ def test_feed(tmp: Path) -> None:
        'a tail read skips the line it cut')
 
 
-class FakeTmux:
-    """tmux, faked: records each argv."""
-
-    def __init__(self):
-        self.calls = []
-
-    def __call__(self, argv):
-        self.calls.append(argv)
-        return 0, ''
-
-
 def test_chat_and_terminal(tmp: Path) -> None:
-    """F74: chat to any control session (c1 through SEND, cN typed into its pane), interrupt (Escape into its
-    pane), a new control session's link, the quick asks to c1, and the terminal view: ttyd, install ttyd, or
-    the feed only."""
+    """F74: chat to any control session (c1 through SEND, cN typed in through its shim's FIFO), interrupt
+    (Escape typed in), a new control session's link, the quick asks to c1, and the terminal view: ttyd,
+    install ttyd, or (Windows) the feed only."""
     from unittest import mock
     from agent_runner import plat, slots
     fake_run(tmp)
-    sent, typed, ran = [], [], []
-    tm = FakeTmux()
-    real = U.SEND[0], U.TMUX[0], U.RUN[0]
+    sent, typed, raw, ran = [], [], [], []
+    real = U.SEND[0], U.RUN[0]
     U.SEND[0] = lambda text: (sent.append(text), {'ok': True, 'code': 0, 'out': 'sent to c1', 'argv': []})[1]
-    U.TMUX[0] = tm
     U.RUN[0] = lambda argv: (ran.append(argv), (0, 'c3 is open: https://claude.ai/code/session_c3x\n'))[1]
-    panes = {'c1': '%1', 'c6': '%6', 's2': '%12'}
+    inboxes = {'c6': Path('/x/control6.in'), 's2': Path('/x/slot2.in')}
     try:
-        with mock.patch.object(U, 'session_pane', side_effect=lambda n: panes.get(n, '')), \
-                mock.patch.object(slots, 'send_to_pane', side_effect=lambda p, t: (typed.append((p, t)), True)[1]):
+        with mock.patch.object(U, 'hidden_inbox', side_effect=lambda n: inboxes.get(n)), \
+                mock.patch.object(plat, 'WINDOWS', False), \
+                mock.patch.object(slots, 'send_fifo', side_effect=lambda p, t: (typed.append((p.name, t)), True)[1]), \
+                mock.patch.object(slots, 'send_fifo_raw', side_effect=lambda p, b: (raw.append((p.name, b)), True)[1]):
             eq(U.act('chat_to', text='hi c1')['out'], 'sent to c1', 'c1 gets it the way chat does')
             eq(U.act('chat_to', text='how is R43?', to='c6')['out'], 'sent to c6', 'c6 too')
             r = U.act('chat_to', text='hello', to='c9')
             eq(U.act('interrupt', session='c6')['out'], 'interrupted c6', 'interrupt c6')
             eq(U.keys('s2', text='yes', key='Enter')['ok'], True, 'keys typed into s2')
             eq(U.keys('s2', key='F13')['ok'], False, 'an unknown key is refused')
-            eq(U.act('keys', session='s2', text='x')['ok'], False, "C25: 'keys' is no action: no page types into a pane")
+            eq(U.act('keys', session='s2', text='x')['ok'], False, "C25: 'keys' is no action: no page types into a session")
         check(not hasattr(U, 'capture') and not hasattr(U, 'CAPTURE_EVERY'),
               'C25: the built-in view\'s capture went with it')
         eq(sent, ['hi c1'], 'c1 through SEND')
-        eq(typed, [('%6', 'how is R43?')], "c6 typed into its own pane")
-        check(not r['ok'] and 'no tmux pane' in r['out'], 'a session with no pane says so', r)
-        eq(tm.calls[:3], [['send-keys', '-t', '%6', 'Escape'], ['send-keys', '-t', '%12', '-l', 'yes'],
-                          ['send-keys', '-t', '%12', 'Enter']], 'Escape into c6; text then Enter into s2')
+        eq(typed, [('control6.in', 'how is R43?')], 'c6 typed in through its FIFO')
+        check(not r['ok'] and 'is not up' in r['out'], 'a session that is not up says so', r)
+        eq(raw, [('control6.in', b'\x1b'), ('slot2.in', b'yes\r')], 'Escape into c6; text then Enter into s2')
 
         n = U.act('new_control', ask='')
         eq((n['ok'], n['link'], ran[-1]), (True, 'https://claude.ai/code/session_c3x', ['control', '--new']),
@@ -446,17 +409,15 @@ def test_chat_and_terminal(tmp: Path) -> None:
         eq([a['key'] for a in U.snapshot(up=False, now=NOW, links={})['quick_asks']],
            ['since', 'yesterday', 'needs', 'usage'], 'the snapshot lists them')
     finally:
-        U.SEND[0], U.TMUX[0], U.RUN[0] = real
+        U.SEND[0], U.RUN[0] = real
 
     which = lambda have: (lambda name: f'/usr/bin/{name}' if name in have else None)  # noqa: E731
     with mock.patch.object(plat, 'WINDOWS', False):
-        with mock.patch('shutil.which', side_effect=which({'tmux', 'ttyd'})):
-            eq(U.terminal_mode(), 'ttyd', 'tmux and ttyd: ttyd')
-        with mock.patch('shutil.which', side_effect=which({'tmux'})):
-            eq(U.terminal_mode(), 'install', 'C25: tmux, no ttyd: install ttyd (the built-in view is gone)')
+        with mock.patch('shutil.which', side_effect=which({'ttyd'})):
+            eq(U.terminal_mode(), 'ttyd', 'ttyd: ttyd')
         with mock.patch('shutil.which', side_effect=which(set())):
-            eq(U.terminal_mode(), 'feed', 'no tmux: the feed only')
-    with mock.patch.object(plat, 'WINDOWS', True), mock.patch('shutil.which', side_effect=which({'tmux', 'ttyd'})):
+            eq(U.terminal_mode(), 'install', 'C25: no ttyd: install ttyd (the built-in view is gone)')
+    with mock.patch.object(plat, 'WINDOWS', True), mock.patch('shutil.which', side_effect=which({'ttyd'})):
         eq(U.terminal_mode(), 'feed', 'Windows: the feed only')
 
 
@@ -517,7 +478,7 @@ def test_concept_chat(tmp: Path) -> None:
 
 
 def test_hidden_send(tmp: Path) -> None:
-    """F89: a hidden session (no tmux pane) is reached through its shim's FIFO, found from its .live marker:
+    """F89: a hidden session is reached through its shim's FIFO, found from its .live marker:
     send writes a bracketed paste then CR, interrupt writes a raw ESC, and a FIFO nobody reads gives ok False."""
     import os
     from agent_runner import plat
@@ -542,7 +503,7 @@ def test_hidden_send(tmp: Path) -> None:
     hidden('control3')
     hidden('slot4', reader=False)
     try:
-        with mock.patch.object(U, 'session_pane', return_value=''), mock.patch.object(plat, 'WINDOWS', False):
+        with mock.patch.object(plat, 'WINDOWS', False):
             r = U.send('s2', 'hello s2')
             eq((r['ok'], r['out']), (True, 'sent to s2'), 'send to a hidden slot')
             eq(drain(readers[0]), b'\x1b[200~hello s2\x1b[201~\r', 'a bracketed paste, then CR')
@@ -555,8 +516,8 @@ def test_hidden_send(tmp: Path) -> None:
             check(not r['ok'], 'a FIFO with no reader: ok False', r)
             check(not U.interrupt('s4')['ok'], 'nor an interrupt')
             r = U.send('s9', 'hi')
-            check(not r['ok'] and 'no tmux pane' in r['out'], 'no marker: no pane, as before', r)
-        with mock.patch.object(U, 'session_pane', return_value=''), mock.patch.object(plat, 'WINDOWS', True):
+            check(not r['ok'] and 'is not up' in r['out'], 'no marker: not up', r)
+        with mock.patch.object(plat, 'WINDOWS', True):
             r = U.send('s2', 'hi')
             check(not r['ok'] and 'cannot be typed into' in r['out'], 'Windows: cannot type into it', r)
     finally:
@@ -576,6 +537,6 @@ def in_tmp(f):
 if __name__ == '__main__':
     raise SystemExit(report([in_tmp(test_snapshot), in_tmp(test_idle_slots), in_tmp(test_actions), in_tmp(test_run_controls),
                          in_tmp(test_real_command),
-                         in_tmp(test_to_c1_by_tag), in_tmp(test_control_windows), in_tmp(test_older_run),
+                         in_tmp(test_to_c1_hidden), in_tmp(test_control_titles),
                          in_tmp(test_queue_rows), in_tmp(test_feed), in_tmp(test_chat_and_terminal),
                          in_tmp(test_concept_copy), in_tmp(test_concept_chat), in_tmp(test_hidden_send)]))

@@ -6,7 +6,6 @@ import datetime as dt
 import json
 import os
 import re
-import shutil
 import signal
 import subprocess as sp
 import sys
@@ -17,24 +16,23 @@ from pathlib import Path
 
 from agent_runner import plan as P, plat
 from agent_runner.config import RUNNER, main_checkout, runner_cmd, shown_cmd
-from agent_runner.state import BOARD_TAG, C, log, REPO_TAG, ROOT, RUN_TAG, run_up, TAG
+from agent_runner.state import C, log, ROOT, run_up
 from agent_runner.slots import link_drift, remote_answer_drift
-from agent_runner.slots import (attach_target, background_env, background_session, MUX, remote_off_why, remote_on,
-    REMOTE_URL, tmux, TmuxMux, transcript, window)
+from agent_runner.slots import marker_pid, remote_off_why, remote_on, REMOTE_URL, transcript
 from agent_runner.land import wip_main_info
 from agent_runner.control import (control_env, CONTROL_LINK_WAIT, control_live, CONTROL_N_ENV, control_name,
-    control_title, feed_on, free_control_number, hidden_control, hidden_control_log, message_text, person_message, RC_ENDING, rc_forget, rc_record,
-    rc_records, rc_sweep, REMOTE_DIR, SESSION_LINK)
+    feed_on, free_control_number, hidden_control, hidden_control_log, hidden_shim, message_text,
+    person_message, RC_ENDING, rc_forget, rc_record, rc_records, rc_sweep, REMOTE_DIR, SESSION_LINK)
 from agent_runner.status import follow, read_events, since_text, waiting_ok
 
 
-BOARD_EVERY = 30  # s between the run's checks that the board window is still there
+BOARD_EVERY = 30  # s between the run's checks that the board is still up
 
 
 def board_header() -> str:
     """The board's top lines: it only shows, and where to steer the run from."""
     where = (f'claude.ai/code: "{ROOT.name} · control" opens a control session' if remote_on() else
-             f'{shown_cmd()} control (or a new pane in this tmux session)')
+             f'{shown_cmd()} control')
     return (f'{ROOT.name} board: what lands and what needs you, no tokens used. Steer from a control session:\n'
             f'    {where}\n' + '-' * 78)
 
@@ -71,7 +69,7 @@ BOARD_TERM = 10  # s the feed gets to end on SIGTERM before it is killed
 def board_feed(run_pid: int = 0, poll: float = BOARD_POLL) -> int:
     """`since --board --feed`: the runner feed (`feed_argv`) as a child, ended once the run that opened it
     (`run_pid`) has: a plain stop once its tasks are done, a force stop, or a crash. The feed then goes
-    offline in the apps and the board window closes. The feed ending on its own ends this too (`keep_board`
+    offline in the apps and the board ends. The feed ending on its own ends this too (`keep_board`
     opens it again while the run is up). Ctrl-C is the feed's own (it asks before it exits)."""
     sid, resume = feed_session(feed_cmd()) if run_pid else ('', False)  # B15: the run's feed carries on its one session
     try:
@@ -121,7 +119,7 @@ SID_RE = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{1
 def feed_session(cmd: str = '') -> tuple[str, bool]:
     """(session id, resume) for the run's runner feed (B15). The id is kept in <notes>/remote/ from the feed's
     first start until a real stop (`rc_sweep_stop`), so any restart that is not one (an upgrade's, a board
-    window replaced or closed, the feed exiting, a crashed run started again) resumes the same Claude session:
+    ended and started again, the feed exiting, a crashed run started again) resumes the same Claude session:
     its history and its app entry carry on. None kept yet: a new id, recorded, and a fresh session.
     B91: the runner command the feed may run (`cmd`, default RUNNER) is kept on the line after the id; a kept
     session whose command differs (or that names none: one from before B91, which may still say only
@@ -158,12 +156,6 @@ def feed_session_args(sid: str, resume: bool) -> list[str]:
 def feed_forget_session() -> None:
     """A real stop (or a resume that failed): the next feed starts a fresh session."""
     C.notes(REMOTE_DIR, FEED_SID).unlink(missing_ok=True)
-
-
-def board_argv(sess: str, root: Path, cmd: str) -> list[str]:
-    """Open the runner feed's window in the background session `sess`, without taking focus."""
-    return ['tmux', 'new-window', '-d', '-t', f'={sess}:', '-n', window('runner'), '-c', str(root),
-            '-P', '-F', '#{pane_id}', cmd]
 
 
 FEED_MODEL = 'haiku'  # ponytail: fixed; the feed only echoes lines and runs one command, a knob if that ever falls short
@@ -207,60 +199,39 @@ def feed_argv() -> list[str]:
             '--remote-control', feed_name()]
 
 
-def board_command() -> str:
-    """What the board window runs: the runner feed with `[run] remote` (in the apps too), else the free text feed;
+def board_argv() -> list[str]:
+    """What the board runs: the runner feed with `[run] remote` (in the apps too), else the free text feed;
     either one ends once this run's process has (B13)."""
-    return plat.command_text([*runner_cmd(), 'since', '--board', *(['--feed'] if feed_on() else []),
-                              '--run-pid', str(os.getpid())])
+    return [*runner_cmd(), 'since', '--board', *(['--feed'] if feed_on() else []), '--run-pid', str(os.getpid())]
 
 
-def keep_board(sess: str) -> None:
-    """Keep the board window up in the background session while the run is: opened again when it is closed or
-    its feed exits. It ends with the run (its `--run-pid`), and the next run opens its own."""
-    cmd = board_command()
-    kind = ('feed' if ' --feed' in cmd else 'text') + '/run'
+def board_command() -> str:
+    """`board_argv` as one command line, for the log and the tests."""
+    return plat.command_text(board_argv())
+
+
+def keep_board() -> None:
+    """C26: keep the board, a hidden session (`hidden_shim` 'board': `<notes>/board.live`, its output in
+    board.log), up while the run is: started again when it ends. It ends with the run (its `--run-pid`), and
+    the next run starts its own; none once the run is ending."""
     said = False
     while True:
-        rows = tmux('list-panes', '-s', '-t', f'={sess}', '-F',
-                    f'#{{session_name}}\t#{{pane_id}}\t#{{{TAG}}}\t#{{{REPO_TAG}}}\t#{{{RUN_TAG}}}')
-        hit = attach_target(rows.stdout.splitlines(), ROOT, 'board') if rows.returncode == 0 else ('', '')
-        if hit and hit[1] and tmux('show-options', '-p', '-v', '-t', hit[1], BOARD_TAG).stdout.strip() != kind:
-            tmux('kill-pane', '-t', hit[1])  # an earlier run's other kind (remote turned on or off): this run's instead
-            hit = None
-        if not hit and not RC_ENDING[0]:  # found by tag, not name: a rename keeps it; none once the run ends
-            r = sp.run(board_argv(sess, ROOT, cmd), capture_output=True, text=True)
-            if pane := r.stdout.strip():  # `attach board` finds it by these
-                tmux('set-option', '-p', '-t', pane, TAG, 'board')
-                tmux('set-option', '-p', '-t', pane, REPO_TAG, str(ROOT))
-                tmux('set-option', '-p', '-t', pane, BOARD_TAG, kind)
-            if not said or r.returncode:
-                what = f'the runner feed, "{feed_name()}" in the apps too' if kind.startswith('feed') else 'the text feed'
-                log(f'board: window {window("runner")} is up with {what} ({shown_cmd()} attach board)' if not r.returncode
-                    else f'board: tmux could not open it: {r.stderr.strip()}')
+        pid = marker_pid(C.notes('board.live'))
+        if not (pid and plat.alive(pid)) and not RC_ENDING[0]:
+            pid, why = hidden_shim('board', board_argv())
+            if not said or not pid:
+                log(f'board: the runner feed is up, "{feed_name()}" in the apps too (its output in '
+                    f'{C.notes("board.log")})' if pid else f'board: the runner feed could not start: {why}')
             said = True
         time.sleep(BOARD_EVERY)
 
 
 def start_board() -> None:
-    """The runner feed's window, in the tmux session the run is in (the background one, or yours), with
-    `[run] remote`: the feed must be there however the run was started. C22: no window without the feed (the
-    text board is gone: `agent-runner ui` and the run page show what lands)."""
-    here = os.environ.get('TMUX_PANE', '')
-    if not (isinstance(MUX, TmuxMux) and here and feed_on()):
-        return
-    if sess := tmux('display-message', '-p', '-t', here, '#{session_name}').stdout.strip():
-        threading.Thread(target=keep_board, args=(sess,), name='board', daemon=True).start()
-
-
-def control_new_session() -> str:
-    """The tmux session `control --new` opens its window in: the one this pane is in (a control session beside
-    the run), else the run's background session while it is up; '' when there is none."""
-    if here := os.environ.get('TMUX_PANE', ''):
-        r = tmux('display-message', '-p', '-t', here, '#{session_name}')
-        if r.returncode == 0 and r.stdout.strip():
-            return r.stdout.strip()
-    sess = background_session()
-    return sess if tmux('has-session', '-t', f'={sess}').returncode == 0 else ''
+    """The runner feed, a hidden session, with `[run] remote`: the feed must be there however the run was
+    started. C22: no board without the feed (the text board is gone: `agent-runner ui` and the run page show
+    what lands). Not on Windows (`feed_on`)."""
+    if feed_on():
+        threading.Thread(target=keep_board, name='board', daemon=True).start()
 
 
 def feed_files() -> list[str]:
@@ -688,7 +659,7 @@ def feed_lost_note() -> str:
 
 def forward_ask_file(n: int, text: str) -> Path:
     """Where `control --new --forward` leaves the message for `control N --ask-file` (read and removed there):
-    a file, so the text never passes through a shell or tmux command line."""
+    a file, so the text never passes through a shell command line."""
     f = C.notes(f'control{n}.ask')
     f.write_text(text, encoding='utf-8')
     return f
@@ -746,9 +717,9 @@ def meta_image_paths(d: dict) -> list[str]:
 
 def control_new(n: int | None = None, wait: float = CONTROL_LINK_WAIT, ask: str = '',
                 images: list[str] | tuple = (), forward: bool = False, handed: bool = False) -> int:
-    """`control --new`: another control session, opened without taking focus (a window of its own in the run's
-    tmux session; Windows: a hidden console), on Remote Control as "<repo> · control N" with `[run] remote`.
-    Prints its claude.ai/code link once its pane shows it, so the session that ran it can answer with a link.
+    """`control --new`: another control session, opened without taking focus (a hidden terminal; Windows: a
+    hidden console), on Remote Control as "<repo> · control N" with `[run] remote`.
+    Prints its claude.ai/code link once its log shows it, so the session that ran it can answer with a link.
     `forward` (`control --new --forward`, B72): its first message is the runner feed's latest person message,
     read word for word from the feed's transcript (`feed_take`) and handed to `control N` in a file, never on a
     command line; when it has not reached the transcript in FEED_WAIT s, `control N --forward --feed-sid` waits
@@ -797,51 +768,20 @@ def control_new(n: int | None = None, wait: float = CONTROL_LINK_WAIT, ask: str 
         print(f'control {n} is up in a hidden console' +
               (f': "{name}" at {REMOTE_URL}' if remote_on() else f' ({shown_cmd()} attach c{n} shows it)'))
         return 0
-    if not shutil.which('tmux') or not (sess := control_new_session()):
-        return control_new_hidden(n, cmd, name, wait)  # F59: no tmux session to open a window in
-    env = [e for e in background_env() if not e.startswith(('AGENT_RUNNER=', 'AGENT_RUNNER_SLOT=', 'AGENT_RUNNER_KEEP='))]
-    envs = [x for e in env for x in ('-e', e)]
-    win = name if control_title(ask, images) else window(f'control{n}')
-    r = tmux('new-window', '-d', '-t', f'={sess}:', '-n', win, '-c', str(ROOT), *envs, '-P', '-F', '#{pane_id}',
-             plat.command_text(cmd))
-    if r.returncode or not (pane := r.stdout.strip()):
-        print(f'tmux could not open control {n}: {r.stderr.strip()}', file=sys.stderr)
-        return 1
-    tmux('set-option', '-p', '-t', pane, TAG, f'c{n}')
-    tmux('set-option', '-p', '-t', pane, REPO_TAG, str(ROOT))
-    where = f'window {win} of tmux session {sess} ({shown_cmd()} attach c{n} goes there)'
-    if not remote_on():
-        why = remote_off_why() if C.run['remote'] == 'auto' else ''
-        print(f'control {n} is up in {where}; it is local' +
-              (f' ({why})' if why else ': [run] remote = true puts control sessions on claude.ai/code'))
-        return 0
-    deadline = time.monotonic() + wait
-    while True:
-        shown = tmux('capture-pane', '-p', '-J', '-t', pane, '-S', '-200')
-        if m := SESSION_LINK.search(shown.stdout or ''):
-            print(f'control {n} is up: {m.group(0)}\n("{name}", in {where})')
-            remote_answer_drift(f'control {n}')  # B45: it came up on Remote Control, so the answer is kept
-            return 0
-        if shown.returncode or time.monotonic() >= deadline:
-            break
-        time.sleep(1)
-    if not shown.returncode:  # B45: the pane is still open, Remote Control on, and no link in all that time
-        link_drift(f'control {n}', wait)
-    print(f'control {n} is up in {where}, but showed no link in {wait:g} s: find "{name}" at {REMOTE_URL}')
-    return 0
+    return control_new_hidden(n, cmd, name, wait)
 
 
 def control_new_hidden(n: int, cmd: list[str], name: str, wait: float = CONTROL_LINK_WAIT) -> int:
-    """F59: `control --new` on Linux and macOS with no tmux session to open a window in (a hidden run, or no
-    tmux): control session `n` in a pseudo-terminal with no window (`hidden_control`). With `[run] remote` it
-    prints its claude.ai/code link once its log shows it, as a window's pane would."""
+    """F59: `control --new` on Linux and macOS: control session `n` in a pseudo-terminal with no window
+    (`hidden_control`; `attach cN` shows it). With `[run] remote` it prints its claude.ai/code link once its
+    log shows it."""
     out = hidden_control_log(n)
     since = out.stat().st_size if out.exists() else 0
     pid, why = hidden_control(n, cmd)
     if not pid:
         print(f'control {n} could not start hidden: {why}', file=sys.stderr)
         return 1
-    where = f'a hidden terminal, its output in {out}'
+    where = f'a hidden terminal ({shown_cmd()} attach c{n} shows it), its output in {out}'
     if not remote_on():
         why = remote_off_why() if C.run['remote'] == 'auto' else ''
         print(f'control {n} is up in {where}; it is local' +

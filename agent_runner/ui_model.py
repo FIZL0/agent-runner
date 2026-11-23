@@ -5,10 +5,10 @@ copy, and the actions they share.
 
     status    the status lines: run up or not, its state, progress, release, no-gate warning, usage
     slots     the run's slot count (0 when no run is up; while it starts, [run] slots)
-    sessions  c1 and every other control session window (cN, its title), then each slot s1..s<slots> and any past the count still on a task: task, title, minutes,
-              state (running, merging, idle: no task), files, session link, terminal URL; none when an older
-              agent-runner started the run (its panes carry no tags: `older_run`)
-    sessions_note  '' or, with no sessions for that reason, the one line Sessions shows instead (`OLDER_RUN`)
+    sessions  c1 and every other live control session (cN, its title from state), then each slot s1..s<slots>
+              and any past the count still on a task: task, title, minutes, state (running, merging, idle: no
+              task), files, session link, terminal URL
+    sessions_note  '' (kept for pages that read it: C26 has no older run to tell apart)
     queue     every open task in TODO.md: id, kind, title, files, after, pri, section, blocked, after_title
               (what it waits on in words: 'F66 Run page: …', 'B109 (landed)', 'all: everything above it') and
               state ('running s2 6m', 'critical', 'after', 'parked', 'ready')
@@ -18,7 +18,7 @@ copy, and the actions they share.
     log       the run log's last lines
     release   the release line ('' when no release is queued)
     quick_asks  the Status chat's quick asks sent to c1: key, label, text
-    terminal_mode  how a session's terminal shows: 'ttyd', 'install' (tmux, no ttyd yet), 'feed'
+    terminal_mode  how a session's terminal shows: 'ttyd', 'install' (no ttyd yet), 'feed' (Windows)
 
 F74 adds, outside the snapshot (read on demand, per session): `feed(name)` (its transcript as say/you/tool/out
 entries); and the actions `chat_to` (any control session), `interrupt`, `new_control` and `quick_ask`; F86
@@ -26,7 +26,7 @@ entries); and the actions `chat_to` (any control session), `interrupt`, `new_con
 
 Each action calls what the CLI already does, as a subprocess of the runner (`runner_cmd()`), so a page and a
 terminal change the run exactly as a person typing the command would; `chat`, `answer` and `take` hand a
-message to c1 the way the runner feed hands one on (typed into c1's pane, else a new control session with
+message to c1 the way the runner feed hands one on (typed into c1, else a new control session with
 it as its first message). Standard library only.
 """
 
@@ -210,7 +210,7 @@ def c1_row() -> dict:
 
 
 def slot_link(name: str) -> str:
-    """Slot `name`'s (s2) claude.ai/code link: its pane's agent session id, then that transcript's link."""
+    """Slot `name`'s (s2) claude.ai/code link: its session's agent session id, then that transcript's link."""
     try:
         from agent_runner import slots
         mux = slots.MUX
@@ -241,67 +241,34 @@ def idle_row(name: str) -> dict:
             'terminal': ''}
 
 
-def tmux_panes() -> list[str]:
-    """B113: every tmux pane, one 'session<TAB>window name<TAB>@runner<TAB>@runner-repo<TAB>@runner-run' line
-    each; [] without tmux or a server."""
-    import shutil
-    if not shutil.which('tmux'):
-        return []
-    try:
-        r = sp.run(['tmux', 'list-panes', '-a', '-F',
-                    f'#{{session_name}}\t#{{window_name}}\t#{{{S.TAG}}}\t#{{{S.REPO_TAG}}}\t#{{{S.RUN_TAG}}}'],
-                   capture_output=True, text=True, timeout=5)
-    except (OSError, sp.SubprocessError):
-        return []
-    return r.stdout.splitlines() if not r.returncode else []
-
-
-OLDER_RUN = 'This run was started by an older agent-runner: restart it to see its sessions.'  # C23
-
-
-def _ours(owner: str) -> bool:
-    """C23: a pane's @runner-repo names this main checkout."""
-    try:
-        return bool(owner) and Path(owner).resolve() == Path(S.ROOT).resolve()
-    except OSError:
-        return False
-
-
-def control_windows(panes: list[str]) -> dict[int, str]:
-    """B113/C23: {N: title} of this repository's control session windows in `panes` (`tmux_panes` lines), read
-    only by the tags this version sets: a pane tagged @runner cN whose @runner-repo is this main checkout. The
-    title is its window's name after "<repo> · " and, when it is N, "N · " ("<repo> · 6 · Pairing broken" is
-    'Pairing broken', "<repo> · R43 · site deploy" 'R43 · site deploy'); 'control session' when nothing is left
-    ("<repo> · 3", "<repo> · control 3"). A pane with no tags is never guessed at (see `older_run`)."""
+def given_title(name: str, n: int) -> str:
+    """A control session's title from the name the runner gave it (`control_given`): what follows "<repo> · "
+    and, when it is N, "N · " ("<repo> · 6 · Pairing broken" is 'Pairing broken', "<repo> · R43 · site deploy"
+    'R43 · site deploy'); 'control session' when nothing is left ("<repo> · 3", "<repo> · control 3", '')."""
     repo = S.ROOT.name
-    out: dict[int, str] = {}
-    for line in panes:
-        _, wname, tag, owner = (line.split('\t') + [''] * 4)[:4]
-        if not (tagged := re.fullmatch(r'c(\d+)', tag)) or not _ours(owner):
-            continue
-        n = int(tagged[1])
-        title = wname[len(repo) + 3:].strip() if wname.startswith(f'{repo} · ') else ''
-        if title in (str(n), f'control {n}'):
-            title = ''
-        elif title.startswith(f'{n} · '):
-            title = title[len(f'{n} · '):].strip()
-        out.setdefault(n, title or 'control session')
-    return out
+    title = name[len(repo) + 3:].strip() if name.startswith(f'{repo} · ') else ''
+    if title in (str(n), f'control {n}'):
+        title = ''
+    elif title.startswith(f'{n} · '):
+        title = title[len(f'{n} · '):].strip()
+    return title or 'control session'
 
 
-def older_run(up: bool, panes: list[str]) -> bool:
-    """C23: an older agent-runner started the project's run: it is up, its runner pane (@runner-run this main
-    checkout) is in `panes`, and that pane has no @runner-repo tag (this version sets both on it). False for a
-    hidden run (no runner pane) and with no tmux panes to read: then nothing can be told."""
-    if not up:
-        return False
-    runner = [cols for cols in ((line.split('\t') + [''] * 5)[:5] for line in panes) if _ours(cols[4])]
-    return bool(runner) and not any(_ours(cols[3]) for cols in runner)
+def control_titles() -> dict[int, str]:
+    """C26: {N: title} of this repository's live control sessions (c1 and those with a live pid file), each
+    titled from the name kept in state (`<notes>/controlN.title`, `given_title`); no window names are read."""
+    try:
+        from agent_runner.control import control_given, control_live, control_live_numbers
+        live = ([1] if control_live(1) else []) + control_live_numbers()
+        return {n: given_title(control_given(n), n) for n in live}
+    except Exception:  # noqa: BLE001 - no notes dir yet
+        return {}
 
 
 def control_rows(windows: dict[int, str], links=None) -> list[dict]:
-    """B113: c1 (`c1_row`, titled by its window when it has one), then each other control session window as
-    cN with its title; `links` as `session_rows` (None: each link from its pid file's transcript)."""
+    """B113: c1 (`c1_row`, titled from state when it is live), then each other live control session as cN with
+    its title (`windows`, as `control_titles`); `links` as `session_rows` (None: each link from its pid file's
+    transcript)."""
     c1 = c1_row()
     if windows.get(1):
         c1['title'], c1['state'] = windows[1], 'live'
@@ -324,12 +291,12 @@ def control_rows(windows: dict[int, str], links=None) -> list[dict]:
 
 def session_rows(st: dict, ls: list[str], titles: dict[str, str], now: float, links=None,
                  terminal_base: str = '', slots: int = 0, windows: dict[int, str] | None = None) -> list[dict]:
-    """c1 and the other control sessions (B113: `control_rows`; `windows` as `control_windows`, None: read from
-    tmux), then each slot of STATE `st` in slot order: s1..s<slots> (F71: an idle one, no task, as `idle_row`)
-    and any slot past the count still on its task. `links` ({'s2': url}) replaces the lookup by pane;
+    """c1 and the other control sessions (B113: `control_rows`; `windows` as `control_titles`, None: read from
+    state), then each slot of STATE `st` in slot order: s1..s<slots> (F71: an idle one, no task, as `idle_row`)
+    and any slot past the count still on its task. `links` ({'s2': url}) replaces the lookup by session;
     `terminal_base` is where the run page serves terminals ('' none yet: each row's `terminal` stays '')."""
     files = {tid: P.fields(ls[i]).get('files', []) for _, _, tid, _, i in P.iter_tasks(ls)}
-    out = control_rows(control_windows(tmux_panes()) if windows is None else windows, links)
+    out = control_rows(control_titles() if windows is None else windows, links)
     merging = set(st.get('merging') or [])
     running = dict(st.get('running') or {})
     for n in range(1, slots + 1):
@@ -378,7 +345,7 @@ def log_tail(n: int = LOG_TAIL) -> list[str]:
 def snapshot(up: bool | None = None, now: float | None = None, log_n: int = LOG_TAIL, links=None,
              terminal_base: str = '', windows: dict[int, str] | None = None) -> dict:
     """The run, as one JSON-ready dict (see the module doc). `up` and `now` default to the real ones; `links`,
-    `terminal_base` and `windows` as `session_rows` (`windows` given: tmux is not read, nor `older_run` asked).
+    `terminal_base` and `windows` as `session_rows` (`windows` given: state is not read for titles).
     Call after `state.init`."""
     from agent_runner.status import progress_line, release_line, waiting_ok
     up = S.run_up() if up is None else up
@@ -392,14 +359,10 @@ def snapshot(up: bool | None = None, now: float | None = None, log_n: int = LOG_
         progress = ''
     needs, concepts = needs_rows(waiting_ok(), dt.datetime.fromtimestamp(now))
     slots = slot_count(up, st)
-    panes = tmux_panes() if windows is None else None
-    older = panes is not None and older_run(up, panes)
-    if panes is not None:
-        windows = control_windows(panes)
-    sessions = [] if older else session_rows(st, ls, titles, now, links, terminal_base, slots, windows)
+    sessions = session_rows(st, ls, titles, now, links, terminal_base, slots, windows)
     return {'project': S.project(), 'at': dt.datetime.fromtimestamp(now).isoformat(timespec='seconds'),
             'up': up, 'status': status_rows(up, st, '\n'.join(x for x in (progress, release) if x)),
-            'slots': slots, 'sessions': sessions, 'sessions_note': OLDER_RUN if older else '',
+            'slots': slots, 'sessions': sessions, 'sessions_note': '',
             'queue': queue_rows(ls, st, now),
             'needs': needs, 'concepts': concepts, 'log': log_tail(log_n), 'release': release,
             'quick_asks': quick_asks(), 'terminal_mode': terminal_mode(), 'controls': controls(),
@@ -467,15 +430,14 @@ def release(now: bool = False, text: str = '') -> dict:
 
 
 def to_c1(text: str) -> dict:
-    """Hand `text` to c1 the way the runner feed hands on a message: typed into c1's pane when it is live,
-    else a new control session that gets it as its first message (`control --new --ask`). c1's pane is found
-    by its c1 tag (`control_window`), never $TMUX_PANE: the caller (the run, a terminal page) is not c1 (B111)."""
+    """Hand `text` to c1 the way the runner feed hands on a message: typed into c1 when it is live (through its
+    hidden shim's FIFO, `control.control_type`), else a new control session that gets it as its first message
+    (`control --new --ask`)."""
     try:
-        from agent_runner.control import control_live, control_window
-        from agent_runner.slots import send_to_pane
-        if (pid := control_live(1)) and (pane := control_window(1, pid)) and send_to_pane(pane, text):
+        from agent_runner.control import control_live, control_type
+        if control_live(1) and control_type(1, text):
             return {'ok': True, 'code': 0, 'out': 'sent to c1', 'argv': []}
-    except Exception:  # noqa: BLE001 - no tmux, no c1: a new control session takes it
+    except Exception:  # noqa: BLE001 - no c1 to type into: a new control session takes it
         pass
     return call(['control', '--new', '--ask', text])
 
@@ -544,6 +506,11 @@ RUN_CONTROLS = (
     {'key': 'stop_now', 'label': 'Stop now', 'argv': ('stop', '--force'), 'tui': 'X', 'where': 'run',
      'confirm': STOP_NOW_ASK},
     {'key': 'stop_undo', 'label': 'Take the stop back', 'argv': ('stop', '--undo'), 'tui': 'U', 'where': 'run'},
+    # C26: the run's u, z and x keys, posted as the run view posts them (`key`: they take themselves back when
+    # sent again, as typed ones do)
+    {'key': 'upgrade', 'label': 'Upgrade agent-runner', 'argv': ('key', 'u'), 'tui': 'V', 'where': 'run'},
+    {'key': 'suspend', 'label': 'Suspend once stopped', 'argv': ('key', 'z'), 'tui': 'Z', 'where': 'run'},
+    {'key': 'shutdown', 'label': 'Shut down once stopped', 'argv': ('key', 'x'), 'tui': 'B', 'where': 'run'},
     {'key': 'task_take', 'label': 'Take back', 'ask': 'do {id} here', 'tui': 'H', 'where': 'task'},
     {'key': 'task_drop', 'label': 'Drop', 'argv': ('plan', 'drop', '{id}', '{why}'), 'tui': 'D', 'where': 'task'},
 )
@@ -614,9 +581,9 @@ def act(name: str, **args) -> dict:
 #
 # The feed is a session's transcript (Claude Code's JSONL; Pi's, in Claude's shape by `slots.backend().entry`)
 # as entries {'kind': say|you|tool|out, 'text'}, newest last: the agent's words, the person's, each tool step
-# and its output, so a page shows the words with the steps folded. The terminal view is the session's live
-# tmux pane, through ttyd when it is installed ('ttyd'; C25: with tmux and no ttyd, 'install': the page says how
-# to install it); on Windows or with no tmux, the feed only ('feed').
+# and its output, so a page shows the words with the steps folded. The terminal view is the session's own
+# terminal (`attach NAME` through its shim's socket), through ttyd when it is installed ('ttyd'; C25: without
+# ttyd, 'install': the page says how to install it); on Windows the feed only ('feed').
 
 FEED_BYTES = 400_000  # the tail of a transcript a feed reads: a long session's whole file is not read each poll
 FEED_MAX = 200  # entries a feed returns
@@ -703,7 +670,7 @@ def feed_entries(rows) -> list[dict]:
 
 def session_sid(name: str) -> str:
     """The agent session id of `name`: cN's from its pid file ("pid sid", kept while it is closed: its
-    transcript stays), a slot's (s2) from its pane's process; '' for none."""
+    transcript stays), a slot's (s2) from its hidden session's job; '' for none."""
     if re.fullmatch(r'c\d+', name):
         try:
             return S.C.notes(f'control{name[1:]}.pid').read_text(encoding='utf-8').strip().partition(' ')[2]
@@ -713,7 +680,7 @@ def session_sid(name: str) -> str:
         from agent_runner import slots
         pid = slots.MUX.panes().get(name, ('', 0))[1]
         return (slots.MUX.session_id(pid) or '') if pid else ''
-    except Exception:  # noqa: BLE001 - no tmux, no such slot
+    except Exception:  # noqa: BLE001 - no such slot
         return ''
 
 
@@ -783,47 +750,18 @@ def concept_copy(cid: str) -> str:
 
 
 def terminal_mode() -> str:
-    """F74: how a page shows a session's terminal: 'ttyd' (installed, with tmux), 'install' (tmux, no ttyd: the
-    page says how to install it; C25), or 'feed' (Windows, or no tmux: the feed and the session link only)."""
+    """F74: how a page shows a session's terminal: 'ttyd' (installed: it serves `attach NAME`), 'install' (no
+    ttyd: the page says how to install it; C25), or 'feed' (Windows: the feed and the session link only)."""
     import shutil
     from agent_runner import plat
-    if plat.WINDOWS or not shutil.which('tmux'):
+    if plat.WINDOWS:
         return 'feed'
     return 'ttyd' if shutil.which('ttyd') else 'install'
 
 
-def session_pane(name: str) -> str:
-    """The tmux pane of `name`: c1 or another control session cN by its tag (`control.control_window`), a slot
-    (s2) by the run's panes; '' when it has none (a hidden run, no tmux, not up)."""
-    if re.fullmatch(r'c\d+', name):
-        try:
-            from agent_runner.control import control_live, control_window
-            return control_window(int(name[1:]), control_live(int(name[1:])))
-        except Exception:  # noqa: BLE001
-            return ''
-    try:
-        from agent_runner import slots
-        if getattr(slots.MUX, 'name', '') != 'tmux':
-            return ''
-        return slots.MUX.panes().get(name, ('', 0))[0]
-    except Exception:  # noqa: BLE001
-        return ''
-
-
-def _tmux(argv: list[str]) -> tuple[int, str]:
-    try:
-        r = sp.run(['tmux', *argv], capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=5)
-    except (OSError, sp.SubprocessError) as e:
-        return 1, str(e)
-    return r.returncode, r.stdout if not r.returncode else r.stderr.strip()
-
-
-TMUX = [_tmux]  # how `keys` reaches tmux; a test swaps it
-
-
 def _no_pane(name: str) -> dict:
-    return {'ok': False, 'code': 1, 'out': f'{name} has no tmux pane (the run is hidden, {name} is not up, or '
-                                           f'there is no tmux): its feed and session link still work.', 'argv': []}
+    return {'ok': False, 'code': 1, 'out': f'{name} is not up, so nothing can be typed into it: its feed and '
+                                           f'session link still work.', 'argv': []}
 
 
 KEY_BYTES = {'Enter': b'\r', 'Escape': b'\x1b', 'Tab': b'\t', 'BSpace': b'\x7f', 'Up': b'\x1b[A',
@@ -832,7 +770,7 @@ KEY_BYTES = {'Enter': b'\r', 'Escape': b'\x1b', 'Tab': b'\t', 'BSpace': b'\x7f',
 
 def hidden_inbox(name: str) -> Path | None:
     """F89: the FIFO a hidden session's shim reads (`<notes>/controlN.in` for cN, `<notes>/slotN.in` for sN),
-    found from its `.live` marker; None when it has none (not up, a tmux run, not a session name)."""
+    found from its `.live` marker; None when it has none (not up, not a session name)."""
     m = re.fullmatch(r'([cs])(\d+)', name)
     if not m:
         return None
@@ -849,7 +787,7 @@ def _no_typing(name: str) -> dict:
 
 
 def _hidden_keys(session: str, inbox: Path, text: str, key: str) -> dict:
-    """F89: `keys` for a session with no tmux pane: `text` then `key` written raw to its shim's FIFO."""
+    """F89: `keys` for a hidden session: `text` then `key` written raw to its shim's FIFO."""
     from agent_runner import plat, slots
     if plat.WINDOWS:
         return _no_typing(session)
@@ -860,39 +798,30 @@ def _hidden_keys(session: str, inbox: Path, text: str, key: str) -> dict:
 
 
 def keys(session: str, text: str = '', key: str = '') -> dict:
-    """F74: `text` typed into `session`'s pane (c6, s2) as is (`send-keys -l`), then the named `key` (one of
-    KEYS: Enter, Escape, …) if given; `interrupt` sends Escape through it (C25: no longer an action). F89: a
-    hidden session (no tmux pane) gets both written raw to its shim's FIFO (`hidden_inbox`)."""
+    """F74: `text` typed into `session` (c6, s2) as is, then the named `key` (one of KEYS: Enter, Escape, …) if
+    given; `interrupt` sends Escape through it (C25: no longer an action). F89: both are written raw to its
+    hidden shim's FIFO (`hidden_inbox`)."""
     if key and key not in KEYS:
         return {'ok': False, 'code': 2, 'out': f'keys: key is one of {", ".join(KEYS)}, not {key!r}', 'argv': []}
-    if not (pane := session_pane(session)):
-        if inbox := hidden_inbox(session):
-            return _hidden_keys(session, inbox, text, key)
-        return _no_pane(session)
-    for argv in ([['send-keys', '-t', pane, '-l', text]] if text else []) + \
-            ([['send-keys', '-t', pane, key]] if key else []):
-        code, out = TMUX[0](argv)
-        if code:
-            return {'ok': False, 'code': code, 'out': f'tmux send-keys: {out}', 'argv': argv}
-    return {'ok': True, 'code': 0, 'out': f'typed into {session}', 'argv': []}
+    if inbox := hidden_inbox(session):
+        return _hidden_keys(session, inbox, text, key)
+    return _no_pane(session)
 
 
 def interrupt(session: str = 'c1') -> dict:
-    """F74: interrupt `session` (Escape into its pane), as a person pressing Esc in it would."""
+    """F74: interrupt `session` (Escape typed into it), as a person pressing Esc in it would."""
     r = keys(session, key='Escape')
     return {**r, 'out': f'interrupted {session}'} if r['ok'] else r
 
 
 def send(name: str, text: str) -> dict:
     """F74: the person's words to session `name` as they typed them: c1 as `chat` hands them on (`SEND`), any
-    other control session or slot typed into its pane (`slots.send_to_pane`), or, hidden (no tmux pane),
-    through its shim's FIFO as a bracketed paste and Enter (`slots.send_fifo`; F89)."""
+    other control session or slot typed in through its hidden shim's FIFO as a bracketed paste and Enter
+    (`slots.send_fifo`; F89)."""
     if name == 'c1':
         return SEND[0](text)
     from agent_runner import plat, slots
-    if pane := session_pane(name):
-        ok = slots.send_to_pane(pane, text)
-    elif inbox := hidden_inbox(name):
+    if inbox := hidden_inbox(name):
         if plat.WINDOWS:
             return _no_typing(name)
         ok = slots.send_fifo(inbox, text)

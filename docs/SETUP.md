@@ -28,12 +28,12 @@ That puts `agent-runner` on your PATH. It is the same CLI as `./run` in a clone:
 
 **Windows:** Python 3.11+ from python.org (not the Store's `python3` alias), Git for Windows (Claude Code
 runs hooks and Bash calls in its Git Bash). Each slot runs hidden, in a console whose window starts hidden
-(`agent-runner attach s2` shows it); tmux isn't needed. Run `agent-runner run 3` from any terminal.
+(`agent-runner attach s2` shows it). Run `agent-runner run 3` from any terminal.
 
-**tmux is optional** on Linux and macOS too. Without it (or with the run outside a tmux session) the slots run
-hidden, in a pseudo-terminal with no window, their output in `.runner/slotN.log`; you watch them through
-`agent-runner status` and control sessions and steer them with `plan tell`. tmux adds a pane per slot to
-attach to and type into.
+**Linux and macOS** need nothing more either (agent-runner 1.0 dropped tmux). The slots run hidden, in a
+pseudo-terminal with no window, their output in `.runner/slotN.log`. `agent-runner attach` is the run view
+(its log, live, and its keys), `agent-runner attach s2` puts this terminal on slot 2's own terminal (Ctrl-b d
+leaves it running), and `status`, `ui`, control sessions and `plan tell` watch and steer them.
 `[run] links` need no Developer Mode: without it they become junctions and hard links. See the reference's
 [Terminals, and Windows](REFERENCE.md#terminals-and-windows).
 
@@ -106,11 +106,10 @@ are unchanged.
 
 `pi auth check --provider <provider> --json` checks that Pi is installed and logged in.
 
-Pi sessions are interactive, like Claude's: each slot's pane (and the `master-<repo>` window for fix
-sessions) shows Pi's interface, and you can take a session over by typing. The bundled extension
-`pi_idle.ts`, loaded with `-e` even under `lean`, does what Claude's Stop hook does: once Pi has settled at
-its prompt for `idle` seconds with nothing in the editor, it exits. Fix sessions without tmux use print
-mode. Prompts are passed as files (`@file`), at any size, including on Windows. Sessions are retained under
+Pi sessions are interactive, like Claude's: each slot's terminal (`attach s2`) shows Pi's interface, and
+you can take a session over by typing. The bundled extension `pi_idle.ts`, loaded with `-e` even under
+`lean`, does what Claude's Stop hook does: once Pi has settled at its prompt for `idle` seconds with nothing
+in the editor, it exits. Fix sessions use print mode. Prompts are passed as files (`@file`), at any size, including on Windows. Sessions are retained under
 `.runner/pi-sessions` for `agent-runner resume ID`, restart adoption, usage statistics, and stall checks.
 Transient network/server errors can resume up to the existing resume limit in worktree mode. Pi's own
 provider retries apply, but Claude-specific weekly caps and usage-reset detection do not apply to Pi;
@@ -185,7 +184,7 @@ agent-runner plan                 # what it sees
 agent-runner plan brief A1        # what the session will be handed
 agent-runner run --dry-run 3      # what three slots would start
 agent-runner run once             # one task, one session; watch it
-tmux new -s runner agent-runner run 3   # or agent-runner run 3 anywhere: the slots run hidden
+agent-runner run 3                # three slots, in this terminal (bare agent-runner: in the background)
 ```
 
 ## Wrapping it from your own CLI
@@ -342,8 +341,8 @@ suspect = 'BLOCKED:.*(pcsx2|pine|capture|record|screenshot|save state|unattended
 | WAITING/LANDED batch merges | `batch_max` (on by default; 1 = none) |
 | spec commits aren't an attempt | `not_attempt` |
 | "(split into …)" parents wait, then tick themselves | built in |
-| adopting running sessions after a restart; a slot held while an untracked pane runs; one runner at a time | built in |
-| the prompt through a file (tmux's ~16 KB limit) | built in |
+| adopting running sessions after a restart; a slot held while an untracked session runs; one runner at a time | built in |
+| the prompt through a file (a long command line is refused) | built in |
 | master session stashing main around merges | gone: a merge worktree, then a fast-forward-or-merge into main that waits for a human's edits instead of stashing them |
 
 What it gets that it didn't have: a fix session per conflict instead of one master that knows every

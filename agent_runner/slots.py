@@ -1,5 +1,5 @@
-"""Slots and sessions: worktrees and panes, the agent backends (Claude Code, Pi), Remote Control, a
-slot's environment, starting and resuming a session, disk trimming and the terminals (`TmuxMux`, `HiddenMux`)."""
+"""Slots and sessions: worktrees, the agent backends (Claude Code, Pi), Remote Control, a slot's
+environment, starting and resuming a session, disk trimming and the hidden terminals (`HiddenMux`)."""
 
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ from agent_runner import plan as P, plat
 from agent_runner.attach import attach_listen, attach_take
 from agent_runner.config import finished_mark, runner_cmd, shown_cmd
 from agent_runner.gitops import push
-from agent_runner.state import C, clean, git, hook, log, note, REPO_TAG, ROOT, SLOTS_DIR, TAG
+from agent_runner.state import C, clean, git, hook, log, note, ROOT, SLOTS_DIR
 from agent_runner.state import EV_STARTED
 from agent_runner.state import EV_DRIFT
 from agent_runner.brief import NO_PUSH_URLS, prompt_for, review_on
@@ -31,20 +31,7 @@ from agent_runner.sched import ahead, blocked_tasks, open_tasks, tasks
 REMOTE_URL = 'https://claude.ai/code'  # every Remote Control session of the account, slots and control alike
 
 
-def send_to_pane(pane_id: str, text: str) -> bool:
-    """F16: type `text` into tmux pane `pane_id` and press Enter: a bracketed paste (so a newline in it does
-    not send early) then Enter, which an interactive Claude Code (or Pi) queues for its next turn while busy."""
-    buf = f'agent-runner-{os.getpid()}'
-    if tmux('load-buffer', '-b', buf, '-', input=text).returncode:
-        return False
-    if tmux('paste-buffer', '-d', '-p', '-b', buf, '-t', pane_id).returncode:
-        tmux('delete-buffer', '-b', buf)
-        return False
-    time.sleep(0.3)  # let the TUI take the paste before Enter, or Enter lands inside it
-    return not tmux('send-keys', '-t', pane_id, 'Enter').returncode
-
-
-# --- worktrees and panes -------------------------------------------------------
+# --- worktrees -----------------------------------------------------------------
 
 def worktree(n, branch: str) -> Path:
     """Slot n's worktree (or the merge worktree), created once and kept: a warm build is worth more than a
@@ -72,77 +59,8 @@ def worktree(n, branch: str) -> Path:
     return d
 
 
-def tmux(*a: str, **kw) -> sp.CompletedProcess:
-    return sp.run(['tmux', *a], capture_output=True, text=True, **kw)
-
-
-def window(kind: str) -> str:
-    """This repo's window of `kind` ("agents" or "master"): "agents-openmx", so two repos' runners in one
-    tmux session neither share a window nor lay out each other's panes."""
-    return f"{kind}-{re.sub(r'[^A-Za-z0-9_-]', '-', ROOT.name)}"
-
-
-def window_id(name: str) -> str | None:
-    """The id (@N) of this tmux session's window called exactly `name`: a name as a target also matches a
-    longer one by prefix (agents-openmx would find agents-openmx-mods)."""
-    for l in tmux('list-windows', '-F', '#{window_id}\t#{window_name}').stdout.splitlines():
-        wid, _, wname = l.partition('\t')
-        if wname == name:
-            return wid
-    return None
-
-
-def pane(name: str, cwd: Path, cmd: str, env=(), logfile: Path | None = None) -> int:
-    """Open cmd in a pane of this repo's window "agents-<repo>", tagged @runner=name and @runner-repo=the
-    main checkout, in slot order; returns its pid. The fix and repair sessions (name "master") get a
-    window of their own, "master-<repo>", so the slots' layout does not squeeze them to a column.
-
-    Panes are found by their tag rather than their position, so you can break them out, join them or swap
-    them around while the run goes on. The pane's output is piped to `logfile`. Raises RuntimeError when
-    tmux will not open it.
-    """
-    envs = [a for e in env for a in ('-e', e)]
-    w = window('master' if name == 'master' else 'agents')
-    where = ['new-window', '-n', w]
-    if name == 'master':
-        pass  # a window per session (fixes ahead of the lock run side by side); it closes with it
-    elif wid := window_id(w):
-        here = sorted((int(h[1:]), p) for p, h in
-                      (l.split('\t') for l in tmux('list-panes', '-t', wid, '-F',
-                                                   f'#{{pane_id}}\t#{{{TAG}}}').stdout.splitlines())
-                      if re.fullmatch(r's\d+', h))
-        k = int(name[1:])
-        lower = [p for i, p in here if i < k]
-        where = (['split-window', '-h', '-t', lower[-1]] if lower else
-                 ['split-window', '-h', '-b', '-t', here[0][1] if here else wid])
-    r = tmux(*where, '-d', '-c', str(cwd), *envs, '-P', '-F', '#{pane_id} #{pane_pid} #{window_id}', cmd)
-    if r.returncode or not r.stdout.split():
-        raise RuntimeError(f'tmux could not open a pane: {r.stderr.strip()}')
-    pane_id, pid, w = (r.stdout.split() + [w])[:3]
-    tmux('set-option', '-p', '-t', pane_id, TAG, name)
-    tmux('set-option', '-p', '-t', pane_id, REPO_TAG, str(ROOT))
-    tmux('set-option', '-w', '-t', w, 'pane-border-status', 'top')
-    tmux('set-option', '-w', '-t', w, 'pane-border-format', f' #{{{TAG}}} ')
-    tmux('select-layout', '-t', w, 'even-horizontal')
-    if logfile:
-        tmux('pipe-pane', '-t', pane_id, '-o', f'cat >> {shlex.quote(str(logfile))}')
-    return int(pid)
-
-
-def panes() -> dict[str, tuple[str, int]]:
-    """{name: (pane id, pid)} of this repo's tagged panes in this tmux session: another repo's runner may
-    share the session, with slots of the same names, so a pane is ours only when its @runner-repo is this
-    main checkout."""
-    out = {}
-    for l in tmux('list-panes', '-s', '-F', f'#{{pane_id}}\t#{{pane_pid}}\t#{{{TAG}}}\t#{{{REPO_TAG}}}').stdout.splitlines():
-        pane_id, pid, name, repo = (l.split('\t') + [''] * 3)[:4]
-        if name and pid.isdigit() and repo and Path(repo) == ROOT:
-            out[name] = (pane_id, int(pid))
-    return out
-
-
 def session_id(pid: int) -> str | None:
-    """The `--session-id` of the agent running as `pid` or its child (the pane's shell may not exec it)."""
+    """The `--session-id` of the agent running as `pid` or its child (a shell may not exec it)."""
     for p in [pid, *plat.children(pid)]:
         if (args := plat.cmdline(p)) is not None and (named := sids(args)):
             return named[0]
@@ -155,7 +73,7 @@ def sids(args: list[str]) -> list[str]:
 
 
 def adopt(branch: str) -> dict[int, tuple]:
-    """Sessions an earlier run left going in panes sN: {n: ((pid, sid, since), task)}. A restarted runner
+    """Sessions an earlier run left going in slots sN: {n: ((pid, sid, since), task)}. A restarted runner
     watches and merges them as its own instead of resetting their worktrees under them. A slot past this run's count is watched until it ends and never refilled."""
     known = {t[0]: t for t in tasks(branch)}
     out = {}
@@ -249,7 +167,7 @@ class Claude:
                                              if remote_slots_on() and silent() is not False else {})})]
 
     def cmd(self, prompt: str, pf: Path, sid: str, flags: list[str]) -> str:
-        """sh reads the prompt file into the one argument (tmux refuses a command over about 16 KB). Past
+        """sh reads the prompt file into the one argument (a long command line is refused). Past
         ARG_PROMPT_MAX bytes even that fails (Linux takes one argument of 128 KB at most, and the agent
         exits at once, "Argument list too long"), so the brief goes in as the system prompt (`long_brief`)."""
         if len(prompt.encode('utf-8')) > ARG_PROMPT_MAX:
@@ -606,7 +524,7 @@ def slot_open(name: str, wait: float = OPEN_WAIT) -> tuple[str, str]:
 
 def agent_cmd(prompt: str, sid: str, model: str, idle: int, name: str, resume: bool = False,
               cwd: Path | None = None) -> str:
-    """The agent command line for one task, for sh (a tmux pane). The prompt is
+    """The agent command line for one task, for sh. The prompt is
     written to `<notes>/<name>.prompt` and goes in from there (`Claude.cmd`, `Pi.cmd`)."""
     pf = C.notes(f'{name}.prompt')
     pf.write_text(prompt, encoding='utf-8')
@@ -638,8 +556,8 @@ def merge_env() -> dict:
 
 def slot_env(n: int | None) -> list[str]:
     """A slot's environment, as NAME=value: `AGENT_RUNNER=1`, `AGENT_SLOT=<n>`; the config file when it came from
-    AGENT_RUNNER_CONFIG and every variable `[run] pass_env` names that is set (a tmux pane does not inherit
-    the runner's environment, so a wrapper's own variables must be passed on by name); then `[run]
+    AGENT_RUNNER_CONFIG and every variable `[run] pass_env` names that is set (a session started elsewhere does
+    not inherit the runner's environment, so a wrapper's own variables must be passed on by name); then `[run]
     slot_env` with {n} (the slot) and {slots} filled in. `n=None` is the master window's: `shared_env` in
     place of `[run] slot_env`, so it builds in the merge worktree the way the gate there does."""
     # `finished_mark`; C14: AGENT_SLOT whatever `slot_env` says, which only adds to it
@@ -946,35 +864,6 @@ def resume(n: int, tid: str, sid: str, why: str, branch: str, model: str, idle: 
 
 # --- terminals: one per slot -----------------------------------------------------
 
-class TmuxMux:
-    """tmux panes in this repo's window "agents-<repo>", tagged @runner=sN; the pane's output goes to the
-    slot log."""
-    name = 'tmux'
-
-    def open(self, n: int, cwd: Path, prompt: str, sid: str, model: str, idle: int, env: list[str],
-             logfile: Path, resume: bool = False) -> int | None:
-        try:
-            return pane(f's{n}', cwd, agent_cmd(prompt, sid, model, idle, f'slot{n}', resume, cwd), env, logfile)
-        except RuntimeError as e:
-            log(f'slot {n}: {e}')
-            return None
-
-    def panes(self) -> dict[str, tuple[str, int]]:
-        return panes()
-
-    def session_id(self, pid: int) -> str | None:
-        return session_id(pid)
-
-    def where(self, n: int) -> str:
-        return f'pane s{n}'
-
-    typed = True  # `send` types into a slot's session
-
-    def send(self, hit: tuple[str, int], text: str) -> bool:
-        """Type `text` into the slot whose `panes()` entry is `hit`, and press Enter."""
-        return send_to_pane(hit[0], text)
-
-
 SHIM_WAIT = 30.0  # s a hidden slot's shim gets to start its agent (a busy machine is slow to start Python)
 
 
@@ -1062,8 +951,8 @@ def hidden_line() -> str:
 
 
 def send_fifo(inbox: Path, text: str) -> bool:
-    """F40: what `send_to_pane` does for tmux, through the FIFO a hidden slot's shim reads (`run_pty`): a
-    bracketed paste, then Enter. False when no shim reads it (the session ended)."""
+    """F40: type `text` into a hidden session through the FIFO its shim reads (`run_pty`): a bracketed paste
+    (so a newline in it does not send early), then Enter. False when no shim reads it (the session ended)."""
     try:
         fd = os.open(inbox, os.O_WRONLY | os.O_NONBLOCK)  # ENXIO with no reader, rather than hang
     except OSError:
@@ -1265,7 +1154,7 @@ def slot_shim(job: str) -> int:
     return 0
 
 
-MUX: TmuxMux | HiddenMux = TmuxMux()  # what `cmd_run` picked
+MUX: HiddenMux = HiddenMux()  # every slot runs hidden (C26: on every OS)
 MASTER_IDLE = 90     # s a master session sits at its prompt, its answer given, before the Stop hook ends it
 
 
@@ -1319,55 +1208,7 @@ def session_tmp() -> Path:
     return d
 
 
-def background_session() -> str:
-    """The detached tmux session bare `agent-runner` starts the run in: "ar-<repo>"."""
-    return f"ar-{re.sub(r'[^A-Za-z0-9_-]', '-', ROOT.name)}"
-
-
-def background_env() -> list[str]:
-    """NAME=value for the runner in a new tmux session, which gets the tmux server's environment, not this
-    shell's: the PATH the agent and git are found on, the runner's and Claude's own variables, `[run] pass_env`."""
-    keep = ('PATH', 'VIRTUAL_ENV', *C.run['pass_env'])
-    return [f'{k}={v}' for k, v in sorted(os.environ.items())
-            if k in keep or k.startswith(('AGENT_RUNNER', 'CLAUDE_', 'ANTHROPIC_'))]
-
-
 def claude_json() -> Path:
     cfg_dir = os.environ.get('CLAUDE_CONFIG_DIR')
     return Path(cfg_dir) / '.claude.json' if cfg_dir else Path.home() / '.claude.json'
 
-
-def attach_target(rows: list[str], root: Path, which: str) -> tuple[str, str] | None:
-    """(session, pane id) of the runner's pane (`which` "runner") or a tagged pane (s2, master) of the run for
-    `root`, from `tmux list-panes -a` rows of session, pane id, @runner, @runner-repo, @runner-run and, when a
-    row has it, its window name: B114, a control session cN with no pane tag (opened by an older agent-runner)
-    is then found by its window name (`control_window_pane`), as ui_model.control_windows lists it."""
-    for l in rows:
-        sess, pane_id, name, repo, run_for = (l.split('\t') + [''] * 5)[:5]
-        mine = run_for if which == 'runner' else repo if name == which else ''
-        if mine and Path(mine) == root:
-            return sess, pane_id
-    return control_window_pane(rows, root, which)
-
-
-def control_window_pane(rows: list[str], root: Path, which: str) -> tuple[str, str] | None:
-    """B114: (session, pane id) of control session `which` (cN) by its window name, "<repo> · N", "<repo> ·
-    control N" or "<repo> · N · <title>", for a pane with no tag (an older agent-runner opened it): its
-    @runner-repo is `root`, or, with none, it is in the run's tmux session "ar-<repo>". Rows as
-    `attach_target`, with the window name sixth; None when no row has one or none matches."""
-    if not (m := re.fullmatch(r'c(\d+)', which)):
-        return None
-    repo_name = root.name
-    run_sess = f"ar-{re.sub(r'[^A-Za-z0-9_-]', '-', repo_name)}"
-    named = re.compile(rf'{re.escape(repo_name)} · (?:control )?{int(m[1])}(?: · .*)?')
-    for l in rows:
-        sess, pane_id, name, repo, _run_for, wname = (l.split('\t') + [''] * 6)[:6]
-        if name or not named.fullmatch(wname):
-            continue
-        try:  # resolved, as ui_model.control_windows compares them: a checkout reached through a symlink
-            ours = Path(repo).resolve() == Path(root).resolve() if repo else sess == run_sess
-        except OSError:
-            ours = False
-        if ours:
-            return sess, pane_id
-    return None
