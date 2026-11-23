@@ -415,7 +415,7 @@ def control_model() -> str:
 
 
 def control_argv(n: int, sid: str, resume: bool, blank: bool = False, ask: str = '', local: bool = False,
-                 images: list[str] | tuple = ()) -> list[str]:
+                 images: list[str] | tuple = (), typed: bool | None = None) -> list[str]:
     """Control session `n`: interactive, on `[models] control`, the brief from its settings
     file; with `[run] remote` on Remote Control as "<repo> · control N". Control 1 (the kept session the run
     starts) gets a first message asking for the status summary (`status` only: `since` would move the last-look
@@ -427,7 +427,12 @@ def control_argv(n: int, sid: str, resume: bool, blank: bool = False, ask: str =
     (`control 1 --local`, the same c1): not on Remote Control even with `[run] remote` on, so it is in the
     terminal only and its start pushes nothing; the control server is the apps' one entry. `ask`
     (`control --new --ask TEXT`, from the runner feed): TEXT is its first message instead; `images` (`--file
-    PATH`, alias `--image`, repeatable) adds a line per attached file to it (`control_ask`)."""
+    PATH`, alias `--image`, repeatable) adds a line per attached file to it (`control_ask`). B147: on Remote
+    Control a positional first message runs before the bridge connects, so the claude.ai/code thread would start
+    at the reply; there (`typed`, by default `first_typed`) it is left off the command line and kept in
+    CONTROL_FIRST for `type_first` to type in once Remote Control is up (control_first.py)."""
+    from agent_runner.control_first import CONTROL_FIRST, first_typed
+    CONTROL_FIRST[0] = ''
     from agent_runner.guide import CONTROL_START, CONTROL_START_WATCH
     cmd = control_cmd()  # B93: [run] command, as the brief and the feed name it
     opening = CONTROL_START.format(cmd=cmd, watch_start='' if feed_on() else CONTROL_START_WATCH.format(cmd=cmd))
@@ -435,11 +440,14 @@ def control_argv(n: int, sid: str, resume: bool, blank: bool = False, ask: str =
         opening = f'Say first, in one line: "{CONTROL_FRESH[0]}." Then: {opening}'
     ask_text, ask = ask, control_ask(ask, images)
     first = [ask] if ask else [opening] if n == 1 and not blank else []
+    remote = remote_on() and not local
+    if first and remote and (first_typed(n) if typed is None else typed):  # B147: typed in once RC is up
+        CONTROL_FIRST[0], first = first[0], []
     return [plat.exe(C.run['agent']), *first,
             '--resume' if resume else '--session-id', sid, '--model', control_model(),
             '--permission-mode', 'bypassPermissions',
             '--settings', str(control_settings()), '--add-dir', str(control_skills_dir()),
-            *(['--remote-control', control_name(n, ask_text, images)] if remote_on() and not local else [])]
+            *(['--remote-control', control_name(n, ask_text, images)] if remote else [])]
 
 
 def control_live(n: int) -> int:
