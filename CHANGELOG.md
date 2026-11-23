@@ -4,6 +4,8 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+## 0.61.0 (2026-11-23)
+
 - Added: the run page (web) deletes chats. Each row in the Chats list has a trash button, shown on hover (always
   on touch screens); the Project chat (c1) has none. A click deletes at once, no confirm: the row dims and an Undo
   button takes the trash button's spot until the person clicks anything else or leaves the page, and only then is
