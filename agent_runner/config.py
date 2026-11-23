@@ -372,6 +372,18 @@ def parse_model(value: str, providers: dict[str, dict] | None = None, local: boo
     return head, rest
 
 
+def claude_model(value: str, providers: dict[str, dict] | None = None, local: bool = False,
+                 where: str = '[models]', backend: str = 'claude') -> str:
+    """`parse_model`, then the bare claude model name; until the loop engine (F106c) lands, only claude runs a
+    session, so another provider is refused (SystemExit) where it is given: a [models] role, a task's own
+    model (plan add/edit --model), run --model."""
+    provider, model = parse_model(value, providers, local, where, backend)
+    if provider != 'claude':
+        raise SystemExit(f'agent-runner: {where} = {value!r}: the {provider} provider is not supported '
+                         'yet; only claude models run until the loop engine lands (F106c)')
+    return model
+
+
 def _toml_value(v) -> str:
     if isinstance(v, bool):
         return 'true' if v else 'false'
@@ -720,11 +732,7 @@ class Config:
         refs.update({f'[models.kinds] {k}': k for k in m['kinds']})
         for where, key in refs.items():
             table = m['kinds'] if where.startswith('[models.kinds]') else m
-            provider, model = parse_model(table[key], self.providers, self.models_local, where, r['backend'])
-            if provider != 'claude':  # until the loop engine (F106c) lands, only claude runs a session
-                raise SystemExit(f'agent-runner: {where} = {table[key]!r}: the {provider} provider is not supported '
-                                 'yet; only claude models run until the loop engine lands (F106c)')
-            table[key] = model
+            table[key] = claude_model(table[key], self.providers, self.models_local, where, r['backend'])
         r['model'], r['fix_model'] = m['code'], m['fix']
         return m
 

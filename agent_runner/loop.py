@@ -20,7 +20,7 @@ from contextlib import ExitStack
 from pathlib import Path
 
 from agent_runner import ci, gitops, plan as P, plansync, plat
-from agent_runner.config import RUNNER, ensure_local, finished_mark, shown_cmd
+from agent_runner.config import claude_model, RUNNER, ensure_local, finished_mark, shown_cmd
 from agent_runner.done import TESTED
 from agent_runner.gitops import missing_remote, push
 from agent_runner.state import (alarm, ask_stop, C, clean, clear_stop, commit_plan, default_branch, FORCED, forced,
@@ -1032,6 +1032,8 @@ def run(argv: list[str], prog: str) -> int:
 
     init()
     r = C.run
+    if a.model and ':' in a.model:  # F125: another provider is refused here, not run as a claude model name
+        a.model = claude_model(a.model, C.providers, C.models_local, 'run --model', r['backend'])
     once = a.slots == 'once'
     global POWER
     POWER = '' if once else 'shutdown' if a.shutdown else 'suspend' if a.suspend else ''
