@@ -1038,9 +1038,28 @@ def picker_wanted() -> bool:
     return tty and not os.environ.get('AGENT_RUNNER_SLOT')
 
 
-def run_facts(root: Path, run: dict) -> dict:
+def page_link(urls: list[str], https=None) -> str:
+    """B135: the run page link from <notes>/web.url's addresses (all http): a Tailscale Serve https address for
+    its port first, as `run status` (web.page_line) and the run log print it, since Talk's mic needs https."""
+    if not urls:
+        return ''
+    from urllib.parse import parse_qs, urlsplit
+    try:
+        u = urlsplit(urls[0])
+        if u.port and (t := (parse_qs(u.query).get('t') or [''])[0]):
+            if https is None:
+                from agent_runner.web import tailscale_https_urls as https
+            if got := [x for x in https(u.port, t) if x not in urls]:
+                return got[0]
+    except (OSError, ValueError):
+        pass
+    return urls[0]
+
+
+def run_facts(root: Path, run: dict, https=None) -> dict:
     """What the run picker and the launcher say of the project at `root` beside `run` (`run_info`): tasks left,
-    stopping (a stop was asked for), and the run page link ('' while no run serves one)."""
+    stopping (a stop was asked for), and the run page link ('' while no run serves one; its https address first,
+    B135)."""
     out = {'left': None, 'stopping': False, 'link': ''}
     try:
         from agent_runner.config import Config
@@ -1050,7 +1069,7 @@ def run_facts(root: Path, run: dict) -> dict:
         out['stopping'] = bool(run.get('up')) and c.notes('STOP').exists()
         if run.get('up'):
             us = c.notes('web.url').read_text(encoding='utf-8').split()
-            out['link'] = us[0] if us else ''
+            out['link'] = page_link(us, https)
     except (OSError, SystemExit, ValueError, KeyError, TypeError):
         pass
     return out
