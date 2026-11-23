@@ -121,7 +121,8 @@ def test_server(tmp: Path) -> None:
         code, out = post(f'{base}/act?t={token}', {'name': 'drop', 'args': ['F1']})
         eq(code, 400, 'args that are not an object are a bad request')
 
-        with mock.patch.object(W.shutil, 'which', return_value=None), mock.patch('agent_runner.plat.WINDOWS', False):
+        with mock.patch.object(W.shutil, 'which', return_value=None), mock.patch('agent_runner.plat.WINDOWS', False), \
+                mock.patch.object(W, 'session_live', return_value=True):
             code, body = get(f'{base}/terminal/s1?t={token}')
         r = json.loads(body)
         check(not r['ok'] and r['out'].startswith(W.TTYD_INSTALL) and 'chat' in r['out'],
@@ -3472,6 +3473,9 @@ def test_session_proxy_f114(tmp: Path) -> None:
                 mock.patch.object(W.shutil, 'which', return_value='ttyd'):
             r = json.loads(get(f'{base}/terminal/c6?t={token}')[1])
             eq((r['ok'], r['live'], r['link'], r['resume']), (False, False, 'L', True), 'an ended chat: its link and Resume')
+            with mock.patch.object(W.shutil, 'which', return_value=None):
+                r = json.loads(get(f'{base}/terminal/c6?t={token}')[1])
+            eq((r['mode'], r['resume']), ('none', True), 'without ttyd too')
             with mock.patch('agent_runner.control_reopen.reopen_control', return_value='x') as ro:
                 out = post(f'{base}/act?t={token}', {'name': 'resume_chat', 'args': {'chat': 'c6'}})[1]
             eq((out['ok'], ro.call_args[0]), (True, (6, 'sid')), 'resume_chat reopens its conversation')

@@ -14,6 +14,7 @@ import json
 import os
 import re
 import secrets
+import subprocess as sp
 import sys
 import threading
 import time
@@ -80,9 +81,14 @@ def listen_tcp(path: Path):
         port, token = s.getsockname()[1], secrets.token_urlsafe(24)
         path.unlink(missing_ok=True)
         with open(os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), 'w', encoding='utf-8') as f:
+            if os.name == 'nt':  # the mode means nothing there: this user alone, before the token is in it
+                who = f'{os.environ.get("USERDOMAIN", ".")}\\{os.environ.get("USERNAME", "")}'
+                sp.run(['icacls', str(path), '/inheritance:r', '/grant:r', f'{who}:F'], check=True, timeout=20,
+                       stdout=sp.DEVNULL, stderr=sp.DEVNULL, creationflags=plat.CREATE_NO_WINDOW)
             json.dump({'port': port, 'token': token}, f)
-    except OSError:
+    except (OSError, sp.SubprocessError):
         s.close()
+        path.unlink(missing_ok=True)
         return None
     TOKENS[port] = token
     return s

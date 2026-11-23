@@ -145,6 +145,8 @@ A chat or slot shows the real Claude Code session through ttyd, in place of a th
 - **Never redrawn.** A refresh, a snapshot or a state change leaves the frame as it is: it is set once per open, and
   `setHTML()` never touches it. It goes when the chat is left or the page has been hidden for 15 s, so the session gets
   its other viewers' size back.
+- **Its prompt line stays.** The session draws its menus, questions and status in the same rows, so cropping it would
+  hide those.
 - **Box and session never both hold focus.** A mouse press in the session gives it the keyboard; ttyd's focus on connect
   never does. A tap on the box takes the focus back.
 - **Touch layer.** On a touch device a layer over the frame takes the touch: a drag scrolls the session (a wheel steps

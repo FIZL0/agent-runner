@@ -558,9 +558,9 @@ class Terminals:
 
     def open(self, name: str) -> dict:
         """Where the page finds session `name`: {'ok', 'port' (the page's own), 'path'}, or why not."""
-        if U.terminal_mode() == 'install':
-            return terminal_fallback(name)
         sock = socket_of(name)
+        if U.terminal_mode() == 'install':  # an ended one says that it ended: ttyd would not bring it back
+            return terminal_fallback(name) if sock or session_live(name) else no_session(name)
         from agent_runner.attach import reachable
         if not sock or name[0] == 's' and headless(name) or not reachable(Path(sock)):
             return no_session(name)
