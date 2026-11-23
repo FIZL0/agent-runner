@@ -1188,7 +1188,7 @@ def launcher_text_painted(row: dict, said: str, p: PickerPaint) -> str:
            '']
     if said:
         out += [said, '']
-    out += [p.hints([('⏎', 'done')], ('q', 'back')), p.c('dim', 'status · attach · stop · control: agent-runner --help')]
+    out += [p.hints([('⏎', 'terminal UI')], ('q', 'back')), p.c('dim', 'status · attach · stop · control: agent-runner --help')]
     return '\n'.join(out) + '\n'
 
 
@@ -1218,7 +1218,7 @@ def launcher_text(row: dict, said: str = '', paint: PickerPaint | None = None) -
     out = [f'{BOLD}{row["name"]}{RESET}  {row["root"]}', status,
            row['link'] or f'{DIM}no run page (the run serves none){RESET}', '',
            '  w  open the run page in the browser', '  t  open the terminal UI (agent-runner ui)',
-           '  c  copy the link', '  q  back · Enter  done', '']
+           '  c  copy the link', '  q  back · ⏎ terminal UI', '']
     if said:
         out += [said, '']
     out.append(f'{DIM}status · attach · stop · control: agent-runner --help{RESET}')
@@ -1284,16 +1284,48 @@ def open_link(url: str) -> str:
     return 'opened in the browser' if webbrowser.open(url) else f'no browser here: {url}'
 
 
-def copy_link(url: str) -> str:
-    """The link on this machine's clipboard (wl-copy, xclip, pbcopy or clip, the first there is); with none,
-    the link itself to copy by hand."""
+def wayland_env() -> dict | None:
+    """F117: the environment for wl-copy when WAYLAND_DISPLAY is unset (a tmux pane, a process started without
+    it) but a Wayland socket is in $XDG_RUNTIME_DIR; None to keep the environment as it is."""
+    run_dir = os.environ.get('XDG_RUNTIME_DIR')
+    if os.environ.get('WAYLAND_DISPLAY') or not run_dir:
+        return None
+    socks = sorted(p.name for p in Path(run_dir).glob('wayland-*') if not p.name.endswith('.lock'))
+    return {**os.environ, 'WAYLAND_DISPLAY': socks[0]} if socks else None
+
+
+def osc52_copy(url: str, out=None) -> bool:
+    """F117: the link to the terminal's clipboard as OSC 52, wrapped for tmux when TMUX is set; False when
+    there is no terminal to write to."""
+    import base64
+    out = out or sys.stdout
+    try:
+        if not out.isatty():
+            return False
+        seq = f'\x1b]52;c;{base64.b64encode(url.encode("utf-8")).decode("ascii")}\x07'
+        if os.environ.get('TMUX'):
+            seq = '\x1bPtmux;' + seq.replace('\x1b', '\x1b\x1b') + '\x1b\\'
+        out.write(seq)
+        out.flush()
+        return True
+    except (OSError, ValueError, AttributeError):
+        return False
+
+
+def copy_link(url: str, out=None) -> str:
+    """The link on this machine's clipboard (wl-copy, xclip, pbcopy or clip, the first that works; wl-copy
+    given the Wayland socket when WAYLAND_DISPLAY is unset); else to the terminal as OSC 52; else the link
+    itself to copy by hand."""
     for argv in (['wl-copy'], ['xclip', '-selection', 'clipboard'], ['pbcopy'], ['clip']):
         if shutil.which(argv[0]):
             try:
-                if not sp.run(argv, input=url.encode('utf-8'), capture_output=True, timeout=5).returncode:
+                if not sp.run(argv, input=url.encode('utf-8'), capture_output=True, timeout=5,
+                              env=wayland_env() if argv[0] == 'wl-copy' else None).returncode:
                     return 'link copied'
             except (OSError, sp.SubprocessError):
                 continue
+    if osc52_copy(url, out):
+        return 'link copied (terminal)'
     return f'no clipboard tool here (wl-copy, xclip, pbcopy, clip): {url}'
 
 
@@ -1306,7 +1338,7 @@ LAUNCHER_ACTIONS = {'w': open_link, 'c': copy_link, 't': open_ui}
 
 
 def launch(row: dict, key=read_key, show=None, actions=None, paint: PickerPaint | None = None) -> str:
-    """Screen 2 for the picked run: w, t and c act and stay; 'back' for q or Esc, 'done' for Enter."""
+    """Screen 2 for the picked run: w, t and c act and stay, Enter as t (F117); 'back' for q or Esc."""
     show = show or (lambda s: (sys.stdout.write(CLEAR + s), sys.stdout.flush()))
     acts = {**LAUNCHER_ACTIONS, **(actions or {})}
     said = ''
@@ -1315,9 +1347,7 @@ def launch(row: dict, key=read_key, show=None, actions=None, paint: PickerPaint 
         k = key()
         if k in ('q', 'esc'):
             return 'back'
-        if k == 'enter':
-            return 'done'
-        if k == 't':
+        if k in ('t', 'enter'):
             said = acts['t'](Path(row['root'])) or ''
         elif k in ('w', 'c'):
             said = acts[k](row['link']) if row['link'] else 'no run page link to use'
@@ -1338,5 +1368,4 @@ def cmd_pick(here: Path | None, key=read_key, show=None, actions=None, sessions=
         row = rows[i]
         if not (row['run'] or {}).get('up'):
             return cmd_background([])
-        if launch(row, key, show, actions, paint) == 'done':
-            return 0
+        launch(row, key, show, actions, paint)
