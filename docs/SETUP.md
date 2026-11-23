@@ -134,7 +134,7 @@ never prints the secret:
 
 ```
 copilot  ✓ OAuth in /home/you/.pi/agent/auth.json (github-copilot, GitHub Enterprise corp.ghe.com)
-claude   ✓ Claude Code's own login (claude /login)
+claude   ✓ Claude Code's own login (claude /login), not checked here
 gemini   ✗ no login: agent-runner login gemini
 acme     ✓ env ACME_KEY
 lab      ✓ needs none (a local model)

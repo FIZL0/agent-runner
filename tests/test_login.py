@@ -161,6 +161,11 @@ def test_needs_you(e: Env):
         git(e.repo, 'commit', '-qm', 'plan')
         eq(L.missing('gemini:pro', R.C), 'gemini', 'a model on gemini with no login is missing its login')
         eq(L.missing('opus', R.C), '', 'a claude model never is')
+        with R.MERGE:  # a merge holds the plan: held back now, not blocked, and handed back a minute later
+            check(L.unlogged(tid, 'main', R.C.models['code']) and tid in L.HELD, f'{tid} is held back while a merge runs')
+        eq(L.retry_held(L.HELD[tid] + 1), set(), 'not handed back at once')
+        eq(L.retry_held(L.HELD[tid] + L.HELD_RETRY), {tid}, f'handed back after {L.HELD_RETRY} s')
+        check(not [a for a in P.asks(R.C.todo, all=True) if a[1] == tid], 'and it was not blocked meanwhile')
         check(L.unlogged(tid, 'main', R.C.models['code']), f'{tid} (kind D, on gemini) is held back, not started')
         asks = [a for a in P.asks(R.C.todo, all=True) if a[1] == tid]
         check(asks and asks[0][0] == 'BLOCKED' and 'login gemini' in asks[0][3],

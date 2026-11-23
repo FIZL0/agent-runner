@@ -35,7 +35,7 @@ from agent_runner.brief import no_remote_line
 from agent_runner.sched import blocked_by_edits, keep_claims, PARK_LIMIT, parked_attempts, pick, tasks
 from agent_runner.sched import forgive_park, note_committed
 from agent_runner.tools import take_end
-from agent_runner.login import unlogged
+from agent_runner.login import retry_held, unlogged
 from agent_runner.asks import block_asks, EV_FINISHED, park_asked, unblocked_asks
 from agent_runner.slots import (adopt, backend, DISK_AT, DISK_SAID, du, env_vars, free_branch,
     free_gb, GB, hidden_line, HiddenMux, MUX, remote_any, remote_line, REMOTE_URL, resume, save_leftovers,
@@ -1377,9 +1377,11 @@ class Run:
                 print('\a', end='', flush=True)
             return
         self.stall_said.discard('before_start')
+        self.tried.difference_update(retry_held())  # F106e: held back for a login, not blocked yet: again
         if task := pick(running, self.tried, self.branch, claim=True):
             if unlogged(task[0], self.branch, self.model):  # F106e: its provider has no login: Needs you
                 plansync.release(C, task[0])
+                self.tried.add(task[0])  # the next pick takes another; an unblock or retry_held puts it back
                 return
             if p := start(n, task, self.branch, self.model, self.idle, slots):
                 procs[n], running[n] = p, task

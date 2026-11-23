@@ -19,6 +19,7 @@ import os
 import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 from agent_runner.config import harness_model, PROVIDERS, RUNNER
@@ -72,7 +73,7 @@ def login_of(provider: str, providers: dict, creds: dict | None = None,
     creds = stored() if creds is None else creds
     env = os.environ if env is None else env
     if provider == 'claude':
-        return True, "Claude Code's own login (claude /login)"
+        return True, "Claude Code's own login (claude /login), not checked here"
     custom = providers.get(provider)
     if provider in LOCAL_NONE or (custom and not custom.get('key_env')):
         return True, 'needs none (a local model)'
@@ -107,16 +108,40 @@ def why_for(provider: str, tid: str) -> str:
 def park_unlogged(tid: str, model: str, branch: str) -> bool:
     """F106e: when `tid`'s session (on `model`) would run on a provider with no login, block it on the person
     with `run login <provider>` instead of starting it, committed as the runner commits a block (sched's
-    `block_parked`: MERGE free, TODO.md clean). True when it is held back (blocked now, or it will be on the
-    next try): the caller starts nothing."""
+    `block_parked`: MERGE free, TODO.md clean). True when it is held back: the caller starts nothing and marks
+    it tried, so the next pick takes another task. Blocked, it comes back once it is unblocked (the run's
+    `retry_reopened`); not blocked yet (a merge holds the plan, TODO.md has edits), `retry_held` hands it back
+    after HELD_RETRY s."""
     from agent_runner import state
     if not (provider := missing(model, state.C)):
         return False
+    HELD[tid] = time.time()
+    if park_now(tid, provider, branch):
+        HELD.pop(tid, None)
+    return True
+
+
+HELD: dict[str, float] = {}  # task id: when the run held it back without blocking it
+HELD_RETRY = 60
+
+
+def retry_held(now: float | None = None) -> set[str]:
+    """The tasks held back without a block HELD_RETRY s ago or more: the run takes them out of its tried set."""
+    now = time.time() if now is None else now
+    due = {t for t, at in HELD.items() if now - at >= HELD_RETRY}
+    for t in due:
+        HELD.pop(t)
+    return due
+
+
+def park_now(tid: str, provider: str, branch: str) -> bool:
+    """Block `tid` on `run login <provider>` and commit it; False when that cannot be done now."""
+    from agent_runner import state
     from contextlib import ExitStack
     from agent_runner import plan as P, plansync
     from agent_runner.state import commit_plan, git, log, MERGE, plan_rel
     if not MERGE.acquire(blocking=False):
-        return True
+        return False
     hold = ExitStack()
     try:
         C, root = state.C, state.ROOT
@@ -126,7 +151,7 @@ def park_unlogged(tid: str, model: str, branch: str) -> bool:
         rel = plan_rel('TODO.md')
         if not C.plan_external and (git('status', '--porcelain', '--', rel).stdout.strip() or branch and
                                     git('branch', '--show-current').stdout.strip() != branch):
-            return True
+            return False
         try:
             P.block(tid, why_for(provider, tid), todo=root / rel, after=[])
         except SystemExit:
@@ -134,7 +159,7 @@ def park_unlogged(tid: str, model: str, branch: str) -> bool:
         if not commit_plan(f'Plan: block {tid}, {provider} has no login', rel):
             if not C.plan_external:
                 git('checkout', '-q', '--', rel)
-            return True
+            return False
         log(f'{tid}: not started: {provider} has no login; `{RUNNER} login {provider}` is under Needs you')
         return True
     finally:
