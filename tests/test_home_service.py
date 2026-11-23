@@ -167,6 +167,12 @@ def test_actions(tmp: Path) -> None:
     eq((argv[-1], kw['cwd'], kw['stdin']), ('pause', str(root), H.sp.DEVNULL), 'the real call: the runner, in the project, no input')
     check('AGENT_RUNNER_REPO' not in kw['env'] and 'AGENT_RUNNER_SLOT' not in kw['env'],
           'without a slot\'s markers, so it acts on that project')
+    check('AGENT_RUNNER_STARTED_BY' not in kw['env'], 'B145: a command other than start is not marked')
+    with mock.patch.object(H.sp, 'run') as sr:
+        sr.return_value = SimpleNamespace(returncode=0, stdout='', stderr='')
+        H.runner(root, [])
+    eq(sr.call_args[1]['env'].get('AGENT_RUNNER_STARTED_BY'), 'Home start',
+       'B145: the start button marks the run as started by Home')
 
 
 class FakeRun(BaseHTTPRequestHandler):

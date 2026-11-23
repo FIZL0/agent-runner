@@ -13,7 +13,7 @@ import time
 from pathlib import Path
 from unittest import mock
 
-from _check import eq, report
+from _check import check, eq, report
 
 from agent_runner import cmds as M  # noqa: E402
 from agent_runner import loop as LP  # noqa: E402
@@ -195,10 +195,10 @@ def test_launcher_actions():
     started = []
     with mock.patch.object(M, 'run_info', lambda r: {'up': False}), \
             mock.patch.object(M, 'run_facts', lambda r, run: FACTS.get(r, {})), \
-            mock.patch.object(M, 'cmd_background', lambda argv: started.append(argv) or 7):
+            mock.patch.object(M, 'cmd_background', lambda argv, by='': started.append((argv, by)) or 7):
         eq(M.cmd_pick(B, keys('enter'), seen.append, acts, sessions=lambda: RUNS), 7,
            'picking here when its run is not up starts it')
-    eq(started, [[]], 'with cmd_background')
+    eq(started, [([], 'picker')], 'with cmd_background, logged as started by the picker (B145)')
 
 
 def test_picker_colours():
@@ -329,8 +329,42 @@ def test_bare_not_a_tty():
         eq(M.picker_wanted(), True, 'at a terminal, not a slot: the picker')
 
 
+def test_started_by_logged():
+    print('B145: cmd_background logs who started the run, with its tty and parent pid, in run.log and events.jsonl')
+    import json
+    with tempfile.TemporaryDirectory() as d:
+        notes = Path(d)
+        ev = notes / 'events.jsonl'
+        spawned = []
+
+        class Up:
+            def poll(self):
+                return None
+
+        def spawn(argv, out):
+            spawned.append(argv)
+            ev.open('a').write(json.dumps({'time': '2026-11-23T00:00:00', 'kind': M.EV_RUN_UP, 'slots': 2}) + '\n')
+            return Up()
+        with mock.patch.object(M, 'init'), mock.patch.object(M, 'drop_session_env'), \
+                mock.patch.object(M, 'run_up', lambda: False), mock.patch.object(M, 'remote_ready', lambda: True), \
+                mock.patch.object(M, 'C', mock.Mock(notes=lambda n: notes / n)), mock.patch.object(M, 'events_file', lambda: ev), \
+                mock.patch.object(M, 'background_argv', lambda: ['run']), \
+                mock.patch.object(M.plat, 'spawn_detached', spawn), mock.patch.object(M, 'started_note', lambda *a: ''), \
+                mock.patch.dict(M.os.environ, {M.STARTED_BY_ENV: 'Home start'}):
+            eq(M.cmd_background([], by='picker'), 0, 'the run comes up')
+            check(M.STARTED_BY_ENV not in M.os.environ, 'the marker is not passed on to the run')
+            eq(M.cmd_background([], by='picker'), 0, 'and again, with no marker set')
+        recs = [r for l in ev.read_text().splitlines() if (r := json.loads(l))['kind'] == M.EV_STARTED_BY]
+        eq([r['by'] for r in recs], ['Home start', 'picker'], 'AGENT_RUNNER_STARTED_BY wins over the caller\'s `by`')
+        eq(recs[0]['ppid'], M.os.getppid(), 'with the parent pid')
+        check(bool(recs[0]['tty']), 'and the tty (or no tty)')
+        log = (notes / 'run.log').read_text()
+        check('run started by Home start (tty ' in log and f'parent pid {M.os.getppid()}' in log,
+              'run.log says it too')
+
+
 if __name__ == '__main__':
     raise SystemExit(report([test_attach_routes, test_run_view_posts_keys, test_list_two_projects,
                              test_attach_number, test_windows_hidden_consoles, test_picker_rows, test_picker_keys,
                              test_launcher_actions, test_picker_colours, test_copy_link_fallbacks,
-                             test_run_facts_https_link, test_bare_not_a_tty]))
+                             test_run_facts_https_link, test_bare_not_a_tty, test_started_by_logged]))
