@@ -420,3 +420,10 @@ _Said_: our own agent loop, the loop engine
 _On screen_: harness loop
 _In code_: harness.mjs, slots.Harness, config.harness_model
 _Avoid_: loop engine, Pi loop
+
+**Provider login**:
+the sign-in or key a model provider other than claude needs before the harness loop can run a session on it
+_Said_: login, run login
+_On screen_: run login
+_In code_: login.py, login.login_of, login.park_unlogged, harness.mjs --login
+_Avoid_: auth, credentials, token

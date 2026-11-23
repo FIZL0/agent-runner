@@ -610,7 +610,84 @@ async function main() {
   }
 }
 
-main().then((code) => process.exit(code), (e) => {
+// --- run login (F106e) ----------------------------------------------------------------------------------------
+// `harness.mjs --login <provider> [--provider <json>] [--enterprise <domain>]`: one login through Pi's login
+// package, kept in Pi's auth.json as Pi keeps it (so the harness loop and Pi both use it). Copilot and Codex sign
+// in by OAuth (a device code, a browser page); Gemini and a custom provider take an API key. It talks to
+// `run login` (agent_runner/login.py) in JSON lines on stdout: {"say": text}, {"ask": prompt} (answered by one
+// line {"answer": text} on stdin), {"saved": id, "file": path}. --enterprise answers the package's GitHub
+// Enterprise question with what the person gave run login ('' is github.com). AGENT_RUNNER_HARNESS_LOGIN, a
+// module path, stands in for the package (the tests' fake): its default export `({id, custom}) -> auth`, auth
+// being {oauth?: {login(interaction)}, apiKey?: {login(interaction)}}.
+
+async function loginAuth(id, custom) {
+  if (process.env.AGENT_RUNNER_HARNESS_LOGIN) {
+    const mod = await import(pathToFileURL(path.resolve(process.env.AGENT_RUNNER_HARNESS_LOGIN)).href);
+    return mod.default({ id, custom });
+  }
+  const ai = await piAi('index');
+  if (custom) return { apiKey: ai.envApiKeyAuth(`${id} API key`, custom.key_env ? [custom.key_env] : []) };
+  const p = (await piAi('providers/all')).builtinProviders().find((x) => x.id === id);
+  if (!p) throw new Error(`harness: Pi's login package has no provider ${id}`);
+  return p.auth;
+}
+
+async function login(argv) {
+  const name = argv[0] || '';
+  let custom = null, enterprise = null;
+  for (let i = 1; i < argv.length; i++) {
+    if (argv[i] === '--provider') custom = JSON.parse(argv[++i]);
+    else if (argv[i] === '--enterprise') enterprise = argv[++i] ?? '';
+    else throw new Error(`harness: --login: unknown argument ${argv[i]}`);
+  }
+  if (!name) throw new Error('harness: --login names no provider');
+  const id = custom ? name : PROVIDER_IDS[name] || name;
+  const out = (o) => process.stdout.write(`${JSON.stringify(o)}\n`);
+  const lines = [];
+  let waiter = null, buf = '';
+  process.stdin.setEncoding('utf8');
+  process.stdin.on('data', (d) => {
+    buf += d;
+    for (let at; (at = buf.indexOf('\n')) >= 0; buf = buf.slice(at + 1)) {
+      lines.push(buf.slice(0, at));
+      if (waiter) { const w = waiter; waiter = null; w(); }
+    }
+  });
+  const nextLine = async () => {
+    while (!lines.length) await new Promise((r) => { waiter = r; });
+    return lines.shift();
+  };
+  const interaction = {
+    signal: new AbortController().signal,
+    async prompt(p) {
+      if (enterprise !== null && p.type !== 'select' && /enterprise/i.test(p.message || '')) return enterprise;
+      out({ ask: { type: p.type, message: p.message, placeholder: p.placeholder || '',
+        options: (p.options || []).map((o) => ({ id: o.id, label: o.label })) } });
+      const answer = JSON.parse(await nextLine()).answer;
+      if (answer === undefined || answer === null) throw new Error('harness: login cancelled');
+      return answer;
+    },
+    notify(e) {
+      if (e.type === 'auth_url') out({ say: `Open this page in your browser:\n${e.url}${e.instructions ? `\n${e.instructions}` : ''}` });
+      else if (e.type === 'device_code') out({ say: `Open ${e.verificationUri} and enter the code ${e.userCode}` });
+      else if (e.message) out({ say: e.message });
+    },
+  };
+  const auth = await loginAuth(id, custom);
+  let credential;
+  if (auth.oauth) credential = await auth.oauth.login(interaction, { getDeviceId: () => crypto.randomUUID() });
+  else if (auth.apiKey?.login) credential = await auth.apiKey.login(interaction);
+  else throw new Error(`harness: ${name} (${id}) has no login in Pi's login package`);
+  if (!credential) throw new Error(`harness: the ${name} login gave no credential`);
+  const dir = process.env.PI_CODING_AGENT_DIR || path.join(os.homedir(), '.pi', 'agent');
+  fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+  await piCredentials().modify(id, async () => credential);
+  out({ saved: id, file: path.join(dir, 'auth.json') });
+  process.stdin.pause();
+  return 0;
+}
+
+(process.argv[2] === '--login' ? login(process.argv.slice(3)) : main()).then((code) => process.exit(code), (e) => {
   console.error(e?.message || e);
   process.exit(2);
 });
