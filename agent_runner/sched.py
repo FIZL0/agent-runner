@@ -42,6 +42,8 @@ def tasks(branch: str) -> list[tuple[str, str, set[str], set[str]]]:
             continue
         l = ls[i]
         f = P.fields(l)
+        if P.release(tid) and not release_alone():  # F100: a release queued with `after: all` starts like any
+            f['after'] = [a for a in f.get('after', []) if a != P.ALL]
         if {P.LAST, P.ALL} & set(f.get('after', [])):  # `all above` (F43), `all` (F35): afresh on every pick
             f['after'] = P.waits_on(ls, i)
             named = set(P.fields(l).get('after', []))

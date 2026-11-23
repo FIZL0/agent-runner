@@ -6,8 +6,8 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 - Changed: a release (kind V) no longer runs alone. It starts like any other task: `plan add V` no longer
   writes `after: all`, and tasks start beside a running release. `[plan] release_alone = true` keeps the old
-  behaviour (wait for everything ahead, nothing beside it). A release already queued with `after: all` still
-  waits for what is ahead of it (F100).
+  behaviour (wait for everything ahead, nothing beside it). Without it, the `after: all` on a release queued
+  before this version no longer holds it either (F100).
 
 ## 0.59.0 (2026-11-22)
 

@@ -92,6 +92,13 @@ def release_line(ls: list[str]) -> str:
         if box not in ' ~' or section.startswith(P.SKIPPED) or not (RELEASE_TASK.match(rest) or last):
             continue
         kind = 'release' if RELEASE_TASK.match(rest) else 'last'
+        after = P.fields(ls[i]).get('after', [])
+        if P.release(tid) and box == ' ' and P.ALL in after and not (C and C.raw['plan'].get('release_alone')):
+            ids = [t for t in after if t not in (P.ALL, tid)]  # F100: `after: all` holds no release (sched.tasks)
+            held = [t for t in ids if t in live]
+            out.append(f'{kind}: waits on {len(held)} of {len(ids)} task{"" if len(ids) == 1 else "s"} ({tid})'
+                       if held else f'{kind}: ready, nothing left to wait on ({tid})')
+            continue
         if P._waits_all(ls, i):  # `after: all` (F35): a count of what is still before it, not an id list
             held = [t for t in P.before_all(ls, i) if t in live and t != tid]
             person = [t for t in P.on_person_before(ls, i) if t != tid]  # B101: said, not waited on

@@ -139,7 +139,8 @@ def test_release_beside(tmp: Path):
                                        '- [ ] **T1** one | files: a.py\n'
                                        '- [ ] **T2** two | files: b.py\n'
                                        '- [ ] **V1** Release\n'
-                                       '- [ ] **T3** three | files: c.py\n', encoding='utf-8')
+                                       '- [ ] **T3** three | files: c.py\n'
+                                       '- [ ] **V2** Release, queued before F100 | after: all\n', encoding='utf-8')
     (repo / 'plan/DONE.md').write_text('# DONE\n', encoding='utf-8')
     (repo / 'runner.toml').write_text('[run]\ntest = "true"\nmin_free_gb = 0\nremote = false\n'
                                       'merge_ahead = false\n', encoding='utf-8')
@@ -150,6 +151,9 @@ def test_release_beside(tmp: Path):
     eq(S.C.raw['plan']['release_alone'], False, '[plan] release_alone is off by default')
     running = {1: ('T1', 'Next', {'a.py'}, set()), 2: ('T2', 'Next', {'b.py'}, set())}
     eq(S.explain(running, set(), 'main').get('V1'), ('free', ''), 'the release is free while T1 and T2 run')
+    eq(S.explain(running, set(), 'main').get('V2'), ('free', ''), 'one queued with `after: all` too')
+    ls = (repo / 'plan/TODO.md').read_text(encoding='utf-8').splitlines()
+    eq(R.release_line(ls).splitlines()[-1], 'release: ready, nothing left to wait on (V2)', 'and status says so')
     eq(S.choose(S.held(running, 'main'), set(), 'main')[0], 'V1', 'and a free slot starts it')
     v = next(t for t in S.held({}, 'main').todo if t[0] == 'V1')
     beside = {**running, 3: v}
@@ -161,6 +165,7 @@ def test_release_beside(tmp: Path):
            ('a release runs alone', 'T1 is running or waiting to merge in this run'), 'release_alone: it waits')
         eq(S.explain(beside, set(), 'main').get('T3'), ('a release runs alone', 'V1 is releasing'),
            'and nothing starts beside it')
+        eq('V2' in S.explain({}, set(), 'main'), False, 'and `after: all` holds a release again')
     finally:
         S.C.raw['plan']['release_alone'] = False
 
