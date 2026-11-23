@@ -450,7 +450,7 @@ _In code_: cmd_ask, park_asked, block_asks, answer_ask, asked/<ID>
 _Avoid_: question tool, AskUserQuestion
 
 **Session pane**:
-Inside tmux, the selected session shown as itself in a tmux pane beside the terminal UI's panels, where the person types to it, selects and copies; Ctrl-f makes it full-screen between the top and bottom bars
+The selected session shown as itself in a tmux pane beside the terminal UI's panels, where the person types to it, selects and copies; Ctrl-f makes it full-screen between the top and bottom bars
 _Said_: the right pane, the real Claude Code session inside the TUI
 _On screen_: (no wording: the session itself, beside the panels)
 _In code_: SidePane, RunPage.sync, want_side

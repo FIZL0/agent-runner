@@ -54,7 +54,8 @@ Bare `agent-runner` starts the run as a detached process, so no terminal is take
 `agent-runner run 3` is the same run in the foreground of this terminal. Either way each slot runs hidden, in
 a terminal with no window, its output in `.runner/slotN.log`: `agent-runner attach s2` puts this terminal on
 it, and you watch and steer the run through `agent-runner attach` (the run view), `status`, `ui`, control
-sessions and `plan tell`. The same on Linux, macOS and Windows; there is no tmux to set up.
+sessions and `plan tell`. The same on Linux, macOS and Windows; the run needs no tmux. The terminal UI (`agent-runner ui`) does: it runs
+inside tmux on Linux and macOS, and on Windows the run page stands in for it.
 The run opens a control session, c1, beside it (hidden too: `attach c1`): a Claude Code session in the main
 checkout that you ask for status, to pause, to add slots or stop, to queue a task, or to do one now. It opens
 with what is running and what happened since you last looked (`agent-runner since`), and when you say "follow"
