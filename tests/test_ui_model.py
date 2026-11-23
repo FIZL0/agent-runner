@@ -160,14 +160,10 @@ def test_actions(tmp: Path) -> None:
         U.act('plan_change', tid='F1', text='Board page, new words', files='a.py')
         U.act('drop', tid='B2', why='overtaken')
         U.act('shelve', tid='D3')
-        U.act('release')
-        U.act('release', now=True)
         eq(ran, [['plan', 'add', 'B', 'Fix X', '--files', 'a.py,tests/test_a.py', '--after', 'F1', '--pri', 'low'],
                  ['plan', 'edit', 'F1', 'Board page, new words', '--files', 'a.py'],
                  ['plan', 'drop', 'B2', 'overtaken'],
-                 ['plan', 'shelve', 'D3'],
-                 ['plan', 'add', 'V'],
-                 ['plan', 'add', 'V', '--now']], 'each action runs its plan command')
+                 ['plan', 'shelve', 'D3']], 'each action runs its plan command')
         U.act('chat', text='how is it going?')
         U.act('answer', tid='D3', text='the lazy one')
         U.act('take', tid='F1')
@@ -200,12 +196,13 @@ def test_run_controls(tmp: Path) -> None:
             mock.patch.object(U, 'SEND', [lambda text: (sent.append(text), {'ok': True, 'code': 0, 'out': 'sent',
                                                                              'argv': []})[1]]):
         for windows in (False, True):  # B163: no re-exec on Windows, so no restart there
-            want = {*RUN_CONTROL_ARGV, 'task_take'} - ({'restart'} if windows else set())
+            want = {*RUN_CONTROL_ARGV, 'task_take', 'queue_take', 'queue_drop', 'queue_priority', 'queue_unpark',
+                    'release_wait', 'release_now'} - ({'restart'} if windows else set())
             on = ' (Windows)' if windows else ''
             with mock.patch('agent_runner.plat.WINDOWS', windows):
                 cs = U.controls()
             eq(sorted(c['key'] for c in cs), sorted(want), f'the list holds every control the task names{on}')
-            eq(len({c['tui'] for c in cs}), len(want), f'each has a key of its own in the TUI{on}')
+            eq(len({(c['where'], c['tui']) for c in cs}), len(want), f'each has a key of its own in its panel{on}')
         for key, argv in RUN_CONTROL_ARGV.items():
             ran.clear()
             r = U.act('run_control', key=key, n='4', tid='main-checkout-1' if 'wip' in key else 'F1', confirm=True)
@@ -228,6 +225,40 @@ def test_run_controls(tmp: Path) -> None:
         by = {c['key']: c for c in U.controls()}
         eq((by['slots_set']['needs'], by['task_drop']['needs'], by['task_take']['needs'], by['pause']['needs']),
            ('n', 'id', 'id', ''), 'what each needs typed')
+
+
+def test_row_actions(tmp: Path) -> None:
+    """C34: the one list of row actions: each entry has an action and a TUI key of its own on its panel; each
+    snapshot row carries the keys allowed on it, and an action runs only on a row it fits, checked again."""
+    fake_run(tmp)
+    seen = set()
+    for c in U.RUN_CONTROLS:
+        check(c.get('argv') or c.get('ask') or c['key'] == 'start', f'{c["key"]} has an action', c)
+        for k in (c['tui'], c.get('tui_also')):
+            check(k is None or (c['where'], k) not in seen, f'{c["key"]}: {k} is no other key of {c["where"]}')
+            seen.add((c['where'], k))
+    snap = U.snapshot(up=True, now=NOW, links={})
+    acts = {q['id']: q['acts'] for q in snap['queue']}
+    eq(acts['F1'], ['queue_priority', 'queue_take', 'queue_drop'], 'a queued task: priority, do it here, drop')
+    eq(acts['R8'], ['queue_unpark', 'queue_take', 'queue_drop'], 'a parked task: unpark, not priority')
+    eq(snap['release_acts'], ['release_wait', 'release_now'], 'the release tab\'s actions')
+    ran = []
+    with mock.patch.object(U, 'RUN', [lambda argv: (ran.append(argv), (0, 'ok'))[1]]):
+        eq(U.run_control('queue_priority', tid='F1')['ok'], True, 'priority runs')
+        eq(U.run_control('queue_unpark', tid='R8')['ok'], True, 'unpark runs')
+        eq(ran, [['plan', 'edit', 'F1', '--pri', 'critical'], ['plan', 'edit', 'R8', '--pri', 'normal']],
+           'their plan commands')
+        ran.clear()
+        for key, tid in (('queue_unpark', 'F1'), ('queue_priority', 'R8'), ('queue_drop', 'ZZ9'), ('queue_drop', '')):
+            r = U.run_control(key, tid=tid, confirm=True)
+            eq((r['ok'], r['code']), (False, 1), f'{key} on {tid or "nothing"} is refused')
+        r = U.run_control('queue_drop', tid='F1')
+        eq((r['ok'], r['code'], r['confirm'] != '', ran), (False, 3, True, []), 'drop asks first')
+        eq(U.run_control('queue_drop', tid='F1', confirm=True)['ok'], True, 'and runs once confirmed')
+        eq(ran, [['plan', 'drop', 'F1', 'dropped from the run app']], 'plan drop')
+        ran.clear()
+        U.run_control('release_now')
+        eq(ran, [['plan', 'add', 'V', '--now']], 'release now')
 
 
 def test_real_command(tmp: Path) -> None:
@@ -841,7 +872,7 @@ def test_need_answers_c33(tmp: Path) -> None:
 
 if __name__ == '__main__':
     raise SystemExit(report([in_tmp(test_snapshot), in_tmp(test_idle_slots), in_tmp(test_version_f90),
-                         in_tmp(test_actions), in_tmp(test_run_controls),
+                         in_tmp(test_actions), in_tmp(test_run_controls), in_tmp(test_row_actions),
                          in_tmp(test_real_command),
                          in_tmp(test_to_c1_hidden), in_tmp(test_control_titles),
                          in_tmp(test_queue_rows), in_tmp(test_feed), in_tmp(test_feed_prompt_b154), in_tmp(test_chat_at_b154),

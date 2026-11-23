@@ -187,10 +187,9 @@ Sessions [2]
 Queue [3]
   e        direct edit            E        chat edit
   n        new task               J/K      move down / up
-  p        priority               H        do it here
-  d D      drop                   ^S       save the direct edit
-  U        unpark (a parked task: no J/K or p)
-  t k K    what, kind (cycles, back)        p f a    priority, files, after
+{queue_actions}
+  ^S       save the direct edit
+  t k K   what, kind (cycles, back)        p f a    priority, files, after
 Needs you [4]
   a        answer                 L        later
   D D      drop (D or d, then D again)
@@ -205,6 +204,19 @@ Typing (a task, an answer, a concept: a session takes its own typing)
   Enter    send                   Shift+Enter  new line (or Alt+Enter)
   Esc      leave the box
 Esc closes this."""
+
+
+def action_help(where: str) -> str:
+    """C34: the keys list's lines for panel `where`'s row actions (ui_model.RUN_CONTROLS), two to a line."""
+    cs = [c for c in U.RUN_CONTROLS if c['where'] == where]
+    cells = [(f'{c["tui_also"]} {c["tui"]}' if c.get('tui_also') else c['tui'],
+              c.get('help') or c['label'].lower()) for c in cs]
+    return '\n'.join('  ' + ''.join(f'{k:<9}{v:<23}' if j < len(row) - 1 else f'{k:<9}{v}'
+                                    for j, (k, v) in enumerate(row)) for row in
+                     (cells[i:i + 2] for i in range(0, len(cells), 2)))
+
+
+HELP = HELP.replace('{queue_actions}', action_help('queue'))
 
 
 def help_line(line: str) -> list[tuple[str, str]]:
@@ -331,6 +343,7 @@ class RunPage:
         self.window_keys: set[str] = set()  # the keys the last frame showed above the bottom line
         self.confirm = ''  # F82: the run control waiting for its key again (stop now), '' none
         self.confirm_id = ''  # F124: what that control works on (a moved-aside branch), '' none
+        self.last_result: dict = {}  # C34: the last run control's result
         self.output: list[str] = []  # F124: what the last W showed
         self.dropping = ''  # F110: the Needs you item waiting for D again, '' none
         self.restart = False  # F90: the run is on a newer version: start this TUI again on it (`follow_upgrade`)
@@ -657,8 +670,11 @@ class RunPage:
             out += [L(), L(('running now:', 'dim'))]
             out += [L(('  ', ''), (f'{s["task"]} ', 'cyan'), (s.get('title', ''), 'fg'), (f' in {s["name"]}', 'dim'))
                     for s in running]
-        return out + [L(), buttons(button('⏎', 'release when the running tasks land', True),
-                                   button('f', 'release now, without them'))]
+        return out + [L(), buttons(*[button(c['tui'], c['label'].lower(), i == 0)
+                                     for i, c in enumerate(self.control_list('release'))])]
+
+    def control_list(self, where: str) -> list[dict]:
+        return [c for c in self.snap.get('controls') or U.controls() if c['where'] == where]
 
     def control_buttons(self, where: str) -> list:
         """F82: the run controls of `where` ('run', 'task') as button rows, from ui_model's one list."""
@@ -694,8 +710,17 @@ class RunPage:
         return U.task_controls_on(it)
 
     def control_by_tui(self, k: str, where: str) -> dict | None:
-        return next((c for c in self.snap.get('controls') or U.controls() if c['tui'] == k and c['where'] == where
-                     and not c['needs'] == 'n'), None)
+        k = '⏎' if k == 'ENTER' else k
+        return next((c for c in self.snap.get('controls') or U.controls() if c['where'] == where
+                     and (c['tui'] == k or (c.get('tui_also') == k and not self.main)) and not c['needs'] == 'n'),
+                    None)
+
+    def row_controls(self, it) -> list[dict]:
+        """C34: the Queue row's actions allowed on it now: the snapshot row's `acts` (else asked of ui_model)."""
+        if not isinstance(it, dict) or it.get('new') or it.get('placeholder'):
+            return []
+        acts = it['acts'] if 'acts' in it else U.row_acts('queue', it)
+        return [c for c in self.snap.get('controls') or U.controls() if c['key'] in acts]
 
     def run_control(self, key: str, **args) -> None:
         """F82: one run control by its key; one with a confirm question waits for its TUI key again."""
@@ -718,16 +743,28 @@ class RunPage:
                 self.msg, self.msg_ok = f'{c["label"].lower()}: which one? {", ".join(ids)}', True
                 return
             args['tid'] = ids[0]
+        if c.get('confirm') and not c.get('tui_sure', True):
+            args['confirm'] = True  # the page asks; here the key is the answer
         if c.get('confirm') and not args.get('confirm'):
             self.confirm, self.confirm_id = key, args.get('tid', '')
             self.panel, self.main = 1, True
             self.set_tab('controls')
             self.msg, self.msg_ok = f'{c["confirm"]} {c["tui"]} again: yes', False
             return
+        if c['where'] == 'queue':
+            args.setdefault('why', 'dropped from agent-runner ui')
         self.control_done(key, U.run_control(key, **args))
+        if c['where'] == 'queue':  # C34: the selection follows its task, or leaves the pane when the task is gone
+            self.say_new_session(self.last_result)
+            ids = [t.get('id') for t in self.items(3)]
+            if args['tid'] in ids:
+                self.cur[3] = ids.index(args['tid'])
+            else:
+                self.main = False
 
     def control_done(self, key: str, r: dict) -> None:
         """A run control's result; what W shows (the files a moved-aside branch holds) stays in the controls pane."""
+        self.last_result = r
         self.output = (r.get('out') or '').strip().splitlines() if key == 'wip_show' and r.get('ok') else []
         if self.output:
             self.panel, self.main = 1, True
@@ -1002,10 +1039,8 @@ class RunPage:
                 return [('⏎', 'open')]
             if isinstance(it, dict) and it.get('new'):
                 return [('⏎', 'open'), ('E', 'chat edit')]
-            if isinstance(it, dict) and it.get('state') == 'parked':
-                return [('e', 'edit'), ('E', 'chat edit'), ('U', 'unpark'), ('H', 'do it here'), ('d', 'drop')]
-            return [('e', 'edit'), ('E', 'chat edit'), ('J/K', 'reorder'), ('p', 'priority'), ('H', 'do it here'),
-                    ('d', 'drop')]
+            return [('e', 'edit'), ('E', 'chat edit')] + ([('J/K', 'reorder')] if (it or {}).get('state') != 'parked' else []) \
+                + [(c['tui_also'] or c['tui'], c['label'].lower()) for c in self.row_controls(it)]
         if self.panel == 4:
             return [('⏎', 'open'), ('a', 'answer'), ('L', 'later')] + ([('D', 'drop')] if it is not None else [])
         if isinstance(it, dict) and it.get('new'):
@@ -1507,8 +1542,8 @@ class RunPage:
                 self.type_in()
                 return True
             return False
-        if tab == 'release' and k in ('ENTER', 'f'):
-            self.done(U.release(now=k == 'f'))
+        if tab == 'release' and (c := self.control_by_tui(k, 'release')):
+            self.run_control(c['key'])
             return True
         if tab == 'session' and k == 'ENTER':  # its pane closed itself: beside again (`sync`); no socket: its link
             if self.want_side():
@@ -1610,8 +1645,6 @@ class RunPage:
             self.run_control(c['key'])
         elif self.panel == 2 and self.task_controls_on(it) and (c := self.control_by_tui(k, 'task')):
             self.run_control(c['key'], tid=it['task'])
-        elif self.panel == 2 and k == 'd' and not self.main and self.task_controls_on(it):
-            self.run_control('task_drop', tid=it['task'])  # F116: d drops a slot's task, as D does
         elif self.panel == 2 and k == 'd' and not self.main and is_control(it):
             self.close_control(it)
         elif self.panel == 2 and k == 'r' and is_control(it):  # F129
@@ -1637,20 +1670,8 @@ class RunPage:
         elif self.panel == 3 and k == 'E' and it is not None and not it.get('placeholder'):
             self.set_tab('chat edit')
             self.type_in()
-        elif self.panel == 3 and (k == 'D' or (k == 'd' and not self.main)) and tid:
-            self.done(U.drop(tid, 'dropped from agent-runner ui'))
-            self.main = False
-        elif self.panel == 3 and k == 'H' and tid:
-            self.done(r := U.take(tid))
-            self.say_new_session(r)
-        elif self.panel == 3 and k == 'U' and tid and it.get('state') == 'parked':
-            r = U.unpark(tid)
-            self.done(r)
-            ids = [t.get('id') for t in self.items(3)]
-            if r.get('ok') and tid in ids:  # the selection follows the task to its new place in the queue
-                self.cur[3] = ids.index(tid)
-        elif self.panel == 3 and k == 'p' and tid and it.get('state') != 'parked':
-            self.done(U.plan_change(tid, pri='normal' if it.get('pri') == 'critical' else 'critical'))
+        elif self.panel == 3 and tid and (c := self.control_by_tui(k, 'queue')) and c in self.row_controls(it):
+            self.run_control(c['key'], tid=tid)  # C34: the Queue's row actions, from ui_model's one list
         elif self.panel == 3 and k in ('J', 'K') and tid and it.get('state') != 'parked':
             self.reorder(1 if k == 'J' else -1)
         elif self.panel == 4 and k == 'a' and it is not None:

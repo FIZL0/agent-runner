@@ -379,6 +379,20 @@ outside it, it re-execs itself in the project's tmux session (named for the fold
 tmux, or on Windows, it refuses with exit 2 (the install line, or the run page's link). Ctrl-f makes the session
 full-screen between the UI's top and bottom bars, and again for side by side. In Sessions, n starts a new control session without waiting for its link, and `c` selects c1.
 
+### Adding a row action
+
+`ui_model.RUN_CONTROLS` is the one list of actions for the TUI and the run page. Besides the run and slot-task controls it holds a Queue row's actions (`where: 'queue'`: `queue_priority`, `queue_unpark`, `queue_take`, `queue_drop`) and the release tab's (`where: 'release'`: `release_wait`, `release_now`).
+
+An entry has `key`, `label`, `tui` (the TUI key), `tui_also` (a second key that works while the panel, not the main pane, has focus), `where` (the panel), `argv` (the runner command: `{id}` the row's task, `{why}`, `{pri}` the other of critical/normal, `{n}`) or `ask` (starts a new control session with that message), `fits` (a function of the row: the rows it is allowed on), `confirm` (the question the page asks first; the TUI asks too unless `tui_sure` is False), `why` (the default reason for a drop) and `help` (the keys-list wording, if not the label).
+
+Each snapshot queue row has `acts`, the keys allowed on it now (`ui_model.row_acts`); the snapshot has `controls` (the list as data) and `release_acts`. `run_control` checks again that the task is queued and the action fits (`ui_model.queue_row`) before it runs.
+
+The TUI takes its hint keys, buttons, panel key branches and the Queue lines of the keys list (`tui.action_help`) from the list. The page draws a row's buttons from `acts` (`actBtns`, `actSure`) and sends them through the one `data-ctl` click handler (`controlReq`), with the confirm asked in place. So a new row action is one entry in RUN_CONTROLS and nothing in `tui.py` or `web_page.html`. Chat edit, direct edit and reorder (J/K) are still hand-written.
+
+The test: `tests/test_ui_model.py` `test_row_actions` goes over the list (every entry has an action, and no two share a TUI key on a panel); the TUI and web tests run and draw them.
+
+`ui_model.unpark` and `ui_model.release` (and their `/act` names) are gone: use `run_control` with `queue_unpark`, `release_wait` or `release_now`.
+
 ### status and since
 
 `agent-runner status` and `agent-runner since` name each task by a short title, the first sentence of its line
