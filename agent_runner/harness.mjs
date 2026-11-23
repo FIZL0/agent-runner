@@ -5,7 +5,8 @@
 //   node harness.mjs --session-id SID --model codex:gpt-6-sol --notes DIR --prompt-file F [options]
 //   node harness.mjs --resume SID ...          continue session SID from its transcript, F its next message
 //
-// Tools: bash, read, edit, write, finish, ask and publish_page (writes the page file; publishing it is F106f).
+// Tools: bash, read, edit, write, finish, ask and publish_page (writes the page file and runs `run publish-page`
+// on it: the run page shows it, and a one-shot publishes it to claude.ai).
 // Before every tool call the git fence (`run fence`, tools.fence's rules) is asked; before every model call the
 // session's spend is held against --task-tokens and --task-usd. A line on stdin is a person's tell: queued,
 // it goes in as the next user message. The transcript is <notes>/harness-sessions/<sid>.jsonl, one entry per
@@ -376,7 +377,8 @@ const TOOLS = [
       'parked under Needs you and their answer resumes this session as its next message. The session ends.',
     parameters: { type: 'object', properties: { question: { type: 'string' } }, required: ['question'] } },
   { name: 'publish_page', description: 'Make a page to show the person (a report, a concept\'s options): the HTML is ' +
-      'written to a file under the run\'s notes, and its path comes back. Link that path in your journal.',
+      'written to a file under the run\'s notes, the run page shows it, and it is published to claude.ai: its URL ' +
+      'comes back (recorded for `done`, which takes it as a concept\'s page). The same as `run publish-page <file>`.',
     parameters: { type: 'object', properties: { name: { type: 'string', description: 'a short file name' },
       html: { type: 'string' } }, required: ['name', 'html'] } },
 ];
@@ -517,7 +519,11 @@ class Session {
     if (denied) return [denied, true];
     fs.mkdirSync(path.dirname(f), { recursive: true });
     fs.writeFileSync(f, String(a.html ?? ''));
-    return [`page written to ${f}`, false];
+    // F106f: `run publish-page` copies it where the run page shows it and publishes it to claude.ai (a one-shot
+    // of up to 300 s), printing the URL and recording it for `done`
+    if (!this.a.runner) return [`page written to ${f}; no runner command was given, so it is not published`, true];
+    const r = await run([...this.a.runner, 'publish-page', f], this.cwd, '', 420);
+    return [`page written to ${f}\n${r.out.trim() || `publish-page failed (exit code ${r.code})`}`, Boolean(r.code)];
   }
 }
 

@@ -338,8 +338,11 @@ answered in that project's control session; a project that needs another's state
 
 A task of kind `K` (concept; one of the default kinds) builds nothing. Its session researches the repo and
 publishes one Artifact page laying out the options, usually two or three, each with what it looks like or
-does, the files it touches and its trade-off, plus a recommendation. It finishes with
-`done K7 "msg" --artifact <url>`; `done` refuses a K task without `--artifact` (unless `--blocked`). Then
+does, the files it touches and its trade-off, plus a recommendation. It publishes that page with
+`agent-runner publish-page <file>` (see below), then finishes with `done K7 "msg"`. `done` takes the URL that
+`publish-page` recorded as its `--artifact` and the copy as its `--page`, and refuses a K task with neither
+(unless `--blocked`); `done K7 "msg" --artifact <url> --page <file>` still works for a page published some
+other way. Then
 `done` notes the link on K7 (and in its journal, when `[plan] journal` is set), ticks K7, and files the build
 task right after it, `- [~] **F12** Build the option a person approves on concept K7's page: … BLOCKED:
 waiting for your OK on <url>`. That block names no task, so no run starts it and `plan reopen` never frees it.
@@ -671,6 +674,13 @@ session ends, its work (commits and uncommitted edits) is kept on `asked/<ID>`, 
 blocked `DECIDE: <question>` under Needs you. The answer (`plan confirm` or `plan change`) reopens it, and the
 next slot resumes that same session (`--resume`) on the kept work, the answer as its next message. Claude Code's
 AskUserQuestion tool stays off.
+
+**Publish a page (F106f).** `agent-runner publish-page <file> [--id ID]` publishes a concept's options page. ID
+defaults to the worktree's `task/<ID>` branch. It copies the HTML to `<notes>/concepts/<ID>.html` (the run page
+shows it at `/concept/<ID>`), then starts a one-shot headless `claude -p` with only the Artifact tool to publish
+that copy to claude.ai: a new artifact with icon "options", or the URL already recorded for ID, so a second
+publish updates the same page. The URL is printed and kept in `<notes>/concepts/<ID>.url`. Exit 1 when the
+one-shot did not publish (the copy is still on the run page); exit 2 for a missing file or no task id.
 
 **Git fence (F102).** Every Claude Code slot gets a PreToolUse hook through `--settings` (`agent-runner fence`)
 that denies `git push` in this project (anywhere while `[git] push = false`), `git reset --hard`, `git clean`
@@ -1009,7 +1019,8 @@ agent-runner since [WHEN] [--all|--follow]  what landed, started or got stuck si
                                        2h, yesterday), as a digest; --all every event; --follow each new one live
 agent-runner plan [...]                the task list as a tool (agent-runner plan help)
 agent-runner done ID "MSG" [--blocked WHY [--after X,Y]] [--artifact URL] [--no-test]
-                                       --artifact: a concept's page (required for a K task)
+                                       --artifact: a concept's page (a K task without it takes the URL that
+                                       `publish-page` recorded; --page FILE names its copy)
 agent-runner run [N|once] [--dry-run] [--model M] [--idle S] [--stall S] [--pause S] [--force] [--shutdown|--suspend]
 agent-runner stop [--force] [--suspend|--shutdown]
                                        finish what's running, start nothing new, exit (or s + Enter in the
@@ -1286,7 +1297,8 @@ GEMINI_API_KEY, COPILOT_GITHUB_TOKEN). A model id the provider does not list is 
 Tools: bash (each call starts in the worktree; timeout default 120 s, at most 3600 s; output over 30000 characters
 is cut in the middle), read, edit, write, finish (runs `run finish`), ask (runs `run ask`; the task is parked under
 Needs you and the answer resumes the same session), and publish_page (writes the HTML to
-`<notes>/harness-pages/<task>/<name>.html` and returns the path; publishing it to claude.ai is not built yet). A
+`<notes>/harness-pages/<task>/<name>.html`, then runs `run publish-page` on it, up to 420 s, and returns its
+output, the URL included). A
 `run finish` or `run ask` typed through bash ends the session the same way (it watches the slot's end mark).
 
 The git fence: before every tool call it runs `run fence`, with the same rules as Claude Code sessions' PreToolUse

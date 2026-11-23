@@ -41,7 +41,9 @@ Once `done` has run (or `done --blocked`), run `{runner} finish "<one line: what
 records the summary and ends this session at once. If you hit a question only a person can answer and the work \
 should go on afterwards with what you know now, run `{runner} ask "<the question, with what you recommend>"` and \
 stop: the task is parked under Needs you with your worktree as it is, and the person's answer comes back as the \
-next message of this same session. Your AskUserQuestion tool is off; `ask` is the only way to ask.
+next message of this same session. Your AskUserQuestion tool is off; `ask` is the only way to ask. To show \
+the person a page (a concept's options, a report), run `{runner} publish-page <the HTML file>`: the run page \
+shows it, and it prints the page's claude.ai URL.
 
 """ + VERIFY + """
 
@@ -217,17 +219,17 @@ BUDGET_STOP = ('Stop at a clean point: {tid} has used its budget ({why}). If you
 
 CONCEPT_PROMPT = """\
 {tid} is a concept task: do not build it. Research the repo (the code, the plan, how similar things are done \
-here) and publish one page with the Artifact tool that lays out the options, usually two or three: for each, \
+here) and publish one page with `{runner} publish-page <the HTML file>` that lays out the options, usually two or three: for each, \
 what it looks like or does (a sketch, a mock-up or an example where that says it best), the files it touches, \
 and its trade-off; then your recommendation and why. A person picks one from that page, often on a phone, so \
 make it short, concrete and readable at a glance. Give each option a button that answers the run with no AI \
 session: `{runner} pick-links {tid} A,B,C` (your options' letters) prints one link per option; put each on its \
 option as a plain `<a href>` button ("Go with B") before you publish. When it says there is no https address, \
 leave the buttons off: the person replies as before. Change no product code; commit only notes you wrote (the \
-journal). Finish with `{runner} done {tid} "<msg>" --artifact <the page's URL> --page <the HTML file you published>`: \
-it is refused without the URL, and it files the build task, blocked until the person approves an option. `--page` \
-keeps a copy of the page at .runner/concepts/{tid}.html for the run page to show inline; without it `done` only \
-finds an .html file this worktree changed, and a page written in the scratchpad is not one."""
+journal). Finish with `{runner} done {tid} "<msg>"`: it takes the page's URL that publish-page recorded, and its \
+copy at .runner/concepts/{tid}.html, which the run page shows inline (a page published some other way: add \
+`done {tid} "<msg>" --artifact <the page's URL> --page <the HTML file you published>`). It is refused without a \
+URL, and it files the build task, blocked until the person approves an option."""
 
 
 RESEARCH_PROMPT = """\
