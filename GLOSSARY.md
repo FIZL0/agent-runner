@@ -577,3 +577,10 @@ _Avoid_: resource, device lock, semaphore
 A task giving up its slot until a shared tool is free; its session then goes on, ahead of other tasks
 _In code_: cmd_wait_for, park, waiting/<ID>
 _Avoid_: park, poll
+
+**New chat view**:
+The empty chat a card's Chat or Add a task opens, titled with what it is about; its session starts with the first message
+_Said_: empty new chat
+_On screen_: The chat starts with your first message.
+_In code_: ctxKey, isNew, about, S.ctx
+_Avoid_: About line, draft chat
