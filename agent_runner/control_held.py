@@ -117,8 +117,13 @@ def files_of(d: dict) -> list[dict]:
             and isinstance(x.get('source'), dict) and x['source'].get('data')] if isinstance(c, list) else []
 
 
+def words(a: dict) -> tuple:
+    """What tells an ask from another: its words and its files."""
+    return (a['norm'], *(hash(f.get('data')) for f in a['files']))
+
+
 def same(a: dict, b: dict) -> bool:
-    return a['norm'] == b['norm'] and [f.get('data') for f in a['files']] == [f.get('data') for f in b['files']]
+    return words(a) == words(b)
 
 
 def walk(rows, dropped: float = 0.0) -> dict:
@@ -128,7 +133,7 @@ def walk(rows, dropped: float = 0.0) -> dict:
     the messages with no reply yet; 'held_at', when a HELD_LEAD message last came in; 'errors', the replies to
     one that were some other API error; 'answered', {words: when} of the person's answered messages; 'last_at'."""
     w = {'asks': [], 'until': 0.0, 'open': [], 'held_at': 0.0, 'errors': 0, 'answered': {}, 'last_at': 0.0}
-    fails = 0
+    fails, going = 0, []  # going: the asks a held message's turn is answering
     for d in rows:
         if not isinstance(d, dict) or d.get('isSidechain'):
             continue
@@ -138,15 +143,16 @@ def walk(rows, dropped: float = 0.0) -> dict:
             at = K._stamp(m) or at
             text = K.message_text(m)
             if CLOSED_BY.search(text) and text.lstrip().startswith('<command-'):
-                w['asks'], w['open'] = [], []
+                w['asks'], w['open'], going = [], [], []
             elif text.startswith('[Request interrupted'):  # the person stopped that turn
                 if HELD in w['open']:
                     w['asks'] = []
-                w['open'] = []
+                w['open'], going = [], []
             elif HELD_LEAD in text[:400] and not m.get('isMeta'):
                 w['open'].append(HELD)
                 w['held_at'] = at
             elif K.person_turn(m):
+                going = going if d['type'] == 'attachment' else []
                 w['open'].append(RUNNER if text.startswith(RUNNER_SAID) else
                                  {'id': str(m.get('uuid') or at), 'at': at, 'text': WAITING_BLOCK.sub('', text).strip(),
                                   'norm': norm(text), 'files': files_of(m)})
@@ -154,6 +160,9 @@ def walk(rows, dropped: float = 0.0) -> dict:
             mine = [a for a in w['open'] if isinstance(a, dict)]
             if d.get('isApiErrorMessage'):
                 if lim := fallback.limit_of(d):
+                    w['asks'] = going + w['asks']  # a limit inside the turn that answered them: not all answered
+                    w['errors'] = 0 if mine else w['errors']
+                    fails, going = fails + bool(going), []
                     w['asks'] += [a for a in mine if not (a['at'] and a['at'] <= dropped)]
                     fails = fails + 1 if HELD in w['open'] else fails
                     hold = fallback.CAP_HOLD * 2 ** min(max(fails - 1, 0), 3)
@@ -172,8 +181,11 @@ def walk(rows, dropped: float = 0.0) -> dict:
                     for x in c)):
                 continue
             if mine or HELD in w['open']:  # not a turn a notification or the runner began
-                w['answered'].update({a['norm']: a['at'] for a in mine + w['asks']})
+                w['answered'].update({words(a): a['at'] for a in mine + w['asks']})
+                going = w['asks'] if HELD in w['open'] else going
                 w['asks'], w['errors'], fails = [], 0, 0
+            if msg.get('stop_reason') == 'end_turn':
+                going = []
             w['open'] = []
     out: list[dict] = []
     for a in w['asks']:
@@ -223,8 +235,8 @@ def resent(sid: str, asks: list[dict]) -> set[str]:
     for o in others:
         w = read(o)
         kept = w['asks'] if record_file(o).exists() else []
-        out |= {a['id'] for a in asks if a['norm'] and (
-            w['answered'].get(a['norm'], 0.0) > a['at'] or
+        out |= {a['id'] for a in asks if len(a['norm'].split()) > 3 and (  # "yes" elsewhere answers something else
+            w['answered'].get(words(a), 0.0) > a['at'] or
             any(same(a, b) and (b['at'], o) > (a['at'], sid) for b in kept))}
     return out
 
@@ -263,6 +275,9 @@ def look(n: int) -> None:
         rec = load(record_file(sid))
         new = {**rec, 'n': n, 'sid': sid, 'pid': pid, 'name': K.control_given(n) or rec.get('name') or '',
                'asks': len(w['asks']), 'until': w['until']}
+        if new.get('stuck') and w['asks'][-1]['at'] > new.get('stuck_at', 0):  # a message since: a fresh try
+            for k in ('stuck', 'stuck_at', 'tries', 'typed', 'reopened'):
+                new.pop(k, None)
         if new != rec:
             save(new)
         if not rec:
@@ -372,7 +387,7 @@ def finished(rec: dict, why: str) -> None:
 def stays(rec: dict, why: str = '', stuck: str = '') -> None:
     """`rec` waits on, saying `why`; `stuck`: it is left to the person, said once in the run log."""
     if stuck and not rec.get('stuck'):
-        rec['stuck'] = stuck
+        rec.update(stuck=stuck, stuck_at=time.time())
         state.log(f'control: {line(rec)}')
     rec['why'] = why
     save(rec)
@@ -393,7 +408,7 @@ def step(rec: dict, now: float) -> None:
         return finished(rec, 'the person closed that conversation')
     rec['asks'], rec['until'] = len(w['asks']), w['until']
     if rec.get('typed') and w['held_at'] >= rec['typed']['at'] - 5 and HELD not in w['open']:
-        for k in ('typed', 'reopened', 'tries'):  # its reply was an error: a fresh try once that is over
+        for k in ('typed', 'untaken', 'reopened', 'tries'):  # its reply was an error: a fresh try once that is over
             rec.pop(k, None)
     if rec.get('stuck') or now < w['until'] + HELD_MARGIN:
         return stays(rec, stuck=rec.get('stuck') or '')
@@ -410,9 +425,14 @@ def step(rec: dict, now: float) -> None:
                 rec.pop('typed')
                 rec['tries'] = rec.get('tries', 0) + 1
                 return stays(rec, 'its session is started again')
-            return stays(rec, 'typed in; the session has not answered yet')
+            if not seen and now - t['at'] > HELD_LOST and not rec.get('untaken'):
+                rec['untaken'] = True  # said once; not typed again: it may still be in its input box
+                state.log(f'control {n}: typed in the asks it held, but the session has not taken them; look at it')
+            return stays(rec, 'typed in, but the session has not taken it: look at it' if rec.get('untaken') and not seen
+                         else 'typed in; the session has not answered yet')
         else:
             rec.pop('typed')  # that process ended with no answer
+            rec.pop('untaken', None)
     if w['errors'] >= HELD_TRIES or rec.get('tries', 0) >= HELD_TRIES:
         return stays(rec, stuck='the API refuses it' if w['errors'] >= HELD_TRIES else 'its session does not come up')
     # looked at again before it is put in, and before its session is reopened for it

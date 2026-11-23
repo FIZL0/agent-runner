@@ -742,6 +742,37 @@ def test_held_still_limited():
         eq(len(w.typed), 3, 'and is tried again')
 
 
+def test_held_stuck_and_cut():
+    print('B170: a limit inside the replay turn keeps the asks; untaken and stuck ones are said, and a new message retries')
+    with held_world() as w:
+        held = said(w.H.HELD_LEAD + ' x', RESET + 62)
+        step = answer('reading', RESET + 63)
+        eq(len(w.H.walk(four() + [held, step, limit(RESET + 64, RESET + 9000)])['asks']), 4, 'cut off mid-replay: held')
+        done = answer('all done', RESET + 65)
+        done['message']['stop_reason'] = 'end_turn'
+        eq(w.H.walk(four() + [held, step, done, limit(RESET + 70)])['asks'], [], 'not once its turn ended')
+        eq([a['text'] for a in w.H.walk(four() + [held, step, said('next', RESET + 70), limit(RESET + 71)])['asks']],
+           ['next'], 'nor when the next message meets the limit')
+        w.rows['a'] = four()
+        w.up(5, 'a', 41)
+        w.tick(RESET + 61)
+        w.tick(RESET + 1000)
+        w.tick(RESET + 2000)
+        eq(len([x for x in w.logs if 'has not taken them' in x]), 1, 'untaken: said once')
+        eq(len(w.typed), 1, 'and not typed twice')
+        bad = {**limit(0), 'error': 'invalid_request', 'apiError': None}
+        for i in range(3):
+            at = RESET + 3000 + 10 * i
+            w.rows['a'] += [said(w.typed[0][1], at), {**bad, 'timestamp': stamp(at + 1)}]
+        w.tick(RESET + 10000)
+        check(w.H.records()[0].get('stuck') and not w.H.holds('a'), 'three refusals: left to the person')
+        w.rows['a'] += [said('again', RESET + 20000), limit(RESET + 20001, RESET + 30000)]
+        w.tick(RESET + 20100)
+        check(w.H.holds('a'), 'a new message held there is not stuck too')
+        w.tick(RESET + 30061)
+        check(len(w.typed) == 2 and in_order(w.typed[1][1], [*ORDER, 'again']), 'and goes in with the rest', w.typed[1:])
+
+
 def test_held_resent_and_runner():
     print('B170: what the person sent again is not doubled; the runner\'s own messages are not held')
     with held_world() as w:
@@ -752,6 +783,12 @@ def test_held_resent_and_runner():
         w.tick(RESET + 61)
         check(in_order(w.typed[0][1], [ORDER[0], ORDER[2], ORDER[3]]), 'each once', w.typed[0][1])
         check(ORDER[1] not in w.typed[0][1], 'not the one answered elsewhere', w.typed[0][1])
+    with held_world() as w:
+        w.rows['a'] = [said('yes', T0), limit(T0 + 1)] + four()[:2]
+        w.up(5, 'a', 41)
+        w.rows['b'] = [said('yes', T0 + 500), answer('done', T0 + 510), said(ORDER[0], T0 + 520), answer('x', T0 + 530)]
+        w.tick(RESET + 61)
+        check('Message 2 of 2' in w.typed[0][1], 'a bare yes, or the same words without the image, is no resend', w.typed)
     from agent_runner import control_held as H, guide as G
     start = G.CONTROL_START.format(cmd='run', watch_start='')
     copy = 'agent-runner: the run changed. Publish the run page copy x. This is the runner, not the person'
@@ -838,4 +875,4 @@ if __name__ == '__main__':
                              test_take_back_from_a_slot_just_started, test_sessions_one_and_each,
                              test_reopen_after_shutdown, test_second_shim_keeps_live_session,
                              test_first_message_typed_after_remote_control, test_rename_f129, test_held_delivered_once,
-                             test_held_still_limited, test_held_resent_and_runner, test_held_reopened]))
+                             test_held_still_limited, test_held_stuck_and_cut, test_held_resent_and_runner, test_held_reopened]))

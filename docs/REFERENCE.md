@@ -142,13 +142,13 @@ task to fix X" (it files it with `plan add`), "do X now" (it uses `take`, never 
   to the session is still to be checked by a person; "new" works either way.
 - **Held messages**: a person's messages to a control session whose reply was only a usage-limit error are held, all in a
   row, with their images. The reset is read from the transcript error's own fields (`rate_limit` and `resetsAt`), else
-  from the reset its words name, else 1 h; each further limit doubles the wait, to 8 h at most. `status` shows one line
+  from the reset its words name, else 1 h (doubling with each try that meets the limit again, to 8 h at most). `status` shows one line
   per chat (how many asks, which chat, when it resets), the run log says it once, and such a session is not closed as
   idle. After the reset (+1 min) the run types them in as one message marked `[agent-runner: held by the usage limit]`,
   in order, reopening the ended session hidden and resuming its transcript (under another number if its number is in
-  use; only with `[run] control = true`). A try that meets the limit again leaves them held till the new reset. The
-  records in `<notes>/held/<sid>.json` survive restarts. Ones the person sent again and got answered in any session of
-  the checkout are left out, and a turn begun by a person's message that gets answered counts as answering the earlier
+  use; only with `[run] control = true`). A try that meets the limit again, or is cut off by it, leaves them held till the new reset. The
+  records in `<notes>/held/<sid>.json` survive restarts. Ones the person sent again (the same words, more than
+  three, and the same files) and got answered in any session of the checkout are left out, and a turn begun by a person's message that gets answered counts as answering the earlier
   ones (Claude Code sends them along). They are dropped when the person closes the session on the run page or the TUI,
   sends `/exit` or `/clear`, archives it in the apps, or interrupts it while it is being answered. After 3 failures (the
   session will not come up, or another API error) `status` says to send them again. Limits: a session ended by Ctrl-C or
