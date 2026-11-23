@@ -259,3 +259,10 @@ _Said_: run app
 _On screen_: run page link (in `status` and the run log)
 _In code_: web_page.html, web.py, [run] web
 _Avoid_: web page, dashboard, web UI
+
+**Run controls**:
+The buttons and keys that change the run itself from the run page or agent-runner ui: slots, pause, force, stop, and stopping one slot's task
+_Said_: run controls
+_On screen_: Run controls
+_In code_: RUN_CONTROLS, run_control, controls(), controlReq
+_Avoid_: run buttons, admin controls

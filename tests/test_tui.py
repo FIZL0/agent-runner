@@ -181,7 +181,7 @@ def test_layout() -> None:
 
 def test_status_tabs() -> None:
     p = page()
-    eq(p.tab(), ('chat', ['chat', 'log', 'release']), 'a status line: chat, log (and release)')
+    eq(p.tab(), ('chat', ['chat', 'log', 'release', 'controls']), 'a status line: chat, log (and release, controls)')
     p.key('ENTER')
     win = drawn(p)
     for b in ('[s since last look]', '[y since yesterday]', '[w what needs me]', '[u usage]'):
@@ -199,7 +199,7 @@ def test_status_tabs() -> None:
     eq((p.main, p.tab()[0]), (False, 'chat'), 'h on the first tab goes back to the panels')
     p.key('j')
     p.key('j')
-    eq(p.tab(), ('release', ['release', 'chat', 'log']), 'the release line: release first')
+    eq(p.tab(), ('release', ['release', 'chat', 'log', 'controls']), 'the release line: release first')
     p.key('ENTER')
     win = drawn(p)
     check('[⏎ release when the running tasks land]' in win.text() and '[f release now, without them]' in win.text(),
@@ -883,6 +883,69 @@ def test_older_run() -> None:
     check('started by an older agent-runner' in win.text(), 'Sessions shows the restart line', win.text())
 
 
+def test_run_controls() -> None:
+    """F82: each run control's key in Status [1] (a slot's task controls in Sessions [2]) runs its runner command
+    through ui_model's one list; stop now (X) runs only on X again."""
+    ran, sent = [], []
+    want = {'+': ['slots', '+1'], '-': ['slots', '-1'], 'P': ['pause'], 'G': ['pause', '--off'], 'F': ['force'],
+            'C': ['force', '--off'], 'S': ['stop'], 'U': ['stop', '--undo']}
+    with mock.patch.object(U, 'RUN', [lambda argv: (ran.append(argv), (0, 'sent to the run'))[1]]), \
+            mock.patch.object(U, 'SEND', [lambda text: (sent.append(text), {'ok': True, 'code': 0, 'out': 'sent',
+                                                                             'argv': []})[1]]):
+        eq({c['tui'] for c in U.controls() if c['where'] == 'run'} - set(want), {'=', 'X'},
+           'every run control has its key here (= and X tested below)')
+        for k, argv in want.items():
+            p = page()
+            ran.clear()
+            p.key(k)
+            eq(ran, [argv], f'{k} runs {" ".join(argv)}')
+        p = page()
+        p.key('ENTER')
+        p.key('l')
+        p.key('l')
+        p.key('l')
+        eq(p.tab()[0], 'controls', 'Status has a controls tab')
+        win = drawn(p, w=140)
+        for b in ('[+ slot +1]', '[- slot -1]', '[= set slots]', '[P pause]', '[G go on]', '[F force past the caps]',
+                  '[C caps back on]', '[S stop (running tasks finish)]', '[X stop now]', '[U take the stop back]'):
+            check(b in win.text(), f'the controls tab shows {b}', win.text())
+        p.key('ESC')
+        ran.clear()
+        p.key('=')
+        eq(p.typing, 'slots:n', '= types the slot count')
+        for c in '4':
+            p.key(c)
+        p.key('ENTER')
+        eq((ran, p.typing), ([['slots', '4']], ''), '= 4 Enter runs slots 4')
+        ran.clear()
+        p.main = False
+        p.key('X')
+        eq((ran, p.confirm), ([], 'stop_now'), 'X alone runs nothing: it asks first')
+        check('X again: yes' in drawn(p, w=140).text(), 'the controls tab shows the question')
+        p.key('n')
+        eq((ran, p.confirm), ([], ''), 'any other key: not stopped')
+        p.main = False
+        p.key('X')
+        p.key('X')
+        eq(ran, [['stop', '--force']], 'X X runs stop --force')
+        ran.clear()
+        p = page()
+        p.key('2')
+        p.cur[2] = 2  # s1 on F1
+        p.key('ENTER')
+        win = drawn(p)
+        check('[H take back]' in win.text() and '[D drop]' in win.text(), "a slot's feed shows its task controls",
+              win.text())
+        p.key('D')
+        eq(ran, [['plan', 'drop', 'F1', U.TASK_DROP_WHY]], 'D on a slot drops its task from the slot')
+        p.key('H')
+        eq(sent, ['do F1 here'], 'H on a slot takes its task back (c1 does it here)')
+        ran.clear()
+        p.cur[2] = 0  # c1: no task controls
+        p.key('D')
+        eq(ran, [], 'D on a control session does nothing')
+
+
 def test_cli() -> None:
     from agent_runner import cli
     eq(cli.COMMANDS.get('ui'), ('tui', 'main'), '`agent-runner ui` runs the terminal Run page')
@@ -894,4 +957,4 @@ if __name__ == '__main__':
     raise SystemExit(report([test_layout, test_status_tabs, test_session_tabs, test_queue, test_direct_edit,
                                test_navigation, test_chat_box, test_actions, test_footer, test_concept_page,
                                test_escape_tail, test_colours, test_row_ground_and_fill, test_reorder, test_themes,
-                               test_idle_run_of_another_project, test_older_run, test_cli]))
+                               test_idle_run_of_another_project, test_older_run, test_run_controls, test_cli]))

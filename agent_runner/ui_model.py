@@ -398,7 +398,8 @@ def snapshot(up: bool | None = None, now: float | None = None, log_n: int = LOG_
             'slots': slots, 'sessions': sessions, 'sessions_note': OLDER_RUN if older else '',
             'queue': queue_rows(ls, st, now),
             'needs': needs, 'concepts': concepts, 'log': log_tail(log_n), 'release': release,
-            'quick_asks': quick_asks(), 'terminal_mode': terminal_mode()}
+            'quick_asks': quick_asks(), 'terminal_mode': terminal_mode(), 'controls': controls(),
+            'run': {'paused': bool(up and st.get('paused')), 'stopping': bool(up and st.get('stopping'))}}
 
 
 def snapshot_json(**kw) -> str:
@@ -510,8 +511,81 @@ def move(tid: str, where: str, other: str) -> dict:
     return call(['plan', 'move', tid, where, other])
 
 
+# --- F82: the run controls ---------------------------------------------------------------------------------
+#
+# One list for the web page and agent-runner ui alike, so the two cannot drift apart: each control's key, its
+# label, the runner command it runs ('{n}' the slot count typed, '{id}' the task), its key in agent-runner ui,
+# where it shows ('run': the run's own; 'task': a slot's task), and what it asks before it runs ('' nothing).
+# Take back is the one that is no runner command of its own: c1 is asked "do ID here", as `take` does.
+
+STOP_NOW_ASK = ('Stop now ends every agent session at once (each resumes in the next run); '
+                'the merges under way finish. Stop now?')
+RUN_CONTROLS = (
+    {'key': 'slot_add', 'label': 'Slot +1', 'argv': ('slots', '+1'), 'tui': '+', 'where': 'run'},
+    {'key': 'slot_remove', 'label': 'Slot -1', 'argv': ('slots', '-1'), 'tui': '-', 'where': 'run'},
+    {'key': 'slots_set', 'label': 'Set slots', 'argv': ('slots', '{n}'), 'tui': '=', 'where': 'run'},
+    {'key': 'pause', 'label': 'Pause', 'argv': ('pause',), 'tui': 'P', 'where': 'run'},
+    {'key': 'go_on', 'label': 'Go on', 'argv': ('pause', '--off'), 'tui': 'G', 'where': 'run'},
+    {'key': 'force', 'label': 'Force past the caps', 'argv': ('force',), 'tui': 'F', 'where': 'run'},
+    {'key': 'caps_on', 'label': 'Caps back on', 'argv': ('force', '--off'), 'tui': 'C', 'where': 'run'},
+    {'key': 'stop', 'label': 'Stop (running tasks finish)', 'argv': ('stop',), 'tui': 'S', 'where': 'run'},
+    {'key': 'stop_now', 'label': 'Stop now', 'argv': ('stop', '--force'), 'tui': 'X', 'where': 'run',
+     'confirm': STOP_NOW_ASK},
+    {'key': 'stop_undo', 'label': 'Take the stop back', 'argv': ('stop', '--undo'), 'tui': 'U', 'where': 'run'},
+    {'key': 'task_take', 'label': 'Take back', 'ask': 'do {id} here', 'tui': 'H', 'where': 'task'},
+    {'key': 'task_drop', 'label': 'Drop', 'argv': ('plan', 'drop', '{id}', '{why}'), 'tui': 'D', 'where': 'task'},
+)
+TASK_DROP_WHY = 'dropped from its slot from the run controls'
+SLOT_COUNT = re.compile(r'[+-]?\d{1,3}')
+TASK_ID = re.compile(r'[A-Z]+\d+[a-z]?')
+
+
+def run_control_of(key: str) -> dict | None:
+    return next((c for c in RUN_CONTROLS if c['key'] == key), None)
+
+
+def controls() -> list[dict]:
+    """The run controls as a page shows them: key, label, TUI key, where, what it needs typed ('n': a slot
+    count, 'id': a task) and its confirm question ('' none)."""
+    def needs(c):
+        words = c.get('argv') or (c.get('ask'),)
+        return 'n' if any('{n}' in w for w in words) else 'id' if any('{id}' in w for w in words) else ''
+    return [{'key': c['key'], 'label': c['label'], 'tui': c['tui'], 'where': c['where'], 'needs': needs(c),
+             'confirm': c.get('confirm', '')} for c in RUN_CONTROLS]
+
+
+def control_argv(key: str, n='', tid: str = '', why: str = '') -> list[str]:
+    """The runner command control `key` runs, filled in; ValueError says what is missing or wrong."""
+    c = run_control_of(key)
+    if c is None:
+        raise ValueError(f'no such run control: {key!r}')
+    words = list(c.get('argv') or ())
+    n = str(n).strip()
+    if any('{n}' in w for w in words) and not (SLOT_COUNT.fullmatch(n) and (key != 'slots_set' or n.isdigit())):
+        raise ValueError(f'{key}: the slot count is a number, not {n!r}')
+    if any('{id}' in w for w in words + [c.get('ask') or '']) and not TASK_ID.fullmatch(tid or ''):
+        raise ValueError(f'{key}: a task id (F82), not {tid!r}')
+    return [w.replace('{n}', n).replace('{id}', tid).replace('{why}', why or TASK_DROP_WHY) for w in words]
+
+
+def run_control(key: str, n='', tid: str = '', why: str = '', confirm: bool = False) -> dict:
+    """F82: run one run control (RUN_CONTROLS) for the web page or agent-runner ui. One with a confirm question
+    runs only with `confirm` true; without it the result is not ok and carries the question as 'confirm'."""
+    try:
+        argv = control_argv(key, n, tid, why)
+    except ValueError as e:
+        return {'ok': False, 'code': 2, 'out': str(e), 'argv': []}
+    c = run_control_of(key)
+    if c.get('confirm') and confirm is not True:
+        return {'ok': False, 'code': 3, 'out': c['confirm'], 'confirm': c['confirm'], 'argv': argv}
+    if c.get('ask'):
+        return SEND[0](c['ask'].replace('{id}', tid))
+    return call(argv)
+
+
 ACTIONS = {'plan_add': plan_add, 'plan_change': plan_change, 'chat': chat, 'answer': answer, 'drop': drop,
-           'take': take, 'shelve': shelve, 'release': release, 'open_session': open_session, 'move': move}
+           'take': take, 'shelve': shelve, 'release': release, 'open_session': open_session, 'move': move,
+           'run_control': run_control}
 
 
 def act(name: str, **args) -> dict:

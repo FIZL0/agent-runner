@@ -160,6 +160,56 @@ def test_real_action(tmp: Path) -> None:
         srv.stop()
 
 
+def test_run_controls(tmp: Path) -> None:
+    """F82: the run controls on the web: the page builds each control's request from the snapshot's one list
+    (ui_model.RUN_CONTROLS), the server runs its runner command, and stop now runs only with the page's own
+    confirm (no browser dialog)."""
+    fake_repo(tmp)
+    page = W.PAGE.read_text(encoding='utf-8')
+    for part in ('controlsCard()', 'Run controls', 'data-ctl=', 'data-tid=', 'data-sure', 'data-unsure',
+                 'data-slots-n', 'controlReq(c,'):
+        check(part in page, f'the page has {part}')
+    for gone in ('confirm(', 'alert(', 'prompt('):
+        check(gone not in page, f'the page uses no {gone}) dialog')
+    want = {'slot_add': ['slots', '+1'], 'slot_remove': ['slots', '-1'], 'slots_set': ['slots', '4'],
+            'pause': ['pause'], 'go_on': ['pause', '--off'], 'force': ['force'], 'caps_on': ['force', '--off'],
+            'stop': ['stop'], 'stop_now': ['stop', '--force'], 'stop_undo': ['stop', '--undo'],
+            'task_drop': ['plan', 'drop', 'F1', U.TASK_DROP_WHY]}
+    cs = U.controls()
+    if shutil.which('node'):
+        reqs = logic_js([['controlReq', c, {'n': ' 4', 'tid': 'F1', 'sure': True}] for c in cs] +
+                        [['controlReq', U.run_control_of('stop_now') | {'needs': '', 'confirm': U.STOP_NOW_ASK},
+                          {'tid': 'F1'}]])
+    else:
+        print('  (no node here: the page requests are built in Python instead)')
+        reqs = [{'name': 'run_control', 'args': {'key': c['key'], **({'n': '4'} if c['needs'] == 'n' else {}),
+                                                  **({'tid': 'F1'} if c['needs'] == 'id' else {}),
+                                                  **({'confirm': True} if c['confirm'] else {})}} for c in cs] + \
+            [{'name': 'run_control', 'args': {'key': 'stop_now'}}]
+    ran, sent = [], []
+    token = W.web_token()
+    srv = W.serve(token, 0, '127.0.0.1', snap=lambda: {})
+    url = f'http://127.0.0.1:{srv.server_address[1]}/act?t={token}'
+    try:
+        with mock.patch.object(U, 'RUN', [lambda argv: (ran.append(argv), (0, 'sent to the run'))[1]]), \
+                mock.patch.object(U, 'SEND', [lambda text: (sent.append(text), {'ok': True, 'code': 0,
+                                                                                 'out': 'sent', 'argv': []})[1]]):
+            for c, rq in zip(cs, reqs):
+                ran.clear()
+                code, out = post(url, rq)
+                if c['key'] == 'task_take':
+                    eq((out.get('ok'), sent, ran), (True, ['do F1 here'], []), 'Take back asks c1 "do F1 here"')
+                else:
+                    eq((code, out.get('ok'), ran), (200, True, [want[c['key']]]),
+                       f'{c["label"]} runs {" ".join(want[c["key"]])}')
+            ran.clear()
+            code, out = post(url, reqs[-1])
+            eq((out.get('ok'), ran, out.get('confirm')), (False, [], U.STOP_NOW_ASK),
+               "stop now without the page's confirm runs nothing and returns the question")
+    finally:
+        srv.stop()
+
+
 def test_start(tmp: Path) -> None:
     fake_repo(tmp)
     eq(CF.DEFAULTS['run']['web'], True, '[run] web is on by default')
@@ -589,7 +639,8 @@ def in_tmp(f):
 
 
 if __name__ == '__main__':
-    raise SystemExit(report([in_tmp(test_server), in_tmp(test_real_action), in_tmp(test_start), in_tmp(test_upload),
+    raise SystemExit(report([in_tmp(test_server), in_tmp(test_real_action), in_tmp(test_run_controls),
+                           in_tmp(test_start), in_tmp(test_upload),
                            in_tmp(test_control_rows), in_tmp(test_feed_pane_concept), in_tmp(test_page),
                            in_tmp(test_logic), in_tmp(test_extras), in_tmp(test_diff), in_tmp(test_views),
                            in_tmp(test_new_chat), in_tmp(test_term_moves)]))
