@@ -748,6 +748,8 @@ def test_actions() -> None:
         check('[a Option A] [b Option B] [c A + B · recommended]' in win.text(), "a pick: the concept's options as "
               'a b c', win.text())
         p.key('c')
+        eq([n['id'] for n in p.snap['needs']], ['D3', 'D7'], 'B149: F4 approved is off Needs you at once')
+        p.snap = SNAP
         p.key('j')
         p.key('ENTER')
         p.key('i')
@@ -806,10 +808,11 @@ def test_actions() -> None:
              ['plan', 'drop', 'B2', 'dropped from agent-runner ui'],
              ['plan', 'move', 'Q1', 'after', 'B2'],
              ['plan', 'confirm', 'D3', 'yes'],
+             ['plan', 'approve', 'F4', 'A + B · recommended'],
              ['plan', 'shelve', 'D7'],
              ['plan', 'add', 'V'],
              ['plan', 'add', 'V', '--now']], 'p, D, J, L and the release buttons run their plan commands')
-    eq(sent, ['change B2: also cover openmx', 'new task: show usage too', 'F4: A + B · recommended',
+    eq(sent, ['change B2: also cover openmx', 'new task: show usage too',
               'D7: port 8770', 'concept K5 ("Lazy layout"): go with Option B',
               'concept K5 ("Lazy layout"): smaller'],
        'chat edits, answers (a button, a reply), the concept pick and its change go to c1')
@@ -1607,6 +1610,32 @@ def test_answer_tab_b138() -> None:
        'a failure says why and the item stays')
 
 
+def test_concept_answer_b149() -> None:
+    """B149: a concept's option key (a b c) in the answer tab runs plan approve with that option, never an AI
+    session, and the item leaves Needs you at once."""
+    from agent_runner import plan as P
+    answer_repo()
+    P.add('K', 'menu layout | files: m.py', todo=S.C.todo)
+    bid = P.concept_done('K1', 'https://x.invalid/k1', todo=S.C.todo)
+    eq(U.need_label(bid), 'CONCEPT', 'the build task waits on the concept')
+    need = {'label': 'CONCEPT', 'id': bid, 'concept': 'K1', 'title': 'menu layout', 'what': '',
+            'url': 'https://x.invalid/k1', 'ask': 'Pick an option on the concept page', 'age': '1m'}
+    p = page(dict(SNAP, needs=[need] + SNAP['needs'][2:]))
+    ran = []
+    with mock.patch.object(U, 'RUN', [lambda argv: (ran.append(argv), (0, 'approved'))[1]]), \
+            mock.patch.object(U, 'SEND', [no_send]):
+        p.key('4')
+        p.key('ENTER')
+        p.key('b')
+    eq(ran, [['plan', 'approve', bid, 'Option B']], 'b runs plan approve with option B')
+    eq((p.msg, p.msg_ok), (f'{bid} approved (Option B): a run starts its build', True), 'the bottom line says so')
+    eq([n['id'] for n in p.snap['needs']], ['D7'], 'the concept is off Needs you at once')
+    with mock.patch.object(U, 'SEND', [no_send]):
+        r = U.answer(bid, 'Option A: one list', button=True)
+    check(r['ok'], 'the real plan approve runs', r)
+    eq(U.need_label(bid), '', 'the build task no longer waits')
+
+
 LONG_ASK = ('Sign in to Chariz on the iPhone 15 Pro (iFizBox > Sources > Chariz > Glint > Sign In, then pick the '
             'Apple ID)\nand check that Glint downloads. Notes are in .runner/journal/R45.md - reply yes/no')
 
@@ -1639,7 +1668,7 @@ def test_short_ask_b152() -> None:
 
 
 if __name__ == '__main__':
-    raise SystemExit(report([test_short_ask_b152, test_d_drops_f116, test_answer_direct_b138, test_answer_tab_b138, test_close_control_quiet_b136,test_layout, test_status_tabs, test_session_tabs, test_queue, test_form_pane_v_task,
+    raise SystemExit(report([test_concept_answer_b149, test_short_ask_b152,test_d_drops_f116, test_answer_direct_b138, test_answer_tab_b138, test_close_control_quiet_b136,test_layout, test_status_tabs, test_session_tabs, test_queue, test_form_pane_v_task,
                                test_direct_edit,
                                test_navigation, test_no_message_box_f112, test_new_chat_f112, test_side_pane_f112,
                                test_diff_key_f127, test_full_screen_f112, test_side_keys_in_box_f113, test_actions, test_session_tab_b125, test_footer,

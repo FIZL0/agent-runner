@@ -488,7 +488,8 @@ def answer_argv(tid: str, text: str, button: bool = False) -> tuple[list[str], s
     """B138: the runner command that settles a Needs you reply at once, and what to say once it did; ([], '')
     when the reply is c1's to read. A button's Yes (or a pick, or done) is `plan confirm ID "<reply>"`, a
     CONFIRM's No is `plan change ID "No: the check failed"`; a pick sheet's go or Send line is `sheet ID
-    --go|--picks`. Free words typed in the reply box are c1's."""
+    --go|--picks`; a concept's option button is `plan approve ID "<option>"` (B149). Free words typed in the
+    reply box are c1's."""
     said, label = (text or '').strip(), need_label(tid)
     if label == 'DECIDE' and button:
         from agent_runner.brief import has_sheet
@@ -496,6 +497,8 @@ def answer_argv(tid: str, text: str, button: bool = False) -> tuple[list[str], s
             return ['sheet', tid, '--go'], f'{tid} answered with the recommended picks'
         if has_sheet(tid) and said.startswith(f'{tid} picks:'):
             return ['sheet', tid, '--picks', said], f'{tid} answered with your picks'
+    if label == 'CONCEPT' and button and said:  # B149: a concept's option button approves that option itself
+        return ['plan', 'approve', tid, said], f'{tid} approved ({said}): a run starts its build'
     if not button or not said or label not in ('CONFIRM', 'DECIDE', 'BLOCKED', P.STUCK):
         return [], ''
     if label == 'CONFIRM' and said.lower() == 'no':
