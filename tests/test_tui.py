@@ -1458,8 +1458,32 @@ def test_d_drops_f116() -> None:
     eq(K.close_from_tui(1)['ok'], False, 'close_from_tui never closes c1')
 
 
+def test_close_control_quiet_b136() -> None:
+    """B136: d on cN runs `control.close_from_tui` in-process, whose run-log lines print to stdout: the TUI
+    swallows them (nothing written over the curses screen) and asks for a full repaint on the next frame."""
+    from agent_runner import control as K
+    logged = []
+
+    def end(n, why):
+        print(f'control {n}: ended ({why})')
+        return True
+
+    def log(line):
+        logged.append(line)
+        print(line)
+    out = io.StringIO()
+    with mock.patch.object(K, 'end_control', end), mock.patch.object(K, 'log', log), \
+            mock.patch.object(sys, 'stdout', out):
+        p = page()
+        p.repaint = False
+        p.close_control({'name': 'c6'})
+    eq(out.getvalue(), '', 'close_control writes nothing to sys.stdout')
+    eq(logged, ['control 6: closed from the TUI'], 'the line still goes to the run log')
+    eq((p.repaint, p.msg_ok), (True, True), 'and the next frame repaints every cell')
+
+
 if __name__ == '__main__':
-    raise SystemExit(report([test_d_drops_f116,test_layout, test_status_tabs, test_session_tabs, test_queue, test_form_pane_v_task,
+    raise SystemExit(report([test_d_drops_f116, test_close_control_quiet_b136,test_layout, test_status_tabs, test_session_tabs, test_queue, test_form_pane_v_task,
                                test_direct_edit,
                                test_navigation, test_no_message_box_f112, test_new_chat_f112, test_side_pane_f112,
                                test_full_screen_f112, test_side_keys_in_box_f113, test_actions, test_session_tab_b125, test_footer,
