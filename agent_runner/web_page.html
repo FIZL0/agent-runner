@@ -526,6 +526,18 @@ const queuedId=out=>((String(out||'').match(/\bK\d+[a-z]?\b/)||[''])[0]);
 const NAV=[['talk','Talk'],['home','Home'],['status','Status'],['plan','Plan'],['concepts','Concepts'],['settings','Settings']];
 /* F124: Agents and Activity are one view now, Status */
 const viewOf=v=>v==='agents'||v==='activity'?'status':v;
+/* B177: what a reload opens: {v: the view, t: the chat ('' for none), link: the link named it}. hash: the link's #,
+   a view (#plan) or a chat or slot (#c3, #s1), which wins over text, the place this tab kept; projects: there is an
+   All projects view; starting: the stand-ins ('@cid') of chats still starting. Anything else is Home */
+function placeOf(text,hash,projects,starting){
+  const known=v=>NAV.some(n=>n[0]===v)||!!projects&&v==='projects', h=String(hash||'').replace(/^#/,''), hv=viewOf(h);
+  if(known(hv))return{v:hv,t:'',link:true};
+  if(/^[cs]\d+$/.test(h))return{v:'home',t:h,link:true};
+  let o;try{o=JSON.parse(text||'{}')}catch(e){}
+  if(!o||typeof o!=='object')o={};
+  const v=viewOf(o.v), t=typeof o.t==='string'?o.t:'';
+  return{v:known(v)?v:'home',t:/^\w[\w.-]*$/.test(t)||(starting||[]).includes(t)?t:'',link:false};
+}
 /* F124: the state pill: the run's state (ui_model.run_state) and its colour */
 function runPill(snap){
   const t=(snap&&snap.run&&snap.run.state)||(snap&&snap.up===false?'Not up':snap&&snap.run&&snap.run.stopping?'Stopping':snap&&snap.run&&snap.run.paused?'Paused':snap&&snap.up?'Running':'');
@@ -908,7 +920,7 @@ function projectButtons(p){
   b.push({label:'Unlist',unlist:true});
   return b;
 }
-if(typeof module!=='undefined')module.exports={viewOf,runPill,cardControls,controlGroups,needsReply,chatGroups,needChatAsk,TALK_SET,talkSetParse,pickVoice,runVoice,speechClips,silentWav,feedMark,feedAfter,atEnd,swipeTakes,swipeOpens,settingText,settingShown,settingValue,homeBase,homeKey,projectLink,homeLink,homeHref,pageTitle,projectState,switcherRows,projectWords,projectButtons,chatMove,BOX_KEYS,keysLine,histPush,histEdge,histStep,slashMatches,slashPick,slashMove,SLASH_FALLBACK,chatPick,answerOpts,needAsk,threadMsgs,working,planWords,compose,sendReq,usageOf,logKind,plain,chatName,controlReq,controlClick,taskControlsOn,queueGroups,conceptButtons,planQueue,NO_CONCEPT,newConceptReq,queuedId,NAV,talkSession,micProblem,dictProblem,dictButton,dictInsert,termTokens,talkShown,talkReply,goneMark,needsShown,answerSaid,GONE_MS,obParse,obNext,obName,obSettle,obRetry,obDrop,obCounts,obHidden,obPill,OLD_RUN,OLD_WAIT,oldRun,plainOut,obRefused,obOld,obDue,obBootCid,sentLeft,sentStep,sentParse};
+if(typeof module!=='undefined')module.exports={viewOf,placeOf,runPill,cardControls,controlGroups,needsReply,chatGroups,needChatAsk,TALK_SET,talkSetParse,pickVoice,runVoice,speechClips,silentWav,feedMark,feedAfter,atEnd,swipeTakes,swipeOpens,settingText,settingShown,settingValue,homeBase,homeKey,projectLink,homeLink,homeHref,pageTitle,projectState,switcherRows,projectWords,projectButtons,chatMove,BOX_KEYS,keysLine,histPush,histEdge,histStep,slashMatches,slashPick,slashMove,SLASH_FALLBACK,chatPick,answerOpts,needAsk,threadMsgs,working,planWords,compose,sendReq,usageOf,logKind,plain,chatName,controlReq,controlClick,taskControlsOn,queueGroups,conceptButtons,planQueue,NO_CONCEPT,newConceptReq,queuedId,NAV,talkSession,micProblem,dictProblem,dictButton,dictInsert,termTokens,talkShown,talkReply,goneMark,needsShown,answerSaid,GONE_MS,obParse,obNext,obName,obSettle,obRetry,obDrop,obCounts,obHidden,obPill,OLD_RUN,OLD_WAIT,oldRun,plainOut,obRefused,obOld,obDue,obBootCid,sentLeft,sentStep,sentParse};
 </script>
 
 <script>
@@ -964,6 +976,9 @@ const $=id=>document.getElementById(id);
 const PN=()=>S.snap.project||HKEY||'agent-runner', LOGO=()=>`<span class="logo">${esc(PN().charAt(0).toLowerCase())}</span>`;
 const store={get(k){try{return localStorage.getItem(k)||''}catch(e){return''}},
   set(k,v){try{v?localStorage.setItem(k,v):localStorage.removeItem(k)}catch(e){}}};
+/* B177: this browser tab's own, kept over a reload */
+const tabStore={get(k){try{return sessionStorage.getItem(k)||''}catch(e){return''}},
+  set(k,v){try{v?sessionStorage.setItem(k,v):sessionStorage.removeItem(k)}catch(e){}}};
 const DRAFT_KEY=k=>'ar-draft:'+k;  /* a box's draft, kept per thread (and Home) across refreshes */
 const boxKey=()=>S.thread||(S.view==='talk'?'talk':'home');
 /* B141: the session the page shows, which Ctrl+C and Stop interrupt: the open chat, else the Talk session in
@@ -1414,6 +1429,8 @@ function box(ph,foot){
     <div class="inrow"><span class="pr" aria-hidden="true">&gt;</span><textarea rows="1" data-in placeholder="${esc(ph)}" aria-label="Message"></textarea></div>
     <div class="boxrow"><button type="button" class="tool" data-clip aria-label="Attach pictures or files" title="Attach pictures or files">${I.clip}</button>${S.view==='talk'&&!S.thread?(micWhy()?'':`<button type="button" class="tool" data-talkmode="mic" aria-label="Talk instead" title="Talk instead">${I.talk}</button>`):dictButton(dictWhy(),!!DK.rec,I.talk)}<span class="to">${esc(S.ctx?'to a new chat':S.thread?S.thread:S.view==='talk'?'to Talk':'to c1')}</span>${busyNow?`<button type="button" class="send stop" data-stop="${esc(shownNow)}" aria-label="Interrupt">${I.stop}</button>`:''}<button class="send" aria-label="Send">${I.up}</button></div></form>${foot?`<div class="foot">${foot}</div>`:''}`;
 }
+/* B177: a chat with a transcript that the run no longer lists (one just started is not listed yet: its message waits) */
+const ended=n=>!!(S.snap.at&&S.feeds[n]&&S.feeds[n].ok&&!sessionOf(n)&&!(S.sent[n]&&(S.sent[n].pending||[]).length));
 function convo(n,shown){  // F93: shown, how a message of yours shows (Talk: without its brief or reminder)
   const talk=!!shown;shown=shown||(t=>t);
   const f=S.feeds[n], agent=isAgent(n), title=threadTitle(n);
@@ -1434,6 +1451,7 @@ function convo(n,shown){  // F93: shown, how a message of yours shows (Talk: wit
   h+=sentBubbles(n,shown);  // B154
   h+=obBubbles(n);  // F137: messages still in the outbox
   if(starting(n))h+=startLine(n);
+  else if(ended(n))h+=`<div class="small" style="text-align:center">${/^c\d+$/.test(n)?'This chat has ended.':'This slot is gone.'}</div>`;  // B177
   else if(busy(n))h+=`<div class="think">${LOGO()}Working on it… · Ctrl+C interrupts<button type="button" class="btn mini" data-stop="${esc(n)}">Stop</button></div>`;
   return `<div class="msgs">${h}</div>`;
 }
@@ -1586,6 +1604,7 @@ function topHTML(){
   return `<button class="icon menu" data-menu aria-label="Menu${S.menuDot?': something needs you':''}">${I.menu}${S.menuDot?'<span class="bdot"></span>':''}</button>${n?`<button class="icon" data-home aria-label="Back">${I.back}</button>`:''}<div class="title">${n?esc(threadTitle(n)):{talk:'Talk',home:'',status:'Status',plan:'Plan',concepts:'Concepts',settings:'Settings',projects:'All projects'}[S.view]}</div>${p.text?`<button class="pill ${p.cls}" data-view="status" data-k="pill" data-v="${esc(p.text)}" title="The run: open Status">${esc(p.text)}</button>`:''}${!n&&S.view==='talk'?`<button class="icon" data-sheet="talk" aria-label="Talk settings" title="Talk settings">${I.settings}</button>`:''}${x&&x.link?`<a class="icon" href="${esc(x.link)}" target="_blank" rel="noopener" aria-label="Open its session" title="Open its session">${I.ext}</a>`:''}${!n&&S.view==='talk'?`<button class="icon" data-newtalk aria-label="New Talk chat" title="New Talk chat">${I.newchat}</button>`:`<button class="icon" data-new aria-label="New chat" title="New chat">${I.newchat}</button>`}`;
 }
 function render(force){
+  keepPlace();  // B177
   if(!force&&(PD.down||selecting())){const now=Date.now();PD.since=PD.late?PD.since:now;PD.late=true;if(now-PD.since<HOLD_MS)return}  // but never for long
   PD.late=false;
   markSeen();  // F128
@@ -1768,7 +1787,9 @@ function slashTake(j){
 
 /* --- F93: Talk: the mic hears the person (Web Speech API), the words go to the Talk session (the `talk` action),
    and its reply is read aloud (F158: run speech, else speechSynthesis); the chat box under the mic works without either ------------- */
-const TALK_KEY='ar-talk', TALK_OLD='ar-talkold', TALK_START='ar-talkstart';  /* the Talk session this browser opened ('new': none yet, the next message opens one), and the Talk chats New Talk chat left (F157) */
+const TALK_FOR=HKEY?':'+HKEY:'', TALK_KEY='ar-talk'+TALK_FOR, TALK_OLD='ar-talkold'+TALK_FOR, TALK_START='ar-talkstart'+TALK_FOR;  /* the Talk session this browser opened ('new': none yet, the next message opens one), and the Talk chats New Talk chat left (F157) */
+/* B177: Talk's own chat, per project (TALK_FOR: through Runner Home they share an address) and per tab; a new tab takes the browser's last */
+const talkKept=()=>tabStore.get(TALK_KEY)||store.get(TALK_KEY), talkKeep=v=>{tabStore.set(TALK_KEY,v);store.set(TALK_KEY,v)};
 const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
 const TK={rec:null,heard:'',trail:null,report:'',upAt:0,state:'',wait:null,said:'',unlocked:false,note:'',held:'',playing:'',hold:false,holdId:null,again:false,ear:null,gen:0,starting:[]};  /* gen: counts New Talk chat presses; starting: the sends that open a chat whose name is not known yet (F157); state: '', listening, thinking, speaking; ear: the listen under way (listen()); trail: what happened on the mic (micLog), report: the one to copy, upAt: when a hold ended; playing: the reply a play button reads; held: the reply the browser wants a tap for (F158) */
 /* F124: Talk's settings (TALK_SET), and whether its dock shows the mic or the box, as this browser last had them */
@@ -1902,8 +1923,8 @@ function talkFind(remembered){
 function newTalk(){
   const was=talkName(), known=(S.snap.sessions||[]).map(s=>s.name);
   if(known.length)store.set(TALK_OLD,JSON.stringify(talkOld().filter(n=>known.includes(n))));  // a chat that is gone: its name can come again
-  talkLeave([...talkTitled(),was,store.get(TALK_KEY)].filter(n=>n&&n!=='new'));
-  store.set(TALK_KEY,'new');TK.gen++;talkStartsKeep();
+  talkLeave([...talkTitled(),was,talkKept()].filter(n=>n&&n!=='new'));
+  talkKeep('new');TK.gen++;talkStartsKeep();
   const rec=TK.rec, spoke=TK.state==='speaking'||!!TK.playing;
   if(TK.ear)micLog('stop by New Talk chat');
   TK.ear=TK.rec=null;TK.hold=TK.again=false;TK.wait=null;
@@ -1914,14 +1935,14 @@ function newTalk(){
   S.drawer=false;S.pin=true;render(true);
 }
 function talkName(){
-  const n=talkFind(store.get(TALK_KEY));if(n)return n;
+  const n=talkFind(talkKept());if(n)return n;
   const w=TK.wait;return w&&Date.now()-w.at<90000?w.n:'';  /* just opened: not in the snapshot yet */
 }
 /* B133: the session a Talk reply is awaited from ('' for none): a wait opened with no session name takes the live
    chat titled Talk once the snapshot lists it */
 function talkWaitName(){
   const w=TK.wait;if(!w)return '';
-  if(!w.n){const t=talkFind('');if(t){w.n=t;talkStarts(TK.starting.filter(x=>x!==w));store.set(TALK_KEY,t)}}
+  if(!w.n){const t=talkFind('');if(t){w.n=t;talkStarts(TK.starting.filter(x=>x!==w));talkKeep(t)}}
   return w.n;
 }
 const micWhy=()=>micProblem(window.isSecureContext!==false,!!SR);
@@ -1977,7 +1998,8 @@ fetch('term'+location.search).then(r=>r.ok?r.text():'').then(p=>{const t=termTok
 const talkGoing=()=>TK.wait&&TK.wait.out?`<div class="msgs"><div class="u pending" data-k="talkout" data-t="${esc(tkey(talkShown(TK.wait.said)))}">${esc(talkShown(TK.wait.said))}</div></div>`:'';
 function talkHTML(){
   const n=talkName(), going=talkGoing();
-  if(!n)return going?`<div class="col">${going}<div class="think">${LOGO()}Starting the chat…</div></div>`: `<div class="col"><div class="greet">${LOGO()}Talk to the run</div><div class="small" style="text-align:center">Tap the mic and ask, say, what is going on: the reply is read aloud. ${store.get(TALK_KEY)==='new'?'Your next message opens a new Talk chat. The old one stays in Chats.':'Talk opens a chat of its own the first time.'}</div></div>`;
+  if(!n&&!going&&!S.snap.at&&/^c\d+$/.test(talkKept()))return `<div class="col"><div class="think">${LOGO()}Loading…</div></div>`;  // B177: no greeting before the chat it had
+  if(!n)return going?`<div class="col">${going}<div class="think">${LOGO()}Starting the chat…</div></div>`: `<div class="col"><div class="greet">${LOGO()}Talk to the run</div><div class="small" style="text-align:center">Tap the mic and ask, say, what is going on: the reply is read aloud. ${talkKept()==='new'?'Your next message opens a new Talk chat. The old one stays in Chats.':'Talk opens a chat of its own the first time.'}</div></div>`;
   if(!S.feeds[n]&&!TK.loading){TK.loading=true;loadFeed(n).finally(()=>{TK.loading=false})}  /* its first look */
   return `<div class="col">${convo(n,talkShown)}${going}</div>`;
 }
@@ -2004,16 +2026,16 @@ async function talkSend(msg){
   /* B133: the wait starts before the action, which can take up to 90 s while a new chat comes up: a reply that
      lands meanwhile is heard from the polls and snapshots (talkWaitName finds the new chat by its title) */
   const w={n:to,since:to?mark:0,at:Date.now(),last:'',said:msg,out:true,gen:TK.gen};TK.wait=w;
-  const asked=store.get(TALK_KEY)==='new';if(asked){talkLeave(talkTitled());store.set(TALK_KEY,'')}  // F157: a Talk chat that shows from now on is the new one
+  const asked=talkKept()==='new';if(asked){talkLeave(talkTitled());talkKeep('')}  // F157: a Talk chat that shows from now on is the new one
   if(!to)talkStarts([...TK.starting,w]);
   render(true);
   const r=await act('talk',{text:msg,to});w.out=false;
   const left=w.gen!==TK.gen;  // F157: New Talk chat was pressed meanwhile: these words belong to the chat it left
   if(!r.ok||r.session)talkStarts(TK.starting.filter(x=>x!==w));
-  if(!r.ok){if(TK.wait===w)TK.wait=null;if(!left){TK.state='';if(asked&&!store.get(TALK_KEY))store.set(TALK_KEY,'new')}render(true);return false}
+  if(!r.ok){if(TK.wait===w)TK.wait=null;if(!left){TK.state='';if(asked&&!talkKept())talkKeep('new')}render(true);return false}
   const n=r.session||to, fresh=n!==to;
   if(TK.wait===w){if(fresh){w.n=n;w.since=0;w.last=''}w.at=Date.now()}  /* not yet heard; n '': found by its title */
-  if(n){if(left)talkLeave([n]);else{store.set(TALK_KEY,n);store.set(TALK_OLD,JSON.stringify(talkOld().filter(x=>x!==n)))}addSent(n,msg,r.at,{talk:true,...(fresh?{first:true}:{})},fresh?0:len);loadFeed(n)}
+  if(n){if(left)talkLeave([n]);else{talkKeep(n);store.set(TALK_OLD,JSON.stringify(talkOld().filter(x=>x!==n)))}addSent(n,msg,r.at,{talk:true,...(fresh?{first:true}:{})},fresh?0:len);loadFeed(n)}
   else if(TK.wait===w&&!w.n){w.sent={text:msg,at:r.at};toast('Talk is opening its chat: it shows here once it is up')}
   render(true);return true;
 }
@@ -2161,6 +2183,7 @@ function takeSnap(s){
       if(ph){obChange(b=>obName(b,ph,nm));drain()}if(!ph||S.thread===ph)open(nm);else render();return}
     if(Date.now()-S.waitNew.at>60000)S.waitNew=null}
   for(const w of working_())if(!S.feeds[w.name]||Date.now()-(S.feeds[w.name].at||0)>15000)loadFeed(w.name);
+  if(S.kept)keptCheck();  // B177
   const tw=talkWaitName();if(tw&&TK.wait.sent){addSent(tw,TK.wait.sent.text,TK.wait.sent.at,{talk:true,first:true},0);TK.wait.sent=null}if(tw)loadFeed(tw);  // B133: each snapshot also looks for the awaited Talk reply
   render();S.live=true;
 }
@@ -2180,6 +2203,7 @@ async function loadFeed(n){
     if(sent){sent.pending=sentStep(sent.pending,f.entries,Date.now(),!!se&&se.state!=='off',!!f.more);keepSent()}  // B154
     const moved=had!==JSON.stringify((sent&&sent.pending)||[]);
     talkHear(n);  // F93
+    if(S.kept&&keptCheck())render(true);  // B177
     if(moved||!old||JSON.stringify(old.entries)!==JSON.stringify(f.entries)||old.out!==f.out)render()}
   catch(e){}
 }
@@ -2187,6 +2211,31 @@ setInterval(()=>{if(S.thread&&!document.hidden)loadFeed(S.thread)},2000);
 setInterval(()=>{for(const n of Object.keys(S.sent))if(n!==S.thread&&S.sent[n].pending.length&&!document.hidden)loadFeed(n)},4000);  // B154
 setInterval(()=>{const w=talkWaitName(), n=talkName();  // F93; B133: an awaited reply is polled in any view
   if(w)loadFeed(w);else if(n&&!S.thread&&S.view==='talk')loadFeed(n)},2000);
+
+/* B177: the open view and chat, per project and per tab (the title names the project on the run's own address) */
+const PLACE_KEY='ar-place:'+(HKEY||document.title);
+let placeWas='';
+function keepPlace(){const p=JSON.stringify({v:S.view,t:S.thread||''});if(!HOME_PAGE&&p!==placeWas)tabStore.set(PLACE_KEY,placeWas=p)}
+/* before the first draw; the link's # goes from the address, so a later reload opens what was open then */
+function takePlace(){
+  if(HOME_PAGE)return;
+  const p=placeOf(tabStore.get(PLACE_KEY),location.hash,!!HB,S.ob.filter(x=>x.newchat).map(x=>'@'+x.cid));
+  S.view=p.v;S.thread=p.t||null;S.kept=p.t;
+  if(p.link)try{history.replaceState(null,'',location.pathname+location.search)}catch(e){}
+}
+/* the chat a reload opened: true when the run has no such chat, and Home is open instead */
+function keptCheck(){
+  const n=S.kept, f=S.feeds[n];
+  if(S.thread!==n||n[0]==='@'||sessionOf(n)||f&&f.ok){S.kept='';return false}
+  if(!S.snap.at||!f||f.name!==n||S.sent[n]&&(S.sent[n].pending||[]).length)return false;
+  S.kept='';S.thread=null;S.ctx=null;S.view='home';return true;
+}
+/* a link to this page, followed in the tab that has it open */
+addEventListener('hashchange',()=>{
+  if(HOME_PAGE||!placeOf('',location.hash,!!HB).link)return;
+  takePlace();S.ctx=null;S.drawer=false;S.sheet='';S.sure=null;render(true);placeLoad();
+});
+function placeLoad(){if(S.thread)loadFeed(S.thread);if(S.view==='settings')loadSettings()}
 
 /* --- doing things ------------------------------------------------------------------------------------------ */
 function open(n){S.thread=n;S.drawer=false;S.sheet='';S.sure=null;loadFeed(n);render(true);setTimeout(()=>document.querySelector('[data-in]')?.focus({preventScroll:true}),50)}
@@ -2508,12 +2557,14 @@ document.addEventListener('touchend',e=>{if(SW&&SW.on&&!SW.sheet&&[...e.touches]
 document.addEventListener('touchcancel',()=>swipeEnd(false),{passive:true});
 addEventListener('pagehide',finalDelete);  // F118: leaving the page makes a pending delete final
 
+takePlace();  // B177: before the first draw
 render(true);
 if(HOME_PAGE){  // F134: Home's own page: no run behind it, only Home's projects and devices
   loadProjects();loadDevices();setInterval(loadProjects,5000);setInterval(loadDevices,30000);
 }else{
 connect();
 loadFeed('c1');
+placeLoad();  // B177
 drain();  // F137: what a reload left in the outbox goes now (the run page runs each cid once)
 if(HB){loadProjects();let tick=0;  // F134: the switcher: every 5 s while it or All projects shows, else every 30 s
   setInterval(()=>{if(H.open||S.view==='projects'||++tick%6===0)loadProjects()},5000);
