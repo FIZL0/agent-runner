@@ -21,7 +21,8 @@ Panels and their tabs (F76):
 
 The feed is the agent's words with its tool steps folded as '· N steps' (v shows them); a chat shows the steps,
 as a Claude session does. A box takes typing after i (or Enter): Enter sends, Shift+Enter (or Ctrl-J, Alt+Enter)
-is a new line, Esc leaves it, and in a chat Esc interrupts while the session works. Each box keeps its draft
+is a new line, Esc leaves it (never interrupts), and in a chat Ctrl+C interrupts while the session works (B116;
+elsewhere Ctrl+C quits). Each box keeps its draft
 across Esc and refreshes. The pane tab attaches to the session's tmux pane (Enter; back with Ctrl-b d outside
 tmux, Ctrl-b L inside it). Navigation: h/l previous / next tab (h on the first tab and Esc go back to the
 panels), Ctrl-h / Ctrl-l the left / right side, 1-5 a panel (anywhere but in a box), Tab the next panel; in the
@@ -114,7 +115,8 @@ def idle_line(row: dict) -> str:
 HELP = """Everywhere (not while typing in a box)
   1-5      focus a panel          Tab      next panel (direct edit: next field)
   j/k      move down / up         l Enter  into the main pane, next tab
-  h        previous tab, out      Esc      back out (a chat: interrupt while it works)
+  h        previous tab, out      Esc      back out
+  ^C       a working chat: interrupt (elsewhere: quit)
   ^h ^l    left / right side      c        chat with c1
   i        type in the box        ?        this list
   q        quit
@@ -470,7 +472,7 @@ class RunPage:
 
     def working(self, name: str) -> bool:
         """The control session `name` is mid-turn: its feed's newest entry is the person's words, a tool step or
-        its output (not an interruption), so Esc interrupts it."""
+        its output (not an interruption), so Ctrl+C interrupts it."""
         ents = self.feed(name).get('entries') or []
         return bool(ents) and ents[-1].get('kind') in ('you', 'tool', 'out') and ents[-1].get('text') != 'interrupted'
 
@@ -963,8 +965,9 @@ class RunPage:
         own key) and never j/k or Ctrl-h/Ctrl-l."""
         it, (tab, _) = self.sel(), self.tab()
         if self.typing:
-            keys = [('Esc', 'interrupt')] if self.chat_name() and self.working(self.chat_name()) else \
-                [('Esc', 'leave')]
+            keys = [('Esc', 'leave')]
+            if self.chat_working():
+                keys.insert(0, ('Ctrl+C', 'interrupts'))
             if self.typing.startswith('form:'):
                 keys.append(('Tab/⇧Tab', 'field'))
             if not self.typing.startswith(('form:', 'answer:', 'edit:', 'concept:')) or \
@@ -981,10 +984,9 @@ class RunPage:
                 keys.append(('i', 'type'))
             if tab == 'feed' and isinstance(it, dict) and it.get('task'):
                 keys.append(('v', 'steps'))
-            if tab == 'chat' and self.chat_name() and self.working(self.chat_name()):
-                keys.append(('Esc', 'interrupt'))
-            else:
-                keys.append(('Esc', 'back'))
+            if tab == 'chat' and self.chat_working():
+                keys.append(('Ctrl+C', 'interrupts'))
+            keys.append(('Esc', 'back'))
             return keys
         if self.panel == 1:
             return [('⏎', 'open'), ('R', 'release'), ('+/-', 'slots'), ('P/G', 'pause, go on'), ('S', 'stop')]
@@ -1114,7 +1116,10 @@ class RunPage:
         if self.help:
             self.help = k not in ('ESC', '?', 'q', 'ENTER')
             return False
-        if k == '^C':
+        if k == '^C':  # B116: Ctrl+C interrupts a working chat (Esc never does); elsewhere it quits
+            if self.main and self.chat_working():
+                self.interrupt(self.chat_name())
+                return False
             return True
         if self.confirm:  # F82: stop now runs only on its key again
             key, self.confirm = self.confirm, ''
@@ -1129,11 +1134,8 @@ class RunPage:
             return False
         if k == 'q':
             return True
-        if k == 'ESC':
-            if self.main and self.chat_name() and self.working(self.chat_name()):
-                self.interrupt(self.chat_name())
-            else:
-                self.main = False
+        if k == 'ESC':  # B116: back out only, never an interrupt
+            self.main = False
             return False
         if len(k) == 1 and k in '12345':
             self.panel, self.main = int(k), False
@@ -1158,12 +1160,8 @@ class RunPage:
         """A key while typing in a box."""
         box = self.typing
         form = box.startswith('form:')
-        if k == 'ESC':
-            name = self.chat_name()
-            if name and box == self.box() and self.working(name):
-                self.interrupt(name)
-            else:
-                self.typing = ''
+        if k == 'ESC':  # B116: leave the box only, never an interrupt
+            self.typing = ''
             return
         if form and k in ('TAB', 'BTAB'):
             self.next_field(-1 if k == 'BTAB' else 1)
@@ -1216,6 +1214,11 @@ class RunPage:
                 if kind in ('edit', 'answer'):
                     self.main = False
         self.done(r)
+
+    def chat_working(self) -> bool:
+        """The main pane's chat is with a control session that is mid-turn, so Ctrl+C interrupts it (B116)."""
+        name = self.chat_name()
+        return bool(name) and self.working(name)
 
     def interrupt(self, name: str) -> None:
         self.done(U.interrupt(name))

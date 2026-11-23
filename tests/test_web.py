@@ -785,6 +785,28 @@ def test_parked(tmp: Path) -> None:
     check('U' in here and 'E' in here, 'the key hints show U unpark and E chat edit', got[7])
 
 
+def test_esc_ctrl_c(tmp: Path) -> None:
+    """B116: on the run app Esc never interrupts (it leaves the box, then goes back); Ctrl+C interrupts the open
+    chat while it works (not over selected text), and a small Stop button sits by the working mark."""
+    page = W.page_html().decode()
+    start = page.index("document.addEventListener('keydown'")
+    handler = page[start:page.index('\n});', start)]
+    lines = handler.splitlines()
+    esc_lines = [ln for ln in lines if "e.key==='Escape'" in ln]
+    check(len(esc_lines) >= 2, 'the keydown handler has its Esc branches', esc_lines)
+    for ln in esc_lines:
+        check('interrupt' not in ln, 'an Esc branch sends no interrupt', ln)
+    check(any("e.key==='Escape'" in ln and 'blur()' in ln for ln in lines), 'Esc in the box leaves it')
+    check(any("e.key==='Escape'&&S.thread" in ln and 'S.thread=null' in ln for ln in lines), 'Esc out of the box goes back')
+    ctrl = [ln for ln in lines if 'e.ctrlKey' in ln]
+    check(len(ctrl) == 1 and "act('interrupt',{session:S.thread})" in ctrl[0] and 'busy(S.thread)' in ctrl[0]
+          and '!selectedText(' in ctrl[0], 'Ctrl+C interrupts the working chat, not over selected text', ctrl)
+    check('Working on it… · Ctrl+C interrupts<button type="button" class="btn mini" data-stop="${esc(n)}">Stop</button>'
+          in page, 'the working mark says Ctrl+C interrupts and has a Stop button')
+    check("if(x=q('[data-stop]')){const n=x.dataset.stop||S.thread;if(n)act('interrupt',{session:n});return}" in page,
+          'Stop interrupts the session it stands by')
+
+
 def in_tmp(f):
     def go():
         with tempfile.TemporaryDirectory() as d:
@@ -798,4 +820,5 @@ if __name__ == '__main__':
                            in_tmp(test_start), in_tmp(test_upload),
                            in_tmp(test_control_rows), in_tmp(test_feed_pane_concept), in_tmp(test_page),
                            in_tmp(test_logic), in_tmp(test_extras), in_tmp(test_diff), in_tmp(test_views),
-                           in_tmp(test_new_chat), in_tmp(test_term_moves), in_tmp(test_page_copy_publish), in_tmp(test_parked)]))
+                           in_tmp(test_new_chat), in_tmp(test_term_moves), in_tmp(test_page_copy_publish), in_tmp(test_parked),
+                           in_tmp(test_esc_ctrl_c)]))

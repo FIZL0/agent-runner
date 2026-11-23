@@ -225,7 +225,8 @@ drawer) and a desktop. It follows the browser's light or dark setting; `[ui] the
   that agent's thread), Up next (opens c1 with an About line naming the task) and Release (when the next one
   lands, or now).
 - **Threads.** A session's feed as a conversation: its replies in serif with no bubble, yours in bubbles,
-  tool steps folded as "Ran N steps", and a mark while it works. Esc or stop interrupts it. A control
+  tool steps folded as "Ran N steps", and a mark while it works, with a Stop button. Ctrl+C or Stop interrupts it; Esc only leaves the box, then
+  goes back (B116). A control
   session's thread talks to that session; an agent's thread messages that agent.
 - **Message box.** Enter sends, Shift+Enter starts a new line, and each thread keeps its own draft. An About
   line says what the message is about. Attachments are uploaded to the run (`POST /upload`), kept under

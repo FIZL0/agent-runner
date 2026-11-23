@@ -168,6 +168,7 @@ a{color:var(--accent)}
 .stepbox .o{color:var(--faint)}
 .think{display:flex;align-items:center;gap:8px;font:13px var(--sans);color:var(--muted)}
 .think .logo{width:20px;height:20px;font-size:10px;border-radius:6px;animation:pulse 1.2s infinite}
+.think .btn.mini{padding:2px 10px;font-size:12px;margin-left:4px}
 .more{font-size:12px;color:var(--faint);text-align:center}
 
 .toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--fg);color:var(--bg);border-radius:12px;padding:9px 14px;font-size:13px;z-index:20;max-width:min(560px,90vw);box-shadow:0 6px 24px var(--shadow)}
@@ -438,7 +439,7 @@ function convo(n){
     h+=`<div class="a">${lead}${st}${m.text?`<div>${md(m.text)}</div>`:''}</div>`;
   });
   for(const p of (S.sent[n]&&S.sent[n].pending)||[])h+=`<div class="u pending">${esc(p)}</div>`;
-  if(busy(n))h+=`<div class="think"><span class="logo">ar</span>Working on it…</div>`;
+  if(busy(n))h+=`<div class="think"><span class="logo">ar</span>Working on it… · Ctrl+C interrupts<button type="button" class="btn mini" data-stop="${esc(n)}">Stop</button></div>`;
   return `<div class="msgs">${h}</div>`;
 }
 const greeting=()=>{const h=new Date().getHours();return h<12?'Good morning':h<18?'Good afternoon':'Good evening'};
@@ -589,15 +590,23 @@ document.addEventListener('click',async e=>{
   if(q('[data-unctx]')){S.ctx=null;render(true);return}
   if(x=q('[data-unatt]')){S.atts.splice(+x.dataset.unatt,1);render(true);return}
   if(q('[data-clip]')){$('file').click();return}
-  if(q('[data-stop]')){if(S.thread)act('interrupt',{session:S.thread});return}
+  if(x=q('[data-stop]')){const n=x.dataset.stop||S.thread;if(n)act('interrupt',{session:n});return}
 });
 document.addEventListener('submit',e=>{e.preventDefault();send()});
+function selectedText(t){
+  if(t&&typeof t.selectionStart==='number'&&t.selectionEnd>t.selectionStart)return true;
+  return !!String(window.getSelection&&window.getSelection()||'');
+}
 document.addEventListener('keydown',e=>{
+  /* B116: Ctrl+C interrupts the open chat while it works (not while text is selected, so copying still works);
+     Esc never interrupts: it leaves the box, then goes back */
+  if(e.ctrlKey&&!e.metaKey&&!e.altKey&&(e.key==='c'||e.key==='C')&&S.thread&&busy(S.thread)&&!selectedText(e.target)){e.preventDefault();act('interrupt',{session:S.thread});return}
   if(e.target.matches&&e.target.matches('[data-in]')){
     if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();send();return}
-    if(e.key==='Escape'&&S.thread&&busy(S.thread)){e.preventDefault();act('interrupt',{session:S.thread});return}
+    if(e.key==='Escape'){e.preventDefault();e.target.blur();return}
     return}
   if(e.key==='Escape'&&S.drawer){S.drawer=false;render();return}
+  if(e.key==='Escape'&&S.thread){S.thread=null;S.ctx=null;render(true);return}  /* out of the box, Esc goes back */
   const c=e.target.closest&&e.target.closest('.card.tap');if(c&&c===e.target&&(e.key==='Enter'||e.key===' ')){e.preventDefault();c.click()}
 });
 document.addEventListener('input',e=>{if(e.target.matches('[data-slots-n]'))S.slotsN=e.target.value;if(e.target.matches('[data-in]')){grow(e.target);store.set(DRAFT_KEY(boxKey()),e.target.value)}});
