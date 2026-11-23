@@ -550,7 +550,6 @@ def ensure_local(root: Path) -> Path:
 
 # A key a release removed: (table, key) -> what to do instead. Ignored, and the run log says so.
 REMOVED: dict[tuple[str, str], str] = {
-    ('ui', 'web'): 'the terminal-style web page is gone (C29); delete it',
     ('run', 'mode'): 'a run never starts two tasks on the same files (0.32.0); delete it',
     ('run', 'fix_ahead'): '`fix_ahead_max = 0` is what `fix_ahead = false` was (0.32.0)',
     ('run', 'precommit'): 'chain the check into `[run] test` (0.32.0)',
