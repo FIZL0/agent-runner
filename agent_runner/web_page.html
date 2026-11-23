@@ -461,7 +461,8 @@ function histKey(e,ta){
   if(HI.key!==k||HI.i===null){if(e.key==='ArrowDown')return false;HI={key:k,i:l.length,draft:ta.value}}
   const i=histStep(l.length,HI.i,e.key);
   HI.i=i;ta.value=i===l.length?HI.draft:l[i];if(i===l.length)HI.i=null;
-  if(HI.i===null)store.set(DRAFT_KEY(k),ta.value);grow(ta);  // a recalled message is not saved as the draftta.setSelectionRange(ta.value.length,ta.value.length);
+  if(HI.i===null)store.set(DRAFT_KEY(k),ta.value);  // a recalled message is not saved as the draft
+  grow(ta);ta.setSelectionRange(ta.value.length,ta.value.length);
   return true;
 }
 
@@ -667,7 +668,7 @@ function render(force){
   const body=$('body'), atEnd=body.scrollHeight-body.scrollTop-body.clientHeight<80;
   body.innerHTML=h;$('dock').innerHTML=dock;$('dock').hidden=!dock;
   const nta=document.querySelector('[data-in]');
-  if(nta){nta.value=store.get(DRAFT_KEY(boxKey()));grow(nta);if(focused){nta.focus();if(sel)nta.setSelectionRange(sel[0],sel[1]);slashShow(nta)}}  // B119: the menu stays open
+  if(nta){nta.value=HI.i!==null&&HI.key===boxKey()?histGet(HI.key)[HI.i]||'':store.get(DRAFT_KEY(boxKey()));grow(nta);if(focused){nta.focus();if(sel)nta.setSelectionRange(sel[0],sel[1]);slashShow(nta)}}  // B119: the menu stays open; B120: so does a recalled message
   const nk=document.querySelector('[data-kin]');if(nk){nk.value=S.kText||'';if(kfocused||S.kFocus)nk.focus();S.kFocus=false}  // F87: the new concept box keeps its words
   if(n&&(atEnd||force))body.scrollTop=1e9;
 }
