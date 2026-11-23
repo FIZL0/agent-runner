@@ -171,6 +171,7 @@ Status [1]
   V        upgrade agent-runner   Z B      suspend, shut down once stopped (again: undo)
 Sessions [2]
   t        a slot on a task       v        tool steps on / off
+  g        a slot's diff in place of its session (again: the session; in tmux: its pane goes, then back)
   N        new chat               o        open the session link
   y        copy the session link (the terminal's clipboard, so over ssh too)
   H        take its task back     d D      drop its task from the slot
@@ -1053,6 +1054,8 @@ class RunPage:
             if isinstance(it, dict) and (it.get('task') or is_control(it)):
                 keys += [('o', 'open session'), ('y', 'copy link'),
                          ('^F', 'normal size' if self.full or self.side.full else 'full-screen')]
+            if isinstance(it, dict) and 'diff' in self.tab_list(2, it):
+                keys.append(('g', 'session' if self.tab()[0] == 'diff' else 'diff'))
             if self.task_controls_on(it):
                 keys += [('H', 'take back'), ('d', 'drop')]
             elif is_control(it) and it.get('name') != 'c1':
@@ -1637,6 +1640,8 @@ class RunPage:
             self.close_control(it)
         elif self.panel == 2 and k == 't':
             self.feed_tab()
+        elif self.panel == 2 and k == 'g':
+            self.diff_toggle()
         elif self.panel == 2 and k == 'v':
             self.steps = not self.steps
             self.msg, self.msg_ok = f'tool steps {"shown" if self.steps else "folded"}', True
@@ -1726,6 +1731,17 @@ class RunPage:
             return
         self.panel, self.cur[2] = 2, at
         self.set_tab('session')
+
+    def diff_toggle(self) -> None:
+        """F127 g: a slot's diff in place of its session, and back. Inside tmux the session pane beside goes while
+        the diff shows (`sync` follows the tab) and comes back with the session tab; focus stays on the TUI."""
+        it = self.sel()
+        tab, ts = self.tab()
+        if 'diff' not in ts:
+            self.msg, self.msg_ok = 'g shows a slot\'s diff: select a slot on a task', True
+            return
+        self.tabs[self._tab_key(it)] = 'session' if tab == 'diff' else 'diff'
+        self.main = False  # the panels keep focus (inside tmux: not moved into the pane that comes back)
 
     def release_tab(self) -> None:
         rows = self.items(1)
