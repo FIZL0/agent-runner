@@ -22,6 +22,8 @@ page on a free port instead (web.start_web), and Home routes to it:
     POST /add?t=TOKEN            {"path": PATH} lists a project; /remove unlists one
     ANY  /p/KEY/...?t=TOKEN      that project's run app, routed to its run's page with the run's own token, so
                                  Home's link is the only one a phone needs; a run works the same with Home off
+    ANY  /p/KEY/t/TOKEN/NAME/... F107: session NAME's terminal tab, the run's ttyd for it (WebSocket included);
+                                 the token is in the path, since ttyd's page drops the query
     GET  /devices?t=TOKEN        F95: Device Vitals, this machine and each peer Home's (vitals.py), and their
                                  alerts (Needs you); /device?id=ID the vitals page; /vitals/device this
                                  machine's; /vitals/clean Clean; /dev/ID/... the same on device ID
@@ -400,8 +402,14 @@ class HomeHandler(BaseHTTPRequestHandler):
 
     def allowed(self) -> bool:
         q = parse_qs(urlsplit(self.path).query)
-        got = (q.get('t') or [''])[0] or self.headers.get('X-Token', '')
+        got = (q.get('t') or [''])[0] or self.headers.get('X-Token', '') or self.path_token()
         return bool(got) and hmac.compare_digest(got.encode(), self.server.token.encode())
+
+    def path_token(self) -> str:
+        """F107: a run's terminal tab is /p/KEY/t/TOKEN/NAME/...: ttyd's page asks for its token and its socket
+        by paths under its own, without the query, so the token rides in the path (as on the run's own ttyd)."""
+        parts = urlsplit(self.path).path.split('/')  # ['', 'p', KEY, 't', TOKEN, NAME, ...]
+        return parts[4] if len(parts) > 5 and parts[1] == 'p' and parts[3] == 't' else ''
 
     def send(self, code: int, body: bytes | str | dict, ctype: str = 'application/json; charset=utf-8') -> None:
         if isinstance(body, dict):
@@ -482,8 +490,79 @@ class HomeHandler(BaseHTTPRequestHandler):
             return self.send(502, f'<p>{root.name} has no run up, so it has no run app to open. '
                              f'<a href="/?{u.query}">Back to Home</a> to start it.</p>', 'text/html; charset=utf-8')
         port, token = link
+        if parts[3].startswith('t/'):
+            return self.terminal(root, port, token, parts[3], u.query)
         query = [(k, v) for k, vs in parse_qs(u.query, keep_blank_values=True).items() if k != 't' for v in vs]
         target = '/' + parts[3] + '?' + urlencode([('t', token), *query])
+        self.forward(method, root, port, target)
+
+    def terminal(self, root: Path, port: int, token: str, rest: str, query: str) -> None:
+        """F107: /p/KEY/t/TOKEN/NAME/REST is session NAME's terminal tab: the run's ttyd for it (started on demand
+        by the run's /terminal/NAME, on the run's port+N), at its own path, its WebSocket included."""
+        bits = rest.split('/', 3)  # ['t', TOKEN, NAME, REST]
+        if len(bits) < 4:
+            return self.send(404, {'ok': False, 'out': 'a terminal address ends in a slash: t/TOKEN/NAME/'})
+        conn = http.client.HTTPConnection('127.0.0.1', port, timeout=10)
+        try:
+            conn.request('GET', f'/terminal/{bits[2]}?' + urlencode([('t', token)]))
+            got = json.loads(conn.getresponse().read() or b'{}')
+        except (OSError, ValueError) as e:
+            return self.send(502, {'ok': False, 'out': f'{root.name}\'s run page did not answer: {e}'})
+        finally:
+            conn.close()
+        if not isinstance(got, dict) or not got.get('ok') or not got.get('port') or not got.get('path'):
+            out = got.get('out') if isinstance(got, dict) else ''
+            return self.send(502, f'<pre>{out or "no terminal for " + bits[2]}</pre>', 'text/html; charset=utf-8')
+        target = str(got['path']).rstrip('/') + '/' + bits[3] + (f'?{query}' if query else '')
+        if 'websocket' in self.headers.get('Upgrade', '').lower():
+            return self.tunnel(root, int(got['port']), target)
+        self.forward(self.command, root, int(got['port']), target)
+
+    def tunnel(self, root: Path, port: int, target: str) -> None:
+        """A WebSocket upgrade: the request goes on as it came (its path swapped), then bytes flow both ways
+        until either side ends."""
+        try:
+            up = socket.create_connection(('127.0.0.1', port), timeout=10)
+        except OSError as e:
+            return self.send(502, {'ok': False, 'out': f'{root.name}\'s terminal did not answer: {e}'})
+        head = [f'{self.command} {target} HTTP/1.1', f'Host: 127.0.0.1:{port}',
+                *(f'{k}: {v}' for k, v in self.headers.items() if k.lower() not in ('host', 'x-token'))]
+        self.close_connection = True
+        try:
+            up.sendall(('\r\n'.join(head) + '\r\n\r\n').encode('latin-1'))
+            up.settimeout(None)
+        except OSError:
+            up.close()
+            return
+
+        def browser_to_run() -> None:
+            try:
+                while data := self.rfile.read1(65536):
+                    up.sendall(data)
+            except (OSError, ValueError):
+                pass
+            try:
+                up.shutdown(socket.SHUT_WR)
+            except OSError:
+                pass
+
+        pump = threading.Thread(target=browser_to_run, name='home-ws', daemon=True)
+        pump.start()
+        try:
+            while data := up.recv(65536):
+                self.wfile.write(data)
+        except OSError:
+            pass
+        finally:
+            up.close()
+            try:
+                self.connection.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
+            pump.join(timeout=5)
+
+    def forward(self, method: str, root: Path, port: int, target: str) -> None:
+        """The request goes on to 127.0.0.1:PORT at TARGET; the answer streams back as it comes."""
         data = self.body()
         headers = {k: v for k, v in self.headers.items() if k.lower() not in HOP | {'host', 'x-token'}}
         conn = http.client.HTTPConnection('127.0.0.1', port, timeout=60)

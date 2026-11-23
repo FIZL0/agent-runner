@@ -269,6 +269,116 @@ def test_routing(tmp: Path) -> None:
         run_srv.stop()
 
 
+class FakeTtyd(BaseHTTPRequestHandler):
+    """ttyd, as far as Home sees it: its page under its base path, and a WebSocket that echoes what it gets."""
+    protocol_version = 'HTTP/1.1'
+    seen: list = []
+
+    def log_message(self, *a):
+        pass
+
+    def do_GET(self):
+        FakeTtyd.seen.append((self.path, self.headers.get('Sec-WebSocket-Protocol'), self.headers.get('Host')))
+        if not self.path.startswith('/t/RUNTOKEN/s1/'):
+            self.send_response(404)
+            self.send_header('Content-Length', '0')
+            self.end_headers()
+            return
+        if self.headers.get('Upgrade', '').lower() == 'websocket':
+            self.send_response(101)
+            self.send_header('Upgrade', 'websocket')
+            self.send_header('Connection', 'Upgrade')
+            self.send_header('Sec-WebSocket-Protocol', 'tty')
+            self.end_headers()
+            self.wfile.flush()
+            self.close_connection = True
+            while data := self.rfile.read1(1024):
+                self.wfile.write(b'echo:' + data)
+            return
+        data = f'<title>ttyd</title>{self.path}'.encode()
+        self.send_response(200)
+        self.send_header('Content-Type', 'text/html')
+        self.send_header('Content-Length', str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+
+def test_terminal_tab(tmp: Path) -> None:
+    print("terminal tab: /p/KEY/t/TOKEN/NAME/ reaches the run's ttyd, its WebSocket included")
+    ttyd = ThreadingHTTPServer(('127.0.0.1', 0), FakeTtyd)
+    ttyd.daemon_threads = True
+    threading.Thread(target=ttyd.serve_forever, daemon=True).start()
+    asked = []
+
+    class Run(FakeRun):
+        def do_GET(self):
+            asked.append(self.path)
+            if self.path.startswith('/terminal/s1?'):
+                out = {'ok': True, 'port': ttyd.server_address[1], 'path': '/t/RUNTOKEN/s1/'}
+            else:
+                out = {'ok': False, 'out': 'c9 is not up, so there is nothing for ttyd to show.'}
+            data = json.dumps(out).encode()
+            self.send_response(200)
+            self.send_header('Content-Length', str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+
+    run_srv = ThreadingHTTPServer(('127.0.0.1', 0), Run)
+    threading.Thread(target=run_srv.serve_forever, daemon=True).start()
+    alpha = tmp / 'alpha'
+    srv = H.serve_home('HOMETOKEN', 0, '127.0.0.1', roots=lambda: [alpha], rows=lambda: [],
+                       link=lambda r: (run_srv.server_address[1], 'RUNTOKEN'))
+    hp = srv.server_address[1]
+    base = f'http://127.0.0.1:{hp}'
+    try:
+        code, body, _ = get(f'{base}/p/alpha/t/HOMETOKEN/s1/')
+        eq((code, body.decode()), (200, '<title>ttyd</title>/t/RUNTOKEN/s1/'),
+           "ttyd's page, at its own path with the run's token, Home's token taken from the path")
+        eq(asked[-1], '/terminal/s1?t=RUNTOKEN', "Home asked the run where s1's ttyd is (which starts it)")
+        code, body, _ = get(f'{base}/p/alpha/t/HOMETOKEN/s1/token')
+        eq((code, body.decode()), (200, '<title>ttyd</title>/t/RUNTOKEN/s1/token'),
+           "ttyd's calls under its path come through without a query")
+        eq(get(f'{base}/p/alpha/t/WRONG/s1/')[0], 403, 'a wrong token in the path: refused')
+        eq(get(f'{base}/p/alpha/t/HOMETOKEN/s1')[0], 404, 'no slash after the name: not a terminal address')
+        code, body, _ = get(f'{base}/p/alpha/t/HOMETOKEN/c9/')
+        eq(code, 502, 'a session with no terminal: 502')
+        has(body.decode(), 'c9 is not up', "with the run's reason")
+
+        with socket.create_connection(('127.0.0.1', hp), timeout=10) as c:
+            c.sendall(b'GET /p/alpha/t/HOMETOKEN/s1/ws HTTP/1.1\r\nHost: home\r\nUpgrade: websocket\r\n'
+                      b'Connection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n'
+                      b'Sec-WebSocket-Version: 13\r\nSec-WebSocket-Protocol: tty\r\n\r\n')
+            got = b''
+            while b'\r\n\r\n' not in got:
+                chunk = c.recv(4096)
+                check(chunk, 'the upgrade answer comes before the socket ends', got)
+                if not chunk:
+                    break
+                got += chunk
+            head = got.split(b'\r\n\r\n')[0].decode()
+            has(head.split('\r\n')[0], '101', 'the WebSocket upgrade goes through: 101')
+            has(head, 'Sec-WebSocket-Protocol: tty', "with ttyd's protocol")
+            eq(FakeTtyd.seen[-1], ('/t/RUNTOKEN/s1/ws', 'tty', f'127.0.0.1:{ttyd.server_address[1]}'),
+               "ttyd got the upgrade at its own path, the browser's protocol header kept")
+            c.sendall(b'keys')
+            back = b''
+            while len(back) < len(b'echo:keys'):
+                chunk = c.recv(4096)
+                if not chunk:
+                    break
+                back += chunk
+            eq(back, b'echo:keys', 'bytes flow both ways after the upgrade')
+        page = (Path(W.__file__).parent / 'web_term.html').read_text(encoding='utf-8')
+        has(page, r"'t/'\+encodeURIComponent\(T\)\+'/'\+encodeURIComponent\(name\)\+'/'",
+            "the terminal-style page's pane goes by t/TOKEN/NAME/ when it is opened through Home")
+    finally:
+        srv.stop()
+        run_srv.shutdown()
+        run_srv.server_close()
+        ttyd.shutdown()
+        ttyd.server_close()
+
+
 def test_run_link(tmp: Path) -> None:
     print("the run's own page: its port and token from its notes, only while the run is up")
     root = project(tmp / 'proj')
@@ -432,5 +542,5 @@ def test_run_moves_off_the_port(tmp: Path) -> None:
 
 if __name__ == '__main__':
     raise SystemExit(report([in_tmp(test_registry), in_tmp(test_rows), in_tmp(test_actions), in_tmp(test_routing),
-                           in_tmp(test_run_link), in_tmp(test_units), in_tmp(test_qr),
+                           in_tmp(test_terminal_tab), in_tmp(test_run_link), in_tmp(test_units), in_tmp(test_qr),
                            in_tmp(test_run_moves_off_the_port)]))
