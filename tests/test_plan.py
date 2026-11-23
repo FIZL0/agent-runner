@@ -757,6 +757,53 @@ def test_concepts():
         check(r.returncode == 0, 'a repo whose kinds lack K has no concepts: K9 is done as any task', r.stderr)
 
 
+def test_concept_shown():
+    print('plan: F108 a concept page shown inline is filed done, waits for an OK, and approve queues its build')
+    from agent_runner import state as S
+    from agent_runner import status as ST
+    from agent_runner import ui_model as U
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        git(root, 'init', '-q')
+        (root / '.gitignore').write_text('.runner/\n', encoding='utf-8')
+        git(root, 'add', '-A'); git(root, 'commit', '-qm', 'start')
+        env = {**os.environ, 'AGENT_RUNNER_REPO': str(root)}
+        env.pop('AGENT_RUNNER', None)
+        todo, done = root / 'plan' / 'TODO.md', root / 'plan' / 'DONE.md'
+        url = 'https://claude.ai/artifact/1CoELB891EqJhHmNGNJgVK'
+        eq(run(root, 'plan', 'concept', 'Run picker colours', env=env).returncode, 2, 'no --page: refused')
+        eq(run(root, 'plan', 'concept', 'Run picker colours', '--page', 'the page', env=env).returncode, 2,
+           '--page must be a URL')
+        r = run(root, 'plan', 'concept', 'Run picker colours', '--page', url, '--files', 'web/picker.css', env=env)
+        check(r.returncode == 0, 'plan concept goes through', r.stdout + r.stderr)
+        has(r.stdout, r'concept K1 filed, done: its build F1 waits for the OK on ' + re.escape(url),
+            'it names the concept and its waiting build')
+        has(done.read_text(encoding='utf-8'), r'- \[x\] \*\*K1\*\* Run picker colours \| files: web/picker\.css.*'
+            r'concept page: ' + re.escape(url), 'the concept is ticked with its page noted')
+        has(todo.read_text(encoding='utf-8'), r'^- \[~\] \*\*F1\*\* Build the option a person approves on concept '
+            r'K1\'s page: Run picker colours \| files: web/picker\.css BLOCKED: waiting for your OK on ' + re.escape(url),
+            'its build waits for the OK, as a finished K task leaves it')
+        eq(git(root, 'status', '--porcelain'), '', 'committed')
+
+        S.init(root)
+        w = ST.waiting_ok()
+        eq([(x[0], x[1], x[2], x[4]) for x in w], [('CONCEPT', 'F1', 'K1', url)], 'waiting_ok lists it with its url')
+        needs, concepts = U.needs_rows(w, __import__('datetime').datetime.now())
+        eq([(c['id'], c['concept'], c['url'], c['title']) for c in concepts],
+           [('F1', 'K1', url, 'Run picker colours')], 'the run page Concepts view shows it')
+        eq([n['id'] for n in needs], ['F1'], 'and Needs you')
+
+        r = run(root, 'plan', 'approve', 'K1', 'option B: muted', env=env)
+        has(r.stdout, r'approved: F1 is open', 'approve on the concept id opens its build')
+        has(todo.read_text(encoding='utf-8'), r'^- \[ \] \*\*F1\*\* .* — approved \(' + re.escape(url)
+            + r'\): option B: muted$', 'the build is queued with the choice noted')
+
+        (root / 'runner.toml').write_text('[plan.kinds]\nF = "feature"\nB = "bug"\n', encoding='utf-8')
+        r = run(root, 'plan', 'concept', 'Menu', '--page', url, env=env)
+        has(r.stdout, r'^F2 filed: its build F2 waits', 'kinds without K: only the waiting build is filed')
+        has(todo.read_text(encoding='utf-8'), r'^- \[~\] \*\*F2\*\* .*BLOCKED: waiting for your OK on ', 'blocked on the OK')
+
+
 def test_needs_you():
     print('plan: B27 Needs you: plain words for each ask, ages, and replies that name no id')
     eq(plan.plain_ask('CONFIRM', 'check the push reached your phone', 'push notices'),
@@ -1421,4 +1468,4 @@ if __name__ == '__main__':
     sys.exit(report([test_refusals, test_iter_tasks_and_titles, test_hook, test_done_gate, test_channel,test_edit, test_unlabelled_block, test_restore, test_plan_last, test_after_all, test_release_kind, test_release_beside,test_goal,test_plan_roundtrip, test_plan_reopen, test_plan_index_and_sections, test_brief, test_brief_outline,
                      test_split_parents, test_add_bottom, test_add_pri, test_add_subtask, test_kinds, test_need_files, test_add_stray_args, test_hand_edits_commit, test_hand_edits_push, test_similar, test_add_refuses_a_duplicate, test_carry_notes,
                      test_merge3, test_concurrent_add, test_merge_driver, test_concepts, test_needs_you,
-                     test_needs_own_project, test_needs_config, test_slot_writes_own_plan]))
+                     test_needs_own_project, test_needs_config, test_slot_writes_own_plan, test_concept_shown]))

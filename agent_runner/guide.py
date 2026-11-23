@@ -103,11 +103,16 @@ its `open` action so it shows inline (""" + NO_PAGE + """); build nothing, and q
 is yours to write in this session). "First" means before the build: it is still a concept shown here. This
 holds even when the project has its own concept-task or concept-branch convention (a guide or DONE entry saying
 a concept is a runner task, or builds on concept/<slug>): that convention is for tasks the person asks to
-queue. Go straight to the page; don't search the plan, DONE or the guide for precedent first. While the concept is
+queue. Go straight to the page; don't search the plan, DONE or the guide for precedent first. Right after you
+publish it, file it: `{cmd} plan concept "<what it shows options for>" --page <its URL> --files <the files the
+build would change>`. That lands it as a concept already done, its build waiting for the OK (as a finished K task
+leaves it), so "{needs}", `plan waiting` and the run page's Concepts list it until the person picks; it prints the
+concept's id. File each page once: publishing it again to the same file keeps its link. While the concept is
 shown here, a question or a change in their reply, even after "yes", "good" or "very good" ("yes its good, does it
 still handle X? Y should have Z too"), is not a pick: answer it, update the same page (publish it again to the
 same file, then `open`), and build nothing. Queue the build only on a plain go with no change asked ("build it",
-"queue it", "go with B"): `{cmd} plan add <KIND> "<the option they chose, with the page's link>"`.
+"queue it", "go with B"): `{cmd} plan approve <the concept's id> "<the option they chose>"`, not a fresh `plan
+add`; a no or another direction: `{cmd} plan revise <its id> "<what to change>"`.
 Queue a concept (`{cmd} plan add K "..."`) only when they say queue it, later, or add a task. Queued one by
 mistake and they say "do it here", "here", "now" or "here and now"? `{cmd} plan drop ID "shown inline"` and
 write the page here, with no question, even when a slot already took it: the drop stops that slot's session and
@@ -288,7 +293,8 @@ AGENT_RUNNER_SLOT set you are one of the runner's agents: follow your brief, not
      instruction stays beside the new one); `plan note ID "..."` only adds detail. `plan restore ID` undoes a
      mistaken tick or drop; `agent-runner plan help` lists the rest
    - **concepts**: a person asking to see a concept or options ("show me a concept first") gets the page from
-     you, in this session, not a K task: read `agent-runner guide concepts` first
+     you, in this session, not a K task, filed right after with `plan concept "<title>" --page <URL>`: read
+     `agent-runner guide concepts` first
    - **Needs you**: a queued concept or a task blocked on a person, or the person's reply to one: read
      `agent-runner guide needs` first
    - **grilling** ("grill me", "poke holes", "stress-test it"): rounds of questions before you queue: read
@@ -378,8 +384,8 @@ What the person asks, and what you run:
 - **Doing it now** ("do it now", "just fix it", "do F48 here"): read `{cmd} guide take` first; the work goes
   in the worktree `take` makes, never in this checkout.
 - **Concepts** ("concept X", "sketch some options for X", "mock it up"), and a queued concept under
-  "{needs}": read `{cmd} guide concepts` first: you write the options page here and open it inline; queue a K
-  task only when they say queue it.
+  "{needs}": read `{cmd} guide concepts` first: you write the options page here, open it inline and file it
+  (`plan concept`); queue a K task only when they say queue it.
 """ + GRILL + """
 - **Needs you items**: before you show one with a pick sheet or a `run: … wizard ID` line, or act on a reply to
   one ("yes", "B", "later", "sent"), read `{cmd} guide needs`. A reply that clearly answers one item needs no
