@@ -670,6 +670,8 @@ def status_text(up: bool, st: dict, log_lines: list[str], titles: dict[str, str]
     out.append(f'run up: {st.get("state", "starting")}' if up else 'no run is up')
     if nogate := no_gate_line():  # up or not: the next run merges untested too
         out.append(nogate)
+    from agent_runner.control_held import lines as held_lines  # B170; here: control imports much of the runner
+    out += held_lines()
     if unpushed := pitch.waiting_line():  # F98
         out.append(unpushed)
     out += progress.splitlines()

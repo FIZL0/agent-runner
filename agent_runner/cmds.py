@@ -16,7 +16,7 @@ import time
 from contextlib import redirect_stdout
 from pathlib import Path
 
-from agent_runner import plan as P, plansync, plat
+from agent_runner import control_held, plan as P, plansync, plat
 from agent_runner.plat import bash_exe
 from agent_runner.config import RUNNER, runner_cmd, shown_cmd
 from agent_runner.state import (ask_stop, C, clear_stop, default_branch, edited, git, init, queued, ROOT, run_up,
@@ -1084,6 +1084,7 @@ def cmd_control(argv: list[str], prog: str = f'{RUNNER} control') -> int:
         except OSError:
             pass
         a.ask, a.file = control_late_files(a.ask, a.file, a.feed_sid)
+    control_held.look(n)  # B170: before an ended session N's pid file is written over
     sid, resume, argv = control_open(n, ask=a.ask, images=a.file, new_run=a.new_run, blank=a.blank, local=a.local,
                                   reopen=a.reopen)
     backend().trust(ROOT)

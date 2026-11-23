@@ -18,7 +18,7 @@ import subprocess as sp
 import sys
 import time
 
-from agent_runner import control as K, plat, state
+from agent_runner import control as K, control_held, plat, state
 from agent_runner.config import runner_cmd
 
 
@@ -71,6 +71,7 @@ def control_shut_down(n: int, booted: float) -> bool:
 def forget_control(n: int, why: str) -> None:
     """Control session `n` stays closed: its pid file goes, so `reopen_controls` passes it by."""
     sid = K.control_kept_sid(n)
+    control_held.look(n)  # B170: what it holds for a usage limit outlives its pid file
     state.C.notes(f'control{n}.pid').unlink(missing_ok=True)
     state.log(f'control {n}: not reopened, {why}' +
               (f' (transcript kept: {plat.exe(state.C.run["agent"])} --resume {sid})' if sid else ''))

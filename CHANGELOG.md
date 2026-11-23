@@ -155,6 +155,9 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
   `plan tell`, budget stops, a typed `/rename` and the run page's send and keys reach them. Before 1809 the hidden
   console stays; headless stream slots are unchanged. `attach sN`, `attach cN` and `attach N` do not attach to a ConPTY
   session yet (they print where the log is), and `agent-runner list` lists control sessions on Windows too (F145).
+- Fixes: a person's messages to a control session that hit the usage limit were lost, since Claude Code answers such a
+  message with only an error and never retries it. They are now held and typed into the session in one message once the
+  limit is over; `status` says how many are waiting and when they go (B170).
 
 ## 0.61.0 (2026-11-23)
 

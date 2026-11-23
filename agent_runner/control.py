@@ -16,7 +16,7 @@ import uuid
 from contextlib import ExitStack
 from pathlib import Path
 
-from agent_runner import pitch, plan as P, plansync, plat
+from agent_runner import control_held, pitch, plan as P, plansync, plat
 from agent_runner.plan import decide_question  # F135: a control session's last line `DECIDE: …`
 from agent_runner.config import RUNNER, runner_cmd, shown_cmd
 from agent_runner.state import C, commit_plan, git, HIDDEN, init, log, MERGE, note, plan_rel, ROOT
@@ -1112,7 +1112,7 @@ def close_controls(branch: str = '', force: bool = False, now: float | None = No
             continue
         st = control_state(entries(sid, skip_bad=True))
         verdict, why = control_verdict(st, cf, now, n, control_one_ask(n, sid))
-        if verdict == 'keep':
+        if verdict == 'keep' or control_held.holds(sid):  # B170
             continue
         link = control_link(st['bridge'])
         if verdict == 'ask':
@@ -1261,6 +1261,7 @@ def end_control(n: int, why: str) -> bool:
             plat.terminate(int(pid_s))  # its hidden shim ends with it
         except ValueError:
             pass
+    control_held.drop(sid.strip())  # B170: closed on purpose, so what it held is not put in
     pidf.unlink(missing_ok=True)
     C.notes(f'control{n}.title').unlink(missing_ok=True)
     C.notes(f'control{n}.name').unlink(missing_ok=True)  # F129

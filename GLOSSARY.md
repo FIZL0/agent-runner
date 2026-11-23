@@ -532,3 +532,10 @@ _Said_: the mic log
 _On screen_: Copy mic report
 _In code_: micLog, micReport, micCopy, TK.trail
 _Avoid_: trace, debug log
+
+**Held message**:
+A person's message to a control session that got only a usage-limit error, kept and put into that session once the limit is over
+_Said_: messages dropped because of the weekly limit
+_On screen_: asks wait for the usage limit
+_In code_: control_held, <notes>/held/
+_Avoid_: lost message, queued message

@@ -3,6 +3,7 @@ shutdown. (C26 dropped B94's tests of the background tmux session, which is gone
 from __future__ import annotations
 
 import contextlib
+import json
 import os
 import re
 import subprocess
@@ -580,8 +581,261 @@ def test_rename_f129():
     eq(person_name(4, ''), '', 'an ended session takes its name with it')
 
 
+# --- B170: messages held by a usage limit ----------------------------------------------------------------------
+
+T0 = 1795384282.0  # 2026-11-22T21:51:22Z
+RESET = 1795399200.0
+
+
+def stamp(at: float) -> str:
+    import datetime as dt
+    return dt.datetime.fromtimestamp(at, dt.timezone.utc).isoformat().replace('+00:00', 'Z')
+
+
+def said(text, at, **kw):
+    return {'type': 'user', 'uuid': f'u{at}', 'timestamp': stamp(at), 'origin': {'kind': 'human'},
+            'message': {'role': 'user', 'content': text}, **kw}
+
+
+def limit(at, resets=RESET, **kw):
+    """The error as Claude Code 2.1.330 wrote it (transcript b35563a2, 2026-11-22)."""
+    return {'type': 'assistant', 'timestamp': stamp(at), 'isApiErrorMessage': True, 'error': 'rate_limit',
+            'apiError': 'usage_limit_reached', 'quotaLimits': {'status': 'rejected', 'resetsAt': resets},
+            'message': {'model': '<synthetic>', 'content': [
+                {'type': 'text', 'text': "You've hit your weekly limit \u00b7 resets 9pm (America/New_York)"}]}, **kw}
+
+
+def answer(text, at, **kw):
+    return {'type': 'assistant', 'timestamp': stamp(at),
+            'message': {'model': 'claude-opus-5-5', 'content': [{'type': 'text', 'text': text}]}, **kw}
+
+
+def four():
+    shot = {'type': 'image', 'source': {'type': 'base64', 'media_type': 'image/png', 'data': 'aGVsbG8='}}
+    asks = [[shot, {'type': 'text', 'text': 'control windows in the terminal too'}], 'N is super slow',
+            'keep the ^ shortcuts', 'n not N']
+    return [x for i, a in enumerate(asks) for x in (said(a, T0 + 30 * i), limit(T0 + 30 * i + 1))]
+
+
+ORDER = ['control windows in the terminal too', 'N is super slow', 'keep the ^ shortcuts', 'n not N']
+
+
+@contextlib.contextmanager
+def held_world():
+    """A project whose control sessions' transcripts are `w.rows`, live ones `w.live` ({n: pid}); what is typed
+    is in `w.typed`, reopened ones in `w.opened`."""
+    from agent_runner import control_held as H, control_reopen as CR, runner as R, watch
+    d = Path(tempfile.mkdtemp(prefix='agent-runner-held-'))
+    git(d, 'init', '-q')
+    (d / '.gitignore').write_text('.runner/\n')
+    (d / 'README.md').write_text('demo\n')
+    git(d, 'add', '-A')
+    git(d, 'commit', '-qm', 'start')
+    R.init(d)
+    H._SEEN.clear()
+    w = types.SimpleNamespace(H=H, rows={}, live={}, typed=[], opened=[], logs=[], outside=[])
+    home = d / 'transcripts'
+    home.mkdir()
+
+    def path(s):
+        if s not in w.rows:
+            return ''
+        (home / f'{s}.jsonl').write_text(''.join(json.dumps(x) + '\n' for x in w.rows[s]), encoding='utf-8')
+        return str(home / f'{s}.jsonl')
+
+    def up(n, sid, pid, ago=1000.0):
+        f = R.C.notes(f'control{n}.pid')
+        f.write_text(f'{pid} {sid}', encoding='utf-8')
+        os.utime(f, (RESET - ago, RESET - ago))
+        w.live[n] = pid
+        R.C.notes(f'control{n}.in').write_text('', encoding='utf-8')
+    w.up = up
+
+    def tick(at):
+        for s in w.rows:
+            path(s)
+        H._SEEN.clear()
+        with mock.patch.object(H.time, 'time', lambda: at):
+            H.held_tick(force=True, now=at)
+    w.tick = tick
+
+    def reopened(n, sid):
+        w.opened.append((n, sid))
+        return 'a test window'
+    with mock.patch.object(K, 'transcript', path), \
+            mock.patch.object(K, 'entries', lambda s, skip_bad=False: iter(w.rows.get(s, []))), \
+            mock.patch.object(K, 'control_live', lambda n: w.live.get(n, 0)), \
+            mock.patch.object(K, 'control_type', lambda n, t: w.typed.append((n, t)) or True), \
+            mock.patch.object(K, 'remote_on', lambda: False), \
+            mock.patch.object(CR, 'reopen_control', reopened), \
+            mock.patch.object(watch, 'live_session', lambda s: 99 if s in w.outside else None), \
+            mock.patch.object(R.state, 'log', lambda *a, **k: w.logs.append(a[0])), \
+            mock.patch.object(K, 'log', lambda *a, **k: w.logs.append(a[0])):
+        w.notes = R.C.notes
+        yield w
+
+
+def in_order(text, words):
+    at = [text.find(x) for x in words]
+    return -1 not in at and at == sorted(at) and all(text.count(x) == 1 for x in words)
+
+
+def test_held_delivered_once():
+    print('B170: four messages that got only a usage-limit error go in once, in order, when it is over')
+    with held_world() as w:
+        w.rows['a'] = four()
+        w.up(5, 'a', 41)
+        w.tick(T0 + 200)
+        eq(w.typed, [], 'nothing is typed while the limit holds')
+        eq(len([x for x in w.logs if 'wait for the usage limit' in x]), 1, 'the run log says so')
+        w.tick(T0 + 300)
+        eq(len([x for x in w.logs if 'wait for the usage limit' in x]), 1, 'once')
+        with mock.patch.object(w.H.time, 'time', lambda: T0 + 300):
+            got = w.H.lines()
+        check(len(got) == 1 and '4 asks wait' in got[0] and got[0].startswith('c5') and 'resets' in got[0],
+              'status: which chat, how many, when', got)
+        with mock.patch.object(K, 'control_live_numbers', lambda: [5]), \
+                mock.patch.object(K.plat, 'terminate', lambda p: w.typed.append(('ended', p))):
+            eq(K.close_controls(force=True, now=T0 + 90000), [], 'it is not closed as idle')
+            w.rows['idle'] = [said('hi', T0), answer('hello', T0 + 1)]
+            w.up(5, 'idle', 41)
+            eq([x[1] for x in K.close_controls(force=True, now=T0 + 90000)], ['closed'], 'one that holds nothing is')
+        w.typed.clear()
+        w.up(5, 'a', 41)
+        w.tick(RESET + 61)
+        eq([n for n, _ in w.typed], [5], 'typed into its session once')
+        text = w.typed[0][1]
+        check(text.startswith(w.H.HELD_LEAD) and in_order(text, ORDER), 'marked, all four, in order', text)
+        saved = re.search(r'saved at "([^"]+)"', text)
+        check(saved and Path(saved[1]).read_bytes() == b'hello', 'the image goes along, saved', text)
+        w.tick(RESET + 100)
+        w.H.HELD_AT[0] = 0.0  # a restarted run knows only the record
+        w.tick(RESET + 4000)
+        eq(len(w.typed), 1, 'not typed again before it shows, however long, also by a restarted run')
+        w.rows['a'] += [said(text, RESET + 62)]
+        w.tick(RESET + 5000)
+        eq(len(w.typed), 1, 'nor while its turn runs')
+        w.rows['a'] += [answer('on it', RESET + 70)]
+        w.tick(RESET + 6000)
+        eq((len(w.typed), w.H.records()), (1, []), 'answered: done with')
+
+
+def test_held_still_limited():
+    print('B170: a retry that meets the limit again loses nothing and is tried again at the new reset')
+    with held_world() as w:
+        w.rows['a'] = four()
+        w.up(5, 'a', 41)
+        w.tick(RESET + 61)
+        text = w.typed[0][1]
+        nxt = RESET + 86400
+        w.rows['a'] += [said(text, RESET + 62), limit(RESET + 63, resets=nxt)]
+        w.tick(RESET + 400)
+        eq(len(w.typed), 1, 'it waits for the new reset')
+        w.rows['a'] += [said('and a fifth', RESET + 500), limit(RESET + 501, resets=nxt)]
+        w.tick(nxt + 61)
+        eq(len(w.typed), 2, 'then they go in')
+        check(in_order(w.typed[1][1], [*ORDER, 'and a fifth']), 'all of them, the new one last', w.typed[1][1])
+        w.rows['a'] += [said(w.typed[1][1], nxt + 62), {**limit(nxt + 63), 'error': 'server_error', 'apiError': None}]
+        w.tick(nxt + 120)
+        eq(len(w.typed), 2, 'another API error waits too')
+        w.tick(nxt + 63 + 3600 + 61)
+        eq(len(w.typed), 3, 'and is tried again')
+
+
+def test_held_resent_and_runner():
+    print('B170: what the person sent again is not doubled; the runner\'s own messages are not held')
+    with held_world() as w:
+        w.rows['a'] = four() + [said('n not  N', T0 + 200), limit(T0 + 201)]
+        w.up(5, 'a', 41)
+        w.rows['b'] = [said('N is super slow', T0 + 500), answer('filed', T0 + 510)]  # in another chat, answered
+        w.rows['c'] = [said('keep the ^ shortcuts', T0 - 500), answer('ok', T0 - 490)]  # earlier: not a resend
+        w.tick(RESET + 61)
+        check(in_order(w.typed[0][1], [ORDER[0], ORDER[2], ORDER[3]]), 'each once', w.typed[0][1])
+        check(ORDER[1] not in w.typed[0][1], 'not the one answered elsewhere', w.typed[0][1])
+    from agent_runner import control_held as H, guide as G
+    start = G.CONTROL_START.format(cmd='run', watch_start='')
+    copy = 'agent-runner: the run changed. Publish the run page copy x. This is the runner, not the person'
+    for t in (start, f'Say first, in one line: "c1 starts a fresh session: x." Then: {start}', copy):
+        eq(H.walk([said(t, T0), limit(T0 + 1)])['asks'], [], 'the runner\'s own message')
+    eq(H.walk(four() + [said('hello?', RESET), answer('all five then', RESET + 1)])['asks'], [],
+       'a later turn of the person\'s that was answered takes them all')
+    note = {'type': 'user', 'timestamp': stamp(RESET), 'origin': {'kind': 'task-notification'},
+            'message': {'content': '<task-notification>x</task-notification>'}}
+    eq(len(H.walk(four() + [note, answer('seen', RESET + 1)])['asks']), 4, 'a notification\'s turn does not')
+    synth = answer('No response requested.', RESET)
+    synth['message']['model'] = '<synthetic>'
+    eq(len(H.walk(four() + [synth])['asks']), 4, 'nor Claude Code\'s own words on a resume')
+    net = {**limit(T0 + 1), 'error': 'unknown', 'apiError': None}
+    eq(H.walk([said('x', T0), net])['asks'], [], 'the error\'s kind decides, not its words')
+    old = {k: v for k, v in limit(T0 + 1).items() if k in ('type', 'timestamp', 'isApiErrorMessage', 'message', 'error')}
+    got = H.walk([said('x', T0), old])
+    check(T0 < got['until'] <= T0 + 86401, 'no resetsAt: the next such time after the error', got['until'])
+
+
+def test_held_reopened():
+    print('B170: an ended session is reopened from its transcript, also by a run that was down; a closed one is not')
+    with held_world() as w:
+        w.rows['a'] = four()
+        w.up(5, 'a', 41)
+        w.live.clear()  # it ended, and the run was down at the reset
+        w.notes('control5.in').unlink()
+        w.tick(RESET + 61)
+        eq((w.opened, w.typed), ([(5, 'a')], []), 'reopened first')
+        w.tick(RESET + 70)
+        eq(len(w.opened), 1, 'once')
+        w.up(5, 'a', 42, ago=-65)
+        w.tick(RESET + 80)
+        eq(w.typed, [], 'not typed into while it starts')
+        w.tick(RESET + 200)
+        eq([n for n, _ in w.typed], [5], 'then typed in')
+        w.tick(RESET + 300)
+        eq((len(w.typed), len(w.opened)), (1, 1), 'once')
+        w.live.clear()  # and it dies before it takes them
+        w.tick(RESET + 400)
+        eq(len(w.opened), 2, 'a process that ended unanswered is reopened, not given up')
+    with held_world() as w:
+        w.rows['a'] = four()
+        w.up(5, 'a', 41)
+        w.tick(T0 + 200)
+        w.live.clear()
+        from agent_runner import control_reopen as CR
+        CR.forget_control(5, 'it ended while the machine was up')
+        w.rows['new'] = []
+        w.up(5, 'new', 50)  # its number is another session's now
+        K.control_keep_sid(5, 'new')
+        w.outside.append('a')
+        w.tick(RESET + 61)
+        eq(w.opened, [], 'not while someone else has that conversation open')
+        w.outside.clear()
+        w.tick(RESET + 91)
+        eq([s for _, s in w.opened], ['a'], 'reopened after its pid file is gone')
+        check(w.opened[0][0] not in (1, 5), 'under a free number, never c1\'s', w.opened)
+        eq(w.H.pid_sid(5), (50, 'new'), 'the session that has its number is left alone')
+    for how in ('end', 'exit', 'clear', 'online'):
+        with held_world() as w:
+            w.rows['a'] = four()
+            w.up(5, 'a', 41)
+            w.tick(T0 + 200)
+            if how == 'end':
+                with mock.patch.object(K.plat, 'terminate', lambda p: None):
+                    K.end_control(5, 'deleted from the run page')
+                w.live.clear()
+            elif how == 'exit':
+                w.rows['a'].append(said('<command-name>/exit</command-name>', T0 + 300))
+                w.live.clear()
+            elif how == 'clear':
+                w.rows['new'] = []
+                w.up(5, 'new', 41)
+            else:
+                w.rows['a'].append({'type': 'system', 'content': 'Remote Control disconnected (code 4090)'})
+            w.tick(RESET + 61)
+            w.tick(RESET + 400)
+            eq((w.opened, w.typed, w.H.records()), ([], [], []), f'closed on purpose ({how}): not resumed')
+
+
 if __name__ == '__main__':
     raise SystemExit(report([test_handed_ask_as_c1_starts_fresh, test_brief_fits_session_start,
                              test_take_back_from_a_slot_just_started, test_sessions_one_and_each,
                              test_reopen_after_shutdown, test_second_shim_keeps_live_session,
-                             test_first_message_typed_after_remote_control, test_rename_f129]))
+                             test_first_message_typed_after_remote_control, test_rename_f129, test_held_delivered_once,
+                             test_held_still_limited, test_held_resent_and_runner, test_held_reopened]))

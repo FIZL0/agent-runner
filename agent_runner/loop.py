@@ -51,7 +51,7 @@ from agent_runner.land import drop_wips, idle_line, prune_wips, reopen_landed, R
 from agent_runner.land import no_gate_line
 from agent_runner.merge import (AHEAD_BUSY, AHEADS, before_start_fails, FIX_DIRS, FIX_DIRS_LOCK, FIXED, gate_runs,
     HELD, last_words, left_merging, merge)
-from agent_runner.control import (close_controls, end_closed_controls, hand_hook, rc_sweep_start,
+from agent_runner.control import (hand_hook, rc_sweep_start,
     start_control, start_control_server)
 from agent_runner.feed import rc_sweep_stop, start_board
 
@@ -1432,8 +1432,8 @@ class Run:
         if not stopping():
             auto_release(branch)  # F63: { every = N }
         if not stopping():
-            close_controls(branch)  # B26
-            end_closed_controls()  # B53
+            from agent_runner.control_held import controls_tick
+            controls_tick(branch)  # B26, B53, B170
             from agent_runner.page_copy import page_copy_tick
             page_copy_tick()  # F68: the claude.ai copy of the run page (B122: a one-shot, never c1)
         if not stopping():
