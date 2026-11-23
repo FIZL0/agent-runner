@@ -1089,8 +1089,13 @@ class PickerPaint:
     title, this screen's keys yellow, keys that work everywhere bright blue, the focused row on the run page's
     dark-red bar across the width. Text in no colour keeps the terminal's own foreground and background."""
 
-    def __init__(self, theme: dict, colours: int = 256, width: int = 100):
-        self.theme, self.colours, self.width = theme, colours, width
+    def __init__(self, theme: dict, colours: int = 256, width: int | None = None):
+        self.theme, self.colours, self.fixed = theme, colours, width
+
+    @property
+    def width(self) -> int:
+        """The bar's width: the one given, else the terminal's at each draw, so the bar follows a resize."""
+        return self.fixed or shutil.get_terminal_size((100, 24)).columns
 
     def code(self, token: str, ground: bool = False) -> str:
         from agent_runner import theme as TH
@@ -1139,7 +1144,7 @@ def picker_paint(here: Path | None, env=None) -> PickerPaint | None:
             name = TH.checked(Config(here).raw.get('ui', {}).get('theme', TH.DEFAULT))
         except (OSError, SystemExit, ValueError, KeyError, TypeError):
             pass
-    return PickerPaint(TH.get(name), TH.terminal_colours(env), shutil.get_terminal_size((100, 24)).columns)
+    return PickerPaint(TH.get(name), TH.terminal_colours(env))
 
 
 def picker_text_painted(rows: list[dict], sel: int, p: PickerPaint) -> str:
