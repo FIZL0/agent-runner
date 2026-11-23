@@ -4,6 +4,7 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Fixed: a command stopped for low memory no longer makes the agent ask the person (B184). Claude Code stops a background command when memory is low and says not to start it again unless asked, and an agent then asked. The slot brief now holds that stop as the person's standing go-ahead: the agent commits what is solid and runs `run wait-for memory`. Its slot is given up, its work is kept on waiting/<ID>, and the same session goes on with a message to run the command again once MemAvailable is 2 GB over `min_free_mem_gb` (a pause of a minute per stop). It needs no `[run.tools]` entry, shows on the queue row, `plan` and `status`, and is never a Needs you item. Under `min_free_mem_gb` no new session starts, and a slot's `done` gate waits for memory up to 10 min.
 - Fixed: Pick links work through Runner Home (F167). With Home installed, a run listens on 127.0.0.1 only (F165),
   so no Pick link was made. Now a Pick link (`pick-links`, a pick sheet's Send) uses Home's Tailscale Serve https
   address, https://HOST/p/KEY/pick; Home routes GET /p/KEY/pick to the run with no Home token, because the link's

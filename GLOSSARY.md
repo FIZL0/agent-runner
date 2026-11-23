@@ -584,3 +584,10 @@ _Said_: empty new chat
 _On screen_: The chat starts with your first message.
 _In code_: ctxKey, isNew, about, S.ctx
 _Avoid_: About line, draft chat
+
+**Wait for memory**:
+A task giving up its slot after a command was stopped for low memory, until memory is free; its session then goes on by itself, as for a shared tool
+_Said_: stopped for low memory
+_On screen_: waits for memory, 5.0 GB free, goes on at 6.0 GB
+_In code_: MEMORY, _wait_memory, waiting/<ID>
+_Avoid_: memory tool, memory lock, ask

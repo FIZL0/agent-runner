@@ -924,8 +924,28 @@ connect = "Connect iPhone 15"    # the Needs you wording while it is missing; de
   `needs` and `status`.
 - **Needs you.** A missing tool with tasks waiting for it is one Needs you item (label `TOOL`) after 3 min, and
   clears by itself when the tool is back. A busy tool never is one.
-- **Without the setting** nothing changes. The run keeps its readings in `.runner/TOOLS.json`, so a restart goes on
+- **Without the setting** no tool is checked and nothing else changes; a command stopped for low memory still waits
+  (### Waiting for memory). The run keeps its readings in `.runner/TOOLS.json`, so a restart goes on
   with them (a file older than 10 min is not used).
+
+### Waiting for memory
+
+Claude Code stops a background command when memory is low, and tells the agent not to start it again unless
+asked. The slot's brief says that stop is the person's standing go-ahead: the agent never asks, it commits what is
+solid and runs `run wait-for memory`. `memory` is built in, so it needs no `[run.tools]` entry (a tool may not be
+named `memory`).
+
+- **The first stop.** With memory free again by then, the session keeps its slot and runs the command again.
+- **Otherwise** the session ends and its work is kept on `waiting/<ID>`, as for a shared tool. The same session goes
+  on first once MemAvailable is 2 GB over `min_free_mem_gb` (on a small machine 60% of total, when that is lower but
+  still over the floor), and a pause of 1 min per stop (10 min at most) is over. Its message says memory is free and
+  to run the command again. Where memory cannot be read (not Linux) only the pause counts.
+- **What shows.** `waits for memory, 5.0 GB free, goes on at 6.0 GB` on the queue row, in `plan`, `needs` (below the
+  needs list) and `status`. It is never a Needs you item. After 3 stops of one task, or a wait of 30 min, the run
+  says so once in the log. The run is not idle meanwhile, and a restart keeps the wait. Stops are counted in
+  `<notes>/<ID>.mem`.
+- **New sessions.** Under `min_free_mem_gb` no new session starts (logged once per spell), and a slot's `done` gate
+  waits for memory, at most 10 min, then runs all the same.
 
 ### Disk
 
@@ -953,7 +973,7 @@ of its worktrees or started from a slot, the agents themselves aside.
   alone: its gate or session sees one test die and goes on, and the run logs `ended pid …` with the
   command. A test walking a looping tree held 52 GB in each of three gates at once before this. When the
   process was a test binary, the test it was running gets a `critical` task at the next merge.
-- **Under `min_free_mem_gb` (4) available**, the run's biggest process (if it holds a GB) is killed instead.
+- **Under `min_free_mem_gb` (4) available**, the run's biggest process (if it holds a GB) is killed instead, and no new session starts until there is more (### Waiting for memory).
 
 ### It stays up
 
@@ -1260,8 +1280,9 @@ agent-runner take "TEXT" --kind K [--files A,B] [--here]
                                        queue it (as `plan add`) and take it in one step; --here (also with
                                        an ID) moves the main checkout's uncommitted edits into the worktree
 agent-runner resume ID...              continue each task's last session in its slot, once that slot is free
-run wait-for TOOL                      a slot's agent, when a shared tool is busy or missing: its session ends and
-                                       its work is kept; the same session goes on once the tool is free (### Shared tools)
+run wait-for TOOL                      a slot's agent, when a shared tool is busy or missing, or a command was stopped
+                                       for low memory (`memory`): its session ends and its work is kept; the same
+                                       session goes on once it is free (### Shared tools, ### Waiting for memory)
 agent-runner cost [--days N] [--files] where the workers' tokens went, by kind of tool call (--files: by
                                        file read, and exact-repeat commands)
 agent-runner home [slots|plan]         where this project's worktrees and plan clone live
@@ -1436,7 +1457,7 @@ home = "~/runs/{repo}"    # the worktrees (s1…, merge) and a [plan] repo clone
 slot_max_gb = 50          # a worktree over this loses its stalest build output before its next task; 0 = never
 min_free_gb = 10          # under this much free disk: free worktrees cleaned, no new task starts; 0 = never
 proc_max_gb = "auto"      # a process of the run's resident past this is killed; "auto": a quarter of RAM; 0 = never
-min_free_mem_gb = 4       # under this much memory available: the run's biggest process is killed; 0 = never
+min_free_mem_gb = 4       # under this much memory available: the run's biggest process is killed, no new session starts; 0 = never
 slot_clean = ""           # a project's own clean, run instead of the trim and the full git clean -ffdXq
 command_timeout = 3600    # s the gate, a retest, a hook (join, before_start, on_exit) or `done`'s gate may run: past it, failed
 needs_order = "oldest"    # what waits on a person (Needs you): oldest first; "newest" first; "plan": TODO.md's order
