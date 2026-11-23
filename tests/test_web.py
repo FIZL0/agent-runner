@@ -1784,7 +1784,7 @@ def test_short_ask_b152(tmp: Path) -> None:
           'a long ask renders short and clamped, with a More control', shut)
     check('R45.md' in opened and '(iFizBox &gt; Sources' in opened and 'clamp' not in opened and '>Less<' in opened,
           'More shows the whole ask, paths and asides too, with Less', opened)
-    eq(small, '<div class="q">Which port?</div>', 'a short ask has no clamp and no More')
+    eq(small, '<div class="q clamp">Which port?</div>', 'a short ask has no More (and is clamped all the same)')
 
 
 if __name__ == '__main__':

@@ -274,7 +274,7 @@ function needAsk(n,i,open){
   const e=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const full=(n&&(n.ask||n.title||n.what))||'', short=(n&&n.ask_short)||full;
   const more=short!==full||full.length>ASK_LONG;
-  const q=open&&more?`<div class="q">${e(full)}</div>`:`<div class="q${more?' clamp':''}">${e(short)}</div>`;
+  const q=open&&more?`<div class="q">${e(full)}</div>`:`<div class="q clamp">${e(short)}</div>`;
   return q+(more?`<button class="more" data-more="${i}" aria-expanded="${open?'true':'false'}">${open?'Less':'More'}</button>`:'');
 }
 /* B138: an answered item stays off Needs you for a while (GONE_MS), so a snapshot taken before the answer landed

@@ -1624,6 +1624,10 @@ def test_short_ask_b152() -> None:
     check(len(U.ask_short('word ' * 80)) <= U.ASK_SHORT, 'a long sentence is cut to ASK_SHORT', '')
     eq(U.ask_short('Which port? - reply with your answer'), 'Which port? - reply with your answer',
        'a short one-sentence ask stays as it is')
+    eq(U.ask_short('Use TCP/IP on iOS 17/18 - reply yes/no'), 'Use TCP/IP on iOS 17/18 - reply yes/no',
+       'words with a slash are not paths')
+    eq(U.ask_short('Look at ~/x/y and docs/a.md and /etc/hosts now'), 'Look at and and now',
+       'paths go from the short ask')
     p = page(dict(SNAP, needs=[n, dict(SNAP['needs'][2])]))
     row = p.row(4, n)
     check(all('\n' not in t for t, _ in row) and 'Glint downloads.' in ''.join(t for t, _ in row),

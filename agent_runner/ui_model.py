@@ -194,7 +194,9 @@ def ask_short(ask: str, limit: int = ASK_SHORT) -> str:
     s = re.sub(r'\s+', ' ', ask or '').strip()
     while (t := re.sub(r'\s*\([^()]*\)', '', s)) != s:  # asides, nested ones too
         s = t
-    s = re.sub(r'\s*(?<![\w])(?:~|\.{0,2})?/?(?:[\w.@+-]+/)+[\w.@+-]*', '', s)  # paths: a/b/c.md, ~/x, /abs
+    # paths: ~/x, ./x, /abs, a/b.md, a/b/c; not words like yes/no, TCP/IP or 17/18
+    s = re.sub(r'\s*(?<!\S)(?:(?:~|\.{1,2})?/\S+|[\w.@+-]+(?:/[\w.@+-]+)+\.[A-Za-z]\w{0,4}\b'
+               r'|[\w.@+-]+(?:/[\w.@+-]+){2,})', '', s)
     s = re.split(r'(?<=[.!?])\s+(?=[A-Z])', s.strip(' ,;:'), maxsplit=1)[0].strip(' ,;:')
     s = re.sub(r'\s+([,.;:!?])', r'\1', s)
     return s if len(s) <= limit else s[:limit - 1].rstrip(' ,;:-') + '…'
