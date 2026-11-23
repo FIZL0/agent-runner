@@ -92,7 +92,8 @@ Ctrl-C leaves the view; the run keeps going. `attach feed` and `attach board` op
 On Windows, `attach s2` shows and raises slot 2's console window. Minimize it to hide it
 again: closing it ends that session, which resumes in the next run. The runner has no window there, so
 `agent-runner status` and `.runner/run.log` show it. On Linux and macOS a hidden session (`attach s2`, `attach c3`,
-or Enter on the pane tab of `agent-runner ui`) is attached to its own terminal, the way dtach does it: the shim
+or Enter on the session tab of `agent-runner ui` outside tmux; inside tmux `agent-runner ui` shows it beside its
+panels) is attached to its own terminal, the way dtach does it: the shim
 listens on a Unix socket beside its marker (`.runner/slotN.sock`, `controlN.sock`, mode 0600, gone when the
 session ends), sends what the session prints to every attached terminal, types in what you type, and takes your
 terminal's size (on attach, and when you resize it). Detach with Ctrl-b d (Ctrl-b Ctrl-b types one Ctrl-b); the
@@ -231,6 +232,14 @@ drawer) and a desktop. It follows the browser's light or dark setting; `[ui] the
   page's headings), plus Chat and View. Tasks are not edited here directly: ask in a chat.
 
 The app does not open slots in the Claude apps; `agent-runner ui` still does (see `[run] sessions` above).
+
+`agent-runner ui` (the terminal UI) has no chat of its own: nothing is typed into a session from it, and Ctrl+C
+always quits. Selecting a session row (cN or sN) shows the real Claude Code session. Inside tmux, a pane split
+off beside the UI runs `agent-runner attach cN` (respawned when another session row is selected, killed when
+another row or the UI quits); l, Enter or Ctrl-l moves focus into it, and Ctrl-h comes back. Outside tmux, or
+where a session has no socket (Windows), its tab shows the feed read-only with its link (o open, y copy); Enter
+attaches full-screen. Ctrl-f makes the session full-screen between the UI's top and bottom bars, and again for
+side by side. N starts a new control session without waiting for its link, and `c` selects c1.
 
 - **Terminal-style page.** The same server also serves the terminal-style page at `/term?t=TOKEN`: the run page
   drawn like `agent-runner ui` (numbered panels, a key for everything), in `[ui] theme` (its `t` picks another
@@ -968,6 +977,8 @@ agent-runner attach [run|sN|cN|feed]   the run view (its log, live, and its keys
                                        console); feed or board: agent-runner ui
 agent-runner control [N]               a control session in this terminal (c1: the kept one, resumed)
 agent-runner control --new [N]         another one beside the run, without taking focus; prints its claude.ai/code link
+agent-runner control --new --no-wait   the same, returning once it starts ("control N is starting in a hidden terminal"),
+                                       without waiting for its claude.ai/code link
 agent-runner control --new --forward   the same, with the person's latest runner-feed message as its first
                                        message, read word for word from the feed's transcript (never retyped
                                        in a shell), and the files or images attached to it named with their

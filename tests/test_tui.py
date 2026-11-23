@@ -125,6 +125,8 @@ def page(snap=None, **kw) -> T.RunPage:
     kw.setdefault('diff', lambda name: DIFF)
     kw.setdefault('read', lambda path: COPY if path.endswith('K5.html') else '')
     kw.setdefault('opener', lambda url: {'ok': True, 'out': f'opened {url}'})
+    kw.setdefault('socket', lambda name: False)  # F112: no session to attach, unless a test says so
+    kw.setdefault('tmux', lambda argv: (1, 'no tmux in this test'))
     return T.RunPage(snap, get_snap=lambda: snap, attrs=ATTRS, **kw)
 
 
@@ -186,25 +188,23 @@ def test_layout() -> None:
 
 def test_status_tabs() -> None:
     p = page()
-    eq(p.tab(), ('chat', ['chat', 'log', 'release', 'controls']), 'a status line: chat, log (and release, controls)')
+    eq(p.tab(), ('log', ['log', 'release', 'controls']), 'F112: a status line: log, release, controls (no chat)')
     p.key('ENTER')
     win = drawn(p)
     for b in ('[s since last look]', '[y since yesterday]', '[w what needs me]', '[u usage]'):
-        check(b in win.text(), f'the Status chat shows the quick ask {b}', win.text())
+        check(b in win.text(), f'the log tab shows the quick ask {b}', win.text())
     eq((colour_at(win, '[s since', 1), colour_at(win, '[s since', 3)), ('hkey', 'fg'),
        'a quick ask: its key in the key colour, its label in the text colour')
-    check('● Nothing needs you beyond D3.' in win.text(), "c1's words in the chat", win.text())
-    check('Bash(./run status -n 20)' in win.text(), 'a chat shows its tool steps, as a Claude session does')
-    check('❯ message c1' in win.text(), 'the chat box with its placeholder')
+    check('line 19' in win.text(), 'the log tab shows the newest lines')
+    check('❯ message c1' not in win.text(), 'F112: no chat box')
     p.key('l')
-    eq(p.tab()[0], 'log', 'l: the next tab')
-    check('line 19' in drawn(p).text(), 'the log tab shows the newest lines')
+    eq(p.tab()[0], 'release', 'l: the next tab')
     p.key('h')
     p.key('h')
-    eq((p.main, p.tab()[0]), (False, 'chat'), 'h on the first tab goes back to the panels')
+    eq((p.main, p.tab()[0]), (False, 'log'), 'h on the first tab goes back to the panels')
     p.key('j')
     p.key('j')
-    eq(p.tab(), ('release', ['release', 'chat', 'log', 'controls']), 'the release line: release first')
+    eq(p.tab(), ('release', ['release', 'log', 'controls']), 'the release line: release first')
     p.key('ENTER')
     win = drawn(p)
     check('[⏎ release when the running tasks land]' in win.text() and '[f release now, without them]' in win.text(),
@@ -216,48 +216,46 @@ def test_status_tabs() -> None:
 def test_session_tabs() -> None:
     p = page()
     p.key('2')
-    eq(p.tab()[1], ['chat', 'pane', 'session'], 'a control session: chat, pane, session')
+    eq(p.tab()[1], ['session'], 'F112: a control session: session (no chat tab, no pane tab)')
     p.cur[2] = 2
-    eq(p.tab()[1], ['feed', 'pane', 'diff', 'session'], 'a slot on a task: feed, pane, diff, session')
+    eq(p.tab()[1], ['session', 'diff'], 'a slot on a task: session, diff')
     p.key('ENTER')
     win = drawn(p)
-    check('● I will start with the board.' in win.text(), 'the feed: the agent\'s words', win.text())
+    check('● I will start with the board.' in win.text(), 'outside tmux: the feed read-only, the agent\'s words',
+          win.text())
     check('· 2 steps' in win.text() and 'Read(a.py)' not in win.text(), "tool steps folded as '· N steps'",
           win.text())
-    check('❯ message s1 (it reads it between steps)' in win.text(), 'a box to message the slot', win.text())
+    check('❯ message' not in win.text(), 'F112: no box to message the slot', win.text())
+    check('https://claude.ai/code/session_1' in win.text() and '[o open it] [y copy link]' in win.text(),
+          'the session tab: its link, o open it, y copy link', win.text())
+    check('[⏎ attach s1' not in win.text(), 'no socket: no attach button', win.text())
+    eq([u for *_, u in p.links], ['https://claude.ai/code/session_1'], 'B125: its link is kept for OSC 8')
     p.key('v')
     win = drawn(p)
     check('Read(a.py)' in win.text() and '⎿ 120 lines' in win.text(), 'v shows the steps', win.text())
     p.key('v')
-    p.key('l')
+    p.socket = lambda name: name == 's1'
     win = drawn(p)
-    check('s1 is not up, so it has no terminal to attach' in win.text() and '[⏎ attach s1]' not in win.text(),
-          'the pane tab of a session with no terminal says so', win.text())
-    with mock.patch.object(T, 'hidden_terminal', lambda name: name == 's1'):
-        win = drawn(p)
-    check('s1 runs hidden, in a terminal of its own' in win.text() and '[⏎ attach s1]' in win.text()
-          and 'Back: Ctrl-b d.' in win.text(), 'F88: a hidden session\'s pane tab attaches to its terminal', win.text())
+    check('[⏎ attach s1 (back: Ctrl-b d)]' in win.text(), 'F88: with a socket, outside tmux, Enter attaches it '
+          'full-screen', win.text())
+    p.socket = lambda name: False
     p.key('l')
     win = drawn(p)
     eq((colour_at(win, '+new line'), colour_at(win, '-old line'), colour_at(win, '@@ -1,2')),
        ('green', 'red', 'cyan'), 'the diff tab: added green, removed red, hunks cyan')
     p.key('l')
-    win = drawn(p)
-    check('https://claude.ai/code/session_1' in win.text() and '[o open it] [y copy link]' in win.text(),
-          'the session tab: o open it, y copy link', win.text())
-    eq([u for *_, u in p.links], ['https://claude.ai/code/session_1'], 'B125: its link is kept for OSC 8')
-    p.key('l')
-    eq(p.tab()[0], 'session', 'l on the last tab stays there')
+    eq(p.tab()[0], 'diff', 'l on the last tab stays there')
     p.cur[2] = 4
-    eq(p.tab()[1], ['feed', 'pane'], 'an idle slot: feed, pane')
-    check('s3 is idle: nothing running' in drawn(p).text(), "an idle slot's feed says so")
+    eq(p.tab()[1], ['session'], 'an idle slot: session')
+    check('s3 is idle: nothing running' in drawn(p).text(), "an idle slot's session says so")
     p.cur[2] = 5
     eq(p.tab()[1], ['info'], "the '+ new chat' row: info")
     check('[N start one]' in drawn(p).text(), 'it says N starts one')
     p.cur[2] = 1
-    p.tabs[p._tab_key(p.sel())] = 'chat'
     win = drawn(p)
-    check('❯ ideas for themes?' in win.text(), "c6's chat shows the person's words", win.text())
+    check('❯ ideas for themes?' in win.text() and 'Read(theme.py)' in win.text(),
+          "c6's feed read-only: the person's words and its steps", win.text())
+    check('❯ message c6' not in win.text(), 'F112: no message box for a control session', win.text())
 
 
 def test_queue() -> None:
@@ -419,9 +417,10 @@ def test_navigation() -> None:
     eq(p.main, True, '^l: the right side')
     p.key('^H')
     eq(p.main, False, '^h: the left side')
+    p.cur[2] = 2
     p.key('ENTER')
     p.key('l')
-    eq(p.tab()[0], 'pane', 'l: next tab')
+    eq(p.tab()[0], 'diff', 'l: next tab')
     p.key('ESC')
     eq(p.main, False, 'Esc: back to the panels')
     tabs = dict(p.tabs)
@@ -439,67 +438,230 @@ def test_navigation() -> None:
         p.key('4' if n != '4' else '3')
         eq((p.panel, p.main), (4 if n != '4' else 3, False), f'1-5 work from panel {n}\'s main pane')
     p.key('c')
-    eq((p.panel, p.sel()['name'], p.tab()[0], p.typing), (2, 'c1', 'chat', 'c1:chat'), 'c: c1\'s chat, typing')
+    eq((p.panel, p.sel()['name'], p.tab()[0], p.typing), (2, 'c1', 'session', ''), 'c: c1\'s session, no typing')
     p.key('ESC')
     p.key('2')
     p.cur[2] = 3
     p.key('t')
-    eq((p.sel()['name'], p.tab()[0], p.main), ('s2', 'feed', True), 't: the slot\'s feed')
+    eq((p.sel()['name'], p.tab()[0], p.main), ('s2', 'session', True), 't: the slot\'s session')
     p.key('j')
     p.key('j')
     eq(p.off.get(p.place()), None or 0, 'j/k scroll the pane (none to scroll here)')
     eq(p.key('q'), True, 'q quits')
 
 
-def test_chat_box() -> None:
+def test_no_message_box_f112() -> None:
+    """F112: no session has a message box: i and Enter type nothing, nothing is sent, and no '❯ message' line is
+    drawn, for any session row on any tab, nor on Status."""
     p = page()
-    sent, stopped = [], []
-    with mock.patch.object(U, 'chat_to', lambda text, to='c1': (sent.append((to, text)), {'ok': True, 'out': f'sent to {to}'})[1]), \
-            mock.patch.object(U, 'interrupt', lambda name='c1': (stopped.append(name), {'ok': True, 'out': f'interrupted {name}'})[1]):
+    sent = []
+    with mock.patch.object(U, 'chat_to', lambda text, to='c1': (sent.append((to, text)), {'ok': True, 'out': ''})[1]), \
+            mock.patch.object(U, 'send', lambda name, text: (sent.append((name, text)), {'ok': True, 'out': ''})[1]):
         p.key('2')
-        p.key('j')  # c6, mid-turn: its newest entry is a tool step
-        p.key('i')
-        eq((p.typing, p.mode()), ('c6:chat', 'INSERT'), 'i: typing in c6\'s chat box, the badge says INSERT')
-        for c in 'hello':
-            p.key(c)
-        p.key('S-ENTER')
-        for c in 'there':
-            p.key(c)
-        win = drawn(p)
-        check('❯ hello' in win.text() and '  there█' in win.text(), 'Shift+Enter: a new line in the box', win.text())
-        check(('Ctrl+C', 'interrupts') in p.hint_keys(), 'the hint while it works: '
-              'Ctrl+C interrupts', p.hint_keys())
-        eq(p.key('^C'), False, 'Ctrl+C in a working chat does not quit')
-        eq((stopped, p.typing), (['c6'], 'c6:chat'), 'Ctrl+C interrupts while it works (the box stays)')
-        p.key('ESC')
-        eq((stopped, p.typing, p.drafts.get('c6:chat')), (['c6'], '', 'hello\nthere'), 'B116: Esc in a working chat '
-           'leaves the box and sends no interrupt; the draft stays')
-        p.key('ESC')
-        eq((stopped, p.main), (['c6'], False), 'B116: Esc on the working chat tab goes back, no interrupt')
-        p.key('ENTER')
-        eq(p.tab()[0], 'chat', 'Enter: back on c6\'s chat tab')
-        eq(p.key('^C'), False, 'Ctrl+C on the working chat tab does not quit')
-        eq(stopped, ['c6', 'c6'], 'Ctrl+C on the working chat tab interrupts')
-        FEEDS['c6'].append({'kind': 'say', 'text': 'Three to start.'})
-        p.cache.clear()
-        p.refresh()
-        p.key('k')
-        p.key('j')
-        p.key('i')
-        eq(p.text_of('c6:chat'), 'hello\nthere', 'the draft is kept across Esc, a move and a refresh')
-        p.key('ENTER')
-        eq((sent, p.drafts.get('c6:chat'), p.typing), ([('c6', 'hello\nthere')], None, 'c6:chat'),
-           'Enter sends to c6 and clears the box; a chat keeps typing')
-        p.key('ESC')
+        for i, row in enumerate(p.items(2)):
+            p.cur[2] = i
+            for tab in p.tab()[1]:
+                p.tabs[p._tab_key(p.sel())] = tab
+                p.main = True
+                eq(p.box(), '', f'{row["name"]} {tab}: no box')
+                win = drawn(p)
+                check('❯ message' not in win.text() and '⏎ send' not in win.text(),
+                      f'{row["name"]} {tab}: no message box drawn', win.text())
+                p.key('i')
+                eq(p.typing, '', f'{row["name"]} {tab}: i types nowhere')
         p.key('1')
         p.key('ENTER')
-        p.key('i')
-        for c in 'hi':
-            p.key(c)
-        eq(p.drafts.get('c6:chat'), None, 'each box keeps its own draft')
-        p.key('ENTER')
-        eq(sent[-1], ('c1', 'hi'), "Status's chat goes to c1")
-    FEEDS['c6'].pop()
+        check('❯ message' not in drawn(p).text(), 'Status: no chat box')
+        eq(p.key('^C'), True, 'Ctrl+C quits (no chat to interrupt)')
+    eq(sent, [], 'nothing was sent to a session')
+
+
+def test_new_chat_f112() -> None:
+    """F112 (1): N does not wait for the session's link: `new_control` runs on a thread without waiting (a
+    stand-in that sleeps), a 'starting...' row is selected at once, and the cN row takes its place once the
+    run's state lists it."""
+    import threading
+    more = {**SNAP, 'sessions': SNAP['sessions'][:2] + [
+        {'name': 'c7', 'task': '', 'title': 'control session', 'minutes': None, 'state': 'live', 'files': [],
+         'link': 'https://claude.ai/code/session_c7', 'terminal': ''}] + SNAP['sessions'][2:]}
+    snaps = [SNAP]
+    go, calls = threading.Event(), []
+
+    def slow(ask='', wait=True):
+        calls.append(wait)
+        go.wait(5)
+        snaps[0] = more
+        return {'ok': True, 'code': 0, 'out': 'control 7 is starting in a hidden terminal', 'argv': [],
+                'link': '', 'name': 'c7'}
+    p = T.RunPage(SNAP, get_snap=lambda: snaps[0], attrs=ATTRS, feed=lambda name: {'entries': []},
+                  socket=lambda name: False, tmux=lambda argv: (1, ''))
+    p.key('2')
+    with mock.patch.object(U, 'new_control', slow):
+        t0 = T.time.time()
+        p.key('N')
+        took = T.time.time() - t0
+        check(took < 1, f'N returns at once ({took:.2f} s) while new_control still runs')
+        it = p.sel()
+        eq((p.panel, bool(it.get('starting'))), (2, True), "the new 'starting...' row is selected at once")
+        check('starting...' in drawn(p).text(), "its row says 'starting...'", drawn(p).text())
+        check('Its row and link fill in once it is up.' in drawn(p).text() and '[N start one]' not in drawn(p).text(),
+              'the main pane says it is starting (not the new chat row\'s text)', drawn(p).text())
+        p.key('N')
+        eq(p.msg, 'a new chat is starting already', 'N again while one starts: said, not another')
+        go.set()
+        for _ in range(50):
+            if 'r' in (p.starting or {}):
+                break
+            T.time.sleep(0.05)
+        p.poll_new_chat()
+    eq(calls, [False], 'new_control ran once, not waiting for the link (--no-wait)')
+    eq((p.starting, p.sel()['name']), (None, 'c7'), 'its cN row takes its place, selected')
+    check('https://claude.ai/code/session_c7' in p.msg, 'the link, read from state, on the message line', p.msg)
+    with mock.patch.object(U, 'RUN', [lambda argv: (calls.append(argv), (0, 'control 8 is starting in x'))[1]]):
+        r = U.new_control(wait=False)
+    eq((calls[-1], r['name']), (['control', '--new', '--no-wait'], 'c8'), "U.new_control(wait=False): "
+       "control --new --no-wait, the cN it started")
+    from agent_runner import feed as FD
+    out = io.StringIO()
+    with mock.patch.object(FD, 'hidden_control', lambda n, cmd: (4321, '')), \
+            mock.patch.object(FD, 'hidden_control_log', lambda n: Path(tempfile.mkdtemp()) / 'control8.log'), \
+            mock.patch.object(FD, 'remote_on', lambda: True), contextlib.redirect_stdout(out):
+        t0 = T.time.time()
+        rc = FD.control_new_hidden(8, ['control', '8'], 'c8', wait=-1)
+    check(rc == 0 and T.time.time() - t0 < 1 and 'control 8 is starting' in out.getvalue(),
+          '--no-wait (wait -1): back at once, before any link', out.getvalue())
+
+
+class Tmux:
+    """A stand-in tmux runner: records each command; split-window answers with a new pane id."""
+
+    def __init__(self):
+        self.calls: list[list[str]] = []
+        self.n = 10
+
+    def __call__(self, argv):
+        self.calls.append(argv)
+        if argv[0] == 'split-window':
+            self.n += 1
+            return 0, f'%{self.n}'
+        if argv[0] == 'list-keys':
+            return 1, 'unknown key'
+        return 0, ''
+
+    def did(self, verb: str) -> list[list[str]]:
+        return [c for c in self.calls if c[0] == verb]
+
+
+def test_side_pane_f112() -> None:
+    """F112 (2): inside tmux, selecting a session row with a socket splits a tmux pane beside the TUI's pane
+    running `attach NAME`; another session respawns it; a task row kills it. Focus moves into it with l / ^l.
+    The TUI then draws only the panels, full width, and no message box."""
+    tm = Tmux()
+    p = page(tmux=tm, socket=lambda name: name in ('c1', 'c6', 's1'))
+    with mock.patch.dict(os.environ, {'TMUX': '/tmp/tmux-1/default,1,0', 'TMUX_PANE': '%3'}), \
+            mock.patch.object(U, 'runner_cmd', lambda: ['/x/run']):
+        p.key('1')
+        eq(tm.calls, [], 'Status: no pane beside')
+        p.key('2')
+        split = tm.did('split-window')
+        check(len(split) == 1 and split[0][-1] == '/x/run attach c1' and '-h' in split[0] and
+              split[0][split[0].index('-t') + 1] == '%3', 'selecting c1 splits a pane beside the TUI\'s pane with '
+              "'attach c1'", tm.calls)
+        eq(p.side.pane, '%11', 'the pane id is kept')
+        check(['set-option', '-w', '-t', '%3', '@agent_runner_tui', '%3'] in tm.calls and
+              any(c[:3] == ['bind-key', '-n', 'C-f'] for c in tm.calls) and
+              any(c[:3] == ['bind-key', '-n', 'C-h'] for c in tm.calls),
+              'Ctrl-f and Ctrl-h are bound, for the TUI\'s window only (its window option)', tm.calls)
+        win = drawn(p)
+        check('session' not in win.lines()[1] and win.at('[2] Sessions')[0] > 0 and
+              win.lines()[1].rstrip().endswith('┐') and len(win.lines()[1].rstrip()) == 120,
+              'the TUI draws only the panels, full width', win.text())
+        check('❯ message' not in win.text(), 'no message box', win.text())
+        p.key('j')
+        eq(tm.did('respawn-pane'), [['respawn-pane', '-k', '-t', '%11', '-c', str(U.S.ROOT), '/x/run attach c6']],
+           "another session: respawn-pane -k with 'attach c6'")
+        p.key('l')
+        eq((tm.did('select-pane')[-1], p.main), (['select-pane', '-t', '%11'], False), 'l: focus into its pane')
+        p.key('j')
+        p.key('j')
+        eq(p.sel()['name'], 's2', 's2 (no socket)')
+        eq(tm.did('kill-pane'), [['kill-pane', '-t', '%11']], 'a session with no socket: the pane is killed')
+        check('· ' in drawn(p).text() or 's2' in drawn(p).text(), 'its feed read-only instead')
+        p.key('k')
+        eq(len(tm.did('split-window')), 2, 's1 (a socket): a pane again')
+        p.key('3')
+        eq(tm.did('kill-pane')[-1], ['kill-pane', '-t', '%12'], 'a task row kills that pane')
+        eq(p.side.pane, '', 'none beside now')
+        check(['unbind-key', '-n', 'C-f'] in tm.calls, 'the bindings go with it')
+    shared = Tmux()  # another TUI bound the same window-gated keys: shared, kept while its window uses them
+    shared_keys = lambda argv: (0, 'bind-key -T root C-f if-shell -F #{@agent_runner_tui} ...') \
+        if argv[0] == 'list-keys' else (0, '%5') if argv[0] == 'list-windows' else shared(argv)  # noqa: E731
+    s = T.SidePane(shared_keys)
+    with mock.patch.dict(os.environ, {'TMUX_PANE': '%3'}), mock.patch.object(U, 'runner_cmd', lambda: ['/x/run']):
+        s.show('c1')
+        s.close()
+    check(not shared.did('bind-key') and not shared.did('unbind-key'), 'two TUIs: the second neither binds again '
+          'nor unbinds while the other window still uses the keys', shared.calls)
+    p2 = page(tmux=tm, socket=lambda name: True)
+    with mock.patch.dict(os.environ, {'TMUX_PANE': '%3'}):
+        os.environ.pop('TMUX', None)
+        n = len(tm.calls)
+        p2.key('2')
+        eq(tm.calls[n:], [], 'outside tmux: no pane, the feed read-only')
+
+
+def test_full_screen_f112() -> None:
+    """F112 Ctrl-f: in tmux the panes are laid out again (the session pane above the TUI's pane cut to its bottom
+    bar, a `ui --bar` pane for the top bar above it), and back; outside tmux the main pane takes the width
+    between both bars."""
+    tm = Tmux()
+    p = page(tmux=tm, socket=lambda name: True)
+    with mock.patch.dict(os.environ, {'TMUX': '/tmp/tmux-1/default,1,0', 'TMUX_PANE': '%3'}), \
+            mock.patch.object(U, 'runner_cmd', lambda: ['/x/run']):
+        p.key('2')
+        n = len(tm.calls)
+        p.key('\x06')
+        did = tm.calls[n:]
+        eq(did[0], ['join-pane', '-d', '-v', '-b', '-s', '%11', '-t', '%3'], 'Ctrl-f: the session pane above the '
+           "TUI's pane")
+        check(did[1][0] == 'split-window' and did[1][-1] == '/x/run ui --bar' and '-b' in did[1] and
+              did[1][did[1].index('-l') + 1] == '1', 'a one-row top bar pane above it runs ui --bar', did)
+        check(['resize-pane', '-t', '%3', '-y', '1'] in did, "the TUI's pane cut to its bottom bar", did)
+        eq(p.side.full, True, 'full-screen')
+        win = drawn(p, 1, 120)
+        check(win.lines()[0].startswith(' SESSIONS ') and '1-5' in win.lines()[0], 'the TUI\'s one-row pane: the '
+              'bottom bar', win.text())
+        win = drawn(p)
+        check(win.lines()[-1].startswith(' SESSIONS ') and '[2] Sessions' not in win.text(),
+              'the bottom bar is still drawn, the panels are not', win.text())
+        bar = page()
+        bar.bar_only = True
+        check(drawn(bar, 1, 120).lines()[0].startswith('agent-runner · proj'), 'ui --bar draws the top bar')
+        n = len(tm.calls)
+        p.key('\x06')
+        did = tm.calls[n:]
+        eq(did[:2], [['kill-pane', '-t', '%12'], ['join-pane', '-d', '-h', '-l', '64%', '-s', '%11', '-t', '%3']],
+           'Ctrl-f again: the bar pane killed, the session joined back beside')
+        eq(p.side.full, False, 'side by side again')
+        check('[2] Sessions' in drawn(p).text(), 'the panels are back')
+        p.key('\x06')
+        p.key('3')
+        check(['kill-pane', '-t', '%13'] in tm.calls and p.side.pane == '' and not p.side.full,
+              'full-screen, a task row: both panes go', tm.calls[-8:])
+    q = page()
+    q.key('2')
+    q.key('j')
+    q.key('\x06')
+    win = drawn(q)
+    eq((q.full, q.main), (True, True), 'outside tmux, Ctrl-f: the session full-screen')
+    check(win.lines()[0].startswith('agent-runner · proj') and win.lines()[-1].startswith(' SESSION ') and
+          '[2] Sessions' not in win.text() and '❯ ideas for themes?' in win.text(),
+          'both bars drawn, the feed between them, no panels', win.text())
+    q.key('\x06')
+    check(not q.full and '[2] Sessions' in drawn(q).text(), 'Ctrl-f again: side by side')
+    q.key('3')
+    q.key('\x06')
+    eq(q.full, False, 'Ctrl-f on a task row: nothing to full-screen')
 
 
 def test_actions() -> None:
@@ -518,8 +680,8 @@ def test_actions() -> None:
             mock.patch.object(U, 'SEND', [lambda text: (sent.append(text), ok('sent to c1'))[1]]), \
             mock.patch.object(U, 'send', lambda name, text: (calls.append(('send', name, text)), ok('sent'))[1]), \
             mock.patch.object(U, 'quick_ask', lambda key: (calls.append(('quick_ask', key)), ok('asked'))[1]), \
-            mock.patch.object(U, 'new_control', lambda ask='': (calls.append(('new_control',)),
-                                                                {**ok('started c7'), 'link': 'https://claude.ai/code/x'})[1]), \
+            mock.patch.object(U, 'new_control', lambda ask='', wait=True: (calls.append(('new_control', wait)),
+                                                                {**ok('started c7'), 'link': '', 'name': 'c7'})[1]), \
             mock.patch.object(U, 'open_session', lambda slot: (calls.append(('open_session', slot)),
                                                                ok(f'https://claude.ai/code/{slot}'))[1]):
         p.key('3')
@@ -583,28 +745,28 @@ def test_actions() -> None:
         p.cur[2] = 2
         p.key('o')
         p.key('ENTER')
-        p.key('l')
+        p.socket = lambda name: name == 's1'
         p.key('ENTER')
+        p.socket = lambda name: False
         p.key('i')
-        eq(p.typing, '', 'nothing to type into on the pane tab')
-        p.key('h')
-        p.key('i')
-        for c in 'use the cache':
-            p.key(c)
-        p.key('ENTER')
-        p.key('ESC')
+        eq(p.typing, '', 'F112: nothing to type into on the session tab')
         p.key('ESC')
         p.cur[2] = 0
         p.key('o')
         c7 = {'name': 'c7', 'task': '', 'title': 'control session', 'minutes': None, 'state': 'live', 'files': [],
               'link': 'https://claude.ai/code/x', 'terminal': ''}
         p.get_snap = lambda: dict(SNAP, sessions=SNAP['sessions'][:2] + [c7] + SNAP['sessions'][2:]) \
-            if ('new_control',) in calls else SNAP
+            if ('new_control', False) in calls else SNAP
         p.key('N')
+        for _ in range(100):
+            if 'r' in (p.starting or {}):
+                break
+            T.time.sleep(0.02)
+        p.poll_new_chat()
         eq(p.sel()['name'], 'c7', 'N selects the new control session')
-        eq((p.msg, p.main, p.tab()[0], p.typing), ('new control session: https://claude.ai/code/x', True, 'chat',
-                                                   'c7:chat'),
-           'B125 N: a new control session on its chat tab, typing, its link said')
+        eq((p.msg, p.main, p.tab()[0], p.typing), ('new control session c7: https://claude.ai/code/x', False,
+                                                   'session', ''),
+           'N: the new control session selected on its session tab, its link said; no typing')
         p.key('ESC')
     eq(ran, [['plan', 'edit', 'B2', '--pri', 'normal'],
              ['plan', 'drop', 'B2', 'dropped from agent-runner ui'],
@@ -616,48 +778,33 @@ def test_actions() -> None:
               'D7: port 8770', 'concept K5 ("Lazy layout"): go with Option B',
               'concept K5 ("Lazy layout"): smaller'],
        'H, chat edits, answers (a button, a reply), the concept pick and its change go to c1')
-    eq(calls, [('quick_ask', 'since'), ('quick_ask', 'usage'), ('open_session', 's1'), ('send', 's1', 'use the cache'),
-               ('new_control',)], 'o, the quick asks, the slot\'s box and N run F74\'s actions')
+    eq(calls, [('quick_ask', 'since'), ('quick_ask', 'usage'), ('open_session', 's1'), ('new_control', False)],
+       'o, the quick asks and N run F74\'s actions (N without waiting for the link)')
     eq(opened, ['https://claude.ai/artifact/k5', 'https://claude.ai/code/s1', 'https://claude.ai/code/session_c1'],
        'O and o open the browser')
-    eq(attached, ['s1'], 'Enter on the pane tab attaches the slot\'s pane')
+    eq(attached, ['s1'], 'Enter on the session tab, with a socket outside tmux, attaches it')
 
 
 def test_session_tab_b125() -> None:
-    """B125: a new chat lands on its chat tab; a control session's session tab types into it; y copies the link
-    with OSC 52; o over ssh opens no browser here: it copies and shows the link to Cmd-click (OSC 8)."""
+    """B125: y copies the link with OSC 52; o over ssh opens no browser here: it copies and shows the link to
+    Cmd-click (OSC 8). F112: the session tab has no message box."""
     import base64
-    wrote, chats, popen = [], [], []
+    wrote, popen = [], []
     ok = lambda out: {'ok': True, 'code': 0, 'out': out, 'argv': []}  # noqa: E731
-    p = page(out=wrote.append)
-    p.opener = lambda url: T.open_url(url, p.out)
     c7 = {'name': 'c7', 'task': '', 'title': 'control session', 'minutes': None, 'state': 'live', 'files': [],
           'link': 'https://claude.ai/code/c7', 'terminal': ''}
-    more = dict(SNAP, sessions=SNAP['sessions'] + [c7])
-    with mock.patch.object(U, 'new_control', lambda ask='': (setattr(p, 'get_snap', lambda: more),
-                                                             {**ok('started c7'), 'link': c7['link']})[1]), \
-            mock.patch.object(U, 'chat_to', lambda text, name: (chats.append((name, text)), ok('sent'))[1]), \
-            mock.patch.object(U, 'open_session', lambda slot: ok(f'https://claude.ai/code/{slot}')), \
+    p = page(dict(SNAP, sessions=SNAP['sessions'] + [c7]), out=wrote.append)
+    p.opener = lambda url: T.open_url(url, p.out)
+    with mock.patch.object(U, 'open_session', lambda slot: ok(f'https://claude.ai/code/{slot}')), \
             mock.patch.object(T.sp, 'Popen', lambda *a, **k: popen.append(a)), \
             mock.patch.dict(T.os.environ, {'SSH_CONNECTION': '10.0.0.2 5000 10.0.0.1 22'}), \
             mock.patch.object(T.os, 'startfile', lambda url: popen.append(url), create=True):
         p.key('2')
-        p.key('N')
-        eq((p.sel()['name'], p.tab()[0], p.typing), ('c7', 'chat', 'c7:chat'), 'N lands on the chat tab, typing')
-        p.key('ESC')
-        p.key('l')
-        p.key('l')
-        eq(p.tab()[0], 'session', 'on the session tab')
+        p.cur[2] = 2
+        eq((p.sel()['name'], p.tab()[0]), ('c7', 'session'), 'c7 on its session tab')
         win = drawn(p)
-        check('❯ message c7' in win.text(), 'the session tab has the message box', win.text())
+        check('❯ message c7' not in win.text(), 'F112: the session tab has no message box', win.text())
         check('[y copy link]' in win.text(), 'and a y copy link button', win.text())
-        p.key('ENTER')
-        eq(p.typing, 'c7:chat', 'Enter types into it')
-        for c in 'hello':
-            p.key(c)
-        p.key('ENTER')
-        eq(chats, [('c7', 'hello')], 'typing on the session tab sends to that session')
-        p.key('ESC')
         p.key('y')
         b64 = base64.b64encode(b'https://claude.ai/code/c7').decode()
         check(any(f'\x1b]52;c;{b64}\x07' in w for w in wrote), 'y writes an OSC 52 sequence with the link', wrote)
@@ -1057,17 +1204,16 @@ def test_idle_run_of_another_project() -> None:
         check(any(want in l for l in left), f'Sessions shows "{want}"', win.text())
     p.cur[2] = 4  # s2
     p.key('ENTER')
-    p.key('l')
-    eq(p.tab()[0], 'pane', "s2's pane tab")
+    eq(p.tab()[0], 'session', "s2's session tab")
     check('s2 is idle: nothing running' in drawn(p).text(), 'it says s2 is idle')
     p.key('ENTER')
     eq((attached, p.msg), ([], 's2 is idle: nothing running'), 'Enter on an idle slot: the idle line, no attach')
     p.key('ESC')
     p.cur[2] = 1  # c6
+    p.socket = lambda name: name == 'c6'
     p.key('ENTER')
-    p.key('l')
     p.key('ENTER')
-    eq(attached, ['c6'], 'Enter on a control session\'s pane tab attaches it')
+    eq(attached, ['c6'], 'Enter on a control session\'s session tab, outside tmux with a socket, attaches it')
 
 
 def test_run_key_binds() -> None:
@@ -1226,32 +1372,34 @@ def test_cli() -> None:
 
 
 def test_side_keys_in_box_f113() -> None:
-    p = page()
-    p.key('c')
-    eq((p.panel, p.sel()['name'], p.typing), (2, 'c1', 'c1:chat'), 'c: typing in c1\'s chat')
+    p = page()  # F112: no chat box any more: Needs you's reply box
+    p.key('4')
+    p.key('a')
+    p.key('i')
+    eq((p.panel, p.sel()['id'], p.typing), (4, 'D3', 'answer:D3'), 'typing in D3\'s reply box')
     for c in 'abc':
         p.key(c)
     p.key('\x7f')
-    eq(p.text_of('c1:chat'), 'ab', 'Backspace (\\x7f) still deletes a character')
+    eq(p.text_of('answer:D3'), 'ab', 'Backspace (\\x7f) still deletes a character')
     p.key('\x08')
-    eq((p.typing, p.main, p.drafts.get('c1:chat')), ('', False, 'ab'), 'Ctrl-h in a box: the panels, the draft kept')
+    eq((p.typing, p.main, p.drafts.get('answer:D3')), ('', False, 'ab'), 'Ctrl-h in a box: the panels, the draft kept')
     p.key('\x0c')
     eq((p.typing, p.main), ('', True), 'Ctrl-l: the right side')
     p.key('i')
     p.key('\x0c')
-    eq(p.typing, 'c1:chat', 'Ctrl-l in a box on the right side stays in it')
-    row = p.cur[2]
+    eq(p.typing, 'answer:D3', 'Ctrl-l in a box on the right side stays in it')
+    row = p.cur[4]
     p.key('\n')
-    eq((p.cur[2], p.typing, p.main, p.drafts.get('c1:chat')), (row + 1, '', True, 'ab'),
+    eq((p.cur[4], p.typing, p.main, p.drafts.get('answer:D3')), (row + 1, '', True, 'ab'),
        'Ctrl-j in a box: the next row of the left list (no new line), focus kept, the draft kept')
     p.key('\x0b')
-    eq((p.cur[2], p.sel()['name']), (row, 'c1'), 'Ctrl-k: the row above')
+    eq((p.cur[4], p.sel()['id']), (row, 'D3'), 'Ctrl-k: the row above')
     p.key('i')
-    eq(p.text_of('c1:chat'), 'ab', 'back in c1\'s box, the draft is there')
+    eq(p.text_of('answer:D3'), 'ab', 'back in D3\'s box, the draft is there')
     p.key('ESC')
     p.key('ESC')
     p.key('\n')
-    eq((p.cur[2], p.main), (row + 1, False), 'Ctrl-j on the panels moves down too')
+    eq((p.cur[4], p.main), (row + 1, False), 'Ctrl-j on the panels moves down too')
 
 
 def test_d_drops_f116() -> None:
@@ -1313,7 +1461,8 @@ def test_d_drops_f116() -> None:
 if __name__ == '__main__':
     raise SystemExit(report([test_d_drops_f116,test_layout, test_status_tabs, test_session_tabs, test_queue, test_form_pane_v_task,
                                test_direct_edit,
-                               test_navigation, test_chat_box, test_side_keys_in_box_f113, test_actions, test_session_tab_b125, test_footer,
+                               test_navigation, test_no_message_box_f112, test_new_chat_f112, test_side_pane_f112,
+                               test_full_screen_f112, test_side_keys_in_box_f113, test_actions, test_session_tab_b125, test_footer,
                                test_concept_page,
                                test_concept_chat, test_new_concept, test_enter_on_concept,
                                test_escape_tail, test_colours, test_row_ground_and_fill, test_reorder, test_parked,

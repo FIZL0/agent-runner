@@ -944,6 +944,8 @@ def cmd_control(argv: list[str], prog: str = f'{RUNNER} control') -> int:
     ap.add_argument('n', nargs='?', type=int, help='its number (1 resumes the kept session); default the first free')
     ap.add_argument('--new', action='store_true', help='open another one without taking focus (a hidden terminal: '
                     'attach cN shows it; Windows: a hidden console) and print its claude.ai/code link')
+    ap.add_argument('--no-wait', action='store_true', help='with --new: return once it starts, without waiting '
+                    'for its claude.ai/code link (the terminal UI reads the link from state later)')
     ap.add_argument('--brief', action='store_true', help=argparse.SUPPRESS)  # the SessionStart hook
     ap.add_argument('--hand', action='store_true', help=argparse.SUPPRESS)  # F53: the hook in settings.local.json
     ap.add_argument('--blank', action='store_true', help=argparse.SUPPRESS)  # c1 under [run] remote: no opening turn
@@ -985,7 +987,7 @@ def cmd_control(argv: list[str], prog: str = f'{RUNNER} control') -> int:
         return control_new_runner(a.n, images=a.file)
     if a.new or (a.forward and not a.feed_sid):
         return control_new(a.n, ask=a.ask, images=a.file, forward=a.forward and not a.from_feed,
-                           handed=bool(a.from_feed))
+                           handed=bool(a.from_feed), **({'wait': -1} if a.no_wait else {}))
     if a.ask_file:
         a.ask = read_ask_file(a.ask_file) or a.ask
     if a.forward and a.feed_sid and SID_RE.fullmatch(a.feed_sid):
