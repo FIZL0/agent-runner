@@ -4,6 +4,13 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Fixed: Pick links work through Runner Home (F167). With Home installed, a run listens on 127.0.0.1 only (F165),
+  so no Pick link was made. Now a Pick link (`pick-links`, a pick sheet's Send) uses Home's Tailscale Serve https
+  address, https://HOST/p/KEY/pick; Home routes GET /p/KEY/pick to the run with no Home token, because the link's
+  one-use code is the check and the run checks it. With no run up, the link's page says to start the run. With no
+  https address for Home's port, `pick-links` says so and gives the `tailscale serve` command. A run with its own
+  https port still gets its Pick links as before where Home does not route it.
+
 ## 0.62.0 (2026-11-23)
 
 - Changed: the run app's Settings page is rebuilt (F166). About 24 everyday settings sit in Speed and limits, Landing work, Models and Chats, each with its control on its row; the rest are behind Advanced, and commands, paths, patterns and rules behind Project file, read only with "Ask a chat to change it". Each setting says where a change is saved: this device at once (`runner.local.toml`), or everyone as a queued C task on `runner.toml`, shown as Queued until it starts. A row's More… has the other home and Reset. Changed lists what differs from the default, and the lines the run ignores or moved. Search finds names, descriptions and code names, and a card with Restart the run says how many changes wait for a restart. `agent-runner settings` still prints the developer notes.

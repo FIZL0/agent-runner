@@ -201,7 +201,8 @@ def page_line(site=None) -> str:
 # --- F138: option buttons that answer the run with no AI session ------------------------------------------------
 #
 # A concept page's or a pick sheet's option button is a plain link to the run page's https address:
-# <https base>/pick?id=<ID>&o=<option>&k=<code>. The code is a one-use secret made for that item and kept in
+# <https base>/pick?id=<ID>&o=<option>&k=<code>; through Runner Home (F167) the base
+# ends in /p/KEY. The code is a one-use secret made for that item and kept in
 # <notes>/pick-codes/<ID>.json, never the run page's own token, so a leaked page can only pick an option for that
 # item. /pick checks it, runs `plan confirm ID "go with <option>: <its name>"` (a pick sheet: `sheet ID --picks`),
 # burns it, and shows a small page saying what happened (or why not: used, unknown, settled already).
@@ -241,23 +242,30 @@ def pick_code(tid: str) -> str:
 
 def run_port() -> int:
     """The run page's port: the one a run serves it on (<notes>/web.url), else `[run] web_port`; 0 when only
-    Runner Home opens it (F165)."""
+    Runner Home opens it (F165), or that port is Home's (F167: a run's own port from before Home)."""
+    port = 0
     try:
         if us := url_file().read_text(encoding='utf-8').split():
             if not own_links(us):
                 return 0
-            if p := urlsplit(us[0]).port:
-                return p
+            port = urlsplit(us[0]).port or 0
     except (OSError, ValueError):
         pass
-    return int(S.C.run.get('web_port', 8770))
+    port = port or int(S.C.run.get('web_port', 8770))
+    return 0 if port == home_port() else port
 
 
 def https_base(https=None) -> str:
-    """The run page's https address with no path and no token (`https://host[:port]`), from Tailscale Serve;
-    '' when it gives none (no https: the pages keep today's flow)."""
+    """The run page's https address with no token and no slash at its end, from Tailscale Serve: F167: Runner
+    Home's for this project (`https://host[:port]/p/KEY`) when Home routes it, else the run's own
+    (`https://host[:port]`); '' when there is none (the pages keep today's flow)."""
+    https = https or tailscale_https_urls
+    for u in https_first(site_urls(), https):
+        s = urlsplit(u)
+        if s.scheme == 'https' and s.netloc:
+            return f'https://{s.netloc}{s.path.rstrip("/")}'
     port = run_port()
-    for u in (https or tailscale_https_urls)(port, 'x') if port else []:
+    for u in https(port, 'x') if port else []:
         s = urlsplit(u)
         if s.scheme == 'https' and s.netloc:
             return f'https://{s.netloc}'
@@ -266,9 +274,14 @@ def https_base(https=None) -> str:
 
 def no_https_why() -> str:
     """Why `https_base` is '' (F165: without naming a port only Home opens)."""
+    if site := site_urls():
+        from agent_runner.home import serve_https_argv
+        port = urlsplit(site[-1]).port
+        return (f'Tailscale Serve proxies none to Runner Home\'s port {port}; '
+                f'`{" ".join(serve_https_argv(port))}` gives Home one')
     if port := run_port():
         return f'Tailscale Serve proxies none to port {port}'
-    return 'it is reached through Runner Home only, which takes no option links'
+    return closed_line()
 
 
 def pick_link(base: str, tid: str, code: str, option: str = '') -> str:
