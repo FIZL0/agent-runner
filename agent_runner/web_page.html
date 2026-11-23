@@ -617,10 +617,13 @@ function settingValue(k,text){
   if(also.includes('list')&&(/\n|,/.test(t)||typeof k.default==='boolean'))return{v:t.split(/[\n,]/).map(x=>x.trim()).filter(Boolean)};
   return{v:String(text==null?'':text)};
 }
-function talkSession(sessions,remembered){
+/* the live Talk session: the remembered one, else a chat titled Talk that is not in `old`, the Talk chats New Talk
+   chat left (F157). remembered 'new': a new one was asked for and nothing was sent yet, so none */
+function talkSession(sessions,remembered,old){
+  if(remembered==='new')return '';
   const live=(sessions||[]).filter(s=>/^c\d+$/.test(s.name)&&s.state==='live');
   const r=live.find(s=>s.name===remembered);if(r)return r.name;
-  const t=live.find(s=>s.title==='Talk');return t?t.name:'';
+  const t=live.find(s=>s.title==='Talk'&&!(old||[]).includes(s.name));return t?t.name:'';
 }
 /* why the mic cannot listen here ('' when it can): Chrome gives the mic only to https or localhost; B130: Safari
    hides speech recognition outside a secure context, so plain http is checked first */
@@ -1512,10 +1515,10 @@ S.at={};S.pin=true;
 const chatShown=()=>!!S.thread||S.view==='talk';
 function toEnd(){const b=$('body');b.scrollTop=b.scrollHeight;S.pin=true;S.fresh=false;jumpDraw()}
 function jumpDraw(){const j=$('jump'), on=chatShown()&&!S.pin&&!HOME_PAGE;setHTML(j,I.down+(S.fresh?'New message':'Latest'));j.classList.toggle('on',on)}
-/* the top bar: the menu (with its dot, F128), back, the title, Talk's settings, the state pill, the session, New chat */
+/* the top bar: the menu (with its dot, F128), back, the title, Talk's settings, the state pill, the session, New chat (in Talk, New Talk chat: F157) */
 function topHTML(){
   const n=S.thread, p=runPill(S.snap), x=n&&sessionOf(n);
-  return `<button class="icon menu" data-menu aria-label="Menu${S.menuDot?': something needs you':''}">${I.menu}${S.menuDot?'<span class="bdot"></span>':''}</button>${n?`<button class="icon" data-home aria-label="Back">${I.back}</button>`:''}<div class="title">${n?esc(threadTitle(n)):{talk:'Talk',home:'',status:'Status',plan:'Plan',concepts:'Concepts',settings:'Settings',projects:'All projects'}[S.view]}</div>${p.text?`<button class="pill ${p.cls}" data-view="status" data-k="pill" data-v="${esc(p.text)}" title="The run: open Status">${esc(p.text)}</button>`:''}${!n&&S.view==='talk'?`<button class="icon" data-sheet="talk" aria-label="Talk settings" title="Talk settings">${I.settings}</button>`:''}${x&&x.link?`<a class="icon" href="${esc(x.link)}" target="_blank" rel="noopener" aria-label="Open its session" title="Open its session">${I.ext}</a>`:''}<button class="icon" data-new aria-label="New chat" title="New chat">${I.newchat}</button>`;
+  return `<button class="icon menu" data-menu aria-label="Menu${S.menuDot?': something needs you':''}">${I.menu}${S.menuDot?'<span class="bdot"></span>':''}</button>${n?`<button class="icon" data-home aria-label="Back">${I.back}</button>`:''}<div class="title">${n?esc(threadTitle(n)):{talk:'Talk',home:'',status:'Status',plan:'Plan',concepts:'Concepts',settings:'Settings',projects:'All projects'}[S.view]}</div>${p.text?`<button class="pill ${p.cls}" data-view="status" data-k="pill" data-v="${esc(p.text)}" title="The run: open Status">${esc(p.text)}</button>`:''}${!n&&S.view==='talk'?`<button class="icon" data-sheet="talk" aria-label="Talk settings" title="Talk settings">${I.settings}</button>`:''}${x&&x.link?`<a class="icon" href="${esc(x.link)}" target="_blank" rel="noopener" aria-label="Open its session" title="Open its session">${I.ext}</a>`:''}${!n&&S.view==='talk'?`<button class="icon" data-newtalk aria-label="New Talk chat" title="New Talk chat">${I.newchat}</button>`:`<button class="icon" data-new aria-label="New chat" title="New chat">${I.newchat}</button>`}`;
 }
 function render(force){
   if(!force&&(PD.down||selecting())){const now=Date.now();PD.since=PD.late?PD.since:now;PD.late=true;if(now-PD.since<HOLD_MS)return}  // but never for long
@@ -1625,9 +1628,9 @@ function slashTake(j){
 
 /* --- F93: Talk: the mic hears the person (Web Speech API), the words go to the Talk session (the `talk` action),
    and its reply is read aloud (speechSynthesis); the chat box under the mic works without either ------------- */
-const TALK_KEY='ar-talk';  /* the Talk session this browser opened */
+const TALK_KEY='ar-talk', TALK_OLD='ar-talkold';  /* the Talk session this browser opened ('new': none yet, the next message opens one), and the Talk chats New Talk chat left (F157) */
 const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
-const TK={rec:null,heard:'',trail:null,report:'',upAt:0,state:'',wait:null,said:'',unlocked:false,note:'',playing:'',hold:false,holdId:null,again:false,ear:null};  /* state: '', listening, thinking, speaking; ear: the listen under way (listen()); trail: what happened on the mic (micLog), report: the one to copy, upAt: when a hold ended; playing: the reply a play button reads */
+const TK={rec:null,heard:'',trail:null,report:'',upAt:0,state:'',wait:null,said:'',unlocked:false,note:'',playing:'',hold:false,holdId:null,again:false,ear:null,gen:0,starting:[]};  /* gen: counts New Talk chat presses; starting: the sends that open a chat whose name is not known yet (F157); state: '', listening, thinking, speaking; ear: the listen under way (listen()); trail: what happened on the mic (micLog), report: the one to copy, upAt: when a hold ended; playing: the reply a play button reads */
 /* F124: Talk's settings (TALK_SET), and whether its dock shows the mic or the box, as this browser last had them */
 const TS_KEY='ar-talkset', TM_KEY='ar-talkmode';
 let TS=talkSetParse(store.get(TS_KEY));
@@ -1636,15 +1639,42 @@ const voices=()=>{try{return window.speechSynthesis?speechSynthesis.getVoices():
 if(window.speechSynthesis&&speechSynthesis.addEventListener)speechSynthesis.addEventListener('voiceschanged',()=>{if(S.sheet==='talk')render(true)});
 const talkTyping=()=>!!micWhy()||store.get(TM_KEY)==='type';
 function talkMode(m){store.set(TM_KEY,m==='type'?'type':'');S.pin=true;render(true);if(m==='type')document.querySelector('[data-in]')?.focus()}
+/* F157: the Talk chats left by New Talk chat, kept over a reload */
+function talkOld(){try{const l=JSON.parse(store.get(TALK_OLD)||'[]');return Array.isArray(l)?l:[]}catch(e){return []}}
+function talkLeave(names){store.set(TALK_OLD,JSON.stringify([...new Set(talkOld().concat(names))]))}
+const talkTitled=()=>(S.snap.sessions||[]).filter(s=>s.title==='Talk').map(s=>s.name);
+/* the live Talk session. A chat that was still starting when New Talk chat was pressed is old as soon as it shows */
+function talkFind(remembered){
+  TK.starting=TK.starting.filter(w=>{
+    if(w.gen===TK.gen)return true;
+    const t=talkSession(S.snap.sessions,'',talkOld());if(t)talkLeave([t]);
+    return !t&&Date.now()-w.at<90000});
+  return talkSession(S.snap.sessions,remembered,talkOld());
+}
+/* F157: New Talk chat: whatever Talk is doing stops, and the next message opens a fresh Talk session. The old one
+   stays in Chats; a message on its way still reaches it */
+function newTalk(){
+  const was=talkName(), known=(S.snap.sessions||[]).map(s=>s.name);
+  store.set(TALK_OLD,JSON.stringify(talkOld().filter(n=>known.includes(n))));  // a chat that is gone: its name can come again
+  talkLeave([...talkTitled(),...(was?[was]:[])]);
+  store.set(TALK_KEY,'new');TK.gen++;
+  const rec=TK.rec, spoke=TK.state==='speaking'||!!TK.playing;
+  if(TK.ear)micLog('stop by New Talk chat');
+  TK.ear=TK.rec=null;TK.hold=TK.again=false;TK.wait=null;
+  TK.state=TK.heard=TK.said=TK.note=TK.report=TK.playing='';TK.turn=(TK.turn||0)+1;
+  if(rec)rec.stop();
+  if(spoke&&window.speechSynthesis)speechSynthesis.cancel();
+  S.drawer=false;S.pin=true;render(true);
+}
 function talkName(){
-  const n=talkSession(S.snap.sessions,store.get(TALK_KEY));if(n)return n;
+  const n=talkFind(store.get(TALK_KEY));if(n)return n;
   const w=TK.wait;return w&&Date.now()-w.at<90000?w.n:'';  /* just opened: not in the snapshot yet */
 }
 /* B133: the session a Talk reply is awaited from ('' for none): a wait opened with no session name takes the live
    chat titled Talk once the snapshot lists it */
 function talkWaitName(){
   const w=TK.wait;if(!w)return '';
-  if(!w.n){const t=talkSession(S.snap.sessions,'');if(t){w.n=t;store.set(TALK_KEY,t)}}
+  if(!w.n){const t=talkFind('');if(t){w.n=t;TK.starting=TK.starting.filter(x=>x!==w);store.set(TALK_KEY,t)}}
   return w.n;
 }
 const micWhy=()=>micProblem(window.isSecureContext!==false,!!SR);
@@ -1700,7 +1730,7 @@ fetch('term'+location.search).then(r=>r.ok?r.text():'').then(p=>{const t=termTok
 const talkGoing=()=>TK.wait&&TK.wait.out?`<div class="msgs"><div class="u pending" data-k="talkout" data-t="${esc(tkey(talkShown(TK.wait.said)))}">${esc(talkShown(TK.wait.said))}</div></div>`:'';
 function talkHTML(){
   const n=talkName(), going=talkGoing();
-  if(!n)return going?`<div class="col">${going}<div class="think">${LOGO()}Starting the chat…</div></div>`: `<div class="col"><div class="greet">${LOGO()}Talk to the run</div><div class="small" style="text-align:center">Tap the mic and ask, say, what is going on: the reply is read aloud. Talk opens a chat of its own the first time.</div></div>`;
+  if(!n)return going?`<div class="col">${going}<div class="think">${LOGO()}Starting the chat…</div></div>`: `<div class="col"><div class="greet">${LOGO()}Talk to the run</div><div class="small" style="text-align:center">Tap the mic and ask, say, what is going on: the reply is read aloud. ${store.get(TALK_KEY)==='new'?'Your next message opens a new Talk chat. The old one stays in Chats.':'Talk opens a chat of its own the first time.'}</div></div>`;
   if(!S.feeds[n]&&!TK.loading){TK.loading=true;loadFeed(n).finally(()=>{TK.loading=false})}  /* its first look */
   return `<div class="col">${convo(n,talkShown)}${going}</div>`;
 }
@@ -1726,12 +1756,17 @@ async function talkSend(msg){
   TK.state='thinking';TK.said=msg;TK.note='';S.pin=true;unlockSpeech();render(true);
   /* B133: the wait starts before the action, which can take up to 90 s while a new chat comes up: a reply that
      lands meanwhile is heard from the polls and snapshots (talkWaitName finds the new chat by its title) */
-  const w={n:to,since:to?mark:0,at:Date.now(),last:'',said:msg,out:true};TK.wait=w;render(true);
+  const w={n:to,since:to?mark:0,at:Date.now(),last:'',said:msg,out:true,gen:TK.gen};TK.wait=w;
+  const asked=store.get(TALK_KEY)==='new';if(asked){talkLeave(talkTitled());store.set(TALK_KEY,'')}  // F157: a Talk chat that shows from now on is the new one
+  if(!to)TK.starting.push(w);
+  render(true);
   const r=await act('talk',{text:msg,to});w.out=false;
-  if(!r.ok){if(TK.wait===w)TK.wait=null;TK.state='';render(true);return false}
+  const left=w.gen!==TK.gen;  // F157: New Talk chat was pressed meanwhile: these words belong to the chat it left
+  if(!r.ok||r.session)TK.starting=TK.starting.filter(x=>x!==w);
+  if(!r.ok){if(TK.wait===w)TK.wait=null;if(!left){TK.state='';if(asked&&!store.get(TALK_KEY))store.set(TALK_KEY,'new')}render(true);return false}
   const n=r.session||to, fresh=n!==to;
   if(TK.wait===w){if(fresh){w.n=n;w.since=0;w.last=''}w.at=Date.now()}  /* not yet heard; n '': found by its title */
-  if(n){store.set(TALK_KEY,n);addSent(n,msg,r.at,{talk:true,...(fresh?{first:true}:{})},fresh?0:len);loadFeed(n)}
+  if(n){if(left)talkLeave([n]);else{store.set(TALK_KEY,n);store.set(TALK_OLD,JSON.stringify(talkOld().filter(x=>x!==n)))}addSent(n,msg,r.at,{talk:true,...(fresh?{first:true}:{})},fresh?0:len);loadFeed(n)}
   else if(TK.wait===w&&!w.n){w.sent={text:msg,at:r.at};toast('Talk is opening its chat: it shows here once it is up')}
   render(true);return true;
 }
@@ -1948,7 +1983,7 @@ document.addEventListener('click',async e=>{
   if(x=q('[data-obretry]')){obRetryClick(x.dataset.obretry);return}
   if(x=q('[data-sentdrop]')){sentDrop(x.dataset.n,x.dataset.sentdrop);render(true);return}  // B154
   if(x=q('[data-sentretry]')){const n=x.dataset.n, p=sentDrop(n,x.dataset.sentretry);
-    if(p&&p.talk)talkSend(p.text);else if(p)outbox('chat_to',{text:p.text,to:n},{text:p.text,key:n,say:`To ${threadTitle(n)}: ${p.text}`});return}
+    if(p&&p.talk&&!talkOld().includes(n))talkSend(p.text);else if(p)outbox('chat_to',{text:p.text,to:n},{text:p.text,key:n,say:`To ${threadTitle(n)}: ${p.text}`});return}
   if(x=q('[data-obdrop]')){obChange(b=>obDrop(b,x.dataset.obdrop));
     if(String(S.thread||'')[0]==='@'&&!S.ob.some(y=>'@'+y.cid===S.thread))S.thread=null;  // its stand-in chat went
     if(S.waitNew&&S.waitNew.ph&&!S.ob.some(y=>'@'+y.cid===S.waitNew.ph))S.waitNew=null;
@@ -2011,6 +2046,7 @@ document.addEventListener('click',async e=>{
   if(x=q('[data-setreset]')){const id=x.dataset.setreset, y=settingOf(id);if(!y||!y.k)return;
     outbox('setting_reset',{table:y.t,key:y.k.key},{set:{id,applies:y.k.applies},say:`Reset [${y.t}] ${y.k.key}`});return}
   if(x=q('[data-thread]')){S.ctx=null;return open(x.dataset.thread)}
+  if(q('[data-newtalk]'))return newTalk();  // F157
   if(q('[data-new]')){S.drawer=false;newChat('new_control',{},'New chat');return}
   if(x=q('[data-cchat]')){const c=S.snap.concepts[+x.dataset.cchat];if(!c)return;  // F86
     newChat('concept_chat',{cid:c.concept||c.id,title:c.title||'',url:c.url||'',copy:c.copy||''},`Chat about ${c.concept||c.id}`);return}
