@@ -14,5 +14,5 @@ for n,t in T.items():
     nz=np.where(np.abs(a)>0.01)[0]; a=a[nz[0]:nz[-1]+1]
     sf.write(f'{n}_lead0.wav',a,sr)
     sf.write(f'{n}_lead500.wav',np.concatenate([np.zeros(int(.5*sr)),a]),sr)
-    ref[n]=t; print(n,len(a)/sr)
-json.dump(ref,open('ref.json','w'))
+    print(n,len(a)/sr)
+# run from the clips/ directory next to bench.py; then encode the copies, see the findings doc section 7

@@ -43,7 +43,7 @@ else:
                     f=C+f'{c}.{ext}'
                     t=time.time()
                     if ext!='wav':
-                        subprocess.run(['ffmpeg','-loglevel','error','-y','-i',f,'-ar','16000','-ac','1','/tmp/x16.wav'],check=True) if False else subprocess.run(['ffmpeg','-loglevel','error','-y','-i',f,'-ar','16000','-ac','1',S+'/x16.wav'],check=True); f=S+'/x16.wav'
+                        subprocess.run(['ffmpeg','-loglevel','error','-y','-i',f,'-ar','16000','-ac','1',S+'/x16.wav'],check=True); f=S+'/x16.wav'
                     cmd=[S+f'/wcpp/{build}/bin/whisper-cli','-m',S+f'/models/ggml-{model}.bin','-f',f,'-nt','-np','-t','8','-l','en']
                     if prompt: cmd+=['--prompt',PROMPT]
                     p=subprocess.run(cmd,capture_output=True,text=True)

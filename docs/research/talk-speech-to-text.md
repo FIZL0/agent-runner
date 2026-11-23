@@ -10,10 +10,10 @@ No product code changed; research only. Feeds F161.
    **Model: `ggml-large-v3-turbo-q5_0` (574 MB) when the machine has a GPU, `ggml-base.en` (148 MB) on CPU only.**
    On this machine's RX 9070 XT (Vulkan) the turbo model took **0.5-0.7 s** from clip end to words for 2.4, 9.4 and 23.8 s clips,
    with 0.4 % word error. On CPU, `base.en` took 0.3-0.6 s with 2.2 % error (0.4 % with a prompt).
-2. **A prompt of project words (task ids) fixes the small models' misses**: `base.en` 5.9 % -> 0.4 %, `small.en` 10 % -> 1.4 %
+2. **A prompt of project words (task ids) fixes the small models' misses**: on whisper.cpp `base.en` 2.2 % -> 0.4 %, `small.en` 9.7 % -> 1.4 %
    (mean over six clips). Always send it. `large-v3-turbo` was already at 0.4 % and the prompt does not change it.
 3. **Do not use `small.en`**: slower than `base.en`, no better, and it wrote "taskr16" (task id fused to the word) in the 3 s clip.
-4. **The engine does not lose first words** on clean audio (first word right in 21 of 21 clips with no lead-in silence).
+4. **The engine does not lose first words** on clean audio (first word right in every no-prompt lead-in-free run: 9 of 9 for each of the 9 engine and model rows).
    If a word is lost it is lost before the engine: cut the clip's front by 0.3 s and the engine returns "check why task…" for
    "Please check why task…" (below). So the fix for the person's complaint is the page's **pre-roll** (section 4), not the engine.
 5. **iPhone Safari records audio as AAC in MP4** (and, since Safari 18.4, WebM/Opus). `ffmpeg` and faster-whisper decode both;
@@ -90,7 +90,7 @@ What the numbers say:
   model is also quick. A single run of the first clip on GPU includes some warm-up (0.5 s for `base.en` 3 s clip vs 0.15 s when repeated).
 - **Misses without a prompt are task ids and a fused word**: `base.en` "ytask b162" for "why task B162"; `small.en` "taskr16";
   with the prompt `Task ids like R16, B162, T19, F106, R15. Words: Talk, Kokoro, Piper, iPhone, agent-runner, Hold.` both are
-  correct. The prompt cost nothing in time. One counter-case: `small.en` m10 went 0 % -> 8.3 % with the prompt (a single word) on
+  correct. The prompt cost no real time (with-prompt times are within about 0.1 s on CPU, and on GPU `sum.py` prints them). One counter-case: `small.en` m10 went 0 % -> 8.3 % with the prompt (a single word) on
   both engines, so a prompt is not free of risk on every model, which is another reason not to use `small.en`.
 - **Hallucination on a longer clip**: faster-whisper `base.en` on the 24 s clip with 0.5 s lead added a made-up sentence
   ("if you have any questions or comments please contact us at …": 32.9 % error); the same clip with the prompt was clean.
@@ -100,7 +100,7 @@ What the numbers say:
   3.6 % against 2.2 % WAV without prompt (one word on one clip), so no real effect. All of `ffmpeg -i x.m4a|x.webm -ar 16000 -ac 1 x.wav`
   worked. A fragmented MP4 (`-movflags frag_keyframe+empty_moov+default_base_moof`, what a timesliced MediaRecorder writes) also decoded, whole, 9.40 s.
 
-First-word check: in all 21 clips where the speech starts at the first sample, every engine got the first word. The same 9.4 s phrase
+First-word check: in the 9 no-prompt clips per row where the speech starts at the first sample (3 texts x WAV, AAC, Opus), every engine and model got the first word. The same 9.4 s phrase
 with its front cut off, on `base.en` and turbo (whisper.cpp Vulkan): cut 0.15 s: complete; cut 0.3 s: "check why task…" (loses "Please");
 cut 0.5 s: "YTask B162…" with `base.en`, "why task B162…" with turbo. So **the engine reads what it is given; the loss happens
 before the engine** if the page starts recording late.
@@ -172,9 +172,16 @@ Recorded; Safari's recognition cannot be given earlier sound. Not measured here 
 from the three result files). Run in a scratch venv with `kokoro-onnx soundfile jiwer faster-whisper "av<16"`:
 
 ```
+# the copies (run in clips/): AAC as iPhone Safari makes, Opus, and a fragmented MP4 as a timesliced MediaRecorder writes
+ffmpeg -i x.wav -ar 48000 -c:a aac -b:a 64k x.m4a
+ffmpeg -i x.wav -ar 48000 -c:a libopus -b:a 32k x.webm
+ffmpeg -i x.wav -ar 48000 -c:a aac -b:a 64k -movflags frag_keyframe+empty_moov+default_base_moof -f mp4 x_frag.mp4
 ffmpeg -i in.m4a -ar 16000 -ac 1 out.wav
 whisper-cli -m ggml-large-v3-turbo-q5_0.bin -f out.wav -nt -np -t 8 -l en --prompt "Task ids like R16, B162, T19, F106, R15. Words: Talk, Kokoro, Piper, iPhone, agent-runner, Hold."
 ```
 
+Caveats: for m4a/webm, whisper.cpp times in `bench.py` exclude the `ffmpeg` decode (about 0.1 s) and process start; faster-whisper was
+CPU only (its pip CTranslate2 has no AMD GPU build); the "30 s" clip is 23.8 s. `bench.py` expects `clips/` beside it and the models in `models/`,
+`whisper.cpp` built in `wcpp/bcpu` and `wcpp/bvk`; `mk.py` writes into the current directory (run it inside `clips/`).
 The scripts hold absolute scratch paths from this run's directory; change `S` and the clips directory to reuse them. Raw
 results are not committed (58 KB of JSON): rerun `bench.py`.
