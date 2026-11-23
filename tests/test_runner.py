@@ -6942,6 +6942,138 @@ def test_hidden_slots(repo: Path, tmp: Path):
         git(repo, 'worktree', 'remove', '--force', str(d))
 
 
+STREAM_AGENT = r'''#!/usr/bin/env python3
+# F106b: a stand-in for headless `claude -p --input-format stream-json`: logs each user message it reads, answers
+# with a turn (usage) and a result; the first turn waits for FAKE_GO, so a tell can arrive while it runs; a message
+# that says finish runs `run finish`; stdin's end ends it.
+import json, os, subprocess, sys, threading, time
+log = open(os.environ['FAKE_STREAM_LOG'], 'a')
+log.write(json.dumps({'argv': sys.argv[1:], 'key': os.environ.get('ANTHROPIC_API_KEY')}) + '\n')
+log.flush()
+n = 0
+for line in sys.stdin:
+    text = json.loads(line)['message']['content'][0]['text']
+    n += 1
+    log.write(json.dumps({'user': text}) + '\n')
+    log.flush()
+    print(json.dumps({'type': 'assistant', 'message': {'id': f'm{n}', 'role': 'assistant', 'model': 'claude-opus-5-5',
+                      'usage': {'input_tokens': 1000, 'output_tokens': 200}, 'content': [{'type': 'text', 'text': 'ok'}]}}),
+          flush=True)
+    end = time.monotonic() + 20
+    while n == 1 and not os.path.exists(os.environ['FAKE_GO']) and time.monotonic() < end:
+        time.sleep(0.05)
+    if 'finish' in text:
+        subprocess.run([sys.executable, os.environ['FAKE_RUN'], 'finish', 'did it'], capture_output=True)
+    if 'background' in text:  # a background command (a `done` on the gate) that outlives the turn
+        bg = subprocess.Popen(['sleep', '3'])
+        threading.Thread(target=bg.wait, daemon=True).start()
+    print(json.dumps({'type': 'result', 'subtype': 'success', 'total_cost_usd': 0.01}), flush=True)
+log.write(json.dumps({'eof': True}) + '\n')
+'''
+
+
+def test_stream_engine_f106b(repo: Path, tmp: Path):
+    print('F106b: [run] engine = "stream": a headless claude -p slot gets its brief first, a tell as its next user '
+          'message, ends at its result after finish, and its spend is read from the event stream')
+    from agent_runner import slots as S
+    from agent_runner.config import Config
+    root = tmp / 'f106b'
+    root.mkdir()
+    git(root, 'init', '-q')
+    (root / 'runner.toml').write_text('[run]\nengine = "sideways"\n', encoding='utf-8')
+    try:
+        Config(root)
+        check(False, 'an unknown engine is refused')
+    except SystemExit as e:
+        has(str(e), r"engine must be 'terminal' or 'stream'", 'an unknown engine is refused')
+    R.init(repo)
+    eq(R.C.run['engine'], 'terminal', 'the default engine stays terminal')
+    # what typed text and messages on the FIFO become
+    si = S.StreamInput()
+    got = si.feed(b'\x1b[20') + si.feed(b'0~two\nlines\x1b[201~\r') + si.feed(S.stream_message('as json')) + \
+        si.feed(b'\x1bkeys\r')
+    eq([json.loads(g)['message']['content'][0]['text'] for g in got], ['two\nlines', 'as json', 'keys'],
+       'a bracketed paste (split mid-mark) is one message at its Enter, a JSON line passes, a lone Escape is dropped')
+    if R.plat.WINDOWS:
+        return
+    git(repo, 'checkout', '-q', 'main')
+    agent = tmp / 'stream-agent'
+    agent.write_text(STREAM_AGENT, encoding='utf-8')
+    agent.chmod(0o755)
+    seen, go = tmp / 'f106b.log', tmp / 'f106b.go'
+    if (R.SLOTS_DIR / 's7').is_dir() and not (R.SLOTS_DIR / 's7' / '.git').exists():
+        shutil.rmtree(R.SLOTS_DIR / 's7')  # a folder an earlier test left there, not a worktree
+    d = R.worktree(7, 'main')
+    git(d, 'checkout', '-q', '-B', 'task/Z8', 'main')
+    saved, old = R.MUX, dict(R.C.run)
+    R.MUX = R.HiddenMux()
+    R.C.run.update({'agent': str(agent), 'engine': 'stream', 'remote_slots': True})
+    R.C.notes('slot7.end').unlink(missing_ok=True)
+    pid = 0
+    try:
+        with mock.patch.dict(os.environ, {'ANTHROPIC_API_KEY': 'sk-not-plan'}):
+            logfile, _ = R.slot_header(7, 'Z8 session sid-st')
+            env = R.slot_env(7) + [f'FAKE_STREAM_LOG={seen}', f'FAKE_GO={go}', f'FAKE_RUN={RUN}']
+            pid = R.MUX.open(7, d, 'do Z8', 'sid-st', 'opus', 90, env, logfile)
+        check(pid and R.plat.alive(pid), 'the headless session starts', pid)
+        job = json.loads(R.C.notes('slot7.job').read_text(encoding='utf-8'))
+        argv = job['argv']
+        eq(argv[1:7], S.STREAM_FLAGS, 'it runs claude -p with stream-json in and out')
+        check('do Z8' not in argv and '--remote-control' not in argv, 'the brief is not on its command line, and it '
+              'has no Remote Control', argv)
+        hooks = json.loads(argv[argv.index('--settings') + 1])['hooks']
+        check('Stop' not in hooks and 'PreToolUse' in hooks, 'no idle Stop hook; the git fence stays', hooks)
+        hit = R.MUX.panes().get('s7')
+        end = time.monotonic() + 10
+        while not R.C.notes('slot7.in').exists() and time.monotonic() < end:
+            time.sleep(0.05)
+        check(hit and R.MUX.streamed(hit), 'the slot is known as headless', hit)
+        check(R.slot_open('s7')[1].startswith('s7 runs headless'), 'and cannot be opened on Remote Control')
+        check(R.MUX.send(hit, 'now finish'), 'a tell goes in as a stream-json message through its FIFO')
+        go.touch()
+        check(wait_dead(pid), 'the session ends at the result after finish')
+        lines = [json.loads(l) for l in seen.read_text(encoding='utf-8').splitlines()]
+        eq(lines[0]['key'], None, 'no ANTHROPIC_API_KEY reaches it: plan usage')
+        eq([l.get('user') for l in lines[1:3]], ['do Z8', 'now finish'],
+           'the brief is the first user message, the tell the next')
+        eq(lines[-1], {'eof': True}, 'its stdin is closed once its turn ends with nothing more sent')
+        end_mark = json.loads(R.C.notes('slot7.end').read_text(encoding='utf-8'))
+        eq(end_mark.get('how'), 'finish', 'its `run finish` left the end mark the run reads')
+        has(logfile.read_text(encoding='utf-8'), r'"type": "result"', 'its event stream is in the slot log')
+        tokens, usd = S.task_spend('sid-st')
+        check(tokens == 2400 and usd > 0, 'its spend is read from the event stream', (tokens, usd))
+        check(not R.MUX.send(hit, 'too late'), 'a tell to an ended session is refused')
+        has(R.hidden_line(), r'slots run headless', 'the run says its slots run headless')
+        check(not R.remote_slots_on(), 'remote_slots does not put headless slots on Remote Control')
+        again = R.agent_argv('carry on', 'sid-st', 'opus', 90, 'slot7', resume=True)
+        check(again[1:7] == S.STREAM_FLAGS and again[again.index('--resume') + 1] == 'sid-st' and 'carry on' not in again,
+              'a resume runs the same headless command with --resume, its message on stdin', again)
+        # a turn that ends while a background command still runs (a `done` on the gate) does not end the session
+        R.C.notes('slot7.end').unlink(missing_ok=True)
+        seen.unlink()
+        logfile, _ = R.slot_header(7, 'Z8 session sid-bg')
+        pid = R.MUX.open(7, d, 'run it in the background', 'sid-bg', 'opus', 90, env, logfile)
+        end = time.monotonic() + 10
+        while 'result' not in logfile.read_text(encoding='utf-8') and time.monotonic() < end:
+            time.sleep(0.05)
+        time.sleep(1)
+        check(R.plat.alive(pid), 'its turn ended, but its background command runs: the session is held')
+        check(R.MUX.send(R.MUX.panes().get('s7'), 'after it'), 'and still takes a tell')
+        check(wait_dead(pid), 'it ends once the background command has')
+        eq([json.loads(l).get('user') for l in seen.read_text(encoding='utf-8').splitlines()][1:3],
+           ['run it in the background', 'after it'], 'the tell reached it')
+    finally:
+        if pid and R.plat.alive(pid):
+            R.plat.terminate(pid)
+        R.MUX = saved
+        R.C.run.clear()
+        R.C.run.update(old)
+        R.C.notes('slot7.end').unlink(missing_ok=True)
+        git(d, 'checkout', '-q', '--detach')
+        git(repo, 'branch', '-D', 'task/Z8')
+        git(repo, 'worktree', 'remove', '--force', str(d))
+
+
 def test_hidden_run_lands(tmp: Path):
     print('F40/C26: a run runs its slot hidden and lands the task (worktree, done, gate, merge)')
     if R.plat.WINDOWS:
@@ -7884,7 +8016,7 @@ def main() -> int:
                        test_split_modules_c3, lambda: test_plan_last(repo), lambda: test_after_all(repo), lambda: test_release_kind(repo),lambda: test_release_push(repo),
                        lambda: test_help_order_and_bare_wizard(tmp), lambda: test_setup(tmp),
                        lambda: test_stop_countdown(repo), lambda: test_real_claude_json_guard(tmp),
-                       lambda: test_hidden_slots(repo, tmp), lambda: test_hidden_run_lands(tmp), lambda: test_no_gate_b36(tmp),
+                       lambda: test_hidden_slots(repo, tmp), lambda: test_stream_engine_f106b(repo, tmp), lambda: test_hidden_run_lands(tmp), lambda: test_no_gate_b36(tmp),
                        lambda: test_claude_drift_b45(repo, tmp), lambda: test_merged_count_b78(repo),
                        lambda: test_hidden_control_f59(repo, tmp), lambda: test_attach_f88(tmp), lambda: test_context_warn_f25(repo),
                        lambda: test_control_fresh_f27(repo), lambda: test_config_trim_c14(tmp), lambda: test_models_f101(repo, tmp), lambda: test_models_kinds_f105(repo, tmp), lambda: test_task_budget_f103(repo, tmp), test_reference_keys_d3, test_cap_stop_hint_b102, lambda: test_stop_stays_with_its_run_b137(repo)])

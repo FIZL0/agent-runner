@@ -26,6 +26,7 @@ from agent_runner.state import EV_STARTED
 from agent_runner.state import EV_DRIFT
 from agent_runner.brief import prompt_for, review_on, subagents
 from agent_runner.sched import ahead, blocked_tasks, open_tasks, tasks
+from agent_runner.stream import run_stream, stream_message, StreamInput  # noqa: F401 (StreamInput: runner.X)
 from agent_runner.tools import end_mark, FENCE_TOOLS
 
 
@@ -142,6 +143,15 @@ def fence_argv() -> list[str]:
     return [*runner_cmd(), 'fence', str(ROOT), str(SLOTS_DIR), str(C.notes()), '1' if C.push_remote else '0']
 
 
+STREAM_FLAGS = ['-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose']
+
+
+def stream_engine() -> bool:
+    """F106b `[run] engine = "stream"`: a slot's Claude Code session runs headless (`claude -p`, stream-json in
+    and out, `run_stream`) instead of interactive in a pty. The harness loop has its own engine."""
+    return C.run.get('engine') == 'stream'
+
+
 ARG_PROMPT_MAX = 96 * 1024  # Linux's MAX_ARG_STRLEN is 128 KiB for one argument; leave room
 ARGV_PROMPT_MAX = 24000  # Windows' CreateProcess takes 32 767 characters, flags and paths included
 LONG_BRIEF = 'Your instructions for this session are in your system prompt, under "{marker}". Follow them.'
@@ -160,14 +170,17 @@ class Claude:
         stop = [{'hooks': [{'type': 'command', 'command': plat.command_text(
             [*runner_cmd(), 'run', '--stop-hook', '--idle', str(idle)])}]}]
         brief = C.notes(f'{sid}.brief')
-        return ['--resume' if resume else '--session-id', sid, '--permission-mode', 'bypassPermissions',
+        # F106b: a stream session ends at its result event (`run_stream`), so it gets no idle Stop hook
+        ends = {} if stream_engine() else {'Stop': stop, 'StopFailure': stop}
+        return [*(STREAM_FLAGS if stream_engine() else []),
+                '--resume' if resume else '--session-id', sid, '--permission-mode', 'bypassPermissions',
                 '--disallowedTools', 'AskUserQuestion', '--model', model, *lean(),
                 # F101: the review and docs subagents, each on its [models] role, so all of it is plan usage
                 *(['--agents', json.dumps(agents)] if (agents := subagents()) else []),
                 *(['--append-system-prompt-file', str(brief)] if brief.exists() else []),
                 # lean() drops user settings, where the bypass dialog's opt-out lives; nobody is there to answer it
                 '--settings', json.dumps({'skipDangerousModePermissionPrompt': True,
-                                          'hooks': {'Stop': stop, 'StopFailure': stop,
+                                          'hooks': {**ends,
                                                     'PreToolUse': fence_hooks()},  # F102: the git fence
                                           # on Remote Control a slot's own PushNotification tool stays off (R2:
                                           # inputNeededNotifEnabled is not here, as Claude Code only sends it to
@@ -185,6 +198,8 @@ class Claude:
         return shlex.quote(C.run['agent']) + f' "$(cat {shlex.quote(str(pf))})" ' + shlex.join(flags)
 
     def argv(self, prompt: str, pf: Path, sid: str, flags: list[str]) -> list[str]:
+        if stream_engine():  # F106b: the brief is the first stream-json message on stdin (`run_stream`), any length
+            return [plat.exe(C.run['agent']), *flags]
         if len(prompt) > ARGV_PROMPT_MAX:
             prompt = self.long_brief(prompt, sid)
         return [plat.exe(C.run['agent']), prompt, *flags]
@@ -439,8 +454,9 @@ def remote_on() -> bool:
 
 
 def remote_slots_on() -> bool:
-    """`[run] remote_slots`: the slots on Remote Control too (never under 'auto' alone)."""
-    return C.run['remote_slots'] is True
+    """`[run] remote_slots`: the slots on Remote Control too (never under 'auto' alone). F106b: never headless
+    slots (`[run] engine = "stream"`), which have no Remote Control."""
+    return C.run['remote_slots'] is True and not stream_engine()
 
 
 def remote_any() -> bool:
@@ -497,6 +513,8 @@ def slot_open(name: str, wait: float = OPEN_WAIT) -> tuple[str, str]:
         return '', f'no session runs in {name}'
     if link := _bridge_link(sid):
         return link, ''
+    if getattr(MUX, 'streamed', lambda h: False)(hit):  # F106b: a headless session has no Remote Control
+        return '', f'{name} runs headless ([run] engine = "stream"), which has no Remote Control: the run page shows it'
     if why := remote_off_why():
         return '', f'Remote Control is off: {why}'
     wt = SLOTS_DIR / name
@@ -519,7 +537,8 @@ def agent_cmd(prompt: str, sid: str, model: str, idle: int, name: str, resume: b
     pf = C.notes(f'{name}.prompt')
     pf.write_text(prompt, encoding='utf-8')
     b = backend_for(model)  # F106c: the harness loop has no Remote Control
-    return b.cmd(prompt, pf, sid, agent_flags(sid, model, idle, resume) + ([] if b is HARNESS else remote_flags(name, cwd)))
+    return b.cmd(prompt, pf, sid, agent_flags(sid, model, idle, resume) +
+                 ([] if b is HARNESS or stream_engine() else remote_flags(name, cwd)))
 
 
 def agent_argv(prompt: str, sid: str, model: str, idle: int, name: str, resume: bool = False,
@@ -529,8 +548,8 @@ def agent_argv(prompt: str, sid: str, model: str, idle: int, name: str, resume: 
     pf = C.notes(f'{name}.prompt')
     pf.write_text(prompt, encoding='utf-8')
     b = backend_for(model)  # F106c: the harness loop has no Remote Control
-    return b.argv(prompt, pf, sid, agent_flags(sid, model, idle, resume, once) +
-                  ([] if once or b is HARNESS else remote_flags(name, cwd)))
+    return b.argv(prompt, pf, sid, agent_flags(sid, model, idle, resume, once) +  # F106b: nor a stream session
+                  ([] if once or b is HARNESS or stream_engine() else remote_flags(name, cwd)))
 
 
 SLOTS = 1  # how many slots this run has; `cmd_run` sets it, for {slots} in `[run] slot_env`
@@ -962,8 +981,11 @@ class HiddenMux:
         marker.unlink(missing_ok=True)
         ended.unlink(missing_ok=True)
         envd = env_vars(env)
+        # F106b: a headless session gets its brief (or resume message) as the first stream-json message
+        stream = {'stream': True, 'brief': prompt, 'sid': sid, 'events': str(stream_file(sid))} \
+            if stream_engine() and backend_for(model) is not HARNESS else {}
         job.write_text(json.dumps({'argv': agent_argv(prompt, sid, model, idle, f'slot{n}', resume, cwd=cwd), 'cwd': str(cwd),
-                                   'env': envd, 'marker': str(marker), 'log': str(logfile)}), encoding='utf-8')
+                                   'env': envd, 'marker': str(marker), 'log': str(logfile), **stream}), encoding='utf-8')
         shim = [*runner_cmd(), 'run', '--slot-shim', str(job)]
         if plat.WINDOWS:
             plat.spawn_console(shim, cwd, {**os.environ, **envd}, hidden=True)
@@ -1004,9 +1026,20 @@ class HiddenMux:
         return (f'the hidden console of slot {n} ({shown_cmd()} attach s{n} shows it)' if plat.WINDOWS else
                 f'slot {n}\'s log, {C.notes(f"slot{n}.log")}')
 
+    def streamed(self, hit: tuple[str, int]) -> bool:
+        """F106b: the slot whose marker is `hit[0]` runs headless (`run_stream`)."""
+        try:
+            return bool(json.loads(Path(hit[0]).with_suffix('.job').read_text(encoding='utf-8')).get('stream'))
+        except (OSError, ValueError, AttributeError):
+            return False
+
     def send(self, hit: tuple[str, int], text: str) -> bool:
-        """Type `text` into the slot whose marker is `hit[0]`, through its shim's FIFO, and press Enter."""
-        return not plat.WINDOWS and send_fifo(Path(hit[0]).with_suffix('.in'), text)
+        """Type `text` into the slot whose marker is `hit[0]`, through its shim's FIFO, and press Enter. F106b: a
+        headless session gets it as its next stream-json user message instead."""
+        if plat.WINDOWS:
+            return False
+        inbox = Path(hit[0]).with_suffix('.in')
+        return send_fifo_raw(inbox, stream_message(text)) if self.streamed(hit) else send_fifo(inbox, text)
 
 
 def hidden_line() -> str:
@@ -1016,6 +1049,9 @@ def hidden_line() -> str:
         see.insert(0, f'Remote Control ({REMOTE_URL}, the Claude apps)')
     if plat.WINDOWS:
         see.append(f'{shown_cmd()} attach sN (shows its console)')
+    if stream_engine():  # F106b
+        return 'slots run headless (claude -p, stream-json; [run] engine = "stream"), with no Remote Control: watch ' \
+               'their event streams through ' + ', '.join(see)
     return 'slots run hidden, with no window: watch them through ' + ', '.join(see)
 
 
@@ -1197,6 +1233,14 @@ def run_session(argv: list[str], cwd: str, env: dict, marker: Path) -> tuple[int
         marker.unlink(missing_ok=True)
 
 
+def stream_file(sid: str) -> Path:
+    """`<notes>/streams/<sid>.jsonl`: a headless session's event stream (its resumes append to it), which its
+    spend is read from (`task_spend`)."""
+    d = C.notes('streams')
+    d.mkdir(parents=True, exist_ok=True)
+    return d / f'{sid}.jsonl'
+
+
 def slot_shim(job: str) -> int:
     """`run --slot-shim <job>`: what runs a hidden slot (see HiddenMux): a pseudo-terminal on POSIX
     (`run_pty`), this console on Windows (`run_session`). How the agent ended goes to `slotN.exit`.
@@ -1211,7 +1255,11 @@ def slot_shim(job: str) -> int:
     f.write_text(json.dumps({**spec, 'started': True}), encoding='utf-8')
     ended = Path(spec['marker']).with_suffix('.exit')
     try:
-        if plat.WINDOWS:
+        if spec.get('stream'):  # F106b: headless, stream-json in and out
+            code, pid = run_stream(spec['argv'], spec['cwd'], spec['env'], Path(spec['marker']),
+                                   Path(spec['log']) if spec.get('log') else None, spec.get('brief') or '',
+                                   Path(spec['events']) if spec.get('events') else None)
+        elif plat.WINDOWS:
             code, pid = run_session(spec['argv'], spec['cwd'], spec['env'], Path(spec['marker']))
         else:
             code, pid = run_pty(spec['argv'], spec['cwd'], spec['env'], Path(spec['marker']),
@@ -1304,9 +1352,12 @@ def budget_mark(tid: str) -> str:
 def task_spend(sid: str) -> tuple[int, float]:
     """(tokens, dollars) session `sid` and its subagents have used so far; (0, 0.0) without a transcript."""
     from agent_runner.cost import Spend, session_files
+    s = SPEND.setdefault(sid, Spend())
+    if (ev := C.notes('streams') / f'{sid}.jsonl').exists():  # F106b: a headless session's event stream, which
+        s.add(ev)  # carries its subagents' turns too
+        return s.total()
     if not (t := transcript(sid)):
         return 0, 0.0
-    s = SPEND.setdefault(sid, Spend())
     for p in session_files(t):
         s.add(p)
     return s.total()

@@ -109,6 +109,8 @@ DEFAULTS: dict = {
         'full_every_hours': 24, # with test_since: the whole `test` again once none has passed for this long; 0 = never
         'slots': 3,             # tasks (agent sessions) at once; `agent-runner slots N` changes a running run
         'agent': 'claude',      # the Claude Code executable that runs a session (or a wrapper around it)
+        'engine': 'terminal',   # F106b: how a slot runs Claude Code. terminal = an interactive session in a
+                                # hidden pty; stream = headless `claude -p` with stream-json in and out
         'include_task_id_in_commit': True,  # agents start each commit subject with the task id
         'comment_policy': 'normal',  # 'minimal': agents add code comments only for non-obvious intent
         'model': 'opus',        # the model the task sessions run on
@@ -680,6 +682,8 @@ class Config:
             raise SystemExit(f"agent-runner: [run] remote must be 'auto', true or false, not {self.run['remote']!r}")
         if self.run['sessions'] not in ('one', 'each'):
             raise SystemExit(f"agent-runner: [run] sessions must be 'one' or 'each', not {self.run['sessions']!r}")
+        if self.run['engine'] not in ('terminal', 'stream'):
+            raise SystemExit(f"agent-runner: [run] engine must be 'terminal' or 'stream', not {self.run['engine']!r}")
         if self.run['silent'] == 'launch':  # C20: the quiet launch is gone (it never stopped the start push)
             self.run['silent'] = False
             self.warnings.append("[run] silent = 'launch' is gone (no setting stops a Remote Control session's start "

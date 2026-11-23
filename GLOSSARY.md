@@ -448,3 +448,10 @@ _Said_: do those things in the background
 _On screen_: N sending · N failed · tap to see
 _In code_: S.ob, outbox(), drain(), obSettle, ActsOnce
 _Avoid_: queue, pending list
+
+**Stream engine**:
+A slot's Claude Code session run with no terminal, reading its brief and every tell as messages and ending when its turn ends with nothing more sent; it has no Remote Control. The terminal engine, an interactive session in a hidden terminal, is the other.
+_Said_: headless Claude Code, claude -p
+_On screen_: runs headless ([run] engine = "stream")
+_In code_: [run] engine, slots.stream_engine, slots.run_stream, slots.StreamInput, <notes>/streams/<sid>.jsonl
+_Avoid_: pipe mode, API mode, background session
