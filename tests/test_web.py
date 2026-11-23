@@ -1115,6 +1115,76 @@ def test_listen_heard_nothing_b132(tmp: Path) -> None:
        'a tap during a reply only stops it: no listen right after a speech call')
 
 
+TALK_HEAR_DRIVER = r"""
+const page = require('fs').readFileSync(process.argv[2], 'utf8');
+const grab = (start) => { const i = page.indexOf(start); return page.slice(i, page.indexOf('\n}\n', i) + 2); };
+const logic = page.split('<script id="logic">')[1].split('</script>')[0];
+const said = [];
+const window = {speechSynthesis: {cancel() {}, speak(u) { if (u.text) said.push(u.text) }}};
+const speechSynthesis = window.speechSynthesis;
+class SpeechSynthesisUtterance { constructor(t) { this.text = t } }
+const navigator = {language: 'en-US'};
+const kept = {}, store = {get: k => kept[k] || '', set(k, v) { kept[k] = v }};
+const toast = () => {}, render = () => {}, tq = p => p, followVersion = () => false, TALK_KEY = 'ar-talk';
+const S = {snap: {sessions: [], queue: []}, feeds: {}, sent: {}, waitNew: null};
+const chats = () => S.snap.sessions.filter(s => /^c\d+$/.test(s.name)), working_ = () => [];
+const feedOf = n => (S.feeds[n] || {}).entries || [];
+const TK = {rec: null, heard: '', state: '', wait: null, said: '', unlocked: false, note: ''};
+let feeds = {}, actDone = null, actResult = null;
+const fetch = async p => ({json: async () => ({ok: true, entries: feeds[decodeURIComponent(p.split('/')[1])] || []})});
+const act = () => new Promise(res => { actDone = () => res(actResult) });
+const tick = () => new Promise(r => setTimeout(r, 0));
+const c13 = [{name: 'c13', title: 'Talk', state: 'live'}];
+const reply = [{kind: 'you', text: 'Talk mode: …\n\nThey said: Hello'}, {kind: 'say', text: "Hi there. I'm listening."}];
+const reset = () => { said.length = 0; TK.state = ''; TK.wait = null; S.snap.sessions = []; S.feeds = {}; feeds = {};
+  for (const k in kept) delete kept[k] };
+eval(logic + grab('function talkName(') + grab('function talkWaitName(') + grab('async function talkSend(')
+  + grab('function talkHear(') + grab('function unlockSpeech(') + grab('function speak(') + grab('function takeSnap(')
+  + grab('async function loadFeed(') + `
+(async () => {
+  const out = {};
+  // the session was just opened and the talk action named none: two snapshots list c13, titled Talk, with its reply
+  actResult = {ok: true, session: ''};
+  const sent = talkSend('Hello'); actDone(); await sent;
+  feeds.c13 = reply;
+  for (let i = 0; i < 2; i++) { takeSnap({sessions: c13}); await tick(); await tick() }
+  out.unnamed = {state: TK.state, said: said.join(' '), remembered: kept['ar-talk'] || ''};
+  // the talk action still waits for the new chat's link while its reply lands: the snapshots hear it meanwhile
+  reset(); actResult = {ok: true, session: 'c13'};
+  const slow = talkSend('Hello');
+  feeds.c13 = reply;
+  for (let i = 0; i < 2; i++) { takeSnap({sessions: c13}); await tick(); await tick() }
+  out.slow = {state: TK.state, said: said.join(' ')};
+  actDone(); await slow; await tick();
+  out.slowAfter = {state: TK.state, wait: TK.wait};
+  console.log(JSON.stringify(out));
+})();`);
+"""
+
+
+def test_talk_reply_heard_b133(tmp: Path) -> None:
+    """B133: a Talk reply is always shown and read aloud: a talkSend to a just-opened chat (the talk action named no
+    session) is heard from the snapshots that list it, so is a reply that lands while the action still waits for the
+    new chat's link, and a capped feed (its length no longer grows) still finds where the reply starts."""
+    if not shutil.which('node'):
+        print('  (no node here: the Talk reply script test is skipped)')
+        return
+    (tmp / 'driver.js').write_text(TALK_HEAR_DRIVER, encoding='utf-8')
+    r = subprocess.run(['node', str(tmp / 'driver.js'), str(W.PAGE)], capture_output=True, text=True, timeout=60)
+    check(r.returncode == 0, 'node runs talkSend and the snapshots', r.stderr[-800:])
+    got = json.loads(r.stdout or '{}')
+    eq(got.get('unnamed'), {'state': 'speaking', 'said': "Hi there. I'm listening.", 'remembered': 'c13'},
+       'a just-opened chat, then two snapshots: speaking the reply, and the chat is remembered')
+    eq(got.get('slow'), {'state': 'speaking', 'said': "Hi there. I'm listening."},
+       'a reply that lands while the talk action still runs is spoken')
+    eq(got.get('slowAfter'), {'state': 'speaking', 'wait': None}, 'the action ending later does not wait again')
+    old = [{'kind': 'you', 'text': 'a'}, {'kind': 'say', 'text': 'one'}]
+    capped = [{'kind': 'say', 'text': 'one'}, {'kind': 'you', 'text': 'b'}, {'kind': 'say', 'text': 'two'}]
+    got = logic_js([['talkSince', capped, old[-1], 2], ['talkSince', old, None, 0], ['talkSince', old, old[-1], 2],
+                    ['talkReply', capped, 1]])
+    eq(got, [1, 0, 2, 'two'], 'the reply starts after the entry that ended the feed at the send, though the cap moved it')
+
+
 if __name__ == '__main__':
     raise SystemExit(report([in_tmp(test_delete_chats_f118), in_tmp(test_server), in_tmp(test_real_action), in_tmp(test_run_controls),
                            in_tmp(test_start), in_tmp(test_upload),
@@ -1123,4 +1193,4 @@ if __name__ == '__main__':
                            in_tmp(test_new_chat), in_tmp(test_term_moves), in_tmp(test_page_copy_publish), in_tmp(test_parked),
                            in_tmp(test_esc_ctrl_c), in_tmp(test_concepts_view), in_tmp(test_follow_version_f90),
                            in_tmp(test_talk_f93), in_tmp(test_https_link_b130),
-                           in_tmp(test_listen_heard_nothing_b132)]))
+                           in_tmp(test_listen_heard_nothing_b132), in_tmp(test_talk_reply_heard_b133)]))
