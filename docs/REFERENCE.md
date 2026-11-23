@@ -1562,11 +1562,12 @@ Renamed or folded in 0.58.0 (the config trim):
 Folded or fixed by the settings cut (F166, unreleased):
 
 - `[run] comment_policy` is ignored: write its wording in `prompt_extra`.
-- `[run] idle`, `stall`, `pause`, `fix_timeout`, `control_idle_quick`, `control_idle_talked` and `merge_ahead` are fixed
+- `[run] idle`, `[run] stall`, `[run] pause`, `[run] fix_timeout`, `[run] control_idle_quick`,
+  `[run] control_idle_talked` and `[run] merge_ahead` are fixed
   (30 s, 1200 s, 60 s, 1800 s, 5 min, 12 h, on); a file that sets one is ignored. `run --idle`, `--stall` and `--pause`
   still set one run.
 - `[run] control_open` is fixed: its phrases are the built-in ones.
-- `[run] model` and `fix_model` moved to `[models] code` and `fix`.
+- `[run] model` and `[run] fix_model` moved to `[models] code` and `fix`.
 - `[run] sessions` is folded into `remote_slots`: an old `true` with `"each"` reads as `"always"`, any other old
   boolean as `"open"`.
 

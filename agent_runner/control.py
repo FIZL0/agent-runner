@@ -971,8 +971,7 @@ def control_state(rows) -> dict:
 
 
 QUICK_IDLE, TALKED_IDLE = 300.0, 43200.0  # F166: s; a one-ask session that queued, and a talked one, close after it
-# what makes Claude's last message an offer or unmarked question: not filed (F135), only named in the run log when it
-# closes, and never closed early (one of punctuation only must end it, any other may stand anywhere in its last paragraph)
+# an offer or unmarked question: not filed (F135), only named in the log; punctuation must end it, words may stand anywhere
 OPEN_PHRASES = ('?', 'want me to', 'should i', 'shall i', 'would you like', 'do you want')
 
 
