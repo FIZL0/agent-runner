@@ -37,6 +37,7 @@ from agent_runner.sched import forgive_park, note_committed
 from agent_runner.slots import (adopt, backend, DISK_AT, DISK_SAID, du, env_vars, free_branch,
     free_gb, GB, hidden_line, HiddenMux, MUX, remote_any, remote_line, REMOTE_URL, resume, save_leftovers,
     single_run, slot_env, slot_shim, SLOTS, start, transcript, trim, unmerged)
+from agent_runner.slots import budget_mark, budgets, SPENT
 from agent_runner.watch import (_account, agent_failed, api_down, AUTO_UPGRADE, auto_upgrade, cut_off,
     drop_session_tmp, end_orphans, memory_watch, queue_cut_off, queue_resume, restart_if_upgraded,
     RESUME_AFTER, resume_failed, RESUME_MAX, resumes, RESUMES_MAX, stalled, START_TRIES, state_line, stats,
@@ -224,6 +225,7 @@ def write_state(running: dict) -> None:
     try:
         tmp.write_text(json.dumps({'at': dt.datetime.now().isoformat(timespec='seconds'), 'state': state_line(),
                                    'slots': SLOTS, 'running': work, 'since': since, 'merging': merging, 'usage': use,
+                                   'spend': {n: SPENT[n] for n in work if n in SPENT},  # F103
                                    'idle': IDLE[0], 'paused': PAUSED[0], 'stopping': stopping(),
                                    'version': run_version()}),
                        encoding='utf-8')
@@ -777,7 +779,12 @@ def _finish(tid: str, n: int, sid: str, branch: str) -> bool:
         return True
     if sid and sid != '(unknown)':
         TASK_SID[tid] = sid  # its repair, if the merge fails the gate, starts from this session
-    while (why := merge(tid, branch)) and why.startswith((EDITED, ELSEWHERE)):
+    over = ''
+    if bm := budget_mark(tid):  # F103: stopped over its budget: parked below, unless its done passed
+        C.notes(f'{tid}.budget').unlink(missing_ok=True)
+        if git('rev-parse', '--verify', '-q', TESTED + tid).returncode and not (plansync.ticks(C) / tid).exists():
+            over = f'stopped over its budget: {bm}'
+    while (why := over or merge(tid, branch)) and why.startswith((EDITED, ELSEWHERE)):
         # Tested and only waiting on somebody's edits: parking it would throw the work away for a fresh
         # attempt. The branch stays task/<ID> (`pick` leaves it alone, the next run's `unmerged` takes it).
         alarm(f'{tid} is not merging: ' + ('uncommitted edits in the main checkout' if why.startswith(EDITED)
@@ -1187,6 +1194,7 @@ class Run:
             end_sessions(procs, running)
         tells(procs, running)  # F16: plan tell / change, typed into a running slot's session
         restyles(procs, running, self.branch)  # F19: plan restyle parks a running interface task
+        budgets(procs, running, type_into)  # F103: [run] task_tokens / task_usd stop a task at a clean point
         halts(procs, running, self.free_at, self.tried, self.branch, self.model, self.idle,
               self.slots)  # B19: plan drop / change of a running task
         self.waiting = {n: q for n, q in queued().items() if n in self.free_at and n <= self.slots}

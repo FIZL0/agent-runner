@@ -336,3 +336,10 @@ _Said_: Home, runner home
 _On screen_: Runner Home
 _In code_: home.py, HomeServer, project_rows, run_action, install
 _Avoid_: dashboard, hub
+
+**Task budget**:
+The most tokens or dollars one task's session may use; past it the task stops at a clean point and is parked as wip/<ID>
+_Said_: per-task budget
+_On screen_: s1 speed up the parser [T3] 12 min 2.5M tok $7.50
+_In code_: task_tokens, task_usd, budgets, budget_mark, cost.Spend, SPENT
+_Avoid_: quota, limit
