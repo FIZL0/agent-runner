@@ -4,11 +4,8 @@ for every project: with Runner Home installed (and no web_port set by the person
 listens on 127.0.0.1 only, on a free port that only Home opens (`start_web`); the link shown is Home's /p/KEY/.
 
     GET  /?t=TOKEN               F79: the page (web_page.html), the run app: a chat app over F74's model, light
-                                 and dark by the browser's setting, laid out for a phone and a desktop; F81: it
-                                 opens /term instead when this browser last chose it, or `[ui] web` = "terminal"
+                                 and dark by the browser's setting, laid out for a phone and a desktop
     GET  /manifest.webmanifest?t=TOKEN, /icon-N.png?t=TOKEN   B179: the app on a Home Screen (home_screen.py)
-    GET  /term?t=TOKEN           F81: the terminal-style page (web_term.html, F75's page) over the same model, in
-                                 `[ui] theme`; its App view (T) and the run app's Terminal view switch between them
     GET  /snapshot?t=TOKEN       the run page model's snapshot, as JSON, with the machine's name and each
                                  concept's options (`run_snapshot`)
     GET  /events?t=TOKEN         the same snapshot over server-sent events, sent again whenever it changes
@@ -55,10 +52,9 @@ from agent_runner import state as S
 from agent_runner import ui_model as U
 
 PAGE = Path(__file__).with_name('web_page.html')
-TERM = Path(__file__).with_name('web_term.html')  # F81: the terminal-style page
-# B164: both pages as they were when this process loaded its code: an update on disk while the run is up must not
-# serve a page that asks for routes and actions this run does not have. A restart serves the new ones.
-PAGE_TEXT, TERM_TEXT = PAGE.read_text(encoding='utf-8'), TERM.read_text(encoding='utf-8')
+# B164: the page as it was when this process loaded its code: an update on disk while the run is up must not
+# serve a page that asks for routes and actions this run does not have. A restart serves the new one.
+PAGE_TEXT = PAGE.read_text(encoding='utf-8')
 BOOT = secrets.token_hex(4)  # B164: this process, so the page knows when the run restarted
 TICK = 2.0  # s between snapshots the events stream compares
 PING = 15.0  # s of no change before the stream sends a keep-alive comment
@@ -550,21 +546,11 @@ class Snapshots:
             return self.last
 
 
-def web_view() -> str:
-    """F81: `[ui] web`, the view the run page's link opens: 'app' or 'terminal' ('app' with no project)."""
-    try:
-        v = S.C.raw.get('ui', {}).get('web', 'app')
-    except Exception:  # noqa: BLE001 - no project initialised: the default
-        return 'app'
-    from agent_runner.config import WEB_VIEWS
-    return v if v in WEB_VIEWS else 'app'
-
-
-def page_html(view: str | None = None, home: bool = False) -> bytes:
+def page_html(home: bool = False) -> bytes:
     """F79: the run app. Its light and dark looks follow the browser's setting (`[ui] theme` is the terminal
-    UI's). F81: `[ui] web` (or `view`) goes into WEB_VIEW, for a browser that never chose a view. F134: `home`
+    UI's). F134: `home`
     is Runner Home's own page (HOME_PAGE): the All projects view and the project switcher, no run behind it."""
-    page = PAGE_TEXT.replace("/*WEB_VIEW*/'app'", json.dumps(view or web_view()), 1)
+    page = PAGE_TEXT
     if home:
         page = page.replace('/*HOME_PAGE*/false', 'true', 1).replace(
             '<title>agent-runner</title>', '<title>Runner Home</title>', 1)
@@ -576,19 +562,6 @@ def page_html(view: str | None = None, home: bool = False) -> bytes:
         if name:
             page = page.replace('<title>agent-runner</title>', f'<title>{html.escape(name)} · runner</title>', 1)
     return page.encode('utf-8')
-
-
-def term_html(name: str | None = None) -> bytes:
-    """F81: the terminal-style page (web_term.html, F75's page), in theme `name` (default `[ui] theme`): its tokens in
-    style#theme, and every theme's in THEMES for the page's picker (t), one table with the terminal UI."""
-    from agent_runner import theme as TH
-    name = TH.checked(name or TH.configured())
-    themes = TH.all_resolved()
-    css = ':root{' + ';'.join(f'--{k}:{v}' for k, v in themes[name].items() if k != 'mode') + \
-        f';color-scheme:{"light" if themes[name]["mode"] == "light" else "dark"}}}'
-    data = json.dumps({'default': name, 'themes': themes}).replace('</', '<\\/')
-    page = TERM_TEXT.replace('/*THEME_CSS*/', css, 1)
-    return page.replace('/*THEMES*/{"default":"ryha","themes":{}}', data, 1).encode('utf-8')
 
 
 _OPTIONS: dict[str, tuple[float, list]] = {}  # a concept copy's path: (its mtime, its options)
@@ -841,8 +814,6 @@ class Handler(BaseHTTPRequestHandler):
                              home_screen.MANIFEST_TYPE)
         if png := home_screen.icon_at(path):
             return self.send(200, png, 'image/png')
-        if path == '/term':  # not /term/: the page's calls are relative to /
-            return self.send(200, term_html(), 'text/html; charset=utf-8')
         if path == '/snapshot':
             return self.send(200, self.server.snaps.get())
         if path == '/events':

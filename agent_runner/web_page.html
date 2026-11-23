@@ -11,13 +11,8 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <title>agent-runner</title>
 <script>
-/* F81: the view this browser last chose (localStorage), else [ui] web (the server writes it into WEB_VIEW): on
-   'terminal' the link opens the terminal-style page (/term) instead. */
-const WEB_VIEW=/*WEB_VIEW*/'app', VIEW_KEY='agent-runner.view';
-/* F134: true on Runner Home's own page (home.home_page): the All projects view, no run behind it, no terminal view */
+/* F134: true on Runner Home's own page (home.home_page): the All projects view, no run behind it */
 const HOME_PAGE=/*HOME_PAGE*/false;
-(()=>{let v='';try{v=localStorage.getItem(VIEW_KEY)||''}catch(e){}if(HOME_PAGE)return;
-  if((v||WEB_VIEW)==='terminal')location.replace('term'+location.search)})();
 </script>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Source+Serif+4:opsz,wght@8..60,400;8..60,500;8..60,600&display=swap">
 <style>
@@ -116,8 +111,6 @@ a{color:var(--accent)}
 .me{margin-top:auto;display:flex;align-items:center;gap:10px;padding:10px 8px 4px;border-top:1px solid var(--line);font-size:var(--fs-m);color:var(--muted)}
 .me .av{width:28px;height:28px;border-radius:50%;background:var(--fg);color:var(--bg);display:grid;place-items:center;font:600 12px var(--sans);flex:none}
 .me .sub{font-size:var(--fs-xs)}
-.viewsw{display:flex;align-items:center;gap:8px;padding:6px 8px 2px;font-size:var(--fs-s);color:var(--muted);text-decoration:none}
-.viewsw:hover{color:var(--fg)} .viewsw svg{width:15px;height:15px}
 /* F134: the project switcher at the top of the sidebar (through Runner Home), and its list of Home's projects */
 .psw{display:flex;align-items:center;gap:10px;width:100%;border:0;background:none;border-radius:var(--r-m);padding:6px 8px;margin-bottom:8px;cursor:pointer;text-align:left;color:var(--fg)}
 .psw:hover{background:var(--bubble)} .psw b{font:500 17px var(--serif);flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -305,7 +298,7 @@ a{color:var(--accent)}
 .pr{display:none}
 @media (pointer:coarse){.tool{height:40px;min-width:40px}.send{width:40px;height:40px}}
 /* F115: a chat (and Talk) looks like the terminal: monospace, the [ui] theme's terminal colours (--t-*: the app's own
-   until the theme comes from the terminal-style page, see termTokens), a '>' prompt, tool lines as the agent's terminal draws them */
+   the theme of the terminal UI is not used here), a '>' prompt, tool lines as the agent's terminal draws them */
 :root{--t-bg:var(--bg);--t-fg:var(--fg);--t-dim:var(--muted);--t-line:var(--line2);--t-raise:var(--side);--t-cur:var(--bubble);
   --t-accent:var(--accent);--t-red:var(--bad);--t-green:var(--ok);--t-yellow:var(--warn);--t-blue:var(--accent)}
 .main.term{--bg:var(--t-bg);--fg:var(--t-fg);--muted:var(--t-dim);--faint:var(--t-dim);--line:var(--t-line);--line2:var(--t-line);
@@ -700,15 +693,6 @@ function dictInsert(draft,words){
   if(!w)return d;
   return d.trim()?d.replace(/\s+$/,'')+' '+w:w;
 }
-/* F115: the [ui] theme's terminal colours from the terminal-style page's style#theme (hex only): {tokens, mode} */
-const TERM_TOKENS=['bg','fg','dim','line','raise','cur','accent','red','green','yellow','blue'];
-function termTokens(page){
-  const m=String(page||'').match(/<style id="theme">([^<]*)<\/style>/), tokens={};
-  if(!m)return {tokens,mode:''};
-  for(const [,k,v] of m[1].matchAll(/--([a-z]+):\s*([^;}]+)/g))if(TERM_TOKENS.includes(k)&&/^#[0-9a-f]{3,8}$/i.test(v.trim()))tokens[k]=v.trim();
-  const s=m[1].match(/color-scheme:\s*(light|dark)/);
-  return {tokens,mode:s?s[1]:''};
-}
 /* B132: the talk line after a listen that ended with no words, naming the last error the recognizer gave */
 /* B162: with how the mic was started (tap, hold, auto) and how long it ran before the error; a mic cut off
    ('aborted') gets what to try, in plain words, unless the person stopped it */
@@ -941,7 +925,7 @@ function projectButtons(p){
   b.push({label:'Unlist',unlist:true});
   return b;
 }
-if(typeof module!=='undefined')module.exports={viewOf,placeOf,runPill,cardControls,controlGroups,needsReply,chatGroups,needChatAsk,TALK_SET,talkSetParse,pickVoice,runVoice,speechClips,silentWav,feedMark,feedAfter,atEnd,swipeTakes,swipeOpens,settingText,settingShown,settingValue,homeBase,homeKey,projectLink,homeLink,manifestLink,appLink,homeHref,pageTitle,projectState,switcherRows,projectWords,projectButtons,chatMove,BOX_KEYS,keysLine,histPush,histEdge,histStep,slashMatches,slashPick,slashMove,SLASH_FALLBACK,chatPick,answerOpts,needAsk,threadMsgs,working,planWords,compose,sendReq,usageOf,logKind,plain,chatName,controlReq,controlClick,taskControlsOn,queueGroups,conceptButtons,planQueue,NO_CONCEPT,newConceptReq,queuedId,NAV,talkSession,micProblem,dictProblem,dictButton,dictInsert,termTokens,talkShown,talkReply,goneMark,needsShown,answerSaid,GONE_MS,obParse,obNext,obName,obSettle,obRetry,obDrop,obCounts,obHidden,obPill,OLD_RUN,OLD_WAIT,oldRun,plainOut,obRefused,obOld,obDue,obBootCid,sentLeft,sentStep,sentParse};
+if(typeof module!=='undefined')module.exports={viewOf,placeOf,runPill,cardControls,controlGroups,needsReply,chatGroups,needChatAsk,TALK_SET,talkSetParse,pickVoice,runVoice,speechClips,silentWav,feedMark,feedAfter,atEnd,swipeTakes,swipeOpens,settingText,settingShown,settingValue,homeBase,homeKey,projectLink,homeLink,manifestLink,appLink,homeHref,pageTitle,projectState,switcherRows,projectWords,projectButtons,chatMove,BOX_KEYS,keysLine,histPush,histEdge,histStep,slashMatches,slashPick,slashMove,SLASH_FALLBACK,chatPick,answerOpts,needAsk,threadMsgs,working,planWords,compose,sendReq,usageOf,logKind,plain,chatName,controlReq,controlClick,taskControlsOn,queueGroups,conceptButtons,planQueue,NO_CONCEPT,newConceptReq,queuedId,NAV,talkSession,micProblem,dictProblem,dictButton,dictInsert,talkShown,talkReply,goneMark,needsShown,answerSaid,GONE_MS,obParse,obNext,obName,obSettle,obRetry,obDrop,obCounts,obHidden,obPill,OLD_RUN,OLD_WAIT,oldRun,plainOut,obRefused,obOld,obDue,obBootCid,sentLeft,sentStep,sentParse};
 </script>
 
 <script>
@@ -1275,8 +1259,7 @@ function side(){
    <div class="nav">${(HB?nav.concat([['projects','All projects']]):nav).map(([k,l])=>`<button class="ni ${!S.thread&&S.view===k?'on':''}" data-view="${k}">${I[k]}${l}${count[k]?`<span class="n">${count[k]}</span>`:''}</button>`).join('')}</div>
    <div class="shead row"><span>Chats</span><button class="shadd" data-new aria-label="New chat" title="New chat">${I.plus}</button></div>${chatBar()}${cs.length?g.top.map(x=>chatRow(x)).join('')+obChatRows()+(g.quiet.length?'<div class="qline">Quiet</div>'+g.quiet.map(x=>chatRow(x,true)).join(''):''):'<div class="none">No chats yet</div>'+obChatRows()}
    <div class="shead">Agents working</div>${ws.length?ws.map(s=>`<button class="thread ${S.thread===s.name?'on':''}" data-thread="${esc(s.name)}"><span class="livedot"></span><span class="t">${esc(s.title||s.task)}</span></button>`).join(''):'<div class="none">None right now</div>'}
-   <div class="me"><div class="av">${esc((S.snap.machine||'?').charAt(0).toUpperCase())}</div><div class="grow"><span class="ell">${esc(S.snap.machine||'this machine')}</span><div class="sub">${S.snap.up===false?'no run is up':`${S.snap.slots||0} slot${S.snap.slots===1?'':'s'}`}${use?` · usage ${esc(use)}`:''}</div></div></div>
-   <a class="viewsw" href="term${esc(location.search)}" data-viewsw="terminal" title="The terminal-style page; this browser remembers the choice">${I.term}Terminal view</a>`);
+   <div class="me"><div class="av">${esc((S.snap.machine||'?').charAt(0).toUpperCase())}</div><div class="grow"><span class="ell">${esc(S.snap.machine||'this machine')}</span><div class="sub">${S.snap.up===false?'no run is up':`${S.snap.slots||0} slot${S.snap.slots===1?'':'s'}`}${use?` · usage ${esc(use)}`:''}</div></div></div>`);
   $('side').classList.toggle('open',S.drawer);$('scrim').classList.toggle('on',S.drawer);
 }
 /* the sidebar drawn again only when it changed, its scroll and a name being typed kept */
@@ -2021,10 +2004,8 @@ function dictate(){
   render(true);
   micWhenFree(()=>{MIC.rec=rec;soundAs('play-and-record');try{rec.start()}catch(e){DK.rec=null;toast(`The mic could not start: ${e.message||e}`,true);render(true);micFree(rec);soundAs('playback')}},()=>{DK.rec=null});
 }
-/* F115: the [ui] theme's terminal colours for a chat, from the terminal-style page (the run app's tokens until then) */
+/* F115: a chat's terminal colours are the run app's own tokens */
 const TERM={mode:''};
-fetch('term'+location.search).then(r=>r.ok?r.text():'').then(p=>{const t=termTokens(p);if(!Object.keys(t.tokens).length)return;
-  for(const [k,v] of Object.entries(t.tokens))document.documentElement.style.setProperty('--t-'+k,v);TERM.mode=t.mode;render(true)}).catch(()=>{});
 /* the words on their way to the Talk session show at once, until it has them */
 const talkGoing=()=>TK.wait&&TK.wait.out?`<div class="msgs"><div class="u pending" data-k="talkout" data-t="${esc(tkey(talkShown(TK.wait.said)))}">${esc(talkShown(TK.wait.said))}</div></div>`:'';
 function talkHTML(){
@@ -2356,7 +2337,6 @@ document.addEventListener('click',async e=>{
     const now=Date.now(), twice=tapped.n===x.dataset.thread&&now-tapped.at<400;tapped={n:x.dataset.thread,at:now};  // F129: a double-click renames
     if(twice&&!S.drawer){startRename(x.dataset.thread);return}
   }
-  if(x=q('[data-viewsw]')){try{localStorage.setItem(VIEW_KEY,x.dataset.viewsw)}catch(err){}return}  // F81: the link goes on
   if(q('[data-micreport]'))return micCopy();
   if(q('[data-mic]')){micLog(`click, detail ${e.detail}`);if(TS.mic==='hold'&&TK.state!=='speaking'&&!TK.playing&&(e.detail>0||Date.now()-TK.upAt<1000))return;return listen()}  // F93; F124: held (pointerdown), a key still toggles
   if(q('[data-spk]')){if(TK.state==='speaking'||TK.playing)return hush();if(TK.held&&!TK.ear&&TK.state!=='thinking')return speak(TK.held);unlockAudio();talkSet('read',!TS.read);return}

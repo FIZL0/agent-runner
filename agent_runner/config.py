@@ -44,7 +44,6 @@ from agent_runner import plat
 
 HERE = Path(__file__).resolve().parent
 CLONE_ENTRY = HERE.parent / 'run'  # `./run` in a clone; an installed package has no such file
-WEB_VIEWS = ('app', 'terminal')  # [ui] web: the run app, or the terminal-style page
 
 
 def runner_cmd() -> list[str]:
@@ -254,10 +253,7 @@ DEFAULTS: dict = {
     'ui': {
         'theme': 'ryha',        # the Run page's colours, in the terminal (`ui`) and on the web: ryha (black, red
                                 # accent), omarchy (the current Omarchy theme's colors.toml, else ryha), terminal
-                                # (the terminal's own 16 colours and background), light; on the web the
-                                # terminal-style page's t picks another for that browser
-        'web': 'app',           # the view the run page's link opens: "app" (the run app) or "terminal" (the
-                                # terminal-style page, /term); a browser that switched views opens its last one
+                                # (the terminal's own 16 colours and background), light
         'chat_quiet': '6h',     # a chat that needs no reply, with nothing said in it for this long, is grayed at the
                                 # bottom of the run app's Chats (never c1, a pinned or a renamed one); false: off
     },
@@ -711,9 +707,6 @@ class Config:
         if self.raw['ui']['theme'] not in THEMES:
             raise SystemExit(f"agent-runner: [ui] theme must be one of {', '.join(THEMES)}, not "
                              f"{self.raw['ui']['theme']!r}")
-        if self.raw['ui']['web'] not in WEB_VIEWS:
-            raise SystemExit(f"agent-runner: [ui] web must be one of {', '.join(WEB_VIEWS)}, not "
-                             f"{self.raw['ui']['web']!r}")
         if problem := setting_problem('ui', 'chat_quiet', self.raw['ui']['chat_quiet']):  # F128
             raise SystemExit(f'agent-runner: {problem}')
         if self.run['comment_policy'] not in ('normal', 'minimal'):
@@ -887,7 +880,6 @@ SETTING_CHOICES: dict[tuple[str, str], tuple] = {
     ('run', 'issues_trust'): ('skeptical', 'trust'),
     ('run', 'needs_order'): ('oldest', 'newest', 'plan'),
     ('git', 'land_edited'): ('wait', 'wip'),
-    ('ui', 'web'): WEB_VIEWS,
 }
 # keys that take more than their default's type: the other types ('off': false, 'bool', 'number', 'text', 'list',
 # 'table')

@@ -262,8 +262,7 @@ run's app (`/p/<project>/`) has a project switcher at the top of the sidebar (th
 list every Home project as running, idle, paused or off, with its needs-you count; each moves to `/p/<project>/` on
 the same Home address) and an "All projects" item in the sidebar.
 
-On a phone's Home Screen: add the app from Home's link while in the App view, not the Terminal view (that page has no
-manifest). Home's root is the app's scope, so a move between projects stays in it. It opens on the project it was added
+On a phone's Home Screen: add the app from Home's link. Home's root is the app's scope, so a move between projects stays in it. It opens on the project it was added
 from, or on All projects if it was added from Home. An icon added before this change: remove it and add it again once,
 since iOS may keep the old scope. The manifest and icon hold the token the link has, so whoever has the manifest has it
 already. A run's own address (no Home, or its own `web_port`) is an app of its own; its project name leads to Home's
@@ -367,12 +366,6 @@ terminal socket says so with its link (o open, y copy; Enter opens the link). On
 outside it, it re-execs itself in the project's tmux session (named for the folder, or a new window in it); without
 tmux, or on Windows, it refuses with exit 2 (the install line, or the run page's link). Ctrl-f makes the session
 full-screen between the UI's top and bottom bars, and again for side by side. In Sessions, n starts a new control session without waiting for its link, and `c` selects c1.
-
-- **Terminal-style page.** The same server also serves the terminal-style page at `/term?t=TOKEN`: the run page
-  drawn like `agent-runner ui` (numbered panels, a key for everything), in `[ui] theme` (its `t` picks another
-  for that browser). The run app's sidebar (the drawer on a phone) has a Terminal view switch; the page has
-  App view in its top bar and the key T. The browser remembers the last view, so the link opens it again;
-  `[ui] web` sets the view for a browser that never chose.
 
 ### status and since
 
@@ -479,7 +472,7 @@ reopened, and `--drop all` drops them all) makes an undo commit per task on loca
 are left out of the undo. The task is reopened, or left closed as dropped. A conflict goes to a fix session. What
 cannot be undone returns to Needs you with the reason. An undone change never goes out without its undo commit. With
 no run up, the command does the undo itself.
-The run app, `agent-runner ui` and the terminal-style page offer the same choices per change.
+The run app and `agent-runner ui` offer the same choices per change.
 
 `agent-runner status` and the run page say "3 changes wait to be pushed (1 pitch for you to approve)". Release tasks
 (V) do not start while anything waits. If the remote moved, the next merge takes it in, and the approved work goes out
@@ -1269,8 +1262,6 @@ theme = "ryha"            # the terminal UI's (`ui`) colours: ryha (black, red a
                           # (~/.config/omarchy/current/theme/colors.toml, else ryha), terminal (the terminal's own
                           # 16 colours and background), light. The run app ignores it: it follows the browser's
                           # light or dark setting
-web = "app"               # the view the run app's link opens: "app" (the run app) or "terminal" (the terminal-style
-                          # page, /term); a browser that switched views opens its last one (see The run app)
 chat_quiet = "6h"         # a chat that needs no reply, with nothing said in it for this long, is grayed at the bottom
                           # of the run app's Chats (never c1, a pinned or a renamed one); false: off
 

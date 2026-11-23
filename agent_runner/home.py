@@ -360,7 +360,7 @@ def home_page() -> bytes:
     switcher and the All projects view (every project's row and buttons, add project, Devices) with no run
     behind it. Opening a project moves to /p/KEY/, the same app with that project's run."""
     from agent_runner.web import page_html
-    return page_html('app', home=True)
+    return page_html(home=True)
 
 
 

@@ -406,9 +406,6 @@ def test_terminal_tab(tmp: Path) -> None:
                     break
                 back += chunk
             eq(back, b'echo:keys', 'bytes flow both ways after the upgrade')
-        page = (Path(W.__file__).parent / 'web_term.html').read_text(encoding='utf-8')
-        has(page, r"'t/'\+encodeURIComponent\(T\)\+'/'\+encodeURIComponent\(name\)\+'/'",
-            "the terminal-style page's pane goes by t/TOKEN/NAME/ when it is opened through Home")
     finally:
         srv.stop()
         run_srv.shutdown()

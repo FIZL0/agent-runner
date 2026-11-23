@@ -4,6 +4,8 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Changed: the terminal-style web page is removed (the /term route, `[ui] web`, the Terminal view / App view switch);
+  the per-session terminal stays; an old `[ui] web` in runner.toml is ignored (C29).
 - Changed: one address for every project (F165). With Runner Home installed, a run's page and its ttyd terminals
   listen on 127.0.0.1 only, on a free port that only Home opens; no link, log line or status names that port. A
   `[run] web_port` the person sets stays open on every interface, unless it is Home's own port. Without Home, the

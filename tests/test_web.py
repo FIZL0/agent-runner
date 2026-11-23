@@ -131,9 +131,6 @@ def test_server(tmp: Path) -> None:
         with mock.patch.object(U, 'act', side_effect=AssertionError('keys reached ui_model')):
             code, out = post(f'{base}/act?t={token}', {'name': 'keys', 'args': {'session': 's1', 'text': 'x'}})
         check(code == 404 and not out['ok'], 'C24: the web no longer types keys into a pane', out)
-        page = W.term_html().decode()
-        check("'builtin'" not in page and "'pane/'" not in page and "act('keys'" not in page,
-              "C24: the terminal-style page has no built-in view code (capture polling, the keys box)")
         with mock.patch.object(W.shutil, 'which', return_value='/usr/bin/ttyd'), \
                 mock.patch('agent_runner.plat.WINDOWS', True):
             r = json.loads(get(f'{base}/terminal/s1?t={token}')[1])
@@ -538,68 +535,23 @@ def test_diff(tmp: Path) -> None:
         srv.stop()
 
 
-TERM_DRIVER = """const m=require(process.argv[2]);
-const cases=JSON.parse(require('fs').readFileSync(0,'utf8'));
-process.stdout.write(JSON.stringify(cases.map(([fn,...a])=>m[fn](...a))));
-"""
-
-
 def test_views(tmp: Path) -> None:
-    """F81: /term serves the terminal view (F75's page, in [ui] theme) on the same server; the run app has a
-    Terminal view switch in its sidebar (the drawer on a phone), the terminal view an App view link and the key T;
-    the browser remembers the choice, and [ui] web picks the view for a browser that never chose."""
+    """C29: the terminal-style page is gone: /term is 404, web_term.html is deleted, the run app has no view switch,
+    and an old runner.toml with [ui] web set is ignored."""
     repo = fake_repo(tmp)
     token = W.web_token()
     srv = W.serve(token, 0, '127.0.0.1', snap=lambda: {})
     base = f'http://127.0.0.1:{srv.server_address[1]}'
     try:
-        code, body = get(f'{base}/term?t={token}')
-        term = body.decode()
-        eq(code, 200, '/term is served')
-        eq(get(f'{base}/term')[0], 403, 'and only with the token')
+        eq(get(f'{base}/term?t={token}')[0], 404, '/term is gone')
         app = get(f'{base}/?t={token}')[1].decode()
-        with mock.patch.dict(S.C.raw['ui'], {'web': 'terminal'}):
-            eq(W.web_view(), 'terminal', '[ui] web = "terminal" is read')
-            app_t = get(f'{base}/?t={token}')[1].decode()
     finally:
         srv.stop()
-    for part in ('<div class="top">', 'id="appview"', 'data-viewsw="app"', '<b class="pk">T</b> App view',
-                 "if(k==='T')return[['appview']]", '<span class="b">T</span>      App view',
-                 "VIEW_KEY='agent-runner.view'", "localStorage.setItem(VIEW_KEY,v)", 'Keybindings'):
-        check(part in term, f'the terminal view has {part}')
-    check('/*THEME_CSS*/' not in term and '"themes": {' in term, 'the terminal view carries [ui] theme and every theme')
-    for part in ('data-viewsw="terminal"', '${I.term}Terminal view', 'href="term${esc(location.search)}"',
-                 "VIEW_KEY='agent-runner.view'", "localStorage.setItem(VIEW_KEY,x.dataset.viewsw)",
-                 "(v||WEB_VIEW)==='terminal')location.replace('term'+location.search)"):
-        check(part in app, f'the run app has {part}')
-    check('const WEB_VIEW="app"' in app, 'by default the link opens the run app')
-    check('const WEB_VIEW="terminal"' in app_t, '[ui] web = "terminal": a browser that never chose opens /term')
-    # the sidebar's switch sits in side(), which draws the drawer too
-    side = app.split('function side(){', 1)[1].split('\nfunction ', 1)[0]
-    check('data-viewsw="terminal"' in side, 'the switch is in the sidebar (and so the drawer)')
-    (repo / 'runner.toml').write_text('[ui]\nweb = "tabs"\n', encoding='utf-8')
-    try:
-        CF.Config(repo)
-        check(False, '[ui] web = "tabs" is refused')
-    except SystemExit as e:
-        check('[ui] web must be one of app, terminal' in str(e), '[ui] web is checked', str(e))
-    if not shutil.which('node'):
-        print('  (no node here: the terminal view key test is skipped)')
-        return
-    js = W.TERM.read_text(encoding='utf-8').split('<script id="keys">', 1)[1].split('</script>', 1)[0]
-    with tempfile.TemporaryDirectory() as d:
-        (Path(d) / 'keys.js').write_text(js, encoding='utf-8')
-        (Path(d) / 'driver.js').write_text(TERM_DRIVER, encoding='utf-8')
-        ctx = {'panel': 3, 'focusMain': False, 'tab': '', 'tabs': [], 'it': {}, 'typing': False}
-        ev = lambda k: {'key': k, 'ctrl': False, 'meta': False, 'shift': False, 'alt': False}  # noqa: E731
-        cases = [['route', ctx, ev('T')], ['route', ctx, ev('t')], ['route', dict(ctx, typing=True), ev('T')]]
-        r = subprocess.run(['node', str(Path(d) / 'driver.js'), str(Path(d) / 'keys.js')], input=json.dumps(cases),
-                           capture_output=True, text=True, timeout=60)
-    check(r.returncode == 0, 'node runs the terminal view script', r.stderr[-800:])
-    got = json.loads(r.stdout or '[]') or [None] * 3
-    eq(got[0], [['appview']], 'T: App view')
-    eq(got[1], [['theme']], 't: the theme picker')
-    eq(got[2], [], 'T while typing is a letter')
+    check(not (Path(W.__file__).parent / 'web_term.html').exists(), 'web_term.html is deleted')
+    for part in ('viewsw', 'WEB_VIEW', 'VIEW_KEY', "location.replace('term'", 'Terminal view</a>'):
+        check(part not in app, f'the run app has no {part}')
+    (repo / 'runner.toml').write_text('[ui]\nweb = "terminal"\n', encoding='utf-8')
+    CF.Config(repo)  # an old [ui] web is ignored, not an error
 
 
 def test_new_chat(tmp: Path) -> None:
@@ -625,57 +577,6 @@ def test_new_chat(tmp: Path) -> None:
         eq(calls, [['control', '--new']], 'its endpoint runs control --new')
     finally:
         srv.stop()
-
-
-MOVES_DRIVER = r"""const {queueMoves}=require(process.argv[2]);
-const ids=q=>q.map(t=>t.id).join('');
-const Q=s=>[...s].map(id=>({id,title:id}));
-const tick=()=>new Promise(r=>setTimeout(r,0));
-async function run(order,fail){
-  const S={snap:{status:[],queue:Q(order)},cur:{3:0}},out={seen:[],sent:[],toasts:[]},waits=[];
-  const m=queueMoves({S,toast:(t,bad)=>out.toasts.push([t,!!bad]),render:()=>{},
-    send:(tid,where,other)=>{out.sent.push(`${tid} ${where} ${other}`);return new Promise(r=>waits.push(r))},
-    fetch:()=>Promise.resolve({status:[],queue:Q(fail?order:'BCDA')})});
-  for(let n=0;n<3;n++){m.press(1);out.seen.push([ids(S.snap.queue),S.cur[3],out.sent.length])}
-  S.snap=m.snap({status:['new'],queue:Q(order+'E')});  // a stale snapshot, with a new task, while moves pend
-  out.during=[ids(S.snap.queue),S.snap.status[0]];
-  for(let n=0;n<3;n++){await tick();if(waits[n])waits[n](fail&&n===0?{ok:false,out:'no such task'}:{ok:true})}
-  await m.idle();await tick();await tick();
-  out.after=[ids(S.snap.queue),S.cur[3],m.pending()];
-  return out;
-}
-(async()=>{process.stdout.write(JSON.stringify([await run('ABCD',false),await run('ABCD',true)]))})();
-"""
-
-
-def test_term_moves(tmp: Path) -> None:
-    """B117: Shift+J / Shift+K in the terminal view's [3] Queue are optimistic: the order and the selection change
-    at once, the plan moves go in the background in order, a snapshot meanwhile keeps the local order, and a
-    failed move is toasted and the server order taken."""
-    page = W.TERM.read_text(encoding='utf-8')
-    check('function reorder(step){MOVES.press(step)}' in page and 'S.snap=MOVES.snap(snap)' in page,
-          'reorder and live snapshots go through queueMoves')
-    if not shutil.which('node'):
-        print('  (no node here: the queue move test is skipped)')
-        return
-    js = page.split('<script id="moves">', 1)[1].split('</script>', 1)[0]
-    (tmp / 'moves.js').write_text(js, encoding='utf-8')
-    (tmp / 'driver.js').write_text(MOVES_DRIVER, encoding='utf-8')
-    r = subprocess.run(['node', str(tmp / 'driver.js'), str(tmp / 'moves.js')], capture_output=True, text=True,
-                       timeout=60)
-    check(r.returncode == 0, 'node runs the queue move script', r.stderr[-800:])
-    ok, bad = json.loads(r.stdout or '[{}, {}]')
-    eq(ok.get('seen'), [['BACD', 1, 0], ['BCAD', 2, 0], ['BCDA', 3, 0]],
-       'three fast J presses: order and selection change before any move is sent or answered')
-    eq(ok.get('during'), ['BCDAE', 'new'],
-       'a snapshot while moves are pending keeps the local order; its new task and the rest are taken')
-    eq(ok.get('sent'), ['A after B', 'A after C', 'A after D'], 'the three moves are sent in order')
-    eq(ok.get('toasts'), [], 'no toast per press')
-    eq(ok.get('after'), ['BCDA', 3, 0], 'once drained the server order is taken, the selection on the task')
-    eq(bad.get('sent'), ['A after B'], 'after a failed move the rest are not sent')
-    check(len(bad.get('toasts', [])) == 1 and bad['toasts'][0][1] and 'no such task' in bad['toasts'][0][0],
-          'a failed move is toasted', bad.get('toasts'))
-    eq(bad.get('after'), ['ABCD', 0, 0], 'a failed move takes the server order back, the selection on the task')
 
 
 def test_page_copy_publish(tmp: Path) -> None:
@@ -758,20 +659,17 @@ PARKED_TODO = TODO + """
 
 def test_parked(tmp: Path) -> None:
     """B118: a parked task (level later, TODO.md's Parked section) is in its own Parked group on the run app and
-    the terminal-style page, never says Ready, and Unpark (plan edit ID --pri normal) moves it out of Parked."""
+    never says Ready, and Unpark (plan edit ID --pri normal) moves it out of Parked."""
     repo = fake_repo(tmp)
     todo = repo / 'plan' / 'TODO.md'
     todo.write_text(PARKED_TODO, encoding='utf-8')
     q = {t['id']: t for t in U.queue_rows(todo.read_text(encoding='utf-8').splitlines())}
     eq(q['F83']['state'], 'parked', 'the model gives a task under Parked state parked')
-    app, term = W.page_html().decode(), W.TERM.read_text(encoding='utf-8')
+    app = W.page_html().decode()
     for part in ('<div class="sec">Parked<span class="ln"></span></div>', "Parked: a run won't start it",
                  'data-unpark="${esc(q.id)}">Unpark</button>', 'data-about="plan:${esc(q.id)}">Chat</button>',
                  "outbox('unpark',{tid:id}", "q.state!=='running'&&q.state!=='parked'"):
         check(part in app, f'the run app has {part}')
-    for part in ("Parked: a run won't start it", '<i class="chip park">parked</i>', "act('unpark',{tid:it.id}",
-                 'items:()=>queueItems(S.snap.queue)', 'unpark (a Parked task)'):
-        check(part in term, f'the terminal-style page has {part}')
     token = W.web_token()
     srv = W.serve(token, 0, '127.0.0.1', snap=lambda: {})
     try:
@@ -795,28 +693,6 @@ def test_parked(tmp: Path) -> None:
     eq(got[0], "Parked: a run won't start it", 'a parked row says so on the run app')
     check('Ready' not in got[0], 'and never Ready')
     eq([[r['id'] for r in g] for g in got[1]], [['F1', 'B2'], ['F83']], 'the Queue, then the Parked group')
-    js = term.split('<script id="keys">', 1)[1].split('</script>', 1)[0]
-    ev = lambda k: {'key': k, 'ctrl': False, 'meta': False, 'shift': False, 'alt': False}  # noqa: E731
-    ctx = {'panel': 3, 'focusMain': False, 'tab': '', 'tabs': [], 'typing': False,
-           'it': {'newtask': False, 'parked': True}}
-    ready = dict(ctx, it={'newtask': False, 'parked': False})
-    cases = [['parkedLast', {'queue': rows}], ['queueItems', rows],
-             ['route', ctx, ev('U')], ['route', ctx, ev('E')], ['route', ctx, ev('J')], ['route', ctx, ev('p')],
-             ['route', ready, ev('U')], ['footer', ctx, []]]
-    (tmp / 'keys.js').write_text(js, encoding='utf-8')
-    (tmp / 'driver.js').write_text(TERM_DRIVER, encoding='utf-8')
-    r = subprocess.run(['node', str(tmp / 'driver.js'), str(tmp / 'keys.js')], input=json.dumps(cases),
-                       capture_output=True, text=True, timeout=60)
-    check(r.returncode == 0, 'node runs the terminal-style page script', r.stderr[-800:])
-    got = json.loads(r.stdout or '[]') or [None] * len(cases)
-    eq([t['id'] for t in got[0]['queue']], ['F1', 'B2', 'F83'], 'parked tasks go after the rest')
-    eq([t['id'] for t in got[1]], ['F1', 'B2', '+', 'F83'], '[3]: the queue, new task, then the Parked group')
-    eq(got[2], [['act', 'unpark']], 'U on a parked row unparks it')
-    eq(got[3], [['tabto', 'chat edit']], 'E: chat edit, as for other rows')
-    eq((got[4], got[5]), ([], []), 'no J/K reorder or priority toggle on a parked row')
-    eq(got[6], [], 'U does nothing on a row that is not parked')
-    here = [k for k, _ in got[7]['here']]
-    check('U' in here and 'E' in here, 'the key hints show U unpark and E chat edit', got[7])
 
 
 def test_concepts_view(tmp: Path) -> None:
@@ -885,37 +761,6 @@ def test_esc_ctrl_c(tmp: Path) -> None:
           in page, 'the working mark says Ctrl+C interrupts and has a Stop button')
     check("if(x=q('[data-stop]')){const n=x.dataset.stop||shownSession();if(n)act('interrupt',{session:n});return}" in page,
           'Stop interrupts the session it stands by')
-    # B124: the terminal-style page, the same way: route()'s Esc branches never interrupt, Ctrl+C does
-    term = W.TERM.read_text(encoding='utf-8')
-    js = term.split('<script id="keys">', 1)[1].split('</script>', 1)[0]
-    route = js.split('function route(c,e){', 1)[1].split('\n}\n', 1)[0]
-    term_esc = [ln for ln in route.splitlines() if "'Escape'" in ln]
-    check(len(term_esc) >= 3, "the term page's route has its Esc branches", term_esc)
-    for ln in term_esc:
-        check('interrupt' not in ln, "a term page Esc branch sends no interrupt", ln)
-    check('<span class="b">Ctrl+C</span> interrupts while it works' in term, 'the term help line says Ctrl+C interrupts')
-    if not shutil.which('node'):
-        print('  (no node here: the terminal-style page Ctrl+C test is skipped)')
-        return
-    ev = lambda k, ctrl=False: {'key': k, 'ctrl': ctrl, 'meta': False, 'shift': False, 'alt': False}  # noqa: E731
-    box = {'panel': 2, 'focusMain': True, 'tab': 'chat', 'tabs': ['chat'], 'it': {}, 'typing': True,
-           'chatBox': True, 'busy': True, 'selected': False}
-    main = dict(box, typing=False, chatBox=False)
-    cases = [['route', box, ev('Escape')], ['route', main, ev('Escape')], ['route', box, ev('c', True)],
-             ['route', main, ev('c', True)], ['route', dict(box, selected=True), ev('c', True)],
-             ['route', dict(box, busy=False), ev('c', True)], ['footer', box, []], ['footer', main, []]]
-    (tmp / 'keys.js').write_text(js, encoding='utf-8')
-    (tmp / 'driver.js').write_text(TERM_DRIVER, encoding='utf-8')
-    r = subprocess.run(['node', str(tmp / 'driver.js'), str(tmp / 'keys.js')], input=json.dumps(cases),
-                       capture_output=True, text=True, timeout=60)
-    check(r.returncode == 0, 'node runs the terminal-style page script', r.stderr[-800:])
-    got = json.loads(r.stdout or '[]') or [None] * len(cases)
-    eq((got[0], got[1]), ([['blur']], [['back']]), 'Esc in a working chat leaves the box, then goes back')
-    eq((got[2], got[3]), ([['interrupt']], [['interrupt']]), 'Ctrl+C interrupts the working chat')
-    eq((got[4], got[5]), ([], []), 'Ctrl+C over selected text, or in an idle chat, is left to the browser')
-    for f in got[6:8]:
-        check(['Ctrl+C', 'interrupts'] in f['here'] and all(lb != 'interrupt' for _, lb in f['here']),
-              "the key hints say 'Ctrl+C interrupts', and Esc no longer interrupts", f)
 
 
 def in_tmp(f):
@@ -943,10 +788,9 @@ console.log(JSON.stringify(out));
 
 
 def test_follow_version_f90(tmp: Path) -> None:
-    """F90: both run pages keep the run's version from the first snapshot and reload when a later one differs;
+    """F90: the run page keeps the run's version from the first snapshot and reload when a later one differs;
     a snapshot without one (an older run) changes nothing."""
-    for path, call in ((W.PAGE, 'if(followVersion(s.version))return;'),
-                       (W.TERM, 'if(followVersion(snap.version))return;')):
+    for path, call in ((W.PAGE, 'if(followVersion(s.version))return;'),):
         page = path.read_text(encoding='utf-8')
         check(call in page, f'{path.name}: each snapshot goes through followVersion before it is taken')
         m = re.search(r"let RUN_VERSION='';\nfunction followVersion\(v\)\{.*?return true\}return false\}\n", page, re.S)
@@ -2091,8 +1935,8 @@ def test_chat_box_f115(tmp: Path) -> None:
           'a chat and its box use the monospace font token (16px: a phone does not zoom)')
     check(".main.term .u::before{content:'>'" in page and ".stepbox .tl::before{content:'● '" in page
           and '⎿' in page, "a '>' prompt on your messages, Claude Code-like tool lines")
-    check("main.classList.toggle('term',chatOn)" in page and "fetch('term'+location.search)" in page,
-          "a chat takes the terminal look and the [ui] theme's colours from the terminal-style page")
+    check("main.classList.toggle('term',chatOn)" in page and "fetch('term'" not in page,
+          "a chat takes the terminal look with the run app's own colours")
     check('@media (pointer:coarse){.tool{height:40px;min-width:40px}.send{width:40px;height:40px}}' in page,
           'the box buttons stay touch-sized on a phone')
     if not shutil.which('node'):
@@ -2101,9 +1945,7 @@ def test_chat_box_f115(tmp: Path) -> None:
     got = logic_js([['dictProblem', False, True], ['dictProblem', True, False], ['dictProblem', True, True],
                     ['dictButton', '', False, 'MIC'], ['dictButton', '', True, 'MIC'],
                     ['dictButton', 'This browser cannot turn speech into text (Chrome, Edge and Safari can).', False, 'MIC'],
-                    ['dictInsert', 'fix the ', ' merge '], ['dictInsert', '', 'hello'], ['dictInsert', 'keep', ''],
-                    ['termTokens', '<style id="theme">:root{--bg:#000000;--fg:#e5e5e5;--dim:#737373;--sel:#7f1d1d;'
-                     '--line:url(x);color-scheme:dark}</style>'], ['termTokens', '<p>no theme</p>']])
+                    ['dictInsert', 'fix the ', ' merge '], ['dictInsert', '', 'hello'], ['dictInsert', 'keep', '']])
     check('https or localhost' in got[0] and 'Type your message instead.' in got[0],
           'plain http: the dictation mic says it needs https', got[0])
     check('cannot turn speech into text' in got[1], 'no speech recognition: the dictation mic says so', got[1])
@@ -2115,9 +1957,6 @@ def test_chat_box_f115(tmp: Path) -> None:
     check('dict off' in got[5] and 'title="This browser cannot turn speech into text' in got[5] and 'disabled' not in got[5],
           'one that cannot listen says why in its label and stays tappable (a tap says why)', got[5])
     eq(got[6:9], ['fix the merge', 'hello', 'keep'], 'the words heard go after what the box held')
-    eq(got[9], {'tokens': {'bg': '#000000', 'fg': '#e5e5e5', 'dim': '#737373'}, 'mode': 'dark'},
-       "the theme's terminal colours, hex only, and its mode")
-    eq(got[10], {'tokens': {}, 'mode': ''}, 'no theme: the app keeps its own colours')
     (tmp / 'driver.js').write_text(DICT_DRIVER, encoding='utf-8')
     r = subprocess.run(['node', str(tmp / 'driver.js'), str(W.PAGE)], capture_output=True, text=True, timeout=60)
     check(r.returncode == 0, 'node runs dictate()', r.stderr[-800:])
@@ -2137,8 +1976,8 @@ def test_home_switcher_f134(tmp: Path) -> None:
     check('${HB?switcher():' in page and 'data-psw' in page, 'the sidebar starts with the switcher when Home is around')
     check("nav.concat([['projects','All projects']])" in page and 'projects:projectsHTML' in page,
           'and the run app has an All projects view')
-    run_page = W.page_html('app').decode()
-    home_page = W.page_html('app', home=True).decode()
+    run_page = W.page_html().decode()
+    home_page = W.page_html(home=True).decode()
     check('const HOME_PAGE=/*HOME_PAGE*/false;' in run_page and 'const HOME_PAGE=true;' in home_page and
           '<title>Runner Home</title>' in home_page, "Home's page is the run app with HOME_PAGE on", home_page[:600])
     if not shutil.which('node'):
@@ -2188,7 +2027,7 @@ def test_home_screen_b179(tmp: Path) -> None:
     finally:
         srv.stop()
     for what, home in (('run page', False), ("Home's page", True)):
-        page = W.page_html('app', home=home).decode()
+        page = W.page_html(home=home).decode()
         for tag in ('name="apple-mobile-web-app-capable" content="yes"',
                     'name="apple-mobile-web-app-status-bar-style" content="default"', 'viewport-fit=cover'):
             check(tag in page, f'the {what} has {tag}')
@@ -2215,7 +2054,7 @@ def test_project_name_b153(tmp: Path) -> None:
     """B153: the run page shows the project's name, not agent-runner: the window title ('proj · runner'), the
     top-left (a link to Runner Home), the logo's letter and a chat's lead label."""
     fake_repo(tmp)
-    run_page = W.page_html('app').decode()
+    run_page = W.page_html().decode()
     check('<title>proj · runner</title>' in run_page, 'the served title is the project first', run_page[:400])
     check("document.title=pageTitle(S.snap.project)" in run_page, 'and the snapshot keeps it')
     check('${HB?switcher():brand()}' in run_page and '<b>agent-runner</b>' not in run_page,
@@ -3007,12 +2846,10 @@ def test_chats_f128(tmp: Path) -> None:
 def test_needs_drop_chat_f110(tmp: Path) -> None:
     """F110, F143: a Needs you card's Drop asks in the page, then need_drop; its Chat sends need_chat and opens a new chat."""
     fake_repo(tmp)
-    page, term = W.page_html().decode(), W.TERM.read_text(encoding='utf-8')
+    page = W.page_html().decode()
     for part in ("outbox('need_drop',{tid:n.id,confirm:true},{need:n.id", "S.sure='need:'+n.id", 'data-needdrop="${i}">Drop</button>',
                  "newChat('need_chat',{tid:n.id}", 'data-needchat="${i}"'):
         check(part in page, f'the run app has {part}')
-    for part in ("data-form=\"needdrop\"", "act('need_drop',{tid:it.id,confirm:true}", "K('D','drop')"):
-        check(part in term, f'the terminal-style page has {part}')
     repo = S.ROOT
     (repo / 'plan' / 'TODO.md').write_text(TODO + '- [~] **D3** Write the guide | files: d.md BLOCKED: DECIDE: which layout\n',
                                            encoding='utf-8')
@@ -3030,19 +2867,6 @@ def test_needs_drop_chat_f110(tmp: Path) -> None:
             eq(ran, [['plan', 'drop', 'D3', 'dropped from Needs you']], 'plan drop ID, from Needs you')
     finally:
         srv.stop()
-    if not shutil.which('node'):
-        return
-    js = term.split('<script id="keys">', 1)[1].split('</script>', 1)[0]
-    (tmp / 'keys.js').write_text(js, encoding='utf-8')
-    (tmp / 'driver.js').write_text(TERM_DRIVER, encoding='utf-8')
-    ev = {'key': 'D', 'ctrl': False, 'meta': False, 'shift': True, 'alt': False}
-    ctx = {'panel': 4, 'focusMain': False, 'tab': '', 'tabs': [], 'typing': False, 'it': {}}
-    r = subprocess.run(['node', str(tmp / 'driver.js'), str(tmp / 'keys.js')], capture_output=True, text=True, timeout=60,
-                       input=json.dumps([['route', ctx, ev], ['footer', ctx, []],
-                                         ['route', {**ctx, 'focusMain': True, 'tab': 'answer', 'tabs': ['answer']}, ev]]))
-    got = json.loads(r.stdout or '[]')
-    eq((got[0], got[2]), ([['act', 'drop']], [['act', 'drop']]), 'D on a Needs you item drops it, in the terminal-style page too')
-    check(['D', 'drop'] in got[1]['here'], 'and its hint shows', got[1])
     ask = logic_js([['needChatAsk', {'id': 'R1', 'title': 'Phone', 'label': 'CONFIRM', 'ask': 'Does it work?'}]])[0]
     check('R1' in ask and 'Does it work?' in ask and '- Yes' in ask and '- No' in ask, 'the question and its answers show at once', ask)
 
@@ -3445,14 +3269,14 @@ def test_older_run_b164(tmp: Path) -> None:
     says so (Settings, a need_chat the run does not know) and sends what it kept once the run restarts."""
     fake_repo(tmp)
     with mock.patch.object(Path, 'read_text', side_effect=AssertionError('read from disk')):
-        page = W.page_html('app')
+        page = W.page_html()
     check(b'function settingsHTML(' in page, 'the run app is served from the start, not from the file on disk')
     real = Path.read_text
 
     def newer(self, *a, **k):
-        return 'NEWER' if self in (W.PAGE, W.TERM) else real(self, *a, **k)
+        return 'NEWER' if self == W.PAGE else real(self, *a, **k)
     with mock.patch.object(Path, 'read_text', newer):
-        check('NEWER' not in W.page_html().decode() + W.term_html().decode(), 'an update on disk changes neither page')
+        check('NEWER' not in W.page_html().decode(), 'an update on disk changes neither page')
     eq(W.with_extras({})['boot'], W.BOOT, 'the snapshot names the process, so the page sees a restart')
     token = W.web_token()
     srv = W.serve(token, 0, '127.0.0.1', snap=lambda: {})
@@ -3503,7 +3327,7 @@ if __name__ == '__main__':
                            in_tmp(test_start), in_tmp(test_upload),
                            in_tmp(test_control_rows), in_tmp(test_feed_pane_concept), in_tmp(test_page),
                            in_tmp(test_logic), in_tmp(test_extras), in_tmp(test_diff), in_tmp(test_views),
-                           in_tmp(test_new_chat), in_tmp(test_term_moves), in_tmp(test_page_copy_publish), in_tmp(test_parked),
+                           in_tmp(test_new_chat), in_tmp(test_page_copy_publish), in_tmp(test_parked),
                            in_tmp(test_esc_ctrl_c), in_tmp(test_concepts_view), in_tmp(test_follow_version_f90),
                            in_tmp(test_talk_f93), in_tmp(test_https_link_b130),
                            in_tmp(test_listen_heard_nothing_b132), in_tmp(test_talk_reply_heard_b133), in_tmp(test_talk_new_chat_f157),
