@@ -79,6 +79,9 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
   still hold; without a free provider it is as before (B157).
 - Added: the gate workflow (ci.yml) runs on request for a task branch before its merge (`gh workflow run ci.yml --ref task/<ID> -f
   system=windows`), so Windows-only code can be checked from a Linux slot; see docs/REFERENCE.md (T13).
+- Added: `tools/windows_vm.sh` runs test files (default `tests/test_windows.py`) of a worktree, uncommitted changes
+  included, on the Windows VM the machine already has, for contributors working on Windows code. It is a repo tool and
+  not part of the installed package (T14).
 
 ## 0.61.0 (2026-11-23)
 
