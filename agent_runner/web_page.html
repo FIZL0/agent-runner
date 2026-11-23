@@ -326,10 +326,11 @@ function talkSession(sessions,remembered){
   const r=live.find(s=>s.name===remembered);if(r)return r.name;
   const t=live.find(s=>s.title==='Talk');return t?t.name:'';
 }
-/* why the mic cannot listen here ('' when it can): Chrome gives the mic only to https or localhost */
+/* why the mic cannot listen here ('' when it can): Chrome gives the mic only to https or localhost; B130: Safari
+   hides speech recognition outside a secure context, so plain http is checked first */
 function micProblem(secure,hasRecognition){
+  if(!secure)return 'The mic needs https or localhost, and this address is plain http: open the https link (run status prints it when Tailscale Serve gives one). Type below instead.';
   if(!hasRecognition)return 'This browser cannot turn speech into text (Chrome, Edge and Safari can). Type below instead.';
-  if(!secure)return 'The mic needs https or localhost, and this address is plain http. Type below instead.';
   return '';
 }
 /* a Talk message as the person said it: without the first message's brief or a later one's reminder */

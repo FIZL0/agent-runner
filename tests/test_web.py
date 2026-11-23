@@ -983,13 +983,16 @@ def test_talk_f93(tmp: Path) -> None:
             {'kind': 'tool', 'text': 'Bash(x)'}, {'kind': 'say', 'text': 'Nothing needs you.'}]
     got = logic_js([['talkSession', live, 'c6'], ['talkSession', live, 'c8'],
                     ['talkSession', live[:1], ''], ['micProblem', False, True], ['micProblem', True, False],
-                    ['micProblem', True, True], ['talkShown', ask], ['talkShown', CT.talk_message('and you?')],
+                    ['micProblem', True, True], ['micProblem', False, False], ['talkShown', ask], ['talkShown', CT.talk_message('and you?')],
                     ['talkShown', 'plain words'], ['talkReply', feed, 2], ['talkReply', feed[:6], 2],
                     ['talkReply', feed, 7]])
     eq(got[:3], ['c6', 'c4', ''], 'the remembered live session, else a live chat titled Talk, else none')
     check('https or localhost' in got[3] and 'Type below' in got[3], 'plain http: the mic says it needs https', got[3])
     check('cannot turn speech into text' in got[4], 'no speech recognition: the mic says so', got[4])
     eq(got[5], '', 'https with recognition: the mic listens')
+    check('https link' in got[6] and 'cannot turn speech' not in got[6],
+          'B130: plain http without recognition (Safari hides it there): the mic points at the https link', got[6])
+    del got[6]
     eq(got[6:9], ['what is going on?', 'and you?', 'plain words'], "the person's words show without the brief")
     eq(got[9], 'Two agents are working. Nothing needs you.', 'the reply since the send, in plain words, read aloud')
     eq(got[10:12], ['', ''], 'nothing is read while it still works, or before it says anything new')
@@ -1042,6 +1045,29 @@ def test_delete_chats_f118(tmp: Path) -> None:
     eq(got[7], {'sel': ['c6'], 'last': 'c6'}, 'Shift+click with nothing clicked before picks that one')
 
 
+def test_https_link_b130(tmp: Path) -> None:
+    fake_repo(tmp)
+    serve = {'TCP': {'8771': {'HTTPS': True}, '8791': {'HTTPS': True}},
+             'Web': {'box.tail.ts.net:8771': {'Handlers': {'/': {'Proxy': 'http://127.0.0.1:8770'}}},
+                     'box.tail.ts.net:8791': {'Handlers': {'/': {'Proxy': 'http://127.0.0.1:8790'}}}}}
+    eq(W.serve_https_urls(serve, 8770, 'TK'), ['https://box.tail.ts.net:8771/?t=TK'],
+       'the https port that proxies to the web port gives the https link')
+    eq(W.serve_https_urls(serve, 8780, 'TK'), [], 'no serve for that port: no https link')
+    eq(W.serve_https_urls({}, 8770, 'TK'), [], 'nothing served: none')
+    plain = {'TCP': {'80': {'HTTP': True}}, 'Web': {'box.tail.ts.net:80': {'Handlers': {'/': {'Proxy': 'http://127.0.0.1:8770'}}}}}
+    eq(W.serve_https_urls(plain, 8770, 'TK'), [], 'a plain-http serve gives no https link')
+    on443 = {'TCP': {'443': {'HTTPS': True}}, 'Web': {'box.tail.ts.net:443': {'Handlers': {'/': {'Proxy': 'http://localhost:8770'}}}}}
+    eq(W.serve_https_urls(on443, 8770, 'TK'), ['https://box.tail.ts.net/?t=TK'], 'port 443 needs no port')
+    ran = lambda *a, **k: subprocess.CompletedProcess(a, 0, json.dumps(serve), '')
+    eq(W.tailscale_https_urls(8770, 'TK', run=ran), ['https://box.tail.ts.net:8771/?t=TK'], 'read from tailscale')
+    W.url_file().parent.mkdir(parents=True, exist_ok=True)
+    W.url_file().write_text('http://box:8770/?t=TK\nhttp://10.0.0.5:8770/?t=TK\n', encoding='utf-8')
+    with mock.patch.object(S, 'run_up', return_value=True), \
+            mock.patch.object(W, 'tailscale_https_urls', lambda port, t: W.serve_https_urls(serve, port, t)):
+        eq(W.page_line(), 'run page: https://box.tail.ts.net:8771/?t=TK (or http://box:8770/?t=TK)',
+           'status prints the https link first')
+
+
 if __name__ == '__main__':
     raise SystemExit(report([in_tmp(test_delete_chats_f118), in_tmp(test_server), in_tmp(test_real_action), in_tmp(test_run_controls),
                            in_tmp(test_start), in_tmp(test_upload),
@@ -1049,4 +1075,4 @@ if __name__ == '__main__':
                            in_tmp(test_logic), in_tmp(test_extras), in_tmp(test_diff), in_tmp(test_views),
                            in_tmp(test_new_chat), in_tmp(test_term_moves), in_tmp(test_page_copy_publish), in_tmp(test_parked),
                            in_tmp(test_esc_ctrl_c), in_tmp(test_concepts_view), in_tmp(test_follow_version_f90),
-                           in_tmp(test_talk_f93)]))
+                           in_tmp(test_talk_f93), in_tmp(test_https_link_b130)]))
