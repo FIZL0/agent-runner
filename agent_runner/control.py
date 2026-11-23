@@ -292,10 +292,10 @@ def control_hook_input() -> dict:
 
 def control_type(n: int, text: str) -> bool:
     """Type `text` into control session `n` and press Enter, through its hidden shim's FIFO
-    (`<notes>/control<n>.in`); False when it has none (Windows, or a session opened in a terminal)."""
+    (`<notes>/control<n>.in`); False when it has none (a hidden console, or a session opened in a terminal)."""
     from agent_runner.slots import send_fifo
     inbox = C.notes(f'control{n}.in')
-    return not plat.WINDOWS and inbox.exists() and send_fifo(inbox, text)
+    return inbox.exists() and send_fifo(inbox, text)
 
 
 def control_set_title(n: int, summary: str) -> int:
@@ -692,9 +692,9 @@ def start_control() -> None:
     """The run opens control session c1 beside it, unless `[run] control = false` or c1 already runs (it outlives
     a stopped run). With `[run] remote` it opens blank (no opening summary, so no tokens until the person types)
     and local (`--local`: no Remote Control, so no second app entry beside the control server's "<repo> ·
-    control" and no start push). Windows: a console of its own (hidden). Linux and macOS: a pseudo-terminal
-    with no window (`hidden_control`, F59; `attach c1` shows it). B121: first the control sessions c2+ a
-    shutdown ended are reopened (`reopen_controls`)."""
+    control" and no start push). Windows with no ConPTY: a console of its own (hidden). Else a pseudo-terminal
+    with no window (`hidden_control`, F59, F145). B121: first the control sessions c2+ a shutdown ended are
+    reopened (`reopen_controls`)."""
     mark_board()
     if C.run['control']:
         try:
@@ -709,7 +709,7 @@ def start_control() -> None:
     if pid := control_live(1):
         log(f'control: c1 already runs (pid {pid})')
         return
-    if plat.WINDOWS:
+    if plat.WINDOWS and not plat.has_conpty():
         plat.spawn_console(cmd, ROOT, control_env(), hidden=HIDDEN[0])
         where = 'a console of its own' + (' (hidden)' if HIDDEN[0] else '')
     else:  # F59: a pseudo-terminal with no window
@@ -717,7 +717,8 @@ def start_control() -> None:
         if not pid:
             log(f'control: c1 could not start hidden: {why}')
             return
-        where = f'a hidden terminal ({shown_cmd()} attach c1 shows it; its output in {hidden_control_log(1)})'
+        where = f'a hidden terminal ({"" if plat.WINDOWS else f"{shown_cmd()} attach c1 shows it; "}' \
+                f'its output in {hidden_control_log(1)})'
     log(f'control: c1 is up in {where} ({shown_cmd()} control opens another)')
 
 
@@ -741,8 +742,8 @@ def hidden_control_log(n: int) -> Path:
 
 
 def hidden_control(n: int, cmd: list[str], wait: float | None = None) -> tuple[int, str]:
-    """F59: start control session `n` (`cmd`, a `control N` command line) with no window on Linux and macOS,
-    through the F40 pty shim (`run --slot-shim`, `run_pty`) with a job of its own, `<notes>/control<n>.job`:
+    """F59: start control session `n` (`cmd`, a `control N` command line) with no window, through
+    the F40 pty shim (`run --slot-shim`: `run_pty`, `run_conpty`) with a job of its own, `<notes>/control<n>.job`:
     its output goes to `hidden_control_log`, its pid to `<notes>/control<n>.live` while it runs, and text
     written to the FIFO beside it (`control<n>.in`) is typed into it. Started detached, so it outlives the run
     the run. (pid, '') once it is up, else (0, why)."""
@@ -768,9 +769,7 @@ def hidden_shim(stem: str, cmd: list[str], wait: float | None = None) -> tuple[i
                                'log': str(C.notes(f'{stem}.log'))}), encoding='utf-8')
     shim = [*runner_cmd(), 'run', '--slot-shim', str(job)]
     try:
-        with open(C.notes(f'{stem}.shim'), 'ab') as out:  # the shim's own errors, should it fail
-            sp.Popen(shim, cwd=str(ROOT), env=control_env(), stdin=sp.DEVNULL, stdout=out, stderr=out,
-                     start_new_session=True)
+        plat.spawn_detached(shim, C.notes(f'{stem}.shim'), ROOT, control_env())  # .shim: its own errors
     except OSError as e:
         return 0, f'could not start the shim: {e}'
     end = time.monotonic() + (SHIM_WAIT if wait is None else wait)

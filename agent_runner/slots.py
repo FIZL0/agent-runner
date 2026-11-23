@@ -19,6 +19,7 @@ from pathlib import Path
 
 from agent_runner import plan as P, plat
 from agent_runner.attach import attach_listen, attach_take
+from agent_runner.conpty import ConPty, InPipe, pipe_send
 from agent_runner.config import finished_mark, runner_cmd, shown_cmd
 from agent_runner.gitops import push
 from agent_runner.state import C, clean, git, hook, log, note, ROOT, SLOTS_DIR
@@ -985,7 +986,7 @@ SHIM_WAIT = 30.0  # s a hidden slot's shim gets to start its agent (a busy machi
 
 class HiddenMux:
     """F40: a slot with no window, on every OS. Watched through Remote Control (with `[run] remote_slots`),
-    status, the slot's log and control sessions; steered by `plan tell` (POSIX).
+    status, the slot's log and control sessions; steered by `plan tell`.
 
     Each slot runs through a shim (`run --slot-shim <job>`, `slot_shim`), started detached so the session
     outlives a restarted runner and the next run adopts it: it reads the argv, directory and environment
@@ -993,21 +994,24 @@ class HiddenMux:
     runs. The loop, a restart's adopt and the Stop hook all read that marker. POSIX: the agent runs in a
     pseudo-terminal of the standard library's `pty` (it needs a TTY), the shim copies its output to the
     slot log and types into it what arrives on the FIFO `<notes>/slotN.in` (`send`); `attach sN` puts a
-    terminal on it through the socket `<notes>/slotN.sock` (F88, Ctrl-b d leaves). Windows: a console of
-    its own whose window starts hidden (`attach sN` shows it); nothing captures its output, so the slot log
-    has only the header lines there, and nothing can be typed into it.
+    terminal on it through the socket `<notes>/slotN.sock` (F88, Ctrl-b d leaves). Windows (F145):
+    the agent runs in a ConPTY pseudo-console (`run_conpty`), its output in the slot log too, and
+    `<notes>/slotN.in` names the pipe, open to this user alone, that typed text comes in by; there is no
+    attach to it yet (`attach sN` says where its log is). Before Windows 10 1809, which has no ConPTY, a console of
+    its own whose window starts hidden (`attach sN` shows it): nothing captures its output, so the slot log
+    has only the header lines, and nothing can be typed into it.
     """
     name = 'hidden'
 
     @property
-    def typed(self) -> bool:  # Windows' hidden console takes no typed text
-        return not plat.WINDOWS
+    def typed(self) -> bool:  # Windows' hidden console (no ConPTY there) takes no typed text
+        return not plat.WINDOWS or plat.has_conpty()
 
     def open(self, n, cwd, prompt, sid, model, idle, env, logfile, resume=False):
         job, marker = C.notes(f'slot{n}.job'), C.notes(f'slot{n}.live')
         ended = marker.with_suffix('.exit')
-        marker.unlink(missing_ok=True)
-        ended.unlink(missing_ok=True)
+        for f in (marker, ended, marker.with_suffix('.in')):  # .in: a killed shim's
+            f.unlink(missing_ok=True)
         envd = env_vars(env)
         # F106b: a headless session gets its brief (or resume message) as the first stream-json message
         stream = {'stream': True, 'brief': prompt, 'sid': sid, 'events': str(stream_file(sid))} \
@@ -1015,7 +1019,7 @@ class HiddenMux:
         job.write_text(json.dumps({'argv': agent_argv(prompt, sid, model, idle, f'slot{n}', resume, cwd=cwd), 'cwd': str(cwd),
                                    'env': envd, 'marker': str(marker), 'log': str(logfile), **stream}), encoding='utf-8')
         shim = [*runner_cmd(), 'run', '--slot-shim', str(job)]
-        if plat.WINDOWS:
+        if plat.WINDOWS and (stream or not plat.has_conpty()):
             plat.spawn_console(shim, cwd, {**os.environ, **envd}, hidden=True)
         else:
             plat.spawn_detached(shim, out=C.notes(f'slot{n}.shim'))  # its own errors, should it fail
@@ -1051,7 +1055,8 @@ class HiddenMux:
         return None
 
     def where(self, n: int) -> str:
-        return (f'the hidden console of slot {n} ({shown_cmd()} attach s{n} shows it)' if plat.WINDOWS else
+        return (f'the hidden console of slot {n} ({shown_cmd()} attach s{n} shows it)'
+                if plat.WINDOWS and not logged(C.notes(f'slot{n}.live')) else
                 f'slot {n}\'s log, {C.notes(f"slot{n}.log")}')
 
     def streamed(self, hit: tuple[str, int]) -> bool:
@@ -1063,9 +1068,7 @@ class HiddenMux:
 
     def send(self, hit: tuple[str, int], text: str) -> bool:
         """Type `text` into the slot whose marker is `hit[0]`, through its shim's FIFO, and press Enter. F106b: a
-        headless session gets it as its next stream-json user message instead."""
-        if plat.WINDOWS:
-            return False
+        headless session gets it as its next stream-json user message instead (Windows: not at all)."""
         inbox = Path(hit[0]).with_suffix('.in')
         return send_fifo_raw(inbox, stream_message(text)) if self.streamed(hit) else send_fifo(inbox, text)
 
@@ -1075,7 +1078,7 @@ def hidden_line() -> str:
     see = [f'{shown_cmd()} status', f'the slot logs ({C.notes("slotN.log")})', f'{shown_cmd()} control']
     if remote_slots_on():
         see.insert(0, f'Remote Control ({REMOTE_URL}, the Claude apps)')
-    if plat.WINDOWS:
+    if plat.WINDOWS and not plat.has_conpty():
         see.append(f'{shown_cmd()} attach sN (shows its console)')
     if stream_engine():  # F106b
         return 'slots run headless (claude -p, stream-json; [run] engine = "stream"), with no Remote Control: watch ' \
@@ -1083,15 +1086,30 @@ def hidden_line() -> str:
     return 'slots run hidden, with no window: watch them through ' + ', '.join(see)
 
 
+PASTE = b'\x1b[200~%s\x1b[201~'  # a bracketed paste
+
+
+def logged(marker: Path) -> bool:
+    """Windows: what the session of `marker` prints goes to its log, so there is no console window to show: it
+    runs in a ConPTY pseudo-console, or headless."""
+    try:
+        spec = json.loads(marker.with_suffix('.job').read_text(encoding='utf-8'))
+        return bool(spec.get('conpty') or spec.get('stream'))
+    except (OSError, ValueError, AttributeError):
+        return False
+
+
 def send_fifo(inbox: Path, text: str) -> bool:
     """F40: type `text` into a hidden session through the FIFO its shim reads (`run_pty`): a bracketed paste
     (so a newline in it does not send early), then Enter. False when no shim reads it (the session ended)."""
+    if plat.WINDOWS:
+        return pipe_send(inbox, [PASTE % text.encode('utf-8'), b'\r'], 0.3)
     try:
         fd = os.open(inbox, os.O_WRONLY | os.O_NONBLOCK)  # ENXIO with no reader, rather than hang
     except OSError:
         return False
     try:
-        for chunk in (b'\x1b[200~' + text.encode('utf-8') + b'\x1b[201~', b'\r'):
+        for chunk in (PASTE % text.encode('utf-8'), b'\r'):
             end = time.monotonic() + 10
             while chunk:
                 try:
@@ -1111,6 +1129,8 @@ def send_fifo(inbox: Path, text: str) -> bool:
 def send_fifo_raw(inbox: Path, data: bytes) -> bool:
     """F89: `data` written to a hidden session's FIFO as is, with no bracketed paste and no Enter: a key such
     as Escape (b'\\x1b') reaches the agent the way a key press would. False when no shim reads it."""
+    if plat.WINDOWS:
+        return pipe_send(inbox, [data])
     try:
         fd = os.open(inbox, os.O_WRONLY | os.O_NONBLOCK)  # ENXIO with no reader, rather than hang
     except OSError:
@@ -1238,6 +1258,39 @@ def run_pty(argv: list[str], cwd: str, env: dict, marker: Path, logfile: Path | 
     return code, pid
 
 
+def run_conpty(argv: list[str], cwd: str, env: dict, marker: Path, logfile: Path | None) -> tuple[int, int]:
+    """F145, Windows: `run_pty` in a ConPTY pseudo-console: one agent session with no window, its pid in `marker`
+    while it runs; what it prints goes to `logfile`, and what arrives on the pipe that slotN.in beside the marker
+    names (`conpty.InPipe`) is typed into it. No attach. Returns its exit code and pid once it has ended; what it
+    started and left in its console ends with it. OSError when the agent cannot be started."""
+    exe = shutil.which(argv[0], path=env.get('PATH') or os.environ.get('PATH'))
+    if not exe:
+        raise FileNotFoundError(f'{argv[0]} is not on PATH')
+    out = open(logfile, 'ab', buffering=0) if logfile else None
+    inbox = marker.with_suffix('.in')
+    inbox.unlink(missing_ok=True)
+    pty = typed = code = None
+    try:
+        pty = ConPty([exe, *argv[1:]], cwd, {**os.environ, **env, 'AGENT_RUNNER_MARKER': str(marker)}, PTY_SIZE,
+                     out.write if out else lambda data: None)
+        try:
+            typed = InPipe(inbox, pty.write)
+        except OSError as e:
+            print(f'{marker.stem}: no typed input: {e}', flush=True)  # in slotN.shim; it runs all the same
+        marker.write_text(str(pty.pid), encoding='utf-8')
+        while code is None:
+            code = pty.wait(1.0)
+    finally:
+        if typed:
+            typed.close()
+        if pty:
+            pty.close()
+        if out:
+            out.close()
+        marker.unlink(missing_ok=True)
+    return code, pty.pid
+
+
 def marker_pid(marker: Path) -> int:
     try:
         return int(marker.read_text(encoding='utf-8').strip() or 0)
@@ -1246,7 +1299,7 @@ def marker_pid(marker: Path) -> int:
 
 
 def run_session(argv: list[str], cwd: str, env: dict, marker: Path) -> tuple[int, int]:
-    """Windows: run one agent session in this (hidden) console, its pid in `marker` while it runs (see
+    """Windows with no ConPTY: run one agent session in this (hidden) console, its pid in `marker` while it runs (see
     HiddenMux); its exit code and pid. The agent gets AGENT_RUNNER_MARKER, which is how the Stop hook finds
     the pid to end."""
     proc = sp.Popen(argv, cwd=cwd, env={**os.environ, **env, 'AGENT_RUNNER_MARKER': str(marker)})
@@ -1271,7 +1324,7 @@ def stream_file(sid: str) -> Path:
 
 def slot_shim(job: str) -> int:
     """`run --slot-shim <job>`: what runs a hidden slot (see HiddenMux): a pseudo-terminal on POSIX
-    (`run_pty`), this console on Windows (`run_session`). How the agent ended goes to `slotN.exit`.
+    (`run_pty`), a pseudo-console on Windows (`run_conpty`; this console where there is no ConPTY, `run_session`). How the agent ended goes to `slotN.exit`.
 
     Always exits 0; and a job runs once, so a shim started again does not resume a finished session behind
     the runner's back."""
@@ -1280,13 +1333,17 @@ def slot_shim(job: str) -> int:
     if spec.get('started'):
         print('This slot\'s session has ended; the runner starts the next one.')
         return 0
-    f.write_text(json.dumps({**spec, 'started': True}), encoding='utf-8')
+    conpty = not spec.get('stream') and plat.has_conpty()
+    f.write_text(json.dumps({**spec, 'started': True, **({'conpty': True} if conpty else {})}), encoding='utf-8')
     ended = Path(spec['marker']).with_suffix('.exit')
     try:
         if spec.get('stream'):  # F106b: headless, stream-json in and out
             code, pid = run_stream(spec['argv'], spec['cwd'], spec['env'], Path(spec['marker']),
                                    Path(spec['log']) if spec.get('log') else None, spec.get('brief') or '',
                                    Path(spec['events']) if spec.get('events') else None)
+        elif conpty:
+            code, pid = run_conpty(spec['argv'], spec['cwd'], spec['env'], Path(spec['marker']),
+                                   Path(spec['log']) if spec.get('log') else None)
         elif plat.WINDOWS:
             code, pid = run_session(spec['argv'], spec['cwd'], spec['env'], Path(spec['marker']))
         else:

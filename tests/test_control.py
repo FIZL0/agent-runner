@@ -389,8 +389,7 @@ def test_second_shim_keeps_live_session():
         marker.write_text(str(live.pid), encoding='utf-8')
         logf.write_text('Remote Control active · https://claude.ai/code/session_01First\n', encoding='utf-8')
         started = []
-        no_shim = mock.patch.object(K, 'sp', types.SimpleNamespace(Popen=lambda *a, **k: started.append(a),
-                                                                  DEVNULL=subprocess.DEVNULL))
+        no_shim = mock.patch.object(K.plat, 'spawn_detached', lambda *a, **k: started.append(a))
         with no_shim:
             eq(K.hidden_control(13, ['control', '13'], wait=0.5), (live.pid, K.SHIM_ALREADY),
                'the second one answers with the live pid')

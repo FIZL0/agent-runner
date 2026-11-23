@@ -383,7 +383,7 @@ def tell_answer(tid: str, told: bool, msg: str) -> None:
 
 def tells(procs: dict, running: dict) -> None:
     """F16: pass each `plan tell` / `plan change` message on to the slot running its task, by typing it into
-    the slot's session through its shim's FIFO (F40). No live session (a Windows hidden console, the
+    the slot's session through its shim's FIFO (F40). No live session (a hidden console, the
     session ended, a cut-off one waiting to resume): told false, and `plan change` falls back to the B19 halt."""
     reqs = tell_requests()
     if not reqs:

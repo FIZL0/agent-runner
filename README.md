@@ -89,13 +89,14 @@ nothing changes. Its projects and token are in `~/.config/agent-runner` (`%APPDA
 > No repo handy? `examples/demo.sh` builds a tiny one with a plan in a temp dir and shows `plan`,
 > `plan brief` and `run --dry-run` without starting an agent. `examples/demo.sh --run` also does one real task.
 
-Upgrade with `uv tool upgrade agent-runner` (or `pipx upgrade`) any time: a running run restarts itself on the
-new version and adopts its sessions (not on Windows, nor across a major version). Or pin a
-[release](https://github.com/FIZL0/agent-runner/releases/latest): `uv tool install git+https://github.com/FIZL0/agent-runner@v<version>`.
-On Windows each slot runs in a console whose window starts hidden (`agent-runner attach s2` shows one). On
-Linux and macOS `agent-runner attach s2` (or `c1`) puts this terminal on a hidden session's own terminal;
-Ctrl-b d detaches and leaves it running.
-Adding it to an existing repo and wrapping it from your own CLI are in [docs/SETUP.md](docs/SETUP.md).
+Upgrade with `uv tool upgrade agent-runner` (or `pipx upgrade`) any time: a running run restarts itself on the new
+version and adopts its sessions (not on Windows, nor across a major version). Or pin a
+[release](https://github.com/FIZL0/agent-runner/releases/latest): `uv tool install
+git+https://github.com/FIZL0/agent-runner@v<version>`. On Windows each slot runs in a ConPTY pseudo-console with no
+window (Windows 10 1809 and later; before that, a console that starts hidden, which `agent-runner attach s2` shows). On
+Linux and macOS `agent-runner attach s2` (or `c1`) puts this terminal on a hidden session's own terminal; Ctrl-b d
+detaches and leaves it running. Adding it to an existing repo and wrapping it from your own CLI are in
+[docs/SETUP.md](docs/SETUP.md).
 
 ## How it works
 
@@ -118,9 +119,9 @@ main moves and is pushed; the slot picks its next task
 1. **Pick.** A free slot reads `plan/TODO.md` from the top and takes the first task that may start. A task
    waits while it is blocked, while a task in its `after:` is not done, while it shares `files:` with a
    task that is running or not merged yet, or while another task of its family is running.
-2. **Work.** The slot gets a worktree on branch `task/<ID>` and a hidden terminal (a pseudo-terminal with no
-   window; on Windows a console that starts hidden). The agent starts from a short brief: the task's line, its long form, the files it
-   names, and its newest journal entry.
+2. **Work.** The slot gets a worktree on branch `task/<ID>` and a hidden terminal (a pseudo-terminal with no window; on
+   Windows a ConPTY pseudo-console, or a console that starts hidden before 1809). The agent starts from a short brief:
+   the task's line, its long form, the files it names, and its newest journal entry.
 3. **Finish.** The agent runs `done`. It runs your test gate, ticks the task, commits and pushes the
    branch, and refuses while the tests fail. A stuck agent runs `done --blocked "why"` instead. Once the
    session goes quiet, the runner ends it.

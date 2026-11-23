@@ -143,6 +143,11 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 - Fixes: Runner Home restarts itself when agent-runner's package files change on disk (an upgrade, or a clone's pull,
   same version or not), once the change holds over two 5 s looks, and never while a request or terminal tunnel is
   open. Before, it kept the version it started with until the service restarted. Not on Windows (B165).
+- Added: on Windows 10 1809 and later, slots, c1 and other control sessions run in a ConPTY pseudo-console (stdlib
+  `ctypes`, 200 by 50) instead of a hidden console. Their output goes to `.runner/slotN.log` and `controlN.log`, and
+  `plan tell`, budget stops, a typed `/rename` and the run page's send and keys reach them. Before 1809 the hidden
+  console stays; headless stream slots are unchanged. `attach sN`, `attach cN` and `attach N` do not attach to a ConPTY
+  session yet (they print where the log is), and `agent-runner list` lists control sessions on Windows too (F145).
 
 ## 0.61.0 (2026-11-23)
 

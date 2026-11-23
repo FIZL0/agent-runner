@@ -27,9 +27,10 @@ agent-runner --version          # agent-runner 0.6.18
 That puts `agent-runner` on your PATH. It is the same CLI as `./run` in a clone: `agent-runner plan`,
 `agent-runner done`, `agent-runner run`, `agent-runner stop`. `python3 -m agent_runner` works too.
 
-**Windows:** Python 3.11+ from python.org (not the Store's `python3` alias), Git for Windows (Claude Code
-runs hooks and Bash calls in its Git Bash). Each slot runs hidden, in a console whose window starts hidden
-(`agent-runner attach s2` shows it). Run `agent-runner run 3` from any terminal.
+**Windows:** Python 3.11+ from python.org (not the Store's `python3` alias), Git for Windows (Claude Code runs hooks and
+Bash calls in its Git Bash). Each slot runs hidden: in a ConPTY pseudo-console with no window (Windows 10 1809 and
+later), or before that in a console whose window starts hidden (`agent-runner attach s2` shows that one). Run
+`agent-runner run 3` from any terminal.
 
 **Linux and macOS** need nothing more either (agent-runner 0.60.0 dropped tmux). The slots run hidden, in a
 pseudo-terminal with no window, their output in `.runner/slotN.log`. `agent-runner attach` is the run view

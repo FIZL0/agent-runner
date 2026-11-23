@@ -9,6 +9,7 @@ gets the native equivalent from the standard library and `ctypes` only (no psuti
                           wait, then `taskkill /T /F` (no SIGTERM; the agent may be a .cmd around node)
     spawn_detached        CREATE_NO_WINDOW + a new process group (+ breakaway from a job when allowed)
     spawn_console         a new console (CREATE_NEW_CONSOLE) whose window starts hidden: a slot, a control session
+                          where there is no ConPTY (`has_conpty`, Windows 10 before 1809; see conpty.py)
     lock                  msvcrt.locking on one byte, which goes with the handle however the process ends
     link                  a symlink; failing that (no Developer Mode) a junction for a directory, a hard link
                           for a file
@@ -255,11 +256,23 @@ def terminate(pid: int) -> None:
         pass
 
 
-def spawn_detached(argv: list[str], out: Path | None = None) -> sp.Popen:
+def has_conpty() -> bool:
+    """Windows 10 1809 and later: a session can run in a pseudo-console (`conpty.ConPty`). False elsewhere."""
+    if not WINDOWS:
+        return False
+    import ctypes
+    try:
+        return hasattr(ctypes.WinDLL('kernel32'), 'CreatePseudoConsole')
+    except (OSError, AttributeError):
+        return False
+
+
+def spawn_detached(argv: list[str], out: Path | None = None, cwd: Path | None = None,
+                   env: dict | None = None) -> sp.Popen:
     """Start a process that outlives this one and every terminal around it (the Stop hook's timer, the
-    background run on Windows). `out`: a file its output goes to, else nowhere."""
+    background run and a ConPTY session's shim on Windows). `out`: a file its output goes to, else nowhere."""
     f = open(out, 'ab') if out else sp.DEVNULL
-    kw: dict = dict(stdin=sp.DEVNULL, stdout=f, stderr=f if out else sp.DEVNULL)
+    kw: dict = dict(stdin=sp.DEVNULL, stdout=f, stderr=f if out else sp.DEVNULL, cwd=cwd, env=env)
     try:
         if not WINDOWS:
             return sp.Popen(argv, start_new_session=True, **kw)

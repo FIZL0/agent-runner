@@ -1182,7 +1182,7 @@ def _no_typing(name: str) -> dict:
 def _hidden_keys(session: str, inbox: Path, text: str, key: str) -> dict:
     """F89: `keys` for a hidden session: `text` then `key` written raw to its shim's FIFO."""
     from agent_runner import plat, slots
-    if plat.WINDOWS:
+    if plat.WINDOWS and not inbox.exists():
         return _no_typing(session)
     if not slots.send_fifo_raw(inbox, text.encode('utf-8') + KEY_BYTES.get(key, b'')):
         return {'ok': False, 'code': 1, 'out': f'could not type into {session} (nothing reads {inbox.name})',
@@ -1215,7 +1215,7 @@ def send(name: str, text: str) -> dict:
         return SEND[0](text)
     from agent_runner import plat, slots
     if inbox := hidden_inbox(name):
-        if plat.WINDOWS:
+        if plat.WINDOWS and not inbox.exists():
             return _no_typing(name)
         ok = slots.send_fifo(inbox, text)
     else:
