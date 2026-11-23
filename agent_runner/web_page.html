@@ -2,7 +2,8 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,interactive-widget=resizes-content">
+<meta name="theme-color" content="" id="themecolor">
 <title>agent-runner</title>
 <script>
 /* F81: the view this browser last chose (localStorage), else [ui] web (the server writes it into WEB_VIEW): on
@@ -21,7 +22,7 @@ const HOME_PAGE=/*HOME_PAGE*/false;
    (dark: warm grey), serif for headings and replies, a rust accent, thin line icons, one big rounded message
    box. It switches layout by its own width (container query): a sidebar on a desktop, a drawer on a phone. */
 :root{
-  --bg:#faf9f5; --side:#f5f4ee; --surface:#ffffff; --bubble:#f0eee6; --fg:#141413; --muted:#73726c; --faint:#a3a199;
+  --page:var(--bg); --bg:#faf9f5; --side:#f5f4ee; --surface:#ffffff; --bubble:#f0eee6; --fg:#141413; --muted:#73726c; --faint:#a3a199;
   --line:#e8e6dc; --line2:#dcd9cd; --accent:#c96442; --accent2:#b5573a; --onaccent:#ffffff; --ok:#4f7a43;
   --warn:#a8711a; --bad:#b0412e; --onbad:#ffffff; --scrim:rgba(0,0,0,.25); --shadow:rgba(0,0,0,.15); --lift:rgba(0,0,0,.04);
   --sans:"Inter",system-ui,-apple-system,"Segoe UI",sans-serif; --serif:"Source Serif 4",Georgia,"Times New Roman",serif;
@@ -41,17 +42,20 @@ const HOME_PAGE=/*HOME_PAGE*/false;
   --warn:#d9a54a; --bad:#e07a66; --onbad:#262624; --scrim:rgba(0,0,0,.45); --shadow:rgba(0,0,0,.4); --lift:rgba(0,0,0,.12); color-scheme:dark}
 *{box-sizing:border-box;scrollbar-width:none} *::-webkit-scrollbar{display:none}
 [hidden]{display:none!important}
-html,body{height:100%;overscroll-behavior:none;overflow:hidden}
-body{position:fixed;inset:0;margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 var(--sans)}
+/* B160: --page is what shows outside .app (behind Safari's bar, round the keyboard): the colour of the view, a chat's too */
+:root.term{--page:var(--t-bg)}
+html,body{height:100%;overscroll-behavior:none;overflow:hidden;background:var(--page)}
+body{position:fixed;inset:0;margin:0;color:var(--fg);font:15px/1.5 var(--sans)}
 svg{width:18px;height:18px;flex:none;stroke:currentColor;fill:none;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
 button{font:inherit;color:inherit}
 button:focus-visible,[tabindex]:focus-visible,a:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 a{color:var(--accent)}
 
-.app{container-type:inline-size;height:100vh;height:100dvh;display:flex;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+.edge{position:fixed;left:0;right:0;height:8px;background:var(--page);z-index:3;pointer-events:none} .edge-top{top:0} .edge-bottom{bottom:0}
+.app{position:relative;container-type:inline-size;height:100vh;height:100dvh;display:flex;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
 /* B160: the keyboard is open: kbFit() sets .app's top and height from visualViewport, and nothing pans the page */
 .app.kb{position:fixed;left:0;right:0;container-type:size;padding-bottom:0}
-.app.kb .dock{padding-bottom:8px} .app.kb .sheet{padding-bottom:12px} .app.kb .slash{max-height:min(320px,50cqh)}
+.app.kb .dock{padding-bottom:8px} .app.kb .sheet{padding-bottom:12px;box-shadow:0 100px 0 var(--surface)} .app.kb .slash{max-height:min(320px,50cqh)}
 .app.kb .top,.app.kb .dock,.app.kb .scrim{touch-action:pinch-zoom}
 .shell{flex:1;min-height:0;min-width:0;position:relative;display:grid;grid-template-columns:minmax(0,1fr)}
 
@@ -127,7 +131,7 @@ a{color:var(--accent)}
 
 /* the main column */
 .main{position:relative;display:flex;flex-direction:column;min-height:0;min-width:0;touch-action:pan-y pinch-zoom}
-.top{display:flex;align-items:center;gap:6px;padding:10px 10px 6px;padding-right:max(10px,env(safe-area-inset-right,0px))}
+.top{position:relative;z-index:3;background:var(--bg);display:flex;align-items:center;gap:6px;padding:10px 10px 6px;padding-right:max(10px,env(safe-area-inset-right,0px))}
 .icon{width:36px;height:36px;border-radius:var(--r-m);border:0;background:none;display:grid;place-items:center;cursor:pointer;color:var(--fg);flex:none}
 .icon:hover{background:var(--bubble)}
 .top .title{flex:1;min-width:0;text-align:center;font-weight:500;font-size:var(--fs-b);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -229,6 +233,8 @@ a{color:var(--accent)}
 /* notices float over the view: they never push it down */
 .notices{position:relative;height:0;z-index:4;display:grid;justify-items:center}
 .notices>*{position:relative}
+/* B160: in a chat they have a row of their own, off the text (noticeRoom keeps the text where it is) */
+.main.term .notices{height:auto;background:var(--bg)} .main.term .notices .obbar{padding-bottom:4px}
 .offline{font-size:var(--fs-s);color:var(--warn);background:var(--surface);border:1px solid var(--line2);border-radius:var(--r-full);padding:2px 12px;box-shadow:0 2px 10px var(--lift)}
 /* F137: the outbox's pill, its popup and the stand-ins */
 .obbar{display:flex;justify-content:center;padding:4px 12px 0;max-width:100%}
@@ -276,7 +282,7 @@ a{color:var(--accent)}
 .speakb:hover{background:var(--bubble);color:var(--fg)} .speakb.on{color:var(--accent)}
 /* B119: the slash command menu, above the message box */
 .box{position:relative}
-.slash{position:absolute;left:0;right:0;bottom:calc(100% + 6px);max-height:min(320px,50vh);overflow-y:auto;background:var(--surface);border:1px solid var(--line2);border-radius:var(--r-l);padding:4px;box-shadow:0 6px 24px var(--shadow);z-index:5}
+.slash{position:absolute;left:0;right:0;bottom:calc(100% + 6px);max-height:min(320px,50vh);max-height:min(320px,50dvh);overflow-y:auto;background:var(--surface);border:1px solid var(--line2);border-radius:var(--r-l);padding:4px;box-shadow:0 6px 24px var(--shadow);z-index:5}
 .slash button{display:flex;gap:10px;align-items:baseline;width:100%;border:0;background:none;color:var(--fg);text-align:left;padding:7px 10px;border-radius:var(--r-s);cursor:pointer;font:14px/1.35 var(--sans);min-width:0}
 .slash button.on{background:var(--bubble)}
 .slash b{font-weight:500;white-space:nowrap}
@@ -361,7 +367,7 @@ a{color:var(--accent)}
 /* the jump to the latest message */
 .jump{position:absolute;left:50%;bottom:100%;margin-bottom:6px;transform:translate(-50%,6px);opacity:0;visibility:hidden;height:36px;border-radius:var(--r-full);border:1px solid var(--line2);background:var(--surface);color:var(--fg);box-shadow:0 2px 10px var(--shadow);padding:0 14px;display:inline-flex;align-items:center;gap:6px;font-size:var(--fs-m);cursor:pointer;z-index:4;transition:opacity var(--dur-fast) var(--ease),transform var(--dur-fast) var(--ease),visibility var(--dur-fast)}
 .jump.on{opacity:1;visibility:visible;transform:translate(-50%,0)} .jump svg{width:16px;height:16px}
-.dockwrap{position:relative}
+.dockwrap{position:relative;will-change:transform}
 /* the composer: the send button fills once there is something to send */
 .send{transition:opacity var(--dur-fast) var(--ease)} .box:not(.has) .send:not(.stop){opacity:.45}
 @media (pointer:coarse){.keysl{display:none} .btn,.chip,.icon{min-height:var(--tap)} .icon{min-width:var(--tap)}}
@@ -1197,7 +1203,7 @@ function side(){
   $('side').classList.toggle('open',S.drawer);$('scrim').classList.toggle('on',S.drawer);
 }
 /* the sidebar drawn again only when it changed, its scroll and a name being typed kept */
-function sideHTML(h){const el=$('side'), put=keepScroll(el), f=keepFields(el);if(setHTML(el,h)){f();put();const t=el.querySelector('[data-f="ren"]');if(t&&S.renFocus){S.renFocus=false;t.focus();t.select()}}}
+function sideHTML(h){const el=$('side'), put=keepScroll(el), f=keepFields(el);if(setHTML(el,h)){f();put();const t=el.querySelector('[data-f="ren"]');if(t&&S.renFocus){S.renFocus=false;kbFocus(t);kbReveal(t);t.select()}}}
 /* --- F134: Runner Home in the app: the switcher, All projects, Devices ------------------------------------ */
 const homeNeeds=()=>(H.projects||[]).reduce((n,p)=>n+(p.needs||0),0);
 /* B153: the run's own page top-left: the project's name, a link to Runner Home when it is installed */
@@ -1561,9 +1567,9 @@ function render(force){
     S.view='projects';S.thread=null;
     setHTML($('top'),`<button class="icon menu" data-menu aria-label="Menu">${I.menu}</button><div class="title">All projects</div><span class="icon"></span>`);
     const pin=document.querySelector('[data-paddin]'), pf=pin&&document.activeElement===pin;
-    if(setHTML(body,projectsHTML())){const np=document.querySelector('[data-paddin]');if(np){np.value=H.add;if(pf)np.focus()}
+    if(setHTML(body,projectsHTML())){const np=document.querySelector('[data-paddin]');if(np){np.value=H.add;if(pf)np.focus({preventScroll:true})}
       put();enter(body,had)}
-    lastPlace=place;dockEl.hidden=true;return;
+    pageColor(false);lastPlace=place;dockEl.hidden=true;return;
   }
   if(setHTML($('top'),topHTML()))enter($('top'),hadTop);
   let h='',dock='';
@@ -1575,7 +1581,7 @@ function render(force){
   const ta=document.querySelector('[data-in]'), focused=ta&&document.activeElement===ta, sel=ta?[ta.selectionStart,ta.selectionEnd]:null;
   const kta=document.querySelector('[data-kin]'), kfocused=kta&&document.activeElement===kta;
   const main=document.querySelector('.main');  // F115: a chat looks like the terminal
-  main.classList.toggle('term',chatOn);main.style.colorScheme=chatOn&&TERM.mode?TERM.mode:'';
+  main.classList.toggle('term',chatOn);main.style.colorScheme=chatOn&&TERM.mode?TERM.mode:'';pageColor(chatOn);
   if(moved){body._h=null;dockEl._h=null}
   const drew=setHTML(body,h);
   let drewDock=false;
@@ -1588,8 +1594,8 @@ function render(force){
   if(!force&&!drew&&!drewDock){lastPlace=place;return}
   const nta=document.querySelector('[data-in]');
   if(nta){const v=HI.i!==null&&HI.key===boxKey()?histGet(HI.key)[HI.i]||'':store.get(DRAFT_KEY(boxKey()));if(nta.value!==v)nta.value=v;grow(nta);if(focused&&nta!==ta){nta.focus({preventScroll:true});if(sel)nta.setSelectionRange(sel[0],sel[1])}if(focused)slashShow(nta)}  // B119: the menu stays open; B120: so does a recalled message
-  const np=document.querySelector('[data-paddin]');if(np){np.value=H.add;if(H.addFocus)np.focus()}  // F134
-  const nk=document.querySelector('[data-kin]');if(nk){nk.value=S.kText||'';if(kfocused||S.kFocus)nk.focus();S.kFocus=false}  // F87: the new concept box keeps its words
+  const np=document.querySelector('[data-paddin]');if(np){np.value=H.add;if(H.addFocus){np.focus({preventScroll:true});kbReveal(np)}}  // F134
+  const nk=document.querySelector('[data-kin]');if(nk){nk.value=S.kText||'';if(S.kFocus){kbFocus(nk);kbReveal(nk)}else if(kfocused)nk.focus({preventScroll:true});S.kFocus=false}  // F87: the new concept box keeps its words
   if(drew)keep();
   if(moved){
     const follow=lastPlace&&lastPlace.startsWith('t:@')&&n;  // a starting chat got its name: the same chat
@@ -1605,24 +1611,94 @@ function render(force){
 /* F83: the chat follows its newest message until the person scrolls up; it follows a box that grows or a keyboard too */
 $('body').addEventListener('scroll',()=>{if(!chatShown())return;S.pin=atEnd($('body'));if(S.pin)S.fresh=false;jumpDraw()},{passive:true});
 if(window.ResizeObserver)new ResizeObserver(()=>{if(chatShown()&&S.pin)toEnd()}).observe($('body'));
+/* B160: a notice's row comes or goes in a chat: the text stays where it was (a pinned chat by the line above) */
+let noticeH=0, noticeAt=null;
+function noticeRoom(h){const d=h-noticeH, same=noticeAt===lastPlace;noticeH=h;noticeAt=lastPlace;if(d&&same&&chatShown()&&!S.pin&&$('body').scrollTop>0)$('body').scrollTop+=d}
+if(window.ResizeObserver)new ResizeObserver(()=>noticeRoom(document.querySelector('.notices').offsetHeight)).observe(document.querySelector('.notices'));
+/* B160: the page's own background, behind Safari's bar and the keyboard, is the view's */
+let edgeWait=0;
+function pageColor(chat){
+  document.documentElement.classList.toggle('term',!!chat);
+  const c=getComputedStyle(document.body).backgroundColor, m=$('themecolor');if(!m||m.content===c)return;
+  const first=!m.content;m.content=c;
+  if(!IOS)return;
+  for(const e of document.querySelectorAll('.edge'))e.remove();
+  clearTimeout(edgeWait);
+  /* Safari tints its bars from a fixed layer over the page's edge, and only looks when one comes: a swap in one go is not seen */
+  if(!first)edgeWait=setTimeout(()=>{for(const k of ['top','bottom']){const e=document.createElement('div');e.className='edge edge-'+k;document.body.appendChild(e)}},300);
+}
 /* B160: a phone's keyboard shrinks only the visual viewport (iOS does not shrink dvh) and pans the page, so while it is
-   open .app takes the visual viewport's height and place. Not while pinch-zoomed: then the person pans. */
-const VV=window.visualViewport;
+   open .app takes the visual viewport's height and place. Not while pinch-zoomed: then the person pans. iOS sends its
+   events in any order and late, so for KB_MS after a field is entered or left kbFit() also runs on every frame. */
+const VV=window.visualViewport, IOS=!!(window.CSS&&CSS.supports('-webkit-touch-callout','none')), KB_MS=900;
 let kbH=0;  // .app's height while the keyboard is open, 0 when it is closed
+let kbUntil=0, kbLoop=0;  // the keyboard is on its way in or out until then
 function kbHeight(vv,full,typing){return vv&&typing&&Math.abs(vv.scale-1)<.02&&full-vv.height>100?Math.round(vv.height):0}
 const typingIn=el=>!!(el&&el.matches&&el.matches('textarea,input,select,[contenteditable]'));
 function kbFit(){
   const app=$('app'), el=document.activeElement, h=kbHeight(VV,document.documentElement.clientHeight,typingIn(el));
+  const moving=Date.now()<kbUntil&&Math.abs(VV.scale-1)<.02;  // a pan comes before the resize, or outlasts the blur: follow it, at full height
   const pin=chatShown()&&S.pin, changed=h!==kbH;  // before the new height can move the chat
+  const was=changed?kbSpot():null;
   if(changed)kbH=h;
-  if(h||changed){
-    app.classList.toggle('kb',!!h);
-    app.style.height=h?h+'px':'';app.style.top=h?Math.max(0,Math.round(VV.offsetTop))+'px':'';
-    if(window.scrollY)window.scrollTo(0,0);  // Safari scrolls even a locked document to show the box
-  }
+  const top=h||moving?Math.max(0,Math.round(VV.offsetTop)):0;
+  app.classList.toggle('kb',!!h);
+  app.style.height=h?h+'px':'';app.style.top=h||top?top+'px':'';
+  if((h||moving)&&window.scrollY)window.scrollTo(0,0);  // Safari scrolls even a locked document to show the box
   if(!changed)return;
   if(pin)toEnd();
   if(h)kbReveal(el);
+  kbGlide(was,pin);
+}
+function kbWatch(){
+  kbUntil=Date.now()+KB_MS;
+  const step=()=>{kbFit();kbLoop=Date.now()<kbUntil?requestAnimationFrame(step):0};
+  if(!kbLoop)kbLoop=requestAnimationFrame(step);
+}
+/* the message box, the chat's words and the sheet glide to their new place: transforms only, the layout is there at once */
+let kbAnims=[], kbUndo=null;
+function kbSpot(){
+  const dock=document.querySelector('.dockwrap'), was={dock:dock?dock.getBoundingClientRect().top:0,sheet:S.sheet?$('sheet').getBoundingClientRect().bottom:0};
+  if(kbUndo)kbUndo();
+  was.scroll=$('body').scrollTop;return was;
+}
+function kbGlide(was,pin){
+  if(!document.querySelector('.dockwrap')||matchMedia('(prefers-reduced-motion:reduce)').matches)return;
+  const dock=document.querySelector('.dockwrap'), b=$('body'), css=getComputedStyle(document.documentElement);
+  const o={duration:parseFloat(css.getPropertyValue('--dur-slow')),easing:css.getPropertyValue('--ease').trim()};
+  const go=(el,d)=>{if(Math.abs(d)<1)return;
+    const at=`translateY(${d}px)`, a=el.animate([{transform:at},{transform:'none'}],o), clear=()=>{el.style.transform=''};
+    el.style.transform=at;requestAnimationFrame(()=>requestAnimationFrame(clear));kbAnims.push(a)};  // iOS draws one frame before the animation
+  const moved=was.dock-dock.getBoundingClientRect().top, text=pin?b.scrollTop-was.scroll:0;  // how far each went up
+  if(S.sheet)go($('sheet'),was.sheet-$('sheet').getBoundingClientRect().bottom);
+  if(text>0){b.style.marginTop=-text+'px';toEnd()}  // under the header for now, so the lines that leave are still drawn
+  go(b,text);go(dock,moved);
+  if(!kbAnims.length)return;
+  kbUndo=()=>{kbUndo=null;for(const a of kbAnims){a.onfinish=null;a.cancel()}kbAnims=[];b.style.marginTop='';if(chatShown()&&S.pin)toEnd()};
+  kbAnims[0].onfinish=kbUndo;
+}
+/* iOS decides to pan when a tap focuses a box under where the keyboard comes. So the tap's focus is made here, with no
+   scroll, and the box see-through for two frames: WebKit does not pan to show a box that is not visible. */
+const KB_BOX='textarea,input:not([type]),input[type=text],input[type=search],input[type=number],input[type=password],input[type=url],input[type=email]';
+let KT=null;  // the touch that may be a tap on a box
+function kbTapStart(e){
+  const t=e.touches.length===1?e.touches[0]:null, el=t&&e.target.closest&&e.target.closest(KB_BOX);
+  KT=el&&!(kbH&&el===document.activeElement)&&!el.disabled&&!el.readOnly&&Math.abs(VV.scale-1)<.02?{el,x:t.clientX,y:t.clientY,at:Date.now()}:null;
+}
+function kbTapEnd(e){
+  const k=KT, t=e.changedTouches[0];KT=null;
+  if(!k||!e.cancelable||e.defaultPrevented||!k.el.isConnected||Date.now()-k.at>450||Math.abs(t.clientX-k.x)>9||Math.abs(t.clientY-k.y)>9)return;  // a scroll, a swipe or a long press
+  e.preventDefault();
+  if(k.el===document.activeElement)k.el.blur();  // a script's focus (open()) brought no keyboard: only a new focus does
+  kbFocus(k.el);
+  k.el.click();  // the click that preventDefault took away
+}
+function kbFocus(el){
+  if(!IOS)return el.focus({preventScroll:true});
+  el.style.opacity='0';
+  try{const n=el.value.length;el.setSelectionRange(n,n)}catch(x){}  // a number box has no selection
+  el.focus({preventScroll:true});
+  requestAnimationFrame(()=>requestAnimationFrame(()=>{el.style.opacity=''}));
 }
 /* the field being typed in, inside its own scroller (never scrollIntoView: that pans the page too) */
 function kbReveal(el){
@@ -1632,7 +1708,12 @@ function kbReveal(el){
   else if(r.top<v.top+8)b.scrollTop-=v.top+8-r.top;
 }
 if(VV){for(const t of ['resize','scroll'])VV.addEventListener(t,kbFit);
-  document.addEventListener('focusin',e=>{kbFit();if(kbH)kbReveal(e.target)})}
+  document.addEventListener('focusin',e=>{if(IOS&&typingIn(e.target))kbWatch();kbFit();if(kbH)kbReveal(e.target)});
+  /* left for no other field: the full height at once, not when the viewport says so. After the microtask: a refresh that
+     drew the box again has put the focus back by then */
+  document.addEventListener('focusout',e=>{if(kbH&&!typingIn(e.relatedTarget))queueMicrotask(()=>{if(typingIn(document.activeElement))return;if(IOS)kbWatch();kbFit()})});
+  if(IOS){document.addEventListener('touchstart',kbTapStart,{passive:true});document.addEventListener('touchcancel',()=>{KT=null},{passive:true});
+    document.addEventListener('touchend',kbTapEnd,{passive:false})}}
 function grow(ta){ta.closest('.box')?.classList.toggle('has',!!ta.value.trim());ta.style.height='auto';ta.style.height=Math.min(ta.scrollHeight,160)+'px'}
 /* B119: the slash command menu. SL.cmds the session's commands from /commands (null until they come, then
    SLASH_FALLBACK's list stands in), SL.items the rows shown, SL.i the highlighted one */
@@ -1649,7 +1730,7 @@ const slashOpen=()=>{const m=document.querySelector('[data-slash]');return !!(m&
 function slashClose(){SL.items=[];SL.i=0;const m=document.querySelector('[data-slash]');if(m){m.hidden=true;m.innerHTML=''}}
 function slashTake(j){
   const ta=document.querySelector('[data-in]'), c=SL.items[j];if(!ta||!c)return;
-  ta.value=slashPick(c);store.set(DRAFT_KEY(boxKey()),ta.value);slashClose();grow(ta);ta.focus();ta.setSelectionRange(ta.value.length,ta.value.length);
+  ta.value=slashPick(c);store.set(DRAFT_KEY(boxKey()),ta.value);slashClose();grow(ta);ta.focus({preventScroll:true});ta.setSelectionRange(ta.value.length,ta.value.length);
 }
 
 /* --- F93: Talk: the mic hears the person (Web Speech API), the words go to the Talk session (the `talk` action),
@@ -1665,7 +1746,7 @@ function talkSet(k,v){TS=talkSetParse(JSON.stringify({...TS,[k]:v}));store.set(T
 const voices=()=>{try{return window.speechSynthesis?speechSynthesis.getVoices():[]}catch(e){return[]}};
 if(window.speechSynthesis&&speechSynthesis.addEventListener)speechSynthesis.addEventListener('voiceschanged',()=>{if(S.sheet==='talk')render(true)});
 const talkTyping=()=>!!micWhy()||store.get(TM_KEY)==='type';
-function talkMode(m){store.set(TM_KEY,m==='type'?'type':'');S.pin=true;render(true);if(m==='type')document.querySelector('[data-in]')?.focus()}
+function talkMode(m){store.set(TM_KEY,m==='type'?'type':'');S.pin=true;render(true);const t=m==='type'&&document.querySelector('[data-in]');if(t)kbFocus(t)}
 /* F157: the Talk chats left by New Talk chat, kept over a reload */
 function talkOld(){try{const l=JSON.parse(store.get(TALK_OLD)||'[]');return Array.isArray(l)?l:[]}catch(e){return []}}
 function talkLeave(names){store.set(TALK_OLD,JSON.stringify([...new Set(talkOld().concat(names))]))}
@@ -1750,7 +1831,7 @@ function dictate(){
   rec.onerror=e=>{if(e.error==='not-allowed'||e.error==='service-not-allowed')toast('The browser did not let the page use the mic: allow it in the site settings, or type instead.',true);
     else if(e.error!=='no-speech'&&e.error!=='aborted')toast(`The mic stopped: ${e.error}`,true)};
   rec.onend=()=>{DK.rec=null;dictShow(final||heard);render(true);
-    const t=document.querySelector('[data-in]');if(t&&boxKey()===DK.key){t.focus();t.setSelectionRange(t.value.length,t.value.length)}micFree(rec)};
+    const t=document.querySelector('[data-in]');if(t&&boxKey()===DK.key){t.focus({preventScroll:true});t.setSelectionRange(t.value.length,t.value.length)}micFree(rec)};
   render(true);
   micWhenFree(()=>{MIC.rec=rec;try{rec.start()}catch(e){DK.rec=null;toast(`The mic could not start: ${e.message||e}`,true);render(true);micFree(rec)}},()=>{DK.rec=null});
 }
@@ -1957,7 +2038,7 @@ setInterval(()=>{const w=talkWaitName(), n=talkName();  // F93; B133: an awaited
   if(w)loadFeed(w);else if(n&&!S.thread&&S.view==='talk')loadFeed(n)},2000);
 
 /* --- doing things ------------------------------------------------------------------------------------------ */
-function open(n){S.thread=n;S.drawer=false;S.sheet='';S.sure=null;loadFeed(n);render(true);setTimeout(()=>document.querySelector('[data-in]')?.focus(),50)}
+function open(n){S.thread=n;S.drawer=false;S.sheet='';S.sure=null;loadFeed(n);render(true);setTimeout(()=>document.querySelector('[data-in]')?.focus({preventScroll:true}),50)}
 function goView(v){S.view=viewOf(v);S.thread=null;S.ctx=null;S.drawer=false;S.sheet='';S.sure=null;S.kSaid='';render(true);if(S.view==='settings')loadSettings()}
 async function send(){
   const ta=document.querySelector('[data-in]');const text=(ta?.value||'').trim();
