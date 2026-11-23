@@ -534,7 +534,7 @@ _In code_: micLog, micReport, micCopy, TK.trail
 _Avoid_: trace, debug log
 
 **Held message**:
-A person's message to a control session that got only a usage-limit error, kept and put into that session once the limit is over
+A person's message to a control session, or to a session started from a Claude app, whose reply was only a usage-limit error or was cut off by the limit, kept and put into that session (a copy of an app session) once the limit is over
 _Said_: messages dropped because of the weekly limit
 _On screen_: asks wait for the usage limit
 _In code_: control_held, <notes>/held/
