@@ -1350,6 +1350,7 @@ def test_run_controls() -> None:
         check('[D drop]' not in drawn(p).text(), "a landing slot's feed shows no task controls")
 
 
+@mock.patch.object(T, 'EXEC_RESTART', True)  # the restart test holds on Windows too, where it is off
 def test_follow_upgrade_f90() -> None:
     """F90: a snapshot from a newer run makes the TUI start again (a stub exec) with the same argv and its place
     in AGENT_RUNNER_TUI_PLACE; an equal, older or missing version does not; the new TUI reopens there."""

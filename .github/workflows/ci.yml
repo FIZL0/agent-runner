@@ -1,9 +1,13 @@
-# Runs the test gate (tests/test_*.py) on Linux and Windows for every push and pull request,
-# so paths, quoting and process flags are tested on Windows too.
+# Runs the test gate (tests/test_*.py) on Linux and Windows for pushes to main and pull requests,
+# so paths, quoting and process flags are tested on Windows too. task/* branch pushes are left out
+# (the runner tests each merge itself), and so is a push that changes only the plan or Markdown.
 name: ci
 on:
   push:
+    branches: [main]
+    paths-ignore: ['plan/**', '**.md']
   pull_request:
+    paths-ignore: ['plan/**', '**.md']
 permissions:
   contents: read
 jobs:

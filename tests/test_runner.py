@@ -3974,8 +3974,9 @@ def test_git_fence(repo: Path, tmp: Path):
     eq(sh('git add -A && git commit -qm "T1: never git push here"'), None, 'a normal commit runs, quoted words '
        'and all')
     eq(sh('git status; git log -1 --format=%s | cat'), None, 'and so do git reads')
-    eq(sh(f'cd {tmp / "sibling"} && git push'), None, 'a push in a sibling repository runs while [git] push is on')
-    check(sh(f'cd {tmp / "sibling"} && git push', push=False), 'but not while it is off')
+    sib = (tmp / 'sibling').as_posix()  # bash (and the fence's parse of it) eats a Windows path's backslashes
+    eq(sh(f'cd {sib} && git push'), None, 'a push in a sibling repository runs while [git] push is on')
+    check(sh(f'cd {sib} && git push', push=False), 'but not while it is off')
     check(sh('git reset --hard HEAD~1'), '`git reset --hard` is denied')
     eq(sh('git reset -q HEAD~1'), None, 'a soft reset is not')
     check(sh('git clean -fdq'), '`git clean` is denied')
@@ -7258,7 +7259,9 @@ def test_claude_drift_b45(repo: Path, tmp: Path):
 
     def new() -> str:
         out = io.StringIO()
+        # plat.WINDOWS off sends alive() down its POSIX path, which cannot tell an ended pid on Windows
         with mock.patch.object(R.feed, 'hidden_control', fake_hidden), mock.patch.object(R.plat, 'WINDOWS', False), \
+                mock.patch.object(R.plat, 'alive', lambda p: bool(p) and p != gone.pid), \
                 mock.patch.object(R.time, 'sleep', lambda s: None), mock.patch.dict(R.C.run, {'remote': True}), \
                 contextlib.redirect_stdout(out):
             eq(R.control_new(45, wait=0), 0, 'control --new opens it')
