@@ -4974,6 +4974,118 @@ def test_limit_resumes(repo: Path, tmp: Path):
         subprocess.run(['git', 'branch', '-D', f'task/{m.group(1)}'], cwd=repo, capture_output=True)
 
 
+def test_limit_falls_back(repo: Path, tmp: Path):
+    print('run: F106g with [models] fallback, a task whose Claude session ends on a usage limit goes on in its slot '
+          'with the next provider, in a new session')
+    from agent_runner import fallback as FB, login
+    R.init(repo)
+    git(repo, 'checkout', '-q', 'main')
+    ts, opened = {}, []
+    ask = {'type': 'user', 'message': {'role': 'user', 'content': 'do it'}}
+    limit = {'type': 'assistant', 'isApiErrorMessage': True, 'error': 'rate_limit',
+             'message': {'stop_reason': 'stop_sequence',
+                         'content': [{'type': 'text', 'text': "You've hit your limit · resets 3pm"}]}}
+    end = {'type': 'assistant', 'message': {'stop_reason': 'end_turn', 'content': [{'type': 'text', 'text': 'ok'}]}}
+
+    class Mux:
+        name = 'fake'
+
+        typed = False
+
+        def open(self, n, cwd, prompt, sid, model, idle, env, logfile, resume=False):
+            opened.append((sid, resume, model, prompt))
+            ts[sid] = str(tmp / f'{sid}.jsonl')
+            Path(ts[sid]).write_text(''.join(json.dumps(e) + '\n' for e in
+                                             (ask, end if model == 'copilot:gpt-test' else limit)), encoding='utf-8')
+            R.ask_stop('test')  # the run ends once the fallback session has ended
+            p = subprocess.Popen([sys.executable, '-c', 'pass'])
+            p.wait()
+            return p.pid
+
+        def panes(self):
+            return {}
+
+        def session_id(self, pid):
+            return None
+
+        def where(self, n):
+            return f'slot {n}'
+
+    saved = R.HiddenMux, R.MUX, R.time.sleep, R.transcript
+    sleep = R.time.sleep
+    R.HiddenMux, R.time.sleep = Mux, lambda s: sleep(min(s, 0.05))
+    R.transcript = lambda sid: ts.get(sid)
+    R.C.run['agent'] = 'fake'
+    here = os.getcwd()
+    os.chdir(repo)
+    try:
+        with mock.patch.object(R.control, 'hidden_control', lambda n, c, wait=None: (0, 'test')), \
+                mock.patch.object(R, 'start_board', lambda: None), \
+                mock.patch.object(R.C, 'fallback', ['copilot:gpt-test'], create=True), \
+                mock.patch.object(login, 'missing', lambda m, c: ''), \
+                mock.patch.object(R, 'unlogged', lambda *a: False):
+            eq(R.run(['1'], 'run'), 0, 'the run ends on its stop')
+            check('claude' in FB.capped_now(), 'claude is noted capped', FB.capped_now())
+            eq(FB.start_model('opus'), 'copilot:gpt-test', 'so a new task starts on the next provider')
+            R.C.notes('capped.json').unlink()
+            eq(FB.start_model('opus'), 'opus', 'and once the cap resets, new tasks go back to the first')
+    finally:
+        os.chdir(here)
+        R.HiddenMux, R.MUX, R.time.sleep, R.transcript = saved
+        R.C.run['agent'] = 'claude'
+        R.C.notes('capped.json').unlink(missing_ok=True)
+    text = (repo / '.runner/run.log').read_text()
+    m = re.search(r'slot 1: (\S+) stopped because claude hit its cap .*goes on in this slot with copilot:gpt-test', text)
+    check(m, 'the run says the task goes on with the next provider', text[-1500:])
+    check(len(opened) >= 2 and opened[1][1] is False and opened[1][0] != opened[0][0]
+          and opened[1][2] == 'copilot:gpt-test', 'in a new session on copilot, not a resume of the capped one',
+          [o[:3] for o in opened])
+    if len(opened) >= 2:
+        has(opened[1][3], r'stopped because claude hit its cap', 'told why, and to read the work and the journal')
+    if m:
+        subprocess.run(['git', 'branch', '-D', f'task/{m.group(1)}'], cwd=repo, capture_output=True)
+
+
+def test_cap_told(repo: Path, tmp: Path):
+    print('run: F106g a running Claude task at a usage limit is told to stop at a clean point, and ended later')
+    from agent_runner import fallback as FB, login
+    R.init(repo)
+    f = tmp / 'cap-sid.jsonl'
+    f.write_text(json.dumps({'type': 'user', 'message': {'role': 'user', 'content': 'do it'}}) + '\n' +
+                 json.dumps({'type': 'assistant', 'isApiErrorMessage': True, 'error': 'rate_limit',
+                             'message': {'content': [{'type': 'text',
+                                                      'text': 'Claude AI usage limit reached|9999999999'}]}}) + '\n')
+    sent, ended = [], []
+    told = lambda n, procs, text: sent.append(text) or None  # noqa: E731
+    procs, running = {1: (515151, 'cap-sid', None)}, {1: ('F905', '', set(), set())}
+    R.TRANSCRIPTS['cap-sid'] = str(f)
+    FB.note_model('cap-sid', 'opus')
+    try:
+        with mock.patch.object(FB, 'finished_mark', lambda n=None: None), \
+                mock.patch.object(FB.plat, 'terminate', ended.append), \
+                mock.patch.object(FB.plat, 'alive', lambda pid: True), \
+                mock.patch.object(login, 'missing', lambda m, c: ''):
+            FB.caps(procs, running, told)
+            eq((sent, ended), ([], []), 'with no chain, nothing is said: it waits for the reset as before')
+            with mock.patch.object(R.C, 'fallback', ['gemini:pro-test'], create=True):
+                FB.caps(procs, running, told)
+                check(len(sent) == 1 and 'Stop at a clean point' in sent[0] and 'gemini:pro-test' in sent[0],
+                      'with a chain it is told to stop at a clean point and commit', sent)
+                eq(FB.capped_now().get('claude'), 9999999999.0, 'claude is capped till the reset its error named')
+                eq(FB.fallback_due('F905', 'cap-sid')[0], 'gemini:pro-test',
+                   'and when it ends, it goes on with the next provider')
+                FB.caps(procs, running, told)
+                eq((len(sent), ended), (1, []), 'told once; not ended within the grace')
+                FB.CAP_TOLD['cap-sid'] -= FB.CAP_GRACE
+                FB.caps(procs, running, told)
+                eq(ended, [515151], 'ended once the grace is over')
+    finally:
+        R.C.notes('capped.json').unlink(missing_ok=True)
+        R.C.notes('cap-sid.model').unlink(missing_ok=True)
+        R.C.notes('F905.fallback').unlink(missing_ok=True)
+        FB.CAP_TOLD.clear()
+
+
 def test_shared_push(repo: Path, tmp: Path):
     print('the shared branch is not merged with a remote that moved: that merge would go out untested')
     from agent_runner.gitops import push
@@ -8119,6 +8231,7 @@ def main() -> int:
                        lambda: test_resume(repo, tmp),
                        lambda: test_session_tmp(repo, tmp), lambda: test_end_orphans(repo), lambda: test_memory_watch(repo), lambda: test_tested_ref(repo, tmp), lambda: test_docs_only_gate(repo), lambda: test_research_findings_only(repo),
                        lambda: test_limit_resumes(repo, tmp),
+                       lambda: test_limit_falls_back(repo, tmp), lambda: test_cap_told(repo, tmp),
                        lambda: test_shared_push(repo, tmp), lambda: test_note_on_a_ticked_task(repo), lambda: test_adopt_merge(repo), lambda: test_followups(repo), lambda: test_person_check_after(repo), lambda: test_ci_watch(repo), lambda: test_issues_watch(repo), lambda: test_auto_release(repo), test_update_notice, test_restart_if_upgraded, test_auto_upgrade, lambda: test_flake_repair(tmp), lambda: test_repair_per_failure(repo),
                        lambda: test_stalled(tmp), lambda: test_take(repo), lambda: test_take_text_and_here(repo), lambda: test_background(repo), test_short_name_hints, test_utf8_streams, lambda: test_attach_flag(repo), lambda: test_bare_outside_git(tmp), lambda: test_hand_hook(tmp), lambda: test_user_hook(tmp), lambda: test_remote_auto(tmp), lambda: test_control(repo), lambda: test_pane_id_not_a_path(repo, tmp),
                        lambda: test_short_titles_and_since(repo), lambda: test_structured_events(repo),

@@ -41,6 +41,7 @@ from agent_runner.slots import (adopt, backend, DISK_AT, DISK_SAID, du, env_vars
     free_gb, GB, hidden_line, HiddenMux, MUX, remote_any, remote_line, REMOTE_URL, resume, save_leftovers,
     single_run, slot_env, slot_shim, SLOTS, start, transcript, trim, unmerged)
 from agent_runner.slots import budget_mark, budgets, SPENT
+from agent_runner import fallback as FB
 from agent_runner.teardown import end_own, PAGE, RUN_LOCK, wait_last_run
 from agent_runner.watch import (_account, api_down, AUTO_UPGRADE, auto_upgrade, cut_off,
     drop_session_tmp, end_orphans, memory_watch, queue_cut_off, queue_resume, restart_if_upgraded,
@@ -1215,6 +1216,7 @@ class Run:
         tells(procs, running)  # F16: plan tell / change, typed into a running slot's session
         restyles(procs, running, self.branch)  # F19: plan restyle parks a running interface task
         budgets(procs, running, type_into)  # F103: [run] task_tokens / task_usd stop a task at a clean point
+        FB.caps(procs, running, type_into)  # F106g: a Claude Code task at a usage cap goes on down the chain
         halts(procs, running, self.free_at, self.tried, self.branch, self.model, self.idle,
               self.slots)  # B19: plan drop / change of a running task
         self.waiting = {n: q for n, q in queued().items() if n in self.free_at and n <= self.slots}
@@ -1265,6 +1267,12 @@ class Run:
                 self.tried.add(task[0])
                 self.free_at[n] = dt.datetime.now() + dt.timedelta(seconds=self.pause)
                 return False
+            if n <= self.slots and not ((m := finished_mark(n)) and m.exists()) and \
+                    (fb := FB.fallback_due(task[0], sid)):  # F106g: it hit a cap; the chain names where it goes on
+                FB.queue_fallback(task[0], n, sid, fb[1], fb[0])
+                log(f'slot {n}: {task[0]} stopped because {fb[1]}; it goes on in this slot with {fb[0]}, '
+                    f'the next in [models] fallback')
+                return True
             if (why := cut_off(sid)) and n <= self.slots:
                 if resumes(n, sid) < RESUMES_MAX:
                     # its worktree stays as the session left it, on task/<ID>: the resume goes on there
@@ -1329,8 +1337,9 @@ class Run:
         if api_down(self.stall_said):
             return
         tid, sid, why = self.waiting.pop(n)
+        fb = FB.queued_model(tid)  # F106g: a new session on the chain's next model, not this one resumed
         C.notes(f'{tid}.resume').unlink(missing_ok=True)
-        if p := resume(n, tid, sid, why, self.branch, self.model, self.idle):
+        if p := resume(n, tid, sid, why, self.branch, self.model, self.idle, fallback=fb):
             self.procs[n] = p
             self.running[n] = next((t for t in tasks(self.branch) if t[0] == tid), (tid, '', set(), set()))
             self.tried.add(tid)
@@ -1344,7 +1353,9 @@ class Run:
             return
         if PAUSED[0]:
             return
-        if (w := capped(self.a.force or FORCED[0])) is not None:
+        w = capped(self.a.force or FORCED[0])
+        FB.USAGE_CAPPED[0] = w is not None  # F106g: claude capped: a new task starts down the chain, if it can
+        if w is not None and not FB.chain_open():
             if not self.cap_said:
                 alarm(f'{w}: no new tasks', cap_stop_detail())
                 self.cap_said = True

@@ -455,3 +455,10 @@ _Said_: headless Claude Code, claude -p
 _On screen_: runs headless ([run] engine = "stream")
 _In code_: [run] engine, slots.stream_engine, slots.run_stream, slots.StreamInput, <notes>/streams/<sid>.jsonl
 _Avoid_: pipe mode, API mode, background session
+
+**Fallback chain**:
+The ordered list of models a task goes on with when its provider hits its usage cap or quota; new tasks go back to their own model once the cap resets
+_Said_: fallback
+_On screen_: [models] fallback
+_In code_: C.fallback, agent_runner/fallback.py, chain_next, capped.json
+_Avoid_: failover, backup model

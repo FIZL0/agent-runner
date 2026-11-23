@@ -33,6 +33,9 @@ export default function ({ provider, model }) {
         messages: context.messages.map((m) => ({ role: m.role, text: typeof m.content === 'string' ? m.content :
           m.content.map((b) => b.text || b.name || '').join(' ') })) }) + '\n');
       const step = steps[n] || { text: 'nothing more to do' };
+      if (step.cap === provider)  // F106g: this provider is at its cap for this step
+        return { role: 'assistant', content: [], api: 'fake', provider, model, timestamp: Date.now(),
+          stopReason: 'error', errorMessage: '429 You exceeded your current quota' };
       const content = [];
       if (step.text) content.push({ type: 'text', text: step.text });
       (step.calls || []).forEach((c, i) => content.push({ type: 'toolCall', id: `call_${n}_${i}`, name: c[0], arguments: c[1] }));
@@ -162,6 +165,39 @@ def test_ask(env: Env):
     git(env.wt, 'checkout', '-q', '-B', 'task/F1', 'main')
     git(env.repo, 'branch', '-D', 'asked/F1')
     R.C.notes('F1.ask').unlink()
+
+
+def test_fallback(env: Env):
+    env.configure('', models='fallback = ["sonnet", "gemini:pro-test"]\n')
+    try:
+        argv = R.agent_argv('p', 'sid-f', MODEL, 90, 'slot1', cwd=env.wt)
+        chain = json.loads(argv[argv.index('--fallback') + 1]) if '--fallback' in argv else []
+        eq([c['model'] for c in chain], [], 'a claude entry first in the chain: nothing to switch to in-session')
+        env.configure('', models='fallback = ["gemini:pro-test", "sonnet"]\n')
+        p, sid, calls = env.session([
+            {'text': 'working', 'calls': [['bash', {'command': 'echo one'}]]},
+            {'cap': 'codex', 'calls': [['finish', {'summary': 'done on gemini'}]]},
+        ])
+        eq(p.returncode, 0, 'a session whose provider hits its cap goes on and finishes')
+        take_end(1, R.C)  # its finish mark, read as the run reads it
+        eq([(c['provider'], c['n']) for c in calls], [('codex', 0), ('codex', 1), ('gemini', 1)],
+           'the cap on codex switches the same session to gemini, which gets the whole conversation so far')
+        has(calls[-1]['messages'][-1]['text'], r'one', 'with the tool results the codex turns made')
+        eq(R.C.notes(f'{sid}.model').read_text(encoding='utf-8'), 'gemini:pro-test',
+           'the session\'s model is noted for the runner')
+        from agent_runner import fallback as FB
+        check('codex' in FB.capped_now(), 'and codex is noted capped, so new tasks start down the chain')
+        eq(FB.start_model(MODEL), 'gemini:pro-test', 'a new codex task starts on gemini while codex is capped')
+        has(json.dumps(env.entries(sid)), r'hit its cap', 'the transcript says the session switched')
+        R.C.notes('capped.json').unlink()
+        eq(FB.start_model(MODEL), MODEL, 'once the cap is gone, new tasks go back to the first')
+        env.configure('')
+        p, sid, calls = env.session([{'cap': 'codex', 'text': 'never'}])
+        eq((p.returncode, [c['provider'] for c in calls]), (1, ['codex']),
+           'with no chain a cap ends the session as before')
+    finally:
+        R.C.notes('capped.json').unlink(missing_ok=True)
+        env.configure('')
 
 
 def test_fence(env: Env):
@@ -307,7 +343,7 @@ def main() -> int:
             if not node:  # F132: the brief check runs no session, so needs no node
                 return report([lambda: test_brief(env), lambda: test_no_pi(env)])
             return report([lambda: test_routing(env), lambda: test_finish(env), lambda: test_ask(env),
-                           lambda: test_fence(env), lambda: test_budget(env), lambda: test_resume(env),
+                           lambda: test_fence(env), lambda: test_fallback(env), lambda: test_budget(env), lambda: test_resume(env),
                            lambda: test_tell(env), lambda: test_brief(env), lambda: test_no_pi(env)])
         finally:
             git(env.repo, 'worktree', 'remove', '--force', str(env.wt))
