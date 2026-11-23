@@ -1058,8 +1058,6 @@ def hidden_line() -> str:
         see.insert(0, f'Remote Control ({REMOTE_URL}, the Claude apps)')
     if plat.WINDOWS:
         see.append(f'{shown_cmd()} attach sN (shows its console)')
-    else:
-        see.append(f'{shown_cmd()} attach sN (its terminal; {DETACH_KEY} leaves)')
     return 'slots run hidden, with no window: watch them through ' + ', '.join(see)
 
 
@@ -1176,7 +1174,7 @@ def run_pty(argv: list[str], cwd: str, env: dict, marker: Path, logfile: Path | 
             if listener and listener in r:
                 try:
                     c, _ = listener.accept()
-                    c.settimeout(2.0)
+                    c.settimeout(0.5)  # a client that takes no output for this long is dropped, once
                     clients[c] = b''
                 except OSError:
                     pass
@@ -1337,7 +1335,8 @@ def attach_session(sock: Path, name: str, stdin: int = 0, stdout: int = 1) -> in
 
     saved = termios.tcgetattr(stdin) if os.isatty(stdin) else None
     main = threading.current_thread() is threading.main_thread()
-    old = signal.signal(signal.SIGWINCH, lambda *_: send_size()) if main else None
+    resized = [False]  # set by SIGWINCH, sent from the loop (never mid-frame from the handler)
+    old = signal.signal(signal.SIGWINCH, lambda *_: resized.__setitem__(0, True)) if main else None
     why = f'detached from {name} ({name} keeps running)'
     try:
         if saved:
@@ -1345,7 +1344,10 @@ def attach_session(sock: Path, name: str, stdin: int = 0, stdout: int = 1) -> in
         send_size(nudge=True)
         prefix = False
         while True:
-            r, _, _ = select.select([stdin, s], [], [])
+            r, _, _ = select.select([stdin, s], [], [], 0.2)
+            if resized[0]:
+                resized[0] = False
+                send_size()
             if s in r:
                 data = s.recv(65536)
                 if not data:
@@ -1355,6 +1357,7 @@ def attach_session(sock: Path, name: str, stdin: int = 0, stdout: int = 1) -> in
             if stdin in r:
                 data = os.read(stdin, 4096)
                 if not data:
+                    why = f'input ended: detached from {name} ({name} keeps running)'
                     break
                 send, detach = bytearray(), False
                 for b in data:
