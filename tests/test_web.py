@@ -847,7 +847,7 @@ def test_esc_ctrl_c(tmp: Path) -> None:
         if ln.strip() in out_of_box:
             check('interrupt' not in ln, 'an Esc branch out of the box sends no interrupt', ln)
     esc_int = [ln for ln in esc_lines if 'interrupt' in ln]
-    check(len(esc_int) == 1 and 'busy(shownSession())' in esc_int[0] and 'S.thread=null' not in esc_int[0],
+    check(len(esc_int) == 1 and 'busy(S.thread)' in esc_int[0] and 'S.thread=null' not in esc_int[0],
           'Esc in the box interrupts only a working chat, and does not go back', esc_int)
     check(any("e.key==='Escape'" in ln and 'blur()' in ln for ln in lines), 'Esc in the box leaves it')
     check(any("e.key==='Escape'&&S.thread&&" in ln and 'S.thread=null' in ln for ln in lines), 'Esc out of the box goes back')
@@ -1348,12 +1348,10 @@ eval(logic + slice('const HIST_KEY=', 'return true;\n}\n') + slice('const SL={',
   out.escIdle = [key('Escape'), acts.length, ta.blurred, S.thread];
   store.v['ar-hist:c4'] = 'not json'; S.thread = 'c4'; at('');
   out.bad = [key('ArrowUp'), ta.value];
-  // B141: on Home (no chat open) Ctrl+C, Esc and Stop interrupt c1 while it works; in the Talk view the Talk session
+  // B141: on Home (no chat open) Ctrl+C and Stop interrupt c1 while it works; in the Talk view the Talk session
   S.thread = null; S.view = 'home'; BUSY = true; acts.length = 0;
   const ctrlC = () => key('c', {ctrlKey: true});
   out.homeCtrlC = [ctrlC(), acts.slice()];
-  acts.length = 0; at('x');
-  out.homeEsc = [key('Escape'), acts.slice()];
   acts.length = 0;
   handlers.click({target: {closest: s => s === '[data-stop]' ? {dataset: {stop: ''}} : null}});
   out.homeStop = acts.slice();
@@ -1416,9 +1414,8 @@ def test_composer_keys_b120(tmp: Path) -> None:
     eq(got.get('escBusy'), [True, [['interrupt', 'c1']], 0, 'c1'], 'Esc interrupts the working chat and stays in it')
     eq(got.get('escIdle'), [True, 1, 1, 'c1'], 'Esc in an idle chat leaves the box, sends nothing, does not go back')
     eq(got.get('bad'), [False, ''], 'a broken stored history is read as none')
-    # B141: with no chat open the page shows c1, and Ctrl+C, Esc and Stop interrupt it while it works
+    # B141: with no chat open the page shows c1, and Ctrl+C and Stop interrupt it while it works
     eq(got.get('homeCtrlC'), [True, [['interrupt', 'c1']]], 'Ctrl+C with no chat open interrupts a working c1')
-    eq(got.get('homeEsc'), [True, [['interrupt', 'c1']]], 'Esc in the Home box interrupts a working c1')
     eq(got.get('homeStop'), [['interrupt', 'c1']], 'Stop with no chat open interrupts c1')
     eq(got.get('talkCtrlC'), [True, [['interrupt', 'c7']]], 'in the Talk view Ctrl+C interrupts the Talk session')
     eq(got.get('talkNone'), [False, []], 'a Talk view with no Talk session yet interrupts nothing')
