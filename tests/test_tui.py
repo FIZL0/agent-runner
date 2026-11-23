@@ -809,6 +809,43 @@ def test_reorder() -> None:
         eq((p.cur[3], p.msg_ok), (1, False), 'a refused move leaves the cursor where it was, the reason in red')
 
 
+def test_parked() -> None:
+    """B123: a state 'parked' queue row (level later, from ui_model since B118) gets the tag 'parked' (dim),
+    never 'ready'; U unparks it (`plan edit ID --pri normal`), and J/K and p do nothing on it."""
+    p = page()
+    eq(p.queue_tag({'id': 'F83', 'title': 'Big later work', 'state': 'parked'}), ('parked', 'dim'),
+       "a parked row: 'parked', dim")
+    eq(p.queue_tag({'id': 'F84', 'title': 'Big later work', 'state': 'parked', 'pri': 'later'}),
+       ('parked', 'dim'), 'never ready')
+    ran, snap = [], dict(SNAP)
+    snap['queue'] = list(SNAP['queue']) + [{'id': 'F83', 'title': 'Parked big work', 'state': 'parked',
+                                            'pri': 'later'}]
+    with mock.patch.object(U, 'RUN', [lambda argv: (ran.append(argv), (0, 'ok'))[1]]):
+        p = T.RunPage(snap, get_snap=lambda: dict(snap), attrs=ATTRS)
+        p.key('3')
+        p.cur[3] = len(snap['queue']) - 1
+        eq(p.sel()['id'], 'F83', 'the parked row selected')
+        check(' parked' in drawn(p, 32, 100).text(), "the open parked row shows its 'parked' tag")
+        p.key('k')  # off the selected row's ground, so the tag draws in its own colour
+        win = drawn(p, 40, 100)
+        check(' parked' in win.text() and colour_at(win, ' parked', 1) == 'dim', "unfocused, the tag is dim",
+              win.text())
+        row = next(l for l in win.lines() if 'F83' in l)[:36].rstrip(' │')
+        check(row.endswith('parked') and 'ready' not in row, "the drawn row: 'parked', never 'ready'", row)
+        p.cur[3] = len(snap['queue']) - 1
+        check(('U', 'unpark') in p.hint_keys() and not any(k == 'J/K' for k, _ in p.hint_keys()),
+              'the hints name U unpark, not J/K', p.hint_keys())
+        p.key('J')
+        p.key('K')
+        p.key('p')
+        eq(ran, [], 'J/K and p run nothing on a parked row')
+        p.key('U')
+        eq(ran, [['plan', 'edit', 'F83', '--pri', 'normal']], 'U: plan edit F83 --pri normal')
+        p.cur[3] = 0
+        p.key('U')
+        eq(len(ran), 1, 'U on a task that is not parked runs nothing')
+
+
 OMARCHY_SAMPLE = '''mode = "dark"
 accent = "#89b4fa"
 selection = "#45475a"
@@ -991,5 +1028,6 @@ if __name__ == '__main__':
     raise SystemExit(report([test_layout, test_status_tabs, test_session_tabs, test_queue, test_direct_edit,
                                test_navigation, test_chat_box, test_actions, test_footer, test_concept_page,
                                test_concept_chat,
-                               test_escape_tail, test_colours, test_row_ground_and_fill, test_reorder, test_themes,
+                               test_escape_tail, test_colours, test_row_ground_and_fill, test_reorder, test_parked,
+                               test_themes,
                                test_idle_run_of_another_project, test_older_run, test_run_controls, test_cli]))
