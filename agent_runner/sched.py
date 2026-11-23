@@ -247,49 +247,11 @@ def critical_tasks(branch: str) -> frozenset:
                                         (m := P.PRI_TAG.search(rest)) and m.group(1) == 'critical'))
 
 
-def merging(b: tuple, h: Held) -> bool:
-    """Busy task `b` has exited and only its merge is left: finished here, not in a slot, not resuming."""
-    return b[0] in h.mine and b[0] not in h.live and b[0] not in h.busy_ids
-
-
-HOLD_FOR_MERGE = 30 * 60  # B126: s after the blocker's last commit that a slot is kept for a critical task
-
-
-def critical_waiting(tried: set, h: Held) -> str | None:
-    """B126: the first critical task held only by tasks that have exited and wait to merge (its files, family or
-    ordered section), or None. Free slots are kept for it rather than given to lower-priority work: once that
-    merge lands, it starts in the next free slot, ahead of the normal tasks (`choose`). A pick does not know how
-    many slots are free, so every free slot waits; the wait is a merge's, and a blocker whose last commit is
-    HOLD_FOR_MERGE old (its merge stuck on a person or on edits in the main checkout) keeps nothing.
-    Read once per (Held, tried): `holds` asks it of every lower-priority task."""
-    key = (id(h), frozenset(tried))
-    if WAITING[0] is h and WAITING[1] == key:
-        return WAITING[2]
-    out = None
-    for t in h.todo:
-        if t[0] in h.critical and (r := holds(t, tried, h)) and r[0] == 'clash' and \
-                all(merging(b, h) and merged_soon(b[0]) for b in h.busy
-                    if clash(t, b, h.shared) and not passes(t, b, h)):
-            out = t[0]
-            break
-    WAITING[:] = [h, key, out]
-    return out
-
-
-WAITING: list = [None, None, None]  # critical_waiting's last answer: [Held, key, critical id or None]
-
-
-def merged_soon(tid: str) -> bool:
-    """task/`tid`'s last commit is under HOLD_FOR_MERGE old: its merge is still expected to land shortly."""
-    ct = git('log', '-1', '--format=%ct', f'task/{tid}').stdout.strip()
-    return ct.isdigit() and time.time() - int(ct) < HOLD_FOR_MERGE
-
-
 def holds(t: tuple, tried: set, h: Held) -> tuple[str, tuple | None] | None:
     """Why open task `t` may not start now, first reason only: ('finished', None), ('tried', None),
     ('busy', None), ('parked', None), ('merging', None) (a release, while a merge holds the turn: F99),
-    ('clash', the busy task it clashes with) or ('yields', (the critical task's id,)) (B126: a critical task
-    waits only for a merge, so the slot is kept for it); None when it is free."""
+    or ('clash', the busy task it clashes with); None when it is free. A critical task never holds a slot
+    for itself (B140): `choose` only tries it first."""
     tid = t[0]
     if tid not in h.busy_ids and tid in h.finished:
         return 'finished', None  # its branch is waiting to be merged: restarting it would reset the branch
@@ -303,8 +265,6 @@ def holds(t: tuple, tried: set, h: Held) -> tuple[str, tuple | None] | None:
         return 'merging', None
     if b := next((b for b in h.busy if clash(t, b, h.shared) and not passes(t, b, h)), None):
         return 'clash', b  # a running or merge-waiting task's sibling, ordered-section mate or file neighbour
-    if tid not in h.critical and (c := critical_waiting(tried, h)):
-        return 'yields', (c,)  # B126: the slot is kept for a critical task whose blocker only has to merge
     return None
 
 
@@ -348,8 +308,6 @@ def explain(running: dict, tried: set, branch: str) -> dict[str, tuple[str, str]
             why[tid] = ('waiting for a merge to land', 'a release starts from what has landed')
         elif kind == 'clash':
             why[tid] = clash_why(t, b, h.shared)
-        elif kind == 'yields':
-            why[tid] = ('a critical task goes first', f'{b[0]} starts once the merge it waits for lands')
         elif P.release(tid) and (over := passed_over(t, h)):
             why[tid] = ('free', away_note(over, set(claimed)))
         else:
@@ -372,7 +330,8 @@ def away_note(ids, claimed: set) -> str:
 def choose(h: Held, tried: set, branch: str, claim: bool = False):
     """The first open task nothing holds back (`holds`), claimed first when `claim` (see `claim_task`), or None.
     Parked tasks are skipped, not blocked: that is `pick`'s part. Critical tasks are tried first, wherever their
-    lines stand (B126): one whose blocker has just landed takes the slot ahead of the normal ones."""
+    lines stand (B126): one whose blocker has just landed takes the next free slot ahead of the normal ones. One
+    still blocked holds nothing back (B140): the free slot goes to the next task that may start."""
     for t in sorted(h.todo, key=lambda t: t[0] not in h.critical):
         if holds(t, tried, h):
             continue
