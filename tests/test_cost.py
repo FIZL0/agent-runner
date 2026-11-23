@@ -175,8 +175,27 @@ def test_spend():
     eq(status.spend_shown({'spend': {'1': 'x'}}, '1'), '', 'nothing for a bad record')
 
 
+def test_worker_transcripts():
+    print('worker transcripts: the harness loop\'s sessions count beside Pi\'s (C30)')
+    from unittest import mock
+    from agent_runner import runner as R
+    with tempfile.TemporaryDirectory() as t:
+        notes = Path(t) / 'notes'
+        for d in ('pi-sessions', 'harness-sessions'):
+            (notes / d).mkdir(parents=True)
+            write(notes / d / f'{d}.jsonl', [result('a', 'y')])
+        (Path(t) / 'slots').mkdir()
+        fake = mock.Mock()
+        fake.notes = lambda name: notes / name
+        with mock.patch.object(R, 'init', lambda: None), mock.patch.object(R, 'C', fake, create=True), \
+                mock.patch.object(R, 'SLOTS_DIR', Path(t) / 'slots', create=True):
+            eq(sorted(p.name for p in cost.worker_transcripts(1)), ['harness-sessions.jsonl', 'pi-sessions.jsonl'],
+               'both folders')
+
+
 def main() -> int:
-    return report([test_kinds, test_sessions, test_filled, test_reads, test_files_report, test_spend])
+    return report([test_kinds, test_sessions, test_filled, test_reads, test_files_report, test_spend,
+                   test_worker_transcripts])
 
 
 if __name__ == '__main__':
