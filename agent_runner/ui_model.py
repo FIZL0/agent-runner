@@ -43,6 +43,7 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import os
 import re
 import subprocess as sp
 import threading
@@ -621,7 +622,11 @@ def snapshot_json(**kw) -> str:
 
 def _run(argv: list[str]) -> tuple[int, str]:
     """Run the runner with `argv` in the main checkout: (exit code, what it printed)."""
-    r = sp.run(runner_cmd() + argv, cwd=S.ROOT, capture_output=True, text=True, encoding='utf-8', errors='replace')
+    env = {k: v for k, v in os.environ.items() if k != 'AGENT_RUNNER_CONTROL'}  # F160: the person's, not the session's
+    if argv[:1] and argv[0] in ('plan', 'pitch', 'sheet'):  # that started the run or the TUI
+        env['AGENT_RUNNER_BY'] = 'the person in the run app'
+    r = sp.run(runner_cmd() + argv, cwd=S.ROOT, env=env, capture_output=True, text=True, encoding='utf-8',
+               errors='replace')
     return r.returncode, (r.stdout + r.stderr).strip()
 
 

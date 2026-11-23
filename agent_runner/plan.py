@@ -2645,7 +2645,9 @@ def _main(argv: list[str], c) -> int:
         return 0
 
     if (a := _parse_command(argv)) is not None:
-        return a.run(a, SimpleNamespace(c=c, plan_dir=plan_dir, todo=todo, done=done, say=say))
+        from agent_runner import control_settled  # F160: the chats about the item it settles are told
+        return control_settled.noting(c, a, todo, lambda: a.run(a, SimpleNamespace(
+            c=c, plan_dir=plan_dir, todo=todo, done=done, say=say)))
 
     # a lookup: an id, a section name, or `next`
     paths = [todo, plan_dir / 'REFERENCE.md', plan_dir / 'HUMAN.md', done]

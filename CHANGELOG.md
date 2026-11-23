@@ -4,6 +4,10 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Added: control sessions learn when an item they are about is settled elsewhere (F160). A chat about a task or a
+  Needs you item (its title starts with the id, or it was opened from that item) gets one typed line from the run when
+  someone else drops, changes, confirms, approves, shelves, restores or otherwise settles it. Sessions also re-read an
+  item before they ask the person for it.
 - Changed: control sessions leave blocked and Needs you items alone: not mentioned, listed, counted or asked
   about in answers, the opening summary or a status, unless they bear on what the person is discussing or the person
   asks ("what needs me?"). A status starts with its headline, with no "Needs you" line or group. A DECIDE line is only

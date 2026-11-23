@@ -193,7 +193,7 @@ def child_env() -> dict:
     """The environment the runner's commands get from Home: none of a slot's or a session's markers."""
     env = dict(os.environ)
     for k in ('AGENT_RUNNER_REPO', 'AGENT_RUNNER_CONFIG', 'AGENT_RUNNER_SLOT', 'AGENT_RUNNER_WORKTREE',
-              'AGENT_RUNNER', 'CLAUDECODE', 'CLAUDE_CODE_ENTRYPOINT'):
+              'AGENT_RUNNER', 'AGENT_RUNNER_CONTROL', 'CLAUDECODE', 'CLAUDE_CODE_ENTRYPOINT'):
         env.pop(k, None)
     return env
 

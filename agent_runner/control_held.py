@@ -31,7 +31,8 @@ import time
 import uuid
 from pathlib import Path
 
-from agent_runner import control as K, fallback, plat, state
+from agent_runner import control as K, control_settled, fallback, plat, state
+from agent_runner.control_settled import LEAD
 
 HELD_EVERY = 30  # s between looks
 HELD_AT = [0.0]
@@ -44,7 +45,7 @@ HELD_LEAD = '[agent-runner: held by the usage limit]'
 CLOSED_BY = re.compile(r'<command-name>/(exit|quit|clear)</command-name>')
 WAITING_BLOCK = re.compile(r'\s*<runner-waiting>.*?</runner-waiting>', re.S)
 RUNNER_SAID = ('Open with the summary your control brief describes', 'Say first, in one line: "c1 starts a fresh',
-               'agent-runner: the run changed. ')  # the first messages the runner itself gives (CONTROL_START, F27, F68)
+               'agent-runner: the run changed. ', LEAD)  # the first messages the runner itself gives (CONTROL_START, F27, F68)
 HELD, RUNNER = 'held', 'runner'  # what `walk` keeps for a message with no reply yet that is not the person's
 APP_TAIL = 65536  # bytes of the control server's log read for how an app session ended
 COPIED = ('user', 'assistant', 'attachment', 'system', 'summary', 'custom-title', 'ai-title')  # entries `copy_app`
@@ -163,7 +164,7 @@ def walk(rows, dropped: float = 0.0) -> dict:
                 going = going if d['type'] == 'attachment' else []
                 w['open'].append(HELD)
                 w['held_at'] = at
-            elif K.person_turn(m):
+            elif K.person_turn(m) or text.startswith(LEAD) and not m.get('isMeta'):  # F160
                 going = going if d['type'] == 'attachment' else []
                 w['open'].append(RUNNER if text.startswith(RUNNER_SAID) else
                                  {'id': str(m.get('uuid') or at), 'at': at, 'text': WAITING_BLOCK.sub('', text).strip(),
@@ -655,7 +656,9 @@ def held_tick(force: bool = False, now: float | None = None) -> None:
 
 
 def controls_tick(branch: str) -> None:
-    """The run loop's look at the control sessions: held messages (B170), idle ones (B26), ones closed online (B53)."""
+    """The run loop's look at the control sessions: held messages (B170), idle ones (B26), ones closed online
+    (B53), items settled elsewhere (F160, after the closes: one just closed is not told)."""
     held_tick()
     K.close_controls(branch)
     K.end_closed_controls()
+    control_settled.tick()

@@ -599,5 +599,8 @@ def cmd_pitch(argv: list[str]) -> int:
             lk.close()
             said += ''.join(f'\n{x["id"]}: {"undone" if x["state"] == "undone" else "not undone: " + x["err"]}'
                             for x in changes_of(a.pitch) if x['id'] in picks)
+    if not rc:
+        from agent_runner import control_settled  # F160
+        control_settled.record(S.C, [a.pitch], 'was approved' if a.what == 'approve' else 'was answered no', a.why)
     print(said, file=sys.stderr if rc else sys.stdout)
     return rc
