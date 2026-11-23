@@ -167,10 +167,61 @@ def test_end():
         eq(busy.end(), None, 'a stop waits for the running sessions')
 
 
+def test_stop_ends_own_b144():
+    print('B144: `run stopped` is said only once the board, control server and page are gone; a start right '
+          'after a stop waits for that run to end')
+    import subprocess
+    said: list = []
+    order: list = []
+    board = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'])
+    try:
+        R.C.notes('board.live').write_text(str(board.pid))
+        page = mock.Mock(stop=lambda: order.append('page'))
+        loop.PAGE[:] = [page]
+        with ExitStack() as st:
+            stubs(st, said, stopping=True, rc_sweep_stop=lambda: order.append('remote'),
+                  log=lambda msg, *a, **k: order.append(msg))
+            st.enter_context(mock.patch.object(loop, 'POWER', ''))
+            st.enter_context(mock.patch.object(loop.plat, 'alive', lambda pid: board.poll() is None and pid == board.pid))
+            eq(new_run().end(), 0, 'a drained stop ends the run')
+        stopped = next(i for i, m in enumerate(order) if m.startswith('run stopped'))
+        check(order.index('remote') < stopped and order.index('page') < stopped, 'feed, server and page first', order)
+        check(board.poll() is not None, 'the board ended before `run stopped`')
+        eq(loop.PAGE, [], 'the page is closed and dropped')
+    finally:
+        board.kill()
+        board.wait()
+        R.C.notes('board.live').unlink(missing_ok=True)
+        loop.PAGE.clear()
+
+    print('B144: a start while the old run still holds run.lock and is stopping waits, then takes it')
+    held = R.plat.lock(R.C.notes('run.lock'))
+    check(held is not None, 'the old run holds the lock')
+    ticks = [0]
+
+    def sleep(_s):  # the old run's process ends on the third look
+        ticks[0] += 1
+        if ticks[0] == 3:
+            held.close()
+    with mock.patch.object(loop, 'stopping', lambda: True), mock.patch.object(loop.time, 'sleep', sleep):
+        got = loop.wait_last_run(5)
+    check(got is not None and ticks[0] == 3, 'it waited for the old run, then took the lock', ticks)
+    got.close()
+    held = R.plat.lock(R.C.notes('run.lock'))
+    with mock.patch.object(loop, 'stopping', lambda: False), mock.patch.object(loop, 'last_event_stopped', lambda: False), \
+            mock.patch.object(loop.time, 'sleep', lambda s: (_ for _ in ()).throw(AssertionError('waited'))):
+        try:
+            loop.wait_last_run(5)
+            check(False, 'a run that is up and not stopping is refused')
+        except SystemExit as e:
+            check('another run is going' in str(e), 'refused at once, as before', e)
+    held.close()
+
+
 def main() -> int:
     with tempfile.TemporaryDirectory() as t:
         R.init(make(Path(t)))
-        return report([test_state, test_reap, test_reap_finish_and_ask, test_fill, test_end])
+        return report([test_state, test_reap, test_reap_finish_and_ask, test_fill, test_end, test_stop_ends_own_b144])
 
 
 if __name__ == '__main__':
