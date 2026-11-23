@@ -548,7 +548,17 @@ function obParse(text){let l;try{l=JSON.parse(text||'[]')}catch(e){return[]}
     &&OB_STATES.includes(x.state)&&x.args&&typeof x.args==='object'&&!Array.isArray(x.args)):[]}
 const obTo=x=>String((x&&x.args&&x.args.to)||'');
 /* the next item to send: the first still sending, skipping messages to a chat that is not up yet */
-function obNext(box){return(box||[]).find(x=>x.state==='sending'&&!obTo(x).startsWith('@'))||null}
+function obNext(box,now){const t=now||Date.now(),held=[];  // B154: one held for a starting chat holds the next ones to it, not other items
+  for(const x of box||[]){if(x.state!=='sending'||obTo(x).startsWith('@'))continue;
+    if(x.until>t)held.push(obTo(x));else if(x.name!=='chat_to'||!held.includes(obTo(x)))return x}
+  return null}
+/* B154: the run answered 'hold' to item cid (its chat does not take input yet): tried again in a moment, until
+   HOLD_MS, when it fails with the run's words */
+const HOLD_MS=120000, HOLD_STEP=1500;
+function obHold(box,cid,r,now){
+  const it=(box||[]).find(x=>x.cid===cid);
+  if(it&&it.heldAt&&now-it.heldAt>HOLD_MS)return obSettle(box,cid,{ok:false,out:r&&r.out});
+  return(box||[]).map(x=>x.cid===cid?{...x,heldAt:x.heldAt||now,until:now+HOLD_STEP}:x)}
 /* a starting chat (placeholder '@cid') got its name: its messages go there */
 function obName(box,ph,name){return(box||[]).map(x=>obTo(x)===ph?{...x,args:{...x.args,to:name}}:x)}
 /* the run answered item cid with r: ok drops it (and names its new chat's messages), else it fails and stays */
@@ -565,11 +575,41 @@ function obRetry(box,cid,fresh){
   const l=box||[], it=l.find(x=>x.cid===cid);if(!it)return l;
   const up=obTo(it).startsWith('@')&&l.find(x=>'@'+x.cid===obTo(it));
   if(up)return obRetry(l,up.cid,fresh);
-  return l.map(x=>x.cid===cid?{...x,cid:fresh,state:'sending',err:''}:obTo(x)==='@'+cid?{...x,args:{...x.args,to:'@'+fresh},state:'sending',err:''}:x);
+  return l.map(x=>x.cid===cid?{...x,cid:fresh,state:'sending',err:'',heldAt:0,until:0}:obTo(x)==='@'+cid?{...x,args:{...x.args,to:'@'+fresh},state:'sending',err:''}:x);
 }
 /* Discard: the item goes, and with a new chat the messages waiting for it */
 function obDrop(box,cid){return(box||[]).filter(x=>x.cid!==cid&&obTo(x)!=='@'+cid)}
 function obCounts(box){const l=box||[];return{sending:l.filter(x=>x.state==='sending').length,failed:l.filter(x=>x.state==='failed').length}}
+/* --- B154: sent messages: each stays shown, as pending, until its own text is in the chat's feed as 'you' -------
+   One: {id, text, at (the run's clock, s, when it was typed), since (the page's clock, ms: when it went, or was last
+   seen behind a working turn), state 'sent'|'failed', first (a new chat's ask), talk}. */
+const LAND_MS=45000, FIRST_MS=150000, SLASH_MS=15000;
+/* a message's lines as they compare: no paste wrap or Talk words, spaces as one, no empty lines */
+const sentLines=t=>talkShown(String(t||'').replace(/<\/?pasted_content[^>]*>/g,'\n').trim()).split('\n').map(l=>l.replace(/\s+/g,' ').trim()).filter(Boolean);
+/* the messages of `pending` the feed does not have yet: each takes its own whole lines of a 'you' entry not older
+   than it (messages queued together come as one entry; an attached picture's path may become a mark) */
+function sentLeft(pending,entries){
+  const es=(entries||[]).filter(e=>e.kind==='you').map(e=>({at:e.at,lines:sentLines(e.text)}));
+  return(pending||[]).filter(p=>{
+    const all=sentLines(p.text), words=all.filter(l=>!l.startsWith('Attached: ')), want=words.length?words:all;
+    for(const e of es){if(e.at&&p.at&&e.at<p.at)continue;
+      for(let i=0;i+want.length<=e.lines.length;i++)if(want.every((l,k)=>e.lines[i+k]===l)){e.lines.splice(i,want.length);return false}}
+    return true});
+}
+/* `pending` after a look at the feed: without those that landed; one the chat has not got while it is idle, or gone
+   (`live` false), is 'failed' (a slash command leaves no words in the feed: it just goes) */
+function sentStep(pending,entries,now,live){
+  const busy=live&&working(entries);
+  return sentLeft(pending,entries).map(p=>busy&&p.state==='sent'?{...p,since:now}:p)
+    .filter(p=>!(/^(\/[a-z][\w:-]*(\s|$)|!)/.test(p.text)&&now-p.since>SLASH_MS))
+    .map(p=>p.state==='sent'&&now-p.since>(p.first?FIRST_MS:LAND_MS)?{...p,state:'failed'}:p);
+}
+/* the kept sent messages after a reload, by chat */
+function sentParse(text){let o;try{o=JSON.parse(text||'{}')}catch(e){return{}}
+  const out={};if(!o||typeof o!=='object')return out;
+  for(const [n,l] of Object.entries(o)){const ps=(Array.isArray(l)?l:[]).filter(p=>p&&typeof p==='object'&&typeof p.text==='string'&&typeof p.since==='number'&&['sent','failed'].includes(p.state));
+    if(/^c\d+$/.test(n)&&ps.length)out[n]={at:0,len:0,pending:ps}}
+  return out}
 /* the ids an item still sending stands in for (key 'need' or 'concept'): the page hides their cards meanwhile */
 function obHidden(box,key){return(box||[]).filter(x=>x.state==='sending'&&x[key]).map(x=>x[key])}
 /* the pill's words */
@@ -620,7 +660,7 @@ function projectButtons(p){
   b.push({label:'Unlist',unlist:true});
   return b;
 }
-if(typeof module!=='undefined')module.exports={homeBase,homeKey,projectLink,homeLink,homeHref,pageTitle,projectState,switcherRows,projectWords,projectButtons,chatMove,BOX_KEYS,keysLine,histPush,histEdge,histStep,slashMatches,slashPick,slashMove,SLASH_FALLBACK,chatPick,answerOpts,needAsk,threadMsgs,working,planWords,compose,sendReq,usageOf,logKind,plain,chatName,controlReq,controlClick,taskControlsOn,queueGroups,conceptButtons,planQueue,NO_CONCEPT,newConceptReq,queuedId,NAV,talkSession,micProblem,dictProblem,dictButton,dictInsert,termTokens,talkShown,talkReply,goneMark,needsShown,answerSaid,GONE_MS,obParse,obNext,obName,obSettle,obRetry,obDrop,obCounts,obHidden,obPill};
+if(typeof module!=='undefined')module.exports={homeBase,homeKey,projectLink,homeLink,homeHref,pageTitle,projectState,switcherRows,projectWords,projectButtons,chatMove,BOX_KEYS,keysLine,histPush,histEdge,histStep,slashMatches,slashPick,slashMove,SLASH_FALLBACK,chatPick,answerOpts,needAsk,threadMsgs,working,planWords,compose,sendReq,usageOf,logKind,plain,chatName,controlReq,controlClick,taskControlsOn,queueGroups,conceptButtons,planQueue,NO_CONCEPT,newConceptReq,queuedId,NAV,talkSession,micProblem,dictProblem,dictButton,dictInsert,termTokens,talkShown,talkReply,goneMark,needsShown,answerSaid,GONE_MS,obParse,obNext,obName,obSettle,obRetry,obDrop,obCounts,obHidden,obPill,obHold,sentLeft,sentStep,sentParse};
 </script>
 
 <script>
@@ -706,6 +746,23 @@ S.ob=obParse(store.get(OB_KEY));S.obOpen=false;
 const OB={busy:false,offline:false,timer:0,wait:2000};
 const newCid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,10);
 function obChange(fn){S.ob=fn(S.ob);store.set(OB_KEY,S.ob.length?JSON.stringify(S.ob):'')}
+/* B154: the sent messages (sentStep), kept over a reload */
+const SENT_KEY='ar-sent';
+S.sent=sentParse(store.get(SENT_KEY));
+const keepSent=()=>{const o={};for(const [n,s] of Object.entries(S.sent))if((s.pending||[]).length)o[n]=s.pending;store.set(SENT_KEY,Object.keys(o).length?JSON.stringify(o):'')};
+function addSent(n,text,at,more,len){
+  const now=Date.now(), p=(S.sent[n]&&S.sent[n].pending)||[];
+  S.sent[n]={at:now,len:len==null?feedOf(n).length:len,pending:[...p,{id:newCid(),text,at:at||0,since:now,state:'sent',...(more||{})}]};keepSent();
+}
+/* a new chat's ask, from the action that started it: pending in its thread */
+function carrySent(n,j,ask){const text=(j&&j.ask)||ask;if(n&&text)addSent(n,text,j&&j.at,{first:true},0)}
+function sentDrop(n,id){const s=S.sent[n], p=s&&s.pending.find(x=>x.id===id);if(p){s.pending=s.pending.filter(x=>x!==p);keepSent()}return p}
+function sentBubbles(n,shown){
+  let h='';
+  for(const p of (S.sent[n]&&S.sent[n].pending)||[]){const b=p.state==='failed', d=`data-n="${esc(n)}"`;
+    h+=`<div class="u pending${b?' failed':''}">${esc(shown(p.text))}${b?`<div class="small">Not delivered: it is not in ${esc(n)}'s chat</div><div class="btns"><button class="btn pri" data-sentretry="${esc(p.id)}" ${d}>Retry</button><button class="btn" data-sentdrop="${esc(p.id)}" ${d}>Discard</button></div>`:''}</div>`}
+  return h;
+}
 /* take an action: drawn at once by the caller, kept in the outbox, sent behind */
 function outbox(name,args,more){
   const it={cid:newCid(),name,args:args||{},state:'sending',err:'',at:Date.now(),say:name,...(more||{})};
@@ -722,19 +779,21 @@ async function drain(){
       catch(e){OB.offline=true;OB.timer=setTimeout(drain,OB.wait);OB.wait=Math.min(OB.wait*2,30000);obDraw();return}
       OB.offline=false;OB.wait=2000;
       if(!S.ob.some(x=>x.cid===it.cid))continue;  // discarded while it went
+      if(j&&j.hold){obChange(b=>obHold(b,it.cid,j,Date.now()));continue}  // B154: its chat does not take input yet
       obChange(b=>obSettle(b,it.cid,j));
       obDone(it,j);render(true);
     }
   }finally{OB.busy=false}
+  if(S.ob.some(x=>x.state==='sending'&&x.until))OB.timer=setTimeout(drain,HOLD_STEP+100);
   obDraw();
 }
 /* what the page does once the run answered an item */
 function obDone(it,j){
   const now=Date.now(), snapNow=()=>fetch(tq('snapshot')).then(s=>s.json()).then(takeSnap).catch(()=>{});
   if(!j||!j.ok){toast(`Not sent: ${it.say}`,true);S.obOpen=true;if(it.need||it.concept)snapNow();return}
-  if(it.newchat&&j.name){if(S.waitNew&&S.waitNew.ph==='@'+it.cid)S.waitNew=null;if(S.thread==='@'+it.cid)open(j.name)}
-  else if(it.name==='chat_to'){const to=it.args.to,p=(S.sent[to]&&S.sent[to].pending)||[];
-    S.sent[to]={at:now,len:feedOf(to).length,pending:[...p,it.args.text]}}
+  if(it.newchat&&j.name){carrySent(j.name,j,it.ask);if(S.waitNew&&S.waitNew.ph==='@'+it.cid)S.waitNew=null;if(S.thread==='@'+it.cid)open(j.name)}
+  else if(it.name==='chat_to'){const to=j.name||it.args.to;  // B154: c1 was not up: the new chat that took it
+    addSent(to,it.args.text,j.at,j.name?{first:true}:{});if(to!==it.args.to&&S.thread===it.args.to)open(to)}
   else if(it.need&&it.name==='answer'){toast(answerSaid(j,it.need,it.args.text));S.gone=goneMark(S.gone,j,now);snapNow()}
   else if(it.concept){S.gone={...(S.gone||{}),[it.concept]:now}}  // a picked concept stays off while the run catches up
   else if(it.name==='plan_add'&&it.args.kind==='K'){S.kSaid=`Queued ${queuedId(j.out)||'a new concept'}: a run writes its options page, and it shows here.`;toast(S.kSaid)}
@@ -747,7 +806,7 @@ function obHide(){
   S.snap.concepts=needsShown(S.snap.concepts,S.gone,now).filter(c=>!cs.includes(c.id));
 }
 const obBtns=x=>`${x.state==='failed'?`<button class="btn pri" data-obretry="${esc(x.cid)}">Retry</button>`:''}${x.state==='failed'&&x.name==='chat_to'?`<button class="btn" data-obedit="${esc(x.cid)}">Edit</button>`:''}<button class="btn" data-obdrop="${esc(x.cid)}">Discard</button>`;
-const obState=x=>x.state==='failed'?`Not sent: ${x.err||'it did not work'}`:OB.offline?'waiting for the connection':'sending…';
+const obState=x=>x.state==='failed'?`Not sent: ${x.err||'it did not work'}`:OB.offline?'waiting for the connection':x.heldAt?'waiting for the chat to start':'sending…';
 function obDraw(){
   const c=obCounts(S.ob), parts=obPill(c,OB.offline), bar=$('obbar'), pop=$('obpop');
   bar.hidden=!parts.length;
@@ -979,7 +1038,7 @@ function box(ph,foot){
 function convo(n,shown){  // F93: shown, how a message of yours shows (Talk: without its brief or reminder)
   shown=shown||(t=>t);
   const f=S.feeds[n], agent=isAgent(n), title=threadTitle(n);
-  if(!f)return `<div class="msgs">${String(n||'')[0]==='@'?'':'<div class="think">'+LOGO()+'Loading…</div>'}${obBubbles(n)}</div>`;  // F137
+  if(!f)return `<div class="msgs">${String(n||'')[0]==='@'?'':'<div class="think">'+LOGO()+'Loading…</div>'}${sentBubbles(n,shown)}${obBubbles(n)}</div>`;  // F137
   const ms=threadMsgs(f.entries);
   let h=f.more?'<div class="more">Older messages are on its session page.</div>':'';
   if(!ms.length)h+=`<div class="small" style="text-align:center">${esc(f.out||'Nothing said here yet.')}</div>`;
@@ -990,7 +1049,7 @@ function convo(n,shown){  // F93: shown, how a message of yours shows (Talk: wit
     const st=m.steps.length?`<button class="steps ${open?'open':''}" data-steps="${esc(k)}">${I.chev}Ran ${m.steps.length} step${m.steps.length>1?'s':''}</button>${open?`<div class="stepbox">${m.steps.map(s=>(s.tool?`<span class="tl">${esc(s.tool)}</span>`:'')+(s.out?`\n<span class="o">  ⎿ ${esc(s.out).replace(/\n/g,'\n    ')}</span>`:'')).join('\n')}</div>`:''}`:'';  // F115: tool lines as in the terminal
     h+=`<div class="a">${lead}${st}${m.text?`<div class="say">${md(m.text)}</div>`:''}</div>`;
   });
-  for(const p of (S.sent[n]&&S.sent[n].pending)||[])h+=`<div class="u pending">${esc(shown(p))}</div>`;
+  h+=sentBubbles(n,shown);  // B154
   h+=obBubbles(n);  // F137: messages still in the outbox
   if(busy(n))h+=`<div class="think">${LOGO()}Working on it… · Ctrl+C interrupts<button type="button" class="btn mini" data-stop="${esc(n)}">Stop</button></div>`;
   return `<div class="msgs">${h}</div>`;
@@ -1158,7 +1217,7 @@ async function talkSend(msg){
   if(!r.ok){if(TK.wait===w)TK.wait=null;TK.state='';render(true);return false}
   const n=r.session||to, fresh=n!==to;
   if(TK.wait===w){if(fresh){w.n=n;w.since=0;w.last=''}w.at=Date.now()}  /* not yet heard; n '': found by its title */
-  if(n){store.set(TALK_KEY,n);S.sent[n]={at:Date.now(),len:fresh?0:len,pending:[msg]};loadFeed(n)}
+  if(n){store.set(TALK_KEY,n);addSent(n,msg,r.at,{talk:true,...(fresh?{first:true}:{})},fresh?0:len);loadFeed(n)}
   else if(TK.wait===w&&!w.n)toast('Talk is opening its chat: it shows here once it is up');
   render(true);return true;
 }
@@ -1238,12 +1297,15 @@ async function loadFeed(n){
   if(String(n||'')[0]==='@')return;  // F137: a chat still starting has no feed yet
   try{const f=await (await fetch(tq('feed/'+encodeURIComponent(n)))).json();
     const old=S.feeds[n];S.feeds[n]={...f,at:Date.now()};
-    const sent=S.sent[n];if(sent&&(f.entries||[]).length>sent.len)sent.pending=[];
+    const sent=S.sent[n], had=JSON.stringify((sent&&sent.pending)||[]), se=sessionOf(n);
+    if(sent){sent.pending=sentStep(sent.pending,f.entries,Date.now(),!!se&&se.state!=='off');keepSent()}  // B154
+    const moved=had!==JSON.stringify((sent&&sent.pending)||[]);
     talkHear(n);  // F93
-    if(!old||JSON.stringify(old.entries)!==JSON.stringify(f.entries)||old.out!==f.out)render()}
+    if(moved||!old||JSON.stringify(old.entries)!==JSON.stringify(f.entries)||old.out!==f.out)render()}
   catch(e){}
 }
 setInterval(()=>{if(S.thread&&!document.hidden)loadFeed(S.thread)},2000);
+setInterval(()=>{for(const n of Object.keys(S.sent))if(n!==S.thread&&S.sent[n].pending.length&&!document.hidden)loadFeed(n)},4000);  // B154
 setInterval(()=>{const w=talkWaitName(), n=talkName();  // F93; B133: an awaited reply is polled in any view
   if(w)loadFeed(w);else if(n&&!S.thread&&S.view==='talk')loadFeed(n)},2000);
 
@@ -1264,7 +1326,7 @@ async function send(){
   const rq=sendReq(ctx,to,msg);
   if(rq.name==='new_control'){newChat(rq.name,rq.args,ctx.kind==='new'?'Add a task':`About ${ctx.id||ctx.label}`,msg);return}  // B139
   // F137: out of the box at once, a pending message until chat_to answers (obDone), red with Retry if it fails
-  outbox('chat_to',{text:msg,to},{text,key,say:`To ${threadTitle(to)}: ${text||paths.length+' attachment(s)'}`});
+  outbox('chat_to',{text:msg,to,wait:false},{text,key,say:`To ${threadTitle(to)}: ${text||paths.length+' attachment(s)'}`});
   if(S.thread!==to)open(to);
 }
 /* F137: a new chat opens at once as a stand-in ('@cid') that takes messages; new_control starts it without
@@ -1296,6 +1358,9 @@ document.addEventListener('click',async e=>{
   if(q('[data-obopen]')){S.obOpen=true;obDraw();return}  // F137: the outbox's pill opens its popup
   if(q('[data-obclose]')||e.target.id==='obpop'){S.obOpen=false;obDraw();return}
   if(x=q('[data-obretry]')){obRetryClick(x.dataset.obretry);return}
+  if(x=q('[data-sentdrop]')){sentDrop(x.dataset.n,x.dataset.sentdrop);render(true);return}  // B154
+  if(x=q('[data-sentretry]')){const n=x.dataset.n, p=sentDrop(n,x.dataset.sentretry);
+    if(p&&p.talk)talkSend(p.text);else if(p)outbox('chat_to',{text:p.text,to:n,wait:false},{text:p.text,key:n,say:`To ${threadTitle(n)}: ${p.text}`});return}
   if(x=q('[data-obdrop]')){obChange(b=>obDrop(b,x.dataset.obdrop));
     if(String(S.thread||'')[0]==='@'&&!S.ob.some(y=>'@'+y.cid===S.thread))S.thread=null;  // its stand-in chat went
     if(S.waitNew&&S.waitNew.ph&&!S.ob.some(y=>'@'+y.cid===S.waitNew.ph))S.waitNew=null;
@@ -1332,7 +1397,7 @@ document.addEventListener('click',async e=>{
     if(c.needs==='n'&&!/^\d+$/.test(n.trim()))return toast('Type how many slots first',true);
     S.sure=null;x.disabled=true;
     const r=await act(rq.name,{...rq.args,wait:false});if(r.ok){S.slotsN='';toast(String(r.out||'').split('\n')[0]||`${c.label}: done`);
-      if(r.name)return open(r.name)}  // B139: a control with an ask (Take back) started a new chat: open it
+      if(r.name){carrySent(r.name,r);return open(r.name)}}  // B139: a control with an ask (Take back) started a new chat: open it
     render(true);return}
   if(x=q('[data-thread]')){S.ctx=null;return open(x.dataset.thread)}
   if(q('[data-new]')){S.drawer=false;newChat('new_control',{},'New chat');return}

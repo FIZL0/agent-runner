@@ -527,6 +527,49 @@ def test_first_message_typed_after_remote_control():
     eq(got, b'\x1b[200~hi\x1b[201~\r', 'the ask went through the FIFO as a paste and Enter')
 
 
+def test_takes_input_b154():
+    print('B154: a starting control session takes input once its TUI is up (bracketed paste on) and its first message is in')
+    import json
+    import os
+    import time
+    from agent_runner import control_first as KF, runner as R
+    d = Path(tempfile.mkdtemp(prefix='agent-runner-control-'))
+    git(d, 'init', '-q')
+    (d / '.gitignore').write_text('.runner/\n')
+    git(d, 'add', '-A')
+    git(d, 'commit', '-qm', 'start')
+    R.init(d)
+    job, log, first = R.C.notes('control14.job'), R.C.notes('control14.log'), R.C.notes('control14.first')
+    check(K.control_takes_input(14), 'no hidden session of this number: nothing to wait for')
+    log.write_bytes(b'\x1b[?2004h an earlier session of this number')
+    was = log.stat().st_size
+    with mock.patch.object(K, 'runner_cmd', lambda: ['true']):
+        K.hidden_shim('control14', ['control', '14'], wait=0.1)
+    eq(json.loads(job.read_text(encoding='utf-8')).get('log_from'), was, 'the job keeps where its log starts')
+    check(not K.control_takes_input(14), 'only the earlier session was up')
+    with log.open('ab') as fh:
+        fh.write(b'starting...')
+    check(not K.control_takes_input(14), 'the launcher is not the TUI')
+    with log.open('ab') as fh:
+        fh.write(b'\x1b[?25h\x1b[?2004h')
+    check(K.control_takes_input(14), 'the TUI is up')
+    first.write_text('', encoding='utf-8')
+    check(not K.control_takes_input(14), 'its first message is still to be typed in')
+    old = time.time() - 3600
+    os.utime(first, (old, old))
+    check(K.control_takes_input(14), 'a first-message mark left behind holds nothing')
+    first.unlink()
+    if hasattr(os, 'fork'):
+        with mock.patch.dict(os.environ, {'AGENT_RUNNER_MARKER': str(R.C.notes('control14.live'))}), \
+                mock.patch.object(KF, 'type_first', lambda m, t, since: time.sleep(0.6) or True):
+            KF.type_first_later('hi')
+            check(first.exists(), 'type_first_later marks it before the agent starts')
+            end = time.monotonic() + 10
+            while first.exists() and time.monotonic() < end:
+                time.sleep(0.05)
+            check(not first.exists(), 'and clears it once typed')
+
+
 def P_lines(d: Path) -> list[str]:
     return (d / 'plan/TODO.md').read_text(encoding='utf-8').splitlines()
 
@@ -535,4 +578,4 @@ if __name__ == '__main__':
     raise SystemExit(report([test_handed_ask_as_c1_starts_fresh, test_brief_fits_session_start,
                              test_take_back_from_a_slot_just_started, test_sessions_one_and_each,
                              test_reopen_after_shutdown, test_second_shim_keeps_live_session,
-                             test_first_message_typed_after_remote_control]))
+                             test_first_message_typed_after_remote_control, test_takes_input_b154]))

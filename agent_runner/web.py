@@ -373,6 +373,9 @@ class ActsOnce:
             return {**got[1], 'again': True}
         try:
             got[1] = fn()
+            if got[1].get('hold'):  # B154: nothing was done yet: the outbox's next try runs it
+                with self.lock:
+                    self.seen.pop(cid, None)
         except BaseException:
             with self.lock:  # it did not finish: a later copy runs it
                 self.seen.pop(cid, None)

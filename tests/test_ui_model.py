@@ -358,7 +358,8 @@ def test_feed(tmp: Path) -> None:
             mock.patch.object(U, 'session_sid', return_value=''):
         f = U.feed('c2')
         none = U.feed('s3')
-        eq(U.feed('c2', limit=2)['entries'], f['entries'][-2:], 'a limit keeps the newest')
+        eq(U.feed('c2', limit=2)['entries'], f['entries'][:1] + f['entries'][-2:],
+           'a limit keeps the newest, after the latest prompt (B154)')
         check(U.feed('c2', limit=2)['more'], 'and says older ones were left out')
     eq(f['entries'], [{'kind': 'you', 'text': 'status?'}, {'kind': 'say', 'text': 'Checking the run.'},
                       {'kind': 'tool', 'text': 'Bash(./run status -n 20)'},
@@ -372,6 +373,80 @@ def test_feed(tmp: Path) -> None:
     big.write_text(json.dumps({'type': 'user', 'message': {'content': 'x' * 100}}) + '\n' + last, encoding='utf-8')
     eq([d['type'] for d in U.tail_rows(str(big), nbytes=len(last) + 10)], ['assistant'],
        'a tail read skips the line it cut')
+
+
+def test_feed_prompt_b154(tmp: Path) -> None:
+    """B154: the feed always holds the person's latest prompt, however long the turn after it, and 'more' says the
+    tail is cut; a message queued in a turn (an attachment, no user entry) is the person's too; 'at' is when."""
+    from unittest import mock
+    fake_run(tmp)
+
+    def row(d: dict) -> str:
+        return json.dumps(d) + '\n'
+
+    def you(text: str, at: str = '2026-11-23T10:00:00.500Z') -> str:
+        return row({'type': 'user', 'timestamp': at, 'message': {'content': text}})
+
+    def say(text: str) -> str:
+        return row({'type': 'assistant', 'message': {'content': [{'type': 'text', 'text': text}]}})
+    t = tmp / 'c3.jsonl'
+    long = ''.join(say(f'step {i} ' + 'x' * 500) for i in range(1000))
+    t.write_text(you('first') + you('do it') + row({'type': 'user', 'message': {'content': [
+        {'type': 'tool_result', 'content': 'not the person'}]}}) + long, encoding='utf-8')
+    at = 1795428000.5
+    with mock.patch.object(U, 'transcript_of', return_value=str(t)), mock.patch.object(U, 'session_sid', return_value=''):
+        f = U.feed('c3', limit=0)
+        eq(f['entries'][0], {'kind': 'you', 'text': 'do it', 'at': at}, 'the latest prompt, before the cut tail')
+        eq([e['kind'] for e in f['entries']].count('you'), 1, 'only the latest one')
+        check(f['more'], "a cut tail says 'more' with no limit reached", f['more'])
+        eq(U.feed('c3')['entries'][0]['text'], 'do it', 'with the page\'s limit too')
+        with t.open('a', encoding='utf-8') as fh:
+            fh.write(you('and now?') + long)
+        eq(U.feed('c3')['entries'][0]['text'], 'and now?', 'a later prompt that the tail leaves behind')
+        t.write_text(you('fresh') + long, encoding='utf-8')
+        eq(U.feed('c3')['entries'][0]['text'], 'fresh', 'a transcript written anew is read anew')
+        q = {'type': 'attachment', 'timestamp': '2026-11-23T10:00:00.500Z', 'attachment': {
+            'type': 'queued_command', 'commandMode': 'prompt', 'prompt': 'one more thing'}}
+        n = {**q, 'attachment': {**q['attachment'], 'commandMode': 'task-notification'}}
+        t.write_text(you('go') + say('ok') + row(q) + row(n), encoding='utf-8')
+        f = U.feed('c3')
+        eq([(e['kind'], e['text']) for e in f['entries']], [('you', 'go'), ('say', 'ok'), ('you', 'one more thing')],
+           'a message queued during a turn is in the feed; a queued notification is not')
+        check(not f['more'], 'a whole feed has no more')
+
+
+def test_chat_hold_b154(tmp: Path) -> None:
+    """B154: a message to a chat that cannot take input yet is not typed: the run page is told to hold it
+    (wait False), any other caller waits; new_control and chat_to say when they ran and what was asked."""
+    from unittest import mock
+    from agent_runner import control as K, plat, slots
+    fake_run(tmp)
+    typed, ready, real = [], [False], U.RUN[0]
+    U.RUN[0] = lambda argv: (0, 'control 3 is starting in a hidden terminal\n')
+    try:
+        with mock.patch.object(U, 'hidden_inbox', return_value=Path('/x/control3.in')), \
+                mock.patch.object(plat, 'WINDOWS', False), \
+                mock.patch.object(K, 'control_takes_input', side_effect=lambda n: ready[0] or None), \
+                mock.patch.object(slots, 'send_fifo', side_effect=lambda p, x: (typed.append(x), True)[1]):
+            r = U.act('chat_to', text='hi', to='c3', wait=False)
+            eq((r['ok'], r.get('hold'), typed), (False, True, []), 'held, not typed, while the chat starts')
+            with mock.patch.object(U, 'START_WAIT', 0.2):
+                r = U.act('chat_to', text='hi', to='c3')
+            eq((r['ok'], r.get('hold'), typed), (False, None, []), 'a caller that waits: not delivered, and not held')
+            check('starting' in r['out'], 'and says why', r)
+            ready[0] = True
+            before = time.time()
+            r = U.act('chat_to', text='hi', to='c3', wait=False)
+            eq((r['ok'], typed), (True, ['hi']), 'typed once the chat takes input')
+            check(before <= r['at'] <= time.time(), 'with when it was typed', r)
+            n = U.act('new_control', ask='theme ideas', wait=False)
+            eq((n['name'], n['ask']), ('c3', 'theme ideas'), 'a new chat says what it was asked')
+            check(n['at'] >= before, 'and when', n)
+        with mock.patch.object(U, 'SEND', [lambda t: {'ok': True, 'code': 0, 'argv': [],
+                                                      'out': 'control 4 is up: https://claude.ai/code/session_x'}]):
+            eq(U.act('chat_to', text='hi', to='c1').get('name'), 'c4', 'c1 off: the new chat that took the message')
+    finally:
+        U.RUN[0] = real
 
 
 def test_chat_and_terminal(tmp: Path) -> None:
@@ -602,6 +677,7 @@ if __name__ == '__main__':
                          in_tmp(test_actions), in_tmp(test_run_controls),
                          in_tmp(test_real_command),
                          in_tmp(test_to_c1_hidden), in_tmp(test_control_titles),
-                         in_tmp(test_queue_rows), in_tmp(test_feed), in_tmp(test_chat_and_terminal),
+                         in_tmp(test_queue_rows), in_tmp(test_feed), in_tmp(test_feed_prompt_b154), in_tmp(test_chat_hold_b154),
+                         in_tmp(test_chat_and_terminal),
                          in_tmp(test_concept_copy), in_tmp(test_concept_chat), in_tmp(test_hidden_send),
                          in_tmp(test_delete_chats), in_tmp(test_chat_list_f133)]))

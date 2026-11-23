@@ -67,6 +67,8 @@ def type_first_later(text: str) -> None:
         since = marker.with_suffix('.log').stat().st_size
     except OSError:
         since = 0
+    mark = marker.with_suffix('.first')  # B154: other messages wait for this one (control_takes_input)
+    mark.write_text('', encoding='utf-8')
     pid = os.fork()
     if pid:
         os.waitpid(pid, 0)
@@ -81,4 +83,5 @@ def type_first_later(text: str) -> None:
         if not type_first(marker, text, since):  # recorded, so a lost first message is not silent
             log(f'{marker.stem}: its first message could not be typed in (no shim read {marker.with_suffix(".in")})')
     finally:
+        mark.unlink(missing_ok=True)
         os._exit(0)
