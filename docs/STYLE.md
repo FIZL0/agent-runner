@@ -31,7 +31,7 @@ name its own size).
 | `--accent --accent2 --onaccent` | the one thing to press, its pressed shade, text on it |
 | `--ok --warn --bad --onbad` | landed or running, needs you or paused, failed or destructive |
 | `--scrim --shadow --lift` | behind a sheet, under a floating thing, under the message box |
-| `--feed` | the ground behind a session: dark unless the person's agent theme starts with light (see The session) |
+| `--feed` | the ground behind a session: dark; the page's `--bg` for a session with the run's theme; white when the person's agent theme is light (see The session) |
 | `--fs-xs --fs-s --fs-m --fs-n --fs-b --fs-l --fs-xl` | 11 hint, 12 badge, 13 second text, 14 button, 15 body, 17 card title, 30 greeting |
 | `--r-xs --r-s --r-m --r-l --r-xl --r-full` | 4 a bar, 8 small control, 10 button and row, 16 card and sheet, 20 message box, pill |
 | `--s1` to `--s6` | 4, 8, 12, 16, 24, 32: gaps and padding |
@@ -110,7 +110,7 @@ Motion shows where a thing came from, where it went, or that it changed. Nothing
 - **Only `transform` and `opacity`**, with `visibility` to take a closed thing out of reach, and a switch's
   `background-color`. Never height, width, top or margin.
 - **What animates:** the drawer and the sheet slide; their scrim fades; the Talk dock's mic and box cross-fade;
-  Talk's top bar slides off when you scroll up (`.away`, transform only); a card
+  Talk's top bar slides off when you scroll up (`.away`, transform only); a session's chips, box and top bar go the same way as the reader scrolls up (`.slim`), and its frame moves with the finger (`feedPlace()`); a card
   or message that is new fades in and rises 6px; a view fades in when you go to it; a state word that changed fades in; a chevron turns; the message box, Talk's words and the sheet glide (transform
   only) to their place when the keyboard opens or closes (`kbGlide()`).
 - **What never animates:** a refresh of what is already there, a list reordering under the reader, text being
@@ -128,7 +128,7 @@ Motion shows where a thing came from, where it went, or that it changed. Nothing
 
 - **The page never moves on its own.** A refresh keeps the reading position in every view (`keepScroll()`): the first
   `data-k` on screen stays where it was. At the very top, new things show.
-- **Talk is pinned to its newest words** when you open it, when you send, and while a reply comes in, unless you scrolled up. It has no jump button. The page does not scroll a session at all: the frame keeps its own scroll, and a refresh never redraws it (see The session).
+- **Talk is pinned to its newest words** when you open it, when you send, and while a reply comes in, unless you scrolled up. It has no jump button. The page does not scroll a session at all: the frame keeps its own scroll, and a refresh never redraws it (see The session). Scrolling up in a session takes the frame's bottom first (its chips, box and top bar go, and the thin strip stays), then the session scrolls.
 - Going to a view starts at its top; coming back to one you left returns to where you were.
 - A reload opens what was open, drawn in the first frame, and never acts by itself: no mic, no sound, no focus on a box.
 - A refresh also keeps focus, the caret (`keepFields()`), a text selection, what is folded open, and a code block's
@@ -151,19 +151,20 @@ Motion shows where a thing came from, where it went, or that it changed. Nothing
 - **Fixed parts stay.** The speaker, the mic (full size), the keyboard button and the status line never change on
   scroll.
 - **Reduced transparency.** Under `prefers-reduced-transparency`, where the browser reports it, the bars, buttons and
-  box go solid. A chat with the real session keeps its solid header and message box.
+  box go solid. A chat with the real session has a solid header and message box at rest: the frame runs under them, and `.slim` is the only thing that shows it through.
 
 ## The session
 
 A chat or slot shows the real Claude Code session through ttyd, in place of a thread the page draws. These rules hold:
 
-- **One frame.** The session is one iframe (`#feed`), filling the space between the header and the message box. Its
+- **One frame.** The session is one iframe (`#feed`), filling the view behind the header and the message box (`#feedframe`, placed by `feedPlace()`). Its
   address is the run's own (`/t/TOKEN/NAME/`), so https and Runner Home both work.
 - **Never redrawn.** A refresh, a snapshot or a state change leaves the frame as it is: it is set once per open, and
   `setHTML()` never touches it. It goes when the chat is left or the page has been hidden for 15 s, so the session gets
-  its other viewers' size back.
-- **Its prompt line stays.** The session draws its menus, questions and status in the same rows, so cropping it would
-  hide those.
+  its other viewers' size back. It is always `FOOT_ROWS` (6) rows taller than its room and placed by transform (`feedSpot()`), so bars, a growing box and scrolling never resize it; only a menu or unsent words (the frame fits its room, "whole") or a window size change does.
+- **Its bottom lines are past the edge.** The lines under Claude's prompt (the update notice, the status line, the mode, background shells and agents) lie past the frame's edge, so each has its control on the page: a chip row above the message box (`.schips`, a `.chip` per thing to say, none when there is nothing) with Working (its sheet has Stop), the mode (Shift+Tab pressed one at a time and checked; the status line is in that sheet as text), N shells (what runs, its output tail, Stop through `/tasks`), N agents (Open through `/tasks`) and Update (the command, run on the run's machine; only known update commands; Restart chat for an idle c2 and up). A chip shows only when there is something to say. Its sheets are `sesswork`, `sessmode`, `sessshells`, `sessagents` and `sessupdate`. `feedFoot()` finds the prompt on screen. When it cannot (a menu, a question, an unknown look) or the prompt holds unsent words, nothing is hidden: the frame fits its room, and on touch the key row stands in place of the chips.
+- **Hidden lines have their controls.** Whatever the frame hides at its bottom must have its control on the page, or the frame must not hide it.
+- **While Claude works.** The message box has Force send (`.act.force`) and Stop beside it (`.act.halt`). Force send interrupts with Escape, waits until Claude Code's own status is at rest, and sends once: queued messages go in as a turn first, and an unanswered prompt put back in the input stays above the new one; it is not sent if the session never rests. Stop sends one Ctrl+C, not again for 3 s, and never to an idle session. The status is read from `/live/NAME`.
 - **Box and session never both hold focus.** A mouse press in the session gives it the keyboard; ttyd's focus on connect
   never does. A tap on the box takes the focus back.
 - **Touch layer.** On a touch device a layer over the frame takes the touch: a drag scrolls the session (a wheel steps
@@ -172,7 +173,7 @@ A chat or slot shows the real Claude Code session through ttyd, in place of a th
 - **Key row.** A keyboard button in the message box folds out the key row (`FEED_KEYS` in `web_page.html`, and Text):
   Esc, Tab, ↑, Enter, Ctrl-C, Text, ←, ↓, →. Touch only.
 - **Text size.** 12px on touch, 13px otherwise, in ttyd's DOM renderer (its canvas is wrong at 2x).
-- **Ground.** `--feed`: dark unless the person's agent `theme` starts with light (`session_look`).
+- **Ground and look.** `--feed` is dark unless the person's agent `theme` starts with light (`session_look`). A session the run starts (control sessions and slots) takes the run's own Claude Code theme, `agent-runner` (`session_theme.py`), named only in the settings the run gives its sessions: its colours are 256-colour slots that each browser fills from the page's light or dark, live (`arLook`), so the ground is the page's `--bg`. Line height 1.3, padding 12px 14px, box lines in the `ar-box` font (they join), minimum contrast 4.5, spinner tips off, reduced motion on. A person's own terminals keep theirs, and a chat open before this keeps its old ground until it restarts.
 - **States are cards.** Starting (says so, with the waiting message), loading, ended (the claude.ai/code link, and Resume
   where there is one), a slot with no session (Resume when its task was cut off), no terminal (a headless stream slot,
   a slot with no socket, or Windows before 1809) and no ttyd (how to install it). Each is a `.card` with a title, one
@@ -232,5 +233,5 @@ A chat or slot shows the real Claude Code session through ttyd, in place of a th
 2. Empty, loading, working, failed: each seen.
 3. Reduced motion on: everything still works.
 4. Scroll half way down, wait for a refresh: nothing moved.
-5. A chat or slot with a real session: phone (390px) and desktop, both themes, and a refresh leaves its frame as it was.
+5. A chat or slot with a real session: phone (390px) and desktop, both themes, and a refresh leaves its frame as it was. Scrolling up hides the chips, box and top bar, the strip stays, and scrolling down brings them back.
 6. `python3 tests/test_web.py`.

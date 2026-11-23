@@ -16,7 +16,7 @@ import uuid
 from contextlib import ExitStack
 from pathlib import Path
 
-from agent_runner import pitch, plan as P, plansync, plat
+from agent_runner import pitch, plan as P, plansync, plat, session_theme
 from agent_runner.plan import decide_question  # F135: a control session's last line `DECIDE: …`
 from agent_runner.control_settled import LEAD  # F160: how the runner's own typed line starts
 from agent_runner.config import RUNNER, runner_cmd, shown_cmd
@@ -90,7 +90,7 @@ def control_settings_data() -> dict:
     hook: a control session is never ended on idle."""
     hook = plat.command_text([*runner_cmd(), 'control', '--brief'])
     return {'hooks': {'SessionStart': [{'hooks': [{'type': 'command', 'command': hook}]}]},
-            'skipDangerousModePermissionPrompt': True,
+            'skipDangerousModePermissionPrompt': True, **session_theme.settings(),  # F170: the run page's look
             'permissions': {'additionalDirectories': [str(control_skills_dir())]}}
 
 
@@ -766,7 +766,7 @@ def hidden_shim(stem: str, cmd: list[str], wait: float | None = None) -> tuple[i
     ended = marker.with_suffix('.exit')
     marker.unlink(missing_ok=True)
     ended.unlink(missing_ok=True)
-    job.write_text(json.dumps({'argv': cmd, 'cwd': str(ROOT), 'env': {}, 'marker': str(marker),
+    job.write_text(json.dumps({'argv': cmd, 'cwd': str(ROOT), 'env': {}, 'marker': str(marker), 'look': session_theme.settings().get('theme', ''),
                                'log': str(C.notes(f'{stem}.log'))}), encoding='utf-8')
     shim = [*runner_cmd(), 'run', '--slot-shim', str(job)]
     try:

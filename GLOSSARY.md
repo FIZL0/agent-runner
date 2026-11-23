@@ -211,6 +211,34 @@ _On screen_: feed
 _In code_: ui_model.feed, feed_entries, /feed/NAME
 _Avoid_: log, terminal, thread
 
+**Force send**:
+The message box's send while Claude works: it interrupts the session (Escape), waits until Claude Code is at rest, and sends the message once. Stop sits beside it.
+_Said_: force send
+_On screen_: Force send
+_In code_: session_now.force_send, chat_to (force), .act.force
+_Avoid_: interrupt and send, resend
+
+**Session chips**:
+The row of chips above a chat's message box that holds the lines Claude Code draws under its prompt, which the frame hides: Working, the mode, N shells, N agents, Update. Each opens a sheet.
+_Said_: chips
+_On screen_: Working, Update, 2 shells
+_In code_: sessionChips, .schips, session_now.py
+_Avoid_: footer, status bar, toolbar
+
+**Thin strip**:
+The 28px strip at a session's bottom that stays when the reader has scrolled up: it says Working, and a tap brings the chips, box and top bar back.
+_Said_: the strip
+_On screen_: Working
+_In code_: .strip, .slim
+_Avoid_: handle, bar
+
+**Session theme**:
+The Claude Code theme the run gives the sessions it starts (control sessions and slots), named `agent-runner` in their settings: its colours each browser fills from the run page's light or dark. A person's own terminals keep theirs.
+_Said_: the run's look
+_On screen_: none (the session looks like the page)
+_In code_: session_theme.py, session_look, frame_look, arLook
+_Avoid_: session look, terminal theme, skin
+
 **Quick ask**:
 One of the Status chat's ready-made questions to c1, sent with one key or tap
 _Said_: quick asks, presets
