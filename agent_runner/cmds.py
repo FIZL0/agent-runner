@@ -754,7 +754,8 @@ def hidden_attach(which: str) -> str:
     if not (pid and plat.alive(pid)):
         return ''
     if c:
-        return f'{which} runs hidden (pid {pid}), with no terminal to attach: its output goes to {C.notes(f"{stem}.log")}'
+        return f'{which} runs hidden (pid {pid}), with no terminal to attach: its output goes to ' + \
+            str(C.notes(f'{stem}.log'))
     remote = f'; on Remote Control ({REMOTE_URL})' if remote_slots_on() else ''
     return (f'{which} runs hidden (pid {pid}), with no terminal to attach: its output goes to '
             f'{C.notes(f"{stem}.log")}{remote}' +
@@ -782,7 +783,7 @@ def cmd_attach(argv: list[str], prog: str = f'{RUNNER} attach') -> int:
         if which == 'runner':
             print(f'on Windows the run has no window of its own: {shown_cmd()} status shows it, and its log is '
                   f'{C.notes("run.log")}. {shown_cmd()} attach s1 '
-                  f'{"says where slot 1" + chr(39) + "s log is" if plat.has_conpty() else "shows slot 1"}.')
+                  f'{"says where the log of slot 1 is" if plat.has_conpty() else "shows slot 1"}.')
             return 0
         c = re.fullmatch(r'c\d+', which)
         marker = C.notes(f'{"control" if c else "slot"}{which[1:]}.live')
@@ -910,8 +911,8 @@ def list_text(projects: list[dict]) -> str:
 
 def hidden_consoles() -> tuple[dict[Path, dict[str, int]], dict[Path, dict[int, str]]]:
     """({main checkout: {'s2': pid, 'c1': pid, 'feed': pid}}, {main checkout: {N: control N's given name}}) of
-    each hidden session alive on this device (`<notes>/slotN.live`, `controlN.live`, `board.live`). Every project found
-    is a key, so `device_projects` can list a run that is up with no session. Found through the slot
+    each hidden session alive on this device (`<notes>/slotN.live`, `controlN.live`, `board.live`). Every project
+    found is a key, so `device_projects` can list a run that is up with no session. Found through the slot
     worktrees in the runs folder (AGENT_RUNNER_HOME, else `[run] home`'s default ~/runs/<project>), the
     current repository's own `[run] home`, and the current repository's notes."""
     from agent_runner.config import Config

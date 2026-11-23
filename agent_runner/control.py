@@ -693,8 +693,8 @@ def start_control() -> None:
     a stopped run). With `[run] remote` it opens blank (no opening summary, so no tokens until the person types)
     and local (`--local`: no Remote Control, so no second app entry beside the control server's "<repo> ·
     control" and no start push). Windows with no ConPTY: a console of its own (hidden). Else a pseudo-terminal
-    with no window (`hidden_control`, F59, F145; `attach c1` shows it, on Windows where its log is). B121: first the control sessions c2+ a
-    shutdown ended are reopened (`reopen_controls`)."""
+    with no window (`hidden_control`, F59, F145). B121: first the control sessions c2+ a shutdown ended are
+    reopened (`reopen_controls`)."""
     mark_board()
     if C.run['control']:
         try:
@@ -717,7 +717,8 @@ def start_control() -> None:
         if not pid:
             log(f'control: c1 could not start hidden: {why}')
             return
-        where = f'a hidden terminal ({shown_cmd()} attach c1 shows it; its output in {hidden_control_log(1)})'
+        where = f'a hidden terminal ({"" if plat.WINDOWS else f"{shown_cmd()} attach c1 shows it; "}' \
+                f'its output in {hidden_control_log(1)})'
     log(f'control: c1 is up in {where} ({shown_cmd()} control opens another)')
 
 
@@ -742,7 +743,7 @@ def hidden_control_log(n: int) -> Path:
 
 def hidden_control(n: int, cmd: list[str], wait: float | None = None) -> tuple[int, str]:
     """F59: start control session `n` (`cmd`, a `control N` command line) with no window, through
-    the F40 pty shim (`run --slot-shim`, `run_pty`; Windows `run_conpty`) with a job of its own, `<notes>/control<n>.job`:
+    the F40 pty shim (`run --slot-shim`: `run_pty`, `run_conpty`) with a job of its own, `<notes>/control<n>.job`:
     its output goes to `hidden_control_log`, its pid to `<notes>/control<n>.live` while it runs, and text
     written to the FIFO beside it (`control<n>.in`) is typed into it. Started detached, so it outlives the run
     the run. (pid, '') once it is up, else (0, why)."""

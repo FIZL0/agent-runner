@@ -719,8 +719,8 @@ def meta_image_paths(d: dict) -> list[str]:
 
 def control_new(n: int | None = None, wait: float = CONTROL_LINK_WAIT, ask: str = '',
                 images: list[str] | tuple = (), forward: bool = False, handed: bool = False) -> int:
-    """`control --new`: another control session, opened without taking focus (a hidden terminal; Windows: a
-    hidden console), on Remote Control as "<repo> · control N" with `[run] remote`.
+    """`control --new`: another control session, opened without taking focus (a hidden terminal; Windows with no
+    ConPTY: a hidden console), on Remote Control as "<repo> · control N" with `[run] remote`.
     Prints its claude.ai/code link once its log shows it, so the session that ran it can answer with a link.
     `forward` (`control --new --forward`, B72): its first message is the runner feed's latest person message,
     read word for word from the feed's transcript (`feed_take`) and handed to `control N` in a file, never on a
@@ -792,7 +792,7 @@ def control_new_hidden(n: int, cmd: list[str], name: str, wait: float = CONTROL_
     if why:  # B131: another `control --new` started control n a moment ago: its link is in its log already
         since = 0
         print(f'control {n} {why} (pid {pid}): this ask did not start another')
-    where = f'a hidden terminal ({shown_cmd()} attach c{n} shows it), its output in {out}'
+    where = f'a hidden terminal{"" if plat.WINDOWS else f" ({shown_cmd()} attach c{n} shows it)"}, its output in {out}'
     if wait < 0:  # F112 `control --new --no-wait` (-1): back at once; the link is read from state once it is up
         print(f'control {n} is starting in {where}')
         return 0

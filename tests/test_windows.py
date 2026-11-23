@@ -218,6 +218,12 @@ sys.exit(7)
 """
 
 
+def plain(f: Path) -> str:
+    """A session's log with no escape sequences: the console host puts its own between a program's words."""
+    s = f.read_text(encoding='utf-8', errors='replace') if f.exists() else ''
+    return re.sub(r'\x1b(?:\][^\x07\x1b]*(?:\x07|\x1b\\)|\[[0-9;?]*[ -/]*[@-~])', '', s)
+
+
 def until(what, seconds: float = 60.0) -> bool:
     end = time.monotonic() + seconds
     while not what() and time.monotonic() < end:
@@ -257,12 +263,13 @@ def test_conpty(tmp: Path):
         t = threading.Thread(target=lambda: got.append(R.slots.run_conpty(
             [sys.executable, str(child), mode], str(d), {'F145': 'an env value'}, marker, log)), daemon=True)
         t.start()
-        text = lambda: log.read_text(encoding='utf-8', errors='replace') if log.exists() else ''
+        text = lambda: plain(log)
         check(until(lambda: 'READY' in text()), f'{mode}: its output reaches the log', text())
         return marker, text, got, t
 
     marker, text, got, t = start('line')
     inbox = marker.with_suffix('.in')
+    check(until(inbox.exists), 'its inbox is there')
     pid = R.marker_pid(marker)
     check(plat.alive(pid), 'the marker holds the pid while it runs')
     has(text(), r'TTY True True an env value conpty', 'it has a terminal, its environment and its directory')
@@ -289,6 +296,7 @@ def test_conpty(tmp: Path):
     check(not R.send_fifo(inbox, 'late'), 'nor to an inbox a killed shim left')
 
     marker, text, got, t = start('keys')
+    until(marker.with_suffix('.in').exists)
     check(R.send_fifo(marker.with_suffix('.in'), 'two\nlines'), 'a message is sent')
     t.join(60)
     has(text(), 'KEYS ' + b'\x1b[200~two\nlines\x1b[201~\r'.hex(), 'a program that reads keys gets the bracketed paste, then Enter')
@@ -317,28 +325,27 @@ def test_conpty_slot(repo: Path, tmp: Path):
     check(mux.typed, 'and takes typed text')
     if not pid:
         return
-    text = lambda f: f.read_text(encoding='utf-8', errors='replace') if f.exists() else ''
-    check(until(lambda: 'READY' in text(log)), 'its output is in the slot log', text(log))
+    check(until(lambda: 'READY' in plain(log)), 'its output is in the slot log', plain(log))
     shown, out = [], io.StringIO()
     with mock.patch.object(plat, 'show_console', lambda p: shown.append(p) or True), \
             mock.patch.object(cmds, 'init'), contextlib.redirect_stdout(out):
-        eq(cmds.cmd_attach(['s6']), 0, 'attach s6')
-    eq((shown, len(out.getvalue().splitlines())), ([], 1), 'shows no console, and says one line')
+        rc = cmds.cmd_attach(['s6'])
+    eq((rc, shown, len(out.getvalue().splitlines())), (0, [], 1), 'attach s6 shows no console, and says one line')
     check(str(log) in out.getvalue(), 'which names the log', out.getvalue())
     check(mux.send(mux.panes()['s6'], 'hello slot'), 'a tell is typed in')
     ended = R.C.notes('slot6.exit')
-    check(until(ended.exists), 'it ends', text(log))
-    has(text(ended), rf'^exit code 7 \(pid {pid}\)$', 'and how is left for the runner')
-    has(text(log), r'GOT .*hello slot', 'the tell reached it')
+    check(until(ended.exists), 'it ends', plain(log))
+    has(plain(ended), rf'^exit code 7 \(pid {pid}\)$', 'and how is left for the runner')
+    has(plain(log), r'GOT .*hello slot', 'the tell reached it')
 
     with mock.patch.dict(os.environ, {'F145': 'y'}):
         pid, why = R.control.hidden_control(5, argv)
     check(pid, 'a control session is up in a pseudo-console', why)
     log = R.control.hidden_control_log(5)
-    check(until(lambda: 'READY' in text(log)), 'its output is in its log', text(log))
+    check(until(lambda: 'READY' in plain(log)), 'its output is in its log', plain(log))
     check(R.control.control_type(5, '/rename x'), 'text is typed into it')
     check(until(R.C.notes('control5.exit').exists), 'it ends')
-    has(text(log), r'GOT .*/rename x', 'the text reached it')
+    has(plain(log), r'GOT .*/rename x', 'the text reached it')
 
 
 def test_attach_logged(repo: Path):
@@ -356,10 +363,11 @@ def test_attach_logged(repo: Path):
             with mock.patch.object(plat, 'WINDOWS', True), mock.patch.object(plat, 'alive', lambda p: p == 4242), \
                     mock.patch.object(plat, 'show_console', lambda p: shown.append(p) or True), \
                     mock.patch.object(cmds, 'init'), contextlib.redirect_stdout(out):
-                eq(cmds.cmd_attach([name]), 0, f'attach {name}')
+                rc = cmds.cmd_attach([name])
+            eq(rc, 0, f'attach {name}')
             eq(shown, [4242] if console else [], f'{name}: its console is shown' if console else f'{name}: none is')
             eq(len(out.getvalue().splitlines()), 1, f'{name}: one line')
-            eq(str(notes(f'{stem}.log')) in out.getvalue(), not console, f'{name}: the log is named', )
+            eq(str(notes(f'{stem}.log')) in out.getvalue(), not console, f'{name}: the log is named' if not console else f'{name}: no log')
     finally:
         for stem in ('slot3', 'slot4', 'slot5', 'control4'):
             for x in ('live', 'job'):
