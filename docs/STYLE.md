@@ -20,7 +20,8 @@ controls (`ui_model.RUN_CONTROLS`).
 ## Tokens
 
 All in `:root` at the top of `web_page.html`. Outside `:root` there is no raw colour, no raw duration, and no
-`border-radius` or `font-size` in px (a circle is `50%`).
+`border-radius` or `font-size` in px (a circle is `50%`; a `font:` shorthand for reading text, code or a text box may
+name its own size).
 
 | Tokens | Use |
 |---|---|
@@ -30,10 +31,10 @@ All in `:root` at the top of `web_page.html`. Outside `:root` there is no raw co
 | `--accent --accent2 --onaccent` | the one thing to press, its pressed shade, text on it |
 | `--ok --warn --bad --onbad` | landed or running, needs you or paused, failed or destructive |
 | `--scrim --shadow --lift` | behind a sheet, under a floating thing, under the message box |
-| `--fs-xs --fs-s --fs-m --fs-b --fs-l --fs-xl` | 11 hint, 12 badge, 13 second text, 15 body, 17 card title, 30 greeting |
-| `--r-s --r-m --r-l --r-xl --r-full` | 8 small control, 10 button and row, 16 card and sheet, 20 message box, pill |
+| `--fs-xs --fs-s --fs-m --fs-n --fs-b --fs-l --fs-xl` | 11 hint, 12 badge, 13 second text, 14 button, 15 body, 17 card title, 30 greeting |
+| `--r-xs --r-s --r-m --r-l --r-xl --r-full` | 4 a bar, 8 small control, 10 button and row, 16 card and sheet, 20 message box, pill |
 | `--s1` to `--s6` | 4, 8, 12, 16, 24, 32: gaps and padding |
-| `--tap` | 44px: the least a finger gets |
+| `--tap` | 44px: the least a finger gets (40 in the message box's own row) |
 | `--dur-fast --dur --dur-slow --ease` | motion, below |
 
 A state colour is never the only sign: there is a word or an icon with it. Text on `--bg` and `--surface` uses `--fg`
@@ -49,19 +50,19 @@ the terminal, in the `[ui] theme`'s colours, inside `.main.term` only).
   has an `aria-label` and a `title`.
 - **Card** (`.card`, `card()`): one thing. `.tap` opens something; `.need` waits on the person. Title, one line of
   second text, then `.btns`.
-- **Row** (`.row`, `.crow`, `.prow`, `.srow`): one line when folded, with an ellipsis. A row that holds more folds
+- **Row** (`.row`, `.crow`, `.prow`, `.srow`, its folding head `.fold`): one line when folded, with an ellipsis. A row that holds more folds
   open on tap in place (`aria-expanded`), and its chevron turns.
 - **Section** (`.sec`): a small muted heading and a line. Sections keep the TUI's order.
 - **Sheet** (`#sheet`, `openSheet(name)`): more choices about what is on screen. It slides up from the bottom, groups
-  its items under `.sec`, closes on the scrim, Esc, a swipe down, or a pick. One sheet, never a sheet over a sheet. Its markup comes from
-  `SHEETS[name]()`.
+  its items (`.it`) under `.sec`, closes on the scrim, Esc, a swipe down, or a pick. One sheet, never a sheet over a
+  sheet. Its markup comes from `SHEETS[name]()`. A button whose label ends in … opens one or folds open.
 - **Badge** (`.n`): a count of what waits on the person, never of anything else. **Dot** (`.bdot`): something
   waits, no count. **Pill** (`.pill`): a state in a word or two. Same words on every page: Running, Paused,
   Stopping, Caps forced, Not up.
 - **Confirm**: asked in place (`sureHTML`), naming what is cut off, Yes then No. No browser dialog, ever. In the TUI
   the key is pressed twice.
-- **Setting or form control**: a label, the control that fits the type (switch, select, number, text), then help in
-  `.small`. A field that must survive a refresh has `data-f="key"`.
+- **Setting or form control**: a label, the control that fits the type (`.sw` switch, `.fld` select, number or text),
+  then help in `.small`. A field that must survive a refresh has `data-f="key"`.
 
 ## States
 
@@ -77,7 +78,7 @@ Every list and view has all four, drawn the same way:
 Every action the person takes goes through `outbox()`: the page draws the result at once as a stand-in, keeps the
 action until the run answers, and sends it again after a lost connection. A card that was answered folds away at
 once; its stand-in shows in the same place. A failure brings Retry, Edit or Discard. `act()` is only for what has
-nothing to draw (an interrupt, an order kept).
+nothing to draw (an interrupt, an order kept) and for Talk, which draws the person's words itself.
 
 ## Words
 
@@ -86,6 +87,13 @@ nothing to draw (an interrupt, an order kept).
 - A task is named by its title. Its id may follow, small.
 - Say what happens, in the person's terms: "Stop (running tasks finish)".
 - Numbers with their unit: `6 min`, `2 of 3 slots`, `week 62%`.
+
+## Drawing
+
+The page is drawn again from the snapshot, whole parts at a time. `setHTML()` draws a part only when its markup changed,
+so markup holds no clock that ticks faster than a minute and no state a gesture is holding: what changes while a finger
+is down (the mic, the drawer, the sheet) is set on the node that is there (`talkDraw()`). `render()` waits while a press or
+a text selection is under way.
 
 ## Motion
 
@@ -97,16 +105,18 @@ Motion shows where a thing came from, where it went, or that it changed. Nothing
 | `--dur` | 200ms | a card or message coming in, a cross-fade, a view |
 | `--dur-slow` | 250ms | the drawer and the sheet |
 | `--ease` | `cubic-bezier(.2,.8,.2,1)` | all of them: ease-out |
-| `--pulse` | 1.6s | the one loop: work going on now |
+| `--pulse` | 1.6s | the one loop: work going on now, or the mic listening |
 
-- **Only `transform` and `opacity`** (and a colour on press). Never height, width, top or margin.
+- **Only `transform` and `opacity`**, with `visibility` to take a closed thing out of reach, and a switch's
+  `background-color`. Never height, width, top or margin.
 - **What animates:** the drawer and the sheet slide; their scrim fades; the Talk dock's mic and box cross-fade; a card
   or message that is new fades in and rises 6px; a view fades in when you go to it; a state word that changed fades in; a chevron turns.
 - **What never animates:** a refresh of what is already there, a list reordering under the reader, text being
   typed, the scroll position (a jump to the latest is instant), anything on first load.
 - **New means new:** give a thing that can come and go `data-k="its key"` (and `data-v="its state"` if it has one).
-  `enter()` animates only the keys that were not there before. Never animate from a class in the markup: the
-  markup is drawn again on every refresh.
+  `enter()` animates only the keys that were not there before, and nothing before the first snapshot. Your own message
+  has `data-t` too, so it comes in once, not again when it is sent and when it lands. Never animate from a class in
+  the markup: the markup is drawn again on every refresh.
 - **A finger leads.** While it drags, the drawer follows it with no transition; on release it settles.
 - **Reduced motion:** under `prefers-reduced-motion:reduce` there is none. One rule at the end of the stylesheet
   zeroes every duration, so nothing needs its own.
@@ -118,7 +128,8 @@ Motion shows where a thing came from, where it went, or that it changed. Nothing
 - **A chat is pinned to its newest message** when you open it, when you send, and while a reply comes in, unless you
   scrolled up. Then it stays put and the jump-to-latest button shows.
 - Going to a view starts at its top; coming back to one you left returns to where you were.
-- A refresh also keeps focus, the caret, a text selection, what is folded open, and a code block's sideways scroll.
+- A refresh also keeps focus, the caret (`keepFields()`), a text selection, what is folded open, and a code block's
+  sideways scroll.
 - A notice (`.notice`) floats over the top of the view. It never pushes it down.
 
 ## Touch, keys and access

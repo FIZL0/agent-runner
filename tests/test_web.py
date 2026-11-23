@@ -2181,7 +2181,7 @@ eval(logic + line('function setHTML(') + grab('function keepScroll(') + grab('fu
   CHAT += ' m3:90'; render(); out.follows = left();
   scroll(5); CHAT += ' m4:90'; render();
   out.up = [b.scrollTop, $('jump').cls.has('on'), $('jump').innerHTML];
-  await send(); out.sent = [outboxed[0], left(), $('jump').cls.has('on')];
+  ta.value = 'hello'; await send(); out.sent = [outboxed[0], left(), $('jump').cls.has('on')];
   scroll(0); toEnd(); out.jump = [left(), $('jump').cls.has('on')];
   scroll(10); PD.down = true; CHAT += ' m5:50'; render(); out.held = b.innerHTML.includes('m5'); PD.down = false; render(); out.after = [b.innerHTML.includes('m5'), b.scrollTop];
   console.log(JSON.stringify(out));
