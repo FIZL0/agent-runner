@@ -98,11 +98,10 @@ def test_release_taken(tmp: Path):
     (repo / 'plan').mkdir()
     (repo / 'plan/TODO.md').write_text('# TODO\n\n### Next\n\n'
                                        '- [ ] **T3** three | files: c.py\n'
-                                       '- [ ] **V1** Release | after: all\n'
+                                       '- [ ] **V1** (alone) Release | after: all\n'  # F130: it runs alone
                                        '- [ ] **T1** one | files: a.py\n', encoding='utf-8')
     (repo / 'plan/DONE.md').write_text('# DONE\n', encoding='utf-8')
-    (repo / 'runner.toml').write_text('[plan]\nrelease_alone = true\n\n'  # F100: the old way, on purpose
-                                      '[run]\ntest = "true"\nmin_free_gb = 0\nremote = false\n'
+    (repo / 'runner.toml').write_text('[run]\ntest = "true"\nmin_free_gb = 0\nremote = false\n'
                                       'merge_ahead = false\n', encoding='utf-8')
     (repo / '.gitignore').write_text('.runner/\n', encoding='utf-8')
     git(repo, 'add', '-A')
@@ -122,7 +121,7 @@ def test_release_taken(tmp: Path):
        "status's release line says so")
     running = {1: ('T1', 'Next', {'a.py'}, set())}
     eq(S.explain(running, set(), 'main').get('V1'),
-       ('a release runs alone', 'T1 is running or waiting to merge in this run'), 'a task in a slot still holds it')
+       ('runs alone', 'T1 is running or waiting to merge in this run'), 'a task in a slot still holds it')
     eq(S.choose(S.held(running, 'main'), set(), 'main'), None, 'and nothing starts')
     h = S.held({}, 'main')
     h = h._replace(away=h.away | {'X9'}, busy=h.busy + [('X9', 'Next', {'z.py'}, set(), {'z.py'})])
@@ -148,7 +147,6 @@ def test_release_beside(tmp: Path):
     git(repo, 'add', '-A')
     git(repo, 'commit', '-qm', 'start')
     R.init(repo)
-    eq(S.C.raw['plan']['release_alone'], False, '[plan] release_alone is off by default')
     running = {1: ('T1', 'Next', {'a.py'}, set()), 2: ('T2', 'Next', {'b.py'}, set())}
     eq(S.explain(running, set(), 'main').get('V1'), ('free', ''), 'the release is free while T1 and T2 run')
     eq('V2' in S.explain(running, set(), 'main'), False, 'one with open tasks ahead of it waits for them to land')
@@ -173,14 +171,48 @@ def test_release_beside(tmp: Path):
     eq(S.explain({2: running[2]}, set(), 'main').get('T1'), ('finished, waiting to merge', ''),
        'and merges once it has landed')
     git(repo, 'branch', '-D', 'task/T1')
-    S.C.raw['plan']['release_alone'] = True
-    try:
-        eq(S.explain(running, set(), 'main').get('V1'),
-           ('a release runs alone', 'T1 is running or waiting to merge in this run'), 'release_alone: it waits')
-        eq(S.explain(beside, set(), 'main').get('T3'), ('a release runs alone', 'V1 is releasing'),
-           'and nothing starts beside it')
-    finally:
-        S.C.raw['plan']['release_alone'] = False
+
+
+def test_alone(tmp: Path):
+    print('F130: a task tagged (alone) waits for what runs, nothing starts beside it, and a release can carry it')
+    repo = tmp / 'alone'
+    repo.mkdir()
+    git(repo, 'init', '-q', '-b', 'main')
+    (repo / 'plan').mkdir()
+    (repo / 'plan/TODO.md').write_text('# TODO\n\n### Next\n\n'
+                                       '- [ ] **C1** (alone) rewrite it all | files: native/**\n'
+                                       '- [ ] **T1** one | files: a.py\n'
+                                       '- [ ] **T2** two | files: b.py\n'
+                                       '- [ ] **V1** (alone) Release\n', encoding='utf-8')
+    (repo / 'plan/DONE.md').write_text('# DONE\n', encoding='utf-8')
+    (repo / 'runner.toml').write_text('[run]\ntest = "true"\nmin_free_gb = 0\nremote = false\n'
+                                      'merge_ahead = false\n', encoding='utf-8')
+    (repo / '.gitignore').write_text('.runner/\n', encoding='utf-8')
+    git(repo, 'add', '-A')
+    git(repo, 'commit', '-qm', 'start')
+    R.init(repo)
+    todo = {t[0]: t for t in S.held({}, 'main').todo}
+    eq(S.held({}, 'main').alone, frozenset({'C1', 'V1'}), 'the tagged tasks are read')
+    eq(S.choose(S.held({}, 'main'), set(), 'main')[0], 'C1', 'nothing runs: the alone task starts')
+    running = {1: todo['T1']}
+    why = S.explain(running, set(), 'main')
+    eq(why.get('C1'), ('runs alone', 'T1 is running or waiting to merge in this run'),
+       'it waits for a running task, files apart (a whole-directory glob alone would not)')
+    eq(why.get('V1'), ('runs alone', 'T1 is running or waiting to merge in this run'), 'so does an alone release')
+    eq(why.get('T2'), ('free', ''), 'untagged tasks still start beside T1')
+    eq(S.choose(S.held(running, 'main'), set(), 'main')[0], 'T2', 'and the pick skips the alone ones')
+    beside = {1: todo['C1']}
+    why = S.explain(beside, set(), 'main')
+    eq(why.get('T1'), ('runs alone', 'C1 runs alone'), 'nothing starts beside a running alone task')
+    eq(why.get('V1'), ('runs alone', 'C1 is running or waiting to merge in this run'), 'not even another alone one')
+    eq(S.choose(S.held(beside, 'main'), set(), 'main'), None, 'and the pick starts nothing')
+    eq(S.choose(S.held({1: todo['V1']}, 'main'), set(), 'main'), None, 'nothing starts beside an alone release')
+    h = S.held({}, 'main')
+    h = h._replace(away=h.away | {'X9'}, busy=h.busy + [('X9', 'Next', {'z.py'}, set(), {'z.py'})])
+    eq(S.holds(todo['C1'], set(), h), None, 'a task claimed by another runner does not hold it (B107)')
+    h = h._replace(busy=h.busy + [('X8', 'Next', set(), set(), set())], away=h.away | {'X8'})
+    h = h._replace(alone=h.alone | {'X8'})
+    eq((S.holds(todo['C1'], set(), h) or ('',))[0], 'clash', 'but one tagged (alone) itself still holds it')
 
 
 def test_critical_first(tmp: Path):
@@ -231,7 +263,7 @@ def main() -> int:
         repo = make_repo(Path(tmp))
         return report([lambda: test_explain(repo), lambda: test_parked(repo),
                        lambda: test_release_taken(Path(tmp)), lambda: test_release_beside(Path(tmp)),
-                       lambda: test_critical_first(Path(tmp))])
+                       lambda: test_alone(Path(tmp)), lambda: test_critical_first(Path(tmp))])
 
 
 if __name__ == '__main__':

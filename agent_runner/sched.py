@@ -123,37 +123,31 @@ def file_overlap(files, b: tuple, shared: set) -> set[str]:
     return P.overlap(files - dirs, held) | P.overlap(dirs, {f for f in line if whole_dir(f)})
 
 
-def clash(t: tuple, b: tuple, shared: set[str]) -> bool:
+def clash(t: tuple, b: tuple, shared: set[str], alone: frozenset = frozenset()) -> bool:
     """Task `t` may not run beside `b` (running here, waiting to merge, or claimed by another runner): siblings,
     a shared ordered section, or overlapping files (`shared_files` aside; see `file_overlap`). A release (kind V)
     clashes like any other task: it starts once what it waits for (`after:`) has landed, beside running tasks,
     and tasks start beside it; while it is busy the merge holds every other merge (`merge.hold_for_release`,
-    F99), so it still releases exactly what was on the shared branch when it started. With `[plan]
-    release_alone` (F38, F100) it clashes with everything, either way round: it starts only when nothing else
-    runs or waits to merge, and nothing starts beside it; `holds` then lets it pass over a task taken by hand or
-    claimed by another runner (`passes`, B107): only this run's tasks hold it."""
+    F99), so it still releases exactly what was on the shared branch when it started. A task tagged `(alone)`
+    (its id in `alone`, F130; a release or any other) clashes with everything, either way round: it starts only
+    when nothing else runs or waits to merge, and nothing starts beside it; `holds` then lets it pass over a task
+    taken by hand or claimed by another runner (`passes`, B107): only this run's tasks hold it."""
     tid, section, files, _ = t
     if family(tid) == family(b[0]):
         return True
-    if (P.release(tid) or P.release(b[0])) and release_alone():  # F38: a release runs alone
+    if tid in alone or b[0] in alone:  # F130: it runs alone
         return True
     return (ordered(section) and section == b[1]) or bool(file_overlap(files, b, shared))
 
 
-def release_alone() -> bool:
-    """`[plan] release_alone` in the run's config (F100): a release clashes with every task, either way round;
-    without it tasks run beside a release and only their merges wait for it (F99)."""
-    return bool(C.raw['plan'].get('release_alone'))
-
-
-def clash_why(t: tuple, b: tuple, shared: set) -> tuple[str, str]:
+def clash_why(t: tuple, b: tuple, shared: set, alone: frozenset = frozenset()) -> tuple[str, str]:
     """Why `clash(t, b)`: (the kind of wait, what holds it), for the dry run."""
     if family(t[0]) == family(b[0]):
         return 'waiting for a sibling', b[0]
-    if P.release(t[0]) and release_alone():
-        return 'a release runs alone', f'{b[0]} is running or waiting to merge in this run'
-    if P.release(b[0]) and release_alone():
-        return 'a release runs alone', f'{b[0]} is releasing'
+    if t[0] in alone:
+        return 'runs alone', f'{b[0]} is running or waiting to merge in this run'
+    if b[0] in alone:
+        return 'runs alone', f'{b[0]} runs alone'
     if ordered(t[1]) and t[1] == b[1]:
         return f'one at a time in "{t[1]}"', b[0]
     return 'waiting for files', f'{", ".join(sorted(file_overlap(t[2], b, shared))[:3])} held by {b[0]}'
@@ -207,6 +201,7 @@ class Held(NamedTuple):
     away: frozenset = frozenset()  # B107: busy ids that hold no release: taken by hand, claimed by another runner
     live: frozenset = frozenset()  # B126: the tasks in this run's slots (a running one may be in `mine` too)
     critical: frozenset = frozenset()  # B126: open tasks tagged `(follow-up, critical)` or in a Critical section
+    alone: frozenset = frozenset()  # F130: tasks tagged `(alone)`, whatever their box: they run alone
 
 
 def held(running: dict, branch: str) -> Held:
@@ -236,7 +231,8 @@ def held(running: dict, branch: str) -> Held:
     busy_ids |= {b[0] for b in busy if b[0] not in mine}
     parked = parked_attempts() if todo else {}
     return Held(todo, busy, busy_ids, mine, finished, parked, shared, away, frozenset(live),
-                critical_tasks(branch) if todo else frozenset())
+                critical_tasks(branch) if todo else frozenset(),
+                P.alone_ids(plan_text(branch)) if todo else frozenset())
 
 
 def critical_tasks(branch: str) -> frozenset:
@@ -263,16 +259,19 @@ def holds(t: tuple, tried: set, h: Held) -> tuple[str, tuple | None] | None:
         return 'parked', None
     if P.release(tid) and MERGE.locked():  # F99: a merge under way lands first, so the release starts from it
         return 'merging', None
-    if b := next((b for b in h.busy if clash(t, b, h.shared) and not passes(t, b, h)), None):
+    if b := next((b for b in h.busy if clash(t, b, h.shared, h.alone) and not passes(t, b, h)), None):
         return 'clash', b  # a running or merge-waiting task's sibling, ordered-section mate or file neighbour
     return None
 
 
 def passes(t: tuple, b: tuple, h: Held) -> bool:
     """Release `t` passes over busy task `b`, taken by hand or claimed by another runner (B107): a release waits only
-    for this run's running and merge-waiting tasks, and `b`'s work lands after, in the next release. A busy
-    release with `[plan] release_alone` still holds everything (it runs alone)."""
-    return P.release(t[0]) and not P.release(b[0]) and b[0] in h.away
+    for this run's running and merge-waiting tasks, and `b`'s work lands after, in the next release. A task
+    tagged `(alone)` (F130) passes over such a `b` too, as a release did under the old release_alone. A busy `b`
+    tagged `(alone)` still holds everything (it runs alone)."""
+    if b[0] not in h.away or b[0] in h.alone:
+        return False
+    return P.release(t[0]) and not P.release(b[0]) or t[0] in h.alone
 
 
 def passed_over(t: tuple, h: Held) -> list[str]:
@@ -307,8 +306,8 @@ def explain(running: dict, tried: set, branch: str) -> dict[str, tuple[str, str]
         elif kind == 'merging':
             why[tid] = ('waiting for a merge to land', 'a release starts from what has landed')
         elif kind == 'clash':
-            why[tid] = clash_why(t, b, h.shared)
-        elif P.release(tid) and (over := passed_over(t, h)):
+            why[tid] = clash_why(t, b, h.shared, h.alone)
+        elif (P.release(tid) or tid in h.alone) and (over := passed_over(t, h)):
             why[tid] = ('free', away_note(over, set(claimed)))
         else:
             why[tid] = ('free', '')
@@ -363,8 +362,8 @@ def claim_task(t: tuple, h: Held, branch: str):
     mine = now.get(t[0])
     for b in claimed_elsewhere(now, h.todo):
         cl = now[b[0]]
-        if mine and (cl.since, cl.owner) < (mine.since, mine.owner) and clash(t, b, h.shared) \
-                and not P.release(t[0]):  # B107: a release does not wait for another runner's task
+        if mine and (cl.since, cl.owner) < (mine.since, mine.owner) and clash(t, b, h.shared, h.alone) \
+                and not P.release(t[0]) and not passes(t, b, h):  # B107: a release does not wait for another runner's task
             plansync.release(C, t[0])
             log(f'{t[0]}: {cl.who} claimed {b[0]} first and it clashes; given way')
             return None

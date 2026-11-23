@@ -425,10 +425,18 @@ words in a note on the task (after ` — `, not in its title), its next merge la
   merge step holds every other merge and push: the tasks keep working, and their finished work waits to
   merge until the release has landed, so the release holds exactly what was on main when it started. The
   run log and the dry run say why a merge waits (`T5: waits to merge: V10 is releasing`). A release lands
-  alone: no other task rides in its batch. A release taken by hand (`take`) holds no merges. With
-  `[plan] release_alone = true` it **runs alone** instead: the run starts it only when no other task is
-  running or waiting to merge, and starts nothing beside it. `plan add V --now` (or `--pri critical`) is an interim release: filed at the top, critical, with
+  alone: no other task rides in its batch. A release taken by hand (`take`) holds no merges.
+  Tagged `(alone)` (`plan add V --alone`, or `plan edit V7 --alone`) it **runs alone** instead: the run starts it
+  only when no other task is running or waiting to merge, and starts nothing beside it. `plan add V --now` (or `--pri critical`) is an interim release: filed at the top, critical, with
   no `after: all`. A release is never refused as a duplicate of another release, and needs no `--files`.
+- **Alone tag** (F130): `(alone)` in a task's description, after its level tag if any: `plan add KIND "text" --alone`
+  writes it, `plan edit ID --alone` sets it on an existing task and `--no-alone` clears it (an edit with new text or
+  fields keeps it). Any kind of task can carry it, e.g. a major rewrite whose `files: native/**` would not hold the
+  other tasks under that directory: a tagged task runs alone, so the run starts it only when nothing else runs or
+  waits to merge in this run, and starts nothing beside it. Tasks taken by hand (`take`) or claimed by another runner
+  do not hold it (B107), unless they are tagged `(alone)` too. The dry run and the TUI say
+  `T1 runs alone`. A release (kind V) without the tag runs beside other tasks as above. A runner.toml that still sets
+  the old `[plan]` key for this (removed in F130) gets one warning in the run log and is ignored.
 - **Auto release** (F63, off by default): `[run] auto_release` has the run queue a release by itself, as
   `plan add V` with no text does. `auto_release = { every = 10 }` queues one once 10 tasks have landed since
   the last release (the later of a release task's landing and the newest version tag); `{ idle = true }`
@@ -1067,7 +1075,6 @@ kinds = {}                # id prefix -> kind of work, e.g. { B = "bug", N = "ne
 need_files = false        # `plan add` refuses a line with no files: and no test: field (else it warns)
 lookup = []               # more files `plan <name>` searches for a heading, e.g. ["PLAN.md", "plan/guide/*.md"]
 context_kb = 12           # budget for what every session loads (`context`); `run` warns past it, 0 = never
-release_alone = false     # true: a release runs alone, nothing beside it; false: tasks run beside it and their merges wait
 glossary = "GLOSSARY.md"  # the project's glossary (`agent-runner glossary`): seeded by the first control session,
                           # named in every brief; false = off (no file written, briefs skip it)
 
@@ -1352,6 +1359,11 @@ Renamed or folded in 0.58.0 (the config trim):
   `<provider>:<model>` instead.
 - `[run] slot_env` keeps its name but defaults to `[]`: every slot gets `AGENT_SLOT=<n>` whatever it says, so
   a `slot_env` no longer needs to repeat it.
+
+Removed since 0.58.0:
+
+- `[plan] release_alone` is ignored, with one warning: tag the release `(alone)` instead (`plan edit V7
+  --alone`); any task can run alone that way (F130).
 
 Removed in 0.58.0 (the config trim):
 

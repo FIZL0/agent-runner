@@ -6227,45 +6227,44 @@ def test_after_all(repo: Path):
 
 def test_release_kind(repo: Path):
     print('run: F38 a release (kind V) waits on the earlier open tasks, and no other task starts beside it '
-          '(with [plan] release_alone, F100)')
+          '(tagged (alone), F130)')
     R.init(repo)
     rel = '- [ ] **V1** Release: cut the next version | after: all'
+    solo = '- [ ] **V1** (alone) Release: cut the next version | after: all'
     plan = {'ls': []}
     saved = R.plan_text
     R.plan_text = lambda branch: plan['ls']
-    R.C.raw['plan']['release_alone'] = True
     try:
         ids = lambda: [t[0] for t in R.tasks('main')]
         head = ['# TODO', '', '### Next', '']
-        plan['ls'] = head + ['- [ ] **F1** one | files: a.py', rel, '- [ ] **F2** below it | files: b.py']
+        plan['ls'] = head + ['- [ ] **F1** one | files: a.py', solo, '- [ ] **F2** below it | files: b.py']
         eq(ids(), ['F1', 'F2'], 'unstarted while an earlier task is open')
-        plan['ls'] = head + [rel, '- [ ] **F2** below it | files: b.py', '- [ ] **B3** another | files: c.py']
+        plan['ls'] = head + [solo, '- [ ] **F2** below it | files: b.py', '- [ ] **B3** another | files: c.py']
         v = R.pick({}, set(), 'main')
         eq(v[0], 'V1', 'starts once nothing is ahead of it')
         eq(R.pick({1: v}, set(), 'main'), None, 'no other task starts beside a running release, whatever its files')
-        eq(R.explain({1: v}, set(), 'main')['F2'], ('a release runs alone', 'V1 is releasing'), 'the dry run says why')
+        eq(R.explain({1: v}, set(), 'main')['F2'], ('runs alone', 'V1 runs alone'), 'the dry run says why')
         f2 = R.pick({}, {'V1'}, 'main')
         eq(f2[0], 'F2', 'with the release passed over, F2 is next')
         eq(R.pick({1: f2}, set(), 'main')[0], 'B3', 'a task beside F2 still starts')
         check((R.pick({1: f2}, {'B3'}, 'main') or ('',))[0] != 'V1',
               'the release waits for a task still running, even one below it')
-        eq(R.explain({1: f2}, set(), 'main')['V1'][0], 'a release runs alone', 'and the dry run says why')
+        eq(R.explain({1: f2}, set(), 'main')['V1'][0], 'runs alone', 'and the dry run says why')
         ahead = R.ahead
         R.ahead = lambda branch: ['F2']
         try:
-            plan['ls'] = head + ['- [x] **F2** below it | files: b.py', rel]
+            plan['ls'] = head + ['- [x] **F2** below it | files: b.py', solo]
             check(R.pick({}, set(), 'main') is None, 'and for one finished but not merged: it releases what landed')
         finally:
             R.ahead = ahead
-        now = '- [ ] **V2** (follow-up, critical) Release: an interim one'
+        now = '- [ ] **V2** (follow-up, critical) (alone) Release: an interim one'
         plan['ls'] = head + [now, '- [ ] **F3** queued | files: d.py']
         v2 = R.pick({}, set(), 'main')
         eq(v2[0], 'V2', 'an interim release (--now: no `after:`) starts at once')
         eq(R.pick({1: v2}, set(), 'main'), None, 'and runs alone too')
     finally:
         R.plan_text = saved
-        R.C.raw['plan']['release_alone'] = False
-    print('run: F99 without release_alone a release starts beside a running task, and a task beside it')
+    print('run: F99 untagged, a release starts beside a running task, and a task beside it')
     R.plan_text = lambda branch: plan['ls']
     try:
         plan['ls'] = head + [rel, '- [ ] **F2** below it | files: b.py', '- [ ] **B3** another | files: c.py']

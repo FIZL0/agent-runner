@@ -1066,7 +1066,6 @@ def test_release_kind():
                                     '- [ ] **F2** another | files: b.py', '', '### Follow-ups', '',
                                     '- [ ] **B1** (follow-up, normal) a follow-up | files: c.py', '']), encoding='utf-8')
         env = {**os.environ, 'AGENT_RUNNER_REPO': str(root), 'AGENT_RUNNER': '1'}
-        (root / 'runner.toml').write_text('[plan]\nrelease_alone = true\n', encoding='utf-8')  # F100: the old way
         r = run(root, 'plan', 'add', 'V', env=env)
         eq((r.returncode, r.stderr), (0, ''), 'plan add V needs no text, no --after and no --files')
         line = plan.section(todo, 'V1')[0]
@@ -1090,6 +1089,45 @@ def test_release_kind():
         r = run(root, 'plan', 'add', 'V', 'a release after the minimap radar', '--after', 'F3', env=env)
         eq((r.returncode, r.stderr), (0, ''), 'a release naming the work it waits for is not its duplicate (B99)')
         eq(run(root, 'plan', 'add', 'F', 'x', '--now', '--force', env=env).returncode, 2, '--now is for a release only')
+
+
+def test_alone_tag():
+    print('plan: F130 add --alone tags a task `(alone)`, edit --alone/--no-alone sets and clears it, '
+          'and a runner.toml with release_alone is warned, not refused')
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        git(root, 'init', '-q')
+        (root / 'plan').mkdir()
+        todo = root / 'plan' / 'TODO.md'
+        todo.write_text('\n'.join(['# TODO', '', '### Next', '', '- [ ] **F1** a feature | files: a.py', '']),
+                        encoding='utf-8')
+        env = {**os.environ, 'AGENT_RUNNER_REPO': str(root), 'AGENT_RUNNER': '1'}
+        r = run(root, 'plan', 'add', 'C', 'rewrite the scheduler', '--files', 'native/**', '--alone', env=env)
+        eq(r.returncode, 0, 'add --alone: ' + r.stderr)
+        line = plan.section(todo, 'C1')[0]
+        has(line, r'\*\*C1\*\* \(follow-up, normal\) \(alone\) rewrite the scheduler \| files: native/\*\*$',
+            'the tag stands after the level tag, before the text')
+        check(plan.alone(line) and plan.alone_ids(plan.lines(todo)) == {'C1'}, 'and is read back', line)
+        r = run(root, 'plan', 'add', 'V', '--alone', env=env)
+        eq(r.returncode, 0, 'add V --alone: ' + r.stderr)
+        has(plan.section(todo, 'V1')[0], r'\*\*V1\*\* \(alone\) Release: ', 'a release can carry it too')
+        eq(run(root, 'plan', 'edit', 'V1', '--no-alone', env=env).returncode, 0, 'edit --no-alone')
+        check(not plan.alone(plan.section(todo, 'V1')[0]), '--no-alone clears it', plan.section(todo, 'V1')[0])
+        eq(run(root, 'plan', 'edit', 'F1', '--alone', env=env).returncode, 0, 'edit --alone')
+        has(plan.section(todo, 'F1')[0], r'^- \[ \] \*\*F1\*\* \(alone\) a feature \| files: a\.py$', '--alone sets it')
+        run(root, 'plan', 'edit', 'F1', 'a better feature', env=env)
+        has(plan.section(todo, 'F1')[0], r'\*\*F1\*\* \(alone\) a better feature', 'new text keeps the tag')
+        run(root, 'plan', 'edit', 'F1', '--files', 'b.py', env=env)
+        has(plan.section(todo, 'F1')[0], r'\*\*F1\*\* \(alone\) a better feature \| files: b\.py$',
+            'and so does a field edit, with the tag written once')
+        plan.add('F', "mentions '(alone)' in its prose", todo=todo, done=root / 'plan' / 'DONE.md')
+        check(plan.alone_ids(plan.lines(todo)) == {'C1', 'F1'}, 'prose naming the tag is no tag',
+              plan.alone_ids(plan.lines(todo)))
+        (root / 'runner.toml').write_text('[plan]\nrelease_alone = true\n', encoding='utf-8')  # the old way
+        from agent_runner.config import Config
+        said = [w for w in Config(root).warnings if 'release_alone' in w]
+        check(len(said) == 1 and "'(alone)'" in said[0], 'one warning says to tag the release instead', said)
+        check('release_alone' not in Config(root).raw['plan'], 'and the key is dropped')
 
 
 def test_release_beside():
@@ -1352,7 +1390,7 @@ def test_refusals():
         (['edit', 'R1', '@'], (2, './run plan: edit takes no @ (`./run plan move ID WHERE` moves a task)\n')),
         (['edit', 'R1', '--files'], (2, './run plan: not edited: --files needs a value\n' + quote)),
         (['edit', 'R1', ''], (2, './run plan edit <ID> "new text" [--files A,B] [--after X,Y] [--test T] [--journal D] '
-                                 '[--model M] [--pri LEVEL]\n')),
+                                 '[--model M] [--pri LEVEL] [--alone | --no-alone]\n')),
         (['goal'], (1, './run plan: no `Goal:` paragraph above the first heading in TODO.md; '
                        '`./run plan goal "TEXT"` writes one\n')),
         (['unclaim', 'Z9'], (1, './run plan: no claim on Z9\n')),
@@ -1486,7 +1524,7 @@ def test_slot_writes_own_plan():
 
 
 if __name__ == '__main__':
-    sys.exit(report([test_refusals, test_iter_tasks_and_titles, test_hook, test_done_gate, test_channel,test_edit, test_unlabelled_block, test_restore, test_plan_last, test_after_all, test_release_kind, test_release_beside,test_goal,test_plan_roundtrip, test_plan_reopen, test_plan_index_and_sections, test_brief, test_brief_outline,
+    sys.exit(report([test_refusals, test_iter_tasks_and_titles, test_hook, test_done_gate, test_channel,test_edit, test_unlabelled_block, test_restore, test_plan_last, test_after_all, test_release_kind, test_alone_tag, test_release_beside,test_goal,test_plan_roundtrip, test_plan_reopen, test_plan_index_and_sections, test_brief, test_brief_outline,
                      test_split_parents, test_add_bottom, test_add_pri, test_add_subtask, test_kinds, test_need_files, test_add_stray_args, test_hand_edits_commit, test_hand_edits_push, test_similar, test_add_refuses_a_duplicate, test_carry_notes,
                      test_merge3, test_concurrent_add, test_merge_driver, test_concepts, test_needs_you,
                      test_needs_own_project, test_needs_config, test_slot_writes_own_plan, test_concept_shown]))

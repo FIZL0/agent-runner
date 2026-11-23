@@ -99,8 +99,6 @@ DEFAULTS: dict = {
                                 # `agent-runner context` reports it, `run` warns past it; 0 = no warning
         'glossary': 'GLOSSARY.md',  # the project's glossary (`agent-runner glossary`), seeded by the first control
                                 # session and named in every brief; false = off: no file written, briefs skip it
-        'release_alone': False,  # a release (kind V) runs alone, nothing beside it; false = tasks run beside it
-                                # and their merges wait until it lands (F99, F100)
     },
     'run': {
         'test': '',             # the gate: `done` and every merge run it; empty means no gate
@@ -554,6 +552,8 @@ REMOVED: dict[tuple[str, str], str] = {
     ('run', 'batch_wait'): 'removed in 0.32.0; delete it',
     ('run', 'batch_min'): 'removed in 0.32.0; delete it',
     ('plan', 'brief'): 'use `brief_extra` and `outline` (0.32.0)',
+    ('plan', 'release_alone'): "tag the release '(alone)' instead (`plan edit ID --alone`, F130): any task "
+                               'tagged so runs alone; delete it',
     ('needs', 'map_replies'): 'sessions map a reply to its item themselves; `plan answer` is gone (0.52.0); delete it',
     # C14, the config trim
     ('run', 'control_file_asks'): 'an open question is always filed before its session closes; '
