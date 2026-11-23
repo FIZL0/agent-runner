@@ -110,10 +110,14 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
   still hold; without a free provider it is as before (B157).
 - Fixes: on an iPhone with the keyboard open, the run app's header went off the top and an empty band sat under the
   message box; now the app fits the space above the keyboard, in Talk, Home, Settings and the sheet too (B160).
-- Fixes: Talk's mic on an iPhone could end at once with "Heard nothing (error: aborted)" (B162). The cause is not
-  proven. Now only one speech recognizer runs at a time (a start waits for the old one's end, the box's dictation
-  too); an abort before any words is retried once by itself, then Talk's status line says what to try in plain words,
-  with the mic mode and the time to the error; a hold survives iOS taking the touch (pointercancel) and a redraw.
+- Fixes: Talk's mic on an iPhone could end at once with "Heard nothing (error: aborted)" (B162). Now only one speech
+  recognizer runs at a time (a start waits for the old one's end, the box's dictation too); an abort before any words
+  is retried once by itself, then Talk's status line says what to try in plain words, with the mic mode and the time
+  to the error; a hold survives iOS taking the touch (pointercancel) and a redraw. The mic line says "Starting the
+  mic…" until sound is really captured, then "Listening…"; the note carries the recognizer's own error message (on an
+  iPhone 'aborted' stands for any failure, silence too, so the message tells them apart); a stop that never gets an end
+  no longer leaves Talk listening for ever; a listen with no words shows a "Copy mic report" button: the events from
+  press to end with times, words counted, not kept. The cause on the person's iPhone is still not proven.
 - Fixes: run app on a phone: a vertical scroll could also open the sidebar drawer, and the page scrolled while the
   drawer followed the finger. Now each touch is one thing until the finger lifts: a touch that scrolled never becomes
   a drawer swipe, and during a drawer swipe nothing scrolls; a swipe must also be more nearly sideways (B167).

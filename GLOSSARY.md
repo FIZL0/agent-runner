@@ -525,3 +525,10 @@ _Said_: approve mode
 _On screen_: N changes wait to be pushed
 _In code_: [run] approve, pitch.on
 _Avoid_: PR mode, gated push
+
+**Mic report**:
+What happened on Talk's mic from the press to the end of a listen that heard no words, each event with its time, to copy and send; it holds no words
+_Said_: the mic log
+_On screen_: Copy mic report
+_In code_: micLog, micReport, micCopy, TK.trail
+_Avoid_: trace, debug log
