@@ -2508,7 +2508,7 @@ async function send(){
   store.set(DRAFT_KEY(key),'');if(ta)ta.value='';
   S.atts=[];
   const rq=sendReq(ctx,to,msg);
-  if(rq.name==='new_control'){newChat(rq.name,rq.args,ctx.kind==='new'?'Add a task':`About ${ctx.id||ctx.label}`,msg);return}  // B139
+  if(rq.name==='new_control'){newChat(rq.name,rq.args,ctx.label,msg);return}  // B139
   // F137: out of the box at once, a pending message until chat_to answers (obDone), red with Retry if it fails
   outbox('chat_to',{text:msg,to},{text,key,say:`To ${threadTitle(to)}: ${text||paths.length+' attachment(s)'}`});
   if(S.thread!==to)open(to);
