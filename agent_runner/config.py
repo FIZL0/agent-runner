@@ -864,11 +864,13 @@ def cfg(cwd: Path | str | None = None) -> Config:
     return _cfg(toplevel(cwd))
 
 
-def finished_mark(slot: str | int | None = None) -> Path | None:
+def finished_mark(slot: str | int | None = None, c: Config | None = None) -> Path | None:
     """The file a slot's successful `done` leaves (`AGENT_RUNNER_SLOT`); the slot clears it when it starts a task,
-    and the stop waiter stops protecting the session's leftover background commands once it exists."""
+    and the stop waiter stops protecting the session's leftover background commands once it exists. `c` is the run's
+    config (the run passes its own); left out, the one of the folder this runs in: code that clears a mark passes it,
+    or a test's run, whose working directory is the real worktree, clears the real slot's (B172)."""
     slot = slot if slot is not None else os.environ.get('AGENT_RUNNER_SLOT')
-    return cfg().notes(f'slot{slot}.finished') if slot not in (None, '') else None
+    return (c or cfg()).notes(f'slot{slot}.finished') if slot not in (None, '') else None
 
 
 # --- F97: the settings, read and written by the run app's Settings view ---------------------------------------

@@ -125,6 +125,10 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 - Fixes: run app on a phone: a vertical scroll could also open the sidebar drawer, and the page scrolled while the
   drawer followed the finger. Now each touch is one thing until the finger lifts: a touch that scrolled never becomes
   a drawer swipe, and during a drawer swipe nothing scrolls; a swipe must also be more nearly sideways (B167).
+- Fixes: `run finish` said "`done` has not run" after a `done` that had passed, because a test suite of agent-runner's
+  own gate, run in another slot, deleted the slot's finished mark: a run's start in a test cleared the mark of the
+  folder it ran in. Now a run clears only its own project's marks; `run finish` also accepts a task whose tick is
+  committed on its branch and tested at HEAD, and a `done` again on a ticked, committed task puts the mark back (B172).
 - Added: the gate workflow (ci.yml) runs on request for a task branch before its merge (`gh workflow run ci.yml --ref task/<ID> -f
   system=windows`), so Windows-only code can be checked from a Linux slot; see docs/REFERENCE.md (T13).
 - Added: `tools/windows_vm.sh` runs test files (default `tests/test_windows.py`) of a worktree, uncommitted changes

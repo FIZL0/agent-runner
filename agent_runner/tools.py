@@ -83,8 +83,14 @@ def cmd_finish(argv: list[str]) -> int:
         return 0
     from agent_runner.config import RUNNER, finished_mark
     from agent_runner.gitops import git
+    tid = ''
     done = (m := finished_mark()) and m.exists()  # this slot's `done` succeeded
-    if not done and (tid := task_here()):  # B156: else the session ends with its task open, nothing under Needs you
+    if not done and (tid := task_here()):
+        from agent_runner.done import tested_tick
+        if tested_tick(tid):  # B172: `done` succeeded, its mark was lost: put it back for the run to read
+            m.touch()
+            done = True
+    if not done and tid:  # B156: else the session ends with its task open, nothing under Needs you
         print(f'run finish: refused: `done` has not run for {tid}, so the session goes on. Run `{RUNNER} done {tid} '
               '"<commit message>"` first (add --blocked "<why + what would unblock it>" when you are stuck), then '
               f'finish. When only a person can answer what you need, run `{RUNNER} ask "<question>"` instead.',

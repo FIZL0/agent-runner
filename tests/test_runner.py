@@ -519,6 +519,7 @@ def test_done(repo: Path, tmp: Path):
     eq((D.fails(d, 'T5'), D.fails(d, 'Z9')), (0, 3), "and clears T5's failed-gate count, not Z9's")
     has(r.stdout, r'pushed task/T5 -> origin', 'and pushes the task branch with CP1252 output enabled')
     check('task/T5' in remote_branches(tmp), 'which is on the remote now')
+    again_after_done(repo, d)
     has((d / 'plan/DONE.md').read_text(), r'- \[x\] \*\*T5\*\*', 'T5 is ticked into DONE.md on the branch')
 
     # meanwhile on main: somebody ticks T1 and logs it (a DONE.md and CHANGELOG.md conflict to come)
@@ -533,6 +534,47 @@ def test_done(repo: Path, tmp: Path):
     git(repo, 'commit', '-qam', 'T4: blocked')
     has((repo / 'plan/TODO.md').read_text(), r'\*\*T4\*\*.*BLOCKED: \(after T5\)',
         'block records only the id still open: T1 was ticked first')
+
+
+def again_after_done(repo: Path, d: Path):
+    """B172: T5's `done` passed in worktree `d`, and its slot's mark is lost."""
+    print('  B172: the mark of a done that passed is lost: `finish` takes it all the same, `done` again restores it')
+    env = {**os.environ, 'AGENT_RUNNER': '1', 'AGENT_RUNNER_SLOT': '7'}
+    mark, end = repo / '.runner/slot7.finished', repo / '.runner/slot7.end'
+    head, tested = git(d, 'rev-parse', 'HEAD'), 'refs/agent-runner/tested/T5'
+    eq(git(d, 'rev-parse', tested), head, 'the tested ref is HEAD')
+    try:
+        mark.unlink(missing_ok=True)
+        r = run(d, 'finish', 'the logger', env=env)
+        check(r.returncode == 0 and end.exists() and mark.exists(), 'finish is taken, and restores the mark',
+              r.stdout + r.stderr)
+        end.unlink(missing_ok=True)
+        mark.unlink(missing_ok=True)
+        r = run(d, 'done', 'T5', 'T5: the logger', env=env)
+        check(r.returncode == 0 and mark.exists(), 'done again restores the mark', r.stdout + r.stderr)
+        has(r.stdout, r'pushed task/T5 -> origin', 'and pushes the branch, in case the first was cut off before that')
+        check('gate passed:' not in r.stdout and git(d, 'rev-parse', 'HEAD') == head, 'with no gate run and no commit',
+              r.stdout)
+        mark.unlink(missing_ok=True)
+        git(d, 'update-ref', '-d', tested)
+        r = run(d, 'finish', 'the logger', env=env)
+        check(r.returncode == 1 and not mark.exists(), 'a tick no gate passed on is not enough for finish',
+              r.stdout + r.stderr)
+        r = run(d, 'done', 'T5', 'T5: the logger', env=env)
+        check(r.returncode == 0 and mark.exists() and 'gate passed' in r.stdout and
+              git(d, 'rev-parse', tested) == head, 'done again runs the gate, and records it', r.stdout + r.stderr)
+        mark.unlink(missing_ok=True)
+        (d / 'd2.py').write_text('# more\n', encoding='utf-8')
+        r = run(d, 'done', 'T5', 'T5: more', env=env)
+        check(r.returncode == 0 and mark.exists() and 'already ticked' in r.stdout and
+              git(d, 'log', '-1', '--format=%s') == 'T5: more' and git(d, 'status', '--porcelain') == '',
+              'and work added since is gated and committed, not ticked twice', r.stdout + r.stderr)
+        git(d, 'reset', '-q', '--hard', head)
+        git(d, 'push', '-q', '--force', 'origin', 'task/T5')
+        git(d, 'update-ref', tested, head)
+    finally:
+        for f in (mark, end):
+            f.unlink(missing_ok=True)
 
 
 def test_note_on_a_ticked_task(repo: Path):
@@ -3877,8 +3919,6 @@ def test_stop_waiter(tmp: Path):
         R.WAITER_POLL = poll
         os.environ.pop('AGENT_RUNNER_IDLE_MAX', None)
         os.environ.pop('AGENT_RUNNER_SLOT', None)
-        if (m := R.finished_mark('9')) and m.exists():
-            m.unlink()
 
 
 def test_stop_hook_grace(tmp: Path):
@@ -3906,8 +3946,6 @@ def test_stop_hook_grace(tmp: Path):
             os.environ.pop('AGENT_RUNNER', None)
         else:
             os.environ['AGENT_RUNNER'] = was_runner
-        if (m := R.finished_mark('9')) and m.exists():
-            m.unlink()
 
 
 def test_finish_ends_session(tmp: Path):
@@ -4033,9 +4071,19 @@ def test_ask_parks_and_resumes(repo: Path, tmp: Path):
         mux, R.MUX = R.MUX, Mux()
         find = slots.Claude.find_transcript
         slots.Claude.find_transcript = lambda self, sid: str(old) if sid == 'sid-ask' and old.exists() else None
+        here = tmp / 'mark-here'  # B172: the gate's working directory is a real slot's worktree; this stands in for it
+        here.mkdir()
+        git(here, 'init', '-q')
+        (here / '.runner').mkdir()
+        (here / '.runner/slot2.finished').touch()
+        R.C.notes('slot2.finished').touch()
+        os.chdir(here)
         try:
             got = R.start(2, ('T2', 'the printer', {'b.py'}, set()), 'main', 'opus', 90, 2)
+            check((here / '.runner/slot2.finished').exists() and not R.C.notes('slot2.finished').exists(),
+                  'B172: a start clears its own run\'s mark, not that of the folder it runs in')
         finally:
+            os.chdir(cwd)
             R.MUX, slots.Claude.find_transcript = mux, find
         d2 = R.SLOTS_DIR / 's2'
         eq(got[:2], (4343, 'sid-ask'), 'the answer resumes the same session, in whichever slot is free')
