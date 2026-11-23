@@ -1434,12 +1434,13 @@ proc_max_gb = "auto"      # a process of the run's resident past this is killed;
 min_free_mem_gb = 4       # under this much memory available: the run's biggest process is killed; 0 = never
 slot_clean = ""           # a project's own clean, run instead of the trim and the full git clean -ffdXq
 command_timeout = 3600    # s the gate, a retest, a hook (join, before_start, on_exit) or `done`'s gate may run: past it, failed
-# [run.tools.<name>]        # a shared tool, one task at a time: check, label, connect (### Shared tools)
 needs_order = "oldest"    # what waits on a person (Needs you): oldest first; "newest" first; "plan": TODO.md's order
 
 [run.join]                # glob = a command that joins a conflict in that file itself:
 # "data/addresses.txt" = "./tools/join {union} {out}"   # also {ours} {base} {theirs} {file}; exit 0 keeps {out}
 
+
+[run.tools]               # shared tools, one [run.tools.<name>] each: check, label, connect (### Shared tools)
 ```
 
 ### Models per role
