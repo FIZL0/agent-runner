@@ -149,20 +149,21 @@ def test_spend():
         s = cost.Spend()
         s.add(f)
         tokens, usd = s.total()
-        eq(tokens, 103500, 'every token billed, a message id once though Claude writes it on two lines')
+        eq(tokens, 3500, 'input, cache writes and output, not cache reads; a message id once though Claude writes '
+                         'it on two lines')
         eq(round(usd, 4), round((1000 * 5 + 2000 * 5 * 1.25 + 100000 * 5 * 0.1 + 500 * 25) / 1e6, 4),
            'dollars at list prices: cache writes 1.25x, reads 0.1x the input price')
         with open(f, 'a', encoding='utf-8') as fh:
             fh.write(json.dumps(turn('m2', 'claude-haiku-5-5')[0]) + '\n' + '{"type": "assistant", "mess')
         s.add(f)
-        eq(s.total()[0], 2 * 103500, 'read on from where it stopped; a half-written line waits')
+        eq(s.total()[0], 2 * 3500, 'read on from where it stopped; a half-written line waits')
         sub = Path(t) / 'sid' / 'subagents'
         sub.mkdir(parents=True)
         write(sub / 'agent-1.jsonl', turn('m9', 'claude-sonnet-5-5'))
         eq([p.name for p in cost.session_files(f)], ['sid.jsonl', 'agent-1.jsonl'], 'its subagents\' transcripts')
         for p in cost.session_files(f):
             s.add(p)
-        eq(s.total()[0], 3 * 103500, 'and their tokens count for the task')
+        eq(s.total()[0], 3 * 3500, 'and their tokens count for the task')
         eq(cost.turn_spend({'input': 10, 'output': 5, 'cost': {'total': 0.5}}, 'x'), (15, 0.5),
            "Pi's keys, and its own cost when it gives one")
     eq(cost.spend_text(1_234_000, 3.4), '1.2M tok $3.40', 'how status shows it')

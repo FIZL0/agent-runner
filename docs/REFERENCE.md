@@ -894,7 +894,7 @@ The built-in prompt is the same text for every task up to its last part (F103): 
 first and says `<ID>` where the task's id goes, then the task's id, an earlier attempt and `prompt_extra`,
 then the task's own paragraphs (concept, review, …) and policies, and the task's brief last. So every slot's
 first turn starts with the same words and the model's prompt cache is reused across slots and tasks. A custom
-template that has `{brief}` keeps the order it gives.
+template (`[run] prompt`) keeps the order it gives.
 
 Each session also gets `AGENT_RUNNER=1`, `AGENT_SLOT=<n>` and anything `[run] slot_env` adds in its
 environment, so your tools can tell slots apart, for example to give each one its own port or emulator
@@ -1091,7 +1091,7 @@ review_min_lines = 50     # a diff smaller than this (changed lines) skips the r
 idle = 30                 # s quiet after a turn ends before a session without a successful `done` is ended (with one: 5 s)
 stall = 1200              # s quiet at a prompt that counts as stalled
 context_warn = 150        # k tokens: a slot session whose context peaked past this says so in its exit line and in `since`, with what filled it ("B32 peaked 168k (over 150k): runner.py 61k, test_runner.py 22k"); soft only, nothing is stopped; 0 = off. A new run also starts c1 afresh when its kept session last stood over it (F27)
-task_tokens = 0           # tokens one task's session (and its subagents) may use: input, cache reads and writes, output. Past it the runner tells the task to stop at a clean point (commit, write its journal, end its turn) and parks it as wip/<ID>; one whose done already passed lands; one that goes on to 1.25 times the cap is ended. `status` shows each running task's spend ("1.2M tok $3.40"); 0 = no cap (F103)
+task_tokens = 0           # tokens one task's session (and its subagents) may use: input, cache writes, output (cache reads are left out: they grow with turns times the context, and task_usd counts them). Past it the runner tells the task to stop at a clean point (commit, write its journal, end its turn) and parks it as wip/<ID>; one whose done already passed lands; one that goes on to 1.25 times the cap is ended. `status` shows each running task's spend ("1.2M tok $3.40"); 0 = no cap (F103)
 task_usd = 0              # the same cap in dollars, at the API's list prices (a plan bills none; Opus prices for a model it does not know); 0 = no cap
 pause = 60                # s between one session ending and the next starting in that slot
 weekly_max = 90           # % of 7-day usage past which nothing new starts

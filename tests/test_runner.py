@@ -7084,7 +7084,7 @@ def test_task_budget_f103(repo: Path, tmp: Path):
     from agent_runner import loop as L, slots as S
     R.init(repo)
     eq((R.C.run.get('task_tokens'), R.C.run.get('task_usd')), (0, 0), 'no cap by default')
-    usage = {'input_tokens': 1000, 'cache_read_input_tokens': 50000, 'output_tokens': 500}  # 51,500 a turn
+    usage = {'input_tokens': 40000, 'cache_read_input_tokens': 500000, 'output_tokens': 11500}  # 51,500 a turn
     f = tmp / 'budget-sid.jsonl'
 
     def turns(*mids):

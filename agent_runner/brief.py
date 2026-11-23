@@ -125,7 +125,7 @@ def prompt_for(tid: str, n: int, slots: int, cwd: Path, branch: str) -> str:
 
     F103: the built-in prompt is the same for every task up to TASK_PROMPT (its id, an earlier attempt,
     `prompt_extra`), then the task's paragraphs and policies, and the task's brief last, so the model's prompt
-    cache is reused across slots. A custom template with `{brief}` keeps its own order.
+    cache is reused across slots. A custom template keeps its own order.
     """
     r = C.run
     journal = os.path.relpath(C.journal, C.root).replace(os.sep, '/') if C.journal else ''
@@ -162,7 +162,7 @@ def prompt_for(tid: str, n: int, slots: int, cwd: Path, branch: str) -> str:
     vals['followups'] = FOLLOWUPS.format(runner=C.command, kinds='; '.join(f'{k} {v}' for k, v in kinds.items()))
     vals['extra'] = vals['extra'].format_map(_Keep(vals))  # `prompt_extra` may say {n}, {tid}, {runner}
     template = (ROOT / r['prompt']).read_text(encoding='utf-8') if r['prompt'] else PROMPT
-    own = '{brief}' in template  # a custom template (or a replaced PROMPT) that places the brief itself
+    own = bool(r['prompt']) or '{brief}' in template  # a custom template, or a replaced PROMPT that places the brief
     if own:
         prompt = template.format_map(_Keep(vals))
     else:  # F103: the same text for every task first; `<ID>` stands for the id the task part names

@@ -280,9 +280,11 @@ def files_report(paths, top: int = 20) -> list[str]:
 
 # --- a task's spend (F103: [run] task_tokens / task_usd) -------------------------------------------------------
 #
-# What one task's session has used so far, read from its transcript as it grows: tokens are every token billed
-# (input, cache reads and writes, output), dollars are those at the API's list prices per million tokens (a
-# plan bills none, but the figure says how much of it a task took). A model it does not know is priced as Opus.
+# What one task's session has used so far, read from its transcript as it grows: tokens are those the model
+# newly read or wrote (input, cache writes, output); cache reads are left out, as they grow with turns times the
+# context and cost a tenth of the input price. Dollars count them all at the API's list prices per million
+# tokens (a plan bills none, but the figure says how much of it a task took). A model it does not know is
+# priced as Opus.
 
 PRICES = {'opus': (5.0, 25.0), 'sonnet': (3.0, 15.0), 'haiku': (1.0, 5.0)}  # $ per M tokens: input, output
 CACHE_WRITE, CACHE_READ = 1.25, 0.1  # times the input price
@@ -294,7 +296,8 @@ def price(model: str) -> tuple[float, float]:
 
 
 def turn_spend(u: dict, model: str) -> tuple[int, float]:
-    """(tokens, dollars) of one model call's usage, Claude's keys or Pi's (Pi's own cost when it gives one)."""
+    """(tokens, dollars) of one model call's usage, Claude's keys or Pi's (Pi's own cost when it gives one); the
+    tokens leave cache reads out, the dollars do not."""
     get = lambda *ks: sum(int(u.get(k) or 0) for k in ks)  # noqa: E731
     fresh, read = get('input_tokens', 'input'), get('cache_read_input_tokens', 'cacheRead')
     write, out = get('cache_creation_input_tokens', 'cacheWrite'), get('output_tokens', 'output')
@@ -302,7 +305,7 @@ def turn_spend(u: dict, model: str) -> tuple[int, float]:
     usd = (fresh * pin + write * pin * CACHE_WRITE + read * pin * CACHE_READ + out * pout) / 1e6
     if isinstance(u.get('cost'), dict) and isinstance(u['cost'].get('total'), (int, float)):
         usd = float(u['cost']['total'])
-    return fresh + read + write + out, usd
+    return fresh + write + out, usd
 
 
 class Spend:

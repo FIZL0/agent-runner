@@ -162,7 +162,7 @@ DEFAULTS: dict = {
         'stall': 1200,          # seconds of quiet at a prompt that count as stalled
         'context_warn': 150,    # k tokens: a slot session whose context peaks past this says so, and what filled
                                 # it, in its exit line and `since` (soft only: nothing is stopped); 0 = off
-        'task_tokens': 0,       # tokens (input, cache reads and writes, output) one task's session may use; past
+        'task_tokens': 0,       # tokens (input, cache writes, output; not cache reads) one task's session may use; past
                                 # it the task stops at a clean point and is parked as wip/<ID>; 0 = no cap
         'task_usd': 0,          # the same in dollars at the API's list prices (a plan bills none); 0 = no cap
         'pause': 60,            # seconds between one session ending and the next starting in that slot
