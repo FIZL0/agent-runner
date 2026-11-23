@@ -89,16 +89,18 @@ then each new line as the run logs it, and the runner keys typed there (`s`, `s!
 `x`, `u`, `?`, and an empty line for Remote Control), each posted to the run through `.runner/KEYS` as `agent-runner
 key` does. `?` lists them (they print once as the view opens too). Ctrl-C leaves the view; the run keeps going. `attach
 feed` and `attach board` open `agent-runner ui` (which needs tmux, so not on Windows).
-On Windows there is no attach to a ConPTY session yet: `attach s2` (or `c1`, `cN`) prints the place of its log and shows no console, as it does for a headless stream slot. Only a session with
-a hidden console from before 1809 is shown: `attach s2` shows and raises its console window. Minimize it to hide it
-again; closing it ends that session, which resumes in the next run. `agent-runner status` and `.runner/run.log` show the
-sessions either way. On Linux and macOS a hidden session (`attach s2`, `attach c3`, or the session tab of
-`agent-runner ui`, which shows it beside its panels) is attached to its own
-terminal, the way dtach does it: the shim listens on a Unix socket beside its marker (`.runner/slotN.sock`,
-`controlN.sock`, mode 0600, gone when the session ends), sends what the session prints to every attached terminal, types
-in what you type, and takes your terminal's size (on attach, and when you resize it). Detach with Ctrl-b d (Ctrl-b
-Ctrl-b types one Ctrl-b); the session keeps running. A session started before this has no socket, and `attach s2` says
-where its log is.
+A hidden session (`attach s2`, `attach c3`, or the session tab of `agent-runner ui`, which shows it beside
+its panels) is attached to its own terminal, the way dtach does it, on Linux, macOS and Windows 1809 and later. On Linux
+and macOS the shim listens on a Unix socket beside its marker (`.runner/slotN.sock`, `controlN.sock`, mode 0600, gone
+when the session ends). On Windows it listens on a free 127.0.0.1 port, and that `.sock` file is a small file holding the
+port and a token; `attach_windows.py` is the client. Either way the shim sends what the session prints to every attached
+terminal and types in what you type. The session takes the smallest size of its viewers (each attached terminal, each
+open session frame of the run app), 200 by 50 when there are none, and a new viewer makes it redraw. Detach with Ctrl-b d
+(Ctrl-b Ctrl-b types one Ctrl-b); the session keeps running. The run app's session frame has no detach key: with
+`AGENT_RUNNER_WEB` set, Ctrl-b goes to the session, and leaving the chat only ends the view. Before 1809 on Windows,
+`attach s2` shows the hidden console and raises its window; minimize it to hide it again, and closing it ends that
+session, which resumes in the next run. A headless stream slot, or a session with no socket (one started before this),
+has no terminal to attach: `attach s2` says where its log is.
 
 With `[run] remote` (or `remote_slots`), Claude Code asks once, at a terminal, "Enable Remote Control? (y/n)".
 In a hidden session that question would hold every session. So before going to the background the launch checks `remoteDialogSeen` in
@@ -115,7 +117,7 @@ task to fix X" (it files it with `plan add`), "do X now" (it uses `take`, never 
 - **c1 comes with the run** (`[run] control = true`, the default; false: none). On Linux, macOS and Windows (ConPTY,
   1809 and later) it runs in a terminal with no window, through the same shim as a hidden slot, its output in
   `.runner/control1.log`; before 1809 on Windows it gets a console of its own that starts hidden. `agent-runner attach
-  c1` goes there, except on a ConPTY session on Windows, where it prints the log's place. c1 keeps its session id in
+  c1` goes there (on Windows 1809 and later too, through the shim's port). c1 keeps its session id in
   `.runner/control.sid` and resumes it in every run while the transcript is there. A new run a person starts begins c1
   afresh instead (a new id in `control.sid`) when the kept session's last context is over `[run] context_warn`, and its
   opening summary says so in one line first (`c1 starts a fresh session: the last one reached 160k context …`; with
@@ -128,8 +130,7 @@ task to fix X" (it files it with `plan add`), "do X now" (it uses `take`, never 
   next free number, `.runner/control<N>.pid`).
 - **A new one from inside one** (the phone apps have no new-session button): `agent-runner control --new [N]` opens the
   next free control session without taking focus: hidden through the slot shim, its output in `.runner/control<N>.log`
-  (Windows: a ConPTY pseudo-console, or before 1809 a hidden console); `attach cN` shows it, except on a ConPTY session
-  on Windows, which prints the log's place. On Windows the first message still goes on the command line. A name it takes
+  (Windows: a ConPTY pseudo-console, or before 1809 a hidden console); `attach cN` shows it (on Windows 1809 and later too). On Windows the first message still goes on the command line. A name it takes
   (`control --title`) is kept in `.runner/control<N>.title`, where `list`, `agent-runner ui` and the run page read it.
   `control --rename N NAME` (the run app's Rename, r in `agent-runner ui`) is the person's own name for it: typed in as
   `/rename NAME`, so the session is never closed when idle and `control --title` leaves it. With `[run] remote` it
@@ -277,7 +278,7 @@ also restarts across a breaking version.
 
 With `[run] web` (on by default) a run serves the run app from this machine on `[run] web_port` (8770), bound
 to every interface so a phone on the LAN or Tailscale reaches it. With Runner Home installed, the run listens on
-127.0.0.1 only, on a free port that only Home opens (its ttyd terminals too, through Home's tunnel), and no link,
+127.0.0.1 only, on a free port that only Home opens (its session frames too, which Home's tunnel carries), and no link,
 log line or status names that port: one address for every project. A `web_port` the person sets (not the
 default) stays open on every interface, unless it is Home's own port, which is kept for Home. Without Home, a
 second run (its port taken) listens on 127.0.0.1 only. The address, with the token every request
@@ -292,7 +293,7 @@ drawer) and a desktop. It follows the browser's light or dark setting; `[ui] the
   browser: read replies aloud, the voice (Kokoro af_heart by default; every Kokoro voice, Piper or the device's own), tap or hold to talk, and auto listen (listen
   again once a reply was read, until one silent turn). Talk has its own control session, titled Talk and reused while it is live, told to answer in short
   spoken sentences with no task IDs, paths, commands, links or markdown. New Talk chat (top bar) stays in Talk, stops listening, reading aloud or waiting for a reply, clears the shown conversation, and the next message opens a fresh Talk session; this also holds after a reload in that browser. The mic needs Chrome, Edge or Safari
-  on https or localhost (a plain http LAN address gets no mic); without one it says so and the box still works. An abort before any words is retried once by itself; if it fails again, Talk's status line says what to try. While the mic starts, its line says "Starting the mic…" until sound is really captured, then "Listening…". A listen that heard no words, or a reply whose sound went wrong, shows "Copy mic report" (Talk settings has it too): the events from press to end with their times and what happened to the sound, no words, to copy and send (shown on screen to copy by hand where the clipboard is refused). Errors in toasts are plain words, never "Load failed". A reload keeps Talk's own chat, per project and per browser tab (a new tab takes the browser's last one), and never starts the mic or reads an old reply aloud.
+  on https or localhost (a plain http LAN address gets no mic); without one it says so and the box still works. An abort before any words is retried once by itself; if it fails again, Talk's status line says what to try. While the mic starts, its line says "Starting the mic…" until sound is really captured, then "Listening…". A listen that heard no words, or a reply whose sound went wrong, shows "Copy mic report" (Talk settings has it too): the events from press to end with their times and what happened to the sound, no words, to copy and send (shown on screen to copy by hand where the clipboard is refused). Errors in toasts are plain words, never "Load failed". A reload keeps Talk's own chat, per project and per browser tab (a new tab takes the browser's last one), and never starts the mic or reads an old reply aloud. Its words show you and the replies, no tool steps, and follow the newest unless you scrolled up; there is no jump button.
 - **Run speech.** Talk's replies are made into sound on the run's own machine by an engine installed there, and the run
   app plays the clips; nothing leaves the machine. Install one with `agent-runner speech install [kokoro|piper]` (a
   person can also ask a chat to install it). Kokoro, the default and the natural voice, is 354 MB of files plus about
@@ -327,20 +328,32 @@ drawer) and a desktop. It follows the browser's light or dark setting; `[ui] the
 - **Home.** A greeting, a message box, quick asks (since my last look, what needs me, add a task), then
   Needs you (each item's answer buttons, Later to shelve it, Chat to open a new chat that shows the question and its answers, Drop to
   drop the task after a confirm), Working now (opens
-  that agent's thread), Up next (a row folds open to the task's whole text) and Release (when the next one
+  that slot's session), Up next (a row folds open to the task's whole text) and Release (when the next one
   lands, or now). An answer button runs the plan command itself, with no AI session: Yes on a CONFIRM or a picked
   answer runs `plan confirm ID "<reply>"`, No on a CONFIRM runs `plan change ID "No: the check failed"` (which reopens it), and a pick sheet's go runs `sheet ID --go`. The button shows it is working, a toast says what was done (e.g. "R13 ticked") and the item leaves Needs you at once; on a failure the toast says why and the item stays. Words typed in a reply still go to c1. `agent-runner ui`'s answer tab does the same. A Talk button first in the row under the message box opens Talk in the page without a reload, and never starts the mic.
-- **Threads.** A session's feed as a conversation: its replies in serif with no bubble, yours in bubbles,
-  tool steps folded as "Ran N steps", and a mark while it works, with a Stop button. Ctrl+C or Stop interrupts it; Esc only leaves the box, then
-  goes back (B116). A control
-  session's thread talks to that session; an agent's thread messages that agent.
-  A chat opens at its newest message and follows it, unless you scrolled up; then a button jumps to the latest. A
-  refresh never moves the page, in any view. A reload does not keep the scroll position.
-  A chat that has ended shows its words and "This chat has ended." (a slot: "This slot is gone.").
-- **Message box.** Enter sends, Shift+Enter starts a new line, and each thread keeps its own draft. An About
+- **The session.** A chat or slot shows the real Claude Code session, not a thread the page draws: its own terminal
+  through ttyd (`attach NAME` shows the same one), in one frame between the header and the message box. A chat has no
+  bubbles, folded steps, history or jump button. The frame is served at `/t/TOKEN/NAME/` on the run's own address, so
+  https and Runner Home both work. ttyd listens on 127.0.0.1 only, on a free port of its own. `/terminal/NAME` says
+  whether there is a session to show, and if not, why. On a computer you click and type in the session directly; only a
+  mouse press in it gives it the keyboard, and ttyd's focus on connect never does. A file dropped on it is attached. On
+  a phone a touch layer over it scrolls it on a drag (a wheel steps it, and it glides), a tap clicks in it without
+  opening the keyboard, and a long press (or the key row's Text) opens a sheet with the screen's text to select and
+  copy; a horizontal swipe still opens the drawer. The message box's keyboard button folds out the key row (Esc, Tab, ↑,
+  Enter, Ctrl-C, Text, ←, ↓, →) for the session's menus; touch only. The session's text is 12px on touch and 13px
+  otherwise, drawn by ttyd's DOM renderer (its canvas is wrong at 2x). Its ground is dark unless the person's agent
+  `theme` (in `~/.claude/settings.json` or `~/.claude.json`) starts with light.
+  The states are cards: starting (says so, with the waiting message); loading; ended (the claude.ai/code link, and
+  Resume where there is one: `resume_chat`, `control N --reopen`; not c1); a slot with no session (Resume when its task
+  was cut off); no terminal (a headless stream slot, a slot with no socket, or Windows before 1809); no ttyd (TTYD_INSTALL
+  says how to install it). The state is checked every 3 s.
+  The frame goes when the chat is left, or the page has been hidden for 15 s, so the session gets its other viewers'
+  size back. A refresh never moves the page, and never redraws the frame. Ctrl+C or Stop interrupts the session; Esc only
+  leaves the box, then goes back (B116).
+- **Message box.** Enter sends, Shift+Enter starts a new line, and each chat keeps its own draft. Messages that never landed are listed in the Outbox popup as not delivered, with Retry and Discard. An About
   line says what the message is about. Attachments are uploaded to the run (`POST /upload`), kept under
   `.runner/uploads` (`<notes>/uploads`, git-ignored with the rest of the notes folder), and handed to the
-  session as paths on this machine.
+  session as paths on this machine. On a computer, a file dropped on the session is attached the same way.
 - **Plan.** The queue in plain words (a row folds open to `plan ID`'s text, with Chat), and Add a task. Tasks are not
   edited here directly: ask in a chat.
 - **Concepts.** Each concept with a button per option (taken from its page's headings), plus Chat, New chat and View.
@@ -1145,8 +1158,8 @@ the running tasks merge. A run left up keeps picking up whatever you commit to T
 agent-runner                           the run in the background (a detached process, its slots hidden), the
                                        prompt straight back; `help` prints the usage
 agent-runner attach [run|sN|cN|feed]   the run view (its log, live, and its keys; Ctrl-C leaves it), or a
-                                       session's own terminal (Ctrl-b d detaches; Windows: no attach to a ConPTY
-                                       session yet, only the log's place; before 1809 the hidden console); feed or
+                                       session's own terminal (Ctrl-b d detaches; Windows 1809 and later too;
+                                       before 1809 the hidden console); feed or
                                        board: agent-runner ui
 agent-runner control [N]               a control session in this terminal (c1: the kept one, resumed)
 agent-runner control --new [N]         another one beside the run, without taking focus; prints its claude.ai/code link
@@ -1532,7 +1545,7 @@ text becomes a message at its Enter, and keys such as Escape are dropped. On Win
 runs in a hidden console, which takes no typed text (ConPTY is for the other sessions).
 
 Its event stream goes to the slot log, to `<notes>/streams/<session id>.jsonl` (the spend for `[run] task_tokens`
-and `task_usd` is read from there), and to `attach sN` and the Run page's Terminal views.
+and `task_usd` is read from there), and to `attach sN`; the run app shows a stream slot as a card with no terminal (see The session).
 
 No Remote Control: `remote_slots` does not apply, and Open a slot on the Run page says the slot runs headless;
 the Run page shows it.

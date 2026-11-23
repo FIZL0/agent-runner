@@ -24,7 +24,7 @@ const HOME_PAGE=/*HOME_PAGE*/false;
 :root{
   --page:var(--bg); --bg:#faf9f5; --side:#f5f4ee; --surface:#ffffff; --bubble:#f0eee6; --fg:#141413; --muted:#73726c; --faint:#a3a199;
   --line:#e8e6dc; --line2:#dcd9cd; --accent:#c96442; --accent2:#b5573a; --onaccent:#ffffff; --ok:#4f7a43;
-  --warn:#a8711a; --bad:#b0412e; --onbad:#ffffff; --scrim:rgba(0,0,0,.25); --shadow:rgba(0,0,0,.15); --lift:rgba(0,0,0,.04);
+  --warn:#a8711a; --bad:#b0412e; --onbad:#ffffff; --scrim:rgba(0,0,0,.25); --shadow:rgba(0,0,0,.15); --lift:rgba(0,0,0,.04); --feed:#1f1e1d;
   --sans:"Inter",system-ui,-apple-system,"Segoe UI",sans-serif; --serif:"Source Serif 4",Georgia,"Times New Roman",serif;
   --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
   --fs-xs:11px; --fs-s:12px; --fs-m:13px; --fs-n:14px; --fs-b:15px; --fs-l:17px; --fs-xl:30px;
@@ -43,7 +43,7 @@ const HOME_PAGE=/*HOME_PAGE*/false;
 *{box-sizing:border-box;scrollbar-width:none} *::-webkit-scrollbar{display:none}
 [hidden]{display:none!important}
 /* B160: --page is what shows outside .app (behind Safari's bar, round the keyboard): the colour of the view, a chat's too */
-:root.term{--page:var(--t-bg)}
+:root.term{--page:var(--t-bg)} :root.lightfeed{--feed:#ffffff}  /* session_frame.THEMES' grounds */
 html,body{height:100%;overscroll-behavior:none;overflow:hidden;background:var(--page)}
 body{position:fixed;inset:0;margin:0;color:var(--fg);font:15px/1.5 var(--sans)}
 svg{width:18px;height:18px;flex:none;stroke:currentColor;fill:none;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
@@ -202,6 +202,15 @@ a{color:var(--accent)}
 .att .x{position:absolute;top:-7px;right:-7px;width:18px;height:18px;border-radius:50%;background:var(--fg);color:var(--bg);font-size:var(--fs-xs);line-height:1;padding:0}
 .dock{padding:8px 12px 14px;padding-left:max(12px,env(safe-area-inset-left,0px));padding-right:max(12px,env(safe-area-inset-right,0px));background:linear-gradient(transparent,var(--bg) 30%)}
 .dock .box{max-width:720px;margin:0 auto}
+/* F114: a chat or slot: the real session (ttyd's page, #feed) fills the space above the message box. On a touch device
+   #feedtouch lies over it: a drag scrolls the session, a tap clicks in it, a long press gives its text */
+.feed{flex:1;min-height:0;position:relative;background:var(--feed)}
+.feed iframe{position:absolute;inset:0;width:100%;height:100%;border:0;display:block}
+.feedtouch{display:none;position:absolute;inset:0;touch-action:pinch-zoom;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+.feedsay{position:absolute;left:50%;top:var(--s3);transform:translateX(-50%);background:var(--surface);border:1px solid var(--line2);border-radius:var(--r-full);padding:2px 12px;font-size:var(--fs-s);color:var(--muted);display:flex;gap:8px;align-items:center;white-space:nowrap}
+.feeds{padding-top:var(--s4)} .feeds .row{align-items:flex-start}
+.keys{grid-template-columns:repeat(5,minmax(0,1fr));gap:6px;max-width:720px;margin:0 auto 8px} .keys .tool{min-height:var(--tap);min-width:var(--tap);font-size:var(--fs-n);color:var(--fg);background:var(--surface);touch-action:manipulation}
+.keyb,.keys{display:none}
 .foot{font-size:var(--fs-xs);color:var(--faint);text-align:center;margin-top:6px}
 
 /* a conversation */
@@ -218,15 +227,8 @@ a{color:var(--accent)}
 .a pre{font:12.5px/1.55 var(--mono);background:var(--side);border:1px solid var(--line);border-radius:var(--r-m);padding:8px 10px;overflow:auto;margin:0;white-space:pre}
 .a pre code{background:none;padding:0}
 .a h1,.a h2,.a h3,.a h4{font:600 16.5px/1.4 var(--serif);margin:0}
-.steps{display:inline-flex;align-items:center;gap:6px;font:400 13px var(--sans);color:var(--muted);border:0;background:none;padding:0;cursor:pointer;justify-self:start}
-.steps svg{width:14px;height:14px;transition:transform var(--dur-fast) var(--ease)}
-.steps.open svg{transform:rotate(90deg)}
-.stepbox{font:12.5px/1.6 var(--mono);color:var(--muted);background:var(--side);border:1px solid var(--line);border-radius:var(--r-m);padding:8px 10px;white-space:pre-wrap;overflow-wrap:anywhere}
-.stepbox .o{color:var(--faint)}
 .think{display:flex;align-items:center;gap:8px;font:13px var(--sans);color:var(--muted)}
 .think .logo{width:20px;height:20px;font-size:var(--fs-xs);border-radius:var(--r-s);animation:pulse var(--pulse) infinite}
-.think .btn.mini{padding:2px 10px;font-size:var(--fs-s);margin-left:4px}
-.older{font-size:var(--fs-s);color:var(--muted);text-align:center}
 
 .toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--fg);color:var(--bg);border-radius:var(--r-m);padding:9px 14px;font-size:var(--fs-m);z-index:20;max-width:min(560px,90vw);box-shadow:0 6px 24px var(--shadow)}
 .toast.bad{background:var(--bad);color:var(--onbad)}
@@ -297,6 +299,7 @@ a{color:var(--accent)}
 .inrow textarea{flex:1;min-width:0}
 .pr{display:none}
 @media (pointer:coarse){.tool{height:40px;min-width:40px}.send{width:40px;height:40px}}
+@media (pointer:coarse){.feedtouch{display:block} .keyb{display:inline-flex} .keys{display:grid}}
 /* F115: a chat (and Talk) looks like the terminal: monospace, the app's own colours (--t-*), a '>' prompt, tool lines as the agent's terminal draws them */
 :root{--t-bg:var(--bg);--t-fg:var(--fg);--t-dim:var(--muted);--t-line:var(--line2);--t-raise:var(--side);--t-cur:var(--bubble);
   --t-accent:var(--accent);--t-red:var(--bad);--t-green:var(--ok);--t-yellow:var(--warn);--t-blue:var(--accent)}
@@ -313,9 +316,6 @@ a{color:var(--accent)}
 .main.term .a .say::before{content:'●';position:absolute;left:0;color:var(--fg)}
 .main.term .a code{font:inherit;color:var(--t-blue)}
 .main.term .a pre{font:13px/1.5 var(--mono)}
-.main.term .steps{font:13px var(--mono);padding:6px 0;min-height:32px}
-.main.term .stepbox{font:13px/1.55 var(--mono);background:none;border:0;border-left:1px solid var(--line);border-radius:0;padding:2px 0 2px 10px}
-.stepbox .tl::before{content:'● ';color:var(--ok)}
 .main.term .think{font:13px var(--mono)}
 .main.term .box{border-radius:var(--r-m);padding:10px 10px 8px 12px}
 .main.term .box textarea{font:16px/1.45 var(--mono)}  /* 16px: a phone does not zoom into it */
@@ -367,9 +367,6 @@ a{color:var(--accent)}
 .setline{justify-content:space-between;flex-wrap:nowrap} .setname{flex:1;min-width:0;display:flex;overflow-wrap:anywhere} .setname b{display:block;font-weight:600} .setname .small{display:block} .fold.setname{min-height:var(--tap)}
 .setpick{width:auto;max-width:50%;flex:none} .setkey{font:var(--fs-s) var(--mono);overflow-wrap:anywhere} .setval{font-size:var(--fs-m);color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:40%;flex:none}
 .step{display:flex;align-items:center;gap:var(--s2);flex:none} .step .btn{min-width:var(--tap);min-height:var(--tap);justify-content:center;padding-inline:0} .step b{min-width:1.5em;text-align:center}
-/* the jump to the latest message */
-.jump{position:absolute;left:50%;bottom:100%;margin-bottom:6px;transform:translate(-50%,6px);opacity:0;visibility:hidden;height:36px;border-radius:var(--r-full);border:1px solid var(--line2);background:var(--surface);color:var(--fg);box-shadow:0 2px 10px var(--shadow);padding:0 14px;display:inline-flex;align-items:center;gap:6px;font-size:var(--fs-m);cursor:pointer;z-index:4;transition:opacity var(--dur-fast) var(--ease),transform var(--dur-fast) var(--ease),visibility var(--dur-fast)}
-.jump.on{opacity:1;visibility:visible;transform:translate(-50%,0)} .jump svg{width:16px;height:16px}
 .dockwrap{position:relative;will-change:transform}
 /* the composer: the send button fills once there is something to send */
 .send{transition:opacity var(--dur-fast) var(--ease)} .box:not(.has) .send:not(.stop){opacity:.45}
@@ -392,8 +389,8 @@ a{color:var(--accent)}
       <div class="notices"><div class="offline" id="offline" role="status" hidden>Lost the run page's connection: trying again…</div>
       <div class="obbar" id="obbar" hidden></div></div>
       <div class="body" id="body"></div>
-      <div class="dockwrap"><button type="button" class="jump" id="jump" data-jump aria-label="Jump to the latest" title="Jump to the latest"></button>
-      <div class="dock" id="dock"></div></div>
+      <div class="feed" id="feed" hidden><div id="feedframe"></div><div class="feedtouch" id="feedtouch"></div><div class="feedsay" id="feedsay" role="status" hidden></div></div>
+      <div class="dockwrap"><div class="dock" id="dock"></div></div>
     </section>
     <div class="scrim sheetscrim" id="sheetscrim"></div>
     <div class="sheet" id="sheet" role="dialog" aria-modal="true" tabindex="-1"></div>
@@ -430,20 +427,27 @@ function goneMark(gone,r,now){const g={...(gone||{})};if(r&&r.ok&&r.gone)g[r.gon
 function needsShown(needs,gone,now){return(needs||[]).filter(n=>!(gone&&gone[n.id]!=null&&now-gone[n.id]<GONE_MS))}
 /* what the toast says once an answer button's command ran: the run's own words ('R13 ticked'), else the reply */
 function answerSaid(r,id,v){return(r&&r.said)||(r&&r.gone?`${id}: ${v}`:`Sent to the project chat: ${id} ${v}`)}
-/* a session's feed entries (say / you / tool / out) as a conversation: your words as {w:'u'}, the agent's as
-   {w:'a', text, steps}; tool steps (and their output) fold into the reply that follows them */
-function threadMsgs(entries){
-  const out=[];let steps=[],k='';  // B134/F83: k, a message's own key (its first entry's id), '' when the feed has none
-  const put=(m,e)=>{const id=k||(e&&e.id)||'';out.push(id?{...m,k:id}:m);k=''};
-  for(const e of entries||[]){
-    if(e.kind==='tool'){if(!steps.length)k=e.id||'';steps.push({tool:e.text,out:''})}
-    else if(e.kind==='out'){if(!steps.length)k=e.id||'';if(steps.length&&!steps[steps.length-1].out)steps[steps.length-1].out=e.text;else steps.push({tool:'',out:e.text})}
-    else if(e.kind==='say'){put({w:'a',text:e.text,steps},e);steps=[]}
-    else if(e.kind==='you'){if(steps.length)put({w:'a',text:'',steps}),steps=[];put({w:'u',text:e.text},e)}
-  }
-  if(steps.length)put({w:'a',text:'',steps});
-  return out;
+/* F93: Talk's words: a session's feed entries as a conversation, yours {w:'u'} and the replies {w:'a'}; k, its entry's id */
+function talkMsgs(entries){return(entries||[]).filter(e=>e.kind==='you'||e.kind==='say').map(e=>({w:e.kind==='you'?'u':'a',text:e.text,...(e.id?{k:e.id}:{})}))}
+/* F114: what a chat or slot shows. o: stand (a chat still starting, '@cid'), starting (its first message went), info
+   (/terminal/NAME's answer, null before it), chat (cN). 'session': the real one; the rest say why there is none */
+function feedState(o){
+  if(o.stand)return'starting';
+  const i=o.info;
+  if(i&&i.ok)return'session';
+  if(i&&i.mode==='install')return'install';
+  if(o.starting)return'starting';
+  if(!i)return'loading';
+  return i.live?'none':o.chat?'ended':'idle';
 }
+/* the key row: a key's bytes, as the terminal sends them (app: application cursor keys) */
+const FEED_KEYS=[['esc','Esc'],['tab','Tab'],['up','↑'],['enter','Enter'],['ctrlc','Ctrl-C'],['left','←'],['down','↓'],['right','→']];
+function feedBytes(k,app){const c=app?'\x1bO':'\x1b[';
+  return{esc:'\x1b',tab:'\t',enter:'\r',ctrlc:'\x03',up:c+'A',down:c+'B',right:c+'C',left:c+'D'}[k]||''}
+/* what a terminal shows, as plain text: no trailing spaces, no empty lines at its end */
+function feedWords(lines){return lines.map(l=>l.replace(/\s+$/,'')).join('\n').replace(/\n+$/,'')}
+/* whole wheel steps in a drag of px with cells of h, and what is left */
+function feedSteps(px,h){const n=Math.trunc(px/h);return[n,px-n*h]}
 /* is the session working: its last entry is a tool step, its output, or your words not yet answered */
 function working(entries){
   const l=(entries||[])[(entries||[]).length-1];
@@ -965,7 +969,7 @@ function projectButtons(p){
   b.push({label:'Unlist',unlist:true});
   return b;
 }
-if(typeof module!=='undefined')module.exports={viewOf,placeOf,runPill,cardControls,controlGroups,needsReply,chatGroups,needChatAsk,TALK_SET,talkSetParse,pickVoice,runVoice,speechClips,silentWav,feedMark,feedAfter,atEnd,swipeTakes,swipeOpens,settingText,settingValue,pickValue,pickOptions,settingSays,settingSide,settingChanged,settingHit,settingShows,kindsModel,KINDS_ROWS,homeBase,homeKey,projectLink,homeLink,manifestLink,appLink,homeHref,pageTitle,projectState,switcherRows,projectWords,projectButtons,chatMove,BOX_KEYS,keysLine,histPush,histEdge,histStep,slashMatches,slashPick,slashMove,SLASH_FALLBACK,chatPick,answerOpts,needAsk,threadMsgs,working,planWords,compose,sendReq,usageOf,logKind,plain,chatName,controlReq,controlClick,taskControlsOn,queueGroups,conceptButtons,planQueue,NO_CONCEPT,newConceptReq,queuedId,NAV,talkSession,micProblem,dictProblem,dictButton,dictInsert,talkShown,talkReply,goneMark,needsShown,answerSaid,GONE_MS,obParse,obNext,obName,obSettle,obRetry,obDrop,obCounts,obHidden,obPill,OLD_RUN,OLD_WAIT,oldRun,plainOut,obRefused,obOld,obDue,obBootCid,sentLeft,sentStep,sentParse};
+if(typeof module!=='undefined')module.exports={talkMsgs,feedState,FEED_KEYS,feedBytes,feedWords,feedSteps,viewOf,placeOf,runPill,cardControls,controlGroups,needsReply,chatGroups,needChatAsk,TALK_SET,talkSetParse,pickVoice,runVoice,speechClips,silentWav,feedMark,feedAfter,atEnd,swipeTakes,swipeOpens,settingText,settingValue,pickValue,pickOptions,settingSays,settingSide,settingChanged,settingHit,settingShows,kindsModel,KINDS_ROWS,homeBase,homeKey,projectLink,homeLink,manifestLink,appLink,homeHref,pageTitle,projectState,switcherRows,projectWords,projectButtons,chatMove,BOX_KEYS,keysLine,histPush,histEdge,histStep,slashMatches,slashPick,slashMove,SLASH_FALLBACK,chatPick,answerOpts,needAsk,working,planWords,compose,sendReq,usageOf,logKind,plain,chatName,controlReq,controlClick,taskControlsOn,queueGroups,conceptButtons,planQueue,NO_CONCEPT,newConceptReq,queuedId,NAV,talkSession,micProblem,dictProblem,dictButton,dictInsert,talkShown,talkReply,goneMark,needsShown,answerSaid,GONE_MS,obParse,obNext,obName,obSettle,obRetry,obDrop,obCounts,obHidden,obPill,OLD_RUN,OLD_WAIT,oldRun,plainOut,obRefused,obOld,obDue,obBootCid,sentLeft,sentStep,sentParse};
 </script>
 
 <script>
@@ -986,6 +990,7 @@ const H={projects:null,machine:'',devices:null,alerts:[],open:false,add:'',err:'
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const ic=d=>`<svg viewBox="0 0 24 24" aria-hidden="true">${d}</svg>`;
 const I={
+  keys:ic('<rect x="2.5" y="6" width="19" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"/>'),
  menu:ic('<path d="M4 7h16M4 12h16M4 17h10"/>'),
  edit:ic('<path d="M12 20h8"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/>'),
  // F84: the top bar's New chat: a speech bubble with a +, stroked in currentColor so it reads in both themes
@@ -1022,7 +1027,7 @@ const I={
 const LOGLINE_ICON={ok:'check',bad:'alert',go:'play','':'dot'};
 
 const S={snap:{status:[],sessions:[],queue:[],needs:[],concepts:[],log:[],release:'',machine:'',slots:0},
-  view:'home',thread:null,ctx:null,atts:[],drawer:false,openSteps:{},feeds:{},sent:{},waitNew:null,online:true,
+  view:'home',thread:null,ctx:null,atts:[],drawer:false,feeds:{},sent:{},waitNew:null,online:true,
   sheet:'',ren:null,f:{},taskOpen:{},tasks:{},set:null,setOpen:{},setChanged:false,
   sel:[],selLast:'',undo:null};  // F118: chats picked for delete, the last one clicked, a delete Undo can still take back
 const $=id=>document.getElementById(id);
@@ -1169,6 +1174,7 @@ function obDone(it,j){
   else if(it.set){const f=`set:${it.name==='setting_project'?'project':'device'}:${it.set.id}`, was=S.f[f];loadSettings().then(()=>{if(S.f[f]===was&&!stepWait[it.set.id]){delete S.f[f];render(true)}});toast(it.name==='setting_project'?`${queuedTask(j.out)} queued: the setting lands through the gate`:String(j.out||'Saved').split('\n')[0])}  // F97
   else if(it.ctl){if(it.name==='run_control'&&it.args.key==='wip_show'){S.out={title:it.args.tid,text:String(j.out||'')};openSheet('out')}
     else toast(String(j.out||'').split('\n')[0]||`${it.say}: done`)}  // F124: a run control
+  if(it.res&&FD.n===it.res)feedLoad();  // F114
   if(it.done)toast(it.done);
 }
 const queuedTask=out=>((String(out||'').match(/\b[A-Z]+\d+[a-z]?\b/)||['A task'])[0]);
@@ -1185,19 +1191,22 @@ const obBtns=x=>`${x.state==='failed'&&!obOld(x)?`<button class="btn pri" data-o
 const obState=x=>obOld(x)?OLD_WAIT:x.state==='failed'?`Not sent: ${obRefused(x)?OLD_RUN:x.err||'it did not work'}`:OB.offline?'waiting for the connection':'sending…';
 function obDraw(){
   const c=obCounts(S.ob), old=S.ob.filter(obOld).length;c.failed-=old;
-  const parts=[...obPill(c,OB.offline),...(old?[`${old} waiting for a restart`]:[])], bar=$('obbar'), pop=$('obpop');
+  const lost=notDelivered();
+  const parts=[...obPill(c,OB.offline),...(old?[`${old} waiting for a restart`]:[]),...(lost.length?[`${lost.length} not delivered · tap to see`]:[])], bar=$('obbar'), pop=$('obpop');
   bar.hidden=!parts.length;
-  setHTML(bar,parts.length?`<button class="obpill${c.failed?' bad':''}" data-obopen>${c.sending?'<span class="livedot"></span>':''}${parts.map(esc).join(' · ')}</button>`:'');
-  if(!S.ob.length&&!S.oldRun)S.obOpen=false;
+  setHTML(bar,parts.length?`<button class="obpill${c.failed||lost.length?' bad':''}" data-obopen>${c.sending?'<span class="livedot"></span>':''}${parts.map(esc).join(' · ')}</button>`:'');
+  if(!S.ob.length&&!S.oldRun&&!lost.length)S.obOpen=false;
   if(!S.obOpen)S.oldRun=false;
   pop.hidden=!S.obOpen;
   setHTML(pop,S.obOpen?`<div class="obcard" role="dialog" aria-label="Outbox"><div class="row"><b class="grow">Outbox</b><button class="btn" data-obclose>Close</button></div>
     ${S.oldRun||S.ob.some(obRefused)?oldRunHTML(OLD_RUN):''}
-    ${S.ob.map(x=>`<div class="obrow ${x.state}"><div class="grow"><div class="ell2">${esc(x.say)}</div><div class="small">${esc(obState(x))}</div></div><div class="btns">${obBtns(x)}</div></div>`).join('')}</div>`:'');
+    ${S.ob.map(x=>`<div class="obrow ${x.state}"><div class="grow"><div class="ell2">${esc(x.say)}</div><div class="small">${esc(obState(x))}</div></div><div class="btns">${obBtns(x)}</div></div>`).join('')}
+    ${lost.map(({n,p})=>`<div class="obrow failed"><div class="grow"><div class="ell2">${esc(p.text)}</div><div class="small">Not delivered: it is not in ${esc(threadTitle(n))}</div></div><div class="btns"><button class="btn pri" data-sentretry="${esc(p.id)}" data-n="${esc(n)}">Retry</button><button class="btn" data-sentdrop="${esc(p.id)}" data-n="${esc(n)}">Discard</button></div></div>`).join('')}</div>`:'');
 }
 /* the stand-ins: a starting chat in the sidebar, a sent answer in Needs you, a queued concept, a message */
 function obChatRows(){return S.ob.filter(x=>x.newchat).map(x=>`<div class="crow"><button class="thread ${S.thread==='@'+x.cid?'on':''} ob ${x.state}" data-thread="@${esc(x.cid)}">${x.state==='failed'?'':'<span class="livedot"></span>'}<span class="t">${esc(x.say)} · ${x.state==='failed'?'did not start':'starting…'}</span></button></div>`).join('')}
 function obCards(key){return S.ob.filter(key).map(x=>card(`<div class="row obstand ${x.state}">${x.state==='failed'?'':'<span class="livedot"></span>'}<div class="grow"><div>${esc(x.say)}</div><div class="small">${esc(obState(x))}</div></div>${x.state==='failed'?`<div class="btns">${obBtns(x)}</div>`:''}</div>`,'',`data-k="ob:${esc(x.cid)}" data-v="${x.state}"`)).join('')}
+/* what waits for a chat that is still starting: its first message, then what was written since */
 function obBubbles(n){
   let h='';
   const up=n&&n[0]==='@'&&S.ob.find(x=>'@'+x.cid===n);
@@ -1206,6 +1215,8 @@ function obBubbles(n){
   if(up)h+=`<div class="think">${LOGO()}${up.state==='failed'?esc(obOld(up)?OLD_WAIT:`The chat did not start: ${up.err}`):'Starting the chat… what you write goes once it is up'}</div>`;
   return h;
 }
+/* B154: messages a chat never got, for the outbox (a Talk one shows in Talk) */
+const notDelivered=()=>Object.entries(S.sent||{}).flatMap(([n,s])=>(s.pending||[]).filter(p=>p.state==='failed'&&!p.talk).map(p=>({n,p})));
 /* B164: the run restarted: what the older one did not know is sent again */
 function obBoot(boot){for(const x of obDue(S.ob,boot))obRetryClick(x.cid,obBootCid(x,boot))}
 function obRetryClick(cid,as){  /* Retry: a new chat sent again gets a new cid, so its stand-in follows */
@@ -1480,34 +1491,137 @@ function box(ph,foot){
     ${a.length?`<div class="atts">${a.map((f,i)=>`<span class="att ${f.path?'':f.err?'err':'up'}" title="${esc(f.err||f.path||'uploading…')}">${f.thumb?`<img src="${f.thumb}" alt="">`:`<span class="fi">${I.file}</span>`}<span class="nm">${esc(f.name)}</span><button type="button" class="x" data-unatt="${i}" aria-label="Remove">✕</button></span>`).join('')}</div>`:''}
     <div class="slash" data-slash role="listbox" aria-label="Commands" hidden></div>
     <div class="inrow"><span class="pr" aria-hidden="true">&gt;</span><textarea rows="1" data-in placeholder="${esc(ph)}" aria-label="Message"></textarea></div>
-    <div class="boxrow"><button type="button" class="tool" data-clip aria-label="Attach pictures or files" title="Attach pictures or files">${I.clip}</button>${S.view==='talk'&&!S.thread?(micWhy()?'':`<button type="button" class="tool" data-talkmode="mic" aria-label="Talk instead" title="Talk instead">${I.talk}</button>`):dictButton(dictWhy(),!!DK.rec,I.talk)}<span class="to">${esc(S.ctx?'to a new chat':S.thread?S.thread:S.view==='talk'?'to Talk':'to c1')}</span>${busyNow?`<button type="button" class="send stop" data-stop="${esc(shownNow)}" aria-label="Interrupt">${I.stop}</button>`:''}<button class="send" aria-label="Send">${I.up}</button></div></form>${foot?`<div class="foot">${foot}</div>`:''}`;
+    <div class="boxrow"><button type="button" class="tool" data-clip aria-label="Attach pictures or files" title="Attach pictures or files">${I.clip}</button>${S.view==='talk'&&!S.thread?(micWhy()?'':`<button type="button" class="tool" data-talkmode="mic" aria-label="Talk instead" title="Talk instead">${I.talk}</button>`):dictButton(dictWhy(),!!DK.rec,I.talk)}${S.thread?`<button type="button" class="tool keyb" data-feedkeys aria-expanded="${!!S.keys}" aria-label="Keys for the session" title="Keys for the session">${I.keys}</button>`:''}<span class="to">${esc(S.ctx?'to a new chat':S.thread?S.thread:S.view==='talk'?'to Talk':'to c1')}</span>${busyNow?`<button type="button" class="send stop" data-stop="${esc(shownNow)}" aria-label="Interrupt">${I.stop}</button>`:''}<button class="send" aria-label="Send">${I.up}</button></div></form>${foot?`<div class="foot">${foot}</div>`:''}`;
 }
 /* B177: a chat with a transcript that the run no longer lists (one just started is not listed yet: its message waits) */
 const ended=n=>!!(S.snap.at&&S.feeds[n]&&S.feeds[n].ok&&!sessionOf(n)&&!(S.sent[n]&&(S.sent[n].pending||[]).length));
-function convo(n,shown){  // F93: shown, how a message of yours shows (Talk: without its brief or reminder)
-  const talk=!!shown;shown=shown||(t=>t);
-  const f=S.feeds[n], agent=isAgent(n), title=threadTitle(n);
-  if(!f)return `<div class="msgs">${String(n||'')[0]==='@'?'':'<div class="think">'+LOGO()+'Loading…</div>'}${sentBubbles(n,shown)}${startLine(n)}${obBubbles(n)}</div>`;  // F137
-  const ms=threadMsgs(f.entries);
-  let h=f.more?'<div class="older">Older messages are on its session page.</div>':'';
+/* Talk's words; talkShown: yours without their brief or reminder */
+function talkConvo(n){
+  const f=S.feeds[n];
+  if(!f)return `<div class="msgs"><div class="think">${LOGO()}Loading…</div>${sentBubbles(n,talkShown)}${startLine(n)}</div>`;
+  const ms=talkMsgs(f.entries);
+  let h='';
   if(!ms.length)h+=`<div class="small" style="text-align:center">${esc(f.out||'Nothing said here yet.')}</div>`;
   ms.forEach((m,i)=>{
-    const mk=esc(m.k||n+':'+i);
-    if(m.w==='u'){h+=`<div class="u" data-k="${mk}" data-t="${esc(tkey(shown(m.text)))}">${esc(shown(m.text))}</div>`;return}
-    const lead=i===0||ms[i-1].w!=='a'?`<div class="lead">${agent?`<span class="logo">${esc(n)}</span>`:LOGO()}${esc(agent?title:PN())}</div>`:'';
-    const k=m.k||n+':'+i, open=S.openSteps[k];
-    const st=m.steps.length?`<button class="steps ${open?'open':''}" data-steps="${esc(k)}" aria-expanded="${!!open}">${I.chev}Ran ${m.steps.length} step${m.steps.length>1?'s':''}</button>${open?`<div class="stepbox">${m.steps.map(s=>(s.tool?`<span class="tl">${esc(s.tool)}</span>`:'')+(s.out?`\n<span class="o">  ⎿ ${esc(s.out).replace(/\n/g,'\n    ')}</span>`:'')).join('\n')}</div>`:''}`:'';  // F115: tool lines as in the terminal
-    const on=TK.playing===k;  // F124: a Talk reply's play button
-    const play=talk&&m.text?`<button type="button" class="speakb${on?' on':''}" data-speak="${esc(k)}" aria-pressed="${on}" aria-label="${on?'Stop reading':'Read this reply aloud'}" title="${on?'Stop reading':'Read this reply aloud'}">${on?I.stop:I.speak}</button>`:'';
-    h+=`<div class="a" data-k="${mk}">${lead}${st}${m.text?`<div class="say" data-k="say:${mk}">${md(m.text)}</div>`:''}${play}</div>`;
+    const k=m.k||n+':'+i, mk=esc(k);
+    if(m.w==='u'){h+=`<div class="u" data-k="${mk}" data-t="${esc(tkey(talkShown(m.text)))}">${esc(talkShown(m.text))}</div>`;return}
+    const lead=i===0||ms[i-1].w!=='a'?`<div class="lead">${LOGO()}${esc(PN())}</div>`:'';
+    const on=TK.playing===k;  // F124: a reply's play button
+    h+=`<div class="a" data-k="${mk}">${lead}<div class="say" data-k="say:${mk}">${md(m.text)}</div><button type="button" class="speakb${on?' on':''}" data-speak="${mk}" aria-pressed="${on}" aria-label="${on?'Stop reading':'Read this reply aloud'}" title="${on?'Stop reading':'Read this reply aloud'}">${on?I.stop:I.speak}</button></div>`;
   });
-  h+=sentBubbles(n,shown);  // B154
-  h+=obBubbles(n);  // F137: messages still in the outbox
+  h+=sentBubbles(n,talkShown);  // B154
   if(starting(n))h+=startLine(n);
-  else if(ended(n))h+=`<div class="small" style="text-align:center">${/^c\d+$/.test(n)?'This chat has ended.':'This slot is gone.'}</div>`;  // B177
-  else if(busy(n))h+=`<div class="think">${LOGO()}Working on it… · Ctrl+C interrupts<button type="button" class="btn mini" data-stop="${esc(n)}">Stop</button></div>`;
+  else if(ended(n))h+=`<div class="small" style="text-align:center">This chat has ended.</div>`;  // B177
+  else if(busy(n))h+=`<div class="think">${LOGO()}Working on it… · Ctrl+C interrupts</div>`;
   return `<div class="msgs">${h}</div>`;
 }
+/* --- F114: a chat or slot: the real session in #feed ------------------------------------------------------------
+   One frame, for the open chat alone: leaving it, or a page out of sight for FEED_AWAY, takes it out, so the session
+   gets its other viewers' size back. FD: n its chat, info the run's answer, frame, up (its socket is open) */
+const FD={n:'',turn:0,info:null,frame:null,up:false,timer:0,away:0,downs:0}, FEED_AWAY=15000, FEED_AGAIN=3000;
+const FEED_LINES=1;  // lines of a drag to one wheel step
+const TOUCH=()=>!!(window.matchMedia&&matchMedia('(pointer:coarse)').matches);
+const feedNow=n=>feedState({stand:String(n||'')[0]==='@',starting:starting(n),info:FD.n===n?FD.info:null,chat:!isAgent(n)});
+const feedSrc=n=>`t/${encodeURIComponent(T)}/${encodeURIComponent(n)}/?fontSize=${TOUCH()?12:13}`;
+function feedLeave(){FD.turn++;clearTimeout(FD.timer);FD.timer=0;FD.up=false;if(FD.frame){FD.frame.remove();FD.frame=null}}
+async function feedLoad(){
+  const n=FD.n, turn=++FD.turn;clearTimeout(FD.timer);FD.timer=0;
+  if(!n||n[0]==='@'||document.hidden)return;
+  let i;try{i=await (await fetch(tq('terminal/'+encodeURIComponent(n)))).json()}catch(e){i=null}
+  if(turn!==FD.turn)return;
+  if(i)FD.info=i;
+  if(i&&i.ok){
+    const f=document.createElement('iframe');f.title=`${threadTitle(n)}: its session`;f.allow='clipboard-read; clipboard-write';f.src=feedSrc(n);
+    if(FD.frame)FD.frame.remove();
+    FD.frame=f;FD.up=false;$('feedframe').appendChild(f);
+  }else{if(FD.frame){FD.frame.remove();FD.frame=null}FD.timer=setTimeout(feedLoad,FEED_AGAIN)}  // it may come up, or be installed
+  render();
+}
+/* the frame's word: its socket opened or closed (the session ended, the connection broke: look again), files dropped */
+addEventListener('message',e=>{
+  const d=e.data;if(e.origin!==location.origin||!d||!FD.frame||e.source!==FD.frame.contentWindow||d.session!==FD.n)return;
+  if(d.files){[...d.files].forEach(upload);return}
+  FD.up=d.state==='up';clearTimeout(FD.timer);FD.timer=0;
+  if(FD.up)FD.downs=0;else FD.timer=setTimeout(feedLoad,Math.min(1000*2**FD.downs++,15000));
+  feedSay();
+});
+function feedSay(){const el=$('feedsay'), on=!!FD.frame&&!FD.up;el.hidden=!on;setHTML(el,on?'<span class="livedot"></span>Connecting to the session…':'')}
+/* each draw: the frame for the chat that is open, or its state in the body */
+function feedDraw(n){
+  if((n||'')!==FD.n){feedLeave();FD.n=n||'';FD.info=null;FD.downs=0;if(n)feedLoad()}
+  const show=!!n&&feedNow(n)==='session';
+  $('feed').hidden=!show;$('body').hidden=show;
+  document.documentElement.classList.toggle('lightfeed',S.snap.session_look==='light');
+  feedSay();
+}
+document.addEventListener('visibilitychange',()=>{
+  clearTimeout(FD.away);
+  if(document.hidden)FD.away=setTimeout(()=>{if(document.hidden)feedLeave()},FEED_AWAY);
+  else if(FD.n&&!FD.frame)feedLoad();
+});
+/* what a chat or slot with no session to show says */
+function feedHTML(n){
+  const st=feedNow(n), i=(FD.n===n&&FD.info)||{}, last=S.last[n]||{}, link=i.link||(sessionOf(n)||{}).link||last.link||'';
+  const open=link?`<a class="btn" href="${esc(link)}" target="_blank" rel="noopener">Open its session ${I.ext}</a>`:'';
+  if(st==='starting')return `<div class="col feeds"><div class="msgs">${sentBubbles(n,t=>t)}${obBubbles(n)}${n[0]==='@'?'':`<div class="think">${LOGO()}Starting the chat…</div>`}</div></div>`;
+  if(st==='loading')return `<div class="col feeds"><div class="think">${LOGO()}Loading…</div></div>`;
+  let title='', words=i.out||'', btns=open;
+  if(st==='install'){title='The session cannot be shown here';if(S.snap.ttyd_install)words+=` On this machine: ${S.snap.ttyd_install}`}
+  else if(st==='ended'){
+    title=n==='c1'?'The project chat is not running':'This chat has ended';
+    words=n==='c1'?'Your next message starts it.':i.resume?'Resume brings it back with everything said in it.':'';
+    if(i.resume)btns=`<button class="btn pri${S.ob.some(x=>x.res===n&&x.state==='sending')?' busy':''}" data-resume="${esc(n)}">Resume</button>`+open;
+  }else if(st==='idle'){
+    const tid=(sessionOf(n)||{}).task||last.task||'', cut=tid&&((S.snap.fixups||{}).resume||[]).some(x=>x.id===tid)&&controlOf('resume');
+    title=sessionOf(n)?`${n} has no session now`:'This slot is gone';
+    words=cut?`Its session on ${tid} was cut off. Its work is kept.`:last.task&&last.title?`It last worked on “${last.title}”.`:'It shows here when a task starts.';
+    if(cut)btns=`<button class="btn pri${ctlBusy('resume',tid)?' busy':''}" data-ctl="resume" data-tid="${esc(tid)}">Resume</button>`+open;
+  }else title='There is no terminal to show';
+  return `<div class="col feeds">${card(`<div class="q">${esc(title)}</div>${words?`<div class="small">${esc(words)}</div>`:''}${btns?`<div class="btns">${btns}</div>`:''}`,'',`data-k="feed:${esc(n)}" data-v="${st}"`)}</div>`;
+}
+/* ttyd's terminal (xterm.js), once its page has made it; null before */
+function feedTerm(){try{return FD.up&&FD.frame&&FD.frame.contentWindow.term||null}catch(e){return null}}
+function feedKey(k){const t=feedTerm();if(!t)return toast('The session is not connected yet',true);
+  t.input(feedBytes(k,!!(t.modes&&t.modes.applicationCursorKeysMode)),true)}
+const keysRow=()=>S.keys?`<div class="keys" role="toolbar" aria-label="Keys for the session">${FEED_KEYS.map(([k,l])=>`${k==='left'?'<button type="button" class="tool" data-feedtext title="The screen as text, to copy">Text</button>':''}<button type="button" class="tool" data-feedkey="${k}">${l}</button>`).join('')}</div>`:'';
+/* the screen's text in a sheet, to select and copy with a finger */
+function feedText(){const t=feedTerm();if(!t)return toast('The session is not connected yet',true);
+  const b=t.buffer.active, l=[];for(let y=b.viewportY;y<b.viewportY+t.rows;y++){const x=b.getLine(y);l.push(x?x.translateToString(true):'')}
+  S.feedText=feedWords(l);openSheet('text')}
+function feedScreen(){const t=feedTerm(), el=t&&t.element&&t.element.querySelector('.xterm-screen');return el?{t,el,win:FD.frame.contentWindow,cell:el.getBoundingClientRect().height/t.rows||16}:null}
+/* wheel steps on the session, as a mouse's: its own scrolling (a fullscreen session's history) or the terminal's */
+function feedWheel(n,x,y){
+  const f=feedScreen();if(!f||!n)return;
+  if(f.t.modes.mouseTrackingMode==='none'&&f.t.buffer.active.type==='normal'){f.t.scrollLines(n);return}
+  for(let i=Math.min(Math.abs(n),20);i>0;i--)f.el.dispatchEvent(new f.win.WheelEvent('wheel',{deltaY:Math.sign(n)*f.cell,deltaMode:0,clientX:x,clientY:y,bubbles:true,cancelable:true}));
+}
+function feedClick(x,y){const f=feedScreen();if(!f)return;
+  for(const type of ['mousemove','mousedown','mouseup','click'])f.el.dispatchEvent(new f.win.MouseEvent(type,{clientX:x,clientY:y,button:0,buttons:type==='mousedown'?1:0,detail:1,bubbles:true,cancelable:true,view:f.win}))}
+/* the touch layer over the frame: a drag scrolls (and glides on), a tap clicks, a long press gives the text. The
+   drawer's swipe has the touch first: once it is on, this leaves it alone */
+{let G=null, glide=0;
+const layer=$('feedtouch'), at=t=>{const r=layer.getBoundingClientRect();return[t.clientX-r.left,t.clientY-r.top]};
+const step=px=>{const f=feedScreen();if(!f)return;const [n,left]=feedSteps(G.rest+px,f.cell*FEED_LINES);G.rest=left;feedWheel(n,G.x,G.y)};
+layer.addEventListener('touchstart',e=>{cancelAnimationFrame(glide);if(G)clearTimeout(G.hold);
+  if(e.touches.length!==1){G=null;return}
+  const t=e.touches[0], [x,y]=at(t);G={x,y,y0:t.clientY,x0:t.clientX,ly:t.clientY,lt:e.timeStamp,v:0,rest:0,on:false};
+  const g=G;g.hold=setTimeout(()=>{if(G===g&&!g.on&&!(SW&&SW.on)){G=null;feedText()}},550)},{passive:true});
+layer.addEventListener('touchmove',e=>{
+  if(!G)return;
+  if(SW&&SW.on||e.touches.length!==1){clearTimeout(G.hold);G=null;return}
+  const t=e.touches[0], dy=t.clientY-G.y0, dx=t.clientX-G.x0;
+  if(!G.on){if(Math.abs(dy)<8&&Math.abs(dx)<8)return;clearTimeout(G.hold);if(Math.abs(dx)>Math.abs(dy)){G=null;return}G.on=true;SW=null}
+  step(G.ly-t.clientY);
+  if(e.timeStamp>G.lt)G.v=.7*(G.ly-t.clientY)/(e.timeStamp-G.lt)+.3*G.v;
+  G.ly=t.clientY;G.lt=e.timeStamp},{passive:true});
+layer.addEventListener('touchend',e=>{const g=G;if(!g)return;clearTimeout(g.hold);
+  if(!g.on){G=null;if(e.cancelable)e.preventDefault();feedClick(g.x,g.y);return}
+  let last=performance.now(), v=e.timeStamp-g.lt>60||matchMedia('(prefers-reduced-motion:reduce)').matches?0:g.v;
+  const go=now=>{if(G!==g)return;if(Math.abs(v)<.05){G=null;return}step(v*(now-last));v*=Math.pow(.996,now-last);last=now;glide=requestAnimationFrame(go)};
+  glide=requestAnimationFrame(go)},{passive:false});
+layer.addEventListener('touchcancel',()=>{if(G)clearTimeout(G.hold);G=null},{passive:true});
+layer.addEventListener('wheel',e=>{const f=feedScreen();if(!f)return;const r=layer.getBoundingClientRect();feedWheel(Math.sign(e.deltaY),e.clientX-r.left,e.clientY-r.top)},{passive:true});
+layer.addEventListener('click',e=>{if(e.detail&&e.pointerType==='mouse'){const r=layer.getBoundingClientRect();feedClick(e.clientX-r.left,e.clientY-r.top)}})}
 const greeting=()=>{const h=new Date().getHours();return h<12?'Good morning':h<18?'Good afternoon':'Good evening'};
 function homeHTML(){
   const ws=working_(), nx=upNext().slice(0,3);
@@ -1518,8 +1632,8 @@ function homeHTML(){
     <div class="sec">Up next<span class="ln"></span></div>${nx.length?nx.map(planCard).join(''):emptyCard('The queue is empty.')}
     ${relCard()}</div>`;
 }
-/* B120: without ttyd, one line says the terminal tab (the real session) needs it, with this machine's install command */
-const ttydLine=()=>S.snap.terminal_mode==='install'?`<div class="small ttyd" data-ttyd>The terminal tab (the real session) needs ttyd: ${S.snap.ttyd_install?`install it with <code>${esc(S.snap.ttyd_install)}</code>`:'install your platform\'s ttyd package'}.</div>`:'';
+/* B120: without ttyd, one line says a chat needs it to show its session, with this machine's install command */
+const ttydLine=()=>S.snap.terminal_mode==='install'?`<div class="small ttyd" data-ttyd>A chat shows the real session with ttyd, which this machine lacks: ${S.snap.ttyd_install?`install it with <code>${esc(S.snap.ttyd_install)}</code>`:'install your platform\'s ttyd package'}.</div>`:'';
 const needsSec=()=>`<div class="sec">Needs you<span class="ln"></span></div>${obCards(x=>x.need)}${S.snap.needs.length?S.snap.needs.map(needCard).join(''):card(`<div class="row"><div class="who">${I.check}</div><div><b>Nothing needs you</b><div class="small">It shows here when something does.</div></div></div>`,'','data-k="noneed"')}`;
 function relCard(){const ws=working_(), rel=S.snap.release||'';
   return obCards(x=>x.name==='release')+card(`<div class="row"><div class="grow"><b>Release</b><div class="small">${esc(rel||(ws.length?`Waits for the ${ws.length} task${ws.length>1?'s':''} still working.`:'Releases what has landed.'))}</div></div></div><div class="btns">${ws.length?`<button class="btn acc" data-rel="wait">Release when they land</button>`:''}<button class="btn ${ws.length?'':'acc'}" data-rel="now">Release now</button></div>`,'','data-k="release"')}
@@ -1538,6 +1652,7 @@ function statusHTML(){
 }
 /* --- F124: the sheet: one panel of more choices over the view (docs/STYLE.md) -------------------------------- */
 const SHEETS={
+  text(){return `<h2>The session's text</h2><div class="btns"><button class="btn pri" data-feedcopy>Copy all</button></div><pre class="out" id="feedtext" style="-webkit-user-select:text;user-select:text">${esc(S.feedText||'')}</pre>`},
   run(){  // More…: Stop, Run, Fix up, each with its key in agent-runner ui
     const gs=controlGroups(S.snap);
     return `<h2>Run</h2>${obCards(x=>x.ctl)}${gs.map(g=>`<div class="sec">${g.group}<span class="ln"></span></div>${g.items.map(({c,label,choices})=>{
@@ -1729,12 +1844,11 @@ function newConcept(){  // F137: shown as queuing at once; obDone says its id on
   S.kOpen=false;S.kText='';S.kSaid='';
   outbox(req.name,req.args,{kq:true,say:`New concept: “${req.args.text}”`});
 }
-/* F83: where each view was scrolled to (S.at), whether the open chat follows its newest message (S.pin) */
+/* F83: where each view was scrolled to (S.at), whether Talk follows its newest words (S.pin) */
 let lastPlace=null;
-S.at={};S.pin=true;
-const chatShown=()=>!!S.thread||S.view==='talk';
-function toEnd(){const b=$('body');b.scrollTop=b.scrollHeight;S.pin=true;S.fresh=false;jumpDraw()}
-function jumpDraw(){const j=$('jump'), on=chatShown()&&!S.pin&&!HOME_PAGE;setHTML(j,I.down+(S.fresh?'New message':'Latest'));j.classList.toggle('on',on)}
+S.at={};S.pin=true;S.last={};S.keys=false;
+const chatShown=()=>!S.thread&&S.view==='talk';
+function toEnd(){const b=$('body');b.scrollTop=b.scrollHeight;S.pin=true}
 /* the top bar: the menu (with its dot, F128), back, the title, Talk's settings, the state pill, the session, New chat (in Talk, New Talk chat: F157) */
 function topHTML(){
   const n=S.thread, p=runPill(S.snap), x=n&&sessionOf(n);
@@ -1762,8 +1876,9 @@ function render(force){
   }
   if(setHTML($('top'),topHTML()))enter($('top'),hadTop);
   let h='',dock='';
-  if(n){const agent=isAgent(n);h=`<div class="col">${convo(n)}</div>`;
-    dock=box(agent?`Message ${threadTitle(n)}`:S.ctx&&S.ctx.kind==='new'?'Describe the task in your own words':`Reply to ${threadTitle(n)}`,
+  feedDraw(n);  // F114
+  if(n){const agent=isAgent(n);h=$('body').hidden?'':feedHTML(n);
+    dock=keysRow()+box(agent?`Message ${threadTitle(n)}`:S.ctx&&S.ctx.kind==='new'?'Describe the task in your own words':`Reply to ${threadTitle(n)}`,
       (agent?'Goes straight to this agent, between its steps. ':'')+keysLine())}  // B120: the keys, from BOX_KEYS
   else if(S.view==='talk')h=talkHTML();
   else h={home:homeHTML,status:statusHTML,plan:planHTML,concepts:conceptsHTML,settings:settingsHTML,projects:projectsHTML}[S.view]();
@@ -1788,17 +1903,17 @@ function render(force){
   if(drew)keep();
   if(moved){
     const follow=lastPlace&&lastPlace.startsWith('t:@')&&n;  // a starting chat got its name: the same chat
-    if(chatOn)toEnd();else{body.scrollTop=S.at[place]||0}
+    if(chatShown())toEnd();else{body.scrollTop=S.at[place]||0}
     if(S.live&&!follow)viewIn(body);
   }else if(drew){
-    if(chatOn&&S.pin)toEnd();
-    else{put();if(chatOn&&[...keysIn(body).keys()].some(k=>!had.has(k)))S.fresh=true}
+    if(chatShown()&&S.pin)toEnd();
+    else put();
     enter(body,had);
   }
-  lastPlace=place;jumpDraw();
+  lastPlace=place;
 }
-/* F83: the chat follows its newest message until the person scrolls up; it follows a box that grows or a keyboard too */
-$('body').addEventListener('scroll',()=>{if(!chatShown())return;S.pin=atEnd($('body'));if(S.pin)S.fresh=false;jumpDraw()},{passive:true});
+/* F83: Talk follows its newest words until the person scrolls up; it follows a box that grows or a keyboard too */
+$('body').addEventListener('scroll',()=>{if(chatShown())S.pin=atEnd($('body'))},{passive:true});
 if(window.ResizeObserver)new ResizeObserver(()=>{if(chatShown()&&S.pin)toEnd()}).observe($('body'));
 /* B160: a notice's row comes or goes in a chat: the text stays where it was (a pinned chat by the line above) */
 let noticeH=0, noticeAt=null;
@@ -2137,10 +2252,10 @@ function talkHTML(){
   if(!n&&!going&&!S.snap.at&&/^c\d+$/.test(talkKept()))return `<div class="col"><div class="think">${LOGO()}Loading…</div></div>`;  // B177: no greeting before the chat it had
   const was=!n&&!going&&!TK.wait?talkWas():'';  // B177: the chat this tab had has ended: its words stay until the next message
   if(was){if(!S.feeds[was]&&!TK.loading){TK.loading=true;loadFeed(was).finally(()=>{TK.loading=false})}
-    if(!S.feeds[was]||S.feeds[was].ok)return `<div class="col">${convo(was,talkShown)}${S.feeds[was]?'<div class="small" style="text-align:center">Your next message opens a new Talk chat.</div>':''}</div>`}
+    if(!S.feeds[was]||S.feeds[was].ok)return `<div class="col">${talkConvo(was)}${S.feeds[was]?'<div class="small" style="text-align:center">Your next message opens a new Talk chat.</div>':''}</div>`}
   if(!n)return going?`<div class="col">${going}<div class="think">${LOGO()}Starting the chat…</div></div>`: `<div class="col"><div class="greet">${LOGO()}Talk to the run</div><div class="small" style="text-align:center">Tap the mic and ask, say, what is going on: the reply is read aloud. ${talkKept()==='new'?'Your next message opens a new Talk chat. The old one stays in Chats.':'Talk opens a chat of its own the first time.'}</div></div>`;
   if(!S.feeds[n]&&!TK.loading){TK.loading=true;loadFeed(n).finally(()=>{TK.loading=false})}  /* its first look */
-  return `<div class="col">${convo(n,talkShown)}${going}</div>`;
+  return `<div class="col">${talkConvo(n)}${going}</div>`;
 }
 /* F124: the dock's mic: the speaker and the mic (64px), the keyboard beside them. Its markup never changes while it
    listens or speaks (talkDraw sets that), so a finger holding the mic keeps it */
@@ -2226,7 +2341,7 @@ function hush(){TK.playing='';if(TK.state==='speaking')TK.state='';TK.turn=(TK.t
 /* a Talk reply's play button: reads that reply, or stops it */
 function playReply(k){
   if(TK.playing===k)return hush();
-  const n=talkName()||talkWas(), ms=threadMsgs(feedOf(n)), i=ms.findIndex((m,j)=>(m.k||n+':'+j)===k);
+  const n=talkName()||talkWas(), ms=talkMsgs(feedOf(n)), i=ms.findIndex((m,j)=>(m.k||n+':'+j)===k);
   if(i>=0)speak(plain(ms[i].text),k);
 }
 function listen(){
@@ -2323,6 +2438,7 @@ function takeSnap(s){
     if(Date.now()-S.waitNew.at>60000)S.waitNew=null}
   for(const w of working_())if(!S.feeds[w.name]||Date.now()-(S.feeds[w.name].at||0)>15000)loadFeed(w.name);
   if(S.kept)keptCheck();  // B177
+  for(const x of S.snap.sessions||[])if(x.task||x.link)S.last[x.name]={task:x.task,title:x.title,link:x.link};  // F114: what it was, once it has ended
   const tw=talkWaitName();if(tw&&TK.wait.sent){addSent(tw,TK.wait.sent.text,TK.wait.sent.at,{talk:true,first:true},0);TK.wait.sent=null}if(tw)loadFeed(tw);  // B133: each snapshot also looks for the awaited Talk reply
   render();S.live=true;
 }
@@ -2388,7 +2504,6 @@ async function send(){
     histAdd(key,text);HI.i=null;store.set(DRAFT_KEY(key),'');if(ta)ta.value='';S.atts=[];
     if(!await talkSend(compose(null,text,paths))){if(!store.get(DRAFT_KEY(key)))store.set(DRAFT_KEY(key),text);S.atts=atts;render(true)}return}
   const ctx=S.ctx, to=S.thread||'c1', key=boxKey();
-  S.pin=true;  // F83: your own message scrolls the chat to its end
   const msg=compose(ctx,text,paths);
   histAdd(key,text);HI.i=null;  // B120: Up brings it back
   store.set(DRAFT_KEY(key),'');if(ta)ta.value='';
@@ -2397,7 +2512,7 @@ async function send(){
   if(rq.name==='new_control'){newChat(rq.name,rq.args,ctx.kind==='new'?'Add a task':`About ${ctx.id||ctx.label}`,msg);return}  // B139
   // F137: out of the box at once, a pending message until chat_to answers (obDone), red with Retry if it fails
   outbox('chat_to',{text:msg,to},{text,key,say:`To ${threadTitle(to)}: ${text||paths.length+' attachment(s)'}`});
-  if(S.thread!==to)open(to);else toEnd();
+  if(S.thread!==to)open(to);
 }
 /* F137: a new chat opens at once as a stand-in ('@cid') that takes messages; new_control starts it without
    waiting, and its messages go once it has a name. B139: ask, its first message, shows in the stand-in. */
@@ -2425,7 +2540,12 @@ let tapped={n:'',at:0};
 document.addEventListener('click',async e=>{
   const q=s=>e.target.closest(s);let x;
   if(S.undo&&!q('[data-undo]'))finalDelete();  // F118: any other click makes the delete final
-  if(q('[data-jump]')){toEnd();return}  // F83
+  if(x=q('[data-feedkey]')){feedKey(x.dataset.feedkey);return}  // F114
+  if(q('[data-feedkeys]')){S.keys=!S.keys;render(true);return}
+  if(q('[data-feedtext]')){feedText();return}
+  if(x=q('[data-feedcopy]')){const pre=$('feedtext'), pick=()=>{const r=document.createRange();r.selectNodeContents(pre);const g=getSelection();g.removeAllRanges();g.addRange(r)};
+    try{await navigator.clipboard.writeText(S.feedText||'');toast('Copied')}catch(err){pick();toast('Selected: copy it with your own Copy')}return}
+  if(x=q('[data-resume]')){const n=x.dataset.resume;outbox('resume_chat',{chat:n},{res:n,say:`Resume ${threadTitle(n)}`});return}
   if(q('#sheetscrim')||q('[data-closesheet]')){closeSheet();return}
   if(q('#sheet [data-pin]')||q('#sheet [data-del]')||q('#sheet [data-ren]'))S.sheet='';  // its own handler goes on
   if(x=q('[data-sheet]')){openSheet(x.dataset.sheet);return}
@@ -2524,7 +2644,6 @@ document.addEventListener('click',async e=>{
     outbox('answer',{tid:c.id,text:`go with ${o.name}`},{concept:c.id,say:`${c.concept||c.id} · go with ${o.name}`,done:`Going with ${o.name}`});open('c1');return}
   if(x=q('[data-rel]')){const now=x.dataset.rel==='now';  // F137: through the outbox
     outbox('release',{now},{say:now?'Release now':'Release when they land',done:now?'Releasing what has landed now':'The release waits for the running tasks to land'});return}
-  if(x=q('[data-steps]')){S.openSteps[x.dataset.steps]=!S.openSteps[x.dataset.steps];render(true);return}
   if(q('[data-unctx]')){S.ctx=null;render(true);return}
   if(x=q('[data-unatt]')){S.atts.splice(+x.dataset.unatt,1);render(true);return}
   if(q('[data-clip]')){$('file').click();return}
@@ -2589,6 +2708,8 @@ document.addEventListener('paste',e=>{if(!e.target.matches||!e.target.matches('[
 $('file').addEventListener('change',e=>{[...e.target.files].forEach(upload);e.target.value=''});
 document.addEventListener('dragover',e=>{if(e.dataTransfer&&[...e.dataTransfer.types].includes('Files'))e.preventDefault()});
 document.addEventListener('drop',e=>{if(e.dataTransfer&&e.dataTransfer.files.length){e.preventDefault();[...e.dataTransfer.files].forEach(upload)}});
+/* F114: a key of the row keeps the box's focus (and its keyboard) */
+for(const t of ['pointerdown','mousedown'])document.addEventListener(t,e=>{if(e.target.closest&&e.target.closest('.keys .tool,[data-feedkeys]'))e.preventDefault()});
 document.addEventListener('visibilitychange',()=>{if(!document.hidden&&S.thread)loadFeed(S.thread)});
 /* F133: drag a chat row to set its place, by pointer events so a phone's touch works too: a mouse drags at once,
    a touch after a short hold (a swipe before it still scrolls the list); the drop is kept by the run */

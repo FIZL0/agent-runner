@@ -205,11 +205,11 @@ _In code_: slot_open, open_session
 _Avoid_: attach, share
 
 **Session feed**:
-A session's own transcript on the Run page: the agent's words, the person's, and each tool step with its output, newest last
+A session's transcript as data: the agent's words, the person's, and each tool step with its output, newest last. Talk reads it; a chat shows the session itself (The session), not this
 _Said_: feed
 _On screen_: feed
 _In code_: ui_model.feed, feed_entries, /feed/NAME
-_Avoid_: log, terminal
+_Avoid_: log, terminal, thread
 
 **Quick ask**:
 One of the Status chat's ready-made questions to c1, sent with one key or tap
@@ -219,10 +219,10 @@ _In code_: QUICK_ASKS, quick_ask
 _Avoid_: preset, shortcut
 
 **Terminal view**:
-A session's own terminal on the Run page, through ttyd (attach NAME); with no ttyd, how to install it; on Windows, the session feed only
+A session's own terminal, shown through ttyd in a chat or slot (`attach NAME` shows the same one); with no ttyd, how to install it (TTYD_INSTALL); on Windows the same, through the session's ConPTY port
 _Said_: terminal
 _On screen_: terminal
-_In code_: terminal_mode, terminal_fallback
+_In code_: terminal_mode, terminal_fallback, session_frame.py, /terminal/NAME
 _Avoid_: console
 
 **Direct edit**:
@@ -289,11 +289,25 @@ _In code_: save_local_setting, setting_device, setting_reset
 _Avoid_: local config, user setting
 
 **Run app**:
-The chat app a run serves on the web for a phone or a desktop: Home, a thread per session, and the Plan, over the same Run page
+The chat app a run serves on the web for a phone or a desktop: Home, a chat per session (each shows the real session, see The session), and the Plan, over the same Run page
 _Said_: run app
 _On screen_: run page link (in `status` and the run log)
 _In code_: web_page.html, web.py, [run] web
 _Avoid_: web page, dashboard, web UI
+
+**The session**:
+What a chat or slot shows in the run app: the real Claude Code session through ttyd, in one frame between the header and the message box, which the page never draws or redraws.
+_Said_: the session, the real window
+_On screen_: (no wording: the session itself)
+_In code_: session_frame.py, #feed, /t/TOKEN/NAME/
+_Avoid_: thread, transcript, chat view
+
+**Key row**:
+The row of keys (Esc, Tab, ↑, Enter, Ctrl-C, Text, ←, ↓, →) that folds out from the message box's keyboard button on a touch device, for a session's menus.
+_Said_: the keys
+_On screen_: Esc Tab ↑ Enter Ctrl-C Text ← ↓ →
+_In code_: FEED_KEYS, web_page.html
+_Avoid_: keypad, shortcut bar, toolbar
 
 **Run controls**:
 The buttons and keys that change the run itself from the run page or agent-runner ui: slots, pause, force, stop, and stopping one slot's task
@@ -317,10 +331,10 @@ _In code_: state 'parked', unpark, parkedLast, queueGroups
 _Avoid_: later task, on hold
 
 **Attach**:
-Put this terminal on a session's own terminal, to watch it and type into it, until Ctrl-b d leaves it running
+Put this terminal on a session's own terminal, to watch it and type into it, until Ctrl-b d leaves it running (on Windows 1809 and later too; the run app's session has no detach key)
 _Said_: attach
 _On screen_: attach s2; Back: Ctrl-b d
-_In code_: cmd_attach, attach_session, session_socket, slotN.sock, controlN.sock
+_In code_: cmd_attach, attach_session, session_socket, slotN.sock, controlN.sock, attach_windows.py
 _Avoid_: open (that is Open a slot), connect
 
 **Run picker**:

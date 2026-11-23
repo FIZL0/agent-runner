@@ -746,7 +746,7 @@ def cmd_background_attach(argv: list[str]) -> int:
 
 def hidden_attach(which: str) -> str:
     """F40: what `attach` says of a slot (Windows: or a control session) that runs hidden but has no socket to
-    attach through (it could not be made; Windows has none): where its output is and how to steer it; '' when there
+    attach through (it could not be made; Windows before 1809 has none): where its output is and how to steer it; '' when there
     is no such session (the caller says so)."""
     c = plat.WINDOWS and re.fullmatch(r'c\d+', which)
     stem = f'{"control" if c else "slot"}{which[1:]}'
@@ -779,11 +779,12 @@ def cmd_attach(argv: list[str], prog: str = f'{RUNNER} attach') -> int:
     a = ap.parse_args(argv)
     init()
     which = {'run': 'runner', '': 'runner'}.get(a.slot, a.slot)
+    if sock := session_socket(which):  # F88: a hidden session's own terminal, through its shim's socket
+        return attach_session(sock, which)
     if plat.WINDOWS:
         if which == 'runner':
             print(f'on Windows the run has no window of its own: {shown_cmd()} status shows it, and its log is '
-                  f'{C.notes("run.log")}. {shown_cmd()} attach s1 '
-                  f'{"says where the log of slot 1 is" if plat.has_conpty() else "shows slot 1"}.')
+                  f'{C.notes("run.log")}. {shown_cmd()} attach s1 shows slot 1.')
             return 0
         c = re.fullmatch(r'c\d+', which)
         marker = C.notes(f'{"control" if c else "slot"}{which[1:]}.live')
@@ -805,8 +806,6 @@ def cmd_attach(argv: list[str], prog: str = f'{RUNNER} attach') -> int:
     if which in ('feed', 'board'):  # C26: the runner feed has no terminal to show; the TUI shows what lands
         from agent_runner.tui import main as tui_main
         return tui_main([])
-    if sock := session_socket(which):  # F88: a hidden session's own terminal, through its shim's socket
-        return attach_session(sock, which)
     if said := hidden_attach(which):
         print(said)
         return 0

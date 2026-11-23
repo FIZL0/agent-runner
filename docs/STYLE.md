@@ -31,6 +31,7 @@ name its own size).
 | `--accent --accent2 --onaccent` | the one thing to press, its pressed shade, text on it |
 | `--ok --warn --bad --onbad` | landed or running, needs you or paused, failed or destructive |
 | `--scrim --shadow --lift` | behind a sheet, under a floating thing, under the message box |
+| `--feed` | the ground behind a session: dark unless the person's agent theme starts with light (see The session) |
 | `--fs-xs --fs-s --fs-m --fs-n --fs-b --fs-l --fs-xl` | 11 hint, 12 badge, 13 second text, 14 button, 15 body, 17 card title, 30 greeting |
 | `--r-xs --r-s --r-m --r-l --r-xl --r-full` | 4 a bar, 8 small control, 10 button and row, 16 card and sheet, 20 message box, pill |
 | `--s1` to `--s6` | 4, 8, 12, 16, 24, 32: gaps and padding |
@@ -40,8 +41,8 @@ name its own size).
 A state colour is never the only sign: there is a word or an icon with it. Text on `--bg` and `--surface` uses `--fg`
 or `--muted`; `--faint` is for what you can do without.
 
-Type: `--sans` for the app, `--serif` for headings and an ask's words, `--mono` for code and a chat (which looks like
-the terminal, in the `[ui] theme`'s colours, inside `.main.term` only).
+Type: `--sans` for the app, `--serif` for headings and an ask's words, `--mono` for code, Talk's words and
+a chat's message box (inside `.main.term`). A session draws its own text with ttyd (see The session).
 
 ## Parts
 
@@ -109,10 +110,10 @@ Motion shows where a thing came from, where it went, or that it changed. Nothing
 - **Only `transform` and `opacity`**, with `visibility` to take a closed thing out of reach, and a switch's
   `background-color`. Never height, width, top or margin.
 - **What animates:** the drawer and the sheet slide; their scrim fades; the Talk dock's mic and box cross-fade; a card
-  or message that is new fades in and rises 6px; a view fades in when you go to it; a state word that changed fades in; a chevron turns; the message box, the chat's words and the sheet glide (transform
+  or message that is new fades in and rises 6px; a view fades in when you go to it; a state word that changed fades in; a chevron turns; the message box, Talk's words and the sheet glide (transform
   only) to their place when the keyboard opens or closes (`kbGlide()`).
 - **What never animates:** a refresh of what is already there, a list reordering under the reader, text being
-  typed, the scroll position (a jump to the latest is instant), anything on first load.
+  typed, the scroll position, anything on first load.
 - **New means new:** give a thing that can come and go `data-k="its key"` (and `data-v="its state"` if it has one).
   `enter()` animates only the keys that were not there before, and nothing before the first snapshot. Your own message
   has `data-t` too, so it comes in once, not again when it is sent and when it lands. Never animate from a class in
@@ -126,14 +127,38 @@ Motion shows where a thing came from, where it went, or that it changed. Nothing
 
 - **The page never moves on its own.** A refresh keeps the reading position in every view (`keepScroll()`): the first
   `data-k` on screen stays where it was. At the very top, new things show.
-- **A chat is pinned to its newest message** when you open it, when you send, and while a reply comes in, unless you
-  scrolled up. Then it stays put and the jump-to-latest button shows.
+- **Talk is pinned to its newest words** when you open it, when you send, and while a reply comes in, unless you scrolled up. It has no jump button. The page does not scroll a session at all: the frame keeps its own scroll, and a refresh never redraws it (see The session).
 - Going to a view starts at its top; coming back to one you left returns to where you were.
 - A reload opens what was open, drawn in the first frame, and never acts by itself: no mic, no sound, no focus on a box.
 - A refresh also keeps focus, the caret (`keepFields()`), a text selection, what is folded open, and a code block's
   sideways scroll.
 - A notice (`.notice`) floats over the top of the view and never pushes it down, except in a chat: there it has its own
   row under the header, so it covers no text, and `noticeRoom()` keeps the text in place. Elsewhere it floats as before.
+
+## The session
+
+A chat or slot shows the real Claude Code session through ttyd, in place of a thread the page draws. These rules hold:
+
+- **One frame.** The session is one iframe (`#feed`), filling the space between the header and the message box. Its
+  address is the run's own (`/t/TOKEN/NAME/`), so https and Runner Home both work.
+- **Never redrawn.** A refresh, a snapshot or a state change leaves the frame as it is: it is set once per open, and
+  `setHTML()` never touches it. It goes when the chat is left or the page has been hidden for 15 s, so the session gets
+  its other viewers' size back.
+- **Its prompt line stays.** The session draws its menus, questions and status in the same rows, so cropping it would
+  hide those.
+- **Box and session never both hold focus.** A mouse press in the session gives it the keyboard; ttyd's focus on connect
+  never does. A tap on the box takes the focus back.
+- **Touch layer.** On a touch device a layer over the frame takes the touch: a drag scrolls the session (a wheel steps
+  it, and it glides), a tap clicks in it without opening the keyboard, and a long press or the key row's Text opens a
+  sheet with the screen's text to select and copy. A horizontal swipe still opens the drawer.
+- **Key row.** A keyboard button in the message box folds out the key row (`FEED_KEYS` in `web_page.html`, and Text):
+  Esc, Tab, ↑, Enter, Ctrl-C, Text, ←, ↓, →. Touch only.
+- **Text size.** 12px on touch, 13px otherwise, in ttyd's DOM renderer (its canvas is wrong at 2x).
+- **Ground.** `--feed`: dark unless the person's agent `theme` starts with light (`session_look`).
+- **States are cards.** Starting (says so, with the waiting message), loading, ended (the claude.ai/code link, and Resume
+  where there is one), a slot with no session (Resume when its task was cut off), no terminal (a headless stream slot,
+  a slot with no socket, or Windows before 1809) and no ttyd (how to install it). Each is a `.card` with a title, one
+  line of second text and its `.btns`. The state is checked every 3 s.
 
 ## Touch, keys and access
 
@@ -158,13 +183,13 @@ Motion shows where a thing came from, where it went, or that it changed. Nothing
 - iOS shrinks only the visual viewport, not `dvh`. While a keyboard is open, `kbFit()` gives `.app` the visual
   viewport's height and offset and the class `.kb`; on close both go back to the stylesheet's.
 - While open: no bottom safe-area inset on `.app`, less bottom padding on `.dock` and the sheet, and the header stays
-  on screen. A pinned chat stays at its newest message; one scrolled up stays put.
+  on screen. Talk stays at its newest words while pinned; one scrolled up stays put.
 - The document never scrolls (`html` and `body` are locked). Only `.body`, `.side`, `.sheet` and small lists scroll.
   Anything with a text box lives inside `.app` and is sized in % or `cqh`, not vh, while the keyboard is open.
 - Never `scrollIntoView` to show a field being typed in: `kbReveal()` scrolls its own scroller. Pinch zoom is left
   alone. Safari's own address pill and arrows bar cannot be removed in a tab.
 - Outside `.app` (behind Safari's bar, around the keyboard) shows `html` and `body`'s `--page`, the view's own colour
-  (the grey band in B160's recording was the app's `--bg` behind a black chat; a chat's is the terminal theme's background); `theme-color` follows it (`pageColor()`). Safari tints its bars from a fixed layer over the page's edge, so
+  (the grey band in B160's recording was the app's `--bg` behind a black chat; Talk's and a chat's is the terminal look's ground); `theme-color` follows it (`pageColor()`). Safari tints its bars from a fixed layer over the page's edge, so
   a change of view puts new `.edge` strips there (under the drawer and the sheet).
 - A tap's focus on a text box in iOS is made by `kbFocus()`: `preventScroll`, and the box see-through for two frames, so
   Safari does not pan; the caret goes to the end (a second tap places it). A box a script
@@ -173,6 +198,7 @@ Motion shows where a thing came from, where it went, or that it changed. Nothing
 - For 900ms (`KB_MS`) after a field is entered or left, `kbFit()` runs each frame on iOS, as events come late and in any
   order, and follows Safari's pan so the header stays on screen.
 - The viewport meta has `interactive-widget=resizes-content` for browsers that have it.
+- The session and the message box never both hold focus (see The session).
 
 ## Sound
 
@@ -185,4 +211,5 @@ Motion shows where a thing came from, where it went, or that it changed. Nothing
 2. Empty, loading, working, failed: each seen.
 3. Reduced motion on: everything still works.
 4. Scroll half way down, wait for a refresh: nothing moved.
-5. `python3 tests/test_web.py`.
+5. A chat or slot with a real session: phone (390px) and desktop, both themes, and a refresh leaves its frame as it was.
+6. `python3 tests/test_web.py`.
