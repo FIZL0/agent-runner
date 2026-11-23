@@ -372,7 +372,9 @@ def test_clean():
     res = V.clean(chosen, plan)
     eq(res['removed'], chosen, 'the chosen temp folder and worktree go')
     check(not f.ended.exists() and not (f.home / 's1').exists(), 'gone from disk')
-    check('s1' not in git(f.root, 'worktree', 'list'), 'and git forgot the worktree')
+    trees = git(f.root, 'worktree', 'list', '--porcelain').splitlines()  # T16: whole paths; a temp name can hold "s1"
+    check(f'worktree {f.home.joinpath("s2").as_posix()}' in trees, 'git lists the worktrees that stay', trees)
+    check(f'worktree {f.home.joinpath("s1").as_posix()}' not in trees, 'and git forgot the worktree', trees)
     eq(res['freed'], 2048 + ids['worktree:' + str(f.home / 's1')]['size'], 'what it freed')
     check(f.live.exists() and f.recent.exists() and f.resumed.exists(), 'the rest stay')
     check('wip/B1' in git(f.root, 'branch', '--list', 'wip/*'), 'an unticked wip/ branch stays')
