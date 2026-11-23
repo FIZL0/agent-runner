@@ -284,7 +284,7 @@ _Avoid_: archived chat, old chat, stale chat
 **Device override**:
 A setting this machine's runner.local.toml sets over the project's runner.toml
 _Said_: This device
-_On screen_: This device, Reset
+_On screen_: Saved on this device only, Reset on this device
 _In code_: save_local_setting, setting_device, setting_reset
 _Avoid_: local config, user setting
 

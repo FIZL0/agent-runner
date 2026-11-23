@@ -1448,12 +1448,27 @@ def settings() -> dict:
     the change queued for it (F166: `queued` {'id', 'value', 'unset'})."""
     from agent_runner import config as CF
     snap = CF.settings_snapshot(S.ROOT)
-    waiting = queued_settings()
+    waiting, was = queued_settings(), SETTINGS_AT[0]
     for t in snap['tables']:
         for k in t['keys']:
             if q := waiting.get((t['table'], k['key'])):
                 k['queued'] = {x: q[x] for x in ('id', 'value', 'unset')}
+    now = _setting_values(snap)
+    snap['waits'] = [f'{t}.{k}' for (t, k), v in now.items() if was and (t, k) not in CF.SETTING_NOW and was.get((t, k)) != v]
     return snap
+
+
+SETTINGS_AT: list[dict] = [{}]  # F166: the settings as this process read them at its start: one that differs now waits
+
+
+def _setting_values(snap: dict) -> dict:
+    return {(t['table'], k['key']): k['value'] for t in snap['tables'] for k in t['keys']}
+
+
+def settings_start() -> None:
+    """F166: the run's web server starts: keep what its settings are now (`settings`' `waits`)."""
+    from agent_runner import config as CF
+    SETTINGS_AT[0] = _setting_values(CF.settings_snapshot(S.ROOT))
 
 
 SETTING_FROM = "(from the run app's Settings)"

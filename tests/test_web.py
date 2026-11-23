@@ -2902,6 +2902,7 @@ def test_settings_f97(tmp: Path) -> None:
     srv = W.serve(token, 0, '127.0.0.1', snap=lambda: {})
     base = f'http://127.0.0.1:{srv.server_address[1]}'
     ran = []
+    U.settings_start()
 
     def key(table, k):
         d = json.loads(get(f'{base}/settings?t={token}')[1])
@@ -2928,11 +2929,13 @@ def test_settings_f97(tmp: Path) -> None:
         with mock.patch.object(U, 'RUN', [lambda argv: (ran.append(argv), (0, 'added C9 it'))[1]]), \
                 mock.patch.object(S, 'run_up', lambda: True):
             eq(act_('setting_device', table='run', key='slots', value=5)['ok'], True, 'a device save')
+            eq(key('run', 'slots')[1]['waits'], [], 'slots applies now: nothing waits')
             eq(local.read_text(encoding='utf-8'), mine.replace('slots = 2 ', 'slots = 5 '), 'edits that value only, comments kept')
             eq(ran, [['slots', '5']], 'slots applies now, through the slots action')
             eq(act_('setting_device', table='run', key='links', value=['a b'])['ok'], True, 'a list over several lines')
             check('# one\nlinks = ["a b"]  # big' in local.read_text(encoding='utf-8'), 'becomes one line, its comments kept')
             eq(act_('setting_device', table='git', key='land_edited', value='wip')['ok'], True, 'a table not there yet')
+            eq(sorted(key('run', 'slots')[1]['waits']), ['git.land_edited', 'run.links'], 'the others wait for a restart')
             eq(CF.tomllib.loads(local.read_text(encoding='utf-8'))['git'], {'land_edited': 'wip'}, 'is added')
             eq(key('run', 'slots')[0]['value'], 5, 'the page reads the new value')
             for t, k in (('run', 'slots'), ('run', 'links'), ('git', 'land_edited')):
@@ -3085,7 +3088,7 @@ const fetch = async (p, o) => {
   return {status, ok: status < 400, json: async () => reply};
 };
 const rc = {key: 'restart', label: 'Restart the run', confirm: 'Restart?'};
-const S = {snap: {needs: [], concepts: [], controls: [rc], boot: 'b1'}, f: {}, ob: [], thread: null, view: 'settings', waitNew: null, obOpen: false, gone: {}, setOpen: {}, setWait: {}};
+const S = {snap: {needs: [], concepts: [], controls: [rc], boot: 'b1'}, f: {}, ob: [], thread: null, view: 'settings', waitNew: null, obOpen: false, gone: {}, setOpen: {}};
 const OB = {busy: false, offline: false, timer: 0, wait: 2000}, OB_KEY = 'ob';
 const threadTitle = n => n, cutsOff = () => '', sureHTML = q => q;
 let cids = 0;

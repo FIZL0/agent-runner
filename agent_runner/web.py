@@ -1076,6 +1076,8 @@ def start_web() -> WebServer | None:
     r = S.C.run
     if not r.get('web', True) or os.environ.get('AGENT_RUNNER_NO_WEB'):
         return None
+    from agent_runner.ui_model import settings_start
+    settings_start()  # F166
     port = int(r.get('web_port', 8770))
     srv, why = None, ''
     if home_only():  # B146: Home's port is Home's, even while Home is not up yet

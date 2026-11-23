@@ -151,6 +151,7 @@ for at, (group, name, desc) in W.WORDS.items():
     t, k = at.split('.')
     check(name and len(name) <= 34 and '_' not in name and name != k, f'{at} has a plain name', name)
     check(desc.endswith('.') and 20 <= len(desc) <= 130 and '`' not in desc and '—' not in desc, f'{at} has a short description', desc)
+    check(len(re.findall(r'[.:] ', desc)) >= 1, f'{at} says what changes when it is moved', desc)
     check(group in groups and W.home(t, k) in (W.DEVICE, W.EVERYONE), f'{at} has a group and a home')
 eq(len({n for _, n, _ in W.WORDS.values()} - {'Chats'}), len(W.WORDS) - 1, 'no two settings share a name')
 for table in (W._HOMES, W._PARENTS, W._CHOICES, W._UNITS):
