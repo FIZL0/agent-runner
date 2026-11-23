@@ -12,6 +12,14 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
   process, pid file and title go; the transcript stays, resumable), so it leaves the list and no run start reopens
   it. New ui_model action `delete_chats {names: [...]}` refuses a list naming c1, backed by
   `control.end_control(n, why)` (F118).
+- Added: the TUI drops with `d` in every left panel that lists things, with the panel focused. Sessions [2]: on a
+  slot working on a task it drops the task (as `D` did); on a control session cN (N>1) it closes it: its process,
+  controlN.pid and controlN.title go, the transcript stays (resumable), and the run log says "control N: closed
+  from the TUI"; on c1 it only says c1 is the run's kept session. Queue [3] drops the task, Needs you [4] drops the
+  item (plan drop), Concepts [5] drops the concept; Status [1] has nothing to drop. `D` stays as an alias where it
+  worked before (a slot's task, a queued task). The bottom hint line and the `?` keys list show `d` where it
+  applies; in the main pane `d` is not a drop key (a pick's `d` option keeps it). New function
+  `control.close_from_tui(n)` (F116).
 
 ## 0.60.0 (2026-11-23)
 

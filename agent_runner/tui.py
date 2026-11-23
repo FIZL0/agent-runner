@@ -176,7 +176,7 @@ Queue [3]
 Needs you [4]
   a        answer                 L        later
   d        drop
-  y n      yes, no               a b c    a pick's options (answer tab)
+  y n      yes, no                a b c    a pick's options (answer tab)
 Concepts [5]
   j/k      option                 Enter    go with it
   i        what to change         O        open in the browser
