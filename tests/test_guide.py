@@ -45,4 +45,11 @@ finally:
     if old is not None:
         os.environ[control.ARTIFACT_ENV] = old
 
+print('F140: a queued concept task puts option buttons on its page')
+from agent_runner import brief  # noqa: E402
+concept = brief.CONCEPT_PROMPT.format(runner='agent-runner', tid='K7')
+has(concept, r'`agent-runner pick-links K7 A,B,C`', 'the K brief runs pick-links with its own id')
+has(concept, r'plain `<a href>`\s+button', 'each link goes on its option as a plain button')
+has(concept, r'no https address,\s+leave the buttons off', 'no https address: no buttons')
+
 raise SystemExit(1 if FAILED else print('\nall checks passed'))
