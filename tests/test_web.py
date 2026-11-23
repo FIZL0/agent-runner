@@ -1119,21 +1119,24 @@ const navigator = {language: 'en-US'};
 const TK = {rec: null, heard: '', state: '', wait: null, said: '', unlocked: false, note: ''};
 const micWhy = () => '', toast = () => {}, render = () => {}, talkSend = t => { sent.push(t) };
 const I = {stop: '', talk: '', speak: '', mute: ''};
+const line = s => { const i = page.indexOf(s); return page.slice(i, page.indexOf('\n', i)) + '\n' };
+const S = {view: 'talk', thread: null}, document = {hidden: false};
 const el = {}, $ = k => el[k] = el[k] || {classList: {toggle() {}}, setAttribute() {}, textContent: '', className: ''};
 const setHTML = () => true, talkTyping = () => false, talkDock = () => (talkDraw(), $('talkline').textContent);
 let TS = {read: true, voice: '', mic: 'tap', auto: false};
-eval(logic.replace('const TALK_SET', 'var TALK_SET') + grab('function unlockSpeech(') + grab('function talkDraw(') + grab('function listen(') + `
+eval(logic.replace('const TALK_SET', 'var TALK_SET') + grab('function unlockSpeech(') + grab('function talkDraw(') + line('const MIC=') + grab('function micWhenFree(') + grab('function micFree(') + grab('function listen(') + grab('function hear(') + grab('function earEnd(') + grab('function micStop(') + `
+  Date.now = () => 1000;
   listen();
   const before = rec.started;
-  rec.onerror({error: 'no-speech'}); rec.onend();
-  const line = talkDock();
+  Date.now = () => 3000; rec.onerror({error: 'no-speech'}); rec.onend();
+  const said = talkDock();
   listen();
   const cleared = talkDock();
   rec.onresult({resultIndex: 0, results: [Object.assign([{transcript: 'hello'}], {isFinal: true})]}); rec.onend();
   TK.state = 'speaking'; rec = null; spoke = 0;
   listen();
   const stopped = {state: TK.state, cancelled: spoke, listened: !!rec};
-  console.log(JSON.stringify({before, line, cleared, sent, stopped}));`);
+  console.log(JSON.stringify({before, line: said, cleared, sent, stopped}));`);
 """
 
 
@@ -1148,7 +1151,7 @@ def test_listen_heard_nothing_b132(tmp: Path) -> None:
     check(r.returncode == 0, 'node runs listen()', r.stderr[-800:])
     got = json.loads(r.stdout or '{}')
     eq(got.get('before'), 0, 'listen does not touch speechSynthesis before rec.start()')
-    eq(got.get('line'), 'Heard nothing (error: no-speech)', 'no words and error no-speech: the talk line says so')
+    eq(got.get('line'), 'Heard nothing (error: no-speech, tap, after 2.0 s)', 'no words and error no-speech: the talk line says so')
     eq(got.get('cleared'), 'Listening…', 'the next listen clears it')
     eq(got.get('sent'), ['hello'], 'words heard are still sent')
     eq(got.get('stopped'), {'state': '', 'cancelled': 1, 'listened': False},
@@ -1964,7 +1967,9 @@ const document = {querySelector: s => s === '[data-in]' ? ta : null};
 const drafts = {}, store = {set: (k, v) => { drafts[k] = v }, get: k => drafts[k] || ''};
 const DRAFT_KEY = k => 'draft:' + k, boxKey = () => 'c3', grow = () => {}, render = () => {};
 const toast = t => toasts.push(t), send = () => sent.push(ta.value), TK = {state: ''};
-eval(logic + 'const DK={rec:null,key:\'\',base:\'\'};const dictWhy=()=>\'\';' + grab('function dictShow(') + grab('function dictate(') + `
+const line = s => { const i = page.indexOf(s); return page.slice(i, page.indexOf('\n', i)) + '\n' };
+const micJs = line('const MIC=') + grab('function micWhenFree(') + grab('function micFree(');
+eval(logic + 'const DK={rec:null,key:\'\',base:\'\'};const dictWhy=()=>\'\';' + micJs + grab('function dictShow(') + grab('function dictate(') + `
   dictate();
   const listening = !!DK.rec;
   rec.onresult({resultIndex: 0, results: [Object.assign([{transcript: 'merge'}], {isFinal: false})]});
@@ -2225,7 +2230,7 @@ class SpeechSynthesisUtterance { constructor(t) { this.text = t } }
 let rec = null, starts = 0, sent = [];
 class SR { constructor() { rec = this } start() { starts++ } stop() { this.stopped = true; this.onend() } }
 const navigator = {language: 'en-US'}, handlers = {};
-const document = {addEventListener(t, f) { (handlers[t] = handlers[t] || []).push(f) }};
+const document = {hidden: false, addEventListener(t, f) { (handlers[t] = handlers[t] || []).push(f) }};
 const fire = (t, e) => (handlers[t] || []).forEach(f => f(e));
 const TK = {rec: null, heard: '', state: '', wait: null, said: '', unlocked: false, note: '', playing: '', hold: false, again: false};
 const S = {view: 'talk', thread: null, feeds: {c5: {entries: [{kind: 'you', text: 'hi', id: 'a'}, {kind: 'say', text: 'One **thing**.', id: 'b'}]}}};
@@ -2233,7 +2238,7 @@ const feedOf = n => S.feeds[n].entries, talkName = () => 'c5', micWhy = () => ''
 const talkSend = t => sent.push(t), talkTyping = () => false, voices = () => speechSynthesis.getVoices();
 eval(logic + `
 let TS = talkSetParse('');
-` + grab('function speak(') + line('function hush(') + grab('function playReply(') + grab('function listen(')
+` + grab('function speak(') + line('function hush(') + grab('function playReply(') + line('const MIC=') + grab('function micWhenFree(') + grab('function micFree(') + grab('function listen(') + grab('function hear(') + grab('function earEnd(') + grab('function micStop(')
   + page.slice(page.indexOf('/* F124: hold to talk'), page.indexOf('/* F124: a swipe right anywhere')) + `
 const out = {defaults: TS, parsed: talkSetParse('{"read":false,"voice":"Ava","mic":"hold","auto":true}'), junk: talkSetParse('nope')};
 const mic = {target: {closest: s => s === '[data-mic]' ? {} : null}, button: 0};
@@ -2317,6 +2322,118 @@ def test_keyboard_b160(tmp: Path) -> None:
     eq((got.get('zoom'), got.get('noField')), (off, off), 'neither a pinch zoom nor a short window with no field in focus is a keyboard')
     eq(got.get('field'), [['420px', '260px', True], 228], 'a field in a view is scrolled above the keyboard')
     eq(got.get('next'), 328, 'and so is the next field, with the keyboard still open')
+
+
+# B162: the mic's recognizers, as iOS ends them: a stop ends one only when the test says so (end), timers run on tick()
+MIC_DRIVER = HOLD_DRIVER.split('let rec = null')[0] + r"""
+let live = 0, most = 0, starts = 0, sent = [], recs = [], timers = [], drawn = 0, now = 1000;
+class SR {
+  constructor() { recs.push(this) }
+  start() { starts++; live++; most = Math.max(most, live) }
+  stop() { this.stopped = true }
+  abort() { this.aborted = true; if (this.onend) this.end(); else live-- }
+  end() { live--; if (this.onend) this.onend() }
+  fail(err) { this.onerror({error: err}); this.end() }
+  say(t) { this.onresult({resultIndex: 0, results: [Object.assign([{transcript: t}], {isFinal: true})]}) }
+}
+const last = () => recs[recs.length - 1];
+const setTimeout = (f, ms) => timers.push({f, ms}), clearTimeout = id => { if (timers[id - 1]) timers[id - 1].f = null };
+const tick = ms => { for (const t of timers) if (t.f && t.ms <= ms) { const f = t.f; t.f = null; f() } };
+Date.now = () => now;
+const navigator = {language: 'en-US'}, handlers = {};
+const document = {hidden: false, addEventListener(t, f) { (handlers[t] = handlers[t] || []).push(f) }};
+const fire = (t, e) => (handlers[t] || []).forEach(f => f(e));
+const TK = {rec: null, heard: '', state: '', note: '', playing: '', hold: false, holdId: null, again: false, ear: null};
+const DK = {rec: null, key: '', base: ''}, I = {stop: '', talk: '', speak: '', mute: '', keys: ''};
+const S = {view: 'talk', thread: null};
+const ta = {value: ''}, box = {value: ''}; document.querySelector = () => ta; ta.focus = ta.setSelectionRange = () => {};
+const micWhy = () => '', dictWhy = () => '', toast = () => {}, voices = () => [], talkTyping = () => false;
+const boxKey = () => 'c3', DRAFT_KEY = k => k, store = {set() {}}, grow = () => {};
+const talkSend = t => { sent.push(t); TK.state = '' };
+const els = {}, el = () => ({classList: {toggle() {}}, setAttribute() {}});
+const $ = k => els[k] = els[k] || el();
+let micEl = null;  // a redraw of the mic's markup makes a new element
+eval(logic + `
+function render() { if (setHTML($('talkmic'), talkMic())) els.mic = micEl = {...el(), setPointerCapture(id) { this.cap = id }}; talkDraw() }
+let TS = talkSetParse('');
+` + line('const MIC=') + line('function setHTML(') + line('const talkMic=') + ['talkDraw', 'micWhenFree', 'micFree', 'dictShow', 'dictate', 'speak', 'listen', 'hear', 'earEnd', 'micStop'].map(f => grab('function ' + f + '(')).join('')
+  + page.slice(page.indexOf('/* F124: hold to talk'), page.indexOf('/* F124: a swipe right anywhere')) + `
+const out = {}; render();
+// two aborts: one retry by itself, then the words
+listen(); now += 300; last().fail('aborted'); out.retryWaits = [starts, TK.state];
+tick(250); out.retried = [starts, TK.state]; now += 400; last().fail('aborted'); tick(250);
+out.twice = [starts, TK.state, TK.note];
+// an abort, then words
+listen(); last().fail('aborted'); tick(250); last().say('hello'); last().end(); out.sent = sent.splice(0);
+// words, then an abort: they go out, no retry; no retry for a stop by hand, or away from Talk
+starts = 0; listen(); last().say('kept'); last().fail('aborted'); tick(250); out.kept = [starts, sent.splice(0)];
+starts = 0; listen(); listen(); last().fail('aborted'); tick(250); out.byHand = [starts, TK.note];
+starts = 0; listen(); S.view = 'home'; last().fail('aborted'); tick(250); out.away = starts; S.view = 'talk';
+starts = 0; listen(); last().fail('aborted'); listen(); tick(250); out.stopInWait = [starts, TK.state];
+// a start waits for the end of the one before
+TS.read = true; starts = 0; listen(); const a = last(); speak('A reply.', 'k'); out.dropped = [TK.state, a.stopped];
+listen(); listen(); out.waits = [starts, TK.state]; a.say('old'); a.end(); out.afterEnd = [starts, TK.state, sent.splice(0)];
+last().end();
+// ended while it waits: the end of the old one starts nothing
+listen(); const b = last(); speak('A reply.', 'k'); listen(); listen(); listen(); starts = 0; b.end(); out.waitOff = [starts, TK.state];
+// dictation still ending
+starts = 0; dictate(); const d = last(); listen(); out.dict = [starts, d.stopped]; d.end(); out.dictEnd = [starts, DK.rec, TK.state]; last().end();
+// an end that never comes
+listen(); const c = last(); speak('A reply.', 'k'); listen(); listen(); starts = 0; tick(1500); out.stuck = [starts, c.aborted, TK.state]; last().end();
+out.most = most;
+// a hold: survives a redraw and a cancel; the finger lifting sends
+TS.mic = 'hold'; render(); const held = micEl, at = {target: {closest: s => s === '[data-mic]' ? held : null}, button: 0, pointerId: 7};
+starts = 0; fire('pointerdown', at); render(); const h = last();
+fire('pointercancel', {pointerId: 7}); out.held = [starts, TK.hold, !!h.stopped, micEl === held, held.cap, held.className];
+fire('pointerup', {pointerId: 8}); fire('touchend', {touches: [{target: at.target}]}); out.other = !!h.stopped;
+h.say('still here'); fire('touchend', {touches: []}); out.lifted = [TK.hold, h.stopped]; h.end(); out.heldSent = sent.splice(0);
+// held again before the end: one listen, both parts
+fire('pointerdown', at); last().say('first'); const p1 = last(); fire('pointerup', at); fire('pointerdown', at);
+p1.end(); out.more = [TK.state, sent.length, last() !== p1]; last().say('second'); fire('pointerup', at); last().end(); out.joined = sent.splice(0);
+// a touch the system took: the mic goes on by itself
+fire('pointerdown', at); fire('pointercancel', at); fire('touchcancel', {}); out.taken = [TK.hold, !!last().stopped]; last().say('done'); last().end(); out.takenSent = sent.splice(0);
+// an abort while held is retried, one once let go is not
+starts = 0; fire('pointerdown', at); last().fail('aborted'); tick(250); out.holdRetry = starts; now += 100; last().fail('aborted'); out.holdNote = TK.note; fire('pointerup', at);
+starts = 0; fire('pointerdown', at); last().fail('aborted'); fire('pointerup', at); tick(250); out.letGo = [starts, TK.state];
+out.mostAll = most;
+console.log(JSON.stringify(out));`);
+"""
+
+
+def test_mic_aborted_b162(tmp: Path) -> None:
+    """B162: one recognizer at a time (a start waits for the old one's end), one retry on an abort before any words and
+    then plain words with the mode and the time, and a hold that survives a redraw and a pointercancel."""
+    css = W.PAGE.read_text(encoding='utf-8').split('<style>', 1)[1].split('</style>', 1)[0]
+    check('.mic.hold{touch-action:none}' in css, 'a held mic is no scroll, zoom or swipe')
+    if not shutil.which('node'):
+        print('  (no node here: the mic script test is skipped)')
+        return
+    (tmp / 'driver.js').write_text(MIC_DRIVER, encoding='utf-8')
+    r = subprocess.run(['node', str(tmp / 'driver.js'), str(W.PAGE)], capture_output=True, text=True, timeout=60)
+    check(r.returncode == 0, 'node runs the mic', r.stderr[-900:])
+    got = json.loads(r.stdout or '{}')
+    words = 'The mic was cut off before it heard anything. Stop any other app that uses sound or the mic, then try again. (aborted, '
+    eq((got.get('retryWaits'), got.get('retried')), ([1, 'listening'], [2, 'listening']), 'aborted before any words: one retry')
+    eq(got.get('twice'), [2, '', words + 'tap, after 0.4 s, 2 tries)'], 'aborted twice: what to try, with mode and time')
+    eq(got.get('sent'), ['hello'], 'the retry hears')
+    eq(got.get('kept'), [1, ['kept']], 'words before the abort are sent, with no retry')
+    eq(got.get('byHand'), [1, 'Heard nothing (error: aborted, tap, after 0.0 s)'], 'stopped by hand: no retry')
+    eq(got.get('away'), 1, 'no retry once Talk is left')
+    eq(got.get('stopInWait'), [1, ''], 'a tap before the retry ends the listen')
+    eq(got.get('dropped'), ['', True], "a play button stops the mic")
+    eq(got.get('waits'), [1, 'listening'], 'a start waits while the old one ends')
+    eq(got.get('afterEnd'), [2, 'listening', []], 'and starts at its onend; its dropped words are not sent')
+    eq(got.get('waitOff'), [0, ''], 'a start called off while it waits never starts')
+    eq((got.get('dict'), got.get('dictEnd')), ([1, True], [2, None, 'listening']), 'it waits for dictation too')
+    eq(got.get('stuck'), [1, True, 'listening'], 'one whose end never comes is aborted')
+    eq((got.get('most'), got.get('mostAll')), (1, 1), 'never two recognizers')
+    eq(got.get('held'), [1, True, False, True, 7, 'mic hold on'], 'a hold survives a redraw and a cancel, its button captured and kept')
+    eq(got.get('other'), False, 'another finger does not end it')
+    eq((got.get('lifted'), got.get('heldSent')), ([False, True], ['still here']), 'the finger lifting sends')
+    eq((got.get('more'), got.get('joined')), (['listening', 0, True], ['first second']), 'held again before the end: one message')
+    eq((got.get('taken'), got.get('takenSent')), ([False, False], ['done']), 'a touch the system took: it goes on until a silence')
+    eq((got.get('holdRetry'), got.get('holdNote')), (2, words + 'hold, after 0.1 s, 2 tries)'), 'an abort while held is retried')
+    eq(got.get('letGo'), [1, ''], 'let go before the retry: none')
 
 
 def test_talk_settings_f124(tmp: Path) -> None:
@@ -2656,6 +2773,6 @@ if __name__ == '__main__':
                            in_tmp(test_interrupt_c1_b141), in_tmp(test_answer_button_b138), in_tmp(test_pick_f138),
                            in_tmp(test_outbox_f137), in_tmp(test_sent_b154), in_tmp(test_card_chat_b139), in_tmp(test_short_ask_b152),
                            in_tmp(test_chat_box_f115), in_tmp(test_home_switcher_f134),
-                           in_tmp(test_scroll_f83), in_tmp(test_keyboard_b160), in_tmp(test_talk_settings_f124), in_tmp(test_status_view_f124),
+                           in_tmp(test_scroll_f83), in_tmp(test_keyboard_b160), in_tmp(test_talk_settings_f124), in_tmp(test_mic_aborted_b162), in_tmp(test_status_view_f124),
                            in_tmp(test_chats_f128), in_tmp(test_needs_drop_chat_f110), in_tmp(test_task_text_f85),
                            in_tmp(test_settings_f97), in_tmp(test_style_f83)]))

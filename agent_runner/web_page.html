@@ -262,6 +262,7 @@ a{color:var(--accent)}
 .talkmic{display:grid;gap:6px;justify-items:center;padding-bottom:4px}
 .talkrow{display:grid;grid-template-columns:1fr auto 1fr;gap:14px;align-items:center;width:100%}
 .mic,.spk{width:64px;height:64px;border-radius:50%;border:0;display:grid;place-items:center;cursor:pointer;touch-action:manipulation;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+.mic.hold{touch-action:none} .mic svg{pointer-events:none}
 .mic{background:var(--accent);color:var(--onaccent);transition:transform var(--dur-fast) var(--ease)}
 .mic:active{transform:scale(.95)} .mic svg{width:28px;height:28px;stroke-width:1.8}
 .spk{justify-self:end;background:var(--surface);border:1px solid var(--line2);color:var(--fg)} .spk svg{width:26px;height:26px}
@@ -652,7 +653,14 @@ function termTokens(page){
   return {tokens,mode:s?s[1]:''};
 }
 /* B132: the talk line after a listen that ended with no words, naming the last error the recognizer gave */
-const heardNothing=err=>err?`Heard nothing (error: ${err})`:'Heard nothing';
+/* B162: with how the mic was started (tap, hold, auto) and how long it ran before the error; a mic cut off
+   ('aborted') gets what to try, in plain words, unless the person stopped it */
+function heardNothing(err,mode,ms,tries,stopped){
+  if(!err)return 'Heard nothing';
+  const d=[mode||'',ms==null?'':`after ${(ms/1000).toFixed(1)} s`,tries>1?`${tries} tries`:''].filter(Boolean).map(x=>', '+x).join('');
+  if(err==='aborted'&&!stopped)return `The mic was cut off before it heard anything. Stop any other app that uses sound or the mic, then try again. (${err}${d})`;
+  return `Heard nothing (error: ${err}${d})`;
+}
 /* a Talk message as the person said it: without the first message's brief or a later one's reminder */
 const talkShown=t=>{t=String(t||'');const i=t.indexOf('\n\nThey said: ');
   return (/^Talk mode:/.test(t)&&i>=0?t.slice(i+13):t.replace(/^\(Talk: [^)]*\) /,'')).trim()};
@@ -1595,7 +1603,7 @@ function slashTake(j){
    and its reply is read aloud (speechSynthesis); the chat box under the mic works without either ------------- */
 const TALK_KEY='ar-talk';  /* the Talk session this browser opened */
 const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
-const TK={rec:null,heard:'',state:'',wait:null,said:'',unlocked:false,note:'',playing:'',hold:false,again:false};  /* state: '', listening, thinking, speaking; playing: the reply a play button reads */
+const TK={rec:null,heard:'',state:'',wait:null,said:'',unlocked:false,note:'',playing:'',hold:false,holdId:null,again:false,ear:null};  /* state: '', listening, thinking, speaking; ear: the listen under way (listen()); playing: the reply a play button reads */
 /* F124: Talk's settings (TALK_SET), and whether its dock shows the mic or the box, as this browser last had them */
 const TS_KEY='ar-talkset', TM_KEY='ar-talkmode';
 let TS=talkSetParse(store.get(TS_KEY));
@@ -1620,13 +1628,28 @@ const micWhy=()=>micProblem(window.isSecureContext!==false,!!SR);
    what that box held when it started. The words go into the box to edit; nothing is sent. */
 const DK={rec:null,key:'',base:''};
 const dictWhy=()=>dictProblem(window.isSecureContext!==false,!!SR);
+/* B162: one recognizer at a time (iOS allows one, and aborts the second): MIC.rec is the one under way or still
+   ending, MIC.next the start that waits for its end. One whose end never comes is aborted after MIC_WAIT ms. */
+const MIC={rec:null,next:null,timer:0}, MIC_WAIT=1500, MIC_RETRY=250;
+function micWhenFree(start,cancel){
+  if(MIC.next&&MIC.next.cancel)MIC.next.cancel();
+  MIC.next=null;clearTimeout(MIC.timer);
+  const old=MIC.rec;if(!old)return start();
+  MIC.next={start,cancel};
+  MIC.timer=setTimeout(()=>{if(MIC.rec!==old)return;const end=old.onend;old.onresult=old.onerror=old.onend=null;try{old.abort()}catch(e){}if(end)end()},MIC_WAIT);
+  try{old.stop()}catch(e){}
+}
+function micFree(rec){
+  if(MIC.rec!==rec)return;
+  const n=MIC.next;MIC.rec=MIC.next=null;clearTimeout(MIC.timer);if(n)n.start();
+}
 function dictShow(words){
   const v=dictInsert(DK.base,words);store.set(DRAFT_KEY(DK.key),v);
   const ta=document.querySelector('[data-in]');if(ta&&boxKey()===DK.key){ta.value=v;grow(ta)}
 }
 function dictate(){
   const why=dictWhy();if(why)return toast(why,true);
-  if(DK.rec){DK.rec.stop();return}
+  if(DK.rec){if(MIC.rec===DK.rec)DK.rec.stop();else{MIC.next=null;DK.rec=null;render(true)}return}  // B162: or it still waits for its turn
   if(TK.state==='listening')return toast("Talk's mic is listening: tap it to stop, then dictate.",true);  /* it has the recognizer */
   const ta=document.querySelector('[data-in]');if(!ta)return;
   let rec;try{rec=new SR()}catch(e){return toast(`The mic could not start: ${e.message||e}`,true)}
@@ -1638,9 +1661,9 @@ function dictate(){
   rec.onerror=e=>{if(e.error==='not-allowed'||e.error==='service-not-allowed')toast('The browser did not let the page use the mic: allow it in the site settings, or type instead.',true);
     else if(e.error!=='no-speech'&&e.error!=='aborted')toast(`The mic stopped: ${e.error}`,true)};
   rec.onend=()=>{DK.rec=null;dictShow(final||heard);render(true);
-    const t=document.querySelector('[data-in]');if(t&&boxKey()===DK.key){t.focus();t.setSelectionRange(t.value.length,t.value.length)}};
+    const t=document.querySelector('[data-in]');if(t&&boxKey()===DK.key){t.focus();t.setSelectionRange(t.value.length,t.value.length)}micFree(rec)};
   render(true);
-  try{rec.start()}catch(e){DK.rec=null;toast(`The mic could not start: ${e.message||e}`,true);render(true)}
+  micWhenFree(()=>{MIC.rec=rec;try{rec.start()}catch(e){DK.rec=null;toast(`The mic could not start: ${e.message||e}`,true);render(true);micFree(rec)}},()=>{DK.rec=null});
 }
 /* F115: the [ui] theme's terminal colours for a chat, from the terminal-style page (the run app's tokens until then) */
 const TERM={mode:''};
@@ -1664,7 +1687,7 @@ function talkDraw(){
   if(!mic)return;
   line.textContent=why||(st==='listening'?(TK.heard||'Listening…'):st==='thinking'?'Thinking…':st==='speaking'?'Speaking. Tap to stop.':(TK.note||(hold?'Hold to talk':'Tap to talk')));
   const label=why||(st==='listening'?'Stop listening':st==='speaking'?'Stop speaking':hold?'Hold to talk':'Talk');
-  mic.className='mic'+(st==='listening'?' on':st==='speaking'?' speaking':'');mic.disabled=!!why;
+  mic.className='mic'+(hold?' hold':'')+(st==='listening'?' on':st==='speaking'?' speaking':'');mic.disabled=!!why;
   mic.setAttribute('aria-label',label);mic.title=label;setHTML(mic,st==='speaking'?I.stop:I.talk);
   const sl=st==='speaking'||TK.playing?'Stop reading':TS.read?'Read replies aloud: on':'Read replies aloud: off';
   spk.className='spk'+(TS.read?'':' off');spk.setAttribute('aria-label',sl);spk.setAttribute('aria-pressed',String(TS.read));spk.title=sl;setHTML(spk,TS.read?I.speak:I.mute);
@@ -1701,7 +1724,7 @@ function unlockSpeech(){  /* Safari speaks later only after a first utterance in
 function speak(text,key){
   const ss=window.speechSynthesis;
   if(!ss||!text){TK.state='';render(true);return}
-  if(key&&TK.rec){TK.drop=true;TK.rec.stop()}  // a play button stops the mic, so it does not hear the reply; nothing is sent
+  if(key&&TK.ear){const r=TK.rec;TK.ear=TK.rec=null;TK.heard='';if(r)r.stop()}  // a play button stops the mic, so it does not hear the reply; nothing is sent
   if(!key||TK.state!=='thinking')TK.state='';TK.playing='';ss.cancel();
   const parts=text.match(/[^.!?]+[.!?]*\s*/g)||[text];  /* sentence by sentence: Chrome cuts one long utterance short */
   const voice=pickVoice(voices(),TS.voice), turn=TK.turn=(TK.turn||0)+1;
@@ -1722,22 +1745,54 @@ function playReply(k){
 }
 function listen(){
   const why=micWhy();if(why)return toast(why,true);
-  if(TK.state==='listening'){if(TK.rec)TK.rec.stop();return}
+  if(TK.state==='listening')return micStop();
   /* B132: no speechSynthesis call before rec.start() on a plain tap: on iOS it puts the audio session in playback
      and recognition hears nothing (talkSend unlocks speech). A tap during a reply only stops it; the next one listens. */
   if(TK.state==='speaking'||TK.playing){if(TK.state==='speaking')TK.state='';TK.playing='';TK.note='';TK.turn=(TK.turn||0)+1;if(window.speechSynthesis)speechSynthesis.cancel();render(true);return}
   TK.note='';const again=TK.again;TK.again=false;  /* auto listen: one silent turn and it stops */
-  let rec;try{rec=new SR()}catch(e){return toast(`The mic could not start: ${e.message||e}`,true)}
-  TK.rec=rec;rec.lang=navigator.language||'en-US';rec.interimResults=true;rec.continuous=false;
-  let final='', err='';
-  rec.onresult=e=>{let interim='';for(let i=e.resultIndex;i<e.results.length;i++){const x=e.results[i];if(x.isFinal)final+=x[0].transcript;else interim+=x[0].transcript}
-    TK.heard=(final+interim).trim();render(true)};
-  rec.onerror=e=>{err=e.error||'';if(e.error==='not-allowed'||e.error==='service-not-allowed')toast('The browser did not let the page use the mic: allow it in the site settings, or type below.',true);
-    else if(e.error!=='no-speech'&&e.error!=='aborted')toast(`The mic stopped: ${e.error}`,true)};
-  rec.onend=()=>{TK.rec=null;const t=TK.drop?'':(final||TK.heard).trim();TK.drop=false;TK.heard='';if(TK.state==='listening')TK.state='';
-    if(t)talkSend(t);else{TK.note=again?(TS.mic==='hold'?'Hold to talk':'Tap to talk'):heardNothing(err);render(true)}};
+  /* B162: the listen: its tries, the words so far, and whether the person ended it (stopped) or held the mic again */
+  const t=TK.ear={mode:again?'auto':TS.mic,tries:0,words:'',err:'',ms:null,stopped:false,more:false};
   TK.state='listening';TK.heard='';render(true);
-  try{rec.start()}catch(e){TK.state='';TK.rec=null;toast(`The mic could not start: ${e.message||e}`,true);render(true)}
+  micWhenFree(()=>hear(t));
+}
+/* B162: one recognizer for the listen t. Aborted before any words, it is tried once more by itself */
+function hear(t){
+  if(TK.ear!==t)return;  // ended while it waited
+  let rec;try{rec=new SR()}catch(e){TK.ear=null;TK.state='';toast(`The mic could not start: ${e.message||e}`,true);return render(true)}
+  MIC.rec=TK.rec=rec;t.tries++;t.err='';t.ms=null;
+  rec.lang=navigator.language||'en-US';rec.interimResults=true;rec.continuous=false;
+  const at=Date.now();let final='', got='';
+  rec.onresult=e=>{let interim='';for(let i=e.resultIndex;i<e.results.length;i++){const x=e.results[i];if(x.isFinal)final+=x[0].transcript;else interim+=x[0].transcript}
+    got=final+interim;if(TK.ear===t){TK.heard=(t.words+' '+got).trim();render(true)}};
+  rec.onerror=e=>{t.err=e.error||'';t.ms=Date.now()-at;if(TK.ear!==t)return;
+    if(e.error==='not-allowed'||e.error==='service-not-allowed')toast('The browser did not let the page use the mic: allow it in the site settings, or type below.',true);
+    else if(e.error!=='no-speech'&&e.error!=='aborted')toast(`The mic stopped: ${e.error}`,true)};
+  rec.onend=()=>{
+    if(TK.rec===rec)TK.rec=null;
+    if(TK.ear!==t)return micFree(rec);  // dropped: nothing is sent
+    t.words=(t.words+' '+(final||got)).trim();
+    const on=TK.state==='listening', retry=on&&t.err==='aborted'&&!t.words&&!t.stopped&&t.tries<2&&S.view==='talk'&&!S.thread&&!talkTyping()&&!document.hidden;
+    const more=on&&t.more;
+    if(more){t.more=t.stopped=false;t.tries=0}
+    micFree(rec);
+    if(more)micWhenFree(()=>hear(t));
+    else if(retry)setTimeout(()=>{if(TK.ear===t)micWhenFree(()=>hear(t))},MIC_RETRY);
+    else earEnd(t);
+  };
+  try{rec.start()}catch(e){TK.ear=null;TK.rec=null;TK.state='';toast(`The mic could not start: ${e.message||e}`,true);render(true);micFree(rec)}
+}
+/* the listen is over: its words go out, or the talk line says why there are none */
+function earEnd(t){
+  TK.ear=null;TK.heard='';if(TK.state==='listening')TK.state='';
+  if(t.words)return talkSend(t.words);
+  TK.note=t.mode==='auto'&&t.err!=='aborted'?(TS.mic==='hold'?'Hold to talk':'Tap to talk'):t.tries?heardNothing(t.err,t.mode,t.ms,t.tries,t.stopped):'';
+  render(true);
+}
+/* the person ends the listen: the recognizer gives its last words, or a start still waiting is off */
+function micStop(){
+  const t=TK.ear;if(!t)return;
+  t.stopped=true;t.more=false;
+  if(TK.rec)TK.rec.stop();else earEnd(t);
 }
 
 /* --- live data --------------------------------------------------------------------------------------------- */
@@ -2033,19 +2088,27 @@ document.addEventListener('selectionchange',()=>{if(PD.late&&!PD.down&&!selectin
 /* F124: hold to talk: the mic listens while it is held, and sends when it is let go */
 document.addEventListener('pointerdown',e=>{
   if(!(e.target.closest&&e.target.closest('[data-mic]'))||TS.mic!=='hold'||TK.state==='speaking'||TK.playing||e.button>0)return;
-  TK.hold=true;if(TK.state!=='listening')listen();  // auto listen is on already: letting go sends it
+  TK.hold=true;TK.holdId=e.pointerId;
+  try{e.target.closest('[data-mic]').setPointerCapture(e.pointerId)}catch(err){}  // B162: a finger that drifts off it still holds it
+  if(TK.state!=='listening')listen();  // auto listen is on already: letting go sends it
+  else if(TK.ear&&TK.ear.stopped)TK.ear.more=true;  // B162: held again before the last one ended: it goes on after that end
 });
-for(const t of ['pointerup','pointercancel'])document.addEventListener(t,()=>{if(!TK.hold)return;TK.hold=false;if(TK.rec)TK.rec.stop()});
+/* B162: a pointercancel (iOS took the touch) does not end the hold: the finger is still down. Its touchend does, and
+   after a touchcancel the mic stops by itself at a silence, or at the next hold's end */
+const letGo=()=>{if(TK.hold){TK.hold=false;micStop()}};
+document.addEventListener('pointerup',e=>{if(e.pointerId===TK.holdId)letGo()});
+document.addEventListener('touchend',e=>{if(![...e.touches].some(x=>x.target.closest&&x.target.closest('[data-mic]')))letGo()},{passive:true});
+document.addEventListener('touchcancel',()=>{TK.hold=false},{passive:true});
 document.addEventListener('contextmenu',e=>{if(e.target.closest&&e.target.closest('[data-mic]'))e.preventDefault()});
 /* F124: a swipe right anywhere opens the sidebar drawer and a swipe left closes it, following the finger (passive
-   listeners only); a swipe down closes the sheet. Not from a text box, a sideways scroller, a row being dragged or
+   listeners only); a swipe down closes the sheet. Not from a text box, a sideways scroller, a held mic, a row being dragged or
    a mostly vertical move; Safari keeps its own back swipe at the very edge. */
 let SW=null;
 const sideways=el=>{for(;el&&el!==document.body;el=el.parentElement)if(el.scrollWidth>el.clientWidth+1&&/(auto|scroll)/.test(getComputedStyle(el).overflowX))return true;return false};
 const drawerOn=()=>{const m=document.querySelector('.top .menu');return !!(m&&m.offsetParent)};
 document.addEventListener('touchstart',e=>{
   SW=null;const t=e.touches[0], el=e.target;
-  if(e.touches.length!==1||!el.closest||el.closest('input,textarea,select,[contenteditable],iframe,.obpop')||DR&&DR.on)return;
+  if(e.touches.length!==1||!el.closest||el.closest('input,textarea,select,[contenteditable],iframe,.obpop,.mic.hold')||DR&&DR.on)return;
   if(S.sheet){if(el.closest('#sheet')&&$('sheet').scrollTop<=0)SW={sheet:true,x:t.clientX,y:t.clientY,at:e.timeStamp,d:0,on:false};return}
   if(!drawerOn()||el.closest('#body,#dock')&&sideways(el))return;
   SW={x:t.clientX,y:t.clientY,at:e.timeStamp,d:0,on:false,open:S.drawer,w:$('side').offsetWidth||280,lx:t.clientX,lt:e.timeStamp,v:0};
