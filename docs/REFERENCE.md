@@ -1133,17 +1133,21 @@ minutes instead; the log line names the files and `take --here`, and `plan claim
 those branches until someone deletes them.
 
 A merge skips the gate only when `task/<ID>` is the very tree `done`'s gate passed on (recorded as
-`refs/agent-runner/tested/<ID>`) and the merge differs from it only in `[run] untested` files. After
-`done --no-test`, commits made after `done`, or a session that never ran it, the merge is tested.
+`refs/agent-runner/tested/<ID>`) and the merge differs from it only in `[run] untested` files. After `done
+--no-test`, commits made after `done`, or a session that never ran it, the merge is tested. With `[run]
+done_test` set, the commit `done` made is also marked `refs/agent-runner/done-test/<ID>`, which a merge does
+not count as a gate pass: the merge runs `test` (or `test_since`) even on that exact tree.
 
-Docs-only changes skip the gate, decided by the diff and not the task's letter (a D task that touches code
-is tested; a B fix that only edits the README is not). When every file a merge changes on the shared branch
-(all its tasks, the plan's archive commit, a remote's commits taken in) matches `[run] docs_files` (default
-`*.md` and `docs/**`; `!glob` takes one back), the merge runs `[run] docs_check` instead, if one is set (a
-link or anchor check), and the log says `docs only, gate skipped`; a failing docs check fails the merge.
-`done` does the same with the files its worktree changes since the shared branch (commits, edits and new
-files): it prints `docs only, gate skipped`, so a session that only edited docs or the plan needs no
-`--no-test`. It records no tested ref then; the merge decides by its own diff.
+Docs-only changes skip the gate, decided by the diff and not the task's letter (a D task that touches code is
+tested; a B fix that only edits the README is not). When every file a merge changes on the shared branch (all
+its tasks, the plan's archive commit, a remote's commits taken in) matches `[run] docs_files` (default `*.md`
+and `docs/**`; `!glob` takes one back), the merge runs `[run] docs_check` instead, if one is set (a link or
+anchor check), and the log says `docs only, gate skipped`; a failing docs check fails the merge. `done` does
+the same with the files its worktree changes since the shared branch (commits, edits and new files): it prints
+`docs only, gate skipped`, so a session that only edited docs or the plan needs no `--no-test`. It records no
+tested ref then; the merge decides by its own diff. With `[run] done_test` set, a docs-only `done` runs it in
+place of skipping (then `docs_check`, if set) and prints `done_test passed`; it still records no tested ref,
+so a docs-only merge skips the gate as before.
 
 ## Keeping sessions lean
 
@@ -1309,7 +1313,7 @@ agent-runner help order                how to make one task wait for another
 agent-runner --version
 ```
 
-`./run …` in a clone is the same CLI. `--no-test` skips the gate.
+`./run …` in a clone is the same CLI. `--no-test` skips the gate and `[run] done_test`.
 `--shutdown` powers the computer off once no task is running or merging and no open task can start, after
 120 s idle; new work in that window cancels it. On Linux it runs `systemctl poweroff`, which needs the
 logged-in session's polkit permission; if the command is refused the run stays up.
@@ -1322,12 +1326,18 @@ main checkout. Set `AGENT_RUNNER_REPO` to use a repo from outside it.
 
 ## runner.toml
 
-Every key is optional. Without a `runner.toml` you get the plan in `plan/`, no gate, 3 slots, and pushes
-to origin. A worktree without its own `runner.toml` (because it's git-ignored) reads the main checkout's.
+Every key is optional. Without a `runner.toml` you get the plan in `plan/`, no gate, 3 slots, and merges that
+stay local: with no gate, `[git] push_merge` pushes a merge only when a settings file sets it. A worktree
+without its own `runner.toml` (because it's git-ignored) reads the main checkout's.
+
+With no settings file at all (no `runner.toml`, no `AGENT_RUNNER_CONFIG` file, and no gate or `push_merge` in
+`runner.local.toml`), the run picker and its launcher, the run page's Run card, Home's All projects and the
+TUI's Status panel say "no settings found, so no test gate and nothing is pushed". A run that is up says what
+it itself found (its STATE).
 
 If `AGENT_RUNNER_CONFIG` names a file, the settings come from that file instead: from its
 `[agent-runner]` table (`[agent-runner.run]`, …) if it has one, else from its top level. This lets a
-project keep them in its own config file (see [docs/SETUP.md](SETUP.md#wrapping-it-from-your-own-cli)).
+project keep them in its own config file (see [docs/SETUP.md](SETUP.md#your-own-cli-for-tools-only)).
 
 **`runner.local.toml` is one machine's settings.** Laid over the shared file key by key, table by table, it
 changes what one person needs without editing what everyone shares: a lower `weekly_max` for a smaller
@@ -1393,6 +1403,7 @@ fallback = []             # '<provider>:<model>' to go on with when a provider h
 [run]
 test = ""                 # the gate, run by `done` and on every merge, e.g. "make test"
 test_since = ""           # a merge's gate on what changed since {base}, e.g. "make test-since REV={base}"
+done_test = ""            # what `done` runs before its commit in place of `test`, on a docs-only diff too, e.g. "make build && make audit"; a merge still runs `test`; "" = `test`
 full_every_hours = 24     # with test_since: the whole `test` once none has passed for this long; 0 = never
 slots = 3
 include_task_id_in_commit = true
@@ -1723,8 +1734,8 @@ Removed earlier:
 
 Nothing project-specific is built in. A project supplies it through hooks: a program per slot
 (`slot_env`, `on_exit`), a check on new block reasons (`suspect`), a custom conflict join
-(`[run.join]`), and extra brief text (`brief_extra`, `outline`). The ps2-decomp-kit mapping is in
-[docs/SETUP.md](SETUP.md#worked-mapping-ps2-decomp-kit).
+(`[run.join]`), and extra brief text (`brief_extra`, `outline`). A kit that keeps only its tools is in
+[docs/SETUP.md](SETUP.md#worked-example-a-kit-that-keeps-only-its-tools).
 
 ## A program per slot
 
@@ -1746,8 +1757,8 @@ opentennis runs one PCSX2 per slot this way. Its mapping is in
 ## Library
 
 `from agent_runner import plan, done, runner` and the names in each module's `__all__` are a stable API,
-so a project's CLI can be thin wrappers (`plan.main(argv)`, `done.main(argv)`, `runner.cmd_run(argv)`).
-See [docs/SETUP.md](SETUP.md#wrapping-it-from-your-own-cli).
+so a project's own code can call them (`plan.main(argv)`, `done.main(argv)`, `runner.cmd_run(argv)`).
+A project's CLI keeps its tools only: see [docs/SETUP.md](SETUP.md#your-own-cli-for-tools-only).
 
 ## Tests
 

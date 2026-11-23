@@ -67,6 +67,37 @@ def post(url: str, body: dict) -> tuple[int, dict]:
         return e.code, json.loads(e.read() or b'{}')
 
 
+def test_no_settings_f178(tmp: Path) -> None:
+    """F178: with no runner.toml, the one warning is in the snapshot, its status lines, the page and the TUI."""
+    repo = fake_repo(tmp)
+    said = 'no settings found, so no test gate and nothing is pushed'
+    snap = U.snapshot(up=False, links={}, windows={})
+    eq((snap['no_settings'], snap['status'][1]), (said, said), 'no runner.toml: said, right under the run state')
+    check(not any('WARNING no test gate' in l for l in snap['status']), 'once, not beside the no-gate warning', snap['status'])
+    from agent_runner import tui
+    eq(tui.RunPage.row(None, 1, said)[0][1], 'yellow', 'the TUI marks it')
+    check('S.snap.no_settings' in W.PAGE.read_text(encoding='utf-8') and 'p.no_settings' in W.PAGE.read_text(encoding='utf-8'),
+          'the Run card and All projects show it')
+    from agent_runner import cmds, home
+    eq(home.project_row('p', repo, info=lambda r: {'up': False}, needs=lambda r: (0, []))['no_settings'], said,
+       'Home has it beside Start')
+    row = cmds.picker_rows([], repo, info=lambda r: {'up': False})[0]
+    check(said in cmds.picker_text([row], 0) and said in cmds.launcher_text(row), 'the picker says it')
+    from agent_runner import theme
+    paint = cmds.PickerPaint(theme.get('terminal'), 256, 120)
+    for sel in (0, 1):
+        check(said in cmds.picker_text([row], sel, paint), 'and in colour, selected or not')
+    check(said in cmds.launcher_text(row, '', paint), 'and in the coloured launcher')
+    eq(U.no_settings(st={'no_settings': False}), '', 'a run started with settings from elsewhere says so itself')
+    eq(U.no_settings(st={'no_settings': True}), said, 'or that it has none')
+    (repo / 'runner.local.toml').write_text('[run]\ntest = "true"\n', encoding='utf-8')
+    eq(U.no_settings(CF.Config(repo)), '', 'a gate from runner.local.toml: not said')
+    (repo / 'runner.local.toml').unlink()
+    (repo / 'runner.toml').write_text('', encoding='utf-8')
+    eq(U.no_settings(CF.Config(repo)), '', 'an empty runner.toml is settings')
+    eq(U.no_settings(st={'no_settings': True}), said, "the run's own word wins")
+
+
 def test_server(tmp: Path) -> None:
     fake_repo(tmp)
     token = W.web_token()
@@ -3782,7 +3813,7 @@ def test_session_run_side_f170(tmp: Path) -> None:
 
 
 if __name__ == '__main__':
-    raise SystemExit(report([in_tmp(test_release_row_f131),in_tmp(test_project_name_b153),in_tmp(test_home_screen_b179),in_tmp(test_chat_order_f133), in_tmp(test_delete_chats_f118), in_tmp(test_server), in_tmp(test_real_action), in_tmp(test_run_controls), in_tmp(test_row_actions),
+    raise SystemExit(report([in_tmp(test_release_row_f131),in_tmp(test_project_name_b153),in_tmp(test_home_screen_b179),in_tmp(test_chat_order_f133), in_tmp(test_delete_chats_f118), in_tmp(test_server), in_tmp(test_no_settings_f178), in_tmp(test_real_action), in_tmp(test_run_controls), in_tmp(test_row_actions),
                            in_tmp(test_start), in_tmp(test_upload),
                            in_tmp(test_control_rows), in_tmp(test_feed_pane_concept), in_tmp(test_page),
                            in_tmp(test_logic), in_tmp(test_extras), in_tmp(test_diff), in_tmp(test_views),

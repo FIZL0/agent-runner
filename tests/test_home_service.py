@@ -1011,8 +1011,10 @@ def test_one_address(tmp: Path) -> None:
         s.bind(('0.0.0.0', 0))
         port = s.getsockname()[1]
     S.init(root)
-    H.save_registry({**H.load_registry(), 'scan': [str(tmp)], 'port': port + 1 if port < 65000 else port - 1})
-    hp = H.load_registry()['port']
+    hold = socket.socket()  # Home's port, bound but not listening until Home serves, so nothing else is given it
+    hold.bind(('127.0.0.1', 0))
+    hp = hold.getsockname()[1]
+    H.save_registry({**H.load_registry(), 'scan': [str(tmp)], 'port': hp})
     nots = lambda p, t: []  # noqa: E731
     log: list[str] = []
     srv = home = None
@@ -1077,6 +1079,7 @@ def test_one_address(tmp: Path) -> None:
             watch.look()
         eq(len(log), 1, 'two in a row are, once')
         has(log[0], 'Runner Home is down.*agent-runner home install', 'with how to start Home')
+        hold.close()
         home = H.serve_home(H.home_token(), hp, '127.0.0.1', rows=lambda: [])
         for _ in range(W.HOME_CHECK):
             watch.look()
@@ -1092,6 +1095,7 @@ def test_one_address(tmp: Path) -> None:
         check(not srv.go_private(), 'a stopping run does not move')
     finally:
         mock.patch.stopall()
+        hold.close()
         for s in (srv, home):
             if s:
                 s.stop()

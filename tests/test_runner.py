@@ -7673,6 +7673,61 @@ def test_attach_f88(tmp: Path):
             shim.wait()
 
 
+def test_done_test_f178(tmp: Path):
+    print('F178: [run] done_test is what done runs, on a docs-only diff too; the merge still runs the gate')
+    (tmp / 'f178').mkdir()
+    # its own runner home: every repo here is named proj, so the suite's other one has the default's worktrees
+    with mock.patch.dict(os.environ, {'AGENT_RUNNER_HOME': str(tmp / 'f178' / 'home')}):
+        done_test_f178(tmp)
+
+
+def done_test_f178(tmp: Path):
+    repo = make_repo(tmp / 'f178')
+    toml = (repo / 'runner.toml').read_text(encoding='utf-8')
+    ran = tmp / 'f178-ran'
+    audit = f'import os, sys; open({str(ran)!r}, "a").write("ran\\n"); sys.exit(os.path.exists("LEAK.md"))'
+    (repo / 'audit.py').write_text(audit + '\n', encoding='utf-8')
+    toml = toml.replace('test = "python3 check.py"\n',
+                        'test = "python3 check.py"\ndone_test = "python3 audit.py"\n')
+    check('done_test' in toml, 'the repo sets done_test')
+    (repo / 'runner.toml').write_text(toml, encoding='utf-8')
+    git(repo, 'add', '-A')
+    git(repo, 'commit', '-qm', 'done_test')
+    git(repo, 'push', '-q', 'origin', 'main')
+    R.init(repo)
+    times = lambda: ran.read_text().count('ran') if ran.exists() else 0  # noqa: E731
+    todo = repo / 'plan/TODO.md'
+    todo.write_text(todo.read_text().replace('### Stretch', '- [ ] **G1** docs | files: n.md\n- [ ] **G2** code | files: g2.py\n\n### Stretch'))
+    git(repo, 'commit', '-qam', 'plan: G1, G2')
+    d = task_branch(repo, 1, 'G1')
+    (d / 'LEAK.md').write_text('0x00100000\n', encoding='utf-8')
+    head = git(d, 'rev-parse', 'HEAD')
+    r = run(d, 'done', 'G1', 'G1: docs')
+    check(r.returncode == 1 and 'done_test (`python3 audit.py`) failed: nothing ticked, nothing committed' in r.stderr,
+          'a failing done_test stops a docs-only done', r.stdout + r.stderr)
+    check(git(d, 'rev-parse', 'HEAD') == head and '- [ ] **G1**' in (d / 'plan/TODO.md').read_text(),
+          'nothing ticked or committed')
+    (d / 'LEAK.md').rename(d / 'n.md')
+    r = run(d, 'done', 'G1', 'G1: docs')
+    check(r.returncode == 0 and times() == 2, 'and one that passes finishes it', r.stdout + r.stderr)
+    has(r.stdout, r'done_test passed: python3 audit\.py', 'saying what ran')
+    git(d, 'checkout', '-q', '--detach')
+    git(d, 'checkout', '-q', '-b', 'task/G2', 'main')
+    (d / 'g2.py').write_text('# g2\n', encoding='utf-8')
+    (d / 'BROKEN').write_text('', encoding='utf-8')
+    r = run(d, 'done', 'G2', 'G2: code')
+    check(r.returncode == 0 and times() == 3, "the gate, which would fail, is not done's", r.stdout + r.stderr)
+    tip = git(d, 'rev-parse', 'HEAD')
+    eq(git(d, 'rev-parse', 'refs/agent-runner/tested/G2'), tip, 'done passed, which finish and a stopped task read')
+    r = run(d, 'done', 'G2', 'G2: code')
+    check('nothing to do again' in r.stdout and times() == 3, 'so a second done has nothing to do', r.stdout + r.stderr)
+    check(not R.gated('G2'), 'but the gate did not pass on it')
+    git(d, 'checkout', '-q', '--detach')
+    R.C.run['repair_merges'] = False
+    has(R.merge('G2', 'main') or '', r'tests fail after the merge', 'so the merge runs the gate, which fails')
+    R.C.run['repair_merges'] = True
+
+
 def test_hidden_control_f59(repo: Path, tmp: Path):
     print('F59/C26: a run opens c1 and control --new in a pty with no window, and keeps the runner feed hidden')
     if R.plat.WINDOWS:
@@ -8453,7 +8508,7 @@ def main() -> int:
                        test_split_modules_c3, lambda: test_plan_last(repo), lambda: test_after_all(repo), lambda: test_release_kind(repo),lambda: test_release_push(repo),
                        lambda: test_help_order_and_bare_wizard(tmp), lambda: test_setup(tmp),
                        lambda: test_stop_countdown(repo), lambda: test_real_claude_json_guard(tmp),
-                       lambda: test_hidden_slots(repo, tmp), lambda: test_stream_engine_f106b(repo, tmp), lambda: test_hidden_run_lands(tmp), lambda: test_no_gate_b36(tmp),
+                       lambda: test_hidden_slots(repo, tmp), lambda: test_stream_engine_f106b(repo, tmp), lambda: test_hidden_run_lands(tmp), lambda: test_no_gate_b36(tmp), lambda: test_done_test_f178(tmp),
                        lambda: test_claude_drift_b45(repo, tmp), lambda: test_merged_count_b78(repo),
                        lambda: test_hidden_control_f59(repo, tmp), lambda: test_attach_f88(tmp), lambda: test_context_warn_f25(repo),
                        lambda: test_control_fresh_f27(repo), lambda: test_config_trim_c14(tmp), lambda: test_models_f101(repo, tmp), lambda: test_models_kinds_f105(repo, tmp), lambda: test_task_budget_f103(repo, tmp), lambda: test_stream_spend_keeps_terminal_turns_b151(repo, tmp), test_reference_keys_d3, test_cap_stop_hint_b102, lambda: test_stop_stays_with_its_run_b137(repo)])

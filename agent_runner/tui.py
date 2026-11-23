@@ -488,7 +488,7 @@ class RunPage:
     def row(self, n: int, it) -> list[tuple[str, str]]:
         if n == 1:
             colour = 'green' if it.startswith('run up') else 'red' if it.startswith('no run') else \
-                'yellow' if it.startswith('usage') else 'magenta' if it.startswith('release') else 'dim'
+                'yellow' if it.startswith(('usage', U.NO_SETTINGS)) else 'magenta' if it.startswith('release') else 'dim'
             return [('● ', colour), (it, 'fg')]
         if n == 2:
             if it.get('starting'):  # F112: a new control session on its way up

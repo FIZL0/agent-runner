@@ -103,6 +103,8 @@ DEFAULTS: dict = {
         'test': '',             # the gate: `done` and every merge run it; empty means no gate
         'test_since': '',       # a merge's gate on what changed since {base} (a commit that passed the gate);
                                 # '' = the whole `test` every time
+        'done_test': '',        # what `done` runs before its commit in place of `test`, on a docs-only diff
+                                # too (a build, an audit); a merge still runs `test` / `test_since`. '' = `test`
         'full_every_hours': 24, # with test_since: the whole `test` again once none has passed for this long; 0 = never
         'slots': 3,             # tasks (agent sessions) at once; `agent-runner slots N` changes a running run
         'agent': 'claude',      # the Claude Code executable that runs a session (or a wrapper around it)
