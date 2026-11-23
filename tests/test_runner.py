@@ -3910,6 +3910,8 @@ def test_ask_parks_and_resumes(repo: Path, tmp: Path):
         git(repo, 'commit', '-qam', 'plan: answer T2')
         eq(P.last_answer('T2', todo=str(repo / 'plan/TODO.md')).endswith('plain, please'), True,
            'the answer is the last note on the task')
+        eq(P.last_answer('T2', todo=str(repo / 'plan/TODO.md'), about='Some later question?'), '',
+           'but not as the answer to another question')
         old.parent.mkdir(parents=True)
         old.write_text('{"type":"user"}\n', encoding='utf-8')
         opened = []
@@ -3979,6 +3981,7 @@ def test_git_fence(repo: Path, tmp: Path):
     check(sh('git clean -fdq'), '`git clean` is denied')
     eq(sh('git clean -n'), None, 'its dry run is not')
     check(sh('git checkout -- .'), '`git checkout -- .` is denied')
+    check(sh('git checkout -f .'), 'with other flags too')
     eq(sh('git checkout -q -B task/T1 main'), None, 'a branch checkout is not')
     eq(f('Write', file_path=str(own / 'a.py')), None, 'a write in the worktree runs')
     eq(f('Edit', file_path='a.py'), None, 'a relative one too')

@@ -212,7 +212,7 @@ def fence(tool: str, tool_input: dict, cwd: str | Path, worktree: str | Path | N
             return 'the git fence: no `git reset --hard`: it destroys work. Commit, or make a new commit that undoes it.'
         if sub == 'clean' and not any(a in ('-n', '--dry-run') or re.match(r'-[a-zA-Z]*n', a) for a in args):
             return 'the git fence: no `git clean`: it deletes files for good. Delete only paths you name in full.'
-        if sub == 'checkout' and (args[-2:] == ['--', '.'] or args == ['.']):
+        if sub == 'checkout' and '.' in args:
             return 'the git fence: no `git checkout -- .`: it throws away every uncommitted change.'
     return None
 

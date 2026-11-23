@@ -865,8 +865,9 @@ def asked(tid: str) -> dict:
         ask = json.loads(C.notes(f'{tid}.ask').read_text(encoding='utf-8'))
     except (OSError, ValueError):
         return {}
-    if not isinstance(ask, dict) or git('rev-parse', '--verify', '-q', f'asked/{tid}').returncode:
-        return {}
+    if not isinstance(ask, dict) or not ask.get('blocked') or \
+            git('rev-parse', '--verify', '-q', f'asked/{tid}').returncode:
+        return {}  # not blocked yet: no answer can have come (`block_asks` blocks it first)
     return ask
 
 
@@ -898,7 +899,7 @@ def answer_ask(n: int, tid: str, d: Path, ask: dict, model: str, idle: int):
     sid = ask.get('sid') or ''
     if not sid or sid == '(unknown)' or not move_transcript(sid, d):
         return None
-    answer = P.last_answer(tid, todo=C.todo) or '(no answer was noted: decide yourself, and say why in the journal)'
+    answer = P.last_answer(tid, todo=C.todo, about=ask.get('question', '')) or '(no answer was noted: decide yourself, and say why in the journal)'
     was = ask.get('slot')
     where = ('in the same worktree' if was in (None, n) else
              f'in another worktree: {d} (paths you saw under {SLOTS_DIR / f"s{was}"} are here now)')

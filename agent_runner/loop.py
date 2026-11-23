@@ -33,8 +33,9 @@ from agent_runner.autorelease import auto_release, auto_release_of, AUTO_RELEASE
 from agent_runner.watch import context_over
 from agent_runner.brief import no_remote_line
 from agent_runner.sched import blocked_by_edits, keep_claims, PARK_LIMIT, parked_attempts, pick, tasks
-from agent_runner.sched import forgive_park, note_committed, open_tasks
+from agent_runner.sched import forgive_park, note_committed
 from agent_runner.tools import take_end
+from agent_runner.asks import block_asks, EV_FINISHED, park_asked, unblocked_asks
 from agent_runner.slots import (adopt, backend, DISK_AT, DISK_SAID, du, env_vars, free_branch,
     free_gb, GB, hidden_line, HiddenMux, MUX, remote_any, remote_line, REMOTE_URL, resume, save_leftovers,
     single_run, slot_env, slot_shim, SLOTS, start, transcript, trim, unmerged)
@@ -833,67 +834,6 @@ def _finish(tid: str, n: int, sid: str, branch: str) -> bool:
     return True
 
 
-# --- F102: a session that asked the person -------------------------------------
-
-EV_FINISHED = 'finished'  # task `id`'s agent ran `run finish` (summary)
-EV_ASKED = 'asked'        # task `id`'s agent ran `run ask`: parked until the person answers (question)
-
-
-def park_asked(n: int, tid: str, sid: str, question: str, branch: str) -> bool:
-    """Slot n's session ran `run ask`: keep its work, commits and uncommitted edits alike, on asked/<tid> (never
-    merged), note its session in `<notes>/<tid>.ask` for the answer to resume (`slots.answer_ask`), and block the
-    task under Needs you (`block_asks`). False when the work could not be kept: the task ends as any other."""
-    d = SLOTS_DIR / f's{n}'
-    dirty = bool(git('status', '--porcelain', cwd=d).stdout.strip())
-    if dirty and (git('add', '-A', cwd=d).returncode or
-                  git('commit', '-qm', f'{tid} wip: uncommitted, asked', '--no-verify', cwd=d).returncode):
-        log(f'slot {n}: {tid} asked, but its edits could not be kept; it ends as any other session')
-        return False
-    git('checkout', '-q', '--detach', cwd=d)
-    if git('branch', '-M', f'task/{tid}', f'asked/{tid}').returncode:
-        log(f'slot {n}: {tid} asked, but task/{tid} could not become asked/{tid}; it ends as any other session')
-        return False
-    C.notes(f'{tid}.ask').write_text(json.dumps({'sid': sid, 'question': question, 'slot': n, 'dirty': dirty,
-                                                 'blocked': False}), encoding='utf-8')
-    log(f'slot {n}: {tid} asks the person: {question[:300]} — parked as asked/{tid}; the answer resumes its '
-        f'session', EV_ASKED, tid, question=question)
-    block_asks(branch)
-    return True
-
-
-def block_asks(branch: str) -> None:
-    """Block each asked task not blocked yet with `DECIDE: <its question>`, committed as `block_parked` commits
-    (MERGE free, TODO.md clean); one that cannot be now is tried again next tick."""
-    for f in C.notes().glob('*.ask'):
-        try:
-            ask = json.loads(f.read_text(encoding='utf-8'))
-        except (OSError, ValueError):
-            continue
-        if not isinstance(ask, dict) or ask.get('blocked') or not MERGE.acquire(blocking=False):
-            continue
-        tid, hold = f.stem, ExitStack()
-        try:
-            if C.plan_external:
-                hold.enter_context(plansync.locked(C))
-                plansync.pull(C, force=True)
-            rel = plan_rel('TODO.md')
-            if tid in open_tasks(branch):
-                if not C.plan_external and (git('status', '--porcelain', '--', rel).stdout.strip() or
-                                            git('branch', '--show-current').stdout.strip() != branch):
-                    continue
-                P.block(tid, f'DECIDE: {ask.get("question", "")} (asked with `run ask`: your answer resumes its '
-                        f'session)', todo=ROOT / rel, after=[])
-                if not commit_plan(f'Plan: block {tid}, asked the person', rel):
-                    if not C.plan_external:
-                        git('checkout', '-q', '--', rel)
-                    continue
-            ask['blocked'] = True  # or ticked, dropped or blocked meanwhile: nothing to block
-            f.write_text(json.dumps(ask), encoding='utf-8')
-        finally:
-            hold.close()
-            MERGE.release()
-
-
 # --- usage caps and power ------------------------------------------------------
 
 def capped(force: bool) -> str | None:
@@ -1230,6 +1170,8 @@ class Run:
             with MERGE:
                 reopen_landed(branch, 'a merge before this run')
         prune_wips(branch, force=True)  # F23: wip/<ID> of tasks ticked or dropped while no run was up
+        block_asks(branch)  # F102: an ask an earlier run parked but could not block yet
+        self.tried |= unblocked_asks()  # still not blocked: no slot starts it before its block lands
 
     def tick(self) -> int | None:
         """One pass of the loop: None to go on after a nap, else the run's exit code."""
