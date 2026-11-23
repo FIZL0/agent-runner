@@ -278,6 +278,94 @@ def files_report(paths, top: int = 20) -> list[str]:
     return out
 
 
+# --- a task's spend (F103: [run] task_tokens / task_usd) -------------------------------------------------------
+#
+# What one task's session has used so far, read from its transcript as it grows: tokens are those the model
+# newly read or wrote (input, cache writes, output); cache reads are left out, as they grow with turns times the
+# context and cost a tenth of the input price. Dollars count them all at the API's list prices per million
+# tokens (a plan bills none, but the figure says how much of it a task took). A model it does not know is
+# priced as Opus.
+
+PRICES = {'opus': (5.0, 25.0), 'sonnet': (3.0, 15.0), 'haiku': (1.0, 5.0)}  # $ per M tokens: input, output
+CACHE_WRITE, CACHE_READ = 1.25, 0.1  # times the input price
+
+
+def price(model: str) -> tuple[float, float]:
+    m = (model or '').lower()
+    return next((v for k, v in PRICES.items() if k in m), PRICES['opus'])
+
+
+def turn_spend(u: dict, model: str) -> tuple[int, float]:
+    """(tokens, dollars) of one model call's usage, Claude's keys or Pi's (Pi's own cost when it gives one); the
+    tokens leave cache reads out, the dollars do not."""
+    get = lambda *ks: sum(int(u.get(k) or 0) for k in ks)  # noqa: E731
+    fresh, read = get('input_tokens', 'input'), get('cache_read_input_tokens', 'cacheRead')
+    write, out = get('cache_creation_input_tokens', 'cacheWrite'), get('output_tokens', 'output')
+    pin, pout = price(model)
+    usd = (fresh * pin + write * pin * CACHE_WRITE + read * pin * CACHE_READ + out * pout) / 1e6
+    if isinstance(u.get('cost'), dict) and isinstance(u['cost'].get('total'), (int, float)):
+        usd = float(u['cost']['total'])
+    return fresh + write + out, usd
+
+
+class Spend:
+    """A task's spend so far, over its transcripts (the session's own and its subagents'), read on from where
+    the last look stopped, so a check every few seconds costs only the new lines. Claude writes one line per
+    content block of a turn, each with the turn's usage: a message id counts once, at its last line's usage."""
+
+    def __init__(self):
+        self.at: dict[str, int] = {}  # transcript -> bytes read
+        self.turns: dict[str, tuple[int, float]] = {}  # message id -> (tokens, dollars)
+        self.n = 0
+
+    def add(self, path) -> None:
+        path = str(path)
+        try:
+            with open(path, 'rb') as f:
+                f.seek(self.at.get(path, 0))
+                for raw in f:
+                    if not raw.endswith(b'\n'):  # the line being written: read it whole next time
+                        break
+                    self.at[path] = self.at.get(path, 0) + len(raw)
+                    try:
+                        e = json.loads(raw)
+                    except ValueError:
+                        continue
+                    m = e.get('message') if isinstance(e, dict) and isinstance(e.get('message'), dict) else {}
+                    if (m.get('role') or e.get('type')) != 'assistant' or not isinstance(m.get('usage'), dict):
+                        continue
+                    if not (mid := m.get('id') or e.get('id')):
+                        self.n += 1
+                        mid = f'#{self.n}'
+                    self.turns[f'{path}:{mid}'] = turn_spend(m['usage'], m.get('model') or '')
+        except OSError:
+            pass
+
+    def total(self) -> tuple[int, float]:
+        return sum(t for t, _ in self.turns.values()), sum(d for _, d in self.turns.values())
+
+
+def session_files(path) -> list[Path]:
+    """A session's transcript and its subagents' (Claude keeps those in `<session id>/subagents/`)."""
+    p = Path(path)
+    return [p, *sorted(p.with_suffix('').glob('subagents/*.jsonl'))]
+
+
+def spend_text(tokens: int, usd: float) -> str:
+    """'1.2M tok $3.40', for status and the run log."""
+    tok = f'{tokens / 1e6:.1f}M' if tokens >= 1e6 else f'{tokens / 1e3:.0f}k'
+    return f'{tok} tok ${usd:.2f}'
+
+
+def over_budget(tokens: int, usd: float, max_tokens, max_usd) -> str:
+    """Why a task's spend is past `[run] task_tokens` / `task_usd` (0 or empty: no cap), else ''."""
+    if max_tokens and tokens >= int(max_tokens):
+        return f'{spend_text(tokens, usd)} is past [run] task_tokens ({int(max_tokens):,})'
+    if max_usd and usd >= float(max_usd):
+        return f'{spend_text(tokens, usd)} is past [run] task_usd (${float(max_usd):.2f})'
+    return ''
+
+
 def worker_transcripts(days: float) -> list[Path]:
     """This repo's worker sessions: Claude's for each slot and merge worktree, and the run's Pi sessions."""
     from agent_runner import runner as R
