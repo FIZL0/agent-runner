@@ -513,7 +513,7 @@ def agent_failed(sid: str) -> tuple[str, float] | None:
 def resume_failed(n: int, pid: int, sid: str, tid: str, model: str, idle: int) -> int | None:
     """End slot n's session and start it again on the same session id, told to carry on; the new pid."""
     from agent_runner.slots import task_model
-    model = task_model(tid, model, '')  # F105: on the model it started on
+    model = task_model(tid, model, '')  # F105: on its task's model, as at its start
     plat.terminate(pid)
     marker = C.notes(f'slot{n}.live')
     for _ in range(50):  # the old shim removes its marker as it exits: wait, so it cannot remove the new one

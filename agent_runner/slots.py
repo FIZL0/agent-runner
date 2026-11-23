@@ -813,17 +813,19 @@ def free_gb() -> float:
 
 
 def task_model(tid: str, model: str, branch: str) -> str:
-    """F105: the model `tid`'s own session runs on: the task's `model:` field (`plan add --model`), else a model
-    the run was given (`run --model`, when it differs from `[models] code`), else its kind's (`[models.kinds]`)."""
+    """F105: the model `tid`'s own session runs on: the task's `model:` field (`plan add --model`), else the
+    model the run was given on its command line (`run --model`), else its kind's (`[models.kinds]`), else
+    `model` (`[models] code`). Read afresh on every start and resume: a changed field or setting applies.
+    `branch` '' reads the plan file itself, not the branch's copy."""
     from agent_runner.state import plan_text
     try:
         ls = plan_text(branch) if branch else P.lines(C.todo)
         own = next((P.fields(rest).get('model', [''])[0] for _, _, t, rest, _ in P.iter_tasks(ls) if t == tid), '')
     except (OSError, IndexError):
         own = ''
-    if not own and model and model != C.models['code']:
-        return model
-    return C.task_model(tid, own)
+    if not own and (flag := C.run.get('model_flag')):
+        return flag
+    return C.task_model(tid, own) or model
 
 
 def start(n: int, task, branch: str, model: str, idle: int, slots: int):
@@ -938,7 +940,7 @@ def resume(n: int, tid: str, sid: str, why: str, branch: str, model: str, idle: 
     paths, so no other slot will do. A slot still on task/<tid> is used as it is; one that moved on gets the
     task back from wip/<tid> (the edits the session left, saved when the slot was reset), uncommitted again.
     """
-    model = task_model(tid, model, branch)  # F105: on the model it started on
+    model = task_model(tid, model, branch)  # F105: on its task's model, as at its start
     d = worktree(n, branch)
     head = git('symbolic-ref', '-q', '--short', 'HEAD', cwd=d).stdout.strip()
     if head != f'task/{tid}':

@@ -1200,7 +1200,7 @@ is P). The defaults are `opus` for F, B, T, V and K, and `sonnet` for D, C and R
 kind by kind, so `D = "haiku"` changes only D. A kind not listed runs on `[models] code`. A task names its own
 model with `model:` on its line (`plan add D "text" --files a.md --model haiku`, or `plan edit ID --model M`),
 which wins over the kind. A task session's model is chosen in this order: the task's own `model:`; `run --model X`
-given on the command line (when X differs from `[models] code`, it sets every task without its own); the
+given on the command line (it sets every task without its own); the
 `[models.kinds]` entry for its kind; `[models] code`. A resumed session (cut off, failed, or answered after
 `run ask`) goes on on the same model. The Pi backend has no default kinds, since Claude model names mean nothing
 there: only the kinds the repo sets apply, else `[run] model`. A kind's value must be a model name (a string), or

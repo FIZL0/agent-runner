@@ -7628,7 +7628,16 @@ def test_models_kinds_f105(repo: Path, tmp: Path):
     eq(P.fields(P.section(str(todo), 'D93')[0]).get('model'), ['haiku'], '`plan D93` shows its model field')
     eq((R.task_model('D91', 'opus', 'main'), R.task_model('F92', 'opus', 'main'), R.task_model('D93', 'opus', 'main')),
        ('sonnet', 'opus', 'haiku'), 'each task\'s session model, read off the plan')
-    eq(R.task_model('D91', 'haiku', 'main'), 'haiku', '`run --model` sets every task without its own')
+    eq(R.task_model('D91', 'haiku', 'main'), 'sonnet', 'the model a run passes on is no --model flag')
+    R.C.run['model_flag'] = 'haiku'
+    try:
+        eq((R.task_model('D91', 'opus', 'main'), R.task_model('F92', 'opus', 'main'),
+            R.task_model('D93', 'opus', 'main')), ('haiku', 'haiku', 'haiku'),
+           '`run --model` sets every task without its own')
+        R.C.run['model_flag'] = 'sonnet'
+        eq(R.task_model('D93', 'opus', 'main'), 'haiku', 'but not one with its own')
+    finally:
+        R.C.run.pop('model_flag', None)
     opened = []
 
     class Mux:
