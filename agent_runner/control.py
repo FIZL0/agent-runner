@@ -430,7 +430,8 @@ def control_argv(n: int, sid: str, resume: bool, blank: bool = False, ask: str =
     PATH`, alias `--image`, repeatable) adds a line per attached file to it (`control_ask`). B147: on Remote
     Control a positional first message runs before the bridge connects, so the claude.ai/code thread would start
     at the reply; there (`typed`, by default `first_typed`) it is left off the command line and kept in
-    CONTROL_FIRST for `type_first` to type in once Remote Control is up."""
+    CONTROL_FIRST for `type_first` to type in once Remote Control is up (control_first.py)."""
+    from agent_runner.control_first import CONTROL_FIRST, first_typed
     CONTROL_FIRST[0] = ''
     from agent_runner.guide import CONTROL_START, CONTROL_START_WATCH
     cmd = control_cmd()  # B93: [run] command, as the brief and the feed name it
@@ -447,74 +448,6 @@ def control_argv(n: int, sid: str, resume: bool, blank: bool = False, ask: str =
             '--permission-mode', 'bypassPermissions',
             '--settings', str(control_settings()), '--add-dir', str(control_skills_dir()),
             *(['--remote-control', control_name(n, ask_text, images)] if remote else [])]
-
-
-CONTROL_FIRST = ['']  # B147: the first message control_argv left off the command line, for type_first
-FIRST_SETTLE = 1.0  # s after the claude.ai/code link shows before the first message is typed in
-
-
-def first_typed(n: int) -> bool:
-    """B147: can this `control N` type its first message in rather than pass it on the command line? Only under
-    its own hidden shim (AGENT_RUNNER_MARKER names `<notes>/control<n>.live`, the FIFO `control<n>.in` beside
-    it; a slot's marker is not one), never on Windows."""
-    return not plat.WINDOWS and Path(os.environ.get('AGENT_RUNNER_MARKER') or 'x').name == f'control{n}.live'
-
-
-def first_wait(log_file: Path, since: int, wait: float, alive=None) -> bool:
-    """B147: wait up to `wait` s for the claude.ai/code link (Remote Control is up) in `log_file` past byte
-    `since`; False when it never showed or `alive()` turned false."""
-    end = time.monotonic() + wait
-    while True:
-        try:
-            with open(log_file, 'rb') as fh:
-                fh.seek(since)
-                if SESSION_LINK.search(fh.read().decode('utf-8', 'replace')):
-                    return True
-        except OSError:
-            pass
-        if time.monotonic() >= end or (alive and not alive()):
-            return False
-        time.sleep(0.5)
-
-
-def type_first(marker: Path, text: str, since: int, wait: float = 0.0) -> bool:
-    """B147: type `text`, a control session's first message, through its hidden shim's FIFO (`<stem>.in` beside
-    `marker`) once its log (`<stem>.log`) shows the claude.ai/code link, so the web thread starts with it. With
-    no link in `wait` s (CONTROL_LINK_WAIT by default) it is typed anyway: late beats lost."""
-    from agent_runner.slots import send_fifo
-    first_wait(marker.with_suffix('.log'), since, wait or CONTROL_LINK_WAIT)
-    time.sleep(FIRST_SETTLE)  # the TUI takes input a beat after it shows the link
-    inbox = marker.with_suffix('.in')
-    for _ in range(5):
-        if send_fifo(inbox, text):
-            return True
-        time.sleep(1)
-    return False
-
-
-def type_first_later(text: str) -> None:
-    """B147: before `control N` execs its agent, leave a detached process (double fork, so nothing waits on it)
-    that types `text` in once Remote Control is up (`type_first`). POSIX only, as `first_typed`."""
-    marker = Path(os.environ['AGENT_RUNNER_MARKER'])
-    try:
-        since = marker.with_suffix('.log').stat().st_size
-    except OSError:
-        since = 0
-    pid = os.fork()
-    if pid:
-        os.waitpid(pid, 0)
-        return
-    try:
-        os.setsid()
-        if os.fork():
-            os._exit(0)
-        null = os.open(os.devnull, os.O_RDWR)
-        for fd in (0, 1, 2):  # off the session's terminal, so nothing it prints lands in the TUI
-            os.dup2(null, fd)
-        if not type_first(marker, text, since):  # recorded, so a lost first message is not silent
-            log(f'{marker.stem}: its first message could not be typed in (no shim read {marker.with_suffix(".in")})')
-    finally:
-        os._exit(0)
 
 
 def control_live(n: int) -> int:

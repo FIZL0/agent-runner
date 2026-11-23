@@ -30,7 +30,7 @@ from agent_runner.land import wip_main_info
 from agent_runner.control import (control_argv, control_brief, control_env, control_give, control_hook_input,
     control_link, control_live, control_mark_ask, CONTROL_N_ENV, control_name, control_ok, control_open, control_session_start,
     control_set_title, control_sid, free_control_number, RUNNER_STARTED_ENV)
-from agent_runner.control import CONTROL_FIRST, type_first_later  # B147
+from agent_runner.control_first import CONTROL_FIRST, type_first_later  # B147
 from agent_runner.status import (follow, move_since_mark, progress_line, release_line, since_mark_file, since_start,
     since_text, status_text, waiting_ok)
 from agent_runner.status import as_event, events_file, read_events

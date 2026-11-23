@@ -438,7 +438,7 @@ def test_first_message_typed_after_remote_control():
     import os
     import threading
     import time
-    from agent_runner import runner as R
+    from agent_runner import control_first as KF, runner as R
     d = Path(tempfile.mkdtemp(prefix='agent-runner-first-'))
     git(d, 'init', '-q')
     (d / '.gitignore').write_text('.runner/\n')
@@ -452,13 +452,13 @@ def test_first_message_typed_after_remote_control():
             argv = K.control_argv(3, 'sid', False, ask=ask, typed=True)
             check(ask not in argv and argv[1] == '--session-id', 'remote on + ask: no positional prompt', argv)
             check('--remote-control' in argv, 'still on Remote Control', argv)
-            eq(K.CONTROL_FIRST[0], K.control_ask(ask), 'the ask is kept to be typed in after start')
+            eq(KF.CONTROL_FIRST[0], K.control_ask(ask), 'the ask is kept to be typed in after start')
             c1 = K.control_argv(1, 'sid', False, typed=True)
-            check(c1[1] == '--session-id' and 'summary' in K.CONTROL_FIRST[0], "c1's status ask is typed in too", c1)
+            check(c1[1] == '--session-id' and 'summary' in KF.CONTROL_FIRST[0], "c1's status ask is typed in too", c1)
             with mock.patch.dict(os.environ, {'AGENT_RUNNER_MARKER': ''}):
                 argv = K.control_argv(3, 'sid', False, ask=ask)
             eq(argv[1], K.control_ask(ask), 'not under a hidden shim (a terminal): the positional prompt stays')
-            eq(K.CONTROL_FIRST[0], '', 'and nothing is left to type')
+            eq(KF.CONTROL_FIRST[0], '', 'and nothing is left to type')
             with mock.patch.dict(os.environ, {'AGENT_RUNNER_MARKER': '/n/slot1.live'}):
                 eq(K.control_argv(3, 'sid', False, ask=ask)[1], K.control_ask(ask), "a slot's marker is not c3's shim")
             with mock.patch.dict(os.environ, {'AGENT_RUNNER_MARKER': '/n/control3.live'}), \
@@ -469,7 +469,7 @@ def test_first_message_typed_after_remote_control():
         with mock.patch.object(K, 'remote_on', lambda: False):
             argv = K.control_argv(3, 'sid', False, ask=ask, typed=True)
             eq(argv[1], K.control_ask(ask), 'Remote Control off: the positional prompt stays')
-            eq(K.CONTROL_FIRST[0], '', 'nothing to type')
+            eq(KF.CONTROL_FIRST[0], '', 'nothing to type')
 
     from agent_runner import cmds
     calls = []
@@ -510,8 +510,8 @@ def test_first_message_typed_after_remote_control():
             fh.write('Remote Control active https://claude.ai/code/session_new\n')
     t = threading.Thread(target=bridge_up)
     t.start()
-    with mock.patch.object(K, 'FIRST_SETTLE', 0.0):
-        ok = K.type_first(marker, ask, since, wait=10)
+    with mock.patch.object(KF, 'FIRST_SETTLE', 0.0):
+        ok = KF.type_first(marker, ask, since, wait=10)
     sent = time.monotonic()
     t.join()
     got = b''
