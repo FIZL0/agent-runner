@@ -103,7 +103,7 @@ def serve_https_urls(status: dict, port: int, token: str) -> list[str]:
             m = re.fullmatch(r'https?://(?:127\.0\.0\.1|localhost|\[::1\]|0\.0\.0\.0):(\d+)/?', str((h or {}).get('Proxy', '')))
             if m and int(m.group(1)) == port:
                 host, _, p = hostport.rpartition(':')
-                if host and ((status.get('TCP') or {}).get(p) or {}).get('HTTPS') is not False:
+                if host and ((status.get('TCP') or {}).get(p) or {}).get('HTTPS') is True:
                     out.append(f'https://{host}' + ('' if p == '443' else f':{p}') + f'/?t={token}')
                 break
     return out

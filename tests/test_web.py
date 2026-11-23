@@ -1054,7 +1054,9 @@ def test_https_link_b130(tmp: Path) -> None:
        'the https port that proxies to the web port gives the https link')
     eq(W.serve_https_urls(serve, 8780, 'TK'), [], 'no serve for that port: no https link')
     eq(W.serve_https_urls({}, 8770, 'TK'), [], 'nothing served: none')
-    on443 = {'Web': {'box.tail.ts.net:443': {'Handlers': {'/': {'Proxy': 'http://localhost:8770'}}}}}
+    plain = {'TCP': {'80': {'HTTP': True}}, 'Web': {'box.tail.ts.net:80': {'Handlers': {'/': {'Proxy': 'http://127.0.0.1:8770'}}}}}
+    eq(W.serve_https_urls(plain, 8770, 'TK'), [], 'a plain-http serve gives no https link')
+    on443 = {'TCP': {'443': {'HTTPS': True}}, 'Web': {'box.tail.ts.net:443': {'Handlers': {'/': {'Proxy': 'http://localhost:8770'}}}}}
     eq(W.serve_https_urls(on443, 8770, 'TK'), ['https://box.tail.ts.net/?t=TK'], 'port 443 needs no port')
     ran = lambda *a, **k: subprocess.CompletedProcess(a, 0, json.dumps(serve), '')
     eq(W.tailscale_https_urls(8770, 'TK', run=ran), ['https://box.tail.ts.net:8771/?t=TK'], 'read from tailscale')
