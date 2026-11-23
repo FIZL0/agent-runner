@@ -64,4 +64,73 @@ for table, k in named:
     check(k in DEFAULTS.get(table, {}), f'example [{table}] {k} is a real key')
 check('night' not in guide.SETTINGS, 'no "fewer agents at night": no such setting')
 
+print('F106a: a [models] role names a provider as <provider>:<model>')
+from agent_runner.config import Config, model_providers, parse_model
+
+
+def refused(fn) -> str:
+    """The SystemExit message `fn` raises, '' when it raises none."""
+    try:
+        fn()
+    except SystemExit as e:
+        return str(e)
+    return ''
+
+
+eq(parse_model('opus'), ('claude', 'opus'), 'a bare name is claude')
+eq(parse_model('claude:sonnet'), ('claude', 'sonnet'), 'claude:sonnet')
+for p in ('copilot', 'codex', 'gemini'):
+    eq(parse_model(f'{p}:m-1'), (p, 'm-1'), f'{p} is a built-in provider')
+has(refused(lambda: parse_model('nope:m')), r"unknown provider 'nope'", 'an unknown provider is refused')
+eq(parse_model('nope:m', backend='pi'), ('claude', 'nope:m'), 'on Pi an unknown prefix is Pi\'s own model syntax')
+has(refused(lambda: parse_model('codex:')), r'no model', 'an empty model is refused')
+has(refused(lambda: parse_model('ollama:llama3:8b')), r'local = true', 'ollama is refused while local is off')
+eq(parse_model('ollama:llama3:8b', local=True), ('ollama', 'llama3:8b'), 'and allowed with local; the model keeps its colon')
+
+provs = model_providers({'acme': {'kind': 'openai', 'url': 'https://api.acme.example/v1', 'key_env': 'ACME_KEY'},
+                         'box': {'kind': 'anthropic', 'url': 'http://192.168.1.9:8080'},
+                         'here': {'kind': 'openai', 'url': 'http://localhost:1234/v1'}})
+eq(provs['acme'], {'kind': 'openai', 'url': 'https://api.acme.example/v1', 'key_env': 'ACME_KEY', 'local': False},
+   'a custom provider: kind, url, key_env')
+check(provs['box']['local'] and provs['here']['local'], 'a private address and localhost are local')
+eq(parse_model('acme:gpt-x', provs), ('acme', 'gpt-x'), 'a role names a custom provider')
+has(refused(lambda: parse_model('box:m', provs)), r'local = true', 'a custom provider on a private address is refused')
+eq(parse_model('here:m', provs, local=True), ('here', 'm'), 'and allowed with local')
+has(refused(lambda: model_providers({'x': {'kind': 'openai', 'url': 'https://a.example', 'key': 'sk-1'}})),
+    r'keys never go in runner\.toml', 'a key in the config is refused')
+has(refused(lambda: model_providers({'x': {'kind': 'openai', 'url': 'https://a.example'}})),
+    r'key_env is missing', 'a remote provider needs key_env')
+has(refused(lambda: model_providers({'x': {'kind': 'grpc', 'url': 'https://a.example', 'key_env': 'K'}})),
+    r'kind must be one of openai, anthropic', 'kind is openai or anthropic')
+has(refused(lambda: model_providers({'ollama': {'kind': 'openai', 'url': 'https://a.example', 'key_env': 'K'}})),
+    r'built-in provider', 'a custom provider cannot shadow a built-in one')
+
+print('F106a: in runner.toml, until the loop engine (F106c) only claude runs')
+repo = Path(tempfile.mkdtemp(prefix='agent-runner-providers-'))
+git(repo, 'init', '-q')
+
+
+def load(text: str) -> Config:
+    (repo / 'runner.toml').write_text(text, encoding='utf-8')
+    return Config(repo)
+
+
+c = load('[models]\ncode = "claude:sonnet"\nreview = "haiku"\n\n[models.kinds]\nD = "claude:haiku"\n')
+eq((c.models['code'], c.models['review'], c.models['kinds']['D'], c.run['model']), ('sonnet', 'haiku', 'haiku', 'sonnet'),
+   'claude:<model> runs as the bare name, [run] model follows')
+check('local' not in c.models and 'providers' not in c.models and c.models_local is False and c.providers == {},
+      'local and providers are settings, not roles; local is off by default')
+eq(c.warnings, [], 'and neither warns as an unknown key')
+custom = '[models.providers.acme]\nkind = "openai"\nurl = "https://api.acme.example/v1"\nkey_env = "ACME_KEY"\n'
+c = load('[models]\ncode = "opus"\n\n' + custom)
+eq(c.providers['acme']['key_env'], 'ACME_KEY', 'a custom provider is read from [models.providers.<name>]')
+has(refused(lambda: load('[models]\nreview = "acme:gpt-x"\n\n' + custom)), r'not supported yet.*F106c',
+    'a role on a non-claude provider is refused at start, saying why')
+has(refused(lambda: load('[models.kinds]\nR = "gemini:pro"\n')), r'\[models\.kinds\] R .*not supported yet',
+    'a kind on one too')
+has(refused(lambda: load('[models]\ncode = "ollama:llama3"\n')), r'local = true', 'ollama refused, local off')
+has(refused(lambda: load('[models]\nlocal = true\ncode = "ollama:llama3"\n')), r'not supported yet',
+    'with local = true it passes the local check (and waits for F106c)')
+has(refused(lambda: load('[models]\nlocal = "yes"\n')), r'local must be true or false', 'local is a boolean')
+
 raise SystemExit(1 if FAILED else print('\nall checks passed'))
