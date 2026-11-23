@@ -8,7 +8,8 @@ USAGE = """agent-runner: AI agents work through plan/TODO.md, one task each, in 
 
 What you type
     agent-runner setup                make this repo ready: back up uncommitted work, runner.toml, a first plan
-    agent-runner                      start the run in the background and get the prompt back
+    agent-runner                      start the run in the background and get the prompt back (at a terminal:
+                                      pick a run on this device, then open its run page, its ui, or copy the link)
     agent-runner --attach             the same, then watch its pane here (Ctrl-b d: back to the background)
     agent-runner attach [s2]          see the run's pane, or slot 2's (c3: control session 3)
     agent-runner list                 every run and session on this device, numbered, from any folder (like tmux ls)
@@ -235,12 +236,19 @@ def main(argv: list[str] | None = None) -> int:
         return getattr(importlib.import_module(f'agent_runner.{module}'), func)(rest)
     if not argv:  # bare: the run in the background (outside a repository: the usage, as before)
         from agent_runner.config import toplevel
+        from agent_runner import cmds
+        picker = cmds.picker_wanted()  # F91: at a terminal, the run picker, then the launcher
         try:
             toplevel()
         except SystemExit as e:
             if not adopt_folder():
+                if picker:
+                    return cmds.cmd_pick(None)
                 print(f'{e}\nagent-runner --help: every command', file=sys.stderr)
                 return 2
+        if picker:
+            from agent_runner.config import main_checkout
+            return cmds.cmd_pick(main_checkout())
         from agent_runner import runner
         return runner.cmd_background(rest)
     if cmd == 'home':  # one answer for every script: never rebuild these paths by hand

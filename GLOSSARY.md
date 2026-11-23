@@ -287,3 +287,17 @@ _Said_: attach
 _On screen_: attach s2; Back: Ctrl-b d
 _In code_: cmd_attach, attach_session, session_socket, slotN.sock, controlN.sock
 _Avoid_: open (that is Open a slot), connect
+
+**Run picker**:
+What bare agent-runner shows at a terminal: one row per run on this device, the current folder's project first, to pick one
+_Said_: pick a run
+_On screen_: agent-runner · pick a run
+_In code_: cmds.cmd_pick, pick_run, picker_rows
+_Avoid_: run menu, chooser
+
+**Launcher**:
+The screen after the run picker: the picked run's status and run page link, and keys to open the page, open its terminal UI or copy the link
+_Said_: launcher menu
+_On screen_: w open the run page · t terminal UI · c copy the link
+_In code_: cmds.launch, launcher_text
+_Avoid_: action menu
