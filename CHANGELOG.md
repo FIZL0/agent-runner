@@ -139,7 +139,10 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
   is missing instead of a traceback. System32's WSL bash is no longer used as a fallback (B159).
 - Fixes: Runner Home restarts itself when agent-runner's package files change on disk (an upgrade, or a clone's pull,
   same version or not), once the change holds over two 5 s looks, and never while a request or terminal tunnel is
-  open. Before, it kept the version it started with until the service restarted. Not on Windows (B165).
+  open. Before, it kept the version it started with until the service restarted (B165).
+- Fixes: on Windows Home restarts its scheduled task for the same reason; and Home run by pythonw.exe no longer
+  stops at its start for want of a stdout (it crashed with AttributeError), its output goes to home.log. A Home older
+  than this needs one sign out and in (or `home install`) to pick it up (F152).
 
 ## 0.61.0 (2026-11-23)
 

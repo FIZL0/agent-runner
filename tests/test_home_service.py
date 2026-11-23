@@ -487,18 +487,22 @@ def test_restart_on_windows(tmp: Path) -> None:
 
     calls, live = [], [True, True, False]
     call = lambda c: calls.append(c[1]) or (1 if c[1] == '/End' else 0, '')  # noqa: E731
-    eq(H.restart_task(7, 8770, call, lambda p: calls.append(p) or not live.pop(0), lambda p: True), 0, 'the helper')
+    eq(H.restart_task(7, 8770, call, lambda p: calls.append(p) or not live.pop(0), lambda p, s: True), 0, 'the helper')
     eq(calls, [7, 7, 7, '/End', '/Run'], 'waits for the old Home to exit, then /End (which may fail) and /Run')
     calls, up = [], [False, True]
-    eq(H.restart_task(7, 8770, call, lambda p: True, lambda p: up.pop(0)), 0, 'a /Run that came too early')
+    eq(H.restart_task(7, 8770, call, lambda p: True, lambda p, s: up.pop(0)), 0, 'a /Run that came too early')
     eq(calls, ['/End', '/Run'] * 2, 'is run again')
     calls = []
-    eq(H.restart_task(7, 8770, call, lambda p: True, lambda p: False), 1, 'a Home that never answers')
+    eq(H.restart_task(7, 8770, call, lambda p: True, lambda p, s: False), 1, 'a Home that never answers')
     eq(calls, ['/End', '/Run'] * 3, 'three times, no more')
     calls = []
-    eq(H.restart_task(7, 8770, lambda c: calls.append(c[1]) or (1, ''), lambda p: True, lambda p: True), 1,
+    eq(H.restart_task(7, 8770, lambda c: calls.append(c[1]) or (1, ''), lambda p: True, lambda p, s: True), 1,
        'uninstalled meanwhile: /Run fails')
     eq(calls, ['/End', '/Run'], 'and it stops there')
+    calls = []
+    eq(H.restart_task(7, 8770, call, lambda p: False, lambda p, s: True, wait=0.0,
+                      kill=lambda p, s: calls.append(('kill', p))), 0, 'an old Home that hangs')
+    eq(calls, [('kill', 7), '/End', '/Run'], 'is ended by its pid first')
     eq([c[1] for c in H.uninstall_commands('windows', None)], ['/Change', '/End', '/Delete'],
        'uninstall disables the task first, so no /Run lands after its /End')
 

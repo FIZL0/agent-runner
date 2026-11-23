@@ -1032,19 +1032,26 @@ def restart_home_task(port: int, spawn=None) -> int:
     return 0
 
 
-def restart_task(pid: int, port: int, call=sh, gone=None, check=wait_serving, tries: int = 3) -> int:
-    """F152, the helper's part: wait for the old Home (`pid`) to exit, so /End does not end this helper with it,
-    then end and run the task until Home answers: a /Run while the task still counts as running is ignored.
+def restart_task(pid: int, port: int, call=sh, gone=None, check=wait_serving, tries: int = 3, wait: float = 15.0,
+                 kill=os.kill) -> int:
+    """F152, the helper's part: wait for the old Home (`pid`) to exit, and end it by its pid if it hangs: /End on
+    the running task could end this helper with it. Then end and run the task until Home answers: a /Run while the task still counts as running is ignored.
     Uninstalled meanwhile: the task is disabled or deleted, /Run fails, and it stops there."""
     from agent_runner import plat
-    end = time.monotonic() + 15
-    while not (gone or (lambda p: not plat.alive(p)))(pid) and time.monotonic() < end:
+    gone = gone or (lambda p: not plat.alive(p))
+    end = time.monotonic() + wait
+    while not (exited := gone(pid)) and time.monotonic() < end:
         time.sleep(0.2)
+    if not exited:
+        try:
+            kill(pid, 15)  # SIGTERM; TerminateProcess on Windows
+        except OSError:
+            pass
     for _ in range(tries):
         call(['schtasks', '/End', '/TN', SERVICE])  # may fail: it has ended by itself
         if call(['schtasks', '/Run', '/TN', SERVICE])[0]:
             return 1
-        if check(port):
+        if check(port, 30.0):  # a first start on new files is slow, and the next try would end it
             return 0
     return 1
 
