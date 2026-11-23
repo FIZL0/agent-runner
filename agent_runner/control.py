@@ -18,6 +18,7 @@ from pathlib import Path
 
 from agent_runner import pitch, plan as P, plansync, plat
 from agent_runner.plan import decide_question  # F135: a control session's last line `DECIDE: …`
+from agent_runner.control_settled import LEAD  # F160: how the runner's own typed line starts
 from agent_runner.config import RUNNER, runner_cmd, shown_cmd
 from agent_runner.state import C, commit_plan, git, HIDDEN, init, log, MERGE, note, plan_rel, ROOT
 from agent_runner.brief import has_sheet
@@ -624,7 +625,7 @@ def control_env() -> dict:
     (`hand_hook`) stays quiet. B108: with ARTIFACT_ENV on, so a session started headless (the control server
     spawns them with entrypoint sdk-cli, where Claude Code leaves the Artifact tool off by default) can still
     publish a page and hand over its claude.ai link; a value the person set (0 to turn it off) is kept."""
-    env = {k: v for k, v in os.environ.items() if k not in ('AGENT_RUNNER', 'AGENT_RUNNER_SLOT', 'AGENT_RUNNER_KEEP')}
+    env = {k: v for k, v in os.environ.items() if k not in ('AGENT_RUNNER', 'AGENT_RUNNER_SLOT', 'AGENT_RUNNER_KEEP', CONTROL_N_ENV)}
     return {ARTIFACT_ENV: '1', **env, RUNNER_STARTED_ENV: '1'}
 
 
@@ -809,14 +810,13 @@ def person_message(d: dict) -> bool:
     """A transcript entry the person typed (not a tool result or a task notification)."""
     if (d.get('origin') or {}).get('kind', 'human') != 'human':
         return False
-    c = (d.get('message') or {}).get('content')
-    if isinstance(c, str):
-        return not c.startswith('<task-notification>')
-    return isinstance(c, list) and any(isinstance(x, dict) and x.get('type') in ('text', 'image') for x in c)
+    if isinstance(c := (d.get('message') or {}).get('content'), str):
+        return not c.startswith(('<task-notification>', LEAD))
+    return isinstance(c, list) and any(isinstance(x, dict) and x.get('type') in ('text', 'image') and not str(x.get('text') or '').startswith(LEAD) for x in c)
 
 
 RUNNER_TURN = ('<command-name>', '<command-message>', '<command-args>', '<local-command-', '<system-reminder>',
-               '<task-notification>', '<user-prompt-submit-hook>', 'Caveat: ')
+               '<task-notification>', '<user-prompt-submit-hook>', 'Caveat: ', LEAD)
 
 
 def person_turn(d: dict) -> bool:

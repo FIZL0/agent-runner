@@ -539,3 +539,10 @@ _Said_: messages dropped because of the weekly limit
 _On screen_: asks wait for the usage limit
 _In code_: control_held, <notes>/held/
 _Avoid_: lost message, queued message
+
+**Settled line**:
+The one line the run types into a control session about an item when that item was settled elsewhere
+_Said_: the chat was told nothing
+_On screen_: From the runner, not the person: R81 was dropped at 13:28 by c4
+_In code_: control_settled, <notes>/settled/
+_Avoid_: notification, alert

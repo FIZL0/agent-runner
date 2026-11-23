@@ -3,11 +3,13 @@ shutdown. (C26 dropped B94's tests of the background tmux session, which is gone
 from __future__ import annotations
 
 import contextlib
+import io
 import json
 import os
 import re
 import subprocess
 import tempfile
+import time
 import types
 import uuid
 from pathlib import Path
@@ -1057,10 +1059,187 @@ def test_held_app_ended():
             eq([r.get('from') for r in w.H.records()], [APP] if kept else [], how)
 
 
+@contextlib.contextmanager
+def settled_world():
+    """`held_world` with a plan: R81 under Needs you, R82 and R90 open; c4 opened from R81, c5 titled R81, c6 titled
+    R90 and only mentioning R81."""
+    from agent_runner import control_settled as Z, runner as R
+    with held_world() as w:
+        R.C.todo.parent.mkdir(parents=True, exist_ok=True)
+        R.C.todo.write_text('# TODO\n\n## Now\n\n- [~] **R81** Tailscale login BLOCKED: CONFIRM: sign in on the phone\n'
+                            '- [ ] **R82** the probe\n- [ ] **R90** other work\n', encoding='utf-8')
+        git(R.ROOT, 'add', '-A')
+        git(R.ROOT, 'commit', '-qm', 'plan')
+        Z._SEEN.clear()
+        Z.LEFT_AT[0] = 0.0
+        w.Z, w.R = Z, R
+        base = time.time()
+        w.base = base
+        w.rows['s4'] = [said("This chat is about R81 'Tailscale login', which needs me. What was put to me:", base - 900),
+                        answer('Sign in on the phone, then say done.', base - 890)]
+        w.rows['s5'] = [said('what is R82 about, and the login?', base - 900), answer('A login.', base - 890)]
+        w.rows['s6'] = [said('compare R90 with R81', base - 900), answer('Done.', base - 890)]
+        for n in (4, 5, 6):
+            w.up(n, f's{n}', 40 + n)
+            os.utime(w.notes(f'control{n}.pid'), (base - 800, base - 800))
+        K.control_give(5, f'{R.ROOT.name} · R81 · Tailscale login')
+        K.control_give(6, f'{R.ROOT.name} · 6 · R90 and R81')
+
+        def plan_cmd(*argv, by=0, slot=''):
+            from agent_runner import plan as P
+            env = {'AGENT_RUNNER_CONTROL': str(by or ''), 'AGENT_RUNNER_SLOT': slot, 'AGENT_RUNNER_BY': ''}
+            with mock.patch.dict(os.environ, env), mock.patch.object(P, 'cfg', lambda *a: R.C), \
+                    mock.patch.object(P, 'other_project', lambda *a: ''), contextlib.redirect_stdout(io.StringIO()):
+                return P.main(list(argv))
+        w.plan = plan_cmd
+
+        def look(at=0.0):
+            for s in w.rows:
+                K.transcript(s)
+            Z.tick(force=True, now=at or base)
+        w.look = look
+        yield w
+
+
+def test_settled_told_once():
+    print('F160: a drop by one control session is typed once into the others about the item')
+    with settled_world() as w:
+        w.look()
+        eq(w.typed, [], 'nothing settled: nothing typed')
+        eq(w.plan('drop', 'R81', 'the phone is signed in', by=4), 0, 'c4 drops it')
+        w.look()
+        eq([n for n, _ in w.typed], [5], 'typed into the one titled R81; not its dropper, nor one that mentions it')
+        check(re.fullmatch(r'From the runner, not the person: R81 was dropped at \d\d:\d\d by c4: the phone is signed in\. '
+                           r'Re-read it before asking the person anything for it\.', w.typed[0][1]), 'the line', w.typed)
+        w.look()
+        w.look(w.base + 400)
+        w.Z._SEEN.clear()  # a restarted run knows only the notes
+        w.Z.LEFT_AT[0] = 0.0
+        w.look(w.base + 4000)
+        eq(len(w.typed), 1, 'not again, by a restarted run either')
+    with settled_world() as w:
+        w.plan('drop', 'R81', 'gone', by=4)
+        with mock.patch.object(K, 'control_type', side_effect=KeyboardInterrupt):  # killed while it types
+            try:
+                w.look()
+            except KeyboardInterrupt:
+                pass
+        w.look()
+        eq(w.typed, [], 'a run killed while it typed does not type it again')
+
+
+def test_settled_verbs_and_openers():
+    print('F160: what is told, by whom, and which sessions are about an item')
+    with settled_world() as w:
+        w.plan('shelve', 'R81')
+        w.look()
+        eq(sorted(n for n, _ in w.typed), [4, 5], 'a terminal\'s shelve: both, with no author')
+        check(' was shelved at ' in w.typed[0][1] and ' by ' not in w.typed[0][1], 'worded', w.typed[0])
+        w.typed.clear()
+        for argv, what in ((('unshelve', 'R81'), 'was put back'), (('change', 'R81', 'use the laptop'), 'was changed'),
+                           (('drop', 'R81', 'no'), 'was dropped'), (('restore', 'R81'), 'was restored')):
+            eq(w.plan(*argv), 0, argv[0])
+            w.look()
+            check([n for n, _ in w.typed] == [4, 5] and what in w.typed[0][1], argv[0], w.typed)
+            w.typed.clear()
+        for argv in (('note', 'R81', 'x'), ('drop', 'R82', 'x'), ('move', 'R81', 'top')):
+            w.plan(*argv)
+        w.look()
+        eq(w.typed, [], 'a note, a move or another item says nothing')
+    from agent_runner import control_settled as Z
+    for title, want in (('p · R81 · login', 'R81'), ('p · 5 · R81: yes', 'R81'), ('R81 Tailscale', 'R81'),
+                        ('p · 5 · about R81', ''), ('p · control 5', ''), ('R812x', 'R812x'), ('C1-only', '')):
+        eq(Z.title_id(title, 'p'), want, title)
+    from agent_runner import ui_model as U
+    for text in (U.need_chat_text({'id': 'R81', 'title': 'a', 'ask': 'b', 'what': ''}),
+                 U.concept_chat_text({'concept': 'K2', 'title': 't'}), 'R81 (a (b) c): yes', 'R81: yes'):
+        m = Z.OPENED.match(text)
+        check(m and (m[1] or m[2]) in ('R81', 'K2'), f'opened from its item: {text[:40]}')
+    check(not Z.OPENED.match('what of R81: is it on?'), 'a mention is not')
+    got = []
+    with mock.patch.object(U.sp, 'run', lambda a, **k: got.append(k['env']) or types.SimpleNamespace(
+            returncode=0, stdout='', stderr='')), mock.patch.dict(os.environ, {'AGENT_RUNNER_CONTROL': '4'}):
+        U._run(['plan', 'drop', 'R81', 'x'])
+    check('AGENT_RUNNER_CONTROL' not in got[0] and got[0]['AGENT_RUNNER_BY'] == 'the person in the run app',
+          'the run app\'s command is the person\'s, not the session\'s that started the run')
+
+
+def test_settled_waits_and_skips():
+    print('F160: not typed where it would be lost; ended and closed sessions are left alone; no person\'s message')
+    with settled_world() as w:
+        ask = {'type': 'assistant', 'message': {'content': [{'type': 'tool_use', 'id': 'q', 'name': 'AskUserQuestion'}]}}
+        w.rows['s5'] = w.rows['s5'] + [ask]
+        os.utime(w.notes('control4.pid'), (w.base, w.base))  # just started
+        w.plan('confirm', 'R81', 'signed in', slot='2')
+        w.look()
+        eq(w.typed, [], 'a question dialog and a starting session wait')
+        w.rows['s5'] = w.rows['s5'] + [{'type': 'user', 'message': {'content': [
+            {'type': 'tool_result', 'tool_use_id': 'q', 'content': 'ok'}]}}]
+        w.look(w.base + 200)
+        eq([n for n, _ in w.typed], [4, 5], 'then both are told')
+        check("by s2's agent: signed in." in w.typed[0][1], 'by a slot', w.typed[0])
+        text = w.typed[0][1]
+        rows = [*w.rows['s5'], said(text, w.base)]
+        eq(K.control_state(rows)['said'], 1, 'it is not counted as a message of the person\'s')
+        check(not K.person_turn(said(text, w.base)) and not K.person_message(said(text, w.base)) and
+              not K.person_message(said([{'type': 'text', 'text': text}], w.base)), 'nor read as one')
+        held = w.H.walk([said('real ask', T0), answer('ok', T0 + 1), said(text, T0 + 2), limit(T0 + 3)])
+        eq(held['asks'], [], 'nor held when it meets the usage limit')
+    with settled_world() as w:
+        w.live.pop(5)
+        w.rows['s4'] = w.rows['s4'] + [{'type': 'system', 'content': 'Remote Control disconnected — archived (code 4090)'}]
+        w.plan('drop', 'R81', 'x')
+        w.look()
+        w.live[5] = 45
+        w.look(w.base + 100)
+        eq(w.typed, [], 'an ended session and one closed online are not told, nor when reopened')
+
+
+def test_settled_landing():
+    print('F160: a landing is told only to a chat that waited on the item under Needs you')
+    with settled_world() as w:
+        from agent_runner import plan as P
+        w.rows['s6'] = [said('R82: how far is it?', w.base - 900)]
+        w.look()
+        for t in ('R82', 'R81'):
+            P.unblock(t, 'x', todo=w.R.C.todo) if t == 'R81' else None
+            P.tick(t, w.R.C.todo, w.R.C.done)
+        w.look(w.base + 40)
+        eq(w.typed, [], 'a command\'s own event gets its time')
+        w.look(w.base + 400)
+        w.look(w.base + 440)
+        eq([n for n, _ in w.typed], [4, 5], 'the chats on the Needs you item; not the one on an ordinary task')
+        check('R81 landed at ' in w.typed[0][1], 'said as landed', w.typed[0])
+        w.look(w.base + 900)
+        eq(len(w.typed), 2, 'once')
+    with settled_world() as w:
+        from agent_runner import plan as P
+        w.look()
+        with mock.patch.dict(os.environ, {'AGENT_RUNNER_CONTROL': '5', 'AGENT_RUNNER_SLOT': ''}):
+            w.Z.done_by(w.R.C, 'R81')
+        P.unblock('R81', 'x', todo=w.R.C.todo)
+        P.tick('R81', w.R.C.todo, w.R.C.done)
+        for at in (40, 400, 440):
+            w.look(w.base + at)
+        eq([n for n, _ in w.typed], [4], 'not into the session that landed it')
+
+
+def test_settled_rule_in_guide():
+    print('F160: the needs guide carries the re-read rule, and the brief points at it')
+    from agent_runner import guide as G
+    page = ' '.join(G.topic('needs', 'run').split())
+    for words in ('Re-read it (`run plan ID`) right before you ask', 'on each follow-up', 'say so at once',
+                  'stop every watch', 'reservation', 'From the runner, not the person:'):
+        check(words in page, words)
+    check('Re-read an item right before' in ' '.join(G.CONTROL.split()), 'the brief says it')
+
+
 if __name__ == '__main__':
     raise SystemExit(report([test_handed_ask_as_c1_starts_fresh, test_brief_fits_session_start,
                              test_take_back_from_a_slot_just_started, test_sessions_one_and_each,
                              test_reopen_after_shutdown, test_second_shim_keeps_live_session,
                              test_first_message_typed_after_remote_control, test_rename_f129, test_held_delivered_once,
                              test_held_still_limited, test_held_stuck_and_cut, test_held_resent_and_runner, test_held_reopened, test_held_cut_off,
-                             test_held_app_session, test_held_app_ended]))
+                             test_held_app_session, test_held_app_ended, test_settled_told_once,
+                             test_settled_verbs_and_openers, test_settled_waits_and_skips, test_settled_landing,
+                             test_settled_rule_in_guide]))

@@ -336,6 +336,9 @@ def finished(c=None, a=None) -> int:
     background command can't hold the slot."""
     if c and c.plan_external and (out := plansync.publish(c, f'{a.id}: {a.message}')):
         print(out, file=sys.stderr)
+    if c and a and not a.blocked:
+        from agent_runner import control_settled  # F160: a take's own landing is not told to its session
+        control_settled.done_by(c, a.id)
     if m := finished_mark():
         m.touch()
     return 0

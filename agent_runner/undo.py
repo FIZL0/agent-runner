@@ -129,6 +129,10 @@ def _undo(x: dict, branch: str) -> str:
             S.log(msg)
             REOPENED.add(tid)
             pitch.undone([x['key']], got[1])
+            from agent_runner import control_settled  # F160
+            control_settled.record(S.C, [tid], 'was dropped' if x['how'] == 'drop' else 'was reopened',
+                                   'not approved, its merge was undone' + (f': {x["why"]}' if x['why'] else ''),
+                                   who={'by': 'the run', 'n': 0, 'sid': ''})
             return ''
         return 'the undo did not land in three tries'
     finally:
