@@ -897,7 +897,7 @@ class RunPage:
                 url = next((u for u in self._urls if text and text in u), '')
                 if url:
                     self.links.append((y, x, text, url))
-            attr =self.attrs.get(f'{ground}:{colour or "fg"}', self.a(ground)) if ground else \
+            attr = self.attrs.get(f'{ground}:{colour or "fg"}', self.a(ground)) if ground else \
                 self.a(colour) | base if colour or base else self.a('fg')  # B112: no colour is the ground's
             if colour in KEY_COLOURS and self._keys_on and text.strip():
                 self.window_keys.add(text.strip())
@@ -1571,7 +1571,7 @@ class RunPage:
         """B125 y: the session's link on the clipboard (OSC 52, so over ssh it lands on the person's machine)."""
         if url := self.session_link(it):
             r = copy_text(url, self.out)
-            self.msg, self.msg_ok, self.msg_link = r['out'], bool(r.get('ok')), url
+            self.msg, self.msg_ok = r['out'], bool(r.get('ok'))
 
     def new_chat(self) -> None:
         """N: a new control session (`new_control`); it is selected, on its chat tab, typing (B125)."""
