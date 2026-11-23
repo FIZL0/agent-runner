@@ -225,9 +225,13 @@ the same Home address) and an "All projects" item in the sidebar.
 
 Runner Home restarts itself when agent-runner's package files change on disk (an upgrade or a clone's pull, same
 version or not), once the change holds over two 5 s looks. It re-execs in place, never while a request or terminal
-tunnel is open; runs' event streams end when only those are left, and pages reconnect by themselves. On Windows,
-sign out and in to restart Home. A Home started before this needs one restart by hand; unlike a run, it also
-restarts across a breaking version.
+tunnel is open; runs' event streams end when only those are left, and pages reconnect by themselves. On Windows, which
+has no exec, a detached helper waits for the old Home to exit and starts the scheduled task again (`schtasks /End`,
+`/Run`, up to three times until Home answers); `home uninstall` disables the task first, so a restart under way cannot
+bring it back. It does so only when the scheduled task runs Home (`pythonw.exe`): a `home serve` typed in a terminal,
+or a Home run with `python.exe` because there is no `pythonw.exe`, does not restart itself. Windows Home writes its
+output to `home.log` in Home's config folder. A Home started before this needs one restart by hand; unlike a run, it
+also restarts across a breaking version.
 
 ### The run app
 
