@@ -445,7 +445,7 @@ def to_c1(text: str) -> dict:
     return call(['control', '--new', '--ask', text])
 
 
-SEND = [to_c1]  # how chat, answers and take reach c1; a test swaps it
+SEND = [to_c1]  # how chat and answers reach c1; a test swaps it
 
 
 def chat(text: str) -> dict:
@@ -503,10 +503,11 @@ def answer(tid: str, text: str, button: bool = False) -> dict:
     return SEND[0](f'{tid}{f" ({title})" if title else ""}: {text}')
 
 
-def take(tid: str) -> dict:
-    """Take (do it here): c1 is asked "do ID here", and does it as its take guide says (`take ID`, the work in
-    that worktree), so the page never makes a worktree nobody works in."""
-    return SEND[0](f'do {tid} here')
+def take(tid: str, wait: bool = True) -> dict:
+    """Take (do it here): a new control session is asked "do ID here" (B139: not c1, whose whole history each
+    send would carry), and does it as its take guide says (`take ID`, the work in that worktree), so the page
+    never makes a worktree nobody works in. The result is `new_control`'s: 'name' the new cN to open."""
+    return new_control(f'do {tid} here', wait)
 
 
 def open_session(slot: str) -> dict:
@@ -594,9 +595,10 @@ def control_argv(key: str, n='', tid: str = '', why: str = '') -> list[str]:
     return [w.replace('{n}', n).replace('{id}', tid).replace('{why}', why or TASK_DROP_WHY) for w in words]
 
 
-def run_control(key: str, n='', tid: str = '', why: str = '', confirm: bool = False) -> dict:
+def run_control(key: str, n='', tid: str = '', why: str = '', confirm: bool = False, wait: bool = True) -> dict:
     """F82: run one run control (RUN_CONTROLS) for the web page or agent-runner ui. One with a confirm question
-    runs only with `confirm` true; without it the result is not ok and carries the question as 'confirm'."""
+    runs only with `confirm` true; without it the result is not ok and carries the question as 'confirm'. B139:
+    one with an 'ask' starts a new control session with it (`new_control`, `wait` as there), not c1."""
     try:
         argv = control_argv(key, n, tid, why)
     except ValueError as e:
@@ -605,7 +607,7 @@ def run_control(key: str, n='', tid: str = '', why: str = '', confirm: bool = Fa
     if c.get('confirm') and confirm is not True:
         return {'ok': False, 'code': 3, 'out': c['confirm'], 'confirm': c['confirm'], 'argv': argv}
     if c.get('ask'):
-        return SEND[0](c['ask'].replace('{id}', tid))
+        return new_control(c['ask'].replace('{id}', tid), wait)
     return call(argv)
 
 
@@ -636,7 +638,7 @@ FEED_BYTES = 400_000  # the tail of a transcript a feed reads: a long session's 
 FEED_MAX = 200  # entries a feed returns
 OUT_LINES, OUT_CHARS, TOOL_CHARS = 3, 300, 120  # how much of a tool's output, and of its call, a feed keeps
 INTERRUPTED = '[Request interrupted'  # how Claude Code records an Escape in the transcript
-QUICK_ASKS = (  # F74: the Status chat's quick asks, sent to c1: (key, label, text)
+QUICK_ASKS = (  # F74: the Status chat's quick asks, each a new control session's first message (B139)
     ('since', 'since last look', 'what happened since my last look?'),
     ('yesterday', 'since yesterday', 'what happened since yesterday?'),
     ('needs', 'what needs me', 'what needs me?'),
@@ -780,7 +782,7 @@ def feed(name: str, limit: int = FEED_MAX) -> dict:
 
 
 def quick_asks() -> list[dict]:
-    """F74: the Status chat's quick asks, for a page's buttons: key, label, the text sent to c1."""
+    """F74: the Status chat's quick asks, for a page's buttons: key, label, the text a new control session gets (B139)."""
     return [{'key': k, 'label': l, 'text': t} for k, l, t in QUICK_ASKS]
 
 
@@ -921,13 +923,14 @@ def concept_chat(cid: str, title: str = '', url: str = '', copy: str = '', wait:
     return new_control(concept_chat_text(row), wait)  # F137: the run page starts it without waiting
 
 
-def quick_ask(key: str) -> dict:
-    """F74: one of the Status chat's quick asks (QUICK_ASKS: since, yesterday, needs, usage), sent to c1."""
+def quick_ask(key: str, wait: bool = True) -> dict:
+    """F74: one of the Status chat's quick asks (QUICK_ASKS: since, yesterday, needs, usage). B139: it starts a
+    new control session with the ask as its first message (`new_control`, `wait` as there), not c1."""
     text = next((t for k, _, t in QUICK_ASKS if k == key), '')
     if not text:
         return {'ok': False, 'code': 2, 'out': f'quick_ask: key is one of {", ".join(k for k, _, _ in QUICK_ASKS)}, '
                                                f'not {key!r}', 'argv': []}
-    return SEND[0](text)
+    return new_control(text, wait)
 
 
 ACTIONS.update({'chat_to': chat_to, 'interrupt': interrupt, 'new_control': new_control, 'quick_ask': quick_ask})

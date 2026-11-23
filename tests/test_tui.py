@@ -809,12 +809,13 @@ def test_actions() -> None:
              ['plan', 'shelve', 'D7'],
              ['plan', 'add', 'V'],
              ['plan', 'add', 'V', '--now']], 'p, D, J, L and the release buttons run their plan commands')
-    eq(sent, ['do B2 here', 'change B2: also cover openmx', 'new task: show usage too', 'F4: A + B · recommended',
+    eq(sent, ['change B2: also cover openmx', 'new task: show usage too', 'F4: A + B · recommended',
               'D7: port 8770', 'concept K5 ("Lazy layout"): go with Option B',
               'concept K5 ("Lazy layout"): smaller'],
-       'H, chat edits, answers (a button, a reply), the concept pick and its change go to c1')
-    eq(calls, [('quick_ask', 'since'), ('quick_ask', 'usage'), ('open_session', 's1'), ('new_control', False)],
-       'o, the quick asks and N run F74\'s actions (N without waiting for the link)')
+       'chat edits, answers (a button, a reply), the concept pick and its change go to c1')
+    eq(calls, [('new_control', True), ('quick_ask', 'since'), ('quick_ask', 'usage'), ('open_session', 's1'),
+               ('new_control', False)],
+       'H starts a new control session (B139); o, the quick asks and N run F74\'s actions (N without waiting)')
     eq(opened, ['https://claude.ai/artifact/k5', 'https://claude.ai/code/s1', 'https://claude.ai/code/session_c1'],
        'O and o open the browser')
     eq(attached, ['s1'], 'Enter on the session tab, with a socket outside tmux, attaches it')
@@ -1342,7 +1343,8 @@ def test_run_controls() -> None:
         p.key('D')
         eq(ran, [['plan', 'drop', 'F1', U.TASK_DROP_WHY]], 'D on a slot drops its task from the slot')
         p.key('H')
-        eq(sent, ['do F1 here'], 'H on a slot takes its task back (c1 does it here)')
+        eq((sent, ran[-1]), ([], ['control', '--new', '--ask', 'do F1 here']),
+           'H on a slot takes its task back (B139: a new control session does it here)')
         ran.clear()
         p.cur[2] = 0  # c1: no task controls
         p.key('D')

@@ -170,8 +170,8 @@ def test_actions(tmp: Path) -> None:
         U.act('chat', text='how is it going?')
         U.act('answer', tid='D3', text='the lazy one')
         U.act('take', tid='F1')
-        eq(sent, ['how is it going?', 'D3 (Write the guide): the lazy one', 'do F1 here'],
-           'chat, answers and take go to c1')
+        eq(sent, ['how is it going?', 'D3 (Write the guide): the lazy one'], 'chat and answers go to c1')
+        eq(ran[-1], ['control', '--new', '--ask', 'do F1 here'], 'B139: take starts a new control session, not c1')
         eq(U.act('nope')['ok'], False, 'an unknown action is an error result')
         eq(U.act('drop', tid='B2')['code'], 2, 'a missing argument is an error result')
         U.RUN[0] = lambda argv: (3, 'looks like F1')
@@ -206,8 +206,10 @@ def test_run_controls(tmp: Path) -> None:
         eq((r['ok'], r['code'], ran, r['confirm'] == U.STOP_NOW_ASK), (False, 3, [], True),
            'stop now without its confirm runs nothing and asks')
         eq(U.run_control('stop_now', confirm='yes')['ok'], False, 'only confirm=true confirms')
-        r = U.act('run_control', key='task_take', tid='F1')
-        eq((r['ok'], sent, ran), (True, ['do F1 here'], []), 'take back asks c1 "do F1 here", as take does')
+        r = U.act('run_control', key='task_take', tid='F1', wait=False)
+        eq((r['ok'], sent, ran), (True, [], [['control', '--new', '--no-wait', '--ask', 'do F1 here']]),
+           'B139: take back asks a new control session "do F1 here", as take does, not c1')
+        ran.clear()
         for bad in ({'key': 'slots_set', 'n': '-2'}, {'key': 'slots_set', 'n': '4; rm'}, {'key': 'slots_set'},
                     {'key': 'task_drop', 'tid': '--force'}, {'key': 'nope'}):
             r = U.act('run_control', **bad)
@@ -417,10 +419,12 @@ def test_chat_and_terminal(tmp: Path) -> None:
         eq(ran[-1], ['control', '--new', '--ask', 'theme ideas'], 'with a first message')
 
         sent.clear()
+        ran.clear()
         for k in ('since', 'yesterday', 'needs', 'usage'):
             U.act('quick_ask', key=k)
-        eq(sent, ['what happened since my last look?', 'what happened since yesterday?', 'what needs me?',
-                  'where are the tokens going?'], 'the quick asks go to c1')
+        eq((sent, [r[-1] for r in ran]), ([], ['what happened since my last look?', 'what happened since yesterday?',
+                                             'what needs me?', 'where are the tokens going?']),
+           'B139: each quick ask starts a new control session with it (control --new --ask), not c1')
         eq(U.act('quick_ask', key='nope')['ok'], False, 'an unknown quick ask is refused')
         eq([a['key'] for a in U.snapshot(up=False, now=NOW, links={})['quick_asks']],
            ['since', 'yesterday', 'needs', 'usage'], 'the snapshot lists them')
