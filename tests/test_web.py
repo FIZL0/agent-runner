@@ -2972,6 +2972,125 @@ def test_style_f83(tmp: Path) -> None:
     check('confirm(' not in page and 'alert(' not in page, 'no browser dialogs')
 
 
+OLD_RUN_DRIVER = r"""
+const page = require('fs').readFileSync(process.argv[2], 'utf8').replace(/\r\n/g, '\n');
+const given = JSON.parse(process.argv[3]);
+const grab = (start) => { const i = page.indexOf(start); return page.slice(i, page.indexOf('\n}\n', i) + 2) + '\n' };
+const line = s => { const i = page.indexOf(s); return page.slice(i, page.indexOf('\n', i)) + '\n' };
+const slice = (a, b) => page.slice(page.indexOf(a), page.indexOf(b));
+const logic = page.split('<script id="logic">')[1].split('</script>')[0];
+const kept = {}, store = {get: k => kept[k] || '', set(k, v) { kept[k] = v }};
+const said = [], toast = t => said.push(t), render = () => {}, tq = p => p, esc = t => String(t);
+const els = {}, $ = k => els[k] = els[k] || {}, setHTML = (el, h) => { el.h = h };
+const emptyCard = t => t, card = h => h, followVersion = () => false, pageTitle = () => '', HOME_PAGE = false, document = {};
+const working_ = () => [], talkWaitName = () => '', chats = () => [], open = n => { S.thread = n };
+const carrySent = () => {}, addSent = () => {};
+let reply = null, status = 200, posts = [];
+const fetch = async (p, o) => {
+  if (p === 'act') posts.push(JSON.parse(o.body));
+  return {status, ok: status < 400, json: async () => reply};
+};
+const rc = {key: 'restart', label: 'Restart the run', confirm: 'Restart?'};
+const S = {snap: {needs: [], concepts: [], controls: [rc], boot: 'b1'}, f: {}, ob: [], thread: null, view: 'settings', waitNew: null, obOpen: false, gone: {}};
+const OB = {busy: false, offline: false, timer: 0, wait: 2000}, OB_KEY = 'ob';
+const threadTitle = n => n, cutsOff = () => '', sureHTML = q => q;
+let cids = 0;
+const newCid = () => 'k' + (++cids);
+eval(logic.replace(/if\(typeof module[^\n]*/, '') + line('function obChange(') + grab('async function act(') + grab('function outbox(') + grab('async function drain(')
+  + grab('function obDone(') + line('const controlOf=') + line('const ctlSure=') + line('const ctlBusy=') + slice('function oldRunHTML(', 'const obBtns=')
+  + line('const obBtns=') + line('const obState=') + grab('function obDraw(') + line('function obBoot(') + grab('function obRetryClick(')
+  + line('function obCards(') + line('const setErrHTML=') + grab('async function loadSettings(') + grab('function settingsHTML(') + grab('function takeSnap(') + `
+const settle = async () => { for (let i = 0; i < 6; i++) await new Promise(r => setTimeout(r, 5)) };
+(async () => {
+  const out = {};
+  // Settings: the route is not there, then another error, then one over settings already loaded
+  reply = given.route; status = 404; await loadSettings(); out.route = [settingsHTML(), S.set === undefined];
+  reply = {ok: false, out: 'disk full'}; status = 200; await loadSettings(); out.err = settingsHTML();
+  S.set = {ok: false, out: 'x'}; out.bad = settingsHTML();
+  const good = {tables: [], unknown: [], project: 'p', device: 'd'};
+  reply = good; await loadSettings(); out.good = [settingsHTML(), S.set === good];
+  reply = given.route; status = 404; await loadSettings(); out.keeps = [S.set === good, settingsHTML()];
+  // need_chat to a run without it: kept, with the restart control and no Retry
+  reply = given.act; status = 200;
+  const it = outbox('need_chat', {tid: 'F1'}, {newchat: true, say: 'About F1'}); S.thread = '@' + it.cid;
+  outbox('chat_to', {text: 'hi', to: '@' + it.cid}, {text: 'hi', say: 'hi'});
+  await settle(); obDraw();
+  out.refused = [S.ob.map(x => [x.name, x.state]), said[said.length - 1], els.obpop.h, JSON.parse(kept.ob).length];
+  // another snapshot of the same run: nothing is sent again; the next run: both go, under a cid every tab shares
+  posts = []; takeSnap({boot: 'b1'}); await settle(); out.same = posts.length;
+  reply = {ok: true, name: 'c7'}; takeSnap({boot: 'b2'}); await settle();
+  out.sent = [posts.map(p => [p.name, p.cid, p.args.to || '']), S.ob.length, S.thread];
+  // one an older page left in the Outbox (no boot kept) goes too; a plain failure does not
+  S.ob = [{cid: 'z', name: 'need_chat', args: {}, state: 'failed', err: 'no such action: need_chat', say: 'z'},
+          {cid: 'y', name: 'answer', args: {}, state: 'failed', err: 'disk full', say: 'y'}];
+  posts = []; takeSnap({boot: 'b3'}); await settle(); out.legacy = [posts.map(p => p.cid), S.ob.map(x => x.cid)];
+  // still refused by a run that is older too: once per run, no loop
+  reply = given.act; S.ob = [{cid: 'z', name: 'need_chat', args: {}, state: 'failed', err: 'no such action: need_chat', say: 'z'}];
+  posts = []; takeSnap({boot: 'b4'}); await settle(); takeSnap({boot: 'b4'}); await settle(); out.once = posts.map(p => p.cid);
+  // outside the Outbox (Talk): the same words and control
+  S.ob = []; S.obOpen = false; await act('talk', {}); out.act = [said[said.length - 1], S.obOpen, els.obpop.h];
+  S.snap.controls = []; obDraw(); out.noctl = els.obpop.h;
+  console.log(JSON.stringify(out));
+  process.exit(0);
+})();`);
+"""
+
+
+def test_older_run_b164(tmp: Path) -> None:
+    """B164: a run serves the page it started with, whatever an update puts on disk; and a page newer than its run
+    says so (Settings, a need_chat the run does not know) and sends what it kept once the run restarts."""
+    fake_repo(tmp)
+    with mock.patch.object(Path, 'read_text', side_effect=AssertionError('read from disk')):
+        page = W.page_html('app')
+    check(b'function settingsHTML(' in page, 'the run app is served from the start, not from the file on disk')
+    real = Path.read_text
+
+    def newer(self, *a, **k):
+        return 'NEWER' if self in (W.PAGE, W.TERM) else real(self, *a, **k)
+    with mock.patch.object(Path, 'read_text', newer):
+        check('NEWER' not in W.page_html().decode() + W.term_html().decode(), 'an update on disk changes neither page')
+    eq(W.with_extras({})['boot'], W.BOOT, 'the snapshot names the process, so the page sees a restart')
+    token = W.web_token()
+    srv = W.serve(token, 0, '127.0.0.1', snap=lambda: {})
+    base = f'http://127.0.0.1:{srv.server_address[1]}'
+    try:
+        without = {k: v for k, v in U.ACTIONS.items() if k != 'need_chat'}
+        with mock.patch.object(U, 'ACTIONS', without):
+            _, refused = post(f'{base}/act?t={token}', {'name': 'need_chat', 'args': {'tid': 'F1'}, 'cid': 'k1'})
+        code, route = get(f'{base}/no-settings?t={token}')
+    finally:
+        srv.stop()
+    eq((refused['ok'], refused['out']), (False, 'no such action: need_chat'), 'a run without need_chat refuses it')
+    eq((code, json.loads(route)['ok']), (404, False), 'a run without a route answers 404')
+    if not shutil.which('node'):
+        print('  (no node here: the older run script test is skipped)')
+        return
+    (tmp / 'driver.js').write_text(OLD_RUN_DRIVER, encoding='utf-8')
+    r = subprocess.run(['node', str(tmp / 'driver.js'), str(W.PAGE), json.dumps({'act': refused, 'route': json.loads(route)})],
+                       capture_output=True, text=True, timeout=60)
+    check(r.returncode == 0, 'node runs the page against an older run', r.stderr[-900:])
+    if r.returncode:
+        return
+    o = json.loads(r.stdout)
+    old, wait, btn = 'This run is older than this page. Restart it.', 'It goes once the run restarts', 'data-ctl="restart"'
+    check(old in o['route'][0] and btn in o['route'][0] and 'no such' not in o['route'][0] and 'Try again' in o['route'][0],
+          'Settings on an older run says so, with the restart control, not a raw 404', o['route'])
+    check(o['route'][1], 'and the error is not kept as the settings')
+    check('disk full' in o['err'] and 'Try again' in o['err'] and btn not in o['err'], 'another error: its words and Try again', o['err'])
+    check(isinstance(o['bad'], str) and 'Try again' in o['bad'], 'an error object in S.set does not throw')
+    check('Find a setting' in o['good'][0] and o['good'][1] and 'Try again' not in o['good'][0], 'Try again that works clears it', o['good'])
+    check(o['keeps'][0] and old in o['keeps'][1] and 'Find a setting' in o['keeps'][1], 'settings already loaded stay', o['keeps'])
+    eq(o['refused'][0], [['need_chat', 'failed'], ['chat_to', 'failed']], 'need_chat and its message stay in the Outbox')
+    check(wait in o['refused'][1] and wait in o['refused'][2] and btn in o['refused'][2], 'which says why, with the restart control', o['refused'])
+    check('no such action' not in o['refused'][2] and o['refused'][3] == 2, 'no raw error, and kept over a reload', o['refused'])
+    eq(o['same'], 0, 'the same run: not sent again')
+    eq(o['sent'], [[['need_chat', 'k1~b2', ''], ['chat_to', 'k2', 'c7']], 0, 'c7'], 'the run restarted: both go, once')
+    eq(o['legacy'], [['z~b3'], ['y']], 'one an earlier page left there goes too; a plain failure waits for Retry')
+    eq(o['once'], ['z~b4'], 'refused again: once per run')
+    check(o['act'][0] == old and o['act'][1] and btn in o['act'][2], 'Talk says the same', o['act'])
+    check('Stop the run and start it again' in o['noctl'], 'a run without the restart control: what to do instead', o['noctl'])
+
+
 if __name__ == '__main__':
     raise SystemExit(report([in_tmp(test_release_row_f131),in_tmp(test_project_name_b153),in_tmp(test_chat_order_f133), in_tmp(test_delete_chats_f118), in_tmp(test_server), in_tmp(test_real_action), in_tmp(test_run_controls),
                            in_tmp(test_start), in_tmp(test_upload),
@@ -2987,4 +3106,4 @@ if __name__ == '__main__':
                            in_tmp(test_chat_box_f115), in_tmp(test_home_switcher_f134),
                            in_tmp(test_scroll_f83), in_tmp(test_keyboard_b160), in_tmp(test_talk_settings_f124), in_tmp(test_mic_aborted_b162), in_tmp(test_status_view_f124),
                            in_tmp(test_chats_f128), in_tmp(test_needs_drop_chat_f110), in_tmp(test_task_text_f85),
-                           in_tmp(test_settings_f97), in_tmp(test_style_f83)]))
+                           in_tmp(test_settings_f97), in_tmp(test_older_run_b164), in_tmp(test_style_f83)]))

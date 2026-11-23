@@ -52,6 +52,10 @@ from agent_runner import ui_model as U
 
 PAGE = Path(__file__).with_name('web_page.html')
 TERM = Path(__file__).with_name('web_term.html')  # F81: the terminal-style page
+# B164: both pages as they were when this process loaded its code: an update on disk while the run is up must not
+# serve a page that asks for routes and actions this run does not have. A restart serves the new ones.
+PAGE_TEXT, TERM_TEXT = PAGE.read_text(encoding='utf-8'), TERM.read_text(encoding='utf-8')
+BOOT = secrets.token_hex(4)  # B164: this process, so the page knows when the run restarted
 TICK = 2.0  # s between snapshots the events stream compares
 PING = 15.0  # s of no change before the stream sends a keep-alive comment
 TTYD_INSTALL = ('ttyd is not installed, so the terminal tab cannot show a session\'s terminal. Install it on this machine '
@@ -522,7 +526,7 @@ def page_html(view: str | None = None, home: bool = False) -> bytes:
     """F79: the run app. Its light and dark looks follow the browser's setting (`[ui] theme` is the terminal
     UI's). F81: `[ui] web` (or `view`) goes into WEB_VIEW, for a browser that never chose a view. F134: `home`
     is Runner Home's own page (HOME_PAGE): the All projects view and the project switcher, no run behind it."""
-    page = PAGE.read_text(encoding='utf-8').replace("/*WEB_VIEW*/'app'", json.dumps(view or web_view()), 1)
+    page = PAGE_TEXT.replace("/*WEB_VIEW*/'app'", json.dumps(view or web_view()), 1)
     if home:
         page = page.replace('/*HOME_PAGE*/false', 'true', 1).replace(
             '<title>agent-runner</title>', '<title>Runner Home</title>', 1)
@@ -545,7 +549,7 @@ def term_html(name: str | None = None) -> bytes:
     css = ':root{' + ';'.join(f'--{k}:{v}' for k, v in themes[name].items() if k != 'mode') + \
         f';color-scheme:{"light" if themes[name]["mode"] == "light" else "dark"}}}'
     data = json.dumps({'default': name, 'themes': themes}).replace('</', '<\\/')
-    page = TERM.read_text(encoding='utf-8').replace('/*THEME_CSS*/', css, 1)
+    page = TERM_TEXT.replace('/*THEME_CSS*/', css, 1)
     return page.replace('/*THEMES*/{"default":"ryha","themes":{}}', data, 1).encode('utf-8')
 
 
@@ -581,7 +585,7 @@ def ttyd_install_cmd(which=shutil.which) -> str:
 
 def with_extras(snap: dict) -> dict:
     """F79: what the run app shows beyond the snapshot: this machine's name, and each concept's options."""
-    snap['machine'] = socket.gethostname()
+    snap['machine'], snap['boot'] = socket.gethostname(), BOOT
     if snap.get('terminal_mode') == 'install':
         snap['ttyd_install'] = ttyd_install_cmd()  # B120: the page's one line on how to get the terminal tab
     for c in snap.get('concepts') or []:

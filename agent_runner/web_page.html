@@ -753,18 +753,28 @@ const OB_STATES=['sending','failed'];
 function obParse(text){let l;try{l=JSON.parse(text||'[]')}catch(e){return[]}
   return Array.isArray(l)?l.filter(x=>x&&typeof x==='object'&&typeof x.cid==='string'&&x.cid&&typeof x.name==='string'
     &&OB_STATES.includes(x.state)&&x.args&&typeof x.args==='object'&&!Array.isArray(x.args)):[]}
+/* B164: the run is older than this page: its answer names an action, route or argument it does not know */
+const OLD_RUN='This run is older than this page. Restart it.', OLD_WAIT='Waiting: this run is older than this page. It goes once the run restarts.';
+const oldSaid=t=>/^no such (action|page): |unexpected keyword argument/.test(String(t||''));
+const oldRun=r=>!!r&&!r.ok&&oldSaid(r.out);
+const plainOut=(r,other)=>oldRun(r)?OLD_RUN:String((r&&r.out)||other);
+/* an item such a run refused: kept, and sent once the run restarts (snap.boot changes). x.boot: the run that refused
+   it ('' for one that has none). The new cid is the same in every tab, so the run still runs it once */
+const obOld=x=>x.state==='failed'&&oldSaid(x.err);
+const obDue=(box,boot)=>boot?(box||[]).filter(x=>obOld(x)&&(x.boot||'')!==boot):[];
+const obBootCid=(x,boot)=>x.cid.split('~')[0]+'~'+boot;
 const obTo=x=>String((x&&x.args&&x.args.to)||'');
 /* the next item to send: the first still sending, skipping messages to a chat that is not up yet */
 function obNext(box){return(box||[]).find(x=>x.state==='sending'&&!obTo(x).startsWith('@'))||null}
 /* a starting chat (placeholder '@cid') got its name: its messages go there */
 function obName(box,ph,name){return(box||[]).map(x=>obTo(x)===ph?{...x,args:{...x.args,to:name}}:x)}
 /* the run answered item cid with r: ok drops it (and names its new chat's messages), else it fails and stays */
-function obSettle(box,cid,r){
+function obSettle(box,cid,r,boot){
   const l=box||[], it=l.find(x=>x.cid===cid);if(!it)return l;
   const ok=!!(r&&r.ok), ph='@'+cid;
   if(ok){const rest=l.filter(x=>x.cid!==cid);return it.newchat&&r.name?obName(rest,ph,r.name):rest}
   const err=String((r&&r.out)||`${it.name} did not work`).trim().split('\n')[0];
-  return l.map(x=>x.cid===cid?{...x,state:'failed',err}:obTo(x)===ph?{...x,state:'failed',err:'the new chat did not start'}:x);
+  return l.map(x=>x.cid===cid?{...x,state:'failed',err,...(oldSaid(err)?{boot:boot||''}:{})}:obTo(x)===ph?{...x,state:'failed',err:'the new chat did not start'}:x);
 }
 /* Retry: sent again under a new cid (the run's answer to the old one is kept); a message waiting on a chat
    that did not start retries that chat */
@@ -858,7 +868,7 @@ function projectButtons(p){
   b.push({label:'Unlist',unlist:true});
   return b;
 }
-if(typeof module!=='undefined')module.exports={viewOf,runPill,cardControls,controlGroups,needsReply,chatGroups,needChatAsk,TALK_SET,talkSetParse,pickVoice,feedMark,feedAfter,atEnd,swipeTakes,swipeOpens,settingText,settingShown,settingValue,homeBase,homeKey,projectLink,homeLink,homeHref,pageTitle,projectState,switcherRows,projectWords,projectButtons,chatMove,BOX_KEYS,keysLine,histPush,histEdge,histStep,slashMatches,slashPick,slashMove,SLASH_FALLBACK,chatPick,answerOpts,needAsk,threadMsgs,working,planWords,compose,sendReq,usageOf,logKind,plain,chatName,controlReq,controlClick,taskControlsOn,queueGroups,conceptButtons,planQueue,NO_CONCEPT,newConceptReq,queuedId,NAV,talkSession,micProblem,dictProblem,dictButton,dictInsert,termTokens,talkShown,talkReply,goneMark,needsShown,answerSaid,GONE_MS,obParse,obNext,obName,obSettle,obRetry,obDrop,obCounts,obHidden,obPill,sentLeft,sentStep,sentParse};
+if(typeof module!=='undefined')module.exports={viewOf,runPill,cardControls,controlGroups,needsReply,chatGroups,needChatAsk,TALK_SET,talkSetParse,pickVoice,feedMark,feedAfter,atEnd,swipeTakes,swipeOpens,settingText,settingShown,settingValue,homeBase,homeKey,projectLink,homeLink,homeHref,pageTitle,projectState,switcherRows,projectWords,projectButtons,chatMove,BOX_KEYS,keysLine,histPush,histEdge,histStep,slashMatches,slashPick,slashMove,SLASH_FALLBACK,chatPick,answerOpts,needAsk,threadMsgs,working,planWords,compose,sendReq,usageOf,logKind,plain,chatName,controlReq,controlClick,taskControlsOn,queueGroups,conceptButtons,planQueue,NO_CONCEPT,newConceptReq,queuedId,NAV,talkSession,micProblem,dictProblem,dictButton,dictInsert,termTokens,talkShown,talkReply,goneMark,needsShown,answerSaid,GONE_MS,obParse,obNext,obName,obSettle,obRetry,obDrop,obCounts,obHidden,obPill,OLD_RUN,OLD_WAIT,oldRun,plainOut,obOld,obDue,obBootCid,sentLeft,sentStep,sentParse};
 </script>
 
 <script>
@@ -978,7 +988,7 @@ function toast(msg,bad){const t=$('toast');t.textContent=msg;t.className='toast'
   clearTimeout(toast.h);toast.h=setTimeout(()=>t.hidden=true,bad?6000:3000)}
 async function act(name,args){
   try{const r=await fetch(tq('act'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,args:args||{}})});
-    const j=await r.json();if(!j.ok)toast(j.out||`${name} did not work`,true);return j}
+    const j=await r.json();if(!j.ok){toast(plainOut(j,`${name} did not work`),true);if(oldRun(j)){S.oldRun=true;S.obOpen=true;obDraw()}}return j}
   catch(e){toast(`Could not reach the run page: ${e}`,true);return{ok:false}}
 }
 
@@ -1026,7 +1036,7 @@ async function drain(){
       catch(e){OB.offline=true;OB.timer=setTimeout(drain,OB.wait);OB.wait=Math.min(OB.wait*2,30000);obDraw();return}
       OB.offline=false;OB.wait=2000;
       if(!S.ob.some(x=>x.cid===it.cid))continue;  // discarded while it went
-      obChange(b=>obSettle(b,it.cid,j));
+      obChange(b=>obSettle(b,it.cid,j,S.snap.boot));
       obDone(it,j);render(true);
     }
   }finally{OB.busy=false}
@@ -1036,7 +1046,7 @@ async function drain(){
 function obDone(it,j){
   const now=Date.now(), snapNow=()=>fetch(tq('snapshot')).then(s=>s.json()).then(takeSnap).catch(()=>{});
   if(it.set&&!(j&&j.ok))delete S.f[`set:${it.name==='setting_project'?'project':'device'}:${it.set.id}`];  // the field shows what is kept again
-  if(!j||!j.ok){toast(`Not sent: ${it.say}`,true);S.obOpen=true;if(it.need||it.concept)snapNow();return}
+  if(!j||!j.ok){toast(oldRun(j)?OLD_WAIT:`Not sent: ${it.say}`,true);S.obOpen=true;if(it.need||it.concept)snapNow();return}
   if(it.newchat&&!j.name&&S.waitNew)S.waitNew.sent={j,ask:it.ask};  // B154: takeSnap finds its name
   if(it.newchat&&j.name){carrySent(j.name,j,it.ask);if(S.waitNew&&S.waitNew.ph==='@'+it.cid)S.waitNew=null;if(S.thread==='@'+it.cid)open(j.name)}
   else if(it.name==='chat_to'){const to=j.name||it.args.to;  // B154: c1 was not up: the new chat that took it
@@ -1057,15 +1067,20 @@ function obHide(){
   S.snap.needs=(S.snap.needs||[]).filter(n=>!ns.includes(n.id));
   S.snap.concepts=needsShown(S.snap.concepts,S.gone,now).filter(c=>!cs.includes(c.id));
 }
-const obBtns=x=>`${x.state==='failed'?`<button class="btn pri" data-obretry="${esc(x.cid)}">Retry</button>`:''}${x.state==='failed'&&x.name==='chat_to'?`<button class="btn" data-obedit="${esc(x.cid)}">Edit</button>`:''}<button class="btn" data-obdrop="${esc(x.cid)}">Discard</button>`;
-const obState=x=>x.state==='failed'?`Not sent: ${x.err||'it did not work'}`:OB.offline?'waiting for the connection':'sending…';
+/* B164: the run is older than the page: what to do, with the restart control when the run has one */
+function oldRunHTML(msg){const rc=controlOf('restart');
+  return `<div class="small v-bad">${esc(msg)}</div>${!rc||S.snap.up===false?'<div class="small">Stop the run and start it again.</div>':S.sure==='restart'?ctlSure(rc):`<div class="btns"><button class="btn acc${ctlBusy('restart')?' busy':''}" data-ctl="restart">Restart the run</button></div>`}`}
+const obBtns=x=>`${x.state==='failed'&&!obOld(x)?`<button class="btn pri" data-obretry="${esc(x.cid)}">Retry</button>`:''}${x.state==='failed'&&x.name==='chat_to'?`<button class="btn" data-obedit="${esc(x.cid)}">Edit</button>`:''}<button class="btn" data-obdrop="${esc(x.cid)}">Discard</button>`;
+const obState=x=>obOld(x)?OLD_WAIT:x.state==='failed'?`Not sent: ${x.err||'it did not work'}`:OB.offline?'waiting for the connection':'sending…';
 function obDraw(){
   const c=obCounts(S.ob), parts=obPill(c,OB.offline), bar=$('obbar'), pop=$('obpop');
   bar.hidden=!parts.length;
   setHTML(bar,parts.length?`<button class="obpill${c.failed?' bad':''}" data-obopen>${c.sending?'<span class="livedot"></span>':''}${parts.map(esc).join(' · ')}</button>`:'');
-  if(!S.ob.length)S.obOpen=false;
+  if(!S.ob.length&&!S.oldRun)S.obOpen=false;
+  if(!S.obOpen)S.oldRun=false;
   pop.hidden=!S.obOpen;
   setHTML(pop,S.obOpen?`<div class="obcard" role="dialog" aria-label="Outbox"><div class="row"><b class="grow">Outbox</b><button class="btn" data-obclose>Close</button></div>
+    ${S.oldRun||S.ob.some(obOld)?oldRunHTML(OLD_RUN):''}
     ${S.ob.map(x=>`<div class="obrow ${x.state}"><div class="grow"><div class="ell2">${esc(x.say)}</div><div class="small">${esc(obState(x))}</div></div><div class="btns">${obBtns(x)}</div></div>`).join('')}</div>`:'');
 }
 /* the stand-ins: a starting chat in the sidebar, a sent answer in Needs you, a queued concept, a message */
@@ -1076,11 +1091,13 @@ function obBubbles(n){
   const up=n&&n[0]==='@'&&S.ob.find(x=>'@'+x.cid===n);
   if(up&&up.ask)h+=`<div class="u pending ${up.state}" data-k="ob:${esc(up.cid)}" data-t="${esc(tkey(up.ask))}">${esc(up.ask)}</div>`;  // B139: its first message
   for(const x of S.ob)if(x.name==='chat_to'&&obTo(x)===n)h+=`<div class="u pending ${x.state}" data-k="ob:${esc(x.cid)}" data-t="${esc(tkey(x.args.text))}">${esc(x.args.text)}${x.state==='failed'?`<div class="small">${esc(obState(x))}</div><div class="btns">${obBtns(x)}</div>`:''}</div>`;
-  if(up)h+=`<div class="think">${LOGO()}${up.state==='failed'?esc(`The chat did not start: ${up.err}`):'Starting the chat… what you write goes once it is up'}</div>`;
+  if(up)h+=`<div class="think">${LOGO()}${up.state==='failed'?esc(obOld(up)?OLD_WAIT:`The chat did not start: ${up.err}`):'Starting the chat… what you write goes once it is up'}</div>`;
   return h;
 }
-function obRetryClick(cid){  /* Retry: a new chat sent again gets a new cid, so its stand-in follows */
-  const before=S.ob, fresh=newCid();obChange(b=>obRetry(b,cid,fresh));
+/* B164: the run restarted: what the older one did not know is sent again */
+function obBoot(boot){for(const x of obDue(S.ob,boot))obRetryClick(x.cid,obBootCid(x,boot))}
+function obRetryClick(cid,as){  /* Retry: a new chat sent again gets a new cid, so its stand-in follows */
+  const before=S.ob, fresh=as||newCid();obChange(b=>obRetry(b,cid,fresh));
   const was=before.find(y=>y.newchat&&!S.ob.some(z=>z.cid===y.cid));
   if(was){const ph='@'+fresh;if(S.thread==='@'+was.cid)S.thread=ph;S.waitNew={known:chats().map(c=>c.name),at:Date.now(),ph}}
   render(true);drain();
@@ -1323,7 +1340,7 @@ function taskRow(q,title){
 async function openTask(id){
   S.taskOpen[id]=!S.taskOpen[id];render(true);
   if(!S.taskOpen[id])return;
-  try{const j=await (await fetch(tq('task/'+encodeURIComponent(id)))).json();S.tasks[id]=j.ok?{text:j.text}:{err:j.out||'It could not be read'}}
+  try{const j=await (await fetch(tq('task/'+encodeURIComponent(id)))).json();S.tasks[id]=j.ok?{text:j.text}:{err:plainOut(j,'It could not be read')}}
   catch(e){if(!S.tasks[id])S.tasks[id]={err:'Could not reach the run page: fold it and open it again'}}
   render(true);
 }
@@ -1443,7 +1460,10 @@ function sheetDraw(){
 }
 /* --- F97: Settings ------------------------------------------------------------------------------------------- */
 async function loadSettings(){
-  try{const j=await (await fetch(tq('settings'))).json();S.set=j;S.setErr=j.out||''}
+  // B164: only a whole answer is kept: an error (a run without this route) leaves the settings already there
+  try{const r=await fetch(tq('settings')), j=await r.json();S.setOld=false;
+    if(r.ok&&j&&Array.isArray(j.tables)){S.set=j;S.setErr=j.out||''}
+    else{S.setOld=oldRun(j);S.setErr=plainOut(j,'The settings could not be read.')}}
   catch(e){S.setErr='Could not reach the run page to read the settings.'}
   render(true);
 }
@@ -1466,21 +1486,22 @@ function settingRow(t,k){
       <div class="setcols"><div class="setcol"><b class="small">Project</b>${settingField(t,k,'project')}${btn('project','Queue change')}</div>
       <div class="setcol"><b class="small">This device</b>${settingField(t,k,'device')}<div class="btns">${btn('device','Save')}${k.has_device?`<button class="btn" data-setreset="${esc(id)}">Reset</button>`:''}</div></div></div>`:''}</div>`;
 }
+const setErrHTML=()=>S.setErr?`${S.setOld?oldRunHTML(S.setErr):`<div class="small v-bad">${esc(S.setErr)}</div>`}<div class="btns"><button class="btn" data-setload>Try again</button></div>`:'';
 function settingsHTML(){
-  const d=S.set, q=String(S.f.setq||'').trim().toLowerCase();
-  if(!d)return `<div class="col">${S.setErr?`<div class="small v-bad">${esc(S.setErr)}</div><div class="btns"><button class="btn" data-setload>Try again</button></div>`:emptyCard('Loading…')}</div>`;
+  const d=S.set&&S.set.tables?S.set:null, q=String(S.f.setq||'').trim().toLowerCase();
+  if(!d)return `<div class="col">${setErrHTML()||emptyCard('Loading…')}${obCards(x=>x.ctl==='restart:')}</div>`;
   const hit=(t,k)=>!q||`${t}.${k.key} ${k.help}`.toLowerCase().includes(q);
   const ts=d.tables.map(t=>({t:t.table,ks:t.keys.filter(k=>hit(t.table,k))})).filter(x=>x.ks.length);
   const rc=controlOf('restart');
   return `<div class="col"><div class="small">Project settings are in ${esc(d.project)}, shared with everyone: a change is queued as a task and lands through the gate. This device's are in ${esc(d.device)}, only on this machine: they are saved at once, and win.</div>
-    ${S.setErr?`<div class="small v-bad">${esc(S.setErr)}</div>`:''}
+    ${setErrHTML()}
     ${S.setWait&&S.snap.up!==false&&rc?card(`<div class="small">Saved. It applies when the run restarts.</div>${S.sure==='restart'?ctlSure(rc):`<div class="btns"><button class="btn acc" data-ctl="restart">Restart the run</button></div>`}`,'','data-k="setwait"'):''}
     ${obCards(x=>x.ctl==='restart:')}
     <input class="fld" type="search" data-f="setq" placeholder="Find a setting" aria-label="Find a setting">
     ${ts.length?ts.map(x=>`<div class="sec">[${esc(x.t)}]<span class="ln"></span></div>${card(x.ks.map(k=>settingRow(x.t,k)).join(''),'',`data-k="sett:${esc(x.t)}"`)}`).join(''):emptyCard('No setting matches.')}
     ${d.unknown.length?`<div class="sec">Not settings<span class="ln"></span></div>${card(d.unknown.map(u=>`<div class="srow" data-k="unk:${esc(u.side+u.table+u.key)}"><div class="row"><span class="grow setkey">${u.table?`[${esc(u.table)}] `:''}${u.key?`${esc(u.key)} = `:''}${esc(u.value)}</span><span class="tag warn">unknown</span></div><div class="small">${esc(u.file)}: ${esc(u.why)}</div></div>`).join(''))}`:''}</div>`;
 }
-const settingOf=id=>{const [t,...k]=id.split('.');const x=S.set&&S.set.tables.find(y=>y.table===t);return x&&{t,k:x.keys.find(y=>y.key===k.join('.'))}};
+const settingOf=id=>{const [t,...k]=id.split('.');const x=S.set&&S.set.tables&&S.set.tables.find(y=>y.table===t);return x&&{t,k:x.keys.find(y=>y.key===k.join('.'))}};
 function saveSetting(id,side){
   const x=settingOf(id);if(!x||!x.k)return;
   const f=`set:${side}:${id}`, el=[...document.querySelectorAll('[data-f]')].find(e=>e.dataset.f===f);
@@ -1890,10 +1911,12 @@ function followVersion(v){if(!v)return false;if(!RUN_VERSION){RUN_VERSION=v;retu
 function takeSnap(s){
   if(!s||s.error){if(s&&s.error)toast(s.error,true);return}
   if(followVersion(s.version))return;
+  const booted=!!s.boot&&s.boot!==S.snap.boot;
   S.snap={...S.snap,...s};
   if(!HOME_PAGE)document.title=pageTitle(S.snap.project);  // B153
   if(OB.offline)drain();  // F137: the run answers again: the outbox goes on at once
   S.snap.needs=needsShown(S.snap.needs,S.gone,Date.now());  // B138: a snapshot taken before an answer keeps it off
+  if(booted){S.oldRun=false;obBoot(s.boot);if(S.view==='settings'&&S.setErr)loadSettings()}  // B164
   // F137: a chat the outbox still starts is named by new_control's answer (obSettle), not by this guess
   if(S.waitNew&&S.waitNew.ph&&S.ob.some(y=>'@'+y.cid===S.waitNew.ph)){}
   else if(S.waitNew){const fresh=chats().map(c=>c.name).filter(x=>!S.waitNew.known.includes(x));
