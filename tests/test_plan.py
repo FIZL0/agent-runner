@@ -1254,10 +1254,14 @@ def test_edit():
             'F105: `plan add --model haiku` stores the model on the task, and `plan ID` shows it')
         run(root, 'plan', 'edit', 'R1', '--model', 'sonnet')
         has(run(root, 'plan', 'R1').stdout, r'\| test: test_p \| model: sonnet$', 'and `plan edit --model` sets it')
-        r = run(root, 'plan', 'add', 'D', 'Copilot docs', '--files', 'q.md', '--model', 'copilot:gpt-5')
+        r = run(root, 'plan', 'add', 'D', 'Local docs', '--files', 'q.md', '--model', 'ollama:llama3')
         check(r.returncode == 2 and 'not added: --model = ' in r.stderr
-              and 'copilot provider is not supported yet' in r.stderr and 'Copilot docs' not in (root / 'plan/TODO.md').read_text(),
-              'F125: `plan add --model copilot:gpt-5` is refused with [models]\' message, nothing added', r.stderr)
+              and 'local = true' in r.stderr and 'Local docs' not in (root / 'plan/TODO.md').read_text(),
+              'F125: `plan add --model ollama:llama3` (local off) is refused with [models]\' message, nothing added',
+              r.stderr)
+        r = run(root, 'plan', 'add', 'D', 'Copilot docs', '--files', 'q.md', '--model', 'copilot:gpt-5')
+        check(r.returncode == 0 and 'model: copilot:gpt-5' in (root / 'plan/TODO.md').read_text(),
+              'F106c: `plan add --model copilot:gpt-5` is taken (its session runs in the harness loop)', r.stderr)
         r = run(root, 'plan', 'edit', 'R1', '--model', 'nope:m')
         check(r.returncode == 2 and "unknown provider 'nope'" in r.stderr
               and 'model: sonnet' in run(root, 'plan', 'R1').stdout,

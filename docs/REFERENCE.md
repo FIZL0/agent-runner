@@ -1244,8 +1244,60 @@ in runner.local.toml to allow it on one machine.
 An unknown provider prefix is refused at start, except on the Pi backend, where the value is kept whole as Pi's
 own model syntax.
 
-For now this is config only: until the loop engine (F106c) lands, a role naming a provider other than `claude` is
-refused at start with a message saying so. `claude:<model>` runs as the bare model name.
+`claude:<model>` runs as the bare model name on Claude Code (or Pi). A role naming another provider runs its sessions
+in the [harness loop](#the-harness-loop).
+
+Only task sessions (`[models] code`, `[models.kinds]`, a task's own `plan add --model`, `run --model`) and fix
+sessions (`[models] fix`) can name another provider. `review`, `docs`, `control` and `feed` run as Claude Code
+itself (its subagents, Remote Control control sessions, the feed's one-shot), so another provider there is refused
+at start, saying why.
+
+### The harness loop
+
+The harness loop is `agent_runner/harness.mjs`, a Node program (Node 22 or later on PATH as `node`), with one
+session per process. The runner starts it instead of Claude Code or Pi for any session whose model is
+`<provider>:<model>` with a provider other than claude: copilot, codex, gemini, ollama (needs `[models] local = true`;
+`OLLAMA_HOST` or http://localhost:11434) and custom `[models.providers.<name>]` (kind openai or anthropic, url, key
+from the env var `key_env` names). This holds whichever `[run] agent` is set.
+
+Models come from `@earendil-works/pi-ai` 1.6.0, the provider and login package Pi uses. It is not bundled. The first
+session runs `npm install` of that pinned version into `~/.cache/agent-runner/harness-1.6.0` (override with
+`AGENT_RUNNER_HARNESS_MODULES`). Built-in provider names map: copilot -> github-copilot, codex -> openai-codex,
+gemini -> google.
+
+Logins are Pi's. The loop reads and refreshes `~/.pi/agent/auth.json` (or `$PI_CODING_AGENT_DIR/auth.json`), taking
+Pi's lock on it, so log in once with `pi` (/login). API keys from the providers' usual env vars also work (e.g.
+GEMINI_API_KEY, COPILOT_GITHUB_TOKEN). A model id the provider does not list is refused with the ids it has.
+
+Tools: bash (each call starts in the worktree; timeout default 120 s, at most 3600 s; output over 30000 characters
+is cut in the middle), read, edit, write, finish (runs `run finish`), ask (runs `run ask`; the task is parked under
+Needs you and the answer resumes the same session), and publish_page (writes the HTML to
+`<notes>/harness-pages/<task>/<name>.html` and returns the path; publishing it to claude.ai is not built yet). A
+`run finish` or `run ask` typed through bash ends the session the same way (it watches the slot's end mark).
+
+The git fence: before every tool call it runs `run fence`, with the same rules as Claude Code sessions' PreToolUse
+hook: no git push, reset --hard, clean, or checkout -- .; no edit or write outside the worktree in the main checkout
+or another slot. A denied call returns the reason to the model and does not run.
+
+Budgets: before every model call it holds what the session has spent, counted as for `[run] task_tokens` and
+`task_usd`: tokens without cache reads; dollars from the provider's own cost when it gives one. Past a cap it stops,
+writes the task's budget mark, and the run parks the branch as wip/<ID> as it does for any session over budget. Fix
+sessions have no cap (`fix_timeout` holds them).
+
+Tells: a person's `plan tell` (text typed into the hidden slot's terminal) is read from stdin and goes in as the next
+user message.
+
+Ending: at finish or ask; or after `idle` seconds at the end of a turn with nothing told; a fix session (`--once`)
+ends with its first answer. A transient model error is tried 3 more times. A lasting one ends the session with an
+API-error entry, which the run resumes as it would Claude's.
+
+Transcript: `<notes>/harness-sessions/<session id>.jsonl`, in Claude Code's entry shape (type user/assistant, content
+blocks text/tool_use/tool_result, usage in Claude's keys), so status, spend, the exit line's stats and resume read it
+as Claude's. Each entry also keeps the provider's message as sent (`harness` field), which a resume reads back, so a
+resumed session keeps its whole history.
+
+Not there yet: no Remote Control, no subagents (the review and docs subagents). A fix session starts fresh rather
+than as a copy of the task's session.
 
 ### Renamed and removed keys
 

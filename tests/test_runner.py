@@ -7005,12 +7005,12 @@ def test_no_gate_b36(tmp: Path):
                 eq(R.run(['--dry-run'], 'run'), 0, 'dry run')
             has(dry.getvalue(), r'WARNING no test gate .*merges go to main untested', '--dry-run warns first')
             try:
-                R.run(['--model', 'copilot:gpt-5', '--dry-run'], 'run')
+                R.run(['--model', 'nope:gpt-5', '--dry-run'], 'run')
                 said = ''
             except SystemExit as e:
                 said = str(e)
-            has(said, r"run --model = 'copilot:gpt-5': the copilot provider is not supported yet",
-                'F125: `run --model copilot:gpt-5` is refused before the run starts, as [models] is')
+            has(said, r"run --model = 'nope:gpt-5': unknown provider 'nope'",
+                'F125: `run --model nope:gpt-5` is refused before the run starts, as [models] is')
             R.C.run['agent'] = str(agent)
             eq(R.run(['once'], 'run'), 0, 'the run ends after its one task')
     finally:

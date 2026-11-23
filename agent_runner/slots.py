@@ -144,6 +144,11 @@ def fence_hooks() -> list[dict]:
     return [{'matcher': FENCE_TOOLS, 'hooks': [{'type': 'command', 'command': plat.command_text(cmd)}]}]
 
 
+def fence_argv() -> list[str]:
+    """F106c: the git fence's command (`fence_hooks`'), which the harness loop runs before every tool call."""
+    return [*runner_cmd(), 'fence', str(ROOT), str(SLOTS_DIR), str(C.notes()), '1' if C.push_remote else '0']
+
+
 ARG_PROMPT_MAX = 96 * 1024  # Linux's MAX_ARG_STRLEN is 128 KiB for one argument; leave room
 ARGV_PROMPT_MAX = 24000  # Windows' CreateProcess takes 32 767 characters, flags and paths included
 LONG_BRIEF = 'Your instructions for this session are in your system prompt, under "{marker}". Follow them.'
@@ -228,6 +233,8 @@ class Claude:
             return  # cannot write there: the dialog shows, as before
 
     def fix_cmd(self, prompt: str) -> list[str]:
+        if on_harness(C.run['fix_model']):  # F106c: [models] fix on another provider runs in the harness loop
+            return HARNESS.fix_cmd(prompt)
         return [plat.exe(C.run['agent']), '-p', prompt, '--permission-mode', 'bypassPermissions',
                 '--disallowedTools', 'AskUserQuestion', '--model', C.run['fix_model'], *lean()]
 
@@ -237,6 +244,8 @@ class Claude:
     def fork_flags(self, sid: str) -> list[str]:
         """Added to a fix session's flags: it starts as a copy of session `sid` (a task's own), from any folder,
         under an id of its own. [] where the backend cannot: the session starts fresh."""
+        if on_harness(C.run['fix_model']):
+            return []  # ponytail: the harness could copy a transcript under a new id; its fix starts fresh
         return ['--resume', sid, '--fork-session'] if self.find_transcript(sid) else []
 
     def entry(self, d: dict) -> dict | None:
@@ -329,6 +338,60 @@ class Pi(Claude):
         return entry
 
 
+HARNESS_JS = Path(__file__).with_name('harness.mjs')
+
+
+class Harness(Claude):
+    """F106c: the harness loop (`harness.mjs`), our own agent loop on Node, for a session whose model is another
+    provider's ('<provider>:<model>', `config.harness_model`), whichever backend `[run] agent` names. Its tools
+    are bash, read, edit, write, finish, ask and publish_page; it asks the git fence (`run fence`) before every
+    tool call and holds `[run] task_tokens` / `task_usd` before every model call. It ends at finish or ask, or
+    after `idle` s with nothing to do and nothing told; `once` (a fix session) ends with its first answer. A
+    tell typed into its terminal is its next message. Transcripts in `<notes>/harness-sessions`, in Claude's
+    shape."""
+    report_exit = True
+
+    @staticmethod
+    def trust(d):
+        pass  # no folder question
+
+    def flags(self, sid, model, idle, resume, once):
+        if resume and not self.find_transcript(sid):
+            raise FileNotFoundError(f'harness session {sid} is missing')
+        provider = model.partition(':')[0]
+        flags = ['--resume' if resume else '--session-id', sid, '--model', model, '--notes', str(C.notes()),
+                 '--fence-cmd', json.dumps(fence_argv()),
+                 '--runner-cmd', json.dumps(runner_cmd())]
+        flags += ['--once'] if once else ['--idle', str(idle)]
+        if not once:  # a task's session; a fix session is held by fix_timeout
+            flags += ['--task-tokens', str(C.run.get('task_tokens') or 0), '--task-usd', str(C.run.get('task_usd') or 0)]
+        if provider in C.providers:
+            flags += ['--provider', json.dumps(C.providers[provider])]
+        if (brief := C.notes(f'{sid}.brief')).exists():
+            flags += ['--system-file', str(brief)]
+        return flags
+
+    def cmd(self, prompt, pf, sid, flags):
+        return shlex.join(self.argv(prompt, pf, sid, flags))
+
+    def argv(self, prompt, pf, sid, flags):
+        return [shutil.which('node') or 'node', str(HARNESS_JS), *flags, '--prompt-file', str(pf)]
+
+    def fix_cmd(self, prompt):
+        return agent_argv(prompt, str(uuid.uuid4()), C.run['fix_model'], MASTER_IDLE, 'master', once=True)
+
+    def find_transcript(self, sid):
+        p = C.notes('harness-sessions') / f'{sid}.jsonl'
+        return str(p) if p.exists() else None
+
+    def fork_flags(self, sid):
+        return []
+
+    def entry(self, d):
+        return d  # written in Claude's shape
+
+
+HARNESS = Harness()
 BACKENDS = {'claude': Claude(), 'pi': Pi()}
 
 
@@ -337,10 +400,21 @@ def backend() -> Claude:
     return BACKENDS[C.run['backend']]
 
 
+def on_harness(model: str) -> bool:
+    """F106c: `model` (a settled one) is another provider's than claude, so its session runs in the harness loop."""
+    from agent_runner.config import harness_model
+    return harness_model(model, C.providers)
+
+
+def backend_for(model: str) -> Claude:
+    """The backend a session on `model` runs on: the harness loop for another provider's, else `backend()`."""
+    return HARNESS if on_harness(model) else backend()
+
+
 def agent_flags(sid: str, model: str, idle: int, resume: bool = False, once: bool = False) -> list[str]:
     """The session flags after the prompt. `resume` continues the session `sid` instead of starting it (its
     transcript keeps the id); `once` is a session with no pane, which exits after one answer."""
-    return backend().flags(sid, model, idle, resume, once)
+    return backend_for(model).flags(sid, model, idle, resume, once)
 
 
 REMOTE_ENV_FLAGS = ('CLAUDE_CODE_USE_BEDROCK', 'CLAUDE_CODE_USE_VERTEX', 'CLAUDE_CODE_USE_FOUNDRY')
@@ -539,7 +613,8 @@ def agent_cmd(prompt: str, sid: str, model: str, idle: int, name: str, resume: b
     written to `<notes>/<name>.prompt` and goes in from there (`Claude.cmd`, `Pi.cmd`)."""
     pf = C.notes(f'{name}.prompt')
     pf.write_text(prompt, encoding='utf-8')
-    return backend().cmd(prompt, pf, sid, agent_flags(sid, model, idle, resume) + remote_flags(name, cwd))
+    b = backend_for(model)  # F106c: the harness loop has no Remote Control
+    return b.cmd(prompt, pf, sid, agent_flags(sid, model, idle, resume) + ([] if b is HARNESS else remote_flags(name, cwd)))
 
 
 def agent_argv(prompt: str, sid: str, model: str, idle: int, name: str, resume: bool = False,
@@ -548,8 +623,9 @@ def agent_argv(prompt: str, sid: str, model: str, idle: int, name: str, resume: 
     agent. The prompt is written to `<notes>/<name>.prompt` all the same."""
     pf = C.notes(f'{name}.prompt')
     pf.write_text(prompt, encoding='utf-8')
-    return backend().argv(prompt, pf, sid, agent_flags(sid, model, idle, resume, once) +
-                          ([] if once else remote_flags(name, cwd)))
+    b = backend_for(model)  # F106c: the harness loop has no Remote Control
+    return b.argv(prompt, pf, sid, agent_flags(sid, model, idle, resume, once) +
+                  ([] if once or b is HARNESS else remote_flags(name, cwd)))
 
 
 SLOTS = 1  # how many slots this run has; `cmd_run` sets it, for {slots} in `[run] slot_env`
@@ -896,6 +972,8 @@ def claude_project_dir(d: Path) -> str:
 def move_transcript(sid: str, d: Path) -> bool:
     """Claude Code finds a session to `--resume` only among its working folder's transcripts: one that asked in
     another slot has its transcript moved under `d`'s. False when there is no transcript to resume."""
+    if HARNESS.find_transcript(sid):
+        return True  # F106c: the harness loop's sessions live in one folder for every slot
     if not (t := backend().find_transcript(sid)):
         return False
     if pi():
@@ -1270,7 +1348,7 @@ TRANSCRIPTS: dict[str, str] = {}  # sid -> its transcript, once found: `stalled`
 def transcript(sid: str) -> str | None:
     if (t := TRANSCRIPTS.get(sid)) and os.path.exists(t):
         return t
-    t = backend().find_transcript(sid)
+    t = backend().find_transcript(sid) or HARNESS.find_transcript(sid)  # F106c: or the harness loop's
     if t:
         TRANSCRIPTS[sid] = t
     return t
