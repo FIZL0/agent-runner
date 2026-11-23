@@ -18,11 +18,10 @@ copy, and the actions they share.
     log       the run log's last lines
     release   the release line ('' when no release is queued)
     quick_asks  the Status chat's quick asks sent to c1: key, label, text
-    terminal_mode  how a session's terminal shows: 'ttyd', 'builtin' (capture-pane and send-keys), 'feed'
+    terminal_mode  how a session's terminal shows: 'ttyd', 'install' (tmux, no ttyd yet), 'feed'
 
 F74 adds, outside the snapshot (read on demand, per session): `feed(name)` (its transcript as say/you/tool/out
-entries) and `capture(name)` (its pane's text, for the built-in terminal view); and the actions `chat_to`
-(any control session), `interrupt`, `new_control`, `quick_ask` and `keys`.
+entries); and the actions `chat_to` (any control session), `interrupt`, `new_control` and `quick_ask`.
 
 Each action calls what the CLI already does, as a subprocess of the runner (`runner_cmd()`), so a page and a
 terminal change the run exactly as a person typing the command would; `chat`, `answer` and `take` hand a
@@ -603,13 +602,12 @@ def act(name: str, **args) -> dict:
 # The feed is a session's transcript (Claude Code's JSONL; Pi's, in Claude's shape by `slots.backend().entry`)
 # as entries {'kind': say|you|tool|out, 'text'}, newest last: the agent's words, the person's, each tool step
 # and its output, so a page shows the words with the steps folded. The terminal view is the session's live
-# tmux pane: through ttyd when it is installed ('ttyd'), else a built-in one ('builtin': the pane's text by
-# `capture` every CAPTURE_EVERY s, typed text by `keys`); on Windows or with no tmux, the feed only ('feed').
+# tmux pane, through ttyd when it is installed ('ttyd'; C25: with tmux and no ttyd, 'install': the page says how
+# to install it); on Windows or with no tmux, the feed only ('feed').
 
 FEED_BYTES = 400_000  # the tail of a transcript a feed reads: a long session's whole file is not read each poll
 FEED_MAX = 200  # entries a feed returns
 OUT_LINES, OUT_CHARS, TOOL_CHARS = 3, 300, 120  # how much of a tool's output, and of its call, a feed keeps
-CAPTURE_EVERY = 0.5  # s between the built-in terminal view's captures of a pane
 INTERRUPTED = '[Request interrupted'  # how Claude Code records an Escape in the transcript
 QUICK_ASKS = (  # F74: the Status chat's quick asks, sent to c1: (key, label, text)
     ('since', 'since last look', 'what happened since my last look?'),
@@ -772,13 +770,13 @@ def concept_copy(cid: str) -> str:
 
 
 def terminal_mode() -> str:
-    """F74: how a page shows a session's terminal: 'ttyd' (installed, with tmux), 'builtin' (tmux, no ttyd:
-    `capture` and `keys`), or 'feed' (Windows, or no tmux: the feed and the session link only)."""
+    """F74: how a page shows a session's terminal: 'ttyd' (installed, with tmux), 'install' (tmux, no ttyd: the
+    page says how to install it; C25), or 'feed' (Windows, or no tmux: the feed and the session link only)."""
     import shutil
     from agent_runner import plat
     if plat.WINDOWS or not shutil.which('tmux'):
         return 'feed'
-    return 'ttyd' if shutil.which('ttyd') else 'builtin'
+    return 'ttyd' if shutil.which('ttyd') else 'install'
 
 
 def session_pane(name: str) -> str:
@@ -807,7 +805,7 @@ def _tmux(argv: list[str]) -> tuple[int, str]:
     return r.returncode, r.stdout if not r.returncode else r.stderr.strip()
 
 
-TMUX = [_tmux]  # how the terminal view reaches tmux; a test swaps it
+TMUX = [_tmux]  # how `keys` reaches tmux; a test swaps it
 
 
 def _no_pane(name: str) -> dict:
@@ -815,19 +813,9 @@ def _no_pane(name: str) -> dict:
                                            f'there is no tmux): its feed and session link still work.', 'argv': []}
 
 
-def capture(name: str) -> dict:
-    """F74: the built-in terminal view: session `name`'s pane as text now (`tmux capture-pane`), and how often
-    to ask again: {'ok', 'name', 'text', 'every'}."""
-    if not (pane := session_pane(name)):
-        return {**_no_pane(name), 'name': name, 'text': '', 'every': CAPTURE_EVERY}
-    code, text = TMUX[0](['capture-pane', '-p', '-J', '-t', pane])
-    return {'ok': code == 0, 'name': name, 'text': text if code == 0 else '', 'every': CAPTURE_EVERY,
-            **({} if code == 0 else {'out': f'tmux capture-pane: {text}'})}
-
-
 def keys(session: str, text: str = '', key: str = '') -> dict:
-    """F74: the built-in terminal view's typing: `text` typed into `session`'s pane (c6, s2) as is
-    (`send-keys -l`), then the named `key` (one of KEYS: Enter, Escape, …) if given."""
+    """F74: `text` typed into `session`'s pane (c6, s2) as is (`send-keys -l`), then the named `key` (one of
+    KEYS: Enter, Escape, …) if given; `interrupt` sends Escape through it (C25: no longer an action)."""
     if key and key not in KEYS:
         return {'ok': False, 'code': 2, 'out': f'keys: key is one of {", ".join(KEYS)}, not {key!r}', 'argv': []}
     if not (pane := session_pane(session)):
@@ -881,5 +869,4 @@ def quick_ask(key: str) -> dict:
     return SEND[0](text)
 
 
-ACTIONS.update({'chat_to': chat_to, 'interrupt': interrupt, 'new_control': new_control, 'quick_ask': quick_ask,
-                'keys': keys})
+ACTIONS.update({'chat_to': chat_to, 'interrupt': interrupt, 'new_control': new_control, 'quick_ask': quick_ask})

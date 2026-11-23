@@ -385,20 +385,20 @@ def test_feed(tmp: Path) -> None:
 
 
 class FakeTmux:
-    """tmux, faked: records each argv; capture-pane answers with a screen."""
+    """tmux, faked: records each argv."""
 
     def __init__(self):
         self.calls = []
 
     def __call__(self, argv):
         self.calls.append(argv)
-        return (0, '❯ status?\n● run up\n') if argv[0] == 'capture-pane' else (0, '')
+        return 0, ''
 
 
 def test_chat_and_terminal(tmp: Path) -> None:
     """F74: chat to any control session (c1 through SEND, cN typed into its pane), interrupt (Escape into its
-    pane), a new control session's link, the quick asks to c1, and the terminal view: ttyd, built-in
-    (capture-pane, send-keys) or the feed only."""
+    pane), a new control session's link, the quick asks to c1, and the terminal view: ttyd, install ttyd, or
+    the feed only."""
     from unittest import mock
     from agent_runner import plat, slots
     fake_run(tmp)
@@ -416,19 +416,16 @@ def test_chat_and_terminal(tmp: Path) -> None:
             eq(U.act('chat_to', text='how is R43?', to='c6')['out'], 'sent to c6', 'c6 too')
             r = U.act('chat_to', text='hello', to='c9')
             eq(U.act('interrupt', session='c6')['out'], 'interrupted c6', 'interrupt c6')
-            eq(U.act('keys', session='s2', text='yes', key='Enter')['ok'], True, 'keys typed into s2')
-            eq(U.act('keys', session='s2', key='F13')['ok'], False, 'an unknown key is refused')
-            cap = U.capture('s2')
-            nocap = U.capture('s9')
+            eq(U.keys('s2', text='yes', key='Enter')['ok'], True, 'keys typed into s2')
+            eq(U.keys('s2', key='F13')['ok'], False, 'an unknown key is refused')
+            eq(U.act('keys', session='s2', text='x')['ok'], False, "C25: 'keys' is no action: no page types into a pane")
+        check(not hasattr(U, 'capture') and not hasattr(U, 'CAPTURE_EVERY'),
+              'C25: the built-in view\'s capture went with it')
         eq(sent, ['hi c1'], 'c1 through SEND')
         eq(typed, [('%6', 'how is R43?')], "c6 typed into its own pane")
         check(not r['ok'] and 'no tmux pane' in r['out'], 'a session with no pane says so', r)
         eq(tm.calls[:3], [['send-keys', '-t', '%6', 'Escape'], ['send-keys', '-t', '%12', '-l', 'yes'],
                           ['send-keys', '-t', '%12', 'Enter']], 'Escape into c6; text then Enter into s2')
-        eq((cap['ok'], cap['text'], cap['every']), (True, '❯ status?\n● run up\n', 0.5),
-           'the built-in view captures the pane every 0.5 s')
-        eq(tm.calls[-1], ['capture-pane', '-p', '-J', '-t', '%12'], 'by tmux capture-pane')
-        check(not nocap['ok'], 'no pane: nothing to capture', nocap)
 
         n = U.act('new_control', ask='')
         eq((n['ok'], n['link'], ran[-1]), (True, 'https://claude.ai/code/session_c3x', ['control', '--new']),
@@ -452,7 +449,7 @@ def test_chat_and_terminal(tmp: Path) -> None:
         with mock.patch('shutil.which', side_effect=which({'tmux', 'ttyd'})):
             eq(U.terminal_mode(), 'ttyd', 'tmux and ttyd: ttyd')
         with mock.patch('shutil.which', side_effect=which({'tmux'})):
-            eq(U.terminal_mode(), 'builtin', 'tmux, no ttyd: the built-in view')
+            eq(U.terminal_mode(), 'install', 'C25: tmux, no ttyd: install ttyd (the built-in view is gone)')
         with mock.patch('shutil.which', side_effect=which(set())):
             eq(U.terminal_mode(), 'feed', 'no tmux: the feed only')
     with mock.patch.object(plat, 'WINDOWS', True), mock.patch('shutil.which', side_effect=which({'tmux', 'ttyd'})):
