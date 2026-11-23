@@ -699,6 +699,9 @@ def log_started_by(by: str) -> None:
     try:
         with open(C.notes('run.log'), 'a', encoding='utf-8') as f:
             f.write(f'=== {stamp} {msg}\n')
+    except OSError:
+        pass
+    try:
         with open(events_file(), 'a', encoding='utf-8') as f:
             f.write(json.dumps({'time': stamp, 'kind': EV_STARTED_BY, 'id': '', 'text': msg, **rec},
                                ensure_ascii=False) + '\n')
