@@ -1399,7 +1399,7 @@ class Run:
             close_controls(branch)  # B26
             end_closed_controls()  # B53
             from agent_runner.page_copy import page_copy_tick
-            page_copy_tick()  # F68: c1 republishes the claude.ai copy of the run page
+            page_copy_tick()  # F68: the claude.ai copy of the run page (B122: a one-shot, never c1)
         if not stopping():
             sweep_unmerged(branch, self.merging)
         keep_claims(self.running, branch)

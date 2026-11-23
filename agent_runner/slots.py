@@ -569,7 +569,7 @@ def slot_session_name(name: str, cwd: Path | None) -> str:
 def one_session() -> bool:
     """F68 `[run] sessions = 'one'` (the default): the Claude apps list one entry per project, c1, the project's
     chat. A slot starts off Remote Control and goes on it only when a person opens it from the run page
-    (`slot_open`); c1 keeps a claude.ai copy of the run page (page_copy.py). 'each': as before."""
+    (`slot_open`); the run keeps a claude.ai copy of the run page (page_copy.py). 'each': as before."""
     return C.run.get('sessions', 'one') != 'each'
 
 

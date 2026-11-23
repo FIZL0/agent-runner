@@ -1,28 +1,43 @@
-"""F68: the claude.ai copy of the run page (the run page copy), kept by c1.
+"""F68: the claude.ai copy of the run page (the run page copy).
 
 With `[run] sessions = 'one'` the Claude apps list one entry per project, c1. For when this machine (and so the
-run page it serves) is not reachable, c1 keeps a copy of the run page on claude.ai: the run writes the page from
+run page it serves) is not reachable, the run keeps a copy of the run page on claude.ai: it writes the page from
 F65's snapshot to <notes>/run-page-copy.html and, on a run event (a task starts, lands or blocks, a needs-you
-item, a concept, the release), asks c1 to publish it with its Artifact tool, to the same URL each time
-(<notes>/run-page-copy.url, which c1 writes after its first publish). The copy shows the run as the page does,
-read-only, with the terminal and the chat as session links: a slot's claude.ai/code link (once opened) and c1's.
+item, a concept, the release), publishes it to the same URL each time (<notes>/run-page-copy.url). The copy
+shows the run as the page does, read-only, with the terminal and the chat as session links: a slot's
+claude.ai/code link (once opened) and c1's.
+
+B122: the publish is a one-shot headless `claude -p` with only the Artifact tool (`page_copy_argv`), never a
+control session: typing the ask into c1 cost a turn (~8k tokens) in the person's chat on every run event. Not
+the runner feed either: it has no Artifact tool, and adding one would grow every one of its turns. At most one
+publish every PAGE_COPY_EVERY s, and only when the page changed apart from its clock (`page_copy_key`). When
+the one-shot cannot publish, the copy stops for the run (`PAGE_COPY_OFF`): it never falls back to c1.
 """
 from __future__ import annotations
 
+import hashlib
 import html
 import json
 import re
+import subprocess as sp
+import threading
 import time
 from pathlib import Path
 
 from agent_runner import plat
-from agent_runner.control import control_live, control_ok, control_window
-from agent_runner.slots import one_session, remote_on, send_fifo, send_to_pane
+from agent_runner.control import control_env, control_ok
+from agent_runner.slots import one_session, remote_on
 from agent_runner.state import C, log, ROOT
 
-PAGE_COPY_EVERY = 300  # s between two asks to republish, however many run events come in between: each ask is
-                       # a turn in c1, the person's chat, so a busy run does not fill it
+PAGE_COPY_EVERY = 600  # s between two publishes, however many run events come in between
 PAGE_COPY_AT = [0.0]
+PAGE_COPY_MODEL = 'haiku'  # the one-shot only publishes a file it is handed
+PAGE_COPY_TIMEOUT = 300  # s a one-shot publish gets before it counts as failed
+PAGE_COPY_FAIL_MAX = 3  # failed publishes in a row before the copy stops for the run
+PAGE_COPY_FAILS = [0]
+PAGE_COPY_OFF = ['']  # why the copy stopped for this run, '' while it is kept
+PAGE_COPY_BUSY = threading.Lock()  # held while a one-shot publishes: one at a time
+ARTIFACT_URL = re.compile(r'https://claude\.ai/(?:code/)?artifact/[A-Za-z0-9_-]+')
 
 
 def page_copy_file() -> Path:
@@ -42,15 +57,13 @@ def page_copy_url() -> str:
 
 
 def page_copy_key(snap: dict) -> str:
-    """What makes a run event for the copy: who runs what, the queue, needs-you items, concepts and the release.
-    Minutes, usage and the log tail leave it as it is, so a quiet run asks c1 nothing."""
-    return json.dumps({'up': snap.get('up'),
-                       'sessions': [(s.get('name'), s.get('task'), s.get('state'), s.get('link'))
-                                    for s in snap.get('sessions') or []],
-                       'queue': [(q.get('id'), q.get('after'), q.get('pri')) for q in snap.get('queue') or []],
-                       'needs': [n.get('id') for n in snap.get('needs') or []],
-                       'concepts': [c.get('id') for c in snap.get('concepts') or []],
-                       'release': snap.get('release')}, sort_keys=True, default=str)
+    """What makes a run event for the copy: the page as it would be published, apart from what moves with the
+    clock: its 'as of' time, the log lines, a slot's minutes and the status lines (usage). Those change every
+    minute, so with them in the key a busy run would publish every PAGE_COPY_EVERY s; a quiet run publishes
+    nothing."""
+    calm = {**snap, 'at': '', 'log': [], 'status': [],
+            'sessions': [{**s, 'minutes': None} for s in snap.get('sessions') or []]}
+    return hashlib.sha256(page_copy_html(calm).encode('utf-8')).hexdigest()
 
 
 def _h(s) -> str:
@@ -132,30 +145,80 @@ def page_copy_html(snap: dict) -> str:
 
 
 def page_copy_ask(path: Path, url: str) -> str:
-    """What the run types to c1 to republish the copy: one line, the runner's and not the person's."""
-    where = (f'to {url} (pass it as url)' if url else
-             f'(the same file path as before if you published it already, else a new artifact with icon '
-             f'"dashboard"), then write its URL alone to {page_copy_url_file()}')
-    return (f'agent-runner: the run changed. Publish the run page copy {path} with the Artifact tool {where}. '
-            'This is the runner, not the person: say nothing about it here.')
+    """The one-shot publisher's prompt: publish `path`, to `url` when there is one, and answer with the URL alone
+    (it has no other tool, so the run writes the URL file from that answer)."""
+    where = (f'to the existing artifact {url}: read it first with action "read" (a publish to it is refused until '
+             'then), then publish the file to that url; the file replaces the page whole' if url else
+             'as a new artifact with icon "dashboard"')
+    return (f'Publish the HTML file {path} with the Artifact tool {where}. Do nothing else, and answer with the '
+            "artifact's claude.ai URL alone.")
 
 
-def c1_send(text: str) -> bool:
-    """Type `text` into c1 when it is live (its tmux pane, or a hidden c1's FIFO); False when it is not."""
-    if not (pid := control_live(1)):
-        return False
-    if pane := control_window(1, pid):
-        return send_to_pane(pane, text)
-    return not plat.WINDOWS and send_fifo(C.notes('control1.in'), text)
+def page_copy_argv(path: Path, url: str) -> list[str]:
+    """B122: the one-shot headless session that publishes the copy: `claude -p`, Haiku, the Artifact tool only
+    (dontAsk refuses the rest), no settings sources or MCP servers, a few turns. Never a control session."""
+    return [plat.exe(C.run['agent']), '-p', page_copy_ask(path, url), '--model', PAGE_COPY_MODEL,
+            '--tools', 'Artifact', '--allowedTools', 'Artifact', '--permission-mode', 'dontAsk',
+            '--strict-mcp-config', '--setting-sources', '', '--settings', json.dumps({'autoMemoryEnabled': False}),
+            '--max-turns', '6']
 
 
-def page_copy_tick(now: float | None = None, snap: dict | None = None, send=None) -> bool:
-    """From the run loop: under `[run] sessions = 'one'`, with c1 live and on Remote Control (where its Artifact
-    tool publishes), write the copy and ask c1 to republish it when the run changed since the last ask
-    (`page_copy_key`), at most every PAGE_COPY_EVERY s. True when c1 was asked. Never raises."""
+def page_copy_publish(path: Path, url: str) -> str:
+    """Run the one-shot (`page_copy_argv`) and return the URL it published to, '' when it did not. Raises
+    OSError when the agent cannot be started at all."""
+    r = sp.run(page_copy_argv(path, url), cwd=str(path.parent), env=control_env(), stdin=sp.DEVNULL,
+               capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=PAGE_COPY_TIMEOUT)
+    got = ARTIFACT_URL.findall(r.stdout or '')
+    if r.returncode != 0 or not got:
+        log(f'run page copy: the one-shot publish failed (exit {r.returncode}): '
+            f'{((r.stderr or r.stdout or "").strip().splitlines() or [""])[-1][:200]}')
+        return ''
+    return url if url in got else got[-1]
+
+
+def page_copy_stop(why: str) -> None:
+    PAGE_COPY_OFF[0] = why
+    log(f'run page copy: stopped for this run: {why}')
+
+
+def page_copy_job(f: Path, url: str, keyf: Path, publish) -> None:
+    """One publish, its URL written on success; a failure forgets the key, so the next run event (or the next
+    tick past PAGE_COPY_EVERY) tries again, and PAGE_COPY_FAIL_MAX failures in a row stop the copy."""
+    try:
+        try:
+            got = publish(f, url)
+        except (OSError, sp.SubprocessError) as e:  # no agent to start, or it hung: as good as a failed publish
+            if isinstance(e, FileNotFoundError):
+                page_copy_stop(f'the agent {C.run["agent"]} cannot be started')
+                return
+            log(f'run page copy: {e}')
+            got = ''
+        if got:
+            PAGE_COPY_FAILS[0] = 0
+            if got != url:
+                page_copy_url_file().write_text(got + '\n', encoding='utf-8')
+            return
+        PAGE_COPY_FAILS[0] += 1
+        keyf.unlink(missing_ok=True)
+        if PAGE_COPY_FAILS[0] >= PAGE_COPY_FAIL_MAX:
+            page_copy_stop(f'{PAGE_COPY_FAILS[0]} one-shot publishes failed in a row')
+    except Exception as e:  # noqa: BLE001 - a nicety: never the run's
+        log(f'run page copy: {e}')
+    finally:
+        PAGE_COPY_BUSY.release()
+
+
+def page_copy_tick(now: float | None = None, snap: dict | None = None, publish=None,
+                   background: bool = True) -> bool:
+    """From the run loop: under `[run] sessions = 'one'` with Remote Control on (the copy is for the apps), write
+    the copy and publish it (`publish`, default the one-shot `page_copy_publish`, in a thread of its own unless
+    `background` is off) when the page changed since the last publish (`page_copy_key`), at most every
+    PAGE_COPY_EVERY s and one at a time. B122: nothing is ever typed into a control session. True when a
+    publish was started. Never raises."""
     now = time.time() if now is None else now
     try:
-        if not (one_session() and control_ok() and remote_on()) or now - PAGE_COPY_AT[0] < PAGE_COPY_EVERY:
+        if (PAGE_COPY_OFF[0] or not (one_session() and control_ok() and remote_on())
+                or now - PAGE_COPY_AT[0] < PAGE_COPY_EVERY):
             return False
         if snap is None:
             from agent_runner import ui_model
@@ -164,15 +227,24 @@ def page_copy_tick(now: float | None = None, snap: dict | None = None, send=None
         key = page_copy_key(snap)
         try:
             if keyf.read_text(encoding='utf-8') == key:
-                return False  # no run event since the last ask (with no URL yet too: asked again only on one)
+                return False  # no run event since the last publish
         except OSError:
             pass
-        f = page_copy_file()
-        f.write_text(page_copy_html(snap), encoding='utf-8')
-        if not (send or c1_send)(page_copy_ask(f, page_copy_url())):
-            return False  # c1 is not up: the next tick asks again
-        PAGE_COPY_AT[0] = now
-        keyf.write_text(key, encoding='utf-8')
+        if not PAGE_COPY_BUSY.acquire(blocking=False):
+            return False  # the last publish is still running: the next tick looks again
+        try:
+            f = page_copy_file()
+            f.write_text(page_copy_html(snap), encoding='utf-8')
+            keyf.write_text(key, encoding='utf-8')
+            PAGE_COPY_AT[0] = now
+            args = (f, page_copy_url(), keyf, publish or page_copy_publish)
+        except BaseException:
+            PAGE_COPY_BUSY.release()
+            raise
+        if background:
+            threading.Thread(target=page_copy_job, args=args, name='run-page-copy', daemon=True).start()
+        else:
+            page_copy_job(*args)
         return True
     except Exception as e:  # noqa: BLE001 - the copy is a nicety: a bad snapshot or write costs it, not the run
         log(f'run page copy: {e}')

@@ -277,24 +277,25 @@ def test_sessions_one_and_each():
             'queue': [{'id': 'T1', 'title': 'fix the <b>widget</b>', 'after': [], 'pri': 'normal'}],
             'needs': [], 'concepts': [], 'log': ['started T1 in s2'], 'release': ''}
     asks = []
-    send = lambda text: asks.append(text) or True  # noqa: E731
+    send = lambda path, url: asks.append((path, url)) or (url or 'https://claude.ai/artifact/abc')  # noqa: E731
     PC.PAGE_COPY_AT[0] = 0.0
+    PC.PAGE_COPY_OFF[0] = ''
     with mock.patch.object(PC, 'remote_on', lambda: True), mock.patch.object(PC, 'control_ok', lambda: True):
-        check(PC.page_copy_tick(now=1000.0, snap=snap, send=send), 'one: c1 is asked to publish the copy')
+        check(PC.page_copy_tick(now=1000.0, snap=snap, publish=send, background=False), 'one: the copy is published')
         page = PC.page_copy_file().read_text(encoding='utf-8')
         check(link in page and f'{S.REMOTE_URL}/session_c1' in page, 'the copy links the terminal and the chat')
         check('<b>widget' not in page and '&lt;b&gt;widget' in page, 'task text is escaped')
         check('?t=' not in page and '<title>' in page, 'no run page token; a title')
-        check(str(PC.page_copy_file()) in asks[0] and 'Artifact' in asks[0] and str(PC.page_copy_url_file()) in asks[0],
-              'the ask names the file, the Artifact tool and where the URL goes', asks)
-        check(not PC.page_copy_tick(now=1000.0 + PC.PAGE_COPY_EVERY + 1, snap=snap, send=send),
-              'nothing changed: c1 is not asked again, even before it wrote the URL')
-        PC.page_copy_url_file().write_text('https://claude.ai/artifact/abc\n', encoding='utf-8')
+        eq(asks, [(PC.page_copy_file(), '')], 'the first publish has the file and no URL yet')
+        eq(PC.page_copy_url(), 'https://claude.ai/artifact/abc', 'the URL it published to is kept')
+        check(not PC.page_copy_tick(now=1000.0 + PC.PAGE_COPY_EVERY + 1, snap=snap, publish=send, background=False),
+              'nothing changed: not published again')
         later = {**snap, 'sessions': snap['sessions'][:1], 'log': ['landed T1']}
-        check(not PC.page_copy_tick(now=1010.0, snap=later, send=send), 'not within PAGE_COPY_EVERY of the last ask')
-        check(PC.page_copy_tick(now=1000.0 + 2 * PC.PAGE_COPY_EVERY, snap=later, send=send),
-              'a run event after that asks again')
-        check('to https://claude.ai/artifact/abc' in asks[-1], 'to the same URL', asks[-1])
+        check(not PC.page_copy_tick(now=1010.0, snap=later, publish=send, background=False),
+              'not within PAGE_COPY_EVERY of the last publish')
+        check(PC.page_copy_tick(now=1000.0 + 2 * PC.PAGE_COPY_EVERY, snap=later, publish=send, background=False),
+              'a run event after that publishes again')
+        eq(asks[-1][1], 'https://claude.ai/artifact/abc', 'to the same URL')
 
         with mock.patch.dict(R.C.run, {'sessions': 'each'}):
             check(not S.one_session(), 'each: one_session() is off')
@@ -303,7 +304,8 @@ def test_sessions_one_and_each():
             check('s2' in flags[1], 'named with its slot', flags)
             argv = S.agent_argv('brief', str(uuid.uuid4()), 'opus', 60, 'slot2')
             check('--remote-control' in argv, 'each: the slot argv has --remote-control (listed), as before', argv)
-            check(not PC.page_copy_tick(now=1e9, snap={**snap, 'up': False}, send=send), 'each: no copy kept')
+            check(not PC.page_copy_tick(now=1e9, snap={**snap, 'up': False}, publish=send,
+                                        background=False), 'each: no copy kept')
 
 
 def test_reopen_after_shutdown():
