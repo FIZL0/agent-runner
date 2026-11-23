@@ -73,12 +73,13 @@ def is_capped(name: str, capped: dict | None = None) -> bool:
     return name in (capped_now() if capped is None else capped)
 
 
-def chain_next(model: str, capped: dict | None = None) -> str | None:
+def chain_next(model: str, capped: dict | None = None, whole: bool = False) -> str | None:
     """The chain's model to go on with after `model`: the first entry after it (after none when it is not in the
-    chain) on another provider that is not capped and has its login; None when there is none, or no chain."""
+    chain) on another provider that is not capped and has its login; None when there is none, or no chain. `whole`: the
+    whole chain's first such entry (a new task: no entry before its model has been tried)."""
     from agent_runner.login import missing
     chain = state.C.fallback
-    after = chain[chain.index(model) + 1:] if model in chain else chain
+    after = chain[chain.index(model) + 1:] if model in chain and not whole else chain
     capped = capped_now() if capped is None else capped
     return next((m for m in after if provider(m) != provider(model) and not is_capped(provider(m), capped)
                  and not missing(m, state.C)), None)  # F106e: a provider with no login is passed over
@@ -109,7 +110,7 @@ def start_model(model: str, held: frozenset = frozenset()) -> str:
     """The model a new task starts on: its own, unless its provider is capped (or in `held`) and the chain has a
     free one."""
     if state.C.fallback and is_capped(provider(model), capped := with_held(held)):
-        return chain_next(model, capped) or model
+        return chain_next(model, capped, whole=True) or model
     return model
 
 

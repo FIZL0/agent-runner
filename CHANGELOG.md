@@ -63,7 +63,8 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 - Changed: with `[models] fallback` set, a new task whose model is claude's starts on the chain's first free provider
   when `[run] session_max` or `weekly_max` is reached (not forced), instead of waiting for the reset. A task with no free
   provider still waits, and STOPPED is raised only when such a task is all that could start. Nothing is written to
-  capped.json; without a chain nothing changes (F142).
+  capped.json; without a chain tasks are held as before. A session is now resumed only by the kind of agent (Claude Code
+  or the harness loop) that ran it; an answered one whose task now runs on the other gets a new session (F142).
 
 ## 0.61.0 (2026-11-23)
 

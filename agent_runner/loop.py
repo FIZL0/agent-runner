@@ -1389,7 +1389,8 @@ class Run:
         self.tried.difference_update(retry_held())  # F106e: held back for a login, not blocked yet: again
         passed = FB.no_free(self.branch, self.model, held) if held else set()
         task = pick(running, self.tried | passed, self.branch, claim=True)
-        if not task and passed and not self.cap_said and pick(running, self.tried, self.branch):
+        if not task and passed and not self.cap_said and \
+                (t := pick(running, self.tried, self.branch)) and t[0] in passed:
             self.say_cap(w)  # F142: only the cap holds it: no provider in the chain is free for it
         if task:
             if unlogged(task[0], self.branch, self.model):  # F106e: its provider has no login: Needs you

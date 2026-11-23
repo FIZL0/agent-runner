@@ -938,8 +938,10 @@ def resume(n: int, tid: str, sid: str, why: str, branch: str, model: str, idle: 
     F106g: with `fallback` (the next model in [models] fallback, its provider having hit its cap), a new session
     on that model goes on with the work in the worktree instead, told to read it and the journal first.
     """
-    from agent_runner.fallback import FALLBACK, note_model
+    from agent_runner.fallback import FALLBACK, note_model, session_model
     model = fallback or task_model(tid, model, branch)  # F105: on its task's model, as at its start
+    if not fallback and on_harness(model) != bool(HARNESS.find_transcript(sid)):
+        model = session_model(sid)  # F142: the chain started it on the other kind of agent: only that can resume it
     d = worktree(n, branch)
     head = git('symbolic-ref', '-q', '--short', 'HEAD', cwd=d).stdout.strip()
     if head != f'task/{tid}':

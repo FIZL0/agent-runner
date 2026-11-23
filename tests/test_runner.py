@@ -5141,6 +5141,8 @@ def test_usage_cap_falls_back_f142(repo: Path):
             eq((started, alarms), (['gemini:pro'] * 2, []),
                'a chain: started on its first free provider (a login, not claude), no alarm')
             eq(len([m for m in said if 'start on the first free provider' in m]), 1, 'said once')
+            fill(['gemini:pro', 'opus'])
+            eq(started, ['gemini:pro'] * 2, 'the chain\'s first free provider, before its own model in the chain too')
             fill(['sonnet'])
             eq((started, len(alarms)), ([], 1), 'nothing free in the chain: held, and the alarm is raised once')
             fill(['sonnet'], own='gemini:pro')
@@ -5156,6 +5158,25 @@ def test_usage_cap_falls_back_f142(repo: Path):
             with mock.patch.object(loop, 'usage_pct', lambda name: 95 if name == 'seven_day' else 10):
                 fill(['gemini:pro'])
                 eq(started, ['gemini:pro'] * 2, 'weekly_max the same')
+        opened = []
+        mux = mock.Mock(open=lambda n, d, prompt, sid, model, *a, **k: opened.append((sid, model)) or 4242)
+        clean = mock.Mock(returncode=0, stdout='task/F1')
+        with mock.patch.object(slots, 'MUX', mux), mock.patch.object(slots, 'worktree', lambda n, b: repo), \
+                mock.patch.object(slots, 'vacate', lambda *a: True), mock.patch.object(slots, 'trim', lambda *a: False), \
+                mock.patch.object(slots, 'git', lambda *a, **k: clean), mock.patch.object(slots, 'asked', lambda t: {}), \
+                mock.patch.object(slots, 'prompt_for', lambda *a: 'brief'), \
+                mock.patch.object(slots, 'slot_env', lambda n: {}), \
+                mock.patch.object(slots, 'slot_header', lambda *a: (None, None)), \
+                mock.patch.object(slots, 'edited_elsewhere', lambda f: []), \
+                mock.patch.object(slots, 'task_model', lambda *a: 'opus'), \
+                mock.patch.object(login, 'missing', lambda m, c: ''), \
+                mock.patch.object(R.C, 'fallback', ['gemini:pro'], create=True):
+            got = slots.start(1, ('F1', '', set(), set()), 'main', 'opus', 30, 1, held=FB.USAGE_HELD)
+            check(got and opened[0][1] == 'gemini:pro', 'slots.start opens the session on the chain', opened)
+            with mock.patch.object(slots.HARNESS, 'find_transcript', lambda sid: 'x.jsonl'):
+                slots.resume(1, 'F1', opened[0][0], 'cut off', 'main', 'opus', 30)
+            eq(opened[1:], [opened[0]], 'and once cut off it resumes there, not on claude')
+            R.C.notes(f'{opened[0][0]}.model').unlink(missing_ok=True)
         with mock.patch.object(slots, 'move_transcript', lambda *a: True):
             eq(slots.answer_ask(1, 'F1', repo, {'sid': 'claude-sid'}, 'gemini:pro', 30), None,
                'an answered claude session is not resumed on the harness loop: a new one starts')

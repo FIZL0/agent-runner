@@ -166,8 +166,8 @@ DEFAULTS: dict = {
                                 # it the task stops at a clean point and is parked as wip/<ID>; 0 = no cap
         'task_usd': 0,          # the same in dollars at the API's list prices (a plan bills none); 0 = no cap
         'pause': 60,            # seconds between one session ending and the next starting in that slot
-        'weekly_max': 90,       # % of the account's 7-day usage past which no new task starts
-        'session_max': 90,      # % of the account's 5-hour session usage past which no new task starts
+        'weekly_max': 90,       # % of the account's 7-day usage past which new tasks wait, or start on [models] fallback
+        'session_max': 90,      # % of the account's 5-hour session usage past which new tasks wait, or start on [models] fallback
         'notes': '.runner',     # logs and the ledger; keep it git-ignored
         'links': [],            # git-ignored paths symlinked into every worktree (data, big files)
         'copies': [],           # git-ignored files copied into a new worktree once (a local config)
@@ -525,8 +525,8 @@ LOCAL_TEMPLATE = """\
 # Uncomment and edit; any key runner.toml takes works here, in the same tables.
 
 # [run]
-# weekly_max = 90        # % of the account's 7-day usage past which no new task starts
-# session_max = 90       # % of the account's 5-hour session usage past which no new task starts
+# weekly_max = 90        # % of the account's 7-day usage past which new tasks wait, or start on [models] fallback
+# session_max = 90       # % of the account's 5-hour session usage past which new tasks wait, or start on [models] fallback
 # slots = 3              # parallel sessions on this machine
 # model = "opus"
 # min_free_gb = 10       # below this free disk space no new task starts
