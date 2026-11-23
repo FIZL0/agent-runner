@@ -366,6 +366,22 @@ a{color:var(--accent)}
 .setpick{width:auto;max-width:50%;flex:none} .setkey{font:var(--fs-s) var(--mono);overflow-wrap:anywhere} .setval{font-size:var(--fs-m);color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:40%;flex:none}
 .step{display:flex;align-items:center;gap:var(--s2);flex:none} .step .btn{min-width:var(--tap);min-height:var(--tap);justify-content:center;padding-inline:0} .step b{min-width:1.5em;text-align:center}
 .dockwrap{position:relative;will-change:transform}
+/* F171: Talk's chat runs behind the top bar, the buttons and the message box. seeRoom() measures the room they take, so at
+   rest the newest words are clear of them; nothing lies behind the buttons, so a touch between them is the chat's */
+.main.see .top,.main.see .dockwrap,.main.see .notices{position:absolute;left:0;right:0}
+.main.see .top{top:0;transition:transform var(--dur-slow) var(--ease)} .main.see .dockwrap{bottom:0;z-index:2;pointer-events:none}
+.main.see .notices{top:var(--seebar,0px);transition:transform var(--dur-slow) var(--ease)}
+.main.see .body{padding:var(--seetop,0px) 0 var(--seedock,0px);scroll-padding:var(--seetop,0px) 0 var(--seedock,0px)}
+.main.see .dock{background:none} .app:not(.kb) .main.see{margin-bottom:calc(-1*env(safe-area-inset-bottom,0px))}
+.app:not(.kb) .main.see .dock{padding-bottom:calc(14px + env(safe-area-inset-bottom,0px))}
+.main.see .talkline,.main.see .foot{justify-self:center;width:fit-content;margin-inline:auto;border-radius:var(--r-xl);padding:2px 12px} .main.see .foot{color:var(--muted)} @media (pointer:coarse){.main.see .foot:has(.keysl){display:none}}
+.main.see :is(.talkline,.foot,.box,.talkrow button,.talkmic .btn){pointer-events:auto}
+.main.see :is(.top,.notices){background:color-mix(in srgb,var(--bg) 62%,transparent)}
+.main.see :is(.talkline,.foot,.box,.spk,.kbd,.talkmic .btn){background:color-mix(in srgb,var(--surface) 72%,transparent)}
+.main.see :is(.top,.notices,.talkline,.foot,.box,.spk,.kbd,.talkmic .btn){-webkit-backdrop-filter:blur(14px) saturate(1.3);backdrop-filter:blur(14px) saturate(1.3)}
+.main.see .mic{box-shadow:0 2px 14px var(--shadow)}
+.main.see.away .top:not(:has(:focus-visible)){transform:translateY(calc(-100% - env(safe-area-inset-top,0px)))} .main.see.away .top:not(:has(:focus-visible))+.notices{transform:translateY(calc(-1*var(--seebar,0px)))}
+@media (prefers-reduced-transparency:reduce){.main.see :is(.top,.notices,.dock){background:var(--bg)} .main.see :is(.talkline,.foot,.box,.spk,.kbd,.talkmic .btn){background:var(--surface)} .main.see :is(.top,.notices,.talkline,.foot,.box,.spk,.kbd,.talkmic .btn){-webkit-backdrop-filter:none;backdrop-filter:none}}
 /* the composer: the send button fills once there is something to send */
 .send{transition:opacity var(--dur-fast) var(--ease)} .box:not(.has) .send:not(.stop){opacity:.45}
 @media (pointer:coarse){.keysl{display:none} .btn,.chip,.icon{min-height:var(--tap)} .icon{min-width:var(--tap)}}
@@ -637,6 +653,13 @@ function feedAfter(entries,mark,said){
 }
 /* the page keeps a chat at its newest message: is it there now */
 const atEnd=b=>b.scrollHeight-b.scrollTop-b.clientHeight<60;
+/* F171: whether Talk's top bar is away, after `was` {top,size,run,away}: gone once the person scrolls up 8px, back once they
+   scroll down 8px or are at the end. A change of size (new words, the keyboard) and iOS's bounce are no scroll of theirs */
+function barAway(was,b){
+  const end=Math.max(0,b.scrollHeight-b.clientHeight), top=Math.max(0,Math.min(b.scrollTop,end)), size=b.scrollHeight+'x'+b.clientHeight;
+  const d=was.size===size?top-was.top:0, run=atEnd(b)?0:d*was.run>=0?was.run+d:d;
+  return {top,size,run,away:atEnd(b)?false:run<=-8?true:run>=8?false:was.away};
+}
 /* F124: a finger moving (dx, dy) over the app: does the drawer follow it (open: it is open), '' not, 'wait' too early */
 function swipeTakes(dx,dy,open){
   if(Math.hypot(dx,dy)<8)return 'wait';  // B167: under the 10px at which iOS begins a scroll, which nothing can cancel then
@@ -1852,7 +1875,18 @@ function newConcept(){  // F137: shown as queuing at once; obDone says its id on
 let lastPlace=null;
 S.at={};S.pin=true;S.last={};S.keys=false;
 const chatShown=()=>!S.thread&&S.view==='talk';
-function toEnd(){const b=$('body');b.scrollTop=b.scrollHeight;S.pin=true}
+function toEnd(){const b=$('body');seeRoom();b.scrollTop=b.scrollHeight;S.pin=true;seeBar()}
+/* F171: the room Talk's top bar (with a notice's row) and dock take from the chat behind them; and the top bar away or not */
+let SEE={top:0,size:'',run:0,away:false};
+function seeRoom(){
+  if(!chatShown())return;
+  const s=document.querySelector('.main').style, bar=$('top').offsetHeight, set=(k,v)=>s.setProperty(k,v+'px');
+  set('--seebar',bar);set('--seetop',bar+document.querySelector('.notices').offsetHeight);set('--seedock',$('dock').offsetHeight);
+}
+function seeBar(){
+  if(chatShown())SEE=barAway(SEE,$('body'));else SEE={top:0,size:'',run:0,away:false};
+  document.querySelector('.main').classList.toggle('away',SEE.away);
+}
 /* the top bar: the menu (with its dot, F128), back, the title, Talk's settings, the state pill, the session, New chat (in Talk, New Talk chat: F157) */
 function topHTML(){
   const n=S.thread, p=runPill(S.snap), x=n&&sessionOf(n);
@@ -1889,7 +1923,7 @@ function render(force){
   const ta=document.querySelector('[data-in]'), focused=ta&&document.activeElement===ta, sel=ta?[ta.selectionStart,ta.selectionEnd]:null;
   const kta=document.querySelector('[data-kin]'), kfocused=kta&&document.activeElement===kta;
   const main=document.querySelector('.main');  // F115: a chat looks like the terminal
-  main.classList.toggle('term',chatOn);main.style.colorScheme=chatOn&&TERM.mode?TERM.mode:'';pageColor(chatOn);
+  main.classList.toggle('term',chatOn);main.style.colorScheme=chatOn&&TERM.mode?TERM.mode:'';main.classList.toggle('see',chatShown());pageColor(chatOn);
   if(moved){body._h=null;dockEl._h=null}
   const drew=setHTML(body,h);
   let drewDock=false;
@@ -1899,6 +1933,7 @@ function render(force){
     talkDraw();
   }else{drewDock=setHTML(dockEl,dock);dockEl.classList.remove('typing')}
   dockEl.hidden=!n&&S.view!=='talk';
+  if(moved)seeBar();
   if(!force&&!drew&&!drewDock){lastPlace=place;return}
   const nta=document.querySelector('[data-in]');
   if(nta){const v=HI.i!==null&&HI.key===boxKey()?histGet(HI.key)[HI.i]||'':store.get(DRAFT_KEY(boxKey()));if(nta.value!==v)nta.value=v;grow(nta);if(focused&&nta!==ta){nta.focus({preventScroll:true});if(sel)nta.setSelectionRange(sel[0],sel[1])}if(focused)slashShow(nta)}  // B119: the menu stays open; B120: so does a recalled message
@@ -1914,15 +1949,17 @@ function render(force){
     else put();
     enter(body,had);
   }
+  seeBar();
   lastPlace=place;
 }
 /* F83: Talk follows its newest words until the person scrolls up; it follows a box that grows or a keyboard too */
-$('body').addEventListener('scroll',()=>{if(chatShown())S.pin=atEnd($('body'))},{passive:true});
+$('body').addEventListener('scroll',()=>{if(chatShown()){S.pin=atEnd($('body'));seeBar()}},{passive:true});
 if(window.ResizeObserver)new ResizeObserver(()=>{if(chatShown()&&S.pin)toEnd()}).observe($('body'));
 /* B160: a notice's row comes or goes in a chat: the text stays where it was (a pinned chat by the line above) */
 let noticeH=0, noticeAt=null;
 function noticeRoom(h){const d=h-noticeH, same=noticeAt===lastPlace;noticeH=h;noticeAt=lastPlace;if(d&&same&&chatShown()&&!S.pin&&$('body').scrollTop>0)$('body').scrollTop+=d}
-if(window.ResizeObserver)new ResizeObserver(()=>noticeRoom(document.querySelector('.notices').offsetHeight)).observe(document.querySelector('.notices'));
+if(window.ResizeObserver)new ResizeObserver(()=>{seeRoom();noticeRoom(document.querySelector('.notices').offsetHeight);seeBar()}).observe(document.querySelector('.notices'));
+if(window.ResizeObserver){const o=new ResizeObserver(()=>{if(!chatShown())return;if(S.pin)toEnd();else{seeRoom();seeBar()}});o.observe($('top'));o.observe($('dock'))}
 /* B160: the page's own background, behind Safari's bar and the keyboard, is the view's */
 let edgeWait=0;
 function pageColor(chat){
