@@ -1170,6 +1170,7 @@ const navigator = {language: 'en-US'};
 const kept = {}, store = {get: k => kept[k] || '', set(k, v) { kept[k] = v }};
 const toast = () => {}, render = () => {}, tq = p => p, followVersion = () => false, TALK_KEY = 'ar-talk', TALK_OLD = 'ar-talkold', TALK_START = 'ar-talkstart';
 const keepSent = () => {}, sessionOf = () => null, newCid = () => 'k';  // B154
+const loadVoices = () => {};  // F158
 const OB = {offline: false}, drain = () => {};  // F137: takeSnap wakes the outbox
 let TS = {read: true, voice: '', mic: 'tap', auto: false}; const voices = () => [], talkTyping = () => false;  // F124
 const HOME_PAGE = false, document = {};  // B153: takeSnap sets the window title

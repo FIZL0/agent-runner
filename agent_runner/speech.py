@@ -137,7 +137,7 @@ class Speaker:
             size = int(head.get('bytes') or 0)
             data = p.stdout.read(size)
             if not size or len(data) != size:
-                raise SpeechError('the speech engine ended')
+                raise ValueError('it ended')
             return data
         except (OSError, ValueError) as e:
             self._end()
@@ -235,7 +235,7 @@ def main(argv: list[str]) -> int:
         except (SpeechError, OSError, sp.SubprocessError) as e:
             print(f'speech install: {e}', file=sys.stderr)
             return 1
-        print(f'{engine} is installed in {speech_dir()}. Open Talk again to hear it.')
+        print(f'{engine} is installed in {speech_dir()}. Talk uses it from the next message on.')
         return 0
     if argv and argv != ['status']:
         print(__doc__.split('\n\nNothing')[0])

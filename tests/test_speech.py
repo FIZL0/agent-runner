@@ -170,6 +170,8 @@ eval(logic + `TS = talkSetParse('');` + page.slice(page.indexOf('/* F158: run sp
   AU.el.finish(); await tick(); out.done = [TK.state, els, said.length];
   // a later reply plays by itself; auto listen after it
   TS.auto = true; speak('Later.'); await tick(); AU.el.finish(); await tick(); out.auto = [TK.state, listens]; TS.auto = false;
+  // refused after it had played: the speaker's tap unlocks again
+  allow = false; speak('Again.'); await tick(); allow = true; plays.length = 0; spk(); out.again = plays.slice(); await tick(); AU.el.finish(); await tick();
   // stopped by hand, and by the phone
   speak('Stop me.'); await tick(); hush(); out.hush = [TK.state, AU.el.paused];
   speak('A call.'); await tick(); AU.el.pause(); out.call = TK.state;
@@ -202,6 +204,7 @@ else:
     eq(o['asked'], [{'text': t, 'voice': 'kokoro:af_heart'} for t in ('First one is here.', 'Second.')], 'clip by clip')
     eq((o['second'], o['done']), (['speaking', 3], ['', 1, 0]), 'one audio element plays them all')
     eq(o['auto'], ['', 1], 'a later reply plays by itself, then auto listen')
+    eq(o['again'], ['silence'], 'refused later: the tap unlocks again')
     eq((o['hush'], o['call']), (['', True], ''), 'stopped by a tap, or by the phone')
     eq((o['newer'][0], o['newerDone']), ('speaking', ''), 'a newer reply takes the place of one')
     eq((o['key'], o['keyDone']), (['k1', ''], ''), 'a play button')
