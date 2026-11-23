@@ -608,7 +608,8 @@ def snapshot(up: bool | None = None, now: float | None = None, log_n: int = LOG_
            'forced': bool(up and st.get('forced')), 'power': str(st.get('power') or '') if up else '',
            'state': run_state(up, st)}  # F124
     fix = fixups(st, ls)
-    return {**controls_shown(bool(up), run, fix), 'run': run, 'fixups': fix,'project': S.project(), 'at': dt.datetime.fromtimestamp(now).isoformat(timespec='seconds'),
+    return {**controls_shown(bool(up), run, fix), 'run': run, 'fixups': fix,
+            'project': S.project(), 'at': dt.datetime.fromtimestamp(now).isoformat(timespec='seconds'),
             'up': up, 'status': status_rows(up, st, '\n'.join(x for x in (progress, release) if x)),
             'slots': slots, 'sessions': sessions, 'sessions_note': '',
             'queue': pin_release(queue_rows(ls, st, now), row), 'release_row': row,

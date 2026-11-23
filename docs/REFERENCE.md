@@ -324,12 +324,19 @@ drawer) and a desktop. It follows the browser's light or dark setting; `[ui] the
   release stale claims, the main-checkout edits a merge moved aside). Stop now, suspend, shut down, upgrade, restart
   and dropping edits ask first, in place; in `agent-runner ui` the key is pressed twice. Restart (`key restart`)
   re-execs the run between merges so that it reads its settings again; its tasks keep going.
+  The snapshot (`ui_model.snapshot`) says which controls show: `shown` (from `ui_model.controls_shown`; with no run up only
+  Start the run and Fix up, Force and Caps back on by run state, Fix up only with something to fix) and `card` (the Run
+  card's everyday keys). Each session row has `task_controls` (`ui_model.task_controls_on`, off while merging or in a
+  control session). The TUI's control rows are `ui_model.CONTROL_ROWS`.
 - **Settings.** The run app's Settings page: about 24 everyday settings in Speed and limits, Landing work, Models and Chats, each with its control on its row. The rest sit behind Advanced, and commands, paths, patterns and rules behind Project file, read only ("Ask a chat to change it"). Each setting has a home: this device saves to `runner.local.toml` at once, or everyone queues a C task on `runner.toml`, which the row shows as Queued until it starts (changing it again edits that task; putting the value back drops it). The other home is in the row's More…. A value set on this device wins and is what the row edits. Changed lists what differs from its default, with Reset, and the lines the run ignores or moved. Dependent rows show with their parent (`approve_wait` and `approve_batch` with `approve` on). Search finds names, descriptions and code names. A "N changes wait for a restart" card has Restart the run; `slots` applies now. `agent-runner settings` still prints the developer notes. The words the page shows are in `agent_runner/setting_words.py`.
 - **Home.** A greeting, a message box, quick asks (since my last look, what needs me, add a task), then
   Needs you (each item's answer buttons, Later to shelve it, Chat to open a new chat that shows the question and its answers, Drop to
   drop the task after a confirm), Working now (opens
   that slot's session), Up next (a row folds open to the task's whole text) and Release (when the next one
-  lands, or now). An answer button runs the plan command itself, with no AI session: Yes on a CONFIRM or a picked
+  lands, or now). Each item's answers come from `ui_model.need_answers` (in each snapshot needs row as `answers`): Yes and No on a
+  CONFIRM or a yes/no ask, a concept's options (A/B/C when its copy has none), a pitch's options, and Done on a BLOCKED item,
+  on both pages; `agent-runner ui` draws the same, adding only the key letters, and `need_chat_text` uses them too.
+  An answer button runs the plan command itself, with no AI session: Yes on a CONFIRM or a picked
   answer runs `plan confirm ID "<reply>"`, No on a CONFIRM runs `plan change ID "No: the check failed"` (which reopens it), and a pick sheet's go runs `sheet ID --go`. The button shows it is working, a toast says what was done (e.g. "R13 ticked") and the item leaves Needs you at once; on a failure the toast says why and the item stays. Words typed in a reply still go to c1. `agent-runner ui`'s answer tab does the same. A Talk button first in the row under the message box opens Talk in the page without a reload, and never starts the mic.
 - **The session.** A chat or slot shows the real Claude Code session, not a thread the page draws: its own terminal
   through ttyd (`attach NAME` shows the same one), in one frame between the header and the message box. A chat has no
@@ -356,7 +363,7 @@ drawer) and a desktop. It follows the browser's light or dark setting; `[ui] the
   session as paths on this machine. On a computer, a file dropped on the session is attached the same way.
 - **Plan.** The queue in plain words (a row folds open to `plan ID`'s text, with Chat), and Add a task. Tasks are not
   edited here directly: ask in a chat.
-- **Concepts.** Each concept with a button per option (taken from its page's headings), plus Chat, New chat and View.
+- **Concepts.** Each concept with a button per option (taken from its page's headings, by `ui_model.concept_options`; `ui_model.concept_page` builds the page), plus Chat, New chat and View.
 
 How the app looks, moves and speaks is in [STYLE.md](STYLE.md); a change to it follows those rules.
 
@@ -928,6 +935,8 @@ The other keys, listed by `?` + Enter (and printed when the run starts), ruled o
 | `slots N` | N slots (`+N`, `-N`: that many more or fewer) |
 | `z` | suspend the computer once the run stops, or when it goes idle as `--suspend` would; `z` again: off |
 | `x` | the same, shutting down (`--shutdown`); `x` again: off |
+
+With no run up, the TUI shows only the Start the run and Fix up controls, as the page does; Force and Caps back on show by run state (`ui_model.controls_shown`).
 
 After a stop, power goes off at once, with no idle grace. `agent-runner stop --suspend` (or `--shutdown`) does
 the same from anywhere, through `.runner/POWER`. A line the runner does not know is echoed back with
