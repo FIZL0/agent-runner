@@ -12,6 +12,12 @@ transcript, so they stay held till the new reset. One typed is not typed again u
 it went or its process has ended. A session the person closed (`end_control`, /exit, /clear, archived online) is
 dropped (`drop`).
 
+B173: a reply the limit cut off counts too: its messages are held (marked `cut`), until a turn that ended answered
+them. And so do control sessions started from the Claude apps (`app_sessions`): the control server has their
+stdin and they have no number, so nothing can be typed into one while it runs, and a second process on its
+conversation would split it. After the reset such a session's transcript is copied to a new session id
+(`copy_app`), whose record the steps above then reopen as a numbered control session and type into.
+
 Not one of the FAMILY modules `share` reaches, so the run's settings are read through their modules at call time."""
 
 from __future__ import annotations
@@ -22,6 +28,7 @@ import datetime as dt
 import json
 import re
 import time
+import uuid
 from pathlib import Path
 
 from agent_runner import control as K, fallback, plat, state
@@ -39,6 +46,9 @@ WAITING_BLOCK = re.compile(r'\s*<runner-waiting>.*?</runner-waiting>', re.S)
 RUNNER_SAID = ('Open with the summary your control brief describes', 'Say first, in one line: "c1 starts a fresh',
                'agent-runner: the run changed. ')  # the first messages the runner itself gives (CONTROL_START, F27, F68)
 HELD, RUNNER = 'held', 'runner'  # what `walk` keeps for a message with no reply yet that is not the person's
+APP_TAIL = 65536  # bytes of the control server's log read for how an app session ended
+COPIED = ('user', 'assistant', 'attachment', 'system', 'summary', 'custom-title', 'ai-title')  # entries `copy_app`
+# takes: not the Remote Control session's own (bridge-session), which would connect the copy as the app session
 _SEEN: dict[str, tuple] = {}  # sid -> (what its transcript was, `walk` of it)
 
 
@@ -69,14 +79,14 @@ def records() -> list[dict]:
     return [r for f in sorted(folder().glob('*.json')) if (r := load(f))]
 
 
-def drop(sid: str) -> None:
-    """The person closed session `sid` (or sent its messages again elsewhere): what it holds up to now is never
-    put in."""
+def drop(sid: str, at: float = 0.0) -> None:
+    """The person closed session `sid` (or sent its messages again elsewhere, or a copy has them): what it holds
+    up to now (or up to `at`) is never put in."""
     if not sid:
         return
     try:
         folder().mkdir(parents=True, exist_ok=True)
-        (folder() / f'{sid}.dropped').write_text(str(time.time()), encoding='utf-8')
+        (folder() / f'{sid}.dropped').write_text(str(at or time.time()), encoding='utf-8')
         record_file(sid).unlink(missing_ok=True)
     except OSError as e:
         state.log(f'control: could not drop the held messages of {sid}: {e}')
@@ -128,12 +138,12 @@ def same(a: dict, b: dict) -> bool:
 
 def walk(rows, dropped: float = 0.0) -> dict:
     """What transcript entries `rows` hold: 'asks', the person's messages in order whose reply was only a
-    usage-limit error and that no later turn of theirs answered ({id, at, text, norm, files}; one sent twice
-    counts once), none sent before `dropped`; 'until', when the last such error says the limit is over; 'open',
+    usage-limit error, or was cut off by one ('cut'), and that no later turn of theirs answered ({id, at, text,
+    norm, files}; one sent twice counts once), none sent before `dropped`; 'until', when the last such error says the limit is over; 'open',
     the messages with no reply yet; 'held_at', when a HELD_LEAD message last came in; 'errors', the replies to
     one that were some other API error; 'answered', {words: when} of the person's answered messages; 'last_at'."""
     w = {'asks': [], 'until': 0.0, 'open': [], 'held_at': 0.0, 'errors': 0, 'answered': {}, 'last_at': 0.0}
-    fails, going = 0, []  # going: the asks a held message's turn is answering
+    fails, going = 0, []  # going: the asks the turn under way is answering
     for d in rows:
         if not isinstance(d, dict) or d.get('isSidechain'):
             continue
@@ -149,6 +159,7 @@ def walk(rows, dropped: float = 0.0) -> dict:
                     w['asks'] = []
                 w['open'], going = [], []
             elif HELD_LEAD in text[:400] and not m.get('isMeta'):
+                going = going if d['type'] == 'attachment' else []
                 w['open'].append(HELD)
                 w['held_at'] = at
             elif K.person_turn(m):
@@ -156,11 +167,16 @@ def walk(rows, dropped: float = 0.0) -> dict:
                 w['open'].append(RUNNER if text.startswith(RUNNER_SAID) else
                                  {'id': str(m.get('uuid') or at), 'at': at, 'text': WAITING_BLOCK.sub('', text).strip(),
                                   'norm': norm(text), 'files': files_of(m)})
+            elif d['type'] == 'user' and ((m.get('origin') or {}).get('kind', 'human') != 'human' or
+                                          text.startswith('<task-notification>')):
+                going = []  # a notification begins a turn of its own
         elif d.get('type') == 'assistant':
             mine = [a for a in w['open'] if isinstance(a, dict)]
             if d.get('isApiErrorMessage'):
                 if lim := fallback.limit_of(d):
-                    w['asks'] = going + w['asks']  # a limit inside the turn that answered them: not all answered
+                    for a in going:  # a limit inside the turn that answered them: not all answered
+                        w['answered'].pop(words(a), None)
+                    w['asks'] = [{**a, 'cut': True} for a in going if not (a['at'] and a['at'] <= dropped)] + w['asks']
                     w['errors'] = 0 if mine else w['errors']
                     fails, going = fails + bool(going), []
                     w['asks'] += [a for a in mine if not (a['at'] and a['at'] <= dropped)]
@@ -182,15 +198,17 @@ def walk(rows, dropped: float = 0.0) -> dict:
                 continue
             if mine or HELD in w['open']:  # not a turn a notification or the runner began
                 w['answered'].update({words(a): a['at'] for a in mine + w['asks']})
-                going = w['asks'] if HELD in w['open'] else going
+                going = going + w['asks'] + mine
                 w['asks'], w['errors'], fails = [], 0, 0
             if msg.get('stop_reason') == 'end_turn':
                 going = []
             w['open'] = []
     out: list[dict] = []
     for a in w['asks']:
-        if not any(same(a, b) for b in out):
+        if (b := next((b for b in out if same(a, b)), None)) is None:
             out.append(a)
+        elif a.get('cut'):
+            b['cut'] = True
     w['asks'] = out
     return w
 
@@ -286,14 +304,111 @@ def look(n: int) -> None:
         state.log(f'control {n}: could not look for messages held by a usage limit: {e}')
 
 
+def app_sessions() -> list[dict]:
+    """The live control sessions the control server started for the Claude apps, as Claude Code's registry of
+    live sessions names them: [{sid, pid, server, bridge}]."""
+    from agent_runner import feed
+    server = K.control_server_live()
+    if not server:
+        return []
+    out, mine = [], None
+    for f in sorted(feed.claude_sessions_dir().glob('*.json')):
+        try:
+            d = json.loads(f.read_text(encoding='utf-8'))
+        except (OSError, ValueError):
+            continue
+        pid = d.get('pid') if isinstance(d, dict) else None
+        if not isinstance(pid, int) or not feed.SID_RE.fullmatch(str(d.get('sessionId') or '')):
+            continue
+        mine = set(plat.children(server)) if mine is None else mine
+        if pid not in mine or not plat.alive(pid):
+            continue
+        if d.get('procStart') and (start := plat.started(pid)) and str(d['procStart']) != str(start):
+            continue  # another process now has that pid
+        out.append({'sid': d['sessionId'], 'pid': pid, 'server': server, 'bridge': str(d.get('bridgeSessionId') or '')})
+    return out
+
+
+def look_app(app: dict) -> None:
+    """Keep a record of the app session `app` (see `app_sessions`), if it holds messages."""
+    try:
+        sid = app['sid']
+        if not K.transcript(sid):
+            return
+        w = read(sid)
+        if not w['asks'] or w['online']:
+            return
+        rec = load(record_file(sid))
+        title = K.control_state(K.entries(sid, skip_bad=True))['title']
+        new = {**rec, **app, 'n': 0, 'app': True, 'name': title, 'asks': len(w['asks']), 'until': w['until']}
+        if new != rec:
+            save(new)
+        if not rec:
+            state.log(f'control: {line(new)}')
+    except Exception as e:  # noqa: BLE001 - one unreadable session never stops the loop
+        state.log(f'control: could not look for messages an app session holds for a usage limit: {e}')
+
+
+def app_closed(rec: dict) -> bool:
+    """Whether the person closed the app session of `rec`: its process ended while its control server stayed up,
+    and the server's log does not say that it failed."""
+    if plat.alive(rec['pid']) or K.control_server_live() != rec.get('server'):
+        return False
+    key = str(rec.get('bridge') or '').removeprefix('session_')
+    try:
+        tail = state.C.notes('control-server.log').read_bytes()[-APP_TAIL:].decode(errors='replace')
+    except OSError:
+        tail = ''
+    said = [x for x in re.split(r'[\r\n]', tail) if key and key in x and re.search(r'\bSession \w+', x)]
+    return not (said and 'Session failed' in said[-1])
+
+
+def copy_app(rec: dict) -> str:
+    """Copy the transcript of the app session of `rec` to a new session id, with a record of its own, and drop
+    what the app session holds: the copy puts it in. The new id; made from the last message it holds, so a run
+    killed on the way makes the same copy. '' when nothing is held any more."""
+    sid = rec['sid']
+    src, was = Path(K.transcript(sid) or ''), dropped_at(sid)
+    rows = []
+    for x in src.read_text(encoding='utf-8', errors='replace').splitlines():
+        try:
+            d = json.loads(x)
+        except ValueError:
+            continue
+        if isinstance(d, dict):
+            rows.append(d)
+    w = walk(rows, was)
+    if not w['asks']:
+        return ''
+    last = max(w['asks'], key=lambda a: a['at'])
+    new = str(uuid.uuid5(uuid.NAMESPACE_URL, f'{sid}/{last["id"]}'))
+    dest = src.with_name(f'{new}.jsonl')
+    if not dest.exists():
+        tmp = dest.with_suffix('.tmp')
+        tmp.write_text(''.join(json.dumps({**d, 'sessionId': new} if 'sessionId' in d else d) + '\n'
+                               for d in rows if d.get('type') in COPIED), encoding='utf-8')
+        tmp.replace(dest)
+    if was:
+        drop(new, was)
+    if not record_file(new).exists():
+        save({'n': 0, 'sid': new, 'pid': 0, 'from': sid, 'name': rec.get('name') or '', 'asks': len(w['asks']),
+              'until': w['until']})
+    drop(sid, last['at'])
+    return new
+
+
 def asks_text(k: int) -> str:
     return f'{k} ask' + ('' if k == 1 else 's')
+
+
+def chat_text(rec: dict) -> str:
+    return f'c{rec["n"]}' if rec['n'] else 'a chat from the Claude apps'
 
 
 def line(rec: dict) -> str:
     """A record as `status` and the run log say it: which chat, how many asks wait, and for what."""
     k = int(rec.get('asks') or 0)
-    chat = f'c{rec["n"]}' + (f' "{rec["name"]}"' if rec.get('name') else '')
+    chat = chat_text(rec) + (f' "{rec["name"]}"' if rec.get('name') else '')
     one = k == 1
     start = f'{chat}: {asks_text(k)} {"waits" if one else "wait"}'
     if rec.get('stuck'):
@@ -329,11 +444,14 @@ def message(sid: str, asks: list[dict]) -> str:
     k = len(asks)
     out = [f'{HELD_LEAD} The usage limit is over. ' +
            ('This message from the person got' if k == 1 else f'These {k} messages from the person got') +
-           ' only its error as a reply. In their own words, in the order sent; answer each once, and skip one you '
-           'have already dealt with:']
+           (' only its error as a reply' if not any(a.get('cut') for a in asks) else
+            ' only its error as a reply, or a reply it cut off') + '. In their own words, in the order sent; answer each once, and skip one you '
+           'have already dealt with' + (
+               ', and go on with one it cut off from where its reply stopped:' if any(a.get('cut') for a in asks) else ':')]
     for i, a in enumerate(asks, 1):
         sent = dt.datetime.fromtimestamp(a['at']).strftime(' (%a %H:%M)') if a['at'] else ''
-        out.append(f'Message {i} of {k}{sent}: {a["text"]}'.rstrip())
+        cut = ' (its reply was cut off)' if a.get('cut') else ''
+        out.append(f'Message {i} of {k}{sent}{cut}: {a["text"]}'.rstrip())
         for j, src in enumerate(a['files'], 1):
             if p := saved_file(sid, a, j, src):
                 out.append(f'The person attached this to message {i}, saved at "{p}": Read it before you answer.')
@@ -381,7 +499,7 @@ def reopen(rec: dict) -> bool:
 
 def finished(rec: dict, why: str) -> None:
     record_file(rec['sid']).unlink(missing_ok=True)
-    state.log(f'control: the messages c{rec["n"]} held for the usage limit are done with: {why}')
+    state.log(f'control: the messages {chat_text(rec)} held for the usage limit are done with: {why}')
 
 
 def stays(rec: dict, why: str = '', stuck: str = '') -> None:
@@ -393,8 +511,43 @@ def stays(rec: dict, why: str = '', stuck: str = '') -> None:
     save(rec)
 
 
+def step_app(rec: dict, now: float) -> None:
+    """`step` for a session started from the Claude apps (`app_sessions`): forget it, wait, or copy it."""
+    sid = rec['sid']
+    if not K.transcript(sid):
+        return finished(rec, 'its transcript is gone')
+    w = read(sid)
+    if not w['asks']:
+        return finished(rec, 'answered')
+    if w['online'] or app_closed(rec):
+        drop(sid)
+        return finished(rec, 'the person closed that conversation')
+    rec['asks'], rec['until'] = len(w['asks']), w['until']
+    if now < w['until'] + HELD_MARGIN:
+        return stays(rec)
+    if w['open'] and now - w['last_at'] < HELD_TURN:
+        return stays(rec, 'a turn is under way')
+    if not state.C.run['control']:
+        return stays(rec, '[run] control is off')
+    gone = resent(sid, w['asks'])
+    if all(a['id'] in gone for a in w['asks']):
+        drop(sid)
+        return finished(rec, 'the person sent them again elsewhere')
+    if new := copy_app(rec):
+        state.log(f'control: the usage limit is over: what a chat from the Claude apps held goes into a copy of it, '
+                  f'as a numbered control session ({new})')
+
+
+def answered_in(sid: str, asks: list[dict]) -> set[str]:
+    """The ids of `asks`, copied from app session `sid`, that were answered there since."""
+    done = walk(K.entries(sid, skip_bad=True))['answered']
+    return {a['id'] for a in asks if words(a) in done and done[words(a)] >= a['at']}
+
+
 def step(rec: dict, now: float) -> None:
     """One look at a session that holds messages: forget it, wait, reopen it, or put them in."""
+    if rec.get('app'):
+        return step_app(rec, now)
     sid, n = rec['sid'], rec['n']
     if not K.transcript(sid):
         return finished(rec, 'its transcript is gone')
@@ -436,7 +589,7 @@ def step(rec: dict, now: float) -> None:
     if w['errors'] >= HELD_TRIES or rec.get('tries', 0) >= HELD_TRIES:
         return stays(rec, stuck='the API refuses it' if w['errors'] >= HELD_TRIES else 'its session does not come up')
     # looked at again before it is put in, and before its session is reopened for it
-    gone = resent(sid, w['asks'])
+    gone = resent(sid, w['asks']) | (answered_in(rec['from'], w['asks']) if rec.get('from') else set())
     asks = [a for a in w['asks'] if a['id'] not in gone]
     if not asks:
         drop(sid)
@@ -489,6 +642,8 @@ def held_tick(force: bool = False, now: float | None = None) -> None:
     HELD_AT[0] = now
     for n in numbers():
         look(n)
+    for app in app_sessions():
+        look_app(app)
     for rec in records():
         try:
             step(rec, now)

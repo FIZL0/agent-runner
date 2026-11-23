@@ -639,9 +639,15 @@ def held_world():
 
     def path(s):
         if s not in w.rows:
-            return ''
+            f = home / f'{s}.jsonl'  # one the runner wrote (B173: a copy of an app session)
+            return str(f) if f.exists() else ''
         (home / f'{s}.jsonl').write_text(''.join(json.dumps(x) + '\n' for x in w.rows[s]), encoding='utf-8')
         return str(home / f'{s}.jsonl')
+
+    def rows_of(s, skip_bad=False):
+        f = home / f'{s}.jsonl'
+        return iter(w.rows[s] if s in w.rows else
+                    [json.loads(x) for x in f.read_text(encoding='utf-8').splitlines()] if f.exists() else [])
 
     def up(n, sid, pid, ago=1000.0):
         f = R.C.notes(f'control{n}.pid')
@@ -663,7 +669,7 @@ def held_world():
         w.opened.append((n, sid))
         return 'a test window'
     with mock.patch.object(K, 'transcript', path), \
-            mock.patch.object(K, 'entries', lambda s, skip_bad=False: iter(w.rows.get(s, []))), \
+            mock.patch.object(K, 'entries', rows_of), \
             mock.patch.object(K, 'control_live', lambda n: w.live.get(n, 0)), \
             mock.patch.object(K, 'control_type', lambda n, t: w.typed.append((n, t)) or True), \
             mock.patch.object(K, 'remote_on', lambda: False), \
@@ -870,9 +876,178 @@ def test_held_reopened():
             eq((w.opened, w.typed, w.H.records()), ([], [], []), f'closed on purpose ({how}): not resumed')
 
 
+# --- B173: cut-off replies, and sessions started from the Claude apps ---------------------------------------------
+
+def tool(at, **kw):
+    d = answer('', at, **kw)
+    d['message'].update(stop_reason='tool_use', content=[{'type': 'tool_use', 'id': 't', 'name': 'Bash', 'input': {}}])
+    return d
+
+
+def result(at):
+    return {'type': 'user', 'timestamp': stamp(at),
+            'message': {'content': [{'type': 'tool_result', 'tool_use_id': 't', 'content': 'ok'}]}}
+
+
+def ended(text, at):
+    d = answer(text, at)
+    d['message']['stop_reason'] = 'end_turn'
+    return d
+
+
+def test_held_cut_off():
+    print('B173: a message whose reply a usage limit cut off is held too, and goes in once')
+    from agent_runner import control_held as H
+
+    def asks(rows, was=0.0):
+        return [a['text'] for a in H.walk(rows, was)['asks']]
+    ask = said('fix the login', T0)
+    eq(asks([ask, answer('I will look', T0 + 1), limit(T0 + 2)]), ['fix the login'], 'after text')
+    eq(asks([ask, tool(T0 + 1), result(T0 + 2), limit(T0 + 3)]), ['fix the login'], 'after a tool call')
+    late = {'type': 'attachment', 'uuid': 'q', 'timestamp': stamp(T0 + 3), 'attachment': {
+        'type': 'queued_command', 'commandMode': 'prompt', 'prompt': 'and the logout', 'source_uuid': 'q1'}}
+    eq(asks([ask, tool(T0 + 1), result(T0 + 2), late, answer('both then', T0 + 4), limit(T0 + 5)]),
+       ['fix the login', 'and the logout'], 'with one typed during the turn')
+    eq(asks([ask, tool(T0 + 1), result(T0 + 2), late, limit(T0 + 5)]), ['fix the login', 'and the logout'],
+       'also when that one had no reply yet')
+    eq(asks([ask, ended('fixed', T0 + 1), limit(T0 + 9)]), [], 'not once the reply ended')
+    note = {'type': 'user', 'timestamp': stamp(T0 + 5), 'origin': {'kind': 'task-notification'},
+            'message': {'content': '<task-notification>x</task-notification>'}}
+    eq(asks([ask, answer('done', T0 + 1), note, tool(T0 + 6), limit(T0 + 7)]), [], 'nor when a notification\'s turn was cut')
+    eq(asks([ask, tool(T0 + 1), limit(T0 + 2)], T0 + 10), [], 'nor what was dropped')
+    eq(asks([ask, tool(T0 + 1), said('[Request interrupted by user]', T0 + 2), limit(T0 + 3)]), [], 'nor one interrupted')
+    eq(asks([ask, tool(T0 + 1), limit(T0 + 2), said('go on', RESET + 1), ended('fixed', RESET + 2)]), [],
+       'a later answered turn of the person\'s takes it')
+    eq(H.walk([ask, tool(T0 + 1), limit(T0 + 2)])['answered'], {}, 'it does not count as answered')
+    with held_world() as w:
+        w.rows['a'] = [ask, tool(T0 + 1), result(T0 + 2), limit(T0 + 3)]
+        w.up(5, 'a', 41)
+        w.tick(T0 + 200)
+        eq(w.typed, [], 'it waits for the reset')
+        w.tick(RESET + 61)
+        w.tick(RESET + 100)
+        eq(len(w.typed), 1, 'typed in once')
+        text = w.typed[0][1]
+        check('fix the login' in text and 'its reply was cut off' in text, 'and said to be cut off', text)
+        w.rows['a'] += [said(text, RESET + 62), tool(RESET + 63), limit(RESET + 64, resets=RESET + 9000)]
+        w.tick(RESET + 400)
+        eq(len(w.typed), 1, 'cut off again: it waits for the new reset')
+        w.tick(RESET + 9061)
+        eq(len(w.typed), 2, 'then goes in again')
+        w.rows['a'] += [said(w.typed[1][1], RESET + 9062), ended('fixed', RESET + 9070)]
+        w.tick(RESET + 9100)
+        eq((len(w.typed), w.H.records()), (2, []), 'answered: done with')
+
+
+APP = '919c84d4-9292-5e75-bd70-fde86b95629b'
+
+
+@contextlib.contextmanager
+def app_world():
+    """`held_world` with a control server (pid 70) and its child `w.child`, a session started from the Claude apps."""
+    from agent_runner import feed
+    with held_world() as w, tempfile.TemporaryDirectory() as reg:
+        w.child, w.server, w.dead = 71, 70, set()
+        bridge = {'type': 'bridge-session', 'bridgeSessionId': 'session_x1', 'sessionId': APP}
+        w.rows[APP] = [bridge] + [{**x, 'sessionId': APP} for x in four()]
+        for pid, sid in ((71, APP), (72, 'aaaaaaaa-0000-4000-8000-000000000000')):  # 72: a person's own session
+            (Path(reg) / f'{pid}.json').write_text(json.dumps(
+                {'pid': pid, 'sessionId': sid, 'bridgeSessionId': 'session_x1'}), encoding='utf-8')
+        w.rows['aaaaaaaa-0000-4000-8000-000000000000'] = [said('my own chat', T0), limit(T0 + 1)]
+        with mock.patch.object(feed, 'claude_sessions_dir', lambda: Path(reg)), \
+                mock.patch.object(K, 'control_server_live', lambda: w.server), \
+                mock.patch.object(K, 'control_state', lambda rows: {'title': ''}), \
+                mock.patch.object(K.plat, 'children', lambda p: [71] if p == 70 and 71 not in w.dead else []), \
+                mock.patch.object(K.plat, 'started', lambda p: None), \
+                mock.patch.object(K.plat, 'alive', lambda p: p in (70, 71, 41, 42) and p not in w.dead):
+            yield w
+
+
+def test_held_app_session():
+    print('B173: a session started from the Claude apps: what it holds goes once into a numbered copy of it')
+    with app_world() as w:
+        w.tick(T0 + 200)
+        eq([r['sid'] for r in w.H.records()], [APP], 'held; a person\'s own session is not')
+        with mock.patch.object(w.H.time, 'time', lambda: T0 + 300):
+            got = w.H.lines()
+        check(len(got) == 1 and got[0].startswith('a chat from the Claude apps: 4 asks wait'), 'status says so', got)
+        w.tick(RESET + 61)
+        recs = w.H.records()
+        eq((len(recs), recs[0].get('from')), (1, APP), 'copied')
+        new = recs[0]['sid']
+        rows = [json.loads(x) for x in Path(K.transcript(new)).read_text(encoding='utf-8').splitlines()]
+        eq({x['sessionId'] for x in rows}, {new}, 'under its own id')
+        check(not any(x['type'] == 'bridge-session' for x in rows), 'without the app session\'s Remote Control entry')
+        w.tick(RESET + 70)
+        w.tick(RESET + 80)
+        eq([s for _, s in w.opened], [new], 'the copy is opened once')
+        n = w.opened[0][0]
+        check(n > 1, 'as a numbered session, never c1', n)
+        w.up(n, new, 42, ago=-75)
+        w.tick(RESET + 300)
+        w.tick(RESET + 400)
+        eq([x for x, _ in w.typed], [n], 'typed in once')
+        text = w.typed[0][1]
+        check(in_order(text, ORDER), 'all four, in order', text)
+        w.rows[new] = [*rows, said(text, RESET + 301), ended('done', RESET + 310)]
+        w.tick(RESET + 500)
+        eq((w.H.records(), len(w.typed)), ([], 1), 'answered: done with')
+        w.rows[APP] += [said('a sixth', RESET + 600), limit(RESET + 601, resets=RESET + 9000)]
+        w.tick(RESET + 700)
+        eq(w.H.records()[0]['asks'], 1, 'a later message there is held on its own')
+        w.tick(RESET + 9061)
+        w.tick(RESET + 9070)
+        m, other = w.opened[-1]
+        check(other != new, 'in a copy of its own', w.opened)
+        w.up(m, other, 41, ago=-9075)
+        w.live.pop(n, None) if m != n else None
+        w.tick(RESET + 9300)
+        check('a sixth' in w.typed[-1][1] and ORDER[0] not in w.typed[-1][1], 'without the earlier ones', w.typed[-1])
+    with app_world() as w:
+        w.rows[APP] = [said('fix the login', T0), tool(T0 + 1), result(T0 + 2), limit(T0 + 3)]
+        w.tick(RESET + 61)
+        eq([r.get('from') for r in w.H.records()], [APP], 'one whose reply was cut off too')
+    with app_world() as w:
+        w.tick(T0 + 200)
+        w.rows[APP] += [said('hello?', RESET + 10), ended('all four then', RESET + 20)]
+        w.tick(RESET + 61)
+        eq((w.H.records(), w.opened), ([], []), 'answered in the app before that: nothing goes in')
+    with app_world() as w:
+        w.tick(RESET + 61)
+        w.rows[APP] += [said('hello?', RESET + 62), ended('all four then', RESET + 63)]
+        w.tick(RESET + 70)
+        w.tick(RESET + 90)
+        eq((w.H.records(), w.opened), ([], []), 'answered there after the copy, before it was opened: nor then')
+    with app_world() as w:
+        w.tick(T0 + 200)
+        rec = w.H.records()[0]
+        keep = dict(rec)
+        w.tick(RESET + 61)
+        w.H.save(keep)  # killed right after the copy: the app record is back
+        (w.H.folder() / f'{APP}.dropped').unlink()
+        w.tick(RESET + 70)
+        eq(len([r for r in w.H.records() if r.get('from')]), 1, 'a run killed on the way makes no second copy')
+
+
+def test_held_app_ended():
+    print('B173: an app session the person closed is dropped; one that failed or ended with its server is not')
+    for how, kept in (('closed', False), ('failed', True), ('server', True)):
+        with app_world() as w:
+            w.tick(T0 + 200)
+            w.dead.add(71)
+            if how == 'server':
+                w.server = 0
+            log = {'closed': 'Session completed (2h) cse_x1', 'failed': 'Session failed: Process exited with error cse_x1'}
+            w.notes('control-server.log').write_text(f'[8A[J[02:05:39] {log.get(how, "")}\nCapacity: 0/32\n',
+                                                     encoding='utf-8')
+            w.tick(RESET + 61)
+            eq([r.get('from') for r in w.H.records()], [APP] if kept else [], how)
+
+
 if __name__ == '__main__':
     raise SystemExit(report([test_handed_ask_as_c1_starts_fresh, test_brief_fits_session_start,
                              test_take_back_from_a_slot_just_started, test_sessions_one_and_each,
                              test_reopen_after_shutdown, test_second_shim_keeps_live_session,
                              test_first_message_typed_after_remote_control, test_rename_f129, test_held_delivered_once,
-                             test_held_still_limited, test_held_stuck_and_cut, test_held_resent_and_runner, test_held_reopened]))
+                             test_held_still_limited, test_held_stuck_and_cut, test_held_resent_and_runner, test_held_reopened, test_held_cut_off,
+                             test_held_app_session, test_held_app_ended]))
