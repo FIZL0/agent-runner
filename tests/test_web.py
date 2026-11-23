@@ -2353,11 +2353,12 @@ const els = {app: {style: {}, classList: cls()}, body: new Box(600)};
 const $ = k => els[k], box = {matches: () => true, closest: () => null}, docOn = {};
 let clock = 5000, frames = [], reduced = false, glides = [];
 Date.now = () => clock;
+let lastPlace = null;
 const requestAnimationFrame = f => frames.push(f), frame = (ms = 16) => { clock += ms; const l = frames; frames = []; l.forEach(f => f()) };
 const matchMedia = () => ({matches: reduced}), getComputedStyle = () => ({getPropertyValue: k => k === '--ease' ? ' ease-out' : '250ms'});
 const anim = who => (kf, o) => { const a = {who, from: kf[0].transform, ms: o.duration, cancel() {}}; glides.push(a); return a };
 els.body.style = {}; els.body.animate = anim('text');
-const dockEl = {animate: anim('dock'), getBoundingClientRect: () => ({top: (parseInt(els.app.style.top) || 0) + (parseInt(els.app.style.height) || 800) - 100})};
+const dockEl = {style: {}, animate: anim('dock'), getBoundingClientRect: () => ({top: (parseInt(els.app.style.top) || 0) + (parseInt(els.app.style.height) || 800) - 100})};
 const document = {activeElement: null, documentElement: {clientHeight: 800}, addEventListener: (t, f) => docOn[t] = f, querySelector: s => s === '.dockwrap' ? dockEl : null};
 const S = {view: 'talk', thread: null, pin: true, sheet: ''}, jumpDraw = () => {};
 eval(line('const atEnd=') + line('const chatShown=') + line('function toEnd(') + page.slice(page.indexOf('const VV='), page.indexOf('function grow(')) + `
@@ -2400,11 +2401,15 @@ docOn.focusout({target: box, relatedTarget: box}); Promise.resolve().then(() => 
   VVS.offsetTop = 24; on.scroll(); out.after = app(); VVS.offsetTop = 0;
   reduced = true; glides = []; document.activeElement = box; vv(420, 0); out.reduced = [app(), glides.length]; document.activeElement = null; vv(800, 0);
   // a tap on a box: its focus is made here, with no scroll; a scroll, a long press and a box in focus are left alone
-  const log = [], tb = {style: {}, value: 'draft', isConnected: true, closest: () => tb, setSelectionRange: (x, y) => log.push([x, y]), focus: o => log.push([o.preventScroll, tb.style.opacity]), click: () => log.push('click')};
+  const log = [], tb = {style: {}, matches: () => true, getBoundingClientRect: () => ({top: 0, bottom: 0}), value: 'draft', isConnected: true, closest: () => tb, setSelectionRange: (x, y) => log.push([x, y]), blur: () => log.push('blur'), focus: o => log.push([o.preventScroll, tb.style.opacity]), click: () => log.push('click')};
   const tap = (dx, ms, off) => { log.length = 0; let stopped = false; docOn.touchstart({touches: [{clientX: 50, clientY: 700}], target: tb}); clock += ms;
     docOn.touchend({cancelable: true, defaultPrevented: !!off, changedTouches: [{clientX: 50, clientY: 700 + dx}], preventDefault() { stopped = true }}); return [stopped, log.slice()] };
   out.tap = tap(2, 80); frame(); out.hidden = tb.style.opacity; frame(); out.shown = tb.style.opacity;
-  out.notTap = [tap(30, 80), tap(0, 700), tap(0, 80, true)]; document.activeElement = tb; out.again = tap(0, 80);
+  // a notice's row in a chat scrolled up: the text stays, also when the chat is another one
+  eval(line('let noticeH=').replace('let ', 'var ') + line('function noticeRoom('));
+  lastPlace = 'a'; noticeRoom(0); S.pin = false; b.scrollTop = 300; noticeRoom(36); const r1 = b.scrollTop; noticeRoom(0); const r2 = b.scrollTop;
+  lastPlace = 'b'; noticeRoom(36); out.notice = [r1, r2, b.scrollTop];
+  out.notTap = [tap(30, 80), tap(0, 700), tap(0, 80, true)]; document.activeElement = tb; out.scripted = tap(0, 80)[1][0]; vv(420, 0); out.again = tap(0, 80);
   console.log(JSON.stringify(out));
 });`);
 """
@@ -2450,6 +2455,8 @@ def test_keyboard_b160(tmp: Path) -> None:
     eq(got.get('reduced'), [['420px', '0px', True], 0], 'reduced motion: no glide')
     eq(got.get('tap'), [True, [[5, 5], [True, '0'], 'click']], "a tap's focus does not scroll, and the box is see-through for it")
     eq((got.get('hidden'), got.get('shown')), ('0', ''), 'for two frames')
+    eq(got.get('scripted'), 'blur', 'a box focused by a script has no keyboard: the tap focuses it anew')
+    eq(got.get('notice'), [336, 300, 300], "a notice's row moves no text; a chat just opened keeps its place")
     eq((got.get('notTap'), got.get('again')), ([[False, []]] * 3, [False, []]), 'a scroll, a long press, a swipe and a box in focus are left to the browser')
 
 

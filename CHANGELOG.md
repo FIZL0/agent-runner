@@ -120,8 +120,7 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
   still hold; without a free provider it is as before (B157).
 - Fixes: on an iPhone with the keyboard open, the run app's header went off the top and an empty band sat under the
   message box; now the app fits the space above the keyboard, in Talk, Home, Settings and the sheet too. Opening and
-  closing the keyboard no longer shows a grey band or pushes the header away (aimed at; the fix is tested with stubbed
-  events, not yet on an iPhone), the strip behind Safari's bar has the view's colour, and the Outbox pill no longer
+  closing the keyboard no longer shows a grey band or pushes the header away (seen on an iPhone 15 Pro, iOS 27), the strip behind Safari's bar has the view's colour, and the Outbox pill no longer
   covers a chat's text (B160).
 - Fixes: Talk's mic on an iPhone could end at once with "Heard nothing (error: aborted)" (B162). Now only one speech
   recognizer runs at a time (a start waits for the old one's end, the box's dictation too); an abort before any words
