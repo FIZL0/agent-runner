@@ -314,6 +314,47 @@ def terminal_fallback(name: str) -> dict:
 
 WEB_REFUSED = {'keys'}  # C24: actions the web does not take (typing into a pane went with the built-in view)
 
+
+class ActsOnce:
+    """F137: the page's outbox sends each action with a client id (`cid`) and sends it again after a drop or a
+    reload, so an action whose id the server has run already answers with its first result instead of running
+    twice (a `new_control` sent twice would start two chats). A copy that comes while the first still runs waits
+    for it (None, a 503, when it waited WAIT s in vain). The last KEEP finished ids are kept, in memory: a restarted
+    run page forgets them."""
+    KEEP = 500
+    WAIT = 300.0  # s a copy waits for the first to finish
+
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.seen: dict[str, list] = {}  # cid -> [done Event, result]
+
+    def run(self, cid: str, fn) -> dict | None:
+        if not cid:
+            return fn()
+        with self.lock:
+            got = self.seen.get(cid)
+            first = got is None
+            if first:
+                got = self.seen[cid] = [threading.Event(), None]
+                done = [k for k, v in self.seen.items() if v[0].is_set()]  # the oldest finished ones go
+                for k in done[:max(0, len(self.seen) - self.KEEP)]:
+                    self.seen.pop(k)
+        if not first:
+            if not got[0].wait(self.WAIT):
+                return None  # still running: the page sends this copy again later (503)
+            if got[1] is None:  # the first did not finish: this copy runs it
+                return self.run(cid, fn)
+            return {**got[1], 'again': True}
+        try:
+            got[1] = fn()
+        except BaseException:
+            with self.lock:  # it did not finish: a later copy runs it
+                self.seen.pop(cid, None)
+            raise
+        finally:
+            got[0].set()
+        return got[1]
+
 CONTROL_N = re.compile(r'\bcontrol (\d+)\b')  # F93: the number `control --new` prints for the session it opened
 
 
@@ -722,16 +763,23 @@ class Handler(BaseHTTPRequestHandler):
         try:
             body = json.loads(self.rfile.read(int(self.headers.get('Content-Length') or 0)) or b'{}')
             name, args = str(body.get('name', '')), body.get('args') or {}
+            cid = str(body.get('cid') or '')[:80]  # F137: the outbox's client id
             if not isinstance(args, dict):
                 raise ValueError('args must be an object')
         except (ValueError, AttributeError) as e:
             return self.send(400, json.dumps({'ok': False, 'out': f'bad request: {e}'}))
         if name in WEB_REFUSED:
             return self.send(404, json.dumps({'ok': False, 'out': f'no such action on the web: {name}'}))
-        try:
-            r = save_chat_order(**args) if name == 'chat_order' else U.act(name, **args)
-        except TypeError as e:  # F133: chat_order is the web's own action, kept beside the chats it orders
-            r = {'ok': False, 'code': 2, 'out': f'{name}: {e}', 'argv': []}
+        def run() -> dict:
+            try:
+                return save_chat_order(**args) if name == 'chat_order' else U.act(name, **args)
+            except TypeError as e:  # F133: chat_order is the web's own action, kept beside the chats it orders
+                return {'ok': False, 'code': 2, 'out': f'{name}: {e}', 'argv': []}
+            except Exception as e:  # noqa: BLE001 - F137: an answer, so the outbox shows it failed, not a drop
+                return {'ok': False, 'code': 1, 'out': f'{name} failed: {e}', 'argv': []}
+        r = self.server.once.run(cid, run)
+        if r is None:  # F137: a copy of an action still running: the outbox sends it again later
+            return self.send(503, json.dumps({'ok': False, 'out': 'that action is still running'}))
         self.server.snaps.at = 0.0  # the next snapshot shows what the action changed
         self.send(200, json.dumps(r, ensure_ascii=False))
 
@@ -797,6 +845,7 @@ class WebServer(ThreadingHTTPServer):
 
     def __init__(self, token: str, port: int, bind: str = '0.0.0.0', snap=run_snapshot):
         self.token, self.snaps, self.stopped = token, Snapshots(snap), threading.Event()
+        self.once = ActsOnce()  # F137
         super().__init__((bind, port), Handler)
         self.terms = Terminals(token, self.server_address[1], bind)
 

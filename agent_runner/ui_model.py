@@ -905,7 +905,7 @@ def concept_chat_text(row: dict) -> str:
             f"until I say a plain go.")
 
 
-def concept_chat(cid: str, title: str = '', url: str = '', copy: str = '') -> dict:
+def concept_chat(cid: str, title: str = '', url: str = '', copy: str = '', wait: bool = True) -> dict:
     """F86: a new control session about concept `cid` (its K id, or the id of its build task): `control --new
     --ask` with `concept_chat_text`. The row comes from the waiting list; `title`, `url` and `copy` fill in for
     a concept no longer listed."""
@@ -918,7 +918,7 @@ def concept_chat(cid: str, title: str = '', url: str = '', copy: str = '') -> di
         rows = []
     row = next((r for r in rows if cid in (r.get('concept'), r.get('id'))), None) or \
         {'concept': cid, 'title': title, 'url': url, 'copy': copy or concept_copy(cid)}
-    return new_control(concept_chat_text(row))
+    return new_control(concept_chat_text(row), wait)  # F137: the run page starts it without waiting
 
 
 def quick_ask(key: str) -> dict:

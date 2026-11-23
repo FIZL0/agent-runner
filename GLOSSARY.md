@@ -441,3 +441,10 @@ _Said_: option button
 _On screen_: Go with B / Answer the run with these picks
 _In code_: web.pick, web.pick_links, pick-links, /pick
 _Avoid_: approve URL, magic link
+
+**Outbox**:
+The run page's list of actions a person took that the run has not answered yet: each shows at once, is sent behind in order, is sent again after a dropped connection or a reload, and stays with Retry and Discard if the run refuses it.
+_Said_: do those things in the background
+_On screen_: N sending · N failed · tap to see
+_In code_: S.ob, outbox(), drain(), obSettle, ActsOnce
+_Avoid_: queue, pending list
