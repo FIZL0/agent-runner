@@ -128,6 +128,9 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
   middle of a backticked command; a multi-line tell whose line ends are CRLF (as Windows pipes them) no longer doubles
   its newlines in a harness loop session; copying the run page link on Windows works when the clipboard tool is a
   .bat or .cmd (B150).
+- Fixes: on Windows, `wizard` works with a default Git for Windows install (its installer puts only Git\cmd on PATH, so
+  no bash was found): after PATH it looks for bin\bash.exe beside git, and with none it says in one line that Git Bash
+  is missing instead of a traceback. System32's WSL bash is no longer used as a fallback (B159).
 
 ## 0.61.0 (2026-11-23)
 

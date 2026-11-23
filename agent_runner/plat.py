@@ -326,6 +326,26 @@ def exe(name: str) -> str:
     return (shutil.which(name) or name) if WINDOWS else name
 
 
+def bash_exe() -> str:
+    """The bash to run wizards with. A bare 'bash' on Windows makes CreateProcess search System32 before PATH and get
+    the WSL launcher (System32\\bash.exe), not Git Bash (B75): there it is the first bash on PATH outside System32,
+    else the one beside git, as Git for Windows' installer puts only Git\\cmd on PATH (B159). With neither it
+    exits with one line that says Git Bash is missing."""
+    if not WINDOWS:
+        return shutil.which('bash') or 'bash'
+    sysdir = os.path.normcase(os.path.join(os.environ.get('SystemRoot', r'C:\Windows'), 'System32'))
+    for d in os.environ.get('PATH', '').split(os.pathsep):
+        found = shutil.which('bash', path=d) if d else None
+        if found and os.path.normcase(os.path.dirname(os.path.abspath(found))) != sysdir:
+            return found
+    git = shutil.which('git')
+    if git:
+        beside = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(git))), 'bin', 'bash.exe')
+        if os.path.isfile(beside):
+            return beside
+    raise SystemExit('Git Bash is missing: no bash on PATH or beside git. Install Git for Windows: https://git-scm.com')
+
+
 # --- files -------------------------------------------------------------------
 
 def lock(path: Path):
