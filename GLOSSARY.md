@@ -329,3 +329,10 @@ _Said_: type of work
 _On screen_: [models] code, review, fix, docs, control, feed
 _In code_: [models], Config.models, resolve_models, subagents
 _Avoid_: model kind, model type
+
+**Runner Home**:
+One always-on page for every project on the machine: each one's run state and what needs the person, buttons to start, pause, resize and stop its run, and a way into its run app
+_Said_: Home, runner home
+_On screen_: Runner Home
+_In code_: home.py, HomeServer, project_rows, run_action, install
+_Avoid_: dashboard, hub

@@ -1,0 +1,436 @@
+#!/usr/bin/env python3
+"""F94: Runner Home. Its registry of projects, the buttons calling the runner, routing a project's address to
+its run's own page, the service files per OS, the QR code, and a run moving off a port Home holds.
+
+    python3 tests/test_home_service.py      (temp folders, servers on free local ports; no service installed)
+"""
+from __future__ import annotations
+
+import json
+import os
+import plistlib
+import shutil
+import socket
+import subprocess
+import tempfile
+import threading
+import urllib.error
+import urllib.request
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from types import SimpleNamespace
+from unittest import mock
+
+from _check import check, eq, git, has, report, run
+
+from agent_runner import home as H  # noqa: E402
+from agent_runner import state as S  # noqa: E402
+from agent_runner import web as W  # noqa: E402
+
+
+def in_tmp(f):
+    def go():
+        with tempfile.TemporaryDirectory() as d:
+            tmp = Path(d).resolve()
+            with mock.patch.dict(os.environ, {'AGENT_RUNNER_HOME_CONFIG': str(tmp / 'cfg')}):
+                f(tmp)
+    go.__name__ = f.__name__
+    return go
+
+
+def project(at: Path, toml: bool = True) -> Path:
+    at.mkdir(parents=True)
+    git(at, 'init', '-q')
+    if toml:
+        (at / 'runner.toml').write_text('[run]\nslots = 2\n', encoding='utf-8')
+    return at
+
+
+def get(url: str, data: bytes | None = None, follow: bool = True) -> tuple[int, bytes, dict]:
+    req = urllib.request.Request(url, data=data, method='POST' if data is not None else 'GET',
+                                 headers={'Content-Type': 'application/json'} if data is not None else {})
+    opener = urllib.request.build_opener(*([] if follow else [NoRedirect()]))
+    try:
+        with opener.open(req, timeout=10) as r:
+            return r.status, r.read(), dict(r.headers)
+    except urllib.error.HTTPError as e:
+        return e.code, e.read(), dict(e.headers)
+
+
+class NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, *a, **kw):
+        return None
+
+
+def test_registry(tmp: Path) -> None:
+    print('the registry: projects under ~/repos with a runner.toml, ones added by hand, ones unlisted')
+    repos = tmp / 'repos'
+    a, plain, c = project(repos / 'alpha'), project(repos / 'plain', toml=False), project(repos / 'charlie')
+    (repos / 'notes.txt').write_text('x', encoding='utf-8')
+    elsewhere = project(tmp / 'work' / 'bravo', toml=False)
+    H.save_registry({**H.load_registry(), 'scan': [str(repos)]})
+    eq(H.projects(), [a, c], 'scanned: each folder in ~/repos with a runner.toml, none without')
+    eq(H.load_registry()['port'], 8770, 'Home is on port 8770 unless the registry says otherwise')
+    ok, said = H.add_project(str(elsewhere))
+    check(ok, 'a git repository outside ~/repos can be added by hand', said)
+    eq(H.projects(), [a, elsewhere, c], 'and is listed, by name with the rest')
+    check(not H.add_project(str(tmp / 'nope'))[0], 'a folder that is not there is refused')
+    (tmp / 'empty').mkdir()
+    check(not H.add_project(str(tmp / 'empty'))[0], 'and a folder that is no project')
+    ok, _ = H.remove_project(str(c))
+    check(ok, 'a scanned project can be unlisted')
+    eq(H.projects(), [a, elsewhere], 'and stays unlisted though it is still in ~/repos')
+    eq(H.load_registry()['hidden'], [str(c)], 'it is kept as hidden, not deleted')
+    H.add_project(str(c))
+    eq(H.projects(), [a, elsewhere, c], 'adding it again brings it back')
+    H.remove_project(str(elsewhere))
+    eq(H.load_registry()['projects'], [str(c)], 'unlisting one added by hand drops it from the registry')
+    check(not H.remove_project(str(plain))[0], 'unlisting one Home never listed says so')
+    eq(H.keys([a, tmp / 'x' / 'alpha', tmp / 'my proj']), {'alpha': a, 'alpha-2': tmp / 'x' / 'alpha',
+                                                          'my-proj': tmp / 'my proj'},
+       "a project's key is its folder name, made safe and told apart")
+    t = H.home_token()
+    eq(H.home_token(), t, 'the token is made once and kept')
+    if os.name != 'nt':
+        eq(oct((tmp / 'cfg' / 'home.token').stat().st_mode & 0o777), '0o600', 'readable by its owner only')
+    r = run(tmp, 'home', 'list', env={**os.environ, 'AGENT_RUNNER_HOME_CONFIG': str(tmp / 'cfg')})
+    eq(r.stdout.split(), [str(a), str(c)], '`agent-runner home list` prints them, from any folder')
+    eq(run(tmp, 'home', 'install', 'extra').returncode, 2, 'a word too many is a usage error')
+
+
+def test_rows(tmp: Path) -> None:
+    print('each project: running, idle or off, paused, its slots, tasks queued, what needs you')
+    root = tmp / 'p'
+    infos = {'off': {'up': False}, 'idle': {'up': True, 'slots': 2, 'state': '2 slots', 'running': {}},
+             'running': {'up': True, 'slots': 3, 'state': '3 slots, paused', 'running': {'2': 'F9', '1': 'B4'}}}
+    rows = {k: H.project_row('p', root, info=lambda r, v=v: v,
+                             facts=lambda r, run: {'left': 4, 'stopping': False,
+                                                   'link': 'http://h:9/?t=x' if run.get('up') else ''},
+                             needs=lambda r: (1, ['B2 - pick one - reply A/B'])) for k, v in infos.items()}
+    eq(rows['off']['asks'], ['B2 - pick one - reply A/B'], 'and what each one is')
+    eq((rows['off']['state'], rows['off']['page'], rows['off']['slots']), ('off', '', None),
+       'no run up: off, nothing to open')
+    eq((rows['idle']['state'], rows['idle']['paused'], rows['idle']['slots']), ('idle', False, 2),
+       'a run up with nothing running: idle')
+    eq((rows['running']['state'], rows['running']['paused'], rows['running']['running']), ('running', True, ['B4', 'F9']),
+       'a run with tasks: running, with its tasks, and paused when its state says so')
+    eq(rows['running']['page'], 'p/p/', "its run app opens through Home's own address")
+    eq((rows['off']['left'], rows['off']['needs']), (4, 1), 'tasks queued and what needs you, run or not')
+
+    def needs_said(text, code=0):
+        H._NEEDS.clear()
+        return H.needs_count(root, call=lambda r, a, t: SimpleNamespace(returncode=code, stdout=text, stderr=''))
+    eq(needs_said('B2 - pick one - reply A/B\nF3 - check it\n2 things need you\n'), 2, '`needs` says 2: 2')
+    eq(H.needs_said(root)[1], ['B2 - pick one - reply A/B', 'F3 - check it'], "with its 'ID - what to do' lines")
+    eq(needs_said('Nothing needs you\n'), 0, 'Nothing needs you: 0')
+    eq(needs_said('1 thing needs you\n'), 1, 'one thing: 1')
+    eq(needs_said('boom', 1), None, 'a failing `needs`: unknown, not 0')
+    calls = []
+    H._NEEDS.clear()
+    for _ in range(3):
+        H.needs_count(root, call=lambda r, a, t: calls.append(a) or SimpleNamespace(returncode=0, stdout='Nothing needs you',
+                                                                                    stderr=''))
+    eq(len(calls), 1, 'a phone polling does not run `needs` each time: it is kept a while')
+
+
+def test_actions(tmp: Path) -> None:
+    print("Start, Stop, Pause and slots run the runner's own command in that project")
+    eq(H.action_argv('start'), [], 'start: bare agent-runner (no terminal, so the run starts in the background)')
+    eq(H.action_argv('stop'), ['stop'], 'stop: stop')
+    eq(H.action_argv('pause'), ['pause'], 'pause: pause')
+    eq(H.action_argv('resume'), ['pause', '--off'], 'resume: pause --off')
+    eq([H.action_argv('slots', a) for a in ('+1', '-1', '4')], [['slots', '+1'], ['slots', '-1'], ['slots', '4']],
+       'slots: +1, -1 or a count')
+    eq([H.action_argv('slots', a) for a in ('0', 'x', '+2', '4; rm')], [None] * 4, 'anything else is refused')
+    eq(H.action_argv('upgrade'), None, 'and so is a command Home has no button for')
+    calls = []
+
+    def call(root, argv, timeout):
+        calls.append((root, argv))
+        return SimpleNamespace(returncode=0, stdout='the run is up in the background: 2 slots\n', stderr='')
+    root = tmp / 'p'
+    r = H.run_action(root, 'start', call=call)
+    eq((calls[-1], r['ok']), ((root, []), True), 'start calls the runner in the project folder')
+    has(r['out'], 'is up in the background', 'and says what it said')
+    H.run_action(root, 'slots', '+1', call=call)
+    eq(calls[-1], (root, ['slots', '+1']), 'slots +1 calls `slots +1`')
+    n = len(calls)
+    r = H.run_action(root, 'slots', 'lots', call=call)
+    eq((r['ok'], len(calls)), (False, n), 'a refused action calls nothing')
+    r = H.run_action(root, 'stop', call=lambda *a: SimpleNamespace(returncode=1, stdout='', stderr='no run up'))
+    eq((r['ok'], r['out']), (False, 'no run up'), "the runner's failure comes back as it said it")
+    with mock.patch.object(H.sp, 'run') as sr:
+        sr.return_value = SimpleNamespace(returncode=0, stdout='', stderr='')
+        with mock.patch.dict(os.environ, {'AGENT_RUNNER_REPO': '/elsewhere', 'AGENT_RUNNER_SLOT': '3'}):
+            H.runner(root, ['pause'])
+    argv, kw = sr.call_args[0][0], sr.call_args[1]
+    eq((argv[-1], kw['cwd'], kw['stdin']), ('pause', str(root), H.sp.DEVNULL), 'the real call: the runner, in the project, no input')
+    check('AGENT_RUNNER_REPO' not in kw['env'] and 'AGENT_RUNNER_SLOT' not in kw['env'],
+          'without a slot\'s markers, so it acts on that project')
+
+
+class FakeRun(BaseHTTPRequestHandler):
+    """A run's page as Home sees it: it echoes what reached it, and streams /events."""
+    protocol_version = 'HTTP/1.1'
+
+    def log_message(self, *a):
+        pass
+
+    def answer(self, body: bytes):
+        data = json.dumps({'method': self.command, 'path': self.path, 'body': body.decode()}).encode()
+        self.send_response(200)
+        self.send_header('Content-Type', 'application/json')
+        self.send_header('Content-Length', str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+    def do_GET(self):
+        if self.path.startswith('/events'):
+            self.send_response(200)
+            self.send_header('Content-Type', 'text/event-stream')
+            self.send_header('Connection', 'close')
+            self.end_headers()
+            self.close_connection = True
+            for i in range(3):
+                self.wfile.write(f'data: {i}\n\n'.encode())
+                self.wfile.flush()
+            return
+        self.answer(b'')
+
+    def do_POST(self):
+        self.answer(self.rfile.read(int(self.headers.get('Content-Length') or 0)))
+
+
+def test_routing(tmp: Path) -> None:
+    print("routing: /p/KEY/ is that project's run app, reached with the run's own token")
+    fake = ThreadingHTTPServer(('127.0.0.1', 0), FakeRun)
+    threading.Thread(target=fake.serve_forever, daemon=True).start()
+    alpha, beta = tmp / 'alpha', tmp / 'beta'
+    acted = []
+    links = {alpha: (fake.server_address[1], 'RUNTOKEN'), beta: None}
+    srv = H.serve_home('HOMETOKEN', 0, '127.0.0.1', roots=lambda: [alpha, beta],
+                       rows=lambda: [{'key': 'alpha', 'state': 'running'}], link=lambda r: links[r],
+                       act=lambda root, name, arg: acted.append((root, name, arg)) or {'ok': True, 'out': 'done'})
+    base = f'http://127.0.0.1:{srv.server_address[1]}'
+    try:
+        eq(get(f'{base}/')[0], 403, 'no token: refused')
+        eq(get(f'{base}/p/alpha/snapshot?t=WRONG')[0], 403, 'a wrong token: refused, the run app too')
+        code, body, _ = get(f'{base}/?t=HOMETOKEN')
+        eq(code, 200, 'the Home page with its token')
+        has(body.decode(), 'Runner Home', 'is the Home page')
+        code, body, _ = get(f'{base}/projects?t=HOMETOKEN')
+        d = json.loads(body)
+        eq((d['ok'], d['projects'], d['machine']), (True, [{'key': 'alpha', 'state': 'running'}], socket.gethostname()),
+           'the projects as JSON, with the machine\'s name')
+        code, body, _ = get(f'{base}/p/alpha/snapshot?t=HOMETOKEN&n=2')
+        got = json.loads(body)
+        eq((code, got['method'], got['path']), (200, 'GET', '/snapshot?t=RUNTOKEN&n=2'),
+           "the run's page gets the path, the run's token in place of Home's, and the rest of the query")
+        code, body, _ = get(f'{base}/p/alpha/act?t=HOMETOKEN', json.dumps({'name': 'chat'}).encode())
+        got = json.loads(body)
+        eq((got['method'], got['path'], json.loads(got['body'])), ('POST', '/act?t=RUNTOKEN', {'name': 'chat'}),
+           'a POST goes through with its body')
+        code, body, _ = get(f'{base}/p/alpha/events?t=HOMETOKEN')
+        eq(body.decode(), 'data: 0\n\ndata: 1\n\ndata: 2\n\n', 'the events stream comes through as it is sent')
+        code, _, hd = get(f'{base}/p/alpha?t=HOMETOKEN', follow=False)
+        eq((code, hd.get('Location')), (302, '/p/alpha/?t=HOMETOKEN'), '/p/KEY goes to /p/KEY/, where the app\'s calls are relative')
+        code, body, _ = get(f'{base}/p/beta/?t=HOMETOKEN')
+        eq(code, 502, 'a project with no run up has no app to route to')
+        has(body.decode(), 'no run up', 'and says so, with the way back to Home')
+        eq(get(f'{base}/p/gamma/?t=HOMETOKEN')[0], 404, 'an unknown project: 404')
+        code, body, _ = get(f'{base}/act?t=HOMETOKEN', json.dumps({'project': 'alpha', 'name': 'slots', 'arg': '+1'}).encode())
+        eq((json.loads(body)['ok'], acted), (True, [(alpha, 'slots', '+1')]), "a button's POST acts on that project")
+        eq(get(f'{base}/act?t=HOMETOKEN', json.dumps({'project': 'nope', 'name': 'stop'}).encode())[0], 404,
+           'one for an unknown project: 404')
+        eq(get(f'{base}/act?t=HOMETOKEN', b'[1]')[0], 400, 'a body that is not an object: 400')
+    finally:
+        srv.stop()
+        fake.shutdown()
+        fake.server_close()
+
+    print("…and to a real run's page")
+    run_srv = W.serve('RUNTOK2', 0, '127.0.0.1', snap=lambda: {'sessions': [], 'hello': 'from the run'})
+    srv = H.serve_home('HT', 0, '127.0.0.1', roots=lambda: [alpha], rows=lambda: [],
+                       link=lambda r: (run_srv.server_address[1], 'RUNTOK2'))
+    base = f'http://127.0.0.1:{srv.server_address[1]}'
+    try:
+        code, body, _ = get(f'{base}/p/alpha/?t=HT')
+        eq(code, 200, "the run app's page through Home")
+        has(body.decode(), "new URLSearchParams\\(location.search\\).get\\('t'\\)",
+            "it reads its token from its own address, which holds Home's: Home swaps it on every call")
+        code, body, _ = get(f'{base}/p/alpha/snapshot?t=HT')
+        eq(json.loads(body).get('hello'), 'from the run', "its snapshot, from the run's server")
+        mine = H.serve_home(H.home_token(), 0, '127.0.0.1', roots=lambda: [], rows=lambda: [])
+        check(H.serving(mine.server_address[1]), '`home status`: Home answers on its port')
+        mine.stop()
+        check(not H.serving(run_srv.server_address[1]), "and a run's page on that port is not Home")
+    finally:
+        srv.stop()
+        run_srv.stop()
+
+
+def test_run_link(tmp: Path) -> None:
+    print("the run's own page: its port and token from its notes, only while the run is up")
+    root = project(tmp / 'proj')
+    from agent_runner.config import Config
+    Config(root).notes('web.url').write_text('http://box:45678/?t=abc123\nhttp://10.0.0.2:45678/?t=abc123\n',
+                                             encoding='utf-8')
+    with mock.patch('agent_runner.cmds.run_info', return_value={'up': True}):
+        eq(H.run_link(root), (45678, 'abc123'), 'its port and token')
+    with mock.patch('agent_runner.cmds.run_info', return_value={'up': False}):
+        eq(H.run_link(root), None, 'no run up: none, whatever an old file says')
+
+
+def test_units(tmp: Path) -> None:
+    print('the service files: systemd user unit with linger, launchd agent, scheduled task')
+    argv = ['/usr/bin/python3', '/opt/agent runner/run', 'home', 'serve']
+    log = tmp / 'home.log'
+    u = H.unit_text('linux', argv, log, {'PATH': '/usr/bin:/bin'})
+    has(u, r'ExecStart=/usr/bin/python3 "/opt/agent runner/run" home serve\n', 'systemd: ExecStart runs `home serve`, quoted')
+    has(u, r'WantedBy=default\.target', 'enabled for the user')
+    has(u, r'Restart=on-failure', 'and restarted when it fails')
+    has(u, r'Environment=PATH=/usr/bin:/bin', "with this shell's PATH, so it finds git and claude")
+    p = plistlib.loads(H.unit_text('macos', argv, log, {'PATH': '/usr/bin'}).encode())
+    eq((p['Label'], p['ProgramArguments'], p['RunAtLoad'], p['KeepAlive']), (H.LABEL, argv, True, True),
+       'launchd: a valid plist that runs it at load and keeps it alive')
+    eq((p['EnvironmentVariables'], p['StandardErrorPath']), ({'PATH': '/usr/bin'}, str(log)), 'its PATH and log')
+    eq(H.unit_text('windows', ['C:\\Py\\pythonw.exe', 'C:\\My Tools\\run', 'home', 'serve'], log),
+       'C:\\Py\\pythonw.exe "C:\\My Tools\\run" home serve', 'Windows: the command line the task runs, quoted')
+    eq(H.unit_path('linux', tmp).name, 'agent-runner-home.service', 'systemd: a user unit')
+    eq(H.unit_path('macos', tmp), tmp / 'Library' / 'LaunchAgents' / 'dev.agent-runner.home.plist',
+       'launchd: a LaunchAgent')
+    eq(H.unit_path('windows', tmp), None, 'Windows: no file, the task is in Task Scheduler')
+    eq(H.os_kind('linux'), 'linux', 'linux')
+    eq(H.os_kind('darwin'), 'macos', 'darwin is macOS')
+    eq(H.os_kind('win32'), 'windows', 'win32 is Windows')
+    eq(H.serve_argv('linux')[-2:], ['home', 'serve'], 'the service runs `agent-runner home serve`')
+
+    print('install and uninstall: the file, then the commands, then the link and a QR code')
+    env = {'HOME': str(tmp / 'home'), 'XDG_CONFIG_HOME': str(tmp / 'home' / '.config'), 'USER': 'me'}
+    with mock.patch.dict(os.environ, env), mock.patch.object(Path, 'home', lambda: tmp / 'home'):
+        for kind, want in (('linux', [['systemctl', '--user', 'daemon-reload'],
+                                      ['systemctl', '--user', 'enable', '--now', 'agent-runner-home.service'],
+                                      ['loginctl', 'enable-linger', 'me']]),
+                           ('macos', [['launchctl', 'unload'], ['launchctl', 'load', '-w']]),
+                           ('windows', [['schtasks', '/Create', '/TN', 'agent-runner-home', '/SC', 'ONLOGON'],
+                                        ['schtasks', '/Run', '/TN', 'agent-runner-home']])):
+            calls, said = [], []
+            code = H.install(kind, call=lambda c: calls.append(c) or (1 if c[:2] == ['launchctl', 'unload'] else 0, ''),
+                             out=said.append, check=lambda p: True)
+            eq(code, 0, f'{kind}: install succeeds')
+            eq([c[:len(w)] for c, w in zip(calls, want)], want, f'{kind}: and runs, in order: {want}')
+            unit = H.unit_path(kind)
+            if unit:
+                check(unit.exists() and 'home' in unit.read_text(encoding='utf-8'), f'{kind}: its file is written', unit)
+            text = '\n'.join(said)
+            has(text, rf':8770/\?t={H.home_token()}', f'{kind}: it prints the link with its token')
+            has(text, '▀|▄|█', f'{kind}: and a QR code of it')
+            check(H.home_on(), f'{kind}: and Home is on in the registry (runs read it)')
+            H.add_project(str(project(tmp / f'added-{kind}')))
+            check(H.home_on(), f'{kind}: adding a project keeps it on')
+            calls = []
+            eq(H.uninstall(kind, call=lambda c: calls.append(c) or (0, ''), out=said.append), 0, f'{kind}: uninstall')
+            check(calls and calls[0][0] in ('systemctl', 'launchctl', 'schtasks'), f'{kind}: it stops the service', calls)
+            check(not H.home_on(), f'{kind}: Home is off again')
+            if unit:
+                check(not unit.exists(), f'{kind}: and removes its file')
+        said = []
+        code = H.install('linux', call=lambda c: (1, 'linger needs a login') if c[0] == 'loginctl' else (0, ''),
+                         out=said.append, check=lambda p: True)
+        eq(code, 0, 'linger refused: still installed')
+        has(said[0], 'when you log in, not at boot', 'and says what that costs')
+        said = []
+        H.install('linux', call=lambda c: (0, ''), out=said.append, check=lambda p: False)
+        has('\n'.join(said), 'does not answer on port 8770 yet: a run may hold that port',
+            'installed but not answering: install says so, and why it may be')
+        said = []
+        eq(H.install('linux', call=lambda c: (1, 'no user bus') if c[2:3] == ['enable'] else (0, ''), out=said.append,
+                     check=lambda p: True), 1, 'the service refused: install fails')
+        has(said[-1], 'no user bus', 'with what systemctl said')
+
+        print('status asks the service manager, not only whether the file is there')
+        unit = H.unit_path('linux')
+        unit.parent.mkdir(parents=True, exist_ok=True)
+        unit.write_text('x', encoding='utf-8')
+        asked = []
+        check(not H.installed('linux', call=lambda c: asked.append(c) or (1, 'disabled')), 'a unit not enabled: not installed')
+        eq(asked[-1][:3], ['systemctl', '--user', 'is-enabled'], 'systemctl is-enabled says')
+        check(H.installed('linux', call=lambda c: (0, '')), 'enabled: installed')
+        check(H.installed('macos', call=lambda c: (0, '')) is False, 'no plist: not installed, nothing asked')
+
+        print('a Windows command line past schtasks\' limit goes through a launcher file')
+        short = 'C:\\py\\pythonw.exe run home serve'
+        eq(H.task_command(short), short, 'a short one as it is')
+        long = 'C:\\' + 'x' * 300 + '\\pythonw.exe run home serve'
+        tr = H.task_command(long)
+        check(len(tr) <= H.TR_MAX and tr.endswith('home-serve.cmd"'), 'a long one: the launcher\'s path', tr)
+        has((tmp / 'cfg' / 'home-serve.cmd').read_text(encoding='utf-8'), 'x{300}', 'which holds the command')
+
+
+def test_qr(tmp: Path) -> None:
+    print('the QR code: a valid symbol, readable by a scanner when one is here')
+    url = 'http://192.168.1.23:8770/?t=' + 'a' * 24
+    m = H.qr_matrix(url)
+    eq(len(m), 29, 'a 52-byte link: version 3, 29 modules a side')
+    finder = [[True] * 7, [True] + [False] * 5 + [True]] + [[True, False, True, True, True, False, True]] * 3 + \
+        [[True] + [False] * 5 + [True], [True] * 7]
+    for x0, y0 in ((0, 0), (22, 0), (0, 22)):
+        eq([row[x0:x0 + 7] for row in m[y0:y0 + 7]], finder, f'a finder pattern at {x0},{y0}')
+    eq(H.qr_matrix('x' * 300), None, 'too long for version 10: none, and install prints only the link')
+    eq(len(H.qr_text(url, ansi=False).splitlines()), (29 + 5) // 2, 'two rows of modules per line, with a quiet zone')
+    check('\x1b[' in H.qr_text(url, ansi=True), 'on a terminal, drawn black on white whatever its colours')
+    if shutil.which('zbarimg'):
+        for text in ('hi', url, 'b' * 250):
+            m = H.qr_matrix(text)
+            s, q = 4, 4
+            n = (len(m) + 2 * q) * s
+            rows = [''.join('1' if 0 <= y // s - q < len(m) and 0 <= x // s - q < len(m) and m[y // s - q][x // s - q]
+                            else '0' for x in range(n)) for y in range(n)]
+            f = tmp / 'qr.pbm'
+            f.write_text(f'P1\n{n} {n}\n' + '\n'.join(rows) + '\n', encoding='ascii')
+            r = subprocess.run(['zbarimg', '-q', '--raw', str(f)], capture_output=True, text=True)
+            eq(r.stdout.strip(), text, f'zbarimg reads it back ({len(text)} bytes, {len(m)} modules)')
+
+
+def test_run_moves_off_the_port(tmp: Path) -> None:
+    print("a run whose port Home holds serves its page on a free one, and Home routes to it")
+    root = project(tmp / 'proj')
+    (root / '.gitignore').write_text('.runner/\n', encoding='utf-8')
+    git(root, 'add', '-A')
+    git(root, 'commit', '-qm', 'start')
+    old = Path.cwd()
+    os.chdir(root)
+    try:
+        S.init(root)
+        held = socket.socket()
+        held.bind(('0.0.0.0', 0))
+        held.listen()
+        port = held.getsockname()[1]
+        H.save_registry(H.load_registry())  # a registry, but Home not installed
+        with mock.patch.dict(W.os.environ, {'AGENT_RUNNER_NO_WEB': ''}), \
+                mock.patch.dict(S.C.run, {'web': True, 'web_port': port}), mock.patch.object(S, 'log') as lg:
+            eq(W.start_web(), None, 'Home off: a taken port costs the page, as before')
+        has(' '.join(str(c) for c in lg.call_args_list), 'cannot serve on port', 'and the run log says so')
+        H.mark_installed(True)
+        with mock.patch.dict(W.os.environ, {'AGENT_RUNNER_NO_WEB': ''}), \
+                mock.patch.dict(S.C.run, {'web': True, 'web_port': port}), mock.patch.object(S, 'log') as lg:
+            srv = W.start_web()
+        try:
+            check(srv is not None and srv.server_address[1] != port, 'the page is served on another port', srv)
+            logged = ' '.join(str(c) for c in lg.call_args_list)
+            has(logged, f'port {port} is taken', 'the run log says why')
+            has(logged, 'Runner Home opens it', 'and that Home opens it')
+            us = W.url_file().read_text(encoding='utf-8').split()
+            has(us[0], f':{srv.server_address[1]}/', 'its notes hold the port it got, which Home reads')
+        finally:
+            if srv:
+                srv.stop()
+            held.close()
+    finally:
+        os.chdir(old)
+
+
+if __name__ == '__main__':
+    raise SystemExit(report([in_tmp(test_registry), in_tmp(test_rows), in_tmp(test_actions), in_tmp(test_routing),
+                           in_tmp(test_run_link), in_tmp(test_units), in_tmp(test_qr),
+                           in_tmp(test_run_moves_off_the_port)]))
