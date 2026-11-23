@@ -831,7 +831,8 @@ def test_concepts_view(tmp: Path) -> None:
 
 
 def test_esc_ctrl_c(tmp: Path) -> None:
-    """B116: on the run app Esc never interrupts (it leaves the box, then goes back); Ctrl+C interrupts the open
+    """B116: on the run app Esc never goes back while interrupting (B120: in the box it interrupts a working chat,
+    out of it only goes back); Ctrl+C interrupts the open
     chat while it works (not over selected text), and a small Stop button sits by the working mark."""
     page = W.page_html().decode()
     start = page.index("document.addEventListener('keydown'")
@@ -1322,7 +1323,7 @@ eval(logic + slice('const HIST_KEY=', 'return true;\n}\n') + slice('const SL={',
   histAdd('c1', 'first'); histAdd('c1', 'second\\nline'); histAdd('c1', 'second\\nline'); histAdd('c2', 'other');
   out.stored = JSON.parse(store.get('ar-hist:c1'));
   at('draft');
-  out.up1 = [key('ArrowUp'), ta.value];
+  out.up1 = [key('ArrowUp'), ta.value, store.get('ar-draft:c1')];
   out.upMid = [key('ArrowUp'), ta.value];          // the caret on the recalled message's last line: Up moves it
   ta.setSelectionRange(0, 0);
   out.up2 = [key('ArrowUp'), ta.value];
@@ -1381,7 +1382,8 @@ def test_composer_keys_b120(tmp: Path) -> None:
     check(r.returncode == 0, 'node runs the message box keys', r.stderr[-800:])
     got = json.loads(r.stdout or '{}')
     eq(got.get('stored'), ['first', 'second\nline'], 'the history is stored per chat, a repeat once')
-    eq(got.get('up1'), [True, 'second\nline'], 'Up recalls the last message sent in this chat')
+    eq(got.get('up1'), [True, 'second\nline', ''], 'Up recalls the last message sent in this chat, not saved as '
+       'the draft')
     eq(got.get('upMid'), [False, 'second\nline'], 'Up off its first line moves the caret, as in Claude Code')
     eq(got.get('up2'), [True, 'first'], 'Up on the first line recalls the one before')
     eq(got.get('upTop'), [True, 'first'], 'Up at the oldest stays there')

@@ -461,7 +461,7 @@ function histKey(e,ta){
   if(HI.key!==k||HI.i===null){if(e.key==='ArrowDown')return false;HI={key:k,i:l.length,draft:ta.value}}
   const i=histStep(l.length,HI.i,e.key);
   HI.i=i;ta.value=i===l.length?HI.draft:l[i];if(i===l.length)HI.i=null;
-  store.set(DRAFT_KEY(k),ta.value);grow(ta);ta.setSelectionRange(ta.value.length,ta.value.length);
+  if(HI.i===null)store.set(DRAFT_KEY(k),ta.value);grow(ta);  // a recalled message is not saved as the draftta.setSelectionRange(ta.value.length,ta.value.length);
   return true;
 }
 
@@ -620,7 +620,7 @@ function homeHTML(){
     ${card(`<div class="row"><div class="grow"><b>Release</b><div class="small">${esc(rel||(ws.length?`Waits for the ${ws.length} task${ws.length>1?'s':''} still working.`:'Releases what has landed.'))}</div></div></div><div class="btns">${ws.length?`<button class="btn acc" data-rel="wait">Release when they land</button>`:''}<button class="btn ${ws.length?'':'acc'}" data-rel="now">Release now</button></div>`)}</div>`;
 }
 /* B120: without ttyd, one line says the terminal tab (the real session) needs it, with this machine's install command */
-const ttydLine=()=>S.snap.terminal_mode==='install'?`<div class="small ttyd" data-ttyd>The terminal tab (the real session) needs ttyd: install it with <code>${esc(S.snap.ttyd_install||'your platform\'s ttyd package')}</code>.</div>`:'';
+const ttydLine=()=>S.snap.terminal_mode==='install'?`<div class="small ttyd" data-ttyd>The terminal tab (the real session) needs ttyd: ${S.snap.ttyd_install?`install it with <code>${esc(S.snap.ttyd_install)}</code>`:'install your platform\'s ttyd package'}.</div>`:'';
 function agentsHTML(){const ss=slots();return `<div class="col">${ttydLine()}${controlsCard()}${ss.length?ss.map(s=>agentCard(s,true)).join(''):card(`<div class="small">${S.snap.up===false?'No run is up, so no agent is working.':'No slots yet.'}</div>`)}</div>`}
 function activityHTML(){
   const log=(S.snap.log||[]).slice().reverse();
