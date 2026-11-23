@@ -578,10 +578,11 @@ def test_new_chat_key_f153() -> None:
         p.key('n')
         eq((started, p.confirm), ([], ''), 'n at a run control question: only no')
         p.panel, p.main = 4, False
-        with mock.patch.object(U, 'answer', lambda *a, **k: {'ok': True, 'out': ''}):
+        said = []
+        with mock.patch.object(U, 'answer', lambda *a, **k: (said.append(a[1]), {'ok': True, 'out': ''})[1]):
             p.key('ENTER')
             p.key('n')
-        eq(started, [], 'n in Needs you starts no chat')
+        eq((said, started), (['no'], []), 'n in Needs you answers no and starts no chat')
     sessions = T.HELP.split('Sessions [2]')[1].split('Queue [3]')[0]
     check('  n        new chat' in sessions, 'the keys list names n under Sessions', sessions)
     check('  N ' not in sessions, 'and not N', sessions)
