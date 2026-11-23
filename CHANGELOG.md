@@ -20,6 +20,10 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
   once the run's state lists it (F112).
 - Added: `agent-runner control --new --no-wait` returns once the session starts, printing "control N is starting in a
   hidden terminal", without waiting for its claude.ai/code link (F112).
+- Changed: offers from control sessions ("Want me to take it right away?") no longer go under Needs you. Only a question
+  the session marks with a last `DECIDE: <question>` line is filed there, after `control_ask`; the brief asks for that
+  line only when work waits on the answer. Any other quiet control session closes after the usual idle time, and the run
+  log names the offer it did not file (F135).
 
 ## 0.61.0 (2026-11-23)
 

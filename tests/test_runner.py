@@ -5866,7 +5866,7 @@ def test_renamed_control_kept(repo: Path):
     R.init(repo)
     H, cf, now = 3600, R.control_cfg(), time.time()
     done = [_person('watch the push', 4 * H), _claude('Pushed; waiting on CI.', 4 * H - 5)]
-    ask = [_person('can T7 go first?', 3 * H), _claude('T7 is now first.\n\nWant me to pause T8 too?', 3 * H - 5)]
+    ask = [_person('can T7 go first?', 3 * H), _claude('T7 is now first.\n\nDECIDE: pause T8 too?', 3 * H - 5)]
     title = lambda t: {'type': 'custom-title', 'customTitle': t, 'sessionId': 'x'}
     eq(R.control_verdict(R.control_state(done), cf, now, 4)[0], 'close', 'without a rename: idle past control_idle closes')
     renamed = done[:1] + [title('PUSH CRUCIAL')] + done[1:]
@@ -5981,8 +5981,11 @@ def test_close_idle_controls(repo: Path):
     H = 3600
     done = [_person('what is running?', 210 * 60), _claude('Two tasks run: B1 and B2. Nothing needs you.', 210 * 60 - 5),
             {'type': 'bridge-session', 'bridgeSessionId': 'cse_01AbC'}]
-    ask = [_person('can T7 go first?', 3 * H), _claude('T7 is now first.\n\nWant me to pause T8 too?', 3 * H - 5)]
-    ask_young = [_person('x', 90 * 60), _claude('Done. Should I also drop T9?', 90 * 60 - 5)]
+    ask = [_person('can T7 go first?', 3 * H),
+           _claude('T7 is now first; T8 holds the same files.\n\n**DECIDE:** pause T8 too?', 3 * H - 5)]
+    ask_young = [_person('x', 90 * 60), _claude('Done.\nDECIDE: drop T9?', 90 * 60 - 5)]
+    offer = [_person('can T7 go first?', 3 * H), _claude('T7 is now first.\n\nWant me to pause T8 too?', 3 * H - 5)]
+    offer_old = [_person('can T7 go first?', 4 * H + 60), _claude('Queued F48.\n\nWant me to take it right away?', 4 * H + 30)]
     person = [_claude('Here is the status.', 3 * H), _person('ok and the cost?', 2 * H)]
     recent = [_person('status', 20 * 60), _claude('All quiet.', 20 * 60 - 5)]
     bg = [_person('run the tests', 4 * H), _call('Bash', {'command': 'x', 'run_in_background': True}, 'u1', 4 * H - 3),
@@ -6005,7 +6008,19 @@ def test_close_idle_controls(repo: Path):
                              ('only the needs-you watch, re-armed lately', watch, 'close')):
         v = R.control_verdict(R.control_state(rows), cf, now)
         eq(v[0], want, f'{name}: {want} ({v[1]})')
-    eq(R.control_verdict(R.control_state(ask), cf, now)[1], 'Want me to pause T8 too?', 'the question in one line')
+    eq(R.control_verdict(R.control_state(ask), cf, now)[1], 'pause T8 too?', 'the question in one line')
+    # F135: only a question marked with a last line `DECIDE: …` is filed; an offer closes after control_idle
+    eq(R.control_verdict(R.control_state(offer), cf, now), ('keep', 'active lately'),
+       'F135: an offer at 3 h: not filed, kept until control_idle')
+    eq(R.control_verdict(R.control_state(offer_old), cf, now),
+       ('close', 'idle 240 min, "Want me to take it right away?" not filed (no DECIDE line)'),
+       'F135: an offer past control_idle: closed, the run.log line names it')
+    for text, want in (('Queued F48.\nSay "do F48 here" to start it now.', ''),
+                       ('Two ways.\n\nDECIDE: keep the old token format or drop it?', 'keep the old token format or drop it?'),
+                       ('> `DECIDE: which port?`', 'which port?'),
+                       ('Needs you:\nDECIDE: F12 which port?\n\nNothing else.', ''),
+                       ('Status: F9 blocked DECIDE: which port?', '')):
+        eq(R.decide_question(text), want, f'F135: decide_question({text!r})')
     eq(R.control_link(R.control_state(done)['bridge']), 'https://claude.ai/code/session_01AbC',
        'the session link from its Remote Control id')
     eq(R.open_question('Landed: see https://x.invalid/a?b=1', cf['open']), '', 'a ? inside a link is no question')
@@ -6013,8 +6028,8 @@ def test_close_idle_controls(repo: Path):
        'times read as 90m, seconds, 2h; false is off')
     with mock.patch.dict(R.C.run, {'control_idle': '4h', 'control_open': ['should i']}):
         eq(R.control_verdict(R.control_state(done), R.control_cfg(), now)[0], 'keep', '[run] control_idle = 4h keeps it')
-        eq(R.control_verdict(R.control_state(ask), R.control_cfg(), now)[0], 'keep',
-           '[run] control_open without "?" or "want me to": not an open question, not idle 4h either')
+        eq(R.control_verdict(R.control_state(offer_old), R.control_cfg(), now), ('close', 'idle 240 min'),
+           '[run] control_open without "?" or "want me to": closed at 4 h, no offer named')
 
     # close_controls end to end: c1 never looked at, sessions 2-7 by their transcripts
     rows = {'s1': done, 's2': done, 's3': ask, 's4': person, 's5': recent, 's6': bg}
@@ -6033,7 +6048,7 @@ def test_close_idle_controls(repo: Path):
         eq(sorted(got), [(2, 'closed', 'idle 209 min'), (3, 'asked', 'F99')], 'done -> closed, question -> filed + closed',
            )
         eq(sorted(ended), [9002, 9003], 'their processes ended, c1 and the rest left running')
-        eq(filed, [(3, 's3', 'Want me to pause T8 too?', '')], 'the question filed, with the session (no link here)')
+        eq(filed, [(3, 's3', 'pause T8 too?', '')], 'the question filed, with the session (no link here)')
         check(not (notes / 'control2.pid').exists() and not (notes / 'control3.pid').exists()
               and all((notes / f'control{n}.pid').exists() for n in (1, 4, 5, 6)),
               'their pid files removed; c1, person last, recent and busy ones kept')
@@ -6100,6 +6115,8 @@ def test_close_control_tiers(repo: Path):
     eq(v(queued(5 * M)), ('close', 'idle 5 min (one ask, queued)'), 'one ask, queued: closed at 5 min')
     eq(v(queued(5 * M), one=False)[0], 'keep', 'a session not opened for one ask: control_idle')
     eq(v(queued(5 * M, 'Queued F7. Want me to put it first?'))[0], 'keep', 'ending in a question: not closed early')
+    eq(v(queued(5 * M, 'Queued F7.\nDECIDE: put it first?'))[0], 'keep', 'F135: a DECIDE line: not closed early')
+    eq(v(queued(3 * H, 'Queued F7. Want me to put it first?'))[0], 'close', 'F135: an offer closes at control_idle')
     refused = queued(5 * M)
     refused[2] = _result('p1', 'agent-runner plan: not added: already open, and may be the same work:', 5 * M + 19)
     eq(v(refused)[0], 'keep', 'a plan add that filed nothing: not queued')
@@ -6118,14 +6135,14 @@ def test_close_control_tiers(repo: Path):
     eq(R.control_state(talked(0))['said'], 2, 'two person messages')
     eq(v(talked(11 * H))[0], 'keep', 'talked: open at 11 h')
     eq(v(talked(12 * H)), ('close', 'idle 720 min (talked)'), 'talked: closed at 12 h')
-    eq(v(talked(2 * H, 'Done. Should I also drop T9?')), ('keep', 'its open question is not old enough'),
+    eq(v(talked(2 * H, 'Done.\nDECIDE: Should I also drop T9?')), ('keep', 'its open question is not old enough'),
        'F57: talked, open question: not filed at control_ask (2 h)')
-    eq(v(talked(11 * H, 'Done. Should I also drop T9?'))[0], 'keep', 'F57: talked, open question: open at 11 h')
-    eq(v(talked(12 * H, 'Done. Should I also drop T9?')), ('ask', 'Should I also drop T9?'),
+    eq(v(talked(11 * H, 'Done.\nDECIDE: Should I also drop T9?'))[0], 'keep', 'F57: talked, open question: open at 11 h')
+    eq(v(talked(12 * H, 'Done.\nDECIDE: Should I also drop T9?')), ('ask', 'Should I also drop T9?'),
        'F57: talked, open question: filed at control_idle_talked (12 h)')
-    eq(v(talked(2 * H, 'Done. Should I also drop T9?'), c={**cf, 'talked': 0.0})[0], 'ask',
+    eq(v(talked(2 * H, 'Done.\nDECIDE: Should I also drop T9?'), c={**cf, 'talked': 0.0})[0], 'ask',
        'F57: control_idle_talked = false: control_ask as before')
-    eq(v(talked(12 * H, 'Done. Should I also drop T9?'), c={**cf, 'ask_idle': 0.0})[0], 'keep',
+    eq(v(talked(12 * H, 'Done.\nDECIDE: Should I also drop T9?'), c={**cf, 'ask_idle': 0.0})[0], 'keep',
        'F57: control_ask = false: a talked session\'s question is never filed')
     eq(v(talked(4 * H), c={**cf, 'talked': 0.0})[0], 'close', 'control_idle_talked = false: control_idle')
     with mock.patch.dict(R.C.run, {'control_idle_quick': False, 'control_idle_talked': '1d'}):

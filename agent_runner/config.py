@@ -134,10 +134,11 @@ DEFAULTS: dict = {
                                 # person's only message that ask and no open question: closed this soon (false: control_idle)
         'control_idle_talked': '12h',  # a session the person sent a second message in: kept this long
                                 # (false: control_idle)
-        'control_ask': '2h',    # quiet this long on an open question: filed under Needs you as a DECIDE item,
-                                # then closed. false: a session waiting on its question stays open
+        'control_ask': '2h',    # quiet this long on a question marked with a last line `DECIDE: …` (F135):
+                                # filed under Needs you as a DECIDE item, then closed. false: such a session stays open
         'control_open': ['?', 'want me to', 'should i', 'shall i', 'would you like', 'do you want'],
-                                # what makes Claude's last message an open question or offer (case ignored;
+                                # what makes Claude's last message an offer or unmarked question: not filed (F135),
+                                # only named in the run log when it closes, and never closed early (case ignored;
                                 # one of punctuation only must end it, any other may stand anywhere in its last paragraph)
         'auto_upgrade': True,   # upgrade agent-runner by itself when a newer release is out, once no merge runs,
                                 # and restart the run on it (as `u` does, without the key); false: only `u` does

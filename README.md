@@ -60,8 +60,8 @@ with what is running and what happened since you last looked (`agent-runner sinc
 it posts each task as it lands. `agent-runner control --new` opens another one. With `[run] remote` the
 control sessions are on Remote Control, so you run the run from claude.ai/code or the Claude apps
 ([docs/REFERENCE.md](docs/REFERENCE.md#control-sessions)). The run closes the extra ones (never c1) after
-3 hours of quiet once Claude has answered, so the apps' list stays short; one left on an open question goes under
-Needs you first (`[run] control_idle`, `control_ask`).
+3 hours of quiet once Claude has answered, so the apps' list stays short; one left on a question
+marked with a `DECIDE:` line goes under Needs you first (`[run] control_idle`, `control_ask`).
 
 ### Runner Home: every project from your phone
 
