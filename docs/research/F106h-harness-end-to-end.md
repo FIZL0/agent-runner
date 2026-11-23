@@ -10,7 +10,10 @@ Not finished. The Copilot half could not be run because there is no Copilot logi
 
 Still to do once `run login copilot` is done:
 
-- the same D task on copilot (fence, ask with answer, finish);
+- the same D task on copilot (fence, ask with answer, finish, all in one task);
+- settle the usage check below: `/usage` did not move, so rerun a larger stream task with nothing else running,
+  or have a person accept the indirect evidence;
+- B155 (filed): the harness loop's finish tool ends a session that never ran `done`;
 - flip the default engine;
 - update the test that asserts "terminal" (tests/test_runner.py, test_stream_engine_f106b);
 - update the docs.
