@@ -315,7 +315,7 @@ off beside the UI runs `agent-runner attach cN` (respawned when another session 
 another row or the UI quits); l, Enter or Ctrl-l moves focus into it, and Ctrl-h comes back. Outside tmux, or
 where a session has no socket (Windows), its tab shows the feed read-only with its link (o open, y copy); Enter
 attaches full-screen. Ctrl-f makes the session full-screen between the UI's top and bottom bars, and again for
-side by side. N starts a new control session without waiting for its link, and `c` selects c1.
+side by side. In Sessions, n starts a new control session without waiting for its link, and `c` selects c1.
 
 - **Terminal-style page.** The same server also serves the terminal-style page at `/term?t=TOKEN`: the run page
   drawn like `agent-runner ui` (numbered panels, a key for everything), in `[ui] theme` (its `t` picks another
