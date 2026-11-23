@@ -1168,7 +1168,7 @@ const speechSynthesis = window.speechSynthesis;
 class SpeechSynthesisUtterance { constructor(t) { this.text = t } }
 const navigator = {language: 'en-US'};
 const kept = {}, store = {get: k => kept[k] || '', set(k, v) { kept[k] = v }};
-const toast = () => {}, render = () => {}, tq = p => p, followVersion = () => false, TALK_KEY = 'ar-talk', TALK_OLD = 'ar-talkold';
+const toast = () => {}, render = () => {}, tq = p => p, followVersion = () => false, TALK_KEY = 'ar-talk', TALK_OLD = 'ar-talkold', TALK_START = 'ar-talkstart';
 const keepSent = () => {}, sessionOf = () => null, newCid = () => 'k';  // B154
 const OB = {offline: false}, drain = () => {};  // F137: takeSnap wakes the outbox
 let TS = {read: true, voice: '', mic: 'tap', auto: false}; const voices = () => [], talkTyping = () => false;  // F124
@@ -1237,7 +1237,7 @@ eval(logic + grab('function talkOld(') + grab('function newTalk(')  // talkOld's
   // F157: New Talk chat, with the old chat c13 (titled Talk) live throughout
   TS.read = true;
   const c14 = {name: 'c14', title: 'Talk', state: 'live'}, both = c13.concat([c14]);
-  const reload = () => { TK.wait = null; TK.starting = []; TK.gen = 0; TK.state = '' };  // what a reload forgets
+  const reload = () => { TK.wait = null; TK.gen = 0; TK.state = ''; TK.starting = talkStartsRead() };  // what a reload forgets
   const start = () => { reset(); kept['ar-talk'] = 'c13'; S.snap.sessions = c13; S.feeds.c13 = {entries: old} };
   const stops = [];
   start(); TK.state = 'listening'; TK.heard = 'half a'; TK.hold = true; TK.ear = {}; TK.rec = {stop() { stops.push('mic') }};
@@ -1271,6 +1271,12 @@ eval(logic + grab('function talkOld(') + grab('function newTalk(')  // talkOld's
   takeSnap({sessions: c13}); out.newStarting = [talkName(), talkWaitName()];
   one({ok: true, session: 'c13'}); await un2; const during = TK.state; twoDone({ok: true, session: 'c14'}); await two;
   takeSnap({sessions: both}); out.newStarted = [during, acts.map(a => a.to), talkName()];
+  // the same over a reload before any of it shows
+  reset(); talkSend('One'); newTalk(); reload(); talkSend('Two');
+  takeSnap({sessions: c13}); out.newStartReload = [talkName(), (takeSnap({sessions: both}), talkName())];
+  // pressed before the first snapshot, and one more press keeps what was left
+  reset(); kept['ar-talk'] = 'c13'; newTalk(); newTalk(); takeSnap({sessions: c13}); talkSend('Fresh'); reload();
+  out.newEarly = [talkName(), JSON.parse(kept['ar-talkold'])];
   console.log(JSON.stringify(out));
 })();`);
 """
@@ -1307,6 +1313,8 @@ def test_talk_new_chat_f157(tmp: Path) -> None:
     eq(got.get('newFailed'), ['new', ''], 'it failed: the next message still opens a new one')
     eq(got.get('newInFlight'), ['', '', 'Old words'], "an old message's answer changes nothing, its chat has it")
     eq(got.get('newStarting'), ['', ''], 'a chat still starting when it was pressed is not taken')
+    eq(got.get('newStartReload'), ['', 'c14'], 'also when the page was reloaded meanwhile')
+    eq(got.get('newEarly'), ['', ['c13']], 'pressed before the first snapshot: the old chat is still left')
     eq(got.get('newStarted'), ['thinking', ['', ''], 'c14'], 'the one opened after it is')
 
 

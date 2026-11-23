@@ -1628,12 +1628,13 @@ function slashTake(j){
 
 /* --- F93: Talk: the mic hears the person (Web Speech API), the words go to the Talk session (the `talk` action),
    and its reply is read aloud (speechSynthesis); the chat box under the mic works without either ------------- */
-const TALK_KEY='ar-talk', TALK_OLD='ar-talkold';  /* the Talk session this browser opened ('new': none yet, the next message opens one), and the Talk chats New Talk chat left (F157) */
+const TALK_KEY='ar-talk', TALK_OLD='ar-talkold', TALK_START='ar-talkstart';  /* the Talk session this browser opened ('new': none yet, the next message opens one), and the Talk chats New Talk chat left (F157) */
 const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
 const TK={rec:null,heard:'',trail:null,report:'',upAt:0,state:'',wait:null,said:'',unlocked:false,note:'',playing:'',hold:false,holdId:null,again:false,ear:null,gen:0,starting:[]};  /* gen: counts New Talk chat presses; starting: the sends that open a chat whose name is not known yet (F157); state: '', listening, thinking, speaking; ear: the listen under way (listen()); trail: what happened on the mic (micLog), report: the one to copy, upAt: when a hold ended; playing: the reply a play button reads */
 /* F124: Talk's settings (TALK_SET), and whether its dock shows the mic or the box, as this browser last had them */
 const TS_KEY='ar-talkset', TM_KEY='ar-talkmode';
 let TS=talkSetParse(store.get(TS_KEY));
+TK.starting=talkStartsRead();  // F157
 function talkSet(k,v){TS=talkSetParse(JSON.stringify({...TS,[k]:v}));store.set(TS_KEY,JSON.stringify(TS));render(true)}
 const voices=()=>{try{return window.speechSynthesis?speechSynthesis.getVoices():[]}catch(e){return[]}};
 if(window.speechSynthesis&&speechSynthesis.addEventListener)speechSynthesis.addEventListener('voiceschanged',()=>{if(S.sheet==='talk')render(true)});
@@ -1643,21 +1644,26 @@ function talkMode(m){store.set(TM_KEY,m==='type'?'type':'');S.pin=true;render(tr
 function talkOld(){try{const l=JSON.parse(store.get(TALK_OLD)||'[]');return Array.isArray(l)?l:[]}catch(e){return []}}
 function talkLeave(names){store.set(TALK_OLD,JSON.stringify([...new Set(talkOld().concat(names))]))}
 const talkTitled=()=>(S.snap.sessions||[]).filter(s=>s.title==='Talk').map(s=>s.name);
+/* the sends still opening a chat, kept over a reload: gen -1 for those New Talk chat left */
+function talkStarts(l){if(l.length===TK.starting.length&&l.every((w,i)=>w===TK.starting[i]))return;TK.starting=l;talkStartsKeep()}
+const talkStartsKeep=()=>store.set(TALK_START,TK.starting.length?JSON.stringify(TK.starting.map(w=>({at:w.at,gen:w.gen===TK.gen?0:-1}))):'');
+function talkStartsRead(){try{const l=JSON.parse(store.get(TALK_START)||'[]');return Array.isArray(l)?l.filter(w=>w&&typeof w.at==='number').map(w=>({at:w.at,gen:w.gen,kept:true})):[]}catch(e){return []}}
 /* the live Talk session. A chat that was still starting when New Talk chat was pressed is old as soon as it shows */
 function talkFind(remembered){
-  TK.starting=TK.starting.filter(w=>{
-    if(w.gen===TK.gen)return true;
-    const t=talkSession(S.snap.sessions,'',talkOld());if(t)talkLeave([t]);
-    return !t&&Date.now()-w.at<90000});
+  talkStarts(TK.starting.filter(w=>{
+    const t=w.gen===TK.gen&&!w.kept?'':talkSession(S.snap.sessions,'',talkOld());
+    if(t&&w.gen!==TK.gen)talkLeave([t]);
+    return !t&&Date.now()-w.at<90000}));
+  if(remembered==='new'){const more=talkTitled().filter(n=>!talkOld().includes(n));if(more.length)talkLeave(more)}
   return talkSession(S.snap.sessions,remembered,talkOld());
 }
 /* F157: New Talk chat: whatever Talk is doing stops, and the next message opens a fresh Talk session. The old one
    stays in Chats; a message on its way still reaches it */
 function newTalk(){
   const was=talkName(), known=(S.snap.sessions||[]).map(s=>s.name);
-  store.set(TALK_OLD,JSON.stringify(talkOld().filter(n=>known.includes(n))));  // a chat that is gone: its name can come again
-  talkLeave([...talkTitled(),...(was?[was]:[])]);
-  store.set(TALK_KEY,'new');TK.gen++;
+  if(known.length)store.set(TALK_OLD,JSON.stringify(talkOld().filter(n=>known.includes(n))));  // a chat that is gone: its name can come again
+  talkLeave([...talkTitled(),was,store.get(TALK_KEY)].filter(n=>n&&n!=='new'));
+  store.set(TALK_KEY,'new');TK.gen++;talkStartsKeep();
   const rec=TK.rec, spoke=TK.state==='speaking'||!!TK.playing;
   if(TK.ear)micLog('stop by New Talk chat');
   TK.ear=TK.rec=null;TK.hold=TK.again=false;TK.wait=null;
@@ -1674,7 +1680,7 @@ function talkName(){
    chat titled Talk once the snapshot lists it */
 function talkWaitName(){
   const w=TK.wait;if(!w)return '';
-  if(!w.n){const t=talkFind('');if(t){w.n=t;TK.starting=TK.starting.filter(x=>x!==w);store.set(TALK_KEY,t)}}
+  if(!w.n){const t=talkFind('');if(t){w.n=t;talkStarts(TK.starting.filter(x=>x!==w));store.set(TALK_KEY,t)}}
   return w.n;
 }
 const micWhy=()=>micProblem(window.isSecureContext!==false,!!SR);
@@ -1758,11 +1764,11 @@ async function talkSend(msg){
      lands meanwhile is heard from the polls and snapshots (talkWaitName finds the new chat by its title) */
   const w={n:to,since:to?mark:0,at:Date.now(),last:'',said:msg,out:true,gen:TK.gen};TK.wait=w;
   const asked=store.get(TALK_KEY)==='new';if(asked){talkLeave(talkTitled());store.set(TALK_KEY,'')}  // F157: a Talk chat that shows from now on is the new one
-  if(!to)TK.starting.push(w);
+  if(!to)talkStarts([...TK.starting,w]);
   render(true);
   const r=await act('talk',{text:msg,to});w.out=false;
   const left=w.gen!==TK.gen;  // F157: New Talk chat was pressed meanwhile: these words belong to the chat it left
-  if(!r.ok||r.session)TK.starting=TK.starting.filter(x=>x!==w);
+  if(!r.ok||r.session)talkStarts(TK.starting.filter(x=>x!==w));
   if(!r.ok){if(TK.wait===w)TK.wait=null;if(!left){TK.state='';if(asked&&!store.get(TALK_KEY))store.set(TALK_KEY,'new')}render(true);return false}
   const n=r.session||to, fresh=n!==to;
   if(TK.wait===w){if(fresh){w.n=n;w.since=0;w.last=''}w.at=Date.now()}  /* not yet heard; n '': found by its title */
