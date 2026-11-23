@@ -263,6 +263,9 @@ DEFAULTS: dict = {
                                 # edits to, then checks; false: no docs subagent
         'control': 'opus',      # control sessions (c1, c2, ...)
         'feed': 'haiku',        # the runner feed and the one-shot that publishes the run page's claude.ai copy
+        'kinds': {'F': 'opus', 'B': 'opus', 'T': 'opus', 'V': 'opus', 'K': 'opus', 'D': 'sonnet', 'C': 'sonnet',
+                  'R': 'sonnet'},  # a task's session by its kind (the id's letters): a kind set here replaces
+                                # only that kind; one not listed runs on `code`; `plan add --model` wins for a task
     },
 }
 
@@ -609,7 +612,7 @@ class Config:
         and `fix`, so code that reads them sees the role."""
         m, r = self.raw['models'], self.run
         for role, v in given.items():
-            if role in DEFAULTS['models'] and not (isinstance(v, str) or (v is False and role == 'docs')):
+            if role in DEFAULTS['models'] and role != 'kinds' and not (isinstance(v, str) or (v is False and role == 'docs')):
                 raise SystemExit(f'agent-runner: [models] {role} must be a model name'
                                  + (' or false' if role == 'docs' else '') + f', not {v!r}')
         code = given.get('code', r['model'])
@@ -617,9 +620,23 @@ class Config:
         r['model'], r['fix_model'] = code, fix
         m.update(code=code, fix=fix)
         for role in DEFAULTS['models']:
-            if role not in ('code', 'fix'):
+            if role not in ('code', 'fix', 'kinds'):
                 m[role] = given.get(role, code if r['backend'] == 'pi' else DEFAULTS['models'][role])
+        # F105: [models.kinds] laid over the defaults kind by kind; on Pi only the kinds the files set
+        kinds = given.get('kinds', {})
+        if not isinstance(kinds, dict) or not all(isinstance(k, str) and isinstance(v, str) and v
+                                                  for k, v in kinds.items()):
+            raise SystemExit(f'agent-runner: [models.kinds] maps a kind to a model name (D = "sonnet"), not {kinds!r}')
+        m['kinds'] = {**({} if r['backend'] == 'pi' else DEFAULTS['models']['kinds']), **kinds}
         return m
+
+    def task_model(self, tid: str, own: str = '') -> str:
+        """F105: the model a task's own session runs on: its own (`plan add --model`, `own`), else its kind's in
+        `[models.kinds]` (the id's letters: 'P17a' is P), else `[models] code`."""
+        if own:
+            return own
+        kind = tid[:len(tid) - len(tid.lstrip('ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'))]
+        return (self.models.get('kinds') or {}).get(kind) or self.models['code']
 
     @property
     def command(self) -> str:

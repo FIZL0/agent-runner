@@ -1248,6 +1248,12 @@ def test_edit():
             plan.tell = real
         eq(told, [('R1', 'it now reads: the parser, not on arm | files: p.py | after: R0 | test: test_p', 'change')],
            'a slot running it is told the line as it now reads ("Your task changed: …"), fields included')
+        r = run(root, 'plan', 'add', 'D', 'Tidy the parser docs', '--files', 'p.md', '--model', 'haiku')
+        tid = r.stdout.split()[1]
+        has(run(root, 'plan', tid).stdout, r'Tidy the parser docs \| files: p\.md \| model: haiku',
+            'F105: `plan add --model haiku` stores the model on the task, and `plan ID` shows it')
+        run(root, 'plan', 'edit', 'R1', '--model', 'sonnet')
+        has(run(root, 'plan', 'R1').stdout, r'\| test: test_p \| model: sonnet$', 'and `plan edit --model` sets it')
     with tempfile.TemporaryDirectory() as tmp:
         todo = Path(tmp) / 'TODO.md'
         todo.write_text('\n'.join(['# TODO', '', '### Next', '',
@@ -1332,7 +1338,7 @@ def test_refusals():
         (['edit', 'R1', '@'], (2, './run plan: edit takes no @ (`./run plan move ID WHERE` moves a task)\n')),
         (['edit', 'R1', '--files'], (2, './run plan: not edited: --files needs a value\n' + quote)),
         (['edit', 'R1', ''], (2, './run plan edit <ID> "new text" [--files A,B] [--after X,Y] [--test T] [--journal D] '
-                                 '[--pri LEVEL]\n')),
+                                 '[--model M] [--pri LEVEL]\n')),
         (['goal'], (1, './run plan: no `Goal:` paragraph above the first heading in TODO.md; '
                        '`./run plan goal "TEXT"` writes one\n')),
         (['unclaim', 'Z9'], (1, './run plan: no claim on Z9\n')),
