@@ -145,6 +145,7 @@ a{color:var(--accent)}
 .btn.pri{background:var(--fg);color:var(--bg);border-color:var(--fg)}
 .btn.acc{background:var(--accent);color:var(--onaccent);border-color:var(--accent)}
 .btn:disabled{opacity:.5;cursor:default}
+.card.relph{opacity:.6}
 .btn.busy{opacity:.7;cursor:progress}
 .btn.bad{background:var(--bad);color:var(--bg);border-color:var(--bad)}
 .sure{display:grid;gap:8px;border-top:1px solid var(--line);padding-top:10px}
@@ -357,6 +358,7 @@ function working(entries){
 /* a queued task's state, in plain words */
 function planWords(q,sessions){
   const s=(sessions||[]).find(x=>x.task===q.id);
+  if(q.release)return q.release.words;  // F131: the release row's words, as status says them
   if(q.state==='running')return s?`${s.name} is on it${s.minutes!=null?` · ${s.minutes} min`:''}`:'Being worked on';
   if(q.state==='blocked')return 'Waits for you';
   if(q.state==='critical')return 'Goes first, as soon as a slot is free';
@@ -409,6 +411,10 @@ function controlClick(c,o){return c.confirm&&!(o&&o.sure===true)?{ask:true}:cont
 const taskControlsOn=s=>!!(s&&s.task&&s.state!=='merging');
 /* B118: the Queue's two groups: [the queue a run works through, the Parked tasks it never starts] */
 const queueGroups=q=>[(q||[]).filter(x=>x.state!=='parked'),(q||[]).filter(x=>x.state==='parked')];
+/* F131: the Queue as shown: the queued tasks (the release task, which the snapshot moved last, among them), then
+   the release placeholder ('Next release · auto at 10 landed: 6/10') while [run] auto_release counts */
+const planQueue=snap=>{const r=snap&&snap.release_row;
+  return queueGroups(snap&&snap.queue)[0].concat(r&&r.placeholder?[r]:[])};
 /* F87: a concept card's buttons, in order: one per option (pick: its index, rec: the recommended one, named
    without its '(recommended)'), then Chat, New chat, and View when it has a local copy or a page */
 const optionName=o=>o.name.replace(/\s*[(\[—–-]*\s*recommended\s*[)\]]?\s*$/i,'')||o.name;
@@ -614,7 +620,7 @@ function projectButtons(p){
   b.push({label:'Unlist',unlist:true});
   return b;
 }
-if(typeof module!=='undefined')module.exports={homeBase,homeKey,projectLink,homeLink,homeHref,pageTitle,projectState,switcherRows,projectWords,projectButtons,chatMove,BOX_KEYS,keysLine,histPush,histEdge,histStep,slashMatches,slashPick,slashMove,SLASH_FALLBACK,chatPick,answerOpts,needAsk,threadMsgs,working,planWords,compose,sendReq,usageOf,logKind,plain,chatName,controlReq,controlClick,taskControlsOn,queueGroups,conceptButtons,NO_CONCEPT,newConceptReq,queuedId,NAV,talkSession,micProblem,dictProblem,dictButton,dictInsert,termTokens,talkShown,talkReply,goneMark,needsShown,answerSaid,GONE_MS,obParse,obNext,obName,obSettle,obRetry,obDrop,obCounts,obHidden,obPill};
+if(typeof module!=='undefined')module.exports={homeBase,homeKey,projectLink,homeLink,homeHref,pageTitle,projectState,switcherRows,projectWords,projectButtons,chatMove,BOX_KEYS,keysLine,histPush,histEdge,histStep,slashMatches,slashPick,slashMove,SLASH_FALLBACK,chatPick,answerOpts,needAsk,threadMsgs,working,planWords,compose,sendReq,usageOf,logKind,plain,chatName,controlReq,controlClick,taskControlsOn,queueGroups,conceptButtons,planQueue,NO_CONCEPT,newConceptReq,queuedId,NAV,talkSession,micProblem,dictProblem,dictButton,dictInsert,termTokens,talkShown,talkReply,goneMark,needsShown,answerSaid,GONE_MS,obParse,obNext,obName,obSettle,obRetry,obDrop,obCounts,obHidden,obPill};
 </script>
 
 <script>
@@ -944,7 +950,10 @@ function needCard(n,i){
     <div class="btns">${os.map((o,j)=>`<button class="btn ${j===0?'pri':''}" data-ans="${i}" data-v="${esc(o)}">${esc(o)}</button>`).join('')}<button class="btn" data-later="${i}">Later</button><button class="btn" data-about="need:${i}">Chat</button>${n.url?`<a class="btn" href="${esc(n.url)}" target="_blank" rel="noopener">Open ${I.ext}</a>`:''}</div>`,'need');
 }
 function planCard(q){
-  return card(`<div class="row"><div class="grow"><b class="ell">${esc(q.title||q.id)}</b><span class="small">${esc(q.id)} · ${esc(planWords(q,S.snap.sessions))}</span></div><span class="chev">${I.chev}</span></div>`,'tap',`tabindex="0" data-about="plan:${esc(q.id)}"`);
+  return card(`<div class="row"><div class="grow"><b class="ell">${esc((q.release&&q.release.title)||q.title||q.id)}</b><span class="small">${esc(q.id)} · ${esc(planWords(q,S.snap.sessions))}</span></div><span class="chev">${I.chev}</span></div>`,'tap',`tabindex="0" data-about="plan:${esc(q.id)}"`);
+}
+function nextReleaseCard(r){  // F131: no release queued yet: the auto release's count, dimmed, not a task
+  return card(`<div class="row"><div class="grow"><b class="ell">${esc(r.title||'Next release')}</b><span class="small">${esc(r.words||'')}</span></div></div>`,'relph');
 }
 function parkedCard(q){  // B118: a parked task: Unpark (plan edit ID --pri normal) and the usual chat about it
   return card(`<div class="row"><div class="grow"><b class="ell">${esc(q.title||q.id)}</b><span class="small">${esc(q.id)} · ${esc(planWords(q,S.snap.sessions))}</span></div></div>
@@ -1005,9 +1014,9 @@ function activityHTML(){
     ${log.length?log.map(l=>{const k=logKind(l);return `<div class="ev"><span class="ic ${k}">${I[LOGLINE_ICON[k]]}</span><div class="txt">${esc(l)}</div></div>`}).join(''):card('<div class="small">Nothing in the run log yet.</div>')}</div>`;
 }
 function planHTML(){
-  const [qs,pk]=queueGroups(S.snap.queue);
+  const pk=queueGroups(S.snap.queue)[1], qs=planQueue(S.snap);
   return `<div class="col"><div><button class="btn acc" data-about="new">${I.plus}Add a task</button></div>
-    <div class="sec">Queue<span class="ln"></span></div>${qs.length?qs.map(planCard).join(''):card('<div class="small">The queue is empty.</div>')}
+    <div class="sec">Queue<span class="ln"></span></div>${qs.length?qs.map(q=>q.placeholder?nextReleaseCard(q):planCard(q)).join(''):card('<div class="small">The queue is empty.</div>')}
     ${obCards(x=>x.name==='unpark')}${pk.length?`<div class="sec">Parked<span class="ln"></span></div>${pk.map(parkedCard).join('')}`:''}</div>`;
 }
 /* F87: the Concepts view: every concept waiting for a pick, as agent-runner ui's Concepts panel lists them */

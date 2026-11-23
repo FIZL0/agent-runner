@@ -344,6 +344,15 @@ def concept_page(html: str) -> dict:
     return {'title': title, 'intro': intro, 'options': options}
 
 
+def release_tail(snap: dict) -> list:
+    """F131: the queue panel's release placeholder, after the queued tasks and before '+ new task': the
+    snapshot's `release_row` while no release is queued and `[run] auto_release` counts ([] otherwise; a queued
+    release task is already the queue's last row, moved there by the snapshot)."""
+    row = snap.get('release_row')
+    return [dict(row, new=True, placeholder=True, id='release')] if isinstance(row, dict) and row.get('placeholder') \
+        else []
+
+
 def after_hint(after: str, queue: list) -> str:
     """The direct edit's line under its after field: each id with its task's title, as the queue says it."""
     titles = {t.get('id'): t.get('title', '') for t in queue if isinstance(t, dict)}
@@ -408,7 +417,7 @@ class RunPage:
         rows = list(self.snap.get(key) or [])
         if key == 'concepts':
             return rows + [NEW_CONCEPT]
-        return rows + [NEW_TASK] if key == 'queue' else rows
+        return rows + release_tail(self.snap) + [NEW_TASK] if key == 'queue' else rows
 
     def empty_line(self, n: int) -> str:
         """What panel `n` says with no rows: 'none', or in Sessions the snapshot's `sessions_note` (C23)."""
@@ -433,6 +442,8 @@ class RunPage:
                 return ['info']
             return ['session', 'diff'] if it.get('task') and not is_control(it) else ['session']
         if n == 3:
+            if it.get('placeholder'):  # F131: the next release, not a task yet: the release tab
+                return ['release']
             return ['chat edit', 'direct edit'] if it.get('new') else ['direct edit', 'chat edit']
         if n == 5 and it.get('new'):
             return ['new concept']
@@ -622,6 +633,12 @@ class RunPage:
         show its whole title and its tag (the after line) under it."""
         if n != 3:
             return [self.row(n, it)]
+        rel = it if it.get('placeholder') else it.get('release')
+        if rel:  # F131: the release row: 'V5 Release · building'; dimmed 'Next release · auto at 10 landed: 6/10'
+            text, colour = rel['text'], 'dim' if it.get('placeholder') else KIND_COLOUR.get('V', 'magenta')
+            if open_ or len(text) <= width:
+                return wrap([(text, colour)], max(width, 4))
+            return [[(text[:max(width - 1, 0)] + '…', colour)]]
         if it.get('new'):
             return [[('+ ', 'green'), ('new task ', 'dim'), ('n', 'hkey')]]
         tid = it.get('id', '')
@@ -1066,6 +1083,8 @@ class RunPage:
                 keys.append(('d', 'close'))  # F116
             return keys
         if self.panel == 3:
+            if isinstance(it, dict) and it.get('placeholder'):  # F131: the release tab's own keys
+                return [('⏎', 'open')]
             if isinstance(it, dict) and it.get('new'):
                 return [('⏎', 'open'), ('E', 'chat edit')]
             if isinstance(it, dict) and it.get('state') == 'parked':
@@ -1678,10 +1697,10 @@ class RunPage:
             self.cur[3] = len(rows) - 1
             self.set_tab('chat edit')
             self.type_in()
-        elif self.panel == 3 and k == 'e' and it is not None:
+        elif self.panel == 3 and k == 'e' and it is not None and not it.get('placeholder'):
             self.set_tab('direct edit')
             self.field('t')
-        elif self.panel == 3 and k == 'E' and it is not None:
+        elif self.panel == 3 and k == 'E' and it is not None and not it.get('placeholder'):
             self.set_tab('chat edit')
             self.type_in()
         elif self.panel == 3 and (k == 'D' or (k == 'd' and not self.main)) and tid:
@@ -1788,7 +1807,10 @@ class RunPage:
     def reorder(self, step: int) -> None:
         """F70: Shift+J / Shift+K: the selected queued task one place down / up (`plan move ID after|before
         <neighbour>`); the selection follows it."""
-        tasks = [t for t in self.items(3) if not t.get('new')]
+        if self.sel(3).get('release'):  # F131: pinned; and no task moves past it, or the release would not wait for it
+            self.msg, self.msg_ok = f'{self.sel(3)["id"]} stays at the end of the queue', True
+            return
+        tasks = [t for t in self.items(3) if not t.get('new') and not t.get('release')]
         i = self.cur[3]
         if not 0 <= i + step < len(tasks):
             self.msg, self.msg_ok = f'{tasks[i]["id"]} is already {"last" if step > 0 else "first"}', True

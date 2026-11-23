@@ -1714,8 +1714,38 @@ def test_project_name_b153() -> None:
         eq(picked, [Path('/x/proj')], 'for this project')
 
 
+def test_release_row_f131() -> None:
+    """F131: the release is the queue panel's last row before + new task: dimmed while auto release counts (its
+    tab is release), in the row's own words once queued; J and K move no task past it."""
+    words = 'Next release · auto at 10 landed: 6/10'
+    p = page(dict(SNAP, release_row={'id': '', 'placeholder': True, 'text': words}))
+    eq([t.get('text') or t['id'] for t in p.items(3)][-2:], [words, '+'], 'the placeholder last')
+    eq(p.row_lines(3, p.items(3)[-2], 60, False), [[(words, 'dim')]], 'dimmed')
+    p.key('3')
+    p.cur[3] = len(p.items(3)) - 2
+    drawn(p)
+    eq(p.tab()[1], ['release'], 'its tab is release')
+    with mock.patch.object(U, 'RUN', [lambda argv: check(False, 'no task action on the placeholder', str(argv))]):
+        for k in 'eEdDHpJKU':
+            p.key(k)
+    eq((p.typing, p.main), ('', False), 'no edit box opens for it')
+    row = {'id': 'V5', 'placeholder': False, 'text': 'V5 Release · waits for 9 open ahead'}
+    v = dict(SNAP['queue'][8], id='V5', title='Release: bump the version', release=row)
+    p = page(dict(SNAP, queue=SNAP['queue'] + [v], release_row=row))
+    eq([t['id'] for t in p.items(3)][-2:], ['V5', '+'], 'the queued release last')
+    eq(''.join(s for s, _ in p.row_lines(3, p.items(3)[-2], 60, False)[0]), row['text'], 'in the row\'s words')
+    p.key('3')
+    with mock.patch.object(U, 'RUN', [lambda argv: check(False, 'nothing moves', str(argv))]):
+        p.cur[3] = 8
+        p.key('J')
+        eq(p.msg, 'Q9 is already last', 'J moves no task past the release')
+        p.cur[3] = 9
+        p.key('K')
+        eq(p.msg, 'V5 stays at the end of the queue', 'the release stays last')
+
+
 if __name__ == '__main__':
-    raise SystemExit(report([test_project_name_b153, test_quick_ask_names_session_c32,test_concept_answer_b149, test_short_ask_b152,test_d_drops_f116, test_answer_direct_b138, test_answer_tab_b138, test_close_control_quiet_b136,test_layout, test_status_tabs, test_session_tabs, test_queue, test_form_pane_v_task,
+    raise SystemExit(report([test_release_row_f131,test_project_name_b153, test_quick_ask_names_session_c32,test_concept_answer_b149, test_short_ask_b152,test_d_drops_f116, test_answer_direct_b138, test_answer_tab_b138, test_close_control_quiet_b136,test_layout, test_status_tabs, test_session_tabs, test_queue, test_form_pane_v_task,
                                test_direct_edit,
                                test_navigation, test_no_message_box_f112, test_new_chat_f112, test_side_pane_f112,
                                test_diff_key_f127, test_full_screen_f112, test_side_keys_in_box_f113, test_actions, test_session_tab_b125, test_footer,

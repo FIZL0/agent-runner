@@ -17,6 +17,8 @@ copy, and the actions they share.
               of the page `done --artifact` kept, <notes>/concepts/<ID>.html; '' for none)
     log       the run log's last lines
     release   the release line ('' when no release is queued)
+    release_row  F131: the release as one row at the queue's end (`release_row`): the V task (also moved last
+              in `queue`, with `release`: this row), or a placeholder while `[run] auto_release` counts; None
     quick_asks  the Status chat's quick asks sent to c1: key, label, text
     terminal_mode  how a session's terminal shows: 'ttyd', 'install' (no ttyd yet), 'feed' (Windows)
     version   the run's agent-runner version, from STATE ('' when no run is up or an older run wrote none);
@@ -168,6 +170,84 @@ def queue_state(tid: str, pri: str, after: list[str], live: set[str], where: dic
     if pri == 'critical':
         return 'critical'
     return 'after' if any(t in live for t in after) else 'ready'
+
+
+def release_row(ls: list[str], st: dict | None = None, landed: int | None = None) -> dict | None:
+    """F131: the release as one row, pinned at the end of the queue, the same words on the run page, the TUI
+    and `status` (`status.release_line`). A release task (kind V) open in TODO.md's lines `ls`: that task, with
+    `words` 'waits for 24 open ahead', 'ready', 'blocked', or 'building' while a slot of STATE `st` runs it or
+    it merges. None queued and `[run] auto_release` on: a placeholder (`placeholder` True, `id` '') 'Next
+    release · auto at 10 landed: 6/10 · when the run goes idle' (`landed`: tasks landed since the last release,
+    `autorelease.landed_since_release` when None). Else None. `text` is the whole row: 'V5 Release · building'."""
+    st = st or {}
+    for section, box, tid, rest, i in P.iter_tasks(ls):
+        if box not in ' ~' or not P.release(tid) or section.startswith(P.SKIPPED) or P._shelved(ls, i):
+            continue
+        live, note = P.open_ids(ls), ''
+        waits = P.WAITS.findall(' '.join(P._item_block(ls, i))) if box == '~' else []
+        if tid in (st.get('running') or {}).values() or tid in (st.get('merging') or []):
+            words = 'building'
+        elif box == '~' and not waits:
+            words = 'blocked'
+        else:
+            if P._waits_all(ls, i):
+                held = [t for t in P.before_all(ls, i) if t in live and t != tid]
+                note = P.not_waiting([t for t in P.on_person_before(ls, i) if t != tid])  # B101
+                if P.ALL in P.fields(ls[i]).get('after', []):  # B107: a task taken by hand lands after it
+                    from agent_runner.sched import taken
+                    from agent_runner.status import taken_note
+                    away = set(taken())
+                    note += taken_note([t for t in held if t in away])
+                    held = [t for t in held if t not in away]
+            else:
+                ids = [t.strip() for t in waits[-1].split(',')] if waits else P.waits_on(ls, i)
+                held = [t for t in dict.fromkeys(ids) if t in live and t != tid]
+            words = f'waits for {len(held)} open ahead' if held else 'ready'
+        title = after_name(re.sub(r'^\s*(?:\(follow-up, \w+\)\s*)?\(alone\)\s*', '', rest))  # F130's tag
+        return {'id': tid, 'title': title, 'words': words, 'placeholder': False,
+                'text': f'{tid} {title} · {words}', 'note': note}
+    from agent_runner.autorelease import auto_release_of
+    every, idle = auto_release_of(S.C.run.get('auto_release', False))
+    if not (every or idle) or P.open_release(ls):  # a shelved or Parked release: none is queued by itself
+        return None
+    if every and landed is None:
+        landed = landed_count()
+    count = '' if landed is None else f': {landed}/{every}'
+    words = ' · '.join(([f'auto at {every} landed{count}'] if every else []) +
+                       (['when the run goes idle'] if idle else []))
+    return {'id': '', 'title': 'Next release', 'words': words, 'placeholder': True,
+            'text': f'Next release · {words}', 'note': ''}
+
+
+LANDED_COUNT: list = [None, 0.0, None]  # what the last count was of, when (monotonic), and the count
+LANDED_FOR = 30.0  # seconds a count holds while events.jsonl is unchanged (a version tag can still arrive)
+
+
+def landed_count() -> int | None:
+    """F131: how many tasks landed since the last release, counted again after a new event or `LANDED_FOR`
+    seconds (a page reads a snapshot every few seconds; the count runs git). None: it could not be counted."""
+    from agent_runner.autorelease import landed_since_release
+    f = S.C.notes('events.jsonl')
+    try:
+        s = f.stat()
+        mark = (str(f), s.st_size, s.st_mtime)
+    except OSError:
+        mark = (str(f), None, None)
+    if mark != LANDED_COUNT[0] or time.monotonic() - LANDED_COUNT[1] > LANDED_FOR:
+        try:
+            n = len(landed_since_release(S.default_branch()))
+        except (Exception, SystemExit):  # noqa: BLE001 - a git hiccup costs the count, not the row
+            n = None
+        LANDED_COUNT[:] = [mark, time.monotonic(), n]
+    return LANDED_COUNT[2]
+
+
+def pin_release(queue: list[dict], row: dict | None) -> list[dict]:
+    """F131: the queue with the release task `row` stands for moved to its end, carrying `release`: the row,
+    whose words the page and the TUI show. A placeholder row is not a task: it is not added."""
+    if not row or row.get('placeholder'):
+        return queue
+    return [q for q in queue if q['id'] != row['id']] + [dict(q, release=row) for q in queue if q['id'] == row['id']]
 
 
 def needs_rows(waiting, now: dt.datetime) -> tuple[list[dict], list[dict]]:
@@ -372,7 +452,8 @@ def snapshot(up: bool | None = None, now: float | None = None, log_n: int = LOG_
     now = time.time() if now is None else now
     st, ls = _state(up), P.lines(S.C.todo)
     titles = P.titles(S.C.done, S.C.todo, width=200)
-    release = release_line(ls)
+    row = release_row(ls, st)  # F131: the release, one row at the queue's end
+    release = release_line(ls, st, row)
     try:
         progress = progress_line(now=dt.datetime.fromtimestamp(now))
     except Exception:  # noqa: BLE001 - a git hiccup costs the progress line, not the snapshot
@@ -383,7 +464,7 @@ def snapshot(up: bool | None = None, now: float | None = None, log_n: int = LOG_
     return {'project': S.project(), 'at': dt.datetime.fromtimestamp(now).isoformat(timespec='seconds'),
             'up': up, 'status': status_rows(up, st, '\n'.join(x for x in (progress, release) if x)),
             'slots': slots, 'sessions': sessions, 'sessions_note': '',
-            'queue': queue_rows(ls, st, now),
+            'queue': pin_release(queue_rows(ls, st, now), row), 'release_row': row,
             'needs': needs, 'concepts': concepts, 'log': log_tail(log_n), 'release': release,
             'quick_asks': quick_asks(), 'terminal_mode': terminal_mode(), 'controls': controls(),
             'run': {'paused': bool(up and st.get('paused')), 'stopping': bool(up and st.get('stopping'))},

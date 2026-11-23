@@ -455,3 +455,10 @@ _Said_: headless Claude Code, claude -p
 _On screen_: runs headless ([run] engine = "stream")
 _In code_: [run] engine, slots.stream_engine, slots.run_stream, slots.StreamInput, <notes>/streams/<sid>.jsonl
 _Avoid_: pipe mode, API mode, background session
+
+**Release row**:
+The one row at the end of the queue that says how the next release stands: how close an auto release is, or what the queued release task waits for
+_Said_: next release
+_On screen_: Next release · auto at 10 landed: 6/10 / V5 Release · waits for 24 open ahead / building
+_In code_: ui_model.release_row, ui_model.pin_release, status.release_line, planQueue
+_Avoid_: release banner

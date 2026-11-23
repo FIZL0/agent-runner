@@ -1934,8 +1934,26 @@ def test_project_name_b153(tmp: Path) -> None:
     eq(got[4:], ['ifizbox · runner', 'agent-runner'], 'the window title: the project first')
 
 
+def test_release_row_f131(tmp: Path) -> None:
+    """F131: the page queue shows the release last, as a queued task or a dimmed placeholder, in the row's words."""
+    page = W.PAGE.read_text(encoding='utf-8')
+    check('qs=planQueue(S.snap)' in page and 'q.placeholder?nextReleaseCard(q):planCard(q)' in page
+          and '.card.relph{opacity' in page, 'the Queue view draws planQueue, the placeholder dimmed')
+    if not shutil.which('node'):
+        print('  (no node here: the release row script test is skipped)')
+        return
+    task, parked = {'id': 'F1', 'state': 'ready'}, {'id': 'F9', 'state': 'parked'}
+    ph = {'id': '', 'title': 'Next release', 'words': 'auto at 10 landed: 6/10', 'placeholder': True}
+    row = {'id': 'V5', 'title': 'Release', 'words': 'building', 'placeholder': False}
+    v = {'id': 'V5', 'state': 'running s2 6m', 'release': row}
+    got = logic_js([['planQueue', {'queue': [task, parked], 'release_row': ph}],
+                    ['planQueue', {'queue': [task, parked, v], 'release_row': row}],
+                    ['planQueue', {'queue': [task]}], ['planWords', v, []]])
+    eq(got, [[task, ph], [task, v], [task], 'building'], 'the release last (Parked is its own group)')
+
+
 if __name__ == '__main__':
-    raise SystemExit(report([in_tmp(test_project_name_b153),in_tmp(test_chat_order_f133), in_tmp(test_delete_chats_f118), in_tmp(test_server), in_tmp(test_real_action), in_tmp(test_run_controls),
+    raise SystemExit(report([in_tmp(test_release_row_f131),in_tmp(test_project_name_b153),in_tmp(test_chat_order_f133), in_tmp(test_delete_chats_f118), in_tmp(test_server), in_tmp(test_real_action), in_tmp(test_run_controls),
                            in_tmp(test_start), in_tmp(test_upload),
                            in_tmp(test_control_rows), in_tmp(test_feed_pane_concept), in_tmp(test_page),
                            in_tmp(test_logic), in_tmp(test_extras), in_tmp(test_diff), in_tmp(test_views),

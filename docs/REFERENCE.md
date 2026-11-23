@@ -459,6 +459,14 @@ words in a note on the task (after ` — `, not in its title), its next merge la
   open, nor with nothing landed since the last release: release tasks are not counted, and nothing counts when
   only the plan changed since the version tag. The run log and `status`'s lately say
   `queued V7 (auto_release: 10 landed)` or `(auto_release: idle)`.
+- **Release row** (F131): the run page and the TUI show the release as a row pinned at the end of the queue, and
+  J/K move no task past it. With `auto_release` on and no V queued, the row is dimmed and reads
+  `Next release · auto at 10 landed: 6/10` (` · when the run goes idle` added for `idle = true`, both when both
+  are set). A queued V reads `V5 Release · waits for 24 open ahead`, then `ready` when nothing is left before it,
+  `blocked` when it waits on a person, and `building` once a slot has it or it is merging. With `auto_release` off
+  and no V, there is no row. Enter on the row opens the release tab. `agent-runner status` says the same thing as
+  `release: <that row>` in place of `last: V5 waits for everything before it`, keeping its `not waiting on` notes;
+  once the release lands, `lately` reads `landed: Release 1.2.0 [V5]` and the count starts again at 0/N.
 - `plan add` also refuses (exit 3, nothing written) text that looks like an open task's work, naming it:
   `plan note` that task instead, or `--force` for different work. A task's own split (`plan add P13 …`)
   is never refused for looking like P13. `plan drop ID WHY` closes a task nobody will do (a duplicate,
@@ -488,8 +496,9 @@ words in a note on the task (after ` — `, not in its title), its next merge la
     or blocked task above it in TODO.md, in any section, resolved afresh on every pick, so a task queued above
     it later holds it too. Parked (`--pri later`) and Stretch tasks and shelved ones don't count, or it would
     never run. On a block it reads `BLOCKED: (after all) why`, and `plan reopen` frees it once nothing is left
-    before it. `status`, `plan ID`, `plan reopen` and `plan waiting` show it as `T5 waits for everything before
-    it (12 open)`, not an id list.
+    before it. `plan ID`, `plan reopen` and `plan waiting` show it as `T5 waits for everything before
+    it (12 open)`, not an id list; `status` does too for a task that is not a release (a queued release shows
+    its row instead, see Auto release).
   - `model:` the model the task's own session runs on (`plan add/edit --model M`), which wins over its kind's
     `[models.kinds]` entry; `plan ID` shows it. See Models per kind.
   - `test:` the tests that prove it. `journal:` its journal folder.

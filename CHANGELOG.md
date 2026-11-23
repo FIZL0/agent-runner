@@ -48,6 +48,11 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
   a restarted run page forgets them), so a resent New chat never starts two chats. If the run refuses an action it
   stays: a popup lists it with Retry and Discard (a failed message also has Edit, which puts the words back in its
   box), and a Needs you card comes back when its answer failed (F137).
+- Changed: the queued release shows as its own row on the run page and in the TUI, and `agent-runner status` says it as
+  `release: …` instead of `last: V5 waits for everything before it`. With `[run] auto_release` on and no release queued,
+  the row reads `Next release · auto at 10 landed: 6/10` (dimmed); a queued V shows `V5 Release · waits for 24 open ahead`,
+  then `ready`, `blocked` or `building`. Once it lands, `lately` says `landed: Release 1.2.0 [V5]` and the count restarts
+  at 0. J and K move no task past the release, and Enter on its row opens the release tab (F131).
 
 ## 0.61.0 (2026-11-23)
 
