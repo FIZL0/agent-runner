@@ -587,17 +587,18 @@ function runVoice(got,name){
   if(!name||/^(kokoro|piper):/.test(name))return vs.some(v=>v.id===name)?name:got.default||'';
   return '';  // a voice of this device
 }
-/* F158: a reply as the clips it is read in: its first sentence alone, so sound starts soon, then about 200 letters each */
+/* F158: a reply as the clips it is read in: its first sentence alone, so sound starts soon, then about 200 letters, then
+   400 each (B178: few clips, for each new one can make Bluetooth reopen) */
 function speechClips(text){
   const out=[];
   for(const s of String(text||'').match(/\S[\s\S]*?(?:[.!?]+(?=\s|$)|$)/g)||[])
     for(let i=0;i<s.length;i+=1000){const p=s.slice(i,i+1000).trim(), l=out.length-1;if(!p)continue;
-      if(out.length&&(l>0||out[0].length<15)&&out[l].length+p.length<200)out[l]+=' '+p;else out.push(p)}
+      if(out.length&&(l>0||out[0].length<15)&&out[l].length+p.length<(l>1?400:200))out[l]+=' '+p;else out.push(p)}
   return out;
 }
 /* F158: 0.1 s of silence as a WAV file's bytes: played in a tap, it lets the page's audio element play later without one */
-function silentWav(){
-  const n=800, b=new Uint8Array(44+n).fill(128), v=new DataView(b.buffer), s=(i,t)=>[...t].forEach((c,j)=>b[i+j]=c.charCodeAt(0));
+function silentWav(n=800){
+  const b=new Uint8Array(44+n).fill(128), v=new DataView(b.buffer), s=(i,t)=>[...t].forEach((c,j)=>b[i+j]=c.charCodeAt(0));
   s(0,'RIFF');v.setUint32(4,36+n,true);s(8,'WAVEfmt ');v.setUint32(16,16,true);v.setUint16(20,1,true);v.setUint16(22,1,true);
   v.setUint32(24,8000,true);v.setUint32(28,8000,true);v.setUint16(32,1,true);v.setUint16(34,8,true);s(36,'data');v.setUint32(40,n,true);
   return b;
@@ -703,6 +704,14 @@ function micLog(what,fresh,own){
   const t=own||TK.trail;
   if(t.ev.length<120)t.ev.push(`${Date.now()-t.at} ms ${what}`);else t.more++;
 }
+/* B178: what the sound is for, where the browser lets a page say (iOS): 'play-and-record' for the mic, which puts
+   Bluetooth earbuds in the hands-free profile, 'playback' once no mic is on or about to be */
+function soundAs(type){
+  try{const a=navigator.audioSession;if(!a||a.type===type||(type==='playback'&&(MIC.rec||MIC.next||TK.ear)))return;
+    a.type=type;micLog(`audio session ${type}, ${a.state||''}`)}catch(e){}
+}
+/* B178: an error in plain words: a fetch with no answer is 'Load failed' in Safari, 'Failed to fetch' elsewhere */
+const plainErr=e=>e&&((e.name==='TypeError'&&/load failed|fetch|network|connection|offline|cancelled|hostname|timed out/i.test(e.message))||e.name==='NetworkError'||e.name==='AbortError')?'no connection':e&&e.name==='SyntaxError'?'its answer made no sense':String((e&&e.message)||e);
 const micReport=(t,head)=>[...head,...t.ev,...(t.more?[`and ${t.more} more`]:[])].join('\n');
 /* a Talk message as the person said it: without the first message's brief or a later one's reminder */
 const talkShown=t=>{t=String(t||'');const i=t.indexOf('\n\nThey said: ');
@@ -1022,7 +1031,7 @@ function actFailed(j,other){toast(plainOut(j,other),true);if(oldRun(j)){S.oldRun
 async function act(name,args){
   try{const r=await fetch(tq('act'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,args:args||{}})});
     const j=await r.json();if(!j.ok)actFailed(j,`${name} did not work`);return j}
-  catch(e){toast(`Could not reach the run page: ${e}`,true);return{ok:false}}
+  catch(e){toast(`Could not reach the run page: ${plainErr(e)}`,true);return{ok:false}}
 }
 
 /* --- F137: the outbox (obParse and the rest in the logic script) ------------------------------------------ */
@@ -1279,7 +1288,7 @@ async function homePost(path,body){
   H.busy=true;toast('…');
   try{const d=await (await fetch(tq(HB+path),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})).json();
     toast(d.out||(d.ok?'Done':'That did not work'),!d.ok)}
-  catch(e){toast(`Could not reach Runner Home: ${e}`,true)}
+  catch(e){toast(`Could not reach Runner Home: ${plainErr(e)}`,true)}
   H.busy=false;loadProjects();
 }
 /* F118: a chat row: its delete button (none for c1), dimmed with Undo in that spot once deleted; the Delete N bar */
@@ -1311,7 +1320,7 @@ function finalDelete(){
   if(u.names.includes(S.thread)){S.thread=null;S.ctx=null}
   S.snap.sessions=S.snap.sessions.filter(s=>!u.names.includes(s.name));
   fetch(tq('act'),{method:'POST',keepalive:true,headers:{'Content-Type':'application/json'},body:JSON.stringify({name:'delete_chats',args:{names:u.names}})})
-    .then(r=>r.json()).then(j=>{if(!j.ok)actFailed(j,'The delete did not work')}).catch(e=>toast(`Could not reach the run page: ${e}`,true));
+    .then(r=>r.json()).then(j=>{if(!j.ok)actFailed(j,'The delete did not work')}).catch(e=>toast(`Could not reach the run page: ${plainErr(e)}`,true));
   render(true);
 }
 const card=(h,cls='',attr='')=>`<div class="card ${cls}" ${attr}>${h}</div>`;
@@ -1482,7 +1491,7 @@ const SHEETS={
       ${AU.got&&!runVoices().length?'<div class="small">The run\'s machine has no voice installed, so this browser reads. Ask a chat to install one.</div>':''}
       <label class="it setrow"><span class="grow">Mic</span><select class="fld" data-ts="mic"><option value="tap" ${t.mic==='tap'?'selected':''}>Tap to start and stop</option><option value="hold" ${t.mic==='hold'?'selected':''}>Hold to talk</option></select></label>
       <label class="it setrow"><span class="grow">Auto listen<span class="small" style="display:block">Listens again once a reply was read; stops after one silent turn.</span></span><input type="checkbox" role="switch" class="sw" data-ts="auto" ${t.auto?'checked':''}></label>
-      <div class="btns"><button class="btn" data-closesheet>Done</button></div>`;
+      <div class="btns">${TK.trail?'<button class="btn" data-micreport>Copy mic report</button>':''}<button class="btn" data-closesheet>Done</button></div>`;
   },
 };
 let sheetBack=null;
@@ -1771,10 +1780,11 @@ const voices=()=>{try{return window.speechSynthesis?speechSynthesis.getVoices():
 if(window.speechSynthesis&&speechSynthesis.addEventListener)speechSynthesis.addEventListener('voiceschanged',()=>{if(S.sheet==='talk')render(true)});
 /* F158: run speech: clips made on the run's machine, played one after another in one audio element (`AU.el`), which a
    tap on the speaker unlocks for good. AU.got: the run's voices, null until it answered; AU.ok: it has played */
-const AU={el:null,got:null,ok:false,url:''};
+const AU={el:null,got:null,ok:false,url:'',hold:null,holding:false};  /* B178: hold: the element that plays silence, holding: for a reply */
 const runVoices=()=>(AU.got&&AU.got.voices)||[];
 function loadVoices(){if(HOME_PAGE)return;fetch(tq('speech')).then(r=>r.ok?r.json():null).then(j=>{if(j&&Array.isArray(j.voices)){AU.got=j;if(S.sheet==='talk')render(true)}}).catch(()=>{})}
 loadVoices();
+try{if(navigator.audioSession)navigator.audioSession.onstatechange=()=>{if(TK.trail)micLog(`audio session is ${navigator.audioSession.state}`)}}catch(e){}  // B178
 /* the Voice setting's first options: with run voices, the default one, theirs by engine, then this device's (a group left open) */
 function voiceOpts(){
   const vs=runVoices(), o=(v,t)=>`<option value="${esc(v)}" ${TS.voice===v?'selected':''}>${esc(t)}</option>`;
@@ -1787,33 +1797,86 @@ function audioSrc(blob){const a=audioEl();a.onended=a.onerror=a.onpause=null;if(
 /* inside a tap that starts no mic: the silent clip, so a later reply plays by itself. Not while a clip plays */
 function unlockAudio(){
   if(AU.ok||TK.ear||TK.state==='speaking'||TK.playing||!runVoice(AU.got,TS.voice))return;
+  soundAs('playback');
+  try{const h=holdEl(), q=h.play();if(q)q.then(()=>{if(!AU.holding)h.pause()}).catch(()=>{})}catch(e){}
   try{const p=audioSrc(new Blob([silentWav()],{type:'audio/wav'})).play();if(p)p.then(()=>{AU.ok=true}).catch(()=>{})}catch(e){}
+}
+/* B178: while a reply is read, a second element plays silence without end, so the Bluetooth route is not closed and
+   reopened between clips. The pause of the lock screen or the earbuds is the person's: it stops the reply */
+function holdEl(){
+  if(!AU.hold){AU.hold=new Audio(URL.createObjectURL(new Blob([silentWav(40000)],{type:'audio/wav'})));AU.hold.loop=true}
+  return AU.hold;
+}
+function pauseKeys(f){try{const m=navigator.mediaSession;if(m)for(const k of ['pause','stop'])m.setActionHandler(k,f)}catch(e){}}
+function routeHold(){
+  AU.holding=true;pauseKeys(()=>{if(TK.trail)micLog('sound: stopped by the person');hush()});
+  try{const h=holdEl(), p=h.play();h.onpause=()=>{if(AU.holding&&TK.trail)micLog('sound: the silence paused, not by the page')};
+    if(p)p.catch(e=>{if(AU.holding&&TK.trail)micLog(`sound: the silence refused: ${e.name}`)})}catch(e){}
+}
+function routeFree(){
+  if(!AU.holding)return;
+  AU.holding=false;pauseKeys(null);if(AU.hold)AU.hold.pause();
 }
 /* what reads now stops, whichever of the two it is */
 function shush(){
+  if(AU.holding)routeFree();
   if(window.speechSynthesis)speechSynthesis.cancel();
   const a=AU.el;if(a){a.onended=a.onerror=a.onpause=null;if(!a.paused)a.pause()}
 }
+/* one clip from the run. Its error's message is plain words; net: no answer came, so asking again can help (late: none in 25 s, asked once more) */
+function clipGet(text,voice){
+  const c=new AbortController(), t=setTimeout(()=>c.abort(),25000), fail=(out,net,late)=>Object.assign(new Error(out),{net,late});
+  return fetch(tq('speech'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text,voice}),signal:c.signal})
+    .then(async r=>{if(r.ok)return r.blob();const j=await r.json().catch(()=>({}));throw fail(j.out||`error ${r.status}`,!j.out&&r.status>=500)})
+    .catch(e=>{throw e.net!=null?e:e.name==='AbortError'?fail('no answer in time',true,true):fail('no connection',true)})
+    .finally(()=>clearTimeout(t));
+}
+const CLIP_AGAIN=[500,2000], PLAY_AGAIN=600;  /* B178: ms before each new try for a clip, and before an unasked pause is undone */
 /* clip number i of `clips`, and then the rest; `turn` is TK.turn while nothing stopped it. end(): read to its end;
-   fall(rest, why): the run made no sound for the rest; held(): the browser wants a tap first */
+   fall(rest, why, net): the run made no sound for the rest; held(): the browser wants a tap first. What it does goes
+   into the mic report, with no words (B178) */
 async function playClips(clips,voice,turn,end,fall,held){
-  const get=p=>{const c=new AbortController(), t=setTimeout(()=>c.abort(),50000);
-    return fetch(tq('speech'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:p,voice}),signal:c.signal})
-      .then(async r=>{if(r.ok)return r.blob();const j=await r.json().catch(()=>({}));throw new Error(j.out||`error ${r.status}`)}).finally(()=>clearTimeout(t))};
-  const ask=i=>{if(i>=clips.length)return null;const p=get(clips[i]);p.catch(()=>{});return p};
-  let next=ask(0);
+  if(!TK.trail||(TK.trail.ev.length>60&&!TK.ear)){micLog('read a reply',true);TK.trail.used=true}
+  const on=()=>TK.turn===turn, trail=TK.trail, wait=ms=>new Promise(r=>setTimeout(r,ms));
+  const log=(x,bad)=>{if(!on())return;micLog('sound: '+x,false,trail);if(bad){trail.sound=true;TK.report=trail}};
+  const get=async(p,i)=>{
+    for(let n=0;;n++){
+      const at=Date.now();log(`clip ${i+1} of ${clips.length} asked, ${p.length} letters`);
+      try{const b=await clipGet(p,voice);log(`clip ${i+1} came, ${b.size} bytes, after ${Date.now()-at} ms`);return b}
+      catch(e){
+        log(`clip ${i+1} failed${e.net?', '+e.message:''}, after ${Date.now()-at} ms`,true);
+        if(!e.net||n>=(e.late?1:CLIP_AGAIN.length)||!on())throw e;
+        await wait(CLIP_AGAIN[n]);if(!on())throw e;
+      }
+    }};
+  const ask=i=>{if(i>=clips.length)return null;const p=get(clips[i],i);p.catch(()=>{});return p};
+  let next=ask(0), resumed=false;
   for(let i=0;i<clips.length;i++){
     try{
-      const b=await next;if(TK.turn!==turn)return;
+      const b=await next;if(!on())return;
       next=ask(i+1);  // made while this one plays, so there is no gap
+      for(let n=0;!i&&MIC.rec&&n<15;n++){await wait(100);if(!on())return}  // B178: a mic still ending
+      soundAs('playback');routeHold();
       await new Promise((done,no)=>{const a=audioSrc(b);
-        a.onended=done;a.onerror=()=>no(new Error('the clip did not play'));
-        a.onpause=()=>{if(!a.ended&&TK.turn===turn)hush()};  // a call, or the lock screen's pause
-        const p=a.play();if(p)p.then(()=>{AU.ok=true}).catch(no)});
-    }catch(e){if(TK.turn!==turn)return;if(e&&e.name==='NotAllowedError'){AU.ok=false;return held()}return fall(clips.slice(i).join(' '),e&&e.message||String(e))}
-    if(TK.turn!==turn)return;
+        a.onended=done;a.onerror=()=>{log(`clip ${i+1} error ${a.error?a.error.code:''}`,true);no(new Error('the clip did not play'))};
+        for(const k of ['playing','waiting','stalled'])a['on'+k]=()=>log(k);
+        a.onpause=()=>{  // a call, a route change; the lock screen's pause goes to pauseKeys()
+          if(a.ended||!on())return;
+          log(`paused at ${(a.currentTime||0).toFixed(1)} s, not by the page`,true);
+          if(resumed)return hush();
+          resumed=true;
+          setTimeout(()=>{if(!on()||!a.paused||a.ended)return;
+            if(MIC.rec||MIC.next||TK.ear)return hush();  // never into a mic that listens
+            log('play again');soundAs('playback');routeHold();
+            const q=a.play();if(q)q.catch(e=>{if(!on())return;log(`play again refused: ${e.name}`);if(e.name==='NotAllowedError')no(e);else hush()})},PLAY_AGAIN)};
+        const p=a.play();if(p)p.then(()=>{AU.ok=true}).catch(e=>{if(e&&e.name==='AbortError')return;log(`play refused: ${e&&e.name}`,true);no(e)})});  // AbortError: a pause came first, onpause has it
+      log(`clip ${i+1} ended`);
+    }catch(e){if(!on())return;routeFree();log(e&&e.name==='NotAllowedError'?'held for a tap':`clip ${i+1} and on: the browser's own voice`,true);
+      if(e&&e.name==='NotAllowedError'){AU.ok=false;return held()}
+      return fall(clips.slice(i).join(' '),e&&e.net!=null?e.message:'the clip did not play',!!(e&&e.net))}
+    if(!on())return;
   }
-  end();
+  routeFree();end();
 }
 const talkTyping=()=>!!micWhy()||store.get(TM_KEY)==='type';
 function talkMode(m){store.set(TM_KEY,m==='type'?'type':'');S.pin=true;render(true);const t=m==='type'&&document.querySelector('[data-in]');if(t)kbFocus(t)}
@@ -1902,9 +1965,9 @@ function dictate(){
   rec.onerror=e=>{if(e.error==='not-allowed'||e.error==='service-not-allowed')toast('The browser did not let the page use the mic: allow it in the site settings, or type instead.',true);
     else if(e.error!=='no-speech'&&e.error!=='aborted')toast(`The mic stopped: ${e.error}`,true)};
   rec.onend=()=>{DK.rec=null;dictShow(final||heard);render(true);
-    const t=document.querySelector('[data-in]');if(t&&boxKey()===DK.key){t.focus({preventScroll:true});t.setSelectionRange(t.value.length,t.value.length)}micFree(rec)};
+    const t=document.querySelector('[data-in]');if(t&&boxKey()===DK.key){t.focus({preventScroll:true});t.setSelectionRange(t.value.length,t.value.length)}micFree(rec);soundAs('playback')};
   render(true);
-  micWhenFree(()=>{MIC.rec=rec;try{rec.start()}catch(e){DK.rec=null;toast(`The mic could not start: ${e.message||e}`,true);render(true);micFree(rec)}},()=>{DK.rec=null});
+  micWhenFree(()=>{MIC.rec=rec;soundAs('play-and-record');try{rec.start()}catch(e){DK.rec=null;toast(`The mic could not start: ${e.message||e}`,true);render(true);micFree(rec);soundAs('playback')}},()=>{DK.rec=null});
 }
 /* F115: the [ui] theme's terminal colours for a chat, from the terminal-style page (the run app's tokens until then) */
 const TERM={mode:''};
@@ -1964,7 +2027,7 @@ function talkHear(n){
   if(TS.read)speak(said);else{TK.state='';render(true)}  // F124: read replies aloud is off
 }
 function unlockSpeech(){  /* Safari speaks later only after a first utterance inside a tap */
-  unlockAudio();  // F158
+  soundAs('playback');unlockAudio();  // F158
   try{if(window.speechSynthesis&&!TK.unlocked){speechSynthesis.speak(new SpeechSynthesisUtterance(''));TK.unlocked=true}}catch(e){}
 }
 /* F124: read text aloud; key, the reply a play button reads (a Talk reply read by itself has none). Auto listen:
@@ -1981,13 +2044,16 @@ function speak(text,key){
     TK.state=TK.state==='speaking'?'':TK.state;TK.playing='';render(true);
     if(!key&&TS.auto&&(!e||e.type!=='error')&&S.view==='talk'&&!S.thread&&!talkTyping()){TK.again=true;listen()}};
   const own=ps=>ps.forEach((p,i)=>{const u=new SpeechSynthesisUtterance(p.trim());u.lang=(voice&&voice.lang)||navigator.language||'en-US';if(voice)u.voice=voice;
-    if(i===ps.length-1)u.onend=u.onerror=ended;
+    if(rv&&!i)u.onstart=()=>{if(TK.turn===turn&&TK.trail)micLog("sound: the browser's own voice started")};  // B178
+    if(i===ps.length-1)u.onend=u.onerror=e=>{if(rv&&TK.turn===turn&&TK.trail)micLog(`sound: the browser's own voice ${e&&e.type==='error'?'error '+e.error:'ended'}`);ended(e)};
     ss.speak(u)});
+  soundAs('playback');
   if(!rv)own(parts);
   else{
     unlockAudio();  // a play button's tap
-    playClips(speechClips(text),rv,turn,ended,(rest,why)=>{
-      toast(ss?`The run could not read this aloud (${why}), so this browser does.`:`The run could not read this aloud: ${why}`,true);
+    playClips(speechClips(text),rv,turn,ended,(rest,why,net)=>{
+      const mine=/iPhone|Android/.test(navigator.userAgent||'')?"the phone's voice":"this device's voice";
+      toast(net?ss?`No connection to the run; reading with ${mine}`:'No connection to the run; the reply is not read aloud':ss?`The run could not read this aloud (${why}), so this browser does.`:`The run could not read this aloud: ${why}`,true);
       if(ss)own(rest.match(/[^.!?]+[.!?]*\s*/g)||[rest]);else ended({type:'error'});
     },()=>{TK.playing='';if(TK.state==='speaking')TK.state='';TK.turn++;TK.held=text;TK.note='The browser wants a tap first. Tap the speaker to hear the reply';
       if(talkTyping())toast('The browser wants a tap first. Tap the play button on the reply to hear it.',true);render(true)});
@@ -2008,7 +2074,7 @@ function listen(){
   /* B132: no speechSynthesis call before rec.start() on a plain tap: on iOS it puts the audio session in playback
      and recognition hears nothing (talkSend unlocks speech). A tap during a reply only stops it; the next one listens. */
   if(TK.state==='speaking'||TK.playing){if(TK.state==='speaking')TK.state='';TK.playing='';TK.note='';TK.turn=(TK.turn||0)+1;shush();render(true);return}
-  TK.note=TK.report=TK.held='';const again=TK.again;TK.again=false;  /* auto listen: one silent turn and it stops */
+  TK.note=TK.held='';if(!(TK.report&&TK.report.sound))TK.report='';const again=TK.again;TK.again=false;  /* auto listen: one silent turn and it stops */
   /* B162: the listen: its tries, the words so far, and whether the person ended it (stopped) or held the mic again */
   const t=TK.ear={mode:again?'auto':TS.mic,tries:0,words:'',err:'',ms:null,stopped:false,more:false,on:false,msg:''};
   if(!TK.trail||TK.trail.used)micLog('listen',true);  // a press began it already
@@ -2034,7 +2100,7 @@ function hear(t){
   rec.onend=()=>{
     log('end');if(t.ms==null)t.ms=Date.now()-at;
     if(TK.rec===rec)TK.rec=null;
-    if(TK.ear!==t)return micFree(rec);  // dropped: nothing is sent
+    if(TK.ear!==t){micFree(rec);return soundAs('playback')}  // dropped: nothing is sent
     t.words=(t.words+' '+(final||got)).trim();
     const on=TK.state==='listening', retry=on&&t.err==='aborted'&&!t.words&&!t.stopped&&t.tries<2&&S.view==='talk'&&!S.thread&&!talkTyping()&&!document.hidden;
     const more=on&&t.more;
@@ -2044,11 +2110,13 @@ function hear(t){
     else if(retry)setTimeout(()=>{if(TK.ear===t)micWhenFree(()=>hear(t))},MIC_RETRY);
     else earEnd(t);
   };
-  try{rec.start()}catch(e){log(`start failed: ${e.message||e}`);TK.report=t.trail;TK.ear=null;TK.rec=null;TK.state='';toast(`The mic could not start: ${e.message||e}`,true);render(true);micFree(rec)}
+  soundAs('play-and-record');
+  try{rec.start()}catch(e){log(`start failed: ${e.message||e}`);TK.report=t.trail;TK.ear=null;TK.rec=null;TK.state='';toast(`The mic could not start: ${e.message||e}`,true);render(true);micFree(rec);soundAs('playback')}
 }
 /* the listen is over: its words go out, or the talk line says why there are none */
 function earEnd(t){
   TK.ear=null;TK.heard='';if(TK.state==='listening')TK.state='';
+  soundAs('playback');  // B178
   if(t.words)return talkSend(t.words);
   if(t.tries&&!(t.mode==='auto'&&(!t.err||t.err==='no-speech')))TK.report=t.trail;  // the Copy mic report button
   TK.note=t.mode==='auto'&&t.err!=='aborted'?(TS.mic==='hold'?'Hold to talk':'Tap to talk'):t.tries?heardNothing(t.err,t.mode,t.ms,t.tries,t.stopped,t.on,t.msg):'';
@@ -2064,9 +2132,9 @@ function micStop(by){
 }
 /* B162: the mic report to the clipboard, or shown to copy by hand where that is refused */
 async function micCopy(){
-  if(!TK.report)return;
+  const rep=TK.report||TK.trail;if(!rep)return;
   let au='';try{au=navigator.audioSession?`${navigator.audioSession.type}, ${navigator.audioSession.state||''}`:'none'}catch(e){}
-  const text=micReport(TK.report,['Mic report',TK.note,`mic ${TS.mic}, version ${RUN_VERSION}, audio session ${au}, media session ${navigator.mediaSession?navigator.mediaSession.playbackState:''}`,navigator.userAgent]);
+  const text=micReport(rep,['Mic report',TK.note,`mic ${TS.mic}, version ${RUN_VERSION}, audio session ${au}, media session ${navigator.mediaSession?navigator.mediaSession.playbackState:''}`,navigator.userAgent]);
   try{await navigator.clipboard.writeText(text);toast('Mic report copied: paste it into your reply')}
   catch(e){S.out={title:'Mic report',text};openSheet('out')}
 }
@@ -2160,7 +2228,7 @@ async function upload(file){
   render(true);
   try{const r=await fetch(tq('upload?name='+encodeURIComponent(it.name)),{method:'POST',headers:{'Content-Type':file.type||'application/octet-stream'},body:file});
     const j=await r.json();if(j.ok)it.path=j.path;else{it.err=j.out||'upload failed';toast(it.err,true)}}
-  catch(e){it.err=String(e);toast(`Upload failed: ${e}`,true)}
+  catch(e){it.err=plainErr(e);toast(`Upload failed: ${it.err}`,true)}
   render(true);
 }
 
