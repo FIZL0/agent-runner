@@ -830,7 +830,8 @@ def test_parked() -> None:
         win = drawn(p, 40, 100)
         check(' parked' in win.text() and colour_at(win, ' parked', 1) == 'dim', "unfocused, the tag is dim",
               win.text())
-        check('F83  Parked big work  ready' not in win.text(), 'never ready')
+        row = next(l for l in win.lines() if 'F83' in l)[:36].rstrip(' │')
+        check(row.endswith('parked') and 'ready' not in row, "the drawn row: 'parked', never 'ready'", row)
         p.cur[3] = len(snap['queue']) - 1
         check(('U', 'unpark') in p.hint_keys() and not any(k == 'J/K' for k, _ in p.hint_keys()),
               'the hints name U unpark, not J/K', p.hint_keys())

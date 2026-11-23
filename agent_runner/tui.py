@@ -1425,7 +1425,11 @@ class RunPage:
         elif self.panel == 3 and k == 'H' and tid:
             self.done(U.take(tid))
         elif self.panel == 3 and k == 'U' and tid and it.get('state') == 'parked':
-            self.done(U.unpark(tid))
+            r = U.unpark(tid)
+            self.done(r)
+            ids = [t.get('id') for t in self.items(3)]
+            if r.get('ok') and tid in ids:  # the selection follows the task to its new place in the queue
+                self.cur[3] = ids.index(tid)
         elif self.panel == 3 and k == 'p' and tid and it.get('state') != 'parked':
             self.done(U.plan_change(tid, pri='normal' if it.get('pri') == 'critical' else 'critical'))
         elif self.panel == 3 and k in ('J', 'K') and tid and it.get('state') != 'parked':
