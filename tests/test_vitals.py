@@ -379,10 +379,15 @@ def test_push():
     from agent_runner.config import Config
     ev = json.loads(Config(up).notes('events.jsonl').read_text(encoding='utf-8').splitlines()[-1])
     eq((ev['device'], ev['text']), ('box', 'box: CPU at 95°C (over 90°C)'), 'written as an event')
+    from agent_runner.state import EV_DEVICE
+    eq(ev['kind'], EV_DEVICE, 'as a device alert, not a Claude Code drift')
     check(not Config(off).notes('events.jsonl').exists(), 'none for a project with no run (no feed to push it)')
     from agent_runner import status
     line = status.since_event(ev, {})
     eq(line[2], 'needs you: box: CPU at 95°C (over 90°C)', 'the feed prints it as needs you, which it pushes')
+    import datetime as dt
+    nl = status.needs_you_line(ev, {}, dt.datetime.fromisoformat(ev['time']), [])
+    check(nl and nl.endswith('needs you: box: CPU at 95°C (over 90°C)'), f'and the needs-you feed keeps it: {nl!r}')
 
     print('Vitals pushes each new alert once and keeps what it said over a restart')
     pushed = []
