@@ -233,8 +233,9 @@ def test_session_tabs() -> None:
        ('green', 'red', 'cyan'), 'the diff tab: added green, removed red, hunks cyan')
     p.key('l')
     win = drawn(p)
-    check('https://claude.ai/code/session_1' in win.text() and '[o open it]' in win.text(), 'the session tab',
-          win.text())
+    check('https://claude.ai/code/session_1' in win.text() and '[o open it] [y copy link]' in win.text(),
+          'the session tab: o open it, y copy link', win.text())
+    eq([u for *_, u in p.links], ['https://claude.ai/code/session_1'], 'B125: its link is kept for OSC 8')
     p.key('l')
     eq(p.tab()[0], 'session', 'l on the last tab stays there')
     p.cur[2] = 4
@@ -567,8 +568,10 @@ def test_actions() -> None:
             if ('new_control',) in calls else SNAP
         p.key('N')
         eq(p.sel()['name'], 'c7', 'N selects the new control session')
-        eq((p.msg, p.main, p.tab()[0]), ('new control session: https://claude.ai/code/x', True, 'session'),
-           'N: a new control session, its link said')
+        eq((p.msg, p.main, p.tab()[0], p.typing), ('new control session: https://claude.ai/code/x', True, 'chat',
+                                                   'c7:chat'),
+           'B125 N: a new control session on its chat tab, typing, its link said')
+        p.key('ESC')
     eq(ran, [['plan', 'edit', 'B2', '--pri', 'normal'],
              ['plan', 'drop', 'B2', 'dropped from agent-runner ui'],
              ['plan', 'move', 'Q1', 'after', 'B2'],
@@ -584,6 +587,69 @@ def test_actions() -> None:
     eq(opened, ['https://claude.ai/artifact/k5', 'https://claude.ai/code/s1', 'https://claude.ai/code/session_c1'],
        'O and o open the browser')
     eq(attached, ['s1'], 'Enter on the pane tab attaches the slot\'s pane')
+
+
+def test_session_tab_b125() -> None:
+    """B125: a new chat lands on its chat tab; a control session's session tab types into it; y copies the link
+    with OSC 52; o over ssh opens no browser here: it copies and shows the link to Cmd-click (OSC 8)."""
+    import base64
+    wrote, chats, popen = [], [], []
+    ok = lambda out: {'ok': True, 'code': 0, 'out': out, 'argv': []}  # noqa: E731
+    p = page(out=wrote.append)
+    p.opener = lambda url: T.open_url(url, p.out)
+    c7 = {'name': 'c7', 'task': '', 'title': 'control session', 'minutes': None, 'state': 'live', 'files': [],
+          'link': 'https://claude.ai/code/c7', 'terminal': ''}
+    more = dict(SNAP, sessions=SNAP['sessions'] + [c7])
+    with mock.patch.object(U, 'new_control', lambda ask='': (setattr(p, 'get_snap', lambda: more),
+                                                             {**ok('started c7'), 'link': c7['link']})[1]), \
+            mock.patch.object(U, 'chat_to', lambda text, name: (chats.append((name, text)), ok('sent'))[1]), \
+            mock.patch.object(U, 'open_session', lambda slot: ok(f'https://claude.ai/code/{slot}')), \
+            mock.patch.object(T.sp, 'Popen', lambda *a, **k: popen.append(a)), \
+            mock.patch.dict(T.os.environ, {'SSH_CONNECTION': '10.0.0.2 5000 10.0.0.1 22'}), \
+            mock.patch.object(T.os, 'startfile', lambda url: popen.append(url), create=True):
+        p.key('2')
+        p.key('N')
+        eq((p.sel()['name'], p.tab()[0], p.typing), ('c7', 'chat', 'c7:chat'), 'N lands on the chat tab, typing')
+        p.key('ESC')
+        p.key('l')
+        p.key('l')
+        eq(p.tab()[0], 'session', 'on the session tab')
+        win = drawn(p)
+        check('❯ message c7' in win.text(), 'the session tab has the message box', win.text())
+        check('[y copy link]' in win.text(), 'and a y copy link button', win.text())
+        p.key('ENTER')
+        eq(p.typing, 'c7:chat', 'Enter types into it')
+        for c in 'hello':
+            p.key(c)
+        p.key('ENTER')
+        eq(chats, [('c7', 'hello')], 'typing on the session tab sends to that session')
+        p.key('ESC')
+        p.key('y')
+        b64 = base64.b64encode(b'https://claude.ai/code/c7').decode()
+        check(any(f'\x1b]52;c;{b64}\x07' in w for w in wrote), 'y writes an OSC 52 sequence with the link', wrote)
+        eq(p.msg, 'link copied', 'y says the link is copied')
+        wrote.clear()
+        p.key('o')
+        eq(popen, [], 'o over ssh runs no xdg-open (nor any other program)')
+        check(any('\x1b]52;c;' in w for w in wrote), 'o over ssh copies the link with OSC 52', wrote)
+        eq((p.msg, p.msg_link), ('link copied, Cmd-click to open', 'https://claude.ai/code/c7'),
+           'o over ssh says to Cmd-click the link')
+        win = drawn(p)
+        check('link copied, Cmd-click to open https://claude.ai/code/c7' in win.text(), 'the message line shows it',
+              win.lines()[-1])
+        seq = T.links_over(p.links)
+        check(T.osc8('https://claude.ai/code/c7', 'https://claude.ai/code/c7') in seq, 'drawn as an OSC 8 link',
+              repr(seq))
+        p.cur[2] = [r.get('name') for r in p.items(2)].index('s1')  # a slot on a task: o and y work there too
+        wrote.clear()
+        p.key('y')
+        check(any(base64.b64encode(b'https://claude.ai/code/s1').decode() in w for w in wrote),
+              "y on a slot copies its session's link", wrote)
+    with mock.patch.dict(T.os.environ, {'SSH_CONNECTION': '', 'SSH_TTY': ''}), \
+            mock.patch.object(T.sys, 'platform', 'linux'), \
+            mock.patch.object(T.sp, 'Popen', lambda argv, **k: popen.append(argv)):
+        r = T.open_url('https://claude.ai/code/c7', wrote.append)
+    eq((popen, r.get('link')), ([['xdg-open', 'https://claude.ai/code/c7']], None), 'locally o stays xdg-open')
 
 
 def test_footer() -> None:
@@ -1026,7 +1092,8 @@ def test_cli() -> None:
 
 if __name__ == '__main__':
     raise SystemExit(report([test_layout, test_status_tabs, test_session_tabs, test_queue, test_direct_edit,
-                               test_navigation, test_chat_box, test_actions, test_footer, test_concept_page,
+                               test_navigation, test_chat_box, test_actions, test_session_tab_b125, test_footer,
+                               test_concept_page,
                                test_concept_chat,
                                test_escape_tail, test_colours, test_row_ground_and_fill, test_reorder, test_parked,
                                test_themes,
