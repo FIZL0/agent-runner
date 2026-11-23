@@ -472,7 +472,7 @@ def answer_argv(tid: str, text: str, button: bool = False) -> tuple[list[str], s
     CONFIRM's No is `plan change ID "No: the check failed"`; a pick sheet's go or Send line is `sheet ID
     --go|--picks`. Free words typed in the reply box are c1's."""
     said, label = (text or '').strip(), need_label(tid)
-    if label == 'DECIDE':
+    if label == 'DECIDE' and button:
         from agent_runner.brief import has_sheet
         if has_sheet(tid) and said.lower() in SHEET_GO:
             return ['sheet', tid, '--go'], f'{tid} answered with the recommended picks'
@@ -492,6 +492,8 @@ def answer(tid: str, text: str, button: bool = False) -> dict:
     no AI session, and an ok result carries 'said' (what was done, for the toast) and 'gone' (the item, off
     Needs you); the words typed in a reply box go to c1 to settle as its needs guide says."""
     argv, done = answer_argv(tid, text, button)
+    if button and not argv and not need_label(tid):  # answered already, or never asked: say so, no AI session
+        return {'ok': False, 'code': 1, 'out': f'{tid} no longer needs you (answered already?)', 'argv': []}
     if argv:
         r = call(argv)
         if r['ok']:

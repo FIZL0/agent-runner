@@ -709,6 +709,7 @@ def test_actions() -> None:
              opener=lambda url: (opened.append(url), {'ok': True, 'out': f'opened {url}'})[1])
     with mock.patch.object(U, 'RUN', [lambda argv: (ran.append(argv), (0, 'ok: ' + ' '.join(argv)))[1]]), \
             mock.patch.object(U, 'SEND', [lambda text: (sent.append(text), ok('sent to c1'))[1]]), \
+            mock.patch.object(U, 'need_label', lambda tid: {n['id']: n['label'] for n in SNAP['needs']}.get(tid, '')), \
             mock.patch.object(U, 'send', lambda name, text: (calls.append(('send', name, text)), ok('sent'))[1]), \
             mock.patch.object(U, 'quick_ask', lambda key: (calls.append(('quick_ask', key)), ok('asked'))[1]), \
             mock.patch.object(U, 'new_control', lambda ask='', wait=True: (calls.append(('new_control', wait)),
@@ -739,6 +740,8 @@ def test_actions() -> None:
         check('❯ or your own reply' in win.text(), 'and the free reply box', win.text())
         p.key('y')
         eq(p.main, False, 'an answer sent: back to the panels')
+        eq([n['id'] for n in p.snap['needs']], ['F4', 'D7'], 'B138: D3 answered is off Needs you at once')
+        p.snap = SNAP  # the rest of this test walks the full list
         p.key('j')
         p.key('ENTER')
         win = drawn(p)
@@ -802,10 +805,11 @@ def test_actions() -> None:
     eq(ran, [['plan', 'edit', 'B2', '--pri', 'normal'],
              ['plan', 'drop', 'B2', 'dropped from agent-runner ui'],
              ['plan', 'move', 'Q1', 'after', 'B2'],
+             ['plan', 'confirm', 'D3', 'yes'],
              ['plan', 'shelve', 'D7'],
              ['plan', 'add', 'V'],
              ['plan', 'add', 'V', '--now']], 'p, D, J, L and the release buttons run their plan commands')
-    eq(sent, ['do B2 here', 'change B2: also cover openmx', 'new task: show usage too', 'D3: yes', 'F4: A + B · recommended',
+    eq(sent, ['do B2 here', 'change B2: also cover openmx', 'new task: show usage too', 'F4: A + B · recommended',
               'D7: port 8770', 'concept K5 ("Lazy layout"): go with Option B',
               'concept K5 ("Lazy layout"): smaller'],
        'H, chat edits, answers (a button, a reply), the concept pick and its change go to c1')
@@ -1558,14 +1562,18 @@ def test_answer_direct_b138() -> None:
         r = U.answer('F1', 'Yes', button=True)
         eq((r['ok'], r['out'], 'gone' in r), (False, 'plan: no such task', False), 'a failure says why; the item stays')
         U.answer('F2', 'SQLite, it is one file')
-        U.answer('F9', 'Yes', button=True)
-    eq(sent, ['F2 (pick a database): SQLite, it is one file', 'F9: Yes'],
-       'typed words go to c1, as does a button for something that needs nothing here')
+        with mock.patch('agent_runner.brief.has_sheet', lambda tid: tid == 'F2'):
+            U.answer('F2', 'go')
+    eq(sent, ['F2 (pick a database): SQLite, it is one file', 'F2 (pick a database): go'],
+       'typed words go to c1, a sheet\'s typed go too')
     with mock.patch.object(U, 'RUN', [lambda argv: (ran.append(argv), (0, 'ok'))[1]]), \
             mock.patch.object(U, 'SEND', [no_send]), \
             mock.patch('agent_runner.brief.has_sheet', lambda tid: tid == 'F2'):
         ran.clear()
-        U.answer('F2', 'go')
+        r = U.answer('F9', 'Yes', button=True)
+        eq((r['ok'], r['out'], ran), (False, 'F9 no longer needs you (answered already?)', []),
+           'a button for something that needs nothing here fails saying so, with no AI session')
+        U.answer('F2', 'go', button=True)
         U.answer('F2', 'F2 picks: db=sqlite', button=True)
     eq(ran, [['sheet', 'F2', '--go'], ['sheet', 'F2', '--picks', 'F2 picks: db=sqlite']],
        'a pick sheet keeps sheet ID --go / --picks')

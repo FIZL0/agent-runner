@@ -932,7 +932,8 @@ document.addEventListener('click',async e=>{
   if(x=q('[data-ans]')){const n=S.snap.needs[+x.dataset.ans];if(!n)return;  // B138: the plan command, no AI session
     const was=x.textContent;x.disabled=true;x.classList.add('busy');x.textContent=`${was}…`;
     const r=await act('answer',{tid:n.id,text:x.dataset.v,button:true});
-    if(r.ok){toast(answerSaid(r,n.id,x.dataset.v));S.gone=goneMark(S.gone,r,Date.now());S.snap.needs=needsShown(S.snap.needs,S.gone,Date.now());render(true)}
+    if(r.ok){toast(answerSaid(r,n.id,x.dataset.v));S.gone=goneMark(S.gone,r,Date.now());S.snap.needs=needsShown(S.snap.needs,S.gone,Date.now());render(true);
+      fetch(tq('snapshot')).then(s=>s.json()).then(takeSnap).catch(()=>{})}  // and the run's own list, at once
     else{x.disabled=false;x.classList.remove('busy');x.textContent=was}
     return}
   if(x=q('[data-later]')){const n=S.snap.needs[+x.dataset.later];if(!n)return;x.disabled=true;
