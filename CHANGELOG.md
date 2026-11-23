@@ -44,8 +44,9 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 - **Breaking: a run on 0.59 or older cannot adopt across 0.60.0** (its sessions are in tmux panes this version
   no longer reads), so stop the old run (`agent-runner stop`) before upgrading; it neither auto-upgrades nor
   restarts itself onto 0.60+ (C28).
-- 0.60.0 replaces the 1.0.0 tag published earlier the same day. A run already installed at 1.0.0 must be
-  reinstalled (`uv tool install --force` or re-pull) to get 0.60.0 and later, since it sees them as older.
+- 0.60.0 replaces the 1.0.0 tag published earlier the same day, and the v1.0.0 tag and GitHub release
+  have been deleted (v0.60.0 is the Latest release). A run already installed at 1.0.0 must be reinstalled
+  (`uv tool install --force` or re-pull) to get 0.60.0 and later, since it sees them as older (F119).
 - Changed: a release (kind V) no longer runs alone. It still waits for what is ahead of it (`after: all`, or
   its own `--after`) to land, then starts even with other tasks running, and tasks start beside it. While it
   is busy the merge holds every other merge and push, so it releases exactly what was on main when it
