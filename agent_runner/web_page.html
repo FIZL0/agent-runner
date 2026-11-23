@@ -563,8 +563,8 @@ document.addEventListener('click',async e=>{
     const r=await act('new_control',{});if(r.ok)toast('Starting a new chat: it opens here once it is up');else S.waitNew=null;return}
   if(x=q('[data-cchat]')){const c=S.snap.concepts[+x.dataset.cchat];if(!c)return;x.disabled=true;  // F86
     S.waitNew={known:chats().map(c=>c.name),at:Date.now()};
-    const r=await act('concept_chat',{cid:c.concept||c.id,title:c.title||'',url:c.url||''});
-    if(r.ok)toast(`Starting a new chat about ${c.concept||c.id}: it opens here once it is up`);else S.waitNew=null;return}
+    const r=await act('concept_chat',{cid:c.concept||c.id,title:c.title||'',url:c.url||'',copy:c.copy||''});
+    if(r.ok)toast(`Starting a new chat about ${c.concept||c.id}: it opens here once it is up`);else{S.waitNew=null;x.disabled=false}return}
   if(x=q('[data-ans]')){const n=S.snap.needs[+x.dataset.ans];if(!n)return;x.disabled=true;
     const r=await act('answer',{tid:n.id,text:x.dataset.v});if(r.ok)toast(`Sent: ${n.id} ${x.dataset.v}`);return}
   if(x=q('[data-later]')){const n=S.snap.needs[+x.dataset.later];if(!n)return;x.disabled=true;
