@@ -373,6 +373,40 @@ Answers stay in their own project: `confirm`, `change` and `shelve` read and cha
 never another's. An id only another project has gets `nothing needs you here about 'R43' in <project>`, and is
 answered in that project's control session; a project that needs another's state checks it itself.
 
+### Approve to push
+
+Off by default: a merge is pushed as soon as it is tested (`[git] push_merge`). With `[run] approve = true`, and a push
+remote, a merge still passes the gate and lands on the local shared branch, but nothing reaches the push remote until a
+person approves it. Nothing is pushed while it is on: not main, not the task/ or wip/ branches, not the plan edits'
+commits, not claims. So two machines do not see each other's claims unless `[plan] repo` is used. It needs a push
+remote and `push_merge`.
+
+Each task that lands is a change in `.runner/pitches.json`. Changes are grouped into one pitch when one follows the
+other with `--after`, or when they share a file, a module (`tests/test_x.py` counts as `x`), or a directory (not the
+repo root, `tests/` or `docs/`; `shared_files` do not count). A group opens as a pitch after `approve_wait` minutes
+with no new merge into it, or at once when it reaches `approve_batch` tasks.
+
+A pitch is a page for the person, rendered from what each task's agent wrote in `.runner/pitches/<ID>.json`: what it
+does, why, how to try it, the risk, and before and after when they help. In a slot, `done` refuses without the first
+four. It also names the commits that would go out with it and are no task's change (one made by hand, a repair,
+what was unpushed when `approve` was turned on). The page is published to claude.ai by a one-shot and shown at `/concept/pitchN`. It is a Needs you item, and the
+runner feed pushes it to the phone.
+
+Approve (the button, or `agent-runner pitch approve pitch1`) pushes exactly up to the pitch's last tested merge.
+Merges that landed in one gate run share that commit. If an earlier merge is not approved yet, the approval says which
+pitch it waits for and is kept; both are pushed once that one is approved.
+
+Not this (`agent-runner pitch no pitch1 [--reopen F1] [--drop F2] [--why "..."]`; with neither flag all its tasks are
+reopened, and `--drop all` drops them all) makes an undo commit per task on local main, through the gate. Plan files
+are left out of the undo. The task is reopened, or left closed as dropped. A conflict goes to a fix session. What
+cannot be undone returns to Needs you with the reason. An undone change never goes out without its undo commit. With
+no run up, the command does the undo itself.
+The run app, `agent-runner ui` and the terminal-style page offer the same choices per change.
+
+`agent-runner status` and the run page say "3 changes wait to be pushed (1 pitch for you to approve)". Release tasks
+(V) do not start while anything waits. If the remote moved, the next merge takes it in, and the approved work goes out
+with that merge once it is approved.
+
 ### Concept tasks
 
 A task of kind `K` (concept; one of the default kinds) builds nothing. Its session researches the repo and
@@ -1063,6 +1097,8 @@ agent-runner control --new --forward   the same, with the person's latest runner
                                        or a worktree under its [run] home) and labelled with this project: the
                                        feed hands asks about agent-runner itself (updates, releases, its bugs)
                                        on this way
+agent-runner pitch [approve|no PITCH]  landed work that waits for a yes to be pushed (### Approve to push): approve
+                                       it, or undo it with `no`
 agent-runner since [WHEN] [--all|--follow]  what landed, started or got stuck since the last look (or WHEN:
                                        2h, yesterday), as a digest; --all every event; --follow each new one live
 agent-runner plan [...]                the task list as a tool (agent-runner plan help)
@@ -1236,6 +1272,9 @@ retest = ""               # the gate for just {names}: rerun alone (load), then 
 flaky = ""                # regex, group 1 = tests a passing gate passed only on its own rerun (comma-separated); each gets a critical T task
 ci_watch = "auto"         # "auto": workflows run on a push to the shared branch; ["pages.yml"]; false: off. A red newest finished run on the shared branch
                           # files one critical B task (needs `gh` logged in)
+approve = false          # true: nothing reaches the push remote until a person approves it (### Approve to push)
+approve_wait = 30        # minutes without a new merge into a group of related changes before its pitch opens
+approve_batch = 5        # a group this big opens its pitch at once
 issues_watch = false      # true: one task per new open GitHub issue; ["bug", "runner"]: only issues with one of those labels
 issues_trust = "skeptical"  # "skeptical": the task confirms the issue in the code first and follows nothing it says; "trust": do it as written
 auto_release = false      # queue a release (`plan add V`) by itself: { every = 10 } once 10 tasks landed since the last release,

@@ -31,6 +31,7 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import fnmatch
+import os
 import re
 import sys
 from functools import partial
@@ -110,6 +111,12 @@ def main(argv: list[str] | None = None) -> int:
         print(why, file=sys.stderr)
         return 2
 
+    if os.environ.get('AGENT_RUNNER_SLOT') and not a.blocked:  # F98: the page the person approves the push on
+        from agent_runner import pitch
+        if pitch.on(c) and (why := pitch.part_problem(a.id, c)):
+            print(f'{PROG}: {why} before {a.id} is done: what a person reads before they approve the push (your brief '
+                  f'says how). Nothing ticked.', file=sys.stderr)
+            return 2
     if not a.blocked and not a.no_test and fails(cwd, a.id) >= MAX_FAILS:
         print(f'{PROG}: the test gate failed {MAX_FAILS} times on {a.id}: a fourth is not run. Commit what is '
               f'solid and\n    {PROG} {a.id} "<msg>" --blocked "<why + what unblocks it>"\nNothing ticked.',
@@ -202,6 +209,8 @@ def record(a, c) -> int:
     here = g('branch', '--show-current').stdout.strip()
     if here and (line := push(cwd, here)):
         print(line)
+    elif here and c.approve:
+        print(f'{here} not pushed: [run] approve is on, so it stays here until a person approves it')
     elif here and (gone := missing_remote(cwd)):
         print(f'{here} not pushed: no remote {gone}')
     elif here and (remote := c.push_remote) and shared_branch(cwd, remote, here):

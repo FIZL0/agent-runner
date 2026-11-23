@@ -6,7 +6,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from agent_runner import plan as P
+from agent_runner import pitch, plan as P
 from agent_runner.gitops import missing_remote
 from agent_runner.guide import GLOSSARY, SAFE_SHELL, VERIFY
 from agent_runner.state import C, default_branch, git, ROOT
@@ -108,6 +108,16 @@ def no_remote_line(remote: str) -> str:
             f'git remote add {remote} <url> to publish')
 
 
+APPROVE = ('When your session ends, the runner merges your branch and tests the merge. A person approves it before it '
+           'is pushed (`[run] approve`), so nothing is pushed yet, and `{runner} done` pushes nothing: never run '
+           '`git push` in this repository. Commits you make in other repositories (a dependency or sibling repo the '
+           'task needed) are pushed as usual; never publish beyond git (releases, uploads, stores) unless the task '
+           'says to.')
+PITCH_PROMPT = ('Before `done`, write `{path}` for the person who approves the push: they use the product, and do not '
+                'review code. JSON, plain words, no code talk; `backticks` show as code. "what": what it changes for '
+                'them; "why": why they would want it; "try": how to try it now (the page or command to open); "risk": '
+                'what it might break; and for a change to a screen "before" and "after": words, or the name of an '
+                'image you put beside that file. `done` refuses without the first four.')
 NO_PUSH = ('When your session ends, the runner merges your branch and tests the merge. Pushing is off for this '
            'run: never run `git push`, here or in any other repository, and never publish anything else '
            '(releases, uploads, stores). A human reviews and pushes.')
@@ -149,7 +159,7 @@ def prompt_for(tid: str, n: int, slots: int, cwd: Path, branch: str, model: str 
                 f'nobody will find.\n' if journal else '')
 
     def publish(t: str) -> str:
-        return (NO_REMOTE if C.push_remote and missing_remote(C.root) else PUBLISH if C.push_remote
+        return (NO_REMOTE if C.push_remote and missing_remote(C.root) else APPROVE if C.approve else PUBLISH if C.push_remote
                 else NO_PUSH).format(runner=C.command, tid=t, remote=C.push_remote)
 
     wip = not git('rev-parse', '--verify', '-q', f'refs/heads/wip/{tid}').returncode
@@ -190,6 +200,8 @@ def prompt_for(tid: str, n: int, slots: int, cwd: Path, branch: str, model: str 
         policies.append(f'Do not include task ID `{tid}` in the commit subject; task tracking is separate.')
     if r['comment_policy'] == 'minimal':
         policies.append('Only add comments when necessary to explain non-obvious intent or constraints.')
+    if pitch.on(C):  # F98
+        policies.append(PITCH_PROMPT.format(path=C.notes('pitches', f'{tid}.json')))
     if P.concept(tid):
         prompt = f'{prompt.rstrip()}\n\n' + CONCEPT_PROMPT.format(runner=C.command, tid=tid)
     elif research_task(tid):  # F36

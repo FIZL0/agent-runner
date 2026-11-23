@@ -1748,7 +1748,7 @@ def change(tid: str, instead: str, todo=None, done=None) -> str:
 
 ASKED = re.compile(r' ?\(asked (\d{4}-\d\d-\d\d \d\d:\d\d)\)')
 REPLY_HINT = {'CONCEPT': 'reply A/B/C', 'CONFIRM': 'reply yes/no', 'DECIDE': 'reply with your answer',
-              'BLOCKED': 'reply done once it is', 'STUCK': 'reply with what to do'}
+              'BLOCKED': 'reply done once it is', 'PITCH': 'reply approve or not this', 'STUCK': 'reply with what to do'}
 
 
 def needs_cfg() -> dict:
@@ -2523,6 +2523,8 @@ def _push(root: Path) -> str:
     branch = g('branch', '--show-current').stdout.strip()
     if not branch or branch != gitops.shared_name(root, remote):
         return ''  # a branch of your own: yours to push
+    if c.approve:  # F98: it goes out with the next approved pitch
+        return ''
     if why := _keeps_merges_local(c):  # B86: pushing would publish the merges a run kept local
         return f'{why}: merges stay local, and this edit with them; to publish them: git push {remote} {branch}'
     net = gitops._net(root)
@@ -2814,7 +2816,8 @@ def _p_revise(a, x):
 
 def _p_waiting(a, x):
     every = bool(a.all)
-    w = asks(all=every)
+    from agent_runner import pitch
+    w = asks(all=every) + [r[:7] for r in pitch.rows(cfg())]  # F98
     print('\n'.join('  '.join(s for s in (label, t, title, '' if label == 'CONCEPT' else what, u,
                                           f'(concept {k})' if k else '', '(shelved)' if sh else '') if s)
                     for label, t, k, what, u, title, sh in w)

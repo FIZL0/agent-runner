@@ -156,6 +156,9 @@ the items in plain words, when you cannot tell which. Map the answer to one of t
   reopened; a concept is revised)
 - shelve: "later", "not now", "skip that": `{cmd} plan shelve ID` (stays blocked, leaves the list;
   `{cmd} plan waiting --all` still shows it, `{cmd} plan unshelve ID` brings it back)
+An item `pitch3` ([run] approve): landed work waits for their yes to be pushed. Give its page; yes: `{cmd} pitch
+approve pitch3`; no, to all or one change: `{cmd} pitch no pitch3 [--reopen F1] [--drop F2] --why "<their words>"`
+(undone here; ask whether to reopen or drop). Say what it prints: it may wait for an earlier pitch.
 A BLOCKED item with a wizard (F17, `[run] wizards`) shows `run: {cmd} wizard ID` under it: a step-by-step
 script for the hand steps (a login, a cert, a secret). Pass that line on as it is; the person runs it in a
 terminal, and finishing it confirms the item, so they need not reply.

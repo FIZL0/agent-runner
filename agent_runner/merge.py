@@ -19,7 +19,7 @@ from pathlib import Path
 
 from contextlib import ExitStack
 
-from agent_runner import plan as P, plat, plansync
+from agent_runner import pitch, plan as P, plat, plansync
 from agent_runner.brief import findings_globs, research_task
 from agent_runner.done import DOCS_SKIP, TESTED, docs_only, gate
 from agent_runner.gitops import _net
@@ -1349,8 +1349,10 @@ def batch_land(t: BatchTurn, last: bool = False):
     if (got := caught_up(t.tid, t.branch, t.d, t.base, t.merged, [t.tid, *t.riders])) is None:
         return BATCH_RETRY
     t.base, t.merged = got
+    pitch.landing([t.tid, *t.riders], t.base, t.merged)  # F98: nothing unless [run] approve
     with LANDING:
         why = land(t.tid, t.branch, t.merged)
+    pitch.landed(t.merged, not why)
     if why == 'conflict' and not last:
         return BATCH_RETRY
     if why:

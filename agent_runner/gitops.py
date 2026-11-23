@@ -115,6 +115,8 @@ def push(cwd: Path, branch: str, shared: bool = False) -> str:
     g, net = _git(cwd), _net(cwd)
     if g('remote', 'get-url', remote).returncode:
         return ''
+    if cfg(cwd).approve:  # F98: only an approved pitch is pushed (`push_sha`)
+        return ''
     if not shared and shared_branch(cwd, remote, branch):
         return ''
     if not (first := net('push', '-q', remote, branch)).returncode:
@@ -137,6 +139,22 @@ def push(cwd: Path, branch: str, shared: bool = False) -> str:
     if net('push', '-q', remote, branch).returncode:
         return f'! {branch} did not push (it is committed locally; push it by hand)'
     return f'pushed {branch} -> {remote}, after merging {remote}/{branch} into it'
+
+
+def push_sha(cwd: Path, sha: str, branch: str) -> str:
+    """F98: push the shared branch up to commit `sha` to `[git] push`, fast-forward only: an approved pitch. Why it
+    could not, or ''."""
+    remote = cfg(cwd).push_remote
+    net = _net(cwd)
+    if not remote:
+        return 'no push remote'
+    if not (r := net('push', '-q', remote, f'{sha}:refs/heads/{branch}')).returncode:
+        return ''
+    net('fetch', '-q', remote)
+    if not _git(cwd)('merge-base', '--is-ancestor', f'refs/remotes/{remote}/{branch}', sha).returncode:
+        return (r.stderr.strip().splitlines() or ['no message'])[-1][:200]
+    return (f'{remote}/{branch} has moved: the next merge takes its commits in, and goes out with that merge once '
+            f'it is approved')
 
 
 def drop_if_merged(cwd: Path, branch: str) -> str:

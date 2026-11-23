@@ -16,7 +16,7 @@ import uuid
 from contextlib import ExitStack
 from pathlib import Path
 
-from agent_runner import plan as P, plansync, plat
+from agent_runner import pitch, plan as P, plansync, plat
 from agent_runner.plan import decide_question  # F135: a control session's last line `DECIDE: …`
 from agent_runner.config import RUNNER, runner_cmd, shown_cmd
 from agent_runner.state import C, commit_plan, git, HIDDEN, init, log, MERGE, note, plan_rel, ROOT
@@ -389,7 +389,7 @@ def ask_waiting() -> str:
     plan cannot be read (opening the session matters more)."""
     try:
         return '\n'.join(f'- {a[1]}: {P.plain_ask(a[0], a[3], a[5], a[0] == "DECIDE" and has_sheet(a[1]))}'
-                         + (f' {a[4]}' if a[4] and a[0] == 'DECIDE' and has_sheet(a[1]) else '') for a in P.asks())
+                         + (f' {a[4]}' if a[4] and a[0] == 'DECIDE' and has_sheet(a[1]) else '') for a in P.asks() + pitch.rows(C))
     except (OSError, SystemExit, ValueError):
         return ''
 

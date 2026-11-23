@@ -1029,7 +1029,7 @@ function obDone(it,j){
   if(it.newchat&&j.name){carrySent(j.name,j,it.ask);if(S.waitNew&&S.waitNew.ph==='@'+it.cid)S.waitNew=null;if(S.thread==='@'+it.cid)open(j.name)}
   else if(it.name==='chat_to'){const to=j.name||it.args.to;  // B154: c1 was not up: the new chat that took it
     addSent(to,it.args.text,j.at,j.name?{first:true}:{});if(to!==it.args.to&&S.thread===it.args.to)open(to)}
-  else if(it.need&&(it.name==='answer'||it.name==='need_drop')){toast(answerSaid(j,it.need,it.args.text));S.gone=goneMark(S.gone,j,now);snapNow()}
+  else if(it.need&&(it.name==='answer'||it.name==='need_drop'||it.name==='pitch_no')){toast(answerSaid(j,it.need,it.args.text));S.gone=goneMark(S.gone,j,now);snapNow()}
   else if(it.concept){S.gone={...(S.gone||{}),[it.concept]:now}}  // a picked concept stays off while the run catches up
   else if(it.name==='plan_add'&&it.args.kind==='K'){S.kSaid=`Queued ${queuedId(j.out)||'a new concept'}: a run writes its options page, and it shows here.`;toast(S.kSaid)}
   else if(it.ren){const x=sessionOf(it.ren);if(x){x.title=it.args.title;x.renamed=true}}  // F129
@@ -1281,10 +1281,24 @@ function controlsCard(){
   const said=!up?'No run is up.':[run.paused?'Paused: no new tasks start':'',run.stopping?'Stopping: the running tasks finish, nothing new starts':'',run.forced?'Usage caps off':'',run.power?`${run.power==='suspend'?'Suspends':'Shuts down'} once it stops`:''].filter(Boolean).join(' · ')||'Running';
   const b=cardControls(S.snap).map(k=>{const c=controlOf(k);return c?`<button class="btn ${k==='start'||k==='go_on'||k==='stop_undo'?'acc':''}${ctlBusy(k)?' busy':''}" data-ctl="${esc(k)}">${esc(k==='stop'?'Stop':c.label)}</button>`:''}).join('');
   return card(`<div class="row"><div class="grow"><b>Run</b><div class="small" data-k="runsaid" data-v="${esc(said)}">${esc(said)}</div></div><span class="small">${up?`${working_().length} of ${S.snap.slots||0} slot${S.snap.slots===1?'':'s'}`:''}</span></div>
+    ${S.snap.unpushed?`<div class="small" data-k="unpushed" data-v="${esc(S.snap.unpushed)}">${esc(S.snap.unpushed)}</div>`:''}
     ${ss.map(slotRow).join('')}
     ${obCards(x=>x.ctl)}${controlsOf('run').length?`<div class="btns tight" role="group" aria-label="Run controls">${b}<button class="btn" data-sheet="run">More…</button></div>`:''}`,'','data-k="run"');
 }
+/* F98: a pitch's Not this, folded open in place: all of it or one change, its task reopened or dropped */
+function pitchNo(n,i){
+  const xs=n.changes||[], sure=String(S.sure||'');
+  const row=(tid,title)=>{const at=how=>`pitch:${n.id}:${how}:${tid}`;
+    return `<div class="small ell">${esc(title)}</div><div class="btns">${['reopen','drop'].map(how=>`<button class="btn" data-pitchno="${i}" data-how="${how}" data-tid="${esc(tid)}">${how==='drop'?'Undo and drop':'Undo and reopen'}</button>`).join('')}</div>`
+      +['reopen','drop'].map(how=>sure===at(how)?sureHTML(`Undo ${tid||'all of it'} here and ${how} ${tid?'its task':'the tasks'}?`,`undo and ${how}`,`data-pitchno="${i}" data-how="${how}" data-tid="${esc(tid)}"`):'').join('')};
+  return (xs.length>1?row('','All of it'):'')+xs.map(x=>row(x.id,`${x.id} · ${x.title}`)).join('')}
+function pitchCard(n,i){
+  const open=!!(S.pitchOpen||{})[n.id], href=n.url||(n.copy?tq('concept/'+encodeURIComponent(n.id)):'');
+  return card(`${needAsk(n,i,!!(S.askOpen||{})[n.id])}<div class="small ell">${esc(n.id)}${n.age?` · ${esc(n.age)}`:''}</div>
+    <div class="btns"><button class="btn pri" data-ans="${i}" data-v="Approve">Approve</button><button class="btn" data-pitchopen="${i}" aria-expanded="${open}">Not this…</button><button class="btn" data-needchat="${i}" title="A new chat that shows the question">Chat</button>${href?`<a class="btn" href="${esc(href)}" target="_blank" rel="noopener">Open ${I.ext}</a>`:''}</div>${open?pitchNo(n,i):''}`,'need',`data-k="need:${esc(n.id)}"`);
+}
 function needCard(n,i){
+  if(n.label==='PITCH')return pitchCard(n,i);
   const os=answerOpts(n);
   return card(`${needAsk(n,i,!!(S.askOpen||{})[n.id])}<div class="small ell">${esc(n.id)}${n.title?` · ${esc(n.title)}`:''}${n.age?` · ${esc(n.age)}`:''}</div>
     <div class="btns">${os.map((o,j)=>`<button class="btn ${j===0?'pri':''}" data-ans="${i}" data-v="${esc(o)}">${esc(o)}</button>`).join('')}<button class="btn" data-later="${i}">Later</button><button class="btn" data-needchat="${i}" title="A new chat that shows the question">Chat</button>${n.url?`<a class="btn" href="${esc(n.url)}" target="_blank" rel="noopener">Open ${I.ext}</a>`:''}<button class="btn" data-needdrop="${i}">Drop</button></div>${S.sure==='need:'+n.id?sureHTML(`Drop ${n.id}? It leaves the plan, and its work is not done.`,'drop it',`data-needdrop="${i}"`):''}`,'need',`data-k="need:${esc(n.id)}"`);
@@ -1953,6 +1967,12 @@ document.addEventListener('click',async e=>{
   if(x=q('[data-needdrop]')){const n=S.snap.needs[+x.dataset.needdrop];if(!n)return;  // F110
     if(!x.hasAttribute('data-sure')){S.sure='need:'+n.id;render(true);return}
     S.sure=null;outbox('need_drop',{tid:n.id,confirm:true},{need:n.id,say:`${n.id} · Drop`});return}
+  if(x=q('[data-pitchopen]')){const n=S.snap.needs[+x.dataset.pitchopen];if(!n)return;  // F98
+    S.pitchOpen={...(S.pitchOpen||{}),[n.id]:!(S.pitchOpen||{})[n.id]};S.sure=null;render(true);return}
+  if(x=q('[data-pitchno]')){const n=S.snap.needs[+x.dataset.pitchno];if(!n)return;
+    const how=x.dataset.how, tid=x.dataset.tid||'';
+    if(!x.hasAttribute('data-sure')){S.sure=`pitch:${n.id}:${how}:${tid}`;render(true);return}
+    S.sure=null;outbox('pitch_no',{pid:n.id,how,tid,confirm:true},{need:n.id,say:`${n.id} · Not this${tid?': '+tid:''}`});return}
   if(x=q('[data-needchat]')){const n=S.snap.needs[+x.dataset.needchat];if(!n)return;  // F143
     newChat('need_chat',{tid:n.id},`About ${n.id}`,needChatAsk(n));return}
   if(x=q('[data-task]')){openTask(x.dataset.task);return}  // F85

@@ -202,7 +202,7 @@ def move_edits_aside(tid: str) -> str | None:
     if git('stash', 'push', '-u', '-q', '-m', f'{name} (agent-runner)', '--', *files).returncode:
         return None
     remote = C.push_remote
-    if C.push_merge and remote and not git('remote', 'get-url', remote).returncode:
+    if C.push_merge and remote and not C.approve and not git('remote', 'get-url', remote).returncode:
         git('push', '-q', remote, name)
     more = f' and {len(files) - 6} more' if len(files) > 6 else ''
     log(f'{tid}: moved uncommitted edits in the main checkout ({", ".join(files[:6])}{more}) to {name} '
@@ -285,7 +285,8 @@ def no_gate_line() -> str:
     run's start, printed by --dry-run and status, so untested merges never reach main without a word."""
     if C.run['test']:
         return ''
-    push = ('and are pushed: [git] push_merge is set' if pushes_main() else
+    push = ('and wait for your approval: [run] approve is set' if C.approve and C.push_merge else
+            'and are pushed: [git] push_merge is set' if pushes_main() else
             'and stay local: set [git] push_merge = true to push them anyway' if C.push_merge else
             'and stay local')
     return f'WARNING no test gate ([run] test is empty): merges go to main untested {push}'
@@ -299,6 +300,9 @@ def pushes_main() -> bool:
 
 def push_landed(tid: str, branch: str) -> None:
     """`published`'s push, for `tid` and the tasks of its batch whose push was left to it."""
+    if C.approve and C.push_merge:  # F98: the landed changes wait in pitches (`pitch.landed`)
+        UNPUSHED.clear()
+        return
     if C.push_merge and not pushes_main():
         log(f'{tid}: merged, not pushed: no test gate ([run] test is empty) and [git] push_merge is not set; '
             f'to publish it untested: git push {C.push_remote} {branch}')

@@ -19,7 +19,7 @@ import webbrowser
 from contextlib import ExitStack
 from pathlib import Path
 
-from agent_runner import ci, gitops, plan as P, plansync, plat
+from agent_runner import ci, gitops, plan as P, plansync, plat, undo
 from agent_runner.config import claude_model, RUNNER, ensure_local, finished_mark, shown_cmd
 from agent_runner.done import TESTED
 from agent_runner.gitops import missing_remote, push
@@ -30,7 +30,6 @@ from agent_runner.state import (EV_DEFERRED, EV_DROPPED, EV_IDLE, EV_LEFT, EV_NO
     EV_STALLED, EV_STOP_ASKED, EV_STOP_BACK, EV_STOPPED)
 from agent_runner.state import EV_CONTEXT
 from agent_runner.autorelease import auto_release, auto_release_of, AUTO_RELEASE_SEEN, landed_since_release
-from agent_runner.watch import context_over
 from agent_runner.brief import no_remote_line
 from agent_runner.sched import blocked_by_edits, keep_claims, PARK_LIMIT, parked_attempts, pick, tasks
 from agent_runner.sched import forgive_park, note_committed
@@ -43,7 +42,7 @@ from agent_runner.slots import (adopt, backend, DISK_AT, DISK_SAID, du, env_vars
 from agent_runner.slots import budget_mark, budgets, SPENT
 from agent_runner import fallback as FB
 from agent_runner.teardown import end_own, PAGE, RUN_LOCK, wait_last_run
-from agent_runner.watch import (_account, api_down, AUTO_UPGRADE, auto_upgrade, cut_off,
+from agent_runner.watch import (_account, api_down, AUTO_UPGRADE, auto_upgrade, context_over, cut_off,
     drop_session_tmp, end_orphans, memory_watch, queue_cut_off, queue_resume, ask_restart, restart_if_upgraded,
     resumes, RESUMES_MAX, stalled, START_TRIES, state_line, stats,
     stop_hook, stop_waiter, sweep_tmp, update_watch, upgrade, usage_pct, weekly)
@@ -1439,6 +1438,7 @@ class Run:
             page_copy_tick()  # F68: the claude.ai copy of the run page (B122: a one-shot, never c1)
         if not stopping():
             sweep_unmerged(branch, self.merging)
+        undo.tick(branch, self.merging)  # F98
         keep_claims(self.running, branch)
         block_asks(branch)  # F102: an ask whose block could not be committed when it was parked
         take_keys()

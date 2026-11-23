@@ -268,6 +268,12 @@ def needs_rows(waiting, now: dt.datetime) -> tuple[list[dict], list[dict]]:
         needs.append({'label': label, 'id': tid, 'concept': k, 'title': title, 'what': what, 'url': url,
                       'ask': (ask := P.plain_ask(label, what, title)), 'ask_short': ask_short(ask),
                       'age': P.age(stamps.get(tid, ''), now)})
+        if label == 'PITCH':  # F98
+            from agent_runner import pitch
+            xs = [{'id': x['id'], 'title': x['title']} for x in pitch.changes_of(tid, state='waiting')]
+            needs[-1].update(copy=concept_copy(tid), changes=xs, options=['Approve'] + [
+                f'Not {w}: {how}' for w in ['this'] + ([x['id'] for x in xs] if len(xs) > 1 else [])
+                for how in ('reopen', 'drop')])
     return needs, concepts
 
 
@@ -468,6 +474,15 @@ def session_rows(st: dict, ls: list[str], titles: dict[str, str], now: float, li
     return out
 
 
+def unpushed_line() -> str:
+    """F98: how many landed changes wait for the person's approval to be pushed; '' for none."""
+    try:
+        from agent_runner import pitch
+        return pitch.waiting_line()
+    except Exception:  # noqa: BLE001 - costs the line, not the snapshot
+        return ''
+
+
 def status_rows(up: bool, st: dict, progress: str) -> list[str]:
     """The status lines: the run's state, progress, the no-gate warning, and usage."""
     from agent_runner.land import no_gate_line
@@ -480,6 +495,8 @@ def status_rows(up: bool, st: dict, progress: str) -> list[str]:
             out.append(nogate)
     except Exception:  # noqa: BLE001
         pass
+    if unpushed := unpushed_line():
+        out.append(unpushed)
     out += [l for l in progress.splitlines() if l]
     use = st.get('usage') or {}
     if parts := [f'{w} {use[k]:.0f}%' for k, w in (('five_hour', 'session'), ('seven_day', 'week'))
@@ -591,6 +608,7 @@ def snapshot(up: bool | None = None, now: float | None = None, log_n: int = LOG_
             'run': {'paused': bool(up and st.get('paused')), 'stopping': bool(up and st.get('stopping')),
                     'forced': bool(up and st.get('forced')), 'power': str(st.get('power') or '') if up else '',
                     'state': run_state(up, st)},  # F124
+            'unpushed': unpushed_line(),  # F98
             'usage': usage_rows(st), 'lately': lately(titles), 'fixups': fixups(st, ls), 'chat_quiet': chat_quiet(),
             'version': str(st.get('version') or '')}  # F90: the run's version ('' from an older run)
 
@@ -683,6 +701,9 @@ CHECK_FAILED = 'No: the check failed'  # B138: what a CONFIRM's No reopens the t
 def need_label(tid: str) -> str:
     """B138: the label of what `tid` asks (CONFIRM, DECIDE, BLOCKED, STUCK, CONCEPT); '' when nothing needs you
     about it."""
+    from agent_runner import pitch
+    if pitch.PITCH_ID.fullmatch(tid or ''):  # F98
+        return pitch.LABEL if any(r[1] == tid for r in pitch.rows()) else ''
     try:
         return P._ask(tid, S.C.todo)[0]
     except (SystemExit, OSError, AttributeError):
@@ -696,6 +717,14 @@ def answer_argv(tid: str, text: str, button: bool = False) -> tuple[list[str], s
     --go|--picks`; a concept's option button is `plan approve ID "<option>"` (B149). Free words typed in the
     reply box are c1's."""
     said, label = (text or '').strip(), need_label(tid)
+    if label == 'PITCH' and button:  # F98
+        if said.lower() == 'approve':
+            return ['pitch', 'approve', tid], f'{tid} approved'
+        if m := re.fullmatch(r'not (\w+): (reopen|drop)', said, re.I):
+            one, how = m[1], m[2].lower()
+            argv = ([] if how == 'reopen' else ['--drop', 'all']) if one.lower() == 'this' else [f'--{how}', one]
+            return ['pitch', 'no', tid, *argv], f'{tid}: the run undoes it'
+        return [], ''
     if label == 'DECIDE' and button:
         from agent_runner.brief import has_sheet
         if has_sheet(tid) and said.lower() in SHEET_GO:
@@ -723,6 +752,8 @@ def answer(tid: str, text: str, button: bool = False) -> dict:
     if argv:
         r = call(argv)
         if r['ok']:
+            if argv[0] == 'pitch':
+                done = r['out'].splitlines()[0] if r['out'] else done  # F98: pushed, or what it waits for
             r.update(said=done, gone=tid)
         return r
     title = P.titles(S.C.todo).get(tid, '')
@@ -1296,6 +1327,26 @@ def need_drop(tid: str, confirm: bool = False) -> dict:
     return {**r, 'said': f'{tid} dropped', 'gone': tid} if r['ok'] else r
 
 
+def pitch_no(pid: str, how: str = 'reopen', tid: str = '', confirm: bool = False) -> dict:
+    """F98: Not this on a pitch, for all of it or the one change `tid`: the run undoes it here and reopens or drops
+    its task. After a confirm, as `need_drop`."""
+    from agent_runner import pitch
+    if not pitch.PITCH_ID.fullmatch(pid or '') or how not in ('reopen', 'drop') or \
+            (tid and not P.TASK_ID.fullmatch(tid)):
+        return {'ok': False, 'code': 2, 'out': f'pitch_no: a pitch, reopen or drop, and a task id; not {pid!r} '
+                                               f'{how!r} {tid!r}', 'argv': []}
+    ask = f'Undo {tid or "all of it"} here and {how} {"its task" if tid else "the tasks"}?'
+    if confirm is not True:
+        return {'ok': False, 'code': 3, 'out': ask, 'confirm': ask, 'argv': []}
+    r = call(['pitch', 'no', pid, f'--{how}', tid] if tid else
+             ['pitch', 'no', pid] + (['--drop', 'all'] if how == 'drop' else []))
+    if r['ok']:
+        r['said'] = f'{tid or pid}: the run undoes it'
+        if not pitch.changes_of(pid, state='waiting'):  # the rest of it still waits otherwise
+            r['gone'] = pid
+    return r
+
+
 def need_options(row: dict) -> list[str]:
     """F143: the possible answers to a Needs you row, as the pages offer them: Yes / No, a concept's options, a pick
     sheet's questions with theirs; [] when only a reply fits."""
@@ -1359,7 +1410,7 @@ def need_chat_text(row: dict) -> str:
 def need_chat(tid: str, wait: bool = True) -> dict:
     """F143: Chat on a Needs you item: a new control session (`control --new --ask`) whose first message is
     `need_chat_text` of it. An id that is none, or no longer needs the person, is refused."""
-    if not TASK_ID.fullmatch(tid or ''):
+    if not TASK_ID.fullmatch(tid or '') and need_label(tid) != 'PITCH':
         return {'ok': False, 'code': 2, 'out': f'need_chat: a task id (F83), not {tid!r}', 'argv': []}
     from agent_runner.status import waiting_ok
     rows, _ = needs_rows(waiting_ok(), dt.datetime.now())
@@ -1436,5 +1487,5 @@ def setting_project(table: str, key: str, value=None) -> dict:
                          f'(from the run app\'s Settings)', files=['runner.toml' if not f else f.name])
 
 
-ACTIONS.update({'need_drop': need_drop, 'need_chat': need_chat, 'rename_chat': rename_chat,
+ACTIONS.update({'pitch_no': pitch_no, 'need_drop': need_drop, 'need_chat': need_chat, 'rename_chat': rename_chat,
                 'setting_device': setting_device, 'setting_reset': setting_reset, 'setting_project': setting_project})

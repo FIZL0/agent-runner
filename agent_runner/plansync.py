@@ -227,6 +227,8 @@ def store(c):
     through: a local-only run is the only runner)."""
     if c.plan_repo:
         return _Files(c)
+    if c.approve:  # F98: nothing reaches the push remote unapproved, a claim neither
+        return None
     if not c.plan_external and (r := c.push_remote) and not git('remote', 'get-url', r, cwd=c.root).returncode:
         return _Refs(c, r)
     return None
