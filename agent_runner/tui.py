@@ -10,7 +10,11 @@ Panels and their tabs (F76):
     Status     a status line: chat (c1, with the quick asks s y w u on its buttons), log; the release line:
                release first; R (only here) opens the release tab
     Sessions   a control session cN: chat, pane, session; a slot: feed, pane, diff, session (an idle slot: feed,
-               pane); the '+ new chat' row and N start one (`new_control`); o opens the session link
+               pane); the '+ new chat' row and N start one (`new_control`) and land on its chat tab, typing;
+               a control session's session tab has the chat's message box too (B125); o opens the session
+               link, y copies it (OSC 52, the terminal's own clipboard, plus wl-copy/xclip/pbcopy when local);
+               over ssh o opens nothing here: it copies the link and shows it as a hyperlink (OSC 8) to
+               Cmd-click
     Queue      a task: direct edit, chat edit; the '+ new task' row: chat edit, direct edit; e edit, E chat edit,
                n new, J/K reorder, p priority on/off, H do it here, D drop; a parked task: U unpark (no J/K, p)
     Needs you  answer (a button per possible answer: y yes, n no, or a b c … for options; L later; a reply box),
@@ -128,6 +132,7 @@ Status [1]
 Sessions [2]
   t        feed                   v        tool steps on / off
   N        new chat               o        open the session link
+  y        copy the session link (the terminal's clipboard, so over ssh too)
   H        take its task back     D        drop its task from the slot
   Enter    on the pane tab: attach (back: Ctrl-b d, or Ctrl-b L in tmux)
 Queue [3]
@@ -306,13 +311,17 @@ class RunPage:
     """The terminal Run page's state and drawing; `key()` takes one key, `draw()` paints one frame."""
 
     def __init__(self, snap: dict, get_snap=None, attach=None, attrs=None, feed=None, diff=None, opener=None,
-                 read=None):
+                 read=None, out=None):
         self.snap = snap
         self.get_snap = get_snap or (lambda: U.snapshot())
         self.attach = attach or (lambda name: {'ok': False, 'out': 'no terminal to attach'})
         self.feed_of = feed or U.feed
         self.diff_of = diff or slot_diff
-        self.opener = opener or open_url
+        self.out = out or term_write  # B125: escape sequences for the terminal itself (OSC 52, OSC 8)
+        self.opener = opener or (lambda url: open_url(url, self.out))
+        self.links: list[tuple[int, int, str, str]] = []  # B125: the links the last frame drew: y, x, text, url
+        self._urls: list[str] = []
+        self.msg_link = ''  # a link the message line shows after its words (o over ssh)
         self.read = read or read_file
         self.attrs = attrs or {}
         self.panel = 1
@@ -411,6 +420,8 @@ class RunPage:
             return ''
         if tab == 'chat':
             return 'status:chat' if self.panel == 1 else f'{it["name"]}:chat'
+        if tab == 'session' and is_control(it):  # B125: the session tab types into the same session as chat
+            return f'{it["name"]}:chat'
         if tab == 'feed' and it.get('task'):
             return f'{it["name"]}:feed'
         if tab == 'chat edit':
@@ -786,9 +797,18 @@ class RunPage:
         what = it.get('task') or it.get('title', '')
         out = [L((f'{name} is a Claude Code session you can open on its own, in the app or on your phone.', 'fg')),
                L()]
-        out.append(L((it['link'], 'blue')) if it.get('link') else
+        out.append(L(self.link(it['link'])) if it.get('link') else
                    L(('no link yet: o asks for one (Remote Control)' if not is_control(it) else 'no link yet', 'dim')))
-        return out + [L(), L((f'{name} · {what}', 'dim')), L(), buttons(button('o', 'open it', True))], [], 0
+        out += [L(), L((f'{name} · {what}', 'dim')), L(), buttons(button('o', 'open it', True),
+                                                                   button('y', 'copy link'))]
+        if is_control(it):  # B125: the same message box as the chat tab
+            return out, self.input_lines(f'{name}:chat', width, f'message {name}'), 0
+        return out, [], 0
+
+    def link(self, url: str) -> tuple[str, str]:
+        """B125: `url` as a segment drawn as a terminal hyperlink (OSC 8, after curses' refresh)."""
+        self._urls.append(url)
+        return url, 'link'
 
     def form(self, it) -> dict:
         tid = it.get('id', '+')
@@ -872,7 +892,12 @@ class RunPage:
             if width <= 0:
                 break
             text = text.replace('\n', ' ')[:width]
-            attr = self.attrs.get(f'{ground}:{colour or "fg"}', self.a(ground)) if ground else \
+            if colour == 'link':  # B125: blue, and kept to be written again as an OSC 8 hyperlink
+                colour = 'blue'
+                url = next((u for u in self._urls if text and text in u), '')
+                if url:
+                    self.links.append((y, x, text, url))
+            attr =self.attrs.get(f'{ground}:{colour or "fg"}', self.a(ground)) if ground else \
                 self.a(colour) | base if colour or base else self.a('fg')  # B112: no colour is the ground's
             if colour in KEY_COLOURS and self._keys_on and text.strip():
                 self.window_keys.add(text.strip())
@@ -988,7 +1013,9 @@ class RunPage:
                 keys.append(('i', 'type'))
             if tab == 'feed' and isinstance(it, dict) and it.get('task'):
                 keys.append(('v', 'steps'))
-            if tab == 'chat' and self.chat_working():
+            if tab == 'session':
+                keys += [('o', 'open'), ('y', 'copy link')]
+            if tab in ('chat', 'session') and self.chat_working():
                 keys.append(('Ctrl+C', 'interrupts'))
             keys.append(('Esc', 'back'))
             return keys
@@ -997,7 +1024,7 @@ class RunPage:
         if self.panel == 2:
             keys = [('⏎', 'open'), ('t', 'feed'), ('v', 'steps')]
             if isinstance(it, dict) and (it.get('task') or is_control(it)):
-                keys.append(('o', 'open session'))
+                keys += [('o', 'open session'), ('y', 'copy link')]
             if self.task_controls_on(it):
                 keys += [('H', 'take back'), ('D', 'drop')]
             return keys
@@ -1019,7 +1046,8 @@ class RunPage:
         ? keys (blue; none while typing, when they do not work); this place's last keys left out should `width`
         be too narrow. A message (an action's result) takes the line instead."""
         if self.msg:
-            return [(self.msg, 'green' if self.msg_ok else 'red')]
+            return [(self.msg, 'green' if self.msg_ok else 'red')] + \
+                ([(' ', ''), self.link(self.msg_link)] if self.msg_link else [])
         keys = [kv for kv in self.hint_keys() if kv[0] not in self.window_keys]
         glob = [] if self.typing else [kv for kv in self.GLOBAL if kv[0] not in self.window_keys]  # a pick's c
 
@@ -1057,6 +1085,7 @@ class RunPage:
     def draw(self, win) -> None:
         h, w = win.getmaxyx()
         self.window_keys = set()
+        self.links, self._urls = [], []
         self.fill(win, h, w)
         if h < 8 or w < 24:
             self.put(win, 0, 0, [('too small', 'red')], w)
@@ -1118,7 +1147,7 @@ class RunPage:
                  '\x7f': 'BS', '\x03': '^C', '\x15': '^U', '^H': 'BS'}.get(k, k)
         else:
             k = KEYS.get(k, k)
-        self.msg = ''
+        self.msg, self.msg_link = '', ''
         if self.help:
             self.help = k not in ('ESC', '?', 'q', 'ENTER')
             return False
@@ -1309,7 +1338,7 @@ class RunPage:
         if tab == 'pane' and k == 'ENTER':
             self.pane_attach()
             return True
-        if tab == 'session' and k == 'ENTER':
+        if tab == 'session' and k == 'ENTER' and not self.box():  # a control session's: Enter types (B125)
             self.open_session(it)
             return True
         if tab == 'info' and self.panel == 2 and k == 'ENTER':
@@ -1409,6 +1438,8 @@ class RunPage:
             self.new_chat()
         elif self.panel == 2 and k == 'o' and isinstance(it, dict) and not it.get('new'):
             self.open_session(it)
+        elif self.panel == 2 and k == 'y' and isinstance(it, dict) and not it.get('new'):
+            self.copy_session(it)
         elif self.panel == 3 and k == 'n':
             self.cur[3] = len(rows) - 1
             self.set_tab('chat edit')
@@ -1511,26 +1542,39 @@ class RunPage:
             return
         r = self.opener(url)
         self.msg, self.msg_ok = (r.get('out') or f'opened {url}'), bool(r.get('ok'))
+        self.msg_link = r.get('link', '')  # B125: over ssh, the link to Cmd-click on the message line
 
-    def open_session(self, it) -> None:
-        """o: the session's claude.ai/code link in the browser; a slot is opened first (`open_session`: under
-        `[run] sessions = 'one'` it is listed there only once asked for)."""
+    def session_link(self, it) -> str:
+        """The session's claude.ai/code link ('' none, the reason on the message line); a slot is opened first
+        (`open_session`: under `[run] sessions = 'one'` it is listed there only once asked for)."""
         if not isinstance(it, dict) or it.get('new'):
-            return
+            return ''
         if is_control(it):
-            self.open_link(it.get('link', ''), it['name'])
-            return
+            if not it.get('link'):
+                self.msg, self.msg_ok = f'{it["name"]} has no link yet', False
+            return it.get('link', '')
         if not it.get('task'):
             self.msg, self.msg_ok = idle_line(it), True
-            return
+            return ''
         r = U.open_session(it['name'])
         if not r.get('ok'):
             self.done(r)
-            return
-        self.open_link(r.get('out', ''), it['name'])
+            return ''
+        return r.get('out', '').strip()
+
+    def open_session(self, it) -> None:
+        """o: the session's claude.ai/code link in the browser (over ssh: copied, and a hyperlink to Cmd-click)."""
+        if url := self.session_link(it):
+            self.open_link(url, it['name'])
+
+    def copy_session(self, it) -> None:
+        """B125 y: the session's link on the clipboard (OSC 52, so over ssh it lands on the person's machine)."""
+        if url := self.session_link(it):
+            r = copy_text(url, self.out)
+            self.msg, self.msg_ok, self.msg_link = r['out'], bool(r.get('ok')), url
 
     def new_chat(self) -> None:
-        """N: a new control session (`new_control`); it is selected, on its session tab (its link)."""
+        """N: a new control session (`new_control`); it is selected, on its chat tab, typing (B125)."""
         before = {r.get('name') for r in self.items(2)}
         r = U.new_control()
         self.done(r)
@@ -1540,7 +1584,8 @@ class RunPage:
         fresh = [i for i, s in enumerate(rows) if is_control(s) and s.get('name') not in before]
         if fresh:
             self.panel, self.cur[2] = 2, fresh[-1]
-            self.set_tab('session')
+            self.set_tab('chat')
+            self.type_in()
 
 
 # --- what the page reads and opens --------------------------------------------------------------------------
@@ -1561,8 +1606,64 @@ def slot_diff(name: str) -> str:
     return r['text'] if r.get('ok') else f'({r.get("out", "no diff")})'
 
 
-def open_url(url: str) -> dict:
-    """A link in this machine's browser: xdg-open on Linux, open on macOS, the default handler on Windows."""
+def term_write(seq: str) -> None:
+    """Write an escape sequence straight to the terminal, past curses (OSC 52, OSC 8: nothing curses draws)."""
+    try:
+        os.write(sys.__stdout__.fileno(), seq.encode('utf-8'))
+    except (OSError, AttributeError, ValueError):
+        pass
+
+
+def over_ssh() -> bool:
+    """B125: this page runs over ssh (SSH_CONNECTION or SSH_TTY set): a browser opened here is not on the
+    person's screen."""
+    return bool(os.environ.get('SSH_CONNECTION') or os.environ.get('SSH_TTY'))
+
+
+def osc52(text: str) -> str:
+    """B125: the terminal's own clipboard set to `text` (OSC 52): over ssh it lands on the person's machine in
+    iTerm2, Ghostty, kitty. Inside tmux it goes out through tmux's passthrough too."""
+    import base64
+    seq = f'\x1b]52;c;{base64.b64encode(text.encode("utf-8")).decode("ascii")}\x07'
+    if os.environ.get('TMUX'):
+        seq += '\x1bPtmux;' + seq.replace('\x1b', '\x1b\x1b') + '\x1b\\'
+    return seq
+
+
+def osc8(url: str, text: str = '') -> str:
+    """B125: `text` (the url itself when empty) as a terminal hyperlink (OSC 8): Cmd-click (or click) opens it
+    where the terminal runs, so on the person's Mac over ssh."""
+    return f'\x1b]8;;{url}\x1b\\{text or url}\x1b]8;;\x1b\\'
+
+
+def copy_text(text: str, out=None) -> dict:
+    """B125: `text` on the clipboard: OSC 52 always (written with `out`, the terminal by default), and on this
+    machine's own clipboard too when not over ssh (wl-copy, xclip or pbcopy, the first there is)."""
+    import shutil
+    (out or term_write)(osc52(text))
+    if not over_ssh():
+        tools = ([['wl-copy']] if os.environ.get('WAYLAND_DISPLAY') else []) + \
+            ([['xclip', '-selection', 'clipboard']] if os.environ.get('DISPLAY') else []) + \
+            ([['pbcopy']] if sys.platform == 'darwin' else [])
+        for argv in tools:
+            if shutil.which(argv[0]):
+                try:
+                    p = sp.Popen(argv, stdin=sp.PIPE, stdout=sp.DEVNULL, stderr=sp.DEVNULL, start_new_session=True)
+                    p.stdin.write(text.encode('utf-8'))
+                    p.stdin.close()
+                except OSError:
+                    continue
+                break
+    return {'ok': True, 'out': 'link copied'}
+
+
+def open_url(url: str, out=None) -> dict:
+    """A link in this machine's browser: xdg-open on Linux, open on macOS, the default handler on Windows.
+    B125: over ssh no browser here would reach the person: the link is copied (OSC 52) and shown as a terminal
+    hyperlink to Cmd-click instead (`link` in the result)."""
+    if over_ssh():
+        copy_text(url, out)
+        return {'ok': True, 'out': 'link copied, Cmd-click to open', 'link': url}
     try:
         if sys.platform.startswith('win'):
             os.startfile(url)  # noqa: S606 - the person's own link, in their own browser
@@ -1663,6 +1764,28 @@ def attach_slot(curses, win, name: str) -> dict:
     return {'ok': True, 'out': f'{name}: back with Ctrl-b L' if inside else f'back from {name}'}
 
 
+def link_sgr(curses, theme: str | dict | None = None) -> str:
+    """B125: the SGR that draws as curses' 'blue' pair does (the theme's blue on its background), for the links
+    written again past curses; '' on a terminal without colours."""
+    if not curses.has_colors():
+        return ''
+    th = theme if isinstance(theme, dict) else TH.get(theme or TH.configured())
+    fg, bg = (TH.curses_colour(th, t, curses.COLORS) for t in ('blue', 'bg'))
+    part = lambda n, base: f'{base + 9}' if n < 0 else f'{base + 8};5;{n}'  # noqa: E731 - 39/49: the default
+    return f'\x1b[0;{part(fg, 30)};{part(bg, 40)}m'
+
+
+def links_over(links: list, sgr: str = '') -> str:
+    """B125: the frame's links written again over what curses drew, each as an OSC 8 hyperlink at its place
+    (the cursor saved and put back), so Cmd-click opens it on the person's machine; '' when there are none."""
+    if not links:
+        return ''
+    out = '\x1b7'
+    for y, x, text, url in links:
+        out += f'\x1b[{y + 1};{x + 1}H{sgr}' + osc8(url, text) + ('\x1b[0m' if sgr else '')
+    return out + '\x1b8'
+
+
 def run_curses(win) -> int:
     import curses
     try:
@@ -1677,6 +1800,7 @@ def run_curses(win) -> int:
     win.keypad(True)
     win.timeout(1000)
     page = RunPage(U.snapshot(), attrs=attrs, attach=lambda name: attach_slot(curses, win, name))
+    sgr = link_sgr(curses)
 
     def more() -> str:
         win.nodelay(True)
@@ -1693,6 +1817,7 @@ def run_curses(win) -> int:
             page.refresh()
         page.draw(win)
         win.refresh()
+        page.out(links_over(page.links, sgr))
         try:
             ch = win.get_wch()
         except curses.error:  # the timeout: draw again ("updated Ns ago"), read the run when it is due
