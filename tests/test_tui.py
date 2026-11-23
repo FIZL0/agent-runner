@@ -1514,8 +1514,91 @@ def test_close_control_quiet_b136() -> None:
     eq((p.repaint, p.msg_ok), (True, True), 'and the next frame repaints every cell')
 
 
+def answer_repo() -> Path:
+    """B138: a project whose plan asks F1 to CONFIRM, F2 to DECIDE and F3 BLOCKED."""
+    from agent_runner import plan as P
+    repo = Path(tempfile.mkdtemp()) / 'proj'
+    (repo / 'plan').mkdir(parents=True)
+    git(repo, 'init', '-q')
+    (repo / 'plan' / 'TODO.md').write_text('# TODO\n', encoding='utf-8')
+    git(repo, 'add', '-A')
+    git(repo, 'commit', '-qm', 'start')
+    S.init(repo)
+    for text in ('push notices | files: a.py', 'pick a database | files: b.py', 'deploy key | files: c.py'):
+        P.add('F', text, todo=S.C.todo)
+    P.block('F1', 'CONFIRM: check the push reached your phone', todo=S.C.todo)
+    P.block('F2', 'DECIDE: Postgres or SQLite, yes or no?', todo=S.C.todo)
+    P.block('F3', 'BLOCKED: add the deploy key on the server', todo=S.C.todo)
+    return repo
+
+
+def no_send(text):
+    raise AssertionError(f'an answer button reached an AI session: {text!r}')
+
+
+def test_answer_direct_b138() -> None:
+    """B138: a Needs you button runs the plan command itself, never an AI session (SEND fails if called): Yes on
+    a CONFIRM is plan confirm, No is plan change "No: the check failed", a DECIDE's pick is plan confirm, a
+    block's done is plan confirm; the words typed in a reply box still go to c1."""
+    answer_repo()
+    ran = []
+    with mock.patch.object(U, 'RUN', [lambda argv: (ran.append(argv), (0, 'ok'))[1]]), \
+            mock.patch.object(U, 'SEND', [no_send]):
+        r = U.answer('F1', 'Yes', button=True)
+        eq((r['ok'], r.get('said'), r.get('gone')), (True, 'F1 ticked', 'F1'), 'Yes: ticked, off Needs you')
+        U.answer('F1', 'No', button=True)
+        U.answer('F2', 'Yes', button=True)
+        U.answer('F3', 'done', button=True)
+    eq(ran, [['plan', 'confirm', 'F1', 'Yes'], ['plan', 'change', 'F1', 'No: the check failed'],
+             ['plan', 'confirm', 'F2', 'Yes'], ['plan', 'confirm', 'F3', 'done']],
+       'each button runs its plan command')
+    sent = []
+    with mock.patch.object(U, 'RUN', [lambda argv: (ran.append(argv), (1, 'plan: no such task'))[1]]), \
+            mock.patch.object(U, 'SEND', [lambda t: (sent.append(t), {'ok': True, 'out': 'sent to c1'})[1]]):
+        r = U.answer('F1', 'Yes', button=True)
+        eq((r['ok'], r['out'], 'gone' in r), (False, 'plan: no such task', False), 'a failure says why; the item stays')
+        U.answer('F2', 'SQLite, it is one file')
+        U.answer('F9', 'Yes', button=True)
+    eq(sent, ['F2 (pick a database): SQLite, it is one file', 'F9: Yes'],
+       'typed words go to c1, as does a button for something that needs nothing here')
+    with mock.patch.object(U, 'RUN', [lambda argv: (ran.append(argv), (0, 'ok'))[1]]), \
+            mock.patch.object(U, 'SEND', [no_send]), \
+            mock.patch('agent_runner.brief.has_sheet', lambda tid: tid == 'F2'):
+        ran.clear()
+        U.answer('F2', 'go')
+        U.answer('F2', 'F2 picks: db=sqlite', button=True)
+    eq(ran, [['sheet', 'F2', '--go'], ['sheet', 'F2', '--picks', 'F2 picks: db=sqlite']],
+       'a pick sheet keeps sheet ID --go / --picks')
+
+
+def test_answer_tab_b138() -> None:
+    """B138: y in the answer tab of a CONFIRM runs plan confirm (no AI session), says 'F1 ticked', and the item
+    leaves Needs you at once even before the run's next snapshot drops it."""
+    answer_repo()
+    need = {'label': 'CONFIRM', 'id': 'F1', 'concept': '', 'title': 'push notices', 'what': 'push',
+            'url': '', 'ask': 'Check the push reached your phone - reply yes or no', 'age': '1m'}
+    p = page(dict(SNAP, needs=[need] + SNAP['needs'][2:]))
+    ran = []
+    with mock.patch.object(U, 'RUN', [lambda argv: (ran.append(argv), (0, 'confirmed and ticked F1'))[1]]), \
+            mock.patch.object(U, 'SEND', [no_send]):
+        p.key('4')
+        p.key('ENTER')
+        p.key('y')
+    eq(ran, [['plan', 'confirm', 'F1', 'yes']], 'y runs plan confirm')
+    eq((p.msg, p.msg_ok), ('F1 ticked', True), 'the bottom line says what was done')
+    eq([n['id'] for n in p.snap['needs']], ['D7'], 'F1 is off Needs you at once')
+    p = page(dict(SNAP, needs=[need]))
+    with mock.patch.object(U, 'RUN', [lambda argv: (1, 'plan: F1 is not waiting')]), \
+            mock.patch.object(U, 'SEND', [no_send]):
+        p.key('4')
+        p.key('ENTER')
+        p.key('n')
+    eq((p.msg, p.msg_ok, [n['id'] for n in p.snap['needs']]), ('plan: F1 is not waiting', False, ['F1']),
+       'a failure says why and the item stays')
+
+
 if __name__ == '__main__':
-    raise SystemExit(report([test_d_drops_f116, test_close_control_quiet_b136,test_layout, test_status_tabs, test_session_tabs, test_queue, test_form_pane_v_task,
+    raise SystemExit(report([test_d_drops_f116, test_answer_direct_b138, test_answer_tab_b138, test_close_control_quiet_b136,test_layout, test_status_tabs, test_session_tabs, test_queue, test_form_pane_v_task,
                                test_direct_edit,
                                test_navigation, test_no_message_box_f112, test_new_chat_f112, test_side_pane_f112,
                                test_diff_key_f127, test_full_screen_f112, test_side_keys_in_box_f113, test_actions, test_session_tab_b125, test_footer,

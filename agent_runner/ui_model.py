@@ -27,8 +27,8 @@ entries); and the actions `chat_to` (any control session), `interrupt`, `new_con
 `concept_chat` (a new control session about one concept).
 
 Each action calls what the CLI already does, as a subprocess of the runner (`runner_cmd()`), so a page and a
-terminal change the run exactly as a person typing the command would; `chat`, `answer` and `take` hand a
-message to c1 the way the runner feed hands one on (typed into c1, else a new control session with
+terminal change the run exactly as a person typing the command would (B138: a Needs you button's `answer` runs
+`plan confirm|change` or `sheet` itself); `chat`, a typed `answer` and `take` hand a message to c1 the way the runner feed hands one on (typed into c1, else a new control session with
 it as its first message). Standard library only.
 """
 
@@ -453,8 +453,50 @@ def chat(text: str) -> dict:
     return SEND[0](text)
 
 
-def answer(tid: str, text: str) -> dict:
-    """A reply to a Needs you item, for c1 to settle (`plan confirm|change|shelve` as its needs guide says)."""
+SHEET_GO = ('go', 'recommended')  # a pick sheet's reply for its recommended picks
+CHECK_FAILED = 'No: the check failed'  # B138: what a CONFIRM's No reopens the task with
+
+
+def need_label(tid: str) -> str:
+    """B138: the label of what `tid` asks (CONFIRM, DECIDE, BLOCKED, STUCK, CONCEPT); '' when nothing needs you
+    about it."""
+    try:
+        return P._ask(tid, S.C.todo)[0]
+    except (SystemExit, OSError, AttributeError):
+        return ''
+
+
+def answer_argv(tid: str, text: str, button: bool = False) -> tuple[list[str], str]:
+    """B138: the runner command that settles a Needs you reply at once, and what to say once it did; ([], '')
+    when the reply is c1's to read. A button's Yes (or a pick, or done) is `plan confirm ID "<reply>"`, a
+    CONFIRM's No is `plan change ID "No: the check failed"`; a pick sheet's go or Send line is `sheet ID
+    --go|--picks`. Free words typed in the reply box are c1's."""
+    said, label = (text or '').strip(), need_label(tid)
+    if label == 'DECIDE':
+        from agent_runner.brief import has_sheet
+        if has_sheet(tid) and said.lower() in SHEET_GO:
+            return ['sheet', tid, '--go'], f'{tid} answered with the recommended picks'
+        if has_sheet(tid) and said.startswith(f'{tid} picks:'):
+            return ['sheet', tid, '--picks', said], f'{tid} answered with your picks'
+    if not button or not said or label not in ('CONFIRM', 'DECIDE', 'BLOCKED', P.STUCK):
+        return [], ''
+    if label == 'CONFIRM' and said.lower() == 'no':
+        return ['plan', 'change', tid, CHECK_FAILED], f'{tid} reopened: the check failed'
+    if label == 'CONFIRM':
+        return ['plan', 'confirm', tid, said], f'{tid} ticked'
+    return ['plan', 'confirm', tid, said], f'{tid} answered ({said}): a run starts it'
+
+
+def answer(tid: str, text: str, button: bool = False) -> dict:
+    """A reply to a Needs you item. B138: a button's answer runs the plan command itself (`answer_argv`), with
+    no AI session, and an ok result carries 'said' (what was done, for the toast) and 'gone' (the item, off
+    Needs you); the words typed in a reply box go to c1 to settle as its needs guide says."""
+    argv, done = answer_argv(tid, text, button)
+    if argv:
+        r = call(argv)
+        if r['ok']:
+            r.update(said=done, gone=tid)
+        return r
     title = P.titles(S.C.todo).get(tid, '')
     return SEND[0](f'{tid}{f" ({title})" if title else ""}: {text}')
 

@@ -1332,8 +1332,12 @@ class RunPage:
         """Show an action's result on the bottom line and read the run again."""
         out = (r.get('out') or '').strip().splitlines()
         self.msg, self.msg_ok = (out[0] if out else ('done' if r.get('ok') else 'failed')), bool(r.get('ok'))
+        if r.get('ok') and r.get('said'):  # B138: an answer's own words ('R13 ticked')
+            self.msg = r['said']
         self.cache = {k: v for k, v in self.cache.items() if k.startswith('copy:')}  # feeds and diffs read anew
         self.refresh()
+        if r.get('ok') and r.get('gone') and isinstance(self.snap.get('needs'), list):  # B138: off Needs you at once
+            self.snap = {**self.snap, 'needs': [n for n in self.snap['needs'] if n.get('id') != r['gone']]}
 
     def key(self, k: str) -> bool:
         """Handle one key (a character, or a name: UP DOWN LEFT RIGHT ENTER S-ENTER ESC TAB BTAB BS ^S ^H ^L
@@ -1521,7 +1525,7 @@ class RunPage:
         if tab == 'answer' and it is not None:
             for key, answer in self.answers(it):
                 if k == key:
-                    r = U.answer(it['id'], answer)
+                    r = U.answer(it['id'], answer, button=True)  # B138: the plan command, no AI session
                     if r.get('ok'):
                         self.main = False
                     self.done(r)

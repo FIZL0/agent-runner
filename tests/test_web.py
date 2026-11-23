@@ -1491,6 +1491,52 @@ def test_chat_order_f133(tmp: Path) -> None:
     eq(got[3], ['c4', 'c3', 'c1', 'c6'], 'a chat just pinned joins the pins')
 
 
+def test_answer_button_b138(tmp: Path) -> None:
+    """B138: a Needs you button through /act runs the plan command itself, never an AI session (SEND fails if
+    called), and its ok result names the item gone; the page drops that item at once and keeps it off while a
+    snapshot taken before the answer still lists it; a failed answer keeps it."""
+    from agent_runner import plan as P
+    fake_repo(tmp)
+    P.block('F1', 'CONFIRM: check the board loads on your phone', todo=S.C.todo)
+
+    def no_send(text):
+        raise AssertionError(f'an answer button reached an AI session: {text!r}')
+    ran = []
+    token = W.web_token()
+    srv = W.serve(token, 0, '127.0.0.1', snap=lambda: {})
+    url = f'http://127.0.0.1:{srv.server_address[1]}/act?t={token}'
+    try:
+        with mock.patch.object(U, 'RUN', [lambda argv: (ran.append(argv), (0, 'confirmed and ticked F1'))[1]]), \
+                mock.patch.object(U, 'SEND', [no_send]):
+            code, yes = post(url, {'name': 'answer', 'args': {'tid': 'F1', 'text': 'Yes', 'button': True}})
+            code, no = post(url, {'name': 'answer', 'args': {'tid': 'F1', 'text': 'No', 'button': True}})
+    finally:
+        srv.stop()
+    eq(ran, [['plan', 'confirm', 'F1', 'Yes'], ['plan', 'change', 'F1', 'No: the check failed']],
+       'Yes is plan confirm, No is plan change (reopened)')
+    eq((yes['ok'], yes['said'], yes['gone']), (True, 'F1 ticked', 'F1'), 'the result says what was done')
+    eq(no['said'], 'F1 reopened: the check failed', "No's words")
+    page = W.PAGE.read_text(encoding='utf-8')
+    check("act('answer',{tid:n.id,text:x.dataset.v,button:true})" in page, 'the page sends a button answer', '')
+    check("x.classList.add('busy')" in page, 'the button shows it is working', '')
+    if not shutil.which('node'):
+        print('  (no node here: the page script test is skipped)')
+        return
+    needs = [{'id': 'F1'}, {'id': 'R6'}]
+    got = logic_js([
+        ['goneMark', {}, yes, 1000],
+        ['needsShown', needs, {'F1': 1000}, 2000],
+        ['needsShown', needs, {'F1': 1000}, 1000 + 31000],
+        ['goneMark', {}, {'ok': False, 'out': 'plan: F1 is not waiting'}, 1000],
+        ['answerSaid', yes, 'F1', 'Yes'],
+    ])
+    eq(got[0], {'F1': 1000}, 'an ok result marks the item answered')
+    eq(got[1], [{'id': 'R6'}], 'the page drops it at once, and a stale snapshot keeps it off')
+    eq(got[2], needs, 'a while later the run\'s own list counts again')
+    eq(got[3], {}, 'a failed answer marks nothing: the item stays')
+    eq(got[4], 'F1 ticked', 'the toast says what was done')
+
+
 if __name__ == '__main__':
     raise SystemExit(report([in_tmp(test_chat_order_f133), in_tmp(test_delete_chats_f118), in_tmp(test_server), in_tmp(test_real_action), in_tmp(test_run_controls),
                            in_tmp(test_start), in_tmp(test_upload),
@@ -1501,4 +1547,4 @@ if __name__ == '__main__':
                            in_tmp(test_talk_f93), in_tmp(test_https_link_b130),
                            in_tmp(test_listen_heard_nothing_b132), in_tmp(test_talk_reply_heard_b133),
                            in_tmp(test_slash_menu_b119), in_tmp(test_composer_keys_b120),
-                           in_tmp(test_interrupt_c1_b141)]))
+                           in_tmp(test_interrupt_c1_b141), in_tmp(test_answer_button_b138)]))
