@@ -1084,6 +1084,29 @@ def send_fifo(inbox: Path, text: str) -> bool:
         os.close(fd)
 
 
+def send_fifo_raw(inbox: Path, data: bytes) -> bool:
+    """F89: `data` written to a hidden session's FIFO as is, with no bracketed paste and no Enter: a key such
+    as Escape (b'\\x1b') reaches the agent the way a key press would. False when no shim reads it."""
+    try:
+        fd = os.open(inbox, os.O_WRONLY | os.O_NONBLOCK)  # ENXIO with no reader, rather than hang
+    except OSError:
+        return False
+    try:
+        end = time.monotonic() + 10
+        while data:
+            try:
+                data = data[os.write(fd, data):]
+            except BlockingIOError:
+                if time.monotonic() > end:
+                    return False
+                time.sleep(0.05)
+        return True
+    except OSError:
+        return False
+    finally:
+        os.close(fd)
+
+
 PTY_SIZE = (50, 200)  # rows, columns of a hidden slot's terminal: wide enough that the log reads
 
 

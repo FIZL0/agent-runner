@@ -826,12 +826,48 @@ def _no_pane(name: str) -> dict:
                                            f'there is no tmux): its feed and session link still work.', 'argv': []}
 
 
+KEY_BYTES = {'Enter': b'\r', 'Escape': b'\x1b', 'Tab': b'\t', 'BSpace': b'\x7f', 'Up': b'\x1b[A',
+             'Down': b'\x1b[B', 'Right': b'\x1b[C', 'Left': b'\x1b[D', 'C-c': b'\x03'}  # F89: KEYS as a terminal sends them
+
+
+def hidden_inbox(name: str) -> Path | None:
+    """F89: the FIFO a hidden session's shim reads (`<notes>/controlN.in` for cN, `<notes>/slotN.in` for sN),
+    found from its `.live` marker; None when it has none (not up, a tmux run, not a session name)."""
+    m = re.fullmatch(r'([cs])(\d+)', name)
+    if not m:
+        return None
+    try:
+        marker = S.C.notes(f'{"control" if m[1] == "c" else "slot"}{m[2]}.live')
+    except Exception:  # noqa: BLE001 - no notes dir
+        return None
+    return marker.with_suffix('.in') if marker.is_file() else None
+
+
+def _no_typing(name: str) -> dict:
+    return {'ok': False, 'code': 1, 'out': f'{name} runs hidden in a console that cannot be typed into (Windows): '
+                                           f'its feed and session link still work.', 'argv': []}
+
+
+def _hidden_keys(session: str, inbox: Path, text: str, key: str) -> dict:
+    """F89: `keys` for a session with no tmux pane: `text` then `key` written raw to its shim's FIFO."""
+    from agent_runner import plat, slots
+    if plat.WINDOWS:
+        return _no_typing(session)
+    if not slots.send_fifo_raw(inbox, text.encode('utf-8') + KEY_BYTES.get(key, b'')):
+        return {'ok': False, 'code': 1, 'out': f'could not type into {session} (nothing reads {inbox.name})',
+                'argv': []}
+    return {'ok': True, 'code': 0, 'out': f'typed into {session}', 'argv': []}
+
+
 def keys(session: str, text: str = '', key: str = '') -> dict:
     """F74: `text` typed into `session`'s pane (c6, s2) as is (`send-keys -l`), then the named `key` (one of
-    KEYS: Enter, Escape, …) if given; `interrupt` sends Escape through it (C25: no longer an action)."""
+    KEYS: Enter, Escape, …) if given; `interrupt` sends Escape through it (C25: no longer an action). F89: a
+    hidden session (no tmux pane) gets both written raw to its shim's FIFO (`hidden_inbox`)."""
     if key and key not in KEYS:
         return {'ok': False, 'code': 2, 'out': f'keys: key is one of {", ".join(KEYS)}, not {key!r}', 'argv': []}
     if not (pane := session_pane(session)):
+        if inbox := hidden_inbox(session):
+            return _hidden_keys(session, inbox, text, key)
         return _no_pane(session)
     for argv in ([['send-keys', '-t', pane, '-l', text]] if text else []) + \
             ([['send-keys', '-t', pane, key]] if key else []):
@@ -849,13 +885,19 @@ def interrupt(session: str = 'c1') -> dict:
 
 def send(name: str, text: str) -> dict:
     """F74: the person's words to session `name` as they typed them: c1 as `chat` hands them on (`SEND`), any
-    other control session or slot typed into its pane (`slots.send_to_pane`)."""
+    other control session or slot typed into its pane (`slots.send_to_pane`), or, hidden (no tmux pane),
+    through its shim's FIFO as a bracketed paste and Enter (`slots.send_fifo`; F89)."""
     if name == 'c1':
         return SEND[0](text)
-    if not (pane := session_pane(name)):
+    from agent_runner import plat, slots
+    if pane := session_pane(name):
+        ok = slots.send_to_pane(pane, text)
+    elif inbox := hidden_inbox(name):
+        if plat.WINDOWS:
+            return _no_typing(name)
+        ok = slots.send_fifo(inbox, text)
+    else:
         return _no_pane(name)
-    from agent_runner import slots
-    ok = slots.send_to_pane(pane, text)
     return {'ok': ok, 'code': 0 if ok else 1, 'out': f'sent to {name}' if ok else f'could not type into {name}',
             'argv': []}
 
