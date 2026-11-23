@@ -515,11 +515,15 @@ class HomeHandler(BaseHTTPRequestHandler):
         root = self.server.project(key)
         link = self.server.link(root) if root else None
         if link is None:
-            from agent_runner.web import pick_page
-            return self.send(502, pick_page(502, 'No run is up to take this answer. Start the run in Runner Home, '
-                                            'then tap the button again.'), 'text/html; charset=utf-8')
+            return self.no_pick()
         q = parse_qs(urlsplit(self.path).query)
-        self.forward('GET', root, link[0], '/pick?' + urlencode([(k, q[k][0]) for k in ('id', 'o', 'k') if k in q]))
+        self.forward('GET', root, link[0], '/pick?' + urlencode([(k, q[k][0]) for k in ('id', 'o', 'k') if k in q]),
+                     self.no_pick)
+
+    def no_pick(self) -> None:
+        from agent_runner.web import pick_page
+        self.send(502, pick_page(502, 'No run is up to take this answer. Start the run in Runner Home, '
+                                 'then tap the button again.'), 'text/html; charset=utf-8')
 
     def terminal(self, root: Path, port: int, token: str, rest: str, query: str) -> None:
         """F107: /p/KEY/t/TOKEN/NAME/REST is session NAME's own terminal: where the run serves it (its /terminal/NAME
@@ -550,8 +554,9 @@ class HomeHandler(BaseHTTPRequestHandler):
         """A WebSocket upgrade, carried to the run (`session_frame.tunnel`)."""
         tunnel(self, port, target, root.name)
 
-    def forward(self, method: str, root: Path, port: int, target: str) -> None:
-        """The request goes on to 127.0.0.1:PORT at TARGET; the answer streams back as it comes."""
+    def forward(self, method: str, root: Path, port: int, target: str, gone=None) -> None:
+        """The request goes on to 127.0.0.1:PORT at TARGET; the answer streams back as it comes. `gone` answers when
+        the run does not."""
         data = self.body()
         headers = {k: v for k, v in self.headers.items() if k.lower() not in HOP | {'host', 'x-token'}}
         conn = http.client.HTTPConnection('127.0.0.1', port, timeout=60)
@@ -561,6 +566,8 @@ class HomeHandler(BaseHTTPRequestHandler):
             r = conn.getresponse()
         except OSError as e:
             conn.close()
+            if gone:
+                return gone()
             return self.send(502, {'ok': False, 'out': f'{root.name}\'s run page did not answer: {e}'})
         try:
             self.send_response(r.status)

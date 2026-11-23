@@ -201,7 +201,8 @@ def page_line(site=None) -> str:
 # --- F138: option buttons that answer the run with no AI session ------------------------------------------------
 #
 # A concept page's or a pick sheet's option button is a plain link to the run page's https address:
-# <https base>/pick?id=<ID>&o=<option>&k=<code>, the base through Runner Home being its /p/KEY (F167). The code is a one-use secret made for that item and kept in
+# <https base>/pick?id=<ID>&o=<option>&k=<code>; through Runner Home (F167) the base
+# ends in /p/KEY. The code is a one-use secret made for that item and kept in
 # <notes>/pick-codes/<ID>.json, never the run page's own token, so a leaked page can only pick an option for that
 # item. /pick checks it, runs `plan confirm ID "go with <option>: <its name>"` (a pick sheet: `sheet ID --picks`),
 # burns it, and shows a small page saying what happened (or why not: used, unknown, settled already).
@@ -273,13 +274,13 @@ def https_base(https=None) -> str:
 
 def no_https_why() -> str:
     """Why `https_base` is '' (F165: without naming a port only Home opens)."""
-    if port := run_port():
-        return f'Tailscale Serve proxies none to port {port}'
     if site := site_urls():
         from agent_runner.home import serve_https_argv
         port = urlsplit(site[-1]).port
         return (f'Tailscale Serve proxies none to Runner Home\'s port {port}; '
                 f'`{" ".join(serve_https_argv(port))}` gives Home one')
+    if port := run_port():
+        return f'Tailscale Serve proxies none to port {port}'
     return closed_line()
 
 

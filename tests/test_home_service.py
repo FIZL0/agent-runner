@@ -867,6 +867,8 @@ def pick_links_through_home(root: Path, hp: int, mine: int, ts) -> None:
     eq(W.pick_base('B1', ts), f'https://box.tail.ts.net/p/proj/pick?id=B1&k={code}', "a pick sheet's Send too")
     has(W.no_https_why(), f'port {hp}; `tailscale serve', 'Home with no https address: why, and the command')
     check(str(mine) not in W.no_https_why(), "the reason never names the run's port", W.no_https_why())
+    with mock.patch.object(W, 'run_port', lambda: 9999):
+        has(W.no_https_why(), f'port {hp}; ', "Home's is said first, as its links are, when the run has a port too")
     eq(W.pick_links('B1', ['A'], nots), [], 'and no links')
     own = W.url_file().read_text(encoding='utf-8')
     with mock.patch.object(W, 'home_port', lambda: hp), mock.patch.object(W, 'site_urls', lambda: []):
@@ -895,6 +897,10 @@ def pick_links_through_home(root: Path, hp: int, mine: int, ts) -> None:
             off = get(f'{here}/p/proj/pick?x="><script>')
             eq((off[0], off[1]), get(f'{here}/p/nope/pick')[:2], 'no run up: the same answer as an unknown project')
             has(off[1].decode(), 'No run is up', 'which says so')
+            with socket.socket() as s:
+                s.bind(('127.0.0.1', 0))  # bound, not listening: a connection is refused
+                home._link = lambda r: (s.getsockname()[1], 'x')
+                eq(get(here + path)[:2], off[:2], 'nor does a run that went away tell them apart')
             check(b'script' not in off[1] and H.home_token().encode() not in off[1], 'with nothing of the address in it')
         finally:
             home.stop()
