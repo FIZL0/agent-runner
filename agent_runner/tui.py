@@ -7,7 +7,7 @@ bottom line. The focused panel takes the spare height; every other panel shows 3
 `TWO_COLUMNS`, the panels and the main pane take the whole width in turn (Enter in, Esc out).
 
 Panels and their tabs (F76):
-    Status     a status line: log (the quick asks s y w u on its buttons: c1 answers in its session), release,
+    Status     a status line: log (the quick asks s y w u on its buttons: a new session answers), release,
                controls; the release line: release first; R (only here) opens the release tab
     Sessions   a control session cN, an idle slot: session; a slot on a task: session, diff. F112: the session
                tab is the real Claude Code session, not a chat view of ours: inside tmux (TMUX set) with its
@@ -165,7 +165,7 @@ HELP = """Everywhere (not while typing in a box)
   i        type in the box        ?        this list
   q ^C     quit
 Status [1]
-  R        release                s y w u  quick asks (c1 answers in its session)
+  R        release                s y w u  quick asks (a new session answers)
   + - =    slot +1, -1, set N     P G      pause, go on
   F C      force, caps back on    S        stop (running tasks finish)
   X X      stop now (X again)     U        take the stop back
@@ -1263,6 +1263,20 @@ class RunPage:
         self.cur[2] = next(i for i, r in enumerate(self.items(2)) if r is st)
         self.msg, self.msg_ok = 'starting a new chat...', True
 
+    def say_new_session(self, r: dict) -> None:
+        """C32: after a quick ask or H started a new control session: say its name (the result's 'name') and,
+        when the run's state lists it, select it in Sessions as N does."""
+        name = r.get('name') if r.get('ok') else ''
+        if not name:
+            return
+        self.msg = f'{self.msg}: {name} answers in its session'
+        self.refresh()
+        rows = self.items(2)
+        at = next((i for i, s in enumerate(rows) if s.get('name') == name), None)
+        if at is not None:
+            self.panel, self.cur[2], self.main = 2, at, False
+            self.msg = f'{self.msg} (selected)'
+
     def poll_new_chat(self) -> None:
         """The new chat's progress: a start that failed says why and its row goes; once its cN is in the run's
         state, that row takes the 'starting...' row's place (selected, when that one was)."""
@@ -1630,10 +1644,8 @@ class RunPage:
         elif self.panel == 1 and k == 'R':
             self.release_tab()
         elif self.panel == 1 and (q := next((q for q, c in QUICK_KEYS.items() if c == k), '')):
-            r = U.quick_ask(q)  # F112: c1 answers in its own session (c shows it)
-            self.done(r)
-            if r.get('ok'):
-                self.msg = f'{self.msg}: c1 answers in its session (c shows it)'
+            self.done(r := U.quick_ask(q))  # B139: a new control session answers
+            self.say_new_session(r)
         elif self.panel == 1 and k == '=':
             self.set_tab('controls')
             self.typing = 'slots:n'
@@ -1672,7 +1684,8 @@ class RunPage:
             self.done(U.drop(tid, 'dropped from agent-runner ui'))
             self.main = False
         elif self.panel == 3 and k == 'H' and tid:
-            self.done(U.take(tid))
+            self.done(r := U.take(tid))
+            self.say_new_session(r)
         elif self.panel == 3 and k == 'U' and tid and it.get('state') == 'parked':
             r = U.unpark(tid)
             self.done(r)
