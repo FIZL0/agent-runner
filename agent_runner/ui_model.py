@@ -748,6 +748,9 @@ def need_label(tid: str) -> str:
     from agent_runner import pitch
     if pitch.PITCH_ID.fullmatch(tid or ''):  # F98
         return pitch.LABEL if any(r[1] == tid for r in pitch.rows()) else ''
+    if (tid or '').startswith('tool-'):  # F168
+        from agent_runner import shared_tools
+        return shared_tools.LABEL if any(r[1] == tid for r in shared_tools.asks()) else ''
     try:
         return P._ask(tid, S.C.todo)[0]
     except (SystemExit, OSError, AttributeError):
@@ -1623,7 +1626,7 @@ def need_chat_text(row: dict) -> str:
 def need_chat(tid: str, wait: bool = True) -> dict:
     """F143: Chat on a Needs you item: a new control session (`control --new --ask`) whose first message is
     `need_chat_text` of it. An id that is none, or no longer needs the person, is refused."""
-    if not TASK_ID.fullmatch(tid or '') and need_label(tid) != 'PITCH':
+    if not TASK_ID.fullmatch(tid or '') and need_label(tid) not in ('PITCH', 'TOOL'):
         return {'ok': False, 'code': 2, 'out': f'need_chat: a task id (F83), not {tid!r}', 'argv': []}
     from agent_runner.status import waiting_ok
     rows, _ = needs_rows(waiting_ok(), dt.datetime.now())

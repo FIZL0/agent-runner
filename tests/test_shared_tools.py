@@ -139,6 +139,7 @@ def test_missing(repo: Path):
     eq(first(), 'T3', 'missing at the start holds the tagged tasks')
     eq([a[1] for a in T.asks()], ['tool-phone'], 'it is a Needs you item, once though checked again')
     reads(t)
+    eq(U.need_label('tool-phone'), 'TOOL', 'the pages know it as one')
     eq((T.asks()[0][0], T.asks()[0][3]), ('TOOL', 'Connect the iPhone 15 by USB: 2 tasks wait'), 'in plain words')
     said = (repo / '.runner/run.log').read_text(encoding='utf-8').count('Connect the iPhone 15 by USB')
     eq(said, 1, 'said once')
@@ -176,6 +177,17 @@ def test_unknown(repo: Path):
     check(not T.pending(), 'nothing is pending on it any more')
     eq((first(), first(claim=True)), ('T1', 'T1'), 'then they start all the same')
     eq(T.wait_words(), {}, 'and nothing says they wait')
+    fresh(repo)
+    for i, w in enumerate(['', '', 'fail', '', 'fail', '', 'fail']):
+        lock(w)
+        reads(t + i)
+    eq(first(claim=True), 'T3', 'a check that fails now and then holds a start too')
+    eq(T.seen()['phone']['shaky'], t + 2, 'counted from its first failure')
+    T.READINGS['phone']['shaky'] = t - T.UNKNOWN_HOLD - 1
+    eq(first(claim=True), 'T1', 'but no longer than one that always fails')
+    lock()
+    reads(t + 8, t + 9)
+    eq(T.seen()['phone']['shaky'], 0, 'steady again: forgotten')
     keep, T.CHECK_TIMEOUT = T.CHECK_TIMEOUT, 0.5
     try:
         lock('hang')
@@ -301,7 +313,7 @@ def test_order_and_drop(repo: Path):
 
 
 def test_background(repo: Path):
-    print('the run\'s own checker: a thread per tool, woken by a start; TOOLS.json for the pages; gone with the run')
+    print('the run\'s own checker: a thread per tool, woken by a start; TOOLS.json for the pages')
     fresh(repo)
     T.start()
     end = time.monotonic() + 20
@@ -312,7 +324,27 @@ def test_background(repo: Path):
     eq(first(claim=True), 'T3', 'a start wakes it, and a stale answer starts nothing')
     check((repo / '.runner/TOOLS.json').exists(), 'the pages read TOOLS.json')
     T.stop()
-    check(not T.THREADS and not (repo / '.runner/TOOLS.json').exists(), 'the run\'s end takes both away')
+    check(not T.THREADS and not (repo / '.runner/TOOLS.json').exists(), 'stopped, both are gone')
+
+
+def test_after_and_release(repo: Path):
+    print('--after and a release behave as before in a project with shared tools')
+    todo = repo / 'plan/TODO.md'
+    was = todo.read_text(encoding='utf-8')
+    try:
+        todo.write_text('# TODO\n\n## Now\n- [ ] **T7** Uses it. | files: a.py | needs: phone\n'
+                        '- [ ] **T8** Later. | files: b.py | after: T7\n- [ ] **V1** Release. | after: all\n', encoding='utf-8')
+        git(repo, 'commit', '-qam', 'after')
+        fresh(repo, 'busy F9')
+        reads(time.time())
+        eq(first(), None, 'the tagged one waits, and what waits on it, and the release behind them')
+        lock()
+        reads(time.time())
+        eq(first(), 'T7', 'free: the first starts')
+        eq(first({1: task('T7')}), None, 'the others still wait for it')
+    finally:
+        todo.write_text(was, encoding='utf-8')
+        git(repo, 'commit', '-qam', 'back')
 
 
 def test_without(tmp: Path):
@@ -340,7 +372,8 @@ def main() -> int:
         repo = make_repo(tmp)
         return report([lambda: test_config(repo), lambda: test_busy_and_together(repo), lambda: test_stale(repo),
                        lambda: test_missing(repo), lambda: test_unknown(repo), lambda: test_wait_for(repo, tmp),
-                       lambda: test_order_and_drop(repo), lambda: test_background(repo), lambda: test_without(tmp)])
+                       lambda: test_order_and_drop(repo), lambda: test_background(repo), lambda: test_after_and_release(repo),
+                       lambda: test_without(tmp)])
 
 
 if __name__ == '__main__':

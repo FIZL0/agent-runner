@@ -902,7 +902,8 @@ connect = "Connect iPhone 15"    # the Needs you wording while it is missing; de
   before a tagged task starts. A change to or from missing or unknown counts after 2 readings in a row; free and
   busy change at once.
 - **Unknown does not hold for ever.** It is logged once, and tagged tasks wait for it at most 5 min, then start
-  anyway: a broken check must not stop the work for ever. The agent still takes the lock itself.
+  anyway. So does a check that fails only now and then: its failing holds a start at most 5 min, counted until 2 good
+  readings in a row. A broken check must not stop the work for ever. The agent still takes the lock itself.
 - **Never two at once.** The run never has two running tasks with the same tool.
 - **Tagging.** `plan add --needs iphone15` writes `| needs: iphone15` on the task's line, and `plan edit --needs`
   sets it on an existing one. A name the project does not name is refused. The TUI's direct edit (`e`) has the field

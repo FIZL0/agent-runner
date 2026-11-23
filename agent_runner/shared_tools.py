@@ -116,7 +116,8 @@ def check(name: str, c=None) -> tuple[str, str]:
 
 # --- what the run knows of each tool -----------------------------------------------------------------------------
 # A reading: {state, who, since} as the run counts it (confirmed), {raw, n, raw_since} the last readings, `at` when
-# the last check started, `asked` its missing spell is under Needs you already.
+# the last check started, `asked` its missing spell is under Needs you already, `shaky` since when its check fails now
+# and then (0 once CONFIRM readings in a row were good).
 
 READINGS: dict[str, dict] = {}
 LOCK = threading.RLock()
@@ -135,7 +136,7 @@ def absorb(name: str, got: tuple[str, str], at: float) -> None:
         r = READINGS.get(name)
         if r is None:
             r = READINGS[name] = {'state': state, 'who': who, 'since': at, 'raw': state, 'n': 1, 'raw_since': at,
-                                  'raw_who': who, 'at': at, 'asked': False}
+                                  'raw_who': who, 'at': at, 'asked': False, 'shaky': at if state == UNKNOWN else 0}
             changed = state in (MISSING, UNKNOWN)
         else:
             if r['raw'] == state:
@@ -143,6 +144,10 @@ def absorb(name: str, got: tuple[str, str], at: float) -> None:
             else:
                 r.update(raw=state, n=1, raw_since=at)
             r.update(at=at, raw_who=who)
+            if state == UNKNOWN:
+                r['shaky'] = r.get('shaky') or at
+            elif r['n'] >= CONFIRM:
+                r['shaky'] = 0
             changed = False
             if state == r['state']:
                 if state == BUSY and who != r['who']:
@@ -198,7 +203,7 @@ def now(name: str) -> dict | None:
             return dict(r)
     if name in THREADS:
         return None
-    if r := _file().get(name):
+    if S.run_up() and (r := _file().get(name)):  # an ended run's file says nothing about now
         return r
     t = time.time()
     absorb_quiet(name, check(name), t)
@@ -276,8 +281,10 @@ def names_task(who: str, tid: str) -> bool:
 
 
 def expired(r: dict) -> bool:
-    """The tool's check has failed for so long that it holds no task any more."""
-    return r['state'] == UNKNOWN and time.time() - r['since'] >= UNKNOWN_HOLD
+    """The tool's check has failed, each time or now and then, for so long that its failing holds no task any more."""
+    if r['state'] == UNKNOWN:
+        return time.time() - r['since'] >= UNKNOWN_HOLD
+    return r.get('raw') == UNKNOWN and bool(r.get('shaky')) and time.time() - r['shaky'] >= UNKNOWN_HOLD
 
 
 def _blocks(state: str, who: str, r: dict, tid: str) -> bool:
@@ -291,7 +298,7 @@ def hold(tid: str, needs: list[str], users: dict[str, str], before: dict[str, st
     task that has it}; `before`: {tool: a task that gave up its slot for it and goes first}."""
     for name in needs:
         if (u := users.get(name)) and u != tid:
-            return name, f'held by {u}'
+            return name, held_by(u)
         r = now(name)
         if r is None:
             return name, 'not checked yet'
@@ -306,6 +313,14 @@ def hold(tid: str, needs: list[str], users: dict[str, str], before: dict[str, st
     return None
 
 
+def held_by(tid: str) -> str:
+    """'held by F389, 12 min': the running task `tid` has a tool; without the minutes while no run says since when."""
+    st = _state()
+    since = next((s for n, t in (st.get('running') or {}).items() if t == tid
+                  and (s := (st.get('since') or {}).get(n))), 0)
+    return f'held by {tid}' + (f', {mins(since)}' if since else '')
+
+
 def ready(tid: str, needs: list[str]) -> bool:
     """A start of `tid` is about to happen: its tools are checked once more, so no stale answer starts it."""
     return all(_ready(tid, n) for n in needs)
@@ -315,7 +330,7 @@ def _ready(tid: str, name: str) -> bool:
     if name not in THREADS:
         got = check(name)
         return not _blocks(*got, READINGS.get(name) or {'state': '', 'since': 0}, tid)
-    if (r := READINGS.get(name)) and expired(r):
+    if (r := READINGS.get(name)) and r['state'] == UNKNOWN and expired(r):
         return True  # its failing check holds nothing any more, so no start waits for it
     t = time.time()
     asked = ASKED.get(name, 0.0)
@@ -615,7 +630,7 @@ def wait_words(ls: list[str] | None = None, st: dict | None = None, t: float | N
     for tid, names in waiting(ls, st).items():
         for name in names:
             r, u = rs.get(name), us.get(name)
-            if r and r['state'] != FREE and not expired(r) and not (r['state'] == BUSY and names_task(r['who'], tid)):
+            if r and r['state'] != FREE and not (r['state'] == UNKNOWN and expired(r)) and not (r['state'] == BUSY and names_task(r['who'], tid)):
                 said = words(r, t)
             elif u:
                 said = f'held by {u[0]}' + (f', {mins(u[1], t)}' if u[1] else '')
