@@ -208,7 +208,7 @@ def adopt_merge(d: Path) -> None:
         if plat.alive(s['pid']) and MUX.session_id(s['pid']) == s['sid']:
             log(f'{s["tid"]}: adopted the {s["kind"]} session an earlier run left going in the master window')
             if not wait_session(s['pid'], s['until']):
-                log(f'{s["tid"]}: the adopted {s["kind"]} session ran past [run] fix_timeout; ended')
+                log(f'{s["tid"]}: the adopted {s["kind"]} session ran past its time limit; ended')
         if keep_made(s, d):
             log(f'{s["tid"]}: kept what the {s["kind"]} session made ({git("rev-parse", "--short", "HEAD", cwd=d).stdout.strip()})')
     m.unlink(missing_ok=True)
@@ -960,7 +960,7 @@ def fix_ahead(tid: str, branch: str) -> str | None:
     as `fixed(tid)`. The other
     finished tasks merge and gate meanwhile; this one then takes the lock with that merge, which goes in
     clean unless the branch has meanwhile touched the same lines again (another, smaller fix). So
-    `[run] fix_timeout` holds up nobody but this task.
+    its time limit (`C.run['fix_timeout']`) holds up nobody but this task.
 
     A conflict in a file that another task, fixed ahead and not merged yet, had in conflict waits for that
     task's merge to end: fixed side by side, whichever lands second would be fixed again (`FIXING`)."""

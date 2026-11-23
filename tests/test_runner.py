@@ -398,14 +398,14 @@ def task_branch(repo: Path, n: int, tid: str) -> Path:
 
 
 def test_run_policies(repo: Path, tmp: Path):
-    print('run: project-configured commit and merge subjects and comment guidance')
+    print('run: project-configured commit and merge subjects')
     fixture = tmp / 'policy-fixture'
     fixture.mkdir()
     policy_repo = make_repo(fixture)
     (policy_repo / 'runner.toml').write_text(
         '[run]\n'
         f'home = "{fixture.as_posix()}/runner-home/{{repo}}"\n'
-        'include_task_id_in_commit = false\ncomment_policy = "minimal"\n'
+        'include_task_id_in_commit = false\n'
         '[git]\npush = false\n', encoding='utf-8')
     git(policy_repo, 'add', 'runner.toml')
     git(policy_repo, 'commit', '-qm', 'configure policy fixture')
@@ -419,8 +419,6 @@ def test_run_policies(repo: Path, tmp: Path):
         prompt = R.prompt_for('T2', 1, 1, policy_repo, 'main')
         has(prompt, r'Do not include task ID .+ in the commit subject',
             'the task-ID setting reaches the agent prompt')
-        has(prompt, r'Only add comments when necessary to explain non-obvious intent',
-            'the comment policy reaches the agent prompt')
 
         git(policy_repo, 'checkout', '-q', '-b', 'task/T2', 'main')
         result = run(policy_repo, 'done', 'T2', 'T2: the printer', env=env)
@@ -1016,7 +1014,7 @@ def test_remote_auto(tmp: Path):
     off = {'ANTHROPIC_API_KEY': 'sk-x', 'ANTHROPIC_AUTH_TOKEN': 't', 'CLAUDE_CODE_USE_BEDROCK': '1',
            'CLAUDE_CODE_USE_VERTEX': '1', 'CLAUDE_CODE_USE_FOUNDRY': 'true',
            'ANTHROPIC_BASE_URL': 'https://llm.example.com/v1'}
-    with mock.patch.dict(R.C.run, {'remote': 'auto', 'remote_slots': False}):
+    with mock.patch.dict(R.C.run, {'remote': 'auto', 'remote_slots': 'open'}):
         with mock.patch.dict(os.environ, base, clear=True):
             check(R.remote_on() and R.remote_off_why() == '', 'auto, a claude.ai login: on')
             check('--remote-control' in R.control_argv(2, 'sid-r', resume=False), 'so control sessions are on it')
@@ -1051,7 +1049,7 @@ def test_remote_auto(tmp: Path):
             eq(R.remote_line(), '', 'and logs nothing')
 
     # silent = true: slots keep their presence file, so they push only as they start; notifications off in settings
-    with mock.patch.dict(R.C.run, {'remote_slots': True, 'silent': True}):
+    with mock.patch.dict(R.C.run, {'remote_slots': 'always', 'silent': True}):
         env = R.env_vars(R.slot_env(2))
         flags = R.agent_flags('sid-q', 'opus', 30)
     with mock.patch.dict(os.environ, {'CLAUDE_CODE_TMPDIR': ''}):
@@ -1062,10 +1060,10 @@ def test_remote_auto(tmp: Path):
     s = json.loads(flags[flags.index('--settings') + 1])
     eq(s['agentPushNotifEnabled'], False, 'and its PushNotification tool is off')
     check('inputNeededNotifEnabled' not in s, 'no inputNeededNotifEnabled: from --settings it never reaches the server')
-    with mock.patch.dict(R.C.run, {'remote_slots': False}):
+    with mock.patch.dict(R.C.run, {'remote_slots': 'open'}):
         check(R.PRESENCE_ENV not in R.env_vars(R.slot_env(2)), 'a local slot has none')
         check('agentPushNotifEnabled' not in R.agent_flags('sid-q', 'opus', 30)[-1], 'nor the settings')
-    with mock.patch.dict(R.C.run, {'remote_slots': True, 'silent': False}):
+    with mock.patch.dict(R.C.run, {'remote_slots': 'always', 'silent': False}):
         check(R.PRESENCE_ENV not in R.env_vars(R.slot_env(2)), 'silent = false: a remote slot has no presence file')
         check('agentPushNotifEnabled' not in R.agent_flags('sid-q', 'opus', 30)[-1], 'nor the push settings')
     # C20: [run] silent is true or false, default false; the quiet launch's 'launch' reads as false, said once
@@ -1084,7 +1082,7 @@ def test_remote_auto(tmp: Path):
         check(False, 'silent = "yes" is refused')
     except SystemExit as e:
         check('silent' in str(e), 'silent = "yes" is refused', str(e))
-    with mock.patch.dict(R.C.run, {'remote_slots': True, 'silent': False}):
+    with mock.patch.dict(R.C.run, {'remote_slots': 'always', 'silent': False}):
         check(R.PRESENCE_ENV not in R.env_vars(R.slot_env(2)), 'silent = false (the default): no presence file')
 
 
@@ -3289,7 +3287,7 @@ def test_prompt_and_hooks(repo: Path):
                 flags = R.remote_flags('slot2', None)
         eq(opened, [R.REMOTE_URL], 'with [run] remote, Enter opens the sessions page')
         eq(flags, [], '[run] remote alone leaves the slots local (only control sessions go on Remote Control)')
-        with mock.patch.dict(R.C.run, {'remote_slots': True, 'sessions': 'each'}):  # F68: 'one' starts none there
+        with mock.patch.dict(R.C.run, {'remote_slots': 'always'}):  # F68: 'one' starts none there
             eq(R.remote_flags('slot2', None), ['--remote-control', f'{R.ROOT.name} s2'],
                'with [run] remote_slots a slot starts on Remote Control, named')
             with mock.patch.object(R, 'git', return_value=mock.Mock(stdout='task/F10\n')), \
@@ -6385,10 +6383,8 @@ def test_close_idle_controls(repo: Path):
     eq(R.open_question('Landed: see https://x.invalid/a?b=1', cf['open']), '', 'a ? inside a link is no question')
     eq((R.duration('90m'), R.duration(45), R.duration('2h'), R.duration(False)), (5400.0, 45.0, 7200.0, 0.0),
        'times read as 90m, seconds, 2h; false is off')
-    with mock.patch.dict(R.C.run, {'control_idle': '4h', 'control_open': ['should i']}):
+    with mock.patch.dict(R.C.run, {'control_idle': '4h'}):
         eq(R.control_verdict(R.control_state(done), R.control_cfg(), now)[0], 'keep', '[run] control_idle = 4h keeps it')
-        eq(R.control_verdict(R.control_state(offer_old), R.control_cfg(), now), ('close', 'idle 240 min'),
-           '[run] control_open without "?" or "want me to": closed at 4 h, no offer named')
 
     # close_controls end to end: c1 never looked at, sessions 2-7 by their transcripts
     rows = {'s1': done, 's2': done, 's3': ask, 's4': person, 's5': recent, 's6': bg}
@@ -6466,7 +6462,7 @@ def test_close_control_tiers(repo: Path):
         return queued(ago + 60) + [_person('and put it first', ago + 30), _claude(last, ago)]
 
     cf, now = R.control_cfg(), time.time() + 2  # the rows are stamped after this, a moment later
-    eq((cf['quick'], cf['talked']), (300.0, 43200.0), 'defaults: control_idle_quick 5m, control_idle_talked 12h')
+    eq((cf['quick'], cf['talked']), (300.0, 43200.0), 'one ask: 5 min; talked: 12 h')
     v = lambda rows, one=True, c=None: R.control_verdict(R.control_state(rows), c or cf, now, 4, one)
     eq(R.control_state(queued(0))['said'], 1, 'one person message')
     check(R.control_state(queued(0))['queued'], 'the plan add counted as queued')
@@ -6479,7 +6475,7 @@ def test_close_control_tiers(repo: Path):
     refused = queued(5 * M)
     refused[2] = _result('p1', 'agent-runner plan: not added: already open, and may be the same work:', 5 * M + 19)
     eq(v(refused)[0], 'keep', 'a plan add that filed nothing: not queued')
-    eq(v(queued(5 * M), c={**cf, 'quick': 0.0})[0], 'keep', 'control_idle_quick = false: control_idle')
+    eq(v(queued(5 * M), c={**cf, 'quick': 0.0})[0], 'keep', 'no quick tier: control_idle')
     # the runner's /rename and hook or system turns are not the person's messages
     noise = [{'type': 'user', 'timestamp': _ts(5 * M + 2), 'message': {'role': 'user', 'content':
               '<command-name>/rename</command-name>\n<command-message>rename</command-message>'}},
@@ -6498,14 +6494,12 @@ def test_close_control_tiers(repo: Path):
        'F57: talked, open question: not filed at control_ask (2 h)')
     eq(v(talked(11 * H, 'Done.\nDECIDE: Should I also drop T9?'))[0], 'keep', 'F57: talked, open question: open at 11 h')
     eq(v(talked(12 * H, 'Done.\nDECIDE: Should I also drop T9?')), ('ask', 'Should I also drop T9?'),
-       'F57: talked, open question: filed at control_idle_talked (12 h)')
+       'F57: talked, open question: filed at 12 h')
     eq(v(talked(2 * H, 'Done.\nDECIDE: Should I also drop T9?'), c={**cf, 'talked': 0.0})[0], 'ask',
-       'F57: control_idle_talked = false: control_ask as before')
+       'F57: no talked tier: control_ask as before')
     eq(v(talked(12 * H, 'Done.\nDECIDE: Should I also drop T9?'), c={**cf, 'ask_idle': 0.0})[0], 'keep',
        'F57: control_ask = false: a talked session\'s question is never filed')
-    eq(v(talked(4 * H), c={**cf, 'talked': 0.0})[0], 'close', 'control_idle_talked = false: control_idle')
-    with mock.patch.dict(R.C.run, {'control_idle_quick': False, 'control_idle_talked': '1d'}):
-        eq((R.control_cfg()['quick'], R.control_cfg()['talked']), (0.0, 86400.0), 'read from [run]')
+    eq(v(talked(4 * H), c={**cf, 'talked': 0.0})[0], 'close', 'no talked tier: control_idle')
 
     # close_controls end to end: the one-ask mark, and c1 never closed whatever its transcript says
     notes = R.C.notes()
@@ -7404,7 +7398,7 @@ def test_stream_engine_f106b(repo: Path, tmp: Path):
     git(d, 'checkout', '-q', '-B', 'task/Z8', 'main')
     saved, old = R.MUX, dict(R.C.run)
     R.MUX = R.HiddenMux()
-    R.C.run.update({'agent': str(agent), 'engine': 'stream', 'remote_slots': True})
+    R.C.run.update({'agent': str(agent), 'engine': 'stream', 'remote_slots': 'always'})
     R.C.notes('slot7.end').unlink(missing_ok=True)
     pid = 0
     try:
@@ -8112,8 +8106,8 @@ def test_merged_count_b78(repo: Path):
 
 
 def test_models_f101(repo: Path, tmp: Path):
-    print('F101: [models] picks a model per role; the subagents go in through --agents; [run] model and fix_model '
-          'still set code and fix when [models] does not')
+    print('F101: [models] picks a model per role; the subagents go in through --agents; [run] model and fix_model, '
+          'cut, move to code and fix when [models] does not set them')
     import shlex
     from agent_runner import config
     from agent_runner.config import Config
@@ -8136,7 +8130,7 @@ def test_models_f101(repo: Path, tmp: Path):
     eq({k: v for k, v in c.models.items() if k != 'kinds'},
        {'code': 'opus', 'review': 'opus', 'fix': 'opus', 'docs': 'haiku', 'control': 'opus',
         'feed': 'haiku'}, 'the defaults every repo gets')
-    eq((c.run['model'], c.run['fix_model'], c.warnings), ('opus', 'opus', []), '[run] model and fix_model match, no warning')
+    eq((c.run['model'], c.run['fix_model'], c.warnings), ('opus', 'opus', []), 'what the run reads matches, no warning')
     c = load('[run]\nmodel = "sonnet"\nfix_model = "haiku"\n')
     eq((c.models['code'], c.models['fix'], c.models['review']), ('sonnet', 'haiku', 'opus'),
        'the old keys still win when [models] does not set the role')
@@ -8145,7 +8139,7 @@ def test_models_f101(repo: Path, tmp: Path):
     eq({k: v for k, v in c.models.items() if k != 'kinds'},
        {'code': 'opus', 'review': 'haiku', 'fix': 'sonnet', 'docs': 'sonnet', 'control': 'sonnet',
         'feed': 'sonnet'}, '[models] overrides each role')
-    eq((c.run['model'], c.run['fix_model']), ('opus', 'sonnet'), 'and [run] model and fix_model follow it')
+    eq((c.run['model'], c.run['fix_model']), ('opus', 'sonnet'), 'and what the run reads follows it')
     check(any('[models] coder is not a setting' in w for w in load('[models]\ncoder = "x"\n').warnings),
           'an unknown role warns')
 

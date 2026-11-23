@@ -1857,7 +1857,7 @@ class RunPage:
 
     def session_link(self, it) -> str:
         """The session's claude.ai/code link ('' none, the reason on the message line); a slot is opened first
-        (`open_session`: under `[run] sessions = 'one'` it is listed there only once asked for)."""
+        (`open_session`: under `[run] remote_slots = 'open'` it is listed there only once asked for)."""
         if not isinstance(it, dict) or it.get('new'):
             return ''
         if is_control(it):

@@ -51,7 +51,7 @@ the terminal, in the `[ui] theme`'s colours, inside `.main.term` only).
 - **Card** (`.card`, `card()`): one thing. `.tap` opens something; `.need` waits on the person. Title, one line of
   second text, then `.btns`.
 - **Row** (`.row`, `.crow`, `.prow`, `.srow`, its folding head `.fold`): one line when folded, with an ellipsis. A row that holds more folds
-  open on tap in place (`aria-expanded`), and its chevron turns.
+  open on tap in place (`aria-expanded`), and its chevron turns. A setting's row (`.srow`) shows its name, its description and its control; it opens to show the code name and More… (a sheet with the other home and Reset).
 - **Section** (`.sec`): a small muted heading and a line. Sections keep the TUI's order.
 - **Sheet** (`#sheet`, `openSheet(name)`): more choices about what is on screen. It slides up from the bottom, groups
   its items (`.it`) under `.sec`, closes on the scrim, Esc, a swipe down, or a pick. One sheet, never a sheet over a
@@ -61,8 +61,7 @@ the terminal, in the `[ui] theme`'s colours, inside `.main.term` only).
   Stopping, Caps forced, Not up.
 - **Confirm**: asked in place (`sureHTML`), naming what is cut off, Yes then No. No browser dialog, ever. In the TUI
   the key is pressed twice.
-- **Setting or form control**: a label, the control that fits the type (`.sw` switch, `.fld` select, number or text),
-  then help in `.small`. A field that must survive a refresh has `data-f="key"`.
+- **Setting or form control**: a label, the control that fits the type (`.sw` switch, `.fld` select, number or text, or a `.step` stepper for a number changed a step at a time), then help in `.small`. A typed value is edited in the open row; a switch or select on a row saves at once; a closed row shows no code name. Each group's heading says its home (this device or everyone). A field that must survive a refresh has `data-f="key"`. A new setting needs its words in `agent_runner/setting_words.py` (`tests/test_settings.py` checks).
 
 ## States
 

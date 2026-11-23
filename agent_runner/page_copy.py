@@ -1,6 +1,6 @@
 """F68: the claude.ai copy of the run page (the run page copy).
 
-With `[run] sessions = 'one'` the Claude apps list one entry per project, c1. For when this machine (and so the
+With `[run] remote_slots = 'open'` the Claude apps list one entry per project, c1. For when this machine (and so the
 run page it serves) is not reachable, the run keeps a copy of the run page on claude.ai: it writes the page from
 F65's snapshot to <notes>/run-page-copy.html and, on a run event (a task starts, lands or blocks, a needs-you
 item, a concept, the release), publishes it to the same URL each time (<notes>/run-page-copy.url). The copy
@@ -211,7 +211,7 @@ def page_copy_job(f: Path, url: str, keyf: Path, publish) -> None:
 
 def page_copy_tick(now: float | None = None, snap: dict | None = None, publish=None,
                    background: bool = True) -> bool:
-    """From the run loop: under `[run] sessions = 'one'` with Remote Control on (the copy is for the apps), write
+    """From the run loop: under `[run] remote_slots = 'open'` with Remote Control on (the copy is for the apps), write
     the copy and publish it (`publish`, default the one-shot `page_copy_publish`, in a thread of its own unless
     `background` is off) when the page changed since the last publish (`page_copy_key`), at most every
     PAGE_COPY_EVERY s and one at a time. B122: nothing is ever typed into a control session. True when a

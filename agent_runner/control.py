@@ -970,18 +970,18 @@ def control_state(rows) -> dict:
     return st
 
 
+QUICK_IDLE, TALKED_IDLE = 300.0, 43200.0  # F166: s; a one-ask session that queued, and a talked one, close after it
+# an offer or unmarked question: not filed (F135), only named in the log; punctuation must end it, words may stand anywhere
+OPEN_PHRASES = ('?', 'want me to', 'should i', 'shall i', 'would you like', 'do you want')
+
+
 def control_cfg() -> dict:
-    """`[run] control_idle` (idle), `control_idle_quick` (quick), `control_idle_talked` (talked), `control_ask`
-    (ask_idle), in seconds, 0 off (control_idle off turns the quick and talked tiers off too), and
-    `control_open` (open, lowercase)."""
+    """`[run] control_idle` (idle), QUICK_IDLE (quick), TALKED_IDLE (talked), `[run] control_ask` (ask_idle), in
+    seconds, 0 off (control_idle off turns the quick and talked tiers off too), and OPEN_PHRASES (open)."""
     r = C.run
-    opens = r.get('control_open', ['?', 'want me to', 'should i'])
     idle = duration(r.get('control_idle', '3h'), 10800.0)
-    return {'idle': idle,
-            'quick': duration(r.get('control_idle_quick', '5m'), 300.0) if idle else 0.0,
-            'talked': duration(r.get('control_idle_talked', '12h'), 43200.0) if idle else 0.0,
-            'ask_idle': duration(r.get('control_ask', '2h'), 7200.0),
-            'open': [str(p).lower() for p in ([opens] if isinstance(opens, str) else opens or [])]}
+    return {'idle': idle, 'quick': QUICK_IDLE if idle else 0.0, 'talked': TALKED_IDLE if idle else 0.0,
+            'ask_idle': duration(r.get('control_ask', '2h'), 7200.0), 'open': list(OPEN_PHRASES)}
 
 
 def open_question(text: str, phrases: list[str]) -> str:
@@ -1019,10 +1019,10 @@ def control_renamed(st: dict, n: int = 0) -> bool:
 def control_verdict(st: dict, cf: dict, now: float, n: int = 0, one_ask: bool = False) -> tuple[str, str]:
     """('close' | 'ask' | 'keep', why or the question) for control session `n`'s state `st` (`control_state`).
     One the person renamed is kept (B41): they named it to keep it. F56, which idle time applies: a session the
-    person sent more than one message in, `control_idle_talked`; one opened for one ask (`one_ask`: the runner gave it its first message) that the person
-    sent nothing more to and that queued a task, with no open question, `control_idle_quick`; else (or with that
+    person sent more than one message in, TALKED_IDLE; one opened for one ask (`one_ask`: the runner gave it its first message) that the person
+    sent nothing more to and that queued a task, with no open question, QUICK_IDLE; else (or with that
     tier off) `control_idle`. F57: an open question is filed after `control_ask`, or in a talked session after the
-    longer of that and `control_idle_talked`. F135: only a `decide_question` is; an offer (`open_question`) closes
+    longer of that and TALKED_IDLE. F135: only a `decide_question` is; an offer (`open_question`) closes
     when idle (never quick), its why naming it."""
     if control_renamed(st, n):
         return 'keep', 'renamed by the person'
@@ -1033,7 +1033,7 @@ def control_verdict(st: dict, cf: dict, now: float, n: int = 0, one_ask: bool = 
     quiet = now - st['at'] if st['at'] else 0
     talked = st.get('said', 0) > 1 and cf.get('talked')
     if q := decide_question(st['text']):
-        # F57: a talked session's question waits control_idle_talked too, so it stays open as long as any talk
+        # F57: a talked session's question waits TALKED_IDLE too, so it stays open as long as any talk
         ask = max(cf['ask_idle'], cf['talked']) if talked and cf['ask_idle'] else cf['ask_idle']
         if ask and quiet >= ask:
             return 'ask', q

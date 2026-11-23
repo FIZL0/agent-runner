@@ -1025,7 +1025,7 @@ def run(argv: list[str], prog: str) -> int:
     ap.add_argument('--idle', type=int, default=None, help='seconds of quiet before a session is ended')
     ap.add_argument('--stall', type=int, default=None, help='seconds of quiet that count as stalled')
     ap.add_argument('--pause', type=int, default=None, help='seconds between a session ending and the next')
-    ap.add_argument('--model', default=None, help='the agent model (default [run] model)')
+    ap.add_argument('--model', default=None, help='the agent model (default [models] code and kinds)')
     ap.add_argument('--dry-run', action='store_true', help='print what would start, and start nothing')
     ap.add_argument('--stop-hook', action='store_true', help=argparse.SUPPRESS)
     ap.add_argument('--stop-waiter', nargs=4, metavar=('PID', 'TRANSCRIPT', 'N', 'IDLE'), help=argparse.SUPPRESS)

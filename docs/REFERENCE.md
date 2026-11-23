@@ -10,7 +10,7 @@ disk and memory, stopping, the prompt, every command and every `runner.toml` key
 plan/TODO.md ──pick──▶ slot N: git worktree ~/runs/<repo>/sN on task/<ID>
                          hidden terminal sN: claude "<prompt + the task's brief>"
                          …the session works, then `agent-runner done <ID> "msg"` (test gate → tick → commit → push task/<ID>)
-                         Stop hook: quiet for [run] idle seconds → the session is ended
+                         Stop hook: quiet for 30 seconds → the session is ended
                ◀─merge── merge worktree ~/runs/<repo>/merge: merge main + task/<ID>, join line-records,
                          a fix session for real conflicts, the test gate on the merge
                          → land in the main checkout → reopen what it unblocked → push main
@@ -27,7 +27,7 @@ plan/TODO.md ──pick──▶ slot N: git worktree ~/runs/<repo>/sN on task/<
    (`[x]`, and the line moves to DONE.md), commits, and pushes `task/<ID>`. If the gate fails, nothing is
    ticked or committed. A session that's stuck runs `done --blocked "why"` instead.
 4. **End the session.** The session goes quiet at its prompt. The Stop hook's detached timer sees no new
-   transcript entries for 5 s once `done` has succeeded, or `[run] idle` seconds (30) when it stopped without it, and ends it. If a human typed in it (`attach sN`), or a usage
+   transcript entries for 5 s once `done` has succeeded, or 30 seconds when it stopped without it, and ends it. If a human typed in it (`attach sN`), or a usage
    limit is being waited out, the timer leaves the session alone. A session still running a background
    command (a `done` queued behind other test runs) is left alone until that command ends, up to 3 h.
    Whatever a session leaves uncommitted is saved on `wip/<ID>` (or `leftover/<ID>` when it has commits)
@@ -210,21 +210,16 @@ task to fix X" (it files it with `plan add`), "do X now" (it uses `take`, never 
   after about 10 minutes offline; 30 s, doubling to 10 minutes while it keeps failing), so new control
   sessions can be started from the app. `--settings` goes in only when `claude remote-control --help` lists
   it (asked once a run): an older Claude Code starts without it, so its app sessions get no control brief,
-  and `run.log` says to update. The run's end ends it. The slots stay local unless `[run]
-  remote_slots = true`, which starts each as "<task title> · <repo> s2 · B646". That is off by default and not
+  and `run.log` says to update. The run's end ends it. A slot's listing in the apps follows `[run] remote_slots` (see Slots in the Claude apps below): `"always"` starts each as "<task title> · <repo> s2 · B646". That is not the default and not
   recommended: every slot start pushes to the phone (see Phone pushes below). Watch hidden slots through
   status and control sessions instead.
-- **One entry per project (`[run] sessions`).** `"one"`, the default, keeps the apps' list to one entry for the
-  project, c1, its chat: no slot starts on Remote Control, even with `remote_slots`. `agent-runner ui`'s
-  Sessions panel opens one (its session tab, "open sN in the Claude apps"; the run app has no such button):
-  the run types `/remote-control <name>` into that slot's session, which is listed from then on until it ends,
-  and its claude.ai/code link shows in the page. For when this machine is not reachable, the run keeps a claude.ai copy of the run page: on a run event (a
+- **Slots in the Claude apps (`[run] remote_slots`).** `"open"`, the default, lists a slot in the apps only once it is opened: c1 is the project's chat, and no slot starts on Remote Control by itself. `agent-runner ui`'s Sessions panel opens one (its session tab, "open sN in the Claude apps"; the run app has no such button): the run types `/remote-control <name>` into that slot's session, which is listed from then on until it ends, and its claude.ai/code link shows in the page. For when this machine is not reachable, the run keeps a claude.ai copy of the run page: on a run event (a
   task starts, lands or blocks, a needs-you item, a concept, the release; at most every 10 minutes, and only
   when the page changed apart from its clock, log and minutes) the run writes `.runner/run-page-copy.html` and
   publishes it with a one-shot headless `claude -p` that has only the Artifact tool, to the URL kept in
   `.runner/run-page-copy.url`; never through c1 or another control session. After 3 failed publishes in a row
   the copy stops for that run. The copy is read-only, with the terminal and the chat as session links.
-  `"each"` is the earlier behaviour: every slot its own entry with `remote_slots`, and no copy.
+  `"always"` lists every slot as its own entry, "<task title> · <repo> s2 · B646", and keeps no copy. An old `remote_slots = true` with `sessions = "each"` reads as `"always"`, any other old `true` as `"open"`.
 - **`remote = "auto"`, the default**, is on when Remote Control can work: Claude Code on a claude.ai login.
   It is off, with one `run.log` line saying why (`remote control off: …`), when
   `ANTHROPIC_API_KEY` or `ANTHROPIC_AUTH_TOKEN` is set, `CLAUDE_CODE_USE_BEDROCK`, `_VERTEX` or
@@ -328,10 +323,7 @@ drawer) and a desktop. It follows the browser's light or dark setting; `[ui] the
   release stale claims, the main-checkout edits a merge moved aside). Stop now, suspend, shut down, upgrade, restart
   and dropping edits ask first, in place; in `agent-runner ui` the key is pressed twice. Restart (`key restart`)
   re-execs the run between merges so that it reads its settings again; its tasks keep going.
-- **Settings.** Every key `agent-runner settings` lists, with its value, where that comes from, its default and its
-  help. This device saves to `runner.local.toml` at once, one key in place, comments kept; Reset takes the key out.
-  Project queues a C task on `runner.toml`, which lands through the gate. Each says when it applies (slots: now;
-  the rest: the next run, or Restart the run). Keys that are no setting show read-only, flagged.
+- **Settings.** The run app's Settings page: about 24 everyday settings in Speed and limits, Landing work, Models and Chats, each with its control on its row. The rest sit behind Advanced, and commands, paths, patterns and rules behind Project file, read only ("Ask a chat to change it"). Each setting has a home: this device saves to `runner.local.toml` at once, or everyone queues a C task on `runner.toml`, which the row shows as Queued until it starts (changing it again edits that task; putting the value back drops it). The other home is in the row's More…. A value set on this device wins and is what the row edits. Changed lists what differs from its default, with Reset, and the lines the run ignores or moved. Dependent rows show with their parent (`approve_wait` and `approve_batch` with `approve` on). Search finds names, descriptions and code names. A "N changes wait for a restart" card has Restart the run; `slots` applies now. `agent-runner settings` still prints the developer notes. The words the page shows are in `agent_runner/setting_words.py`.
 - **Home.** A greeting, a message box, quick asks (since my last look, what needs me, add a task), then
   Needs you (each item's answer buttons, Later to shelve it, Chat to open a new chat that shows the question and its answers, Drop to
   drop the task after a confirm), Working now (opens
@@ -355,7 +347,7 @@ drawer) and a desktop. It follows the browser's light or dark setting; `[ui] the
 
 How the app looks, moves and speaks is in [STYLE.md](STYLE.md); a change to it follows those rules.
 
-The app does not open slots in the Claude apps; `agent-runner ui` still does (see `[run] sessions` above).
+The app does not open slots in the Claude apps; `agent-runner ui` still does (see `[run] remote_slots` above).
 
 `agent-runner ui` (the terminal UI) has no chat of its own: nothing is typed into a session from it, and Ctrl+C
 always quits. Selecting a session row (cN or sN) shows the real Claude Code session. A pane split
@@ -841,7 +833,7 @@ that denies `git push` in this project (anywhere while `[git] push = false`), `g
 another slot; an edit outside the project, in a sibling repository the task needs, is let through. It
 holds every session, and replaces the no-push git config that `[git] push = false` used to set.
 
-**Idle stop.** The Stop hook starts a detached timer; a session quiet for `[run] idle` seconds is ended.
+**Idle stop.** The Stop hook starts a detached timer; a session quiet for 30 seconds is ended.
 The timer does not fire on a session a human has typed into, or one waiting out a usage limit. Nor on
 one whose agent still has a child process (a background command), until it ends or
 `AGENT_RUNNER_IDLE_MAX` (10800 s) has passed since the stop.
@@ -851,7 +843,7 @@ them onto `wip/<ID>` if the task has no commits (the next attempt is told to rea
 `leftover/<ID>` otherwise, so the merge never takes in untested edits; both are pushed. Only then is
 the slot reset.
 
-**Stall watchdog.** A session quiet at a prompt with no tool running for `[run] stall` seconds (20 min),
+**Stall watchdog.** A session quiet at a prompt with no tool running for 1200 seconds (20 min),
 or quiet for over 65 minutes with a tool running, is logged with the terminal to look at, and the bell
 rings.
 
@@ -964,7 +956,7 @@ that merge, which goes in clean unless the shared branch touched the same lines 
 it goes back out for another, smaller fix. Its third try fixes under the lock, in the merge worktree. It runs as
 `claude -p`. Its prompt (`FIXER` in `runner.py`) includes the tail of the ledger. It either
 commits the resolution or runs `git merge --abort` and states why; its output goes to
-`.runner/fixer.log`. It is capped at `[run] fix_timeout` (30 min); ahead of the lock that holds up only
+`.runner/fixer.log`. It is capped at 30 minutes; ahead of the lock that holds up only
 its own task. Set `fix_merges = false` to park every such conflict as `wip/<ID>` instead. With `[run] build`
 set, the fix session runs it before it commits and fixes what the two sides broke between them: git
 merges the files it did not stop on without reading them, so a function both sides added under one name
@@ -1007,7 +999,7 @@ slot from starting a new task (with 6 slots and `batch_max` 16, 33 waiting run 5
 Sessions under way go on; slots pick up again as merges land. The runner says when it holds slots back
 and when it stops.
 
-Tasks that finish while a batch is in its gate do not wait for it to end (`merge_ahead = true`). They are
+Tasks that finish while a batch is in its gate do not wait for it to end (always on). They are
 merged on top of the merge under test in a second worktree (`merge2` under `[run] home`) and their gate starts
 beside that one. When the first batch lands, the next one's turn finds the same merge built ahead and
 waits for the gate already under way on that exact tree, so two batches cost about one gate's wait. If
@@ -1117,8 +1109,7 @@ instance. `AGENT_RUNNER_WORKTREE` names the slot's worktree: while it is set, pl
 another project, and say to run the command from that worktree (B103).
 
 `include_task_id_in_commit = false` tells sessions to omit the task ID from the commit subject; `done` also
-removes a leading `<ID>:` if a session includes one anyway. The default is `true`. `comment_policy = "minimal"`
-asks sessions to add comments only when they explain non-obvious intent or constraints. The default is `"normal"`.
+removes a leading `<ID>:` if a session includes one anyway. The default is `true`. An old `comment_policy` is ignored: write its wording in `prompt_extra`.
 These policy instructions are appended to built-in and custom prompts.
 
 ## After a run
@@ -1266,9 +1257,9 @@ chat_quiet = "6h"         # a chat that needs no reply, with nothing said in it 
                           # of the run app's Chats (never c1, a pinned or a renamed one); false: off
 
 [models]                  # the model each type of work runs on (see Models per role below)
-code = "opus"             # a task's own session; unset, [run] model sets it
+code = "opus"             # a task's own session when its kind has no model below
 review = "opus"           # the `review` subagent the spec review before done runs in
-fix = "opus"              # merge-conflict fix and repair sessions; unset, [run] fix_model sets it
+fix = "opus"              # merge-conflict fix and repair sessions
 docs = "haiku"            # the `docs` subagent: CHANGELOG, docs, README, journal and plan-text edits; false: none
 control = "opus"          # control sessions (c1, c2, …)
 feed = "haiku"            # the runner feed, and the one-shot that publishes the run page's claude.ai copy
@@ -1284,17 +1275,13 @@ test_since = ""           # a merge's gate on what changed since {base}, e.g. "m
 full_every_hours = 24     # with test_since: the whole `test` once none has passed for this long; 0 = never
 slots = 3
 include_task_id_in_commit = true
-comment_policy = "normal"
 agent = "claude"          # the Claude Code executable a session runs: claude, or a wrapper around it
 engine = "terminal"       # terminal = an interactive session in a hidden terminal (the default for now); stream = headless claude -p, stream-json in and out
-model = "opus"
 lean = true               # sessions get Bash/Read/Edit/Write/Artifact only, no MCP servers or user settings
 remote = "auto"           # control sessions on Remote Control, and a control server to start more from claude.ai/code or the Claude apps; Enter in the run view opens it. auto: on where it can work (see Control sessions); true/false force it
-remote_slots = false      # the slots on Remote Control too ("<task title> · <repo> s2 · B646"); not
-                          # recommended: every slot start pushes to the phone
-sessions = "one"          # what the Claude apps list for this project. one: c1, the project's chat; a slot goes
-                          # on Remote Control only when opened from `agent-runner ui` (Sessions, session tab), and
-                          # the run keeps a claude.ai copy of the run page. each: every slot its own entry (remote_slots)
+remote_slots = "open"     # the slots in the Claude apps. open: listed once opened from `agent-runner ui` (Sessions, session tab),
+                          # c1 is the project's chat, and the run keeps a claude.ai copy of the run page. always: every slot its own
+                          # entry ("<task title> · <repo> s2 · B646"), no copy
 web = true                # the run app (see The run app), served by the run on web_port for the LAN/Tailscale, or on
                           # 127.0.0.1 only behind Home; its address, with the token it needs, is in `status` and the run
                           # log; false: off
@@ -1303,10 +1290,7 @@ web_port = 8770           # where the run app is served; a port set here stays o
 silent = false            # phone pushes from those sessions after each one's start push (that one cannot be stopped): true = none, false = Claude Code's usual
 control = true            # a run opens control session c1 beside it; false: none (`agent-runner control` still works)
 control_idle = "3h"       # close idle control sessions 2, 3, … (never c1) once quiet this long, Claude spoke last, its last message does not end on a `DECIDE:` line (that one waits for `control_ask`), and nothing runs in it (a background task or Monitor; the needs-you watch does not count): process ended, controlN.pid removed, transcript kept (`claude --resume <sid>`); false: none closed idle
-control_idle_quick = "5m"   # a session opened for one ask (a feed reply, `control --new --ask`) where the person sent only that message, a task got queued (`plan add` printed "added <ID>") and the last message has no `control_open` phrase and no `DECIDE:` line: closed after this instead (looked at every 5 min, so 5-10 min); false: control_idle
-control_idle_talked = "12h" # a session the person sent a second message in: closed after this instead, and a `DECIDE:` question in it is filed only after the longer of this and control_ask; false: control_idle (and control_ask for its question). Slash commands (the runner's /rename), hook and system turns are not the person's messages
 control_ask = "2h"        # a last message ending on a line `DECIDE: <question>` (the brief asks the session for one only when work waits on the answer): after this long it is filed under Needs you as a DECIDE item (an F task with the question + the session link; answering it reopens the task for a run to carry on), then closed; false: such a session stays open and nothing is filed
-control_open = ["?", "want me to", "should i", "shall i", "would you like", "do you want"]  # what makes a last message an offer or open question: not filed, named in the run log when its session closes, never closed by control_idle_quick (case ignored; "?" must end its last paragraph, the rest may stand anywhere in it)
 auto_upgrade = true       # upgrade by itself when a newer release is out, as `u` does, once no merge runs; the run restarts on it (false: only `u` or `agent-runner upgrade`)
 install_skill = true      # keep the `agent-runner guide` skill in ~/.claude/skills and the user-level SessionStart hook (the control brief in a runner repo's main checkout) in Claude Code's user settings, from every agent-runner command, for sessions a person starts; false: neither is written
 rules_pointer = true      # a run adds one line to the rules file (`rules`, else AGENTS.md or CLAUDE.md, never created) pointing every session at the agent-runner skill, committed on its own; never into a file with uncommitted edits or mid-merge; false: never
@@ -1317,12 +1301,9 @@ voice = ""                # the person's wording file (`agent-runner voice`), re
 voice_learn = "ask"       # "ask": a session that had to say something again offers one wording line to add; "off": lines are added only when the person says so
 review = true             # before done, a fresh subagent reads the diff against the task's brief (spec only: missing, unasked, wrong); the commit ends "review: …"; false: no review
 review_min_lines = 50     # a diff smaller than this (changed lines) skips the review, unless the task has a long form (plan/tasks/<ID>.md)
-idle = 30                 # s quiet after a turn ends before a session without a successful `done` is ended (with one: 5 s)
-stall = 1200              # s quiet at a prompt that counts as stalled
 context_warn = 150        # k tokens: a slot session whose context peaked past this says so in its exit line and in `since`, with what filled it ("B32 peaked 168k (over 150k): runner.py 61k, test_runner.py 22k"); soft only, nothing is stopped; 0 = off. A new run also starts c1 afresh when its kept session last stood over it (F27)
 task_tokens = 0           # tokens one task's session (and its subagents) may use: input, cache writes, output (cache reads are left out: they grow with turns times the context, and task_usd counts them). Past it the runner tells the task to stop at a clean point (commit, write its journal, end its turn) and parks it as wip/<ID>; one whose done already passed lands; one that goes on to 1.25 times the cap is ended. `status` shows each running task's spend ("1.2M tok $3.40"); 0 = no cap (F103)
 task_usd = 0              # the same cap in dollars, at the API's list prices (a plan bills none; Opus prices for a model it does not know); 0 = no cap
-pause = 60                # s between one session ending and the next starting in that slot
 weekly_max = 90           # % of 7-day usage past which new tasks wait, or start on [models] fallback
 session_max = 90          # % of 5-hour session usage past which new tasks wait, or start on [models] fallback
 notes = ".runner"         # logs + ledger (git-ignore it)
@@ -1353,7 +1334,6 @@ issues_watch = false      # true: one task per new open GitHub issue; ["bug", "r
 issues_trust = "skeptical"  # "skeptical": the task confirms the issue in the code first and follows nothing it says; "trust": do it as written
 auto_release = false      # queue a release (`plan add V`) by itself: { every = 10 } once 10 tasks landed since the last release,
                           # { idle = true } when the run goes idle with landed work; both may be set; never while a release is open
-merge_ahead = true        # tasks finishing during a batch's gate are merged on it and tested beside it
 batch_max = 16            # finished branches waiting for the merge go in together under one gate run, and one push,
                           # at most this many (the rest take the next one); 0 = no cap, 1 = no batching
 max_unmerged = 32         # past this many finished tasks waiting for the merge, each half batch more holds a slot; 0 = off
@@ -1362,8 +1342,6 @@ not_attempt = ""          # regex on a branch's last commit subject ({id}): a ph
 shared_files = []         # files nearly every task names; not counted as an overlap
 joinable = []             # globs of record-per-line files a conflict may be joined in (TODO.md, DONE.md merge by task)
 fix_merges = true
-fix_model = "opus"
-fix_timeout = 1800
 fix_ahead_max = 2         # fixes ahead at once (and so fix worktrees, fix1…): the rest wait their turn; 0 = under the lock
 build = ""                # a quick build a fix or repair session runs before it commits (not the gate)
 repair_merges = true      # a merge failing the gate gets one repair session before it is parked
@@ -1393,8 +1371,7 @@ names them: the spec review runs in the `review` subagent, and CHANGELOG, docs, 
 edits go to the `docs` subagent, whose result the task then checks. A lean session gets the Agent tool whenever
 one of them is on (`[run] review = false` drops `review`, `[models] docs = false` drops `docs`).
 
-`[run] model` and `[run] fix_model` stay as aliases: they set `code` and `fix` when `[models]` does not, so an
-older `model = "opus"` keeps working, and `run --model M` still picks the task model for one run. A role
+`[run] model` and `[run] fix_model` moved to `[models] code` and `fix`: an old file that sets them still works, filling those roles when `[models]` does not (the run log has a note), and `run --model M` still picks the task model for one run. A role
 `[models]` sets wins over them.
 
 ### Models per kind
@@ -1407,7 +1384,7 @@ which wins over the kind. A task session's model is chosen in this order: the ta
 given on the command line (it sets every task without its own); the
 `[models.kinds]` entry for its kind; `[models] code`. A resumed session (cut off, failed, or answered after
 `run ask`) goes on on the same model. A kind's value must be a model name (a string), or
-the run refuses to start with a `[models.kinds]` error. A repo that sets `[models] code` or `[run] model` still gets
+the run refuses to start with a `[models.kinds]` error. A repo that sets `[models] code` still gets
 the default kinds for F, B, T, V, K, D, C and R; to run every kind on one model, set those kinds in `[models.kinds]`.
 
 ### Model providers
@@ -1518,7 +1495,7 @@ or another slot. A denied call returns the reason to the model and does not run.
 Budgets: before every model call it holds what the session has spent, counted as for `[run] task_tokens` and
 `task_usd`: tokens without cache reads; dollars from the provider's own cost when it gives one. Past a cap it stops,
 writes the task's budget mark, and the run parks the branch as wip/<ID> as it does for any session over budget. Fix
-sessions have no cap (`fix_timeout` holds them).
+sessions have no cap (the fixed 30 minute timeout holds them).
 
 Tells: a person's `plan tell` (text typed into the hidden slot's terminal) is read from stdin and goes in as the next
 user message.
@@ -1581,6 +1558,18 @@ Renamed or folded in 0.58.0 (the config trim):
   `<provider>:<model>` instead.
 - `[run] slot_env` keeps its name but defaults to `[]`: every slot gets `AGENT_SLOT=<n>` whatever it says, so
   a `slot_env` no longer needs to repeat it.
+
+Folded or fixed by the settings cut (F166, unreleased):
+
+- `[run] comment_policy` is ignored: write its wording in `prompt_extra`.
+- `[run] idle`, `[run] stall`, `[run] pause`, `[run] fix_timeout`, `[run] control_idle_quick`,
+  `[run] control_idle_talked` and `[run] merge_ahead` are fixed
+  (30 s, 1200 s, 60 s, 1800 s, 5 min, 12 h, on); a file that sets one is ignored. `run --idle`, `--stall` and `--pause`
+  still set one run.
+- `[run] control_open` is fixed: its phrases are the built-in ones.
+- `[run] model` and `[run] fix_model` moved to `[models] code` and `fix`.
+- `[run] sessions` is folded into `remote_slots`: an old `true` with `"each"` reads as `"always"`, any other old
+  boolean as `"open"`.
 
 Removed since 0.58.0:
 

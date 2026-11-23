@@ -20,7 +20,7 @@ Where the settings come from, first match wins:
 2. `runner.toml` at the root of the checkout, else the main checkout's (a git-ignored one is only there).
 
 Then `runner.local.toml` (the checkout's, else the main checkout's), if there is one, is laid over it key by
-key, table by table: one person's settings on one machine (`weekly_max`, `slots`, `model`) without editing the
+key, table by table: one person's settings on one machine (`weekly_max`, `slots`) without editing the
 file everyone shares. It may wrap its tables in `[agent-runner]` too. `run` creates it in the main checkout
 (all comments, so it changes nothing) when it is missing and changes it only as the run app's Settings view asks (F97), and keeps it out of git by
 adding it to the clone's `.git/info/exclude`.
@@ -109,17 +109,13 @@ DEFAULTS: dict = {
         'engine': 'terminal',   # F106b: how a slot runs Claude Code. terminal = an interactive session in a
                                 # hidden pty; stream = headless `claude -p` with stream-json in and out
         'include_task_id_in_commit': True,  # agents start each commit subject with the task id
-        'comment_policy': 'normal',  # 'minimal': agents add code comments only for non-obvious intent
-        'model': 'opus',        # the model the task sessions run on
         'lean': True,           # agents get Bash/Read/Edit/Write/Artifact only, no MCP, no user settings
         'remote': 'auto',       # control sessions on Remote Control, and a control server there to start more:
                                 # the run, watched and steered from claude.ai/code and the Claude apps; auto = on
                                 # when it can work (Claude Code on a claude.ai login), true/false force it
-        'remote_slots': False,  # the slots on Remote Control too, each "<task title> · <repo> s2 · B646"
-        'sessions': 'one',      # what the Claude apps list for a project. one = c1 is the project's chat;
-                                # a slot goes on Remote Control only when opened from the run page, and c1
-                                # keeps a claude.ai copy of the run page. each = every slot its own entry
-                                # (with remote_slots), as before
+        'remote_slots': 'open', # the slots in the Claude apps. open = a slot is listed only once opened from the run
+                                # page, c1 is the project's chat, and the run keeps a claude.ai copy of the run page;
+                                # always = every slot its own entry, "<task title> · <repo> s2 · B646", and no copy
         'web': True,            # the run page on the web, served by the run from this machine on web_port for the
                                 # LAN/Tailscale (its address, with the token it needs, in `status` and the run log)
         'web_port': 8770,       # where the run page is served (its ttyds take the next ports); with Home, only if set (F165)
@@ -128,16 +124,8 @@ DEFAULTS: dict = {
         'control': True,        # a run opens control session c1 beside it (`agent-runner control`); false: none
         'control_idle': '3h',   # the run closes control sessions 2, 3, … (never c1) quiet this long with Claude
                                 # last and nothing running in them; transcripts kept. false: none closed idle
-        'control_idle_quick': '5m',  # a session opened for one ask (a feed reply) that queued a task, the
-                                # person's only message that ask and no open question: closed this soon (false: control_idle)
-        'control_idle_talked': '12h',  # a session the person sent a second message in: kept this long
-                                # (false: control_idle)
         'control_ask': '2h',    # quiet this long on a question marked with a last line `DECIDE: …` (F135):
                                 # filed under Needs you as a DECIDE item, then closed. false: such a session stays open
-        'control_open': ['?', 'want me to', 'should i', 'shall i', 'would you like', 'do you want'],
-                                # what makes Claude's last message an offer or unmarked question: not filed (F135),
-                                # only named in the run log when it closes, and never closed early (case ignored;
-                                # one of punctuation only must end it, any other may stand anywhere in its last paragraph)
         'auto_upgrade': True,   # upgrade agent-runner by itself when a newer release is out, once no merge runs,
                                 # and restart the run on it (as `u` does, without the key); false: only `u` does
         'install_skill': True,  # keep the `agent-runner guide` skill in ~/.claude/skills, for sessions a person starts
@@ -157,14 +145,11 @@ DEFAULTS: dict = {
                                 # only: missing, unasked, wrong); the commit ends 'review: …'; false: no review
         'review_min_lines': 50, # a diff smaller than this (changed lines) skips the review, unless the task has a
                                 # long form (plan/tasks/<ID>.md)
-        'idle': 30,             # seconds a finished session sits at its prompt before it is ended
-        'stall': 1200,          # seconds of quiet at a prompt that count as stalled
         'context_warn': 150,    # k tokens: a slot session whose context peaks past this says so, and what filled
                                 # it, in its exit line and `since` (soft only: nothing is stopped); 0 = off
         'task_tokens': 0,       # tokens (input, cache writes, output; not cache reads) one task's session may use; past
                                 # it the task stops at a clean point and is parked as wip/<ID>; 0 = no cap
         'task_usd': 0,          # the same in dollars at the API's list prices (a plan bills none); 0 = no cap
-        'pause': 60,            # seconds between one session ending and the next starting in that slot
         'weekly_max': 90,       # % of the account's 7-day usage past which new tasks wait, or start on [models] fallback
         'session_max': 90,      # % of the account's 5-hour session usage past which new tasks wait, or start on [models] fallback
         'notes': '.runner',     # logs and the ledger; keep it git-ignored
@@ -209,7 +194,6 @@ DEFAULTS: dict = {
         'auto_release': False,  # queue a release (`plan add V`) by itself: { every = 10 } once that many tasks
                                 # landed since the last release, { idle = true } when the run goes idle with
                                 # landed work; both may be set; false: off
-        'merge_ahead': True,    # tasks finishing during a batch's gate are merged on it and tested beside it
         'batch_max': 16,        # finished branches waiting for the merge go in together under one gate run, at
                                 # most this many (the rest take the next one); 0 = no cap, 1 = no batching
         'max_unmerged': 32,     # past this many finished tasks waiting for the merge, each half batch more holds one
@@ -218,8 +202,6 @@ DEFAULTS: dict = {
         'not_attempt': '',      # a regex on a finished branch's first commit subject ({id}): such a session
                                 # (a spec phase, say) is not the run's one attempt at the task
         'fix_merges': True,     # give a conflict the join cannot do to a one-shot agent session
-        'fix_model': 'opus',    # the model a merge-conflict fix session runs on
-        'fix_timeout': 1800,    # seconds a fix session may take before it is stopped
         'fix_ahead_max': 2,     # conflicts fixed before the merge lock at once, each in a fix worktree (fix1…)
                                 # while other merges go on; 0 = fix them under the lock, in the merge worktree
         'build': '',            # a quick build, not the gate: a fix session runs it before it commits, so a
@@ -258,9 +240,9 @@ DEFAULTS: dict = {
                                 # bottom of the run app's Chats (never c1, a pinned or a renamed one); false: off
     },
     'models': {
-        'code': 'opus',         # a task's own session; unset here, `[run] model` sets it
+        'code': 'opus',         # a task's own session when its kind has no model below
         'review': 'opus',       # the `review` subagent the spec review before done runs in
-        'fix': 'opus',          # a merge-conflict fix or repair session; unset here, `[run] fix_model` sets it
+        'fix': 'opus',          # a merge-conflict fix or repair session
         'docs': 'haiku',        # the `docs` subagent a task hands CHANGELOG, docs, README, journal and plan-text
                                 # edits to, then checks; false: no docs subagent
         'control': 'opus',      # control sessions (c1, c2, ...)
@@ -298,7 +280,7 @@ SETTINGS_HEAD = """\
 
 Where: runner.toml (committed, shared by everyone who runs the repo: project behaviour such as test, rules,
 review) or runner.local.toml (this machine only, git-ignored, laid over runner.toml key by key: slots,
-weekly_max, session_max, model, remote, silent, control_idle). Both sit at the main checkout's root; set a key
+weekly_max, session_max, remote, silent, control_idle). Both sit at the main checkout's root; set a key
 in its table ([run], [plan], ...) with the value written as below.
 How: a runner.toml change is a commit, so make it through `{cmd} take "set [TABLE] KEY = VALUE: why" --kind C
 --files runner.toml` (its own worktree, then `take ID --merge`), never as an edit in the main checkout.
@@ -530,7 +512,6 @@ LOCAL_TEMPLATE = """\
 # weekly_max = 90        # % of the account's 7-day usage past which new tasks wait, or start on [models] fallback
 # session_max = 90       # % of the account's 5-hour session usage past which new tasks wait, or start on [models] fallback
 # slots = 3              # parallel sessions on this machine
-# model = "opus"
 # min_free_gb = 10       # below this free disk space no new task starts
 """
 
@@ -570,6 +551,15 @@ REMOVED: dict[tuple[str, str], str] = {
     ('needs', 'ages'): 'each item always shows its age; delete it',
     ('run', 'mux'): 'every run is hidden on every OS (0.60.0: no tmux; `attach` shows the run and its sessions); '
                     'delete it',
+    ('run', 'comment_policy'): 'write it in `prompt_extra`; delete it',
+    ('run', 'idle'): "always 30 seconds (`run --idle N` for one run); delete it",
+    ('run', 'stall'): 'always 1200 seconds (`run --stall N` for one run); delete it',
+    ('run', 'pause'): 'always 60 seconds (`run --pause N` for one run); delete it',
+    ('run', 'merge_ahead'): 'always on; delete it',
+    ('run', 'fix_timeout'): 'always 1800 seconds; delete it',
+    ('run', 'control_idle_quick'): 'always 5 minutes; delete it',
+    ('run', 'control_idle_talked'): 'always 12 hours; delete it',
+    ('run', 'control_open'): 'what reads as an offer is fixed; delete it',
     ('run', 'backend'): 'every session runs on Claude Code or, for another provider\'s model, the harness loop '
                         '(F106d); delete it',
 }
@@ -593,7 +583,26 @@ MOVED: dict[tuple[str, str], tuple[str, str, object, str]] = {
                                'write `control_idle = false` for false, else delete it'),
     ('run', 'batch'): ('run', 'batch_max', lambda v: 1 if v is False else None,
                        'write `batch_max = 1` for false, else delete it'),
+    ('run', 'model'): ('models', 'code', lambda v: v, 'move it to `[models] code`'),
+    ('run', 'fix_model'): ('models', 'fix', lambda v: v, 'move it to `[models] fix`'),
+    ('run', 'sessions'): ('run', 'remote_slots', lambda v: None,  # `slots_in_apps` takes its value
+                          'write `remote_slots = "always"` for "each" with remote_slots = true, else delete both'),
 }
+
+# F166: values that were settings, fixed now; the run reads them in `C.run` as before
+FIXED: dict[str, object] = {'idle': 30, 'stall': 1200, 'pause': 60, 'merge_ahead': True, 'fix_timeout': 1800}
+
+
+def old_sessions(raws: list[dict]) -> str:
+    """F166: what the files `raws` (the later one wins; before `move_keys`) set the cut `[run] sessions` to, '' for none."""
+    return next((str(r['run']['sessions']) for r in reversed(raws)
+                 if isinstance(r.get('run'), dict) and 'sessions' in r['run']), '')
+
+
+def slots_in_apps(v, sessions: str):
+    """F166: `[run] remote_slots` = `v` as 'open' or 'always': the old true listed every slot only with
+    `sessions = "each"`. Any other value is given back as it is."""
+    return ('always' if v and sessions == 'each' else 'open') if isinstance(v, bool) else v
 
 
 def move_keys(raw: dict) -> None:
@@ -644,12 +653,14 @@ class Config:
     def __init__(self, root: Path):
         self.root = root
         raw: dict = {}
+        sessions: list[dict] = []
         self.warnings: list[str] = []  # old, removed or unknown keys; the run logs them at its start
 
         def read(f: Path, mine: dict) -> dict:
             if isinstance(mine.get('run'), dict) and mine['run'].get('backend') == 'pi':
                 raise SystemExit(f'agent-runner: {f.name}: [run] backend = "pi": {PI_GONE}')
             self.warnings.extend(migrate(mine, f.name))
+            sessions.append({'run': dict(mine['run'])} if isinstance(mine.get('run'), dict) else {})
             move_keys(mine)
             return mine
         self.file = config_file(root)
@@ -675,6 +686,10 @@ class Config:
         if self.raw['plan']['repo'] and 'dir' not in raw.get('plan', {}):
             self.raw['plan']['dir'] = str(self.home / 'plan')
         self.run = self.raw['run']
+        self.run.update(FIXED)
+        if isinstance(self.run['remote_slots'], bool):
+            self.warnings.append('[run] remote_slots is now "open" (a slot is listed once you open it) or "always"')
+        self.run['remote_slots'] = slots_in_apps(self.run['remote_slots'], old_sessions(sessions))
         agent_stem = Path(str(self.run['agent']).replace('\\', '/')).stem.lower()
         if agent_stem == 'copilot':
             raise SystemExit('agent-runner: [run] agent = "copilot" is gone (GitHub Copilot CLI support was '
@@ -688,8 +703,8 @@ class Config:
                 raise SystemExit(f'agent-runner: {problem}')
         if not (isinstance(self.run['remote'], bool) or self.run['remote'] == 'auto'):
             raise SystemExit(f"agent-runner: [run] remote must be 'auto', true or false, not {self.run['remote']!r}")
-        if self.run['sessions'] not in ('one', 'each'):
-            raise SystemExit(f"agent-runner: [run] sessions must be 'one' or 'each', not {self.run['sessions']!r}")
+        if self.run['remote_slots'] not in ('open', 'always'):
+            raise SystemExit(f"agent-runner: [run] remote_slots must be 'open' or 'always', not {self.run['remote_slots']!r}")
         if self.run['engine'] not in ('terminal', 'stream'):
             raise SystemExit(f"agent-runner: [run] engine must be 'terminal' or 'stream', not {self.run['engine']!r}")
         if self.run['silent'] == 'launch':  # C20: the quiet launch is gone (it never stopped the start push)
@@ -709,15 +724,12 @@ class Config:
                              f"{self.raw['ui']['theme']!r}")
         if problem := setting_problem('ui', 'chat_quiet', self.raw['ui']['chat_quiet']):  # F128
             raise SystemExit(f'agent-runner: {problem}')
-        if self.run['comment_policy'] not in ('normal', 'minimal'):
-            raise SystemExit("agent-runner: [run] comment_policy must be 'normal' or 'minimal'")
         self.run['backend'] = 'claude'  # not a setting: `slots.backend()` reads it; the only one since F106d
         self.models = self.resolve_models(given_models)
 
     def resolve_models(self, given: dict) -> dict:
-        """F101: `[models]`, each role settled: a role the files set wins; else `code` is `[run] model` and `fix`
-        `[run] fix_model` (their aliases, set or default). `[run] model` and `fix_model` are kept equal to `code`
-        and `fix`, so code that reads them sees the role."""
+        """F101: `[models]`, each role settled: a role the files set wins, else the default. `C.run['model']` and
+        `C.run['fix_model']` are kept equal to `code` and `fix`, so code that reads them sees the role."""
         m, r = self.raw['models'], self.run
         # F106a: [models] local and [models.providers] are settings, not roles: kept apart from self.models
         self.models_local = m.pop('local', False)
@@ -734,12 +746,8 @@ class Config:
                     and not (isinstance(v, str) or (v is False and role == 'docs')):
                 raise SystemExit(f'agent-runner: [models] {role} must be a model name'
                                  + (' or false' if role == 'docs' else '') + f', not {v!r}')
-        code = given.get('code', r['model'])
-        fix = given.get('fix', r['fix_model'])
-        r['model'], r['fix_model'] = code, fix
-        m.update(code=code, fix=fix)
         for role in DEFAULTS['models']:
-            if role not in ('code', 'fix', *MODEL_SETTINGS):
+            if role not in MODEL_SETTINGS:
                 m[role] = given.get(role, DEFAULTS['models'][role])
         # F105: [models.kinds] laid over the defaults kind by kind
         kinds = given.get('kinds', {})
@@ -872,9 +880,8 @@ def finished_mark(slot: str | int | None = None, c: Config | None = None) -> Pat
 SETTING_CHOICES: dict[tuple[str, str], tuple] = {
     ('plan', 'journal_layout'): ('dated', 'id'),
     ('run', 'engine'): ('terminal', 'stream'),
-    ('run', 'comment_policy'): ('normal', 'minimal'),
     ('run', 'remote'): ('auto', True, False),
-    ('run', 'sessions'): ('one', 'each'),
+    ('run', 'remote_slots'): ('open', 'always'),
     ('run', 'grill'): ('ask', 'big', 'off'),
     ('run', 'voice_learn'): ('ask', 'off'),
     ('run', 'issues_trust'): ('skeptical', 'trust'),
@@ -884,15 +891,13 @@ SETTING_CHOICES: dict[tuple[str, str], tuple] = {
 # keys that take more than their default's type: the other types ('off': false, 'bool', 'number', 'text', 'list',
 # 'table')
 SETTING_ALSO: dict[tuple[str, str], tuple[str, ...]] = {
-    ('plan', 'glossary'): ('off',), ('run', 'control_idle'): ('off',), ('run', 'control_idle_quick'): ('off',),
-    ('run', 'control_idle_talked'): ('off',), ('run', 'control_ask'): ('off',), ('run', 'ci_watch'): ('off', 'list'),
+    ('plan', 'glossary'): ('off',), ('run', 'control_idle'): ('off',), ('run', 'control_ask'): ('off',), ('run', 'ci_watch'): ('off', 'list'),
     ('run', 'issues_watch'): ('list',), ('run', 'auto_release'): ('table',), ('run', 'proc_max_gb'): ('number',),
-    ('run', 'control_open'): ('text',), ('git', 'push'): ('off',), ('ui', 'chat_quiet'): ('off',),
+    ('git', 'push'): ('off',), ('ui', 'chat_quiet'): ('off',),
     ('models', 'docs'): ('off',), ('run', 'task_tokens'): ('float',), ('run', 'task_usd'): ('float',),
     ('run', 'weekly_max'): ('float',), ('run', 'session_max'): ('float',),
 }
-SETTING_DURATIONS = {('run', 'control_idle'), ('run', 'control_idle_quick'), ('run', 'control_idle_talked'),
-                     ('run', 'control_ask'), ('ui', 'chat_quiet')}
+SETTING_DURATIONS = {('run', 'control_idle'), ('run', 'control_ask'), ('ui', 'chat_quiet')}
 SETTING_NOW = {('run', 'slots')}  # a change reaches the run that is up (through `slots N`); the rest wait for the next
 
 
@@ -1119,6 +1124,11 @@ def save_local_setting(root: Path, table: str, key: str, value=None, unset: bool
     crlf = '\r\n' in raw
     try:
         out = toml_edit(raw.replace('\r\n', '\n'), table, key, value, unset)
+        for (t, k), (nt, nk, _, _) in MOVED.items():  # F166: an old key that still sets this one goes with it
+            data = tomllib.loads(out)
+            data = data['agent-runner'] if isinstance(data.get('agent-runner'), dict) else data
+            if (nt, nk) == (table, key) and isinstance(data.get(t), dict) and k in data[t]:
+                out = toml_edit(out, t, k, unset=True)
     except tomllib.TOMLDecodeError as e:
         raise ValueError(f'{f.name} does not read as TOML ({e}): fix it there first') from None
     tmp = f.with_name(f.name + '.tmp')
@@ -1127,6 +1137,11 @@ def save_local_setting(root: Path, table: str, key: str, value=None, unset: bool
     os.replace(tmp, f)
     keep_local_ignored(f.parent)
     return f
+
+
+def _table_for(key: str) -> str:
+    """The table line a key written at the top of a file misses."""
+    return next((f'[{t}]' for t, keys in DEFAULTS.items() if key in keys), '[table]')
 
 
 def settings_snapshot(root: Path) -> dict:
@@ -1151,7 +1166,7 @@ def settings_snapshot(root: Path) -> dict:
                     unknown.append({'table': t if isinstance(keys, dict) else '', 'key': '' if isinstance(keys, dict) else t,
                                     'value': toml_value(keys), 'file': f.name, 'side': side,
                                     'why': f'[{t}] is not a table the runner reads, ignored' if isinstance(keys, dict)
-                                    else f'{t} is in no table, ignored'})
+                                    else f'no {_table_for(t)} line is above it, ignored'})
                 continue
             for k, v in keys.items():
                 if k in DEFAULTS.get(t, {}) or (t not in DEFAULTS and k not in gone):
@@ -1159,31 +1174,31 @@ def settings_snapshot(root: Path) -> dict:
                 said = migrate({t: {k: v}}, f.name)
                 unknown.append({'table': t, 'key': k, 'value': toml_value(v), 'file': f.name, 'side': side,
                                 'why': said[0].partition(': ')[2] if said else 'not a setting'})
+    sessions = old_sessions([raws[side] for side in files])
+    for side in files:
         move_keys(raws[side])
-    docs, tables = default_docs(), []
+    from agent_runner import setting_words as W
+    tables = []
     for t, keys in DEFAULTS.items():
         rows = []
         for k, d in keys.items():
             row = {'key': k, 'type': setting_type(t, k), 'choices': list(setting_choices(t, k)), 'default': d,
                    'off': 'off' in SETTING_ALSO.get((t, k), ()), 'also': list(SETTING_ALSO.get((t, k), ())),
-                   'help': docs.get(t, {}).get(k, ''),
+                   'name': W.name(t, k), 'desc': W.desc(t, k), 'group': W.group(t, k), 'home': W.home(t, k),
+                   'parent': W.parent(t, k), 'words': W.words(t, k), 'unit': W.unit(t, k), 'order': W.order(t, k),
                    'applies': 'now' if (t, k) in SETTING_NOW else 'next run', 'value': d, 'source': 'default'}
             for side in ('project', 'device'):
                 have = raws[side].get(t)
                 row[f'has_{side}'] = isinstance(have, dict) and k in have
                 if row[f'has_{side}']:
-                    row[side] = have[k]
+                    row[side] = slots_in_apps(have[k], sessions) if (t, k) == ('run', 'remote_slots') else have[k]
                     row['value'] = {**d, **have[k]} if (t, k) == ('models', 'kinds') and isinstance(have[k], dict) \
-                        else have[k]
+                        else row[side]
                     row['source'] = side
             rows.append(row)
         tables.append({'table': t, 'keys': rows})
-    of = {(t['table'], k['key']): k for t in tables for k in t['keys']}
-    for role, old in (('code', 'model'), ('fix', 'fix_model')):  # resolve_models: a role unset takes [run]'s
-        k, was = of[('models', role)], of[('run', old)]
-        if k['source'] == 'default' and was['source'] != 'default':
-            k['value'] = was['value']
     return {'ok': not errors, 'out': '; '.join(errors), 'tables': tables, 'unknown': unknown,
+            'groups': [list(g) for g in W.GROUPS],
             'project': files['project'].name if files['project'] else 'runner.toml',
             'device': files['device'].name if files['device'] else LOCAL}
 

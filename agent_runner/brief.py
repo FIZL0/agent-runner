@@ -198,8 +198,6 @@ def prompt_for(tid: str, n: int, slots: int, cwd: Path, branch: str, model: str 
         policies.append(f'Include task ID `{tid}` at the start of the commit subject.')
     else:
         policies.append(f'Do not include task ID `{tid}` in the commit subject; task tracking is separate.')
-    if r['comment_policy'] == 'minimal':
-        policies.append('Only add comments when necessary to explain non-obvious intent or constraints.')
     if pitch.on(C):  # F98
         policies.append(PITCH_PROMPT.format(path=C.notes('pitches', f'{tid}.json')))
     if P.concept(tid):

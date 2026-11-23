@@ -460,9 +460,9 @@ def remote_on() -> bool:
 
 
 def remote_slots_on() -> bool:
-    """`[run] remote_slots`: the slots on Remote Control too (never under 'auto' alone). F106b: never headless
+    """`[run] remote_slots = "always"`: the slots on Remote Control too (never under 'auto' alone). F106b: never headless
     slots (`[run] engine = "stream"`), which have no Remote Control."""
-    return C.run['remote_slots'] is True and not stream_engine()
+    return C.run['remote_slots'] == 'always' and not stream_engine()
 
 
 def remote_any() -> bool:
@@ -481,11 +481,11 @@ def remote_line() -> str:
 
 
 def remote_flags(name: str, cwd: Path | None) -> list[str]:
-    """`[run] remote_slots`: the session shows in claude.ai/code and the Claude apps as "<task title> · <repo> s2 ·
+    """`[run] remote_slots = "always"`: the session shows in claude.ai/code and the Claude apps as "<task title> · <repo> s2 ·
     B646" (the title leads, the id stays for referring to it), where a person can watch it and type to it. Claude
     Code only, and only an interactive session.
     (`[run] remote` alone puts only the control sessions there: `control_argv`.)"""
-    if not remote_slots_on() or one_session():  # F68: under sessions = 'one' only once opened (slot_open)
+    if not remote_slots_on():  # F68: otherwise only once opened (slot_open)
         return []
     return ['--remote-control', slot_session_name(name, cwd)]
 
@@ -498,21 +498,21 @@ def slot_session_name(name: str, cwd: Path | None) -> str:
 
 
 def one_session() -> bool:
-    """F68 `[run] sessions = 'one'` (the default): the Claude apps list one entry per project, c1, the project's
+    """F68 `[run] remote_slots = 'open'` (the default): the Claude apps list one entry per project, c1, the project's
     chat. A slot starts off Remote Control and goes on it only when a person opens it from the run page
-    (`slot_open`); the run keeps a claude.ai copy of the run page (page_copy.py). 'each': as before."""
-    return C.run.get('sessions', 'one') != 'each'
+    (`slot_open`); the run keeps a claude.ai copy of the run page (page_copy.py). 'always': as before."""
+    return C.run['remote_slots'] != 'always'
 
 
 OPEN_WAIT = 20.0  # s slot_open waits for an opened slot's claude.ai/code link
 
 
 def slot_open(name: str, wait: float = OPEN_WAIT) -> tuple[str, str]:
-    """F68: open slot `name` (s2) in claude.ai/code and the apps: under `[run] sessions = 'one'` its session is
+    """F68: open slot `name` (s2) in claude.ai/code and the apps: under `[run] remote_slots = 'open'` its session is
     told `/remote-control <its name>`, which puts it on Remote Control from then on (until it ends), so it is
     listed only once a person asked for it. (link, '') once its link shows within `wait` s; ('', why) when it
     cannot: no session runs there, Remote Control cannot work here, or the link did not come up. A slot
-    already on Remote Control (opened before, or under 'each' with remote_slots) gives its link at once."""
+    already on Remote Control (opened before, or under 'always') gives its link at once."""
     from agent_runner.ui_model import _bridge_link
     hit = MUX.panes().get(name)
     if not hit or not plat.alive(hit[1]) or not (sid := MUX.session_id(hit[1])):
@@ -985,7 +985,7 @@ SHIM_WAIT = 30.0  # s a hidden slot's shim gets to start its agent (a busy machi
 
 
 class HiddenMux:
-    """F40: a slot with no window, on every OS. Watched through Remote Control (with `[run] remote_slots`),
+    """F40: a slot with no window, on every OS. Watched through Remote Control (with `[run] remote_slots = "always"`),
     status, the slot's log and control sessions; steered by `plan tell`.
 
     Each slot runs through a shim (`run --slot-shim <job>`, `slot_shim`), started detached so the session
