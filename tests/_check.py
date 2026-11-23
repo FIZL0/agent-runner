@@ -5,9 +5,11 @@ import atexit
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -37,6 +39,37 @@ TMP_ROOT = Path(tempfile.mkdtemp(prefix='agent-runner-test-'))
 tempfile.tempdir = str(TMP_ROOT)
 for _k in ('TMPDIR', 'TEMP', 'TMP'):
     os.environ[_k] = str(TMP_ROOT)
+_SUITE_PID = os.getpid()
+
+
+@atexit.register  # exit handlers run last-registered first: this one after the leak check and every suite's own
+def _remove_temp() -> None:
+    """T21: the suite's temp root and git config go when it ends, passed or failed. What a process still running
+    there holds or writes again is left behind; it never changes the exit code."""
+    if os.getpid() != _SUITE_PID:
+        return  # a forked child has the handler too, and its parent still uses the folder
+    try:
+        os.chdir(ROOT)  # Windows removes no folder that is a current one
+    except OSError:
+        pass
+    for wait in (0, 0.1, 0.3):  # a process that is just ending may still write there
+        time.sleep(wait)
+        shutil.rmtree(TMP_ROOT, ignore_errors=True)
+        if not TMP_ROOT.exists():
+            break
+        for d, dirs, files in os.walk(TMP_ROOT):  # a read-only folder, and on Windows a read-only file, stops rmtree
+            for p in [d, *(os.path.join(d, n) for n in dirs + (files if os.name == 'nt' else []))]:
+                try:
+                    if not os.path.islink(p):
+                        os.chmod(p, 0o700)
+                except OSError:
+                    pass
+    try:
+        os.unlink(_gitconfig.name)
+    except OSError:
+        pass
+
+
 # the files Claude Code (and Claude.trust) would use without the suite's own CLAUDE_CONFIG_DIR below
 REAL_CLAUDE_JSON = list(dict.fromkeys(
     [Path.home() / '.claude.json'] + ([Path(os.environ['CLAUDE_CONFIG_DIR']) / '.claude.json']
@@ -125,6 +158,7 @@ def _check_at_exit() -> None:
     """A suite that ends without report() (test_home) is held to it too: a leak turns its exit code to 1."""
     if not _CHECKED and not check_real_claude_json():
         sys.stdout.flush()
+        _remove_temp()  # os._exit runs no further exit handler
         os._exit(1)
 
 
