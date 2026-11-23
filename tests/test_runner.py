@@ -5100,6 +5100,70 @@ def test_cap_told(repo: Path, tmp: Path):
         FB.CAP_TOLD.clear()
 
 
+def test_usage_cap_falls_back_f142(repo: Path):
+    print('F142: past session_max / weekly_max new tasks start down [models] fallback; with none free they wait')
+    from agent_runner import fallback as FB, login, loop, slots
+    R.init(repo)
+    git(repo, 'checkout', '-q', 'main')
+    started, alarms, said = [], [], []
+    here = os.getcwd()
+    os.chdir(repo)
+
+    def fill(chain, own=None, force=False):
+        """One fill of a free slot past session_max; `own`: the task's own model."""
+        started.clear(), alarms.clear(), said.clear()
+        run = loop.Run(mock.Mock(force=force), 1, False, 'main', 'opus', 30, 20, 0)
+        with mock.patch.object(R.C, 'fallback', chain, create=True), \
+                mock.patch.object(slots, 'task_model', lambda *a: own or 'opus'):
+            run.fill(1), run.fill(1)
+            eq(FB.start_model('opus'), 'opus', 'the cap is no mark in capped.json: an uncapped start keeps its model')
+        return run
+
+    def start(n, task, branch, model, idle, n_slots, held=frozenset()):
+        started.append(FB.start_model(slots.task_model(task[0], model, branch), held))
+        return None
+
+    try:
+        with mock.patch.object(loop, 'usage_pct', lambda name: 95 if name == 'five_hour' else 10), \
+                mock.patch.dict(R.C.run, {'agent': 'claude', 'before_start': '', 'session_max': 90, 'weekly_max': 90}), \
+                mock.patch.object(loop, 'alarm', lambda t, d: alarms.append(t)), \
+                mock.patch.object(loop, 'log', lambda m, *a, **k: said.append(m)), \
+                mock.patch.object(loop, 'start', start), mock.patch.object(loop, 'unlogged', lambda *a: False), \
+                mock.patch.object(loop, 'api_down', lambda s: False), \
+                mock.patch.object(loop, 'low_disk', lambda s: False), \
+                mock.patch.object(loop, 'stopping', lambda: False), \
+                mock.patch.object(loop, 'backlog_slots', lambda s, m: s), \
+                mock.patch.object(loop.plansync, 'release', lambda *a: None), \
+                mock.patch.object(login, 'missing', lambda m, c: 'copilot' if m == 'copilot:out' else ''):
+            fill([])
+            eq((started, alarms), ([], ['session usage 95% >= 90%: no new tasks']), 'no chain: held, and said once')
+            fill(['copilot:out', 'sonnet', 'gemini:pro'])
+            eq((started, alarms), (['gemini:pro'] * 2, []),
+               'a chain: started on its first free provider (a login, not claude), no alarm')
+            eq(len([m for m in said if 'start on the first free provider' in m]), 1, 'said once')
+            fill(['sonnet'])
+            eq((started, len(alarms)), ([], 1), 'nothing free in the chain: held, and the alarm is raised once')
+            fill(['sonnet'], own='gemini:pro')
+            eq((started, alarms), (['gemini:pro'] * 2, []), 'a task on another provider starts on its own model')
+            FB.mark_capped('gemini')
+            fill(['gemini:pro'])
+            eq((started, len(alarms)), ([], 1), 'a chain whose providers hit their own caps: held')
+            fill(['sonnet'], own='gemini:pro')
+            eq(started, [], 'and the claude entry is not started on past the usage cap')
+            R.C.notes('capped.json').unlink()
+            fill(['gemini:pro'], force=True)
+            eq(started, ['opus'] * 2, 'forced: on its own model, the caps off')
+            with mock.patch.object(loop, 'usage_pct', lambda name: 95 if name == 'seven_day' else 10):
+                fill(['gemini:pro'])
+                eq(started, ['gemini:pro'] * 2, 'weekly_max the same')
+        with mock.patch.object(slots, 'move_transcript', lambda *a: True):
+            eq(slots.answer_ask(1, 'F1', repo, {'sid': 'claude-sid'}, 'gemini:pro', 30), None,
+               'an answered claude session is not resumed on the harness loop: a new one starts')
+    finally:
+        os.chdir(here)
+        R.C.notes('capped.json').unlink(missing_ok=True)
+
+
 def test_shared_push(repo: Path, tmp: Path):
     print('the shared branch is not merged with a remote that moved: that merge would go out untested')
     from agent_runner.gitops import push
@@ -8248,7 +8312,7 @@ def main() -> int:
                        lambda: test_resume(repo, tmp),
                        lambda: test_session_tmp(repo, tmp), lambda: test_end_orphans(repo), lambda: test_memory_watch(repo), lambda: test_tested_ref(repo, tmp), lambda: test_docs_only_gate(repo), lambda: test_research_findings_only(repo),
                        lambda: test_limit_resumes(repo, tmp),
-                       lambda: test_limit_falls_back(repo, tmp), lambda: test_cap_told(repo, tmp),
+                       lambda: test_limit_falls_back(repo, tmp), lambda: test_cap_told(repo, tmp), lambda: test_usage_cap_falls_back_f142(repo),
                        lambda: test_shared_push(repo, tmp), lambda: test_note_on_a_ticked_task(repo), lambda: test_adopt_merge(repo), lambda: test_followups(repo), lambda: test_person_check_after(repo), lambda: test_ci_watch(repo), lambda: test_issues_watch(repo), lambda: test_auto_release(repo), test_update_notice, test_restart_if_upgraded, test_auto_upgrade, lambda: test_flake_repair(tmp), lambda: test_repair_per_failure(repo),
                        lambda: test_stalled(tmp), lambda: test_take(repo), lambda: test_take_text_and_here(repo), lambda: test_background(repo), test_short_name_hints, test_utf8_streams, lambda: test_attach_flag(repo), lambda: test_bare_outside_git(tmp), lambda: test_hand_hook(tmp), lambda: test_user_hook(tmp), lambda: test_remote_auto(tmp), lambda: test_control(repo), lambda: test_pane_id_not_a_path(repo, tmp),
                        lambda: test_short_titles_and_since(repo), lambda: test_structured_events(repo),

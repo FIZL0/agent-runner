@@ -1130,6 +1130,7 @@ class Run:
         self.stall_said: set[str] = set()
         self.failed_starts: dict[str, int] = {}  # task -> sessions that did not start
         self.cap_said = False
+        self.cap_fell = False  # F142: said that new tasks start down the chain, this time past a cap
         self.held_said = slots  # the slot count `max_unmerged` last held the run to, as logged
         self.foreign: dict[int, int] = {}  # slot -> pid of a session no run knew (see queue_cut_off)
         self.waiting: dict[int, tuple] = {}  # slot -> (task, session id, why) queued to resume there
@@ -1345,6 +1346,12 @@ class Run:
             self.tried.add(tid)
             self.idle_said = False
 
+    def say_cap(self, w: str) -> None:
+        """The usage-cap alarm, once each time a cap is reached."""
+        if not self.cap_said:
+            alarm(f'{w}: no new tasks', cap_stop_detail())
+            self.cap_said = True
+
     def fill(self, n: int) -> None:
         """Start the next task in the free slot, unless a stop, pause, usage cap, backlog, API outage, low disk
         or failing before_start holds it."""
@@ -1353,12 +1360,14 @@ class Run:
             return
         if PAUSED[0]:
             return
-        if (w := capped(self.a.force or FORCED[0])) is not None:
-            if not self.cap_said:
-                alarm(f'{w}: no new tasks', cap_stop_detail())
-                self.cap_said = True
+        w, held = capped(self.a.force or FORCED[0]), frozenset()
+        if w is None:
+            self.cap_said = self.cap_fell = False
+        elif C.fallback:
+            held = FB.USAGE_HELD  # F142: new tasks start down the chain instead
+        else:
+            self.say_cap(w)
             return
-        self.cap_said = False
         allowed = backlog_slots(slots, sum(t.is_alive() for t in self.merging))
         if allowed != self.held_said:
             log(backlog_line(slots, allowed, sum(t.is_alive() for t in self.merging)))
@@ -1378,12 +1387,19 @@ class Run:
             return
         self.stall_said.discard('before_start')
         self.tried.difference_update(retry_held())  # F106e: held back for a login, not blocked yet: again
-        if task := pick(running, self.tried, self.branch, claim=True):
+        passed = FB.no_free(self.branch, self.model, held) if held else set()
+        task = pick(running, self.tried | passed, self.branch, claim=True)
+        if not task and passed and not self.cap_said and pick(running, self.tried, self.branch):
+            self.say_cap(w)  # F142: only the cap holds it: no provider in the chain is free for it
+        if task:
             if unlogged(task[0], self.branch, self.model):  # F106e: its provider has no login: Needs you
                 plansync.release(C, task[0])
                 self.tried.add(task[0])  # the next pick takes another; an unblock or retry_held puts it back
                 return
-            if p := start(n, task, self.branch, self.model, self.idle, slots):
+            if held and not self.cap_fell:
+                log(f'{w}: new tasks start on the first free provider in [models] fallback until the reset')
+                self.cap_fell = True
+            if p := start(n, task, self.branch, self.model, self.idle, slots, held=held):
                 procs[n], running[n] = p, task
                 if self.once:  # one task: nothing new starts, and the run exits once it has merged
                     ask_stop('once')

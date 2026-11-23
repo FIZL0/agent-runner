@@ -60,6 +60,10 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
   has succeeded, even when the worktree has no uncommitted changes. The refusal says to run `done` or `run ask`. Before,
   B155 guarded only the harness loop's finish tool, so `run finish` typed through bash or in a Claude Code session could
   end the session with its task still open and nothing under Needs you (B156).
+- Changed: with `[models] fallback` set, a new task whose model is claude's starts on the chain's first free provider
+  when `[run] session_max` or `weekly_max` is reached (not forced), instead of waiting for the reset. A task with no free
+  provider still waits, and STOPPED is raised only when such a task is all that could start. Nothing is written to
+  capped.json; without a chain nothing changes (F142).
 
 ## 0.61.0 (2026-11-23)
 

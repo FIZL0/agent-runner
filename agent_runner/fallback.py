@@ -10,6 +10,8 @@ provider hits its cap (a Claude usage limit, a provider's quota error).
 * A capped provider is kept in `<notes>/capped.json` ({provider: until}), till the reset its error named, else
   CAP_HOLD s; a new task whose model is on a capped provider starts on the chain's first free one
   (`start_model`), and once the cap resets new tasks go back to their own model.
+* F142: past `[run] session_max` / `weekly_max` a new task whose model is claude's starts on the chain's first free
+  one too (`free_model`); one with none waits for the reset (`no_free`). Running tasks are not touched.
 * With no chain, nothing here acts: a task waits for the reset as before.
 """
 from __future__ import annotations
@@ -95,11 +97,41 @@ def harness_chain(model: str) -> list[str]:
     return out
 
 
-def start_model(model: str) -> str:
-    """The model a new task starts on: its own, unless its provider is capped and the chain has a free one."""
-    if state.C.fallback and is_capped(provider(model)):
-        return chain_next(model) or model
+USAGE_HELD = frozenset({'claude'})  # the providers `[run] session_max` / `weekly_max` hold new tasks from
+
+
+def with_held(held: frozenset) -> dict[str, float]:
+    """The providers a new task passes over: those capped now, and `held` (past the usage caps: USAGE_HELD)."""
+    return {**capped_now(), **dict.fromkeys(held, float('inf'))}
+
+
+def start_model(model: str, held: frozenset = frozenset()) -> str:
+    """The model a new task starts on: its own, unless its provider is capped (or in `held`) and the chain has a
+    free one."""
+    if state.C.fallback and is_capped(provider(model), capped := with_held(held)):
+        return chain_next(model, capped) or model
     return model
+
+
+def free_model(model: str, held: frozenset) -> str | None:
+    """F142: `start_model`, but None when that model's provider is capped or in `held`: nothing free to start on."""
+    m = start_model(model, held)
+    return None if is_capped(provider(m), with_held(held)) else m
+
+
+def no_free(branch: str, model: str, held: frozenset) -> set[str]:
+    """F142: the open tasks with no free model while `held` providers take no new task: they wait for the reset."""
+    from agent_runner.sched import tasks
+    from agent_runner.slots import task_model
+    ls, free = state.plan_text(branch), {}
+    out = set()
+    for tid, *_ in tasks(branch):
+        m = task_model(tid, model, branch, ls)
+        if m not in free:
+            free[m] = free_model(m, held) is not None
+        if not free[m]:
+            out.add(tid)
+    return out
 
 
 def note_model(sid: str, model: str) -> None:

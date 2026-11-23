@@ -801,14 +801,14 @@ def free_gb() -> float:
     return shutil.disk_usage(SLOTS_DIR if SLOTS_DIR.is_dir() else ROOT).free / GB
 
 
-def task_model(tid: str, model: str, branch: str) -> str:
+def task_model(tid: str, model: str, branch: str, ls: list[str] | None = None) -> str:
     """F105: the model `tid`'s own session runs on: the task's `model:` field (`plan add --model`), else the
     model the run was given on its command line (`run --model`), else its kind's (`[models.kinds]`), else
     `model` (`[models] code`). Read afresh on every start and resume: a changed field or setting applies.
-    `branch` '' reads the plan file itself, not the branch's copy."""
+    `branch` '' reads the plan file itself, not the branch's copy; `ls`: the plan's lines, when already read."""
     from agent_runner.state import plan_text
     try:
-        ls = plan_text(branch) if branch else P.lines(C.todo)
+        ls = ls if ls is not None else plan_text(branch) if branch else P.lines(C.todo)
         own = next((P.fields(rest).get('model', [''])[0] for _, _, t, rest, _ in P.iter_tasks(ls) if t == tid), '')
     except (OSError, IndexError):
         own = ''
@@ -817,10 +817,11 @@ def task_model(tid: str, model: str, branch: str) -> str:
     return C.task_model(tid, own) or model
 
 
-def start(n: int, task, branch: str, model: str, idle: int, slots: int):
+def start(n: int, task, branch: str, model: str, idle: int, slots: int, held: frozenset = frozenset()):
+    """Start `task` in slot n. `held` (F142): the providers past a usage cap, not to start it on."""
     from agent_runner.fallback import note_model, start_model
     tid = task[0]
-    model = start_model(task_model(tid, model, branch))  # F106g: a capped provider's task starts on the chain
+    model = start_model(task_model(tid, model, branch), held)  # F106g: a capped provider's task starts on the chain
     finished_mark(n).unlink(missing_ok=True)  # the last task's `done`, not this one's
     C.notes(f'{tid}.budget').unlink(missing_ok=True)  # F103: an earlier attempt's budget stop, not this one's
     C.notes(f'{tid}.fallback').unlink(missing_ok=True)  # F106g: an earlier attempt's cap stop
@@ -908,6 +909,8 @@ def answer_ask(n: int, tid: str, d: Path, ask: dict, model: str, idle: int):
     sid = ask.get('sid') or ''
     if not sid or sid == '(unknown)' or not move_transcript(sid, d):
         return None
+    if on_harness(model) != bool(HARNESS.find_transcript(sid)):
+        return None  # F142: the chain starts it on the other kind of agent, which cannot read this session
     answer = P.last_answer(tid, todo=C.todo, about=ask.get('question', '')) or '(no answer was noted: decide yourself, and say why in the journal)'
     was = ask.get('slot')
     where = ('in the same worktree' if was in (None, n) else
