@@ -817,6 +817,9 @@ def test_run_moves_off_the_port(tmp: Path) -> None:
             check(srv is not None and srv.server_address[1] != port, 'the page is served on another port', srv)
             eq(srv.server_address[0], '127.0.0.1', 'F165: Home installed: on 127.0.0.1 only')
             eq(srv.terms.bind, '127.0.0.1', 'its terminals too')
+            eq(srv.terms.ended('s1', 8006, 'ERROR on binding fd 13 to port 8006 (-1 98)'),
+               'ttyd for s1 ended at once: ERROR on binding fd 13 (-1 98)', "a ttyd that ends names no port")
+            eq(W.WebServer.allow_reuse_address, os.name != 'nt', 'Windows: no two runs on one port')
             has(' '.join(W.Terminals.argv(srv.terms, 's1', '', 9)), '-i 127.0.0.1', 'ttyd is told so')
             logged = ' '.join(str(c) for c in lg.call_args_list)
             has(logged, 'Runner Home is down', 'the run log says Home is down')

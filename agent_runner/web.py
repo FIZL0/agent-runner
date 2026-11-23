@@ -492,6 +492,11 @@ class Terminals:
         return ['ttyd', '-W', '-p', str(port), *(['-i', self.bind] if self.bind not in ('', '0.0.0.0') else []),
                 '-b', f'/t/{self.token}/{name}', *runner_cmd(), 'attach', name]
 
+    def ended(self, name: str, port: int, err: str) -> str:
+        if self.bind == LOCAL:  # F165: a port only Home opens is never named; ttyd's own error has it
+            return f'ttyd for {name} ended at once: ' + re.sub(rf'( to)?( port:?)? *\b{port}\b', '', err)
+        return f'ttyd for {name} ended at once (port {port}): {err}'
+
     def open(self, name: str) -> dict:
         if U.terminal_mode() == 'feed' or not shutil.which('ttyd'):
             return terminal_fallback(name)
@@ -513,8 +518,7 @@ class Terminals:
                                 stderr=sp.PIPE, start_new_session=True)
                 try:  # one that cannot start (its port taken) ends at once: say so, not a dead frame
                     err = proc.communicate(timeout=0.8)[1].decode(errors='replace').strip()
-                    return {'ok': False, 'out': f'ttyd for {name} ended at once' + (
-                        '' if self.bind == LOCAL else f' (port {port})') + f': {err[-300:]}'}
+                    return {'ok': False, 'out': self.ended(name, port, err[-300:])}
                 except sp.TimeoutExpired:
                     pass
                 self.procs[name] = (proc, port, sock)
