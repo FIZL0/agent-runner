@@ -1094,3 +1094,205 @@ def cmd_control(argv: list[str], prog: str = f'{RUNNER} control') -> int:
             return p.wait()
         except KeyboardInterrupt:
             continue  # Ctrl-C is the session's (it interrupts a turn)
+
+
+# --- F91: bare agent-runner at a terminal: the run picker, then the launcher -------------------------------------
+
+def picker_wanted() -> bool:
+    """Bare `agent-runner` shows the run picker only to a person at a terminal: stdin and stdout TTYs, and not
+    a slot's agent. Otherwise it starts the run, as before."""
+    try:
+        tty = sys.stdin.isatty() and sys.stdout.isatty()
+    except (AttributeError, ValueError):
+        return False
+    return tty and not os.environ.get('AGENT_RUNNER_SLOT')
+
+
+def run_facts(root: Path, run: dict) -> dict:
+    """What the run picker and the launcher say of the project at `root` beside `run` (`run_info`): tasks left,
+    stopping (a stop was asked for), and the run page link ('' while no run serves one)."""
+    out = {'left': None, 'stopping': False, 'link': ''}
+    try:
+        from agent_runner.config import Config
+        from agent_runner.status import tasks_left
+        c = Config(root)
+        out['left'] = tasks_left(c.todo.read_text(encoding='utf-8').splitlines())[0]
+        out['stopping'] = bool(run.get('up')) and c.notes('STOP').exists()
+        if run.get('up'):
+            us = c.notes('web.url').read_text(encoding='utf-8').split()
+            out['link'] = us[0] if us else ''
+    except (OSError, SystemExit, ValueError, KeyError, TypeError):
+        pass
+    return out
+
+
+def picker_rows(projects: list[dict], here: Path | None, info=None, facts=None) -> list[dict]:
+    """The run picker's rows: one per run on this device (`device_sessions`, runs only: a project whose run is
+    up), by name; the project around the current folder (`here`) first, marked here, even when its run is not
+    up. Each: {'root', 'name', 'run', 'here', 'left', 'stopping', 'link'}."""
+    info, facts = info or run_info, facts or run_facts
+    rows = [{'root': p['root'], 'name': p['name'], 'run': p['run'], 'here': False}
+            for p in projects if (p.get('run') or {}).get('up')]
+    if here is not None:
+        mine = [r for r in rows if Path(r['root']) == here]
+        rows = [r for r in rows if Path(r['root']) != here]
+        row = mine[0] if mine else {'root': here, 'name': here.name, 'run': info(here) or {}}
+        rows.insert(0, {**row, 'here': True})
+    return [{**r, **facts(Path(r['root']), r['run'])} for r in rows]
+
+
+def left_words(row: dict) -> str:
+    if row.get('stopping'):
+        return 'stopping'
+    n = row.get('left')
+    return '' if n is None else f'{n} task{"" if n == 1 else "s"} left'
+
+
+def slots_words(run: dict) -> str:
+    n = run.get('slots')
+    return f'{n} slot{"" if n == 1 else "s"}' if isinstance(n, int) else ''
+
+
+DIM, BOLD, RESET, CLEAR = '\x1b[2m', '\x1b[1m', '\x1b[0m', '\x1b[H\x1b[J'
+
+
+def picker_text(rows: list[dict], sel: int) -> str:
+    """Screen 1, the run picker: one numbered row per run, the selected one marked."""
+    out = [f'{BOLD}agent-runner · pick a run{RESET}', '']
+    if not rows:
+        out.append('  no run is up on this device; start one from inside a project: agent-runner')
+    for i, r in enumerate(rows):
+        up = (r['run'] or {}).get('up')
+        what = ' · '.join(x for x in (slots_words(r['run']) if up else '(not running)', left_words(r)) if x)
+        mark = '>' if i == sel else ' '
+        line = f'{mark} {i + 1}  {r["name"]:<16} {what:<28} {r["root"]}' + ('  here' if r['here'] else '')
+        out.append(f'{BOLD}{line}{RESET}' if i == sel else line)
+    out += ['', f'{DIM}j/k or arrows move · 1-9 picks · Enter picks · q quits{RESET}']
+    return '\n'.join(out) + '\n'
+
+
+def launcher_text(row: dict, said: str = '') -> str:
+    """Screen 2, the launcher for the picked run: its status, its run page link, the keys, the dim footer."""
+    status = ' · '.join(x for x in ('● run up', slots_words(row['run']), left_words(row)) if x)
+    out = [f'{BOLD}{row["name"]}{RESET}  {row["root"]}', status,
+           row['link'] or f'{DIM}no run page (the run serves none){RESET}', '',
+           '  w  open the run page in the browser', '  t  open the terminal UI (agent-runner ui)',
+           '  c  copy the link', '  q  back · Enter  done', '']
+    if said:
+        out += [said, '']
+    out.append(f'{DIM}status · attach · stop · control: agent-runner --help{RESET}')
+    return '\n'.join(out) + '\n'
+
+
+def read_key() -> str:
+    """One key, read raw: a digit or letter as itself, 'up', 'down', 'enter', 'esc'; '' for anything else."""
+    if plat.WINDOWS:
+        import msvcrt
+        ch = msvcrt.getwch()
+        if ch in ('\x00', '\xe0'):
+            return {'H': 'up', 'P': 'down'}.get(msvcrt.getwch(), '')
+    else:
+        import select
+        import termios
+        import tty
+        fd = sys.stdin.fileno()
+        old = termios.tcgetattr(fd)
+        try:
+            tty.setcbreak(fd)
+            ch = os.read(fd, 1).decode('utf-8', 'replace')
+            if ch == '\x1b':
+                seq = ''
+                while select.select([fd], [], [], 0.05)[0] and len(seq) < 8:
+                    seq += os.read(fd, 1).decode('utf-8', 'replace')
+                return {'[A': 'up', 'OA': 'up', '[B': 'down', 'OB': 'down'}.get(seq, 'esc' if not seq else '')
+        finally:
+            termios.tcsetattr(fd, termios.TCSADRAIN, old)
+    if ch in ('\r', '\n'):
+        return 'enter'
+    if ch == '\x1b':
+        return 'esc'
+    if ch == '\x03':
+        raise KeyboardInterrupt
+    return ch
+
+
+def pick_run(rows: list[dict], key=read_key, show=None) -> int | None:
+    """Screen 1: the index of the run picked (a digit, or Enter on the selection), None when q or Esc quit.
+    Starts on row 1 (the current folder's project when there is one)."""
+    show = show or (lambda s: (sys.stdout.write(CLEAR + s), sys.stdout.flush()))
+    sel = 0
+    while True:
+        show(picker_text(rows, sel))
+        k = key()
+        if k in ('q', 'esc'):
+            return None
+        if not rows:
+            continue
+        if k in ('j', 'down'):
+            sel = min(sel + 1, len(rows) - 1)
+        elif k in ('k', 'up'):
+            sel = max(sel - 1, 0)
+        elif k == 'enter':
+            return sel
+        elif k.isdigit() and 1 <= int(k) <= len(rows):
+            return int(k) - 1
+
+
+def open_link(url: str) -> str:
+    import webbrowser
+    return 'opened in the browser' if webbrowser.open(url) else f'no browser here: {url}'
+
+
+def copy_link(url: str) -> str:
+    """The link on this machine's clipboard (wl-copy, xclip, pbcopy or clip, the first there is); with none,
+    the link itself to copy by hand."""
+    for argv in (['wl-copy'], ['xclip', '-selection', 'clipboard'], ['pbcopy'], ['clip']):
+        if shutil.which(argv[0]):
+            try:
+                if not sp.run(argv, input=url.encode('utf-8'), capture_output=True, timeout=5).returncode:
+                    return 'link copied'
+            except (OSError, sp.SubprocessError):
+                continue
+    return f'no clipboard tool here (wl-copy, xclip, pbcopy, clip): {url}'
+
+
+def open_ui(root: Path) -> str:
+    sp.call([*runner_cmd(), 'ui'], cwd=str(root))
+    return ''
+
+
+LAUNCHER_ACTIONS = {'w': open_link, 'c': copy_link, 't': open_ui}
+
+
+def launch(row: dict, key=read_key, show=None, actions=None) -> str:
+    """Screen 2 for the picked run: w, t and c act and stay; 'back' for q or Esc, 'done' for Enter."""
+    show = show or (lambda s: (sys.stdout.write(CLEAR + s), sys.stdout.flush()))
+    acts = {**LAUNCHER_ACTIONS, **(actions or {})}
+    said = ''
+    while True:
+        show(launcher_text(row, said))
+        k = key()
+        if k in ('q', 'esc'):
+            return 'back'
+        if k == 'enter':
+            return 'done'
+        if k == 't':
+            said = acts['t'](Path(row['root'])) or ''
+        elif k in ('w', 'c'):
+            said = acts[k](row['link']) if row['link'] else 'no run page link to use'
+
+
+def cmd_pick(here: Path | None, key=read_key, show=None, actions=None, sessions=None) -> int:
+    """F91: bare `agent-runner` at a terminal. Screen 1 picks a run (the current folder's project first, its
+    run started when it is not up); screen 2, the launcher, opens its run page, its terminal UI or copies the
+    link. q on screen 2 goes back to screen 1."""
+    rows = picker_rows((sessions or device_sessions)(), here)
+    while True:
+        i = pick_run(rows, key, show)
+        if i is None:
+            return 0
+        row = rows[i]
+        if not (row['run'] or {}).get('up'):
+            return cmd_background([])
+        if launch(row, key, show, actions) == 'done':
+            return 0
