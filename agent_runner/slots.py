@@ -931,7 +931,7 @@ def start(n: int, task, branch: str, model: str, idle: int, slots: int):
             return p
         log(f'slot {n}: {tid}\'s asking session cannot be resumed; a new one starts on the work it left')
     sid = str(uuid.uuid4())
-    prompt = prompt_for(tid, n, slots, d, branch)
+    prompt = prompt_for(tid, n, slots, d, branch, model)  # F132: the harness loop's brief has no subagents
     logfile, since = slot_header(n, f'{tid} session {sid}')
     if not (pid := MUX.open(n, d, prompt, sid, model, idle, slot_env(n), logfile)):
         log(f'slot {n}: the session for {tid} did not start in {MUX.where(n)}')

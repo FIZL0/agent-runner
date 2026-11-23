@@ -123,7 +123,7 @@ def brief_for(tid: str, cwd: Path) -> str:
         return f'({C.command} plan brief {tid} produced nothing: {e})'
 
 
-def prompt_for(tid: str, n: int, slots: int, cwd: Path, branch: str) -> str:
+def prompt_for(tid: str, n: int, slots: int, cwd: Path, branch: str, model: str = '') -> str:
     """The first turn of a task's session: `[run] prompt` (a file) if set, else PROMPT, filled in.
 
     Placeholders a custom template may use: {tid} {n} {runner} {branch} {others} {earlier} {rules} {test}
@@ -133,8 +133,12 @@ def prompt_for(tid: str, n: int, slots: int, cwd: Path, branch: str) -> str:
     F103: the built-in prompt is the same for every task up to TASK_PROMPT (its id, an earlier attempt,
     `prompt_extra`), then the task's paragraphs and policies, and the task's brief last, so the model's prompt
     cache is reused across slots. A custom template keeps its own order.
+
+    F132: `model` is the session's settled model; on another provider's (the harness loop, which has no Agent
+    tool) the brief leaves out the docs subagent and asks for the spec review as a self-review.
     """
     r = C.run
+    loop = harness_session(model)
     journal = os.path.relpath(C.journal, C.root).replace(os.sep, '/') if C.journal else ''
 
     def journal_text(t: str) -> str:
@@ -200,8 +204,8 @@ def prompt_for(tid: str, n: int, slots: int, cwd: Path, branch: str) -> str:
         prompt = f'{prompt.rstrip()}\n\n' + SHEET_PROMPT.format(
             runner=C.command, tid=tid, path=C.notes('sheets', f'{tid}.json'))
     if review_on() and not P.concept(tid):  # a concept task changes no product code: nothing to review
-        prompt = f'{prompt.rstrip()}\n\n' + review_prompt(tid, cwd)
-    if 'docs' in subagents():  # F101
+        prompt = f'{prompt.rstrip()}\n\n' + review_prompt(tid, cwd, harness=loop)
+    if 'docs' in subagents() and not loop:  # F101; F132: the harness loop has no subagents
         prompt = f'{prompt.rstrip()}\n\n' + DOCS_PROMPT.format(runner=C.command, tid=tid)
     prompt = f'{prompt.rstrip()}\n\nProject policies:\n' + '\n'.join(f'- {policy}' for policy in policies)
     if not own:  # F103: the task's own text last
@@ -300,6 +304,21 @@ The commit message passed to `done` ends with exactly one line: `review: nothing
 skipped (small)`."""
 
 
+SELF_REVIEW = """\
+Spec review, before `done` (after mattpocock/skills code-review, MIT; its Spec axis only): you have no subagent \
+to hand it to, so review your own work as a fresh reader would. Commit your work, then read only the output of \
+`git diff {base}...HEAD` and of `{runner} plan brief {tid}`, setting aside what you meant to do, and list, \
+each finding quoting the task's words: (a) what the task asked for that is missing or partial, (b) what the diff \
+does that was not asked, (c) what looks implemented but wrong. Fix (a) and (c) on this branch before `done`, \
+never file them: filing would land known-broken work. Revert (b) from this branch; if the extra is worth \
+keeping, file it as a follow-up (`{runner} plan add <KIND> "<what the review found>" --files … --pri normal`), \
+and file the same way anything broken outside this task's files or already broken before it. Skip the review \
+when the diff is under {min_lines} changed lines (`git diff --shortstat {base}...HEAD`, insertions plus \
+deletions) and the task has no long-form brief (plan/tasks/{tid}.md); {long}. The commit message passed to \
+`done` ends with exactly one line: `review: nothing`, `review: fixed <what>`, `review: filed <IDs>` (with what \
+was fixed too, if any: `review: fixed <what>; filed <IDs>`) or `review: skipped (small)`."""
+
+
 DOCS_PROMPT = """\
 Hand CHANGELOG, docs, README, journal and plan-text edits (a `plan add` or `plan note` text) to the `docs` \
 subagent (the Agent tool, subagent_type "docs"): tell it the file or command, what to say and why, and the \
@@ -342,9 +361,21 @@ def review_on() -> bool:
         return False
 
 
-def review_prompt(tid: str, cwd: Path) -> str:
+def harness_session(model: str) -> bool:
+    """F132: a session on `model` runs in the harness loop (another provider's than claude): no Agent tool."""
+    if not model:
+        return False
+    try:
+        from agent_runner.config import harness_model
+        return harness_model(model, C.providers)
+    except AttributeError:  # no config loaded
+        return False
+
+
+def review_prompt(tid: str, cwd: Path, harness: bool = False) -> str:
     """REVIEW_PROMPT filled in: the branch the diff is taken against, the skip threshold, and whether this task
-    has a long form (then it is reviewed whatever its size)."""
+    has a long form (then it is reviewed whatever its size). F132: with `harness` (a harness loop session, which
+    has no subagents) the review is the session's own, done as a fresh reader would: SELF_REVIEW."""
     try:
         base = default_branch()
     except SystemExit:
@@ -354,6 +385,10 @@ def review_prompt(tid: str, cwd: Path) -> str:
         has_long = P.long_form(plan_dir, tid).exists()
     except (OSError, ValueError):
         has_long = False
+    if harness:
+        return SELF_REVIEW.format(
+            base=base, runner=C.command, tid=tid, min_lines=int(C.run.get('review_min_lines', 50)),
+            long='this task has one, so review it whatever its size' if has_long else 'this task has none')
     return REVIEW_PROMPT.format(
         who='the Agent tool, subagent_type "review"' if 'review' in subagents() else 'the Agent tool',
         base=base, runner=C.command, tid=tid, min_lines=int(C.run.get('review_min_lines', 50)),

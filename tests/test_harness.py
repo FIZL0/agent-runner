@@ -231,6 +231,25 @@ def test_tell(env: Env):
     check('please also\nupdate the docs' in told, 'a tell typed into its terminal goes in as a user message, whole', told)
 
 
+def test_brief(env: Env):
+    """F132: a harness loop session has no Agent tool, so its brief hands nothing to a subagent."""
+    env.configure('review = true', models='review = "sonnet"\ndocs = "haiku"\n')
+    try:
+        claude = R.prompt_for('F1', 1, 2, env.wt, 'main', 'opus')
+        has(claude, 'subagent_type "docs"', 'a Claude Code session is told to hand docs to the docs subagent')
+        has(claude, 'subagent_type "review"', 'and to give the spec review to the review subagent')
+        loop = R.prompt_for('F1', 1, 2, env.wt, 'main', MODEL)
+        check('subagent_type "docs"' not in loop and 'docs` subagent' not in loop,
+              'a harness loop session\'s brief leaves out the docs subagent', loop[-3000:])
+        check('Agent tool' not in loop and 'subagent_type' not in loop,
+              'and names no Agent tool or subagent for the review', loop[-3000:])
+        has(loop, 'review your own work as a fresh reader would', 'its spec review is a self-review')
+        check('`review: skipped (small)`' in loop, 'that still ends the commit message with its review line')
+        eq(R.prompt_for('F1', 1, 2, env.wt, 'main'), claude, 'no model given reads as Claude Code')
+    finally:
+        env.configure('')
+
+
 def main() -> int:
     if not shutil.which('node'):
         print('  skip: no node on PATH')
@@ -240,7 +259,7 @@ def main() -> int:
         try:
             return report([lambda: test_routing(env), lambda: test_finish(env), lambda: test_ask(env),
                            lambda: test_fence(env), lambda: test_budget(env), lambda: test_resume(env),
-                           lambda: test_tell(env)])
+                           lambda: test_tell(env), lambda: test_brief(env)])
         finally:
             git(env.repo, 'worktree', 'remove', '--force', str(env.wt))
 
