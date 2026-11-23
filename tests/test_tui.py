@@ -688,6 +688,28 @@ def test_concept_chat() -> None:
     check('N        chat about it' in T.HELP, 'the keys list names N under Concepts')
 
 
+def test_new_concept() -> None:
+    """F87: Concepts ends with a '+ new concept' row; n on Concepts opens its box, and Enter queues what was typed
+    as a K task (plan add K TEXT), the result on the message line; the keys list and footer name n."""
+    ran = []
+    p = page()
+    with mock.patch.object(U, 'RUN', [lambda argv: (ran.append(argv), (0, 'added K9 dark mode\n'))[1]]):
+        p.key('5')
+        rows = p.items(5)
+        eq((rows[-1].get('new'), len(rows)), (True, 2), "the concept, then the '+ new concept' row")
+        check('+ new concept n' in drawn(p, 40, 100).text(), "the row reads '+ new concept n'")
+        check(('n', 'new concept') in p.hint_keys(), 'the Concepts footer names n', p.hint_keys())
+        p.key('n')
+        eq((p.sel().get('new'), p.tab()[0], p.typing), (True, 'new concept', 'concept:+'),
+           'n: the new concept row, its box typing')
+        for c in 'dark mode':
+            p.key(c)
+        p.key('ENTER')
+    eq(ran, [['plan', 'add', 'K', 'dark mode']], 'Enter: plan add K with the words typed')
+    eq((p.msg, p.msg_ok, p.typing), ('added K9 dark mode', True, ''), 'it says it is queued; the box closes')
+    check('n        new concept' in T.HELP, 'the keys list names n under Concepts')
+
+
 def test_escape_tail() -> None:
     def more_of(s):
         it = iter(s)
@@ -1027,7 +1049,7 @@ def test_cli() -> None:
 if __name__ == '__main__':
     raise SystemExit(report([test_layout, test_status_tabs, test_session_tabs, test_queue, test_direct_edit,
                                test_navigation, test_chat_box, test_actions, test_footer, test_concept_page,
-                               test_concept_chat,
+                               test_concept_chat, test_new_concept,
                                test_escape_tail, test_colours, test_row_ground_and_fill, test_reorder, test_parked,
                                test_themes,
                                test_idle_run_of_another_project, test_older_run, test_run_controls, test_cli]))
