@@ -665,9 +665,55 @@ def started_note(slots: int, where: str) -> str:
     return '\n'.join(lines)
 
 
-def cmd_background(argv: list[str]) -> int:
+STARTED_BY_ENV = 'AGENT_RUNNER_STARTED_BY'  # B145: set by a caller that starts the run for someone (Home: 'Home start')
+EV_STARTED_BY = 'run started by'  # B145: who asked for the run (by, tty, ppid, parent)
+
+
+def started_by_record(by: str) -> dict:
+    """B145: who is starting the run: `by` (bare agent-runner, picker, --attach or Home start), the caller's
+    tty ('no tty' without one), its parent pid and that parent's command name ('' where it cannot be read)."""
+    tty = 'no tty'
+    for fd in (0, 1, 2):
+        try:
+            if os.isatty(fd):
+                tty = os.ttyname(fd)
+                break
+        except OSError:
+            pass
+    ppid = os.getppid()
+    parent = ''
+    try:
+        parent = Path(f'/proc/{ppid}/comm').read_text(encoding='utf-8', errors='replace').strip()
+    except OSError:
+        pass
+    return {'by': by, 'tty': tty, 'ppid': ppid, 'parent': parent}
+
+
+def log_started_by(by: str) -> None:
+    """B145: 'run started by <by>' with the caller's tty and parent pid into run.log and events.jsonl (not to the
+    terminal), so a run that comes up right after a stop can be traced to the picker, Home or a script."""
+    rec = started_by_record(by)
+    stamp = dt.datetime.now().isoformat(timespec='seconds')
+    msg = (f'run started by {rec["by"]} (tty {rec["tty"]}, parent pid {rec["ppid"]}'
+           + (f' {rec["parent"]}' if rec['parent'] else '') + f', pid {os.getpid()})')
+    try:
+        with open(C.notes('run.log'), 'a', encoding='utf-8') as f:
+            f.write(f'=== {stamp} {msg}\n')
+    except OSError:
+        pass
+    try:
+        with open(events_file(), 'a', encoding='utf-8') as f:
+            f.write(json.dumps({'time': stamp, 'kind': EV_STARTED_BY, 'id': '', 'text': msg, **rec},
+                               ensure_ascii=False) + '\n')
+    except OSError:
+        pass
+
+
+def cmd_background(argv: list[str], by: str = 'bare agent-runner') -> int:
     """Bare `agent-runner`: start the run as a detached process (`plat.spawn_detached`), its slots hidden, and
-    give the prompt back once it is up. `attach` then shows its log and takes its keys."""
+    give the prompt back once it is up. `attach` then shows its log and takes its keys. `by` (B145): who asked,
+    logged before the run starts; AGENT_RUNNER_STARTED_BY overrides it (Home's start button sets it)."""
+    by = os.environ.pop(STARTED_BY_ENV, '') or by
     drop_session_env()
     init()
     if run_up():
@@ -676,6 +722,7 @@ def cmd_background(argv: list[str]) -> int:
         return 0
     if not remote_ready():
         return 1
+    log_started_by(by)
     log_file = C.notes('run.log')
     since = events_file().stat().st_size if events_file().exists() else 0
     out = C.notes('background.out')
@@ -702,9 +749,9 @@ def cmd_background_attach(argv: list[str]) -> int:
     init()
     if plat.WINDOWS:
         print(f'on Windows the run has no window to attach: --attach starts it as {shown_cmd()} does')
-        return cmd_background([])
+        return cmd_background([], by='--attach')
     if not run_up():
-        if r := cmd_background([]):
+        if r := cmd_background([], by='--attach'):
             return r
     return cmd_attach([])
 
@@ -1425,5 +1472,5 @@ def cmd_pick(here: Path | None, key=read_key, show=None, actions=None, sessions=
             return 0
         row = rows[i]
         if not (row['run'] or {}).get('up'):
-            return cmd_background([])
+            return cmd_background([], by='picker')
         launch(row, key, show, actions, paint)

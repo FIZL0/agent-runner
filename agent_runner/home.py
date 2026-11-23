@@ -196,8 +196,11 @@ def child_env() -> dict:
 
 def runner(root: Path, argv: list[str], timeout: float = 90.0) -> sp.CompletedProcess:
     from agent_runner.config import runner_cmd
+    env = child_env()
+    if not argv:  # B145: bare agent-runner from Home is its start button; the run logs who started it
+        env['AGENT_RUNNER_STARTED_BY'] = 'Home start'
     return sp.run([*runner_cmd(), *argv], cwd=str(root), stdin=sp.DEVNULL, capture_output=True, text=True,
-                  encoding='utf-8', errors='replace', timeout=timeout, env=child_env())
+                  encoding='utf-8', errors='replace', timeout=timeout, env=env)
 
 
 _NEEDS: dict[str, tuple[float, int | None, list[str]]] = {}

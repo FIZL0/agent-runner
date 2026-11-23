@@ -767,7 +767,7 @@ def test_attach_flag(repo: Path):
     from agent_runner import cli
     R.init(repo)
     calls: list[str] = []
-    bg = lambda argv: calls.append('start') or 0
+    bg = lambda argv, by='': calls.append('start' if by == '--attach' else f'start by {by}') or 0
     at = lambda argv: calls.append('attach') or 0
     with mock.patch.object(R, 'init'), mock.patch.object(R.plat, 'WINDOWS', False), \
             mock.patch.object(R, 'cmd_background', bg), mock.patch.object(R, 'cmd_attach', at), \
@@ -780,7 +780,7 @@ def test_attach_flag(repo: Path):
             eq(cli.main(['--attach']), 0, '--attach with a run up')
         eq(calls, ['attach'], 'a run up: it only attaches')
         calls.clear()
-        with mock.patch.object(R, 'run_up', lambda: False), mock.patch.object(R, 'cmd_background', lambda a: 1):
+        with mock.patch.object(R, 'run_up', lambda: False), mock.patch.object(R, 'cmd_background', lambda a, by='': 1):
             eq(cli.main(['--attach']), 1, 'a run that does not come up fails --attach')
         eq(calls, [], 'and nothing is attached')
         out = io.StringIO()
