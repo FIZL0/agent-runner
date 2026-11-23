@@ -248,7 +248,7 @@ def test_sessions_one_and_each():
     send = lambda path, url: asks.append((path, url)) or (url or 'https://claude.ai/artifact/abc')  # noqa: E731
     PC.PAGE_COPY_AT[0] = 0.0
     PC.PAGE_COPY_OFF[0] = ''
-    with mock.patch.object(PC, 'remote_on', lambda: True), mock.patch.object(PC, 'control_ok', lambda: True):
+    with mock.patch.object(PC, 'remote_on', lambda: True):
         check(PC.page_copy_tick(now=1000.0, snap=snap, publish=send, background=False), 'one: the copy is published')
         page = PC.page_copy_file().read_text(encoding='utf-8')
         check(link in page and f'{S.REMOTE_URL}/session_c1' in page, 'the copy links the terminal and the chat')
@@ -349,7 +349,6 @@ def test_reopen_after_shutdown():
 
         calls = []  # the run restarted: start_control reopens them first, unless [run] control is off
         with mock.patch.object(CR, 'reopen_controls', lambda: calls.append(1) or []), \
-                mock.patch.object(K, 'control_ok', lambda: True), \
                 mock.patch.object(K, 'hidden_control', lambda n, cmd: (4243, '')), \
                 mock.patch.object(K.plat, 'WINDOWS', False), mock.patch.object(K, 'mark_board', lambda: None):
             with mock.patch.dict(R.C.run, {'control': True}):

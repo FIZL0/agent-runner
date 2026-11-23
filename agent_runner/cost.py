@@ -7,7 +7,7 @@ subcommand or script: `git log`, `python3 tools/x.py`), the other tools by name.
 
     agent-runner cost                 the last 7 days of this repo's worker sessions (slots, merge fixes)
     agent-runner cost --days 1
-    agent-runner cost FILE.jsonl …    any transcripts, Claude's or Pi's
+    agent-runner cost FILE.jsonl …    any transcripts
     agent-runner cost --files         by file read (Read, cat/sed/grep targets) and exact-repeat commands
 
 Tokens are estimated as characters / 4; context compaction is ignored, so long sessions read high.
@@ -75,7 +75,7 @@ def session(path, by_file: bool = False, key=None) -> tuple[list[tuple[str, int,
     """(kind, chars, turn it arrived), the session's assistant turns, input tokens billed (cache reads too).
     With `by_file`, a Read (Edit, Write) counts under its file's name, not 'read'; with `key` (a function of
     the tool's name and arguments), whatever it returns instead of the kind (F26: `(name, args)`).
-    Claude writes one line per content block of a turn (one message id); Pi one per message."""
+    Claude writes one line per content block of a turn (one message id)."""
     if key is None:
         key = lambda n, a: call_kind(n, a, by_file)  # noqa: E731
     calls: dict[str, str] = {}
@@ -86,7 +86,7 @@ def session(path, by_file: bool = False, key=None) -> tuple[list[tuple[str, int,
                 e = json.loads(line)
             except ValueError:
                 continue
-            if e.get('type') not in ('user', 'assistant', 'message'):  # not request snapshots, which repeat
+            if e.get('type') not in ('user', 'assistant'):  # not request snapshots, which repeat
                 continue
             m = e.get('message') if isinstance(e.get('message'), dict) else {}
             role = m.get('role') or e.get('type')
@@ -96,19 +96,13 @@ def session(path, by_file: bool = False, key=None) -> tuple[list[tuple[str, int,
                     turns, last = turns + 1, mid
                     u = m.get('usage') or {}
                     billed += sum(u.get(k, 0) or 0 for k in ('input_tokens', 'cache_read_input_tokens',
-                                                             'cache_creation_input_tokens', 'input', 'cacheRead',
-                                                             'cacheWrite'))
-            if role == 'toolResult':  # Pi: the result is a message of its own
-                tid = m.get('toolCallId')
-                out.append((calls[tid] if tid in calls else key((m.get('toolName') or 'unknown').lower(), {}),
-                            _text(m.get('content')), turns))
-                continue
+                                                             'cache_creation_input_tokens'))
             content = m.get('content')
             for b in content if isinstance(content, list) else []:
                 if not isinstance(b, dict):
                     continue
-                if b.get('type') in ('tool_use', 'toolCall'):
-                    calls[b.get('id')] = key(b.get('name', ''), b.get('input') or b.get('arguments') or {})
+                if b.get('type') == 'tool_use':
+                    calls[b.get('id')] = key(b.get('name', ''), b.get('input') or {})
                 elif b.get('type') == 'tool_result':
                     tid = b.get('tool_use_id')
                     out.append((calls[tid] if tid in calls else key('unknown', {}), _text(b.get('content')),
@@ -296,11 +290,11 @@ def price(model: str) -> tuple[float, float]:
 
 
 def turn_spend(u: dict, model: str) -> tuple[int, float]:
-    """(tokens, dollars) of one model call's usage, Claude's keys or Pi's (Pi's own cost when it gives one); the
+    """(tokens, dollars) of one model call's usage, Claude's keys (the provider's own cost when it gives one); the
     tokens leave cache reads out, the dollars do not."""
     get = lambda *ks: sum(int(u.get(k) or 0) for k in ks)  # noqa: E731
-    fresh, read = get('input_tokens', 'input'), get('cache_read_input_tokens', 'cacheRead')
-    write, out = get('cache_creation_input_tokens', 'cacheWrite'), get('output_tokens', 'output')
+    fresh, read = get('input_tokens'), get('cache_read_input_tokens')
+    write, out = get('cache_creation_input_tokens'), get('output_tokens')
     pin, pout = price(model)
     usd = (fresh * pin + write * pin * CACHE_WRITE + read * pin * CACHE_READ + out * pout) / 1e6
     if isinstance(u.get('cost'), dict) and isinstance(u['cost'].get('total'), (int, float)):
@@ -367,12 +361,11 @@ def over_budget(tokens: int, usd: float, max_tokens, max_usd) -> str:
 
 
 def worker_transcripts(days: float) -> list[Path]:
-    """This repo's worker sessions: Claude's for each slot and merge worktree, and the run's Pi and harness-loop sessions."""
+    """This repo's worker sessions: Claude's for each slot and merge worktree, and the run's harness-loop sessions."""
     from agent_runner import runner as R
     R.init()
     dirs = [Path(os.path.expanduser('~/.claude/projects')) / R.project_slug(d)
             for d in R.SLOTS_DIR.glob('*') if d.is_dir()]
-    dirs.append(R.C.notes('pi-sessions'))
     dirs.append(R.C.notes('harness-sessions'))
     since = time.time() - days * 86400
     return sorted(p for d in dirs if d.is_dir() for p in d.glob('*.jsonl') if p.stat().st_mtime >= since)

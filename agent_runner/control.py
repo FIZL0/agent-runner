@@ -31,11 +31,6 @@ from agent_runner.merge import gate_alive
 CONTROL_SERVER_WAIT = (30, 600)  # s before the control server restarts after it exits, doubling to the second
 
 
-def control_ok() -> bool:
-    """Control sessions are Claude Code sessions, which every run has since the Pi backend went (F106d)."""
-    return True
-
-
 def control_cmd() -> str:
     """B93: the command a control session's brief, opening, skills and hints name: `[run] command` (e.g. openmx's
     `./kit`, which forwards every runner command once it has loaded the kit's settings), else the runner, as the
@@ -662,11 +657,11 @@ def hand_hook(root: Path) -> str:
 def user_brief(root: Path) -> str:
     """B79: the control brief for a session opened by hand in `root`, a runner repo's main checkout, by the
     user-level SessionStart hook (`config.install_user_hook`): a repo where no run has started yet has no hook
-    of its own (`hand_hook`). '' where `control_ok` says no."""
+    of its own (`hand_hook`)."""
     import contextlib
     with contextlib.redirect_stderr(io.StringIO()):  # init's git calls and merge driver: nothing on the screen
         init(root)
-        return control_brief() if control_ok() else ''
+        return control_brief()
 
 
 def hand_hook_exclude(root: Path) -> None:
@@ -699,13 +694,13 @@ def start_control() -> None:
     with no window (`hidden_control`, F59; `attach c1` shows it). B121: first the control sessions c2+ a
     shutdown ended are reopened (`reopen_controls`)."""
     mark_board()
-    if C.run['control'] and control_ok():
+    if C.run['control']:
         try:
             from agent_runner.control_reopen import reopen_controls
             reopen_controls()
         except Exception as e:  # never stops the run from starting
             log(f'control: could not reopen the control sessions a shutdown ended: {e}')
-    if not C.run['control'] or not control_ok():
+    if not C.run['control']:
         return
     cmd = [*runner_cmd(), 'control', '1', *([] if run_restart() else ['--new-run']),  # F27: a restart resumes c1
            *(['--blank', '--local'] if remote_on() else [])]  # remote: free till you type, terminal only
@@ -790,7 +785,7 @@ def feed_on() -> bool:
     """Does a run here keep the runner feed (a hidden session, on Remote Control), the one watch that pushes what
     needs the person? Control sessions then start no needs-you watch of their own. Not while the run that is up
     has no runner feed (Windows)."""
-    return remote_on() and control_ok() and not plat.WINDOWS and not C.notes(NO_BOARD).exists()
+    return remote_on() and not plat.WINDOWS and not C.notes(NO_BOARD).exists()
 
 
 CONTROL_LINK_WAIT = 90  # s `control --new` watches the new pane for its claude.ai/code link
@@ -1097,7 +1092,7 @@ def close_controls(branch: str = '', force: bool = False, now: float | None = No
     """B26: close the idle control sessions (see above), every CONTROL_CLOSE_EVERY s from the run loop.
     [(n, 'closed' | 'asked', why or the task id filed)] for those closed."""
     cf = control_cfg()
-    if not (cf['idle'] or cf['ask_idle']) or not control_ok() or (not force and time.time() - CONTROL_CLOSE_AT[0] < CONTROL_CLOSE_EVERY):
+    if not (cf['idle'] or cf['ask_idle']) or (not force and time.time() - CONTROL_CLOSE_AT[0] < CONTROL_CLOSE_EVERY):
         return []
     CONTROL_CLOSE_AT[0] = time.time()
     now = time.time() if now is None else now
@@ -1167,7 +1162,7 @@ def closed_online(rows) -> bool:
 
 def end_closed_controls(force: bool = False) -> list[int]:
     """B53: end the control sessions closed online (see above). The numbers ended."""
-    if not control_ok() or (not force and time.time() - CONTROL_GONE_AT[0] < CONTROL_CLOSE_EVERY):
+    if not force and time.time() - CONTROL_GONE_AT[0] < CONTROL_CLOSE_EVERY:
         return []
     CONTROL_GONE_AT[0] = time.time()
     from agent_runner.control_reopen import forget_ended_controls
@@ -1388,7 +1383,7 @@ def server_stale(args: list[str] | None) -> bool:
 
 
 def start_control_server() -> None:
-    if remote_on() and C.run['control'] and control_ok():
+    if remote_on() and C.run['control']:
         threading.Thread(target=keep_control_server, name='control-server', daemon=True).start()
 
 
@@ -1493,6 +1488,6 @@ def rc_sweep(run_pid: int, stopping: bool = False, wait: float = RC_TEARDOWN,
 
 def rc_sweep_start() -> None:
     """The run's start: end what an earlier run left on Remote Control, in the background (it can wait)."""
-    keep = remote_on() and bool(C.run['control']) and control_ok()
+    keep = remote_on() and bool(C.run['control'])
     threading.Thread(target=rc_sweep, args=(os.getpid(),), kwargs={'keep_server': keep},
                      name='remote-sweep', daemon=True).start()

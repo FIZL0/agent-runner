@@ -25,7 +25,7 @@ import time
 from pathlib import Path
 
 from agent_runner import plat
-from agent_runner.control import control_env, control_ok
+from agent_runner.control import control_env
 from agent_runner.feed import feed_model  # F101: [models] feed; the one-shot only publishes a file it is handed
 from agent_runner.slots import one_session, remote_on
 from agent_runner.state import C, log, ROOT
@@ -218,7 +218,7 @@ def page_copy_tick(now: float | None = None, snap: dict | None = None, publish=N
     publish was started. Never raises."""
     now = time.time() if now is None else now
     try:
-        if (PAGE_COPY_OFF[0] or not (one_session() and control_ok() and remote_on())
+        if (PAGE_COPY_OFF[0] or not (one_session() and remote_on())
                 or now - PAGE_COPY_AT[0] < PAGE_COPY_EVERY):
             return False
         if snap is None:

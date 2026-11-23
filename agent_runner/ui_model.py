@@ -649,7 +649,7 @@ def act(name: str, **args) -> dict:
 
 # --- F74: the feed, chat with any control session, quick asks, concept copies, the terminal view ---------------
 #
-# The feed is a session's transcript (Claude Code's JSONL; Pi's, in Claude's shape by `slots.backend().entry`)
+# The feed is a session's transcript (Claude Code's JSONL, which the harness loop writes too)
 # as entries {'kind': say|you|tool|out, 'text'}, newest last: the agent's words, the person's, each tool step
 # and its output, so a page shows the words with the steps folded. The terminal view is the session's own
 # terminal (`attach NAME` through its shim's socket), through ttyd when it is installed ('ttyd'; C25: without
@@ -718,12 +718,8 @@ def feed_entries(rows) -> list[dict]:
                     continue
                 if b.get('type') == 'text' and str(b.get('text') or '').strip():
                     out.append({'kind': 'say', 'text': b['text'].strip()})
-                elif b.get('type') in ('tool_use', 'toolCall'):  # Claude's, Pi's
-                    out.append({'kind': 'tool', 'text': tool_words(b.get('name', 'tool'),
-                                                                   b.get('input', b.get('arguments')))})
-            continue
-        if m.get('role') == 'toolResult':  # Pi: a tool's result is a message of its own
-            out.append({'kind': 'out', 'text': _clip(_blocks_text(c), OUT_LINES, OUT_CHARS)})
+                elif b.get('type') == 'tool_use':
+                    out.append({'kind': 'tool', 'text': tool_words(b.get('name', 'tool'), b.get('input'))})
             continue
         for b in ([{'type': 'text', 'text': c}] if isinstance(c, str) else c if isinstance(c, list) else []):
             if not isinstance(b, dict):

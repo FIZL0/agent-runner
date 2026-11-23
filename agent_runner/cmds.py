@@ -28,7 +28,7 @@ from agent_runner.attach import attach_session, session_socket
 from agent_runner.watch import breaking, installed_version, last_session, queue_resume, upgrade, upgrade_argv
 from agent_runner.land import wip_main_info
 from agent_runner.control import (control_argv, control_brief, control_env, control_give, control_hook_input,
-    control_link, control_live, control_mark_ask, CONTROL_N_ENV, control_name, control_ok, control_open, control_session_start,
+    control_link, control_live, control_mark_ask, CONTROL_N_ENV, control_name, control_open, control_session_start,
     control_set_title, control_sid, free_control_number, RUNNER_STARTED_ENV)
 from agent_runner.control_first import CONTROL_FIRST, type_first_later  # B147
 from agent_runner.status import (follow, move_since_mark, progress_line, release_line, since_mark_file, since_start,
@@ -654,7 +654,7 @@ def started_note(slots: int, where: str) -> str:
              f'    {shown_cmd()} status     what it is doing',
              f'    {shown_cmd()} attach     {attach}',
              f'    {shown_cmd()} stop       finish the running tasks, then end it (--force: now)']
-    if C.run['control'] and control_ok():
+    if C.run['control']:
         beside = 'c1 runs beside the run: attach c1' + (' (terminal only; the apps start control sessions from '
                                                         'the control server)' if remote_on() else '')
         lines.append(f'    {shown_cmd()} control    a control session in this terminal ({beside})')
@@ -1061,9 +1061,6 @@ def cmd_control(argv: list[str], prog: str = f'{RUNNER} control') -> int:
     if a.title is not None:
         env_n = os.environ.get(CONTROL_N_ENV, '')
         return control_set_title(a.n or (int(env_n) if env_n.isdigit() else 0), a.title)
-    if not control_ok():
-        print(f'control sessions are Claude Code sessions; [run] agent is {C.run["agent"]}', file=sys.stderr)
-        return 1
     if a.runner and a.forward and not a.feed_sid:
         return control_new_runner(a.n, images=a.file)
     if a.new or (a.forward and not a.feed_sid):

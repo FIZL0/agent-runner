@@ -894,7 +894,7 @@ def add_args(rest: list[str]) -> tuple[str, str, str, bool, bool]:
     if m is not None and ':' in m:  # F125: another provider is refused here, not swapped for the kind's model later
         c = cfg()
         try:
-            claude_model(m.strip(), c.providers, c.models_local, '--model', c.run['backend'])
+            claude_model(m.strip(), c.providers, c.models_local, '--model')
         except SystemExit as e:
             no(str(e).removeprefix('agent-runner: '))
     if last:

@@ -42,16 +42,16 @@ from agent_runner.slots import (adopt, backend, DISK_AT, DISK_SAID, du, env_vars
     single_run, slot_env, slot_shim, SLOTS, start, transcript, trim, unmerged)
 from agent_runner.slots import budget_mark, budgets, SPENT
 from agent_runner.teardown import end_own, PAGE, RUN_LOCK, wait_last_run
-from agent_runner.watch import (_account, agent_failed, api_down, AUTO_UPGRADE, auto_upgrade, cut_off,
+from agent_runner.watch import (_account, api_down, AUTO_UPGRADE, auto_upgrade, cut_off,
     drop_session_tmp, end_orphans, memory_watch, queue_cut_off, queue_resume, restart_if_upgraded,
-    RESUME_AFTER, resume_failed, RESUME_MAX, resumes, RESUMES_MAX, stalled, START_TRIES, state_line, stats,
+    resumes, RESUMES_MAX, stalled, START_TRIES, state_line, stats,
     stop_hook, stop_waiter, sweep_tmp, update_watch, upgrade, usage_pct, weekly)
 from agent_runner.join import EDITED, EDITS_POLL, ELSEWHERE, REMIND_EVERY, TASK_SID, WAITING
 from agent_runner.land import drop_wips, idle_line, prune_wips, reopen_landed, REOPENED, retry_reopened, wip_main
 from agent_runner.land import no_gate_line
 from agent_runner.merge import (AHEAD_BUSY, AHEADS, before_start_fails, FIX_DIRS, FIX_DIRS_LOCK, FIXED, gate_runs,
     HELD, last_words, left_merging, merge)
-from agent_runner.control import (close_controls, control_ok, end_closed_controls, hand_hook, rc_sweep_start,
+from agent_runner.control import (close_controls, end_closed_controls, hand_hook, rc_sweep_start,
     start_control, start_control_server)
 from agent_runner.feed import rc_sweep_stop, start_board
 
@@ -1044,7 +1044,7 @@ def run(argv: list[str], prog: str) -> int:
     init()
     r = C.run
     if a.model and ':' in a.model:  # F125: another provider is refused here, not run as a claude model name
-        a.model = claude_model(a.model, C.providers, C.models_local, 'run --model', r['backend'])
+        a.model = claude_model(a.model, C.providers, C.models_local, 'run --model')
     once = a.slots == 'once'
     global POWER
     POWER = '' if once else 'shutdown' if a.shutdown else 'suspend' if a.suspend else ''
@@ -1095,7 +1095,7 @@ def run(argv: list[str], prog: str) -> int:
         log(said)
     if said := point_rules(C, git):
         log(said)
-    if control_ok() and (said := hand_hook(ROOT)):
+    if said := hand_hook(ROOT):
         log(said)
     if Path('/proc/meminfo').exists() and (r['proc_max_gb'] or r['min_free_mem_gb']):
         threading.Thread(target=memory_watch, daemon=True).start()
@@ -1127,7 +1127,6 @@ class Run:
         self.free_at = {n: dt.datetime.min for n in range(1, slots + 1)}
         self.merging: list[threading.Thread] = []
         self.stall_said: set[str] = set()
-        self.failed_resumes: dict[str, int] = {}  # session id -> times it was resumed after a failed model call
         self.failed_starts: dict[str, int] = {}  # task -> sessions that did not start
         self.cap_said = False
         self.held_said = slots  # the slot count `max_unmerged` last held the run to, as logged
@@ -1228,7 +1227,6 @@ class Run:
 
     def slot(self, n: int) -> None:
         """One slot's turn in a tick: watch its session, reap it when it ended, else fill the free slot."""
-        self.retry_failed_call(n)
         if self.reap(n):
             return
         self.watch_stall(n)
@@ -1239,19 +1237,6 @@ class Run:
             return
         if n not in self.procs and dt.datetime.now() >= self.free_at[n]:
             self.fill(n)
-
-    def retry_failed_call(self, n: int) -> None:
-        """A live session stopped on a failed model call: resume it, a few times, further apart each time."""
-        procs, running = self.procs, self.running
-        if n in procs and plat.alive(procs[n][0]) and (f := agent_failed(procs[n][1])) and \
-                (k := self.failed_resumes.get(procs[n][1], 0)) < RESUME_MAX and f[1] >= RESUME_AFTER * 2 ** k:
-            pid, sid, since = procs[n]
-            self.failed_resumes[sid] = k + 1
-            log(f'slot {n}: {running[n][0]} stopped on a failed model call ({f[0][:120]}); resuming its '
-                f'session ({k + 1}/{RESUME_MAX})')
-            if new := resume_failed(n, pid, sid, running[n][0], self.model, self.idle):
-                procs[n] = (new, sid, since)
-                self.stall_said.add(sid)  # its transcript is still old until the resumed session writes
 
     def reap(self, n: int) -> bool:
         """The slot's session ended: queue its resume if it was cut off (True: nothing more this tick), else

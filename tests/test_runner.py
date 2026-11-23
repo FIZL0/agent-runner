@@ -836,7 +836,7 @@ def test_short_name_hints():
     from agent_runner import config
     exe = 'C:/Users/me/AppData/Roaming/Python/Scripts/agent-runner.EXE'
     with mock.patch.object(R.plat, 'WINDOWS', True), mock.patch.object(config, 'RUNNER', exe), \
-            mock.patch.object(R, 'RUNNER', exe), mock.patch.object(R, 'control_ok', lambda: True), \
+            mock.patch.object(R, 'RUNNER', exe), \
             mock.patch.object(R, 'remote_on', lambda: False), mock.patch.object(R, 'remote_slots_on', lambda: False), \
             mock.patch.dict(R.C.run, {'control': True}):
         with mock.patch.object(config.shutil, 'which', lambda c, *a, **k: exe if c == 'agent-runner' else None):
@@ -5910,7 +5910,7 @@ def test_closed_online_controls(repo: Path):
     try:
         with mock.patch.object(R, 'control_live', live), mock.patch.object(R, 'transcript', lambda s: f'/t/{s}'), \
                 mock.patch.object(R, 'entries', lambda s, skip_bad=False: iter(rows[s])), \
-                mock.patch.object(R.plat, 'terminate', ended.append), mock.patch.object(R, 'control_ok', lambda: True), \
+                mock.patch.object(R.plat, 'terminate', ended.append), \
                 mock.patch.object(R, 'log'):
             eq(R.control_number(), 6, 'before: every number up to 5 is held')
             eq(R.end_closed_controls(force=True), [2, 4], 'the archived and the deleted one are ended')
@@ -6114,7 +6114,7 @@ def test_close_idle_controls(repo: Path):
     live = lambda n: 9000 + n if (notes / f'control{n}.pid').exists() else 0
     with mock.patch.object(R, 'control_live', live), mock.patch.object(R, 'transcript', lambda s: f'/t/{s}'), \
             mock.patch.object(R, 'entries', lambda s, skip_bad=False: iter(rows[s])), \
-            mock.patch.object(R.plat, 'terminate', ended.append), mock.patch.object(R, 'control_ok', lambda: True), \
+            mock.patch.object(R.plat, 'terminate', ended.append), \
             mock.patch.object(R, 'file_control_ask', lambda n, sid, q, link, branch='': filed.append((n, sid, q, link)) or 'F99'), \
             mock.patch.object(R, 'log'), mock.patch.object(R, 'note'):
         got = R.close_controls(force=True)
@@ -6235,7 +6235,7 @@ def test_close_control_tiers(repo: Path):
     try:
         with mock.patch.object(R, 'control_live', live), mock.patch.object(R, 'transcript', lambda s: f'/t/{s}'), \
                 mock.patch.object(R, 'entries', lambda s, skip_bad=False: iter(rows[s])), \
-                mock.patch.object(R.plat, 'terminate', ended.append), mock.patch.object(R, 'control_ok', lambda: True), \
+                mock.patch.object(R.plat, 'terminate', ended.append), \
                 mock.patch.object(R, 'log'), mock.patch.object(R, 'note'):
             got = R.close_controls(force=True, now=now)
         eq(sorted(got), [(2, 'closed', 'idle 6 min (one ask, queued)'), (4, 'closed', 'idle 780 min (talked)')],
@@ -7370,7 +7370,7 @@ def test_hidden_control_f59(repo: Path, tmp: Path):
     pids = []
     try:
         # feed_on: C26, every run on Linux and macOS keeps the runner feed (a hidden session); Windows none
-        with mock.patch.object(Ctl, 'remote_on', lambda: True), mock.patch.object(Ctl, 'control_ok', lambda: True):
+        with mock.patch.object(Ctl, 'remote_on', lambda: True):
             Ctl.mark_board()
             check(Ctl.feed_on(), 'a run keeps the runner feed: the feed is on')
             with mock.patch.object(Ctl.plat, 'WINDOWS', True):
@@ -7380,8 +7380,7 @@ def test_hidden_control_f59(repo: Path, tmp: Path):
         # c1 in a hidden run: through the pty shim, not skipped
         got = []
         with mock.patch.object(Ctl, 'hidden_control', lambda n, c, wait=None: got.append((n, c)) or (4242, '')), \
-                mock.patch.object(Ctl, 'control_live', lambda n: 0), mock.patch.dict(R.C.run, {'control': True}), \
-                mock.patch.object(Ctl, 'control_ok', lambda: True):
+                mock.patch.object(Ctl, 'control_live', lambda n: 0), mock.patch.dict(R.C.run, {'control': True}):
             Ctl.start_control()
         eq(got and got[0][0], 1, 'a run starts c1 hidden')
         check(got and got[0][1][-1] in ('1', '--local', '--new-run'), 'with the control command line', got)
