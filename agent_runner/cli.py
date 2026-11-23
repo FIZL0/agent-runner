@@ -210,6 +210,7 @@ COMMANDS = {
     'upgrade': ('runner', 'cmd_upgrade'),  # B49
     'glossary': ('glossary', 'main'),  # F22
     'voice': ('voice', 'main'),  # F21
+    'speech': ('speech', 'main'),  # F158: the voices Talk reads with
     'ui': ('tui', 'main'),  # F67: the Run page in the terminal
     'finish': ('tools', 'cmd_finish'),  # F102: a slot's agent ends its session now
     'ask': ('tools', 'cmd_ask'),  # F102: a slot's agent asks the person; the answer resumes it
