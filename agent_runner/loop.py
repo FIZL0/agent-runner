@@ -196,6 +196,12 @@ def send_key(*keys: str) -> None:
 RUNNING_SINCE: dict[tuple[str, str], float] = {}  # (slot, task) -> when write_state first saw it running
 
 
+def run_version() -> str:
+    """F90: the version this run's code is, for STATE: an open TUI or run page restarts or reloads on a newer one."""
+    from agent_runner import __version__
+    return __version__
+
+
 def write_state(running: dict) -> None:
     """`<notes>/STATE`, for `agent-runner status`: what the keys have set, what each slot is on and since when,
     what is merging, and the account's usage (as the cap reads it, at most every 5 minutes)."""
@@ -212,7 +218,8 @@ def write_state(running: dict) -> None:
     try:
         tmp.write_text(json.dumps({'at': dt.datetime.now().isoformat(timespec='seconds'), 'state': state_line(),
                                    'slots': SLOTS, 'running': work, 'since': since, 'merging': merging, 'usage': use,
-                                   'idle': IDLE[0], 'paused': PAUSED[0], 'stopping': stopping()}),
+                                   'idle': IDLE[0], 'paused': PAUSED[0], 'stopping': stopping(),
+                                   'version': run_version()}),
                        encoding='utf-8')
         os.replace(tmp, C.notes('STATE'))
     except OSError:  # Windows: `status` has STATE open this instant; the next pass writes it
