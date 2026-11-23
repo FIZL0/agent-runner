@@ -1928,8 +1928,8 @@ def test_project_name_b153(tmp: Path) -> None:
                     ['homeHref', '/', 'RT', home, {'protocol': 'http:', 'hostname': 'box'}],
                     ['homeHref', '', 'RT', {}, {'protocol': 'http:', 'hostname': 'box'}],
                     ['pageTitle', 'ifizbox'], ['pageTitle', '']])
-    eq(got[:4], ['http://box:8770/?t=H%26T', 'https://box.ts.net:8771/?t=H%26T', '/?t=RT', ''],
-       "the top-left name links to Runner Home: its port and token on the page's host (https: Serve's port+1); "
+    eq(got[:4], ['http://box:8770/?t=H%26T', 'http://box.ts.net:8770/?t=H%26T', '/?t=RT', ''],
+       "the top-left name links to Runner Home: its port and token on the page's host (over http, also from https); "
        "through Home, Home's own base; none while Home is not installed")
     eq(got[4:], ['ifizbox · runner', 'agent-runner'], 'the window title: the project first')
 

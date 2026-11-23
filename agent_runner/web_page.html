@@ -581,13 +581,13 @@ function homeKey(path){const m=String(path||'').match(/^.*?\/p\/([^/]+)\//);try{
 const projectLink=(base,key,t)=>base+'p/'+encodeURIComponent(key)+'/?t='+encodeURIComponent(t||'');
 const homeLink=(base,t)=>base+'?t='+encodeURIComponent(t||'');
 /* B153: Runner Home's link for the project name top-left: through Home, its own base; on the run's own page,
-   Home's port and token (the snapshot's home) on the host the page came from (https: Tailscale Serve's port+1);
-   '' while Home is not installed */
+   Home's port and token (the snapshot's home) on the host the page came from, over http (Home serves http on
+   every interface; its https port depends on Tailscale Serve, which the page cannot see); '' while Home is not
+   installed */
 function homeHref(base,t,home,loc){
   if(base)return homeLink(base,t);
   if(!home||!home.port||!home.t||!loc)return '';
-  const s=loc.protocol==='https:';
-  return `${s?'https':'http'}://${loc.hostname}:${s?+home.port+1:home.port}/?t=${encodeURIComponent(home.t)}`;
+  return `http://${loc.hostname}:${home.port}/?t=${encodeURIComponent(home.t)}`;
 }
 /* B153: the window title: the project's name first */
 const pageTitle=project=>project?project+' · runner':'agent-runner';
