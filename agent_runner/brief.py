@@ -220,7 +220,10 @@ CONCEPT_PROMPT = """\
 here) and publish one page with the Artifact tool that lays out the options, usually two or three: for each, \
 what it looks like or does (a sketch, a mock-up or an example where that says it best), the files it touches, \
 and its trade-off; then your recommendation and why. A person picks one from that page, often on a phone, so \
-make it short, concrete and readable at a glance. Change no product code; commit only notes you wrote (the \
+make it short, concrete and readable at a glance. Give each option a button that answers the run with no AI \
+session: `{runner} pick-links {tid} A,B,C` (your options' letters) prints one link per option; put each on its \
+option as a plain `<a href>` button ("Go with B") before you publish. When it says there is no https address, \
+leave the buttons off: the person replies as before. Change no product code; commit only notes you wrote (the \
 journal). Finish with `{runner} done {tid} "<msg>" --artifact <the page's URL> --page <the HTML file you published>`: \
 it is refused without the URL, and it files the build task, blocked until the person approves an option. `--page` \
 keeps a copy of the page at .runner/concepts/{tid}.html for the run page to show inline; without it `done` only \
