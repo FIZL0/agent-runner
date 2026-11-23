@@ -856,6 +856,50 @@ def test_run_moves_off_the_port(tmp: Path) -> None:
         os.chdir(old)
 
 
+def pick_links_through_home(root: Path, hp: int, mine: int, ts) -> None:
+    """F167: the run on 127.0.0.1:`mine`, Home serving on `hp`, Tailscale Serve (`ts`) on Home's port."""
+    nots = lambda p, t: []  # noqa: E731
+    eq(W.https_base(ts), 'https://box.tail.ts.net/p/proj', "F167: the base is Home's https address at /p/KEY")
+    link = W.pick_links('B1', ['A'], ts)[0]
+    code = W.pick_code('B1')
+    eq(link, f'https://box.tail.ts.net/p/proj/pick?id=B1&k={code}&o=A', 'an option link through Home')
+    check(H.home_token() not in link and W.web_token() not in link, "with neither Home's token nor the run's", link)
+    eq(W.pick_base('B1', ts), f'https://box.tail.ts.net/p/proj/pick?id=B1&k={code}', "a pick sheet's Send too")
+    has(W.no_https_why(), f'port {hp}; `tailscale serve', 'Home with no https address: why, and the command')
+    check(str(mine) not in W.no_https_why(), "the reason never names the run's port", W.no_https_why())
+    eq(W.pick_links('B1', ['A'], nots), [], 'and no links')
+    own = W.url_file().read_text(encoding='utf-8')
+    with mock.patch.object(W, 'home_port', lambda: hp), mock.patch.object(W, 'site_urls', lambda: []):
+        W.url_file().write_text(f'http://h:{hp}/?t=x\n', encoding='utf-8')
+        eq(W.https_base(ts), '', "a web.url from before Home, on Home's port, gives no link without /p/KEY")
+    W.url_file().write_text(own, encoding='utf-8')
+
+    ran = []
+    path = link.removeprefix('https://box.tail.ts.net')
+    with mock.patch.object(W.U, 'RUN', [lambda argv: (ran.append(argv), (0, 'ok'))[1]]), \
+            mock.patch.object(W.U, 'need_label', lambda tid: 'DECIDE'):
+        home = H.serve_home(H.home_token(), 0, '127.0.0.1', roots=lambda: [root], rows=lambda: [],
+                            link=lambda r: (mine, W.web_token()))
+        try:
+            here = f'http://127.0.0.1:{home.server_address[1]}'
+            eq(get(f'{here}/p/proj/pick?id=B1&o=A&k=nope')[0], 403, 'a wrong code: the run refuses it')
+            code_, body, _ = get(f'{here}/p/proj/pick?id=B1&o=A&k={W.web_token()}&t={H.home_token()}')
+            eq((code_, b'unknown' in body), (403, True), 'and tokens are not codes')
+            eq(get(f'{here}/p/proj/pick/../snapshot')[0], 403, 'nothing else goes past the token')
+            eq(get(f'{here}/p/proj/pick', b'{}')[0], 403, 'a POST neither')
+            code_, body, _ = get(here + path)
+            eq((code_, ran), (200, [['plan', 'confirm', 'B1', 'go with A']]), "the link answers the run, no token")
+            has(body.decode(), 'Answered B1 with A', 'and says so')
+            eq(get(here + path)[0], 409, 'once')
+            home._link = lambda r: None
+            off = get(f'{here}/p/proj/pick?x="><script>')
+            eq((off[0], off[1]), get(f'{here}/p/nope/pick')[:2], 'no run up: the same answer as an unknown project')
+            has(off[1].decode(), 'No run is up', 'which says so')
+            check(b'script' not in off[1] and H.home_token().encode() not in off[1], 'with nothing of the address in it')
+        finally:
+            home.stop()
+
+
 def test_device_site_link(tmp: Path) -> None:
     print("B146: with the port held, the run page's link goes through the device site (Home's /p/KEY/), else the bare port")
     from agent_runner import cmds as M
@@ -894,6 +938,7 @@ def test_device_site_link(tmp: Path) -> None:
             eq(H.project_row('proj', root, info=lambda r: {'up': True}, needs=lambda r: (0, []))['page'], 'p/proj/',
                'F165: Home still opens it')
             eq(W.https_base(lambda p, t: ['https://x/?t=x']), '', 'F138: no option links to it')
+            has(W.no_https_why(), 'Home is not installed', 'F167: and why')
             check(str(mine) not in W.no_https_why(), 'and the reason names no port')
             home = H.serve_home(H.home_token(), 0, '127.0.0.1', roots=lambda: [root], rows=lambda: [])
             hp = home.server_address[1]
@@ -907,7 +952,9 @@ def test_device_site_link(tmp: Path) -> None:
                "a Tailscale Serve https address for Home's port keeps the /p/KEY/ path")
             eq(H.site_links(root, https=ts), [f'https://box.tail.ts.net/p/proj/?t={H.home_token()}', site],
                'F134: the /p/KEY/ links themselves put the https one first')
+            pick_links_through_home(root, hp, mine, ts)
             H.remove_project(str(root))
+            eq(W.https_base(ts), '', "F167: not listed by Home: no link to Home's root")
             eq(H.site_links(root), [], 'Home does not list the project: no device site link')
             has(W.page_line(), 'home add ', 'F165: status says how to list it')
             H.add_project(str(root))

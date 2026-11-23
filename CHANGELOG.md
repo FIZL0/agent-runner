@@ -4,6 +4,7 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Fixed: Pick links work through Runner Home (F167). With Home installed, a run listens on 127.0.0.1 only (F165), so no Pick link was made. Now a Pick link (`pick-links`, a pick sheet's Send) uses Home's Tailscale Serve https address, https://HOST/p/KEY/pick; Home routes GET /p/KEY/pick to the run with no Home token, because the link's one-use code is the check and the run checks it. With no run up, the link's page says to start the run. With no https address for Home's port, `pick-links` says so and gives the `tailscale serve` command. A run with its own https port still gets its Pick links as before where Home does not route it.
 - Changed: the run app's Settings page is rebuilt (F166). About 24 everyday settings sit in Speed and limits, Landing work, Models and Chats, each with its control on its row; the rest are behind Advanced, and commands, paths, patterns and rules behind Project file, read only with "Ask a chat to change it". Each setting says where a change is saved: this device at once (`runner.local.toml`), or everyone as a queued C task on `runner.toml`, shown as Queued until it starts. A row's More… has the other home and Reset. Changed lists what differs from the default, and the lines the run ignores or moved. Search finds names, descriptions and code names, and a card with Restart the run says how many changes wait for a restart. `agent-runner settings` still prints the developer notes.
 - Removed: the settings cut (F166). `[run] comment_policy` is ignored (write its wording in `prompt_extra`); `[run] merge_ahead` is always on; `[run] idle`, `stall`, `pause`, `fix_timeout`, `control_idle_quick`, `control_idle_talked` and `control_open` are fixed (30 s, 1200 s, 60 s, 1800 s, 5 min, 12 h, and the built-in phrases), and `run --idle`, `--stall` and `--pause` stay. `[run] model` and `fix_model` move to `[models] code` and `fix`. `[run] sessions` folds into `remote_slots`, now "open" or "always". An old file still works, and the run log has a note.
 - Changed: a chat or slot in the run app shows the real Claude Code session through ttyd, filling the space above the message box, in place of the page's own thread (bubbles, folded steps, Older messages, the jump button). The message box keeps its send, attachments, mic, slash menu, drafts, Stop and outbox; a phone gets a touch layer and a key row (F114). Attach works on Windows 10 1809 and later (ConPTY, through a local port), and the `feed` terminal mode is gone.
@@ -16,8 +17,7 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
   `agent-runner home install`. Installing Home while runs are up moves each run off the public port within seconds, with no
   restart; after `home uninstall`, a run serves its own page again from its next start. When Home is down while a
   run is up, `status` and the run log say so with the command to start it. On Windows a second run
-  can no longer bind the same port as another run. Option links (`pick-links`) need a run page with a port of its own
-  (`web_port` set): Home does not route them.
+  can no longer bind the same port as another run.
 - Added: Home has a Talk button (F164), first in the row under the message box. One press opens Talk in the page,
   without a reload, and the mic does not start by itself. It shows always, as Talk does in the sidebar (where the mic
   cannot listen, Talk is typed).
