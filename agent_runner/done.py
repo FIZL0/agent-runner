@@ -102,6 +102,9 @@ def main(argv: list[str] | None = None) -> int:
     a = ap.parse_args(argv)
     c = cfg()
     cwd = c.root
+    if not a.blocked and tested_tick(a.id, c) and not git('status', '--porcelain', cwd=cwd).stdout.strip():
+        print(f'{a.id} is already ticked and committed, and its gate passed on this commit: nothing to do again')
+        return finished(c, a)  # B172: the mark may be gone
     if not a.artifact and not a.blocked and plan.concept(a.id):  # F106f: the page `run publish-page` published
         from agent_runner.page_copy import concept_url
         a.artifact = concept_url(a.id, c) or None
@@ -157,7 +160,8 @@ def record(a, c) -> int:
     cwd = c.root
     kept = {p: p.read_bytes() for p in (c.todo, c.done, plan.long_form(c.plan_dir, a.id)) if p.exists()}
     later = c.plan_external and not a.blocked and finished_mark() is not None
-    if a.artifact and not a.blocked:
+    again = not a.blocked and ticked(a.id, c)  # B172: `done` ran before; more work on top, or its mark is gone
+    if a.artifact and not a.blocked and not again:
         journal_link(c, a.id, a.artifact)
         if plan.concept(a.id) and (kept_copy := keep_page(c, a.id, getattr(a, 'page', None))):
             print(f'kept a copy of the page: {kept_copy}')
@@ -170,6 +174,8 @@ def record(a, c) -> int:
     if a.blocked:
         plan.block(a.id, a.blocked, after=None if a.after is None else [t for t in a.after.split(',') if t])
         print(f'blocked {a.id}')
+    elif again:
+        print(f'{a.id} is already ticked')
     elif later:
         (plansync.ticks(c) / a.id).touch()
         print(f'{a.id} is ticked in {c.plan_dir} once its merge lands')
@@ -216,6 +222,27 @@ def record(a, c) -> int:
     elif here and (remote := c.push_remote) and shared_branch(cwd, remote, here):
         print(f'{here} is not pushed: done only pushes a task branch (git push {remote} {here} to publish)')
     return finished(c, a)
+
+
+def ticked(tid: str, c) -> bool:
+    """`done` already ticked `tid`: the tick is in this branch's last commit; for a plan outside the repo, in the
+    plan itself, or left for the runner to make once the merge lands."""
+    if not c.plan_external:
+        texts = [git('show', f'HEAD:{p.relative_to(c.root).as_posix()}', cwd=c.root).stdout for p in (c.done, c.todo)]
+    elif (plansync.ticks(c) / tid).exists():
+        return True
+    else:
+        texts = [p.read_text(encoding='utf-8') for p in (c.done, c.todo) if p.exists()]
+    return any(not m.group(1) and m.group(2) == 'x' and m.group(3).rstrip('.') == tid
+               for t in texts for l in t.splitlines() if (m := plan.ITEM.match(l)))
+
+
+def tested_tick(tid: str, c=None) -> bool:
+    """`tid` is ticked and the commit its gate passed on is HEAD: `done` succeeded here, whatever became of the
+    slot's mark (B172)."""
+    c = c or cfg()
+    ref = git('rev-parse', '--verify', '-q', TESTED + tid, cwd=c.root).stdout.strip()
+    return bool(ref) and ref == git('rev-parse', 'HEAD', cwd=c.root).stdout.strip() and ticked(tid, c)
 
 
 def fails(cwd: Path, tid: str, add: bool = False, reset: bool = False) -> int:

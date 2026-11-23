@@ -297,7 +297,7 @@ def discard_task(tid: str, n: int | None, sid: str = '') -> list[str]:
             clean(d)
             git('checkout', '-q', '--detach', cwd=d)
             did.append(f'reset s{n}')
-        finished_mark(n).unlink(missing_ok=True)
+        finished_mark(n, C).unlink(missing_ok=True)
     if not git('rev-parse', '--verify', '-q', f'refs/heads/task/{tid}').returncode:
         git('branch', '-D', f'task/{tid}')
         did.append(f'deleted task/{tid}')

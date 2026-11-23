@@ -823,7 +823,7 @@ def start(n: int, task, branch: str, model: str, idle: int, slots: int, held: fr
     from agent_runner.fallback import note_model, start_model
     tid = task[0]
     model = start_model(task_model(tid, model, branch), held)  # F106g: a capped provider's task starts on the chain
-    finished_mark(n).unlink(missing_ok=True)  # the last task's `done`, not this one's
+    finished_mark(n, C).unlink(missing_ok=True)  # the last task's `done`, not this one's
     C.notes(f'{tid}.budget').unlink(missing_ok=True)  # F103: an earlier attempt's budget stop, not this one's
     C.notes(f'{tid}.fallback').unlink(missing_ok=True)  # F106g: an earlier attempt's cap stop
     d = worktree(n, branch)
