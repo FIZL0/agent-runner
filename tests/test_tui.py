@@ -295,6 +295,30 @@ def test_queue() -> None:
     check(any('+ new task n' in l[:36] for l in drawn(p).lines()), "'+ new task' with its key")
 
 
+def test_form_pane_v_task() -> None:
+    """B128: a V task's edit pane: the text now in the typed text's colour, the kind its short name, any run-on
+    indented under the value."""
+    p = page()
+    it = {'id': 'V3', 'title': 'Release the next version with its notes and tag'}
+    for width in (60, 24):
+        lines = p.form_pane(it, width)
+        now = [l for l in lines if any('now: ' in t for t, _ in l)]
+        check(now, f'the text now is shown ({width})', lines)
+        start = lines.index(now[0])
+        segs = [s for l in lines[start:start + 3] for s in l if s[0].strip() and 'now:' not in s[0]
+                and any(w in s[0] for w in ('Release', 'version', 'notes', 'tag'))]
+        check(segs and all(c == 'fg' for _, c in segs), f'the text now is fg, not dim ({width})', segs)
+        k = next(i for i, l in enumerate(lines) if l and l[0] == ('k', 'hkey'))
+        kind_text = ''.join(t for l in lines[k:k + 3] for t, _ in l)
+        check('release' in kind_text and 'waits for everything' not in kind_text, 'the kind: its short name only',
+              kind_text)
+        end = next(i for i, l in enumerate(lines) if l and l[0] == ('p', 'hkey'))
+        for l in lines[k + 1:end]:
+            check(l[0][0].startswith('    '), f'a kind-line continuation starts indented ({width})', l)
+        check(all(sum(len(t) for t, _ in l) <= width for l in lines[k:end]), f'the kind lines fit the pane ({width})',
+              lines[k:end])
+
+
 def test_direct_edit() -> None:
     p = page()
     ran: list = []
@@ -1186,7 +1210,8 @@ def test_cli() -> None:
 
 
 if __name__ == '__main__':
-    raise SystemExit(report([test_layout, test_status_tabs, test_session_tabs, test_queue, test_direct_edit,
+    raise SystemExit(report([test_layout, test_status_tabs, test_session_tabs, test_queue, test_form_pane_v_task,
+                               test_direct_edit,
                                test_navigation, test_chat_box, test_actions, test_session_tab_b125, test_footer,
                                test_concept_page,
                                test_concept_chat, test_new_concept,
