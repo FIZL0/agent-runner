@@ -6958,6 +6958,95 @@ print('told', repr(sys.stdin.readline().strip()), flush=True)
 '''
 
 
+ATTACH_AGENT = r'''
+import os, sys
+print('ready', flush=True)
+for line in sys.stdin:
+    line = line.strip()
+    if line == 'size':
+        sz = os.get_terminal_size(0)
+        print(f'size {sz.lines} {sz.columns}', flush=True)
+    elif line == 'quit':
+        break
+    elif line:
+        print(f'echo:{line}', flush=True)
+'''
+
+
+def test_attach_f88(tmp: Path):
+    print('F88: a hidden session\'s terminal is attached through its shim\'s socket: output, input, a resize, '
+          'Ctrl-b d leaves it running')
+    if R.plat.WINDOWS:
+        return
+    import socket
+    import stat
+    d = tmp / 'f88'
+    d.mkdir(exist_ok=True)
+    agent = d / 'echo.py'
+    agent.write_text(ATTACH_AGENT, encoding='utf-8')
+    marker, sock = d / 'slot9.live', d / 'slot9.sock'
+    shim = R.sp.Popen([sys.executable, '-c', 'import json, sys; from pathlib import Path; from agent_runner import slots; '
+                       'a = json.loads(sys.argv[1]); slots.run_pty(a[0], a[1], {}, Path(a[2]), None)',
+                       json.dumps([[sys.executable, str(agent)], str(d), str(marker)])],
+                      cwd=str(Path(__file__).resolve().parent.parent), stdout=R.sp.DEVNULL, stderr=R.sp.DEVNULL)
+    conn = None
+
+    def until(c, pattern: bytes, seen: list) -> bool:
+        end = time.monotonic() + 15
+        c.settimeout(0.5)
+        while time.monotonic() < end:
+            if pattern in b''.join(seen):
+                return True
+            try:
+                got = c.recv(65536)
+            except socket.timeout:
+                continue
+            if not got:
+                break
+            seen.append(got)
+        return pattern in b''.join(seen)
+
+    try:
+        end = time.monotonic() + 20
+        while not (sock.exists() and R.marker_pid(marker)) and time.monotonic() < end:
+            time.sleep(0.1)
+        check(sock.exists(), 'the shim listens on a socket beside its marker (slotN.sock)')
+        eq(stat.S_IMODE(sock.stat().st_mode), 0o600, 'only its owner can use it (mode 0600)')
+        conn = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        conn.connect(str(sock))
+        seen: list = []
+        conn.sendall(R.attach_input_frames(b'hello\r'))
+        check(until(conn, b'echo:hello', seen), 'text sent through the socket reaches the session, and its output '
+                                               'comes back', b''.join(seen)[-300:])
+        conn.sendall(R.attach_size_frame(30, 100) + R.attach_input_frames(b'size\r'))
+        check(until(conn, b'size 30 100', seen), 'a resize frame sets the terminal\'s size', b''.join(seen)[-300:])
+        # the client: input from a pipe (not a terminal, so no raw mode), Ctrl-b d leaves
+        r, w = os.pipe()
+        os.write(w, b'via client\r\x02d')
+        out = d / 'client.out'
+        fd = os.open(out, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        try:
+            eq(R.attach_session(sock, 's9', stdin=r, stdout=fd), 0, 'the client detaches on Ctrl-b d')
+        finally:
+            os.close(fd)
+            os.close(r)
+            os.close(w)
+        has(out.read_text(encoding='utf-8', errors='replace'), r'\[detached from s9 \(s9 keeps running\)\]',
+            'and says the session keeps running')
+        check(until(conn, b'echo:via client', seen), 'what the client typed before Ctrl-b d reached the session, '
+                                                    'and every client gets the output', b''.join(seen)[-300:])
+        check(R.plat.alive(R.marker_pid(marker)), 'the session runs on after the client detaches')
+        conn.sendall(R.attach_input_frames(b'quit\r'))
+        shim.wait(timeout=20)
+        check(not sock.exists() and not marker.exists(), 'the socket goes when the session ends')
+    finally:
+        if conn:
+            conn.close()
+        if shim.poll() is None:
+            shim.kill()
+            shim.wait()
+
+
 def test_hidden_control_f59(repo: Path, tmp: Path):
     print('F59: a hidden run opens c1 and control --new in a pty with no window, and keeps no runner feed')
     if R.plat.WINDOWS:
@@ -7448,7 +7537,7 @@ def main() -> int:
                        lambda: test_stop_countdown(repo), lambda: test_real_claude_json_guard(tmp),
                        lambda: test_hidden_slots(repo, tmp), lambda: test_hidden_run_lands(tmp), lambda: test_no_gate_b36(tmp),
                        lambda: test_claude_drift_b45(repo, tmp), lambda: test_merged_count_b78(repo),
-                       lambda: test_hidden_control_f59(repo, tmp), lambda: test_context_warn_f25(repo),
+                       lambda: test_hidden_control_f59(repo, tmp), lambda: test_attach_f88(tmp), lambda: test_context_warn_f25(repo),
                        lambda: test_control_fresh_f27(repo), lambda: test_config_trim_c14(tmp), test_reference_keys_d3, test_cap_stop_hint_b102])
 
 

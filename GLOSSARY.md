@@ -280,3 +280,10 @@ _Said_: parked
 _On screen_: Parked: a run won't start it
 _In code_: state 'parked', unpark, parkedLast, queueGroups
 _Avoid_: later task, on hold
+
+**Attach**:
+Put this terminal on a session's own terminal, to watch it and type into it, until Ctrl-b d leaves it running
+_Said_: attach
+_On screen_: attach s2; Back: Ctrl-b d
+_In code_: cmd_attach, attach_session, session_socket, slotN.sock, controlN.sock
+_Avoid_: open (that is Open a slot), connect

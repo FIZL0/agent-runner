@@ -26,6 +26,7 @@ from agent_runner.sched import ahead, open_tasks
 from agent_runner.slots import (attach_target, backend, background_env, background_session, claude_json, entries,
     marker_pid, MUX, PRESENCE_ENV, quiet_file, remote_off_why, remote_on, remote_slots_on, REMOTE_URL, silent, tmux,
     transcript, window, worktree)
+from agent_runner.slots import attach_session, session_socket
 from agent_runner.watch import breaking, installed_version, last_session, queue_resume, upgrade, upgrade_argv
 from agent_runner.land import wip_main_info
 from agent_runner.control import (control_argv, control_brief, control_env, control_give, control_hook_input,
@@ -748,6 +749,7 @@ def hidden_attach(which: str) -> str:
 
 def cmd_attach(argv: list[str], prog: str = f'{RUNNER} attach') -> int:
     """`agent-runner attach [sN|cN|feed]`: the runner's pane, or a session's; on Windows a slot's console window.
+    F88: a hidden session (no tmux) is attached through its shim's socket (`attach_session`); Ctrl-b d leaves.
     F80: `attach N` (a number from `agent-runner list`) or `attach <project> cN|sN|feed|run`, from any folder."""
     if not any(a.startswith('-') for a in argv) and (argv[:1] and argv[0].isdigit() or len(argv) == 2):
         return attach_listed(argv)
@@ -772,6 +774,8 @@ def cmd_attach(argv: list[str], prog: str = f'{RUNNER} attach') -> int:
             return 1
         print(f'{which}: its console window is up (minimize it to hide it again; closing it ends the session)')
         return 0
+    if sock := session_socket(which):  # F88: a hidden session's own terminal, through its shim's socket
+        return attach_session(sock, which)
     rows = tmux('list-panes', '-a', '-F', f'#{{session_name}}\t#{{pane_id}}\t#{{{TAG}}}\t#{{{REPO_TAG}}}\t#{{{RUN_TAG}}}'
                 '\t#{window_name}') if shutil.which('tmux') else None  # B114: an untagged cN by its window name
     hit = attach_target(rows.stdout.splitlines(), ROOT, which) if rows and not rows.returncode else None

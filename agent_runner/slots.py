@@ -11,6 +11,7 @@ import re
 import shlex
 import shutil
 import subprocess as sp
+import sys
 import tempfile
 import time
 import urllib.parse
@@ -986,7 +987,8 @@ class HiddenMux:
     from `<notes>/slotN.job`, starts the agent, and keeps the agent's pid in `<notes>/slotN.live` while it
     runs. The loop, a restart's adopt and the Stop hook all read that marker. POSIX: the agent runs in a
     pseudo-terminal of the standard library's `pty` (it needs a TTY), the shim copies its output to the
-    slot log and types into it what arrives on the FIFO `<notes>/slotN.in` (`send`). Windows: a console of
+    slot log and types into it what arrives on the FIFO `<notes>/slotN.in` (`send`); `attach sN` puts a
+    terminal on it through the socket `<notes>/slotN.sock` (F88, Ctrl-b d leaves). Windows: a console of
     its own whose window starts hidden (`attach sN` shows it); nothing captures its output, so the slot log
     has only the header lines there, and nothing can be typed into it.
     """
@@ -1056,6 +1058,8 @@ def hidden_line() -> str:
         see.insert(0, f'Remote Control ({REMOTE_URL}, the Claude apps)')
     if plat.WINDOWS:
         see.append(f'{shown_cmd()} attach sN (shows its console)')
+    else:
+        see.append(f'{shown_cmd()} attach sN (its terminal; {DETACH_KEY} leaves)')
     return 'slots run hidden, with no window: watch them through ' + ', '.join(see)
 
 
@@ -1113,7 +1117,9 @@ PTY_SIZE = (50, 200)  # rows, columns of a hidden slot's terminal: wide enough t
 def run_pty(argv: list[str], cwd: str, env: dict, marker: Path, logfile: Path | None) -> tuple[int, int]:
     """POSIX: run one agent session in a pseudo-terminal with no window (see HiddenMux), its pid in `marker`
     while it runs; what it prints goes to `logfile`, and what arrives on the FIFO beside the marker (slotN.in)
-    is typed into it. Returns its exit code and pid once it has ended. OSError when the agent cannot be started."""
+    is typed into it. F88: it also listens on the socket beside the marker (slotN.sock) for clients that attach
+    to the terminal (`attach_session`), removed when the session ends. Returns its exit code and pid once it
+    has ended. OSError when the agent cannot be started."""
     import fcntl
     import pty
     import select
@@ -1143,10 +1149,14 @@ def run_pty(argv: list[str], cwd: str, env: dict, marker: Path, logfile: Path | 
     except OSError:
         inq = -1
     out = open(logfile, 'ab') if logfile else None
+    sockpath = marker.with_suffix('.sock')
+    listener = attach_listen(sockpath)
+    clients: dict = {}  # F88: socket -> the bytes of a frame not yet whole
     code = None
     try:
         while True:
-            r, _, _ = select.select([fd] + ([inq] if inq >= 0 else []), [], [], 1.0)
+            watch = [fd] + ([inq] if inq >= 0 else []) + ([listener] if listener else []) + list(clients)
+            r, _, _ = select.select(watch, [], [], 1.0)
             if fd in r:
                 try:
                     data = os.read(fd, 65536)
@@ -1157,6 +1167,29 @@ def run_pty(argv: list[str], cwd: str, env: dict, marker: Path, logfile: Path | 
                 if out:
                     out.write(data)
                     out.flush()
+                for c in list(clients):
+                    try:
+                        c.sendall(data)
+                    except OSError:  # gone, or too slow to take it: that client is dropped, not the session
+                        clients.pop(c)
+                        c.close()
+            if listener and listener in r:
+                try:
+                    c, _ = listener.accept()
+                    c.settimeout(2.0)
+                    clients[c] = b''
+                except OSError:
+                    pass
+            for c in [c for c in r if c in clients]:
+                try:
+                    got = c.recv(65536)
+                except OSError:
+                    got = b''
+                if not got:
+                    clients.pop(c)
+                    c.close()
+                    continue
+                clients[c] = attach_take(clients[c] + got, fd)
             if inq in r:
                 try:
                     os.write(fd, os.read(inq, 65536))
@@ -1175,9 +1208,179 @@ def run_pty(argv: list[str], cwd: str, env: dict, marker: Path, logfile: Path | 
         os.close(fd)
         if inq >= 0:
             os.close(inq)
+        for c in clients:
+            c.close()
+        if listener:
+            listener.close()
+            sockpath.unlink(missing_ok=True)
         inbox.unlink(missing_ok=True)
         marker.unlink(missing_ok=True)
     return code, pid
+
+
+# --- F88: attach to a hidden session's terminal through its shim's socket, as dtach does ----------------------
+# The shim (`run_pty`) listens on <notes>/slotN.sock (controlN.sock), mode 0600. It sends what the session prints
+# to every client as is; a client sends frames: one kind byte, a 2-byte big-endian length, the payload. Kind
+# b'd' is input for the session, b'w' a terminal size (2-byte rows, 2-byte columns) set with TIOCSWINSZ.
+
+DETACH_KEY = 'Ctrl-b d'  # as tmux had it
+DETACH_PREFIX = 0x02     # Ctrl-b; then 'd' detaches, Ctrl-b again sends one Ctrl-b
+TERM_RESET = b'\x1b[0m\x1b[?25h\x1b[?2004l\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l\x1b[?1049l'
+
+
+def attach_frame(kind: bytes, payload: bytes) -> bytes:
+    import struct
+    return kind + struct.pack('>H', len(payload)) + payload
+
+
+def attach_size_frame(rows: int, cols: int) -> bytes:
+    import struct
+    return attach_frame(b'w', struct.pack('>HH', max(1, rows), max(1, cols)))
+
+
+def attach_input_frames(data: bytes) -> bytes:
+    return b''.join(attach_frame(b'd', data[i:i + 65535]) for i in range(0, len(data), 65535))
+
+
+def attach_listen(path: Path):
+    """The shim's listening socket at `path` (mode 0600, an old one replaced); None when it cannot be made
+    (a path too long for a Unix socket, say): the session runs, it just cannot be attached."""
+    import socket
+    try:
+        path.unlink(missing_ok=True)
+        s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    except (OSError, AttributeError):
+        return None
+    old = os.umask(0o177)
+    try:
+        s.bind(str(path))
+        s.listen(8)
+        s.setblocking(False)
+        return s
+    except OSError:
+        s.close()
+        return None
+    finally:
+        os.umask(old)
+
+
+def attach_take(buf: bytes, fd: int) -> bytes:
+    """The whole frames at the start of `buf` acted on against the pty `fd`; what is left of a frame not yet
+    whole is returned. An unknown kind is skipped."""
+    import fcntl
+    import struct
+    import termios
+    while len(buf) >= 3:
+        n = struct.unpack('>H', buf[1:3])[0]
+        if len(buf) < 3 + n:
+            break
+        kind, payload, buf = buf[:1], buf[3:3 + n], buf[3 + n:]
+        try:
+            if kind == b'd':
+                os.write(fd, payload)
+            elif kind == b'w' and n == 4:
+                rows, cols = struct.unpack('>HH', payload)
+                fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack('HHHH', rows, cols, 0, 0))
+        except OSError:
+            pass
+    return buf
+
+
+def session_socket(name: str) -> Path | None:
+    """F88: the attach socket of hidden session `name` (sN, cN), when its shim is up; else None."""
+    m = re.fullmatch(r'([cs])(\d+)', name)
+    if not m or plat.WINDOWS:
+        return None
+    sock = C.notes(f'{"control" if m[1] == "c" else "slot"}{m[2]}.sock')
+    return sock if sock.exists() else None
+
+
+def attach_session(sock: Path, name: str, stdin: int = 0, stdout: int = 1) -> int:
+    """F88 `attach sN|cN` for a hidden session: this terminal on the session's own terminal, through its
+    shim's socket, until Ctrl-b d (the session keeps running) or the session ends. The terminal is raw while
+    attached and put back after; its size goes to the session on connect (nudged a row smaller, then right,
+    so Claude Code draws the whole screen again) and on every resize. 1 when the socket takes no connection."""
+    import select
+    import signal
+    import socket
+    import termios
+    import threading
+    import tty
+    s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    try:
+        s.connect(str(sock))
+    except OSError as e:
+        s.close()
+        print(f'{name}: could not attach ({e})', file=sys.stderr)
+        return 1
+
+    def size() -> tuple[int, int] | None:
+        try:
+            cols, rows = os.get_terminal_size(stdout)
+            return rows, cols
+        except OSError:
+            return None
+
+    def send_size(nudge: bool = False) -> None:
+        if not (sz := size()):
+            return
+        try:
+            if nudge:
+                s.sendall(attach_size_frame(sz[0] - 1, sz[1]))
+                time.sleep(0.05)
+            s.sendall(attach_size_frame(*sz))
+        except OSError:
+            pass
+
+    saved = termios.tcgetattr(stdin) if os.isatty(stdin) else None
+    main = threading.current_thread() is threading.main_thread()
+    old = signal.signal(signal.SIGWINCH, lambda *_: send_size()) if main else None
+    why = f'detached from {name} ({name} keeps running)'
+    try:
+        if saved:
+            tty.setraw(stdin)
+        send_size(nudge=True)
+        prefix = False
+        while True:
+            r, _, _ = select.select([stdin, s], [], [])
+            if s in r:
+                data = s.recv(65536)
+                if not data:
+                    why = f'{name} ended'
+                    break
+                os.write(stdout, data)
+            if stdin in r:
+                data = os.read(stdin, 4096)
+                if not data:
+                    break
+                send, detach = bytearray(), False
+                for b in data:
+                    if prefix:
+                        prefix = False
+                        if b == ord('d'):
+                            detach = True
+                            break
+                        send += bytes([DETACH_PREFIX]) if b == DETACH_PREFIX else bytes([DETACH_PREFIX, b])
+                    elif b == DETACH_PREFIX:
+                        prefix = True
+                    else:
+                        send.append(b)
+                if send:
+                    s.sendall(attach_input_frames(bytes(send)))
+                if detach:
+                    break
+    except OSError:
+        why = f'{name}: the connection to its terminal broke'
+    finally:
+        s.close()
+        if main:
+            signal.signal(signal.SIGWINCH, signal.SIG_DFL if old is None else old)
+        if saved:
+            termios.tcsetattr(stdin, termios.TCSADRAIN, saved)
+        if os.isatty(stdout):
+            os.write(stdout, TERM_RESET)
+        os.write(stdout, f'\r\n[{why}]\r\n'.encode())
+    return 0
 
 
 def marker_pid(marker: Path) -> int:

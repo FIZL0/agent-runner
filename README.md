@@ -72,7 +72,9 @@ Upgrade with `uv tool upgrade agent-runner` (or `pipx upgrade`) any time: a runn
 new version and adopts its sessions (not on Windows, nor across a major version). Or pin a
 [release](https://github.com/FIZL0/agent-runner/releases/latest): `uv tool install git+https://github.com/FIZL0/agent-runner@v<version>`.
 On Windows the slots always run hidden, each in a console whose window starts hidden (`agent-runner attach s2`
-shows one), whether the run is bare `agent-runner` or `agent-runner run 3` in a terminal.
+shows one), whether the run is bare `agent-runner` or `agent-runner run 3` in a terminal. On Linux and macOS
+`agent-runner attach s2` (or `c1`) puts this terminal on a hidden session's own terminal, with or without tmux;
+Ctrl-b d detaches and leaves it running.
 Adding it to an existing repo and wrapping it from your own CLI are in [docs/SETUP.md](docs/SETUP.md).
 
 ## How it works

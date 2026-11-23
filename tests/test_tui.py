@@ -227,6 +227,10 @@ def test_session_tabs() -> None:
     p.key('l')
     win = drawn(p)
     check('s1 runs in a tmux pane' in win.text() and '[⏎ attach s1]' in win.text(), 'the pane tab', win.text())
+    with mock.patch.object(T, 'hidden_terminal', lambda name: name == 's1'):
+        win = drawn(p)
+    check('s1 runs hidden, in a terminal of its own' in win.text() and '[⏎ attach s1]' in win.text()
+          and 'Back: Ctrl-b d.' in win.text(), 'F88: a hidden session\'s pane tab attaches to its terminal', win.text())
     p.key('l')
     win = drawn(p)
     eq((colour_at(win, '+new line'), colour_at(win, '-old line'), colour_at(win, '@@ -1,2')),
