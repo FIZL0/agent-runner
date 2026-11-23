@@ -964,20 +964,17 @@ def fetch_json(url: str, data: dict | None = None, timeout: float = PEER_TIMEOUT
 
 def push_alert(roots: list[Path], what: str, host: str) -> int:
     """Put a device alert in each running project's events, where its runner feed reads it and pushes it as
-    'needs you: …'. It goes as a Claude Code drift event (status.since_event prints those as needs you lines),
-    marked `device`. How many projects got it."""
+    'needs you: …'. It goes as a device alert event (EV_DEVICE; status.since_event prints those as needs you
+    lines), with its host in `device`. How many projects got it."""
     from agent_runner.cmds import run_info
-    try:
-        from agent_runner.state import EV_DRIFT
-    except ImportError:
-        EV_DRIFT = 'claude code drift'
+    from agent_runner.state import EV_DEVICE
     from agent_runner.config import Config
     import datetime as dt
     n = 0
     for root in roots:
         if not (run_info(root) or {}).get('up'):
             continue
-        rec = {'time': dt.datetime.now().isoformat(timespec='seconds'), 'kind': EV_DRIFT, 'id': '',
+        rec = {'time': dt.datetime.now().isoformat(timespec='seconds'), 'kind': EV_DEVICE, 'id': '',
                'text': what, 'device': host}
         try:
             with open(Config(root).notes('events.jsonl'), 'a', encoding='utf-8') as f:
