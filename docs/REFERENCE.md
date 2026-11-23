@@ -790,6 +790,8 @@ Writing "follows A12" in its text isn't enough: if A12 hasn't started, the task 
 A plain new number (`plan add A "…"`) is an independent task and may run beside anything. `agent-runner help order`
 prints this summary; `agent-runner run --dry-run N` shows what N free slots would start now, and why the rest wait.
 
+A task over `[run] task_size` is split the same way: `plan add A12 "…"` per part (A12a, A12b, …), then `plan edit A12 "<title> (split into A12a, A12b)"`. `plan add`, `edit`, `note` and an approval say when a task is too big and how to split it, and a run that starts an unsplit one has its session split it before it does the first part (F177). A12 ticks itself once its parts land.
+
 ## Picking
 
 `pick` walks TODO.md in order and starts the first task that passes all of these checks. The order is the
@@ -1408,7 +1410,8 @@ voice = ""                # the person's wording file (`agent-runner voice`), re
 voice_learn = "ask"       # "ask": a session that had to say something again offers one wording line to add; "off": lines are added only when the person says so
 review = true             # before done, a fresh subagent reads the diff against the task's brief (spec only: missing, unasked, wrong); the commit ends "review: …"; false: no review
 review_min_lines = 50     # a diff smaller than this (changed lines) skips the review, unless the task has a long form (plan/tasks/<ID>.md)
-context_warn = 150        # k tokens: a slot session whose context peaked past this says so in its exit line and in `since`, with what filled it ("B32 peaked 168k (over 150k): runner.py 61k, test_runner.py 22k"); soft only, nothing is stopped; 0 = off. A new run also starts c1 afresh when its kept session last stood over it (F27)
+context_warn = 150        # k tokens: a slot session whose context peaked past this says so in its exit line and in `since`, with what filled it ("B32 peaked 168k (over 150k): runner.py 61k, test_runner.py 22k"), and is told once, as a turn ends, to commit what is solid, file the rest as a part and finish; soft only, nothing is stopped; 0 = off. A new run also starts c1 afresh when its kept session last stood over it (F27)
+task_size = 10            # a task bigger than this is split: its size is its code files (`docs_files` not counted) + 2 per numbered outcome + 1 per 400 characters of text (a long form is not read); `plan add`, `edit`, `note` and an approval say so, and its session splits it first; 0 = off (F177)
 task_tokens = 0           # tokens one task's session (and its subagents) may use: input, cache writes, output (cache reads are left out: they grow with turns times the context, and task_usd counts them). Past it the runner tells the task to stop at a clean point (commit, write its journal, end its turn) and parks it as wip/<ID>; one whose done already passed lands; one that goes on to 1.25 times the cap is ended. `status` shows each running task's spend ("1.2M tok $3.40"); 0 = no cap (F103)
 task_usd = 0              # the same cap in dollars, at the API's list prices (a plan bills none; Opus prices for a model it does not know); 0 = no cap
 weekly_max = 90           # % of 7-day usage past which new tasks wait, or start on [models] fallback
@@ -1630,7 +1633,7 @@ environment, so its usage stays plan usage.
 The brief (on a resume, the resume message, with `--resume <session id>`) is the first stream-json user message
 on its stdin, so a brief of any length goes in whole.
 
-No idle Stop hook: the session ends at its result event. Its stdin closes at once when nothing was sent during
+No idle Stop hook: the session ends at its result event. Its Stop hook ends nothing; it only gives the once-only context-full message (F177). Its stdin closes at once when nothing was sent during
 that turn, otherwise when no next turn starts within 5 s. So `run finish` (then stopping), or a turn that ends
 with nothing more to do, ends it. While the agent still runs a background command (a `done` waiting on the gate),
 its stdin stays open, as the Stop hook's waiter does, until that command ends, `done` or `run finish` has run, or

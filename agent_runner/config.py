@@ -146,7 +146,10 @@ DEFAULTS: dict = {
         'review_min_lines': 50, # a diff smaller than this (changed lines) skips the review, unless the task has a
                                 # long form (plan/tasks/<ID>.md)
         'context_warn': 150,    # k tokens: a slot session whose context peaks past this says so, and what filled
-                                # it, in its exit line and `since` (soft only: nothing is stopped); 0 = off
+                                # it, in its exit line and `since`, and is told once, at a turn's end, to finish and
+                                # file the rest as a part (soft only: nothing is stopped); 0 = off
+        'task_size': 10,        # a task bigger than this is split: its code files, plus 2 per numbered outcome, plus 1 per
+                                # 400 characters of text; `plan` says so and its session splits it first; 0 = off
         'task_tokens': 0,       # tokens (input, cache writes, output; not cache reads) one task's session may use; past
                                 # it the task stops at a clean point and is parked as wip/<ID>; 0 = no cap
         'task_usd': 0,          # the same in dollars at the API's list prices (a plan bills none); 0 = no cap

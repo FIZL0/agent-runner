@@ -1331,7 +1331,7 @@ def test_control(repo: Path):
           '"do X after T181" queues X with --after (block --after for a queued task)')
     for want in ('plan add <KIND> "..." --pri later', '`--pri low`', 'plan move ID top', 'plan drop ID',
                  'stop --suspend', 'stop --shutdown', 'resume ID', 'plan claims', 'plan unclaim ID',
-                 'plan add ID', 'subtasks wait for their parent', 'cost`'):
+                 'plan add ID', 'the parts run, then ID ticks itself', 'cost`'):
         check(f'{R.C.command} {want}' in brief or want in brief, f'the brief maps a request to {want!r}')
     for want in ('plan move ID top', 'plan drop ID', 'stop --suspend', 'stop --shutdown', 'resume ID',
                  'plan claims', 'plan unclaim ID', 'plan add ID', 'cost'):
@@ -7413,7 +7413,8 @@ def test_stream_engine_f106b(repo: Path, tmp: Path):
         check('do Z8' not in argv and '--remote-control' not in argv, 'the brief is not on its command line, and it '
               'has no Remote Control', argv)
         hooks = json.loads(argv[argv.index('--settings') + 1])['hooks']
-        check('Stop' not in hooks and 'PreToolUse' in hooks, 'no idle Stop hook; the git fence stays', hooks)
+        check('--idle -1' in json.dumps(hooks['Stop']) and 'StopFailure' not in hooks and 'PreToolUse' in hooks,
+              'no idle Stop hook (F177: it only says once that the context is full); the git fence stays', hooks)
         hit = R.MUX.panes().get('s7')
         end = time.monotonic() + 10
         while not R.C.notes('slot7.in').exists() and time.monotonic() < end:

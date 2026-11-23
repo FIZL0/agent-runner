@@ -398,7 +398,8 @@ What the person asks, and what you run:
   background watcher, Monitor or loop to upgrade agent-runner.
 - **Queue it** ("add a task", "fix X"): `{cmd} plan add <KIND> "what, why, how to check" --files
   a.py,tests/test_a.py` (`plan kinds`; exact files; `--after ID`; `--pri critical` only when it blocks work),
-  then one hint line: 'Say "do F48 here" to start it now.' Corrections, order, park, drop, split, a release, telling a running task: `guide queue`.
+  then one hint line: 'Say "do F48 here" to start it now.' A big ask: split into parts first. How, and
+  corrections, order, park, drop, a release, telling a running task: `guide queue`.
 - Why did a task stop? `plan ID`, the run log `{log}`, then `plan note ID "…"` or `plan unblock ID "…"`.
 - **Doing it now** ("do it now", "just fix it", "do F48 here"): read `{cmd} guide take` first; the work goes
   in the worktree `take` makes, never in this checkout.
@@ -413,8 +414,7 @@ What the person asks, and what you run:
 """ + NO_BANG + """
 
 **Settings.** When what the person says fits a runner.toml setting, read `guide settings` first, then recommend the one change in one line and ask.
-Never `git reset --hard`, `git clean`, `git checkout -- .`, `git stash` or `git push --force`: they destroy
-work you cannot get back.
+Never `git reset --hard`, `git clean`, `git checkout -- .`, `git stash` or `git push --force`: work is lost.
 """
 
 # B98: the control brief's longer rules, printed by `{cmd} guide <topic>` and named in the brief's Guide pages
@@ -500,6 +500,12 @@ you, to act on a task or when the person asks which one.
   or waits to merge, and nothing starts beside it.
   After you queue, end with one hint line naming the new id: 'Say "do F48 here" to start it now.' (with
   several, name each; never as a question).
+- Too big: `plan add`, `edit`, `note` and an approval say when a task is over `[run] task_size` (its code files,
+  2 per numbered outcome, 1 per 400 characters). Split a big ask before you queue it: each part a vertical slice
+  that passes the gate and can be checked alone. File its title parked, so no run starts it: `{cmd} plan add <KIND>
+  "<title> (split into parts)" --files … --pri later`, then `{cmd} plan add ID "part" --files … --pri normal` per
+  part, `--after` a part it needs, never ID. ID ticks itself once they land. One already queued or approved: "split
+  that up" below, at once; a run that starts it first has its session split it.
 - A correction of a queued task ("not on arm", "use X, not Y", the wrong files): `{cmd} plan edit ID "<the
   whole corrected text>"` (with `--files`/`--after`/`--test`/`--pri` to change those), which rewrites it in
   place, stale notes included; `plan note` only adds detail that agrees with the line. Read the queue with
@@ -509,7 +515,8 @@ you, to act on a task or when the person asks which one.
   - "park it", "someday": `{cmd} plan add <KIND> "..." --pri later` (never started by a run); "low
     priority": `--pri low`. "do that next": `{cmd} plan move ID top`. "drop it": `{cmd} plan drop ID "why"`.
     "that wasn't done", "bring it back": `{cmd} plan restore ID`
-  - "split that up": `{cmd} plan add ID "part"` per part (IDa, IDb: subtasks wait for their parent)
+  - "split that up": `{cmd} plan add ID "part"` per part (IDa, IDb), then `{cmd} plan edit ID "<title> (split
+    into IDa, IDb)"`: the parts run, then ID ticks itself
   - "stop and sleep / shut down when done": `{cmd} stop --suspend` / `{cmd} stop --shutdown`
   - "pick that back up" (cut off by a network drop or reboot): `{cmd} resume ID`
   - tasks held by a run that crashed: `{cmd} plan claims`, then `{cmd} plan unclaim ID`

@@ -279,6 +279,21 @@ def test_budget(env: Env):
     check(results(es) and 'spent' in results(es)[0]['content'], 'the tool call of the last turn still ran')
 
 
+def test_context_warn(env: Env):
+    """F177: told once, at a turn's end, that its context is full; a resume does not tell it again."""
+    steps = [{'input': 5000, 'calls': [['bash', {'command': 'echo mid'}]]}, {'text': 'turn over'}, {'text': 'went on'}]
+    env.configure('context_warn = 2')
+    try:
+        p, sid, calls = env.session(steps)
+        eq((p.returncode, len(calls)), (0, 3), 'one more turn, and it is not stopped')
+        check('context_warn' not in calls[1]['messages'][-1]['text'], 'nothing is said in the middle of a turn')
+        has(calls[2]['messages'][-1]['text'], r'context is 5k tokens.*\(2k\).*task/F1.*plan add F1', 'said at its end')
+        p, _, calls = env.session(steps + [{'text': 'resumed'}] * 2, prompt='go on', sid=sid, resume=True)
+        eq(len(calls), 1, 'once: not again when it is resumed')
+    finally:
+        env.configure('')
+
+
 def test_resume(env: Env):
     steps = [{'text': 'first answer'}, {'text': 'second answer'}]
     p, sid, calls = env.session(steps, prompt='the first message')
@@ -382,7 +397,7 @@ def main() -> int:
                 return report([lambda: test_brief(env), lambda: test_no_pi(env)])
             return report([lambda: test_routing(env), lambda: test_finish(env),
                            lambda: test_finish_refused(env), lambda: test_ask(env),
-                           lambda: test_fence(env), lambda: test_fallback(env), lambda: test_budget(env), lambda: test_resume(env),
+                           lambda: test_fence(env), lambda: test_fallback(env), lambda: test_budget(env), lambda: test_context_warn(env), lambda: test_resume(env),
                            lambda: test_tell(env), lambda: test_brief(env), lambda: test_no_pi(env)])
         finally:
             git(env.repo, 'worktree', 'remove', '--force', str(env.wt))
