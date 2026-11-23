@@ -9,14 +9,14 @@ No product code changed; this is research only.
    `AVSpeechSynthesisVoice.speechVoices…` returns, and Siri's own voices are not among the voices Apple hands to apps.
    Nothing a page does changes that.
 2. **Talk today asks for no voice at all**, so it gets the iPhone's default voice for the page language, which is
-   the low-quality one. Nothing is "passed over" by `pickVoice`: it never chooses, it only looks up a name the
-   person saved in Settings (`agent_runner/web_page.html:575`, `speak()` at `:1758`).
+   the low-quality one. `pickVoice` never chooses: it only looks up a name the person saved in Settings, so with none saved
+   every better listed voice is passed over (not by a rule, by there being none) (`agent_runner/web_page.html:575`, `speak()` at `:1758`).
 3. **Best fix: speech made on the run's machine and played by the page as audio.** Kokoro and Piper both run
    on this machine's CPU with no GPU, far faster than real time, and sound much better than an iOS default voice
    (play them: sample page below).
    They also give the same voice on every device, and an audio element is a better start for B166 than speechSynthesis.
    Recommendation: **Piper `en_US-lessac-medium` or `en_GB-alba-medium` first** (fast, small, free), **Kokoro
-   `af_heart` if the person wants the most natural voice** (about 5-8x slower, 330 MB, still fine for a reply).
+   `af_heart` if the person wants the most natural voice** (about 5-8x slower, 354 MB, still fine for a reply).
 4. A paid service is not needed, and would send every reply's text off the machine.
 
 ## 1. What iOS Safari gives a page (from sources, not measured on a phone)
@@ -34,7 +34,7 @@ No product code changed; this is research only.
   phone can say, which is why the sample page below lists the phone's own voices.
 - Siri's voices (the ones Siri itself speaks with) and Personal Voice are separate system voices that Apple does not
   include in that list. This is Apple's design, not a WebKit gap I could find a switch for. I could not read a
-  sentence from Apple saying so in one place, so treat "Siri cannot be used" as established by absence in the API
+  sentence from Apple saying so in one place, so treat "Siri cannot be used" (also point 1 of the verdict) as established by absence in the API
   and by the WebKit code above, and confirm it on the phone with the page below (Siri's name is not in the list).
 - With no voice set, WebKit speaks with `voiceWithLanguage:` for `utterance.lang` (same file, lines 151-168): Apple's
   default for that language, which on a phone is usually the compact voice. That is what Talk does today, and it is
@@ -53,7 +53,7 @@ the given audio length. Piper's first chunk (one sentence) alone came after 0.05
 | Voice | Size on disk | Opening | Whole reply | Audio length | Licence |
 |---|---|---|---|---|---|
 | Piper en_US-lessac-medium | 63 MB | 0.22 s | 0.33 s | 13.6 s | voice data: Blizzard 2013 licence (Edinburgh CSTR) |
-| Piper en_US-amy-medium | 63 MB | 0.30 s | 0.40 s | 17.3 s | voice data: Mimic3 voices, see its repo |
+| Piper en_US-amy-medium | 63 MB | 0.30 s | 0.40 s | 17.3 s | voice data: Mimic3 voices, Mimic3 voices repo, licence not checked |
 | Piper en_GB-alba-medium | 63 MB | 0.17 s | 0.33 s | 15.3 s | CC BY 4.0 (credit needed) |
 | Piper en_US-ryan-high | 121 MB | 0.80 s | 1.33 s | 12.5 s | **CC BY-NC-SA 4.0: not for commercial use** |
 | Kokoro af_heart | 326 MB model + 28 MB voices (all voices) | 1.5 s | 1.9 s | 14.9 s | Apache 2.0 weights |
@@ -76,7 +76,7 @@ the given audio length. Piper's first chunk (one sentence) alone came after 0.05
   clips: Kokoro `af_heart` is the most natural; Piper `lessac` and `alba` are clear and plain, clearly better than
   iOS compact voices and they never change with the phone.
 - Paid services (not measured, no text was sent anywhere): cloud engines (OpenAI, ElevenLabs, Google, Azure) give
-  the best voices but every reply's text leaves the machine, need a key and cost per character; Kokoro itself is
+  the best voices but every reply's text leaves the machine, need a key and cost per character (their prices were not looked up); Kokoro itself is
   priced by hosts at under $1 per million characters (Hexgrad's model card, April 2025, which also says on average
   1000 characters are about one minute of audio). A Talk reply is a few hundred characters, so the cost would be
   small, but a local engine is as good for this and keeps the text at home. Only with the person's OK.
@@ -110,7 +110,9 @@ Yes, and for a stated reason in WebKit:
 
 ## Sample page (play on a phone)
 
-- Eight clips of the same text, 56 kbit/s mono mp3, in `docs/research/R15-samples/`
+Page with all clips and the phone-voice buttons: https://claude.ai/artifact/SPykufB1YF46QQjzJj4uDz (private; open it signed in).
+
+- Eight clips of the same text, mono mp3, 56 kbit/s (Piper) or 64 kbit/s (Kokoro), in `docs/research/R15-samples/`
   (`en_US-lessac-medium`, `en_US-amy-medium`, `en_GB-alba-medium`, `en_US-ryan-high`, `kokoro_af_heart`,
   `kokoro_af_bella`, `kokoro_am_michael`, `kokoro_bm_george`). Total 850 KB.
 - The page published with them also has buttons that speak the same text with each voice **the phone's own Safari
