@@ -209,6 +209,17 @@ each run at `/p/<project>/`. Without it, each run serves its own page on port 87
 the second run's page moves to another port. `home status` shows whether it is installed and serving;
 `home add PATH` lists a project outside `~/repos`. See the README's Runner Home section.
 
+Home's links put the https address first. `home status`, `home install` (and its QR code, which holds the https
+link when there is one) and a run's link through Home (`/p/<project>/`) list a Tailscale Serve https address for
+Home's port first, then http by hostname and LAN address; Talk's mic and dictation need https. With no Tailscale
+Serve for Home, `home install` offers (in a terminal, y/n) to run `tailscale serve --bg --https=8771
+http://127.0.0.1:8770` (Home's port plus one), or prints that command. Home's page
+is now the run app itself: at `/` it is the "All projects" view, one row per project with Start run, Open, Pause or
+Go on, −1 slot, +1 slot, Stop and Unlist, plus an add-project box, Needs you alerts and Devices. Through Home, a
+run's app (`/p/<project>/`) has a project switcher at the top of the sidebar (the current project's name; tap it to
+list every Home project as running, idle, paused or off, with its needs-you count; each moves to `/p/<project>/` on
+the same Home address) and an "All projects" item in the sidebar.
+
 ### The run app
 
 With `[run] web` (on by default) a run serves the run app from this machine on `[run] web_port` (8770), bound

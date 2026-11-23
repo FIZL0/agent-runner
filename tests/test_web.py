@@ -1860,6 +1860,44 @@ def test_chat_box_f115(tmp: Path) -> None:
     eq((d.get('sent'), d.get('toasts')), ([], []), 'nothing is sent: the words wait in the box to edit')
 
 
+def test_home_switcher_f134(tmp: Path) -> None:
+    """F134: through Runner Home (/p/KEY/) the sidebar opens with a project switcher: every Home project from
+    Home's /projects, running/idle/off and its needs-you count, each a link to /p/KEY/?t=TOKEN on the same Home
+    address; Home's own page is the same app in Home mode (HOME_PAGE), with All projects and Devices."""
+    page = W.PAGE.read_text(encoding='utf-8')
+    check("fetch(tq(HB+'projects'))" in page, "the switcher reads Home's /projects, with the page's token")
+    check('${HB?switcher():' in page and 'data-psw' in page, 'the sidebar starts with the switcher when Home is around')
+    check("nav.concat([['projects','All projects']])" in page and 'projects:projectsHTML' in page,
+          'and the run app has an All projects view')
+    run_page = W.page_html('app').decode()
+    home_page = W.page_html('app', home=True).decode()
+    check('const HOME_PAGE=/*HOME_PAGE*/false;' in run_page and 'const HOME_PAGE=true;' in home_page and
+          '<title>Runner Home</title>' in home_page, "Home's page is the run app with HOME_PAGE on", home_page[:600])
+    if not shutil.which('node'):
+        print('  (no node here: the switcher script test is skipped)')
+        return
+    ps = [{'key': 'alpha', 'name': 'alpha', 'state': 'running', 'paused': False, 'needs': 2},
+          {'key': 'beta two', 'name': 'beta two', 'state': 'idle', 'paused': True, 'needs': 0},
+          {'key': 'gamma', 'name': 'gamma', 'state': 'off', 'needs': None}]
+    got = logic_js([['switcherRows', ps, 'alpha', '/', 'HT&1'],
+                    ['homeBase', '/p/alpha/', False], ['homeBase', '/', True], ['homeBase', '/', False],
+                    ['homeKey', '/p/beta%20two/'], ['homeKey', '/'],
+                    ['projectButtons', {'state': 'off'}],
+                    ['projectButtons', {'state': 'running', 'paused': False, 'page': 'p/alpha/'}],
+                    ['projectWords', {'state': 'idle', 'paused': True, 'slots': 1, 'running': [], 'left': 3}]])
+    eq([(r['key'], r['said'], r['needs'], r['href'], r['on']) for r in got[0]],
+       [('alpha', 'running', 2, '/p/alpha/?t=HT%261', True), ('beta two', 'paused', 0, '/p/beta%20two/?t=HT%261', False),
+        ('gamma', 'off', 0, '/p/gamma/?t=HT%261', False)],
+       "the switcher lists Home's projects with their state and needs-you count, each linking /p/KEY/?t=TOKEN")
+    eq(got[1:6], ['/', '/', '', 'beta two', ''],
+       "Home's address from the page's path: /p/KEY/ through Home, / on Home's own page, none on a run's own port")
+    eq([b['label'] for b in got[6]], ['Start run', 'Unlist'], 'a project that is off: Start run')
+    eq([(b['label'], b.get('a'), b.get('arg')) for b in got[7]],
+       [('Open', None, None), ('Pause', 'pause', None), ('−1 slot', 'slots', '-1'), ('+1 slot', 'slots', '+1'),
+        ('Stop', 'stop', None), ('Unlist', None, None)], "one that runs: Open, Pause, the slots and Stop, as Home's were")
+    eq(got[8], 'paused · 1 slot · 3 queued', 'the words under a project')
+
+
 if __name__ == '__main__':
     raise SystemExit(report([in_tmp(test_chat_order_f133), in_tmp(test_delete_chats_f118), in_tmp(test_server), in_tmp(test_real_action), in_tmp(test_run_controls),
                            in_tmp(test_start), in_tmp(test_upload),
@@ -1872,4 +1910,4 @@ if __name__ == '__main__':
                            in_tmp(test_slash_menu_b119), in_tmp(test_composer_keys_b120),
                            in_tmp(test_interrupt_c1_b141), in_tmp(test_answer_button_b138), in_tmp(test_pick_f138),
                            in_tmp(test_outbox_f137), in_tmp(test_card_chat_b139), in_tmp(test_short_ask_b152),
-                           in_tmp(test_chat_box_f115)]))
+                           in_tmp(test_chat_box_f115), in_tmp(test_home_switcher_f134)]))
