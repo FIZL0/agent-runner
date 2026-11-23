@@ -6,6 +6,7 @@ its run's own page, the service files per OS, the QR code, and a run moving off 
 """
 from __future__ import annotations
 
+import io
 import json
 import os
 import plistlib
@@ -16,6 +17,7 @@ import tempfile
 import threading
 import urllib.error
 import urllib.request
+from contextlib import redirect_stdout
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from types import SimpleNamespace
@@ -858,6 +860,7 @@ def test_run_moves_off_the_port(tmp: Path) -> None:
 
 def pick_links_through_home(root: Path, hp: int, mine: int, ts) -> None:
     """F167: the run on 127.0.0.1:`mine`, Home serving on `hp`, Tailscale Serve (`ts`) on Home's port."""
+    from agent_runner import cmds as M
     nots = lambda p, t: []  # noqa: E731
     eq(W.https_base(ts), 'https://box.tail.ts.net/p/proj', "F167: the base is Home's https address at /p/KEY")
     link = W.pick_links('B1', ['A'], ts)[0]
@@ -870,8 +873,17 @@ def pick_links_through_home(root: Path, hp: int, mine: int, ts) -> None:
     with mock.patch.object(W, 'run_port', lambda: 9999):
         has(W.no_https_why(), f'port {hp}; ', "Home's is said first, as its links are, when the run has a port too")
     eq(W.pick_links('B1', ['A'], nots), [], 'and no links')
+    # the case a person hit: Serve's https on a port of its own (8771) to Home's, where another entry proxies to 8771
+    serve = lambda p, t: {hp: [f'https://box.tail.ts.net:8771/?t={t}'],  # noqa: E731
+                          8771: [f'https://other.ts.net/?t={t}']}.get(p, [])
+    with mock.patch.object(W, 'tailscale_https_urls', serve), redirect_stdout(io.StringIO()) as out, \
+            mock.patch.object(M, 'init'):
+        rc = M.cmd_pick_links(['B1', 'A,B'])
+    eq(rc, 0, 'pick-links prints links with Serve on port 8771 to Home')
+    eq([x.split('&k=')[0] for x in out.getvalue().splitlines()],
+       [f'{o} https://box.tail.ts.net:8771/p/proj/pick?id=B1' for o in 'AB'], "on Home's https address")
     own = W.url_file().read_text(encoding='utf-8')
-    with mock.patch.object(W, 'home_port', lambda: hp), mock.patch.object(W, 'site_urls', lambda: []):
+    with mock.patch.object(W, 'home_port', lambda: hp), mock.patch.object(W, 'site_urls', lambda **kw: []):
         W.url_file().write_text(f'http://h:{hp}/?t=x\n', encoding='utf-8')
         eq(W.https_base(ts), '', "a web.url from before Home, on Home's port, gives no link without /p/KEY")
     W.url_file().write_text(own, encoding='utf-8')

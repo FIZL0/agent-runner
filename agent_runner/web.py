@@ -142,14 +142,14 @@ def url_file() -> Path:
     return S.C.notes('web.url')
 
 
-def site_urls(root: Path | None = None) -> list[str]:
+def site_urls(root: Path | None = None, https=None) -> list[str]:
     """B146: the run app's addresses through the device site (home.site_links: Runner Home's /p/KEY/ on its port)
     for the project at `root` (this run's), [] while nothing on the device routes it. Worked out each time it is
     shown, never kept in <notes>/web.url: that keeps the run's own port, which Home routes to, and the device
     site can come up or go after the run starts."""
     try:
         from agent_runner.home import site_links
-        return site_links(root or S.C.root)
+        return site_links(root or S.C.root, https=https)
     except Exception:  # noqa: BLE001 - the run's own link still works without Home
         return []
 
@@ -260,7 +260,7 @@ def https_base(https=None) -> str:
     Home's for this project (`https://host[:port]/p/KEY`) when Home routes it, else the run's own
     (`https://host[:port]`); '' when there is none (the pages keep today's flow)."""
     https = https or tailscale_https_urls
-    for u in https_first(site_urls(), https):
+    for u in site_urls(https=https):
         s = urlsplit(u)
         if s.scheme == 'https' and s.netloc:
             return f'https://{s.netloc}{s.path.rstrip("/")}'
