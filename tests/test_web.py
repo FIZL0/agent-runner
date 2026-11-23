@@ -1816,14 +1816,17 @@ def test_sent_b154(tmp: Path) -> None:
         ['sentStep', [p('x', since=1000)], [{'kind': 'tool', 'text': 'Bash(ls)'}], 60000, False],
         ['sentStep', [p('x', since=1000, first=True)], [], 60000, True],
         ['sentStep', [p('/clear', since=1000)], [], 60000, True],
+        ['sentStep', [p('x', since=1000)], [you('later', 200)], 60000, True, True],
+        ['sentStep', [p('x', 300, since=1000)], [you('before', 200), {'kind': 'say', 'text': 'ok'}], 60000, True, True],
+        left([p('Attached: /r/a.png')], [you('[Image #1]')]),
     ])
     eq([len(x) for x in got[:3]], [1, 1, 0], "only your own words, and only since they were sent, make it land")
     eq(len(got[3]), 1, 'one entry lands one of two same messages')
     eq([len(x) for x in got[4:10]], [0, 0, 1, 0, 0, 0],
        'a paste wrap, merged messages, a whole line only, the waiting block, an image, a Talk reminder')
     eq([[(x['text'], x['state']) for x in r] for r in got[10:]],
-       [[('x', 'failed')], [('x', 'sent')], [('x', 'failed')], [('x', 'sent')], []],
-       'not delivered once idle a while; not mid-turn; a chat that ended; longer for a first message; a slash command goes')
+       [[('x', 'failed')], [('x', 'sent')], [('x', 'failed')], [('x', 'sent')], [], [], [('x', 'failed')], []],
+       'not delivered once idle a while; not mid-turn; a chat that ended; longer for a first message; a slash command goes; behind the cut; not before it; a picture alone')
     (tmp / 'driver.js').write_text(SENT_DRIVER, encoding='utf-8')
     r = subprocess.run(['node', str(tmp / 'driver.js'), str(W.PAGE)], capture_output=True, text=True, timeout=60)
     check(r.returncode == 0, 'node runs the page', r.stderr[-1500:])

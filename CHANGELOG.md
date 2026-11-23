@@ -56,6 +56,13 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
   the row reads `Next release · auto at 10 landed: 6/10` (dimmed); a queued V shows `V5 Release · waits for 24 open ahead`,
   then `ready`, `blocked` or `building`. Once it lands, `lately` says `landed: Release 1.2.0 [V5]` and the count restarts
   at 0. J and K move no task past the release, and Enter on the dimmed row opens the release tab (F131).
+- Fixes: a new control session started from the run page or the terminal UI (Chat on a card, Add a task, quick asks,
+  Take, Talk, an answer handed on while c1 is off) starts at once. It used to wait about 65 s (5 + 60) looking for its
+  message in the runner feed's transcript, and then showed a false note about attached images. Its message stays on
+  screen with a starting line until the reply, and any sent message stays until its own text is in the chat (kept over
+  a reload); one that does not arrive shows Not delivered with Retry and Discard. A long turn no longer loses the
+  person's latest prompt from the chat, and the chat says when older messages are cut off; a message sent mid-turn
+  (queued) shows as the person's (B154).
 
 ## 0.61.0 (2026-11-23)
 
