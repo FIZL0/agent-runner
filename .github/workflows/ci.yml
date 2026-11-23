@@ -4,7 +4,7 @@
 name: ci
 on:
   push:
-    branches: [main]
+    branches: [main, task/B150]
     paths-ignore: ['plan/**', '**.md']
   pull_request:
     paths-ignore: ['plan/**', '**.md']

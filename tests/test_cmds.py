@@ -312,9 +312,12 @@ def test_copy_link_fallbacks():
 def test_copy_link_daemon_b153():
     print('B153: copy_link returns at once when wl-copy forks a daemon that keeps its stdout open')
     with tempfile.TemporaryDirectory() as d:
-        stub = Path(d, 'wl-copy')
-        stub.write_text('#!/bin/sh\ncat >/dev/null\n( sleep 3 ) &\nexit 0\n')
-        stub.chmod(0o755)
+        if M.os.name == 'nt':  # a batch file stands in for the tool, ping for the daemon it leaves
+            Path(d, 'wl-copy.bat').write_text('@start "" /b "%SystemRoot%\\System32\\ping.exe" -n 4 127.0.0.1\n@exit /b 0\n')
+        else:
+            stub = Path(d, 'wl-copy')
+            stub.write_text('#!/bin/sh\ncat >/dev/null\n( sleep 3 ) &\nexit 0\n')
+            stub.chmod(0o755)
         with mock.patch.dict(M.os.environ, {'PATH': d, 'WAYLAND_DISPLAY': 'wayland-0'}):
             t0 = time.monotonic()
             said = M.copy_link('https://example.test/run', FakeTerm())

@@ -1420,11 +1420,12 @@ def copy_link(url: str, out=None) -> str:
     given the Wayland socket when WAYLAND_DISPLAY is unset); else to the terminal as OSC 52; else the link
     itself to copy by hand."""
     for argv in (['wl-copy'], ['xclip', '-selection', 'clipboard'], ['pbcopy'], ['clip']):
-        if shutil.which(argv[0]):
+        if exe := shutil.which(argv[0]):
             try:
+                # B150: run what `which` found: on Windows a bare name starts only an .exe, not a .bat or .cmd
                 # B153: no captured pipes; wl-copy forks a daemon that holds them open, and a capture waits
                 # for it until the timeout.
-                if not sp.run(argv, input=url.encode('utf-8'), stdout=sp.DEVNULL, stderr=sp.DEVNULL, timeout=5,
+                if not sp.run([exe, *argv[1:]], input=url.encode('utf-8'), stdout=sp.DEVNULL, stderr=sp.DEVNULL, timeout=5,
                               env=wayland_env() if argv[0] == 'wl-copy' else None).returncode:
                     return 'link copied'
             except (OSError, sp.SubprocessError):
