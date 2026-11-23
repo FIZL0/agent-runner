@@ -831,7 +831,8 @@ def test_concepts_view(tmp: Path) -> None:
 
 
 def test_esc_ctrl_c(tmp: Path) -> None:
-    """B116: on the run app Esc never interrupts (it leaves the box, then goes back); Ctrl+C interrupts the open
+    """B116: on the run app Esc never goes back while interrupting (B120: in the box it interrupts a working chat,
+    out of it only goes back); Ctrl+C interrupts the open
     chat while it works (not over selected text), and a small Stop button sits by the working mark."""
     page = W.page_html().decode()
     start = page.index("document.addEventListener('keydown'")
@@ -839,8 +840,14 @@ def test_esc_ctrl_c(tmp: Path) -> None:
     lines = handler.splitlines()
     esc_lines = [ln for ln in lines if "e.key==='Escape'" in ln]
     check(len(esc_lines) >= 2, 'the keydown handler has its Esc branches', esc_lines)
+    # B120: in the message box Esc interrupts a working chat (after the menu closes); out of it, never
+    out_of_box = handler[handler.index("if(e.key==='Escape'&&S.sel.length)"):]
     for ln in esc_lines:
-        check('interrupt' not in ln, 'an Esc branch sends no interrupt', ln)
+        if ln.strip() in out_of_box:
+            check('interrupt' not in ln, 'an Esc branch out of the box sends no interrupt', ln)
+    esc_int = [ln for ln in esc_lines if 'interrupt' in ln]
+    check(len(esc_int) == 1 and 'busy(S.thread)' in esc_int[0] and 'S.thread=null' not in esc_int[0],
+          'Esc in the box interrupts only a working chat, and does not go back', esc_int)
     check(any("e.key==='Escape'" in ln and 'blur()' in ln for ln in lines), 'Esc in the box leaves it')
     check(any("e.key==='Escape'&&S.thread&&" in ln and 'S.thread=null' in ln for ln in lines), 'Esc out of the box goes back')
     ctrl = [ln for ln in lines if 'e.ctrlKey' in ln]
@@ -1286,6 +1293,113 @@ def test_slash_menu_b119(tmp: Path) -> None:
     eq(got.get('full'), {'sent': 1, 'hidden': True}, 'Enter on a command typed in full sends it')
 
 
+COMPOSER_DRIVER = r"""
+const page = require('fs').readFileSync(process.argv[2], 'utf8');
+const slice = (a, b) => { const i = page.indexOf(a); return page.slice(i, page.indexOf(b, i) + b.length); };
+const logic = page.split('<script id="logic">')[1].split('</script>')[0];
+const handlers = {}, acts = [];
+const store = {v: {}, get(k) { return this.v[k] || '' }, set(k, v) { if (v) this.v[k] = v; else delete this.v[k] }};
+const DRAFT_KEY = k => 'ar-draft:' + k, grow = () => {}, esc = s => String(s), tq = p => p;
+const S = {thread: 'c1', sel: [], drawer: false, view: 'home'};
+const boxKey = () => S.thread || 'home';
+let BUSY = false, sent = 0, prevented = 0;
+const busy = () => BUSY, act = (n, a) => { acts.push([n, a.session]) }, selectedText = () => false,
+      render = () => {}, newConcept = () => {}, send = () => { sent++ };
+const menu = {hidden: true, innerHTML: '', querySelector() { return null }};
+const ta = {value: '', blurred: 0, selectionStart: 0, selectionEnd: 0, matches(s) { return s === '[data-in]' },
+            focus() {}, blur() { this.blurred++ }, closest() { return null },
+            setSelectionRange(a, b) { this.selectionStart = a; this.selectionEnd = b }};
+const document = {activeElement: ta, addEventListener(t, f) { handlers[t] = f },
+                  querySelector(s) { return s === '[data-slash]' ? menu : s === '[data-in]' ? ta : null }};
+const fetch = () => Promise.resolve({json: () => Promise.resolve([])});
+eval(logic + slice('const HIST_KEY=', 'return true;\n}\n') + slice('const SL={', 'ta.value.length);\n}\n')
+     + slice("document.addEventListener('keydown',", '\n});\n') + `
+(async () => {
+  await new Promise(r => setTimeout(r, 0));
+  const out = {};
+  const key = (k, o) => { const was = prevented; handlers.keydown(Object.assign({key: k, target: ta,
+    preventDefault() { prevented++ }}, o || {})); return prevented > was };
+  const at = (v, c) => { ta.value = v; ta.selectionStart = ta.selectionEnd = c == null ? v.length : c };
+  histAdd('c1', 'first'); histAdd('c1', 'second\\nline'); histAdd('c1', 'second\\nline'); histAdd('c2', 'other');
+  out.stored = JSON.parse(store.get('ar-hist:c1'));
+  at('draft');
+  out.up1 = [key('ArrowUp'), ta.value, store.get('ar-draft:c1')];
+  out.upMid = [key('ArrowUp'), ta.value];          // the caret on the recalled message's last line: Up moves it
+  ta.setSelectionRange(0, 0);
+  out.up2 = [key('ArrowUp'), ta.value];
+  out.upTop = [key('ArrowUp'), ta.value];
+  out.down1 = [key('ArrowDown'), ta.value];
+  out.down2 = [key('ArrowDown'), ta.value];
+  out.down3 = [key('ArrowDown'), ta.value];
+  out.draft = store.get('ar-draft:c1');
+  S.thread = 'c2'; at('');
+  out.other = [key('ArrowUp'), ta.value];
+  S.thread = 'c3'; at('');
+  out.none = [key('ArrowUp'), ta.value];
+  S.thread = 'c1'; at('one');
+  out.shift = [key('Enter', {shiftKey: true}), sent];
+  out.enter = [key('Enter'), sent];
+  BUSY = true; at('x');
+  out.escBusy = [key('Escape'), acts.slice(), ta.blurred, S.thread];
+  BUSY = false;
+  out.escIdle = [key('Escape'), acts.length, ta.blurred, S.thread];
+  store.v['ar-hist:c4'] = 'not json'; S.thread = 'c4'; at('');
+  out.bad = [key('ArrowUp'), ta.value];
+  console.log(JSON.stringify(out));
+})();`);
+"""
+
+
+def test_composer_keys_b120(tmp: Path) -> None:
+    """B120: the run app's message box takes Claude Code's keys: Up and Down recall the messages sent in that chat
+    (kept per chat in localStorage), Shift+Enter makes a new line and Enter sends, Esc interrupts a working chat;
+    the keys are listed once (BOX_KEYS); without ttyd the page shows one line with this machine's install command."""
+    page = W.page_html().decode()
+    check('const BOX_KEYS=[' in page and page.count('keysLine()') >= 2, 'the keys are listed once, in BOX_KEYS, and '
+          'shown under the box')
+    check("'ar-hist:'+k" in page and 'localStorage' in page, 'the history is kept per chat in localStorage')
+    check("S.snap.terminal_mode==='install'" in page and 'The terminal tab (the real session) needs ttyd' in page,
+          'without ttyd the page says the terminal tab needs it')
+    eq(W.ttyd_install_cmd(lambda t: t == 'pacman'), 'sudo pacman -S ttyd', 'Arch: pacman')
+    eq(W.ttyd_install_cmd(lambda t: t == 'brew'), 'brew install ttyd', 'macOS: brew')
+    eq(W.ttyd_install_cmd(lambda t: False), '', 'no package manager known: no command')
+    with mock.patch.object(W, 'ttyd_install_cmd', return_value='sudo pacman -S ttyd'):
+        eq(W.with_extras({'terminal_mode': 'install'}).get('ttyd_install'), 'sudo pacman -S ttyd',
+           'the snapshot carries the install command when ttyd is missing')
+        check('ttyd_install' not in W.with_extras({'terminal_mode': 'ttyd'}), 'and not when ttyd is there')
+    if not shutil.which('node'):
+        print('  (no node here: the message box keys test is skipped)')
+        return
+    got = logic_js([['histPush', ['a'], ' b '], ['histPush', ['a', 'b'], 'b'], ['histPush', ['a'], '  '],
+                    ['histStep', 2, None, 'ArrowUp'], ['histStep', 2, 0, 'ArrowUp'], ['histStep', 2, 1, 'ArrowDown'],
+                    ['histEdge', 'ab\ncd', 1, 1, 'ArrowUp'], ['histEdge', 'ab\ncd', 4, 4, 'ArrowUp'],
+                    ['histEdge', 'ab\ncd', 1, 1, 'ArrowDown'], ['histEdge', 'ab', 0, 2, 'ArrowUp']])
+    eq(got[:3], [['a', 'b'], ['a', 'b'], ['a']], 'a sent message joins the history, not twice in a row, not blank')
+    eq(got[3:6], [1, 0, 2], 'Up from the draft goes to the last message, stops at the first; Down comes back')
+    eq(got[6:], [True, False, False, False], 'Up and Down leave the text only from its first / last line')
+    (tmp / 'driver.js').write_text(COMPOSER_DRIVER, encoding='utf-8')
+    r = subprocess.run(['node', str(tmp / 'driver.js'), str(W.PAGE)], capture_output=True, text=True, timeout=60)
+    check(r.returncode == 0, 'node runs the message box keys', r.stderr[-800:])
+    got = json.loads(r.stdout or '{}')
+    eq(got.get('stored'), ['first', 'second\nline'], 'the history is stored per chat, a repeat once')
+    eq(got.get('up1'), [True, 'second\nline', ''], 'Up recalls the last message sent in this chat, not saved as '
+       'the draft')
+    eq(got.get('upMid'), [False, 'second\nline'], 'Up off its first line moves the caret, as in Claude Code')
+    eq(got.get('up2'), [True, 'first'], 'Up on the first line recalls the one before')
+    eq(got.get('upTop'), [True, 'first'], 'Up at the oldest stays there')
+    eq(got.get('down1'), [True, 'second\nline'], 'Down goes forward again')
+    eq(got.get('down2'), [True, 'draft'], 'Down past the last brings back the unsent draft')
+    eq(got.get('down3'), [False, 'draft'], 'Down at the draft does nothing more')
+    eq(got.get('draft'), 'draft', 'the draft is saved again')
+    eq(got.get('other'), [True, 'other'], "another chat recalls its own messages")
+    eq(got.get('none'), [False, ''], 'a chat with no history leaves Up alone')
+    eq(got.get('shift'), [False, 0], 'Shift+Enter is left to the box (a new line), not sent')
+    eq(got.get('enter'), [True, 1], 'Enter sends')
+    eq(got.get('escBusy'), [True, [['interrupt', 'c1']], 0, 'c1'], 'Esc interrupts the working chat and stays in it')
+    eq(got.get('escIdle'), [True, 1, 1, 'c1'], 'Esc in an idle chat leaves the box, sends nothing, does not go back')
+    eq(got.get('bad'), [False, ''], 'a broken stored history is read as none')
+
+
 if __name__ == '__main__':
     raise SystemExit(report([in_tmp(test_delete_chats_f118), in_tmp(test_server), in_tmp(test_real_action), in_tmp(test_run_controls),
                            in_tmp(test_start), in_tmp(test_upload),
@@ -1295,4 +1409,4 @@ if __name__ == '__main__':
                            in_tmp(test_esc_ctrl_c), in_tmp(test_concepts_view), in_tmp(test_follow_version_f90),
                            in_tmp(test_talk_f93), in_tmp(test_https_link_b130),
                            in_tmp(test_listen_heard_nothing_b132), in_tmp(test_talk_reply_heard_b133),
-                           in_tmp(test_slash_menu_b119)]))
+                           in_tmp(test_slash_menu_b119), in_tmp(test_composer_keys_b120)]))
