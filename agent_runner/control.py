@@ -21,7 +21,7 @@ from agent_runner.plan import decide_question  # F135: a control session's last 
 from agent_runner.config import RUNNER, runner_cmd, shown_cmd
 from agent_runner.state import C, commit_plan, git, HIDDEN, init, log, MERGE, note, plan_rel, ROOT
 from agent_runner.brief import has_sheet
-from agent_runner.slots import (backend, entries, marker_pid, pi, PRESENCE_ENV, quiet_file, remote_on,
+from agent_runner.slots import (backend, entries, marker_pid, PRESENCE_ENV, quiet_file, remote_on,
     REMOTE_URL, silent, transcript)
 from agent_runner.merge import gate_alive
 
@@ -32,8 +32,8 @@ CONTROL_SERVER_WAIT = (30, 600)  # s before the control server restarts after it
 
 
 def control_ok() -> bool:
-    """Control sessions are Claude Code sessions: none for pi."""
-    return not pi()
+    """Control sessions are Claude Code sessions, which every run has since the Pi backend went (F106d)."""
+    return True
 
 
 def control_cmd() -> str:
@@ -662,7 +662,7 @@ def hand_hook(root: Path) -> str:
 def user_brief(root: Path) -> str:
     """B79: the control brief for a session opened by hand in `root`, a runner repo's main checkout, by the
     user-level SessionStart hook (`config.install_user_hook`): a repo where no run has started yet has no hook
-    of its own (`hand_hook`). '' where control sessions are not Claude Code's (`[run] agent` is pi)."""
+    of its own (`hand_hook`). '' where `control_ok` says no."""
     import contextlib
     with contextlib.redirect_stderr(io.StringIO()):  # init's git calls and merge driver: nothing on the screen
         init(root)

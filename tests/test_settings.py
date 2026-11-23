@@ -82,7 +82,6 @@ eq(parse_model('claude:sonnet'), ('claude', 'sonnet'), 'claude:sonnet')
 for p in ('copilot', 'codex', 'gemini'):
     eq(parse_model(f'{p}:m-1'), (p, 'm-1'), f'{p} is a built-in provider')
 has(refused(lambda: parse_model('nope:m')), r"unknown provider 'nope'", 'an unknown provider is refused')
-eq(parse_model('nope:m', backend='pi'), ('claude', 'nope:m'), 'on Pi an unknown prefix is Pi\'s own model syntax')
 has(refused(lambda: parse_model('codex:')), r'no model', 'an empty model is refused')
 has(refused(lambda: parse_model('ollama:llama3:8b')), r'local = true', 'ollama is refused while local is off')
 eq(parse_model('ollama:llama3:8b', local=True), ('ollama', 'llama3:8b'), 'and allowed with local; the model keeps its colon')

@@ -25,8 +25,8 @@ file everyone shares. It may wrap its tables in `[agent-runner]` too. `run` crea
 (all comments, so it changes nothing) when it is missing and never rewrites it, and keeps it out of git by
 adding it to the clone's `.git/info/exclude`.
 
-`AGENT_RUNNER_BACKEND=claude|pi` runs on that backend whatever the file says (its `agent`, `model` and
-`fix_model` then fall back to the backend's defaults), e.g. to try a task on Pi with the repo's own config.
+Every session runs on Claude Code, or on the harness loop for another provider's model (`[models] code =
+"<provider>:<model>"`); the Pi backend (`[run] agent = "pi"`) is gone (F106d) and refused with that hint.
 """
 from __future__ import annotations
 
@@ -108,8 +108,7 @@ DEFAULTS: dict = {
                                 # '' = the whole `test` every time
         'full_every_hours': 24, # with test_since: the whole `test` again once none has passed for this long; 0 = never
         'slots': 3,             # tasks (agent sessions) at once; `agent-runner slots N` changes a running run
-        'agent': 'claude',      # the CLI that runs a session: claude, or a pi executable (an executable named
-                                # pi runs on the Pi backend; AGENT_RUNNER_BACKEND=claude|pi overrides it)
+        'agent': 'claude',      # the Claude Code executable that runs a session (or a wrapper around it)
         'include_task_id_in_commit': True,  # agents start each commit subject with the task id
         'comment_policy': 'normal',  # 'minimal': agents add code comments only for non-obvious intent
         'model': 'opus',        # the model the task sessions run on
@@ -354,15 +353,13 @@ def parse_model(value: str, providers: dict[str, dict] | None = None, local: boo
                 where: str = '[models]', backend: str = 'claude') -> tuple[str, str]:
     """A [models] role's value as (provider, model): '<provider>:<model>' for a built-in or `providers` name, a
     bare name ('opus') as ('claude', 'opus'). Refuses (SystemExit) an unknown provider, an empty model, and a
-    local provider (ollama, or a url on localhost or a private address) unless `local`. On the Pi backend a
-    prefix that is no provider is Pi's own model syntax, kept whole."""
+    local provider (ollama, or a url on localhost or a private address) unless `local`. `backend` is kept for
+    its callers; since F106d it is always claude."""
     providers = providers or {}
     head, sep, rest = value.partition(':')
     if not sep:
         return 'claude', value
     if head not in PROVIDERS and head not in providers:
-        if backend == 'pi':
-            return 'claude', value
         raise SystemExit(f'agent-runner: {where} = {value!r}: unknown provider {head!r}; use one of '
                          f'{", ".join([*PROVIDERS, *providers])}, or define it in [models.providers.{head}]')
     if not rest:
@@ -396,7 +393,7 @@ def claude_model(value: str, providers: dict[str, dict] | None = None, local: bo
 
 def harness_model(value: str, providers: dict | None = None) -> bool:
     """F106c: `value` is a settled model (`claude_model`'s) the harness loop runs: '<provider>:<model>' with a
-    provider other than claude, built in or one of `providers`. A Pi model ('github-copilot/x') is not."""
+    provider other than claude, built in or one of `providers`."""
     head, sep, _ = (value or '').partition(':')
     return bool(sep) and head != 'claude' and (head in PROVIDERS or head in (providers or {}))
 
@@ -566,7 +563,16 @@ REMOVED: dict[tuple[str, str], str] = {
     ('needs', 'ages'): 'each item always shows its age; delete it',
     ('run', 'mux'): 'every run is hidden on every OS (0.60.0: no tmux; `attach` shows the run and its sessions); '
                     'delete it',
+    ('run', 'backend'): 'every session runs on Claude Code or, for another provider\'s model, the harness loop '
+                        '(F106d); delete it',
 }
+
+# F106d: what a file that still names the removed Pi backend is told (`[run] agent = "pi"`, `backend = "pi"`,
+# AGENT_RUNNER_BACKEND=pi)
+PI_GONE = ('the Pi backend is gone (F106d): the harness loop runs other providers\' models. Delete it, and name the '
+           'model in [models] as "<provider>:<model>", e.g. [models] code = "copilot:<model>" (providers: '
+           f'{", ".join(p for p in PROVIDERS if p != "claude")}, or your own [models.providers.<name>]); '
+           '`run login <provider>` adds its login')
 
 # C14: a key a release renamed or folded into another: (table, key) -> (table, its new key, the old value as the
 # new key's, or None to drop it, and what to write instead). The old key still works (the new one, when a
@@ -580,9 +586,6 @@ MOVED: dict[tuple[str, str], tuple[str, str, object, str]] = {
                                'write `control_idle = false` for false, else delete it'),
     ('run', 'batch'): ('run', 'batch_max', lambda v: 1 if v is False else None,
                        'write `batch_max = 1` for false, else delete it'),
-    ('run', 'backend'): ('run', 'agent', lambda v: 'pi' if v == 'pi' else None,
-                         'the backend follows `agent` (an executable named pi runs on Pi) and AGENT_RUNNER_BACKEND; '
-                         'write `agent = "pi"` for pi, else delete it'),
 }
 
 
@@ -635,13 +638,11 @@ class Config:
         self.root = root
         raw: dict = {}
         self.warnings: list[str] = []  # old, removed or unknown keys; the run logs them at its start
-        old_backend = ''  # C14: a removed `[run] backend = "pi"` beside an agent not named pi (a wrapper) still holds
 
         def read(f: Path, mine: dict) -> dict:
-            nonlocal old_backend
-            self.warnings.extend(migrate(mine, f.name))
             if isinstance(mine.get('run'), dict) and mine['run'].get('backend') == 'pi':
-                old_backend = 'pi'
+                raise SystemExit(f'agent-runner: {f.name}: [run] backend = "pi": {PI_GONE}')
+            self.warnings.extend(migrate(mine, f.name))
             move_keys(mine)
             return mine
         self.file = config_file(root)
@@ -659,26 +660,20 @@ class Config:
         # the keys the config files set, before defaults fill in the rest (B36: push_merge given explicitly)
         self.given = {k: set(v) for k, v in raw.items() if isinstance(v, dict)}
         supplied = dict(raw.get('run', {}))
-        stem = lambda run: 'pi' if Path(str(run.get('agent', 'claude')).replace('\\', '/')).stem.lower() == 'pi' \
-            else 'claude'
-        backend = old_backend or stem(supplied)
-        if (env := os.environ.get('AGENT_RUNNER_BACKEND')) and env != backend:
-            # one run on another agent with the repo's config: its agent and models are the other backend's
-            if env not in ('claude', 'pi'):
-                raise SystemExit(f'agent-runner: unknown AGENT_RUNNER_BACKEND {env!r}; choose claude or pi')
-            supplied = {k: v for k, v in supplied.items() if k not in ('agent', 'model', 'fix_model')}
-            raw = {**raw, 'models': {}}  # [models] names the other backend's models too
-            backend = env
+        if os.environ.get('AGENT_RUNNER_BACKEND') == 'pi':
+            raise SystemExit(f'agent-runner: AGENT_RUNNER_BACKEND=pi: {PI_GONE}')
         raw = {**raw, 'run': supplied}
         given_models = dict(raw['models']) if isinstance(raw.get('models'), dict) else {}
         self.raw = {k: {**v, **raw.get(k, {})} for k, v in DEFAULTS.items()}
         if self.raw['plan']['repo'] and 'dir' not in raw.get('plan', {}):
             self.raw['plan']['dir'] = str(self.home / 'plan')
         self.run = self.raw['run']
-        if Path(str(self.run['agent']).replace('\\', '/')).stem.lower() == 'copilot':
+        agent_stem = Path(str(self.run['agent']).replace('\\', '/')).stem.lower()
+        if agent_stem == 'copilot':
             raise SystemExit('agent-runner: [run] agent = "copilot" is gone (GitHub Copilot CLI support was '
-                             'removed); use Pi with its github-copilot provider: agent = "pi", '
-                             'model = "github-copilot/<model>"')
+                             'removed); use the harness loop\'s copilot provider: [models] code = "copilot:<model>"')
+        if agent_stem == 'pi':
+            raise SystemExit(f'agent-runner: [run] agent = {self.run["agent"]!r}: {PI_GONE}')
         if not isinstance(self.run['include_task_id_in_commit'], bool):
             raise SystemExit('agent-runner: [run] include_task_id_in_commit must be a boolean')
         if not (isinstance(self.run['remote'], bool) or self.run['remote'] == 'auto'):
@@ -705,20 +700,12 @@ class Config:
                              f"{self.raw['ui']['web']!r}")
         if self.run['comment_policy'] not in ('normal', 'minimal'):
             raise SystemExit("agent-runner: [run] comment_policy must be 'normal' or 'minimal'")
-        self.run['backend'] = backend  # settled here, not a setting: `slots.backend()` reads it
-        if 'agent' not in supplied:
-            self.run['agent'] = backend
-        if backend == 'pi':
-            if 'model' not in supplied:
-                self.run['model'] = ''
-            if 'fix_model' not in supplied:
-                self.run['fix_model'] = self.run['model']
+        self.run['backend'] = 'claude'  # not a setting: `slots.backend()` reads it; the only one since F106d
         self.models = self.resolve_models(given_models, supplied)
 
     def resolve_models(self, given: dict, supplied: dict) -> dict:
         """F101: `[models]`, each role settled: a role the files set wins; else `code` is `[run] model` and `fix`
-        `[run] fix_model` (their aliases, set or default); on Pi every other role falls back to `[run] model`
-        too (Claude's model names mean nothing there). `[run] model` and `fix_model` are kept equal to `code`
+        `[run] fix_model` (their aliases, set or default). `[run] model` and `fix_model` are kept equal to `code`
         and `fix`, so code that reads them sees the role."""
         m, r = self.raw['models'], self.run
         # F106a: [models] local and [models.providers] are settings, not roles: kept apart from self.models
@@ -732,18 +719,18 @@ class Config:
                 raise SystemExit(f'agent-runner: [models] {role} must be a model name'
                                  + (' or false' if role == 'docs' else '') + f', not {v!r}')
         code = given.get('code', r['model'])
-        fix = given.get('fix', code if r['backend'] == 'pi' and 'fix_model' not in supplied else r['fix_model'])
+        fix = given.get('fix', r['fix_model'])
         r['model'], r['fix_model'] = code, fix
         m.update(code=code, fix=fix)
         for role in DEFAULTS['models']:
             if role not in ('code', 'fix', *MODEL_SETTINGS):
-                m[role] = given.get(role, code if r['backend'] == 'pi' else DEFAULTS['models'][role])
-        # F105: [models.kinds] laid over the defaults kind by kind; on Pi only the kinds the files set
+                m[role] = given.get(role, DEFAULTS['models'][role])
+        # F105: [models.kinds] laid over the defaults kind by kind
         kinds = given.get('kinds', {})
         if not isinstance(kinds, dict) or not all(isinstance(k, str) and isinstance(v, str) and v
                                                   for k, v in kinds.items()):
             raise SystemExit(f'agent-runner: [models.kinds] maps a kind to a model name (D = "sonnet"), not {kinds!r}')
-        m['kinds'] = {**({} if r['backend'] == 'pi' else DEFAULTS['models']['kinds']), **kinds}
+        m['kinds'] = {**DEFAULTS['models']['kinds'], **kinds}
         # F106a: each role as '<provider>:<model>'; claude's are kept as the bare name the agent takes, another
         # provider's as '<provider>:<model>' for the harness loop (F106c), but not in a Claude-only role
         refs = {f'[models] {role}': role for role in m if role != 'kinds' and isinstance(m[role], str)}

@@ -972,8 +972,6 @@ def test_remote_auto(tmp: Path):
         with mock.patch.dict(os.environ, base | {'CLAUDE_CODE_USE_BEDROCK': '0'}, clear=True):
             check(R.remote_on(), 'auto, CLAUDE_CODE_USE_BEDROCK=0: on')
         with mock.patch.dict(os.environ, base, clear=True):
-            with mock.patch.object(R, 'pi', lambda: True):
-                check(not R.remote_on() and R.remote_off_why().startswith('backend pi'), 'auto, backend pi: off')
             seen.write_text('{}', encoding='utf-8')
             check(not R.remote_on() and 'remote-control' in R.remote_off_why(),
                   'auto, Remote Control never allowed in Claude Code: off')
@@ -4010,12 +4008,8 @@ def test_git_fence(repo: Path, tmp: Path):
     out = subprocess.run(argv, input=ev('Bash', command='git commit -qm "T1: x"'), capture_output=True, text=True,
                          env=env)
     eq((out.returncode, out.stdout.strip()), (0, ''), 'and lets a normal commit run')
-    with mock.patch.object(R.slots, 'no_push_env', lambda: {'GIT_CONFIG_COUNT': '1'}):
-        with mock.patch.object(R.slots, 'pi', lambda: False):
-            check(not any(e.startswith('GIT_CONFIG') for e in R.slot_env(1)),
-                  'Claude Code slots lose the no-push git config: the fence does that now')
-        with mock.patch.object(R.slots, 'pi', lambda: True):
-            check('GIT_CONFIG_COUNT=1' in R.slot_env(1), 'Pi keeps it until the harness')
+    check(not any(e.startswith('GIT_CONFIG') for e in R.slot_env(1)),
+          'slots get no no-push git config: the fence does that now')
 
 
 def test_land_waits_aloud(repo: Path):
@@ -7581,8 +7575,6 @@ def test_models_f101(repo: Path, tmp: Path):
     eq((c.run['model'], c.run['fix_model']), ('opus', 'sonnet'), 'and [run] model and fix_model follow it')
     check(any('[models] coder is not a setting' in w for w in load('[models]\ncoder = "x"\n').warnings),
           'an unknown role warns')
-    c = load('[run]\nagent = "pi"\nmodel = "github-copilot/m1"\n')
-    eq({v for k, v in c.models.items() if k != 'kinds'}, {'github-copilot/m1'}, 'Pi: every role falls back to [run] model')
 
     argv, agents = agents_of('[run]\nremote = false\n')
     eq({k: v['model'] for k, v in agents.items()}, {'review': 'opus', 'docs': 'haiku'},
@@ -7629,8 +7621,6 @@ def test_models_kinds_f105(repo: Path, tmp: Path):
     eq((c.task_model('D3'), c.task_model('X1'), c.task_model('C4'), c.task_model('Q1')),
        ('opus', 'sonnet', 'sonnet', 'haiku'), 'a repo\'s [models.kinds] overrides the defaults, kind by kind')
     check(not c.warnings, 'and is no unknown setting', c.warnings)
-    c = load('[run]\nagent = "pi"\nmodel = "github-copilot/m1"\n')
-    eq(c.task_model('D3'), 'github-copilot/m1', 'Pi: no default kinds, every task on [run] model')
     try:
         load('[models.kinds]\nD = 3\n')
         check(False, 'a kind must name a model')
@@ -7752,13 +7742,9 @@ def test_config_trim_c14(tmp: Path):
     check(said(c, '[run] batch is gone, folded into [run] batch_max'), 'and warns', c.warnings)
     eq(load('[run]\nbatch = true\n').run['batch_max'], 16, 'batch = true keeps batch_max')
     eq(load('[run]\nbatch = false\nbatch_max = 4\n').run['batch_max'], 4, 'an explicit batch_max wins')
-    c = load('[run]\nbackend = "pi"\n')
-    eq((c.run['agent'], c.run['backend']), ('pi', 'pi'), '(1) backend = "pi" is agent = "pi"')
-    check(said(c, '[run] backend is gone') and said(c, 'AGENT_RUNNER_BACKEND'), 'and warns, naming the override', c.warnings)
     c = load('[run]\nbackend = "claude"\n')
-    eq((c.run['agent'], c.run['backend']), ('claude', 'claude'), 'backend = "claude" changes nothing')
-    check(said(c, '[run] backend is gone'), 'but warns too', c.warnings)
-    eq(load('[run]\nagent = "/usr/local/bin/pi"\n').run['backend'], 'pi', 'the backend follows an agent named pi')
+    eq((c.run['agent'], c.run['backend']), ('claude', 'claude'), '(1) backend = "claude" changes nothing')
+    check(said(c, '[run] backend is ignored'), 'but warns (F106d: backend = "pi" is refused)', c.warnings)
     # removed outright (now constants): ignored, said why
     for key, words in (('control_file_asks = false', 'control_file_asks is ignored'),
                        ('control_ask_kind = "R"', 'control_ask_kind is ignored'),
