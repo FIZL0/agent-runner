@@ -643,6 +643,79 @@ def test_term_moves(tmp: Path) -> None:
     eq(bad.get('after'), ['ABCD', 0, 0], 'a failed move takes the server order back, the selection on the task')
 
 
+def test_page_copy_publish(tmp: Path) -> None:
+    """B122: a run change publishes the run page copy through a one-shot `claude -p` with only the Artifact tool,
+    never by typing into a control session's pane; at most once every PAGE_COPY_EVERY s, only when the page
+    changed apart from its clock and log; a one-shot that cannot publish stops the copy, with no c1 fallback."""
+    from agent_runner import page_copy as PC, slots as SL
+    fake_repo(tmp)
+    keys = []
+    runs = []
+    rc = [0]
+    real_run = subprocess.run
+
+    def fake_run(argv, **kw):
+        if '--tools' not in argv:  # the run's own git and the like
+            return real_run(argv, **kw)
+        runs.append((argv, kw))
+        out = '' if rc[0] else 'https://claude.ai/artifact/0f3c-copy\n'
+        return subprocess.CompletedProcess(argv, rc[0], out, 'boom' if rc[0] else '')
+
+    def snap(t: str, task: str = 'F1', minutes: int = 3, log: str = 'a line') -> dict:
+        return {'project': 'proj', 'at': t, 'up': True, 'status': [f'run up · usage {minutes}%'],
+                'sessions': [{'name': 'c1', 'state': 'live', 'link': 'https://claude.ai/code/c1'},
+                             {'name': 's1', 'task': task, 'title': 'a task', 'minutes': minutes,
+                              'state': 'running', 'link': ''}],
+                'queue': [], 'needs': [], 'concepts': [], 'log': [log], 'release': ''}
+
+    PC.PAGE_COPY_AT[0], PC.PAGE_COPY_FAILS[0], PC.PAGE_COPY_OFF[0] = 0.0, 0, ''
+    tick = lambda now, s: PC.page_copy_tick(now=now, snap=s, background=False)  # noqa: E731
+    with mock.patch.object(PC, 'remote_on', lambda: True), mock.patch.object(PC, 'control_ok', lambda: True), \
+            mock.patch.object(PC, 'C', S.C), mock.patch.object(PC, 'ROOT', S.ROOT), \
+            mock.patch.object(PC.sp, 'run', fake_run), \
+            mock.patch.object(SL, 'send_to_pane', lambda *a, **k: keys.append(a) or True), \
+            mock.patch.object(SL, 'send_fifo', lambda *a, **k: keys.append(a) or True), \
+            mock.patch.object(SL, 'tmux', lambda *a, **k: keys.append(a)), \
+            mock.patch('agent_runner.control.control_live', lambda *a, **k: keys.append(('live', a)) or 4242), \
+            mock.patch('agent_runner.control.control_window', lambda *a, **k: keys.append(('window', a)) or '%1'), \
+            mock.patch.object(SL.MUX, 'send', lambda *a, **k: keys.append(('mux', a)) or True, create=True):
+        check(tick(1000.0, snap('10:00')), 'a run change publishes the copy')
+        argv, kw = runs[0]
+        eq(argv[1:2], ['-p'], 'a one-shot headless session')
+        eq(argv[argv.index('--tools') + 1], 'Artifact', 'with only the Artifact tool')
+        check('--remote-control' not in argv and '--resume' not in argv, 'never a control session', argv)
+        eq(kw['env'].get('CLAUDE_CODE_ARTIFACT'), '1', 'the Artifact tool turned on headless')
+        check(str(PC.page_copy_file()) in argv[2], 'the prompt names the file', argv[2])
+        eq(PC.page_copy_url(), 'https://claude.ai/artifact/0f3c-copy', 'the URL the one-shot published to is kept')
+        for t in (1060.0, 1300.0, 1599.0):
+            check(not tick(t, snap(f'{t}', task='B2')), f'debounced: no publish {t - 1000:.0f}s after the last')
+        eq(len(runs), 1, 'one publish in the first PAGE_COPY_EVERY s')
+        check(tick(1000.0 + PC.PAGE_COPY_EVERY, snap('10:10', task='B2')), 'the change publishes once that passed')
+        check('0f3c-copy' in runs[-1][0][2], 'to the same URL', runs[-1][0][2])
+        check(not tick(5000.0, snap('11:00', task='B2', minutes=40, log='another line')),
+              'only the clock, minutes, usage and log changed: no publish')
+        paused = snap('11:01', task='B2')
+        paused['status'] = ['run paused · usage 3%']
+        check(tick(5000.0 + PC.PAGE_COPY_EVERY, paused), 'a run that pauses is a change: published')
+        runs.pop()
+        rc[0] = 1
+        for i, t in enumerate((7000.0, 8000.0, 9000.0)):
+            check(tick(t, snap(f'{t}', task=f'T{i}')), f'publish {i + 1} is tried')
+        check(PC.PAGE_COPY_OFF[0], 'three failed one-shots in a row stop the copy')
+        check(not tick(20000.0, snap('later', task='T9')), 'a stopped copy publishes nothing more')
+        eq(len(runs), 5, 'and starts no more one-shots')
+        PC.PAGE_COPY_AT[0], PC.PAGE_COPY_FAILS[0], PC.PAGE_COPY_OFF[0] = 0.0, 0, ''
+        with mock.patch.object(PC, 'page_copy_argv', lambda path, url: ['/nonexistent/agent-b122']):
+            check(tick(30000.0, snap('x', task='Z1')), 'a publish is tried with no agent to start')
+        check('cannot be started' in PC.PAGE_COPY_OFF[0], 'no agent to start: the copy stops', PC.PAGE_COPY_OFF[0])
+    eq(keys, [], 'no run change sends keys to any pane or FIFO')
+    check(not hasattr(PC, 'c1_send'), 'the copy has no way to type into c1')
+    src = Path(PC.__file__).read_text(encoding='utf-8')
+    for name in ('send_to_pane', 'send_fifo', 'control_window', 'control_live', 'send_keys', 'MUX'):
+        check(name not in src, f'page_copy.py never calls {name}')
+    PC.PAGE_COPY_OFF[0] = ''
+
+
 def in_tmp(f):
     def go():
         with tempfile.TemporaryDirectory() as d:
@@ -656,4 +729,4 @@ if __name__ == '__main__':
                            in_tmp(test_start), in_tmp(test_upload),
                            in_tmp(test_control_rows), in_tmp(test_feed_pane_concept), in_tmp(test_page),
                            in_tmp(test_logic), in_tmp(test_extras), in_tmp(test_diff), in_tmp(test_views),
-                           in_tmp(test_new_chat), in_tmp(test_term_moves)]))
+                           in_tmp(test_new_chat), in_tmp(test_term_moves), in_tmp(test_page_copy_publish)]))

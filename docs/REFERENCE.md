@@ -185,10 +185,12 @@ task to fix X" (it files it with `plan add`), "do X now" (it uses `take`, never 
   project, c1, its chat: no slot starts on Remote Control, even with `remote_slots`. `agent-runner ui`'s
   Sessions panel opens one (its session tab, "open sN in the Claude apps"; the run app has no such button):
   the run types `/remote-control <name>` into that slot's session, which is listed from then on until it ends,
-  and its claude.ai/code link shows in the page. For when this machine is not reachable, c1 keeps a claude.ai copy of the run page: on a run event (a
-  task starts, lands or blocks, a needs-you item, a concept, the release; at most every 5 minutes) the run
-  writes `.runner/run-page-copy.html` and asks c1 to publish it with its Artifact tool, to the URL kept in
-  `.runner/run-page-copy.url`. The copy is read-only, with the terminal and the chat as session links.
+  and its claude.ai/code link shows in the page. For when this machine is not reachable, the run keeps a claude.ai copy of the run page: on a run event (a
+  task starts, lands or blocks, a needs-you item, a concept, the release; at most every 10 minutes, and only
+  when the page changed apart from its clock, log and minutes) the run writes `.runner/run-page-copy.html` and
+  publishes it with a one-shot headless `claude -p` that has only the Artifact tool, to the URL kept in
+  `.runner/run-page-copy.url`; never through c1 or another control session. After 3 failed publishes in a row
+  the copy stops for that run. The copy is read-only, with the terminal and the chat as session links.
   `"each"` is the earlier behaviour: every slot its own entry with `remote_slots`, and no copy.
 - **`remote = "auto"`, the default**, is on when Remote Control can work: Claude Code on a claude.ai login.
   It is off, with one `run.log` line saying why (`remote control off: …`), when the backend is pi,
@@ -1057,7 +1059,7 @@ remote_slots = false      # the slots on Remote Control too ("<task title> · <r
                           # recommended: every slot start pushes to the phone
 sessions = "one"          # what the Claude apps list for this project. one: c1, the project's chat; a slot goes
                           # on Remote Control only when opened from `agent-runner ui` (Sessions, session tab), and
-                          # c1 keeps a claude.ai copy of the run page. each: every slot its own entry (remote_slots)
+                          # the run keeps a claude.ai copy of the run page. each: every slot its own entry (remote_slots)
 web = true                # the run app (see The run app), served by the run on web_port for the LAN/Tailscale; its
                           # address, with the token it needs, is in `status` and the run log; false: off
 web_port = 8770           # where the run app is served
