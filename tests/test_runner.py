@@ -1331,7 +1331,7 @@ def test_control(repo: Path):
           '"do X after T181" queues X with --after (block --after for a queued task)')
     for want in ('plan add <KIND> "..." --pri later', '`--pri low`', 'plan move ID top', 'plan drop ID',
                  'stop --suspend', 'stop --shutdown', 'resume ID', 'plan claims', 'plan unclaim ID',
-                 'plan add ID', 'subtasks wait for their parent', 'cost`'):
+                 'plan add ID', 'the parts run, then ID ticks itself', 'cost`'):
         check(f'{R.C.command} {want}' in brief or want in brief, f'the brief maps a request to {want!r}')
     for want in ('plan move ID top', 'plan drop ID', 'stop --suspend', 'stop --shutdown', 'resume ID',
                  'plan claims', 'plan unclaim ID', 'plan add ID', 'cost'):
