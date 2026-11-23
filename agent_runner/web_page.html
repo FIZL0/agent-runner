@@ -68,6 +68,16 @@ a{color:var(--accent)}
 .thread:hover{background:var(--bubble)} .thread.on{background:var(--bubble)}
 .thread .t{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .thread .off{width:7px;height:7px;border-radius:50%;border:1px solid var(--faint);flex:none}
+/* F118: a chat row's delete button (on hover; always on touch), its Undo, the selection and its Delete N bar */
+.crow{position:relative} .crow .thread{padding-right:38px}
+.crow .del{position:absolute;right:4px;top:50%;transform:translateY(-50%);height:28px;min-width:28px;border:0;border-radius:8px;background:none;color:var(--muted);display:grid;place-items:center;cursor:pointer;opacity:0;font-size:12px;font-weight:500}
+.crow:hover .del,.crow:focus-within .del,.crow .del.undo{opacity:1} .crow .del:hover{background:var(--line2);color:var(--fg)}
+.crow .del svg{width:15px;height:15px} .crow .del.undo{padding:0 8px;color:var(--accent)}
+@media (hover:none){.crow .del{opacity:1}}
+.thread.sel{background:color-mix(in srgb,var(--accent) 18%,transparent)}
+.thread.gone{opacity:.5;cursor:default} .thread.gone .t{text-decoration:line-through}
+.selbar{display:flex;align-items:center;gap:8px;padding:4px 10px;font-size:13px;color:var(--muted)} .selbar span{flex:1}
+.selbar .btn{padding:4px 10px;font-size:13px}
 .none{font-size:13px;color:var(--faint);padding:4px 10px}
 .livedot{width:7px;height:7px;border-radius:50%;background:var(--accent);flex:none;animation:pulse 1.6s infinite}
 @keyframes pulse{50%{opacity:.35}}
@@ -332,7 +342,21 @@ function talkReply(entries,since){
   if(!es.length||es[es.length-1].kind!=='say')return '';
   return es.filter(e=>e.kind==='say').map(e=>plain(e.text)).join(' ').trim();
 }
-if(typeof module!=='undefined')module.exports={answerOpts,threadMsgs,working,planWords,compose,usageOf,logKind,plain,chatName,controlReq,controlClick,taskControlsOn,queueGroups,conceptButtons,NO_CONCEPT,newConceptReq,queuedId,NAV,talkSession,micProblem,talkShown,talkReply};
+/* F118: the chats picked for delete after a click on `name`: `names` the chats in list order, `sel` those picked,
+   `last` the last one clicked, `how` 'toggle' (Ctrl/Cmd+click: in or out), 'range' (Shift+click: every chat from
+   `last` to `name`), else a plain click (nothing picked, `name` the new last). c1, the Project chat, is never picked. */
+function chatPick(names,sel,last,name,how){
+  names=names||[];const ok=n=>n!=='c1'&&names.includes(n);
+  const order=s=>names.filter(n=>s.has(n));
+  let s=new Set((sel||[]).filter(ok));
+  if(how==='range'&&names.includes(name)&&names.includes(last)){
+    const [a,b]=[names.indexOf(last),names.indexOf(name)].sort((x,y)=>x-y);
+    return{sel:order(new Set(names.slice(a,b+1).filter(ok))),last};
+  }
+  if(how==='toggle'||how==='range'){if(ok(name)){s.has(name)?s.delete(name):s.add(name)}return{sel:order(s),last:name}}
+  return{sel:[],last:name};
+}
+if(typeof module!=='undefined')module.exports={chatPick,answerOpts,threadMsgs,working,planWords,compose,usageOf,logKind,plain,chatName,controlReq,controlClick,taskControlsOn,queueGroups,conceptButtons,NO_CONCEPT,newConceptReq,queuedId,NAV,talkSession,micProblem,talkShown,talkReply};
 </script>
 
 <script>
@@ -352,6 +376,7 @@ const I={
  plan:ic('<path d="M8 6h12M8 12h12M8 18h12"/><circle cx="4" cy="6" r=".6"/><circle cx="4" cy="12" r=".6"/><circle cx="4" cy="18" r=".6"/>'),
  concepts:ic('<path d="M9 18h6M10 21h4"/><path d="M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2.1h5c0-.9.4-1.6 1-2.1A6 6 0 0 0 12 3z"/>'),  // F87: a bulb
  plus:ic('<path d="M12 5v14M5 12h14"/>'),
+ trash:ic('<path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/>'),  // F118
  clip:ic('<path d="M21 11.5 12.5 20a5 5 0 0 1-7-7L14 4.5a3.4 3.4 0 0 1 4.8 4.8L10.4 17.7a1.8 1.8 0 0 1-2.6-2.6L15.5 7.5"/>'),
  up:ic('<path d="M12 19V5M6 11l6-6 6 6"/>'),
  stop:ic('<rect x="7" y="7" width="10" height="10" rx="1.5"/>'),
@@ -369,7 +394,8 @@ const I={
 const LOGLINE_ICON={ok:'check',bad:'alert',go:'play','':'dot'};
 
 const S={snap:{status:[],sessions:[],queue:[],needs:[],concepts:[],log:[],release:'',machine:'',slots:0},
-  view:'home',thread:null,ctx:null,atts:[],drawer:false,openSteps:{},feeds:{},sent:{},waitNew:null,online:true};
+  view:'home',thread:null,ctx:null,atts:[],drawer:false,openSteps:{},feeds:{},sent:{},waitNew:null,online:true,
+  sel:[],selLast:'',undo:null};  // F118: chats picked for delete, the last one clicked, a delete Undo can still take back
 const $=id=>document.getElementById(id);
 const store={get(k){try{return localStorage.getItem(k)||''}catch(e){return''}},
   set(k,v){try{v?localStorage.setItem(k,v):localStorage.removeItem(k)}catch(e){}}};
@@ -421,14 +447,36 @@ function side(){
   const needs=S.snap.needs.length, use=usageOf(S.snap.status), cn=(S.snap.concepts||[]).length;
   const count={home:needs,concepts:cn};
   const cs=chats(), ws=working_();
+  S.sel=S.sel.filter(n=>cs.some(c=>c.name===n));  // F118: a picked chat that ended elsewhere leaves the pick
   $('side').innerHTML=`<div class="brand"><div class="logo">ar</div><b>agent-runner</b></div>
    <button class="newchat" data-new><span class="plus">${I.plus}</span>New chat</button>
    <div class="nav">${nav.map(([k,l])=>`<button class="ni ${!S.thread&&S.view===k?'on':''}" data-view="${k}">${I[k]}${l}${count[k]?`<span class="n">${count[k]}</span>`:''}</button>`).join('')}</div>
-   <div class="shead row"><span>Chats</span><button class="shadd" data-new aria-label="New chat" title="New chat">${I.plus}</button></div>${cs.length?cs.map(s=>`<button class="thread ${S.thread===s.name?'on':''}" data-thread="${esc(s.name)}">${s.state==='live'?'':'<span class="off" title="not running"></span>'}<span class="t">${esc(chatName(s))}</span></button>`).join(''):'<div class="none">No chats yet</div>'}
+   <div class="shead row"><span>Chats</span><button class="shadd" data-new aria-label="New chat" title="New chat">${I.plus}</button></div>${chatBar()}${cs.length?cs.map(chatRow).join(''):'<div class="none">No chats yet</div>'}
    <div class="shead">Agents working</div>${ws.length?ws.map(s=>`<button class="thread ${S.thread===s.name?'on':''}" data-thread="${esc(s.name)}"><span class="livedot"></span><span class="t">${esc(s.title||s.task)}</span></button>`).join(''):'<div class="none">None right now</div>'}
    <div class="me"><div class="av">${esc((S.snap.machine||'?').charAt(0).toUpperCase())}</div><div class="grow"><span class="ell">${esc(S.snap.machine||'this machine')}</span><div class="sub">${S.snap.up===false?'no run is up':`${S.snap.slots||0} slot${S.snap.slots===1?'':'s'}`}${use?` · usage ${esc(use)}`:''}</div></div></div>
    <a class="viewsw" href="term${esc(location.search)}" data-viewsw="terminal" title="The terminal-style page; this browser remembers the choice">${I.term}Terminal view</a>`;
   $('side').classList.toggle('open',S.drawer);$('scrim').classList.toggle('on',S.drawer);
+}
+/* F118: a chat row: its delete button (none for c1), dimmed with Undo in that spot once deleted; the Delete N bar */
+function chatRow(s){
+  const n=s.name,u=S.undo,gone=!!(u&&u.names.includes(n)),cls=[S.thread===n&&!gone?'on':'',S.sel.includes(n)?'sel':'',gone?'gone':''].join(' ');
+  const row=`<button class="thread ${cls}" ${gone?'':`data-thread="${esc(n)}"`}>${s.state==='live'?'':'<span class="off" title="not running"></span>'}<span class="t">${esc(chatName(s))}</span></button>`;
+  const btn=gone?(u.bar?'':`<button class="del undo" data-undo>Undo</button>`):
+    n==='c1'?'':`<button class="del" data-del="${esc(n)}" aria-label="Delete this chat" title="Delete this chat">${I.trash}</button>`;
+  return `<div class="crow">${row}${btn}</div>`;
+}
+function chatBar(){
+  if(S.undo&&S.undo.bar)return `<div class="selbar"><span>Deleted ${S.undo.names.length} chats</span><button class="btn" data-undo>Undo</button></div>`;
+  return S.sel.length>1?`<div class="selbar"><span>${S.sel.length} selected</span><button class="btn" data-delsel>Delete ${S.sel.length}</button></div>`:'';
+}
+/* F118: a delete is final once the person clicks anything but Undo (or leaves the page): only then is it sent */
+function finalDelete(){
+  const u=S.undo;if(!u)return;S.undo=null;
+  if(u.names.includes(S.thread)){S.thread=null;S.ctx=null}
+  S.snap.sessions=S.snap.sessions.filter(s=>!u.names.includes(s.name));
+  fetch(tq('act'),{method:'POST',keepalive:true,headers:{'Content-Type':'application/json'},body:JSON.stringify({name:'delete_chats',args:{names:u.names}})})
+    .then(r=>r.json()).then(j=>{if(!j.ok)toast(j.out||'The delete did not work',true)}).catch(e=>toast(`Could not reach the run page: ${e}`,true));
+  render(true);
 }
 const card=(h,cls='',attr='')=>`<div class="card ${cls}" ${attr}>${h}</div>`;
 function agentCard(s,withControls){
@@ -709,6 +757,15 @@ async function upload(file){
 
 document.addEventListener('click',async e=>{
   const q=s=>e.target.closest(s);let x;
+  if(S.undo&&!q('[data-undo]'))finalDelete();  // F118: any other click makes the delete final
+  if(q('[data-undo]')){S.undo=null;render(true);return}
+  if(x=q('[data-del]')){S.undo={names:[x.dataset.del],bar:false};S.sel=[];render(true);return}
+  if(q('[data-delsel]')){if(S.sel.length){S.undo={names:S.sel,bar:true};S.sel=[]}render(true);return}
+  if((x=q('[data-thread]'))&&/^c\d+$/.test(x.dataset.thread)){  // F118: Ctrl/Cmd+click picks, Shift+click a range
+    const how=e.shiftKey?'range':e.ctrlKey||e.metaKey?'toggle':'';
+    const p=chatPick(chats().map(c=>c.name),S.sel,S.selLast,x.dataset.thread,how);S.sel=p.sel;S.selLast=p.last;
+    if(how){e.preventDefault();render(true);return}
+  }
   if(x=q('[data-viewsw]')){try{localStorage.setItem(VIEW_KEY,x.dataset.viewsw)}catch(err){}return}  // F81: the link goes on
   if(q('[data-mic]'))return listen();  // F93
   if(q('[data-menu]')){S.drawer=true;render();return}
@@ -769,6 +826,7 @@ document.addEventListener('keydown',e=>{
     if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();send();return}
     if(e.key==='Escape'){e.preventDefault();e.target.blur();return}
     return}
+  if(e.key==='Escape'&&S.sel.length){S.sel=[];render(true);return}  // F118
   if(e.key==='Escape'&&S.drawer){S.drawer=false;render();return}
   if(e.key==='Escape'&&S.thread&&!(e.target.matches&&e.target.matches('input,textarea,select'))){S.thread=null;S.ctx=null;render(true);return}  /* out of the box, Esc goes back */
   const c=e.target.closest&&e.target.closest('.card.tap');if(c&&c===e.target&&(e.key==='Enter'||e.key===' ')){e.preventDefault();c.click()}
@@ -780,6 +838,7 @@ $('file').addEventListener('change',e=>{[...e.target.files].forEach(upload);e.ta
 document.addEventListener('dragover',e=>{if(e.dataTransfer&&[...e.dataTransfer.types].includes('Files'))e.preventDefault()});
 document.addEventListener('drop',e=>{if(e.dataTransfer&&e.dataTransfer.files.length){e.preventDefault();[...e.dataTransfer.files].forEach(upload)}});
 document.addEventListener('visibilitychange',()=>{if(!document.hidden&&S.thread)loadFeed(S.thread)});
+addEventListener('pagehide',finalDelete);  // F118: leaving the page makes a pending delete final
 
 render(true);
 connect();

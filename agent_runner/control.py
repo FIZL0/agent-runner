@@ -1168,12 +1168,8 @@ def end_closed_controls(force: bool = False) -> list[int]:
         except Exception as e:  # one unreadable session never stops the run loop or a new session
             log(f'control {n}: could not tell whether it was closed online: {e}')
             continue
-        plat.terminate(pid)  # its hidden shim ends with it
-        pidf.unlink(missing_ok=True)
-        C.notes(f'control{n}.title').unlink(missing_ok=True)
-        log(f'control {n}: ended, its Remote Control session was closed online '
-            f'(transcript kept: {plat.exe(C.run["agent"])} --resume {sid})')
-        out.append(n)
+        if end_control(n, 'its Remote Control session was closed online'):  # F118: the one close path
+            out.append(n)
     return out
 
 
@@ -1181,6 +1177,28 @@ def free_control_number() -> int:
     """control_number() once the control sessions closed online have ended (B53), so their numbers count free."""
     end_closed_controls(force=True)
     return control_number()
+
+
+def end_control(n: int, why: str) -> bool:
+    """F118: end control session `n` (> 1) on purpose, as closing it does (B26, B53): its process, controlN.pid and
+    controlN.title go, so it leaves the chat list and no run start reopens it (B121); the transcript stays,
+    resumable. c1 is never ended here: it is the run's kept session. Whether it was there to end."""
+    if n <= 1:
+        return False
+    pidf = C.notes(f'control{n}.pid')
+    try:
+        pid_s, _, sid = pidf.read_text(encoding='utf-8').strip().partition(' ')
+    except OSError:
+        return False
+    if control_live(n):
+        try:
+            plat.terminate(int(pid_s))  # its hidden shim ends with it
+        except ValueError:
+            pass
+    pidf.unlink(missing_ok=True)
+    C.notes(f'control{n}.title').unlink(missing_ok=True)
+    log(f'control {n}: ended, {why}' + (f' (transcript kept: {plat.exe(C.run["agent"])} --resume {sid})' if sid else ''))
+    return True
 
 
 def control_server_argv() -> list[str]:

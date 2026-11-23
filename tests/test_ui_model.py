@@ -541,6 +541,36 @@ def test_hidden_send(tmp: Path) -> None:
             os.close(fd)
 
 
+def test_delete_chats(tmp: Path) -> None:
+    """F118: delete_chats ends each named control session (its process, controlN.pid and .title go, so it leaves
+    the chat list and no run start reopens it) and refuses c1, the Project chat, whole."""
+    import subprocess as sp
+    fake_run(tmp)
+    procs = {n: sp.Popen(['sleep', '60']) for n in (1, 3, 4)}
+    try:
+        for n, p in procs.items():
+            S.C.notes(f'control{n}.pid').write_text(f'{p.pid} sid-{n}', encoding='utf-8')
+            S.C.notes(f'control{n}.title').write_text(f'proj · {n} · chat {n}\n', encoding='utf-8')
+        with mock.patch('agent_runner.control.control_live', lambda n: procs[n].pid if n in procs and
+                        procs[n].poll() is None and S.C.notes(f'control{n}.pid').exists() else 0):
+            r = U.act('delete_chats', names=['c1', 'c3'])
+            eq((r['ok'], 'Project chat' in r['out']), (False, True), 'c1 in the list: refused')
+            check(procs[3].poll() is None and S.C.notes('control3.pid').exists(), 'and nothing was ended')
+            eq(U.act('delete_chats', names=[])['ok'], False, 'no names: refused')
+            eq(U.act('delete_chats', names=['s2'])['ok'], False, 'a slot is not a chat')
+            r = U.act('delete_chats', names=['c3', 'c9'])
+            eq((r['ok'], r['deleted']), (True, ['c3']), 'c3 deleted, c9 was not there')
+            procs[3].wait(timeout=10)
+            check(not S.C.notes('control3.pid').exists() and not S.C.notes('control3.title').exists(),
+                  'its pid file and title are gone')
+            eq(sorted(U.control_titles()), [1, 4], 'the chat list keeps c1 and c4')
+            check(procs[1].poll() is None and procs[4].poll() is None, 'the others still run')
+    finally:
+        for p in procs.values():
+            p.kill()
+            p.wait()
+
+
 def in_tmp(f):
     def go():
         print(f.__name__)
@@ -556,4 +586,5 @@ if __name__ == '__main__':
                          in_tmp(test_real_command),
                          in_tmp(test_to_c1_hidden), in_tmp(test_control_titles),
                          in_tmp(test_queue_rows), in_tmp(test_feed), in_tmp(test_chat_and_terminal),
-                         in_tmp(test_concept_copy), in_tmp(test_concept_chat), in_tmp(test_hidden_send)]))
+                         in_tmp(test_concept_copy), in_tmp(test_concept_chat), in_tmp(test_hidden_send),
+                         in_tmp(test_delete_chats)]))

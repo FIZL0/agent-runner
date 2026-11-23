@@ -4,6 +4,15 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Added: the run page (web) deletes chats. Each row in the Chats list has a trash button, shown on hover (always
+  on touch screens); the Project chat (c1) has none. A click deletes at once, no confirm: the row dims and an Undo
+  button takes the trash button's spot until the person clicks anything else or leaves the page, and only then is
+  the delete sent. Ctrl/Cmd+click picks chats, Shift+click picks a range from the last one clicked; with 2 or more
+  picked a "Delete N" bar shows, with the same Undo, and Esc drops the pick. Deleting ends the control session (its
+  process, pid file and title go; the transcript stays, resumable), so it leaves the list and no run start reopens
+  it. New ui_model action `delete_chats {names: [...]}` refuses a list naming c1, backed by
+  `control.end_control(n, why)` (F118).
+
 ## 0.60.0 (2026-11-23)
 
 - Added: runner tools on Claude Code. `agent-runner finish "summary"` ends a slot's session at once after

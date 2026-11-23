@@ -886,3 +886,25 @@ def quick_ask(key: str) -> dict:
 
 ACTIONS.update({'chat_to': chat_to, 'interrupt': interrupt, 'new_control': new_control, 'quick_ask': quick_ask})
 ACTIONS['concept_chat'] = concept_chat  # F86
+
+
+def delete_chats(names: list | None = None) -> dict:
+    """F118: the run page's chat delete: end each named control session (`control.end_control`) so it drops off
+    the chat list. c1, the Project chat, is never deleted: a list naming it is refused whole, nothing ended."""
+    names = [n for n in (names or []) if isinstance(n, str)]
+    if not names:
+        return {'ok': False, 'code': 2, 'out': 'delete_chats: no chats named', 'argv': []}
+    bad = [n for n in names if not re.fullmatch(r'c\d+', n)]
+    if bad:
+        return {'ok': False, 'code': 2, 'out': f'delete_chats: not a chat: {", ".join(bad)}', 'argv': []}
+    if any(int(n[1:]) <= 1 for n in names):
+        return {'ok': False, 'code': 2, 'out': 'The Project chat (c1) cannot be deleted.', 'argv': []}
+    from agent_runner import control as K
+    gone = [n for n in names if K.end_control(int(n[1:]), 'deleted from the run page')]
+    left = [n for n in names if n not in gone]
+    out = f'deleted {", ".join(gone)}' if gone else 'nothing deleted'
+    return {'ok': True, 'code': 0, 'out': out + (f' ({", ".join(left)} already gone)' if left else ''),
+            'deleted': gone, 'argv': []}
+
+
+ACTIONS['delete_chats'] = delete_chats
