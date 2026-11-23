@@ -512,7 +512,8 @@ class HomeHandler(BaseHTTPRequestHandler):
             conn.close()
         if not isinstance(got, dict) or not got.get('ok') or not got.get('port') or not got.get('path'):
             out = got.get('out') if isinstance(got, dict) else ''
-            return self.send(502, f'<pre>{out or "no terminal for " + bits[2]}</pre>', 'text/html; charset=utf-8')
+            return self.send(502, f'<pre>{_xml(str(out or "no terminal for " + bits[2]))}</pre>',
+                             'text/html; charset=utf-8')
         target = str(got['path']).rstrip('/') + '/' + bits[3] + (f'?{query}' if query else '')
         if 'websocket' in self.headers.get('Upgrade', '').lower():
             return self.tunnel(root, int(got['port']), target)
