@@ -408,7 +408,7 @@ function conceptCard(c,i){
   const os=c.options||[], view=c.copy?tq('concept/'+encodeURIComponent(c.concept||c.id)):c.url;
   const nm=o=>o.name.replace(/\s*[(\[—–-]*\s*recommended\s*[)\]]?\s*$/i,'')||o.name;
   return card(`<div class="q">${esc(c.title||c.concept)}</div><span class="small">${esc(c.concept||c.id)}${os.length?` · ${os.length} options${os.some(o=>o.rec)?` · recommends ${esc(nm(os.find(o=>o.rec)))}`:''}`:''}</span>
-    <div class="btns">${os.map((o,j)=>`<button class="btn ${o.rec?'pri':''}" data-pick="${i}" data-o="${j}">${esc(nm(o))}</button>`).join('')}<button class="btn" data-about="concept:${i}">Chat</button>${view?`<a class="btn" href="${esc(view)}" target="_blank" rel="noopener">View ${I.ext}</a>`:''}</div>`);
+    <div class="btns">${os.map((o,j)=>`<button class="btn ${o.rec?'pri':''}" data-pick="${i}" data-o="${j}">${esc(nm(o))}</button>`).join('')}<button class="btn" data-about="concept:${i}">Chat</button><button class="btn" data-cchat="${i}" title="A new chat about this concept">New chat</button>${view?`<a class="btn" href="${esc(view)}" target="_blank" rel="noopener">View ${I.ext}</a>`:''}</div>`);
 }
 function box(ph,foot){
   const a=S.atts, busyNow=S.thread&&busy(S.thread);
@@ -561,6 +561,10 @@ document.addEventListener('click',async e=>{
   if(x=q('[data-thread]')){S.ctx=null;return open(x.dataset.thread)}
   if(q('[data-new]')){S.drawer=false;S.waitNew={known:chats().map(c=>c.name),at:Date.now()};render();
     const r=await act('new_control',{});if(r.ok)toast('Starting a new chat: it opens here once it is up');else S.waitNew=null;return}
+  if(x=q('[data-cchat]')){const c=S.snap.concepts[+x.dataset.cchat];if(!c)return;x.disabled=true;  // F86
+    S.waitNew={known:chats().map(c=>c.name),at:Date.now()};
+    const r=await act('concept_chat',{cid:c.concept||c.id,title:c.title||'',url:c.url||''});
+    if(r.ok)toast(`Starting a new chat about ${c.concept||c.id}: it opens here once it is up`);else S.waitNew=null;return}
   if(x=q('[data-ans]')){const n=S.snap.needs[+x.dataset.ans];if(!n)return;x.disabled=true;
     const r=await act('answer',{tid:n.id,text:x.dataset.v});if(r.ok)toast(`Sent: ${n.id} ${x.dataset.v}`);return}
   if(x=q('[data-later]')){const n=S.snap.needs[+x.dataset.later];if(!n)return;x.disabled=true;
