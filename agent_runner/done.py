@@ -104,6 +104,7 @@ def main(argv: list[str] | None = None) -> int:
     cwd = c.root
     if not a.blocked and tested_tick(a.id, c) and not git('status', '--porcelain', cwd=cwd).stdout.strip():
         print(f'{a.id} is already ticked and committed, and its gate passed on this commit: nothing to do again')
+        push_task(c)  # a `done` cut off before its push
         return finished(c, a)  # B172: the mark may be gone
     if not a.artifact and not a.blocked and plan.concept(a.id):  # F106f: the page `run publish-page` published
         from agent_runner.page_copy import concept_url
@@ -200,6 +201,7 @@ def record(a, c) -> int:
         print('nothing to commit (the tick was already committed?)')
         if not a.no_test and not getattr(a, 'docs', False):
             g('update-ref', TESTED + a.id, 'HEAD')
+        push_task(c)
         return finished(c, a)
     message = a.message
     if not c.run['include_task_id_in_commit']:
@@ -212,7 +214,14 @@ def record(a, c) -> int:
     if not a.no_test and not getattr(a, 'docs', False):  # what the gate passed on, so a merge that differs from it only in [run] untested skips it
         g('update-ref', TESTED + a.id, 'HEAD')
     print(g('log', '-1', '--oneline').stdout.strip())
-    here = g('branch', '--show-current').stdout.strip()
+    push_task(c)
+    return finished(c, a)
+
+
+def push_task(c) -> None:
+    """Push the branch this worktree is on (never the shared one) and say what became of it."""
+    cwd = c.root
+    here = git('branch', '--show-current', cwd=cwd).stdout.strip()
     if here and (line := push(cwd, here)):
         print(line)
     elif here and c.approve:
@@ -221,7 +230,6 @@ def record(a, c) -> int:
         print(f'{here} not pushed: no remote {gone}')
     elif here and (remote := c.push_remote) and shared_branch(cwd, remote, here):
         print(f'{here} is not pushed: done only pushes a task branch (git push {remote} {here} to publish)')
-    return finished(c, a)
 
 
 def ticked(tid: str, c) -> bool:

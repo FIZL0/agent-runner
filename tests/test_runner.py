@@ -552,7 +552,8 @@ def again_after_done(repo: Path, d: Path):
         mark.unlink(missing_ok=True)
         r = run(d, 'done', 'T5', 'T5: the logger', env=env)
         check(r.returncode == 0 and mark.exists(), 'done again restores the mark', r.stdout + r.stderr)
-        check('gate passed' not in r.stdout and git(d, 'rev-parse', 'HEAD') == head, 'with no gate run and no commit',
+        has(r.stdout, r'pushed task/T5 -> origin', 'and pushes the branch, in case the first was cut off before that')
+        check('gate passed:' not in r.stdout and git(d, 'rev-parse', 'HEAD') == head, 'with no gate run and no commit',
               r.stdout)
         mark.unlink(missing_ok=True)
         git(d, 'update-ref', '-d', tested)
@@ -3918,8 +3919,6 @@ def test_stop_waiter(tmp: Path):
         R.WAITER_POLL = poll
         os.environ.pop('AGENT_RUNNER_IDLE_MAX', None)
         os.environ.pop('AGENT_RUNNER_SLOT', None)
-        if (m := R.finished_mark('9')) and m.exists():
-            m.unlink()
 
 
 def test_stop_hook_grace(tmp: Path):
@@ -3947,8 +3946,6 @@ def test_stop_hook_grace(tmp: Path):
             os.environ.pop('AGENT_RUNNER', None)
         else:
             os.environ['AGENT_RUNNER'] = was_runner
-        if (m := R.finished_mark('9')) and m.exists():
-            m.unlink()
 
 
 def test_finish_ends_session(tmp: Path):
