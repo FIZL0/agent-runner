@@ -335,6 +335,8 @@ def test_terminal_tab(tmp: Path) -> None:
         eq((code, body.decode()), (200, '<title>ttyd</title>/t/RUNTOKEN/s1/'),
            "ttyd's page, at its own path with the run's token, Home's token taken from the path")
         eq(asked[-1], '/terminal/s1?t=RUNTOKEN', "Home asked the run where s1's ttyd is (which starts it)")
+        code, body, _ = get(f'{base}/p/alpha/t/HOMETOKEN/s1/?t=HOMETOKEN&x=1')
+        eq(body.decode(), '<title>ttyd</title>/t/RUNTOKEN/s1/?x=1', "Home's token in the query does not reach ttyd")
         code, body, _ = get(f'{base}/p/alpha/t/HOMETOKEN/s1/token')
         eq((code, body.decode()), (200, '<title>ttyd</title>/t/RUNTOKEN/s1/token'),
            "ttyd's calls under its path come through without a query")

@@ -514,7 +514,9 @@ class HomeHandler(BaseHTTPRequestHandler):
             out = got.get('out') if isinstance(got, dict) else ''
             return self.send(502, f'<pre>{_xml(str(out or "no terminal for " + bits[2]))}</pre>',
                              'text/html; charset=utf-8')
-        target = str(got['path']).rstrip('/') + '/' + bits[3] + (f'?{query}' if query else '')
+        rest_q = urlencode([(k, v) for k, vs in parse_qs(query, keep_blank_values=True).items() if k != 't'
+                            for v in vs])  # Home's token stays at Home
+        target = str(got['path']).rstrip('/') + '/' + bits[3] + (f'?{rest_q}' if rest_q else '')
         if 'websocket' in self.headers.get('Upgrade', '').lower():
             return self.tunnel(root, int(got['port']), target)
         self.forward(self.command, root, int(got['port']), target)
