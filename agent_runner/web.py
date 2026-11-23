@@ -347,9 +347,20 @@ def concept_options(path: str) -> list[dict]:
     return opts
 
 
+TTYD_PACKAGES = (('pacman', 'sudo pacman -S ttyd'), ('apt', 'sudo apt install ttyd'), ('dnf', 'sudo dnf install ttyd'),
+                 ('zypper', 'sudo zypper install ttyd'), ('brew', 'brew install ttyd'))
+
+
+def ttyd_install_cmd(which=shutil.which) -> str:
+    """B120: the command that installs ttyd here, from the first package manager found ('' when none is)."""
+    return next((cmd for tool, cmd in TTYD_PACKAGES if which(tool)), '')
+
+
 def with_extras(snap: dict) -> dict:
     """F79: what the run app shows beyond the snapshot: this machine's name, and each concept's options."""
     snap['machine'] = socket.gethostname()
+    if snap.get('terminal_mode') == 'install':
+        snap['ttyd_install'] = ttyd_install_cmd()  # B120: the page's one line on how to get the terminal tab
     for c in snap.get('concepts') or []:
         c['options'] = concept_options(c.get('copy', ''))
     return snap

@@ -383,7 +383,28 @@ function slashMatches(cmds,text){
 const slashPick=c=>`/${c.name} `;
 /* the highlighted row after ArrowDown / ArrowUp, wrapping round the n rows */
 const slashMove=(i,n,key)=>n?(key==='ArrowUp'?(i-1+n)%n:(i+1)%n):0;
-if(typeof module!=='undefined')module.exports={slashMatches,slashPick,slashMove,SLASH_FALLBACK,chatPick,answerOpts,threadMsgs,working,planWords,compose,usageOf,logKind,plain,chatName,controlReq,controlClick,taskControlsOn,queueGroups,conceptButtons,NO_CONCEPT,newConceptReq,queuedId,NAV,talkSession,micProblem,talkShown,talkReply};
+/* B120: the message box's keys, as in the agent CLI's own input, listed here once (the box's foot shows them) */
+const BOX_KEYS=[['Enter','sends'],['Shift+Enter','new line'],['↑ ↓','earlier messages'],['/','commands'],
+  ['Esc','closes the menu, then interrupts'],['Ctrl+C','interrupts'],['Paste','attaches pictures or files']];
+const keysLine=()=>BOX_KEYS.map(([k,d])=>`${k} ${d}`).join(' · ');
+/* B120: the chat's message history (kept per chat): HIST_MAX the most it keeps; histPush the list once `text` is
+   sent (not twice in a row); histEdge whether ArrowUp / ArrowDown leaves the box's text for history (the caret on
+   its first / last line, nothing selected); histStep the place after the key, n meaning the unsent draft */
+const HIST_MAX=100;
+function histPush(list,text){
+  const t=String(text||'').trim(), l=(Array.isArray(list)?list:[]).filter(x=>typeof x==='string');
+  if(!t||l[l.length-1]===t)return l;
+  return l.concat([t]).slice(-HIST_MAX);
+}
+function histEdge(value,start,end,key){
+  const v=String(value||'');if(start!==end)return false;
+  return key==='ArrowUp'?!v.slice(0,start).includes('\n'):!v.slice(end).includes('\n');
+}
+function histStep(n,i,key){
+  if(typeof i!=='number'||i<0||i>n)i=n;
+  return key==='ArrowUp'?Math.max(0,i-1):Math.min(n,i+1);
+}
+if(typeof module!=='undefined')module.exports={BOX_KEYS,keysLine,histPush,histEdge,histStep,slashMatches,slashPick,slashMove,SLASH_FALLBACK,chatPick,answerOpts,threadMsgs,working,planWords,compose,usageOf,logKind,plain,chatName,controlReq,controlClick,taskControlsOn,queueGroups,conceptButtons,NO_CONCEPT,newConceptReq,queuedId,NAV,talkSession,micProblem,talkShown,talkReply};
 </script>
 
 <script>
@@ -428,6 +449,21 @@ const store={get(k){try{return localStorage.getItem(k)||''}catch(e){return''}},
   set(k,v){try{v?localStorage.setItem(k,v):localStorage.removeItem(k)}catch(e){}}};
 const DRAFT_KEY=k=>'ar-draft:'+k;  /* a box's draft, kept per thread (and Home) across refreshes */
 const boxKey=()=>S.thread||(S.view==='talk'?'talk':'home');
+/* B120: each chat's sent messages (localStorage, so a reload keeps them; store's try/catch when it is blocked), and
+   HI where Up / Down stands in them: the chat, the place (null: not looking back) and the draft it left */
+const HIST_KEY=k=>'ar-hist:'+k;
+function histGet(k){try{const l=JSON.parse(store.get(HIST_KEY(k))||'[]');return Array.isArray(l)?l.filter(x=>typeof x==='string'):[]}catch(e){return[]}}
+function histAdd(k,text){store.set(HIST_KEY(k),JSON.stringify(histPush(histGet(k),text)))}
+let HI={key:'',i:null,draft:''};
+function histKey(e,ta){
+  if(e.shiftKey||e.altKey||e.ctrlKey||e.metaKey||e.isComposing||!histEdge(ta.value,ta.selectionStart,ta.selectionEnd,e.key))return false;
+  const k=boxKey(), l=histGet(k);if(!l.length)return false;
+  if(HI.key!==k||HI.i===null){if(e.key==='ArrowDown')return false;HI={key:k,i:l.length,draft:ta.value}}
+  const i=histStep(l.length,HI.i,e.key);
+  HI.i=i;ta.value=i===l.length?HI.draft:l[i];if(i===l.length)HI.i=null;
+  store.set(DRAFT_KEY(k),ta.value);grow(ta);ta.setSelectionRange(ta.value.length,ta.value.length);
+  return true;
+}
 
 function toast(msg,bad){const t=$('toast');t.textContent=msg;t.className='toast'+(bad?' bad':'');t.hidden=false;
   clearTimeout(toast.h);toast.h=setTimeout(()=>t.hidden=true,bad?6000:3000)}
@@ -576,14 +612,16 @@ function convo(n,shown){  // F93: shown, how a message of yours shows (Talk: wit
 const greeting=()=>{const h=new Date().getHours();return h<12?'Good morning':h<18?'Good afternoon':'Good evening'};
 function homeHTML(){
   const ws=working_(), nx=upNext().slice(0,3), rel=S.snap.release||'';
-  return `<div class="col"><div class="greet"><span class="logo">ar</span>${greeting()}</div>${box('How can I help with the run?')}
+  return `<div class="col"><div class="greet"><span class="logo">ar</span>${greeting()}</div>${box('How can I help with the run?',keysLine())}${ttydLine()}
     <div class="chips"><button class="chip" data-quick="since">${I.clock}Since my last look</button><button class="chip" data-quick="needs">${I.ask}What needs me</button><button class="chip" data-about="new">${I.plus}Add a task</button></div>
     <div class="sec">Needs you<span class="ln"></span></div>${S.snap.needs.length?S.snap.needs.map(needCard).join(''):card(`<div class="row"><div class="who">${I.check}</div><div><b>Nothing needs you</b><div class="small">It shows here when something does.</div></div></div>`)}
     <div class="sec">Working now<span class="ln"></span></div>${ws.length?`<div class="grid2">${ws.map(agentCard).join('')}</div>`:card(`<div class="small">${S.snap.up===false?'No run is up.':'No agent is working right now.'}</div>`)}
     <div class="sec">Up next<span class="ln"></span></div>${nx.length?nx.map(planCard).join(''):card('<div class="small">The queue is empty.</div>')}
     ${card(`<div class="row"><div class="grow"><b>Release</b><div class="small">${esc(rel||(ws.length?`Waits for the ${ws.length} task${ws.length>1?'s':''} still working.`:'Releases what has landed.'))}</div></div></div><div class="btns">${ws.length?`<button class="btn acc" data-rel="wait">Release when they land</button>`:''}<button class="btn ${ws.length?'':'acc'}" data-rel="now">Release now</button></div>`)}</div>`;
 }
-function agentsHTML(){const ss=slots();return `<div class="col">${controlsCard()}${ss.length?ss.map(s=>agentCard(s,true)).join(''):card(`<div class="small">${S.snap.up===false?'No run is up, so no agent is working.':'No slots yet.'}</div>`)}</div>`}
+/* B120: without ttyd, one line says the terminal tab (the real session) needs it, with this machine's install command */
+const ttydLine=()=>S.snap.terminal_mode==='install'?`<div class="small ttyd" data-ttyd>The terminal tab (the real session) needs ttyd: install it with <code>${esc(S.snap.ttyd_install||'your platform\'s ttyd package')}</code>.</div>`:'';
+function agentsHTML(){const ss=slots();return `<div class="col">${ttydLine()}${controlsCard()}${ss.length?ss.map(s=>agentCard(s,true)).join(''):card(`<div class="small">${S.snap.up===false?'No run is up, so no agent is working.':'No slots yet.'}</div>`)}</div>`}
 function activityHTML(){
   const log=(S.snap.log||[]).slice().reverse();
   return `<div class="col"><div class="chips" style="justify-content:flex-start"><button class="chip" data-quick="since">${I.clock}Since my last look</button><button class="chip" data-quick="yesterday">${I.clock}Since yesterday</button></div>
@@ -618,7 +656,7 @@ function render(force){
   let h='',dock='';
   if(n){const agent=isAgent(n);h=`<div class="col">${convo(n)}</div>`;
     dock=box(agent?`Message ${threadTitle(n)}`:S.ctx&&S.ctx.kind==='new'?'Describe the task in your own words':`Reply to ${threadTitle(n)}`,
-      agent?'Goes straight to this agent, between its steps.':'Enter sends, Shift+Enter starts a new line.')}
+      (agent?'Goes straight to this agent, between its steps. ':'')+keysLine())}  // B120: the keys, from BOX_KEYS
   else if(S.view==='talk'){h=talkHTML();dock=talkDock()}
   else h={home:homeHTML,agents:agentsHTML,activity:activityHTML,plan:planHTML,concepts:conceptsHTML}[S.view]();
   const ta=document.querySelector('[data-in]'), focused=ta&&document.activeElement===ta, sel=ta?[ta.selectionStart,ta.selectionEnd]:null;
@@ -783,11 +821,12 @@ async function send(){
   if(S.atts.some(a=>!a.path&&!a.err))return toast('Wait for the attachments to finish uploading');
   const paths=S.atts.filter(a=>a.path).map(a=>a.path);
   if(!text&&!paths.length)return;
-  if(!S.thread&&S.view==='talk'){if(await talkSend(compose(null,text,paths))){store.set(DRAFT_KEY(boxKey()),'');if(ta)ta.value='';S.atts=[];render(true)}return}  // F93
+  if(!S.thread&&S.view==='talk'){if(await talkSend(compose(null,text,paths))){histAdd(boxKey(),text);HI.i=null;store.set(DRAFT_KEY(boxKey()),'');if(ta)ta.value='';S.atts=[];render(true)}return}  // F93
   const ctx=S.ctx, to=S.thread||'c1', key=boxKey();
   const msg=compose(ctx,text,paths);
   const r=await act('chat_to',{text:msg,to});
   if(!r.ok)return;
+  histAdd(key,text);HI.i=null;  // B120: Up brings it back
   store.set(DRAFT_KEY(key),'');if(ta)ta.value='';
   S.atts=[];S.ctx=null;
   const len=feedOf(to).length;
@@ -875,7 +914,8 @@ function selectedText(t){
 }
 document.addEventListener('keydown',e=>{
   /* B116: Ctrl+C interrupts the open chat while it works (not while text is selected, so copying still works);
-     Esc never interrupts: it leaves the box, then goes back */
+     B120: in the message box Esc closes the menu, then interrupts a working chat (never goes back), else leaves
+     the box; out of the box Esc never interrupts, it goes back */
   if(e.ctrlKey&&!e.metaKey&&!e.altKey&&(e.key==='c'||e.key==='C')&&S.thread&&busy(S.thread)&&!selectedText(e.target)){e.preventDefault();act('interrupt',{session:S.thread});return}
   if(e.target.matches&&e.target.matches('[data-kin]')){  // F87: Enter queues the concept, Esc closes the box
     if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();newConcept();return}
@@ -890,6 +930,8 @@ document.addEventListener('keydown',e=>{
       if(e.key==='Enter')slashClose();  // the command is typed in full: Enter sends it
     }
     if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();send();return}
+    if((e.key==='ArrowUp'||e.key==='ArrowDown')&&histKey(e,e.target)){e.preventDefault();return}  // B120: earlier messages
+    if(e.key==='Escape'&&S.thread&&busy(S.thread)){e.preventDefault();act('interrupt',{session:S.thread});return}  // B120
     if(e.key==='Escape'){e.preventDefault();e.target.blur();return}
     return}
   if(e.key==='Escape'&&S.sel.length){S.sel=[];render(true);return}  // F118
@@ -897,7 +939,7 @@ document.addEventListener('keydown',e=>{
   if(e.key==='Escape'&&S.thread&&!(e.target.matches&&e.target.matches('input,textarea,select'))){S.thread=null;S.ctx=null;render(true);return}  /* out of the box, Esc goes back */
   const c=e.target.closest&&e.target.closest('.card.tap');if(c&&c===e.target&&(e.key==='Enter'||e.key===' ')){e.preventDefault();c.click()}
 });
-document.addEventListener('input',e=>{if(e.target.matches('[data-slots-n]'))S.slotsN=e.target.value;if(e.target.matches('[data-kin]'))S.kText=e.target.value;if(e.target.matches('[data-in]')){grow(e.target);store.set(DRAFT_KEY(boxKey()),e.target.value);slashShow(e.target)}});
+document.addEventListener('input',e=>{if(e.target.matches('[data-slots-n]'))S.slotsN=e.target.value;if(e.target.matches('[data-kin]'))S.kText=e.target.value;if(e.target.matches('[data-in]')){grow(e.target);store.set(DRAFT_KEY(boxKey()),e.target.value);HI.i=null;slashShow(e.target)}});
 document.addEventListener('paste',e=>{if(!e.target.matches||!e.target.matches('[data-in]'))return;
   const fs=[...(e.clipboardData?.files||[])];if(fs.length){e.preventDefault();fs.forEach(upload)}});
 $('file').addEventListener('change',e=>{[...e.target.files].forEach(upload);e.target.value=''});
