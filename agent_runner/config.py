@@ -451,7 +451,7 @@ REMOVED: dict[tuple[str, str], str] = {
     ('run', 'ci_kind'): 'a red CI run is always filed as a B task; delete it',
     ('needs', 'heading'): 'the heading is always "Needs you"; delete it',
     ('needs', 'ages'): 'each item always shows its age; delete it',
-    ('run', 'mux'): 'every run is hidden on every OS (1.0.0: no tmux; `attach` shows the run and its sessions); '
+    ('run', 'mux'): 'every run is hidden on every OS (0.60.0: no tmux; `attach` shows the run and its sessions); '
                     'delete it',
 }
 

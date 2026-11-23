@@ -51,7 +51,7 @@ plan/TODO.md ──pick──▶ slot N: git worktree ~/runs/<repo>/sN on task/<
 ### Terminals, and Windows
 
 Every session the run starts (each slot, c1 and other control sessions, the runner feed) runs hidden: a
-terminal with no window, the same way on every OS (1.0.0 removed tmux and `[run] mux`; a leftover `mux` key
+terminal with no window, the same way on every OS (0.60.0 removed tmux and `[run] mux`; a leftover `mux` key
 is ignored with one warning). You watch and steer it through `agent-runner attach` (the run view), `attach
 sN` (the session's own terminal), `agent-runner ui` and the run page, Remote Control (claude.ai/code and the
 Claude apps, with `[run] remote_slots`), `agent-runner status`, the slot's log `.runner/slotN.log` and control
@@ -1217,7 +1217,7 @@ Removed in 0.58.0 (the config trim):
 
 Removed earlier:
 
-- 1.0.0: `[run] mux` (and `run --mux`): every run is hidden on every OS, with no tmux; `agent-runner attach`
+- 0.60.0: `[run] mux` (and `run --mux`): every run is hidden on every OS, with no tmux; `agent-runner attach`
   shows the run view and `attach sN` a session's own terminal.
 - 0.52.0: `[needs] map_replies` (sessions map a reply to its item themselves).
 - 0.32.0: `[run] mode` (a run never starts two tasks on the same files), `[run] fix_ahead` (`fix_ahead_max = 0`

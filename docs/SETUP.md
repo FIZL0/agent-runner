@@ -30,7 +30,7 @@ That puts `agent-runner` on your PATH. It is the same CLI as `./run` in a clone:
 runs hooks and Bash calls in its Git Bash). Each slot runs hidden, in a console whose window starts hidden
 (`agent-runner attach s2` shows it). Run `agent-runner run 3` from any terminal.
 
-**Linux and macOS** need nothing more either (agent-runner 1.0 dropped tmux). The slots run hidden, in a
+**Linux and macOS** need nothing more either (agent-runner 0.60.0 dropped tmux). The slots run hidden, in a
 pseudo-terminal with no window, their output in `.runner/slotN.log`. `agent-runner attach` is the run view
 (its log, live, and its keys), `agent-runner attach s2` puts this terminal on slot 2's own terminal (Ctrl-b d
 leaves it running), and `status`, `ui`, control sessions and `plan tell` watch and steer them.

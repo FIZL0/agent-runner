@@ -54,5 +54,16 @@ def test_by_file() -> None:
     check(W.upgrade_argv()[0] != 'git' or 'site-packages' not in W.upgrade_argv()[2], 'never a pull in site-packages')
 
 
+def test_breaking() -> None:
+    """C28: 0.60.0 dropped tmux, so a run below it never restarts (or auto-upgrades) onto 0.60+."""
+    eq(W.breaking('0.59.3', '0.60.0'), True, '0.59 -> 0.60 refused: its tmux sessions cannot be adopted')
+    eq(W.breaking('0.41.0', '0.62.1'), True, 'from further back across 0.60 too')
+    eq(W.breaking('0.60.0', '0.61.0'), False, '0.60 -> 0.61 restarts by itself')
+    eq(W.breaking('0.58.0', '0.59.1'), False, '0.58 -> 0.59 restarts by itself')
+    eq(W.breaking('0.61.0', '1.0.0'), True, 'a major version still breaks')
+    eq(W.auto_upgrade_due('0.60.0', '0.59.0', '0.59.0', False, ''), False, 'no auto upgrade from 0.59 onto 0.60')
+    eq(W.auto_upgrade_due('0.61.0', '0.60.0', '0.60.0', False, ''), True, 'auto upgrade from 0.60 onto 0.61')
+
+
 if __name__ == '__main__':
-    sys.exit(report([test_by_file]))
+    sys.exit(report([test_by_file, test_breaking]))
