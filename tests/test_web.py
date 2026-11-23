@@ -3224,7 +3224,7 @@ function load(o) {
 const log = {draws: [], settings: 0, spoke: [], heard: 0, on: {}};
 const HOME_PAGE = false, location = {pathname: o.path || '/p/a/', search: '?t=x', hash: o.hash || ''}, document = {title: o.title || 'a · runner', querySelector: () => null};
 const history = {replaceState(a, b, u) { log.url = u; location.hash = '' }}, addEventListener = (t, f) => { log.on[t] = f };
-const setTimeout = () => 0, tq = p => p, followVersion = () => false, toast = () => {}, esc = t => String(t), LOGO = () => '', md = t => t, I = {chev: ''};
+const setTimeout = () => { log.focus = (log.focus || 0) + 1 }, tq = p => p, followVersion = () => false, toast = () => {}, esc = t => String(t), LOGO = () => '', md = t => t, I = {chev: ''};
 const fetch = async p => ({json: async () => (o.feeds || {})[decodeURIComponent(p.split('/')[1])] || {ok: false, name: decodeURIComponent(p.split('/')[1]), entries: [], out: 'none'}});
 const S = {snap: {sessions: [], needs: []}, view: 'home', thread: null, ctx: null, feeds: {}, sent: o.sent || {}, ob: o.ob || [], openSteps: {}, gone: {}, waitNew: null};
 const OB = {}, drain = () => {}, working_ = () => [], keepSent = () => {}, loadSettings = () => { log.settings++ };
@@ -3237,7 +3237,7 @@ const threadTitle = n => n, PN = () => 'p', sentBubbles = () => '', starting = (
   + line('const ended=') + grab('function convo(') + grab('function takeSnap(') + grab('async function loadFeed(')
   + slice('/* B177: the open view and chat', '/* --- doing things') + line('function open(') + line('function goView(')
   + slice('\ntakePlace();', 'if(HOME_PAGE){  // F134') + line('placeLoad();  // B177')
-  + `;return {S, TK, log, location, open, goView, takeSnap, loadFeed, convo, talkHTML, talkName, talkKeep, at: () => [S.view, S.thread]};`;
+  + `;return {S, TK, log, location, open, goView, takeSnap, loadFeed, convo, talkHTML, talkName, talkKeep, talkKept, at: () => [S.view, S.thread]};`;
   return new Function('o', 'sessionStorage', 'localStorage', body)(o, o.tab, o.browser || map());
 }
 const c = (n, title) => ({name: n, title: title || n, state: 'live'});
@@ -3265,7 +3265,8 @@ const snap = (...l) => ({at: 'now', sessions: [c('c1'), ...l], needs: []});
   load({tab}).open('c3'); p = load({tab, feeds: {c3: {ok: false, out: 'no such page'}}}); p.takeSnap(snap()); await settle(); out.unread = p.at();
   // just started, its message not landed: not gone; a stand-in lives with its outbox item
   p = load({tab, sent: {c3: {pending: [{id: 'k', text: 'x'}]}}}); p.takeSnap(snap()); await settle(); out.fresh = p.at();
-  load({tab}).open('@k1'); out.standIn = [load({tab, ob: [{cid: 'k1', newchat: true, args: {}}]}).at()];
+  p = load({tab}); p.goView('plan'); p.open('@k1'); p = load({tab, ob: [{cid: 'k1', newchat: true, args: {}}]}); out.standIn = [p.at()];
+  p.open('c8'); out.quiet = p.log.focus || 0; p.open('c3'); out.quiet = [out.quiet, p.log.focus]; p.open('@k1');
   out.standIn.push(load({tab}).at());
   // projects, by Home's key or by the run's own title; another tab
   tab = map(); load({tab}).goView('plan'); out.other = [load({tab, path: '/p/b/'}).at(), load({tab}).at(), load({tab: map()}).at()];
@@ -3289,6 +3290,13 @@ const snap = (...l) => ({at: 'now', sessions: [c('c1'), ...l], needs: []});
   out.talk = [p.at(), p.talkName(), p.talkHTML().includes('An old reply.'), p.log.spoke, p.log.heard, p.TK.state];
   p = load({tab: map(), browser}); p.takeSnap(two); out.talkNewTab = p.talkName();
   p = load({tab, browser, path: '/p/b/'}); p.takeSnap(snap(c('c4'), c('c2', 'Talk'))); out.talkOther = p.talkName();
+  p = load({tab, browser, path: '/p/c/', feeds: {c4: talk}}); p.talkKeep('c4'); p.goView('talk');
+  p = load({tab, browser, path: '/p/c/', feeds: {c4: talk}}); p.takeSnap(snap()); p.talkHTML(); await settle(); const h = p.talkHTML();
+  out.talkEnded = [h.includes('An old reply.'), h.includes('This chat has ended.'), h.includes('Your next message opens a new Talk chat.'), p.talkName(), p.log.spoke.length];
+  p = load({tab, browser, path: '/p/c/'}); p.takeSnap(snap()); p.talkHTML(); await settle(); out.talkGone = p.talkHTML().includes('Talk to the run');
+  p = load({tab: tab2, browser, path: '/p/c/'}); p.talkKeep(''); load({tab: map(), browser, path: '/p/c/'}).talkKeep('c9'); out.talkNone = p.talkKept();
+  const own = {tab: map(), browser, path: '/'}; load({...own, title: 'x · runner'}).talkKeep('c4');
+  p = load({...own, title: 'y · runner'}); out.talkOwn = [p.talkKept(), load({...own, title: 'x · runner'}).talkKept()];
   console.log(JSON.stringify(out));
 })();
 """
@@ -3315,7 +3323,10 @@ def test_reload_b177(tmp: Path) -> None:
     eq(o['gone'], [['plan', 'c3'], ['plan', 'c3'], home, home], 'a chat that no longer exists: Home, once the run says so')
     eq((o['slot'], o['goneSlot']), (['home', 's1'], home), 'a slot too')
     eq((o['unread'], o['fresh']), (['home', 'c3'], ['home', 'c3']), 'a feed that could not be read, or a chat just started, is not gone')
-    eq(o['standIn'], [['home', '@k1'], home], 'a chat still starting, while the outbox has it')
+    eq(o['standIn'], [['plan', '@k1'], home], 'a chat still starting, while the outbox has it')
+    eq(o['quiet'], [0, 1], 'and its box is not focused when it gets its name')
+    eq(o['talkEnded'], [True, True, True, '', 0], "Talk's chat that has ended: its words and that it ended; the next message opens a new one")
+    eq((o['talkGone'], o['talkNone'], o['talkOwn']), (True, '', ['', 'c4']), 'a gone one greets; another tab, or another project on the same address, does not set it')
     eq(o['other'], [home, ['plan', None], home], 'two projects, or two tabs, do not share')
     eq(o['own'], [home, ['status', None]], "nor two projects on a run's own address")
     eq(o['junk'], [home] * 4 + [['status', None]], 'what is no place is Home; an old view name is its new one')

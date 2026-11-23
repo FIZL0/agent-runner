@@ -536,7 +536,8 @@ function placeOf(text,hash,projects,starting){
   let o;try{o=JSON.parse(text||'{}')}catch(e){}
   if(!o||typeof o!=='object')o={};
   const v=viewOf(o.v), t=typeof o.t==='string'?o.t:'';
-  return{v:known(v)?v:'home',t:/^\w[\w.-]*$/.test(t)||(starting||[]).includes(t)?t:'',link:false};
+  const ok=!t||/^\w[\w.-]*$/.test(t)||(starting||[]).includes(t);  // a stand-in that went is a chat that is gone
+  return{v:ok&&known(v)?v:'home',t:ok?t:'',link:false};
 }
 /* F124: the state pill: the run's state (ui_model.run_state) and its colour */
 function runPill(snap){
@@ -1787,9 +1788,10 @@ function slashTake(j){
 
 /* --- F93: Talk: the mic hears the person (Web Speech API), the words go to the Talk session (the `talk` action),
    and its reply is read aloud (F158: run speech, else speechSynthesis); the chat box under the mic works without either ------------- */
-const TALK_FOR=HKEY?':'+HKEY:'', TALK_KEY='ar-talk'+TALK_FOR, TALK_OLD='ar-talkold'+TALK_FOR, TALK_START='ar-talkstart'+TALK_FOR;  /* the Talk session this browser opened ('new': none yet, the next message opens one), and the Talk chats New Talk chat left (F157) */
-/* B177: Talk's own chat, per project (TALK_FOR: through Runner Home they share an address) and per tab; a new tab takes the browser's last */
-const talkKept=()=>tabStore.get(TALK_KEY)||store.get(TALK_KEY), talkKeep=v=>{tabStore.set(TALK_KEY,v);store.set(TALK_KEY,v)};
+const TALK_FOR=':'+(HKEY||document.title), TALK_KEY='ar-talk'+TALK_FOR, TALK_OLD='ar-talkold'+TALK_FOR, TALK_START='ar-talkstart'+TALK_FOR;  /* the Talk session this browser opened ('new': none yet, the next message opens one), and the Talk chats New Talk chat left (F157) */
+/* B177: Talk's own chat, per project (TALK_FOR: they can share an address) and per tab; a new tab takes the
+   browser's last. '-': this tab has none, whatever another tab keeps. talkWas: the tab's chat, also once it has ended */
+const talkKept=()=>{const v=tabStore.get(TALK_KEY);return v==='-'?'':v||store.get(TALK_KEY)}, talkKeep=v=>{tabStore.set(TALK_KEY,v||'-');store.set(TALK_KEY,v)}, talkWas=()=>{const v=tabStore.get(TALK_KEY);return/^c\d+$/.test(v)?v:''};
 const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
 const TK={rec:null,heard:'',trail:null,report:'',upAt:0,state:'',wait:null,said:'',unlocked:false,note:'',held:'',playing:'',hold:false,holdId:null,again:false,ear:null,gen:0,starting:[]};  /* gen: counts New Talk chat presses; starting: the sends that open a chat whose name is not known yet (F157); state: '', listening, thinking, speaking; ear: the listen under way (listen()); trail: what happened on the mic (micLog), report: the one to copy, upAt: when a hold ended; playing: the reply a play button reads; held: the reply the browser wants a tap for (F158) */
 /* F124: Talk's settings (TALK_SET), and whether its dock shows the mic or the box, as this browser last had them */
@@ -1999,6 +2001,9 @@ const talkGoing=()=>TK.wait&&TK.wait.out?`<div class="msgs"><div class="u pendin
 function talkHTML(){
   const n=talkName(), going=talkGoing();
   if(!n&&!going&&!S.snap.at&&/^c\d+$/.test(talkKept()))return `<div class="col"><div class="think">${LOGO()}Loading…</div></div>`;  // B177: no greeting before the chat it had
+  const was=!n&&!going&&!TK.wait?talkWas():'';  // B177: the chat this tab had has ended: its words stay until the next message
+  if(was){if(!S.feeds[was]&&!TK.loading){TK.loading=true;loadFeed(was).finally(()=>{TK.loading=false})}
+    if(!S.feeds[was]||S.feeds[was].ok)return `<div class="col">${convo(was,talkShown)}${S.feeds[was]?'<div class="small" style="text-align:center">Your next message opens a new Talk chat.</div>':''}</div>`}
   if(!n)return going?`<div class="col">${going}<div class="think">${LOGO()}Starting the chat…</div></div>`: `<div class="col"><div class="greet">${LOGO()}Talk to the run</div><div class="small" style="text-align:center">Tap the mic and ask, say, what is going on: the reply is read aloud. ${talkKept()==='new'?'Your next message opens a new Talk chat. The old one stays in Chats.':'Talk opens a chat of its own the first time.'}</div></div>`;
   if(!S.feeds[n]&&!TK.loading){TK.loading=true;loadFeed(n).finally(()=>{TK.loading=false})}  /* its first look */
   return `<div class="col">${convo(n,talkShown)}${going}</div>`;
@@ -2087,7 +2092,7 @@ function hush(){TK.playing='';if(TK.state==='speaking')TK.state='';TK.turn=(TK.t
 /* a Talk reply's play button: reads that reply, or stops it */
 function playReply(k){
   if(TK.playing===k)return hush();
-  const n=talkName(), ms=threadMsgs(feedOf(n)), i=ms.findIndex((m,j)=>(m.k||n+':'+j)===k);
+  const n=talkName()||talkWas(), ms=threadMsgs(feedOf(n)), i=ms.findIndex((m,j)=>(m.k||n+':'+j)===k);
   if(i>=0)speak(plain(ms[i].text),k);
 }
 function listen(){
@@ -2220,7 +2225,7 @@ function keepPlace(){const p=JSON.stringify({v:S.view,t:S.thread||''});if(!HOME_
 function takePlace(){
   if(HOME_PAGE)return;
   const p=placeOf(tabStore.get(PLACE_KEY),location.hash,!!HB,S.ob.filter(x=>x.newchat).map(x=>'@'+x.cid));
-  S.view=p.v;S.thread=p.t||null;S.kept=p.t;
+  S.view=p.v;S.thread=p.t||null;S.kept=p.t;S.quiet=p.t[0]==='@'?p.t:'';
   if(p.link)try{history.replaceState(null,'',location.pathname+location.search)}catch(e){}
 }
 /* the chat a reload opened: true when the run has no such chat, and Home is open instead */
@@ -2238,7 +2243,7 @@ addEventListener('hashchange',()=>{
 function placeLoad(){if(S.thread)loadFeed(S.thread);if(S.view==='settings')loadSettings()}
 
 /* --- doing things ------------------------------------------------------------------------------------------ */
-function open(n){S.thread=n;S.drawer=false;S.sheet='';S.sure=null;loadFeed(n);render(true);setTimeout(()=>document.querySelector('[data-in]')?.focus({preventScroll:true}),50)}
+function open(n){const quiet=!!S.quiet&&S.quiet===S.thread;S.quiet='';S.thread=n;S.drawer=false;S.sheet='';S.sure=null;loadFeed(n);render(true);if(!quiet)setTimeout(()=>document.querySelector('[data-in]')?.focus({preventScroll:true}),50)}  // B177: not for a stand-in a reload opened
 function goView(v){S.view=viewOf(v);S.thread=null;S.ctx=null;S.drawer=false;S.sheet='';S.sure=null;S.kSaid='';render(true);if(S.view==='settings')loadSettings()}
 async function send(){
   const ta=document.querySelector('[data-in]');const text=(ta?.value||'').trim();
