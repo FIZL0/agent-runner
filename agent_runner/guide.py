@@ -369,7 +369,7 @@ me?", "what is blocked?"). The run page and the TUI show them.
 **Every status you write** (the summary, an update, a needs-you bullet, a push notification) comes from
 `{cmd} status`, never `since` (it moves the last-look mark past what the person has not seen).
 Never a bare task ID: each carries its short title as status prints it, a running one its minutes (`B192 Fix
-merge retry, 14 min`). It starts with its headline. Name usage only at or past 80%,
+merge retry, 14 min`). A summary or update starts with its headline. Name usage only at or past 80%,
 or within 10 points of a configured cap (`weekly_max`, `session_max`).
 
 {watch}
@@ -442,7 +442,7 @@ you, to act on a task or when the person asks which one.
   `{cmd} since --all` (what is new since the last look; it moves that mark; `{cmd} since --all 2h` or
   `yesterday` looks further back), hand its whole output over as a page as below, every time, not only when
   they ask for more, and reply with the link and a one-line gist from it in everyday words (`Since yesterday:
-  41 landed, run idle. <link>`; blocked and "{needs}" items stay on the page), without ids. Never answer /since with "too long, run it yourself".
+  41 landed, 2 stuck, run idle. <link>`; blocked and "{needs}" items stay on the page), without ids. Never answer /since with "too long, run it yourself".
 - Long output (B89): the person may be in the Claude app or on a phone, where they cannot run a command or pass
   a flag, so never tell them to ("run X", "pass --all", "see it in a terminal"). The run page already shows
   the slots, the queue, Needs you and the run log's last lines: for those (`status -n 50`, `plan waiting`),

@@ -6685,7 +6685,7 @@ def test_control_status_rules(repo: Path):
     text = control_text()
     check('Never a bare task ID' in text and 'short title' in text and 'its minutes' in text,
           'the control brief: each task ID with its short title and a running one with its minutes', text)
-    check('It starts with its headline.' in text and '1. One headline first:' in text, 'F151: the headline is first', text)
+    check('A summary or update starts with its headline.' in text and '1. One headline first:' in text, 'F151: the headline is first', text)
     check('80%' in text and 'within 10 points of a configured cap' in text and 'weekly_max' in text,
           'usage only at or past 80% or near a cap', text)
     check('push notification' in text, 'the rules cover push notifications too', text)
@@ -6715,6 +6715,9 @@ def test_control_leaves_needs_alone():
     needs = flat(topic('needs', './run'))
     check('whenever you show that item again' in needs and 'Map the answer to one of three' in needs
           and 'plan confirm ID' in needs, 'the needs topic still answers items', needs)
+    for name, t in (('needs topic', needs), ('feed brief', flat(RUNNER_BRIEF))):
+        check('never mention' not in t and 'items alone' not in t and 'unless they bear' not in t,
+              f'the rule is not in the {name}: it is unchanged', t)
     check('You are the only one watching for what needs the person' in RUNNER_BRIEF
           and 'make its first item line, word for word, the last line of your reply' in RUNNER_BRIEF,
           'the feed still pushes what needs the person', RUNNER_BRIEF)
