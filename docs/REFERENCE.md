@@ -287,7 +287,7 @@ drawer) and a desktop. It follows the browser's light or dark setting; `[ui] the
   browser: read replies aloud, the voice (Kokoro af_heart by default; every Kokoro voice, Piper or the device's own), tap or hold to talk, and auto listen (listen
   again once a reply was read, until one silent turn). Talk has its own control session, titled Talk and reused while it is live, told to answer in short
   spoken sentences with no task IDs, paths, commands, links or markdown. New Talk chat (top bar) stays in Talk, stops listening, reading aloud or waiting for a reply, clears the shown conversation, and the next message opens a fresh Talk session; this also holds after a reload in that browser. The mic needs Chrome, Edge or Safari
-  on https or localhost (a plain http LAN address gets no mic); without one it says so and the box still works. An abort before any words is retried once by itself; if it fails again, Talk's status line says what to try. While the mic starts, its line says "Starting the mic…" until sound is really captured, then "Listening…". A listen that heard no words, or a reply whose sound went wrong, shows "Copy mic report" (Talk settings has it too): the events from press to end with their times and what happened to the sound, no words, to copy and send (shown on screen to copy by hand where the clipboard is refused). Errors in toasts are plain words, never "Load failed".
+  on https or localhost (a plain http LAN address gets no mic); without one it says so and the box still works. An abort before any words is retried once by itself; if it fails again, Talk's status line says what to try. While the mic starts, its line says "Starting the mic…" until sound is really captured, then "Listening…". A listen that heard no words, or a reply whose sound went wrong, shows "Copy mic report" (Talk settings has it too): the events from press to end with their times and what happened to the sound, no words, to copy and send (shown on screen to copy by hand where the clipboard is refused). Errors in toasts are plain words, never "Load failed". A reload keeps Talk's own chat, per project and per browser tab (a new tab takes the browser's last one), and never starts the mic or reads an old reply aloud.
 - **Run speech.** Talk's replies are made into sound on the run's own machine by an engine installed there, and the run
   app plays the clips; nothing leaves the machine. Install one with `agent-runner speech install [kokoro|piper]` (a
   person can also ask a chat to install it). Kokoro, the default and the natural voice, is 354 MB of files plus about
@@ -304,7 +304,11 @@ drawer) and a desktop. It follows the browser's light or dark setting; `[ui] the
   pinned or a renamed one). Double-click a chat's name (on a phone: its ⋯) to rename it; the name is yours, so the
   run neither closes that chat when idle nor renames it. Agents working are the slots on a task. On a phone the
   sidebar is a drawer: swipe right anywhere to open it, left to close it, and its button has a dot while Home or
-  Concepts has a count.
+  Concepts has a count. A reload opens what was open: the view (Home, Talk, Status, Plan, Concepts, Settings or All
+  projects) and the open chat or slot, kept per project and per browser tab. A chat with no transcript that the run no
+  longer lists, or a view that is not there, opens Home. A link may name a view or a chat (`#plan`, `#c3` or `#s1` at
+  the end of the address); it wins over what was kept, and the # then leaves the address. When storage is blocked the
+  page opens on Home.
 - **State.** Every page's top bar has the run's state: Running, Paused, Stopping, Caps forced or Not up. A tap on it
   opens Status.
 - **Status.** One scroll in `agent-runner ui`'s order: Needs you, the run with its slots and controls, usage, what
@@ -329,7 +333,8 @@ drawer) and a desktop. It follows the browser's light or dark setting; `[ui] the
   goes back (B116). A control
   session's thread talks to that session; an agent's thread messages that agent.
   A chat opens at its newest message and follows it, unless you scrolled up; then a button jumps to the latest. A
-  refresh never moves the page, in any view.
+  refresh never moves the page, in any view. A reload does not keep the scroll position.
+  A chat that has ended shows its words and "This chat has ended." (a slot: "This slot is gone.").
 - **Message box.** Enter sends, Shift+Enter starts a new line, and each thread keeps its own draft. An About
   line says what the message is about. Attachments are uploaded to the run (`POST /upload`), kept under
   `.runner/uploads` (`<notes>/uploads`, git-ignored with the rest of the notes folder), and handed to the

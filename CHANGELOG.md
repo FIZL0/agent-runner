@@ -4,6 +4,10 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Changed: a reload of the run app opens what was open (B177): the view (Home, Talk, Status, Plan, Concepts, Settings
+  or All projects) and the open chat or slot, kept per project and per browser tab, drawn in the first frame so Home
+  does not flash. A reload never starts the mic or reads an old reply aloud. A link may name a view or a chat (`#plan`,
+  `#c3`, `#s1`) and wins over what was kept. With storage blocked the page opens on Home.
 - Fixed: Talk's sound over Bluetooth and a bad connection (B178). A reply is read in fewer clips, with silence
   playing between them so the Bluetooth route stays open; the audio session is set for the mic and for playback; a
   pause nobody asked for is undone once per reply. A clip with no answer is tried again twice, then the phone's voice

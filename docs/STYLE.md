@@ -130,6 +130,7 @@ Motion shows where a thing came from, where it went, or that it changed. Nothing
 - **A chat is pinned to its newest message** when you open it, when you send, and while a reply comes in, unless you
   scrolled up. Then it stays put and the jump-to-latest button shows.
 - Going to a view starts at its top; coming back to one you left returns to where you were.
+- A reload opens what was open, drawn in the first frame, and never acts by itself: no mic, no sound, no focus on a box.
 - A refresh also keeps focus, the caret (`keepFields()`), a text selection, what is folded open, and a code block's
   sideways scroll.
 - A notice (`.notice`) floats over the top of the view and never pushes it down, except in a chat: there it has its own
