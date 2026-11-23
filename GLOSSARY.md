@@ -121,7 +121,7 @@ _In code_: hidden_control, control_new_hidden, controlN.log
 _Avoid_: headless control, background control
 
 **Context warning**:
-A slot session's context grew past the set size; the exit line and since say how big and which files filled it
+A slot session's context grew past the set size; the exit line and since say how big and which files filled it, and the session is told once, as a turn ends, to finish and file the rest as a part
 _Said_: context budget
 _On screen_: B32 peaked 168k (over 150k): runner.py 61k, test_runner.py 22k
 _In code_: context_warn, context_over, EV_CONTEXT, cost.filled
@@ -591,3 +591,10 @@ _Said_: stopped for low memory
 _On screen_: waits for memory, 5.0 GB free, goes on at 6.0 GB
 _In code_: MEMORY, _wait_memory, waiting/<ID>
 _Avoid_: memory tool, memory lock
+
+**Task size**:
+How big a task is, from its code files, numbered outcomes and length of text; over the set size it is split into parts
+_Said_: oversized task
+_On screen_: F5 is too big for one session (size 37, over 10: ...)
+_In code_: task_size, size, too_big, SPLIT_PROMPT
+_Avoid_: weight, points

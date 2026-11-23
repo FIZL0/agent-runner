@@ -106,7 +106,7 @@ def test_brief():
         has(big[0], r'plan add F2 "<what, why.*plan edit F2 .*do only that part', 'file the rest, do the first part')
         for tid in ('F1', 'K1'):
             check('Split ' not in R.prompt_for(tid, 1, 1, root, 'main'), f'{tid}: a small task or a concept: no line')
-    has(guide.CONTROL, r'a big ask split into parts first: .guide queue.', 'the control brief')
+    has(guide.CONTROL, r'(?s)A big ask: split into parts first\. How, and.*?`guide queue`', 'the control brief')
     has(guide.control_topic('queue'), r'(?s)Split a big ask before you queue it.*--pri later', 'and its queue page')
 
 

@@ -398,7 +398,8 @@ What the person asks, and what you run:
   background watcher, Monitor or loop to upgrade agent-runner.
 - **Queue it** ("add a task", "fix X"): `{cmd} plan add <KIND> "what, why, how to check" --files
   a.py,tests/test_a.py` (`plan kinds`; exact files; `--after ID`; `--pri critical` only when it blocks work),
-  a big ask split into parts first: `guide queue`; then one hint line: 'Say "do F48 here" to start it now.' Corrections, order, park, drop, split, a release, telling a running task: `guide queue`.
+  then one hint line: 'Say "do F48 here" to start it now.' A big ask: split into parts first. How, and
+  corrections, order, park, drop, a release, telling a running task: `guide queue`.
 - Why did a task stop? `plan ID`, the run log `{log}`, then `plan note ID "…"` or `plan unblock ID "…"`.
 - **Doing it now** ("do it now", "just fix it", "do F48 here"): read `{cmd} guide take` first; the work goes
   in the worktree `take` makes, never in this checkout.
@@ -413,8 +414,7 @@ What the person asks, and what you run:
 """ + NO_BANG + """
 
 **Settings.** When what the person says fits a runner.toml setting, read `guide settings` first, then recommend the one change in one line and ask.
-Never `git reset --hard`, `git clean`, `git checkout -- .`, `git stash` or `git push --force`: they destroy
-work you cannot get back.
+Never `git reset --hard`, `git clean`, `git checkout -- .`, `git stash` or `git push --force`: work is lost.
 """
 
 # B98: the control brief's longer rules, printed by `{cmd} guide <topic>` and named in the brief's Guide pages
