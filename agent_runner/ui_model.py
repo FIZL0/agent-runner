@@ -270,8 +270,10 @@ def needs_rows(waiting, now: dt.datetime) -> tuple[list[dict], list[dict]]:
                       'age': P.age(stamps.get(tid, ''), now)})
         if label == 'PITCH':  # F98
             from agent_runner import pitch
-            needs[-1].update(options=['Approve', 'Not this'], copy=concept_copy(tid), changes=[
-                {'id': x['id'], 'title': x['title']} for x in pitch.changes_of(tid, state='waiting')])
+            xs = [{'id': x['id'], 'title': x['title']} for x in pitch.changes_of(tid, state='waiting')]
+            needs[-1].update(copy=concept_copy(tid), changes=xs, options=['Approve'] + [
+                f'Not {w}: {how}' for w in ['this'] + ([x['id'] for x in xs] if len(xs) > 1 else [])
+                for how in ('reopen', 'drop')])
     return needs, concepts
 
 
@@ -718,8 +720,10 @@ def answer_argv(tid: str, text: str, button: bool = False) -> tuple[list[str], s
     if label == 'PITCH' and button:  # F98
         if said.lower() == 'approve':
             return ['pitch', 'approve', tid], f'{tid} approved'
-        if said.lower() in ('not this', 'no'):
-            return ['pitch', 'no', tid], f'{tid}: the run undoes it and reopens its tasks'
+        if m := re.fullmatch(r'not (\w+): (reopen|drop)', said, re.I):
+            one, how = m[1], m[2].lower()
+            argv = ([] if how == 'reopen' else ['--drop', 'all']) if one.lower() == 'this' else [f'--{how}', one]
+            return ['pitch', 'no', tid, *argv], f'{tid}: the run undoes it'
         return [], ''
     if label == 'DECIDE' and button:
         from agent_runner.brief import has_sheet

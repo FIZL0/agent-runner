@@ -6,7 +6,7 @@ one pitch (`groups`); a group opens as a pitch once it has been quiet for `[run]
 `[run] approve_batch` tasks (`open_due`). A pitch is a page for the person (`page_html`), an item under Needs you
 (`rows`) and an event the runner feed pushes to the phone. Approve pushes the shared branch up to the pitch's last
 merge, in merge order (`approve`, `target`); Not this marks changes to be undone (`refuse`), which the run does
-under the merge lock (`merge.undo_changes`).
+under the merge lock (`undo.undo_changes`).
 
 A change's `state`: waiting -> approved -> pushed, or waiting -> undoing -> undone.
 """
@@ -137,8 +137,9 @@ def _line_of(tid: str, base: str) -> str:
     return next((ls[i] for _, _, t, _, i in P.iter_tasks(ls) if t == tid), '')
 
 
-def landed(tids: list[str], base: str, merged: str) -> None:
-    """The tasks of one landed merge, each a change that waits for approval. Their task branches are still there."""
+def landing(tids: list[str], base: str, merged: str) -> None:
+    """The tasks of one tested merge about to land, each a change that will wait for approval. Recorded before it
+    lands, so a run that dies in between leaves no merge untracked (`settle`). Their task branches are still there."""
     if not on():
         return
     plan, new = _plan_prefix(), []
@@ -151,12 +152,24 @@ def landed(tids: list[str], base: str, merged: str) -> None:
                     'files': [f for f in files if f and not (plan and f.startswith(plan))],
                     'waits': P.fields(line).get('after', []) if line else [], 'say': part(tid),
                     'subject': S.git('log', '-1', '--format=%s', after).stdout.strip() if after else '',
-                    'state': 'waiting', 'pitch': '', 'how': '', 'why': '', 'undo': '', 'err': ''})
-        part_file(tid).unlink(missing_ok=True)
+                    'state': 'landing', 'pitch': '', 'how': '', 'why': '', 'undo': '', 'err': ''})
     with edit() as d:
         have = {x['key'] for x in d['changes']}
         d['changes'] += [x for x in new if x['key'] not in have]
-    for x in new:
+
+
+def landed(merged: str, ok: bool) -> None:
+    """The merge `landing` recorded landed (`ok`), or did not."""
+    if not on():
+        return
+    with edit() as d:
+        mine = [x for x in d['changes'] if x['state'] == 'landing' and x['merged'] == merged]
+        for x in mine:
+            x.update(state='waiting', at=time.time())
+        if not ok:
+            d['changes'] = [x for x in d['changes'] if x not in mine]
+    for x in mine if ok else []:
+        part_file(x['id']).unlink(missing_ok=True)
         S.log(f'{x["id"]}: merged, waits for your approval before it is pushed ([run] approve)')
 
 
@@ -185,9 +198,10 @@ def _related(a: dict, b: dict, shared: set[str]) -> bool:
     if a['id'] == b['id'] or a['id'] in b['waits'] or b['id'] in a['waits']:
         return True
     fa, fb = ({f for f in x['files'] if f not in shared} for x in (a, b))
-    stem = lambda fs: {re.sub(r'^test_|_test$', '', Path(f).stem) for f in fs if Path(f).suffix not in ('', '.md')}
+    tests = lambda fs: {m[1] or m[2] for f in fs if (m := re.fullmatch(r'test_(.+)|(.+)_test', Path(f).stem))}
+    code = lambda fs: {Path(f).stem for f in fs}
     where = lambda fs: {d for f in fs if (d := str(Path(f).parent).replace('\\', '/')).split('/')[0] not in COMMON_DIRS}
-    return bool(fa & fb or stem(fa) & stem(fb) or where(fa) & where(fb))
+    return bool(fa & fb or tests(fa) & code(fb) or code(fa) & tests(fb) or where(fa) & where(fb))
 
 
 def groups(changes: list[dict], shared=()) -> list[list[dict]]:
@@ -294,6 +308,22 @@ ul{margin:0;padding-left:1.2em}
 </style>"""
 
 
+def also_going(pid: str, d: dict) -> list[str]:
+    """The unpushed commits approving `pid` pushes that are no task's change and not the plan's alone (a commit made
+    by hand, a repair, what was unpushed before `approve` was on), so the person approves those knowingly."""
+    ref, to = _remote_ref(), target(d, pid)[0]
+    if not (ref and to):
+        return []
+    plan, known = _plan_prefix(), set()
+    for x in d['changes']:
+        if x['before']:
+            known |= set(S.git('rev-list', f'{x["before"]}..{x["after"]}').stdout.split())
+        known.add(x['undo'])
+    out = S.git('log', '--no-merges', '--format=%H %s', f'{ref}..{to}', '--', '.',
+                *([f':(exclude){plan}'] if plan else [])).stdout.splitlines()
+    return [l[41:] for l in out if l[:40] not in known]
+
+
 def page_html(pid: str, d: dict, project: str = '') -> str:
     """A pitch's page: per change what it changes, why, how to try it and what it might break, as its agent wrote
     it; the files at the bottom."""
@@ -310,6 +340,9 @@ def page_html(pid: str, d: dict, project: str = '') -> str:
                      + (f'<div class="pair">{pair}</div>' if pair else '') + '</article>')
         files.append(f'<p>{html.escape(x["id"])}</p><ul>'
                      + ''.join(f'<li><code>{html.escape(f)}</code></li>' for f in x['files']) + '</ul>')
+    if also := also_going(pid, d):
+        files.append('<h3>Also goes out with them</h3><ul>' + ''.join(f'<li>{html.escape(l)}</li>' for l in also)
+                     + '</ul>')
     n = len(xs)
     return (f'<title>{html.escape(project)} {pid}</title>\n<meta name="claude:viewport-fit-sides" content="cover">\n'
             f'{STYLE}<div class="wrap"><div><h1>{n} change{"s" * (n != 1)} ready to push</h1>'
@@ -416,12 +449,14 @@ def _remote_ref() -> str:
 
 
 def settle() -> None:
-    """What the remote has already (pushed by hand, or before `approve` was on) waits for nothing."""
-    if not (ref := _remote_ref()):
-        return
+    """A merge that landed as the run died waits like any other; what the remote has already (pushed by hand, or before `approve` was on) waits
+    for nothing."""
+    ref, branch = _remote_ref(), S.default_branch()
     with edit() as d:
         for x in d['changes']:
-            if x['state'] in ('waiting', 'approved') and _anc(x['merged'], ref):
+            if x['state'] == 'landing' and _anc(x['merged'], branch):  # the run died before `landed`
+                x['state'] = 'waiting'
+            if ref and x['state'] in ('waiting', 'approved') and _anc(x['merged'], ref):
                 x['state'] = 'pushed'
 
 
@@ -474,7 +509,7 @@ def approve(pid: str) -> tuple[int, str]:
     to, left = target(d, pid)
     if left:
         return 0, (f'{pid} is approved, and not pushed yet: it goes out in merge order, and {_blockers(left, pid)} '
-                   f'landed before it. Approve that too, and both are pushed.')
+                   f'landed before it or with it. Approve that too, and both are pushed.')
     return 1, f'{pid} is approved, and not pushed: {"; ".join(said)}. The run tries again.'
 
 
@@ -557,8 +592,8 @@ def cmd_pitch(argv: list[str]) -> int:
         picks = {t: 'reopen' for t in back or ([] if drop else every)} | {t: 'drop' for t in drop}
         rc, said = refuse(a.pitch, picks, a.why)
         if not rc and (lk := plat.lock(S.C.notes('run.lock'))):  # no run is up: this process does it now
-            from agent_runner import runner
-            from agent_runner.merge import undo_changes
+            from agent_runner import runner  # noqa: F401 - loads the modules `init` sets up
+            from agent_runner.undo import undo_changes
             S.init()
             undo_changes(S.default_branch())
             lk.close()

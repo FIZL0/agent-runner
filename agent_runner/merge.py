@@ -28,7 +28,7 @@ from agent_runner.state import commit_plan, EV_LANDED, EV_LEFT, EV_PART
 from agent_runner.slots import (backend, entries, env_vars, merge_env, MUX, slot_env, trim, worktree)
 from agent_runner.join import joined, LANDED, merge_into, renumber_doubles, task_env, TASK_SID, WAITING
 from agent_runner.land import (announce_release, BROKEN, flaky, land, land_tick, published, push_landed,
-    REOPENED, reopen_landed, UNPUSHED)
+    reopen_landed, UNPUSHED)
 
 
 def left_merging() -> set[str]:
@@ -1349,15 +1349,16 @@ def batch_land(t: BatchTurn, last: bool = False):
     if (got := caught_up(t.tid, t.branch, t.d, t.base, t.merged, [t.tid, *t.riders])) is None:
         return BATCH_RETRY
     t.base, t.merged = got
+    pitch.landing([t.tid, *t.riders], t.base, t.merged)  # F98: nothing unless [run] approve
     with LANDING:
         why = land(t.tid, t.branch, t.merged)
+    pitch.landed(t.merged, not why)
     if why == 'conflict' and not last:
         return BATCH_RETRY
     if why:
         return why
     for x in [t.tid, *t.riders]:
         LANDED[x] = (t.base, t.merged)
-    pitch.landed([t.tid, *t.riders], t.base, t.merged)  # F98: nothing unless [run] approve
     return None
 
 
@@ -1395,135 +1396,6 @@ def merge_batch(tid: str, branch: str, inline: bool = False, yields: bool = True
         return f'{tid}: no merge landed in three tries'
     finally:
         git('merge', '--abort', cwd=d)
-        git('checkout', '-q', '--detach', cwd=d)
-
-
-# --- F98: undoing a change a person did not approve -------------------------------------------------------------
-
-UNDO_FIXER = """This checkout is half way through undoing what task {tid} changed (a `git revert`), and git could not \
-finish it: {files}
-
-Nobody will answer questions: decide. See what {tid} did with `git diff {before} {after}`. Resolve each conflict so that \
-{tid}'s change is gone and everything other tasks did since stays. Change nothing else. Then `git add` the files and \
-stop: no commit, no push, no reset. If it cannot be undone without breaking other work, leave the conflicts and say why."""
-
-
-def _undo_one(x: dict, d: Path) -> str:
-    """Take change `x` (`pitch`) back out of the checkout `d`, staged and not committed; why it could not, or ''.
-    The plan's own files stay as they are: the caller edits them."""
-    if not x['before']:
-        return 'its merge could not be told apart from the others it landed with'
-    tid, plan_dir = x['id'], '' if C.plan_external else plan_rel('').rstrip('/')
-    g = lambda *a, **kw: git(*a, cwd=d, **kw)
-    idx = {'env': {**os.environ, 'GIT_INDEX_FILE': str(C.notes('undo.index'))}}
-    C.notes('undo.index').unlink(missing_ok=True)
-    g('read-tree', x['after'], **idx)
-    if plan_dir:  # its plan edits are not undone: read as if it had made none
-        g('rm', '-r', '-q', '--cached', '--ignore-unmatch', '--', plan_dir, **idx)
-        if not g('rev-parse', '-q', '--verify', f'{x["before"]}:{plan_dir}').returncode:
-            g('read-tree', f'--prefix={plan_dir}/', f'{x["before"]}:{plan_dir}', **idx)
-    tree = g('write-tree', **idx).stdout.strip()
-    one = g('commit-tree', tree, '-p', x['before'], '-m', f'{tid} as one commit').stdout.strip() if tree else ''
-    if not one:
-        return 'git could not rebuild its change'
-    if tree == g('rev-parse', f'{x["before"]}^{{tree}}').stdout.strip() or \
-            not (r := g('revert', '--no-commit', one)).returncode:
-        g('revert', '--quit')
-        return ''
-    files = g('diff', '--name-only', '--diff-filter=U').stdout.split()
-    if files and C.run['fix_merges']:
-        log(f'{tid}: undoing it conflicts in {", ".join(files)}; handing it to a fix session')
-        if why := fixer(f'{tid} undo {", ".join(files)}', UNDO_FIXER.format(
-                tid=tid, files=', '.join(files), before=x['before'], after=x['after']), d, 'fix', 'undo it')[1]:
-            return why
-        files = g('diff', '--name-only', '--diff-filter=U').stdout.split()
-        if not files and not g('diff', 'HEAD', '--check').stdout.count('leftover conflict marker'):
-            g('revert', '--quit')
-            return ''
-    return f'it conflicts with later work in {", ".join(files)}' if files else \
-        (r.stderr.strip().splitlines() or ['git revert failed'])[-1][:200]
-
-
-def _undo_plan(x: dict, todo: Path, done: Path) -> None:
-    """The plan's side of an undo: the task reopens, or stays closed as dropped, with the person's why."""
-    tid, live = x['id'], P.open_ids(P.lines(todo))
-    said = 'not approved, its merge was undone' + (f': {x["why"]}' if x['why'] else '')
-    if x['how'] == 'drop':
-        if tid in live:
-            P.drop(tid, said, todo=todo, done=done)
-        elif tid in {t for _, _, t, _, _ in P.iter_tasks(P.lines(done))}:
-            P.note(tid, f'dropped: {said}', todo=done)
-        return
-    if tid not in live:
-        P.restore(tid, todo=todo, done=done)
-        P.note(tid, said, todo=todo)
-    else:
-        P.unblock(tid, said, todo=todo)
-
-
-def undo_changes(branch: str) -> None:
-    """F98: undo the changes a person said Not this to (`pitch.undoing`): one commit each on the shared branch,
-    newest first, tested and landed like a merge. One that cannot be goes back under Needs you with why."""
-    for x in pitch.undoing():
-        if releasing(x['id'], branch):
-            return
-        with MERGE.turn(lambda: 1):
-            try:
-                why = _undo(x, branch)
-            except Exception as e:  # noqa: BLE001 - said under Needs you, not lost in a thread
-                why = f'{type(e).__name__}: {e}'
-        if why:
-            log(f'{x["id"]}: not undone: {why}')
-            pitch.not_undone([x['key']], why)
-
-
-def _undo(x: dict, branch: str) -> str:
-    """`undo_changes` for one change, holding MERGE: why it could not, or ''."""
-    tid, d = x['id'], worktree('merge', branch)
-    adopt_merge(d)
-    try:
-        for attempt in range(3):
-            git('merge', '--abort', cwd=d)
-            clean(d)
-            base = git('rev-parse', branch).stdout.strip()
-            git('checkout', '-q', '--detach', base, cwd=d)
-            if why := _undo_one(x, d):
-                return why
-            if not C.plan_external:
-                _undo_plan(x, d / plan_rel('TODO.md'), d / plan_rel('DONE.md'))
-            git('add', '-A', cwd=d)
-            head = f'{tid}: ' if C.run['include_task_id_in_commit'] else ''
-            if git('commit', '-qm', f'{head}undo, not approved', '--allow-empty', cwd=d).returncode:
-                return 'the undo could not be committed'
-            merged = git('rev-parse', 'HEAD', cwd=d).stdout.strip()
-            if why := tested(tid, d, base, [tid]):
-                FAILED.pop(tid, None)
-                return why
-            if (got := caught_up(tid, branch, d, base, merged, [tid])) is None:
-                continue
-            with LANDING:
-                why = land(tid, branch, got[1])
-            if why == 'conflict' and attempt < 2:
-                continue
-            if why:
-                return why
-            if C.plan_external:
-                with plansync.locked(C):
-                    plansync.pull(C, force=True)
-                    _undo_plan(x, C.todo, C.done)
-                    if out := plansync.publish(C, f'{tid}: undone, not approved'):
-                        log(out)
-            msg = f'{tid}: undone, not approved ({"dropped" if x["how"] == "drop" else "reopened"})'
-            note(msg)
-            log(msg)
-            REOPENED.add(tid)
-            pitch.undone([x['key']], got[1])
-            return ''
-        return 'the undo did not land in three tries'
-    finally:
-        git('revert', '--quit', cwd=d)
-        git('merge', '--abort', cwd=d)
-        clean(d)
         git('checkout', '-q', '--detach', cwd=d)
 
 

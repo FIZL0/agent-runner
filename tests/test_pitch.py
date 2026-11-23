@@ -18,7 +18,7 @@ from pathlib import Path
 from _check import check, eq, git, has, report, run
 
 from agent_runner import runner as R  # noqa: E402
-from agent_runner import land, merge as M, pitch, plan as P, sched, status, ui_model as U  # noqa: E402
+from agent_runner import land, merge as M, pitch, plan as P, sched, status, ui_model as U, undo  # noqa: E402
 
 TASKS = {'F1': ('one', 'ui/menu.py', ''), 'F2': ('two', 'ui/menu.py', ''), 'F3': ('three', 'net/send.py', ''),
          'F4': ('four', 'other/x.py', ''), 'F5': ('five', 'far/y.py', ' | after: F4')}
@@ -132,7 +132,7 @@ def test_held(tmp: Path):
     row = status.waiting_ok()[-1]
     eq(row[:2] + (row[4],), ('PITCH', 'pitch1', 'https://claude.ai/artifact/abc'), 'it is under Needs you')
     need = U.needs_rows([row], dt.datetime.now())[0][0]
-    eq((need['options'], [c['id'] for c in need['changes']]), (['Approve', 'Not this'], ['F1']), 'with its answers')
+    eq((need['options'], [c['id'] for c in need['changes']]), (['Approve', 'Not this: reopen', 'Not this: drop'], ['F1']), 'with its answers')
     ev = [e for e in status.read_events() if e['kind'] == pitch.EV_PITCH]
     eq(len(ev), 1, 'one event is logged for the phone')
     has(status.needs_you_line(json.dumps(ev[0]), {}, dt.datetime.now(), []) or '', r'needs you: Approve 1 change',
@@ -140,6 +140,8 @@ def test_held(tmp: Path):
     open_all()
     eq(len([e for e in status.read_events() if e['kind'] == pitch.EV_PITCH]), 1, 'said once')
     eq(U.answer_argv('pitch1', 'Approve', True)[0], ['pitch', 'approve', 'pitch1'], 'Approve runs the command')
+    eq(U.answer_argv('pitch1', 'Not F1: drop', True)[0], ['pitch', 'no', 'pitch1', '--drop', 'F1'], 'so does Not this')
+    eq(U.answer_argv('pitch1', 'Not this: reopen', True)[0], ['pitch', 'no', 'pitch1'], 'for all of it too')
     eq(U.pitch_no('pitch1', 'drop', 'F1')['code'], 3, 'Not this asks first')
     r = run(repo, 'pitch', 'approve', 'pitch1')
     eq(r.returncode, 0, 'approved: ' + r.stdout + r.stderr)
@@ -157,6 +159,7 @@ def test_groups(tmp: Path):
     eq(got, [['F1', 'F2'], ['F3'], ['F4', 'F5']], 'one file together, unrelated apart, a follower with what it follows')
     ch = lambda i, *f: {'id': i, 'files': list(f), 'waits': []}
     eq(len(pitch.groups([ch('A1', 'src/a.py'), ch('A2', 'tests/test_a.py')])), 1, 'a module and its tests')
+    eq(len(pitch.groups([ch('A1', 'x/util.py'), ch('A2', 'y/util.py')])), 2, 'not two files of one name')
     eq(len(pitch.groups([ch('A1', 'src/a.py'), ch('A2', 'src/b.py')])), 1, 'one directory')
     eq(len(pitch.groups([ch('A1', 'tests/test_a.py'), ch('A2', 'tests/test_b.py')])), 2, 'but not tests/')
     eq(len(pitch.groups([ch('A1', 'CHANGELOG.md', 'x/a.py'), ch('A2', 'CHANGELOG.md', 'y/b.py')], {'CHANGELOG.md'})),
@@ -187,10 +190,29 @@ def test_order(tmp: Path):
     eq((rc, remote(origin)), (0, h3), 'approving the first pushes both, and not the third')
     eq((state('F1'), state('F3'), state('F4')), ('pushed', 'pushed', 'waiting'), 'the third still waits')
     check(h1 != h3 != h4, 'three heads')
+    eq(pitch.also_going(of('F4'), pitch.read()), [], 'nothing else goes out with the third')
     git(repo, 'commit', '-q', '--allow-empty', '-m', 'later, by hand')
     pitch.approve(of('F4'))
     eq(remote(origin), h4, 'a later commit does not go out with it')
     check(pitch.approve('pitch1')[0] == 1, 'answered once')
+
+
+def test_died(tmp: Path):
+    print('a run that dies as a merge lands, and commits no task made')
+    repo, origin = make(tmp, 'died')
+    (repo / 'hand.py').write_text('x\n')
+    git(repo, 'add', '-A'), git(repo, 'commit', '-qm', 'made by hand')
+    after, pitch.landed = pitch.landed, lambda *a: None
+    try:
+        work(repo, 'F1')
+    finally:
+        pitch.landed = after
+    eq(state('F1'), 'landing', 'recorded before it landed')
+    pitch.settle()
+    eq(state('F1'), 'waiting', 'and found again: it waits')
+    open_all()
+    eq(pitch.also_going('pitch1', pitch.read()), ['made by hand'], 'the hand commit is named')
+    check('made by hand' in (repo / '.runner/concepts/pitch1.html').read_text(), 'on the page')
 
 
 def test_moved(tmp: Path):
@@ -225,7 +247,7 @@ def test_not_this(tmp: Path):
     eq(pitch.refuse('pitch1', {'F1': 'reopen'}, 'wrong colour')[0], 0, 'Not this on F1 alone')
     eq([x['id'] for x in pitch.undoing()], ['F1'], 'it waits to be undone')
     before = git(repo, 'rev-list', '--count', 'main')
-    M.undo_changes('main')
+    undo.undo_changes('main')
     eq(state('F1'), 'undone', 'undone')
     eq(int(git(repo, 'rev-list', '--count', 'main')), int(before) + 1, 'one commit')
     has(git(repo, 'log', '-1', '--format=%s', 'main'), 'F1: undo, not approved', 'that says so')
@@ -257,13 +279,13 @@ def test_not_undone(tmp: Path):
     work(repo, 'F2', 'bbb', where='aaa')
     open_all()
     pitch.refuse('pitch1', {'F1': 'reopen'})
-    M.undo_changes('main')
+    undo.undo_changes('main')
     eq(state('F1'), 'waiting', 'it waits again')
     has(pitch.rows()[0][3], r'F1 could not be undone: it conflicts with later work in ui/menu.py', 'with why')
     eq(git(repo, 'status', '--porcelain'), '', 'the main checkout is clean')
     R.C.run['test'] = 'false'
     pitch.refuse('pitch1', {'F2': 'reopen'})
-    M.undo_changes('main')
+    undo.undo_changes('main')
     R.C.run['test'] = 'true'
     has(pitch.rows()[0][3], r'F2 could not be undone: the tests fail', 'an undo that fails the gate does not land')
     check('bbb' in (repo / 'ui/menu.py').read_text(), 'F2 is still in')
@@ -290,7 +312,7 @@ def main() -> int:
     with tempfile.TemporaryDirectory() as tmp:
         t = Path(tmp)
         return report([lambda: test_off(t), lambda: test_held(t), lambda: test_groups(t), lambda: test_order(t),
-                       lambda: test_moved(t), lambda: test_not_this(t), lambda: test_not_undone(t),
+                       lambda: test_died(t), lambda: test_moved(t), lambda: test_not_this(t), lambda: test_not_undone(t),
                        lambda: test_done(t)])
 
 

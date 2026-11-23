@@ -388,7 +388,8 @@ with no new merge into it, or at once when it reaches `approve_batch` tasks.
 
 A pitch is a page for the person, rendered from what each task's agent wrote in `.runner/pitches/<ID>.json`: what it
 does, why, how to try it, the risk, and before and after when they help. In a slot, `done` refuses without the first
-four. The page is published to claude.ai by a one-shot and shown at `/concept/pitchN`. It is a Needs you item, and the
+four. It also names the commits that would go out with it and are no task's change (one made by hand, a repair,
+what was unpushed when `approve` was turned on). The page is published to claude.ai by a one-shot and shown at `/concept/pitchN`. It is a Needs you item, and the
 runner feed pushes it to the phone.
 
 Approve (the button, or `agent-runner pitch approve pitch1`) pushes exactly up to the pitch's last tested merge.
@@ -400,6 +401,7 @@ reopened, and `--drop all` drops them all) makes an undo commit per task on loca
 are left out of the undo. The task is reopened, or left closed as dropped. A conflict goes to a fix session. What
 cannot be undone returns to Needs you with the reason. An undone change never goes out without its undo commit. With
 no run up, the command does the undo itself.
+The run app, `agent-runner ui` and the terminal-style page offer the same choices per change.
 
 `agent-runner status` and the run page say "3 changes wait to be pushed (1 pitch for you to approve)". Release tasks
 (V) do not start while anything waits. If the remote moved, the next merge takes it in, and the approved work goes out
