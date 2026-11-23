@@ -630,6 +630,20 @@ the same way. A request the API refused is not a cut-off (it would fail again), 
 most 3 times. `agent-runner resume <ID>` resumes a task's last session by hand, for one the run already ended:
 when its slot is free, the edits it left come back from `wip/<ID>` (kept as `resumed/<ID>`).
 
+**Finish and ask (F102).** After `done`, the agent runs `agent-runner finish "<summary>"`: the summary goes to
+the run log (`slot N: T4 finished: …`, event `finished`) and the Stop hook ends the session at once, with no
+idle wait. Mid-task, a question only a person can answer goes through `agent-runner ask "<question>"`: the
+session ends, its work (commits and uncommitted edits) is kept on `asked/<ID>`, never merged, and the task is
+blocked `DECIDE: <question>` under Needs you. The answer (`plan confirm` or `plan change`) reopens it, and the
+next slot resumes that same session (`--resume`) on the kept work, the answer as its next message. Claude Code's
+AskUserQuestion tool stays off.
+
+**Git fence (F102).** Every Claude Code slot gets a PreToolUse hook through `--settings` (`agent-runner fence`)
+that denies `git push` in this project (anywhere while `[git] push = false`), `git reset --hard`, `git clean`
+(not `-n`) and `git checkout -- .`, and an Edit or Write in the main checkout (but its notes folder) or
+another slot; an edit outside the project, in a sibling repository the task needs, is let through. It
+replaces the no-push git config, which only Pi's sessions still get.
+
 **Idle stop.** The Stop hook starts a detached timer; a session quiet for `[run] idle` seconds is ended.
 The timer does not fire on a session a human has typed into, or one waiting out a usage limit. Nor on
 one whose agent still has a child process (a background command), until it ends or

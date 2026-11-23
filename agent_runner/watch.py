@@ -18,6 +18,7 @@ from pathlib import Path
 
 from agent_runner import cost, plat
 from agent_runner.config import finished_mark, runner_cmd
+from agent_runner.tools import ended
 from agent_runner.state import (banner, C, FORCED, forced, git, log, PAUSED, POWER, queued, READING,
     SLOTS_DIR, stopped_by, stopping)
 from agent_runner.sched import open_tasks
@@ -738,7 +739,9 @@ def stop_hook(idle: int) -> int:
         return 0
     if pi_last_error(t)[0]:
         return 0  # Pi settles after a failed model call too: the run resumes that session instead
-    if finished():  # `done` succeeded: nothing left to wait for, and its leftovers get no grace
+    if ended():  # F102: the agent ran `finish` or `ask`: end it now
+        idle = 0
+    elif finished():  # `done` succeeded: nothing left to wait for, and its leftovers get no grace
         idle = min(idle, DONE_IDLE)
     elif ev.get('background_tasks'):
         idle = max(idle, int(os.environ.get('AGENT_RUNNER_IDLE_BG', 1800)))
@@ -770,8 +773,8 @@ WAITER_POLL = 60  # s between looks at a session whose background command is sti
 
 
 def finished() -> bool:
-    """This slot's `done` has succeeded (`finished_mark`)."""
-    return bool((m := finished_mark()) and m.exists())
+    """This slot's `done` has succeeded (`finished_mark`), or its agent ran `finish` or `ask` (F102)."""
+    return bool((m := finished_mark()) and m.exists()) or ended()
 
 
 def _wait_on(pid: int, seconds: float) -> bool:

@@ -12,7 +12,8 @@ from agent_runner.guide import GLOSSARY, SAFE_SHELL, VERIFY
 from agent_runner.state import C, default_branch, git, ROOT
 
 
-PROMPT = """Unattended run: nobody will answer questions, so never ask one — decide, write down why, and go on.
+PROMPT = """Unattended run: nobody is here to answer in this chat, so never ask a question here — decide, write \
+down why, and go on. Only for what you truly cannot decide or check, `{runner} ask` (below).
 
 Do the one task named at the end of this brief, and nothing else; `<ID>` below stands for its id. You are in a git \
 worktree on branch task/<ID>: commit this repo's work here only. Never \
@@ -35,6 +36,12 @@ lists under Needs you until they answer. Before a `BLOCKED:` on access, check wh
 and try it: `gh auth status`, `wrangler whoami`, the service's own CLI login, `ssh -T`, and \
 ~/.claude/ACCESS.md if it exists; the `BLOCKED:` line then names the exact command that failed and its error \
 (e.g. `wrangler OAuth login cannot change Workers Builds settings: Authentication error`).
+
+Once `done` has run (or `done --blocked`), run `{runner} finish "<one line: what you did>"` and stop: it \
+records the summary and ends this session at once. If you hit a question only a person can answer and the work \
+should go on afterwards with what you know now, run `{runner} ask "<the question, with what you recommend>"` and \
+stop: the task is parked under Needs you with your worktree as it is, and the person's answer comes back as the \
+next message of this same session. Your AskUserQuestion tool is off; `ask` is the only way to ask.
 
 """ + VERIFY + """
 

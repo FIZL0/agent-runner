@@ -1042,6 +1042,20 @@ def similar(text: str, todo=None, skip: str | None = None, limit: int = 3, ls: l
     return out
 
 
+def last_answer(tid: str, todo=None) -> str:
+    """F102: the person's answer `confirm` or `change` last noted on the task ('your answer (DECIDE …): …', 'you
+    said, on DECIDE …: do this instead: …'), for the session that asked; '' when none is noted last."""
+    todo, _ = ensure(todo)
+    ls = list(lines(todo))
+    try:
+        i = _find(ls, tid)
+    except SystemExit:
+        return ''
+    last = ls[i + len(_item_block(ls, i)) - 1].split(' BLOCKED: ')[0].rsplit(' — ', 1)
+    said = last[1].strip() if len(last) > 1 else ''
+    return said if said.startswith(('your answer (', 'you said')) else ''
+
+
 def note(tid: str, text: str, todo=None) -> None:
     todo, _ = ensure(todo)
     ls = list(lines(todo))

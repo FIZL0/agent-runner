@@ -378,3 +378,17 @@ _Said_: other machine, other Home
 _On screen_: Devices
 _In code_: peers, peer add, peer_links
 _Avoid_: node, remote host
+
+**Git fence**:
+The check before each of a slot agent's tool calls that refuses a push, a destructive git command or an edit outside its worktree
+_Said_: git fence
+_On screen_: the git fence
+_In code_: tools.fence, fence_hook, fence_hooks
+_Avoid_: guard, sandbox
+
+**Ask**:
+A slot agent's question to the person: the task waits under Needs you, and the answer goes back to the same session
+_Said_: run ask
+_On screen_: asked with run ask
+_In code_: cmd_ask, park_asked, block_asks, answer_ask, asked/<ID>
+_Avoid_: question tool, AskUserQuestion

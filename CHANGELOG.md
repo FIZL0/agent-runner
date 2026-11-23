@@ -4,6 +4,12 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Added: runner tools on Claude Code. `agent-runner finish "summary"` ends a slot's session at once after
+  `done`, its summary in the run log. `agent-runner ask "question"` parks the task under Needs you (`DECIDE:`),
+  its work kept on `asked/<ID>`; the person's answer resumes that same session with the answer as its next
+  message. A git fence (a PreToolUse hook in every slot's `--settings`) denies `git push`, `git reset --hard`,
+  `git clean`, `git checkout -- .` and edits in the main checkout or another slot; it replaces the no-push git
+  config, which only Pi keeps (F102).
 - Added: Device Vitals in Runner Home. Home lists Devices, one card per machine with a plain verdict ("Room for
   3 more agents", or its top problem) and CPU, GPU, RAM and disk meters; a card opens that machine's vitals:
   Headroom (the smallest of the memory, CPU-load, disk-above-`min_free_gb` and usage-cap limits, at most 6, with

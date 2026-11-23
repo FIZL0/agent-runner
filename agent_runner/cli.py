@@ -41,6 +41,8 @@ Mostly for agents (you can run these too)
     agent-runner take B646 --merge    after `done` there: the runner tests and merges it (--drop: give it back)
     agent-runner resume B646          continue B646's last session, cut off by a dropped network or a reboot
     agent-runner done B646 "Halve the sheet's memory" [--blocked "why"]
+    agent-runner finish "summary"     in a slot, after done: end the session now
+    agent-runner ask "question"       in a slot: park the task under Needs you; the answer resumes the session
     agent-runner plan block B12 --after B646 "why"
     agent-runner plan move B12 top    B12 to the top: the next free agent takes it
     agent-runner plan next            the task that starts next
@@ -203,6 +205,8 @@ COMMANDS = {
     'glossary': ('glossary', 'main'),  # F22
     'voice': ('voice', 'main'),  # F21
     'ui': ('tui', 'main'),  # F67: the Run page in the terminal
+    'finish': ('tools', 'cmd_finish'),  # F102: a slot's agent ends its session now
+    'ask': ('tools', 'cmd_ask'),  # F102: a slot's agent asks the person; the answer resumes it
 }
 
 
@@ -212,6 +216,9 @@ def main(argv: list[str] | None = None) -> int:
     cmd, rest = (argv[0], argv[1:]) if argv else ('', [])
     if argv == ['control', '--brief', '--user']:  # B79: the user-level hook, in every session on the machine
         return user_brief()
+    if cmd == 'fence':  # F102: the git fence, a PreToolUse hook on every tool call of a slot: nothing else first
+        from agent_runner.tools import fence_hook
+        return fence_hook(rest)
     if cmd != 'merge-plan' and not os.environ.get('AGENT_RUNNER_SLOT'):  # not git's driver, not a slot's agent
         skill()
         user_hook()
