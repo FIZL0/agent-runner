@@ -511,7 +511,8 @@ def type_first_later(text: str) -> None:
         null = os.open(os.devnull, os.O_RDWR)
         for fd in (0, 1, 2):  # off the session's terminal, so nothing it prints lands in the TUI
             os.dup2(null, fd)
-        type_first(marker, text, since)
+        if not type_first(marker, text, since):  # recorded, so a lost first message is not silent
+            log(f'{marker.stem}: its first message could not be typed in (no shim read {marker.with_suffix(".in")})')
     finally:
         os._exit(0)
 

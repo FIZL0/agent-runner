@@ -471,6 +471,31 @@ def test_first_message_typed_after_remote_control():
             eq(argv[1], K.control_ask(ask), 'Remote Control off: the positional prompt stays')
             eq(K.CONTROL_FIRST[0], '', 'nothing to type')
 
+    from agent_runner import cmds
+    calls = []
+
+    def fake_exec(exe, argv, env):
+        calls.append(('exec', argv))
+        raise SystemExit(0)
+    here = os.getcwd()
+    os.chdir(d)  # cmd_control's init() reads the current directory
+    try:
+        with mock.patch.object(K, 'ask_waiting', lambda: ''), mock.patch.object(K, 'remote_on', lambda: True), \
+                mock.patch.object(K.plat, 'WINDOWS', False), \
+                mock.patch.dict(os.environ, {'AGENT_RUNNER_MARKER': str(R.C.notes('control3.live'))}), \
+                mock.patch.object(cmds, 'backend', lambda: types.SimpleNamespace(trust=lambda root: None)), \
+                mock.patch.object(cmds, 'type_first_later', lambda text: calls.append(('type', text))), \
+                mock.patch.object(cmds.os, 'execvpe', fake_exec):
+            try:
+                calls.append(('returned', cmds.cmd_control(['3', '--ask', ask])))
+            except SystemExit:
+                pass
+    finally:
+        os.chdir(here)
+    eq([c[0] for c in calls], ['type', 'exec'], 'control 3 --ask under its shim leaves the typer, then execs')
+    check(calls[0][1] == K.control_ask(ask) and K.control_ask(ask) not in calls[1][1],
+          'the ask goes to the typer, not on the command line', calls)
+
     marker, log_file, inbox = d / 'control3.live', d / 'control3.log', d / 'control3.in'
     log_file.write_text('earlier run https://claude.ai/code/session_old\n', encoding='utf-8')
     since = log_file.stat().st_size
