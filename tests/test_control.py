@@ -947,7 +947,7 @@ def app_world():
     """`held_world` with a control server (pid 70) and its child `w.child`, a session started from the Claude apps."""
     from agent_runner import feed
     with held_world() as w, tempfile.TemporaryDirectory() as reg:
-        w.child, w.server, w.dead = 71, 70, set()
+        w.child, w.server, w.dead, w.reg = 71, 70, set(), Path(reg)
         bridge = {'type': 'bridge-session', 'bridgeSessionId': 'session_x1', 'sessionId': APP}
         w.rows[APP] = [bridge] + [{**x, 'sessionId': APP} for x in four()]
         for pid, sid in ((71, APP), (72, 'aaaaaaaa-0000-4000-8000-000000000000')):  # 72: a person's own session
@@ -1031,6 +1031,19 @@ def test_held_app_session():
 
 def test_held_app_ended():
     print('B173: an app session the person closed is dropped; one that failed or ended with its server is not')
+    with app_world() as w:
+        w.rows[APP] = [said('fix it', T0), limit(T0 + 1), said('fix it', T0 + 60), limit(T0 + 61)]
+        w.tick(RESET + 61)
+        w.tick(RESET + 70)
+        w.tick(RESET + 80)
+        eq(len(w.H.records()), 1, 'sent twice: one copy')
+    with app_world() as w:
+        w.tick(T0 + 200)
+        w.rows['bbbbbbbb-0000-4000-8000-000000000000'] = []
+        (w.reg / '71.json').write_text(json.dumps(
+            {'pid': 71, 'sessionId': 'bbbbbbbb-0000-4000-8000-000000000000'}), encoding='utf-8')
+        w.tick(RESET + 61)
+        eq((w.H.records(), w.opened), ([], []), '/clear there: dropped')
     for how, kept in (('closed', False), ('failed', True), ('server', True)):
         with app_world() as w:
             w.tick(T0 + 200)

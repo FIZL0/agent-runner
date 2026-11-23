@@ -167,10 +167,10 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
   message with only an error and never retries it. They are now held and typed into the session in one message once the
   limit is over; `status` says how many are waiting and when they go (B170).
 - Fixes: a person's message to a control session was also lost when its reply had begun and the usage limit cut it
-  off, and when the session was started from a Claude app (through the control server), since the runner cannot type into
-  an app session. Both are now held too. Once the limit is over the runner copies that conversation into a numbered control
-  session and types the held messages there, once; the app chat itself is left as it is. A message the person closed, or
-  that got an answer meanwhile, is left alone (B173).
+  off, and when the session was started from a Claude app (through the control server). Both are now held too. The
+  runner cannot type into an app session, so once the limit is over it copies that conversation into a numbered
+  control session and types the held messages in there, once; the app chat itself is left as it is. Messages of an app
+  chat the person closed, or that were answered there meanwhile, are left alone (B173).
 
 ## 0.61.0 (2026-11-23)
 

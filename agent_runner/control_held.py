@@ -141,7 +141,8 @@ def walk(rows, dropped: float = 0.0) -> dict:
     usage-limit error, or was cut off by one ('cut'), and that no later turn of theirs answered ({id, at, text,
     norm, files}; one sent twice counts once), none sent before `dropped`; 'until', when the last such error says the limit is over; 'open',
     the messages with no reply yet; 'held_at', when a HELD_LEAD message last came in; 'errors', the replies to
-    one that were some other API error; 'answered', {words: when} of the person's answered messages; 'last_at'."""
+    one that were some other API error; 'answered', {words: when} of the person's answered messages; 'last_at';
+    'asked_to', when the last of the asks was sent."""
     w = {'asks': [], 'until': 0.0, 'open': [], 'held_at': 0.0, 'errors': 0, 'answered': {}, 'last_at': 0.0}
     fails, going = 0, []  # going: the asks the turn under way is answering
     for d in rows:
@@ -203,6 +204,7 @@ def walk(rows, dropped: float = 0.0) -> dict:
             if msg.get('stop_reason') == 'end_turn':
                 going = []
             w['open'] = []
+    w['asked_to'] = max((a['at'] for a in w['asks']), default=0.0)  # the last one's, sent twice or not
     out: list[dict] = []
     for a in w['asks']:
         if (b := next((b for b in out if same(a, b)), None)) is None:
@@ -393,7 +395,7 @@ def copy_app(rec: dict) -> str:
     if not record_file(new).exists():
         save({'n': 0, 'sid': new, 'pid': 0, 'from': sid, 'name': rec.get('name') or '', 'asks': len(w['asks']),
               'until': w['until']})
-    drop(sid, last['at'])
+    drop(sid, w['asked_to'])
     return new
 
 
@@ -519,7 +521,8 @@ def step_app(rec: dict, now: float) -> None:
     w = read(sid)
     if not w['asks']:
         return finished(rec, 'answered')
-    if w['online'] or app_closed(rec):
+    cleared = any(a['pid'] == rec['pid'] and a['sid'] != sid for a in app_sessions())  # /clear or /new
+    if w['online'] or cleared or app_closed(rec):
         drop(sid)
         return finished(rec, 'the person closed that conversation')
     rec['asks'], rec['until'] = len(w['asks']), w['until']
