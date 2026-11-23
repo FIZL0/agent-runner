@@ -610,6 +610,37 @@ def test_side_pane_f112() -> None:
         eq(tm.calls[n:], [], 'outside tmux: no pane, the feed read-only')
 
 
+def test_diff_key_f127() -> None:
+    """F127: inside tmux a slot's session is the pane beside, so h/l never reach its diff tab: g on s1 kills the
+    pane and draws the diff; g again brings the pane back. HELP lists g."""
+    tm = Tmux()
+    p = page(tmux=tm, socket=lambda name: True)
+    with mock.patch.dict(os.environ, {'TMUX': '/tmp/tmux-1/default,1,0', 'TMUX_PANE': '%3'}), \
+            mock.patch.object(U, 'runner_cmd', lambda: ['/x/run']):
+        p.key('2')
+        while p.sel().get('name') != 's1':
+            p.key('j')
+        eq(p.side.name, 's1', "s1's session in the pane beside")
+        pane = p.side.pane
+        check(('g', 'diff') in p.hint_keys(), 'the bottom line offers g diff', p.hint_keys())
+        p.key('g')
+        eq((tm.did('kill-pane')[-1:], p.side.pane, p.tab()[0]), ([['kill-pane', '-t', pane]], '', 'diff'),
+           'g: the pane is killed, the diff tab is on')
+        txt = drawn(p).text()
+        check('+new line' in txt and '-old line' in txt, 'the diff is drawn', txt)
+        check(('g', 'session') in p.hint_keys(), 'the bottom line offers g session', p.hint_keys())
+        n = len(tm.did('split-window'))
+        p.key('g')
+        eq((len(tm.did('split-window')), p.side.name, p.tab()[0]), (n + 1, 's1', 'session'),
+           'g again: the pane comes back with s1')
+        check(not tm.did('select-pane') or tm.did('select-pane')[-1] != ['select-pane', '-t', p.side.pane],
+              'focus stays on the TUI', tm.calls)
+        p.cur[2] = 0
+        p.key('g')
+        check(p.tab()[0] == 'session' and 'g shows' in p.msg, 'g on c1 (no diff): a message only', p.msg)
+    check(any(l.strip().startswith('g ') for l in T.HELP.splitlines()), 'HELP lists g')
+
+
 def test_full_screen_f112() -> None:
     """F112 Ctrl-f: in tmux the panes are laid out again (the session pane above the TUI's pane cut to its bottom
     bar, a `ui --bar` pane for the top bar above it), and back; outside tmux the main pane takes the width
@@ -1486,7 +1517,7 @@ if __name__ == '__main__':
     raise SystemExit(report([test_d_drops_f116, test_close_control_quiet_b136,test_layout, test_status_tabs, test_session_tabs, test_queue, test_form_pane_v_task,
                                test_direct_edit,
                                test_navigation, test_no_message_box_f112, test_new_chat_f112, test_side_pane_f112,
-                               test_full_screen_f112, test_side_keys_in_box_f113, test_actions, test_session_tab_b125, test_footer,
+                               test_diff_key_f127, test_full_screen_f112, test_side_keys_in_box_f113, test_actions, test_session_tab_b125, test_footer,
                                test_concept_page,
                                test_concept_chat, test_new_concept, test_enter_on_concept,
                                test_escape_tail, test_colours, test_row_ground_and_fill, test_reorder, test_parked,
