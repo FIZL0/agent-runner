@@ -2497,7 +2497,8 @@ def test_status_view_f124(tmp: Path) -> None:
     for ev in ('touchstart', 'touchmove', 'touchend', 'touchcancel'):
         check(f"document.addEventListener('{ev}'" in page, f'{ev} is handled')
     swipe = page.split('/* F124: a swipe right anywhere', 1)[1].split("addEventListener('pagehide'", 1)[0]
-    check('preventDefault' not in swipe and swipe.count('{passive:true}') == 4, 'with passive listeners only')
+    check(swipe.count('preventDefault') == 1 and swipe.count('{passive:true}') == 3 and swipe.count('{passive:false}') == 1,
+          'only its touchmove is not passive (B167)')
     for part in ('input,textarea,select', 'sideways(el)', 'translateX(', 'swipeOpens('):
         check(part in swipe, f'the swipe has {part}')
     if not shutil.which('node'):
@@ -2536,6 +2537,89 @@ def test_status_view_f124(tmp: Path) -> None:
     eq(got[11:16], ['wait', 'drag', '', 'drag', ''], 'right opens, left closes, a mostly vertical move does neither')
     eq(got[16:21], [False, True, True, False, True], 'it settles by how far and how fast')
     eq(got[21:23], [True, False], 'at the end, or not')
+
+
+# B167: the swipe's own listeners, over a stub page: a drawer and a scroller
+SWIPE_DRIVER = r"""
+const fs = require('fs'), page = fs.readFileSync(0, 'utf8');
+const logic = page.split('<script id="logic">')[1].split('</script>')[0];
+const on = {}, els = {}, S = {}, PD = {}, render = () => {}, getComputedStyle = () => ({overflowX: 'auto'});
+let DR = null, noClick = false, skip = '';
+const dragEnd = () => { DR = null }, closeSheet = () => { S.sheet = '' };
+const cls = () => ({add() {}, remove() {}});
+const $ = k => els[k] = els[k] || {style: {}, classList: cls(), offsetWidth: 280, scrollTop: 0};
+const document = {body: {}, querySelector: () => ({offsetParent: {}}),
+  addEventListener(t, f, o) { (on[t] = on[t] || []).push(f) }};
+const box = {scrollTop: 500, scrollHeight: 3000, clientHeight: 600, scrollWidth: 400, clientWidth: 400, parentElement: document.body};
+const el = {scrollHeight: 20, clientHeight: 20, parentElement: box, closest: s => skip && s.includes(skip) ? {} : null};
+let now = 0;
+const fire = (t, x, y, o = {}) => { let stopped = false;
+  on[t].forEach(f => f({target: el, touches: Array(o.n || (t === 'touchstart' || t === 'touchmove' ? 1 : 0)).fill().map((_, i) => ({identifier: i, clientX: x, clientY: y})), timeStamp: now += 100,
+    cancelable: o.cancelable !== false, preventDefault() { if (o.cancelable !== false) stopped = true }}));
+  return stopped };
+eval(logic + page.slice(page.indexOf('/* F124: a swipe right anywhere'), page.indexOf("addEventListener('pagehide'")) + `
+// a touch from (100, 300) through these [dx, dy, options]: the moves it kept from scrolling, and where the drawer ends
+function touch(open, moves, end = 'touchend') {
+  S.drawer = open; S.sheet = ''; DR = null; skip = ''; box.scrollTop = 500; box.scrollHeight = 3000; fire('touchstart', 100, 300);
+  const kept = moves.map(([dx, dy, o = {}]) => { if (o.top) box.scrollTop = o.top; if (o.h) box.scrollHeight = o.h;
+    if (o.hold) DR = {ready: true, hold: 1}; if (o.start) { fire('touchstart', 9, 9, {n: 2}); return 'start' }
+    if (o.lift) { fire('touchend', 9, 9, {n: 1}); return 'lift' }
+    return fire('touchmove', 100 + dx, 300 + dy, o) });
+  const at = $('side').style.transform; fire(end, 0, 0); return [kept.map(k => typeof k === 'string' ? k : +k).join(), !!S.drawer, at, !!noClick && !(noClick = false)];
+}
+const out = {
+  scrollFirst: touch(false, [[2, -20], [60, -30], [220, -30]]),
+  slowScroll: touch(false, [[1, -4], [3, -5, {top: 505}], [60, -6], [220, -6]]),
+  begun: touch(false, [[20, 2, {cancelable: false}], [220, 2]]),
+  grew: touch(false, [[3, 0, {top: 900, h: 3400}], [40, 0], [220, 0]]),
+  sideFirst: touch(false, [[12, 2], [60, 90], [220, 300]]),
+  diagonal: touch(false, [[20, 14], [220, 150]]),
+  shallow: touch(false, [[20, 8], [220, 150]]),
+  close: touch(true, [[-12, 3], [-60, -120], [-220, -200]]),
+  closeScroll: touch(true, [[-2, -15], [-220, -20]]),
+  wrongWay: touch(false, [[-20, 0], [220, 0]]),
+  cancel: touch(false, [[20, 0], [220, 0]], 'touchcancel'),
+  second: touch(false, [[20, 0], [0, 0, {start: true}], [220, 40, {n: 2}], [0, 0, {lift: true}], [220, 90]]),
+  grewThenScrolled: touch(false, [[3, 0, {top: 900, h: 3400}], [4, -5, {top: 905}], [220, -6]]),
+  held: touch(false, [[2, 0], [20, 0, {hold: true}], [220, 0]]),
+  tap: touch(false, [[4, 3]]),
+};
+const from = k => { skip = k; S.drawer = false; S.sheet = ''; DR = null; fire('touchstart', 100, 300);
+  const r = fire('touchmove', 200, 300); fire('touchend'); return r };
+out.box = from('textarea'); out.mic = from('.mic.hold');
+box.scrollWidth = 900; out.sideways = from('#body'); box.scrollWidth = 400;
+skip = '#sheet'; S.sheet = 'run'; fire('touchstart', 100, 300); out.sheet = [fire('touchmove', 100, 420), $('sheet').style.transform]; fire('touchend'); out.sheet.push(S.sheet);
+console.log(JSON.stringify(out));process.exit(0)`);
+"""
+
+
+def test_swipe_or_scroll_b167(tmp: Path) -> None:
+    """B167: a touch is a scroll or a drawer swipe until the finger lifts, never both."""
+    page = W.page_html().decode()
+    css = page.split('<style>', 1)[1].split('</style>', 1)[0]
+    for sel in ('.side{', '.scrim{'):
+        check('touch-action:pan-y pinch-zoom' in css.split('\n' + sel, 1)[1].split('}', 1)[0], f'{sel}}} pans up and down only')
+    if not shutil.which('node'):
+        print('  (no node here: the swipe script test is skipped)')
+        return
+    p = subprocess.run(['node', '-e', SWIPE_DRIVER], input=page, capture_output=True, text=True, encoding='utf-8', timeout=30)
+    check(p.returncode == 0, 'the swipe script runs', p.stderr)
+    got = json.loads(p.stdout or '{}')
+    for k, what in (('scrollFirst', 'a scroll that bends sideways'), ('slowScroll', 'the scroller moved first'),
+                    ('begun', 'a scroll has begun: the move is not cancelable'), ('diagonal', 'a diagonal move'),
+                    ('grewThenScrolled', 'a scroll after a new message'), ('wrongWay', 'a swipe left with the drawer closed'), ('held', 'a held row')):
+        kept, opened, *_ = got.get(k)
+        check('1' not in kept and not opened, f'{what}: no drawer, and the scroll is left alone', got.get(k))
+    eq(got['grew'][:2], ['0,1,1', True], "a chat's new message is not the finger's scroll")
+    eq(got['sideFirst'][:2], ['1,1,1', True], 'sideways, then vertical: every move is kept from scrolling')
+    eq(got['shallow'][:2], ['1,1', True], 'a shallow diagonal moves the drawer only')
+    eq(got['close'][:2], ['1,1,1', False], 'the same for the swipe that closes')
+    eq(got['closeScroll'][:2], ['0,0', True], "a scroll of the drawer's list does not close it")
+    eq(got['cancel'][:2], ['1,1', False], 'a cancelled swipe leaves the drawer as it was')
+    eq(got['second'][:2], ['1,start,1,lift,1', True], 'a second finger, down or up, does not end the lock')
+    eq(got['tap'][0::3], ['0', False], 'a tap stays a tap')
+    eq([got['box'], got['mic'], got['sideways']], [False] * 3, 'text boxes, the held mic and sideways scrollers are left alone')
+    eq(got['sheet'], [False, 'translateY(120px)', ''], "the sheet's swipe down")
 
 
 def test_chats_f128(tmp: Path) -> None:

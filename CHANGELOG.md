@@ -114,6 +114,9 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
   proven. Now only one speech recognizer runs at a time (a start waits for the old one's end, the box's dictation
   too); an abort before any words is retried once by itself, then Talk's status line says what to try in plain words,
   with the mic mode and the time to the error; a hold survives iOS taking the touch (pointercancel) and a redraw.
+- Fixes: run app on a phone: a vertical scroll could also open the sidebar drawer, and the page scrolled while the
+  drawer followed the finger. Now each touch is one thing until the finger lifts: a touch that scrolled never becomes
+  a drawer swipe, and during a drawer swipe nothing scrolls; a swipe must also be more nearly sideways (B167).
 - Added: the gate workflow (ci.yml) runs on request for a task branch before its merge (`gh workflow run ci.yml --ref task/<ID> -f
   system=windows`), so Windows-only code can be checked from a Linux slot; see docs/REFERENCE.md (T13).
 - Added: `tools/windows_vm.sh` runs test files (default `tests/test_windows.py`) of a worktree, uncommitted changes
