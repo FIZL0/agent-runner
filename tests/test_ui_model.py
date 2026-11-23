@@ -132,6 +132,22 @@ def test_idle_slots(tmp: Path) -> None:
        'the run starting, no STATE yet: [run] slots, all idle')
 
 
+def test_version_f90(tmp: Path) -> None:
+    """F90: the run writes its version into STATE and the snapshot carries it as 'version'; '' when STATE has
+    none (an older run) or no run is up."""
+    from agent_runner import __version__, loop
+    fake_run(tmp)
+    eq(U.snapshot(up=True, now=NOW, links={})['version'], '', 'a STATE with no version (an older run): empty')
+    loop.write_state({})
+    eq(json.loads(S.C.notes('STATE').read_text(encoding='utf-8')).get('version'), __version__,
+       "write_state puts the run's version in STATE")
+    eq(U.snapshot(up=True, now=NOW, links={})['version'], __version__, 'the snapshot carries it')
+    S.C.notes('STATE').write_text(json.dumps({'state': '1 slot', 'running': {}, 'version': '9.9.9'}),
+                                  encoding='utf-8')
+    eq(U.snapshot(up=True, now=NOW, links={})['version'], '9.9.9', "the version from STATE, not this process's")
+    eq(U.snapshot(up=False, now=NOW, links={})['version'], '', 'no run up: empty')
+
+
 def test_actions(tmp: Path) -> None:
     fake_run(tmp)
     ran, sent = [], []
@@ -574,7 +590,8 @@ def in_tmp(f):
 
 
 if __name__ == '__main__':
-    raise SystemExit(report([in_tmp(test_snapshot), in_tmp(test_idle_slots), in_tmp(test_actions), in_tmp(test_run_controls),
+    raise SystemExit(report([in_tmp(test_snapshot), in_tmp(test_idle_slots), in_tmp(test_version_f90),
+                         in_tmp(test_actions), in_tmp(test_run_controls),
                          in_tmp(test_real_command),
                          in_tmp(test_to_c1_by_tag), in_tmp(test_control_windows), in_tmp(test_older_run),
                          in_tmp(test_queue_rows), in_tmp(test_feed), in_tmp(test_chat_and_terminal),

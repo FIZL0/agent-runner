@@ -524,8 +524,14 @@ function render(force){
 function grow(ta){ta.style.height='auto';ta.style.height=Math.min(ta.scrollHeight,160)+'px'}
 
 /* --- live data --------------------------------------------------------------------------------------------- */
+/* F90: the run's version from the first snapshot that has one; a later, different one (the run restarted on an
+   upgrade) reloads the page for its new HTML and JS. None (an older run): nothing. */
+let RUN_VERSION='';
+function followVersion(v){if(!v)return false;if(!RUN_VERSION){RUN_VERSION=v;return false}
+  if(v!==RUN_VERSION){location.reload();return true}return false}
 function takeSnap(s){
   if(!s||s.error){if(s&&s.error)toast(s.error,true);return}
+  if(followVersion(s.version))return;
   S.snap={...S.snap,...s};
   if(S.waitNew){const fresh=chats().map(c=>c.name).filter(x=>!S.waitNew.known.includes(x));
     if(fresh.length){S.waitNew=null;open(fresh[fresh.length-1]);return}
