@@ -1209,10 +1209,39 @@ def test_cli() -> None:
     eq(T.main(['--nope']), 2, 'ui takes no arguments')
 
 
+def test_side_keys_in_box_f113() -> None:
+    p = page()
+    p.key('c')
+    eq((p.panel, p.sel()['name'], p.typing), (2, 'c1', 'c1:chat'), 'c: typing in c1\'s chat')
+    for c in 'abc':
+        p.key(c)
+    p.key('\x7f')
+    eq(p.text_of('c1:chat'), 'ab', 'Backspace (\\x7f) still deletes a character')
+    p.key('\x08')
+    eq((p.typing, p.main, p.drafts.get('c1:chat')), ('', False, 'ab'), 'Ctrl-h in a box: the panels, the draft kept')
+    p.key('\x0c')
+    eq((p.typing, p.main), ('', True), 'Ctrl-l: the right side')
+    p.key('i')
+    p.key('\x0c')
+    eq(p.typing, 'c1:chat', 'Ctrl-l in a box on the right side stays in it')
+    row = p.cur[2]
+    p.key('\n')
+    eq((p.cur[2], p.typing, p.main, p.drafts.get('c1:chat')), (row + 1, '', True, 'ab'),
+       'Ctrl-j in a box: the next row of the left list (no new line), focus kept, the draft kept')
+    p.key('\x0b')
+    eq((p.cur[2], p.sel()['name']), (row, 'c1'), 'Ctrl-k: the row above')
+    p.key('i')
+    eq(p.text_of('c1:chat'), 'ab', 'back in c1\'s box, the draft is there')
+    p.key('ESC')
+    p.key('ESC')
+    p.key('\n')
+    eq((p.cur[2], p.main), (row + 1, False), 'Ctrl-j on the panels moves down too')
+
+
 if __name__ == '__main__':
     raise SystemExit(report([test_layout, test_status_tabs, test_session_tabs, test_queue, test_form_pane_v_task,
                                test_direct_edit,
-                               test_navigation, test_chat_box, test_actions, test_session_tab_b125, test_footer,
+                               test_navigation, test_chat_box, test_side_keys_in_box_f113, test_actions, test_session_tab_b125, test_footer,
                                test_concept_page,
                                test_concept_chat, test_new_concept,
                                test_escape_tail, test_colours, test_row_ground_and_fill, test_reorder, test_parked,

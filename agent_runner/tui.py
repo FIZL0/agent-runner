@@ -25,11 +25,13 @@ Panels and their tabs (F76):
                queue a new concept (plan add K)
 
 The feed is the agent's words with its tool steps folded as '· N steps' (v shows them); a chat shows the steps,
-as a Claude session does. A box takes typing after i (or Enter): Enter sends, Shift+Enter (or Ctrl-J, Alt+Enter)
+as a Claude session does. A box takes typing after i (or Enter): Enter sends, Shift+Enter (or Alt+Enter)
 is a new line, Esc leaves it (never interrupts), and in a chat Ctrl+C interrupts while the session works (B116;
 elsewhere Ctrl+C quits). Each box keeps its draft
-across Esc and refreshes. The pane tab attaches to the session's own terminal (Enter, F88; back with Ctrl-b d). Navigation: h/l previous / next tab (h on the first tab and Esc go back to the
-panels), Ctrl-h / Ctrl-l the left / right side, 1-5 a panel (anywhere but in a box), Tab the next panel; in the
+across Esc and refreshes; Ctrl-h / Ctrl-l and Ctrl-j / Ctrl-k still work in a box (F113: they leave it, its
+draft kept). The pane tab attaches to the session's own terminal (Enter, F88; back with Ctrl-b d). Navigation: h/l previous / next tab (h on the first tab and Esc go back to the
+panels), Ctrl-h / Ctrl-l the left / right side, Ctrl-j / Ctrl-k down / up the left side's list (in a box too, F113),
+1-5 a panel (anywhere but in a box), Tab the next panel; in the
 main pane j/k scroll it (the terminal has no scrollbar), and move through a concept's options.
 
 The bottom line: the mode badge, this place's keys (yellow), a separator, then 1-5 panel, c chat, ? keys
@@ -148,6 +150,7 @@ HELP = """Everywhere (not while typing in a box)
   h        previous tab, out      Esc      back out
   ^C       a working chat: interrupt (elsewhere: quit)
   ^h ^l    left / right side      c        chat with c1
+  ^j ^k    down / up the left list (these four work in a box too)
   i        type in the box        ?        this list
   q        quit
 Status [1]
@@ -178,7 +181,7 @@ Concepts [5]
   N        chat about it (a new session)
   n        new concept (queued as a K task)
 Typing
-  Enter    send                   Shift+Enter  new line (or Ctrl-J)
+  Enter    send                   Shift+Enter  new line (or Alt+Enter)
   Esc      leave the box
 Esc closes this."""
 
@@ -199,8 +202,9 @@ def help_line(line: str) -> list[tuple[str, str]]:
     return out
 
 # raw characters as RunPage's key names; curses' own keys come named by `key_name`
-KEYS = {'\r': 'ENTER', '\n': 'S-ENTER', '\t': 'TAB', '\x1b': 'ESC', '\x13': '^S',
+KEYS = {'\r': 'ENTER', '\n': '^J', '\t': 'TAB', '\x1b': 'ESC', '\x13': '^S', '\x0b': '^K',
         '\x08': '^H', '\x0c': '^L', '\x7f': 'BS', '\x03': '^C', '\x15': '^U'}
+SIDE_KEYS = ('^H', '^L', '^J', '^K')  # F113: focus left / right, the left list down / up; in a box too
 MOVES = {'DOWN', 'UP', 'j', 'k', 'ENTER', 'LEFT', 'RIGHT', 'h', 'l'}
 VI = {'j': 'DOWN', 'k': 'UP'}  # j / k move as Down / Up do, except where a tab gives them a use of its own  # main pane keys never handed on to the panel
 
@@ -1230,12 +1234,8 @@ class RunPage:
 
     def key(self, k: str) -> bool:
         """Handle one key (a character, or a name: UP DOWN LEFT RIGHT ENTER S-ENTER ESC TAB BTAB BS ^S ^H ^L
-        ^C ^U); True means quit."""
-        if self.typing:
-            k = {'\r': 'ENTER', '\n': 'S-ENTER', '\t': 'TAB', '\x1b': 'ESC', '\x13': '^S', '\x08': 'BS',
-                 '\x7f': 'BS', '\x03': '^C', '\x15': '^U', '^H': 'BS'}.get(k, k)
-        else:
-            k = KEYS.get(k, k)
+        ^J ^K ^C ^U); True means quit."""
+        k = KEYS.get(k, k)
         self.msg, self.msg_link = '', ''
         if self.help:
             self.help = k not in ('ESC', '?', 'q', 'ENTER')
@@ -1253,6 +1253,9 @@ class RunPage:
             else:
                 self.msg, self.msg_ok = f'{c.get("label", key)}: not done', True
             return False
+        if k in SIDE_KEYS:
+            self.side_key(k)
+            return False
         if self.typing:
             self.typed(k)
             return False
@@ -1264,11 +1267,8 @@ class RunPage:
         if len(k) == 1 and k in '12345':
             self.panel, self.main = int(k), False
             return False
-        if k in ('^H', 'BS'):
+        if k == 'BS':
             self.main = False
-            return False
-        if k == '^L':
-            self.main = True
             return False
         if k == '?':
             self.help = True
@@ -1279,6 +1279,22 @@ class RunPage:
             return False
         self.panel_key(k)
         return False
+
+    def side_key(self, k: str) -> None:
+        """F113: Ctrl-h / Ctrl-l focus the left / right side, Ctrl-j / Ctrl-k move down / up the left side's list
+        (focus stays where it is), in a box too: Ctrl-h and Ctrl-j / Ctrl-k leave it with its draft kept (the box
+        is the old row's); Ctrl-l in a box on the right side stays in it."""
+        if k == '^L':
+            if not (self.typing and self.main):
+                self.typing, self.main = '', True
+            return
+        self.typing = ''
+        if k == '^H':
+            self.main = False
+            return
+        main = self.main
+        self.panel_key('DOWN' if k == '^J' else 'UP')
+        self.main = main
 
     def typed(self, k: str) -> None:
         """A key while typing in a box."""
@@ -1902,7 +1918,7 @@ def run_curses(win, box: dict | None = None) -> int:
     except curses.error:
         pass
     curses.raw()  # ^S, ^H, ^L and ^C reach the page (no flow control, no signal)
-    curses.nonl()  # Enter is '\r', Ctrl-J '\n' (a new line in a box)
+    curses.nonl()  # Enter is '\r', Ctrl-J '\n' (down the left list, F113)
     attrs = curses_attrs(curses)
     win.bkgd(' ', attrs.get('fg', 0))
     win.clear()  # B112: the first refresh repaints every cell, so the terminal's earlier screen is gone
