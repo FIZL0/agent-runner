@@ -68,7 +68,7 @@ def running_slot(tid: str) -> int:
 
 def slot_link(n: int, tid: str = '') -> str:
     """F52: slot `n`'s claude.ai/code link: its session's pid -> session id -> the transcript's bridge-session
-    entry; '' when `[run] remote_slots` is off or any step is missing."""
+    entry; '' when `[run] remote_slots` is not "always" or any step is missing."""
     if not remote_slots_on():
         return ''
     try:
@@ -574,7 +574,7 @@ def remote_ready(tty: bool | None = None, ask=input) -> bool:
     """With `[run] remote`: will Claude Code start a slot without its one-time "Enable Remote Control? (y/n)"?
     In a hidden session that question would hold every slot, so it is asked here, in this terminal, and the
     answer kept where Claude Code keeps it (`remoteDialogSeen` in ~/.claude.json). False: start nothing.
-    Under `[run] remote = 'auto'` (and no remote_slots) it never stops a run: with no terminal to ask on, or
+    Under `[run] remote = 'auto'` (and remote_slots not "always") it never stops a run: with no terminal to ask on, or
     answered no, the run starts with Remote Control off, and its log says why."""
     auto = C.run['remote'] == 'auto' and not remote_slots_on()
     if not (remote_slots_on() or (not remote_off_why(dialog=False) if auto else remote_on())):

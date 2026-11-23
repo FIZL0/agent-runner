@@ -15,8 +15,10 @@ from pathlib import Path
 
 from _check import check, eq, git, report
 
-from agent_runner import runner as R  # noqa: E402
+from agent_runner import config as CF, runner as R  # noqa: E402
 from agent_runner import sched as S  # noqa: E402
+
+CF.FIXED['merge_ahead'] = False  # F166: no merge built beside a gate here
 
 
 def make_repo(tmp: Path) -> Path:
@@ -31,8 +33,7 @@ def make_repo(tmp: Path) -> Path:
                                        '- [ ] **L4a** four | files: d.py\n'
                                        '- [ ] **L4b** five | files: e.py\n', encoding='utf-8')
     (repo / 'plan/DONE.md').write_text('# DONE\n', encoding='utf-8')
-    (repo / 'runner.toml').write_text('[run]\ntest = "true"\nmin_free_gb = 0\nremote = false\n'
-                                      'merge_ahead = false\n', encoding='utf-8')
+    (repo / 'runner.toml').write_text('[run]\ntest = "true"\nmin_free_gb = 0\nremote = false\n', encoding='utf-8')
     (repo / '.gitignore').write_text('.runner/\n', encoding='utf-8')
     git(repo, 'add', '-A')
     git(repo, 'commit', '-qm', 'start')
@@ -101,8 +102,7 @@ def test_release_taken(tmp: Path):
                                        '- [ ] **V1** (alone) Release | after: all\n'  # F130: it runs alone
                                        '- [ ] **T1** one | files: a.py\n', encoding='utf-8')
     (repo / 'plan/DONE.md').write_text('# DONE\n', encoding='utf-8')
-    (repo / 'runner.toml').write_text('[run]\ntest = "true"\nmin_free_gb = 0\nremote = false\n'
-                                      'merge_ahead = false\n', encoding='utf-8')
+    (repo / 'runner.toml').write_text('[run]\ntest = "true"\nmin_free_gb = 0\nremote = false\n', encoding='utf-8')
     (repo / '.gitignore').write_text('.runner/\n', encoding='utf-8')
     git(repo, 'add', '-A')
     git(repo, 'commit', '-qm', 'start')
@@ -141,8 +141,7 @@ def test_release_beside(tmp: Path):
                                        '- [ ] **T3** three | files: c.py\n'
                                        '- [ ] **V2** Release | after: all\n', encoding='utf-8')
     (repo / 'plan/DONE.md').write_text('# DONE\n', encoding='utf-8')
-    (repo / 'runner.toml').write_text('[run]\ntest = "true"\nmin_free_gb = 0\nremote = false\n'
-                                      'merge_ahead = false\n', encoding='utf-8')
+    (repo / 'runner.toml').write_text('[run]\ntest = "true"\nmin_free_gb = 0\nremote = false\n', encoding='utf-8')
     (repo / '.gitignore').write_text('.runner/\n', encoding='utf-8')
     git(repo, 'add', '-A')
     git(repo, 'commit', '-qm', 'start')
@@ -185,8 +184,7 @@ def test_alone(tmp: Path):
                                        '- [ ] **T2** two | files: b.py\n'
                                        '- [ ] **V1** (alone) Release\n', encoding='utf-8')
     (repo / 'plan/DONE.md').write_text('# DONE\n', encoding='utf-8')
-    (repo / 'runner.toml').write_text('[run]\ntest = "true"\nmin_free_gb = 0\nremote = false\n'
-                                      'merge_ahead = false\n', encoding='utf-8')
+    (repo / 'runner.toml').write_text('[run]\ntest = "true"\nmin_free_gb = 0\nremote = false\n', encoding='utf-8')
     (repo / '.gitignore').write_text('.runner/\n', encoding='utf-8')
     git(repo, 'add', '-A')
     git(repo, 'commit', '-qm', 'start')
@@ -228,8 +226,7 @@ def test_critical_first(tmp: Path):
             '- [ ] **N2** normal too | files: a.py\n')
     (repo / 'plan/TODO.md').write_text(todo, encoding='utf-8')
     (repo / 'plan/DONE.md').write_text('# DONE\n', encoding='utf-8')
-    (repo / 'runner.toml').write_text('[run]\ntest = "true"\nmin_free_gb = 0\nremote = false\n'
-                                      'merge_ahead = false\n', encoding='utf-8')
+    (repo / 'runner.toml').write_text('[run]\ntest = "true"\nmin_free_gb = 0\nremote = false\n', encoding='utf-8')
     (repo / '.gitignore').write_text('.runner/\n', encoding='utf-8')
     git(repo, 'add', '-A')
     git(repo, 'commit', '-qm', 'start')

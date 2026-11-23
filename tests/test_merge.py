@@ -15,8 +15,10 @@ from pathlib import Path
 
 from _check import check, eq, git, report
 
-from agent_runner import runner as R  # noqa: E402
+from agent_runner import config as CF, runner as R  # noqa: E402
 from agent_runner import merge as M  # noqa: E402
+
+CF.FIXED['merge_ahead'] = False  # F166: no merge built beside a gate here
 
 
 def make_repo(tmp: Path) -> Path:
@@ -28,8 +30,7 @@ def make_repo(tmp: Path) -> Path:
                                        '- [ ] **B2** two | files: b2.py\n', encoding='utf-8')
     (repo / 'plan/DONE.md').write_text('# DONE\n', encoding='utf-8')
     (repo / 'a.py').write_text('# a\n', encoding='utf-8')
-    (repo / 'runner.toml').write_text('[run]\ntest = "true"\nmin_free_gb = 0\nremote = false\n'
-                                      'merge_ahead = false\n', encoding='utf-8')
+    (repo / 'runner.toml').write_text('[run]\ntest = "true"\nmin_free_gb = 0\nremote = false\n', encoding='utf-8')
     (repo / '.gitignore').write_text('.runner/\n', encoding='utf-8')
     git(repo, 'add', '-A')
     git(repo, 'commit', '-qm', 'start')

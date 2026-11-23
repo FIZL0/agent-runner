@@ -1444,9 +1444,38 @@ def task_text(tid: str) -> dict:
 
 
 def settings() -> dict:
-    """F97: every setting, its value, source and default (`config.settings_snapshot`), read from the files now."""
+    """F97: every setting, its value, source and default (`config.settings_snapshot`), read from the files now, with
+    the change queued for it (F166: `queued` {'id', 'value', 'unset'})."""
     from agent_runner import config as CF
-    return CF.settings_snapshot(S.ROOT)
+    snap = CF.settings_snapshot(S.ROOT)
+    waiting = queued_settings()
+    for t in snap['tables']:
+        for k in t['keys']:
+            if q := waiting.get((t['table'], k['key'])):
+                k['queued'] = {x: q[x] for x in ('id', 'value', 'unset')}
+    return snap
+
+
+SETTING_FROM = "(from the run app's Settings)"
+_SETTING_TASK = re.compile(r'(?:set \[(\w+)\] (\w+) = (.*)|reset \[(\w+)\] (\w+) to its default: take it out) (?:in|of) \S+ '
+                           + re.escape(SETTING_FROM))
+
+
+def queued_settings() -> dict:
+    """F166: the open tasks Settings queued, by (table, key): {'id', 'value', 'unset', 'taken'}, the newest of each."""
+    import tomllib
+    out: dict = {}
+    if not S.C.todo.exists():
+        return out
+    for _, box, tid, text, _ in P.iter_tasks(P.lines(S.C.todo)):
+        if box not in ' ~' or not (m := _SETTING_TASK.search(text)):
+            continue
+        try:
+            value = tomllib.loads(f'v = {m[3]}')['v'] if m[1] else None
+        except tomllib.TOMLDecodeError:
+            continue
+        out[(m[1] or m[4], m[2] or m[5])] = {'id': tid, 'value': value, 'unset': not m[1], 'taken': box == '~'}
+    return out
 
 
 _SETTING_LOCK = threading.Lock()  # two pages saving at once: one read and write of the file at a time
@@ -1478,18 +1507,33 @@ def setting_reset(table: str, key: str) -> dict:
     return _setting_done(table, key, unset=True)
 
 
-def setting_project(table: str, key: str, value=None) -> dict:
-    """F97: save a Project value: never an edit of the main checkout, but a queued C task on runner.toml, which lands
-    through the gate."""
+def setting_project(table: str, key: str, value=None, unset: bool = False) -> dict:
+    """F97: save a Project value (`unset`: take it out): never an edit of the main checkout, but a queued C task on
+    runner.toml, which lands through the gate. F166: a change queued and not started yet is changed in place, and
+    dropped when the value is back to what the file has."""
     from agent_runner import config as CF
-    if problem := CF.setting_check(S.ROOT, table, key, value):
+    if unset and key not in CF.DEFAULTS.get(table, {}):
+        return {'ok': False, 'code': 2, 'out': f'[{table}] {key} is not a setting', 'argv': []}
+    if problem := '' if unset else CF.setting_check(S.ROOT, table, key, value):
         return {'ok': False, 'code': 2, 'out': problem, 'argv': []}
     f = CF.config_file(S.ROOT)
-    if re.search(r'\s\|\s*\w+:|—|BLOCKED:|\\n', CF.toml_value(value)):  # the plan's own marks: the line would not read back
+    name = f.name if f else 'runner.toml'
+    if not unset and re.search(r'\s\|\s*\w+:|—|BLOCKED:|\\n', CF.toml_value(value)):  # the plan's own marks: the line would not read back
         return {'ok': False, 'code': 2, 'out': f'[{table}] {key}: that value cannot go on a task line; ask for it in a '
                                                f'chat', 'argv': []}
-    return plan_add('C', f'set [{table}] {key} = {CF.toml_value(value)} in {f.name if f else "runner.toml"} '
-                         f'(from the run app\'s Settings)', files=['runner.toml' if not f else f.name])
+    text = (f'reset [{table}] {key} to its default: take it out of {name} ' if unset else
+            f'set [{table}] {key} = {CF.toml_value(value)} in {name} ') + SETTING_FROM
+    if (q := queued_settings().get((table, key))) and not q['taken']:
+        row = next(k for t in CF.settings_snapshot(S.ROOT)['tables'] if t['table'] == table
+                   for k in t['keys'] if k['key'] == key)
+        has = row['has_project']
+        if (not has) if unset else CF.toml_value(row['project'] if has else row['default']) == CF.toml_value(value):
+            r = drop(q['id'], 'changed back in Settings')
+            return {**r, 'out': f'{q["id"]} dropped: it is back as it was'} if r['ok'] else r
+        r = plan_change(q['id'], text)
+        return {**r, 'out': f'{q["id"]} changed'} if r['ok'] else r
+    # --force: two settings' tasks read alike, and are never the same work
+    return call(['plan', 'add', 'C', text, '--files', name, '--force'])
 
 
 ACTIONS.update({'pitch_no': pitch_no, 'need_drop': need_drop, 'need_chat': need_chat, 'rename_chat': rename_chat,

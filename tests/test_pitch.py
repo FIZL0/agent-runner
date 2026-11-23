@@ -17,8 +17,10 @@ from pathlib import Path
 
 from _check import check, eq, git, has, report, run
 
-from agent_runner import runner as R  # noqa: E402
+from agent_runner import config as CF, runner as R  # noqa: E402
 from agent_runner import land, merge as M, pitch, plan as P, sched, status, ui_model as U, undo  # noqa: E402
+
+CF.FIXED['merge_ahead'] = False  # F166: no merge built beside a gate here
 
 TASKS = {'F1': ('one', 'ui/menu.py', ''), 'F2': ('two', 'ui/menu.py', ''), 'F3': ('three', 'net/send.py', ''),
          'F4': ('four', 'other/x.py', ''), 'F5': ('five', 'far/y.py', ' | after: F4')}
@@ -39,7 +41,7 @@ def make(tmp: Path, name: str, extra: str = 'approve = true\n') -> tuple[Path, P
     for _, f, _ in TASKS.values():
         (repo / f).parent.mkdir(exist_ok=True)
         (repo / f).write_text('top\n\n\n\n\nend\n', encoding='utf-8')
-    (repo / 'runner.toml').write_text('[run]\ntest = "true"\nmin_free_gb = 0\nremote = false\nmerge_ahead = false\n'
+    (repo / 'runner.toml').write_text('[run]\ntest = "true"\nmin_free_gb = 0\nremote = false\n'
                                       f'fix_merges = false\n{extra}',
                                       encoding='utf-8')
     (repo / '.gitignore').write_text('.runner/\nrunner.local.toml\n', encoding='utf-8')

@@ -364,8 +364,9 @@ a{color:var(--accent)}
 .fld{width:100%;min-width:0;border:1px solid var(--line2);border-radius:var(--r-m);background:var(--bg);color:var(--fg);padding:8px 10px;font:16px/1.35 var(--sans)} textarea.fld{font-family:var(--mono);resize:vertical}
 .it .fld{width:auto;max-width:60%}
 /* F97: Settings */
-.setcols{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px} .setcol{display:grid;gap:8px;align-content:start;min-width:0;justify-items:start}
-.setkey{font:13px var(--mono);overflow-wrap:anywhere} .setval{font:12px var(--mono);color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:46%}
+.setline{justify-content:space-between;flex-wrap:nowrap} .setname{flex:1;min-width:0;display:flex;overflow-wrap:anywhere} .setname b{display:block;font-weight:600} .setname .small{display:block} .fold.setname{min-height:var(--tap)}
+.setpick{width:auto;max-width:50%;flex:none} .setkey{font:var(--fs-s) var(--mono);overflow-wrap:anywhere} .setval{font-size:var(--fs-m);color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:40%;flex:none}
+.step{display:flex;align-items:center;gap:var(--s2);flex:none} .step .btn{min-width:var(--tap);min-height:var(--tap);justify-content:center;padding-inline:0} .step b{min-width:1.5em;text-align:center}
 /* the jump to the latest message */
 .jump{position:absolute;left:50%;bottom:100%;margin-bottom:6px;transform:translate(-50%,6px);opacity:0;visibility:hidden;height:36px;border-radius:var(--r-full);border:1px solid var(--line2);background:var(--surface);color:var(--fg);box-shadow:0 2px 10px var(--shadow);padding:0 14px;display:inline-flex;align-items:center;gap:6px;font-size:var(--fs-m);cursor:pointer;z-index:4;transition:opacity var(--dur-fast) var(--ease),transform var(--dur-fast) var(--ease),visibility var(--dur-fast)}
 .jump.on{opacity:1;visibility:visible;transform:translate(-50%,0)} .jump svg{width:16px;height:16px}
@@ -468,6 +469,7 @@ function compose(ctx,text,paths){
   if(ctx&&ctx.kind==='new')msg=`Add a task: ${text}`;
   else if(ctx&&ctx.kind==='plan')msg=`About ${ctx.id}${ctx.title?` (${ctx.title})`:''}: ${text}`;
   else if(ctx&&ctx.kind==='concept')msg=`About concept ${ctx.id}${ctx.title?` (${ctx.title})`:''}: ${text}`;
+  else if(ctx&&ctx.kind==='setting')msg=`Change the setting ${ctx.id} (${ctx.title}) in the project file: ${text}`;
   else if(ctx&&ctx.kind==='need')msg=`About ${ctx.id}${ctx.title?` (${ctx.title})`:''}, which needs me: ${text}`;
   if(paths&&paths.length)msg+=(msg?'\n\n':'')+'Attached: '+paths.join(', ');
   return msg;
@@ -648,7 +650,6 @@ function swipeTakes(dx,dy,open){
 const swipeOpens=(dx,v,w,open)=>Math.abs(v)>.35?v>0:(open?w+dx:dx)>w/2;
 /* F97: a setting's value as a field shows it, and the words typed in one as a value ({v} or {err}) */
 const settingText=v=>v==null?'':typeof v==='string'?v:Array.isArray(v)?v.join('\n'):typeof v==='object'?JSON.stringify(v):String(v);
-const settingShown=v=>v===''?'(empty)':Array.isArray(v)?(v.length?v.join(', '):'(none)'):typeof v==='object'&&v?(Object.keys(v).length?JSON.stringify(v):'(none)'):String(v);
 function settingValue(k,text){
   const t=String(text==null?'':text).trim(), also=k.also||[];
   if(k.type==='choice'||k.type==='switch'||typeof k.default==='boolean'||k.off){if(t==='true'&&k.type!=='text'||t==='true'&&typeof k.default==='boolean')return{v:true};if(t==='false')return{v:false}}
@@ -663,6 +664,45 @@ function settingValue(k,text){
   if(also.includes('list')&&(/\n|,/.test(t)||typeof k.default==='boolean'))return{v:t.split(/[\n,]/).map(x=>x.trim()).filter(Boolean)};
   return{v:String(text==null?'':text)};
 }
+/* F166: a control's option ('true', '{"every":10}', 'opus'; `settingText` writes it) back as a value */
+function pickValue(k,t){
+  if(k.choices&&k.choices.length){const c=k.choices.find(x=>String(x)===t);return c===undefined?t:c}
+  if(t==='true'||t==='false')return t==='true';
+  if(k.type==='number'&&/^-?\d+(\.\d+)?$/.test(t))return Number(t);
+  if(/^\{/.test(t)){try{return JSON.parse(t)}catch(e){}}
+  if((k.also||[]).includes('list')&&/[\n,]/.test(t))return t.split(/[\n,]/).map(x=>x.trim()).filter(Boolean);
+  return t;
+}
+/* its options as [value, words], the one it has now among them; null when it is typed */
+function pickOptions(k,now){
+  const w=k.words||{}, o=(k.choices&&k.choices.length?k.choices.map(c=>[String(c),w[String(c)]||String(c)]):Object.keys(w).map(x=>[x,w[x]]));
+  if(!o.length)return null;
+  if(now!==''&&now!=null&&!o.some(x=>x[0]===now))o.push([now,settingSays(k,now)]);
+  return o;
+}
+/* a value as a person reads it */
+function settingSays(k,t){
+  if(k.words&&k.words[t])return k.words[t];
+  if(k.type==='switch')return t==='true'?'On':'Off';
+  if(t==='')return 'not set';
+  if(t==='false')return 'Off';
+  return k.unit==='$'&&/^\d/.test(t)?`$${t}`:k.unit&&/^\d/.test(t)?`${t}${k.unit==='%'?'':' '}${k.unit}`:t.split('\n').join(', ');
+}
+/* where a row's control saves: this device when it has its own value (it wins), else the setting's home */
+const settingSide=k=>k.has_device||k.home==='device'?'device':'project';
+const settingChanged=k=>k.source!=='default'&&JSON.stringify(k.value)!==JSON.stringify(k.default);
+const settingHit=(k,q)=>!q||`${k.name} ${k.desc} ${k.table}.${k.key} [${k.table}] ${k.key}`.toLowerCase().includes(q);
+/* shown only while its parent is on (the queued value of the parent counts) */
+function settingShows(k,all){
+  if(!k.parent)return true;
+  const p=all.find(x=>`${x.table}.${x.key}`===k.parent);if(!p)return true;
+  const v=p.queued&&!p.has_device?(p.queued.unset?p.default:p.queued.value):p.value;
+  return !(v===false||v===''||v==null);
+}
+/* the rows that set several kinds' models at once */
+const KINDS_ROWS=[{id:'build',name:'Features, fixes, tests',desc:'Also concepts and releases. A stronger model does them better and uses more of your limit.',kinds:['F','B','T','V','K']},
+  {id:'light',name:'Docs, cleanup, research',desc:'Lighter work; a cheaper model does it and saves your limit.',kinds:['D','C','R']}];
+const kindsModel=(kinds,v)=>{const m=[...new Set(kinds.map(x=>(v||{})[x]||''))];return m.length===1?m[0]:''};
 /* the live Talk session: the remembered one, else a chat titled Talk that is not in `old`, the Talk chats New Talk
    chat left (F157). remembered 'new': a new one was asked for and nothing was sent yet, so none */
 function talkSession(sessions,remembered,old){
@@ -924,7 +964,7 @@ function projectButtons(p){
   b.push({label:'Unlist',unlist:true});
   return b;
 }
-if(typeof module!=='undefined')module.exports={viewOf,placeOf,runPill,cardControls,controlGroups,needsReply,chatGroups,needChatAsk,TALK_SET,talkSetParse,pickVoice,runVoice,speechClips,silentWav,feedMark,feedAfter,atEnd,swipeTakes,swipeOpens,settingText,settingShown,settingValue,homeBase,homeKey,projectLink,homeLink,manifestLink,appLink,homeHref,pageTitle,projectState,switcherRows,projectWords,projectButtons,chatMove,BOX_KEYS,keysLine,histPush,histEdge,histStep,slashMatches,slashPick,slashMove,SLASH_FALLBACK,chatPick,answerOpts,needAsk,threadMsgs,working,planWords,compose,sendReq,usageOf,logKind,plain,chatName,controlReq,controlClick,taskControlsOn,queueGroups,conceptButtons,planQueue,NO_CONCEPT,newConceptReq,queuedId,NAV,talkSession,micProblem,dictProblem,dictButton,dictInsert,talkShown,talkReply,goneMark,needsShown,answerSaid,GONE_MS,obParse,obNext,obName,obSettle,obRetry,obDrop,obCounts,obHidden,obPill,OLD_RUN,OLD_WAIT,oldRun,plainOut,obRefused,obOld,obDue,obBootCid,sentLeft,sentStep,sentParse};
+if(typeof module!=='undefined')module.exports={viewOf,placeOf,runPill,cardControls,controlGroups,needsReply,chatGroups,needChatAsk,TALK_SET,talkSetParse,pickVoice,runVoice,speechClips,silentWav,feedMark,feedAfter,atEnd,swipeTakes,swipeOpens,settingText,settingValue,pickValue,pickOptions,settingSays,settingSide,settingChanged,settingHit,settingShows,kindsModel,KINDS_ROWS,homeBase,homeKey,projectLink,homeLink,manifestLink,appLink,homeHref,pageTitle,projectState,switcherRows,projectWords,projectButtons,chatMove,BOX_KEYS,keysLine,histPush,histEdge,histStep,slashMatches,slashPick,slashMove,SLASH_FALLBACK,chatPick,answerOpts,needAsk,threadMsgs,working,planWords,compose,sendReq,usageOf,logKind,plain,chatName,controlReq,controlClick,taskControlsOn,queueGroups,conceptButtons,planQueue,NO_CONCEPT,newConceptReq,queuedId,NAV,talkSession,micProblem,dictProblem,dictButton,dictInsert,talkShown,talkReply,goneMark,needsShown,answerSaid,GONE_MS,obParse,obNext,obName,obSettle,obRetry,obDrop,obCounts,obHidden,obPill,OLD_RUN,OLD_WAIT,oldRun,plainOut,obRefused,obOld,obDue,obBootCid,sentLeft,sentStep,sentParse};
 </script>
 
 <script>
@@ -982,7 +1022,7 @@ const LOGLINE_ICON={ok:'check',bad:'alert',go:'play','':'dot'};
 
 const S={snap:{status:[],sessions:[],queue:[],needs:[],concepts:[],log:[],release:'',machine:'',slots:0},
   view:'home',thread:null,ctx:null,atts:[],drawer:false,openSteps:{},feeds:{},sent:{},waitNew:null,online:true,
-  sheet:'',ren:null,f:{},taskOpen:{},tasks:{},set:null,setOpen:{},
+  sheet:'',ren:null,f:{},taskOpen:{},tasks:{},set:null,setOpen:{},setWait:{},setChanged:false,
   sel:[],selLast:'',undo:null};  // F118: chats picked for delete, the last one clicked, a delete Undo can still take back
 const $=id=>document.getElementById(id);
 /* B153: the project's name (the top-left, the chat's lead label) and its first letter (the logo) */
@@ -1125,7 +1165,7 @@ function obDone(it,j){
   else if(it.concept){S.gone={...(S.gone||{}),[it.concept]:now}}  // a picked concept stays off while the run catches up
   else if(it.name==='plan_add'&&it.args.kind==='K'){S.kSaid=`Queued ${queuedId(j.out)||'a new concept'}: a run writes its options page, and it shows here.`;toast(S.kSaid)}
   else if(it.ren){const x=sessionOf(it.ren);if(x){x.title=it.args.title;x.renamed=true}}  // F129
-  else if(it.set){if(it.set.applies!=='now')S.setWait=true;delete S.f[`set:${it.name==='setting_project'?'project':'device'}:${it.set.id}`];loadSettings();toast(it.name==='setting_project'?`${queuedTask(j.out)} queued: the setting lands through the gate`:String(j.out||'Saved').split('\n')[0])}  // F97
+  else if(it.set){if(it.set.applies!=='now'&&!S.setWait[it.set.id])S.setWait[it.set.id]=1;const f=`set:${it.name==='setting_project'?'project':'device'}:${it.set.id}`, was=S.f[f];loadSettings().then(()=>{if(S.f[f]===was&&!stepWait[it.set.id]){delete S.f[f];render(true)}});toast(it.name==='setting_project'?`${queuedTask(j.out)} queued: the setting lands through the gate`:String(j.out||'Saved').split('\n')[0])}  // F97
   else if(it.ctl){if(it.name==='run_control'&&it.args.key==='wip_show'){S.out={title:it.args.tid,text:String(j.out||'')};openSheet('out')}
     else toast(String(j.out||'').split('\n')[0]||`${it.say}: done`)}  // F124: a run control
   if(it.done)toast(it.done);
@@ -1541,48 +1581,130 @@ async function loadSettings(){
   catch(e){S.setOld=false;S.setErr='Could not reach the run page to read the settings.'}
   render(true);
 }
-const settingId=(t,k)=>`${t}.${k}`;
-function settingField(t,k,side){
-  const id=`set:${side}:${settingId(t,k.key)}`, own=k['has_'+side], v=own?k[side]:undefined, d=`data-f="${esc(id)}" aria-label="${side==='device'?'This device':'Project'}: ${esc(k.key)}"`;
-  const now=id in S.f?S.f[id]:settingText(v);
-  if(k.type==='switch')return `<input type="checkbox" role="switch" class="sw" ${d} data-sw ${(id in S.f?S.f[id]==='true':own?v:k.value)?'checked':''}>`;
-  if(k.type==='choice')return `<select class="fld" ${d}>${own?'':'<option value="">not set</option>'}${k.choices.map(c=>`<option value="${esc(String(c))}" ${now===String(c)?'selected':''}>${esc(String(c))}</option>`).join('')}</select>`;
-  if(k.type==='list'||k.type==='table'||settingText(v).length>40)return `<textarea class="fld" rows="3" ${d} placeholder="${k.type==='list'?'one per line':k.type==='table'?'{ key = value }':'not set'}">${esc(now)}</textarea>`;
+/* F166: the Settings view: the everyday settings with their control on the row, the rest behind Advanced and Project
+   file. A setting has one home: 'device' saves at once, 'everyone' queues a task. `side` is where its row saves. */
+const settingId=k=>`${k.table}.${k.key}`;
+const settingOf=id=>{const x=S.set&&S.set.tables&&S.set.tables.find(t=>t.table===id.split('.')[0]);return x&&x.keys.map(k=>({...k,table:x.table})).find(k=>settingId(k)===id)};
+const settingsAll=d=>d.tables.flatMap(t=>t.keys.map(k=>({...k,table:t.table}))).sort((a,b)=>a.order-b.order);
+const PLACE={device:'this device',project:'everyone',everyone:'everyone'};
+const setField=(id,side)=>`set:${side}:${id}`;
+/* the words in a setting's field on `side`: what is typed, else what is queued, else what is kept */
+function settingNow(k,side,field){
+  const f=setField(settingId(k),side);
+  if(f in S.f)return S.f[f];
+  if(side==='project'&&k.queued)return settingText(k.queued.unset?k.default:k.queued.value);
+  return k['has_'+side]?settingText(k[side]):field?settingText(k.value):'';
+}
+function settingField(k,side,onRow){
+  const id=settingId(k), now=settingNow(k,side,true), d=`data-f="${esc(setField(id,side))}"${onRow?' data-now':''} aria-label="${esc(k.name)}, ${PLACE[side]}"`;
+  if(k.type==='switch')return `<input type="checkbox" role="switch" class="sw" ${d} data-sw ${now==='true'?'checked':''}>`;
+  const opts=pickOptions(k,now);
+  if(opts)return `<select class="fld setpick" ${d}>${opts.map(([v,l])=>`<option value="${esc(v)}" ${v===now?'selected':''}>${esc(l)}</option>`).join('')}</select>`;
+  if(k.type==='list'||k.type==='table'||now.length>40)return `<textarea class="fld" rows="3" ${d} placeholder="${k.type==='list'?'one per line':k.type==='table'?'{ key = value }':'not set'}">${esc(now)}</textarea>`;
   return `<input class="fld" ${k.type==='number'?'inputmode="decimal"':''} ${d} value="${esc(now)}" placeholder="not set" autocomplete="off" autocapitalize="off" spellcheck="false">`;
 }
-const SOURCE={device:'This device',project:'Project',default:'Default'};
-function settingRow(t,k){
-  const id=settingId(t,k.key), open=!!S.setOpen[id], busy=S.ob.filter(x=>x.set&&x.set.id===id);
-  const btn=(side,l)=>`<button class="btn" data-setsave="${side}" data-id="${esc(id)}">${l}</button>`;
-  return `<div class="srow" data-k="set:${esc(id)}"><button class="fold" data-setopen="${esc(id)}" aria-expanded="${open}"><span class="grow setkey">${esc(k.key)}</span><span class="setval">${esc(settingShown(k.value))}</span>${k.source==='default'?'':`<span class="tag${k.source==='device'?' acc':''}">${SOURCE[k.source]}</span>`}<span class="chev">${I.chev}</span></button>
+const onRow=k=>k.type==='switch'||!!pickOptions(k,'');
+/* what stands at the right of a folded row: its control, or its value when it is typed in the open row */
+function settingControl(k,side,readonly){
+  if(readonly)return `<span class="setval">${esc(settingSays(k,settingText(k.value)))}</span>`;
+  if(settingId(k)==='run.slots'){const n=settingNow(k,side,true), id=esc(settingId(k));
+    return `<span class="step" role="group" aria-label="${esc(k.name)}"><button class="btn" data-setstep="-1" data-id="${id}" aria-label="Fewer" ${Number(n)<2?'disabled':''}>−</button><b>${esc(n)}</b><button class="btn" data-setstep="1" data-id="${id}" aria-label="More">+</button></span>`}
+  if(onRow(k))return settingField(k,side,true);
+  return `<span class="setval">${esc(settingSays(k,settingNow(k,side,true)))}</span>`;
+}
+function settingRow(k,o={}){
+  const id=settingId(k), open=!!S.setOpen[id], side=settingSide(k), busy=S.ob.filter(x=>x.set&&x.set.id===id&&!x.set.part);
+  const place=side==='device'?'device':'everyone', off=o.home&&place!==o.home, e=esc(id);
+  const where=k.source==='default'?'the default':k.source==='device'?'this device':'everyone';
+  return `<div class="srow" data-k="set:${e}"><div class="row setline"><button class="fold setname" data-setopen="${e}" aria-expanded="${open}"><span class="grow"><b>${esc(k.name)}</b><span class="small">${esc(k.desc)}</span></span></button>${settingControl(k,side,o.readonly)}</div>
     ${busy.map(x=>`<div class="small">${esc(x.say)}: ${esc(obState(x))}</div>`).join('')}
-    ${open?`<div class="small">${esc(k.help||'No help text.')}</div><div class="small">In force: <b>${esc(settingShown(k.value))}</b>, from ${k.source==='default'?'the default':k.source==='device'?esc(S.set.device):esc(S.set.project)}. Default: ${esc(settingShown(k.default))}. A change applies ${k.applies==='now'?'now':'the next run (or a restart)'}.</div>
-      <div class="setcols"><div class="setcol"><b class="small">Project</b>${settingField(t,k,'project')}${btn('project','Queue change')}</div>
-      <div class="setcol"><b class="small">This device</b>${settingField(t,k,'device')}<div class="btns">${btn('device','Save')}${k.has_device?`<button class="btn" data-setreset="${esc(id)}">Reset</button>`:''}</div></div></div>`:''}</div>`;
+    ${k.queued&&!busy.length?`<div class="small"><span class="tag warn">Queued</span> ${esc(k.queued.id)} ${k.queued.unset?'resets it':`sets it to ${esc(settingSays(k,settingText(k.queued.value)))}`} for everyone</div>`:''}
+    ${off?`<div class="small">${place==='device'?'Saved on this device only':'Saved for everyone'}</div>`:''}
+    ${open?`<div class="small"><span class="setkey">[${esc(k.table)}] ${esc(k.key)}</span> · ${esc(settingSays(k,settingText(k.value)))}, from ${where}. Default: ${esc(settingSays(k,settingText(k.default)))}. ${k.applies==='now'?'A change applies now.':'A change applies when the run restarts.'}</div>
+      ${o.readonly?`<div class="btns"><button class="btn" data-about="setting:${e}">Ask a chat to change it</button></div>`:`${onRow(k)||id==='run.slots'?'':settingField(k,side)}
+      <div class="btns">${onRow(k)||id==='run.slots'?'':`<button class="btn pri" data-setsave="${side}" data-id="${e}">${side==='device'?'Save on this device':'Queue for everyone'}</button>`}<button class="btn" data-setmore="${e}">More…</button></div>`}`:''}
+    ${o.reset?`<div class="btns">${o.readonly?'':resetBtn(k)}</div>`:''}</div>`;
+}
+const resetBtn=k=>k.has_device?`<button class="btn" data-setreset="device" data-id="${esc(settingId(k))}">Reset on this device</button>`:k.has_project?`<button class="btn" data-setreset="project" data-id="${esc(settingId(k))}">Reset for everyone</button>`:'';
+/* the two rows that pick the models of a few kinds at once: [models.kinds] */
+function kindsValue(k){
+  const side=settingSide(k), f=setField(settingId(k),side);
+  if(f in S.f){const r=settingValue(k,S.f[f]);if(r.v)return r.v}
+  return side==='project'&&k.queued?(k.queued.unset?{}:k.queued.value||{}):k['has_'+side]?k[side]:{};
+}
+function kindsRow(g,k){
+  const now=kindsModel(g.kinds,{...k.default,...kindsValue(k)}), ms=[...new Set(['opus','sonnet','haiku',...(now?[now]:[])])];
+  return `<div class="srow" data-k="setkinds:${g.id}"><div class="row setline"><span class="setname"><span class="grow"><b>${g.name}</b><span class="small">${g.desc}</span></span></span>
+    <select class="fld setpick" data-kinds="${g.id}" aria-label="${g.name}">${now?'':'<option value="" selected>Mixed</option>'}${ms.map(m=>`<option ${m===now?'selected':''}>${esc(m)}</option>`).join('')}</select></div>
+    ${S.ob.filter(x=>x.set&&x.set.part===g.id).map(x=>`<div class="small">${esc(x.say)}: ${esc(obState(x))}</div>`).join('')}
+    ${k.queued?`<div class="small"><span class="tag warn">Queued</span> ${esc(k.queued.id)} changes the models for everyone</div>`:''}
+    ${k.has_device?'<div class="small">Saved on this device only</div>':''}</div>`;
+}
+function saveKinds(gid,model){
+  const k=settingOf('models.kinds'), g=KINDS_ROWS.find(x=>x.id===gid);if(!k||!g||!model)return;
+  const side=settingSide(k), v={...kindsValue(k)};for(const x of g.kinds)v[x]=model;
+  S.f[setField('models.kinds',side)]=JSON.stringify(v);
+  outbox(side==='device'?'setting_device':'setting_project',{table:'models',key:'kinds',value:v},{set:{id:'models.kinds',applies:side==='project'?'now':k.applies,part:gid},say:`${side==='device'?'Save':'Queue'} ${g.name} on ${model}`});
 }
 const setErrHTML=()=>S.setErr?`${S.setOld?oldRunHTML(S.setErr):`<div class="small v-bad">${esc(S.setErr)}</div>`}<div class="btns"><button class="btn" data-setload>Try again</button></div>`:'';
+function setGroup(d,g,ks,o){
+  const [id,head,where,home]=g, kinds=id==='models'&&(o||{}).kinds;
+  if(!ks.length&&!kinds)return '';
+  return `<div class="sec">${esc(head)}${where==='file'?'':` · ${PLACE[home]}`}<span class="ln"></span></div>${card((kinds||'')+ks.map(k=>settingRow(k,{...o,home:where==='file'?'':home,readonly:where==='file'})).join(''),'',`data-k="sett:${esc(id)}"`)}`;
+}
+function setFold(id,name,about,body){
+  const open=!!S.setOpen['#'+id];
+  return `${card(`<button class="fold setname" data-setopen="#${id}" aria-expanded="${open}"><span class="grow"><b>${name}</b><span class="small">${about}</span></span><span class="chev">${I.chev}</span></button>`,'',`data-k="setfold:${id}"`)}${open?body():''}`;
+}
 function settingsHTML(){
   const d=S.set&&S.set.tables?S.set:null, q=String(S.f.setq||'').trim().toLowerCase();
   if(!d)return `<div class="col">${setErrHTML()||emptyCard('Loading…')}${obCards(x=>x.ctl==='restart:')}</div>`;
-  const hit=(t,k)=>!q||`${t}.${k.key} ${k.help}`.toLowerCase().includes(q);
-  const ts=d.tables.map(t=>({t:t.table,ks:t.keys.filter(k=>hit(t.table,k))})).filter(x=>x.ks.length);
-  const rc=controlOf('restart');
-  return `<div class="col"><div class="small">Project settings are in ${esc(d.project)}, shared with everyone: a change is queued as a task and lands through the gate. This device's are in ${esc(d.device)}, only on this machine: they are saved at once, and win.</div>
-    ${setErrHTML()}
-    ${S.setWait&&S.snap.up!==false&&rc?card(`<div class="small">Saved. It applies when the run restarts.</div>${S.sure==='restart'?ctlSure(rc):`<div class="btns"><button class="btn acc" data-ctl="restart">Restart the run</button></div>`}`,'','data-k="setwait"'):''}
-    ${obCards(x=>x.ctl==='restart:')}
-    <input class="fld" type="search" data-f="setq" placeholder="Find a setting" aria-label="Find a setting">
-    ${ts.length?ts.map(x=>`<div class="sec">[${esc(x.t)}]<span class="ln"></span></div>${card(x.ks.map(k=>settingRow(x.t,k)).join(''),'',`data-k="sett:${esc(x.t)}"`)}`).join(''):emptyCard('No setting matches.')}
-    ${d.unknown.length?`<div class="sec">Not settings<span class="ln"></span></div>${card(d.unknown.map(u=>`<div class="srow" data-k="unk:${esc(u.side+u.table+u.key)}"><div class="row"><span class="grow setkey">${u.table?`[${esc(u.table)}] `:''}${u.key?`${esc(u.key)} = `:''}${esc(u.value)}</span><span class="tag warn">unknown</span></div><div class="small">${esc(u.file)}: ${esc(u.why)}</div></div>`).join(''))}`:''}</div>`;
+  const all=settingsAll(d), rc=controlOf('restart'), waits=Object.keys(S.setWait||{}).length, changed=all.filter(settingChanged);
+  const kinds=all.find(k=>settingId(k)==='models.kinds'), kr=kinds?KINDS_ROWS.map(g=>kindsRow(g,kinds)).join(''):'';
+  const groups=(ks,o,w)=>d.groups.filter(g=>!w||g[2]===w).map(g=>setGroup(d,g,ks.filter(k=>k.group===g[0]),o)).join('');
+  const shown=all.filter(k=>settingShows(k,all));
+  let body;
+  if(q||S.setChanged){
+    const ks=(S.setChanged?changed:all).filter(k=>settingHit(k,q)), un=S.setChanged?d.unknown.filter(u=>!q||`${u.table} ${u.key} ${u.value}`.toLowerCase().includes(q)):[];
+    body=(groups(ks,{reset:S.setChanged})||emptyCard(q?'No setting matches.':'Nothing is changed from its default.'))
+      +(un.length?`<div class="sec">Ignored or moved<span class="ln"></span></div>${card(un.map(u=>`<div class="srow" data-k="unk:${esc(u.side+u.table+u.key)}"><div class="row"><span class="grow setkey">${u.table?`[${esc(u.table)}] `:''}${u.key?`${esc(u.key)} = `:''}${esc(u.value)}</span><span class="tag warn">ignored or moved</span></div><div class="small">${esc(u.file)}: ${esc(u.why)}</div></div>`).join(''))}`:'');
+  }else body=d.groups.filter(g=>g[2]==='page').map(g=>setGroup(d,g,shown.filter(k=>k.group===g[0]),{kinds:g[0]==='models'?kr:''})).join('')
+    +`<div class="sec">More<span class="ln"></span></div>${setFold('advanced','Advanced','disk, memory, merge tuning',()=>groups(shown,{},'advanced'))}${setFold('file','Project file','test command, paths, rules: read only here',()=>groups(shown,{},'file'))}`;
+  return `<div class="col"><div class="row"><input class="fld grow" type="search" data-f="setq" placeholder="Find a setting" aria-label="Find a setting">${changed.length+d.unknown.length||S.setChanged?`<button class="btn${S.setChanged?' pri':''}" data-setchanged aria-pressed="${!!S.setChanged}">Changed ${changed.length}</button>`:''}</div>
+    ${setErrHTML()}${obCards(x=>x.ctl==='restart:')}${body}
+    ${waits&&S.snap.up!==false&&rc?card(`<div class="row"><span class="grow">${waits===1?'1 change waits':`${waits} changes wait`} for a restart</span>${S.sure==='restart'?'':'<button class="btn acc" data-ctl="restart">Restart the run</button>'}</div>${S.sure==='restart'?ctlSure(rc):''}`,'','data-k="setwait"'):''}</div>`;
 }
-const settingOf=id=>{const [t,...k]=id.split('.');const x=S.set&&S.set.tables&&S.set.tables.find(y=>y.table===t);return x&&{t,k:x.keys.find(y=>y.key===k.join('.'))}};
+/* a row's More…: its words, its other home, and Reset for each place that sets it */
+function settingSheet(){
+  const k=settingOf(S.sheetArg||'');if(!k)return '<div class="small">That setting is gone.</div>';
+  const id=settingId(k), side=settingSide(k), other=side==='device'?'project':'device';
+  return `<h2>${esc(k.name)}</h2><div class="small">${esc(k.desc)}</div>
+    <div class="sec">${other==='device'?'Only on this device':'For everyone'}<span class="ln"></span></div>
+    <div class="small">${other==='device'?`Saved at once in ${esc(S.set.device)}, and wins over everyone's.`:`Queued as a task on ${esc(S.set.project)}; it lands once its tests pass.${k.has_device?' This device keeps its own.':''}`}</div>
+    ${settingField(k,other)}<div class="btns"><button class="btn pri" data-setsave="${other}" data-id="${esc(id)}">${other==='device'?'Save on this device':'Queue for everyone'}</button></div>
+    ${k.has_device||k.has_project?`<div class="sec">Reset<span class="ln"></span></div><div class="btns">${k.has_device?`<button class="btn" data-setreset="device" data-id="${esc(id)}">Reset on this device</button>`:''}${k.has_project?`<button class="btn" data-setreset="project" data-id="${esc(id)}">Reset for everyone</button>`:''}</div>`:''}
+    <div class="btns"><button class="btn" data-closesheet>Close</button></div>`;
+}
+SHEETS.setting=settingSheet;
 function saveSetting(id,side){
-  const x=settingOf(id);if(!x||!x.k)return;
-  const f=`set:${side}:${id}`, el=[...document.querySelectorAll('[data-f]')].find(e=>e.dataset.f===f);
-  const text=el&&el.type==='checkbox'?String(el.checked):el?el.value:S.f[f];
-  if(x.k.type==='choice'&&!text)return toast('Pick a value first',true);
-  const r=settingValue(x.k,text);if(r.err)return toast(r.err,true);
-  outbox(side==='device'?'setting_device':'setting_project',{table:x.t,key:x.k.key,value:r.v},{set:{id,applies:side==='project'?'now':x.k.applies},say:`${side==='device'?'Save':'Queue'} [${x.t}] ${x.k.key} = ${settingShown(r.v)}`});
+  const k=settingOf(id);if(!k)return;
+  const f=setField(id,side), el=[...document.querySelectorAll('[data-f]')].find(e=>e.dataset.f===f);
+  const text=f in S.f&&!(el&&el.type!=='checkbox'&&el.tagName!=='SELECT')?S.f[f]:el?(el.type==='checkbox'?String(el.checked):el.value):settingNow(k,side,true);
+  const r=pickOptions(k,text)?{v:pickValue(k,text)}:settingValue(k,text);if(r.err)return toast(r.err,true);
+  outbox(side==='device'?'setting_device':'setting_project',{table:k.table,key:k.key,value:r.v},{set:{id,applies:side==='project'?'now':k.applies},say:`${side==='device'?'Save':'Queue'} ${k.name}: ${settingSays(k,text)}`});
+}
+function resetSetting(id,side){
+  const k=settingOf(id);if(!k)return;
+  if(side==='device')outbox('setting_reset',{table:k.table,key:k.key},{set:{id,applies:k.applies},say:`Reset ${k.name}`});
+  else outbox('setting_project',{table:k.table,key:k.key,unset:true},{set:{id,applies:'now'},say:`Queue ${k.name}: reset`});
+}
+/* the stepper: what it shows moves at once; one save goes once the taps stop */
+let stepWait={};
+function stepSetting(id,by){
+  const k=settingOf(id);if(!k)return;
+  const side=settingSide(k), f=setField(id,side);
+  S.f[f]=String(Math.max(1,Number(settingNow(k,side,true))+by));render(true);
+  clearTimeout(stepWait[id]);stepWait[id]=setTimeout(()=>{delete stepWait[id];saveSetting(id,side)},700);
 }
 function planHTML(){
   const pk=queueGroups(S.snap.queue)[1], qs=planQueue(S.snap);
@@ -2189,7 +2311,7 @@ function takeSnap(s){
   if(!HOME_PAGE)document.title=pageTitle(S.snap.project);  // B153
   if(OB.offline)drain();  // F137: the run answers again: the outbox goes on at once
   S.snap.needs=needsShown(S.snap.needs,S.gone,Date.now());  // B138: a snapshot taken before an answer keeps it off
-  if(booted){S.oldRun=false;obBoot(s.boot);if(S.view==='settings'&&S.setErr)loadSettings()}  // B164
+  if(booted){S.oldRun=false;S.setWait={};obBoot(s.boot);if(S.view==='settings'&&S.setErr)loadSettings()}  // B164
   // F137: a chat the outbox still starts is named by new_control's answer (obSettle), not by this guess
   if(S.waitNew&&S.waitNew.ph&&S.ob.some(y=>'@'+y.cid===S.waitNew.ph)){}
   else if(S.waitNew){const fresh=chats().map(c=>c.name).filter(x=>!S.waitNew.known.includes(x));
@@ -2282,6 +2404,7 @@ function about(a){
   const [k,v]=[a.split(':')[0],a.slice(a.indexOf(':')+1)];
   if(a==='new')S.ctx={kind:'new',label:'A new task'};
   else if(k==='concept'){const c=S.snap.concepts[+v];if(!c)return;S.ctx={kind:'concept',id:c.concept||c.id,title:c.title,label:c.title||c.concept}}
+  else if(k==='setting'){const x=settingOf(v);if(!x)return;S.ctx={kind:'setting',id:`[${x.table}] ${x.key}`,title:x.name,label:x.name}}
   else if(k==='plan'){const q=S.snap.queue.find(x=>x.id===v);if(!q)return;S.ctx={kind:'plan',id:q.id,title:q.title,label:`${q.id} ${q.title}`}}
   open('c1');
 }
@@ -2371,8 +2494,10 @@ document.addEventListener('click',async e=>{
   if(x=q('[data-setopen]')){const id=x.dataset.setopen;S.setOpen[id]=!S.setOpen[id];render(true);return}  // F97
   if(q('[data-setload]')){loadSettings();return}
   if(x=q('[data-setsave]')){saveSetting(x.dataset.id,x.dataset.setsave);return}
-  if(x=q('[data-setreset]')){const id=x.dataset.setreset, y=settingOf(id);if(!y||!y.k)return;
-    outbox('setting_reset',{table:y.t,key:y.k.key},{set:{id,applies:y.k.applies},say:`Reset [${y.t}] ${y.k.key}`});return}
+  if(x=q('[data-setreset]')){resetSetting(x.dataset.id,x.dataset.setreset);return}
+  if(x=q('[data-setstep]')){stepSetting(x.dataset.id,+x.dataset.setstep);return}
+  if(x=q('[data-setmore]')){openSheet('setting',x.dataset.setmore);return}
+  if(q('[data-setchanged]')){S.setChanged=!S.setChanged;render(true);return}
   if(x=q('[data-thread]')){S.ctx=null;return open(x.dataset.thread)}
   if(q('[data-newtalk]'))return newTalk();  // F157
   if(q('[data-new]')){S.drawer=false;newChat('new_control',{},'New chat');return}
@@ -2407,13 +2532,14 @@ document.addEventListener('submit',e=>{e.preventDefault();
   if(e.target.matches('[data-padd]')){const v=H.add.trim();if(v){H.add='';homePost('add',{path:v})}return}  // F134
   if(e.target.matches('[data-renform]'))return saveRename();  // F129
   if(e.target.matches('[data-kform]'))newConcept();else send()});
-/* F124, F97: a switch or a select acts at once; a device's own switch or select saves at once too */
+/* F124, F97: a switch or a select acts at once; a setting's on its row saves at once too */
 document.addEventListener('change',e=>{
   const t=e.target, ts=t.dataset&&t.dataset.ts, f=(t.dataset&&t.dataset.f)||'';
   if(ts){talkSet(ts,t.type==='checkbox'?t.checked:t.value);return}
+  if(t.dataset&&t.dataset.kinds){saveKinds(t.dataset.kinds,t.value);return}
   if(!f.startsWith('set:'))return;
   S.f[f]=t.type==='checkbox'?String(t.checked):t.value;
-  if(f.startsWith('set:device:')&&(t.type==='checkbox'||t.tagName==='SELECT')&&S.f[f])saveSetting(f.slice(11),'device');
+  if(t.dataset.now!==undefined){const [,side,...id]=f.split(':');saveSetting(id.join(':'),side)}  // F166: a row's own switch or select
 });
 document.addEventListener('focusin',e=>{if(e.target.matches&&e.target.matches('[data-paddin]'))H.addFocus=true});
 document.addEventListener('focusout',e=>{if(e.target.matches&&e.target.matches('[data-paddin]'))H.addFocus=false});

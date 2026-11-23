@@ -31,7 +31,7 @@ def make_repo(tmp: Path) -> Path:
     repo = tmp / 'proj'
     repo.mkdir()
     git(repo, 'init', '-q', '-b', 'main')
-    (repo / 'runner.toml').write_text('[run]\nmodel = "m1"\nfix_model = "m2"\n\n[git]\npush = false\n',
+    (repo / 'runner.toml').write_text('[models]\ncode = "m1"\nfix = "m2"\n\n[git]\npush = false\n',
                                       encoding='utf-8')
     (repo / '.gitignore').write_text('.runner/\n', encoding='utf-8')
     git(repo, 'add', '-A')

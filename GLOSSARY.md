@@ -546,3 +546,10 @@ _Said_: the voice, natural voice
 _On screen_: Voice, Default (af_heart)
 _In code_: speech.py, speech_worker.py, /speech, runVoice, playClips
 _Avoid_: TTS, voice file
+
+**Setting's home**:
+Where a change to a setting is saved: on this device at once, or for everyone as a queued task
+_Said_: this device or everyone
+_On screen_: this device, everyone
+_In code_: setting_words.home, settingSide
+_Avoid_: scope, level

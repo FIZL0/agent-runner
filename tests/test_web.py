@@ -2917,7 +2917,8 @@ def test_settings_f97(tmp: Path) -> None:
         eq((push['value'], push['source'], push['off']), (False, 'project', True), 'push = false, from the project')
         quiet, _ = key('ui', 'chat_quiet')
         eq((quiet['value'], quiet['source'], quiet['applies']), ('6h', 'default', 'next run'), 'chat_quiet: the default, 6h')
-        check('grayed' in quiet['help'], 'with its help text', quiet)
+        eq((quiet['name'], quiet['home']), ('Gray out a chat after', 'device'), 'with its name and home')
+        check('bottom of Chats' in quiet['desc'], 'and its description', quiet)
         eq([(u['table'], u['key'], u['file']) for u in d['unknown']], [('run', 'slotz', 'runner.toml'), ('rnu', '', 'runner.toml')],
            'an unknown key is flagged, and an unknown table')
         check('did you mean' in d['unknown'][0]['why'], 'and says why', d['unknown'])
@@ -2945,9 +2946,30 @@ def test_settings_f97(tmp: Path) -> None:
             r = act_('setting_project', table='run', key='weekly_max', value=80)
             eq(r['ok'], True, 'a project save')
             check(ran[0][:3] == ['plan', 'add', 'C'] and 'set [run] weekly_max = 80' in ran[0][3]
-                  and ran[0][4:] == ['--files', 'runner.toml'], 'queues a C task on runner.toml', ran)
+                  and ran[0][4:] == ['--files', 'runner.toml', '--force'], 'queues a C task on runner.toml', ran)
             eq(toml.read_text(encoding='utf-8'), before, 'and never edits the main checkout')
             check('chat' in act_('setting_project', table='run', key='test', value='a | files: b')['out'], "the plan's marks are refused")
+            ran.clear()
+            todo = S.C.todo  # F166: a queued change is on its row, is changed in place, and goes when it is undone
+            kept = todo.read_text(encoding='utf-8')
+            wait = "- [ ] **C9** set [run] weekly_max = 80 in runner.toml (from the run app's Settings) | files: runner.toml\n"
+            todo.write_text(kept + '\n### Later\n\n' + wait, encoding='utf-8')
+            eq(key('run', 'weekly_max')[0]['queued'], {'id': 'C9', 'value': 80, 'unset': False}, 'the row says what is queued')
+            check('queued' not in key('run', 'slots')[0], 'and no other row does')
+            act_('setting_project', table='run', key='weekly_max', value=70)
+            check(ran[-1][:3] == ['plan', 'edit', 'C9'] and 'weekly_max = 70' in ran[-1][3], 'another value changes that task', ran)
+            act_('setting_project', table='run', key='weekly_max', value=90)
+            eq(ran[-1][:3], ['plan', 'drop', 'C9'], 'back to what it was: the task is dropped')
+            act_('setting_project', table='run', key='session_max', value=80)
+            eq(ran[-1][:3], ['plan', 'add', 'C'], 'another setting is a task of its own')
+            todo.write_text(kept + '\n### Later\n\n' + wait.replace('[ ]', '[~]'), encoding='utf-8')
+            act_('setting_project', table='run', key='weekly_max', value=70)
+            eq(ran[-1][:3], ['plan', 'add', 'C'], 'a task that has started is left alone: a new one')
+            todo.write_text(kept, encoding='utf-8')
+            r = act_('setting_project', table='run', key='slots', unset=True)
+            check(r['ok'] and 'reset [run] slots to its default: take it out of runner.toml' in ran[-1][3], 'Reset for everyone queues too', ran)
+            eq(U._SETTING_TASK.search(ran[-1][3]).group(4, 5), ('run', 'slots'), 'and reads back as that')
+            check(not act_('setting_project', table='run', key='nokey', unset=True)['ok'], 'an unknown key is refused')
             ran.clear()
             now = local.read_text(encoding='utf-8')
             for t, k, v in (('run', 'slots', 'four'), ('run', 'slots', 0), ('run', 'slots', True), ('run', 'web', 'yes'),
@@ -2970,8 +2992,8 @@ def test_settings_f97(tmp: Path) -> None:
     eq(CF.setting_problem('ui', 'chat_quiet', False), '', 'chat_quiet = false is off')
     check(CF.setting_problem('ui', 'chat_quiet', 5), 'a bare number is refused')
     page = W.page_html().decode()
-    for part in ('settingsHTML', 'data-setsave="${side}"', 'data-setreset=', 'Project</b>', 'This device</b>', 'Restart the run',
-                 'unknown</span>', "'setting_device':'setting_project'"):
+    for part in ('settingsHTML', 'data-setsave="${side}"', 'data-setreset=', 'data-setmore=', 'data-setstep=', 'Find a setting',
+                 "'Advanced'", "'Project file'", 'Ask a chat to change it', 'Restart the run', "'setting_device':'setting_project'"):
         check(part in page, f'the Settings view has {part}')
     if not shutil.which('node'):
         return
@@ -2986,6 +3008,24 @@ def test_settings_f97(tmp: Path) -> None:
                     ['settingValue', k(default=False, also=['list']), 'bug, ui'], ['settingValue', k(default=False, also=['list']), 'true']])
     eq([g.get('v', 'err') for g in got], [4, 'err', ['a', 'b'], False, False, 'false', True, 'auto', {'every': 10}, 'err', 8,
                                           ['bug', 'ui'], True], "a field's words as a value of its type")
+    # F166: a row's control, and which rows show
+    rel = k(table='run', key='auto_release', type='table', default=False, also=['table'], words={'false': 'Off', '{"every":10}': 'Every 10 tasks'})
+    rem = k(type='choice', choices=['auto', True, False], words={'auto': 'Auto', 'true': 'On', 'false': 'Off'})
+    pct = k(type='number', default=90, unit='%', words={'90': '90%'})
+    par = k(table='run', key='approve', value=False)
+    kid = k(table='run', key='approve_wait', parent='run.approve')
+    got = logic_js([['settingText', {'every': 10}], ['settingText', False], ['pickValue', rel, '{"every":10}'], ['pickValue', rel, 'false'],
+                    ['pickValue', rem, 'true'], ['pickValue', rem, 'auto'], ['pickValue', pct, '80'], ['pickOptions', pct, '94'],
+                    ['pickOptions', k(words={}, choices=[]), 'x'], ['settingSays', rel, '{"every":10}'], ['settingSays', k(unit='GB'), '4'],
+                    ['settingSide', k(home='device', has_device=False)], ['settingSide', k(home='everyone', has_device=False)],
+                    ['settingSide', k(home='everyone', has_device=True)], ['settingChanged', k(source='device', value=3, default=3)],
+                    ['settingChanged', k(source='project', value=4, default=3)], ['settingShows', kid, [par]],
+                    ['settingShows', kid, [{**par, 'value': True}]], ['settingShows', kid, [{**par, 'queued': {'value': True}}]],
+                    ['settingHit', k(table='run', key='slots', name='Tasks at once', desc='How many.'), 'slots'],
+                    ['settingHit', k(table='run', key='slots', name='Tasks at once', desc='How many.'), 'tasks at'],
+                    ['kindsModel', ['F', 'B'], {'F': 'opus', 'B': 'opus'}], ['kindsModel', ['F', 'B'], {'F': 'opus', 'B': 'haiku'}]])
+    eq(got, ['{"every":10}', 'false', {'every': 10}, False, True, 'auto', 80, [['90', '90%'], ['94', '94%']], None, 'Every 10 tasks', '4 GB',
+             'device', 'project', 'device', False, True, False, True, True, True, True, 'opus', ''], "a row's control, its home and when it shows")
 
 
 def test_style_f83(tmp: Path) -> None:
@@ -3036,7 +3076,7 @@ const logic = page.split('<script id="logic">')[1].split('</script>')[0];
 const kept = {}, store = {get: k => kept[k] || '', set(k, v) { kept[k] = v }};
 const said = [], toast = t => said.push(t), render = () => {}, tq = p => p, esc = t => String(t);
 const els = {}, $ = k => els[k] = els[k] || {}, setHTML = (el, h) => { el.h = h };
-const emptyCard = t => t, card = h => h, followVersion = () => false, pageTitle = () => '', HOME_PAGE = false, document = {};
+const emptyCard = t => t, card = h => h, followVersion = () => false, pageTitle = () => '', HOME_PAGE = false, document = {}, I = {chev: ''}, stepWait = {};
 const working_ = () => [], talkWaitName = () => '', chats = () => [], open = n => { S.thread = n };
 const carrySent = () => {}, addSent = () => {};
 let reply = null, status = 200, posts = [];
@@ -3045,7 +3085,7 @@ const fetch = async (p, o) => {
   return {status, ok: status < 400, json: async () => reply};
 };
 const rc = {key: 'restart', label: 'Restart the run', confirm: 'Restart?'};
-const S = {snap: {needs: [], concepts: [], controls: [rc], boot: 'b1'}, f: {}, ob: [], thread: null, view: 'settings', waitNew: null, obOpen: false, gone: {}};
+const S = {snap: {needs: [], concepts: [], controls: [rc], boot: 'b1'}, f: {}, ob: [], thread: null, view: 'settings', waitNew: null, obOpen: false, gone: {}, setOpen: {}, setWait: {}};
 const OB = {busy: false, offline: false, timer: 0, wait: 2000}, OB_KEY = 'ob';
 const threadTitle = n => n, cutsOff = () => '', sureHTML = q => q;
 let cids = 0;
@@ -3053,7 +3093,7 @@ const newCid = () => 'k' + (++cids);
 eval(logic.replace(/if\(typeof module[^\n]*/, '') + line('function obChange(') + line('function actFailed(') + grab('async function act(') + grab('function outbox(') + grab('async function drain(')
   + grab('function obDone(') + line('const controlOf=') + line('const ctlSure=') + line('const ctlBusy=') + slice('function oldRunHTML(', 'const obBtns=')
   + line('const obBtns=') + line('const obState=') + grab('function obDraw(') + line('function obBoot(') + grab('function obRetryClick(')
-  + line('function obCards(') + line('const setErrHTML=') + grab('async function loadSettings(') + grab('function settingsHTML(') + grab('function takeSnap(') + `
+  + line('function obCards(') + slice('const settingId=', 'const setErrHTML=') + slice('const setErrHTML=', 'SHEETS.setting=') + grab('async function loadSettings(') + grab('function takeSnap(') + `
 const settle = async () => { for (let i = 0; i < 6; i++) await new Promise(r => setTimeout(r, 5)) };
 (async () => {
   const out = {};
@@ -3061,7 +3101,7 @@ const settle = async () => { for (let i = 0; i < 6; i++) await new Promise(r => 
   reply = given.route; status = 404; await loadSettings(); out.route = [settingsHTML(), S.set === undefined];
   reply = {ok: false, out: 'disk full'}; status = 200; await loadSettings(); out.err = settingsHTML();
   S.set = {ok: false, out: 'x'}; out.bad = settingsHTML();
-  const good = {tables: [], unknown: [], project: 'p', device: 'd'};
+  const good = {tables: [], groups: [], unknown: [], project: 'p', device: 'd'};
   reply = good; await loadSettings(); out.good = [settingsHTML(), S.set === good];
   reply = given.route; status = 404; await loadSettings(); out.keeps = [S.set === good, settingsHTML()];
   // need_chat to a run without it: kept, with the restart control and no Retry

@@ -196,8 +196,8 @@ def test_take_back_from_a_slot_just_started():
 
 
 def test_sessions_one_and_each():
-    print('F68: [run] sessions = one keeps a slot off Remote Control until opened, its link then in the snapshot, '
-          'and c1 republishes the claude.ai copy; each puts every slot there as before')
+    print('F68: [run] remote_slots = open keeps a slot off Remote Control until opened, its link then in the snapshot, '
+          'and c1 republishes the claude.ai copy; always puts every slot there as before')
     import os
     from agent_runner import page_copy as PC, runner as R, slots as S, ui_model as U
     d = Path(tempfile.mkdtemp(prefix='agent-runner-f68-'))
@@ -206,12 +206,12 @@ def test_sessions_one_and_each():
     (d / 'plan/TODO.md').write_text('# TODO\n\n### Later\n\n- [ ] **T1** fix the <b>widget</b> | files: a.py\n',
                                     encoding='utf-8')
     (d / 'plan/DONE.md').write_text('# DONE\n', encoding='utf-8')
-    (d / 'runner.toml').write_text('[run]\ntest = "true"\nremote_slots = true\n', encoding='utf-8')
+    (d / 'runner.toml').write_text('[run]\ntest = "true"\nremote_slots = "open"\n', encoding='utf-8')
     (d / '.gitignore').write_text('.runner/\n')
     git(d, 'add', '-A')
     git(d, 'commit', '-qm', 'start')
     R.init(d)
-    eq(R.C.run['sessions'], 'one', 'sessions defaults to one')
+    eq(R.C.run['remote_slots'], 'open', 'slots are listed when opened')
     check(S.one_session(), 'one_session() under the default')
     eq(S.remote_flags('slot2', None), [], 'one: a slot starts with no --remote-control (not listed in the apps)')
     argv = S.agent_argv('brief', str(uuid.uuid4()), 'opus', 60, 'slot2')
@@ -277,7 +277,7 @@ def test_sessions_one_and_each():
               'a run event after that publishes again')
         eq(asks[-1][1], 'https://claude.ai/artifact/abc', 'to the same URL')
 
-        with mock.patch.dict(R.C.run, {'sessions': 'each'}):
+        with mock.patch.dict(R.C.run, {'remote_slots': 'always'}):
             check(not S.one_session(), 'each: one_session() is off')
             flags = S.remote_flags('slot2', None)
             eq(flags[:1], ['--remote-control'], 'each: a slot starts on Remote Control, as before')

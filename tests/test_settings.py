@@ -116,7 +116,7 @@ def load(text: str) -> Config:
 
 c = load('[models]\ncode = "claude:sonnet"\nreview = "haiku"\n\n[models.kinds]\nD = "claude:haiku"\n')
 eq((c.models['code'], c.models['review'], c.models['kinds']['D'], c.run['model']), ('sonnet', 'haiku', 'haiku', 'sonnet'),
-   'claude:<model> runs as the bare name, [run] model follows')
+   'claude:<model> runs as the bare name, and the run takes it')
 check('local' not in c.models and 'providers' not in c.models and c.models_local is False and c.providers == {},
       'local and providers are settings, not roles; local is off by default')
 eq(c.warnings, [], 'and neither warns as an unknown key')
@@ -141,5 +141,57 @@ c = load('')
 eq((c.task_model('D1', 'claude:opus'), c.task_model('D1', 'gemini:pro'), c.task_model('D1', 'haiku')),
    ('opus', 'gemini:pro', 'haiku'), "a task's own claude:<model> runs bare, another provider's as <provider>:<model>")
 has(refused(lambda: load('[models]\nlocal = "yes"\n')), r'local must be true or false', 'local is a boolean')
+
+print('F166: every setting has a name, a description, a group and a home, in plain words')
+from agent_runner import setting_words as W
+every = {f'{t}.{k}' for t, keys in DEFAULTS.items() for k in keys}
+eq(set(W.WORDS) ^ every, set(), 'a line for each setting, and none for another')
+groups = {g[0] for g in W.GROUPS}
+for at, (group, name, desc) in W.WORDS.items():
+    t, k = at.split('.')
+    check(name and len(name) <= 34 and '_' not in name and name != k, f'{at} has a plain name', name)
+    check(desc.endswith('.') and 20 <= len(desc) <= 130 and '`' not in desc and '—' not in desc, f'{at} has a short description', desc)
+    check(group in groups and W.home(t, k) in (W.DEVICE, W.EVERYONE), f'{at} has a group and a home')
+eq(len({n for _, n, _ in W.WORDS.values()} - {'Chats'}), len(W.WORDS) - 1, 'no two settings share a name')
+for table in (W._HOMES, W._PARENTS, W._CHOICES, W._UNITS):
+    eq(set(table) - every, set(), 'the other tables name real settings only')
+for at, words in W._CHOICES.items():
+    t, k = at.split('.')
+    for v in words:
+        val = {'true': True, 'false': False}.get(v, v)
+        val = int(v) if v.isdigit() else __import__('json').loads(v) if v.startswith('{') else val
+        eq(config.setting_problem(t, k, val), '', f'{at}: {v} is a value it takes')
+page = [at for at, w in W.WORDS.items() if W._WHERE[w[0]] == 'page']
+check(20 <= len(page) <= 28, 'about 24 everyday settings', len(page))
+
+print('F166: the settings that were cut: an old file still works, and is told')
+CUT = {'comment_policy': '"minimal"', 'idle': '9', 'stall': '9', 'pause': '9', 'merge_ahead': 'false', 'fix_timeout': '9',
+       'control_idle_quick': 'false', 'control_idle_talked': '"1d"', 'control_open': '["x"]'}
+for k, v in {**CUT, 'model': '"sonnet"', 'fix_model': '"haiku"', 'sessions': '"each"'}.items():
+    check(k not in DEFAULTS['run'], f'[run] {k} is cut')
+    c = load(f'[run]\n{k} = {v}\n')
+    check(len(c.warnings) == 1 and f'[run] {k}' in c.warnings[0], f'an old {k} loads, with a note', c.warnings)
+c = load('[run]\n' + ''.join(f'{k} = {v}\n' for k, v in CUT.items()))
+eq({k: c.run[k] for k in config.FIXED}, config.FIXED, 'the fixed ones keep their values')
+eq((c.run['idle'], c.run['stall'], c.run['pause'], c.run['merge_ahead'], c.run['fix_timeout']), (30, 1200, 60, True, 1800), "today's values")
+c = load('[run]\nmodel = "sonnet"\nfix_model = "haiku"\n')
+eq((c.models['code'], c.models['fix']), ('sonnet', 'haiku'), 'model and fix_model move to [models] code and fix')
+for text, want in (('', 'open'), ('remote_slots = true\n', 'open'), ('sessions = "each"\n', 'open'),
+                   ('sessions = "each"\nremote_slots = true\n', 'always'), ('sessions = "one"\nremote_slots = true\n', 'open'),
+                   ('remote_slots = "always"\n', 'always'), ('remote_slots = "open"\n', 'open')):
+    eq(load('[run]\n' + text).run['remote_slots'], want, f'slots in the Claude apps: {text!r}')
+(repo / 'runner.local.toml').write_text('[run]\nremote_slots = true\nmodel = "haiku"\n', encoding='utf-8')
+eq(load('[run]\nsessions = "each"\n').run['remote_slots'], 'always', 'one in each file')
+snap = config.settings_snapshot(repo)
+row = next(k for t in snap['tables'] for k in t['keys'] if k['key'] == 'remote_slots')
+eq((row['value'], row['device'], row['name']), ('always', 'always', 'Slots in the Claude apps'), 'the page shows the same')
+config.save_local_setting(repo, 'models', 'code', unset=True)
+check('model' not in (repo / 'runner.local.toml').read_text(encoding='utf-8'), 'Reset takes the old key out too')
+config.save_local_setting(repo, 'run', 'remote_slots', 'open')
+eq(load('[run]\nsessions = "each"\n').run['remote_slots'], 'open', 'a value set on the page wins over the old keys')
+(repo / 'runner.local.toml').unlink()
+has(refused(lambda: load('[run]\nremote_slots = "yes"\n')), r"must be 'open' or 'always'", 'another value is refused')
+(repo / 'runner.local.toml').write_text('slots = 2\n', encoding='utf-8')
+has(config.settings_snapshot(repo)['unknown'][0]['why'], r'no \[run\] line is above it', 'a limit with no [run] line above it says so')
 
 raise SystemExit(1 if FAILED else print('\nall checks passed'))
