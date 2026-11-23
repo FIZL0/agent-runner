@@ -407,7 +407,7 @@ What the person asks, and what you run:
 """ + GRILL + """
 - **Needs you items**: before you show one with a pick sheet or a `run: … wizard ID` line, or act on a reply to
   one ("yes", "B", "later", "sent"), read `{cmd} guide needs`. Re-read an item right before asking for it. A
-  reply that clearly answers one item needs no id: {answer}
+  clear reply needs no id: {answer}
 
 """ + NO_BANG + """
 
@@ -652,8 +652,8 @@ RUNNER_START = ("Start the Monitor tool (persistent, timeout_ms 1800000) on `{cm
 
 # B27: a reply that answers an item under Needs you without naming it ({needs} is its heading)
 CONTROL_ANSWER = ('work out which item it answers, run `{cmd} plan confirm|change|shelve ID` as the needs guide '
-                  'says, and say in a line what it did to which item. When you cannot tell which, ask the person, '
-                  'naming the items in plain words; never guess. Only this project\'s items (F33): another project\'s is answered in '
+                  'says, and say in a line what it did to which item. When you cannot tell which, ask, '
+                  'naming the items in plain words; never guess. Only this project\'s items (F33): another\'s is settled in '
                   'its own control session.')
 FEED_ANSWER = ('- A reply to something under "{needs}" ("yes", "no", "B", "later", "use SQLite", "do X instead" '
                'right after that item was shown): work out which item it answers (its [ID] is on the line) and run '
