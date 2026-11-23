@@ -424,10 +424,16 @@ function loadFeed(name){
   api('feed/'+encodeURIComponent(name)).then(r=>{const was=JSON.stringify(S.feeds[name]?.entries||null);
     S.feeds[name]={...r,loading:false};if(JSON.stringify(r.entries||null)!==was)paneOnly()});
 }
+/* F107: through Runner Home (/p/KEY/...) ttyd's own port is not reachable, so the pane goes by Home's
+   /p/KEY/t/TOKEN/NAME/, relative to this page, with Home's token (the one in this page's address) in the path. */
+function termSrc(t,name){
+  if(/^\/p\/[^/]+\//.test(location.pathname))return 't/'+encodeURIComponent(T)+'/'+encodeURIComponent(name)+'/';
+  return location.protocol+'//'+location.hostname+':'+t.port+t.path;
+}
 function termHTML(it){
   const t=S.terms[it.name];
   if(!t||t.ok===undefined&&!t.mode)return '<span class="d">opening the pane…</span>';
-  if(t.ok)return `<iframe src="${esc(location.protocol+'//'+location.hostname+':'+t.port+t.path)}" title="${esc(it.name)} pane"></iframe>`;
+  if(t.ok)return `<iframe src="${esc(termSrc(t,it.name))}" title="${esc(it.name)} pane"></iframe>`;
   return `<div style="padding:4px 10px;white-space:pre-wrap">${esc(t.out)}</div>`;
 }
 function openTerm(it){
