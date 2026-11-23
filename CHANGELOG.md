@@ -4,6 +4,10 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- **Breaking: `[plan] release_alone` is gone (F130).** Tag the release `(alone)` instead (`plan add V --alone`, or
+  `plan edit V7 --alone`; `--no-alone` clears it). Any task can now run alone the same way, so a major rewrite can stop
+  other tasks starting beside it. A runner.toml still setting the key gets one warning in the run log and is otherwise
+  ignored.
 - **Breaking: the Pi backend is gone (F106d).** `[run] agent = "pi"` (any executable named pi, pi.cmd included),
   `[run] backend = "pi"` and `AGENT_RUNNER_BACKEND=pi` now fail at start. Write the model as `<provider>:<model>` in
   `[models]` instead, e.g. `code = "copilot:<model>"`: it runs on the harness loop, and `agent-runner login <provider>`

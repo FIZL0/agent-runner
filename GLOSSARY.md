@@ -309,13 +309,6 @@ _On screen_: (no wording: the TUI starts again, the run page reloads)
 _In code_: follow_upgrade, followVersion, newer_version, PLACE_ENV, snapshot 'version'
 _Avoid_: hot reload, auto-refresh
 
-**Release alone**:
-A release task that waits for every task ahead of it and runs with nothing beside it; off by default, when a release starts like any other task
-_Said_: release runs alone
-_On screen_: a release runs alone
-_In code_: [plan] release_alone, plan.release_alone, sched.release_alone
-_Avoid_: exclusive release
-
 **Run view**:
 The run's log followed live in any terminal, taking the runner keys typed there; Ctrl-C leaves it and the run keeps going
 _Said_: attach, the runner's pane
@@ -336,6 +329,13 @@ _Said_: Home, runner home
 _On screen_: Runner Home
 _In code_: home.py, HomeServer, project_rows, run_action, install
 _Avoid_: dashboard, hub
+
+**Runs alone**:
+A task tagged `(alone)` that starts only when nothing else runs or waits to merge in the run, and starts nothing beside it; any kind of task, a release included
+_Said_: runs alone, nothing beside it
+_On screen_: runs alone, (alone)
+_In code_: `(alone)` tag, plan.alone, plan.alone_ids, plan add/edit --alone, Held.alone, sched.clash
+_Avoid_: exclusive, release_alone
 
 **Task budget**:
 The most tokens or dollars one task's session may use; past it the task stops at a clean point and is parked as wip/<ID>
