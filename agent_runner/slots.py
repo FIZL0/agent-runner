@@ -18,6 +18,7 @@ import uuid
 from pathlib import Path
 
 from agent_runner import plan as P, plat
+from agent_runner.attach import attach_listen, attach_take
 from agent_runner.config import finished_mark, runner_cmd, shown_cmd
 from agent_runner.gitops import push
 from agent_runner.state import C, clean, git, hook, log, note, REPO_TAG, ROOT, SLOTS_DIR, TAG
@@ -986,7 +987,8 @@ class HiddenMux:
     from `<notes>/slotN.job`, starts the agent, and keeps the agent's pid in `<notes>/slotN.live` while it
     runs. The loop, a restart's adopt and the Stop hook all read that marker. POSIX: the agent runs in a
     pseudo-terminal of the standard library's `pty` (it needs a TTY), the shim copies its output to the
-    slot log and types into it what arrives on the FIFO `<notes>/slotN.in` (`send`). Windows: a console of
+    slot log and types into it what arrives on the FIFO `<notes>/slotN.in` (`send`); `attach sN` puts a
+    terminal on it through the socket `<notes>/slotN.sock` (F88, Ctrl-b d leaves). Windows: a console of
     its own whose window starts hidden (`attach sN` shows it); nothing captures its output, so the slot log
     has only the header lines there, and nothing can be typed into it.
     """
@@ -1113,7 +1115,9 @@ PTY_SIZE = (50, 200)  # rows, columns of a hidden slot's terminal: wide enough t
 def run_pty(argv: list[str], cwd: str, env: dict, marker: Path, logfile: Path | None) -> tuple[int, int]:
     """POSIX: run one agent session in a pseudo-terminal with no window (see HiddenMux), its pid in `marker`
     while it runs; what it prints goes to `logfile`, and what arrives on the FIFO beside the marker (slotN.in)
-    is typed into it. Returns its exit code and pid once it has ended. OSError when the agent cannot be started."""
+    is typed into it. F88: it also listens on the socket beside the marker (slotN.sock) for clients that attach
+    to the terminal (`attach_session`), removed when the session ends. Returns its exit code and pid once it
+    has ended. OSError when the agent cannot be started."""
     import fcntl
     import pty
     import select
@@ -1143,10 +1147,14 @@ def run_pty(argv: list[str], cwd: str, env: dict, marker: Path, logfile: Path | 
     except OSError:
         inq = -1
     out = open(logfile, 'ab') if logfile else None
+    sockpath = marker.with_suffix('.sock')
+    listener = attach_listen(sockpath)
+    clients: dict = {}  # F88: socket -> the bytes of a frame not yet whole
     code = None
     try:
         while True:
-            r, _, _ = select.select([fd] + ([inq] if inq >= 0 else []), [], [], 1.0)
+            watch = [fd] + ([inq] if inq >= 0 else []) + ([listener] if listener else []) + list(clients)
+            r, _, _ = select.select(watch, [], [], 1.0)
             if fd in r:
                 try:
                     data = os.read(fd, 65536)
@@ -1157,6 +1165,29 @@ def run_pty(argv: list[str], cwd: str, env: dict, marker: Path, logfile: Path | 
                 if out:
                     out.write(data)
                     out.flush()
+                for c in list(clients):
+                    try:
+                        c.sendall(data)
+                    except OSError:  # gone, or too slow to take it: that client is dropped, not the session
+                        clients.pop(c)
+                        c.close()
+            if listener and listener in r:
+                try:
+                    c, _ = listener.accept()
+                    c.settimeout(0.5)  # a client that takes no output for this long is dropped, once
+                    clients[c] = b''
+                except OSError:
+                    pass
+            for c in [c for c in r if c in clients]:
+                try:
+                    got = c.recv(65536)
+                except OSError:
+                    got = b''
+                if not got:
+                    clients.pop(c)
+                    c.close()
+                    continue
+                clients[c] = attach_take(clients[c] + got, fd)
             if inq in r:
                 try:
                     os.write(fd, os.read(inq, 65536))
@@ -1175,6 +1206,11 @@ def run_pty(argv: list[str], cwd: str, env: dict, marker: Path, logfile: Path | 
         os.close(fd)
         if inq >= 0:
             os.close(inq)
+        for c in clients:
+            c.close()
+        if listener:
+            listener.close()
+            sockpath.unlink(missing_ok=True)
         inbox.unlink(missing_ok=True)
         marker.unlink(missing_ok=True)
     return code, pid

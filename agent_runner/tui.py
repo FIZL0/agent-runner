@@ -29,7 +29,7 @@ as a Claude session does. A box takes typing after i (or Enter): Enter sends, Sh
 is a new line, Esc leaves it (never interrupts), and in a chat Ctrl+C interrupts while the session works (B116;
 elsewhere Ctrl+C quits). Each box keeps its draft
 across Esc and refreshes. The pane tab attaches to the session's tmux pane (Enter; back with Ctrl-b d outside
-tmux, Ctrl-b L inside it). Navigation: h/l previous / next tab (h on the first tab and Esc go back to the
+tmux, Ctrl-b L inside it), or a hidden session's own terminal (F88; back with Ctrl-b d). Navigation: h/l previous / next tab (h on the first tab and Esc go back to the
 panels), Ctrl-h / Ctrl-l the left / right side, 1-5 a panel (anywhere but in a box), Tab the next panel; in the
 main pane j/k scroll it (the terminal has no scrollbar), and move through a concept's options.
 
@@ -794,6 +794,10 @@ class RunPage:
         if tab == 'pane':
             if not it.get('task') and not is_control(it):
                 return [L((idle_line(it), 'dim'))], [], 0
+            if hidden_terminal(name):  # F88: its own terminal, through its shim's socket
+                return [L((f'{name} runs hidden, in a terminal of its own.', 'fg')), L(),
+                        buttons(button('⏎', f'attach {name}', True)), L(),
+                        L((f'Back: {DETACH_KEY}.', 'dim'))], [], 0
             if self.snap.get('terminal_mode') == 'feed':
                 return [L((f'{name} has no tmux pane here (Windows, or no tmux): its feed and session link work.',
                            'dim'))], [], 0
@@ -1548,7 +1552,8 @@ class RunPage:
             self.cur[3] = ids.index(tasks[i]['id']) if tasks[i]['id'] in ids else i + step
 
     def pane_attach(self) -> None:
-        """Enter on the pane tab: switch to the session's tmux pane (`attach NAME`); an idle slot has none."""
+        """Enter on the pane tab: switch to the session's tmux pane, or its hidden terminal (F88), with `attach
+        NAME`; an idle slot has none."""
         it = self.sel()
         if not isinstance(it, dict) or it.get('new'):
             return
@@ -1770,8 +1775,22 @@ def escape_tail(name: str, more) -> list[str]:
     return ['ESC'] if not seq else []
 
 
+DETACH_KEY = 'Ctrl-b d'  # attach.DETACH_KEY: what leaves a hidden session's terminal
+
+
+def hidden_terminal(name: str) -> bool:
+    """F88: `name` (sN, cN) runs hidden with a terminal to attach to (its shim's socket is up; not Windows)."""
+    try:
+        from agent_runner.attach import session_socket
+        return bool(session_socket(name))
+    except Exception:  # noqa: BLE001 - no notes dir (no repo set up): nothing to attach
+        return False
+
+
 def attach_slot(curses, win, name: str) -> dict:
-    """Leave curses, show the session's tmux pane (`attach NAME`), and come back when it returns."""
+    """Leave curses, show the session's tmux pane or, F88, its hidden terminal (`attach NAME`), and come back
+    when it returns."""
+    hidden = hidden_terminal(name)
     curses.def_prog_mode()
     curses.endwin()
     try:
@@ -1782,7 +1801,7 @@ def attach_slot(curses, win, name: str) -> dict:
     inside = bool(os.environ.get('TMUX'))
     if r.returncode:
         return {'ok': False, 'out': (r.stderr or '').strip() or f'attach {name} failed'}
-    return {'ok': True, 'out': f'{name}: back with Ctrl-b L' if inside else f'back from {name}'}
+    return {'ok': True, 'out': f'{name}: back with Ctrl-b L' if inside and not hidden else f'back from {name}'}
 
 
 def link_sgr(curses, theme: str | dict | None = None) -> str:

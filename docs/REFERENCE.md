@@ -101,8 +101,12 @@ for a run started with `agent-runner run` in a tmux session too. `attach s2` goe
 `attach master` to a fix session. Inside tmux it switches the client; outside, it attaches this terminal.
 Detach with Ctrl-b d. On Windows, `attach s2` shows and raises slot 2's console window. Minimize it to hide it
 again: closing it ends that session, which resumes in the next run. The runner has no window there, so
-`agent-runner status` and `.runner/run.log` show it. On Linux and macOS a hidden slot has no pane to attach:
-`attach s2` says where its log is.
+`agent-runner status` and `.runner/run.log` show it. On Linux and macOS a hidden session (`attach s2`, `attach c3`,
+or Enter on the pane tab of `agent-runner ui`) is attached to its own terminal, the way dtach does it: the shim
+listens on a Unix socket beside its marker (`.runner/slotN.sock`, `controlN.sock`, mode 0600, gone when the
+session ends), sends what the session prints to every attached terminal, types in what you type, and takes your
+terminal's size (on attach, and when you resize it). Detach with Ctrl-b d (Ctrl-b Ctrl-b types one Ctrl-b); the
+session keeps running. A session started before this has no socket, and `attach s2` says where its log is.
 
 With `[run] remote` (or `remote_slots`), Claude Code asks once, at a terminal, "Enable Remote Control? (y/n)".
 In a hidden pane that question would hold every session. So before going to the background the launch checks `remoteDialogSeen` in
@@ -942,7 +946,8 @@ the running tasks merge. A run left up keeps picking up whatever you commit to T
 agent-runner                           the run in the background (a detached tmux session; without tmux or on
                                        Windows a detached process, its slots hidden), the prompt straight back;
                                        `help` prints the usage
-agent-runner attach [sN|c1|master]     the runner's pane, or a slot's (Windows: the slot's hidden console)
+agent-runner attach [sN|c1|master]     the runner's pane, or a slot's (Windows: the slot's hidden console; a hidden
+                                       session on Linux and macOS: its own terminal); Ctrl-b d detaches
 agent-runner control [N]               a control session in this terminal (c1: the kept one, resumed)
 agent-runner control --new [N]         another one beside the run, without taking focus; prints its claude.ai/code link
 agent-runner control --new --forward   the same, with the person's latest runner-feed message as its first
