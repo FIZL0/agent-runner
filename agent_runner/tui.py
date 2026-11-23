@@ -1184,11 +1184,12 @@ class RunPage:
             self.restart = True
 
     def saved_place(self) -> dict:
-        """F90: the focused panel, the selection, tabs and focus, for `restore_place` after a restart."""
+        """F90: the focused panel, the selection, tabs and focus, for `restore_place` after a restart; F92: and
+        the typing boxes' drafts."""
         it = self.sel()
         sel = (it.get('id') or it.get('name') or '') if isinstance(it, dict) else ''
         return {'panel': self.panel, 'cur': {str(n): c for n, c in self.cur.items()}, 'sel': sel,
-                'tabs': self.tabs, 'main': self.main,
+                'tabs': self.tabs, 'main': self.main, 'drafts': dict(self.drafts),
                 'for': str(self.snap.get('version') or '')}
 
     def restore_place(self, place: dict) -> None:
@@ -1210,6 +1211,11 @@ class RunPage:
             self.cur[self.panel] = ids.index(place['sel'])
         self.tabs.update({str(k): str(v) for k, v in (place.get('tabs') or {}).items()})
         self.main = bool(place.get('main'))
+        drafts = place.get('drafts')
+        if isinstance(drafts, dict):  # F92: a draft typed here is kept; the saved one fills only empty boxes
+            for box, text in drafts.items():
+                if isinstance(text, str) and text and not self.drafts.get(str(box)):
+                    self.drafts[str(box)] = text
         self.followed = str(place.get('for') or '')
 
     def done(self, r: dict) -> None:

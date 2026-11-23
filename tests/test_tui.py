@@ -1129,6 +1129,7 @@ def test_follow_upgrade_f90() -> None:
     p.key('DOWN')
     p.key('ENTER')  # the main pane on B2
     check(p.set_tab('chat edit'), "B2's second tab")
+    p.set_text('status:chat', 'half a message\nline two')  # F92: a draft survives the restart
     p.refresh()
     check(p.restart, 'a newer run version: restart')
     got = []
@@ -1146,6 +1147,10 @@ def test_follow_upgrade_f90() -> None:
         check(T.PLACE_ENV not in os.environ, 'the place is taken once')
     eq((q.panel, q.sel().get('id'), q.main, q.tab()[0]), (3, 'B2', True, 'chat edit'),
        'the new TUI reopens where it was: panel, selection, main pane, tab')
+    eq(q.text_of('status:chat'), 'half a message\nline two', 'F92: the typing box keeps its draft')
+    r = page(dict(SNAP, version=newer))
+    r.restore_place({'drafts': {'status:chat': 7, 'c2:chat': ''}})
+    eq(r.drafts, {}, 'F92: a draft that is not text, or empty, is left out')
     q.refresh()
     check(not q.restart, 'never a second restart for the version it restarted for')
     check(T.newer_version('0.60.0', '0.59.9') and not T.newer_version('0.59.0', '0.59.0')
