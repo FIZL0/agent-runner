@@ -2467,7 +2467,7 @@ def test_mic_aborted_b162(tmp: Path) -> None:
                           '1600 ms stop by pointerup', '1600 ms touchend touch id 7', '1600 ms error aborted: No speech detected', '1600 ms end',
                           '1600 ms lostpointercapture touch id 7'], 'the mic report: each event with its ms, and who stopped it')
     eq((got.get('button'), got.get('cleared')), (False, True), 'the copy button shows with the note, and goes with the next listen')
-    eq(got.get('early'), 'The mic was stopped before it was on. Allow it if the browser asks, wait until this line says Listening…, then speak.', 'let go before any sound')
+    eq(got.get('early'), 'The mic was stopped before it was on. Allow it if the browser asks, wait until this line says Listening…, then speak. (hold, after 0.0 s)', 'let go before any sound')
     eq(got.get('two'), False, 'one of two fingers lifting is not the end')
     eq(got.get('noEnd'), ['', True, True], 'a stop with no end still ends the listen, and the report says so')
     check('result, 6 letters, final' in got['noWords'][0] and 'secret' not in got['noWords'][0], 'words are counted, not kept', str(got['noWords']))
