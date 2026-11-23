@@ -1506,6 +1506,18 @@ python3 tests/test_runner.py    # picking, done, merge/join/land/push, fix sessi
                                 # Windows slot shim (temp repos, fake agent)
 ```
 
+### Windows CI for a task branch
+
+Windows-only code (ConPTY, attach) cannot run on Linux, so an agent on a Linux slot runs the gate on Windows on its
+task branch before the merge. The git fence refuses `git push`; `run done <ID> "<msg>" --blocked "waits for its Windows
+run"` commits and pushes the branch and leaves the task open, so it can be repeated after a fix (a plain `done` ticks
+the task, and cannot). Then, in the same session, `gh workflow run ci.yml --ref task/<ID> -f system=windows` (`system`:
+`windows`, `linux` or `both`, the default; `-f tests="tests/test_windows.py tests/test_cmds.py"` runs only those files).
+Find it with `gh run list -w ci.yml -b task/<ID> -e workflow_dispatch -L 1 --json databaseId,headSha`, check that
+headSha is your commit, and wait in the foreground, repeated until it ends (after `done` a session idling on a
+background command may be ended): `timeout 540 gh run watch <run-id> --exit-status`, where exit 124 means not yet.
+`gh run view <run-id> --log-failed` shows why it failed. Once it is green, plain `done`, then `finish`.
+
 ### Test entries in ~/.claude.json
 
 The suites keep Claude Code's config in a temp `CLAUDE_CONFIG_DIR` (`tests/_check.py`), so the folder-trust entries
