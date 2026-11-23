@@ -1291,8 +1291,11 @@ def session_socket(name: str) -> Path | None:
     m = re.fullmatch(r'([cs])(\d+)', name)
     if not m or plat.WINDOWS:
         return None
-    sock = C.notes(f'{"control" if m[1] == "c" else "slot"}{m[2]}.sock')
-    return sock if sock.exists() else None
+    try:
+        sock = C.notes(f'{"control" if m[1] == "c" else "slot"}{m[2]}.sock')
+        return sock if sock.exists() else None
+    except (AttributeError, OSError):  # no repo set up: no notes, so no socket
+        return None
 
 
 def attach_session(sock: Path, name: str, stdin: int = 0, stdout: int = 1) -> int:
