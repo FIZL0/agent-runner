@@ -512,7 +512,7 @@ def slot_open(name: str, wait: float = OPEN_WAIT) -> tuple[str, str]:
         return '', f'no session runs in {name}'
     if link := _bridge_link(sid):
         return link, ''
-    if MUX.streamed(hit):  # F106b: a headless session has no Remote Control
+    if getattr(MUX, 'streamed', lambda h: False)(hit):  # F106b: a headless session has no Remote Control
         return '', f'{name} runs headless ([run] engine = "stream"), which has no Remote Control: the run page shows it'
     if why := remote_off_why():
         return '', f'Remote Control is off: {why}'
