@@ -238,7 +238,8 @@ def held(running: dict, branch: str) -> Held:
 
 def holds(t: tuple, tried: set, h: Held) -> tuple[str, tuple | None] | None:
     """Why open task `t` may not start now, first reason only: ('finished', None), ('tried', None),
-    ('busy', None), ('parked', None) or ('clash', the busy task it clashes with); None when it is free."""
+    ('busy', None), ('parked', None), ('merging', None) (a release, while a merge holds the turn: F99) or
+    ('clash', the busy task it clashes with); None when it is free."""
     tid = t[0]
     if tid not in h.busy_ids and tid in h.finished:
         return 'finished', None  # its branch is waiting to be merged: restarting it would reset the branch
@@ -248,6 +249,8 @@ def holds(t: tuple, tried: set, h: Held) -> tuple[str, tuple | None] | None:
         return 'busy', None
     if len(h.parked.get(tid, [])) >= PARK_LIMIT:  # B32: failed its merge that often; a person decides
         return 'parked', None
+    if P.release(tid) and MERGE.locked():  # F99: a merge under way lands first, so the release starts from it
+        return 'merging', None
     if b := next((b for b in h.busy if clash(t, b, h.shared) and not passes(t, b, h)), None):
         return 'clash', b  # a running or merge-waiting task's sibling, ordered-section mate or file neighbour
     return None
@@ -289,6 +292,8 @@ def explain(running: dict, tried: set, branch: str) -> dict[str, tuple[str, str]
                         'taken by hand (`take`)' if tid in taken() else '')
         elif kind == 'parked':
             why[tid] = (f'parked {len(h.parked[tid])} times, needs a person', ', '.join(sorted(h.parked[tid])))
+        elif kind == 'merging':
+            why[tid] = ('waiting for a merge to land', 'a release starts from what has landed')
         elif kind == 'clash':
             why[tid] = clash_why(t, b, h.shared)
         elif P.release(tid) and (over := passed_over(t, h)):

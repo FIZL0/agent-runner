@@ -830,7 +830,8 @@ def releasing(tid: str, branch: str) -> str:
     if not vs:
         return ''
     from agent_runner.sched import taken  # sched never imports merge
-    live = {t for _, box, t, _, _ in P.iter_tasks(plan_text(branch)) if box != 'x'}
+    live = {t for section, box, t, _, _ in P.iter_tasks(plan_text(branch))
+            if box != 'x' and not section.startswith(P.SKIPPED)}
     away = set(taken())
     return next((v for v in vs if v in live and v not in away), '')
 

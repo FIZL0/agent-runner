@@ -153,6 +153,9 @@ def test_release_beside(tmp: Path):
     eq(S.explain(running, set(), 'main').get('V1'), ('free', ''), 'the release is free while T1 and T2 run')
     eq('V2' in S.explain(running, set(), 'main'), False, 'one with open tasks ahead of it waits for them to land')
     eq(S.choose(S.held(running, 'main'), set(), 'main')[0], 'V1', 'and a free slot starts it')
+    with S.MERGE:  # a merge is landing: the release starts from it, once it has
+        eq(S.explain(running, set(), 'main').get('V1'),
+           ('waiting for a merge to land', 'a release starts from what has landed'), 'not while a merge lands')
     v = next(t for t in S.held({}, 'main').todo if t[0] == 'V1')
     beside = {**running, 3: v}
     eq(S.explain(beside, set(), 'main').get('T3'), ('free', ''), 'a task is free beside the release')
