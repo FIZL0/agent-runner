@@ -363,6 +363,7 @@ class RunPage:
         self.side = SidePane(tmux)  # F112: inside tmux, the selected session in a tmux pane beside this one
         self.full = False  # F112 Ctrl-f outside tmux: the main pane between the bars, no panels
         self.bar_only = False  # F112 `ui --bar`: only the top bar (the top pane of tmux's full-screen layout)
+        self.repaint = False  # B136: an in-process action may have written to the terminal; clear it next frame
         self.starting: dict | None = None  # F112: the new control session N started, until its row is up
         self.get_snap = get_snap or (lambda: U.snapshot())
         self.attach = attach or (lambda name: {'ok': False, 'out': 'no terminal to attach'})
@@ -1695,12 +1696,23 @@ class RunPage:
             self.msg, self.msg_ok = "c1 is the run's kept session: d leaves it open", False
             return
         from agent_runner import control as K
-        self.done(K.close_from_tui(n))
+        self.done(self.quiet(K.close_from_tui, n))
+
+    def quiet(self, fn, *args, **kw):
+        """B136: run an in-process action with its stdout and stderr swallowed (its run-log lines still go to
+        run.log), so nothing prints over the curses screen; the next frame repaints every cell."""
+        import contextlib
+        import io
+        try:
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                return fn(*args, **kw)
+        finally:
+            self.repaint = True
 
     def concept_chat(self, it: dict) -> None:
         """F86: N on a concept: a new control session about it (`concept_chat`), its link in the message line."""
-        r = U.concept_chat(it.get('concept') or it.get('id', ''), it.get('title', ''), it.get('url', ''),
-                             it.get('copy', ''))
+        r = self.quiet(U.concept_chat, it.get('concept') or it.get('id', ''), it.get('title', ''),
+                       it.get('url', ''), it.get('copy', ''))
         self.done(r)
         if r.get('ok') and r.get('link'):
             self.msg = f'new control session about {it.get("concept") or it.get("id")}: {r["link"]}'
@@ -2211,6 +2223,9 @@ def page_loop(curses, win, page: RunPage, box: dict | None) -> int:
         if page.restart and box is not None and not page.bar_only:
             box['restart'] = page
             return 0
+        if page.repaint:  # B136: an in-process action may have printed; repaint every cell
+            page.repaint = False
+            win.clear()
         page.draw(win)
         win.refresh()
         page.out(links_over(page.links, sgr))
