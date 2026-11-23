@@ -1764,6 +1764,29 @@ def test_card_chat_b139(tmp: Path) -> None:
        'with no card context the box still goes to its chat (c1 by default)')
 
 
+def test_short_ask_b152(tmp: Path) -> None:
+    """B152: a Needs you card shows its short ask clamped to 2 lines with a More that opens the whole ask in
+    place (Less folds it), and the title under it on one line with an ellipsis."""
+    page = W.PAGE.read_text(encoding='utf-8')
+    check('.q.clamp{display:-webkit-box;-webkit-line-clamp:2' in page, 'a clamped ask is cut at 2 lines', '')
+    check('<div class="small ell">${esc(n.id)}${n.title' in page, 'the title line has an ellipsis', '')
+    check("q('[data-more]')" in page and 'S.askOpen' in page, 'More opens the ask in place', '')
+    if not shutil.which('node'):
+        print('  (no node here: the short ask script test is skipped)')
+        return
+    long = {'id': 'R45', 'title': 'Check the sign-in', 'ask_short': 'Sign in to Chariz and check that Glint downloads.',
+            'ask': 'Sign in to Chariz (iFizBox > Sources > Chariz > Sign In) and check that Glint downloads. '
+                   'Notes are in .runner/journal/R45.md - reply yes/no'}
+    shut, opened, small = logic_js([['needAsk', long, 3, False], ['needAsk', long, 3, True],
+                                    ['needAsk', {'id': 'D7', 'ask': 'Which port?', 'ask_short': 'Which port?'}, 0, False]])
+    check('<div class="q clamp">Sign in to Chariz and check that Glint downloads.</div>' in shut
+          and 'data-more="3"' in shut and '>More<' in shut and 'R45.md' not in shut,
+          'a long ask renders short and clamped, with a More control', shut)
+    check('R45.md' in opened and '(iFizBox &gt; Sources' in opened and 'clamp' not in opened and '>Less<' in opened,
+          'More shows the whole ask, paths and asides too, with Less', opened)
+    eq(small, '<div class="q">Which port?</div>', 'a short ask has no clamp and no More')
+
+
 if __name__ == '__main__':
     raise SystemExit(report([in_tmp(test_chat_order_f133), in_tmp(test_delete_chats_f118), in_tmp(test_server), in_tmp(test_real_action), in_tmp(test_run_controls),
                            in_tmp(test_start), in_tmp(test_upload),
@@ -1775,4 +1798,4 @@ if __name__ == '__main__':
                            in_tmp(test_listen_heard_nothing_b132), in_tmp(test_talk_reply_heard_b133),
                            in_tmp(test_slash_menu_b119), in_tmp(test_composer_keys_b120),
                            in_tmp(test_interrupt_c1_b141), in_tmp(test_answer_button_b138), in_tmp(test_pick_f138),
-                           in_tmp(test_outbox_f137), in_tmp(test_card_chat_b139)]))
+                           in_tmp(test_outbox_f137), in_tmp(test_card_chat_b139), in_tmp(test_short_ask_b152)]))

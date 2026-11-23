@@ -180,8 +180,24 @@ def needs_rows(waiting, now: dt.datetime) -> tuple[list[dict], list[dict]]:
         if label == 'CONCEPT':
             concepts.append({'id': tid, 'concept': k, 'title': title, 'url': url, 'copy': concept_copy(k)})
         needs.append({'label': label, 'id': tid, 'concept': k, 'title': title, 'what': what, 'url': url,
-                      'ask': P.plain_ask(label, what, title), 'age': P.age(stamps.get(tid, ''), now)})
+                      'ask': (ask := P.plain_ask(label, what, title)), 'ask_short': ask_short(ask),
+                      'age': P.age(stamps.get(tid, ''), now)})
     return needs, concepts
+
+
+ASK_SHORT = 120  # B152: the most a short ask runs to, in characters
+
+
+def ask_short(ask: str, limit: int = ASK_SHORT) -> str:
+    """B152: a Needs you ask, short, on one line: its first sentence, without parenthesised asides and paths
+    (those stay in the full ask), cut to `limit` characters with an ellipsis."""
+    s = re.sub(r'\s+', ' ', ask or '').strip()
+    while (t := re.sub(r'\s*\([^()]*\)', '', s)) != s:  # asides, nested ones too
+        s = t
+    s = re.sub(r'\s*(?<![\w])(?:~|\.{0,2})?/?(?:[\w.@+-]+/)+[\w.@+-]*', '', s)  # paths: a/b/c.md, ~/x, /abs
+    s = re.split(r'(?<=[.!?])\s+(?=[A-Z])', s.strip(' ,;:'), maxsplit=1)[0].strip(' ,;:')
+    s = re.sub(r'\s+([,.;:!?])', r'\1', s)
+    return s if len(s) <= limit else s[:limit - 1].rstrip(' ,;:-') + '…'
 
 
 def _bridge_link(sid: str) -> str:

@@ -113,6 +113,8 @@ a{color:var(--accent)}
 .card.tap{cursor:pointer} .card.tap:hover{border-color:var(--line2)}
 .card.need{border-color:color-mix(in srgb,var(--warn) 45%,var(--line))}
 .q{font:500 17px/1.35 var(--serif);overflow-wrap:anywhere}
+.q.clamp{display:-webkit-box;-webkit-line-clamp:2;line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.more{border:0;background:none;padding:0;font:500 13px var(--sans);color:var(--accent);cursor:pointer;justify-self:start}
 .small{font-size:13px;color:var(--muted)}
 .row{display:flex;align-items:center;gap:12px;min-width:0}
 .grow{flex:1;min-width:0}
@@ -264,6 +266,16 @@ function answerOpts(it){
   const opts=Array.isArray(it.options)&&it.options.length?it.options.map(String):
     it.label==='CONFIRM'||/\byes ?(\/|or) ?no\b/i.test(it.ask||'')?['Yes','No']:[];
   return opts.map(o=>o.charAt(0).toUpperCase()+o.slice(1));
+}
+/* B152: a Needs you card's ask: short (ask_short: first sentence, no paths or asides) clamped to 2 lines with a More
+   that opens the whole ask in place, Less to fold it again; the title under it on one line with an ellipsis */
+const ASK_LONG=80;
+function needAsk(n,i,open){
+  const e=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const full=(n&&(n.ask||n.title||n.what))||'', short=(n&&n.ask_short)||full;
+  const more=short!==full||full.length>ASK_LONG;
+  const q=open&&more?`<div class="q">${e(full)}</div>`:`<div class="q${more?' clamp':''}">${e(short)}</div>`;
+  return q+(more?`<button class="more" data-more="${i}" aria-expanded="${open?'true':'false'}">${open?'Less':'More'}</button>`:'');
 }
 /* B138: an answered item stays off Needs you for a while (GONE_MS), so a snapshot taken before the answer landed
    does not bring a stale card back; gone maps an id to when it was answered */
@@ -484,7 +496,7 @@ function obHidden(box,key){return(box||[]).filter(x=>x.state==='sending'&&x[key]
 /* the pill's words */
 function obPill(c,offline){const p=[];if(c.sending)p.push(`${c.sending} ${offline?'waiting for the connection':'sending'}`);
   if(c.failed)p.push(`${c.failed} failed · tap to see`);return p}
-if(typeof module!=='undefined')module.exports={chatMove,BOX_KEYS,keysLine,histPush,histEdge,histStep,slashMatches,slashPick,slashMove,SLASH_FALLBACK,chatPick,answerOpts,threadMsgs,working,planWords,compose,sendReq,usageOf,logKind,plain,chatName,controlReq,controlClick,taskControlsOn,queueGroups,conceptButtons,NO_CONCEPT,newConceptReq,queuedId,NAV,talkSession,micProblem,talkShown,talkReply,goneMark,needsShown,answerSaid,GONE_MS,obParse,obNext,obName,obSettle,obRetry,obDrop,obCounts,obHidden,obPill};
+if(typeof module!=='undefined')module.exports={chatMove,BOX_KEYS,keysLine,histPush,histEdge,histStep,slashMatches,slashPick,slashMove,SLASH_FALLBACK,chatPick,answerOpts,needAsk,threadMsgs,working,planWords,compose,sendReq,usageOf,logKind,plain,chatName,controlReq,controlClick,taskControlsOn,queueGroups,conceptButtons,NO_CONCEPT,newConceptReq,queuedId,NAV,talkSession,micProblem,talkShown,talkReply,goneMark,needsShown,answerSaid,GONE_MS,obParse,obNext,obName,obSettle,obRetry,obDrop,obCounts,obHidden,obPill};
 </script>
 
 <script>
@@ -744,7 +756,7 @@ function controlsCard(){
 }
 function needCard(n,i){
   const os=answerOpts(n);
-  return card(`<div class="q">${esc(n.ask||n.title||n.what)}</div><div class="small">${esc(n.id)}${n.title?` · ${esc(n.title)}`:''}${n.age?` · ${esc(n.age)}`:''}</div>
+  return card(`${needAsk(n,i,!!(S.askOpen||{})[n.id])}<div class="small ell">${esc(n.id)}${n.title?` · ${esc(n.title)}`:''}${n.age?` · ${esc(n.age)}`:''}</div>
     <div class="btns">${os.map((o,j)=>`<button class="btn ${j===0?'pri':''}" data-ans="${i}" data-v="${esc(o)}">${esc(o)}</button>`).join('')}<button class="btn" data-later="${i}">Later</button><button class="btn" data-about="need:${i}">Chat</button>${n.url?`<a class="btn" href="${esc(n.url)}" target="_blank" rel="noopener">Open ${I.ext}</a>`:''}</div>`,'need');
 }
 function planCard(q){
@@ -1089,6 +1101,8 @@ document.addEventListener('click',async e=>{
   if(x=q('[data-ans]')){const n=S.snap.needs[+x.dataset.ans];if(!n)return;  // B138: the plan command, no AI session
     // F137: the card folds away at once (obHide) and stands as 'sending' until answer returns (obDone)
     outbox('answer',{tid:n.id,text:x.dataset.v,button:true},{need:n.id,say:`${n.id} · answered “${x.dataset.v}”`});return}
+  if(x=q('[data-more]')){const n=S.snap.needs[+x.dataset.more];if(!n)return;  // B152: the whole ask, in place
+    S.askOpen={...(S.askOpen||{}),[n.id]:!(S.askOpen||{})[n.id]};render(true);return}
   if(x=q('[data-later]')){const n=S.snap.needs[+x.dataset.later];if(!n)return;
     outbox('shelve',{tid:n.id},{need:n.id,say:`${n.id} · Later`,done:`${n.id} is set aside until you bring it back`});return}
   if(x=q('[data-unpark]')){const id=x.dataset.unpark;  // B118; F137: through the outbox

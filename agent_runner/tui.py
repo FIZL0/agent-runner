@@ -590,7 +590,9 @@ class RunPage:
                     (f'{it.get("task", "")} ', 'cyan'), (it.get('title', ''), 'fg'),
                     (f'{mins} {it.get("state", "")}', 'dim')]
         if n == 4:
-            return [(f'{it["id"]} ', 'yellow'), (it.get('title') or it.get('ask', ''), 'fg'),
+            # B152: the short ask, one line; the full ask shows in the pane beside
+            short = ' '.join(str(it.get('ask_short') or it.get('title') or it.get('ask', '')).split())
+            return [(f'{it["id"]} ', 'yellow'), (short, 'fg'),
                     (f' {it.get("age", "")}', 'dim')]
         if it.get('new'):
             return [('+ ', 'green'), ('new concept ', 'dim'), ('n', 'hkey')]

@@ -1607,8 +1607,35 @@ def test_answer_tab_b138() -> None:
        'a failure says why and the item stays')
 
 
+LONG_ASK = ('Sign in to Chariz on the iPhone 15 Pro (iFizBox > Sources > Chariz > Glint > Sign In, then pick the '
+            'Apple ID)\nand check that Glint downloads. Notes are in .runner/journal/R45.md - reply yes/no')
+
+
+def test_short_ask_b152() -> None:
+    """B152: needs_rows adds ask_short (first sentence, no asides or paths, ~120 chars) beside the full ask, and
+    a Needs you panel row shows it on one line, even for an ask of several lines with a long title."""
+    import datetime as dt
+    needs, _ = U.needs_rows([('CONFIRM', 'R45', '', LONG_ASK, '', 'Check the Chariz sign-in on a real iPhone ' * 3,
+                              False, '')], dt.datetime(2026, 11, 23))
+    n = needs[0]
+    eq(n['ask_short'], 'Sign in to Chariz on the iPhone 15 Pro and check that Glint downloads.',
+       'the short ask: first sentence, without the aside')
+    check('R45.md' in n['ask'] and '(iFizBox' in n['ask'], 'the full ask keeps the path and the aside', n['ask'])
+    check(len(U.ask_short('word ' * 80)) <= U.ASK_SHORT, 'a long sentence is cut to ASK_SHORT', '')
+    eq(U.ask_short('Which port? - reply with your answer'), 'Which port? - reply with your answer',
+       'a short one-sentence ask stays as it is')
+    p = page(dict(SNAP, needs=[n, dict(SNAP['needs'][2])]))
+    row = p.row(4, n)
+    check(all('\n' not in t for t, _ in row) and 'Glint downloads.' in ''.join(t for t, _ in row),
+          'the panel row is the short ask on one line', row)
+    lines = drawn(p).lines()
+    at = [i for i, l in enumerate(lines) if 'R45 ' in l and 'Sign in to Chariz' in l]
+    eq(len(at), 1, 'R45 shows on one panel line')
+    check('D7 ' in lines[at[0] + 1], 'the next item is on the very next line', lines[at[0]:at[0] + 2])
+
+
 if __name__ == '__main__':
-    raise SystemExit(report([test_d_drops_f116, test_answer_direct_b138, test_answer_tab_b138, test_close_control_quiet_b136,test_layout, test_status_tabs, test_session_tabs, test_queue, test_form_pane_v_task,
+    raise SystemExit(report([test_short_ask_b152, test_d_drops_f116, test_answer_direct_b138, test_answer_tab_b138, test_close_control_quiet_b136,test_layout, test_status_tabs, test_session_tabs, test_queue, test_form_pane_v_task,
                                test_direct_edit,
                                test_navigation, test_no_message_box_f112, test_new_chat_f112, test_side_pane_f112,
                                test_diff_key_f127, test_full_screen_f112, test_side_keys_in_box_f113, test_actions, test_session_tab_b125, test_footer,
