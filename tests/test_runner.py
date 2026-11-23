@@ -848,6 +848,21 @@ def test_short_name_hints(repo: Path):
             check('    agent-runner status' in note and '    agent-runner control' in note and exe not in note,
                   'on PATH: the start hints say agent-runner', note)
             check(f'{exe} status' in R.control_brief(), "a control session's brief keeps the full path")
+            # B171: at and over the cap, with the wording's path and lines of any length: what flipped the check above
+            for n in (1, 40, 120):
+                folder = Path(tempfile.mkdtemp()) / ('p' * n)
+                folder.mkdir()
+                (folder / 'voice.md').write_text(f'- say {"y" * n}\n', encoding='utf-8')
+                with mock.patch.dict(R.C.run, {'voice': str(folder / 'voice.md')}):
+                    full = R.control_brief()
+                    check(f'{exe} status' in full and f'{"p" * n}/voice.md' in full,
+                          f'B171: the full path with a voice folder of {n} chars')
+                    for over, bare in ((-1, False), (0, True), (1, True)):
+                        with mock.patch.object(RC, 'BRIEF_MAX', len(full) - over):
+                            got = R.control_brief()
+                        check((f'{exe} status' not in got) == bare and f'`{exe} <that command>`' in got
+                              and len(got) < len(full) - over,
+                              f'B171: {over:+} chars from the cap: ' + ('bare, the full path named once' if bare else 'the full path'))
         with mock.patch.object(config.shutil, 'which', lambda *a, **k: None):
             check(f'    {exe} status' in R.started_note(2, 'here'), 'not on PATH: the full path, which works')
     with mock.patch.object(R.plat, 'WINDOWS', False), mock.patch.object(config, 'RUNNER', '/x/run'):
