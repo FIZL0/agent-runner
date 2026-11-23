@@ -245,6 +245,34 @@ def test_picker_colours():
         eq(M.picker_paint(None, {'TERM': 'xterm-256color'}), None, 'not a terminal: no colour')
 
 
+def test_run_facts_https_link():
+    print('B135: the run page link names the Tailscale Serve https address first, as run status does')
+    http = ['http://box:8123/?t=tok', 'http://192.168.1.5:8123/?t=tok']
+    seen = []
+
+    def https(port, token):
+        seen.append((port, token))
+        return ['https://box.tail.ts.net/?t=tok']
+    eq(M.page_link(http, https), 'https://box.tail.ts.net/?t=tok', 'the https address first')
+    eq(seen, [(8123, 'tok')], 'asked for the port and token of web.url')
+    eq(M.page_link(http, lambda p, t: []), http[0], 'no Tailscale Serve: the first http address')
+    eq(M.page_link([], https), '', 'no addresses: no link')
+    with tempfile.TemporaryDirectory() as d:
+        notes = Path(d)
+        (notes / 'TODO.md').write_text('- [ ] **B1** one\n', encoding='utf-8')
+        (notes / 'web.url').write_text('\n'.join(http) + '\n', encoding='utf-8')
+
+        class FakeConfig:
+            def __init__(self, root):
+                self.todo = notes / 'TODO.md'
+
+            def notes(self, *parts):
+                return notes.joinpath(*parts)
+        with mock.patch('agent_runner.config.Config', FakeConfig):
+            got = M.run_facts(notes, {'up': True}, https)
+    eq((got['left'], got['link']), (1, 'https://box.tail.ts.net/?t=tok'), 'run_facts gives the https link')
+
+
 class FakeTerm(io.StringIO):
     def isatty(self):
         return True
@@ -305,4 +333,4 @@ if __name__ == '__main__':
     raise SystemExit(report([test_attach_routes, test_run_view_posts_keys, test_list_two_projects,
                              test_attach_number, test_windows_hidden_consoles, test_picker_rows, test_picker_keys,
                              test_launcher_actions, test_picker_colours, test_copy_link_fallbacks,
-                             test_bare_not_a_tty]))
+                             test_run_facts_https_link, test_bare_not_a_tty]))
