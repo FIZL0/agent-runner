@@ -233,7 +233,7 @@ def nvidia_gpus(run=sp.run) -> list[dict]:
 def proc_table(proc: Path = Path('/proc')) -> dict[int, tuple[int, int, int, str]]:
     """{pid: (ppid, cpu ticks, resident bytes, name)} of every process /proc shows."""
     out = {}
-    page = os.sysconf('SC_PAGE_SIZE') if hasattr(os, 'sysconf') else 4096
+    page = page_size()
     try:
         entries = [d for d in proc.iterdir() if d.name.isdigit()]
     except OSError:
@@ -251,6 +251,14 @@ def proc_table(proc: Path = Path('/proc')) -> dict[int, tuple[int, int, int, str
             continue
         out[int(d.name)] = (ppid, ticks, rss, name)
     return out
+
+
+def page_size() -> int:
+    """The memory page size /proc counts resident pages in; Windows has no os.sysconf, so 4096 there."""
+    try:
+        return os.sysconf('SC_PAGE_SIZE')
+    except (AttributeError, ValueError, OSError):
+        return 4096
 
 
 def clock_ticks() -> int:

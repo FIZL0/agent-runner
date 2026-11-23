@@ -1094,7 +1094,7 @@ def test_https_link_b130(tmp: Path) -> None:
 
 
 LISTEN_DRIVER = r"""
-const page = require('fs').readFileSync(process.argv[2], 'utf8');
+const page = require('fs').readFileSync(process.argv[2], 'utf8').replace(/\r\n/g, '\n');  // a Windows checkout is CRLF
 const grab = (start) => { const i = page.indexOf(start); return page.slice(i, page.indexOf('\n}\n', i) + 2); };
 const logic = page.split('<script id="logic">')[1].split('</script>')[0];
 let spoke = 0, sent = [];
@@ -1141,7 +1141,7 @@ def test_listen_heard_nothing_b132(tmp: Path) -> None:
 
 
 TALK_HEAR_DRIVER = r"""
-const page = require('fs').readFileSync(process.argv[2], 'utf8');
+const page = require('fs').readFileSync(process.argv[2], 'utf8').replace(/\r\n/g, '\n');  // a Windows checkout is CRLF
 const grab = (start) => { const i = page.indexOf(start); return page.slice(i, page.indexOf('\n}\n', i) + 2); };
 const logic = page.split('<script id="logic">')[1].split('</script>')[0];
 const said = [];
@@ -1210,7 +1210,7 @@ def test_talk_reply_heard_b133(tmp: Path) -> None:
 
 
 SLASH_DRIVER = r"""
-const page = require('fs').readFileSync(process.argv[2], 'utf8'), CMDS = JSON.parse(process.argv[3]);
+const page = require('fs').readFileSync(process.argv[2], 'utf8').replace(/\r\n/g, '\n'), CMDS = JSON.parse(process.argv[3]);
 const slice = (a, b) => { const i = page.indexOf(a); return page.slice(i, page.indexOf(b, i) + b.length); };
 const logic = page.split('<script id="logic">')[1].split('</script>')[0];
 const handlers = {}, store = {v: {}, get(k) { return this.v[k] || '' }, set(k, v) { this.v[k] = v }};
@@ -1295,7 +1295,7 @@ def test_slash_menu_b119(tmp: Path) -> None:
 
 
 COMPOSER_DRIVER = r"""
-const page = require('fs').readFileSync(process.argv[2], 'utf8');
+const page = require('fs').readFileSync(process.argv[2], 'utf8').replace(/\r\n/g, '\n');  // a Windows checkout is CRLF
 const slice = (a, b) => { const i = page.indexOf(a); return page.slice(i, page.indexOf(b, i) + b.length); };
 const logic = page.split('<script id="logic">')[1].split('</script>')[0];
 const handlers = {}, acts = [];

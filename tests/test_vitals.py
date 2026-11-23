@@ -140,7 +140,7 @@ def test_linux_collectors():
     eq(sorted(table), [10, 11, 12], 'the process table')
     eq(table[11][0], 10, 'with each parent')
     eq(table[11][3], 'cargo build', 'and its name, spaces and all')
-    eq(V.tree_usage(10, table, {10: 5.0, 11: 20.0, 12: 9.0}), (25.0, 1500 * os.sysconf('SC_PAGE_SIZE')),
+    eq(V.tree_usage(10, table, {10: 5.0, 11: 20.0, 12: 9.0}), (25.0, 1500 * V.page_size()),
        'a session\'s CPU and memory count every process under it')
     eq(V.tree_usage(99, table, {}), None, 'a session whose process is gone: none')
 

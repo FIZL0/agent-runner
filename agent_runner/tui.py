@@ -80,6 +80,7 @@ NEW_TASK = {'id': '+', 'new': True}  # the queue's last row: a new task
 NEW_CHAT = {'name': '+', 'new': True}  # Sessions' last row: a new control session
 NEW_CONCEPT = {'id': '+', 'new': True}  # F87: Concepts' last row: a new concept (a K task)
 PLACE_ENV = 'AGENT_RUNNER_TUI_PLACE'  # F90: where the TUI was, handed to itself across an upgrade restart
+EXEC_RESTART = os.name != 'nt'  # F90: a newer run restarts the TUI by exec; Windows has no real exec
 
 
 def newer_version(v: str, than: str) -> bool:
@@ -1182,7 +1183,7 @@ class RunPage:
             return
         from agent_runner import __version__
         v = str(self.snap.get('version') or '')
-        if newer_version(v, __version__) and v != self.followed and os.name != 'nt':  # F90; Windows: no real exec
+        if newer_version(v, __version__) and v != self.followed and EXEC_RESTART:  # F90
             self.restart = True
         if self.side.pane and not self.side.alive():  # F112: detached or ended: its pane closed itself
             self.side.gone()
