@@ -14,6 +14,7 @@ import json
 import tempfile
 import time
 from pathlib import Path
+from unittest import mock
 
 from _check import check, eq, git, report
 
@@ -162,6 +163,44 @@ def test_actions(tmp: Path) -> None:
         eq(U.plan_add('F', 'Board page')['ok'], False, 'a refused add is not ok')
     finally:
         U.RUN[0], U.SEND[0] = real_run, real_send
+
+
+RUN_CONTROL_ARGV = {  # F82: each run control and the runner command it must run
+    'slot_add': ['slots', '+1'], 'slot_remove': ['slots', '-1'], 'slots_set': ['slots', '4'],
+    'pause': ['pause'], 'go_on': ['pause', '--off'], 'force': ['force'], 'caps_on': ['force', '--off'],
+    'stop': ['stop'], 'stop_now': ['stop', '--force'], 'stop_undo': ['stop', '--undo'],
+    'task_drop': ['plan', 'drop', 'F1', U.TASK_DROP_WHY]}
+
+
+def test_run_controls(tmp: Path) -> None:
+    """F82: one list of run controls, each to its runner command; stop now runs only once confirmed."""
+    fake_run(tmp)
+    ran, sent = [], []
+    with mock.patch.object(U, 'RUN', [lambda argv: (ran.append(argv), (0, 'ok'))[1]]), \
+            mock.patch.object(U, 'SEND', [lambda text: (sent.append(text), {'ok': True, 'code': 0, 'out': 'sent',
+                                                                             'argv': []})[1]]):
+        eq(sorted(c['key'] for c in U.controls()), sorted([*RUN_CONTROL_ARGV, 'task_take']),
+           'the list holds every control the task names')
+        for key, argv in RUN_CONTROL_ARGV.items():
+            ran.clear()
+            r = U.act('run_control', key=key, n='4', tid='F1', confirm=True)
+            eq((r['ok'], ran), (True, [argv]), f'{key} runs {" ".join(argv)}')
+        ran.clear()
+        r = U.act('run_control', key='stop_now')
+        eq((r['ok'], r['code'], ran, r['confirm'] == U.STOP_NOW_ASK), (False, 3, [], True),
+           'stop now without its confirm runs nothing and asks')
+        eq(U.run_control('stop_now', confirm='yes')['ok'], False, 'only confirm=true confirms')
+        r = U.act('run_control', key='task_take', tid='F1')
+        eq((r['ok'], sent, ran), (True, ['do F1 here'], []), 'take back asks c1 "do F1 here", as take does')
+        for bad in ({'key': 'slots_set', 'n': '-2'}, {'key': 'slots_set', 'n': '4; rm'}, {'key': 'slots_set'},
+                    {'key': 'task_drop', 'tid': '--force'}, {'key': 'nope'}):
+            r = U.act('run_control', **bad)
+            eq((r['ok'], r['code']), (False, 2), f'refused: {bad}')
+        eq(ran, [], 'a refused control runs nothing')
+        by = {c['key']: c for c in U.controls()}
+        eq((by['slots_set']['needs'], by['task_drop']['needs'], by['task_take']['needs'], by['pause']['needs']),
+           ('n', 'id', 'id', ''), 'what each needs typed')
+        eq(len({c['tui'] for c in U.controls()}), len(U.RUN_CONTROLS), 'each has a key of its own in the TUI')
 
 
 def test_real_command(tmp: Path) -> None:
@@ -451,7 +490,8 @@ def in_tmp(f):
 
 
 if __name__ == '__main__':
-    raise SystemExit(report([in_tmp(test_snapshot), in_tmp(test_idle_slots), in_tmp(test_actions), in_tmp(test_real_command),
+    raise SystemExit(report([in_tmp(test_snapshot), in_tmp(test_idle_slots), in_tmp(test_actions), in_tmp(test_run_controls),
+                         in_tmp(test_real_command),
                          in_tmp(test_to_c1_by_tag), in_tmp(test_control_windows), in_tmp(test_older_run),
                          in_tmp(test_queue_rows), in_tmp(test_feed), in_tmp(test_chat_and_terminal),
                          in_tmp(test_concept_copy)]))

@@ -119,9 +119,13 @@ HELP = """Everywhere (not while typing in a box)
   q        quit
 Status [1]
   R        release                s y w u  quick asks (chat tab)
+  + - =    slot +1, -1, set N     P G      pause, go on
+  F C      force, caps back on    S        stop (running tasks finish)
+  X X      stop now (X again)     U        take the stop back
 Sessions [2]
   t        feed                   v        tool steps on / off
   N        new chat               o        open the session link
+  H        take its task back     D        drop its task from the slot
   Enter    on the pane tab: attach (back: Ctrl-b d, or Ctrl-b L in tmux)
 Queue [3]
   e        direct edit            E        chat edit
@@ -321,6 +325,7 @@ class RunPage:
         self.msg, self.msg_ok = '', True
         self.got = time.time()
         self.window_keys: set[str] = set()  # the keys the last frame showed above the bottom line
+        self.confirm = ''  # F82: the run control waiting for its key again (stop now), '' none
 
     # --- what is where --------------------------------------------------------------------------------
 
@@ -345,9 +350,10 @@ class RunPage:
 
     def tab_list(self, n: int, it) -> list[str]:
         if it is None:
-            return ['chat', 'log', 'release'] if n == 1 else ['info']
+            return ['chat', 'log', 'release', 'controls'] if n == 1 else ['info']
         if n == 1:
-            return ['release', 'chat', 'log'] if str(it).startswith('release') else ['chat', 'log', 'release']
+            return ['release', 'chat', 'log', 'controls'] if str(it).startswith('release') else \
+                ['chat', 'log', 'release', 'controls']
         if n == 2:
             if it.get('new'):
                 return ['info']
@@ -628,6 +634,9 @@ class RunPage:
                 [L(('the run log is empty', 'dim'))], [], 'end'
         if tab == 'release':
             return self.release_pane(width), [], 0
+        if tab == 'controls':
+            foot = self.input_lines('slots:n', width, 'how many slots') if self.typing == 'slots:n' else []
+            return self.controls_pane(width), foot, 0
         if tab == 'chat' and self.panel == 1:
             asks = self.snap.get('quick_asks') or U.quick_asks()
             row = buttons(*[button(QUICK_KEYS.get(q['key'], '?'), q['label']) for q in asks])
@@ -687,6 +696,52 @@ class RunPage:
         return out + [L(), buttons(button('⏎', 'release when the running tasks land', True),
                                    button('f', 'release now, without them'))]
 
+    def control_buttons(self, where: str) -> list:
+        """F82: the run controls of `where` ('run', 'task') as button rows, from ui_model's one list."""
+        cs = [c for c in self.snap.get('controls') or U.controls() if c['where'] == where]
+        if where == 'task':
+            return [buttons(*[button(c['tui'], c['label'].lower()) for c in cs])]
+        groups = (('slot_add', 'slot_remove', 'slots_set'), ('pause', 'go_on'), ('force', 'caps_on'),
+                  ('stop', 'stop_now', 'stop_undo'))
+        return [buttons(*[button(c['tui'], c['label'].lower()) for c in cs if c['key'] in g]) for g in groups]
+
+    def controls_pane(self, width: int) -> list:
+        L = lambda *segs: list(segs)  # noqa: E731
+        run = self.snap.get('run') or {}
+        said = 'no run is up' if not self.snap.get('up') else ', '.join(
+            w for k, w in (('paused', 'paused'), ('stopping', 'stopping')) if run.get(k)) or 'running'
+        out = [L(('run ', 'dim'), (said, 'fg'), (f' · {self.snap.get("slots", 0)} slots', 'dim')), L()]
+        for row in self.control_buttons('run'):
+            out += [row, L()]
+        out.append(L(('A slot on a task: H takes it back, D drops it (Sessions [2]).', 'dim')))
+        if self.confirm:
+            c = next((c for c in self.snap.get('controls') or U.controls() if c['key'] == self.confirm), {})
+            out += [L()] + text_lines(f'{c.get("confirm", "")} {c.get("tui", "")} again: yes; any other key: no',
+                                      'red', width)
+        return out
+
+    @staticmethod
+    def task_controls_on(it) -> bool:
+        """A slot's task controls work while it works on a task, not while the task lands (merging)."""
+        return isinstance(it, dict) and bool(it.get('task')) and not is_control(it) and it.get('state') != 'merging'
+
+    def control_by_tui(self, k: str, where: str) -> dict | None:
+        return next((c for c in self.snap.get('controls') or U.controls() if c['tui'] == k and c['where'] == where
+                     and not c['needs'] == 'n'), None)
+
+    def run_control(self, key: str, **args) -> None:
+        """F82: one run control by its key; one with a confirm question waits for its TUI key again."""
+        c = next((c for c in self.snap.get('controls') or U.controls() if c['key'] == key), None)
+        if c is None:
+            return
+        if c.get('confirm') and not args.get('confirm'):
+            self.confirm = key
+            self.panel, self.main = 1, True
+            self.set_tab('controls')
+            self.msg, self.msg_ok = f'{c["confirm"]} {c["tui"]} again: yes', False
+            return
+        self.done(U.run_control(key, **args))
+
     def session_pane(self, it, tab: str, width: int) -> tuple[list, list, object]:
         L = lambda *segs: list(segs)  # noqa: E731
         name = it.get('name', '')
@@ -700,7 +755,8 @@ class RunPage:
         if tab == 'feed':
             if not it.get('task'):
                 return [L((idle_line(it), 'dim'))], [], 0
-            head = [L((f'{name} ', 'yellow'), (f'{it["task"]} ', 'cyan'), (it.get('title', ''), 'fg')), L()]
+            head = [L((f'{name} ', 'yellow'), (f'{it["task"]} ', 'cyan'), (it.get('title', ''), 'fg')),
+                    *(self.control_buttons('task') if self.task_controls_on(it) else []), L()]
             return head + self.feed_lines(name, width, self.steps), \
                 self.input_lines(f'{name}:feed', width, f'message {name} (it reads it between steps)'), 'end'
         if tab == 'pane':
@@ -929,11 +985,13 @@ class RunPage:
                 keys.append(('Esc', 'back'))
             return keys
         if self.panel == 1:
-            return [('⏎', 'open'), ('R', 'release')]
+            return [('⏎', 'open'), ('R', 'release'), ('+/-', 'slots'), ('P/G', 'pause, go on'), ('S', 'stop')]
         if self.panel == 2:
             keys = [('⏎', 'open'), ('t', 'feed'), ('v', 'steps')]
             if isinstance(it, dict) and (it.get('task') or is_control(it)):
                 keys.append(('o', 'open session'))
+            if self.task_controls_on(it):
+                keys += [('H', 'take back'), ('D', 'drop')]
             return keys
         if self.panel == 3:
             if isinstance(it, dict) and it.get('new'):
@@ -1056,6 +1114,14 @@ class RunPage:
             return False
         if k == '^C':
             return True
+        if self.confirm:  # F82: stop now runs only on its key again
+            key, self.confirm = self.confirm, ''
+            c = next((c for c in self.snap.get('controls') or U.controls() if c['key'] == key), {})
+            if k == c.get('tui'):
+                self.done(U.run_control(key, confirm=True))
+            else:
+                self.msg, self.msg_ok = f'{c.get("label", key)}: not done', True
+            return False
         if self.typing:
             self.typed(k)
             return False
@@ -1134,6 +1200,8 @@ class RunPage:
             r = U.chat(f'new task: {text}' if rest == '+' else f'change {rest}: {text}')
         elif kind == 'answer':
             r = U.answer(rest, text)
+        elif box == 'slots:n':
+            r = U.run_control('slots_set', n=text)
         elif kind == 'concept':
             it = next((c for c in self.snap.get('concepts') or [] if c.get('id') == rest), {'id': rest})
             r = U.chat(f'concept {it.get("concept") or rest} ("{it.get("title", "")}"): {text}')
@@ -1314,6 +1382,13 @@ class RunPage:
             self.type_in()
         elif self.panel == 1 and k == 'R':
             self.release_tab()
+        elif self.panel == 1 and k == '=':
+            self.set_tab('controls')
+            self.typing = 'slots:n'
+        elif self.panel == 1 and (c := self.control_by_tui(k, 'run')):
+            self.run_control(c['key'])
+        elif self.panel == 2 and self.task_controls_on(it) and (c := self.control_by_tui(k, 'task')):
+            self.run_control(c['key'], tid=it['task'])
         elif self.panel == 2 and k == 't':
             self.feed_tab()
         elif self.panel == 2 and k == 'v':

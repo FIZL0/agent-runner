@@ -106,6 +106,10 @@ a{color:var(--accent)}
 .btn.pri{background:var(--fg);color:var(--bg);border-color:var(--fg)}
 .btn.acc{background:var(--accent);color:var(--onaccent);border-color:var(--accent)}
 .btn:disabled{opacity:.5;cursor:default}
+.btn.bad{background:var(--bad);color:var(--bg);border-color:var(--bad)}
+.sure{display:grid;gap:8px;border-top:1px solid var(--line);padding-top:10px}
+.slotsn{display:inline-flex;gap:6px;align-items:center}
+.slotsn input{width:64px;border:1px solid var(--line2);background:var(--surface);color:var(--fg);border-radius:10px;padding:7px 8px;font:inherit}
 .chev{color:var(--faint);display:grid}
 .chips{display:flex;gap:8px;flex-wrap:wrap;justify-content:center}
 .chip{border:1px solid var(--line);background:var(--surface);border-radius:10px;padding:7px 12px;font-size:13px;cursor:pointer;display:inline-flex;align-items:center;gap:7px;color:var(--fg)}
@@ -261,7 +265,22 @@ function logKind(line){
 const plain=s=>String(s||'').replace(/```[\s\S]*?(```|$)/g,' ').replace(/\*\*([^*]+)\*\*/g,'$1').replace(/`([^`]+)`/g,'$1')
   .replace(/\[([^\]]+)\]\([^)]*\)/g,'$1').replace(/^\s*(?:[-*]|\d+[.)]|#+)\s+/gm,'').replace(/\s+/g,' ').trim();
 const chatName=s=>s.name==='c1'?'Project chat':(s.title&&s.title!=='control session'?s.title:`Chat ${s.name.slice(1)}`);
-if(typeof module!=='undefined')module.exports={answerOpts,threadMsgs,working,planWords,compose,usageOf,logKind,plain,chatName};
+/* F82: a run control's request to /act (run_control, from the snapshot's one list of controls): o.n the slot
+   count typed, o.tid the slot's task, o.sure only from the page's own confirm step (a control with a confirm
+   question is refused without it) */
+function controlReq(c,o){
+  o=o||{};const args={key:c.key};
+  if(c.needs==='n')args.n=String(o.n==null?'':o.n).trim();
+  if(c.needs==='id')args.tid=o.tid||'';
+  if(c.confirm&&o.sure===true)args.confirm=true;
+  return {name:'run_control',args};
+}
+/* a control's button pressed: {ask:true} for one with a confirm question not yet answered in the page (its Yes
+   button carries o.sure), else its request */
+function controlClick(c,o){return c.confirm&&!(o&&o.sure===true)?{ask:true}:controlReq(c,o)}
+/* a slot's task controls show while it works, not while it lands (merging) */
+const taskControlsOn=s=>!!(s&&s.task&&s.state!=='merging');
+if(typeof module!=='undefined')module.exports={answerOpts,threadMsgs,working,planWords,compose,usageOf,logKind,plain,chatName,controlReq,controlClick,taskControlsOn};
 </script>
 
 <script>
@@ -357,10 +376,25 @@ function side(){
   $('side').classList.toggle('open',S.drawer);$('scrim').classList.toggle('on',S.drawer);
 }
 const card=(h,cls='',attr='')=>`<div class="card ${cls}" ${attr}>${h}</div>`;
-function agentCard(s){
+function agentCard(s,withControls){
   if(!s.task)return card(`<div class="row"><div class="who">${esc(s.name)}</div><div class="grow"><b>Idle</b><div class="small">Nothing it can start right now</div></div></div>`);
   const w=lastWords(s.name);
-  return card(`<div class="row"><div class="who">${esc(s.name)}</div><div class="grow"><b class="ell">${esc(s.title||s.task)}</b><span class="status"><span class="livedot"></span>${s.state==='merging'?'Landing':'Working'}${s.minutes!=null?` · ${s.minutes} min`:''}</span></div><span class="chev">${I.chev}</span></div>${w?`<div class="quote">${esc(w)}</div>`:''}`,'tap',`tabindex="0" data-thread="${esc(s.name)}"`);
+  const tc=withControls&&taskControlsOn(s)?controlsOf('task'):[];
+  return card(`<div class="row"><div class="who">${esc(s.name)}</div><div class="grow"><b class="ell">${esc(s.title||s.task)}</b><span class="status"><span class="livedot"></span>${s.state==='merging'?'Landing':'Working'}${s.minutes!=null?` · ${s.minutes} min`:''}</span></div><span class="chev">${I.chev}</span></div>${w?`<div class="quote">${esc(w)}</div>`:''}${tc.length?`<div class="btns">${tc.map(c=>`<button class="btn" data-ctl="${esc(c.key)}" data-tid="${esc(s.task)}">${esc(c.label)}</button>`).join('')}</div>`:''}`,'tap',`tabindex="0" data-thread="${esc(s.name)}"`);
+}
+/* F82: the run controls, from the snapshot's one list (ui_model.RUN_CONTROLS); stop now asks here first */
+const controlsOf=w=>(S.snap.controls||[]).filter(c=>c.where===w);
+const controlOf=k=>(S.snap.controls||[]).find(c=>c.key===k);
+function controlsCard(){
+  if(!controlsOf('run').length)return '';
+  const run=S.snap.run||{}, b=(k,cls='')=>{const c=controlOf(k);return c?`<button class="btn ${cls}" data-ctl="${esc(k)}">${esc(c.label)}</button>`:''};
+  const said=S.snap.up===false?'No run is up.':[run.paused?'Paused':'',run.stopping?'Stopping: the running tasks finish, nothing new starts':''].filter(Boolean).join(' · ')||`Running · ${S.snap.slots||0} slot${S.snap.slots===1?'':'s'}`;
+  const sure=S.sure&&controlOf(S.sure);
+  return card(`<div class="row"><div class="grow"><b>Run controls</b><div class="small">${esc(said)}</div></div></div>
+    <div class="btns">${b('slot_remove')}${b('slot_add')}<span class="slotsn"><input type="number" min="0" max="99" inputmode="numeric" data-slots-n aria-label="Slots" placeholder="N" value="${esc(S.slotsN||'')}">${b('slots_set')}</span></div>
+    <div class="btns">${run.paused?b('go_on','acc'):b('pause')}${b('force')}${b('caps_on')}</div>
+    <div class="btns">${run.stopping?b('stop_undo','acc'):b('stop')}${b('stop_now')}</div>
+    ${sure?`<div class="sure"><div class="small">${esc(sure.confirm)}</div><div class="btns"><button class="btn bad" data-ctl="${esc(sure.key)}" data-sure>Yes, ${esc(sure.label.toLowerCase())}</button><button class="btn" data-unsure>No</button></div></div>`:''}`);
 }
 function needCard(n,i){
   const os=answerOpts(n);
@@ -410,7 +444,7 @@ function homeHTML(){
     <div class="sec">Up next<span class="ln"></span></div>${nx.length?nx.map(planCard).join(''):card('<div class="small">The queue is empty.</div>')}
     ${card(`<div class="row"><div class="grow"><b>Release</b><div class="small">${esc(rel||(ws.length?`Waits for the ${ws.length} task${ws.length>1?'s':''} still working.`:'Releases what has landed.'))}</div></div></div><div class="btns">${ws.length?`<button class="btn acc" data-rel="wait">Release when they land</button>`:''}<button class="btn ${ws.length?'':'acc'}" data-rel="now">Release now</button></div>`)}</div>`;
 }
-function agentsHTML(){const ss=slots();return `<div class="col">${ss.length?ss.map(agentCard).join(''):card(`<div class="small">${S.snap.up===false?'No run is up, so no agent is working.':'No slots yet.'}</div>`)}</div>`}
+function agentsHTML(){const ss=slots();return `<div class="col">${controlsCard()}${ss.length?ss.map(s=>agentCard(s,true)).join(''):card(`<div class="small">${S.snap.up===false?'No run is up, so no agent is working.':'No slots yet.'}</div>`)}</div>`}
 function activityHTML(){
   const log=(S.snap.log||[]).slice().reverse();
   return `<div class="col"><div class="chips" style="justify-content:flex-start"><button class="chip" data-quick="since">${I.clock}Since my last look</button><button class="chip" data-quick="yesterday">${I.clock}Since yesterday</button></div>
@@ -514,6 +548,16 @@ document.addEventListener('click',async e=>{
   if(q('#scrim')){S.drawer=false;render();return}
   if(x=q('[data-view]'))return goView(x.dataset.view);
   if(q('[data-home]')){S.thread=null;S.ctx=null;render(true);return}
+  if(q('[data-slots-n]'))return;
+  if(q('[data-unsure]')){S.sure=null;render(true);return}
+  if(x=q('[data-ctl]')){const c=controlOf(x.dataset.ctl);if(!c)return;
+    const n=c.needs==='n'?(document.querySelector('[data-slots-n]')||{}).value||'':'';
+    const rq=controlClick(c,{n,tid:x.dataset.tid,sure:x.hasAttribute('data-sure')});
+    if(rq.ask){S.sure=c.key;render(true);return}  // F82: asked in the page, no browser dialog
+    if(c.needs==='n'&&!/^\d+$/.test(n.trim()))return toast('Type how many slots first',true);
+    S.sure=null;x.disabled=true;
+    const r=await act(rq.name,rq.args);if(r.ok){S.slotsN='';toast(String(r.out||'').split('\n')[0]||`${c.label}: done`)}
+    render(true);return}
   if(x=q('[data-thread]')){S.ctx=null;return open(x.dataset.thread)}
   if(q('[data-new]')){S.drawer=false;S.waitNew={known:chats().map(c=>c.name),at:Date.now()};render();
     const r=await act('new_control',{});if(r.ok)toast('Starting a new chat: it opens here once it is up');else S.waitNew=null;return}
@@ -540,9 +584,9 @@ document.addEventListener('keydown',e=>{
     if(e.key==='Escape'&&S.thread&&busy(S.thread)){e.preventDefault();act('interrupt',{session:S.thread});return}
     return}
   if(e.key==='Escape'&&S.drawer){S.drawer=false;render();return}
-  const c=e.target.closest&&e.target.closest('.card.tap');if(c&&(e.key==='Enter'||e.key===' ')){e.preventDefault();c.click()}
+  const c=e.target.closest&&e.target.closest('.card.tap');if(c&&c===e.target&&(e.key==='Enter'||e.key===' ')){e.preventDefault();c.click()}
 });
-document.addEventListener('input',e=>{if(e.target.matches('[data-in]')){grow(e.target);store.set(DRAFT_KEY(boxKey()),e.target.value)}});
+document.addEventListener('input',e=>{if(e.target.matches('[data-slots-n]'))S.slotsN=e.target.value;if(e.target.matches('[data-in]')){grow(e.target);store.set(DRAFT_KEY(boxKey()),e.target.value)}});
 document.addEventListener('paste',e=>{if(!e.target.matches||!e.target.matches('[data-in]'))return;
   const fs=[...(e.clipboardData?.files||[])];if(fs.length){e.preventDefault();fs.forEach(upload)}});
 $('file').addEventListener('change',e=>{[...e.target.files].forEach(upload);e.target.value=''});
