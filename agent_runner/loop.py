@@ -44,7 +44,7 @@ from agent_runner.slots import budget_mark, budgets, SPENT
 from agent_runner import fallback as FB
 from agent_runner.teardown import end_own, PAGE, RUN_LOCK, wait_last_run
 from agent_runner.watch import (_account, api_down, AUTO_UPGRADE, auto_upgrade, cut_off,
-    drop_session_tmp, end_orphans, memory_watch, queue_cut_off, queue_resume, restart_if_upgraded,
+    drop_session_tmp, end_orphans, memory_watch, queue_cut_off, queue_resume, RESTART, restart_if_upgraded,
     resumes, RESUMES_MAX, stalled, START_TRIES, state_line, stats,
     stop_hook, stop_waiter, sweep_tmp, update_watch, upgrade, usage_pct, weekly)
 from agent_runner.join import EDITED, EDITS_POLL, ELSEWHERE, REMIND_EVERY, TASK_SID, WAITING
@@ -93,6 +93,7 @@ runner keys: type one here and press Enter
              finish the merges under way, then exit
     p        pause: no new tasks, and the run stays up
     u        upgrade agent-runner now; the run restarts on the new version by itself
+    restart  restart the run between merges, so it reads its settings again (its tasks keep going)
     f        force: start tasks past the session and weekly usage caps (as --force)
     +        one slot more
     -        one slot fewer (a running task in it finishes first)
@@ -165,6 +166,12 @@ def take_keys() -> None:
                     'force taken back: the usage caps hold new tasks again')
             elif k == 'u':
                 threading.Thread(target=upgrade, daemon=True).start()  # the loop restarts on what it installs
+            elif k == 'restart':  # F97: settings saved on the run page wait for it
+                if plat.WINDOWS:
+                    log('restart: not on Windows; stop the run and start it again')
+                else:
+                    RESTART[0] = True
+                    log('restarting between merges, to read the settings again; the running tasks keep going')
             elif k in ('+', '-'):
                 if k == '-' and SLOTS == 1:
                     log('one slot is the fewest; s stops the run')
@@ -232,6 +239,7 @@ def write_state(running: dict) -> None:
                                    'slots': SLOTS, 'running': work, 'since': since, 'merging': merging, 'usage': use,
                                    'spend': {n: SPENT[n] for n in work if n in SPENT},  # F103
                                    'idle': IDLE[0], 'paused': PAUSED[0], 'stopping': stopping(),
+                                   'forced': FORCED[0], 'power': POWER,  # F124: the run app's state pill
                                    'version': run_version()}),
                        encoding='utf-8')
         os.replace(tmp, C.notes('STATE'))

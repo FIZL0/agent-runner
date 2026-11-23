@@ -1048,8 +1048,15 @@ def cmd_control(argv: list[str], prog: str = f'{RUNNER} control') -> int:
     ap.add_argument('--feed-sid', default='', help=argparse.SUPPRESS)  # B57: wait for the handed-on message's files
     ap.add_argument('--title', default=None, metavar='SUMMARY', help='from inside control session N, once it has '
                     'read its first message: name it "<repo> · N · SUMMARY" for what it is for')
+    ap.add_argument('--rename', nargs=2, default=None, metavar=('N', 'NAME'), help='the person\'s own name for '
+                    'control session N (the run app\'s Rename, r in agent-runner ui)')
     a = ap.parse_args(argv)
     init()
+    if a.rename:  # F129
+        if not a.rename[0].isdigit():
+            ap.error('--rename N NAME: N is the control session\'s number')
+        from agent_runner.control import control_rename
+        return control_rename(int(a.rename[0]), a.rename[1])
     if a.brief:
         if a.hand and os.environ.get(RUNNER_STARTED_ENV):
             return 0  # F53: a session the runner started has its brief from --settings already

@@ -22,7 +22,7 @@ Where the settings come from, first match wins:
 Then `runner.local.toml` (the checkout's, else the main checkout's), if there is one, is laid over it key by
 key, table by table: one person's settings on one machine (`weekly_max`, `slots`, `model`) without editing the
 file everyone shares. It may wrap its tables in `[agent-runner]` too. `run` creates it in the main checkout
-(all comments, so it changes nothing) when it is missing and never rewrites it, and keeps it out of git by
+(all comments, so it changes nothing) when it is missing and changes it only as the run app's Settings view asks (F97), and keeps it out of git by
 adding it to the clone's `.git/info/exclude`.
 
 Every session runs on Claude Code, or on the harness loop for another provider's model (`[models] code =
@@ -254,6 +254,8 @@ DEFAULTS: dict = {
                                 # terminal-style page's t picks another for that browser
         'web': 'app',           # the view the run page's link opens: "app" (the run app) or "terminal" (the
                                 # terminal-style page, /term); a browser that switched views opens its last one
+        'chat_quiet': '6h',     # a chat that needs no reply, with nothing said in it for this long, is grayed at the
+                                # bottom of the run app's Chats (never c1, a pinned or a renamed one); false: off
     },
     'models': {
         'code': 'opus',         # a task's own session; unset here, `[run] model` sets it
@@ -521,7 +523,7 @@ def keep_local_ignored(root: Path) -> None:
 
 LOCAL_TEMPLATE = """\
 # This machine's agent-runner settings, laid over runner.toml key by key. Git ignores this file (the runner
-# added it to .git/info/exclude) and the runner never rewrites it: what you set here stays yours.
+# added it to .git/info/exclude) and the runner changes a key only when you set it in the run app's Settings.
 # Uncomment and edit; any key runner.toml takes works here, in the same tables.
 
 # [run]
@@ -705,6 +707,8 @@ class Config:
         if self.raw['ui']['web'] not in WEB_VIEWS:
             raise SystemExit(f"agent-runner: [ui] web must be one of {', '.join(WEB_VIEWS)}, not "
                              f"{self.raw['ui']['web']!r}")
+        if problem := setting_problem('ui', 'chat_quiet', self.raw['ui']['chat_quiet']):  # F128
+            raise SystemExit(f'agent-runner: {problem}')
         if self.run['comment_policy'] not in ('normal', 'minimal'):
             raise SystemExit("agent-runner: [run] comment_policy must be 'normal' or 'minimal'")
         self.run['backend'] = 'claude'  # not a setting: `slots.backend()` reads it; the only one since F106d
@@ -853,6 +857,304 @@ def finished_mark(slot: str | int | None = None) -> Path | None:
     and the stop waiter stops protecting the session's leftover background commands once it exists."""
     slot = slot if slot is not None else os.environ.get('AGENT_RUNNER_SLOT')
     return cfg().notes(f'slot{slot}.finished') if slot not in (None, '') else None
+
+
+# --- F97: the settings, read and written by the run app's Settings view ---------------------------------------
+
+# keys whose value is one of a few: the choices, the default's type aside
+SETTING_CHOICES: dict[tuple[str, str], tuple] = {
+    ('plan', 'journal_layout'): ('dated', 'id'),
+    ('run', 'engine'): ('terminal', 'stream'),
+    ('run', 'comment_policy'): ('normal', 'minimal'),
+    ('run', 'remote'): ('auto', True, False),
+    ('run', 'sessions'): ('one', 'each'),
+    ('run', 'grill'): ('ask', 'big', 'off'),
+    ('run', 'voice_learn'): ('ask', 'off'),
+    ('run', 'issues_trust'): ('skeptical', 'trust'),
+    ('run', 'needs_order'): ('oldest', 'newest', 'plan'),
+    ('git', 'land_edited'): ('wait', 'wip'),
+    ('ui', 'web'): WEB_VIEWS,
+}
+# keys that take more than their default's type: the other types ('off': false, 'bool', 'number', 'text', 'list',
+# 'table')
+SETTING_ALSO: dict[tuple[str, str], tuple[str, ...]] = {
+    ('plan', 'glossary'): ('off',), ('run', 'control_idle'): ('off',), ('run', 'control_idle_quick'): ('off',),
+    ('run', 'control_idle_talked'): ('off',), ('run', 'control_ask'): ('off',), ('run', 'ci_watch'): ('off', 'list'),
+    ('run', 'issues_watch'): ('list',), ('run', 'auto_release'): ('table',), ('run', 'proc_max_gb'): ('number',),
+    ('run', 'control_open'): ('text',), ('git', 'push'): ('off',), ('ui', 'chat_quiet'): ('off',),
+    ('models', 'docs'): ('off',), ('run', 'task_tokens'): ('float',), ('run', 'task_usd'): ('float',),
+    ('run', 'weekly_max'): ('float',), ('run', 'session_max'): ('float',),
+}
+SETTING_DURATIONS = {('run', 'control_idle'), ('run', 'control_idle_quick'), ('run', 'control_idle_talked'),
+                     ('run', 'control_ask'), ('ui', 'chat_quiet')}
+SETTING_NOW = {('run', 'slots')}  # a change reaches the run that is up (through `slots N`); the rest wait for the next
+
+
+def setting_type(table: str, key: str) -> str:
+    """The control a setting gets: 'choice', 'switch', 'number', 'list', 'table' or 'text'."""
+    if setting_choices(table, key):
+        return 'choice'
+    v = DEFAULTS[table][key]
+    if SETTING_ALSO.get((table, key)) == ('table',):
+        return 'table'
+    return ('switch' if isinstance(v, bool) and not SETTING_ALSO.get((table, key)) else
+            'number' if isinstance(v, (int, float)) and not isinstance(v, bool) else
+            'list' if isinstance(v, list) else 'table' if isinstance(v, dict) else 'text')
+
+
+def setting_choices(table: str, key: str) -> tuple:
+    if (table, key) == ('ui', 'theme'):
+        from agent_runner.theme import NAMES
+        return tuple(NAMES)
+    return SETTING_CHOICES.get((table, key), ())
+
+
+def setting_problem(table: str, key: str, v) -> str:
+    """Why `v` cannot be `[table] key` ('' when it can): its type, its choices, its range."""
+    if table not in DEFAULTS or key not in DEFAULTS[table]:
+        return f'[{table}] {key} is not a setting'
+    where, d, also = f'[{table}] {key}', DEFAULTS[table][key], SETTING_ALSO.get((table, key), ())
+    if choices := setting_choices(table, key):
+        ok = any(v == c and isinstance(v, bool) == isinstance(c, bool) for c in choices)
+        return '' if ok else f'{where} must be one of {", ".join(_toml_value(c) for c in choices)}, not {v!r}'
+    num = isinstance(v, (int, float)) and not isinstance(v, bool)
+    ok = (isinstance(v, bool) if isinstance(d, bool) else
+          isinstance(v, int) and not isinstance(v, bool) if isinstance(d, int) else
+          isinstance(v, str) if isinstance(d, str) else
+          isinstance(v, list) and all(isinstance(x, str) for x in v) if isinstance(d, list) else isinstance(v, dict))
+    ok = ok or (v is False and 'off' in also) or (num and ('number' in also or 'float' in also)) \
+        or (isinstance(v, str) and 'text' in also) or (isinstance(v, dict) and 'table' in also) \
+        or (isinstance(v, list) and 'list' in also and all(isinstance(x, str) for x in v))
+    if not ok:
+        kind = {'switch': 'true or false', 'number': 'a whole number', 'list': 'a list of words',
+                'table': 'a table'}.get(setting_type(table, key), 'text')
+        return f'{where} must be {kind}{" or false" if "off" in also else ""}, not {v!r}'
+    if num and v < 0:
+        return f'{where} cannot be below 0, not {v!r}'
+    if (table, key) == ('run', 'slots') and v < 1:
+        return f'{where} must be at least 1, not {v!r}'
+    if (table, key) == ('run', 'web_port') and not 0 < v < 65536:
+        return f'{where} must be a port number, not {v!r}'
+    if (table, key) in SETTING_DURATIONS and isinstance(v, str):
+        import re
+        if not re.fullmatch(r'\s*\d+(?:\.\d+)?\s*[smhd]?\s*', v):
+            return f'{where} must be a time like "6h" or "30m", or false, not {v!r}'
+    return ''
+
+
+def toml_value(v) -> str:
+    """`v` as TOML source for one line (strings as written, not \\u escapes)."""
+    if isinstance(v, str):
+        return json.dumps(v, ensure_ascii=False)
+    if isinstance(v, list):
+        return '[' + ', '.join(toml_value(x) for x in v) + ']'
+    if isinstance(v, dict):
+        return '{ ' + ', '.join(f'{json.dumps(str(k), ensure_ascii=False)} = {toml_value(x)}'
+                                for k, x in v.items()) + ' }' if v else '{}'
+    return _toml_value(v)
+
+
+def _toml_span(lines: list[str], i: int) -> int:
+    """How many of `lines` the key at `i` takes (a list or string over several lines), 0 when it never parses."""
+    for n in range(1, len(lines) - i + 1):
+        try:
+            tomllib.loads('\n'.join(lines[i:i + n]))
+            return n
+        except tomllib.TOMLDecodeError:
+            continue
+    return 0
+
+
+def _toml_comment(line: str) -> str:
+    """The comment that ends a `key = value` (with the spaces before it), '' for none."""
+    at = line.find('#')
+    while at >= 0:
+        head = line[:at]
+        try:
+            tomllib.loads(head)
+            return head[len(head.rstrip()):] + line[at:]
+        except tomllib.TOMLDecodeError:
+            at = line.find('#', at + 1)
+    return ''
+
+
+def toml_edit(text: str, table: str, key: str, value=None, unset: bool = False) -> str:
+    """F97: `text` (a runner.local.toml) with `[table] key` set to `value` (`unset`: taken out), every other line
+    and comment as it was. ValueError when it cannot be done on its own line (a key written as a [table.key]
+    section, an inline table); the result is read back, and only that key may differ."""
+    import re
+    before = tomllib.loads(text)
+    wrapped = isinstance(before.get('agent-runner'), dict)
+    name = f'agent-runner.{table}' if wrapped else table
+    lines = text.split('\n')
+    # real headers and keys only: not a look-alike inside a multi-line string, which parses as no prefix
+    head = re.compile(r'\s*\[\s*' + r'\s*\.\s*'.join(f'["\']?{re.escape(p)}["\']?' for p in name.split('.'))
+                      + r'\s*\]\s*(#.*)?$')
+    any_head = re.compile(r'\s*\[')
+    key_re = re.compile(rf'\s*["\']?{re.escape(key)}["\']?\s*=')
+    i, at, end, where, last = 0, None, None, None, 0  # last: the line after the section's last key
+    while i < len(lines):
+        l = lines[i]
+        if not l.strip() or l.lstrip().startswith('#'):
+            i += 1
+            continue
+        if any_head.match(l):
+            if at is not None and end is None:
+                end = i
+            if head.match(l):
+                at, end, last = i, None, i + 1
+            i += 1
+            continue
+        n = _toml_span(lines, i) or 1
+        if at is not None and end is None and key_re.match(l):
+            where = (i, n)
+        i += n
+        if at is not None and end is None:
+            last = i
+    if unset:
+        if where is None:
+            return text if key not in _table_of(before, table, wrapped) else _toml_refuse(table, key)
+        lines[where[0]:where[0] + where[1]] = []
+    else:
+        new = f'{key} = {toml_value(value)}'
+        if where is not None:
+            old = lines[where[0]]
+            indent = old[:len(old) - len(old.lstrip())]
+            lines[where[0]:where[0] + where[1]] = [
+                indent + new + _toml_comment('\n'.join(lines[where[0]:where[0] + where[1]]))]
+        elif at is not None:
+            lines[last:last] = [new]
+        else:
+            while lines and not lines[-1].strip():
+                lines.pop()
+            lines += ([''] if lines else []) + [f'[{name}]', new, '']
+    out = '\n'.join(lines)
+    try:
+        after = tomllib.loads(out)
+    except tomllib.TOMLDecodeError:
+        return _toml_refuse(table, key)
+    want = json.loads(json.dumps(before, default=str))
+    t = want.setdefault('agent-runner', {}).setdefault(table, {}) if wrapped else want.setdefault(table, {})
+    if not isinstance(t, dict):
+        return _toml_refuse(table, key)
+    if unset:
+        t.pop(key, None)
+    else:
+        t[key] = value
+    if json.loads(json.dumps(after, default=str)) != json.loads(json.dumps(want, default=str)):
+        return _toml_refuse(table, key)
+    return out
+
+
+def _table_of(raw: dict, table: str, wrapped: bool) -> dict:
+    t = (raw.get('agent-runner') or {}).get(table) if wrapped else raw.get(table)
+    return t if isinstance(t, dict) else {}
+
+
+def _toml_refuse(table: str, key: str) -> str:
+    raise ValueError(f'[{table}] {key} is not on a line of its own in {LOCAL}: change it there by hand')
+
+
+def local_settings_file(root: Path) -> Path:
+    return local_file(root) or main_checkout(root) / LOCAL
+
+
+def setting_check(root: Path, table: str, key: str, v) -> str:
+    """`setting_problem`, and for [models] whether each model named is one the runner takes ('' when all is well)."""
+    if (problem := setting_problem(table, key, v)) or table != 'models':
+        return problem
+    snap = {(t['table'], k['key']): k['value'] for t in settings_snapshot(root)['tables'] for k in t['keys']}
+    snap[(table, key)] = v
+    try:
+        providers, local = model_providers(snap['models', 'providers']), bool(snap['models', 'local'])
+        named = v.values() if key == 'kinds' else v if key == 'fallback' else \
+            [v] if key not in MODEL_SETTINGS and isinstance(v, str) else []
+        for m in named:
+            if not isinstance(m, str) or not m:
+                return f'[models] {key}: {m!r} is not a model name'
+            claude_model(m, providers, local, f'[models] {key}',
+                         claude_only=key in CLAUDE_ONLY_ROLES)
+    except SystemExit as e:
+        return str(e).removeprefix('agent-runner: ')
+    return ''
+
+
+def save_local_setting(root: Path, table: str, key: str, value=None, unset: bool = False) -> Path:
+    """F97: set (or `unset`) one key in this machine's runner.local.toml, in place; ValueError says why not."""
+    if problem := ('' if unset else setting_check(root, table, key, value)):
+        raise ValueError(problem)
+    if unset and (table not in DEFAULTS or key not in DEFAULTS[table]):
+        raise ValueError(f'[{table}] {key} is not a setting')
+    f = local_settings_file(root)
+    if not f.exists():
+        if unset:
+            return f
+        ensure_local(f.parent)
+    f = f.resolve()
+    raw = f.read_bytes().decode('utf-8')
+    crlf = '\r\n' in raw
+    try:
+        out = toml_edit(raw.replace('\r\n', '\n'), table, key, value, unset)
+    except tomllib.TOMLDecodeError as e:
+        raise ValueError(f'{f.name} does not read as TOML ({e}): fix it there first') from None
+    tmp = f.with_name(f.name + '.tmp')
+    tmp.write_bytes((out.replace('\n', '\r\n') if crlf else out).encode('utf-8'))
+    os.replace(tmp, f)
+    keep_local_ignored(f.parent)
+    return f
+
+
+def settings_snapshot(root: Path) -> dict:
+    """F97: every setting for the run app's Settings view, read from the files now: {'ok', 'project', 'device' (the
+    two files' names), 'tables': [{'table', 'keys': [...]}], 'unknown': [...]}. A key: its type, choices, default,
+    help, its value in each file (`project`, `device`, with `has_…`), the one in force (`value`), where that comes from
+    (`source`: 'device', 'project' or 'default') and when a change applies (`applies`: 'now' or 'next run')."""
+    raws, errors = {}, []
+    files = {'project': config_file(root), 'device': local_file(root)}
+    for side, f in files.items():
+        try:
+            raws[side] = _load(f) if f else {}
+        except (OSError, tomllib.TOMLDecodeError) as e:
+            raws[side] = {}
+            errors.append(f'{f.name}: {e}')
+    unknown = []
+    for side, f in files.items():
+        for t, keys in raws[side].items():
+            gone = {k for (tt, k) in (*REMOVED, *MOVED) if tt == t}
+            if not isinstance(keys, dict) or (t not in DEFAULTS and not gone):
+                continue
+            for k, v in keys.items():
+                if k in DEFAULTS.get(t, {}) or (t not in DEFAULTS and k not in gone):
+                    continue
+                said = migrate({t: {k: v}}, f.name)
+                unknown.append({'table': t, 'key': k, 'value': toml_value(v), 'file': f.name, 'side': side,
+                                'why': said[0].partition(': ')[2] if said else 'not a setting'})
+        move_keys(raws[side])
+    docs, tables = default_docs(), []
+    for t, keys in DEFAULTS.items():
+        rows = []
+        for k, d in keys.items():
+            row = {'key': k, 'type': setting_type(t, k), 'choices': list(setting_choices(t, k)), 'default': d,
+                   'off': 'off' in SETTING_ALSO.get((t, k), ()), 'help': docs.get(t, {}).get(k, ''),
+                   'applies': 'now' if (t, k) in SETTING_NOW else 'next run', 'value': d, 'source': 'default'}
+            for side in ('project', 'device'):
+                have = raws[side].get(t)
+                row[f'has_{side}'] = isinstance(have, dict) and k in have
+                if row[f'has_{side}']:
+                    row[side] = have[k]
+                    row['value'] = {**d, **have[k]} if (t, k) == ('models', 'kinds') and isinstance(have[k], dict) \
+                        else have[k]
+                    row['source'] = side
+            rows.append(row)
+        tables.append({'table': t, 'keys': rows})
+    of = {(t['table'], k['key']): k for t in tables for k in t['keys']}
+    for role, old in (('code', 'model'), ('fix', 'fix_model')):  # resolve_models: a role unset takes [run]'s
+        k, was = of[('models', role)], of[('run', old)]
+        if k['source'] == 'default' and was['source'] != 'default':
+            k['value'] = was['value']
+    return {'ok': not errors, 'out': '; '.join(errors), 'tables': tables, 'unknown': unknown,
+            'project': files['project'].name if files['project'] else 'runner.toml',
+            'device': files['device'].name if files['device'] else LOCAL}
 
 
 # B79: a user-level SessionStart hook, so a session opened by hand in a runner repo's main checkout (the desktop

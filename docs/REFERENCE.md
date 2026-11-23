@@ -1082,7 +1082,8 @@ project keep them in its own config file (see [docs/SETUP.md](SETUP.md#wrapping-
 **`runner.local.toml` is one machine's settings.** Laid over the shared file key by key, table by table, it
 changes what one person needs without editing what everyone shares: a lower `weekly_max` for a smaller
 plan, fewer `slots` on a laptop, another `model`. `run` creates it in the main checkout when it is missing,
-all comments so it changes nothing, and never rewrites it after that; it keeps it out of git through the
+all comments so it changes nothing, and changes it only when a person saves a This device value in the run app's
+Settings (one key on its own line; its comments stay); it keeps it out of git through the
 clone's `.git/info/exclude`, so neither a `git add` nor another person sees it. Worktrees read the main
 checkout's.
 
@@ -1125,6 +1126,8 @@ theme = "ryha"            # the terminal UI's (`ui`) colours: ryha (black, red a
                           # light or dark setting
 web = "app"               # the view the run app's link opens: "app" (the run app) or "terminal" (the terminal-style
                           # page, /term); a browser that switched views opens its last one (see The run app)
+chat_quiet = "6h"         # a chat that needs no reply, with nothing said in it for this long, is grayed at the bottom
+                          # of the run app's Chats (never c1, a pinned or a renamed one); false: off
 
 [models]                  # the model each type of work runs on (see Models per role below)
 code = "opus"             # a task's own session; unset, [run] model sets it

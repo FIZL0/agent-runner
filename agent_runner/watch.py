@@ -639,6 +639,7 @@ def auto_upgrade(merging: bool) -> threading.Thread | None:
 
 
 _upgrade_seen: str | None = None
+RESTART = [False]  # F97: the `restart` key was sent: the next tick with no merge going restarts the run
 
 
 def restart_if_upgraded() -> None:
@@ -651,6 +652,10 @@ def restart_if_upgraded() -> None:
     never lands mid-install."""
     global _upgrade_seen
     from agent_runner import __version__
+    if RESTART[0] and not plat.WINDOWS:
+        RESTART[0] = False
+        log(f'restarting the run, keeping {state_line()}')
+        return restart_run()
     new = installed_version()
     if not new or new == __version__ or plat.WINDOWS:
         return
@@ -664,6 +669,11 @@ def restart_if_upgraded() -> None:
         _upgrade_seen = new  # once more next tick, then restart
         return
     log(f'agent-runner {new} is installed (this run is {__version__}); restarting on it, keeping {state_line()}')
+    restart_run()
+
+
+def restart_run() -> None:
+    """Re-exec this run as it was started; the new process reads the settings again and adopts the sessions."""
     sys.stdout.flush()
     # what the keys set lives in this process: the new one takes it over (see `kept_keys`)
     os.environ['AGENT_RUNNER_KEEP'] = json.dumps({'slots': SLOTS, 'paused': PAUSED[0], 'power': POWER,
