@@ -168,6 +168,29 @@ def cap_text(sid: str) -> str:
     return text[:200] or 'usage limit'
 
 
+def limit_of(d: dict) -> tuple[str, float | None] | None:
+    """B170: (text, reset epoch or None) when transcript entry `d` is a usage-limit error, read from the error's own
+    fields (its words only from a Claude Code that wrote none); None otherwise. The reset: the error's `resetsAt`,
+    else what its words name after the moment it was written (not after now: that would move it on a day)."""
+    if not d.get('isApiErrorMessage'):
+        return None
+    c = (d.get('message') or {}).get('content') if isinstance(d.get('message'), dict) else ''
+    text = ' '.join((c if isinstance(c, str) else ' '.join(str(x.get('text') or '') for x in c or []
+                                                          if isinstance(x, dict))).split())
+    kind = d.get('error') or d.get('apiError')
+    if kind not in ('rate_limit', 'usage_limit_reached') and (kind or not CAP.search(text)):
+        return None
+    params = d.get('apiErrorParams') if isinstance(d.get('apiErrorParams'), dict) else {}
+    for q in (d.get('quotaLimits'), params.get('rate_limit_info')):
+        if isinstance(q, dict) and isinstance(q.get('resetsAt'), (int, float)):
+            return text, float(q['resetsAt'])
+    try:
+        at = dt.datetime.fromisoformat(str(d['timestamp']).replace('Z', '+00:00')).timestamp()
+    except (KeyError, ValueError):
+        at = None
+    return text, reset_at(text, at)
+
+
 def reset_at(text: str, now: float | None = None) -> float | None:
     """The reset time a cap's text names, as an epoch: Claude Code's "usage limit reached|1764000000", or
     "resets 3pm" / "resets 3:30pm" / "resets 15:00" (local time, the next such time); None when it names none."""

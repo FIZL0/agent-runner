@@ -1093,8 +1093,8 @@ def file_control_ask(n: int, sid: str, q: str, link: str, branch: str = '') -> s
 
 
 def close_controls(branch: str = '', force: bool = False, now: float | None = None) -> list[tuple[int, str, str]]:
-    """B26: close the idle control sessions (see above), every CONTROL_CLOSE_EVERY s from the run loop.
-    [(n, 'closed' | 'asked', why or the task id filed)] for those closed."""
+    """B26: close the idle ones (see above) every CONTROL_CLOSE_EVERY s: [(n, 'closed' | 'asked', why or task id)]."""
+    from agent_runner import control_held
     cf = control_cfg()
     if not (cf['idle'] or cf['ask_idle']) or (not force and time.time() - CONTROL_CLOSE_AT[0] < CONTROL_CLOSE_EVERY):
         return []
@@ -1112,7 +1112,7 @@ def close_controls(branch: str = '', force: bool = False, now: float | None = No
             continue
         st = control_state(entries(sid, skip_bad=True))
         verdict, why = control_verdict(st, cf, now, n, control_one_ask(n, sid))
-        if verdict == 'keep':
+        if verdict == 'keep' or control_held.holds(sid):  # B170
             continue
         link = control_link(st['bridge'])
         if verdict == 'ask':
@@ -1261,6 +1261,8 @@ def end_control(n: int, why: str) -> bool:
             plat.terminate(int(pid_s))  # its hidden shim ends with it
         except ValueError:
             pass
+    from agent_runner import control_held
+    control_held.drop(sid.strip())  # B170: closed on purpose, so what it held is not put in
     pidf.unlink(missing_ok=True)
     C.notes(f'control{n}.title').unlink(missing_ok=True)
     C.notes(f'control{n}.name').unlink(missing_ok=True)  # F129

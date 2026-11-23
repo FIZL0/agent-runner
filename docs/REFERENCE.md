@@ -140,6 +140,22 @@ task to fix X" (it files it with `plan add`), "do X now" (it uses `take`, never 
   `permissions.additionalDirectories`, never in your repo's files. It is not named `/new` because Claude Code's `/new`
   is an alias of `/clear`, which would wipe the session instead. Whether the phone app passes a typed `/control` through
   to the session is still to be checked by a person; "new" works either way.
+- **Held messages**: a person's messages to a control session whose reply was only a usage-limit error are held, all in a
+  row, with their images. The reset is read from the transcript error's own fields (`rate_limit` and `resetsAt`), else
+  from the reset its words name, else 1 h (doubling with each try that meets the limit again, to 8 h at most). `status` shows one line
+  per chat (how many asks, which chat, when it resets), the run log says it once, and such a session is not closed as
+  idle. After the reset (+1 min) the run types them in as one message marked `[agent-runner: held by the usage limit]`,
+  in order, reopening the ended session hidden and resuming its transcript (under another number if its number is in
+  use; only with `[run] control = true`). A try that meets the limit again, or is cut off by it, leaves them held till the new reset. The
+  records in `<notes>/held/<sid>.json` survive restarts. Ones the person sent again (the same words, more than
+  three, and the same files) and got answered in any session of the checkout are left out, and a turn begun by a person's message that gets answered counts as answering the earlier
+  ones (Claude Code sends them along). They are dropped when the person closes the session on the run page or the TUI,
+  sends `/exit` or `/clear`, archives it in the apps, or interrupts it while it is being answered. After 3 failures (the
+  session will not come up, or another API error) `status` says to send them again. Limits: a session ended by Ctrl-C or
+  Ctrl-D, a closed terminal or a kill leaves no sign of purpose, so it is reopened; a session live in a terminal with no
+  hidden shim cannot be typed into and waits till it ends (`status` says so); sessions started from the apps' control
+  server have no number and are not covered; a message whose reply had begun before the limit is not held. Not tried
+  against a real limit yet: it was checked against transcripts only (the real ones of 2026-11-22 were read).
 - **Their settings**: every control session, and the control server, gets `.runner/control-settings.json`
   with `--settings`: a SessionStart hook that runs `agent-runner control --brief`, which prints the control
   brief (so a resumed or compacted session gets it again). They run on `[models] control` with every tool
