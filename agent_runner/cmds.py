@@ -1017,6 +1017,7 @@ def cmd_control(argv: list[str], prog: str = f'{RUNNER} control') -> int:
     ap.add_argument('--blank', action='store_true', help=argparse.SUPPRESS)  # c1 under [run] remote: no opening turn
     ap.add_argument('--local', action='store_true', help=argparse.SUPPRESS)  # c1 under [run] remote: not in the apps
     ap.add_argument('--new-run', action='store_true', help=argparse.SUPPRESS)  # F27: c1 of a new run (not a restart)
+    ap.add_argument('--reopen', action='store_true', help=argparse.SUPPRESS)  # B121: resume cN after a shutdown
     ap.add_argument('--ask', default='', help=argparse.SUPPRESS)  # its first message: tests and older feeds (B72)
     ap.add_argument('--ask-file', default='', help=argparse.SUPPRESS)  # B72: the forwarded message, from a file
     ap.add_argument(FORWARD_FLAG, action='store_true', help='open another one (as --new) whose first message is '
@@ -1070,7 +1071,8 @@ def cmd_control(argv: list[str], prog: str = f'{RUNNER} control') -> int:
         except OSError:
             pass
         a.ask, a.file = control_late_files(a.ask, a.file, a.feed_sid)
-    sid, resume, argv = control_open(n, ask=a.ask, images=a.file, new_run=a.new_run, blank=a.blank, local=a.local)
+    sid, resume, argv = control_open(n, ask=a.ask, images=a.file, new_run=a.new_run, blank=a.blank, local=a.local,
+                                  reopen=a.reopen)
     backend().trust(ROOT)
     os.chdir(ROOT)
     pidf = C.notes(f'control{n}.pid')

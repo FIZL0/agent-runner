@@ -306,6 +306,93 @@ def test_sessions_one_and_each():
             check(not PC.page_copy_tick(now=1e9, snap={**snap, 'up': False}, send=send), 'each: no copy kept')
 
 
+def test_reopen_after_shutdown():
+    print('B121: c2+ live at a shutdown come back on run start with --resume <same sid> and their title; '
+          'one closed on purpose stays closed')
+    import os
+    import sys
+    import time
+    from agent_runner import control_reopen as CR, runner as R, slots as S
+    d = Path(tempfile.mkdtemp(prefix='agent-runner-reopen-'))
+    git(d, 'init', '-q')
+    (d / '.gitignore').write_text('.runner/\n')
+    (d / 'README.md').write_text('demo\n')
+    git(d, 'add', '-A')
+    git(d, 'commit', '-qm', 'start')
+    R.init(d)
+    p = subprocess.Popen([sys.executable, '-c', 'pass'])
+    p.wait()
+    dead = p.pid  # a process that is gone, as every control session is after a reboot
+    booted = time.time() - 1000
+    gone = 'Remote Control disconnected — this session was ended or archived from another device or app (code 4090)'
+    rows: dict[str, list] = {}
+    with mock.patch.object(R.Claude, 'find_transcript', lambda self, s: f'/{s}.jsonl' if s in rows else ''), \
+            mock.patch.object(K, 'transcript', lambda s: f'/{s}.jsonl' if s in rows else ''), \
+            mock.patch.object(K, 'entries', lambda s, skip_bad=False: rows.get(s, [])), \
+            mock.patch.object(K, 'remote_on', lambda: True), mock.patch.object(K, 'ask_waiting', lambda: ''), \
+            mock.patch.object(CR, 'boot_time', lambda: booted):
+        sid1, resume1, _ = K.control_open(1)
+        rows[sid1] = []
+        sid2, resume2, _ = K.control_open(2, ask='fix the deploy page')
+        check(not resume2, 'c2 starts fresh the first time')
+        eq(R.C.notes('control2.sid').read_text(encoding='utf-8').strip(), sid2, 'c2 keeps its id in control2.sid')
+        title2 = K.control_given(2)
+        eq(title2, K.control_name(2, 'fix the deploy page'), 'c2 has the title its ask gave it')
+        opened = {n: K.control_open(n)[0] for n in (3, 4, 5)}
+        for n, sid in [(1, sid1), (2, sid2), *opened.items()]:
+            rows.setdefault(sid, [])
+            R.C.notes(f'control{n}.pid').write_text(f'{dead} {sid}', encoding='utf-8')
+        rows[opened[4]] = [{'type': 'system', 'content': gone}]  # c4: closed in the apps while the machine was off
+        R.C.notes('control3.pid').unlink()  # c3: closed on purpose (idle close, B26; closed online, B53)
+        for n in (1, 2, 4):  # live at the shutdown: pid files from before this boot
+            os.utime(R.C.notes(f'control{n}.pid'), (booted - 100, booted - 100))
+        # c5: its pid file is from this boot, so the person quit it while the machine was up
+
+        started = []
+        with mock.patch.object(CR, 'reopen_control', lambda n, sid: started.append((n, sid)) or 'a test window'):
+            eq(CR.reopen_controls(), [2], 'run start reopens c2 only')
+        eq(started, [(2, sid2)], 'with its own session id')
+        check(R.C.notes('control2.pid').exists(), 'c2 is still listed until it is up again')
+        for n in (3, 4, 5):
+            check(not R.C.notes(f'control{n}.pid').exists(), f'c{n} stays closed (no pid file)')
+        eq(CR.controls_to_reopen(), [(2, sid2)], 'asking again names c2 only')
+
+        sid, resume, argv = K.control_open(2, reopen=True)  # what `control 2 --reopen` runs
+        eq((sid, resume), (sid2, True), 'control 2 --reopen resumes the same conversation')
+        eq(argv[argv.index('--resume') + 1], sid2, '--resume <same sid>')
+        check('--session-id' not in argv, 'not a new session', argv)
+        eq(argv[argv.index('--remote-control') + 1], title2, 'under the title it had')
+        check(len(argv) > 1 and argv[1] != K.control_ask('fix the deploy page'), 'its ask is not sent again', argv)
+        eq(K.control_given(2), title2, 'its title is left as it was')
+        rows[sid2] = [{'type': 'custom-title', 'customTitle': 'deploy talk'}]
+        named = K.control_open(2, reopen=True)[2]
+        eq(named[named.index('--remote-control') + 1], 'deploy talk', 'a name the person gave it wins')
+        fresh, again, _ = K.control_open(2)
+        check(not again and fresh != sid2, 'a plain control 2 (control --new) starts fresh', (fresh, again))
+        eq(K.control_sid(1), (sid1, True), 'c1 still resumes its kept session')
+
+        got = []
+        with mock.patch.object(S, 'MUX', object()), mock.patch.object(K.plat, 'WINDOWS', False), \
+                mock.patch.object(K, 'hidden_control', lambda n, cmd: got.append(cmd) or (4242, '')):
+            check(CR.reopen_control(2, sid2).startswith('a hidden terminal'), 'a hidden run reopens it hidden')
+        eq(got[0][-3:], ['control', '2', '--reopen'], 'as control 2 --reopen')
+
+        calls = []  # the run restarted: start_control reopens them first, unless [run] control is off
+        with mock.patch.object(CR, 'reopen_controls', lambda: calls.append(1) or []), \
+                mock.patch.object(K, 'control_ok', lambda: True), mock.patch.object(K, 'MUX', object()), \
+                mock.patch.object(K.plat, 'WINDOWS', False), mock.patch.object(K, 'mark_board', lambda: None):
+            with mock.patch.dict(R.C.run, {'control': True}):
+                K.start_control()
+            eq(len(calls), 1, 'a run start reopens the control sessions')
+            with mock.patch.dict(R.C.run, {'control': False}):
+                K.start_control()
+            eq(len(calls), 1, 'not with [run] control = false')
+
+        R.C.notes('control6.pid').write_text(f'{dead} {sid2}', encoding='utf-8')
+        eq(CR.forget_ended_controls(), [6], 'the run loop forgets one that ended during this boot, not c2')
+        check(not R.C.notes('control6.pid').exists(), 'c6 will not be reopened')
+
+
 def P_lines(d: Path) -> list[str]:
     return (d / 'plan/TODO.md').read_text(encoding='utf-8').splitlines()
 
@@ -313,4 +400,5 @@ def P_lines(d: Path) -> list[str]:
 if __name__ == '__main__':
     raise SystemExit(report([test_background_session_options_target, test_real_tmux_takes_the_option,
                              test_handed_ask_as_c1_starts_fresh, test_brief_fits_session_start,
-                             test_take_back_from_a_slot_just_started, test_sessions_one_and_each]))
+                             test_take_back_from_a_slot_just_started, test_sessions_one_and_each,
+                             test_reopen_after_shutdown]))

@@ -239,6 +239,8 @@ def control_session_start(n: int, hook: dict) -> str:
             pidf.write_text(f'{pid_s} {new}', encoding='utf-8')
         except OSError:
             pass
+        if n > 1:
+            control_keep_sid(n, new)  # B121: a reopen after a shutdown resumes the conversation it has now
     if old and transcript(old) and control_renamed(control_state(entries(old, skip_bad=True)), n):
         return ''  # the person named it: never overwritten
     base, given = control_base_name(n), control_given(n)
@@ -497,18 +499,27 @@ def control_bloated(sid: str) -> int:
     return last if warn > 0 and last > warn else 0
 
 
-def control_sid(n: int, new_run: bool = False, handed: bool = False) -> tuple[str, bool]:
+def control_sid(n: int, new_run: bool = False, handed: bool = False, reopen: bool = False) -> tuple[str, bool]:
     """(session id, resume?): c1 keeps its id in `<notes>/control.sid` and resumes it across runs while its
     transcript is there; any other control session starts fresh. F27: `new_run` (`control 1 --new-run`, from a
     run a person started, not a restart: `run_restart`) starts c1 fresh, with a new id in control.sid, when
     the kept transcript's last context is over [run] context_warn; the plan, ledger and since hold the state,
     so the opening summary covers it. CONTROL_FRESH then says why, in one line. B96: `handed` (a session opened
     for a handed-on ask, `control --new --ask`, that got number 1 because c1 was not live) always starts fresh
-    and leaves control.sid as it is: that kept session stays the run's own c1."""
+    and leaves control.sid as it is: that kept session stays the run's own c1. B121: any other number N keeps
+    its id in `<notes>/control<N>.sid` (`control_sid_file`), and `reopen` (`control N --reopen`, from
+    `reopen_controls` on run start) resumes it while its transcript is there; a plain `control N` starts fresh."""
     f = C.notes('control.sid')
     CONTROL_FRESH[0] = ''
+    if n > 1 and reopen:
+        sid = control_kept_sid(n)
+        if sid and backend().find_transcript(sid):
+            return sid, True
     if handed:
-        return str(uuid.uuid4()), False
+        sid = str(uuid.uuid4())
+        if n > 1:
+            control_keep_sid(n, sid)
+        return sid, False
     if n == 1:
         try:
             sid = f.read_text(encoding='utf-8').strip()
@@ -523,17 +534,51 @@ def control_sid(n: int, new_run: bool = False, handed: bool = False) -> tuple[st
     sid = str(uuid.uuid4())
     if n == 1:
         f.write_text(sid + '\n', encoding='utf-8')
+    else:
+        control_keep_sid(n, sid)
     return sid, False
 
 
+def control_sid_file(n: int) -> Path:
+    """B121: where control session `n` (> 1) keeps its session id: `<notes>/control<n>.sid` (c1's is control.sid)."""
+    return C.notes(f'control{n}.sid')
+
+
+def control_keep_sid(n: int, sid: str) -> None:
+    """B121: record `sid` as control session `n`'s (> 1) conversation, for `reopen_controls` after a shutdown."""
+    try:
+        control_sid_file(n).write_text(sid + '\n', encoding='utf-8')
+    except OSError:
+        pass
+
+
+def control_kept_sid(n: int) -> str:
+    """B121: control session `n`'s (> 1) kept session id: the one its pid file names (it follows /clear), else
+    control<n>.sid; '' for none."""
+    try:
+        sid = C.notes(f'control{n}.pid').read_text(encoding='utf-8').strip().partition(' ')[2].strip()
+    except OSError:
+        sid = ''
+    if sid:
+        return sid
+    try:
+        return control_sid_file(n).read_text(encoding='utf-8').strip()
+    except OSError:
+        return ''
+
+
 def control_open(n: int, ask: str = '', images: list[str] | tuple = (), new_run: bool = False, blank: bool = False,
-                 local: bool = False) -> tuple[str, bool, list[str]]:
+                 local: bool = False, reopen: bool = False) -> tuple[str, bool, list[str]]:
     """(session id, resume?, argv) control session `n` starts with (`control N`). B96: one opened with an ask
     (or files) starts fresh even as number 1 (`control_sid`). A fresh session gets the name the runner gives it
-    (F32: never an earlier session N's or a task's) and, opened for an ask, the one-ask mark (F56)."""
+    (F32: never an earlier session N's or a task's) and, opened for an ask, the one-ask mark (F56). B121:
+    `reopen` resumes session N's kept conversation under the name it had (`reopen_name`)."""
     handed = bool(ask or images)
-    sid, resume = control_sid(n, new_run=new_run, handed=handed)
+    sid, resume = control_sid(n, new_run=new_run, handed=handed, reopen=reopen and not handed)
     argv = control_argv(n, sid, resume, blank=blank, ask=ask, local=local, images=images)
+    if resume and n > 1 and '--remote-control' in argv:
+        from agent_runner.control_reopen import reopen_name
+        argv[argv.index('--remote-control') + 1] = reopen_name(n, sid)
     if not resume:
         control_give(n, control_name(n, ask, images))
         control_mark_ask(n, sid if ask else '')
@@ -642,8 +687,15 @@ def start_control() -> None:
     control" and no start push). tmux: under the runner's pane, or in the background session's own window, whose
     default-command makes every new pane a control session. Windows: a console of its own (hidden in the
     background run). Linux and macOS with no tmux pane to open it in (a hidden run): a pseudo-terminal with no
-    window (`hidden_control`, F59)."""
+    window (`hidden_control`, F59). B121: first the control sessions c2+ a shutdown ended are reopened
+    (`reopen_controls`)."""
     mark_board()
+    if C.run['control'] and control_ok():
+        try:
+            from agent_runner.control_reopen import reopen_controls
+            reopen_controls()
+        except Exception as e:  # never stops the run from starting
+            log(f'control: could not reopen the control sessions a shutdown ended: {e}')
     if not C.run['control'] or not control_ok():
         return
     cmd = [*runner_cmd(), 'control', '1', *([] if run_restart() else ['--new-run']),  # F27: a restart resumes c1
@@ -1133,6 +1185,8 @@ def end_closed_controls(force: bool = False) -> list[int]:
     if not control_ok() or (not force and time.time() - CONTROL_GONE_AT[0] < CONTROL_CLOSE_EVERY):
         return []
     CONTROL_GONE_AT[0] = time.time()
+    from agent_runner.control_reopen import forget_ended_controls
+    forget_ended_controls()  # B121: one the person ended while the machine stays up is not reopened later
     out = []
     for n in control_live_numbers():
         pidf = C.notes(f'control{n}.pid')
