@@ -327,52 +327,6 @@ def control_set_title(n: int, summary: str) -> int:
     return 0
 
 
-def person_name_file(n: int) -> Path:
-    """F129: `<notes>/control<n>.name`: the name the person gave control session `n` on the run page or in the TUI,
-    and the custom title its transcript had then (JSON {name, was}), until the typed /rename shows there."""
-    return C.notes(f'control{n}.name')
-
-
-def person_name(n: int, title: str) -> str:
-    """F129: the name the person last gave control session `n`, whose transcript's custom title is `title`; '' when
-    the person named it nowhere but the apps. A title that changed since (a rename in the apps, or the typed
-    one arriving) is the newer name, so the record stands only until then."""
-    try:
-        d = json.loads(person_name_file(n).read_text(encoding='utf-8'))
-        return str(d['name']) if title in (str(d['was']), str(d['name'])) else ''
-    except (OSError, ValueError, KeyError, TypeError):
-        return ''
-
-
-def control_rename(n: int, name: str) -> int:
-    """F129 `control --rename N NAME`: the person's own rename of control session `n` (c1 too), from the run app or
-    the TUI: `/rename NAME` is typed into it, so its custom title is the person's and `control_renamed` keeps it
-    (never closed when idle, B41; `control --title` does not replace it). The name is kept in state too, so it
-    shows at once, before the turn under way ends."""
-    name = ' '.join(str(name or '').split())[:80]
-    if not name or name.startswith('/'):
-        print('--rename needs a name', file=sys.stderr)
-        return 2
-    if not control_live(n):
-        print(f'control {n} is not up', file=sys.stderr)
-        return 1
-    try:
-        sid = C.notes(f'control{n}.pid').read_text(encoding='utf-8').strip().partition(' ')[2]
-    except OSError:
-        sid = ''
-    was = control_state(entries(sid, skip_bad=True))['title'] if sid and transcript(sid) else ''
-    try:
-        person_name_file(n).write_text(json.dumps({'name': name, 'was': was}) + '\n', encoding='utf-8')
-    except OSError:
-        pass
-    if control_type(n, f'/rename {name}'):
-        print(f'control {n} is renamed "{name}"')
-    else:
-        print(f'control {n} is named "{name}" on the run page and in the TUI (it runs in a terminal of its own, so '
-              f'the Claude apps keep its name)')
-    return 0
-
-
 def control_ask(ask: str, images: list[str] | tuple = ()) -> str:
     """The first message a handed-on request opens a control session with: `ask`, and for each `--file PATH`
     (`--image`: an alias) a line saying the person attached that file, by name and saved path, and to Read or open
@@ -658,7 +612,7 @@ def control_open(n: int, ask: str = '', images: list[str] | tuple = (), new_run:
         from agent_runner.control_reopen import reopen_name
         argv[argv.index('--remote-control') + 1] = reopen_name(n, sid)
     if not resume:
-        person_name_file(n).unlink(missing_ok=True)  # F129: the name was an earlier session N's
+        C.notes(f'control{n}.name').unlink(missing_ok=True)  # F129: the name was an earlier session N's
         control_give(n, control_name(n, ask, images))
         control_mark_ask(n, sid if ask else '')
     return sid, resume, argv
@@ -1057,6 +1011,7 @@ def control_renamed(st: dict, n: int = 0) -> bool:
     `control_given`, its ask's or `control --title`'s), not any "<repo> · N ·" name; with `n` 0 any custom
     title counts."""
     t = st.get('title') or ''
+    from agent_runner.control_names import person_name
     if n and person_name(n, t):  # F129: renamed on the run page or in the TUI
         return True
     return bool(t) and not (n and t in (control_name(n), control_base_name(n), control_given(n)))
@@ -1309,7 +1264,7 @@ def end_control(n: int, why: str) -> bool:
             pass
     pidf.unlink(missing_ok=True)
     C.notes(f'control{n}.title').unlink(missing_ok=True)
-    person_name_file(n).unlink(missing_ok=True)  # F129
+    C.notes(f'control{n}.name').unlink(missing_ok=True)  # F129
     log(f'control {n}: ended, {why}' + (f' (transcript kept: {plat.exe(C.run["agent"])} --resume {sid})' if sid else ''))
     return True
 

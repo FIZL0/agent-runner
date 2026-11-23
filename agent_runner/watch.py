@@ -672,6 +672,13 @@ def restart_if_upgraded() -> None:
     restart_run()
 
 
+def ask_restart() -> None:
+    """F97: the `restart` key: settings saved on the run page wait for it."""
+    RESTART[0] = not plat.WINDOWS
+    log('restarting between merges, to read the settings again; the running tasks keep going' if RESTART[0] else
+        'restart: not on Windows; stop the run and start it again')
+
+
 def restart_run() -> None:
     """Re-exec this run as it was started; the new process reads the settings again and adopts the sessions."""
     sys.stdout.flush()

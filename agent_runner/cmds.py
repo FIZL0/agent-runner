@@ -1053,10 +1053,8 @@ def cmd_control(argv: list[str], prog: str = f'{RUNNER} control') -> int:
     a = ap.parse_args(argv)
     init()
     if a.rename:  # F129
-        if not a.rename[0].isdigit():
-            ap.error('--rename N NAME: N is the control session\'s number')
-        from agent_runner.control import control_rename
-        return control_rename(int(a.rename[0]), a.rename[1])
+        from agent_runner.control_names import control_rename
+        return control_rename(*a.rename)
     if a.brief:
         if a.hand and os.environ.get(RUNNER_STARTED_ENV):
             return 0  # F53: a session the runner started has its brief from --settings already

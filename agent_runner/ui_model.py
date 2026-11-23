@@ -298,6 +298,7 @@ def chat_state(n: int, sid: str) -> dict:
     out = {'link': '', 'last': '', 'at': 0, 'needs_reply': False, 'renamed': False, 'title': ''}
     try:
         from agent_runner import control as K
+        from agent_runner.control_names import person_name
         from agent_runner.slots import entries, transcript
         path = str(sid and transcript(sid) or '')
         st: dict = {}
@@ -307,7 +308,7 @@ def chat_state(n: int, sid: str) -> dict:
             if _CHAT_STATE.get(path, (None,))[0] != mark:
                 _CHAT_STATE[path] = (mark, K.control_state(entries(sid, skip_bad=True)))
             st = _CHAT_STATE[path][1]
-        name, renamed = K.person_name(n, st.get('title') or ''), K.control_renamed(st, n)
+        name, renamed = person_name(n, st.get('title') or ''), K.control_renamed(st, n)
         out.update(link=K.control_link(st.get('bridge') or ''), last=st.get('last') or '', at=int(st.get('at') or 0),
                    renamed=renamed, title=name or (st.get('title') or '' if renamed else ''))
         if st.get('last') == 'claude':
