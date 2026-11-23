@@ -532,7 +532,8 @@ class Session {
 
   async tool_finish(a) {
     if (this.undone()) {
-      const done = `${(this.a.runner || ['run']).join(' ')} done ${this.tid} "<commit message>"`;
+      const quoted = (w) => (/^[\w@%+=:,./-]+$/.test(w) ? w : `'${w.replaceAll("'", `'\\''`)}'`);
+      const done = `${(this.a.runner || ['run']).map(quoted).join(' ')} done ${this.tid} "<commit message>"`;
       return [`finish refused: \`done\` has not run for ${this.tid}, so the session goes on. Run \`${done}\` with bash ` +
         `first (add --blocked "<why + what would unblock it>" when you are stuck), then finish. When only a person ` +
         `can answer what you need, call the ask tool instead.`, true];
