@@ -619,6 +619,13 @@ function talkName(){
   const n=talkSession(S.snap.sessions,store.get(TALK_KEY));if(n)return n;
   const w=TK.wait;return w&&Date.now()-w.at<90000?w.n:'';  /* just opened: not in the snapshot yet */
 }
+/* B133: the session a Talk reply is awaited from ('' for none): a wait opened with no session name takes the live
+   chat titled Talk once the snapshot lists it */
+function talkWaitName(){
+  const w=TK.wait;if(!w)return '';
+  if(!w.n){const t=talkSession(S.snap.sessions,'');if(t){w.n=t;store.set(TALK_KEY,t)}}
+  return w.n;
+}
 const micWhy=()=>micProblem(window.isSecureContext!==false,!!SR);
 function talkHTML(){
   const n=talkName();
@@ -637,19 +644,20 @@ function talkDock(){
 async function talkSend(msg){
   const to=talkName(), len=to?feedOf(to).length:0;
   TK.state='thinking';TK.said=msg;TK.note='';unlockSpeech();render(true);
+  /* B133: the wait starts before the action, which can take up to 90 s while a new chat comes up: a reply that
+     lands meanwhile is heard from the polls and snapshots (talkWaitName finds the new chat by its title) */
+  const w={n:to,since:len,at:Date.now(),last:''};TK.wait=w;
   const r=await act('talk',{text:msg,to});
-  if(!r.ok){TK.state='';render(true);return false}
+  if(!r.ok){if(TK.wait===w)TK.wait=null;TK.state='';render(true);return false}
   const n=r.session||to, fresh=n!==to;
-  TK.wait={n,since:fresh?0:len,at:Date.now(),last:''};  /* n '': found by its title once it is up (talkHear) */
+  if(TK.wait===w){if(fresh){w.n=n;w.since=0;w.last=''}w.at=Date.now()}  /* not yet heard; n '': found by its title */
   if(n){store.set(TALK_KEY,n);S.sent[n]={at:Date.now(),len:fresh?0:len,pending:[msg]};loadFeed(n)}
-  else toast('Talk is opening its chat: it shows here once it is up');
+  else if(TK.wait===w&&!w.n)toast('Talk is opening its chat: it shows here once it is up');
   render(true);return true;
 }
 /* a new feed for session n: once the Talk reply has stood for one poll, read it aloud */
 function talkHear(n){
-  const w=TK.wait;if(!w)return;
-  if(!w.n&&talkSession(S.snap.sessions,'')===n){w.n=n;store.set(TALK_KEY,n)}
-  if(w.n!==n)return;
+  const w=TK.wait;if(!w||talkWaitName()!==n)return;
   if(Date.now()-w.at>300000){TK.wait=null;if(TK.state==='thinking'){TK.state='';toast('No spoken reply came in five minutes: its chat shows where it is.',true);render(true)}return}
   const said=talkReply(feedOf(n),w.since);
   if(!said||said!==w.last){w.last=said;return}
@@ -702,6 +710,7 @@ function takeSnap(s){
     if(fresh.length){S.waitNew=null;open(fresh[fresh.length-1]);return}
     if(Date.now()-S.waitNew.at>60000)S.waitNew=null}
   for(const w of working_())if(!S.feeds[w.name]||Date.now()-(S.feeds[w.name].at||0)>15000)loadFeed(w.name);
+  const tw=talkWaitName();if(tw)loadFeed(tw);  // B133: each snapshot also looks for the awaited Talk reply
   render();
 }
 function connect(){
@@ -721,7 +730,8 @@ async function loadFeed(n){
   catch(e){}
 }
 setInterval(()=>{if(S.thread&&!document.hidden)loadFeed(S.thread)},2000);
-setInterval(()=>{const n=talkName();if(n&&!S.thread&&S.view==='talk')loadFeed(n)},2000);  // F93
+setInterval(()=>{const w=talkWaitName(), n=talkName();  // F93; B133: an awaited reply is polled in any view
+  if(w)loadFeed(w);else if(n&&!S.thread&&S.view==='talk')loadFeed(n)},2000);
 
 /* --- doing things ------------------------------------------------------------------------------------------ */
 function open(n){S.thread=n;S.drawer=false;loadFeed(n);render(true);setTimeout(()=>document.querySelector('[data-in]')?.focus(),50)}
