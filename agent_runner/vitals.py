@@ -431,16 +431,36 @@ LIMIT_WORDS = {'memory': 'memory is nearly full', 'cpu': 'the CPU is busy',
                'disk': 'the disk is near min_free_gb', 'usage': 'a usage cap is reached'}
 
 
-def headroom(snap: dict, min_free_gb: float = 10, usage: dict | None = None, caps: dict | None = None) -> dict:
+def free_fallback(c) -> bool:
+    """F142: `c`'s [models] fallback has an entry a new task can start on past the usage caps: not claude's, its
+    provider not capped and logged in (fallback.chain_next, for any project's config)."""
+    from agent_runner.config import harness_model
+    from agent_runner.login import missing
+    try:
+        capped = json.loads(c.notes('capped.json').read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        capped = {}
+    if not isinstance(capped, dict):
+        capped = {}
+    now = time.time()
+    held = {p for p, u in capped.items() if isinstance(u, (int, float)) and u > now}
+    return any(harness_model(m, c.providers) and m.partition(':')[0] not in held and not missing(m, c)
+               for m in c.fallback)
+
+
+def headroom(snap: dict, min_free_gb: float = 10, usage: dict | None = None, caps: dict | None = None,
+             fallback: bool = False) -> dict:
     """How many more agents fit: {'room' (None when nothing could be read), 'by' (the limit that set it),
     'limits' ({memory|cpu|disk|usage: n}, only those read), 'said'}.
 
         memory  (available - KEEP_FREE_GB) / AGENT_GB
         cpu     threads * CPU_SHARE - load average
         disk    (free - min_free_gb) / DISK_GB
-        usage   0 once the session or weekly usage reaches its cap (session_max, weekly_max), else no limit
+        usage   0 once the session or weekly usage reaches its cap (session_max, weekly_max), else no limit;
+                no limit either with `fallback` (new tasks start down [models] fallback): 'said' tells it
     The smallest wins, capped at ROOM_MAX."""
     limits: dict[str, int] = {}
+    over = False
     if mem := snap.get('mem'):
         limits['memory'] = max(0, int((mem['avail'] / GB - KEEP_FREE_GB) // AGENT_GB))
     cpu = snap.get('cpu') or {}
@@ -451,13 +471,17 @@ def headroom(snap: dict, min_free_gb: float = 10, usage: dict | None = None, cap
     for name, cap_key in (('session', 'session_max'), ('weekly', 'weekly_max')):
         pct, cap = (usage or {}).get(name), (caps or {}).get(cap_key)
         if pct is not None and cap and pct >= cap:
-            limits['usage'] = 0
+            over = True
+    if over and not fallback:
+        limits['usage'] = 0
     if not limits:
         return {'room': None, 'by': '', 'limits': {}, 'said': 'Headroom unknown: nothing here could be read'}
     by = min(limits, key=lambda k: limits[k])
     room = min(limits[by], ROOM_MAX)
     said = (f'Room for {room} more agent{"" if room == 1 else "s"}' if room
             else f'No room for another agent: {LIMIT_WORDS[by]}')
+    if over and room:
+        said += f', on [models] fallback: {LIMIT_WORDS["usage"]}'
     return {'room': room, 'by': by if limits[by] <= ROOM_MAX else '', 'limits': limits, 'said': said}
 
 
@@ -673,7 +697,8 @@ class Project:
     run has busy and the sessions waiting to resume."""
 
     def __init__(self, root: Path, home: Path, notes: Path, main: str, up: bool, busy: set[str],
-                 resume: set[str], min_free_gb: float = 10, caps: dict | None = None):
+                 resume: set[str], min_free_gb: float = 10, caps: dict | None = None, fallback: bool = False):
+        self.fallback = fallback
         self.root, self.home, self.notes, self.main, self.up = root, home, notes, main, up
         self.busy, self.resume, self.min_free_gb, self.caps = busy, resume, min_free_gb, caps or {}
 
@@ -685,6 +710,7 @@ class Project:
             home, notes = c.home, c.notes()
             main = c.master_branch or git_out(root, 'branch', '--show-current') or 'main'
             mff, caps = c.run.get('min_free_gb', 10), {k: c.run.get(k) for k in ('weekly_max', 'session_max')}
+            fallback = free_fallback(c)
         except (OSError, SystemExit, ValueError, KeyError, TypeError):
             return None
         if info is None:
@@ -700,7 +726,7 @@ class Project:
                     continue
         except OSError:
             pass
-        return cls(root, home, notes, main, bool(run.get('up')), busy, resume, mff, caps)
+        return cls(root, home, notes, main, bool(run.get('up')), busy, resume, mff, caps, fallback)
 
 
 def tmp_roots(projects: list[Project]) -> list[Path]:
@@ -1130,7 +1156,9 @@ class Vitals:
             self.start()
         projs = self.projects()
         mff, caps = self.limits(projs)
-        room = headroom(self.snap, mff, self.usage, caps)
+        # a project whose run is up can start one down its chain; with none up, any that would
+        fell = any(p.fallback for p in [p for p in projs if p.up] or projs)
+        room = headroom(self.snap, mff, self.usage, caps, fell)
         found = alerts(self.snap, mff, (self.foot or {}).get('tmp'))
         try:
             from agent_runner.home import keys

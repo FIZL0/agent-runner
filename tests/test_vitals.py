@@ -70,10 +70,49 @@ def test_headroom():
     s['disk']['free'] = 900 * GB
     h = V.headroom(s, 10, {'weekly': 91.0, 'session': 10.0}, {'weekly_max': 90, 'session_max': 90})
     eq((h['room'], h['by']), (0, 'usage'), 'a usage cap reached: none')
+    h = V.headroom(s, 10, {'weekly': 91.0}, {'weekly_max': 90}, fallback=True)
+    eq((h['room'], h['said']), (6, 'Room for 6 more agents, on [models] fallback: a usage cap is reached'),
+       'B157: new tasks start down the chain, and it says so')
+    check('usage' not in h['limits'], 'so usage sets no limit')
+    low = snap(mem={'total': 30 * GB, 'avail': 3 * GB})
+    eq(V.headroom(low, 10, {'weekly': 91.0}, {'weekly_max': 90}, fallback=True)['said'],
+       'No room for another agent: memory is nearly full', 'another limit still holds')
+    eq(V.headroom(s, 10, {'weekly': 50.0}, {'weekly_max': 90}, fallback=True)['said'], 'Room for 6 more agents',
+       'under the caps the chain is not named')
     h = V.headroom(s, 10, {'weekly': 50.0}, {'weekly_max': 90})
     check('usage' not in h['limits'], 'under the caps: usage sets no limit')
     eq(V.headroom(snap(), 10)['room'], None, 'nothing read: unknown, not zero')
     eq(V.headroom(snap(cpu={'threads': 8}), 10)['limits'], {}, 'threads without a load average: no CPU limit')
+
+
+def test_fallback_room():
+    print('B157: a project past the usage caps has room while its [models] fallback has a free provider')
+    t = tmpdir()
+    root = t / 'proj'
+    root.mkdir()
+    git(root, 'init', '-q')
+
+    def room(models: str) -> tuple:
+        write(root / 'runner.toml', '[run]\nweekly_max = 90\n' + models)
+        v = V.Vitals(lambda: [root], None, tailscale=False, usage=lambda: {}, info=lambda r: {'up': True},
+                     sampler=V.Sampler())
+        v.started, v.usage = True, {'weekly': 91.0}
+        v.snap = snap(mem={'total': 64 * GB, 'avail': 64 * GB})
+        h = v.device(detail=False)['headroom']
+        return h['room'], '[models] fallback' in h['said']
+
+    with mock.patch.dict(os.environ, {'PI_CODING_AGENT_DIR': str(t / 'pi'), 'GEMINI_API_KEY': 'k'}):
+        eq(room(''), (0, False), 'no chain: none')
+        eq(room('[models]\nfallback = ["sonnet"]\n'), (0, False), 'only claude in it: none')
+        chain = '[models]\nfallback = ["sonnet", "gemini:pro-test"]\n'
+        eq(room(chain), (6, True), 'a free provider: room')
+        from agent_runner.config import Config
+        capped = write(Config(root).notes('capped.json'), json.dumps({'gemini': time.time() + 900}))
+        eq(room(chain), (0, False), 'its provider capped: none')
+        write(capped, json.dumps({'gemini': time.time() - 1}))
+        eq(room(chain), (6, True), 'its cap over: room again')
+        del os.environ['GEMINI_API_KEY']
+        eq(room(chain), (0, False), 'no login: none')
 
 
 # --- collectors -------------------------------------------------------------------------------------------------
@@ -530,5 +569,5 @@ def test_sessions():
 
 
 if __name__ == '__main__':
-    raise SystemExit(report([test_headroom, test_linux_collectors, test_other_collectors, test_history, test_clean,
-                             test_alerts, test_push, test_home_calls, test_tailscale, test_sessions]))
+    raise SystemExit(report([test_headroom, test_fallback_room, test_linux_collectors, test_other_collectors,
+                             test_history, test_clean, test_alerts, test_push, test_home_calls, test_tailscale, test_sessions]))
