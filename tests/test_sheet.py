@@ -206,5 +206,33 @@ def test_go():
             'with the recommended answers noted')
 
 
+def test_pick_links_f138():
+    print('F138: Send gives a link that answers the run (no page token); /pick on a sheet runs sheet --picks')
+    link = 'https://box.tail.ts.net:8771/pick?id=F2&k=CODE'
+    page = S.render(SPEC, 'F2', pick=link)
+    check(json.dumps(link) in page and "S.pick+'&o='+encodeURIComponent(txt)" in page,
+          'the page carries the link; Send adds its picks line to it')
+    check('"pick": ""' in S.render(SPEC, 'F2'), 'no link: Send keeps today\'s flow')
+    check('"pick": ""' in S.render(SPEC, 'F2', pick='http://box:8770/?t=TOKEN'), 'only an https link is kept')
+    from unittest import mock
+    from agent_runner import state as ST, ui_model as U, web as W
+    with tempfile.TemporaryDirectory() as t:
+        root, env = make(Path(t))
+        run(root, 'done', 'F2', 'F2: audit', '--no-test', '--blocked', f'DECIDE: cleanups ready {URL}', env=env)
+        f = root / '.runner' / 'sheets' / 'F2.json'
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_text(json.dumps(SPEC), encoding='utf-8')
+        ST.init(root)
+        ran = []
+        with mock.patch.object(U, 'RUN', [lambda argv: (ran.append(argv), (0, 'ok'))[1]]):
+            code = W.pick_code('F2')
+            got = W.pick('F2', 'F2 picks: backend=b silent=a', code)
+            eq(got[0], 200, 'a good code answers the sheet')
+            eq(W.pick('F2', 'go', code)[0], 409, 'and is burnt')
+            W.pick('F2', 'go', W.pick_code('F2'))
+        eq(ran, [['sheet', 'F2', '--picks', 'F2 picks: backend=b silent=a'], ['sheet', 'F2', '--go']],
+           "the picks line is sheet --picks; 'go' is sheet --go")
+
+
 if __name__ == '__main__':
-    raise SystemExit(report([test_spec, test_page, test_db, test_needs_you, test_answer, test_go]))
+    raise SystemExit(report([test_spec, test_page, test_db, test_needs_you, test_answer, test_go, test_pick_links_f138]))

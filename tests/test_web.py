@@ -1537,6 +1537,79 @@ def test_answer_button_b138(tmp: Path) -> None:
     eq(got[4], 'F1 ticked', 'the toast says what was done')
 
 
+def test_pick_f138(tmp: Path) -> None:
+    """F138: an option button's /pick link answers the item with no AI session and no page token: a good code
+    confirms it (`plan confirm ID "go with B: <its name>"`) and is burnt; a reused, wrong or missing code is
+    refused, and so is an item settled already. pick-links prints one link per option, with no token in them;
+    with no https address it says so and prints none."""
+    import io
+    from contextlib import redirect_stderr, redirect_stdout
+    from agent_runner import cmds, plan as P
+    fake_repo(tmp)
+    token = W.web_token()
+    https = lambda port, t: [f'https://box.tail.ts.net:8771/?t={t}']
+    cid, build = P.concept_shown('tabs or a drawer', 'https://claude.ai/artifact/k1', ['a.py'],
+                                 todo=S.C.todo, done=S.C.done)
+    copy = S.C.notes('concepts', f'{cid}.html')
+    copy.parent.mkdir(parents=True, exist_ok=True)
+    copy.write_text('<h1>Menu</h1><h2>A: tabs</h2><p>x</p><h2>B: drawer (recommended)</h2><p>y</p>', encoding='utf-8')
+    out, err = io.StringIO(), io.StringIO()
+    with mock.patch.object(W, 'tailscale_https_urls', https), mock.patch.object(cmds, 'init', lambda: None), \
+            redirect_stdout(out):
+        rc = cmds.cmd_pick_links([cid, 'A,B,C'])
+    eq(rc, 0, 'pick-links prints the links')
+    lines = out.getvalue().split()
+    eq(len(lines), 6, 'one link per option')
+    eq([lines[0], lines[2], lines[4]], ['A', 'B', 'C'], 'each line names its option')
+    link = lines[3]
+    check(link.startswith(f'https://box.tail.ts.net:8771/pick?id={cid}&k=') and link.endswith('&o=B'),
+          'a link is the run page https base /pick?id&k&o', link)
+    check(token not in out.getvalue() and 't=' not in out.getvalue(), 'no page token in the links', out.getvalue())
+    code = re.search(r'&k=([^&]+)', link)[1]
+    eq(json.loads(W.pick_file(cid).read_text())['code'], code, 'the code is kept in .runner/pick-codes')
+    check(code != token, 'the code is not the page token')
+    with mock.patch.object(W, 'tailscale_https_urls', lambda port, t: []), mock.patch.object(cmds, 'init', lambda: None), \
+            redirect_stdout(out), redirect_stderr(err):
+        rc = cmds.cmd_pick_links([cid, 'A,B'])
+    eq(rc, 1, 'no https address: no links')
+    check('no https address' in err.getvalue(), 'and it says so', err.getvalue())
+    ran = []
+    srv = W.serve(token, 0, '127.0.0.1', snap=lambda: {})
+    base = f'http://127.0.0.1:{srv.server_address[1]}'
+
+    def fake_run(argv):
+        ran.append(argv)
+        return 0, 'approved'
+    try:
+        with mock.patch.object(U, 'RUN', [fake_run]):
+            c1, wrong = get(f'{base}/pick?id={cid}&o=B&k=nope')
+            c2, tok = get(f'{base}/pick?id={cid}&o=B&k={token}')
+            c3, ok = get(f'{base}{link[link.index("/pick"):]}')
+            c4, again = get(f'{base}{link[link.index("/pick"):]}')
+    finally:
+        srv.stop()
+    eq((c1, c2), (403, 403), 'a wrong code, or the page token, is refused')
+    check(b'unknown' in wrong, 'and says the link is unknown', wrong)
+    eq(c3, 200, 'the good code answers')
+    eq(ran, [['plan', 'confirm', cid, 'go with B: B: drawer (recommended)']], 'it runs plan confirm with the option name')
+    check(f'Approved B'.encode() in ok and f'the run starts {build}'.encode() in ok, 'and says what it did', ok)
+    eq(c4, 409, 'the code is burnt: a second tap is refused')
+    check(b'used already' in again, 'and says it was used', again)
+    check(json.loads(W.pick_file(cid).read_text()).get('used'), 'the code file is marked used')
+    # an item settled already
+    P.block('F1', 'DECIDE: which colour', todo=S.C.todo)
+    code1 = W.pick_code('F1')
+    with mock.patch.object(U, 'need_label', lambda tid: ''):
+        eq(W.pick('F1', 'A', code1)[0], 409, 'an item settled already is refused')
+    eq(W.pick_code('F1'), code1, 'an unused code is kept for the next links')
+    with mock.patch.object(U, 'RUN', [fake_run]):
+        eq(W.pick('F1', 'A', code1)[0], 200, 'a DECIDE answers too')
+    eq(ran[-1], ['plan', 'confirm', 'F1', 'go with A'], 'with its option')
+    check(W.pick_code('F1') != code1, 'once used, new links get a new code')
+    eq(W.pick('../x', 'A', code1)[0], 403, 'a bad id is unknown')
+    eq(W.pick('F1', '', '')[0], 403, 'no code: unknown')
+
+
 if __name__ == '__main__':
     raise SystemExit(report([in_tmp(test_chat_order_f133), in_tmp(test_delete_chats_f118), in_tmp(test_server), in_tmp(test_real_action), in_tmp(test_run_controls),
                            in_tmp(test_start), in_tmp(test_upload),
@@ -1547,4 +1620,4 @@ if __name__ == '__main__':
                            in_tmp(test_talk_f93), in_tmp(test_https_link_b130),
                            in_tmp(test_listen_heard_nothing_b132), in_tmp(test_talk_reply_heard_b133),
                            in_tmp(test_slash_menu_b119), in_tmp(test_composer_keys_b120),
-                           in_tmp(test_interrupt_c1_b141), in_tmp(test_answer_button_b138)]))
+                           in_tmp(test_interrupt_c1_b141), in_tmp(test_answer_button_b138), in_tmp(test_pick_f138)]))

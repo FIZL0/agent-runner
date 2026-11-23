@@ -499,9 +499,13 @@ def cmd_sheet(argv: list[str], prog: str = f'{RUNNER} sheet') -> int:
         print(f'{prog}: {e}', file=sys.stderr)
         return 1
     if a.html:
-        Path(a.html).write_text(sheet.render(spec, a.id), encoding='utf-8')
+        from agent_runner import web
+        link = (web.pick_links(a.id, ['x']) or [''])[0].removesuffix('&o=x')  # F138: Send's link to the run
+        Path(a.html).write_text(sheet.render(spec, a.id, pick=link), encoding='utf-8')
         print(f'{a.html}: {len(sheet.questions(spec))} questions; publish it with the Artifact tool, with '
               f'capabilities {json.dumps(sheet.CAPABILITIES)} (F54: Send writes the picks to its db)')
+        print('F138: Send also gives a link that answers the run directly' if link else
+              'F138: ' + NO_PICK_HTTPS.format(port=web.run_port()).replace('put no option buttons on the page and ', ''))
         return 0
     if a.picks is None and not a.go:
         print(f'{f}: {len(sheet.questions(spec))} questions, ok')
@@ -513,6 +517,35 @@ def cmd_sheet(argv: list[str], prog: str = f'{RUNNER} sheet') -> int:
         return 2
     from agent_runner import plan
     return plan.main(['confirm', a.id, sheet.picks_note(spec, picks)])
+
+
+NO_PICK_HTTPS = ('no https address for the run page (Tailscale Serve proxies none to port {port}): '
+                 'put no option buttons on the page and keep today\'s flow (the person replies, or Sends)')
+
+
+def cmd_pick_links(argv: list[str], prog: str = f'{RUNNER} pick-links') -> int:
+    """F138: `agent-runner pick-links ID A,B,C`: one link per option, for the option buttons on a concept page;
+    each answers the run with no AI session (web /pick). Exit 1, saying so, when the run page has no https."""
+    import re
+    from agent_runner import web
+    ap = argparse.ArgumentParser(prog=prog, description="Print each option's button link for item ID: tapping "
+                                 'it answers the run with that option (a one-use code, not the page token).')
+    ap.add_argument('id', help='the item id: the concept (or the task whose question it is)')
+    ap.add_argument('options', help='the options, comma-separated: A,B,C')
+    a = ap.parse_args(argv)
+    if not re.fullmatch(r'[A-Za-z]+\d+[a-z0-9]*', a.id):
+        ap.error(f'{a.id!r} is not a task id')
+    opts = [o.strip() for o in a.options.split(',') if o.strip()]
+    if not opts or not all(web.PICK_OPTION.fullmatch(o) for o in opts):
+        ap.error('options are letters or digits, comma-separated: A,B,C')
+    init()
+    links = web.pick_links(a.id, opts)
+    if not links:
+        print(f'{prog}: ' + NO_PICK_HTTPS.format(port=web.run_port()), file=sys.stderr)
+        return 1
+    for o, link in zip(opts, links):
+        print(f'{o} {link}')
+    return 0
 
 
 def cmd_stop(argv: list[str], prog: str = f'{RUNNER} stop') -> int:

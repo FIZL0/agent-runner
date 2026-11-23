@@ -158,8 +158,10 @@ def _rich(s) -> str:
     return re.sub(r'`([^`]+)`', r'<code>\1</code>', html.escape(str(s)))
 
 
-def render(spec: dict, tid: str) -> str:
-    """The pick sheet's page (the Artifact tool's page contract: no html/head/body of its own)."""
+def render(spec: dict, tid: str, pick: str = '') -> str:
+    """The pick sheet's page (the Artifact tool's page contract: no html/head/body of its own). F138: `pick`, the
+    run page's /pick link for this sheet with no option (`web.pick_links`), makes Send also show a plain link
+    that answers the run with the picks; '' (no https address) keeps today's flow."""
     groups = []
     for g in spec['groups']:
         qs = []
@@ -167,7 +169,7 @@ def render(spec: dict, tid: str) -> str:
             qs.append({'id': q['id'], 'q': _rich(q['q']), 'a': [_rich(a) for a in q['answers']],
                        'r': rec(q), 'k': q.get('keep'), 'why': _rich(q.get('why') or '')})
         groups.append({'h': _rich(g.get('heading') or ''), 'qs': qs})
-    data = json.dumps({'tid': tid, 'groups': groups}).replace('</', '<\\/')
+    data = json.dumps({'tid': tid, 'groups': groups, 'pick': pick if pick.startswith('https://') else ''}).replace('</', '<\\/')
     title = html.escape(str(spec.get('title') or f'{tid} pick sheet'))
     return (PAGE.replace('{{title}}', title)
             .replace('{{intro}}', _rich(spec.get('intro') or spec['summary']))
@@ -211,13 +213,16 @@ padding-right:max(16px,env(safe-area-inset-right,0px))}
 background:transparent;color:var(--fg)}
 .bar button.go{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
 #sent{display:grid;gap:6px}
+.pick{justify-self:start;background:var(--accent);color:var(--accent-ink);border-radius:8px;padding:8px 14px;
+font-weight:600;text-decoration:none}
 #out{white-space:pre-wrap;word-break:break-word;font-family:ui-monospace,monospace;font-size:.85rem;background:var(--card);
 border:1px solid var(--line);border-radius:10px;padding:10px;margin:0;user-select:all}
 </style>
 <div class="wrap">
 <header><h1>{{title}}</h1><p class="lede">{{intro}} The recommended answers are already selected.</p></header>
 <div id="qs"></div>
-<div id="sent" hidden><p class="lede" id="said"></p><pre id="out"></pre></div>
+<div id="sent" hidden><p class="lede" id="said"></p><pre id="out"></pre>
+<a id="pick" class="pick" hidden target="_blank" rel="noreferrer">Answer the run with these picks</a></div>
 </div>
 <div class="bar"><div class="in">
 <span><b id="n">0</b> changes picked</span>
@@ -260,6 +265,12 @@ document.getElementById('send').onclick=async()=>{
   const txt=changed.length?S.tid+' picks: '+all.map(q=>q.id+'='+String.fromCharCode(97+pick[q.id])).join(' '):'go';
   const out=document.getElementById('out'), said=document.getElementById('said'), send=document.getElementById('send');
   out.textContent=txt;document.getElementById('sent').hidden=false;
+  if(S.pick){  // F138: a plain link to the run page answers the item with these picks, no AI session
+    const a=document.getElementById('pick');a.href=S.pick+'&o='+encodeURIComponent(txt);a.hidden=false;
+    said.textContent='Tap the button below: it answers {{tid}} with these picks now.';
+    a.scrollIntoView({behavior:'smooth',block:'center'});
+    return;
+  }
   send.disabled=true;said.textContent='Sending…';
   if(await store(txt)){
     send.disabled=false;send.textContent='Send again';

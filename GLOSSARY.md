@@ -434,3 +434,10 @@ _Said_: drag to reorder chats, pin chats
 _On screen_: Pin this chat / Unpin this chat
 _In code_: chat_order, chat_list, chatMove, chat_order.json
 _Avoid_: chat sort, favourites
+
+**Pick link**:
+A plain link on a concept page's option or a pick sheet that answers the run with that option when tapped, through a one-use code made for that item
+_Said_: option button
+_On screen_: Go with B / Answer the run with these picks
+_In code_: web.pick, web.pick_links, pick-links, /pick
+_Avoid_: approve URL, magic link

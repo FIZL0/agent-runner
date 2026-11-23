@@ -44,6 +44,7 @@ Mostly for agents (you can run these too)
     agent-runner done B646 "Halve the sheet's memory" [--blocked "why"]
     agent-runner finish "summary"     in a slot, after done: end the session now
     agent-runner ask "question"       in a slot: park the task under Needs you; the answer resumes the session
+    agent-runner pick-links K7 A,B,C  each option's button link: tapping it answers the run, no AI session
     agent-runner plan block B12 --after B646 "why"
     agent-runner plan move B12 top    B12 to the top: the next free agent takes it
     agent-runner plan next            the task that starts next
@@ -196,6 +197,7 @@ COMMANDS = {
     'resume': ('runner', 'cmd_resume'),
     'wizard': ('runner', 'cmd_wizard'),  # F17
     'sheet': ('runner', 'cmd_sheet'),  # F18
+    'pick-links': ('cmds', 'cmd_pick_links'),  # F138
     'take': ('runner', 'cmd_take'),
     'wip': ('runner', 'cmd_wip'),  # F23
     'stop': ('runner', 'cmd_stop'),
