@@ -42,7 +42,7 @@ const PROVIDER_IDS = { copilot: 'github-copilot', codex: 'openai-codex', gemini:
 
 function parseArgs(argv) {
   const a = { idle: 300, once: false, resume: false, taskTokens: 0, taskUsd: 0, fence: null, runner: null,
-    provider: null, systemFile: '', promptFile: '', notes: '', sid: '', model: '' };
+    provider: null, systemFile: '', promptFile: '', notes: '', sid: '', model: '', fallback: [] };
   for (let i = 0; i < argv.length; i++) {
     const k = argv[i], v = () => argv[++i];
     if (k === '--session-id') a.sid = v();
@@ -58,6 +58,7 @@ function parseArgs(argv) {
     else if (k === '--fence-cmd') a.fence = JSON.parse(v());
     else if (k === '--runner-cmd') a.runner = JSON.parse(v());
     else if (k === '--provider') a.provider = JSON.parse(v());
+    else if (k === '--fallback') a.fallback = JSON.parse(v());
     else throw new Error(`harness: unknown argument ${k}`);
   }
   if (!a.sid || !a.model || !a.notes) throw new Error('harness: --session-id (or --resume), --model and --notes are needed');
@@ -93,6 +94,21 @@ function turnSpend(u, model) {
 
 function permanentError(text) {
   return /\b(?:400|401|403|404|413|422|429)\b|authentication|unauthorized|forbidden|billing|rate.?limit|invalid.?request/i.test(text);
+}
+
+// F106g: a usage cap or quota error: the session goes on with the next model in its --fallback chain
+function capError(text) {
+  return /\b429\b|rate.?limit|quota|usage limit|limit reached|resource.?exhausted|too many requests/i.test(text);
+}
+
+// F106g: `<notes>/capped.json` ({provider: until}), which the runner reads to start new tasks down the chain
+const CAP_HOLD = 3600;
+function markCapped(notes, provider) {
+  const file = path.join(notes, 'capped.json');
+  let d = {};
+  try { d = JSON.parse(fs.readFileSync(file, 'utf8')) || {}; } catch { d = {}; }
+  d[provider] = Math.max(Number(d[provider]) || 0, Date.now() / 1000 + CAP_HOLD);
+  try { fs.writeFileSync(file, JSON.stringify(d)); } catch { /* the switch goes on without it */ }
 }
 
 function transientError(text) {
@@ -556,7 +572,7 @@ async function main() {
   const prompt = a.promptFile ? fs.readFileSync(a.promptFile, 'utf8') : '';
   const s = new Session(a, cwd);
   const tells = new Tells(process.stdin);
-  const provider = await loadProvider(a.model, a.provider);
+  let provider = await loadProvider(a.model, a.provider);
   console.log(`harness: ${a.resume ? 'resumed' : 'started'} session ${a.sid} on ${a.model} in ${cwd}`);
   const pending = prompt.trim() ? [prompt] : [];
   let failures = 0;
@@ -583,6 +599,32 @@ async function main() {
       failures++;
       console.log(`harness: the model call failed (${m.errorMessage}); trying again (${failures}/${RETRIES})`);
       await new Promise((r) => setTimeout(r, 5000 * 2 ** failures));
+      continue;
+    }
+    if (m.stopReason === 'error' && capError(m.errorMessage || '') && a.fallback.length) {
+      // F106g: the provider hit its cap: the same session goes on with the chain's next model
+      const was = a.model;
+      let next = null;
+      while (!next && a.fallback.length) { // an entry that will not load is passed over for the one after it
+        const c = a.fallback.shift();
+        try {
+          provider = await loadProvider(c.model, c.provider);
+          next = c;
+        } catch (e) {
+          console.log(`harness: cannot switch to ${c.model}: ${e?.message || e}`);
+        }
+      }
+      if (!next) {
+        t.assistant(m);
+        console.log(`harness: the model call failed: ${m.errorMessage}; no model in --fallback could be loaded`);
+        return 1;
+      }
+      markCapped(a.notes, was.split(':')[0]);
+      a.model = next.model;
+      try { fs.writeFileSync(path.join(a.notes, `${a.sid}.model`), a.model); } catch { /* status only */ }
+      t.note(`${was} hit its cap (${m.errorMessage}); the session goes on with ${a.model}, the next in [models] fallback`);
+      console.log(`harness: ${was} hit its cap (${m.errorMessage}); going on with ${a.model}`);
+      failures = 0;
       continue;
     }
     failures = 0;

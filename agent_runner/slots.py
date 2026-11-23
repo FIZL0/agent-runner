@@ -289,6 +289,11 @@ class Harness(Claude):
             flags += ['--task-tokens', str(C.run.get('task_tokens') or 0), '--task-usd', str(C.run.get('task_usd') or 0)]
         if provider in C.providers:
             flags += ['--provider', json.dumps(C.providers[provider])]
+        if not once and C.fallback:  # F106g: the providers it switches to within the session at a cap
+            from agent_runner.fallback import harness_chain
+            if chain := harness_chain(model):
+                flags += ['--fallback', json.dumps([{'model': m, 'provider': C.providers.get(m.partition(':')[0])}
+                                                    for m in chain])]
         if (brief := C.notes(f'{sid}.brief')).exists():
             flags += ['--system-file', str(brief)]
         return flags
@@ -813,10 +818,12 @@ def task_model(tid: str, model: str, branch: str) -> str:
 
 
 def start(n: int, task, branch: str, model: str, idle: int, slots: int):
+    from agent_runner.fallback import note_model, start_model
     tid = task[0]
-    model = task_model(tid, model, branch)
+    model = start_model(task_model(tid, model, branch))  # F106g: a capped provider's task starts on the chain
     finished_mark(n).unlink(missing_ok=True)  # the last task's `done`, not this one's
     C.notes(f'{tid}.budget').unlink(missing_ok=True)  # F103: an earlier attempt's budget stop, not this one's
+    C.notes(f'{tid}.fallback').unlink(missing_ok=True)  # F106g: an earlier attempt's cap stop
     d = worktree(n, branch)
     head = git('symbolic-ref', '-q', '--short', 'HEAD', cwd=d).stdout.strip()
     if not vacate(n, d, head, branch, f'for {tid}'):
@@ -841,6 +848,7 @@ def start(n: int, task, branch: str, model: str, idle: int, slots: int):
     sid = str(uuid.uuid4())
     prompt = prompt_for(tid, n, slots, d, branch, model)  # F132: the harness loop's brief has no subagents
     logfile, since = slot_header(n, f'{tid} session {sid}')
+    note_model(sid, model)
     if not (pid := MUX.open(n, d, prompt, sid, model, idle, slot_env(n), logfile)):
         log(f'slot {n}: the session for {tid} did not start in {MUX.where(n)}')
         return None
@@ -919,12 +927,16 @@ did last, then carry on with task {tid} where you left off and finish it as the 
 session says."""
 
 
-def resume(n: int, tid: str, sid: str, why: str, branch: str, model: str, idle: int):
+def resume(n: int, tid: str, sid: str, why: str, branch: str, model: str, idle: int, fallback: str = '',
+           slots: int = 1):
     """Continue the session `sid` of task `tid` in slot n, where it ran: its transcript names that worktree's
     paths, so no other slot will do. A slot still on task/<tid> is used as it is; one that moved on gets the
     task back from wip/<tid> (the edits the session left, saved when the slot was reset), uncommitted again.
+    F106g: with `fallback` (the next model in [models] fallback, its provider having hit its cap), a new session
+    on that model goes on with the work in the worktree instead, told to read it and the journal first.
     """
-    model = task_model(tid, model, branch)  # F105: on its task's model, as at its start
+    from agent_runner.fallback import FALLBACK, note_model
+    model = fallback or task_model(tid, model, branch)  # F105: on its task's model, as at its start
     d = worktree(n, branch)
     head = git('symbolic-ref', '-q', '--short', 'HEAD', cwd=d).stdout.strip()
     if head != f'task/{tid}':
@@ -941,6 +953,17 @@ def resume(n: int, tid: str, sid: str, why: str, branch: str, model: str, idle: 
         if saved:
             git('reset', '-q', 'HEAD~1', cwd=d)  # the saved edits are uncommitted again, as the session left them
             git('branch', '-M', src, free_branch(f'resumed/{tid}'))  # kept, but no longer read as an earlier attempt
+    if fallback:  # F106g: a new session on the next provider, the old one's work in the worktree
+        sid = str(uuid.uuid4())
+        prompt = FALLBACK.format(model=model, tid=tid, why=why, branch=branch) + \
+            prompt_for(tid, n, slots, d, branch, model)
+        logfile, since = slot_header(n, f'{tid} session {sid} (fallback: {why})')
+        note_model(sid, model)
+        if not (pid := MUX.open(n, d, prompt, sid, model, idle, slot_env(n), logfile)):
+            log(f'slot {n}: the session for {tid} on {model} did not start in {MUX.where(n)}')
+            return None
+        log(f'slot {n}: {tid} goes on with {model} ({why})', EV_STARTED, tid)
+        return pid, sid, since
     logfile, since = slot_header(n, f'{tid} resume {sid} ({why})')
     if not (pid := MUX.open(n, d, RESUME.format(why=why, tid=tid), sid, model, idle, slot_env(n), logfile,
                             resume=True)):

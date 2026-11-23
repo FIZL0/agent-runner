@@ -1128,6 +1128,7 @@ kinds = { F = "opus", B = "opus", T = "opus", V = "opus", K = "opus", D = "sonne
                           # a task's own session by its kind (the id's letters: F105 is F); see Models per kind
 local = false             # allow a local provider (ollama, or a provider url on localhost or a private address); see Model providers
 providers = {}            # the repo's own providers, [models.providers.<name>]; see Model providers
+fallback = []             # '<provider>:<model>' to go on with when a provider hits its cap, in order; see Fallback chain
 
 [run]
 test = ""                 # the gate, run by `done` and on every merge, e.g. "make test"
@@ -1288,6 +1289,42 @@ sessions (`[models] fix`) can name another provider. `review`, `docs`, `control`
 itself (its subagents, Remote Control control sessions, the feed's one-shot), so another provider there is refused
 at start, saying why.
 
+### Fallback chain
+
+`[models] fallback` is a list of models a task goes on with when its provider hits a cap, in order:
+
+    fallback = ["copilot:gpt-5", "gemini:gemini-2.5-pro"]
+
+Each is written as a role value is (`<provider>:<model>`, a bare name is claude's), and checked at start like one: an
+unknown provider, or a local provider without `local = true`, is refused.
+
+A cap is a Claude usage limit, or a provider's quota error (429, rate limit, quota, resource exhausted, "usage limit
+reached").
+
+A Claude Code task that hits a cap while it runs is told to stop at a clean point (commit what is solid, write its
+journal), as a budget stop is (`[run] task_tokens`/`task_usd`), and its session is ended after 120 s. A session that
+already ended on a cap is taken as it is. Either way the task goes on in the same slot: its worktree stays as the
+session left it (commits and uncommitted edits), and a new session starts on the next model in the chain, told why
+and to read `git log`, `git status` and its journal before carrying on. The run log says "stopped because claude hit
+its cap ...; it goes on in this slot with <model>".
+
+The next model is the first entry after the session's model in the chain (the first entry, when the session's model
+is not in the chain) on another provider that is not capped and has its login (`run login`).
+
+On the harness loop the switch happens within the same session: the runner passes it the chain entries after its
+model up to the first claude one (`--fallback`); at a cap it goes on with the next with the whole conversation so
+far, noting it in the transcript. When none is left it ends on the error, and the runner goes on with the next entry
+(a claude one) in a new Claude Code session as above.
+
+Capped providers are kept in `<notes>/capped.json` (provider -> until): till the reset time the error names (Claude
+Code's `usage limit reached|<epoch>`, or "resets 3pm"), else one hour. While a provider is capped, a new task whose model is on it
+starts on the chain's first free model; once the cap has reset, new tasks go back to their own model.
+
+With no fallback set (the default), nothing changes: a task waits for the reset as before (a cut-off session
+resumes).
+
+If every provider in the chain is capped, the task waits for the reset as with no chain.
+
 ### The harness loop
 
 The harness loop is `agent_runner/harness.mjs`, a Node program (Node 22 or later on PATH as `node`), with one
@@ -1326,7 +1363,7 @@ user message.
 
 Ending: at finish or ask; or after `idle` seconds at the end of a turn with nothing told; a fix session (`--once`)
 ends with its first answer. A transient model error is tried 3 more times. A lasting one ends the session with an
-API-error entry, which the run resumes as it would Claude's.
+API-error entry, which the run resumes as it would Claude's. With `[models] fallback` set, a quota or usage-limit error switches the session to the chain's next model instead (see Fallback chain).
 
 Transcript: `<notes>/harness-sessions/<session id>.jsonl`, in Claude Code's entry shape (type user/assistant, content
 blocks text/tool_use/tool_result, usage in Claude's keys), so status, spend, the exit line's stats and resume read it

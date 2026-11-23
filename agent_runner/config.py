@@ -271,6 +271,10 @@ DEFAULTS: dict = {
         'providers': {},        # the repo's own providers, [models.providers.<name>]: kind = "openai" or
                                 # "anthropic" (a compatible API), url, key_env (the env var holding its key, never
                                 # the key itself); a role names one as "<name>:<model>"
+        'fallback': [],         # F106g: a list of '<provider>:<model>' a task goes on with when its provider
+                                # hits its cap (a Claude usage limit, a provider's quota error), in order; new
+                                # tasks go back to their own model once the cap resets. Empty: a task waits
+                                # for the reset
     },
 }
 
@@ -279,7 +283,7 @@ PROVIDERS = ('claude', 'copilot', 'codex', 'gemini', 'ollama')
 LOCAL_PROVIDERS = ('ollama',)
 PROVIDER_KINDS = ('openai', 'anthropic')
 # the [models] keys that are not roles
-MODEL_SETTINGS = ('kinds', 'local', 'providers')
+MODEL_SETTINGS = ('kinds', 'local', 'providers', 'fallback')
 
 # the [models] roles that run as Claude Code subagents of a task session (`--agents`), not sessions of their own
 SUBAGENT_ROLES = ('review', 'docs')
@@ -716,6 +720,11 @@ class Config:
         if not isinstance(self.models_local, bool):
             raise SystemExit(f'agent-runner: [models] local must be true or false, not {self.models_local!r}')
         self.providers = model_providers(m.pop('providers', {}))
+        # F106g: [models] fallback, each entry settled as a role is (claude's a bare name)
+        chain = m.pop('fallback', [])
+        if not isinstance(chain, list) or not all(isinstance(v, str) and v for v in chain):
+            raise SystemExit(f'agent-runner: [models] fallback is a list of "<provider>:<model>", not {chain!r}')
+        self.fallback = [claude_model(v, self.providers, self.models_local, '[models] fallback') for v in chain]
         for role, v in given.items():
             if role in DEFAULTS['models'] and role not in MODEL_SETTINGS \
                     and not (isinstance(v, str) or (v is False and role == 'docs')):
