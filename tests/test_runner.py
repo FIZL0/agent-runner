@@ -7216,6 +7216,68 @@ def test_merged_count_b78(repo: Path):
     R.init(repo)
 
 
+def test_models_f101(repo: Path, tmp: Path):
+    print('F101: [models] picks a model per role; the subagents go in through --agents; [run] model and fix_model '
+          'still set code and fix when [models] does not')
+    import shlex
+    from agent_runner import config
+    from agent_runner.config import Config
+    root = tmp / 'f101'
+    root.mkdir()
+    git(root, 'init', '-q')
+
+    def load(text: str) -> Config:
+        (root / 'runner.toml').write_text(text, encoding='utf-8')
+        return Config(root)
+
+    def agents_of(text: str) -> tuple[list[str], dict]:
+        (root / 'runner.toml').write_text(text, encoding='utf-8')
+        config._cfg.cache_clear()  # init keeps one Config per root
+        R.init(root)
+        argv = shlex.split(R.agent_cmd('hi', 'sid', R.C.run['model'], 90, 'slot1'))
+        return argv, (json.loads(argv[argv.index('--agents') + 1]) if '--agents' in argv else {})
+
+    c = load('')
+    eq(c.models, {'code': 'opus', 'review': 'opus', 'fix': 'opus', 'docs': 'haiku', 'control': 'opus',
+                  'feed': 'haiku'}, 'the defaults every repo gets')
+    eq((c.run['model'], c.run['fix_model'], c.warnings), ('opus', 'opus', []), '[run] model and fix_model match, no warning')
+    c = load('[run]\nmodel = "sonnet"\nfix_model = "haiku"\n')
+    eq((c.models['code'], c.models['fix'], c.models['review']), ('sonnet', 'haiku', 'opus'),
+       'the old keys still win when [models] does not set the role')
+    c = load('[run]\nmodel = "sonnet"\nfix_model = "haiku"\n\n[models]\ncode = "opus"\nfix = "sonnet"\nreview = "haiku"\n'
+             'docs = "sonnet"\ncontrol = "sonnet"\nfeed = "sonnet"\n')
+    eq(c.models, {'code': 'opus', 'review': 'haiku', 'fix': 'sonnet', 'docs': 'sonnet', 'control': 'sonnet',
+                  'feed': 'sonnet'}, '[models] overrides each role')
+    eq((c.run['model'], c.run['fix_model']), ('opus', 'sonnet'), 'and [run] model and fix_model follow it')
+    check(any('[models] coder is not a setting' in w for w in load('[models]\ncoder = "x"\n').warnings),
+          'an unknown role warns')
+    c = load('[run]\nagent = "pi"\nmodel = "github-copilot/m1"\n')
+    eq(set(c.models.values()), {'github-copilot/m1'}, 'Pi: every role falls back to [run] model')
+
+    argv, agents = agents_of('[run]\nremote = false\n')
+    eq({k: v['model'] for k, v in agents.items()}, {'review': 'opus', 'docs': 'haiku'},
+       'agent_cmd carries --agents: review on opus, docs on haiku by default')
+    check(all(v['description'] and v['prompt'] for v in agents.values()), 'each with a description and a prompt')
+    eq(argv[argv.index('--tools') + 1], 'Bash,Read,Edit,Write,Artifact,Agent', 'lean allows Agent')
+    _, agents = agents_of('[run]\nremote = false\nmodel = "sonnet"\n\n[models]\nreview = "sonnet"\ndocs = "opus"\n')
+    eq({k: v['model'] for k, v in agents.items()}, {'review': 'sonnet', 'docs': 'opus'}, '[models] sets each subagent')
+    argv, agents = agents_of('[run]\nremote = false\nreview = false\n\n[models]\ndocs = false\n')
+    check('--agents' not in argv and argv[argv.index('--tools') + 1] == 'Bash,Read,Edit,Write,Artifact',
+          'no review and docs = false: no --agents, no Agent tool', argv)
+    agents_of('[run]\nremote = false\n')
+    from agent_runner import brief
+    check('subagent_type "docs"' in brief.DOCS_PROMPT and 'check its result' in brief.DOCS_PROMPT,
+          'the brief hands docs edits to the docs subagent, then checks its result')
+    from agent_runner import feed, page_copy
+    with mock.patch.dict(R.C.raw['models'], {'feed': 'sonnet', 'control': 'haiku'}):
+        eq(feed.feed_model(), 'sonnet', 'the feed on [models] feed')
+        a = page_copy.page_copy_argv(root / 'x.html', '')
+        eq(a[a.index('--model') + 1], 'sonnet', 'and the run page copy')
+        a = R.control_argv(2, 'sid-2', resume=False)
+        eq(a[a.index('--model') + 1], 'haiku', 'control sessions on [models] control')
+    R.init(repo)
+
+
 def test_config_trim_c14(tmp: Path):
     print('C14: each key the config trim dropped or renamed warns with what to write instead; a renamed one still '
           'applies, under its new name')
@@ -7382,7 +7444,7 @@ def main() -> int:
                        lambda: test_hidden_slots(repo, tmp), lambda: test_hidden_run_lands(tmp), lambda: test_no_gate_b36(tmp),
                        lambda: test_claude_drift_b45(repo, tmp), lambda: test_merged_count_b78(repo),
                        lambda: test_hidden_control_f59(repo, tmp), lambda: test_attach_f88(tmp), lambda: test_context_warn_f25(repo),
-                       lambda: test_control_fresh_f27(repo), lambda: test_config_trim_c14(tmp), test_reference_keys_d3, test_cap_stop_hint_b102])
+                       lambda: test_control_fresh_f27(repo), lambda: test_config_trim_c14(tmp), lambda: test_models_f101(repo, tmp), test_reference_keys_d3, test_cap_stop_hint_b102])
 
 
 if __name__ == '__main__':

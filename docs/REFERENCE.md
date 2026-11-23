@@ -138,7 +138,7 @@ task to fix X" (it files it with `plan add`), "do X now" (it uses `take`, never 
   works either way.
 - **Their settings**: every control session, and the control server, gets `.runner/control-settings.json`
   with `--settings`: a SessionStart hook that runs `agent-runner control --brief`, which prints the control
-  brief (so a resumed or compacted session gets it again). They run on `[run] model` with every tool
+  brief (so a resumed or compacted session gets it again). They run on `[models] control` with every tool
   (`[run] lean` is for slots) and in bypassPermissions mode, as the slots do: driven from a phone or the web,
   a permission prompt would stall them.
 - **The opening**: the first message has the session run `agent-runner status` and `agent-runner since` and
@@ -1037,6 +1037,14 @@ theme = "ryha"            # the terminal UI's (`ui`) colours: ryha (black, red a
 web = "app"               # the view the run app's link opens: "app" (the run app) or "terminal" (the terminal-style
                           # page, /term); a browser that switched views opens its last one (see The run app)
 
+[models]                  # the model each type of work runs on (see Models per role below)
+code = "opus"             # a task's own session; unset, [run] model sets it
+review = "opus"           # the `review` subagent the spec review before done runs in
+fix = "opus"              # merge-conflict fix and repair sessions; unset, [run] fix_model sets it
+docs = "haiku"            # the `docs` subagent: CHANGELOG, docs, README, journal and plan-text edits; false: none
+control = "opus"          # control sessions (c1, c2, …)
+feed = "haiku"            # the runner feed, and the one-shot that publishes the run page's claude.ai copy
+
 [run]
 test = ""                 # the gate, run by `done` and on every merge, e.g. "make test"
 test_since = ""           # a merge's gate on what changed since {base}, e.g. "make test-since REV={base}"
@@ -1135,6 +1143,20 @@ needs_order = "oldest"    # what waits on a person (Needs you): oldest first; "n
 # "data/addresses.txt" = "./tools/join {union} {out}"   # also {ours} {base} {theirs} {file}; exit 0 keeps {out}
 
 ```
+
+### Models per role
+
+`[models]` picks the model for each type of work, with the defaults above in every repo: `code` (the task's
+session), `fix`, `control` and `feed` start sessions of their own; `review` and `docs` are Claude Code subagents
+of the task session, passed in with `--agents` and a model each, so all of it is plan usage. The task's brief
+names them: the spec review runs in the `review` subagent, and CHANGELOG, docs, README, journal and plan-text
+edits go to the `docs` subagent, whose result the task then checks. A lean session gets the Agent tool whenever
+one of them is on (`[run] review = false` drops `review`, `[models] docs = false` drops `docs`).
+
+`[run] model` and `[run] fix_model` stay as aliases: they set `code` and `fix` when `[models]` does not, so an
+older `model = "opus"` keeps working, and `run --model M` still picks the task model for one run. A role
+`[models]` sets wins over them. On the Pi backend there are no subagents, and every role `[models]` does not set
+falls back to `[run] model`.
 
 ### Renamed and removed keys
 

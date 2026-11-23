@@ -252,7 +252,19 @@ DEFAULTS: dict = {
         'web': 'app',           # the view the run page's link opens: "app" (the run app) or "terminal" (the
                                 # terminal-style page, /term); a browser that switched views opens its last one
     },
+    'models': {
+        'code': 'opus',         # a task's own session; unset here, `[run] model` sets it
+        'review': 'opus',       # the `review` subagent the spec review before done runs in
+        'fix': 'opus',          # a merge-conflict fix or repair session; unset here, `[run] fix_model` sets it
+        'docs': 'haiku',        # the `docs` subagent a task hands CHANGELOG, docs, README, journal and plan-text
+                                # edits to, then checks; false: no docs subagent
+        'control': 'opus',      # control sessions (c1, c2, ...)
+        'feed': 'haiku',        # the runner feed and the one-shot that publishes the run page's claude.ai copy
+    },
 }
+
+# the [models] roles that run as Claude Code subagents of a task session (`--agents`), not sessions of their own
+SUBAGENT_ROLES = ('review', 'docs')
 
 
 # B28: `agent-runner settings` prints these keys with their defaults and the comments above, read from this file
@@ -539,8 +551,10 @@ class Config:
             if env not in ('claude', 'pi'):
                 raise SystemExit(f'agent-runner: unknown AGENT_RUNNER_BACKEND {env!r}; choose claude or pi')
             supplied = {k: v for k, v in supplied.items() if k not in ('agent', 'model', 'fix_model')}
+            raw = {**raw, 'models': {}}  # [models] names the other backend's models too
             backend = env
         raw = {**raw, 'run': supplied}
+        given_models = dict(raw['models']) if isinstance(raw.get('models'), dict) else {}
         self.raw = {k: {**v, **raw.get(k, {})} for k, v in DEFAULTS.items()}
         if self.raw['plan']['repo'] and 'dir' not in raw.get('plan', {}):
             self.raw['plan']['dir'] = str(self.home / 'plan')
@@ -583,6 +597,26 @@ class Config:
                 self.run['model'] = ''
             if 'fix_model' not in supplied:
                 self.run['fix_model'] = self.run['model']
+        self.models = self.resolve_models(given_models, supplied)
+
+    def resolve_models(self, given: dict, supplied: dict) -> dict:
+        """F101: `[models]`, each role settled: a role the files set wins; else `code` is `[run] model` and `fix`
+        `[run] fix_model` (their aliases, set or default); on Pi every other role falls back to `[run] model`
+        too (Claude's model names mean nothing there). `[run] model` and `fix_model` are kept equal to `code`
+        and `fix`, so code that reads them sees the role."""
+        m, r = self.raw['models'], self.run
+        for role, v in given.items():
+            if role in DEFAULTS['models'] and not (isinstance(v, str) or (v is False and role == 'docs')):
+                raise SystemExit(f'agent-runner: [models] {role} must be a model name'
+                                 + (' or false' if role == 'docs' else '') + f', not {v!r}')
+        code = given.get('code', r['model'])
+        fix = given.get('fix', code if r['backend'] == 'pi' and 'fix_model' not in supplied else r['fix_model'])
+        r['model'], r['fix_model'] = code, fix
+        m.update(code=code, fix=fix)
+        for role in DEFAULTS['models']:
+            if role not in ('code', 'fix'):
+                m[role] = given.get(role, code if r['backend'] == 'pi' else DEFAULTS['models'][role])
+        return m
 
     @property
     def command(self) -> str:

@@ -380,9 +380,14 @@ def attached_name(path: str) -> str:
     return m.group(1) if m and 'uploads' in p.parts else p.name
 
 
+def control_model() -> str:
+    """F101: `[models] control` (opus by default), else `[run] model`."""
+    return (C.raw.get('models') or {}).get('control') or C.run['model']
+
+
 def control_argv(n: int, sid: str, resume: bool, blank: bool = False, ask: str = '', local: bool = False,
                  images: list[str] | tuple = ()) -> list[str]:
-    """Control session `n`: interactive, on `[run] model` (no model of its own), the brief from its settings
+    """Control session `n`: interactive, on `[models] control`, the brief from its settings
     file; with `[run] remote` on Remote Control as "<repo> · control N". Control 1 (the kept session the run
     starts) gets a first message asking for the status summary (`status` only: `since` would move the last-look
     mark past updates the person has not seen); any other (`control --new`, /control) gets none and stays blank
@@ -402,7 +407,7 @@ def control_argv(n: int, sid: str, resume: bool, blank: bool = False, ask: str =
     ask_text, ask = ask, control_ask(ask, images)
     first = [ask] if ask else [opening] if n == 1 and not blank else []
     return [plat.exe(C.run['agent']), *first,
-            '--resume' if resume else '--session-id', sid, '--model', C.run['model'],
+            '--resume' if resume else '--session-id', sid, '--model', control_model(),
             '--permission-mode', 'bypassPermissions',
             '--settings', str(control_settings()), '--add-dir', str(control_skills_dir()),
             *(['--remote-control', control_name(n, ask_text, images)] if remote_on() and not local else [])]

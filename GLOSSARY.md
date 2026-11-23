@@ -322,3 +322,10 @@ _Said_: attach, the runner's pane
 _On screen_: runner keys: type one here and press Enter
 _In code_: run_view.py, run_view, view_key, keys_help(view=True), attach run
 _Avoid_: runner pane, runner window, console
+
+**Model role**:
+A type of work the runner picks a model for: a task's session, the spec review, a fix, docs edits, control sessions, the feed
+_Said_: type of work
+_On screen_: [models] code, review, fix, docs, control, feed
+_In code_: [models], Config.models, resolve_models, subagents
+_Avoid_: model kind, model type

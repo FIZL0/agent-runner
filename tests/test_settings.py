@@ -23,7 +23,7 @@ for s in lines:
         cur = sections.setdefault(s[1:-1], [])
     elif cur is not None and s:
         cur.append(s)
-for table in ('run', 'plan', 'git'):
+for table in ('run', 'plan', 'git', 'models'):  # F101: [models] too
     check(table in sections, f'[{table}] has a heading')
     for k, v in DEFAULTS[table].items():
         line = next((s for s in sections.get(table, []) if s.startswith(f'{k} = ')), '')

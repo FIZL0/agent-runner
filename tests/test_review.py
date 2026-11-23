@@ -13,6 +13,7 @@ import os
 import re
 import tempfile
 from pathlib import Path
+from unittest import mock
 
 from _check import check, eq, git, has, report, run
 
@@ -80,9 +81,14 @@ def test_prompt_off():
         root, _ = make(Path(t), 'review = false\n')
         R.init(root)
         p = R.prompt_for('F1', 1, 1, root, 'main')
-        check('Spec review' not in p and 'review: ' not in p and 'subagent' not in p, 'not in the prompt', p)
+        check('Spec review' not in p and 'review: ' not in p and '"review"' not in p, 'not in the prompt', p)
+        check('review' not in R.subagents(), 'no review subagent (F101)')
         tools = R.lean()
-        eq(tools[tools.index('--tools') + 1], 'Bash,Read,Edit,Write,Artifact', 'lean: no Agent tool')
+        eq(tools[tools.index('--tools') + 1], 'Bash,Read,Edit,Write,Artifact,Agent',
+           'lean: the Agent tool still, for the docs subagent (F101)')
+        with mock.patch.dict(R.C.raw['models'], {'docs': False}):
+            tools = R.lean()
+            eq(tools[tools.index('--tools') + 1], 'Bash,Read,Edit,Write,Artifact', 'no subagent at all: no Agent tool')
 
 
 if __name__ == '__main__':

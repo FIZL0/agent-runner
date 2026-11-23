@@ -168,6 +168,8 @@ def prompt_for(tid: str, n: int, slots: int, cwd: Path, branch: str) -> str:
             runner=C.command, tid=tid, path=C.notes('sheets', f'{tid}.json'))
     if review_on() and not P.concept(tid):  # a concept task changes no product code: nothing to review
         prompt = f'{prompt.rstrip()}\n\n' + review_prompt(tid, cwd)
+    if 'docs' in subagents():  # F101
+        prompt = f'{prompt.rstrip()}\n\n' + DOCS_PROMPT.format(runner=C.command, tid=tid)
     return f'{prompt.rstrip()}\n\nProject policies:\n' + '\n'.join(f'- {policy}' for policy in policies)
 
 
@@ -242,7 +244,7 @@ Needs you shows the person `{runner} wizard {tid}`, and finishing the wizard con
 
 REVIEW_PROMPT = """\
 Spec review, before `done` (after mattpocock/skills code-review, MIT; its Spec axis only): commit your work, \
-then give a fresh subagent (the Agent tool; with none, a fresh one-shot session of your agent CLI) only the \
+then give a fresh subagent ({who}; with none, a fresh one-shot session of your agent CLI) only the \
 output of `git diff {base}...HEAD` and of `{runner} plan brief {tid}`, nothing of this conversation, and ask it \
 for, in under 300 words, each finding quoting the task's words: (a) what the task asked for that is missing or \
 partial, (b) what the diff does that was not asked, (c) what looks implemented but wrong. Fix (a) and (c) on \
@@ -254,6 +256,40 @@ before it. Skip the review when the diff is under {min_lines} changed lines (`gi
 The commit message passed to `done` ends with exactly one line: `review: nothing`, `review: fixed <what>`, \
 `review: filed <IDs>` (with what was fixed too, if any: `review: fixed <what>; filed <IDs>`) or `review: \
 skipped (small)`."""
+
+
+DOCS_PROMPT = """\
+Hand CHANGELOG, docs, README, journal and plan-text edits (a `plan add` or `plan note` text) to the `docs` \
+subagent (the Agent tool, subagent_type "docs"): tell it the file or command, what to say and why, and the \
+facts it needs. Then check its result (`git diff`, `{runner} plan {tid}`) and fix what it got wrong yourself."""
+
+SUBAGENTS = {
+    'review': ('A fresh spec reviewer for the review before done: give it only the diff and the task brief, '
+               'never the conversation, and it lists what is missing, what was not asked and what looks wrong.',
+               'You review a diff against the task brief you are handed, nothing else: you have none of the '
+               'conversation that wrote it. Read the diff and the brief (open a changed file in the repo only to '
+               'check a finding), then answer as the message asks, each finding quoting the task\'s words. Change '
+               'no file.'),
+    'docs': ('Writes documentation and plan text: CHANGELOG, docs, README, journal edits and the text of a '
+             '`plan add` or `plan note`. Tell it the file or command, what to say and why.',
+             'You make the documentation or plan-text change you are asked for, and only that: in the repo\'s own '
+             'style and with the terms of its GLOSSARY.md, if it has one. Change no code and commit nothing. '
+             'Answer with what you changed: each file or command, and a line on what it says now.'),
+}
+
+
+def subagents() -> dict:
+    """F101: the task session's Claude Code subagents (`--agents`), each on its `[models]` role: `review` when
+    the spec review is on, `docs` unless `[models] docs = false`. Empty on Pi, which has none."""
+    try:
+        if C.run['backend'] == 'pi':
+            return {}
+        models = C.raw.get('models') or {}
+    except (AttributeError, KeyError, TypeError):  # no config loaded
+        return {}
+    on = {'review': review_on(), 'docs': True}
+    return {role: {'description': desc, 'prompt': prompt, 'model': models[role]}
+            for role, (desc, prompt) in SUBAGENTS.items() if on[role] and models.get(role)}
 
 
 def review_on() -> bool:
@@ -277,6 +313,7 @@ def review_prompt(tid: str, cwd: Path) -> str:
     except (OSError, ValueError):
         has_long = False
     return REVIEW_PROMPT.format(
+        who='the Agent tool, subagent_type "review"' if 'review' in subagents() else 'the Agent tool',
         base=base, runner=C.command, tid=tid, min_lines=int(C.run.get('review_min_lines', 50)),
         long='this task has one, so review it whatever its size' if has_long else 'this task has none')
 

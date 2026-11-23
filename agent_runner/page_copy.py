@@ -26,12 +26,12 @@ from pathlib import Path
 
 from agent_runner import plat
 from agent_runner.control import control_env, control_ok
+from agent_runner.feed import feed_model  # F101: [models] feed; the one-shot only publishes a file it is handed
 from agent_runner.slots import one_session, remote_on
 from agent_runner.state import C, log, ROOT
 
 PAGE_COPY_EVERY = 600  # s between two publishes, however many run events come in between
 PAGE_COPY_AT = [0.0]
-PAGE_COPY_MODEL = 'haiku'  # the one-shot only publishes a file it is handed
 PAGE_COPY_TIMEOUT = 300  # s a one-shot publish gets before it counts as failed
 PAGE_COPY_FAIL_MAX = 3  # failed publishes in a row before the copy stops for the run
 PAGE_COPY_FAILS = [0]
@@ -157,7 +157,7 @@ def page_copy_ask(path: Path, url: str) -> str:
 def page_copy_argv(path: Path, url: str) -> list[str]:
     """B122: the one-shot headless session that publishes the copy: `claude -p`, Haiku, the Artifact tool only
     (dontAsk refuses the rest), no settings sources or MCP servers, a few turns. Never a control session."""
-    return [plat.exe(C.run['agent']), '-p', page_copy_ask(path, url), '--model', PAGE_COPY_MODEL,
+    return [plat.exe(C.run['agent']), '-p', page_copy_ask(path, url), '--model', feed_model(),
             '--tools', 'Artifact', '--allowedTools', 'Artifact', '--permission-mode', 'dontAsk',
             '--strict-mcp-config', '--setting-sources', '', '--settings', json.dumps({'autoMemoryEnabled': False}),
             '--max-turns', '6']

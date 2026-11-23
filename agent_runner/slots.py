@@ -24,7 +24,7 @@ from agent_runner.gitops import push
 from agent_runner.state import C, clean, git, hook, log, note, ROOT, SLOTS_DIR
 from agent_runner.state import EV_STARTED
 from agent_runner.state import EV_DRIFT
-from agent_runner.brief import NO_PUSH_URLS, prompt_for, review_on
+from agent_runner.brief import NO_PUSH_URLS, prompt_for, review_on, subagents
 from agent_runner.sched import ahead, blocked_tasks, open_tasks, tasks
 
 
@@ -131,8 +131,8 @@ def lean() -> list[str]:
     if pi():
         return ['--no-mcp']
     # Artifact: a task can publish a page or screenshots to claude.ai and link it, seen from any device
-    # Agent (F28): the spec review before done runs in a fresh subagent
-    tools = 'Bash,Read,Edit,Write,Artifact' + (',Agent' if review_on() else '')
+    # Agent (F28, F101): the spec review before done, and the docs subagent, run as subagents
+    tools = 'Bash,Read,Edit,Write,Artifact' + (',Agent' if review_on() or subagents() else '')
     return ['--tools', tools, '--setting-sources', 'project,local', '--strict-mcp-config']
 
 
@@ -156,6 +156,8 @@ class Claude:
         brief = C.notes(f'{sid}.brief')
         return ['--resume' if resume else '--session-id', sid, '--permission-mode', 'bypassPermissions',
                 '--disallowedTools', 'AskUserQuestion', '--model', model, *lean(),
+                # F101: the review and docs subagents, each on its [models] role, so all of it is plan usage
+                *(['--agents', json.dumps(agents)] if (agents := subagents()) else []),
                 *(['--append-system-prompt-file', str(brief)] if brief.exists() else []),
                 # lean() drops user settings, where the bypass dialog's opt-out lives; nobody is there to answer it
                 '--settings', json.dumps({'skipDangerousModePermissionPrompt': True,

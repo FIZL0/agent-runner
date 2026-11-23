@@ -158,7 +158,9 @@ def feed_forget_session() -> None:
     C.notes(REMOTE_DIR, FEED_SID).unlink(missing_ok=True)
 
 
-FEED_MODEL = 'haiku'  # ponytail: fixed; the feed only echoes lines and runs one command, a knob if that ever falls short
+def feed_model() -> str:
+    """F101: `[models] feed` (haiku by default): the feed only echoes lines and runs one command."""
+    return (C.raw.get('models') or {}).get('feed') or 'haiku'
 
 
 def feed_name() -> str:
@@ -192,7 +194,7 @@ def feed_argv() -> list[str]:
     from agent_runner import voice  # F21: the person's wording, in the prompt: the feed has no file tools
     system = voice.feed(RUNNER_BRIEF.format(cmd=cmd, repo=ROOT.name, answer=answer), C)
     return [plat.exe(C.run['agent']), RUNNER_START.format(cmd=cmd, repo=ROOT.name),
-            '--model', FEED_MODEL, '--system-prompt', system,
+            '--model', feed_model(), '--system-prompt', system,
             '--tools', 'Bash,Monitor,PushNotification', '--permission-mode', 'dontAsk',
             '--allowedTools', *feed_allowed_bash(), 'Monitor', 'PushNotification', '--strict-mcp-config',
             '--setting-sources', '', '--settings', json.dumps({'autoMemoryEnabled': False}),  # ~6k tokens a turn
