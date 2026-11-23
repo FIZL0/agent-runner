@@ -89,6 +89,7 @@ a{color:var(--accent)}
 .greet .logo{width:30px;height:30px;font-size:15px}
 .sec{font-size:13px;color:var(--muted);margin-top:10px;display:flex;align-items:center;gap:8px}
 .sec .ln{flex:1;height:1px;background:var(--line)}
+.kform{display:grid;gap:8px} .kform textarea{width:100%;border:1px solid var(--line);border-radius:10px;padding:8px 10px;font:inherit;background:var(--bg);color:var(--fg);resize:vertical}
 .card{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:14px 16px;display:grid;gap:10px;min-width:0}
 .card.tap{cursor:pointer} .card.tap:hover{border-color:var(--line2)}
 .card.need{border-color:color-mix(in srgb,var(--warn) 45%,var(--line))}
@@ -284,7 +285,21 @@ function controlClick(c,o){return c.confirm&&!(o&&o.sure===true)?{ask:true}:cont
 const taskControlsOn=s=>!!(s&&s.task&&s.state!=='merging');
 /* B118: the Queue's two groups: [the queue a run works through, the Parked tasks it never starts] */
 const queueGroups=q=>[(q||[]).filter(x=>x.state!=='parked'),(q||[]).filter(x=>x.state==='parked')];
-if(typeof module!=='undefined')module.exports={answerOpts,threadMsgs,working,planWords,compose,usageOf,logKind,plain,chatName,controlReq,controlClick,taskControlsOn,queueGroups};
+/* F87: a concept card's buttons, in order: one per option (pick: its index, rec: the recommended one, named
+   without its '(recommended)'), then Chat, New chat, and View when it has a local copy or a page */
+const optionName=o=>o.name.replace(/\s*[(\[—–-]*\s*recommended\s*[)\]]?\s*$/i,'')||o.name;
+function conceptButtons(c){
+  const bs=(c.options||[]).map((o,j)=>({label:optionName(o),pick:j,rec:!!o.rec}));
+  bs.push({label:'Chat',about:true},{label:'New chat',cchat:true});
+  if(c.copy||c.url)bs.push({label:'View',view:true});
+  return bs;
+}
+const NO_CONCEPT='No concept waits for a pick.';
+/* F87: the Concepts view's +: what the concept is about, queued as a K task (plan add K TEXT); null when empty */
+function newConceptReq(text){const t=String(text||'').trim();return t?{name:'plan_add',args:{kind:'K',text:t}}:null}
+/* the id plan add gave the new task, from its output ('' when it names none) */
+const queuedId=out=>((String(out||'').match(/\bK\d+[a-z]?\b/)||[''])[0]);
+if(typeof module!=='undefined')module.exports={answerOpts,threadMsgs,working,planWords,compose,usageOf,logKind,plain,chatName,controlReq,controlClick,taskControlsOn,queueGroups,conceptButtons,NO_CONCEPT,newConceptReq,queuedId};
 </script>
 
 <script>
@@ -301,6 +316,7 @@ const I={
  agents:ic('<circle cx="12" cy="8" r="3.5"/><path d="M5 20c.8-3.6 3.6-5.5 7-5.5s6.2 1.9 7 5.5"/>'),
  activity:ic('<path d="M3 12h4l3-7 4 14 3-7h4"/>'),
  plan:ic('<path d="M8 6h12M8 12h12M8 18h12"/><circle cx="4" cy="6" r=".6"/><circle cx="4" cy="12" r=".6"/><circle cx="4" cy="18" r=".6"/>'),
+ concepts:ic('<path d="M9 18h6M10 21h4"/><path d="M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2.1h5c0-.9.4-1.6 1-2.1A6 6 0 0 0 12 3z"/>'),  // F87: a bulb
  plus:ic('<path d="M12 5v14M5 12h14"/>'),
  clip:ic('<path d="M21 11.5 12.5 20a5 5 0 0 1-7-7L14 4.5a3.4 3.4 0 0 1 4.8 4.8L10.4 17.7a1.8 1.8 0 0 1-2.6-2.6L15.5 7.5"/>'),
  up:ic('<path d="M12 19V5M6 11l6-6 6 6"/>'),
@@ -367,12 +383,13 @@ function md(src){
 
 /* --- drawing ----------------------------------------------------------------------------------------------- */
 function side(){
-  const nav=[['home','Home'],['agents','Agents'],['activity','Activity'],['plan','Plan']];
-  const needs=S.snap.needs.length, use=usageOf(S.snap.status);
+  const nav=[['home','Home'],['agents','Agents'],['activity','Activity'],['plan','Plan'],['concepts','Concepts']];
+  const needs=S.snap.needs.length, use=usageOf(S.snap.status), cn=(S.snap.concepts||[]).length;
+  const count={home:needs,concepts:cn};
   const cs=chats(), ws=working_();
   $('side').innerHTML=`<div class="brand"><div class="logo">ar</div><b>agent-runner</b></div>
    <button class="newchat" data-new><span class="plus">${I.plus}</span>New chat</button>
-   <div class="nav">${nav.map(([k,l])=>`<button class="ni ${!S.thread&&S.view===k?'on':''}" data-view="${k}">${I[k]}${l}${k==='home'&&needs?`<span class="n">${needs}</span>`:''}</button>`).join('')}</div>
+   <div class="nav">${nav.map(([k,l])=>`<button class="ni ${!S.thread&&S.view===k?'on':''}" data-view="${k}">${I[k]}${l}${count[k]?`<span class="n">${count[k]}</span>`:''}</button>`).join('')}</div>
    <div class="shead row"><span>Chats</span><button class="shadd" data-new aria-label="New chat" title="New chat">${I.plus}</button></div>${cs.length?cs.map(s=>`<button class="thread ${S.thread===s.name?'on':''}" data-thread="${esc(s.name)}">${s.state==='live'?'':'<span class="off" title="not running"></span>'}<span class="t">${esc(chatName(s))}</span></button>`).join(''):'<div class="none">No chats yet</div>'}
    <div class="shead">Agents working</div>${ws.length?ws.map(s=>`<button class="thread ${S.thread===s.name?'on':''}" data-thread="${esc(s.name)}"><span class="livedot"></span><span class="t">${esc(s.title||s.task)}</span></button>`).join(''):'<div class="none">None right now</div>'}
    <div class="me"><div class="av">${esc((S.snap.machine||'?').charAt(0).toUpperCase())}</div><div class="grow"><span class="ell">${esc(S.snap.machine||'this machine')}</span><div class="sub">${S.snap.up===false?'no run is up':`${S.snap.slots||0} slot${S.snap.slots===1?'':'s'}`}${use?` · usage ${esc(use)}`:''}</div></div></div>
@@ -414,9 +431,12 @@ function parkedCard(q){  // B118: a parked task: Unpark (plan edit ID --pri norm
 }
 function conceptCard(c,i){
   const os=c.options||[], view=c.copy?tq('concept/'+encodeURIComponent(c.concept||c.id)):c.url;
-  const nm=o=>o.name.replace(/\s*[(\[—–-]*\s*recommended\s*[)\]]?\s*$/i,'')||o.name;
-  return card(`<div class="q">${esc(c.title||c.concept)}</div><span class="small">${esc(c.concept||c.id)}${os.length?` · ${os.length} options${os.some(o=>o.rec)?` · recommends ${esc(nm(os.find(o=>o.rec)))}`:''}`:''}</span>
-    <div class="btns">${os.map((o,j)=>`<button class="btn ${o.rec?'pri':''}" data-pick="${i}" data-o="${j}">${esc(nm(o))}</button>`).join('')}<button class="btn" data-about="concept:${i}">Chat</button><button class="btn" data-cchat="${i}" title="A new chat about this concept">New chat</button>${view?`<a class="btn" href="${esc(view)}" target="_blank" rel="noopener">View ${I.ext}</a>`:''}</div>`);
+  const b=x=>x.pick!=null?`<button class="btn ${x.rec?'pri':''}" data-pick="${i}" data-o="${x.pick}">${esc(x.label)}</button>`
+    :x.about?`<button class="btn" data-about="concept:${i}">Chat</button>`
+    :x.cchat?`<button class="btn" data-cchat="${i}" title="A new chat about this concept">New chat</button>`
+    :`<a class="btn" href="${esc(view)}" target="_blank" rel="noopener">View ${I.ext}</a>`;
+  return card(`<div class="q">${esc(c.title||c.concept)}</div><span class="small">${esc(c.concept||c.id)}${os.length?` · ${os.length} options${os.some(o=>o.rec)?` · recommends ${esc(optionName(os.find(o=>o.rec)))}`:''}`:''}</span>
+    <div class="btns">${conceptButtons(c).map(b).join('')}</div>`);
 }
 function box(ph,foot){
   const a=S.atts, busyNow=S.thread&&busy(S.thread);
@@ -459,23 +479,38 @@ function activityHTML(){
     ${log.length?log.map(l=>{const k=logKind(l);return `<div class="ev"><span class="ic ${k}">${I[LOGLINE_ICON[k]]}</span><div class="txt">${esc(l)}</div></div>`}).join(''):card('<div class="small">Nothing in the run log yet.</div>')}</div>`;
 }
 function planHTML(){
-  const cs=S.snap.concepts||[], [qs,pk]=queueGroups(S.snap.queue);
+  const [qs,pk]=queueGroups(S.snap.queue);
   return `<div class="col"><div><button class="btn acc" data-about="new">${I.plus}Add a task</button></div>
     <div class="sec">Queue<span class="ln"></span></div>${qs.length?qs.map(planCard).join(''):card('<div class="small">The queue is empty.</div>')}
-    ${pk.length?`<div class="sec">Parked<span class="ln"></span></div>${pk.map(parkedCard).join('')}`:''}
-    <div class="sec">Concepts<span class="ln"></span></div>${cs.length?cs.map(conceptCard).join(''):card('<div class="small">No concept waits for a pick.</div>')}</div>`;
+    ${pk.length?`<div class="sec">Parked<span class="ln"></span></div>${pk.map(parkedCard).join('')}`:''}</div>`;
+}
+/* F87: the Concepts view: every concept waiting for a pick, as agent-runner ui's Concepts panel lists them */
+function conceptsHTML(){
+  const cs=S.snap.concepts||[];
+  const form=S.kOpen?card(`<form class="kform" data-kform><div class="small">What is the concept about? It is queued as a K task; its options page shows here once it is up.</div>
+    <textarea rows="3" data-kin aria-label="What the concept is about" placeholder="e.g. a dark mode for the run app"></textarea>
+    <div class="btns"><button class="btn acc">Queue it</button><button type="button" class="btn" data-kcancel>Cancel</button></div></form>`):'';
+  return `<div class="col"><div class="sec">Concepts<span class="ln"></span><button class="shadd" data-kadd aria-label="New concept" title="New concept">${I.plus}</button></div>
+    ${form}${S.kSaid?`<div class="small">${esc(S.kSaid)}</div>`:''}${cs.length?cs.map(conceptCard).join(''):card(`<div class="small">${NO_CONCEPT}</div>`)}</div>`;
+}
+async function newConcept(){
+  const req=newConceptReq(S.kText);if(!req)return;
+  const r=await act(req.name,req.args);if(!r.ok)return;
+  const id=queuedId(r.out);S.kOpen=false;S.kText='';
+  S.kSaid=`Queued ${id||'a new concept'}: a run writes its options page, and it shows here.`;toast(S.kSaid);render(true);
 }
 let lastBody='';
 function render(force){
   side();
   const n=S.thread;
-  $('top').innerHTML=`<button class="icon menu" data-menu aria-label="Menu">${I.menu}</button>${n?`<button class="icon" data-home aria-label="Back">${I.back}</button>`:''}<div class="title">${n?esc(threadTitle(n)):{home:'',agents:'Agents',activity:'Activity',plan:'Plan'}[S.view]}</div>${n&&sessionOf(n)&&sessionOf(n).link?`<a class="icon" href="${esc(sessionOf(n).link)}" target="_blank" rel="noopener" aria-label="Open its session" title="Open its session">${I.ext}</a>`:''}<button class="icon" data-new aria-label="New chat" title="New chat">${I.newchat}</button>`;
+  $('top').innerHTML=`<button class="icon menu" data-menu aria-label="Menu">${I.menu}</button>${n?`<button class="icon" data-home aria-label="Back">${I.back}</button>`:''}<div class="title">${n?esc(threadTitle(n)):{home:'',agents:'Agents',activity:'Activity',plan:'Plan',concepts:'Concepts'}[S.view]}</div>${n&&sessionOf(n)&&sessionOf(n).link?`<a class="icon" href="${esc(sessionOf(n).link)}" target="_blank" rel="noopener" aria-label="Open its session" title="Open its session">${I.ext}</a>`:''}<button class="icon" data-new aria-label="New chat" title="New chat">${I.newchat}</button>`;
   let h='',dock='';
   if(n){const agent=isAgent(n);h=`<div class="col">${convo(n)}</div>`;
     dock=box(agent?`Message ${threadTitle(n)}`:S.ctx&&S.ctx.kind==='new'?'Describe the task in your own words':`Reply to ${threadTitle(n)}`,
       agent?'Goes straight to this agent, between its steps.':'Enter sends, Shift+Enter starts a new line.')}
-  else h={home:homeHTML,agents:agentsHTML,activity:activityHTML,plan:planHTML}[S.view]();
+  else h={home:homeHTML,agents:agentsHTML,activity:activityHTML,plan:planHTML,concepts:conceptsHTML}[S.view]();
   const ta=document.querySelector('[data-in]'), focused=ta&&document.activeElement===ta, sel=ta?[ta.selectionStart,ta.selectionEnd]:null;
+  const kta=document.querySelector('[data-kin]'), kfocused=kta&&document.activeElement===kta;
   const key=h+'|'+dock;
   if(key===lastBody&&!force)return;
   lastBody=key;
@@ -483,6 +518,7 @@ function render(force){
   body.innerHTML=h;$('dock').innerHTML=dock;$('dock').hidden=!dock;
   const nta=document.querySelector('[data-in]');
   if(nta){nta.value=store.get(DRAFT_KEY(boxKey()));grow(nta);if(focused){nta.focus();if(sel)nta.setSelectionRange(sel[0],sel[1])}}
+  const nk=document.querySelector('[data-kin]');if(nk){nk.value=S.kText||'';if(kfocused||S.kFocus)nk.focus();S.kFocus=false}  // F87: the new concept box keeps its words
   if(n&&(atEnd||force))body.scrollTop=1e9;
 }
 function grow(ta){ta.style.height='auto';ta.style.height=Math.min(ta.scrollHeight,160)+'px'}
@@ -516,7 +552,7 @@ setInterval(()=>{if(S.thread&&!document.hidden)loadFeed(S.thread)},2000);
 
 /* --- doing things ------------------------------------------------------------------------------------------ */
 function open(n){S.thread=n;S.drawer=false;loadFeed(n);render(true);setTimeout(()=>document.querySelector('[data-in]')?.focus(),50)}
-function goView(v){S.view=v;S.thread=null;S.ctx=null;S.drawer=false;render(true)}
+function goView(v){S.view=v;S.thread=null;S.ctx=null;S.drawer=false;S.kSaid='';render(true)}
 async function send(){
   const ta=document.querySelector('[data-in]');const text=(ta?.value||'').trim();
   if(S.atts.some(a=>!a.path&&!a.err))return toast('Wait for the attachments to finish uploading');
@@ -580,6 +616,8 @@ document.addEventListener('click',async e=>{
     const r=await act('shelve',{tid:n.id});if(r.ok)toast(`${n.id} is set aside until you bring it back`);return}
   if(x=q('[data-unpark]')){const id=x.dataset.unpark;x.disabled=true;  // B118
     const r=await act('unpark',{tid:id});if(r.ok)toast(`${id} is unparked: it joins Follow-ups`);else x.disabled=false;return}
+  if(q('[data-kadd]')){S.kOpen=!S.kOpen;S.kFocus=S.kOpen;S.kSaid='';render(true);return}  // F87: the Concepts view's +
+  if(q('[data-kcancel]')){S.kOpen=false;render(true);return}
   if(x=q('[data-about]'))return about(x.dataset.about);
   if(x=q('[data-quick]')){const r=await act('quick_ask',{key:x.dataset.quick});if(r.ok){S.ctx=null;S.sent.c1={at:Date.now(),len:feedOf('c1').length,pending:[]};open('c1')}return}
   if(x=q('[data-pick]')){const c=S.snap.concepts[+x.dataset.pick],o=c&&(c.options||[])[+x.dataset.o];if(!o)return;
@@ -592,7 +630,7 @@ document.addEventListener('click',async e=>{
   if(q('[data-clip]')){$('file').click();return}
   if(x=q('[data-stop]')){const n=x.dataset.stop||S.thread;if(n)act('interrupt',{session:n});return}
 });
-document.addEventListener('submit',e=>{e.preventDefault();send()});
+document.addEventListener('submit',e=>{e.preventDefault();if(e.target.matches('[data-kform]'))newConcept();else send()});
 function selectedText(t){
   if(t&&typeof t.selectionStart==='number'&&t.selectionEnd>t.selectionStart)return true;
   return !!String(window.getSelection&&window.getSelection()||'');
@@ -601,6 +639,10 @@ document.addEventListener('keydown',e=>{
   /* B116: Ctrl+C interrupts the open chat while it works (not while text is selected, so copying still works);
      Esc never interrupts: it leaves the box, then goes back */
   if(e.ctrlKey&&!e.metaKey&&!e.altKey&&(e.key==='c'||e.key==='C')&&S.thread&&busy(S.thread)&&!selectedText(e.target)){e.preventDefault();act('interrupt',{session:S.thread});return}
+  if(e.target.matches&&e.target.matches('[data-kin]')){  // F87: Enter queues the concept, Esc closes the box
+    if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();newConcept();return}
+    if(e.key==='Escape'){e.preventDefault();S.kOpen=false;render(true);return}
+    return}
   if(e.target.matches&&e.target.matches('[data-in]')){
     if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();send();return}
     if(e.key==='Escape'){e.preventDefault();e.target.blur();return}
@@ -609,7 +651,7 @@ document.addEventListener('keydown',e=>{
   if(e.key==='Escape'&&S.thread&&!(e.target.matches&&e.target.matches('input,textarea,select'))){S.thread=null;S.ctx=null;render(true);return}  /* out of the box, Esc goes back */
   const c=e.target.closest&&e.target.closest('.card.tap');if(c&&c===e.target&&(e.key==='Enter'||e.key===' ')){e.preventDefault();c.click()}
 });
-document.addEventListener('input',e=>{if(e.target.matches('[data-slots-n]'))S.slotsN=e.target.value;if(e.target.matches('[data-in]')){grow(e.target);store.set(DRAFT_KEY(boxKey()),e.target.value)}});
+document.addEventListener('input',e=>{if(e.target.matches('[data-slots-n]'))S.slotsN=e.target.value;if(e.target.matches('[data-kin]'))S.kText=e.target.value;if(e.target.matches('[data-in]')){grow(e.target);store.set(DRAFT_KEY(boxKey()),e.target.value)}});
 document.addEventListener('paste',e=>{if(!e.target.matches||!e.target.matches('[data-in]'))return;
   const fs=[...(e.clipboardData?.files||[])];if(fs.length){e.preventDefault();fs.forEach(upload)}});
 $('file').addEventListener('change',e=>{[...e.target.files].forEach(upload);e.target.value=''});

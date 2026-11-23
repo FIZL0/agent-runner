@@ -367,7 +367,7 @@ def test_page(tmp: Path) -> None:
         page = get(f'http://127.0.0.1:{srv.server_address[1]}/?t={token}')[1].decode()
     finally:
         srv.stop()
-    for part in ('New chat', "['home','Home'],['agents','Agents'],['activity','Activity'],['plan','Plan']",
+    for part in ('New chat', "['home','Home'],['agents','Agents'],['activity','Activity'],['plan','Plan'],['concepts','Concepts']",
                  '<div class="shead row"><span>Chats</span>', '<div class="shead">Agents working</div>', 'class="livedot"',
                  'S.snap.machine', 'usage ${esc(use)}',  # the sidebar
                  'side.open', 'class="scrim"', 'data-menu',  # a drawer on a phone
@@ -381,7 +381,7 @@ def test_page(tmp: Path) -> None:
                  'Ran ${m.steps.length} step', 'Working on it…', "tq('feed/'",
                  'Goes straight to this agent', "tq('upload?name='", 'type="file" multiple', 'About: <b>',  # the box
                  "e.key==='Enter'&&!e.shiftKey", 'DRAFT_KEY', 'store.set(DRAFT_KEY(boxKey())',
-                 'data-pick=', 'data-about="concept:', 'View ${I.ext}', "tq('concept/'",  # the Plan
+                 'data-pick=', 'data-about="concept:', 'View ${I.ext}', "tq('concept/'",  # the Concepts view
                  '@media (prefers-color-scheme:dark){:root:not([data-theme="light"])', ':root[data-theme="dark"]',
                  '*{box-sizing:border-box;scrollbar-width:none}', '*::-webkit-scrollbar{display:none}',
                  'container-type:inline-size', '@container (min-width:760px)', '<div class="logo">ar</div>'):
@@ -785,6 +785,45 @@ def test_parked(tmp: Path) -> None:
     check('U' in here and 'E' in here, 'the key hints show U unpark and E chat edit', got[7])
 
 
+def test_concepts_view(tmp: Path) -> None:
+    """F87: the sidebar has Concepts (after Plan, with a count); its view lists the snapshot's concepts with their
+    buttons (an option each, Chat, New chat, View), says no concept waits when none does, and its + queues a new
+    concept as plan add K through /act; the Plan view no longer lists concepts."""
+    fake_repo(tmp)
+    app = W.page_html().decode()
+    for part in ("['plan','Plan'],['concepts','Concepts']", 'count={home:needs,concepts:cn}',
+                 'concepts:conceptsHTML', "concepts:'Concepts'", 'data-kadd aria-label="New concept"',
+                 'data-kform', 'newConceptReq(S.kText)', 'cs.map(conceptCard)'):
+        check(part in app, f'the run app has {part}')
+    plan = app.split('function planHTML(){', 1)[1].split('\n}', 1)[0]
+    check('concept' not in plan.lower(), 'the Plan view lists no concepts', plan)
+    token = W.web_token()
+    srv = W.serve(token, 0, '127.0.0.1', snap=lambda: {})
+    try:
+        code, out = post(f'http://127.0.0.1:{srv.server_address[1]}/act?t={token}',
+                         {'name': 'plan_add', 'args': {'kind': 'K', 'text': 'a dark mode for the run app'}})
+    finally:
+        srv.stop()
+    eq(out.get('argv', [])[-4:], ['plan', 'add', 'K', 'a dark mode for the run app'], "+'s request is plan add K TEXT")
+    if not shutil.which('node'):
+        print('  (no node here: the Concepts view script test is skipped)')
+        return
+    c = {'id': 'K5', 'concept': 'K5', 'title': 'Lazy layout', 'copy': '/n/K5.html',
+         'options': [{'name': 'A: tabs', 'rec': False}, {'name': 'B: drawer (recommended)', 'rec': True}]}
+    got = logic_js([['conceptButtons', c], ['conceptButtons', {'id': 'K6', 'options': []}],
+                    ['newConceptReq', '  a dark mode  '], ['newConceptReq', '   '],
+                    ['queuedId', 'added K12 a dark mode'], ['queuedId', 'ok']])
+    eq([b['label'] for b in got[0]], ['A: tabs', 'B: drawer', 'Chat', 'New chat', 'View'],
+       "a concept's buttons: its options (no '(recommended)'), Chat, New chat, View")
+    eq([b.get('rec', False) for b in got[0]], [False, True, False, False, False], 'the recommended option stands out')
+    eq([b['label'] for b in got[1]], ['Chat', 'New chat'], 'no copy and no page: no options and no View')
+    eq(got[2], {'name': 'plan_add', 'args': {'kind': 'K', 'text': 'a dark mode'}}, '+ sends plan add K TEXT')
+    eq(got[3], None, 'an empty box sends nothing')
+    eq(got[4:], ['K12', ''], 'the queued id, from plan add\'s output')
+    check("NO_CONCEPT='No concept waits for a pick.'" in app and '${NO_CONCEPT}' in app,
+          'the empty state says no concept waits')
+
+
 def test_esc_ctrl_c(tmp: Path) -> None:
     """B116: on the run app Esc never interrupts (it leaves the box, then goes back); Ctrl+C interrupts the open
     chat while it works (not over selected text), and a small Stop button sits by the working mark."""
@@ -852,4 +891,4 @@ if __name__ == '__main__':
                            in_tmp(test_control_rows), in_tmp(test_feed_pane_concept), in_tmp(test_page),
                            in_tmp(test_logic), in_tmp(test_extras), in_tmp(test_diff), in_tmp(test_views),
                            in_tmp(test_new_chat), in_tmp(test_term_moves), in_tmp(test_page_copy_publish), in_tmp(test_parked),
-                           in_tmp(test_esc_ctrl_c)]))
+                           in_tmp(test_esc_ctrl_c), in_tmp(test_concepts_view)]))

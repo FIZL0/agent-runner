@@ -21,7 +21,8 @@ Panels and their tabs (F76):
                info
     Concepts   preview: the K copy inline, its options (the copy's headings) moved through with j/k, Enter goes
                with the selected one, i says what to change, O opens the page in the browser, N starts a new
-               control session about it (`concept_chat`; c stays c1's chat)
+               control session about it (`concept_chat`; c stays c1's chat); the '+ new concept' row and n
+               queue a new concept (plan add K)
 
 The feed is the agent's words with its tool steps folded as '· N steps' (v shows them); a chat shows the steps,
 as a Claude session does. A box takes typing after i (or Enter): Enter sends, Shift+Enter (or Ctrl-J, Alt+Enter)
@@ -66,6 +67,7 @@ PANELS = [(1, 'Status', 'status'), (2, 'Sessions', 'sessions'), (3, 'Queue', 'qu
           (4, 'Needs you', 'needs'), (5, 'Concepts', 'concepts')]
 NEW_TASK = {'id': '+', 'new': True}  # the queue's last row: a new task
 NEW_CHAT = {'name': '+', 'new': True}  # Sessions' last row: a new control session
+NEW_CONCEPT = {'id': '+', 'new': True}  # F87: Concepts' last row: a new concept (a K task)
 KIND_COLOUR = {'B': 'red', 'F': 'green', 'C': 'blue', 'R': 'magenta', 'V': 'yellow', 'K': 'cyan'}
 KINDS = ('B', 'F', 'T', 'D', 'R', 'C', 'K', 'V')  # the direct edit's kind field cycles through these
 QUICK_KEYS = {'since': 's', 'yesterday': 'y', 'needs': 'w', 'usage': 'u'}  # F74's quick asks, by key
@@ -149,6 +151,7 @@ Concepts [5]
   j/k      option                 Enter    go with it
   i        what to change         O        open in the browser
   N        chat about it (a new session)
+  n        new concept (queued as a K task)
 Typing
   Enter    send                   Shift+Enter  new line (or Ctrl-J)
   Esc      leave the box
@@ -348,6 +351,8 @@ class RunPage:
         if key == 'sessions':
             return session_rows(self.snap) + ([NEW_CHAT] if not self.snap.get('sessions_note') else [])
         rows = list(self.snap.get(key) or [])
+        if key == 'concepts':
+            return rows + [NEW_CONCEPT]
         return rows + [NEW_TASK] if key == 'queue' else rows
 
     def empty_line(self, n: int) -> str:
@@ -376,6 +381,8 @@ class RunPage:
             return ['feed', 'pane', 'diff', 'session'] if it.get('task') else ['feed', 'pane']
         if n == 3:
             return ['chat edit', 'direct edit'] if it.get('new') else ['direct edit', 'chat edit']
+        if n == 5 and it.get('new'):
+            return ['new concept']
         return ['answer', 'info'] if n == 4 else ['preview']
 
     def _tab_key(self, it) -> str:
@@ -428,7 +435,7 @@ class RunPage:
             return f'edit:{it["id"]}'
         if tab == 'answer':
             return f'answer:{it["id"]}'
-        if tab == 'preview':
+        if tab in ('preview', 'new concept'):
             return f'concept:{it["id"]}'
         return ''
 
@@ -550,6 +557,8 @@ class RunPage:
         if n == 4:
             return [(f'{it["id"]} ', 'yellow'), (it.get('title') or it.get('ask', ''), 'fg'),
                     (f' {it.get("age", "")}', 'dim')]
+        if it.get('new'):
+            return [('+ ', 'green'), ('new concept ', 'dim'), ('n', 'hkey')]
         return [('◆ ', 'magenta'), (it.get('title', ''), 'fg')]
 
     def queue_tag(self, it) -> tuple[str, str]:
@@ -693,6 +702,10 @@ class RunPage:
             if it.get('url'):
                 out += [L(), L(('page ', 'dim'), (it['url'], 'blue'))]
             return out + [L(), L((f'waiting {it.get("age", "")}', 'dim'))], [], 0
+        if tab == 'new concept':
+            out = [L(('Say what the concept is about; it is queued as a K task (plan add K), and its options page ',
+                      'dim'), ('lists here once a run writes it.', 'dim'))]
+            return out, self.input_lines('concept:+', width, 'e.g. a dark mode for the run app'), 0
         if tab == 'preview':
             lines, anchor = self.preview_pane(it, width)
             return lines, self.input_lines(f'concept:{it["id"]}', width, 'say what to change'), anchor
@@ -1037,7 +1050,9 @@ class RunPage:
                     ('D', 'drop')]
         if self.panel == 4:
             return [('⏎', 'open'), ('a', 'answer'), ('L', 'later')]
-        return [('⏎', 'view'), ('O', 'open in the browser'), ('N', 'chat about it')]
+        if isinstance(it, dict) and it.get('new'):
+            return [('⏎', 'open')]
+        return [('⏎', 'view'), ('O', 'open in the browser'), ('N', 'chat about it'), ('n', 'new concept')]
 
     GLOBAL = [('1-5', 'panel'), ('c', 'chat'), ('?', 'keys')]
 
@@ -1237,6 +1252,8 @@ class RunPage:
             r = U.answer(rest, text)
         elif box == 'slots:n':
             r = U.run_control('slots_set', n=text)
+        elif box == 'concept:+':  # F87: a new concept, queued as a K task
+            r = U.plan_add('K', text)
         elif kind == 'concept':
             it = next((c for c in self.snap.get('concepts') or [] if c.get('id') == rest), {'id': rest})
             r = U.chat(f'concept {it.get("concept") or rest} ("{it.get("title", "")}"): {text}')
@@ -1470,9 +1487,13 @@ class RunPage:
         elif self.panel == 4 and k == 'L' and it is not None:
             self.done(U.shelve(it['id']))
             self.main = False
-        elif self.panel == 5 and k == 'O' and it is not None:
+        elif self.panel == 5 and k == 'n':  # F87: a new concept, in its row's box
+            self.cur[5] = len(rows) - 1
+            self.set_tab('new concept')
+            self.type_in()
+        elif self.panel == 5 and k == 'O' and it is not None and not it.get('new'):
             self.open_link(it.get('url', ''), it.get('title', 'the concept'))
-        elif self.panel == 5 and k == 'N' and it is not None:
+        elif self.panel == 5 and k == 'N' and it is not None and not it.get('new'):
             self.concept_chat(it)
 
     def concept_chat(self, it: dict) -> None:
