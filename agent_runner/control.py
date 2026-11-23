@@ -1162,7 +1162,7 @@ def closed_online(rows) -> bool:
 
 def end_closed_controls(force: bool = False) -> list[int]:
     """B53: end the control sessions closed online (see above). The numbers ended."""
-    if (not force and time.time() - CONTROL_GONE_AT[0] < CONTROL_CLOSE_EVERY):
+    if not force and time.time() - CONTROL_GONE_AT[0] < CONTROL_CLOSE_EVERY:
         return []
     CONTROL_GONE_AT[0] = time.time()
     from agent_runner.control_reopen import forget_ended_controls
@@ -1488,6 +1488,6 @@ def rc_sweep(run_pid: int, stopping: bool = False, wait: float = RC_TEARDOWN,
 
 def rc_sweep_start() -> None:
     """The run's start: end what an earlier run left on Remote Control, in the background (it can wait)."""
-    keep = remote_on() and bool(C.run['control']) 
+    keep = remote_on() and bool(C.run['control'])
     threading.Thread(target=rc_sweep, args=(os.getpid(),), kwargs={'keep_server': keep},
                      name='remote-sweep', daemon=True).start()
