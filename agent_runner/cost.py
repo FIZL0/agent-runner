@@ -367,12 +367,13 @@ def over_budget(tokens: int, usd: float, max_tokens, max_usd) -> str:
 
 
 def worker_transcripts(days: float) -> list[Path]:
-    """This repo's worker sessions: Claude's for each slot and merge worktree, and the run's Pi sessions."""
+    """This repo's worker sessions: Claude's for each slot and merge worktree, and the run's Pi and harness-loop sessions."""
     from agent_runner import runner as R
     R.init()
     dirs = [Path(os.path.expanduser('~/.claude/projects')) / R.project_slug(d)
             for d in R.SLOTS_DIR.glob('*') if d.is_dir()]
     dirs.append(R.C.notes('pi-sessions'))
+    dirs.append(R.C.notes('harness-sessions'))
     since = time.time() - days * 86400
     return sorted(p for d in dirs if d.is_dir() for p in d.glob('*.jsonl') if p.stat().st_mtime >= since)
 
