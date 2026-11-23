@@ -216,7 +216,8 @@ def test_run_controls(tmp: Path) -> None:
                 ran.clear()
                 code, out = post(url, rq)
                 if c['key'] == 'task_take':
-                    eq((out.get('ok'), sent, ran), (True, ['do F1 here'], []), 'Take back asks c1 "do F1 here"')
+                    eq((out.get('ok'), sent, ran), (True, [], [['control', '--new', '--ask', 'do F1 here']]),
+                       'B139: Take back asks a new control session "do F1 here", not c1')
                 else:
                     eq((code, out.get('ok'), ran), (200, True, [want[c['key']]]),
                        f'{c["label"]} runs {" ".join(want[c["key"]])}')
@@ -310,10 +311,15 @@ def test_feed_pane_concept(tmp: Path) -> None:
             body, csp = resp.read(), resp.headers.get('Content-Security-Policy', '')
         eq((body, csp), (b'<h1>Option A</h1>', 'sandbox allow-scripts'), 'the copy, sandboxed')
         eq(get(f'{base}/concept/K5')[0], 403, 'and only with the token')
-        sent = []
-        with mock.patch.object(U, 'SEND', [lambda t: (sent.append(t), {'ok': True, 'out': 'sent to c1'})[1]]):
-            code, out = post(f'{base}/act?t={token}', {'name': 'quick_ask', 'args': {'key': 'needs'}})
-        eq(sent, ['what needs me?'], 'a quick ask through /act reaches c1')
+        ran = []
+
+        def no_send(t):
+            raise AssertionError(f'B139: a quick ask reached c1: {t!r}')
+        with mock.patch.object(U, 'SEND', [no_send]), \
+                mock.patch.object(U, 'RUN', [lambda argv: (ran.append(argv), (0, 'control 7 is starting'))[1]]):
+            code, out = post(f'{base}/act?t={token}', {'name': 'quick_ask', 'args': {'key': 'needs', 'wait': False}})
+        eq((out['ok'], out['name'], ran), (True, 'c7', [['control', '--new', '--no-wait', '--ask', 'what needs me?']]),
+           'B139: a quick ask through /act starts a new control session with it, named for the page to open')
         typed = []
         from agent_runner import slots as SLT
         with mock.patch.object(U, 'hidden_inbox', return_value=Path('/x/control6.in')), \
@@ -383,7 +389,7 @@ def test_page(tmp: Path) -> None:
                  'data-quick="needs">', 'What needs me', 'data-about="new">', 'Add a task',  # Home
                  '>Needs you<', 'data-ans=', 'data-later=', 'data-about="need:', '>Working now<', '>Up next<',
                  'data-about="plan:', 'Release when they land', 'Release now',
-                 "outbox('answer'", "outbox('shelve'", "outbox('release'", "outbox('quick_ask'", "outbox('chat_to'",
+                 "outbox('answer'", "outbox('shelve'", "outbox('release'", "newChat('quick_ask'", "outbox('chat_to'",
                  "newChat('new_control'", "act('interrupt'",  # F137: through the outbox
                  '.a{display:grid;gap:8px;font:400 16.5px/1.6 var(--serif)', '.u{justify-self:end',  # threads
                  'Ran ${m.steps.length} step', 'Working on it…', "tq('feed/'",
@@ -1723,6 +1729,41 @@ def test_outbox_f137(tmp: Path) -> None:
     eq(got[16], [], 'nothing in the outbox: no pill')
 
 
+def test_card_chat_b139(tmp: Path) -> None:
+    """B139: a run page button that starts a chat (Add a task, a card's Chat, a quick ask, Take) starts a fresh
+    control session (`control --new --ask`) instead of sending to c1 with its whole history; typing in the c1
+    chat box with no card context still goes to c1."""
+    fake_repo(tmp)
+
+    def no_send(t):
+        raise AssertionError(f'a chat-starting button reached c1: {t!r}')
+    ran = []
+    with mock.patch.object(U, 'SEND', [no_send]), \
+            mock.patch.object(U, 'RUN', [lambda argv: (ran.append(argv), (0, 'control 9 is starting'))[1]]):
+        q, t = U.act('quick_ask', key='since', wait=False), U.act('take', tid='F1', wait=False)
+    eq(ran, [['control', '--new', '--no-wait', '--ask', 'what happened since my last look?'],
+             ['control', '--new', '--no-wait', '--ask', 'do F1 here']], 'quick_ask and take use new_control')
+    eq((q['name'], t['name']), ('c9', 'c9'), 'each names its new chat for the page to open')
+    page = W.PAGE.read_text(encoding='utf-8')
+    send = page.split('async function send(){', 1)[1].split('\n}', 1)[0]
+    check('sendReq(ctx,to,msg)' in send and "newChat(rq.name,rq.args," in send,
+          'send() starts a new chat when a card set the context', send)
+    check("newChat('quick_ask'" in page and "outbox('quick_ask'" not in page, 'a quick ask starts a new chat', '')
+    check("if(r.name)return open(r.name)" in page, "Take back opens the new chat it started", '')
+    if not shutil.which('node'):
+        print('  (no node here: the send script test is skipped)')
+        return
+    got = logic_js([['sendReq', {'kind': 'need', 'id': 'R6'}, 'c1', 'About R6, which needs me: hi'],
+                    ['sendReq', {'kind': 'new'}, 'c1', 'Add a task: dark mode'],
+                    ['sendReq', None, 'c1', 'hello'], ['sendReq', None, 'c6', 'hi c6']])
+    eq(got[:2], [{'name': 'new_control', 'args': {'ask': 'About R6, which needs me: hi'}},
+                 {'name': 'new_control', 'args': {'ask': 'Add a task: dark mode'}}],
+       'a send with S.ctx set calls new_control, not chat_to c1')
+    eq(got[2:], [{'name': 'chat_to', 'args': {'text': 'hello', 'to': 'c1'}},
+                 {'name': 'chat_to', 'args': {'text': 'hi c6', 'to': 'c6'}}],
+       'with no card context the box still goes to its chat (c1 by default)')
+
+
 if __name__ == '__main__':
     raise SystemExit(report([in_tmp(test_chat_order_f133), in_tmp(test_delete_chats_f118), in_tmp(test_server), in_tmp(test_real_action), in_tmp(test_run_controls),
                            in_tmp(test_start), in_tmp(test_upload),
@@ -1734,4 +1775,4 @@ if __name__ == '__main__':
                            in_tmp(test_listen_heard_nothing_b132), in_tmp(test_talk_reply_heard_b133),
                            in_tmp(test_slash_menu_b119), in_tmp(test_composer_keys_b120),
                            in_tmp(test_interrupt_c1_b141), in_tmp(test_answer_button_b138), in_tmp(test_pick_f138),
-                           in_tmp(test_outbox_f137)]))
+                           in_tmp(test_outbox_f137), in_tmp(test_card_chat_b139)]))

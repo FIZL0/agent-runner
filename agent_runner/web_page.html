@@ -313,6 +313,9 @@ function compose(ctx,text,paths){
   if(paths&&paths.length)msg+=(msg?'\n\n':'')+'Attached: '+paths.join(', ');
   return msg;
 }
+/* B139: where the message box sends msg: with a card's context (Add a task, a card's Chat) a new control
+   session that gets it as its first message, so it carries none of c1's history; else chat_to the open chat */
+function sendReq(ctx,to,msg){return ctx?{name:'new_control',args:{ask:msg}}:{name:'chat_to',args:{text:msg,to:to||'c1'}}}
 /* the usage line of the status lines ('usage: session 40%, week 12%'), '' for none */
 const usageOf=status=>((status||[]).find(l=>/^usage: /.test(l))||'').replace(/^usage: /,'');
 /* a run log line's kind, for its icon on Activity */
@@ -481,7 +484,7 @@ function obHidden(box,key){return(box||[]).filter(x=>x.state==='sending'&&x[key]
 /* the pill's words */
 function obPill(c,offline){const p=[];if(c.sending)p.push(`${c.sending} ${offline?'waiting for the connection':'sending'}`);
   if(c.failed)p.push(`${c.failed} failed · tap to see`);return p}
-if(typeof module!=='undefined')module.exports={chatMove,BOX_KEYS,keysLine,histPush,histEdge,histStep,slashMatches,slashPick,slashMove,SLASH_FALLBACK,chatPick,answerOpts,threadMsgs,working,planWords,compose,usageOf,logKind,plain,chatName,controlReq,controlClick,taskControlsOn,queueGroups,conceptButtons,NO_CONCEPT,newConceptReq,queuedId,NAV,talkSession,micProblem,talkShown,talkReply,goneMark,needsShown,answerSaid,GONE_MS,obParse,obNext,obName,obSettle,obRetry,obDrop,obCounts,obHidden,obPill};
+if(typeof module!=='undefined')module.exports={chatMove,BOX_KEYS,keysLine,histPush,histEdge,histStep,slashMatches,slashPick,slashMove,SLASH_FALLBACK,chatPick,answerOpts,threadMsgs,working,planWords,compose,sendReq,usageOf,logKind,plain,chatName,controlReq,controlClick,taskControlsOn,queueGroups,conceptButtons,NO_CONCEPT,newConceptReq,queuedId,NAV,talkSession,micProblem,talkShown,talkReply,goneMark,needsShown,answerSaid,GONE_MS,obParse,obNext,obName,obSettle,obRetry,obDrop,obCounts,obHidden,obPill};
 </script>
 
 <script>
@@ -617,9 +620,9 @@ function obChatRows(){return S.ob.filter(x=>x.newchat).map(x=>`<div class="crow"
 function obCards(key){return S.ob.filter(key).map(x=>card(`<div class="row obstand ${x.state}"><div class="grow"><div>${esc(x.say)}</div><div class="small">${esc(obState(x))}</div></div>${x.state==='failed'?`<div class="btns">${obBtns(x)}</div>`:''}</div>`)).join('')}
 function obBubbles(n){
   let h='';
-  if(n==='c1')for(const x of S.ob)if(x.name==='quick_ask')h+=`<div class="u pending ${x.state}">${esc(x.ask||x.say)}</div>`;
-  for(const x of S.ob)if(x.name==='chat_to'&&obTo(x)===n)h+=`<div class="u pending ${x.state}">${esc(x.args.text)}${x.state==='failed'?`<div class="small">${esc(obState(x))}</div><div class="btns">${obBtns(x)}</div>`:''}</div>`;
   const up=n&&n[0]==='@'&&S.ob.find(x=>'@'+x.cid===n);
+  if(up&&up.ask)h+=`<div class="u pending ${up.state}">${esc(up.ask)}</div>`;  // B139: its first message
+  for(const x of S.ob)if(x.name==='chat_to'&&obTo(x)===n)h+=`<div class="u pending ${x.state}">${esc(x.args.text)}${x.state==='failed'?`<div class="small">${esc(obState(x))}</div><div class="btns">${obBtns(x)}</div>`:''}</div>`;
   if(up)h+=`<div class="think"><span class="logo">ar</span>${up.state==='failed'?esc(`The chat did not start: ${up.err}`):'Starting the chat… what you write goes once it is up'}</div>`;
   return h;
 }
@@ -766,7 +769,7 @@ function box(ph,foot){
     ${a.length?`<div class="atts">${a.map((f,i)=>`<span class="att ${f.path?'':f.err?'err':'up'}" title="${esc(f.err||f.path||'uploading…')}">${f.thumb?`<img src="${f.thumb}" alt="">`:`<span class="fi">${I.file}</span>`}<span class="nm">${esc(f.name)}</span><button type="button" class="x" data-unatt="${i}" aria-label="Remove">✕</button></span>`).join('')}</div>`:''}
     <div class="slash" data-slash role="listbox" aria-label="Commands" hidden></div>
     <textarea rows="1" data-in placeholder="${esc(ph)}" aria-label="Message"></textarea>
-    <div class="boxrow"><button type="button" class="tool" data-clip aria-label="Attach pictures or files">${I.clip}</button><span class="to">${esc(S.thread?S.thread:S.view==='talk'?'to Talk':'to c1')}</span>${busyNow?`<button type="button" class="send stop" data-stop="${esc(shownNow)}" aria-label="Interrupt">${I.stop}</button>`:''}<button class="send" aria-label="Send">${I.up}</button></div></form>${foot?`<div class="foot">${foot}</div>`:''}`;
+    <div class="boxrow"><button type="button" class="tool" data-clip aria-label="Attach pictures or files">${I.clip}</button><span class="to">${esc(S.ctx?'to a new chat':S.thread?S.thread:S.view==='talk'?'to Talk':'to c1')}</span>${busyNow?`<button type="button" class="send stop" data-stop="${esc(shownNow)}" aria-label="Interrupt">${I.stop}</button>`:''}<button class="send" aria-label="Send">${I.up}</button></div></form>${foot?`<div class="foot">${foot}</div>`:''}`;
 }
 function convo(n,shown){  // F93: shown, how a message of yours shows (Talk: without its brief or reminder)
   shown=shown||(t=>t);
@@ -1011,10 +1014,16 @@ async function send(){
   histAdd(key,text);HI.i=null;  // B120: Up brings it back
   store.set(DRAFT_KEY(key),'');if(ta)ta.value='';
   S.atts=[];S.ctx=null;
+  const rq=sendReq(ctx,to,msg);
+  if(rq.name==='new_control'){newChat(rq.name,rq.args,ctx.kind==='new'?'Add a task':`About ${ctx.id||ctx.label}`,msg);return}  // B139
   // F137: out of the box at once, a pending message until chat_to answers (obDone), red with Retry if it fails
   outbox('chat_to',{text:msg,to},{text,key,say:`To ${threadTitle(to)}: ${text||paths.length+' attachment(s)'}`});
   if(S.thread!==to)open(to);
 }
+/* F137: a new chat opens at once as a stand-in ('@cid') that takes messages; new_control starts it without
+   waiting, and its messages go once it has a name. B139: ask, its first message, shows in the stand-in. */
+function newChat(name,args,say,ask){const known=chats().map(c=>c.name), it=outbox(name,{...args,wait:false},{newchat:true,say,...(ask?{ask}:{})});
+  S.waitNew={known,at:Date.now(),ph:'@'+it.cid};open('@'+it.cid)}
 function about(a){
   const [k,v]=[a.split(':')[0],a.slice(a.indexOf(':')+1)];
   if(a==='new')S.ctx={kind:'new',label:'A new task'};
@@ -1070,13 +1079,10 @@ document.addEventListener('click',async e=>{
     if(rq.ask){S.sure=c.key;render(true);return}  // F82: asked in the page, no browser dialog
     if(c.needs==='n'&&!/^\d+$/.test(n.trim()))return toast('Type how many slots first',true);
     S.sure=null;x.disabled=true;
-    const r=await act(rq.name,rq.args);if(r.ok){S.slotsN='';toast(String(r.out||'').split('\n')[0]||`${c.label}: done`)}
+    const r=await act(rq.name,{...rq.args,wait:false});if(r.ok){S.slotsN='';toast(String(r.out||'').split('\n')[0]||`${c.label}: done`);
+      if(r.name)return open(r.name)}  // B139: a control with an ask (Take back) started a new chat: open it
     render(true);return}
   if(x=q('[data-thread]')){S.ctx=null;return open(x.dataset.thread)}
-  // F137: a new chat opens at once as a stand-in ('@cid') that takes messages; new_control starts it without
-  // waiting, and its messages go once it has a name
-  const newChat=(name,args,say)=>{const known=chats().map(c=>c.name), it=outbox(name,{...args,wait:false},{newchat:true,say});
-    S.waitNew={known,at:Date.now(),ph:'@'+it.cid};open('@'+it.cid)};
   if(q('[data-new]')){S.drawer=false;newChat('new_control',{},'New chat');return}
   if(x=q('[data-cchat]')){const c=S.snap.concepts[+x.dataset.cchat];if(!c)return;  // F86
     newChat('concept_chat',{cid:c.concept||c.id,title:c.title||'',url:c.url||'',copy:c.copy||''},`Chat about ${c.concept||c.id}`);return}
@@ -1090,8 +1096,8 @@ document.addEventListener('click',async e=>{
   if(q('[data-kadd]')){S.kOpen=!S.kOpen;S.kFocus=S.kOpen;S.kSaid='';render(true);return}  // F87: the Concepts view's +
   if(q('[data-kcancel]')){S.kOpen=false;render(true);return}
   if(x=q('[data-about]'))return about(x.dataset.about);
-  if(x=q('[data-quick]')){S.ctx=null;S.sent.c1={at:Date.now(),len:feedOf('c1').length,pending:[]};  // F137: c1 shows it working at once
-    outbox('quick_ask',{key:x.dataset.quick},{say:`To the project chat: ${x.textContent.trim()}`,ask:x.textContent.trim()});open('c1');return}
+  if(x=q('[data-quick]')){S.ctx=null;const t=x.textContent.trim();  // B139: a new chat, not c1
+    newChat('quick_ask',{key:x.dataset.quick},t,t);return}
   if(x=q('[data-pick]')){const c=S.snap.concepts[+x.dataset.pick],o=c&&(c.options||[])[+x.dataset.o];if(!o)return;
     outbox('answer',{tid:c.id,text:`go with ${o.name}`},{concept:c.id,say:`${c.concept||c.id} · go with ${o.name}`,done:`Going with ${o.name}`});open('c1');return}
   if(x=q('[data-rel]')){const now=x.dataset.rel==='now';  // F137: through the outbox
