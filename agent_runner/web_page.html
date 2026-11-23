@@ -628,8 +628,8 @@ function talkHTML(){
 }
 function talkDock(){
   const why=micWhy(), st=TK.state;
-  const line=why||(st==='listening'?(TK.heard||'Listening…'):st==='thinking'?'Thinking…':st==='speaking'?'Speaking. Tap to stop and talk.':(TK.note||'Tap to talk'));
-  const label=why||(st==='listening'?'Stop listening':st==='speaking'?'Stop speaking and talk':'Talk');
+  const line=why||(st==='listening'?(TK.heard||'Listening…'):st==='thinking'?'Thinking…':st==='speaking'?'Speaking. Tap to stop.':(TK.note||'Tap to talk'));
+  const label=why||(st==='listening'?'Stop listening':st==='speaking'?'Stop speaking':'Talk');
   return `<div class="talk"><button type="button" class="mic ${st==='listening'?'on':st==='speaking'?'speaking':''}" data-mic aria-label="${esc(label)}" title="${esc(label)}" ${why?'disabled':''}>${st==='speaking'?I.stop:I.talk}</button><div class="talkline" role="status">${esc(line)}</div></div>`
     +box('Or type to Talk','Replies are read aloud.');
 }
@@ -672,8 +672,8 @@ function listen(){
   const why=micWhy();if(why)return toast(why,true);
   if(TK.state==='listening'){if(TK.rec)TK.rec.stop();return}
   /* B132: no speechSynthesis call before rec.start() on a plain tap: on iOS it puts the audio session in playback
-     and recognition hears nothing (talkSend unlocks speech). Only a tap that stops a reply cancels it. */
-  if(TK.state==='speaking'&&window.speechSynthesis)speechSynthesis.cancel();
+     and recognition hears nothing (talkSend unlocks speech). A tap during a reply only stops it; the next one listens. */
+  if(TK.state==='speaking'){if(window.speechSynthesis)speechSynthesis.cancel();TK.state='';TK.note='';render(true);return}
   TK.note='';
   let rec;try{rec=new SR()}catch(e){return toast(`The mic could not start: ${e.message||e}`,true)}
   TK.rec=rec;rec.lang=navigator.language||'en-US';rec.interimResults=true;rec.continuous=false;

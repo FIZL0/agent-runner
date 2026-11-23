@@ -1090,7 +1090,10 @@ eval(logic + grab('function unlockSpeech(') + grab('function talkDock(') + grab(
   listen();
   const cleared = talkDock().match(/class="talkline"[^>]*>([^<]*)</)[1];
   rec.onresult({resultIndex: 0, results: [Object.assign([{transcript: 'hello'}], {isFinal: true})]}); rec.onend();
-  console.log(JSON.stringify({before, line, cleared, sent}));`);
+  TK.state = 'speaking'; rec = null; spoke = 0;
+  listen();
+  const stopped = {state: TK.state, cancelled: spoke, listened: !!rec};
+  console.log(JSON.stringify({before, line, cleared, sent, stopped}));`);
 """
 
 
@@ -1108,6 +1111,8 @@ def test_listen_heard_nothing_b132(tmp: Path) -> None:
     eq(got.get('line'), 'Heard nothing (error: no-speech)', 'no words and error no-speech: the talk line says so')
     eq(got.get('cleared'), 'Listening…', 'the next listen clears it')
     eq(got.get('sent'), ['hello'], 'words heard are still sent')
+    eq(got.get('stopped'), {'state': '', 'cancelled': 1, 'listened': False},
+       'a tap during a reply only stops it: no listen right after a speech call')
 
 
 if __name__ == '__main__':
