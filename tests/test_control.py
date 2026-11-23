@@ -432,6 +432,77 @@ def test_second_shim_keeps_live_session():
             live.wait()
 
 
+def test_first_message_typed_after_remote_control():
+    print('B147: on Remote Control under the hidden shim the first message is not a positional prompt (it would '
+          'run before the bridge connects); it is typed in through the FIFO once the claude.ai/code link shows')
+    import os
+    import threading
+    import time
+    from agent_runner import runner as R
+    d = Path(tempfile.mkdtemp(prefix='agent-runner-first-'))
+    git(d, 'init', '-q')
+    (d / '.gitignore').write_text('.runner/\n')
+    (d / 'README.md').write_text('demo\n')
+    git(d, 'add', '-A')
+    git(d, 'commit', '-qm', 'start')
+    R.init(d)
+    ask = 'hi'
+    with mock.patch.object(K, 'ask_waiting', lambda: ''):
+        with mock.patch.object(K, 'remote_on', lambda: True):
+            argv = K.control_argv(3, 'sid', False, ask=ask, typed=True)
+            check(ask not in argv and argv[1] == '--session-id', 'remote on + ask: no positional prompt', argv)
+            check('--remote-control' in argv, 'still on Remote Control', argv)
+            eq(K.CONTROL_FIRST[0], K.control_ask(ask), 'the ask is kept to be typed in after start')
+            c1 = K.control_argv(1, 'sid', False, typed=True)
+            check(c1[1] == '--session-id' and 'summary' in K.CONTROL_FIRST[0], "c1's status ask is typed in too", c1)
+            with mock.patch.dict(os.environ, {'AGENT_RUNNER_MARKER': ''}):
+                argv = K.control_argv(3, 'sid', False, ask=ask)
+            eq(argv[1], K.control_ask(ask), 'not under a hidden shim (a terminal): the positional prompt stays')
+            eq(K.CONTROL_FIRST[0], '', 'and nothing is left to type')
+            with mock.patch.dict(os.environ, {'AGENT_RUNNER_MARKER': '/n/slot1.live'}):
+                eq(K.control_argv(3, 'sid', False, ask=ask)[1], K.control_ask(ask), "a slot's marker is not c3's shim")
+            with mock.patch.dict(os.environ, {'AGENT_RUNNER_MARKER': '/n/control3.live'}), \
+                    mock.patch.object(K.plat, 'WINDOWS', False):
+                eq(K.control_argv(3, 'sid', False, ask=ask)[1], '--session-id', "under c3's own shim it is typed in")
+            argv = K.control_argv(3, 'sid', False, ask=ask, local=True, typed=True)
+            eq(argv[1], K.control_ask(ask), '--local: the positional prompt stays')
+        with mock.patch.object(K, 'remote_on', lambda: False):
+            argv = K.control_argv(3, 'sid', False, ask=ask, typed=True)
+            eq(argv[1], K.control_ask(ask), 'Remote Control off: the positional prompt stays')
+            eq(K.CONTROL_FIRST[0], '', 'nothing to type')
+
+    marker, log_file, inbox = d / 'control3.live', d / 'control3.log', d / 'control3.in'
+    log_file.write_text('earlier run https://claude.ai/code/session_old\n', encoding='utf-8')
+    since = log_file.stat().st_size
+    os.mkfifo(inbox, 0o600)
+    rd = os.open(inbox, os.O_RDONLY | os.O_NONBLOCK)
+    linked = []
+
+    def bridge_up():
+        time.sleep(0.8)
+        linked.append(time.monotonic())
+        with open(log_file, 'a', encoding='utf-8') as fh:
+            fh.write('Remote Control active https://claude.ai/code/session_new\n')
+    t = threading.Thread(target=bridge_up)
+    t.start()
+    with mock.patch.object(K, 'FIRST_SETTLE', 0.0):
+        ok = K.type_first(marker, ask, since, wait=10)
+    sent = time.monotonic()
+    t.join()
+    got = b''
+    while True:
+        try:
+            chunk = os.read(rd, 4096)
+        except BlockingIOError:
+            break
+        if not chunk:
+            break
+        got += chunk
+    os.close(rd)
+    check(ok and linked and sent >= linked[0], 'typed only after the link showed (not the earlier run\'s)', (ok, linked))
+    eq(got, b'\x1b[200~hi\x1b[201~\r', 'the ask went through the FIFO as a paste and Enter')
+
+
 def P_lines(d: Path) -> list[str]:
     return (d / 'plan/TODO.md').read_text(encoding='utf-8').splitlines()
 
@@ -439,4 +510,5 @@ def P_lines(d: Path) -> list[str]:
 if __name__ == '__main__':
     raise SystemExit(report([test_handed_ask_as_c1_starts_fresh, test_brief_fits_session_start,
                              test_take_back_from_a_slot_just_started, test_sessions_one_and_each,
-                             test_reopen_after_shutdown, test_second_shim_keeps_live_session]))
+                             test_reopen_after_shutdown, test_second_shim_keeps_live_session,
+                             test_first_message_typed_after_remote_control]))
