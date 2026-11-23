@@ -167,12 +167,15 @@ def test_unknown(repo: Path):
     fresh(repo, 'fail')
     t = time.time()
     reads(t, t + 1)
+    check(T.pending(), 'the run is not idle while it holds them')
     eq(T.seen()['phone']['state'], 'unknown', 'it fails')
     eq(first(), 'T3', 'it holds the tagged tasks at first')
     log = (repo / '.runner/run.log').read_text(encoding='utf-8')
     eq(log.count('iPhone 15: unknown'), 1, 'said once')
     T.READINGS['phone']['since'] = t - T.UNKNOWN_HOLD - 1
+    check(not T.pending(), 'nothing is pending on it any more')
     eq((first(), first(claim=True)), ('T1', 'T1'), 'then they start all the same')
+    eq(T.wait_words(), {}, 'and nothing says they wait')
     keep, T.CHECK_TIMEOUT = T.CHECK_TIMEOUT, 0.5
     try:
         lock('hang')
@@ -222,6 +225,17 @@ def test_wait_for(repo: Path, tmp: Path):
     eq((row['state'], row['tool_wait']), ('tool', 'waits for iPhone 15, held by F389, 0 min'), 'the queue row too')
     eq(first(), 'T3', 'another task takes the slot')
     check(T.pending(), 'and the run is not idle meanwhile')
+    lock('missing unplugged')
+    t = time.time()
+    reads(t - 400, t - 399, t)
+    eq((first(), [a[1] for a in T.asks()], T.wait_words()['T2'][:38]),
+       ('T3', ['tool-phone'], 'waits for iPhone 15, unplugged, 6 min'), 'gone while T2 waits: it waits on, asked once due')
+    lock('busy F389')
+    reads(t, t)
+    d2 = R.worktree(2, 'main')  # a run that crashed as it woke T2
+    git(d2, 'checkout', '-q', '-B', 'task/T2', 'waiting/T2')
+    T.settle_ended([1, 2])
+    eq((git(repo, 'branch', '--list', 'task/T2'), list(T.parked())), ('', ['T2']), 'a start cut short: T2 waits still')
     T.READINGS.clear()  # a run that starts again
     T.settle_ended([1])
     reads(time.time())

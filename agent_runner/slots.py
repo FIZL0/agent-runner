@@ -854,7 +854,7 @@ def start(n: int, task, branch: str, model: str, idle: int, slots: int, held: fr
     if wait:
         if wait.get('dirty'):
             git('reset', '-q', 'HEAD~1', cwd=d)  # its edits are uncommitted again, as the session left them
-        if p := wake(n, tid, d, wait, model, idle):
+        if p := shared_tools.wake(n, tid, d, wait, model, idle):
             shared_tools.resumed(tid, wait)
             return p
         log(f'slot {n}: {tid}\'s waiting session cannot be resumed; a new one starts on the work it left')
@@ -864,13 +864,9 @@ def start(n: int, task, branch: str, model: str, idle: int, slots: int, held: fr
     note_model(sid, model)
     if not (pid := MUX.open(n, d, prompt, sid, model, idle, slot_env(n), logfile)):
         log(f'slot {n}: the session for {tid} did not start in {MUX.where(n)}')
-        if wait:  # its work is on waiting/<tid> still: no task/<tid> stays for a merge to take it half done
-            clean(d)
-            git('checkout', '-q', '--detach', cwd=d)
-            git('branch', '-D', f'task/{tid}')
+        shared_tools.not_started(tid, d, wait)
         return None
-    if wait:
-        shared_tools.resumed(tid, wait)
+    shared_tools.resumed(tid, wait)
     log(f'slot {n}: {tid} ({task[1]}; {", ".join(sorted(task[2])) or "no files listed"})', EV_STARTED, tid)
     for where in edited_elsewhere(task[2]):
         log(f'slot {n}: {tid} heads into uncommitted edits outside the runner, in {where}: '
@@ -921,27 +917,6 @@ def move_transcript(sid: str, d: Path) -> bool:
     return True
 
 
-def wake(n: int, tid: str, d: Path, wait: dict, model: str, idle: int):
-    """F168: resume the session that ran `run wait-for` in slot n, its tool free. None when it cannot be resumed."""
-    sid = wait.get('sid') or ''
-    if not sid or sid == '(unknown)' or not move_transcript(sid, d) or \
-            on_harness(model) != bool(HARNESS.find_transcript(sid)):
-        return None
-    logfile, since = slot_header(n, f'{tid} woken {sid}')
-    prompt = shared_tools.woken_prompt(tid, wait, where_now(n, d, wait.get('slot')))
-    if not (pid := MUX.open(n, d, prompt, sid, model, idle, slot_env(n), logfile, resume=True)):
-        log(f'slot {n}: the session for {tid} did not resume in {MUX.where(n)}')
-        return None
-    log(f'slot {n}: {tid} goes on: {wait["tool"]} is free', EV_STARTED, tid)
-    return pid, sid, since
-
-
-def where_now(n: int, d: Path, was) -> str:
-    """Where a resumed session is, for its prompt: its paths change with the slot."""
-    return ('in the same worktree' if was in (None, n) else
-            f'in another worktree: {d} (paths you saw under {SLOTS_DIR / f"s{was}"} are here now)')
-
-
 def answer_ask(n: int, tid: str, d: Path, ask: dict, model: str, idle: int):
     """F102: resume the session that ran `run ask` in slot n, the person's answer its next message. None when it
     cannot be resumed (no session id, no transcript, or the session did not start)."""
@@ -951,7 +926,7 @@ def answer_ask(n: int, tid: str, d: Path, ask: dict, model: str, idle: int):
     if on_harness(model) != bool(HARNESS.find_transcript(sid)):
         return None  # F142: the chain starts it on the other kind of agent, which cannot read this session
     answer = P.last_answer(tid, todo=C.todo, about=ask.get('question', '')) or '(no answer was noted: decide yourself, and say why in the journal)'
-    where = where_now(n, d, ask.get('slot'))
+    where = shared_tools.where_now(n, d, ask.get('slot'))
     logfile, since = slot_header(n, f'{tid} answered {sid}')
     prompt = ANSWERED.format(question=ask.get('question', ''), answer=answer, where=where, tid=tid)
     if not (pid := MUX.open(n, d, prompt, sid, model, idle, slot_env(n), logfile, resume=True)):

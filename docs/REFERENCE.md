@@ -912,7 +912,7 @@ connect = "Connect iPhone 15"    # the Needs you wording while it is missing; de
   record is in `<notes>/<ID>.wait`. Once the tool is free, the same session goes on ahead of other tasks, longest
   wait first, and this survives a run restart. `wait-for` is refused while the session itself holds a tool; when the
   tool is free after all it says so, and the agent takes it and goes on.
-- **Idle.** A run waiting on a busy tool is not idle: it does not power off or auto release while it waits. A
+- **Idle.** A run waiting on a busy tool, or on one whose check still holds its tasks as unknown, is not idle: it does not power off or auto release while it waits. A
   missing tool does not keep it up.
 - **What shows.** A Tools line on `status`, the TUI Status panel and the Run card: `Tools: iPhone 15: held by F389,
   12 min`. A task that waits reads `waits for iPhone 15, held by F389, 12 min` on its queue row, and in `plan`,
@@ -920,7 +920,7 @@ connect = "Connect iPhone 15"    # the Needs you wording while it is missing; de
 - **Needs you.** A missing tool with tasks waiting for it is one Needs you item (label `TOOL`) after 3 min, and
   clears by itself when the tool is back. A busy tool never is one.
 - **Without the setting** nothing changes. The run keeps its readings in `.runner/TOOLS.json`, so a restart goes on
-  with them (a file older than 10 min is not used); a stop removes it.
+  with them (a file older than 10 min is not used).
 
 ### Disk
 

@@ -39,8 +39,8 @@ SOON = 5.0            # s to the next check after a reading not confirmed yet
 CONFIRM = 2           # readings in a row before a change to or from missing or unknown counts: a blip changes nothing
 UNKNOWN_HOLD = 300.0  # s a check that fails holds the tasks that need the tool; then they start all the same
 MISSING_ASK = 180.0   # s a tool is missing, with tasks waiting for it, before it is a Needs you item
-FRESH_WAIT = 3.0      # s a start waits for its own check; a slower answer is used on the next tick
-FRESH_FOR = 15.0      # s that answer may be old by then
+FRESH_WAIT = CHECK_TIMEOUT + 1  # s a start waits for its own check, run off the scheduling thread: a check is quick
+FRESH_FOR = 15.0      # s an answer a start asked for may be old
 FILE_AGE = 600.0      # s past which TOOLS.json is an ended run's
 LABEL = 'TOOL'        # the Needs you label
 EV_TOOL = 'tool missing'   # a missing tool is put under Needs you (text: the ask)
@@ -187,7 +187,7 @@ def seen() -> dict[str, dict]:
     if READINGS:
         with LOCK:
             return {n: dict(r) for n, r in READINGS.items() if n in specs()}
-    return {n: r for n, r in _file().items() if n in specs()}
+    return {n: r for n, r in _file().items() if n in specs()} if S.run_up() else {}
 
 
 def now(name: str) -> dict | None:
@@ -211,9 +211,10 @@ def absorb_quiet(name: str, got: tuple[str, str], at: float) -> None:
                       'raw_who': got[1], 'at': at, 'asked': False}
 
 
-def start() -> None:
+def start(free: list[int] = ()) -> None:
     """The run's checkers, one thread per tool; nothing without the setting. Readings an earlier run left minutes ago
-    (an upgrade's restart) keep their times."""
+    (an upgrade's restart) keep their times. `free`: the slots with no session, for `settle_ended`."""
+    settle_ended(list(free))
     stop(keep=True)
     STOP.clear()
     READINGS.update({n: r for n, r in _file().items() if n in specs()})
@@ -242,6 +243,7 @@ def _watch(name: str, wake: threading.Event) -> None:
         wake.clear()
         try:
             once(name)
+            prune()
         except Exception as e:  # noqa: BLE001 - the next check looks again; a checker never ends the run
             log(f'shared tool {name}: {e}')
         wake.wait(pause(name))
@@ -273,9 +275,14 @@ def names_task(who: str, tid: str) -> bool:
     return bool(re.search(rf'(?<![A-Za-z0-9]){re.escape(tid)}(?![A-Za-z0-9])', who or ''))
 
 
+def expired(r: dict) -> bool:
+    """The tool's check has failed for so long that it holds no task any more."""
+    return r['state'] == UNKNOWN and time.time() - r['since'] >= UNKNOWN_HOLD
+
+
 def _blocks(state: str, who: str, r: dict, tid: str) -> bool:
     if state == UNKNOWN:
-        return not (r['state'] == UNKNOWN and time.time() - r['since'] >= UNKNOWN_HOLD)
+        return not expired(r)
     return state == MISSING or state == BUSY and not names_task(who, tid)
 
 
@@ -308,6 +315,8 @@ def _ready(tid: str, name: str) -> bool:
     if name not in THREADS:
         got = check(name)
         return not _blocks(*got, READINGS.get(name) or {'state': '', 'since': 0}, tid)
+    if (r := READINGS.get(name)) and expired(r):
+        return True  # its failing check holds nothing any more, so no start waits for it
     t = time.time()
     asked = ASKED.get(name, 0.0)
     if t - asked > FRESH_FOR:
@@ -390,8 +399,15 @@ def park(n: int, tid: str, sid: str, tool: str) -> bool:
     return True
 
 
+def park_end(n: int, tid: str, sid: str, end: dict) -> bool:
+    """Slot n's session ended with the end mark `end`: parked when it waits for a tool (`park`)."""
+    return end.get('how') == 'wait' and end.get('tid') == tid and park(n, tid, sid, end.get('text', ''))
+
+
 def resumed(tid: str, w: dict) -> None:
     """Task `tid`'s session goes on: its kept branch goes, and it has the tool until the session ends."""
+    if not w:
+        return
     git('branch', '-D', f'waiting/{tid}')
     mark(tid).write_text(json.dumps({**w, 'running': True}), encoding='utf-8')
 
@@ -424,20 +440,31 @@ def settle_ended(slots: list[int]) -> None:
         if last and last[0] == n:
             take_end(n, S.C)
             park(n, e['tid'], last[1], e.get('text', ''))
-    for tid in parked():
-        if not waited(tid) and not git('rev-parse', '--verify', '-q', f'refs/heads/task/{tid}').returncode:
+    for tid in parked():  # a start that crashed as it woke one: the work is still on waiting/<tid>
+        if waited(tid) and not git('rev-parse', '--verify', '-q', f'refs/heads/task/{tid}').returncode:
+            at = [n for n in range(1, 100) if (S.SLOTS_DIR / f's{n}').is_dir() and
+                  git('branch', '--show-current', cwd=S.SLOTS_DIR / f's{n}').stdout.strip() == f'task/{tid}']
+            if at and at[0] not in slots:  # adopted: its session is up
+                resumed(tid, _read(mark(tid)))
+                continue
+            if at:
+                S.clean(S.SLOTS_DIR / f's{at[0]}')
+                git('checkout', '-q', '--detach', cwd=S.SLOTS_DIR / f's{at[0]}')
+            git('branch', '-D', f'task/{tid}')
+        elif not waited(tid) and not git('rev-parse', '--verify', '-q', f'refs/heads/task/{tid}').returncode:
             git('branch', '-M', f'task/{tid}', f'waiting/{tid}')
     prune()
 
 
 def prune() -> None:
     """Drop the waits of tasks ticked or dropped meanwhile (DONE.md holds them)."""
-    if not (ws := parked()):
+    if not (ws := {f.stem: w for f in S.C.notes().glob('*.wait') if (w := _read(f))}):
         return
     gone = {tid.rstrip('.') for _, box, tid, _, _ in P.iter_tasks(P.lines(S.C.done)) if box == 'x'}
     for tid in ws:
         if tid in gone:
-            log(f'{tid}: done or dropped while it waited for {ws[tid]["tool"]}; its kept work is deleted')
+            if not ws[tid].get('running'):
+                log(f'{tid}: done or dropped while it waited for {ws[tid]["tool"]}; its kept work is deleted')
             forget(tid)
 
 
@@ -452,6 +479,37 @@ def woken_prompt(tid: str, w: dict, where: str) -> str:
     why = 'its check fails, so nobody knows whether it is free' if r.get('state') == UNKNOWN else 'it is free'
     return WOKEN.format(label=specs().get(w['tool'], {}).get('label', w['tool']), why=why, where=where, tid=tid,
                         tool=w['tool'])
+
+
+def wake(n: int, tid: str, d: Path, wait: dict, model: str, idle: int):
+    """F168: resume the session that ran `run wait-for` in slot n, its tool free. None when it cannot be resumed."""
+    from agent_runner import slots as L  # it reads this module
+    sid = wait.get('sid') or ''
+    if not sid or sid == '(unknown)' or not L.move_transcript(sid, d) or \
+            L.on_harness(model) != bool(L.HARNESS.find_transcript(sid)):
+        return None
+    logfile, since = L.slot_header(n, f'{tid} woken {sid}')
+    prompt = woken_prompt(tid, wait, where_now(n, d, wait.get('slot')))
+    if not (pid := L.MUX.open(n, d, prompt, sid, model, idle, L.slot_env(n), logfile, resume=True)):
+        log(f'slot {n}: the session for {tid} did not resume in {L.MUX.where(n)}')
+        return None
+    log(f'slot {n}: {tid} goes on: {wait["tool"]} is free', S.EV_STARTED, tid)
+    return pid, sid, since
+
+
+def where_now(n: int, d: Path, was) -> str:
+    """Where a resumed session is, for its prompt: its paths change with the slot."""
+    return ('in the same worktree' if was in (None, n) else
+            f'in another worktree: {d} (paths you saw under {S.SLOTS_DIR / f"s{was}"} are here now)')
+
+
+def not_started(tid: str, d: Path, w: dict) -> None:
+    """Task `tid`'s session did not start in worktree `d`: its work is on waiting/<tid> still, and no task/<tid> stays
+    for a merge to take it half done."""
+    if w:
+        S.clean(d)
+        git('checkout', '-q', '--detach', cwd=d)
+        git('branch', '-D', f'task/{tid}')
 
 
 # --- what the pages say -----------------------------------------------------------------------------------------
@@ -503,9 +561,11 @@ def waiting(ls: list[str] | None = None, st: dict | None = None) -> dict[str, li
 
 
 def pending(tried=()) -> bool:
-    """A task waits for a busy tool, so it goes on by itself: the run is not idle (a missing one may stay so)."""
+    """A task waits for a tool that is busy, or whose failing check holds it a few minutes more: it goes on by itself,
+    so the run is not idle (a missing tool may stay so)."""
     rs = seen()
-    return bool(rs) and any(rs.get(n, {}).get('state') == BUSY and not names_task(rs[n]['who'], tid)
+    return bool(rs) and any((r := rs.get(n)) and (r['state'] == UNKNOWN and not expired(r) or
+                                                  r['state'] == BUSY and not names_task(r['who'], tid))
                             for tid, ns in waiting().items() if tid not in tried for n in ns)
 
 
@@ -555,7 +615,7 @@ def wait_words(ls: list[str] | None = None, st: dict | None = None, t: float | N
     for tid, names in waiting(ls, st).items():
         for name in names:
             r, u = rs.get(name), us.get(name)
-            if r and r['state'] != FREE and not (r['state'] == BUSY and names_task(r['who'], tid)):
+            if r and r['state'] != FREE and not expired(r) and not (r['state'] == BUSY and names_task(r['who'], tid)):
                 said = words(r, t)
             elif u:
                 said = f'held by {u[0]}' + (f', {mins(u[1], t)}' if u[1] else '')
