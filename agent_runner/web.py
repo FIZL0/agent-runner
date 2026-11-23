@@ -12,9 +12,8 @@
     POST /act?t=TOKEN            {"name": ACTION, "args": {...}}: one of `ui_model.ACTIONS` (plan add, plan edit,
                                  drop, shelve, release, chat, answer, take, move), its result as JSON
     GET  /terminal/NAME?t=TOKEN  where slot NAME's (or c1's, or cN's) tmux pane is served by ttyd, started on demand;
-                                 without ttyd, the built-in view to use instead (or, with no tmux, the feed only)
+                                 without ttyd, how to install it (or, with no tmux, the feed only)
     GET  /feed/NAME?t=TOKEN      F74: session NAME's transcript as say/you/tool/out entries (`ui_model.feed`)
-    GET  /pane/NAME?t=TOKEN      F74: the built-in terminal view: NAME's pane as text now (`ui_model.capture`)
     GET  /concept/ID?t=TOKEN     F74: concept ID's local page copy (<notes>/concepts/ID.html), sandboxed
     GET  /diff/NAME?t=TOKEN      F75: slot NAME's diff so far (`slot_diff`), for its diff tab
     POST /upload?t=TOKEN&name=N  F79: an attachment (the body, as is) kept under <notes>/uploads; its path on this
@@ -154,12 +153,15 @@ FEED_ONLY = ('There is no tmux here (Windows, or it is not installed), so {name}
 
 
 def terminal_fallback(name: str) -> dict:
-    """F74: the terminal tab without ttyd: with tmux, the built-in view (`mode` 'builtin': GET `capture` every
-    `every` s, POST the `keys` action to type), and how to install ttyd for the live one; else the feed only."""
+    """F74: the terminal tab without ttyd: with tmux, how to install ttyd (`mode` 'install'; C24: ttyd is the only
+    Terminal view, and the chat works meanwhile); else the feed only."""
     if U.terminal_mode() == 'feed':
         return {'ok': False, 'mode': 'feed', 'out': FEED_ONLY.format(name=name), 'feed': f'feed/{name}'}
-    return {'ok': False, 'mode': 'builtin', 'out': TTYD_INSTALL + ' Until then the built-in view shows the pane.',
-            'capture': f'pane/{name}', 'every': U.CAPTURE_EVERY, 'feed': f'feed/{name}'}
+    return {'ok': False, 'mode': 'install', 'feed': f'feed/{name}',
+            'out': TTYD_INSTALL + f' Until then, the chat shows {name} and takes your messages.'}
+
+
+WEB_REFUSED = {'keys'}  # C24: actions the web does not take (typing into a pane went with the built-in view)
 
 
 DIFF_BYTES = 200_000  # the most of a slot's diff the diff tab shows
@@ -403,8 +405,6 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(200, json.dumps(self.server.terms.open(path.split('/')[2])))
         if path.startswith('/feed/'):
             return self.send(200, json.dumps(U.feed(path.split('/')[2]), ensure_ascii=False))
-        if path.startswith('/pane/'):
-            return self.send(200, json.dumps(U.capture(path.split('/')[2]), ensure_ascii=False))
         if path.startswith('/diff/'):
             return self.send(200, json.dumps(slot_diff(path.split('/')[2]), ensure_ascii=False))
         if path.startswith('/concept/'):
@@ -425,6 +425,8 @@ class Handler(BaseHTTPRequestHandler):
                 raise ValueError('args must be an object')
         except (ValueError, AttributeError) as e:
             return self.send(400, json.dumps({'ok': False, 'out': f'bad request: {e}'}))
+        if name in WEB_REFUSED:
+            return self.send(404, json.dumps({'ok': False, 'out': f'no such action on the web: {name}'}))
         r = U.act(name, **args)
         self.server.snaps.at = 0.0  # the next snapshot shows what the action changed
         self.send(200, json.dumps(r, ensure_ascii=False))
