@@ -493,7 +493,9 @@ class HomeHandler(BaseHTTPRequestHandler):
             return self.send(404, {'ok': False, 'out': f'no such project: {key}'})
         link = self.server.link(root)
         if link is None:
-            return self.send(502, f'<p>{root.name} has no run up, so it has no run app to open. '
+            return self.send(502, '<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1">'
+                             '<meta name="color-scheme" content="light dark"><title>Runner Home</title>'
+                             f'<p>{root.name} has no run up, so it has no run app to open. '
                              f'<a href="/?{u.query}">Back to Home</a> to start it.</p>', 'text/html; charset=utf-8')
         port, token = link
         if parts[3].startswith('t/'):

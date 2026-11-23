@@ -2194,7 +2194,9 @@ def test_home_screen_b179(tmp: Path) -> None:
             check(tag in page, f'the {what} has {tag}')
         check("add('manifest',manifestLink(HB,HKEY,T))" in page and "add('apple-touch-icon'" in page,
               f'the {what} links its manifest and icon')
-        for a in re.findall(r'<a class="(?:prow|btn acc|brand)[^>]*>', page):
+        links = re.findall(r'<a class="(?:prow|btn acc|brand)[^>]*>', page)
+        check(len(links) >= 4, f'the {what} has the switcher, All projects and project card links', links)
+        for a in links:
             check('_blank' not in a, f'{what}: a link between projects opens no tab', a)
     if not shutil.which('node'):
         print('  (no node here: the Home Screen script test is skipped)')
