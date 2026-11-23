@@ -783,6 +783,9 @@ def control_new_hidden(n: int, cmd: list[str], name: str, wait: float = CONTROL_
     if not pid:
         print(f'control {n} could not start hidden: {why}', file=sys.stderr)
         return 1
+    if why:  # B131: another `control --new` started control n a moment ago: its link is in its log already
+        since = 0
+        print(f'control {n} {why} (pid {pid}): this ask did not start another')
     where = f'a hidden terminal ({shown_cmd()} attach c{n} shows it), its output in {out}'
     if not remote_on():
         why = remote_off_why() if C.run['remote'] == 'auto' else ''

@@ -743,11 +743,18 @@ def hidden_control(n: int, cmd: list[str], wait: float | None = None) -> tuple[i
     return hidden_shim(f'control{n}', cmd, wait)
 
 
+SHIM_ALREADY = 'it was already up'  # B131: hidden_shim's why beside the pid of a session it found running
+
+
 def hidden_shim(stem: str, cmd: list[str], wait: float | None = None) -> tuple[int, str]:
     """`hidden_control` for any hidden session named `stem` (control3, board): its job, marker, log, FIFO and
-    attach socket are `<notes>/<stem>.job|.live|.log|.in|.sock`. (pid, '') once it is up, else (0, why)."""
+    attach socket are `<notes>/<stem>.job|.live|.log|.in|.sock`. (pid, '') once it is up, else (0, why).
+    B131: when `<stem>.live` already names a live pid (two `control --new` that picked the same number), that
+    session is left as it is, its job, marker and log untouched, and the answer is (its pid, SHIM_ALREADY)."""
     from agent_runner.slots import SHIM_WAIT
     job, marker = C.notes(f'{stem}.job'), C.notes(f'{stem}.live')
+    if (up := marker_pid(marker)) and up != os.getpid() and plat.alive(up):
+        return up, SHIM_ALREADY
     ended = marker.with_suffix('.exit')
     marker.unlink(missing_ok=True)
     ended.unlink(missing_ok=True)

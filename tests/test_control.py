@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 import subprocess
 import tempfile
+import types
 import uuid
 from pathlib import Path
 from unittest import mock
@@ -363,6 +364,55 @@ def test_reopen_after_shutdown():
         check(not R.C.notes('control6.pid').exists(), 'c6 will not be reopened')
 
 
+def test_second_shim_keeps_live_session():
+    print('B131: a second hidden_shim for a control session that is up returns its pid and leaves .job/.live alone')
+    from agent_runner import runner as R
+    d = Path(tempfile.mkdtemp(prefix='agent-runner-control-'))
+    git(d, 'init', '-q')
+    (d / '.gitignore').write_text('.runner/\n')
+    (d / 'README.md').write_text('demo\n')
+    git(d, 'add', '-A')
+    git(d, 'commit', '-qm', 'start')
+    R.init(d)
+    live = subprocess.Popen(['sleep', '30'])  # the first control 13, up
+    try:
+        job, marker, logf = (R.C.notes(f'control13.{x}') for x in ('job', 'live', 'log'))
+        job.write_text('{"argv": ["first"]}', encoding='utf-8')
+        marker.write_text(str(live.pid), encoding='utf-8')
+        logf.write_text('Remote Control active · https://claude.ai/code/session_01First\n', encoding='utf-8')
+        started = []
+        no_shim = mock.patch.object(K, 'sp', types.SimpleNamespace(Popen=lambda *a, **k: started.append(a),
+                                                                  DEVNULL=subprocess.DEVNULL))
+        with no_shim:
+            eq(K.hidden_control(13, ['control', '13'], wait=0.5), (live.pid, K.SHIM_ALREADY),
+               'the second one answers with the live pid')
+        eq(started, [], 'and starts no second shim')
+        eq(job.read_text(encoding='utf-8'), '{"argv": ["first"]}', '.job is left as it was')
+        eq(marker.read_text(encoding='utf-8'), str(live.pid), '.live is left as it was')
+        check(logf.exists() and 'session_01First' in logf.read_text(encoding='utf-8'), 'and its log too')
+
+        import contextlib
+        import io
+        out = io.StringIO()
+        with no_shim, mock.patch.object(R.feed, 'remote_on', lambda: True), contextlib.redirect_stdout(out):
+            eq(R.feed.control_new_hidden(13, ['control', '13'], 'c13', wait=0), 0,
+               'control --new on that number is not an error')
+        check('already up' in out.getvalue() and 'session_01First' in out.getvalue(),
+              'it says so, with the link already in its log', out.getvalue())
+
+        live.kill()
+        live.wait()
+        with no_shim:
+            pid, why = K.hidden_control(13, ['control', '13'], wait=0.3)
+        check(pid == 0 and len(started) == 1, 'a marker whose pid has ended does not stop a new start', (pid, why))
+        check(not marker.exists() and '"control", "13"' in job.read_text(encoding='utf-8'),
+              'the stale marker is cleared and the job rewritten')
+    finally:
+        if live.poll() is None:
+            live.kill()
+            live.wait()
+
+
 def P_lines(d: Path) -> list[str]:
     return (d / 'plan/TODO.md').read_text(encoding='utf-8').splitlines()
 
@@ -370,4 +420,4 @@ def P_lines(d: Path) -> list[str]:
 if __name__ == '__main__':
     raise SystemExit(report([test_handed_ask_as_c1_starts_fresh, test_brief_fits_session_start,
                              test_take_back_from_a_slot_just_started, test_sessions_one_and_each,
-                             test_reopen_after_shutdown]))
+                             test_reopen_after_shutdown, test_second_shim_keeps_live_session]))
