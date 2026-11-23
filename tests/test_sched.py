@@ -190,9 +190,9 @@ def test_critical_waits_merge(tmp: Path):
     git(repo, 'init', '-q', '-b', 'main')
     (repo / 'plan').mkdir()
     todo = ('# TODO\n\n### Next\n\n'
+            '- [ ] **N1** normal, listed first | files: n.py\n'
             '- [ ] **B1** fix (follow-up, critical) | files: a.py\n'
             '- [ ] **X1** blocker | files: a.py\n'
-            '- [ ] **N1** normal | files: n.py\n'
             '- [ ] **N2** normal too | files: a.py\n')
     (repo / 'plan/TODO.md').write_text(todo, encoding='utf-8')
     (repo / 'plan/DONE.md').write_text('# DONE\n', encoding='utf-8')
@@ -218,6 +218,11 @@ def test_critical_waits_merge(tmp: Path):
     eq(why.get('N1'), ('a critical task goes first', 'B1 starts once the merge it waits for lands'),
        'and N1 says why it does not start')
     eq(S.choose(h, {'B1'}, 'main')[0], 'N1', 'a critical task tried this run keeps nothing')
+    keep, S.HOLD_FOR_MERGE = S.HOLD_FOR_MERGE, 0
+    try:
+        eq(S.choose(S.held({}, 'main'), set(), 'main')[0], 'N1', 'a merge stuck past HOLD_FOR_MERGE keeps nothing')
+    finally:
+        S.HOLD_FOR_MERGE = keep
     # X1's merge lands: a.py and the ticked line on main, its branch deleted
     git(repo, 'merge', '-q', '--no-ff', '-m', 'Merge X1', 'task/X1')
     (repo / 'plan/TODO.md').write_text(todo.replace('[ ] **X1**', '[x] **X1**'), encoding='utf-8')
