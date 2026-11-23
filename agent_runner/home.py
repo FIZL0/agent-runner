@@ -13,8 +13,8 @@
 Off until installed: nothing runs and nothing listens until `home install`. The server is the same kind as a
 run's page (web.py): standard library only, token-gated, bound to every interface so a phone on the LAN or on
 Tailscale reaches it, on port 8770 (`port` in the registry). A run that finds the port taken, or Home installed
-on it, serves its own page on a free port instead (web.start_web), and Home routes to it; while Home serves, the
-run's link is Home's /p/KEY/ (B146, site_links), so one device address switches between runners:
+at all (F165), serves its own page on 127.0.0.1 only (web.start_web), and Home routes to it; the run's link is
+Home's /p/KEY/ (B146, site_links), so one device address switches between runners:
 
     GET  /?t=TOKEN               the Home page: F134: the run app (web_page.html) in Home mode, its All projects
                                  view: every project, running, idle or off, what needs you, buttons, Devices
@@ -277,6 +277,22 @@ def site_links(root: Path, serves=None, https=None) -> list[str]:
         return []
 
 
+def why_closed(root: Path) -> str:
+    """F165: why Home does not open the page of the run at `root`, which only Home can, and what opens it."""
+    reg = load_registry()
+    if serving(reg['port']):
+        from agent_runner.config import main_checkout
+        try:
+            root = main_checkout(Path(root))
+        except (OSError, SystemExit):
+            pass
+        return f'Runner Home does not list this project: `agent-runner home add {root}` opens it there'
+    if home_on():
+        return 'Runner Home is down, and only Home opens it: `agent-runner home install` starts Home again'
+    return ('nothing opens it: only Runner Home can, and Home is not installed; `agent-runner home install` gives '
+            'every project on this device one address')
+
+
 def project_row(key: str, root: Path, info=None, facts=None, needs=needs_said) -> dict:
     """What Home shows of one project: {'key', 'name', 'root', 'state' (running|idle|off), 'paused',
     'stopping', 'slots', 'running' (task ids), 'left', 'needs' (how many), 'asks' (their 'ID - what to do'
@@ -287,7 +303,7 @@ def project_row(key: str, root: Path, info=None, facts=None, needs=needs_said) -
     # B135: Home only asks whether there is a link, so no Tailscale lookup per project on each refresh
     # B146: nor the device site lookup (Home is the device site; it would ask itself)
     f = facts(root, run) if facts else cmds.run_facts(root, run, https=lambda port, token: [],
-                                                       site=lambda r: [])
+                                                       site=lambda r: [f'p/{key}/'])
     up = bool(run.get('up'))
     running = sorted(str(v) for v in (run.get('running') or {}).values() if v) if up else []
     words = str(run.get('state') or '')
@@ -838,12 +854,13 @@ def sh(argv: list[str]) -> tuple[int, str]:
 
 
 def serving(port: int, host: str = '127.0.0.1') -> bool:
-    """Does Home itself answer on `port` (not a run's page that holds it)?"""
+    """Does Home itself answer on `port` (not a run's page that holds it)? F165: asked for its page, not
+    /projects: those rows run commands in every project, so a slow one would read as Home being down."""
     conn = http.client.HTTPConnection(host, port, timeout=3)
     try:
-        conn.request('GET', '/projects?' + urlencode({'t': home_token()}))
+        conn.request('GET', '/?' + urlencode({'t': home_token()}))
         r = conn.getresponse()
-        return r.status == 200 and 'projects' in json.loads(r.read() or b'{}')
+        return r.status == 200 and b'Runner Home' in r.read()
     except (OSError, ValueError, http.client.HTTPException):
         return False
     finally:
@@ -865,7 +882,7 @@ def installed(kind: str | None = None, call=sh) -> bool:
 
 def home_on() -> bool:
     """F94: has `home install` turned Home on (and no `uninstall` off since)? Runs read it from the registry,
-    with no call to the service manager: only then does a run move off a taken port."""
+    with no call to the service manager: then only Home opens a run's page (F165)."""
     try:
         return bool(json.loads(registry_file().read_text(encoding='utf-8')).get('installed'))
     except (OSError, ValueError, AttributeError):
@@ -904,7 +921,7 @@ def install(kind: str | None = None, call=sh, out=print, check=wait_serving, htt
     for the page to answer and print the link and a QR code. The service gets the PATH and runs-folder
     settings of this shell (a scheduled task runs with the user's own logon environment)."""
     kind = kind or os_kind()
-    mark_installed(True)  # Home is on from now on: a run that finds its port taken moves to a free one
+    mark_installed(True)  # Home is on from now on: a run that is up leaves Home's port within seconds
     reg = load_registry()
     home_token()  # made now, so the link below holds it
     log = config_dir() / 'home.log'
@@ -929,8 +946,8 @@ def install(kind: str | None = None, call=sh, out=print, check=wait_serving, htt
              'windows': f'scheduled task {SERVICE} (at logon)'}[kind]
     out(f'Runner Home is installed: {where}, on port {reg["port"]}.')
     if not check(reg['port']):
-        out(f'It does not answer on port {reg["port"]} yet: a run may hold that port (it moves to a free one '
-            f'when it next starts; Home keeps trying meanwhile), or see {log}.')
+        out(f'It does not answer on port {reg["port"]} yet: a run may hold that port (one on an older '
+            f'version gives it up when it next starts; Home keeps trying meanwhile), or see {log}.')
     urls = offer_https(reg['port'], urls, call=call, out=out, ask=ask)
     out('Open it on your phone (same network or Tailscale):\n  ' + '\n  '.join(urls))
     # F134: the QR code holds the https link when there is one (the mic needs it), else the LAN address
@@ -957,7 +974,7 @@ def uninstall(kind: str | None = None, call=sh, out=print) -> int:
     (config_dir() / 'home-serve.cmd').unlink(missing_ok=True)
     mark_installed(False)
     out('Runner Home is uninstalled' + (f' (but: {"; ".join(bad)})' if bad else '') +
-        f'. Its projects and token stay in {config_dir()}; runs serve their own pages as before.')
+        f'. Its projects and token stay in {config_dir()}; a run serves its own page again from its next start.')
     return 1 if bad and kind == 'windows' else 0
 
 
@@ -991,8 +1008,8 @@ def serve(port: int | None = None) -> int:
     try:
         srv = HomeServer(home_token(), port, stamp=package_stamp if can_restart() else None)
     except OSError as e:
-        print(f'agent-runner home: cannot serve on port {port} ({e}): a run may hold it; it moves to a free '
-              f'port when it next starts', file=sys.stderr)
+        print(f'agent-runner home: cannot serve on port {port} ({e}): a run may hold it; with Home installed '
+              f'it gives the port up', file=sys.stderr)
         return 1
     print(f'Runner Home: {" or ".join(home_urls(srv.server_address[1]))}', flush=True)
     srv.vitals.start()  # F95: the day of samples builds up while Home runs, page open or not

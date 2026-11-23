@@ -799,9 +799,13 @@ def test_run_moves_off_the_port(tmp: Path) -> None:
         with mock.patch.dict(W.os.environ, {'AGENT_RUNNER_NO_WEB': ''}), \
                 mock.patch.dict(S.C.run, {'web': True, 'web_port': port}), mock.patch.object(S, 'log') as lg:
             srv = W.start_web()
-        try:  # B146: another run holds the port: a free one, with Home off too
-            check(srv is not None and srv.server_address[1] != port, 'B146: Home off: still served, on another port', srv)
-            has(' '.join(str(c) for c in lg.call_args_list), f'port {port} is taken', 'and the run log says why')
+        try:  # F165: another run holds the port, no Home: no port of its own, and Home's install is offered
+            eq((srv.server_address[0], srv.server_address[1] != port), ('127.0.0.1', True),
+               'F165: Home off, the port taken: served on 127.0.0.1 only')
+            logged = ' '.join(str(c) for c in lg.call_args_list)
+            has(logged, f'port {port} is taken', 'and the run log says why')
+            has(logged, 'agent-runner home install', "and offers Home's install")
+            check(f':{srv.server_address[1]}' not in logged, 'no port of its own in the run log', logged)
         finally:
             if srv:
                 srv.stop()
@@ -811,9 +815,13 @@ def test_run_moves_off_the_port(tmp: Path) -> None:
             srv = W.start_web()
         try:
             check(srv is not None and srv.server_address[1] != port, 'the page is served on another port', srv)
+            eq(srv.server_address[0], '127.0.0.1', 'F165: Home installed: on 127.0.0.1 only')
+            eq(srv.terms.bind, '127.0.0.1', 'its terminals too')
+            has(' '.join(W.Terminals.argv(srv.terms, 's1', '', 9)), '-i 127.0.0.1', 'ttyd is told so')
             logged = ' '.join(str(c) for c in lg.call_args_list)
-            has(logged, f'port {port} is taken', 'the run log says why')
-            has(logged, 'Runner Home opens it', 'and that Home opens it')
+            has(logged, 'Runner Home is down', 'the run log says Home is down')
+            has(logged, 'agent-runner home install', 'and how to start it')
+            check(f':{srv.server_address[1]}' not in logged, 'and not the port', logged)
             us = W.url_file().read_text(encoding='utf-8').split()
             has(us[0], f':{srv.server_address[1]}/', 'its notes hold the port it got, which Home reads')
         finally:
@@ -852,12 +860,17 @@ def test_device_site_link(tmp: Path) -> None:
         check(srv is not None and srv.server_address[1] != port, 'another run holds the port: served on a free one', srv)
         mine = srv.server_address[1]
         eq(srv.terms.port, mine, "the terminal tab's ttyd ports follow the port it got")
-        bare = f'http://{socket.gethostname()}:{mine}/?t={W.web_token()}'
+        bare = f'http://127.0.0.1:{mine}/?t={W.web_token()}'
         eq(W.url_file().read_text(encoding='utf-8').split(), [bare], 'web.url keeps its own port (Home routes to it)')
         with mock.patch.object(S, 'run_up', return_value=True), mock.patch.object(W, 'tailscale_https_urls', nots), \
                 mock.patch.object(W, 'lan_ip', lambda: ''):
-            eq(W.page_line(), f'run page: {bare}', 'no device site: status gives the bare port link')
-            eq(M.run_facts(root, {'up': True}, nots)['link'], bare, 'and so does run_facts (the picker)')
+            has(W.page_line(), 'Home is not installed; `agent-runner home install`', 'no device site: status offers it')
+            check(str(mine) not in W.page_line(), 'F165: and names no port', W.page_line())
+            eq(M.run_facts(root, {'up': True}, nots)['link'], '', 'and run_facts (the picker) has no link')
+            eq(H.project_row('proj', root, info=lambda r: {'up': True}, needs=lambda r: (0, []))['page'], 'p/proj/',
+               'F165: Home still opens it')
+            eq(W.https_base(lambda p, t: ['https://x/?t=x']), '', 'F138: no option links to it')
+            check(str(mine) not in W.no_https_why(), 'and the reason names no port')
             home = H.serve_home(H.home_token(), 0, '127.0.0.1', roots=lambda: [root], rows=lambda: [])
             hp = home.server_address[1]
             H.save_registry({**H.load_registry(), 'port': hp})
@@ -872,10 +885,13 @@ def test_device_site_link(tmp: Path) -> None:
                'F134: the /p/KEY/ links themselves put the https one first')
             H.remove_project(str(root))
             eq(H.site_links(root), [], 'Home does not list the project: no device site link')
+            has(W.page_line(), 'home add ', 'F165: status says how to list it')
             H.add_project(str(root))
             home.stop()
             home = None
-            eq(W.page_line(), f'run page: {bare}', 'Home down: the bare port link again')
+            H.mark_installed(True)
+            has(W.page_line(), 'Runner Home is down.*home install', 'F165: Home down: status says so, not the port')
+            H.mark_installed(False)
         srv.stop()
         # Home installed on a port nobody holds: the run still keeps off it, so Home can start later
         held.close()
@@ -886,7 +902,7 @@ def test_device_site_link(tmp: Path) -> None:
                 mock.patch.dict(S.C.run, {'web': True, 'web_port': port}), mock.patch.object(S, 'log') as lg:
             srv = W.start_web()
         check(srv is not None and srv.server_address[1] != port, "Home installed: a run never binds Home's port", srv)
-        has(' '.join(str(c) for c in lg.call_args_list), 'kept for it', 'and the run log says why')
+        eq(srv.server_address[0], '127.0.0.1', 'F165: it is on 127.0.0.1 only')
     finally:
         for s in (srv, home):
             if s:
@@ -895,9 +911,107 @@ def test_device_site_link(tmp: Path) -> None:
         os.chdir(old)
 
 
+def test_one_address(tmp: Path) -> None:
+    print('F165: with Home a run is on 127.0.0.1 unless the person set web_port; HomeWatch moves it and says when Home goes')
+    from agent_runner.config import _cfg
+    root = project(tmp / 'proj')
+    (root / '.gitignore').write_text('.runner/\n', encoding='utf-8')
+    git(root, 'add', '-A')
+    git(root, 'commit', '-qm', 'start')
+    with socket.socket() as s:
+        s.bind(('0.0.0.0', 0))
+        port = s.getsockname()[1]
+    S.init(root)
+    H.save_registry({**H.load_registry(), 'scan': [str(tmp)], 'port': port + 1 if port < 65000 else port - 1})
+    hp = H.load_registry()['port']
+    nots = lambda p, t: []  # noqa: E731
+    log: list[str] = []
+    srv = home = None
+
+    def fresh():
+        _cfg.cache_clear()
+        S.init(root)
+
+    def start(**run_settings):
+        log.clear()
+        with mock.patch.dict(W.os.environ, {'AGENT_RUNNER_NO_WEB': ''}), mock.patch.object(W, 'HOME_LOOK', 999), \
+                mock.patch.dict(S.C.run, {'web': True, **run_settings}):
+            return W.start_web()
+    patches = [mock.patch.object(S, 'log', log.append), mock.patch.object(W, 'tailscale_https_urls', nots),
+               mock.patch.object(W, 'lan_ip', lambda: ''), mock.patch.object(S, 'run_up', return_value=True),
+               mock.patch('agent_runner.cmds.run_info', return_value={'up': True})]
+    for p in patches:
+        p.start()
+    try:
+        print('web_port set by the person: open as before, Home or not')
+        for name in ('runner.toml', 'runner.local.toml'):
+            old = (root / name).read_text(encoding='utf-8') if (root / name).exists() else ''
+            (root / name).write_text(f'[run]\nweb_port = {port}\n', encoding='utf-8')
+            fresh()
+            H.mark_installed(True)
+            srv = start()
+            eq(srv.server_address, ('0.0.0.0', port), f'{name}: on its port, every interface')
+            has(log[-1], f':{port}/', 'its link is printed')
+            W.HomeWatch(srv).look()
+            eq(srv.server_address, ('0.0.0.0', port), 'and it stays there')
+            srv.stop()
+            H.save_registry({**H.load_registry(), 'port': port})
+            check(W.home_only(), "set to Home's own port: Home keeps it")
+            H.save_registry({**H.load_registry(), 'port': hp})
+            (root / name).write_text(old or '[run]\nslots = 2\n', encoding='utf-8')
+        fresh()
+
+        print('Home installed while the run is up')
+        H.mark_installed(False)
+        srv = start(web_port=port)
+        eq(srv.server_address, ('0.0.0.0', port), 'no Home: on web_port, every interface')
+        watch = W.HomeWatch(srv)
+        watch.look()
+        eq(srv.server_address[0], '0.0.0.0', 'and it stays there')
+        H.mark_installed(True)
+        watch.look()
+        eq((srv.server_address[0], srv.server_address[1] != port), ('127.0.0.1', True), 'it leaves the port for 127.0.0.1')
+        with socket.socket() as s:
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            s.bind(('0.0.0.0', port))  # raises when still held
+        eq((srv.terms.bind, srv.terms.port), ('127.0.0.1', srv.server_address[1]), 'its terminals follow')
+        key = W.web_token()
+        eq(get(f'http://127.0.0.1:{srv.server_address[1]}/?t={key}')[0], 200, 'it answers there')
+        eq(H.run_link(root), (srv.server_address[1], key), 'Home finds it there')
+
+        print('Home down, then back')
+        log.clear()
+        for _ in range(W.HOME_CHECK):
+            watch.look()
+        eq(log, [], 'one miss (a restart of Home) is not said')
+        for _ in range(3 * W.HOME_CHECK):
+            watch.look()
+        eq(len(log), 1, 'two in a row are, once')
+        has(log[0], 'Runner Home is down.*agent-runner home install', 'with how to start Home')
+        home = H.serve_home(H.home_token(), hp, '127.0.0.1', rows=lambda: [])
+        for _ in range(W.HOME_CHECK):
+            watch.look()
+        has(log[-1], f':{hp}/p/proj/', "Home back: the run log has Home's link")
+        eq(get(f'http://127.0.0.1:{hp}/p/proj/?t={H.home_token()}')[0], 200, "and Home opens the run's page")
+        check(not any(str(srv.server_address[1]) in x for x in [*log, W.page_line()]), 'no port of its own anywhere', log)
+        srv.stop()
+        srv = start(web_port=port)
+        eq(srv.server_address[0], '127.0.0.1', 'Home installed and serving: 127.0.0.1 from the start')
+        eq(log, [f'run page: http://{socket.gethostname()}:{hp}/p/proj/?t={H.home_token()}' +
+                 ('' if shutil.which('ttyd') else ' (no terminal tab: ttyd is not installed)')], "one line: Home's link")
+        srv.stop()
+        check(not srv.go_private(), 'a stopping run does not move')
+    finally:
+        mock.patch.stopall()
+        for s in (srv, home):
+            if s:
+                s.stop()
+
+
 if __name__ == '__main__':
     raise SystemExit(report([in_tmp(test_registry), in_tmp(test_rows), in_tmp(test_actions), in_tmp(test_routing),
                            in_tmp(test_terminal_tab), in_tmp(test_restart_on_upgrade), in_tmp(test_restart_waits),
                            in_tmp(test_restart_on_windows),
                            in_tmp(test_run_link), in_tmp(test_units), in_tmp(test_https_links), in_tmp(test_qr),
-                           in_tmp(test_run_moves_off_the_port), in_tmp(test_device_site_link)]))
+                           in_tmp(test_run_moves_off_the_port), in_tmp(test_device_site_link),
+                           in_tmp(test_one_address)]))

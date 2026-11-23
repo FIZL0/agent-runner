@@ -253,8 +253,23 @@ def test_start(tmp: Path) -> None:
         with mock.patch.object(S, 'run_up', return_value=True):
             eq(W.page_line(), f'run page: {url} (or {by_ip})', 'status prints it while the run is up')
         eq(U.SEND[0], U.to_c1, "the run's chat goes through ui_model.to_c1, which finds c1 by its tag")
+        eq(srv.server_address[0], '0.0.0.0', 'F165: no Home: on every interface')
     finally:
         srv.stop()
+    # F165: with Home installed it is on 127.0.0.1, and nothing shown names its port
+    with mock.patch.dict(W.os.environ, {'AGENT_RUNNER_NO_WEB': ''}), mock.patch.object(W, 'home_port', lambda: 8770), \
+            mock.patch.object(W, 'site_urls', lambda root=None: ['http://box:8770/p/proj/?t=HT']), \
+            mock.patch.object(W, 'tailscale_https_urls', lambda port, t: []), mock.patch.object(S, 'log') as lg:
+        srv = W.start_web()
+        try:
+            own = srv.server_address[1]
+            eq((srv.server_address[0], srv.terms.bind), ('127.0.0.1', '127.0.0.1'), 'Home installed: 127.0.0.1 only')
+            logged = ' '.join(str(c) for c in lg.call_args_list)
+            check('http://box:8770/p/proj/?t=HT' in logged and str(own) not in logged, "the run log has Home's link only", logged)
+            with mock.patch.object(S, 'run_up', return_value=True):
+                eq(W.page_line(), 'run page: http://box:8770/p/proj/?t=HT', 'and so has status')
+        finally:
+            srv.stop()
 
 
 def post_raw(url: str, data: bytes, ctype: str = 'image/png') -> tuple[int, dict]:

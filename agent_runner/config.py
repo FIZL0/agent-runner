@@ -123,7 +123,7 @@ DEFAULTS: dict = {
                                 # (with remote_slots), as before
         'web': True,            # the run page on the web, served by the run from this machine on web_port for the
                                 # LAN/Tailscale (its address, with the token it needs, in `status` and the run log)
-        'web_port': 8770,       # where the run page is served; its terminal tab's ttyd processes take the next ports
+        'web_port': 8770,       # where the run page is served (its ttyds take the next ports); with Home, only if set (F165)
         'silent': False,        # phone pushes from the run's Remote Control sessions: true = none after each
                                 # one's start push (that one cannot be stopped), false = Claude Code's usual
         'control': True,        # a run opens control session c1 beside it (`agent-runner control`); false: none

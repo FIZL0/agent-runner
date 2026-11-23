@@ -492,7 +492,7 @@ def cmd_sheet(argv: list[str], prog: str = f'{RUNNER} sheet') -> int:
         print(f'{a.html}: {len(sheet.questions(spec))} questions; publish it with the Artifact tool, with '
               f'capabilities {json.dumps(sheet.CAPABILITIES)} (F54: Send writes the picks to its db)')
         print('F138: Send also gives a link that answers the run directly' if link else
-              'F138: ' + NO_PICK_HTTPS.format(port=web.run_port()).replace('put no option buttons on the page and ', ''))
+              'F138: ' + NO_PICK_HTTPS.format(why=web.no_https_why()).replace('put no option buttons on the page and ', ''))
         return 0
     if a.picks is None and not a.go:
         print(f'{f}: {len(sheet.questions(spec))} questions, ok')
@@ -506,7 +506,7 @@ def cmd_sheet(argv: list[str], prog: str = f'{RUNNER} sheet') -> int:
     return plan.main(['confirm', a.id, sheet.picks_note(spec, picks)])
 
 
-NO_PICK_HTTPS = ('no https address for the run page (Tailscale Serve proxies none to port {port}): '
+NO_PICK_HTTPS = ('no https address for the run page ({why}): '
                  'put no option buttons on the page and keep today\'s flow (the person replies, or Sends)')
 
 
@@ -528,7 +528,7 @@ def cmd_pick_links(argv: list[str], prog: str = f'{RUNNER} pick-links') -> int:
     init()
     links = web.pick_links(a.id, opts)
     if not links:
-        print(f'{prog}: ' + NO_PICK_HTTPS.format(port=web.run_port()), file=sys.stderr)
+        print(f'{prog}: ' + NO_PICK_HTTPS.format(why=web.no_https_why()), file=sys.stderr)
         return 1
     for o, link in zip(opts, links):
         print(f'{o} {link}')
@@ -1147,9 +1147,8 @@ def run_facts(root: Path, run: dict, https=None, site=None) -> dict:
         if run.get('up'):
             us = c.notes('web.url').read_text(encoding='utf-8').split()
             if us:
-                if site is None:
-                    from agent_runner.home import site_links as site
-                us = site(root) or us
+                from agent_runner import home, web  # F165: own_links: never a page only Home opens
+                us = (site or home.site_links)(root) or web.own_links(us)
             out['link'] = page_link(us, https)
     except (OSError, SystemExit, ValueError, KeyError, TypeError):
         pass
@@ -1283,7 +1282,7 @@ def launcher_text_painted(row: dict, said: str, p: PickerPaint) -> str:
                                                      if slots_words(row['run']) else [])
                         + ([p.c('yellow' if row.get('stopping') else 'dim', left)] if left else []))
     link = f'\x1b[4;{p.code("bblue")}m{row["link"]}{RESET}' if row['link'] else \
-        p.c('dim', 'no run page (the run serves none)')
+        p.c('dim', 'no run page link (`status` says why)')
     button = lambda k, label: p.c('dim', '[') + p.key(k) + f' {label}' + p.c('dim', ']')  # noqa: E731
     out = [p.c('accent', row['name'], True) + ' ' + button('0', 'all runs') + '  ' + p.c('dim', str(row['root'])),
            status, link, '',
@@ -1319,7 +1318,7 @@ def launcher_text(row: dict, said: str = '', paint: PickerPaint | None = None) -
         return launcher_text_painted(row, said, paint)
     status = ' · '.join(x for x in ('● run up', slots_words(row['run']), left_words(row)) if x)
     out = [f'{BOLD}{row["name"]}{RESET} [0 all runs]  {row["root"]}', status,
-           row['link'] or f'{DIM}no run page (the run serves none){RESET}', '',
+           row['link'] or f'{DIM}no run page link (`status` says why){RESET}', '',
            '  w  open the run page in the browser', '  t  open the terminal UI (agent-runner ui)',
            '  c  copy the link', '  q  back · ⏎ terminal UI', '']
     if said:

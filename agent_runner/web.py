@@ -1,7 +1,7 @@
 """F66: the run page on the web. A run serves it from this machine (`[run] web`, on by default) on
-`[run] web_port` (8770), bound to every interface so a phone on the LAN or Tailscale reaches it. F94/B146: with
-that port taken (another run's page, Runner Home), or kept for Runner Home (installed, on that port), on a free
-port instead, which Runner Home routes to; the link shown is then Home's /p/KEY/ while Home serves.
+`[run] web_port` (8770), bound to every interface so a phone on the LAN or Tailscale reaches it. F165: one address
+for every project: with Runner Home installed (and no web_port set by the person), or with that port taken, it
+listens on 127.0.0.1 only, on a free port that only Home opens (`start_web`); the link shown is Home's /p/KEY/.
 
     GET  /?t=TOKEN               F79: the page (web_page.html), the run app: a chat app over F74's model, light
                                  and dark by the browser's setting, laid out for a phone and a desktop; F81: it
@@ -154,6 +154,21 @@ def site_urls(root: Path | None = None) -> list[str]:
         return []
 
 
+LOCAL = '127.0.0.1'
+
+
+def own_links(urls: list[str]) -> list[str]:
+    """F165: of a run's own addresses (<notes>/web.url), those another device may open: not the 127.0.0.1 one,
+    which is there for Runner Home only and is never shown."""
+    return [u for u in urls if urlsplit(u).hostname != LOCAL]
+
+
+def closed_line() -> str:
+    """F165: why nothing opens this run's page, and what opens it (home.why_closed)."""
+    from agent_runner.home import why_closed
+    return why_closed(S.C.root)
+
+
 def https_first(urls: list[str], https=None) -> list[str]:
     """`urls` with the Tailscale Serve https addresses for the first one's port ahead of them, at its path
     (/p/KEY/ through the device site, B146) and with its token (B130: Safari's mic needs https)."""
@@ -169,12 +184,14 @@ def https_first(urls: list[str], https=None) -> list[str]:
 
 def page_line(site=None) -> str:
     """`run page: URL` while a run serves the page (what `status` prints), else ''. B146: the device site's
-    /p/KEY/ address when one routes this project (site_urls), else the run's own; B130: a Tailscale Serve https
+    /p/KEY/ address when one routes this project (site_urls), else the run's own; F165: with neither, why; B130: a Tailscale Serve https
     address for that port comes first (Safari's mic needs https); <notes>/web.url keeps the run's own http ones,
     which Home reads its port from."""
     try:
         if S.run_up() and (us := url_file().read_text(encoding='utf-8').split()):
-            us = https_first((site or site_urls)() or us)
+            us = https_first((site or site_urls)() or own_links(us))
+            if not us:
+                return f'run page: {closed_line()}'
             return f'run page: {us[0]}' + (f' (or {us[1]})' if len(us) > 1 else '')
     except (OSError, ValueError):
         pass
@@ -223,9 +240,12 @@ def pick_code(tid: str) -> str:
 
 
 def run_port() -> int:
-    """The run page's port: the one a run serves it on (<notes>/web.url), else `[run] web_port`."""
+    """The run page's port: the one a run serves it on (<notes>/web.url), else `[run] web_port`; 0 when only
+    Runner Home opens it (F165)."""
     try:
         if us := url_file().read_text(encoding='utf-8').split():
+            if not own_links(us):
+                return 0
             if p := urlsplit(us[0]).port:
                 return p
     except (OSError, ValueError):
@@ -236,11 +256,19 @@ def run_port() -> int:
 def https_base(https=None) -> str:
     """The run page's https address with no path and no token (`https://host[:port]`), from Tailscale Serve;
     '' when it gives none (no https: the pages keep today's flow)."""
-    for u in (https or tailscale_https_urls)(run_port(), 'x'):
+    port = run_port()
+    for u in (https or tailscale_https_urls)(port, 'x') if port else []:
         s = urlsplit(u)
         if s.scheme == 'https' and s.netloc:
             return f'https://{s.netloc}'
     return ''
+
+
+def no_https_why() -> str:
+    """Why `https_base` is '' (F165: without naming a port only Home opens)."""
+    if port := run_port():
+        return f'Tailscale Serve proxies none to port {port}'
+    return 'it is reached through Runner Home only, which takes no option links'
 
 
 def pick_link(base: str, tid: str, code: str, option: str = '') -> str:
@@ -449,7 +477,8 @@ def slot_diff(name: str) -> dict:
 
 
 class Terminals:
-    """One ttyd per session, started the first time its tab opens, on web_port+1, +2, …; each serves only under
+    """One ttyd per session, started the first time its tab opens, on the page's port+1, +2, …, on the page's own
+    interface (F165: 127.0.0.1 when only Home opens the page, which tunnels to it); each serves only under
     /t/TOKEN/NAME/, so the address is as secret as the page's. C26: it runs `attach NAME` for each browser,
     a client of the session's own socket (F88) like any other, so watching it moves no other client."""
 
@@ -484,7 +513,8 @@ class Terminals:
                                 stderr=sp.PIPE, start_new_session=True)
                 try:  # one that cannot start (its port taken) ends at once: say so, not a dead frame
                     err = proc.communicate(timeout=0.8)[1].decode(errors='replace').strip()
-                    return {'ok': False, 'out': f'ttyd for {name} ended at once (port {port}): {err[-300:]}'}
+                    return {'ok': False, 'out': f'ttyd for {name} ended at once' + (
+                        '' if self.bind == LOCAL else f' (port {port})') + f': {err[-300:]}'}
                 except sp.TimeoutExpired:
                     pass
                 self.procs[name] = (proc, port, sock)
@@ -927,7 +957,7 @@ class Handler(BaseHTTPRequestHandler):
 
 class WebServer(ThreadingHTTPServer):
     daemon_threads = True
-    allow_reuse_address = True
+    allow_reuse_address = os.name != 'nt'  # F165: on Windows it would let two runs share one port
 
     def __init__(self, token: str, port: int, bind: str = '0.0.0.0', snap=run_snapshot):
         self.token, self.snaps, self.stopped = token, Snapshots(snap), threading.Event()
@@ -935,12 +965,34 @@ class WebServer(ThreadingHTTPServer):
         self.speaker = speech.Speaker()  # F158
         super().__init__((bind, port), Handler)
         self.terms = Terminals(token, self.server_address[1], bind)
+        self.moving = threading.Lock()
+
+    def private(self) -> bool:
+        return self.server_address[0] == LOCAL
+
+    def go_private(self) -> bool:
+        """F165: leave the port it listens on for a free one on 127.0.0.1 (Runner Home was installed). What is
+        being answered goes on; terminals open again through Home. False when the run is stopping."""
+        with self.moving:
+            if self.stopped.is_set():
+                return False
+            # the new one first: with no port to be had, the page stays where it is
+            new = socket.create_server((LOCAL, 0))
+            self.shutdown()
+            self.server_close()
+            self.terms.close()
+            self.socket, self.server_address = new, new.getsockname()
+            self.server_port = self.server_address[1]
+            self.terms = Terminals(self.token, self.server_port, LOCAL)
+            threading.Thread(target=self.serve_forever, name='run-page', daemon=True).start()
+            return True
 
     def stop(self) -> None:
         self.stopped.set()
-        self.shutdown()
-        self.server_close()
-        self.terms.close()
+        with self.moving:
+            self.shutdown()
+            self.server_close()
+            self.terms.close()
         self.speaker.close()
 
 
@@ -971,34 +1023,99 @@ def home_port() -> int:
     return 0
 
 
+def home_only() -> bool:
+    """F165: is this run's page Runner Home's alone to open? With Home installed, unless the person set `[run]
+    web_port` (runner.toml or runner.local.toml) to a port other than Home's own, which is kept for Home."""
+    port = home_port()
+    return bool(port) and ('web_port' not in S.C.given.get('run', ()) or S.C.run.get('web_port') == port)
+
+
+def write_urls(srv: WebServer) -> list[str]:
+    """Keep the page's own addresses in <notes>/web.url (Home reads the port and token there): returns them."""
+    port = srv.server_address[1]
+    urls = [page_url(port, srv.token, LOCAL)] if srv.private() else page_urls(port, srv.token)
+    url_file().write_text('\n'.join(urls) + '\n', encoding='utf-8')
+    return urls
+
+
+class HomeWatch:
+    """F165: while a run is up, what Runner Home does to its page. `look` every HOME_LOOK s: Home installed
+    meanwhile: the page leaves its port for 127.0.0.1; on 127.0.0.1 and nothing opens it on two checks in a row
+    (a restart of Home is over by then): the run log says so and how to start Home, once, and when it is back."""
+
+    def __init__(self, srv: WebServer, said: str = ''):
+        self.srv, self.said, self.missed, self.looks = srv, said, 0, 0
+
+    def look(self) -> None:
+        if not self.srv.private():
+            if not home_only() or not self.srv.go_private():
+                return
+            write_urls(self.srv)
+            S.log('run page: Runner Home is installed, so only Home opens it now')
+            self.missed = 0
+            return
+        self.looks += 1
+        if self.looks % HOME_CHECK:
+            return
+        from agent_runner.home import site_links, why_closed
+        if urls := site_links(S.C.root, https=lambda port, token: []):
+            self.missed = 0
+            if self.said:
+                self.said = ''
+                S.log(f'run page: {" or ".join(https_first(urls))}')
+            return
+        self.missed += 1
+        if self.missed >= 2 and (why := why_closed(S.C.root)) != self.said:
+            self.said = why
+            S.log(f'run page: {why}')
+
+    def loop(self) -> None:
+        while not self.srv.stopped.wait(HOME_LOOK):
+            try:
+                self.look()
+            except Exception as e:  # noqa: BLE001 - the run goes on whatever Home does
+                S.log(f'run page: looking for Runner Home failed ({type(e).__name__}: {e})')
+
+
+HOME_LOOK = 2.0  # s between two looks (Home's install waits 8 s for its port)
+HOME_CHECK = 10  # looks between two checks that Home opens the page
+
+
 def start_web() -> WebServer | None:
     """The run's start: serve the page when `[run] web` is on (the run log gets its address), else nothing.
+    F165: on `[run] web_port` for every interface, but with Runner Home installed (`home_only`), or that port
+    taken by another, on 127.0.0.1 for Home alone: no project is on a port of its own unless the person set one.
+    Without Home the first run up has web_port, and another one's log and status offer `home install`.
     A port in use costs the page, not the run. AGENT_RUNNER_NO_WEB=1 (the test suites) turns it off too."""
     url_file().unlink(missing_ok=True)
     r = S.C.run
     if not r.get('web', True) or os.environ.get('AGENT_RUNNER_NO_WEB'):
         return None
     port = int(r.get('web_port', 8770))
-    srv = None
-    if port and port == home_port():  # B146: Home's port is Home's, even while Home is not up yet
-        why = 'Runner Home is installed, so its port is kept for it'
+    srv, why = None, ''
+    if home_only():  # B146: Home's port is Home's, even while Home is not up yet
+        if 'web_port' in S.C.given.get('run', ()):
+            why = 'Runner Home is installed, so its port is kept for it'
     else:
         try:
             srv = serve(web_token(), port)
         except OSError as e:
             why = f'port {port} is taken ({e})'
     if srv is None:
-        try:  # F94/B146: another run or Runner Home holds the port: a free one, which Home routes to
-            srv = serve(web_token(), 0)
-            S.log(f'run page: {why}, so it is on port {srv.server_address[1]} (Runner Home opens it)')
+        try:
+            srv = serve(web_token(), 0, LOCAL)
         except OSError as e2:
-            S.log(f'run page: cannot serve on port {port} ({e2}); set [run] web_port, or web = false')
+            S.log(f'run page: cannot serve it ({e2}); set [run] web_port, or web = false')
             return None
-    urls = page_urls(srv.server_address[1], srv.token)
-    url_file().write_text('\n'.join(urls) + '\n', encoding='utf-8')
+        if why:
+            S.log(f'run page: {why}, so only Runner Home opens it')
+    urls = own_links(write_urls(srv))
     # B129: the run log names a Tailscale Serve https address first too (the mic needs https); web.url stays http.
     # B146: the device site's /p/KEY/ address first when one routes this project
     shown = https_first(site_urls() or urls)
     shown += [x for x in urls if x not in shown]
-    S.log(f'run page: {" or ".join(shown)}' + ('' if shutil.which('ttyd') else ' (no terminal tab: ttyd is not installed)'))
+    closed = '' if shown else closed_line()
+    S.log(f'run page: {" or ".join(shown) or closed}' +
+          ('' if shutil.which('ttyd') else ' (no terminal tab: ttyd is not installed)'))
+    threading.Thread(target=HomeWatch(srv, closed).loop, name='run-page-home', daemon=True).start()
     return srv
