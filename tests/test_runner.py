@@ -1570,7 +1570,7 @@ print('https://claude.ai/code/artifact/k1-page')
 '''
 
 
-def test_publish_page_f106f(tmp: Path):
+def test_publish_page_f106f(repo: Path, tmp: Path):
     print('F106f: run publish-page puts the page at /concept/ID, starts the one-shot with it, records the url, and '
           'done takes it as the concept\'s page')
     if R.plat.WINDOWS:
@@ -1617,15 +1617,19 @@ def test_publish_page_f106f(tmp: Path):
     check('k1-page' in argv[1], 'a second publish updates the same page', argv[1])
 
     R.init(root)
-    token = W.web_token()
-    srv = W.serve(token, 0, '127.0.0.1', snap=lambda: {'queue': []})
     try:
-        with urllib.request.urlopen(f'http://127.0.0.1:{srv.server_address[1]}/concept/K1?t={token}',
-                                    timeout=10) as resp:
-            eq(resp.read().decode('utf-8'), page.read_text(encoding='utf-8'), 'the run page shows it at /concept/K1')
+        token = W.web_token()
+        srv = W.serve(token, 0, '127.0.0.1', snap=lambda: {'queue': []})
+        try:
+            with urllib.request.urlopen(f'http://127.0.0.1:{srv.server_address[1]}/concept/K1?t={token}',
+                                        timeout=10) as resp:
+                eq(resp.read().decode('utf-8'), page.read_text(encoding='utf-8'),
+                   'the run page shows it at /concept/K1')
+        finally:
+            srv.stop()
+        eq(PC.concept_url('K1', R.C), 'https://claude.ai/code/artifact/k1-page', 'concept_url reads the recorded url')
     finally:
-        srv.stop()
-    eq(PC.concept_url('K1', R.C),'https://claude.ai/code/artifact/k1-page', 'concept_url reads the recorded url')
+        R.init(repo)  # the tests after this one run on the suite's repo
 
     r = run(root, 'done', 'K1', 'K1: two layouts', '--no-test', env=env)
     check(r.returncode == 0, 'done needs no --artifact once publish-page recorded the url', r.stdout + r.stderr)
@@ -8079,7 +8083,7 @@ def main() -> int:
                        lambda: test_short_titles_and_since(repo), lambda: test_structured_events(repo),
                        lambda: test_board_follows_run(repo, tmp),
                        lambda: test_remote_sweep(repo, tmp), lambda: test_feed_resume(repo, tmp),
-                       lambda: test_concepts_waiting(repo), lambda: test_publish_page_f106f(tmp),
+                       lambda: test_concepts_waiting(repo), lambda: test_publish_page_f106f(repo, tmp),
                        lambda: test_person_waiting(repo), lambda: test_control_server_old_agent(repo, tmp),
                        lambda: test_drop_or_change_running(repo), lambda: test_tell_running(repo),
                        lambda: test_close_idle_controls(repo), lambda: test_close_control_tiers(repo),
