@@ -51,6 +51,10 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 - Fixes: in the harness loop, the finish tool refuses until `done` or `done --blocked` has succeeded for the slot's
   task. It says to run `done`, or `run ask` when only the person can answer, and the session goes on. Before, a
   session could end with its task still open and nothing under Needs you (B155).
+- Fixes: `run finish`, run from a slot's agent on a `task/<ID>` branch, is refused until `done` or `done --blocked`
+  has succeeded, even when the worktree has no uncommitted changes. The refusal says to run `done` or `run ask`. Before,
+  B155 guarded only the harness loop's finish tool, so `run finish` typed through bash or in a Claude Code session could
+  end the session with its task still open and nothing under Needs you (B156).
 
 ## 0.61.0 (2026-11-23)
 

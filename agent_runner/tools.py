@@ -81,9 +81,15 @@ def cmd_finish(argv: list[str]) -> int:
         print('run finish: not in a runner slot, so there is no session to end. Summary noted here only:\n'
               f'  {a.summary}')
         return 0
-    from agent_runner.config import finished_mark
+    from agent_runner.config import RUNNER, finished_mark
     from agent_runner.gitops import git
     done = (m := finished_mark()) and m.exists()  # this slot's `done` succeeded
+    if not done and (tid := task_here()):  # B156: else the session ends with its task open, nothing under Needs you
+        print(f'run finish: refused: `done` has not run for {tid}, so the session goes on. Run `{RUNNER} done {tid} '
+              '"<commit message>"` first (add --blocked "<why + what would unblock it>" when you are stuck), then '
+              f'finish. When only a person can answer what you need, run `{RUNNER} ask "<question>"` instead.',
+              file=sys.stderr)
+        return 1
     if not done and git('status', '--porcelain', cwd=Path.cwd()).stdout.strip():
         print('run finish: `done` has not run, and this worktree has uncommitted changes: they would be left '
               'behind. Run `done <ID> "<msg>"` (or `--blocked "<why>"`) first, then finish.', file=sys.stderr)
