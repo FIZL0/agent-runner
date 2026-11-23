@@ -287,3 +287,10 @@ _Said_: attach
 _On screen_: attach s2; Back: Ctrl-b d
 _In code_: cmd_attach, attach_session, session_socket, slotN.sock, controlN.sock
 _Avoid_: open (that is Open a slot), connect
+
+**Follow an upgrade**:
+When the run restarts on a newer agent-runner, an open TUI starts again on it where it was and an open run page reloads
+_Said_: follow an upgrade of the run
+_On screen_: (no wording: the TUI starts again, the run page reloads)
+_In code_: follow_upgrade, followVersion, newer_version, PLACE_ENV, snapshot 'version'
+_Avoid_: hot reload, auto-refresh

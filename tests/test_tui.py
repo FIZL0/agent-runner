@@ -11,6 +11,9 @@ drafts, Esc), and each action, with the runner call and F74's session actions sw
 """
 from __future__ import annotations
 
+import json
+import os
+import sys
 import tempfile
 from pathlib import Path
 from unittest import mock
@@ -1109,6 +1112,47 @@ def test_run_controls() -> None:
         check('[D drop]' not in drawn(p).text(), "a landing slot's feed shows no task controls")
 
 
+def test_follow_upgrade_f90() -> None:
+    """F90: a snapshot from a newer run makes the TUI start again (a stub exec) with the same argv and its place
+    in AGENT_RUNNER_TUI_PLACE; an equal, older or missing version does not; the new TUI reopens there."""
+    from agent_runner import __version__
+    major, rest = __version__.split('.', 1)
+    newer = f'{int(major) + 1}.{rest}'
+    for v, why in ((__version__, 'an equal version'), ('0.0.1', 'an older version'), ('', 'no version'),
+                   (None, 'a snapshot without the key')):
+        snap = dict(SNAP, version=v) if v is not None else dict(SNAP)
+        p = page(snap)
+        p.refresh()
+        check(not p.restart, f'{why}: no restart')
+    p = page(dict(SNAP, version=newer))
+    p.key('3')
+    p.key('DOWN')
+    p.key('ENTER')  # the main pane, on B2's first tab
+    p.drafts['edit:B2'] = 'half a thought'
+    p.refresh()
+    check(p.restart, 'a newer run version: restart')
+    got = []
+    T.follow_upgrade(p, exec_=lambda path, argv, env: got.append((path, argv, env)))
+    eq(len(got), 1, 'exec called once')
+    path, argv, env = got[0]
+    eq((path, argv), (sys.executable, list(getattr(sys, 'orig_argv', None) or [sys.executable] + sys.argv)),
+       'the same interpreter and argv')
+    place = json.loads(env[T.PLACE_ENV])
+    eq((place['panel'], place['sel'], place['main'], place['for']), (3, 'B2', True, newer),
+       'the place: the focused panel, the selection, the main pane, the version it restarts for')
+    tab = p.tab()[0]
+    q = page(dict(SNAP, version=newer))
+    with mock.patch.dict(os.environ, {T.PLACE_ENV: env[T.PLACE_ENV]}):
+        q.restore_place(T.taken_place())
+        check(T.PLACE_ENV not in os.environ, 'the place is taken once')
+    eq((q.panel, q.sel().get('id'), q.main, q.tab()[0], q.drafts.get('edit:B2')),
+       (3, 'B2', True, tab, 'half a thought'), 'the new TUI reopens where it was')
+    q.refresh()
+    check(not q.restart, 'never a second restart for the version it restarted for')
+    check(T.newer_version('0.60.0', '0.59.9') and not T.newer_version('0.59.0', '0.59.0')
+          and T.newer_version('0.100.0', '0.99.0') and not T.newer_version('', '0.1.0'), 'newer_version')
+
+
 def test_cli() -> None:
     from agent_runner import cli
     eq(cli.COMMANDS.get('ui'), ('tui', 'main'), '`agent-runner ui` runs the terminal Run page')
@@ -1123,4 +1167,5 @@ if __name__ == '__main__':
                                test_concept_chat, test_new_concept,
                                test_escape_tail, test_colours, test_row_ground_and_fill, test_reorder, test_parked,
                                test_themes,
-                               test_idle_run_of_another_project, test_older_run, test_run_controls, test_cli]))
+                               test_idle_run_of_another_project, test_older_run, test_run_controls,
+                               test_follow_upgrade_f90, test_cli]))

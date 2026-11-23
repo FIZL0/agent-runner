@@ -47,6 +47,7 @@ test drives it with a stub window; the feed, diff, attach and browser are passed
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import subprocess as sp
@@ -68,6 +69,30 @@ PANELS = [(1, 'Status', 'status'), (2, 'Sessions', 'sessions'), (3, 'Queue', 'qu
 NEW_TASK = {'id': '+', 'new': True}  # the queue's last row: a new task
 NEW_CHAT = {'name': '+', 'new': True}  # Sessions' last row: a new control session
 NEW_CONCEPT = {'id': '+', 'new': True}  # F87: Concepts' last row: a new concept (a K task)
+PLACE_ENV = 'AGENT_RUNNER_TUI_PLACE'  # F90: where the TUI was, handed to itself across an upgrade restart
+
+
+def newer_version(v: str, than: str) -> bool:
+    """F90: version `v` is newer than `than` (dotted numbers; False when either is missing)."""
+    num = lambda s: tuple(int(x) for x in re.findall(r'\d+', s or ''))  # noqa: E731
+    return bool(v and than) and num(v) > num(than)
+
+
+def follow_upgrade(page, exec_=None) -> None:
+    """F90: start this TUI again on the run's newer version, with the same argv, its place (`saved_place`) in
+    PLACE_ENV so it reopens where it was. Call with the terminal restored (curses ended)."""
+    env = dict(os.environ, **{PLACE_ENV: json.dumps(page.saved_place())})
+    sys.stdout.flush()
+    (exec_ or os.execve)(sys.executable, list(getattr(sys, 'orig_argv', None) or [sys.executable] + sys.argv), env)
+
+
+def taken_place() -> dict:
+    """F90: the place an upgrade restart handed on (once), else {}."""
+    try:
+        place = json.loads(os.environ.pop(PLACE_ENV, '') or '{}')
+    except ValueError:
+        return {}
+    return place if isinstance(place, dict) else {}
 KIND_COLOUR = {'B': 'red', 'F': 'green', 'C': 'blue', 'R': 'magenta', 'V': 'yellow', 'K': 'cyan'}
 KINDS = ('B', 'F', 'T', 'D', 'R', 'C', 'K', 'V')  # the direct edit's kind field cycles through these
 QUICK_KEYS = {'since': 's', 'yesterday': 'y', 'needs': 'w', 'usage': 'u'}  # F74's quick asks, by key
@@ -343,6 +368,8 @@ class RunPage:
         self.got = time.time()
         self.window_keys: set[str] = set()  # the keys the last frame showed above the bottom line
         self.confirm = ''  # F82: the run control waiting for its key again (stop now), '' none
+        self.restart = False  # F90: the run is on a newer version: start this TUI again on it (`follow_upgrade`)
+        self.followed = ''  # F90: the version the last restart was for (never restart twice for one version)
 
     # --- what is where --------------------------------------------------------------------------------
 
@@ -1150,6 +1177,41 @@ class RunPage:
             self.got = time.time()
         except Exception as e:  # noqa: BLE001 - keep the last snapshot on screen, say why it is old
             self.msg, self.msg_ok = f'could not read the run: {e}', False
+            return
+        from agent_runner import __version__
+        v = str(self.snap.get('version') or '')
+        if newer_version(v, __version__) and v != self.followed and os.name != 'nt':  # F90; Windows: no real exec
+            self.restart = True
+
+    def saved_place(self) -> dict:
+        """F90: the focused panel, the selection, tabs, focus and drafts, for `restore_place` after a restart."""
+        it = self.sel()
+        sel = (it.get('id') or it.get('name') or '') if isinstance(it, dict) else ''
+        return {'panel': self.panel, 'cur': {str(n): c for n, c in self.cur.items()}, 'sel': sel,
+                'tabs': self.tabs, 'main': self.main, 'drafts': self.drafts,
+                'for': str(self.snap.get('version') or '')}
+
+    def restore_place(self, place: dict) -> None:
+        """F90: reopen where `saved_place` was (the selected item by its id or name, else by its row)."""
+        if not place:
+            return
+        try:
+            self.panel = int(place.get('panel', self.panel))
+            if self.panel not in self.cur:
+                self.panel = 1
+            for n, c in (place.get('cur') or {}).items():
+                if int(n) in self.cur:
+                    self.cur[int(n)] = int(c)
+        except (TypeError, ValueError):
+            self.panel = 1
+        rows = self.items(self.panel)
+        ids = [(r.get('id') or r.get('name')) if isinstance(r, dict) else None for r in rows]
+        if place.get('sel') and place['sel'] in ids:
+            self.cur[self.panel] = ids.index(place['sel'])
+        self.tabs.update({str(k): str(v) for k, v in (place.get('tabs') or {}).items()})
+        self.drafts.update({str(k): str(v) for k, v in (place.get('drafts') or {}).items()})
+        self.main = bool(place.get('main'))
+        self.followed = str(place.get('for') or '')
 
     def done(self, r: dict) -> None:
         """Show an action's result on the bottom line and read the run again."""
@@ -1826,7 +1888,9 @@ def links_over(links: list, sgr: str = '') -> str:
     return out + '\x1b8'
 
 
-def run_curses(win) -> int:
+def run_curses(win, box: dict | None = None) -> int:
+    """The Run page's loop; F90: on a newer run it returns with the page in `box['restart']` (curses.wrapper
+    then restores the terminal, and `main` starts the TUI again)."""
     import curses
     try:
         curses.curs_set(0)
@@ -1840,6 +1904,7 @@ def run_curses(win) -> int:
     win.keypad(True)
     win.timeout(1000)
     page = RunPage(U.snapshot(), attrs=attrs, attach=lambda name: attach_slot(curses, win, name))
+    page.restore_place(taken_place())
     sgr = link_sgr(curses)
 
     def more() -> str:
@@ -1855,6 +1920,9 @@ def run_curses(win) -> int:
     while True:
         if time.time() - page.got >= REFRESH:
             page.refresh()
+        if page.restart and box is not None:
+            box['restart'] = page
+            return 0
         page.draw(win)
         win.refresh()
         page.out(links_over(page.links, sgr))
@@ -1895,4 +1963,8 @@ def main(argv: list[str]) -> int:
     init()
     locale.setlocale(locale.LC_ALL, '')
     os.environ.setdefault('ESCDELAY', '25')  # Esc backs out at once, not after curses' default second
-    return curses.wrapper(run_curses)
+    box: dict = {}
+    rc = curses.wrapper(run_curses, box)
+    if box.get('restart'):  # F90: the terminal is restored; this process becomes the new version's TUI
+        follow_upgrade(box['restart'])
+    return rc
