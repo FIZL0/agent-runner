@@ -471,10 +471,15 @@ def test_auto_clean():
         v.refresh_footprint([f.p], now)
         check(there() == before and f.ended.exists(), 'no /proc: nothing is removed')
         s.proc = proc
-        v.refresh_footprint([f.p], now, auto=False)
-        check(there() == before and f.ended.exists(), 'nor by a walk the person\'s Clean makes')
-        listed = {i['path'] for i in v.foot['clean'] if i['kind'] == 'tmp'}
+        plan = v.refresh_footprint([f.p], now, auto=False)['clean']
+        check(there() == before and f.ended.exists(), 'nor by the walk for the person\'s Clean list')
+        listed = {i['path'] for i in plan if i['kind'] == 'tmp'}
         check(str(dirs['h25']) in listed and str(dirs['opened']) not in listed, 'it lists a main checkout\'s ended one')
+        write(f.p.notes / 'B9.resume', '{"slot": 1')
+        v.refresh_footprint([f.p], now)
+        check(there() == before and f.ended.exists(), 'a resume that cannot be read may name any session: none goes')
+        (f.p.notes / 'B9.resume').unlink()
+        write(f.p.notes / 'control6.ask', 'a1111111-1111-1111-1111-111111111111\n')  # a one-ask mark: waits for nothing
         write(reg / '11.json', '{broken')
         v.refresh_footprint([f.p], now)
         eq(there(), before, 'unreadable registry: no main checkout folder goes')

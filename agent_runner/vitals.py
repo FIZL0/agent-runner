@@ -55,6 +55,7 @@ HOT_C = 90.0             # a CPU or GPU this hot is an alert
 MEM_LOW = 0.10           # less memory free than this share of it is an alert
 TMP_ALERT_SHARE = 0.05   # session temp folders past this share of the disk, after the auto-clean, are an alert
 ENDED_AFTER = 3600.0     # s with no write before a session temp folder no process names counts as ended
+ANY_SID = '*'            # among the waiting sessions: one that cannot be named waits, so none counts as ended
 MAIN_ENDED_AFTER = 24 * 3600.0  # the same for a session in a main checkout
 FOOTPRINT_EVERY = 600.0  # s between footprint walks
 PEER_TIMEOUT = 3.0
@@ -748,13 +749,17 @@ def waiting_sids(p: 'Project') -> set[str]:
     """The sessions of `p` the runner will resume or wake, whose temp folders stay: those queued to resume
     (<ID>.resume), those whose ask waits for the person's answer (<ID>.ask), the last session of a slot worktree
     still on its task/ branch (the next run start resumes one that was cut off), the runner feed's, c1's kept one
-    (control.sid), and cN's while its pid file is there (reopened after a shutdown)."""
+    (control.sid), and cN's while its pid file is there (reopened after a shutdown). ANY_SID is among them when a
+    resume or ask cannot be read: any session may be the one it names."""
     out = set(p.resume)
     for f in [*p.notes.glob('*.resume'), *p.notes.glob('*.ask')]:
         try:
             out.add(str(json.loads(f.read_text(encoding='utf-8'))['sid']))
+        except FileNotFoundError:
+            continue  # resumed meanwhile
         except (OSError, ValueError, KeyError, TypeError):
-            continue  # control<N>.ask is no JSON: it marks a session opened for one ask, not one that waits
+            if not re.fullmatch(r'control\d+\.ask', f.name):  # that one marks a session opened for one ask
+                out.add(ANY_SID)
     kept = [p.notes / 'control.sid', p.notes / 'remote' / 'feed.sid']
     for f in p.notes.glob('control*.pid'):
         kept += [f, f.with_suffix('.sid')]
@@ -955,7 +960,7 @@ def session_ended(d: Path, main: bool, live: set[str] | None, registry: bool, wa
     nothing wrote to it in ENDED_AFTER (`main`, one in a main checkout: MAIN_ENDED_AFTER)? Never where /proc
     cannot tell (`live` None), nor, in a main checkout, when Claude Code's registry could not be read in full
     (`registry`): a person's own session names no id on its command line."""
-    if live is None or (main and not registry) or d.name in live or d.name in waits:
+    if live is None or (main and not registry) or d.name in live or d.name in waits or ANY_SID in waits:
         return False
     return now - written(d) >= (MAIN_ENDED_AFTER if main else ENDED_AFTER)
 
@@ -1273,12 +1278,13 @@ class Vitals:
 
     def refresh_footprint(self, projs: list[Project] | None = None, now: float | None = None,
                           auto: bool = True) -> dict:
-        """Walk the footprint again; `auto` (the regular walk, not the person's Clean) also removes the ended
-        sessions' temp folders and logs what that freed."""
+        """Walk the footprint again, remove the ended sessions' temp folders and log what that freed. Without
+        `auto` nothing is removed or kept: the answer is the person's Clean's fresh list."""
         with self.foot_lock:
             projs = self.projects() if projs is None else projs
             now = time.time() if now is None else now
-            self.foot_at = now  # a walk under way is not started again
+            if auto:
+                self.foot_at = now  # a walk under way is not started again
             live, registry = self.look()
             foot = footprint(projs, live, now, registry=registry)
             if auto:
@@ -1286,8 +1292,8 @@ class Vitals:
                 if count or freed:
                     self.log(f'{time.strftime("%Y-%m-%d %H:%M:%S")} removed {count} ended sessions\' temp folders, '
                              f'freed {size_words(freed) or "0 B"}')
-            self.foot = foot
-            return self.foot
+                self.foot = foot
+            return foot
 
     def look(self) -> tuple[set[str] | None, bool]:
         return live_now(self.sampler.proc, self.registry)
@@ -1482,7 +1488,7 @@ class Vitals:
                 return 400, {'ok': False, 'out': 'bad request: {"items": [ids]}'}, json_t
             plan = self.refresh_footprint(auto=False).get('clean') or []  # made again now: only what is still safe
             res = clean(chosen, plan)
-            self.refresh_footprint(auto=False)  # what they left unticked waits for the regular walk
+            self.refresh_footprint()
             return 200, res, json_t
         return 404, {'ok': False, 'out': f'no such page: {path}'}, json_t
 
