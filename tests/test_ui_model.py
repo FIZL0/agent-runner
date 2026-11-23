@@ -516,6 +516,54 @@ def test_concept_chat(tmp: Path) -> None:
           "the Concepts card's New chat button sends concept_chat with the concept's id")
 
 
+def test_hidden_send(tmp: Path) -> None:
+    """F89: a hidden session (no tmux pane) is reached through its shim's FIFO, found from its .live marker:
+    send writes a bracketed paste then CR, interrupt writes a raw ESC, and a FIFO nobody reads gives ok False."""
+    import os
+    from agent_runner import plat
+    if plat.WINDOWS:
+        return
+    fake_run(tmp)
+    readers = []
+
+    def hidden(stem: str, reader: bool = True) -> None:
+        S.C.notes(f'{stem}.live').write_text(str(os.getpid()), encoding='utf-8')
+        os.mkfifo(S.C.notes(f'{stem}.in'))
+        if reader:
+            readers.append(os.open(S.C.notes(f'{stem}.in'), os.O_RDONLY | os.O_NONBLOCK))
+
+    def drain(fd: int) -> bytes:
+        try:
+            return os.read(fd, 65536)
+        except BlockingIOError:
+            return b''
+
+    hidden('slot2')
+    hidden('control3')
+    hidden('slot4', reader=False)
+    try:
+        with mock.patch.object(U, 'session_pane', return_value=''), mock.patch.object(plat, 'WINDOWS', False):
+            r = U.send('s2', 'hello s2')
+            eq((r['ok'], r['out']), (True, 'sent to s2'), 'send to a hidden slot')
+            eq(drain(readers[0]), b'\x1b[200~hello s2\x1b[201~\r', 'a bracketed paste, then CR')
+            r = U.interrupt('c3')
+            eq((r['ok'], r['out']), (True, 'interrupted c3'), 'interrupt a hidden control session')
+            eq(drain(readers[1]), b'\x1b', 'a raw ESC, no paste')
+            eq(U.keys('s2', text='y', key='Enter')['ok'], True, 'keys: text and a key, raw')
+            eq(drain(readers[0]), b'y\r', 'y then CR')
+            r = U.send('s4', 'anyone?')
+            check(not r['ok'], 'a FIFO with no reader: ok False', r)
+            check(not U.interrupt('s4')['ok'], 'nor an interrupt')
+            r = U.send('s9', 'hi')
+            check(not r['ok'] and 'no tmux pane' in r['out'], 'no marker: no pane, as before', r)
+        with mock.patch.object(U, 'session_pane', return_value=''), mock.patch.object(plat, 'WINDOWS', True):
+            r = U.send('s2', 'hi')
+            check(not r['ok'] and 'cannot be typed into' in r['out'], 'Windows: cannot type into it', r)
+    finally:
+        for fd in readers:
+            os.close(fd)
+
+
 def in_tmp(f):
     def go():
         print(f.__name__)
@@ -530,4 +578,4 @@ if __name__ == '__main__':
                          in_tmp(test_real_command),
                          in_tmp(test_to_c1_by_tag), in_tmp(test_control_windows), in_tmp(test_older_run),
                          in_tmp(test_queue_rows), in_tmp(test_feed), in_tmp(test_chat_and_terminal),
-                         in_tmp(test_concept_copy), in_tmp(test_concept_chat)]))
+                         in_tmp(test_concept_copy), in_tmp(test_concept_chat), in_tmp(test_hidden_send)]))
