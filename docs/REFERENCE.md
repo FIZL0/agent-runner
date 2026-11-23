@@ -200,6 +200,15 @@ task to fix X" (it files it with `plan add`), "do X now" (it uses `take`, never 
   PushNotification tool). The old `silent = "launch"` (quiet only while a session started, which never
   stopped the start push) reads as `false`, with one `run.log` line.
 
+### Runner Home
+
+`agent-runner home install` is the recommended setup, part of the default one (README Quick start, right after
+`setup`), not an optional extra. It installs one always-on page for every project on this device and prints its
+link and a QR code. With several projects on one device it is what keeps every run's page reachable: one link,
+each run at `/p/<project>/`. Without it, each run serves its own page on port 8770 only while it is up, and
+the second run's page moves to another port. `home status` shows whether it is installed and serving;
+`home add PATH` lists a project outside `~/repos`. See the README's Runner Home section.
+
 ### The run app
 
 With `[run] web` (on by default) a run serves the run app from this machine on `[run] web_port` (8770), bound

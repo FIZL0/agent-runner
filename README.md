@@ -36,6 +36,7 @@ uv tool install git+https://github.com/FIZL0/agent-runner    # tracks main; or: 
 cd your-repo
 agent-runner setup                 # a new repo: backs up uncommitted work to a branch, writes runner.toml,
                                    # and a Claude session reads the repo and writes the gate and a first plan
+agent-runner home install          # recommended: one always-on page for every project on this device, link + QR code
 agent-runner plan                  # what the runner sees in plan/TODO.md
 agent-runner run --dry-run 3       # what three slots would start right now, and why the rest wait
 agent-runner run once              # one task, one session, then stop: try it like this first
@@ -71,12 +72,15 @@ agent-runner home status           # installed? serving? the link again (uninsta
 agent-runner home add ~/work/proj  # list a project that is not under ~/repos (remove PATH: unlist one)
 ```
 
+Runner Home is the recommended setup, not an optional extra. With several projects on one device it is what
+keeps every run's page reachable: one link, each run at `/p/<project>/`.
+
 Each run serves its own page only while it is up. Runner Home is one page that is always there: every folder
 in `~/repos` with a `runner.toml`, plus the ones you add, each shown as running, idle or off with what needs
 you, and Start run, Pause, ±1 slot and Stop buttons that run the runner's own commands in that project. Open
 takes you to that project's run app through Home, so one link (one bookmark) reaches them all. It runs as a
 per-user service that starts at boot: systemd `--user` with linger on Linux, a launchd agent on macOS, a
-scheduled task at logon on Windows. It is off until you install it. Like the run page it is token-gated and
+scheduled task at logon on Windows. It is on once you install it (`home install` in the Quick start). Like the run page it is token-gated and
 listens on port 8770 on every interface, for a phone on your network or Tailscale; never expose it to the
 internet. With Home on that port, a run serves its own page on a free one, which Home opens; with Home off,
 nothing changes. Its projects and token are in `~/.config/agent-runner` (`%APPDATA%\agent-runner`).
