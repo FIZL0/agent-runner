@@ -13,6 +13,9 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 - Fixed: `run publish-page` and the run page copy and pitch pages now reach claude.ai (B180). They did not: the one-shot exited 0 with no URL. It had only `--tools Artifact`; Claude Code 2.1.330 then denies Read, and Artifact will not publish a file it may not read. It now has Artifact and Read, and a failed publish logs the end of its errors and answer, so a sign-in warning no longer hides the reason.
 - Added: shared tools (F168). `[run.tools.<name>]` in runner.toml names something only one task can use at a time (a test phone, a device) with a `check` that says whether it is free, busy (and by whom) or missing. A task tags itself `needs:` (`plan add --needs`); the run never runs two tasks with the same tool, and holds a tagged task while it is busy or missing (at most 5 min when the check is unknown). An agent that finds its tool busy runs `run wait-for TOOL`: its session ends, its work is kept, and the same session resumes once the tool is free. Status, the TUI and the run page show the tool, and a missing one with tasks waiting is a Needs you item after 3 min. Without the setting nothing changes.
 - Changed: Chat on a plan task, a concept or a setting, and Add a task open an empty new chat view at once, titled with what it is about; the session starts with the first message, and an unsent draft is kept per thing (F172).
+- Changed: In Talk the chat fills the whole view and runs behind the top bar, the round buttons and the message
+  box, which are see-through (solid under reduced transparency). The top bar slides off while the person scrolls
+  up and returns on scrolling down or at the end, and the newest words stay clear of it at rest (F171).
 
 ## 0.62.0 (2026-11-23)
 

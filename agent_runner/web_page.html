@@ -381,7 +381,7 @@ a{color:var(--accent)}
 .main.see :is(.top,.notices,.talkline,.foot,.box,.spk,.kbd,.talkmic .btn){-webkit-backdrop-filter:blur(14px) saturate(1.3);backdrop-filter:blur(14px) saturate(1.3)}
 .main.see .mic{box-shadow:0 2px 14px var(--shadow)}
 .main.see.away .top:not(:has(:focus-visible)){transform:translateY(calc(-100% - env(safe-area-inset-top,0px)))} .main.see.away .top:not(:has(:focus-visible))+.notices{transform:translateY(calc(-1*var(--seebar,0px)))}
-@media (prefers-reduced-transparency:reduce){.main.see :is(.top,.notices,.dock){background:var(--bg)} .main.see :is(.talkline,.foot,.box,.spk,.kbd,.talkmic .btn){background:var(--surface)} .main.see :is(.top,.notices,.talkline,.foot,.box,.spk,.kbd,.talkmic .btn){-webkit-backdrop-filter:none;backdrop-filter:none}}
+@media (prefers-reduced-transparency:reduce){.main.see :is(.top,.notices,.dock){background:var(--bg)} .main.see .dock{pointer-events:auto} .main.see :is(.talkline,.foot,.box,.spk,.kbd,.talkmic .btn){background:var(--surface)} .main.see :is(.top,.notices,.talkline,.foot,.box,.spk,.kbd,.talkmic .btn){-webkit-backdrop-filter:none;backdrop-filter:none}}
 /* the composer: the send button fills once there is something to send */
 .send{transition:opacity var(--dur-fast) var(--ease)} .box:not(.has) .send:not(.stop){opacity:.45}
 @media (pointer:coarse){.keysl{display:none} .btn,.chip,.icon{min-height:var(--tap)} .icon{min-width:var(--tap)}}
@@ -653,8 +653,8 @@ function feedAfter(entries,mark,said){
 }
 /* the page keeps a chat at its newest message: is it there now */
 const atEnd=b=>b.scrollHeight-b.scrollTop-b.clientHeight<60;
-/* F171: whether Talk's top bar is away, after `was` {top,size,run,away}: gone once the person scrolls up 8px, back once they
-   scroll down 8px or are at the end. A change of size (new words, the keyboard) and iOS's bounce are no scroll of theirs */
+/* F171: whether Talk's top bar is away, after `was` {top,size,run,away}: gone once the person scrolls up 8px and is away from the
+   end (atEnd), back once they scroll down 8px or are at the end. A change of size (new words, the keyboard) and iOS's bounce are no scroll of theirs */
 function barAway(was,b){
   const end=Math.max(0,b.scrollHeight-b.clientHeight), top=Math.max(0,Math.min(b.scrollTop,end)), size=b.scrollHeight+'x'+b.clientHeight;
   const d=was.size===size?top-was.top:0, run=atEnd(b)?0:d*was.run>=0?was.run+d:d;
