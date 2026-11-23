@@ -107,7 +107,7 @@ change: the merge[[|s]] stay[[s|]] as committed (no amend or reset), no push, no
 when you are done.
 4. If you cannot fix it honestly (the failure is {branch}'s own, [[the two sides contradict|one branch is broken by \
 itself, two branches contradict]] each other and picking needs a human), commit nothing and say why in one line. [[|The runner then merges each branch on its own. ]]That is a real answer.
-5. If it is a flaky test (it passes when you rerun it, and nothing [[the merge|these merges]] changed touches what it checks), commit nothing and make your last line `FLAKE: <test name>[, <test name>…]`. The runner runs the gate once more and files the flake to be fixed.
+5. If it is a flaky test (it passes when you rerun it, and nothing [[the merge|these merges]] changed touches what it checks), commit nothing and make your last line `FLAKE: <test name>[, <test name>…]`: one name per test, commas only between tests, and a name that has spaces or commas in double quotes (`FLAKE: LogPanelTest, "the watch, restarted"`). The runner runs the gate once more and files the flake to be fixed.
 """  # [[one merge|a batch]]: `repair_prompt` keeps one side
 
 
@@ -575,7 +575,7 @@ def repair_merge(tid: str, branch: str, cwd: Path, riders: list[str] = (), base:
     head = git('rev-parse', 'HEAD', cwd=cwd).stdout.strip()
     if head == before:
         if names := flake_said(logfile):
-            return FLAKE + ', '.join(names)
+            return FLAKE + ', '.join(f'`{n}`' for n in names)  # quoted: a name may hold a comma
         return f'the repair session committed nothing; its reason is in {logfile}'
     if git('merge-base', '--is-ancestor', before, head, cwd=cwd).returncode:
         return f'the repair session rewrote the merge instead of committing on top; see {logfile}'
@@ -1036,7 +1036,19 @@ def flake_said(logfile: Path) -> list[str]:
     except OSError:
         return []
     m = next((m for l in reversed(tail) if (m := re.match(r'\W*FLAKE:\s*(.+)', l))), None)
-    return [n.strip(' `*') for n in re.split(r'[,\s]+', m[1]) if n.strip(' `*')] if m else []
+    return flake_names(m[1]) if m else []
+
+
+def flake_names(said: str) -> list[str]:
+    """The test names in a `FLAKE:` answer: split on commas only, and never inside quotes or backticks."""
+    out = []
+    for n in re.findall(r"""(?:`[^`]*`|"[^"]*"|(?<!\w)'[^']*'(?!\w)|[^,])+""", said):
+        n = n.strip(' *')
+        if m := re.fullmatch(r"""`([^`]*)`|"([^"]*)"|'([^']*)'""", n):  # the quotes are around the whole name
+            n = next(g for g in m.groups() if g is not None)
+        if n := n.replace('`', '').strip(' *'):  # the task filed puts the name in backticks
+            out.append(n)
+    return out
 
 
 def repair_retest(tid: str, branch: str, d: Path, base: str, merged: str,
@@ -1048,7 +1060,7 @@ def repair_retest(tid: str, branch: str, d: Path, base: str, merged: str,
     if not_fixed := repair_merge(tid, branch, d, riders, base):
         if not not_fixed.startswith(FLAKE):
             return not_fixed, None, []
-        names = not_fixed[len(FLAKE):].split(', ')
+        names = flake_names(not_fixed[len(FLAKE):])
         flaky(tid, names)
         log(f'{tid}: {not_fixed}; running the gate once more before parking it')
         if why := tested(tid, d, base, [tid, *riders]):

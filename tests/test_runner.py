@@ -5860,6 +5860,14 @@ def test_flake_repair(tmp: Path):
     eq(R.flake_said(log), [], "an earlier session's FLAKE line is not this one's")
     log.write_text(log.read_text() + 'it passes alone, nothing here touches it\nFLAKE: `LogPanelTest`, TimerTest\n')
     eq(R.flake_said(log), ['LogPanelTest', 'TimerTest'], 'the tests the last session named')
+    for said, names in (
+            ('tests/test_vitals.py "and git forgot the worktree"', ['tests/test_vitals.py "and git forgot the worktree"']),
+            ('"one, two", `three, four` , five six', ['one, two', 'three, four', 'five six']),
+            ("'one, two', it's, isn't", ['one, two', "it's", "isn't"]),
+            ('tests/a.py `b c`', ['tests/a.py b c'])):
+        log.write_text(f'\n=== now\nFLAKE: {said}\n', encoding='utf-8')
+        eq(R.flake_said(log), names, f'one name per test: {said}')
+        eq(R.flake_names(', '.join(f'`{n}`' for n in names)), names, 'and whole again on the way to the filed task')
     saved = R.repair_merge, R.tested, R.log, dict(R.FLAKY)
     R.log = lambda m: None
     try:

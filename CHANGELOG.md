@@ -200,6 +200,9 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
   runner cannot type into an app session, so once the limit is over it copies that conversation into a numbered
   control session and types the held messages in there, once; the app chat itself is left as it is. Messages of an app
   chat the person closed, or that were answered there meanwhile, are left alone (B173).
+- Fixes: a repair session's `FLAKE:` line was split on spaces as well as commas, so one quoted test name was filed as
+  several flaky-test tasks (four critical tasks for one flake). It is now split on commas only, a quoted or backticked
+  name stays whole, and the repair prompt states the names format (B176).
 
 ## 0.61.0 (2026-11-23)
 
