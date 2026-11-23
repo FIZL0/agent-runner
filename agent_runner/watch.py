@@ -77,11 +77,7 @@ def usage(sid: str) -> tuple[int, list[int], list[str]]:
         if not isinstance(d, dict):
             continue
         ts += [d['timestamp']] if 'timestamp' in d else []
-        if d.get('type') == 'message' and (m := d.get('message', {})).get('role') == 'assistant' \
-                and (u := m.get('usage')):  # Pi
-            calls += 1
-            ctx.append(u.get('input', 0) + u.get('cacheRead', 0) + u.get('cacheWrite', 0))
-        elif d.get('type') == 'assistant' and (u := d.get('message', {}).get('usage')):
+        if d.get('type') == 'assistant' and (u := d.get('message', {}).get('usage')):
             calls += 1
             ctx.append(sum(u.get(k, 0) for k in ('input_tokens', 'cache_read_input_tokens',
                                                  'cache_creation_input_tokens')))
@@ -476,31 +472,7 @@ def api_up() -> bool:
     return _api[1]
 
 
-RESUME_AFTER = 120  # s after a failed model call before the session is resumed; doubles with each resume
-RESUME_MAX = 5
 START_TRIES = 3  # a task whose session will not start is tried this many times in a run
-RESUME_FAILED = ('The connection to the model failed and this session stopped mid-task. Carry on with task {tid} from '
-          'where you left off.')
-
-
-def agent_failed(sid: str) -> tuple[str, float] | None:
-    """(message, age in s) when the session stopped on a failed model call and should be resumed. Only the Pi
-    backend's sessions did, and it is gone (F106d), so always None."""
-    return None
-
-
-def resume_failed(n: int, pid: int, sid: str, tid: str, model: str, idle: int) -> int | None:
-    """End slot n's session and start it again on the same session id, told to carry on; the new pid."""
-    from agent_runner.slots import task_model
-    model = task_model(tid, model, '')  # F105: on its task's model, as at its start
-    plat.terminate(pid)
-    marker = C.notes(f'slot{n}.live')
-    for _ in range(50):  # the old shim removes its marker as it exits: wait, so it cannot remove the new one
-        if not marker.exists():
-            break
-        time.sleep(0.2)
-    return MUX.open(n, SLOTS_DIR / f's{n}', RESUME_FAILED.format(tid=tid), sid, model, idle, slot_env(n),
-                    C.notes(f'slot{n}.log'))
 
 
 _account = [-1e9, None]
@@ -745,8 +717,8 @@ def stop_hook(idle: int) -> int:
     return 0
 
 
-# Claude Code; Pi (a user message or a tool result)
-USER_ENTRY = re.compile(r'"type":"user"|"role":"(user|toolResult)"')
+# a user message or a tool result
+USER_ENTRY = re.compile(r'"type":"user"')
 
 
 def _user_entries(t: str) -> int:

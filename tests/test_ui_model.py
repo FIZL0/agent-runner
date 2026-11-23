@@ -350,8 +350,7 @@ def fake_transcript(path: Path) -> Path:
 
 
 def test_feed(tmp: Path) -> None:
-    """F74: a session's feed is its transcript as say/you/tool/out entries, newest last; Pi's toolCall and
-    toolResult read the same; a session with no transcript says so."""
+    """F74: a session's feed is its transcript as say/you/tool/out entries, newest last; a session with no transcript says so."""
     from unittest import mock
     fake_run(tmp)
     t = fake_transcript(tmp / 'c2.jsonl')
@@ -368,12 +367,6 @@ def test_feed(tmp: Path) -> None:
        'the feed: you, say, tool, out; meta, runner turns, thinking and subagents left out')
     eq((f['ok'], f['more']), (True, False), 'a whole feed')
     check(not none['ok'] and none['entries'] == [] and 'no transcript' in none['out'], 'no transcript: said', none)
-    pi = [{'type': 'assistant', 'message': {'role': 'assistant', 'content': [
-              {'type': 'text', 'text': 'Reading it.'},
-              {'type': 'toolCall', 'name': 'read', 'arguments': {'path': 'a.py'}}]}},
-          {'type': 'user', 'message': {'role': 'toolResult', 'content': [{'type': 'text', 'text': 'def a(): ...'}]}}]
-    eq(U.feed_entries(pi), [{'kind': 'say', 'text': 'Reading it.'}, {'kind': 'tool', 'text': 'read(a.py)'},
-                            {'kind': 'out', 'text': 'def a(): ...'}], "Pi's entries read the same")
     big = tmp / 'big.jsonl'
     last = json.dumps({'type': 'assistant', 'message': {'content': [{'type': 'text', 'text': 'tail'}]}}) + '\n'
     big.write_text(json.dumps({'type': 'user', 'message': {'content': 'x' * 100}}) + '\n' + last, encoding='utf-8')

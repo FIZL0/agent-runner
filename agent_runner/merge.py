@@ -138,7 +138,7 @@ def fix_session(prompt: str, cwd: Path, fh, keep: dict | None = None, fork: str 
     """Run one fix or repair session in `cwd` to its end; its exit code. Raises what `sp.run` raises for a
     missing agent or a timeout.
 
-    It is `-p` (Pi: `--print`), its output in `fh` (C26: no longer a session in a window of its own; `keep`
+    It is `-p`, its output in `fh` (C26: no longer a session in a window of its own; `keep`
     is what it was started on, kept for the callers, and `adopt_merge` still reads a master.json an older
     run left). With `fork` (a session id), it starts as a copy of that session (`fork_flags`), knowing what
     it did.

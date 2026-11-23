@@ -56,12 +56,12 @@ def stubs(st: ExitStack, said: list, **over) -> dict:
 def test_state():
     print('Run: the loop state is the object\'s, one slot free per count')
     run = new_run(3)
-    for k in ('procs', 'running', 'tried', 'closed', 'free_at', 'merging', 'stall_said', 'failed_resumes',
+    for k in ('procs', 'running', 'tried', 'closed', 'free_at', 'merging', 'stall_said',
               'failed_starts', 'foreign', 'waiting'):
         check(hasattr(run, k), f'{k} is on the run')
     eq(sorted(run.free_at), [1, 2, 3], 'a free_at per slot')
     check(not run.idle_said and not run.cap_said and run.held_said == 3, 'nothing said yet')
-    for step in ('open', 'tick', 'top', 'slot', 'retry_failed_call', 'reap', 'watch_stall', 'held',
+    for step in ('open', 'tick', 'top', 'slot', 'reap', 'watch_stall', 'held',
                  'resume_queued', 'fill', 'after', 'end'):
         check(callable(getattr(run, step, None)), f'step {step} is a method')
 

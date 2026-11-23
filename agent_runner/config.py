@@ -350,11 +350,10 @@ def model_providers(given: object) -> dict[str, dict]:
 
 
 def parse_model(value: str, providers: dict[str, dict] | None = None, local: bool = False,
-                where: str = '[models]', backend: str = 'claude') -> tuple[str, str]:
+                where: str = '[models]') -> tuple[str, str]:
     """A [models] role's value as (provider, model): '<provider>:<model>' for a built-in or `providers` name, a
     bare name ('opus') as ('claude', 'opus'). Refuses (SystemExit) an unknown provider, an empty model, and a
-    local provider (ollama, or a url on localhost or a private address) unless `local`. `backend` is kept for
-    its callers; since F106d it is always claude."""
+    local provider (ollama, or a url on localhost or a private address) unless `local`."""
     providers = providers or {}
     head, sep, rest = value.partition(':')
     if not sep:
@@ -377,11 +376,11 @@ CLAUDE_ONLY_ROLES = ('review', 'docs', 'control', 'feed')
 
 
 def claude_model(value: str, providers: dict[str, dict] | None = None, local: bool = False,
-                 where: str = '[models]', backend: str = 'claude', claude_only: bool = False) -> str:
+                 where: str = '[models]', claude_only: bool = False) -> str:
     """`parse_model`, then the model as a session runs it: claude's as the bare name ('opus'), another
     provider's as '<provider>:<model>', which the harness loop runs (F106c). With `claude_only` (a role in
     CLAUDE_ONLY_ROLES) another provider is refused (SystemExit), saying why."""
-    provider, model = parse_model(value, providers, local, where, backend)
+    provider, model = parse_model(value, providers, local, where)
     if provider == 'claude':
         return model
     if claude_only:
@@ -705,9 +704,9 @@ class Config:
         if self.run['comment_policy'] not in ('normal', 'minimal'):
             raise SystemExit("agent-runner: [run] comment_policy must be 'normal' or 'minimal'")
         self.run['backend'] = 'claude'  # not a setting: `slots.backend()` reads it; the only one since F106d
-        self.models = self.resolve_models(given_models, supplied)
+        self.models = self.resolve_models(given_models)
 
-    def resolve_models(self, given: dict, supplied: dict) -> dict:
+    def resolve_models(self, given: dict) -> dict:
         """F101: `[models]`, each role settled: a role the files set wins; else `code` is `[run] model` and `fix`
         `[run] fix_model` (their aliases, set or default). `[run] model` and `fix_model` are kept equal to `code`
         and `fix`, so code that reads them sees the role."""
@@ -741,7 +740,7 @@ class Config:
         refs.update({f'[models.kinds] {k}': k for k in m['kinds']})
         for where, key in refs.items():
             table = m['kinds'] if where.startswith('[models.kinds]') else m
-            table[key] = claude_model(table[key], self.providers, self.models_local, where, r['backend'],
+            table[key] = claude_model(table[key], self.providers, self.models_local, where,
                                       claude_only=table is m and key in CLAUDE_ONLY_ROLES)
         r['model'], r['fix_model'] = m['code'], m['fix']
         return m
@@ -750,7 +749,7 @@ class Config:
         """F105: the model a task's own session runs on: its own (`plan add --model`, `own`), else its kind's in
         `[models.kinds]` (the id's letters: 'P17a' is P), else `[models] code`."""
         if own:  # F106a: 'claude:<model>' runs as the bare name; F106c: another provider's as '<provider>:<model>'
-            provider, model = parse_model(own, self.providers, True, 'model', self.run['backend']) \
+            provider, model = parse_model(own, self.providers, True, 'model') \
                 if own.partition(':')[0] in (*PROVIDERS, *self.providers) else ('claude', own)
             return model if provider == 'claude' else f'{provider}:{model}'
         kind = tid[:len(tid) - len(tid.lstrip('ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'))]

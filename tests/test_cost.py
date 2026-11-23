@@ -40,11 +40,11 @@ def test_kinds():
     eq(k('python3 -m pytest -q'), 'python3 -m pytest', 'a module')
     eq(k('sed -n 1,80p a.py'), 'sed', 'a plain program')
     eq(cost.kind('Read', {'file_path': 'a.py'}), 'read', 'other tools by name')
-    eq(cost.kind('bash', {'command': 'grep -rn x .'}), 'grep', "Pi's lower-case bash")
+    eq(cost.kind('bash', {'command': 'grep -rn x .'}), 'grep', 'a lower-case bash')
 
 
 def test_sessions():
-    print('cost: size × turns in context, Claude and Pi')
+    print('cost: size × turns in context, Claude')
     with tempfile.TemporaryDirectory() as t:
         tmp = Path(t)
         big = 'x' * 4000  # ~1000 tokens
@@ -62,19 +62,10 @@ def test_sessions():
         eq(turns, 3, 'turns are message ids, not lines')
         eq(billed, 30, 'billed input counted once per turn')
         eq(got, [('cat', 4000, 1), ('read', 400, 2)], 'each result once, with the turn it arrived on')
-        pi = write(tmp / 'p.jsonl', [
-            {'type': 'message', 'message': {'role': 'assistant', 'content': [
-                {'type': 'toolCall', 'id': 'p1', 'name': 'bash', 'arguments': {'command': 'git diff'}}],
-                'usage': {'input': 5, 'cacheRead': 7}}},
-            {'type': 'message', 'message': {'role': 'toolResult', 'toolCallId': 'p1', 'toolName': 'bash',
-                                            'content': [{'type': 'text', 'text': 'z' * 800}]}},
-            {'type': 'message', 'message': {'role': 'assistant', 'content': [{'type': 'text', 'text': 'ok'}]}},
-        ])
-        eq(cost.session(pi), ([('git diff', 800, 1)], 2, 12), "Pi's toolCall / toolResult")
-        out = '\n'.join(cost.report([claude, pi]))
-        has(out, r'^2 sessions, 5 turns, 3 tool calls; ~42 input tokens billed', 'the header')
+        out = '\n'.join(cost.report([claude]))
+        has(out, r'^1 sessions?, 3 turns, 2 tool calls; ~30 input tokens billed', 'the header')
         has(out, r'cat +1 +1,000 +2,000 ', 'cat: 1000 tokens, in context for 2 turns')
-        has(out, r'^  cat.*\n  git diff.*\n  read', 'sorted by what stayed in context')
+        has(out, r'^  cat.*\n  read', 'sorted by what stayed in context')
 
 
 def test_filled():
@@ -164,8 +155,8 @@ def test_spend():
         for p in cost.session_files(f):
             s.add(p)
         eq(s.total()[0], 3 * 3500, 'and their tokens count for the task')
-        eq(cost.turn_spend({'input': 10, 'output': 5, 'cost': {'total': 0.5}}, 'x'), (15, 0.5),
-           "Pi's keys, and its own cost when it gives one")
+        eq(cost.turn_spend({'input_tokens': 10, 'output_tokens': 5, 'cost': {'total': 0.5}}, 'x'), (15, 0.5),
+           "and the provider's own cost when it gives one")
     eq(cost.spend_text(1_234_000, 3.4), '1.2M tok $3.40', 'how status shows it')
     eq(cost.over_budget(100, 1.0, 0, 0), '', 'no caps: never over')
     has(cost.over_budget(2_000_000, 1.0, 1_000_000, 0), r'past \[run\] task_tokens \(1,000,000\)', 'tokens cap')
@@ -176,21 +167,20 @@ def test_spend():
 
 
 def test_worker_transcripts():
-    print('worker transcripts: the harness loop\'s sessions count beside Pi\'s (C30)')
+    print('worker transcripts: the harness loop\'s sessions count (C30)')
     from unittest import mock
     from agent_runner import runner as R
     with tempfile.TemporaryDirectory() as t:
         notes = Path(t) / 'notes'
-        for d in ('pi-sessions', 'harness-sessions'):
-            (notes / d).mkdir(parents=True)
-            write(notes / d / f'{d}.jsonl', [result('a', 'y')])
+        (notes / 'harness-sessions').mkdir(parents=True)
+        write(notes / 'harness-sessions' / 'harness-sessions.jsonl', [result('a', 'y')])
         (Path(t) / 'slots').mkdir()
         fake = mock.Mock()
         fake.notes = lambda name: notes / name
         with mock.patch.object(R, 'init', lambda: None), mock.patch.object(R, 'C', fake, create=True), \
                 mock.patch.object(R, 'SLOTS_DIR', Path(t) / 'slots', create=True):
-            eq(sorted(p.name for p in cost.worker_transcripts(1)), ['harness-sessions.jsonl', 'pi-sessions.jsonl'],
-               'both folders')
+            eq(sorted(p.name for p in cost.worker_transcripts(1)), ['harness-sessions.jsonl'],
+               'the harness loop\'s folder')
 
 
 def main() -> int:

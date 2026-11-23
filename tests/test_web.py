@@ -685,7 +685,7 @@ def test_page_copy_publish(tmp: Path) -> None:
 
     PC.PAGE_COPY_AT[0], PC.PAGE_COPY_FAILS[0], PC.PAGE_COPY_OFF[0] = 0.0, 0, ''
     tick = lambda now, s: PC.page_copy_tick(now=now, snap=s, background=False)  # noqa: E731
-    with mock.patch.object(PC, 'remote_on', lambda: True), mock.patch.object(PC, 'control_ok', lambda: True), \
+    with mock.patch.object(PC, 'remote_on', lambda: True), \
             mock.patch.object(PC, 'C', S.C), mock.patch.object(PC, 'ROOT', S.ROOT), \
             mock.patch.object(PC.sp, 'run', fake_run), \
             mock.patch.object(SL, 'send_fifo', lambda *a, **k: keys.append(a) or True), \
