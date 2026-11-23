@@ -1336,6 +1336,7 @@ def test_run_controls() -> None:
             p.key(ch)
         p.key('ENTER')
         eq(ran, [['wip', 'show', 'main-checkout-2']], 'the one typed is shown')
+        check('sent to the run' in drawn(p).text() and p.output == ['sent to the run'], 'its whole output stays in the pane', p.output)
         p = page()
         ran.clear()
         p.key('r')

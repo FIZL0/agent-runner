@@ -93,7 +93,7 @@ nothing to draw (an interrupt, an order kept) and for Talk, which draws the pers
 The page is drawn again from the snapshot, whole parts at a time. `setHTML()` draws a part only when its markup changed,
 so markup holds no clock that ticks faster than a minute and no state a gesture is holding: what changes while a finger
 is down (the mic, the drawer, the sheet) is set on the node that is there (`talkDraw()`). `render()` waits while a press or
-a text selection is under way.
+a text selection is under way (15 s at most).
 
 ## Motion
 

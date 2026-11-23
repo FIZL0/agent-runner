@@ -978,6 +978,23 @@ def _toml_comment(line: str) -> str:
     return ''
 
 
+def _toml_inner(lines: list[str]) -> list[str]:
+    """The comments inside a value over several `lines` (not the one that ends it), as lines of their own."""
+    out = []
+    want = tomllib.loads('\n'.join(lines))
+    for i, l in enumerate(lines[:-1]):
+        at = l.find('#')
+        while at >= 0:
+            try:
+                if tomllib.loads('\n'.join([*lines[:i], l[:at], *lines[i + 1:]])) == want:
+                    out.append(l[at:].strip())
+                    break
+            except tomllib.TOMLDecodeError:
+                pass
+            at = l.find('#', at + 1)
+    return out
+
+
 def toml_edit(text: str, table: str, key: str, value=None, unset: bool = False) -> str:
     """F97: `text` (a runner.local.toml) with `[table] key` set to `value` (`unset`: taken out), every other line
     and comment as it was. ValueError when it cannot be done on its own line (a key written as a [table.key]
@@ -1014,14 +1031,15 @@ def toml_edit(text: str, table: str, key: str, value=None, unset: bool = False) 
     if unset:
         if where is None:
             return text if key not in _table_of(before, table, wrapped) else _toml_refuse(table, key)
-        lines[where[0]:where[0] + where[1]] = []
+        lines[where[0]:where[0] + where[1]] = _toml_inner(lines[where[0]:where[0] + where[1]])
     else:
         new = f'{key} = {toml_value(value)}'
         if where is not None:
             old = lines[where[0]]
             indent = old[:len(old) - len(old.lstrip())]
-            lines[where[0]:where[0] + where[1]] = [
-                indent + new + _toml_comment('\n'.join(lines[where[0]:where[0] + where[1]]))]
+            was = lines[where[0]:where[0] + where[1]]
+            lines[where[0]:where[0] + where[1]] = [indent + c for c in _toml_inner(was)] + [
+                indent + new + _toml_comment('\n'.join(was))]
         elif at is not None:
             lines[last:last] = [new]
         else:
@@ -1099,6 +1117,7 @@ def save_local_setting(root: Path, table: str, key: str, value=None, unset: bool
         raise ValueError(f'{f.name} does not read as TOML ({e}): fix it there first') from None
     tmp = f.with_name(f.name + '.tmp')
     tmp.write_bytes((out.replace('\n', '\r\n') if crlf else out).encode('utf-8'))
+    os.chmod(tmp, f.stat().st_mode & 0o777)
     os.replace(tmp, f)
     keep_local_ignored(f.parent)
     return f
@@ -1122,6 +1141,11 @@ def settings_snapshot(root: Path) -> dict:
         for t, keys in raws[side].items():
             gone = {k for (tt, k) in (*REMOVED, *MOVED) if tt == t}
             if not isinstance(keys, dict) or (t not in DEFAULTS and not gone):
+                if f.name in ('runner.toml', LOCAL) and not (isinstance(keys, dict) and keys.get('agent-runner')):
+                    unknown.append({'table': t if isinstance(keys, dict) else '', 'key': '' if isinstance(keys, dict) else t,
+                                    'value': toml_value(keys), 'file': f.name, 'side': side,
+                                    'why': f'[{t}] is not a table the runner reads, ignored' if isinstance(keys, dict)
+                                    else f'{t} is in no table, ignored'})
                 continue
             for k, v in keys.items():
                 if k in DEFAULTS.get(t, {}) or (t not in DEFAULTS and k not in gone):

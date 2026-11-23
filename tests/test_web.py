@@ -2251,6 +2251,10 @@ speak('Stopped early.'); const u = spoken[spoken.length - 1]; hush(); u.onend();
 TS = {...TS, auto: false, read: false}; speak('No more.'); spoken[spoken.length - 1].onend(); out.off = starts;
 playReply('b'); out.play = [TK.playing, spoken[spoken.length - 1].text, TK.state];
 playReply('b'); out.playStop = TK.playing;
+TS = {...TS, mic: 'tap'}; listen(); rec.onresult({resultIndex: 0, results: [Object.assign([{transcript: 'x'}], {isFinal: true})]});
+const n0 = sent.length; playReply('b'); out.playOver = [sent.length - n0, TK.rec, TK.playing];
+starts = 0; listen(); out.micStops = [starts, TK.playing];
+TS = {...TS, mic: 'hold'}; listen(); fire('pointerdown', mic); rec.onresult({resultIndex: 0, results: [Object.assign([{transcript: 'auto'}], {isFinal: true})]}); fire('pointerup', mic); out.autoHeld = sent[sent.length - 1];
 console.log(JSON.stringify(out));`);
 """
 
@@ -2285,6 +2289,9 @@ def test_talk_settings_f124(tmp: Path) -> None:
     eq(got.get('off'), 1, 'off: no auto listen')
     eq(got.get('play'), ['b', 'One thing.', ''], "a reply's play button reads it, with read aloud off too")
     eq(got.get('playStop'), '', 'a second tap stops it')
+    eq(got.get('playOver'), [0, None, 'b'], 'playing a reply stops the mic, and sends nothing')
+    eq(got.get('micStops'), [0, ''], 'the mic then stops the reply first')
+    eq(got.get('autoHeld'), 'auto', 'holding the mic while it already listens: letting go sends')
 
 
 def test_status_view_f124(tmp: Path) -> None:
@@ -2445,8 +2452,8 @@ def test_settings_f97(tmp: Path) -> None:
     runner.local.toml, its comments kept; a project value queued as a C task; bad values refused."""
     repo = fake_repo(tmp)
     toml, local = repo / 'runner.toml', repo / 'runner.local.toml'
-    toml.write_text('[run]\nslots = 4\nslotz = 1\n\n[git]\npush = false\n', encoding='utf-8')
-    mine = '# my laptop\n[run]\nslots = 2   # it is small\nlinks = [\n  "data",\n]  # big\n\n# the end\n[ui]\ntheme = "light"\n'
+    toml.write_text('[run]\nslots = 4\nslotz = 1\n\n[rnu]\nslots = 9\n\n[git]\npush = false\n', encoding='utf-8')
+    mine = '# my laptop\n[run]\nslots = 2   # it is small\nlinks = [\n  "data",  # one\n]  # big\n\n# the end\n[ui]\ntheme = "light"\n'
     local.write_text(mine, encoding='utf-8')
     token = W.web_token()
     srv = W.serve(token, 0, '127.0.0.1', snap=lambda: {})
@@ -2468,7 +2475,8 @@ def test_settings_f97(tmp: Path) -> None:
         quiet, _ = key('ui', 'chat_quiet')
         eq((quiet['value'], quiet['source'], quiet['applies']), ('6h', 'default', 'next run'), 'chat_quiet: the default, 6h')
         check('grayed' in quiet['help'], 'with its help text', quiet)
-        eq([(u['table'], u['key'], u['file']) for u in d['unknown']], [('run', 'slotz', 'runner.toml')], 'an unknown key is flagged')
+        eq([(u['table'], u['key'], u['file']) for u in d['unknown']], [('run', 'slotz', 'runner.toml'), ('rnu', '', 'runner.toml')],
+           'an unknown key is flagged, and an unknown table')
         check('did you mean' in d['unknown'][0]['why'], 'and says why', d['unknown'])
         every = {(t, k) for t, keys in CF.DEFAULTS.items() for k in keys}
         eq({(t['table'], k['key']) for t in d['tables'] for k in t['keys']}, every, 'every key `settings` lists')
@@ -2479,7 +2487,7 @@ def test_settings_f97(tmp: Path) -> None:
             eq(local.read_text(encoding='utf-8'), mine.replace('slots = 2 ', 'slots = 5 '), 'edits that value only, comments kept')
             eq(ran, [['slots', '5']], 'slots applies now, through the slots action')
             eq(act_('setting_device', table='run', key='links', value=['a b'])['ok'], True, 'a list over several lines')
-            check('links = ["a b"]  # big' in local.read_text(encoding='utf-8'), 'becomes one line, its comment kept')
+            check('# one\nlinks = ["a b"]  # big' in local.read_text(encoding='utf-8'), 'becomes one line, its comments kept')
             eq(act_('setting_device', table='git', key='land_edited', value='wip')['ok'], True, 'a table not there yet')
             eq(CF.tomllib.loads(local.read_text(encoding='utf-8'))['git'], {'land_edited': 'wip'}, 'is added')
             eq(key('run', 'slots')[0]['value'], 5, 'the page reads the new value')
@@ -2496,6 +2504,7 @@ def test_settings_f97(tmp: Path) -> None:
             check(ran[0][:3] == ['plan', 'add', 'C'] and 'set [run] weekly_max = 80' in ran[0][3]
                   and ran[0][4:] == ['--files', 'runner.toml'], 'queues a C task on runner.toml', ran)
             eq(toml.read_text(encoding='utf-8'), before, 'and never edits the main checkout')
+            check('chat' in act_('setting_project', table='run', key='test', value='a | files: b')['out'], "the plan's marks are refused")
             ran.clear()
             now = local.read_text(encoding='utf-8')
             for t, k, v in (('run', 'slots', 'four'), ('run', 'slots', 0), ('run', 'slots', True), ('run', 'web', 'yes'),

@@ -945,7 +945,7 @@ function keepFields(root){
     if(on){const el=[...root.querySelectorAll('[data-f]')].find(e=>e.dataset.f===on);if(el&&el!==document.activeElement){el.focus({preventScroll:true});try{if(sel&&sel[0]!=null)el.setSelectionRange(sel[0],sel[1])}catch(e){}}}};
 }
 /* a press under way, or a text selection in the view: a refresh waits for it (the next draw has it all) */
-const PD={down:false,late:false};
+const PD={down:false,late:false,since:0}, HOLD_MS=15000;
 const selecting=()=>{const g=window.getSelection&&window.getSelection();return !!(g&&!g.isCollapsed&&g.anchorNode&&$('body').contains(g.anchorNode))};
 const emptyCard=t=>card(`<div class="small">${t}</div>`);
 
@@ -1010,6 +1010,7 @@ async function drain(){
 /* what the page does once the run answered an item */
 function obDone(it,j){
   const now=Date.now(), snapNow=()=>fetch(tq('snapshot')).then(s=>s.json()).then(takeSnap).catch(()=>{});
+  if(it.set&&!(j&&j.ok))delete S.f[`set:${it.name==='setting_project'?'project':'device'}:${it.set.id}`];  // the field shows what is kept again
   if(!j||!j.ok){toast(`Not sent: ${it.say}`,true);S.obOpen=true;if(it.need||it.concept)snapNow();return}
   if(it.newchat&&!j.name&&S.waitNew)S.waitNew.sent={j,ask:it.ask};  // B154: takeSnap finds its name
   if(it.newchat&&j.name){carrySent(j.name,j,it.ask);if(S.waitNew&&S.waitNew.ph==='@'+it.cid)S.waitNew=null;if(S.thread==='@'+it.cid)open(j.name)}
@@ -1019,7 +1020,7 @@ function obDone(it,j){
   else if(it.concept){S.gone={...(S.gone||{}),[it.concept]:now}}  // a picked concept stays off while the run catches up
   else if(it.name==='plan_add'&&it.args.kind==='K'){S.kSaid=`Queued ${queuedId(j.out)||'a new concept'}: a run writes its options page, and it shows here.`;toast(S.kSaid)}
   else if(it.ren){const x=sessionOf(it.ren);if(x){x.title=it.args.title;x.renamed=true}}  // F129
-  else if(it.set){if(it.set.applies!=='now')S.setWait=true;for(const f of Object.keys(S.f))if(f.endsWith(it.set.id))delete S.f[f];loadSettings();toast(it.name==='setting_project'?`${queuedTask(j.out)} queued: the setting lands through the gate`:String(j.out||'Saved').split('\n')[0])}  // F97
+  else if(it.set){if(it.set.applies!=='now')S.setWait=true;delete S.f[`set:${it.name==='setting_project'?'project':'device'}:${it.set.id}`];loadSettings();toast(it.name==='setting_project'?`${queuedTask(j.out)} queued: the setting lands through the gate`:String(j.out||'Saved').split('\n')[0])}  // F97
   else if(it.ctl){if(it.name==='run_control'&&it.args.key==='wip_show'){S.out={title:it.args.tid,text:String(j.out||'')};openSheet('out')}
     else toast(String(j.out||'').split('\n')[0]||`${it.say}: done`)}  // F124: a run control
   if(it.done)toast(it.done);
@@ -1438,7 +1439,7 @@ function settingsHTML(){
     ${obCards(x=>x.ctl==='restart:')}
     <input class="fld" type="search" data-f="setq" placeholder="Find a setting" aria-label="Find a setting">
     ${ts.length?ts.map(x=>`<div class="sec">[${esc(x.t)}]<span class="ln"></span></div>${card(x.ks.map(k=>settingRow(x.t,k)).join(''),'',`data-k="sett:${esc(x.t)}"`)}`).join(''):emptyCard('No setting matches.')}
-    ${d.unknown.length?`<div class="sec">Not settings<span class="ln"></span></div>${card(d.unknown.map(u=>`<div class="srow" data-k="unk:${esc(u.side+u.table+u.key)}"><div class="row"><span class="grow setkey">[${esc(u.table)}] ${esc(u.key)} = ${esc(u.value)}</span><span class="tag warn">unknown</span></div><div class="small">${esc(u.file)}: ${esc(u.why)}</div></div>`).join(''))}`:''}</div>`;
+    ${d.unknown.length?`<div class="sec">Not settings<span class="ln"></span></div>${card(d.unknown.map(u=>`<div class="srow" data-k="unk:${esc(u.side+u.table+u.key)}"><div class="row"><span class="grow setkey">${u.table?`[${esc(u.table)}] `:''}${u.key?`${esc(u.key)} = `:''}${esc(u.value)}</span><span class="tag warn">unknown</span></div><div class="small">${esc(u.file)}: ${esc(u.why)}</div></div>`).join(''))}`:''}</div>`;
 }
 const settingOf=id=>{const [t,...k]=id.split('.');const x=S.set&&S.set.tables.find(y=>y.table===t);return x&&{t,k:x.keys.find(y=>y.key===k.join('.'))}};
 function saveSetting(id,side){
@@ -1481,7 +1482,7 @@ function topHTML(){
   return `<button class="icon menu" data-menu aria-label="Menu${S.menuDot?': something needs you':''}">${I.menu}${S.menuDot?'<span class="bdot"></span>':''}</button>${n?`<button class="icon" data-home aria-label="Back">${I.back}</button>`:''}<div class="title">${n?esc(threadTitle(n)):{talk:'Talk',home:'',status:'Status',plan:'Plan',concepts:'Concepts',settings:'Settings',projects:'All projects'}[S.view]}</div>${p.text?`<button class="pill ${p.cls}" data-view="status" data-k="pill" data-v="${esc(p.text)}" title="The run: open Status">${esc(p.text)}</button>`:''}${!n&&S.view==='talk'?`<button class="icon" data-sheet="talk" aria-label="Talk settings" title="Talk settings">${I.gear}</button>`:''}${x&&x.link?`<a class="icon" href="${esc(x.link)}" target="_blank" rel="noopener" aria-label="Open its session" title="Open its session">${I.ext}</a>`:''}<button class="icon" data-new aria-label="New chat" title="New chat">${I.newchat}</button>`;
 }
 function render(force){
-  if(!force&&(PD.down||selecting())){PD.late=true;return}
+  if(!force&&(PD.down||selecting())){const now=Date.now();PD.since=PD.late?PD.since:now;PD.late=true;if(now-PD.since<HOLD_MS)return}  // but never for long
   PD.late=false;
   markSeen();  // F128
   obHide();
@@ -1668,7 +1669,8 @@ function unlockSpeech(){  /* Safari speaks later only after a first utterance in
 function speak(text,key){
   const ss=window.speechSynthesis;
   if(!ss||!text){TK.state='';render(true);return}
-  TK.state='';TK.playing='';ss.cancel();
+  if(key&&TK.rec){TK.drop=true;TK.rec.stop()}  // a play button stops the mic, so it does not hear the reply; nothing is sent
+  if(!key||TK.state!=='thinking')TK.state='';TK.playing='';ss.cancel();
   const parts=text.match(/[^.!?]+[.!?]*\s*/g)||[text];  /* sentence by sentence: Chrome cuts one long utterance short */
   const voice=pickVoice(voices(),TS.voice), turn=TK.turn=(TK.turn||0)+1;
   parts.forEach((p,i)=>{const u=new SpeechSynthesisUtterance(p.trim());u.lang=(voice&&voice.lang)||navigator.language||'en-US';if(voice)u.voice=voice;
@@ -1691,7 +1693,7 @@ function listen(){
   if(TK.state==='listening'){if(TK.rec)TK.rec.stop();return}
   /* B132: no speechSynthesis call before rec.start() on a plain tap: on iOS it puts the audio session in playback
      and recognition hears nothing (talkSend unlocks speech). A tap during a reply only stops it; the next one listens. */
-  if(TK.state==='speaking'){TK.state='';TK.note='';TK.turn=(TK.turn||0)+1;if(window.speechSynthesis)speechSynthesis.cancel();render(true);return}
+  if(TK.state==='speaking'||TK.playing){if(TK.state==='speaking')TK.state='';TK.playing='';TK.note='';TK.turn=(TK.turn||0)+1;if(window.speechSynthesis)speechSynthesis.cancel();render(true);return}
   TK.note='';const again=TK.again;TK.again=false;  /* auto listen: one silent turn and it stops */
   let rec;try{rec=new SR()}catch(e){return toast(`The mic could not start: ${e.message||e}`,true)}
   TK.rec=rec;rec.lang=navigator.language||'en-US';rec.interimResults=true;rec.continuous=false;
@@ -1700,7 +1702,7 @@ function listen(){
     TK.heard=(final+interim).trim();render(true)};
   rec.onerror=e=>{err=e.error||'';if(e.error==='not-allowed'||e.error==='service-not-allowed')toast('The browser did not let the page use the mic: allow it in the site settings, or type below.',true);
     else if(e.error!=='no-speech'&&e.error!=='aborted')toast(`The mic stopped: ${e.error}`,true)};
-  rec.onend=()=>{TK.rec=null;const t=(final||TK.heard).trim();TK.heard='';if(TK.state==='listening')TK.state='';
+  rec.onend=()=>{TK.rec=null;const t=TK.drop?'':(final||TK.heard).trim();TK.drop=false;TK.heard='';if(TK.state==='listening')TK.state='';
     if(t)talkSend(t);else{TK.note=again?(TS.mic==='hold'?'Hold to talk':'Tap to talk'):heardNothing(err);render(true)}};
   TK.state='listening';TK.heard='';render(true);
   try{rec.start()}catch(e){TK.state='';TK.rec=null;toast(`The mic could not start: ${e.message||e}`,true);render(true)}
@@ -1839,7 +1841,7 @@ document.addEventListener('click',async e=>{
     if(twice&&!S.drawer){startRename(x.dataset.thread);return}
   }
   if(x=q('[data-viewsw]')){try{localStorage.setItem(VIEW_KEY,x.dataset.viewsw)}catch(err){}return}  // F81: the link goes on
-  if(q('[data-mic]')){if(TS.mic==='hold'&&TK.state!=='speaking'&&e.detail>0)return;return listen()}  // F93; F124: held (pointerdown), a key still toggles
+  if(q('[data-mic]')){if(TS.mic==='hold'&&TK.state!=='speaking'&&!TK.playing&&e.detail>0)return;return listen()}  // F93; F124: held (pointerdown), a key still toggles
   if(q('[data-spk]')){if(TK.state==='speaking'||TK.playing)return hush();talkSet('read',!TS.read);return}
   if(x=q('[data-talkmode]'))return talkMode(x.dataset.talkmode);
   if(x=q('[data-speak]'))return playReply(x.dataset.speak);
@@ -1992,13 +1994,14 @@ document.addEventListener('contextmenu',e=>{if(DR&&DR.ready&&e.target.closest&&e
 let noClick=false;
 document.addEventListener('click',e=>{if(noClick){noClick=false;e.preventDefault();e.stopPropagation()}},true);
 /* F83: a press under way holds the refreshes back, so what it lands on is still there when it ends */
-document.addEventListener('pointerdown',()=>{PD.down=true},true);
+document.addEventListener('pointerdown',e=>{PD.down=!(e.button>0)},true);
+for(const t of ['contextmenu','blur','visibilitychange'])addEventListener(t,()=>{PD.down=false},true);
 for(const t of ['pointerup','pointercancel'])document.addEventListener(t,()=>{PD.down=false;if(PD.late)setTimeout(()=>{if(!PD.down)render()},60)},true);
 document.addEventListener('selectionchange',()=>{if(PD.late&&!PD.down&&!selecting())render()});
 /* F124: hold to talk: the mic listens while it is held, and sends when it is let go */
 document.addEventListener('pointerdown',e=>{
-  if(!(e.target.closest&&e.target.closest('[data-mic]'))||TS.mic!=='hold'||TK.state==='speaking'||e.button>0)return;
-  if(TK.state!=='listening'){TK.hold=true;listen()}
+  if(!(e.target.closest&&e.target.closest('[data-mic]'))||TS.mic!=='hold'||TK.state==='speaking'||TK.playing||e.button>0)return;
+  TK.hold=true;if(TK.state!=='listening')listen();  // auto listen is on already: letting go sends it
 });
 for(const t of ['pointerup','pointercancel'])document.addEventListener(t,()=>{if(!TK.hold)return;TK.hold=false;if(TK.rec)TK.rec.stop()});
 document.addEventListener('contextmenu',e=>{if(e.target.closest&&e.target.closest('[data-mic]'))e.preventDefault()});

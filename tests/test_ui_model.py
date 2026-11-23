@@ -759,6 +759,11 @@ def test_need_chat_f143(tmp: Path) -> None:
               "a pick sheet's questions and answers are in it", ran[-1])
         eq(U.need_options({'label': 'CONFIRM'}), ['Yes', 'No'], 'a CONFIRM: Yes, No')
         eq(U.need_options({'label': 'DECIDE', 'options': ['a', 'b']}), ['a', 'b'], "an item's own options")
+        path = chat(9, 'sx', [said('assistant', 'I looked at both. Tabs cost a day, the drawer two.', '2026-11-21T10:00:00Z')])
+        from agent_runner import slots, watch
+        with mock.patch.object(watch, 'last_session', lambda tid: (1, 'sx')), mock.patch.object(slots, 'transcript', lambda sid: path):
+            U.act('need_chat', tid='D3')
+        check('Tabs cost a day, the drawer two.' in ran[-1][3], "the agent's full last message is in it", ran[-1])
         n = len(ran)
         for bad in ('', 'D3; rm', '--force', 'F1'):
             eq(U.act('need_chat', tid=bad)['ok'], False, f'refused: {bad!r}')

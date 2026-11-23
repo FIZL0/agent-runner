@@ -408,6 +408,7 @@ class RunPage:
         self.window_keys: set[str] = set()  # the keys the last frame showed above the bottom line
         self.confirm = ''  # F82: the run control waiting for its key again (stop now), '' none
         self.confirm_id = ''  # F124: what that control works on (a moved-aside branch), '' none
+        self.output: list[str] = []  # F124: what the last W showed
         self.dropping = ''  # F110: the Needs you item waiting for D again, '' none
         self.restart = False  # F90: the run is on a newer version: start this TUI again on it (`follow_upgrade`)
         self.pick = False  # B153: quit for the pick-a-run screen (0, the project name's key)
@@ -809,6 +810,8 @@ class RunPage:
         for row in self.control_buttons('run'):
             out += [row, L()]
         out.append(L(('A slot on a task: H takes it back, D drops it (Sessions [2]).', 'dim')))
+        if self.output:
+            out += [L()] + [L((l, 'fg')) for l in self.output]
         if self.confirm:
             c = next((c for c in self.snap.get('controls') or U.controls() if c['key'] == self.confirm), {})
             out += [L()] + text_lines(f'{c.get("confirm", "")} {c.get("tui", "")} again: yes; any other key: no',
@@ -851,7 +854,15 @@ class RunPage:
             self.set_tab('controls')
             self.msg, self.msg_ok = f'{c["confirm"]} {c["tui"]} again: yes', False
             return
-        self.done(U.run_control(key, **args))
+        self.control_done(key, U.run_control(key, **args))
+
+    def control_done(self, key: str, r: dict) -> None:
+        """A run control's result; what W shows (the files a moved-aside branch holds) stays in the controls pane."""
+        self.output = (r.get('out') or '').strip().splitlines() if key == 'wip_show' and r.get('ok') else []
+        if self.output:
+            self.panel, self.main = 1, True
+            self.set_tab('controls')
+        self.done(r)
 
     def session_pane(self, it, tab: str, width: int) -> tuple[list, list, object]:
         L = lambda *segs: list(segs)  # noqa: E731
@@ -1445,7 +1456,7 @@ class RunPage:
             tid, self.confirm_id = self.confirm_id, ''
             c = next((c for c in self.snap.get('controls') or U.controls() if c['key'] == key), {})
             if k == c.get('tui'):
-                self.done(U.run_control(key, confirm=True, **({'tid': tid} if tid else {})))
+                self.control_done(key, U.run_control(key, confirm=True, **({'tid': tid} if tid else {})))
             else:
                 self.msg, self.msg_ok = f'{c.get("label", key)}: not done', True
             return False

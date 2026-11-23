@@ -45,6 +45,7 @@ import datetime as dt
 import json
 import re
 import subprocess as sp
+import threading
 import time
 from pathlib import Path
 
@@ -825,6 +826,8 @@ def run_control_of(key: str) -> dict | None:
 def controls() -> list[dict]:
     """The run controls as a page shows them: key, label, TUI key, where, what it needs typed ('n': a slot
     count, 'id': a task) and its confirm question ('' none)."""
+    from agent_runner import plat
+
     def needs(c):
         if c.get('fix'):
             return 'pick'
@@ -832,7 +835,8 @@ def controls() -> list[dict]:
         return 'n' if any('{n}' in w for w in words) else 'id' if any('{id}' in w for w in words) else ''
     return [{'key': c['key'], 'label': c['label'], 'tui': c['tui'], 'where': c['where'], 'needs': needs(c),
              'confirm': c.get('confirm', ''), 'group': c.get('group', ''), 'fix': c.get('fix', ''),
-             'each': bool(c.get('each')), 'up': c.get('up', True)} for c in RUN_CONTROLS]
+             'each': bool(c.get('each')), 'up': c.get('up', True)} for c in RUN_CONTROLS
+            if not (plat.WINDOWS and c['key'] == 'restart')]  # no re-exec there
 
 
 def control_argv(key: str, n='', tid: str = '', why: str = '') -> list[str]:
@@ -872,8 +876,9 @@ def run_control(key: str, n='', tid: str = '', why: str = '', confirm: bool = Fa
         return {'ok': False, 'code': 3, 'out': c['confirm'], 'confirm': c['confirm'], 'argv': argv}
     if c.get('ask'):
         return new_control(c['ask'].replace('{id}', tid), wait)
+    r = call(argv)
     FIXUPS[0] = float('-inf')  # what there is to fix is looked up anew
-    return call(argv)
+    return r
 
 
 ACTIONS = {'plan_add': plan_add, 'plan_change': plan_change, 'chat': chat, 'answer': answer, 'drop': drop,
@@ -1316,6 +1321,21 @@ def need_options(row: dict) -> list[str]:
     return []
 
 
+def agent_last_words(tid: str) -> str:
+    """F143: the last message of the agent that worked on task `tid` (its latest session's transcript), else the
+    task's own lines in TODO.md, uncut (what it blocked with); '' for neither."""
+    try:
+        from agent_runner.slots import transcript
+        from agent_runner.watch import last_session
+        if (last := last_session(tid)) and (path := transcript(last[1])):
+            if says := [e['text'] for e in feed_entries(tail_rows(path)) if e['kind'] == 'say']:
+                return says[-1]
+    except Exception:  # noqa: BLE001 - no slot logs, or a transcript that does not read
+        pass
+    ls = P.lines(S.C.todo)
+    return next(('\n'.join(P._item_block(ls, i)).strip() for _, _, t, _, i in P.iter_tasks(ls) if t == tid), '')
+
+
 def need_chat_text(row: dict) -> str:
     """F143: the first message of a new control session about one Needs you row: its id and title, the agent's full
     last message (what it put to the person) and the possible answers."""
@@ -1324,6 +1344,8 @@ def need_chat_text(row: dict) -> str:
            ask]
     if what and what.strip(' .') not in ask:
         out.append(what)
+    if (last := agent_last_words(row.get('id', ''))) and last not in out:
+        out.append(f"The agent's last message:\n{last}")
     if opts:
         out.append('Possible answers:\n' + '\n'.join(f'- {o}' for o in opts))
     if row.get('url'):
@@ -1370,10 +1392,14 @@ def settings() -> dict:
     return CF.settings_snapshot(S.ROOT)
 
 
+_SETTING_LOCK = threading.Lock()  # two pages saving at once: one read and write of the file at a time
+
+
 def _setting_done(table: str, key: str, value=None, unset: bool = False) -> dict:
     from agent_runner import config as CF
     try:
-        f = CF.save_local_setting(S.ROOT, table, key, value, unset)
+        with _SETTING_LOCK:
+            f = CF.save_local_setting(S.ROOT, table, key, value, unset)
     except (ValueError, OSError) as e:
         return {'ok': False, 'code': 2, 'out': str(e), 'argv': []}
     if (table, key) in CF.SETTING_NOW and S.run_up():  # it applies now: the run that is up is told
@@ -1402,6 +1428,9 @@ def setting_project(table: str, key: str, value=None) -> dict:
     if problem := CF.setting_check(S.ROOT, table, key, value):
         return {'ok': False, 'code': 2, 'out': problem, 'argv': []}
     f = CF.config_file(S.ROOT)
+    if re.search(r'\s\|\s*\w+:|—|BLOCKED:|\\n', CF.toml_value(value)):  # the plan's own marks: the line would not read back
+        return {'ok': False, 'code': 2, 'out': f'[{table}] {key}: that value cannot go on a task line; ask for it in a '
+                                               f'chat', 'argv': []}
     return plan_add('C', f'set [{table}] {key} = {CF.toml_value(value)} in {f.name if f else "runner.toml"} '
                          f'(from the run app\'s Settings)', files=['runner.toml' if not f else f.name])
 
