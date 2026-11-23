@@ -4,6 +4,8 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Fixed: `run publish-page` and the run page copy and pitch pages now reach claude.ai (B180). They did not: the one-shot exited 0 with no URL. It had only `--tools Artifact`; Claude Code 2.1.330 then denies Read, and Artifact will not publish a file it may not read. It now has Artifact and Read, and a failed publish logs the end of its errors and answer, so a sign-in warning no longer hides the reason.
+
 ## 0.62.0 (2026-11-23)
 
 - Changed: the run app's Settings page is rebuilt (F166). About 24 everyday settings sit in Speed and limits, Landing work, Models and Chats, each with its control on its row; the rest are behind Advanced, and commands, paths, patterns and rules behind Project file, read only with "Ask a chat to change it". Each setting says where a change is saved: this device at once (`runner.local.toml`), or everyone as a queued C task on `runner.toml`, shown as Queued until it starts. A row's More… has the other home and Reset. Changed lists what differs from the default, and the lines the run ignores or moved. Search finds names, descriptions and code names, and a card with Restart the run says how many changes wait for a restart. `agent-runner settings` still prints the developer notes.

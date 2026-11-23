@@ -1664,7 +1664,7 @@ def test_publish_page_f106f(repo: Path, tmp: Path):
     argv = calls[0]['argv']
     eq(argv[0], '-p', 'a headless one-shot')
     check(str(copy) in argv[1] and 'icon "options"' in argv[1], 'it is asked to publish the copy, as a new page', argv[1])
-    eq(argv[argv.index('--tools') + 1], 'Artifact', 'with only the Artifact tool')
+    eq(argv[argv.index('--tools') + 1], 'Artifact,Read', 'with only Artifact, and the Read it needs')
     has(r.stdout, r'published: https://claude\.ai/code/artifact/k1-page', 'the url is printed')
     has(r.stdout, r'/concept/K1', 'and where the run page shows it')
     eq((root / '.runner' / 'concepts' / 'K1.url').read_text(encoding='utf-8').strip(),
