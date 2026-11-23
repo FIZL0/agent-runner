@@ -111,6 +111,17 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 - Added: `tools/windows_vm.sh` runs test files (default `tests/test_windows.py`) of a worktree, uncommitted changes
   included, on the Windows VM the machine already has, for contributors working on Windows code. It is a repo tool and
   not part of the installed package (T14).
+- Changed: Runner Home's footprint walk (every 10 min) now removes ended sessions' temp folders itself and logs to
+  home.log what it freed; before, only the Clean button did. A session has ended when no process names it, Claude
+  Code's session registry (`sessions/<pid>.json` under `CLAUDE_CONFIG_DIR` or `~/.claude`) has it not open (pid alive
+  with the same procStart), the runner will not resume or wake it (queued resume, unanswered ask, cut-off slot task,
+  runner feed, c1's kept conversation, cN with a pid file), and nothing wrote to its folder for 1 h (runner worktrees)
+  or 24 h (main checkouts, newly included, in Clean too). With an unreadable or missing registry no main-checkout
+  folder goes; without /proc (macOS, Windows) none goes. Each is rechecked just before deletion, and symlinks are never
+  followed out of the temp root. Worktrees and wip/ branches still wait for the person in Clean. The fixed 5 GB alert
+  is gone: the alert comes when the temp folders left exceed 5% of the disk, names the size and the largest folder, and
+  mentions Clean only when it has a temp folder to free; min_free_gb's alert is unchanged. Home's service now keeps
+  `CLAUDE_CONFIG_DIR` from the installing shell: re-run `agent-runner home install` if you set it (F144).
 
 ## 0.61.0 (2026-11-23)
 

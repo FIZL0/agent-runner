@@ -11,10 +11,12 @@ From a sample Home works out:
                usage-cap limits (no usage limit while [models] fallback has a free provider), capped at ROOM_MAX
                (`headroom`)
     alerts     the thresholds that need the person: disk under min_free_gb, high temperatures, memory nearly
-               full, session temp folders over 5 GB (`alerts`); they show under Needs you on Home and go to
-               each running project's runner feed, which pushes them (`Vitals.push_alerts`)
+               full, session temp folders over 5% of the disk after the auto-clean (`alerts`); they show under
+               Needs you on Home and go to each running project's runner feed, which pushes them
+               (`Vitals.push_alerts`)
     footprint  what agent-runner keeps on disk: worktrees under each run home, session temp folders, logs,
-               wip/ branches, each sized (`footprint`), and Clean's safe list (`clean_plan`, `clean`)
+               wip/ branches, each sized (`footprint`), and Clean's safe list (`clean_plan`, `clean`);
+               each regular walk removes the ended sessions' temp folders on that list by itself (`auto_clean`)
     sessions   CPU and memory per slot and per control session (`session_rows`)
 
 Homes find each other (`peers`): links in the registry (`agent-runner home peer add LINK`) and, when Tailscale
@@ -51,8 +53,9 @@ DISK_GB = 2.0            # disk one more agent's worktree and temp folder take
 ROOM_MAX = 6             # the most "room for N more" ever says
 HOT_C = 90.0             # a CPU or GPU this hot is an alert
 MEM_LOW = 0.10           # less memory free than this share of it is an alert
-TMP_ALERT_GB = 5.0       # session temp folders past this are an alert
+TMP_ALERT_SHARE = 0.05   # session temp folders past this share of the disk, after the auto-clean, are an alert
 ENDED_AFTER = 3600.0     # s with no write before a session temp folder no process names counts as ended
+MAIN_ENDED_AFTER = 24 * 3600.0  # the same for a session in a main checkout
 FOOTPRINT_EVERY = 600.0  # s between footprint walks
 PEER_TIMEOUT = 3.0
 SESSION_DIR = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
@@ -492,9 +495,10 @@ def headroom(snap: dict, min_free_gb: float = 10, usage: dict | None = None, cap
     return {'room': room, 'by': by if limits[by] <= ROOM_MAX else '', 'limits': limits, 'said': said}
 
 
-def alerts(snap: dict, min_free_gb: float = 10, tmp_bytes: int | None = None) -> list[dict]:
+def alerts(snap: dict, min_free_gb: float = 10, foot: dict | None = None) -> list[dict]:
     """The thresholds crossed: [{'id', 'what', 'clean' (Clean helps)}]. `id` stays the same while the
-    problem lasts, so it is pushed once."""
+    problem lasts, so it is pushed once. `foot` is the footprint: its session temp folders are an alert past
+    TMP_ALERT_SHARE of the disk, and offer Clean only when its list has one to free."""
     host, out = snap.get('host', 'this machine'), []
     if (d := snap.get('disk')) and min_free_gb and d['free'] / GB < min_free_gb:
         out.append({'id': f'{host}:disk', 'clean': True,
@@ -509,10 +513,15 @@ def alerts(snap: dict, min_free_gb: float = 10, tmp_bytes: int | None = None) ->
     if (m := snap.get('mem')) and m['total'] and m['avail'] / m['total'] < MEM_LOW:
         out.append({'id': f'{host}:memory', 'clean': False,
                     'what': f'{host}: memory nearly full, {m["avail"] / GB:.1f} GB free of {m["total"] / GB:.0f} GB'})
-    if tmp_bytes is not None and tmp_bytes >= TMP_ALERT_GB * GB:
-        out.append({'id': f'{host}:tmp', 'clean': True,
-                    'what': f'{host}: session temp folders use {tmp_bytes / GB:.1f} GB (over {TMP_ALERT_GB:.0f} GB): '
-                            f'Clean frees the ended sessions\''})
+    tmp = (foot or {}).get('tmp')
+    if tmp is not None and (d := snap.get('disk')) and d.get('total') and tmp > TMP_ALERT_SHARE * d['total']:
+        said = (f'{host}: session temp folders use {size_words(tmp)} '
+                f'(over {TMP_ALERT_SHARE:.0%} of the {size_words(d["total"])} disk)')
+        if big := foot.get('tmp_largest'):
+            said += f'; the largest is {big["path"]} ({size_words(big["size"])})'
+        can = any(i['kind'] == 'tmp' for i in foot.get('clean') or [])
+        out.append({'id': f'{host}:tmp', 'clean': can,
+                    'what': said + ('. Clean frees the ended sessions\'' if can else '')})
     return out
 
 
@@ -684,6 +693,94 @@ def live_session_ids(proc: Path = Path('/proc')) -> set[str] | None:
     return out
 
 
+def open_sessions(proc: Path = Path('/proc'), registry: Path | None = None) -> tuple[set[str], bool]:
+    """(the session ids Claude Code's registry says are open, whether it could be read in full). Each session has
+    a `<pid>.json` there (`feed.claude_sessions_dir`) and is open while that pid is alive with the start time the
+    entry gives as procStart. Not in full: no registry, or an entry of a live pid that cannot be read; a session
+    that names no id on its command line (a person's own) may then be open unseen."""
+    if registry is None:
+        from agent_runner.feed import claude_sessions_dir
+        registry = claude_sessions_dir()
+    out: set[str] = set()
+    full = True
+    try:
+        entries = [f for f in registry.iterdir() if f.suffix == '.json']
+    except OSError:
+        return out, False
+    for f in entries:
+        try:
+            d = json.loads(f.read_text(encoding='utf-8'))
+            pid, sid = int(d['pid']), str(d['sessionId'])
+            if not SESSION_DIR.fullmatch(sid):
+                raise ValueError(sid)
+        except (OSError, ValueError, KeyError, TypeError):
+            if f.stem.isdigit() and (proc / f.stem).is_dir():
+                full = False
+            continue
+        if not (proc / str(pid)).is_dir():
+            continue
+        start, said = proc_start(proc, pid), d.get('procStart')
+        if start is None or said is None or str(said) == start:  # not told apart: counts as open
+            out.add(sid)
+    return out, full
+
+
+def proc_start(proc: Path, pid: int) -> str | None:
+    """When `pid` started (clock ticks since boot, as Claude Code's procStart): /proc's stat, field 22."""
+    stat = _read(proc / str(pid) / 'stat')
+    try:
+        return stat.rsplit(')', 1)[1].split()[19] if stat else None
+    except IndexError:
+        return None
+
+
+def live_now(proc: Path = Path('/proc'), registry: Path | None = None) -> tuple[set[str] | None, bool]:
+    """(the live sessions' ids: those a process names and those the registry has open, whether the registry was
+    read in full); (None, False) with no /proc to tell."""
+    live = live_session_ids(proc)
+    if live is None:
+        return None, False
+    ids, full = open_sessions(proc, registry)
+    return live | ids, full
+
+
+def waiting_sids(p: 'Project') -> set[str]:
+    """The sessions of `p` the runner will resume or wake, whose temp folders stay: those queued to resume
+    (<ID>.resume), those whose ask waits for the person's answer (<ID>.ask), the last session of a slot worktree
+    still on its task/ branch (the next run start resumes one that was cut off), the runner feed's, c1's kept one
+    (control.sid), and cN's while its pid file is there (reopened after a shutdown)."""
+    out = set(p.resume)
+    for f in [*p.notes.glob('*.resume'), *p.notes.glob('*.ask')]:
+        try:
+            out.add(str(json.loads(f.read_text(encoding='utf-8'))['sid']))
+        except (OSError, ValueError, KeyError, TypeError):
+            continue  # control<N>.ask is no JSON: it marks a session opened for one ask, not one that waits
+    kept = [p.notes / 'control.sid', p.notes / 'remote' / 'feed.sid']
+    for f in p.notes.glob('control*.pid'):
+        kept += [f, f.with_suffix('.sid')]
+    for f in kept:
+        out.update(SESSION_DIR.findall(_read(f) or ''))
+    for d in _dirs(p.home):
+        if re.fullmatch(r's\d+', d.name) and (b := git_out(d, 'branch', '--show-current') or '').startswith('task/'):
+            if sid := slot_session(p.notes / f'slot{d.name[1:]}.log', b.removeprefix('task/')):
+                out.add(sid)
+    return out
+
+
+def slot_session(log: Path, tid: str) -> str:
+    """Task `tid`'s latest session in a slot's log, by its header lines; '' for none."""
+    from agent_runner.watch import HEADER
+    sid = ''
+    try:
+        with open(log, encoding='utf-8', errors='replace') as fh:
+            for line in fh:
+                if (m := HEADER.match(line)) and m.group(2) == tid:
+                    sid = m.group(3)
+    except OSError:
+        pass
+    return sid
+
+
 def busy_dirs(proc: Path = Path('/proc')) -> list[str]:
     """The working folder of every process: a worktree one is in is not Clean's to remove."""
     out = []
@@ -760,10 +857,18 @@ def session_folders(projects: list[Project], roots: list[Path], main: bool = Fal
     out = []
     for root in roots:
         for proj in root.glob('claude-*/*'):
-            if (p := mine.get(proj.name)) is None:
+            if (p := mine.get(proj.name)) is None or not inside(root, proj):
                 continue
             out += [(p, d) for d in _dirs(proj) if SESSION_DIR.fullmatch(d.name)]
     return out
+
+
+def inside(root: Path, d: Path) -> bool:
+    """Is `d` really where its path says under `root`: no symlink on the way?"""
+    try:
+        return d.resolve() == root.resolve() / d.relative_to(root)
+    except (OSError, ValueError, RuntimeError):
+        return False
 
 
 def _dirs(p: Path) -> list[Path]:
@@ -774,9 +879,10 @@ def _dirs(p: Path) -> list[Path]:
 
 
 def footprint(projects: list[Project], live: set[str] | None, now: float | None = None,
-              size=du, written=newest_write, cwds: list[str] | None = None) -> dict:
+              size=du, written=newest_write, cwds: list[str] | None = None, registry: bool = False) -> dict:
     """What agent-runner keeps on this machine: {'worktrees', 'tmp', 'logs': bytes, 'wip': [branches],
-    'total', 'largest': [{'path', 'size'}], 'clean': Clean's list}."""
+    'total', 'largest': [{'path', 'size'}], 'tmp_largest': the largest session temp folder or None, 'clean':
+    Clean's list}. `live` and `registry` are `live_now`'s answer."""
     now = time.time() if now is None else now
     out = {'worktrees': 0, 'tmp': 0, 'logs': 0, 'wip': [], 'largest': []}
     sized: list[dict] = []
@@ -795,31 +901,27 @@ def footprint(projects: list[Project], live: set[str] | None, now: float | None 
                 pass
         refs = git_out(p.root, 'for-each-ref', '--format=%(refname:short)', 'refs/heads/wip/')
         out['wip'] += [{'project': p.root.name, 'root': str(p.root), 'branch': b} for b in (refs or '').split() if b]
-    temps = []
-    for p, d in session_folders(projects, tmp_roots(projects)):
-        n = size(d)
-        out['tmp'] += n
-        sized.append({'path': str(d), 'size': n})
-        temps.append((p, d, n))
-    for p, d in session_folders(projects, tmp_roots(projects), main=True):
-        # control sessions' temp folders count in the size and the 5 GB alert, but Clean never lists them: a
-        # person's own session in the main checkout names no session id on its command line, so a quiet one
-        # cannot be told from an ended one
-        n = size(d)
-        out['tmp'] += n
-        sized.append({'path': str(d), 'size': n})
-    out['largest'] = sorted(sized, key=lambda x: -x['size'])[:8]
+    temps, out['dirs'], out['tmps'] = [], sized, []
+    for main in (False, True):
+        for p, d in session_folders(projects, tmp_roots(projects), main):
+            n = size(d)
+            out['tmp'] += n
+            out['tmps'].append({'path': str(d), 'size': n})
+            temps.append((p, d, n, main))
+    waits = set().union(*(waiting_sids(p) for p in projects))
+    rank(out)
     out['total'] = out['worktrees'] + out['tmp'] + out['logs']
-    out['clean'] = clean_plan(trees, temps, out['wip'], live, now, written, cwds)
+    out['clean'] = clean_plan(trees, temps, out['wip'], live, now, written, cwds, registry=registry, waits=waits)
     return out
 
 
 def clean_plan(trees, temps, wips, live: set[str] | None, now: float, written=newest_write,
-               cwds: list[str] | None = None, merged=None) -> list[dict]:
+               cwds: list[str] | None = None, merged=None, registry: bool = False,
+               waits: set[str] = frozenset()) -> list[dict]:
     """Clean's safe list, shown before anything is removed: [{'id', 'kind', 'path', 'size', 'why', 'ask'
     (only when the person ticks it)}]. Only:
-        tmp       a session temp folder no running process names, no resume waits for, and nothing wrote to in
-                  ENDED_AFTER; none where /proc cannot tell (`live` None)
+        tmp       an ended session's temp folder (`session_ended`), a runner worktree's or a main checkout's; the
+                  regular footprint walk removes these by itself (`auto_clean`)
         worktree  a runner worktree whose HEAD is merged into the project's main branch, with nothing
                   uncommitted, that no process works in, of a project whose run is off (a run up may start a
                   task in any of its worktrees at any moment; the next run makes a removed one again)
@@ -827,14 +929,10 @@ def clean_plan(trees, temps, wips, live: set[str] | None, now: float, written=ne
     merged = merged or worktree_merged
     cwds = busy_dirs() if cwds is None else cwds
     out = []
-    if live is not None:
-        for p, d, n in temps:
-            if d.name in live or d.name in p.resume:
-                continue
-            if now - written(d) < ENDED_AFTER:
-                continue
+    for p, d, n, main in temps:
+        if session_ended(d, main, live, registry, waits | p.resume, now, written):
             out.append({'id': 'tmp:' + str(d), 'kind': 'tmp', 'path': str(d), 'size': n, 'ask': False,
-                        'why': 'ended session\'s temp folder'})
+                        'main': main, 'why': 'ended session\'s temp folder'})
     for p, d, n in trees:
         if p.up or d.name in p.busy:
             continue
@@ -849,6 +947,60 @@ def clean_plan(trees, temps, wips, live: set[str] | None, now: float, written=ne
         out.append({'id': f'wip:{w["root"]}:{w["branch"]}', 'kind': 'wip', 'path': w['branch'], 'size': 0,
                     'ask': True, 'root': w['root'], 'why': f'{w["project"]}: parked work; remove only if you are sure'})
     return out
+
+
+def session_ended(d: Path, main: bool, live: set[str] | None, registry: bool, waits: set[str], now: float,
+                  written=newest_write) -> bool:
+    """Has the session of temp folder `d` ended: nothing names it as live, no resume waits for it (`waits`), and
+    nothing wrote to it in ENDED_AFTER (`main`, one in a main checkout: MAIN_ENDED_AFTER)? Never where /proc
+    cannot tell (`live` None), nor, in a main checkout, when Claude Code's registry could not be read in full
+    (`registry`): a person's own session names no id on its command line."""
+    if live is None or (main and not registry) or d.name in live or d.name in waits:
+        return False
+    return now - written(d) >= (MAIN_ENDED_AFTER if main else ENDED_AFTER)
+
+
+def auto_clean(foot: dict, projects: list[Project], look, now: float, size=du, written=newest_write,
+               rm=shutil.rmtree) -> tuple[int, int]:
+    """Remove the ended sessions' temp folders on Clean's list, each looked at again just before (`look()` is
+    `live_now`'s answer then), and take them off `foot`. Worktrees and wip/ branches stay for the person.
+    (how many it removed, the bytes it freed)."""
+    count, freed = 0, 0
+    for item in [i for i in foot['clean'] if i['kind'] == 'tmp']:
+        d = Path(item['path'])
+        written_at = written(d)  # the slow walk first: the looks at what is live and waits come last
+        waits = set().union(*(waiting_sids(p) for p in projects))
+        live, registry = look()
+        if not inside(d.parents[2], d) or not session_ended(d, item['main'], live, registry, waits, now,
+                                                            lambda _: written_at):
+            foot['clean'].remove(item)
+            continue
+        try:
+            rm(d)
+        except OSError:
+            pass  # what is left stays on the list
+        left = size(d) if d.exists() else 0
+        gone = max(0, item['size'] - left)
+        freed += gone
+        foot['tmp'] -= gone
+        foot['total'] -= gone
+        if d.exists():
+            item['size'] = left
+        else:
+            count += 1
+            foot['clean'].remove(item)
+        for x in foot['tmps']:
+            if x['path'] == item['path']:
+                x['size'] = left
+    rank(foot)
+    return count, freed
+
+
+def rank(foot: dict) -> None:
+    """The footprint's 'largest' folders and its largest session temp folder, from what is still there."""
+    foot['tmps'] = [x for x in foot['tmps'] if x['size']]
+    foot['largest'] = sorted(foot['dirs'] + foot['tmps'], key=lambda x: -x['size'])[:8]
+    foot['tmp_largest'] = max(foot['tmps'], key=lambda x: x['size'], default=None)
 
 
 def worktree_merged(p: Project, d: Path) -> bool:
@@ -1046,11 +1198,13 @@ def usage_now() -> dict:
 
 class Vitals:
     """This machine's vitals for Home: samples every EVERY s in a thread once started, walks the footprint every
-    FOOTPRINT_EVERY s, pushes new alerts, and answers the page's calls (`handle`)."""
+    FOOTPRINT_EVERY s and removes the ended sessions' temp folders it finds (`auto_clean`), pushes new alerts,
+    and answers the page's calls (`handle`)."""
 
     def __init__(self, roots, store: Path | None, peers=lambda: [], token: str = '', tailscale: bool = True,
                  sampler: Sampler | None = None, sessions=None, usage=usage_now, info=None, push=push_alert,
-                 act=None):
+                 act=None, registry: Path | None = None, log=lambda said: print(said, flush=True)):
+        self.registry, self.log = registry, log
         self.roots, self.peers, self.token, self.tailscale = roots, peers, token, tailscale
         self.sampler = sampler or Sampler()
         self.history = History(store / 'vitals.jsonl' if store else None)
@@ -1117,13 +1271,26 @@ class Vitals:
         self.push_alerts(projs)
         return snap
 
-    def refresh_footprint(self, projs: list[Project] | None = None, now: float | None = None) -> dict:
+    def refresh_footprint(self, projs: list[Project] | None = None, now: float | None = None,
+                          auto: bool = True) -> dict:
+        """Walk the footprint again; `auto` (the regular walk, not the person's Clean) also removes the ended
+        sessions' temp folders and logs what that freed."""
         with self.foot_lock:
             projs = self.projects() if projs is None else projs
             now = time.time() if now is None else now
             self.foot_at = now  # a walk under way is not started again
-            self.foot = footprint(projs, live_session_ids(self.sampler.proc), now)
+            live, registry = self.look()
+            foot = footprint(projs, live, now, registry=registry)
+            if auto:
+                count, freed = auto_clean(foot, projs, self.look, now)
+                if count or freed:
+                    self.log(f'{time.strftime("%Y-%m-%d %H:%M:%S")} removed {count} ended sessions\' temp folders, '
+                             f'freed {size_words(freed) or "0 B"}')
+            self.foot = foot
             return self.foot
+
+    def look(self) -> tuple[set[str] | None, bool]:
+        return live_now(self.sampler.proc, self.registry)
 
     def limits(self, projs: list[Project]) -> tuple[float, dict]:
         """The strictest min_free_gb and usage caps over this machine's projects."""
@@ -1153,7 +1320,7 @@ class Vitals:
 
     def alerts(self, projs: list[Project]) -> list[dict]:
         mff, _ = self.limits(projs)
-        return alerts(self.snap, mff, (self.foot or {}).get('tmp'))
+        return alerts(self.snap, mff, self.foot)
 
     # what the page reads
     def device(self, detail: bool = True) -> dict:
@@ -1166,7 +1333,7 @@ class Vitals:
         # a project past its own caps starts tasks down its chain: one whose run is up; with none up, any
         fell = any(p.fallback and past_caps(self.usage, p.caps) for p in [p for p in projs if p.up] or projs)
         room = headroom(self.snap, mff, self.usage, caps, fell)
-        found = alerts(self.snap, mff, (self.foot or {}).get('tmp'))
+        found = alerts(self.snap, mff, self.foot)
         try:
             from agent_runner.home import keys
             named = {str(v): k for k, v in keys(self.roots()).items()}
@@ -1313,9 +1480,9 @@ class Vitals:
                 chosen = [str(x) for x in req.get('items') or []]
             except (ValueError, AttributeError):
                 return 400, {'ok': False, 'out': 'bad request: {"items": [ids]}'}, json_t
-            plan = self.refresh_footprint().get('clean') or []  # made again now: only what is still safe
+            plan = self.refresh_footprint(auto=False).get('clean') or []  # made again now: only what is still safe
             res = clean(chosen, plan)
-            self.refresh_footprint()
+            self.refresh_footprint(auto=False)  # what they left unticked waits for the regular walk
             return 200, res, json_t
         return 404, {'ok': False, 'out': f'no such page: {path}'}, json_t
 
