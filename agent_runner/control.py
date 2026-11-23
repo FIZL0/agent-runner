@@ -130,10 +130,39 @@ def control_settings() -> Path:
     return f
 
 
+# F93: Talk, the run page's spoken chat: its own control session, titled Talk, whose first message
+# (`talk_ask`) says how to answer so a reply reads well aloud; each later message carries TALK_TAG.
+TALK_TITLE = 'Talk'
+TALK_LEAD = 'Talk mode:'
+TALK_BRIEF = (
+    f"{TALK_LEAD} the person is talking to you by voice, maybe on a phone or walking, and hears every reply read "
+    "aloud by their browser. Answer as you would speak: short plain sentences, a few at most, one thing at a time. "
+    "Never say task IDs, branch names, file paths, commands, links or session numbers, and use no markdown, "
+    "lists, tables, code or emoji. Say what a task is in words (\"the merge retry fix\", not its ID), round "
+    "numbers (\"about twenty minutes\"), and name only what matters most; offer more if there is more. When "
+    "something needs a page or a link, say you will put it in the chat instead of reading it out. Do everything "
+    "else your brief says, but this session is already named Talk: do not run control --title. Each later "
+    "message starts with a short reminder of this.")
+TALK_SAID = 'They said: '
+TALK_TAG = '(Talk: answer as speech.) '
+
+
+def talk_ask(words: str) -> str:
+    """F93: the first message of the Talk session: TALK_BRIEF, then the person's first words."""
+    return f'{TALK_BRIEF}\n\n{TALK_SAID}{words.strip()}'
+
+
+def talk_message(words: str) -> str:
+    """F93: a later Talk message: TALK_TAG, then the person's words."""
+    return TALK_TAG + words.strip()
+
+
 def control_title(ask: str = '', images: list[str] | tuple = ()) -> str:
     """A short title for a control session opened with `--ask`: the ask's first words (up to 5, trimmed at a word
     to about 40 characters, trailing punctuation dropped); for a files-only ask "screenshot" when they are all
-    images, else the first file's name (B30); "" without one."""
+    images, else the first file's name (B30); "" without one. F93: a Talk ask (`talk_ask`) is titled Talk."""
+    if (ask or '').startswith(TALK_BRIEF):  # the whole brief, so a typed "Talk mode: …" is not taken for Talk
+        return TALK_TITLE
     words = (ask or '').split()[:5]
     while len(' '.join(words)) > 40 and len(words) > 1:
         words.pop()

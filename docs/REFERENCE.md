@@ -207,7 +207,12 @@ needs (made once per project in `.runner/web.token`), is in `status` and the run
 the run page: the same snapshot as `agent-runner ui` and most of its actions (not opening a slot), laid out for a phone (the sidebar becomes a
 drawer) and a desktop. It follows the browser's light or dark setting; `[ui] theme` is the terminal UI's only.
 
-- **Sidebar.** New chat, Home (with the Needs you count), Agents, Activity and Plan. Chats are the control
+- **Talk.** The first view in the sidebar, for running the run hands-free: tap the big mic, speak, and the
+  reply is read aloud (the browser's own speech recognition and speech, no install); a chat box under it takes
+  typing. Talk has its own control session, titled Talk and reused while it is live, told to answer in short
+  spoken sentences with no task IDs, paths, commands, links or markdown. The mic needs Chrome, Edge or Safari
+  on https or localhost (a plain http LAN address gets no mic); without one it says so and the box still works.
+- **Sidebar.** New chat, Talk, Home (with the Needs you count), Agents, Activity and Plan. Chats are the control
   sessions; Agents are the slots working on a task, each with a live dot. The machine, the slots and usage sit
   at the bottom.
 - **Home.** A greeting, a message box, quick asks (since my last look, what needs me, add a task), then

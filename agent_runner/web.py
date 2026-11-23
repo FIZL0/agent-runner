@@ -11,7 +11,8 @@ Home installed and that port taken, on a free port instead, which Runner Home ro
                                  concept's options (`run_snapshot`)
     GET  /events?t=TOKEN         the same snapshot over server-sent events, sent again whenever it changes
     POST /act?t=TOKEN            {"name": ACTION, "args": {...}}: one of `ui_model.ACTIONS` (plan add, plan edit,
-                                 drop, shelve, release, chat, answer, take, move, unpark), its result as JSON
+                                 drop, shelve, release, chat, answer, take, move, unpark; F93 `talk`, the Talk
+                                 view's words to its own control session), its result as JSON
     GET  /terminal/NAME?t=TOKEN  where slot NAME's (or c1's, or cN's) own terminal is served by ttyd (`attach NAME`),
                                  started on demand; without ttyd, how to install it (on Windows, the feed only)
     GET  /feed/NAME?t=TOKEN      F74: session NAME's transcript as say/you/tool/out entries (`ui_model.feed`)
@@ -138,6 +139,28 @@ def terminal_fallback(name: str) -> dict:
 
 
 WEB_REFUSED = {'keys'}  # C24: actions the web does not take (typing into a pane went with the built-in view)
+
+CONTROL_N = re.compile(r'\bcontrol (\d+)\b')  # F93: the number `control --new` prints for the session it opened
+
+
+def talk(text: str, to: str = '') -> dict:
+    """F93: the Talk view's words (heard or typed) to its control session: to `to` (cN, its live Talk session)
+    with the spoken-reply reminder (`talk_message`), else a new control session titled Talk whose first message
+    says how to answer (`talk_ask`). The result's 'session' is where they went ('' when it cannot tell)."""
+    from agent_runner.control import talk_ask, talk_message
+    text = str(text or '').strip()
+    if not text:
+        return {'ok': False, 'code': 2, 'out': 'talk: nothing was said', 'argv': [], 'session': ''}
+    if re.fullmatch(r'c\d+', to or ''):
+        r = U.chat_to(talk_message(text), to)
+        if r.get('ok'):
+            return {**r, 'session': to}
+    r = U.new_control(talk_ask(text))
+    m = CONTROL_N.search(r.get('out') or '')
+    return {**r, 'session': f'c{m[1]}' if r.get('ok') and m else ''}
+
+
+U.ACTIONS['talk'] = talk  # F93: the run page's Talk view
 
 
 DIFF_BYTES = 200_000  # the most of a slot's diff the diff tab shows
