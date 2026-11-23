@@ -4,6 +4,11 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Fixed: Talk's sound over Bluetooth and a bad connection (B178). A reply is read in fewer clips, with silence
+  playing between them so the Bluetooth route stays open; the audio session is set for the mic and for playback; a
+  pause nobody asked for is undone once per reply. A clip with no answer is tried again twice, then the phone's voice
+  reads the rest of that reply with a toast saying so. Toast errors are plain words, and the mic report also logs
+  what happened to the sound.
 - Added: control sessions learn when an item they are about is settled elsewhere (F160). A chat about a task or a
   Needs you item (its title starts with the id, or it was opened from that item) gets one typed line from the run when
   someone else drops, changes, confirms, approves, shelves, restores or otherwise settles it. Sessions also re-read an

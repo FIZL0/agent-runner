@@ -711,7 +711,7 @@ function soundAs(type){
     a.type=type;micLog(`audio session ${type}, ${a.state||''}`)}catch(e){}
 }
 /* B178: an error in plain words: a fetch with no answer is 'Load failed' in Safari, 'Failed to fetch' elsewhere */
-const plainErr=e=>e&&(e.name==='TypeError'||e.name==='NetworkError'||e.name==='AbortError')?'no connection':e&&e.name==='SyntaxError'?'its answer made no sense':String((e&&e.message)||e);
+const plainErr=e=>e&&((e.name==='TypeError'&&/load failed|fetch|network|connection|offline|cancelled|hostname|timed out/i.test(e.message))||e.name==='NetworkError'||e.name==='AbortError')?'no connection':e&&e.name==='SyntaxError'?'its answer made no sense':String((e&&e.message)||e);
 const micReport=(t,head)=>[...head,...t.ev,...(t.more?[`and ${t.more} more`]:[])].join('\n');
 /* a Talk message as the person said it: without the first message's brief or a later one's reminder */
 const talkShown=t=>{t=String(t||'');const i=t.indexOf('\n\nThey said: ');
@@ -1810,7 +1810,8 @@ function holdEl(){
 function pauseKeys(f){try{const m=navigator.mediaSession;if(m)for(const k of ['pause','stop'])m.setActionHandler(k,f)}catch(e){}}
 function routeHold(){
   AU.holding=true;pauseKeys(()=>{if(TK.trail)micLog('sound: stopped by the person');hush()});
-  try{const p=holdEl().play();if(p)p.catch(()=>{})}catch(e){}
+  try{const h=holdEl(), p=h.play();h.onpause=()=>{if(AU.holding&&TK.trail)micLog('sound: the silence paused, not by the page')};
+    if(p)p.catch(e=>{if(AU.holding&&TK.trail)micLog(`sound: the silence refused: ${e.name}`)})}catch(e){}
 }
 function routeFree(){
   if(!AU.holding)return;
@@ -1822,12 +1823,12 @@ function shush(){
   if(window.speechSynthesis)speechSynthesis.cancel();
   const a=AU.el;if(a){a.onended=a.onerror=a.onpause=null;if(!a.paused)a.pause()}
 }
-/* one clip from the run. Its error's message is plain words; net: no answer came, so asking again can help */
+/* one clip from the run. Its error's message is plain words; net: no answer came, so asking again can help (late: none in 25 s, asked once more) */
 function clipGet(text,voice){
-  const c=new AbortController(), t=setTimeout(()=>c.abort(),50000), fail=(out,net)=>Object.assign(new Error(out),{net});
+  const c=new AbortController(), t=setTimeout(()=>c.abort(),25000), fail=(out,net,late)=>Object.assign(new Error(out),{net,late});
   return fetch(tq('speech'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text,voice}),signal:c.signal})
     .then(async r=>{if(r.ok)return r.blob();const j=await r.json().catch(()=>({}));throw fail(j.out||`error ${r.status}`,!j.out&&r.status>=500)})
-    .catch(e=>{throw e.net!=null?e:e.name==='AbortError'?fail('it took too long',false):fail('no connection',true)})
+    .catch(e=>{throw e.net!=null?e:e.name==='AbortError'?fail('no answer in time',true,true):fail('no connection',true)})
     .finally(()=>clearTimeout(t));
 }
 const CLIP_AGAIN=[500,2000], PLAY_AGAIN=600;  /* B178: ms before each new try for a clip, and before an unasked pause is undone */
@@ -1843,8 +1844,8 @@ async function playClips(clips,voice,turn,end,fall,held){
       const at=Date.now();log(`clip ${i+1} of ${clips.length} asked, ${p.length} letters`);
       try{const b=await clipGet(p,voice);log(`clip ${i+1} came, ${b.size} bytes, after ${Date.now()-at} ms`);return b}
       catch(e){
-        log(`clip ${i+1} failed${e.net?', no connection':''}, after ${Date.now()-at} ms`,true);
-        if(!e.net||n>=CLIP_AGAIN.length||!on())throw e;
+        log(`clip ${i+1} failed${e.net?', '+e.message:''}, after ${Date.now()-at} ms`,true);
+        if(!e.net||n>=(e.late?1:CLIP_AGAIN.length)||!on())throw e;
         await wait(CLIP_AGAIN[n]);if(!on())throw e;
       }
     }};
@@ -1865,11 +1866,12 @@ async function playClips(clips,voice,turn,end,fall,held){
           if(resumed)return hush();
           resumed=true;
           setTimeout(()=>{if(!on()||!a.paused||a.ended)return;
+            if(MIC.rec||MIC.next||TK.ear)return hush();  // never into a mic that listens
             log('play again');soundAs('playback');routeHold();
             const q=a.play();if(q)q.catch(e=>{if(!on())return;log(`play again refused: ${e.name}`);if(e.name==='NotAllowedError')no(e);else hush()})},PLAY_AGAIN)};
         const p=a.play();if(p)p.then(()=>{AU.ok=true}).catch(e=>{if(e&&e.name==='AbortError')return;log(`play refused: ${e&&e.name}`,true);no(e)})});  // AbortError: a pause came first, onpause has it
       log(`clip ${i+1} ended`);
-    }catch(e){if(!on())return;routeFree();
+    }catch(e){if(!on())return;routeFree();log(e&&e.name==='NotAllowedError'?'held for a tap':`clip ${i+1} and on: the browser's own voice`,true);
       if(e&&e.name==='NotAllowedError'){AU.ok=false;return held()}
       return fall(clips.slice(i).join(' '),e&&e.net!=null?e.message:'the clip did not play',!!(e&&e.net))}
     if(!on())return;
@@ -1965,7 +1967,7 @@ function dictate(){
   rec.onend=()=>{DK.rec=null;dictShow(final||heard);render(true);
     const t=document.querySelector('[data-in]');if(t&&boxKey()===DK.key){t.focus({preventScroll:true});t.setSelectionRange(t.value.length,t.value.length)}micFree(rec);soundAs('playback')};
   render(true);
-  micWhenFree(()=>{MIC.rec=rec;soundAs('play-and-record');try{rec.start()}catch(e){DK.rec=null;toast(`The mic could not start: ${e.message||e}`,true);render(true);micFree(rec)}},()=>{DK.rec=null});
+  micWhenFree(()=>{MIC.rec=rec;soundAs('play-and-record');try{rec.start()}catch(e){DK.rec=null;toast(`The mic could not start: ${e.message||e}`,true);render(true);micFree(rec);soundAs('playback')}},()=>{DK.rec=null});
 }
 /* F115: the [ui] theme's terminal colours for a chat, from the terminal-style page (the run app's tokens until then) */
 const TERM={mode:''};
@@ -2042,7 +2044,8 @@ function speak(text,key){
     TK.state=TK.state==='speaking'?'':TK.state;TK.playing='';render(true);
     if(!key&&TS.auto&&(!e||e.type!=='error')&&S.view==='talk'&&!S.thread&&!talkTyping()){TK.again=true;listen()}};
   const own=ps=>ps.forEach((p,i)=>{const u=new SpeechSynthesisUtterance(p.trim());u.lang=(voice&&voice.lang)||navigator.language||'en-US';if(voice)u.voice=voice;
-    if(i===ps.length-1)u.onend=u.onerror=ended;
+    if(rv&&!i)u.onstart=()=>{if(TK.turn===turn&&TK.trail)micLog("sound: the browser's own voice started")};  // B178
+    if(i===ps.length-1)u.onend=u.onerror=e=>{if(rv&&TK.turn===turn&&TK.trail)micLog(`sound: the browser's own voice ${e&&e.type==='error'?'error '+e.error:'ended'}`);ended(e)};
     ss.speak(u)});
   soundAs('playback');
   if(!rv)own(parts);
@@ -2108,7 +2111,7 @@ function hear(t){
     else earEnd(t);
   };
   soundAs('play-and-record');
-  try{rec.start()}catch(e){log(`start failed: ${e.message||e}`);TK.report=t.trail;TK.ear=null;TK.rec=null;TK.state='';toast(`The mic could not start: ${e.message||e}`,true);render(true);micFree(rec)}
+  try{rec.start()}catch(e){log(`start failed: ${e.message||e}`);TK.report=t.trail;TK.ear=null;TK.rec=null;TK.state='';toast(`The mic could not start: ${e.message||e}`,true);render(true);micFree(rec);soundAs('playback')}
 }
 /* the listen is over: its words go out, or the talk line says why there are none */
 function earEnd(t){

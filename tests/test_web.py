@@ -2636,6 +2636,7 @@ const VOICES = {voices: [{id: 'kokoro:a', name: 'a', engine: 'Kokoro'}], default
 // answers: one per clip asked for, 'net' (no answer), a status with no JSON, or a reason; then clips
 const fetch = async (p, o) => { if (!o) return {ok: true, json: async () => VOICES};
   asked.push(JSON.parse(o.body).text); const a = answers.shift();
+  if (a === 'hang') return new Promise((y, no) => o.signal.addEventListener('abort', () => no(Object.assign(new Error('x'), {name: 'AbortError'}))));
   if (a === 'net') throw new TypeError('Load failed');
   return {ok: !a, status: a === 502 ? 502 : 503, blob: async () => new Blob(['x']), json: async () => { if (a === 502) throw new SyntaxError('x'); return {out: a} }} };
 const audioSession = {state: 'active', get type() { return types[types.length - 1] || 'auto' }, set type(t) { types.push(t) }};
@@ -2669,6 +2670,10 @@ eval(logic + `TS = talkSetParse('');` + page.slice(page.indexOf('/* F158: run sp
   out.kept = [plays.length, said.length, notes.length, TK.state, asked.length]; AU.el.finish(); await settle(); out.drop = [said.slice(), notes.slice(), AU.holding]; hush();
   // the engine's own reason is said at once, with no new try
   notes.length = 0; asked = []; answers = ['it broke']; speak('Other.'); await settle(); out.engine = [asked.length, notes.slice()]; hush();
+  // no answer in time: asked once more, then the phone's voice
+  notes.length = 0; asked = []; answers = ['hang', 'hang']; speak('Hung.'); await settle(); await tick(25000); await tick(500); await tick(25000); out.hang = [asked.length, notes.slice()]; hush();
+  // a mic that took the sound (dictation): the reply is not played into it
+  plays = []; speak('Long one here.'); await settle(); MIC.rec = {}; AU.el.pause(); await tick(600); out.dict = [TK.state, plays.length]; MIC.rec = null;
   // a mic that is still ending: no playback session and no clip before its end
   types.length = 0; types.push('play-and-record'); plays = []; MIC.rec = {}; speak('After the mic.'); await settle(); out.mic = [types.slice(-1)[0], plays.length];
   MIC.rec = null; await tick(100); out.micOver = [types.slice(-1)[0], plays.length]; hush();
@@ -2710,6 +2715,8 @@ def test_sound_b178(tmp: Path) -> None:
     eq(got.get('kept'), [1, 0, 0, 'speaking', 4], 'a drop in the middle: the clip that came plays on, the next is tried three times')
     eq(got.get('drop'), [['Second.'], ["No connection to the run; reading with the phone's voice"], False], "then the phone's voice reads the rest")
     eq(got.get('engine'), [1, ['The run could not read this aloud (it broke), so this browser does.']], "the engine's reason: no new try")
+    eq(got.get('hang'), [2, ["No connection to the run; reading with the phone's voice"]], 'no answer in time: one more try, and the same plain words')
+    eq(got.get('dict'), ['', 1], 'a pause by a mic: not played into it')
     eq((got.get('mic'), got.get('micOver')), (['play-and-record', 0], ['playback', 1]), 'a mic still ending is waited for')
     eq(got.get('live'), 'play-and-record', 'never playback while a mic is on')
     rep = got.get('report') or [False, '']

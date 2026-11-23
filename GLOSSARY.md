@@ -527,7 +527,7 @@ _In code_: [run] approve, pitch.on
 _Avoid_: PR mode, gated push
 
 **Mic report**:
-What happened on Talk's mic from the press to the end of a listen that heard no words, each event with its time, to copy and send; it holds no words
+What happened on Talk's mic from the press to the end of a listen that heard no words, and to the sound of replies, each event with its time, to copy and send; it holds no words
 _Said_: the mic log
 _On screen_: Copy mic report
 _In code_: micLog, micReport, micCopy, TK.trail
