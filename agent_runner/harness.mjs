@@ -691,7 +691,7 @@ async function main() {
     if (calls.length) continue;
     if (a.once) return 0;
     const full = path.join(a.notes, `${a.sid}.full`); // F177: said once, at a turn's end (watch.full_message)
-    if (a.contextWarn && Math.floor(peak / 1000) > a.contextWarn && s.undone() && !fs.existsSync(full)) {
+    if (a.contextWarn && Math.floor(peak / 1000) > a.contextWarn && s.undone() && !/^[KV]\d/.test(s.tid) && !fs.existsSync(full)) {
       fs.writeFileSync(full, `${Math.floor(peak / 1000)}\n`);
       pending.push(a.contextText.replaceAll('{tid}', s.tid).replaceAll('{peak}', String(Math.floor(peak / 1000))));
       continue;

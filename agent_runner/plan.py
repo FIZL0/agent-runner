@@ -2899,7 +2899,7 @@ def _p_confirm(a, x):
 
 
 def _p_change(a, x):
-    return x.say(change(a.id, _text(a)))
+    return x.say(change(a.id, _text(a)) + big_note(a.id, x))
 
 
 def _p_shelve(a, x):

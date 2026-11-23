@@ -172,6 +172,8 @@ def test_one_message():
                 eq(stop(), '', 'context_warn = 0: never')
                 (root / 'runner.toml').write_text('[run]\nremote = false\n', encoding='utf-8')
                 config._cfg.cache_clear()
+                git(root, 'checkout', '-qb', 'task/K7')
+                eq(stop(), '', 'not a concept task, which has no parts')
                 git(root, 'checkout', '-q', 'main')
                 eq(stop(), '', 'not a session on no task branch (a fix session)')
         finally:

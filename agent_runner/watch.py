@@ -779,13 +779,15 @@ def full_message(t: str) -> str:
     if not os.environ.get('AGENT_RUNNER_SLOT') or finished():
         return ''
     try:
+        from agent_runner import plan as P
         from agent_runner.brief import CONTEXT_FULL
         from agent_runner.config import cfg
         from agent_runner.tools import task_here
         c = cfg()
         warn = int(c.run.get('context_warn') or 0)
         mark = full_mark(Path(t).stem, c)
-        if warn <= 0 or mark.exists() or (peak := context_peak(t) // 1000) <= warn or not (tid := task_here()):
+        if warn <= 0 or mark.exists() or (peak := context_peak(t) // 1000) <= warn or not (tid := task_here()) \
+                or P.concept(tid) or P.release(tid):  # neither is split into parts
             return ''
         mark.write_text(f'{peak}\n', encoding='utf-8')  # before it is said: a mark that cannot be left says nothing
         return CONTEXT_FULL.format(tid=tid, peak=peak, warn=warn, runner=c.command)
