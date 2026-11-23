@@ -26,6 +26,7 @@ from agent_runner.state import EV_STARTED
 from agent_runner.state import EV_DRIFT
 from agent_runner.brief import NO_PUSH_URLS, prompt_for, review_on, subagents
 from agent_runner.sched import ahead, blocked_tasks, open_tasks, tasks
+from agent_runner.tools import end_mark, FENCE_TOOLS
 
 
 REMOTE_URL = 'https://claude.ai/code'  # every Remote Control session of the account, slots and control alike
@@ -136,6 +137,13 @@ def lean() -> list[str]:
     return ['--tools', tools, '--setting-sources', 'project,local', '--strict-mcp-config']
 
 
+def fence_hooks() -> list[dict]:
+    """F102: the git fence as a PreToolUse hook (`tools.fence`): no push, no reset --hard, clean or checkout -- .,
+    no edit in the main checkout or another slot. It takes over from `no_push_env`, which only Pi keeps."""
+    cmd = [*runner_cmd(), 'fence', str(ROOT), str(SLOTS_DIR), str(C.notes()), '1' if C.push_remote else '0']
+    return [{'matcher': FENCE_TOOLS, 'hooks': [{'type': 'command', 'command': plat.command_text(cmd)}]}]
+
+
 ARG_PROMPT_MAX = 96 * 1024  # Linux's MAX_ARG_STRLEN is 128 KiB for one argument; leave room
 ARGV_PROMPT_MAX = 24000  # Windows' CreateProcess takes 32 767 characters, flags and paths included
 LONG_BRIEF = 'Your instructions for this session are in your system prompt, under "{marker}". Follow them.'
@@ -161,7 +169,8 @@ class Claude:
                 *(['--append-system-prompt-file', str(brief)] if brief.exists() else []),
                 # lean() drops user settings, where the bypass dialog's opt-out lives; nobody is there to answer it
                 '--settings', json.dumps({'skipDangerousModePermissionPrompt': True,
-                                          'hooks': {'Stop': stop, 'StopFailure': stop},
+                                          'hooks': {'Stop': stop, 'StopFailure': stop,
+                                                    'PreToolUse': fence_hooks()},  # F102: the git fence
                                           # on Remote Control a slot's own PushNotification tool stays off (R2:
                                           # inputNeededNotifEnabled is not here, as Claude Code only sends it to
                                           # the server from /config, so --settings never reaches the push)
@@ -570,7 +579,7 @@ def slot_env(n: int | None) -> list[str]:
         env.append(f'AGENT_RUNNER_CONFIG={C.file}')
     env += [f'{k}={os.environ[k]}' for k in C.run['pass_env'] if k in os.environ]
     return env + (shared_env() if n is None else [e.format(n=n, slots=SLOTS) for e in C.run['slot_env']]) + \
-        [f'{k}={v}' for k, v in no_push_env().items()] + \
+        [f'{k}={v}' for k, v in (no_push_env() if pi() else {}).items()] + \
         ([f'{PRESENCE_ENV}={quiet_file("slots")}'] if n is not None and remote_slots_on() and silent() is not False
          else [])
 
@@ -605,7 +614,8 @@ def env_vars(env) -> dict[str, str]:
 
 
 def no_push_env() -> dict[str, str]:
-    """With `[git] push = false`: git config, as environment, that makes every push from an agent session fail."""
+    """With `[git] push = false`: git config, as environment, that makes every push from an agent session fail.
+    Pi's sessions only (F102): Claude Code's have the git fence (`fence_hooks`)."""
     if C.push_remote:
         return {}
     count = int(os.environ.get('GIT_CONFIG_COUNT', '0'))
@@ -812,10 +822,21 @@ def start(n: int, task, branch: str, model: str, idle: int, slots: int):
         return None
     if trim(d, f'slot {n}'):
         worktree(n, branch)  # the `links` the clean took
-    co = git('checkout', '-q', '-B', f'task/{tid}', branch, cwd=d)
+    end_mark(n, C).unlink(missing_ok=True)  # F102: the last session's finish or ask, read when it ended
+    ask = asked(tid)  # F102: it asked the person, and the answer is in: its own session goes on
+    base = f'asked/{tid}' if ask else branch
+    co = git('checkout', '-q', '-B', f'task/{tid}', base, cwd=d)
     if co.returncode:  # e.g. another worktree still holds task/<ID>: never start an agent on the wrong branch
         log(f'slot {n}: checkout task/{tid} failed: {co.stderr.strip()[:200]}')
         return None
+    if ask:
+        if ask.get('dirty'):
+            git('reset', '-q', 'HEAD~1', cwd=d)  # its edits are uncommitted again, as the session left them
+        git('branch', '-D', base)
+        C.notes(f'{tid}.ask').unlink(missing_ok=True)
+        if p := answer_ask(n, tid, d, ask, model, idle):
+            return p
+        log(f'slot {n}: {tid}\'s asking session cannot be resumed; a new one starts on the work it left')
     sid = str(uuid.uuid4())
     prompt = prompt_for(tid, n, slots, d, branch)
     logfile, since = slot_header(n, f'{tid} session {sid}')
@@ -826,6 +847,68 @@ def start(n: int, task, branch: str, model: str, idle: int, slots: int):
     for where in edited_elsewhere(task[2]):
         log(f'slot {n}: {tid} heads into uncommitted edits outside the runner, in {where}: '
             f'if that is the same work, stop the slot; if not, commit it before {tid} lands')
+    return pid, sid, since
+
+
+ANSWERED = """The person answered the question you asked with `run ask` ("{question}"):
+
+{answer}
+
+The runner resumed this session {where}; whatever you had running in the background ended with it. Look at \
+`git status`, then carry on with task {tid} as the first message of this session says."""
+
+
+def asked(tid: str) -> dict:
+    """F102: `<notes>/<tid>.ask`, kept while the task waits on the person's answer ({sid, question, slot, dirty}),
+    when its work is still there on asked/<tid>; {} otherwise."""
+    try:
+        ask = json.loads(C.notes(f'{tid}.ask').read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(ask, dict) or not ask.get('blocked') or \
+            git('rev-parse', '--verify', '-q', f'asked/{tid}').returncode:
+        return {}  # not blocked yet: no answer can have come (`block_asks` blocks it first)
+    return ask
+
+
+def claude_project_dir(d: Path) -> str:
+    """The folder name Claude Code keeps a working folder's transcripts under, in ~/.claude/projects."""
+    return re.sub(r'[^A-Za-z0-9]', '-', str(d.resolve()))
+
+
+def move_transcript(sid: str, d: Path) -> bool:
+    """Claude Code finds a session to `--resume` only among its working folder's transcripts: one that asked in
+    another slot has its transcript moved under `d`'s. False when there is no transcript to resume."""
+    if not (t := backend().find_transcript(sid)):
+        return False
+    if pi():
+        return True  # Pi's sessions live in one folder for every slot
+    dest = Path(t).parent.parent / claude_project_dir(d) / f'{sid}.jsonl'
+    if Path(t) != dest:
+        try:
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(t, dest)
+        except OSError:
+            return False
+    return True
+
+
+def answer_ask(n: int, tid: str, d: Path, ask: dict, model: str, idle: int):
+    """F102: resume the session that ran `run ask` in slot n, the person's answer its next message. None when it
+    cannot be resumed (no session id, no transcript, or the session did not start)."""
+    sid = ask.get('sid') or ''
+    if not sid or sid == '(unknown)' or not move_transcript(sid, d):
+        return None
+    answer = P.last_answer(tid, todo=C.todo, about=ask.get('question', '')) or '(no answer was noted: decide yourself, and say why in the journal)'
+    was = ask.get('slot')
+    where = ('in the same worktree' if was in (None, n) else
+             f'in another worktree: {d} (paths you saw under {SLOTS_DIR / f"s{was}"} are here now)')
+    logfile, since = slot_header(n, f'{tid} answered {sid}')
+    prompt = ANSWERED.format(question=ask.get('question', ''), answer=answer, where=where, tid=tid)
+    if not (pid := MUX.open(n, d, prompt, sid, model, idle, slot_env(n), logfile, resume=True)):
+        log(f'slot {n}: the session for {tid} did not resume in {MUX.where(n)}')
+        return None
+    log(f'slot {n}: {tid} resumed with the person\'s answer', EV_STARTED, tid)
     return pid, sid, since
 
 

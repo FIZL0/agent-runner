@@ -41,7 +41,8 @@ def stubs(st: ExitStack, said: list, **over) -> dict:
                  save_leftovers=False, not_attempt=False, cut_off=None, stats='1 min', resumes=0,
                  queue_resume=None, finish=None, stopping=False, forced=False, pick=None, start=None,
                  capped=None, backlog_slots=2, api_down=False, low_disk=False, power_due=False, shut_down=False,
-                 idle_line='run idle', clear_stop=None, rc_sweep_stop=None, stopped_by='test')
+                 idle_line='run idle', clear_stop=None, rc_sweep_stop=None, stopped_by='test', take_end={},
+                 park_asked=False)
     names.update(over)
     got = {}
     for k, v in names.items():
@@ -89,6 +90,31 @@ def test_reap():
         eq(run.reap(2), True, 'cut off: nothing more for this slot this tick')
         eq(m['queue_resume'].call_args.args, ('T2', 2, 'sid2', 'usage limit'), 'it resumes in its slot')
         check(not run.merging and not run.tried, 'neither merged nor tried')
+
+
+def test_reap_finish_and_ask():
+    print('Run.reap (F102): a finish logs its summary and merges; an ask parks the task instead of merging it')
+    said: list = []
+    run = new_run()
+    run.procs[1], run.running[1] = (111, 'sid1', 0), ('T1', '', set(), set())
+    with ExitStack() as st:
+        st.enter_context(mock.patch.object(loop.plat, 'alive', lambda pid: False))
+        m = stubs(st, said, take_end={'how': 'finish', 'tid': 'T1', 'text': 'the parser reads lists'},
+                  park_asked=True)
+        eq(run.reap(1), False, 'finished: the slot goes on')
+        run.merging[0].join(5)
+        check(any('T1 finished: the parser reads lists' in s for s in said), 'the summary is in the run log', said)
+        check(m['finish'].called and not m['park_asked'].called, 'and it merges as any ended session')
+    run = new_run()
+    run.procs[1], run.running[1] = (111, 'sid1', 0), ('T1', '', set(), set())
+    with ExitStack() as st:
+        st.enter_context(mock.patch.object(loop.plat, 'alive', lambda pid: False))
+        m = stubs(st, said, take_end={'how': 'ask', 'tid': 'T1', 'text': 'plain or coloured?'}, park_asked=True,
+                  cut_off='usage limit')
+        eq(run.reap(1), False, 'asked: the slot is free')
+        eq(m['park_asked'].call_args.args, (1, 'T1', 'sid1', 'plain or coloured?', 'main'), 'the task is parked')
+        check(not run.merging and not m['queue_resume'].called, 'neither merged nor queued to resume')
+        eq(run.tried, {'T1'}, 'and no other slot starts it this run')
 
 
 def test_fill():
@@ -144,7 +170,7 @@ def test_end():
 def main() -> int:
     with tempfile.TemporaryDirectory() as t:
         R.init(make(Path(t)))
-        return report([test_state, test_reap, test_fill, test_end])
+        return report([test_state, test_reap, test_reap_finish_and_ask, test_fill, test_end])
 
 
 if __name__ == '__main__':
