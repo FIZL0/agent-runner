@@ -400,6 +400,25 @@ def test_second_shim_keeps_live_session():
         check('already up' in out.getvalue() and 'session_01First' in out.getvalue(),
               'it says so, with the link already in its log', out.getvalue())
 
+        # the root cause: two `control --new` that arrive together each claim a number of their own
+        with mock.patch.object(K, 'free_control_number', lambda: 13), mock.patch.object(K, 'control_live', lambda n: 0):
+            eq(K.claim_control_number(), 14, 'a number whose shim marker is live is taken: the next one')
+            claims = R.C.notes('control14.claim')
+            check(claims.exists(), 'and claimed')
+            other = subprocess.Popen(['sleep', '30'])  # another control --new holds c14's claim
+            try:
+                claims.write_text(str(other.pid), encoding='utf-8')
+                eq(K.claim_control_number(), 15, 'a number another live control --new claimed is skipped')
+                K.control_unclaim(14)
+                check(claims.exists(), "unclaim leaves another process's claim alone")
+            finally:
+                other.kill()
+                other.wait()
+            eq(K.claim_control_number(), 14, "a claim whose process ended is taken over")
+            K.control_unclaim(14)
+            K.control_unclaim(15)
+            check(not claims.exists() and not R.C.notes('control15.claim').exists(), 'unclaim drops its own claims')
+
         live.kill()
         live.wait()
         with no_shim:

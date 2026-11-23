@@ -21,7 +21,7 @@ from agent_runner.slots import link_drift, remote_answer_drift
 from agent_runner.slots import marker_pid, remote_off_why, remote_on, REMOTE_URL, transcript
 from agent_runner.land import wip_main_info
 from agent_runner.control import (control_env, CONTROL_LINK_WAIT, control_live, CONTROL_N_ENV, control_name,
-    feed_on, free_control_number, hidden_control, hidden_control_log, hidden_shim, message_text,
+    claim_control_number, control_unclaim, feed_on, free_control_number, hidden_control, hidden_control_log, hidden_shim, message_text,
     person_message, RC_ENDING, rc_forget, rc_record, rc_records, rc_sweep, REMOTE_DIR, SESSION_LINK)
 from agent_runner.status import follow, read_events, since_text, waiting_ok
 
@@ -726,7 +726,12 @@ def control_new(n: int | None = None, wait: float = CONTROL_LINK_WAIT, ask: str 
     read word for word from the feed's transcript (`feed_take`) and handed to `control N` in a file, never on a
     command line; when it has not reached the transcript in FEED_WAIT s, `control N --forward --feed-sid` waits
     for it itself."""
-    n = n or free_control_number()
+    if not n:  # B131: claimed until it is up, so an ask that arrives meanwhile gets the next number
+        n = claim_control_number()
+        try:
+            return control_new(n, wait, ask, images, forward, handed)
+        finally:
+            control_unclaim(n)
     if pid := control_live(n):
         print(f'control {n} already runs (pid {pid})', file=sys.stderr)
         return 1

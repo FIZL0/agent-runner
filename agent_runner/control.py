@@ -1186,6 +1186,55 @@ def free_control_number() -> int:
     return control_number()
 
 
+def control_taken(n: int) -> bool:
+    """B131: control number `n` is in use: its session is live (`control_live`), or its hidden shim's marker
+    (`<notes>/control<n>.live`) names a live pid, as it does before `control N` has written its pid file."""
+    up = marker_pid(C.notes(f'control{n}.live'))
+    return bool(control_live(n) or (up and up != os.getpid() and plat.alive(up)))
+
+
+def control_claim(n: int) -> bool:
+    """B131: claim control number `n` for this `control --new` (`<notes>/control<n>.claim`, made only if it is
+    not there, holding this pid), so that two asks that arrive together never both start control n. A claim
+    whose process has ended is stale and is taken over. False when another live `control --new` holds it."""
+    f = C.notes(f'control{n}.claim')
+    for _ in range(2):
+        try:
+            fd = os.open(f, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+        except FileExistsError:
+            holder = marker_pid(f)
+            if holder and holder != os.getpid() and plat.alive(holder):
+                return False
+            f.unlink(missing_ok=True)
+            continue
+        except OSError:
+            return True  # no claim can be made here: go on as before B131
+        with os.fdopen(fd, 'w', encoding='utf-8') as fh:
+            fh.write(str(os.getpid()))
+        return True
+    return False
+
+
+def control_unclaim(n: int) -> None:
+    """B131: drop this process's claim on control number `n` (`control_claim`)."""
+    f = C.notes(f'control{n}.claim')
+    if marker_pid(f) == os.getpid():
+        f.unlink(missing_ok=True)
+
+
+def claim_control_number() -> int:
+    """B131: the first free control number (`free_control_number`) that is not taken (`control_taken`) and
+    that this process could claim (`control_claim`). Tested again once claimed: the claim is held until the
+    session's marker is up, so one that started and let go of its claim meanwhile shows as taken."""
+    n = free_control_number()
+    while True:
+        if not control_taken(n) and control_claim(n):
+            if not control_taken(n):
+                return n
+            control_unclaim(n)
+        n += 1
+
+
 def end_control(n: int, why: str) -> bool:
     """F118: end control session `n` (> 1) on purpose, as closing it does (B26, B53): its process, controlN.pid and
     controlN.title go, so it leaves the chat list and no run start reopens it (B121); the transcript stays,
