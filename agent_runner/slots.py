@@ -1010,8 +1010,8 @@ class HiddenMux:
     def open(self, n, cwd, prompt, sid, model, idle, env, logfile, resume=False):
         job, marker = C.notes(f'slot{n}.job'), C.notes(f'slot{n}.live')
         ended = marker.with_suffix('.exit')
-        marker.unlink(missing_ok=True)
-        ended.unlink(missing_ok=True)
+        for f in (marker, ended, marker.with_suffix('.in')):  # .in: a killed shim's
+            f.unlink(missing_ok=True)
         envd = env_vars(env)
         # F106b: a headless session gets its brief (or resume message) as the first stream-json message
         stream = {'stream': True, 'brief': prompt, 'sid': sid, 'events': str(stream_file(sid))} \
@@ -1263,17 +1263,20 @@ def run_conpty(argv: list[str], cwd: str, env: dict, marker: Path, logfile: Path
     while it runs; what it prints goes to `logfile`, and what arrives on the pipe that slotN.in beside the marker
     names (`conpty.InPipe`) is typed into it. No attach. Returns its exit code and pid once it has ended; what it
     started and left in its console ends with it. OSError when the agent cannot be started."""
+    exe = shutil.which(argv[0], path=env.get('PATH') or os.environ.get('PATH'))
+    if not exe:
+        raise FileNotFoundError(f'{argv[0]} is not on PATH')
     out = open(logfile, 'ab', buffering=0) if logfile else None
     inbox = marker.with_suffix('.in')
     inbox.unlink(missing_ok=True)
     pty = typed = code = None
     try:
-        pty = ConPty(argv, cwd, {**os.environ, **env, 'AGENT_RUNNER_MARKER': str(marker)}, PTY_SIZE,
+        pty = ConPty([exe, *argv[1:]], cwd, {**os.environ, **env, 'AGENT_RUNNER_MARKER': str(marker)}, PTY_SIZE,
                      out.write if out else lambda data: None)
         try:
             typed = InPipe(inbox, pty.write)
-        except OSError:
-            pass  # it runs, it just cannot be typed into
+        except OSError as e:
+            print(f'{marker.stem}: no typed input: {e}', flush=True)  # in slotN.shim; it runs all the same
         marker.write_text(str(pty.pid), encoding='utf-8')
         while code is None:
             code = pty.wait(1.0)

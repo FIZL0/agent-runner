@@ -50,54 +50,55 @@ plan/TODO.md ──pick──▶ slot N: git worktree ~/runs/<repo>/sN on task/<
 
 ### Terminals, and Windows
 
-Every session the run starts (each slot, c1 and other control sessions, the runner feed) runs hidden: a
-terminal with no window, the same way on every OS (0.60.0 removed tmux and `[run] mux`; a leftover `mux` key
-is ignored with one warning). You watch and steer it through `agent-runner attach` (the run view), `attach
-sN` (the session's own terminal), `agent-runner ui` and the run page, Remote Control (claude.ai/code and the
-Claude apps, with `[run] remote_slots`), `agent-runner status`, the slot's log `.runner/slotN.log` and control
-sessions; `plan tell <ID> "…"` types into it. On Linux and macOS it is a pseudo-terminal from Python's
-standard library (`pty`), 200 columns by 50 rows, and its output goes to the slot log. On Windows it is a
-console of its own whose window starts hidden (`attach s2` shows it); nothing captures its output there, so the
-slot log has only the header lines, and `plan tell` cannot type into it.
-One slot, and `once`, run like any other count: a worktree, a session, a tested merge.
+Every session the run starts (each slot, c1 and other control sessions, the runner feed) runs hidden: a terminal with no
+window, the same way on every OS (0.60.0 removed tmux and `[run] mux`; a leftover `mux` key is ignored with one
+warning). You watch and steer it through `agent-runner attach` (the run view), `attach sN` (the session's own terminal),
+`agent-runner ui` and the run page, Remote Control (claude.ai/code and the Claude apps, with `[run] remote_slots`),
+`agent-runner status`, the slot's log `.runner/slotN.log` and control sessions; `plan tell <ID> "…"` types into it. On
+Linux and macOS it is a pseudo-terminal from Python's standard library (`pty`), 200 columns by 50 rows, and its output
+goes to the slot log. On Windows 10 1809 and later it is a ConPTY pseudo-console (stdlib `ctypes`), also 200 by 50, and
+its output goes to the slot log. `plan tell`, budget stops, a typed `/rename` and the run page's send and keys reach it
+through `.runner/slotN.in`, a small file that names a named pipe only this user can open, from this machine. When the session
+ends its pseudo-console closes, which ends what it left running there. Before 1809
+(no ConPTY) it is a console of its own whose window starts hidden (`attach s2` shows it); nothing captures its output
+there, and `plan tell` cannot type into it. One slot, and `once`, run like any other count: a worktree, a session, a tested merge.
 
-A hidden slot runs through a small shim, `run --slot-shim`, started detached so the session outlives a
-restarted runner. It starts the agent and keeps its pid in `.runner/slotN.live` while it runs (and, on Linux
-and macOS, reads the FIFO `.runner/slotN.in` for what `plan tell` types). The loop, a restarted run's adopt
-and the Stop hook read that file; how the agent ended goes to `.runner/slotN.exit`. The rest of the Windows
-differences are in `agent_runner/plat.py`: the run lock is
-`msvcrt.locking`, process checks go through kernel32 (stdlib `ctypes`, no psutil), an ended session's
-windowed processes (an emulator, say) get WM_CLOSE and up to 10 s to exit before `taskkill /T /F`, and `[run] links` become a junction (directory) or hard link (file) when symlinks
-need Developer Mode. A
-prompt over 24,000 characters (a Windows command line holds 32,767) is handed over as a file the session
-is told to read. `[run] test`, `on_exit`, `before_start` and the other commands run in the platform's
-shell, which on Windows is `cmd.exe`.
+A hidden slot runs through a small shim, `run --slot-shim`, started detached so the session outlives a restarted runner.
+It starts the agent and keeps its pid in `.runner/slotN.live` while it runs (and reads `.runner/slotN.in` for what `plan
+tell` types: a FIFO on Linux and macOS, a pipe's name on Windows). The loop, a restarted run's adopt and the Stop hook
+read that file; how the agent ended goes to `.runner/slotN.exit`. The rest of the Windows differences are in
+`agent_runner/plat.py`: the run lock is `msvcrt.locking`, process checks go through kernel32 (stdlib `ctypes`, no
+psutil), an ended session's windowed processes (an emulator, say) get WM_CLOSE and up to 10 s to exit before `taskkill
+/T /F`, and `[run] links` become a junction (directory) or hard link (file) when symlinks need Developer Mode. A prompt
+over 24,000 characters (a Windows command line holds 32,767) is handed over as a file the session is told to read.
+`[run] test`, `on_exit`, `before_start` and the other commands run in the platform's shell, which on Windows is
+`cmd.exe`.
 
 ### In the background
 
 Bare `agent-runner` starts the run where no terminal shows it and returns within seconds: a detached process
-(`plat.spawn_detached`: `agent-runner run`, its output in `.runner/background.out`), its slots hidden (see
-above). The launch waits for the run's start line in `run.log`, then prints the slot count and the commands:
-`status`, `attach`, `stop`, and claude.ai/code with `[run] remote`. If the run fails within that time, it
-prints the end of its output. If a run is already up it says so and starts nothing. `agent-runner run 3` is
-the same run in the foreground of this terminal, its log printed there and its keys read from it. On Windows
-each slot gets a console that starts hidden (`STARTUPINFO.wShowWindow = SW_HIDE`); it's still a real console,
-so the agent has a TTY.
+(`plat.spawn_detached`: `agent-runner run`, its output in `.runner/background.out`), its slots hidden (see above). The
+launch waits for the run's start line in `run.log`, then prints the slot count and the commands: `status`, `attach`,
+`stop`, and claude.ai/code with `[run] remote`. If the run fails within that time, it prints the end of its output. If a
+run is already up it says so and starts nothing. `agent-runner run 3` is the same run in the foreground of this
+terminal, its log printed there and its keys read from it. On Windows each slot gets a ConPTY pseudo-console with no
+window (before 1809, a console that starts hidden, `STARTUPINFO.wShowWindow = SW_HIDE`); either way the agent has a TTY.
 
-`agent-runner attach` (or `attach run`) is the run view, from any terminal and over ssh: the end of
-`.runner/run.log`, then each new line as the run logs it, and the runner keys typed there (`s`, `s!`, `p`,
-`f`, `+`, `-`, `slots N`, `z`, `x`, `u`, `?`, and an empty line for Remote Control), each posted to the run
-through `.runner/KEYS` as `agent-runner key` does. `?` lists them (they print once as the view opens too).
-Ctrl-C leaves the view; the run keeps going. `attach feed` and `attach board` open `agent-runner ui`.
-On Windows, `attach s2` shows and raises slot 2's console window. Minimize it to hide it
-again: closing it ends that session, which resumes in the next run. The runner has no window there, so
-`agent-runner status` and `.runner/run.log` show it. On Linux and macOS a hidden session (`attach s2`, `attach c3`,
-or Enter on the session tab of `agent-runner ui` outside tmux; inside tmux `agent-runner ui` shows it beside its
-panels) is attached to its own terminal, the way dtach does it: the shim
-listens on a Unix socket beside its marker (`.runner/slotN.sock`, `controlN.sock`, mode 0600, gone when the
-session ends), sends what the session prints to every attached terminal, types in what you type, and takes your
-terminal's size (on attach, and when you resize it). Detach with Ctrl-b d (Ctrl-b Ctrl-b types one Ctrl-b); the
-session keeps running. A session started before this has no socket, and `attach s2` says where its log is.
+`agent-runner attach` (or `attach run`) is the run view, from any terminal and over ssh: the end of `.runner/run.log`,
+then each new line as the run logs it, and the runner keys typed there (`s`, `s!`, `p`, `f`, `+`, `-`, `slots N`, `z`,
+`x`, `u`, `?`, and an empty line for Remote Control), each posted to the run through `.runner/KEYS` as `agent-runner
+key` does. `?` lists them (they print once as the view opens too). Ctrl-C leaves the view; the run keeps going. `attach
+feed` and `attach board` open `agent-runner ui`. On Windows there is no attach to a ConPTY session yet: `attach s2` (or
+`c1`, `cN`) prints the place of its log and shows no console, as it does for a headless stream slot. Only a session with
+a hidden console from before 1809 is shown: `attach s2` shows and raises its console window. Minimize it to hide it
+again; closing it ends that session, which resumes in the next run. `agent-runner status` and `.runner/run.log` show the
+sessions either way. On Linux and macOS a hidden session (`attach s2`, `attach c3`, or Enter on the session tab of
+`agent-runner ui` outside tmux; inside tmux `agent-runner ui` shows it beside its panels) is attached to its own
+terminal, the way dtach does it: the shim listens on a Unix socket beside its marker (`.runner/slotN.sock`,
+`controlN.sock`, mode 0600, gone when the session ends), sends what the session prints to every attached terminal, types
+in what you type, and takes your terminal's size (on attach, and when you resize it). Detach with Ctrl-b d (Ctrl-b
+Ctrl-b types one Ctrl-b); the session keeps running. A session started before this has no socket, and `attach s2` says
+where its log is.
 
 With `[run] remote` (or `remote_slots`), Claude Code asks once, at a terminal, "Enable Remote Control? (y/n)".
 In a hidden session that question would hold every session. So before going to the background the launch checks `remoteDialogSeen` in
@@ -111,34 +112,34 @@ A control session is an interactive Claude Code session in the main checkout whe
 the terminal or from claude.ai/code and the Claude apps: "status?", "pause", "one slot more", "stop", "add a
 task to fix X" (it files it with `plan add`), "do X now" (it uses `take`, never edits the main checkout).
 
-- **c1 comes with the run** (`[run] control = true`, the default; false: none). On Linux and macOS it runs in
-  a terminal with no window, through the same shim as a hidden slot, its output in `.runner/control1.log`; on
-  Windows it gets a console of its own that starts hidden. `agent-runner attach c1` goes there. c1 keeps
-  its session id in `.runner/control.sid` and resumes it in every run while the transcript is there. A new
-  run a person starts begins c1 afresh instead (a new id in `control.sid`) when the kept session's last
-  context is over `[run] context_warn`, and its opening summary says so in one line first (`c1 starts a fresh
-  session: the last one reached 160k context …`; with `[run] remote`, whose c1 opens blank, that line is in
-  c1's terminal and `run.log` only); the plan, ledger and `since` hold the state. A restart always resumes it,
-  whatever its size: the self-restart on `upgrade` or `auto_upgrade`, a run after a crash, a kill or Ctrl-C
-  (the last run never logged its stop) within 6 hours, and a run started within 5 minutes of the last one
-  ending. It has no
-  Stop hook, is never ended on idle, and outlives a stopped run: a run that finds c1 still up opens no other.
+- **c1 comes with the run** (`[run] control = true`, the default; false: none). On Linux, macOS and Windows (ConPTY,
+  1809 and later) it runs in a terminal with no window, through the same shim as a hidden slot, its output in
+  `.runner/control1.log`; before 1809 on Windows it gets a console of its own that starts hidden. `agent-runner attach
+  c1` goes there, except on a ConPTY session on Windows, where it prints the log's place. c1 keeps its session id in
+  `.runner/control.sid` and resumes it in every run while the transcript is there. A new run a person starts begins c1
+  afresh instead (a new id in `control.sid`) when the kept session's last context is over `[run] context_warn`, and its
+  opening summary says so in one line first (`c1 starts a fresh session: the last one reached 160k context …`; with
+  `[run] remote`, whose c1 opens blank, that line is in c1's terminal and `run.log` only); the plan, ledger and `since`
+  hold the state. A restart always resumes it, whatever its size: the self-restart on `upgrade` or `auto_upgrade`, a run
+  after a crash, a kill or Ctrl-C (the last run never logged its stop) within 6 hours, and a run started within 5
+  minutes of the last one ending. It has no Stop hook, is never ended on idle, and outlives a stopped run: a run that
+  finds c1 still up opens no other.
 - **More of them**: `agent-runner control` starts one in this terminal (c1 when it is not running, else the
   next free number, `.runner/control<N>.pid`).
-- **A new one from inside one** (the phone apps have no new-session button): `agent-runner control --new [N]`
-  opens the next free control session without taking focus: hidden through the slot shim, its output in
-  `.runner/control<N>.log` (Windows: a hidden console); `attach cN` shows it. A name it takes (`control
-  --title`) is kept in `.runner/control<N>.title`, where `list`, `agent-runner ui` and the run page read it.
+- **A new one from inside one** (the phone apps have no new-session button): `agent-runner control --new [N]` opens the
+  next free control session without taking focus: hidden through the slot shim, its output in `.runner/control<N>.log`
+  (Windows: a ConPTY pseudo-console, or before 1809 a hidden console); `attach cN` shows it, except on a ConPTY session
+  on Windows, which prints the log's place. On Windows the first message still goes on the command line. A name it takes
+  (`control --title`) is kept in `.runner/control<N>.title`, where `list`, `agent-runner ui` and the run page read it.
   `control --rename N NAME` (the run app's Rename, r in `agent-runner ui`) is the person's own name for it: typed in as
-  `/rename NAME`, so the session is never closed when idle and `control --title` leaves it.
-  With `[run] remote` it watches that log for up to 90 s and prints its `claude.ai/code/session_…` link,
-  so the control session that ran it answers with a link to tap. Tell a control session "new", "new
-  session", "/new" or type `/control`: its brief maps those to `control --new`. `/control` is a skill only
-  control sessions get, in `.runner/control-skills/.claude/skills/control/SKILL.md`, added with `--add-dir`
-  and the settings' `permissions.additionalDirectories`, never in your repo's files. It is not named `/new`
-  because Claude Code's `/new` is an alias of `/clear`, which would wipe the session instead. Whether the
-  phone app passes a typed `/control` through to the session is still to be checked by a person; "new"
-  works either way.
+  `/rename NAME`, so the session is never closed when idle and `control --title` leaves it. With `[run] remote` it
+  watches that log for up to 90 s and prints its `claude.ai/code/session_…` link, so the control session that ran it
+  answers with a link to tap. Tell a control session "new", "new session", "/new" or type `/control`: its brief maps
+  those to `control --new`. `/control` is a skill only control sessions get, in
+  `.runner/control-skills/.claude/skills/control/SKILL.md`, added with `--add-dir` and the settings'
+  `permissions.additionalDirectories`, never in your repo's files. It is not named `/new` because Claude Code's `/new`
+  is an alias of `/clear`, which would wipe the session instead. Whether the phone app passes a typed `/control` through
+  to the session is still to be checked by a person; "new" works either way.
 - **Their settings**: every control session, and the control server, gets `.runner/control-settings.json`
   with `--settings`: a SessionStart hook that runs `agent-runner control --brief`, which prints the control
   brief (so a resumed or compacted session gets it again). They run on `[models] control` with every tool
@@ -499,15 +500,15 @@ words in a note on the task (after ` — `, not in its title), its next merge la
   `plan note` that task instead, or `--force` for different work. A task's own split (`plan add P13 …`)
   is never refused for looking like P13. `plan drop ID WHY` closes a task nobody will do (a duplicate,
   overtaken): archived with `dropped: WHY`, so its id stays used and what waits on it reopens.
-- Reaching a running agent: `plan tell ID TEXT` types `A note on your task, from the person running this
-  run: TEXT` into the session of the slot running ID, through its shim's FIFO (Claude Code queues it for its
-  next turn while busy), and edits no plan; it fails when no slot of a run here runs ID. `plan change ID TEXT`
-  on a running task notes the change in the plan as usual, then types `Your task changed: TEXT` into it, and
-  the agent works on. Both print `told s1 (ID)` once the text is in. They go through the run like a halt: a
-  request in `<notes>/tell/<ID>.json`, answered in `<notes>/tell/<ID>.done`. With no live session (Windows, a
-  session that ended, a cut-off one waiting to resume, a finished branch merging), `change` says so and
-  falls back to stopping the slot and starting the task again from the new text, which
-  `plan change ID --restart TEXT` asks for outright.
+- Reaching a running agent: `plan tell ID TEXT` types `A note on your task, from the person running this run: TEXT` into
+  the session of the slot running ID, through its shim's FIFO, or on Windows its named pipe (Claude Code queues it for
+  its next turn while busy), and edits no plan; it fails when no slot of a run here runs ID. `plan change ID TEXT` on a
+  running task notes the change in the plan as usual, then types `Your task changed: TEXT` into it, and the agent works
+  on. Both print `told s1 (ID)` once the text is in. They go through the run like a halt: a request in
+  `<notes>/tell/<ID>.json`, answered in `<notes>/tell/<ID>.done`. With no live session (Windows before 1809 or a stream
+  slot on Windows, a session that ended, a cut-off one waiting to resume, a finished branch merging), `change` says so
+  and falls back to stopping the slot and starting the task again from the new text, which `plan change ID --restart
+  TEXT` asks for outright.
 - A note one side adds to a task the other side ticks is kept: the tick wins in TODO.md, and the runner
   appends the note to the task's line in DONE.md after the merge.
 - After the prose come keyed fields, each ` | key: a, b` (comma-separated), in any order; a ` — note` or
@@ -1049,8 +1050,9 @@ the running tasks merge. A run left up keeps picking up whatever you commit to T
 agent-runner                           the run in the background (a detached process, its slots hidden), the
                                        prompt straight back; `help` prints the usage
 agent-runner attach [run|sN|cN|feed]   the run view (its log, live, and its keys; Ctrl-C leaves it), or a
-                                       session's own terminal (Ctrl-b d detaches; Windows: the slot's hidden
-                                       console); feed or board: agent-runner ui
+                                       session's own terminal (Ctrl-b d detaches; Windows: no attach to a ConPTY
+                                       session yet, only the log's place; before 1809 the hidden console); feed or
+                                       board: agent-runner ui
 agent-runner control [N]               a control session in this terminal (c1: the kept one, resumed)
 agent-runner control --new [N]         another one beside the run, without taking focus; prints its claude.ai/code link
 agent-runner control --new --no-wait   the same, returning once it starts ("control N is starting in a hidden terminal"),
@@ -1437,9 +1439,9 @@ with nothing more to do, ends it. While the agent still runs a background comman
 its stdin stays open, as the Stop hook's waiter does, until that command ends, `done` or `run finish` has run, or
 `AGENT_RUNNER_IDLE_MAX` (10800 s) has passed.
 
-`plan tell`, budget stops and typing from the Run page go in as its next user message, through the slot's FIFO:
-typed text becomes a message at its Enter, and keys such as Escape are dropped. On Windows there is no FIFO, so
-a stream session there takes no tells, as a hidden console takes no typed text.
+`plan tell`, budget stops and typing from the Run page go in as its next user message, through the slot's FIFO: typed
+text becomes a message at its Enter, and keys such as Escape are dropped. On Windows a stream session takes no tells: it
+runs in a hidden console, which takes no typed text (ConPTY is for the other sessions).
 
 Its event stream goes to the slot log, to `<notes>/streams/<session id>.jsonl` (the spend for `[run] task_tokens`
 and `task_usd` is read from there), and to `attach sN` and the Run page's Terminal views.

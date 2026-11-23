@@ -135,6 +135,11 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 - Fixes: on Windows, `wizard` works with a default Git for Windows install (its installer puts only Git\cmd on PATH, so
   no bash was found): after PATH it looks for bin\bash.exe beside git, and with none it says in one line that Git Bash
   is missing instead of a traceback. System32's WSL bash is no longer used as a fallback (B159).
+- Added: on Windows 10 1809 and later, slots, c1 and other control sessions run in a ConPTY pseudo-console (stdlib
+  `ctypes`, 200 by 50) instead of a hidden console. Their output goes to `.runner/slotN.log` and `controlN.log`, and
+  `plan tell`, budget stops, a typed `/rename` and the run page's send and keys reach them. Before 1809 the hidden
+  console stays; headless stream slots are unchanged. `attach sN`, `attach cN` and `attach N` do not attach to a ConPTY
+  session yet (they print where the log is), and `agent-runner list` lists control sessions on Windows too (F145).
 
 ## 0.61.0 (2026-11-23)
 

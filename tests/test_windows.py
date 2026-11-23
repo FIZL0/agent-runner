@@ -251,6 +251,7 @@ def pipe_access(name: str) -> str:
 
 def test_conpty(tmp: Path):
     print('windows: run_conpty: a session in a pseudo-console, its output in the log, typed into by slotN.in (F145)')
+    check(plat.has_conpty() or os.name != 'nt', 'Windows 10 1809 and later have it')
     if not plat.has_conpty():
         return
     d = tmp / 'conpty'
@@ -299,7 +300,8 @@ def test_conpty(tmp: Path):
     until(marker.with_suffix('.in').exists)
     check(R.send_fifo(marker.with_suffix('.in'), 'two\nlines'), 'a message is sent')
     t.join(60)
-    has(text(), 'KEYS ' + b'\x1b[200~two\nlines\x1b[201~\r'.hex(), 'a program that reads keys gets the bracketed paste, then Enter')
+    has(text(), 'KEYS ' + b'\x1b[200~two\nlines\x1b[201~\r'.hex(),
+        'a program that reads keys gets the bracketed paste, then Enter')
     eq([g[0] for g in got], [0], 'and ends')
     try:
         R.slots.run_conpty([str(d / 'no-such-agent.exe')], str(d), {}, d / 'none.live', None)

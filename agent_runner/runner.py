@@ -2,7 +2,7 @@
 
 Most of a long project is small, checkable steps that need no human in the loop: they need the backlog,
 the tests and a commit. This is the loop that does that. It picks the next task nobody is on, opens a git
-worktree and a hidden terminal for it (a pseudo-terminal; on Windows a hidden console), and
+worktree and a hidden terminal for it (a pseudo-terminal; on Windows a ConPTY pseudo-console, or a hidden console with no ConPTY), and
 starts an agent session with the task's brief already pasted into the first turn. It waits for the session to finish, merges and tests the branch, pushes it, and starts the
 next task.
 
@@ -44,9 +44,9 @@ docs/REFERENCE.md describes each mechanism. In short:
 Internal modes (used by the sessions it starts, not by you):
     --stop-hook            Stop hook: arm the idle timer for the session that is stopping
     --stop-waiter P T N S  the detached timer itself
-    --slot-shim JOB        run one hidden slot's session (a pty, or a hidden Windows console), its pid in a marker file
+    --slot-shim JOB        run one hidden slot's session (a pty; Windows: a pseudo-console, or a hidden console with no ConPTY), its pid in a marker file
 
-What depends on the OS is in `plat.py`; the terminals are `HiddenMux` in `slots.py`.
+What depends on the OS is in `plat.py`; the terminals are `HiddenMux` in `slots.py`, and the Windows pseudo-console is `conpty.py`.
 
 C3 split this file by responsibility; each module imports only the ones before it in this list:
     state    shared state and small helpers: init, log, git, the plan file, the stop request
