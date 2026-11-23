@@ -137,8 +137,45 @@ def test_files_report():
         eq(cost.files_report([Path(t) / 'none.jsonl']), ['no transcripts'], 'no transcript: nothing')
 
 
+def test_spend():
+    print('task spend: tokens and dollars from a growing transcript, subagents too (F103)')
+    with tempfile.TemporaryDirectory() as t:
+        u = {'input_tokens': 1000, 'cache_read_input_tokens': 100000, 'cache_creation_input_tokens': 2000,
+             'output_tokens': 500}
+        turn = lambda mid, model='claude-opus-5-5': [  # noqa: E731
+            {'type': 'assistant', 'message': {'id': mid, 'role': 'assistant', 'model': model, 'usage': u,
+                                              'content': [{'type': 'text', 'text': 'x'}]}}] * 2
+        f = write(Path(t) / 'sid.jsonl', [*turn('m1'), result('a', 'y')])
+        s = cost.Spend()
+        s.add(f)
+        tokens, usd = s.total()
+        eq(tokens, 103500, 'every token billed, a message id once though Claude writes it on two lines')
+        eq(round(usd, 4), round((1000 * 5 + 2000 * 5 * 1.25 + 100000 * 5 * 0.1 + 500 * 25) / 1e6, 4),
+           'dollars at list prices: cache writes 1.25x, reads 0.1x the input price')
+        with open(f, 'a', encoding='utf-8') as fh:
+            fh.write(json.dumps(turn('m2', 'claude-haiku-5-5')[0]) + '\n' + '{"type": "assistant", "mess')
+        s.add(f)
+        eq(s.total()[0], 2 * 103500, 'read on from where it stopped; a half-written line waits')
+        sub = Path(t) / 'sid' / 'subagents'
+        sub.mkdir(parents=True)
+        write(sub / 'agent-1.jsonl', turn('m9', 'claude-sonnet-5-5'))
+        eq([p.name for p in cost.session_files(f)], ['sid.jsonl', 'agent-1.jsonl'], 'its subagents\' transcripts')
+        for p in cost.session_files(f):
+            s.add(p)
+        eq(s.total()[0], 3 * 103500, 'and their tokens count for the task')
+        eq(cost.turn_spend({'input': 10, 'output': 5, 'cost': {'total': 0.5}}, 'x'), (15, 0.5),
+           "Pi's keys, and its own cost when it gives one")
+    eq(cost.spend_text(1_234_000, 3.4), '1.2M tok $3.40', 'how status shows it')
+    eq(cost.over_budget(100, 1.0, 0, 0), '', 'no caps: never over')
+    has(cost.over_budget(2_000_000, 1.0, 1_000_000, 0), r'past \[run\] task_tokens \(1,000,000\)', 'tokens cap')
+    has(cost.over_budget(100, 5.0, 0, 4), r'past \[run\] task_usd \(\$4\.00\)', 'dollars cap')
+    from agent_runner import status
+    eq(status.spend_shown({'spend': {'1': [2_500_000, 7.5]}}, '1'), '2.5M tok $7.50', "status: a slot's spend")
+    eq(status.spend_shown({'spend': {'1': 'x'}}, '1'), '', 'nothing for a bad record')
+
+
 def main() -> int:
-    return report([test_kinds, test_sessions, test_filled, test_reads, test_files_report])
+    return report([test_kinds, test_sessions, test_filled, test_reads, test_files_report, test_spend])
 
 
 if __name__ == '__main__':

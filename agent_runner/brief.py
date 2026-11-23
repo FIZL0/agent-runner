@@ -14,18 +14,19 @@ from agent_runner.state import C, default_branch, git, ROOT
 
 PROMPT = """Unattended run: nobody will answer questions, so never ask one — decide, write down why, and go on.
 
-Do task {tid} and nothing else. You are in a git worktree on branch task/{tid}: commit this repo's work here only. Never \
+Do the one task named at the end of this brief, and nothing else; `<ID>` below stands for its id. You are in a git \
+worktree on branch task/<ID>: commit this repo's work here only. Never \
 touch the main checkout, and never merge, rebase or push the main branch. {publish}
-{others}{earlier}
+{others}
 Rules: {rules}. {test} """ + GLOSSARY + """
 {journal}
-Finish with `{runner} done {tid} "<commit message>"`. It runs the test gate, ticks the task, commits and \
+Finish with `{runner} done <ID> "<commit message>"`. It runs the test gate, ticks the task, commits and \
 pushes, and it refuses to tick when the gate fails. Run it, and any whole test suite, as a background command \
 and wait for it to end: beside the other slots a gate can outlast your own command time limit, and one cut \
 off there commits nothing. Run one at a time: start another only once the first has ended.
 
 If you are stuck (a tool hangs, the same fix fails twice, it needs a human, about 20 minutes with no \
-progress), commit what is solid and run `{runner} done {tid} "<msg>" --blocked "<why + what would unblock \
+progress), commit what is solid and run `{runner} done <ID> "<msg>" --blocked "<why + what would unblock \
 it>"`, then stop. If all it waits on is another task landing (its code is not on the main branch yet), add \
 `--after <ID>[,<ID>]`, and the run reopens it the moment those merge. If it waits on a person, start WHY with \
 what you ask of them: `CONFIRM: <what to check by hand>`, `DECIDE: <the question or choice>` or `BLOCKED: \
@@ -48,8 +49,15 @@ print runs for ever. Search where the thing can be, not the whole disk (`find /`
 
 """ + SAFE_SHELL + """ Delete only inside your worktree.
 
-{followups}
-{extra}
+{followups}"""
+
+# F103: what differs from task to task comes after PROMPT, the task's own brief last, so every slot's first turn
+# starts with the same text and the model's prompt cache is reused across slots and tasks.
+TASK_PROMPT = """\
+Your task is {tid}: `<ID>` above is {tid}, and your branch is task/{tid}.
+{earlier}{extra}"""
+
+BRIEF_LAST = """\
 The task's brief (`{runner} plan brief {tid}`) follows, so don't gather it again.
 
 {brief}"""
@@ -114,17 +122,31 @@ def prompt_for(tid: str, n: int, slots: int, cwd: Path, branch: str) -> str:
     Placeholders a custom template may use: {tid} {n} {runner} {branch} {others} {earlier} {rules} {test}
     {journal} {extra} {followups} {brief}. Any other `{name}` is left as it is. `[run] prompt_extra` may use them too
     (a slot's own emulator, say: "KIT_PCSX2={n} is set").
+
+    F103: the built-in prompt is the same for every task up to TASK_PROMPT (its id, an earlier attempt,
+    `prompt_extra`), then the task's paragraphs and policies, and the task's brief last, so the model's prompt
+    cache is reused across slots. A custom template with `{brief}` keeps its own order.
     """
     r = C.run
     journal = os.path.relpath(C.journal, C.root).replace(os.sep, '/') if C.journal else ''
-    journal_at = (f'{journal}/{tid}/notes.md (if it exists, an earlier attempt wrote it: then '
-                  f'{journal}/{tid}/<date>-<slug>/notes.md)' if C.raw['plan']['journal_layout'] == 'id'
-                  else f'{journal}/<date>-{tid.lower()}-<slug>/')
+
+    def journal_text(t: str) -> str:
+        at = (f'{journal}/{t}/notes.md (if it exists, an earlier attempt wrote it: then '
+              f'{journal}/{t}/<date>-<slug>/notes.md)' if C.raw['plan']['journal_layout'] == 'id'
+              else f'{journal}/<date>-{t.lower()}-<slug>/')
+        return (f'\nWrite the task\'s journal as you go, in {at}: what you did, '
+                f'what you tried that failed, and under **Not verified** everything you could not check, with '
+                f'why (or `none`). A skipped check that is written down is useful; a silent one is a bug '
+                f'nobody will find.\n' if journal else '')
+
+    def publish(t: str) -> str:
+        return (NO_REMOTE if C.push_remote and missing_remote(C.root) else PUBLISH if C.push_remote
+                else NO_PUSH).format(runner=C.command, tid=t, remote=C.push_remote)
+
     wip = not git('rev-parse', '--verify', '-q', f'refs/heads/wip/{tid}').returncode
     vals = dict(
         tid=tid, n=n, runner=C.command, branch=branch,
-        publish=(NO_REMOTE if C.push_remote and missing_remote(C.root) else PUBLISH if C.push_remote
-                 else NO_PUSH).format(runner=C.command, tid=tid, remote=C.push_remote),
+        publish=publish(tid),
         others=OTHERS if slots > 1 else '',
         earlier=(f'An earlier attempt that could not be merged is on wip/{tid} (`git log {branch}..wip/{tid}`, '
                  f'and the ledger line in {r["notes"]}/ledger.md says why). Read it before starting over.\n'
@@ -132,10 +154,7 @@ def prompt_for(tid: str, n: int, slots: int, cwd: Path, branch: str) -> str:
         rules=f'read {r["rules"]} first' if r['rules'] else 'the README, and AGENTS.md or CLAUDE.md if there is one',
         test=(f'The test gate is `{r["test"]}`. `done` runs it, and it must pass.' if r['test'] else
               'There is no test gate, so say in the commit message how you checked the work.'),
-        journal=(f'\nWrite the task\'s journal as you go, in {journal_at}: what you did, '
-                 f'what you tried that failed, and under **Not verified** everything you could not check, with '
-                 f'why (or `none`). A skipped check that is written down is useful; a silent one is a bug '
-                 f'nobody will find.\n' if journal else ''),
+        journal=journal_text(tid),
         extra=f'\n{r["prompt_extra"].strip()}\n' if r['prompt_extra'] else '',
         brief=brief_for(tid, cwd),
     )
@@ -143,11 +162,18 @@ def prompt_for(tid: str, n: int, slots: int, cwd: Path, branch: str) -> str:
     vals['followups'] = FOLLOWUPS.format(runner=C.command, kinds='; '.join(f'{k} {v}' for k, v in kinds.items()))
     vals['extra'] = vals['extra'].format_map(_Keep(vals))  # `prompt_extra` may say {n}, {tid}, {runner}
     template = (ROOT / r['prompt']).read_text(encoding='utf-8') if r['prompt'] else PROMPT
-    prompt = template.format_map(_Keep(vals))
+    own = '{brief}' in template  # a custom template (or a replaced PROMPT) that places the brief itself
+    if own:
+        prompt = template.format_map(_Keep(vals))
+    else:  # F103: the same text for every task first; `<ID>` stands for the id the task part names
+        prompt = template.format_map(_Keep({**vals, 'tid': '<ID>', 'publish': publish('<ID>'),
+                                            'journal': journal_text('<ID>'), 'earlier': '', 'extra': ''}))
     from agent_runner import glossary  # F22: name things with its terms, add new ones; nothing when it is off
     prompt = glossary.fit(prompt, 'slot', C.command, C)
     from agent_runner import voice  # F21: the person's wording, for what status and since show of this task
     prompt = voice.slot(prompt, C)
+    if not own:
+        prompt = f'{prompt.rstrip()}\n\n' + TASK_PROMPT.format_map(_Keep(vals))
     policies = []
     if r['include_task_id_in_commit']:
         policies.append(f'Include task ID `{tid}` at the start of the commit subject.')
@@ -170,7 +196,16 @@ def prompt_for(tid: str, n: int, slots: int, cwd: Path, branch: str) -> str:
         prompt = f'{prompt.rstrip()}\n\n' + review_prompt(tid, cwd)
     if 'docs' in subagents():  # F101
         prompt = f'{prompt.rstrip()}\n\n' + DOCS_PROMPT.format(runner=C.command, tid=tid)
-    return f'{prompt.rstrip()}\n\nProject policies:\n' + '\n'.join(f'- {policy}' for policy in policies)
+    prompt = f'{prompt.rstrip()}\n\nProject policies:\n' + '\n'.join(f'- {policy}' for policy in policies)
+    if not own:  # F103: the task's own text last
+        prompt = f'{prompt}\n\n' + BRIEF_LAST.format_map(_Keep(vals))
+    return prompt
+
+
+BUDGET_STOP = ('Stop at a clean point: {tid} has used its budget ({why}). If your `{runner} done` is already '
+               'running its test gate, let it finish and do nothing else. Otherwise do not run `done`: commit what '
+               'is solid on task/{tid}, write in your journal what is done and what is left, then end your turn. '
+               'The run parks your branch as wip/{tid}, and the task\'s next attempt starts from there.')
 
 
 CONCEPT_PROMPT = """\

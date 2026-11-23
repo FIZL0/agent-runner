@@ -329,3 +329,10 @@ _Said_: type of work
 _On screen_: [models] code, review, fix, docs, control, feed
 _In code_: [models], Config.models, resolve_models, subagents
 _Avoid_: model kind, model type
+
+**Task budget**:
+The most tokens or dollars one task's session may use; past it the task stops at a clean point and is parked as wip/<ID>
+_Said_: per-task budget
+_On screen_: s1 speed up the parser [T3] 12 min 2.5M tok $7.50
+_In code_: task_tokens, task_usd, budgets, budget_mark, cost.Spend, SPENT
+_Avoid_: quota, limit

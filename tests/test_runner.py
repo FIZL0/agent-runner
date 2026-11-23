@@ -1528,6 +1528,9 @@ def test_control(repo: Path):
                            '  21:03 stuck, not merged: B9 (x) [B9]',
                            '  21:05 run idle: nothing left it may start', 'usage: session 40%, week 10%'],
        'status reads well on a phone: titles first, ids in brackets at the end')
+    st['spend'] = {'1': [2_500_000, 7.5]}
+    has(R.status_text(True, st, [], {'T3': 'speed up the parser'}, 1000 + 12 * 60),
+        r'^  s1  speed up the parser \[T3\]  12 min  2\.5M tok \$7\.50$', 'F103: status shows a task\'s spend')
 
 
 def test_concepts_waiting(repo: Path):
@@ -3035,6 +3038,16 @@ def test_prompt_and_hooks(repo: Path):
     p = R.prompt_for('T2', 1, 1, repo, 'main')
     has(p, r'The test gate is `python3 check\.py`', 'the built-in prompt names the gate')
     check('Other agents' not in p, 'and says nothing about other agents in a one-slot run')
+    # F103: the fixed runner brief first, the same for every task; the task's own text last (the prompt cache)
+    p1, p2 = R.prompt_for('T1', 2, 2, repo, 'main'), R.prompt_for('T2', 1, 2, repo, 'main')
+    head = os.path.commonprefix([p1, p2])
+    cut = head.rfind('\n') + 1
+    check(p1[cut:].startswith('Your task is T1:') and p2[cut:].startswith('Your task is T2:'),
+          'two tasks\' briefs share the same text up to the task\'s own', p1[cut - 200:cut + 80])
+    check('T1' not in head and 'T2' not in head and len(head) > 3000, 'and the shared part names no task')
+    check(f'`{R.C.command} done <ID> "<commit message>"`' in head, 'it says <ID> where the id goes')
+    check(p2.rstrip().endswith(R.brief_for('T2', repo).rstrip()), 'the task\'s brief comes last')
+    check(p2.index('Project policies:') < p2.index('The task\'s brief'), 'after its policies')
     cmd = R.agent_cmd('hi', 'sid', 'opus', 90, 'slot1')
     has(cmd, r'--stop-hook --idle 90', 'the agent command carries the idle Stop hook')
     big = 'x' * 40000  # a long brief
@@ -7066,6 +7079,79 @@ def test_claude_drift_b45(repo: Path, tmp: Path):
             cj.write_text(saved_cj, encoding='utf-8')
 
 
+def test_task_budget_f103(repo: Path, tmp: Path):
+    print('F103: a task past [run] task_tokens is told to stop at a clean point, parked as wip/<ID>, ended if it goes on')
+    from agent_runner import loop as L, slots as S
+    R.init(repo)
+    eq((R.C.run.get('task_tokens'), R.C.run.get('task_usd')), (0, 0), 'no cap by default')
+    usage = {'input_tokens': 1000, 'cache_read_input_tokens': 50000, 'output_tokens': 500}  # 51,500 a turn
+    f = tmp / 'budget-sid.jsonl'
+
+    def turns(*mids):
+        with open(f, 'a', encoding='utf-8') as fh:
+            for mid in mids:
+                fh.write(json.dumps({'type': 'assistant', 'message': {
+                    'id': mid, 'role': 'assistant', 'model': 'claude-opus-5-5', 'usage': usage,
+                    'content': [{'type': 'text', 'text': 'x'}]}}) + '\n')
+
+    sent, ended = [], []
+    told = lambda n, procs, text: sent.append(text) or None  # noqa: E731
+    procs, running = {1: (424242, 'budget-sid', None)}, {1: ('F903', '', set(), set())}
+    old = dict(R.C.run)
+    S.TRANSCRIPTS['budget-sid'] = str(f)
+    try:
+        with mock.patch.object(S, 'finished_mark', lambda n=None: None), \
+                mock.patch.object(S.plat, 'terminate', ended.append):
+            def look():
+                S.BUDGET_AT[0] = 0
+                S.budgets(procs, running, told)
+            turns('m1')
+            look()
+            eq(S.SPENT.get('1', [0])[0], 51500, 'its spend is kept for status, with no cap set')
+            R.C.run['task_tokens'] = 100000
+            look()
+            eq((sent, S.budget_mark('F903')), ([], ''), 'under the cap: nothing said')
+            turns('m2')
+            look()
+            eq(len(sent), 1, 'past it: one message typed into the session')
+            has(sent[0], r'Stop at a clean point: F903 has used its budget \(103k tok \$[\d.]+ is past \[run\] '
+                r'task_tokens \(100,000\)\).*let it finish.*commit what is solid.*journal.*wip/F903',
+                'to stop at a clean point, commit and write its journal')
+            has(S.budget_mark('F903'), r'past \[run\] task_tokens', 'marked to park when its session ends')
+            look()
+            eq((len(sent), ended), (1, []), 'said once; not ended while under 1.25 times the cap')
+            turns('m3')
+            look()
+            eq(ended, [424242], 'still spending past 1.25 times the cap: its session is ended')
+            look()
+            eq(ended, [424242], 'once')
+            S.TRANSCRIPTS['budget-sid2'] = str(f)
+            R.C.notes('F904.budget').unlink(missing_ok=True)
+            S.BUDGET_AT[0] = 0
+            S.budgets({2: (434343, 'budget-sid2', None)}, {2: ('F904', '', set(), set())},
+                      lambda n, p, t: 'no live pane for s2')
+            eq(ended[-1], 434343, 'a session that takes no typed text is ended at once')
+            R.C.notes('F904.budget').unlink(missing_ok=True)
+        git(repo, 'branch', 'task/F903', 'main')
+        d = tmp / 'wt-F903'
+        git(repo, 'worktree', 'add', '-q', str(d), 'task/F903')
+        (d / 'f903.py').write_text('# half done\n', encoding='utf-8')
+        git(d, 'add', 'f903.py')
+        git(d, 'commit', '-qm', 'F903 half of it')
+        git(repo, 'worktree', 'remove', '--force', str(d))
+        eq(L._finish('F903', 1, 'budget-sid', 'main'), True, 'its session ends: finished')
+        heads = set(git(repo, 'for-each-ref', '--format=%(refname:short)', 'refs/heads/').split())
+        check('wip/F903' in heads and 'task/F903' not in heads, 'parked as wip/F903, not merged', heads)
+        eq(S.budget_mark('F903'), '', 'its mark is gone')
+    finally:
+        R.C.run.clear()
+        R.C.run.update(old)
+        S.SPENT.clear()
+        for b in ('wip/F903', 'task/F903'):  # gone already when a check above failed midway
+            subprocess.run(['git', 'branch', '-D', b], cwd=repo, capture_output=True)
+        subprocess.run(['git', 'push', '-q', 'origin', '--delete', 'wip/F903'], cwd=repo, capture_output=True)
+
+
 def test_context_warn_f25(repo: Path):
     print('F25: a slot session whose context peaks past [run] context_warn says so, and what filled it')
     R.init(repo)
@@ -7444,7 +7530,7 @@ def main() -> int:
                        lambda: test_hidden_slots(repo, tmp), lambda: test_hidden_run_lands(tmp), lambda: test_no_gate_b36(tmp),
                        lambda: test_claude_drift_b45(repo, tmp), lambda: test_merged_count_b78(repo),
                        lambda: test_hidden_control_f59(repo, tmp), lambda: test_attach_f88(tmp), lambda: test_context_warn_f25(repo),
-                       lambda: test_control_fresh_f27(repo), lambda: test_config_trim_c14(tmp), lambda: test_models_f101(repo, tmp), test_reference_keys_d3, test_cap_stop_hint_b102])
+                       lambda: test_control_fresh_f27(repo), lambda: test_config_trim_c14(tmp), lambda: test_models_f101(repo, tmp), lambda: test_task_budget_f103(repo, tmp), test_reference_keys_d3, test_cap_stop_hint_b102])
 
 
 if __name__ == '__main__':

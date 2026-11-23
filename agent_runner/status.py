@@ -621,6 +621,15 @@ def needs_heading(heading: str) -> str:
     return f'{p} needs you:' if heading.lower() == 'needs you' else f'{heading} ({p}):'
 
 
+def spend_shown(st: dict, n: str) -> str:
+    """F103: what slot n's task has spent so far ('1.2M tok $3.40'), as the run last wrote it to STATE."""
+    got = (st.get('spend') or {}).get(n)
+    if not (isinstance(got, list) and len(got) == 2 and all(isinstance(x, (int, float)) for x in got)) or not got[0]:
+        return ''
+    from agent_runner.cost import spend_text
+    return spend_text(int(got[0]), float(got[1]))
+
+
 def status_text(up: bool, st: dict, log_lines: list[str], titles: dict[str, str], now: float, width: int = 60,
                 waiting=None, progress: str = '', wips=None) -> str:
     """`agent-runner status`, short enough for a phone: concepts waiting for the person's OK first, then the
@@ -636,7 +645,7 @@ def status_text(up: bool, st: dict, log_lines: list[str], titles: dict[str, str]
         title = title if len(title) <= width else title[:width - 1].rstrip() + '…'
         mins = f'{int((now - st["since"][n]) // 60)} min' if n in st.get('since', {}) else ''
         out.append('  ' + '  '.join(x for x in (f's{n}' if n.isdigit() else n, f'{title} [{tid}]' if title else tid,
-                                                 mins) if x))
+                                                 mins, spend_shown(st, n)) if x))
     if up and not st.get('running'):
         out.append('  no task running')
     if st.get('merging'):

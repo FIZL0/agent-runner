@@ -805,6 +805,7 @@ def free_gb() -> float:
 def start(n: int, task, branch: str, model: str, idle: int, slots: int):
     tid = task[0]
     finished_mark(n).unlink(missing_ok=True)  # the last task's `done`, not this one's
+    C.notes(f'{tid}.budget').unlink(missing_ok=True)  # F103: an earlier attempt's budget stop, not this one's
     d = worktree(n, branch)
     head = git('symbolic-ref', '-q', '--short', 'HEAD', cwd=d).stdout.strip()
     if not vacate(n, d, head, branch, f'for {tid}'):
@@ -1214,3 +1215,71 @@ def claude_json() -> Path:
     cfg_dir = os.environ.get('CLAUDE_CONFIG_DIR')
     return Path(cfg_dir) / '.claude.json' if cfg_dir else Path.home() / '.claude.json'
 
+
+
+# --- per-task budgets (F103: [run] task_tokens / task_usd) ------------------------------------------------------
+
+SPEND: dict[str, object] = {}  # sid -> its cost.Spend, read on from where the last look stopped
+SPENT: dict[str, list] = {}  # slot -> [tokens, dollars] of its task's session, for STATE and `status`
+BUDGET_AT = [0.0]
+BUDGET_EVERY = 15  # seconds between two looks at the running sessions' transcripts
+BUDGET_HARD = 1.25  # times the cap: a session told to stop that is still spending past this is ended
+BUDGET_ENDED: set[str] = set()
+
+
+def budget_mark(tid: str) -> str:
+    """Why the budget stopped `tid` while it ran, for `_finish` (which parks it, unless its done passed)."""
+    try:
+        return C.notes(f'{tid}.budget').read_text(encoding='utf-8').strip()
+    except OSError:
+        return ''
+
+
+def task_spend(sid: str) -> tuple[int, float]:
+    """(tokens, dollars) session `sid` and its subagents have used so far; (0, 0.0) without a transcript."""
+    from agent_runner.cost import Spend, session_files
+    if not (t := transcript(sid)):
+        return 0, 0.0
+    s = SPEND.setdefault(sid, Spend())
+    for p in session_files(t):
+        s.add(p)
+    return s.total()
+
+
+def budgets(procs: dict, running: dict, type_into) -> None:
+    """Each running task's spend, kept in SPENT for `status`; one past `[run] task_tokens` or `task_usd` is told
+    to stop at a clean point, commit and write its journal (its branch is parked as wip/<ID> when the session
+    ends), and ended if it goes on spending to BUDGET_HARD times the cap. One whose `done` passed is left to
+    land. `type_into(n, procs, text)` types into slot n's session: None when it went in, else why not."""
+    if time.time() - BUDGET_AT[0] < BUDGET_EVERY:
+        return
+    BUDGET_AT[0] = time.time()
+    from agent_runner.brief import BUDGET_STOP
+    from agent_runner.cost import over_budget, spend_text
+    caps = C.run.get('task_tokens') or 0, C.run.get('task_usd') or 0
+    for k in [k for k in SPENT if not k.isdigit() or int(k) not in procs]:
+        SPENT.pop(k)
+    for n, (pid, sid, _) in list(procs.items()):
+        if n not in running:
+            continue
+        tid = running[n][0]
+        tokens, usd = task_spend(sid)
+        SPENT[str(n)] = [tokens, round(usd, 2)]
+        if not (why := over_budget(tokens, usd, *caps)) or ((m := finished_mark(n)) and m.exists()):
+            continue
+        mark = C.notes(f'{tid}.budget')
+        if not mark.exists():
+            mark.write_text(why + '\n', encoding='utf-8')
+            if (said := type_into(n, procs, BUDGET_STOP.format(tid=tid, why=why, runner=C.command))) is None:
+                log(f'slot {n}: {tid} {why}: told it to stop at a clean point, commit and write its journal; '
+                    f'its branch is parked as wip/{tid} when the session ends', None, tid)
+            else:
+                BUDGET_ENDED.add(sid)
+                plat.terminate(pid)
+                log(f'slot {n}: {tid} {why}; {said}, so its session is ended and what it did is parked as '
+                    f'wip/{tid}', None, tid)
+        elif sid not in BUDGET_ENDED and over_budget(tokens, usd, caps[0] * BUDGET_HARD, caps[1] * BUDGET_HARD):
+            BUDGET_ENDED.add(sid)
+            plat.terminate(pid)
+            log(f'slot {n}: {tid} went on to {spend_text(tokens, usd)} after it was told to stop; its session is '
+                f'ended and what it did is parked as wip/{tid}', None, tid)
