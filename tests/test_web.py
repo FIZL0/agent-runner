@@ -1002,8 +1002,48 @@ def test_talk_f93(tmp: Path) -> None:
     eq([k for k, _ in nav][:2], ['talk', 'home'], 'Talk is the top view in the sidebar, above Home')
 
 
+def test_delete_chats_f118(tmp: Path) -> None:
+    """F118: the page's delete_chats reaches control.end_control for each named chat and refuses c1; each chat
+    row but c1 has a delete button, a delete is sent only once Undo is past, and chatPick picks as Ctrl/Cmd+click
+    (toggle) and Shift+click (a range from the last clicked) do, never c1."""
+    from agent_runner import control as CT
+    fake_repo(tmp)
+    page = W.page_html().decode()
+    check('data-del=' in page and 'data-undo' in page and 'data-delsel' in page and "name:'delete_chats'" in page,
+          'the page: a delete button per chat, Undo, a Delete N bar, the delete_chats action')
+    token = W.web_token()
+    srv = W.serve(token, 0, '127.0.0.1', snap=lambda: {})
+    url = f'http://127.0.0.1:{srv.server_address[1]}/act?t={token}'
+    ended = []
+    try:
+        with mock.patch.object(CT, 'end_control', lambda n, why: (ended.append(n), n != 7)[1]):
+            code, out = post(url, {'name': 'delete_chats', 'args': {'names': ['c4', 'c7']}})
+            eq((code, out.get('ok'), out.get('deleted'), ended), (200, True, ['c4'], [4, 7]),
+               'each named chat is ended; one already gone is said so')
+            code, out = post(url, {'name': 'delete_chats', 'args': {'names': ['c1']}})
+            eq((out.get('ok'), ended), (False, [4, 7]), 'c1 cannot be deleted: nothing ended')
+    finally:
+        srv.stop()
+    if not shutil.which('node'):
+        print('  (no node here: the chat pick test is skipped)')
+        return
+    names = ['c1', 'c3', 'c4', 'c6', 'c9']
+    got = logic_js([['chatPick', names, [], '', 'c4', 'toggle'], ['chatPick', names, ['c4'], 'c4', 'c9', 'toggle'],
+                    ['chatPick', names, ['c4', 'c9'], 'c9', 'c4', 'toggle'], ['chatPick', names, ['c4'], 'c4', 'c9', 'range'],
+                    ['chatPick', names, [], 'c6', 'c1', 'range'], ['chatPick', names, ['c3'], 'c3', 'c1', 'toggle'],
+                    ['chatPick', names, ['c3', 'c4'], 'c4', 'c6', ''], ['chatPick', names, [], '', 'c6', 'range']])
+    eq(got[0], {'sel': ['c4'], 'last': 'c4'}, 'Ctrl/Cmd+click picks a chat')
+    eq(got[1], {'sel': ['c4', 'c9'], 'last': 'c9'}, 'and another, in list order')
+    eq(got[2], {'sel': ['c9'], 'last': 'c4'}, 'and again takes it out')
+    eq(got[3], {'sel': ['c4', 'c6', 'c9'], 'last': 'c4'}, 'Shift+click picks the range from the last clicked')
+    eq(got[4]['sel'], ['c3', 'c4', 'c6'], 'a range up to c1 leaves c1 out')
+    eq(got[5]['sel'], ['c3'], 'c1 is never picked')
+    eq(got[6], {'sel': [], 'last': 'c6'}, 'a plain click drops the pick')
+    eq(got[7], {'sel': ['c6'], 'last': 'c6'}, 'Shift+click with nothing clicked before picks that one')
+
+
 if __name__ == '__main__':
-    raise SystemExit(report([in_tmp(test_server), in_tmp(test_real_action), in_tmp(test_run_controls),
+    raise SystemExit(report([in_tmp(test_delete_chats_f118), in_tmp(test_server), in_tmp(test_real_action), in_tmp(test_run_controls),
                            in_tmp(test_start), in_tmp(test_upload),
                            in_tmp(test_control_rows), in_tmp(test_feed_pane_concept), in_tmp(test_page),
                            in_tmp(test_logic), in_tmp(test_extras), in_tmp(test_diff), in_tmp(test_views),

@@ -1183,6 +1183,28 @@ def free_control_number() -> int:
     return control_number()
 
 
+def end_control(n: int, why: str) -> bool:
+    """F118: end control session `n` (> 1) on purpose, as closing it does (B26, B53): its process, controlN.pid and
+    controlN.title go, so it leaves the chat list and no run start reopens it (B121); the transcript stays,
+    resumable. c1 is never ended here: it is the run's kept session. Whether it was there to end."""
+    if n <= 1:
+        return False
+    pidf = C.notes(f'control{n}.pid')
+    try:
+        pid_s, _, sid = pidf.read_text(encoding='utf-8').strip().partition(' ')
+    except OSError:
+        return False
+    if control_live(n):
+        try:
+            plat.terminate(int(pid_s))  # its hidden shim ends with it
+        except ValueError:
+            pass
+    pidf.unlink(missing_ok=True)
+    C.notes(f'control{n}.title').unlink(missing_ok=True)
+    log(f'control {n}: ended, {why}' + (f' (transcript kept: {plat.exe(C.run["agent"])} --resume {sid})' if sid else ''))
+    return True
+
+
 def control_server_argv() -> list[str]:
     """With `[run] remote`: Claude Code's Remote Control server in the main checkout, so new control sessions can
     be started from claude.ai/code and the Claude apps, each with the control settings (its brief)."""
