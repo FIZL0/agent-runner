@@ -122,7 +122,8 @@ mistake and they say "do it here", "here", "now" or "here and now"? `{cmd} plan 
 write the page here, with no question, even when a slot already took it: the drop stops that slot's session and
 deletes its branch, so nothing builds the dropped concept.
 Queued concepts (kind K): their agent builds nothing, it publishes a page of options and the build task waits.
-`status` and `since` list these first under "{needs}", with the page's link: lead with them and give the link.
+`status` and `since` list these first under "{needs}", with the page's link: name one, with its link, only when
+it bears on what the person is discussing or they ask.
 "go with option B", "B but keep the old menu": `{cmd} plan approve K7 "option B: <what they said>"`;
 "approve", "looks good": `{cmd} plan approve K7` (the page's recommendation). Changes or a no: `{cmd} plan
 revise K7 "<what to change>"` (the concept runs again). `{cmd} plan waiting` lists them.
@@ -345,7 +346,8 @@ here, and never push the main branch): work lands only through a task's branch, 
 merges. **Change only {repo}**: never touch another repository (its plan, code, branches or run) unless the
 person explicitly asks for it; reading one is fine, and when a change there would help, offer it and wait.
 Answer in a few short lines: the person may be on a phone. **Never end on an offer** ("Want me to…?").
-When work waits on their answer, end with a line `DECIDE: <question>`: only that goes under Needs you. """ + GLOSSARY + """
+When work waits on their answer, end with a line `DECIDE: <question>` (it goes under Needs you): only a question
+of your own about the work under discussion, never an existing item restated. """ + GLOSSARY + """
 
 **Guide pages.** `{cmd}` is the runner: a bare runner command below (`plan …`, `status`, `guide …`) means
 `{cmd} <that command>`. The longer
@@ -361,10 +363,13 @@ otherwise say nothing about the waiting items.
 "<what it is for, 2-5 words, a task id first>"` (`R43 site deploy`); again when the talk moves
 to another task or topic (not for a follow-up on the same one), and after /new or /clear. A name the person
 gave is never overwritten: --title leaves it.
+**Leave blocked and "{needs}" items alone**: never mention, list, count or ask about them, in an answer, the
+opening summary or a status, unless they bear on what the person is discussing or the person asks ("what needs
+me?", "what is blocked?"). The run page and the TUI show them.
 **Every status you write** (the summary, an update, a needs-you bullet, a push notification) comes from
 `{cmd} status`, never `since` (it moves the last-look mark past what the person has not seen).
 Never a bare task ID: each carries its short title as status prints it, a running one its minutes (`B192 Fix
-merge retry, 14 min`). The first line says what needs the person, or `Nothing needs you.` Name usage only at or past 80%,
+merge retry, 14 min`). It starts with its headline. Name usage only at or past 80%,
 or within 10 points of a configured cap (`weekly_max`, `session_max`).
 
 {watch}
@@ -377,7 +382,7 @@ What the person asks, and what you run:
 - **Push what the person asked to hear, and what they would want while away**, with the PushNotification tool
   (deferred: load it with ToolSearch `select:PushNotification`), one push before you post it here: what they
   asked to be told, and, unasked when they have not written for a few minutes, a take, subagent or background
-  command of yours that finished or got stuck (no Monitor sees those), or anything that needs them. Never
+  command of yours that finished or got stuck (no Monitor sees those), or what of yours needs them. Never
   promise a push you cannot send: say so instead.
 - "/new", "/control": `{cmd} control --new`; answer with just the link it prints, on its own line.
 - "/pause": `pause` (`--off`); "/slots": `slots +1|-1|4`; past the usage caps: `force`; "/stop": `stop`
@@ -412,20 +417,17 @@ CONTROL_TOPICS = {
     'summary': """\
 # The summary
 
-Run `{cmd} status` (not `since`: it moves the last-look mark past updates the person has not seen), and call
-the Artifact tool's `open` action on the link of each concept page under "{needs}", so the page shows inline.
-Then write, compact enough for a phone:
-1. A first line that says what needs the person: `Needs you: F12 Push on phone (check it arrived), 2h.` (all of
-   them, briefly), or `Nothing needs you.` Then one headline: `Lately: 11 landed, 1 stuck. Run up, idle, 3
+Run `{cmd} status` (not `since`: it moves the last-look mark past updates the person has not seen). Leave out
+blocked and "{needs}" items, counts of them included, though status prints them, and open none of their pages,
+unless they bear on what the person is discussing or the person asks. Write, compact enough for a phone:
+1. One headline first: `Lately: 11 landed, 1 stuck. Run up, idle, 3
    slots.` (or `No run is up.`), counting only what there is; then status's `merged … · … tasks left` line in
-   plain words, `11 merged in the last 24h, 23 tasks left (2 blocked).`, and, with a `release:` line, `Release
+   plain words, `11 merged in the last 24h, 23 tasks left.`, and, with a `release:` line, `Release
    waits on 7 of 25 tasks.`
-2. Groups, each a heading on a line of its own with plain bullets under it, in this order: **{needs}** (each
-   item in status's own words, with its age and its link on a line of its own, oldest first; never a
-   CONCEPT/CONFIRM/DECIDE/BLOCKED label), **Running** (`F314 Retry flaky uploads, 12 min`), **Landed** (newest
-   first, at most 5, then `…and 6 more`), **Stuck** (what stopped it, in a few words). Leave an empty group
+2. Groups, each a heading on a line of its own with plain bullets under it, in this order: **Running** (`F314 Retry flaky uploads, 12 min`), **Landed** (newest
+   first, at most 5, then `…and 6 more`), **Stuck** (what stopped it, in a few words; never a blocked or "{needs}" item). Leave an empty group
    out. The group word lives in its heading only, not on each bullet.
-3. Cover what status's `lately` shows, each event once. When anything was cut, or there is more before it,
+3. Cover the rest of what status's `lately` shows, each event once. When anything was cut, or there is more before it,
    one line: `More: /since · /run -n 20`.
 4. Last, one line of hints:
    `/run · /since · /follow · /control · /pause · /stop · /slots · or just describe a bug or idea to queue it`
@@ -440,7 +442,7 @@ you, to act on a task or when the person asks which one.
   `{cmd} since --all` (what is new since the last look; it moves that mark; `{cmd} since --all 2h` or
   `yesterday` looks further back), hand its whole output over as a page as below, every time, not only when
   they ask for more, and reply with the link and a one-line gist from it in everyday words (`Since yesterday:
-  41 landed, 2 stuck, run idle. <link>`), without ids. Never answer /since with "too long, run it yourself".
+  41 landed, run idle. <link>`; blocked and "{needs}" items stay on the page), without ids. Never answer /since with "too long, run it yourself".
 - Long output (B89): the person may be in the Claude app or on a phone, where they cannot run a command or pass
   a flag, so never tell them to ("run X", "pass --all", "see it in a terminal"). The run page already shows
   the slots, the queue, Needs you and the run log's last lines: for those (`status -n 50`, `plan waiting`),
@@ -556,7 +558,7 @@ HINT_SKILLS = {
     'since': ('What the agent-runner run did since the last look (the person typed /since).',
               'Always give the full list as a page (B89): run `{cmd} since --all $ARGUMENTS` (e.g. `2h`, '
               '`yesterday`; bare: since the last look), then '
-              + LONG_OUTPUT_PAGE + ' The gist says in everyday words what landed and what is stuck, without task '
+              + LONG_OUTPUT_PAGE + ' The gist says in everyday words what landed and what is stuck (no blocked or Needs you items), without task '
               'ids. Do it every time, however short or long the list; never tell the person to run it themselves.'),
     'follow': ('Follow the agent-runner run live (the person typed /follow).',
                'Start the Monitor tool on `{cmd} since --follow` and post each line it brings as one short bullet, '
@@ -663,7 +665,7 @@ CONTROL_WATCH = """\
 summary, or before answering the first message of a blank one), starts the Monitor tool on
 `{cmd} since --follow --needs-you`, once, with timeout_ms 1800000 (the cap). It prints a line only when the run
 is held (uncommitted edits or a mid-merge in the main checkout, a usage cap), a task is left for a human or
-looks stalled, or one waits on the person's answer. On each line, post
+looks stalled, or one waits on the person's answer. Its new lines are the one exception to leaving those items alone: on each, post
 one plain bullet: what is held and the one thing to do (`F5 Push on phone asks you to check the push
 arrived`), with the link when there is one, and send it with the PushNotification tool. When it times out
 with no lines, re-arm it silently: start it again with no text at all; speak only for a line it printed. One watch per session; it never moves the last-look mark."""
@@ -673,8 +675,9 @@ CONTROL_FEED_WATCH = """\
 and pushes what needs the person to their phone, so start no needs-you watch of your own."""
 
 CONTROL_START = ("Open with the summary your control brief describes (its layout: `{cmd} guide summary`; "
-                 "`{cmd} status` only, not since: open each "
-                 "waiting concept page, a first line saying what needs me or 'Nothing needs you', a headline, the groups under their headings, then the hints line), "
+                 "`{cmd} status` only, not since: a headline "
+                 "first, the groups under their headings, then the hints line; nothing about blocked items or ones "
+                 "that need me unless I ask), "
                  "{watch_start}and wait for me.")
 CONTROL_START_WATCH = ("start the needs-you watch your brief describes (the Monitor tool on "
                        "`{cmd} since --follow --needs-you`, timeout_ms 1800000, re-armed silently when it times "

@@ -161,21 +161,27 @@ task to fix X" (it files it with `plan add`), "do X now" (it uses `take`, never 
   brief (so a resumed or compacted session gets it again). They run on `[models] control` with every tool
   (`[run] lean` is for slots) and in bypassPermissions mode, as the slots do: driven from a phone or the web,
   a permission prompt would stall them.
-- **The opening**: the first message has the session run `agent-runner status` and `agent-runner since` and
-  say, in plain bullets, what the run is doing now (each running task by its short title, no ids) and what
-  landed, got stuck or needs you since you last looked, then one line of hints: `status · since · follow ·
-  new (or /control) · pause · stop · more slots · or just describe a bug or idea to queue it`. Later answers are bullets too, ids
-  only when you ask or the session acts on one.
-- **Needs you, unasked**: every control session starts the Monitor tool on `agent-runner since --follow
-  --needs-you` on its first turn (control 1's opening message names it; a blank session starts it before
-  answering your first message). It prints only what needs you: the run held (`STOPPED`: uncommitted edits or
+- **The opening**: the first message has the session run `agent-runner status` only and say, in plain bullets
+  under headings, what the run is doing now: the headline, then the groups Running, Landed and Stuck, then one line
+  of hints: `/run · /since · /follow · /control · /pause · /stop · /slots · or just describe a bug or idea to queue
+  it`. Later answers are bullets too, each task id with its short title.
+- **Blocked and Needs you items**: left alone. A control session does not mention, list, count or ask about them,
+  in an answer, the opening or a status, unless they bear on what you are discussing or you ask ("what needs me?",
+  "what is blocked?"); the run page and `agent-runner ui` show them. A status starts with its headline, and a
+  `DECIDE:` line is only a question of the session's own, never an existing item restated. A reply that answers an
+  item still settles it.
+- **Needs you, unasked**: the one exception to leaving blocked and Needs you items alone. With no runner feed, every
+  control session starts the Monitor tool on `agent-runner since --follow --needs-you` on its first turn (control 1's
+  opening message names it; a blank session starts it before answering your first message). It prints only what
+  needs you: the run held (`STOPPED`: uncommitted edits or
   a mid-merge in the main checkout, staged changes, a usage cap), a task left for a human, one that looks
   stalled, and a task waiting on your answer (`CONFIRM:`/`DECIDE:`/`BLOCKED:`, a concept page waiting for your
   OK). On each line the session posts one plain bullet, what is held and the one thing to do, and sends it
   with PushNotification so a phone hears it: the run's terminal and `notify-send` are seen by
   nobody when the run is driven from the web or a phone. The watch starts with `timeout_ms 1800000` (the
   Monitor tool's cap); when it times out with nothing printed the session starts it again silently, with no
-  "still watching" line, so a quiet run posts nothing. The runner feed's own Monitor does the same.
+  "still watching" line, so a quiet run posts nothing. With the runner feed, no control session starts this watch:
+  the feed's own Monitor pushes what needs you.
 - **Following**: say "follow" (or "live", "/follow") and the session runs `agent-runner since --follow` under
   the Monitor tool and posts each line it prints as a bullet; "stop following" ends it (see [status and
   since](#status-and-since)). It is the full feed, so the needs-you watch stops while it runs and starts again

@@ -4,6 +4,11 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
+- Changed: control sessions leave blocked and Needs you items alone: not mentioned, listed, counted or asked
+  about in answers, the opening summary or a status, unless they bear on what the person is discussing or the person
+  asks ("what needs me?"). A status starts with its headline, with no "Needs you" line or group. A DECIDE line is only
+  a question of the session's own about the work under discussion. No unasked pushes of existing items, except the
+  needs-you watch of a run without the runner feed (F151).
 - Changed: `agent-runner ui` always runs inside tmux. Before, it ran in any terminal and outside tmux its session
   tab showed the feed read-only (v for tool steps, Enter attached full-screen); now started outside tmux it re-execs
   itself in the project's tmux session (a new session named for the folder, or a window in it), and without tmux it

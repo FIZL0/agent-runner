@@ -1310,24 +1310,24 @@ def test_control(repo: Path):
     for want in ('control session', f'{R.C.command} status', f'{R.C.command} plan add', f'{R.C.command} take',
                  'Never edit code', f'{R.C.command} since', f'{R.C.command} since --follow', 'Open the session',
                  '/run · /since · /follow · /control · /pause · /stop · /slots', 'Start it only when asked',
-                 f'{R.C.command} control --new', '"/new"', "Artifact tool's `open` action", '**Needs you**',
+                 f'{R.C.command} control --new', '"/new"',
                  '**Running**', '**Landed**', '**Stuck**', "status's `lately`", 'More: /since · /run -n 20',
                  f'{R.C.command} status -n 20'):
         check(want in brief, f'the brief says {want!r}')
-    check(brief.index('**Needs you**') < brief.index('**Running**') < brief.index('**Landed**')
-          < brief.index('**Stuck**'), 'the groups in order: Needs you, Running, Landed, Stuck')
+    check(brief.index('**Running**') < brief.index('**Landed**') < brief.index('**Stuck**'),
+          'the groups in order: Running, Landed, Stuck')
     check('Waiting for your OK' not in brief, 'B27: the old heading is gone from the brief')
     from agent_runner.guide import topic
     needs_page = topic('needs', R.C.command)
-    check('never a\n   CONCEPT/CONFIRM/DECIDE/BLOCKED label' in brief and 'never show the person those labels' in needs_page
+    check('never show the person those labels' in needs_page
           and 'reply yes/no' in needs_page, 'B27: each item worded plainly, without the caps labels (C2: details in guide needs)', brief)
     check('plan answer' not in brief and f'{R.C.command} plan confirm|change|shelve ID' in brief
           and 'ask the person, naming the items' in brief,
           'C5: a reply naming no item is mapped to its id by the session, which asks when it cannot tell')
     with mock.patch.object(P, 'needs_cfg', lambda: {'heading': 'For you', 'ages': True, 'order': 'oldest'}):
         b2 = R.control_brief()
-    check('"For you"' in b2 and '**For you**' in control_pages(R.C.command, 'For you'),
-          'B27: [needs] heading names the group', b2[:200])
+    check('"For you"' in b2 and 'blocked and "For you" items' in control_pages(R.C.command, 'For you'),
+          'B27: [needs] heading names the items', b2[:200])
     check('status · since · follow' not in brief, 'the hints line is slash commands, not bare words')
     check('--after T181' in brief and f'{R.C.command} plan block ID --after' in brief,
           '"do X after T181" queues X with --after (block --after for a queued task)')
@@ -6679,18 +6679,45 @@ def control_text(cmd: str = './run') -> str:
 
 
 def test_control_status_rules(repo: Path):
-    """F39: every status a control session writes names IDs with titles and minutes, leads with needs-you, and
+    """F39: every status a control session writes names IDs with titles and minutes, starts with its headline, and
     leaves usage out below 80% (or 10 points short of a cap)."""
-    from agent_runner.guide import CONTROL, CONTROL_START, CONTROL_WATCH, RUNNER_BRIEF
+    from agent_runner.guide import RUNNER_BRIEF
     text = control_text()
     check('Never a bare task ID' in text and 'short title' in text and 'its minutes' in text,
           'the control brief: each task ID with its short title and a running one with its minutes', text)
-    check('first line' in text and 'Nothing needs you.' in text, 'the first line says what needs the person', text)
+    check('It starts with its headline.' in text and '1. One headline first:' in text, 'F151: the headline is first', text)
     check('80%' in text and 'within 10 points of a configured cap' in text and 'weekly_max' in text,
           'usage only at or past 80% or near a cap', text)
     check('push notification' in text, 'the rules cover push notifications too', text)
-    check('Nothing needs you' in CONTROL_START, 'the opening prompt asks for the needs-you first line', CONTROL_START)
     check('never a bare ID' in RUNNER_BRIEF, 'the runner feed pushes name tasks with their titles', RUNNER_BRIEF)
+
+
+def test_control_leaves_needs_alone():
+    """F151: control sessions leave blocked and Needs you items alone; the needs topic and the feed keep theirs."""
+    from agent_runner.guide import CONTROL, CONTROL_FEED_WATCH, CONTROL_START, CONTROL_TOPICS, RUNNER_BRIEF, topic
+    flat = lambda t: ' '.join(t.split())
+    brief = flat(CONTROL.format(repo='r', cmd='./run', log='l', watch=CONTROL_FEED_WATCH.format(repo='r'),
+                                needs='Needs you', answer=''))
+    summary = flat(CONTROL_TOPICS['summary'].format(cmd='./run', needs='Needs you'))
+    start = flat(CONTROL_START.format(cmd='./run', watch_start=''))
+    for name, t in (('brief', brief), ('summary topic', summary), ('start prompt', start)):
+        check('Nothing needs you' not in t and 'first line' not in t and '**Needs you**' not in t
+              and 'waiting concept page' not in t and 'each concept page' not in t,
+              f'the {name} orders no needs-you first line, group or pages', t)
+    check('**Leave blocked and "Needs you" items alone**' in brief and 'never mention, list, count or ask about them' in brief
+          and 'unless they bear on what the person is discussing or the person asks' in brief, 'the brief has the rule', brief)
+    check('Leave out blocked and "Needs you" items' in summary and '(2 blocked)' not in summary, 'and the summary topic', summary)
+    check('nothing about blocked items or ones that need me unless I ask' in start, 'and the start prompt', start)
+    check('only a question of your own about the work under discussion, never an existing item restated' in brief,
+          'a DECIDE line restates no item', brief)
+    concepts = flat(topic('concepts', './run'))
+    check('lead with them' not in concepts, 'the concepts topic no longer leads with waiting concepts', concepts)
+    needs = flat(topic('needs', './run'))
+    check('whenever you show that item again' in needs and 'Map the answer to one of three' in needs
+          and 'plan confirm ID' in needs, 'the needs topic still answers items', needs)
+    check('You are the only one watching for what needs the person' in RUNNER_BRIEF
+          and 'make its first item line, word for word, the last line of your reply' in RUNNER_BRIEF,
+          'the feed still pushes what needs the person', RUNNER_BRIEF)
 
 
 def test_control_do_it_here(repo: Path):
@@ -8416,7 +8443,7 @@ def main() -> int:
                        lambda: test_closed_online_controls(repo),
                        lambda: test_renamed_control_kept(repo),
                        lambda: test_control_summary_title(repo), lambda: test_control_task_name(repo), lambda: test_progress_and_release(repo),
-                       lambda: test_control_status_rules(repo), lambda: test_control_do_it_here(repo), lambda: test_control_retitle_on_topic(repo), test_control_push_when_asked, test_needs_cmd_f44, test_idle_control_not_waiting, lambda: test_take_running_slot(repo), lambda: test_upgrade_cmd(repo), lambda: test_runner_route_b54(repo), test_control_no_upgrade_watcher,
+                       lambda: test_control_status_rules(repo), test_control_leaves_needs_alone, lambda: test_control_do_it_here(repo), lambda: test_control_retitle_on_topic(repo), test_control_push_when_asked, test_needs_cmd_f44, test_idle_control_not_waiting, lambda: test_take_running_slot(repo), lambda: test_upgrade_cmd(repo), lambda: test_runner_route_b54(repo), test_control_no_upgrade_watcher,
                        test_split_modules_c3, lambda: test_plan_last(repo), lambda: test_after_all(repo), lambda: test_release_kind(repo),lambda: test_release_push(repo),
                        lambda: test_help_order_and_bare_wizard(tmp), lambda: test_setup(tmp),
                        lambda: test_stop_countdown(repo), lambda: test_real_claude_json_guard(tmp),
