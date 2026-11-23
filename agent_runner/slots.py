@@ -927,7 +927,8 @@ did last, then carry on with task {tid} where you left off and finish it as the 
 session says."""
 
 
-def resume(n: int, tid: str, sid: str, why: str, branch: str, model: str, idle: int, fallback: str = ''):
+def resume(n: int, tid: str, sid: str, why: str, branch: str, model: str, idle: int, fallback: str = '',
+           slots: int = 1):
     """Continue the session `sid` of task `tid` in slot n, where it ran: its transcript names that worktree's
     paths, so no other slot will do. A slot still on task/<tid> is used as it is; one that moved on gets the
     task back from wip/<tid> (the edits the session left, saved when the slot was reset), uncommitted again.
@@ -955,7 +956,7 @@ def resume(n: int, tid: str, sid: str, why: str, branch: str, model: str, idle: 
     if fallback:  # F106g: a new session on the next provider, the old one's work in the worktree
         sid = str(uuid.uuid4())
         prompt = FALLBACK.format(model=model, tid=tid, why=why, branch=branch) + \
-            prompt_for(tid, n, C.run.get('slots') or 1, d, branch, model)
+            prompt_for(tid, n, slots, d, branch, model)
         logfile, since = slot_header(n, f'{tid} session {sid} (fallback: {why})')
         note_model(sid, model)
         if not (pid := MUX.open(n, d, prompt, sid, model, idle, slot_env(n), logfile)):

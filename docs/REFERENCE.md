@@ -1317,10 +1317,8 @@ far, noting it in the transcript. When none is left it ends on the error, and th
 (a claude one) in a new Claude Code session as above.
 
 Capped providers are kept in `<notes>/capped.json` (provider -> until): till the reset time the error names (Claude
-Code's `usage limit reached|<epoch>`), else one hour. While a provider is capped, a new task whose model is on it
-starts on the chain's first free model; once the cap has reset, new tasks go back to their own model. With
-`[run] session_max` or `weekly_max` reached, new tasks start down the chain instead of waiting, when it has a free
-provider.
+Code's `usage limit reached|<epoch>`, or "resets 3pm"), else one hour. While a provider is capped, a new task whose model is on it
+starts on the chain's first free model; once the cap has reset, new tasks go back to their own model.
 
 With no fallback set (the default), nothing changes: a task waits for the reset as before (a cut-off session
 resumes).

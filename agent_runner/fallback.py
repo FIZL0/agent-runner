@@ -14,6 +14,7 @@ provider hits its cap (a Claude usage limit, a provider's quota error).
 """
 from __future__ import annotations
 
+import datetime as dt
 import json
 import re
 import time
@@ -28,7 +29,6 @@ CAP_GRACE = 120  # s a session told to stop over a cap gets before it is ended
 # limit · resets 3pm"; a provider's 429, quota or resource-exhausted error)
 CAP = re.compile(r'usage limit|limit reached|hit your limit|rate.?limit|quota|resource.?exhausted|'
                  r'too many requests|\b429\b', re.I)
-USAGE_CAPPED = [False]  # the loop's `capped` holds claude ([run] session_max / weekly_max) this tick
 CAP_TOLD: dict[str, float] = {}  # sid -> when it was told to stop over a cap
 
 CAP_STOP = ('Stop at a clean point: {provider} has hit its usage cap ({why}). If your `{runner} done` is already '
@@ -68,7 +68,7 @@ def mark_capped(name: str, until: float | None = None) -> None:
 
 
 def is_capped(name: str, capped: dict | None = None) -> bool:
-    return name in (capped_now() if capped is None else capped) or (name == 'claude' and USAGE_CAPPED[0])
+    return name in (capped_now() if capped is None else capped)
 
 
 def chain_next(model: str, capped: dict | None = None) -> str | None:
@@ -100,11 +100,6 @@ def start_model(model: str) -> str:
     if state.C.fallback and is_capped(provider(model)):
         return chain_next(model) or model
     return model
-
-
-def chain_open() -> bool:
-    """With claude capped, a new task can still start: the chain names a provider that is not capped."""
-    return bool(state.C.fallback) and chain_next(state.C.models['code'], {**capped_now(), 'claude': float('inf')}) is not None
 
 
 def note_model(sid: str, model: str) -> None:
@@ -140,11 +135,23 @@ def cap_text(sid: str) -> str:
     return text[:200] or 'usage limit'
 
 
-def reset_at(text: str) -> float | None:
-    """The reset time a cap's text names as an epoch (Claude Code's "usage limit reached|1764000000")."""
-    if (m := re.search(r'\|(\d{10})\b', text)) and float(m[1]) > time.time():
+def reset_at(text: str, now: float | None = None) -> float | None:
+    """The reset time a cap's text names, as an epoch: Claude Code's "usage limit reached|1764000000", or
+    "resets 3pm" / "resets 3:30pm" / "resets 15:00" (local time, the next such time); None when it names none."""
+    now = time.time() if now is None else now
+    if (m := re.search(r'\|(\d{10})\b', text)) and float(m[1]) > now:
         return float(m[1])
-    return None
+    if not (m := re.search(r'resets?\s+(?:at\s+)?(\d{1,2})(?::(\d\d))?\s*([ap]m)?\b', text, re.I)):
+        return None
+    hour, minute, half = int(m[1]), int(m[2] or 0), (m[3] or '').lower()
+    if half:
+        hour = hour % 12 + (12 if half == 'pm' else 0)
+    if hour > 23 or minute > 59:
+        return None
+    at = dt.datetime.fromtimestamp(now).replace(hour=hour, minute=minute, second=0, microsecond=0)
+    if at.timestamp() <= now:
+        at += dt.timedelta(days=1)
+    return at.timestamp()
 
 
 def fallback_due(tid: str, sid: str) -> tuple[str, str] | None:

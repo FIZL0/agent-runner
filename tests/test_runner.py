@@ -5072,6 +5072,12 @@ def test_cap_told(repo: Path, tmp: Path):
                 check(len(sent) == 1 and 'Stop at a clean point' in sent[0] and 'gemini:pro-test' in sent[0],
                       'with a chain it is told to stop at a clean point and commit', sent)
                 eq(FB.capped_now().get('claude'), 9999999999.0, 'claude is capped till the reset its error named')
+                noon = R.dt.datetime(2026, 11, 23, 12, 0).timestamp()
+                eq(FB.reset_at("You've hit your limit · resets 3pm", noon),
+                   R.dt.datetime(2026, 11, 23, 15, 0).timestamp(), '"resets 3pm" is read as today 15:00')
+                eq(FB.reset_at('resets 9am', noon), R.dt.datetime(2026, 11, 24, 9, 0).timestamp(),
+                   'and a time already past as tomorrow\'s')
+                eq(FB.reset_at('429 quota exceeded', noon), None, 'an error with no time names no reset')
                 eq(FB.fallback_due('F905', 'cap-sid')[0], 'gemini:pro-test',
                    'and when it ends, it goes on with the next provider')
                 FB.caps(procs, running, told)

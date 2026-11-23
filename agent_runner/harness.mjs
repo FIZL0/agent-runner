@@ -603,12 +603,21 @@ async function main() {
     }
     if (m.stopReason === 'error' && capError(m.errorMessage || '') && a.fallback.length) {
       // F106g: the provider hit its cap: the same session goes on with the chain's next model
-      const next = a.fallback.shift(), was = a.model;
-      try {
-        provider = await loadProvider(next.model, next.provider);
-      } catch (e) {
-        console.log(`harness: cannot switch to ${next.model}: ${e?.message || e}`);
-        continue;
+      const was = a.model;
+      let next = null;
+      while (!next && a.fallback.length) { // an entry that will not load is passed over for the one after it
+        const c = a.fallback.shift();
+        try {
+          provider = await loadProvider(c.model, c.provider);
+          next = c;
+        } catch (e) {
+          console.log(`harness: cannot switch to ${c.model}: ${e?.message || e}`);
+        }
+      }
+      if (!next) {
+        t.assistant(m);
+        console.log(`harness: the model call failed: ${m.errorMessage}; no model in --fallback could be loaded`);
+        return 1;
       }
       markCapped(a.notes, was.split(':')[0]);
       a.model = next.model;

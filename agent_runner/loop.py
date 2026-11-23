@@ -1339,7 +1339,7 @@ class Run:
         tid, sid, why = self.waiting.pop(n)
         fb = FB.queued_model(tid)  # F106g: a new session on the chain's next model, not this one resumed
         C.notes(f'{tid}.resume').unlink(missing_ok=True)
-        if p := resume(n, tid, sid, why, self.branch, self.model, self.idle, fallback=fb):
+        if p := resume(n, tid, sid, why, self.branch, self.model, self.idle, fallback=fb, slots=self.slots):
             self.procs[n] = p
             self.running[n] = next((t for t in tasks(self.branch) if t[0] == tid), (tid, '', set(), set()))
             self.tried.add(tid)
@@ -1353,9 +1353,7 @@ class Run:
             return
         if PAUSED[0]:
             return
-        w = capped(self.a.force or FORCED[0])
-        FB.USAGE_CAPPED[0] = w is not None  # F106g: claude capped: a new task starts down the chain, if it can
-        if w is not None and not FB.chain_open():
+        if (w := capped(self.a.force or FORCED[0])) is not None:
             if not self.cap_said:
                 alarm(f'{w}: no new tasks', cap_stop_detail())
                 self.cap_said = True

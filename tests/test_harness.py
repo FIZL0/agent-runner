@@ -187,7 +187,11 @@ def test_fallback(env: Env):
            'the session\'s model is noted for the runner')
         from agent_runner import fallback as FB
         check('codex' in FB.capped_now(), 'and codex is noted capped, so new tasks start down the chain')
-        eq(FB.start_model(MODEL), 'gemini:pro-test', 'a new codex task starts on gemini while codex is capped')
+        from agent_runner import login
+        with mock.patch.object(login, 'missing', lambda m, c: ''):
+            eq(FB.start_model(MODEL), 'gemini:pro-test', 'a new codex task starts on gemini while codex is capped')
+        with mock.patch.object(login, 'missing', lambda m, c: m.partition(':')[0]):
+            eq(FB.start_model(MODEL), MODEL, 'but not while gemini has no login')
         has(json.dumps(env.entries(sid)), r'hit its cap', 'the transcript says the session switched')
         R.C.notes('capped.json').unlink()
         eq(FB.start_model(MODEL), MODEL, 'once the cap is gone, new tasks go back to the first')
