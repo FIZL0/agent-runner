@@ -52,7 +52,7 @@ a{color:var(--accent)}
 /* B160: the keyboard is open: kbFit() sets .app's top and height from visualViewport, and nothing pans the page */
 .app.kb{position:fixed;left:0;right:0;container-type:size;padding-bottom:0}
 .app.kb .dock{padding-bottom:8px} .app.kb .sheet{padding-bottom:12px} .app.kb .slash{max-height:min(320px,50cqh)}
-.app.kb .top,.app.kb .dock,.app.kb .scrim{touch-action:none}
+.app.kb .top,.app.kb .dock,.app.kb .scrim{touch-action:pinch-zoom}
 .shell{flex:1;min-height:0;min-width:0;position:relative;display:grid;grid-template-columns:minmax(0,1fr)}
 
 /* the sidebar: a drawer on a phone */
