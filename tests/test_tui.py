@@ -1127,26 +1127,25 @@ def test_follow_upgrade_f90() -> None:
     p = page(dict(SNAP, version=newer))
     p.key('3')
     p.key('DOWN')
-    p.key('ENTER')  # the main pane, on B2's first tab
-    p.drafts['edit:B2'] = 'half a thought'
+    p.key('ENTER')  # the main pane on B2
+    check(p.set_tab('chat edit'), "B2's second tab")
     p.refresh()
     check(p.restart, 'a newer run version: restart')
     got = []
-    T.follow_upgrade(p, exec_=lambda path, argv, env: got.append((path, argv, env)))
+    with mock.patch.object(sys, 'orig_argv', ['/usr/bin/python3', '/x/run', 'ui'], create=True):
+        T.follow_upgrade(p, exec_=lambda path, argv, env: got.append((path, argv, env)))
     eq(len(got), 1, 'exec called once')
     path, argv, env = got[0]
-    eq((path, argv), (sys.executable, list(getattr(sys, 'orig_argv', None) or [sys.executable] + sys.argv)),
-       'the same interpreter and argv')
+    eq((path, argv), (sys.executable, ['/usr/bin/python3', '/x/run', 'ui']), 'the same interpreter and argv')
     place = json.loads(env[T.PLACE_ENV])
     eq((place['panel'], place['sel'], place['main'], place['for']), (3, 'B2', True, newer),
        'the place: the focused panel, the selection, the main pane, the version it restarts for')
-    tab = p.tab()[0]
     q = page(dict(SNAP, version=newer))
     with mock.patch.dict(os.environ, {T.PLACE_ENV: env[T.PLACE_ENV]}):
         q.restore_place(T.taken_place())
         check(T.PLACE_ENV not in os.environ, 'the place is taken once')
-    eq((q.panel, q.sel().get('id'), q.main, q.tab()[0], q.drafts.get('edit:B2')),
-       (3, 'B2', True, tab, 'half a thought'), 'the new TUI reopens where it was')
+    eq((q.panel, q.sel().get('id'), q.main, q.tab()[0]), (3, 'B2', True, 'chat edit'),
+       'the new TUI reopens where it was: panel, selection, main pane, tab')
     q.refresh()
     check(not q.restart, 'never a second restart for the version it restarted for')
     check(T.newer_version('0.60.0', '0.59.9') and not T.newer_version('0.59.0', '0.59.0')

@@ -1184,11 +1184,11 @@ class RunPage:
             self.restart = True
 
     def saved_place(self) -> dict:
-        """F90: the focused panel, the selection, tabs, focus and drafts, for `restore_place` after a restart."""
+        """F90: the focused panel, the selection, tabs and focus, for `restore_place` after a restart."""
         it = self.sel()
         sel = (it.get('id') or it.get('name') or '') if isinstance(it, dict) else ''
         return {'panel': self.panel, 'cur': {str(n): c for n, c in self.cur.items()}, 'sel': sel,
-                'tabs': self.tabs, 'main': self.main, 'drafts': self.drafts,
+                'tabs': self.tabs, 'main': self.main,
                 'for': str(self.snap.get('version') or '')}
 
     def restore_place(self, place: dict) -> None:
@@ -1209,7 +1209,6 @@ class RunPage:
         if place.get('sel') and place['sel'] in ids:
             self.cur[self.panel] = ids.index(place['sel'])
         self.tabs.update({str(k): str(v) for k, v in (place.get('tabs') or {}).items()})
-        self.drafts.update({str(k): str(v) for k, v in (place.get('drafts') or {}).items()})
         self.main = bool(place.get('main'))
         self.followed = str(place.get('for') or '')
 
