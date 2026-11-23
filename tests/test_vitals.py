@@ -106,6 +106,13 @@ def test_fallback_room():
         eq(room('[models]\nfallback = ["sonnet"]\n'), (0, False), 'only claude in it: none')
         chain = '[models]\nfallback = ["sonnet", "gemini:pro-test"]\n'
         eq(room(chain), (6, True), 'a free provider: room')
+        write(t / 'other' / 'runner.toml', '[run]\nweekly_max = 95\n' + chain)
+        git(t / 'other', 'init', '-q')
+        write(root / 'runner.toml', '[run]\nweekly_max = 90\n')
+        v = V.Vitals(lambda: [root, t / 'other'], None, tailscale=False, usage=lambda: {},
+                     info=lambda r: {'up': True}, sampler=V.Sampler())
+        v.started, v.usage, v.snap = True, {'weekly': 91.0}, snap(mem={'total': 64 * GB, 'avail': 64 * GB})
+        eq(v.device(detail=False)['headroom']['room'], 0, 'a chain counts only with its own project\'s caps reached')
         from agent_runner.config import Config
         capped = write(Config(root).notes('capped.json'), json.dumps({'gemini': time.time() + 900}))
         eq(room(chain), (0, False), 'its provider capped: none')

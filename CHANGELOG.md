@@ -65,6 +65,11 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
   provider still waits, and STOPPED is raised only when such a task is all that could start. Nothing is written to
   capped.json; without a chain tasks are held as before. A session is now resumed only by the kind of agent (Claude Code
   or the harness loop) that ran it; an answered one whose task now runs on the other gets a new session (F142).
+- Fixes: Device Vitals' headroom said "No room for another agent: a usage cap is reached" past `[run] session_max` or
+  `weekly_max`, though new tasks start down `[models] fallback` (F142). While a project whose run is up (with none up,
+  any project) has a free provider in its chain (not claude, not capped, logged in), the usage cap now sets no limit and
+  the line reads e.g. "Room for 6 more agents, on [models] fallback: a usage cap is reached". Memory, CPU and disk limits
+  still hold; without a free provider it is as before (B157).
 
 ## 0.61.0 (2026-11-23)
 

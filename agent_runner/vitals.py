@@ -8,7 +8,8 @@ sparklines.
 
 From a sample Home works out:
     headroom   how many more agents fit: the smallest of the memory, CPU-load, disk (against min_free_gb) and
-               usage-cap limits, capped at ROOM_MAX (`headroom`)
+               usage-cap limits (no usage limit while [models] fallback has a free provider), capped at ROOM_MAX
+               (`headroom`)
     alerts     the thresholds that need the person: disk under min_free_gb, high temperatures, memory nearly
                full, session temp folders over 5 GB (`alerts`); they show under Needs you on Home and go to
                each running project's runner feed, which pushes them (`Vitals.push_alerts`)
@@ -448,6 +449,15 @@ def free_fallback(c) -> bool:
                for m in c.fallback)
 
 
+def past_caps(usage: dict | None, caps: dict | None) -> bool:
+    """The session or weekly usage is at or past its cap."""
+    for name, cap_key in (('session', 'session_max'), ('weekly', 'weekly_max')):
+        pct, cap = (usage or {}).get(name), (caps or {}).get(cap_key)
+        if pct is not None and cap and pct >= cap:
+            return True
+    return False
+
+
 def headroom(snap: dict, min_free_gb: float = 10, usage: dict | None = None, caps: dict | None = None,
              fallback: bool = False) -> dict:
     """How many more agents fit: {'room' (None when nothing could be read), 'by' (the limit that set it),
@@ -460,7 +470,6 @@ def headroom(snap: dict, min_free_gb: float = 10, usage: dict | None = None, cap
                 no limit either with `fallback` (new tasks start down [models] fallback): 'said' tells it
     The smallest wins, capped at ROOM_MAX."""
     limits: dict[str, int] = {}
-    over = False
     if mem := snap.get('mem'):
         limits['memory'] = max(0, int((mem['avail'] / GB - KEEP_FREE_GB) // AGENT_GB))
     cpu = snap.get('cpu') or {}
@@ -468,14 +477,12 @@ def headroom(snap: dict, min_free_gb: float = 10, usage: dict | None = None, cap
         limits['cpu'] = max(0, int(cpu['threads'] * CPU_SHARE - cpu['load']))
     if (disk := snap.get('disk')) and min_free_gb is not None:
         limits['disk'] = max(0, int((disk['free'] / GB - (min_free_gb or 0)) // DISK_GB))
-    for name, cap_key in (('session', 'session_max'), ('weekly', 'weekly_max')):
-        pct, cap = (usage or {}).get(name), (caps or {}).get(cap_key)
-        if pct is not None and cap and pct >= cap:
-            over = True
+    over = past_caps(usage, caps)
     if over and not fallback:
         limits['usage'] = 0
     if not limits:
-        return {'room': None, 'by': '', 'limits': {}, 'said': 'Headroom unknown: nothing here could be read'}
+        return {'room': None, 'by': '', 'limits': {}, 'said': 'Headroom unknown: nothing here could be read' + (
+            f'; {LIMIT_WORDS["usage"]}, new tasks start down [models] fallback' if over else '')}
     by = min(limits, key=lambda k: limits[k])
     room = min(limits[by], ROOM_MAX)
     said = (f'Room for {room} more agent{"" if room == 1 else "s"}' if room
@@ -1156,8 +1163,8 @@ class Vitals:
             self.start()
         projs = self.projects()
         mff, caps = self.limits(projs)
-        # a project whose run is up can start one down its chain; with none up, any that would
-        fell = any(p.fallback for p in [p for p in projs if p.up] or projs)
+        # a project past its own caps starts tasks down its chain: one whose run is up; with none up, any
+        fell = any(p.fallback and past_caps(self.usage, p.caps) for p in [p for p in projs if p.up] or projs)
         room = headroom(self.snap, mff, self.usage, caps, fell)
         found = alerts(self.snap, mff, (self.foot or {}).get('tmp'))
         try:
