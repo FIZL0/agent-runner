@@ -2501,7 +2501,10 @@ def test_status_view_f124(tmp: Path) -> None:
     if not shutil.which('node'):
         print('  (no node here: the Status script test is skipped)')
         return
-    cs = U.controls()
+    with mock.patch('agent_runner.plat.WINDOWS', False):
+        cs = U.controls()
+    with mock.patch('agent_runner.plat.WINDOWS', True):  # B163: no re-exec there, so no restart
+        win = U.controls()
     up = {'up': True, 'controls': cs, 'run': {}, 'fixups': {'resume': [], 'unclaim': [{'id': 'F1', 'label': 'x'}] * 2, 'wip': []}}
     got = logic_js([['viewOf', 'agents'], ['viewOf', 'activity'], ['viewOf', 'plan'],
                     ['runPill', {'up': True, 'run': {'state': 'Caps forced'}}], ['runPill', {'up': False}],
@@ -2513,22 +2516,24 @@ def test_status_view_f124(tmp: Path) -> None:
                     ['swipeOpens', 100, 0, 280, False], ['swipeOpens', 180, 0, 280, False],
                     ['swipeOpens', 60, 0.8, 280, False], ['swipeOpens', -60, -0.8, 280, True],
                     ['swipeOpens', -60, 0, 280, True], ['atEnd', {'scrollHeight': 500, 'scrollTop': 400, 'clientHeight': 100}],
-                    ['atEnd', {'scrollHeight': 500, 'scrollTop': 300, 'clientHeight': 100}]])
+                    ['atEnd', {'scrollHeight': 500, 'scrollTop': 300, 'clientHeight': 100}],
+                    ['controlGroups', {**up, 'controls': win}]])
     eq(got[:3], ['status', 'status', 'plan'], 'the old views land on Status')
     eq(got[3:5], [{'text': 'Caps forced', 'cls': 'warn'}, {'text': 'Not up', 'cls': ''}], "the pill's words")
     eq(got[5], ['slot_remove', 'slot_add', 'pause', 'stop'], "the card's everyday buttons")
     eq(got[6], ['slot_remove', 'slot_add', 'go_on', 'stop_undo'], 'paused and stopping: what undoes it')
     eq(got[7], ['start'], 'no run: Start the run')
-    keys = [(g['group'], [i['c']['key'] for i in g['items']]) for g in got[8]]
-    eq(keys, [('Stop', ['stop', 'stop_now', 'suspend', 'shutdown']), ('Run', ['slots_set', 'force', 'upgrade', 'restart']),
-              ('Fix up', ['unclaim'])], 'the sheet: Stop, Run and Fix up, what there is to fix only')
+    for groups, more, on in ((got[8], ['restart'], ''), (got[23], [], ' (Windows)')):
+        keys = [(g['group'], [i['c']['key'] for i in g['items']]) for g in groups]
+        eq(keys, [('Stop', ['stop', 'stop_now', 'suspend', 'shutdown']), ('Run', ['slots_set', 'force', 'upgrade', *more]),
+                  ('Fix up', ['unclaim'])], f'the sheet: Stop, Run and Fix up, what there is to fix only{on}')
     eq(got[8][2]['items'][0]['label'], 'Release stale claims (2)', 'with its count')
     eq([g['group'] for g in got[9]], ['Stop', 'Run'], 'nothing to fix: no Fix up')
     eq([i['c']['key'] for i in got[10][0]['items']], ['stop_now', 'suspend', 'shutdown'], 'stopping already: no Stop')
     check('caps_on' in [i['c']['key'] for i in got[10][1]['items']], 'caps forced: Caps back on')
     eq(got[11:16], ['wait', 'drag', '', 'drag', ''], 'right opens, left closes, a mostly vertical move does neither')
     eq(got[16:21], [False, True, True, False, True], 'it settles by how far and how fast')
-    eq(got[21:], [True, False], 'at the end, or not')
+    eq(got[21:23], [True, False], 'at the end, or not')
 
 
 def test_chats_f128(tmp: Path) -> None:

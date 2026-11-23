@@ -1306,7 +1306,11 @@ def test_run_controls() -> None:
             'O': ['wip', 'drop', 'main-checkout-1']}
     fix = {'resume': [{'id': 'F8', 'label': 'cut off'}], 'unclaim': [{'id': 'F9', 'label': 'bob'}],
            'wip': [{'id': 'main-checkout-1', 'label': '3 files'}]}
-    double = {c['tui'] for c in U.controls() if c['confirm']}
+    lists = {}
+    for windows in (False, True):
+        with mock.patch('agent_runner.plat.WINDOWS', windows):
+            lists[windows] = U.controls()
+    double = {c['tui'] for c in lists[False] if c['confirm']}
     with mock.patch.object(U, 'RUN', [lambda argv: (ran.append(argv), (0, 'sent to the run'))[1]]), \
             mock.patch.object(U, 'SEND', [lambda text: (sent.append(text), {'ok': True, 'code': 0, 'out': 'sent',
                                                                              'argv': []})[1]]):
@@ -1314,7 +1318,7 @@ def test_run_controls() -> None:
            'every run control has its key here (= and X tested below)')
         for k, argv in want.items():
             p = page()
-            p.snap = {**p.snap, 'fixups': fix, **({'up': False} if k == 'T' else {})}
+            p.snap = {**p.snap, 'controls': lists[False], 'fixups': fix, **({'up': False} if k == 'T' else {})}
             p.get_snap = lambda s=p.snap: s
             ran.clear()
             with mock.patch.object(U, 'fixups', lambda st, ls: fix):
@@ -1323,6 +1327,13 @@ def test_run_controls() -> None:
                     eq(ran, [], f'F124: {k} asks first')
                     p.key(k)
             eq(ran, [argv], f'{k} runs {" ".join(argv)}')
+        p = page()  # B163: no re-exec on Windows, so no restart there
+        p.snap = {**p.snap, 'controls': lists[True], 'fixups': fix}
+        p.get_snap = lambda s=p.snap: s
+        ran.clear()
+        p.key('Y')
+        p.key('Y')
+        eq((ran, p.confirm), ([], ''), 'Y on Windows does nothing')
         two = {**fix, 'wip': fix['wip'] + [{'id': 'main-checkout-2', 'label': '1 file'}]}
         p = page()
         p.snap = {**p.snap, 'fixups': two}

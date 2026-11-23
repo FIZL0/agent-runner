@@ -198,8 +198,13 @@ def test_run_controls(tmp: Path) -> None:
     with mock.patch.object(U, 'RUN', [lambda argv: (ran.append(argv), (0, 'ok'))[1]]), \
             mock.patch.object(U, 'SEND', [lambda text: (sent.append(text), {'ok': True, 'code': 0, 'out': 'sent',
                                                                              'argv': []})[1]]):
-        eq(sorted(c['key'] for c in U.controls()), sorted([*RUN_CONTROL_ARGV, 'task_take']),
-           'the list holds every control the task names')
+        for windows in (False, True):  # B163: no re-exec on Windows, so no restart there
+            want = {*RUN_CONTROL_ARGV, 'task_take'} - ({'restart'} if windows else set())
+            on = ' (Windows)' if windows else ''
+            with mock.patch('agent_runner.plat.WINDOWS', windows):
+                cs = U.controls()
+            eq(sorted(c['key'] for c in cs), sorted(want), f'the list holds every control the task names{on}')
+            eq(len({c['tui'] for c in cs}), len(want), f'each has a key of its own in the TUI{on}')
         for key, argv in RUN_CONTROL_ARGV.items():
             ran.clear()
             r = U.act('run_control', key=key, n='4', tid='main-checkout-1' if 'wip' in key else 'F1', confirm=True)
@@ -222,7 +227,6 @@ def test_run_controls(tmp: Path) -> None:
         by = {c['key']: c for c in U.controls()}
         eq((by['slots_set']['needs'], by['task_drop']['needs'], by['task_take']['needs'], by['pause']['needs']),
            ('n', 'id', 'id', ''), 'what each needs typed')
-        eq(len({c['tui'] for c in U.controls()}), len(U.RUN_CONTROLS), 'each has a key of its own in the TUI')
 
 
 def test_real_command(tmp: Path) -> None:
