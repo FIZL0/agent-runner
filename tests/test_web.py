@@ -1068,6 +1068,48 @@ def test_https_link_b130(tmp: Path) -> None:
            'status prints the https link first')
 
 
+LISTEN_DRIVER = r"""
+const page = require('fs').readFileSync(process.argv[2], 'utf8');
+const grab = (start) => { const i = page.indexOf(start); return page.slice(i, page.indexOf('\n}\n', i) + 2); };
+const logic = page.split('<script id="logic">')[1].split('</script>')[0];
+let spoke = 0, sent = [];
+const window = {speechSynthesis: {cancel() { spoke++ }, speak() { spoke++ }}};
+const speechSynthesis = window.speechSynthesis;
+class SpeechSynthesisUtterance {}
+let rec = null;
+class SR { constructor() { rec = this } start() { this.started = spoke } stop() {} }
+const navigator = {language: 'en-US'};
+const TK = {rec: null, heard: '', state: '', wait: null, said: '', unlocked: false, note: ''};
+const micWhy = () => '', toast = () => {}, render = () => {}, talkSend = t => { sent.push(t) };
+const esc = s => s, I = {stop: '', talk: ''}, box = () => '';
+eval(logic + grab('function unlockSpeech(') + grab('function talkDock(') + grab('function listen(') + `
+  listen();
+  const before = rec.started;
+  rec.onerror({error: 'no-speech'}); rec.onend();
+  const line = talkDock().match(/class="talkline"[^>]*>([^<]*)</)[1];
+  listen();
+  const cleared = talkDock().match(/class="talkline"[^>]*>([^<]*)</)[1];
+  rec.onresult({resultIndex: 0, results: [Object.assign([{transcript: 'hello'}], {isFinal: true})]}); rec.onend();
+  console.log(JSON.stringify({before, line, cleared, sent}));`);
+"""
+
+
+def test_listen_heard_nothing_b132(tmp: Path) -> None:
+    """B132: a listen touches no speechSynthesis before rec.start() (iOS then hears nothing), and one that ends with
+    no words says so in the talk line with the last error, instead of going quiet."""
+    if not shutil.which('node'):
+        print('  (no node here: the listen script test is skipped)')
+        return
+    (tmp / 'driver.js').write_text(LISTEN_DRIVER, encoding='utf-8')
+    r = subprocess.run(['node', str(tmp / 'driver.js'), str(W.PAGE)], capture_output=True, text=True, timeout=60)
+    check(r.returncode == 0, 'node runs listen()', r.stderr[-800:])
+    got = json.loads(r.stdout or '{}')
+    eq(got.get('before'), 0, 'listen does not touch speechSynthesis before rec.start()')
+    eq(got.get('line'), 'Heard nothing (error: no-speech)', 'no words and error no-speech: the talk line says so')
+    eq(got.get('cleared'), 'Listening…', 'the next listen clears it')
+    eq(got.get('sent'), ['hello'], 'words heard are still sent')
+
+
 if __name__ == '__main__':
     raise SystemExit(report([in_tmp(test_delete_chats_f118), in_tmp(test_server), in_tmp(test_real_action), in_tmp(test_run_controls),
                            in_tmp(test_start), in_tmp(test_upload),
@@ -1075,4 +1117,5 @@ if __name__ == '__main__':
                            in_tmp(test_logic), in_tmp(test_extras), in_tmp(test_diff), in_tmp(test_views),
                            in_tmp(test_new_chat), in_tmp(test_term_moves), in_tmp(test_page_copy_publish), in_tmp(test_parked),
                            in_tmp(test_esc_ctrl_c), in_tmp(test_concepts_view), in_tmp(test_follow_version_f90),
-                           in_tmp(test_talk_f93), in_tmp(test_https_link_b130)]))
+                           in_tmp(test_talk_f93), in_tmp(test_https_link_b130),
+                           in_tmp(test_listen_heard_nothing_b132)]))

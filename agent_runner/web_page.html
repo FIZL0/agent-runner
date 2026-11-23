@@ -333,6 +333,8 @@ function micProblem(secure,hasRecognition){
   if(!hasRecognition)return 'This browser cannot turn speech into text (Chrome, Edge and Safari can). Type below instead.';
   return '';
 }
+/* B132: the talk line after a listen that ended with no words, naming the last error the recognizer gave */
+const heardNothing=err=>err?`Heard nothing (error: ${err})`:'Heard nothing';
 /* a Talk message as the person said it: without the first message's brief or a later one's reminder */
 const talkShown=t=>{t=String(t||'');const i=t.indexOf('\n\nThey said: ');
   return (/^Talk mode:/.test(t)&&i>=0?t.slice(i+13):t.replace(/^\(Talk: [^)]*\) /,'')).trim()};
@@ -612,7 +614,7 @@ function grow(ta){ta.style.height='auto';ta.style.height=Math.min(ta.scrollHeigh
    and its reply is read aloud (speechSynthesis); the chat box under the mic works without either ------------- */
 const TALK_KEY='ar-talk';  /* the Talk session this browser opened */
 const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
-const TK={rec:null,heard:'',state:'',wait:null,said:'',unlocked:false};  /* state: '', listening, thinking, speaking */
+const TK={rec:null,heard:'',state:'',wait:null,said:'',unlocked:false,note:''};  /* state: '', listening, thinking, speaking */
 function talkName(){
   const n=talkSession(S.snap.sessions,store.get(TALK_KEY));if(n)return n;
   const w=TK.wait;return w&&Date.now()-w.at<90000?w.n:'';  /* just opened: not in the snapshot yet */
@@ -626,7 +628,7 @@ function talkHTML(){
 }
 function talkDock(){
   const why=micWhy(), st=TK.state;
-  const line=why||(st==='listening'?(TK.heard||'Listening…'):st==='thinking'?'Thinking…':st==='speaking'?'Speaking. Tap to stop and talk.':'Tap to talk');
+  const line=why||(st==='listening'?(TK.heard||'Listening…'):st==='thinking'?'Thinking…':st==='speaking'?'Speaking. Tap to stop and talk.':(TK.note||'Tap to talk'));
   const label=why||(st==='listening'?'Stop listening':st==='speaking'?'Stop speaking and talk':'Talk');
   return `<div class="talk"><button type="button" class="mic ${st==='listening'?'on':st==='speaking'?'speaking':''}" data-mic aria-label="${esc(label)}" title="${esc(label)}" ${why?'disabled':''}>${st==='speaking'?I.stop:I.talk}</button><div class="talkline" role="status">${esc(line)}</div></div>`
     +box('Or type to Talk','Replies are read aloud.');
@@ -634,7 +636,7 @@ function talkDock(){
 /* the person's words to the Talk session; true once sent */
 async function talkSend(msg){
   const to=talkName(), len=to?feedOf(to).length:0;
-  TK.state='thinking';TK.said=msg;unlockSpeech();render(true);
+  TK.state='thinking';TK.said=msg;TK.note='';unlockSpeech();render(true);
   const r=await act('talk',{text:msg,to});
   if(!r.ok){TK.state='';render(true);return false}
   const n=r.session||to, fresh=n!==to;
@@ -669,17 +671,19 @@ function speak(text){
 function listen(){
   const why=micWhy();if(why)return toast(why,true);
   if(TK.state==='listening'){if(TK.rec)TK.rec.stop();return}
-  if(window.speechSynthesis)speechSynthesis.cancel();
-  unlockSpeech();
+  /* B132: no speechSynthesis call before rec.start() on a plain tap: on iOS it puts the audio session in playback
+     and recognition hears nothing (talkSend unlocks speech). Only a tap that stops a reply cancels it. */
+  if(TK.state==='speaking'&&window.speechSynthesis)speechSynthesis.cancel();
+  TK.note='';
   let rec;try{rec=new SR()}catch(e){return toast(`The mic could not start: ${e.message||e}`,true)}
   TK.rec=rec;rec.lang=navigator.language||'en-US';rec.interimResults=true;rec.continuous=false;
-  let final='';
+  let final='', err='';
   rec.onresult=e=>{let interim='';for(let i=e.resultIndex;i<e.results.length;i++){const x=e.results[i];if(x.isFinal)final+=x[0].transcript;else interim+=x[0].transcript}
     TK.heard=(final+interim).trim();render(true)};
-  rec.onerror=e=>{if(e.error==='not-allowed'||e.error==='service-not-allowed')toast('The browser did not let the page use the mic: allow it in the site settings, or type below.',true);
+  rec.onerror=e=>{err=e.error||'';if(e.error==='not-allowed'||e.error==='service-not-allowed')toast('The browser did not let the page use the mic: allow it in the site settings, or type below.',true);
     else if(e.error!=='no-speech'&&e.error!=='aborted')toast(`The mic stopped: ${e.error}`,true)};
   rec.onend=()=>{TK.rec=null;const t=(final||TK.heard).trim();TK.heard='';if(TK.state==='listening')TK.state='';
-    if(t)talkSend(t);else render(true)};
+    if(t)talkSend(t);else{TK.note=heardNothing(err);render(true)}};
   TK.state='listening';TK.heard='';render(true);
   try{rec.start()}catch(e){TK.state='';TK.rec=null;toast(`The mic could not start: ${e.message||e}`,true);render(true)}
 }
