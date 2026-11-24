@@ -249,15 +249,16 @@ link when there is one) and a run's link through Home (`/p/<project>/`) list a T
 Home's port first, then http by hostname and LAN address; Talk's mic and dictation need https. With no Tailscale
 Serve for Home, `home install` offers (in a terminal, y/n) to run `tailscale serve --bg --https=8771
 http://127.0.0.1:8770` (Home's port plus one), or prints that command. Home's page
-is now the run app itself: at `/` it is the "All projects" view, one row per project with Start run, Open, Pause or
-Go on, −1 slot, +1 slot, Stop and Unlist, plus an add-project box, Needs you alerts and Devices. Through Home, a
-run's app (`/p/<project>/`) has a project switcher at the top of the sidebar (the current project's name; tap it to
-list every Home project as running, idle, paused or off, with its needs-you count; each moves to `/p/<project>/` on
-the same Home address) and an "All projects" item in the sidebar. Both list projects with a run up (running, idle or
-paused) first, then those off, by name in each group.
+is now the run app itself: at `/` it is the Overview, Needs you over all projects, then a card per project with one
+main button (Start run, Open, Pause or Go on) and a … sheet for the rest (Slots, Stop and Unlist, which ask first), plus
+an add-project box, Needs you alerts and Devices. Projects with a run up (running, idle or paused) come first, then
+those off, by name in each group. Through Home, a run's app (`/p/<project>/`) has an "All projects" row at the top of
+the sidebar, with a count of what needs you in other projects; tapping it turns the sidebar into the project list
+(Overview, Running, Idle, Off, Devices), and each project in it moves to `/p/<project>/` on the same Home address. An
+off project's page has Start run and turns into its app once the run is up.
 
 On a phone's Home Screen: add the app from Home's link. Home's root is the app's scope, so a move between projects stays in it. It opens on the project it was added
-from, or on All projects if it was added from Home. An icon added before this change: remove it and add it again once,
+from, or on the Overview if it was added from Home. An icon added before this change: remove it and add it again once,
 since iOS may keep the old scope. The manifest and icon hold the token the link has, so whoever has the manifest has it
 already. A run's own address (no Home, or its own `web_port`) is an app of its own; its project name leads to Home's
 address, another origin, which iOS opens outside the app.
@@ -1456,7 +1457,7 @@ stay local: with no gate, `[git] push_merge` pushes a merge only when a settings
 without its own `runner.toml` (because it's git-ignored) reads the main checkout's.
 
 With no settings file at all (no `runner.toml`, no `AGENT_RUNNER_CONFIG` file, and no gate or `push_merge` in
-`runner.local.toml`), the run picker and its launcher, the run page's Run card, Home's All projects and the
+`runner.local.toml`), the run picker and its launcher, the run page's Run card, Home's Overview and the
 TUI's Status panel say "no settings found, so no test gate and nothing is pushed". A run that is up says what
 it itself found (its STATE).
 
