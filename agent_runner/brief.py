@@ -270,8 +270,8 @@ make it short, concrete and readable at a glance. Put no answer buttons on the p
 Concepts or Needs you on the run page, or in the chat. Change no product code; commit only notes you wrote (the \
 journal). Finish with `{runner} done {tid} "<msg>"`: it takes the page's URL that publish-page recorded, and its \
 copy at .runner/concepts/{tid}.html, which the run page shows inline (a page published some other way: add \
-`done {tid} "<msg>" --artifact <the page's URL> --page <the HTML file you published>`). It is refused without a \
-URL, and it files the build task, blocked until the person approves an option."""
+`done {tid} "<msg>" --artifact <the page's URL> --page <the HTML file you published>`). With no Claude Code here there is no URL: \
+publish-page records the run page's copy, and `done` takes that. It is refused without a published page, and it files the build task, blocked until the person approves an option."""
 
 
 RESEARCH_PROMPT = """\

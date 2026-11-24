@@ -69,6 +69,7 @@ import re
 import subprocess as sp
 import sys
 import time
+from pathlib import Path
 
 from agent_runner import plat
 from agent_runner import theme as TH
