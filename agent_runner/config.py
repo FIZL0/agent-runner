@@ -265,7 +265,8 @@ DEFAULTS: dict = {
         'fix': 'opus',          # a merge-conflict fix or repair session
         'docs': 'haiku',        # the `docs` subagent a task hands CHANGELOG, docs, README, journal and plan-text
                                 # edits to, then checks; false, or another provider's model: no docs subagent
-        'control': 'opus',      # control sessions (c2, c3, ...)
+        'control': 'opus',      # control sessions (c2, c3, ...); another provider's runs on the harness loop, with no
+                                # Remote Control, push or Artifact
         'feed': 'haiku',        # the one-shot that publishes the run page's claude.ai copy; another
                                 # provider's has no claude.ai page: the local copy stands
         'kinds': {'F': 'opus', 'B': 'opus', 'T': 'opus', 'V': 'opus', 'K': 'opus', 'D': 'sonnet', 'C': 'sonnet',
@@ -380,24 +381,18 @@ def parse_model(value: str, providers: dict[str, dict] | None = None, local: boo
     return head, rest
 
 
-# F106c: the roles that run as Claude Code itself (Remote Control's control sessions), so only on claude; every
-# other role runs on any provider, another than claude through the harness loop (agent_runner/harness.mjs). F406e: a
+# F106c: every role runs on any provider, another than claude through the harness loop (agent_runner/harness.mjs),
+# F406f: control sessions too. F406e: a
 # feed or review model there is a one-shot (feed.harness_once); a docs model there leaves docs to the task's session
-CLAUDE_ONLY_ROLES = ('control',)
 
 
 def claude_model(value: str, providers: dict[str, dict] | None = None, local: bool = False,
-                 where: str = '[models]', claude_only: bool = False) -> str:
+                 where: str = '[models]') -> str:
     """`parse_model`, then the model as a session runs it: claude's as the bare name ('opus'), another
-    provider's as '<provider>:<model>', which the harness loop runs (F106c). With `claude_only` (a role in
-    CLAUDE_ONLY_ROLES) another provider is refused (SystemExit), saying why."""
+    provider's as '<provider>:<model>', which the harness loop runs (F106c)."""
     provider, model = parse_model(value, providers, local, where)
     if provider == 'claude':
         return model
-    if claude_only:
-        raise SystemExit(f'agent-runner: {where} = {value!r}: this role runs as Claude Code itself (a '
-                         'control session), so only a claude model; the harness loop runs the '
-                         f'{provider} provider for the other roles')
     return f'{provider}:{model}'
 
 
@@ -787,13 +782,12 @@ class Config:
             raise SystemExit(f'agent-runner: [models.kinds] maps a kind to a model name (D = "sonnet"), not {kinds!r}')
         m['kinds'] = {**DEFAULTS['models']['kinds'], **kinds}
         # F106a: each role as '<provider>:<model>'; claude's are kept as the bare name the agent takes, another
-        # provider's as '<provider>:<model>' for the harness loop (F106c), but not in a Claude-only role
+        # provider's as '<provider>:<model>' for the harness loop (F106c)
         refs = {f'[models] {role}': role for role in m if role != 'kinds' and isinstance(m[role], str)}
         refs.update({f'[models.kinds] {k}': k for k in m['kinds']})
         for where, key in refs.items():
             table = m['kinds'] if where.startswith('[models.kinds]') else m
-            table[key] = claude_model(table[key], self.providers, self.models_local, where,
-                                      claude_only=table is m and key in CLAUDE_ONLY_ROLES)
+            table[key] = claude_model(table[key], self.providers, self.models_local, where)
         r['model'], r['fix_model'] = m['code'], m['fix']
         return m
 
@@ -1234,8 +1228,7 @@ def setting_check(root: Path, table: str, key: str, v, device: bool = False) -> 
         for m in named:
             if not isinstance(m, str) or not m:
                 return f'[models] {key}: {m!r} is not a model name'
-            claude_model(m, providers, local, f'[models] {key}',
-                         claude_only=key in CLAUDE_ONLY_ROLES)
+            claude_model(m, providers, local, f'[models] {key}')
     except SystemExit as e:
         return str(e).removeprefix('agent-runner: ')
     return ''

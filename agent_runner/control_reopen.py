@@ -17,7 +17,7 @@ import subprocess as sp
 import sys
 import time
 
-from agent_runner import control as K, control_held, plat, state
+from agent_runner import control as K, control_harness, control_held, plat, state
 from agent_runner.config import runner_cmd
 
 
@@ -73,7 +73,7 @@ def forget_control(n: int, why: str) -> None:
     control_held.look(n)  # B170: what it holds for a usage limit outlives its pid file
     state.C.notes(f'control{n}.pid').unlink(missing_ok=True)
     state.log(f'control {n}: not reopened, {why}' +
-              (f' (transcript kept: {plat.exe(state.C.run["agent"])} --resume {sid})' if sid else ''))
+              (f' (transcript kept: {control_harness.resume_hint(sid)})' if sid else ''))
 
 
 def forget_ended_controls(booted: float | None = None) -> list[int]:
@@ -103,6 +103,8 @@ def controls_to_reopen(booted: float | None = None) -> list[tuple[int, str]]:
             forget_control(n, 'its transcript is gone')
         elif K.closed_online(K.entries(sid, skip_bad=True)):
             forget_control(n, 'its Remote Control session was closed online')
+        elif not control_harness.resumable(sid):  # F406f
+            forget_control(n, '[models] control is another kind of agent now, which cannot read its conversation')
         else:
             out.append((n, sid))
     return out

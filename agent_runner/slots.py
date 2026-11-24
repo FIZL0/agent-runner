@@ -459,7 +459,11 @@ def remote_dialog_seen() -> bool:
 
 def remote_on() -> bool:
     """`[run] remote`, resolved: control sessions and the control server on Remote Control. 'auto' is on when
-    `remote_off_why` finds nothing; true forces it; false keeps it off."""
+    `remote_off_why` finds nothing; true forces it; false keeps it off. F406f: always off with [models] control on another
+    provider, whose control sessions run on the harness loop."""
+    from agent_runner.control_harness import harness_control
+    if harness_control():
+        return False
     v = C.run['remote']
     if v == 'auto':
         return not remote_off_why()
@@ -483,6 +487,9 @@ def remote_line() -> str:
         what = 'control sessions and the slots' if on and slots else 'control sessions' if on else 'slots'
         return f'remote control on: the {what} show at {REMOTE_URL} and in the Claude apps; Enter here opens it'
     if C.run['remote'] == 'auto':
+        from agent_runner.control_harness import harness_control
+        if harness_control():
+            return 'remote control off: [models] control is another provider\'s'
         return f'remote control off: {remote_off_why()}; [run] remote = true forces it'
     return ''  # false: off, as asked, and nothing to say
 

@@ -16,7 +16,7 @@ import time
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 
-from agent_runner import control_held, no_push, plan as P, plansync, plat, shared_tools, stack
+from agent_runner import control_harness, control_held, no_push, plan as P, plansync, plat, shared_tools, stack
 from agent_runner.config import RUNNER, runner_cmd, shown_cmd
 from agent_runner.state import (ask_stop, C, clear_stop, default_branch, edited, git, init, queued, ROOT, run_up,
     SLOTS_DIR, EV_RUN_UP)
@@ -964,6 +964,7 @@ def cmd_control(argv: list[str], prog: str = f'{RUNNER} control') -> int:
                     'read its first message: name it "<repo> · N · SUMMARY" for what it is for')
     ap.add_argument('--rename', nargs=2, default=None, metavar=('N', 'NAME'), help='the person\'s own name for '
                     'control session N (the run app\'s Rename, r in agent-runner ui)')
+    ap.add_argument('--resume', metavar='SID', default='', help='go on with the control session of that session id')
     a = ap.parse_args(argv)
     init()
     if a.rename:  # F129
@@ -991,13 +992,22 @@ def cmd_control(argv: list[str], prog: str = f'{RUNNER} control') -> int:
     if bad := agent_held():  # B764c
         print(f'no control session started: {bad}', file=sys.stderr)
         return 1
+    if a.resume:  # F406f
+        if not (n := control_harness.resume_number(a.resume)):
+            return 1
+        a.n, a.reopen = n, True
     n = a.n or free_control_number()
     if pid := control_live(n):
         print(f'control {n} already runs (pid {pid}): {shown_cmd()} control starts another', file=sys.stderr)
         return 1
     control_held.look(n)  # B170: before an ended session N's pid file is written over
     sid, resume, argv = control_open(n, ask=a.ask, images=a.file, reopen=a.reopen)
-    backend().trust(ROOT)
+    if control_harness.harness_control():  # F406f: no folder question; it needs Node
+        if not shutil.which('node'):
+            print(f'control {n}: Node.js is not on PATH; a control session on {control_harness.model()} needs it', file=sys.stderr)
+            return 1
+    else:
+        backend().trust(ROOT)
     os.chdir(ROOT)
     pidf = C.notes(f'control{n}.pid')
     env = control_env()

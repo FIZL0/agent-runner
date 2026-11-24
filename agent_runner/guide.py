@@ -13,6 +13,7 @@ printed by `agent-runner guide <topic>`; GUIDE and the control brief carry a poi
 from __future__ import annotations
 
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -287,8 +288,11 @@ def cmd_guide(rest: list[str]) -> int:
     from agent_runner import plan as P
     from agent_runner.config import RUNNER
     needs = P.needs_cfg()['heading']
+    from agent_runner.control_harness import in_harness_chat
+    chat = in_harness_chat()  # F406f
     if rest[0] in TOPICS:
-        print(topic(rest[0], RUNNER, needs), end='')
+        page = topic(rest[0], RUNNER, needs)
+        print(harness_fit(page, RUNNER) if chat else page, end='')
         return 0
     from agent_runner.config import cfg
     try:
@@ -296,7 +300,9 @@ def cmd_guide(rest: list[str]) -> int:
     except (Exception, SystemExit):  # outside a repository: the runner as typed, the defaults
         c = None
     # B98: the control brief names [run] command (B93), so its pages do too
-    print(control_topic(rest[0], c.command if c else RUNNER, needs, c), end='')
+    cmd = c.command if c else RUNNER
+    page = HARNESS_WATCH.format(cmd=cmd) if chat and rest[0] == 'watch' else control_topic(rest[0], cmd, needs, c)
+    print(harness_fit(page, cmd) if chat else page, end='')
     return 0
 
 
@@ -559,6 +565,67 @@ def control_topic(name: str, cmd: str = 'agent-runner', needs: str = 'Needs you'
 
 
 CONTROL_TOPIC_NAMES = (*CONTROL_TOPICS, 'glossary', 'voice')
+
+# F406f: the control brief and its pages for a control session on the harness loop, which has no Remote Control, push,
+# Artifact, Monitor or subagent: (what they say, what they say there); spaces and line ends count as one.
+HARNESS_PAGE = ('publish it with publish_page (it prints the link; with none, say it is on the run page at the '
+                '/concept/… address it prints, and give the `run page:` link `{cmd} status` prints)')
+HARNESS_FIT = (
+    ('(at this terminal, or in claude.ai/code and the Claude apps)', '(at this terminal or on the run page)'),
+    (', and after /new or /clear. A name', '. A name'),
+    (', a push notification)', ')'),
+    ('"/follow", "notify me when …": `guide watch`.', '"/follow", "notify me when …": you cannot (`guide watch`).'),
+    ("""- **Push what the person asked to hear, and what they would want while away**, with the PushNotification tool
+  (deferred: load it with ToolSearch `select:PushNotification`), one push before you post it here: what they
+  asked to be told, and, unasked when they have not written for a few minutes, a take, subagent or background
+  command of yours that finished or got stuck (no Monitor sees those), or what of yours needs them. Never
+  promise a push you cannot send: say so instead.""",
+     '- You cannot send a push or write unasked: never promise to. What waits on the person shows under "Needs you".'),
+    ('answer with just the link it prints, on its own line.', 'say in one line what it printed.'),
+    ('never set up a background watcher, Monitor or loop to upgrade agent-runner.',
+     'never set up a background watcher or loop to upgrade agent-runner.'),
+    ('you write the options page here, open it inline and file it', 'you write the options page here, publish it and file it'),
+    (NO_BANG, '**Never tell the person to run a command**: run it yourself when it needs no secret and no prompt. When it '
+              'does (a password, an interactive login), say it must be typed in a terminal on this machine, named by its '
+              'hostname (run `hostname`), and give the plain command.'),
+    # the pages
+    ("Do the work in that worktree as a slot would, or hand the prompt to a subagent with the worktree as its working "
+     "directory.", 'Do the work in that worktree as a slot would.'),
+    ("give the person the slot's claude.ai/code link it prints (when there is one), else offer to steer it",
+     'offer to steer it'),
+    ('they may be on the app, with no terminal.', 'they may have no terminal.'),
+    ('publish it with the Artifact tool and call its `open` action so it shows inline (' + NO_PAGE + ')',
+     HARNESS_PAGE),
+    ('(they do not work in the Claude app)', '(they do not work)'),
+    ('update the same page (publish it again to the same file, then `open`)',
+     'update the same page (publish it again under the same name)'),
+    ('File each page once: publishing it again to the same file keeps its link.',
+     'File each page once; with no claude.ai link, `--page` takes the /concept/… address.'),
+    ("give the link (call the Artifact tool's `open` on it).", 'give the link.'),
+    ("The sheet's Send writes their picks to the sheet's artifact db (F54):", "The sheet's Send keeps their picks there:"),
+    ("""when they say they sent it ("sent", "done", "picked"), and whenever you show that item again, read it with the
+ArtifactData tool (`get`, the sheet's url, collection `picks`, doc_id the ID); if the document is there, run `{cmd}
+sheet R7 --picks "<its picks field>"`. An older sheet,""",
+     'you cannot read that, so when they say they sent it, ask for their picks in words. An older sheet,'),
+    ('the person may be in the Claude app or on a phone', 'the person may be on a phone'),
+    ("""write its output as a plain HTML file (a `<pre>` of the text, under a `<title>`) in your scratchpad, publish it
+as a private page with the Artifact tool (""" + NO_PAGE + ')',
+     'put its output in a page (a `<pre>` of the text, under a `<title>`), ' + HARNESS_PAGE),
+)
+HARNESS_WATCH = """\
+# Following the run, and notify me
+
+You cannot: this session writes only when the person does, and has no push. Say so in one line and give the `run
+page:` link `{cmd} status` prints, which follows the run live. Start no loop or background command to watch it.
+"""
+
+
+def harness_fit(text: str, cmd: str) -> str:
+    """F406f: the control brief or one of its pages (`text`, filled in) for a control session on the harness loop."""
+    for old, new in HARNESS_FIT:
+        at = r'\s+'.join(re.escape(w) for w in old.replace('{cmd}', cmd).split())
+        text = re.sub(at, lambda _, new=new: new.replace('{cmd}', cmd), text)
+    return text
 
 CONTROL_SKILL_TEXT = """\
 ---

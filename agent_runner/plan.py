@@ -1633,20 +1633,21 @@ def revise(tid: str, why: str, todo=None, done=None) -> str:
     return k
 
 
-def concept_shown(title: str, page: str, files=None, todo=None, done=None) -> tuple[str, str]:
+def concept_shown(title: str, page: str, files=None, todo=None, done=None, local=None) -> tuple[str, str]:
     """F108: a concept page a chat (a control session) wrote and showed inline lands in the plan as a K task
     already done: ticked with its page noted and its build waiting for the OK, as `concept_done` leaves a finished
     K task, so Needs you, `waiting` and the run page's Concepts list it until the person picks (`approve`,
     `revise` on its id). Where the kinds lack K only the waiting build is filed. Returns (concept id, build id);
-    the two are the same id without K."""
+    the two are the same id without K. F406f: `local(id)`, with no claude.ai page: gives the concept its copy, and its address."""
     todo, done = ensure(todo, done)
     text = ' '.join(title.split()) + (' | files: ' + ', '.join(files) if files else '')
     if CONCEPT not in kinds()[0]:
         bid = add(build_kind(), f'Build the option a person approves on the concept page: {text}', todo=todo,
                   done=done)
-        block(bid, WAIT_OK + page, todo=todo, after=[])
+        block(bid, WAIT_OK + (local(bid) if local else page), todo=todo, after=[])
         return bid, bid
     kid = add(CONCEPT, text, todo=todo, done=done)
+    page = local(kid) if local else page
     bid = concept_done(kid, page, todo=todo, done=done)
     tick(kid, todo=todo, done=done)
     return kid, bid
@@ -3179,12 +3180,20 @@ def _p_concept(a, x):
         else:
             words.append(w)
     title, page = ' '.join(words).strip(), (opts.get('page') or '').strip()
-    if not title or not re.match(r'https?://\S+$', page):
+    local = None
+    if x.c and (m := re.fullmatch(r'/concept/([A-Za-z]+\d+[a-z0-9]*)', page)) and \
+            (src := x.c.notes('concepts', f'{m[1]}.html')).is_file():  # F406f: no claude.ai page, so the run page's copy
+        def local(tid):
+            x.c.notes('concepts', f'{tid}.html').write_bytes(src.read_bytes())
+            x.c.notes('concepts', f'{tid}.url').write_text(f'/concept/{tid}\n', encoding='utf-8')
+            return f'/concept/{tid}'
+    if not title or not (local or re.match(r'https?://\S+$', page)):
         print(f'{PROG} concept "<what the page shows options for>" --page <the page\'s URL> [--files A,B]',
               file=sys.stderr)
         return 2
     files = [f for f in re.split(r'[,\s]+', opts.get('files') or '') if f] or None
-    kid, bid = concept_shown(title, page, files, todo=x.todo, done=x.done)
+    kid, bid = concept_shown(title, page, files, todo=x.todo, done=x.done, local=local)
+    page = f'/concept/{kid}' if local else page
     _filed_here(x.c, kid, bid)
     head = f'concept {kid} filed, done' if kid != bid else f'{bid} filed'
     return x.say(f'{head}: its build {bid} waits for the OK on {page}; the pick goes through '

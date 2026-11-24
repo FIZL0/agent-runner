@@ -107,7 +107,7 @@ def apply_settings(changed: dict, once: bool = False) -> None:
         S.log(f'slots: {slots.SLOTS}')
     if 'auto_upgrade' in run:
         watch.AUTO_UPGRADE[0] = bool(run['auto_upgrade'])
-    if {'remote', 'control'} & set(run):
+    if {'remote', 'control'} & set(run) or ('models', 'control') in changed:  # F406f: no control server for another provider
         K.settle_control_server()
     if {'remote', 'remote_slots'} & set(run):
         S.log(slots.remote_line() or 'remote control off')

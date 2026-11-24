@@ -16,7 +16,7 @@ import uuid
 from contextlib import ExitStack
 from pathlib import Path
 
-from agent_runner import control_settled, no_push, pitch, plan as P, plansync, plat, session_theme
+from agent_runner import control_harness, control_settled, no_push, pitch, plan as P, plansync, plat, session_theme
 from agent_runner.plan import decide_question  # F135: a control session's last line `DECIDE: …`
 from agent_runner.control_settled import LEAD  # F160: how the runner's own typed line starts
 from agent_runner.config import RUNNER, runner_cmd
@@ -39,8 +39,9 @@ def control_cmd() -> str:
     return C.command
 
 
-def control_brief() -> str:
+def control_brief(harness: bool = False) -> str:
     """What every control session is told, through its SessionStart hook (`control --brief` prints it).
+    F406f: `harness`, as the system text of one on the harness loop: fitted to it (`guide.harness_fit`), any length.
     B98: kept under BRIEF_MAX chars: Claude Code shows a model only a 2KB preview of SessionStart output over
     ~10KB, so the core rules are inline and the long ones behind `guide <topic>` (guide.CONTROL_TOPICS); the
     glossary's and the wording's paragraphs are pointers too (glossary.brief_fit, voice.brief_fit)."""
@@ -55,6 +56,9 @@ def control_brief() -> str:
     from agent_runner import voice  # F21: the person's wording, read fresh by every session's brief
     core = grill_fit(glossary.brief_fit(CONTROL.format(repo=ROOT.name, cmd=cmd, log=logf,
                                                        needs=cf['heading'], answer=answer), cmd, C), cmd, C)
+    if harness:
+        from agent_runner.guide import harness_fit
+        return voice.brief_fit(harness_fit(core, cmd), cmd, C)
     out = voice.brief_fit(core, cmd, C)
     if len(out) >= BRIEF_MAX:  # B104: a long [run] command (Windows: python.exe and the run path) first
         core = bare_commands(core, cmd)
@@ -318,7 +322,9 @@ def control_set_title(n: int, summary: str) -> int:
         print(f'control {n} keeps the name the person gave it')
         return 0
     control_give(n, name)
-    if control_type(n, f'/rename {name}'):
+    if control_harness.harness_chat(n):
+        print(f'control {n} is named "{name}" on the run page and in the TUI')
+    elif control_type(n, f'/rename {name}'):
         print(f'control {n} is renamed "{name}" when this turn ends')
     else:
         print(f'control {n} is named "{name}" on the run page and in the TUI (it runs in a terminal of its own, '
@@ -425,6 +431,8 @@ def control_argv(n: int, sid: str, resume: bool, ask: str = '', images: list[str
     from agent_runner.control_first import CONTROL_FIRST, first_typed
     CONTROL_FIRST[0] = ''
     ask_text, ask = ask, control_ask(ask, images)
+    if control_harness.harness_control():  # F406f
+        return control_harness.argv(n, sid, resume, ask)
     first = [ask] if ask else []
     remote = remote_on()
     if first and remote and (first_typed(n) if typed is None else typed):  # B147: typed in once RC is up
@@ -471,7 +479,7 @@ def control_sid(n: int, reopen: bool = False) -> tuple[str, bool]:
     --reopen`, from `reopen_controls` after a shutdown, or Resume) can carry that conversation on (B121)."""
     if reopen:
         sid = control_kept_sid(n)
-        if sid and backend().find_transcript(sid):
+        if control_harness.resumable(sid):
             return sid, True
     sid = str(uuid.uuid4())
     control_keep_sid(n, sid)
@@ -999,7 +1007,7 @@ def file_control_ask(n: int, sid: str, q: str, link: str, branch: str = '') -> s
         if not C.plan_external and (git('status', '--porcelain', '--', rel).stdout.strip() or branch and
                                     git('branch', '--show-current').stdout.strip() != branch):
             return ''  # somebody mid-edit, or the main checkout on another branch: the next look files it
-        where = link or f'resume it with `{plat.exe(C.run["agent"])} --resume {sid}`'
+        where = link or f'resume it with `{control_harness.resume_hint(sid)}`'
         tid = P.add(CONTROL_ASK_KIND, f'Control session {n} asked the person: "{q}" Carry on from their '
                     f'answer (the session, closed while it waited: {where})', todo=ROOT / rel, pri='normal')
         P.block(tid, f'DECIDE: {q} {link}'.strip(), todo=ROOT / rel, after=[])
@@ -1045,7 +1053,7 @@ def close_controls(branch: str = '', force: bool = False, now: float | None = No
             why = tid
         plat.terminate(pid)
         pidf.unlink(missing_ok=True)
-        log(f'control {n}: closed, ' + (f'its question filed as {why}' if verdict == 'ask' else why) + f' (transcript kept: {plat.exe(C.run["agent"])} --resume {sid})')
+        log(f'control {n}: closed, ' + (f'its question filed as {why}' if verdict == 'ask' else why) + f' (transcript kept: {control_harness.resume_hint(sid)})')
         out.append((n, 'asked' if verdict == 'ask' else 'closed', why))
     return out
 
@@ -1185,7 +1193,7 @@ def end_control(n: int, why: str) -> bool:
     pidf.unlink(missing_ok=True)
     C.notes(f'control{n}.title').unlink(missing_ok=True)
     C.notes(f'control{n}.name').unlink(missing_ok=True)  # F129
-    log(f'control {n}: ended, {why}' + (f' (transcript kept: {plat.exe(C.run["agent"])} --resume {sid})' if sid else ''))
+    log(f'control {n}: ended, {why}' + (f' (transcript kept: {control_harness.resume_hint(sid)})' if sid else ''))
     return True
 
 
