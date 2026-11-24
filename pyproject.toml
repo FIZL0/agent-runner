@@ -36,4 +36,4 @@ agent_runner = ["web_page.html", "harness.mjs"]
 "agent_runner.example" = ["*", "**/*", ".gitignore", "journal/.keep"]
 
 [tool.setuptools.exclude-package-data]
-"agent_runner.example" = ["__pycache__/*"]
+"agent_runner.example" = ["__pycache__/*", ".runner/*", ".runner/**/*"]

@@ -105,6 +105,11 @@ def test_never_over() -> None:
     check(refused(D.remove, copy) != '', 'a copy a person made of it is theirs')
     with mock.patch.object(D, '_git', side_effect=D.DemoError('git init failed')):
         check('git init' in refused(D.make, TMP / 'half'), 'a failure says why')
+    with mock.patch.object(D, '_git', side_effect=KeyboardInterrupt):
+        try:
+            D.make(TMP / 'half')
+        except KeyboardInterrupt:
+            pass
     check(not (TMP / 'half').exists(), 'and leaves nothing half made')
 
 
@@ -149,13 +154,17 @@ def test_remove() -> None:
     check('control2' in refused(D.remove, root), 'nor a control session')
     (notes / 'control2.live').unlink()
     check((runs / 's1').is_dir() and (root / 'greet.py').is_file(), 'and nothing was removed')
+    check(str(elsewhere) in refused(D.remove, root), 'nor with a worktree of it that is not a run\'s')
+    git(root, 'worktree', 'remove', str(elsewhere))
+    git(root, 'worktree', 'add', '-q', str(runs / 'take-F4'), 'task/F4')
+    check('take-F4' in refused(D.remove, root) and (runs / 's1').is_dir(), 'nor with a take of a task')
+    git(root, 'worktree', 'remove', str(runs / 'take-F4'))
     (TMP / 'home-config').mkdir(exist_ok=True)
     reg = TMP / 'home-config' / 'home.json'
     reg.write_text(json.dumps({'projects': [str(root)], 'scan': []}), encoding='utf-8')
-    rc, text = said('--remove', str(root))
+    rc, _ = said('--remove', str(root))
     eq(rc, 0, 'it is removed')
     check(not root.exists() and not runs.exists(), 'with the run\'s worktrees of it')
-    check(elsewhere.is_dir() and str(elsewhere) in text, 'a worktree made elsewhere is left, and named', text)
     eq(json.loads(reg.read_text(encoding='utf-8'))['projects'], [], 'Runner Home no longer lists it')
 
     root = D.make(TMP / 'kept')
@@ -185,7 +194,7 @@ def test_wheel() -> None:
     for f in ('pyproject.toml', 'README.md', 'LICENSE'):
         shutil.copy(ROOT / f, src)
     for d in ('agent_runner', 'examples'):
-        shutil.copytree(ROOT / d, src / d, ignore=shutil.ignore_patterns('__pycache__'))
+        shutil.copytree(ROOT / d, src / d, ignore=shutil.ignore_patterns('__pycache__', '.runner'))
     if importlib.util.find_spec('setuptools'):
         cmd = [sys.executable, '-c', 'import sys; from setuptools import build_meta; build_meta.build_wheel(sys.argv[1])',
                str(dist)]

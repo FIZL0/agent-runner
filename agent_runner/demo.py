@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shutil
 import stat
 import subprocess
@@ -21,6 +22,8 @@ from agent_runner.config import RUNNER, Config, shown_cmd
 DEFAULT = '~/agent-runner-demo'
 MARK = 'agent-runner-demo.json'  # in the project's .git: this folder was made by `demo`
 ORIGIN = 'demo-origin.git'       # in the project's .git too, so it is never committed and goes with the folder
+
+RUN_WORKTREE = re.compile(r'(s|merge|fix)\d*')  # a run's own worktrees in [run] home
 
 
 class DemoError(Exception):
@@ -73,9 +76,11 @@ def make(path: str | Path | None = None) -> Path:
         raise DemoError(f'cannot make {root}: {e.strerror or e}') from None
     try:
         _fill(root, src)
-    except (OSError, DemoError) as e:
+    except BaseException as e:  # Ctrl-C too: half a project would be refused as existing, and never removed
         _rmtree(root)
-        raise DemoError(str(e)) from None
+        if isinstance(e, (OSError, DemoError)):
+            raise DemoError(str(e)) from None
+        raise
     return root
 
 
@@ -128,7 +133,7 @@ def busy(root: Path) -> str:
 
 def remove(path: str | Path | None = None) -> tuple[Path, list[Path]]:
     """Take the example project away, its runner worktrees too: (the folder it was, what was left). DemoError,
-    and nothing removed, when `demo` did not make it or a run or session is up there."""
+    and nothing removed, when `demo` did not make it, a run or session is up, or someone has a worktree of it."""
     root = Path(path or DEFAULT).expanduser().resolve()
     if not root.is_dir():
         raise DemoError(f'no example project at {root}')
@@ -139,18 +144,20 @@ def remove(path: str | Path | None = None) -> tuple[Path, list[Path]]:
     home = _home(root)
     worktrees = [Path(l[len('worktree '):]) for l in _git(root, 'worktree', 'list', '--porcelain').splitlines()
                  if l.startswith('worktree ')]
+    own = []
+    for w in (w.resolve() for w in worktrees):
+        if w == root or not w.is_dir():
+            continue
+        if not (home and w.parent == home and RUN_WORKTREE.fullmatch(w.name)):  # a take's, or the person's: work
+            raise DemoError(f'{w} is a worktree of {root} that is not a run\'s own: remove it first')
+        own.append(w)
     if Path.cwd().is_relative_to(root):
         os.chdir(root.parent)  # Windows removes no folder that is a current one
     left = []
     try:
-        for w in (w.resolve() for w in worktrees):
-            if w == root or not w.is_dir():
-                continue
-            if home and w.is_relative_to(home):
-                _rmtree(w)
-            else:
-                left.append(w)  # a worktree somebody put elsewhere
-        if home and home != root and home.is_dir():
+        for w in own:
+            _rmtree(w)
+        if home and home.is_dir() and home.name == root.name:  # another name: AGENT_RUNNER_HOME, shared
             if not {f.name for f in home.iterdir()} - {'tmp'}:  # tmp: the run's own (slots.py)
                 _rmtree(home)
             else:
