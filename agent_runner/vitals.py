@@ -955,9 +955,9 @@ def clean_plan(trees, temps, wips, live: set[str] | None, now: float, written=ne
         why, kind = 'nothing uncommitted, nothing ignored but build output and links', 'worktree'
         if held:  # an id of its own: a tick given before it held these does not count
             why = f'holds files git ignores, deleted with it: {held_names(held)}'
-            kind += '+' + held_key(held)
+            kind += '+' + held_key(d, held)
         out.append({'id': f'{kind}:{d}', 'kind': 'worktree', 'path': str(d), 'size': n, 'ask': bool(held),
-                    'root': str(p.root), 'held': held_key(held), 'why': f'worktree merged into {p.main}, {why}'})
+                    'root': str(p.root), 'held': held_key(d, held), 'why': f'worktree merged into {p.main}, {why}'})
     for w in wips:
         out.append({'id': f'wip:{w["root"]}:{w["branch"]}', 'kind': 'wip', 'path': w['branch'], 'size': 0,
                     'ask': True, 'root': w['root'], 'why': f'{w["project"]}: parked work; remove only if you are sure'})
@@ -1047,7 +1047,8 @@ def clean(chosen: list[str], plan: list[dict], rm=shutil.rmtree, call=sp.run) ->
             if item['kind'] == 'tmp':
                 rm(item['path'])
                 ok = True
-            elif item['kind'] == 'worktree' and held_key(held_files(Path(item['path']))) != item.get('held', ''):
+            elif (item['kind'] == 'worktree'
+                  and held_key(w := Path(item['path']), held_files(w)) != item.get('held', '')):
                 said.append(f'not removed (no longer safe: its ignored files changed): {item["path"]}')
                 ok = False
             elif item['kind'] == 'worktree':

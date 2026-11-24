@@ -102,6 +102,12 @@ def test_held():
 
 
 def test_repo_in_build():
+    print('a notes file straight in a CMake folder')
+    _, d = fixture()
+    cmake(d / 'build', d)
+    write(d / 'build' / 'notes.md')
+    write(d / 'build' / 'install_manifest.txt')
+    eq(B.held_files(d), ['build/notes.md'], 'held; CMake\'s own files are not')
     print('a repository in a build folder: only a CMake-fetched one with nothing of its own')
     root, d = fixture()
     cmake(d / 'build', d)
@@ -113,6 +119,8 @@ def test_repo_in_build():
     eq(B.held_files(d), ['build/_deps/lib-src/'], 'with a local change')
     git(dep, 'add', '-A')
     git(dep, 'commit', '-q', '-m', 'mine')
+    git(dep, 'tag', 'mine')
+    git(dep, 'checkout', '-q', '--detach', 'HEAD')
     eq(B.held_files(d), ['build/_deps/lib-src/'], 'with a local commit')
     _, d = fixture()
     cmake(d / 'build', d)
@@ -142,6 +150,12 @@ def test_clean():
           'it says what it holds', held[0]['why'])
     res = V.clean([safe[0]['id']], held)
     check(not res['ok'] and (d / 'notes.txt').is_file(), 'a tick on the list from before it held the file does not count')
+    write(d / 'modding' / 'a')
+    grown = clean_list(root, d)
+    write(d / 'modding' / 'b')
+    res = V.clean([grown[0]['id']], grown)
+    check(not res['ok'] and d.is_dir(), 'nor one from before a held folder got a new file')
+    held = clean_list(root, d)
     res = V.clean([held[0]['id']], held)
     check(res['ok'] and not d.exists(), 'ticked, it goes', res)
 

@@ -12,6 +12,8 @@ import subprocess as sp
 from pathlib import Path
 
 CACHEDIR_SIGNATURE = b'Signature: 8a477f597d28d172789f06886806bc55'  # bford.info/cachedir
+NOTES = {'.md', '.txt', '.rst', '.org', '.diff', '.patch'}  # a person's, straight in a CMake or Cargo profile folder
+CMAKE_FILES = {'CMakeCache.txt', 'install_manifest.txt'}
 CARGO_FILES = {'CACHEDIR.TAG', '.rustc_info.json', '.cargo-lock'}
 
 
@@ -58,7 +60,9 @@ def _held(p: Path, rel: str, cargo: bool = False) -> tuple[list[str], bool]:
     target = _cargo_target(p)
     if _is_build_output(p, names, target, cargo):
         repos = _repos_held(p)
-        return [f'{rel}/{r}/' for r in repos], True
+        notes = [k.name for k in kids if (cargo or 'CMakeCache.txt' in names) and k.suffix.lower() in NOTES
+                 and k.name not in CMAKE_FILES and k.is_file() and not k.is_symlink()]
+        return [f'{rel}/{r}/' for r in repos] + [f'{rel}/{x}' for x in notes], True
     out, other = [], not kids
     for k in kids:
         held, rest = _held(k, f'{rel}/{k.name}', target)
@@ -129,10 +133,10 @@ def _fetched_only(repo: Path) -> bool:
             return None
         return r.stdout.strip() if r.returncode == 0 else None
     top = g('rev-parse', '--show-toplevel')
-    if not top or Path(top).resolve() != repo.resolve() or g('status', '--porcelain') != '':
+    if not top or Path(top).resolve() != repo.resolve() or g('status', '--porcelain') != '' or held_files(repo):
         return False
     fetched = ['FETCH_HEAD'] if g('rev-parse', '--verify', '-q', 'FETCH_HEAD') else []
-    return g('rev-list', '-n1', '--all', 'HEAD', '--not', '--remotes', '--tags', *fetched) == ''
+    return g('rev-list', '-n1', '--all', 'HEAD', '--not', '--remotes', *fetched) == ''
 
 
 def held_names(held: list[str], most: int = 12) -> str:
@@ -143,8 +147,15 @@ def held_names(held: list[str], most: int = 12) -> str:
     return ', '.join(held[:most]) + more
 
 
-def held_key(held: list[str] | None) -> str | None:
-    """A short key of the list `held_files` gave: '' for an empty one, None for none."""
+def held_key(d: Path, held: list[str] | None) -> str | None:
+    """A short key of every file in what `held_files` named in worktree `d`: '' for nothing, None for None."""
     if not held:
         return None if held is None else ''
-    return hashlib.sha1('\0'.join(held).encode('utf-8', 'surrogateescape')).hexdigest()[:12]
+    h = hashlib.sha1()
+    for rel in held:
+        h.update(os.fsencode(rel) + b'\0')
+        for top, dirs, files in os.walk(d / rel):
+            dirs.sort()
+            for f in sorted(files):
+                h.update(os.fsencode(os.path.join(top, f)) + b'\0')
+    return h.hexdigest()[:12]
