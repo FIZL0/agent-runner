@@ -4,7 +4,7 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 ## Unreleased
 
-- Fixed: a person's answer typed in a chat as a task's `run ask` ran was lost. `plan tell ID` on a task no slot runs now drops nothing: if the task asks the person it prints the question and the exact `plan confirm ID "TEXT"` or `plan change ID "TEXT"` to run if the text answers it, otherwise the exact `plan note ID "TEXT"`; `plan confirm` and `plan change` also settle an ask the run has not blocked yet (e.g. its block is held by a merge), so it never shows under Needs you and the session resumes with the answer (B767).
+- Fixed: a person's answer typed in a chat as a task's `run ask` ran was lost. `plan tell ID` on a task no slot runs now drops nothing: if the task asks the person it prints the question and the exact `plan confirm ID "TEXT"` or `plan change ID "TEXT"` to run if the text answers it, otherwise the `plan note ID` to run; `plan confirm` and `plan change` also settle an ask the run has not blocked yet (e.g. its block is held by a merge), so it never shows under Needs you and the session resumes with the answer (B767).
 
 ## 0.64.0 (2026-11-24)
 
