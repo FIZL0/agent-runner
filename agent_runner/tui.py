@@ -644,7 +644,8 @@ class RunPage:
             out = self.need_lines(it, width)
             if it.get('url'):
                 out += [L(), L((it['url'], 'blue'))]
-            out += [L(), L(('Your reply goes to a new chat, which settles the item.', 'dim'))]
+            out += [L(), L(('Your reply is the answer: a run starts it.' if it.get('label') == 'DECIDE' else
+                            'Your reply goes to a new chat, which settles the item.', 'dim'))]
             row = buttons(*[button(k, v) for k, v in self.answers(it)], button('L', 'later'))
             return out, [row] + self.input_lines(f'answer:{it["id"]}', width, 'or your own reply'), 0
         if tab == 'info' and self.panel == 4:

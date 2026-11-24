@@ -164,8 +164,7 @@ def test_actions(tmp: Path) -> None:
                  ['plan', 'edit', 'F1', 'Board page, new words', '--files', 'a.py'],
                  ['plan', 'drop', 'B2', 'overtaken']], 'each action runs its plan command')
         U.act('chat', text='how is it going?')
-        U.act('answer', tid='D3', text='the lazy one')
-        eq(sent, ['how is it going?', 'D3 (Write the guide): the lazy one'], 'chat and answers go through SEND')
+        eq(sent, ['how is it going?'], 'chat goes through SEND')
         eq(U.act('nope')['ok'], False, 'an unknown action is an error result')
         eq(U.act('drop', tid='B2')['code'], 2, 'a missing argument is an error result')
         U.RUN[0] = lambda argv: (3, 'looks like F1')
@@ -840,6 +839,33 @@ def in_tmp(f):
     return go
 
 
+def test_typed_decide_f181a(tmp: Path) -> None:
+    """F181a: the words typed as a DECIDE's reply are its answer (plan confirm, no session); a CONFIRM's and a
+    concept's still open a chat."""
+    repo = fake_run(tmp)
+    todo = repo / 'plan' / 'TODO.md'
+    todo.write_text(TODO.replace('- [ ] **B2** Fix the merge retry | files: b.py | after: F1',
+                                 '- [~] **B2** Fix the merge retry | files: b.py BLOCKED: CONFIRM: look at it'),
+                    encoding='utf-8')
+    eq(U.answer_argv('D3', ' the lazy one '), (['plan', 'confirm', 'D3', 'the lazy one'],
+                                               'D3 answered (the lazy one): a run starts it'), 'DECIDE: plan confirm')
+    for words in ('', '  '):
+        eq(U.answer_argv('D3', words), ([], ''), 'no words, no answer')
+    eq([U.answer_argv(t, 'looks odd') for t in ('B2', 'F4')], [([], '')] * 2, "a CONFIRM's and a concept's: a chat")
+    with mock.patch('agent_runner.brief.has_sheet', lambda tid: tid == 'D3'):
+        eq([U.answer_argv('D3', w)[0] for w in ('go', 'D3 picks: a=b', 'neither')],
+           [['sheet', 'D3', '--go'], ['sheet', 'D3', '--picks', 'D3 picks: a=b'], ['plan', 'confirm', 'D3', 'neither']],
+           "a pick sheet's go and Send line are still the sheet's")
+    sent = []
+    with mock.patch.object(U, 'SEND', [lambda t: (sent.append(t), {'ok': True, 'code': 0, 'out': 'sent', 'argv': []})[1]]):
+        r = U.act('answer', tid='D3', text='the lazy one')  # the real plan confirm
+        U.act('answer', tid='B2', text='looks odd')
+    eq((r['ok'], r.get('gone')), (True, 'D3'), 'answered at once, off Needs you')
+    check('- [ ] **D3**' in todo.read_text(encoding='utf-8') and 'the lazy one' in todo.read_text(encoding='utf-8'),
+          'D3 is open again with the words noted', todo.read_text(encoding='utf-8'))
+    eq(sent, ['B2 (Fix the merge retry): looks odd'], "only the CONFIRM's words went to a chat")
+
+
 def test_need_answers_c33(tmp: Path) -> None:
     """C33: every needs row carries its answers; one rule for both pages and the chat text."""
     copy = tmp / 'K1.html'
@@ -945,4 +971,4 @@ if __name__ == '__main__':
                          in_tmp(test_concept_copy), in_tmp(test_concept_chat), in_tmp(test_hidden_send),
                          in_tmp(test_delete_chats), in_tmp(test_chat_list_f133),
                          in_tmp(test_status_f124), in_tmp(test_chat_rows_f128), in_tmp(test_need_chat_f143),
-                         in_tmp(test_feed_ids_b134), in_tmp(test_need_answers_c33)]))
+                         in_tmp(test_feed_ids_b134), in_tmp(test_need_answers_c33), in_tmp(test_typed_decide_f181a)]))

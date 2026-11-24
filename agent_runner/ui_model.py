@@ -759,9 +759,10 @@ def answer_argv(tid: str, text: str, button: bool = False, note: str = '') -> tu
     """B138: the runner command that settles a Needs you reply at once, and what to say once it did; ([], '')
     when the reply is a chat's to read. A button's Yes (or a pick, or done) is `plan confirm ID "<reply>"`, a
     CONFIRM's No is `plan change ID "No: the check failed"`; a pick sheet's go or Send line is `sheet ID
-    --go|--picks`; a concept's option button is `plan approve ID "<option>"` (B149). Free words typed in the
-    reply box are a new chat's. F162: `note`, the words beside a button's answer, go with it (a pitch or a pick
-    sheet takes none)."""
+    --go|--picks`; a concept's option button is `plan approve ID "<option>"` (B149). F181a: words typed as the
+    reply to a DECIDE are its answer, so they run the same command as a button's; typed for any other label they
+    are a new chat's. F162: `note`, the words beside a button's answer, go with it (a pitch or a pick sheet
+    takes none)."""
     said, label, note = (text or '').strip(), need_label(tid), ' '.join((note or '').split())
     noted = f': {note}' if note else ''
     if label == 'PITCH' and button:  # F98
@@ -772,7 +773,7 @@ def answer_argv(tid: str, text: str, button: bool = False, note: str = '') -> tu
             argv = ([] if how == 'reopen' else ['--drop', 'all']) if one.lower() == 'this' else [f'--{how}', one]
             return ['pitch', 'no', tid, *argv], f'{tid}: the run undoes it'
         return [], ''
-    if label == 'DECIDE' and button:
+    if label == 'DECIDE':
         from agent_runner.brief import has_sheet
         if has_sheet(tid) and said.lower() in SHEET_GO:
             return ['sheet', tid, '--go'], f'{tid} answered with the recommended picks'
@@ -780,7 +781,7 @@ def answer_argv(tid: str, text: str, button: bool = False, note: str = '') -> tu
             return ['sheet', tid, '--picks', said], f'{tid} answered with your picks'
     if label == 'CONCEPT' and button and said:  # B149: a concept's option button approves that option itself
         return ['plan', 'approve', tid, said + noted], f'{tid} approved ({said}): a run starts its build'
-    if not button or not said or label not in ('CONFIRM', 'DECIDE', 'BLOCKED', P.STUCK):
+    if not said or label not in ('CONFIRM', 'DECIDE', 'BLOCKED', P.STUCK) or not (button or label == 'DECIDE'):
         return [], ''
     if label == 'CONFIRM' and said.lower() == 'no':
         return ['plan', 'change', tid, f'No{noted}' if note else CHECK_FAILED], f'{tid} reopened: the check failed'
@@ -790,9 +791,10 @@ def answer_argv(tid: str, text: str, button: bool = False, note: str = '') -> tu
 
 
 def answer(tid: str, text: str, button: bool = False, note: str = '') -> dict:
-    """A reply to a Needs you item. B138: a button's answer runs the plan command itself (`answer_argv`), with
-    no AI session, and an ok result carries 'said' (what was done, for the toast) and 'gone' (the item, off
-    Needs you); the words typed in a reply box go to a new chat to settle as its needs guide says."""
+    """A reply to a Needs you item. B138: a button's answer, and the words typed for a DECIDE (F181a), run the
+    plan command itself (`answer_argv`), with no AI session, and an ok result carries 'said' (what was done, for
+    the toast) and 'gone' (the item, off Needs you); the words typed for any other label go to a new chat to
+    settle as its needs guide says."""
     argv, done = answer_argv(tid, text, button, note)
     if button and not argv and not need_label(tid):  # answered already, or never asked: say so, no AI session
         return {'ok': False, 'code': 1, 'out': f'{tid} no longer needs you (answered already?)', 'argv': []}

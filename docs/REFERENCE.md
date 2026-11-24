@@ -129,7 +129,7 @@ task to fix X" (it files it with `plan add`), "do X now" (it uses `take`, never 
   Numbers start at 2 (`FIRST_CONTROL`). 1 was the kept session's and is retired, so a c1 an older runner left running is a
   chat like any other: it lists, idles closed, can be deleted, renamed and resumed.
 - **Every prompt opens one**: the run app's Home box, a Status quick ask, Say what to change (a chat edit), a concept
-  change, a typed reply under Needs you and the runner feed's hand-on each open a new control session
+  change, a typed reply under Needs you (not a DECIDE's, see below) and the runner feed's hand-on each open a new control session
   (`control --new --ask`), named for its ask (its first words; `control --title` sets another name). From the run app and
   `agent-runner ui` it starts without waiting for its link. A message in an open chat goes to that chat. In the run app no
   chat is protected: any can be deleted or go Quiet.
@@ -352,14 +352,14 @@ drawer) and a desktop. It follows the browser's light or dark setting; `[ui] the
   do as numbered steps, what you should see, notes, pictures, a link to its page, the agent's last words (`GET /why/ID`) and the
   full task (`GET /task/ID`), and at the foot a one-line reply box with the answer buttons. The reply's words go with the answer
   (Yes is `plan confirm ID "Yes: words"`, No is `plan change ID "No: words"`, a concept option likewise). An item with no
-  answer buttons, and a DECIDE, STUCK or PITCH, has a Reply button, which sends the words to a new chat. The popup is a sheet on
+  answer buttons, and a DECIDE, STUCK or PITCH, has a Reply button. A DECIDE's words are its answer and run at once with no session (`plan confirm ID "<words>"`; on an item with a pick sheet, `go` or `recommended` is `sheet ID --go` and a pasted `ID picks: ...` line is `sheet ID --picks`), and Chat stays for asking about a DECIDE. A STUCK's or PITCH's words go to a new chat, as does a typed reply to any other label. The popup is a sheet on
   a phone and a centred dialog from 760px wide, and closes when the item is answered or leaves Needs you. Working now (opens
   that slot's session), Up next (a row folds open to the task's whole text) and Release (when the next one
   lands, or now). Each item's answers come from `ui_model.need_answers` (in each snapshot needs row as `answers`): Yes and No on a
   CONFIRM or a yes/no ask, a concept's options (A/B/C when its copy has none), a pitch's options, and Done on a BLOCKED item,
   on both pages; `agent-runner ui` draws the same, adding only the key letters, and `need_chat_text` uses them too.
   An answer button runs the plan command itself, with no AI session: Yes on a CONFIRM or a picked
-  answer runs `plan confirm ID "<reply>"`, No on a CONFIRM runs `plan change ID "No: the check failed"` (which reopens it), and a pick sheet's go runs `sheet ID --go`. The button shows it is working, a toast says what was done (e.g. "R13 ticked") and the item leaves Needs you at once; on a failure the toast says why and the item stays. Words typed in a reply open a new control session with them (`control --new --ask`, named for the ask). `agent-runner ui`'s answer tab does the same. A Talk button first in the row under the message box opens Talk in the page without a reload, and never starts the mic.
+  answer runs `plan confirm ID "<reply>"`, No on a CONFIRM runs `plan change ID "No: the check failed"` (which reopens it), and a pick sheet's go runs `sheet ID --go`. The button shows it is working, a toast says what was done (e.g. "R13 ticked") and the item leaves Needs you at once; on a failure the toast says why and the item stays. Words typed in a reply open a new control session with them (`control --new --ask`, named for the ask), except a DECIDE's, which are its answer as above. `agent-runner ui`'s answer tab does the same. A Talk button first in the row under the message box opens Talk in the page without a reload, and never starts the mic.
 - **The session.** A chat or slot shows the real Claude Code session, not a thread the page draws: its own terminal
   through ttyd (`attach NAME` shows the same one), in one frame between the header and the message box. A chat has no
   bubbles, folded steps, history or jump button. The frame is served at `/t/TOKEN/NAME/` on the run's own address, so
