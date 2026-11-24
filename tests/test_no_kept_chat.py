@@ -119,6 +119,25 @@ def test_prompts_and_replies() -> None:
     check('opens with the summary' not in K.control_brief(), 'the brief names no chat that opens with the summary')
 
 
+def test_reopen_is_its_own() -> None:
+    print("control 1 --reopen (Resume on an older runner's c1) never resumes another number's chat")
+    from agent_runner import cmds
+    fake_repo()
+    got = []
+
+    def opened(n, **k):
+        got.append((n, k['reopen']))
+        raise SystemExit
+    with mock.patch.object(cmds, 'control_open', opened), mock.patch.object(cmds, 'init', lambda: None), \
+            mock.patch.object(cmds, 'free_control_number', lambda: 2):
+        for argv in (['1', '--reopen'], ['1']):
+            try:
+                cmds.cmd_control(argv)
+            except SystemExit:
+                pass
+    eq(got, [(1, True), (2, False)], '--reopen keeps its number; a plain control 1 is a new session')
+
+
 def test_control_server_pre_creates_none() -> None:
     print('the control server pre-creates no session: Claude Code adopts that one again in every later run')
     fake_repo()
@@ -130,4 +149,5 @@ def test_control_server_pre_creates_none() -> None:
 
 if __name__ == '__main__':
     raise SystemExit(report([test_second_run_starts_fresh, test_restart_keeps_what_runs, test_prompts_and_replies,
+                             test_reopen_is_its_own,
                              test_control_server_pre_creates_none]))

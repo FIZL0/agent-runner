@@ -44,7 +44,7 @@ agent-runner                       # the run in the background; the prompt comes
 agent-runner --attach              # the same (or the run already up), then the run view here
 agent-runner status                # is it up, merged / left counts, each slot's task, what merged lately
 agent-runner attach                # the run view: its log, live, and its keys (s, p, +, ?); Ctrl-C leaves it
-agent-runner attach s2             # slot 2's own terminal (c1: the control session); Ctrl-b d leaves it running
+agent-runner attach s2             # slot 2's own terminal (attach c2: a control session); Ctrl-b d leaves it running
 agent-runner ui                    # the run page here: sessions, queue, what needs you; keys act on it
 agent-runner control               # a control session here: "status?", "pause", "add a task to fix X"
 agent-runner stop                  # finish the running tasks, then end it
@@ -56,13 +56,15 @@ a terminal with no window, its output in `.runner/slotN.log`: `agent-runner atta
 it, and you watch and steer the run through `agent-runner attach` (the run view), `status`, `ui`, control
 sessions and `plan tell`. The same on Linux, macOS and Windows; the run needs no tmux. The terminal UI (`agent-runner ui`) does: it runs
 inside tmux on Linux and macOS, and on Windows the run page stands in for it.
-The run opens a control session, c1, beside it (hidden too: `attach c1`): a Claude Code session in the main
-checkout that you ask for status, to pause, to add slots or stop, to queue a task, or to do one now. It opens
-with what is running and what happened since you last looked (`agent-runner since`), and when you say "follow"
-it posts each task as it lands. `agent-runner control --new` opens another one. With `[run] remote` the
-control sessions are on Remote Control, so you run the run from claude.ai/code or the Claude apps
-([docs/REFERENCE.md](docs/REFERENCE.md#control-sessions)). The run closes the extra ones (never c1) after
-3 hours of quiet once Claude has answered, so the apps' list stays short; one left on a question
+The run opens no control session of its own. Each thing you ask for opens one, c2, c3, … (hidden too: `attach c2`):
+a message in the run app's Home box, a Status quick ask, a change to a task, a reply under Needs you. It is named for its
+ask, and it is a Claude Code session in the main checkout that you ask for status, to pause, to add slots or stop, to
+queue a task, or to do one now. A message in an open chat goes to that chat. `agent-runner control` opens a blank one in
+this terminal, with no summary until you ask for one; when you say "follow" it posts each task as it lands. With
+`[run] remote` the control sessions are on Remote Control, so you run the run from claude.ai/code or the Claude apps
+([docs/REFERENCE.md](docs/REFERENCE.md#control-sessions)). The run closes the quiet ones after 3 hours of quiet once
+Claude has answered, so the apps' list stays short; one left on a question marked with a `DECIDE:` line goes under
+Needs you first (`[run] control_idle`, `control_ask`).
 marked with a `DECIDE:` line goes under Needs you first (`[run] control_idle`, `control_ask`).
 
 ### Runner Home: every project from your phone
@@ -96,7 +98,7 @@ version and adopts its sessions (not on Windows, nor across a major version). Or
 [release](https://github.com/FIZL0/agent-runner/releases/latest): `uv tool install
 git+https://github.com/FIZL0/agent-runner@v<version>`. On Windows each slot runs in a ConPTY pseudo-console with no
 window (Windows 10 1809 and later; before that, a console that starts hidden, which `agent-runner attach s2` shows). On
-Linux, macOS and Windows 1809 and later `agent-runner attach s2` (or `c1`) puts this terminal on a hidden session's own terminal; Ctrl-b d
+Linux, macOS and Windows 1809 and later `agent-runner attach s2` (or `c2`) puts this terminal on a hidden session's own terminal; Ctrl-b d
 detaches and leaves it running. Adding it to an existing repo and keeping your own CLI for its tools are in
 [docs/SETUP.md](docs/SETUP.md).
 

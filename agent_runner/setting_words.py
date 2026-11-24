@@ -48,7 +48,7 @@ WORDS: dict[str, tuple[str, str, str]] = {
     'run.remote': ('chats', 'Steer from the Claude apps', 'Your chats show in the Claude apps on your phone. Auto: on when it can work.'),
     'run.remote_slots': ('chats', 'Slots in the Claude apps', 'When I open one: a slot is listed once you open it. Always: every slot has its own entry.'),
     'run.silent': ('chats', 'No phone alerts', 'Chats stop sending alerts to your phone after their first one. Off: Claude alerts you as usual.'),
-    'run.control': ('chats', 'Reopen chats', 'A run brings back the chats a shutdown cut off, and lets you start chats from the Claude apps.'),
+    'run.control': ('chats', 'Reopen chats', 'A run brings back chats a shutdown cut off and lets the Claude apps start chats. Off: neither.'),
     'run.control_idle': ('chats', 'Close quiet chats after', 'A chat with nothing said in it this long is closed. Its words are kept.'),
     'run.control_ask': ('chats', 'Move an open question after', 'A chat quiet this long on a question is closed and the question goes to Needs you. Off: it stays open.'),
     'ui.chat_quiet': ('chats', 'Gray out a chat after', 'A chat that needs no reply moves to the bottom of Chats after this long. Off: it keeps its place.'),

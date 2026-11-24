@@ -651,7 +651,10 @@ def start_control() -> None:
     """The run's start. F176: it opens no control session and resumes none (`drop_kept_chat`): each prompt opens one
     of its own. B121: the ones a shutdown cut off are reopened (`reopen_controls`), unless `[run] control = false`."""
     mark_board()
-    drop_kept_chat()
+    try:
+        drop_kept_chat()
+    except OSError as e:  # never stops the run from starting
+        log(f'control: could not forget the sessions an earlier run kept: {e}')
     if C.run['control']:
         try:
             from agent_runner.control_reopen import reopen_controls

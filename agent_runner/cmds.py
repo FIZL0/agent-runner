@@ -1053,7 +1053,7 @@ def cmd_control(argv: list[str], prog: str = f'{RUNNER} control') -> int:
             sys.stdout.flush()
             control_session_start(int(env_n), control_hook_input())
         return 0
-    if a.n is not None and a.n < FIRST_CONTROL and a.title is None:  # F176: no number is special, so it is any free one
+    if a.n is not None and a.n < FIRST_CONTROL and a.title is None and not a.reopen:  # F176: any free one
         a.n = None
     if a.title is not None:
         env_n = os.environ.get(CONTROL_N_ENV, '')

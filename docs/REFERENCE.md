@@ -50,7 +50,7 @@ plan/TODO.md ──pick──▶ slot N: git worktree ~/runs/<repo>/sN on task/<
 
 ### Terminals, and Windows
 
-Every session the run starts (each slot, c1 and other control sessions, the runner feed) runs hidden: a terminal with no
+Every session the run starts (each slot, each control session, the runner feed) runs hidden: a terminal with no
 window, the same way on every OS (0.60.0 removed tmux and `[run] mux`; a leftover `mux` key is ignored with one
 warning). You watch and steer it through `agent-runner attach` (the run view), `attach sN` (the session's own terminal),
 `agent-runner ui` and the run page, Remote Control (claude.ai/code and the Claude apps, with `[run] remote_slots`),
@@ -114,20 +114,22 @@ A control session is an interactive Claude Code session in the main checkout whe
 the terminal or from claude.ai/code and the Claude apps: "status?", "pause", "one slot more", "stop", "add a
 task to fix X" (it files it with `plan add`), "do X now" (it uses `take`, never edits the main checkout).
 
-- **c1 comes with the run** (`[run] control = true`, the default; false: none). On Linux, macOS and Windows (ConPTY,
-  1809 and later) it runs in a terminal with no window, through the same shim as a hidden slot, its output in
-  `.runner/control1.log`; before 1809 on Windows it gets a console of its own that starts hidden. `agent-runner attach
-  c1` goes there (on Windows 1809 and later too, through the shim's port). c1 keeps its session id in
-  `.runner/control.sid` and resumes it in every run while the transcript is there. A new run a person starts begins c1
-  afresh instead (a new id in `control.sid`) when the kept session's last context is over `[run] context_warn`, and its
-  opening summary says so in one line first (`c1 starts a fresh session: the last one reached 160k context …`; with
-  `[run] remote`, whose c1 opens blank, that line is in c1's terminal and `run.log` only); the plan, ledger and `since`
-  hold the state. A restart always resumes it, whatever its size: the self-restart on `upgrade` or `auto_upgrade`, a run
-  after a crash, a kill or Ctrl-C (the last run never logged its stop) within 6 hours, and a run started within 5
-  minutes of the last one ending. It has no Stop hook, is never ended on idle, and outlives a stopped run: a run that
-  finds c1 still up opens no other.
-- **More of them**: `agent-runner control` starts one in this terminal (c1 when it is not running, else the
-  next free number, `.runner/control<N>.pid`).
+- **No kept chat** (F176). The run opens no control session of its own and resumes none. `[run] control = true` (the
+  default; false: none) means the run reopens the control sessions a shutdown cut off (B121: the self-restart on
+  `upgrade` or `auto_upgrade`, a crash or a kill, a stop that never logged its end) and, with `[run] remote`, keeps the
+  control server up. A session that ended while the machine was up is forgotten. Each control session runs in a
+  terminal with no window, through the same shim as a hidden slot, its output in `.runner/controlN.log` (before 1809 on
+  Windows, a console of its own that starts hidden); `attach cN` goes there (on Windows 1809 and later too). Its session
+  id is kept in `.runner/controlN.sid` for `control N --reopen`; a run start deletes an older `.runner/control.sid`.
+  Numbers start at 2 (`FIRST_CONTROL`). 1 was the kept session's and is retired, so a c1 an older runner left running is a
+  chat like any other: it lists, idles closed, can be deleted, renamed and resumed.
+- **Every prompt opens one**: the run app's Home box, a Status quick ask, Say what to change (a chat edit), a concept
+  change, a typed reply under Needs you and the runner feed's hand-on each open a new control session
+  (`control --new --ask`), named for its ask (its first words; `control --title` sets another name). From the run app and
+  `agent-runner ui` it starts without waiting for its link. A message in an open chat goes to that chat. In the run app no
+  chat is protected: any can be deleted or go Quiet.
+- **More of them**: `agent-runner control` opens a new session in this terminal, blank, with no opening summary (ask for
+  one to get it); the next free number from 2, `.runner/controlN.pid`.
 - **A new one from inside one** (the phone apps have no new-session button): `agent-runner control --new [N]` opens the
   next free control session without taking focus: hidden through the slot shim, its output in `.runner/control<N>.log`
   (Windows: a ConPTY pseudo-console, or before 1809 a hidden console); `attach cN` shows it (on Windows 1809 and later too). On Windows the first message still goes on the command line. A name it takes
@@ -182,15 +184,15 @@ task to fix X" (it files it with `plan add`), "do X now" (it uses `take`, never 
 - **The opening**: the first message has the session run `agent-runner status` only and say, in plain bullets
   under headings, what the run is doing now: the headline, then the groups Running, Landed and Stuck, then one line
   of hints: `/run · /since · /follow · /control · /pause · /stop · /slots · or just describe a bug or idea to queue
-  it`. Later answers are bullets too, each task id with its short title.
+  it`. Later answers are bullets too, each task id with its short title. A session a prompt opens takes the prompt as its first message, not this opening; a blank one (`agent-runner control`) has none until asked.
 - **Blocked and Needs you items**: left alone. A control session does not mention, list, count or ask about them,
   in an answer, the opening or a status, unless they bear on what you are discussing or you ask ("what needs me?",
   "what is blocked?"); the run page and `agent-runner ui` show them. A status starts with its headline, and a
   `DECIDE:` line is only a question of the session's own, never an existing item restated. A reply that answers an
   item still settles it.
 - **Needs you, unasked**: the one exception to leaving blocked and Needs you items alone. With no runner feed, every
-  control session starts the Monitor tool on `agent-runner since --follow --needs-you` on its first turn (control 1's
-  opening message names it; a blank session starts it before answering your first message). It prints only what
+  control session starts the Monitor tool on `agent-runner since --follow --needs-you` on its first turn (a control session's
+  opening names it; a blank session starts it before answering your first message). It prints only what
   needs you: the run held (`STOPPED`: uncommitted edits or
   a mid-merge in the main checkout, staged changes, a usage cap), a task left for a human, one that looks
   stalled, and a task waiting on your answer (`CONFIRM:`/`DECIDE:`/`BLOCKED:`, a concept page waiting for your
@@ -205,21 +207,22 @@ task to fix X" (it files it with `plan add`), "do X now" (it uses `take`, never 
   since](#status-and-since)). It is the full feed, so the needs-you watch stops while it runs and starts again
   after.
 - **With `[run] remote`** each control session starts with `--remote-control "<repo> · control N"`, and the
-  run keeps `claude remote-control --spawn same-dir --name "<repo> · control" --settings <file>` running in
+  run keeps `claude remote-control --spawn same-dir --no-create-session-in-dir --name "<repo> · control" --settings <file>` running in
   the main checkout (output in `.runner/control-server.log`, errors in `.runner/control-server.err`; one that
   quits within a minute puts its last error line in `run.log`), restarted when it exits (Remote Control quits
   after about 10 minutes offline; 30 s, doubling to 10 minutes while it keeps failing), so new control
-  sessions can be started from the app. `--settings` goes in only when `claude remote-control --help` lists
+  sessions can be started from the app. The server starts with `--no-create-session-in-dir` too, when `claude remote-control --help`
+  lists it: found on Claude Code 2.1.330, the session `same-dir` pre-creates is not archived on SIGTERM ("Skipping archive+deregister to allow resume") and every later server in that folder adopted it, after a clean stop and after SIGKILL, which is how an old "<folder> · control" chat kept coming back. With the flag nothing is kept: a stop deregisters, and each start gets a new environment. Right after an upgrade from an older server the new one can be refused ("This folder is already served…") for about a minute; the run retries it. `--settings` goes in only when `claude remote-control --help` lists
   it (asked once a run): an older Claude Code starts without it, so its app sessions get no control brief,
   and `run.log` says to update. The run's end ends it. A slot's listing in the apps follows `[run] remote_slots` (see Slots in the Claude apps below): `"always"` starts each as "<task title> · <repo> s2 · B646". That is not the default and not
   recommended: every slot start pushes to the phone (see Phone pushes below). Watch hidden slots through
   status and control sessions instead.
-- **Slots in the Claude apps (`[run] remote_slots`).** `"open"`, the default, lists a slot in the apps only once it is opened: c1 is the project's chat, and no slot starts on Remote Control by itself. `agent-runner ui`'s Sessions panel opens one (its session tab, "open sN in the Claude apps"; the run app has no such button): the run types `/remote-control <name>` into that slot's session, which is listed from then on until it ends, and its claude.ai/code link shows in the page. For when this machine is not reachable, the run keeps a claude.ai copy of the run page: on a run event (a
+- **Slots in the Claude apps (`[run] remote_slots`).** `"open"`, the default, lists a slot in the apps only once it is opened, and no slot starts on Remote Control by itself. `agent-runner ui`'s Sessions panel opens one (its session tab, "open sN in the Claude apps"; the run app has no such button): the run types `/remote-control <name>` into that slot's session, which is listed from then on until it ends, and its claude.ai/code link shows in the page. For when this machine is not reachable, the run keeps a claude.ai copy of the run page: on a run event (a
   task starts, lands or blocks, a needs-you item, a concept, the release; at most every 10 minutes, and only
   when the page changed apart from its clock, log and minutes) the run writes `.runner/run-page-copy.html` and
   publishes it with a one-shot headless `claude -p` that has only the Artifact and Read tools (Artifact refuses to publish a file when Read is off, B180), to the URL kept in
-  `.runner/run-page-copy.url`; never through c1 or another control session. After 3 failed publishes in a row
-  the copy stops for that run. The copy is read-only, with the terminal and the chat as session links.
+  `.runner/run-page-copy.url`; never through a control session. After 3 failed publishes in a row
+  the copy stops for that run. The copy is read-only, with each chat as a session link.
   `"always"` lists every slot as its own entry, "<task title> · <repo> s2 · B646", and keeps no copy. An old `remote_slots = true` with `sessions = "each"` reads as `"always"`, any other old `true` as `"open"`.
 - **`remote = "auto"`, the default**, is on when Remote Control can work: Claude Code on a claude.ai login.
   It is off, with one `run.log` line saying why (`remote control off: …`), when
@@ -306,8 +309,7 @@ drawer) and a desktop. It follows the browser's light or dark setting; `[ui] the
   the speaker. A reply is read in few clips: its first sentence alone, then about 200 letters, then 400 each. While a reply is read, a second element plays silence so a Bluetooth route stays open between clips; the audio session is play-and-record for the mic and playback once it ended (browsers with navigator.audioSession, iOS). A pause nobody asked for (a call, a route change) is undone once per reply, unless a mic listens; a second one ends the reply, and the lock screen's or the earbuds' pause stops it. A clip request with no answer is tried again twice (after 0.5 s and 2 s; once when none came in 25 s); what was fetched plays on, then the phone's voice reads the rest of that reply, so it is heard to its end, and a toast says "No connection to the run; reading with the phone's voice" (the next reply tries run speech again). An engine's own failure is not retried. With no engine installed, or when one fails, the browser's own speech reads.
 - **Sidebar.** New chat, Talk, Home (with the Needs you count), Status, Plan, Concepts and Settings. Chats are the
   control sessions: a dot marks one that needs your reply (an open question, or it spoke after you last opened it),
-  and one that needs none with nothing said for `[ui] chat_quiet` is gray at the bottom under Quiet (never c1, a
-  pinned or a renamed one). Double-click a chat's name (on a phone: its ⋯) to rename it; the name is yours, so the
+  and one that needs none with nothing said for `[ui] chat_quiet` is gray at the bottom under Quiet (a pinned or a renamed one is left alone by the run; by hand any chat can go Quiet or be deleted). Double-click a chat's name (on a phone: its ⋯) to rename it; the name is yours, so the
   run neither closes that chat when idle nor renames it. Agents working are the slots on a task. On a phone the
   sidebar is a drawer: swipe right anywhere to open it, left to close it, and its button has a dot while Home or
   Concepts has a count. A reload opens what was open: the view (Home, Talk, Status, Plan, Concepts, Settings or All
@@ -337,7 +339,7 @@ drawer) and a desktop. It follows the browser's light or dark setting; `[ui] the
   CONFIRM or a yes/no ask, a concept's options (A/B/C when its copy has none), a pitch's options, and Done on a BLOCKED item,
   on both pages; `agent-runner ui` draws the same, adding only the key letters, and `need_chat_text` uses them too.
   An answer button runs the plan command itself, with no AI session: Yes on a CONFIRM or a picked
-  answer runs `plan confirm ID "<reply>"`, No on a CONFIRM runs `plan change ID "No: the check failed"` (which reopens it), and a pick sheet's go runs `sheet ID --go`. The button shows it is working, a toast says what was done (e.g. "R13 ticked") and the item leaves Needs you at once; on a failure the toast says why and the item stays. Words typed in a reply still go to c1. `agent-runner ui`'s answer tab does the same. A Talk button first in the row under the message box opens Talk in the page without a reload, and never starts the mic.
+  answer runs `plan confirm ID "<reply>"`, No on a CONFIRM runs `plan change ID "No: the check failed"` (which reopens it), and a pick sheet's go runs `sheet ID --go`. The button shows it is working, a toast says what was done (e.g. "R13 ticked") and the item leaves Needs you at once; on a failure the toast says why and the item stays. Words typed in a reply open a new control session with them (`control --new --ask`, named for the ask). `agent-runner ui`'s answer tab does the same. A Talk button first in the row under the message box opens Talk in the page without a reload, and never starts the mic.
 - **The session.** A chat or slot shows the real Claude Code session, not a thread the page draws: its own terminal
   through ttyd (`attach NAME` shows the same one), in one frame between the header and the message box. A chat has no
   bubbles, folded steps, history or jump button. The frame is served at `/t/TOKEN/NAME/` on the run's own address, so
@@ -352,7 +354,7 @@ drawer) and a desktop. It follows the browser's light or dark setting; `[ui] the
   `theme` (in `~/.claude/settings.json` or `~/.claude.json`) starts with light. A session the run starts (control sessions and
   slots) takes the run's own theme, `agent-runner`, whose colours each browser fills from the page's light or dark.
   The states are cards: starting (says so, with the waiting message); loading; ended (the claude.ai/code link, and
-  Resume where there is one: `resume_chat`, `control N --reopen`; not c1); a slot with no session (Resume when its task
+  Resume where there is one: `resume_chat`, `control N --reopen`); a slot with no session (Resume when its task
   was cut off); no terminal (a headless stream slot, a slot with no socket, or Windows before 1809); no ttyd (TTYD_INSTALL
   says how to install it). The state is checked every 3 s.
   The frame goes when the chat is left, or the page has been hidden for 15 s, so the session gets its other viewers'
@@ -392,7 +394,7 @@ terminal socket says so with its link (o open, y copy; Enter opens the link). On
 (Ctrl-b d there) says so, and Enter (⏎ show it beside) shows it again. `agent-runner ui` always runs inside tmux: started
 outside it, it re-execs itself in the project's tmux session (named for the folder, or a new window in it); without
 tmux, or on Windows, it refuses with exit 2 (the install line, or the run page's link). Ctrl-f makes the session
-full-screen between the UI's top and bottom bars, and again for side by side. In Sessions, n starts a new control session without waiting for its link, and `c` selects c1.
+full-screen between the UI's top and bottom bars, and again for side by side. In Sessions, n starts a new control session without waiting for its link; `c` (anywhere) starts a new chat, and `d` closes any control session.
 
 ### Adding a row action
 
@@ -1270,7 +1272,7 @@ agent-runner attach [run|sN|cN|feed]   the run view (its log, live, and its keys
                                        session's own terminal (Ctrl-b d detaches; Windows 1809 and later too;
                                        before 1809 the hidden console); feed or
                                        board: agent-runner ui
-agent-runner control [N]               a control session in this terminal (c1: the kept one, resumed)
+agent-runner control [N]               a new control session in this terminal, blank (no opening summary)
 agent-runner control --new [N]         another one beside the run, without taking focus; prints its claude.ai/code link
 agent-runner control --new --no-wait   the same, returning once it starts ("control N is starting in a hidden terminal"),
                                        without waiting for its claude.ai/code link
@@ -1385,14 +1387,14 @@ theme = "ryha"            # the terminal UI's (`ui`) colours: ryha (black, red a
                           # 16 colours and background), light. The run app ignores it: it follows the browser's
                           # light or dark setting
 chat_quiet = "6h"         # a chat that needs no reply, with nothing said in it for this long, is grayed at the bottom
-                          # of the run app's Chats (never c1, a pinned or a renamed one); false: off
+                          # of the run app's Chats (a pinned or a renamed one is left alone); false: off
 
 [models]                  # the model each type of work runs on (see Models per role below)
 code = "opus"             # a task's own session when its kind has no model below
 review = "opus"           # the `review` subagent the spec review before done runs in
 fix = "opus"              # merge-conflict fix and repair sessions
 docs = "haiku"            # the `docs` subagent: CHANGELOG, docs, README, journal and plan-text edits; false: none
-control = "opus"          # control sessions (c1, c2, …)
+control = "opus"          # control sessions (c2, c3, …)
 feed = "haiku"            # the runner feed, and the one-shot that publishes the run page's claude.ai copy
 kinds = { F = "opus", B = "opus", T = "opus", V = "opus", K = "opus", D = "sonnet", C = "sonnet", R = "sonnet" }
                           # a task's own session by its kind (the id's letters: F105 is F); see Models per kind
@@ -1412,7 +1414,7 @@ engine = "terminal"       # terminal = an interactive session in a hidden termin
 lean = true               # sessions get Bash/Read/Edit/Write/Artifact only, no MCP servers or user settings
 remote = "auto"           # control sessions on Remote Control, and a control server to start more from claude.ai/code or the Claude apps; Enter in the run view opens it. auto: on where it can work (see Control sessions); true/false force it
 remote_slots = "open"     # the slots in the Claude apps. open: listed once opened from `agent-runner ui` (Sessions, session tab),
-                          # c1 is the project's chat, and the run keeps a claude.ai copy of the run page. always: every slot its own
+                          # the run keeps a claude.ai copy of the run page. always: every slot its own
                           # entry ("<task title> · <repo> s2 · B646"), no copy
 web = true                # the run app (see The run app), served by the run on web_port for the LAN/Tailscale, or on
                           # 127.0.0.1 only behind Home; its address, with the token it needs, is in `status` and the run
@@ -1420,8 +1422,8 @@ web = true                # the run app (see The run app), served by the run on 
 web_port = 8770           # where the run app is served; a port set here stays open on every interface (unless it is
                           # Home's own port)
 silent = false            # phone pushes from those sessions after each one's start push (that one cannot be stopped): true = none, false = Claude Code's usual
-control = true            # a run opens control session c1 beside it; false: none (`agent-runner control` still works)
-control_idle = "3h"       # close idle control sessions 2, 3, … (never c1) once quiet this long, Claude spoke last, its last message does not end on a `DECIDE:` line (that one waits for `control_ask`), and nothing runs in it (a background task or Monitor; the needs-you watch does not count): process ended, controlN.pid removed, transcript kept (`claude --resume <sid>`); false: none closed idle
+control = true            # the run opens no control session of its own; true: it reopens the ones a shutdown cut off and, with remote, keeps the control server up; false: neither (`agent-runner control` still works)
+control_idle = "3h"       # close idle control sessions (none is protected) once quiet this long, Claude spoke last, its last message does not end on a `DECIDE:` line (that one waits for `control_ask`), and nothing runs in it (a background task or Monitor; the needs-you watch does not count): process ended, controlN.pid removed, transcript kept (`claude --resume <sid>`); false: none closed idle
 control_ask = "2h"        # a last message ending on a line `DECIDE: <question>` (the brief asks the session for one only when work waits on the answer): after this long it is filed under Needs you as a DECIDE item (an F task with the question + the session link; answering it reopens the task for a run to carry on), then closed; false: such a session stays open and nothing is filed
 auto_upgrade = true       # upgrade by itself when a newer release is out, as `u` does, once no merge runs; the run restarts on it (false: only `u` or `agent-runner upgrade`)
 install_skill = true      # keep the `agent-runner guide` skill in ~/.claude/skills and the user-level SessionStart hook (the control brief in a runner repo's main checkout) in Claude Code's user settings, from every agent-runner command, for sessions a person starts; false: neither is written
@@ -1433,7 +1435,7 @@ voice = ""                # the person's wording file (`agent-runner voice`), re
 voice_learn = "ask"       # "ask": a session that had to say something again offers one wording line to add; "off": lines are added only when the person says so
 review = true             # before done, a fresh subagent reads the diff against the task's brief (spec only: missing, unasked, wrong); the commit ends "review: …"; false: no review
 review_min_lines = 50     # a diff smaller than this (changed lines) skips the review, unless the task has a long form (plan/tasks/<ID>.md)
-context_warn = 150        # k tokens: a slot session whose context peaked past this says so in its exit line and in `since`, with what filled it ("B32 peaked 168k (over 150k): runner.py 61k, test_runner.py 22k"), and is told once, as a turn ends, to commit what is solid, file the rest as a part and finish; soft only, nothing is stopped; 0 = off. A new run also starts c1 afresh when its kept session last stood over it (F27)
+context_warn = 150        # k tokens: a slot session whose context peaked past this says so in its exit line and in `since`, with what filled it ("B32 peaked 168k (over 150k): runner.py 61k, test_runner.py 22k"), and is told once, as a turn ends, to commit what is solid, file the rest as a part and finish; soft only, nothing is stopped; 0 = off.
 task_size = 10            # a task bigger than this is split: its size is its code files (`docs_files` not counted) + 2 per numbered outcome + 1 per 400 characters of text (a long form is not read); `plan add`, `edit`, `note` and an approval say so, and its session splits it first; 0 = off (F177)
 task_tokens = 0           # tokens one task's session (and its subagents) may use: input, cache writes, output (cache reads are left out: they grow with turns times the context, and task_usd counts them). Past it the runner tells the task to stop at a clean point (commit, write its journal, end its turn) and parks it as wip/<ID>; one whose done already passed lands; one that goes on to 1.25 times the cap is ended. `status` shows each running task's spend ("1.2M tok $3.40"); 0 = no cap (F103)
 task_usd = 0              # the same cap in dollars, at the API's list prices (a plan bills none; Opus prices for a model it does not know); 0 = no cap

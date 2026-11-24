@@ -6670,20 +6670,18 @@ def test_control_status_rules(repo: Path):
 
 def test_control_leaves_needs_alone():
     """F151: control sessions leave blocked and Needs you items alone; the needs topic and the feed keep theirs."""
-    from agent_runner.guide import CONTROL, CONTROL_FEED_WATCH, CONTROL_START, CONTROL_TOPICS, RUNNER_BRIEF, topic
+    from agent_runner.guide import CONTROL, CONTROL_FEED_WATCH, CONTROL_TOPICS, RUNNER_BRIEF, topic
     flat = lambda t: ' '.join(t.split())
     brief = flat(CONTROL.format(repo='r', cmd='./run', log='l', watch=CONTROL_FEED_WATCH.format(repo='r'),
                                 needs='Needs you', answer=''))
     summary = flat(CONTROL_TOPICS['summary'].format(cmd='./run', needs='Needs you'))
-    start = flat(CONTROL_START.format(cmd='./run', watch_start=''))
-    for name, t in (('brief', brief), ('summary topic', summary), ('start prompt', start)):
+    for name, t in (('brief', brief), ('summary topic', summary)):
         check('Nothing needs you' not in t and 'first line' not in t and '**Needs you**' not in t
               and 'waiting concept page' not in t and 'each concept page' not in t,
               f'the {name} orders no needs-you first line, group or pages', t)
     check('**Leave blocked and "Needs you" items alone**' in brief and 'never mention, list, count or ask about them' in brief
           and 'unless they bear on what the person is discussing or the person asks' in brief, 'the brief has the rule', brief)
     check('Leave out blocked and "Needs you" items' in summary and '(2 blocked)' not in summary, 'and the summary topic', summary)
-    check('nothing about blocked items or ones that need me unless I ask' in start, 'and the start prompt', start)
     check('only a question of your own about the work under discussion, never an existing item restated' in brief,
           'a DECIDE line restates no item', brief)
     concepts = flat(topic('concepts', './run'))
