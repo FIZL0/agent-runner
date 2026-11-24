@@ -4301,7 +4301,7 @@ def test_research_findings_only(repo: Path):
         check(P.research('Q1', own) and not P.research('R1', own), 'a repo\'s own kinds mark research by meaning')
         (repo / rel).write_text(before.replace('### Later\n', '### Later\n\n- [ ] **R7** how slow is the parser\n'
                                                '- [ ] **R8** why the printer drops lines (no merge anyway '
-                                               'without a person)\n- [ ] **R6** read every label\n'), encoding='utf-8')
+                                               'without a person)\n- [ ] **R6** read every label\n- [ ] **R12** count the lines\n'), encoding='utf-8')
         git(repo, 'commit', '-qm', 'test: R7, R8', '--', rel)
         p = R.prompt_for('R7', 1, 1, repo, 'main')
         has(p, r'R7 is a research task.*`plan/\*\*`.*`docs/research/\*\*`.*plan add.*change no code',
@@ -4390,6 +4390,34 @@ def test_research_findings_only(repo: Path):
                                          ('measure it and fix the label', '', line.replace('** ', '** (follow-up, normal) '), False)):
             eq(bool(P.asked_for(f'x\n\nasked for: "{words}"', P.person_words(where, 'R5', told=told))), want,
                f'request, tell, agent\'s note, two words, a follow-up: {words}')
+        commit_on(repo, 'T225', {'t225.py': '1\n'}, 'T225: beside research')
+        commit_on(repo, 'R12', {'r12.py': '# fixed\n'}, 'R12: a fix nobody asked for')
+        commit_on(repo, 'R13', {'docs/research/r13.md': 'fine\n'}, 'R13: findings')
+        R.WAITING.update({'R12', 'R13', 'R14'})  # as finish threads queued on the lock
+        commit_on(repo, 'R14', {'r14.py': '# fixed\n'}, 'R14: a fix the person said to ship')
+        saved_ships, P.research_ships = P.research_ships, lambda item, tid: tid == 'R14' or saved_ships(item, tid)
+        saved_ahead, R._build_ahead, saved_poll, R.AHEAD_POLL = R._build_ahead, lambda b, base, c: built.append(c), \
+            R.AHEAD_POLL, 0.01
+        built: list[list[str]] = []
+        try:
+            stop = threading.Event()
+            threading.Timer(60, stop.set).start()
+            R.build_ahead('main', git(repo, 'rev-parse', 'main'), stop, set())
+            eq(built, [['R13', 'R14']], 'held research is not built ahead; findings and shipped code are (B225)')
+            base = git(repo, 'rev-parse', 'main')
+            R.AHEADS[:] = [{'base': base, 'tids': ['T225', 'R12'], 'merged': git(repo, 'rev-parse', 'task/R12')}]
+            eq(R.merge('T225', 'main'), None, 'a task merges beside held research, in an adopted merge with it too')
+            check((repo / 't225.py').exists() and (repo / 'docs/research/r13.md').exists()
+                  and (repo / 'r14.py').exists(), 'findings and shipped code ride along')
+            check(not (repo / 'r12.py').exists() and 'R12' not in R.LANDED, 'held research does not')
+        finally:
+            P.research_ships, R._build_ahead, R.AHEAD_POLL = saved_ships, saved_ahead, saved_poll
+            R.AHEADS.clear()
+            R.WAITING.difference_update({'R12', 'R13', 'R14'})
+        eq([R.merge(x, 'main') for x in ('R13', 'R14')], [None, None], 'the riders record their landing')
+        has(R.merge('R12', 'main') or '', r'research changes no product.*r12\.py; blocked on a person',
+            'the held one blocks on a person at its own turn')
+        check('R12' in [x[1] for x in P.asks(repo / rel)], 'and is under Needs you')
         R.C.raw['plan']['kinds'] = own
         commit_on(repo, 'R9', {'r9.py': '# tidied\n'}, 'R9: a refactor in a repo where R is not research')
         eq(R.merge('R9', 'main'), None, 'a kind that is not research merges code as before')
@@ -4399,7 +4427,8 @@ def test_research_findings_only(repo: Path):
             R.C.raw['plan'].pop('kinds', None)
         else:
             R.C.raw['plan']['kinds'] = saved_kinds
-        for b in ('task/R6', 'task/R7', 'task/R8', 'task/R9', 'task/R10', 'task/R11', 'task/R12', 'task/T224'):
+        for b in ('task/R6', 'task/R7', 'task/R8', 'task/R9', 'task/R10', 'task/R11', 'task/R12', 'task/R13', 'task/R14', 'task/T224',
+                  'task/T225'):
             if git(repo, 'branch', '--list', b):
                 git(repo, 'branch', '-D', b)
         if (repo / rel).read_text(encoding='utf-8') != before:
