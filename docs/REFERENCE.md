@@ -1400,13 +1400,6 @@ agent-runner control [N]               a new control session in this terminal, b
 agent-runner control --new [N]         another one beside the run, without taking focus; prints its claude.ai/code link
 agent-runner control --new --no-wait   the same, returning once it starts ("control N is starting in a hidden terminal"),
                                        without waiting for its claude.ai/code link
-agent-runner control --new --forward   the same, with the person's latest message to an older version's runner feed
-                                       as its first message, read word for word from that feed's transcript (never
-                                       retyped in a shell), and the files or images attached to it named with their
-                                       paths; no run calls it now, since a run starts no feed
-  … --forward --runner                 the same, opened in agent-runner's own checkout (the clone it runs from,
-                                       or a worktree under its [run] home) and labelled with this project; the older
-                                       feed handed asks about agent-runner itself (updates, releases, its bugs) on this way
 agent-runner pitch [approve|no PITCH]  landed work that waits for a yes to be pushed (### Approve to push): approve
                                        it, or undo it with `no`
 agent-runner since [WHEN] [--all|--follow]  what landed, started or got stuck since the last look (or WHEN:
