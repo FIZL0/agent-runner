@@ -329,8 +329,14 @@ def chat_to(text: str, to: str = '', force: bool = False, unsent: bool = False, 
     """F74: the chat box of any control session: `to` (c6) gets `text`, with no `to` a new one (F176). B154: 'at' is when it was typed, and
     'name' the new control session. F170: `force` interrupts it first while it works
     (`session_now.force_send`); `unsent`: the page sees words in its input, so the text goes below them.
+    F190b: `force` with no text sends what is queued in it (`session_now.force_queued`) and types nothing.
     B158: a chat still starting gets it once it takes input; with `wait` False (the run page) the answer is 'hold'
     meanwhile."""
+    if force and not text.strip():
+        if not to:
+            return {'ok': False, 'code': 2, 'out': 'chat_to: force with no text needs a session', 'argv': []}
+        from agent_runner.session_now import force_queued
+        return {**force_queued(to, unsent), 'at': time.time()}
     if held := _starting(to, wait):
         return held
     at = time.time()
