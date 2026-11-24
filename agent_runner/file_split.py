@@ -154,3 +154,10 @@ def queue_file_split(running: dict, tried: set, branch: str, force: bool = False
     finally:
         hold.close()
         MERGE.release()
+
+
+def no_task(run, held) -> None:
+    """`run` (a loop.Run) has nothing for its free slot: queue a file split if that is for want of a file, which a later
+    pick takes. Not at a usage limit (`held`), nor in `run once`."""
+    if not held and not run.once:
+        queue_file_split(run.running, run.tried, run.branch)
