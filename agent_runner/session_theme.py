@@ -35,6 +35,22 @@ ROLES = {
     'gone': (52, 224, '#4a2c27', '#f5dcd6'),
     'gone2': (88, 217, '#743d33', '#edb8ad'),
 }
+# F182: the code in a diff, which Claude Code (2.1.331) draws in colours of its own that no theme names, by the theme's
+# base. Role: (slots with a dark base, with a light one, the page's dark colour, its light colour). Only the slots of the
+# base in use are filled: with a dark base nothing else of Claude Code's is drawn in 231, with a light one 231 is only
+# other programs' white, which stays white. With a dark base, other programs' white on
+# a strong colour (231 on 160, 25 or 64) still shows light on a light page: minimumContrastRatio turns the dark text back
+# (seen in Chromium). A slot `ROLES` has (125, 97, 242, 246) keeps its role's colour, and that ratio lifts it on a row.
+CODE = {
+    'plain': ((231,), (236,), '#f3f1ea', '#141413'),
+    'keyword': ((197, 218), (), '#f7c6d6', '#8a2f5b'),
+    'storage': ((81,), (), '#b4dfe4', '#0b5560'),
+    'name': ((148,), (31,), '#c9e3a9', '#2c5526'),
+    'number': ((141, 183), (), '#dccff2', '#5f3f8c'),
+    'string': ((186,), (24,), '#e6cf8f', '#6b4500'),
+    'param': ((208, 215), (), '#f5c8a8', '#7c3217'),
+    'comment': ((250,), (), '#d2d0c8', '#4b4a46'),
+}
 # Claude Code's colour names, by role; one left out (its rainbow, its subagents') keeps its stock colour
 USES = {
     'text': 'text', 'inverse': 'inverseText clawd_background', 'muted': 'inactive',
@@ -75,13 +91,19 @@ def theme(look: str) -> dict:
             'overrides': {k: f'ansi256({ROLES[role][i]})' for role, keys in USES.items() for k in keys.split()}}
 
 
-def page_look(look: str) -> dict:
+def page_look(look: str, base: str = '') -> dict:
     """What the page's terminal is set to while the page is `look` (an xterm.js theme): the page's own ground, and every
-    slot of `ROLES` in the page's colours."""
+    slot of `ROLES`, and of `CODE` for the theme's `base` (the person's look unless given), in the page's colours."""
+    if not base:  # imported here, as in settings
+        from agent_runner.session_frame import session_look
+        base = session_look()
     i = 2 if look == 'dark' else 3
     slots = [xterm256(n) for n in range(16, 256)]
     for role in ROLES.values():
         slots[role[0] - 16] = slots[role[1] - 16] = role[i]
+    for code in CODE.values():
+        for n in code[1 if base == 'light' else 0]:
+            slots[n - 16] = code[i]
     at = {k: v[i] for k, v in ROLES.items()}
     ground = '#262624' if look == 'dark' else '#faf9f5'  # web_page.html's --bg
     return {'background': ground, 'foreground': at['text'], 'cursor': at['text'], 'cursorAccent': ground,

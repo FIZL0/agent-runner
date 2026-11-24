@@ -153,6 +153,30 @@ def test_theme(tmp: Path) -> None:
         check('theme' not in T.settings('dark'), 'no file, no theme named')
 
 
+def test_code_colours() -> None:
+    """F182: plain code in a diff is the page's text colour in both looks, and no code colour needs xterm to change it."""
+    def lum(h):
+        c = [int(h[i:i + 2], 16) / 255 for i in (1, 3, 5)]
+        c = [x / 12.92 if x <= .03928 else ((x + .055) / 1.055) ** 2.4 for x in c]
+        return .2126 * c[0] + .7152 * c[1] + .0722 * c[2]
+    taken = {r[i] for r in T.ROLES.values() for i in (0, 1)}
+    for b, base, plain, other in ((0, 'dark', 231, 236), (1, 'light', 236, 231)):
+        slots = [n for c in T.CODE.values() for n in c[b]]
+        eq((len(slots), taken & set(slots)), (len(set(slots)), set()), f'{base} base: no slot stands for two roles')
+        for look, i in (('dark', 2), ('light', 3)):
+            got = T.page_look(look, base)
+            at = lambda n: got['extendedAnsi'][n - 16]
+            eq((at(plain), at(other)), (got['foreground'], T.xterm256(other)), f"{base} base, {look} page: plain code, the other base's slot left alone")
+            grounds = [got['background'], *(T.ROLES[k][i] for k in ('add', 'add2', 'gone', 'gone2'))]
+            for n in slots:
+                for g in grounds:
+                    x, y = sorted((lum(at(n)), lum(g)))
+                    check((y + .05) / (x + .05) >= 4.5, f'{base} base, {look} page: {n} reads at 4.5:1 on {g}', at(n))
+    for look in ('dark', 'light'):  # the base is the person's look unless given
+        with mock.patch('agent_runner.session_frame.session_look', lambda: look):
+            eq(T.page_look('light'), T.page_look('light', look), f'a person whose terminals are {look}')
+
+
 def in_tmp(f):
     def run():
         with tempfile.TemporaryDirectory() as d:
@@ -161,4 +185,4 @@ def in_tmp(f):
 
 
 if __name__ == '__main__':
-    raise SystemExit(report([test_stop_and_force, test_tasks, in_tmp(test_skills), test_update_and_restart, in_tmp(test_theme)]))
+    raise SystemExit(report([test_stop_and_force, test_tasks, in_tmp(test_skills), test_update_and_restart, in_tmp(test_theme), test_code_colours]))
