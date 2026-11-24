@@ -8,10 +8,12 @@ test_runner.py and test_plansync.py drive pick whole; this checks that the dry r
 """
 from __future__ import annotations
 
+import importlib
 import os
 import sys
 import tempfile
 from pathlib import Path
+from unittest import mock
 
 from _check import check, eq, git, report
 
@@ -255,6 +257,86 @@ def test_critical_first(tmp: Path):
     eq(S.choose(S.held({1: b1}, 'main'), set(), 'main')[0], 'N1', 'and N1 the one after (N2 waits for B1)')
 
 
+def test_alone_turn(tmp: Path):
+    print('F208: a critical (alone) task gets its turn: only critical tasks start until the running ones have ended')
+    repo = tmp / 'turn'
+    repo.mkdir()
+    git(repo, 'init', '-q', '-b', 'main')
+    (repo / 'plan').mkdir()
+    todo = ('# TODO\n\n### Next\n\n'
+            '- [ ] **T1** one | files: a.py\n'
+            '- [ ] **T2** two | files: b.py\n'
+            '- [ ] **B1** fix (follow-up, critical) | files: c.py\n'
+            '- [ ] **C1** (follow-up, critical) (alone) split a.py | files: a.py\n')
+    (repo / 'plan/TODO.md').write_text(todo, encoding='utf-8')
+    (repo / 'plan/DONE.md').write_text('# DONE\n', encoding='utf-8')
+    (repo / 'a.py').write_text('# a\n', encoding='utf-8')
+    (repo / 'runner.toml').write_text('[run]\ntest = "true"\nmin_free_gb = 0\nremote = false\n', encoding='utf-8')
+    (repo / '.gitignore').write_text('.runner/\n', encoding='utf-8')
+    git(repo, 'add', '-A')
+    git(repo, 'commit', '-qm', 'start')
+    R.init(repo)
+    by = {t[0]: t for t in S.held({}, 'main').todo}
+
+    def first(running: dict, tried=frozenset()) -> str:
+        return (S.choose(S.held(running, 'main'), set(tried), 'main') or ('',))[0]
+    eq(first({}), 'B1', 'nothing runs: critical tasks, in order')
+    one = {1: by['T1']}
+    eq(first(one), 'B1', 'a critical task that does not run alone still starts')
+    eq(first({**one, 2: by['B1']}), '', 'then no normal one does')
+    why = S.explain(one, set(), 'main')
+    eq((why['T2'], why['B1']), (('runs alone', 'C1 runs alone next'), ('free', '')), 'the dry run says so')
+    eq(first({}, {'B1'}), 'C1', 'the running ones have ended: its turn')
+    eq(first(one, {'B1', 'C1'}), 'T2', 'C1 tried this run holds nothing')
+    h = S.held(one, 'main')
+    parked = h._replace(parked={'C1': ['wip/C1', 'wip/C1-2']})
+    eq(S.choose(parked, {'B1'}, 'main')[0], 'T2', 'nor one that waits for a person')
+    eq(S.choose(h._replace(alone=h.alone | {'T1'}, away=frozenset({'T1'})), {'B1'}, 'main'), None,
+       'T1 itself alone and taken by hand: nothing starts beside it, as before')
+    eq(S.turn_of(set(), h._replace(alone=h.alone | {'T1'}, away=frozenset({'T1'})), 'main'), '', 'but no turn is kept')
+    tool = h._replace(needs={'C1': ['X']})
+    with mock.patch.object(S.shared_tools, 'hold', lambda tid, *a: ('X', 'missing') if tid == 'C1' else None):
+        eq(S.choose(tool, {'B1'}, 'main')[0], 'T2', 'nor one whose shared tool is missing')
+    (repo / 'plan/TODO.md').write_text(todo.replace('(follow-up, critical) (alone)', '(alone)'), encoding='utf-8')
+    git(repo, 'commit', '-qam', 'C1 normal')
+    eq(first(one, {'B1'}), 'T2', 'an (alone) task that is not critical holds no start')
+    (repo / 'plan/TODO.md').write_text(todo.replace(
+        'split a.py | files: a.py', 'split a.py | files: a.py | after: T1'), encoding='utf-8')
+    git(repo, 'commit', '-qam', 'C1 after T1')
+    eq(first(one, {'B1'}), 'T2', 'nor one that still waits for its after:')
+    (repo / 'plan/TODO.md').write_text(todo, encoding='utf-8')
+    git(repo, 'commit', '-qam', 'C1 as it was')
+
+    git(repo, 'checkout', '-q', '-b', 'task/T1')  # T1 finished: its branch waits to merge
+    (repo / 'a.py').write_text('# a, T1\n', encoding='utf-8')
+    git(repo, 'commit', '-qam', 'T1: a')
+    on = git(repo, 'rev-parse', 'HEAD')
+    git(repo, 'checkout', '-q', 'main')
+    eq(first({}, {'B1'}), '', 'a task that waits to merge is waited for too')
+    M = importlib.import_module('agent_runner.merge')
+    with mock.patch.object(M, 'under_way', lambda: [{'on': on, 'tids': ['T1']}]):
+        (repo / 'plan/TODO.md').write_text(todo.replace('files: b.py', 'files: a.py'), encoding='utf-8')
+        git(repo, 'commit', '-qam', 'T2 on a.py')
+        eq(first({}, {'B1'}), '', 'and none starts on top of its merge (F198)')
+        eq(first({}, {'B1', 'C1'}), 'T2', 'as it would with no turn kept')
+    (repo / 'plan/TODO.md').write_text(todo, encoding='utf-8')
+    git(repo, 'commit', '-qam', 'T2 as it was')
+    loop = importlib.import_module('agent_runner.loop')
+    (repo / 'a.py').write_text('# edited\n', encoding='utf-8')
+    eq(first({}, {'B1'}), 'T2', 'not while edits in the main checkout hold its merge: the run would stand still')
+    git(repo, 'add', 'a.py')
+    eq(first({}, {'B1'}), 'T2', 'staged ones too')
+    git(repo, 'reset', '-q', '--', 'a.py')
+    git(repo, 'checkout', '-q', '--', 'a.py')
+    with mock.patch.object(loop, 'SWEPT', {'T1'}):
+        eq(first({}, {'B1'}), 'T2', 'nor when its merge crashed')
+    with mock.patch.object(S, 'queued', lambda: {1: ('T1', 'sid', 'usage limit')}):
+        eq(first({}, {'B1'}), 'T2', 'nor when its session waits for a usage reset')
+    (repo / 'plan/TODO.md').write_text(todo.replace('[ ] **T1**', '[x] **T1**'), encoding='utf-8')
+    git(repo, 'commit', '-qam', 'T1 closed')
+    eq(first({}, {'B1'}), 'T2', "nor for a closed task's branch, which no run merges")
+
+
 def test_split_parent_first(tmp: Path):
     print('B185: a task that filed its parts and was then parked goes before them')
     repo = tmp / 'split'
@@ -396,6 +478,7 @@ def main() -> int:
         return report([lambda: test_explain(repo), lambda: test_parked(repo),
                        lambda: test_release_taken(Path(tmp)), lambda: test_release_beside(Path(tmp)),
                        lambda: test_alone(Path(tmp)), lambda: test_critical_first(Path(tmp)),
+                       lambda: test_alone_turn(Path(tmp)),
                        lambda: test_split_parent_first(Path(tmp)),
                        lambda: test_split_hold(Path(tmp)), lambda: test_split_side_by_side(Path(tmp))])
 
