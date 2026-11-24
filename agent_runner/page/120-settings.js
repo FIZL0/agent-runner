@@ -111,9 +111,20 @@ function settingsHTML(){
       +(un.length?`<div class="sec">Ignored or moved<span class="ln"></span></div>${card(un.map(u=>`<div class="srow" data-k="unk:${esc(u.side+u.table+u.key)}"><div class="row"><span class="grow setkey">${u.table?`[${esc(u.table)}] `:''}${u.key?`${esc(u.key)} = `:''}${esc(u.value)}</span><span class="tag warn">ignored or moved</span></div><div class="small">${esc(u.file)}: ${esc(u.why)}</div></div>`).join(''))}`:'');
   }else body=d.groups.filter(g=>g[2]==='page').map(g=>setGroup(d,g,shown.filter(k=>k.group===g[0]),{kinds:g[0]==='models'?kr:''})).join('')
     +`<div class="sec">More<span class="ln"></span></div>${setFold('advanced','Advanced','disk, memory, merge tuning',()=>groups(shown,{},'advanced'))}${setFold('file','Project file','test command, paths, rules: read only here',()=>groups(shown,{},'file'))}`;
-  return `<div class="col"><div class="row"><input class="fld grow" type="search" data-f="setq" placeholder="Find a setting" aria-label="Find a setting">${changed.length+d.unknown.length||S.setChanged?`<button class="btn${S.setChanged?' pri':''}" data-setchanged aria-pressed="${!!S.setChanged}">Changed ${changed.length}</button>`:''}</div>
+  return `<div class="col"><div class="row"><span class="setq grow"><input class="fld" type="search" data-f="setq" placeholder="Find a setting" aria-label="Find a setting"><button type="button" class="x" data-setqclear aria-label="Clear search"${S.f.setq?'':' hidden'}>${I.x}</button></span>${changed.length+d.unknown.length||S.setChanged?`<button class="btn${S.setChanged?' pri':''}" data-setchanged aria-pressed="${!!S.setChanged}">Changed ${changed.length}</button>`:''}</div>
     ${setErrHTML()}${obCards(x=>x.ctl==='restart:')}${body}
     ${waits&&S.snap.up!==false&&rc?card(`<div class="row"><span class="grow">${waits===1?'1 change waits':`${waits} changes wait`} for a restart</span>${S.sure==='restart'?'':'<button class="btn acc" data-ctl="restart">Restart the run</button>'}</div>${S.sure==='restart'?ctlSure(rc):''}`,'','data-k="setwait"'):''}</div>`;
+}
+/* F204a: the search field in use stays the same element while what is under it changes (as B222a) */
+function settingsDraw(el,h){
+  if(el._h!==h&&el._gone)for(const g of el._gone)g.remove();  // leaving() puts them back
+  return fieldHTML(el,h,'setq');
+}
+/* the x in the search: the full list, and focus in the field */
+function setqClear(){
+  const at=()=>document.querySelector('[data-f="setq"]'), was=at();S.f.setq='';if(was)was.value='';
+  render(true);
+  const el=at();if(el&&document.activeElement!==el)kbFocus(el);
 }
 /* a row's More…: its words, its other home, and Reset for each place that sets it */
 function settingSheet(){

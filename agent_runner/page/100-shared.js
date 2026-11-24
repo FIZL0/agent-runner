@@ -53,7 +53,12 @@ function closeSheet(){if(!S.sheet)return;MO.folded=0;runStop($('sheet'));S.sheet
    element: a new one under the keyboard loses its autocorrect and the letters on their way */
 function sheetHTML(el,h){
   const a=document.activeElement, f=S.sheet==='need'&&a&&a!==el&&el.contains(a)&&a.dataset&&a.dataset.f;
-  if(!f||el._h===h)return setHTML(el,h);
+  return f?fieldHTML(el,h,f):setHTML(el,h);
+}
+/* el's markup, patched around its field f when that is the one in use */
+function fieldHTML(el,h,f){
+  const a=document.activeElement;
+  if(el._h===h||!a||a===el||!el.contains(a)||!a.dataset||a.dataset.f!==f)return setHTML(el,h);
   const t=document.createElement('template');t.innerHTML=h;
   const at=[...t.content.querySelectorAll('[data-f]')].find(x=>x.dataset.f===f), up=(x,top)=>{const l=[];for(;x&&x!==top;x=x.parentNode)l.unshift(x);return l};
   const was=up(a,el), now=up(at,t.content);

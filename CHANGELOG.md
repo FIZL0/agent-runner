@@ -6,6 +6,7 @@ Semantic versioning; what counts as breaking is in [docs/SETUP.md](docs/SETUP.md
 
 - Added: `[git] no_push = true` (off by default) is a no-push policy: the runner pushes nothing, and every session it starts (task, repair, control, one-shot) makes `git push` fail in any repository with git's message, so `--no-verify`, `-c` and child processes do not get around it. Settings > Merging shows it as Never push. It is a guard, not a sandbox (docs/REFERENCE.md, ### No-push policy) (F400).
 - Added: the run page serves a session's whole history as data, `GET /history/NAME` (F191a), for a chat or a slot. It is read from the session's transcript in pages: the newest first, `&before=MARK` for older and `&since=MARK` for new. Tool calls are folded with their results, and diffs are shown as Claude Code shows them. It has the same access as `/feed`. Nothing on the page draws it yet.
+- Added: on the run page, the Settings search (Find a setting) has an x while it has text, on phones too (the browser's own x, missing on iOS, is hidden); it clears the search, shows the full list and keeps focus in the field. The field stays the same element as the list changes, so typing no longer loses autocorrect on a phone (F204a).
 
 ## 0.63.0 (2026-11-24)
 
