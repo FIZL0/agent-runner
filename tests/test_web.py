@@ -5471,6 +5471,11 @@ def test_bars_over_text_b192(tmp: Path) -> None:
     for gone in ('FD.pulling', '#feedframe.glide', 'data-strip', 'feedSettle'):
         check(gone not in page, f'no {gone}: the bars never move the frame')
     check('.main.sess.slim .dockwrap{pointer-events:none}' in page, 'a touch where the box was is the session\'s')
+    bar = '.main.sess.slim .top:not(:has(:focus-visible))'
+    check(bar + '{background-color:transparent;pointer-events:none}' in page and bar + '>*{opacity:0}' in page
+          and bar + '>:not(.menu){visibility:hidden}' in page,
+          'B215: the menu fades with the bar and takes no taps, keyboard focus on it shows the bar')
+    eq(page.count('.main.sess.slim .top'), page.count(bar), 'B215: no other rule keeps a control over the text')
     row = page[page.index('function slimDraw('):]
     row = row.split('function workDraw')[0]
     check(all(x in row for x in ('data-slimbox', 'data-halt', 'data-sheet="sesswork"')) and 'schips' not in row and 'data-clip' not in row,
